@@ -113,6 +113,12 @@
 		"date": "2026-10-29",
 		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
 	},
+	"chromium-swiftshader/compat/demo-ocean.png": {
+		"test": "demo-ocean",
+		"tier": "compat",
+		"date": "2026-10-28",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the demo; the branch's CI run has not drawn it yet"
+	},
 	"chromium-swiftshader/compat/demo-post-effects.png": {
 		"test": "demo-post-effects",
 		"tier": "compat",
@@ -137,11 +143,11 @@
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
 	},
-	"chromium-swiftshader/compat/demo-ocean.png": {
-		"test": "demo-ocean",
+	"chromium-swiftshader/compat/demo-water.png": {
+		"test": "demo-water",
 		"tier": "compat",
-		"date": "2026-10-28",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the demo; the branch's CI run has not drawn it yet"
+		"date": "2026-10-31",
+		"reason": "Held frames now draw the water's reflection. Nothing is pushed yet, so CI's own drawing replaces these."
 	},
 	"chromium-swiftshader/compat/feature-instances-shadow.png": {
 		"test": "feature-instances-shadow",
@@ -407,12 +413,6 @@
 		"date": "2026-10-27",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
 	},
-	"chromium-swiftshader/webgl2/demo-impostors.png": {
-		"test": "demo-impostors",
-		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
-	},
 	"chromium-swiftshader/webgl2/demo-post-effects.png": {
 		"test": "demo-post-effects",
 		"tier": "webgl2",
@@ -509,23 +509,11 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader on the branch that fixes the hand-over band and adds the turned-copy light picture; the branch was not pushed when the set was drawn"
 	},
-	"chromium-swiftshader/webgl2/impostor-turn-sun-back.png": {
-		"test": "impostor-turn-sun-back",
-		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "the card's stored normal no longer turns with the camera's bearing, so the pictures whose eye lies off the tree's forward moved; drawn on the software renderer"
-	},
 	"chromium-swiftshader/webgl2/impostor-turn.png": {
 		"test": "impostor-turn",
 		"tier": "webgl2",
 		"date": "2026-10-29",
 		"reason": "the card's stored normal no longer turns with the camera's bearing, so the pictures whose eye lies off the tree's forward moved; drawn on the software renderer"
-	},
-	"chromium-swiftshader/webgl2/impostors.png": {
-		"test": "impostors",
-		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
 	"chromium-swiftshader/webgl2/lens-aberration.png": {
 		"test": "lens-aberration",
@@ -563,12 +551,6 @@
 		"date": "2026-10-30",
 		"reason": "the branch has no CI run; the prototype S3 page is a test page that draws its fixed scene with plain GPU calls, so the software set can be drawn here until a CI run replaces it"
 	},
-	"chromium-swiftshader/webgl2/sky-layer-scene-pass.png": {
-		"test": "sky-layer-scene-pass",
-		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the picture; the branch is not pushed, so no CI run could draw it"
-	},
 	"chromium-swiftshader/webgl2/spot-map-probe.png": {
 		"test": "spot-map-probe",
 		"tier": "webgl2",
@@ -598,12 +580,6 @@
 		"tier": "webgl2",
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
-	},
-	"chromium-swiftshader/webgl2/water-bounds.png": {
-		"test": "water-bounds",
-		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
 	},
 	"chromium-swiftshader/webgl2/weather.png": {
 		"test": "weather",
@@ -725,6 +701,12 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
+	"chromium-swiftshader/webgpu/demo-ocean.png": {
+		"test": "demo-ocean",
+		"tier": "webgpu",
+		"date": "2026-10-28",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the demo; the branch's CI run has not drawn it yet"
+	},
 	"chromium-swiftshader/webgpu/demo-post-effects.png": {
 		"test": "demo-post-effects",
 		"tier": "webgpu",
@@ -748,18 +730,6 @@
 		"tier": "webgpu",
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
-	},
-	"chromium-swiftshader/webgpu/demo-ocean.png": {
-		"test": "demo-ocean",
-		"tier": "webgpu",
-		"date": "2026-10-28",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the demo; the branch's CI run has not drawn it yet"
-	},
-	"chromium-swiftshader/webgpu/feature-instances-shadow.png": {
-		"test": "feature-instances-shadow",
-		"tier": "webgpu",
-		"date": "2026-10-25",
-		"reason": "M3-E9's picture draws no text and no 2D canvas, so this Mac's Chromium and CI's SwiftShader round the same frame alike. CI run 40223106242 compared it on both tiers and passed, so the reference stands until a later CI drawing replaces it."
 	},
 	"chromium-swiftshader/webgpu/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
@@ -827,23 +797,11 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader on the branch that fixes the hand-over band and adds the turned-copy light picture; the branch was not pushed when the set was drawn"
 	},
-	"chromium-swiftshader/webgpu/impostor-turn-sun-back.png": {
-		"test": "impostor-turn-sun-back",
-		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "the card's stored normal no longer turns with the camera's bearing, so the pictures whose eye lies off the tree's forward moved; drawn on the software renderer"
-	},
 	"chromium-swiftshader/webgpu/impostor-turn.png": {
 		"test": "impostor-turn",
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "the card's stored normal no longer turns with the camera's bearing, so the pictures whose eye lies off the tree's forward moved; drawn on the software renderer"
-	},
-	"chromium-swiftshader/webgpu/impostors.png": {
-		"test": "impostors",
-		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
 	"chromium-swiftshader/webgpu/lens-aberration.png": {
 		"test": "lens-aberration",
@@ -893,12 +851,6 @@
 		"date": "2026-10-27",
 		"reason": "drawn on this Mac's SwiftShader from the branch that redrew the skinning-shadow picture; the branch was not pushed when the set was drawn"
 	},
-	"chromium-swiftshader/webgpu/sky-layer-scene-pass.png": {
-		"test": "sky-layer-scene-pass",
-		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the picture; the branch is not pushed, so no CI run could draw it"
-	},
 	"chromium-swiftshader/webgpu/spot-map-probe.png": {
 		"test": "spot-map-probe",
 		"tier": "webgpu",
@@ -929,22 +881,10 @@
 		"date": "2026-10-30",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 for the hill that the grass draws as one band, before the branch was pushed; CI's own software set replaces it when the branch lands"
 	},
-	"chromium-swiftshader/webgpu/water-bounds.png": {
-		"test": "water-bounds",
-		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
-	},
 	"chromium-swiftshader/webgpu/weather.png": {
 		"test": "weather",
 		"tier": "webgpu",
 		"date": "2026-10-30",
 		"reason": "No CI run has drawn this picture yet: run 41006111918 drew the three weather pictures and lost them when its shard reached the job's time limit, before the guard let a timed-out shard upload. This Mac's SwiftShader drew these three, and the next CI drawing of them replaces them."
-	},
-	"chromium-swiftshader/compat/demo-water.png": {
-		"test": "demo-water",
-		"tier": "compat",
-		"date": "2026-10-31",
-		"reason": "Held frames now draw the water's reflection. Nothing is pushed yet, so CI's own drawing replaces these."
 	}
 }
