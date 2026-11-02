@@ -141,11 +141,12 @@ const FAMILIES = {
 		lobeDepth: 0.4,
 		veins: 5,
 	},
+	// A cell of smooth, entire oval leaves, for the live oak and the evergreen oaks.
 	beech: {
-		profile: 0.85,
-		aspect: 0.25,
-		teeth: 13,
-		toothDepth: 0.1,
+		profile: 0.7,
+		aspect: 0.3,
+		teeth: 0,
+		toothDepth: 0,
 		lobes: 0,
 		lobeDepth: 0,
 		veins: 6,

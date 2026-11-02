@@ -73,7 +73,7 @@ export default defineSketch((ctx) => {
 		transmission: SPECIES.color.transmission,
 		alphaCutoff: SPECIES.leaf?.kind === 'needle' ? 0.2 : 0.24,
 		// A softer gloss keeps a flat card from catching a white sheen that reads as a dead leaf.
-		leafGloss: 0.45,
+		leafGloss: 0.2,
 	});
 	const bark = plantMaterial(ctx, {
 		atlases,
