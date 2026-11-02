@@ -58,12 +58,22 @@ for (const gpu of ['webgpu', 'compat', 'webgl2'] as const)
 			const result = await pageResult<CostResult>(page, 200_000);
 			expect(result.error).toBeUndefined();
 			const transform = (result.on.gpuMs ?? 0) - (result.off.gpuMs ?? 0);
+			const offRounds = result.off.gpuRoundsMs ?? [];
+			const onRounds = result.on.gpuRoundsMs ?? [];
+			// Each round's sides alternate, so each round's difference pairs one off side with the on
+			// side beside it. Their spread says whether the difference stands above the run's noise.
+			const rounds = onRounds.map((on, at) => on - (offRounds[at] ?? Number.NaN));
+			const middle = median(rounds);
+			const spread = rounds.length > 1 ? Math.max(...rounds) - Math.min(...rounds) : Number.NaN;
 			console.log(
 				[
 					`OCEANCOST ${result.tier} at ${preset}, load ${loadBefore} before and ${loadNow()} after`,
 					sideLine('off', result.off, 3),
 					sideLine('on', result.on, 3),
-					`transform ${transform.toFixed(3)} ms of GPU time per frame`,
+					`transform ${transform.toFixed(3)} ms of GPU time per frame, rounds median ${middle === null ? 'none' : middle.toFixed(3)} ms and spread ${spread.toFixed(3)} ms`,
+					`  off rounds: ${offRounds.map((ms) => ms.toFixed(3)).join(', ')}`,
+					`  on rounds: ${onRounds.map((ms) => ms.toFixed(3)).join(', ')}`,
+					`  each round's difference: ${rounds.map((ms) => ms.toFixed(3)).join(', ')}`,
 				].join('\n'),
 			);
 			for (const [side, values] of [
