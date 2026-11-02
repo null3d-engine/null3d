@@ -86,3 +86,9 @@ tests allow. With this mapping they pass. The WebGL2 Creek pictures are drawn ag
 because the frame value that the water's light-from-behind lookup divides by changed there. The
 tests that already judge the whole scale keep their pictures unchanged, where the mapping is the
 identity.
+
+The `creek-band` guard reads the river band's brightness across the route picture, so it follows the
+valley's look as well as the frame value. The valley's vegetation (`10d91fda8`) shades that band: the
+guard passes before that commit and reads 0.46 after it, while `frame-resolution` still passes. Its
+rows and its 0.7 limit are therefore derived again once the valley's references are redrawn, not
+before.
