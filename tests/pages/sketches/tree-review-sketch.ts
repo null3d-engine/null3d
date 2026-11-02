@@ -341,7 +341,11 @@ export default defineSketch((ctx) => {
 		const fitHeight = ((max[1] - min[1]) * 1.05) / 2 / Math.tan(vertical / 2);
 		const fitWidth = (max[0] - min[0]) / 2 / (Math.tan(vertical / 2) * aspect);
 		const distance = Math.max(fitHeight, fitWidth) * 1.18;
-		const direction = normalize(0.62, 0.2, 1);
+		// A turntable walks round the tree, so a crown that is full from one side and thin from another
+		// is measured rather than passed.
+		const turn = (Number(params.get('turn') ?? 0) * Math.PI) / 180;
+		const base = Math.atan2(0.62, 1) + turn;
+		const direction = normalize(Math.sin(base), 0.2, Math.cos(base));
 		position = [
 			target[0] + direction[0] * distance,
 			target[1] + direction[1] * distance,
