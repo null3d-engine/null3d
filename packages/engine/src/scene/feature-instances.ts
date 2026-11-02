@@ -117,9 +117,9 @@ export class ComputeInstances<Wgsl extends string | CompiledWgsl = string | Comp
 		private readonly materialIdValue: number,
 		/** @internal The mesh that holds the draw's one shape. */
 		private readonly mesh: MeshGeometry,
-		/** @internal The count word, which a compute pass writes. */
+		/** The count word that a compute pass writes for the draw, which the engine reads each frame. */
 		readonly counts: FeatureInstanceBuffer,
-		/** @internal The per-instance buffer, which a compute pass fills. */
+		/** The per-instance buffer that a compute pass fills and the draw reads. */
 		readonly instances: FeatureInstanceBuffer,
 		private readonly call: string,
 		/** The most instances that the draw holds. */
