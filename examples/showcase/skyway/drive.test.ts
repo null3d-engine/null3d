@@ -5,6 +5,7 @@ import {
 	CEILING,
 	CHASE_DISTANCE,
 	CHASE_TILT,
+	type ChaseView,
 	CLEARANCE,
 	cityTowers,
 	clearSight,
@@ -463,42 +464,77 @@ test('a turn that would put the camera in a tower is refused until the way is cl
 	);
 });
 
-test('a refused turn still follows the car’s own heading', () => {
-	const car = flight({ x: BESIDE_X, y: 50, z: 0 });
+test('the camera stays behind the car as the car turns', () => {
+	const car = flight({ x: 0, y: 50, z: 0, speed: LAPSE });
+	const view: ChaseView = { turn: 0, tilt: CHASE_TILT, distance: CHASE_DISTANCE };
 	const sight = createSight(CHASE_DISTANCE);
 	const aim: Flight = { ...flight() };
-	let turn = 0;
-	/** Turns the car by `yaw` radians and the user's view by `drag` radians. */
-	const step = (drag: number, yaw: number): void => {
-		turn += drag;
-		car.yaw += yaw;
+	const keys = stick({ throttle: 1, steer: 1 });
+	// The car turns where no tower stands, so the turn is free.
+	for (let k = 0; k < 60; k++) {
+		fly(car, keys, FRAME, NONE, view);
 		settleSight(
 			sight,
 			car.x,
 			car.y,
 			car.z,
-			car.yaw + BEHIND + turn,
 			car.yaw + BEHIND,
-			CHASE_TILT,
-			CHASE_DISTANCE,
+			car.yaw + BEHIND,
+			view.tilt,
+			view.distance,
+			NONE,
+			FRAME,
+			aim,
+		);
+	}
+	expect(car.yaw).toBeGreaterThan(0.4);
+	// The camera sits behind the car's own heading, not on a heading of its own.
+	const bearing = Math.atan2(aim.x - car.x, aim.z - car.z) - car.yaw - BEHIND;
+	expect(Math.atan2(Math.sin(bearing), Math.cos(bearing))).toBeCloseTo(0, 6);
+});
+
+test('a turn that would put the camera in a tower is refused by the car too', () => {
+	const car = flight({ x: BESIDE_X, y: 50, z: 0, speed: LAPSE });
+	const view: ChaseView = { turn: 0.62, tilt: CHASE_TILT, distance: CHASE_DISTANCE };
+	const sight = createSight(CHASE_DISTANCE);
+	const aim: Flight = { ...flight() };
+	const keys = stick({ throttle: 1, steer: 1 });
+	/** Flies the car one frame and aims its chase camera. */
+	const step = (): void => {
+		fly(car, keys, FRAME, BESIDE, view);
+		settleSight(
+			sight,
+			car.x,
+			car.y,
+			car.z,
+			car.yaw + BEHIND + view.turn,
+			car.yaw + BEHIND,
+			view.tilt,
+			view.distance,
 			BESIDE,
 			FRAME,
 			aim,
 		);
+		// The camera stands clear of the tower on every frame: the keep-out moves nothing.
+		expect(keepOut({ ...aim }, BESIDE)).toBe(false);
 	};
-	for (let k = 0; k < 60; k++) step(0, 0);
-	// The drag meets the tower's face and is refused.
-	for (let k = 0; k < 80; k++) step(DRAG * FRAME, 0);
+	// The drag holds the camera against the tower, and the keys ask the car to turn.
+	for (let k = 0; k < 30; k++) step();
+	const yaw = car.yaw;
+	const place = { x: aim.x - car.x, z: aim.z - car.z };
+	const z = car.z;
+	for (let k = 0; k < 90; k++) {
+		step();
+		expect(car.yaw).toBe(yaw);
+		expect(Math.hypot(aim.x - car.x - place.x, aim.z - car.z - place.z)).toBeLessThan(0.01);
+	}
+	// The car keeps flying, and the camera keeps it in view.
+	expect(car.z).toBeGreaterThan(z + 20);
 	expect(sight.held).toBe(true);
-	const bearing = Math.atan2(aim.x - car.x, aim.z - car.z);
-	const stood = sight.angle;
-	// The car turns its own nose toward the wall, so the drag stays refused.
-	const YAW = 0.1;
-	for (let k = 0; k < 30; k++) step(0, YAW / 30);
-	// The drag keeps the angle off the tail that it could last stand at, rather than taking the
-	// turn the car's nose makes.
-	expect(sight.held).toBe(true);
-	expect(sight.angle).toBe(stood);
-	// The car's own heading still carries the camera round with it, so it stays behind the car.
-	expect(Math.atan2(aim.x - car.x, aim.z - car.z)).toBeGreaterThan(bearing + YAW / 2);
+	// The car passes the tower. The turn applies again, and the camera follows the new heading.
+	const cleared = car.z;
+	for (let k = 0; k < 180; k++) step();
+	expect(car.z).toBeGreaterThan(cleared + 20);
+	expect(car.yaw).toBeGreaterThan(yaw + 0.2);
+	expect(Math.hypot(aim.x - car.x - place.x, aim.z - car.z - place.z)).toBeGreaterThan(1);
 });

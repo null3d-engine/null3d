@@ -66,6 +66,19 @@ export interface Stick {
 /** The towers as boxes: five numbers each, its middle's x and z, its half sides and its height. */
 export type Towers = Float32Array;
 
+/**
+ * The chase camera's place behind the car, as the user set it: the angle to either side of the
+ * car's tail, the tilt and the distance. A turn must keep that place clear of the towers.
+ */
+export interface ChaseView {
+	/** The user's angle off the car's tail, in radians. */
+	turn: number;
+	/** The camera's tilt above the car, in radians. */
+	tilt: number;
+	/** The camera's distance from the car, in meters. */
+	distance: number;
+}
+
 /** The towers of the city plan, as the flight reads them. */
 export function cityTowers(): Towers {
 	const buildings = cityBuildings();
@@ -83,8 +96,60 @@ export function cityTowers(): Towers {
 const approach = (value: number, goal: number, step: number): number =>
 	value < goal ? Math.min(goal, value + step) : Math.max(goal, value - step);
 
-/** Flies the car one frame of `dt` seconds on the keys' wishes, then keeps it out of the towers. */
-export function fly(flight: Flight, stick: Stick, dt: number, towers: Towers): void {
+/**
+ * True when the camera can stand at the user's own distance along `angle` without entering a
+ * tower. Each tower's box is grown by `clearance`, as the camera's keep-out grows it, so a place
+ * that this refuses is one the keep-out would move.
+ */
+function standable(
+	atX: number,
+	atY: number,
+	atZ: number,
+	angle: number,
+	level: number,
+	rise: number,
+	distance: number,
+	towers: Towers,
+): boolean {
+	const x = atX + Math.sin(angle) * level * distance;
+	const y = atY + rise * distance;
+	const z = atZ + Math.cos(angle) * level * distance;
+	for (let k = 0; k < towers.length; k += 5) {
+		if (y >= (towers[k + 4] as number) + CLEARANCE) continue;
+		if (Math.abs(x - (towers[k] as number)) >= (towers[k + 2] as number) + CLEARANCE) continue;
+		if (Math.abs(z - (towers[k + 1] as number)) >= (towers[k + 3] as number) + CLEARANCE) continue;
+		return false;
+	}
+	return true;
+}
+
+/** True when the chase camera can stand behind a car at `yaw`, at the user's own view. */
+function standsBehind(flight: Flight, yaw: number, view: ChaseView, towers: Towers): boolean {
+	return standable(
+		flight.x,
+		flight.y,
+		flight.z,
+		yaw + Math.PI + view.turn,
+		Math.cos(view.tilt),
+		Math.sin(view.tilt),
+		view.distance,
+		towers,
+	);
+}
+
+/**
+ * Flies the car one frame of `dt` seconds on the keys' wishes, then keeps it out of the towers.
+ * A turn that would put the chase camera in a tower is refused, so the car keeps its heading and
+ * the camera stays behind it instead of being pushed along the face. `view` is the chase camera's
+ * place that the turn must keep clear; without it, the car turns freely.
+ */
+export function fly(
+	flight: Flight,
+	stick: Stick,
+	dt: number,
+	towers: Towers,
+	view?: ChaseView,
+): void {
 	// The throttle gains speed toward its top, a reverse wish brakes first, and no wish coasts.
 	if (stick.throttle > 0) {
 		const rate = flight.speed < 0 ? FLIGHT.brake : FLIGHT.accelerate;
@@ -100,7 +165,11 @@ export function fly(flight: Flight, stick: Stick, dt: number, towers: Towers): v
 	const grip =
 		FLIGHT.hover + (1 - FLIGHT.hover) * Math.min(1, Math.abs(flight.speed) / FLIGHT.turnSpeed);
 	flight.turning = stick.steer * FLIGHT.turn * grip * (flight.speed < 0 ? -1 : 1);
-	flight.yaw += flight.turning * dt;
+	const yaw = flight.yaw + flight.turning * dt;
+	// The car keeps its heading while the turn would put the chase camera in a tower, and the bank
+	// follows the turn that happened, so a refused turn banks nothing.
+	if (view !== undefined && !standsBehind(flight, yaw, view, towers)) flight.turning = 0;
+	else flight.yaw = yaw;
 	flight.climb += (stick.lift * FLIGHT.climb - flight.climb) * Math.min(1, FLIGHT.climbRate * dt);
 	flight.x += Math.sin(flight.yaw) * flight.speed * dt;
 	flight.z += Math.cos(flight.yaw) * flight.speed * dt;
@@ -392,33 +461,6 @@ function findSide(
 	return 0;
 }
 
-/**
- * True when the camera can stand at the user's own distance along `angle` without entering a
- * tower. Each tower's box is grown by `clearance`, as the camera's keep-out grows it, so a place
- * that this refuses is one the keep-out would move.
- */
-function standable(
-	atX: number,
-	atY: number,
-	atZ: number,
-	angle: number,
-	level: number,
-	rise: number,
-	distance: number,
-	towers: Towers,
-): boolean {
-	const x = atX + Math.sin(angle) * level * distance;
-	const y = atY + rise * distance;
-	const z = atZ + Math.cos(angle) * level * distance;
-	for (let k = 0; k < towers.length; k += 5) {
-		if (y >= (towers[k + 4] as number) + CLEARANCE) continue;
-		if (Math.abs(x - (towers[k] as number)) >= (towers[k + 2] as number) + CLEARANCE) continue;
-		if (Math.abs(z - (towers[k + 1] as number)) >= (towers[k + 3] as number) + CLEARANCE) continue;
-		return false;
-	}
-	return true;
-}
-
 /** Keeps a placed camera at the standoff from the car, where the towers leave room. */
 function clampStandoff(eye: Flight, atX: number, atY: number, atZ: number): void {
 	const dx = eye.x - atX;
@@ -473,7 +515,10 @@ export function settleSight(
 	// car's own heading still carries it, and once the way is clear it eases back to the user's own
 	// turn, so the turn returns rather than jumps.
 	const wish = around - tail;
-	if (Number.isNaN(sight.angle)) sight.angle = wish;
+	// The first frame has no last angle to keep, so it takes the user's own turn where it can stand,
+	// and the view straight behind the car where it cannot.
+	if (Number.isNaN(sight.angle))
+		sight.angle = standable(atX, atY, atZ, around, level, rise, distance, towers) ? wish : 0;
 	else if (!sight.held) {
 		if (standable(atX, atY, atZ, around, level, rise, distance, towers)) sight.angle = wish;
 		else sight.held = true;
