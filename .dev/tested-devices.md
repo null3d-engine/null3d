@@ -257,7 +257,7 @@ Thirteen pages passed, and none was skipped. WebGL2 and compatibility mode cap t
 Medium, so their High and Ultra pages drew Medium again and are left out.
 
 The Galaxy S25 stands in for the S24 class. Low, Medium and Ultra hold their ceilings; High misses
-by 16.68 ms, 8.0 per cent, because the plants add about 70 batches and every view draws them again.
+by 16.68 ms, 8.0 per cent, because the plants make 76 batches and every view draws them again.
 
 | Device and preset | Path | FPS | Frame ms | CPU ms | GPU ms | Triangles | Draws | Textures MiB | Buffers MiB | wasm MiB |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
