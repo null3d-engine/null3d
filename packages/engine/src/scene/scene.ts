@@ -4816,11 +4816,16 @@ export class Scene implements ViewHolder {
 	 * other objects, and sorts a blended draw among the transparent pass's objects. The first call
 	 * downloads the draw adapter.
 	 *
-	 * The description names the frame point: `'opaque'` with an opaque or masked material, or
-	 * `'transparent'` with a blended one. The band and order place a blended draw among the pass's
-	 * objects. The adapter records in the main view alone, so a description with another view
-	 * throws E1223. The description's `reads`, `writes`, `outputs` and `provides` stay with the
-	 * feature registry: this draw draws no scene resource.
+	 * The description names the frame point: `'opaque'` with an opaque or masked material,
+	 * `'transparent'` with a blended one, or `'resolve'` with a blended one that blends after the
+	 * transparent pass's objects. With MSAA, a draw at `'resolve'` blends its surfaces back to
+	 * front in a layer of one sample per pixel, which the engine then blends over the scene, so
+	 * many overlapping surfaces, such as Gaussian splats, cost one blend per pixel instead of one
+	 * per sample. Its surfaces show in front of every object of the transparent pass, and other
+	 * views draw them in their own transparent pass. The band and order place a blended draw among
+	 * the pass's objects. The adapter records in the main view alone, so a description with
+	 * another view throws E1223. The description's `reads`, `writes`, `outputs` and `provides`
+	 * stay with the feature registry: this draw draws no scene resource.
 	 *
 	 * Throws E1223 for a description that is not a draw the adapter can place, E1215, E1216 and
 	 * E1217 for WGSL and values that `materials.shader` refuses, E1206 for vertex data that makes no

@@ -149,6 +149,7 @@ use crate::probe_grid;
 use crate::probes::{self, ProbeTextures};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame, ShadowUniform};
+use crate::single_layer::SingleIds;
 use crate::sorted::{SkinnedPipeline, SortedLayout, SortedRows};
 use crate::ssr::SsrIds;
 use crate::subsurface::SubsurfaceIds;
@@ -175,6 +176,7 @@ mod ids {
     use crate::effects::EffectPass;
     use crate::moment::MomentIds;
     use crate::particles::ParticleIds;
+    use crate::single_layer::SingleIds;
     use crate::subsurface::STEPS as SUBSURFACE_STEPS;
     use crate::taa::STEPS as TAA_STEPS;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
@@ -515,8 +517,11 @@ mod ids {
     pub const fn moment_frame_group(view: ViewId) -> u32 {
         MOMENT_FRAME_GROUPS + view.index() as u32
     }
-    /// The bind groups of materials' maps, after the moment layer's frame groups.
-    pub const TEXTURE_GROUPS: u32 = MOMENT_FRAME_GROUPS + MAX_VIEWS as u32;
+    /// The bind groups of the one-sample layer's composite and depth copy, after the moment
+    /// layer's frame groups.
+    pub const SINGLE_GROUPS: u32 = MOMENT_FRAME_GROUPS + MAX_VIEWS as u32;
+    /// The bind groups of materials' maps, after the one-sample layer's.
+    pub const TEXTURE_GROUPS: u32 = SINGLE_GROUPS + SingleIds::GROUPS;
 }
 
 /// The group index of the decal pass's scene depth in the decal templates on WebGL2: after the
@@ -893,6 +898,9 @@ impl CpuCulledRenderer {
                         weighted: WeightedIds {
                             first_group: ids::WEIGHTED_GROUPS,
                         },
+                        single: SingleIds {
+                            first_group: ids::SINGLE_GROUPS,
+                        },
                         moment: MomentIds {
                             first_group: ids::MOMENT_GROUPS,
                             sampler: ids::MOMENT_SAMPLER,
@@ -907,6 +915,7 @@ impl CpuCulledRenderer {
                 graph.bind_shadow_map(config.cascade_depth);
                 graph.set_weighted_targets(config.float16_targets);
                 graph.set_moment_targets(config.float16_targets);
+                graph.set_single_targets(config.float16_targets);
                 graph.set_depth_prepass(config.depth_prepass);
                 graph.set_prepass_color(config.prepass_color);
                 graph
@@ -1351,6 +1360,7 @@ impl CpuCulledRenderer {
                 |slot, key| skins.sorted_pipeline(slot, key),
                 weighted,
                 moment,
+                self.graph.single_targets(targets),
                 &mut self.key_counts,
             )
             .map_err(out_of_memory)?;
@@ -1367,6 +1377,7 @@ impl CpuCulledRenderer {
                 RESIDENT,
                 shadows.any(),
                 |_, _| SkinnedPipeline::NotSkinned,
+                None,
                 None,
                 None,
                 &mut self.key_counts,
@@ -1389,6 +1400,7 @@ impl CpuCulledRenderer {
                     RESIDENT,
                     shadows.any(),
                     |slot, key| skins.sorted_pipeline(slot, key),
+                    None,
                     None,
                     None,
                     &mut self.key_counts,
@@ -1963,6 +1975,7 @@ impl CpuCulledRenderer {
         self.graph.set_motion(motion, motion_frame);
         self.graph.set_weighted(self.sorted.weighs());
         self.graph.set_moment(self.sorted.moments());
+        self.graph.set_single(self.sorted.singles());
         let skipped = self.settings.decal_skipped_layers();
         let redraws = self.redraws_built && skipped != 0;
         self.graph
@@ -2486,8 +2499,8 @@ impl CpuCulledRenderer {
             lines_bytes,
         )?;
         let (culling, opaque, lines) = (&self.culling, &self.opaque, &self.lines);
-        let weighted = self.graph.weighted_declared();
-        let moment_layer = self.graph.moment_declared();
+        let blended_layer = self.graph.weighted_declared() || self.graph.moment_declared();
+        let single_layer = self.graph.single_declared();
         let (cascade_culling, cascade_draws) = (&self.cascade_culling, &self.cascade_draws);
         let (tile_culling, tile_draws) = (&self.tile_culling, &self.tile_draws);
         let (outline_culling, outline_draws) = (&self.outline_culling, &self.outline_draws);
@@ -2678,11 +2691,7 @@ impl CpuCulledRenderer {
                     )
                 }
                 Role::Transparent(view) if culling.frame(view).is_some() => {
-                    let rows = if (weighted || moment_layer) && view == ViewId::CAMERA {
-                        SortedRows::Sorted
-                    } else {
-                        SortedRows::All
-                    };
+                    let rows = SortedRows::transparent(view, blended_layer, single_layer);
                     let at = opaque.sorted_records_at(view, layout);
                     let draws = ids::draws_group(view);
                     let light_slot = light_textures.slot(view);
@@ -2705,36 +2714,25 @@ impl CpuCulledRenderer {
                         vertex_draws,
                     )
                 }
-                Role::Weighted if culling.frame(ViewId::CAMERA).is_some() => {
+                // The weighted and moment layers draw no custom material, so they bind no scene
+                // group. The one-sample layer draws after the copy of the opaque depth, which its
+                // surfaces read as the camera's transparent pass's do.
+                Role::Weighted | Role::Moment | Role::Single
+                    if culling.frame(ViewId::CAMERA).is_some() =>
+                {
                     let view = ViewId::CAMERA;
                     let at = opaque.sorted_records_at(view, layout);
                     let draws = ids::draws_group(view);
                     let light_slot = light_textures.slot(view);
-                    let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot, 0);
+                    let (rows, scene) = match role {
+                        Role::Weighted => (SortedRows::Weighted, 0),
+                        Role::Moment => (SortedRows::Moment, 0),
+                        _ => (SortedRows::Single, scene_groups[view.index()]),
+                    };
+                    let bind =
+                        |list: &mut DrawList| opaque.bind_view(list, view, light_slot, scene);
                     let hidden = hidden_in(view);
-                    let (index, rows) = (view.index(), SortedRows::Weighted);
-                    transparent.record(
-                        list,
-                        arena,
-                        index,
-                        rows,
-                        draws,
-                        at,
-                        meshes,
-                        bind,
-                        &hidden,
-                        particles,
-                        vertex_draws,
-                    )
-                }
-                Role::Moment if culling.frame(ViewId::CAMERA).is_some() => {
-                    let view = ViewId::CAMERA;
-                    let at = opaque.sorted_records_at(view, layout);
-                    let draws = ids::draws_group(view);
-                    let light_slot = light_textures.slot(view);
-                    let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot, 0);
-                    let hidden = hidden_in(view);
-                    let (index, rows) = (view.index(), SortedRows::Moment);
+                    let index = view.index();
                     transparent.record(
                         list,
                         arena,

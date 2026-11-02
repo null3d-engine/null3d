@@ -194,6 +194,7 @@ use crate::probe_grid;
 use crate::probes::{self, ProbeTextures};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowUniform};
+use crate::single_layer::SingleIds;
 use crate::skinning::SkinningMode;
 use crate::sorted::{SkinnedPipeline, SortedLayout, SortedRows};
 use crate::ssr::SsrIds;
@@ -277,6 +278,7 @@ mod ids {
     use crate::effects::EffectPass;
     use crate::moment::MomentIds;
     use crate::particles::ParticleIds;
+    use crate::single_layer::SingleIds;
     use crate::subsurface::STEPS as SUBSURFACE_STEPS;
     use crate::taa::STEPS as TAA_STEPS;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
@@ -831,8 +833,11 @@ mod ids {
         LIGHT_DEPTH_GROUPS + view.index() as u32
     }
 
-    /// The bind groups of materials' maps, after the light depth reductions'.
-    pub const TEXTURE_GROUPS: u32 = LIGHT_DEPTH_GROUPS + MAX_VIEW_IDS as u32;
+    /// The bind groups of the one-sample layer's composite and depth copy, after the light depth
+    /// reductions'.
+    pub const SINGLE_GROUPS: u32 = LIGHT_DEPTH_GROUPS + MAX_VIEW_IDS as u32;
+    /// The bind groups of materials' maps, after the one-sample layer's.
+    pub const TEXTURE_GROUPS: u32 = SINGLE_GROUPS + SingleIds::GROUPS;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -1255,6 +1260,9 @@ impl GpuDrivenRenderer {
                         },
                         weighted: WeightedIds {
                             first_group: ids::WEIGHTED_GROUPS,
+                        },
+                        single: SingleIds {
+                            first_group: ids::SINGLE_GROUPS,
                         },
                         moment: MomentIds {
                             first_group: ids::MOMENT_GROUPS,
@@ -1746,6 +1754,7 @@ impl GpuDrivenRenderer {
                     |slot, key| skinning.sorted_pipeline(slot as u32, key),
                     weighted,
                     moment,
+                    self.graph.single_targets(targets),
                     &mut self.key_counts,
                 )
                 .map_err(out_of_memory)?;
@@ -1760,6 +1769,7 @@ impl GpuDrivenRenderer {
                     0,
                     shadows,
                     |_, _| SkinnedPipeline::NotSkinned,
+                    None,
                     None,
                     None,
                     &mut self.key_counts,
@@ -1780,6 +1790,7 @@ impl GpuDrivenRenderer {
                         0,
                         shadows,
                         |slot, key| skinning.sorted_pipeline(slot as u32, key),
+                        None,
                         None,
                         None,
                         &mut self.key_counts,
@@ -2011,6 +2022,7 @@ impl GpuDrivenRenderer {
         self.graph.set_motion(motion, motion_frame);
         self.graph.set_weighted(self.sorted.weighs());
         self.graph.set_moment(self.sorted.moments());
+        self.graph.set_single(self.sorted.singles());
         let skipped = self.settings.decal_skipped_layers();
         let shown = self.settings.views()[ViewId::CAMERA.index()].layers();
         self.redraw_layout.set_layer_filter(skipped, shown);
@@ -3275,8 +3287,8 @@ impl GpuDrivenRenderer {
         let particles = &self.particles;
         let (settings, meshes) = (&self.settings, &self.meshes);
         let motion_state = &mut self.motion;
-        let weighted = self.graph.weighted_declared();
-        let moment_layer = self.graph.moment_declared();
+        let blended_layer = self.graph.weighted_declared() || self.graph.moment_declared();
+        let single_layer = self.graph.single_declared();
         let direct_draws = self.config.direct_draws;
         let direct = &self.direct;
         // A direct draw's instance count changes every frame, so the direct path records the
@@ -3408,11 +3420,7 @@ impl GpuDrivenRenderer {
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::FogLight(_) => bind_frame_group(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::Transparent(view) => {
-                    let rows = if (weighted || moment_layer) && view == ViewId::CAMERA {
-                        SortedRows::Sorted
-                    } else {
-                        SortedRows::All
-                    };
+                    let rows = SortedRows::transparent(view, blended_layer, single_layer);
                     let frame = ids::frame_group(view);
                     // The camera's transparent pass draws after the copy of its opaque depth; a
                     // scene pass's view has no copy, so the graph gives it the blank texel.
@@ -3473,32 +3481,29 @@ impl GpuDrivenRenderer {
                     list.push(Op::Draw, &[3, 1, 0, 0])?;
                     Ok(())
                 }
-                Role::Weighted => transparent.record(
-                    list,
-                    ViewId::CAMERA,
-                    SortedRows::Weighted,
-                    sorted,
-                    skinning,
-                    settings,
-                    meshes,
-                    ids::frame_group(ViewId::CAMERA),
-                    0,
-                    ids::MATERIAL_SCENE_GROUPS,
-                    particles,
-                ),
-                Role::Moment => transparent.record(
-                    list,
-                    ViewId::CAMERA,
-                    SortedRows::Moment,
-                    sorted,
-                    skinning,
-                    settings,
-                    meshes,
-                    ids::frame_group(ViewId::CAMERA),
-                    0,
-                    ids::MATERIAL_SCENE_GROUPS,
-                    particles,
-                ),
+                // The weighted and moment layers draw no custom material, so their draws bind the
+                // blank depth. The one-sample layer draws after the copy of the opaque depth, which
+                // its surfaces read as the camera's transparent pass's do.
+                Role::Weighted | Role::Moment | Role::Single => {
+                    let (rows, scene) = match role {
+                        Role::Weighted => (SortedRows::Weighted, ids::MATERIAL_SCENE_GROUPS),
+                        Role::Moment => (SortedRows::Moment, ids::MATERIAL_SCENE_GROUPS),
+                        _ => (SortedRows::Single, scene_groups[ViewId::CAMERA.index()]),
+                    };
+                    transparent.record(
+                        list,
+                        ViewId::CAMERA,
+                        rows,
+                        sorted,
+                        skinning,
+                        settings,
+                        meshes,
+                        ids::frame_group(ViewId::CAMERA),
+                        0,
+                        scene,
+                        particles,
+                    )
+                }
                 Role::MomentColour => transparent.record(
                     list,
                     ViewId::CAMERA,

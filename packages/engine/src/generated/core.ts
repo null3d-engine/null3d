@@ -535,6 +535,8 @@ export const SCOPE_FINAL_BLOOM = 42;
 export const SCOPE_OUTPUT = 43;
 export const SCOPE_OUTPUT_BLOOM = 44;
 export const SCOPE_LIGHT_DEPTH = 45;
+export const SCOPE_SINGLE = 53;
+export const SCOPE_SINGLE_COMPOSITE = 54;
 
 export const TEXTURE_FORMAT_SRGB = 9;
 export const TEXTURE_FORMAT_LINEAR = 2;
