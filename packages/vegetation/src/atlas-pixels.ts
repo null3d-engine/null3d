@@ -957,9 +957,9 @@ const BARK_FAMILIES: Readonly<Record<BarkCellName, BarkFamily>> = {
 		crackWidth: 0.18,
 		depth: 1,
 		fibre: 0.03,
-		dark: [0.24, 0.21, 0.19],
-		light: [1.02, 0.97, 0.9],
-		moss: 0.22,
+		dark: [0.16, 0.14, 0.13],
+		light: [0.72, 0.68, 0.62],
+		moss: 0.1,
 	},
 	beech: {
 		across: 5,
@@ -1004,7 +1004,7 @@ const BARK_FAMILIES: Readonly<Record<BarkCellName, BarkFamily>> = {
 		fibre: 0.02,
 		dark: [0.34, 0.32, 0.29],
 		light: [1.1, 1.05, 0.98],
-		moss: 0.28,
+		moss: 0.08,
 		ridges: true,
 	},
 };
