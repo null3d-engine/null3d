@@ -557,7 +557,7 @@ const CALL_BUDGETS: Readonly<Record<string, number>> = { '(IDLE)': 48, '(JS)': 2
  * that path. The loader walks its runners by index too, so a call makes no iterator result for
  * each of them.
  */
-const TASK_CALL_BUDGETS: Readonly<Record<string, number>> = {
+export const TASK_CALL_BUDGETS: Readonly<Record<string, number>> = {
 	'pose null3d/s1-sketch.ts': 128,
 	'run shared/tasks.ts': 560,
 	'n.onmessage shared/tasks.ts': 336,
@@ -582,7 +582,7 @@ const TASK_CALL_BUDGETS: Readonly<Record<string, number>> = {
  * switch that makes a shared place heavier names the place's budget for its own run, before the
  * tables' shared figure, so raising it there leaves every other run's guard as tight as it was.
  */
-function callBudgetFor(
+export function callBudgetFor(
 	worker: string,
 	place: string,
 	chosen: readonly PageSwitch[] = [],
