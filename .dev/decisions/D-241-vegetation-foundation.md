@@ -1022,7 +1022,11 @@ Neither row reaches 208.3. The same page with the grass switched off measures 17
 adds 126.91 ms and at the strip's 311.55. The preset's own cost sits mostly in one ambient occlusion
 pass, 176.36 ms of the 179.18, and the grass's fixed cost, its shadow pass and draw setup, adds about
 33 ms on top of the per-tuft cost. The ceiling is the grass's to miss at Creek's density, and the
-cull takes back 4.0 per cent at the valley's and 6.9 at the strip's. The cull applies to the camera's view
+cull takes back 4.0 per cent at the valley's and 6.9 at the strip's. Two places make the ceiling
+reachable and neither is the grass: the demo's second ambient occlusion pass and the far cover's look.
+The fit through two tuft counts first put the base at 211.9 ms and was read as the scene's own cost. A
+fitted intercept is not a base frame: it carries everything the removal would also take away, whether or
+not that cost varies with the count, and only switching the thing off gives the base. The cull applies to the camera's view
 only: the grass is culled for the camera and not for the cascades, so every shadow view draws the whole
 kept list, which is why the near cascades pay for it. Widening the cull toward the light waits on the
 near-shadow count and the graph edge.
