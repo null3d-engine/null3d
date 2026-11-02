@@ -477,8 +477,8 @@ function parseSelector(text: string, known: KnownNames): Selector {
 /**
  * Reads every expected-change trailer in the messages. A trailer's value names benchmarks, each as
  * `<scene>[/<page>[/<measure>]]` with `*` for any part and a comma between them, then a colon and
- * the reason. Lines that start with the trailer's name count anywhere in a message, because a
- * squash merge lists the messages of each commit it joins.
+ * the reason. A trailer counts only in a message's trailer block, which git reads at the end of the
+ * message, so a squash that lists the messages of several commits carries only the last one's.
  */
 export function readExpectedChanges(
 	messages: readonly string[],

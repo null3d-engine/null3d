@@ -117,10 +117,47 @@ describe('message parsing', () => {
 		expect(findAckValue('feat: x\n\nbody', 'Docs-Checked')).toBeNull();
 	});
 
-	it('finds every value of a trailer, in order', () => {
-		const message = 'feat: x\n\nSize-Growth: first\nbody\nsize-growth:  second ';
+	it('reads a trailer from a footer block at the end of the message', () => {
+		const message =
+			'feat(x): add thing\n\nThe body says why.\n\nDocs-Checked: re-read docs/a.md\nTask: none';
+		expect(findAckValues(message, 'Docs-Checked')).toEqual(['re-read docs/a.md']);
+	});
+
+	it('ignores a key in the middle of the body when no footer block follows', () => {
+		const message =
+			'feat(x): add thing\n\nDocs-Checked: re-read docs/a.md\n\nAnd a closing paragraph of prose.';
+		expect(findAckValues(message, 'Docs-Checked')).toEqual([]);
+	});
+
+	it('drops the block when a continuation line starts without whitespace', () => {
+		const message =
+			'feat(x): add thing\n\nDocs-Checked: re-read docs/a.md\nsee also docs/b.md\nTask: none';
+		expect(findAckValues(message, 'Docs-Checked')).toEqual([]);
+		expect(findAckValues(message, 'Task')).toEqual([]);
+	});
+
+	it('unfolds a continuation line that starts with whitespace into the value', () => {
+		const message =
+			'feat(x): add thing\n\nDocs-Checked: re-read docs/a.md\n  and docs/b.md\nTask: none';
+		expect(findAckValues(message, 'Docs-Checked')).toEqual(['re-read docs/a.md and docs/b.md']);
+	});
+
+	it('finds every trailer of the block, in order', () => {
+		const message =
+			'feat(x): add thing\n\nWhy it changed.\n\nDocs-Checked: re-read docs/a.md\nsize-growth:  first \nSize-Growth: second\nTask: none';
 		expect(findAckValues(message, 'Size-Growth')).toEqual(['first', 'second']);
+		expect(findAckValues(message, 'Task')).toEqual(['none']);
 		expect(findAckValues('feat: x', 'Size-Growth')).toEqual([]);
+	});
+
+	it('reads no trailer block when the subject stands alone', () => {
+		expect(findAckValues('feat: x\nTask: none', 'Task')).toEqual([]);
+		expect(findAckValues('Task: none', 'Task')).toEqual([]);
+	});
+
+	it('ignores everything below a divider line', () => {
+		const message = 'feat(x): add thing\n\nWhy it changed.\n\n---\nTask: none';
+		expect(findAckValues(message, 'Task')).toEqual([]);
 	});
 });
 
