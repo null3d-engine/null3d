@@ -22,34 +22,6 @@ The engine starts job workers only when its parallel loops take 0.2 ms or more p
 
 Godot found that MSAA crashed Mali-G52, G72 and G76 GPUs on its Vulkan mobile path. Its fix, [godot#114785](https://github.com/godotengine/godot/pull/114785), moved all uniforms to set 0. The engine binds its uniforms in several bind groups. A Mali phone with MSAA on must run the shadow and custom material image tests on WebGPU to rule the fault out ([implementation notes](implementation-notes.md#browser-faults)). The fault is a driver crash, so only a device run can show it.
 
-## A reflection pass that waits draws black on WebGL2 (M3-F9)
-
-A reflection pass that carries a cadence of two draws its image on WebGPU and in compatibility
-mode, and draws black on WebGL2. The ocean's surface samples the pass's texture in the same frame,
-so its sea has no sky to mirror and reads flat. The same scene at Medium, whose cadence is two,
-keeps a bright mirror on WebGPU and in compatibility mode, and loses it on WebGL2. At a cadence of
-one the WebGL2 reflection draws.
-
-`ocean-waves` shows the transform is not at fault: the field and the slopes match the page's own
-transform within 0.004 m of a 0.73 m field on all three paths. A reflection pass created with the
-same options in the same scene draws its sky on WebGL2, so the pass's drawing and the material's
-reading are both right; the cadence alone loses the image. The reflection image tests draw with the
-default cadence of one, and `compute-state`'s cadence cases cover compute passes, so nothing else
-in the suite covers this shape.
-
-The shape is the fog pulse's and the compile-every-frame fault's: something on the WebGL2 path
-assumes that the pass ran in the frame before. The recording skips the view's steps while it waits
-(`crates/null3d-render/src/frame_graph.rs`, the `draws` check that reads `ViewTarget::draws`), and
-the frame moves the view's turn on in `pace` (`crates/null3d-render/src/view.rs`). The texture that
-shows the view finds its target through `set_pass_target` and `shown_views`
-(`crates/null3d-render/src/textures.rs`). A reader should look first at that handover: whether a
-target made again, or a bind group made again, leaves the waiting view's texture without the image
-of its last turn. The fallback's own drawing is not the fault, since a cadence of one draws and a
-separate pass draws.
-
-The ocean's demo therefore draws WebGPU and compatibility mode until the WebGL2 cadence keeps the
-pass's image. `.dev/decisions/D-257-water-addon.md` records the demo's stand.
-
 ## A read of a compute pass fetched the mirror on WebGL2 (M3-V13)
 
 `render.readPass` copied a region of a compute pass's target from the other end of the texture on
@@ -126,5 +98,6 @@ Every other finding of the review is fixed or settled. The table names the code,
 | R8-07 | plain bundlers rule | Settled: `.dev/decisions/D-54-addon-modules.md`, `docs/getting-started/install.md` |
 | R8-08 | (see its fix group) | `packages/engine/src/page/engine.ts`, `.dev/implementation-notes.md` |
 | M3-F9 | a compute pass's fragment form stores its image upside down | `tests/image/ocean-waves.spec.ts`: the three paths' fields agree within 0.004 m of a 0.73 m field; [D-271](decisions/D-271-a-fallback-pass-writes-the-image.md) fixed the read |
+| M3-F9 | a reflection that waits draws its clear color on WebGL2 | `crates/null3d-render/src/cpu_culled/mod.rs`: the cull moves each view's turn on before it reads the view, so a turn's pass draws its objects; `crates/null3d-render/tests/scene_passes.rs` holds a cadenced mirror's turns and fails without the move |
 
 The text of R2-03, R2-05, R2-06, R2-07, R3-07 is not in the repository, so no one checked them one by one. The records of their fix groups say that each group is built.
