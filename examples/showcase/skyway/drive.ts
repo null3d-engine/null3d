@@ -5,7 +5,9 @@
 //
 // The chase camera reads the same boxes. A tower that stands between the car and the camera pulls
 // the camera in along the user's own view, easing the pull and the distance it heads for; a tower
-// that no distance clears swings it round to a side, and the swing eases as the pull does.
+// that no distance clears swings it round to a side, and the swing eases as the pull does. A turn
+// that would put the camera in a tower is refused, so the camera stops at the last place it could
+// stand instead of sliding along the face, and the turn returns once the way is clear.
 //
 // All of it is plain numbers, apart from the scene, so the unit test drives it frame by frame.
 import { cityBuildings, HALF, PITCH } from './layout';
@@ -317,11 +319,26 @@ export interface Sight {
 	/** The distance the camera took from the car this frame, which is the user's own distance once
 	 * the way is clear. */
 	radius: number;
+	/** The angle off the car's tail that the camera uses, in radians, which a tower can refuse to
+	 * let it leave. `NaN` until the first frame takes the user's own angle. */
+	angle: number;
+	/** True while a tower refuses the user's turn, so the camera keeps the last angle it could
+	 * stand at, and the turn eases back once the way is clear. */
+	held: boolean;
 }
 
 /** Starts a sight with the camera at the user's own distance and the car in view. */
 export function createSight(distance: number): Sight {
-	return { pull: 0, want: distance, clear: Infinity, swing: 0, goal: 0, radius: distance };
+	return {
+		pull: 0,
+		want: distance,
+		clear: Infinity,
+		swing: 0,
+		goal: 0,
+		radius: distance,
+		angle: Number.NaN,
+		held: false,
+	};
 }
 
 /**
@@ -375,6 +392,33 @@ function findSide(
 	return 0;
 }
 
+/**
+ * True when the camera can stand at the user's own distance along `angle` without entering a
+ * tower. Each tower's box is grown by `clearance`, as the camera's keep-out grows it, so a place
+ * that this refuses is one the keep-out would move.
+ */
+function standable(
+	atX: number,
+	atY: number,
+	atZ: number,
+	angle: number,
+	level: number,
+	rise: number,
+	distance: number,
+	towers: Towers,
+): boolean {
+	const x = atX + Math.sin(angle) * level * distance;
+	const y = atY + rise * distance;
+	const z = atZ + Math.cos(angle) * level * distance;
+	for (let k = 0; k < towers.length; k += 5) {
+		if (y >= (towers[k + 4] as number) + CLEARANCE) continue;
+		if (Math.abs(x - (towers[k] as number)) >= (towers[k + 2] as number) + CLEARANCE) continue;
+		if (Math.abs(z - (towers[k + 1] as number)) >= (towers[k + 3] as number) + CLEARANCE) continue;
+		return false;
+	}
+	return true;
+}
+
 /** Keeps a placed camera at the standoff from the car, where the towers leave room. */
 function clampStandoff(eye: Flight, atX: number, atY: number, atZ: number): void {
 	const dx = eye.x - atX;
@@ -391,7 +435,8 @@ function clampStandoff(eye: Flight, atX: number, atY: number, atZ: number): void
 
 /**
  * Aims the chase camera for one frame of `dt` seconds. The user's view is their angle round the car
- * from its tail, `around`, its tilt and its distance. A tower between the car and the place those
+ * from its tail, `around`, its tilt and its distance, and `tail` is the direction behind the car,
+ * which carries the camera with the car's own heading. A tower between the car and the place those
  * pick pulls the camera in along the view, and the way back out takes the same easing, after a
  * dwell, so an edge that crosses back and forth does not flicker the distance. The pull starts
  * after the line is already blocked and covers about two thirds of the gap in a quarter second,
@@ -399,6 +444,10 @@ function clampStandoff(eye: Flight, atX: number, atY: number, atZ: number): void
  * trade of having no look-ahead: the motion is smooth, but the car is briefly out of sight.
  * A tower that stands nearer than the standoff, which no distance clears, makes the camera ease
  * round to a side that sees the car, and it holds that side until the user's own view clears.
+ *
+ * A turn that would put the camera in a tower is refused: the camera keeps the last angle it could
+ * stand at, so it stops against the face instead of sliding along it, and the turn eases back to
+ * the user's own view once the way is clear.
  *
  * The height and the look return to their usual ones over the larger of the usual chase distance
  * and the user's own distance. Writes the place the camera heads for into `out`, and returns how
@@ -410,6 +459,7 @@ export function settleSight(
 	atY: number,
 	atZ: number,
 	around: number,
+	tail: number,
 	tilt: number,
 	distance: number,
 	towers: Towers,
@@ -418,13 +468,35 @@ export function settleSight(
 ): number {
 	const level = Math.cos(tilt);
 	const rise = Math.sin(tilt);
+	// The user's own turn off the car's tail. The camera takes it at once while it can stand there.
+	// A turn it cannot stand at is refused: the camera keeps the last angle that it could, so the
+	// car's own heading still carries it, and once the way is clear it eases back to the user's own
+	// turn, so the turn returns rather than jumps.
+	const wish = around - tail;
+	if (Number.isNaN(sight.angle)) sight.angle = wish;
+	else if (!sight.held) {
+		if (standable(atX, atY, atZ, around, level, rise, distance, towers)) sight.angle = wish;
+		else sight.held = true;
+	} else if (standable(atX, atY, atZ, around, level, rise, distance, towers)) {
+		// The way is clear at the user's own turn again. The camera eases toward it, and takes no
+		// step that a tower refuses, so a way that clears on one side returns without a jump.
+		const gap = Math.atan2(Math.sin(wish - sight.angle), Math.cos(wish - sight.angle));
+		if (Math.abs(gap) < SIGHT_SNAP) {
+			sight.angle = wish;
+			sight.held = false;
+		} else {
+			const next = sight.angle + gap * (1 - Math.exp(-SIGHT_EASE * dt));
+			if (standable(atX, atY, atZ, tail + next, level, rise, distance, towers)) sight.angle = next;
+		}
+	}
+	const view = tail + sight.angle;
 	// A span that stopped short of the camera would drop it by the height of a wide zoom in a
 	// single frame when a side swing shortens the blend, so it reaches the user's own distance.
 	const far = Math.max(CHASE_DISTANCE, distance);
 	// The pull follows whether a tower stands between the car and the user's usual place, not
 	// whether one stands between the car and the camera that the pull itself has moved, so the
 	// pull does not release as soon as its own motion clears the line.
-	const own = viewDistance(atX, atY, atZ, around, level, rise, distance, towers);
+	const own = viewDistance(atX, atY, atZ, view, level, rise, distance, towers);
 	const blocked = own < distance;
 
 	// The pull rises while a tower stands in the way, and falls only once the way has stayed clear
@@ -438,12 +510,12 @@ export function settleSight(
 	// user's view clears the car. It is held until the user's own view clears again.
 	const wantSide = sight.goal === 0 ? blocked && own < SIGHT_MIN : blocked;
 	if (wantSide) {
-		const held =
+		const sideView =
 			sight.goal === 0
 				? 0
-				: viewDistance(atX, atY, atZ, around + sight.goal, level, rise, distance, towers);
-		if (sight.goal === 0 || held < distance)
-			sight.goal = findSide(atX, atY, atZ, around, level, rise, distance, towers);
+				: viewDistance(atX, atY, atZ, view + sight.goal, level, rise, distance, towers);
+		if (sight.goal === 0 || sideView < distance)
+			sight.goal = findSide(atX, atY, atZ, view, level, rise, distance, towers);
 	} else sight.goal = 0;
 	sight.swing += (sight.goal - sight.swing) * (1 - Math.exp(-SIGHT_EASE * dt));
 	if (Math.abs(sight.goal - sight.swing) < SIGHT_SNAP) sight.swing = sight.goal;
@@ -451,7 +523,7 @@ export function settleSight(
 	// The distance along the camera's own heading where the way first clears. While the pull
 	// releases, the distance it heads for is held, so a tower that flickers at an edge cannot make
 	// the camera pulse. A side, once it sees the car, gives the user's own distance back.
-	const angle = around + sight.swing;
+	const angle = view + sight.swing;
 	const entry = viewDistance(atX, atY, atZ, angle, level, rise, distance, towers);
 	const clear = entry >= distance;
 	let want: number;
