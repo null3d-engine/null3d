@@ -1057,7 +1057,7 @@ The owner reviews each scene's look before its references are remade. Every scen
 
 ### Creek
 
-Creek is a small stream in a grassy valley (M2-EX8). The vegetation add-on dresses the whole valley, and code makes the rest: the land, its textures, the stones, the water, the air and the light. The owner asked for a very beautiful scene. So it has dense trees, wildflowers, wet stones, foam, caustics, things that drift in the air, mist and shafts of light. The owner approved its look. It holds the mountain ring and its gorges, with the sun rising and setting down them, and the view under the water. It also holds the look that blends with the light, the midnight moon, and the grass, leaves and petals without grain.
+Creek is a small stream in a grassy valley (M2-EX8). The vegetation add-on dresses the whole valley, and code makes the rest: the land, its textures, the stones, the water, the air and the light. The owner asked for a very beautiful scene. So it has dense trees, wet stones, foam, caustics, things that drift in the air, mist and shafts of light. The owner approved its look. It holds the mountain ring and its gorges, with the sun rising and setting down them, and the view under the water. It also holds the look that blends with the light, the midnight moon, and the grass and leaves without grain.
 
 | Part | How it is made |
 | --- | --- |
@@ -1076,7 +1076,7 @@ Creek is a small stream in a grassy valley (M2-EX8). The vegetation add-on dress
 
 **Creek's air is the wind add-on's.** `createWind` makes one field for the valley. The plants, the grass, the floating and falling leaves and the water surface read it, and G sends a gust from the camera's place. The field's box follows the camera, so the leaves and the air fill the part of the valley that the view shows. The field's Low preset takes the analytic field; Medium and above take the grid ([D-283](decisions/D-283-fluid-wind-cost.md)).
 
-**The valley is the vegetation add-on's.** Creek grows its trees, shrubs, ferns, hostas, sedges, rushes and grass at first use, from the add-on's species records and seeds (M3-V11). The ecological rules place them over the whole valley, and one wind field, which the wind add-on provides, moves them all. The scene keeps no plant code of its own: the Blender plant script, its manifest entry and its three files of about 3.1 MB are gone, and so are `grass.ts`, `models.ts` and the plants of `flora.ts`. The floating leaves and the fireflies stay (the owner's ruling, [D-241](decisions/D-241-vegetation-foundation.md)). The cave mouth went with the Blender models, since one script built both: Creek draws no cave now, and the owner's look review, still owed, judges that loss.
+**The valley is the vegetation add-on's.** Creek grows its trees, shrubs, ferns, hostas, sedges, rushes and grass at first use, from the add-on's species records and seeds (M3-V11). The ecological rules place them over the whole valley, and one wind field, which the wind add-on provides, moves them all. The scene keeps no plant code of its own: the Blender plant script, its manifest entry and its three files of about 3.1 MB are gone, and so are `grass.ts`, `models.ts` and the plants of `flora.ts`. The floating leaves and the fireflies stay (the owner's ruling, [D-241](decisions/D-241-vegetation-foundation.md)). The cave mouth went with the Blender models, since one script built both: Creek draws no cave now. The wildflower clumps went too: the add-on has no wildflower species, so a flower head would draw with a leaf's card and read as a leaf, and the valley's open patches grow grass alone. The owner's look review, still owed, judges both losses.
 
 The choices, and why:
 
@@ -1108,6 +1108,8 @@ At the two low-sun moods, haze can hide the scene under a bright brown veil, wit
 On Creek's held frame, the mean luminance of the whole picture is 24 of 255 at Dusk and 46 at golden hour. Night town's mean at Dusk is 46. No image test holds these moods: the held demo frames draw the afternoon and the night, and the physical sky's test sketch sets no fog.
 
 #### Frame rates of the Creek on the Mac
+
+The figures below belong to the scene before M3-V11 grew its plants: its 17 trees were model files, and the add-on's 2,216 plants are not in these readings. They stay as the record of that scene.
 
 The figures come from Chrome on a Mac with an Apple M5 Max, with the display at 120 Hz. Each figure is five readings of the stats overlay, a second apart, after each mood ran for 8 seconds. The engine chose the preset, with the governor on.
 

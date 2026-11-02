@@ -232,6 +232,43 @@ Five pages passed, and none was skipped. The same plan ran on this phone on 27 O
 ([that run](tested-devices/galaxy-s25-sm-s931b-chrome/20261027-002402-vegetation.md)), and it holds
 no per-pass figures.
 
+### Creek through the vegetation add-on (M3-V11)
+
+Creek grows its plants at first use: 11 species records in four variants each, 2,216 plants placed
+from seed 7, where the rows above loaded model files. The figures below measure that scene.
+
+The Mac's page drew at its display's full 1,512 by 982 points at the display's pixel ratio, where
+the folder's earlier Creek record drew 1,920 by 1,080, so compare the counts rather than the
+milliseconds across the two. The Mac's WebGL2 timer reports the whole frame, not one pass.
+
+| Device and preset | Path | FPS | Frame ms | CPU ms | GPU ms | Triangles | Draws | Textures MiB | Buffers MiB | wasm MiB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Mac, Low | WebGPU | 38.2 | 26.19 | 4.12 | 46.04 | 4,560,000 | 780 | 85.4 | 79.9 | 119.9 |
+| Mac, Low | compatibility mode | 38.9 | 25.68 | 3.18 | 42.21 | 4,850,000 | 783 | 85.4 | 72.0 | 104.3 |
+| Mac, Low | WebGL2 | 34.1 | 29.31 | 2.50 | 49.08 | 6,130,000 | 279 | 103.5 | 40.5 | 100.2 |
+| Mac, Medium | WebGPU | 20.0 | 50.04 | 3.06 | 93.06 | 4,830,000 | 698 | 276.4 | 84.6 | 116.1 |
+| Mac, Medium | compatibility mode | 28.2 | 35.50 | 2.97 | 67.01 | 4,870,000 | 698 | 160.5 | 84.6 | 116.1 |
+| Mac, Medium | WebGL2 | 13.0 | 77.22 | 2.62 | 126.43 | 9,420,000 | 297 | 410.6 | 44.0 | 108.5 |
+| Mac, High | WebGPU | 11.2 | 89.28 | 3.61 | 150.60 | 8,450,000 | 846 | 359.6 | 86.7 | 126.7 |
+| Mac, Ultra | WebGPU | 13.4 | 74.53 | 2.01 | 140.25 | 9,950,000 | 855 | 516.6 | 90.9 | 143.8 |
+
+The Mac's run: [20261102-131805-vegetation](tested-devices/macbook-pro-m3-max-chrome/20261102-131805-vegetation.md).
+Thirteen pages passed, and none was skipped. WebGL2 and compatibility mode cap the preset at
+Medium, so their High and Ultra pages drew Medium again and are left out.
+
+The Galaxy S25 stands in for the S24 class. Low, Medium and Ultra hold their ceilings; High misses
+by 16.68 ms, 8.0 per cent, because the plants add about 70 batches and every view draws them again.
+
+| Device and preset | Path | FPS | Frame ms | CPU ms | GPU ms | Triangles | Draws | Textures MiB | Buffers MiB | wasm MiB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Galaxy S25, Low | WebGPU | 30.0 | 33.33 | 6.31 | 24.61 | 2,280,000 | 752 | 47.5 | 79.9 | 117.8 |
+| Galaxy S25, Medium | WebGPU | 6.0 | 166.62 | 5.53 | 164.43 | 2,440,000 | 669 | 114.2 | 92.5 | 135.6 |
+| Galaxy S25, High | WebGPU | 4.4 | 224.98 | 5.91 | 237.63 | 3,700,000 | 812 | 135.9 | 94.6 | 147.9 |
+| Galaxy S25, Ultra | WebGPU | 2.2 | 458.20 | 7.30 | 451.22 | 6,510,000 | 829 | 355.7 | 98.8 | 181.7 |
+
+The S25's run: [20261102-132333-vegetation](tested-devices/galaxy-s25-sm-s931b-chrome/20261102-132333-vegetation.md).
+Five pages passed, and none was skipped.
+
 ### Tree generation, all four devices
 
 The page generated the stand-in parametric tree of `tests/pages/lib/tree-generator.ts` in a worker:
