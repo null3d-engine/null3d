@@ -98,9 +98,16 @@ stutters and the median is the figure:
 The display ran at 60 Hz. Low holds it; Medium takes two display frames at both settings, so the
 pass adds no measurable upload and no frame time.
 
+On the iPad Pro 13 in Safari 26.6.1, through BrowserStack, Creek Low on the WebGL2 path reads 15.94
+ms against D-241's 30.8 ms ceiling, with 445,988 bytes uploaded a frame at the median and 694,674 at
+the 99th percentile: the scene's own writes, far below the preset's 2 MiB budget. The Medium page
+failed three times while a module loaded over BrowserStack Local's TLS (E1410, E1406 and E1424),
+so that row, and the rows of the other three devices of M3-V1, stay owed.
+
 ## What the fix shows
 
 - The upload figure per frame holds the scene's own, the same as the scene without the pass.
 - The frame that a pass fallback shares with a second draw costs no more than the frame without it.
-- Owed: the iPad Pro 13 and the four cloud devices of M3-V1, whose rows this machine cannot run
-  because it holds no BrowserStack key. The landing session runs them.
+- Owed: the iPad's Medium row and the other three cloud devices of M3-V1. The iPad's Medium page
+  failed three times while a worker's module loaded over BrowserStack Local's TLS, and the other
+  devices' pages did not run.
