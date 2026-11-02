@@ -147,6 +147,7 @@ export const BUILTIN_SPECIES: readonly Species[] = [
 		crown: { shape: 'spherical', start: 0.28, spread: 0.3, pull: 0.16 },
 		leaf: {
 			kind: 'cluster',
+			cell: 'cluster-f',
 			cards: 12,
 			width: 0.6,
 			height: 0.6,
@@ -212,6 +213,7 @@ export const BUILTIN_SPECIES: readonly Species[] = [
 		crown: { shape: 'spherical', start: 0.05, spread: 0.2, pull: 0.1 },
 		leaf: {
 			kind: 'cluster',
+			cell: 'cluster-f',
 			cards: 6,
 			width: 0.2,
 			height: 0.2,
@@ -339,6 +341,7 @@ export const CREEK_SPECIES: readonly Species[] = [
 		crown: { shape: 'spherical', start: 0.3, spread: 0.35, pull: 0.1 },
 		leaf: {
 			kind: 'cluster',
+			cell: 'cluster-a',
 			cards: 10,
 			width: 0.5,
 			height: 0.42,
@@ -395,6 +398,7 @@ export const CREEK_SPECIES: readonly Species[] = [
 		crown: { shape: 'hemispherical', start: 0.35, spread: 0.3, pull: 0.12 },
 		leaf: {
 			kind: 'cluster',
+			cell: 'cluster-e',
 			cards: 10,
 			width: 0.3,
 			height: 0.4,
@@ -443,6 +447,7 @@ export const CREEK_SPECIES: readonly Species[] = [
 		crown: { shape: 'vase', start: 0.22, spread: 0.25, pull: 0.28 },
 		leaf: {
 			kind: 'cluster',
+			cell: 'cluster-c',
 			cards: 10,
 			width: 0.24,
 			height: 0.24,
@@ -510,6 +515,7 @@ export const CREEK_SPECIES: readonly Species[] = [
 		crown: { shape: 'weeping', start: 0.2, spread: 0.2, pull: 0.6 },
 		leaf: {
 			kind: 'cluster',
+			cell: 'cluster-d',
 			cards: 11,
 			width: 0.12,
 			height: 0.42,
@@ -558,6 +564,7 @@ export const CREEK_SPECIES: readonly Species[] = [
 		crown: { shape: 'flame', start: 0.2, spread: 0.35, pull: 0.2 },
 		leaf: {
 			kind: 'cluster',
+			cell: 'cluster-c',
 			cards: 10,
 			width: 0.28,
 			height: 0.3,

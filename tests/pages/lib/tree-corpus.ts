@@ -306,7 +306,7 @@ const ASPEN: Species = {
 	crown: { shape: 'spherical', start: 0.3, spread: 0.4, pull: 0.2, floor: 0.15, fillTop: 1 },
 	leaf: {
 		kind: 'cluster',
-		cell: 'cluster-c',
+		cell: 'cluster-f',
 		cards: 20,
 		width: 0.22,
 		height: 0.22,
@@ -847,6 +847,7 @@ const MAPLE_RED: Species = {
 	crown: { shape: 'spherical', start: 0.22, spread: 0.4, pull: 0.12, floor: 0.2 },
 	leaf: {
 		kind: 'cluster',
+		cell: 'cluster-g',
 		cards: 16,
 		width: 0.26,
 		height: 0.24,
@@ -942,6 +943,7 @@ const BLUE_CANOPY: Species = {
 	crown: { shape: 'spherical', start: 0.22, spread: 0.4, pull: 0.12, floor: 0.2 },
 	leaf: {
 		kind: 'cluster',
+		cell: 'cluster-f',
 		cards: 16,
 		width: 0.26,
 		height: 0.24,
@@ -1037,6 +1039,7 @@ const BEECH_COPPER: Species = {
 	crown: { shape: 'spherical', start: 0.24, spread: 0.4, pull: 0.1, floor: 0.2 },
 	leaf: {
 		kind: 'cluster',
+		cell: 'cluster-e',
 		cards: 16,
 		width: 0.24,
 		height: 0.2,

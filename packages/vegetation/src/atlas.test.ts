@@ -69,6 +69,11 @@ describe('the atlas blocks', () => {
 		expect(cells.length).toBe(LEAF_CELLS_X * LEAF_CELLS_Y);
 	});
 
+	it('names a cell for every built-in species rather than hashing one', () => {
+		for (const species of ALL_SPECIES)
+			if (species.leaf?.kind === 'cluster') expect(species.leaf.cell).toBeDefined();
+	});
+
 	it('draws each species the cell of its own kind', () => {
 		for (const species of ALL_SPECIES) {
 			const cell = leafCellFor(species);
