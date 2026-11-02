@@ -72,6 +72,9 @@ fn surface(input: SurfaceInput) -> Surface {
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, render } = ctx;
+	// The governor lowers the render scale while frames take long, and each change compiles the
+	// plan again, so a page that counts the plan's turns keeps it off.
+	if (params.get('governor') === 'off') await ctx.quality.set({ governor: false });
 	scene.setBackground('#20242a');
 	scene.setFog({ color: '#20242a', density: 0.02 });
 	const room = await assets.builtinEnvironment('room');
