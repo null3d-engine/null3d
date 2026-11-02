@@ -403,20 +403,29 @@ describe('the expected-change trailer', () => {
 		]);
 	});
 
-	test('counts anywhere in a message, as a squash merge lists each commit', () => {
-		const squash = [
+	test('counts in the trailer block that ends a message, and nowhere else', () => {
+		const last = [
+			'feat(render): add the final pass (#60)',
+			'',
+			'* fix(render): clamp the exposure',
+			'',
+			'Bench-Expected: *: the final pass adds a full-screen draw to each frame',
+			'Docs-Checked: updated docs/concepts/color.md',
+		].join('\n');
+		// A squash that lists several commits ends with the last one's own text, so a trailer in the
+		// middle of it is not in the message's trailer block and git does not read it.
+		const middle = [
 			'feat(render): add the final pass (#60)',
 			'',
 			'* feat(render): add the final pass',
 			'',
 			'Bench-Expected: *: the final pass adds a full-screen draw to each frame',
-			'Docs-Checked: updated docs/concepts/color.md',
 			'',
 			'* fix(render): clamp the exposure',
 		].join('\n');
 		const other =
 			'perf: trim uploads\n\nbench-expected: s1/null3d-webgpu: the ring is larger now\n';
-		const { changes, problems } = readExpectedChanges([squash, other], KNOWN);
+		const { changes, problems } = readExpectedChanges([last, middle, other], KNOWN);
 		expect(problems).toEqual([]);
 		expect(changes.map((c) => c.reason)).toEqual([
 			'the final pass adds a full-screen draw to each frame',
@@ -434,7 +443,10 @@ describe('the expected-change trailer', () => {
 			'Bench-Expected: s1//own-work: an empty part in the middle',
 			'Bench-Expected: s1/threejs-webgl: a page that the comparison does not run',
 		];
-		const { changes, problems } = readExpectedChanges([lines.join('\n')], KNOWN);
+		const { changes, problems } = readExpectedChanges(
+			[['fix: a change', '', ...lines].join('\n')],
+			KNOWN,
+		);
 		expect(changes).toEqual([]);
 		expect(problems).toHaveLength(lines.length);
 		expect(problems[0]).toContain('it needs the benchmarks, a colon and a reason');

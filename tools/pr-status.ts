@@ -14,6 +14,8 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { TASK_TRAILER } from './hooks/check-task';
+import { findAckValues } from './hooks/commit-ack';
 import { TASK_EVIDENCE } from './task-evidence.ts';
 
 /** The milestone pull request, its title, and the plan that lists its tasks. */
@@ -111,25 +113,27 @@ function landedTasks(): Set<string> {
 	// A record-only commit claims a task without building any of it, so it must not read as work
 	// that landed with its evidence still owed: that reads to a maintainer as a finished feature
 	// whose proof is missing. Only a commit that touches a file outside the records counts.
-	const out = git('log', '--format=%x1e%H%x1f%b', `${BASE}..HEAD`, '--name-only');
-	const out2 = out.split('\x1e').map((chunk) => {
-		const [header = '', body = ''] = chunk.split('\x1f');
-		const lines = body.split('\n');
-		// A trailer claims a task. A body that mentions an ID in prose, such as a
-		// `Docs-Checked:` line, must not tick it, or a task that no commit names in a trailer reads
-		// as ticked.
-		const claimed = lines.filter((line) => /^Task:\s/.test(line)).join('\n');
-		const files = lines.filter((line) => /^\S+\/\S*$/.test(line) && !/^Task:/.test(line));
+	const out = git('log', '--format=%x1e%H%x1f%b%x1f', `${BASE}..HEAD`, '--name-only');
+	const tasks = new Set<string>();
+	for (const chunk of out.split('\x1e')) {
+		const [, body = '', names = ''] = chunk.split('\x1f');
+		const files = names
+			.split('\n')
+			.map((line) => line.trim())
+			.filter(Boolean);
 		// A test file is code wherever it lives: the guard test for a tool sits beside the tool, and
 		// without this a task whose whole work is a test in `tools/` could never land.
 		const built = files.some(
 			(file) =>
 				CODE_ROOTS.some((root) => file.startsWith(root)) || /\.(test|spec)\.[jt]s$/.test(file),
 		);
-		return built || header === '' ? claimed : '';
-	});
-	const claimed = out2.join('\n');
-	return new Set(claimed.match(/M3-[A-Z0-9]+[a-z]?/g) ?? []);
+		if (!built) continue;
+		// A trailer claims a task. A body that mentions an ID in prose, such as a `Docs-Checked:`
+		// line, must not tick it, or a task that no commit names in a trailer reads as ticked.
+		for (const value of findAckValues(body, TASK_TRAILER))
+			for (const id of value.match(/M3-[A-Z0-9]+[a-z]?/g) ?? []) tasks.add(id);
+	}
+	return tasks;
 }
 
 /** Each task of the plan, in its order, with the name it was given. */
