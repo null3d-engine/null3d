@@ -312,6 +312,8 @@ fn a_cadenced_full_screen_pass_draws_in_one_frame_of_two() {
     cadence_draws(webgl2, "WebGL2");
 }
 
+// These tests drive a full-screen view alone. A transparent pass's place in the plan also waits on
+// whether the frame blends, and no test here drives that branch.
 /// A pass that carries a cadence keeps its place in the plan: neither the frame that its turn
 /// comes round nor the frame that it skips compiles the graph. The enabled switch beside it is the
 /// control: it changes what the plan holds, so the counter moves when the switch does.
@@ -435,9 +437,9 @@ fn resting_cadenced_pass_compiles_no_plan<B: FrameBuilder>(
         );
     }
     assert_eq!(
-        draws.iter().sum::<usize>(),
-        2,
-        "{path}: the cadence paces the turns again: {draws:?}"
+        draws,
+        vec![1, 0, 1, 0],
+        "{path}: the cadence paces the turns again"
     );
 }
 
