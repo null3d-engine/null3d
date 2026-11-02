@@ -736,19 +736,18 @@ uploads together, and the time sits on the render worker's replay phase, not on 
 splits the figures and says what a fix must show.
 
 The water draws the valley a second time for its reflection. Beside that second draw, a pass whose
-WebGL2 form is a fragment pass costs the frame a large upload for every frame: 2.2 MB at Low and
-4.3 MB at Medium. Both passes that the branch adds hit it, the leaves' state pass and the wind
-grid's. The same scene without the reflection, and the same passes in a scene that draws once, as
-the forest does, pay nothing: the forest's Low rows hold on every path.
+WebGL2 form is a fragment pass made the frame upload megabytes. It read 2.2 MB at Low and 4.3 MB at
+Medium, for the frames that took. Both passes that the branch adds met it, the leaves' state pass and the wind
+grid's. The same passes in a scene that draws once, as the forest does, paid nothing.
+[D-286](D-286-texture-budget-counts-a-pass-target.md) holds the cause, which was the texture
+budget's own projection.
 
-The wind grid's own pass lifts Medium and above into the same cost: at Medium the branch reads
-683 ms with the grid and 33.3 ms without it, the leaves riding the offset form in both.
-
-So Creek rides the offset form and keeps no grid on the WebGL2 path. Its readers work the air out of
-the steady field there. The owner ruled that the gust must work on that path, so the steady field
-now carries a gust that a page sends: `gust()` writes its place, its strength and the time it was
-sent into the field's reading, the readers' settings take them as a fourth vector, and the block
-adds the same travelling wave from that place. A push still reaches readers only through the grid.
+Creek kept the offset form and no grid on the WebGL2 path until M3-R41 fixed that projection. Its
+readers work the air out of the steady field there. The owner ruled that the gust must work on that
+path, so the steady field now carries a gust that a page sends: `gust()` writes its place, its
+strength and the time it was sent into the field's reading, the readers' settings take them as a
+fourth vector, and the block adds the same travelling wave from that place. A push still reaches
+readers only through the grid.
 
 What this record proves is the air, not a person watching the demo. A probe sampled the block that
 the readers carry, on a line across the ground with no grid, and the gust moved 6 m in the 1 s
@@ -761,15 +760,13 @@ gust sent, which would show the grass, the water and the leaves moving. The mach
 runs when this landed.
 
 The settings go up when a page sends a gust, so the frame pays one small upload for each press and
-no upload in the frames between. The path that draws a reflection stays off the pass that cost
-[2.2 MB a frame](D-286-webgl2-texture-copies-beside-a-second-draw.md).
+no upload in the frames between.
 
 An earlier version of this record said the sent gust crossed the banks when it did not. That was
 wrong, and the code now makes it true.
 
-The cost itself is the WebGL2 backend's, not the add-ons'.
-[D-286](D-286-webgl2-texture-copies-beside-a-second-draw.md) holds it, with the figures and what a
-fix must show. No task owns that fix yet.
+The cost was the texture budget's, not the add-ons'.
+[D-286](D-286-texture-budget-counts-a-pass-target.md) holds the cause, the fix and what a run owes.
 
 The branch and the milestone head read the same rows on the cloud devices. The branch at 8363b20a6
 runs [the iPad's rows](../tested-devices/ipad-pro-13-safari/20261101-091422-vegetation.md) and

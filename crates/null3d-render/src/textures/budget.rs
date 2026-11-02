@@ -326,11 +326,14 @@ impl TextureStore {
     }
 
     /// The GPU bytes that the textures will take once the next recorded frame has sized every
-    /// array, and the loads again under way have swapped.
+    /// array, and the loads again under way have swapped. It measures the same arrays as
+    /// [`TextureStore::memory_bytes`]: a pass's target is the render graph's, so it takes no room
+    /// of the textures' own and cannot push them past their budget.
     fn projected_bytes(&self) -> u64 {
         let arrays: u64 = self
             .arrays
             .iter()
+            .filter(|array| array.key.kind != Kind::Pass)
             .map(|array| array.bytes(array.target_capacity()))
             .sum();
         let mut bytes = arrays as i64;
@@ -1053,6 +1056,37 @@ mod tests {
         h.frame();
         h.store.reset_gpu();
         assert_eq!(h.store.reload_of(texture), Some((0, Handle::NONE)));
+    }
+
+    /// A texture from texels that the page can load again, of `size` texels, with `mips` levels.
+    fn reloadable(h: &mut Harness, size: u32, mips: u32) -> Handle {
+        let texture = h.store.create(astc_desc(size, size, mips)).unwrap();
+        h.store.set_data(texture, size, size).unwrap().0.fill(7);
+        h.store.set_reloadable(texture).unwrap();
+        texture
+    }
+
+    #[test]
+    fn a_pass_target_takes_no_room_of_the_textures_and_drops_no_level() {
+        let mut h = Harness::with_capabilities(Capabilities::TEXTURE_ASTC);
+        let texture = reloadable(&mut h, 512, 10);
+        // A view's target, the size of a canvas, which the render graph makes and owns.
+        h.store
+            .create_pass(0, 1600, 900, format::RGBA16_FLOAT)
+            .unwrap();
+        // The texture takes a small part of an 8 MiB budget, so it keeps every level.
+        h.store.set_memory_budget(8 * 1024 * 1024);
+        h.frame();
+        for _ in 0..5 {
+            let (commands, _) = h.frame();
+            assert_eq!(
+                h.store.dropped_levels(texture),
+                Ok(0),
+                "the target is not the textures'"
+            );
+            assert_eq!(h.store.reload_of(texture), None);
+            assert_eq!(ops(&commands, Op::WriteTexture), Vec::<Vec<u32>>::new());
+        }
     }
 
     #[test]
