@@ -37,6 +37,16 @@ reading are both right; the cadence alone loses the image. The reflection image 
 default cadence of one, and `compute-state`'s cadence cases cover compute passes, so nothing else
 in the suite covers this shape.
 
+The shape is the fog pulse's and the compile-every-frame fault's: something on the WebGL2 path
+assumes that the pass ran in the frame before. The recording skips the view's steps while it waits
+(`crates/null3d-render/src/frame_graph.rs`, the `draws` check that reads `ViewTarget::draws`), and
+the frame moves the view's turn on in `pace` (`crates/null3d-render/src/view.rs`). The texture that
+shows the view finds its target through `set_pass_target` and `shown_views`
+(`crates/null3d-render/src/textures.rs`). A reader should look first at that handover: whether a
+target made again, or a bind group made again, leaves the waiting view's texture without the image
+of its last turn. The fallback's own drawing is not the fault, since a cadence of one draws and a
+separate pass draws.
+
 The ocean's demo therefore draws WebGPU and compatibility mode until the WebGL2 cadence keeps the
 pass's image. `.dev/decisions/D-257-water-addon.md` records the demo's stand.
 
