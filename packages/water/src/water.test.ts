@@ -122,3 +122,14 @@ describe('the water’s wind', () => {
 		expect(shader).toContain('wind_sample(');
 	});
 });
+
+describe('the water’s color along a low view', () => {
+	it('mixes the depth with the view’s whole path by the material’s share', () => {
+		const thickness =
+			wgslFunction(read('water.wgsl'), 'surface')
+				.split('\n')
+				.find((line) => line.startsWith('s.thickness =')) ?? '';
+		expect(thickness).toContain('mix(depth, gap,');
+		expect(thickness).toContain('material.viewPath');
+	});
+});
