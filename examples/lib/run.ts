@@ -56,6 +56,8 @@ export interface StartOptions {
 	 * development build.
 	 */
 	preset?: QualityPreset;
+	/** The anti-aliasing mode that the page asks for, instead of the preset's own. */
+	antialias?: 'msaa' | 'fxaa' | 'none';
 	/**
 	 * The element that holds the buttons of the demo's choices, such as a time of day, for a demo
 	 * that has some. Without it, the demo runs with its own first options.
@@ -86,6 +88,7 @@ export async function startDemo({
 	labels,
 	stats = true,
 	preset,
+	antialias,
 	choices,
 	hud,
 	signal,
@@ -164,6 +167,7 @@ export async function startDemo({
 			momentTransparency: demo.momentTransparency,
 			transparent: behind,
 			preset,
+			antialias,
 			// Collapsed, the overlay stays small until clicked.
 			stats: stats && { collapsed: true },
 			onProgress: (stage: StartupStage, progress?: StartupProgress) => {
