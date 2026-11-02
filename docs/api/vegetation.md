@@ -96,7 +96,7 @@ A record holds only numbers and short strings. This table shows the parts that a
 | `leaf` | `kind` (`cluster`, `needle`, `frond` or `blade`), `cards`, `width`, `height`, `perCard`, `up`, `out`, `start`, `end`, and the optional `cell`, `depth`, `cross`, `fill`, `hang` and `bare` |
 | `rosette` | For a plant without branches: `blades`, `length`, `width`, `arch`, `segments`, `shape`, `pinnae`, `upright` and `flowers` |
 | `wind` | `stiffness` for each branch level, the flutter's `flutter` distance and its `frequency` |
-| `color` | `bark`, `leaf`, `tint` and `transmission` |
+| `color` | `bark`, `leaf`, `tint` and `transmission`: `leaf` is the leaf colour as linear RGB and may be any colour, not only a green |
 | `height`, `trunks` | The plant's height, the trunks that rise from one base, and the optional `leader` and `stemLean` |
 | `heightVariance`, `size` | How much a variant's height and a copy's scale vary |
 | `flare`, `levels`, `variants` | The root flare, the detail levels, and the variants that a scene makes |
@@ -127,6 +127,10 @@ A record holds only numbers and short strings. This table shows the parts that a
 Fill is a scene's choice, not part of a species' shape. In the add-on's measurement, a spruce at half its record's fill kept its silhouette and used 24 per cent fewer triangles across its levels, and twenty of them took 22 per cent less frame time. A pine that is already cheap measured no change from more fill. A scene under a tight frame budget can lower fill without changing which species it draws.
 
 **`fillTop` sets how far up the branches a filled crown reaches.** The value is a share of the branch heights, from 0 to 1. The default is 1 for a conical crown, whose top is its leader, and 0.92 for another outline, so a lone upper limb does not carry cards into the air above a rounded dome. A pine that ends in a leader asks for 1, so its crown stays filled to its tip.
+
+**A leaf's colour is a free field.** A species record's `color.leaf` is a linear RGB triplet, and the generator paints no green of its own: the leaf atlas holds a brightness and coverage factor, and the record's colour multiplies it. A red maple asks for `color: { bark: [0.28, 0.2, 0.16], leaf: [0.55, 0.08, 0.05], tint: 0.08, transmission: 0.3 }`, a copper beech for a darker red-brown, and a quaking aspen's autumn for gold. The optional `tint` sets how far one copy's colour may shift, and `transmission` how much light passes through. Every built-in happens to be green, which makes the field read fixed when it is not.
+
+A season is a copy of a species in another colour, not a species of its own: an aspen in gold is the same plant as an aspen in green, and only the picture differs. A catalogue records such a copy as a variant of the reviewed species, with the colour that its photograph shows, rather than spending a species row on it.
 
 **`taperCurve` narrows a branch toward its tip.** The pipe model gives a branch the least radius that carries the limbs beyond it, which holds the wood constant between those limbs and reads as a stack of cylinders. The value, from 0 to 1, pulls each point of a branch toward one cone from its base to its tip, never wider than the pipe model asks. One gives the cone, and another blends toward it. The trunk still widens at the ground from the record's `flare`, so a trunk reads as a cone seated in the soil. The default is 0, which keeps the pipe model's radii.
 
