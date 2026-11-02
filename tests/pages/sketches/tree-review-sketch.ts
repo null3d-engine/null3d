@@ -333,8 +333,14 @@ export default defineSketch((ctx) => {
 		target = [center[0], min[1] + (max[1] - min[1]) * 0.48, center[2]];
 		fov = WHOLE_FOV;
 		const vertical = (fov * Math.PI) / 180;
-		const distance =
-			(Math.max(max[0] - min[0], (max[1] - min[1]) * 1.05) / 2 / Math.tan(vertical / 2)) * 1.18;
+		// The frame is taller than it is wide, so a broad tree needs more distance than its height
+		// asks for. A live oak's spread is the whole of what its whole view must show.
+		// The review page draws a whole view at 768 by 1024; the sketch runs off the page's thread and
+		// cannot read the canvas size, so the frame's shape is stated here.
+		const aspect = 768 / 1024;
+		const fitHeight = ((max[1] - min[1]) * 1.05) / 2 / Math.tan(vertical / 2);
+		const fitWidth = (max[0] - min[0]) / 2 / (Math.tan(vertical / 2) * aspect);
+		const distance = Math.max(fitHeight, fitWidth) * 1.18;
 		const direction = normalize(0.62, 0.2, 1);
 		position = [
 			target[0] + direction[0] * distance,

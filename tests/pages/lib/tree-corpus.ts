@@ -503,7 +503,7 @@ const CLUMP_OAK: Species = {
 			segments: 2,
 		}),
 	],
-	crown: { shape: 'spherical', start: 0.1, spread: 1, pull: 0.05, floor: 0.12, fillTop: 1 },
+	crown: { shape: 'spherical', start: 0.1, spread: 1.4, pull: 0.05, floor: 0.12, fillTop: 1 },
 	leaf: {
 		kind: 'cluster',
 		cell: 'cluster-b',
