@@ -252,21 +252,34 @@ are notes from a busy machine, at a load of 9 to 16, not verdicts. Other session
 pictures during the trials, so a round may fall in a picture draw; the two pairs agree on the
 direction and the size, which the picture draw cannot give a round, but the figures stay notes.
 
-**The quiet run, and why no cost per preset is stated.** The WebGPU chain got a quiet minute at a
-load of 7.9. Six rounds of six seconds a side read the difference as a median of -0.105 ms with a
-2.223 ms spread. The rounds fell on both sides of zero. The chain is below the frame's spread, so
-no figure above zero resolves. The compatibility and WebGL2 runs did not get a quiet minute.
-The shared queue closes a timing window once the load stays at 8 or more for ten minutes, and the
-load held near 30. No cost per preset is stated. The transform's grid and bands do not change with
-the preset, so one figure would answer all four. The GPU timer names its fifteen passes as one
-compute step, so it cannot give that figure. The on-and-off difference is the only method left.
-It resolves the older path only in the notes above, and the newer one not at all.
-`ocean-cost.spec.ts`
-keeps the instrument, gated by `NULL3D_OCEAN_COST`: it sends the reflection to its longest cadence
-and takes more rounds and longer sides from the environment, so each round's difference pairs one
-side with the side beside it. The pass timer names all fifteen transform passes `compute`, so their
-times do not separate by name; the difference of the sides is the figure to read. The design figure
-for three bands at 128 squared is 0.5 ms ([D-179](D-179-technique-rulings.md) ruling 19).
+**The simulation's cost, per path.** `ocean-ablation.spec.ts` draws the cost page with the
+simulation on in one page load and off in the next. The camera, the preset and the scale are the
+same, and the frame's own GPU time is the difference. The run held the quiet window for ten minutes. The
+shared queue held its own jobs back, and the marker in `tools/lib/quiet-window.ts` stopped builds
+in other checkouts. The one-minute load was 6.9 before the first batch and 2.0 to 2.4 for the rest. The least
+difference of three batches was 2.850 ms on WebGL2, whose batches read 2.850, 3.063 and 3.009 ms.
+On WebGPU the batches differ by -0.484, -1.415 and +0.062 ms, and in compatibility mode by -0.319,
++1.462 and -0.540 ms. The chain sits inside the frame's own variation on those paths, so the method
+states no cost there. The smallest resolved bound is about 1.4 ms.
+
+**The budget at each preset.** The plan's estimate is 0.5 ms for three bands at 128 squared. The
+preset does not change the bands or the grid. Its bands, the mesh's segments and reach, and the
+reflection's cadence are `createOcean`'s options. The transform's grid is the module's fixed 128. The add-on's only preset row is `reflectionEvery`, which paces the reflection. So the figure
+above is the figure at every preset. WebGL2's 2.850 ms is 5.7 times the estimate, which is a finding
+about the estimate. Against the frame the comparison holds. With the reflection's 1.7, 1.7, 3.4 and
+3.4 ms, the ocean costs 4.55 ms at Low and Medium. At High and Ultra it costs 6.25 ms. Both are
+inside a 16.7 ms frame at 60 frames a second. The WebGPU and compatibility chain adds at most about 1.4 ms,
+so its ocean stays inside the frame too.
+
+**The cause of the WebGL2 figure.** The fragment form runs the fifteen 128-squared passes through
+the fragment pipeline, fifteen raster passes of 16,384 pixels each. The compute path runs the same
+work in one compute pass.
+
+`ocean-cost.spec.ts` keeps the earlier instrument, gated by `NULL3D_OCEAN_COST`: it sends the
+reflection to its longest cadence and takes more rounds and longer sides from the environment. The
+pass timer names all fifteen transform passes `compute`, so their times do not separate by name.
+The design figure for three bands at 128 squared is 0.5 ms
+([D-179](D-179-technique-rulings.md) ruling 19).
 
 The first rate runs measured the page while the reflection switched itself off every other frame.
 At 1920 by 1080 on Low the ocean drew 1.21 frames a second, and a 64 squared grid gave 1.45.
@@ -363,12 +376,12 @@ vertex's world place is the origin with its place in the mesh.
   own code at every preset. The machine stood at a load of about 30 to 44 through the run, so the
   cost figures are notes until a quiet run. The transform's own cost is treated above, with the
   WebGPU quiet window and the older path's closed one.
-- The ocean's own GPU time does not come apart from the frame. The transform's fifteen passes record
-  in one compute step. The GPU timer names that step by its kind and not by a pass of its own, so it
-  cannot give the chain's time. The on-and-off difference in a quiet window on WebGPU read a median
-  of -0.105 ms with a 2.223 ms spread. The chain sits inside the frame's own spread there.
-  The design figure for three bands at 128 squared is 0.5 ms
-  ([D-179](D-179-technique-rulings.md) ruling 19).
+- The ocean's simulation costs 2.850 ms a frame on WebGL2. That is the least of three batches of an
+  on/off ablation in separate page loads, against the plan's 0.5 ms estimate. On WebGPU and in
+  compatibility mode the same method resolves no cost. The batches straddle zero inside the frame's
+  own variation, and the bound is about 1.4 ms. The preset does not change the bands or the grid, so
+  the figure is the figure at every preset. With the reflection's own per-preset budget, the ocean
+  stays inside a 16.7 ms frame at every preset.
 - The add-on's tests cover the shape, the mesh's coverage and winding, a shape's own current, bed
   and mesh, the carried wave set, the wave copies, the foam map and the size gates. The demo
   `examples/water` draws both bodies and the view from below. The package's own page
