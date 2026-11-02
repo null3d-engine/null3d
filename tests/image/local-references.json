@@ -407,12 +407,6 @@
 		"date": "2026-10-27",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
 	},
-	"chromium-swiftshader/webgl2/demo-impostors.png": {
-		"test": "demo-impostors",
-		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
-	},
 	"chromium-swiftshader/webgl2/demo-post-effects.png": {
 		"test": "demo-post-effects",
 		"tier": "webgl2",
@@ -599,12 +593,6 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
-	"chromium-swiftshader/webgl2/water-bounds.png": {
-		"test": "water-bounds",
-		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
-	},
 	"chromium-swiftshader/webgl2/weather.png": {
 		"test": "weather",
 		"tier": "webgl2",
@@ -754,12 +742,6 @@
 		"tier": "webgpu",
 		"date": "2026-10-28",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the demo; the branch's CI run has not drawn it yet"
-	},
-	"chromium-swiftshader/webgpu/feature-instances-shadow.png": {
-		"test": "feature-instances-shadow",
-		"tier": "webgpu",
-		"date": "2026-10-25",
-		"reason": "M3-E9's picture draws no text and no 2D canvas, so this Mac's Chromium and CI's SwiftShader round the same frame alike. CI run 40223106242 compared it on both tiers and passed, so the reference stands until a later CI drawing replaces it."
 	},
 	"chromium-swiftshader/webgpu/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
