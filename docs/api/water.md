@@ -8,7 +8,7 @@ summary: "createWater: a river and a lake from one shape, with waves that the cu
 
 # Water (@null3d/water)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The ocean's WebGL2 path is not ready: its heights were not compared with the other paths again after a readback fault on that path was fixed. Draw the ocean on WebGPU or in compatibility mode.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The ocean's WebGL2 path is not ready: its surface draws the sea, but a reflection pass that draws every other frame loses its image on that path, so the sea loses the sky's mirror. Draw the ocean on WebGPU or in compatibility mode.
 
 ```mermaid
 flowchart LR
