@@ -226,6 +226,13 @@ export interface Leaf {
 	 */
 	readonly volume?: number;
 	/**
+	 * How much larger a card grows in the crown's outer third, where a rim of overlapping cards reads
+	 * as a mass and an even spread of thin ones reads as a spray. The cards out there are also thinned
+	 * to every other one, so the rim gains size rather than count. From 0 to 3; the default 1 draws
+	 * every card the same size.
+	 */
+	readonly rim?: number;
+	/**
 	 * Whether the filled cards hang almost straight down, as a willow's shoots fall, rather than
 	 * following the crown's outward direction. The default is false.
 	 */
@@ -530,6 +537,11 @@ export function speciesProblems(species: Species): string[] {
 			(!finite(species.leaf.startTop) || species.leaf.startTop < 0 || species.leaf.startTop > 1)
 		)
 			problems.push(`${at}.startTop must be a number from 0 to 1.`);
+		if (
+			species.leaf.rim !== undefined &&
+			(!finite(species.leaf.rim) || species.leaf.rim < 0 || species.leaf.rim > 3)
+		)
+			problems.push(`${at}.rim must be a number from 0 to 3.`);
 		if (
 			species.leaf.volume !== undefined &&
 			(!finite(species.leaf.volume) || species.leaf.volume < 0 || species.leaf.volume > 1)

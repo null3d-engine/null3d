@@ -519,6 +519,7 @@ const CLUMP_OAK: Species = {
 		depth: 3,
 		fill: 1.4,
 		volume: 0.15,
+		rim: 1.7,
 	},
 	wind: { stiffness: [0.12, 0.45, 0.75, 0.9], flutter: 0.02, frequency: 1.6 },
 	color: { bark: DARK_BARK, leaf: GREEN, tint: 0.09, transmission: 0.3 },

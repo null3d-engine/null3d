@@ -474,6 +474,18 @@ export function leafCards(
 				pick.branch,
 				stiffness,
 			);
+			// The crown's rim carries fewer, larger cards: a spray of thin cards at the edge shows sky
+			// between them, where a rim of overlapping ones reads as a mass broken by tufts.
+			const rim = leaf.rim ?? 1;
+			if (rim !== 1) {
+				const fromAxis = Math.hypot(placed[0], placed[2]);
+				const atRim = fromAxis > crown.radius * 0.66;
+				if (atRim) {
+					if (k % 2 === 1) continue;
+					cards.push({ ...card, width: card.width * rim, height: card.height * rim });
+					continue;
+				}
+			}
 			// The crown's top keeps finer cards, so a spire closes to a point rather than a ball.
 			const shrink = 0.45 + 0.55 * crownEnvelope(crown.shape, t);
 			cards.push({ ...card, width: card.width * shrink, height: card.height * shrink });
