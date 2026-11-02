@@ -68,13 +68,14 @@ function main(): void {
 		const files = git('diff-tree', '--no-commit-id', '--name-only', '-r', sha)
 			.split('\n')
 			.filter(Boolean);
-		commits.push({ sha, message, files });
+		commits.push({ sha, message, files, authoredAt });
 		const commit = `${sha.slice(0, 8)} ${message.split('\n')[0]}`;
 		for (const rule of RULES) {
 			const result = checkAck(message, files, rule, authoredAt);
 			if (!result.ok) failures.push(`${commit}: ${result.error}`);
 		}
-		for (const problem of sizeGrowthProblems(message)) failures.push(`${commit}: ${problem}`);
+		for (const problem of sizeGrowthProblems(message, undefined, authoredAt))
+			failures.push(`${commit}: ${problem}`);
 		for (const finding of checkSubject(message.split('\n')[0] ?? ''))
 			if (finding.severity === 'error') failures.push(`${commit}: ${finding.message}`);
 		const task = taskProblem(message, tasks, authoredAt);
