@@ -34,6 +34,7 @@ const GREEN: readonly [number, number, number] = [0.08, 0.18, 0.045];
 const SPRUCE: Species = {
 	id: 'review-spruce',
 	kind: 'conifer',
+	bark: 'spruce',
 	branchLevels: [
 		level({
 			children: 48,
@@ -137,6 +138,7 @@ const SPRUCE: Species = {
 const PINE: Species = {
 	id: 'review-pine',
 	kind: 'conifer',
+	bark: 'pine',
 	branchLevels: [
 		level({
 			children: 16,
@@ -224,7 +226,7 @@ const PINE: Species = {
 		fill: 0.2,
 	},
 	wind: { stiffness: [0.08, 0.4, 0.7, 0.9], flutter: 0.008, frequency: 2.2 },
-	color: { bark: [0.32, 0.2, 0.13], leaf: [0.09, 0.2, 0.08], tint: 0.05, transmission: 0.24 },
+	color: { bark: [0.45, 0.22, 0.1], leaf: [0.09, 0.2, 0.08], tint: 0.05, transmission: 0.24 },
 	height: 22,
 	trunks: 1,
 	heightVariance: 0.12,
@@ -239,6 +241,7 @@ const PINE: Species = {
 const ASPEN: Species = {
 	id: 'review-aspen',
 	kind: 'tree',
+	bark: 'birch',
 	branchLevels: [
 		level({
 			children: 6,
@@ -319,7 +322,7 @@ const ASPEN: Species = {
 		fill: 1.6,
 	},
 	wind: { stiffness: [0.15, 0.5, 0.8, 0.95], flutter: 0.03, frequency: 1.9 },
-	color: { bark: [0.7, 0.68, 0.62], leaf: [0.45, 0.3, 0.03], tint: 0.08, transmission: 0.4 },
+	color: { bark: [0.62, 0.6, 0.55], leaf: [0.45, 0.3, 0.03], tint: 0.08, transmission: 0.4 },
 	height: 16,
 	leader: 0.62,
 	trunks: 1,
@@ -335,6 +338,7 @@ const ASPEN: Species = {
 const OAK: Species = {
 	id: 'review-oak',
 	kind: 'tree',
+	bark: 'oak',
 	branchLevels: [
 		level({
 			children: 6,
@@ -416,7 +420,7 @@ const OAK: Species = {
 		fill: 1.2,
 	},
 	wind: { stiffness: [0.1, 0.4, 0.7, 0.9], flutter: 0.02, frequency: 1.5 },
-	color: { bark: DARK_BARK, leaf: GREEN, tint: 0.08, transmission: 0.3 },
+	color: { bark: [0.16, 0.13, 0.11], leaf: GREEN, tint: 0.08, transmission: 0.3 },
 	height: 9,
 	leader: 0.33,
 	trunks: 1,
@@ -432,6 +436,7 @@ const OAK: Species = {
 const CLUMP_OAK: Species = {
 	id: 'review-clump-oak',
 	kind: 'tree',
+	bark: 'oak',
 	branchLevels: [
 		level({
 			children: 3,
@@ -529,6 +534,7 @@ const CLUMP_OAK: Species = {
 const WILLOW: Species = {
 	id: 'review-willow',
 	kind: 'tree',
+	bark: 'willow',
 	branchLevels: [
 		level({
 			children: 6,
@@ -628,6 +634,7 @@ const WILLOW: Species = {
 const PALM: Species = {
 	id: 'review-palm',
 	kind: 'tree',
+	bark: 'beech',
 	branchLevels: [
 		level({
 			children: 22,
@@ -697,6 +704,7 @@ const PALM: Species = {
 const BAMBOO: Species = {
 	id: 'review-bamboo',
 	kind: 'shrub',
+	bark: 'willow',
 	branchLevels: [
 		level({
 			children: 4,
@@ -781,6 +789,7 @@ const BAMBOO: Species = {
 const MAPLE_RED: Species = {
 	id: 'review-maple-red',
 	kind: 'tree',
+	bark: 'beech',
 	branchLevels: [
 		level({
 			children: 6,
@@ -878,6 +887,7 @@ const MAPLE_RED: Species = {
 const BLUE_CANOPY: Species = {
 	id: 'review-blue-canopy',
 	kind: 'tree',
+	bark: 'beech',
 	branchLevels: [
 		level({
 			children: 6,
@@ -975,6 +985,7 @@ const BLUE_CANOPY: Species = {
 const BEECH_COPPER: Species = {
 	id: 'review-beech-copper',
 	kind: 'tree',
+	bark: 'beech',
 	branchLevels: [
 		level({
 			children: 6,

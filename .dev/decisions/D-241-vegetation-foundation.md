@@ -690,14 +690,16 @@ textures from integer hashes in the browser, the first time a page asks for them
 draws a trunk or a crown from them. The plan asks for the atlas to be painted on the GPU and kept.
 The need to keep it is what decides where it is painted.
 
-**What the atlases hold.** The bark block is 256 texels square and tiles around and along a branch:
+**What the atlases hold.** The bark block is 768 by 512 in six cells of 256, one for each painted bark family; each cell tiles
+around and along a branch:
 stretched Voronoi plates, warped by fractal noise, with cracks between them and fibers up the trunk.
 The leaf block is 768 by 256 texels, in twelve cells of 128: seven leaf clusters (a lobed oak, a
 smooth entire oval, a small-toothed birch, a long narrow willow, a wavy beech, a small round aspen
 and a palmately lobed maple), a needle spray, a frond, a blade, a broad leaf and one spare. Its
 color and surface maps are 0.79 MB each before mips and about 1.0 MB each with them, so the pair
-costs about 2.0 MB, 0.67 MB more than the eight-cell block it replaced. The bark block stays 256
-square. A species names its cell; a species that shares one says so in its record, and a leaf shape
+costs about 2.0 MB, 0.67 MB more than the eight-cell block it replaced. The bark block grew to 768 by 512 in six cells: six painted families, 1.57 MB a map before mips and
+about 2.1 MB with them, so the pair costs about 4.2 MB against 0.35 MB for the one block it
+replaced. A species names its cell; a species that shares one says so in its record, and a leaf shape
 that no cell suits waits for a new cell rather than borrowing a neighbour's. A leaf comes from an outline with veins written into a height field,
 and the gradient of that field gives the normal map. Each atlas has a color map, in sRGB, whose
 values multiply the species' own color, and a linear surface map: the normal in red and green, the

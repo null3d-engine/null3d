@@ -125,7 +125,14 @@ export interface Crown {
 }
 
 /**
- * The cells of the leaf atlas that a species may name.
+ * The bark figures that a species may draw: one painter for each family of bark.
+ * @category api/vegetation
+ */
+export type BarkCellName = 'birch' | 'pine' | 'oak' | 'beech' | 'spruce' | 'willow';
+
+/**
+ * The cells of the leaf atlas that a species may name: seven cluster outlines and the needle,
+ * frond, blade and broad leaves.
  * @category api/vegetation
  */
 export type LeafCellName =
@@ -271,6 +278,12 @@ export interface Species {
 	readonly branchLevels: readonly BranchLevel[];
 	/** The crown's outline and pull. */
 	readonly crown: Crown;
+	/**
+	 * The bark cell that the trunk and the limbs draw. Each cell is a painter for a family of bark:
+	 * a birch's peeling white, a pine's flaking plates, an oak's fissures, a beech's smooth grey, a
+	 * spruce's scales or a willow's ridges. The default is the beech's smooth grey.
+	 */
+	readonly bark?: BarkCellName;
 	/** The cards that carry leaves, for a plant with a branch system. */
 	readonly leaf?: Leaf;
 	/** The leaves of a plant without a branch system. */
@@ -486,6 +499,11 @@ export function speciesProblems(species: Species): string[] {
 			].includes(species.leaf.cell)
 		)
 			problems.push(`${at}.cell is not one of the leaf cells.`);
+		if (
+			species.bark !== undefined &&
+			!['birch', 'pine', 'oak', 'beech', 'spruce', 'willow'].includes(species.bark)
+		)
+			problems.push(`${name}: bark is not one of the bark cells.`);
 		if (!Number.isInteger(species.leaf.cards) || species.leaf.cards < 1)
 			problems.push(`${at}.cards must be a whole number from 1.`);
 		positive(species.leaf.width, `${at}.width`);

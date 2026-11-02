@@ -143,6 +143,7 @@ export const BUILTIN_SPECIES: readonly Species[] = [
 	{
 		id: 'broadleaf',
 		kind: 'tree',
+		bark: 'beech',
 		branchLevels: BROADLEAF_BRANCHES,
 		crown: { shape: 'spherical', start: 0.28, spread: 0.3, pull: 0.16 },
 		leaf: {
@@ -171,6 +172,7 @@ export const BUILTIN_SPECIES: readonly Species[] = [
 	{
 		id: 'conifer',
 		kind: 'conifer',
+		bark: 'spruce',
 		branchLevels: coniferBranches(15),
 		// The crown holds its mass up the trunk: the lower part is bare, and the branches crowd the
 		// upper tree, as an evergreen's do, so light passes beneath the crown. The outline narrows
@@ -205,6 +207,7 @@ export const BUILTIN_SPECIES: readonly Species[] = [
 	{
 		id: 'shrub',
 		kind: 'shrub',
+		bark: 'beech',
 		branchLevels: [
 			level({ children: 4, length: 1.6, angle: 48, taper: 0.02, sides: 6, segments: 4 }),
 			level({ children: 3, length: 0.8, angle: 55, taper: 0.008, sides: 5, segments: 3 }),
@@ -300,6 +303,7 @@ export const CREEK_SPECIES: readonly Species[] = [
 	{
 		id: 'oak',
 		kind: 'tree',
+		bark: 'oak',
 		branchLevels: [
 			level({
 				children: 7,
@@ -352,7 +356,7 @@ export const CREEK_SPECIES: readonly Species[] = [
 			end: 1,
 		},
 		wind: { stiffness: [0.1, 0.4, 0.7, 0.85], flutter: 0.02, frequency: 1.5 },
-		color: { bark: [0.16, 0.13, 0.1], leaf: [0.09, 0.19, 0.045], tint: 0.08, transmission: 0.3 },
+		color: { bark: [0.18, 0.15, 0.12], leaf: [0.09, 0.19, 0.045], tint: 0.08, transmission: 0.3 },
 		height: 13,
 		trunks: 1,
 		heightVariance: 0.16,
@@ -365,6 +369,7 @@ export const CREEK_SPECIES: readonly Species[] = [
 	{
 		id: 'beech',
 		kind: 'tree',
+		bark: 'beech',
 		branchLevels: [
 			level({
 				children: 6,
@@ -422,6 +427,7 @@ export const CREEK_SPECIES: readonly Species[] = [
 	{
 		id: 'birch',
 		kind: 'tree',
+		bark: 'birch',
 		branchLevels: [
 			level({
 				children: 5,
@@ -471,6 +477,7 @@ export const CREEK_SPECIES: readonly Species[] = [
 	{
 		id: 'willow',
 		kind: 'tree',
+		bark: 'willow',
 		branchLevels: [
 			level({
 				children: 6,
@@ -539,6 +546,7 @@ export const CREEK_SPECIES: readonly Species[] = [
 	{
 		id: 'alder',
 		kind: 'tree',
+		bark: 'beech',
 		branchLevels: [
 			level({
 				children: 6,

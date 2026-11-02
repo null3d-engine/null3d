@@ -4,11 +4,19 @@
 // alpha keeps a leaf's coverage as it shrinks, and a masked material fades its cut edges with alpha
 // to coverage.
 import type { ColorInput, SketchContext, Texture, Textures } from '@null3d/engine';
-import { type AtlasPixels, LEAF_CELLS_X, LEAF_CELLS_Y, paintBark, paintLeaf } from './atlas-pixels';
+import {
+	type AtlasPixels,
+	BARK_CELLS_X,
+	BARK_CELLS_Y,
+	LEAF_CELLS_X,
+	LEAF_CELLS_Y,
+	paintBark,
+	paintLeaf,
+} from './atlas-pixels';
 import type { PlantWind } from './plant';
 import plantShader from './plant.wgsl';
 import plantCardsShader from './plant-cards.wgsl';
-import type { LeafCellName, LeafKind, Species } from './species';
+import type { BarkCellName, LeafCellName, LeafKind, Species } from './species';
 
 /**
  * One map of an atlas: its texture, and its size in texels.
@@ -80,7 +88,7 @@ export function bakePlantAtlases(ctx: Pick<SketchContext, 'textures'>): PlantAtl
 		bark: {
 			color: asTexture(ctx.textures, bark.color, 'srgb', true),
 			surface: asTexture(ctx.textures, bark.surface, 'linear', true),
-			cells: [1, 1],
+			cells: [BARK_CELLS_X, BARK_CELLS_Y],
 			pixels: { color: bark.color, surface: bark.surface },
 		},
 		leaf: {
@@ -187,6 +195,30 @@ export function leafCellFor(species: Species): LeafCell {
 }
 
 /**
+ * The cell of each bark family, in the atlas's cells: the column and row.
+ * @category api/vegetation
+ */
+export const BARK_CELLS_BY_KIND: Readonly<Record<BarkCellName, readonly [number, number]>> = {
+	birch: [0, 0],
+	pine: [1, 0],
+	oak: [2, 0],
+	beech: [0, 1],
+	spruce: [1, 1],
+	willow: [2, 1],
+};
+
+/**
+ * The bark cell that a species draws: its own family's, or a beech's smooth grey when it names none.
+ *
+ * @param species The species record.
+ * @returns The bark cell of the atlas that the species' wood samples.
+ * @category api/vegetation
+ */
+export function barkCellFor(species: Species): BarkCellName {
+	return species.bark ?? 'beech';
+}
+
+/**
  * What `plantMaterial` draws: the bark of a trunk or the leaves of a crown.
  * @category api/vegetation
  */
@@ -203,6 +235,8 @@ export interface PlantMaterialOptions {
 	readonly part: PlantMaterialPart;
 	/** The leaf cell to draw. The default is the first cluster shape. */
 	readonly cell?: LeafCell;
+	/** The bark cell to draw. The default is the beech's smooth grey. */
+	readonly barkCell?: BarkCellName;
 	/** The linear colour that multiplies the atlas's own, such as the species' leaf or bark colour. */
 	readonly color?: ColorInput;
 	/** How the leaf cuts its outline: below this coverage nothing draws. The default is 0.35. */
@@ -311,6 +345,8 @@ export function plantMaterial(
 	const fields = {
 		cells: [atlases.leaf.cells[0], atlases.leaf.cells[1]] as [number, number],
 		cell: [cell[0], cell[1]] as [number, number],
+		barkCells: [BARK_CELLS_X, BARK_CELLS_Y] as [number, number],
+		barkCell: BARK_CELLS_BY_KIND[options.barkCell ?? 'beech'],
 		part: leaves ? 1 : 0,
 		tiles: options.barkTiles ?? 3,
 		tint: (options.color ?? [1, 1, 1]) as [number, number, number],

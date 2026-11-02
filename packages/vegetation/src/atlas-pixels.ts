@@ -1,3 +1,5 @@
+import type { BarkCellName } from './species';
+
 // The pixels of the bark and leaf atlases, made in the browser the first time a page asks for them.
 // A page ships no image file: these functions paint the same atlas on every device, from integer
 // hashes alone, so no texture is downloaded and none differs between machines.
@@ -23,8 +25,14 @@ export interface AtlasPixels {
 	readonly data: Uint8Array;
 }
 
-/** How many texels the bark block is across and down. It tiles, so it holds one cell. */
+/** How many texels one bark cell is across and down. Each cell tiles about a branch. */
 export const BARK_SIZE = 256;
+/** How many bark cells the block holds across and down: one painter for each bark family. */
+export const BARK_CELLS_X = 3;
+export const BARK_CELLS_Y = 2;
+/** The bark block's size in texels, its cells together. */
+export const BARK_WIDTH = BARK_CELLS_X * BARK_SIZE;
+export const BARK_HEIGHT = BARK_CELLS_Y * BARK_SIZE;
 /** How many cells the leaf block holds across and down. */
 export const LEAF_CELLS_X = 6;
 export const LEAF_CELLS_Y = 2;
@@ -806,88 +814,6 @@ function leafCells(): LeafCellPainter[] {
 	];
 }
 
-/** The nearest bark plate's distance, the next one's, and a number of the nearest plate. */
-function plates(x: number, y: number): [number, number, number] {
-	const wholeX = Math.floor(x);
-	const wholeY = Math.floor(y);
-	const partX = x - wholeX;
-	const partY = y - wholeY;
-	let first = 8;
-	let second = 8;
-	let near = 0;
-	for (let oy = -1; oy <= 1; oy++)
-		for (let ox = -1; ox <= 1; ox++) {
-			const cellX = wholeX + ox;
-			const cellY = wholeY + oy;
-			const atX = random2(cellX, cellY);
-			const atY = random2(cellX + 31, cellY + 17);
-			const dx = ox + atX - partX;
-			const dy = oy + atY - partY;
-			const d = Math.hypot(dx, dy);
-			if (d < first) {
-				second = first;
-				first = d;
-				near = random2(cellX + 7, cellY + 3);
-			} else if (d < second) second = d;
-		}
-	return [first, second, near];
-}
-
-/** The bark's plate coordinates at a point, warped by noise, and the nearest plate's number. */
-function barkPlates(u: number, v: number): [number, number, number] {
-	const warp = fbm2(u * 1.7 + 3.1, v * 0.7 + 8.4, 3) * 0.9;
-	const [first, second, near] = plates(u * 7 + warp, v * 1.6);
-	return [first, second, near];
-}
-
-/** The bark's height at a point of its own tiling coordinates. */
-function barkHeight(u: number, v: number): number {
-	const [first, second, near] = barkPlates(u, v);
-	const crack = smoothstep(0, 0.08, second - first);
-	let height = (0.25 + 0.65 * crack) * (0.75 + 0.5 * near);
-	height += fbm2(u * 90, v * 18, 3) * 0.07 * crack;
-	height += fbm2(u * 23, v * 4, 2) * 0.06;
-	return height;
-}
-
-/** How much light a bark point reflects, as a factor around white. */
-function barkColorAt(
-	u: number,
-	v: number,
-	height: number,
-	plate: number,
-): [number, number, number] {
-	const mix = clamp(height, 0, 1);
-	const dark = [0.3, 0.27, 0.25] as const;
-	const light = [1.2, 1.1, 1.0] as const;
-	// One plate sits at a different tone from its neighbours, so a trunk shows bands of bark rather
-	// than one flat colour.
-	const shade = 0.72 + 0.52 * plate;
-	const moss = smoothstep(0.55, 0.85, fbm2(u * 5 + 11, v * 2 + 4, 3)) * 0.4;
-	return [0, 1, 2].map((channel) => {
-		const base =
-			(dark[channel] as number) + ((light[channel] as number) - (dark[channel] as number)) * mix;
-		const withMoss = base * shade * (1 - moss) + [0.62, 0.85, 0.42][channel]! * moss;
-		return withMoss;
-	}) as [number, number, number];
-}
-
-/** The sRGB code of a linear value, from 0 to 1, as a colour map's texel holds it. */
-function encode(value: number): number {
-	const v = clamp(value, 0, 1);
-	return Math.round((v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055) * 255);
-}
-
-/** A texel's four bytes, from three numbers that a linear map holds as they are. */
-function encodeLinear(r: number, g: number, b: number): [number, number, number, number] {
-	return [
-		Math.round(clamp(r, 0, 1) * 255),
-		Math.round(clamp(g, 0, 1) * 255),
-		Math.round(clamp(b, 0, 1) * 255),
-		255,
-	];
-}
-
 /** The two maps of one atlas: its colour map and its surface map.
  *
  * @category api/vegetation
@@ -935,40 +861,261 @@ function slope(
 	return [(-dx * bump) / across, (-dy * bump) / along];
 }
 
+/** How one bark family is cut: its plates, its cracks, its fibre and its colour. */
+interface BarkFamily {
+	/** Plates across and along the cell. A low count makes a broad plate, a high one a fine scale. */
+	readonly across: number;
+	readonly along: number;
+	/** How far the plates warp, how wide a crack runs, and how deep it cuts. */
+	readonly warp: number;
+	readonly crackWidth: number;
+	readonly depth: number;
+	/** How strongly the fibres and the fine noise break the surface. */
+	readonly fibre: number;
+	/** The darkest and lightest tone of the family, as factors around white. */
+	readonly dark: readonly [number, number, number];
+	readonly light: readonly [number, number, number];
+	/** How much moss the family may carry, from 0 to 1. */
+	readonly moss: number;
+	/** A birch's horizontal lenticels, or a willow's vertical ridges. */
+	readonly lenticels?: boolean;
+	readonly ridges?: boolean;
+}
+
+/** The six bark families, in the order that the atlas lays them out. */
+const BARK_FAMILIES: Readonly<Record<BarkCellName, BarkFamily>> = {
+	birch: {
+		across: 3,
+		along: 1,
+		warp: 0.5,
+		crackWidth: 0.05,
+		depth: 0.22,
+		fibre: 0.015,
+		dark: [0.72, 0.71, 0.69],
+		light: [1.22, 1.21, 1.18],
+		moss: 0.08,
+		lenticels: true,
+	},
+	pine: {
+		across: 5,
+		along: 2,
+		warp: 0.7,
+		crackWidth: 0.1,
+		depth: 0.6,
+		fibre: 0.04,
+		dark: [0.34, 0.19, 0.1],
+		light: [1.28, 0.78, 0.42],
+		moss: 0.12,
+	},
+	oak: {
+		across: 9,
+		along: 1,
+		warp: 1.1,
+		crackWidth: 0.12,
+		depth: 0.8,
+		fibre: 0.03,
+		dark: [0.24, 0.21, 0.19],
+		light: [1.02, 0.97, 0.9],
+		moss: 0.22,
+	},
+	beech: {
+		across: 2,
+		along: 1,
+		warp: 0.35,
+		crackWidth: 0.04,
+		depth: 0.16,
+		fibre: 0.008,
+		dark: [0.66, 0.65, 0.63],
+		light: [1.14, 1.13, 1.1],
+		moss: 0.05,
+	},
+	spruce: {
+		across: 5,
+		along: 2,
+		warp: 0.65,
+		crackWidth: 0.07,
+		depth: 0.5,
+		fibre: 0.05,
+		dark: [0.31, 0.22, 0.16],
+		light: [1.08, 0.86, 0.68],
+		moss: 0.12,
+	},
+	willow: {
+		across: 8,
+		along: 1,
+		warp: 1.2,
+		crackWidth: 0.09,
+		depth: 0.55,
+		fibre: 0.02,
+		dark: [0.34, 0.32, 0.29],
+		light: [1.1, 1.05, 0.98],
+		moss: 0.28,
+		ridges: true,
+	},
+};
+
+/** The nearest bark plate's distance, the next one's, and a number of the nearest plate. */
+function plates(x: number, y: number, across: number, along: number): [number, number, number] {
+	const wholeX = Math.floor(x);
+	const wholeY = Math.floor(y);
+	const partX = x - wholeX;
+	const partY = y - wholeY;
+	let first = 8;
+	let second = 8;
+	let near = 0;
+	for (let oy = -1; oy <= 1; oy++)
+		for (let ox = -1; ox <= 1; ox++) {
+			// The lattice wraps by its own counts, so the plate pattern repeats exactly with the cell.
+			const cellX = (((wholeX + ox) % across) + across) % across;
+			const cellY = (((wholeY + oy) % along) + along) % along;
+			const atX = random2(cellX, cellY);
+			const atY = random2(cellX + 31, cellY + 17);
+			const dx = ox + atX - partX;
+			const dy = oy + atY - partY;
+			const d = Math.hypot(dx, dy);
+			if (d < first) {
+				second = first;
+				first = d;
+				near = random2(cellX + 7, cellY + 3);
+			} else if (d < second) second = d;
+		}
+	return [first, second, near];
+}
+
+/** A noise that repeats with the cell: a sum of sines at whole cycles across and along it. */
+function periodicBark(u: number, v: number, across: number, along: number, seed: number): number {
+	const first = Math.sin(2 * Math.PI * (across * u) + seed * 1.7);
+	const second = Math.sin(2 * Math.PI * (along * v) + seed * 3.1);
+	const third = Math.sin(2 * Math.PI * ((across + 1) * u + along * v) + seed * 5.3);
+	return 0.5 + 0.22 * first + 0.18 * second + 0.1 * third;
+}
+
+/** The bark's plate coordinates at a point, warped by noise, and the nearest plate's number. */
+function barkPlates(u: number, v: number, family: BarkFamily): [number, number, number] {
+	// A warp built from sines of whole cycles wraps with the cell, so a bark tile's seam does not
+	// show where the pattern repeats.
+	const warp =
+		(Math.sin(2 * Math.PI * (2 * u) + 1.3) + Math.sin(2 * Math.PI * (3 * v) + 2.1)) *
+		0.5 *
+		family.warp;
+	const across = (u * family.across) % family.across;
+	const along = (v * family.along) % family.along;
+	const [first, second, near] = plates(across + warp, along, family.across, family.along);
+	return [first, second, near];
+}
+
+/** A birch's lenticels: short horizontal dashes where the bark's pores open. */
+function lenticel(u: number, v: number): number {
+	const band = Math.floor(v * 18);
+	const shift = random2(band, 3) * 4;
+	const along = teethWave(v * 18);
+	const marks = smoothstep(0.62, 0.9, fbm2(u * 6 + shift, band * 5.3, 2));
+	return marks * (1 - smoothstep(0.1, 0.35, along));
+}
+
+/** A willow's ridges: long vertical furrows, broken by the same slow noise as its plates. */
+function ridge(u: number, v: number): number {
+	const across = Math.sin(u * Math.PI * 18 + fbm2(u * 4, v * 3, 2) * 3);
+	return smoothstep(0.55, 1, Math.abs(across)) * (0.5 + 0.5 * fbm2(u * 9, v * 2, 2));
+}
+
+/** The bark's height at a point of its own tiling coordinates. */
+function barkHeight(u: number, v: number, family: BarkFamily): number {
+	const [first, second, near] = barkPlates(u, v, family);
+	const crack = smoothstep(0, family.crackWidth, second - first);
+	let height = (0.25 + 0.65 * crack) * (0.75 + 0.5 * near);
+	height += (periodicBark(u, v, 45, 9, 1) - 0.5) * family.fibre * crack;
+	height += (periodicBark(u, v, 11, 2, 2) - 0.5) * family.depth * 0.07;
+	if (family.lenticels) height -= lenticel(u, v) * 0.08;
+	if (family.ridges) height += ridge(u, v) * 0.12;
+	return height;
+}
+
+/** How much light a bark point reflects, as a factor around white. */
+function barkColorAt(
+	u: number,
+	v: number,
+	height: number,
+	plate: number,
+	family: BarkFamily,
+): [number, number, number] {
+	const mix = clamp(height, 0, 1);
+	const shade = 0.72 + 0.52 * plate;
+	const feature = family.lenticels
+		? 1 - 0.45 * lenticel(u, v)
+		: family.ridges
+			? 1 - 0.25 * (1 - ridge(u, v))
+			: 1;
+	const moss = smoothstep(0.55, 0.85, periodicBark(u, v, 2, 1, 3)) * family.moss;
+	return [0, 1, 2].map((channel) => {
+		const dark = family.dark[channel] as number;
+		const light = family.light[channel] as number;
+		const base = dark + (light - dark) * mix;
+		const withMoss = base * shade * feature * (1 - moss) + [0.62, 0.85, 0.42][channel]! * moss;
+		return withMoss;
+	}) as [number, number, number];
+}
+
+/** The sRGB code of a linear value, from 0 to 1, as a colour map's texel holds it. */
+function encode(value: number): number {
+	const v = clamp(value, 0, 1);
+	return Math.round((v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055) * 255);
+}
+
+/** A texel's four bytes, from three numbers that a linear map holds as they are. */
+function encodeLinear(r: number, g: number, b: number): [number, number, number, number] {
+	return [
+		Math.round(clamp(r, 0, 1) * 255),
+		Math.round(clamp(g, 0, 1) * 255),
+		Math.round(clamp(b, 0, 1) * 255),
+		255,
+	];
+}
+
 /**
- * Paints the bark's two maps: its colour as a factor around white, and a surface of the normal and
- * the roughness that lies under it.
+ * Paints the bark's two maps: each family's colour as a factor around white, and a surface of the
+ * normal and the roughness that lies under it. The block holds six cells, one for each family; the
+ * bark of a branch samples its own species' cell and repeats within it.
  *
  * @returns The colour and the surface map.
  * @category api/vegetation
  */
 export function paintBark(): PaintedAtlas {
-	const size = BARK_SIZE;
-	const color = new Uint8Array(size * size * 4);
-	const surface = new Uint8Array(size * size * 4);
-	const heights = heightField(size, size, (x, y) => barkHeight(x / size, y / size));
-	for (let y = 0; y < size; y++)
-		for (let x = 0; x < size; x++) {
-			const u = x / size;
-			const v = y / size;
-			const [, , near] = barkPlates(u, v);
-			const tint = barkColorAt(u, v, heights[y * size + x] ?? 0, near);
-			const at = (y * size + x) * 4;
-			color[at] = encode(tint[0]);
-			color[at + 1] = encode(tint[1]);
-			color[at + 2] = encode(tint[2]);
-			color[at + 3] = 255;
-			const [nx, ny] = slope(heights, size, size, x, y, BUMP_BARK * size, true);
-			const length = Math.hypot(nx, ny, 1);
-			const roughness = 0.72 + 0.25 * fbm2(u * 40, v * 5, 2);
-			surface[at] = Math.round(clamp((nx / length) * 0.5 + 0.5, 0, 1) * 255);
-			surface[at + 1] = Math.round(clamp((ny / length) * 0.5 + 0.5, 0, 1) * 255);
-			surface[at + 2] = Math.round(clamp(roughness, 0, 1) * 255);
-			surface[at + 3] = 255;
-		}
+	const width = BARK_WIDTH;
+	const height = BARK_HEIGHT;
+	const color = new Uint8Array(width * height * 4);
+	const surface = new Uint8Array(width * height * 4);
+	const names = Object.keys(BARK_FAMILIES) as BarkCellName[];
+	for (const [kind, name] of names.entries()) {
+		const family = BARK_FAMILIES[name];
+		const col = kind % BARK_CELLS_X;
+		const row = Math.floor(kind / BARK_CELLS_X);
+		const heights = heightField(BARK_SIZE, BARK_SIZE, (x, y) =>
+			barkHeight(x / BARK_SIZE, y / BARK_SIZE, family),
+		);
+		for (let y = 0; y < BARK_SIZE; y++)
+			for (let x = 0; x < BARK_SIZE; x++) {
+				const u = x / BARK_SIZE;
+				const v = y / BARK_SIZE;
+				const [, , near] = barkPlates(u, v, family);
+				const tint = barkColorAt(u, v, heights[y * BARK_SIZE + x] ?? 0, near, family);
+				const at = ((row * BARK_SIZE + y) * width + col * BARK_SIZE + x) * 4;
+				color[at] = encode(tint[0]);
+				color[at + 1] = encode(tint[1]);
+				color[at + 2] = encode(tint[2]);
+				color[at + 3] = 255;
+				const [nx, ny] = slope(heights, BARK_SIZE, BARK_SIZE, x, y, BUMP_BARK * BARK_SIZE, true);
+				const length = Math.hypot(nx, ny, 1);
+				const roughness = 0.72 + 0.25 * periodicBark(u, v, 20, 2, 5);
+				surface[at] = Math.round(clamp((nx / length) * 0.5 + 0.5, 0, 1) * 255);
+				surface[at + 1] = Math.round(clamp((ny / length) * 0.5 + 0.5, 0, 1) * 255);
+				surface[at + 2] = Math.round(clamp(roughness, 0, 1) * 255);
+				surface[at + 3] = 255;
+			}
+	}
 	return {
-		color: { width: size, height: size, data: color },
-		surface: { width: size, height: size, data: surface },
+		color: { width, height, data: color },
+		surface: { width, height, data: surface },
 	};
 }
 
