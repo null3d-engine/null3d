@@ -552,13 +552,17 @@ const WILLOW: Species = {
 	branchLevels: [
 		level({
 			children: 6,
-			prune: 0.08,
+			// Every limb grows: a pruned one leaves a gap in a crown of six, and a weeping willow's
+			// curtains hang from every limb it has.
+			prune: 0.02,
 			length: 12,
 			lengthVariance: 0.12,
 			angle: 0,
 			angleVariance: 0,
-			curve: 20,
-			curveVariance: 10,
+			// The bole rises nearly straight and the curtains hang from the boughs: a bole that swept
+			// twenty degrees carried the whole crown into a C, and the reference's crown is round.
+			curve: 6,
+			curveVariance: 3,
 			taper: 0.11,
 			start: 0,
 			end: 1,
