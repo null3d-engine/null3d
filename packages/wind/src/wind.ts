@@ -238,9 +238,10 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		const owed = Math.floor((now() - solved) / step + 1e-6);
 		if (owed <= 0) return 0;
 		const cycles = Math.min(owed, MAX_CYCLES);
-		// A stall that owes more than one frame runs skips the air that it missed. Crediting only
-		// the cycles that ran would leave a debt, and every later frame would pay it.
-		solved = owed > MAX_CYCLES ? now() : solved + cycles * step;
+		// A held page steps its sketch many times and draws only the last frame, so the cycles that
+		// the steps between ran do not reach the GPU. The time stays owed until a frame draws it, so
+		// the one drawn frame runs the air for the whole hold instead of its last step alone.
+		if (!ctx.time.held) solved = owed > MAX_CYCLES ? now() : solved + cycles * step;
 		return cycles * cycleSteps();
 	};
 
