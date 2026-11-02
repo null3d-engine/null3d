@@ -343,9 +343,7 @@ export function plantMaterial(
 		swayDistance: wind?.swayDistance ?? 0,
 	};
 	const fields = {
-		cells: [atlases.leaf.cells[0], atlases.leaf.cells[1]] as [number, number],
 		cell: [cell[0], cell[1]] as [number, number],
-		barkCells: [BARK_CELLS_X, BARK_CELLS_Y] as [number, number],
 		barkCell: BARK_CELLS_BY_KIND[options.barkCell ?? 'beech'],
 		part: leaves ? 1 : 0,
 		tiles: options.barkTiles ?? 3,

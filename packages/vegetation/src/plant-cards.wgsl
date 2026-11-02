@@ -13,6 +13,10 @@
 
 var barkColor: texture_2d<f32>;
 var barkSurface: texture_2d<f32>;
+/// The leaf and bark atlases' cells across and down, which the painter fixes.
+const LEAF_CELLS = vec2f(6.0, 2.0);
+const BARK_CELLS = vec2f(3.0, 2.0);
+
 var leafColor: texture_2d<f32>;
 var leafSurface: texture_2d<f32>;
 // The plant's branch records: four texels a record, fetched by the branch index that the vertex
@@ -210,12 +214,9 @@ fn wind_sample(world: vec3f, origin: vec2f, size: f32, layer: i32, air: WindAir)
 // </wind-sample>
 
 struct Uniforms {
-    /// The leaf atlas's cells across and down.
-    cells: vec2f,
     /// The leaf cell that this material draws: its column and row.
     cell: vec2f,
-    /// The bark atlas's cells across and down, and the bark cell that this material draws.
-    barkCells: vec2f,
+    /// The bark cell that this material draws: its column and row.
     barkCell: vec2f,
     /// 0 draws a trunk's bark and 1 a crown's leaves.
     part: f32,
@@ -408,10 +409,10 @@ fn surface(input: SurfaceInput) -> Surface {
 
     // A texture sample belongs to uniform control flow, so every map is read and the part picks one
     // afterwards. A leaf's card reads its own cell of the atlas, and the bark tiles.
-    let leafPlace = (material.cell + clamp(input.uv, vec2f(0.0), vec2f(1.0))) / material.cells;
+    let leafPlace = (material.cell + clamp(input.uv, vec2f(0.0), vec2f(1.0))) / LEAF_CELLS;
     // The bark repeats within its own cell, so the pattern tiles without crossing into a
     // neighbouring family's bark.
-    let barkPlace = (material.barkCell + fract(input.uv * material.tiles)) / material.barkCells;
+    let barkPlace = (material.barkCell + fract(input.uv * material.tiles)) / BARK_CELLS;
     let leafColorSample = textureSample(leafColor, leafColorSampler, leafPlace);
     let leafSurfaceSample = textureSample(leafSurface, leafSurfaceSampler, leafPlace);
     let barkColorSample = textureSample(barkColor, barkColorSampler, barkPlace);
