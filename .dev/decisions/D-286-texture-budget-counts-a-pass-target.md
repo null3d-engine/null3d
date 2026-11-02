@@ -1,8 +1,8 @@
 # D-286: The texture budget counted a pass's target, so a second draw dropped levels
 
-Status: decided by the owner, and built. M3-R41 owns it. The fix is a filter in the budget's
-projection and a unit test. The frame and device figures that the task's done line asks for are
-owed a run of the browser and the cloud devices.
+Status: built, and owned by M3-R41. The fix is a filter in the budget's projection and a unit test.
+The frame and device figures that the task's done line asks for are owed a run of the browser and
+the cloud devices.
 
 Summary: The texture memory budget measured two different things. The figure that a page reads,
 `quality.textureMemory.bytes`, holds the texture arrays alone. A pass's target belongs to the render
@@ -54,6 +54,11 @@ together. A temporary instrumentation of the WebGL2 backend split that figure on
 read 87 to 150 KB a frame of buffer writes. The rest were texture uploads of a compressed model
 texture.
 
+The same scene read 287.1 ms on the iPad Pro 13, against the head's 31.06 ms on the same device and
+path. Both rows were measured before the fix ([the branch's
+run](../tested-devices/ipad-pro-13-safari/20261101-080738-vegetation.md), [the
+head's](../tested-devices/ipad-pro-13-safari/20261101-091901-vegetation.md)).
+
 The figures name a burst rather than a cost of every frame. The upload budget is 2 MiB a frame at
 Low and 4 MiB at Medium. The two figures are those allowances spent whole. Three frames could not
 show whether the burst ended. The unit test below shows the decision that started it. A run of the
@@ -89,6 +94,24 @@ pass target takes no room of the textures. The unit test
 loads again. The texture takes half a megabyte of an 8 MiB budget, and the test adds a pass target of
 1600 by 900. It drops no level, asks for no load again and uploads nothing after its first frame.
 With the filter removed, the same test drops two levels.
+
+## The pictures
+
+The fix moves no picture. The terrain, water and creek tests were drawn on WebGPU, compatibility
+mode and WebGL2. `terrain`, `demo-terrain`, `water-shores`, `transmission-water` and `demo-water` on
+WebGPU matched their references, which predate the fix. The fix moved no pixel there.
+
+The other fourteen differ from their references, and those were drawn again at the commit before
+the fix. Each pair of drawings matches to 0.000 per cent. Two compatibility-mode pictures read 0.051 and
+0.001 per cent, which is the noise of two separate runs. So those references were owed a redraw
+before this fix.
+
+Three `water-bounds` pages timed out under the load of four parallel tests and drew no frame, so
+they are no evidence either way.
+
+On WebGL2 the Creek water-close picture draws its trees near black, where its WebGPU and
+compatibility drawings shade the same trees. That darkness predates the fix, and it owes a look of
+its own before a reference is drawn over it.
 
 ## What a fix must show
 
