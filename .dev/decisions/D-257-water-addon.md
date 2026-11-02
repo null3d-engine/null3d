@@ -8,8 +8,9 @@ Summary: `@null3d/water` draws a river and a lake from one shape and an open sea
 with waves, ripples, caustics, foam, soft shores, a reflection and an underwater view. The surface
 reads the copy of the scene's depth, or the bed that the shape describes, so a shore fades against
 the bed. The reflection's cadence is a feature setting of the preset and the governor. The current
-carries the whole wave set downstream, so every crest moves with the river. The Creek draws its
-water and its underwater view through the add-on, and keeps no water code of its own.
+carries the whole wave set downstream, so every crest moves with the river. A page sets the surface's
+height, so a slow stream draws nearly flat and keeps its fine ripples. The Creek draws its water and
+its underwater view through the add-on, and keeps no water code of its own.
 
 ## Question
 
@@ -64,6 +65,16 @@ reach and the foam. Measured over a band, the same gap gives the soft shore, whi
 instead of ending on the mesh's edge. A call told `bed: 'shape'` instead carries each vertex's bed
 depth in its color, and the surface reads that. The surface draws both faces, and its back face
 shows the window overhead.
+
+**The surface's height.** A page asks for a gentle surface with `waveAmplitude`. It scales the long
+waves and the wind's lift. The fine ripples keep the strength that `ripple` gives them. So the
+surface can lie nearly flat and still ripple. The view from under the water reads the same
+waterline. The Creek's water takes a tenth of the base height. At its default wind of 4 m/s the
+lift reaches 0.14 m at a crest, against 0.044 m for the three long waves together. The wind's lift
+therefore dominates the height, and the long waves set the crossing crests at 1 m to 3 m. The four
+Creek pictures draw the calmer surface, and the Mac's references are redrawn. Those references were
+already stale for the valley's new plants, so the redrawn set holds both changes. The software set
+is owed to a CI run.
 
 **The reflection cadence.** The pass redraws every other frame on Low and Medium and every frame on
 High and Ultra, and a caller may give its own cadence. [The cadence through the feature
