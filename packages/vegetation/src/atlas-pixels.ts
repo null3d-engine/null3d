@@ -199,9 +199,9 @@ interface LeafShape extends LeafFamily {
 	readonly skew: number;
 	/** How far the veins stand out of the blade. */
 	readonly veinStrength: number;
-	/** The brightness of the leaf's own colour, and how far it leans from green to yellow. */
+	/** The brightness of the leaf's own colour, and how much that brightness varies. */
 	readonly brightness: number;
-	readonly warmth: number;
+	readonly variation: number;
 	/** How much light the leaf's body lets through. */
 	readonly thickness: number;
 }
@@ -221,7 +221,7 @@ function leafShape(seed: number, family: LeafFamily): LeafShape {
 		skew: (at(8) * 2 - 1) * 0.08,
 		veinStrength: 0.5 + 0.5 * at(9),
 		brightness: 0.55 + 0.55 * at(10),
-		warmth: (at(11) * 2 - 1) * 0.75,
+		variation: (at(11) * 2 - 1) * 0.75,
 		thickness: 0.55 + 0.3 * at(12),
 	};
 }
@@ -402,18 +402,22 @@ function leafPaint(leaf: PlacedLeaf, cardX: number, cardY: number, spot: LeafSpo
 		blotch *
 		rim;
 	const shade = light * (1 - 0.14 * vein) + 0.12 * midrib * light;
-	// Each leaf leans towards yellow or towards a deeper green, and a slow blotch shifts its hue
-	// again, so one leaf is not one flat colour.
-	const hue = value2(cardX * 3 + leaf.seed * 11.7, cardY * 3 + leaf.seed * 5.3) - 0.5;
-	const warmth = clamp(shape.warmth + hue * 0.5, -1, 1);
-	const red = shade * (1 + 0.16 * warmth);
-	const blue = shade * (1 - 0.24 * warmth);
-	// The brightest channel is kept at or below white, so a warm leaf shows its hue instead of
+	// Each leaf varies in brightness and not in hue. The atlas serves every species colour, so the
+	// variation has no channel of its own to lean toward: a blue leaf varies toward a paler blue,
+	// and a green one toward a paler green. A slow blotch moves the brightness again, so one leaf
+	// is not one flat tone.
+	const blotchHue = value2(cardX * 3 + leaf.seed * 11.7, cardY * 3 + leaf.seed * 5.3) - 0.5;
+	const variation = clamp(shape.variation + blotchHue * 0.5, -1, 1);
+	const lean = 1 + 0.18 * variation;
+	const red = shade * lean;
+	const blue = shade * lean;
+	const green = shade * lean;
+	// The brightest channel is kept at or below white, so a bright leaf keeps its tint instead of
 	// clipping to a pastel.
-	const top = Math.max(red, shade, blue);
+	const top = Math.max(red, green, blue);
 	const norm = top > 1 ? 1 / top : 1;
 	return {
-		color: [red * norm, shade * norm, blue * norm],
+		color: [red * norm, green * norm, blue * norm],
 		height,
 		thickness: shape.thickness * (1 - 0.3 * edge),
 	};
@@ -459,7 +463,8 @@ function stemDistance(cardX: number, cardY: number, lean: number, half: number):
 function stemPoint(distance: number, cardY: number): LeafPoint {
 	const shade = 0.5 + 0.12 * cardY;
 	return {
-		color: [shade, shade * 1.12, shade * 0.72],
+		// The stem is a neutral tone, so it takes the species' own colour as the leaves do.
+		color: [shade, shade, shade],
 		alpha: cover(distance, LEAF_EDGE),
 		height: 0.3 + 0.12 * cardY,
 		thickness: 0.5,

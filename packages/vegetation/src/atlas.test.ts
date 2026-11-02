@@ -160,6 +160,24 @@ describe('the painted leaves', () => {
 		}
 	});
 
+	it('varies a leaf brightness without a hue of its own', () => {
+		const atlas = paintLeaf();
+		const sums = [0, 0, 0];
+		let covered = 0;
+		for (let at = 0; at < atlas.color.data.length; at += 4) {
+			if ((atlas.surface.data[at + 2] ?? 0) < 200) continue;
+			for (let channel = 0; channel < 3; channel++)
+				sums[channel] = (sums[channel] as number) + (atlas.color.data[at + channel] as number);
+			covered += 1;
+		}
+		expect(covered).toBeGreaterThan(1000);
+		const means = sums.map((sum) => (sum as number) / covered);
+		// The colour map multiplies the species' colour, so its leaves average neutral: no channel
+		// may sit above the others, or a blue leaf would vary toward a green one.
+		expect(Math.abs((means[0] as number) - (means[1] as number))).toBeLessThan(3);
+		expect(Math.abs((means[1] as number) - (means[2] as number))).toBeLessThan(3);
+	});
+
 	it('writes a normal that points out of the leaf', () => {
 		const surface = paintLeaf().surface;
 		let inside = 0;
