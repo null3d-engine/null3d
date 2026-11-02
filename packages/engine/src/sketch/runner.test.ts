@@ -580,6 +580,17 @@ describe('SketchRunner', () => {
 		expect(shadowCalls().at(-1)).toEqual(['setShadowQuality', 3, 1, false, 0.2]);
 	});
 
+	it("moves the canvas to the lower preset's anti-aliasing mode when the check lowers the preset", async () => {
+		const { runner, context, calls } = await start(() => ({}));
+		const moves = () => calls.filter((call) => call[0] === 'setCanvasOutput');
+		expect(moves()).toEqual([]);
+		// The check's step is the runner's own, not part of a sketch's quality API.
+		const quality = context.quality as unknown as { lower(): Promise<void> };
+		await quality.lower();
+		runner.step(1000 / 60);
+		expect(moves()).toEqual([['setCanvasOutput', FORMAT_RGBA16_FLOAT, C.ANTIALIAS_FXAA]]);
+	});
+
 	it('moves an 8-bit device to HDR color for the subsurface blur only once the page or the sketch gives it taps', async () => {
 		const eightBit = { sceneColor: FORMAT_CANVAS, antialias: C.ANTIALIAS_MSAA };
 		const high: QualityStart = { ...MEDIUM, preset: 'high', settings: presetSettings('high') };

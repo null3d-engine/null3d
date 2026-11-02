@@ -167,7 +167,18 @@ describe('SketchQuality', () => {
 		expect(quality.takeChange()).toBe(RESTART_CHANGE);
 	});
 
-	it('keeps the settings fixed when the engine starts through setPreset and the check', async () => {
+	it("keeps the lower preset's anti-aliasing mode when a later setPreset changes the preset", async () => {
+		const { quality } = medium();
+		await quality.lower();
+		expect(quality.settings.antialias).toBe('fxaa');
+		// A device cannot take a heavier mode than the one it draws with, so the setting stays on
+		// the mode that the canvas draws, whatever preset comes next.
+		await quality.setPreset('high');
+		expect(quality.preset).toBe('high');
+		expect(quality.settings.antialias).toBe('fxaa');
+	});
+
+	it("keeps the settings fixed when the engine starts through setPreset, and the check takes the lower preset's anti-aliasing", async () => {
 		const { quality } = medium();
 		await quality.setPreset('ultra');
 		expect(quality.settings.antialias).toBe(MEDIUM.antialias);
@@ -175,7 +186,8 @@ describe('SketchQuality', () => {
 		await quality.lower();
 		await quality.lower();
 		expect(quality.preset).toBe('low');
-		expect(quality.settings.antialias).toBe(MEDIUM.antialias);
+		// A device can move to a lighter mode while it runs, so the check's lower preset gives it.
+		expect(quality.settings.antialias).toBe('fxaa');
 	});
 
 	it('keeps the lowest render scale at or below the highest', async () => {
@@ -211,7 +223,8 @@ describe('SketchQuality.lower', () => {
 		const { quality, applied, settled } = medium();
 		await quality.lower();
 		expect(quality.preset).toBe('low');
-		expect(quality.settings).toEqual(fromMedium('low'));
+		// The device moves to the lower preset's anti-aliasing mode, which costs less to draw.
+		expect(quality.settings).toEqual(fromMedium('low', { antialias: 'fxaa' }));
 		expect(applied.at(-1)?.preset).toBe('low');
 		expect(settled.count).toBe(1);
 		expect(quality.takeRestart()).toBe(true);
@@ -261,7 +274,7 @@ describe('SketchQuality.lower', () => {
 			maxAnisotropy: 16,
 			textureMemoryMiB: low.textureMemoryMiB,
 			uploadBytesPerFrame: MEDIUM.uploadBytesPerFrame,
-			antialias: MEDIUM.antialias,
+			antialias: low.antialias,
 			momentTransparency: MEDIUM.momentTransparency,
 			shadowCascades: MEDIUM.shadowCascades,
 			shadowMapSize: MEDIUM.shadowMapSize,
@@ -297,6 +310,7 @@ describe('SketchQuality.lower', () => {
 			'lodFade',
 			'physicalSky',
 			'parallax',
+			'antialias',
 			'lightFit',
 		]);
 	});
