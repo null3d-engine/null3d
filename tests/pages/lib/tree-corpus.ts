@@ -687,8 +687,101 @@ const PALM: Species = {
 	seedSalt: 106,
 };
 
+/**
+ * A bamboo: many slender canes from one base, their leaf sprays high up. No corpus photograph
+ * covers it, so it proves the archetype's shape and stays unreviewed until a picture names it.
+ */
+const BAMBOO: Species = {
+	id: 'review-bamboo',
+	kind: 'shrub',
+	branchLevels: [
+		level({
+			children: 4,
+			prune: 0.5,
+			length: 8,
+			lengthVariance: 0.18,
+			angle: 0,
+			angleVariance: 0,
+			curve: 4,
+			curveVariance: 2,
+			taper: 0.03,
+			start: 0,
+			end: 1,
+			sides: 6,
+			segments: 10,
+			twist: 0,
+		}),
+		level({
+			children: 2,
+			prune: 0.2,
+			length: 1.6,
+			lengthVariance: 0.25,
+			angle: 45,
+			angleVariance: 14,
+			curve: 20,
+			curveVariance: 10,
+			taper: 0.008,
+			start: 0.55,
+			end: 1,
+			sides: 3,
+			segments: 4,
+			twist: 90,
+			upright: 30,
+		}),
+		level({
+			children: 0,
+			prune: 0,
+			length: 0.5,
+			lengthVariance: 0.2,
+			angle: 50,
+			angleVariance: 16,
+			curve: 12,
+			taper: 0.003,
+			start: 0.1,
+			end: 1,
+			sides: 3,
+			segments: 2,
+			twist: 0,
+		}),
+	],
+	crown: { shape: 'flame', start: 0.45, spread: 0.25, pull: 0.1, floor: 0.25 },
+	leaf: {
+		kind: 'cluster',
+		cell: 'cluster-d',
+		cards: 8,
+		width: 0.18,
+		height: 0.4,
+		perCard: 8,
+		up: 0.7,
+		out: 0.9,
+		start: 0.1,
+		end: 1,
+		depth: 2,
+	},
+	wind: { stiffness: [0.12, 0.5, 0.8], flutter: 0.03, frequency: 2.2 },
+	color: { bark: [0.32, 0.3, 0.16], leaf: [0.16, 0.32, 0.08], tint: 0.08, transmission: 0.35 },
+	height: 8,
+	trunks: 18,
+	stemLean: 0.06,
+	heightVariance: 0.2,
+	size: [0.8, 1.2],
+	flare: 0.2,
+	levels: 2,
+	variants: 6,
+	seedSalt: 107,
+};
+
 /** The trees of the woodland review, in the order that its page draws them. */
-export const REVIEW_TREES: readonly Species[] = [SPRUCE, PINE, ASPEN, OAK, CLUMP_OAK, WILLOW, PALM];
+export const REVIEW_TREES: readonly Species[] = [
+	SPRUCE,
+	PINE,
+	ASPEN,
+	OAK,
+	CLUMP_OAK,
+	WILLOW,
+	PALM,
+	BAMBOO,
+];
 
 /** The review tree with an id, or undefined when the list has none. */
 export function reviewTree(id: string): Species | undefined {
