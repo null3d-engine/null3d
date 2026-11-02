@@ -27,6 +27,9 @@ pub const ROTATIONS: u32 = 1;
 pub const SCALES: u32 = 2;
 /// The colors of a chunk's rows: four floats for each, linear RGBA.
 pub const COLORS: u32 = 3;
+/// The share of the chunk's surface that each prefix covers, one float for each prefix length.
+/// The add-on measures it when it cuts the chunk.
+pub const COVERAGE: u32 = 4;
 
 /// One chunk's rows, in importance order: its whole count, and the arrays that the add-on wrote.
 #[derive(Debug)]
@@ -36,26 +39,23 @@ struct ChunkRows {
     rotations: Vec<f32>,
     scales: Vec<f32>,
     colors: Vec<f32>,
-    /// The surface that the whole chunk covers, as `cover_of` counts each splat.
-    cover: f32,
-    /// The surface that the first rows cover together, running: entry `i` is the first `i + 1`
-    /// rows' cover. Sealed once when the chunk arrives, so a pack reads a prefix's cover in one
-    /// lookup rather than summing the rows again in every frame.
-    prefix: Vec<f32>,
+    /// The share of the chunk's surface that each prefix covers, from the whole chunk down to one
+    /// splat, at prefix lengths that halve every two steps. The add-on measures it when it cuts
+    /// the chunk, so a pack reads a prefix's share rather than measuring the chunk again.
+    coverage: Vec<f32>,
 }
 
 /// The most that a prefix's splats grow, so a chunk far away never draws as a few large blobs.
 const MOST_GROWTH: f32 = 3.0;
 
-/// The surface that a chunk's `i`th splat covers: its opacity times the area of its largest
-/// cross-section. The TypeScript reference counts it the same way, and a test holds the two equal.
-fn cover_of(scales: &[f32], colors: &[f32], i: usize) -> f32 {
-    let a = scales[i * 3];
-    let b = scales[i * 3 + 1];
-    let c = scales[i * 3 + 2];
-    let alpha = colors[i * 4 + 3].max(0.0);
-    let area = (a * b).max(b * c).max(a * c);
-    area * alpha
+/// The number of prefix shares that a chunk of `count` rows holds: the whole chunk, then each
+/// prefix the square root of two times shorter.
+fn coverage_steps(count: u32) -> usize {
+    if count <= 1 {
+        1
+    } else {
+        (2.0 * (count as f32).log2()).floor() as usize + 1
+    }
 }
 
 impl ChunkRows {
@@ -68,19 +68,19 @@ impl ChunkRows {
             rotations: Vec::new(),
             scales: Vec::new(),
             colors: Vec::new(),
-            cover: 0.0,
-            prefix: Vec::new(),
+            coverage: Vec::new(),
         };
         rows.positions.try_reserve_exact(count * 3)?;
         rows.rotations.try_reserve_exact(count * 4)?;
         rows.scales.try_reserve_exact(count * 3)?;
         rows.colors.try_reserve_exact(count * 4)?;
-        rows.prefix.try_reserve_exact(count)?;
+        rows.coverage
+            .try_reserve_exact(coverage_steps(count as u32))?;
         rows.positions.resize(count * 3, 0.0);
         rows.rotations.resize(count * 4, 0.0);
         rows.scales.resize(count * 3, 0.0);
         rows.colors.resize(count * 4, 0.0);
-        rows.prefix.resize(count, 0.0);
+        rows.coverage.resize(coverage_steps(count as u32), 1.0);
         Ok(rows)
     }
 
@@ -92,7 +92,7 @@ impl ChunkRows {
             vec_bytes(&self.rotations),
             vec_bytes(&self.scales),
             vec_bytes(&self.colors),
-            vec_bytes(&self.prefix),
+            vec_bytes(&self.coverage),
         ] {
             use_.add(array);
         }
@@ -106,6 +106,7 @@ impl ChunkRows {
             ROTATIONS => &self.rotations,
             SCALES => &self.scales,
             COLORS => &self.colors,
+            COVERAGE => &self.coverage,
             _ => return 0,
         };
         if array.is_empty() {
@@ -181,28 +182,6 @@ impl ChunkRowTable {
     /// The address of a chunk's array, or 0 for a cloud, slot or field that holds none.
     pub fn field(&self, cloud: u32, slot: u32, field: u32) -> usize {
         self.chunk(cloud, slot).map_or(0, |rows| rows.field(field))
-    }
-
-    /// Seals a chunk's cover after the add-on has written its arrays: the running cover of its
-    /// prefixes, and the whole chunk's cover. A pack reads a prefix's cover from it, so no frame
-    /// sums a chunk's rows. A slot that holds none, and a chunk whose rows were written again,
-    /// take the seal that their arrays give.
-    pub fn seal(&mut self, cloud: u32, slot: u32) {
-        let Some(rows) = self
-            .clouds
-            .get_mut(cloud as usize)
-            .and_then(Option::as_mut)
-            .and_then(|cloud| cloud.chunks.get_mut(slot as usize))
-            .and_then(Option::as_mut)
-        else {
-            return;
-        };
-        let mut running = 0.0f32;
-        for i in 0..rows.count as usize {
-            running += cover_of(&rows.scales, &rows.colors, i);
-            rows.prefix[i] = running;
-        }
-        rows.cover = running;
     }
 
     /// The number of rows that a chunk holds, or 0 for a slot that holds none.
@@ -322,21 +301,32 @@ impl ChunkRowTable {
     }
 }
 
+/// The share of a chunk's surface that its first `kept` rows cover, read from the table that the
+/// add-on measured, between the two prefix lengths the table holds.
+fn coverage_at(coverage: &[f32], count: usize, kept: usize) -> f32 {
+    if kept >= count || coverage.len() < 2 {
+        return 1.0;
+    }
+    let ratio = count as f32 / kept.max(1) as f32;
+    let step = (2.0 * ratio.log2()).min((coverage.len() - 1) as f32);
+    let low = step.floor() as usize;
+    let high = (low + 1).min(coverage.len() - 1);
+    let t = step - low as f32;
+    coverage[low] * (1.0 - t) + coverage[high] * t
+}
+
 /// The factor that a chunk's first `count` rows grow by, so that together they cover what the
 /// whole chunk covers: 1 for the whole chunk, and at most the cap for a small prefix.
 fn growth_of(rows: &ChunkRows, count: usize) -> f32 {
     if count >= rows.count as usize {
         return 1.0;
     }
-    let kept = rows.prefix.get(count - 1).copied().unwrap_or(0.0);
-    let whole = rows.cover;
-    // A chunk with no cover to gain keeps its own scales, and so does one whose figures are not
-    // numbers, since neither comparison then holds.
-    let gains = kept > 0.0 && whole > kept;
-    if !gains {
-        return 1.0;
+    let share = coverage_at(&rows.coverage, rows.count as usize, count);
+    // A prefix that covers nothing draws as few, large splats as the cap allows.
+    if share <= 0.0 {
+        return MOST_GROWTH;
     }
-    (whole / kept).sqrt().min(MOST_GROWTH)
+    (1.0 / share).sqrt().clamp(1.0, MOST_GROWTH)
 }
 
 #[cfg(test)]
@@ -364,21 +354,19 @@ mod tests {
         }
     }
 
-    /// A chunk of `count` splats, each a unit square at full opacity, so every splat covers 1 and
-    /// the chunk covers `count`.
-    fn covering_chunk(table: &mut ChunkRowTable, slot: u32, count: u32) {
+    /// A chunk of `count` rows whose coverage table is the shares given, as the add-on measured
+    /// them when it cut the chunk.
+    fn chunk_with_shares(table: &mut ChunkRowTable, slot: u32, count: u32, shares: &[f32]) {
         chunk(table, slot, 1.0, count);
+        // Every row starts one unit across, so a test reads the growth as a factor of one.
         let scales = table.field(CLOUD, slot, SCALES) as *mut f32;
-        let colors = table.field(CLOUD, slot, COLORS) as *mut f32;
-        for i in 0..count as usize {
-            unsafe {
-                for axis in 0..3 {
-                    *scales.add(i * 3 + axis) = 1.0;
-                }
-                *colors.add(i * 4 + 3) = 1.0;
-            }
+        for i in 0..count as usize * 3 {
+            unsafe { *scales.add(i) = 1.0 };
         }
-        table.seal(CLOUD, slot);
+        let at = table.field(CLOUD, slot, COVERAGE) as *mut f32;
+        for (i, share) in shares.iter().enumerate() {
+            unsafe { *at.add(i) = *share };
+        }
     }
 
     #[test]
@@ -386,8 +374,8 @@ mod tests {
         // The same file that the TypeScript reference is held to, so the two packs agree on a
         // grown prefix rather than each keeping its own expectations.
         let text = include_str!("../../../packages/splats/src/pack-growth.fixture");
-        let mut scales = Vec::new();
-        let mut alphas = Vec::new();
+        let mut count = 0u32;
+        let mut shares: Vec<f32> = Vec::new();
         let mut expected = Vec::new();
         for line in text.lines() {
             let line = line.trim();
@@ -396,11 +384,13 @@ mod tests {
             }
             let parts: Vec<&str> = line.split_whitespace().collect();
             match parts.first().copied() {
-                Some("splat") => {
-                    for value in parts.iter().take(4).skip(1) {
-                        scales.push(value.parse::<f32>().expect("a scale"));
-                    }
-                    alphas.push(parts[4].parse::<f32>().expect("an alpha"));
+                Some("count") => count = parts[1].parse::<u32>().expect("a count"),
+                Some("coverage") => {
+                    shares = parts
+                        .iter()
+                        .skip(1)
+                        .map(|value| value.parse::<f32>().expect("a share"))
+                        .collect()
                 }
                 Some("expect") => expected.push((
                     parts[1].parse::<usize>().expect("a prefix"),
@@ -409,20 +399,8 @@ mod tests {
                 _ => {}
             }
         }
-        let count = alphas.len() as u32;
         let mut table = ChunkRowTable::default();
-        table.prepare(CLOUD, 0, count).unwrap();
-        let to_scales = table.field(CLOUD, 0, SCALES) as *mut f32;
-        let to_colors = table.field(CLOUD, 0, COLORS) as *mut f32;
-        for i in 0..count as usize {
-            unsafe {
-                for axis in 0..3 {
-                    *to_scales.add(i * 3 + axis) = scales[i * 3 + axis];
-                }
-                *to_colors.add(i * 4 + 3) = alphas[i];
-            }
-        }
-        table.seal(CLOUD, 0);
+        chunk_with_shares(&mut table, 0, count, &shares);
         let rows = table.chunk(CLOUD, 0).expect("the chunk was just written");
         for (prefix, growth) in expected {
             let got = growth_of(rows, prefix);
@@ -436,7 +414,8 @@ mod tests {
     #[test]
     fn a_prefix_grows_the_splats_it_keeps_to_cover_the_chunk() {
         let mut table = ChunkRowTable::default();
-        covering_chunk(&mut table, 0, 4);
+        // The whole chunk covers 1, and its first quarter covers a quarter of that.
+        chunk_with_shares(&mut table, 0, 4, &[1.0, 0.8, 0.5, 0.35, 0.25]);
         let mut batch = batch(8);
         // A quarter of the chunk covers a quarter of its surface, so each kept splat doubles.
         let packed = table.pack(CLOUD, &mut batch, &[1.0]).unwrap();
@@ -447,7 +426,7 @@ mod tests {
     #[test]
     fn a_whole_chunk_draws_at_its_own_scales() {
         let mut table = ChunkRowTable::default();
-        covering_chunk(&mut table, 0, 4);
+        chunk_with_shares(&mut table, 0, 4, &[1.0, 0.8, 0.5, 0.35, 0.25]);
         let mut batch = batch(8);
         let packed = table.pack(CLOUD, &mut batch, &[4.0]).unwrap();
         assert_eq!(packed, 4);
@@ -457,9 +436,15 @@ mod tests {
     #[test]
     fn a_small_prefix_never_grows_past_the_cap() {
         let mut table = ChunkRowTable::default();
-        covering_chunk(&mut table, 0, 16);
+        chunk_with_shares(
+            &mut table,
+            0,
+            16,
+            &[1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.2, 0.01],
+        );
         let mut batch = batch(16);
-        // A sixteenth of the chunk would quadruple, and the cap holds it at three.
+        // One row of sixteen covers a hundredth of the surface and would grow past four, so the
+        // cap holds it at three.
         table.pack(CLOUD, &mut batch, &[1.0]).unwrap();
         assert_eq!(&batch.scales()[0..3], &[3.0, 3.0, 3.0]);
     }

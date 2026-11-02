@@ -2,29 +2,14 @@
 # packages/splats/src/pack.ts and the core's port in crates/null3d-core/src/chunk_rows.rs. Each
 # reads this file and fails when its own growth leaves these figures.
 #
-# Every splat is a unit square at full opacity, so it covers 1 and the whole chunk covers `count`.
-# A prefix of n splats covers n, so its growth is the square root of count over n, capped at 3.
-
+# A chunk of 16 rows, and the share of its surface that each prefix covers, from the whole chunk
+# down to one row. Index i stands for the prefix that is count / 2^(i/2) rows long.
 count 16
-splat 1 1 1 1
-splat 1 1 1 1
-splat 1 1 1 1
-splat 1 1 1 1
-splat 1 1 1 1
-splat 1 1 1 1
-splat 1 1 1 1
-splat 1 1 1 1
-splat 1 1 1 1
-splat 1 1 1 1
-splat 1 1 1 1
-splat 1 1 1 1
-splat 1 1 1 1
-splat 1 1 1 1
-splat 1 1 1 1
-splat 1 1 1 1
+coverage 1 0.9 0.8 0.7 0.6 0.5 0.4 0.2 0.05
 
-# prefix growth: a sixteenth would quadruple and the cap holds it at three, a quarter doubles, and
-# the whole chunk draws at its own scales.
-expect 1 3
-expect 4 2
+# prefix growth: the whole chunk draws at its own scales; a half covers 0.8 of the surface and
+# grows by its square root's inverse; one row covers a twentieth and would grow past four, so the
+# cap holds it at three.
 expect 16 1
+expect 8 1.118033988749895
+expect 1 3

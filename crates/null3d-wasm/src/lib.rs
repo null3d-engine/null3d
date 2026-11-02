@@ -1899,16 +1899,6 @@ pub fn splat_chunk_field(cloud: u32, slot: u32, field: u32) -> u32 {
     value_with_engine(|e| Ok(e.chunk_rows.field(cloud, slot, field) as u32))
 }
 
-/// Seals a chunk's cover once the add-on has written its arrays, so the pack grows a prefix's
-/// splats without summing the chunk again.
-#[wasm_bindgen(js_name = splatChunkSeal)]
-pub fn splat_chunk_seal(cloud: u32, slot: u32) -> u32 {
-    with_engine(|e| {
-        e.chunk_rows.seal(cloud, slot);
-        0
-    })
-}
-
 /// Forgets a chunk, so its slot draws nothing.
 #[wasm_bindgen(js_name = splatChunkDestroy)]
 pub fn splat_chunk_destroy(cloud: u32, slot: u32) -> u32 {

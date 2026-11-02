@@ -285,7 +285,7 @@
 		"test": "splats-budget",
 		"tier": "compat",
 		"date": "2026-11-02",
-		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
+		"reason": "The splats add-on grows a coarse level's splats by the share of the chunk's surface that they leave uncovered, so the knot kept at a quarter of its splats draws at its own thickness; drawn on this Mac's SwiftShader before CI's first run of the branch"
 	},
 	"chromium-swiftshader/compat/splats-gltf.png": {
 		"test": "splats-gltf",
@@ -675,7 +675,7 @@
 		"test": "splats-budget",
 		"tier": "webgl2",
 		"date": "2026-11-02",
-		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
+		"reason": "The splats add-on grows a coarse level's splats by the share of the chunk's surface that they leave uncovered, so the knot kept at a quarter of its splats draws at its own thickness; drawn on this Mac's SwiftShader before CI's first run of the branch"
 	},
 	"chromium-swiftshader/webgl2/splats-gltf.png": {
 		"test": "splats-gltf",
@@ -1059,7 +1059,7 @@
 		"test": "splats-budget",
 		"tier": "webgpu",
 		"date": "2026-11-02",
-		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
+		"reason": "The splats add-on grows a coarse level's splats by the share of the chunk's surface that they leave uncovered, so the knot kept at a quarter of its splats draws at its own thickness; drawn on this Mac's SwiftShader before CI's first run of the branch"
 	},
 	"chromium-swiftshader/webgpu/splats-gltf.png": {
 		"test": "splats-gltf",

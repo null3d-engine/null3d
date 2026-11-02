@@ -100,9 +100,11 @@ writes only the rows that its budget keeps.
 
 `createSplats` cuts a cloud into chunks of nearby splats, each ordered so that its first splats
 cover the most surface: a splat's opacity times the area of its largest cross-section. A prefix of
-a chunk is a coarser level of it: all of it, a half, a quarter and an eighth. A prefix grows the
-splats that it keeps, by the factor that gives them the whole chunk's cover, up to three times, so
-a coarse level draws the same surface with fewer, larger splats rather than a sparse one.
+a chunk is a coarser level of it: all of it, a half, a quarter and an eighth. As a chunk is built,
+the add-on measures how much of the chunk's surface each prefix covers, seen from three directions.
+A prefix grows the splats that it keeps by what it leaves uncovered, up to three times. So a scan's
+ground of small flat splats draws as the same surface with fewer, larger splats rather than a
+sparse one, and a dense cloud whose splats overlap barely grows.
 
 `update` writes the camera's position and asks a job worker, through `runTask`, which prefix each
 chunk draws. Every chunk the budget reaches keeps an eighth of itself first. The budget then

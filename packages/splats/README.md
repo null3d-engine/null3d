@@ -36,7 +36,8 @@ Importing the package also registers the glTF reader, so
   workers, on WebGPU and WebGL2. The splats draw unlit: each pixel is a fade and a blend, with no
   lights, shadows or reflections.
 - A chunk far from the camera draws a prefix of its splats, and the prefix grows the splats it
-  keeps so they still cover the chunk's surface. A scan's colors are its photographs', so show one
+  keeps by the share of the chunk's surface that it leaves uncovered, which the add-on measures as
+  it cuts the chunk. A scan's colors are its photographs', so show one
   with `post.set({ toneMapping: 'none' })`.
 - A splat stream is an index of chunk files: read the index first, then fetch the chunks that the
   view asks for. `chunkSplats` and `encodeSpz` make the files, and `parseStreamIndex` reads an
