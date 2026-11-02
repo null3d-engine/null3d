@@ -222,6 +222,8 @@ struct Uniforms {
     part: f32,
     /// How many times the bark tiles across the mesh's texture coordinates.
     tiles: f32,
+    /// How many times the scar layer repeats for each repeat of the bark.
+    scarTiles: f32,
     /// The linear colour that multiplies the atlas's own, such as a species' colour.
     tint: vec3f,
     /// The plant's height in meters, which its trunk's bend follows.
@@ -426,7 +428,16 @@ fn surface(input: SurfaceInput) -> Surface {
     let barkSurfaceSample = textureSampleGrad(
         barkSurface, barkSurfaceSampler, barkPlace, barkGradX, barkGradY,
     );
-    let color = select(barkColorSample, leafColorSample, leafPart);
+    // A scar rides in the surface map's alpha, and the map is read again at a coarser tiling, so the
+    // knots scatter instead of repeating with the bark's own cells. A bark material reads that
+    // channel for nothing else; a leaf's thickness is the same channel of a leaf's cell.
+    let scarTile = barkTile * material.scarTiles;
+    let scarPlace = (material.barkCell + fract(scarTile)) / BARK_CELLS;
+    let scarSample = textureSampleGrad(
+        barkSurface, barkSurfaceSampler, scarPlace,
+        dpdx(scarTile) / BARK_CELLS, dpdy(scarTile) / BARK_CELLS,
+    );
+    let color = select(barkColorSample * (1.0 - 0.9 * (1.0 - scarSample.a)), leafColorSample, leafPart);
     let surfaceMap = select(barkSurfaceSample, leafSurfaceSample, leafPart);
 
     // The normal's x and y come from the surface map, and its z from the unit length it must keep.

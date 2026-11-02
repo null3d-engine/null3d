@@ -1251,7 +1251,6 @@ function barkHeight(u: number, v: number, family: BarkFamily): number {
 	height += (periodicBark(u, v, 45, 9, 1) - 0.5) * family.fibre * crack;
 	height += (periodicBark(u, v, 11, 2, 2) - 0.5) * family.depth * 0.07;
 	if (family.lenticels) height -= lenticel(u, v, family) * 0.08;
-	height -= barkScar(u, v, family) * 0.05;
 	height += (periodicBark(u, v, 2, 3, 11) - 0.5) * (family.mottle ?? 0);
 	if (family.ridges) height += ridge(u, v) * 0.12;
 	return height;
@@ -1268,8 +1267,7 @@ function barkColorAt(
 	const mix = clamp(height, 0, 1);
 	const shade = 0.72 + 0.52 * plate;
 	const lenticels = family.lenticels ? 1 - 0.7 * lenticel(u, v, family) : 1;
-	const feature =
-		(family.ridges ? 1 - 0.25 * (1 - ridge(u, v)) : lenticels) * (1 - 0.9 * barkScar(u, v, family));
+	const feature = family.ridges ? 1 - 0.25 * (1 - ridge(u, v)) : lenticels;
 	const moss = smoothstep(0.55, 0.85, periodicBark(u, v, 2, 1, 3)) * family.moss;
 	return [0, 1, 2].map((channel) => {
 		const dark = family.dark[channel] as number;
@@ -1328,13 +1326,17 @@ export function paintBark(): PaintedAtlas {
 				color[at + 1] = encode(tint[1]);
 				color[at + 2] = encode(tint[2]);
 				color[at + 3] = 255;
+				// A scar rides in the surface map's alpha, which a bark material does not read: the
+				// shader takes that channel for a leaf's thickness alone. The material samples this
+				// map again at a coarser tiling, so the knots do not repeat with the bark's cells.
+				const scar = barkScar(u, v, family);
 				const [nx, ny] = slope(heights, BARK_SIZE, BARK_SIZE, x, y, BUMP_BARK * BARK_SIZE, true);
 				const length = Math.hypot(nx, ny, 1);
 				const roughness = 0.72 + 0.25 * periodicBark(u, v, 20, 2, 5);
 				surface[at] = Math.round(clamp((nx / length) * 0.5 + 0.5, 0, 1) * 255);
 				surface[at + 1] = Math.round(clamp((ny / length) * 0.5 + 0.5, 0, 1) * 255);
 				surface[at + 2] = Math.round(clamp(roughness, 0, 1) * 255);
-				surface[at + 3] = 255;
+				surface[at + 3] = Math.round((1 - scar) * 255);
 			}
 	}
 	return {

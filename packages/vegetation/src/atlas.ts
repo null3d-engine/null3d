@@ -249,6 +249,11 @@ export interface PlantMaterialOptions {
 	/** How many times the bark tiles across the mesh's texture coordinates. The default is 3. */
 	readonly barkTiles?: number;
 	/**
+	 * How many times the bark's scar layer repeats for each repeat of the bark, so its knots scatter
+	 * rather than repeat with the bark's cells. The default is 0.4.
+	 */
+	readonly barkScarTiles?: number;
+	/**
 	 * Gives the material the leaf-card morph: a crown's cards move to their next level's places
 	 * before the engine switches, so a card that the level drops shrinks and a kept one grows. It
 	 * applies to the leaves alone. Give the object or batch that draws the plant the same
@@ -347,6 +352,7 @@ export function plantMaterial(
 		barkCell: BARK_CELLS_BY_KIND[options.barkCell ?? 'beech'],
 		part: leaves ? 1 : 0,
 		tiles: options.barkTiles ?? 3,
+		scarTiles: options.barkScarTiles ?? 0.55,
 		tint: (options.color ?? [1, 1, 1]) as [number, number, number],
 		height: wind?.height ?? 1,
 		throughLeaf: leaves ? (options.transmission ?? 0.35) : 0,
