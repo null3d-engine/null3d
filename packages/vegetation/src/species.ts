@@ -60,6 +60,12 @@ export interface BranchLevel {
 	 * toward that taper. The default is 0, which keeps the pipe model's radii.
 	 */
 	readonly taperCurve?: number;
+	/**
+	 * How far a branch widens where it leaves its parent, as a share of its own base radius. A limb
+	 * that swells into a trunk reads as massive at the joint; a branch of a fixed share of its
+	 * parent's radius cannot. Leave it out and the branch keeps the pipe model's radius.
+	 */
+	readonly baseFlare?: number;
 	/** Share of the parent's length where children start. */
 	readonly start: number;
 	/** Share of the parent's length where children stop. */
@@ -458,6 +464,11 @@ export function speciesProblems(species: Species): string[] {
 				problems.push(`${at}.segments must be a whole number from 1 to 24.`);
 			if (!finite(level.twist)) problems.push(`${at}.twist must be a number of degrees.`);
 			if (level.taperCurve !== undefined) share(level.taperCurve, `${at}.taperCurve`);
+			if (
+				level.baseFlare !== undefined &&
+				(!finite(level.baseFlare) || level.baseFlare < 0 || level.baseFlare > 8)
+			)
+				problems.push(`${at}.baseFlare must be a number from 0 to 8.`);
 			if (level.whorls !== undefined && (!Number.isInteger(level.whorls) || level.whorls < 0))
 				problems.push(`${at}.whorls must be a whole number from 0.`);
 			if (level.whorlTip !== undefined && typeof level.whorlTip !== 'boolean')
@@ -627,6 +638,7 @@ const LEVEL_FIELDS = [
 	'curveVariance',
 	'taper',
 	'taperCurve',
+	'baseFlare',
 	'start',
 	'end',
 	'sides',
