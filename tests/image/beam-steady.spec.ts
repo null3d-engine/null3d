@@ -23,7 +23,12 @@ const MEAN_SWING = 0.5;
 const PIXEL = 3;
 /** The share of the box's pixels that may move more than that. */
 const SHARE = 0.01;
-/** The least that the lit fog must add to the box's mean over the same scene without it. */
+/**
+ * The least that the lit fog must add to the box's mean over the same scene without it: a liveness
+ * floor for this composition, so a page that lost its beam fails. It moves with the beam's size and
+ * strength, so revisiting them means revisiting it. The scale-free form compares the box with a
+ * fog-only region beside it, which stays honest to a look that narrows the beam.
+ */
 const BEAM_GAIN = 8;
 /** The frames the page draws before the capture starts, so the blend's history settles. */
 const SETTLE_FRAMES = 40;
