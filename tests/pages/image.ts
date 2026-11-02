@@ -43,6 +43,9 @@ run('image', async () => {
 	if (!canvas) throw new Error('the page has no canvas');
 	canvas.style.width = `${width}px`;
 	canvas.style.height = `${height}px`;
+	// The probe's messages, kept in the result so a run of a probed test carries the facts that its
+	// picture cannot show. A test that posts none has an empty list.
+	const probe: unknown[] = [];
 	const engine = await createEngine({
 		canvas,
 		sketch: sketchUrl(sketch),
@@ -53,6 +56,9 @@ run('image', async () => {
 		pointLightShadows: params.has('pointLightShadows') || undefined,
 		morphTargets: params.has('morphTargets') ? Number(params.get('morphTargets')) : undefined,
 		largeWorld: params.has('largeWorld'),
+	});
+	engine.onSketchMessage((type, data) => {
+		if (type === 'probe') probe.push(data);
 	});
 	const frame = await engine.captureFrame();
 	const hold = (globalThis as { __null3dHold?: HoldResult }).__null3dHold;
@@ -68,6 +74,7 @@ run('image', async () => {
 		// whole-level fallback expects false.
 		clusterPatches: hold?.ok ? hold.clusterPatches : null,
 		mode: engine.mode,
+		probe,
 		...depthFacts(engine),
 		width: frame.width,
 		height: frame.height,
