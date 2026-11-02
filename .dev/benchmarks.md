@@ -216,7 +216,7 @@ Add `--shard 2/3` to run only the pages of one shard, as a CI shard does. Each r
 
 When the check reports S4 at High as slower, `bun run bench:gpu-passes` says which pass pays. It runs the same comparison on that one page at that preset, and prints one line per pass: each build's median GPU time per frame, the difference in milliseconds and its share of the baseline. The last line names the largest increase.
 
-It takes the check's `--prepare`, `--measure`, `--base` and `--no-build` options, and its `--runs` and `--seconds`. A browser without a GPU timer gives no pass figures, and the tool says so. A pass that only one build timed has no difference; the tool names it below the table.
+It takes the check's `--prepare`, `--measure`, `--base` and `--no-build` options, and its `--runs` and `--seconds`. It refuses, printing the comparison's lines, when the two builds measured different pages: their pass times do not compare. It also refuses when a run gives no pass figures, as on WebGL2, which draws a frame with no parts, rather than printing an empty table. A pass that only one build timed has no difference; the tool names it below the table.
 
 ## Visual figures and captured frames
 

@@ -689,12 +689,23 @@ export interface ReportContext {
 
 const problemsText = (count: number) => (count === 1 ? 'one problem' : `${count} problems`);
 
+/**
+ * The lines that say why a comparison judges no time: the benchmark pages or the comparison's
+ * switches changed between the builds, so each build drew different work. A tool that reads a
+ * comparison's record refuses on the same lines.
+ */
+export function measurementChangedLines(measurementChanges: readonly string[]): string[] {
+	return [
+		`**Measurement changed**: the run reports every page and judges no time, because the two builds measure in different ways. Main's next run compares with this commit.`,
+		...measurementChanges.map((change) => `- ${change}`),
+	];
+}
+
 /** The verdict's lines of the report. */
 function verdictLines({ pass, failures, unjudged, measurementChanges }: Verdict): string[] {
 	if (measurementChanges.length > 0)
 		return [
-			`**Measurement changed**: the run reports every page and judges no time, because the two builds measure in different ways. Main's next run compares with this commit.`,
-			...measurementChanges.map((change) => `- ${change}`),
+			...measurementChangedLines(measurementChanges),
 			...(failures.length > 0
 				? ['', `**Failed**: ${problemsText(failures.length)}.`, ...failures.map((f) => `- ${f}`)]
 				: []),

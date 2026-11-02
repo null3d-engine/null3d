@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { parseGpuPassesArgs } from '../gpu-passes';
-import { type PassRun, passChanges, passTable } from './gpu-passes';
+import { type PassRun, passChanges, passTable, splitRefusal } from './gpu-passes';
 
 /** A run of one build with each pass's GPU time per frame, in the frame's order. */
 function run(build: 'baseline' | 'new', round: number, passes: Record<string, number>): PassRun {
@@ -70,6 +70,16 @@ describe('the per-pass split', () => {
 		expect(passTable(passChanges([run('baseline', 1, { opaque: 1 })]))).toContain(
 			'No pass has GPU time in both builds.',
 		);
+	});
+});
+
+describe('the per-pass split refusal', () => {
+	test("prints the comparison's lines when the builds measured different pages", () => {
+		expect(splitRefusal([])).toBeNull();
+		const lines = splitRefusal(['the benchmark pages changed: bench/pages/null3d/s4.ts']);
+		expect(lines?.[0]).toContain('**Measurement changed**');
+		expect(lines?.[0]).toContain("Main's next run compares with this commit");
+		expect(lines?.slice(1)).toEqual(['- the benchmark pages changed: bench/pages/null3d/s4.ts']);
 	});
 });
 
