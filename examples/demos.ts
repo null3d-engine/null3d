@@ -161,8 +161,9 @@ export const DEMOS: readonly Demo[] = [
 		controls: SHOWCASE_CONTROLS,
 		hold: 0.5,
 		// A software GPU builds the pipelines of the town, the trees and the water, and draws the
-		// island's first frame slowly. The figure leaves room for a loaded runner.
-		timeoutSeconds: 300,
+		// island's first frame slowly while the heavy shards share a runner. The figure leaves room
+		// for that load.
+		timeoutSeconds: 600,
 	},
 	{
 		name: 'skyway',
