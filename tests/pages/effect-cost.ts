@@ -110,6 +110,8 @@ const repeat = params.get('repeat');
 const clear = params.has('clear');
 /** A sketch's bloom, which the streak reads, off for a case that measures a mark without it. */
 const bloomOff = params.get('bloom') === 'off';
+/** A sketch's reflection, made rare so a smaller cost, such as a transform chain, shows. */
+const reflection = params.get('reflection');
 /** The rounds of each side, with the sides in the opposite order on alternate rounds. */
 const rounds = params.get('rounds');
 if (rounds !== null && !(Number.isSafeInteger(Number(rounds)) && Number(rounds) >= 1))
@@ -132,7 +134,7 @@ run('effect-cost', async () => {
 	const kind = params.get('kind');
 	const area = `${kind === null ? '' : `&kind=${kind}`}${params.has('image') ? '&image' : ''}`;
 	/** The switches that a sketch uses to lift a small cost above the frame's own movement. */
-	const smallCost = `${repeat === null ? '' : `&repeat=${repeat}`}${clear ? '&clear' : ''}${bloomOff ? '&bloom=off' : ''}`;
+	const smallCost = `${repeat === null ? '' : `&repeat=${repeat}`}${clear ? '&clear' : ''}${bloomOff ? '&bloom=off' : ''}${reflection === null ? '' : `&reflection=${reflection}`}`;
 	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${meter === null ? '' : `&meter=${meter}`}${slices === null ? '' : `&slices=${slices}`}${steps === null ? '' : `&steps=${steps}`}${strength === null ? '' : `&strength=${strength}`}${aoScale === null ? '' : `&aoscale=${aoScale}`}${area}${moving ? '&moving' : ''}${base === null ? '' : `&base=${base}`}${fill === null ? '' : `&fill=${fill}`}${background === null ? '' : `&background=${background}`}${night ? '&night' : ''}${look === null ? '' : `&look=${encodeURIComponent(look)}`}${smallCost}`;
 	const engine = await createEngine({
 		canvas,

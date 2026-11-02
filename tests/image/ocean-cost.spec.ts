@@ -20,6 +20,31 @@ test.use(TIMING_BROWSER);
 /** The presets that the test measures, and the switch that names each. */
 const PRESETS = ['low', 'medium', 'high', 'ultra'] as const;
 
+/**
+ * A quiet run's own settings: more rounds and longer sides resolve a cost under a millisecond,
+ * and the reflection at the longest cadence keeps its cost out of the transform's. Each is the
+ * page's own switch, so a run without them measures as before.
+ */
+const EXTRA = [
+	process.env.NULL3D_OCEAN_COST_ROUNDS && `rounds=${process.env.NULL3D_OCEAN_COST_ROUNDS}`,
+	process.env.NULL3D_OCEAN_COST_SECONDS && `seconds=${process.env.NULL3D_OCEAN_COST_SECONDS}`,
+	process.env.NULL3D_OCEAN_COST_WARM_UP && `warm-up=${process.env.NULL3D_OCEAN_COST_WARM_UP}`,
+	process.env.NULL3D_OCEAN_COST_REFLECTION &&
+		`reflection=${process.env.NULL3D_OCEAN_COST_REFLECTION}`,
+]
+	.filter(Boolean)
+	.join('&');
+
+/** The middle of some numbers, or null without any. */
+function median(values: number[]): number | null {
+	const sorted = [...values].sort((a, b) => a - b);
+	if (sorted.length === 0) return null;
+	const middle = Math.floor(sorted.length / 2);
+	return sorted.length % 2
+		? (sorted[middle] as number)
+		: ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2;
+}
+
 for (const gpu of ['webgpu', 'compat', 'webgl2'] as const)
 	for (const preset of PRESETS)
 		test(`the ocean's transform on ${gpu} at ${preset}, timed on and off`, async ({ page }) => {
@@ -27,7 +52,9 @@ for (const gpu of ['webgpu', 'compat', 'webgl2'] as const)
 			test.setTimeout(costTimeout(300_000));
 			const loadBefore = await waitForQuiet();
 			await page.setViewportSize({ width: 1920, height: 1080 });
-			await page.goto(`effect-cost.html?effect=ocean&gpu=${gpu}&preset=${preset}&scale=1&fixed`);
+			await page.goto(
+				`effect-cost.html?effect=ocean&gpu=${gpu}&preset=${preset}&scale=1&fixed${EXTRA === '' ? '' : `&${EXTRA}`}`,
+			);
 			const result = await pageResult<CostResult>(page, 200_000);
 			expect(result.error).toBeUndefined();
 			const transform = (result.on.gpuMs ?? 0) - (result.off.gpuMs ?? 0);

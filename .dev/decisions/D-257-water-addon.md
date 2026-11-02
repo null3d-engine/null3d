@@ -205,10 +205,9 @@ GPU paths, without work on the page's thread?
 ### Rule
 
 - The compute hook fills the heights in the frame that the material reads them, and the same chain
-  has a fragment form for WebGL2. The compute form draws the sea. The fragment form's field differed
-  from the compute form's when this branch measured it, through a read that WebGL2 later fixed
-  ([D-271](D-271-a-fallback-pass-writes-the-image.md)), so the comparison is owed against the
-  merged engine.
+  has a fragment form for WebGL2. Both forms write the same field: the fragment form keeps the
+  row index that its shader names, and the read that compares them keeps that index
+  ([D-271](D-271-a-fallback-pass-writes-the-image.md)).
 - The add-on owns the ocean as it owns the river (D-173).
 - A pass may not read its own texture. WebGL2 draws a fragment form one texel for each pixel. So a
   stage that each pixel computes alone is the form that both paths share.
@@ -221,15 +220,12 @@ estimate is about 0.5 ms for three bands.
 
 The browser test reads each band's heights back and compares them with the transform on the page's
 thread. On WebGPU the worst texel of the read square differs by 0.004 m, and in compatibility mode
-by 0.004 m, of a field of 0.73 m. On WebGL2 it differed by 0.60 m when this branch measured it. That
-reading went through `render.readPass`, which on WebGL2 returned rows from the other end of the
-target; [D-271](D-271-a-fallback-pass-writes-the-image.md) found that fault, and its record names
-this ocean's read. The comparison against the merged engine is owed, and `ocean-waves` keeps WebGL2
-marked as an expected failure until it runs. A run in which the path agrees reports an unexpected
-pass, which fails the suite, so that first red means the gap closed and the marker's line must then
-be removed. The comparison is owed at the first CI run of `tests/image/ocean-waves.spec.ts` on a
-built core, or on a quiet machine after `bun run build` with
-`bun run test:browser -- ocean-waves.spec.ts`.
+by 0.004 m, and on WebGL2 by 0.004 m too, of a field of 0.73 m. The former 0.60 m gap on WebGL2
+came from the read: it fetched rows from the other end of the target
+([D-271](D-271-a-fallback-pass-writes-the-image.md)). With the read fixed, the three paths draw the
+same field, so `ocean-waves` judges WebGL2 like the other tiers. The demo waits on a separate
+fault: a reflection pass that carries a cadence of two draws black on WebGL2, so the sea loses the
+sky's mirror and reads flat. At a cadence of one the pass draws (`.dev/code-review.md`).
 
 The transform's own cost is unmeasured. The effect page's on-and-off difference cannot resolve it:
 over one quiet run of three bands at 128 squared, the difference ranged from -0.62 to 0.54 ms on
@@ -300,12 +296,12 @@ vertex's world place is the origin with its place in the mesh.
   ([D-287](D-287-a-pass-carries-its-cadence.md)). With the pass carrying its cadence, the same page
   holds 60 frames a second, so the transform's cost per path and preset is owed rather than known.
   The data's table keeps the switched page's figures as the reading that the cadence replaces.
-- The WebGL2 heights differed from the compute form by 0.60 m when this branch measured them, and
-  the demo draws only the two paths that drew one sea. The readings went through `render.readPass`,
-  which on WebGL2 returned rows from the other end of the target
-  ([D-271](D-271-a-fallback-pass-writes-the-image.md)); that record names this ocean's read. The
-  comparison is owed against the merged engine, and `ocean-waves` marks that path as an expected
-  failure until it runs.
+- The three GPU paths draw one sea. `ocean-waves` reads each band's heights back and compares them
+  with the page's transform: the worst texel differs by 0.004 m of a 0.73 m field on WebGPU, in
+  compatibility mode and on WebGL2, after [D-271](D-271-a-fallback-pass-writes-the-image.md) made
+  the read keep the rows that the shader names. The demo draws WebGPU and compatibility mode until
+  a reflection pass that waits keeps its image on WebGL2: the demo's WebGL2 tier runs at Medium,
+  whose cadence is two, and that path draws the mirror black.
 
 ## Consequences
 
