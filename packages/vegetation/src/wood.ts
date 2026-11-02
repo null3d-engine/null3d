@@ -148,7 +148,13 @@ export function buildWood(
 			const nz = tx * sy - ty * sx;
 			const radius = branch.radii[sample] as number;
 			wind.occlusion = occlusionByte(cx, cy, cz, crown);
-			for (let j = 0; j < sides; j++) {
+			// A ring of a thick branch carries one vertex more than it has sides, the last of them a
+			// copy of the first with the texture coordinate at its far end. Without that copy the quad
+			// that closes the ring spans the whole bark tile backwards, and the branch shows a
+			// stretched facet at its join. A thin twig keeps its closing quad instead: the seam is
+			// under a millimetre wide there, and the vertex costs the twig a third of its geometry.
+			const seam = sides >= 6 ? 1 : 0;
+			for (let j = 0; j <= sides - 1 + seam; j++) {
 				const angle = (j / sides) * Math.PI * 2;
 				const cos = Math.cos(angle);
 				const sin = Math.sin(angle);
@@ -168,10 +174,11 @@ export function buildWood(
 				);
 			}
 		}
-		const perRing = sides;
+		const seam = sides >= 6 ? 1 : 0;
+		const perRing = sides + seam;
 		for (let r = 0; r + 1 < rings.length; r++) {
 			for (let j = 0; j < sides; j++) {
-				const next = (j + 1) % sides;
+				const next = seam === 1 ? j + 1 : (j + 1) % sides;
 				const a = first + r * perRing + j;
 				const b = first + r * perRing + next;
 				const c = first + (r + 1) * perRing + next;
