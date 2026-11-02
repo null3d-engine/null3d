@@ -2,7 +2,9 @@
 // frame-budget governor lengthens it while frames take too long, and the feature host reports the
 // cadence and the pass's share of a frame to the stats overlay. A page that draws no water has no
 // such row, and the figures go when the water goes. The add-on's `water-bounds` debug view draws
-// each body's bounds at the surface, and stops when another view replaces it.
+// each body's bounds at the surface, and stops when another view replaces it. The surface also takes
+// the share of the view's path through the water that the page asks for, and reads its depth alone
+// by default.
 import { describe, expect, it } from 'bun:test';
 import type { FeatureStats, MeshArrays, QualityPreset, SketchContext } from '@null3d/engine';
 import { activateAddonDebugView, hasAddonDebugView } from '@null3d/engine/internal';
@@ -284,6 +286,26 @@ describe('a held frame', () => {
 		for (let k = 0; k < 8; k++) water.update();
 		expect(seen.every(Boolean)).toBe(true);
 		water.destroy();
+	});
+});
+
+describe('the water’s color along a low view', () => {
+	/** The share that the surface’s uniforms give the view’s path through the water. */
+	function viewPath(options: Partial<WaterOptions> = {}): unknown {
+		const context = fakeContext();
+		const water = waterOn(context, options);
+		const material = context.shaderOptions.at(-1) as { uniforms?: { viewPath?: number } };
+		const share = material.uniforms?.viewPath;
+		water.destroy();
+		return share;
+	}
+
+	it('gives the surface the share that the page asks for', () => {
+		expect(viewPath({ colorAlongView: 0.22 })).toBe(0.22);
+	});
+
+	it('reads the depth alone unless the page asks otherwise', () => {
+		expect(viewPath()).toBe(0);
 	});
 });
 

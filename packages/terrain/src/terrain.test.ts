@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { SketchContext, Texture } from '@null3d/engine';
 import { ReferenceTerrainBuilder } from './reference-builder';
 import { Terrain, type TerrainOptions } from './terrain';
@@ -40,16 +42,21 @@ function sideOf(positions: Float32Array): number {
 function fakeContext() {
 	const blocks: FakeBlock[] = [];
 	const selections: { selection: [number, number] }[] = [];
+	/** The uniforms that each material was made with. */
+	const uniforms: Record<string, unknown>[] = [];
 	const texture = () => ({ destroy: () => {} }) as unknown as Texture;
 	const context = {
 		textures: { fromData: texture },
 		materials: {
-			shader: () => ({
-				destroy: () => {},
-				set: (values: { selection: [number, number] }) => {
-					selections.push({ selection: [values.selection[0], values.selection[1]] });
-				},
-			}),
+			shader: (options: { uniforms: Record<string, unknown> }) => {
+				uniforms.push(options.uniforms);
+				return {
+					destroy: () => {},
+					set: (values: { selection: [number, number] }) => {
+						selections.push({ selection: [values.selection[0], values.selection[1]] });
+					},
+				};
+			},
 		},
 		// The ground picks blocks from the drawing buffer's height and the preset's detail.
 		engine: { viewport: { width: 1920, height: 1080, pixelRatio: 1 } },
@@ -106,7 +113,7 @@ function fakeContext() {
 	} as unknown as SketchContext;
 	const visible = () => blocks.filter((b) => b.visible && !b.destroyed);
 	const area = () => visible().reduce((sum, b) => sum + b.mesh.side * b.mesh.side, 0);
-	return { context, blocks, selections, visible, area };
+	return { context, blocks, selections, uniforms, visible, area };
 }
 
 const SIZE = 1024;
@@ -381,5 +388,58 @@ describe('terrain block spheres', () => {
 		await settle(t, 200, 10);
 		expect(existing.length).toBeGreaterThan(0);
 		for (const block of existing) expect(block.boundsCalls).toBe(1);
+	});
+});
+
+describe('the rock on steep faces', () => {
+	const shader = readFileSync(join(import.meta.dirname, 'terrain.wgsl'), 'utf8');
+
+	/** The body of the WGSL function `name`, from its signature to its closing brace. */
+	function wgslFunction(name: string): string {
+		const start = shader.indexOf(`fn ${name}(`);
+		expect(start).toBeGreaterThanOrEqual(0);
+		const end = shader.indexOf('\n}', start);
+		expect(end).toBeGreaterThan(start);
+		return shader.slice(start, end);
+	}
+
+	/** The branch that maps the third layer, the rock, from the sides. */
+	function steepBranch(): string {
+		const surface = wgslFunction('surface');
+		const start = surface.indexOf('if material.steepFaces > 0.5 {');
+		expect(start).toBeGreaterThanOrEqual(0);
+		const end = surface.indexOf('\n    }', start);
+		expect(end).toBeGreaterThan(start);
+		return surface.slice(start, end);
+	}
+
+	test('the ground takes the option that the page asks for', () => {
+		expect(terrain().uniforms.at(-1)?.steepFaces).toBe(0);
+		expect(terrain({ steepFaces: true }).uniforms.at(-1)?.steepFaces).toBe(1);
+	});
+
+	test('the rock turns with the ground’s facing', () => {
+		const branch = steepBranch();
+		expect(branch).toContain('input.worldPosition.zy');
+		expect(branch).toContain('input.worldPosition.xy');
+		expect(branch).toContain('smoothstep(0.75, 0.45, facing.y)');
+		expect(branch).toContain('c2 = mix(c2, sideways, steep)');
+	});
+
+	test('the side maps are read only where the page asks for them', () => {
+		const surface = wgslFunction('surface');
+		const outside = surface.replace(steepBranch(), '');
+		expect(outside).not.toContain('input.worldPosition.zy');
+		expect(outside).not.toContain('input.worldPosition.xy');
+	});
+
+	test('the side samples take their gradients from outside the branch', () => {
+		const surface = wgslFunction('surface');
+		const branch = steepBranch();
+		const before = surface.slice(0, surface.indexOf(branch));
+		expect(before).toContain('dpdx(input.worldPosition)');
+		expect(before).toContain('dpdy(input.worldPosition)');
+		expect(branch).toContain('textureSampleGrad(');
+		expect(branch).not.toContain('textureSample(');
 	});
 });
