@@ -489,7 +489,9 @@ export function createHero(
 			yaw + Math.PI + orbit.turn,
 			CHASE_TILT + orbit.tilt,
 			orbit.distance,
-			CHASE_DISTANCE,
+			// The height and look blend reaches the user's own zoom, so a side swing shortens it
+			// from the height the camera already has rather than from the usual chase distance.
+			Math.max(CHASE_DISTANCE, orbit.distance),
 			towers,
 			dt,
 			aim,

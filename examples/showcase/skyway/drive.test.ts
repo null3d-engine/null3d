@@ -279,9 +279,11 @@ test('a tower edge that crosses back and forth does not pump the distance', () =
 	expect(sight.pull).toBe(1);
 });
 
-/** The speed of the car in the tower swap, and the user's zoom there. */
+/** The speed of the car in the tower swap, the user's zoom there, and the span the height blend
+ * reaches at that zoom, as the demo's own call passes it. */
 const SPEED = 10;
 const ZOOM = 50;
+const FAR = Math.max(DISTANCE, ZOOM);
 /**
  * Two towers that stand in the same line behind the car, at very different distances. They are
  * wide, so the car's sideways travel keeps its view across both while the blocker changes.
@@ -298,7 +300,7 @@ test('a changed tower moves the distance no faster than the pull', () => {
 	const step = (towers: Float32Array, frames: number): void => {
 		for (let k = 0; k < frames; k++) {
 			car.x += SPEED * FRAME;
-			settleSight(sight, car.x, car.y, car.z, BEHIND, TILT, ZOOM, DISTANCE, towers, FRAME, aim);
+			settleSight(sight, car.x, car.y, car.z, BEHIND, TILT, ZOOM, FAR, towers, FRAME, aim);
 		}
 	};
 	// The pull reaches the end of its travel behind the near tower.
@@ -345,7 +347,7 @@ test('a side swing at a wide zoom does not drop the camera', () => {
 		for (let k = 0; k < frames; k++) {
 			// The car creeps forward, so the tower stays inside the standoff for the whole swing.
 			car.z += CREEP * FRAME;
-			settleSight(sight, car.x, car.y, car.z, BEHIND, TILT, ZOOM, DISTANCE, towers, FRAME, aim);
+			settleSight(sight, car.x, car.y, car.z, BEHIND, TILT, ZOOM, FAR, towers, FRAME, aim);
 		}
 	};
 	step(NONE, 30);
