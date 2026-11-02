@@ -97,9 +97,13 @@ function makeCard(
 		normal[2] * right[0] - normal[0] * right[2],
 		normal[0] * right[1] - normal[1] * right[0],
 	);
+	// A conifer's spray runs along its shoot, so its card rolls less than a broadleaf's cluster. A
+	// rolled shoot points across its twig, and a crown of them reads as loose sticks.
+	const rollScale = leaf.kind === 'needle' ? 0.3 : 1;
 	const roll =
-		(unitAt(seed, 2, variant, key, KEY_ROLL) - 0.5) * 1.2 +
-		(unitAt(seed, 3, variant, key, KEY_SIDE) - 0.5) * 0.4;
+		rollScale *
+		((unitAt(seed, 2, variant, key, KEY_ROLL) - 0.5) * 1.2 +
+			(unitAt(seed, 3, variant, key, KEY_SIDE) - 0.5) * 0.4);
 	const cos = Math.cos(roll);
 	const sin = Math.sin(roll);
 	const rolledRight: [number, number, number] = [
