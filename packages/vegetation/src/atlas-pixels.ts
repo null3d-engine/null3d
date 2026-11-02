@@ -674,7 +674,7 @@ function clumpCell(seed: number): LeafCellPainter {
  */
 function shootCell(seed: number): LeafCellPainter {
 	const leaves: PlacedLeaf[] = [];
-	const count = 120;
+	const count = 190;
 	// The twig bows a little, so its silhouette is not a ruled line.
 	const bow = 0.012;
 	for (let i = 0; i < count; i++) {
@@ -702,7 +702,7 @@ function shootCell(seed: number): LeafCellPainter {
  */
 function fascicleCell(seed: number): LeafCellPainter {
 	const leaves: PlacedLeaf[] = [];
-	const bundles = 26;
+	const bundles = 30;
 	const bow = 0.01;
 	for (let bundle = 0; bundle < bundles; bundle++) {
 		const key = seed * 131 + bundle;
@@ -715,7 +715,7 @@ function fascicleCell(seed: number): LeafCellPainter {
 			const side = needle - 1;
 			// The needles of a bunch stay close at the base and part along their length.
 			const angle = turn + side * (0.36 + 0.3 * random2(sub, 6));
-			const length = (0.17 - 0.05 * f) * (0.9 + 0.2 * random2(sub, 4));
+			const length = (0.24 - 0.07 * f) * (0.9 + 0.2 * random2(sub, 4));
 			leaves.push(placeLeaf(sub, FAMILIES.fascicle, baseX, baseY, angle, length));
 		}
 	}
