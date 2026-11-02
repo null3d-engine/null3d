@@ -1104,14 +1104,15 @@ jobs:
       - run: bun install --frozen-lockfile
       # The sketch shaders that Vite compiles on demand, kept in the project's cache. A page
       # whose sketch holds many material variants spends minutes compiling them on a cold cache,
-      # which stalled pages on the software GPU before their first pipeline. The key follows the
-      # sketch sources and the compiler's stamp; the plugin revalidates each entry by its own key.
+      # which stalled pages on the software GPU before their first pipeline. One key serves every
+      # job: the first to finish saves the set it compiled, later jobs restore it, and a cache is
+      # written once, so it does not grow with runs. The plugin revalidates each entry by its own key.
       - uses: actions/cache@v4
         with:
           path: node_modules/.cache/null3d-shaders
-          key: sketch-shaders-browser-${{ matrix.shard }}-${{ hashFiles('examples/**', 'skills/**', 'tests/pages/**', 'packages/engine/src/generated/**', 'packages/*/src/**/*.wgsl', 'packages/vite-plugin/**', 'crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'bun.lock', 'package.json') }}
+          key: sketch-shaders-${{ hashFiles('examples/**', 'skills/**', 'tests/pages/**', 'packages/engine/src/generated/**', 'packages/*/src/**/*.wgsl', 'packages/vite-plugin/**', 'crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'bun.lock', 'package.json') }}
           restore-keys: |
-            sketch-shaders-browser-${{ matrix.shard }}-
+            sketch-shaders-
       # The build job's files, at their places in the repository.
       - uses: ./.github/actions/archive
         timeout-minutes: 5
@@ -1175,14 +1176,15 @@ jobs:
       - run: bun install --frozen-lockfile
       # The sketch shaders that Vite compiles on demand, kept in the project's cache. A page
       # whose sketch holds many material variants spends minutes compiling them on a cold cache,
-      # which stalled pages on the software GPU before their first pipeline. The key follows the
-      # sketch sources and the compiler's stamp; the plugin revalidates each entry by its own key.
+      # which stalled pages on the software GPU before their first pipeline. One key serves every
+      # job: the first to finish saves the set it compiled, later jobs restore it, and a cache is
+      # written once, so it does not grow with runs. The plugin revalidates each entry by its own key.
       - uses: actions/cache@v4
         with:
           path: node_modules/.cache/null3d-shaders
-          key: sketch-shaders-alone-${{ matrix.shard }}-${{ hashFiles('examples/**', 'skills/**', 'tests/pages/**', 'packages/engine/src/generated/**', 'packages/*/src/**/*.wgsl', 'packages/vite-plugin/**', 'crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'bun.lock', 'package.json') }}
+          key: sketch-shaders-${{ hashFiles('examples/**', 'skills/**', 'tests/pages/**', 'packages/engine/src/generated/**', 'packages/*/src/**/*.wgsl', 'packages/vite-plugin/**', 'crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'bun.lock', 'package.json') }}
           restore-keys: |
-            sketch-shaders-alone-${{ matrix.shard }}-
+            sketch-shaders-
       - uses: ./.github/actions/archive
         timeout-minutes: 5
         with:
@@ -1230,14 +1232,15 @@ jobs:
       - run: bun install --frozen-lockfile
       # The sketch shaders that Vite compiles on demand, kept in the project's cache. A page
       # whose sketch holds many material variants spends minutes compiling them on a cold cache,
-      # which stalled pages on the software GPU before their first pipeline. The key follows the
-      # sketch sources and the compiler's stamp; the plugin revalidates each entry by its own key.
+      # which stalled pages on the software GPU before their first pipeline. One key serves every
+      # job: the first to finish saves the set it compiled, later jobs restore it, and a cache is
+      # written once, so it does not grow with runs. The plugin revalidates each entry by its own key.
       - uses: actions/cache@v4
         with:
           path: node_modules/.cache/null3d-shaders
-          key: sketch-shaders-heavy-${{ matrix.shard }}-${{ hashFiles('examples/**', 'skills/**', 'tests/pages/**', 'packages/engine/src/generated/**', 'packages/*/src/**/*.wgsl', 'packages/vite-plugin/**', 'crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'bun.lock', 'package.json') }}
+          key: sketch-shaders-${{ hashFiles('examples/**', 'skills/**', 'tests/pages/**', 'packages/engine/src/generated/**', 'packages/*/src/**/*.wgsl', 'packages/vite-plugin/**', 'crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'bun.lock', 'package.json') }}
           restore-keys: |
-            sketch-shaders-heavy-${{ matrix.shard }}-
+            sketch-shaders-
       - uses: ./.github/actions/archive
         timeout-minutes: 5
         with:
@@ -1316,14 +1319,15 @@ jobs:
       - run: bun install --frozen-lockfile
       # The sketch shaders that Vite compiles on demand, kept in the project's cache. A page
       # whose sketch holds many material variants spends minutes compiling them on a cold cache,
-      # which stalled pages on the software GPU before their first pipeline. The key follows the
-      # sketch sources and the compiler's stamp; the plugin revalidates each entry by its own key.
+      # which stalled pages on the software GPU before their first pipeline. One key serves every
+      # job: the first to finish saves the set it compiled, later jobs restore it, and a cache is
+      # written once, so it does not grow with runs. The plugin revalidates each entry by its own key.
       - uses: actions/cache@v4
         with:
           path: node_modules/.cache/null3d-shaders
-          key: sketch-shaders-production-${{ hashFiles('examples/**', 'skills/**', 'tests/pages/**', 'packages/engine/src/generated/**', 'packages/*/src/**/*.wgsl', 'packages/vite-plugin/**', 'crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'bun.lock', 'package.json') }}
+          key: sketch-shaders-${{ hashFiles('examples/**', 'skills/**', 'tests/pages/**', 'packages/engine/src/generated/**', 'packages/*/src/**/*.wgsl', 'packages/vite-plugin/**', 'crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'bun.lock', 'package.json') }}
           restore-keys: |
-            sketch-shaders-production-
+            sketch-shaders-
       - uses: ./.github/actions/archive
         timeout-minutes: 5
         with:
@@ -1390,14 +1394,15 @@ jobs:
       - run: bun install --frozen-lockfile
       # The sketch shaders that Vite compiles on demand, kept in the project's cache. A page
       # whose sketch holds many material variants spends minutes compiling them on a cold cache,
-      # which stalled pages on the software GPU before their first pipeline. The key follows the
-      # sketch sources and the compiler's stamp; the plugin revalidates each entry by its own key.
+      # which stalled pages on the software GPU before their first pipeline. One key serves every
+      # job: the first to finish saves the set it compiled, later jobs restore it, and a cache is
+      # written once, so it does not grow with runs. The plugin revalidates each entry by its own key.
       - uses: actions/cache@v4
         with:
           path: node_modules/.cache/null3d-shaders
-          key: sketch-shaders-city-${{ hashFiles('examples/**', 'skills/**', 'tests/pages/**', 'packages/engine/src/generated/**', 'packages/*/src/**/*.wgsl', 'packages/vite-plugin/**', 'crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'bun.lock', 'package.json') }}
+          key: sketch-shaders-${{ hashFiles('examples/**', 'skills/**', 'tests/pages/**', 'packages/engine/src/generated/**', 'packages/*/src/**/*.wgsl', 'packages/vite-plugin/**', 'crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'bun.lock', 'package.json') }}
           restore-keys: |
-            sketch-shaders-city-
+            sketch-shaders-
       - uses: ./.github/actions/archive
         timeout-minutes: 5
         with:
@@ -1469,14 +1474,15 @@ jobs:
       - run: bun install --frozen-lockfile
       # The sketch shaders that Vite compiles on demand, kept in the project's cache. A page
       # whose sketch holds many material variants spends minutes compiling them on a cold cache,
-      # which stalled pages on the software GPU before their first pipeline. The key follows the
-      # sketch sources and the compiler's stamp; the plugin revalidates each entry by its own key.
+      # which stalled pages on the software GPU before their first pipeline. One key serves every
+      # job: the first to finish saves the set it compiled, later jobs restore it, and a cache is
+      # written once, so it does not grow with runs. The plugin revalidates each entry by its own key.
       - uses: actions/cache@v4
         with:
           path: node_modules/.cache/null3d-shaders
-          key: sketch-shaders-showcase-${{ matrix.part }}-${{ hashFiles('examples/**', 'skills/**', 'tests/pages/**', 'packages/engine/src/generated/**', 'packages/*/src/**/*.wgsl', 'packages/vite-plugin/**', 'crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'bun.lock', 'package.json') }}
+          key: sketch-shaders-${{ hashFiles('examples/**', 'skills/**', 'tests/pages/**', 'packages/engine/src/generated/**', 'packages/*/src/**/*.wgsl', 'packages/vite-plugin/**', 'crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'bun.lock', 'package.json') }}
           restore-keys: |
-            sketch-shaders-showcase-${{ matrix.part }}-
+            sketch-shaders-
       - uses: ./.github/actions/archive
         timeout-minutes: 5
         with:
@@ -1819,14 +1825,15 @@ jobs:
       - run: bun install --frozen-lockfile
       # The sketch shaders that Vite compiles on demand, kept in the project's cache. A page
       # whose sketch holds many material variants spends minutes compiling them on a cold cache,
-      # which stalled pages on the software GPU before their first pipeline. The key follows the
-      # sketch sources and the compiler's stamp; the plugin revalidates each entry by its own key.
+      # which stalled pages on the software GPU before their first pipeline. One key serves every
+      # job: the first to finish saves the set it compiled, later jobs restore it, and a cache is
+      # written once, so it does not grow with runs. The plugin revalidates each entry by its own key.
       - uses: actions/cache@v4
         with:
           path: node_modules/.cache/null3d-shaders
-          key: sketch-shaders-${{ matrix.browser }}-${{ matrix.shard }}-${{ hashFiles('examples/**', 'skills/**', 'tests/pages/**', 'packages/engine/src/generated/**', 'packages/*/src/**/*.wgsl', 'packages/vite-plugin/**', 'crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'bun.lock', 'package.json') }}
+          key: sketch-shaders-${{ hashFiles('examples/**', 'skills/**', 'tests/pages/**', 'packages/engine/src/generated/**', 'packages/*/src/**/*.wgsl', 'packages/vite-plugin/**', 'crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'bun.lock', 'package.json') }}
           restore-keys: |
-            sketch-shaders-${{ matrix.browser }}-${{ matrix.shard }}-
+            sketch-shaders-
       # A download on GitHub's macOS machines can stall with no error until the job's limit ends it
       # and fails the run (run 39990527400). Each download has a limit of its own and one more
       # try; the slowest that finished took about 3 minutes.
@@ -1911,14 +1918,15 @@ jobs:
       - run: bun install --frozen-lockfile
       # The sketch shaders that Vite compiles on demand, kept in the project's cache. A page
       # whose sketch holds many material variants spends minutes compiling them on a cold cache,
-      # which stalled pages on the software GPU before their first pipeline. The key follows the
-      # sketch sources and the compiler's stamp; the plugin revalidates each entry by its own key.
+      # which stalled pages on the software GPU before their first pipeline. One key serves every
+      # job: the first to finish saves the set it compiled, later jobs restore it, and a cache is
+      # written once, so it does not grow with runs. The plugin revalidates each entry by its own key.
       - uses: actions/cache@v4
         with:
           path: node_modules/.cache/null3d-shaders
-          key: sketch-shaders-${{ matrix.browser }}-prebuilt-${{ hashFiles('examples/**', 'skills/**', 'tests/pages/**', 'packages/engine/src/generated/**', 'packages/*/src/**/*.wgsl', 'packages/vite-plugin/**', 'crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'bun.lock', 'package.json') }}
+          key: sketch-shaders-${{ hashFiles('examples/**', 'skills/**', 'tests/pages/**', 'packages/engine/src/generated/**', 'packages/*/src/**/*.wgsl', 'packages/vite-plugin/**', 'crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'bun.lock', 'package.json') }}
           restore-keys: |
-            sketch-shaders-${{ matrix.browser }}-prebuilt-
+            sketch-shaders-
       - uses: ./.github/actions/archive
         id: page-wasm
         timeout-minutes: 6
