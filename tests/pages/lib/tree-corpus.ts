@@ -115,7 +115,7 @@ const SPRUCE: Species = {
 		perCard: 26,
 		up: 1,
 		out: 0.9,
-		start: 0.05,
+		start: 0.32,
 		end: 1,
 		depth: 4,
 		cross: true,
