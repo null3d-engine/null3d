@@ -246,6 +246,18 @@ describe('feature scenes', () => {
 		expect(sketchOf(featureImagePath(tone, 'webgpu'))).toBe(
 			'/tests/pages/sketches/bright-sketch.ts?tone=aces&stops=0',
 		);
+		// A scene whose picture the bounce light moves compares without it, so three.js and null3D
+		// draw the same lighting terms.
+		for (const name of [
+			'gltf-iridescence-dielectric',
+			'gltf-dispersion',
+			'gltf-emissive-strength',
+			'lights-16',
+		]) {
+			const scene = featureScene(name);
+			if (!scene) throw new Error(`the feature scenes lost ${name}`);
+			expect(sketchOf(featureImagePath(scene, 'webgpu'))).toContain('bounce=off');
+		}
 	});
 
 	test('name image tests of their own, each once, apart from the benchmark scenes', () => {
