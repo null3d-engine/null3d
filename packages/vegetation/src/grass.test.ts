@@ -126,13 +126,14 @@ describe('the grass batches', () => {
 				},
 			},
 			quality: { preset, onChange: () => () => {} },
+			engine: { capabilities: { tier: 'webgl2' } },
 		} as unknown as SketchContext;
 		return { ctx, made, materials, uploads, layers };
 	}
 
-	test('the High count fills the hill and each preset draws its share', () => {
+	test('the High count fills the hill and each preset draws its share', async () => {
 		const { ctx, made } = context('high');
-		const grass = createGrass(ctx, field);
+		const grass = await createGrass(ctx, field);
 		expect(grass.batches.length).toBe(1);
 		const b = made[0] as ReturnType<typeof batch>;
 		// The capacity also holds Ultra's extra quarter.
@@ -148,7 +149,7 @@ describe('the grass batches', () => {
 		grass.fit('ultra');
 		expect(b.active).toBe(125);
 	});
-	test('the grass reads the field it is given, and takes its newest layer', () => {
+	test('the grass reads the field it is given, and takes its newest layer', async () => {
 		const { ctx, materials, uploads, layers } = context('high');
 		const air = {
 			base: [2, 0.5, 0.3, 7],
@@ -162,7 +163,7 @@ describe('the grass batches', () => {
 			size: 128,
 			air,
 		} as unknown as WindField;
-		const grass = createGrass(ctx, { ...field, wind });
+		const grass = await createGrass(ctx, { ...field, wind });
 		const options = materials[0] as {
 			uniforms: { windStrength: number; windBox: number };
 			textures: { wind: unknown };
@@ -181,9 +182,9 @@ describe('the grass batches', () => {
 		grass.setWindLayer(wind);
 		expect(layers).toEqual([3]);
 	});
-	test('the grass that names no field binds the slots and stands still', () => {
+	test('the grass that names no field binds the slots and stands still', async () => {
 		const { ctx, materials, uploads } = context('high');
-		createGrass(ctx, field);
+		await createGrass(ctx, field);
 		const options = materials[0] as {
 			uniforms: { windStrength: number; windBox: number };
 			textures: Record<string, unknown>;
@@ -194,5 +195,89 @@ describe('the grass batches', () => {
 		// shapes whether or not a page gives a field.
 		expect(uploads.map((upload) => upload.width)).toEqual([1, 1]);
 		expect(Object.keys(options.textures).sort()).toEqual(['airSettings', 'wind']);
+	});
+
+	test('WebGPU builds the blade list in a compute pass, which the shadows read', async () => {
+		const passes: Record<string, unknown>[] = [];
+		const uniformCalls: number[][] = [];
+		const uploads: Record<string, unknown>[] = [];
+		const made: { capacity: number; options: Record<string, unknown> }[] = [];
+		const cast: boolean[] = [];
+		const camera = {
+			fov: 90,
+			near: 0.5,
+			far: 300,
+			getWorldMatrix(out: Float64Array) {
+				out.set([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 2, 3, 1]);
+			},
+		};
+		const ctx = {
+			engine: {
+				capabilities: { tier: 'webgpu' },
+				viewport: { width: 960, height: 540 },
+			},
+			materials: {},
+			geometry: {},
+			scene: {
+				addComputeInstances: async (_description: unknown, options: Record<string, unknown>) => {
+					made.push({ capacity: options.capacity as number, options });
+					return {
+						counts: { buffer: 1, bytes: 4 },
+						instances: { buffer: 2, bytes: (options.capacity as number) * 64 },
+						materialIndex: 7,
+						material: { setUniform: () => undefined },
+						object: {
+							setCastShadows: (on: boolean) => cast.push(on),
+							setReceiveShadows: () => undefined,
+						},
+					};
+				},
+			},
+			render: {
+				addPass: (options: Record<string, unknown>) => {
+					passes.push(options);
+					return {};
+				},
+				setPassUniforms: (_pass: unknown, values: number[]) => uniformCalls.push(values),
+			},
+			textures: {
+				fromData: (options: Record<string, unknown>) => {
+					uploads.push(options);
+					return { update: () => undefined };
+				},
+			},
+			quality: { preset: 'high', onChange: () => () => {} },
+		} as unknown as SketchContext;
+		const grass = await createGrass(ctx, { ...field, camera } as unknown as Parameters<
+			typeof createGrass
+		>[1]);
+		expect(grass.batches).toEqual([]);
+		expect(grass.draws.length).toBe(1);
+		expect(made[0]?.capacity).toBe(125);
+		// The draw's count starts empty: the pass writes it each frame.
+		expect(made[0]?.options.count).toBe(0);
+		expect(cast).toEqual([true]);
+		// The material thins the far tufts and widens their blades, as the pass does.
+		if (!made[0]) throw new Error('the blade list made no draw');
+		expect((made[0].options.uniforms as Record<string, number>).cull).toBe(1);
+		// The pass's values hold the camera's place, its right, up and forward with its lens, then
+		// the tufts that the preset draws, the material that the rows read, and the data texture's
+		// width. The camera looks down its own -z, at the origin turned.
+		const values = passes[0]?.values as number[];
+		expect(values.slice(0, 4)).toEqual([1, 2, 3, 1]);
+		expect(values.slice(4, 7)).toEqual([1, 0, 0]);
+		expect(values[7]).toBeCloseTo(1, 12);
+		expect(values.slice(8, 12)).toEqual([0, 1, 0, 960 / 540]);
+		expect(values.slice(12, 15).map((value) => value || 0)).toEqual([0, 0, -1]);
+		expect(values[15]).toBe(0.5);
+		expect(values.slice(16, 19)).toEqual([100, 7, 2048]);
+		expect(values[19]).toBe(300);
+		// The tuft data holds two texels for each tuft.
+		const data = uploads.find((upload) => upload.width === 2048);
+		if (!data) throw new Error('the blade list wrote no tuft texture');
+		expect(data.height).toBe(Math.ceil((125 * 2) / 2048));
+		expect((data.data as Float32Array).length % 8).toBe(0);
+		grass.fit('low');
+		expect(uniformCalls.at(-1)?.[16]).toBe(35);
 	});
 });

@@ -16,7 +16,7 @@ import {
 	type SketchContext,
 	timeOfDay,
 } from '@null3d/engine';
-import { createGrass } from '@null3d/vegetation';
+import { createGrass, swayDistanceFor } from '@null3d/vegetation';
 import { createUnderwater, createWater, foamMap, type Water, type WaterShape } from '@null3d/water';
 import { createWind, type WindField } from '@null3d/wind';
 import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
@@ -313,7 +313,7 @@ export default defineSketch(async (ctx) => {
 	const bank = (x: number, z: number) => dry(x, z) && Math.abs(z - streamZ(x)) < BANK;
 	const grass = WITHOUT.has('grass')
 		? []
-		: [
+		: await Promise.all([
 				createGrass(ctx, {
 					height: groundHeight,
 					area: { x: 0, z: 0, size: LAND },
@@ -321,6 +321,8 @@ export default defineSketch(async (ctx) => {
 					seed: SEED,
 					mask: bank,
 					wind: wind.field,
+					camera,
+					swayDistance: swayDistanceFor(quality.preset),
 				}),
 				createGrass(ctx, {
 					height: groundHeight,
@@ -329,10 +331,15 @@ export default defineSketch(async (ctx) => {
 					seed: SEED + 1,
 					mask: (x, z) => dry(x, z) && !bank(x, z),
 					wind: wind.field,
+					camera,
+					swayDistance: swayDistanceFor(quality.preset),
 				}),
-			];
+			]);
 	const fit = () => {
-		for (const field of grass) field.fit(quality.preset);
+		for (const field of grass) {
+			field.fit(quality.preset);
+			field.setSwayDistance(swayDistanceFor(quality.preset));
+		}
 		plants.fit(quality.preset);
 		stones.fit(quality.preset);
 	};
