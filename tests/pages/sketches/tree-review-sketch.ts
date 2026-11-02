@@ -327,7 +327,9 @@ export default defineSketch((ctx) => {
 		cell: leafCellFor(SPECIES),
 		color: SPECIES.color.leaf as [number, number, number],
 		transmission: SPECIES.color.transmission,
-		alphaCutoff: SPECIES.leaf?.kind === 'needle' ? 0.2 : 0.24,
+		// A needle card keeps the atlas's own cutoff; a lower one fills the gaps between the needles of
+		// a spray that the camera sees at a distance, and the card reads as a solid plate.
+		alphaCutoff: SPECIES.leaf?.kind === 'needle' ? 0.35 : 0.24,
 		...(field ? { wind: field } : {}),
 	});
 	const bark = plantMaterial(ctx, {

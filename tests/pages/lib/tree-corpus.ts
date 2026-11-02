@@ -116,11 +116,11 @@ const SPRUCE: Species = {
 	crown: { shape: 'conical', start: 0.06, spread: 0.05, pull: 0.04, floor: 0.03, leafFloor: 0 },
 	leaf: {
 		kind: 'needle',
-		// Fewer cards to a shoot, now that a bough carries a dozen shoots instead of three: the
-		// subdivision shows as fine sprays with air between them rather than as one solid mass.
-		cards: 10,
-		width: 0.2,
-		height: 0.26,
+		// Many small sprays along a shoot, in one plane each, so the sky shows between them: a
+		// spruce's spray is a flat fan of needles, and a few large cards read as solid plates.
+		cards: 20,
+		width: 0.16,
+		height: 0.208,
 		cell: 'needle',
 		perCard: 26,
 		up: 1,
@@ -129,8 +129,8 @@ const SPRUCE: Species = {
 		startTop: 0.05,
 		end: 1,
 		depth: 4,
-		cross: true,
-		fill: 0.6,
+		cross: false,
+		fill: 0.35,
 	},
 	wind: { stiffness: [0.08, 0.35, 0.65, 0.85], flutter: 0.006, frequency: 2.6 },
 	color: { bark: [0.22, 0.16, 0.12], leaf: [0.12, 0.27, 0.11], tint: 0.05, transmission: 0.24 },
