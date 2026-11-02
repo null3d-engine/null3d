@@ -115,6 +115,13 @@ const bloomOff = params.get('bloom') === 'off';
 const reflection = params.get('reflection');
 /** The rounds of each side, with the sides in the opposite order on alternate rounds. */
 const rounds = params.get('rounds');
+/**
+ * The sides to measure: both unless `sides=on` or `sides=off`, which measures one side alone so
+ * separate page loads can be differenced as an ablation.
+ */
+const sides = params.get('sides');
+if (sides !== null && sides !== 'on' && sides !== 'off' && sides !== 'both')
+	throw new Error(`the page takes no sides ${sides}; give on, off or both`);
 if (rounds !== null && !(Number.isSafeInteger(Number(rounds)) && Number(rounds) >= 1))
 	throw new Error(`the page takes no round count ${rounds}`);
 const asked = params.get('effect') ?? 'bloom';
@@ -201,14 +208,12 @@ run('effect-cost', async () => {
 			await built;
 		},
 		glSnapshot,
-		rounds === null
-			? undefined
-			: {
-					rounds: Number(rounds),
-					alternate: true,
-					...(params.has('seconds') && { seconds: Number(params.get('seconds')) }),
-					...(params.has('warm-up') && { warmUpSeconds: Number(params.get('warm-up')) }),
-				},
+		{
+			...(rounds === null ? {} : { rounds: Number(rounds), alternate: true }),
+			...(params.has('seconds') && { seconds: Number(params.get('seconds')) }),
+			...(params.has('warm-up') && { warmUpSeconds: Number(params.get('warm-up')) }),
+			...(sides !== null && sides !== 'both' && { sides: [sides] }),
+		},
 	);
 	// The memory figures come from the overlay, which samples the GPUs' tables and the wasm file.
 	// It shows after the timing, so its sampling costs none of the frames above.
