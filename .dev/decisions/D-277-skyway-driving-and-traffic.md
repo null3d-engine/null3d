@@ -97,7 +97,11 @@ instead of a band of cars over the low streets. The owner judges the final look.
 - **The views.** Behind: the camera eases to 13 m behind the car and 4.4 m above it. It looks 22 m
   ahead while it sits at its usual distance, and two metres past the car once it has pulled in,
   and it keeps out of the towers as the car does. It also pulls in before a tower that would stand
-  between it and the car, and sits lower as it closes. The pull keeps a ten-metre floor from the
+  between it and the car, and sits lower as it closes. A drag turns the camera round the car, and a
+  turn that would put the camera's own place in a tower is refused: the camera keeps the angle off
+  the car's tail that it could last stand at, so the car's own heading still carries it, and it
+  stops against the face instead of sliding along it. The turn eases back to the user's own angle
+  once the clear way returns. The pull keeps a ten-metre floor from the
   car where the towers leave room, so the whole car stays in the frame with a margin: the held
   frames keep the car's coloured pixels at least 118 pixels inside every edge, 164 at the pull's
   first frames, and 65 in the control. The tower's shadow covers the angles between the usual

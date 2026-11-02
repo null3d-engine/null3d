@@ -485,6 +485,7 @@ export function createHero(
 			at[1] as number,
 			at[2] as number,
 			yaw + Math.PI + orbit.turn,
+			yaw + Math.PI,
 			CHASE_TILT + orbit.tilt,
 			orbit.distance,
 			towers,
