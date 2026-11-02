@@ -268,6 +268,19 @@ function pathOf(test: ImageTest, tier: Tier, mode: EngineMode | undefined): stri
 }
 
 /**
+ * The switches that CI's software renderer draws a test's page with. The software GPU cannot afford
+ * the sky's volumetric tier on every page that shows a sky, so a page that sets no step count of its
+ * own draws the flat layer there. The tier's own tests set theirs, and keep the march on every path.
+ */
+function swiftShaderSwitchesOf(test: ImageTest): readonly string[] {
+	const nothing = test.swiftShaderSwitches ?? [];
+	const namesCloudSteps = [...(test.switches ?? []), ...nothing].some((entry) =>
+		entry.startsWith('cloudSteps='),
+	);
+	return namesCloudSteps ? nothing : [...nothing, 'cloudSteps=0'];
+}
+
+/**
  * Every run of these tests: each test on each of its tiers, in each of its thread modes. Throws when
  * a test compares with the references of a test that the list lacks.
  */
@@ -306,7 +319,7 @@ export function imageRuns(tests: readonly ImageTest[]): ImageRun[] {
 				}),
 				deviceTolerance: { ...DEVICE_TOLERANCE, ...test.deviceTolerance },
 				...(index > 0 && { sameAs: idOf(modes[0]) }),
-				...(test.swiftShaderSwitches && { swiftShaderSwitches: test.swiftShaderSwitches }),
+				swiftShaderSwitches: swiftShaderSwitchesOf(test),
 			}));
 		});
 	});

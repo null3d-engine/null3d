@@ -48,7 +48,9 @@ function settings(elevation: number, turn: number): Float32Array {
  * texture and generator words go unread here.
  */
 function command(stage: number, sky: Float32Array): [Uint32Array, Float32Array] {
-	const words = new Uint32Array(20);
+	// The sky's values come after the first four words, then the cloud tier's step count and the
+	// noise field's texture, which this page draws none of.
+	const words = new Uint32Array(22);
 	const floats = new Float32Array(words.buffer);
 	words[2] = stage;
 	floats.set(sky, 4);
@@ -136,6 +138,7 @@ async function timeWebGPU(): Promise<Timed> {
 			undefined,
 			undefined,
 			undefined,
+			undefined,
 		);
 		device.queue.submit([encoder.finish()]);
 		await device.queue.onSubmittedWorkDone();
@@ -152,6 +155,7 @@ async function timeWebGPU(): Promise<Timed> {
 			...command(k, sky),
 			0,
 			memory,
+			undefined,
 			undefined,
 			undefined,
 			undefined,
@@ -180,6 +184,7 @@ async function timeWebGPU(): Promise<Timed> {
 			...command(k, last),
 			0,
 			memory,
+			undefined,
 			undefined,
 			undefined,
 			undefined,
@@ -288,6 +293,7 @@ async function timeWebGL2(): Promise<Timed> {
 				null,
 				undefined,
 				undefined,
+				null,
 			);
 		if (last === STAGES - 1) read();
 		if (timer) gl.endQuery(timer.TIME_ELAPSED_EXT);

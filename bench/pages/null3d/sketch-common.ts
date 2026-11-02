@@ -75,6 +75,19 @@ export function readPinnedScale(moduleUrl: string): number | null {
 }
 
 /**
+ * Sets the quality switches that a sketch's own address names: the governor, which `?governor=off`
+ * turns off, and a pinned render scale, which holds one scale and turns the governor off so no step
+ * can move it. Every benchmark sketch that lets the scale move uses this one path, so none can drop
+ * one of the two switches.
+ */
+export function applyQualitySwitches(quality: Quality, moduleUrl: string): void {
+	quality.set({ governor: readGovernor(moduleUrl) });
+	const pinned = readPinnedScale(moduleUrl);
+	if (pinned !== null)
+		quality.set({ minRenderScale: pinned, maxRenderScale: pinned, governor: false });
+}
+
+/**
  * Sets the background, the sun and the ambient light, and makes the active camera. The three.js
  * twins draw with no tone mapping, three.js's default, so the null3D pages turn off the engine's
  * default curve. The twins also draw every pixel of the canvas and never lighten their shadows,

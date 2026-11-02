@@ -71,6 +71,11 @@ export interface RendererSetup extends FramePacing {
 	 * narrowed shader set lists, through the `?permutations=record` switch.
 	 */
 	recordPermutations?: boolean;
+	/**
+	 * The steps of each ray of the sky's volumetric cloud tier at the page's start: above 0, the
+	 * thread that draws loads the tier's shaders with the first generator that it runs.
+	 */
+	cloudSteps?: number;
 }
 
 export type SketchWorkerInit = CoreHandoff & {

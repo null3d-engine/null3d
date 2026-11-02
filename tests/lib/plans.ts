@@ -1195,7 +1195,8 @@ export type CostedEffect =
 	| 'sky'
 	| 'sharpen'
 	| 'compute'
-	| 'fills';
+	| 'fills'
+	| 'clouds';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -1297,6 +1298,14 @@ export function effectPlan(
 		sharpen: [['', []]],
 		// A compute pass whose output a vertex offset reads, for the vegetation wind path's budgets.
 		compute: [['', []]],
+		// The tier at the High preset's step count, and the tier below it.
+		clouds: [
+			['-32', ['steps=32']],
+			['-16', ['steps=16']],
+			// Twice the High preset's steps: the march's cost follows its steps, so a device with
+			// no GPU timer that holds this frame bounds the High tier's cost at half of it.
+			['-stress', ['steps=64', 'heavy']],
+		],
 		// The fills plan times its own pages, at one render scale each.
 		fills: [['', []]],
 	};
@@ -3077,6 +3086,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	effects: () => effectPlan('effects'),
 	sharpen: () => effectPlan('sharpen'),
 	compute: () => effectPlan('compute'),
+	clouds: () => effectPlan('clouds'),
 	'physical-sky': () => effectPlan('sky'),
 	'fills-cost': fillsCostPlan,
 	'effects-joined': effectsJoinedPlan,

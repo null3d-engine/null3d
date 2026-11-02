@@ -25,16 +25,33 @@ const MOST_SAMPLES = 8192;
 const FEWEST_PANORAMA_SAMPLES = 2;
 const MOST_PANORAMA_SAMPLES = 8;
 
+/**
+ * The volumetric cloud tier's shader builds, by the sky kind that each draws: the analytic sky, and
+ * the physical sky's panorama.
+ */
+export interface CloudShaders {
+	readonly sky?: import('../generated/shaders').ShaderVariant<'sky'>;
+	readonly panorama?: import('../generated/shaders').ShaderVariant<'panorama'>;
+}
+
 /** Bytes of one step's uniform values, as the shader's `Step` holds them. */
 export const STEP_BYTES = 32;
-
-export { LAYER_VALUES, LAYER_WORD, LIGHT_BUFFER_WORD } from './environment-words';
 
 /** Bytes of the sky's settings, as the shader's `SkySettings` holds them. */
 export const SKY_BYTES = 64;
 
 /** Bytes of the layer's values, as the shader's `SkyLayerValues` holds them. */
 export const LAYER_BYTES = 32;
+
+// The words of a stage's command sit in environment-words.ts, which every start reads while the
+// steps load only with a sketch's first map.
+export {
+	CLOUD_FIELD_WORD,
+	CLOUD_STEPS_WORD,
+	LAYER_VALUES,
+	LAYER_WORD,
+	LIGHT_BUFFER_WORD,
+} from './environment-words';
 
 /**
  * The texels of a light capture's target, one for each of the nine spherical harmonics
