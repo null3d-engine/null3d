@@ -132,7 +132,11 @@ function chooseCard(
 
 export default defineSketch((ctx) => {
 	if (!SPECIES) throw new Error(`the review has no ${params.get('species')} tree`);
-	const { scene, geometry, materials } = ctx;
+	const { scene, geometry, materials, post } = ctx;
+	// A review picture is compared with a photograph, and a photograph carries no display curve. The
+	// preset's tone map crushes and saturates the sky and the foliage, so a picture judged through it
+	// is judged against a different image from the one the reference shows.
+	post.set({ toneMapping: 'none' });
 	scene.setBackground('#9fc0dd');
 	const LOW_SUN = params.get('sun') === 'low';
 	// Every view carries the shipping shadow arrangement except the posed trunk view. A close-up
