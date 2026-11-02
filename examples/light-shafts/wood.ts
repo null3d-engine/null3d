@@ -55,28 +55,35 @@ function woodlandPine(base: Species): Species {
 		height: 18,
 		crown: { shape: 'conical', start: 0.52, spread: 0.3, pull: 0.02, floor: 0.12 },
 		branchLevels: [
-			branchLevel(trunk, { children: 8, prune: 0.02, length: 18, start: 0.0, end: 1 }),
+			branchLevel(trunk, { children: 12, prune: 0.02, length: 18, start: 0.0, end: 1 }),
 			branchLevel(bough, {
 				children: 2,
 				prune: 0.02,
 				length: 18 * 0.15,
 				whorls: 4,
+				whorlTip: true,
 				start: 0.52,
 				end: 1,
+				upright: 30,
+				thin: 0.15,
 			}),
-			branchLevel(branchlet, { children: 1, length: 18 * 0.1 }),
+			branchLevel(branchlet, { children: 2, length: 18 * 0.1 }),
 			branchLevel(twig, { children: 0, length: 18 * 0.05 }),
 		],
 		leaf: {
 			kind: 'needle',
-			cards: 22,
-			width: 0.22,
-			height: 0.31,
+			cell: 'needle',
+			cards: 24,
+			width: 0.12,
+			height: 0.5,
 			perCard: 40,
 			up: 0.3,
 			out: 1.1,
-			start: 0.05,
+			start: 0,
 			end: 1,
+			depth: 4,
+			cross: true,
+			fill: 0.3,
 		},
 		color: { ...base.color, leaf: [0.1, 0.24, 0.1] },
 	};
@@ -156,6 +163,7 @@ export function createWood(
 		atlases,
 		part: 'wood',
 		color: species.color.bark,
+		barkTiles: 5,
 		wind: field,
 	});
 	const treeLeaves = plantMaterial(ctx, {
@@ -165,7 +173,9 @@ export function createWood(
 		color: species.color.leaf,
 		transmission: species.color.transmission,
 		// The needle cards carry thin sprays, so a lower cut keeps the crown closed at a distance.
-		alphaCutoff: 0.25,
+		alphaCutoff: 0.2,
+		// A softer gloss keeps a flat needle card from catching a pale sheen in the low sun.
+		leafGloss: 0.45,
 		wind: field,
 	});
 	plantMaterials.push(treeBark, treeLeaves);

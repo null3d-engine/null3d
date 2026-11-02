@@ -8,7 +8,7 @@ import { type AtlasPixels, paintBark, paintLeaf } from './atlas-pixels';
 import type { PlantWind } from './plant';
 import plantShader from './plant.wgsl';
 import plantCardsShader from './plant-cards.wgsl';
-import type { LeafKind, Species } from './species';
+import type { LeafCellName, LeafKind, Species } from './species';
 
 /**
  * One map of an atlas: its texture, and its size in texels.
@@ -116,15 +116,7 @@ function asTexture(
  * What a leaf cell of the atlas draws.
  * @category api/vegetation
  */
-export type LeafCell =
-	| 'cluster-a'
-	| 'cluster-b'
-	| 'cluster-c'
-	| 'cluster-d'
-	| 'needle'
-	| 'frond'
-	| 'blade'
-	| 'broad';
+export type LeafCell = LeafCellName;
 
 /**
  * The cell of each leaf kind, in the atlas's cells: the column and row.
@@ -150,6 +142,10 @@ export const LEAF_CELLS_BY_KIND: Readonly<Record<LeafCell, readonly [number, num
  * @category api/vegetation
  */
 export function leafCellFor(species: Species): LeafCell {
+	// A record that names its cell keeps it: a species' leaves differ from its kind's more often
+	// than the four cluster shapes alone can tell.
+	const chosen = species.leaf?.cell;
+	if (chosen) return chosen;
 	const kind: LeafKind | undefined = species.leaf?.kind;
 	if (kind === 'needle') return 'needle';
 	if (kind === 'frond') return 'frond';

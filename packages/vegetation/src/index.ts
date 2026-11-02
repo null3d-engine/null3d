@@ -114,6 +114,7 @@ export type {
 	Crown,
 	CrownShape,
 	Leaf,
+	LeafCellName,
 	LeafKind,
 	Rosette,
 	Species,
