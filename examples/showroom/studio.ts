@@ -20,15 +20,19 @@ const FACE_MINUS_X = [0, -Math.SQRT1_2, 0, Math.SQRT1_2] as const;
 /** What the studio gives the scene. */
 export interface Studio {
 	/** The probe that the studio's surfaces reflect, which covers the room and leaves the car out. */
-	readonly probe: ReflectionProbe;
+	readonly probe?: ReflectionProbe;
 }
 
 /**
  * Builds the studio's room, floor, softboxes and probe. The floor reads the scene's planar reflection
  * pass as a mirror. The car is left out of the probe's capture by its layer, so the paint reflects
- * the room and never itself.
+ * the room and never itself. `without` names the parts that a measurement leaves out.
  */
-export function createStudio(ctx: SketchContext, mirror: Texture): Studio {
+export function createStudio(
+	ctx: SketchContext,
+	mirror: Texture,
+	without: ReadonlySet<string> = new Set(),
+): Studio {
 	const { scene, geometry, materials } = ctx;
 	const wall = materials.standard({ color: '#14161b', roughness: 0.82 });
 	const ceiling = materials.standard({ color: '#0b0c0f', roughness: 0.9 });
@@ -92,27 +96,29 @@ export function createStudio(ctx: SketchContext, mirror: Texture): Studio {
 	// The softbox above and behind the car, and a thinner box over it, which draw the reflections
 	// across the roof and the flanks.
 	const key = { width: 5.5, height: 2.2 };
-	scene.createRectAreaLight({
-		position: [0, 6.1, 12],
-		direction: [0, -1, 0],
-		width: key.width,
-		height: key.height,
-		range: 18,
-		color: '#fff1dc',
-		intensity: 300,
-	});
+	if (!without.has('arealights'))
+		scene.createRectAreaLight({
+			position: [0, 6.1, 12],
+			direction: [0, -1, 0],
+			width: key.width,
+			height: key.height,
+			range: 18,
+			color: '#fff1dc',
+			intensity: 300,
+		});
 	panel(key.width, key.height, [0, 6.16, 12], [Math.SQRT1_2, 0, 0, Math.SQRT1_2], '#fff1dc');
 	// A long thin box over the car, whose reflection draws the bright line along the roof and the deck.
 	const top = { width: 6.5, height: 0.8 };
-	scene.createRectAreaLight({
-		position: [0, 5, 9],
-		direction: [0, -1, 0],
-		width: top.width,
-		height: top.height,
-		range: 14,
-		color: '#ffffff',
-		intensity: 240,
-	});
+	if (!without.has('arealights'))
+		scene.createRectAreaLight({
+			position: [0, 5, 9],
+			direction: [0, -1, 0],
+			width: top.width,
+			height: top.height,
+			range: 14,
+			color: '#ffffff',
+			intensity: 240,
+		});
 	panel(top.width, top.height, [0, 5.06, 9], [Math.SQRT1_2, 0, 0, Math.SQRT1_2], '#ffffff');
 	// A strip down each side, which lights the flanks and the walls.
 	const stripSize = { width: 0.9, height: 5 };
@@ -120,15 +126,16 @@ export function createStudio(ctx: SketchContext, mirror: Texture): Studio {
 		[-1, '#dfe9ff'],
 		[1, '#ffd9b8'],
 	] as const) {
-		scene.createRectAreaLight({
-			position: [side * 9.4, 2.9, 10.5],
-			direction: [-side, 0, 0],
-			width: stripSize.width,
-			height: stripSize.height,
-			range: 20,
-			color,
-			intensity: 150,
-		});
+		if (!without.has('arealights'))
+			scene.createRectAreaLight({
+				position: [side * 9.4, 2.9, 10.5],
+				direction: [-side, 0, 0],
+				width: stripSize.width,
+				height: stripSize.height,
+				range: 20,
+				color,
+				intensity: 150,
+			});
 		panel(
 			stripSize.width,
 			stripSize.height,
@@ -150,6 +157,7 @@ export function createStudio(ctx: SketchContext, mirror: Texture): Studio {
 	});
 
 	// The probe fills the room's box, so every surface inside it reflects the softboxes and the walls.
+	if (without.has('probe')) return {};
 	const probe = scene.createReflectionProbe({
 		box: { min: [-HALF, 0.01, 0.01], max: [HALF, HEIGHT, DEPTH - 0.01] },
 		position: [0, 3, DEPTH / 2],
