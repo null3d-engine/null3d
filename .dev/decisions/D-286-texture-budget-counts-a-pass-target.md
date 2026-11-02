@@ -102,16 +102,18 @@ mode and WebGL2. `terrain`, `demo-terrain`, `water-shores`, `transmission-water`
 WebGPU matched their references, which predate the fix. The fix moved no pixel there.
 
 The other fourteen differ from their references, and those were drawn again at the commit before
-the fix. Each pair of drawings matches to 0.000 per cent. Two compatibility-mode pictures read 0.051 and
-0.001 per cent, which is the noise of two separate runs. So those references were owed a redraw
+the fix. Eleven pairs of drawings are identical. Three compatibility-mode pictures differ, in 2,302,
+28 and 2 of their 230,400 pixels. Only 117 of all of those differ by more than two levels. That
+is the speckle of two separate runs of a moving scene. So those references were owed a redraw
 before this fix.
 
 Three `water-bounds` pages timed out under the load of four parallel tests and drew no frame, so
 they are no evidence either way.
 
-On WebGL2 the Creek water-close picture draws its trees near black, where its WebGPU and
-compatibility drawings shade the same trees. That darkness predates the fix, and it owes a look of
-its own before a reference is drawn over it.
+On WebGL2 the Creek water-close picture draws the water's sky reflection dim: 10.8 in the lower
+third, where WebGPU and compatibility mode read 25.1. The sky and the trees differ by about one
+level. That darkness predates the fix, and it owes a look of its own before a reference is drawn
+over it.
 
 ## What a fix must show
 
