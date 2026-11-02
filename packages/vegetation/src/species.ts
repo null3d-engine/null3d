@@ -315,6 +315,12 @@ export interface Species {
 	 * vertical. The default is 0.18; a wider value spreads several stems from one base.
 	 */
 	readonly stemLean?: number;
+	/**
+	 * The detail level whose meshes cast the plant's shadow. Leave it out and the coarsest level casts
+	 * it, unless the plant is small enough that a coarse level would turn its shadow into a blob: a
+	 * plant under `SHADOW_CASTER_MIN_TRIANGLES` keeps its finest level whatever this says.
+	 */
+	readonly shadowLevel?: number;
 	/** How much a variant's height varies from the record's, as a share of it. */
 	readonly heightVariance: number;
 	/** The scale of one copy, from smallest to largest. */
@@ -386,6 +392,13 @@ export function speciesProblems(species: Species): string[] {
 	share(species.leader ?? 1, `${name}: leader`);
 	if (!finite(species.trunks) || species.trunks < 0)
 		problems.push(`${name}: trunks must be a number from 0.`);
+	if (
+		species.shadowLevel !== undefined &&
+		(!finite(species.shadowLevel) ||
+			species.shadowLevel < 0 ||
+			!Number.isInteger(species.shadowLevel))
+	)
+		problems.push(`${name}: shadowLevel must be a whole level from 0.`);
 	if (species.stemLean !== undefined && (!finite(species.stemLean) || species.stemLean < 0))
 		problems.push(`${name}: stemLean must be a number from 0.`);
 	if (species.kind === 'tree' || species.kind === 'conifer' || species.kind === 'shrub')

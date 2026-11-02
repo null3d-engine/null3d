@@ -11,6 +11,7 @@ import {
 	plantMaterial,
 	plantWind,
 	setWindLayer,
+	shadowCasterLevel,
 	treeValues,
 } from '@null3d/vegetation';
 import { createWind } from '@null3d/wind';
@@ -92,7 +93,8 @@ export default defineSketch((ctx) => {
 	});
 	const batches: InstanceBatch[] = [];
 	const proxyBatches: InstanceBatch[] = [];
-	const coarseLevel = asset.levels[asset.levels.length - 1];
+	// The shadow casts from the level the record names, unless the plant is too small for a coarse one.
+	const coarseLevel = asset.levels[shadowCasterLevel(asset)];
 	for (const part of asset.levels[0]?.parts ?? []) {
 		const baseMesh = geometry.fromArrays(part.arrays);
 		baseMesh.setLevels(

@@ -10,6 +10,7 @@ import {
 	leafCellFor,
 	plantMaterial,
 	type Species,
+	shadowCasterLevel,
 } from '@null3d/vegetation';
 import { REVIEW_TREES, reviewTree } from '../lib/tree-corpus';
 
@@ -201,7 +202,7 @@ export default defineSketch((ctx) => {
 		}
 		// A shadow proxy casts from the coarsest level alone, so a low sun can show what it leaves out.
 		if (SHADOW_PROXY) {
-			const coarse = asset.levels[asset.levels.length - 1];
+			const coarse = asset.levels[shadowCasterLevel(asset)];
 			for (const part of coarse?.parts ?? []) {
 				scene.createMesh({
 					mesh: geometry.fromArrays(part.arrays),
