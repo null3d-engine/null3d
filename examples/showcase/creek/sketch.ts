@@ -198,6 +198,9 @@ function createCreekWater(
 		],
 		level: WATER,
 		layers: 1,
+		// The stream runs slowly, so its surface stays nearly flat: the swell is a tenth of a lake's,
+		// and the fine ripples keep their full strength.
+		waveAmplitude: 0.1,
 		wind,
 		...(reflectScale !== undefined && { reflectionScale: reflectScale }),
 		...(alwaysReflect && { reflectionEvery: { low: 1, medium: 1, high: 1, ultra: 1 } }),
