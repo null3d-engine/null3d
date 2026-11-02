@@ -325,6 +325,43 @@ test('a changed tower moves the distance no faster than the pull', () => {
 	expect(mostPlace).toBeLessThan(1.6);
 });
 
+/**
+ * A tower that stands inside the standoff behind the car, so the camera must swing to a side. It
+ * stands straight behind, so the swing's arc carries the camera clear of it and the keep-out does
+ * not move the camera while the swing runs.
+ */
+const INSIDE = new Float32Array([0, -8, 4, 4, 100]);
+/** How fast the car creeps forward while the swing runs, in meters per second. */
+const CREEP = 1;
+
+test('a side swing at a wide zoom does not drop the camera', () => {
+	// The camera sits at the user's own zoom, seeing the car, and then a tower inside the standoff
+	// starts a side swing. The height blend must reach the user's own height at that distance, or
+	// the aim drops by the height of the zoom in a single frame as the swing shortens the blend.
+	const car = flight();
+	const sight = createSight(ZOOM);
+	const aim: Flight = { ...flight() };
+	const step = (towers: Float32Array, frames: number): void => {
+		for (let k = 0; k < frames; k++) {
+			// The car creeps forward, so the tower stays inside the standoff for the whole swing.
+			car.z += CREEP * FRAME;
+			settleSight(sight, car.x, car.y, car.z, BEHIND, TILT, ZOOM, DISTANCE, towers, FRAME, aim);
+		}
+	};
+	step(NONE, 30);
+	let was = { x: aim.x, y: aim.y, z: aim.z };
+	let most = 0;
+	for (let k = 0; k < 180; k++) {
+		step(INSIDE, 1);
+		most = Math.max(most, apart(aim, [was.x, was.y, was.z]));
+		was = { x: aim.x, y: aim.y, z: aim.z };
+	}
+	expect(Math.abs(sight.swing)).toBeGreaterThan(0.5);
+	// The swing itself covers about four metres of arc in its first frame at this zoom. The height
+	// must add well under a metre to that, not twelve.
+	expect(most).toBeLessThan(6);
+});
+
 test('a tower dead behind the car finds a side that sees it', () => {
 	// The tower stands inside the standoff, so no distance along the view behind the car sees it.
 	const towers = new Float32Array([0, -8, 4, 4, 100]);

@@ -393,9 +393,9 @@ function clampStandoff(eye: Flight, atX: number, atY: number, atZ: number): void
  * A tower that stands nearer than the standoff, which no distance clears, makes the camera ease
  * round to a side that sees the car, and it holds that side until the user's own view clears.
  *
- * `far` is the distance at which the usual height and look return. Writes the place the camera
- * heads for into `out`, and returns how much of the usual chase look remains, from 0 pulled in to 1
- * at the user's distance.
+ * `usual` is the chase distance at which the height and look are the usual ones; the user's own
+ * distance stands in when it is farther. Writes the place the camera heads for into `out`, and
+ * returns how much of the usual chase look remains, from 0 pulled in to 1 at the user's distance.
  */
 export function settleSight(
 	sight: Sight,
@@ -405,13 +405,17 @@ export function settleSight(
 	around: number,
 	tilt: number,
 	distance: number,
-	far: number,
+	usual: number,
 	towers: Towers,
 	dt: number,
 	out: Flight,
 ): number {
 	const level = Math.cos(tilt);
 	const rise = Math.sin(tilt);
+	// The height and the look return to the usual ones over this span. It reaches the user's own
+	// distance at least: a blend that stopped short of the camera would drop it by the height of
+	// the zoom in a single frame when a side swing begins, because the swing shortens the blend.
+	const far = Math.max(usual, distance);
 	// The pull follows whether a tower stands between the car and the user's usual place, not
 	// whether one stands between the car and the camera that the pull itself has moved, so the
 	// pull does not release as soon as its own motion clears the line.
