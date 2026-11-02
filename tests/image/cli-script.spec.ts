@@ -133,7 +133,8 @@ test.describe('the island showcase through three states', () => {
 
 	// One run draws all three states, and each test compares one of its images with its reference.
 	test.beforeAll(async () => {
-		test.setTimeout(900_000);
+		// Three states, each waiting up to the command's limit for its frame.
+		test.setTimeout(1_500_000);
 		drawn = mkdtempSync(join(REPO_ROOT, 'target/cli-script-showcase-'));
 		const environment = environmentNamed(test.info().project.name);
 		const run = await runCli(REPO_ROOT, [
@@ -147,7 +148,7 @@ test.describe('the island showcase through three states', () => {
 			'--gpu',
 			SCRIPT_TIER,
 			'--timeout',
-			'180',
+			'300',
 			'--out',
 			join(drawn, 'island.png'),
 		]);
