@@ -9,6 +9,10 @@ import { decodePngRgba } from '../../packages/cli/src/png.js';
 
 /** The share of the canvas to measure, of its width and height: the lit floor before the car. */
 const BOX = [0.3, 0.7, 0.6, 0.95] as const;
+/** A part of the frame that the car's slow turn moves, so the run knows the scene is alive. */
+const MOVING = [0.55, 0.3, 0.9, 0.75] as const;
+/** The least that the moving part may change over the run, in levels of 255. */
+const MOVES = 1;
 /** The most that the floor's mean luminance may move across the frames, in levels of 255. */
 const LIMIT = 2;
 /**
@@ -26,12 +30,17 @@ const LEAST = 8;
 /** How long the capture may take on a software GPU, where a frame can take seconds. */
 const CAPTURE_MS = 30_000;
 
-/** The mean luminance of the box, from the canvas pixels of one frame. */
-function meanOf(data: Uint8Array, width: number, height: number): number {
-	const x0 = Math.floor(BOX[0] * width);
-	const x1 = Math.floor(BOX[2] * width);
-	const y0 = Math.floor(BOX[1] * height);
-	const y1 = Math.floor(BOX[3] * height);
+/** The mean luminance of a box, from the canvas pixels of one frame. */
+function meanOf(
+	data: Uint8Array,
+	width: number,
+	height: number,
+	box: readonly [number, number, number, number],
+): number {
+	const x0 = Math.floor(box[0] * width);
+	const x1 = Math.floor(box[2] * width);
+	const y0 = Math.floor(box[1] * height);
+	const y1 = Math.floor(box[3] * height);
 	let sum = 0;
 	let count = 0;
 	for (let y = y0; y < y1; y++)
@@ -60,6 +69,17 @@ test('the showroom floor holds still on a still camera', async ({ page, context 
 	// opening view for three seconds, so the press lands on that view.
 	await page.keyboard.press('c');
 	await page.waitForTimeout(600);
+	// A still image of a stopped engine would pass every check below, so the run records the sketch's
+	// frame before and after and requires it to have moved.
+	const frameOf = () =>
+		page.evaluate(async () => {
+			const engine = (
+				globalThis as { __null3dEngine?: { captureFrame(): Promise<{ frame: number }> } }
+			).__null3dEngine;
+			if (!engine) throw new Error('the page has no engine to read the frame of');
+			return (await engine.captureFrame()).frame;
+		});
+	const frameBefore = await frameOf();
 
 	const frames: string[] = [];
 	const session = await context.newCDPSession(page);
@@ -72,10 +92,12 @@ test('the showroom floor holds still on a still camera', async ({ page, context 
 	while (frames.length < WANTED && Date.now() < deadline) await page.waitForTimeout(250);
 	await session.send('Page.stopScreencast');
 
-	const means = frames.map((base64) => {
-		const frame = decodePngRgba(Buffer.from(base64, 'base64'), 'a screencast frame');
-		return meanOf(frame.data, frame.width, frame.height);
-	});
+	const drawn = frames.map((base64) =>
+		decodePngRgba(Buffer.from(base64, 'base64'), 'a screencast frame'),
+	);
+	const means = drawn.map((frame) => meanOf(frame.data, frame.width, frame.height, BOX));
+	const moving = drawn.map((frame) => meanOf(frame.data, frame.width, frame.height, MOVING));
+	const frameAfter = await frameOf();
 	const swing = Math.max(...means) - Math.min(...means);
 	let step = 0;
 	let across = 0;
@@ -90,7 +112,14 @@ test('the showroom floor holds still on a still camera', async ({ page, context 
 			3,
 		)} against ${twoApart.toFixed(3)} two frames apart`,
 	);
+	const moved = Math.max(...moving) - Math.min(...moving);
+	console.log(
+		`the sketch drew frames ${frameBefore} to ${frameAfter}, and the car moved the frame by ${moved.toFixed(2)}` +
+			` of ${MOVES}`,
+	);
+	expect(frameAfter).toBeGreaterThan(frameBefore);
 	expect(means.length).toBeGreaterThanOrEqual(LEAST);
+	expect(moved).toBeGreaterThanOrEqual(MOVES);
 	expect(swing).toBeLessThanOrEqual(LIMIT);
 	expect(apart).toBeLessThanOrEqual(Math.max(FLOOR, ALTERNATION * twoApart));
 });

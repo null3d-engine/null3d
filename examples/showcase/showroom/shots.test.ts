@@ -52,7 +52,8 @@ test('the opening looks at the configurator with the car in frame beside it', ()
 });
 
 test('the car leaves the studio before the camera follows it out', () => {
-	// The car waits in the studio for the first part of the loop, and the camera stays with it.
+	// The times are the current shot lengths, not a property of the demo: a shot that lasts longer
+	// moves every one of them, and the checks below move with it.
 	for (const time of [2, 5, 8]) {
 		expect(carPose(time).heading).toBeGreaterThanOrEqual(TOWARD_STREET - 0.5);
 		expect(pose(time)[2]!).toBeGreaterThan(0);
@@ -61,4 +62,18 @@ test('the car leaves the studio before the camera follows it out', () => {
 	expect(pose(20)[2]!).toBeLessThan(-10);
 	// And it comes back in for the settle, which ends on the opening view.
 	expect(pose(30)[2]!).toBeGreaterThan(0);
+});
+
+test('the camera backs away in front of the car as it returns', () => {
+	// The camera waits ahead of the car, on the studio side, and retreats before it all the way in,
+	// so the car stays in frame as it passes toward the showroom. The times are the current shot
+	// lengths, as the test above says.
+	for (const time of [23, 25, 27]) {
+		const camera = pose(time)[2]!;
+		expect(camera).toBeGreaterThan(carPose(time).z + 4);
+		expect(camera - carPose(time).z).toBeLessThan(14);
+	}
+	// It goes that way: each pose is nearer the studio than the one before it.
+	expect(pose(25)[2]!).toBeGreaterThan(pose(23)[2]!);
+	expect(pose(27)[2]!).toBeGreaterThan(pose(25)[2]!);
 });
