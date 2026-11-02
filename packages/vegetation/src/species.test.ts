@@ -30,6 +30,7 @@ describe('the species records', () => {
 			'hosta',
 			'sedge',
 			'rush',
+			'wildflower',
 		]);
 	});
 

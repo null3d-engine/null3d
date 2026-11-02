@@ -163,6 +163,11 @@ export interface SpeciesColor {
 	readonly bark: readonly [number, number, number];
 	/** The leaf color, linear 0 to 1. */
 	readonly leaf: readonly [number, number, number];
+	/**
+	 * The flower color, linear 0 to 1, for a rosette that grows flowers. A page draws the flower
+	 * part with the leaf material tinted by this color.
+	 */
+	readonly flower?: readonly [number, number, number];
 	/** How much a copy's leaf color may shift, linear 0 to 1. */
 	readonly tint: number;
 	/** The light that passes through a leaf, as a share of the diffuse light. */
@@ -388,6 +393,10 @@ export function speciesProblems(species: Species): string[] {
 	for (const [i, channel] of species.color.leaf.entries())
 		if (!finite(channel) || channel < 0 || channel > 1)
 			problems.push(`${name}: color.leaf[${i}] must be a number from 0 to 1.`);
+	if (species.color.flower)
+		for (const [i, channel] of species.color.flower.entries())
+			if (!finite(channel) || channel < 0 || channel > 1)
+				problems.push(`${name}: color.flower[${i}] must be a number from 0 to 1.`);
 	share(species.color.tint, `${name}: color.tint`);
 	share(species.color.transmission, `${name}: color.transmission`);
 

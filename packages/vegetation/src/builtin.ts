@@ -1,4 +1,4 @@
-// The built-in species: five general families, and the eight that Creek's valley draws. Each is a
+// The built-in species: five general families, and the nine that Creek's valley draws. Each is a
 // record of numbers, not a model or a file, so the package ships no plant assets and a page grows
 // them at first use. A themed pack writes the same records with numbers of its own.
 import { type BranchLevel, branchLevel, type Species } from './species';
@@ -289,8 +289,9 @@ export const BUILTIN_SPECIES: readonly Species[] = [
 ];
 
 /**
- * Creek's species: the valley's trees, and the hostas, sedges and rushes that line its water. Their
- * numbers give the shapes that the demo's plant models had.
+ * Creek's species: the valley's trees, the hostas, sedges and rushes that line its water, and the
+ * wildflower clumps of its open patches. Their numbers give the shapes that the demo's plant models
+ * had.
  *
  * @category api/vegetation
  */
@@ -595,7 +596,15 @@ export const CREEK_SPECIES: readonly Species[] = [
 			flowers: 7,
 		},
 		wind: { stiffness: [0.55], flutter: 0.03, frequency: 2.4 },
-		color: { bark: [0.2, 0.18, 0.12], leaf: [0.12, 0.3, 0.09], tint: 0.12, transmission: 0.42 },
+		// A hosta's flowers are pale lilac on tall stems, so its heads draw in that colour rather than
+		// as leaves.
+		color: {
+			bark: [0.2, 0.18, 0.12],
+			leaf: [0.12, 0.3, 0.09],
+			flower: [0.66, 0.6, 0.82],
+			tint: 0.12,
+			transmission: 0.42,
+		},
 		height: 0.6,
 		trunks: 0,
 		heightVariance: 0.12,
@@ -659,10 +668,43 @@ export const CREEK_SPECIES: readonly Species[] = [
 		variants: 6,
 		seedSalt: 208,
 	},
+	{
+		id: 'wildflower',
+		kind: 'rosette',
+		branchLevels: [],
+		crown: { shape: 'hemispherical', start: 0, spread: 0.25, pull: 0.15 },
+		rosette: {
+			blades: 7,
+			length: 0.34,
+			width: 0.17,
+			arch: 0.45,
+			segments: 4,
+			shape: 'broad',
+			pinnae: 0,
+			upright: 0.55,
+			flowers: 7,
+		},
+		wind: { stiffness: [0.7], flutter: 0.04, frequency: 2.6 },
+		color: {
+			bark: [0.2, 0.18, 0.12],
+			leaf: [0.14, 0.3, 0.08],
+			flower: [0.78, 0.64, 0.18],
+			tint: 0.1,
+			transmission: 0.4,
+		},
+		height: 0.4,
+		trunks: 0,
+		heightVariance: 0.15,
+		size: [0.8, 1.4],
+		flare: 0,
+		levels: 2,
+		variants: 6,
+		seedSalt: 209,
+	},
 ];
 
 /**
- * Every species that the package ships: the five families and Creek's eight.
+ * Every species that the package ships: the five families and Creek's nine.
  *
  * @category api/vegetation
  */

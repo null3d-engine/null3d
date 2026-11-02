@@ -50,20 +50,20 @@
 	"chromium-swiftshader/compat/creek-render-scale-opening.png": {
 		"test": "creek-render-scale-opening",
 		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
+		"date": "2026-11-02",
+		"reason": "The Creek's plants changed on this branch and CI's SwiftShader has not drawn the scene since. This Mac's SwiftShader drew these twelve; CI's next run draws the set again and replaces them (D-238)."
 	},
 	"chromium-swiftshader/compat/creek-render-scale-route.png": {
 		"test": "creek-render-scale-route",
 		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
+		"date": "2026-11-02",
+		"reason": "The Creek's plants changed on this branch and CI's SwiftShader has not drawn the scene since. This Mac's SwiftShader drew these twelve; CI's next run draws the set again and replaces them (D-238)."
 	},
 	"chromium-swiftshader/compat/creek-water-close.png": {
 		"test": "creek-water-close",
 		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
+		"date": "2026-11-02",
+		"reason": "The Creek's plants changed on this branch and CI's SwiftShader has not drawn the scene since. This Mac's SwiftShader drew these twelve; CI's next run draws the set again and replaces them (D-238)."
 	},
 	"chromium-swiftshader/compat/custom-cutout-motion.png": {
 		"test": "custom-cutout-motion",
@@ -98,8 +98,8 @@
 	"chromium-swiftshader/compat/demo-creek.png": {
 		"test": "demo-creek",
 		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
+		"date": "2026-11-02",
+		"reason": "The Creek's plants changed on this branch and CI's SwiftShader has not drawn the scene since. This Mac's SwiftShader drew these twelve; CI's next run draws the set again and replaces them (D-238)."
 	},
 	"chromium-swiftshader/compat/demo-depth-only.png": {
 		"test": "demo-depth-only",
@@ -323,6 +323,12 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
+	"chromium-swiftshader/compat/vegetation-wildflower.png": {
+		"test": "vegetation-wildflower",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "The new wildflower species has no CI drawing yet; CI's next run draws the software set and is the judge (D-238)."
+	},
 	"chromium-swiftshader/compat/water-bounds.png": {
 		"test": "water-bounds",
 		"tier": "compat",
@@ -386,20 +392,20 @@
 	"chromium-swiftshader/webgl2/creek-render-scale-opening.png": {
 		"test": "creek-render-scale-opening",
 		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
+		"date": "2026-11-02",
+		"reason": "The Creek's plants changed on this branch and CI's SwiftShader has not drawn the scene since. This Mac's SwiftShader drew these twelve; CI's next run draws the set again and replaces them (D-238)."
 	},
 	"chromium-swiftshader/webgl2/creek-render-scale-route.png": {
 		"test": "creek-render-scale-route",
 		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
+		"date": "2026-11-02",
+		"reason": "The Creek's plants changed on this branch and CI's SwiftShader has not drawn the scene since. This Mac's SwiftShader drew these twelve; CI's next run draws the set again and replaces them (D-238)."
 	},
 	"chromium-swiftshader/webgl2/creek-water-close.png": {
 		"test": "creek-water-close",
 		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
+		"date": "2026-11-02",
+		"reason": "The Creek's plants changed on this branch and CI's SwiftShader has not drawn the scene since. This Mac's SwiftShader drew these twelve; CI's next run draws the set again and replaces them (D-238)."
 	},
 	"chromium-swiftshader/webgl2/custom-cutout-motion.png": {
 		"test": "custom-cutout-motion",
@@ -434,8 +440,8 @@
 	"chromium-swiftshader/webgl2/demo-creek.png": {
 		"test": "demo-creek",
 		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
+		"date": "2026-11-02",
+		"reason": "The Creek's plants changed on this branch and CI's SwiftShader has not drawn the scene since. This Mac's SwiftShader drew these twelve; CI's next run draws the set again and replaces them (D-238)."
 	},
 	"chromium-swiftshader/webgl2/demo-depth-only.png": {
 		"test": "demo-depth-only",
@@ -671,6 +677,12 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
+	"chromium-swiftshader/webgl2/vegetation-wildflower.png": {
+		"test": "vegetation-wildflower",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "The new wildflower species has no CI drawing yet; CI's next run draws the software set and is the judge (D-238)."
+	},
 	"chromium-swiftshader/webgl2/weather.png": {
 		"test": "weather",
 		"tier": "webgl2",
@@ -728,20 +740,20 @@
 	"chromium-swiftshader/webgpu/creek-render-scale-opening.png": {
 		"test": "creek-render-scale-opening",
 		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
+		"date": "2026-11-02",
+		"reason": "The Creek's plants changed on this branch and CI's SwiftShader has not drawn the scene since. This Mac's SwiftShader drew these twelve; CI's next run draws the set again and replaces them (D-238)."
 	},
 	"chromium-swiftshader/webgpu/creek-render-scale-route.png": {
 		"test": "creek-render-scale-route",
 		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
+		"date": "2026-11-02",
+		"reason": "The Creek's plants changed on this branch and CI's SwiftShader has not drawn the scene since. This Mac's SwiftShader drew these twelve; CI's next run draws the set again and replaces them (D-238)."
 	},
 	"chromium-swiftshader/webgpu/creek-water-close.png": {
 		"test": "creek-water-close",
 		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
+		"date": "2026-11-02",
+		"reason": "The Creek's plants changed on this branch and CI's SwiftShader has not drawn the scene since. This Mac's SwiftShader drew these twelve; CI's next run draws the set again and replaces them (D-238)."
 	},
 	"chromium-swiftshader/webgpu/custom-cutout-motion.png": {
 		"test": "custom-cutout-motion",
@@ -776,8 +788,8 @@
 	"chromium-swiftshader/webgpu/demo-creek.png": {
 		"test": "demo-creek",
 		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "drawn on this machine's software GPU before the branch was pushed; CI run 40823063180 drew each of these twelve on its software tier and matched them within the test's tolerance, so the run confirms them without saving new images"
+		"date": "2026-11-02",
+		"reason": "The Creek's plants changed on this branch and CI's SwiftShader has not drawn the scene since. This Mac's SwiftShader drew these twelve; CI's next run draws the set again and replaces them (D-238)."
 	},
 	"chromium-swiftshader/webgpu/demo-depth-only.png": {
 		"test": "demo-depth-only",
@@ -1024,6 +1036,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-02",
 		"reason": "the manifest draws the software set at Low now, because the High shadow pass timed out; CI's drawing replaces this one"
+	},
+	"chromium-swiftshader/webgpu/vegetation-wildflower.png": {
+		"test": "vegetation-wildflower",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "The new wildflower species has no CI drawing yet; CI's next run draws the software set and is the judge (D-238)."
 	},
 	"chromium-swiftshader/webgpu/water-bounds.png": {
 		"test": "water-bounds",
