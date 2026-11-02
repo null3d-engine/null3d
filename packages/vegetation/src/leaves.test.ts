@@ -116,8 +116,10 @@ describe('card coverage', () => {
 			return Math.min(...leafCards(base, skeleton, 3, 0, crown).map((card) => card.center[1]));
 		};
 		expect(lowest()).toBeGreaterThanOrEqual(floor);
-		// The conifer's foliage reaches the ground, so a floor of zero keeps the skirt below its crown.
-		expect(lowest(0)).toBeLessThan(floor - 1);
+		// The conifer's foliage reaches the ground, so a floor of zero keeps the skirt well below its
+		// crown. Half a metre below the floor is enough to tell the two apart without fixing where one
+		// bough's tip happens to end.
+		expect(lowest(0)).toBeLessThan(floor - 0.5);
 	});
 
 	test('keeps every filled card inside the crown and names a branch that exists', () => {

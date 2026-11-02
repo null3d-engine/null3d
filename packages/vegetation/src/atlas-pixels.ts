@@ -259,7 +259,19 @@ const FAMILIES = {
 		lobeDepth: 0.2,
 		veins: 3,
 	},
-	needle: { profile: 1, aspect: 0.14, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 1 },
+	// A spruce's needle: short, narrow and smooth, widest near its base and tapering to a point, so
+	// a rank of them reads as needles rather than as the fringe of a blade.
+	needle: {
+		profile: 1.9,
+		aspect: 0.09,
+		teeth: 0,
+		toothDepth: 0,
+		lobes: 0,
+		lobeDepth: 0,
+		veins: 1,
+		// A needle carries no visible vein, so its blade stays smooth rather than leaf-like.
+		veinDepth: 0.2,
+	},
 	fascicle: { profile: 1, aspect: 0.11, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 1 },
 	blade: { profile: 1, aspect: 0.06, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 3 },
 	hosta: {
@@ -309,6 +321,12 @@ function leafShape(seed: number, family: LeafFamily): LeafShape {
 		variation: (at(11) * 2 - 1) * 0.75,
 		palmate: family.palmate ?? 0,
 		sinus: family.sinus ?? 0.45,
+		// The outline's own switches ride through, or a family that asks for a circle, a point or a
+		// smooth blade would paint the ordinary outline and nothing would say so.
+		circle: family.circle === true,
+		tip: family.tip ?? 0,
+		veinDepth: family.veinDepth ?? 1,
+		bites: family.bites,
 		thickness: 0.55 + 0.3 * at(12),
 	};
 }
@@ -747,29 +765,25 @@ function clumpCell(seed: number): LeafCellPainter {
 }
 
 /**
- * A spruce shoot: a thin woody twig with short needles in two ranks, standing out from it and
- * leaning forward toward its tip. The needle spacing is closer than a needle's width, so the ranks
- * overlap into a spray that stands as foliage at a distance and shows its needles close up.
+ * A spruce shoot: a thin woody twig with short needles in two opposite ranks, each needle angled
+ * forward toward the tip, as its own reference shows. The needles stand apart by more than their
+ * width, so the twig shows between them and a close view reads needles rather than a feather.
  */
 function shootCell(seed: number): LeafCellPainter {
 	const leaves: PlacedLeaf[] = [];
-	const count = 190;
+	const count = 132;
 	// The twig bows a little, so its silhouette is not a ruled line.
 	const bow = 0.012;
 	for (let i = 0; i < count; i++) {
 		const key = seed * 131 + i;
 		const f = (i + 0.5) / count;
-		// Every third needle fills the shoot's middle, and the rest make its two ranks.
-		const rank = i % 3;
 		const side = i % 2 === 0 ? -1 : 1;
-		const along = 0.02 + 0.96 * f + (random2(key, 7) - 0.5) * 0.01;
-		const lean = rank === 2 ? 0.45 + 0.3 * random2(key, 6) : 1.38 + 0.16 * (random2(key, 6) - 0.5);
-		const angle = side * lean;
-		const length =
-			(0.18 - 0.05 * Math.abs(2 * f - 1)) *
-			(0.8 + 0.36 * random2(key, 4)) *
-			(rank === 2 ? 0.62 : 1);
-		const baseX = 0.5 + bow * Math.sin(Math.PI * f) + (random2(key, 5) - 0.5) * 0.012;
+		const along = 0.04 + 0.92 * f;
+		// The needles lean forward along the twig, a little more toward its tip.
+		const lean = 1.12 + 0.14 * Math.sin(Math.PI * f);
+		const angle = side * lean + (random2(key, 6) - 0.5) * 0.18;
+		const length = (0.26 - 0.1 * f) * (0.85 + 0.3 * random2(key, 4));
+		const baseX = 0.5 + bow * Math.sin(Math.PI * f);
 		leaves.push(placeLeaf(key, FAMILIES.needle, baseX, along, angle, length));
 	}
 	return leafSpray(leaves, bow);
