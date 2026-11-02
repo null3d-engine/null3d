@@ -15,7 +15,7 @@ var barkColor: texture_2d<f32>;
 var barkSurface: texture_2d<f32>;
 /// The leaf and bark atlases' cells across and down, which the painter fixes.
 const LEAF_CELLS = vec2f(6.0, 2.0);
-const BARK_CELLS = vec2f(3.0, 2.0);
+const BARK_CELLS = vec2f(4.0, 2.0);
 
 var leafColor: texture_2d<f32>;
 var leafSurface: texture_2d<f32>;

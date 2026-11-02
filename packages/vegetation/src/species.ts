@@ -128,7 +128,7 @@ export interface Crown {
  * The bark figures that a species may draw: one painter for each family of bark.
  * @category api/vegetation
  */
-export type BarkCellName = 'birch' | 'pine' | 'oak' | 'beech' | 'spruce' | 'willow';
+export type BarkCellName = 'birch' | 'pine' | 'oak' | 'beech' | 'spruce' | 'willow' | 'holm';
 
 /**
  * The cells of the leaf atlas that a species may name: seven cluster outlines, a conifer's needle
@@ -501,7 +501,7 @@ export function speciesProblems(species: Species): string[] {
 			problems.push(`${at}.cell is not one of the leaf cells.`);
 		if (
 			species.bark !== undefined &&
-			!['birch', 'pine', 'oak', 'beech', 'spruce', 'willow'].includes(species.bark)
+			!['birch', 'pine', 'oak', 'beech', 'spruce', 'willow', 'holm'].includes(species.bark)
 		)
 			problems.push(`${name}: bark is not one of the bark cells.`);
 		if (!Number.isInteger(species.leaf.cards) || species.leaf.cards < 1)

@@ -436,7 +436,7 @@ const OAK: Species = {
 const CLUMP_OAK: Species = {
 	id: 'review-clump-oak',
 	kind: 'tree',
-	bark: 'oak',
+	bark: 'holm',
 	branchLevels: [
 		level({
 			children: 3,

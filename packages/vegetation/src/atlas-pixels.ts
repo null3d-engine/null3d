@@ -28,7 +28,7 @@ export interface AtlasPixels {
 /** How many texels one bark cell is across and down. Each cell tiles about a branch. */
 export const BARK_SIZE = 256;
 /** How many bark cells the block holds across and down: one painter for each bark family. */
-export const BARK_CELLS_X = 3;
+export const BARK_CELLS_X = 4;
 export const BARK_CELLS_Y = 2;
 /** The bark block's size in texels, its cells together. */
 export const BARK_WIDTH = BARK_CELLS_X * BARK_SIZE;
@@ -972,6 +972,18 @@ const BARK_FAMILIES: Readonly<Record<BarkCellName, BarkFamily>> = {
 		dark: [0.31, 0.22, 0.16],
 		light: [1.08, 0.86, 0.68],
 		moss: 0.12,
+	},
+	// A holm oak's bark: small dark plates that scale off, with shallow cracks between them.
+	holm: {
+		across: 12,
+		along: 9,
+		warp: 0.4,
+		crackWidth: 0.04,
+		depth: 0.3,
+		fibre: 0.02,
+		dark: [0.2, 0.19, 0.17],
+		light: [0.95, 0.9, 0.82],
+		moss: 0.05,
 	},
 	willow: {
 		across: 8,
