@@ -699,9 +699,10 @@ and a palmately lobed maple), a spruce's needle shoot, a pine's fascicle spray, 
 and a broad leaf. Its cells rose from 128 texels to 256 when the conifer needles arrived: a
 conifer's needles are a small share of a card, and at 128 texels they could not be drawn as needles
 without turning into blades. Its color and surface maps are 3.0 MB each before mips and about 4.0 MB
-each with them, so the pair costs about 8 MB, 6 MB more than the 128-texel block it replaced. The bark block grew to 768 by 512 in six cells: six painted families, 1.57 MB a map before mips and
-about 2.1 MB with them, so the pair costs about 4.2 MB against 0.35 MB for the one block it
-replaced. A species names its cell; a species that shares one says so in its record, and a leaf shape
+each with them, so the pair costs about 8 MB, 6 MB more than the 128-texel block it replaced. The bark block is 1024 by 512 in eight cells, seven of them painted families: a seventh cell joined
+for a holm oak's small dark plates, because a furrowed live-oak bark is the wrong figure for it.
+2.1 MB a map before mips and about 2.8 MB with them, so the pair costs about 5.6 MB against 0.35 MB
+for the one block it replaced. A species names its cell; a species that shares one says so in its record, and a leaf shape
 that no cell suits waits for a new cell rather than borrowing a neighbour's. A leaf comes from an outline with veins written into a height field,
 and the gradient of that field gives the normal map. Each atlas has a color map, in sRGB, whose
 values multiply the species' own color, and a linear surface map: the normal in red and green, the
