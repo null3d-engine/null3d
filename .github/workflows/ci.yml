@@ -1562,15 +1562,16 @@ jobs:
     # (bench/allocation.ts). The Mac's gate keeps the full count on a real GPU. On SwiftShader the
     # browser optimizes after fewer calls, so the warm-up is 1,200 frames. The WebGPU job runs a
     # second time with `--canvas`, so S1's own places keep their own budgets and a canvas texture's
-    # refresh is judged by its budgets too. The wind add-on's field made the second run far dearer
-    # than the first: in run 41443464419 it took 15.6 minutes on WebGPU and was still drawing on
-    # WebGL2 when the job's twenty minutes ran out, so the limit allows for that run and the canvas
-    # step beside it.
+    # refresh is judged by its budgets too. The wind add-on's field made the run far dearer: in run
+    # 41374295180 it took 15.6 minutes on WebGPU, where it failed on the lattice budget, and run
+    # 41443464419 ended both paths at the twenty-minute limit with the WebGL2 warm-up about
+    # three-quarters done. At that rate the warm-up alone takes about 23 minutes, and the plain run
+    # and four and a half minutes of setup follow it, so the limit allows for the whole wind run.
     name: allocation (${{ matrix.gpu }})
     needs: [build, load-pages]
     if: *full-run
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
