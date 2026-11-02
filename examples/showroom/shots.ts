@@ -3,7 +3,7 @@
 // the car beside it, and between them the camera turns around the car in the studio, follows it out
 // to the street, watches it turn, and comes back in front of it as it returns. The route takes the
 // same time as the car's loop, so the two meet at the seam.
-import type { Shot } from '../../lib/cinematic';
+import type { Shot } from '../lib/cinematic';
 
 /**
  * The shots, whose lengths add up to the car's loop. Each shot moves the camera from its own pose to

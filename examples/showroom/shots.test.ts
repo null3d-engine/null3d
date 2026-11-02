@@ -3,7 +3,7 @@
 // the studio, follows it out to the street and comes back in front of it. These checks hold the
 // route to that shape, so a later edit to the shots cannot quietly lose the opening view.
 import { expect, test } from 'bun:test';
-import { routePosition, routeTimeline } from '../../lib/cinematic';
+import { routePosition, routeTimeline } from '../lib/cinematic';
 import { CAR_PERIOD, carPose, TOWARD_STREET } from './route';
 import { SHOTS } from './shots';
 

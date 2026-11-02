@@ -177,9 +177,9 @@ export const DEMOS: readonly Demo[] = [
 	},
 	{
 		name: 'showroom',
-		group: 'Showcase',
-		sketch: new URL('./showcase/showroom/sketch.ts', import.meta.url),
-		code: 'showcase/showroom/',
+		group: 'Light, materials and effects',
+		sketch: new URL('./showroom/sketch.ts', import.meta.url),
+		code: 'showroom/',
 		title: 'Showroom to street',
 		scene: 'Car configurator',
 		summary:
