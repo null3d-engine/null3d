@@ -9,6 +9,7 @@ declare const shader: CompiledMaterial<
 		readonly windLayer: 'f32';
 		readonly sway: 'f32';
 		readonly swayDistance: 'f32';
+		readonly cull: 'f32';
 	},
 	'wind' | 'airSettings'
 >;

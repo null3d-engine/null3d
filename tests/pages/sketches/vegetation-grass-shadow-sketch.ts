@@ -41,6 +41,7 @@ export default defineSketch(async (ctx) => {
 	const grass = await createGrass(ctx, {
 		...GRASS,
 		wind: wind.field,
+		camera,
 		// The near cascades hold the hill; the blades past this distance stand still.
 		swayDistance: 32,
 	});

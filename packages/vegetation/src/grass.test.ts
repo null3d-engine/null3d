@@ -203,8 +203,19 @@ describe('the grass batches', () => {
 		const uploads: Record<string, unknown>[] = [];
 		const made: { capacity: number; options: Record<string, unknown> }[] = [];
 		const cast: boolean[] = [];
+		const camera = {
+			fov: 90,
+			near: 0.5,
+			far: 300,
+			getWorldMatrix(out: Float64Array) {
+				out.set([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 2, 3, 1]);
+			},
+		};
 		const ctx = {
-			engine: { capabilities: { tier: 'webgpu' } },
+			engine: {
+				capabilities: { tier: 'webgpu' },
+				viewport: { width: 960, height: 540 },
+			},
 			materials: {},
 			geometry: {},
 			scene: {
@@ -237,22 +248,36 @@ describe('the grass batches', () => {
 			},
 			quality: { preset: 'high', onChange: () => () => {} },
 		} as unknown as SketchContext;
-		const grass = await createGrass(ctx, field);
+		const grass = await createGrass(ctx, { ...field, camera } as unknown as Parameters<
+			typeof createGrass
+		>[1]);
 		expect(grass.batches).toEqual([]);
 		expect(grass.draws.length).toBe(1);
 		expect(made[0]?.capacity).toBe(125);
 		// The draw's count starts empty: the pass writes it each frame.
 		expect(made[0]?.options.count).toBe(0);
 		expect(cast).toEqual([true]);
-		// The pass names the tufts that the preset draws, the material that the rows read, and the
-		// data texture's width.
-		expect(passes[0]?.values).toEqual([100, 7, 2048, 0]);
+		// The material thins the far tufts and widens their blades, as the pass does.
+		if (!made[0]) throw new Error('the blade list made no draw');
+		expect((made[0].options.uniforms as Record<string, number>).cull).toBe(1);
+		// The pass's values hold the camera's place, its right, up and forward with its lens, then
+		// the tufts that the preset draws, the material that the rows read, and the data texture's
+		// width. The camera looks down its own -z, at the origin turned.
+		const values = passes[0]?.values as number[];
+		expect(values.slice(0, 4)).toEqual([1, 2, 3, 1]);
+		expect(values.slice(4, 7)).toEqual([1, 0, 0]);
+		expect(values[7]).toBeCloseTo(1, 12);
+		expect(values.slice(8, 12)).toEqual([0, 1, 0, 960 / 540]);
+		expect(values.slice(12, 15).map((value) => value || 0)).toEqual([0, 0, -1]);
+		expect(values[15]).toBe(0.5);
+		expect(values.slice(16, 19)).toEqual([100, 7, 2048]);
+		expect(values[19]).toBe(300);
 		// The tuft data holds two texels for each tuft.
 		const data = uploads.find((upload) => upload.width === 2048);
 		if (!data) throw new Error('the blade list wrote no tuft texture');
 		expect(data.height).toBe(Math.ceil((125 * 2) / 2048));
 		expect((data.data as Float32Array).length % 8).toBe(0);
 		grass.fit('low');
-		expect(uniformCalls.at(-1)).toEqual([35]);
+		expect(uniformCalls.at(-1)?.[16]).toBe(35);
 	});
 });

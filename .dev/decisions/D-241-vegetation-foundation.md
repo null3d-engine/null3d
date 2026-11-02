@@ -1004,9 +1004,23 @@ layer. The blades' tint comes from a hash of the tuft's root place on both paths
 values, so one shader serves the compute draw and the batch alike. WebGL2 keeps the instance batch,
 which the CPU fills.
 
-**What remains.** The compute pass builds the preset's list over the whole hill; it does not cull per
-tile or by view yet, and the distance bands are not built. The plan's widened cull toward the light
-that keeps a blade's shadow at the view's edge is therefore not needed yet: every tuft in the share
-draws in every view. Two pictures hold it. `vegetation-grass` still matches its references on the
-three real-GPU tiers, and `vegetation-grass-shadow` holds the hill at a low sun, where the grass's
-shadows follow the count, so a view that drew the capacity would show the rows past it.
+**The view cull and the distance bands.** The pass culls each 4 meter tile against the camera's
+frustum. It keeps a share of the far tufts from their roots' hashes. Under 10 meters from the camera
+it keeps all of them; at 10 to 20 meters, 94 per cent; at 20 to 30, 71; and past 30, 40. A kept far
+tuft's blades widen by the inverse of its share, so the cover stays the same. The draw shader holds
+the same block, so WebGL2's batch collapses the tufts that the share leaves out. Both paths then draw
+one hill. On the hill of 20,000 tufts at High the share keeps 13,730.
+
+**The stress hill and the rows that compare.** The 20,000 tuft hill is a stress case: 17.3 tufts on
+each square meter, and its rows hold no ceiling. On the Tab A9 Plus its High row is 961.54 ms with
+the near shadows and 283.97 without. The rows that D-241's ceilings compare draw the hill at Creek's
+own density. On the same tablet, 2,312 tufts, its valley's 2.0 on each square meter, take 306.09 ms
+with the view cull and the far share and 318.77 without. 6,820 tufts, its bank strip's 5.9, take
+490.73 and 527.17. The cull takes 4.0 per cent back at the valley's density and 6.9 at the strip's.
+Neither row reaches 208.3, because the tablet's High frame with the casting sun is about 212 ms
+before the grass adds its own. Each tuft costs about 0.046 ms, and the grass at the valley's density
+adds about 100 ms. The ceiling is below the scene's own cost at this preset. The widened cull toward
+the light is not built: the whole list draws in every view, which is why the near cascades pay for
+their draw. Two pictures hold the look. `vegetation-grass` holds the hill. `vegetation-grass-shadow`
+holds it at a low sun, where the grass's shadows follow the count, so a view that drew the capacity
+would show the rows past it.

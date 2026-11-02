@@ -325,6 +325,7 @@ export default defineSketch(async (ctx) => {
 					seed: SEED,
 					mask: bank,
 					wind: wind.field,
+					camera,
 					swayDistance: swayDistanceFor(quality.preset),
 				}),
 				createGrass(ctx, {
@@ -334,6 +335,7 @@ export default defineSketch(async (ctx) => {
 					seed: SEED + 1,
 					mask: (x, z) => dry(x, z) && !bank(x, z),
 					wind: wind.field,
+					camera,
 					swayDistance: swayDistanceFor(quality.preset),
 				}),
 			]);

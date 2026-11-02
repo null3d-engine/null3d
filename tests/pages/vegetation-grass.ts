@@ -8,20 +8,30 @@ import { progress, run } from './lib/result';
 const params = new URLSearchParams(location.search);
 /** The seconds that the measurement runs for. */
 const SECONDS = Math.max(1, Number(params.get('seconds') ?? 5));
+/** The seconds that the pipelines build before the measurement, which a slow device needs. */
+const WARMUP = Math.max(0, Number(params.get('warmup') ?? 3));
 
 run('vegetation-grass', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
+	const sketch = new URL('./sketches/vegetation-grass-sketch.ts', import.meta.url);
+	// The cost plan asks for a casting sun, so its rows hold the shadow pass that the grass adds.
+	if (params.has('shadows')) sketch.searchParams.set('shadows', '');
+	// A row can draw a hill of its own density, or one without the view cull and the far share.
+	for (const name of ['tufts', 'cull']) {
+		const value = params.get(name);
+		if (value !== null) sketch.searchParams.set(name, value);
+	}
 	const engine = await createEngine({
 		canvas,
-		sketch: new URL('./sketches/vegetation-grass-sketch.ts', import.meta.url),
+		sketch,
 		maxPixelRatio: 1,
 		preset: (params.get('preset') ?? 'high') as QualityPreset,
 	});
 	await engine.firstFrame;
 	progress('the first frame drew');
 	// Let the pipelines build and the first draws settle before the measurement.
-	await new Promise((resolve) => setTimeout(resolve, 3000));
+	await new Promise((resolve) => setTimeout(resolve, WARMUP * 1000));
 	const stats = await engine.measure(SECONDS);
 	const mode = {
 		tier: engine.capabilities.tier,

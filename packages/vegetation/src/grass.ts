@@ -5,6 +5,7 @@
 import {
 	defineFeature,
 	type InstanceBatch,
+	type PerspectiveCamera,
 	type QualityPreset,
 	quat,
 	type RenderPass,
@@ -35,6 +36,8 @@ const ATTEMPTS = 8;
 const LIFT = 0.02;
 /** The texels across the blade list's tuft data texture; two texels hold one tuft. */
 const TUFT_COLUMNS = 2048;
+/** The numbers that a blade-list pass takes: the camera and its lens, then the count and material. */
+const CULL_VALUES = 24;
 
 /**
  * What `createGrass` takes: the ground, the area, the count at the High preset, and the seed.
@@ -81,6 +84,12 @@ export interface GrassOptions {
 	 */
 	readonly swayDistance?: number;
 	/**
+	 * The camera that draws the hill. Give it to cull the tiles outside the view and to thin the
+	 * far tufts, which widens their blades so the cover stays the same. Without it every tuft in
+	 * the preset's share draws at full width, as on a page that does not draw the hill.
+	 */
+	readonly camera?: PerspectiveCamera;
+	/**
 	 * True lets WebGPU build the blade list in a compute pass, and the grass's near shadows follow
 	 * its count. The default is true. Give false for a page that drives the rows itself, which
 	 * draws an instance batch on both GPU paths.
@@ -107,8 +116,8 @@ export interface Grass {
 	 */
 	setSwayDistance(distance: number): void;
 	/**
-	 * Gives the blades the field's newest state for this frame, as the leaf material takes it. Call
-	 * it once in each frame, before the frame draws.
+	 * Gives the blades the field's newest state for this frame, as the leaf material takes it, and
+	 * the blade list the camera's view. Call it once in each frame, before the frame draws.
 	 */
 	setWindLayer(field: WindField): void;
 }
@@ -307,6 +316,7 @@ export async function createGrass(ctx: SketchContext, options: GrassOptions): Pr
 			windLayer: 0,
 			sway: options.sway ?? 0.04,
 			swayDistance: options.swayDistance ?? 0,
+			cull: options.camera ? 1 : 0,
 		},
 	});
 	const draws: GrassDraw[] = [];
@@ -341,7 +351,15 @@ export async function createGrass(ctx: SketchContext, options: GrassOptions): Pr
 			draw.object.setCastShadows(true);
 			draw.object.setReceiveShadows(true);
 			const texture = tuftTexture(ctx.textures, rows);
+			// The pass's values: the camera's place and flag, its right, up and forward with its
+			// lens, then the tufts that the preset draws, the material's index and the data
+			// texture's width.
+			const values = new Array<number>(CULL_VALUES).fill(0);
+			values[16] = Math.min(capacity, shapeHigh);
+			values[17] = draw.materialIndex;
+			values[18] = TUFT_COLUMNS;
 			passes.push({
+				values,
 				pass: ctx.render.addPass({
 					kind: 'compute',
 					description: defineFeature({
@@ -354,7 +372,7 @@ export async function createGrass(ctx: SketchContext, options: GrassOptions): Pr
 					buffers: [draw.counts, draw.instances],
 					textures: [texture],
 					dispatch: [1, 1, 1],
-					values: [Math.min(capacity, shapeHigh), draw.materialIndex, TUFT_COLUMNS, 0],
+					values,
 				}),
 			});
 			draws.push({ material: draw.material });
@@ -391,12 +409,56 @@ export async function createGrass(ctx: SketchContext, options: GrassOptions): Pr
 			);
 			entry.batch?.setActiveCount(active);
 			const filled = passes[index];
-			if (filled) ctx.render.setPassUniforms(filled.pass, [active]);
+			if (filled) {
+				filled.values[16] = active;
+				ctx.render.setPassUniforms(filled.pass, filled.values);
+			}
 		});
 	};
 	fit(ctx.quality.preset);
+	// The camera's basis and lens, which the blade list culls and thins by. The world matrix is
+	// the frame before's, so a moving camera's cull lags one frame, and the tile's radius covers
+	// the hill that the lag moves past the view's edge.
+	const world = new Float64Array(16);
+	const updateCull = (): void => {
+		if (passes.length === 0) return;
+		const camera = options.camera;
+		const tanY = camera ? Math.tan((camera.fov * Math.PI) / 360) : 0;
+		const view = ctx.engine.viewport;
+		const aspect = view.width / Math.max(1, view.height);
+		for (const filled of passes) {
+			const values = filled.values;
+			if (camera) {
+				camera.getWorldMatrix(world);
+				values[0] = world[12] as number;
+				values[1] = world[13] as number;
+				values[2] = world[14] as number;
+				values[3] = 1;
+				values[4] = world[0] as number;
+				values[5] = world[1] as number;
+				values[6] = world[2] as number;
+				values[7] = tanY;
+				values[8] = world[4] as number;
+				values[9] = world[5] as number;
+				values[10] = world[6] as number;
+				values[11] = aspect;
+				// The camera looks down its own -z, which is the world matrix's third column.
+				values[12] = -(world[8] as number);
+				values[13] = -(world[9] as number);
+				values[14] = -(world[10] as number);
+				values[15] = camera.near;
+				values[19] = camera.far;
+			} else {
+				values[3] = 0;
+			}
+			ctx.render.setPassUniforms(filled.pass, values);
+		}
+	};
+	updateCull();
 	const setWindLayer = (field: WindField) => {
 		for (const entry of draws) entry.material.setUniform('windLayer', field.texture.layer);
+		// The cull follows the camera, so a moving page gives the blade list its view each frame.
+		if (passes.length > 0) updateCull();
 		// A gust that a page sends travels through the steady field, which the settings carry. The
 		// texels go up when a gust is sent, not once a frame.
 		if (field.air.sent[3] !== sentBorn) {
@@ -419,6 +481,8 @@ export async function createGrass(ctx: SketchContext, options: GrassOptions): Pr
 /** A shape's blade-list pass, which draws the preset's share of its hill. */
 interface GradedPass {
 	readonly pass: RenderPass;
+	/** The pass's values, which the camera's movement changes each frame. */
+	readonly values: number[];
 }
 
 /**
