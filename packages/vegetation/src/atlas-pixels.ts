@@ -263,7 +263,7 @@ const FAMILIES = {
 	// a rank of them reads as needles rather than as the fringe of a blade.
 	needle: {
 		profile: 1.9,
-		aspect: 0.09,
+		aspect: 0.0625,
 		teeth: 0,
 		toothDepth: 0,
 		lobes: 0,
@@ -771,7 +771,7 @@ function clumpCell(seed: number): LeafCellPainter {
  */
 function shootCell(seed: number): LeafCellPainter {
 	const leaves: PlacedLeaf[] = [];
-	const count = 132;
+	const count = 108;
 	// The twig bows a little, so its silhouette is not a ruled line.
 	const bow = 0.012;
 	for (let i = 0; i < count; i++) {
