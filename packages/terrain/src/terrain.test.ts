@@ -432,4 +432,14 @@ describe('the rock on steep faces', () => {
 		expect(outside).not.toContain('input.worldPosition.zy');
 		expect(outside).not.toContain('input.worldPosition.xy');
 	});
+
+	test('the side samples take their gradients from outside the branch', () => {
+		const surface = wgslFunction('surface');
+		const branch = steepBranch();
+		const before = surface.slice(0, surface.indexOf(branch));
+		expect(before).toContain('dpdx(input.worldPosition)');
+		expect(before).toContain('dpdy(input.worldPosition)');
+		expect(branch).toContain('textureSampleGrad(');
+		expect(branch).not.toContain('textureSample(');
+	});
 });
