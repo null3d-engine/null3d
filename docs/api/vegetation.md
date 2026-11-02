@@ -92,7 +92,7 @@ A record holds only numbers and short strings. This table shows the parts that a
 | --- | --- |
 | `id`, `kind` | A name, and `tree`, `conifer`, `shrub`, `fern`, `rosette` or `grass` |
 | `branchLevels` | One entry per level: `children`, `prune`, `length`, `lengthVariance`, `angle`, `angleVariance`, `curve`, `curveVariance`, `taper`, `start`, `end`, `sides`, `segments`, `twist`, and the optional `whorls`, `whorlTip`, `upright` and `thin` |
-| `crown` | A `shape` from the nine outlines, the `start` height, a `spread`, the vertical `pull`, and the optional `floor` that a crown keeps at its narrowest |
+| `crown` | A `shape` from the nine outlines, the `start` height, a `spread`, the vertical `pull`, the optional `floor` that a crown keeps at its narrowest, and the optional `fillTop` that sets how far up the branches a filled crown reaches |
 | `leaf` | `kind` (`cluster`, `needle`, `frond` or `blade`), `cards`, `width`, `height`, `perCard`, `up`, `out`, `start`, `end`, and the optional `cell`, `depth`, `cross`, `fill` and `hang` |
 | `rosette` | For a plant without branches: `blades`, `length`, `width`, `arch`, `segments`, `shape`, `pinnae`, `upright` and `flowers` |
 | `wind` | `stiffness` for each branch level, the flutter's `flutter` distance and its `frequency` |
@@ -122,7 +122,9 @@ A record holds only numbers and short strings. This table shows the parts that a
 
 **`cross` keeps a spray's coverage edge-on.** A flat card that a needle or a frond draws can vanish when the camera looks along its plane. Set a leaf record's `cross` to true and the generator draws each flat card as two panels crossed along the middle, so the spray keeps its shape from below and edge-on. A crossed card takes twice the vertices and triangles of a flat one.
 
-**`fill` closes a crown that its twigs leave open.** The value is the share of extra cards that the generator places through the crown's volume, against the cards on its branches. The cards sample the crown's outline, so a spruce ends in a closed spire and a broadleaf in one mass rather than separate clumps. Each filled card reads the nearest branch for its wind and its shade, and a card near the crown's top is smaller than one at its foot. The default, 0, draws only the branch cards. A filled crown costs the vertices of its extra cards.
+**`fill` closes a crown that its twigs leave open.** The value is the share of extra cards that the generator places through the crown's volume, against the cards on its branches. The cards sample the crown's outline, so a spruce ends in a closed spire and a broadleaf in one mass rather than separate clumps. Each filled card reads the nearest branch for its wind and its shade, one card in three sits near the crown's axis so a trunk is hidden through the middle, and a card near the crown's top is smaller than one at its foot. The default, 0, draws only the branch cards. A filled crown costs the vertices of its extra cards.
+
+**`fillTop` sets how far up the branches a filled crown reaches.** The value is a share of the branch heights, from 0 to 1. The default is 1 for a conical crown, whose top is its leader, and 0.92 for another outline, so a lone upper limb does not carry cards into the air above a rounded dome. A pine that ends in a leader asks for 1, so its crown stays filled to its tip.
 
 **`hang` turns a filled crown into a curtain.** Set it to true and the filled cards fall almost straight down, as a willow's shoots do, rather than following the crown's outward direction. The default is false.
 

@@ -178,7 +178,8 @@ export function leafCards(
 				if (y >= crown.start) tops.push(y);
 			}
 		tops.sort((a, b) => a - b);
-		const at = crown.shape === 'conical' ? tops.length - 1 : Math.floor((tops.length - 1) * 0.92);
+		const share = crown.fillTop ?? (crown.shape === 'conical' ? 1 : 0.92);
+		const at = Math.floor((tops.length - 1) * share);
 		crownTop = Math.max(crown.start + 0.1, tops[at] ?? crown.height);
 	}
 	for (const [branchIndex, branch] of skeleton.branches.entries()) {
@@ -307,10 +308,11 @@ export function leafCards(
 			// enough to close the spire rather than spread its cards only over the lower volume.
 			const t = 1 - Math.sqrt(1 - unitAt(seed, 21, variant, key, KEY_AT));
 			const y = crown.start + Math.max(0, crownTop - crown.start) * t;
+			const shell = crown.radius * crownEnvelope(crown.shape, t);
+			// One filled card in three sits near the axis, so a crown hides its trunk through the
+			// middle as well as closing at its edge.
 			const at =
-				crown.radius *
-				crownEnvelope(crown.shape, t) *
-				Math.sqrt(unitAt(seed, 22, variant, key, KEY_SIDE));
+				shell * (k % 3 === 0 ? 0.18 : 1) * Math.sqrt(unitAt(seed, 22, variant, key, KEY_SIDE));
 			const angle = unitAt(seed, 23, variant, key, KEY_ROLL) * Math.PI * 2;
 			const outward: [number, number, number] = [Math.cos(angle), 0, Math.sin(angle)];
 			const point: [number, number, number] = [axisX + outward[0] * at, y, axisZ + outward[2] * at];

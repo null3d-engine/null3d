@@ -121,6 +121,11 @@ export interface CrownField {
 	readonly height: number;
 	/** The crown's outline. */
 	readonly shape: CrownShape;
+	/**
+	 * How far up the branch heights a filled crown reaches, from 0 to 1. Leave it out for the rule
+	 * that the outline gives: a conical crown reaches its top, and another outline stops at 0.92.
+	 */
+	readonly fillTop?: number;
 }
 
 /**
