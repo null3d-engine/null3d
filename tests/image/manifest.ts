@@ -3075,6 +3075,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		'hosta',
 		'sedge',
 		'rush',
+		'wildflower',
 	].map((species) => ({
 		name: `vegetation-${species}`,
 		sketch: `tests/pages/sketches/vegetation-sketch.ts?species=${species}`,
@@ -3810,7 +3811,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: CREEK_SCALE_SIZE,
 		hold: 0.5,
 		swiftShaderSwitches: ['preset=low'],
-		timeoutSeconds: 300,
+		timeoutSeconds: 600,
 	},
 	{
 		name: 'creek-render-scale-route',
@@ -3818,7 +3819,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: CREEK_SCALE_SIZE,
 		hold: 17,
 		swiftShaderSwitches: ['preset=low'],
-		timeoutSeconds: 300,
+		timeoutSeconds: 600,
 	},
 	// The Creek's water from just above the stream, looking along it, so its surface fills the
 	// frame. The bank views draw the stream a few dozen pixels wide, and a fault in the surface's
@@ -3829,7 +3830,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: CREEK_WATER_SIZE,
 		hold: 0.5,
 		swiftShaderSwitches: ['preset=low'],
-		timeoutSeconds: 300,
+		timeoutSeconds: 600,
 	},
 	// The hero demo at both tile sizes. The car stands in the same place and its shadow falls the
 	// same way; the larger tile draws its edge sharper, which shows that the detail the preset pays

@@ -144,9 +144,10 @@ export const DEMOS: readonly Demo[] = [
 
 		controls: [...SHOWCASE_CONTROLS, { keys: ['G'], does: 'Send a gust down the valley' }],
 		hold: 0.5,
-		// A software GPU draws the scene with its bloom and its full-detail meshes, which takes it
-		// well past a minute on a loaded runner, and past three on an emulated Firefox GPU.
-		timeoutSeconds: 300,
+		// A software GPU draws the scene with its bloom and the whole valley of grown plants, which
+		// takes it well past a minute on a loaded runner, past three on an emulated Firefox GPU, and
+		// past five while the machine runs other work.
+		timeoutSeconds: 600,
 	},
 	{
 		name: 'island',

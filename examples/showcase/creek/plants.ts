@@ -226,12 +226,16 @@ export function createPlants(
 			const parts = asset.levels[0]?.parts ?? [];
 			const field = plantWind(ctx, asset, wind, { swayDistance: swayDistanceFor(quality.preset) });
 			// A fern, a hosta or a sedge grows no wood, so its variant needs no bark material.
+			// The trunks stay out of the depth prepass, so the ambient occlusion's second draw of
+			// every batch skips them: their thin cards add little to the map, and the main view is
+			// unchanged.
 			const bark = parts.some((part) => part.name === 'wood')
 				? plantMaterial(ctx, {
 						atlases,
 						part: 'wood',
 						color: record.color.bark,
 						wind: field,
+						prepass: false,
 					})
 				: undefined;
 			const leaves = plantMaterial(ctx, {
@@ -249,13 +253,31 @@ export function createPlants(
 					},
 				}),
 			});
+			// A rosette that grows flowers draws their heads in the species' flower color, so a
+			// clump reads as bloom rather than as a green tuft.
+			const flower = record.color.flower
+				? plantMaterial(ctx, {
+						atlases,
+						part: 'leaves',
+						cell: leafCellFor(record),
+						color: record.color.flower,
+						transmission: record.color.transmission,
+						wind: field,
+					})
+				: undefined;
 			if (bark) materials.push(bark);
 			materials.push(leaves);
+			if (flower) materials.push(flower);
 			for (const part of parts) {
 				const base = geometry.fromArrays(part.arrays);
 				base.setLevels(coarserLevels(ctx, asset, part.name), { fade: false });
 				const batch = scene.createInstances(base, copies.length, {
-					material: part.name === 'wood' ? (bark ?? leaves) : leaves,
+					material:
+						part.name === 'wood'
+							? (bark ?? leaves)
+							: part.name === 'flower'
+								? (flower ?? leaves)
+								: leaves,
 					values: true,
 					castShadows: true,
 					receiveShadows: true,

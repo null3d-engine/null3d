@@ -23,7 +23,7 @@ flowchart LR
     asset --> worker["A job worker,<br/>off the frame loop"]
 ```
 
-The `@null3d/vegetation` package grows plants from a short record of numbers and a seed. A record describes a tree, a conifer, a shrub, a fern, a hosta or a grass clump. The generator makes the plant's skeleton first, then every detail level from that skeleton, so a crown keeps its shape as it thins. A plant ships no model and no texture: a page grows it at first use.
+The `@null3d/vegetation` package grows plants from a short record of numbers and a seed. A record describes a tree, a conifer, a shrub, a fern, a hosta, a wildflower clump or a grass clump. The generator makes the plant's skeleton first, then every detail level from that skeleton, so a crown keeps its shape as it thins. A plant ships no model and no texture: a page grows it at first use.
 
 ```sh
 bun add @null3d/vegetation
@@ -96,7 +96,7 @@ A record holds only numbers and short strings. This table shows the parts that a
 | `leaf` | `kind` (`cluster`, `needle`, `frond` or `blade`), `cards`, `width`, `height`, `perCard`, `up`, `out`, `start` and `end` |
 | `rosette` | For a plant without branches: `blades`, `length`, `width`, `arch`, `segments`, `shape`, `pinnae`, `upright` and `flowers` |
 | `wind` | `stiffness` for each branch level, the flutter's `flutter` distance and its `frequency` |
-| `color` | `bark`, `leaf`, `tint` and `transmission` |
+| `color` | `bark`, `leaf`, `tint` and `transmission`, plus an optional `flower` that tints a rosette's flower heads |
 | `height`, `trunks` | The plant's height and the trunks that rise from one base |
 | `heightVariance`, `size` | How much a variant's height and a copy's scale vary |
 | `flare`, `levels`, `variants` | The root flare, the detail levels, and the variants that a scene makes |
@@ -281,7 +281,7 @@ The built-in set holds thirteen species and six variants each. Grown in one call
 
 Growth is linear in the branch count and the card count. A species whose record raises `children` at several levels grows many more branches and costs more to generate. Keep a plant under 255 branches, and let a species with more rely on a coarser record instead.
 
-Reading Creek's 160 m valley into the ground maps and placing the eight species that the package records for it takes about 55 ms on an Apple M5 Max laptop, for about a thousand points. Ground cover is the most of it. A species at one meter of spacing offers tens of thousands of candidates.
+Reading Creek's 160 m valley into the ground maps and placing the nine species that the package records for it takes about 55 ms for each thousand points on an Apple M5 Max laptop. Ground cover is the most of it. A species at one meter of spacing offers tens of thousands of candidates.
 ## Bark and leaf textures
 
 A plant ships no image file, so its bark and leaves come from two atlases that the browser paints the first time a page asks for them. `bakePlantAtlases` paints them, and `plantMaterial` draws a plant part from them.

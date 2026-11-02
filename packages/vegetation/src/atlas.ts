@@ -194,6 +194,13 @@ export interface PlantMaterialOptions {
 	/** How the leaf cuts its outline: below this coverage nothing draws. The default is 0.35. */
 	readonly alphaCutoff?: number;
 	/**
+	 * False leaves this part out of the depth prepass, which a scene draws for ambient occlusion or
+	 * for WebGL2's early depth rejection. The part draws as it does in the main view; only the
+	 * prepass skips it, so its trunks no longer darken the corners of the ambient occlusion map.
+	 * The default is true, and a leaf part never draws in the prepass, since its cards carry a mask.
+	 */
+	readonly prepass?: boolean;
+	/**
 	 * The strength of the sun's gloss on a leaf, from 0 to 1. The default, 0.875, is a measured leaf's.
 	 * A far card holds no gloss, so a lower one brings a near crown closer to its card.
 	 */
@@ -280,8 +287,10 @@ export function plantMaterial(
 			pivots: wind?.pivots ?? stillTextures(ctx.textures).pivots,
 			wind: wind?.field.texture ?? stillTextures(ctx.textures).wind,
 		},
-		alphaMode: (leaves ? 'mask' : 'opaque') as 'mask' | 'opaque',
-		alphaCutoff: options.alphaCutoff ?? 0.35,
+		// A part that stays out of the depth prepass takes the mask's build, whose cut-out the
+		// engine also keeps out of the prepass. The bark's coverage is full, so no texel is cut.
+		alphaMode: (leaves || options.prepass === false ? 'mask' : 'opaque') as 'mask' | 'opaque',
+		alphaCutoff: options.alphaCutoff ?? (leaves ? 0.35 : 0),
 		doubleSided: leaves,
 		roughness: 1,
 		metalness: 0,
