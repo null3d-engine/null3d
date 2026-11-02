@@ -9,7 +9,7 @@ import { createTrees, TREE_SHARE } from '../../../examples/showcase/island/trees
 const DISTANCE = 25;
 const place = Number(new URL(import.meta.url).searchParams.get('oak') ?? 0);
 
-export default defineSketch((ctx) => {
+export default defineSketch(async (ctx) => {
 	const { scene, quality } = ctx;
 	scene.setBackground('#d8e0e8');
 	scene.createAmbientLight({ intensity: 3 });
@@ -24,5 +24,5 @@ export default defineSketch((ctx) => {
 		target: [oak.x, oak.y + 5, oak.z],
 	});
 	scene.setActiveCamera(camera);
-	createTrees(ctx, camera);
+	await createTrees(ctx, camera);
 });

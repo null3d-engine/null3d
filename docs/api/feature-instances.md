@@ -106,7 +106,7 @@ The draw's material is opaque. The options take the material's other values, suc
 
 `draw.instances` and `draw.counts` are the engine's buffers for the draw. A compute pass binds them with its `buffers` option, which takes the draw's two handles in binding order:
 
-- `draw.instances` holds `capacity` rows of 16 floats each. Each row is three world-matrix rows, with the translation in each row's `w`, then the ids. The engine's instance buffers hold the same shape. The vertex shader reads a row by `instance_index` through `find_instance`.
+- `draw.instances` holds `capacity` rows of 16 floats each. Each row is three world-matrix rows, with the translation in each row's `w`, then the ids. The engine's instance buffers hold the same shape. The vertex shader reads a row by `instance_index` through `find_instance`. The first id is the index of the draw's material in the engine's table, which `draw.materialIndex` gives; a compute pass that writes the rows writes it there, so the vertex shader finds the draw's material.
 - `draw.counts` holds one 32-bit word: the count that the draw renders.
 
 The engine's vertex shaders read an instance matrix relative to the camera. On WebGPU the engine converts the world rows to that space on the GPU, once for each draw in each frame, before the pass that draws them. The rows that you write stay world rows, so a camera that moves costs no upload. The engine keeps a second buffer of `capacity` rows for the converted rows, which doubles the memory that the draw's instances take.
