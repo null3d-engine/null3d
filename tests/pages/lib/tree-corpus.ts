@@ -372,7 +372,7 @@ const OAK: Species = {
 			children: 4,
 			prune: 0.12,
 			length: 2.7,
-			angle: 52,
+			angle: 45,
 			angleVariance: 12,
 			curve: 12,
 			curveVariance: 6,
@@ -381,7 +381,7 @@ const OAK: Species = {
 			end: 1,
 			sides: 4,
 			segments: 4,
-			upright: 25,
+			upright: 45,
 			thin: 0.2,
 		}),
 		level({
@@ -397,7 +397,7 @@ const OAK: Species = {
 			segments: 2,
 		}),
 	],
-	crown: { shape: 'hemispherical', start: 0.18, spread: 0.45, pull: 0.06, floor: 0.25, fillTop: 1 },
+	crown: { shape: 'hemispherical', start: 0.18, spread: 0.45, pull: -0.3, floor: 0.25, fillTop: 1 },
 	leaf: {
 		kind: 'cluster',
 		cell: 'cluster-b',
