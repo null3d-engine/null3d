@@ -137,6 +137,12 @@
 		"date": "2026-11-02",
 		"reason": "Playwright's Chromium on this Mac draws SwiftShader byte for byte as CI's does; the picture is redrawn after the ground mesh joined the scene"
 	},
+	"chromium-swiftshader/compat/demo-splats.png": {
+		"test": "demo-splats",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
+	},
 	"chromium-swiftshader/compat/demo-spot-cookies.png": {
 		"test": "demo-spot-cookies",
 		"tier": "compat",
@@ -490,6 +496,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-02",
 		"reason": "Playwright's Chromium on this Mac draws SwiftShader byte for byte as CI's does; the picture is redrawn after the ground mesh joined the scene"
+	},
+	"chromium-swiftshader/webgl2/demo-splats.png": {
+		"test": "demo-splats",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
 	},
 	"chromium-swiftshader/webgl2/demo-spot-cookies.png": {
 		"test": "demo-spot-cookies",
@@ -868,6 +880,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-02",
 		"reason": "Playwright's Chromium on this Mac draws SwiftShader byte for byte as CI's does; the picture is redrawn after the ground mesh joined the scene"
+	},
+	"chromium-swiftshader/webgpu/demo-splats.png": {
+		"test": "demo-splats",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
 	},
 	"chromium-swiftshader/webgpu/demo-spot-cookies.png": {
 		"test": "demo-spot-cookies",
