@@ -5,6 +5,7 @@ import type { CompiledMaterial } from '@null3d/vite-plugin';
 declare const shader: CompiledMaterial<
 	{
 		readonly ripple: 'f32';
+		readonly waveAmplitude: 'f32';
 		readonly softness: 'f32';
 		readonly viewPath: 'f32';
 		readonly caustics: 'vec3f';
