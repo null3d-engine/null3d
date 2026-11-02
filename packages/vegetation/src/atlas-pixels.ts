@@ -1367,6 +1367,16 @@ export function paintBark(): PaintedAtlas {
 				surface[at + 2] = Math.round(clamp(roughness, 0, 1) * 255);
 				surface[at + 3] = Math.round((1 - scar) * 255);
 			}
+		// The cell's last column repeats its first, so the sampler's wrap meets itself exactly. The
+		// painters count whole cycles, but the texture's last texel still holds the value a hair
+		// before the cycle ends, and that half texel is the faint line down a trunk.
+		for (const map of [color, surface]) {
+			for (let y = 0; y < BARK_SIZE; y++) {
+				const first = ((row * BARK_SIZE + y) * width + col * BARK_SIZE) * 4;
+				const last = first + (BARK_SIZE - 1) * 4;
+				for (let c = 0; c < 4; c++) map[last + c] = map[first + c] as number;
+			}
+		}
 	}
 	return {
 		color: { width, height, data: color },
