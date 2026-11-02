@@ -21,7 +21,7 @@ try {
   const engine = await createEngine({
     canvas,
     sketch: new URL('./sketch.ts', import.meta.url),
-    onProgress: (stage) => console.log('start:', stage), // core, sketch, first-frame
+    onProgress: (stage, progress) => console.log('start:', stage, progress), // core-download, core, sketch, first-frame
   });
   engine.onFailure((error) => console.error(error.code, error.message));
   await engine.firstFrame; // the first frame is on the screen: remove the loading screen
@@ -36,9 +36,15 @@ try {
 
 `onProgress` reports each stage of the start, in this order:
 
+- `core-download`, as the engine core's file downloads, with the bytes that have arrived and the
+  length that the server announced;
 - `core`, once the engine core is compiled and the GPU paths are tested;
 - `sketch`, after the sketch's setup, and after the preset check when one runs;
 - `first-frame`, once the GPU has finished the first frame.
+
+The handler's second argument carries a stage's figures: `done` and `total`, in bytes, for
+`core-download`. The handler gets it only while the stage has figures. The total is 0 when the
+response announced no length, so a page shows no fraction then.
 
 Before `core`, `memory-wait` comes when the browser has refused the engine's memory for 10 seconds. A browser can hold memory that an earlier engine used for a while after it stops, and Safari at times held it for 40 seconds. The engine keeps trying for about 45 seconds in all, then fails with E1109. Show the user that the start takes longer than usual.
 
@@ -101,7 +107,7 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | `expectedObjects` | None | The objects that the scene starts with room for, from 1 to 1,048,575, in place of 1,023. A scene that knows its size never grows its tables during play: [Scene limits](scene.md#limits). Another value fails with [E1213](../errors/E1213.md). |
 | `maxLabels` | `4096` | The most labels that the sketch tracks at once, from 1 to 65,536: [UI overlays and labels](ui.md). Another value fails with [E1213](../errors/E1213.md). |
 | `maxLabels3d` | `256` | The most labels whose `transform` is `'world'` or `'billboard'`, which are planes of the scene, from 0 to 65,536: [Labels as planes of the scene](ui.md#labels-as-planes-of-the-scene). Another value fails with [E1213](../errors/E1213.md). |
-| `onProgress` | None | Reports each stage of the start |
+| `onProgress` | None | Reports each stage of the start, and a download stage's bytes |
 | `onSketchMessage` | None | Receives the sketch's messages from the start of its setup: [Messages](page.md) |
 | `onSketchError` | None | Receives each distinct error that the sketch's frame code throws while the engine runs: [The running engine](#the-running-engine) |
 | `onWorkerRetry` | None | Called when the engine starts a second copy of a worker whose script did not load: [The start](#the-start) |

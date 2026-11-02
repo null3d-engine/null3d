@@ -1,11 +1,18 @@
 // Starts a demo on a canvas. The examples page uses it, and so can any page that shows the demos
 // in a layout of its own, such as the website's: the page owns the canvas, the text and the
 // styles, and this module owns how a demo starts.
-import { createEngine, type Engine, type QualityPreset, type StartupStage } from '@null3d/engine';
+import {
+	createEngine,
+	type Engine,
+	type QualityPreset,
+	type StartupProgress,
+	type StartupStage,
+} from '@null3d/engine';
 import type { Demo } from '../demos';
 import type { HudGroup } from './controls';
 import { createDrivePad } from './drive-pad';
 import { createHud } from './hud';
+import { bytesOf, LoadMeter, type LoadPhase } from './progress';
 
 /** The message that a demo posts to show a label, or to change its text. */
 interface LabelMessage {
@@ -69,6 +76,8 @@ export interface StartOptions {
 
 /** How long the loading overlay waits after the last loading message before it hides, in ms. */
 const LOADER_QUIET_MS = 400;
+/** The most of the sketch's early messages that the page keeps, as the engine keeps its own. */
+const MAX_EARLY_MESSAGES = 256;
 
 /** Starts the demo's sketch on the canvas, and resolves to its engine once it runs. */
 export async function startDemo({
@@ -124,7 +133,26 @@ export async function startDemo({
 		firstFrameAt = performance.now();
 		hideWhenQuiet();
 	};
-	let engine: Engine;
+	let engine: Engine | undefined;
+	/** The sketch's messages that needed the engine, before it existed. */
+	const early: [string, unknown][] = [];
+	/** The handlers of the messages that carry the demo's labels, controls and help. */
+	let readers: ((type: string, data: unknown) => void)[] = [];
+	// The page passes this handler at the start, so the sketch's loading messages arrive as its
+	// setup runs rather than all at once at the end: the overlay follows the scene's own progress.
+	const handleMessage = (type: string, data: unknown): void => {
+		if (type === 'loading') {
+			lastLoadingAt = performance.now();
+			loader.note(data);
+			hideWhenQuiet();
+			return;
+		}
+		if (!engine) {
+			if (early.push([type, data]) > MAX_EARLY_MESSAGES) early.shift();
+			return;
+		}
+		for (const reader of readers) reader(type, data);
+	};
 	try {
 		// Without a preset: the engine's start-up check picks one that the device holds at its frame
 		// rate. A production build reads no URL switches, so the page passes the address's preset.
@@ -138,14 +166,15 @@ export async function startDemo({
 			preset,
 			// Collapsed, the overlay stays small until clicked.
 			stats: stats && { collapsed: true },
-			onProgress: (stage) => {
+			onProgress: (stage: StartupStage, progress?: StartupProgress) => {
 				// The loader hears of the first frame through `hideWhenQuiet`, with any last message.
 				if (stage === 'first-frame') {
 					reachedFirstFrame();
 					return;
 				}
-				loader.stage(stage);
+				loader.stage(stage, progress);
 			},
+			onSketchMessage: handleMessage,
 		});
 	} catch (error) {
 		loader.fail(error instanceof Error ? error.message : String(error));
@@ -155,21 +184,15 @@ export async function startDemo({
 	// One message handler for the page: the engine gives the messages that a sketch sent before the
 	// page listened to the first handler alone, so two handlers would drop the help that a showcase
 	// scene posts at its start. The same handler carries the loading progress that a scene posts.
-	const readers = [
+	readers = [
 		...(labels ? [labelReader(engine, labels)] : []),
 		...(hud
 			? [hudReader(engine, hud, signal), padReader(engine, hud, signal), pressReader(engine)]
 			: []),
 	];
-	engine.onSketchMessage((type, data) => {
-		if (type === 'loading') {
-			lastLoadingAt = performance.now();
-			loader.note(data);
-			hideWhenQuiet();
-			return;
-		}
-		for (const reader of readers) reader(type, data);
-	});
+	// The engine's start handler stays the sketch's one handler, so the messages that arrived before
+	// the readers existed now reach them in the order that the sketch sent them.
+	for (const [type, data] of early.splice(0)) handleMessage(type, data);
 	// The overlay leaves once the first frame is drawn and the scene's own loading has gone quiet,
 	// so a stage that reports after the frame never changes a card that is already going.
 	void engine.firstFrame.then(reachedFirstFrame, reachedFirstFrame);
@@ -183,14 +206,16 @@ export async function startDemo({
 interface LoadingMessage {
 	/** What the scene is doing now, such as how many files have loaded. */
 	text: string;
+	/** A second line with the count, such as the bytes that arrived of a total. */
+	detail?: string;
 	/** How far the load has gone, from 0 to 1, for the bar. Without it, the bar keeps moving. */
 	value?: number;
 }
 
 /** The loading overlay of a starting demo. */
 export interface Loader {
-	/** Shows the engine's start stage: `core`, `sketch` or `first-frame`. */
-	stage(stage: StartupStage): void;
+	/** Shows the engine's start stage and the stage's figures, when it has some. */
+	stage(stage: StartupStage, progress?: StartupProgress): void;
 	/** Shows the progress that a scene posts while it loads its files. */
 	note(data: unknown): void;
 	/** Fades the overlay out; the first frame is drawn. */
@@ -201,8 +226,9 @@ export interface Loader {
 
 /**
  * Makes the loading overlay over the canvas: a glass card that names the start's stage and any
- * progress a scene posts, in the style of the showcase HUD. It fades out when the first frame is
- * drawn, and shows the error instead when the start fails.
+ * progress a scene posts, in the style of the showcase HUD. A stage whose work is counted shows its
+ * percentage over the bar, and one without a total leaves the bar moving. It fades out when the
+ * first frame is drawn, and shows the error instead when the start fails.
  */
 export function createLoader(canvas: HTMLCanvasElement): Loader {
 	const host = canvas.parentElement ?? document.body;
@@ -212,54 +238,136 @@ export function createLoader(canvas: HTMLCanvasElement): Loader {
 	overlay.setAttribute('aria-live', 'polite');
 	const box = document.createElement('div');
 	box.className = 'loader__box';
+	const head = document.createElement('div');
+	head.className = 'loader__head';
 	const label = document.createElement('p');
 	label.className = 'loader__label';
 	label.textContent = 'Loading the engine';
+	// The visuals stay out of the live region: the hidden line below carries the text that a screen
+	// reader announces, so a percentage that moves with every chunk never queues an announcement.
+	label.setAttribute('aria-hidden', 'true');
+	const percent = document.createElement('span');
+	percent.className = 'loader__percent';
+	percent.hidden = true;
+	percent.setAttribute('aria-hidden', 'true');
+	head.append(label, percent);
 	const bar = document.createElement('div');
 	bar.className = 'loader__bar';
+	bar.setAttribute('aria-hidden', 'true');
 	const fill = document.createElement('div');
 	fill.className = 'loader__fill';
 	bar.append(fill);
-	box.append(label, bar);
+	const detail = document.createElement('p');
+	detail.className = 'loader__detail';
+	detail.setAttribute('aria-hidden', 'true');
+	const say = document.createElement('p');
+	say.className = 'loader__say';
+	say.textContent = 'Loading the engine';
+	box.append(head, bar, detail, say);
 	overlay.append(box);
 	host.append(overlay);
+	const meter = new LoadMeter();
+	let shown: LoadPhase | undefined;
+	/** The phase that the engine's start named last, which a finished scene phase falls back to. */
+	let enginePhase: LoadPhase = { key: 'loading', text: 'Loading the engine' };
+	let painted = 0;
 	let hidden = false;
+	/** The last text that the live region holds, and the tenth of the percentage it names. */
+	let said = 'Loading the engine';
+	let saidTenth = -1;
+	const paint = (): void => {
+		painted = 0;
+		const phase = shown;
+		if (!phase || hidden) return;
+		label.textContent = phase.text;
+		detail.textContent = phase.detail ?? '';
+		const value = phase.value;
+		const whole = value === undefined ? undefined : Math.round(value * 100);
+		percent.textContent = whole === undefined ? '' : `${whole}%`;
+		percent.hidden = whole === undefined;
+		fill.classList.toggle('loader__fill--set', whole !== undefined);
+		// A width of none leaves the bar its travelling band, which a phase without a total shows.
+		fill.style.width = whole === undefined ? '' : `${whole}%`;
+		const tenth = whole === undefined ? -1 : Math.floor(whole / 10);
+		if (phase.text !== said || tenth !== saidTenth) {
+			said = phase.text;
+			saidTenth = tenth;
+			say.textContent = tenth < 0 ? phase.text : `${phase.text}, ${tenth * 10} per cent`;
+		}
+	};
+	const show = (phase: LoadPhase): void => {
+		shown = meter.show(phase);
+		if (!painted && !hidden) painted = requestAnimationFrame(paint);
+	};
+	/** True when a figure is whole, as the card's whole-percent measure shows it. */
+	const atEnd = (value?: number): boolean =>
+		value !== undefined && Math.round(Math.min(1, Math.max(0, value)) * 100) >= 100;
 	const hide = (): void => {
 		if (hidden) return;
 		hidden = true;
+		if (painted) cancelAnimationFrame(painted);
+		painted = 0;
 		overlay.classList.add('loader--done');
 		const remove = () => overlay.remove();
 		if (matchMedia('(prefers-reduced-motion: reduce)').matches) remove();
 		else setTimeout(remove, 320);
 	};
 	return {
-		stage(stage) {
-			if (stage === 'memory-wait') label.textContent = 'Waiting for the engine memory';
-			else if (stage === 'core') label.textContent = 'Starting the sketch';
-			else if (stage === 'sketch') label.textContent = 'Drawing the first frame';
-			else if (stage === 'first-frame') hide();
+		stage(stage, progress) {
+			if (stage === 'first-frame') {
+				hide();
+				return;
+			}
+			let phase: LoadPhase;
+			if (stage === 'memory-wait') phase = { key: stage, text: 'Waiting for the engine memory' };
+			else if (stage === 'core') phase = { key: stage, text: 'Starting the sketch' };
+			else if (stage === 'sketch') phase = { key: stage, text: 'Drawing the first frame' };
+			else {
+				const done = progress?.done ?? 0;
+				const total = progress?.total ?? 0;
+				// A body that arrives larger than its announced length, as a compressed response can,
+				// leaves no fraction to show: the bytes that arrived still count.
+				const measured = total > 0 && done <= total;
+				phase = {
+					key: stage,
+					text: 'Downloading the engine',
+					detail: measured ? `${bytesOf(done)} of ${bytesOf(total)}` : bytesOf(done),
+					value: measured ? done / total : undefined,
+				};
+			}
+			enginePhase = phase;
+			show(phase);
 		},
 		note(data) {
 			if (typeof data === 'string') {
-				label.textContent = data;
+				show({ key: `note:${data}`, text: data });
 				return;
 			}
 			const message = data as Partial<LoadingMessage> | null;
 			if (!message || typeof message.text !== 'string') return;
-			label.textContent = message.text;
-			if (typeof message.value === 'number') {
-				fill.classList.add('loader__fill--set');
-				const value = Math.max(0, Math.min(1, message.value));
-				fill.style.width = `${Math.round(value * 100)}%`;
-			}
+			const phase: LoadPhase = {
+				key: `note:${message.text}`,
+				text: message.text,
+				detail: typeof message.detail === 'string' ? message.detail : undefined,
+				value: typeof message.value === 'number' ? message.value : undefined,
+			};
+			// A counted scene phase that reaches its total names its own end. The start then waits for
+			// the scene to build, which the engine's own stage names, so a full bar never sits over a
+			// scene that is still starting.
+			show(atEnd(phase.value) ? enginePhase : phase);
 		},
 		hide,
 		fail(text) {
 			hidden = true;
+			if (painted) cancelAnimationFrame(painted);
+			painted = 0;
 			overlay.classList.add('loader--error');
 			label.textContent = text;
 			label.classList.add('loader__label--error');
+			percent.hidden = true;
+			detail.hidden = true;
 			bar.hidden = true;
+			say.textContent = text;
 		},
 	};
 }
