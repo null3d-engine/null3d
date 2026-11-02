@@ -4,15 +4,11 @@
 // the right, which the environment's uniform light cannot show. Every 4 seconds the bounce light
 // turns off and on again, so the difference shows. The pointer turns the camera around the room.
 import { defineSketch } from '@null3d/engine';
-import { enableBounce } from '../lib/bounce';
+import { showBounce } from '../lib/bounce';
 import { interact } from '../lib/interact';
 
-/** The seconds of each half of the on-and-off cycle. */
-const CYCLE = 4;
-
 export default defineSketch(async (ctx) => {
-	const { scene, assets, geometry, materials, quality, time } = ctx;
-	enableBounce(ctx);
+	const { scene, assets, geometry, materials, time } = ctx;
 	const environment = await assets.builtinEnvironment('room');
 	scene.setEnvironment(environment);
 	scene.setBackground('#1a1d24');
@@ -39,16 +35,11 @@ export default defineSketch(async (ctx) => {
 	surface('#d9160e', [0.2, 3, 6], [-3.1, 1.5, 0]);
 	surface('#14b81a', [0.2, 3, 6], [3.1, 1.5, 0]);
 
-	let shown = quality.settings.bounceRays > 0;
 	return {
 		onUpdate(dt: number) {
 			view.update(dt);
 			// On for the first half of each cycle, off for the second.
-			const half = Math.floor(time.now / CYCLE) % 2 === 0;
-			if (half !== shown) {
-				shown = half;
-				quality.set({ bounceRays: half ? 8 : 0 });
-			}
+			showBounce(ctx, time.now);
 		},
 	};
 });
