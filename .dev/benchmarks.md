@@ -177,7 +177,7 @@ Bench-Expected: s1/null3d-webgl2: the batch pass now writes normals, about 0.1 m
 
 - Before the colon, name the benchmarks: a scene, then a page and a measure if needed. For example `s1`, `s1/null3d-webgl2` or `s1/null3d-webgl2/own-work`. The measures are `busiest-thread`, `own-work` and `gpu-time`. A `*` stands for any part, and a comma separates two benchmarks.
 - After the colon, give the reason. A bare value such as "yes" does not count.
-- The comparison reads the trailers of every commit from the baseline to the new commit. A squash merge keeps them, because main's squash messages list each commit's message.
+- The comparison reads the message of every commit from the baseline to the new commit. It takes a trailer only from the block of footers that ends the message, as git does. A squash merge lists each commit's message, so only the last listed commit's trailers reach that block.
 - A trailer that does not parse excuses nothing, and the summary lists it.
 
 ### Run a comparison on your computer
