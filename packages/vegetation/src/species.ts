@@ -361,6 +361,12 @@ export interface Species {
 	readonly size: readonly [number, number];
 	/** The root flare, as a share of the trunk's base radius. */
 	readonly flare: number;
+	/**
+	 * The least radius of the trunk at its base, as a share of the plant's height. The pipe model
+	 * sizes a bole by the wood it carries, which leaves a small-leaved tree on few limbs thinner than
+	 * its own reference shows; this holds a floor under it. Leave it out for the pipe model alone.
+	 */
+	readonly boleRadius?: number;
 	/** Detail levels that the generator builds, from 1 to 3. */
 	readonly levels: number;
 	/** Variants that a scene makes by default. */
