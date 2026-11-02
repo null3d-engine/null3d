@@ -3,6 +3,8 @@
 import { expect, test } from 'bun:test';
 import {
 	CEILING,
+	CHASE_DISTANCE,
+	CHASE_TILT,
 	CLEARANCE,
 	cityTowers,
 	clearSight,
@@ -210,9 +212,7 @@ test('the pull keeps two meters from the point it looks at', () => {
 	expect(apart(camera, [0, 50, 3])).toBeCloseTo(2, 5);
 });
 
-/** The chase camera's tilt behind the car, its distance, and the angle behind a car that heads +z. */
-const TILT = Math.atan2(4.4, 13);
-const DISTANCE = Math.hypot(13, 4.4);
+/** The angle behind a car that heads +z. */
 const BEHIND = Math.PI;
 
 /** Settles the camera of a still car for `frames` frames and returns the place it heads for. */
@@ -224,24 +224,24 @@ function settle(
 	car: Flight = flight(),
 ): Flight {
 	for (let k = 0; k < frames; k++)
-		settleSight(sight, car.x, car.y, car.z, BEHIND, TILT, DISTANCE, DISTANCE, towers, FRAME, aim);
+		settleSight(sight, car.x, car.y, car.z, BEHIND, CHASE_TILT, CHASE_DISTANCE, towers, FRAME, aim);
 	return aim;
 }
 
 /** A tower that stands between the still car and its usual place, past the standoff. */
 const IN_THE_WAY = new Float32Array([0, -15, 1.4, 1.4, 100]);
 /** The distance at which the camera stands before it: the tower's near face, its own margin in. */
-const CLEAR_AT = (15 - 1.4 - CLEARANCE) / Math.cos(TILT);
+const CLEAR_AT = (15 - 1.4 - CLEARANCE) / Math.cos(CHASE_TILT);
 
 test('a blocked view eases the camera in over several frames', () => {
-	const sight = createSight(DISTANCE);
+	const sight = createSight(CHASE_DISTANCE);
 	const aim: Flight = { ...flight() };
 	settle(sight, aim, IN_THE_WAY, 1);
 	// One frame moves the camera a fraction of the way, not all of it.
-	expect(sight.radius).toBeGreaterThan(DISTANCE - 0.5);
+	expect(sight.radius).toBeGreaterThan(CHASE_DISTANCE - 0.5);
 	settle(sight, aim, IN_THE_WAY, 10);
 	expect(sight.radius).toBeGreaterThan(CLEAR_AT + 0.5);
-	expect(sight.radius).toBeLessThan(DISTANCE - 0.5);
+	expect(sight.radius).toBeLessThan(CHASE_DISTANCE - 0.5);
 	settle(sight, aim, IN_THE_WAY, 150);
 	expect(sight.radius).toBeCloseTo(CLEAR_AT, 3);
 	// The camera stands at the standoff or beyond, and looks past the tower.
@@ -250,20 +250,20 @@ test('a blocked view eases the camera in over several frames', () => {
 });
 
 test('the camera returns to the user’s exact chase distance once clear', () => {
-	const sight = createSight(DISTANCE);
+	const sight = createSight(CHASE_DISTANCE);
 	const aim: Flight = { ...flight() };
 	settle(sight, aim, IN_THE_WAY, 180);
 	expect(sight.radius).toBeCloseTo(CLEAR_AT, 3);
 	settle(sight, aim, NONE, 180);
-	expect(sight.radius).toBe(DISTANCE);
+	expect(sight.radius).toBe(CHASE_DISTANCE);
 	expect(sight.pull).toBe(0);
 	expect(sight.swing).toBe(0);
 	// The placed camera sits at that distance too.
-	expect(apart(aim, [0, 50, 0])).toBeCloseTo(DISTANCE, 6);
+	expect(apart(aim, [0, 50, 0])).toBeCloseTo(CHASE_DISTANCE, 6);
 });
 
 test('a tower edge that crosses back and forth does not pump the distance', () => {
-	const sight = createSight(DISTANCE);
+	const sight = createSight(CHASE_DISTANCE);
 	const aim: Flight = { ...flight() };
 	settle(sight, aim, IN_THE_WAY, 180);
 	let last = sight.radius;
@@ -279,11 +279,9 @@ test('a tower edge that crosses back and forth does not pump the distance', () =
 	expect(sight.pull).toBe(1);
 });
 
-/** The speed of the car in the tower swap, the user's zoom there, and the span the height blend
- * reaches at that zoom, as the demo's own call passes it. */
+/** The speed of the car in the tower swap, and the user's zoom there. */
 const SPEED = 10;
 const ZOOM = 50;
-const FAR = Math.max(DISTANCE, ZOOM);
 /**
  * Two towers that stand in the same line behind the car, at very different distances. They are
  * wide, so the car's sideways travel keeps its view across both while the blocker changes.
@@ -300,7 +298,7 @@ test('a changed tower moves the distance no faster than the pull', () => {
 	const step = (towers: Float32Array, frames: number): void => {
 		for (let k = 0; k < frames; k++) {
 			car.x += SPEED * FRAME;
-			settleSight(sight, car.x, car.y, car.z, BEHIND, TILT, ZOOM, FAR, towers, FRAME, aim);
+			settleSight(sight, car.x, car.y, car.z, BEHIND, CHASE_TILT, ZOOM, towers, FRAME, aim);
 		}
 	};
 	// The pull reaches the end of its travel behind the near tower.
@@ -347,7 +345,7 @@ test('a side swing at a wide zoom does not drop the camera', () => {
 		for (let k = 0; k < frames; k++) {
 			// The car creeps forward, so the tower stays inside the standoff for the whole swing.
 			car.z += CREEP * FRAME;
-			settleSight(sight, car.x, car.y, car.z, BEHIND, TILT, ZOOM, FAR, towers, FRAME, aim);
+			settleSight(sight, car.x, car.y, car.z, BEHIND, CHASE_TILT, ZOOM, towers, FRAME, aim);
 		}
 	};
 	step(NONE, 30);
@@ -367,7 +365,7 @@ test('a side swing at a wide zoom does not drop the camera', () => {
 test('a tower dead behind the car finds a side that sees it', () => {
 	// The tower stands inside the standoff, so no distance along the view behind the car sees it.
 	const towers = new Float32Array([0, -8, 4, 4, 100]);
-	const sight = createSight(DISTANCE);
+	const sight = createSight(CHASE_DISTANCE);
 	const aim: Flight = { ...flight() };
 	settle(sight, aim, towers, 1);
 	expect(sight.goal).not.toBe(0);
