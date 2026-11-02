@@ -1560,14 +1560,17 @@ jobs:
     # SwiftShader, which draws S1's 100,000 boxes at under one frame a second, so the check draws
     # fewer boxes here, counts the frames that S1 steps, and judges them by CI's own budgets
     # (bench/allocation.ts). The Mac's gate keeps the full count on a real GPU. On SwiftShader the
-    # browser optimizes after fewer calls, so the warm-up is 1,200 frames and each run takes about 4
-    # minutes. The WebGPU job runs a second time with `--canvas`, so S1's own places keep their own
-    # budgets and a canvas texture's refresh is judged by its budgets too.
+    # browser optimizes after fewer calls, so the warm-up is 1,200 frames. The WebGPU job runs a
+    # second time with `--canvas`, so S1's own places keep their own budgets and a canvas texture's
+    # refresh is judged by its budgets too. The wind add-on's field made the second run far dearer
+    # than the first: in run 41443464419 it took 15.6 minutes on WebGPU and was still drawing on
+    # WebGL2 when the job's twenty minutes ran out, so the limit allows for that run and the canvas
+    # step beside it.
     name: allocation (${{ matrix.gpu }})
     needs: [build, load-pages]
     if: *full-run
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
