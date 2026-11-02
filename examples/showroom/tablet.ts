@@ -3,7 +3,7 @@
 // choice on and repaints the panel. The sketch answers each change at once, so the car takes the new
 // paint, wheels, trim or lights while the picture is still uploading.
 import type { SketchContext } from '@null3d/engine';
-import { createScreen } from '../../addons/screens';
+import { createScreen } from '../addons/screens';
 import {
 	type Config,
 	type ConfigPage,

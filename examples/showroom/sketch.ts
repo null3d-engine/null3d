@@ -9,10 +9,10 @@
 // trim or the lights, and the car takes the change at once. The controls HUD offers the time of day,
 // the effects and the quality preset, as the other showcases do.
 import { defineSketch } from '@null3d/engine';
-import { type CameraBounds, type Cinematic, createCinematic } from '../../lib/cinematic';
-import { CAMERA_LAYERS, SUN_LAYERS } from '../../lib/layers';
-import { createShowcaseEffects, type ShadowReach } from '../../lib/showcase-effects';
-import { createMoods, isMood } from '../../lib/stage';
+import { type CameraBounds, type Cinematic, createCinematic } from '../lib/cinematic';
+import { CAMERA_LAYERS, SUN_LAYERS } from '../lib/layers';
+import { createShowcaseEffects, type ShadowReach } from '../lib/showcase-effects';
+import { createMoods, isMood } from '../lib/stage';
 import { createCar } from './car';
 import { carPose, STUDIO_Z } from './route';
 import { SHOTS } from './shots';
