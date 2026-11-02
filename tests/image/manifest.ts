@@ -1857,14 +1857,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	),
 	// Car-sized boxes standing on a street, in the last cascade from above, and from a low angle in
 	// the first cascade and in the last. Each box's shadow must meet its base with no lit line
-	// between them.
+	// between them. The bounce light draws on WebGPU and WebGL2 but not on compatibility mode's
+	// 8-bit path (D-284), so every tier keeps a picture of its own.
 	...['', 'near', 'far'].map(
 		(view): ImageTest => ({
 			name: view === '' ? 'shadows-contact' : `shadows-contact-${view}`,
 			sketch: `tests/pages/sketches/shadow-contact-sketch.ts${view === '' ? '' : `?view=${view}`}`,
 			hold: 0,
 			size: [480, 270],
-			sameOnEveryTier: true,
 			tolerance: { maxDiffRatio: 0.005 },
 		}),
 	),
