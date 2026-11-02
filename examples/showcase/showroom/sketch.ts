@@ -2,18 +2,20 @@
 // configurator tablet beside it, and then the car drives out into a short wet street. The studio's
 // reflection probe gives the paint its softbox highlights, and one planar reflection across the
 // ground carries the car, the lamps and the neon into both floors. The camera runs a route made for
-// the scene: it looks the car over while the car turns on the spot, follows it out through the
-// opening, watches it turn at the far end, and comes back with it. `c` switches between the route
-// (Auto) and the user's own camera (Manual). A tap on the tablet changes the paint, the wheels, the
+// the scene: it opens on the configurator with the car beside it, turns around the car while it
+// waits, follows it out through the opening, watches it turn at the far end, and comes back in front
+// of it to settle on the view it opened with. `c` switches between the route (Auto) and the user's
+// own camera (Manual). A tap on the tablet changes the paint, the wheels, the
 // trim or the lights, and the car takes the change at once. The controls HUD offers the time of day,
 // the effects and the quality preset, as the other showcases do.
 import { defineSketch } from '@null3d/engine';
-import { type CameraBounds, type Cinematic, createCinematic, type Shot } from '../../lib/cinematic';
+import { type CameraBounds, type Cinematic, createCinematic } from '../../lib/cinematic';
 import { CAMERA_LAYERS, SUN_LAYERS } from '../../lib/layers';
 import { createShowcaseEffects, type ShadowReach } from '../../lib/showcase-effects';
 import { createMoods, isMood } from '../../lib/stage';
 import { createCar } from './car';
 import { carPose, STUDIO_Z } from './route';
+import { SHOTS } from './shots';
 import { createStreet } from './street';
 import { createStudio } from './studio';
 import { createTablet } from './tablet';
@@ -38,28 +40,6 @@ const BOUNDS: Omit<CameraBounds, 'ground'> = {
 	focusHeight: [0.6, 5],
 	distance: 28,
 };
-
-/**
- * The camera's route, over the same loop as the car's. The first shot holds still, so a held frame
- * lands on the studio view; the rest follow the car out, along the street and back.
- */
-export const SHOTS: readonly Shot[] = [
-	{ position: [6, 2.2, 3.2], target: [0, 0.85, 9], seconds: 1.2, move: 'hold' },
-	// A closer look over the front of the car and the configurator tablet beside it.
-	{ position: [5.2, 1.8, 6.2], target: [3.2, 1.05, 10.2], seconds: 4.3 },
-	// Round to the other flank as the car starts to move.
-	{ position: [-3.6, 2.4, 4.2], target: [0, 0.9, 9], seconds: 4 },
-	// Out through the opening beside the car as it drives away down the street.
-	{ position: [4.5, 3.2, -19], target: [0, 1, -27], seconds: 7.5 },
-	// Down at the street's far end, where the car turns.
-	{ position: [4, 2.2, -21], target: [0, 1, -30], seconds: 4 },
-	// The car comes back toward the camera, head on.
-	{ position: [3.8, 2.6, -14], target: [0, 1, -26], seconds: 6 },
-	// In the studio as the car arrives and turns square.
-	{ position: [3, 2.4, 4], target: [0, 0.9, 9], seconds: 5 },
-	// Back to the opening view, which the loop's first shot shares.
-	{ position: [6, 2.2, 3.2], target: [0, 0.85, 9], seconds: 4 },
-];
 
 const params = new URL(import.meta.url).searchParams;
 
