@@ -480,7 +480,9 @@ export const CREEK_SPECIES: readonly Species[] = [
 				segments: 3,
 			}),
 		],
-		crown: { shape: 'vase', start: 0.36, spread: 0.45, pull: 0.28 },
+		// Its reference puts the lowest foliage at 21 per cent up, below the crown's own start, so the
+		// foliage floor is stated there rather than at the crown.
+		crown: { shape: 'vase', start: 0.36, spread: 0.45, pull: 0.28, leafFloor: 0.21 },
 		leaf: {
 			kind: 'cluster',
 			cell: 'cluster-c',
