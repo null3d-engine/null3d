@@ -24,7 +24,7 @@ const CHUNK_SPLATS = 30_000;
 
 /**
  * Cuts a cloud into chunk files and a stream index, and returns the index's address. `progress`
- * hears how many chunks are written, with the share of the whole file that their bytes hold.
+ * hears how many chunks are written, and the share of the chunks that are done.
  */
 export async function streamCloud(
 	data: SplatData,
