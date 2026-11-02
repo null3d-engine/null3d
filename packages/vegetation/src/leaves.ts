@@ -214,7 +214,7 @@ export function leafCards(
 					1,
 					Math.max(0, (point[1] - crown.start) / Math.max(1e-6, crownTop - crown.start)),
 				);
-				const shrink = 0.55 + 0.45 * crownEnvelope(crown.shape, t);
+				const shrink = 0.3 + 0.7 * crownEnvelope(crown.shape, t);
 				cards.push({ ...card, width: card.width * shrink, height: card.height * shrink });
 			} else cards.push(card);
 		}
@@ -304,7 +304,7 @@ export function leafCards(
 			const at =
 				crown.radius *
 				crownEnvelope(crown.shape, t) *
-				(0.35 + 0.65 * Math.sqrt(unitAt(seed, 22, variant, key, KEY_SIDE)));
+				Math.sqrt(unitAt(seed, 22, variant, key, KEY_SIDE));
 			const angle = unitAt(seed, 23, variant, key, KEY_ROLL) * Math.PI * 2;
 			const outward: [number, number, number] = [Math.cos(angle), 0, Math.sin(angle)];
 			const point: [number, number, number] = [axisX + outward[0] * at, y, axisZ + outward[2] * at];

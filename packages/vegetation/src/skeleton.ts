@@ -187,12 +187,18 @@ function grow(
 		// layered shelves with air between them rather than one even mass.
 		const whorls = Math.max(0, Math.floor(childLevel.whorls ?? 0));
 		const perWhorl = whorls > 0 ? Math.max(1, Math.ceil(count / whorls)) : count;
+		const rings = Math.min(whorls, count);
 		for (let k = 0; k < count; k++) {
 			const key = branchKey * 0x9e37 + k + 1;
 			const jitter = (unitAt(seed, species.seedSalt, variant, key, KEY_ANGLE) - 0.5) * 0.6;
+			const ring = Math.floor(k / perWhorl);
+			// A record may hold its last ring at the parent's tip, so a conifer's crown closes over
+			// its trunk and the tree ends in boughs rather than a bare stick.
 			const along =
 				whorls > 0
-					? (Math.floor(k / perWhorl) + 0.5) / Math.min(whorls, count)
+					? childLevel.whorlTip === true && ring >= rings - 1
+						? 1
+						: (ring + 0.5) / rings
 					: (k + 0.5 + jitter) / count;
 			const share = childLevel.start + (childLevel.end - childLevel.start) * along;
 			const sample = Math.round(share * (samples - 1));
