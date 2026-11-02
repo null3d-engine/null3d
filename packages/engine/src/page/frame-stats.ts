@@ -125,6 +125,8 @@ export interface FrameSummary {
 	uploadBytes: Percentiles;
 	/** Draw calls per frame. */
 	drawCalls: Percentiles;
+	/** Triangles that the frame's draws drew, over every pass. */
+	triangles: Percentiles;
 	/**
 	 * Entries per frame in the list of visible objects on WebGL2, where the job workers cull. Each
 	 * visible object or instance row is one entry. So is each visible group of 64 rows in a static
@@ -364,6 +366,7 @@ export function summarizeFrames(
 		gpuLatencyMs: completion.busy.length > 0 ? percentiles(completion.busy) : null,
 		uploadBytes: percentiles(render.counters[Counter.UploadBytes] ?? []),
 		drawCalls: percentiles(render.counters[Counter.DrawCalls] ?? []),
+		triangles: percentiles(render.counters[Counter.Triangles] ?? []),
 		visibleEntries: visible.length > 0 ? percentiles(visible) : null,
 		occludedEntries: occluded.length > 0 ? percentiles(occluded) : null,
 		rebuilds: (sketch.counters[Counter.Rebuilds] ?? []).filter((n) => n > 0).length,
