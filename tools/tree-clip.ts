@@ -3,6 +3,12 @@
 // Each frame is a hold page at a later scene time, read back through the engine and shrunk; the
 // frames share one palette, so colors do not flicker between them.
 //
+// What it needs from the sketch, so that clips of different species can be compared:
+// - a `wind=1` switch that grows the wind, so the plant moves and a still stays still;
+// - the same framing as that species' stills, which the review sketch gives at `view=whole`.
+// A tool whose wind fell back to still would produce a clip that looks fine and shows nothing, so
+// every run measures the motion between frames and fails when there is none.
+//
 // From the repository root, with the pictures drawn by `target/tree-render/render.ts`:
 //   bun tools/tree-clip.ts --species review-aspen --out .internal/coordination/tree-renders/aspen-wind
 //     [--seconds 3] [--fps 10] [--width 360] [--turn 0] [--seed 11] [--variant 0] [--view whole]
@@ -120,12 +126,15 @@ async function main(): Promise<void> {
 	const seed = option('seed', '11');
 	const variant = option('variant', '0');
 	const view = option('view', 'whole');
-	const frames = Math.max(1, Math.round(seconds * fps));
+	// The wind is on unless a run asks for a still: a still clip is how the motion check is tried,
+	// and it is not evidence of anything else.
+	const wind = option('wind', '1');
+	const frames = Math.max(2, Math.round(seconds * fps));
 	const delay = Math.round(1000 / fps);
 	// The sketch's own query: the same framing as the stills, with the wind switched on.
 	const sketch =
 		`/tests/pages/sketches/tree-review-sketch.ts?species=${species}` +
-		`&view=${view}&seed=${seed}&variant=${variant}&turn=${turn}&wind=1`;
+		`&view=${view}&seed=${seed}&variant=${variant}&turn=${turn}&wind=${wind}`;
 	const base = `http://localhost:${process.env.NULL3D_PORT ?? '6173'}`;
 	const browser = await launchBrowser(defaultEnvironment());
 	const captured: Frame[] = [];
@@ -144,6 +153,15 @@ async function main(): Promise<void> {
 	}
 	const { width: gifWidth, height: gifHeight } = captured[0] as Frame;
 	const palette = quantize(joinFrames(captured, gifWidth, gifHeight), 256);
+	// Each frame is a frame of the same length as every other, and the GIF's length is the count
+	// below. A static clip is the failure this check exists for: the frames would look like a plant
+	// and prove nothing about its motion.
+	const motion = frameMotion(captured);
+	if (motion === 0)
+		throw new Error(
+			'the clip is static: no frame differs from the next. Check that the sketch takes ?wind=1 ' +
+				'and that its sketch time is the hold the tool sets.',
+		);
 	const gif = GIFEncoder();
 	for (const [i, frame] of captured.entries()) {
 		const index = applyPalette(frame.pixels, palette);
@@ -158,8 +176,31 @@ async function main(): Promise<void> {
 	writeFileSync(file, gif.bytes());
 	console.log(
 		`${file}: ${gifWidth}x${gifHeight}, ${frames} frames at ${fps} fps, ` +
-			`${((gif.bytes().length as number) / 1e6).toFixed(2)} MB`,
+			`${((gif.bytes().length as number) / 1e6).toFixed(2)} MB, ` +
+			`${(motion * 100).toFixed(1)} per cent of pixels move between neighbouring frames`,
 	);
+}
+
+/**
+ * The largest share of pixels that differ between one frame and the next, from 0 to 1. A plant that
+ * sways moves a few per cent of the picture's pixels; a still clip moves none.
+ */
+function frameMotion(frames: readonly Frame[]): number {
+	let most = 0;
+	for (let i = 1; i < frames.length; i++) {
+		const before = (frames[i - 1] as Frame).pixels;
+		const after = (frames[i] as Frame).pixels;
+		let moved = 0;
+		for (let at = 0; at < before.length; at += 4)
+			if (
+				before[at] !== after[at] ||
+				before[at + 1] !== after[at + 1] ||
+				before[at + 2] !== after[at + 2]
+			)
+				moved++;
+		most = Math.max(most, moved / (before.length / 4));
+	}
+	return most;
 }
 
 /** Every frame's pixels in one buffer, which the palette is sampled from. */
