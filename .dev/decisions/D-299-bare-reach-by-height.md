@@ -1,4 +1,4 @@
-# D-291: a bough's bare reach follows its height in the crown
+# D-299: a bough's bare reach follows its height in the crown
 
 Status: decided and built. Task: none.
 

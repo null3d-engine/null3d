@@ -1,4 +1,4 @@
-# D-292: cards above a limb's axis do not make the limb read
+# D-300: cards above a limb's axis do not make the limb read
 
 Status: tested and rejected. Task: none.
 
@@ -53,7 +53,7 @@ Three plausible fixes went by before anything was measured. Cards above the limb
 
 So the rule: when a shape does not read against its reference, measure the geometry against the reference's before changing the foliage. Cards, fill and density are the cheapest levers to reach for and the easiest to blame.
 
-The reference pictures decode normally; an early report that they could not was my page context, not the files. A dark-run mask on a photograph returns too many fragments to measure a trunk reliably, and the reference ratios in D-291's sibling record are estimates for that reason.
+The reference pictures decode normally; an early report that they could not was my page context, not the files. A dark-run mask on a photograph returns too many fragments to measure a trunk reliably, and the reference ratios in D-299's sibling record are estimates for that reason.
 
 ## Consequences
 
