@@ -113,6 +113,12 @@
 		"date": "2026-10-29",
 		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
 	},
+	"chromium-swiftshader/compat/demo-ocean.png": {
+		"test": "demo-ocean",
+		"tier": "compat",
+		"date": "2026-10-28",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the demo; the branch's CI run has not drawn it yet"
+	},
 	"chromium-swiftshader/compat/demo-post-effects.png": {
 		"test": "demo-post-effects",
 		"tier": "compat",
@@ -124,6 +130,12 @@
 		"tier": "compat",
 		"date": "2026-11-02",
 		"reason": "the owner's new opening view of the configurator"
+	},
+	"chromium-swiftshader/compat/demo-splat-garden.png": {
+		"test": "demo-splat-garden",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "Playwright's Chromium on this Mac draws SwiftShader byte for byte as CI's does; the picture is redrawn after the ground mesh joined the scene"
 	},
 	"chromium-swiftshader/compat/demo-spot-cookies.png": {
 		"test": "demo-spot-cookies",
@@ -137,11 +149,11 @@
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
 	},
-	"chromium-swiftshader/compat/demo-ocean.png": {
-		"test": "demo-ocean",
+	"chromium-swiftshader/compat/demo-water.png": {
+		"test": "demo-water",
 		"tier": "compat",
-		"date": "2026-10-28",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the demo; the branch's CI run has not drawn it yet"
+		"date": "2026-10-31",
+		"reason": "Held frames now draw the water's reflection. Nothing is pushed yet, so CI's own drawing replaces these."
 	},
 	"chromium-swiftshader/compat/feature-instances-shadow.png": {
 		"test": "feature-instances-shadow",
@@ -245,6 +257,24 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
+	"chromium-swiftshader/compat/shadows-contact-far.png": {
+		"test": "shadows-contact-far",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that gives this family its per-tier software set; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/shadows-contact-near.png": {
+		"test": "shadows-contact-near",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that gives this family its per-tier software set; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/shadows-contact.png": {
+		"test": "shadows-contact",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that gives this family its per-tier software set; the branch was not pushed yet, so no CI run could draw it"
+	},
 	"chromium-swiftshader/compat/sky-layer-scene-pass.png": {
 		"test": "sky-layer-scene-pass",
 		"tier": "compat",
@@ -256,6 +286,12 @@
 		"tier": "compat",
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
+	},
+	"chromium-swiftshader/compat/terrain-baked-normals.png": {
+		"test": "terrain-baked-normals",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1; this Mac's software drawing stands in for CI's own Linux SwiftShader, and CI's redraw is owed and replaces these if it differs"
 	},
 	"chromium-swiftshader/compat/terrain.png": {
 		"test": "terrain",
@@ -419,6 +455,12 @@
 		"date": "2026-11-02",
 		"reason": "the owner's new opening view of the configurator"
 	},
+	"chromium-swiftshader/webgl2/demo-splat-garden.png": {
+		"test": "demo-splat-garden",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "Playwright's Chromium on this Mac draws SwiftShader byte for byte as CI's does; the picture is redrawn after the ground mesh joined the scene"
+	},
 	"chromium-swiftshader/webgl2/demo-spot-cookies.png": {
 		"test": "demo-spot-cookies",
 		"tier": "webgl2",
@@ -557,6 +599,24 @@
 		"date": "2026-10-30",
 		"reason": "the branch has no CI run; the prototype S3 page is a test page that draws its fixed scene with plain GPU calls, so the software set can be drawn here until a CI run replaces it"
 	},
+	"chromium-swiftshader/webgl2/shadows-contact-far.png": {
+		"test": "shadows-contact-far",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that gives this family its per-tier software set; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/shadows-contact-near.png": {
+		"test": "shadows-contact-near",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that gives this family its per-tier software set; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/shadows-contact.png": {
+		"test": "shadows-contact",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that gives this family its per-tier software set; the branch was not pushed yet, so no CI run could draw it"
+	},
 	"chromium-swiftshader/webgl2/sky-layer-scene-pass.png": {
 		"test": "sky-layer-scene-pass",
 		"tier": "webgl2",
@@ -568,6 +628,12 @@
 		"tier": "webgl2",
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
+	},
+	"chromium-swiftshader/webgl2/terrain-baked-normals.png": {
+		"test": "terrain-baked-normals",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1; this Mac's software drawing stands in for CI's own Linux SwiftShader, and CI's redraw is owed and replaces these if it differs"
 	},
 	"chromium-swiftshader/webgl2/terrain.png": {
 		"test": "terrain",
@@ -713,6 +779,12 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
+	"chromium-swiftshader/webgpu/demo-ocean.png": {
+		"test": "demo-ocean",
+		"tier": "webgpu",
+		"date": "2026-10-28",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the demo; the branch's CI run has not drawn it yet"
+	},
 	"chromium-swiftshader/webgpu/demo-post-effects.png": {
 		"test": "demo-post-effects",
 		"tier": "webgpu",
@@ -725,6 +797,12 @@
 		"date": "2026-11-02",
 		"reason": "the owner's new opening view of the configurator"
 	},
+	"chromium-swiftshader/webgpu/demo-splat-garden.png": {
+		"test": "demo-splat-garden",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "Playwright's Chromium on this Mac draws SwiftShader byte for byte as CI's does; the picture is redrawn after the ground mesh joined the scene"
+	},
 	"chromium-swiftshader/webgpu/demo-spot-cookies.png": {
 		"test": "demo-spot-cookies",
 		"tier": "webgpu",
@@ -736,12 +814,6 @@
 		"tier": "webgpu",
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
-	},
-	"chromium-swiftshader/webgpu/demo-ocean.png": {
-		"test": "demo-ocean",
-		"tier": "webgpu",
-		"date": "2026-10-28",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the demo; the branch's CI run has not drawn it yet"
 	},
 	"chromium-swiftshader/webgpu/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
@@ -869,6 +941,24 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
+	"chromium-swiftshader/webgpu/shadows-contact-far.png": {
+		"test": "shadows-contact-far",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that gives this family its per-tier software set; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/shadows-contact-near.png": {
+		"test": "shadows-contact-near",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that gives this family its per-tier software set; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/shadows-contact.png": {
+		"test": "shadows-contact",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that gives this family its per-tier software set; the branch was not pushed yet, so no CI run could draw it"
+	},
 	"chromium-swiftshader/webgpu/skinning-shadows.png": {
 		"test": "skinning-shadows",
 		"tier": "webgpu",
@@ -886,6 +976,12 @@
 		"tier": "webgpu",
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
+	},
+	"chromium-swiftshader/webgpu/terrain-baked-normals.png": {
+		"test": "terrain-baked-normals",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1; this Mac's software drawing stands in for CI's own Linux SwiftShader, and CI's redraw is owed and replaces these if it differs"
 	},
 	"chromium-swiftshader/webgpu/terrain.png": {
 		"test": "terrain",
@@ -922,47 +1018,5 @@
 		"tier": "webgpu",
 		"date": "2026-10-30",
 		"reason": "No CI run has drawn this picture yet: run 41006111918 drew the three weather pictures and lost them when its shard reached the job's time limit, before the guard let a timed-out shard upload. This Mac's SwiftShader drew these three, and the next CI drawing of them replaces them."
-	},
-	"chromium-swiftshader/compat/demo-water.png": {
-		"test": "demo-water",
-		"tier": "compat",
-		"date": "2026-10-31",
-		"reason": "Held frames now draw the water's reflection. Nothing is pushed yet, so CI's own drawing replaces these."
-	},
-	"chromium-swiftshader/compat/terrain-baked-normals.png": {
-		"test": "terrain-baked-normals",
-		"tier": "compat",
-		"date": "2026-11-02",
-		"reason": "drawn on this Mac's SwiftShader with CI=1; this Mac's software drawing stands in for CI's own Linux SwiftShader, and CI's redraw is owed and replaces these if it differs"
-	},
-	"chromium-swiftshader/webgl2/terrain-baked-normals.png": {
-		"test": "terrain-baked-normals",
-		"tier": "webgl2",
-		"date": "2026-11-02",
-		"reason": "drawn on this Mac's SwiftShader with CI=1; this Mac's software drawing stands in for CI's own Linux SwiftShader, and CI's redraw is owed and replaces these if it differs"
-	},
-	"chromium-swiftshader/webgpu/terrain-baked-normals.png": {
-		"test": "terrain-baked-normals",
-		"tier": "webgpu",
-		"date": "2026-11-02",
-		"reason": "drawn on this Mac's SwiftShader with CI=1; this Mac's software drawing stands in for CI's own Linux SwiftShader, and CI's redraw is owed and replaces these if it differs"
-	},
-	"chromium-swiftshader/compat/demo-splat-garden.png": {
-		"test": "demo-splat-garden",
-		"tier": "compat",
-		"date": "2026-11-02",
-		"reason": "Playwright's Chromium on this Mac draws SwiftShader byte for byte as CI's does; the picture is redrawn after the ground mesh joined the scene"
-	},
-	"chromium-swiftshader/webgl2/demo-splat-garden.png": {
-		"test": "demo-splat-garden",
-		"tier": "webgl2",
-		"date": "2026-11-02",
-		"reason": "Playwright's Chromium on this Mac draws SwiftShader byte for byte as CI's does; the picture is redrawn after the ground mesh joined the scene"
-	},
-	"chromium-swiftshader/webgpu/demo-splat-garden.png": {
-		"test": "demo-splat-garden",
-		"tier": "webgpu",
-		"date": "2026-11-02",
-		"reason": "Playwright's Chromium on this Mac draws SwiftShader byte for byte as CI's does; the picture is redrawn after the ground mesh joined the scene"
 	}
 }
