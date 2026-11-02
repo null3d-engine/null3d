@@ -52,7 +52,7 @@ The handler gets the bytes downloaded so far and the bytes expected so far. The 
 
 The page passes `onSketchMessage` to `createEngine`, so it hears the messages that the sketch sends during its setup. It removes the loading screen when `engine.firstFrame` resolves: until the GPU has finished the first frame, the canvas is blank.
 
-A percentage must come from work that is counted. `onProgress` gives the engine core's bytes, measured against the length that the server announced. `assets.onProgress` gives a scene's files the same way. Neither knows how much of the whole start is left. So the page measures each phase on its own, and it names the phase beside its number. Within a phase the percentage never falls. A scene's total grows as it starts more files, so the bytes that arrived can be a smaller share than before.
+A percentage must come from work that is counted. `onProgress` gives the engine core's bytes, measured against the length that the server announced. `assets.onProgress` gives a scene's files the same way. Neither knows how much of the whole start is left. So the page measures each phase on its own, and it names the phase beside its number. Within a phase the percentage never falls. A scene's total grows as it starts more files, so the bytes that arrived can be a smaller share than before. Across the whole start the figure can fall: a counted phase that ends returns the card to the engine's stage, and a later file starts a new measure under the same label.
 
 ```ts
 // page.ts
