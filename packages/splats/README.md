@@ -33,7 +33,11 @@ Importing the package also registers the glTF reader, so
 ## Costs and limits
 
 - One draw for the whole cloud. The engine culls the rows and sorts them back to front on its job
-  workers, on WebGPU and WebGL2.
+  workers, on WebGPU and WebGL2. The splats draw unlit: each pixel is a fade and a blend, with no
+  lights, shadows or reflections.
+- A chunk far from the camera draws a prefix of its splats, and the prefix grows the splats it
+  keeps so they still cover the chunk's surface. A scan's colors are its photographs', so show one
+  with `post.set({ toneMapping: 'none' })`.
 - A splat stream is an index of chunk files: read the index first, then fetch the chunks that the
   view asks for. `chunkSplats` and `encodeSpz` make the files, and `parseStreamIndex` reads an
   index without a sketch.

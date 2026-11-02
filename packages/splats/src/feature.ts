@@ -27,7 +27,9 @@ const MAX_SPLATS = 8_000_000;
 export function splatsFeature(memory: () => number): FeatureDescription {
 	return defineFeature({
 		name: 'splats',
-		frame: 'transparent',
+		// The camera draws the splats at one sample per pixel and blends them over the scene,
+		// so a multisampled frame does not blend each of their overlapping cards per sample.
+		frame: 'resolve',
 		kind: 'draw',
 		views: ['main'],
 		settings: {

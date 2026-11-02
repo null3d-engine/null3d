@@ -1,7 +1,9 @@
 // The draw of a batch's splats: each row places one Gaussian, and this shader turns its row into a
-// camera-facing card that covers the splat's projected ellipse. The vertex offset sizes the card
-// from the row's covariance, which the row's rotation and scales give, and the surface function
-// fades it with the same ellipse in pixels, so the splat is a soft Gaussian rather than a disc.
+// camera-facing card that covers the splat's projected ellipse. The vertex offset projects the
+// row's covariance, which the row's rotation and scales give, onto the screen, and spans the card
+// along the ellipse's own axes, so the card's texture coordinates measure the distance from the
+// splat's center in standard deviations. The unlit function then fades the card by that distance
+// alone, so a pixel pays for no projection, and the splat shows its own color with no lighting.
 //
 // The engine sorts the batch's rows back to front in the transparent pass and culls them by their
 // spheres, so this shader reads no order of its own. It also fades a splat where it meets an opaque
@@ -21,19 +23,13 @@ struct Uniforms {
 // The gravity of the blur that a point of a splat spreads over, as the covariance adds it.
 const BASE_BLUR: f32 = 0.09;
 
-// A splat on the screen: where its center lies in pixels, the inverse of its 2D covariance, and the
-// two covariance axes that the card spans.
+// A splat on the screen: the ellipse's two axes in pixels, and how many meters a pixel covers at
+// the splat's depth.
 struct SplatScreen {
-    // The center in pixels from the top left, or 0 when the splat does not draw.
-    center: vec2f,
-    // The inverse of the 2D covariance: [a, b; b, c].
-    conic: vec3f,
-    // The covariance's x and y axes on the screen, in pixels.
+    // The ellipse's major and minor axes, each one standard deviation long, in pixels.
     axisX: vec2f,
     axisY: vec2f,
-    // The distance of the center in front of the camera, in meters.
-    depth: f32,
-    // How many meters one pixel covers at that depth.
+    // How many meters one pixel covers at the splat's depth.
     worldPerPixel: f32,
     // True when the splat lies in front of the camera and covers a pixel.
     drawn: bool,
@@ -57,19 +53,14 @@ fn to_mesh(m: mat3x3f, v: vec3f) -> vec3f {
 // covariance's own axes, in meters.
 fn splat_screen(matrix: mat4x4f) -> SplatScreen {
     var out: SplatScreen;
-    out.center = vec2f(0.0);
-    out.conic = vec3f(0.0);
     out.axisX = vec2f(0.0);
     out.axisY = vec2f(0.0);
-    out.depth = 0.0;
     out.worldPerPixel = 0.0;
     out.drawn = false;
-    let center = matrix[3].xyz;
     let view = camera.view;
-    let center_view = (view * vec4f(center, 1.0)).xyz;
+    let center_view = (view * vec4f(matrix[3].xyz, 1.0)).xyz;
     // The camera looks down -Z, so a point in front of it has a negative view Z.
     let depth = -center_view.z;
-    out.depth = depth;
     if (depth <= camera.near) {
         return out;
     }
@@ -89,26 +80,34 @@ fn splat_screen(matrix: mat4x4f) -> SplatScreen {
     let sxx = ca.x * ca.x + cb.x * cb.x + cc.x * cc.x + blur;
     let sxy = ca.x * ca.y + cb.x * cb.y + cc.x * cc.y;
     let syy = ca.y * ca.y + cb.y * cb.y + cc.y * cc.y + blur;
-    let det = sxx * syy - sxy * sxy;
-    if (det <= 1e-12) {
+    if (sxx * syy - sxy * sxy <= 1e-12) {
         return out;
     }
-    out.conic = vec3f(syy, -sxy, sxx) / det;
-    out.axisX = ca;
-    out.axisY = cb;
-    let clip = camera.viewProjection * vec4f(center, 1.0);
-    if (clip.w <= 0.0) {
-        return out;
-    }
-    let ndc = clip.xy / clip.w;
-    out.center = vec2f((ndc.x * 0.5 + 0.5) * res.x, (0.5 - ndc.y * 0.5) * res.y);
+    // The card spans the ellipse's own axes, from the 2D covariance's eigenvectors. All three of
+    // the splat's axes add to that ellipse, so a flat splat seen edge on, or one whose longest
+    // axis is its third, still gets a card that covers it.
+    let mid = 0.5 * (sxx + syy);
+    let spread = sqrt(max(0.25 * (sxx - syy) * (sxx - syy) + sxy * sxy, 0.0));
+    let major = mid + spread;
+    let minor = max(mid - spread, 0.0);
+    // Either row of the covariance less the major value gives the major axis; the longer one
+    // keeps its precision, and a round ellipse takes any direction.
+    let fromX = vec2f(major - syy, sxy);
+    let fromY = vec2f(sxy, major - sxx);
+    var direction = select(fromY, fromX, dot(fromX, fromX) >= dot(fromY, fromY));
+    let length2 = dot(direction, direction);
+    direction = select(vec2f(1.0, 0.0), direction * inverseSqrt(length2), length2 > 1e-20);
+    out.axisX = direction * sqrt(major);
+    out.axisY = vec2f(-direction.y, direction.x) * sqrt(minor);
     out.worldPerPixel = 2.0 * depth / (camera.projection[1][1] * res.y);
     out.drawn = true;
     return out;
 }
 
-// Places the card that covers the splat: the quad's corner moves along the splat's two screen axes,
-// and the result turns back into the mesh's space, where the engine applies the row's matrix.
+// Places the card that covers the splat: the quad's corner moves along the ellipse's axes, and the
+// result turns back into the mesh's space, where the engine applies the row's matrix. The card
+// lies in the plane through the splat's center that faces the camera, so every pixel of it has the
+// center's depth.
 fn vertexOffset(input: VertexInput) -> vec3f {
     let matrix = object.worldMatrix;
     let axes = mat3x3f(matrix[0].xyz, matrix[1].xyz, matrix[2].xyz);
@@ -125,27 +124,22 @@ fn vertexOffset(input: VertexInput) -> vec3f {
     return to_mesh(axes, world) - input.position;
 }
 
-fn surface(input: SurfaceInput) -> Surface {
-    var s = defaultSurface(input);
-    let screen = splat_screen(object.worldMatrix);
-    var alpha = 0.0;
-    if (screen.drawn) {
-        let d = input.fragCoord.xy - screen.center;
-        let power = 0.5 * (screen.conic.x * d.x * d.x + 2.0 * screen.conic.y * d.x * d.y + screen.conic.z * d.y * d.y);
-        alpha = input.vertexColor.a * exp(-power);
-        if (material.softness > 0.0) {
-            // The opaque scene behind this pixel, and the splat's own distance along the view: a
-            // splat that meets a mesh fades over the last meters before it.
-            let uv = input.fragCoord.xy / frame.resolution;
-            let behind = sceneDistance(uv);
-            alpha *= smoothstep(0.0, material.softness, behind - screen.depth);
-        }
-        alpha = select(0.0, alpha, alpha >= material.cutoff);
+// The splat's own color, faded by the Gaussian: the card's corner coordinates reach `extent`
+// standard deviations, so their length gives the distance from the center in standard deviations.
+// A pixel too faint to show draws nothing, so it costs no blend.
+fn unlit(input: SurfaceInput) -> vec4f {
+    let corner = input.uv * 2.0 - 1.0;
+    let deviations = material.extent * material.extent * dot(corner, corner);
+    var alpha = input.vertexColor.a * exp(-0.5 * deviations);
+    if (material.softness > 0.0) {
+        // The opaque scene behind this pixel, and the splat's own depth along the view: a splat
+        // that meets a mesh fades over the last meters before it.
+        let uv = input.fragCoord.xy / frame.resolution;
+        let depth = -(camera.view * vec4f(input.relativePosition, 0.0)).z;
+        alpha *= smoothstep(0.0, material.softness, sceneDistance(uv) - depth);
     }
-    s.baseColor = vec3f(0.0);
-    s.metalness = 0.0;
-    s.roughness = 1.0;
-    s.emissive = input.vertexColor.rgb;
-    s.alpha = clamp(alpha, 0.0, 1.0);
-    return s;
+    if (alpha < material.cutoff) {
+        discard;
+    }
+    return vec4f(input.vertexColor.rgb, min(alpha, 1.0));
 }

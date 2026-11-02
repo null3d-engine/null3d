@@ -1,7 +1,7 @@
 // The draw of the splats of a glTF primitive: one quad per splat, with the splat's own values in
 // the mesh's vertex attributes, as KHR_gaussian_splatting stores them. The vertex shader turns the
-// quad into a camera-facing card that covers the splat's projected ellipse, and the fragment fades
-// it with the same ellipse, so each splat is a soft Gaussian in its own color.
+// quad into a camera-facing card along the axes of the splat's projected ellipse, and the fragment
+// fades it with the same ellipse, so each splat is a soft Gaussian in its own color.
 //
 // A glTF model draws as one object for each part of the model, which the transparent pass sorts by
 // depth. The splats inside a part draw in the file's order: the add-on's own files draw through an
@@ -15,6 +15,8 @@
 const EXTENT: f32 = 3.3;
 // The square pixels of blur that every splat gains, so a tiny splat still covers a pixel.
 const BLUR: f32 = 0.09;
+// The alpha under which a pixel draws nothing.
+const CUTOFF: f32 = 1.0 / 255.0;
 
 struct Varyings {
     @builtin(position) clip: vec4f,
@@ -83,8 +85,21 @@ fn vs(
         return out;
     }
     out.conic = vec3f(syy, -sxy, sxx) / det;
+    // The card spans the ellipse's own axes, from the 2D covariance's eigenvectors, so a flat
+    // splat seen edge on, or one whose longest axis is its third, still gets a card that covers it.
+    let mid = 0.5 * (sxx + syy);
+    let spread = sqrt(max(0.25 * (sxx - syy) * (sxx - syy) + sxy * sxy, 0.0));
+    let major = mid + spread;
+    let minor = max(mid - spread, 0.0);
+    let from_x = vec2f(major - syy, sxy);
+    let from_y = vec2f(sxy, major - sxx);
+    var direction = select(from_y, from_x, dot(from_x, from_x) >= dot(from_y, from_y));
+    let length2 = dot(direction, direction);
+    direction = select(vec2f(1.0, 0.0), direction * inverseSqrt(length2), length2 > 1e-20);
+    let axis_x = direction * sqrt(major);
+    let axis_y = vec2f(-direction.y, direction.x) * sqrt(minor);
     let corner = uv0 * 2.0 - 1.0;
-    out.offset = EXTENT * (corner.x * ca + corner.y * cb);
+    out.offset = EXTENT * (corner.x * axis_x + corner.y * axis_y);
     // The card lies in the camera's plane, with the offset in world units at the splat's depth.
     let right = vec3f(view[0][0], view[1][0], view[2][0]);
     let up = vec3f(view[0][1], view[1][1], view[2][1]);
@@ -100,7 +115,11 @@ fn fs(in: Varyings) -> @location(0) vec4f {
     let d = in.offset;
     let power = 0.5 * (in.conic.x * d.x * d.x + 2.0 * in.conic.y * d.x * d.y + in.conic.z * d.y * d.y);
     let alpha = clamp(in.color.a * exp(-power), 0.0, 1.0);
-    var out = finish(in.color.rgb, in.clip.xy);
-    out.a = alpha;
-    return out;
+    // A pixel too faint to show draws nothing, so it costs no blend.
+    if (alpha < CUTOFF) {
+        discard;
+    }
+    // The engine blends color that its alpha has multiplied already.
+    let shown = finish(in.color.rgb, in.clip.xy);
+    return vec4f(shown.rgb * alpha, alpha);
 }
