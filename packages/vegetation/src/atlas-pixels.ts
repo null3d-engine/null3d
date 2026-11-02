@@ -140,6 +140,17 @@ interface LeafFamily {
 	readonly sinus?: number;
 	/** How many veins each half of the blade carries. */
 	readonly veins: number;
+	/**
+	 * True for a blade whose outline is a circle, which an aspen's leaf nearly is. The profile then
+	 * gives way, because `sin` holds its width too long at the base and the tip.
+	 */
+	readonly circle?: boolean;
+	/** The share of the blade that forms its point, narrowing to nothing instead of rounding. */
+	readonly tip?: number;
+	/** False for a family whose reference leaves have unbroken margins, with no feeding damage. */
+	readonly bites?: boolean;
+	/** How far the veins stand out of the blade, against the usual depth. The default is 1. */
+	readonly veinDepth?: number;
 }
 
 /** The families that the cells' leaves grow from. */
@@ -214,6 +225,21 @@ const FAMILIES = {
 		lobes: 0,
 		lobeDepth: 0,
 		veins: 4,
+	},
+	// A quaking aspen's leaf: a blade as wide as it is long, its margin cut by fine even teeth, and
+	// a short abrupt point where the midrib runs out.
+	aspen: {
+		profile: 1,
+		aspect: 0.52,
+		teeth: 26,
+		toothDepth: 0.045,
+		lobes: 0,
+		lobeDepth: 0,
+		veins: 6,
+		circle: true,
+		tip: 0.09,
+		bites: false,
+		veinDepth: 0.5,
 	},
 	willow: {
 		profile: 1.15,
@@ -319,7 +345,7 @@ function placeLeaf(
 	// One leaf in five has lost a piece of its edge, so a crown never reads as a tiled pattern.
 	const side = random2(seed, 22) < 0.5 ? -1 : 1;
 	const bite: readonly [number, number, number] | null =
-		random2(seed, 21) < 0.22
+		family.bites !== false && random2(seed, 21) < 0.22
 			? [
 					0.35 + 0.4 * random2(seed, 23),
 					side * length * shape.aspect * (0.55 + 0.35 * random2(seed, 24)),
@@ -355,8 +381,16 @@ function placeLeaf(
 function leafHalfWidth(shape: LeafShape, t: number): number {
 	if (t <= 0 || t >= 1) return 0;
 	const envelope = Math.sqrt(Math.sin(Math.PI * t));
-	// The profile rounds the leaf's tip and base rather than cutting them to points.
-	let width = Math.sin(Math.PI * t ** shape.profile) ** 0.7;
+	// The profile rounds the leaf's tip and base rather than cutting them to points. A circular
+	// blade takes the circle's own half width instead, because the profile holds its width too long
+	// at either end and reads as an ovate leaf rather than a round one.
+	let width = shape.circle
+		? 2 * Math.sqrt(t * (1 - t))
+		: Math.sin(Math.PI * t ** shape.profile) ** 0.7;
+	// A leaf that ends in a point keeps the circle until the point begins, then narrows straight to
+	// the tip: an aspen's short acuminate point, not a rounded end.
+	const tip = shape.tip ?? 0;
+	if (tip > 0 && t > 1 - tip) width *= (1 - t) / tip;
 	if (shape.teeth > 0)
 		width *= 1 + shape.toothDepth * (teethWave(t * shape.teeth) - 0.4) * envelope;
 	if (shape.lobes > 0) {
@@ -470,7 +504,7 @@ function leafPaint(leaf: PlacedLeaf, cardX: number, cardY: number, spot: LeafSpo
 		0.3 * (1 - edge * edge) -
 		0.14 * smoothstep(0.82, 1, edge) +
 		0.3 * midrib +
-		0.22 * shape.veinStrength * vein +
+		0.22 * (shape.veinDepth ?? 1) * shape.veinStrength * vein +
 		0.12 * (spot.t - 0.5);
 	// The tip catches more light and a slow blotch mottles the blade. The rim darkens a little, so
 	// two leaves that overlap still read apart: a deep band turns every edge of a distant crown
@@ -577,13 +611,18 @@ function tileLeaves(leaves: readonly PlacedLeaf[]): readonly (readonly PlacedLea
 }
 
 /** Paints a cell from its leaves and the stem that carries them, or from its leaves alone. */
-function leafSpray(all: readonly PlacedLeaf[], stem: number | null): LeafCellPainter {
+function leafSpray(
+	all: readonly PlacedLeaf[],
+	stem: number | null,
+	stalk: number | null = null,
+): LeafCellPainter {
 	const leaves = tileLeaves(all);
 	return {
 		at(cardX, cardY) {
 			let winner: PlacedLeaf | null = null;
 			let nearest = 1;
 			let covers = 0;
+			let nearestStalk = 1;
 			const tile = tileOf(cardY) * CELL_TILES + tileOf(cardX);
 			for (const leaf of leaves[tile] as readonly PlacedLeaf[]) {
 				const distance = leafDistance(leaf, cardX, cardY);
@@ -592,11 +631,19 @@ function leafSpray(all: readonly PlacedLeaf[], stem: number | null): LeafCellPai
 					nearest = distance;
 					winner = leaf;
 				}
+				// A leaf on a stalk hangs off the stem, and the stalk is drawn from the stem to the
+				// leaf's own base, wherever the leaf leans.
+				if (stalk !== null) {
+					const nearX = clamp(cardX, Math.min(0.5, leaf.baseX), Math.max(0.5, leaf.baseX));
+					const toStalk = Math.hypot(cardX - nearX, cardY - leaf.baseY) - stalk;
+					if (toStalk < nearestStalk) nearestStalk = toStalk;
+				}
 			}
 			if (stem !== null) {
 				const distance = stemDistance(cardX, cardY, stem, 0.007);
 				if (distance < nearest) return stemPoint(distance, cardY);
 			}
+			if (nearestStalk < nearest) return stemPoint(nearestStalk, cardY);
 			if (winner === null) return EMPTY_CELL_POINT;
 			const spot = leafSpotAt(winner, cardX, cardY);
 			const paint = leafPaint(winner, cardX, cardY, spot);
@@ -632,6 +679,11 @@ interface SprayOptions {
 	readonly length: readonly [number, number];
 	/** How far a leaf's base may sit from the stem, as a share of the cell's width. */
 	readonly spread: number;
+	/**
+	 * The half width of the stalk that joins a leaf's base to the stem, as a share of the cell's
+	 * width. Leave it out for a leaf that sits on the stem itself.
+	 */
+	readonly stalk?: number;
 }
 
 /** Places a spray of leaves over a card, each at a point and an angle of its own. */
@@ -652,7 +704,24 @@ function sprayLeaves(seed: number, family: LeafFamily, options: SprayOptions): P
 		const length =
 			(options.length[0] + (options.length[1] - options.length[0]) * f) *
 			(0.82 + 0.36 * random2(key, 4));
-		leaves.push(placeLeaf(key, family, baseX, along, angle, length));
+		const leaf = placeLeaf(key, family, baseX, along, angle, length);
+		const stalk = options.stalk;
+		if (stalk === undefined) {
+			leaves.push(leaf);
+			continue;
+		}
+		// The stalk reaches from the stem to the leaf's base, so the tile lookup must hold the leaf
+		// wherever the stalk runs as well as wherever the blade reaches.
+		const [left, bottom, right, top] = leaf.box as readonly [number, number, number, number];
+		leaves.push({
+			...leaf,
+			box: [
+				Math.min(left, Math.min(0.5, baseX) - stalk),
+				Math.min(bottom, along - stalk),
+				Math.max(right, Math.max(0.5, baseX) + stalk),
+				Math.max(top, along + stalk),
+			],
+		});
 	}
 	return leaves;
 }
@@ -809,17 +878,22 @@ function leafCells(): LeafCellPainter[] {
 			}),
 			0.02,
 		),
+		// A quaking aspen: six leaves hang apart on long flattened stalks. The stalks are what the
+		// species shows, because a leaf on one turns edge-on in the least wind, so the card draws
+		// the gap between the leaves rather than a packed clump.
 		leafSpray(
-			sprayLeaves(79, FAMILIES.round, {
-				count: 26,
-				from: 0.05,
-				to: 0.88,
-				lean: [0.5, 1.3],
-				turn: 0.7,
-				length: [0.3, 0.22],
-				spread: 0.16,
+			sprayLeaves(79, FAMILIES.aspen, {
+				count: 5,
+				from: 0.14,
+				to: 0.86,
+				lean: [1.05, 0.85],
+				turn: 0.3,
+				length: [0.28, 0.22],
+				spread: 0.3,
+				stalk: 0.006,
 			}),
-			0.025,
+			0.02,
+			0.006,
 		),
 		// A maple's palmate leaf, whose lobes radiate from its base rather than running along the
 		// midrib.
@@ -922,7 +996,19 @@ interface BarkFamily {
 	readonly moss: number;
 	/** A birch's horizontal lenticels, or a willow's vertical ridges. */
 	readonly lenticels?: boolean;
+	/** How many bands of lenticels a cell holds, and how dense the marks are within each, 0 to 1. */
+	readonly lenticelRows?: number;
+	readonly lenticelDensity?: number;
 	readonly ridges?: boolean;
+	/** How many dark scars a cell carries, where a branch died and the bark closed over it. */
+	readonly scars?: number;
+	/**
+	 * True for bark with no plates at all: one unbroken surface, as an aspen's bole is. The lattice
+	 * then gives way, and the lenticels and scars alone mark the bark.
+	 */
+	readonly smooth?: boolean;
+	/** How strongly a smooth bark's tone drifts across the cell, so it is not one flat colour. */
+	readonly mottle?: number;
 	/**
 	 * How tall a plate runs against its width. A value under one stretches the plates down the
 	 * trunk, as a live oak's furrows do, without changing the lattice's counts.
@@ -994,18 +1080,24 @@ const BARK_FAMILIES: Readonly<Record<BarkCellName, BarkFamily>> = {
 		light: [1.08, 0.86, 0.68],
 		moss: 0.12,
 	},
-	// An aspen's bark: smooth and pale, marked by horizontal lenticels rather than cracked into plates.
+	// An aspen's bark: one smooth pale surface, unbroken by plates, marked by dense fine horizontal
+	// lenticels and a few large dark scars where branches died.
 	aspen: {
 		across: 2,
 		along: 2,
-		warp: 0.2,
+		warp: 0,
 		crackWidth: 0.01,
-		depth: 0.02,
-		fibre: 0.01,
-		dark: [0.78, 0.77, 0.74],
-		light: [1.16, 1.15, 1.1],
-		moss: 0.06,
+		depth: 0,
+		fibre: 0.012,
+		dark: [0.88, 0.88, 0.84],
+		light: [1.12, 1.11, 1.06],
+		moss: 0.05,
 		lenticels: true,
+		lenticelRows: 44,
+		lenticelDensity: 0.42,
+		scars: 2,
+		smooth: true,
+		mottle: 0.35,
 	},
 	// A holm oak's bark: small dark plates that scale off, with shallow cracks between them.
 	holm: {
@@ -1089,6 +1181,9 @@ function periodicBark(u: number, v: number, across: number, along: number, seed:
 
 /** The bark's plate coordinates at a point, warped by noise, and the nearest plate's number. */
 function barkPlates(u: number, v: number, family: BarkFamily): [number, number, number] {
+	// A smooth family has no lattice at all: one plate covers the cell, so the surface stays
+	// unbroken and only the lenticels and the scars mark it.
+	if (family.smooth === true) return [0, 1, 0.5];
 	// A warp built from sines of whole cycles wraps with the cell, so a bark tile's seam does not
 	// show where the pattern repeats.
 	// Two warps: a slow one that bends the plates and a faster one that makes their widths uneven.
@@ -1109,13 +1204,37 @@ function barkPlates(u: number, v: number, family: BarkFamily): [number, number, 
 	return [first, second, near];
 }
 
-/** A birch's lenticels: short horizontal dashes where the bark's pores open. */
-function lenticel(u: number, v: number): number {
-	const band = Math.floor(v * 18);
+/** A bark's lenticels: short horizontal dashes where its pores open. */
+function lenticel(u: number, v: number, family: BarkFamily): number {
+	const rows = family.lenticelRows ?? 18;
+	const density = family.lenticelDensity ?? 0.62;
+	const band = Math.floor(v * rows);
 	const shift = random2(band, 3) * 4;
-	const along = teethWave(v * 18);
-	const marks = smoothstep(0.62, 0.9, fbm2(u * 6 + shift, band * 5.3, 2));
-	return marks * (1 - smoothstep(0.1, 0.35, along));
+	const along = teethWave(v * rows);
+	const marks = smoothstep(density, density + 0.2, fbm2(u * 18 + shift, band * 7.3, 2));
+	return marks * (1 - smoothstep(0.05, 0.2, along));
+}
+
+/**
+ * The bark's scars: a few dark patches where a branch died and the bark closed over it. Each scar
+ * keeps clear of the cell's edge, so a tile's seam cannot cut one in half.
+ */
+function barkScar(u: number, v: number, family: BarkFamily): number {
+	const count = family.scars ?? 0;
+	let scar = 0;
+	for (let i = 0; i < count; i++) {
+		const centreX = 0.16 + 0.68 * random2(i + 1, 41);
+		const centreY = 0.16 + 0.68 * random2(i + 1, 43);
+		const size = 0.035 + 0.055 * random2(i + 1, 47);
+		// No two scars share an outline: each branch died at its own angle and the bark closed over
+		// it unevenly. One repeated shape is what makes a bark read as a pattern rather than a bole.
+		const wide = 0.8 + 0.5 * random2(i + 1, 53);
+		const tall = 0.9 + 0.6 * random2(i + 1, 59);
+		const wobble = 1 + 0.35 * (fbm2(u * 15 + i * 3, v * 15, 2) - 0.5);
+		const reach = Math.hypot((u - centreX) / wide, (v - centreY) / tall) / (size * wobble);
+		scar = Math.max(scar, 1 - smoothstep(0.82, 1, reach));
+	}
+	return scar;
 }
 
 /** A willow's ridges: long vertical furrows, broken by the same slow noise as its plates. */
@@ -1131,7 +1250,9 @@ function barkHeight(u: number, v: number, family: BarkFamily): number {
 	let height = (0.25 + 0.65 * crack) * (0.75 + 0.5 * near);
 	height += (periodicBark(u, v, 45, 9, 1) - 0.5) * family.fibre * crack;
 	height += (periodicBark(u, v, 11, 2, 2) - 0.5) * family.depth * 0.07;
-	if (family.lenticels) height -= lenticel(u, v) * 0.08;
+	if (family.lenticels) height -= lenticel(u, v, family) * 0.08;
+	height -= barkScar(u, v, family) * 0.05;
+	height += (periodicBark(u, v, 2, 3, 11) - 0.5) * (family.mottle ?? 0);
 	if (family.ridges) height += ridge(u, v) * 0.12;
 	return height;
 }
@@ -1146,11 +1267,9 @@ function barkColorAt(
 ): [number, number, number] {
 	const mix = clamp(height, 0, 1);
 	const shade = 0.72 + 0.52 * plate;
-	const feature = family.lenticels
-		? 1 - 0.7 * lenticel(u, v)
-		: family.ridges
-			? 1 - 0.25 * (1 - ridge(u, v))
-			: 1;
+	const lenticels = family.lenticels ? 1 - 0.7 * lenticel(u, v, family) : 1;
+	const feature =
+		(family.ridges ? 1 - 0.25 * (1 - ridge(u, v)) : lenticels) * (1 - 0.9 * barkScar(u, v, family));
 	const moss = smoothstep(0.55, 0.85, periodicBark(u, v, 2, 1, 3)) * family.moss;
 	return [0, 1, 2].map((channel) => {
 		const dark = family.dark[channel] as number;
