@@ -6,10 +6,9 @@
 //
 // The cloud streams: it is cut into chunk files, and the add-on reads a small index first and then
 // fetches only the chunks that the view's budget asks for. The budget follows the quality preset and
-// the frame-budget governor, so a phone draws a prefix of each chunk at its own count. The controls
-// HUD offers the shared switches, a Full detail button that drops the cloud to a quarter of its
-// budget, and the quality presets. The camera runs a route made for this scene; `c` hands it to the
-// user. For held frames, the sketch's address takes the mood: `?mood=Morning&dslr`.
+// the frame-budget governor, so a phone draws a prefix of each chunk at its own count. The scene
+// shows no controls panel: the route plays by itself, and `c` hands the camera to the user. For held
+// frames, the sketch's address takes the mood: `?mood=Morning&dslr`.
 import { defineSketch } from '@null3d/engine';
 import { createSplats, type Splats } from '@null3d/splats';
 import { createMoods, isMood } from '../lib/stage';
@@ -47,6 +46,8 @@ export default defineSketch(async (ctx) => {
 	]);
 	const sun = scene.createDirectionalLight({ castShadows: false });
 	post.set({ ao: { radius: 0.8 } });
+	// Every splat and mesh draws at its fullest level, so the glade's detail shows.
+	void quality.set({ lodThreshold: 0 });
 	const opening = SHOTS[0] as (typeof SHOTS)[number];
 	const camera = scene.createPerspectiveCamera({
 		fov: FOV,
@@ -65,8 +66,7 @@ export default defineSketch(async (ctx) => {
 	ui.trackLabel(finial, 'scan', { offset: [0, 0.32, 0] });
 	page.post('label', { id: 'scan', text: 'Moss garden scan' });
 
-	// The stage holds the golden hour that the capture's own colors were taken in. Auto moves the
-	// sun and the moon across the sky, and the HUD's effects switch the rest.
+	// The stage holds the golden hour that the capture's own colors were taken in.
 	const stage = createMoods(ctx, sun, sky, room, {
 		heading: HEADING,
 		fogDensity: 0.0026,
@@ -92,11 +92,8 @@ export default defineSketch(async (ctx) => {
 
 	const hud = createHud(ctx, {
 		camera,
-		sun,
-		stage,
 		splats,
 		total: cloud.count,
-		fov: FOV,
 		focalLength: DSLR_FOCAL_LENGTH,
 		dslr: params.has('dslr'),
 	});
@@ -105,7 +102,7 @@ export default defineSketch(async (ctx) => {
 		onUpdate(dt) {
 			const now = time.now;
 			stage.update(dt);
-			hud.update(dt, now);
+			hud.update(dt);
 			camera.getPosition(eye);
 			splats.update(eye);
 			hud.label(now);
