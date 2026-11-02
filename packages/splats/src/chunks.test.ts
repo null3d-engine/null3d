@@ -136,4 +136,18 @@ describe('chunkSplats', () => {
 		};
 		expect(await chunkSplats(empty)).toEqual({ chunks: [], total: 0 });
 	});
+
+	it('puts first the splat that covers the most surface, not the thickest', async () => {
+		// A wide flat disc covers more of a surface than a small round splat of more volume.
+		const data: SplatData = {
+			count: 2,
+			positions: new Float32Array(6),
+			scales: new Float32Array([0.2, 0.2, 0.2, 1, 1, 0.001]),
+			rotations: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1]),
+			colors: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]),
+		};
+		const { chunks } = await chunkSplats(data);
+		expect(chunks[0]?.scales[0]).toBe(1);
+		expect(chunks[0]?.cover).toBeCloseTo(1 + 0.04, 6);
+	});
 });

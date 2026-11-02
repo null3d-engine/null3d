@@ -138,6 +138,9 @@ export class ChunkRowWriter implements ViewHolder {
 		field(ROTATIONS).set(rows.rotations.subarray(0, count * 4));
 		field(SCALES).set(rows.scales.subarray(0, count * 3));
 		field(COLORS).set(rows.colors.subarray(0, count * 4));
+		// The pack grows a prefix's splats by the cover it leaves bare, and reads that cover from
+		// the seal, so a frame never sums a chunk's rows.
+		core.check(core.glue.splatChunkSeal(this.cloud, slot), 'splat chunk', 'a chunk of rows', true);
 	}
 
 	/** Forgets a chunk at `slot`, so it takes no row. */

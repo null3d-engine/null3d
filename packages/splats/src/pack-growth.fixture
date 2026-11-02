@@ -1,0 +1,30 @@
+# The splats' pack growth, held to one set of numbers by both packs: the TypeScript reference in
+# packages/splats/src/pack.ts and the core's port in crates/null3d-core/src/chunk_rows.rs. Each
+# reads this file and fails when its own growth leaves these figures.
+#
+# Every splat is a unit square at full opacity, so it covers 1 and the whole chunk covers `count`.
+# A prefix of n splats covers n, so its growth is the square root of count over n, capped at 3.
+
+count 16
+splat 1 1 1 1
+splat 1 1 1 1
+splat 1 1 1 1
+splat 1 1 1 1
+splat 1 1 1 1
+splat 1 1 1 1
+splat 1 1 1 1
+splat 1 1 1 1
+splat 1 1 1 1
+splat 1 1 1 1
+splat 1 1 1 1
+splat 1 1 1 1
+splat 1 1 1 1
+splat 1 1 1 1
+splat 1 1 1 1
+splat 1 1 1 1
+
+# prefix growth: a sixteenth would quadruple and the cap holds it at three, a quarter doubles, and
+# the whole chunk draws at its own scales.
+expect 1 3
+expect 4 2
+expect 16 1

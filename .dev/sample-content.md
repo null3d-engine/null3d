@@ -45,6 +45,21 @@ The key must hold the pinned commit, because the files name images in that commi
 
 A page imports them as `/s6-city/kit.gltf?optimized` and `/s6-city/towers.gltf?optimized`. The `cityServer` plugin of the module resolves each import to the built file, and the null3D plugin optimizes it as any model. The benchmark pages' build and the dev server both use it. The first build takes about 27 seconds, and the optimization about 100 more on the owner's Mac. `bun bench/lib/city-files.ts` does both ahead of time. In CI, the `city` job runs it once per run through `.github/actions/city`, after the samples action, and keeps both results in the Actions cache. Its key covers the pinned sample content, the module and the asset tool. The job hands both results to the jobs that load S6 as artifacts. A build without the cache took 6.2 minutes on GitHub's Linux machines ([D-106](decisions/D-106-s6-city.md#ci)). [Benchmarks](benchmarks.md#the-city) describes S6.
 
+## Splat scans converted by script
+
+The splats add-on reads SPZ files and splat streams, and the scans that sites publish come in other forms. A script in this repository converts a published scan into a stream, and the sample-assets repository keeps both the published file and the stream. The published file keeps the author's own bytes, and the manifest records the stream with the origin kind `converted`, which names the script and the asset it reads.
+
+| Script | Builds |
+| --- | --- |
+| `tools/samples/splats/bolton-priory.ts` | The Bolton Priory stream from the SOG file that SuperSplat publishes |
+
+Build the stream with `bun tools/samples/splats/bolton-priory.ts <folder>`. It needs libwebp's `dwebp` (`brew install webp`), or the executable that `DWEBP` names, and takes about a second. A SOG file is a zip of lossless WebP images, and `dwebp` gives every byte exactly. A browser's decoder may multiply a pixel's color by its alpha, and every splat's color pixel in a SOG file is partly transparent, so a browser would change the colors. The script turns the cloud upright, since the training wrote it with its vertical axis pointing down, moves the ground to height 0 and the site over the origin, keeps the first spherical-harmonic band, and cuts and writes the chunks with the add-on's own `chunkSplats` and `encodeSpz`. To publish it:
+
+1. Copy the folder into `sources/splats/bolton-priory-stream/` of the sample-assets repository, and run `bun scripts/manifest.ts --write` there.
+2. Commit, push, and pin the commit here, as "Add or change an asset" says.
+
+SuperSplat lets only a signed-in account download a scan, so the published file's origin kind is `manual`, which names the page to download it from. A page names only the stream's index, and the add-on reads the chunks from it. So `copyNamedSamples` copies the chunk files that a named stream index lists beside it.
+
 ## The sample check
 
 `bun run test` runs `tools/lib/samples.test.ts`. It finds every `samplePath` and `sampleUrl` call in `tests/`, `bench/`, `examples/`, `tools/` and `packages/`. For each named file, it checks that the pinned manifest lists the file with a SHA-256. It also checks that the file's asset is under CC0 or CC BY, with its authors, title, source link, fetch date and changes. The sample-assets repository's own check makes its README tables match its manifest, so each pinned asset also has its row in that README.

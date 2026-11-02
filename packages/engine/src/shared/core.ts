@@ -293,6 +293,8 @@ export interface CoreGlue extends CoreErrors {
 	splatChunkPrepare(cloud: number, slot: number, count: number): number;
 	/** The address of one of a chunk's arrays, or 0 for a slot or field that holds none. */
 	splatChunkField(cloud: number, slot: number, field: number): number;
+	/** Seals a chunk's cover after its arrays are written, so a pack can grow a prefix. */
+	splatChunkSeal(cloud: number, slot: number): number;
 	/** Forgets a chunk, so its slot draws nothing. */
 	splatChunkDestroy(cloud: number, slot: number): number;
 	/** Forgets every chunk of a cloud. */
@@ -1404,6 +1406,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'splatChunksReserve',
 	'splatChunkPrepare',
 	'splatChunkField',
+	'splatChunkSeal',
 	'splatChunkDestroy',
 	'splatChunksDrop',
 	'splatPackPlan',
