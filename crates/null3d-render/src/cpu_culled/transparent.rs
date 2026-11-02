@@ -7,8 +7,10 @@
 //!
 //! A bucket of a weighted material draws each run once more, with its weighted pipeline, from the
 //! same records, in a call that only the camera's weighted pass records (see [`crate::weighted`]).
-//! While the camera draws that layer, its transparent pass leaves out the bucket's own calls. The
-//! records do not change with the layer, so a view's index list that stays the same keeps them.
+//! A bucket of the one-sample layer does the same with its pipelines of that layer, in calls that
+//! only the layer's pass records (see [`crate::single_layer`]). While the camera draws such a
+//! layer, its transparent pass leaves out the bucket's own calls. The records do not change with
+//! the layer, so a view's index list that stays the same keeps them.
 //!
 //! Neighboring draws that share a pipeline, a map group and a vertex page go out in one call:
 //! one multi-draw call of up to a block of records where the device has `WEBGL_multi_draw`, or one
@@ -66,8 +68,8 @@ struct Call {
     draws: u32,
 }
 
-/// Which passes record a call: the transparent pass, which leaves out a weighted bucket's own
-/// calls while the camera draws its weighted layer, or the weighted pass.
+/// Which passes record a call: the transparent pass, which leaves out a layered bucket's own calls
+/// while the camera draws its layer, or the pass of a layer.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum CallKind {
     /// A call of a bucket without a weighted pipeline.
@@ -81,6 +83,11 @@ enum CallKind {
     Moment,
     /// A bucket's call in the moment layer's colour pass.
     MomentColour,
+    /// A bucket's own call where the one-sample layer draws it, which draws it back to front in
+    /// the transparent pass while the camera draws no such layer.
+    SingleSorted,
+    /// A bucket's call in the one-sample layer.
+    Single,
 }
 
 impl CallKind {
@@ -89,12 +96,18 @@ impl CallKind {
         match rows {
             SortedRows::All => !matches!(
                 self,
-                CallKind::Weighted | CallKind::Moment | CallKind::MomentColour
+                CallKind::Weighted | CallKind::Moment | CallKind::MomentColour | CallKind::Single
             ),
-            SortedRows::Sorted => self == CallKind::Sorted,
+            SortedRows::Sorted { blended, single } => match self {
+                CallKind::Sorted => true,
+                CallKind::WeightedSorted => !blended,
+                CallKind::SingleSorted => !single,
+                _ => false,
+            },
             SortedRows::Weighted => self == CallKind::Weighted,
             SortedRows::Moment => self == CallKind::Moment,
             SortedRows::MomentColour => self == CallKind::MomentColour,
+            SortedRows::Single => self == CallKind::Single,
         }
     }
 }
@@ -238,18 +251,21 @@ impl Transparent {
             let mesh = storage
                 .mesh(bucket.mesh - 1)
                 .expect("buckets name known meshes");
-            // A run that draws its back faces, then its front faces, or once more in the weighted
-            // layer, starts calls of its own, so its later passes can draw the same parts with the
-            // same records.
+            // A run that draws its back faces, then its front faces, or once more in a layer,
+            // starts calls of its own, so its later passes can draw the same parts with the same
+            // records.
             let first_call = state.calls.len();
             let weighted = bucket.weighted != 0;
             let moment = bucket.moment != 0;
+            let single = bucket.single != 0;
             let kind = if weighted || moment {
                 CallKind::WeightedSorted
+            } else if single {
+                CallKind::SingleSorted
             } else {
                 CallKind::Sorted
             };
-            let mut alone = bucket.back != 0 || weighted || moment;
+            let mut alone = bucket.back != 0 || weighted || moment || single;
             let pipeline = if bucket.back != 0 {
                 bucket.back
             } else {
@@ -319,6 +335,22 @@ impl Transparent {
                     });
                 }
             }
+            // The one-sample layer draws the run's back faces, then its front faces, as the
+            // transparent pass does.
+            if single {
+                let back = (bucket.single_back != 0).then_some(bucket.single_back);
+                for pipeline in back.into_iter().chain([bucket.single]) {
+                    for k in own.clone() {
+                        let first = state.calls[k];
+                        state.calls.push(Call {
+                            pipeline,
+                            repeat: true,
+                            kind: CallKind::Single,
+                            ..first
+                        });
+                    }
+                }
+            }
             if moment {
                 for k in own.clone() {
                     let first = state.calls[k];
@@ -381,7 +413,7 @@ impl Transparent {
     /// offset of the transparent part of the view's ring slot of draw records. It leaves out each
     /// call whose maps' group `hidden` names: a group that binds a target that the view draws
     /// into, or one that it does not read. `rows` picks the calls: those of the transparent pass,
-    /// or of the camera's weighted layer.
+    /// or of one of the camera's layers.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn record(
         &self,

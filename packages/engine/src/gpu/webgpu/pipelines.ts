@@ -191,6 +191,8 @@ import {
 	TEMPLATE_SHADOW_CUTOUT,
 	TEMPLATE_SHADOW_CUTOUT_MAP,
 	TEMPLATE_SHADOW_DEPTH,
+	TEMPLATE_SINGLE_COMPOSITE,
+	TEMPLATE_SINGLE_DEPTH,
 	TEMPLATE_SKIN,
 	TEMPLATE_SKY_TABLE,
 	TEMPLATE_SPRITE,
@@ -1723,6 +1725,24 @@ export class Pipelines {
 		this.defineTemplate(TEMPLATE_WEIGHTED_DEPTH, {
 			label: 'weighted depth',
 			shader: shaders.weighted_depth,
+			pipeline: 'main',
+			layouts: [LAYOUT_WEIGHTED_DEPTH_MS],
+			vertexBuffers: [],
+			depthFragment: true,
+		});
+		// The one-sample layer's composite reads the layer one texel per pixel, as a view's copy
+		// reads its image, and its depth copy reads a multisampled scene depth, as the weighted
+		// layer's does.
+		this.defineTemplate(TEMPLATE_SINGLE_COMPOSITE, {
+			label: 'one-sample composite',
+			shader: shaders.single_composite,
+			pipeline: 'main',
+			layouts: [LAYOUT_VIEW_COPY],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_SINGLE_DEPTH, {
+			label: 'one-sample depth',
+			shader: shaders.single_depth,
 			pipeline: 'main',
 			layouts: [LAYOUT_WEIGHTED_DEPTH_MS],
 			vertexBuffers: [],

@@ -98,7 +98,7 @@ A feature with no `frame` records no frame work. It gives no `kind`, `reads`, `w
 | `'background'` | The background, before the opaque objects. A sky or atmosphere records here. | `'draw'`, `'compute'`, `'fullscreen'` |
 | `'opaque'` | The pass that shades the opaque objects. | `'draw'`, `'compute'`, `'fullscreen'` |
 | `'transparent'` | The pass that draws the blended objects. | `'draw'`, `'compute'`, `'fullscreen'` |
-| `'resolve'` | The scene color as the camera's passes leave it, before the tone curve. Effects such as blur and bloom record here. | `'compute'`, `'fullscreen'` |
+| `'resolve'` | The scene color as the camera's passes leave it, before the tone curve. Effects such as blur and bloom record here. A blended draw here lands over the camera's other blended objects, at one sample per pixel ([feature draws](feature-draws.md)). | `'draw'`, `'compute'`, `'fullscreen'` |
 | `'post'` | The display image, after the tone curve. An overlay records here. | `'compute'`, `'fullscreen'` |
 
 A `'compute'` feature publishes its results as outputs. It writes no scene resource.
