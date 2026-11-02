@@ -246,10 +246,14 @@ function grow(
 			// golden angle, so no direction between two boughs goes thin all the way up the tree. An
 			// even spread by the child's own number would not: a ring of three boughs at a golden
 			// angle from each other leaves three gaps that line up with each other on some views.
+			// A level's children spread evenly around their parent: the golden angle leaves a gap of
+			// eighty-five degrees between two of six limbs, and a view across that gap sees a crown
+			// with nothing at its edge. A whorl keeps the same spacing within each ring, and its rings
+			// turn by the golden angle against each other.
 			const yaw =
 				(whorls > 0
 					? ((k % perWhorl) / perWhorl) * Math.PI * 2 + ring * GOLDEN_ANGLE
-					: GOLDEN_ANGLE * k) +
+					: (k / count) * Math.PI * 2) +
 				levelRecord.twist * RADIANS * level +
 				(unitAt(seed, species.seedSalt, variant, key, KEY_TWIST) * 2 - 1) *
 					(whorls > 0 ? WHORL_YAW_JITTER : 0.4);
