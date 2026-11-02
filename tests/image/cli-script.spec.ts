@@ -80,7 +80,9 @@ test.describe('the fixture project through three states', () => {
 			'--script',
 			'drive.script',
 			'--page',
-			'/',
+			// The preset's bounce light draws the held frame once more. The script counts the
+			// project's frames, so it draws none.
+			'/?bounce=off',
 			'--size',
 			'320x180',
 			'--gpu',

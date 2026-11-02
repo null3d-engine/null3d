@@ -177,6 +177,9 @@ const CASES: Record<string, Case> = {
 		});
 	},
 	hash: (context) => card(context, { alphaMode: 'hash' }),
+	// The moment layer draws the blended surfaces into its store, which the page's ?moments=on
+	// switch turns on: this card is the first blended surface that the held frame draws.
+	moment: (context) => card(context, { alphaMode: 'blend' }),
 	sky: ({ scene }) => scene.setBackground({ sky: { sunPosition: [0, 0.2, -1] } }),
 	physical_sky: ({ scene }) => scene.setBackground({ atmosphere: { sunPosition: [0, 0.2, -1] } }),
 	skinning: skinnedCharacter,

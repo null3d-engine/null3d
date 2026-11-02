@@ -35,7 +35,7 @@ interface SketchState<State = AnimatedState> {
 
 /** Opens the hold page with `switches` and returns what the engine publishes. */
 async function hold(page: Page, switches: string): Promise<HoldReport> {
-	await page.goto(`hold.html?${switches}`);
+	await page.goto(`hold.html?${switches}&bounce=off`);
 	return holdResult(page, 30_000);
 }
 

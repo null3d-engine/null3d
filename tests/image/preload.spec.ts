@@ -39,7 +39,9 @@ async function load(page: Page, mode: string, gpu: string) {
 		if (feature) events.push(feature);
 	});
 	await page.exposeBinding('__mark', (_, name: string) => events.push(`mark:${name}`));
-	await page.goto(`preload.html?mode=${mode}&gpu=${gpu}`);
+	// The preset's bounce light reads ambient occlusion's file, which the test counts as a
+	// feature's file. This page measures the preload list, so it turns the bounce light off.
+	await page.goto(`preload.html?mode=${mode}&gpu=${gpu}&bounce=off`);
 	const result = await pageResult<PreloadResult>(page, 60_000);
 	return { result, events };
 }

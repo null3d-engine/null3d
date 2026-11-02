@@ -20,12 +20,19 @@ const TIERS = [
 	},
 ] as const;
 
+/**
+ * The page's switches. The preset's screen-space bounce light builds passes of its own, and the
+ * ambient occlusion and color copies that they read, so the first frame would build those too. The
+ * check counts the pipelines of the page's own scene, which the preset does not change.
+ */
+const PAGE = 'bounce=off';
+
 for (const { name, tier, gpu, query } of TIERS)
 	for (const mode of ENGINE_MODES)
 		test(`the first frame builds every pipeline and play builds none on ${name}, ${mode.name}`, async ({
 			page,
 		}) => {
-			await page.goto(`warm-up.html?${query}&${mode.query}`);
+			await page.goto(`warm-up.html?${query}&${PAGE}&${mode.query}`);
 			const result = await pageResult<WarmUpResult & { error?: string }>(page, 30_000);
 			expect(result.error).toBeUndefined();
 			expect(result.tier).toBe(tier);
@@ -37,7 +44,7 @@ for (const { name, tier, gpu, query } of TIERS)
 for (const mode of THREADED_MODES)
 	test(`warm-ups end without Atomics.waitAsync, ${mode.name}`, async ({ page }) => {
 		await withoutWaitAsync(page);
-		await page.goto(`warm-up.html?gpu=webgl2&${mode.query}`);
+		await page.goto(`warm-up.html?gpu=webgl2&${PAGE}&${mode.query}`);
 		const result = await pageResult<WarmUpResult & { error?: string }>(page, 30_000);
 		await restoreWaitAsync(page);
 		expect(result.error).toBeUndefined();

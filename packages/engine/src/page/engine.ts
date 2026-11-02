@@ -1719,6 +1719,7 @@ async function startEngine(
 		pointLightShadows: options.pointLightShadows,
 		depthPrepass: switches.prepass ?? options.depthPrepass,
 		momentTransparency: switches.moments ?? options.momentTransparency,
+		bounceRays: switches.bounce === false ? (0 as const) : undefined,
 		gpuOcclusion: switches.occlusion ?? options.gpuOcclusion,
 		morphTargets: options.morphTargets,
 		softwareOcclusion: switches.occlusion ?? options.softwareOcclusion,

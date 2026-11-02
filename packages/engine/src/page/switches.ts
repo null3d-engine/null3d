@@ -4,8 +4,9 @@
 // set what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count,
 // ?memory= for the shared memory's maximum, ?queue= for the frames that may wait on the GPU,
 // ?cells=off for culling without grid cells, ?prepass=on or off for the depth prepass,
-// ?moments=on or off for moment transparency, ?prepass-color= for how a prepass that a screen
-// step splits from the opaque pass starts the stand-in color that it never draws,
+// ?moments=on or off for moment transparency, ?bounce=off for no screen-space bounce light,
+// ?prepass-color= for how a prepass that a screen step splits from the opaque pass starts the
+// stand-in color that it never draws,
 // ?occlusion=on or off for occlusion culling, ?occlusion-buffer= for the size of software occlusion
 // culling's buffer, such as 384x216, ?skinning= for how WebGPU skins (compute for the skinning
 // pass, or full, skip or narrow for the pass with fewer of its savings), ?instances=index for
@@ -199,6 +200,11 @@ export interface Switches {
 	 * undefined to leave it to the page's option and the quality preset.
 	 */
 	moments: boolean | undefined;
+	/**
+	 * False when ?bounce=off draws no screen-space bounce light, and undefined otherwise. Only `off`
+	 * is a switch: the preset sets the rays, so there is no `?bounce=on`.
+	 */
+	bounce: boolean | undefined;
 	/**
 	 * How a depth prepass that a screen step splits from the opaque pass starts the stand-in color
 	 * that it never draws, which ?prepass-color= picks: `load` starts it from what the texture
@@ -426,6 +432,7 @@ export function parseSwitches(search: string): Switches {
 		join: params.get('join') !== 'off',
 		prepass: onOff(params.get('prepass')),
 		moments: onOff(params.get('moments')),
+		bounce: params.get('bounce') === 'off' ? false : undefined,
 		prepassColor: oneOf(params.get('prepass-color'), ['load', 'clear', 'none'] as const),
 		occlusion: onOff(params.get('occlusion')),
 		occlusionBuffer: pixelsOf(params.get('occlusion-buffer')),

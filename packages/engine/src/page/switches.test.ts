@@ -26,6 +26,7 @@ describe('parseSwitches', () => {
 			cells: true,
 			prepass: undefined,
 			moments: undefined,
+			bounce: undefined,
 			prepassColor: undefined,
 			occlusion: undefined,
 			occlusionBuffer: undefined,

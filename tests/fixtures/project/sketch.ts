@@ -4,6 +4,12 @@
 // pressed, which a timed script drives and a plain hold never does.
 import { defineSketch } from '@null3d/engine';
 
+/**
+ * The sketch's own switches. ?bounce=off draws the page with no screen-space bounce light, as the
+ * image test's manifest entry and the shot command ask, so both sides of their comparison agree.
+ */
+const params = new URL(import.meta.url).searchParams;
+
 /** The floor's tiles along each side. */
 const TILES = 7;
 /** How fast the box turns, in radians per second. */
@@ -15,7 +21,8 @@ const SLIDE_SPEED = 1.2;
 /** The farthest right that the box slides, in meters. */
 const SLIDE_LIMIT = 2;
 
-export default defineSketch(({ scene, geometry, materials, time, input }) => {
+export default defineSketch(({ scene, geometry, materials, time, input, quality }) => {
+	if (params.get('bounce') === 'off') quality.set({ bounceRays: 0 });
 	scene.setBackground('#101418');
 	const camera = scene.createPerspectiveCamera({
 		fov: 60,

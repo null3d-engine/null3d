@@ -52,6 +52,10 @@ const null3d = (args: string[]) => run<ShotReport>('shot', args);
 for (const tier of TIERS)
 	test(`null3d shot draws the project's page on ${tier}`, async () => {
 		const { code, output, report } = await null3d([
+			// The preset's bounce light draws the held frame once more, because its pass reads the
+			// frame before. This test counts the frames of the project's scene, so it draws none.
+			'--page',
+			'/?bounce=off',
 			'--time',
 			'1.5',
 			'--size',
@@ -61,7 +65,7 @@ for (const tier of TIERS)
 		]);
 		expect(code, output).toBe(0);
 		expect(output).toContain(
-			`Drew / at 1.5 s, frame 91, on ${REPORTED_TIERS[tier]}: 320 x 180 pixels.`,
+			`Drew /?bounce=off at 1.5 s, frame 91, on ${REPORTED_TIERS[tier]}: 320 x 180 pixels.`,
 		);
 		expect(output).toMatch(
 			/It made \d+ draw calls?, uploaded [\d.]+ \w+ and built \d+ pipelines?\./,
@@ -69,7 +73,7 @@ for (const tier of TIERS)
 		const environment = environmentNamed(test.info().project.name);
 		expect(report).toMatchObject({
 			ok: true,
-			page: `/?hold=1.5&gpu=${tier}`,
+			page: `/?bounce=off&hold=1.5&gpu=${tier}`,
 			environment,
 			time: 1.5,
 			frame: 91,

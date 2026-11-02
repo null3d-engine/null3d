@@ -334,18 +334,26 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 	for (const mode of ENGINE_MODES)
 		test(`a page that uses no feature that loads on first use downloads none of their files, ${mode.name} on ${gpu}`, async ({
 			page,
-		}) => {
+		}, testInfo) => {
 			const requests: string[] = [];
 			page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
-			await page.goto(`engine.html?gpu=${gpu}&seconds=1&${mode.query}`);
+			await page.goto(`engine.html?gpu=${gpu}&seconds=1&bounce=off&${mode.query}`);
 			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 			expect(result.error).toBeUndefined();
 			expect(engineProblems(result, mode, gpu, notPacing)).toEqual([]);
 			expect(requests.some((path) => /\/null3d_bg(-[\w-]+)?\.wasm$/.test(path))).toBe(true);
+			// A development build reads the culling shader's dropped copies at every first frame, so
+			// its source file arrives there. A production build loads it only for the stats figures,
+			// so this exclusion holds in the development project alone; the production project runs
+			// the same check over the built files, where the hashed file must not arrive.
+			const devOnly = (path: string) =>
+				testInfo.project.name !== 'production build' &&
+				/\/gpu\/webgpu\/culled-counts\.ts$/.test(path);
 			expect(
 				requests.filter(
 					(path) =>
-						FIRST_USE_PATTERNS.some((file) => file.test(path)) || isFirstUseShaderFile(path),
+						!devOnly(path) &&
+						(FIRST_USE_PATTERNS.some((file) => file.test(path)) || isFirstUseShaderFile(path)),
 				),
 			).toEqual([]);
 			const renderers = (path: string) => new RegExp(`/${path}-renderers(\\.ts|-[\\w-]{8}\\.js)$`);
@@ -423,6 +431,8 @@ const FIRST_USE_SKETCHES: Partial<Record<ShaderFeature, string>> = {
 const FIRST_USE_SWITCHES: Partial<Record<ShaderFeature, string>> = {
 	instance_index: '&instances=index',
 	occlusion: '&occlusion=on',
+	// The moment layer draws only when the quality setting turns it on, and no preset does.
+	moment: '&moments=on',
 };
 
 /**
@@ -492,8 +502,8 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 				FIRST_USE_SKETCHES[feature] ??
 				`tests/pages/sketches/first-use-sketch.ts?feature=${feature}`;
 			const address = FIRST_USE_LIVE.has(feature)
-				? `first-use-live.html?gpu=${gpu}&sketch=${encodeURIComponent(`/${sketch}`)}`
-				: `image.html?gpu=${gpu}&hold=0&preset=high&size=320x180${FIRST_USE_SWITCHES[feature] ?? ''}&sketch=${encodeURIComponent(`/${sketch}`)}`;
+				? `first-use-live.html?gpu=${gpu}&bounce=off&sketch=${encodeURIComponent(`/${sketch}`)}`
+				: `image.html?gpu=${gpu}&hold=0&preset=high&bounce=off&size=320x180${FIRST_USE_SWITCHES[feature] ?? ''}&sketch=${encodeURIComponent(`/${sketch}`)}`;
 			await page.goto(address);
 			// A page that failed gives the steps it got through, which say where it spent the time.
 			const result = await pageResult<ItemResult>(page, FIRST_USE_WAIT_MS);
@@ -525,7 +535,9 @@ test('marked occluders download no occlusion shader file with ?occlusion=off on 
 	const requests: string[] = [];
 	page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
 	const sketch = encodeURIComponent('/tests/pages/sketches/room-sketch.ts');
-	await page.goto(`image.html?gpu=webgpu&hold=0&size=320x180&occlusion=off&sketch=${sketch}`);
+	await page.goto(
+		`image.html?gpu=webgpu&hold=0&bounce=off&size=320x180&occlusion=off&sketch=${sketch}`,
+	);
 	const result = await pageResult<{ error?: string }>(page, 30_000);
 	expect(result.error).toBeUndefined();
 	expect(requests.filter(isFirstUseShaderFile)).toEqual([]);

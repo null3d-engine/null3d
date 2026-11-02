@@ -328,6 +328,7 @@ quality.set({ bounceRays: 8 });
 ```
 
 - The quality setting `bounceRays` is the number of rays each texel casts: 0 draws none. High sets 4 and Ultra 8. Low and Medium set 0, and WebGL2, which ends at Medium, sets 4 there. A change takes effect during play and makes no GPU object.
+- The switch `?bounce=off` on a page's address draws it with no bounce light, as `bounceRays: 0` does. There is no `?bounce=on`: the preset sets the rays.
 - The light is one frame behind the scene, as screen-space reflections are. The first frame after it turns on shows none.
 - The light draws nothing on the 8-bit path, whose copy holds display color. Compatibility mode draws that path, so it draws no bounce light.
 - A scene with a [light probe grid](lighting.md#light-probe-grid) draws no bounce light. The grid already holds one bounce, with the validity and sky-occlusion terms that the screen cannot supply.
