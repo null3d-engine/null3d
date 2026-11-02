@@ -37,6 +37,7 @@ run('tree-stand', async () => {
 		gpuMs: metrics.gpuMs,
 		intervalMs: metrics.intervalMs,
 		drawCalls: metrics.drawCalls,
+		triangles: metrics.triangles,
 		tier: engine.capabilities.tier,
 		mode: { ...engine.mode },
 		failures,

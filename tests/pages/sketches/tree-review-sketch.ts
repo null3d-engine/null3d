@@ -215,6 +215,19 @@ export default defineSketch((ctx) => {
 		fov = CROWN_FOV;
 		const reach = Math.max(4, span * 1.1);
 		position = [target[0] + reach * 0.7, Math.max(1.2, start * 0.8), target[2] + reach * 0.7];
+	} else if (VIEW === 'trunk') {
+		// Stand close to the bole below the lowest limbs, where the bark is cleanest, so the bark's
+		// figure fills the frame rather than a few pixels of a whole-tree view.
+		const height = Math.max(0.9, Math.min(start * 0.55, 2.4));
+		target = [center[0], height, center[2]];
+		fov = 34;
+		const reach = Math.max(1.6, span * 0.16 + radius * 0.06);
+		const direction = normalize(0.55, 0.05, 1);
+		position = [
+			target[0] + direction[0] * reach,
+			target[1] + direction[1] * reach,
+			target[2] + direction[2] * reach,
+		];
 	} else if (VIEW === 'leaf' && card) {
 		// Stand on the card's own normal and frame the card alone.
 		target = card.centre;

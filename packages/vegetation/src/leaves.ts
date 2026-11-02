@@ -48,6 +48,38 @@ function pointAndTangent(
 	};
 }
 
+/**
+ * A point of a branch at a share of its length, with the tangent that the segment runs along. The
+ * branch's points are its joints, so a card placed at a joint and one placed between joints sit as
+ * far apart as the branch is long: a twig of four joints carries a spray along its whole length
+ * rather than a clump at each joint.
+ */
+function pointAlong(
+	branch: SkeletonBranch,
+	t: number,
+): {
+	point: [number, number, number];
+	tangent: [number, number, number];
+} {
+	const samples = branch.points.length / 3;
+	if (samples < 2) return pointAndTangent(branch, 0);
+	const f = Math.min(1, Math.max(0, t)) * (samples - 1);
+	const i = Math.min(samples - 2, Math.floor(f));
+	const u = f - i;
+	const a = i * 3;
+	const b = (i + 1) * 3;
+	const ax = branch.points[a] as number;
+	const ay = branch.points[a + 1] as number;
+	const az = branch.points[a + 2] as number;
+	const bx = branch.points[b] as number;
+	const by = branch.points[b + 1] as number;
+	const bz = branch.points[b + 2] as number;
+	return {
+		point: [ax + (bx - ax) * u, ay + (by - ay) * u, az + (bz - az) * u],
+		tangent: normalize(bx - ax, by - ay, bz - az),
+	};
+}
+
 /** The stiffness byte of a branch level, which the material reads as a fraction. */
 function stiffnessByte(species: Species, level: number): number {
 	return Math.round(
@@ -78,10 +110,13 @@ function makeCard(
 	// Each card leans its own way, so a crown's leaves point in many directions rather than one,
 	// which is what makes a real crown read as leaves and not as a shell. The lean keeps the card's
 	// up-and-out bias: a leaf that faced inward would not catch the sun.
+	// A conifer's spray lies in the plane of its bough, so its card leans less than a broadleaf's
+	// cluster: a card that turns away from the bough reads as a stick stuck into it.
+	const leanScale = leaf.kind === 'needle' ? 0.35 : 1;
 	const normal = normalize(
-		facing[0] + (unitAt(seed, 6, variant, key, KEY_LEAN) - 0.5) * 1.5,
-		facing[1] + (unitAt(seed, 7, variant, key, KEY_LEAN) - 0.5) * 1.1,
-		facing[2] + (unitAt(seed, 8, variant, key, KEY_LEAN) - 0.5) * 1.5,
+		facing[0] + (unitAt(seed, 6, variant, key, KEY_LEAN) - 0.5) * 1.5 * leanScale,
+		facing[1] + (unitAt(seed, 7, variant, key, KEY_LEAN) - 0.5) * 1.1 * leanScale,
+		facing[2] + (unitAt(seed, 8, variant, key, KEY_LEAN) - 0.5) * 1.5 * leanScale,
 	);
 	// The card's up axis leans along the branch, so a leaf reads as growing from its twig.
 	const sideX = tangent[1] * normal[2] - tangent[2] * normal[1];
@@ -204,8 +239,7 @@ export function leafCards(
 				leaf.start +
 				(leaf.end - leaf.start) *
 					((k + 0.5 + (unitAt(seed, 1, variant, key, KEY_AT) - 0.5) * 0.5) / perBranch);
-			const sample = Math.min(samples - 1, Math.max(0, Math.round(share * (samples - 1))));
-			const { point, tangent } = pointAndTangent(branch, sample);
+			const { point, tangent } = pointAlong(branch, share);
 			// The outward direction is horizontal, away from the plant's axis.
 			const outward = normalize(point[0], 0, point[2]);
 			const card = makeCard(
@@ -234,7 +268,7 @@ export function leafCards(
 		// itself and the wood shows no bare point. Only a filled crown pays for the extra card.
 		if (fill > 0 && perBranch > 0 && samples > 1) {
 			const key = branchIndex * 0x1f + perBranch + 1;
-			const { point, tangent } = pointAndTangent(branch, samples - 1);
+			const { point, tangent } = pointAlong(branch, 1);
 			const outward = normalize(point[0], 0, point[2]);
 			cards.push(
 				makeCard(leaf, crown, seed, variant, key, point, tangent, outward, branchIndex, stiffness),
