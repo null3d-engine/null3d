@@ -4,8 +4,8 @@
 // on the sills, bumpers, pillars and roof rails; the rims take the wheel's finish; and the lamps'
 // glow, and the beams they throw down the street, take the light's color.
 import type { Material, Object3D, SketchContext, SpotLight } from '@null3d/engine';
-import { createCarPaint } from '../../addons/car-paint';
-import { createCarBody, WHEEL_RADIUS } from '../../lib/car-body';
+import { createCarPaint } from '../addons/car-paint';
+import { createCarBody, WHEEL_RADIUS } from '../lib/car-body';
 import { type Config, choice } from './config';
 import { wheelTurn } from './route';
 
