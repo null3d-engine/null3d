@@ -264,12 +264,17 @@ states no cost there. The smallest resolved bound is about 1.4 ms.
 
 **The budget at each preset.** The plan's estimate is 0.5 ms for three bands at 128 squared. The
 preset does not change the bands or the grid. Its bands, the mesh's segments and reach, and the
-reflection's cadence are `createOcean`'s options. The transform's grid is the module's fixed 128. The add-on's only preset row is `reflectionEvery`, which paces the reflection. So the figure
-above is the figure at every preset. WebGL2's 2.850 ms is 5.7 times the estimate, which is a finding
-about the estimate. Against the frame the comparison holds. With the reflection's 1.7, 1.7, 3.4 and
-3.4 ms, the ocean costs 4.55 ms at Low and Medium. At High and Ultra it costs 6.25 ms. Both are
-inside a 16.7 ms frame at 60 frames a second. The WebGPU and compatibility chain adds at most about 1.4 ms,
-so its ocean stays inside the frame too.
+reflection's cadence are `createOcean`'s options. The transform's grid is the module's fixed 128.
+The add-on's only preset row is `reflectionEvery`, which paces the reflection. So the figure above
+is the figure at every preset. The Mac's 2.850 ms on WebGL2 is 5.7 times the estimate. That is a
+finding about the estimate, and the cause is the fragment form. The Mac's ocean sits well inside a
+16.7 ms frame at 60 frames a second. The only per-preset reflection figure is the Galaxy S25's,
+1.7 ms at Low and Medium and 3.4 ms at High and Ultra ([D-120](D-120-planar-reflections.md)). No
+reflection figure exists for the Mac, so the two are not one frame. The phone's reflection beside
+the Mac's ocean is a ceiling across two devices. The phone has no ocean figure. This clause does
+not ask for one, and a later row that names the class's stand-in device will need it. The Mac's
+WebGPU and compatibility chain adds at most about 1.4 ms, so its ocean stays inside the frame there
+too.
 
 **The cause of the WebGL2 figure.** The fragment form runs the fifteen 128-squared passes through
 the fragment pipeline, fifteen raster passes of 16,384 pixels each. The compute path runs the same
@@ -380,8 +385,8 @@ vertex's world place is the origin with its place in the mesh.
   on/off ablation in separate page loads, against the plan's 0.5 ms estimate. On WebGPU and in
   compatibility mode the same method resolves no cost. The batches straddle zero inside the frame's
   own variation, and the bound is about 1.4 ms. The preset does not change the bands or the grid, so
-  the figure is the figure at every preset. With the reflection's own per-preset budget, the ocean
-  stays inside a 16.7 ms frame at every preset.
+  the figure is the figure at every preset. The Mac's ocean sits inside a 16.7 ms frame on its own.
+  The only per-preset reflection figure is the S25's, and the two devices are not added.
 - The add-on's tests cover the shape, the mesh's coverage and winding, a shape's own current, bed
   and mesh, the carried wave set, the wave copies, the foam map and the size gates. The demo
   `examples/water` draws both bodies and the view from below. The package's own page
