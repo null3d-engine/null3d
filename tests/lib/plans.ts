@@ -1521,6 +1521,76 @@ export function alphaMaskPlan(): PlanItem<Check>[] {
 	return items;
 }
 
+/** The GPU paths of the car-paint cost plan, each with the presets that its ceiling allows. */
+const CAR_PAINT_PATHS = [
+	{ path: 'webgpu', tier: 'webgpu', presets: ['low', 'medium', 'high', 'ultra'] },
+	{ path: 'compat', tier: 'webgpu', presets: ['low', 'medium'] },
+	{ path: 'webgl2', tier: 'webgl2', presets: ['low', 'medium'] },
+] as const;
+
+/**
+ * How long one page of the car-paint cost plan may take: the starts of the page and its shaders
+ * through a phone's network, then the warm-up and the timed rounds of both sides.
+ */
+const CAR_PAINT_TIMEOUT_SECONDS = 240;
+
+/**
+ * What the car paint costs at each preset: the car-paint-cost page fills the view with one panel,
+ * timed with the paint and with the same clear-coated metal without it, in turns, at a fixed render
+ * scale. The paint's flakes count their facets for each light, so its cost is per pixel, and the
+ * presets differ in pixel ratio. D-255 records the figures.
+ */
+export function carPaintCostPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+	];
+	for (const { path, tier, presets } of CAR_PAINT_PATHS)
+		for (const preset of presets)
+			items.push(
+				pageItem(
+					`car-paint-${preset}-${path}`,
+					'car-paint-cost',
+					{ kind: 'probe', tier },
+					{
+						switches: [`gpu=${path}`, `preset=${preset}`, 'rounds=6', 'seconds=1', 'warm-up=3'],
+						timeoutSeconds: CAR_PAINT_TIMEOUT_SECONDS,
+					},
+				),
+			);
+	return items;
+}
+
+/**
+ * What the flake count's own steps cost: the car-paint-cost page with the painted side's flakes
+ * given a footprint whose count lands in the exact branch at each buffer the page draws, under a
+ * light that every flake catches. The same footprint runs again under a light that no flake
+ * catches, so the count breaks at its first compare. The two pages' differences from their plain
+ * sides, less each other, are the count's loop, apart from the rest of the lobe.
+ */
+export function carPaintLoopPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...(['loop', 'loop-0'] as const).map((paint) =>
+			pageItem(
+				`car-paint-${paint}-medium-webgpu`,
+				'car-paint-cost',
+				{ kind: 'probe', tier: 'webgpu' },
+				{
+					switches: [
+						'gpu=webgpu',
+						'preset=medium',
+						'rounds=6',
+						'seconds=1',
+						'warm-up=3',
+						`paint=${paint}`,
+					],
+					timeoutSeconds: CAR_PAINT_TIMEOUT_SECONDS,
+				},
+			),
+		),
+	];
+}
+
 /**
  * What a far-tree impostor bake costs on the device, at each preset's atlas grid: the bake page
  * bakes a conifer, a birch and an oak at every grid and reports each bake's time on the sketch
@@ -2942,6 +3012,8 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	grass: grassPlan,
 	'atlas-paint': atlasPaintPlan,
 	'alpha-mask-cost': alphaMaskPlan,
+	'car-paint-cost': carPaintCostPlan,
+	'car-paint-loop': carPaintLoopPlan,
 	'impostor-bake': impostorBakePlan,
 	'impostor-cost': impostorCostPlan,
 	'impostor-frame': impostorFramePlan,
