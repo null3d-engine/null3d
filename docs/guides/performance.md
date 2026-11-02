@@ -275,7 +275,7 @@ Each post effect adds full-screen work, which grows with the pixels drawn:
 - Bloom draws a chain of small passes. In the engine's effect cost test, it added about 0.8 ms of GPU time per frame at 1920 x 1080 on a MacBook Pro. A smaller base, as on Low, costs less, and saves the most on phones ([The post-processing chain](../concepts/post-processing.md#cost)).
 - Ambient occlusion adds the depth prepass and three passes at half size. In the engine's ambient occlusion scene on a MacBook Pro, it added 2.42 ms per frame, where three.js's `GTAOPass` added about 5.3 ms. Low and Medium leave it off.
 - Each custom effect that reads other pixels costs a full-screen pass. The engine joins the effects that read only their own pixel, and can fold the last into the final pass ([Custom passes](custom-passes.md#cost)).
-- A scene pass culls and draws the scene again, at the size of its texture. Keep the texture small, and switch the pass off with `render.setPassEnabled` in frames that need no new image. A pass that nothing shows costs nothing ([Render to a texture](custom-passes.md#drawing-less-often)).
+- A scene pass culls and draws the scene again, at the size of its texture. Keep the texture small, and give the pass a cadence with `render.setPassEvery` so it draws in some frames only. A pass that nothing shows costs nothing ([Render to a texture](custom-passes.md#drawing-less-often)).
 
 ## Occlusion culling
 
