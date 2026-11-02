@@ -271,5 +271,10 @@ describe('the plant shaders', () => {
 			expect(`// <wind-steady>${piece.slice(0, steady.length - '// <wind-steady>'.length)}`).toBe(
 				steady,
 			);
+		// The blade list and the draw both thin the far tufts by the same hash and share, so a
+		// change to one copy must reach the other.
+		const density = block(read('./grass.wgsl'), 'tuft-density');
+		expect(density.length).toBeGreaterThan(0);
+		expect(block(read('./grass-blades.wgsl'), 'tuft-density')).toBe(density);
 	});
 });

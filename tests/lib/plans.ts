@@ -1917,9 +1917,12 @@ const VEGETATION_GRASS_PATHS = [
 /**
  * What the grass on one hill costs at each preset that a GPU path draws, for M3-V8: the frame's
  * GPU time, its per-pass breakdown where the device times passes, the CPU time and the draw calls.
- * The page places 20,000 tufts at High, draws a preset's share of them, and measures five seconds.
- * Each of the hill's three distance bands also runs alone at High on WebGPU, so the far bands'
- * cheaper draws read as figures of their own rather than as one hill's average.
+ * The page places 20,000 tufts at High, culls each view, thins the far tufts, draws a preset's
+ * share of them, and measures five seconds. Its sun casts, so its rows hold the near shadow pass.
+ * The 20,000 hill is a stress case with no ceiling. Four rows draw the hill at Creek's own density,
+ * 2.0 tufts on each square meter of its 160 meter valley and 5.9 on its densest bank strip, which
+ * is the scene that D-241's ceilings name. Each density runs with and without the view cull and
+ * the far share, so the cull's own change shows on that scene.
  */
 export function vegetationGrassPlan(): PlanItem<Check>[] {
 	const items: PlanItem<Check>[] = [];
@@ -1931,11 +1934,51 @@ export function vegetationGrassPlan(): PlanItem<Check>[] {
 					'vegetation-grass',
 					{ kind: 'probe', tier },
 					{
-						switches: [`gpu=${path}`, `preset=${preset}`, 'seconds=5'],
+						switches: [`gpu=${path}`, `preset=${preset}`, 'seconds=5', 'warmup=8', 'shadows'],
 						timeoutSeconds: 600,
 					},
 				),
 			);
+	// The hill is 34 by 34 meters, so 2.0 tufts on each square meter is 2,312 at High and 5.9 is
+	// 6,820. The strip's own count would leave the rest of the hill bare, so the row spreads it.
+	const CREEK_DENSITY = [
+		['2', 2312],
+		['5-9', 6820],
+	] as const;
+	for (const [name, tufts] of CREEK_DENSITY)
+		for (const cull of [true, false])
+			items.push(
+				pageItem(
+					`vegetation-grass-creek-${name}${cull ? '' : '-nocull'}-webgpu`,
+					'vegetation-grass',
+					{ kind: 'probe', tier: 'webgpu' },
+					{
+						switches: [
+							'gpu=webgpu',
+							'preset=high',
+							'seconds=5',
+							'warmup=8',
+							'shadows',
+							`tufts=${tufts}`,
+							...(cull ? [] : ['cull=off']),
+						],
+						timeoutSeconds: 600,
+					},
+				),
+			);
+	// The same scene and sun with no grass, which gives the base frame that the ceiling meets
+	// before the add-on draws anything.
+	items.push(
+		pageItem(
+			'vegetation-grass-nograss-webgpu',
+			'vegetation-grass',
+			{ kind: 'probe', tier: 'webgpu' },
+			{
+				switches: ['gpu=webgpu', 'preset=high', 'seconds=5', 'warmup=8', 'shadows', 'grass=off'],
+				timeoutSeconds: 600,
+			},
+		),
+	);
 	return items;
 }
 
@@ -2424,6 +2467,36 @@ export function demosPlan(): PlanItem<Check>[] {
 						},
 					),
 				),
+			),
+		),
+	];
+}
+
+/**
+ * What the shadow map's shape costs the Showroom at Low: the same page four times in one session,
+ * twice with Low's two cascades at 1024 and twice with Medium's three at 2048. A check that lowers
+ * the preset carries the starting preset's shape, so this pair separates the map's sampling inside
+ * the scene draw from everything else that Low draws.
+ */
+export function showroomShadowPlan(): PlanItem<Check>[] {
+	const shapes = ['low', 'medium', 'low', 'medium'] as const;
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...shapes.map((shape, index) =>
+			pageItem(
+				`demo-showroom-webgpu-shadow-${shape}-${index + 1}`,
+				'demo-frames',
+				{ kind: 'probe', tier: 'webgpu' },
+				{
+					switches: [
+						'gpu=webgpu',
+						'demo=showroom',
+						'seconds=5',
+						'preset=low',
+						`shadow-shape=${shape}`,
+					],
+					timeoutSeconds: 300,
+				},
 			),
 		),
 	];
@@ -3023,6 +3096,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'two-step': twoStepPlan,
 	sky: skyPlan,
 	demos: demosPlan,
+	'showroom-shadow': showroomShadowPlan,
 	skyway: skywayPlan,
 	'skyway-cost': skywayCostPlan,
 	splats: splatsPlan,

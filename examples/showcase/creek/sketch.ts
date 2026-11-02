@@ -16,7 +16,7 @@ import {
 	type SketchContext,
 	timeOfDay,
 } from '@null3d/engine';
-import { createGrass } from '@null3d/vegetation';
+import { createGrass, swayDistanceFor } from '@null3d/vegetation';
 import { createUnderwater, createWater, foamMap, type Water, type WaterShape } from '@null3d/water';
 import { createWind, type WindField } from '@null3d/wind';
 import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
@@ -265,12 +265,8 @@ export default defineSketch(async (ctx) => {
 	});
 	scene.setActiveCamera(camera);
 	// The valley's one wind field. The grass, the falling leaves and the water read it, and G sends
-	// a gust that a person can watch cross the banks. The water draws the valley a second time for
-	// its reflection, and on the WebGL2 path a pass's fallback beside that second draw costs the
-	// frame a full set of the valley's textures, so that path keeps no grid and its readers work the
-	// air out of the steady field, gust and swirl included.
-	const grid = ctx.engine.capabilities.tier === 'webgl2' ? 0 : undefined;
-	const wind = createWind(ctx, { camera, box: 128, grid });
+	// a gust that a person can watch cross the banks.
+	const wind = createWind(ctx, { camera, box: 128 });
 	const target: [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];
 	/** A scratch place for the camera, which the gust control reads. */
 	const here: number[] = [0, 0, 0];
@@ -317,7 +313,7 @@ export default defineSketch(async (ctx) => {
 	const bank = (x: number, z: number) => dry(x, z) && Math.abs(z - streamZ(x)) < BANK;
 	const grass = WITHOUT.has('grass')
 		? []
-		: [
+		: await Promise.all([
 				createGrass(ctx, {
 					height: groundHeight,
 					area: { x: 0, z: 0, size: LAND },
@@ -325,6 +321,8 @@ export default defineSketch(async (ctx) => {
 					seed: SEED,
 					mask: bank,
 					wind: wind.field,
+					camera,
+					swayDistance: swayDistanceFor(quality.preset),
 				}),
 				createGrass(ctx, {
 					height: groundHeight,
@@ -333,10 +331,15 @@ export default defineSketch(async (ctx) => {
 					seed: SEED + 1,
 					mask: (x, z) => dry(x, z) && !bank(x, z),
 					wind: wind.field,
+					camera,
+					swayDistance: swayDistanceFor(quality.preset),
 				}),
-			];
+			]);
 	const fit = () => {
-		for (const field of grass) field.fit(quality.preset);
+		for (const field of grass) {
+			field.fit(quality.preset);
+			field.setSwayDistance(swayDistanceFor(quality.preset));
+		}
 		plants.fit(quality.preset);
 		stones.fit(quality.preset);
 	};

@@ -83,7 +83,11 @@ function facade(textures: SketchContext['textures'], seed: number, lit: string):
 }
 
 /** Builds the street, its lamp posts and its signs, over the planar reflection's picture. */
-export function createStreet(ctx: SketchContext, mirror: Texture): void {
+export function createStreet(
+	ctx: SketchContext,
+	mirror: Texture,
+	without: ReadonlySet<string> = new Set(),
+): void {
 	const { scene, geometry, materials, textures } = ctx;
 
 	// The asphalt reads the scene's planar reflection pass: rough dry stone between smooth puddles
@@ -204,11 +208,12 @@ export function createStreet(ctx: SketchContext, mirror: Texture): void {
 			position: [x, 4.2, z],
 			rotation: side < 0 ? [...FACE_PLUS_X] : [...FACE_MINUS_X],
 		});
-		scene.createPointLight({
-			position: [x - side * 0.9, 4.1, z],
-			range: 16,
-			color,
-			intensity: 34,
-		});
+		if (!without.has('lamps'))
+			scene.createPointLight({
+				position: [x - side * 0.9, 4.1, z],
+				range: 16,
+				color,
+				intensity: 34,
+			});
 	}
 }

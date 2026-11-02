@@ -3055,6 +3055,20 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/vegetation-grass-sketch.ts',
 		hold: 1,
 		size: [1280, 720],
+		// The software GPU draws the hill's shadow pass slowly, so it takes the thinner preset.
+		swiftShaderSwitches: ['preset=low'],
+		timeoutSeconds: 300,
+	},
+	// The same hill at a low sun, where the near cascades take the grass's shadows. The blade list
+	// writes the count that the engine copies into each shadow view, so a shadow view that drew the
+	// capacity, or none of it, changes the picture.
+	{
+		name: 'vegetation-grass-shadow',
+		sketch: 'tests/pages/sketches/vegetation-grass-shadow-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+		swiftShaderSwitches: ['preset=low'],
+		timeoutSeconds: 300,
 	},
 	// A grove of grown oaks in the scene's one wind field: the leaf and bark materials sway, the
 	// leaves flutter and the sun's shadows follow. The two holds catch the trees at different points
@@ -3281,11 +3295,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Gaussian splats from an SPZ file that the sketch makes: a knot of splats above a ground, with a
 	// bar in front of part of it, so the picture shows the splats hiding behind a mesh and fading where
-	// they meet the ground. The selection runs on a job worker before the held frame draws.
+	// they meet the ground. The selection runs on a job worker before the held frame draws. The
+	// software GPU captures this whole cloud slowly: its page publishes the image past the default
+	// minute while other builds run, so the run waits three minutes.
 	{
 		name: 'splats',
 		sketch: 'tests/pages/sketches/splats-sketch.ts',
 		hold: 0,
+		timeoutSeconds: 180,
 		modes: ALL_MODES,
 	},
 	// The same cloud with the budget capped, so fewer splats draw: the worker keeps the most

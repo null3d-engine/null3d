@@ -13,6 +13,7 @@ import { CAMERA_LAYERS, SUN_LAYERS } from '../lib/layers';
 import type { ShadowReach } from '../lib/shadow-range';
 import { createMoods, isMood } from '../lib/stage';
 import { createCar } from './car';
+import { START_CONFIG } from './config';
 import { createHud } from './hud';
 import { carPose, STUDIO_Z } from './route';
 import { createStreet } from './street';
@@ -33,6 +34,12 @@ const TARGET: [number, number, number] = [0, 0.9, STUDIO_Z];
 const SHADOW_REACH: ShadowReach = { distance: 38, center: [0, 2, 8], radius: 17 };
 
 const params = new URL(import.meta.url).searchParams;
+/** The parts of the scene that the address leaves out, for a cost measurement. */
+const WITHOUT = new Set((params.get('without') ?? '').split(',').filter(Boolean));
+/** The render scale that the address fixes, or undefined to leave the scale to the governor. */
+const RENDER_SCALE = Number(params.get('render-scale')) || undefined;
+/** False turns the frame-budget governor off, so a measurement keeps one preset's settings. */
+const GOVERNOR = params.get('governor') !== 'off';
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, page, quality, render, textures, time } = ctx;
@@ -42,25 +49,37 @@ export default defineSketch(async (ctx) => {
 		assets.builtinEnvironment('room'),
 	]);
 	const sun = scene.createDirectionalLight({
-		castShadows: true,
+		castShadows: !WITHOUT.has('shadows'),
 		layers: SUN_LAYERS,
 		shadow: { distance: SHADOW_REACH.distance, normalBias: 0.04, contactDistance: 0.25 },
 	});
-	post.set({ ao: { radius: 0.7 }, bloom: { intensity: 0.45, threshold: 1 } });
-	// Every mesh draws at its fullest level, so the car's paint, the tablet and the street's lamps keep
-	// their edges.
-	void quality.set({ lodThreshold: 0 });
-	// The one reflection that both floors read: the scene mirrored across the ground, the car and the
-	// street's lamps included. It draws at half the size, which a wet surface hides.
-	const reflection = textures.fromPass(
-		render.addPass({
-			kind: 'reflection',
-			writes: 'ground',
-			plane: { point: [0, 0, 0] },
-			scale: 0.5,
-			layers: CAMERA_LAYERS,
-		}),
-	);
+	post.set({
+		...(WITHOUT.has('ao') ? {} : { ao: { radius: 0.7 } }),
+		...(WITHOUT.has('bloom') ? {} : { bloom: { intensity: 0.45, threshold: 1 } }),
+	});
+	// Every mesh draws at its fullest level, so the paint, the tablet and the lamps keep their edges.
+	void quality.set({
+		lodThreshold: 0,
+		...(RENDER_SCALE ? { minRenderScale: RENDER_SCALE, maxRenderScale: RENDER_SCALE } : {}),
+		...(GOVERNOR ? {} : { governor: false }),
+	});
+	// The one reflection both floors read: the scene mirrored across the ground, at half the size.
+	const reflection = WITHOUT.has('reflection')
+		? textures.fromData({
+				width: 1,
+				height: 1,
+				data: new Uint8Array([6, 7, 9, 255]),
+				colorSpace: 'srgb',
+			})
+		: textures.fromPass(
+				render.addPass({
+					kind: 'reflection',
+					writes: 'ground',
+					plane: { point: [0, 0, 0] },
+					scale: 0.5,
+					layers: CAMERA_LAYERS,
+				}),
+			);
 	const camera = scene.createPerspectiveCamera({
 		fov: FOV,
 		near: 0.08,
@@ -69,9 +88,7 @@ export default defineSketch(async (ctx) => {
 	});
 	scene.setActiveCamera(camera);
 	const target: [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];
-
-	// The stage: a night sky beyond the street, with thick air that the lamps light. The studio's own
-	// softboxes carry its interior, so the hour only sets the street's sky and the air.
+	// A night sky beyond the street with thick air the lamps light; the softboxes carry the studio.
 	const stage = createMoods(ctx, sun, sky, room, {
 		heading: HEADING,
 		fogDensity: FOG_DENSITY,
@@ -83,13 +100,18 @@ export default defineSketch(async (ctx) => {
 	});
 	const mood = params.get('mood');
 	stage.set(isMood(mood) ? mood : 'Night');
+	for (const part of ['sky', 'fog', 'environment'] as const)
+		if (WITHOUT.has(part)) stage.show(part, false);
 
 	page.post('loading', 'Building the street');
-	createStreet(ctx, reflection);
-	createStudio(ctx, reflection);
+	if (!WITHOUT.has('street')) createStreet(ctx, reflection, WITHOUT);
+	if (!WITHOUT.has('studio')) createStudio(ctx, reflection, WITHOUT);
 	const car = createCar(ctx);
-	const tablet = createTablet(ctx, (config) => car.apply(config));
-	car.apply(tablet.config);
+	const tablet = WITHOUT.has('tablet')
+		? undefined
+		: createTablet(ctx, (config) => car.apply(config));
+	car.apply(tablet?.config ?? START_CONFIG);
+	if (WITHOUT.has('car')) car.root.setVisible(false);
 	const opening = carPose(0);
 	car.root.setPosition(0, 0, opening.z);
 	car.root.setRotationEuler(0, opening.heading, 0);
@@ -120,7 +142,7 @@ export default defineSketch(async (ctx) => {
 			lastZ = pose.z;
 			// The lens and the Manual camera's focus stay on the car wherever it drives.
 			target[2] = pose.z;
-			tablet.update();
+			tablet?.update();
 			hud.lens();
 		},
 	};
