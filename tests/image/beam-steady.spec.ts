@@ -1,12 +1,15 @@
-// A headlight beam in still fog must hold still. The owner saw the showroom's beam flicker, and the
-// volumetric fog's light step was the cause: each cell sampled a point that moved with a sixteen
-// frame cycle, and the blend with the last frame's grid kept enough weight on the new sample that
-// the whole lit fog pulsed at the cycle's rate. A cell now keeps its own point, hashed from its
-// place, so a still camera draws the same fog every frame. The test records the frames that the
-// browser presents, as showroom-steady.spec.ts does, because a capture that draws the frame again
-// would move the fog's own history. The page starts with ?still-camera=off, since the engine's
-// still-camera accumulation would average the pulse away.
-import { expect, test } from '@playwright/test';
+// A headlight beam in still fog must hold still, and the test must know a beam is there. The owner
+// saw the showroom's beam flicker, and the volumetric fog's light step was the cause: each cell
+// sampled a point that moved with a sixteen frame cycle, and the blend with the last frame's grid
+// kept enough weight on the new sample that the whole lit fog pulsed at the cycle's rate. A cell now
+// keeps its own point, hashed from its place, so a still camera draws the same fog every frame.
+//
+// The test records the frames that the browser presents, as showroom-steady.spec.ts does, because a
+// capture that draws the frame again would move the fog's own history. The page starts with
+// ?still-camera=off, since the engine's still-camera accumulation would average the pulse away. The
+// same scene then loads without the volumetric fog, and the lit fog must brighten the beam's box by
+// a margin, so a page whose lamps or fog went missing fails rather than passing on stillness.
+import { type BrowserContext, expect, type Page, test } from '@playwright/test';
 import { decodePngRgba } from '../../packages/cli/src/png.js';
 
 /** The canvas, which fills the window, so a share of the frame is a share of the canvas. */
@@ -20,6 +23,8 @@ const MEAN_SWING = 0.5;
 const PIXEL = 3;
 /** The share of the box's pixels that may move more than that. */
 const SHARE = 0.01;
+/** The least that the lit fog must add to the box's mean over the same scene without it. */
+const BEAM_GAIN = 8;
 /** The frames the page draws before the capture starts, so the blend's history settles. */
 const SETTLE_FRAMES = 40;
 /** How long the settle may take on a software GPU, where a frame can take seconds. */
@@ -27,8 +32,13 @@ const SETTLE_MS = 60_000;
 /** The frames wanted before the capture stops early, and the least that a capture must give. */
 const WANTED = 24;
 const LEAST = 12;
+/** The frames the fog-off page gives: its look holds still, so a few are enough. */
+const OFF_WANTED = 4;
 /** How long the capture may take on a software GPU, where a frame can take seconds. */
 const CAPTURE_MS = 60_000;
+
+/** A frame that the browser presented. */
+type Frame = ReturnType<typeof decodePngRgba>;
 
 /** The luminance of a pixel, from its red, green and blue levels. */
 function luminance(data: Uint8Array, at: number): number {
@@ -44,17 +54,39 @@ function boxOf(width: number, height: number) {
 	return { x0, x1, y0, y1 };
 }
 
-test('the headlight beam holds still in the volumetric fog', async ({ page, context }) => {
-	test.setTimeout(300_000);
-	await page.setViewportSize({ width: WIDTH, height: HEIGHT });
-	await page.goto(`/tests/pages/beam-steady.html?still-camera=off&size=${WIDTH}x${HEIGHT}`);
+/** The mean luminance of the box, averaged over the frames. */
+function meanOf(frames: readonly Frame[]): number {
+	let total = 0;
+	for (const frame of frames) {
+		const { width, height } = frame;
+		const { x0, x1, y0, y1 } = boxOf(width, height);
+		let sum = 0;
+		let count = 0;
+		for (let y = y0; y < y1; y++)
+			for (let x = x0; x < x1; x++) {
+				sum += luminance(frame.data, (y * width + x) * 4);
+				count++;
+			}
+		total += sum / count;
+	}
+	return total / frames.length;
+}
+
+/** Opens the beam's page, with the volumetric fog on or off, and returns the frames it presents. */
+async function open(
+	page: Page,
+	context: BrowserContext,
+	{ volumetric, settle }: { volumetric: boolean; settle: boolean },
+): Promise<{ frames: Frame[]; settleFrames: number }> {
+	const off = volumetric ? '' : '&volumetric=off';
+	await page.goto(`/tests/pages/beam-steady.html?still-camera=off&size=${WIDTH}x${HEIGHT}${off}`);
 	await page.waitForFunction(
 		() => (globalThis as { __null3dEngine?: unknown }).__null3dEngine !== undefined,
 		null,
 		{ timeout: 180_000 },
 	);
-	const framesDrawn = await page.evaluate(
-		async ({ limit, ms }) => {
+	const settleFrames = await page.evaluate(
+		async ({ limit, ms, settle }) => {
 			const engine = (
 				globalThis as {
 					__null3dEngine?: {
@@ -65,6 +97,7 @@ test('the headlight beam holds still in the volumetric fog', async ({ page, cont
 			).__null3dEngine;
 			if (!engine) return 0;
 			await engine.firstFrame;
+			if (!settle) return 0;
 			const started = performance.now();
 			let frames = 0;
 			while (frames < limit && performance.now() - started < ms) {
@@ -73,38 +106,37 @@ test('the headlight beam holds still in the volumetric fog', async ({ page, cont
 			}
 			return frames;
 		},
-		{ limit: SETTLE_FRAMES, ms: SETTLE_MS },
+		{ limit: SETTLE_FRAMES, ms: SETTLE_MS, settle },
 	);
-
-	const frames: string[] = [];
+	const wanted = settle ? WANTED : OFF_WANTED;
+	const recorded: string[] = [];
 	const session = await context.newCDPSession(page);
 	session.on('Page.screencastFrame', async (event) => {
-		frames.push(event.data as string);
+		recorded.push(event.data as string);
 		await session.send('Page.screencastFrameAck', { sessionId: event.sessionId }).catch(() => {});
 	});
 	await session.send('Page.startScreencast', { format: 'png', everyNthFrame: 1 });
 	const deadline = Date.now() + CAPTURE_MS;
-	while (frames.length < WANTED && Date.now() < deadline) await page.waitForTimeout(100);
+	while (recorded.length < wanted && Date.now() < deadline) await page.waitForTimeout(100);
 	await session.send('Page.stopScreencast');
+	return {
+		frames: recorded.map((base64) =>
+			decodePngRgba(Buffer.from(base64, 'base64'), 'a screencast frame'),
+		),
+		settleFrames,
+	};
+}
 
-	const drawn = frames.map((base64) =>
-		decodePngRgba(Buffer.from(base64, 'base64'), 'a screencast frame'),
-	);
-	// The last frames alone: a slow device may not have drawn enough settle frames, and its blend's
+test('the headlight beam holds still in the volumetric fog', async ({ page, context }) => {
+	test.setTimeout(300_000);
+	await page.setViewportSize({ width: WIDTH, height: HEIGHT });
+	const lit = await open(page, context, { volumetric: true, settle: true });
+	// The last frames alone: a slow device may not have drawn enough settle frames, and the blend's
 	// last steps would show in the first frames the capture holds.
-	const sample = drawn.slice(Math.floor(drawn.length / 2));
-	const { width, height } = drawn[0] ?? { width: 0, height: 0 };
+	const sample = lit.frames.slice(Math.floor(lit.frames.length / 2));
+	const { width, height } = lit.frames[0] ?? { width: 0, height: 0 };
 	const { x0, x1, y0, y1 } = boxOf(width, height);
-	const means = sample.map((frame) => {
-		let sum = 0;
-		let count = 0;
-		for (let y = y0; y < y1; y++)
-			for (let x = x0; x < x1; x++) {
-				sum += luminance(frame.data, (y * width + x) * 4);
-				count++;
-			}
-		return sum / count;
-	});
+	const means = sample.map((frame) => meanOf([frame]));
 	let moved = 0;
 	let count = 0;
 	for (let y = y0; y < y1; y++)
@@ -122,13 +154,23 @@ test('the headlight beam holds still in the volumetric fog', async ({ page, cont
 		}
 	const swing = Math.max(...means) - Math.min(...means);
 	const share = moved / Math.max(1, count);
+
+	const plain = await open(page, context, { volumetric: false, settle: false });
+	const litMean = meanOf(sample);
+	const plainMean = meanOf(plain.frames);
+	const gain = litMean - plainMean;
 	console.log(
-		`the beam over the last ${sample.length} of ${drawn.length} frames, after ${framesDrawn} of ${SETTLE_FRAMES} settle frames: ` +
+		`the beam over the last ${sample.length} of ${lit.frames.length} frames, after ` +
+			`${lit.settleFrames} of ${SETTLE_FRAMES} settle frames: ` +
 			`mean swing ${swing.toFixed(2)} of ${MEAN_SWING}, ` +
-			`${(100 * share).toFixed(1)}% of pixels moved more than ${PIXEL} of ${(100 * SHARE).toFixed(1)}%`,
+			`${(100 * share).toFixed(1)}% of pixels moved more than ${PIXEL} of ` +
+			`${(100 * SHARE).toFixed(1)}%; the lit fog adds ${gain.toFixed(2)} of ${BEAM_GAIN} levels ` +
+			`over the same scene without it (${litMean.toFixed(2)} against ${plainMean.toFixed(2)})`,
 	);
-	expect(framesDrawn).toBeGreaterThan(0);
-	expect(drawn.length).toBeGreaterThanOrEqual(LEAST);
+	expect(lit.settleFrames).toBeGreaterThan(0);
+	expect(lit.frames.length).toBeGreaterThanOrEqual(LEAST);
+	expect(plain.frames.length).toBeGreaterThanOrEqual(OFF_WANTED);
+	expect(gain).toBeGreaterThanOrEqual(BEAM_GAIN);
 	expect(swing).toBeLessThanOrEqual(MEAN_SWING);
 	expect(share).toBeLessThanOrEqual(SHARE);
 });
