@@ -394,7 +394,7 @@ function leafPaint(leaf: PlacedLeaf, cardX: number, cardY: number, spot: LeafSpo
 	// two leaves that overlap still read apart: a deep band turns every edge of a distant crown
 	// into a dark speckle, so the fall is shallow and starts close to the outline.
 	const blotch = 0.84 + 0.3 * value2(cardX * 6 + leaf.seed * 7.3, cardY * 6 + leaf.seed * 3.1);
-	const rim = 1 - 0.22 * smoothstep(0.86, 1, edge);
+	const rim = 1 - 0.24 * smoothstep(0.86, 1, edge);
 	const light =
 		shape.brightness *
 		(0.84 + 0.26 * spot.t) *
@@ -519,8 +519,9 @@ function leafSpray(all: readonly PlacedLeaf[], stem: number | null): LeafCellPai
 			const spot = leafSpotAt(winner, cardX, cardY);
 			const paint = leafPaint(winner, cardX, cardY, spot);
 			// A leaf darkens where another leaf lies over it, as a pile of leaves shades itself. Without
-			// that shade, two overlapping leaves of one tone read as one shape.
-			const shade = 1 - 0.14 * Math.min(covers - 1, 2);
+			// that shade, two overlapping leaves of one tone read as one shape, and a card seen close
+			// shows the union of its leaves as one lobed outline instead of the leaves themselves.
+			const shade = 1 - 0.2 * Math.min(covers - 1, 2);
 			return {
 				color: [paint.color[0] * shade, paint.color[1] * shade, paint.color[2] * shade],
 				alpha: cover(spot.distance, LEAF_EDGE) * cellRim(cardX, cardY),
@@ -625,13 +626,13 @@ function leafCells(): LeafCellPainter[] {
 		),
 		leafSpray(
 			sprayLeaves(23, FAMILIES.beech, {
-				count: 40,
-				from: 0.04,
-				to: 0.9,
-				lean: [0.4, 1.4],
-				turn: 0.8,
-				length: [0.36, 0.26],
-				spread: 0.18,
+				count: 24,
+				from: 0.05,
+				to: 0.88,
+				lean: [0.5, 1.3],
+				turn: 0.7,
+				length: [0.34, 0.24],
+				spread: 0.16,
 			}),
 			0.02,
 		),
@@ -664,13 +665,13 @@ function leafCells(): LeafCellPainter[] {
 		// row of teeth.
 		leafSpray(
 			sprayLeaves(53, FAMILIES.needle, {
-				count: 72,
-				from: 0.02,
-				to: 0.97,
+				count: 46,
+				from: 0.03,
+				to: 0.96,
 				lean: [1.4, 0.4],
-				turn: 0.65,
-				length: [0.46, 0.26],
-				spread: 0.13,
+				turn: 0.6,
+				length: [0.44, 0.24],
+				spread: 0.18,
 			}),
 			0.012,
 		),

@@ -2,6 +2,7 @@
 // crown, or the crown seen from below. The species, the variant and the seed come from the query,
 // so a render run draws the same frame on every device.
 import { defineSketch } from '@null3d/engine';
+import type { LeafCellName } from '@null3d/vegetation';
 import {
 	bakePlantAtlases,
 	generatePlant,
@@ -79,15 +80,109 @@ export default defineSketch((ctx) => {
 		color: SPECIES.color.bark as [number, number, number],
 		barkTiles: 5,
 	});
-	for (const part of asset.levels[0]?.parts ?? [])
-		scene.createMesh({
-			mesh: geometry.fromArrays(part.arrays),
-			material: part.name === 'wood' ? bark : leaves,
-			castShadows: true,
-			receiveShadows: true,
-		});
-
 	const { min, max, center, radius, start } = asset.crown;
+	const parts = asset.levels[0]?.parts ?? [];
+	const leavesPart = parts.find((part) => part.name === 'leaves');
+	const per = SPECIES.leaf?.kind === 'cluster' ? 6 : SPECIES.leaf?.cross === true ? 8 : 4;
+	/** The card that the leaf view draws alone: one that faces the sky and stands at the surface. */
+	let card:
+		| {
+				centre: [number, number, number];
+				normal: [number, number, number];
+				radius: number;
+		  }
+		| undefined;
+	if (VIEW === 'leaf' && leavesPart) {
+		const positions = leavesPart.arrays.positions;
+		const normals = leavesPart.arrays.normals;
+		let chosen = 0;
+		let best = Number.NEGATIVE_INFINITY;
+		for (let at = 0; at + per * 3 <= positions.length; at += per * 3) {
+			let cx = 0;
+			let cy = 0;
+			let cz = 0;
+			for (let i = 0; i < per; i++) {
+				cx += positions[at + i * 3] as number;
+				cy += positions[at + i * 3 + 1] as number;
+				cz += positions[at + i * 3 + 2] as number;
+			}
+			cx /= per;
+			cy /= per;
+			cz /= per;
+			const reach = Math.hypot(cx - center[0], cy - center[1], cz - center[2]);
+			const score = (normals[at + 1] as number) + reach * 0.12;
+			if (score > best) {
+				best = score;
+				chosen = at;
+			}
+		}
+		let x = 0;
+		let y = 0;
+		let z = 0;
+		let radius = 0;
+		for (let i = 0; i < per; i++) {
+			const vx = positions[chosen + i * 3] as number;
+			const vy = positions[chosen + i * 3 + 1] as number;
+			const vz = positions[chosen + i * 3 + 2] as number;
+			x += vx;
+			y += vy;
+			z += vz;
+			radius = Math.max(radius, Math.hypot(vx, vy, vz));
+		}
+		x /= per;
+		y /= per;
+		z /= per;
+		let spread = 0;
+		for (let i = 0; i < per; i++)
+			spread = Math.max(
+				spread,
+				Math.hypot(
+					(positions[chosen + i * 3] as number) - x,
+					(positions[chosen + i * 3 + 1] as number) - y,
+					(positions[chosen + i * 3 + 2] as number) - z,
+				),
+			);
+		card = {
+			centre: [x, y, z],
+			normal: normalize(
+				normals[chosen] as number,
+				normals[chosen + 1] as number,
+				normals[chosen + 2] as number,
+			),
+			radius: Math.max(0.05, spread),
+		};
+		// One card alone: the frame shows its atlas and nothing of its neighbours, so the leaf shape
+		// is what the eye reads rather than the pile in front of it.
+		const indices = leavesPart.arrays.indices;
+		const first = chosen / 3;
+		const perCard = indices.length / (positions.length / 3 / per);
+		const ordinal = Math.round(chosen / (per * 3));
+		const start = ordinal * perCard;
+		const sliced: Uint32Array = Uint32Array.from(
+			indices.subarray(start, start + perCard),
+			(value) => value - first,
+		);
+		const arrays = {
+			positions: positions.slice(chosen, chosen + per * 3),
+			normals: leavesPart.arrays.normals.slice(chosen, chosen + per * 3),
+			uvs: leavesPart.arrays.uvs.slice(first * 2, (first + per) * 2),
+			colors: leavesPart.arrays.colors.slice(first * 4, (first + per) * 4),
+			...(leavesPart.arrays.targets
+				? { targets: leavesPart.arrays.targets.slice(first * 4, (first + per) * 4) }
+				: {}),
+			indices: sliced,
+		};
+		scene.createMesh({ mesh: geometry.fromArrays(arrays), material: leaves, castShadows: false });
+	} else {
+		for (const part of parts)
+			scene.createMesh({
+				mesh: geometry.fromArrays(part.arrays),
+				material: part.name === 'wood' ? bark : leaves,
+				castShadows: true,
+				receiveShadows: true,
+			});
+	}
+
 	const crownTop = Math.max(max[1], start + 0.1);
 	const span = Math.max(max[0] - min[0], max[2] - min[2], 1);
 	let position: [number, number, number];
@@ -112,43 +207,15 @@ export default defineSketch((ctx) => {
 		fov = CROWN_FOV;
 		const reach = Math.max(4, span * 1.1);
 		position = [target[0] + reach * 0.7, Math.max(1.2, start * 0.8), target[2] + reach * 0.7];
-	} else if (VIEW === 'leaf') {
-		// Stand close to one card of the crown, along its own normal, so the frame shows the atlas
-		// and the lighting of a leaf rather than the crown's mass.
-		const leavesPart = (asset.levels[0]?.parts ?? []).find((part) => part.name === 'leaves');
-		const positions = leavesPart?.arrays.positions;
-		const normals = leavesPart?.arrays.normals;
-		const per = SPECIES.leaf?.kind === 'cluster' ? 6 : SPECIES.leaf?.cross === true ? 8 : 4;
-		let chosen = 0;
-		if (positions && normals)
-			for (let at = 0; at + per * 3 <= positions.length; at += per * 3)
-				if ((normals[at + 1] as number) > 0.4) {
-					chosen = at;
-					break;
-				}
-		let x = 0;
-		let y = 0;
-		let z = 0;
-		if (positions)
-			for (let i = 0; i < per; i++) {
-				x += positions[chosen + i * 3] as number;
-				y += positions[chosen + i * 3 + 1] as number;
-				z += positions[chosen + i * 3 + 2] as number;
-			}
-		target = [x / per, y / per, z / per];
-		fov = 32;
-		const facing = normals
-			? normalize(
-					normals[chosen] as number,
-					normals[chosen + 1] as number,
-					normals[chosen + 2] as number,
-				)
-			: ([0, 1, 0] as [number, number, number]);
-		const distance = 1.1;
+	} else if (VIEW === 'leaf' && card) {
+		// Stand on the card's own normal and frame the card alone.
+		target = card.centre;
+		fov = 34;
+		const distance = card.radius * 3.2;
 		position = [
-			target[0] + facing[0] * distance,
-			target[1] + facing[1] * distance,
-			target[2] + facing[2] * distance,
+			target[0] + card.normal[0] * distance,
+			target[1] + card.normal[1] * distance,
+			target[2] + card.normal[2] * distance,
 		];
 	} else {
 		target = [center[0], min[1] + (max[1] - min[1]) * 0.48, center[2]];
