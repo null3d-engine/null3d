@@ -11,8 +11,14 @@ import {
 	octahedralAtlas,
 } from '@null3d/impostors';
 import type { PlantAsset } from './asset';
-import { LEAF_CELLS_BY_KIND, leafCellFor, type PlantAtlases } from './atlas';
-import { LEAF_CELLS_X, LEAF_CELLS_Y } from './atlas-pixels';
+import {
+	BARK_CELLS_BY_KIND,
+	barkCellFor,
+	LEAF_CELLS_BY_KIND,
+	leafCellFor,
+	type PlantAtlases,
+} from './atlas';
+import { type AtlasPixels, BARK_SIZE, LEAF_CELLS_X, LEAF_CELLS_Y } from './atlas-pixels';
 import { VERSION } from './version';
 
 /**
@@ -108,6 +114,19 @@ function bakePlant(
 	const bark = atlases.bark.pixels;
 	const leaf = atlases.leaf.pixels;
 	const cell = LEAF_CELLS_BY_KIND[leafCellFor(asset.species)];
+	// The bake takes one tiling texture, so it takes the species' own bark cell cut out of the block.
+	const [barkCol, barkRow] = BARK_CELLS_BY_KIND[barkCellFor(asset.species)];
+	const cutBark = (map: AtlasPixels): AtlasPixels => {
+		const data = new Uint8Array(BARK_SIZE * BARK_SIZE * 4);
+		for (let y = 0; y < BARK_SIZE; y++)
+			for (let x = 0; x < BARK_SIZE; x++) {
+				const from = ((barkRow * BARK_SIZE + y) * map.width + barkCol * BARK_SIZE + x) * 4;
+				const to = (y * BARK_SIZE + x) * 4;
+				for (let c = 0; c < 4; c++) data[to + c] = map.data[from + c] as number;
+			}
+		return { width: BARK_SIZE, height: BARK_SIZE, data };
+	};
+	const barkColor = cutBark(bark.color);
 	const parts = level.parts.map((part) => {
 		const wood = part.name === 'wood';
 		return {
@@ -123,9 +142,9 @@ function bakePlant(
 			...(wood
 				? {
 						color: {
-							width: bark.color.width,
-							height: bark.color.height,
-							data: bark.color.data,
+							width: barkColor.width,
+							height: barkColor.height,
+							data: barkColor.data,
 							tiles: 3,
 							wrap: 'repeat' as const,
 						},

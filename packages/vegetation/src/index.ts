@@ -42,7 +42,9 @@ export type {
 	PlantMorph,
 } from './atlas';
 export {
+	BARK_CELLS_BY_KIND,
 	bakePlantAtlases,
+	barkCellFor,
 	LEAF_CELLS_BY_KIND,
 	leafCellFor,
 	plantMaterial,
@@ -110,6 +112,7 @@ export {
 	scatterVegetation,
 } from './scatter';
 export type {
+	BarkCellName,
 	BranchLevel,
 	Crown,
 	CrownShape,

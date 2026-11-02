@@ -214,6 +214,9 @@ struct Uniforms {
     cells: vec2f,
     /// The leaf cell that this material draws: its column and row.
     cell: vec2f,
+    /// The bark atlas's cells across and down, and the bark cell that this material draws.
+    barkCells: vec2f,
+    barkCell: vec2f,
     /// 0 draws a trunk's bark and 1 a crown's leaves.
     part: f32,
     /// How many times the bark tiles across the mesh's texture coordinates.
@@ -406,7 +409,9 @@ fn surface(input: SurfaceInput) -> Surface {
     // A texture sample belongs to uniform control flow, so every map is read and the part picks one
     // afterwards. A leaf's card reads its own cell of the atlas, and the bark tiles.
     let leafPlace = (material.cell + clamp(input.uv, vec2f(0.0), vec2f(1.0))) / material.cells;
-    let barkPlace = input.uv * material.tiles;
+    // The bark repeats within its own cell, so the pattern tiles without crossing into a
+    // neighbouring family's bark.
+    let barkPlace = (material.barkCell + fract(input.uv * material.tiles)) / material.barkCells;
     let leafColorSample = textureSample(leafColor, leafColorSampler, leafPlace);
     let leafSurfaceSample = textureSample(leafSurface, leafSurfaceSampler, leafPlace);
     let barkColorSample = textureSample(barkColor, barkColorSampler, barkPlace);

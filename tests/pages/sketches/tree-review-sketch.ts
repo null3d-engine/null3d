@@ -5,6 +5,7 @@ import { defineSketch } from '@null3d/engine';
 import type { LeafCellName } from '@null3d/vegetation';
 import {
 	bakePlantAtlases,
+	barkCellFor,
 	generatePlant,
 	leafCellFor,
 	plantMaterial,
@@ -78,6 +79,7 @@ export default defineSketch((ctx) => {
 		atlases,
 		part: 'wood',
 		color: SPECIES.color.bark as [number, number, number],
+		barkCell: barkCellFor(SPECIES),
 		barkTiles: 5,
 	});
 	const { min, max, center, radius, start } = asset.crown;

@@ -4,9 +4,12 @@
 // paintings of one atlas byte for byte.
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { LEAF_CELLS_BY_KIND, leafCellFor } from './atlas';
+import { barkCellFor, LEAF_CELLS_BY_KIND, leafCellFor } from './atlas';
 import {
+	BARK_CELLS_X,
+	BARK_HEIGHT,
 	BARK_SIZE,
+	BARK_WIDTH,
 	LEAF_CELL,
 	LEAF_CELLS_X,
 	LEAF_CELLS_Y,
@@ -74,6 +77,18 @@ describe('the atlas blocks', () => {
 			if (species.leaf?.kind === 'cluster') expect(species.leaf.cell).toBeDefined();
 	});
 
+	it('names a bark cell for every built-in branch plant', () => {
+		for (const species of ALL_SPECIES)
+			if (species.kind === 'tree' || species.kind === 'conifer' || species.kind === 'shrub')
+				expect(species.bark).toBeDefined();
+	});
+
+	it('gives a species its own bark cell, or the smooth one', () => {
+		const oak = ALL_SPECIES.find((species) => species.id === 'oak') as Species;
+		expect(barkCellFor(oak)).toBe('oak');
+		expect(barkCellFor({ ...oak, bark: undefined })).toBe('beech');
+	});
+
 	it('draws each species the cell of its own kind', () => {
 		for (const species of ALL_SPECIES) {
 			const cell = leafCellFor(species);
@@ -120,9 +135,10 @@ describe('the atlas blocks', () => {
 
 	it('keeps the sizes the painters fill', () => {
 		const bark = paintBark().color;
-		expect(bark.width).toBe(BARK_SIZE);
-		expect(bark.height).toBe(BARK_SIZE);
-		expect(bark.data.length).toBe(BARK_SIZE * BARK_SIZE * 4);
+		expect(bark.width).toBe(BARK_WIDTH);
+		expect(bark.height).toBe(BARK_HEIGHT);
+		expect(bark.data.length).toBe(BARK_WIDTH * BARK_HEIGHT * 4);
+		expect(BARK_WIDTH).toBe(BARK_CELLS_X * BARK_SIZE);
 		const leaf = paintLeaf().color;
 		expect(leaf.width).toBe(LEAF_WIDTH);
 		expect(leaf.height).toBe(LEAF_HEIGHT);
@@ -219,7 +235,9 @@ describe('the painted bark', () => {
 	it('paints plates that tile', () => {
 		const color = paintBark().color;
 		// The block tiles, so its opposite edges agree more closely than two random texels do.
-		const at = (x: number, y: number) => color.data[(y * BARK_SIZE + x) * 4] ?? 0;
+		// Each cell tiles within itself, so a cell's opposite edges agree more closely than two
+		// random texels of it do. The first cell is the birch's bark.
+		const at = (x: number, y: number) => color.data[(y * BARK_WIDTH + x) * 4] ?? 0;
 		let edge = 0;
 		let middle = 0;
 		for (let y = 0; y < BARK_SIZE; y += 4) {
@@ -238,7 +256,9 @@ describe('the painted bark', () => {
 			const nx = (surface.data[at] ?? 128) / 255 - 0.5;
 			if (Math.abs(nx) > 0.02) bent += 1;
 		}
-		expect(bent / total).toBeGreaterThan(0.3);
+		// The smooth families bend less than the plated ones, so the block as a whole is a little
+		// flatter than the one bark it used to hold.
+		expect(bent / total).toBeGreaterThan(0.25);
 	});
 });
 
