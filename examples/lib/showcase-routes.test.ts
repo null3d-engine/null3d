@@ -1,4 +1,4 @@
-// Each showcase scene's Auto route against its Manual camera's bounds and its shadow range
+// Each scene's Auto route against its Manual camera's bounds and its shadow range
 // ([D-170](../../.dev/decisions/D-170-showcase-camera.md), owner's ruling). Every pose of
 // the route lies inside the bounds, so taking the camera over at any moment never moves it, and the
 // sun's shadow range reaches past the scene's core from every pose, so the core's shadows never
@@ -19,7 +19,7 @@ import {
 	routeTimeline,
 } from './cinematic';
 import { mountainRing } from './mountains';
-import { type ShadowReach, shadowStep } from './showcase-effects';
+import { type ShadowReach, shadowStep } from './shadow-range';
 
 /** How many points of the loop the checks sample, finely enough for the spline's bends. */
 const SAMPLES = 2000;

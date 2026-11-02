@@ -6,11 +6,11 @@
 // waits, follows it out through the opening, watches it turn at the far end, and comes back in front
 // of it to settle on the view it opened with. `c` switches between the route (Auto) and the user's
 // own camera (Manual). A tap on the tablet changes the paint, the wheels, the
-// trim or the lights, and the car takes the change at once. The controls HUD offers the time of day,
-// the effects and the quality preset, as the other showcases do.
+// trim or the lights, and the car takes the change at once. The scene shows no controls panel: the
+// route plays by itself.
 import { defineSketch } from '@null3d/engine';
 import { CAMERA_LAYERS, SUN_LAYERS } from '../lib/layers';
-import type { ShadowReach } from '../lib/showcase-effects';
+import type { ShadowReach } from '../lib/shadow-range';
 import { createMoods, isMood } from '../lib/stage';
 import { createCar } from './car';
 import { createHud } from './hud';
@@ -35,7 +35,7 @@ const SHADOW_REACH: ShadowReach = { distance: 38, center: [0, 2, 8], radius: 17 
 const params = new URL(import.meta.url).searchParams;
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, post, page, render, textures, time } = ctx;
+	const { scene, assets, post, page, quality, render, textures, time } = ctx;
 	page.post('loading', 'Building the studio');
 	const [sky, room] = await Promise.all([
 		assets.skyEnvironment(),
@@ -47,6 +47,9 @@ export default defineSketch(async (ctx) => {
 		shadow: { distance: SHADOW_REACH.distance, normalBias: 0.04, contactDistance: 0.25 },
 	});
 	post.set({ ao: { radius: 0.7 }, bloom: { intensity: 0.45, threshold: 1 } });
+	// Every mesh draws at its fullest level, so the car's paint, the tablet and the street's lamps keep
+	// their edges.
+	void quality.set({ lodThreshold: 0 });
 	// The one reflection that both floors read: the scene mirrored across the ground, the car and the
 	// street's lamps included. It draws at half the size, which a wet surface hides.
 	const reflection = textures.fromPass(
@@ -93,15 +96,13 @@ export default defineSketch(async (ctx) => {
 	/** The z where the car stood a frame ago, which its forward travel and its wheels take from. */
 	let lastZ = opening.z;
 
-	// The scene's controls and the route that Auto plays: the shared switches, and its own ambient
-	// occlusion and bloom.
+	// The scene's route and the lens that follows the car; the showroom sets its own effects above,
+	// and shows no controls panel.
 	const hud = createHud(ctx, {
 		camera,
 		sun,
-		stage,
 		shadowReach: SHADOW_REACH,
 		target,
-		fov: FOV,
 		focalLength: FOCAL_LENGTH,
 	});
 
@@ -109,7 +110,7 @@ export default defineSketch(async (ctx) => {
 		onUpdate(dt) {
 			const t = time.now;
 			stage.update(dt);
-			hud.update(dt, t);
+			hud.update(dt);
 			const pose = carPose(t);
 			car.root.setPosition(0, 0, pose.z);
 			car.root.setRotationEuler(0, pose.heading, 0);
