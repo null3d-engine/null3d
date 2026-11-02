@@ -45,7 +45,9 @@ export default defineSketch((ctx) => {
 	const { scene, geometry, materials } = ctx;
 	scene.setBackground('#9fc0dd');
 	const LOW_SUN = params.get('sun') === 'low';
-	// Every view carries the shipping shadow arrangement: the caster level the record names.
+	// Every view carries the shipping shadow arrangement except the posed trunk view. A close-up
+	// exists to show the bark, and a coarse crown shadow would change what the bark is judged under;
+	// the trunk view therefore casts from the real level by design.
 	const SHADOW_PROXY = true;
 	scene.createDirectionalLight({
 		direction: LOW_SUN ? [-0.85, -0.35, -0.4] : [-0.5, -1, -0.35],
@@ -192,17 +194,19 @@ export default defineSketch((ctx) => {
 		// A trunk view draws the wood alone: the bark is what it is for, and a crown that reaches low
 		// would otherwise fill the frame with leaves.
 		const hideLeaves = VIEW === 'trunk';
+		// The posed trunk view keeps the real caster, so the bark is lit as bark and not as a shadow test.
+		const castReal = SHADOW_PROXY && VIEW !== 'trunk';
 		for (const part of parts) {
 			if (hideLeaves && part.name !== 'wood') continue;
 			scene.createMesh({
 				mesh: geometry.fromArrays(part.arrays),
 				material: part.name === 'wood' ? bark : leaves,
-				castShadows: !SHADOW_PROXY,
+				castShadows: !castReal,
 				receiveShadows: true,
 			});
 		}
 		// A shadow proxy casts from the coarsest level alone, so a low sun can show what it leaves out.
-		if (SHADOW_PROXY) {
+		if (castReal) {
 			const coarse = asset.levels[shadowCasterLevel(asset)];
 			for (const part of coarse?.parts ?? []) {
 				scene.createMesh({
