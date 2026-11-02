@@ -2,16 +2,19 @@
 // crown, or the crown seen from below. The species, the variant and the seed come from the query,
 // so a render run draws the same frame on every device.
 import { defineSketch } from '@null3d/engine';
-import type { LeafCellName } from '@null3d/vegetation';
+import type { PlantPart } from '@null3d/vegetation';
 import {
 	bakePlantAtlases,
 	barkCellFor,
 	generatePlant,
 	leafCellFor,
 	plantMaterial,
+	plantWind,
 	type Species,
+	setWindLayer,
 	shadowCasterLevel,
 } from '@null3d/vegetation';
+import { createWind } from '@null3d/wind';
 import { REVIEW_TREES, reviewTree } from '../lib/tree-corpus';
 
 const params = new URL(import.meta.url).searchParams;
@@ -26,6 +29,8 @@ const SPECIES: Species | undefined =
 const VIEW = params.get('view') ?? 'whole';
 const SEED = Number(params.get('seed') ?? 11);
 const VARIANT = Number(params.get('variant') ?? 0);
+/** Whether the plant moves in the wind: stills stay still, and a clip asks for the motion. */
+const WIND = params.get('wind') === '1';
 /** How far the camera's field of view narrows the whole-tree frame. */
 const WHOLE_FOV = 38;
 /** How far the camera's field of view narrows a crown frame. */
@@ -38,6 +43,91 @@ const FLAT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] as const;
 function normalize(x: number, y: number, z: number): [number, number, number] {
 	const length = Math.hypot(x, y, z) || 1;
 	return [x / length, y / length, z / length];
+}
+
+/** The card that the leaf view draws alone: one that faces the sky and stands at the surface. */
+interface ChosenCard {
+	readonly centre: [number, number, number];
+	readonly normal: [number, number, number];
+	readonly radius: number;
+	/** The index of the card's first vertex in the leaves part. */
+	readonly chosen: number;
+}
+
+/**
+ * Picks the card of a plant that the leaf view draws alone: the one that faces the sky and stands
+ * at the crown's surface, so the frame shows its shape rather than a card pressed against another.
+ */
+function chooseCard(
+	part: PlantPart,
+	per: number,
+	centre: readonly [number, number, number],
+): ChosenCard {
+	const positions = part.arrays.positions;
+	const normals = part.arrays.normals;
+	let chosen = 0;
+	let best = Number.NEGATIVE_INFINITY;
+	for (let at = 0; at + per * 3 <= positions.length; at += per * 3) {
+		let cx = 0;
+		let cy = 0;
+		let cz = 0;
+		for (let i = 0; i < per; i++) {
+			cx += positions[at + i * 3] as number;
+			cy += positions[at + i * 3 + 1] as number;
+			cz += positions[at + i * 3 + 2] as number;
+		}
+		cx /= per;
+		cy /= per;
+		cz /= per;
+		const reach = Math.hypot(cx - centre[0], cy - centre[1], cz - centre[2]);
+		const score = (normals[at + 1] as number) + reach * 0.12;
+		if (score > best) {
+			best = score;
+			chosen = at;
+		}
+	}
+	let x = 0;
+	let y = 0;
+	let z = 0;
+	let radius = 0;
+	for (let i = 0; i < per; i++) {
+		const vx = positions[chosen + i * 3] as number;
+		const vy = positions[chosen + i * 3 + 1] as number;
+		const vz = positions[chosen + i * 3 + 2] as number;
+		x += vx;
+		y += vy;
+		z += vz;
+		radius = Math.max(radius, Math.hypot(vx, vy, vz));
+	}
+	x /= per;
+	y /= per;
+	z /= per;
+	let spread = 0;
+	for (let i = 0; i < per; i++)
+		spread = Math.max(
+			spread,
+			Math.hypot(
+				(positions[chosen + i * 3] as number) - x,
+				(positions[chosen + i * 3 + 1] as number) - y,
+				(positions[chosen + i * 3 + 2] as number) - z,
+			),
+		);
+	// A cluster card is folded, so the average of its vertex normals points between the two panels;
+	// a camera along either panel's own normal would see the other edge-on.
+	let nx = 0;
+	let ny = 0;
+	let nz = 0;
+	for (let i = 0; i < per; i++) {
+		nx += normals[chosen + i * 3] as number;
+		ny += normals[chosen + i * 3 + 1] as number;
+		nz += normals[chosen + i * 3 + 2] as number;
+	}
+	return {
+		centre: [x, y, z],
+		normal: normalize(nx, ny, nz),
+		radius: Math.max(0.05, spread),
+		chosen,
+	};
 }
 
 export default defineSketch((ctx) => {
@@ -74,154 +164,12 @@ export default defineSketch((ctx) => {
 
 	const asset = generatePlant(SPECIES, { seed: SEED, variant: VARIANT });
 	const atlases = bakePlantAtlases(ctx);
-	const leaves = plantMaterial(ctx, {
-		atlases,
-		part: 'leaves',
-		cell: leafCellFor(SPECIES),
-		color: SPECIES.color.leaf as [number, number, number],
-		transmission: SPECIES.color.transmission,
-		alphaCutoff: SPECIES.leaf?.kind === 'needle' ? 0.2 : 0.24,
-	});
-	const bark = plantMaterial(ctx, {
-		atlases,
-		part: 'wood',
-		color: SPECIES.color.bark as [number, number, number],
-		barkCell: barkCellFor(SPECIES),
-		barkTiles: 5,
-	});
 	const { min, max, center, radius, start } = asset.crown;
 	const parts = asset.levels[0]?.parts ?? [];
 	const leavesPart = parts.find((part) => part.name === 'leaves');
 	const per = SPECIES.leaf?.kind === 'cluster' ? 6 : SPECIES.leaf?.cross === true ? 8 : 4;
-	/** The card that the leaf view draws alone: one that faces the sky and stands at the surface. */
-	let card:
-		| {
-				centre: [number, number, number];
-				normal: [number, number, number];
-				radius: number;
-		  }
-		| undefined;
-	if (VIEW === 'leaf' && leavesPart) {
-		const positions = leavesPart.arrays.positions;
-		const normals = leavesPart.arrays.normals;
-		let chosen = 0;
-		let best = Number.NEGATIVE_INFINITY;
-		for (let at = 0; at + per * 3 <= positions.length; at += per * 3) {
-			let cx = 0;
-			let cy = 0;
-			let cz = 0;
-			for (let i = 0; i < per; i++) {
-				cx += positions[at + i * 3] as number;
-				cy += positions[at + i * 3 + 1] as number;
-				cz += positions[at + i * 3 + 2] as number;
-			}
-			cx /= per;
-			cy /= per;
-			cz /= per;
-			const reach = Math.hypot(cx - center[0], cy - center[1], cz - center[2]);
-			const score = (normals[at + 1] as number) + reach * 0.12;
-			if (score > best) {
-				best = score;
-				chosen = at;
-			}
-		}
-		let x = 0;
-		let y = 0;
-		let z = 0;
-		let radius = 0;
-		for (let i = 0; i < per; i++) {
-			const vx = positions[chosen + i * 3] as number;
-			const vy = positions[chosen + i * 3 + 1] as number;
-			const vz = positions[chosen + i * 3 + 2] as number;
-			x += vx;
-			y += vy;
-			z += vz;
-			radius = Math.max(radius, Math.hypot(vx, vy, vz));
-		}
-		x /= per;
-		y /= per;
-		z /= per;
-		let spread = 0;
-		for (let i = 0; i < per; i++)
-			spread = Math.max(
-				spread,
-				Math.hypot(
-					(positions[chosen + i * 3] as number) - x,
-					(positions[chosen + i * 3 + 1] as number) - y,
-					(positions[chosen + i * 3 + 2] as number) - z,
-				),
-			);
-		// A cluster card is folded, so the average of its vertex normals points between the two
-		// panels; a camera along either panel's own normal would see the other edge-on.
-		let nx = 0;
-		let ny = 0;
-		let nz = 0;
-		for (let i = 0; i < per; i++) {
-			nx += normals[chosen + i * 3] as number;
-			ny += normals[chosen + i * 3 + 1] as number;
-			nz += normals[chosen + i * 3 + 2] as number;
-		}
-		card = {
-			centre: [x, y, z],
-			normal: normalize(nx, ny, nz),
-			radius: Math.max(0.05, spread),
-		};
-		// One card alone: the frame shows its atlas and nothing of its neighbours, so the leaf shape
-		// is what the eye reads rather than the pile in front of it.
-		const indices = leavesPart.arrays.indices;
-		const first = chosen / 3;
-		const perCard = indices.length / (positions.length / 3 / per);
-		const ordinal = Math.round(chosen / (per * 3));
-		const start = ordinal * perCard;
-		const sliced: Uint32Array = Uint32Array.from(
-			indices.subarray(start, start + perCard),
-			(value) => value - first,
-		);
-		const arrays = {
-			positions: positions.slice(chosen, chosen + per * 3),
-			normals: leavesPart.arrays.normals.slice(chosen, chosen + per * 3),
-			uvs: leavesPart.arrays.uvs.slice(first * 2, (first + per) * 2),
-			colors: leavesPart.arrays.colors.slice(first * 4, (first + per) * 4),
-			...(leavesPart.arrays.targets
-				? { targets: leavesPart.arrays.targets.slice(first * 4, (first + per) * 4) }
-				: {}),
-			indices: sliced,
-		};
-		scene.createMesh({ mesh: geometry.fromArrays(arrays), material: leaves, castShadows: false });
-	} else {
-		// A tall dense crown hides its bole completely, so a trunk view can draw the wood alone. The
-		// manifest says when a view hides the foliage.
-		// A trunk view draws the wood alone: the bark is what it is for, and a crown that reaches low
-		// would otherwise fill the frame with leaves.
-		const hideLeaves = VIEW === 'trunk' || VIEW === 'skeleton';
-		// The posed trunk view keeps the real caster, so the bark is lit as bark and not as a shadow test.
-		const castReal = SHADOW_PROXY && VIEW !== 'trunk';
-		for (const part of parts) {
-			// Only the wood survives a posed view: a frond, a blade and a leaf are all foliage.
-			if (hideLeaves && part.name !== 'wood') continue;
-			scene.createMesh({
-				mesh: geometry.fromArrays(part.arrays),
-				material: part.name === 'wood' ? bark : leaves,
-				castShadows: !castReal,
-				receiveShadows: true,
-			});
-		}
-		// A shadow proxy casts from the coarsest level alone, so a low sun can show what it leaves out.
-		if (castReal) {
-			const coarse = asset.levels[shadowCasterLevel(asset)];
-			for (const part of coarse?.parts ?? []) {
-				// A posed view hides the foliage in the caster too, or the proxy's leaves reappear.
-				if (hideLeaves && part.name !== 'wood') continue;
-				scene.createMesh({
-					mesh: geometry.fromArrays(part.arrays),
-					material: part.name === 'wood' ? bark : leaves,
-					castShadows: true,
-					receiveShadows: false,
-				});
-			}
-		}
-	}
-
+	const chosenCard =
+		VIEW === 'leaf' && leavesPart ? chooseCard(leavesPart, per, center) : undefined;
 	const crownTop = Math.max(max[1], start + 0.1);
 	const span = Math.max(max[0] - min[0], max[2] - min[2], 1);
 	let position: [number, number, number];
@@ -316,14 +264,18 @@ export default defineSketch((ctx) => {
 			target[1] + direction[1] * reach,
 			target[2] + direction[2] * reach,
 		];
-	} else if (VIEW === 'leaf' && card) {
+	} else if (chosenCard) {
 		// Stand on the card's own normal and frame the card alone.
-		target = card.centre;
+		target = chosenCard.centre;
 		fov = 34;
-		const distance = card.radius * 3.2;
+		const distance = chosenCard.radius * 3.2;
 		// A card that faces straight up would put the camera's up axis along the view, which leaves
 		// the view without a basis; a small sideways lean keeps it well defined.
-		const facing = normalize(card.normal[0] + 0.18, card.normal[1] + 0.02, card.normal[2] + 0.18);
+		const facing = normalize(
+			chosenCard.normal[0] + 0.18,
+			chosenCard.normal[1] + 0.02,
+			chosenCard.normal[2] + 0.18,
+		);
 		position = [
 			target[0] + facing[0] * distance,
 			target[1] + facing[1] * distance,
@@ -360,5 +312,93 @@ export default defineSketch((ctx) => {
 		target,
 	});
 	scene.setActiveCamera(camera);
-	return {};
+
+	// The wind is a clip's business: a still of a plant that is swaying is a still of a different
+	// plant on every device, and the review compares frames that must hold still.
+	const wind = WIND ? createWind(ctx, { camera, box: 96, grid: 64 }) : undefined;
+	const field = wind ? plantWind(ctx, asset, wind.field, { swayDistance: 0 }) : undefined;
+	const leaves = plantMaterial(ctx, {
+		atlases,
+		part: 'leaves',
+		cell: leafCellFor(SPECIES),
+		color: SPECIES.color.leaf as [number, number, number],
+		transmission: SPECIES.color.transmission,
+		alphaCutoff: SPECIES.leaf?.kind === 'needle' ? 0.2 : 0.24,
+		...(field ? { wind: field } : {}),
+	});
+	const bark = plantMaterial(ctx, {
+		atlases,
+		part: 'wood',
+		color: SPECIES.color.bark as [number, number, number],
+		barkCell: barkCellFor(SPECIES),
+		barkTiles: 5,
+		...(field ? { wind: field } : {}),
+	});
+	/** The card that the leaf view draws alone: one that faces the sky and stands at the surface. */
+	if (chosenCard && leavesPart) {
+		const positions = leavesPart.arrays.positions;
+		const chosen = chosenCard.chosen;
+		// One card alone: the frame shows its atlas and nothing of its neighbours, so the leaf shape
+		// is what the eye reads rather than the pile in front of it.
+		const indices = leavesPart.arrays.indices;
+		const first = chosen / 3;
+		const perCard = indices.length / (positions.length / 3 / per);
+		const ordinal = Math.round(chosen / (per * 3));
+		const start = ordinal * perCard;
+		const sliced: Uint32Array = Uint32Array.from(
+			indices.subarray(start, start + perCard),
+			(value) => value - first,
+		);
+		const arrays = {
+			positions: positions.slice(chosen, chosen + per * 3),
+			normals: leavesPart.arrays.normals.slice(chosen, chosen + per * 3),
+			uvs: leavesPart.arrays.uvs.slice(first * 2, (first + per) * 2),
+			colors: leavesPart.arrays.colors.slice(first * 4, (first + per) * 4),
+			...(leavesPart.arrays.targets
+				? { targets: leavesPart.arrays.targets.slice(first * 4, (first + per) * 4) }
+				: {}),
+			indices: sliced,
+		};
+		scene.createMesh({ mesh: geometry.fromArrays(arrays), material: leaves, castShadows: false });
+	} else {
+		// A tall dense crown hides its bole completely, so a trunk view can draw the wood alone. The
+		// manifest says when a view hides the foliage.
+		// A trunk view draws the wood alone: the bark is what it is for, and a crown that reaches low
+		// would otherwise fill the frame with leaves.
+		const hideLeaves = VIEW === 'trunk' || VIEW === 'skeleton';
+		// The posed trunk view keeps the real caster, so the bark is lit as bark and not as a shadow test.
+		const castReal = SHADOW_PROXY && VIEW !== 'trunk';
+		for (const part of parts) {
+			// Only the wood survives a posed view: a frond, a blade and a leaf are all foliage.
+			if (hideLeaves && part.name !== 'wood') continue;
+			scene.createMesh({
+				mesh: geometry.fromArrays(part.arrays),
+				material: part.name === 'wood' ? bark : leaves,
+				castShadows: !castReal,
+				receiveShadows: true,
+			});
+		}
+		// A shadow proxy casts from the coarsest level alone, so a low sun can show what it leaves out.
+		if (castReal) {
+			const coarse = asset.levels[shadowCasterLevel(asset)];
+			for (const part of coarse?.parts ?? []) {
+				// A posed view hides the foliage in the caster too, or the proxy's leaves reappear.
+				if (hideLeaves && part.name !== 'wood') continue;
+				scene.createMesh({
+					mesh: geometry.fromArrays(part.arrays),
+					material: part.name === 'wood' ? bark : leaves,
+					castShadows: true,
+					receiveShadows: false,
+				});
+			}
+		}
+	}
+
+	if (!wind) return {};
+	return {
+		onUpdate() {
+			wind.update();
+			setWindLayer([leaves, bark], wind.field);
+		},
+	};
 });
