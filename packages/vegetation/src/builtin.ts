@@ -596,7 +596,15 @@ export const CREEK_SPECIES: readonly Species[] = [
 			flowers: 7,
 		},
 		wind: { stiffness: [0.55], flutter: 0.03, frequency: 2.4 },
-		color: { bark: [0.2, 0.18, 0.12], leaf: [0.12, 0.3, 0.09], tint: 0.12, transmission: 0.42 },
+		// A hosta's flowers are pale lilac on tall stems, so its heads draw in that colour rather than
+		// as leaves.
+		color: {
+			bark: [0.2, 0.18, 0.12],
+			leaf: [0.12, 0.3, 0.09],
+			flower: [0.66, 0.6, 0.82],
+			tint: 0.12,
+			transmission: 0.42,
+		},
 		height: 0.6,
 		trunks: 0,
 		heightVariance: 0.12,
