@@ -17,12 +17,15 @@ import {
 	BUDGETS,
 	CANVAS_BUDGETS,
 	COUNTED_IN_CALLER,
+	callBudgetFor,
 	DAY_BUDGETS,
 	PAGE_SWITCHES,
 	placeBudget,
 	SKY_ENVIRONMENT_BUDGETS,
 	STATS_BUDGETS,
 	SWIFTSHADER_BUDGETS,
+	TASK_CALL_BUDGETS,
+	WIND_CALL_BUDGETS,
 } from '../allocation.ts';
 
 let nextId = 1;
@@ -227,5 +230,20 @@ describe('budgets', () => {
 		);
 		const unbudgeted = [...COUNTED_IN_CALLER.values()].filter((place) => !budgeted.has(place));
 		expect(unbudgeted).toEqual([]);
+	});
+});
+
+describe('per-call budgets', () => {
+	test("a switch's own figure holds for its run alone", () => {
+		const place = 'n.onmessage shared/tasks.ts';
+		const wind = PAGE_SWITCHES.find((choice) => choice.flag === '--wind');
+		const splats = PAGE_SWITCHES.find((choice) => choice.flag === '--splats');
+		// The shared figure guards the splats' answer, at 145.0, and every run without the switch.
+		expect(TASK_CALL_BUDGETS[place]).toBe(336);
+		expect(callBudgetFor('sketch-worker', place)).toBe(336);
+		expect(callBudgetFor('sketch-worker', place, splats ? [splats] : [])).toBe(336);
+		// The wind's answer carries a transferred array, so its own run allows it 368.
+		expect(WIND_CALL_BUDGETS[place]).toBe(368);
+		expect(callBudgetFor('sketch-worker', place, wind ? [wind] : [])).toBe(368);
 	});
 });
