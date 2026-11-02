@@ -22,6 +22,13 @@ export const SCRIPT_TIER = 'webgl2';
 /** The image size that the states draw at. */
 export const SCRIPT_SIZE = [320, 180] as const;
 
+/**
+ * The time that a state waits for its frame, in the command and in the review. A software GPU
+ * builds the island's pipelines before it draws the first frame, which takes it past five minutes
+ * while the heavy shards share a runner.
+ */
+export const SCRIPT_TIMEOUT_SECONDS = 600;
+
 /** The page that draws the showcase, at the preset that the real GPU's references use. */
 const SHOWCASE_PAGE =
 	'/tests/pages/image.html?sketch=/examples/showcase/island/sketch.ts&size=320x180&preset=high';
@@ -41,9 +48,7 @@ export const SCRIPT_RUNS: ImageRun[] = SCRIPT_STATES.map((state) => ({
 	path: SHOWCASE_PAGE,
 	scene: 'examples/showcase/island/sketch.ts',
 	hold: SHOWCASE_HOLD[state],
-	// A software GPU draws a state of the island only after it builds the scene's pipelines, which
-	// takes it past the default minute and past three minutes on a loaded runner.
-	timeoutSeconds: 300,
+	timeoutSeconds: SCRIPT_TIMEOUT_SECONDS,
 	size: SCRIPT_SIZE,
 	expect: {},
 	reference: { test: `${SCRIPT_TEST}-${state}`, tier: SCRIPT_TIER, devices: [] },
