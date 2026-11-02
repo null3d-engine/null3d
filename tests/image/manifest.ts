@@ -1219,7 +1219,12 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		const { uncompressed, clip, timeoutSeconds } = MODEL_SCENES[model] as ModelScene;
 		return {
 			name: `gltf-${model}`,
-			sketch: `tests/pages/sketches/gltf-sketch.ts?model=${model}`,
+			// The interpolation model's row runs the probe that posts its maps' upload facts, so a
+			// browser that loses the maps says so in the run's record; every other model frames as usual.
+			sketch:
+				model === 'texture-linear-interpolation'
+					? 'tests/pages/sketches/probe-gltf-maps-sketch.ts'
+					: `tests/pages/sketches/gltf-sketch.ts?model=${model}`,
 			size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
 			hold: clip?.time ?? 0,
 			...(uncompressed ? { reference: `gltf-${uncompressed}` } : {}),
