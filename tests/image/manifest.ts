@@ -3786,11 +3786,6 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.017 },
 			}),
 			...(demo.group === 'Showcase' && { swiftShaderSwitches: ['preset=low'] }),
-			// The ocean's wave field agrees on all three paths, but a reflection pass that carries a
-			// cadence of two draws black on WebGL2 (.dev/code-review.md). The demo's WebGL2 tier
-			// runs at Medium, whose cadence is two, so its sea loses the sky's mirror and reads
-			// flat. The demo draws the two paths whose reflection keeps its image.
-			...(demo.name === 'ocean' && { tiers: ['webgpu', 'compat'] as const }),
 			// The hero shadow is fine detail on one object, so its demo draws larger than the
 			// other demos, where the tile size's difference shows.
 			...(demo.name === 'hero-shadow' && { size: HERO_SIZE }),

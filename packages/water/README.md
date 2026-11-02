@@ -11,9 +11,8 @@ that a middle line and a width do not describe.
 `createOcean` draws an open sea instead. Its waves come from two or three bands of wave spectra.
 Compute passes transform each band into the height of the sea in every frame. One material sums the
 bands at their own scales, lights their slopes, breaks foam on the crests and mirrors the sky.
-WebGL2 draws the same chain as fragment passes. That path is not ready: its heights have not been
-compared with the other paths since a readback fault on that path was fixed. Draw the ocean on
-WebGPU or in compatibility mode.
+WebGL2 draws the same chain as fragment passes, and each band's heights match the transform on the
+page's thread there as they do on WebGPU.
 
 ## Use
 

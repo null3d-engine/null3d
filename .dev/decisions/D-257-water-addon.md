@@ -2,9 +2,8 @@
 
 Status: decided. Built: the `@null3d/water` add-on, its demo, the reflection's cadence through the
 feature host, one owner for each point where bodies meet, the Creek's migration to the add-on, and
-the ocean. Owed: the cost per preset, for the water and for the ocean, and the WebGL2 reflection's
-image while its cadence waits, which keeps the ocean's demo off that tier. Tasks: M3-F5, M3-E6,
-M3-F9.
+the ocean, which draws on every GPU path. Owed: the cost per preset, for the water and for the
+ocean. Tasks: M3-F5, M3-E6, M3-F9.
 
 Summary: `@null3d/water` draws a river and a lake from one shape and an open sea of wave spectra,
 with waves, ripples, caustics, foam, soft shores, a reflection and an underwater view. The surface
@@ -225,9 +224,12 @@ thread. On WebGPU the worst texel of the read square differs by 0.004 m, and in 
 by 0.004 m, and on WebGL2 by 0.004 m too, of a field of 0.73 m. The former 0.60 m gap on WebGL2
 came from the read: it fetched rows from the other end of the target
 ([D-271](D-271-a-fallback-pass-writes-the-image.md)). With the read fixed, the three paths draw the
-same field, so `ocean-waves` judges WebGL2 like the other tiers. The demo waits on a separate
-fault: a reflection pass that carries a cadence of two draws black on WebGL2, so the sea loses the
-sky's mirror and reads flat. At a cadence of one the pass draws (`.dev/code-review.md`).
+same field, so `ocean-waves` judges WebGL2 like the other tiers.
+
+The reflection keeps its image in the frames that its cadence waits, on every path. The CPU-culled
+builder moves a view's turn on before it culls the view, so the turn's pass records its objects.
+The sampled texture then keeps the last image between turns. The demo draws on every path, and its
+six pictures hold in both reference sets.
 
 **The transform's cost, as trials.** Two pairs of trials at Low, with the reflection at its
 longest cadence, read the WebGL2 fragment chain as a positive difference in every round: 1.08 to
@@ -312,9 +314,8 @@ vertex's world place is the origin with its place in the mesh.
 - The three GPU paths draw one sea. `ocean-waves` reads each band's heights back and compares them
   with the page's transform: the worst texel differs by 0.004 m of a 0.73 m field on WebGPU, in
   compatibility mode and on WebGL2, after [D-271](D-271-a-fallback-pass-writes-the-image.md) made
-  the read keep the rows that the shader names. The demo draws WebGPU and compatibility mode until
-  a reflection pass that waits keeps its image on WebGL2: the demo's WebGL2 tier runs at Medium,
-  whose cadence is two, and that path draws the mirror black.
+  the read keep the rows that the shader names. The demo draws on every path: its WebGL2 tier runs
+  at Medium, whose cadence is two, and the reflection keeps its last image there.
 
 ## Consequences
 
