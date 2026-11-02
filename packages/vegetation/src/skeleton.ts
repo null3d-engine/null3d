@@ -242,10 +242,17 @@ function grow(
 			const angle = (upright > 0 ? Math.max(0, spread - upright * heightShare) : spread) * RADIANS;
 			const [sx, sy, sz] = sideOf(tx, ty, tz);
 			const [tiltedX, tiltedY, tiltedZ] = rotate(tx, ty, tz, sx, sy, sz, angle);
+			// A whorled level spaces each ring's boughs evenly around it, and turns each ring by the
+			// golden angle, so no direction between two boughs goes thin all the way up the tree. An
+			// even spread by the child's own number would not: a ring of three boughs at a golden
+			// angle from each other leaves three gaps that line up with each other on some views.
 			const yaw =
-				GOLDEN_ANGLE * k +
+				(whorls > 0
+					? ((k % perWhorl) / perWhorl) * Math.PI * 2 + ring * GOLDEN_ANGLE
+					: GOLDEN_ANGLE * k) +
 				levelRecord.twist * RADIANS * level +
-				(unitAt(seed, species.seedSalt, variant, key, KEY_TWIST) * 2 - 1) * 0.4;
+				(unitAt(seed, species.seedSalt, variant, key, KEY_TWIST) * 2 - 1) *
+					(whorls > 0 ? WHORL_YAW_JITTER : 0.4);
 			const [cdx, cdy, cdz] = rotate(tiltedX, tiltedY, tiltedZ, tx, ty, tz, yaw);
 			const child = grow(growth, level + 1, index, [cx, cy, cz], [cdx, cdy, cdz], childLength, key);
 			if (child >= 0) {
@@ -306,6 +313,12 @@ function grow(
 	}
 	return index;
 }
+
+/**
+ * How far a whorled bough's angle may wander from its ring's place, in radians. A ring spreads its
+ * boughs evenly, and a wide wander breaks that spread, so the cone's width moves with the view.
+ */
+const WHORL_YAW_JITTER = 0.15;
 
 /** The kinds that grow a branch system rather than a rosette. */
 const BRANCHED: ReadonlySet<SpeciesKind> = new Set(['tree', 'conifer', 'shrub']);

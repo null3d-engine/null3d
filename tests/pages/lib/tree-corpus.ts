@@ -37,14 +37,16 @@ const SPRUCE: Species = {
 	bark: 'spruce',
 	branchLevels: [
 		level({
-			children: 30,
+			children: 32,
 			prune: 0.02,
 			length: 18,
 			lengthVariance: 0.06,
 			angle: 0,
 			angleVariance: 0,
-			curve: 6,
-			curveVariance: 3,
+			// A spruce's trunk runs straight: a curved bole carries the whole cone sideways and the
+			// crown's width then depends on which side the view comes from.
+			curve: 2,
+			curveVariance: 1,
 			taper: 0.05,
 			start: 0,
 			end: 1,
@@ -56,18 +58,22 @@ const SPRUCE: Species = {
 			children: 3,
 			prune: 0.02,
 			length: 5.2,
-			lengthVariance: 0.12,
+			// A bough ring wider than this in length or angle makes the cone's outline move as the
+			// view turns, so each ring stays close to its own size and angle.
+			lengthVariance: 0.06,
 			angle: 92,
-			angleVariance: 7,
+			angleVariance: 3,
+			// A bough that droops much more than its ring's others reaches lower and further out, and
+			// the cone's widest row then follows that one tip round the tree.
 			curve: -16,
-			curveVariance: 10,
+			curveVariance: 3,
 			taper: 0.02,
 			start: 0.14,
 			end: 1,
 			sides: 5,
 			segments: 6,
 			twist: 90,
-			whorls: 13,
+			whorls: 8,
 			whorlTip: true,
 			upright: 14,
 			thin: 0.12,
@@ -105,7 +111,7 @@ const SPRUCE: Species = {
 			upright: 15,
 		}),
 	],
-	crown: { shape: 'conical', start: 0.06, spread: 0.25, pull: 0.04, floor: 0.03, leafFloor: 0 },
+	crown: { shape: 'conical', start: 0.06, spread: 0.05, pull: 0.04, floor: 0.03, leafFloor: 0 },
 	leaf: {
 		kind: 'needle',
 		cards: 46,
@@ -126,6 +132,9 @@ const SPRUCE: Species = {
 	color: { bark: [0.22, 0.16, 0.12], leaf: [0.12, 0.27, 0.11], tint: 0.05, transmission: 0.24 },
 	height: 18,
 	leader: 0.96,
+	// A spruce's leader stands straight up its cone, so the crown's outline does not swing with the
+	// view because the whole tree leans.
+	stemLean: 0,
 	trunks: 1,
 	heightVariance: 0.14,
 	size: [0.8, 1.2],
