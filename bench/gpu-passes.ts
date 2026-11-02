@@ -31,10 +31,9 @@ import {
 	preparedBaseDir,
 	runComparison,
 } from './gpu-check';
-import type { BuildRun, ComparisonRecord } from './lib/compare';
+import type { Build, ComparisonRecord } from './lib/compare';
 import { GPU_CHECK_PAGE } from './lib/gpu-check';
 import { type PassRun, passChanges, passTable, splitRefusal } from './lib/gpu-passes';
-import type { BenchResult } from './lib/report';
 import { benchPagesFresh, comparePagesDir } from './lib/serve';
 
 /** The page whose passes the split compares: S4's textured materials. */
@@ -87,14 +86,42 @@ interface StatsWithPasses {
 	gpuPassMs?: { name: string; ms: { median: number } }[] | null;
 }
 
+/** The fields of a comparison run that the split reads. */
+export interface SplitRun {
+	build: Build;
+	scene: string;
+	kind: string;
+	round: number;
+	result: { ok: boolean; error?: string; stats?: unknown };
+}
+
+/** The fields of a comparison record that the split reads. */
+export interface SplitRecord {
+	measurementChanges: readonly string[];
+	results: readonly SplitRun[];
+	commits: { baseline: string; new: string };
+}
+
+/** What the split prints for a record, and the exit code that its refusal sets. */
+export interface SplitReport {
+	/** True when the builds measured different pages, so no pass compares. */
+	refused: boolean;
+	/** The lines to print: the comparison's refusal, or the table of passes. */
+	lines: string[];
+	/** Runs that failed, which the surviving medians do not include. */
+	warnings: string[];
+	/** 1 when the split refuses, 0 when it prints the table. */
+	exitCode: number;
+}
+
 /** The passes that a run timed, in the frame's order. */
-const passesOf = (result: BenchResult): PassRun['passes'] => {
+const passesOf = (result: SplitRun['result']): PassRun['passes'] => {
 	const stats = result.stats as StatsWithPasses | undefined;
 	return (stats?.gpuPassMs ?? []).map(({ name, ms }) => ({ name, ms: ms.median }));
 };
 
 /** The split's page's runs, and why any run of it gave no figures. */
-function pageRuns(results: readonly BuildRun[]): { runs: PassRun[]; failed: string[] } {
+function pageRuns(results: readonly SplitRun[]): { runs: PassRun[]; failed: string[] } {
 	const runs: PassRun[] = [];
 	const failed: string[] = [];
 	for (const { build, round, result } of results) {
@@ -107,7 +134,46 @@ function pageRuns(results: readonly BuildRun[]): { runs: PassRun[]; failed: stri
 	return { runs, failed };
 }
 
-/** Times the page in both builds, and prints the table of its passes. */
+/**
+ * The tool's answer for a comparison record: the comparison's refusal lines when the builds
+ * measured different pages, or else the table of passes. The refusal comes first, so a record of
+ * different pages prints no table. Throws when no pass has GPU time from both builds, since no
+ * table can say anything then.
+ */
+export function splitReport(record: SplitRecord, runs: number): SplitReport {
+	const refusal = splitRefusal(record.measurementChanges);
+	if (refusal) return { refused: true, lines: refusal, warnings: [], exitCode: 1 };
+	const results = record.results.filter(
+		(run) => run.scene === SPLIT_SCENE && run.kind === GPU_CHECK_PAGE,
+	);
+	const { runs: passRuns, failed } = pageRuns(results);
+	const warnings =
+		failed.length > 0
+			? [`${failed.length} of ${results.length} runs failed: ${failed.join('; ')}`]
+			: [];
+	const rows = passChanges(passRuns);
+	if (rows.every((row) => row.deltaMs === null))
+		throw new Error(
+			passRuns.every((run) => run.passes.length === 0)
+				? 'no run gave per-pass GPU time: the browser may have no GPU timer, or the builds publish none'
+				: 'no pass has GPU time from both builds',
+		);
+	return {
+		refused: false,
+		warnings,
+		exitCode: 0,
+		lines: [
+			`GPU time per pass: ${SPLIT_SCENE} at ${SPLIT_PRESET}, ${runs} runs of each build.`,
+			`baseline: ${record.commits.baseline}`,
+			`new: ${record.commits.new}`,
+			'Each figure is a median over the runs that timed the pass; the change is the difference against the baseline.',
+			'',
+			...passTable(rows),
+		],
+	};
+}
+
+/** Times the page in both builds, prints the split's answer, and sets its exit code. */
 function measure(options: GpuPassesOptions): void {
 	const base = preparedBaseDir(options, PREPARE);
 	if (!benchPagesFresh(REPO_ROOT, comparePagesDir('new')))
@@ -127,35 +193,11 @@ function measure(options: GpuPassesOptions): void {
 		`preset=${SPLIT_PRESET}`,
 	]);
 	const record = JSON.parse(readFileSync(join(folder, 'runs.json'), 'utf8')) as ComparisonRecord;
-	const refusal = splitRefusal(record.measurementChanges);
-	if (refusal) {
-		for (const line of refusal) console.error(line);
-		process.exitCode = 1;
-		return;
-	}
-	const results = record.results.filter(
-		(run) => run.scene === SPLIT_SCENE && run.kind === GPU_CHECK_PAGE,
-	);
-	const { runs, failed } = pageRuns(results);
-	if (failed.length > 0)
-		console.error(`${failed.length} of ${results.length} runs failed: ${failed.join('; ')}`);
-	const rows = passChanges(runs);
-	if (rows.every((row) => row.deltaMs === null))
-		throw new Error(
-			runs.every((run) => run.passes.length === 0)
-				? 'no run gave per-pass GPU time: the browser may have no GPU timer, or the builds publish none'
-				: 'no pass has GPU time from both builds',
-		);
-	console.log(
-		`GPU time per pass: ${SPLIT_SCENE} at ${SPLIT_PRESET}, ${options.runs} runs of each build.`,
-	);
-	console.log(`baseline: ${record.commits.baseline}`);
-	console.log(`new: ${record.commits.new}`);
-	console.log(
-		'Each figure is a median over the runs that timed the pass; the change is the difference against the baseline.',
-	);
-	console.log();
-	for (const line of passTable(rows)) console.log(line);
+	const report = splitReport(record, options.runs);
+	for (const warning of report.warnings) console.error(warning);
+	if (report.refused) for (const line of report.lines) console.error(line);
+	else for (const line of report.lines) console.log(line);
+	if (report.exitCode !== 0) process.exitCode = report.exitCode;
 }
 
 async function main(): Promise<void> {
