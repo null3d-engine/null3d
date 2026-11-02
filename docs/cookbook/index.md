@@ -275,7 +275,12 @@ The sketch downloads its files at once, and posts how far the downloads have com
 import { defineSketch } from '@null3d/engine';
 
 export default defineSketch(async ({ scene, assets, page }) => {
-  assets.onProgress((loaded, total) => page.post('loading', loaded / total));
+  assets.onProgress((loaded, total) =>
+    page.post('loading', {
+      text: 'Downloading the scene files',
+      value: total > 0 ? loaded / Math.max(total, loaded) : undefined,
+    }),
+  );
   await assets.preload(['/models/knight.glb', '/env/sunset.hdr']);
 
   // Both files come from memory now.
