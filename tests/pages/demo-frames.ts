@@ -11,6 +11,8 @@ const params = new URLSearchParams(location.search);
 
 /** The seconds that the page measures after the first frame. */
 const SECONDS = Number(params.get('seconds') ?? 5);
+/** How long the page waits for the preset check's result before it measures anyway. */
+const CHECK_WAIT_MS = 30_000;
 
 /**
  * The bytes that the page's own threads downloaded, from its resource timings. A worker's loads are
@@ -51,6 +53,14 @@ run('demo-frames', async () => {
 	await engine.firstFrame;
 	const bytesBeforeFirstFrame = downloadedBytes();
 	progress('the first frame drew');
+	// The preset check draws its rounds after the first frame, and a lowering rebuilds the scene's
+	// settings. Wait for its result, so the measure covers the preset the session runs rather than
+	// the check's own frames. A page that names its preset checks nothing.
+	if (!params.has('preset')) {
+		const limit = performance.now() + CHECK_WAIT_MS;
+		while (engine.mode.presetCheck === null && performance.now() < limit)
+			await new Promise((resolve) => setTimeout(resolve, 50));
+	}
 	// The frame figures' code loads on the measure's first use. A tunnel can fail that one request
 	// and take the measure with it, so warm it in a very short measure that is not reported, and
 	// try the timed measure once more if its first attempt fails.
