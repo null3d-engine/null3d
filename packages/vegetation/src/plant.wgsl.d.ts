@@ -4,8 +4,8 @@ import type { CompiledMaterial } from '@null3d/vite-plugin';
 
 declare const shader: CompiledMaterial<
 	{
-		readonly cells: 'vec2f';
 		readonly cell: 'vec2f';
+		readonly barkCell: 'vec2f';
 		readonly part: 'f32';
 		readonly tiles: 'f32';
 		readonly tint: 'vec3f';
