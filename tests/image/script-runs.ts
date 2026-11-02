@@ -41,7 +41,9 @@ export const SCRIPT_RUNS: ImageRun[] = SCRIPT_STATES.map((state) => ({
 	path: SHOWCASE_PAGE,
 	scene: 'examples/showcase/island/sketch.ts',
 	hold: SHOWCASE_HOLD[state],
-	timeoutSeconds: 180,
+	// A software GPU draws a state of the island only after it builds the scene's pipelines, which
+	// takes it past the default minute and past three minutes on a loaded runner.
+	timeoutSeconds: 300,
 	size: SCRIPT_SIZE,
 	expect: {},
 	reference: { test: `${SCRIPT_TEST}-${state}`, tier: SCRIPT_TIER, devices: [] },
