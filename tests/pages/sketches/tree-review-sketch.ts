@@ -193,10 +193,11 @@ export default defineSketch((ctx) => {
 		// manifest says when a view hides the foliage.
 		// A trunk view draws the wood alone: the bark is what it is for, and a crown that reaches low
 		// would otherwise fill the frame with leaves.
-		const hideLeaves = VIEW === 'trunk';
+		const hideLeaves = VIEW === 'trunk' || VIEW === 'skeleton';
 		// The posed trunk view keeps the real caster, so the bark is lit as bark and not as a shadow test.
 		const castReal = SHADOW_PROXY && VIEW !== 'trunk';
 		for (const part of parts) {
+			// Only the wood survives a posed view: a frond, a blade and a leaf are all foliage.
 			if (hideLeaves && part.name !== 'wood') continue;
 			scene.createMesh({
 				mesh: geometry.fromArrays(part.arrays),
@@ -209,6 +210,8 @@ export default defineSketch((ctx) => {
 		if (castReal) {
 			const coarse = asset.levels[shadowCasterLevel(asset)];
 			for (const part of coarse?.parts ?? []) {
+				// A posed view hides the foliage in the caster too, or the proxy's leaves reappear.
+				if (hideLeaves && part.name !== 'wood') continue;
 				scene.createMesh({
 					mesh: geometry.fromArrays(part.arrays),
 					material: part.name === 'wood' ? bark : leaves,
@@ -224,7 +227,19 @@ export default defineSketch((ctx) => {
 	let position: [number, number, number];
 	let target: [number, number, number];
 	let fov: number;
-	if (VIEW === 'crown') {
+	if (VIEW === 'skeleton') {
+		// The crown's own frame with the foliage hidden: the boughs, their spacing along the trunk and
+		// their taper can be judged only when the leaves that sit on them are not in front of them.
+		target = [center[0], start + (crownTop - start) * 0.62, center[2]];
+		fov = CROWN_FOV;
+		const distance = Math.max(3.5, span * 0.7 + radius * 0.55);
+		const direction = normalize(0.72, 0.16, 1);
+		position = [
+			target[0] + direction[0] * distance,
+			target[1] + direction[1] * distance,
+			target[2] + direction[2] * distance,
+		];
+	} else if (VIEW === 'crown') {
 		// Stand off the crown's middle and look along its side, so the close-up fills the frame with
 		// the crown's structure rather than one leaf card.
 		target = [center[0], start + (crownTop - start) * 0.62, center[2]];

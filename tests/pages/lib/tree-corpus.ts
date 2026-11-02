@@ -1084,6 +1084,25 @@ const BEECH_COPPER: Species = {
  * rows only, and cannot settle its bark, its colour or its species identity. */
 const BIRCH: Species = { ...(builtInSpecies('birch') as Species), id: 'review-birch' };
 
+/** The add-on's built-in forms, drawn as the catalogue's archetypes: the broad dome, the columnar
+ * conifer, the vase, the shrub, the fern, the broad rosette and the tuft. */
+const ARCHETYPES: readonly Species[] = [
+	'broadleaf',
+	'conifer',
+	'beech',
+	'shrub',
+	'fern',
+	'hosta',
+	'meadow-grass',
+].map((id) => ({ ...(builtInSpecies(id) as Species), id: `review-${id}` }));
+
+/** A bare winter tree: the built-in broadleaf's skeleton with its leaves withheld. */
+const BARE: Species = {
+	...(builtInSpecies('broadleaf') as Species),
+	id: 'review-bare',
+	leaf: { ...(builtInSpecies('broadleaf') as Species).leaf!, bare: true },
+};
+
 /** The trees of the woodland review, in the order that its page draws them. */
 export const REVIEW_TREES: readonly Species[] = [
 	SPRUCE,
@@ -1098,6 +1117,8 @@ export const REVIEW_TREES: readonly Species[] = [
 	BEECH_COPPER,
 	BLUE_CANOPY,
 	BIRCH,
+	...ARCHETYPES,
+	BARE,
 ];
 
 /** The review tree with an id, or undefined when the list has none. */
