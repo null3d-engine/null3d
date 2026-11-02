@@ -984,6 +984,12 @@ product pages.
   that capture. The showroom's flakes now take a wider light and a lower glint, and its clear coat
   is a little rougher. That is a look choice, not only a fix: it moves all three pictures, and the
   owner should rule on the nose's look.
+- **The paint costs what its flakes count.** On a cloud Galaxy S25, one panel of the car paint filled
+  the view against the same clear-coated metal. The paint raised the frame's GPU time by 75 per cent
+  at Low, 5.18 ms over a buffer of 540 by 932 pixels. At Medium it raised it by nearly half, 6.08 ms
+  over 720 by 1243 pixels. The flake count's loop, forced to eight steps a pixel, adds 0.88 ms.
+  [D-255](decisions/D-255-car-paint-glints.md) gives the rows, their conditions and the presets that
+  did not resolve.
 
 ### Engine features for the showcase
 
