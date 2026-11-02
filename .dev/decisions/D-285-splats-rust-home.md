@@ -47,6 +47,8 @@ The selection is `crates/null3d-splats`. It reads a parameter block of 64-bit fl
 
 The core stores each chunk's arrays for as long as the cloud lives. The splats' memory is therefore the same bytes that the JavaScript reader held before, in the engine's memory instead of the sketch worker's heap. The sketch's slot keeps only a flag that the chunk arrived, because the rows live in the core once the writer copied them, so a cloud is not held twice. A cloud that is destroyed forgets its chunks.
 
+The measured cost at 500,000 splats, the High preset's count, is 0.6 to 1.6 ms for the TypeScript pack. The core pack costs 0.7 to 2.0 ms. Both copy the same 28 MB, so the port removes the JavaScript loop and its per-frame objects rather than the copy. The selection costs 1 to 4 us a call at a realistic 20-chunk cloud. At a 4,096-chunk cut it costs 0.5 to 0.8 ms, against 0.9 to 1.7 ms in TypeScript. The pack therefore costs about a thousand times the selection, which makes it the loop whose cost a player could feel.
+
 ## What stays in TypeScript
 
 Two small loops over the chunk list stay on the sketch thread, and neither is a loop that hard rule 42 names:
@@ -61,7 +63,8 @@ The worker keeps a selector's arrays while they hold a grown cloud's chunk count
 ## Consequences
 
 - `crates/null3d-core/src/chunk_rows.rs` holds the chunk store and the pack. Its tests mirror the TypeScript reference's cases.
-- `crates/null3d-splats` holds the selection and the sort. `packages/splats/src/select-parity.test.ts` compares the built module with the reference over seven clouds and views, over a cloud whose distances all tie, and over a `SharedArrayBuffer` as a page with shared memory gives it, which is the path that production takes.
+- `crates/null3d-splats` holds the selection and the sort. `packages/splats/src/select-parity.test.ts` compares the built module with the reference over seven clouds and views. It also compares a cloud whose distances all tie, a `SharedArrayBuffer` as a page with shared memory gives it, and two frames that share one version. A shared buffer is the path that production takes.
+- `packages/splats/src/select-task.ts` keeps a selector's chunk table in the module's memory while the input's version and chunk count agree, so a moved frame copies no table.
 - `packages/engine/src/shared/tasks.test.ts` covers the loader's caches: a URL's text and a task's module key are made once, a failed download is tried again, and two concurrent asks share the one pending module.
 - `packages/splats/src/pack.ts` stays as the TypeScript reference, and the draw no longer calls it.
 - `packages/engine/src/scene/chunk-rows.ts` holds the public writer. `docs/concepts/instances.md` names the hook, and the API reference comes from its doc comments.
