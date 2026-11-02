@@ -43,7 +43,9 @@ export default defineSketch((ctx) => {
 	const SHADOWS = params.get('shadows') !== 'off';
 	// A shadow proxy casts from the coarsest level alone, and a low sun stretches whatever the proxy
 	// leaves out across the ground where it shows.
-	const SHADOW_PROXY = params.get('shadowproxy') === '1';
+	// Every stand casts from the level the record names, so a cost run measures the shipping
+	// arrangement rather than a variant of it.
+	const SHADOW_PROXY = true;
 	const LOW_SUN = params.get('sun') === 'low';
 	scene.setBackground('#9fc0dd');
 	scene.createDirectionalLight({

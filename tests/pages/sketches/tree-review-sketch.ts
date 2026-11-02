@@ -45,7 +45,8 @@ export default defineSketch((ctx) => {
 	const { scene, geometry, materials } = ctx;
 	scene.setBackground('#9fc0dd');
 	const LOW_SUN = params.get('sun') === 'low';
-	const SHADOW_PROXY = params.get('shadowproxy') === '1';
+	// Every view carries the shipping shadow arrangement: the caster level the record names.
+	const SHADOW_PROXY = true;
 	scene.createDirectionalLight({
 		direction: LOW_SUN ? [-0.85, -0.35, -0.4] : [-0.5, -1, -0.35],
 		intensity: 3.1,
