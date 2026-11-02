@@ -4,7 +4,9 @@
 // run moves both alike. ?scale= draws at that render scale, held with the frame-budget governor off:
 // a governor that moved the scale would change the pixel count as the sides were timed, which hides
 // the work being measured. ?governor lets it run instead. ?rounds= and ?seconds= set the
-// measurement. It runs only in a quiet window on a computer with a GPU of its own:
+// measurement, and ?paint= picks the painted side's parts: full, flakes, body, loop or loop-0, as
+// tests/pages/sketches/car-paint-cost-sketch.ts describes. It runs only in a quiet window on a
+// computer with a GPU of its own:
 // NULL3D_PAINT_COST=1 bun run test:browser -- car-paint-cost.spec.ts.
 import { createEngine } from '@null3d/engine';
 import { featureCost } from './lib/feature-cost';
@@ -13,6 +15,9 @@ import { run } from './lib/result';
 const params = new URLSearchParams(location.search);
 const scale = Number(params.get('scale') ?? '1');
 const fixed = !params.has('governor');
+const paint = params.get('paint') ?? 'full';
+if (!['full', 'flakes', 'body', 'loop', 'loop-0'].includes(paint))
+	throw new Error(`the page takes no paint ${paint}`);
 const rounds = params.get('rounds');
 if (rounds !== null && !(Number.isSafeInteger(Number(rounds)) && Number(rounds) >= 1))
 	throw new Error(`the page takes no round count ${rounds}`);
@@ -27,7 +32,7 @@ run('car-paint-cost', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
 	const sketch = new URL('./sketches/car-paint-cost-sketch.ts', import.meta.url);
-	sketch.search = `?scale=${scale}${fixed ? '&fixed' : ''}`;
+	sketch.search = `?scale=${scale}${fixed ? '&fixed' : ''}&paint=${paint}`;
 	const engine = await createEngine({ canvas, sketch });
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
@@ -70,6 +75,7 @@ run('car-paint-cost', async () => {
 		tier: engine.capabilities.tier,
 		hdr: engine.capabilities.hdr,
 		scale,
+		paint,
 		buffer,
 		// The window in CSS pixels and the screen's pixel ratio: the preset's cap sets the drawing
 		// buffer's size from them.
