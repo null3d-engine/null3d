@@ -3277,12 +3277,16 @@ impl FrameGraph {
                     // The fragment form of a compute pass keeps the states in the same layers that
                     // the compute pass's target holds, so a page reads its images on both paths.
                     // It keeps the compute pass's own format too: an 8-bit scene color rounds the
-                    // small values a compute pass writes, and clamps their sign away.
+                    // small values a compute pass writes, and clamps their sign away. It keeps the
+                    // one sample's array and shown texture: a material samples the image outside
+                    // the graph's passes, as it does for the passes that draw a target whole.
                     Some(pass) if pass.fallback => Target::color(if pass.format == 0 {
                         fullscreen_target_format(self.scene_color)
                     } else {
                         pass.format
                     })
+                    .array()
+                    .shown()
                     .layers(pass.layers.max(1) * if pass.history { 2 } else { 1 })
                     .clearable()
                     .copy_source(),
