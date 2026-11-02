@@ -245,6 +245,36 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
+	"chromium-swiftshader/compat/probe-grid-mirror.png": {
+		"test": "probe-grid-mirror",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/compat/probe-grid-wall-leak.png": {
+		"test": "probe-grid-wall-leak",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
+		"test": "probe-grid-wall-night",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/compat/probe-grid-wall.png": {
+		"test": "probe-grid-wall",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/compat/probe-grid.png": {
+		"test": "probe-grid",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
 	"chromium-swiftshader/compat/row-colors.png": {
 		"test": "row-colors",
 		"tier": "compat",
@@ -593,6 +623,36 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
+	"chromium-swiftshader/webgl2/probe-grid-mirror.png": {
+		"test": "probe-grid-mirror",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/webgl2/probe-grid-wall-leak.png": {
+		"test": "probe-grid-wall-leak",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
+		"test": "probe-grid-wall-night",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/webgl2/probe-grid-wall.png": {
+		"test": "probe-grid-wall",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/webgl2/probe-grid.png": {
+		"test": "probe-grid",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
 	"chromium-swiftshader/webgl2/proto-ao-bitmask-half.png": {
 		"test": "proto-ao-bitmask-half",
 		"tier": "webgl2",
@@ -940,6 +1000,36 @@
 		"tier": "webgpu",
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
+	},
+	"chromium-swiftshader/webgpu/probe-grid-mirror.png": {
+		"test": "probe-grid-mirror",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/webgpu/probe-grid-wall-leak.png": {
+		"test": "probe-grid-wall-leak",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
+		"test": "probe-grid-wall-night",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/webgpu/probe-grid-wall.png": {
+		"test": "probe-grid-wall",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/webgpu/probe-grid.png": {
+		"test": "probe-grid",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
 	},
 	"chromium-swiftshader/webgpu/proto-ao-bitmask-half.png": {
 		"test": "proto-ao-bitmask-half",

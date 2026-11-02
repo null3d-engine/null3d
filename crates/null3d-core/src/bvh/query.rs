@@ -95,6 +95,11 @@ pub struct QueryHit {
     pub point: [f64; 3],
     /// The unit normal of the triangle in the world, on the side that faces the ray's origin.
     pub normal: [f32; 3],
+    /// True when the ray met the back of the triangle: the triangle's own normal points along the
+    /// ray, so the ray's origin lies behind the surface. A query that tests both faces of every
+    /// triangle reports this for geometry that encloses the ray's origin, as a light probe inside
+    /// a wall is enclosed.
+    pub back_facing: bool,
     /// The first texture coordinates at the hit, blended across the hit triangle's three corners,
     /// or `None` for a hit on a mesh with no first texture coordinate set, and for a hit on a
     /// sprite, a point or a line.
@@ -110,6 +115,7 @@ impl QueryHit {
             triangle: 0,
             point: [0.0; 3],
             normal: [0.0; 3],
+            back_facing: false,
             uv: None,
         }
     }
@@ -162,6 +168,8 @@ pub struct SceneQueries {
     raw: Vec<RawHit>,
     hits: Vec<QueryHit>,
     batch: Vec<Option<QueryHit>>,
+    /// True while a query tests both faces of every triangle, whatever its material says.
+    all_faces: bool,
 }
 
 #[inline(always)]
@@ -282,24 +290,25 @@ fn local_box(m: &Affine, b: &Aabb) -> Option<Aabb> {
 }
 
 /// The unit normal in the world of a triangle that `m` moves, on the side that faces against
-/// `direction`. The normal moves by the inverse transpose of the matrix, which is the matrix of
-/// its cofactors up to a scale; the scale's sign does not matter, because the normal then turns
-/// to face the ray.
-fn world_normal(m: &Affine, v: &[[f32; 3]; 3], direction: [f32; 3]) -> [f32; 3] {
+/// `direction`, and whether the ray met the triangle's back. The normal moves by the inverse
+/// transpose of the matrix, which is the matrix of its cofactors up to a scale; the scale's sign
+/// does not matter, because the normal then turns to face the ray.
+fn world_normal(m: &Affine, v: &[[f32; 3]; 3], direction: [f32; 3]) -> ([f32; 3], bool) {
     let p = v.map(|q| q.map(f64::from));
     let n = cross(sub(p[1], p[0]), sub(p[2], p[0]));
     let column = |k: usize| [m[k], m[4 + k], m[8 + k]].map(f64::from);
     let (a0, a1, a2) = (column(0), column(1), column(2));
     let (c0, c1, c2) = (cross(a1, a2), cross(a2, a0), cross(a0, a1));
     let mut w: [f64; 3] = std::array::from_fn(|k| c0[k] * n[0] + c1[k] * n[1] + c2[k] * n[2]);
-    if dot(w, direction.map(f64::from)) > 0.0 {
+    let back_facing = dot(w, direction.map(f64::from)) > 0.0;
+    if back_facing {
         w = w.map(|x| -x);
     }
     let len = dot(w, w).sqrt();
     if len > 0.0 {
-        w.map(|x| (x / len) as f32)
+        (w.map(|x| (x / len) as f32), back_facing)
     } else {
-        [0.0; 3]
+        ([0.0; 3], back_facing)
     }
 }
 
@@ -317,6 +326,13 @@ impl SceneQueries {
     /// Empty trees and lists. They allocate nothing until the first sync.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Tests both faces of every triangle from the next query on, whatever its material's side
+    /// says, or only the faces that materials draw for none. A caller that finds geometry that
+    /// encloses a point sets it for its query and clears it after.
+    pub fn set_all_faces(&mut self, all_faces: bool) {
+        self.all_faces = all_faces;
     }
 
     /// Makes room for `hits` hits in the lists that queries fill, so queries that find at most
@@ -494,6 +510,15 @@ impl SceneQueries {
         id: u32,
         layers: u32,
     ) -> Option<Target<'a>> {
+        // A query that tests every face reads the geometry's own sides, which finds a surface that
+        // encloses the ray's origin.
+        let side = |material: u32| {
+            if self.all_faces {
+                Side::Double
+            } else {
+                view.meshes.side(material)
+            }
+        };
         match self.bvh.source(id) {
             Source::Object(slot) => {
                 let (scene, s) = (view.scene, slot as usize);
@@ -503,7 +528,7 @@ impl SceneQueries {
                     Target::Mesh(Item {
                         matrix: world.matrix(s),
                         mesh: scene.meshes()[s],
-                        side: view.meshes.side(scene.materials()[s]),
+                        side: side(scene.materials()[s]),
                     })
                 })
             }
@@ -520,7 +545,7 @@ impl SceneQueries {
                     return Some(Target::Mesh(Item {
                         matrix,
                         mesh: batch.mesh(),
-                        side: view.meshes.side(batch.material()),
+                        side: side(batch.material()),
                     }));
                 }
                 let coords = view.scene.cell_table().coords(batch.cells()[r]);
@@ -626,11 +651,13 @@ impl SceneQueries {
         hit: RawHit,
     ) -> QueryHit {
         let mut normal = [0.0; 3];
+        let mut back_facing = false;
         let mut uv = None;
         match self.item(view, hit.id, u32::MAX) {
             Some(Target::Mesh(item)) => {
                 if let Some(mesh) = view.meshes.mesh(item.mesh) {
-                    normal = world_normal(item.matrix, &mesh.triangle(hit.triangle), ray.direction);
+                    (normal, back_facing) =
+                        world_normal(item.matrix, &mesh.triangle(hit.triangle), ray.direction);
                     uv = hit
                         .barycentric
                         .zip(mesh.triangle_uv(hit.triangle))
@@ -649,6 +676,7 @@ impl SceneQueries {
             triangle: hit.triangle,
             point: std::array::from_fn(|k| ray.origin[k] + t * f64::from(ray.direction[k])),
             normal,
+            back_facing,
             uv,
         }
     }
@@ -941,8 +969,12 @@ mod tests {
             0.0, 1.0, 0.0, 0.0, //
             0.0, 0.0, 1.0, 0.0,
         ];
-        assert_eq!(world_normal(&m, &tri, [0.0, 0.0, -1.0]), [0.0, 0.0, 1.0]);
-        assert_eq!(world_normal(&m, &tri, [0.0, 0.0, 1.0]), [0.0, 0.0, -1.0]);
+        let (front, front_back) = world_normal(&m, &tri, [0.0, 0.0, -1.0]);
+        assert_eq!(front, [0.0, 0.0, 1.0]);
+        assert!(!front_back);
+        let (back, back_facing) = world_normal(&m, &tri, [0.0, 0.0, 1.0]);
+        assert_eq!(back, [0.0, 0.0, -1.0]);
+        assert!(back_facing);
         // Sheared: the normal stays at right angles to the moved triangle.
         let shear = [
             1.0, 0.0, 1.0, 0.0, //
@@ -950,7 +982,9 @@ mod tests {
             0.0, 0.0, 1.0, 0.0,
         ];
         let tilted = [[0.0, 0.0, 0.0], [1.0, 0.0, 1.0], [0.0, 1.0, 0.0]];
-        let n = world_normal(&shear, &tilted, [0.0, 0.0, -1.0]).map(f64::from);
+        let n = world_normal(&shear, &tilted, [0.0, 0.0, -1.0])
+            .0
+            .map(f64::from);
         let moved = triangle_in_cell(&shear, &tilted);
         assert!(dot(n, sub(moved[1], moved[0])).abs() < 1e-6);
         assert!(dot(n, sub(moved[2], moved[0])).abs() < 1e-6);

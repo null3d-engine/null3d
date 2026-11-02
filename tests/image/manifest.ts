@@ -2363,9 +2363,12 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// A light probe grid that the sketch bakes in the browser, in a room with a red wall at the left
 	// and a green wall at the right (D-146): the grey spheres take red light at the left and green
 	// at the right. The same room without the grid, and with a mirror on the floor, whose reflection
-	// pass reads the grid at each reflected sphere's own place. The room's environment makes its
+	// pass reads the grid at each reflected sphere's own place. ?wall adds a partition thick enough
+	// to hold a row of probes, whose light the validity mask stops; ?wall-leak draws the same bake
+	// with every probe valid, which shows the leak beside it; and ?wall-night turns the environment
+	// after the bake, which lights the grid again with no new bake. The room's environment makes its
 	// map in the held frame, so the runs take the room's longer limit.
-	...(['', 'off', 'mirror'] as const).map(
+	...(['', 'off', 'mirror', 'wall', 'wall-leak', 'wall-night'] as const).map(
 		(variant): ImageTest => ({
 			name: variant ? `probe-grid-${variant}` : 'probe-grid',
 			sketch: `tests/pages/sketches/probe-grid-sketch.ts${variant ? `?${variant}` : ''}`,
