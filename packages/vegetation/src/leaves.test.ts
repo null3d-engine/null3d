@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import { builtInSpecies } from './builtin';
+import { generatePlant } from './generate';
 import { buildLeaves } from './leaves';
 import type { LeafCard } from './levels';
+import type { Species } from './species';
 
 /** A cluster card with its own middle, and axes lined up with the world so its corners read plainly. */
 function card(x: number, y: number, z: number): LeafCard {
@@ -54,5 +57,70 @@ describe('leaf target records', () => {
 		const part = buildLeaves([card(1, 2, 3)], 2);
 		const targets = part.targets as Float32Array;
 		for (let v = 0; v < targets.length / 4; v++) expect(targets[v * 4 + 3]).toBe(0);
+	});
+});
+
+describe('card coverage', () => {
+	/** The vertices and triangles of one level's leaf part. */
+	function leafSize(species: Species): { vertices: number; triangles: number } {
+		const asset = generatePlant(species, { seed: 3 });
+		const leaves = asset.levels[0]?.parts.find((part) => part.name === 'leaves');
+		if (!leaves) throw new Error('the plant has no leaves');
+		return {
+			vertices: leaves.arrays.positions.length / 3,
+			triangles: leaves.arrays.indices.length / 3,
+		};
+	}
+
+	test('fills the inner branches when a record names a greater depth', () => {
+		const base = builtInSpecies('conifer') as Species;
+		const leaf = base.leaf as NonNullable<Species['leaf']>;
+		const shallow = leafSize({ ...base, leaf: { ...leaf, depth: 2 } });
+		const deep = leafSize({ ...base, leaf: { ...leaf, depth: 3 } });
+		expect(deep.vertices).toBeGreaterThan(shallow.vertices);
+		expect(deep.triangles).toBeGreaterThan(shallow.triangles);
+	});
+
+	test('draws a crossed card as two panels, so a spray keeps its coverage edge-on', () => {
+		const base = builtInSpecies('conifer') as Species;
+		const leaf = base.leaf as NonNullable<Species['leaf']>;
+		const flat = leafSize({ ...base, leaf: { ...leaf, cross: false } });
+		const crossed = leafSize({ ...base, leaf: { ...leaf, cross: true } });
+		expect(crossed.vertices).toBe(flat.vertices * 2);
+		expect(crossed.triangles).toBe(flat.triangles * 2);
+	});
+
+	test('fills a crown with cards inside its outline when a record names a fill', () => {
+		const base = builtInSpecies('conifer') as Species;
+		const leaf = base.leaf as NonNullable<Species['leaf']>;
+		const open = leafSize({ ...base, leaf: { ...leaf, depth: 4, fill: 0 } });
+		const filled = leafSize({ ...base, leaf: { ...leaf, depth: 4, fill: 0.5 } });
+		expect(filled.vertices).toBeGreaterThan(open.vertices);
+		expect(filled.triangles).toBeGreaterThan(open.triangles);
+	});
+
+	test('keeps every filled card inside the crown and names a branch that exists', () => {
+		const base = builtInSpecies('conifer') as Species;
+		const leaf = base.leaf as NonNullable<Species['leaf']>;
+		const species = {
+			...base,
+			leaf: { ...leaf, depth: 4, fill: 0.5, cross: true, hang: true },
+		} as Species;
+		const asset = generatePlant(species, { seed: 3 });
+		const leaves = asset.levels[0]?.parts.find((part) => part.name === 'leaves');
+		if (!leaves) throw new Error('the plant has no leaves');
+		const { normals, colors } = leaves.arrays;
+		const vertices = normals.length / 3;
+		expect(colors.length).toBe(vertices * 4);
+		for (let v = 0; v < vertices; v++) {
+			expect(colors[v * 4] as number).toBeLessThan(asset.wind.branches);
+			expect(
+				Math.hypot(
+					normals[v * 3] as number,
+					normals[v * 3 + 1] as number,
+					normals[v * 3 + 2] as number,
+				),
+			).toBeGreaterThan(0.9);
+		}
 	});
 });

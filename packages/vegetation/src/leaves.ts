@@ -2,11 +2,11 @@
 // cards along a conifer's twigs. Every card's place and angle is a choice of the skeleton, so a
 // coarser level drops cards and grows the rest without moving the crown.
 import { MeshBuilder, type PartArrays, type VertexWind } from './builder';
-import { type CrownField, occlusionByte } from './crown';
+import { type CrownField, crownEnvelope, occlusionByte } from './crown';
 import { hashAt, unitAt } from './hash';
 import type { LeafCard } from './levels';
 import type { Skeleton, SkeletonBranch } from './skeleton';
-import type { Species } from './species';
+import type { Leaf, Species } from './species';
 
 /** The random stream keys of one card's choices. */
 const KEY_AT = 11;
@@ -48,10 +48,92 @@ function pointAndTangent(
 	};
 }
 
+/** The stiffness byte of a branch level, which the material reads as a fraction. */
+function stiffnessByte(species: Species, level: number): number {
+	return Math.round(
+		Math.min(
+			1,
+			Math.max(0, species.wind.stiffness[Math.min(level, species.wind.stiffness.length - 1)] ?? 0),
+		) * 255,
+	);
+}
+
 /**
- * Places the plant's leaf cards on the branches that carry them: the tips of the branch system.
- * Each card faces up and away from the plant's axis, with a size and a roll of its own. The cards
- * come out in the same order on every device, so a level's share of them is the same as well.
+ * One card at a point, facing up and out from the plant's axis. The card leans and rolls by its own
+ * choice of the random stream, so a crown reads as many leaves rather than one panel.
+ */
+function makeCard(
+	leaf: Leaf,
+	crown: CrownField,
+	seed: number,
+	variant: number,
+	key: number,
+	point: [number, number, number],
+	tangent: [number, number, number],
+	outward: [number, number, number],
+	branch: number,
+	stiffness: number,
+): LeafCard {
+	const facing = normalize(outward[0] * leaf.out, leaf.up, outward[2] * leaf.out);
+	// Each card leans its own way, so a crown's leaves point in many directions rather than one,
+	// which is what makes a real crown read as leaves and not as a shell. The lean keeps the card's
+	// up-and-out bias: a leaf that faced inward would not catch the sun.
+	const normal = normalize(
+		facing[0] + (unitAt(seed, 6, variant, key, KEY_LEAN) - 0.5) * 1.5,
+		facing[1] + (unitAt(seed, 7, variant, key, KEY_LEAN) - 0.5) * 1.1,
+		facing[2] + (unitAt(seed, 8, variant, key, KEY_LEAN) - 0.5) * 1.5,
+	);
+	// The card's up axis leans along the branch, so a leaf reads as growing from its twig.
+	const sideX = tangent[1] * normal[2] - tangent[2] * normal[1];
+	const sideY = tangent[2] * normal[0] - tangent[0] * normal[2];
+	const sideZ = tangent[0] * normal[1] - tangent[1] * normal[0];
+	const sideLength = Math.hypot(sideX, sideY, sideZ);
+	const right: [number, number, number] =
+		sideLength > 1e-6
+			? [sideX / sideLength, sideY / sideLength, sideZ / sideLength]
+			: normalize(normal[1], -normal[0], 0);
+	const up = normalize(
+		normal[1] * right[2] - normal[2] * right[1],
+		normal[2] * right[0] - normal[0] * right[2],
+		normal[0] * right[1] - normal[1] * right[0],
+	);
+	const roll =
+		(unitAt(seed, 2, variant, key, KEY_ROLL) - 0.5) * 1.2 +
+		(unitAt(seed, 3, variant, key, KEY_SIDE) - 0.5) * 0.4;
+	const cos = Math.cos(roll);
+	const sin = Math.sin(roll);
+	const rolledRight: [number, number, number] = [
+		right[0] * cos + up[0] * sin,
+		right[1] * cos + up[1] * sin,
+		right[2] * cos + up[2] * sin,
+	];
+	const rolledUp: [number, number, number] = [
+		up[0] * cos - right[0] * sin,
+		up[1] * cos - right[1] * sin,
+		up[2] * cos - right[2] * sin,
+	];
+	const size = 0.85 + 0.3 * unitAt(seed, 4, variant, key, KEY_SIZE);
+	return {
+		center: point,
+		normal,
+		right: rolledRight,
+		up: rolledUp,
+		width: leaf.width * size,
+		height: leaf.height * size,
+		branch,
+		flutter: hashAt(seed, 5, variant, key, KEY_SIZE) & 0xff,
+		stiffness,
+		occlusion: occlusionByte(point[0], point[1], point[2], crown) / 255,
+		kind: leaf.kind,
+		cross: leaf.cross === true,
+	};
+}
+
+/**
+ * Places the plant's leaf cards on the branches that carry them, and in the crown's volume when
+ * the record asks for fill. Each card faces up and away from the plant's axis, with a size and a
+ * roll of its own. The cards come out in the same order on every device, so a level's share of
+ * them is the same as well.
  *
  * @param species The species record.
  * @param skeleton The plant's skeleton.
@@ -71,22 +153,38 @@ export function leafCards(
 	const leaf = species.leaf;
 	if (!leaf) return [];
 	const cards: LeafCard[] = [];
-	// The last two branch levels carry leaves: the twigs at full count and the branches above
-	// them at half, so a crown fills from its inside rather than only at its tips.
+	// The twigs carry the leaves, and each level above them carries half the cards of the level
+	// below, out to the record's depth. The share thins the foliage toward the trunk, so a crown
+	// fills from its inside rather than only at its tips.
 	const lastLevel = Math.max(0, species.branchLevels.length - 1);
+	const depth = Math.max(1, Math.round(leaf.depth ?? 2));
+	// A record that asks for interior foliage spreads cards along the inner branches at the twigs'
+	// own density, so a long limb carries a spray over its length rather than a clump at its tip.
+	const fills = depth > 2;
+	const twigLength = species.branchLevels[lastLevel]?.length ?? 1;
+	const density = leaf.cards / Math.max(0.1, twigLength);
+	const fill = Math.max(0, leaf.fill ?? 0);
+	// A filled crown fills to the branches' own top rather than the record's nominal height, so no
+	// card is left in the air above the tree. Its cards also finish smaller near that top, so a
+	// spire closes to a point.
+	let crownTop = crown.height;
+	if (fill > 0) {
+		crownTop = crown.start;
+		for (const branch of skeleton.branches)
+			for (let i = 0; i + 2 < branch.points.length; i += 3)
+				crownTop = Math.max(crownTop, branch.points[i + 1] as number);
+		crownTop = Math.max(crownTop, crown.start + 0.1);
+	}
 	for (const [branchIndex, branch] of skeleton.branches.entries()) {
 		const terminal = branch.children.length === 0;
-		if (!terminal && branch.level !== lastLevel - 1) continue;
-		const perBranch = terminal ? leaf.cards : Math.max(1, Math.round(leaf.cards * 0.5));
-		const stiffness = Math.round(
-			Math.min(
-				1,
-				Math.max(
-					0,
-					species.wind.stiffness[Math.min(branch.level, species.wind.stiffness.length - 1)] ?? 0,
-				),
-			) * 255,
-		);
+		const distance = lastLevel - branch.level;
+		// A trunk carries no foliage of its own, and a branch beyond the depth carries none.
+		if (!terminal && (branch.level === 0 || distance >= depth)) continue;
+		const weight = 0.5 ** distance;
+		let perBranch = terminal ? leaf.cards : Math.max(1, Math.round(leaf.cards * weight));
+		if (fills && !terminal)
+			perBranch = Math.max(perBranch, Math.min(64, Math.round(branch.length * density * weight)));
+		const stiffness = stiffnessByte(species, branch.level);
 		const samples = branch.points.length / 3;
 		for (let k = 0; k < perBranch; k++) {
 			const key = branchIndex * 0x1f + k + 1;
@@ -98,58 +196,146 @@ export function leafCards(
 			const { point, tangent } = pointAndTangent(branch, sample);
 			// The outward direction is horizontal, away from the plant's axis.
 			const outward = normalize(point[0], 0, point[2]);
-			const facing = normalize(outward[0] * leaf.out, leaf.up, outward[2] * leaf.out);
-			// Each card leans its own way, so a crown's leaves point in many directions rather than
-			// one, which is what makes a real crown read as leaves and not as a shell. The lean keeps
-			// the card's up-and-out bias: a leaf that faced inward would not catch the sun.
-			const normal = normalize(
-				facing[0] + (unitAt(seed, 6, variant, key, KEY_LEAN) - 0.5) * 1.5,
-				facing[1] + (unitAt(seed, 7, variant, key, KEY_LEAN) - 0.5) * 1.1,
-				facing[2] + (unitAt(seed, 8, variant, key, KEY_LEAN) - 0.5) * 1.5,
-			);
-			// The card's up axis leans along the branch, so a leaf reads as growing from its twig.
-			const sideX = tangent[1] * normal[2] - tangent[2] * normal[1];
-			const sideY = tangent[2] * normal[0] - tangent[0] * normal[2];
-			const sideZ = tangent[0] * normal[1] - tangent[1] * normal[0];
-			const sideLength = Math.hypot(sideX, sideY, sideZ);
-			const right: [number, number, number] =
-				sideLength > 1e-6
-					? [sideX / sideLength, sideY / sideLength, sideZ / sideLength]
-					: normalize(normal[1], -normal[0], 0);
-			const up = normalize(
-				normal[1] * right[2] - normal[2] * right[1],
-				normal[2] * right[0] - normal[0] * right[2],
-				normal[0] * right[1] - normal[1] * right[0],
-			);
-			const roll =
-				(unitAt(seed, 2, variant, key, KEY_ROLL) - 0.5) * 1.2 +
-				(unitAt(seed, 3, variant, key, KEY_SIDE) - 0.5) * 0.4;
-			const cos = Math.cos(roll);
-			const sin = Math.sin(roll);
-			const rolledRight: [number, number, number] = [
-				right[0] * cos + up[0] * sin,
-				right[1] * cos + up[1] * sin,
-				right[2] * cos + up[2] * sin,
-			];
-			const rolledUp: [number, number, number] = [
-				up[0] * cos - right[0] * sin,
-				up[1] * cos - right[1] * sin,
-				up[2] * cos - right[2] * sin,
-			];
-			const size = 0.85 + 0.3 * unitAt(seed, 4, variant, key, KEY_SIZE);
-			cards.push({
-				center: point,
-				normal,
-				right: rolledRight,
-				up: rolledUp,
-				width: leaf.width * size,
-				height: leaf.height * size,
-				branch: branchIndex,
-				flutter: hashAt(seed, 5, variant, key, KEY_SIZE) & 0xff,
+			const card = makeCard(
+				leaf,
+				crown,
+				seed,
+				variant,
+				key,
+				point,
+				tangent,
+				outward,
+				branchIndex,
 				stiffness,
-				occlusion: occlusionByte(point[0], point[1], point[2], crown) / 255,
-				kind: leaf.kind,
-			});
+			);
+			if (fill > 0) {
+				// A card near the crown's top is finer than one at its foot, so a spire ends in a point.
+				const t = Math.min(
+					1,
+					Math.max(0, (point[1] - crown.start) / Math.max(1e-6, crownTop - crown.start)),
+				);
+				const shrink = 0.55 + 0.45 * crownEnvelope(crown.shape, t);
+				cards.push({ ...card, width: card.width * shrink, height: card.height * shrink });
+			} else cards.push(card);
+		}
+	}
+
+	// A filled crown holds cards through its volume as well as on its branches. The cards sample the
+	// crown's outline, so a crown that its twigs leave open closes as the mass that the species
+	// draws, and each card reads the nearest branch for its wind and its shade.
+	if (fill > 0 && cards.length > 0) {
+		const count = Math.round(cards.length * fill);
+		// The crown's axis is the mean of the branches above the crown's start.
+		let axisX = 0;
+		let axisZ = 0;
+		let samples = 0;
+		for (const branch of skeleton.branches)
+			for (let i = 0; i + 2 < branch.points.length; i += 3) {
+				if ((branch.points[i + 1] as number) < crown.start) continue;
+				axisX += branch.points[i] as number;
+				axisZ += branch.points[i + 2] as number;
+				samples++;
+			}
+		if (samples > 0) {
+			axisX /= samples;
+			axisZ /= samples;
+		}
+		// A coarse grid of the branches' samples lets a filled card find the branch nearest it
+		// without walking every branch of the plant.
+		const CELL = 1.5;
+		const cellKey = (x: number, y: number, z: number) =>
+			Math.floor(x / CELL) +
+			512 +
+			1024 * (Math.floor(y / CELL) + 512 + 1024 * (Math.floor(z / CELL) + 512));
+		const buckets = new Map<number, number[]>();
+		for (const [index, branch] of skeleton.branches.entries())
+			for (let i = 0; i + 2 < branch.points.length; i += 3) {
+				const key = cellKey(
+					branch.points[i] as number,
+					branch.points[i + 1] as number,
+					branch.points[i + 2] as number,
+				);
+				let list = buckets.get(key);
+				if (!list) {
+					list = [];
+					buckets.set(key, list);
+				}
+				if (!list.includes(index)) list.push(index);
+			}
+		const seen = new Int32Array(skeleton.branches.length).fill(-1);
+		const nearestSample = (point: [number, number, number], mark: number): number => {
+			let nearest = 0;
+			let nearestDistance = Number.POSITIVE_INFINITY;
+			const walk = (index: number) => {
+				if (seen[index] === mark) return;
+				seen[index] = mark;
+				const branch = skeleton.branches[index] as SkeletonBranch;
+				for (let i = 0; i + 2 < branch.points.length; i += 3) {
+					const dx = (branch.points[i] as number) - point[0];
+					const dy = (branch.points[i + 1] as number) - point[1];
+					const dz = (branch.points[i + 2] as number) - point[2];
+					const distance = dx * dx + dy * dy + dz * dz;
+					if (distance < nearestDistance) {
+						nearestDistance = distance;
+						nearest = index;
+					}
+				}
+			};
+			const cellX = Math.floor(point[0] / CELL) + 512;
+			const cellY = Math.floor(point[1] / CELL) + 512;
+			const cellZ = Math.floor(point[2] / CELL) + 512;
+			for (let dx = -1; dx <= 1; dx++)
+				for (let dy = -1; dy <= 1; dy++)
+					for (let dz = -1; dz <= 1; dz++) {
+						const list = buckets.get(cellX + dx + 1024 * (cellY + dy + 1024 * (cellZ + dz)));
+						if (list) for (const index of list) walk(index);
+					}
+			if (nearestDistance === Number.POSITIVE_INFINITY)
+				for (let index = 0; index < skeleton.branches.length; index++) walk(index);
+			return nearest;
+		};
+		const stiffnesses = new Map<number, number>();
+		for (let k = 0; k < count; k++) {
+			const key = 0x400000 + k;
+			// More cards stand low in the crown, where a cone's surface is widest, and the top keeps
+			// enough to close the spire rather than spread its cards only over the lower volume.
+			const t = 1 - Math.sqrt(1 - unitAt(seed, 21, variant, key, KEY_AT));
+			const y = crown.start + Math.max(0, crownTop - crown.start) * t;
+			const at =
+				crown.radius *
+				crownEnvelope(crown.shape, t) *
+				(0.35 + 0.65 * Math.sqrt(unitAt(seed, 22, variant, key, KEY_SIDE)));
+			const angle = unitAt(seed, 23, variant, key, KEY_ROLL) * Math.PI * 2;
+			const outward: [number, number, number] = [Math.cos(angle), 0, Math.sin(angle)];
+			const point: [number, number, number] = [axisX + outward[0] * at, y, axisZ + outward[2] * at];
+			// The nearest branch holds the card for its wind and its shade.
+			const nearest = nearestSample(point, k);
+			const level = skeleton.branches[nearest]?.level ?? 0;
+			let stiffness = stiffnesses.get(nearest);
+			if (stiffness === undefined) {
+				stiffness = stiffnessByte(species, level);
+				stiffnesses.set(nearest, stiffness);
+			}
+			// A filled card hangs a little below its own height, as a spray at the crown's edge does.
+			// A hanging species turns its cards almost straight down, as a willow's shoots fall.
+			const tangent = leaf.hang
+				? normalize(outward[0] * 0.2, -1, outward[2] * 0.2)
+				: normalize(outward[0], -0.25, outward[2]);
+			const card = makeCard(
+				leaf,
+				crown,
+				seed,
+				variant,
+				key,
+				point,
+				tangent,
+				outward,
+				nearest,
+				stiffness,
+			);
+			// The crown's top keeps finer cards, so a spire closes to a point rather than a ball.
+			const shrink = 0.45 + 0.55 * crownEnvelope(crown.shape, t);
+			cards.push({ ...card, width: card.width * shrink, height: card.height * shrink });
 		}
 	}
 	return cards;
@@ -188,12 +374,14 @@ export function buildLeaves(
 	next?: LeafTargets,
 ): PartArrays {
 	const builder = new MeshBuilder();
-	// Every cluster card is six vertices and four triangles; every other card is four and two.
+	// A cluster card is six vertices and four triangles. A flat card is four and two, or eight and
+	// four when it is crossed.
 	let vertices = 0;
 	let triangles = 0;
 	for (const card of cards) {
-		vertices += card.kind === 'cluster' ? 6 : 4;
-		triangles += card.kind === 'cluster' ? 4 : 2;
+		const crossed = card.kind !== 'cluster' && card.cross === true;
+		vertices += card.kind === 'cluster' ? 6 : crossed ? 8 : 4;
+		triangles += card.kind === 'cluster' ? 4 : crossed ? 4 : 2;
 	}
 	builder.reserve(vertices, triangles);
 	// The target record runs beside the vertices, in the order that they arrive.
@@ -274,25 +462,44 @@ export function buildLeaves(
 			builder.triangle(start + 1, start + 2, start + 5);
 			builder.triangle(start + 1, start + 5, start + 4);
 		} else {
-			// A flat card: four vertices and two triangles.
+			// A flat card: four vertices and two triangles. A crossed card adds a second panel across
+			// the first, so a spray keeps its coverage when the camera looks along the first panel.
 			const start = builder.vertexCount;
-			const corners: readonly [number, number][] = [
-				[-w, -h],
-				[w, -h],
-				[w, h],
-				[-w, h],
-			];
-			for (const [right, up] of corners) {
-				const x = card.center[0] + card.right[0] * right * grow + card.up[0] * up * grow;
-				const y = card.center[1] + card.right[1] * right * grow + card.up[1] * up * grow;
-				const z = card.center[2] + card.right[2] * right * grow + card.up[2] * up * grow;
+			const crossed = card.cross === true;
+			const planes: readonly (readonly [
+				number,
+				number,
+				readonly [number, number, number],
+				readonly [number, number, number],
+				readonly [number, number, number],
+			])[] = crossed
+				? [
+						[-w, -h, card.right, card.up, card.normal],
+						[w, -h, card.right, card.up, card.normal],
+						[w, h, card.right, card.up, card.normal],
+						[-w, h, card.right, card.up, card.normal],
+						[-w, -h, card.normal, card.up, card.right],
+						[w, -h, card.normal, card.up, card.right],
+						[w, h, card.normal, card.up, card.right],
+						[-w, h, card.normal, card.up, card.right],
+					]
+				: [
+						[-w, -h, card.right, card.up, card.normal],
+						[w, -h, card.right, card.up, card.normal],
+						[w, h, card.right, card.up, card.normal],
+						[-w, h, card.right, card.up, card.normal],
+					];
+			for (const [right, up, across, along, direction] of planes) {
+				const x = card.center[0] + across[0] * right * grow + along[0] * up * grow;
+				const y = card.center[1] + across[1] * right * grow + along[1] * up * grow;
+				const z = card.center[2] + across[2] * right * grow + along[2] * up * grow;
 				const at = builder.vertex(
 					x,
 					y,
 					z,
-					card.normal[0],
-					card.normal[1],
-					card.normal[2],
+					direction[0],
+					direction[1],
+					direction[2],
 					(right / w + 1) / 2,
 					(up / h + 1) / 2,
 					wind,
@@ -301,6 +508,10 @@ export function buildLeaves(
 			}
 			builder.triangle(start, start + 1, start + 2);
 			builder.triangle(start, start + 2, start + 3);
+			if (crossed) {
+				builder.triangle(start + 4, start + 5, start + 6);
+				builder.triangle(start + 4, start + 6, start + 7);
+			}
 		}
 	}
 	return { ...builder.finish(), targets };

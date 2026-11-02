@@ -1,9 +1,19 @@
 import { describe, expect, test } from 'bun:test';
 import { ALL_SPECIES, builtInSpecies } from './builtin';
 import { growSkeleton } from './skeleton';
-import { MAX_BRANCHES, type Species } from './species';
+import { type BranchLevel, branchLevel, MAX_BRANCHES, type Species } from './species';
 
 const oak = builtInSpecies('oak') as Species;
+
+/** Oak's record with its branch levels replaced, for a test that reads one rule alone. */
+function withLevels(levels: Species['branchLevels']): Species {
+	return { ...oak, branchLevels: levels };
+}
+
+/** The height of a branch's first sample, which is where it leaves its parent. */
+function firstRise(points: Float32Array): number {
+	return (points[4] as number) - (points[1] as number);
+}
 
 describe('the skeleton', () => {
 	test('grows a tree in which every branch names a parent above it', () => {
@@ -84,5 +94,84 @@ describe('the skeleton', () => {
 		}
 		expect(lowest).toBeLessThan(highest);
 		expect(lowest).toBeLessThan(skeleton.height * 0.6);
+	});
+
+	test('runs the trunk to the height unless the record names a leader', () => {
+		const trunkTop = (species: Species) => {
+			const trunk = growSkeleton(species, 5, 0).branches[0];
+			return trunk?.points[trunk.points.length - 2] as number;
+		};
+		const full = trunkTop(oak);
+		const divided = trunkTop({ ...oak, leader: 0.3 } as Species);
+		expect(divided).toBeGreaterThan(0);
+		expect(divided).toBeLessThan(full * 0.5);
+	});
+
+	test('turns the upper limbs toward the trunk as the crown rises', () => {
+		const small = {
+			...oak,
+			height: 10,
+			crown: { ...oak.crown, start: 0.1 },
+			branchLevels: [
+				branchLevel(oak.branchLevels[0] as BranchLevel, {
+					children: 6,
+					angle: 0,
+					angleVariance: 0,
+					curve: 0,
+					curveVariance: 0,
+					length: 10,
+					start: 0,
+					end: 1,
+				}),
+				branchLevel(oak.branchLevels[1] as BranchLevel, {
+					children: 0,
+					angle: 80,
+					angleVariance: 0,
+					curve: 0,
+					curveVariance: 0,
+					length: 2,
+					start: 0.1,
+					end: 1,
+					upright: 80,
+				}),
+			],
+		} as Species;
+		const boughs = growSkeleton(small, 3, 0).branches.filter((branch) => branch.level === 1);
+		const rise = (branch: (typeof boughs)[number]) =>
+			firstRise(branch.points) / (Math.max(1e-6, branch.length) / (branch.points.length / 3 - 1));
+		const sorted = [...boughs].sort((a, b) => (a.points[1] as number) - (b.points[1] as number));
+		const lowest = sorted[0] as (typeof boughs)[number];
+		const highest = sorted[sorted.length - 1] as (typeof boughs)[number];
+		expect(rise(lowest)).toBeLessThan(0.35);
+		expect(rise(highest)).toBeGreaterThan(0.65);
+	});
+
+	test('drops more children toward the crown top when a level thins', () => {
+		const record = (thin: number) =>
+			withLevels(
+				oak.branchLevels.map((level, index) =>
+					index === 1 ? { ...level, thin } : level,
+				) as Species['branchLevels'],
+			);
+		const kept = (thin: number) =>
+			growSkeleton(record(thin), 4, 0).branches.filter((branch) => branch.level === 1).length;
+		expect(kept(0.9)).toBeLessThan(kept(0));
+	});
+
+	test('spreads the stems of a multi-stem plant', () => {
+		const clump = { ...oak, trunks: 4, height: 8, leader: 0.5 } as Species;
+		const reach = (stemLean: number) => {
+			const skeleton = growSkeleton({ ...clump, stemLean } as Species, 6, 0);
+			const trunks = skeleton.branches.filter((branch) => branch.parent === -1);
+			return Math.max(
+				...trunks.map((trunk) =>
+					Math.hypot(
+						trunk.points[trunk.points.length - 3] as number,
+						trunk.points[trunk.points.length - 1] as number,
+					),
+				),
+			);
+		};
+		expect(reach(0.7)).toBeGreaterThan(reach(0.18));
 	});
 });

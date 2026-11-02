@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { ALL_SPECIES, BUILTIN_SPECIES, builtInSpecies, CREEK_SPECIES } from './builtin';
 import {
+	type BranchLevel,
 	branchLevel,
 	checkSpecies,
 	DEFAULT_VARIANTS,
@@ -100,5 +101,32 @@ describe('the species records', () => {
 		expect(filled.length).toBe(5);
 		expect(filled.angle).toBe(40);
 		expect(filled.sides).toBe(6);
+	});
+
+	test('checks the numbers of a divided trunk and a filled crown', () => {
+		const oak = builtInSpecies('oak') as Species;
+		const leaf = oak.leaf as NonNullable<Species['leaf']>;
+		const level = oak.branchLevels[1] as NonNullable<Species['branchLevels'][number]>;
+		const problems = speciesProblems({
+			...oak,
+			leader: 1.4,
+			stemLean: -1,
+			leaf: {
+				...leaf,
+				depth: 0,
+				cross: 'yes' as unknown as boolean,
+				fill: -1,
+				hang: 1 as unknown as boolean,
+			},
+			branchLevels: [oak.branchLevels[0] as BranchLevel, { ...level, upright: -5, thin: 2 }],
+		} as Species);
+		expect(problems.some((problem) => problem.includes('leader'))).toBe(true);
+		expect(problems.some((problem) => problem.includes('stemLean'))).toBe(true);
+		expect(problems.some((problem) => problem.includes('leaf.depth'))).toBe(true);
+		expect(problems.some((problem) => problem.includes('leaf.cross'))).toBe(true);
+		expect(problems.some((problem) => problem.includes('leaf.fill'))).toBe(true);
+		expect(problems.some((problem) => problem.includes('leaf.hang'))).toBe(true);
+		expect(problems.some((problem) => problem.includes('upright'))).toBe(true);
+		expect(problems.some((problem) => problem.includes('thin'))).toBe(true);
 	});
 });

@@ -69,6 +69,19 @@ export interface BranchLevel {
 	 * instead, as a broadleaf's limbs grow.
 	 */
 	readonly whorls?: number;
+	/**
+	 * How much more upright a child grows toward the top of the crown, in degrees. The generator
+	 * takes this from the child's own angle: a limb that leaves the trunk at a spread angle near
+	 * the ground turns toward its parent's direction near the crown's top, as a tree's upper limbs
+	 * do. The default is 0, which keeps the angle the record states.
+	 */
+	readonly upright?: number;
+	/**
+	 * The share of the level's children that the crown's top drops, from 0 to 1. The generator keeps
+	 * each child by a hash, so the crown thins as it rises and its upper limbs fork less than its
+	 * lower ones. The default is 0, which keeps every child.
+	 */
+	readonly thin?: number;
 }
 
 /**
@@ -114,6 +127,30 @@ export interface Leaf {
 	readonly start: number;
 	/** Share of the branch where cards stop. */
 	readonly end: number;
+	/**
+	 * How many branch levels above the twigs carry cards. One puts cards on the twigs alone. Two adds
+	 * half as many to the level above, and each further level adds half of the level below it, so
+	 * the crown fills from its inside rather than only at its tips. The default is 2, which covers
+	 * the twigs and the level above them.
+	 */
+	readonly depth?: number;
+	/**
+	 * Whether each flat card is drawn as two panels crossed along its middle. A crossed card keeps
+	 * its coverage when the camera looks along the card's plane, as a spray of needles is seen from
+	 * below. The default is false, which draws one panel.
+	 */
+	readonly cross?: boolean;
+	/**
+	 * Extra cards through the crown's volume, as a share of the cards on the branches. A filled crown
+	 * closes its outline where its twigs leave a gap, and each filled card reads the nearest branch
+	 * for its wind and its shade. The default is 0, which draws only the branch cards.
+	 */
+	readonly fill?: number;
+	/**
+	 * Whether the filled cards hang almost straight down, as a willow's shoots fall, rather than
+	 * following the crown's outward direction. The default is false.
+	 */
+	readonly hang?: boolean;
 }
 
 /**
@@ -194,8 +231,19 @@ export interface Species {
 	readonly color: SpeciesColor;
 	/** Height of the plant in meters at scale 1. */
 	readonly height: number;
+	/**
+	 * The share of the height that the trunk rises before its limbs carry the crown, from 0 to 1.
+	 * The default is 1, which runs the trunk to the top as a leader. A smaller value makes a tree
+	 * that divides low into heavy limbs, as an open-grown oak does.
+	 */
+	readonly leader?: number;
 	/** Trunks that rise from one base: one for a tree, several for a shrub. */
 	readonly trunks: number;
+	/**
+	 * How far each stem of a multi-stem plant leans outward, as the tangent of its angle from the
+	 * vertical. The default is 0.18; a wider value spreads several stems from one base.
+	 */
+	readonly stemLean?: number;
 	/** How much a variant's height varies from the record's, as a share of it. */
 	readonly heightVariance: number;
 	/** The scale of one copy, from smallest to largest. */
@@ -231,8 +279,11 @@ export const DEFAULT_VARIANTS = 6;
 /** The branch levels that a record may hold. */
 const MAX_BRANCH_LEVELS = 5;
 
-/** The largest number of children at one level, which keeps the branch count within its cap. */
-const MAX_CHILDREN = 16;
+/**
+ * The largest number of children at one level. A dense conifer carries more boughs in a whorl than
+ * a broadleaf carries limbs, and the plant's branch cap still bounds every level together.
+ */
+const MAX_CHILDREN = 32;
 
 /**
  * Every problem that a record has, as sentences; an empty list means the record grows. The check
@@ -261,8 +312,11 @@ export function speciesProblems(species: Species): string[] {
 	if (!['tree', 'conifer', 'shrub', 'fern', 'rosette', 'grass'].includes(species.kind))
 		problems.push(`${name} has an unknown kind; use tree, conifer, shrub, fern, rosette or grass.`);
 	positive(species.height, `${name}: height`);
+	share(species.leader ?? 1, `${name}: leader`);
 	if (!finite(species.trunks) || species.trunks < 0)
 		problems.push(`${name}: trunks must be a number from 0.`);
+	if (species.stemLean !== undefined && (!finite(species.stemLean) || species.stemLean < 0))
+		problems.push(`${name}: stemLean must be a number from 0.`);
 	if (species.kind === 'tree' || species.kind === 'conifer' || species.kind === 'shrub')
 		positive(species.trunks, `${name}: trunks`);
 	share(species.heightVariance, `${name}: heightVariance`);
@@ -307,6 +361,9 @@ export function speciesProblems(species: Species): string[] {
 			if (!finite(level.twist)) problems.push(`${at}.twist must be a number of degrees.`);
 			if (level.whorls !== undefined && (!Number.isInteger(level.whorls) || level.whorls < 0))
 				problems.push(`${at}.whorls must be a whole number from 0.`);
+			if (level.upright !== undefined && (!finite(level.upright) || level.upright < 0))
+				problems.push(`${at}.upright must be a number of degrees from 0.`);
+			share(level.thin ?? 0, `${at}.thin`);
 		});
 	}
 
@@ -370,6 +427,17 @@ export function speciesProblems(species: Species): string[] {
 		share(species.leaf.end, `${at}.end`);
 		if (species.leaf.start >= species.leaf.end)
 			problems.push(`${at}.start must lie before ${at}.end.`);
+		if (
+			species.leaf.depth !== undefined &&
+			(!Number.isInteger(species.leaf.depth) || species.leaf.depth < 1)
+		)
+			problems.push(`${at}.depth must be a whole number from 1.`);
+		if (species.leaf.cross !== undefined && typeof species.leaf.cross !== 'boolean')
+			problems.push(`${at}.cross must be true or false.`);
+		if (species.leaf.fill !== undefined && (!finite(species.leaf.fill) || species.leaf.fill < 0))
+			problems.push(`${at}.fill must be a number from 0.`);
+		if (species.leaf.hang !== undefined && typeof species.leaf.hang !== 'boolean')
+			problems.push(`${at}.hang must be true or false.`);
 	}
 
 	if (!Array.isArray(species.wind.stiffness) || species.wind.stiffness.length === 0)
@@ -427,6 +495,8 @@ const LEVEL_FIELDS = [
 	'segments',
 	'twist',
 	'whorls',
+	'upright',
+	'thin',
 ] as const;
 
 /**
