@@ -116,8 +116,8 @@
 	"chromium-swiftshader/compat/demo-ocean.png": {
 		"test": "demo-ocean",
 		"tier": "compat",
-		"date": "2026-10-28",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the demo; the branch's CI run has not drawn it yet"
+		"date": "2026-11-02",
+		"reason": "the stored compat picture recorded a sea without its mirror before the reflection kept its image, and the WebGL2 tier is new; CI's run replaces both"
 	},
 	"chromium-swiftshader/compat/demo-post-effects.png": {
 		"test": "demo-post-effects",
@@ -442,6 +442,12 @@
 		"tier": "webgl2",
 		"date": "2026-10-27",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
+	},
+	"chromium-swiftshader/webgl2/demo-ocean.png": {
+		"test": "demo-ocean",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "the stored compat picture recorded a sea without its mirror before the reflection kept its image, and the WebGL2 tier is new; CI's run replaces both"
 	},
 	"chromium-swiftshader/webgl2/demo-post-effects.png": {
 		"test": "demo-post-effects",
