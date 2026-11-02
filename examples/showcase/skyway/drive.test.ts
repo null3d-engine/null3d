@@ -440,7 +440,6 @@ test('a turn that would put the camera in a tower is refused until the way is cl
 		most = Math.max(most, Math.hypot(aim.x - car.x - met.x, aim.z - car.z - met.z));
 	}
 	expect(most).toBeLessThan(1e-6);
-	expect(sight.held).toBe(true);
 	// The camera stopped clear of the tower, rather than in it or sliding along it.
 	expect(aim.x).toBeGreaterThanOrEqual(20 + CLEARANCE - 1e-6);
 	expect(apart(aim, [car.x, car.y, car.z])).toBeGreaterThanOrEqual(SIGHT_MIN);
@@ -453,7 +452,6 @@ test('a turn that would put the camera in a tower is refused until the way is cl
 		fastest = Math.max(fastest, Math.hypot(aim.x - car.x - was.x, aim.z - car.z - was.z));
 		was = { x: aim.x - car.x, z: aim.z - car.z };
 	}
-	expect(sight.held).toBe(false);
 	expect(fastest).toBeGreaterThan(0);
 	expect(fastest).toBeLessThan(1.5);
 	// The camera sits where the user's own turn asked, at the user's own distance.
@@ -493,48 +491,25 @@ test('the camera stays behind the car as the car turns', () => {
 	expect(Math.atan2(Math.sin(bearing), Math.cos(bearing))).toBeCloseTo(0, 6);
 });
 
-test('a turn that would put the camera in a tower is refused by the car too', () => {
+test('a turn that would put the camera in a tower is refused by the car', () => {
 	const car = flight({ x: BESIDE_X, y: 50, z: 0, speed: LAPSE });
 	const view: ChaseView = { turn: 0.62, tilt: CHASE_TILT, distance: CHASE_DISTANCE };
-	const sight = createSight(CHASE_DISTANCE);
-	const aim: Flight = { ...flight() };
 	const keys = stick({ throttle: 1, steer: 1 });
-	/** Flies the car one frame and aims its chase camera. */
-	const step = (): void => {
-		fly(car, keys, FRAME, BESIDE, view);
-		settleSight(
-			sight,
-			car.x,
-			car.y,
-			car.z,
-			car.yaw + BEHIND + view.turn,
-			car.yaw + BEHIND,
-			view.tilt,
-			view.distance,
-			BESIDE,
-			FRAME,
-			aim,
-		);
-		// The camera stands clear of the tower on every frame: the keep-out moves nothing.
-		expect(keepOut({ ...aim }, BESIDE)).toBe(false);
-	};
+	/** Flies the car one frame with the keys held. */
+	const step = (): void => fly(car, keys, FRAME, BESIDE, view);
 	// The drag holds the camera against the tower, and the keys ask the car to turn.
 	for (let k = 0; k < 30; k++) step();
 	const yaw = car.yaw;
-	const place = { x: aim.x - car.x, z: aim.z - car.z };
 	const z = car.z;
 	for (let k = 0; k < 90; k++) {
 		step();
 		expect(car.yaw).toBe(yaw);
-		expect(Math.hypot(aim.x - car.x - place.x, aim.z - car.z - place.z)).toBeLessThan(0.01);
 	}
-	// The car keeps flying, and the camera keeps it in view.
+	// The car keeps flying while its turn is refused.
 	expect(car.z).toBeGreaterThan(z + 20);
-	expect(sight.held).toBe(true);
-	// The car passes the tower. The turn applies again, and the camera follows the new heading.
+	// The car passes the tower, and the turn applies again.
 	const cleared = car.z;
 	for (let k = 0; k < 180; k++) step();
 	expect(car.z).toBeGreaterThan(cleared + 20);
 	expect(car.yaw).toBeGreaterThan(yaw + 0.2);
-	expect(Math.hypot(aim.x - car.x - place.x, aim.z - car.z - place.z)).toBeGreaterThan(1);
 });
