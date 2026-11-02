@@ -390,6 +390,24 @@ The runs:
 [20261024-074806-splats](tested-devices/ipad-pro-13-safari/20261024-074806-splats.md) and
 [20261024-074630-splats](tested-devices/galaxy-s24-sm-s921b-chrome/20261024-074630-splats.md).
 
+### A real scan in the splats add-on, iPad Pro 13 and Galaxy S24
+
+The splats plan also times the splats demo, which streams the Bolton Priory scan of 1.7 million
+splats from the sample content. The engine chose Low on both devices, and the scan held the
+display's rate on every path. The generated cloud, whose cards cover the screen many times over,
+rose from 1.06 to 10.98 fps on the iPad's WebGPU path once the splats drew unlit with cards along
+each ellipse's axes ([D-286](decisions/D-298-real-scan-splats.md)).
+
+| Device and path | The scan, presented fps | 400,000-splat cloud, presented fps | Display |
+| --- | --- | --- | --- |
+| iPad Pro 13, WebGPU | 59.89 | 10.98 | 60 Hz |
+| iPad Pro 13, WebGL2 | 60.05 | 19.58 | 60 Hz |
+| Galaxy S24, WebGL2 | 29.18 | 29.12 | 30 Hz |
+
+The S24's display ran at 30 Hz, so its rates show only that the pages keep up with it. The runs:
+[20261102-144656-splats](tested-devices/ipad-pro-13-safari/20261102-144656-splats.md) and
+[20261102-145233-splats](tested-devices/galaxy-s24-sm-s921b-chrome/20261102-145233-splats.md).
+
 ### The splats add-on streaming, iPad Pro 13 and Galaxy S24
 
 Both cloud devices ran the streaming plan ([its plan](devices.md#the-splats-plan)).
