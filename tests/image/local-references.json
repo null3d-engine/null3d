@@ -946,5 +946,23 @@
 		"tier": "compat",
 		"date": "2026-10-31",
 		"reason": "Held frames now draw the water's reflection. Nothing is pushed yet, so CI's own drawing replaces these."
+	},
+	"chromium-swiftshader/compat/terrain-baked-normals.png": {
+		"test": "terrain-baked-normals",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1; this Mac's software drawing stands in for CI's own Linux SwiftShader, and CI's redraw is owed and replaces these if it differs"
+	},
+	"chromium-swiftshader/webgl2/terrain-baked-normals.png": {
+		"test": "terrain-baked-normals",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1; this Mac's software drawing stands in for CI's own Linux SwiftShader, and CI's redraw is owed and replaces these if it differs"
+	},
+	"chromium-swiftshader/webgpu/terrain-baked-normals.png": {
+		"test": "terrain-baked-normals",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1; this Mac's software drawing stands in for CI's own Linux SwiftShader, and CI's redraw is owed and replaces these if it differs"
 	}
 }
