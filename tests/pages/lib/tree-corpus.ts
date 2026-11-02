@@ -353,7 +353,7 @@ const ASPEN: Species = {
 		volume: 0.55,
 	},
 	wind: { stiffness: [0.15, 0.5, 0.8, 0.95], flutter: 0.03, frequency: 1.9 },
-	color: { bark: [0.62, 0.6, 0.55], leaf: [0.45, 0.3, 0.03], tint: 0.08, transmission: 0.4 },
+	color: { bark: [0.62, 0.6, 0.55], leaf: [0.45, 0.3, 0.006], tint: 0.08, transmission: 0.4 },
 	height: 16,
 	leader: 0.62,
 	// Its reference shows a bole 2.6 per cent of the tree's height in diameter, where the pipe model
