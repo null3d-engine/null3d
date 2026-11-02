@@ -5846,6 +5846,22 @@ export class Scene implements ViewHolder {
 	}
 
 	/**
+	 * Casts many rays as `raycastBatch` does, but tests both faces of every triangle and writes 1
+	 * for each ray that met the back of a surface and 0 for one that met the front. The light probe
+	 * bake reads it to find the probes that lie inside geometry.
+	 *
+	 * @internal
+	 */
+	raycastBatchFaces(
+		rays: ArrayLike<number>,
+		options: RaycastOptions | undefined,
+		out: RaycastBatchHits,
+		backFacing: Uint8Array,
+	): number {
+		return this.queries.raycastBatchFaces(rays, options, out, backFacing);
+	}
+
+	/**
 	 * Finds the objects and instance rows on the layers of `options.layers` that have a triangle
 	 * within `radius` meters of `center`, writes them into `out`, and returns how many. It fills
 	 * `out` as `raycastAll` fills its hits, in no set order.

@@ -2333,7 +2333,7 @@ fn light_surface(
         if has_probe_grid(engine_frame.probe_grid) {
             // `relative` is from this view's own camera, so a reflection's view reads its own place.
             let world = engine_frame.camera_world.xyz + relative;
-            irradiance = mix(irradiance, probe_grid_irradiance(engine_frame.probe_grid, world, normal), engine_frame.probe_grid.params.y);
+            irradiance = mix(irradiance, probe_grid_irradiance(engine_frame.probe_grid, world, normal, environment_irradiance(env, normal)), engine_frame.probe_grid.params.y);
         }
 #endif
         var image = indirect_specular(m, radiance, irradiance, dfg);

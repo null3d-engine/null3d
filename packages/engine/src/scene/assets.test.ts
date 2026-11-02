@@ -607,9 +607,9 @@ describe('baked light files', () => {
 		expect(Array.from(grid.origin)).toEqual([0, 1, 0]);
 		expect(Array.from(grid.spacing)).toEqual([1, 1, 1]);
 		expect(grid.counts).toEqual([2, 2, 2]);
-		// The texture is a 3D texture of half floats: one sub-volume of L1 for each of three.
+		// The texture is a 3D texture of half floats: three sub-volumes of L1 and one of the masks.
 		expect(volumes.map(([w, h, d, format]) => [w, h, d, format])).toEqual([
-			[2, 2, 12, 'rgba16float'],
+			[2, 2, 16, 'rgba16float'],
 		]);
 	});
 
@@ -706,6 +706,8 @@ describe('baked light files', () => {
 			new Float32Array([1, 1, 1]),
 			[2, 2, 2],
 			coefficients,
+			new Float32Array(8).fill(1),
+			new Float32Array(8),
 		);
 		const bytes = await new Assets(fakeTextures().textures, PAGE).lightProbeGridFile(grid);
 		expect(new TextDecoder().decode(bytes)).toBe(fixture('probe-grid'));
@@ -717,6 +719,8 @@ describe('baked light files', () => {
 			new Float32Array([1, 1, 1]),
 			[2, 2, 2],
 			new Float32Array(3),
+			new Float32Array(8),
+			new Float32Array(8),
 		);
 		const assets = new Assets(fakeTextures().textures, PAGE);
 		expect(await codeOf(assets.lightProbeGridFile(grid))).toBe(

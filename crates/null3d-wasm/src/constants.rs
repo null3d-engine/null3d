@@ -692,7 +692,7 @@ pub mod query {
     pub const RAYS: u32 = 3;
 
     /// Numbers in the input array.
-    pub const INPUT_FLOATS: u32 = 26;
+    pub const INPUT_FLOATS: u32 = 27;
     /// Where the input holds the far limit or the radius.
     pub const INPUT_LIMIT: u32 = 6;
     /// The point threshold, or a number below 0 for none.
@@ -713,6 +713,9 @@ pub mod query {
     /// The distances to the camera's near and far planes.
     pub const INPUT_NEAR: u32 = 24;
     pub const INPUT_FAR: u32 = 25;
+    /// 1 to test both faces of every triangle, whatever its material's side says, and 0 to test
+    /// the faces that materials draw.
+    pub const INPUT_ALL_FACES: u32 = 26;
     /// No camera: rays miss the rows that need one.
     pub const CAMERA_NONE: u32 = 0;
     /// A perspective camera.
@@ -723,7 +726,7 @@ pub mod query {
     pub const RAY_FLOATS: u32 = 6;
 
     /// Numbers per hit record.
-    pub const HIT_FLOATS: u32 = 14;
+    pub const HIT_FLOATS: u32 = 15;
     /// The object's slot, or 0 for a batch row.
     pub const HIT_SLOT: u32 = 0;
     /// The batch's id, or 0 for an object.
@@ -742,6 +745,9 @@ pub mod query {
     pub const HIT_UV: u32 = 11;
     /// 1 when the hit carries first texture coordinates, 0 when it does not.
     pub const HIT_HAS_UV: u32 = 13;
+    /// 1 when the ray met the back of the triangle, whose own normal points along the ray, and 0
+    /// when it met the front.
+    pub const HIT_BACK_FACING: u32 = 14;
 
     /// The closest hit.
     pub const CLOSEST: u32 = 0;
@@ -902,6 +908,7 @@ pub fn typescript() -> String {
                 ("INPUT_PIXEL", query::INPUT_PIXEL),
                 ("INPUT_NEAR", query::INPUT_NEAR),
                 ("INPUT_FAR", query::INPUT_FAR),
+                ("INPUT_ALL_FACES", query::INPUT_ALL_FACES),
                 ("CAMERA_NONE", query::CAMERA_NONE),
                 ("CAMERA_PERSPECTIVE", query::CAMERA_PERSPECTIVE),
                 ("CAMERA_ORTHOGRAPHIC", query::CAMERA_ORTHOGRAPHIC),
@@ -916,6 +923,7 @@ pub fn typescript() -> String {
                 ("HIT_NORMAL", query::HIT_NORMAL),
                 ("HIT_UV", query::HIT_UV),
                 ("HIT_HAS_UV", query::HIT_HAS_UV),
+                ("HIT_BACK_FACING", query::HIT_BACK_FACING),
                 ("CLOSEST", query::CLOSEST),
                 ("ANY", query::ANY),
                 ("ALL", query::ALL),
