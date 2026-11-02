@@ -519,3 +519,27 @@ describe('taskProblem', () => {
 		expect(ids.has('M3-plan')).toBe(true);
 	});
 });
+
+describe('the footer block rule and the commits that predate it', () => {
+	// A footer outside a trailer block, which git cannot see.
+	const LOOSE =
+		'docs: change a page\n\nThe body mentions the work.\n\nTask: M3-V11\nmore prose with no indent\n';
+
+	it('holds a commit authored after the rule to the block, so a loose footer counts for nothing', () => {
+		expect(findAckValues(LOOSE, 'Task', '2026-11-03T09:00:00+08:00')).toEqual([]);
+	});
+
+	it('reads a commit authored before the rule the old way, so the same footer counts', () => {
+		expect(findAckValues(LOOSE, 'Task', '2026-10-01T09:00:00+08:00')).toEqual(['M3-V11']);
+	});
+
+	it('holds a commit with no author time to the block, since it is being made now', () => {
+		expect(findAckValues(LOOSE, 'Task')).toEqual([]);
+	});
+
+	it('reads a well-formed block the same way on both sides of the rule', () => {
+		const message = 'docs: change a page\n\nTask: M3-V11\n';
+		expect(findAckValues(message, 'Task', '2026-10-01T09:00:00+08:00')).toEqual(['M3-V11']);
+		expect(findAckValues(message, 'Task', '2026-11-03T09:00:00+08:00')).toEqual(['M3-V11']);
+	});
+});
