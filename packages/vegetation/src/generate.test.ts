@@ -3,6 +3,7 @@ import type { PlantAsset } from './asset';
 import { ALL_SPECIES, builtInSpecies } from './builtin';
 import { generatePlant, generateVariantSet } from './generate';
 import { run } from './generate-task';
+import { growSkeleton } from './skeleton';
 import type { Species } from './species';
 
 /** Every typed array in an asset, minus the timing, for a byte comparison. */
@@ -225,6 +226,22 @@ describe('the generator', () => {
 				}
 			}
 		}
+	});
+
+	test('tapers a branch toward its tip when the record asks', () => {
+		const tapered: Species = {
+			...oak,
+			branchLevels: oak.branchLevels.map((level) => ({ ...level, taperCurve: 1 })),
+		};
+		const plain = growSkeleton(oak, 4, 0).branches.find((branch) => branch.level === 0);
+		const shape = growSkeleton(tapered, 4, 0).branches.find((branch) => branch.level === 0);
+		if (!plain || !shape) throw new Error('the oak grows no trunk');
+		for (let i = 0; i < plain.radii.length; i++)
+			expect(shape.radii[i] as number).toBeLessThanOrEqual((plain.radii[i] as number) + 1e-9);
+		let narrowed = false;
+		for (let i = 1; i + 1 < plain.radii.length; i++)
+			if ((shape.radii[i] as number) < (plain.radii[i] as number) - 1e-4) narrowed = true;
+		expect(narrowed).toBe(true);
 	});
 
 	test('draws a bare plant as branches alone', () => {

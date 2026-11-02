@@ -53,6 +53,13 @@ export interface BranchLevel {
 	readonly curveVariance: number;
 	/** Radius at the tip of a terminal branch, in meters. */
 	readonly taper: number;
+	/**
+	 * How smoothly a branch narrows from its base to its tip, from 0 to 1. The pipe model holds a
+	 * branch's radius constant between the limbs that leave it, so a trunk reads as a stack of
+	 * cylinders. A value of 1 tapers each span between two attachments, and another value blends
+	 * toward that taper. The default is 0, which keeps the pipe model's radii.
+	 */
+	readonly taperCurve?: number;
 	/** Share of the parent's length where children start. */
 	readonly start: number;
 	/** Share of the parent's length where children stop. */
@@ -398,6 +405,7 @@ export function speciesProblems(species: Species): string[] {
 			if (!Number.isInteger(level.segments) || level.segments < 1 || level.segments > 24)
 				problems.push(`${at}.segments must be a whole number from 1 to 24.`);
 			if (!finite(level.twist)) problems.push(`${at}.twist must be a number of degrees.`);
+			if (level.taperCurve !== undefined) share(level.taperCurve, `${at}.taperCurve`);
 			if (level.whorls !== undefined && (!Number.isInteger(level.whorls) || level.whorls < 0))
 				problems.push(`${at}.whorls must be a whole number from 0.`);
 			if (level.whorlTip !== undefined && typeof level.whorlTip !== 'boolean')
@@ -547,6 +555,7 @@ const LEVEL_FIELDS = [
 	'curve',
 	'curveVariance',
 	'taper',
+	'taperCurve',
 	'start',
 	'end',
 	'sides',

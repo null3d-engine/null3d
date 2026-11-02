@@ -91,7 +91,7 @@ A record holds only numbers and short strings. This table shows the parts that a
 | Field | Holds |
 | --- | --- |
 | `id`, `kind` | A name, and `tree`, `conifer`, `shrub`, `fern`, `rosette` or `grass` |
-| `branchLevels` | One entry per level: `children`, `prune`, `length`, `lengthVariance`, `angle`, `angleVariance`, `curve`, `curveVariance`, `taper`, `start`, `end`, `sides`, `segments`, `twist`, and the optional `whorls`, `whorlTip`, `upright` and `thin` |
+| `branchLevels` | One entry per level: `children`, `prune`, `length`, `lengthVariance`, `angle`, `angleVariance`, `curve`, `curveVariance`, `taper`, `start`, `end`, `sides`, `segments`, `twist`, and the optional `whorls`, `whorlTip`, `upright`, `thin` and `taperCurve` |
 | `crown` | A `shape` from the nine outlines, the `start` height, a `spread`, the vertical `pull`, the optional `floor` that a crown keeps at its narrowest, and the optional `fillTop` that sets how far up the branches a filled crown reaches |
 | `leaf` | `kind` (`cluster`, `needle`, `frond` or `blade`), `cards`, `width`, `height`, `perCard`, `up`, `out`, `start`, `end`, and the optional `cell`, `depth`, `cross`, `fill`, `hang` and `bare` |
 | `rosette` | For a plant without branches: `blades`, `length`, `width`, `arch`, `segments`, `shape`, `pinnae`, `upright` and `flowers` |
@@ -127,6 +127,8 @@ A record holds only numbers and short strings. This table shows the parts that a
 Fill is a scene's choice, not part of a species' shape. In the add-on's measurement, a spruce at half its record's fill kept its silhouette and used 24 per cent fewer triangles across its levels, and twenty of them took 22 per cent less frame time. A pine that is already cheap measured no change from more fill. A scene under a tight frame budget can lower fill without changing which species it draws.
 
 **`fillTop` sets how far up the branches a filled crown reaches.** The value is a share of the branch heights, from 0 to 1. The default is 1 for a conical crown, whose top is its leader, and 0.92 for another outline, so a lone upper limb does not carry cards into the air above a rounded dome. A pine that ends in a leader asks for 1, so its crown stays filled to its tip.
+
+**`taperCurve` narrows a branch toward its tip.** The pipe model gives a branch the least radius that carries the limbs beyond it, which holds the wood constant between those limbs and reads as a stack of cylinders. The value, from 0 to 1, pulls each point of a branch toward one cone from its base to its tip, never wider than the pipe model asks. One gives the cone, and another blends toward it. The trunk still widens at the ground from the record's `flare`, so a trunk reads as a cone seated in the soil. The default is 0, which keeps the pipe model's radii.
 
 **`hang` turns a filled crown into a curtain.** Set it to true and the filled cards fall almost straight down, as a willow's shoots do, rather than following their branches. The default is false.
 
