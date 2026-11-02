@@ -576,9 +576,12 @@ const WILLOW: Species = {
 			twist: 0,
 		}),
 		level({
-			children: 5,
-			prune: 0.1,
-			length: 3.4,
+			// A weeping willow's inner crown is dense with fine pendulous shoots, so the limbs divide
+			// more and each shoot runs shorter: the curtains then hang as one mass rather than as
+			// separate sheets with a window between them.
+			children: 8,
+			prune: 0.05,
+			length: 3,
 			lengthVariance: 0.2,
 			angle: 64,
 			angleVariance: 10,
@@ -592,9 +595,9 @@ const WILLOW: Species = {
 			twist: 100,
 		}),
 		level({
-			children: 5,
-			prune: 0.1,
-			length: 2.1,
+			children: 6,
+			prune: 0.05,
+			length: 1.8,
 			lengthVariance: 0.2,
 			angle: 58,
 			angleVariance: 12,
@@ -609,7 +612,7 @@ const WILLOW: Species = {
 		}),
 		level({
 			children: 0,
-			length: 1.5,
+			length: 1.2,
 			angle: 48,
 			angleVariance: 12,
 			curve: -75,
