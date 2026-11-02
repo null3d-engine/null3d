@@ -1966,6 +1966,19 @@ export function vegetationGrassPlan(): PlanItem<Check>[] {
 					},
 				),
 			);
+	// The same scene and sun with no grass, which gives the base frame that the ceiling meets
+	// before the add-on draws anything.
+	items.push(
+		pageItem(
+			'vegetation-grass-nograss-webgpu',
+			'vegetation-grass',
+			{ kind: 'probe', tier: 'webgpu' },
+			{
+				switches: ['gpu=webgpu', 'preset=high', 'seconds=5', 'warmup=8', 'shadows', 'grass=off'],
+				timeoutSeconds: 600,
+			},
+		),
+	);
 	return items;
 }
 

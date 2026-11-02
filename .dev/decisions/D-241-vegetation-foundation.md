@@ -1017,10 +1017,13 @@ the near shadows and 283.97 without. The rows that D-241's ceilings compare draw
 own density. On the same tablet, 2,312 tufts, its valley's 2.0 on each square meter, take 306.09 ms
 with the view cull and the far share and 318.77 without. 6,820 tufts, its bank strip's 5.9, take
 490.73 and 527.17. The cull takes 4.0 per cent back at the valley's density and 6.9 at the strip's.
-Neither row reaches 208.3, because the tablet's High frame with the casting sun is about 212 ms
-before the grass adds its own. Each tuft costs about 0.046 ms, and the grass at the valley's density
-adds about 100 ms. The ceiling is below the scene's own cost at this preset. The widened cull toward
-the light is not built: the whole list draws in every view, which is why the near cascades pay for
-their draw. Two pictures hold the look. `vegetation-grass` holds the hill. `vegetation-grass-shadow`
-holds it at a low sun, where the grass's shadows follow the count, so a view that drew the capacity
-would show the rows past it.
+Neither row reaches 208.3. The same page with the grass switched off measures 179.18 ms, which is
+29.12 ms inside the ceiling, so the base scene does not break it: the grass at the valley's density
+adds 126.91 ms and at the strip's 311.55. The preset's own cost sits mostly in one ambient occlusion
+pass, 176.36 ms of the 179.18, and the grass's fixed cost, its shadow pass and draw setup, adds about
+33 ms on top of the per-tuft cost. The ceiling is the grass's to miss at Creek's density, and the
+cull takes back 4.0 per cent at the valley's and 6.9 at the strip's. The widened cull toward the light
+is not built: the whole list draws in every view, which is why the near cascades pay for their draw.
+Two pictures hold the look. `vegetation-grass` holds the hill. `vegetation-grass-shadow` holds it at a
+low sun, where the grass's shadows follow the count, so a view that drew the capacity would show the
+rows past it.

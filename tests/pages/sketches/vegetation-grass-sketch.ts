@@ -58,6 +58,8 @@ const SHADOWS = new URL(import.meta.url).searchParams.has('shadows');
 const TUFTS = Number(new URL(import.meta.url).searchParams.get('tufts') ?? Number.NaN);
 /** False when a cost row measures the hill without the view cull and the far share. */
 const CULL = new URL(import.meta.url).searchParams.get('cull') !== 'off';
+/** True when a cost row measures the scene with no grass at all, which gives its base frame. */
+const GRASS_OFF = new URL(import.meta.url).searchParams.get('grass') === 'off';
 
 export default defineSketch(async (ctx) => {
 	const { scene, geometry, materials } = ctx;
@@ -92,6 +94,7 @@ export default defineSketch(async (ctx) => {
 		grid: 64,
 		air: { speed: 0, gustStrength: 0, swirl: 0 },
 	});
+	if (GRASS_OFF) return { onUpdate: () => wind.update() };
 	const grass = await createGrass(ctx, {
 		...GRASS,
 		...(Number.isFinite(TUFTS) ? { count: TUFTS } : {}),

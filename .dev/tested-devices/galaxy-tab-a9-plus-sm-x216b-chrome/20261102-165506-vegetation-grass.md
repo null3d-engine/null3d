@@ -13,6 +13,6 @@ The plan's four `vegetation-grass-creek-*` items draw the hill at Creek's own de
 
 The WebGPU times come from the GPU's timer, over two samples at 2.0 and one at 5.9, so the top rows' spread is thin and the bottom rows' p95 is their only sample. The cull takes 12.68 ms back at 2.0, 4.0 per cent, and 36.44 ms at 5.9, 6.9 per cent.
 
-Neither row reaches D-241's 208.3 ms High ceiling for this tablet. Across the two rows without the cull, each tuft costs about 0.046 ms, so the frame with no grass is about 212 ms: the High preset's own passes with the casting sun already sit past the ceiling. The grass at Creek's average density adds about 100 ms, and the cull takes a seventh of it back at the strip's density.
+Neither row reaches D-241's 208.3 ms High ceiling for this tablet. The same page with the grass switched off measured 179.18 ms in the run of 2026-11-02 17:13 (`.dev/tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261102-171133-vegetation-grass.md`), so the scene's own passes with the casting sun sit 29.12 ms inside the ceiling and the grass at Creek's density is what carries the row past it: it adds 126.91 ms at 2,312 tufts and 311.55 ms at 6,820.
 
 The 20,000 tuft hill stays a separate stress case with no ceiling. Its High row on this tablet is 961.54 ms with the casting sun and 283.97 ms without, measured in runs of their own.

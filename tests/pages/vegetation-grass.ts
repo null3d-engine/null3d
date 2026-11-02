@@ -17,8 +17,9 @@ run('vegetation-grass', async () => {
 	const sketch = new URL('./sketches/vegetation-grass-sketch.ts', import.meta.url);
 	// The cost plan asks for a casting sun, so its rows hold the shadow pass that the grass adds.
 	if (params.has('shadows')) sketch.searchParams.set('shadows', '');
-	// A row can draw a hill of its own density, or one without the view cull and the far share.
-	for (const name of ['tufts', 'cull']) {
+	// A row can draw a hill of its own density, one without the view cull and the far share, or
+	// the scene with no grass at all for its base frame.
+	for (const name of ['tufts', 'cull', 'grass']) {
 		const value = params.get(name);
 		if (value !== null) sketch.searchParams.set(name, value);
 	}
