@@ -432,9 +432,11 @@ export const WIND_BUDGETS: Record<(typeof WORKERS)[number], Record<string, numbe
  * What `--wind` raises in the per-call table, for the places that the field makes heavier. The
  * field's answer carries a transferred array, so its message makes more objects than the splats'
  * answer does: the Mac's GPU reads 309.3 bytes a call at the handler and SwiftShader's WebGL2
- * 336.4, where the splats' handler reads 145.0. The shared table keeps a budget that guards the
- * splats' answer, and this one raises the handler for the wind's run alone: a new 32-byte record
- * fails the splats' run above 177 and the wind's above 368.
+ * 336.4, where the splats' handler read up to 230.4. The shared table keeps a budget that guards
+ * the splats' answer, at 336: its handler allocates per frame as well as per call, so its figure
+ * moves with a run's frames, and 336 leaves about three 32-byte records above the worst it read.
+ * This table raises the handler for the wind's run alone, to 368, which leaves less than one
+ * 32-byte record above the wind's largest figure.
  */
 export const WIND_CALL_BUDGETS: Readonly<Record<string, number>> = {
 	'n.onmessage shared/tasks.ts': 368,
@@ -548,9 +550,9 @@ const CALL_BUDGETS: Readonly<Record<string, number>> = { '(IDLE)': 48, '(JS)': 2
  * 217.7. The handler allocates per frame as well as per call, so a run whose frames outrun its
  * answers reads it higher per call: SwiftShader's WebGL2 run made 84 calls in the sample where its
  * WebGPU run made 161, and read 336.4. The shared table's budget of 336 guards the splats' answer,
- * at 145.0; `WIND_CALL_BUDGETS` gives the wind's run the 368 it needs, which leaves room above
- * 336.4 and catches a new promise-sized record of 32 bytes. The `then` place's budget of 96 does
- * the same above 82.
+ * whose handler read up to 230.4: its per-frame share moves the figure by tens of bytes between
+ * runs, so its ceiling leaves about three 32-byte records above the worst it read, where the wind's
+ * own 368 leaves less than one above 336.4. The `then` place's budget of 96 does the same above 82.
  *
  * A task that carries WebAssembly compiles its file in the loader once per page, and a lone file
  * needs no array, no map and no `Promise.all`; the terrain add-on's task is the first that takes
