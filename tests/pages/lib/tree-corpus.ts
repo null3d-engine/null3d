@@ -105,7 +105,7 @@ const SPRUCE: Species = {
 			upright: 15,
 		}),
 	],
-	crown: { shape: 'conical', start: 0.06, spread: 0.25, pull: 0.04, floor: 0.03 },
+	crown: { shape: 'conical', start: 0.06, spread: 0.25, pull: 0.04, floor: 0.03, leafFloor: 0 },
 	leaf: {
 		kind: 'needle',
 		cards: 46,
@@ -603,7 +603,15 @@ const WILLOW: Species = {
 			segments: 3,
 		}),
 	],
-	crown: { shape: 'spherical', start: 0.08, spread: 0.3, pull: 0.7, floor: 0.45, fillTop: 1 },
+	crown: {
+		shape: 'spherical',
+		start: 0.08,
+		spread: 0.3,
+		pull: 0.7,
+		floor: 0.45,
+		fillTop: 1,
+		leafFloor: 0,
+	},
 	leaf: {
 		kind: 'cluster',
 		cell: 'cluster-d',

@@ -177,7 +177,8 @@ export const BUILTIN_SPECIES: readonly Species[] = [
 		// The crown holds its mass up the trunk: the lower part is bare, and the branches crowd the
 		// upper tree, as an evergreen's do, so light passes beneath the crown. The outline narrows
 		// quickly, so the crown tapers to a point instead of standing as a column of clumps.
-		crown: { shape: 'conical', start: 0.48, spread: 0.45, pull: 0.04, floor: 0.15 },
+		// A columnar conifer wears its foliage from just above the ground, so its floor is the ground.
+		crown: { shape: 'conical', start: 0.48, spread: 0.45, pull: 0.04, floor: 0.15, leafFloor: 0 },
 		leaf: {
 			kind: 'needle',
 			cards: 19,
@@ -551,7 +552,8 @@ export const CREEK_SPECIES: readonly Species[] = [
 				segments: 2,
 			}),
 		],
-		crown: { shape: 'weeping', start: 0.2, spread: 0.2, pull: 0.6 },
+		// A willow's weeping strands reach the ground, so its foliage grows down to the ground.
+		crown: { shape: 'weeping', start: 0.2, spread: 0.2, pull: 0.6, leafFloor: 0 },
 		leaf: {
 			kind: 'cluster',
 			cell: 'cluster-d',

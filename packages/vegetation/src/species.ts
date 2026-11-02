@@ -128,6 +128,13 @@ export interface Crown {
 	 * that ends in a leader keeps its top filled.
 	 */
 	readonly fillTop?: number;
+	/**
+	 * Height where the plant's foliage begins, as a share of its height, from 0 to 1. The default is
+	 * the crown's own start, so a branch that leaves the trunk below the crown carries no leaves
+	 * there. A species whose foliage hangs to the ground states 0, because its lowest limbs and
+	 * their drooping tips are the truth of the plant rather than foliage below its crown.
+	 */
+	readonly leafFloor?: number;
 }
 
 /**
@@ -506,6 +513,8 @@ export function speciesProblems(species: Species): string[] {
 	if (!finite(species.crown.pull)) problems.push(`${name}: crown.pull must be a number.`);
 	if (species.crown.floor !== undefined) share(species.crown.floor, `${name}: crown.floor`);
 	if (species.crown.fillTop !== undefined) share(species.crown.fillTop, `${name}: crown.fillTop`);
+	if (species.crown.leafFloor !== undefined)
+		share(species.crown.leafFloor, `${name}: crown.leafFloor`);
 
 	if (species.kind === 'fern' || species.kind === 'rosette' || species.kind === 'grass') {
 		if (!species.rosette) problems.push(`${name}: a ${species.kind} needs a rosette record.`);
