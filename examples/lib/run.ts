@@ -4,6 +4,7 @@
 import {
 	createEngine,
 	type Engine,
+	type EngineOptions,
 	type QualityPreset,
 	type StartupProgress,
 	type StartupStage,
@@ -59,6 +60,21 @@ export interface StartOptions {
 	/** The anti-aliasing mode that the page asks for, instead of the preset's own. */
 	antialias?: 'msaa' | 'fxaa' | 'none';
 	/**
+	 * Settings that the page fixes at the engine's start, such as a measurement's shadow shape. They
+	 * win over the preset's values, as `createEngine`'s options do.
+	 */
+	settings?: Partial<
+		Pick<
+			EngineOptions,
+			| 'shadowCascades'
+			| 'shadowMapSize'
+			| 'shadowTiles'
+			| 'shadowTileSize'
+			| 'heroTileSize'
+			| 'morphTargets'
+		>
+	>;
+	/**
 	 * The element that holds the buttons of the demo's choices, such as a time of day, for a demo
 	 * that has some. Without it, the demo runs with its own first options.
 	 */
@@ -89,6 +105,7 @@ export async function startDemo({
 	stats = true,
 	preset,
 	antialias,
+	settings,
 	choices,
 	hud,
 	signal,
@@ -168,6 +185,7 @@ export async function startDemo({
 			transparent: behind,
 			preset,
 			antialias,
+			...settings,
 			// Collapsed, the overlay stays small until clicked.
 			stats: stats && { collapsed: true },
 			onProgress: (stage: StartupStage, progress?: StartupProgress) => {

@@ -2430,6 +2430,36 @@ export function demosPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * What the shadow map's shape costs the Showroom at Low: the same page four times in one session,
+ * twice with Low's two cascades at 1024 and twice with Medium's three at 2048. A check that lowers
+ * the preset carries the starting preset's shape, so this pair separates the map's sampling inside
+ * the scene draw from everything else that Low draws.
+ */
+export function showroomShadowPlan(): PlanItem<Check>[] {
+	const shapes = ['low', 'medium', 'low', 'medium'] as const;
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...shapes.map((shape, index) =>
+			pageItem(
+				`demo-showroom-webgpu-shadow-${shape}-${index + 1}`,
+				'demo-frames',
+				{ kind: 'probe', tier: 'webgpu' },
+				{
+					switches: [
+						'gpu=webgpu',
+						'demo=showroom',
+						'seconds=5',
+						'preset=low',
+						`shadow-shape=${shape}`,
+					],
+					timeoutSeconds: 300,
+				},
+			),
+		),
+	];
+}
+
+/**
  * What the levels of a dense forest save: the lod-cost page's 40,000 pines, four levels each, timed
  * with every tree at its base mesh and with each at its own level in turns, at the lowest and the
  * highest preset. The two presets carry different thresholds and shadow settings, so the saving
@@ -3023,6 +3053,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'two-step': twoStepPlan,
 	sky: skyPlan,
 	demos: demosPlan,
+	'showroom-shadow': showroomShadowPlan,
 	skyway: skywayPlan,
 	'skyway-cost': skywayCostPlan,
 	splats: splatsPlan,
