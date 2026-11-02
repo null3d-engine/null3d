@@ -541,7 +541,13 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Screen-space bounce light',
 		scene: 'Red and green room',
 		summary:
-			"One bounce of indirect light in a room with a red wall at the left and a green one at the right. Each wall's light lands on the white floor and on the white back wall, which the environment's uniform light cannot show. Every few seconds the bounce turns off and on again.",
+			"One bounce of indirect light in a room with a bright red wall at the left and a bright green one at the right. Each wall's light lands on the grey floor and back wall, which the environment's uniform light cannot show. Every few seconds the bounce turns off and on again, and B takes it over so you can switch it yourself.",
+		controls: [
+			{
+				keys: ['B'],
+				does: 'The bounce light on or off, which takes over from the automatic cycle',
+			},
+		],
 		hold: 1,
 		timeoutSeconds: 60,
 	},
