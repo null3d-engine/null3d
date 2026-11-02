@@ -31,6 +31,7 @@ export type {
 	PlantStats,
 	WindData,
 } from './asset';
+export { SHADOW_CASTER_MIN_TRIANGLES, shadowCasterLevel } from './asset';
 export type {
 	AtlasMap,
 	LeafCell,

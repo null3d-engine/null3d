@@ -91,6 +91,29 @@ export interface PlantStats {
 }
 
 /**
+ * The least triangles a plant draws before its shadow may come from a coarse level. A young plant's
+ * silhouette is the whole of what its shadow says, and a coarse level of a sapling is a blob.
+ *
+ * @category api/vegetation
+ */
+export const SHADOW_CASTER_MIN_TRIANGLES = 4000;
+
+/**
+ * The detail level whose meshes cast a plant's shadow: the record's `shadowLevel`, or the coarsest
+ * level when it names none. A plant under `SHADOW_CASTER_MIN_TRIANGLES` keeps its finest level.
+ *
+ * @param asset The grown plant.
+ * @returns The index of the level to cast the plant's shadow from.
+ * @category api/vegetation
+ */
+export function shadowCasterLevel(asset: PlantAsset): number {
+	const last = Math.max(0, asset.levels.length - 1);
+	const named = Math.round(asset.species.shadowLevel ?? last);
+	const wanted = Math.min(last, Math.max(0, named));
+	return (asset.levels[0]?.triangles ?? 0) < SHADOW_CASTER_MIN_TRIANGLES ? 0 : wanted;
+}
+
+/**
  * One grown plant: every detail level, the wind data, the crown, and the source that a far card
  * bakes from. The same species, seed and variant give the same asset on every device.
  *
