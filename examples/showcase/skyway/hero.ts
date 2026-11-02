@@ -26,6 +26,9 @@ import { COCKPIT, CONSOLE, createCanopy, createCanopyOverlay, createShell, FITTI
 import { createCockpit } from './cockpit';
 import { createConsole } from './console';
 import {
+	CHASE,
+	CHASE_DISTANCE,
+	CHASE_TILT,
 	cityTowers,
 	createSight,
 	type Flight,
@@ -54,15 +57,10 @@ const BUBBLE_MIDDLE = [0, 0.92, -0.05] as const;
 const TRANSITION = 0.9;
 /** How high the camera's path rises over the canopy on its way in or out, in meters. */
 const ARC = 1.2;
-/** The chase camera's place behind the car and above it, and how far ahead of the car it looks. */
-const CHASE = { behind: 13, above: 4.4, ahead: 22, lift: 1.4 };
 /** How quickly the chase camera follows the car's place and its look, per second. */
 const CHASE_FOLLOW = 7;
 /** How far past the car the camera looks when it has pulled all the way in, in meters. */
 const SIGHT_LEAD = 2;
-/** The chase camera's tilt above the car, and its distance from it. */
-const CHASE_TILT = Math.atan2(CHASE.above, CHASE.behind);
-const CHASE_DISTANCE = Math.hypot(CHASE.behind, CHASE.above);
 /**
  * How a drag and the wheel move the camera while the user drives: radians of turn and of tilt per
  * CSS pixel of drag, the zoom per pixel of scroll, and the nearest and farthest the chase camera
@@ -489,9 +487,6 @@ export function createHero(
 			yaw + Math.PI + orbit.turn,
 			CHASE_TILT + orbit.tilt,
 			orbit.distance,
-			// The height and look blend reaches the user's own zoom, so a side swing shortens it
-			// from the height the camera already has rather than from the usual chase distance.
-			Math.max(CHASE_DISTANCE, orbit.distance),
 			towers,
 			dt,
 			aim,
