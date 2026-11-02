@@ -117,6 +117,14 @@ the feature's memory beside the engine's own figures. Its draw records inside th
 pass, so the row reads `gpu not measured` and shows no GPU time of its own. `setBudget(count)` caps the count below the
 preset's value, and `capacity` sets the rows that the batch holds.
 
+The batch allocates its rows when `createSplats` runs, from the preset in use then. A move to a
+higher preset after that draws no more splats, while a move to a lower one draws fewer. A scene
+that offers the Quality control at run time passes `capacity` for the highest preset it may reach,
+and pays that memory on every preset.
+
+A splat's color is the light recorded with it, so the scene's lights do not relight a cloud. Splats
+also cast and receive no shadows. Choose the light of the scene to match the light of the capture.
+
 A whole file appears as its chunks are cut: the first chunks draw while the rest are cut, and a
 large file never holds up a frame. `ready` resolves when every chunk of a file is ready. For a
 stream, it resolves once the nearest chunks have arrived, which takes about a megabyte of files, or

@@ -9,6 +9,8 @@ import * as creek from '../showcase/creek/sketch';
 import * as islandPlace from '../showcase/island/island';
 import * as islandPlan from '../showcase/island/plan';
 import * as island from '../showcase/island/sketch';
+import * as splatCloud from '../showcase/splat-garden/cloud';
+import * as splatGarden from '../showcase/splat-garden/sketch';
 import {
 	BOUNDED_POLAR_ANGLE,
 	type CameraBounds,
@@ -17,7 +19,7 @@ import {
 	routeTimeline,
 } from './cinematic';
 import { mountainRing } from './mountains';
-import { shadowStep } from './showcase-effects';
+import { type ShadowReach, shadowStep } from './showcase-effects';
 
 /** How many points of the loop the checks sample, finely enough for the spline's bends. */
 const SAMPLES = 2000;
@@ -43,6 +45,7 @@ const SCENES = [
 		ground: (x: number, z: number) =>
 			Math.max(creekLand.groundHeight(x, z), creekRing.heightAt(x, z)),
 	},
+	{ name: 'splat garden', sketch: splatGarden, ground: splatCloud.gardenHeight },
 ];
 
 /** The most that a tree on the island rises above where it stands, per unit of its scale, in meters. */
@@ -167,7 +170,13 @@ for (const { name, ground, sketch } of SCENES) {
 		});
 
 		it('keeps the scene’s core inside the shadow range from every pose', () => {
-			const { center, radius, distance } = sketch.SHADOW_REACH;
+			// A scene whose look is a capture of light casts no live shadows, so it declares no range.
+			const reach =
+				'SHADOW_REACH' in sketch
+					? (sketch as { SHADOW_REACH: ShadowReach }).SHADOW_REACH
+					: undefined;
+			if (reach === undefined) return;
+			const { center, radius, distance } = reach;
 			let held = distance;
 			for (let step = 0; step <= SAMPLES; step++) {
 				const { position, target } = at(step);
