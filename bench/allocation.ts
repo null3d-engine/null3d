@@ -429,6 +429,18 @@ export const WIND_BUDGETS: Record<(typeof WORKERS)[number], Record<string, numbe
 };
 
 /**
+ * What `--wind` raises in the per-call table, for the places that the field makes heavier. The
+ * field's answer carries a transferred array, so its message makes more objects than the splats'
+ * answer does: the Mac's GPU reads 309.3 bytes a call at the handler and SwiftShader's WebGL2
+ * 336.4, where the splats' handler reads 145.0. The shared table keeps a budget that guards the
+ * splats' answer, and this one raises the handler for the wind's run alone: a new 32-byte record
+ * fails the splats' run above 177 and the wind's above 368.
+ */
+export const WIND_CALL_BUDGETS: Readonly<Record<string, number>> = {
+	'n.onmessage shared/tasks.ts': 368,
+};
+
+/**
  * Places that allocate with `--calls`, on top of `BUDGETS`: the sketch's own step, which makes the
  * calls that the engine's docs promise allocate nothing, and the figure places that its read of
  * `debug.frameStats` turns on, which are `STATS_BUDGETS`'.
@@ -535,8 +547,10 @@ const CALL_BUDGETS: Readonly<Record<string, number>> = { '(IDLE)': 48, '(JS)': 2
  * splats' answer: the Mac's GPU reads 309.3 bytes a call at the handler, and CI's SwiftShader
  * 217.7. The handler allocates per frame as well as per call, so a run whose frames outrun its
  * answers reads it higher per call: SwiftShader's WebGL2 run made 84 calls in the sample where its
- * WebGPU run made 161, and read 336.4. Its budget of 368 leaves room above that and catches a new
- * promise-sized record of 32 bytes. The `then` place's budget of 96 does the same above 82.
+ * WebGPU run made 161, and read 336.4. The shared table's budget of 336 guards the splats' answer,
+ * at 145.0; `WIND_CALL_BUDGETS` gives the wind's run the 368 it needs, which leaves room above
+ * 336.4 and catches a new promise-sized record of 32 bytes. The `then` place's budget of 96 does
+ * the same above 82.
  *
  * A task that carries WebAssembly compiles its file in the loader once per page, and a lone file
  * needs no array, no map and no `Promise.all`; the terrain add-on's task is the first that takes
@@ -546,7 +560,7 @@ const CALL_BUDGETS: Readonly<Record<string, number>> = { '(IDLE)': 48, '(JS)': 2
 const TASK_CALL_BUDGETS: Readonly<Record<string, number>> = {
 	'pose null3d/s1-sketch.ts': 128,
 	'run shared/tasks.ts': 560,
-	'n.onmessage shared/tasks.ts': 368,
+	'n.onmessage shared/tasks.ts': 336,
 	'send src/field.ts': 80,
 	'ask src/field.ts': 208,
 	'then (built-in)': 96,
@@ -563,8 +577,20 @@ const TASK_CALL_BUDGETS: Readonly<Record<string, number>> = {
 	'next (built-in)': 16,
 };
 
-/** The budget of `place` per call in `worker`, or undefined where the worker judges it per frame. */
-function callBudgetFor(worker: string, place: string): number | undefined {
+/**
+ * The budget of `place` per call in `worker`, or undefined where the worker judges it per frame. A
+ * switch that makes a shared place heavier names the place's budget for its own run, before the
+ * tables' shared figure, so raising it there leaves every other run's guard as tight as it was.
+ */
+function callBudgetFor(
+	worker: string,
+	place: string,
+	chosen: readonly PageSwitch[] = [],
+): number | undefined {
+	for (const choice of chosen) {
+		const own = choice.callBudgets?.[place];
+		if (own !== undefined) return own;
+	}
 	return worker === 'render-worker' ? CALL_BUDGETS[place] : TASK_CALL_BUDGETS[place];
 }
 
@@ -694,6 +720,8 @@ interface PageSwitch {
 	passes?: number;
 	/** What it allocates on top of `BUDGETS` beyond its passes, by place. */
 	budgets?: WorkerBudgets;
+	/** The per-call budget that it gives a shared place in place of the tables' figure. */
+	callBudgets?: Readonly<Record<string, number>>;
 	/** True for a switch that any scene takes; the others change S1 alone. */
 	anyScene?: boolean;
 }
@@ -794,7 +822,13 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 		budgets: SPLATS_BUDGETS,
 	},
 	// The wind's field: one compute pass that fills its grid.
-	{ flag: '--wind', query: '&wind', passes: 1, budgets: WIND_BUDGETS },
+	{
+		flag: '--wind',
+		query: '&wind',
+		passes: 1,
+		budgets: WIND_BUDGETS,
+		callBudgets: WIND_CALL_BUDGETS,
+	},
 	{ flag: '--inertial', query: '&inertial' },
 	{ flag: '--calls', query: '&calls', budgets: CALLS_BUDGETS },
 	{ flag: '--time-of-day', query: '&timeOfDay', budgets: DAY_BUDGETS },
@@ -1142,7 +1176,7 @@ async function main(): Promise<void> {
 					) +
 					(sceneBudgets[name] ?? 0);
 				// The render worker's browser calls and the sketch worker's tasks judge their own places.
-				const callBudget = callBudgetFor(worker, name);
+				const callBudget = callBudgetFor(worker, name, chosen);
 				if (callBudget !== undefined && worker === 'sketch-worker') {
 					const measured = perCall(workerSamples, name);
 					const figure = measured?.perCall ?? 0;
