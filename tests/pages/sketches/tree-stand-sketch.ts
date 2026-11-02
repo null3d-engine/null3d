@@ -40,9 +40,13 @@ export default defineSketch((ctx) => {
 	const SCALE = Number(params.get('scale') ?? 0);
 	if (SCALE > 0) quality.set({ minRenderScale: SCALE, maxRenderScale: SCALE });
 	const SHADOWS = params.get('shadows') !== 'off';
+	// A shadow proxy casts from the coarsest level alone, and a low sun stretches whatever the proxy
+	// leaves out across the ground where it shows.
+	const SHADOW_PROXY = params.get('shadowproxy') === '1';
+	const LOW_SUN = params.get('sun') === 'low';
 	scene.setBackground('#9fc0dd');
 	scene.createDirectionalLight({
-		direction: [-0.5, -1, -0.35],
+		direction: LOW_SUN ? [-0.85, -0.35, -0.4] : [-0.5, -1, -0.35],
 		intensity: 3.1,
 		castShadows: SHADOWS,
 		shadow: { distance: 60, mapSize: 1024 },
@@ -87,6 +91,8 @@ export default defineSketch((ctx) => {
 		wind: field,
 	});
 	const batches: InstanceBatch[] = [];
+	const proxyBatches: InstanceBatch[] = [];
+	const coarseLevel = asset.levels[asset.levels.length - 1];
 	for (const part of asset.levels[0]?.parts ?? []) {
 		const baseMesh = geometry.fromArrays(part.arrays);
 		baseMesh.setLevels(
@@ -101,10 +107,23 @@ export default defineSketch((ctx) => {
 			scene.createInstances(baseMesh, COUNT, {
 				material: part.name === 'wood' ? bark : leaves,
 				values: true,
-				castShadows: true,
+				castShadows: !SHADOW_PROXY,
 				receiveShadows: true,
 			}),
 		);
+		if (SHADOW_PROXY) {
+			const coarse = coarseLevel?.parts.find((other) => other.name === part.name);
+			if (coarse) {
+				proxyBatches.push(
+					scene.createInstances(geometry.fromArrays(coarse.arrays), COUNT, {
+						material: part.name === 'wood' ? bark : leaves,
+						values: true,
+						castShadows: true,
+						receiveShadows: false,
+					}),
+				);
+			}
+		}
 	}
 	math.seed(11);
 	for (let k = 0; k < COUNT; k++) {
@@ -113,14 +132,14 @@ export default defineSketch((ctx) => {
 		const [x, z] = [(column - (side - 1) / 2) * SPACING, (row - (side - 1) / 2) * SPACING];
 		const scale = 0.9 + 0.2 * ((k * 0.6180339887498949) % 1);
 		const turn = (k * 2.399963229728653) % (Math.PI * 2);
-		for (const batch of batches) {
+		for (const batch of [...batches, ...proxyBatches]) {
 			batch.positions.set([x, 0, z], k * 3);
 			batch.scales.fill(scale, k * 3, k * 3 + 3);
 			batch.rotations.set([0, Math.sin(turn / 2), 0, Math.cos(turn / 2)], k * 4);
 			batch.values?.set(treeValues(x, z, 11, 0), k * 4);
 		}
 	}
-	for (const batch of batches) batch.markDirty(0, COUNT);
+	for (const batch of [...batches, ...proxyBatches]) batch.markDirty(0, COUNT);
 
 	return {
 		onUpdate() {
