@@ -49,7 +49,8 @@ export default defineSketch((ctx) => {
 		direction: LOW_SUN ? [-0.85, -0.35, -0.4] : [-0.5, -1, -0.35],
 		intensity: 3.1,
 		castShadows: true,
-		shadow: { distance: 40, contactDistance: 0.4 },
+		// A low sun throws a long shadow, so the map has to reach past the crown to the ground it falls on.
+		shadow: { distance: LOW_SUN ? 140 : 40, contactDistance: 0.4 },
 	});
 	scene.createAmbientLight({ intensity: 0.5 });
 	scene.createHemisphereLight({
@@ -236,6 +237,16 @@ export default defineSketch((ctx) => {
 		fov = CROWN_FOV;
 		const reach = Math.max(4, span * 1.1);
 		position = [target[0] + reach * 0.7, Math.max(1.2, start * 0.8), target[2] + reach * 0.7];
+	} else if (VIEW === 'shadow') {
+		// A low camera over open ground, aimed where a low sun throws the tree's shadow, so a coarse
+		// caster's silhouette can be compared with the real one against the ground rather than the sky.
+		const groundY = 0.15;
+		const reach = Math.max(6, span * 1.6);
+		// The low sun throws the shadow away from the trunk along the light's own ground direction, so
+		// the camera stands beyond the shadow and looks back along it at the tree.
+		target = [center[0] + reach * 0.55, groundY, center[2] + reach * 0.4];
+		fov = 44;
+		position = [center[0] + reach * 1.35, Math.max(1.6, span * 0.3), center[2] + reach * 1.05];
 	} else if (VIEW === 'trunk') {
 		// Stand close to the bole, where the bark is cleanest, so the bark's figure fills the frame.
 		// The trunk's axis comes from the wood near the ground, because a crown's centre is not the
