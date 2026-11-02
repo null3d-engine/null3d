@@ -22,43 +22,23 @@ The engine starts job workers only when its parallel loops take 0.2 ms or more p
 
 Godot found that MSAA crashed Mali-G52, G72 and G76 GPUs on its Vulkan mobile path. Its fix, [godot#114785](https://github.com/godotengine/godot/pull/114785), moved all uniforms to set 0. The engine binds its uniforms in several bind groups. A Mali phone with MSAA on must run the shadow and custom material image tests on WebGPU to rule the fault out ([implementation notes](implementation-notes.md#browser-faults)). The fault is a driver crash, so only a device run can show it.
 
-## A compute pass's fragment form stores its image upside down (M3-F9)
+## A reflection pass that waits draws black on WebGL2 (M3-F9)
 
-`@null3d/water`'s ocean transforms each band's spectrum with a chain of compute passes on WebGPU and
-with their fragment forms on WebGL2. On WebGPU and in compatibility mode the heights match the same
-transform on the page's thread within 0.004 m of a field of 0.73 m
-(`tests/image/ocean-waves.spec.ts`). On WebGL2 the field is the same field, but a read of the pass
-finds it mirrored top to bottom: the square from the image's row 6 holds the texels that the thread's
-transform gives at its row 118, and a read there matches that transform within 0.004 m. A material
-that samples the pass with `textureSampleLevel` sees the mirror too, so the ocean's surface draws the
-swell running the other way.
+A reflection pass that carries a cadence of two draws its image on WebGPU and in compatibility
+mode, and draws black on WebGL2. The ocean's surface samples the pass's texture in the same frame,
+so its sea has no sky to mirror and reads flat. The same scene at Medium, whose cadence is two,
+keeps a bright mirror on WebGPU and in compatibility mode, and loses it on WebGL2. At a cadence of
+one the WebGL2 reflection draws.
 
-A pass's target keeps a row at the index that the shader gives it: a compute pass writes row `id.y`
-and its fragment form writes the row of `gl_FragCoord`. The two agree on the row's *index*, and the
-whole transform chain therefore agrees with itself and with the picture on WebGPU. They disagree on
-the row's *place in the image*. WebGPU counts a texture's rows from the top, and WebGL2 from the
-bottom, so the same index is the top row on one path and the bottom row on the other. The engine's
-read of a pass and its `fromPass` texture both use the image's rows, so both see the mirror on
-WebGL2 and neither does on WebGPU.
+`ocean-waves` shows the transform is not at fault: the field and the slopes match the page's own
+transform within 0.004 m of a 0.73 m field on all three paths. A reflection pass created with the
+same options in the same scene draws its sky on WebGL2, so the pass's drawing and the material's
+reading are both right; the cadence alone loses the image. The reflection image tests draw with the
+default cadence of one, and `compute-state`'s cadence cases cover compute passes, so nothing else
+in the suite covers this shape.
 
-The map is not at fault. `compute-state`'s `map` case binds a two-layer texture as a fallback pass's
-map and reads a texel of each layer back; the value, the column and the layer that the map gives all
-arrive right on every path. The engine's block, the pass's size, the layer of each draw and the
-sketch time are right too. What differs is only where in the image a row lands.
-
-The pass is the first *textured* compute pass of several layers: its fragment form reads a texture
-array of two layers, one for each band, at the layer that it draws, and writes one layer. The
-engine's layered fallback test (`compute-state`, the `layers` case) draws a pass without textures,
-so nothing else in the suite covers that shape.
-
-The readings above went through `render.readPass`. [D-271](decisions/D-271-a-fallback-pass-writes-the-image.md)
-then found that a read on WebGL2 fetched rows from the other end of the target, and its record names
-this ocean's read at row 6 against row 118. So the difference and the copy-chain probe may both be
-that read, and neither says the map's binding is at fault. The case must be re-run against the
-merged engine. If WebGL2 then agrees, the expected-failure line comes off and this finding closes;
-if it does not, the test that binds a known two-layer texture as a fallback pass's map and reads
-each layer back, through a second pass, names whether the binding, the layer or the view differs.
-`tests/image/ocean-waves.spec.ts` marks the WebGL2 case as an expected failure until that run.
+The ocean's demo therefore draws WebGPU and compatibility mode until the WebGL2 cadence keeps the
+pass's image. `.dev/decisions/D-257-water-addon.md` records the demo's stand.
 
 ## A read of a compute pass fetched the mirror on WebGL2 (M3-V13)
 
@@ -135,5 +115,6 @@ Every other finding of the review is fixed or settled. The table names the code,
 | R8-06 | workers from another origin; shared `blob:` bootstrap, [D-54](decisions/D-54-addon-modules.md) | `packages/engine/src/shared/worker-start.ts`, `worker-start.test.ts` |
 | R8-07 | plain bundlers rule | Settled: `.dev/decisions/D-54-addon-modules.md`, `docs/getting-started/install.md` |
 | R8-08 | (see its fix group) | `packages/engine/src/page/engine.ts`, `.dev/implementation-notes.md` |
+| M3-F9 | a compute pass's fragment form stores its image upside down | `tests/image/ocean-waves.spec.ts`: the three paths' fields agree within 0.004 m of a 0.73 m field; [D-271](decisions/D-271-a-fallback-pass-writes-the-image.md) fixed the read |
 
 The text of R2-03, R2-05, R2-06, R2-07, R3-07 is not in the repository, so no one checked them one by one. The records of their fix groups say that each group is built.
