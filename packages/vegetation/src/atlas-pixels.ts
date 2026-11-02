@@ -950,12 +950,12 @@ const BARK_FAMILIES: Readonly<Record<BarkCellName, BarkFamily>> = {
 	},
 	// A live oak's bark: long wavy vertical furrows with broad flat ridges between them.
 	oak: {
-		across: 3,
+		across: 5,
 		along: 2,
-		vertical: 0.3,
-		warp: 1.4,
-		crackWidth: 0.18,
-		depth: 1,
+		vertical: 0.1,
+		warp: 1.8,
+		crackWidth: 0.22,
+		depth: 1.1,
 		fibre: 0.03,
 		dark: [0.16, 0.14, 0.13],
 		light: [0.72, 0.68, 0.62],
@@ -983,6 +983,19 @@ const BARK_FAMILIES: Readonly<Record<BarkCellName, BarkFamily>> = {
 		light: [1.08, 0.86, 0.68],
 		moss: 0.12,
 	},
+	// An aspen's bark: smooth and pale, marked by horizontal lenticels rather than cracked into plates.
+	aspen: {
+		across: 2,
+		along: 2,
+		warp: 0.2,
+		crackWidth: 0.01,
+		depth: 0.02,
+		fibre: 0.01,
+		dark: [0.78, 0.77, 0.74],
+		light: [1.16, 1.15, 1.1],
+		moss: 0.06,
+		lenticels: true,
+	},
 	// A holm oak's bark: small dark plates that scale off, with shallow cracks between them.
 	holm: {
 		across: 12,
@@ -996,8 +1009,9 @@ const BARK_FAMILIES: Readonly<Record<BarkCellName, BarkFamily>> = {
 		moss: 0.05,
 	},
 	willow: {
-		across: 9,
-		along: 5,
+		across: 12,
+		along: 2,
+		vertical: 0.16,
 		warp: 1.2,
 		crackWidth: 0.09,
 		depth: 0.55,
@@ -1113,7 +1127,7 @@ function barkColorAt(
 	const mix = clamp(height, 0, 1);
 	const shade = 0.72 + 0.52 * plate;
 	const feature = family.lenticels
-		? 1 - 0.45 * lenticel(u, v)
+		? 1 - 0.7 * lenticel(u, v)
 		: family.ridges
 			? 1 - 0.25 * (1 - ridge(u, v))
 			: 1;
