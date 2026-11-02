@@ -3,7 +3,7 @@
 // under the tree and rises into the blossom, passes out through the canopy's edge and climbs back
 // to the opening view. The opening shot holds, so the image test's held frame lands on the view of
 // the whole garden.
-import type { Shot } from '../../lib/cinematic';
+import type { Shot } from '../lib/cinematic';
 
 /** The point that the opening view and the Manual camera turn around. */
 export const WIDE_LOOK: readonly [number, number, number] = [0.5, 1.9, 0];

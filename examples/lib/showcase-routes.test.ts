@@ -9,8 +9,8 @@ import * as creek from '../showcase/creek/sketch';
 import * as islandPlace from '../showcase/island/island';
 import * as islandPlan from '../showcase/island/plan';
 import * as island from '../showcase/island/sketch';
-import * as splatCloud from '../showcase/splat-garden/cloud';
-import * as splatGarden from '../showcase/splat-garden/sketch';
+import * as splatCloud from '../splat-garden/cloud';
+import * as splatGarden from '../splat-garden/sketch';
 import {
 	BOUNDED_POLAR_ANGLE,
 	type CameraBounds,
