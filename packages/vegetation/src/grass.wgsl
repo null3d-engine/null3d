@@ -17,6 +17,8 @@ struct Uniforms {
     sway: f32,
     // The distance from the camera out to which the blades sway, in meters: 0 for every distance.
     swayDistance: f32,
+    // 1 draws the far share and widens its blades, as the compute path does; 0 draws every tuft.
+    cull: f32,
 }
 
 var wind: texture_2d_array<f32>;
@@ -203,62 +205,96 @@ fn wind_sample(world: vec3f, origin: vec2f, size: f32, layer: i32, air: WindAir)
 }
 // </wind-sample>
 
-fn vertexOffset(input: VertexInput) -> vec3f {
-    if (material.windStrength <= 0.0) {
-        return vec3f(0.0);
-    }
-    // The air at the blade's root: the field's grid where it covers the root, and its steady
-    // field beyond the box.
-    let base = textureLoad(airSettings, vec2i(0, 0), 0);
-    let gust = textureLoad(airSettings, vec2i(1, 0), 0);
-    let swirl = textureLoad(airSettings, vec2i(2, 0), 0);
-    let sent = textureLoad(airSettings, vec2i(3, 0), 0);
-    let reading = wind_reading(base, gust, swirl, sent, frame.time);
-    let place = (object.worldMatrix * vec4f(input.position, 1.0)).xyz + camera.position;
-    let at = wind_sample(
-        place,
-        camera.position.xz - vec2f(material.windBox * 0.5),
-        material.windBox,
-        i32(material.windLayer),
-        reading,
-    );
-    let across = vec2f(at.x, at.z);
-    let speed = at.a;
-    if (speed <= 0.0) {
-        return vec3f(0.0);
-    }
-    // The air's direction in the tuft's own space, so a turned tuft bends downwind.
-    let local = object.normalMatrix * vec3f(across.x, 0.0, across.y);
-    let reach = length(local);
-    if (reach <= 0.00001) {
-        return vec3f(0.0);
-    }
-    let downwind = local / reach;
-    // The blade bends most at its tip, and the air's speed sets how far.
-    var bend = input.uv.y * input.uv.y * material.sway * speed;
-    // The tuft's whole crown fades with its origin's distance from the camera, so a tuft past the
-    // sway distance stands still and its shadow keeps the layer that a far cascade cached.
-    if (material.swayDistance > 0.0) {
-        let away = length(object.position - camera.position);
-        bend *= 1.0 - smoothstep(material.swayDistance * 0.8, material.swayDistance, away);
-    }
-    if (bend <= 0.0) {
-        return vec3f(0.0);
-    }
-    return vec3f(downwind.x * bend, -0.4 * bend * bend, downwind.z * bend);
-}
+// <tuft-density>
+/// The share of a tuft that the far ground draws, from all of it near the camera to this share far
+/// from it, and the distances where the share falls. A tuft's place keeps one share, and its
+/// blades widen by the inverse, so the hill's cover stays the same.
+const DENSITY_FAR: f32 = 0.25;
+const DENSITY_START: f32 = 10.0;
+const DENSITY_END: f32 = 45.0;
 
-/// A tuft's traits from its root's place: a value from 0 to 1 that differs between neighbouring
-/// tufts, so each tuft keeps one tint over its blades and two GPU paths agree.
-fn tuft_trait(place: vec3f) -> f32 {
+/// A value from 0 up to 1 from a tuft's root place, the same on every device.
+fn tuft_hash(place: vec3f) -> f32 {
     let x = bitcast<u32>(i32(round(place.x * 8.0)));
     let z = bitcast<u32>(i32(round(place.z * 8.0)));
     return f32(pcg(x ^ pcg(z ^ 0x9e3779b9u))) / 4294967295.0;
 }
 
+/// The share of the tufts that draw at a root's place: all of them near the camera, and the far
+/// share at the fade's end.
+fn tuft_density(place: vec3f, eye: vec3f) -> f32 {
+    return mix(1.0, DENSITY_FAR, smoothstep(DENSITY_START, DENSITY_END, length(place - eye)));
+}
+
+/// True when a tuft at `place` draws, from its hash against the share at its distance.
+fn tuft_kept(place: vec3f, eye: vec3f) -> bool {
+    return tuft_hash(place) < tuft_density(place, eye);
+}
+// </tuft-density>
+
+fn vertexOffset(input: VertexInput) -> vec3f {
+    let root = object.position;
+    // A far tuft draws a share of the time. The tufts that the share leaves out collapse to their
+    // root, so WebGL2's batch draws the same hill that the compute list builds.
+    var width = 1.0;
+    if (material.cull > 0.5) {
+        if (!tuft_kept(root, camera.position)) {
+            return -input.position;
+        }
+        width = 1.0 / tuft_density(root, camera.position);
+    }
+    var offset = vec3f(0.0);
+    if (material.windStrength > 0.0) {
+        // The air at the blade's root: the field's grid where it covers the root, and its steady
+        // field beyond the box.
+        let base = textureLoad(airSettings, vec2i(0, 0), 0);
+        let gust = textureLoad(airSettings, vec2i(1, 0), 0);
+        let swirl = textureLoad(airSettings, vec2i(2, 0), 0);
+        let sent = textureLoad(airSettings, vec2i(3, 0), 0);
+        let reading = wind_reading(base, gust, swirl, sent, frame.time);
+        let place = (object.worldMatrix * vec4f(input.position, 1.0)).xyz + camera.position;
+        let at = wind_sample(
+            place,
+            camera.position.xz - vec2f(material.windBox * 0.5),
+            material.windBox,
+            i32(material.windLayer),
+            reading,
+        );
+        let across = vec2f(at.x, at.z);
+        let speed = at.a;
+        // The air's direction in the tuft's own space, so a turned tuft bends downwind.
+        let local = object.normalMatrix * vec3f(across.x, 0.0, across.y);
+        let reach = length(local);
+        if (speed > 0.0 && reach > 0.00001) {
+            let downwind = local / reach;
+            // The blade bends most at its tip, and the air's speed sets how far.
+            var bend = input.uv.y * input.uv.y * material.sway * speed;
+            // The tuft's whole crown fades with its origin's distance from the camera, so a tuft
+            // past the sway distance stands still and its shadow keeps the layer that a far
+            // cascade cached.
+            if (material.swayDistance > 0.0) {
+                let away = length(root - camera.position);
+                bend *= 1.0 - smoothstep(material.swayDistance * 0.8, material.swayDistance, away);
+            }
+            if (bend > 0.0) {
+                offset = vec3f(downwind.x * bend, -0.4 * bend * bend, downwind.z * bend);
+            }
+        }
+    }
+    // Widen the strip about its radial centerline, so the far share covers the ground that the
+    // tufts it leaves out would have covered.
+    if (width > 1.0) {
+        let radial = normalize(input.position.xz);
+        let side = input.position.xz - radial * dot(input.position.xz, radial);
+        offset.x += side.x * (width - 1.0);
+        offset.z += side.y * (width - 1.0);
+    }
+    return offset;
+}
+
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
-    let tint = tuft_trait(object.position);
+    let tint = tuft_hash(object.position);
     // A share of the tufts dry toward their tips, and each tuft's green differs a little.
     let dry = smoothstep(0.62, 1.0, tint) * input.uv.y;
     s.baseColor *= mix(vec3f(0.8 + 0.4 * tint), vec3f(1.7, 1.3, 0.45), dry);

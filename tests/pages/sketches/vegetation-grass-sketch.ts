@@ -52,11 +52,23 @@ export function ground(size: number, segments: number): MeshArrays {
 	return { positions, normals, uvs, indices };
 }
 
+/** True when the sun casts, which the cost plan asks for so its rows hold the shadow pass. */
+const SHADOWS = new URL(import.meta.url).searchParams.has('shadows');
+/** The tufts at the High count that a cost row draws, or its own count for the picture. */
+const TUFTS = Number(new URL(import.meta.url).searchParams.get('tufts') ?? Number.NaN);
+/** False when a cost row measures the hill without the view cull and the far share. */
+const CULL = new URL(import.meta.url).searchParams.get('cull') !== 'off';
+
 export default defineSketch(async (ctx) => {
 	const { scene, geometry, materials } = ctx;
 	scene.setBackground('#a9c7e6');
 	scene.createAmbientLight({ intensity: 0.55, color: '#cfe0ff' });
-	scene.createDirectionalLight({ direction: [-0.4, -1, -0.3], intensity: 2.3, color: '#ffe9c8' });
+	scene.createDirectionalLight({
+		direction: [-0.4, -1, -0.3],
+		intensity: 2.3,
+		color: '#ffe9c8',
+		castShadows: SHADOWS,
+	});
 	const camera = scene.createPerspectiveCamera({
 		fov: 45,
 		near: 0.1,
@@ -80,7 +92,12 @@ export default defineSketch(async (ctx) => {
 		grid: 64,
 		air: { speed: 0, gustStrength: 0, swirl: 0 },
 	});
-	const grass = await createGrass(ctx, { ...GRASS, wind: wind.field });
+	const grass = await createGrass(ctx, {
+		...GRASS,
+		...(Number.isFinite(TUFTS) ? { count: TUFTS } : {}),
+		wind: wind.field,
+		camera: CULL ? camera : undefined,
+	});
 	// The preset's share draws from the first frame; a change of preset takes its share then.
 	ctx.quality.onChange(() => grass.fit(ctx.quality.preset));
 	return {
