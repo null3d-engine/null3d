@@ -229,6 +229,18 @@ export function builtinRules(species: readonly Species[]): EcoRule[] {
 		],
 		clump: [0.3, 1],
 	});
+	// The open patches: wildflower clumps where the canopy is thin and the ground is dry.
+	add('wildflower', {
+		layer: 'ground',
+		spacing: 3.2,
+		overlaps: ['ground'],
+		tolerances: [
+			curve('openness', 0.4, 0.6, 1, 1.01),
+			curve('heightAboveWater', 0.2, 0.5, 8, 15),
+			curve('slope', 0, 0, 0.6, 1.1),
+		],
+		clump: [0.5, 0.66],
+	});
 	add('meadow-grass', {
 		layer: 'ground',
 		spacing: 1,

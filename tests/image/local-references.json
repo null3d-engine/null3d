@@ -323,6 +323,12 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
+	"chromium-swiftshader/compat/vegetation-wildflower.png": {
+		"test": "vegetation-wildflower",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "The new wildflower species has no CI drawing yet; CI's next run draws the software set and is the judge (D-238)."
+	},
 	"chromium-swiftshader/compat/water-bounds.png": {
 		"test": "water-bounds",
 		"tier": "compat",
@@ -658,6 +664,12 @@
 		"tier": "webgl2",
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/webgl2/vegetation-wildflower.png": {
+		"test": "vegetation-wildflower",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "The new wildflower species has no CI drawing yet; CI's next run draws the software set and is the judge (D-238)."
 	},
 	"chromium-swiftshader/webgl2/weather.png": {
 		"test": "weather",
@@ -1006,6 +1018,12 @@
 		"tier": "webgpu",
 		"date": "2026-10-30",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 for the hill that the grass draws as one band, before the branch was pushed; CI's own software set replaces it when the branch lands"
+	},
+	"chromium-swiftshader/webgpu/vegetation-wildflower.png": {
+		"test": "vegetation-wildflower",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "The new wildflower species has no CI drawing yet; CI's next run draws the software set and is the judge (D-238)."
 	},
 	"chromium-swiftshader/webgpu/water-bounds.png": {
 		"test": "water-bounds",

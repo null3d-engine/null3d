@@ -3019,6 +3019,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		'hosta',
 		'sedge',
 		'rush',
+		'wildflower',
 	].map((species) => ({
 		name: `vegetation-${species}`,
 		sketch: `tests/pages/sketches/vegetation-sketch.ts?species=${species}`,
