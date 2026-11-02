@@ -111,12 +111,32 @@ export interface Crown {
 }
 
 /**
+ * The cells of the leaf atlas that a species may name.
+ * @category api/vegetation
+ */
+export type LeafCellName =
+	| 'cluster-a'
+	| 'cluster-b'
+	| 'cluster-c'
+	| 'cluster-d'
+	| 'needle'
+	| 'frond'
+	| 'blade'
+	| 'broad';
+
+/**
  * The cards or blades that carry a plant's leaves.
  * @category api/vegetation
  */
 export interface Leaf {
 	/** The shape of one card. */
 	readonly kind: LeafKind;
+	/**
+	 * The leaf atlas's cell that the cards sample. Leave it out and the generator chooses a cluster
+	 * cell from the species' name, or the cell that the kind names. A species names its own cell
+	 * when its leaves differ from its kind's, such as a small round leaf on a broadleaf tree.
+	 */
+	readonly cell?: LeafCellName;
 	/** Cards on one terminal branch. */
 	readonly cards: number;
 	/** Half the width of one card, in meters: a card draws two of these across. */
@@ -422,6 +442,20 @@ export function speciesProblems(species: Species): string[] {
 		const at = `${name}: leaf`;
 		if (!['cluster', 'needle', 'frond', 'blade'].includes(species.leaf.kind))
 			problems.push(`${at}.kind must be cluster, needle, frond or blade.`);
+		if (
+			species.leaf.cell !== undefined &&
+			![
+				'cluster-a',
+				'cluster-b',
+				'cluster-c',
+				'cluster-d',
+				'needle',
+				'frond',
+				'blade',
+				'broad',
+			].includes(species.leaf.cell)
+		)
+			problems.push(`${at}.cell is not one of the eight leaf cells.`);
 		if (!Number.isInteger(species.leaf.cards) || species.leaf.cards < 1)
 			problems.push(`${at}.cards must be a whole number from 1.`);
 		positive(species.leaf.width, `${at}.width`);

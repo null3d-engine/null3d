@@ -12,8 +12,14 @@ import {
 import { REVIEW_TREES, reviewTree } from '../lib/tree-corpus';
 
 const params = new URL(import.meta.url).searchParams;
-const SPECIES: Species | undefined =
+const CHOSEN: Species | undefined =
 	reviewTree(params.get('species') ?? '') ?? REVIEW_TREES[Number(params.get('species') ?? 0)];
+/** How much of the record's crown fill to draw: 0.5 for the half-filled comparison. */
+const FILL = Math.max(0, Number(params.get('fill') ?? 1));
+const SPECIES: Species | undefined =
+	CHOSEN?.leaf && FILL !== 1
+		? { ...CHOSEN, leaf: { ...CHOSEN.leaf, fill: (CHOSEN.leaf.fill ?? 0) * FILL } }
+		: CHOSEN;
 const VIEW = params.get('view') ?? 'whole';
 const SEED = Number(params.get('seed') ?? 11);
 const VARIANT = Number(params.get('variant') ?? 0);
@@ -34,7 +40,7 @@ function normalize(x: number, y: number, z: number): [number, number, number] {
 export default defineSketch((ctx) => {
 	if (!SPECIES) throw new Error(`the review has no ${params.get('species')} tree`);
 	const { scene, geometry, materials } = ctx;
-	scene.setBackground('#c8d2d9');
+	scene.setBackground('#9fc0dd');
 	scene.createDirectionalLight({
 		direction: [-0.5, -1, -0.35],
 		intensity: 3.1,
@@ -65,12 +71,15 @@ export default defineSketch((ctx) => {
 		cell: leafCellFor(SPECIES),
 		color: SPECIES.color.leaf as [number, number, number],
 		transmission: SPECIES.color.transmission,
-		alphaCutoff: SPECIES.leaf?.kind === 'needle' ? 0.28 : 0.35,
+		alphaCutoff: SPECIES.leaf?.kind === 'needle' ? 0.2 : 0.24,
+		// A softer gloss keeps a flat card from catching a white sheen that reads as a dead leaf.
+		leafGloss: 0.45,
 	});
 	const bark = plantMaterial(ctx, {
 		atlases,
 		part: 'wood',
 		color: SPECIES.color.bark as [number, number, number],
+		barkTiles: 5,
 	});
 	for (const part of asset.levels[0]?.parts ?? [])
 		scene.createMesh({

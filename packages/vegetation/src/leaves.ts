@@ -169,11 +169,17 @@ export function leafCards(
 	// spire closes to a point.
 	let crownTop = crown.height;
 	if (fill > 0) {
-		crownTop = crown.start;
+		// A filled crown stops at the branches' real top. A rounded crown stops at the height that
+		// most branches reach, so a lone upper limb does not carry cards into the air above the dome.
+		const tops: number[] = [];
 		for (const branch of skeleton.branches)
-			for (let i = 0; i + 2 < branch.points.length; i += 3)
-				crownTop = Math.max(crownTop, branch.points[i + 1] as number);
-		crownTop = Math.max(crownTop, crown.start + 0.1);
+			for (let i = 0; i + 2 < branch.points.length; i += 3) {
+				const y = branch.points[i + 1] as number;
+				if (y >= crown.start) tops.push(y);
+			}
+		tops.sort((a, b) => a - b);
+		const at = crown.shape === 'conical' ? tops.length - 1 : Math.floor((tops.length - 1) * 0.92);
+		crownTop = Math.max(crown.start + 0.1, tops[at] ?? crown.height);
 	}
 	for (const [branchIndex, branch] of skeleton.branches.entries()) {
 		const terminal = branch.children.length === 0;

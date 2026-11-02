@@ -82,6 +82,13 @@ describe('the atlas blocks', () => {
 		}
 	});
 
+	it('keeps the cell that a record names', () => {
+		const base = BUILTIN_SPECIES[0] as Species;
+		const leaf = base.leaf as NonNullable<Species['leaf']>;
+		expect(leafCellFor({ ...base, leaf: { ...leaf, cell: 'cluster-d' } })).toBe('cluster-d');
+		expect(leafCellFor({ ...base, leaf: { ...leaf, cell: 'needle' } })).toBe('needle');
+	});
+
 	it('spreads broadleaves over more than one cluster shape', () => {
 		const shapes = new Set(
 			CREEK_SPECIES.filter((species) => (species.leaf?.kind ?? 'cluster') === 'cluster').map(
