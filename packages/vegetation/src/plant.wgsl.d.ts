@@ -8,6 +8,7 @@ declare const shader: CompiledMaterial<
 		readonly barkCell: 'vec2f';
 		readonly part: 'f32';
 		readonly tiles: 'f32';
+		readonly scarTiles: 'f32';
 		readonly tint: 'vec3f';
 		readonly height: 'f32';
 		readonly throughLeaf: 'f32';
