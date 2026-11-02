@@ -256,8 +256,11 @@ direction and the size, which the picture draw cannot give a round, but the figu
 simulation on in one page load and off in the next. The camera, the preset and the scale are the
 same, and the frame's own GPU time is the difference. The run held the quiet window for ten minutes. The
 shared queue held its own jobs back, and the marker in `tools/lib/quiet-window.ts` stopped builds
-in other checkouts. The one-minute load was 6.9 before the first batch and 2.0 to 2.4 for the rest. The least
-difference of three batches was 2.850 ms on WebGL2, whose batches read 2.850, 3.063 and 3.009 ms.
+in other checkouts. The one-minute load was 6.9 before the first batch and 2.0 to 2.4 for the rest. A neighbour's
+package build started just before the marker went up and ran about forty seconds into it. The least
+of the three batches is the figure that stands, so the batch that shared the machine is excluded by
+construction. The least difference of three batches was 2.850 ms on WebGL2, whose batches read
+2.850, 3.063 and 3.009 ms.
 On WebGPU the batches differ by -0.484, -1.415 and +0.062 ms, and in compatibility mode by -0.319,
 +1.462 and -0.540 ms. The chain sits inside the frame's own variation on those paths, so the method
 states no cost there. The smallest resolved bound is about 1.4 ms.
