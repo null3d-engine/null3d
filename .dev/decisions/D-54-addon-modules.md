@@ -215,13 +215,13 @@ The splats add-on ships as `@null3d/splats`, its own package whose version stays
 
 ### The draw goes through the feature draw hook
 
-The cloud is one instance batch whose rows are the splats that draw: `scene.addFeatureInstances`, the many-copies form of M3-E1's feature draw. The add-on gives one quad and a surface function, and each row brings a center, rotations and spreads (the row's place, its quaternion and its scales), a linear RGBA color (the row's color) and four values. The shader projects each row's covariance, sizes a camera-facing card to its ellipse, and fades the card with the same ellipse; it reads the copy of the scene's depth (M3-E4) to fade a splat where it meets a mesh.
+The cloud is one instance batch whose rows are the splats that draw: `scene.addFeatureInstances`, the many-copies form of M3-E1's feature draw. The add-on gives one quad and an unlit surface, and each row brings a center, rotations and spreads (the row's place, its quaternion and its scales), a linear RGBA color (the row's color) and four values. The shader projects each row's covariance and spans a camera-facing card along its ellipse's own axes, so the card's coordinates measure the distance from the center and the fragment fades by them; it reads the copy of the scene's depth (M3-E4) to fade a splat where it meets a mesh. [D-286](D-286-real-scan-splats.md) gives the reasons, from the first real scan.
 
 The per-splat sort is the engine's own: the transparent pass culls and sorts the batch's rows back to front on the job workers, on both GPU paths. The add-on adds no second sort, because a second sort would duplicate the one place that orders blended draws.
 
 ### Detail levels, streaming and the budget
 
-`createSplats` cuts the cloud into chunks of nearby splats, each in importance order (blurred volume times opacity), so a prefix of a chunk is a coarser level of it: all, a half, a quarter and an eighth. A task on the job workers (M3-E2's `runTask`) chooses each chunk's prefix from its distance and the budget, nearest first, and the sketch writes the chosen rows between two frames. The chunks are cut one at a time, so the cloud appears coarse to fine and a large file holds up no frame.
+`createSplats` cuts the cloud into chunks of nearby splats, each in importance order (opacity times the area of the largest cross-section), so a prefix of a chunk is a coarser level of it: all, a half, a quarter and an eighth. A prefix grows its splats so it covers the whole chunk's surface ([D-286](D-286-real-scan-splats.md)). A task on the job workers (M3-E2's `runTask`) chooses each chunk's prefix from its distance and the budget, nearest first, and the sketch writes the chosen rows between two frames. The chunks are cut one at a time, so the cloud appears coarse to fine and a large file holds up no frame.
 
 The budget is a feature setting through M3-E6's `FeatureHost`: 100,000 splats on Low to 800,000 on Ultra, with lower counts on WebGL2, and the frame-budget governor lowers it again. The host reports the batch's memory to the stats overlay. GPU time is not measured for add-on features, so the overlay shows it as not measured.
 

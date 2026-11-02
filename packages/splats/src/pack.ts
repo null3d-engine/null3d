@@ -2,7 +2,16 @@
 // batch that the engine sorts. A chunk whose data has not arrived takes no row, and a chunk whose
 // chosen count is zero takes none either, so a chunk that arrives after the camera looked away
 // never draws where it no longer belongs.
-import type { SplatChunk } from './chunks';
+//
+// A prefix that keeps part of a chunk leaves gaps where the splats it drops covered the surface. So
+// the pack grows the splats that it keeps, by the factor that gives them the chunk's whole cover
+// again: the square root of the whole chunk's cover over the prefix's own, where a splat's cover is
+// its opacity times the area of its largest cross-section. A coarse level then draws the same
+// surface with fewer, larger splats, as a level of detail should, rather than a sparse one.
+import { coverOf, type SplatChunk } from './chunks';
+
+/** The most that a prefix's splats grow, so a chunk far away never draws as a few large blobs. */
+const MOST_GROWTH = 3;
 
 /** The batch rows that a pack writes, and the calls that tell the engine what changed. */
 export interface SplatRows {
@@ -56,11 +65,13 @@ export function packRows(
 		}
 		let prefix = prefixes[i];
 		if (!prefix || prefix.count !== count) {
+			const growth = growthOf(chunk, count);
+			const scales = chunk.scales.subarray(0, count * 3);
 			prefix = {
 				count,
 				positions: chunk.positions.subarray(0, count * 3),
 				rotations: chunk.rotations.subarray(0, count * 4),
-				scales: chunk.scales.subarray(0, count * 3),
+				scales: growth === 1 ? scales : scales.map((value) => value * growth),
 				colors: chunk.colors.subarray(0, count * 4),
 			};
 			prefixes[i] = prefix;
@@ -74,4 +85,17 @@ export function packRows(
 	if (at > 0) rows.markDirty(0, at);
 	rows.setActiveCount(at);
 	return at;
+}
+
+/**
+ * The factor that a chunk's first `count` splats grow by, so that together they cover what the
+ * whole chunk covers: 1 for the whole chunk, and at most the cap for a small prefix.
+ */
+export function growthOf(chunk: SplatChunk, count: number): number {
+	if (count >= chunk.count) return 1;
+	let kept = 0;
+	for (let i = 0; i < count; i++) kept += coverOf(chunk.scales, chunk.colors, i);
+	const whole = chunk.cover;
+	if (!(kept > 0) || !(whole > kept)) return 1;
+	return Math.min(MOST_GROWTH, Math.sqrt(whole / kept));
 }

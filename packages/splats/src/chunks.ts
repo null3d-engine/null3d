@@ -37,6 +37,8 @@ export interface SplatChunk {
 	readonly scales: Float32Array;
 	/** Linear RGBA colors, 4 floats each. */
 	readonly colors: Float32Array;
+	/** The surface that the chunk's splats cover together, as `coverOf` counts each one. */
+	readonly cover: number;
 }
 
 /**
@@ -220,15 +222,14 @@ function buildChunk(
 	radius: number,
 ): SplatChunk {
 	const count = which.length;
+	// A splat's importance is the surface that it covers. A scan's splats are mostly flat discs
+	// whose thickness says nothing of the surface, so their volume would rank them almost at random.
 	const weight = new Float32Array(count);
+	let cover = 0;
 	for (let k = 0; k < count; k++) {
-		const i = which[k] as number;
-		const volume =
-			(data.scales[i * 3] as number) *
-			(data.scales[i * 3 + 1] as number) *
-			(data.scales[i * 3 + 2] as number);
-		// A splat's importance is the surface that it covers, so its volume, weighted by its opacity.
-		weight[k] = volume * Math.max(data.colors[i * 4 + 3] as number, 0);
+		const value = coverOf(data.scales, data.colors, which[k] as number);
+		weight[k] = value;
+		cover += value;
 	}
 	const order = new Uint32Array(count);
 	for (let k = 0; k < count; k++) order[k] = k;
@@ -244,5 +245,16 @@ function buildChunk(
 		scales.set(data.scales.subarray(i * 3, i * 3 + 3), k * 3);
 		colors.set(data.colors.subarray(i * 4, i * 4 + 4), k * 4);
 	}
-	return { center, radius, count, positions, rotations, scales, colors };
+	return { center, radius, count, positions, rotations, scales, colors, cover };
+}
+
+/**
+ * The surface that splat `i` covers: its opacity times the area of its largest cross-section, the
+ * product of its two largest spreads.
+ */
+export function coverOf(scales: Float32Array, colors: Float32Array, i: number): number {
+	const a = scales[i * 3] as number;
+	const b = scales[i * 3 + 1] as number;
+	const c = scales[i * 3 + 2] as number;
+	return Math.max(a * b, b * c, a * c) * Math.max(colors[i * 4 + 3] as number, 0);
 }

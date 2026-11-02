@@ -3,7 +3,7 @@
 // camera moved away, which must take no row.
 import { describe, expect, it } from 'bun:test';
 import type { SplatChunk } from './chunks';
-import { type PrefixView, packRows, type SplatRows } from './pack';
+import { growthOf, type PrefixView, packRows, type SplatRows } from './pack';
 
 /** A chunk whose positions name it, so the test can tell the rows apart. */
 function chunk(name: number, count: number): SplatChunk {
@@ -17,6 +17,27 @@ function chunk(name: number, count: number): SplatChunk {
 		rotations: new Float32Array(count * 4),
 		scales: new Float32Array(count * 3),
 		colors: new Float32Array(count * 4),
+		cover: 0,
+	};
+}
+
+/** A chunk of `count` flat splats, each `size` across and fully opaque, whose cover the test knows. */
+function discs(count: number, size: number): SplatChunk {
+	const scales = new Float32Array(count * 3);
+	const colors = new Float32Array(count * 4);
+	for (let i = 0; i < count; i++) {
+		scales.set([size, size, 1e-6], i * 3);
+		colors.set([1, 1, 1, 1], i * 4);
+	}
+	return {
+		center: [0, 0, 0],
+		radius: 1,
+		count,
+		positions: new Float32Array(count * 3),
+		rotations: new Float32Array(count * 4),
+		scales,
+		colors,
+		cover: count * size * size,
 	};
 }
 
@@ -120,5 +141,21 @@ describe('packRows', () => {
 			),
 		).toBe(2);
 		expect(target.active).toEqual([2]);
+	});
+
+	it('grows a prefix of equal splats by the square root of the share it drops', () => {
+		const chunk = discs(8, 0.5);
+		expect(growthOf(chunk, 8)).toBe(1);
+		expect(growthOf(chunk, 2)).toBeCloseTo(2, 6);
+		expect(growthOf(chunk, 4)).toBeCloseTo(Math.SQRT2, 6);
+		const target = rows(2);
+		expect(packRows(target, [{ count: 8, data: chunk }], [2], [])).toBe(2);
+		expect([...target.scales]).toEqual([1, 1, 2e-6, 1, 1, 2e-6].map(Math.fround));
+		// The chunk's own data keeps its spreads, so a finer level later draws them as they are.
+		expect(chunk.scales[0]).toBe(0.5);
+	});
+
+	it('caps the growth of a very small prefix', () => {
+		expect(growthOf(discs(100, 0.5), 1)).toBe(3);
 	});
 });
