@@ -29,17 +29,41 @@ run('demo-frames', async () => {
 	if (!demo) throw new Error(`Add ?demo= with the name of a demo, not ${name}.`);
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
+	// The demo's own cost switches reach its sketch, as the device page passes them.
+	const sketch = new URL(demo.sketch);
+	for (const id of [
+		'morph',
+		'still',
+		'follow',
+		'mood',
+		'storm',
+		'lens',
+		'governor',
+		'render-scale',
+		'without',
+	])
+		if (params.has(id)) sketch.searchParams.set(id, params.get(id) ?? '');
+	const runDemo = { ...demo, sketch };
 	const failures: string[] = [];
 	// No stats overlay: its sampling would take frames that this page measures.
-	const engine = await startDemo({ canvas, demo, stats: false });
+	const engine = await startDemo({ canvas, demo: runDemo, stats: false });
 	engine.onFailure((error) => failures.push(`${error.code}: ${error.message}`));
 	await engine.firstFrame;
 	const bytesBeforeFirstFrame = downloadedBytes();
 	progress('the first frame drew');
-	const metrics = await engine.measure(SECONDS);
+	// The frame figures' code loads on the measure's first use. A tunnel can fail that one request
+	// and take the measure with it, so warm it in a very short measure that is not reported, and
+	// try the timed measure once more if its first attempt fails.
+	await engine.measure(0.05).catch(() => undefined);
+	const metrics = await engine.measure(SECONDS).catch(async (error) => {
+		progress(`the measure failed (${(error as Error).message}); trying once more`);
+		await new Promise((resolve) => setTimeout(resolve, 1000));
+		return engine.measure(SECONDS);
+	});
 	const bytesTotal = downloadedBytes();
 	const { tier } = engine.capabilities;
 	const mode = { ...engine.mode };
+	const directDraws = engine.capabilities.directDraws;
 	await engine.destroy();
 	if (!(metrics.presentedFps > 0))
 		throw new Error(
@@ -48,6 +72,7 @@ run('demo-frames', async () => {
 	return {
 		tier,
 		mode,
+		directDraws,
 		demo: demo.name,
 		seconds: metrics.seconds,
 		frames: metrics.frames,
@@ -62,6 +87,12 @@ run('demo-frames', async () => {
 		firstFrameMs: metrics.load.firstFrameMs,
 		firstFrameDoneMs: metrics.load.firstFrameDoneMs,
 		engineStartMs: metrics.load.engineStartMs,
+		// The GPU's own split of the frame, where the device times passes.
+		gpuMs: metrics.gpuMs,
+		gpuStepMs: metrics.gpuStepMs,
+		gpuPassMs: metrics.gpuPassMs,
+		cpuMs: metrics.cpuMs,
+		drawCalls: metrics.drawCalls,
 		// The engine's own stages of the start, so a slow first frame names its one-time cost.
 		load: metrics.load,
 		wasmBytes: metrics.downloadBytes.wasm,
