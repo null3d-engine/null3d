@@ -237,12 +237,12 @@ export function leafCards(
 		}
 	}
 
-	// A filled crown holds cards through its volume as well as on its branches. Every filled card
-	// sits within reach of a branch's own path, so the foliage reads as a spray that the wood carries
-	// rather than as cards left standing in the air.
+	// A filled crown holds cards through its volume as well as on its branches. Each filled card
+	// takes its place from the crown's own outline, then lies on the line between the two twigs
+	// nearest that place, so foliage closes the space between the wood instead of gathering on it.
 	if (fill > 0 && cards.length > 0) {
-		// The branches' samples that lie inside the crown give the places that a filled card may
-		// stand near, and the branch and level that hold it for its wind and its shade.
+		// The branches' samples that lie inside the crown give the twigs that a filled card may
+		// stand between, and the branch and level that hold it for its wind and its shade.
 		interface Hold {
 			readonly point: [number, number, number];
 			readonly tangent: [number, number, number];
@@ -267,30 +267,139 @@ export function leafCards(
 				});
 			}
 		}
+		// A coarse grid of the holds finds the twigs around a crown point without walking every
+		// branch of the plant.
+		const CELL = 1.5;
+		const cellKey = (x: number, y: number, z: number) =>
+			Math.floor(x / CELL) +
+			512 +
+			1024 * (Math.floor(y / CELL) + 512 + 1024 * (Math.floor(z / CELL) + 512));
+		const buckets = new Map<number, number[]>();
+		for (const [index, hold] of holds.entries()) {
+			const key = cellKey(hold.point[0], hold.point[1], hold.point[2]);
+			const list = buckets.get(key);
+			if (list) list.push(index);
+			else buckets.set(key, [index]);
+		}
+		/** The holds that stand in the cells around a point, which a filled card may bridge. */
+		const neighbours = (point: readonly [number, number, number]): number[] => {
+			const found: number[] = [];
+			const cx = Math.floor(point[0] / CELL) + 512;
+			const cy = Math.floor(point[1] / CELL) + 512;
+			const cz = Math.floor(point[2] / CELL) + 512;
+			for (let dx = -1; dx <= 1; dx++)
+				for (let dy = -1; dy <= 1; dy++)
+					for (let dz = -1; dz <= 1; dz++) {
+						const list = buckets.get(cx + dx + 1024 * (cy + dy + 1024 * (cz + dz)));
+						if (list) found.push(...list);
+					}
+			return found;
+		};
 		const stiffnesses = new Map<number, number>();
 		const count = Math.round(cards.length * fill);
+		const span = Math.max(1e-6, crownTop - crown.start);
 		for (let k = 0; k < count && holds.length > 0; k++) {
 			const key = 0x400000 + k;
-			const pick = holds[
-				Math.min(
-					holds.length - 1,
-					Math.floor(unitAt(seed, 21, variant, key, KEY_AT) * holds.length),
-				)
-			] as Hold;
-			// The offset spreads the card around its branch in every direction, so the spray wraps the
-			// wood instead of lining its upper side.
-			const reach = 0.12 + 0.72 * unitAt(seed, 24, variant, key, KEY_SIZE);
-			const offset = normalize(
-				unitAt(seed, 22, variant, key, KEY_SIDE) * 2 - 1,
-				unitAt(seed, 23, variant, key, KEY_ROLL) * 2 - 1,
-				unitAt(seed, 25, variant, key, KEY_LEAN) * 2 - 1,
-			);
-			const point: [number, number, number] = [
-				pick.point[0] + offset[0] * reach,
-				Math.min(crownTop, Math.max(crown.start, pick.point[1] + offset[1] * reach)),
-				pick.point[2] + offset[2] * reach,
+			// More cards stand low in the crown, where a cone's surface is widest, and the top keeps
+			// enough to close the spire rather than spread its cards only over the lower volume.
+			const t = 1 - Math.sqrt(1 - unitAt(seed, 21, variant, key, KEY_AT));
+			const at = crown.radius * crownEnvelope(crown.shape, t);
+			const angle = unitAt(seed, 22, variant, key, KEY_SIDE) * Math.PI * 2;
+			const aim: [number, number, number] = [
+				Math.cos(angle) * at * Math.sqrt(unitAt(seed, 23, variant, key, KEY_ROLL)),
+				crown.start + span * t,
+				Math.sin(angle) * at * Math.sqrt(unitAt(seed, 23, variant, key, KEY_ROLL)),
 			];
-			const outward = normalize(point[0], 0, point[2]);
+			const near = neighbours(aim);
+			// The nearest twig holds the card, and the second twig that makes the line closest to
+			// the crown point carries the other end, so a card that closes a gap between whorls or
+			// between limbs still reads as foliage growing from wood.
+			let pick: Hold | undefined;
+			let point: [number, number, number] | undefined;
+			if (near.length > 0) {
+				let bestFirst = Number.POSITIVE_INFINITY;
+				for (const index of near) {
+					const hold = holds[index] as Hold;
+					const dx = hold.point[0] - aim[0];
+					const dy = hold.point[1] - aim[1];
+					const dz = hold.point[2] - aim[2];
+					const distance = dx * dx + dy * dy + dz * dz;
+					if (distance < bestFirst) {
+						bestFirst = distance;
+						pick = hold;
+					}
+				}
+				// A cone's outline is its surface: a card that stands on the crown point, within reach
+				// of a twig, keeps the spire smooth instead of lumpy. Another crown pulls its cards
+				// onto the line between two twigs, so an open canopy shows air rather than loose cards.
+				if (pick && crown.shape === 'conical' && bestFirst <= 1.6 * 1.6) point = aim;
+				if (pick && !point) {
+					let bestPair = Number.POSITIVE_INFINITY;
+					for (const index of near) {
+						const other = holds[index] as Hold;
+						if (other === pick) continue;
+						const dx = other.point[0] - pick.point[0];
+						const dy = other.point[1] - pick.point[1];
+						const dz = other.point[2] - pick.point[2];
+						const length = dx * dx + dy * dy + dz * dz;
+						// A cone closes between twigs that can stand a little apart; a broken crown does
+						// not bridge a long gap, so its cards stay near the wood and the air shows.
+						const pairSpan = crown.shape === 'conical' ? 3 : 1.6;
+						if (length < 1e-6 || length > pairSpan * pairSpan) continue;
+						const share = Math.min(
+							1,
+							Math.max(
+								0,
+								((aim[0] - pick.point[0]) * dx +
+									(aim[1] - pick.point[1]) * dy +
+									(aim[2] - pick.point[2]) * dz) /
+									length,
+							),
+						);
+						const px = pick.point[0] + dx * share;
+						const py = pick.point[1] + dy * share;
+						const pz = pick.point[2] + dz * share;
+						const miss = (px - aim[0]) ** 2 + (py - aim[1]) ** 2 + (pz - aim[2]) ** 2;
+						if (miss < bestPair) {
+							bestPair = miss;
+							point = [px, py, pz];
+						}
+					}
+					const reach = crown.shape === 'conical' ? 1.6 : 0.7;
+					if (bestPair > reach * reach) {
+						point = undefined;
+						pick = undefined;
+					}
+				}
+			}
+			if (!pick || !point) {
+				// With no twig near the crown point, the nearest branch still holds the card close,
+				// so a lone tip carries foliage rather than leaving the place empty.
+				const fallback = holds[
+					Math.min(
+						holds.length - 1,
+						Math.floor(unitAt(seed, 24, variant, key, KEY_SIZE) * holds.length),
+					)
+				] as Hold;
+				const reach = 0.1 + 0.3 * unitAt(seed, 25, variant, key, KEY_LEAN);
+				const offset = normalize(
+					unitAt(seed, 26, variant, key, KEY_AT) * 2 - 1,
+					unitAt(seed, 27, variant, key, KEY_SIDE) * 2 - 1,
+					unitAt(seed, 28, variant, key, KEY_ROLL) * 2 - 1,
+				);
+				pick = fallback;
+				point = [
+					fallback.point[0] + offset[0] * reach,
+					fallback.point[1] + offset[1] * reach,
+					fallback.point[2] + offset[2] * reach,
+				];
+			}
+			const placed: [number, number, number] = [
+				point[0],
+				Math.min(crownTop, Math.max(crown.start, point[1])),
+				point[2],
+			];
+			const outward = normalize(placed[0], 0, placed[2]);
 			const tangent = leaf.hang ? normalize(outward[0] * 0.2, -1, outward[2] * 0.2) : pick.tangent;
 			let stiffness = stiffnesses.get(pick.level);
 			if (stiffness === undefined) {
@@ -303,17 +412,13 @@ export function leafCards(
 				seed,
 				variant,
 				key,
-				point,
+				placed,
 				tangent,
 				outward,
 				pick.branch,
 				stiffness,
 			);
 			// The crown's top keeps finer cards, so a spire closes to a point rather than a ball.
-			const t = Math.min(
-				1,
-				Math.max(0, (point[1] - crown.start) / Math.max(1e-6, crownTop - crown.start)),
-			);
 			const shrink = 0.45 + 0.55 * crownEnvelope(crown.shape, t);
 			cards.push({ ...card, width: card.width * shrink, height: card.height * shrink });
 		}
