@@ -233,11 +233,23 @@ export function leafCards(
 			perBranch = Math.max(perBranch, Math.min(64, Math.round(branch.length * density * weight)));
 		const stiffness = stiffnessByte(species, branch.level);
 		const samples = branch.points.length / 3;
+		// The bare reach at a branch's base follows its height in the crown where the record names a
+		// second one: a conifer's whorls stand apart low, so their wood shows, and crowd at the top,
+		// where they should wrap the leader.
+		let firstCard = leaf.start;
+		if (leaf.startTop !== undefined) {
+			const branchY = branch.points[1] as number;
+			const heightT = Math.min(
+				1,
+				Math.max(0, (branchY - crown.start) / Math.max(1e-6, crownTop - crown.start)),
+			);
+			firstCard = leaf.start + (leaf.startTop - leaf.start) * heightT;
+		}
 		for (let k = 0; k < perBranch; k++) {
 			const key = branchIndex * 0x1f + k + 1;
 			const share =
-				leaf.start +
-				(leaf.end - leaf.start) *
+				firstCard +
+				(leaf.end - firstCard) *
 					((k + 0.5 + (unitAt(seed, 1, variant, key, KEY_AT) - 0.5) * 0.5) / perBranch);
 			const { point, tangent } = pointAlong(branch, share);
 			// The outward direction is horizontal, away from the plant's axis.

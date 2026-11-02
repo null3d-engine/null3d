@@ -184,6 +184,13 @@ export interface Leaf {
 	readonly out: number;
 	/** Share of the branch where cards start. */
 	readonly start: number;
+	/**
+	 * The share of a branch left bare at its base at the crown's top, where `start` gives it at the
+	 * crown's bottom. A conifer shows wood where its whorls stand apart and wraps its leader where
+	 * they crowd, and one bare reach cannot serve both ends of the same tree. Leave it out and every
+	 * branch keeps `start`.
+	 */
+	readonly startTop?: number;
 	/** Share of the branch where cards stop. */
 	readonly end: number;
 	/**
@@ -507,6 +514,11 @@ export function speciesProblems(species: Species): string[] {
 	}
 	if (species.leaf) {
 		const at = `${name}: leaf`;
+		if (
+			species.leaf.startTop !== undefined &&
+			(!finite(species.leaf.startTop) || species.leaf.startTop < 0 || species.leaf.startTop > 1)
+		)
+			problems.push(`${at}.startTop must be a number from 0 to 1.`);
 		if (
 			species.leaf.volume !== undefined &&
 			(!finite(species.leaf.volume) || species.leaf.volume < 0 || species.leaf.volume > 1)
