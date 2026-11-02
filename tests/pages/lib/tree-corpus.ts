@@ -116,6 +116,7 @@ const SPRUCE: Species = {
 		up: 1,
 		out: 0.9,
 		start: 0.32,
+		startTop: 0.05,
 		end: 1,
 		depth: 4,
 		cross: true,
