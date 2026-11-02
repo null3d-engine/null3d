@@ -371,7 +371,12 @@ export function leafCards(
 				// A cone's outline is its surface: a card that stands on the crown point, within reach
 				// of a twig, keeps the spire smooth instead of lumpy. Another crown pulls its cards
 				// onto the line between two twigs, so an open canopy shows air rather than loose cards.
-				if (pick && crown.shape === 'conical' && bestFirst <= 1.6 * 1.6) point = aim;
+				// A record may ask for a share of its crown's cards to stand where the outline puts them,
+				// whatever the wood is doing. A crown with few long limbs fills between them that way; a
+				// crown that bridges only its neighbouring twigs reads as one lobe per limb.
+				const loose = unitAt(seed, 24, variant, key, KEY_SIZE) < (leaf.volume ?? 0);
+				if (pick && loose) point = aim;
+				else if (pick && crown.shape === 'conical' && bestFirst <= 1.6 * 1.6) point = aim;
 				if (pick && !point) {
 					let bestPair = Number.POSITIVE_INFINITY;
 					for (const index of near) {

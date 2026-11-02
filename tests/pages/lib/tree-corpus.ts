@@ -320,6 +320,7 @@ const ASPEN: Species = {
 		end: 1,
 		depth: 4,
 		fill: 2,
+		volume: 0.55,
 	},
 	wind: { stiffness: [0.15, 0.5, 0.8, 0.95], flutter: 0.03, frequency: 1.9 },
 	color: { bark: [0.62, 0.6, 0.55], leaf: [0.45, 0.3, 0.03], tint: 0.08, transmission: 0.4 },
