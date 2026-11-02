@@ -1,6 +1,7 @@
 // A stand of one review species, drawn as a scene draws the add-on: instance batches with the
 // plant's three levels, the wind field, shadows and the generated atlases. ?species= names the
-// review tree, ?count= the copies, ?fill= scales the filled crown and ?spacing= the grid step.
+// review tree, ?count= the copies, ?fill= scales the filled crown, ?spacing= the grid step and
+// ?governor=off holds the render scale, so a timing says whether the frame budget moved it.
 import { defineSketch, type InstanceBatch, math } from '@null3d/engine';
 import {
 	bakePlantAtlases,
@@ -30,7 +31,10 @@ const SPECIES =
 const FLAT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] as const;
 
 export default defineSketch((ctx) => {
-	const { scene, geometry, materials } = ctx;
+	const { scene, geometry, materials, quality } = ctx;
+	// The governor lowers the live settings when frames take too long, so a timing that leaves it on
+	// measures the engine's own adjustment as much as the stand. A run names which of the two it is.
+	if (params.get('governor') === 'off') quality.set({ governor: false });
 	scene.setBackground('#9fc0dd');
 	scene.createDirectionalLight({
 		direction: [-0.5, -1, -0.35],

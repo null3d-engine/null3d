@@ -224,7 +224,7 @@ const FAMILIES = {
 		veins: 3,
 	},
 	needle: { profile: 1, aspect: 0.14, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 1 },
-	fascicle: { profile: 1, aspect: 0.06, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 1 },
+	fascicle: { profile: 1, aspect: 0.11, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 1 },
 	blade: { profile: 1, aspect: 0.06, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 3 },
 	hosta: {
 		profile: 0.55,
@@ -702,7 +702,7 @@ function shootCell(seed: number): LeafCellPainter {
  */
 function fascicleCell(seed: number): LeafCellPainter {
 	const leaves: PlacedLeaf[] = [];
-	const bundles = 13;
+	const bundles = 26;
 	const bow = 0.01;
 	for (let bundle = 0; bundle < bundles; bundle++) {
 		const key = seed * 131 + bundle;
@@ -710,12 +710,12 @@ function fascicleCell(seed: number): LeafCellPainter {
 		const baseY = 0.06 + 0.86 * f;
 		const baseX = 0.5 + bow * Math.sin(Math.PI * f) + (random2(key, 3) - 0.5) * 0.03;
 		const turn = (random2(key, 5) - 0.5) * 0.6;
-		for (let needle = 0; needle < 2; needle++) {
+		for (let needle = 0; needle < 3; needle++) {
 			const sub = key * 7 + needle;
-			const side = needle === 0 ? -1 : 1;
-			// The two needles of a bunch stay close at the base and part along their length.
-			const angle = turn + side * (0.34 + 0.34 * random2(sub, 6));
-			const length = (0.13 - 0.045 * f) * (0.9 + 0.2 * random2(sub, 4));
+			const side = needle - 1;
+			// The needles of a bunch stay close at the base and part along their length.
+			const angle = turn + side * (0.36 + 0.3 * random2(sub, 6));
+			const length = (0.17 - 0.05 * f) * (0.9 + 0.2 * random2(sub, 4));
 			leaves.push(placeLeaf(sub, FAMILIES.fascicle, baseX, baseY, angle, length));
 		}
 	}
