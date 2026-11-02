@@ -1022,8 +1022,10 @@ Neither row reaches 208.3. The same page with the grass switched off measures 17
 adds 126.91 ms and at the strip's 311.55. The preset's own cost sits mostly in one ambient occlusion
 pass, 176.36 ms of the 179.18, and the grass's fixed cost, its shadow pass and draw setup, adds about
 33 ms on top of the per-tuft cost. The ceiling is the grass's to miss at Creek's density, and the
-cull takes back 4.0 per cent at the valley's and 6.9 at the strip's. The widened cull toward the light
-is not built: the whole list draws in every view, which is why the near cascades pay for their draw.
+cull takes back 4.0 per cent at the valley's and 6.9 at the strip's. The cull applies to the camera's view
+only: the grass is culled for the camera and not for the cascades, so every shadow view draws the whole
+kept list, which is why the near cascades pay for it. Widening the cull toward the light waits on the
+near-shadow count and the graph edge.
 Two pictures hold the look. `vegetation-grass` holds the hill. `vegetation-grass-shadow` holds it at a
 low sun, where the grass's shadows follow the count, so a view that drew the capacity would show the
 rows past it.
