@@ -151,7 +151,8 @@ export function leafCards(
 	crown: CrownField,
 ): LeafCard[] {
 	const leaf = species.leaf;
-	if (!leaf) return [];
+	// A bare plant keeps its branches and the record's card settings, and draws no leaves.
+	if (!leaf || leaf.bare === true) return [];
 	const cards: LeafCard[] = [];
 	// The twigs carry the leaves, and each level above them carries half the cards of the level
 	// below, out to the record's depth. The share thins the foliage toward the trunk, so a crown

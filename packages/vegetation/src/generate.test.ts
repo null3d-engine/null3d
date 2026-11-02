@@ -227,6 +227,18 @@ describe('the generator', () => {
 		}
 	});
 
+	test('draws a bare plant as branches alone', () => {
+		const leaf = oak.leaf as NonNullable<Species['leaf']>;
+		const bare: Species = { ...oak, leaf: { ...leaf, bare: true } };
+		const asset = generatePlant(bare, { seed: 3, variant: 1 });
+		for (const level of asset.levels) {
+			expect(level.parts.some((part) => part.name === 'leaves')).toBe(false);
+			expect(level.parts.some((part) => part.name === 'wood')).toBe(true);
+		}
+		const green = generatePlant(oak, { seed: 3, variant: 1 });
+		expect(green.levels[0]?.parts.some((part) => part.name === 'leaves')).toBe(true);
+	});
+
 	test('keeps the built-in set inside the budgets that M3-V1 measured', () => {
 		const started = performance.now();
 		let variants = 0;

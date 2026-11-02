@@ -184,6 +184,12 @@ export interface Leaf {
 	 * following the crown's outward direction. The default is false.
 	 */
 	readonly hang?: boolean;
+	/**
+	 * Whether the plant draws its branches without leaves, as a deciduous tree in winter. The leaf
+	 * record still names the cards that it would draw, so a bare tree and a green tree share one
+	 * record. The default is false.
+	 */
+	readonly bare?: boolean;
 }
 
 /**
@@ -484,6 +490,8 @@ export function speciesProblems(species: Species): string[] {
 			problems.push(`${at}.depth must be a whole number from 1.`);
 		if (species.leaf.cross !== undefined && typeof species.leaf.cross !== 'boolean')
 			problems.push(`${at}.cross must be true or false.`);
+		if (species.leaf.bare !== undefined && typeof species.leaf.bare !== 'boolean')
+			problems.push(`${at}.bare must be true or false.`);
 		if (species.leaf.fill !== undefined && (!finite(species.leaf.fill) || species.leaf.fill < 0))
 			problems.push(`${at}.fill must be a number from 0.`);
 		if (species.leaf.hang !== undefined && typeof species.leaf.hang !== 'boolean')
