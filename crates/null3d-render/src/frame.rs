@@ -4767,6 +4767,42 @@ mod tests {
         assert_eq!(arena.push(&[1u8; 16]).unwrap().1, 16);
     }
 
+    /// A frame that fails keeps none of its copies' blocks, so the frame that records next starts
+    /// from empty memory however large the failed frame's copies were.
+    #[test]
+    fn a_failed_frame_keeps_no_upload_blocks() {
+        let mut lists = ParityLists::new(16, 64);
+        let (list, mut arena) = lists.take(0).unwrap();
+        arena.begin_frame().unwrap();
+        arena.push(&vec![1u8; 2 * UPLOAD_BLOCK]).unwrap();
+        let marks = StillMarks {
+            settled: false,
+            words: &[],
+            weight_at: None,
+        };
+        let result = lists.restore(
+            0,
+            list,
+            arena,
+            marks,
+            Err(RecordError::OutOfMemory { bytes: 1 }),
+            HaltFigures::default(),
+        );
+        assert!(result.is_err());
+        assert!(
+            lists.arenas[0].blocks.is_empty(),
+            "the failed frame kept the blocks of copies that never replay"
+        );
+        lists.arenas[0].begin_frame().unwrap();
+        assert_eq!(
+            lists.arenas[0]
+                .push(&vec![1u8; 2 * UPLOAD_BLOCK])
+                .unwrap()
+                .1,
+            (2 * UPLOAD_BLOCK) as u32
+        );
+    }
+
     /// A copy that the heap cannot hold is reported as an error, and the core does not trap.
     #[test]
     fn an_upload_arena_reports_a_copy_that_the_heap_cannot_hold() {
