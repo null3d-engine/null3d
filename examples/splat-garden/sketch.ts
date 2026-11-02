@@ -12,11 +12,11 @@
 // user. For held frames, the sketch's address takes the mood: `?mood=Morning&dslr`.
 import { defineSketch, type QualityPreset } from '@null3d/engine';
 import { createSplats, type Splats } from '@null3d/splats';
-import { type CameraBounds, createCinematic } from '../../lib/cinematic';
-import { mountainRing } from '../../lib/mountains';
-import { terrain } from '../../lib/procedural';
-import { createShowcaseEffects } from '../../lib/showcase-effects';
-import { createMoods, isMood } from '../../lib/stage';
+import { type CameraBounds, createCinematic } from '../lib/cinematic';
+import { mountainRing } from '../lib/mountains';
+import { terrain } from '../lib/procedural';
+import { createShowcaseEffects } from '../lib/showcase-effects';
+import { createMoods, isMood } from '../lib/stage';
 import { createCloud, gardenHeight, groundColor, HEADING, HOUR, LAND } from './cloud';
 import { createLantern } from './lantern';
 import { SHOTS, WIDE_LOOK } from './route';

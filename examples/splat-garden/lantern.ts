@@ -4,7 +4,7 @@
 // through the add-on's depth mix, so the two read as one scene. Its maps are made in code from
 // seeded noise, and a small lamp light warms the moss that the mesh ground wears below it.
 import type { MeshGeometry, Object3D, SketchContext } from '@null3d/engine';
-import { Noise, textureSet } from '../../lib/procedural';
+import { Noise, textureSet } from '../lib/procedural';
 import { gardenHeight, LANTERN, LANTERN_SCALE } from './cloud';
 
 /** The lantern's parts, in meters, scaled to the garden's lantern. */

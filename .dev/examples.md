@@ -922,7 +922,7 @@ Splat garden is the fifth showcase scene, and the one that draws a captured surf
 built one. A shallow hollow of moss in the late afternoon holds weathered boulders, a fallen log, a stone
 lantern that glows and a blossoming tree, with ferns, fallen petals and drifting spores. Most of
 the glade is one cloud of Gaussian splats, so the picture shows the add-on's soft detail close up
-and the cloud's scale from a distance. The scene is `examples/showcase/splat-garden/`.
+and the cloud's scale from a distance. The scene is `examples/splat-garden/`.
 
 - **The cloud is made in code, then streamed as chunk files.** The sample content carries no scan,
   so `cloud.ts` makes one of 446,970 splats from seeded noise. Each splat is shaded with the light
