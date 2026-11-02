@@ -970,6 +970,13 @@ product pages.
   lights that the frame lists, so a light switched off or hidden leaves the list and is not faded:
   the fade smooths a light crossing the area lights' cap, not one switched off. The fix brightens
   every area-lit picture a little, so `demo-area-lights` changed with it, in both sets.
+- **The beam pulsed with the fog's offset cycle.** The volumetric fog's light step moved each
+  cell's sample point through a sixteen-frame cycle. The blend with the last frame's grid left a
+  residual that repeated with the cycle. The lit fog, the headlight beams included, pulsed at
+  3.75 Hz. A cell now keeps a point hashed from its own place, so a still camera draws the same fog
+  every frame. The reasons are in [D-133](decisions/D-133-volumetric-fog.md).
+  `tests/image/beam-steady.spec.ts` draws a still headlight in the fog. It measures the beam over
+  the frames that the browser presents, so the pulse cannot return unseen.
 - **The lamps were not the sparkle; the paint was.** In one 60-frame-a-second capture of the car
   returning in the street on the Mac, the two lamp bars stayed at full brightness in every frame,
   while the paint on the nose sparkled. Turning the headlamp beams off or the fog off left the
