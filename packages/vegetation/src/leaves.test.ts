@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { builtInSpecies } from './builtin';
 import { generatePlant } from './generate';
-import { buildLeaves } from './leaves';
+import { buildLeaves, leafCards } from './leaves';
 import type { LeafCard } from './levels';
+import { growSkeleton } from './skeleton';
 import type { Species } from './species';
 
 /** A cluster card with its own middle, and axes lined up with the world so its corners read plainly. */
@@ -97,6 +98,26 @@ describe('card coverage', () => {
 		const filled = leafSize({ ...base, leaf: { ...leaf, depth: 4, fill: 0.5 } });
 		expect(filled.vertices).toBeGreaterThan(open.vertices);
 		expect(filled.triangles).toBeGreaterThan(open.triangles);
+	});
+
+	test('carries no card below a floor that stands above the ground', () => {
+		const base = builtInSpecies('conifer') as Species;
+		const skeleton = growSkeleton(base, 3, 0);
+		const floor = base.height * base.crown.start;
+		/** The lowest card middle that the plant grows for a given foliage floor. */
+		const lowest = (leafFloor?: number): number => {
+			const crown = {
+				radius: base.height,
+				start: floor,
+				height: base.height,
+				shape: base.crown.shape,
+				...(leafFloor === undefined ? {} : { leafFloor }),
+			};
+			return Math.min(...leafCards(base, skeleton, 3, 0, crown).map((card) => card.center[1]));
+		};
+		expect(lowest()).toBeGreaterThanOrEqual(floor);
+		// The conifer's foliage reaches the ground, so a floor of zero keeps the skirt below its crown.
+		expect(lowest(0)).toBeLessThan(floor - 1);
 	});
 
 	test('keeps every filled card inside the crown and names a branch that exists', () => {

@@ -179,6 +179,9 @@ export function generatePlant(species: Species, options: GenerateOptions): Plant
 		height: species.height,
 		shape: species.crown.shape,
 		...(species.crown.fillTop !== undefined ? { fillTop: species.crown.fillTop } : {}),
+		...(species.crown.leafFloor !== undefined
+			? { leafFloor: species.height * species.crown.leafFloor }
+			: {}),
 	};
 
 	const rosetteLeavesList = rosettePlant ? rosetteLeaves(species, seed, variant, field) : undefined;

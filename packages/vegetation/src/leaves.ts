@@ -204,6 +204,11 @@ export function leafCards(
 	const twigLength = species.branchLevels[lastLevel]?.length ?? 1;
 	const density = leaf.cards / Math.max(0.1, twigLength);
 	const fill = Math.max(0, leaf.fill ?? 0);
+	// A branch carries no foliage below the plant's floor. A crown's own start is the floor unless
+	// the record states another, which a plant whose foliage hangs to the ground sets to zero. A
+	// zero floor is the ground itself: everything above it is the species' own foliage, and a
+	// drooping tip under the ground is out of sight rather than below a crown.
+	const floor = crown.leafFloor ?? crown.start;
 	// A filled crown fills to the branches' own top rather than the record's nominal height, so no
 	// card is left in the air above the tree. Its cards also finish smaller near that top, so a
 	// spire closes to a point.
@@ -252,6 +257,8 @@ export function leafCards(
 				(leaf.end - firstCard) *
 					((k + 0.5 + (unitAt(seed, 1, variant, key, KEY_AT) - 0.5) * 0.5) / perBranch);
 			const { point, tangent } = pointAlong(branch, share);
+			// A limb that leaves the trunk below the floor carries no leaves there.
+			if (floor > 0 && point[1] < floor) continue;
 			// The outward direction is horizontal, away from the plant's axis.
 			const outward = normalize(point[0], 0, point[2]);
 			const card = makeCard(
@@ -281,6 +288,7 @@ export function leafCards(
 		if (fill > 0 && perBranch > 0 && samples > 1) {
 			const key = branchIndex * 0x1f + perBranch + 1;
 			const { point, tangent } = pointAlong(branch, 1);
+			if (floor > 0 && point[1] < floor) continue;
 			const outward = normalize(point[0], 0, point[2]);
 			cards.push(
 				makeCard(leaf, crown, seed, variant, key, point, tangent, outward, branchIndex, stiffness),

@@ -126,6 +126,11 @@ export interface CrownField {
 	 * that the outline gives: a conical crown reaches its top, and another outline stops at 0.92.
 	 */
 	readonly fillTop?: number;
+	/**
+	 * The height where the plant's foliage begins, in meters. Leave it out to use the crown's start,
+	 * or state 0 for a plant whose foliage hangs to the ground.
+	 */
+	readonly leafFloor?: number;
 }
 
 /**
