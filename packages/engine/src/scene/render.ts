@@ -961,8 +961,8 @@ export class Render {
 
 	/**
 	 * Switches a pass on or off, from the next frame on. A pass switched off keeps the last image
-	 * it drew, so a sketch can draw a costly pass every few frames. Throws E1101 for a pass that was
-	 * removed. It allocates nothing.
+	 * it drew. A pass that draws in some frames only takes a cadence from `setPassEvery`, which
+	 * compiles nothing. Throws E1101 for a pass that was removed. It allocates nothing.
 	 */
 	setPassEnabled(pass: RenderPass, enabled: boolean): void {
 		const call = 'render.setPassEnabled';
