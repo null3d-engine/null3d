@@ -425,4 +425,11 @@ describe('the rock on steep faces', () => {
 		expect(branch).toContain('smoothstep(0.75, 0.45, facing.y)');
 		expect(branch).toContain('c2 = mix(c2, sideways, steep)');
 	});
+
+	test('the side maps are read only where the page asks for them', () => {
+		const surface = wgslFunction('surface');
+		const outside = surface.replace(steepBranch(), '');
+		expect(outside).not.toContain('input.worldPosition.zy');
+		expect(outside).not.toContain('input.worldPosition.xy');
+	});
 });
