@@ -3,10 +3,12 @@
 Status: decided by the measurement below. `render.setPassEvery` is built, and the water and ocean
 add-ons set their reflection's cadence through it instead of switching the pass. Task: M3-E8.
 
-Summary: Switching a pass off recompiles the render graph on that frame. A reflection that drew every
-other frame by switching itself off cost 675 ms of a WebGL2 frame, and the same page with the pass
+Summary: A pass that carries its cadence draws in every frame of it and compiles nothing. Switching a
+pass off instead changed the plan on each switch of the measurement below. A reflection that drew
+every other frame by switching itself off cost 675 ms of a WebGL2 frame. The same page with the pass
 carrying a cadence of two runs at 60 frames a second. A pass now takes its cadence at runtime, and
-changing it compiles nothing.
+changing it compiles nothing. The switch still starts and stops a feature, and compiles nothing once
+a pass has drawn.
 
 ## Question
 
@@ -84,16 +86,19 @@ the plan, so no frame compiles.
 - Rejected: fewer passes. The cost followed the pass toggles, not the pass count: the same 45 draws
   ran at 60 frames a second once nothing toggled.
 
-The enabled-state switch keeps its meaning: it starts and stops a feature, and it compiles when it
-changes. It is not the frame-rate switch.
+The enabled-state switch keeps its meaning: it starts and stops a feature, and it is not the
+frame-rate switch. A pass that has never drawn is out of the plan while it is off, so switching it on
+compiles the render graph. Once a pass has drawn, its passes stay in the plan while it is off: the
+switch only skips its recording, and compiles nothing.
 
 ## Consequences
 
 - `render.setPassEvery(pass, every)` is public. It throws E1101 for a removed pass and E1220 for a
   cadence that is not a whole number from 1.
-- A view's pass stays in the graph while the view is switched on, whatever its cadence; the frame
-  records no passes for a view that is not due. A material that samples the target on a skipped
-  frame reads the last image, as `compute-state`'s `cadence-kept` case checks on every GPU path.
+- A view's pass stays in the graph while the view is switched on, whatever its cadence, and once the
+  view has drawn, while it is off; the frame records no passes for a view that is off or not due. A
+  material that samples the target on a skipped frame reads the last image, as `compute-state`'s
+  `cadence-kept` case checks on every GPU path.
 - The water and ocean add-ons set their reflection's cadence through it in the quality callback, and
   their `update()` no longer switches the pass.
 - [The render API](../../docs/api/render.md), [custom passes](../../docs/guides/custom-passes.md) and the develop
