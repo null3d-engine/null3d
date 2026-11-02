@@ -206,6 +206,7 @@ export const BARK_CELLS_BY_KIND: Readonly<Record<BarkCellName, readonly [number,
 	spruce: [1, 1],
 	willow: [2, 1],
 	holm: [3, 1],
+	aspen: [3, 0],
 };
 
 /**

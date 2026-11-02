@@ -241,7 +241,7 @@ const PINE: Species = {
 const ASPEN: Species = {
 	id: 'review-aspen',
 	kind: 'tree',
-	bark: 'birch',
+	bark: 'aspen',
 	branchLevels: [
 		level({
 			children: 8,
