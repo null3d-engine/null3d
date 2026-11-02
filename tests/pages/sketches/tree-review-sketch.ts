@@ -43,8 +43,10 @@ export default defineSketch((ctx) => {
 	if (!SPECIES) throw new Error(`the review has no ${params.get('species')} tree`);
 	const { scene, geometry, materials } = ctx;
 	scene.setBackground('#9fc0dd');
+	const LOW_SUN = params.get('sun') === 'low';
+	const SHADOW_PROXY = params.get('shadowproxy') === '1';
 	scene.createDirectionalLight({
-		direction: [-0.5, -1, -0.35],
+		direction: LOW_SUN ? [-0.85, -0.35, -0.4] : [-0.5, -1, -0.35],
 		intensity: 3.1,
 		castShadows: true,
 		shadow: { distance: 40, contactDistance: 0.4 },
@@ -192,9 +194,21 @@ export default defineSketch((ctx) => {
 			scene.createMesh({
 				mesh: geometry.fromArrays(part.arrays),
 				material: part.name === 'wood' ? bark : leaves,
-				castShadows: true,
+				castShadows: !SHADOW_PROXY,
 				receiveShadows: true,
 			});
+		}
+		// A shadow proxy casts from the coarsest level alone, so a low sun can show what it leaves out.
+		if (SHADOW_PROXY) {
+			const coarse = asset.levels[asset.levels.length - 1];
+			for (const part of coarse?.parts ?? []) {
+				scene.createMesh({
+					mesh: geometry.fromArrays(part.arrays),
+					material: part.name === 'wood' ? bark : leaves,
+					castShadows: true,
+					receiveShadows: false,
+				});
+			}
 		}
 	}
 
