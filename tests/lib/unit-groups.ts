@@ -5,10 +5,11 @@
 // The demos' group is read from the tree: every top-level folder under `examples` that holds a test
 // file, at any depth, joins it. A demo folder that arrives with a test then runs without an edit
 // here, and a demo folder that the run leaves out fails `unit-groups.test.ts`.
-// A symbolic link is followed, so a linked folder's tests run too, and a link back to a folder
-// already read is not read again. The rule covers files whose name ends with `.test.ts` inside a
-// top-level folder; a test file directly under `examples`, and a test file with another extension,
-// are outside it.
+// A symbolic link is followed, so a linked folder's tests run too. A link back to a folder already
+// read is not read again, and two links that point at each other with no folder behind them stop the
+// walk with an error rather than hang. The rule covers files whose name ends with `.test.ts` inside a
+// top-level folder, except under `node_modules` or `target`, which it skips at every depth. A test
+// file directly under `examples`, and a test file with another extension, are outside it.
 import { readdirSync, realpathSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
