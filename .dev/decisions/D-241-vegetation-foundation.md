@@ -1,6 +1,6 @@
 # D-241: A vegetation foundation add-on, with GPU grass, generated plants and wind on custom materials
 
-Status: decided by the owner. Built: the `@null3d/vegetation` package with its generator and built-in species (M3-V4), the bark and leaf atlases (M3-V5), the scatter (M3-V6), the leaf and bark materials that sway in the wind add-on's field (M3-V7), and grass drawn from CPU-built tiles that read the same wind field ([below](#the-grasss-first-slice-and-the-edge-its-compute-half-waits-on)). The engine's vertex offsets read a compute pass in every pass (M3-V3), custom materials have the standard material's cut-out features (M3-V2), and the wind add-on's first stage is built (M3-V15, D-265). Not built yet: the compute-built grass of M3-V8, whose plan line names M3-E8 and M3-E9 and not M3-V3's graph edge ([below](#the-grasss-first-slice-and-the-edge-its-compute-half-waits-on)); and far-tree impostors (M3-V9). Branch poses (M3-V10) and Creek's move to the add-on (M3-V11) are not built yet either. Open: which wind method trees use by default, per vertex or by branch poses, which M3-V10 measures for the owner's ruling. The generated leaves wait for the owner's judgment. Tasks: M3-V1 to M3-V17.
+Status: decided by the owner. Built: the `@null3d/vegetation` package with its generator and built-in species (M3-V4), the bark and leaf atlases (M3-V5), the scatter (M3-V6), the leaf and bark materials that sway in the wind add-on's field (M3-V7), and the grass, whose blade list a compute pass builds and counts on WebGPU and whose rows an instance batch draws on WebGL2, with near shadows ([below](#the-grasss-two-halves)). The engine's vertex offsets read a compute pass in every pass (M3-V3), custom materials have the standard material's cut-out features (M3-V2), and the wind add-on's first stage is built (M3-V15, D-265). Not built yet: the compute path's per-tile view cull and the plan's distance bands ([below](#the-grasss-two-halves)); and far-tree impostors (M3-V9). Branch poses (M3-V10) and Creek's move to the add-on (M3-V11) are not built yet either. Open: which wind method trees use by default, per vertex or by branch poses, which M3-V10 measures for the owner's ruling. The generated leaves wait for the owner's judgment. Tasks: M3-V1 to M3-V17.
 
 Summary: Vegetation is the eleventh foundation add-on, `@null3d/vegetation`, which grows plants at first use and places them by ecological rules. It draws grass on the GPU, sways plants in the wind add-on's field and hands far trees to impostors. Creek drops its 3.1 MB of Blender plants for it, and custom materials, whose vertex offsets carry the wind, gain the standard material's cut-out features.
 
@@ -946,7 +946,7 @@ the field's cost on the Mac, the iPhone 17 and the Galaxy S24, the readers on th
 each figure is, whether measured, modelled from measured parts or a bound. It also names the rows
 that M3-V16 declares, and what the look runs and the owner's ruling still owe.
 
-## The grass's first slice, and the edge its compute half waits on
+## The grass's two halves
 
 M3-V8's first slice builds the CPU half of the plan's two paths: `createGrass` places tufts on a
 height function by integer hash and draws the hill in one instance batch for each tuft shape. A
@@ -991,21 +991,22 @@ devices. The iPad, the S24 class and the Tab A9 Plus rows are owed. The picture 
 so its blades stand straight, and its references hold the three tiers of both sets.
 `createGrass` draws on WebGL2 too, where the field's grid costs extra draws.
 
-**What its compute half waits on.** The plan's V8 line names M3-E8 and M3-E9 with shadow views. It
-does not name M3-V3, and three things stand between this slice and blades that the GPU makes and
-culls:
+**The compute half.** On WebGPU and compatibility mode a compute pass builds the blade list and
+writes its count. `createGrass` keeps the CPU's integer-hash placement, so both paths place the same
+tufts, and uploads the placed tufts in a data texture of two texels each: the place rounded to whole
+meters with the turn, then the rest of the place with the size. One workgroup of the pass loops over
+the preset's share, writes each tuft's world matrix and ids into the draw's instance buffer, and
+adds each one to the count word. The engine copies that word into the main view's indirect entry and
+every drawn shadow view's (M3-E9), so the near cascades draw the same list and count as the camera's
+view. The draw casts and receives shadows on both paths, and the blades' sway fades to nothing at
+the distance that the page gives, so a far cascade that only the grass reaches keeps its cached
+layer. The blades' tint comes from a hash of the tuft's root place on both paths, not from row
+values, so one shader serves the compute draw and the batch alike. WebGL2 keeps the instance batch,
+which the CPU fills.
 
-- **M3-E9's first version stops short of shadows.** Its line draws the main view only, with a CPU
-  count in the shadow views, until the splats are shown to cast no shadow. Near grass casts shadows,
-  so the GPU-written count must reach the near cascades. The RedGPU ruling fixes the form: copy the
-  main view's count word into each near cascade's entry, and widen the main cull toward the light.
-  E9's own bullets carry that requirement, and its finish line does not.
-- **M3-E8's same-frame output.** The pass that makes and culls the blades must be read by the draws
-  of the same frame on WebGPU. WebGL2 keeps the CPU tiles either way.
-- **M3-V3's graph edge.** V3 is what orders a pass before every pass that draws what reads it, the
-  shadow views included, and what tests the order there. Without it a grass pass runs in an order
-  that nothing checks, so a view can draw the last frame's list or an empty one. V8's dependencies
-  should name V3 beside E8 and E9.
-
-None of this changes V8's finish line. It names the order in which the task's remaining pieces can
-land.
+**What remains.** The compute pass builds the preset's list over the whole hill; it does not cull per
+tile or by view yet, and the distance bands are not built. The plan's widened cull toward the light
+that keeps a blade's shadow at the view's edge is therefore not needed yet: every tuft in the share
+draws in every view. Two pictures hold it. `vegetation-grass` still matches its references on the
+three real-GPU tiers, and `vegetation-grass-shadow` holds the hill at a low sun, where the grass's
+shadows follow the count, so a view that drew the capacity would show the rows past it.

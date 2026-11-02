@@ -460,7 +460,7 @@ function standShrubs(
 }
 
 /** Grows the island's trees for the preset, and returns the call that moves them in the wind. */
-export function createTrees(ctx: SketchContext, camera: Camera): { update(): void } {
+export async function createTrees(ctx: SketchContext, camera: Camera): Promise<{ update(): void }> {
 	const preset = ctx.quality.preset;
 	const atlases = bakePlantAtlases(ctx);
 	const onWall = onRetainingWall();
@@ -479,19 +479,23 @@ export function createTrees(ctx: SketchContext, camera: Camera): { update(): voi
 		),
 	);
 	swaying.push(...standShrubs(ctx, atlases, wind));
-	const lawns = parkLawns().map((lawn, k) =>
-		createGrass(ctx, {
-			height: () => lawn.height,
-			area: { x: lawn.x, z: lawn.z, size: lawn.size },
-			count: GRASS_TUFTS,
-			seed: 41 + k,
-			blades: 9,
-			segments: 2,
-			shapes: 2,
-			where: lawn.where,
-			color: GRASS_COLOR,
-			wind: wind.field,
-		}),
+	const lawns = await Promise.all(
+		parkLawns().map((lawn, k) =>
+			createGrass(ctx, {
+				height: () => lawn.height,
+				area: { x: lawn.x, z: lawn.z, size: lawn.size },
+				count: GRASS_TUFTS,
+				seed: 41 + k,
+				blades: 9,
+				segments: 2,
+				shapes: 2,
+				where: lawn.where,
+				color: GRASS_COLOR,
+				wind: wind.field,
+				// The lawns set their own draw range, so their rows stay a batch on both paths.
+				compute: false,
+			}),
+		),
 	);
 	for (const lawn of lawns) for (const batch of lawn.batches) batch.setDrawRange(0, GRASS_REACH);
 	ctx.quality.onChange(() => {

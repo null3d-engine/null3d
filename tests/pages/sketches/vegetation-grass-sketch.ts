@@ -7,11 +7,11 @@ import { createGrass, type GrassOptions } from '@null3d/vegetation';
 import { createWind } from '@null3d/wind';
 
 /** The hill's width and depth, in meters. */
-const SIZE = 34;
+export const SIZE = 34;
 /** The tufts at the High preset. */
 const COUNT = 20_000;
 /** The height of the hill at a point, in meters. */
-const hill = (x: number, z: number) => 4.5 * Math.exp(-(x * x + z * z) / 220);
+export const hill = (x: number, z: number) => 4.5 * Math.exp(-(x * x + z * z) / 220);
 
 /** The grass that this page grows, which the sketch and its measurement page share. */
 export const GRASS: GrassOptions = {
@@ -22,7 +22,7 @@ export const GRASS: GrassOptions = {
 };
 
 /** The hill's ground as a grid of vertices, with its normals from the height's slope. */
-function ground(size: number, segments: number): MeshArrays {
+export function ground(size: number, segments: number): MeshArrays {
 	const n = segments + 1;
 	const positions = new Float32Array(n * n * 3);
 	const normals = new Float32Array(n * n * 3);
@@ -52,7 +52,7 @@ function ground(size: number, segments: number): MeshArrays {
 	return { positions, normals, uvs, indices };
 }
 
-export default defineSketch((ctx) => {
+export default defineSketch(async (ctx) => {
 	const { scene, geometry, materials } = ctx;
 	scene.setBackground('#a9c7e6');
 	scene.createAmbientLight({ intensity: 0.55, color: '#cfe0ff' });
@@ -80,7 +80,7 @@ export default defineSketch((ctx) => {
 		grid: 64,
 		air: { speed: 0, gustStrength: 0, swirl: 0 },
 	});
-	const grass = createGrass(ctx, { ...GRASS, wind: wind.field });
+	const grass = await createGrass(ctx, { ...GRASS, wind: wind.field });
 	// The preset's share draws from the first frame; a change of preset takes its share then.
 	ctx.quality.onChange(() => grass.fit(ctx.quality.preset));
 	return {
