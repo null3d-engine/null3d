@@ -83,6 +83,12 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
+	"chromium-swiftshader/compat/demo-area-lights.png": {
+		"test": "demo-area-lights",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "the area lights' fade no longer steps away from its target"
+	},
 	"chromium-swiftshader/compat/demo-bounce-light.png": {
 		"test": "demo-bounce-light",
 		"tier": "compat",
@@ -370,6 +376,12 @@
 		"tier": "webgl2",
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/webgl2/demo-area-lights.png": {
+		"test": "demo-area-lights",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "the area lights' fade no longer steps away from its target"
 	},
 	"chromium-swiftshader/webgl2/demo-bounce-light.png": {
 		"test": "demo-bounce-light",
@@ -676,6 +688,12 @@
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/webgpu/demo-area-lights.png": {
+		"test": "demo-area-lights",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "the area lights' fade no longer steps away from its target"
 	},
 	"chromium-swiftshader/webgpu/demo-bounce-light.png": {
 		"test": "demo-bounce-light",
