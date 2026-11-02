@@ -471,7 +471,7 @@
 		"test": "demo-water",
 		"tier": "webgl2",
 		"date": "2026-11-02",
-		"reason": "the branch is not pushed, so no CI run can draw the merged tree; this Mac's SwiftShader drawing of the merged head stands in, and CI's own drawing replaces it"
+		"reason": "the merged tree draws the tier and the bounce light together, so this Mac's SwiftShader drawing of the merged head stands in; CI's own drawing of the range replaces it"
 	},
 	"chromium-swiftshader/webgl2/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
