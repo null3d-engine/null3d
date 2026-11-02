@@ -948,6 +948,29 @@ that depends on another add-on. [D-173](D-173-addon-hooks.md) gives the rule for
   keep their state between frames.
 - M3-V15 builds the wind add-on, and M3-V16 declares the wind's feature in it.
 
+## The shadow's level
+
+A plant's shadow needs far less detail than the crown that casts it. `shadowLevel` on the species
+record names the detail level whose meshes cast the shadow, and `shadowCasterLevel` answers with it:
+the level the record names, the coarsest level when it names none, and the finest level for a plant
+under four thousand triangles, because a sapling's shadow is a blob at a coarse level and its
+silhouette is all that shadow says.
+
+**What it saves, twenty trees, governor off, on the GPU's own clock at Medium.** The pine falls from
+27.72 to 14.48 milliseconds, 44.8 to 59.8 frames a second. The spruce falls from 26.61 to 15.73,
+48.3 to 59.6. The triangles of the whole stand fall with them, 2.35 M to 1.42 M on the pine and
+2.77 M to 1.81 M on the spruce.
+
+**What it costs.** The caster level is already generated for the crown's own level of detail, so no
+new arrays are built. Its meshes are uploaded besides the visible ones, which is the cost to record.
+The pine's caster is 10,493 triangles and 1,024 KiB of vertex arrays against 39,865 and 4,226 KiB for
+the level the crown draws. The spruce's caster is 21,598 triangles and 2,114 KiB. On both, the caster
+is about a quarter of the finest level's arrays.
+
+The change moves the cast shadow, so every picture with a shadow on the ground or on the tree itself
+moves with it. The crown, the leaf cards and the bark do not move: their geometry and their materials
+are untouched. A reviewer scoring a row from a cast shadow should know which arrangement drew it.
+
 ## The wind add-on's cost and budget
 
 The wind's own cost at each preset, and the rows and the budget that each preset proposes, are in

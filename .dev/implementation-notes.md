@@ -628,6 +628,11 @@ A feature that most pages do not use keeps its shader builds out of the start fi
 
 ## Shadows
 
+- **A caster needs far less detail than the surface it darkens, and the saving is large.** A conifer's shadow at twenty trees took half the frame's cost at Medium when it cast from the plant's coarsest level: the pine went from 27.72 to 14.48 milliseconds and the spruce from 26.61 to 15.73. The record names the level with `shadowLevel` and `shadowCasterLevel` answers with it, keeping the finest level for a plant under four thousand triangles. The caster's meshes upload besides the visible ones, so the cost is real: the pine's caster is 10,493 triangles and 1,024 KiB of arrays against 39,865 and 4,226 KiB for the level the crown draws.
+- **A shadow comparison silently proves nothing in two ways, and both caught me.** A camera can stand on the wrong side of the trunk and face away from the shadow it means to judge. A shadow map can be too short for a low sun, so the ground reads evenly lit and the caster looks like it casts nothing. Check that the shadow is in frame before comparing anything.
+- Compare the silhouettes at a low sun, not a high one. A coarse caster gives itself away where the shadow is stretched across open ground, at the bough's ragged edge. At a high sun the shadow hides under the crown and agrees with anything.
+
+
 - The cascade split leans 65% toward the logarithmic spread. [D-15](decisions/D-15-cascade-split.md) gives the texel sizes, the options that lost and the cost.
 - Each cascade but the last blends into the next over a band at its far end ([D-73](decisions/D-73-cascade-blend.md)). The uniform block holds where each band starts. It is in the distance that picks a receiver's cascade. The second read sits behind a branch, so only band pixels pay. A band pixel reads the next cascade only where the next box holds it with the filter's reach. A box kept from an earlier frame can miss it after a turn.
 - Each cascade's sphere is fitted from the band before it, divided by `sqrt(1 + k²)`, where `k` is the tangent of the view corner's angle. Receivers pick their cascade by their distance from the camera. A point at a corner lies that many times further away than along the view. Fitting only the slice along the view leaves lit holes at the sides of narrow views (R5-06).
