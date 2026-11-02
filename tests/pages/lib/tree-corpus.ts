@@ -55,7 +55,9 @@ const SPRUCE: Species = {
 			twist: 0,
 		}),
 		level({
-			children: 3,
+			// Ten to fourteen branchlets to a bough, as the reference shows: the bough divides into
+			// fine shoots rather than carrying a few long ones.
+			children: 12,
 			prune: 0.02,
 			length: 4.2,
 			// A bough ring wider than this in length or angle makes the cone's outline move as the
@@ -79,7 +81,7 @@ const SPRUCE: Species = {
 			thin: 0.12,
 		}),
 		level({
-			children: 4,
+			children: 2,
 			prune: 0.03,
 			length: 2.4,
 			lengthVariance: 0.2,
@@ -114,7 +116,9 @@ const SPRUCE: Species = {
 	crown: { shape: 'conical', start: 0.06, spread: 0.05, pull: 0.04, floor: 0.03, leafFloor: 0 },
 	leaf: {
 		kind: 'needle',
-		cards: 46,
+		// Fewer cards to a shoot, now that a bough carries a dozen shoots instead of three: the
+		// subdivision shows as fine sprays with air between them rather than as one solid mass.
+		cards: 10,
 		width: 0.2,
 		height: 0.26,
 		cell: 'needle',

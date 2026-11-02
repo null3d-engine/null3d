@@ -309,7 +309,7 @@ export function leafCards(
 			readonly level: number;
 		}
 		const holds: Hold[] = [];
-		for (const [index, branch] of skeleton.branches.entries()) {
+		for (const branch of skeleton.branches) {
 			const samples = branch.points.length / 3;
 			for (let i = 0; i < samples; i++) {
 				const point: [number, number, number] = [
@@ -321,7 +321,7 @@ export function leafCards(
 				holds.push({
 					point,
 					tangent: pointAndTangent(branch, i).tangent,
-					branch: index,
+					branch: branch.wind,
 					level: branch.level,
 				});
 			}

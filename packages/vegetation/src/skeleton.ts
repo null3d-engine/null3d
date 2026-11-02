@@ -3,7 +3,13 @@
 // the same shape. Radii follow the pipe model: a branch's cross section carries the tips beyond it.
 import { crownScale } from './crown';
 import { hashAt, unitAt } from './hash';
-import { type BranchLevel, MAX_BRANCHES, type Species, type SpeciesKind } from './species';
+import {
+	type BranchLevel,
+	MAX_BRANCHES,
+	MAX_PLANT_BRANCHES,
+	type Species,
+	type SpeciesKind,
+} from './species';
 
 /** One branch: its path, its radius at each sample, and its place in the plant's tree. */
 export interface SkeletonBranch {
@@ -31,6 +37,11 @@ export interface SkeletonBranch {
 	readonly children: number[];
 	/** For each child, the sample of this branch where it starts. */
 	readonly attach: number[];
+	/**
+	 * The wind table's record that this branch reads: its own index while the table has a row for it,
+	 * and its parent's record beyond the table's width.
+	 */
+	wind: number;
 }
 
 /** The grown plant's branch system. */
@@ -141,7 +152,7 @@ function place(growth: Growth, spec: BranchSpec, queue: BranchSpec[]): number {
 	const { level, parent, origin, direction, length, key: branchKey } = spec;
 	const { species, seed, variant } = growth;
 	const levelRecord: BranchLevel | undefined = species.branchLevels[level];
-	if (!levelRecord || growth.branches.length >= MAX_BRANCHES) return -1;
+	if (!levelRecord || growth.branches.length >= MAX_PLANT_BRANCHES) return -1;
 	const index = growth.branches.length;
 	const sides = levelRecord.sides;
 	const samples = levelRecord.segments + 1;
@@ -159,6 +170,7 @@ function place(growth: Growth, spec: BranchSpec, queue: BranchSpec[]): number {
 		length,
 		children,
 		attach,
+		wind: index,
 	};
 	growth.branches.push(branch);
 	if (parent >= 0) {
@@ -423,6 +435,13 @@ export function growSkeleton(species: Species, seed: number, variant: number): S
 		});
 	}
 	for (let at = 0; at < queue.length; at++) place(growth, queue[at] as BranchSpec, queue);
+	// The wind table has one record for each of the first MAX_BRANCHES branches, because a vertex
+	// colour names its record in a byte. A branch beyond them reads its parent's record, so the
+	// table stays 255 wide while the plant subdivides as its record asks.
+	for (let at = MAX_BRANCHES; at < branches.length; at++) {
+		const branch = branches[at] as SkeletonBranch;
+		branch.wind = branches[branch.parent]?.wind ?? 0;
+	}
 	// The radii run from the tips back, so every branch reads the thickness it must carry.
 	for (let at = branches.length - 1; at >= 0; at--) finish(growth, branches[at] as SkeletonBranch);
 	return { branches, height, crownStart };
