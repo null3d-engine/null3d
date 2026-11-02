@@ -836,8 +836,14 @@ product pages.
 - **The route and the car run one loop.** The car waits in the studio and turns slowly on the spot.
   It then drives out, turns at the street's far end and drives back. The camera route takes the same
   36 s, so the loop meets itself with no jump. `route.test.ts` checks the poses at the points that
-  matter, and that the car moves smoothly at every step. The first shot holds still, so the held
-  frame is the studio view.
+  matter, and that the car moves smoothly at every step.
+- **The camera opens and settles on the configurator, as the owner asked.** The view looks at the
+  tablet with the car standing to its side; the camera then turns around the car in the studio,
+  follows it out through the opening, watches it turn at the far end, and backs away in front of it
+  as it returns, settling on the view it opened with. The first shot holds, so the held frame is
+  that view. The shots live in `shots.ts`, where `shots.test.ts` checks that the loop opens and
+  closes on that view, that both the tablet and the car fall inside its frame, and that the camera
+  is in the studio while the car waits and in the street when the car turns.
 - **The car body is shared with the clear coat demo.** `examples/lib/car-body.ts` builds the hull,
   the cabin, the lamps and the wheels from the materials that its caller gives. The clear coat demo
   keeps its candy red paint and carbon trim, and the showroom repaints the same body.
@@ -846,6 +852,17 @@ product pages.
   over the wheel's radius, the left side the other way because its axle points the other way, so
   both sides roll forward. `route.test.ts` turns a point on the tyre and checks that it moves
   backward relative to the hub for both sides, so an inverted sign fails.
+- **The lit floor pulsed, and the rectangle lights were the cause.** On a still camera the
+  showroom's lit surfaces swung by several levels on alternate frames, and the owner saw it on the
+  street's light pool. The engine's frame-budget fade for area lights stepped a light that already
+  held its target one step *away* from it, and the next frame stepped it back, so every settled area
+  light in every scene pulsed between full and seven-eighths strength on every frame
+  (`crates/null3d-render/src/light_grid.rs`). A light at its target now keeps it. Two engine tests
+  hold the fade to that, and `tests/image/showroom-steady.spec.ts` holds the demo's camera still and
+  measures the floor on consecutive frames as the browser presents them: its step between frames
+  must not exceed one and a half times its step across two frames, which an alternating image breaks
+  and a drifting one does not. The fix brightens every area-lit picture a little, so
+  `demo-area-lights` changed with it.
 - **The lamps were not the sparkle; the paint was.** In one 60-frame-a-second capture of the car
   returning in the street on the Mac, the two lamp bars stayed at full brightness in every frame,
   while the paint on the nose sparkled. Turning the headlamp beams off or the fog off left the

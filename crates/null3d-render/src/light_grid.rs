@@ -877,10 +877,15 @@ impl LightGrid {
             let fade = &mut fades[light.light as usize];
             let target = *weight;
             fade.weight = if fade.seen.wrapping_add(1) == *frame {
+                // A light that already holds its target keeps it. Stepping toward a target it has
+                // would move it away, and the next frame would step it back: a light at rest would
+                // flicker every frame between its full weight and one step less.
                 if target > fade.weight {
                     (fade.weight + step).min(1.0)
-                } else {
+                } else if target < fade.weight {
                     (fade.weight - step).max(0.0)
+                } else {
+                    fade.weight
                 }
             } else {
                 target
@@ -1544,6 +1549,96 @@ mod tests {
         assert_eq!(span_of(&planes, [0.1, 0.0, 0.0], 0.2), Some((0, 1)));
         assert_eq!(span_of(&planes, [3.0, 0.0, 0.0], 0.2), None);
         assert_eq!(span_of(&planes, [-1.1, 0.0, 0.0], 0.2), Some((0, 0)));
+    }
+
+    /// A rectangle light of `light`, `half` meters from the camera along -z, with the given half
+    /// sides in the engine's record, and a color of 1.
+    fn area_light(light: u32, z: f32, along: [f32; 3], across: [f32; 3]) -> VisibleLight {
+        VisibleLight::area(
+            kind::RECT,
+            light,
+            [0.0, 0.0, z],
+            30.0,
+            [1.0, 1.0, 1.0],
+            along,
+            across,
+            0.0,
+        )
+    }
+
+    #[test]
+    fn an_area_light_that_holds_its_target_keeps_its_weight() {
+        // A light that the frame keeps has nothing to fade toward. One that stepped away from its
+        // target anyway would be stepped back the next frame, and a still scene would flicker
+        // between two brightnesses every frame (the showroom's softboxes did).
+        let limits = LightLimits {
+            area_lights: 4,
+            ..LightLimits::default()
+        };
+        let mut grid = LightGrid::new(DEFAULT_GRID, limits);
+        let visible = [area_light(1, -8.0, [1.0, 0.0, 0.0], [0.0, 1.0, 0.0])];
+        let mut weights = Vec::new();
+        for _ in 0..(FADE_FRAMES * 2) {
+            grid.choose(&visible);
+            weights.push(grid.lights()[0].color[0]);
+        }
+        for weight in &weights {
+            assert!(
+                (weight - 1.0).abs() < 1e-6,
+                "a light at its target changed weight: {weights:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_area_light_past_the_cap_fades_out_over_the_fade_frames() {
+        // The cap keeps the light that gives the camera the most, so the far one leaves, and its
+        // weight falls a step a frame instead of vanishing at once.
+        let limits = LightLimits {
+            area_lights: 2,
+            ..LightLimits::default()
+        };
+        let mut grid = LightGrid::new(DEFAULT_GRID, limits);
+        let visible = [
+            area_light(1, -4.0, [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+            area_light(2, -14.0, [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        ];
+        let weight_of = |grid: &LightGrid, light: u32| {
+            grid.lights()
+                .iter()
+                .find(|held| held.light == light)
+                .map_or(0.0, |held| held.color[0])
+        };
+        // Both lights are kept first, so the far one starts at its full weight. Only a light that
+        // was lit and then falls past the cap fades: one that never drew starts at no weight.
+        for _ in 0..2 {
+            grid.choose(&visible);
+        }
+        assert_eq!(
+            weight_of(&grid, 2),
+            1.0,
+            "both lights are kept under the cap"
+        );
+        grid.set_area_light_cap(1);
+        let mut weights = Vec::new();
+        for _ in 0..FADE_FRAMES {
+            grid.choose(&visible);
+            weights.push(weight_of(&grid, 2));
+        }
+        let step = 1.0 / FADE_FRAMES as f32;
+        for (frame, weight) in weights.iter().enumerate() {
+            let expected = 1.0 - step * (frame + 1) as f32;
+            assert!(
+                (weight - expected).abs() < 1e-6,
+                "the far light's weight fell to {weight} at frame {frame}, not {expected}"
+            );
+        }
+        grid.choose(&visible);
+        assert_eq!(
+            weight_of(&grid, 2),
+            0.0,
+            "a light past the cap stays at no weight"
+        );
     }
 
     #[test]
