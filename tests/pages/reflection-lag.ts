@@ -7,5 +7,5 @@ const every = new URLSearchParams(location.search).get('every') ?? '1';
 const sketch = new URL('./sketches/reflection-sketch.ts', import.meta.url);
 sketch.search = `?water&jump&every=${every}`;
 (globalThis as { __ready?: boolean }).__ready = false;
-await createEngine({ canvas, sketch, preset: 'high' });
+await createEngine({ canvas, sketch, preset: 'low' });
 (globalThis as { __ready?: boolean }).__ready = true;

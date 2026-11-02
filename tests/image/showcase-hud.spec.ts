@@ -188,8 +188,9 @@ async function openHud(page: Page, size?: { width: number; height: number }): Pr
 	// engine on the page, which is how these tests read the canvas's frames.
 	await page.goto('/examples/index.html?demo=island&preset=low&bench');
 	const hud = page.locator('.hud');
-	// The sketch posts the HUD once its setup has run, which loads nothing but builds the town.
-	await expect(hud).toBeVisible({ timeout: 90_000 });
+	// The sketch posts the HUD once its setup has run. The island's setup builds the town, the
+	// trees and the sea, and on a software GPU with a cold shader cache that takes minutes.
+	await expect(hud).toBeVisible({ timeout: 180_000 });
 	await expect(page.getByRole('tab', { name: 'Post' })).toBeVisible();
 	// The controls come up while the sketch finishes its scene, which is before the engine's first
 	// frame. On a software GPU that frame arrives much later, and a picture read before it is an
@@ -297,8 +298,8 @@ test('the showcase HUD keeps the fog off until it turns on', ALONE, async ({ pag
 	const errors = await openHud(page, PART_WINDOW);
 	await holdForSwitches(page);
 
-	// The fog starts off, so it is turned on before the part that checks it goes off and on.
-	await pick(page, 'Atmosphere', 'atmosphere', 'Fog', 'Fog: on');
+	// The island starts with its fog on, so the part that checks it goes off and on again
+	// straight away.
 	await switchPart(page, 'Fog', 'Atmosphere', 'atmosphere');
 
 	expect(errors).toEqual([]);
@@ -311,9 +312,8 @@ test(
 		const errors = await openHud(page, PART_WINDOW);
 		await holdForSwitches(page);
 
-		// The fog starts off. It goes on first, so the environment light is checked with the sky and
-		// the fog both drawn.
-		await pick(page, 'Atmosphere', 'atmosphere', 'Fog', 'Fog: on');
+		// The island starts with its sky and fog drawn, so the environment light is checked with
+		// both of them on.
 		await switchPart(page, 'Environment', 'Lighting', 'lighting');
 
 		expect(errors).toEqual([]);

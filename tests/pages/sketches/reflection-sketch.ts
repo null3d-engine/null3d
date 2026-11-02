@@ -72,7 +72,7 @@ fn surface(input: SurfaceInput) -> Surface {
 }
 `;
 
-export default defineSketch(({ scene, materials, geometry, textures, render, quality }) => {
+export default defineSketch(({ scene, materials, geometry, textures, render, quality, time }) => {
 	if (params.has('half'))
 		quality.set({ minRenderScale: 0.5, maxRenderScale: 0.5, governor: false });
 	const lamps = params.has('lamps');
@@ -175,13 +175,17 @@ export default defineSketch(({ scene, materials, geometry, textures, render, qua
 		}
 	}
 	// ?jump moves the camera to a second place and back each half second, so a test can see whether
-	// the reflection changes in the same frame as what it mirrors.
+	// the reflection changes in the same frame as what it mirrors. The jump follows the sketch's
+	// time, not a frame count, so a slow software GPU still shows each jump in the frames it draws.
 	if (!params.has('jump')) return {};
-	let frames = 0;
+	const JUMP_SECONDS = 0.5;
+	let away = false;
+	let next = 0;
 	return {
 		onUpdate() {
-			frames++;
-			const away = Math.floor(frames / 30) % 2 === 1;
+			if (time.now < next) return;
+			next += JUMP_SECONDS;
+			away = !away;
 			camera.setPosition(away ? 0.6 : 0, away ? 3.1 : 2.6, 9);
 			camera.lookAt(0, 0.6, 0);
 		},

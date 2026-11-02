@@ -12,9 +12,16 @@ const MOST_LATE = 0.25;
 
 /** The frames of the live page over two seconds, as the browser's screencast gives them. */
 async function record(page: Page, query: string) {
+	// A software WebGPU draws this water too slowly at the viewport's size to give the frames that
+	// a jump takes, so the page draws small: the change across a jump still shows at this size.
+	await page.setViewportSize({ width: 480, height: 270 });
 	await page.goto(`reflection-lag.html?${query}`);
 	await page.waitForFunction('globalThis.__ready === true', undefined, { timeout: 60_000 });
 	await page.waitForTimeout(1000);
+	// A WebGPU canvas that has not been composed since the page opened gives the screencast no
+	// frame, however many animation frames the page takes. A screenshot takes one, and the
+	// screencast then follows the canvas's frames.
+	await page.screenshot();
 	const session = await page.context().newCDPSession(page);
 	const frames: string[] = [];
 	session.on('Page.screencastFrame', (event) => {
@@ -22,7 +29,7 @@ async function record(page: Page, query: string) {
 		void session.send('Page.screencastFrameAck', { sessionId: event.sessionId }).catch(() => {});
 	});
 	await session.send('Page.startScreencast', { format: 'png', everyNthFrame: 1 });
-	await page.waitForTimeout(2000);
+	await page.waitForTimeout(4000);
 	await session.send('Page.stopScreencast');
 	return frames.map((frame) => decodePngRgba(Buffer.from(frame, 'base64'), 'a frame'));
 }
