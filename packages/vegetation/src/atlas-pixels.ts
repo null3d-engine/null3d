@@ -917,9 +917,11 @@ interface BarkFamily {
 
 /** The six bark families, in the order that the atlas lays them out. */
 const BARK_FAMILIES: Readonly<Record<BarkCellName, BarkFamily>> = {
+	// Every family counts several plates down the trunk as well as across it: a family that
+	// counts one repeats the same motif down the bole, and that reads as a border, not as bark.
 	birch: {
-		across: 3,
-		along: 1,
+		across: 6,
+		along: 5,
 		warp: 0.5,
 		crackWidth: 0.05,
 		depth: 0.22,
@@ -931,8 +933,8 @@ const BARK_FAMILIES: Readonly<Record<BarkCellName, BarkFamily>> = {
 	},
 	// A Scots pine's bark: orange-red plates that flake apart, smaller and greyer low on the trunk.
 	pine: {
-		across: 7,
-		along: 5,
+		across: 8,
+		along: 6,
 		warp: 0.85,
 		crackWidth: 0.08,
 		depth: 0.5,
@@ -942,8 +944,8 @@ const BARK_FAMILIES: Readonly<Record<BarkCellName, BarkFamily>> = {
 		moss: 0.12,
 	},
 	oak: {
-		across: 9,
-		along: 1,
+		across: 10,
+		along: 4,
 		warp: 1.1,
 		crackWidth: 0.12,
 		depth: 0.8,
@@ -953,8 +955,8 @@ const BARK_FAMILIES: Readonly<Record<BarkCellName, BarkFamily>> = {
 		moss: 0.22,
 	},
 	beech: {
-		across: 2,
-		along: 1,
+		across: 5,
+		along: 4,
 		warp: 0.35,
 		crackWidth: 0.04,
 		depth: 0.16,
@@ -987,8 +989,8 @@ const BARK_FAMILIES: Readonly<Record<BarkCellName, BarkFamily>> = {
 		moss: 0.05,
 	},
 	willow: {
-		across: 8,
-		along: 1,
+		across: 9,
+		along: 5,
 		warp: 1.2,
 		crackWidth: 0.09,
 		depth: 0.55,
@@ -1018,7 +1020,9 @@ function plates(x: number, y: number, across: number, along: number): [number, n
 			const atY = random2(cellX + 31, cellY + 17);
 			const dx = ox + atX - partX;
 			const dy = oy + atY - partY;
-			const d = Math.hypot(dx, dy);
+			// Each plate runs to its own size, so the lattice never shows as an even grid of cells.
+			const size = 0.72 + 0.56 * random2(cellX + 13, cellY + 29);
+			const d = Math.hypot(dx, dy) / size;
 			if (d < first) {
 				second = first;
 				first = d;
@@ -1040,9 +1044,11 @@ function periodicBark(u: number, v: number, across: number, along: number, seed:
 function barkPlates(u: number, v: number, family: BarkFamily): [number, number, number] {
 	// A warp built from sines of whole cycles wraps with the cell, so a bark tile's seam does not
 	// show where the pattern repeats.
+	// Two warps: a slow one that bends the plates and a faster one that makes their widths uneven.
+	// Both count whole cycles, so the cell still tiles.
 	const warp =
-		(Math.sin(2 * Math.PI * (2 * u) + 1.3) + Math.sin(2 * Math.PI * (3 * v) + 2.1)) *
-		0.5 *
+		((Math.sin(2 * Math.PI * (2 * u) + 1.3) + Math.sin(2 * Math.PI * (3 * v) + 2.1)) * 0.5 +
+			(Math.sin(2 * Math.PI * (5 * u) + 0.7) + Math.sin(2 * Math.PI * (7 * v) + 4.2)) * 0.22) *
 		family.warp;
 	const across = (u * family.across) % family.across;
 	const along = (v * family.along) % family.along;

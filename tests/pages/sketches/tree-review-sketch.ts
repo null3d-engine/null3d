@@ -184,7 +184,9 @@ export default defineSketch((ctx) => {
 	} else {
 		// A tall dense crown hides its bole completely, so a trunk view can draw the wood alone. The
 		// manifest says when a view hides the foliage.
-		const hideLeaves = VIEW === 'trunk' && params.get('noleaves') === '1';
+		// A trunk view draws the wood alone: the bark is what it is for, and a crown that reaches low
+		// would otherwise fill the frame with leaves.
+		const hideLeaves = VIEW === 'trunk';
 		for (const part of parts) {
 			if (hideLeaves && part.name !== 'wood') continue;
 			scene.createMesh({
