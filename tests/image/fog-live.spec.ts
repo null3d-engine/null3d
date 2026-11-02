@@ -16,11 +16,11 @@ interface FogLiveResult {
 	failures: string[];
 }
 
-// The blend never settles to one image: each frame's offset cycles every 16 frames, and the last
-// frame keeps a weight of 0.9, so two loads of the same path differ by the phase of that cycle. On
-// the Mac, two WebGPU loads differ over 1.22% of pixels by more than 8 in a channel and over 0.02%
-// by more than 16, and WebGL2 sits at 3.00% and 1.48%. A history read from
-// the wrong place moves the whole blend, far past these figures, so the bound sits above the noise.
+// The blend settles on a still camera: a cell keeps its sample point, so the last frame's grid stops
+// changing, and a page that waits for the blend's frames draws the same image on every load. On the
+// Mac, three loads of WebGPU's page drew the same image, with no pixel apart in a channel of 16. A
+// history read from the wrong place moves the whole blend, far past that, so the bound sits well
+// above it.
 /** The most a channel may differ for two pixels to count as the same. */
 const CHANNEL = 16;
 /** The share of pixels that may differ from WebGPU's frame. */

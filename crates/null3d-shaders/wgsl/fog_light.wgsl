@@ -1,11 +1,11 @@
 // The volumetric fog's light step: one triangle over the grid's texture (null3d::fog_volume), whose
-// texels are the grid's cells. Each cell takes a point inside it, moved by the frame's offset, and
-// finds the fog's density there from the scene's fog. It adds the light that the fog scatters
-// toward the camera: the sun's, where the shadow cascades see the point, and that of each point and
-// spot light of the point's cluster, through its shadow tile. Then it blends the result with the
-// last frame's grid at the same place in the world, which smooths the frames' offsets into a finer
-// grid over a few frames. It writes the light scattered per meter in `rgb` and the fog's density
-// in `a`.
+// texels are the grid's cells. Each cell takes a point of its own inside it, hashed from the cell's
+// place so that the point holds still from frame to frame, and finds the fog's density there from
+// the scene's fog. It adds the light that the fog scatters toward the camera: the sun's, where the
+// shadow cascades see the point, and that of each point and spot light of the point's cluster,
+// through its shadow tile. Then it blends the result with the last frame's grid at the same place
+// in the world, which smooths the grid across the camera's motion. It writes the light scattered
+// per meter in `rgb` and the fog's density in `a`.
 //
 // The step binds the camera's frame group at group 0, as the scene's background does, so it reads
 // the sun's cascades, the clustered lights and the shadow atlas as the scene's surfaces do. Its own
@@ -14,6 +14,7 @@
 #import null3d::fog_volume::{FogStep, SLICES_PER_ROW, fog_edge_distance, fog_grid_place, fog_phase, fog_point, fog_slice_edge}
 #import null3d::lighting::{distance_attenuation, spot_attenuation}
 #import null3d::lights::{KIND_RECT, cluster_lights, grid_word, light_of}
+#import null3d::noise::{pcg3d, to_unit}
 #import null3d::shadows::{shadows, light_shadow, no_plane, sun_texels}
 
 @group(1) @binding(0) var<uniform> settings: FogStep;
@@ -101,6 +102,15 @@ fn lamps_seen(relative: vec3f, toward: vec3f) -> vec3f {
     return sum;
 }
 
+/// The point of a cell that the light step samples, as a part of the cell from -0.5 to 0.5 each way:
+/// a hash of the cell's place in the grid. Neighboring cells take different points, and a cell keeps
+/// its own from one frame to the next. It lies inside the cell, so no sample reads another cell's
+/// light.
+fn cell_offset(index: vec2u, slice: u32) -> vec3f {
+    let hashed = pcg3d(vec3u(index, slice));
+    return vec3f(to_unit(hashed.x), to_unit(hashed.y), to_unit(hashed.z)) - vec3f(0.5);
+}
+
 @fragment
 fn light(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let grid = settings.grid;
@@ -111,8 +121,13 @@ fn light(@builtin(position) position: vec4f) -> @location(0) vec4f {
     if f32(slice) >= grid.cells.z {
         return vec4f(0.0);
     }
-    let cell = vec2f(texel % size);
-    let offset = settings.jitter.xyz;
+    let index = texel % size;
+    let cell = vec2f(index);
+    // A frame with no last grid samples each cell's center, so a held image does not depend on the
+    // frame's number. Once a frame reads the last grid, each cell takes its own fixed point: a point
+    // that moved every frame would set the whole grid pulsing with the cycle of its offsets, which
+    // the last grid's weight, below one, never averages away.
+    let offset = select(vec3f(0.0), cell_offset(index, slice), settings.medium.z > 0.0);
     let screen = (cell + 0.5 + offset.xy) / grid.cells.xy;
     let distance = fog_edge_distance(grid, f32(slice) + 0.5 + offset.z);
     let relative = fog_point(settings, screen, distance);
