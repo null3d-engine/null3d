@@ -124,6 +124,8 @@ A record holds only numbers and short strings. This table shows the parts that a
 
 **`fill` closes a crown that its twigs leave open.** The value is the share of extra cards that the generator places through the crown's volume, against the cards on its branches. The cards sample the crown's outline, so a spruce ends in a closed spire and a broadleaf in one mass rather than separate clumps. Each filled card reads the nearest branch for its wind and its shade, one card in three sits near the crown's axis so a trunk is hidden through the middle, and a card near the crown's top is smaller than one at its foot. The default, 0, draws only the branch cards. A filled crown costs the vertices of its extra cards.
 
+Fill is a scene's choice, not part of a species' shape. In the add-on's measurement, a spruce at half its record's fill kept its silhouette and used 24 per cent fewer triangles across its levels, and twenty of them took 22 per cent less frame time. A pine that is already cheap measured no change from more fill. A scene under a tight frame budget can lower fill without changing which species it draws.
+
 **`fillTop` sets how far up the branches a filled crown reaches.** The value is a share of the branch heights, from 0 to 1. The default is 1 for a conical crown, whose top is its leader, and 0.92 for another outline, so a lone upper limb does not carry cards into the air above a rounded dome. A pine that ends in a leader asks for 1, so its crown stays filled to its tip.
 
 **`hang` turns a filled crown into a curtain.** Set it to true and the filled cards fall almost straight down, as a willow's shoots do, rather than following the crown's outward direction. The default is false.
