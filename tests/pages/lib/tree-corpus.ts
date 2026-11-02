@@ -238,6 +238,8 @@ const PINE: Species = {
 	wind: { stiffness: [0.08, 0.4, 0.7, 0.9], flutter: 0.008, frequency: 2.2 },
 	color: { bark: [0.45, 0.22, 0.1], leaf: [0.09, 0.2, 0.08], tint: 0.05, transmission: 0.24 },
 	height: 22,
+	// A pine's bole is about two per cent of its height in diameter, where the pipe model gives less.
+	boleRadius: 0.02,
 	trunks: 1,
 	heightVariance: 0.12,
 	size: [0.8, 1.2],
@@ -336,6 +338,9 @@ const ASPEN: Species = {
 	color: { bark: [0.62, 0.6, 0.55], leaf: [0.45, 0.3, 0.03], tint: 0.08, transmission: 0.4 },
 	height: 16,
 	leader: 0.62,
+	// Its reference shows a bole 2.6 per cent of the tree's height in diameter, where the pipe model
+	// gives 1.35.
+	boleRadius: 0.013,
 	trunks: 1,
 	heightVariance: 0.12,
 	size: [0.75, 1.25],

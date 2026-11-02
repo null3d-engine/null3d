@@ -340,6 +340,15 @@ function finish(growth: Growth, branch: SkeletonBranch): void {
 		branch.flares = scale;
 	}
 
+	// The pipe model sizes a bole by the wood it carries, so a plant on few limbs comes out thinner
+	// than its own reference. A record may hold a floor under the trunk's base radius, and the whole
+	// trunk thickens with it rather than swelling at one point.
+	const boleRadius = (species.boleRadius ?? 0) * growth.top;
+	if (level === 0 && boleRadius > 0 && (radii[0] as number) < boleRadius) {
+		const thicken = boleRadius / ((radii[0] as number) || 1);
+		for (let i = 0; i < samples; i++) radii[i] = (radii[i] as number) * thicken;
+	}
+
 	// A trunk widens where it meets the ground, so it reads as seated rather than pushed in.
 	if (level === 0) {
 		const flareHeight = Math.max(0.05, species.height * 0.08);
