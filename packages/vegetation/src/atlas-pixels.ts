@@ -163,6 +163,16 @@ const FAMILIES = {
 		lobeDepth: 0,
 		veins: 6,
 	},
+	// A live oak's leaf: small, stiff, oblong to oval, with an entire margin and a pale midrib.
+	liveoak: {
+		profile: 0.9,
+		aspect: 0.26,
+		teeth: 0,
+		toothDepth: 0,
+		lobes: 0,
+		lobeDepth: 0,
+		veins: 5,
+	},
 	birch: {
 		profile: 0.95,
 		aspect: 0.28,
@@ -752,14 +762,14 @@ function leafCells(): LeafCellPainter[] {
 			0.03,
 		),
 		leafSpray(
-			sprayLeaves(23, FAMILIES.beech, {
-				count: 24,
-				from: 0.05,
-				to: 0.88,
+			sprayLeaves(23, FAMILIES.liveoak, {
+				count: 44,
+				from: 0.04,
+				to: 0.9,
 				lean: [0.5, 1.3],
-				turn: 0.7,
-				length: [0.34, 0.24],
-				spread: 0.16,
+				turn: 0.8,
+				length: [0.2, 0.12],
+				spread: 0.2,
 			}),
 			0.02,
 		),
