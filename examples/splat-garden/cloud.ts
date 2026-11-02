@@ -8,7 +8,7 @@
 // photogrammetry scan of this glade would hold.
 import { timeOfDay } from '@null3d/engine';
 import type { SplatData } from '@null3d/splats';
-import { Noise } from '../../lib/procedural';
+import { Noise } from '../lib/procedural';
 
 /** Half the width of the garden's square of land, in meters. */
 export const LAND = 40;

@@ -190,9 +190,9 @@ export const DEMOS: readonly Demo[] = [
 	},
 	{
 		name: 'splat-garden',
-		group: 'Showcase',
-		sketch: new URL('./showcase/splat-garden/sketch.ts', import.meta.url),
-		code: 'showcase/splat-garden/',
+		group: 'Light, materials and effects',
+		sketch: new URL('./splat-garden/sketch.ts', import.meta.url),
+		code: 'splat-garden/',
 		title: 'Splat garden',
 		scene: 'A moss garden captured as Gaussian splats',
 		summary:
