@@ -106,6 +106,13 @@ export function fly(flight: Flight, stick: Stick, dt: number, towers: Towers): v
 	keepOut(flight, towers);
 }
 
+/** The chase camera's place behind and above the car, how far ahead of the car it looks and the
+ * lift of that look, all in meters. */
+export const CHASE = { behind: 13, above: 4.4, ahead: 22, lift: 1.4 } as const;
+/** The chase camera's tilt above the car, and its usual distance from it. */
+export const CHASE_TILT = Math.atan2(CHASE.above, CHASE.behind);
+export const CHASE_DISTANCE = Math.hypot(CHASE.behind, CHASE.above);
+
 /** The least distance a pulled-in chase camera keeps from the point it looks at, in meters. */
 const SIGHT_NEAREST = 2;
 /** The nearest a pulled-in chase camera comes to the car, in meters, so the car cannot fill the
@@ -393,10 +400,9 @@ function clampStandoff(eye: Flight, atX: number, atY: number, atZ: number): void
  * A tower that stands nearer than the standoff, which no distance clears, makes the camera ease
  * round to a side that sees the car, and it holds that side until the user's own view clears.
  *
- * `far` is the distance at which the height and look return to their usual ones. It must reach the
- * camera's own distance, or the blend would drop the camera by the height of a wide zoom in a
- * single frame when a side swing shortens it. Writes the place the camera heads for into `out`, and
- * returns how much of the usual chase look remains, from 0 pulled in to 1 at the user's distance.
+ * The height and the look return to their usual ones over the larger of the usual chase distance
+ * and the user's own distance. Writes the place the camera heads for into `out`, and returns how
+ * much of the usual chase look remains, from 0 pulled in to 1 at the user's distance.
  */
 export function settleSight(
 	sight: Sight,
@@ -406,13 +412,15 @@ export function settleSight(
 	around: number,
 	tilt: number,
 	distance: number,
-	far: number,
 	towers: Towers,
 	dt: number,
 	out: Flight,
 ): number {
 	const level = Math.cos(tilt);
 	const rise = Math.sin(tilt);
+	// A span that stopped short of the camera would drop it by the height of a wide zoom in a
+	// single frame when a side swing shortens the blend, so it reaches the user's own distance.
+	const far = Math.max(CHASE_DISTANCE, distance);
 	// The pull follows whether a tower stands between the car and the user's usual place, not
 	// whether one stands between the car and the camera that the pull itself has moved, so the
 	// pull does not release as soon as its own motion clears the line.
