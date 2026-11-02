@@ -950,16 +950,17 @@ const BARK_FAMILIES: Readonly<Record<BarkCellName, BarkFamily>> = {
 	},
 	// A live oak's bark: long wavy vertical furrows with broad flat ridges between them.
 	oak: {
-		across: 5,
+		across: 9,
 		along: 2,
-		vertical: 0.1,
-		warp: 1.8,
-		crackWidth: 0.22,
-		depth: 1.1,
+		vertical: 0.16,
+		warp: 1.2,
+		crackWidth: 0.16,
+		depth: 0.9,
 		fibre: 0.03,
 		dark: [0.16, 0.14, 0.13],
 		light: [0.72, 0.68, 0.62],
 		moss: 0.1,
+		ridges: true,
 	},
 	beech: {
 		across: 5,
@@ -1022,6 +1023,15 @@ const BARK_FAMILIES: Readonly<Record<BarkCellName, BarkFamily>> = {
 		ridges: true,
 	},
 };
+
+/**
+ * The bark families in the order that the painter lays them out, which fixes each one's cell. The
+ * map that a species reads is built from this list, so the painted order and the read order cannot
+ * drift apart: a family added here moves the cells that follow it, and both sides move together.
+ *
+ * @category api/vegetation
+ */
+export const BARK_FAMILY_ORDER = Object.keys(BARK_FAMILIES) as readonly BarkCellName[];
 
 /** The nearest bark plate's distance, the next one's, and a number of the nearest plate. */
 function plates(
