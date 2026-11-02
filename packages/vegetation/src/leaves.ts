@@ -225,6 +225,16 @@ export function leafCards(
 				cards.push({ ...card, width: card.width * shrink, height: card.height * shrink });
 			} else cards.push(card);
 		}
+		// The last distributed card stops short of the branch's end, so one card sits on the tip
+		// itself and the wood shows no bare point. Only a filled crown pays for the extra card.
+		if (fill > 0 && perBranch > 0 && samples > 1) {
+			const key = branchIndex * 0x1f + perBranch + 1;
+			const { point, tangent } = pointAndTangent(branch, samples - 1);
+			const outward = normalize(point[0], 0, point[2]);
+			cards.push(
+				makeCard(leaf, crown, seed, variant, key, point, tangent, outward, branchIndex, stiffness),
+			);
+		}
 	}
 
 	// A filled crown holds cards through its volume as well as on its branches. The cards sample the
@@ -310,9 +320,10 @@ export function leafCards(
 			const y = crown.start + Math.max(0, crownTop - crown.start) * t;
 			const shell = crown.radius * crownEnvelope(crown.shape, t);
 			// One filled card in three sits near the axis, so a crown hides its trunk through the
-			// middle as well as closing at its edge.
-			const at =
-				shell * (k % 3 === 0 ? 0.18 : 1) * Math.sqrt(unitAt(seed, 22, variant, key, KEY_SIDE));
+			// middle and a trunk tip. A conical spire keeps its cards at the edge, because its dense
+			// whorls already hide the trunk and its apex must end in leaves.
+			const core = crown.shape !== 'conical' && k % 3 === 0;
+			const at = shell * (core ? 0.18 : 1) * Math.sqrt(unitAt(seed, 22, variant, key, KEY_SIDE));
 			const angle = unitAt(seed, 23, variant, key, KEY_ROLL) * Math.PI * 2;
 			const outward: [number, number, number] = [Math.cos(angle), 0, Math.sin(angle)];
 			const point: [number, number, number] = [axisX + outward[0] * at, y, axisZ + outward[2] * at];
