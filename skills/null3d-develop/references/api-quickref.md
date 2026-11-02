@@ -653,7 +653,7 @@ const map = render.addPass({
   clearColor: '#103050',             // optional: the scene's background color by default
 });
 const screen = materials.unlit({ map: textures.fromPass(map) });
-render.setPassEnabled(map, false);   // stops drawing; keeps its last image; recompiles once
+render.setPassEnabled(map, false);   // stops drawing; keeps its last image; compiles nothing once it has drawn
 render.setPassEvery(map, 4);         // a cadence: draws one frame in four, compiles nothing
 render.removePass(map);              // destroys its textures
 render.dumpGraph();                  // Graphviz DOT text of the compiled graph, for debugging
