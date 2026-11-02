@@ -2,8 +2,8 @@
 
 Status: decided. Built: the `@null3d/water` add-on, its demo, the reflection's cadence through the
 feature host, one owner for each point where bodies meet, the Creek's migration to the add-on, and
-the ocean, which draws on every GPU path. Owed: the cost per preset, for the water and for the
-ocean. Tasks: M3-F5, M3-E6, M3-F9.
+the ocean, which draws on every GPU path. Owed: a quiet run of the add-on's cost per preset, whose
+gate has run under load. Tasks: M3-F5, M3-E6, M3-F9.
 
 Summary: `@null3d/water` draws a river and a lake from one shape and an open sea of wave spectra,
 with waves, ripples, caustics, foam, soft shores, a reflection and an underwater view. The surface
@@ -357,17 +357,17 @@ vertex's world place is the origin with its place in the mesh.
 - The page and allocation gates ran in the browser against E4a's engine: the water page starts from
   another origin under the strict policy, threaded and single-threaded, and the add-on's own code
   allocates zero bytes a frame on all four presets. That is E4a's first user, end to end.
-- The cost per preset is owed until a quiet window: the machine stood at a load of 33 in the last
-  attempt, and the earlier ones at 90 to 155. Its command is `bun packages/cli/bin/null3d.js
-  check-addon packages/water`, which measures the add-on's page on each preset; `--skip-cost`
-  leaves that gate out and runs the page and allocation gates.
-- The ocean's own GPU time does not come apart from the frame yet. A trial of
-  `ocean-cost.spec.ts` on WebGPU at Low, at a load of 33, read the frame's parts as `compute`
-  0.208 ms with the transform on and 0.132 with it off, a 0.076 ms difference inside the run-to-run
-  spread. The transform's 15 passes record in one compute step, which the GPU timer names by its
-  kind and not by a pass of its own, so a difference method cannot resolve the chain. An honest
-  figure needs a quiet window and either a per-pass scope for the transform's passes or many
-  alternating runs with the GPU timer; the design figure for three bands at 128 squared is 0.5 ms
+- The add-on's cost gate has run at this head. `bun packages/cli/bin/null3d.js check-addon
+  packages/water` passed the page, cost, allocation and size gates. Its cost per preset read 2.03,
+  2.85, 2.56 and 2.85 ms of GPU time a frame. Its allocation read zero bytes a frame in the add-on's
+  own code at every preset. The machine stood at a load of about 30 to 44 through the run, so the
+  cost figures are notes until a quiet run. The transform's own cost is treated above, with the
+  WebGPU quiet window and the older path's closed one.
+- The ocean's own GPU time does not come apart from the frame. The transform's fifteen passes record
+  in one compute step. The GPU timer names that step by its kind and not by a pass of its own, so it
+  cannot give the chain's time. The on-and-off difference in a quiet window on WebGPU read a median
+  of -0.105 ms with a 2.223 ms spread. The chain sits inside the frame's own spread there.
+  The design figure for three bands at 128 squared is 0.5 ms
   ([D-179](D-179-technique-rulings.md) ruling 19).
 - The add-on's tests cover the shape, the mesh's coverage and winding, a shape's own current, bed
   and mesh, the carried wave set, the wave copies, the foam map and the size gates. The demo
