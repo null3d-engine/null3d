@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { PlantAsset } from './asset';
-import { ALL_SPECIES, builtInSpecies } from './builtin';
+import { ALL_SPECIES, BUILTIN_SPECIES, builtInSpecies, CREEK_SPECIES } from './builtin';
 import { generatePlant, generateVariantSet } from './generate';
 import { run } from './generate-task';
 import { growSkeleton } from './skeleton';
@@ -268,11 +268,31 @@ describe('the generator', () => {
 		}
 		const elapsed = performance.now() - started;
 		expect(variants).toBe(ALL_SPECIES.length * 6);
-		// The measured total is 32.75 MiB of arrays, 34,335,362 bytes, the leaf targets included,
-		// after each species took its own card density; it was 29.75 MiB before. The device time
-		// budgets are far above the Mac's. These bounds catch a generator that slowed by an order
-		// of magnitude.
-		expect(bytes).toBeLessThan(34 * 1024 * 1024);
+		// The whole catalogue measures 33.95 MiB of arrays, 35,600,000 bytes, the leaf morph targets
+		// included; it was 32.75 MiB before the conifers took their larger, fewer cards, and 29.75
+		// before every species had its own density. The guard is that figure plus 1.5 MiB, which is
+		// about the largest single legitimate change a record has made in a day. The margin is
+		// absolute rather than a share of the catalogue on purpose: a guard that grew with the set
+		// would stop catching a card count or a level that multiplied, which is what it is for.
+		// A species added to the catalogue takes a fresh measurement rather than the margin.
+		expect(bytes).toBeLessThan(35.5 * 1024 * 1024);
 		expect(elapsed).toBeLessThan(3000);
+	});
+
+	test('keeps a scene inside the memory that D-241 budgets for one', () => {
+		// The catalogue guard above asks whether the whole set grew by accident. This asks the other
+		// question a user feels: what one scene holds. Creek grows eleven species at four variants
+		// each, which is the scene that D-241 measured, and its budget is 25 MB at Low and Medium.
+		const scene = [
+			...CREEK_SPECIES,
+			...BUILTIN_SPECIES.filter((record) => ['conifer', 'fern', 'shrub'].includes(record.id)),
+		];
+		let bytes = 0;
+		for (const species of scene)
+			for (const asset of generateVariantSet(species, { seed: 1 }).slice(0, 4))
+				bytes += asset.stats.bytes;
+		// The measured scene is 20.25 MiB, and D-241 allows 25 MB at Low and Medium and 30 at High
+		// and Ultra. The Low figure is the one that binds.
+		expect(bytes).toBeLessThan(25 * 1024 * 1024);
 	});
 });
