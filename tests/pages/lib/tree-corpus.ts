@@ -108,9 +108,9 @@ const SPRUCE: Species = {
 	crown: { shape: 'conical', start: 0.06, spread: 0.25, pull: 0.04, floor: 0.03 },
 	leaf: {
 		kind: 'needle',
-		cards: 62,
-		width: 0.15,
-		height: 0.3,
+		cards: 28,
+		width: 0.26,
+		height: 0.34,
 		cell: 'needle',
 		perCard: 26,
 		up: 1.5,
@@ -213,8 +213,8 @@ const PINE: Species = {
 	leaf: {
 		kind: 'needle',
 		cell: 'fascicle',
-		cards: 90,
-		width: 0.1,
+		cards: 38,
+		width: 0.26,
 		height: 0.4,
 		perCard: 12,
 		up: 0.3,
