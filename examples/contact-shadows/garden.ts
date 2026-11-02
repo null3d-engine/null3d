@@ -283,7 +283,7 @@ export function garden(ctx: SketchContext, camera: Camera): { update(): void } {
 	const stalks = scene.createInstances(
 		geometry.cylinder({ radiusTop: 1, radiusBottom: 1, height: 1, radialSegments: 6 }),
 		STALKS,
-		{ material: materials.standard({ color: '#ffffff', roughness: 0.45 }), colors: true },
+		{ material: materials.standard({ color: '#ffffff', roughness: 0.45 }), colors: true, ...solid },
 	);
 	const leaves = scene.createInstances(
 		geometry.cone({ radius: 1, height: 1, radialSegments: 4 }),
@@ -291,6 +291,7 @@ export function garden(ctx: SketchContext, camera: Camera): { update(): void } {
 		{
 			material: materials.standard({ color: '#ffffff', roughness: 0.7, doubleSided: true }),
 			colors: true,
+			...solid,
 		},
 	);
 	const [turn, twist] = [quat.create(), quat.create()];
