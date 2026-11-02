@@ -234,8 +234,9 @@ no per-pass figures.
 
 ### Creek through the vegetation add-on (M3-V11)
 
-Creek grows its plants at first use: 11 species records in four variants each, 2,216 plants placed
-from seed 7, where the rows above loaded model files. The figures below measure that scene.
+Creek grows its plants at first use. It has 12 species records with up to four variants each, and
+it places 2,543 plants from seed 7, where the rows above loaded model files. The figures below
+measure that scene.
 
 The Mac's page drew at its display's full 1,512 by 982 points at the display's pixel ratio, where
 the folder's earlier Creek record drew 1,920 by 1,080, so compare the counts rather than the
@@ -256,8 +257,8 @@ The Mac's run: [20261102-131805-vegetation](tested-devices/macbook-pro-m3-max-ch
 Thirteen pages passed, and none was skipped. WebGL2 and compatibility mode cap the preset at
 Medium, so their High and Ultra pages drew Medium again and are left out.
 
-The Galaxy S25 stands in for the S24 class. Low, Medium and Ultra hold their ceilings; High misses
-by 16.68 ms, 8.0 per cent, because the plants make 76 batches and every view draws them again.
+The Galaxy S25 stands in for the S24 class. The table is the run below, on the scene before the
+wildflower record and before the trunks' prepass option.
 
 | Device and preset | Path | FPS | Frame ms | CPU ms | GPU ms | Triangles | Draws | Textures MiB | Buffers MiB | wasm MiB |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -267,7 +268,20 @@ by 16.68 ms, 8.0 per cent, because the plants make 76 batches and every view dra
 | Galaxy S25, Ultra | WebGPU | 2.2 | 458.20 | 7.30 | 451.22 | 6,510,000 | 829 | 355.7 | 98.8 | 181.7 |
 
 The S25's run: [20261102-132333-vegetation](tested-devices/galaxy-s25-sm-s931b-chrome/20261102-132333-vegetation.md).
-Five pages passed, and none was skipped.
+Five pages passed, and none was skipped. Its High row reads 16.68 ms over the 208.3 ceiling. That
+reading did not hold: the phone was hot, and its later High runs read lower.
+
+Two later runs put the final scene at High, which carries the wildflower clumps. One had the trunks
+in the depth prepass and one had them out. Both read a 208.29 ms median frame interval against the
+208.3 ceiling, so the frame measure passes. Their GPU medians are 231.67 and 224.85 ms, and the
+frame medians agree because the page paces its frames, not because the plants cost the same. The
+runs' mean frame intervals were 239.2 and 226.6 ms, so they cannot order the code states against
+each other. The exclusion's own saving is the Mac's measured 0.92 ms of GPU time.
+
+| Galaxy S25, High | Median frame ms | GPU ms | Triangles | Draws | Run |
+| --- | --- | --- | --- | --- | --- |
+| Trunks out | 208.29 | 231.67 | 3,590,000 | 783 | 20261102-142543-vegetation |
+| Trunks in | 208.29 | 224.85 | 3,750,000 | 860 | 20261102-142844-vegetation |
 
 ### Tree generation, all four devices
 
