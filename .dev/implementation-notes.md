@@ -363,6 +363,14 @@ The opcode numbers that M2 tasks need are reserved (M2-E1), so lanes that work a
 - A class that only the engine makes marks its constructor `@internal`. Stripping it would leave the class constructible with no arguments, so the build writes `protected constructor();` in its place. Protected, not private, so that the engine's own subclasses still type check.
 - The internal entry point that tests import (`src/internal.ts`) leaves the package. The tarball check fails if it returns (review R8, R8-10).
 
+## One list, not two
+
+- **Where two lists must stay in step, one is derived from the other.** Never keep the second by hand. A list written beside the list it must match drifts as soon as an entry joins one of them. Nothing fails until a picture disagrees with a claim.
+- Three faults of this shape cost most of a day in the vegetation add-on. An atlas declared four columns while the painter wrote six. Every cell past the second then sampled the wrong texels. A `stemLean` field only reached multi-stem plants, so a single trunk never leaned. Its curve then bent it back along the tilt it never had. A bark cell map was kept by hand beside the painter's order. Adding a family moved every later one, so the willow read the holm oak's mottle and the holm oak read the willow's ridges.
+- Each was fixed the same way: the counts and the map now come from the painter's own lists.
+- **The symptom is a picture that contradicts a claim.** That is why these faults cost a day each. None failed a test, a type check or a review. The code agreed with itself and was wrong about the world. When a render disagrees with what the record says it draws, look for a second list before looking at the painter.
+- A declared count that a shader reads as a constant is still a second list. `LEAF_CELLS` and `BARK_CELLS` in the plant shaders are written by hand beside the painters' constants. When a family joins the atlas, the shader constant, the block's width and the map all move together. A test that reads a cell by its painted content catches them apart.
+
 ## Shaders in a packed add-on
 
 - A package's WGSL is compiled while the package is built, not in the project that installs it. `tools/lib/packages.ts` compiles each `.wgsl` file in a package's `src/` and writes `lib/<file>.wgsl.js`, in the shape that the Vite plugin gives a project's own WGSL: the shader's records, with its text in tables that it reads on first use, and a module for each set of a custom material's builds, which a device loads when it first needs one ([D-54](decisions/D-54-addon-modules.md)).
