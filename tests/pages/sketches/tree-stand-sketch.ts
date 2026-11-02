@@ -35,11 +35,16 @@ export default defineSketch((ctx) => {
 	// The governor lowers the live settings when frames take too long, so a timing that leaves it on
 	// measures the engine's own adjustment as much as the stand. A run names which of the two it is.
 	if (params.get('governor') === 'off') quality.set({ governor: false });
+	// A cost run holds the render scale or turns shadows off, one at a time, so the difference a
+	// preset makes can be pinned on a setting rather than guessed at.
+	const SCALE = Number(params.get('scale') ?? 0);
+	if (SCALE > 0) quality.set({ minRenderScale: SCALE, maxRenderScale: SCALE });
+	const SHADOWS = params.get('shadows') !== 'off';
 	scene.setBackground('#9fc0dd');
 	scene.createDirectionalLight({
 		direction: [-0.5, -1, -0.35],
 		intensity: 3.1,
-		castShadows: true,
+		castShadows: SHADOWS,
 		shadow: { distance: 60, mapSize: 1024 },
 	});
 	scene.createAmbientLight({ intensity: 0.5 });
