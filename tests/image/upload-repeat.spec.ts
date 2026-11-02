@@ -32,8 +32,16 @@ interface UploadResult {
 
 /** Runs the page with one set of switches, and fails with the page's own error when it gives one. */
 async function uploads(page: Page, query: string): Promise<UploadResult> {
-	await page.goto(`reupload.html?gpu=webgl2&preset=low&seconds=3&${query}`);
-	const result = await pageResult<UploadResult>(page, 180_000);
+	// The software GPU draws the model's first frame far slower than a GPU, and this run judges only
+	// the object count, so it leaves the model out. It also needs more frames after a longer settle,
+	// because a plan's first build would otherwise fill the whole window it measures.
+	const software = softwareGpu();
+	const model = software ? 'model=0' : 'model=1';
+	const timing = software ? 'settle=5&seconds=8' : 'settle=2&seconds=3';
+	// The governor changes the render scale while frames are slow, which compiles the plan again,
+	// so the page keeps it off on every GPU: this test measures the plan's turns, not the governor's.
+	await page.goto(`reupload.html?gpu=webgl2&governor=off&preset=low&${timing}&${model}&${query}`);
+	const result = await pageResult<UploadResult>(page, 300_000);
 	expect(result.error).toBeUndefined();
 	expect(result.ok).toBe(true);
 	expect(result.failures).toEqual([]);
@@ -43,6 +51,8 @@ async function uploads(page: Page, query: string): Promise<UploadResult> {
 test('a reflection that rests makes no GPU object beside a fragment-form pass', async ({
 	page,
 }) => {
+	// The scene loads a model and draws two views, which CI's software GPU takes its time over.
+	test.setTimeout(300_000);
 	const plain = await uploads(page, 'pass=0&reflect=1&every=2');
 	const withPass = await uploads(page, 'pass=1&reflect=1&every=2');
 	expect(withPass.tier).toBe('webgl2');
