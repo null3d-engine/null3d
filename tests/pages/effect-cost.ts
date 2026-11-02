@@ -34,9 +34,10 @@
 // reports how long each joined shader took to build, where development builds keep the times.
 // A look whose work is a fraction of a millisecond hides under a scene's own movement between
 // rounds. ?repeat=N passes the count to a sketch that draws its effect that many times in a frame,
-// ?clear asks for a scene that leaves out the work around the effect, and ?bloom=off leaves bloom
-// out for a case that draws no streak. ?seconds= sets each side's own measurement, and ?warm-up=
-// the play before the first, both in seconds.
+// ?clear asks for a scene that leaves out the work around the effect, ?bloom=off leaves bloom out
+// for a case that draws no streak, and ?bounce=off leaves out the preset's screen-space bounce light
+// for a cleared scene that it does not light. ?seconds= sets each side's own measurement, and
+// ?warm-up= the play before the first, both in seconds.
 // ?heavy makes the GPU the limit where it has no timer: 8 effects by default, at the display's
 // whole pixel ratio, so the frame interval shows what joining saves.
 import { createEngine } from '@null3d/engine';
@@ -110,6 +111,8 @@ const repeat = params.get('repeat');
 const clear = params.has('clear');
 /** A sketch's bloom, which the streak reads, off for a case that measures a mark without it. */
 const bloomOff = params.get('bloom') === 'off';
+/** A sketch's screen-space bounce light, off for a cleared scene that it does not light. */
+const bounceOff = params.get('bounce') === 'off';
 /** A sketch's reflection, made rare so a smaller cost, such as a transform chain, shows. */
 const reflection = params.get('reflection');
 /** The rounds of each side, with the sides in the opposite order on alternate rounds. */
@@ -134,7 +137,7 @@ run('effect-cost', async () => {
 	const kind = params.get('kind');
 	const area = `${kind === null ? '' : `&kind=${kind}`}${params.has('image') ? '&image' : ''}`;
 	/** The switches that a sketch uses to lift a small cost above the frame's own movement. */
-	const smallCost = `${repeat === null ? '' : `&repeat=${repeat}`}${clear ? '&clear' : ''}${bloomOff ? '&bloom=off' : ''}${reflection === null ? '' : `&reflection=${reflection}`}`;
+	const smallCost = `${repeat === null ? '' : `&repeat=${repeat}`}${clear ? '&clear' : ''}${bloomOff ? '&bloom=off' : ''}${bounceOff ? '&bounce=off' : ''}${reflection === null ? '' : `&reflection=${reflection}`}`;
 	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${meter === null ? '' : `&meter=${meter}`}${slices === null ? '' : `&slices=${slices}`}${steps === null ? '' : `&steps=${steps}`}${strength === null ? '' : `&strength=${strength}`}${aoScale === null ? '' : `&aoscale=${aoScale}`}${area}${moving ? '&moving' : ''}${base === null ? '' : `&base=${base}`}${fill === null ? '' : `&fill=${fill}`}${background === null ? '' : `&background=${background}`}${night ? '&night' : ''}${look === null ? '' : `&look=${encodeURIComponent(look)}`}${smallCost}`;
 	const engine = await createEngine({
 		canvas,
