@@ -595,6 +595,15 @@ scene hands it.
 - The held frame, 6 seconds in, stands inside the hall. Hold mode meters its one frame and takes the result at once, so the image test shows the adapted hall.
 - The walk stops at each end and turns there, with each leg eased, so the eye's change shows while the view holds still.
 
+## The bounce-light demo's room
+
+`bounce-light: Red and green room` shows one bounce of screen-space light. A red wall at the left and a green wall at the right throw their color onto the grey floor and back wall ([D-284](decisions/D-284-screen-space-bounce-light.md)).
+
+- The walls take four times the environment's light that the grey surfaces take, through each material's `envIntensity`. The walls therefore throw a strong color, and the dim grey surfaces show it instead of washing it out. At the image test's size, the floor under the red wall reads 58.8 levels redder than the same room without the light, and the floor under the green wall 34.9 levels greener. A room whose surfaces all take the environment's light alike reads 7.6 and 3.8 levels. At 960 x 540 the same boxes read 1.9 and 0.9 levels against 16.3 and 11.0.
+- The camera stands at the room's open front, low and close, so each wall runs down the frame beside a wide area of floor. The screen-space gather reads a disk 64 texels wide on its half-size grid, which is about 128 pixels of the picture. A wall therefore colors the surfaces within that distance of it, and a distant wall colors nothing. The close view keeps a wide band of floor and back wall inside the reach.
+- `B` takes the light from the automatic cycle and switches it on or off. The cycle does not run it again, because a visitor who takes the light in hand should keep the state that they chose.
+- A held frame shows the light, as the cycle's first half does. No input reaches a held frame, and the sketch reads no key there.
+
 ## The crystal spiral's scenery
 
 The owner wants the demos "as amazing as possible". The custom shader inputs demo (`shader-inputs`) keeps its scenery in `examples/shader-inputs/pool.ts`, beside the sketch. The sketch keeps to the crystals and the stones that show the feature.
