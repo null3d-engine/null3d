@@ -3,11 +3,15 @@
 import { defineSketch } from '@null3d/engine';
 import { PRECISION, precisionSurfaces } from '../lib/depth-precision';
 
-export default defineSketch(({ scene, materials, geometry, post }) => {
+export default defineSketch(({ scene, materials, geometry, post, quality }) => {
 	// The page finds fighting pixels by their red channel. A tone mapping curve such as ACES mixes
 	// the channels, which would give the nearer surface some red, so the colors pass through as
 	// they are.
 	post.set({ toneMapping: 'none' });
+	// Ambient occlusion, contact shadows, screen-space bounce light and screen-space reflections
+	// each force a depth prepass, which the page turns off. With a prepass the opaque pass tests
+	// equal depth, so the surface drawn last wins a tie and the red surface's ties go unseen.
+	void quality.set({ aoScale: 0, contactShadowSteps: 0, bounceRays: 0, ssrScale: 0 });
 	scene.setBackground(PRECISION.background);
 	const camera = scene.createPerspectiveCamera({
 		fov: PRECISION.fovDegrees,
