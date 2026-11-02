@@ -18,6 +18,8 @@
 	},
 	"include": [
 		"tools/**/*.ts",
+		// A tool that writes a GIF reads the same package, so its types join this project.
+		"bench/gifenc.d.ts",
 		"packages/*/src/**/*.test.ts",
 		"packages/vite-plugin/src/**/*.ts",
 		"tests/*.ts",
