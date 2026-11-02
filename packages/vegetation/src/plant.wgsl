@@ -410,9 +410,10 @@ fn surface(input: SurfaceInput) -> Surface {
         // The surface map's blue holds the leaf's coverage, and its alpha the leaf's thickness.
         s.alpha = surfaceMap.b;
         // A leaf's gloss is a dielectric's, four per cent at normal incidence, the engine's default
-        // for an index of refraction of 1.5 and the top of a leaf's measured range, and rougher than
-        // a leaf's texture suggests.
-        s.roughness = mix(0.35, 0.6, surfaceMap.a);
+        // for an index of refraction of 1.5 and the top of a leaf's measured range. Its surface is
+        // matte, so the reflection spreads wide instead of running as a white sliver along a card
+        // seen edge-on, where every dielectric reflects the sky at full strength.
+        s.roughness = mix(0.65, 0.9, surfaceMap.a);
         // Light through the leaf, about a third of its diffuse light, tinted by the leaf's own hue
         // and lifted toward yellow as the leaf turns. A leaf is about a millimeter thick.
         s.thickness = surfaceMap.a * 0.001;
@@ -425,8 +426,10 @@ fn surface(input: SurfaceInput) -> Surface {
         let enclosed = clamp(input.vertexColor.a, 0.0, 1.0);
         s.occlusion = 1.0 - CROWN_SHADE * enclosed * enclosed;
         // The diffuse light follows the crown's volume, so a crown reads as a shape rather than as a
-        // scatter of cards. The leaf keeps its own normal for its gloss and the light through it.
-        s.normal = leafNormal;
+        // scatter of cards. The gloss turns toward the viewer: a flat card seen edge-on sits at a
+        // grazing angle, where a dielectric reflects the sky white however dim its gloss, so the
+        // card would read as a pale sliver. The light through the leaf keeps the leaf's own normal.
+        s.normal = normalize(mix(leafNormal, input.viewDirection, 0.65));
         s.diffuseNormal = normalize(mix(leafNormal, crown_normal(input.worldPosition), material.crownBend));
         // Autumn shifts a leaf's colour toward yellow, brightens it and dries its surface.
         let turned = mix(s.baseColor, s.baseColor * vec3f(1.5, 1.1, 0.35), autumn * 0.8);
