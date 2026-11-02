@@ -275,7 +275,10 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  *   With a mouse move about every third frame, S5 and S6 took 2 to 11 bytes per frame there.
  * - the frame's pending reads, which the render worker maps after it submits: each read makes a
  *   promise with its reactions, about 18 bytes, and S1 reads once a frame, so it took 18.2 bytes
- *   per frame, up to 20.4.
+ *   per frame, up to 20.4;
+ * - the mip levels that a frame makes again, each with the browser's encoder for its pass. A chain
+ *   of 11 levels, the most a texture of 2,048 pixels across needs, took 133.7 to 171 bytes a frame
+ *   on the Mac's GPU. The budget allows one encoder of 32 bytes for each level.
  */
 export const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {
@@ -307,6 +310,8 @@ export const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> =
 		'finish gpu/completion.ts': 40,
 		'unfinished gpu/completion.ts': 16,
 		'giveUpStalled gpu/completion.ts': 16,
+		// One encoder for each level of an 11-level chain, as the doc block says.
+		'generateMipmaps webgpu/backend.ts': 11 * 32,
 	},
 };
 /**
@@ -523,7 +528,8 @@ const CALL_BUDGETS: Readonly<Record<string, number>> = { '(IDLE)': 48, '(JS)': 2
  * thread, and a fast runner charges that record, and the loader's async call's promise, to `ask`
  * instead, where the browser inlines the call. Both places are judged per call as well: CI's
  * SwiftShader read 35.0 bytes a frame at `send`, 66 an ask, and a run on this Mac's SwiftShader
- * charged the same call to `ask` at 95.1 bytes a frame, 191 an ask. On this Mac's GPU the browser
+ * charged the same call to `ask` at 95.1 bytes a frame, 191 an ask. `send`'s budget of 80 holds one
+ * reaction record at 66 with less than one boxed number more. On this Mac's GPU the browser
  * keeps the `then` record in a place of its own, `then (built-in)`, at 40.6 bytes a frame and 82 an
  * ask. The answer's message makes more objects for the field's transferred array than for the
  * splats' answer: the Mac's GPU reads 309.3 bytes a call at the handler, and CI's SwiftShader
@@ -541,7 +547,7 @@ const TASK_CALL_BUDGETS: Readonly<Record<string, number>> = {
 	'pose null3d/s1-sketch.ts': 128,
 	'run shared/tasks.ts': 560,
 	'n.onmessage shared/tasks.ts': 368,
-	'send src/field.ts': 96,
+	'send src/field.ts': 80,
 	'ask src/field.ts': 208,
 	'then (built-in)': 96,
 	'Promise (built-in)': 160,
