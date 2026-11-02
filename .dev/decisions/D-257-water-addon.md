@@ -227,11 +227,17 @@ same field, so `ocean-waves` judges WebGL2 like the other tiers. The demo waits 
 fault: a reflection pass that carries a cadence of two draws black on WebGL2, so the sea loses the
 sky's mirror and reads flat. At a cadence of one the pass draws (`.dev/code-review.md`).
 
-The transform's own cost is unmeasured. The effect page's on-and-off difference cannot resolve it:
-over one quiet run of three bands at 128 squared, the difference ranged from -0.62 to 0.54 ms on
-WebGPU, and the same work at the four presets spread the same way. `ocean-cost.spec.ts` keeps the
-instrument, gated by `NULL3D_OCEAN_COST`, and the pass timer reports each of the chain's fifteen
-passes apart.
+The transform's own cost is not measured. The effect page's on-and-off difference cannot resolve
+it when the machine is busy: over one quiet run of three bands at 128 squared, the difference
+ranged from -0.62 to 0.54 ms on WebGPU, and the same work at the four presets spread the same way.
+`ocean-cost.spec.ts` keeps the instrument, gated by `NULL3D_OCEAN_COST`. It now sends the
+reflection to its longest cadence and takes more rounds and longer sides from the environment, so
+each round's difference pairs one side with the side beside it on the same clean frame. The pass
+timer names all fifteen transform passes `compute`, so their times do not separate by name; the
+difference of the sides is the figure to read. The figures wait on a quiet window: the machine
+stayed at a load of 11 through the last attempt, and the test refuses to measure above its limit
+rather than report a figure it does not believe. The design figure for three bands at 128 squared
+is 0.5 ms ([D-179](D-179-technique-rulings.md) ruling 19).
 
 The first rate runs measured the page while the reflection switched itself off every other frame.
 At 1920 by 1080 on Low the ocean drew 1.21 frames a second, and a 64 squared grid gave 1.45.
