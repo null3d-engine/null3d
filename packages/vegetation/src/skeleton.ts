@@ -258,6 +258,22 @@ function grow(
 		radii[i] = Math.sqrt(area);
 	}
 
+	// The pipe model holds a branch's radius constant between the limbs that leave it, which reads as
+	// a stack of cylinders. A record that asks for a taper pulls each point toward one cone from the
+	// branch's base to its tip, never wider than the pipe model asks, so the wood narrows as it rises.
+	const taperCurve = levelRecord.taperCurve ?? 0;
+	if (taperCurve > 0 && samples > 2) {
+		const baseRadius = radii[0] as number;
+		const tipRadius = radii[samples - 1] as number;
+		for (let i = 1; i < samples - 1; i++) {
+			const cone = baseRadius + (tipRadius - baseRadius) * (i / (samples - 1));
+			// The taper never widens the wood: the pipe model's radius is the least that carries the
+			// limbs beyond, and a cone that would exceed it leaves that point alone.
+			const line = Math.min(radii[i] as number, cone);
+			radii[i] = (radii[i] as number) + (line - (radii[i] as number)) * taperCurve;
+		}
+	}
+
 	// A trunk widens where it meets the ground, so it reads as seated rather than pushed in.
 	if (level === 0) {
 		const flareHeight = Math.max(0.05, species.height * 0.08);
