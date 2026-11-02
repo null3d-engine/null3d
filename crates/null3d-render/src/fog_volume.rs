@@ -54,8 +54,8 @@ pub(crate) const GRID_FORMAT: u32 = format::RGBA16_FLOAT;
 /// The format of the apply step's target: HDR color, as the scene color holds it.
 pub(crate) const FORMAT: u32 = format::RGBA16_FLOAT;
 
-/// The weight of the last frame's grid in each cell's light: as Unreal Engine's default. The
-/// frames' offsets then average over about ten frames.
+/// The weight of the last frame's grid in each cell's light: as Unreal Engine's default. The blend
+/// then smooths the grid across the camera's motion over about ten frames.
 const HISTORY_WEIGHT: f32 = 0.9;
 
 /// The shortest distance from a lamp at which the light step counts its light, in world units.
@@ -286,7 +286,7 @@ pub(crate) struct FogVolumePass {
     created: bool,
     /// The textures that the bind groups read, before the first group exists the default.
     bound: Option<FogVolumeSources>,
-    /// The frames that drew the grid, which pick each frame's offset and light texture.
+    /// The frames that drew the grid, which pick each frame's light texture.
     frames: u32,
     /// The camera of the last frame that drew the grid, while the next frame may read its grid.
     history: Option<History>,

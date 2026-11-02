@@ -10,10 +10,8 @@ if (!canvas) throw new Error('the page has no canvas');
 const [width, height] = (params.get('size') ?? '480x300').split('x').map(Number);
 canvas.style.width = `${width}px`;
 canvas.style.height = `${height}px`;
-const engine = await createEngine({
-	canvas,
-	sketch: new URL('./sketches/beam-steady-sketch.ts', import.meta.url),
-	maxPixelRatio: 1,
-});
+const sketch = new URL('./sketches/beam-steady-sketch.ts', import.meta.url);
+if (params.get('volumetric') === 'off') sketch.searchParams.set('volumetric', 'off');
+const engine = await createEngine({ canvas, sketch, maxPixelRatio: 1 });
 (globalThis as { __null3dEngine?: unknown }).__null3dEngine = engine;
 await engine.firstFrame;
