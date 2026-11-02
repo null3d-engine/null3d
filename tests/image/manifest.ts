@@ -3295,11 +3295,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Gaussian splats from an SPZ file that the sketch makes: a knot of splats above a ground, with a
 	// bar in front of part of it, so the picture shows the splats hiding behind a mesh and fading where
-	// they meet the ground. The selection runs on a job worker before the held frame draws.
+	// they meet the ground. The selection runs on a job worker before the held frame draws. The
+	// software GPU captures this whole cloud slowly: its page publishes the image past the default
+	// minute while other builds run, so the run waits three minutes.
 	{
 		name: 'splats',
 		sketch: 'tests/pages/sketches/splats-sketch.ts',
 		hold: 0,
+		timeoutSeconds: 180,
 		modes: ALL_MODES,
 	},
 	// The same cloud with the budget capped, so fewer splats draw: the worker keeps the most

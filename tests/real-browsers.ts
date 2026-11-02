@@ -1141,6 +1141,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'lod-cost',
 	'splats',
 	'demos',
+	'showroom-shadow',
 	'vegetation',
 	'vegetation-wind',
 	'terrain',
