@@ -98,10 +98,12 @@ instead of a band of cars over the low streets. The owner judges the final look.
   ahead while it sits at its usual distance, and two metres past the car once it has pulled in,
   and it keeps out of the towers as the car does. It also pulls in before a tower that would stand
   between it and the car, and sits lower as it closes. A drag turns the camera round the car, and a
-  turn that would put the camera's own place in a tower is refused: the camera keeps the angle off
-  the car's tail that it could last stand at, so the car's own heading still carries it, and it
-  stops against the face instead of sliding along it. The turn eases back to the user's own angle
-  once the clear way returns. The pull keeps a ten-metre floor from the
+  turn that would put the chase camera in a tower is refused, for the car and for the drag alike:
+  the car keeps its heading, so the camera stays behind it and stops against the face instead of
+  sliding along it, and the drag keeps the angle off the car's tail that it could last stand at.
+  Both turn again once the clear way returns, the car at once and the drag eased back to the user's
+  own angle. In the seat the camera sits inside the car, so it refuses no turn there. The pull
+  keeps a ten-metre floor from the
   car where the towers leave room, so the whole car stays in the frame with a margin: the held
   frames keep the car's coloured pixels at least 118 pixels inside every edge, 164 at the pull's
   first frames, and 65 in the control. The tower's shadow covers the angles between the usual
