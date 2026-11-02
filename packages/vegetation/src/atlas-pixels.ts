@@ -223,7 +223,8 @@ const FAMILIES = {
 		lobeDepth: 0.2,
 		veins: 3,
 	},
-	needle: { profile: 1, aspect: 0.2, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 1 },
+	needle: { profile: 1, aspect: 0.11, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 1 },
+	fascicle: { profile: 1, aspect: 0.06, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 1 },
 	blade: { profile: 1, aspect: 0.06, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 3 },
 	hosta: {
 		profile: 0.55,
@@ -666,6 +667,57 @@ function clumpCell(seed: number): LeafCellPainter {
 	return leafSpray(leaves, null);
 }
 
+/**
+ * A spruce shoot: short needles in two ranks along a thin twig, standing out near its base and
+ * leaning forward toward its tip. The twig shows between the needles, so a card reads as a spray
+ * rather than as a blade with a serrated edge.
+ */
+function shootCell(seed: number): LeafCellPainter {
+	const leaves: PlacedLeaf[] = [];
+	const count = 72;
+	// The twig bows a little, so its silhouette is not a ruled line.
+	const bow = 0.012;
+	for (let i = 0; i < count; i++) {
+		const key = seed * 131 + i;
+		const f = (i + 0.5) / count;
+		const side = i % 2 === 0 ? -1 : 1;
+		const along = 0.04 + 0.92 * f + (random2(key, 7) - 0.5) * 0.014;
+		// A spruce's needles lie all round its shoot, so a card seen from one side shows two ranks.
+		// Each rank leans out from the twig, and the needles near the tip lean further forward.
+		const angle = side * (1.24 - 0.4 * f + (random2(key, 6) - 0.5) * 0.24);
+		const length = (0.34 - 0.1 * Math.abs(2 * f - 1)) * (0.86 + 0.28 * random2(key, 4));
+		const baseX = 0.5 + bow * Math.sin(Math.PI * f) + (random2(key, 5) - 0.5) * 0.008;
+		leaves.push(placeLeaf(key, FAMILIES.needle, baseX, along, angle, length));
+	}
+	return leafSpray(leaves, bow);
+}
+
+/**
+ * A pine's fascicles: bunches of long needles that leave one point of a twig and part as they grow,
+ * with bare twig between one bunch and the next.
+ */
+function fascicleCell(seed: number): LeafCellPainter {
+	const leaves: PlacedLeaf[] = [];
+	const bundles = 13;
+	const bow = 0.01;
+	for (let bundle = 0; bundle < bundles; bundle++) {
+		const key = seed * 131 + bundle;
+		const f = bundle / (bundles - 1);
+		const baseY = 0.06 + 0.86 * f;
+		const baseX = 0.5 + bow * Math.sin(Math.PI * f) + (random2(key, 3) - 0.5) * 0.03;
+		const turn = (random2(key, 5) - 0.5) * 0.6;
+		for (let needle = 0; needle < 2; needle++) {
+			const sub = key * 7 + needle;
+			const side = needle === 0 ? -1 : 1;
+			// The two needles of a bunch stay close at the base and part along their length.
+			const angle = turn + side * (0.34 + 0.34 * random2(sub, 6));
+			const length = (0.46 - 0.16 * f) * (0.9 + 0.2 * random2(sub, 4));
+			leaves.push(placeLeaf(sub, FAMILIES.fascicle, baseX, baseY, angle, length));
+		}
+	}
+	return leafSpray(leaves, bow);
+}
+
 /** A broad leaf that fills its cell, with a smaller one behind it so the cell is not one cut-out. */
 function broadCell(seed: number): LeafCellPainter {
 	return leafSpray(
@@ -769,21 +821,10 @@ function leafCells(): LeafCellPainter[] {
 			}),
 			0.03,
 		),
-		// A conifer's needle spray, a fern's frond, a clump of grass blades and a broad leaf. The
-		// needles fan out from the twig at their own angles, so a card reads as a spray and not as a
-		// row of teeth.
-		leafSpray(
-			sprayLeaves(53, FAMILIES.needle, {
-				count: 46,
-				from: 0.03,
-				to: 0.96,
-				lean: [1.4, 0.4],
-				turn: 0.6,
-				length: [0.44, 0.24],
-				spread: 0.18,
-			}),
-			0.012,
-		),
+		// A conifer's shoot, a fern's frond, a clump of grass blades and a broad leaf. The shoot
+		// carries short needles along a twig, so a card reads as a spray of needles rather than as a
+		// broad blade with serrated edges.
+		shootCell(53),
 		leafSpray(
 			sprayLeaves(67, FAMILIES.pinna, {
 				count: 22,
@@ -797,20 +838,8 @@ function leafCells(): LeafCellPainter[] {
 		),
 		clumpCell(73),
 		broadCell(83),
-		// A cell that no species names yet. It holds leaves rather than nothing, so a mip level and a
-		// normal read a full cell, and the next leaf shape has a place to stand.
-		leafSpray(
-			sprayLeaves(97, FAMILIES.round, {
-				count: 24,
-				from: 0.05,
-				to: 0.86,
-				lean: [0.5, 1.3],
-				turn: 0.7,
-				length: [0.28, 0.2],
-				spread: 0.16,
-			}),
-			0.025,
-		),
+		// A pine's long needles, in bunches along a twig.
+		fascicleCell(97),
 	];
 }
 

@@ -131,9 +131,9 @@ export type LeafCell = LeafCellName;
  * @category api/vegetation
  */
 export const LEAF_CELLS_BY_KIND: Readonly<Record<LeafCell, readonly [number, number]>> = {
-	// Six cluster outlines and the maple's palmate one, in the first row and the second row's first
-	// cell: a lobed oak, a smooth entire oval, a small-toothed birch, a long narrow willow, a wavy
-	// beech, a small round aspen and a palmately lobed maple.
+	// Seven cluster outlines in the first row and the second row's first cell: a lobed oak, a smooth
+	// entire oval, a small-toothed birch, a long narrow willow, a wavy beech, a small round aspen and
+	// a palmately lobed maple.
 	'cluster-a': [0, 0],
 	'cluster-b': [1, 0],
 	'cluster-c': [2, 0],
@@ -145,8 +145,8 @@ export const LEAF_CELLS_BY_KIND: Readonly<Record<LeafCell, readonly [number, num
 	frond: [2, 1],
 	blade: [3, 1],
 	broad: [4, 1],
-	// A spare round cell that no species names yet; the next leaf shape has a place to stand.
-	'cluster-h': [5, 1],
+	// A pine's long needles, bunched along a twig.
+	fascicle: [5, 1],
 };
 
 /**

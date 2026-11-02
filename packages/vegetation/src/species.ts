@@ -131,8 +131,8 @@ export interface Crown {
 export type BarkCellName = 'birch' | 'pine' | 'oak' | 'beech' | 'spruce' | 'willow';
 
 /**
- * The cells of the leaf atlas that a species may name: seven cluster outlines and the needle,
- * frond, blade and broad leaves.
+ * The cells of the leaf atlas that a species may name: seven cluster outlines, a conifer's needle
+ * shoot and fascicle spray, a fern frond, a grass blade and a broad leaf.
  * @category api/vegetation
  */
 export type LeafCellName =
@@ -143,7 +143,7 @@ export type LeafCellName =
 	| 'cluster-e'
 	| 'cluster-f'
 	| 'cluster-g'
-	| 'cluster-h'
+	| 'fascicle'
 	| 'needle'
 	| 'frond'
 	| 'blade'
@@ -491,7 +491,7 @@ export function speciesProblems(species: Species): string[] {
 				'cluster-e',
 				'cluster-f',
 				'cluster-g',
-				'cluster-h',
+				'fascicle',
 				'needle',
 				'frond',
 				'blade',
