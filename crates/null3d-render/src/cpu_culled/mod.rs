@@ -1991,8 +1991,6 @@ impl CpuCulledRenderer {
             size: s.size,
             hero: self.tiles.hero_tile(),
         }));
-        self.settings.prepare_probe_capture(input.frame);
-        self.settings.pace_views(input.canvas, input.render_scale);
         self.settings.mark_shown_views();
         // The shadow, motion and pick passes draw their layouts' materials, so each reads the pass
         // targets those materials sample: a compute pass finds its place before them.
@@ -3036,6 +3034,9 @@ impl FrameBuilder for CpuCulledRenderer {
     fn cull(&mut self, input: &FrameInput<'_>) -> Result<(), RecordError> {
         // The capture views of a probe that captures in this frame cull with the others.
         self.settings.prepare_probe_capture(input.frame);
+        // A view's turn moves on before the frame culls it: the objects it draws are the ones its
+        // cadence gives this frame, not the turn that the frame before saw.
+        self.settings.pace_views(input.canvas, input.render_scale);
         let (scene, parity, canvas, scale) = (
             input.scene,
             input.parity(),
