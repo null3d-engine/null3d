@@ -13,7 +13,8 @@
 import { defineSketch } from '@null3d/engine';
 import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
 import { EFFECT_LAYER, INTERIOR_LAYER, SUN_LAYERS } from '../../lib/layers';
-import { createShowcaseEffects, type ShadowReach } from '../../lib/showcase-effects';
+import type { ShadowReach } from '../../lib/shadow-range';
+import { createShowcaseEffects } from '../../lib/showcase-effects';
 import { createMoods, isMood } from '../../lib/stage';
 import { SEA_LEVEL, TOWN } from './island';
 import { createLand } from './land';

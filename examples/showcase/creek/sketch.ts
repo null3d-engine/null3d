@@ -23,7 +23,8 @@ import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinemat
 import { createHaze } from '../../lib/haze';
 import { EFFECT_LAYER, SUN_LAYERS } from '../../lib/layers';
 import { reportLoading } from '../../lib/progress';
-import { createShowcaseEffects, type ShadowReach } from '../../lib/showcase-effects';
+import type { ShadowReach } from '../../lib/shadow-range';
+import { createShowcaseEffects } from '../../lib/showcase-effects';
 import { createMoods, isMood, type Mood, type MoodMix, moodMix, moodShare } from '../../lib/stage';
 import { createAir } from './air';
 import { createFlora } from './flora';

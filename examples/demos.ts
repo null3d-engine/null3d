@@ -184,7 +184,7 @@ export const DEMOS: readonly Demo[] = [
 		scene: 'Car configurator',
 		summary:
 			'A new car under softbox area lights on a mirror floor in a dark studio, with a tablet beside it. A tap on the tablet changes the paint, the wheels, the trim or the lights, and the car takes the change at once. The car turns on the spot, then drives out through the opening into a short wet street, where the lamps and the neon signs streak down the asphalt and the lit fog catches their light.',
-		controls: [...SHOWCASE_CONTROLS, { keys: ['Click'], does: 'change the car on the tablet' }],
+		controls: [{ keys: ['Click'], does: 'change the car on the tablet' }],
 		hold: 1,
 		timeoutSeconds: 300,
 	},
@@ -197,7 +197,6 @@ export const DEMOS: readonly Demo[] = [
 		scene: 'A moss garden captured as Gaussian splats',
 		summary:
 			'A glade of moss, weathered stone and blossom, captured as nearly half a million soft splats rather than meshes: a blossoming tree, a glowing stone lantern, ferns, fallen petals and drifting spores, with the cloud streamed as chunk files and held to the device budget. Turn around the glade or fly through the blossom.',
-		controls: SHOWCASE_CONTROLS,
 		hold: 0.5,
 		timeoutSeconds: 300,
 	},
