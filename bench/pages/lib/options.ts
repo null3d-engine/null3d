@@ -209,3 +209,22 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
 		),
 	};
 }
+
+/**
+ * The engine options that a page's switches set, for `createEngine`. Every switch that names a
+ * quality setting is forwarded here, so a page that builds its engine options with this function
+ * cannot drop one. `maxPixelRatio` is the page's, because a page that fills its window caps a
+ * pixel ratio the protocol's canvas does not. The governor and the render scale reach the sketch,
+ * which applies them to the engine's quality settings.
+ */
+export function engineOptionsOf(options: RunOptions) {
+	return {
+		...(options.antialias !== null && { antialias: options.antialias }),
+		...(options.cloudSteps !== null && { cloudSteps: options.cloudSteps }),
+		...(options.shadowCascades !== null && { shadowCascades: options.shadowCascades }),
+		...(options.shadowMapSize !== null && { shadowMapSize: options.shadowMapSize }),
+		...(options.shadowCascadeBlend !== null && {
+			shadowCascadeBlend: options.shadowCascadeBlend,
+		}),
+	};
+}

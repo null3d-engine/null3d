@@ -20,7 +20,7 @@ import { CANVAS, PARITY_CANVAS } from '../../scenes/spec';
 import { soakEngine } from '../lib/device-soak';
 import { fillWindow, fitToWindow, showPageName } from '../lib/fit';
 import type { GlTiming } from '../lib/gl-timing';
-import { pageReport, readRunOptions } from '../lib/options';
+import { engineOptionsOf, pageReport, readRunOptions } from '../lib/options';
 import { twinSettings } from '../lib/preset';
 import { engineTrace, QualityLog } from '../lib/trace';
 import { FRAMES_MESSAGE, QUALITY_MESSAGE } from './sketch-common';
@@ -221,10 +221,9 @@ export function runNull3dPage(
 			canvas,
 			sketch: sketchUrl,
 			...(maxPixelRatio !== undefined && { maxPixelRatio }),
-			antialias: options.antialias ?? undefined,
-			...(options.cloudSteps !== null && { cloudSteps: options.cloudSteps }),
-			shadowCascades: options.shadowCascades ?? undefined,
-			shadowMapSize: options.shadowMapSize ?? undefined,
+			// One forwarding path for every quality setting that a switch names, so no page loses
+			// one by listing them by hand.
+			...engineOptionsOf(options),
 			...(params.has('tileShadows') && { pointLightShadows: true, shadowTiles: 24 }),
 			hold: options.hold ?? undefined,
 		});
