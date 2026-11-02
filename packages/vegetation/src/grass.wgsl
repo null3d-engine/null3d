@@ -4,7 +4,7 @@
 // still field draws stands still.
 
 // The wind's swirl reads the engine's value noise, as the leaf material's copy of the block does.
-#import null3d::noise::{value3}
+#import null3d::noise::{pcg, value3}
 
 struct Uniforms {
     // The field's box across the ground, in meters, and how strong the air is: 1 for a field, 0
@@ -15,6 +15,8 @@ struct Uniforms {
     windLayer: f32,
     // How far the air's speed bends a blade at its tip, in meters a second.
     sway: f32,
+    // The distance from the camera out to which the blades sway, in meters: 0 for every distance.
+    swayDistance: f32,
 }
 
 var wind: texture_2d_array<f32>;
@@ -233,16 +235,33 @@ fn vertexOffset(input: VertexInput) -> vec3f {
     }
     let downwind = local / reach;
     // The blade bends most at its tip, and the air's speed sets how far.
-    let bend = input.uv.y * input.uv.y * material.sway * speed;
+    var bend = input.uv.y * input.uv.y * material.sway * speed;
+    // The tuft's whole crown fades with its origin's distance from the camera, so a tuft past the
+    // sway distance stands still and its shadow keeps the layer that a far cascade cached.
+    if (material.swayDistance > 0.0) {
+        let away = length(object.position - camera.position);
+        bend *= 1.0 - smoothstep(material.swayDistance * 0.8, material.swayDistance, away);
+    }
+    if (bend <= 0.0) {
+        return vec3f(0.0);
+    }
     return vec3f(downwind.x * bend, -0.4 * bend * bend, downwind.z * bend);
+}
+
+/// A tuft's traits from its root's place: a value from 0 to 1 that differs between neighbouring
+/// tufts, so each tuft keeps one tint over its blades and two GPU paths agree.
+fn tuft_trait(place: vec3f) -> f32 {
+    let x = bitcast<u32>(i32(round(place.x * 8.0)));
+    let z = bitcast<u32>(i32(round(place.z * 8.0)));
+    return f32(pcg(x ^ pcg(z ^ 0x9e3779b9u))) / 4294967295.0;
 }
 
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
-    let traits = object.values;
+    let tint = tuft_trait(object.position);
     // A share of the tufts dry toward their tips, and each tuft's green differs a little.
-    let dry = smoothstep(0.62, 1.0, traits.y) * input.uv.y;
-    s.baseColor *= mix(vec3f(0.8 + 0.4 * traits.y), vec3f(1.7, 1.3, 0.45), dry);
+    let dry = smoothstep(0.62, 1.0, tint) * input.uv.y;
+    s.baseColor *= mix(vec3f(0.8 + 0.4 * tint), vec3f(1.7, 1.3, 0.45), dry);
     // Both faces light as the upper face, since the blades' normals lean up.
     s.normal = select(input.normal, -input.normal, input.normal.y < 0.0);
     return s;

@@ -113,6 +113,8 @@ export class ComputeInstances<Wgsl extends string | CompiledWgsl = string | Comp
 		readonly object: Mesh | InstanceBatch,
 		/** The draw's custom material, whose WGSL reads its instances. */
 		readonly material: Material<ShaderValues<Wgsl>>,
+		/** The engine's id for the draw's material, which a compute pass writes in each row's ids. */
+		private readonly materialIdValue: number,
 		/** @internal The mesh that holds the draw's one shape. */
 		private readonly mesh: MeshGeometry,
 		/** @internal The count word, which a compute pass writes. */
@@ -136,6 +138,14 @@ export class ComputeInstances<Wgsl extends string | CompiledWgsl = string | Comp
 	/** The count that the GPU or the CPU set. */
 	get count(): number {
 		return this.countValue;
+	}
+
+	/**
+	 * The index of the draw's material in the engine's table. A compute pass that fills the rows
+	 * writes it in each row's first id word, the material that the vertex shader reads.
+	 */
+	get materialIndex(): number {
+		return this.materialIdValue - 1;
 	}
 
 	/**
@@ -300,6 +310,7 @@ export function createComputeInstances<const Wgsl extends string | CompiledWgsl>
 			0,
 			batch,
 			material,
+			material.id,
 			mesh,
 			none,
 			none,
@@ -340,6 +351,7 @@ export function createComputeInstances<const Wgsl extends string | CompiledWgsl>
 		id,
 		object,
 		material,
+		material.id,
 		mesh,
 		counts,
 		instances,
