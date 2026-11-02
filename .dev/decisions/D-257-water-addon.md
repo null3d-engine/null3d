@@ -235,8 +235,11 @@ longest cadence, read the WebGL2 fragment chain as a positive difference in ever
 stayed inside the frame's own noise in the same trials: the rounds' differences fell between -0.36
 and 0.37 ms, so no figure above zero resolves, and the chain sits under about 0.4 ms. The
 transform's grid and bands do not change with the preset, so one figure answers each preset. These
-are notes from a busy machine, at a load of 9 to 16, not verdicts: the quiet run that the cost per
-preset needs is still owed, because the load stayed above the test's limit of 8. `ocean-cost.spec.ts`
+are notes from a busy machine, at a load of 9 to 16, not verdicts. Other sessions built and drew
+pictures during the trials, so a round may fall in a picture draw; the two pairs agree on the
+direction and the size, which the picture draw cannot give a round, but the figures stay notes. The
+quiet run that the cost per preset needs is still owed, because the load stayed above the test's
+limit of 8. `ocean-cost.spec.ts`
 keeps the instrument, gated by `NULL3D_OCEAN_COST`: it sends the reflection to its longest cadence
 and takes more rounds and longer sides from the environment, so each round's difference pairs one
 side with the side beside it. The pass timer names all fifteen transform passes `compute`, so their
