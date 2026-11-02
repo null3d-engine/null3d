@@ -118,7 +118,10 @@ describe('the species records', () => {
 				fill: -1,
 				hang: 1 as unknown as boolean,
 			},
-			branchLevels: [oak.branchLevels[0] as BranchLevel, { ...level, upright: -5, thin: 2 }],
+			branchLevels: [
+				oak.branchLevels[0] as BranchLevel,
+				{ ...level, upright: -5, thin: 2, whorlTip: 1 as unknown as boolean },
+			],
 		} as Species);
 		expect(problems.some((problem) => problem.includes('leader'))).toBe(true);
 		expect(problems.some((problem) => problem.includes('stemLean'))).toBe(true);
@@ -128,5 +131,6 @@ describe('the species records', () => {
 		expect(problems.some((problem) => problem.includes('leaf.hang'))).toBe(true);
 		expect(problems.some((problem) => problem.includes('upright'))).toBe(true);
 		expect(problems.some((problem) => problem.includes('thin'))).toBe(true);
+		expect(problems.some((problem) => problem.includes('whorlTip'))).toBe(true);
 	});
 });

@@ -87,10 +87,11 @@ export default defineSketch((ctx) => {
 	let target: [number, number, number];
 	let fov: number;
 	if (VIEW === 'crown') {
-		// Stand off the crown's middle and look along its side, so the close-up fills the frame.
+		// Stand off the crown's middle and look along its side, so the close-up fills the frame with
+		// the crown's structure rather than one leaf card.
 		target = [center[0], start + (crownTop - start) * 0.62, center[2]];
 		fov = CROWN_FOV;
-		const distance = Math.max(1.6, span * 0.46 + radius * 0.42);
+		const distance = Math.max(3.5, span * 0.7 + radius * 0.55);
 		const direction = normalize(0.72, 0.16, 1);
 		position = [
 			target[0] + direction[0] * distance,
@@ -98,11 +99,12 @@ export default defineSketch((ctx) => {
 			target[2] + direction[2] * distance,
 		];
 	} else if (VIEW === 'below') {
-		// Stand under the crown and look up into it, as a walker sees a broadleaf canopy.
+		// Stand under the crown and look up into it, as a walker sees a broadleaf canopy. The camera
+		// sits outside the foliage so the branches and their gaps read.
 		target = [center[0], start + (crownTop - start) * 0.55, center[2]];
 		fov = CROWN_FOV;
-		const reach = Math.max(1.6, span * 0.5);
-		position = [target[0] + reach * 0.55, Math.max(0.7, start * 0.7), target[2] + reach * 0.55];
+		const reach = Math.max(4, span * 1.1);
+		position = [target[0] + reach * 0.7, Math.max(1.2, start * 0.8), target[2] + reach * 0.7];
 	} else {
 		target = [center[0], min[1] + (max[1] - min[1]) * 0.48, center[2]];
 		fov = WHOLE_FOV;

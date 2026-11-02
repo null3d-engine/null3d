@@ -70,6 +70,12 @@ export interface BranchLevel {
 	 */
 	readonly whorls?: number;
 	/**
+	 * Whether the level's last whorl sits at the parent's tip rather than half a ring below it. A
+	 * conifer that sets this ends its trunk in boughs, so the crown closes over the top instead of
+	 * leaving a bare stick. The default is false, which keeps the rings evenly spaced.
+	 */
+	readonly whorlTip?: boolean;
+	/**
 	 * How much more upright a child grows toward the top of the crown, in degrees. The generator
 	 * takes this from the child's own angle: a limb that leaves the trunk at a spread angle near
 	 * the ground turns toward its parent's direction near the crown's top, as a tree's upper limbs
@@ -361,6 +367,8 @@ export function speciesProblems(species: Species): string[] {
 			if (!finite(level.twist)) problems.push(`${at}.twist must be a number of degrees.`);
 			if (level.whorls !== undefined && (!Number.isInteger(level.whorls) || level.whorls < 0))
 				problems.push(`${at}.whorls must be a whole number from 0.`);
+			if (level.whorlTip !== undefined && typeof level.whorlTip !== 'boolean')
+				problems.push(`${at}.whorlTip must be true or false.`);
 			if (level.upright !== undefined && (!finite(level.upright) || level.upright < 0))
 				problems.push(`${at}.upright must be a number of degrees from 0.`);
 			share(level.thin ?? 0, `${at}.thin`);
@@ -495,6 +503,7 @@ const LEVEL_FIELDS = [
 	'segments',
 	'twist',
 	'whorls',
+	'whorlTip',
 	'upright',
 	'thin',
 ] as const;
