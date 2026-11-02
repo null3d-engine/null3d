@@ -182,13 +182,18 @@ export default defineSketch((ctx) => {
 		};
 		scene.createMesh({ mesh: geometry.fromArrays(arrays), material: leaves, castShadows: false });
 	} else {
-		for (const part of parts)
+		// A tall dense crown hides its bole completely, so a trunk view can draw the wood alone. The
+		// manifest says when a view hides the foliage.
+		const hideLeaves = VIEW === 'trunk' && params.get('noleaves') === '1';
+		for (const part of parts) {
+			if (hideLeaves && part.name !== 'wood') continue;
 			scene.createMesh({
 				mesh: geometry.fromArrays(part.arrays),
 				material: part.name === 'wood' ? bark : leaves,
 				castShadows: true,
 				receiveShadows: true,
 			});
+		}
 	}
 
 	const crownTop = Math.max(max[1], start + 0.1);
@@ -216,12 +221,47 @@ export default defineSketch((ctx) => {
 		const reach = Math.max(4, span * 1.1);
 		position = [target[0] + reach * 0.7, Math.max(1.2, start * 0.8), target[2] + reach * 0.7];
 	} else if (VIEW === 'trunk') {
-		// Stand close to the bole below the lowest limbs, where the bark is cleanest, so the bark's
-		// figure fills the frame rather than a few pixels of a whole-tree view.
-		const height = Math.max(0.9, Math.min(start * 0.55, 2.4));
-		target = [center[0], height, center[2]];
+		// Stand close to the bole, where the bark is cleanest, so the bark's figure fills the frame.
+		// The trunk's axis comes from the wood near the ground, because a crown's centre is not the
+		// trunk's. A crown that reaches near the ground hides the bole from every side, and the
+		// manifest says that its view draws the wood alone.
+		const wood = parts.find((part) => part.name === 'wood');
+		let axisX = center[0];
+		let axisZ = center[2];
+		let trunkRadius = 0.25;
+		if (wood) {
+			const positions = wood.arrays.positions;
+			let sx = 0;
+			let sz = 0;
+			let n = 0;
+			for (let at = 0; at + 2 < positions.length; at += 9) {
+				const y = positions[at + 1] as number;
+				if (y > 0.35) continue;
+				sx += positions[at] as number;
+				sz += positions[at + 2] as number;
+				n += 1;
+			}
+			if (n > 0) {
+				axisX = sx / n;
+				axisZ = sz / n;
+			}
+			const distances: number[] = [];
+			for (let at = 0; at + 2 < positions.length; at += 9) {
+				const d = Math.hypot(
+					(positions[at] as number) - axisX,
+					(positions[at + 2] as number) - axisZ,
+				);
+				if (d > 0.02) distances.push(d);
+			}
+			distances.sort((a, b) => a - b);
+			trunkRadius = Math.max(0.08, (distances[Math.floor(distances.length * 0.04)] ?? 0.25) * 1.1);
+		}
+		// A crown whose foliage begins near the ground leaves no clear bole from any side.
+		const dense = start < 2.2;
+		const height = dense ? max[1] * 0.45 : Math.max(1, Math.min(start * 0.6, 2.6));
+		target = [axisX, height, axisZ];
 		fov = 34;
-		const reach = Math.max(1.6, span * 0.16 + radius * 0.06);
+		const reach = dense ? trunkRadius * 6 : Math.min(2.6, Math.max(0.6, trunkRadius * 3.2));
 		const direction = normalize(0.55, 0.05, 1);
 		position = [
 			target[0] + direction[0] * reach,
