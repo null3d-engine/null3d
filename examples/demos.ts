@@ -785,6 +785,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'splats',
+		group: 'Scale',
+		sketch: new URL('./splats/sketch.ts', import.meta.url),
+		title: 'Gaussian splats',
+		scene: 'Bolton Priory',
+		summary:
+			"Dok11's drone scan of Bolton Priory (CC BY 4.0), 1.7 million Gaussian splats that the splats add-on streams from 84 chunk files, nearest first. The preset's budget draws up to 800,000 of them: a far chunk draws its most covering splats, grown so they still cover its ground, and each splat shows its own color with no lighting. A survey drone made of meshes circles the ruins, and the splats and the meshes hide each other by depth.",
+		assets: 'Shows how a scan streams in from its chunk files and draws within the budget.',
+		hold: 1,
+		timeoutSeconds: 120,
+	},
+	{
 		name: 'galaxy',
 		group: 'Scale',
 		sketch: new URL('./galaxy/sketch.ts', import.meta.url),

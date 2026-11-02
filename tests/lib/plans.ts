@@ -1708,8 +1708,9 @@ export function twoStepPlan(): PlanItem<Check>[] {
  * The page reports the splats that draw against the budget, the chunks and bytes that arrived, the
  * frame rate, the first-frame time and the bytes that the page downloaded. Each path runs the whole
  * cloud and a quarter of it at the same pixel count, so the two show whether the cost follows the
- * count or the screen's fill. The capabilities page comes first, so a device without WebGPU skips
- * that page.
+ * count or the screen's fill. Each path then times the splats demo, a real scan of 1.7 million
+ * splats that streams from the sample content, at the preset that the engine chooses. The
+ * capabilities page comes first, so a device without WebGPU skips that page.
  */
 export function splatsPlan(): PlanItem<Check>[] {
 	return [
@@ -1726,6 +1727,12 @@ export function splatsPlan(): PlanItem<Check>[] {
 				'splats-stream',
 				{ kind: 'probe', tier },
 				{ switches: [`gpu=${tier}`, 'splats=100000', 'seconds=3'], timeoutSeconds: 180 },
+			),
+			pageItem(
+				`splats-scan-${tier}`,
+				'demo-frames',
+				{ kind: 'probe', tier },
+				{ switches: [`gpu=${tier}`, 'demo=splats', 'seconds=5'], timeoutSeconds: 300 },
 			),
 		]),
 	];

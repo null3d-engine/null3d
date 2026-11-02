@@ -27,6 +27,8 @@ On the owner's Mac, the first fetch of 540 files (183 MB) took 8.7 seconds. A fe
 | Four Poly Haven environments at 2048 x 1024, with one OpenEXR copy | Environment light and backgrounds (M2-B2, M2-E2, M2-E3) and the HDR readers (M2-E4) |
 | Colour grading tables in `.cube` and `.3dl` form | Colour grading (M2-F3) |
 | The Creek's trees, plants and cave mouth (`sources/showcase/creek/`), built by script in Blender | The Creek showcase scene (M2-EX8) |
+| Dok11's drone scan of Bolton Priory (`sources/splats/bolton-priory/`): 1,710,551 Gaussian splats, as the SOG file that SuperSplat publishes | The source of the splat stream below |
+| The same scan as a splat stream (`sources/splats/bolton-priory-stream/`): an index and 84 SPZ chunk files, 27.6 MB, made by script | The Gaussian splats demo, and a real scan for the splats add-on's devices |
 
 No Khronos model under an accepted licence uses `EXT_meshopt_compression`. So `tests/lib/meshopt-fixtures.ts` compresses SimpleInstancing (CC0) with gltfpack 1.3, `-cc -ce ext`, into `tests/pages/assets/models/simple-instancing-meshopt.glb`. `bun tests/lib/meshopt-fixtures.ts` writes it again. A unit test checks that the committed file matches what gltfpack builds. [D-34](decisions/D-34-meshopt-decoding.md) records why. The sample content's one Draco model, RiggedSimple, has no texture coordinates. So `tests/lib/draco-fixtures.ts` compresses TextureCoordinateTest (CC0) with Draco's own encoder through glTF-Transform, into `tests/pages/assets/models/texture-coordinates-draco.glb`. A unit test checks that file the same way ([D-112](decisions/D-112-draco-decoding.md)). Small fixtures, such as one glTF file per extension and malformed files, stay in this repository beside their tests. So do the image test references. Khronos's AnisotropyStrengthTest is one: its `glTF-Binary` file is 94,444 bytes and under CC0 by Ed Mackey, so the image tests keep it at `tests/pages/assets/models/sources/khronos/AnisotropyStrengthTest/`, beside the two animation-pointer samples that are kept the same way.  The same holds for Khronos's TextureLinearInterpolationTest: 13,468 bytes under CC0, at `tests/pages/assets/models/sources/khronos/TextureLinearInterpolationTest/`. Its scene checks that a texture samples linearly after its texels decode, a fault that no synthetic scene caught. Khronos's DispersionTest is another: its `glTF-Binary` file is 2,310,944 bytes, SHA-256 `bbac38386632b5a7a27289737963314c2f92095074dfdf0e8c0c1c25270b3e37`, and under CC BY 4.0 by AGI, so the image tests keep it at `tests/pages/assets/models/sources/khronos/DispersionTest/`. Each is the Khronos original, byte for byte.
 
@@ -76,6 +78,21 @@ Each model draws with few triangles, so a scene can place many copies:
 
 The trees file takes 1,793 KB with its levels of detail, the plants file 443 KB, and the cave file 778 KB. The trees' leaves are cards. Each card holds a cluster of 22 to 28 small leaves from a 2 by 2 atlas of 2048 texels, and its alpha cuts their outline. The alpha fades over two texels at each leaf's edge, which softens the outline where alpha to coverage runs. The cards' normals bend away from the crown's middle, so the crown shades as one soft mass. The materials of the cards are masked and double sided. Each tree part also has two lower levels of detail, in the MSFT_lod extension. Level 1 keeps a third of the cards, made larger, and drops the finest twigs. Level 2 keeps an eighth of the cards, and only the trunk and the main boughs. Each level's error in `NULL3D_lod_error` makes it switch in about 25 m and 50 m away on a screen 1,080 pixels high. The asset tool keeps each level in its base mesh's frame (M2-I4), and the levels add 317 KB to the trees file.
 
+## Splat scans converted by script
+
+The splats add-on reads SPZ files and splat streams, and the scans that sites publish come in other forms. A script in this repository converts a published scan into a stream, and the sample-assets repository keeps both the published file and the stream. The published file keeps the author's own bytes, and the manifest records the stream with the origin kind `converted`, which names the script and the asset it reads.
+
+| Script | Builds |
+| --- | --- |
+| `tools/samples/splats/bolton-priory.ts` | The Bolton Priory stream from the SOG file that SuperSplat publishes |
+
+Build the stream with `bun tools/samples/splats/bolton-priory.ts <folder>`. It needs libwebp's `dwebp` (`brew install webp`), or the executable that `DWEBP` names, and takes about a second. A SOG file is a zip of lossless WebP images, and `dwebp` gives every byte exactly. A browser's decoder may multiply a pixel's color by its alpha, and every splat's color pixel in a SOG file is partly transparent, so a browser would change the colors. The script turns the cloud upright, since the training wrote it with its vertical axis pointing down, moves the ground to height 0 and the site over the origin, keeps the first spherical-harmonic band, and cuts and writes the chunks with the add-on's own `chunkSplats` and `encodeSpz`. To publish it:
+
+1. Copy the folder into `sources/splats/bolton-priory-stream/` of the sample-assets repository, and run `bun scripts/manifest.ts --write` there.
+2. Commit, push, and pin the commit here, as "Add or change an asset" says.
+
+SuperSplat lets only a signed-in account download a scan, so the published file's origin kind is `manual`, which names the page to download it from. A page names only the stream's index, and the add-on reads the chunks from it. So `copyNamedSamples` copies the chunk files that a named stream index lists beside it.
+
 ## The sample check
 
 `bun run test` runs `tools/lib/samples.test.ts`. It finds every `samplePath` and `sampleUrl` call in `tests/`, `bench/`, `examples/`, `tools/` and `packages/`. For each named file, it checks that the pinned manifest lists the file with a SHA-256. It also checks that the file's asset is under CC0 or CC BY, with its authors, title, source link, fetch date and changes. The sample-assets repository's own check makes its README tables match its manifest, so each pinned asset also has its row in that README.
@@ -84,7 +101,7 @@ The trees file takes 1,793 KB with its levels of detail, the plants file 443 KB,
 
 1. In the sample-assets repository, follow its README: add the asset's entry to `manifest.json`, run `bun scripts/import.ts <asset id>`, then `bun scripts/manifest.ts --write`, then `bun scripts/manifest.ts`.
 2. Accept CC0 and CC BY only. Leave out an asset whose licence is non-commercial, no-derivatives or unclear, and add it to the list of assets left out below, with the reason. The sample-assets README lists only the assets it holds.
-3. Keep each file under 40 MB and each image within 2048 x 2048, which the asset tool's encoder takes. Keep the sources near 300 MB in all. They are 207 MB now.
+3. Keep each file under 40 MB and each image within 2048 x 2048, which the asset tool's encoder takes. Keep the sources near 300 MB in all. They are 268 MB now.
 4. Commit and push in the sample-assets repository, and wait for its check to pass.
 5. Here, run `bun run samples:fetch --pin main`, or give a commit. It copies that commit's manifest, records the commit in the lock, and fetches it. Commit `tools/samples/lock.json` and `tools/samples/manifest.json` together.
 
@@ -102,7 +119,7 @@ Well-known sample models that may not go into the sample-assets repository, and 
 
 ## Why a separate repository and a download script
 
-- Size. The sources are 207 MB, and the processed files will add 110 to 170 MB for each version of the encoders. In this repository, they would slow every clone for people, CI and agents.
+- Size. The sources are 268 MB, and the processed files will add 110 to 170 MB for each version of the encoders. In this repository, they would slow every clone for people, CI and agents.
 - Not Git LFS. GitHub's free plan gives 10 GiB of LFS downloads a month, and CI's downloads count. One CI fetch of about 150 MB uses 1.5% of that, so about 65 fetches would use it all. No file is near GitHub's block at 100 MiB, so plain git holds the files well.
 - Not a submodule. Each worktree would need its own checkout of the sources, and this team runs many worktrees at once. CI would need its own submodule step and cache. The download script keeps one checked copy per machine, keyed by commit, and works the same way in CI.
 - Not an npm package. Every version would stay in the registry for good, and the files would land in each worktree's `node_modules`.
