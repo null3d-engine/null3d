@@ -8,6 +8,7 @@ import {
 	type AtlasPixels,
 	BARK_CELLS_X,
 	BARK_CELLS_Y,
+	BARK_FAMILY_ORDER,
 	LEAF_CELLS_X,
 	LEAF_CELLS_Y,
 	paintBark,
@@ -198,16 +199,13 @@ export function leafCellFor(species: Species): LeafCell {
  * The cell of each bark family, in the atlas's cells: the column and row.
  * @category api/vegetation
  */
-export const BARK_CELLS_BY_KIND: Readonly<Record<BarkCellName, readonly [number, number]>> = {
-	birch: [0, 0],
-	pine: [1, 0],
-	oak: [2, 0],
-	beech: [0, 1],
-	spruce: [1, 1],
-	willow: [2, 1],
-	holm: [3, 1],
-	aspen: [3, 0],
-};
+export const BARK_CELLS_BY_KIND: Readonly<Record<BarkCellName, readonly [number, number]>> =
+	Object.fromEntries(
+		BARK_FAMILY_ORDER.map((name, index) => [
+			name,
+			[index % BARK_CELLS_X, Math.floor(index / BARK_CELLS_X)] as const,
+		]),
+	) as Record<BarkCellName, readonly [number, number]>;
 
 /**
  * The bark cell that a species draws: its own family's, or a beech's smooth grey when it names none.
