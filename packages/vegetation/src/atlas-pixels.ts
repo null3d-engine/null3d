@@ -1218,6 +1218,19 @@ function barkPlates(u: number, v: number, family: BarkFamily): [number, number, 
 	return [first, second, near];
 }
 
+/**
+ * The dash field of the lenticels, periodic across the cell: every wave counts whole cycles, so the
+ * field meets itself at the cell's seam. Noise would not: its value at the seam jumps, and the trunk
+ * shows a line down its side every time the bark comes round.
+ */
+function periodicDash(u: number, band: number): number {
+	const phase = random2(band, 17) * Math.PI * 2;
+	const first = Math.sin(2 * Math.PI * 3 * u + phase);
+	const second = Math.sin(2 * Math.PI * 7 * u + phase * 1.7);
+	const third = Math.sin(2 * Math.PI * 13 * u + phase * 0.3);
+	return 0.5 + 0.06 * first + 0.16 * second + 0.28 * third;
+}
+
 /** A bark's lenticels: short horizontal dashes where its pores open. */
 function lenticel(u: number, v: number, family: BarkFamily): number {
 	const rows = family.lenticelRows ?? 18;
@@ -1225,7 +1238,7 @@ function lenticel(u: number, v: number, family: BarkFamily): number {
 	const band = Math.floor(v * rows);
 	const shift = random2(band, 3) * 4;
 	const along = teethWave(v * rows);
-	const marks = smoothstep(density, density + 0.2, fbm2(u * 18 + shift, band * 7.3, 2));
+	const marks = smoothstep(density, density + 0.2, periodicDash(u, band + shift));
 	return marks * (1 - smoothstep(0.05, 0.2, along));
 }
 
@@ -1244,7 +1257,9 @@ function barkScar(u: number, v: number, family: BarkFamily): number {
 		// it unevenly. One repeated shape is what makes a bark read as a pattern rather than a bole.
 		const wide = 0.8 + 0.5 * random2(i + 1, 53);
 		const tall = 0.9 + 0.6 * random2(i + 1, 59);
-		const wobble = 1 + 0.35 * (fbm2(u * 15 + i * 3, v * 15, 2) - 0.5);
+		// The scar's edge wobbles on waves that count whole cycles, like every other bark term, so
+		// the mark meets itself across the cell's seam.
+		const wobble = 1 + 0.35 * (periodicDash(u, i * 7) * periodicDash(v, i * 11) - 0.25);
 		const reach = Math.hypot((u - centreX) / wide, (v - centreY) / tall) / (size * wobble);
 		scar = Math.max(scar, 1 - smoothstep(0.82, 1, reach));
 	}
