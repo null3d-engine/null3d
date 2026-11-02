@@ -700,7 +700,12 @@ and a hero car with two screens.
 - **The user drives the car in Manual.** W and S speed it up and slow it down, A and D turn it, and
   R and F climb and sink. The towers are boxes that the car slides along or lands on. The chase
   camera pulls in before a tower that would hide the car, so the car stays in view, and eases back
-  out when the tower clears. `drive.test.ts` flies it frame by frame. A drag swings the camera round the car, and a touch
+  out when the tower clears. A turn that would put the chase camera in a tower is refused for the
+  car and for the camera: the car keeps its heading, so the camera stays behind it and stops
+  against the face rather than sliding along it, and both turn again once the way is clear. The
+  check measures the camera at the user's own zoom, not at the shorter distance the pull has taken
+  it to, so it also refuses a turn that a pulled-in camera could make.
+  `drive.test.ts` flies it frame by frame. A drag swings the camera round the car, and a touch
   screen drives with an on-screen pad. V and the View buttons put the camera behind the car or
   in its seat. The camera flies over the canopy into the seat and back out. The hero car has a
   cockpit under a tinted glass canopy, with its screens on the dashboard and a touchscreen console
