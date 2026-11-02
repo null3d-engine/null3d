@@ -427,6 +427,25 @@ mod tests {
         assert_eq!(std::mem::size_of::<Block>(), BLOCK_BYTES as usize);
     }
 
+    /// A sample's share of the bounce light shrinks as its own brightness rises, so one sun glint
+    /// cannot outweigh the lit surfaces around it.
+    #[test]
+    fn a_bright_sample_takes_a_bounded_share_of_the_bounce_light() {
+        let source = include_str!("../../null3d-shaders/wgsl/bounce.wgsl");
+        let gather = source
+            .split_once("fn gathered(")
+            .map(|(_, rest)| rest)
+            .expect("bounce.wgsl holds the gather");
+        assert!(
+            gather.contains("cosine / (1.0 + luminance(color))"),
+            "the gather gives a sample the share that its brightness bounds"
+        );
+        assert!(
+            gather.contains("color * share"),
+            "the sample's light takes that bounded share"
+        );
+    }
+
     #[test]
     fn a_new_scale_uploads_new_settings_and_makes_no_object() {
         let ids = BounceIds {
