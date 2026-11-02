@@ -337,6 +337,8 @@ export class SceneQueries implements ViewHolder {
 		input[C.QUERY_INPUT_LIMIT] = options?.maxDistance ?? Infinity;
 		input[C.QUERY_INPUT_POINT_THRESHOLD] = options?.pointThreshold ?? -1;
 		input[C.QUERY_INPUT_LINE_THRESHOLD] = options?.lineThreshold ?? -1;
+		// Only a bake asks for both faces, and it sets the flag again after this call.
+		input[C.QUERY_INPUT_ALL_FACES] = 0;
 		if (fromEvent) this.targets.writeRayCamera(input);
 		else this.targets.writeCamera(input);
 	}
@@ -480,7 +482,40 @@ export class SceneQueries implements ViewHolder {
 		options: RaycastOptions | undefined,
 		out: RaycastBatchHits,
 	): number {
-		const call = 'raycastBatch';
+		return this.batch('raycastBatch', rays, options, out);
+	}
+
+	/**
+	 * Casts many rays as `raycastBatch` does, but tests both faces of every triangle whatever its
+	 * material's side says, and writes 1 for each ray that met the back of a surface and 0 for one
+	 * that met the front. A light probe bake reads it to find the probes that lie inside geometry,
+	 * whose rays meet the backs of the walls that enclose them.
+	 *
+	 * @internal
+	 */
+	raycastBatchFaces(
+		rays: ArrayLike<number>,
+		options: RaycastOptions | undefined,
+		out: RaycastBatchHits,
+		backFacing: Uint8Array,
+	): number {
+		checkLength(
+			'raycastBatchFaces',
+			'backFacing',
+			backFacing.length,
+			rays.length / C.QUERY_RAY_FLOATS,
+		);
+		return this.batch('raycastBatchFaces', rays, options, out, backFacing);
+	}
+
+	/** The batch of rays that `raycastBatch` and `raycastBatchFaces` run. */
+	private batch(
+		call: string,
+		rays: ArrayLike<number>,
+		options: RaycastOptions | undefined,
+		out: RaycastBatchHits,
+		backFacing?: Uint8Array,
+	): number {
 		const count = rays.length / C.QUERY_RAY_FLOATS;
 		if (!Number.isInteger(count))
 			throw new EngineError(
@@ -496,13 +531,14 @@ export class SceneQueries implements ViewHolder {
 		if (out.normals) checkLength(call, 'normals', out.normals.length, count * 3);
 		const { core } = this;
 		if (count > this.rayCapacity) {
-			core.checkGrowth(core.glue.reserveRays(count), 'raycastBatch', undefined, true);
+			core.checkGrowth(core.glue.reserveRays(count), call, undefined, true);
 			this.rayCapacity = count;
 			this.generation = -1;
 		}
 		this.writeOptions(options);
+		if (backFacing) this.input[C.QUERY_INPUT_ALL_FACES] = 1;
 		this.rays.set(rays);
-		const found = this.finish(core.glue.raycastBatch(count, layersOf(options)), 'raycastBatch');
+		const found = this.finish(core.glue.raycastBatch(count, layersOf(options)), call);
 		const r = this.hits;
 		const { distances, objects, instances, points, normals } = out;
 		for (let i = 0; i < count; i++) {
@@ -510,6 +546,7 @@ export class SceneQueries implements ViewHolder {
 			distances[i] = r[at + C.QUERY_HIT_DISTANCE] as number;
 			if (objects) objects[i] = this.targetAt(at);
 			if (instances) instances[i] = r[at + C.QUERY_HIT_ROW] as number;
+			if (backFacing) backFacing[i] = r[at + C.QUERY_HIT_BACK_FACING] as number;
 			for (let k = 0; k < 3; k++) {
 				if (points) points[i * 3 + k] = r[at + C.QUERY_HIT_POINT + k] as number;
 				if (normals) normals[i * 3 + k] = r[at + C.QUERY_HIT_NORMAL + k] as number;

@@ -6133,6 +6133,7 @@ fn write_hit(out: &mut [f64], hit: Option<&QueryHit>) {
     }
     let uv = query::HIT_UV as usize;
     out[query::HIT_HAS_UV as usize] = f64::from(hit.uv.is_some());
+    out[query::HIT_BACK_FACING as usize] = f64::from(hit.back_facing);
     for k in 0..2 {
         out[uv + k] = hit.uv.map_or(f64::NAN, |pair| f64::from(pair[k]));
     }
@@ -6210,6 +6211,8 @@ fn run_query(f: impl FnOnce(QueryParts<'_>) -> Result<u32, u32>) -> u32 {
             meshes: e.renderer.settings(),
             rows: row_query(&e.query_input),
         };
+        e.queries
+            .set_all_faces(e.query_input[query::INPUT_ALL_FACES as usize] > 0.5);
         if let Err(error) = e.queries.sync(&view, jobs) {
             return core_failure(error);
         }

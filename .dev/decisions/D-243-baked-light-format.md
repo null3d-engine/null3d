@@ -4,11 +4,11 @@ Status: decided by the helper of M3-E5, for the owner's review. Built: the reade
 two loading calls, the tests and the guide, as the consequences list. Task: M3-E5.
 
 Summary: A baked light file is JSON with the marker `null3d.baked-light`, a version and a kind. A
-probe grid carries the four values of `LightProbeGridData`. A grid that the engine bakes therefore
-writes the same format as a grid that another tool bakes. A light map carries its radiance as
-base64 texels, and a directional light map also carries the light's direction at each texel. The
-loader refuses a wrong version, a wrong element count and a cut-short file with E1434, and its
-message names the fault.
+probe grid carries the values of `LightProbeGridData`: its placement, its coefficients and its two
+masks. A grid that the engine bakes therefore writes the same format as a grid that another tool
+bakes. A light map carries its radiance as base64 texels, and a directional light map also carries
+the light's direction at each texel. The loader refuses a wrong version, a wrong element count and a
+cut-short file with E1434, and its message names the fault.
 
 ## Question
 
@@ -24,8 +24,9 @@ in what container, how is it validated, and how does the engine's own bake write
   - `kind`: `probe-grid` or `light-map`.
 - A `probe-grid` file holds `origin`, `spacing` and `counts`, each three numbers. It also holds
   `coefficients`: base64 of little-endian 32-bit floats. The probes run x fastest, then y, then z.
-  Within a probe the order is L0, then L1 along y, z and x. These are exactly the four values of
-  `LightProbeGridData`.
+  Within a probe the order is L0, then L1 along y, z and x. These are the values of
+  `LightProbeGridData`. Two optional members, `validity` and `skyVisibility`, hold one float from
+  0 to 1 for each probe, in the same probe order.
 - A `light-map` file holds `width`, `height`, `encoding`, `radiance` and an optional `direction`.
   - `encoding` is `rgb8`, three bytes per texel in sRGB, or `rgba16float`, eight bytes per texel
     as little-endian half floats in linear light.
@@ -78,10 +79,13 @@ in what container, how is it validated, and how does the engine's own bake write
 
 ## M3-F1
 
-M3-F1 adds a validity mask and a sky-visibility term to each probe. Nothing reads a baked light
-file before the first release, 0.1.0, ships in M4 ([D-108](D-108-first-release.md)). F1 therefore adds those members to version 1 in the same release, with the
-same validation rules. The reader ignores unknown members, so the fields of this version keep their
-meaning when F1 lands. A file that omits the new members reads as a file without them.
+A probe-grid file carries two more members: `validity` and `skyVisibility`, each base64 of one
+32-bit float for each probe, from 0 to 1. A reader refuses a payload whose floats do not cover every
+probe, and a value outside that range. A file that omits either member reads as a file without it:
+every probe is valid, and none adds the live sky, because a grid that a bake wrote before the masks
+existed counted the sky in its coefficients. Nothing read a baked light file before the first
+release, 0.1.0, ships in M4 ([D-108](D-108-first-release.md)), so version 1 holds both members from
+its first reader.
 
 ## Consequences
 

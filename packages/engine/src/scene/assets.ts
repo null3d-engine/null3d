@@ -712,8 +712,8 @@ export class Assets {
 	 * file](../../guides/baked-light-data.md) format, as bytes to save or send. The file holds the
 	 * same values that `loadLightProbeGrid` reads, so a bake in the browser and a bake in another
 	 * tool give one format. The first call loads the writer, about 2 KB after Brotli. Throws E1108
-	 * when the grid's coefficients do not hold 12 numbers for each probe in its counts, and E1406
-	 * when the writer does not load.
+	 * when the grid's coefficients do not hold 12 numbers for each probe in its counts, or its
+	 * masks do not hold one number for each probe, and E1406 when the writer does not load.
 	 */
 	async lightProbeGridFile(grid: LightProbeGridData): Promise<Uint8Array> {
 		const call = 'assets.lightProbeGridFile';
