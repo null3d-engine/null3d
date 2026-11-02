@@ -2,7 +2,7 @@
 
 Status: decided by the measurement below. The engine still draws a model without a map whose image a browser lost; the image test's row for the interpolation model posts its maps' upload facts from a probe. Task: none (no plan task names the glTF loader's image handoff; the fault is the CI Safari row's).
 
-Summary: Safari 27.2 sometimes hands a transferred `ImageBitmap` over empty, and a model then draws without that map. A loader that failed such a load and loaded the file again with the images copied was measured on CI: it recovered one page and then failed the same page, and thirty model rows that had loaded before failed under it. So the engine keeps the old behavior, the fault stays open, and a probe records what a lost image looks like on the devices that lose it.
+Summary: Safari 27.2 sometimes hands a transferred `ImageBitmap` over empty, and a model then draws without that map. A loader that failed such a load and loaded the file again with the images copied was measured on CI: the one page that took the copy failed 24 ms later, and thirty model rows that had loaded before failed under it. So the engine keeps the old behavior, the fault stays open, and a probe records what a lost image looks like on the devices that lose it.
 
 ## Question
 
@@ -37,7 +37,7 @@ The withdrawn attempt looked worse: pages that drew a model before failed to loa
 
 ## Decision
 
-Leave the fault open. The engine neither fails such a load nor reloads it: it draws the model without the map, as it did before, and the probe records the upload facts beside the picture so a later attempt starts from evidence. The attempt to guard and recopy is rejected: a copy of an `ImageBitmap` does not survive that browser either, and the loading path that tried it cost thirty rows.
+Leave the fault open. The engine neither fails such a load nor reloads it: it draws the model without the map, as it did before, and the probe records the upload facts beside the picture so a later attempt starts from evidence. The attempt to guard and recopy is rejected on what the run shows: the one page that took the copy path failed 24 ms later with `E1416`, and the thirty rows that regressed under it. That a copy of an `ImageBitmap` is what that browser refused is an inference from the failure, not an observation: the read error does not separate a browser refusal from a fault in the attempt's own change, and a later attempt should measure which before it copies again.
 
 ## Consequences
 
