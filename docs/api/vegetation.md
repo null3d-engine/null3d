@@ -93,7 +93,7 @@ A record holds only numbers and short strings. This table shows the parts that a
 | `id`, `kind` | A name, and `tree`, `conifer`, `shrub`, `fern`, `rosette` or `grass` |
 | `branchLevels` | One entry per level: `children`, `prune`, `length`, `lengthVariance`, `angle`, `angleVariance`, `curve`, `curveVariance`, `taper`, `start`, `end`, `sides`, `segments`, `twist`, and the optional `whorls`, `whorlTip`, `upright` and `thin` |
 | `crown` | A `shape` from the nine outlines, the `start` height, a `spread`, the vertical `pull`, the optional `floor` that a crown keeps at its narrowest, and the optional `fillTop` that sets how far up the branches a filled crown reaches |
-| `leaf` | `kind` (`cluster`, `needle`, `frond` or `blade`), `cards`, `width`, `height`, `perCard`, `up`, `out`, `start`, `end`, and the optional `cell`, `depth`, `cross`, `fill` and `hang` |
+| `leaf` | `kind` (`cluster`, `needle`, `frond` or `blade`), `cards`, `width`, `height`, `perCard`, `up`, `out`, `start`, `end`, and the optional `cell`, `depth`, `cross`, `fill`, `hang` and `bare` |
 | `rosette` | For a plant without branches: `blades`, `length`, `width`, `arch`, `segments`, `shape`, `pinnae`, `upright` and `flowers` |
 | `wind` | `stiffness` for each branch level, the flutter's `flutter` distance and its `frequency` |
 | `color` | `bark`, `leaf`, `tint` and `transmission` |
@@ -129,6 +129,8 @@ Fill is a scene's choice, not part of a species' shape. In the add-on's measurem
 **`fillTop` sets how far up the branches a filled crown reaches.** The value is a share of the branch heights, from 0 to 1. The default is 1 for a conical crown, whose top is its leader, and 0.92 for another outline, so a lone upper limb does not carry cards into the air above a rounded dome. A pine that ends in a leader asks for 1, so its crown stays filled to its tip.
 
 **`hang` turns a filled crown into a curtain.** Set it to true and the filled cards fall almost straight down, as a willow's shoots do, rather than following their branches. The default is false.
+
+**`bare` draws the branches without their leaves.** Set it to true and the plant keeps its skeleton and no leaf card, as a deciduous tree in winter. The record still names the cards that it would draw, so a bare tree and a green tree share one record. The default is false, which draws the leaves.
 
 ## Detail levels
 

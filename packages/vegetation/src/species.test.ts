@@ -117,6 +117,7 @@ describe('the species records', () => {
 				cross: 'yes' as unknown as boolean,
 				fill: -1,
 				hang: 1 as unknown as boolean,
+				bare: 'yes' as unknown as boolean,
 				cell: 'no-such-cell' as never,
 			},
 			branchLevels: [
@@ -130,6 +131,7 @@ describe('the species records', () => {
 		expect(problems.some((problem) => problem.includes('leaf.cross'))).toBe(true);
 		expect(problems.some((problem) => problem.includes('leaf.fill'))).toBe(true);
 		expect(problems.some((problem) => problem.includes('leaf.hang'))).toBe(true);
+		expect(problems.some((problem) => problem.includes('leaf.bare'))).toBe(true);
 		expect(problems.some((problem) => problem.includes('leaf.cell'))).toBe(true);
 		expect(problems.some((problem) => problem.includes('upright'))).toBe(true);
 		expect(problems.some((problem) => problem.includes('thin'))).toBe(true);
