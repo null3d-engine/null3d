@@ -913,6 +913,11 @@ interface BarkFamily {
 	/** A birch's horizontal lenticels, or a willow's vertical ridges. */
 	readonly lenticels?: boolean;
 	readonly ridges?: boolean;
+	/**
+	 * How tall a plate runs against its width. A value under one stretches the plates down the
+	 * trunk, as a live oak's furrows do, without changing the lattice's counts.
+	 */
+	readonly vertical?: number;
 }
 
 /** The six bark families, in the order that the atlas lays them out. */
@@ -943,12 +948,14 @@ const BARK_FAMILIES: Readonly<Record<BarkCellName, BarkFamily>> = {
 		light: [1.28, 0.78, 0.42],
 		moss: 0.12,
 	},
+	// A live oak's bark: long wavy vertical furrows with broad flat ridges between them.
 	oak: {
-		across: 10,
-		along: 4,
-		warp: 1.1,
-		crackWidth: 0.12,
-		depth: 0.8,
+		across: 3,
+		along: 2,
+		vertical: 0.3,
+		warp: 1.4,
+		crackWidth: 0.18,
+		depth: 1,
 		fibre: 0.03,
 		dark: [0.24, 0.21, 0.19],
 		light: [1.02, 0.97, 0.9],
@@ -1003,7 +1010,13 @@ const BARK_FAMILIES: Readonly<Record<BarkCellName, BarkFamily>> = {
 };
 
 /** The nearest bark plate's distance, the next one's, and a number of the nearest plate. */
-function plates(x: number, y: number, across: number, along: number): [number, number, number] {
+function plates(
+	x: number,
+	y: number,
+	across: number,
+	along: number,
+	vertical: number,
+): [number, number, number] {
 	const wholeX = Math.floor(x);
 	const wholeY = Math.floor(y);
 	const partX = x - wholeX;
@@ -1019,7 +1032,7 @@ function plates(x: number, y: number, across: number, along: number): [number, n
 			const atX = random2(cellX, cellY);
 			const atY = random2(cellX + 31, cellY + 17);
 			const dx = ox + atX - partX;
-			const dy = oy + atY - partY;
+			const dy = (oy + atY - partY) * vertical;
 			// Each plate runs to its own size, so the lattice never shows as an even grid of cells.
 			const size = 0.72 + 0.56 * random2(cellX + 13, cellY + 29);
 			const d = Math.hypot(dx, dy) / size;
@@ -1052,7 +1065,13 @@ function barkPlates(u: number, v: number, family: BarkFamily): [number, number, 
 		family.warp;
 	const across = (u * family.across) % family.across;
 	const along = (v * family.along) % family.along;
-	const [first, second, near] = plates(across + warp, along, family.across, family.along);
+	const [first, second, near] = plates(
+		across + warp,
+		along,
+		family.across,
+		family.along,
+		family.vertical ?? 1,
+	);
 	return [first, second, near];
 }
 

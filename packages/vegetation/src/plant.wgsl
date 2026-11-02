@@ -384,13 +384,22 @@ fn surface(input: SurfaceInput) -> Surface {
     // A texture sample belongs to uniform control flow, so every map is read and the part picks one
     // afterwards. A leaf's card reads its own cell of the atlas, and the bark tiles.
     let leafPlace = (material.cell + clamp(input.uv, vec2f(0.0), vec2f(1.0))) / LEAF_CELLS;
-    // The bark repeats within its own cell, so the pattern tiles without crossing into a
-    // neighbouring family's bark.
-    let barkPlace = (material.barkCell + fract(input.uv * material.tiles)) / BARK_CELLS;
+    // The bark repeats within its own cell, so the pattern tiles without crossing into a neighbouring
+    // family's bark. The gradients come from the tiling coordinate before the wrap: a gradient taken
+    // across the wrap itself jumps, and the sampler then stretches one side of the trunk into
+    // streaks along the join.
+    let barkTile = input.uv * material.tiles;
+    let barkPlace = (material.barkCell + fract(barkTile)) / BARK_CELLS;
+    let barkGradX = dpdx(barkTile) / BARK_CELLS;
+    let barkGradY = dpdy(barkTile) / BARK_CELLS;
     let leafColorSample = textureSample(leafColor, leafColorSampler, leafPlace);
     let leafSurfaceSample = textureSample(leafSurface, leafSurfaceSampler, leafPlace);
-    let barkColorSample = textureSample(barkColor, barkColorSampler, barkPlace);
-    let barkSurfaceSample = textureSample(barkSurface, barkSurfaceSampler, barkPlace);
+    let barkColorSample = textureSampleGrad(
+        barkColor, barkColorSampler, barkPlace, barkGradX, barkGradY,
+    );
+    let barkSurfaceSample = textureSampleGrad(
+        barkSurface, barkSurfaceSampler, barkPlace, barkGradX, barkGradY,
+    );
     let color = select(barkColorSample, leafColorSample, leafPart);
     let surfaceMap = select(barkSurfaceSample, leafSurfaceSample, leafPart);
 
