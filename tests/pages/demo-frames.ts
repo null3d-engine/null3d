@@ -13,6 +13,31 @@ const params = new URLSearchParams(location.search);
 const SECONDS = Number(params.get('seconds') ?? 5);
 /** How long the page waits for the preset check's result before it measures anyway. */
 const CHECK_WAIT_MS = 30_000;
+/**
+ * The shadow shape that the page fixes at the engine's start, for a measurement: the cascade
+ * count, map size, tile atlas, hero tile and morph cap that each preset gives.
+ */
+const SHADOW_SHAPE = params.get('shadow-shape');
+const SHADOW_SETTINGS =
+	SHADOW_SHAPE === 'medium'
+		? {
+				shadowCascades: 3,
+				shadowMapSize: 2048,
+				shadowTiles: 8,
+				heroTileSize: 2048,
+				morphTargets: 16,
+			}
+		: SHADOW_SHAPE === 'low'
+			? {
+					shadowCascades: 2,
+					shadowMapSize: 1024,
+					shadowTiles: 4,
+					heroTileSize: 1024,
+					morphTargets: 8,
+				}
+			: undefined;
+if (SHADOW_SHAPE !== null && SHADOW_SETTINGS === undefined)
+	throw new Error(`the page takes no shadow shape ${SHADOW_SHAPE}`);
 
 /**
  * The bytes that the page's own threads downloaded, from its resource timings. A worker's loads are
@@ -48,7 +73,12 @@ run('demo-frames', async () => {
 	const runDemo = { ...demo, sketch };
 	const failures: string[] = [];
 	// No stats overlay: its sampling would take frames that this page measures.
-	const engine = await startDemo({ canvas, demo: runDemo, stats: false });
+	const engine = await startDemo({
+		canvas,
+		demo: runDemo,
+		stats: false,
+		settings: SHADOW_SETTINGS,
+	});
 	engine.onFailure((error) => failures.push(`${error.code}: ${error.message}`));
 	await engine.firstFrame;
 	const bytesBeforeFirstFrame = downloadedBytes();
