@@ -81,7 +81,17 @@ A stored result applies only when the start matches the one that the check measu
 
 The engine stores a result only when it measured against the highest target, 60 frames per second, or the `?fps=` cap. A display that saves power with a lower refresh rate gives an easier target. Its result could keep a preset too heavy for a normal day. A result measured against the highest target is safe to take at any lower target. The page's `targetFps` setting ([D-124](D-124-target-frame-rate.md)) is one of the conditions. The engine stores a result whose target reaches 60, or the setting's rate when that is lower.
 
-A start that takes a stored result runs the stored preset from its setup on. Its settings fixed at the start keep the values of the preset that the check started from, as they do after the check's own steps. These are anti-aliasing, the shadow tiles, point light shadows and the prepass. A unit test checks that both paths give the same settings. `engine.mode.presetCheck` reports the stored result with `reused: true`. The `?check=fresh` switch measures again.
+A start that takes a stored result runs the stored preset from its setup on. Its settings fixed at the start keep the values of the preset that the check started from, as they do after the check's own steps. These are the shadow tiles, point light shadows and the prepass. A unit test checks that both paths give the same settings. `engine.mode.presetCheck` reports the stored result with `reused: true`. The `?check=fresh` switch measures again.
+
+### The anti-aliasing mode of a lowered preset
+
+The anti-aliasing mode does not stay with the start preset. A device fixes its mode when it starts, and the scene's targets and pipelines depend on it. A device can still move to a lighter mode while it runs. The engine does so when the check lowers the preset: `SketchQuality.lower()` gives the lower preset's mode when it is lighter. The runner then moves the canvas to that mode, on the scene color that the device started with. A start that takes a stored result computes the same setting in `checkedSettings`, so both paths draw alike.
+
+The check lowers a tablet from Medium to Low, and Low's FXAA costs about half the GPU time of Medium's MSAA on the same scene and device. A tablet that kept the start's MSAA drew Skyway's Low preset at 47.4 frames a second with 14.36 ms of GPU, at a render scale of 0.85. With the lower preset's mode the same page draws Low with FXAA at the scale of 1: 56.9 frames a second and 6.72 ms of GPU, against 6.41 for the same preset with the governor off. So the settings that the start fixes are inherited to keep a session from changing shape under the viewer. A lowering by the check is not that case: it happens after the frames that the check measured, and before the session plays.
+
+A sketch's own `quality.setPreset()` keeps the mode that the device started with, so a session never changes its edges while the viewer plays. Only the check's lowering takes a lighter mode, because only the check decides the preset that the session runs. A later preset keeps it too: the lowering writes the mode into the settings that every preset keeps, so `quality.settings` never names a mode that the canvas is not drawing.
+
+The move is paid inside the check, not by the viewer. The lowering applies, the runner moves the canvas on the next frame, and the check waits for the new preset's first frame before it measures again.
 
 ### three.js
 
@@ -94,6 +104,7 @@ three.js has no preset check. Apps choose a quality level themselves, or adapt d
 ## Consequences
 
 - `page/check-store.ts` reads and writes the stored result. `createEngine` reads it after the GPU probe, and starts at its preset with `checkedSettings`. It saves each result that a check measured.
+- `SketchQuality.lower()` gives the lower preset's anti-aliasing mode when it is lighter than the one that runs, and `SketchRunner` moves the canvas to it with `setCanvasOutput`. `checkedSettings` gives the same setting for a start that takes a stored result, so both paths draw alike. `SketchQuality.setPreset()` keeps the mode that the device started with, and a lowering writes the lighter mode into the settings that every later preset keeps.
 - `PresetCheck` has `reused`. The `?check=fresh` switch measures again.
 - The device runner's quality and preset check pages take `?check=fresh`, so each run measures. So do the first two loads of each scene in the warm-up time plan. Its later loads take the stored result, as a repeat visit does.
 - The quality presets page and the loading screens guide describe repeat visits.
