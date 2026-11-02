@@ -231,6 +231,17 @@ builder moves a view's turn on before it culls the view, so the turn's pass reco
 The sampled texture then keeps the last image between turns. The demo draws on every path, and its
 six pictures hold in both reference sets.
 
+The rule the fault broke is worth keeping. A view's turn moves on before anything culls against it.
+The cull reads the turn to choose the objects the view draws. The recording reads it again to
+choose whether the view draws at all. A frame that reads the turn at two points in time draws an
+empty pass on the turn.
+
+**The frame rate, in a quiet window.** At 1920 by 1080 on Low on WebGL2, `ocean-rate` read 60.01
+frames a second and a 16.7 ms frame in all three states. The reflection carried its cadence through
+the setter, and the one-minute load was 7.7. The test's browser reports a 60 Hz display, so the page
+held its display's rate in every state. The page that switched the pass off and on every other
+frame read 1.21 frames a second at the same preset.
+
 **The transform's cost, as trials.** Two pairs of trials at Low, with the reflection at its
 longest cadence, read the WebGL2 fragment chain as a positive difference in every round: 1.08 to
 2.10 ms in one pair and 0.61 to 3.37 ms in the other, a median near 1.5 ms. The WebGPU compute chain
@@ -239,9 +250,18 @@ and 0.37 ms, so no figure above zero resolves, and the chain sits under about 0.
 transform's grid and bands do not change with the preset, so one figure answers each preset. These
 are notes from a busy machine, at a load of 9 to 16, not verdicts. Other sessions built and drew
 pictures during the trials, so a round may fall in a picture draw; the two pairs agree on the
-direction and the size, which the picture draw cannot give a round, but the figures stay notes. The
-quiet run that the cost per preset needs is still owed, because the load stayed above the test's
-limit of 8. `ocean-cost.spec.ts`
+direction and the size, which the picture draw cannot give a round, but the figures stay notes.
+
+**The quiet run, and why no cost per preset is stated.** The WebGPU chain got a quiet minute at a
+load of 7.9. Six rounds of six seconds a side read the difference as a median of -0.105 ms with a
+2.223 ms spread. The rounds fell on both sides of zero. The chain is below the frame's spread, so
+no figure above zero resolves. The compatibility and WebGL2 runs did not get a quiet minute.
+The shared queue closes a timing window once the load stays at 8 or more for ten minutes, and the
+load held near 30. No cost per preset is stated. The transform's grid and bands do not change with
+the preset, so one figure would answer all four. The GPU timer names its fifteen passes as one
+compute step, so it cannot give that figure. The on-and-off difference is the only method left.
+It resolves the older path only in the notes above, and the newer one not at all.
+`ocean-cost.spec.ts`
 keeps the instrument, gated by `NULL3D_OCEAN_COST`: it sends the reflection to its longest cadence
 and takes more rounds and longer sides from the environment, so each round's difference pairs one
 side with the side beside it. The pass timer names all fifteen transform passes `compute`, so their

@@ -98,6 +98,6 @@ Every other finding of the review is fixed or settled. The table names the code,
 | R8-07 | plain bundlers rule | Settled: `.dev/decisions/D-54-addon-modules.md`, `docs/getting-started/install.md` |
 | R8-08 | (see its fix group) | `packages/engine/src/page/engine.ts`, `.dev/implementation-notes.md` |
 | M3-F9 | a compute pass's fragment form stores its image upside down | `tests/image/ocean-waves.spec.ts`: the three paths' fields agree within 0.004 m of a 0.73 m field; [D-271](decisions/D-271-a-fallback-pass-writes-the-image.md) fixed the read |
-| M3-F9 | a reflection that waits draws its clear color on WebGL2 | `crates/null3d-render/src/cpu_culled/mod.rs`: the cull moves each view's turn on before it reads the view, so a turn's pass draws its objects; `crates/null3d-render/tests/scene_passes.rs` holds a cadenced mirror's turns and fails without the move |
+| M3-F9 | a reflection that waits draws its clear color on WebGL2 | `crates/null3d-render/src/cpu_culled/mod.rs`: the cull moves each view's turn on before it reads the view, so a turn's pass draws its objects; `crates/null3d-render/tests/scene_passes.rs` holds a cadenced view's turns and fails without the move |
 
 The text of R2-03, R2-05, R2-06, R2-07, R3-07 is not in the repository, so no one checked them one by one. The records of their fix groups say that each group is built.
