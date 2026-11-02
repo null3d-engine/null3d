@@ -492,10 +492,10 @@ describe('presetSettings', () => {
 			expect(presetSettings(preset, { depthPrepass: false }, 'webgl2').depthPrepass).toBe(false);
 			expect(presetSettings(preset, { depthPrepass: true }, 'webgpu').depthPrepass).toBe(true);
 		}
-		// A check that lowers the preset keeps the start's WebGL2 values.
+		// A check that lowers the preset keeps the start's WebGL2 values, but takes the lower
+		// preset's anti-aliasing mode, which a device can move to while it runs.
 		expect(checkedSettings('medium', 'low', {}, 'webgl2')).toEqual({
 			...presetSettings('low', {}, 'webgl2'),
-			antialias: 'msaa',
 			shadowCascades: 3,
 			shadowMapSize: 2048,
 			shadowTiles: 8,

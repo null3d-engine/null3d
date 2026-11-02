@@ -873,7 +873,22 @@ export function checkedSettings(
 	tier?: Tier,
 ): QualitySettings {
 	const start = presetSettings(from, options, tier);
-	return to === from ? start : presetSettings(to, { ...options, ...startValues(start) }, tier);
+	if (to === from) return start;
+	const kept: Partial<QualitySettings> = { ...options, ...startValues(start) };
+	// A device can move to a lighter anti-aliasing mode while it runs, and to none heavier, so the
+	// lower preset gives the mode. It keeps the mode the start's when the lower preset asks for a
+	// heavier one, and the page's own option always wins.
+	if (options.antialias === undefined) {
+		const wanted = presetSettings(to).antialias;
+		kept.antialias =
+			antialiasRank(wanted) < antialiasRank(start.antialias) ? wanted : start.antialias;
+	}
+	return presetSettings(to, kept, tier);
+}
+
+/** How heavy an anti-aliasing mode is: each step costs more than the one before. */
+export function antialiasRank(mode: QualitySettings['antialias']): number {
+	return mode === 'msaa' ? 2 : mode === 'fxaa' ? 1 : 0;
 }
 
 /** "a, b or c", for the choices in an error message. */
