@@ -15,6 +15,12 @@ export interface SkeletonBranch {
 	readonly points: Float32Array;
 	/** The radius at each sample, in meters. */
 	readonly radii: Float32Array;
+	/**
+	 * A multiplier on the drawn radius at each sample where a branch swells at its base, or absent
+	 * when it does not. It scales the mesh only: the pipe model keeps the radius that carries the
+	 * wood beyond, so a limb's swell does not thicken the trunk it grows from.
+	 */
+	flares?: Float32Array;
 	/** The radial sides of the branch at full detail. */
 	readonly sides: number;
 	/** The phase that the branch's leaves flutter with, from 0 to 255. */
@@ -272,6 +278,20 @@ function grow(
 			const line = Math.min(radii[i] as number, cone);
 			radii[i] = (radii[i] as number) + (line - (radii[i] as number)) * taperCurve;
 		}
+	}
+
+	// A branch widens where it leaves its parent, so a limb swells into the wood it grows from. The
+	// swell is drawn, not piped: it scales the branch's radius where it is meshed, so the parent does
+	// not thicken to carry a child that is fatter only at its joint.
+	const baseFlare = levelRecord.baseFlare ?? 0;
+	if (baseFlare > 0 && level > 0) {
+		const swell = Math.max(2, Math.round(samples * 0.2));
+		const scale = new Float32Array(samples).fill(1);
+		for (let i = 0; i < swell && i < samples; i++) {
+			const t = 1 - i / swell;
+			scale[i] = 1 + baseFlare * t * t;
+		}
+		branch.flares = scale;
 	}
 
 	// A trunk widens where it meets the ground, so it reads as seated rather than pushed in.

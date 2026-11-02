@@ -466,6 +466,7 @@ const CLUMP_OAK: Species = {
 			curve: 28,
 			curveVariance: 10,
 			taper: 0.12,
+			baseFlare: 2.5,
 			start: 0.12,
 			end: 1,
 			sides: 5,

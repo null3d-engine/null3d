@@ -146,7 +146,7 @@ export function buildWood(
 			const nx = ty * sz - tz * sy;
 			const ny = tz * sx - tx * sz;
 			const nz = tx * sy - ty * sx;
-			const radius = branch.radii[sample] as number;
+			const radius = (branch.radii[sample] as number) * (branch.flares?.[sample] ?? 1);
 			wind.occlusion = occlusionByte(cx, cy, cz, crown);
 			// A ring of a thick branch carries one vertex more than it has sides, the last of them a
 			// copy of the first with the texture coordinate at its far end. Without that copy the quad
