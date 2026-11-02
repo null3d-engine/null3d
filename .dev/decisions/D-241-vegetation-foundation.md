@@ -1011,6 +1011,13 @@ tuft's blades widen by the inverse of its share, so the cover stays the same. Th
 the same block, so WebGL2's batch collapses the tufts that the share leaves out. Both paths then draw
 one hill. On the hill of 20,000 tufts at High the share keeps 13,730.
 
+Each view then culls the kept list to its own box in the draw shader, from the frame's own matrix. The
+camera's view draws its frustum. A light's view draws its cascade, whose box reaches toward the light
+over the casters, so the near cascades no longer draw the whole kept list. A tuft's root and a point a
+tuft's reach away go through the view's matrix, so the margin that a blade crossing the edge needs comes
+from the view's own scale. The list stays the one that the compute pass writes; no second list and no
+second count.
+
 **The stress hill and the rows that compare.** The 20,000 tuft hill is a stress case: 17.3 tufts on
 each square meter, and its rows hold no ceiling. On the Tab A9 Plus its High row is 961.54 ms with
 the near shadows and 283.97 without. The rows that D-241's ceilings compare draw the hill at Creek's
@@ -1026,10 +1033,9 @@ cull takes back 4.0 per cent at the valley's and 6.9 at the strip's. Two places 
 reachable and neither is the grass: the demo's second ambient occlusion pass and the far cover's look.
 The fit through two tuft counts first put the base at 211.9 ms and was read as the scene's own cost. A
 fitted intercept is not a base frame: it carries everything the removal would also take away, whether or
-not that cost varies with the count, and only switching the thing off gives the base. The cull applies to the camera's view
-only: the grass is culled for the camera and not for the cascades, so every shadow view draws the whole
-kept list, which is why the near cascades pay for it. Widening the cull toward the light waits on the
-near-shadow count and the graph edge.
+not that cost varies with the count, and only switching the thing off gives the base. Every view culls the
+kept list to its own box, the cascades among them, so a shadow view draws only the tufts inside its
+cascade. It reads the frame's own matrix and the one count that the compute pass writes.
 Two pictures hold the look. `vegetation-grass` holds the hill. `vegetation-grass-shadow` holds it at a
 low sun, where the grass's shadows follow the count, so a view that drew the capacity would show the
 rows past it.
