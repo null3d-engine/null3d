@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { QUALITY_SETTINGS } from '../../../packages/engine/src/quality/presets';
 import { HOLD_TIME, MEASURE_SECONDS, WARMUP_SECONDS } from '../../scenes/spec';
-import { readChoice, readRunOptions } from './options';
+import { engineOptionsOf, readChoice, readRunOptions } from './options';
 
 describe('readRunOptions', () => {
 	const read = (query: string) => readRunOptions(new URLSearchParams(query));
@@ -74,6 +75,35 @@ describe('readRunOptions', () => {
 
 	test('takes only off for the governor', () => {
 		expect(() => read('governor=on')).toThrow('"on" is not a valid governor. Use ?governor=off.');
+	});
+
+	// The shared path a page builds its engine options with. Every switch that names a quality
+	// setting reaches the engine through it, so a page cannot lose one by listing them itself.
+	test('forwards every switch that names a quality setting to the engine', () => {
+		const samples: Record<string, string> = {
+			antialias: 'fxaa',
+			cloudSteps: '0',
+			shadowCascades: '2',
+			shadowMapSize: '1024',
+			shadowCascadeBlend: '0.25',
+		};
+		// The page caps its own pixel ratio, and the sketch applies the rest to the engine.
+		const elsewhere = new Set(['governor', 'maxPixelRatio', 'renderScale', 'shadowFilter']);
+		const names = new Set(Object.keys(read('')));
+		const parsed = Object.keys(QUALITY_SETTINGS).filter(
+			(name) => names.has(name) && !elsewhere.has(name),
+		);
+		expect(parsed.length).toBeGreaterThan(3);
+		for (const name of parsed) {
+			const sample = samples[name];
+			if (sample === undefined) throw new Error(`the test needs a sample value for ${name}`);
+			const forwarded = engineOptionsOf(read(`?${name}=${sample}`)) as unknown as Record<
+				string,
+				unknown
+			>;
+			// The parsed value, so a zero or an empty string proves it was not read as "absent".
+			expect(forwarded[name]).toBe(name === 'antialias' ? sample : Number(sample));
+		}
 	});
 
 	test("takes only the engine's modes for antialias", () => {
