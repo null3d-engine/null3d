@@ -188,12 +188,13 @@ describe('the manifest', () => {
 
 	it('sets an exposure in each demo that uses timeOfDay', () => {
 		// A dusk or night scene at the default exposure shows several times too dark. A demo takes
-		// the time of day's exposure or sets its own. Creek is exempt: the owner approved its look,
-		// which is tuned at the default exposure, and a new exposure would change it.
+		// the time of day's exposure or sets its own, directly or through the stage's exposure scale.
+		// Creek is exempt: the owner approved its look, which is tuned at the default exposure, and a
+		// new exposure would change it.
 		const exempt = new Set(['creek']);
 		const skipped = DEMOS.filter((demo) => {
 			const code = demoSources(demo);
-			return !exempt.has(demo.name) && /\btimeOfDay\(/.test(code) && !/\bexposure\b/.test(code);
+			return !exempt.has(demo.name) && /\btimeOfDay\(/.test(code) && !/\bexposure\w*/.test(code);
 		});
 		expect(skipped.map((demo) => demo.name)).toEqual([]);
 	});

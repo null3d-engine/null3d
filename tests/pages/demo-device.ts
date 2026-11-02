@@ -46,6 +46,13 @@ requestAnimationFrame(function countFrame() {
 	pageFrames.count++;
 	requestAnimationFrame(countFrame);
 });
+/**
+ * The anti-aliasing mode that the page fixes from the engine's start, which a preset keeps for the
+ * engine's life. A run compares it with the mode that the preset gives.
+ */
+const antialias = params.get('antialias');
+if (antialias !== null && antialias !== 'msaa' && antialias !== 'fxaa' && antialias !== 'none')
+	throw new Error(`the page takes no anti-aliasing mode ${antialias}`);
 /** The shared effect switches that the page turns off after the first frame. */
 const OFF = (params.get('off') ?? '').split(',').filter(Boolean);
 /** The HUD group that carries each shared effect switch, which the page posts to turn it off. */
@@ -174,7 +181,12 @@ run('demo-device', async () => {
 	// A showcase scene loads its models and builds its shaders in its setup, so the start itself can
 	// hold a slow phone for minutes. The wait ends, so a page that cannot start reports why.
 	const started = KEEP_COPIES
-		? startDemo({ canvas, demo: runDemo, stats: false })
+		? startDemo({
+				canvas,
+				demo: runDemo,
+				stats: false,
+				antialias: antialias ?? undefined,
+			})
 		: createEngine({
 				canvas,
 				sketch: runDemo.sketch,
@@ -182,6 +194,7 @@ run('demo-device', async () => {
 				hdr: runDemo.hdr,
 				stats: false,
 				keepTextureCopies: false,
+				antialias: antialias ?? undefined,
 			});
 	const engine = await Promise.race([
 		started,

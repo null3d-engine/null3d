@@ -160,7 +160,10 @@ export const DEMOS: readonly Demo[] = [
 		momentTransparency: true,
 		controls: SHOWCASE_CONTROLS,
 		hold: 0.5,
-		timeoutSeconds: 180,
+		// A software GPU builds the pipelines of the town, the trees and the water, and draws the
+		// island's first frame slowly while the heavy shards share a runner. The figure leaves room
+		// for that load.
+		timeoutSeconds: 600,
 	},
 	{
 		name: 'skyway',
@@ -184,7 +187,7 @@ export const DEMOS: readonly Demo[] = [
 		scene: 'Car configurator',
 		summary:
 			'A new car under softbox area lights on a mirror floor in a dark studio, with a tablet beside it. A tap on the tablet changes the paint, the wheels, the trim or the lights, and the car takes the change at once. The car turns on the spot, then drives out through the opening into a short wet street, where the lamps and the neon signs streak down the asphalt and the lit fog catches their light.',
-		controls: [...SHOWCASE_CONTROLS, { keys: ['Click'], does: 'change the car on the tablet' }],
+		controls: [{ keys: ['Click'], does: 'change the car on the tablet' }],
 		hold: 1,
 		timeoutSeconds: 300,
 	},
@@ -197,7 +200,6 @@ export const DEMOS: readonly Demo[] = [
 		scene: 'A moss garden captured as Gaussian splats',
 		summary:
 			'A glade of moss, weathered stone and blossom, captured as nearly half a million soft splats rather than meshes: a blossoming tree, a glowing stone lantern, ferns, fallen petals and drifting spores, with the cloud streamed as chunk files and held to the device budget. Turn around the glade or fly through the blossom.',
-		controls: SHOWCASE_CONTROLS,
 		hold: 0.5,
 		timeoutSeconds: 300,
 	},
@@ -541,7 +543,13 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Screen-space bounce light',
 		scene: 'Red and green room',
 		summary:
-			"One bounce of indirect light in a room with a red wall at the left and a green one at the right. Each wall's light lands on the white floor and on the white back wall, which the environment's uniform light cannot show. Every few seconds the bounce turns off and on again.",
+			"One bounce of indirect light in a room with a bright red wall at the left and a bright green one at the right. Each wall's light lands on the grey floor and back wall, which the environment's uniform light cannot show. Every few seconds the bounce turns off and on again, and B takes it over so you can switch it yourself.",
+		controls: [
+			{
+				keys: ['B'],
+				does: 'The bounce light on or off, which takes over from the automatic cycle',
+			},
+		],
 		hold: 1,
 		timeoutSeconds: 60,
 	},

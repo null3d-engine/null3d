@@ -14,11 +14,18 @@ import { audienceOf, isStyleChecked, keepsDates, subjectOf } from './check-docs-
 import { gpuBearingFiles, gpuCheckProblem } from './check-gpu-ack';
 import { macReferencesProblem, unmatchedSwiftShaderReferences } from './check-mac-references';
 import { touchesRust } from './check-rust';
+import { scriptReferencesProblem } from './check-script-references';
 import { explainedFiles, growthReason, namesFile, sizeGrowthProblems } from './check-size-growth';
 import { checkCommitMessage as checkSkills, skillBearingFiles } from './check-skills-ack';
 import { knownTaskIds, TASK_ID_SHAPE, TASK_RULE_SINCE, taskProblem } from './check-task';
 import { keptCommits } from './check-trailers';
-import { checkAck, findAckValue, findAckValues } from './commit-ack';
+import {
+	checkAck,
+	findAckValue,
+	findAckValues,
+	readsTrailerBlock,
+	TRAILER_BLOCK_SINCE,
+} from './commit-ack';
 
 describe('docBearingFiles', () => {
 	it('flags engine code, package source and binaries, skills, tools, benchmarks and commands', () => {
@@ -72,6 +79,48 @@ describe('rules that gained paths later', () => {
 	});
 });
 
+describe('the trailer block dateline', () => {
+	const files = ['packages/engine/src/scene.ts'];
+	const before = '2026-11-02T14:00:00+08:00';
+	const after = '2026-11-02T16:00:00+08:00';
+	// A footer in the middle of the body: the older reading finds it, the block reading does not.
+	const midBody =
+		'feat(x): add thing\n\nDocs-Checked: re-read docs/a.md\n\nAnd a closing paragraph of prose.';
+	const proper =
+		'feat(x): add thing\n\nWhy it changed.\n\nDocs-Checked: re-read docs/a.md\nTask: none';
+
+	it('reads a commit authored before the dateline the older way', () => {
+		expect(Date.parse(TRAILER_BLOCK_SINCE)).toBeGreaterThan(Date.parse(before));
+		expect(readsTrailerBlock(before)).toBe(false);
+		expect(checkAck(midBody, files, DOCS_ACK_RULE, before).ok).toBe(true);
+	});
+
+	it('holds the same message to the trailer block after the dateline', () => {
+		expect(readsTrailerBlock(after)).toBe(true);
+		const result = checkAck(midBody, files, DOCS_ACK_RULE, after);
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain('no Docs-Checked: trailer');
+	});
+
+	it('holds a commit being made now to the trailer block', () => {
+		expect(readsTrailerBlock()).toBe(true);
+		expect(checkAck(midBody, files, DOCS_ACK_RULE).ok).toBe(false);
+	});
+
+	it('passes a proper block on either side of the dateline', () => {
+		expect(checkAck(proper, files, DOCS_ACK_RULE, before).ok).toBe(true);
+		expect(checkAck(proper, files, DOCS_ACK_RULE, after).ok).toBe(true);
+	});
+
+	it('finds an old GPU check that the block reading cannot see', () => {
+		const message =
+			'feat(x): draw it\n\nGPU-Checked: s4 medium 4.1 to 4.2 ms on the Mac\n\nAnd a closing line.';
+		const commit = { sha: 'a'.repeat(40), message, files: ['packages/engine/src/render/draw.ts'] };
+		expect(gpuCheckProblem([{ ...commit, authoredAt: before }])).toBeNull();
+		expect(gpuCheckProblem([{ ...commit, authoredAt: after }])).not.toBeNull();
+	});
+});
+
 describe('skillBearingFiles', () => {
 	it('flags the public API, the shader library, the mapping and the skills', () => {
 		const files = [
@@ -117,10 +166,47 @@ describe('message parsing', () => {
 		expect(findAckValue('feat: x\n\nbody', 'Docs-Checked')).toBeNull();
 	});
 
-	it('finds every value of a trailer, in order', () => {
-		const message = 'feat: x\n\nSize-Growth: first\nbody\nsize-growth:  second ';
+	it('reads a trailer from a footer block at the end of the message', () => {
+		const message =
+			'feat(x): add thing\n\nThe body says why.\n\nDocs-Checked: re-read docs/a.md\nTask: none';
+		expect(findAckValues(message, 'Docs-Checked')).toEqual(['re-read docs/a.md']);
+	});
+
+	it('ignores a key in the middle of the body when no footer block follows', () => {
+		const message =
+			'feat(x): add thing\n\nDocs-Checked: re-read docs/a.md\n\nAnd a closing paragraph of prose.';
+		expect(findAckValues(message, 'Docs-Checked')).toEqual([]);
+	});
+
+	it('drops the block when a continuation line starts without whitespace', () => {
+		const message =
+			'feat(x): add thing\n\nDocs-Checked: re-read docs/a.md\nsee also docs/b.md\nTask: none';
+		expect(findAckValues(message, 'Docs-Checked')).toEqual([]);
+		expect(findAckValues(message, 'Task')).toEqual([]);
+	});
+
+	it('unfolds a continuation line that starts with whitespace into the value', () => {
+		const message =
+			'feat(x): add thing\n\nDocs-Checked: re-read docs/a.md\n  and docs/b.md\nTask: none';
+		expect(findAckValues(message, 'Docs-Checked')).toEqual(['re-read docs/a.md and docs/b.md']);
+	});
+
+	it('finds every trailer of the block, in order', () => {
+		const message =
+			'feat(x): add thing\n\nWhy it changed.\n\nDocs-Checked: re-read docs/a.md\nsize-growth:  first \nSize-Growth: second\nTask: none';
 		expect(findAckValues(message, 'Size-Growth')).toEqual(['first', 'second']);
+		expect(findAckValues(message, 'Task')).toEqual(['none']);
 		expect(findAckValues('feat: x', 'Size-Growth')).toEqual([]);
+	});
+
+	it('reads no trailer block when the subject stands alone', () => {
+		expect(findAckValues('feat: x\nTask: none', 'Task')).toEqual([]);
+		expect(findAckValues('Task: none', 'Task')).toEqual([]);
+	});
+
+	it('ignores everything below a divider line', () => {
+		const message = 'feat(x): add thing\n\nWhy it changed.\n\n---\nTask: none';
+		expect(findAckValues(message, 'Task')).toEqual([]);
 	});
 });
 
@@ -439,6 +525,71 @@ describe('macReferencesProblem', () => {
 		expect(
 			macReferencesProblem([change([swift('webgpu', 's4')], 'fix: a\n\nMac-References: yes')]),
 		).toContain('Mac-References value "yes" gives no reason');
+	});
+});
+
+describe('scriptReferencesProblem', () => {
+	const demo = (environment: string, tier: string, name: string) =>
+		`tests/image/references/${environment}/${tier}/demo-${name}.png`;
+	const script = (environment: string, tier: string, state: string) =>
+		`tests/image/references/${environment}/${tier}/script-demo-island-${state}.png`;
+	const states = ['turned', 'walked', 'closer'] as const;
+	const change = (files: string[], message = 'test(images): draw the island again') => ({
+		sha: 'c3d4e5f6a7',
+		message,
+		files,
+	});
+
+	it('needs nothing when the script pictures change with the demo, in one commit or across the range', () => {
+		expect(
+			scriptReferencesProblem([
+				change([
+					demo('chromium-swiftshader', 'webgl2', 'island'),
+					...states.map((state) => script('chromium-swiftshader', 'webgl2', state)),
+				]),
+			]),
+		).toBeNull();
+		expect(
+			scriptReferencesProblem([
+				change([demo('chrome-real-gpu', 'webgl2', 'island')]),
+				change(states.map((state) => script('chrome-real-gpu', 'webgl2', state))),
+			]),
+		).toBeNull();
+	});
+
+	it('fails a demo-only change and names each script picture that it left', () => {
+		const problem = scriptReferencesProblem([
+			change([demo('chromium-swiftshader', 'webgl2', 'island')]),
+		]);
+		expect(problem).toContain(
+			'chromium-swiftshader/webgl2/script-demo-island-closer.png, chromium-swiftshader/webgl2/script-demo-island-turned.png, chromium-swiftshader/webgl2/script-demo-island-walked.png',
+		);
+		expect(problem).toContain('Script-References:');
+	});
+
+	it('needs nothing for a tier the script does not draw, a demo without a script, or a set without script pictures', () => {
+		expect(
+			scriptReferencesProblem([change([demo('chromium-swiftshader', 'webgpu', 'island')])]),
+		).toBeNull();
+		expect(
+			scriptReferencesProblem([change([demo('chromium-swiftshader', 'webgl2', 'showroom')])]),
+		).toBeNull();
+		expect(scriptReferencesProblem([change([demo('ipad', 'webgl2', 'island')])])).toBeNull();
+	});
+
+	it('takes a reason on any commit, and refuses a bare one', () => {
+		const left = change([demo('chromium-swiftshader', 'webgl2', 'island')]);
+		const reason =
+			'Script-References: the script draws another time of the same page, and its pictures still match';
+		expect(scriptReferencesProblem([change([], `test: note\n\n${reason}`), left])).toBeNull();
+		expect(
+			scriptReferencesProblem([
+				change(
+					[demo('chromium-swiftshader', 'webgl2', 'island')],
+					'test(images): a\n\nScript-References: yes',
+				),
+			]),
+		).toContain('Script-References value "yes" gives no reason');
 	});
 });
 

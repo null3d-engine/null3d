@@ -275,7 +275,10 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  *   With a mouse move about every third frame, S5 and S6 took 2 to 11 bytes per frame there.
  * - the frame's pending reads, which the render worker maps after it submits: each read makes a
  *   promise with its reactions, about 18 bytes, and S1 reads once a frame, so it took 18.2 bytes
- *   per frame, up to 20.4.
+ *   per frame, up to 20.4;
+ * - the mip levels that a frame makes again, each with the browser's encoder for its pass. A chain
+ *   of 11 levels, the most a texture of 2,048 pixels across needs, took 133.7 to 171 bytes a frame
+ *   on the Mac's GPU. The budget allows one encoder of 32 bytes for each level.
  */
 export const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {
@@ -307,6 +310,8 @@ export const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> =
 		'finish gpu/completion.ts': 40,
 		'unfinished gpu/completion.ts': 16,
 		'giveUpStalled gpu/completion.ts': 16,
+		// One encoder for each level of an 11-level chain, as the doc block says.
+		'generateMipmaps webgpu/backend.ts': 11 * 32,
 	},
 };
 /**
@@ -405,18 +410,36 @@ const PROBE_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = 
  * Each budget leaves room for the run-to-run noise above the place's steady figure, and less than a
  * boxed fraction above it, so a new per-frame object fails the run while a sample that varies by a
  * few bytes still passes. CI runs the switch on each GPU path.
+ *
+ * The idle place also holds the browser's message objects that settle an answer between tasks,
+ * which a run with the field adds to the browser's own work between frames. Its budget leaves room
+ * for them beside that work.
  */
 export const WIND_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {
 		'(anonymous) null3d/addons.ts': 36,
+		'(IDLE)': 64,
 		'read src/wind.ts': 20,
-		'ask src/field.ts': 24,
 		'fillRequest src/field-layout.ts': 12,
 		'turn src/wind.ts': 16,
 		'write src/wind.ts': 24,
 		'owedSteps src/wind.ts': 18,
 	},
 	'render-worker': {},
+};
+
+/**
+ * What `--wind` raises in the per-call table, for the places that the field makes heavier. The
+ * field's answer carries a transferred array, so its message makes more objects than the splats'
+ * answer does: the Mac's GPU reads 309.3 bytes a call at the handler and SwiftShader's WebGL2
+ * 336.4, where the splats' handler read up to 230.4. The shared table keeps a budget that guards
+ * the splats' answer, at 336: its handler allocates per frame as well as per call, so its figure
+ * moves with a run's frames, and 336 leaves about three 32-byte records above the worst it read.
+ * This table raises the handler for the wind's run alone, to 368, which leaves less than one
+ * 32-byte record above the wind's largest figure.
+ */
+export const WIND_CALL_BUDGETS: Readonly<Record<string, number>> = {
+	'n.onmessage shared/tasks.ts': 368,
 };
 
 /**
@@ -515,15 +538,34 @@ const CALL_BUDGETS: Readonly<Record<string, number>> = { '(IDLE)': 48, '(JS)': 2
  * and SwiftShader runs with `--splats` and the task asked about once a frame, with room above them.
  * The add-on's frame step makes no array and no number object.
  *
+ * The wind's field sends its ask from `send`, whose `then` makes a promise's record on the sketch's
+ * thread, and a fast runner charges that record, and the loader's async call's promise, to `ask`
+ * instead, where the browser inlines the call. Both places are judged per call as well: CI's
+ * SwiftShader read 35.0 bytes a frame at `send`, 66 an ask, and a run on this Mac's SwiftShader
+ * charged the same call to `ask` at 95.1 bytes a frame, 191 an ask. `send`'s budget of 80 holds one
+ * reaction record at 66 with less than one boxed number more. On this Mac's GPU the browser
+ * keeps the `then` record in a place of its own, `then (built-in)`, at 40.6 bytes a frame and 82 an
+ * ask. The answer's message makes more objects for the field's transferred array than for the
+ * splats' answer: the Mac's GPU reads 309.3 bytes a call at the handler, and CI's SwiftShader
+ * 217.7. The handler allocates per frame as well as per call, so a run whose frames outrun its
+ * answers reads it higher per call: SwiftShader's WebGL2 run made 84 calls in the sample where its
+ * WebGPU run made 161, and read 336.4. The shared table's budget of 336 guards the splats' answer,
+ * whose handler read up to 230.4: its per-frame share moves the figure by tens of bytes between
+ * runs, so its ceiling leaves about three 32-byte records above the worst it read, where the wind's
+ * own 368 leaves less than one above 336.4. The `then` place's budget of 96 does the same above 82.
+ *
  * A task that carries WebAssembly compiles its file in the loader once per page, and a lone file
  * needs no array, no map and no `Promise.all`; the terrain add-on's task is the first that takes
  * that path. The loader walks its runners by index too, so a call makes no iterator result for
  * each of them.
  */
-const TASK_CALL_BUDGETS: Readonly<Record<string, number>> = {
+export const TASK_CALL_BUDGETS: Readonly<Record<string, number>> = {
 	'pose null3d/s1-sketch.ts': 128,
 	'run shared/tasks.ts': 560,
-	'n.onmessage shared/tasks.ts': 240,
+	'n.onmessage shared/tasks.ts': 336,
+	'send src/field.ts': 80,
+	'ask src/field.ts': 208,
+	'then (built-in)': 96,
 	'Promise (built-in)': 160,
 	'delete (built-in)': 130,
 	'leastBusy shared/tasks.ts': 100,
@@ -537,8 +579,20 @@ const TASK_CALL_BUDGETS: Readonly<Record<string, number>> = {
 	'next (built-in)': 16,
 };
 
-/** The budget of `place` per call in `worker`, or undefined where the worker judges it per frame. */
-function callBudgetFor(worker: string, place: string): number | undefined {
+/**
+ * The budget of `place` per call in `worker`, or undefined where the worker judges it per frame. A
+ * switch that makes a shared place heavier names the place's budget for its own run, before the
+ * tables' shared figure, so raising it there leaves every other run's guard as tight as it was.
+ */
+export function callBudgetFor(
+	worker: string,
+	place: string,
+	chosen: readonly PageSwitch[] = [],
+): number | undefined {
+	for (const choice of chosen) {
+		const own = choice.callBudgets?.[place];
+		if (own !== undefined) return own;
+	}
 	return worker === 'render-worker' ? CALL_BUDGETS[place] : TASK_CALL_BUDGETS[place];
 }
 
@@ -668,6 +722,8 @@ interface PageSwitch {
 	passes?: number;
 	/** What it allocates on top of `BUDGETS` beyond its passes, by place. */
 	budgets?: WorkerBudgets;
+	/** The per-call budget that it gives a shared place in place of the tables' figure. */
+	callBudgets?: Readonly<Record<string, number>>;
 	/** True for a switch that any scene takes; the others change S1 alone. */
 	anyScene?: boolean;
 }
@@ -768,7 +824,13 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 		budgets: SPLATS_BUDGETS,
 	},
 	// The wind's field: one compute pass that fills its grid.
-	{ flag: '--wind', query: '&wind', passes: 1, budgets: WIND_BUDGETS },
+	{
+		flag: '--wind',
+		query: '&wind',
+		passes: 1,
+		budgets: WIND_BUDGETS,
+		callBudgets: WIND_CALL_BUDGETS,
+	},
 	{ flag: '--inertial', query: '&inertial' },
 	{ flag: '--calls', query: '&calls', budgets: CALLS_BUDGETS },
 	{ flag: '--time-of-day', query: '&timeOfDay', budgets: DAY_BUDGETS },
@@ -1116,7 +1178,7 @@ async function main(): Promise<void> {
 					) +
 					(sceneBudgets[name] ?? 0);
 				// The render worker's browser calls and the sketch worker's tasks judge their own places.
-				const callBudget = callBudgetFor(worker, name);
+				const callBudget = callBudgetFor(worker, name, chosen);
 				if (callBudget !== undefined && worker === 'sketch-worker') {
 					const measured = perCall(workerSamples, name);
 					const figure = measured?.perCall ?? 0;

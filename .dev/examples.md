@@ -311,10 +311,10 @@ and the cloud's scale from a distance. The scene is `examples/splat-garden/`.
   That ground means a coarse preset shows moss in the gaps between its chunks rather than the
   horizon. The splats fade where they meet the lantern, through the add-on's depth mix. That shows
   the soft edge that a splat has against a solid surface.
-- **The controls.** The HUD's groups are the shared ones plus a Splats tab whose Full detail button
-  draws the preset's whole budget or a quarter of it, so the levels of detail show. The effects
-  start off, as every showcase's do; Bloom picks out the lantern and the spores. Quality switches
-  the preset, and with it the cloud's budget.
+- **The look is the scene's own.** The sketch sets the ambient occlusion and keeps the levels of
+  detail off. The stage writes the sky, the fog, the environment light and the exposure. The
+  demo shows no controls panel: the route plays by itself, and `c` hands the camera to the user. A
+  new preset gives the cloud a new budget, and the label above the lantern follows it.
 - **The camera.** The route opens above the glade with the tree and the lantern in view and holds
   that shot, so the held frame is the opening view. It then comes down to the lantern, skims the
   moss and the log, turns under the tree and rises into the blossom, passes out through the
@@ -333,7 +333,7 @@ and the cloud's scale from a distance. The scene is `examples/splat-garden/`.
 - **What the add-on cannot do here.** Splats cast and receive no shadows, so the scene has no live
   shadow map: the light in the capture is all the shading there is. The batch's rows are fixed when
   `createSplats` makes it, at the count of the preset in use then, so a later move to a higher
-  preset draws no more splats; the HUD's cap follows the new budget downward only. A stream's chunk
+  preset draws no more splats. A stream's chunk
   files must all exist before its index can name them, so a scene that makes its own cloud builds
   every chunk first, which is the setup cost here.
 
@@ -595,6 +595,18 @@ scene hands it.
 - The held frame, 6 seconds in, stands inside the hall. Hold mode meters its one frame and takes the result at once, so the image test shows the adapted hall.
 - The walk stops at each end and turns there, with each leg eased, so the eye's change shows while the view holds still.
 
+## The bounce-light demo's room
+
+`bounce-light: Red and green room` shows one bounce of screen-space light. A red wall at the left and a green wall at the right throw their color onto the gray floor and back wall ([D-284](decisions/D-284-screen-space-bounce-light.md)).
+
+- The walls take four times the environment's light that the gray surfaces take, through each material's `envIntensity`. The walls therefore throw a strong color, and the dim gray surfaces show it instead of washing it out.
+- The figures come from the image test's 320 x 180 held frame, with the camera at the room's open front. The box under the red wall is columns 13 to 30 per cent of the picture and rows 72 to 90 per cent. It reads 58.8 levels redder with the light on than with it off. The box under the green wall is columns 70 to 87 per cent and the same rows. It reads 34.9 levels greener. The back wall reads 47.4 and -26.1 levels over columns 28 to 42 and 58 to 72 per cent, rows 35 to 55 per cent. At 960 x 540 the tuned room's floor boxes read 16.3 and -11.0 levels. A room whose surfaces all take the environment's light alike changes the floor's red-minus-green by only 7.6 and -3.8 levels.
+- The room itself is not a plain room in either half of the cycle. Its grays are dimmer and its walls brighter than a room whose surfaces take the environment's light alike. A picture of the plain room therefore does not match it. The walls must throw enough color for the bleed to show, and the neutral surfaces must stay dim enough for that color to read.
+- The camera stands at the room's open front, low and close, so each wall runs down the frame beside a wide area of floor. The screen-space gather reads a disk with a radius of 48 texels of its half-size grid, which is 96 pixels of the picture. A wall therefore colors the surfaces within that distance of it, and a distant wall colors nothing. The close view keeps a band of floor and back wall inside the reach.
+- The bleed is a soft estimate, not a sharp cast. The trace gathers that 96-pixel disk, and a 24-tap denoise smooths it within 4 texels. The edges therefore fade, and the light falls off with distance. On a 960-pixel-wide canvas, the back wall's red-minus-green is 64.3 levels at 0.1 m from the red wall's corner. It falls to 31.8 at 0.5 m, 1.5 at 1 m and 0.1 at 1.5 m. The boxes are 0.3 m wide, at rows 35 to 55 per cent of the picture. The background above the wall is unchanged with the light on and off, so the light stays on the surfaces. Eight and 16 rays change those boxes by at most 1.0 level at 960 and 2.1 at 320, so the width is the gather's, not the sampling's. The same 96 pixels reach about 1.3 m on that wall at 960 wide and about 3.9 m at 320 wide. That is 96 pixels instead of 128, a quarter narrower, which is a tighter bleed and not a sharper technique: the estimate still spreads a wall's color over distance, and at 320 by 180 the small frame still looks wide. No switch reaches the denoiser; the pass always draws the trace and the 24-tap denoise.
+- `B` takes the light from the automatic cycle and switches it on or off. The cycle does not run it again, because a visitor who takes the light in hand should keep the state that they chose.
+- A held frame shows the light, as the cycle's first half does. No input reaches a held frame, and the sketch reads no key there.
+
 ## The crystal spiral's scenery
 
 The owner wants the demos "as amazing as possible". The custom shader inputs demo (`shader-inputs`) keeps its scenery in `examples/shader-inputs/pool.ts`, beside the sketch. The sketch keeps to the crystals and the stones that show the feature.
@@ -623,6 +635,91 @@ The scenery of the contact shadows demo (`contact-shadows`, Stone garden) lives 
 - The sun keeps the hour's own height as it turns, and the sky's sun turns with it. When the sky's sun stands higher than the hour's, the sky is too bright for the low sun's light, and the long shadows hardly show. The sky's environment lights the scene, so the demo has no ambient light.
 - The wall stands high behind the garden, away from the sun's side. On the left, the sun's side, it stands only 0.5 m high. A wall 1.2 m high there shades half the bed under a sun this low. The bamboo behind it fills the skyline there, and casts no shadows.
 - The camera stands low and close, over a rock, its drift of pebbles and a stepping stone, and the sun stands about 10 degrees high. There, the cascades miss the pebbles' long shadows, and contact shadows draw them. On a tall screen the camera stands farther back with a wider view, and looks above the stones, so they sit low in the frame.
+
+## Showroom to street (M3-C2)
+
+Showroom to street is an ordinary demo in the Light, materials and effects group. A car stands in a
+dark studio under softbox area lights, on a mirror floor, with a tablet beside it that changes its
+paint, wheels, trim and lights.
+The car then drives out through the opening into a short wet street. The scene is a template for
+product pages.
+
+- **The studio reflects the softboxes twice.** The floor takes one planar reflection across the
+  ground, so the car, the softboxes and the tablet mirror in it, and the car shows from underneath
+  as a real mirror shows it. A reflection probe fills the room's box, so the paint's clear coat
+  reflects the softboxes and the walls wherever the camera stands. The car draws on a layer of its
+  own, which the probe leaves out, so the paint never reflects itself.
+- **Four rectangle lights carry the studio.** A wide softbox behind the car and a thin box above it
+  draw the highlights along the roof and the flanks, and a strip down each side lights the walls.
+  The Low preset shades four rectangle lights, so the scene adds no more. A warm spot from the front
+  fills the paint, so the body reads deep red under the highlights.
+- **The configurator is a screen in the world.** The tablet is an `OffscreenCanvas` through the
+  screens add-on. Four tabs pick the part, and a tap on a value, a swatch or an arrow moves the
+  choice on. The car takes the change at once: the paint and the rims keep their material and change
+  their color, and the trim swaps between carbon, brushed steel and gloss black. A low glow under
+  the car and the two head lamps take the light's color, so the choice shows on the wet road.
+- **The street is short and lit.** The road runs 56 m from the studio's opening. A row of buildings
+  with lit windows stands on each side, with four lamp posts and two neon signs. One wall closes the
+  far end. The asphalt reads the same planar reflection, with rough dry stone between puddles whose
+  water carries the picture. The stage writes the volumetric fog, so each lamp and the head lamps
+  draw their cones through the air. Low turns the fog's slices off, so its fog keeps the sun's glow.
+- **The route and the car run one loop.** The car waits in the studio and turns slowly on the spot.
+  It then drives out, turns at the street's far end and drives back. The camera route takes the same
+  36 s, so the loop meets itself with no jump. `route.test.ts` checks the poses at the points that
+  matter, and that the car moves smoothly at every step.
+- **The camera opens and settles on the configurator, as the owner asked.** The view looks at the
+  tablet with the car standing to its side; the camera then turns around the car in the studio,
+  follows it out through the opening, watches it turn at the far end, and backs away in front of it
+  as it returns, settling on the view it opened with. The first shot holds, so the held frame is
+  that view. The shots live in `shots.ts`, where `shots.test.ts` checks that the loop opens and
+  closes on that view, that both the tablet and the car fall inside its frame, and that the camera
+  is in the studio while the car waits and in the street when the car turns.
+- **The look is the scene's own.** The sketch sets the ambient occlusion, the bloom and the sun's
+  contact-shadow distance, and the stage writes the sky, the fog and the environment light. The
+  levels of detail stay off. The demo shows no controls panel: the route plays by itself, and `c`
+  hands the camera to the user.
+- **The car body is shared with the clear coat demo.** `examples/lib/car-body.ts` builds the hull,
+  the cabin, the lamps and the wheels from the materials that its caller gives. The clear coat demo
+  keeps its candy red paint and carbon trim, and the showroom repaints the same body.
+- **The wheels roll with the car.** The body builder returns the four wheel hubs, each with a group
+  that turns inside the axle. The showroom turns each group by the distance the car drove forward
+  over the wheel's radius, the left side the other way because its axle points the other way, so
+  both sides roll forward. `route.test.ts` turns a point on the tyre and checks that it moves
+  backward relative to the hub for both sides, so an inverted sign fails.
+- **The lit floor pulsed, and the rectangle lights were the cause.** On a still camera the
+  showroom's lit surfaces swung by several levels on alternate frames, and the owner saw it on the
+  street's light pool. The engine's frame-budget fade for area lights stepped a light that already
+  held its target one step *away* from it, and the next frame stepped it back, so every settled area
+  light in every scene pulsed between full and seven-eighths strength on every frame
+  (`crates/null3d-render/src/light_grid.rs`). A light at its target now keeps it. Two engine tests
+  hold the fade to that, and `tests/image/showroom-steady.spec.ts` holds the demo's camera still and
+  measures the floor on consecutive frames as the browser presents them: its step between frames
+  must not exceed one and a half times its step across two frames, which an alternating image breaks
+  and a drifting one does not; the run also requires the sketch's frame count to advance and the
+  car's own part of the frame to move, so a stopped engine cannot pass it. The fade covers the
+  lights that the frame lists, so a light switched off or hidden leaves the list and is not faded:
+  the fade smooths a light crossing the area lights' cap, not one switched off. The fix brightens
+  every area-lit picture a little, so `demo-area-lights` changed with it, in both sets.
+- **The beam pulsed with the fog's offset cycle.** The volumetric fog's light step moved each
+  cell's sample point through a sixteen-frame cycle. The blend with the last frame's grid left a
+  residual that repeated with the cycle. The lit fog, the headlight beams included, pulsed at
+  3.75 Hz. A cell now keeps a point hashed from its own place, so a still camera draws the same fog
+  every frame. The reasons are in [D-133](decisions/D-133-volumetric-fog.md).
+  `tests/image/beam-steady.spec.ts` draws a still headlight in the fog. It measures the beam over
+  the frames that the browser presents, so the pulse cannot return unseen.
+- **The lamps were not the sparkle; the paint was.** In one 60-frame-a-second capture of the car
+  returning in the street on the Mac, the two lamp bars stayed at full brightness in every frame,
+  while the paint on the nose sparkled. Turning the headlamp beams off or the fog off left the
+  sparkle, and turning the flakes off removed most of it, so the paint's flakes were its source in
+  that capture. The showroom's flakes now take a wider light and a lower glint, and its clear coat
+  is a little rougher. That is a look choice, not only a fix: it moves all three pictures, and the
+  owner should rule on the nose's look.
+- **The paint costs what its flakes count.** On a cloud Galaxy S25, one panel of the car paint filled
+  the view against the same clear-coated metal. On core WebGPU the paint raised the frame's GPU time
+  by 75 per cent at Low. That is 5.18 ms over a buffer of 540 by 932 pixels. At Medium it raised it by
+  nearly half, 6.08 ms over 720 by 1243 pixels. The flake count's loop, forced to eight steps a pixel,
+  adds 0.88 ms. [D-255](decisions/D-255-car-paint-glints.md) gives the rows, their conditions and the
+  rows that did not stand.
 
 ## Showcase scenes
 
@@ -653,8 +750,8 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 - **The shadow range follows the camera:** a fixed range fails here. With the night town's sun at a fixed 70 m, its shadows fade over the last 7 m. The Manual camera can dolly out with no limit, and past about 70 m every house lies beyond the range. A quick zoom then carries the whole town across the fade in a fifth of a second, so the shadows appear at once. Even the opening view puts the back houses at 75 to 82 m. So each scene passes `shadowReach` to `createShowcaseEffects`: the range it asks for close up, and the sphere of its core. The core is the night town's houses and tower, and Creek's stream and banks. Each frame, the range is the shortest step of a ladder of 1.25 times that reaches the core's far side. It rises at once, and falls only once the need is a whole step lower. Close-up shadows stay as sharp as a fixed range gives, and the core never leaves the range. The engine's automatic distance ([D-168](decisions/D-168-auto-shadow-distance.md)) does not fit here. It follows the farthest visible receiver, which in these scenes is the ground out to the mountains. It would hold the range at 150 m or more and blur the near shadows.
 - **The sky, the sun and the moon:** the outdoor moods drive the physical sky, `scene.setBackground({ atmosphere })`, from `timeOfDay` with the physical model ([D-171](decisions/D-171-showcase-controls-hud.md)). The real sun disc lights the scene by day and the moon disc at night, the main directional light is the sun by day and the moon at night, and the lit fog and the light shafts follow that light, so a scene shows sun rays by day and moon rays at night. `Auto` advances the hour continuously and loops, so the sun rises, arcs and sets and the moon does the same, while the fixed moods hold an hour. A whole day takes 80 seconds in Auto (the owner's ruling). `examples/lib/stage.ts` holds the moods and the Auto driver.
 - **The look follows the light, not the nearest mood:** a scene's own look, such as Creek's fireflies, mist, leaf tint and caustics, blends between the moods on either side of the hour (`moodMix` in `examples/lib/stage.ts`). Through the dark hours, while the sun is more than 18 degrees under the horizon, it holds Night. Only while the sky has light does it move from each mood to the next. The dawn's look comes in through the morning twilight and is whole at Dawn's hour. A look taken from the nearest fixed mood would jump. At 02:36, halfway between Night and Dawn, Creek's warm dawn caustics would come on at once. The stream would change color in the middle of the night. The stage's own haze factor blends the same way. `examples/lib/stage.test.ts` checks that no mood's share steps between hours a minute apart.
-- **The showcase scenes are Creek, Night town, Skyway and Showroom to street.** A forest at dawn, a
-  night town under the moon, a city from the air, and a car showroom that opens onto a wet street.
+- **The showcase scenes are Creek, Night town and Skyway.** A forest at dawn, a night town under the
+  moon, and a city from the air.
 
 ### Night town's windows (M3-B2)
 
@@ -910,86 +1007,6 @@ and a hero car with two screens.
   and both windows carry upload spikes of about 1.2 MB, so neither explains the first window. Night
   town's first window had no such stall. A cold phone's first seconds therefore need their own
   measurement before the 60 frames a second target has a device figure.
-
-### Showroom to street (M3-C2)
-
-Showroom to street is the fourth showcase scene. A car stands in a dark studio under softbox area
-lights, on a mirror floor, with a tablet beside it that changes its paint, wheels, trim and lights.
-The car then drives out through the opening into a short wet street. The scene is a template for
-product pages.
-
-- **The studio reflects the softboxes twice.** The floor takes one planar reflection across the
-  ground, so the car, the softboxes and the tablet mirror in it, and the car shows from underneath
-  as a real mirror shows it. A reflection probe fills the room's box, so the paint's clear coat
-  reflects the softboxes and the walls wherever the camera stands. The car draws on a layer of its
-  own, which the probe leaves out, so the paint never reflects itself.
-- **Four rectangle lights carry the studio.** A wide softbox behind the car and a thin box above it
-  draw the highlights along the roof and the flanks, and a strip down each side lights the walls.
-  The Low preset shades four rectangle lights, so the scene adds no more. A warm spot from the front
-  fills the paint, so the body reads deep red under the highlights.
-- **The configurator is a screen in the world.** The tablet is an `OffscreenCanvas` through the
-  screens add-on. Four tabs pick the part, and a tap on a value, a swatch or an arrow moves the
-  choice on. The car takes the change at once: the paint and the rims keep their material and change
-  their color, and the trim swaps between carbon, brushed steel and gloss black. A low glow under
-  the car and the two head lamps take the light's color, so the choice shows on the wet road.
-- **The street is short and lit.** The road runs 56 m from the studio's opening. A row of buildings
-  with lit windows stands on each side, with four lamp posts and two neon signs. One wall closes the
-  far end. The asphalt reads the same planar reflection, with rough dry stone between puddles whose
-  water carries the picture. The stage writes the volumetric fog, so each lamp and the head lamps
-  draw their cones through the air. Low turns the fog's slices off, so its fog keeps the sun's glow.
-- **The route and the car run one loop.** The car waits in the studio and turns slowly on the spot.
-  It then drives out, turns at the street's far end and drives back. The camera route takes the same
-  36 s, so the loop meets itself with no jump. `route.test.ts` checks the poses at the points that
-  matter, and that the car moves smoothly at every step.
-- **The camera opens and settles on the configurator, as the owner asked.** The view looks at the
-  tablet with the car standing to its side; the camera then turns around the car in the studio,
-  follows it out through the opening, watches it turn at the far end, and backs away in front of it
-  as it returns, settling on the view it opened with. The first shot holds, so the held frame is
-  that view. The shots live in `shots.ts`, where `shots.test.ts` checks that the loop opens and
-  closes on that view, that both the tablet and the car fall inside its frame, and that the camera
-  is in the studio while the car waits and in the street when the car turns.
-- **The car body is shared with the clear coat demo.** `examples/lib/car-body.ts` builds the hull,
-  the cabin, the lamps and the wheels from the materials that its caller gives. The clear coat demo
-  keeps its candy red paint and carbon trim, and the showroom repaints the same body.
-- **The wheels roll with the car.** The body builder returns the four wheel hubs, each with a group
-  that turns inside the axle. The showroom turns each group by the distance the car drove forward
-  over the wheel's radius, the left side the other way because its axle points the other way, so
-  both sides roll forward. `route.test.ts` turns a point on the tyre and checks that it moves
-  backward relative to the hub for both sides, so an inverted sign fails.
-- **The lit floor pulsed, and the rectangle lights were the cause.** On a still camera the
-  showroom's lit surfaces swung by several levels on alternate frames, and the owner saw it on the
-  street's light pool. The engine's frame-budget fade for area lights stepped a light that already
-  held its target one step *away* from it, and the next frame stepped it back, so every settled area
-  light in every scene pulsed between full and seven-eighths strength on every frame
-  (`crates/null3d-render/src/light_grid.rs`). A light at its target now keeps it. Two engine tests
-  hold the fade to that, and `tests/image/showroom-steady.spec.ts` holds the demo's camera still and
-  measures the floor on consecutive frames as the browser presents them: its step between frames
-  must not exceed one and a half times its step across two frames, which an alternating image breaks
-  and a drifting one does not; the run also requires the sketch's frame count to advance and the
-  car's own part of the frame to move, so a stopped engine cannot pass it. The fade covers the
-  lights that the frame lists, so a light switched off or hidden leaves the list and is not faded:
-  the fade smooths a light crossing the area lights' cap, not one switched off. The fix brightens
-  every area-lit picture a little, so `demo-area-lights` changed with it, in both sets.
-- **The beam pulsed with the fog's offset cycle.** The volumetric fog's light step moved each
-  cell's sample point through a sixteen-frame cycle. The blend with the last frame's grid left a
-  residual that repeated with the cycle. The lit fog, the headlight beams included, pulsed at
-  3.75 Hz. A cell now keeps a point hashed from its own place, so a still camera draws the same fog
-  every frame. The reasons are in [D-133](decisions/D-133-volumetric-fog.md).
-  `tests/image/beam-steady.spec.ts` draws a still headlight in the fog. It measures the beam over
-  the frames that the browser presents, so the pulse cannot return unseen.
-- **The lamps were not the sparkle; the paint was.** In one 60-frame-a-second capture of the car
-  returning in the street on the Mac, the two lamp bars stayed at full brightness in every frame,
-  while the paint on the nose sparkled. Turning the headlamp beams off or the fog off left the
-  sparkle, and turning the flakes off removed most of it, so the paint's flakes were its source in
-  that capture. The showroom's flakes now take a wider light and a lower glint, and its clear coat
-  is a little rougher. That is a look choice, not only a fix: it moves all three pictures, and the
-  owner should rule on the nose's look.
-- **The paint costs what its flakes count.** On a cloud Galaxy S25, one panel of the car paint filled
-  the view against the same clear-coated metal. On core WebGPU the paint raised the frame's GPU time
-  by 75 per cent at Low. That is 5.18 ms over a buffer of 540 by 932 pixels. At Medium it raised it by
-  nearly half, 6.08 ms over 720 by 1243 pixels. The flake count's loop, forced to eight steps a pixel,
-  adds 0.88 ms. [D-255](decisions/D-255-car-paint-glints.md) gives the rows, their conditions and the
-  rows that did not stand.
 
 ### Engine features for the showcase
 

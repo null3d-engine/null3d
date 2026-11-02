@@ -14,6 +14,8 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { TASK_TRAILER } from './hooks/check-task';
+import { findAckValues } from './hooks/commit-ack';
 import { TASK_EVIDENCE } from './task-evidence.ts';
 
 /** The milestone pull request, its title, and the plan that lists its tasks. */
@@ -68,16 +70,14 @@ const NOTES: Readonly<Record<string, string>> = {
  * because both describe the same task and only one of them can be true.
  */
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
-	'M3-C1':
-		"the scene, its lanes, rain and the hero car are in, and so are the moods (`createMoods` in the skyway sketch) and the instances demo, which is registered and built on the traffic-lanes add-on; the pictures pass in both reference sets, and D-277 records the owner's look review as pending. What remains is the frame rates against the target: the iPad Pro 13 drew 50.0 fps at Low on WebGPU and 54.2 on WebGL2, and the cloud S24 drew 11.7 at Low and 7.8 in the demos plan, all under 60",
 	'M3-C2':
 		"the showroom draws and drives, its wheels turn forward on both sides with a contact-point test that fails on the inverted sign, the lamps are recorded honestly as one capture on one path with the sparkle traced to the paint, both reference sets hold its pictures, and the owner approved the nose's flake and clear-coat look. What keeps the task open is its rate: the owner kept the 60 fps bar for the tablet, and the demo does not hold it, since the iPad Pro 13 drew 11.8 fps cold and 23.3 warm at Low on WebGPU against 52.7 on WebGL2, and the per-pass split is unmeasured,",
 	'M3-B1':
 		"the whole look is costed at every preset on WebGPU and in compatibility mode, 3.13 to 3.91 and 3.12 to 3.82 ms at the 33-megapixel canvas, and all eight of those cells keep their range above zero. What remains is narrower: each mark is costed at the highest preset its path allows rather than at every preset, WebGL2 keeps no whole-look figure and its sharpening cell does not resolve, and the compatibility fringes' range crosses zero from -0.080 to 0.417, so that cell cannot be told apart from no mark. The earlier run at four times the pixels could not tell a mark from the frame's own variation, and that reason no longer stands",
-	'M3-B5':
-		'the glints draw and are tested in both sets; its cost per preset is owed (D-255), which needs a quiet GPU',
 	'M3-F2':
 		"the rule-42 move is on `feat/m3-f2-splats-scope`: the selection and its distance sort run in `crates/null3d-splats` on the job workers, and the pack runs in `crates/null3d-core` through the public `createChunkRows()` writer, with the parity test and the seven-plus-eight Rust tests beside them. The device runs at that branch's head held the settled budget on the iPad Pro 13 and the Galaxy S24 and failed no chunk. What keeps the task open is the picture run at the head, which the reviewer holds, and the record corrections beside it",
+	'M3-V11':
+		"the task's own evidence names work still owed, so it stands open: the four Creek pictures, `demo-creek`, `creek-render-scale-opening`, `creek-render-scale-route` and `creek-water-close`, are owed a redraw in both reference sets, and the GPU check is owed. The branch drew the Creek's plants through the add-on at `10d91fda8`, and that commit's footers wrap a value onto a line with no indent, so git reads no trailer block on it and the count never supported a tick. The corrected parser stopped crediting it; it did not make a finished task read as unfinished",
 	'M3-V14':
 		"the owner ruled the rows and the budgets, and D-283 records them. Three clauses of the Done-when stand open, so the task cannot tick: the smallest-tier look, a side-by-side that the owner judges and has not named, which is also the tier he cannot tell from the next one up; the cost of each tier on the M5 Max, whose row is owed, while the iPad Pro 13, the Galaxy S25 and the Galaxy Tab A9 Plus measured theirs at this head; and the proof that the chosen rows keep Creek and the forest within D-241's frame ceilings, which cannot be shown while their readers wait on M3-V11 and M3-V12",
 	'M3-V8':
@@ -106,30 +106,37 @@ const git = (...args: string[]) =>
 /** The roots that hold a build of the engine, its tests, its demos and its published pages. */
 const CODE_ROOTS = ['crates/', 'packages/', 'tests/', 'examples/', 'bench/', 'docs/'];
 
-/** Every task ID that a kept commit's `Task:` trailer names, once that commit built something. */
+/**
+ * Every task ID that a kept commit's `Task:` trailer names, once that commit built something. The
+ * count reads every commit's trailer block, with no dateline: it reports which tasks the branch
+ * names in a footer that git reads, and a tick that rests on a footer git cannot see is a tick that
+ * nothing downstream can carry.
+ */
 function landedTasks(): Set<string> {
 	// A record-only commit claims a task without building any of it, so it must not read as work
 	// that landed with its evidence still owed: that reads to a maintainer as a finished feature
 	// whose proof is missing. Only a commit that touches a file outside the records counts.
-	const out = git('log', '--format=%x1e%H%x1f%b', `${BASE}..HEAD`, '--name-only');
-	const out2 = out.split('\x1e').map((chunk) => {
-		const [header = '', body = ''] = chunk.split('\x1f');
-		const lines = body.split('\n');
-		// A trailer claims a task. A body that mentions an ID in prose, such as a
-		// `Docs-Checked:` line, must not tick it, or a task that no commit names in a trailer reads
-		// as ticked.
-		const claimed = lines.filter((line) => /^Task:\s/.test(line)).join('\n');
-		const files = lines.filter((line) => /^\S+\/\S*$/.test(line) && !/^Task:/.test(line));
+	const out = git('log', '--format=%x1e%H%x1f%b%x1f', `${BASE}..HEAD`, '--name-only');
+	const tasks = new Set<string>();
+	for (const chunk of out.split('\x1e')) {
+		const [, body = '', names = ''] = chunk.split('\x1f');
+		const files = names
+			.split('\n')
+			.map((line) => line.trim())
+			.filter(Boolean);
 		// A test file is code wherever it lives: the guard test for a tool sits beside the tool, and
 		// without this a task whose whole work is a test in `tools/` could never land.
 		const built = files.some(
 			(file) =>
 				CODE_ROOTS.some((root) => file.startsWith(root)) || /\.(test|spec)\.[jt]s$/.test(file),
 		);
-		return built || header === '' ? claimed : '';
-	});
-	const claimed = out2.join('\n');
-	return new Set(claimed.match(/M3-[A-Z0-9]+[a-z]?/g) ?? []);
+		if (!built) continue;
+		// A trailer claims a task. A body that mentions an ID in prose, such as a `Docs-Checked:`
+		// line, must not tick it, or a task that no commit names in a trailer reads as ticked.
+		for (const value of findAckValues(body, TASK_TRAILER))
+			for (const id of value.match(/M3-[A-Z0-9]+[a-z]?/g) ?? []) tasks.add(id);
+	}
+	return tasks;
 }
 
 /** Each task of the plan, in its order, with the name it was given. */

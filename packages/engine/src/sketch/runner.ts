@@ -26,7 +26,9 @@ import { coreFailure, QUEUED_CHANGE } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import {
+	ANTIALIAS_FXAA,
 	ANTIALIAS_MSAA,
+	ANTIALIAS_NONE,
 	CORE_NOT_COUNTED,
 	LIGHT_VALUE_HERO_SIZE,
 	LIGHT_VALUE_SHADOW_CASCADES,
@@ -426,6 +428,8 @@ export class SketchRunner {
 	 * started on the 8-bit path.
 	 */
 	private hdrForEffects = false;
+	/** The anti-aliasing mode that the device draws with now, which is at most the start's. */
+	private canvasAntialias = 0;
 	/** True while the scene's fog is volumetric, as the governor knows it. */
 	private fogOn = false;
 	/** The volumetric fog's slices that the `fogSlices` setting gives. */
@@ -483,6 +487,7 @@ export class SketchRunner {
 		);
 		const { glue, device } = sketch;
 		const { slots } = sketch.control;
+		this.canvasAntialias = device.antialias;
 		glue.setMemoryMaximum(device.memoryMaximumMiB ?? 0);
 		const status = glue.initEngine(
 			sketch.jobWorkers,
@@ -1033,6 +1038,7 @@ export class SketchRunner {
 	 * passes that play draws the range with.
 	 */
 	private applyFrameSettings(settings: QualitySettings): void {
+		this.followAntialias(settings);
 		const low = thousandths(settings.minRenderScale);
 		const high = thousandths(settings.maxRenderScale);
 		this.heldScale = high;
@@ -1083,6 +1089,28 @@ export class SketchRunner {
 			glue.setMomentTransparency(settings.momentTransparency) !== 0 ||
 			glue.setSoftParticles(settings.softParticles) !== 0
 		)
+			this.report(coreFailure(glue, 'quality.set'));
+	}
+
+	/**
+	 * Moves the canvas to a lighter anti-aliasing mode that a preset asks for. A device fixes its
+	 * mode when it starts, so a lower preset keeps the start's MSAA unless the canvas moves: the
+	 * preset check lowers a tablet from Medium to Low that way, and MSAA draws the low preset at
+	 * twice the cost of its own FXAA. The scene colour draws with either mode, and the frame's
+	 * passes and pipelines follow the change. No mode heavier than the start's can begin.
+	 */
+	private followAntialias(settings: QualitySettings): void {
+		const wanted =
+			settings.antialias === 'msaa'
+				? ANTIALIAS_MSAA
+				: settings.antialias === 'fxaa'
+					? ANTIALIAS_FXAA
+					: ANTIALIAS_NONE;
+		if (wanted === this.canvasAntialias || wanted === ANTIALIAS_MSAA) return;
+		const { device, glue } = this.sketch;
+		this.canvasAntialias = wanted;
+		this.preloads.setUsable('coverage', false);
+		if (glue.setCanvasOutput(device.sceneColor, wanted) !== 0)
 			this.report(coreFailure(glue, 'quality.set'));
 	}
 

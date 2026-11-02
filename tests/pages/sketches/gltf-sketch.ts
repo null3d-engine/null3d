@@ -4,7 +4,9 @@
 // prefab's bounds or the scene's frame. Each engine draws without tone mapping, so the parity test
 // compares the colors themselves. ?mark posts 'instantiate' to the page right before the sketch
 // creates the copy, and ?pause=<ms> waits that long after the file loads, as a model's texture
-// decode would. A scene with the environment loads the HDR file's environment first.
+// decode would. A scene with the environment loads the HDR file's environment first. ?bounce=off
+// draws without screen-space bounce light, which three.js does not have, so the parity test
+// compares the same lighting.
 import { defineSketch } from '@null3d/engine';
 import {
 	AMBIENT,
@@ -23,10 +25,11 @@ import { sampleEnvironment } from '../../../tools/lib/sample-url';
 
 const params = new URL(import.meta.url).searchParams;
 
-export default defineSketch(async ({ scene, assets, post, page }) => {
+export default defineSketch(async ({ scene, assets, post, page, quality }) => {
 	const name = (params.get('model') ?? 'metal-rough') as ModelName;
 	const model: ModelScene | undefined = MODEL_SCENES[name];
 	if (!model) throw new Error(`no model scene is named ${name}`);
+	if (params.get('bounce') === 'off') quality.set({ bounceRays: 0 });
 	post.set({ toneMapping: 'none' });
 	scene.setBackground(MODELS_BACKGROUND);
 	if (model.ownLights || model.ambientOnly) scene.createAmbientLight(DIM_AMBIENT);

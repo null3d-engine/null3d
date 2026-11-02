@@ -63,9 +63,11 @@ pub const MAX_DISTANCE: f32 = 20.0;
 /// How near the texel's own surface a sample must be to send nothing, in meters.
 const BIAS: f32 = 0.05;
 
-/// The radius of the disk of screen texels that each texel gathers, in texels of the steps. It is
-/// wide enough that a wall beside the surface shows its upper part, which is where its light is.
-const GATHER_RADIUS: f32 = 64.0;
+/// The radius of the disk of screen texels that each texel gathers, in texels of the steps, which
+/// is twice this many pixels of the picture. The disk is wide enough that a wall beside a floor
+/// still lights the floor under it, and narrow enough that the wall's color does not spread across
+/// the surface it lands on as a haze.
+const GATHER_RADIUS: f32 = 48.0;
 
 /// The share of the screen over which the light fades toward its edges.
 const EDGE_FADE: f32 = 0.1;
