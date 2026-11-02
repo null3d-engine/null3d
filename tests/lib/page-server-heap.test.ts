@@ -12,7 +12,7 @@ import { join } from 'node:path';
 const ROOT = join(import.meta.dirname, '../..');
 const CONFIG = 'tests/playwright.config.ts';
 
-/** The dev server's resident peak at 1,915 pages, in megabytes (2 November 2026). */
+/** The dev server's resident peak at 1,915 pages, in megabytes, as measured on the Mac. */
 const MEASURED_PEAK_MB = 3542;
 
 describe('the picture run page servers', () => {
