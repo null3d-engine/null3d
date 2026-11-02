@@ -36,12 +36,12 @@ function readTrailer(value: string, files: readonly string[]) {
  * Size-Growth trailer that names the file and gives a reason. Files that no trailer explains are absent.
  */
 export function explainedFiles(
-	commits: readonly { sha: string; message: string }[],
+	commits: readonly { sha: string; message: string; authoredAt?: string }[],
 	files: readonly string[],
 ): Map<string, string> {
 	const explained = new Map<string, string>();
-	for (const { sha, message } of commits)
-		for (const value of findAckValues(message, SIZE_GROWTH_TRAILER)) {
+	for (const { sha, message, authoredAt } of commits)
+		for (const value of findAckValues(message, SIZE_GROWTH_TRAILER, authoredAt)) {
 			const { named, reasoned } = readTrailer(value, files);
 			if (reasoned) for (const file of named) if (!explained.has(file)) explained.set(file, sha);
 		}
@@ -70,10 +70,11 @@ function firstUseShaderFiles(value: string): string[] {
 export function sizeGrowthProblems(
 	rawMessage: string,
 	files: readonly string[] = REPORTED_FILES,
+	authoredAt?: string,
 ): string[] {
 	const message = effectiveMessage(rawMessage);
 	if (message.length === 0 || isExemptCommit(message)) return [];
-	return findAckValues(message, SIZE_GROWTH_TRAILER).flatMap((value) => {
+	return findAckValues(message, SIZE_GROWTH_TRAILER, authoredAt).flatMap((value) => {
 		const { named, reasoned } = readTrailer(value, [...files, ...firstUseShaderFiles(value)]);
 		if (named.length === 0)
 			return [
