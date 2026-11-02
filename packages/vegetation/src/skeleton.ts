@@ -317,8 +317,11 @@ export function growSkeleton(species: Species, seed: number, variant: number): S
 		const angle = (t / Math.max(1, trunks)) * Math.PI * 2;
 		const ring = trunks > 1 ? height * 0.035 : 0;
 		const origin: [number, number, number] = [Math.cos(angle) * ring, 0, Math.sin(angle) * ring];
-		// A tree with one trunk stands nearly upright; stems of a multi-stem plant lean apart.
-		const leanAt = trunks > 1 ? lean : 0.045;
+		// A record that states a lean sets the trunk's first direction, whether the plant has one stem
+		// or many; a record that states none stands nearly upright. A lean that only tilted the base
+		// would fight the trunk's curve, and a trunk that should arc out of the ground came out
+		// straighter the more curve it was given.
+		const leanAt = trunks > 1 ? lean : (species.stemLean ?? 0.045);
 		const yaw = unitAt(seed, species.seedSalt, variant, t, KEY_TILT) * Math.PI * 2;
 		const direction = normalize(Math.cos(yaw) * leanAt, 1, Math.sin(yaw) * leanAt);
 		const trunkLength =
