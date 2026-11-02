@@ -2,7 +2,9 @@
 
 Status: decided. Built: the `@null3d/water` add-on, its demo, the reflection's cadence through the
 feature host, one owner for each point where bodies meet, the Creek's migration to the add-on, and
-the ocean. Owed: the cost per preset, for the water and for the ocean. Tasks: M3-F5, M3-E6, M3-F9.
+the ocean. Owed: the cost per preset, for the water and for the ocean, and the WebGL2 reflection's
+image while its cadence waits, which keeps the ocean's demo off that tier. Tasks: M3-F5, M3-E6,
+M3-F9.
 
 Summary: `@null3d/water` draws a river and a lake from one shape and an open sea of wave spectra,
 with waves, ripples, caustics, foam, soft shores, a reflection and an underwater view. The surface
@@ -227,17 +229,19 @@ same field, so `ocean-waves` judges WebGL2 like the other tiers. The demo waits 
 fault: a reflection pass that carries a cadence of two draws black on WebGL2, so the sea loses the
 sky's mirror and reads flat. At a cadence of one the pass draws (`.dev/code-review.md`).
 
-The transform's own cost is not measured. The effect page's on-and-off difference cannot resolve
-it when the machine is busy: over one quiet run of three bands at 128 squared, the difference
-ranged from -0.62 to 0.54 ms on WebGPU, and the same work at the four presets spread the same way.
-`ocean-cost.spec.ts` keeps the instrument, gated by `NULL3D_OCEAN_COST`. It now sends the
-reflection to its longest cadence and takes more rounds and longer sides from the environment, so
-each round's difference pairs one side with the side beside it on the same clean frame. The pass
-timer names all fifteen transform passes `compute`, so their times do not separate by name; the
-difference of the sides is the figure to read. The figures wait on a quiet window: the machine
-stayed at a load of 11 through the last attempt, and the test refuses to measure above its limit
-rather than report a figure it does not believe. The design figure for three bands at 128 squared
-is 0.5 ms ([D-179](D-179-technique-rulings.md) ruling 19).
+**The transform's cost, as trials.** Two pairs of trials at Low, with the reflection at its
+longest cadence, read the WebGL2 fragment chain as a positive difference in every round: 1.08 to
+2.10 ms in one pair and 0.61 to 3.37 ms in the other, a median near 1.5 ms. The WebGPU compute chain
+stayed inside the frame's own noise in the same trials: the rounds' differences fell between -0.36
+and 0.37 ms, so no figure above zero resolves, and the chain sits under about 0.4 ms. The
+transform's grid and bands do not change with the preset, so one figure answers each preset. These
+are notes from a busy machine, at a load of 9 to 16, not verdicts: the quiet run that the cost per
+preset needs is still owed, because the load stayed above the test's limit of 8. `ocean-cost.spec.ts`
+keeps the instrument, gated by `NULL3D_OCEAN_COST`: it sends the reflection to its longest cadence
+and takes more rounds and longer sides from the environment, so each round's difference pairs one
+side with the side beside it. The pass timer names all fifteen transform passes `compute`, so their
+times do not separate by name; the difference of the sides is the figure to read. The design figure
+for three bands at 128 squared is 0.5 ms ([D-179](D-179-technique-rulings.md) ruling 19).
 
 The first rate runs measured the page while the reflection switched itself off every other frame.
 At 1920 by 1080 on Low the ocean drew 1.21 frames a second, and a 64 squared grid gave 1.45.
