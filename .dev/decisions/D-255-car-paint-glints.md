@@ -77,7 +77,7 @@ function cannot see a light, so the model needs the material lobe hook
 
 Measured on BrowserStack's Galaxy S25 (Chrome 152.0.7977.54, Android 15, Adreno 830). The runner
 page's frame is 360 by 621 CSS pixels at a device pixel ratio of 3. Two runs agree within 0.05 ms on
-the rows that both resolve:
+the rows that both resolve. Four rows stand:
 
 | Path | Preset | Drawing buffer | Plain, GPU ms | Painted, GPU ms | Paint, ms |
 | --- | --- | --- | --- | --- | --- |
@@ -85,15 +85,22 @@ the rows that both resolve:
 | core WebGPU | Medium | 720 x 1243 | 12.88 | 18.94 | 6.08 |
 | core WebGPU | High | 720 x 1243 | 12.85 | 18.89 | 6.03 |
 | compatibility | Low | 540 x 932 | 6.88 | 12.06 | 5.18 |
-| compatibility | Medium | 720 x 1243 | 16.06 | 19.33 | 3.29 |
 
 The figure is the middle of the six paired differences of the sides' GPU time. The paint adds nearly
 half again to the frame at Medium and High, and raises the frame's GPU time by 75 per cent at Low.
 Its cost lands in the pass that draws the panel. At Low the final pass rose by 1.57 ms too, while at
-Medium it did not. Compatibility mode's plain frame costs 16.06 ms against core WebGPU's 12.88 at
-the same buffer, and the paint's share there is 3.29 ms against 6.08.
+Medium it did not.
 
-Two rows give no figure, for reasons the run shows. At Ultra, 1080 by 1864 pixels, the plain side's
+One row is qualified. Compatibility mode at Medium gives 16.06 ms plain and 19.33 painted, a
+difference of 3.29 ms. Its pass lines refuse the comparison with core WebGPU. The plain panel pass
+costs 15.40 ms there against 10.55 on core at the same buffer, and the painted one 18.74 against
+16.58. The compatibility frame also holds no final pass, where core's costs 1.70 ms. The extra time
+therefore sits in the pass that draws the panel. A ceiling that is not the shader's can hide the
+paint's share there. The row does not say that the same shader costs less in compatibility mode, and
+its 3.29 ms does not stand beside 6.08. A page that draws the same passes on both paths, at one
+buffer, would separate the two.
+
+Two rows are refused, for reasons the run shows. At Ultra, 1080 by 1864 pixels, the plain side's
 rounds swung between 16.5 and 20.1 ms, a fifth of its cost. The painted side held 19.1 to 19.2 ms.
 The two sides therefore did not share a GPU clock, and the signed difference moved between -0.85 and
 +2.65 ms. The paint cannot be faster than the plain side, so the negative rounds are the clock's. A
@@ -103,11 +110,12 @@ Until then the row is refused, not blank. WebGL2 has no GPU timer on Chrome for 
 sides kept the display's 33.3 ms period. The frame interval cannot show the paint. The presets differ
 on this page only in the pixel ratio, so each row's cost belongs to its drawing buffer.
 
-The flake count's own steps, measured at Medium, are apart from the rest of the lobe. A light that
-every flake catches, over a footprint of about eight cells a pixel, costs 5.47 ms of that frame. The
-same footprint under a light that no flake catches costs 4.59 ms. The count's steps add 0.88 ms, 16
-per cent of the flakes' cost at that footprint. At the page's own settings the expected count is
-about 0.1, so the loop runs about once per pixel.
+The flake count's own steps, measured at Medium, are apart from the rest of the lobe. The painted
+sides of both pages carry the flakes alone. A light that every flake catches, over a footprint of
+about eight cells a pixel, costs 5.47 ms of that frame. The same footprint under a light that no
+flake catches costs 4.59 ms. The count's steps add 0.88 ms, 16 per cent of the flakes' cost at that
+footprint. At the page's own settings the expected count is about 0.1, so the loop runs about once
+per pixel.
 
 The runs are [the phone's cost run](../tested-devices/galaxy-s25-sm-s931b-chrome/20261102-062057-car-paint-cost.md)
 and [its loop run](../tested-devices/galaxy-s25-sm-s931b-chrome/20261102-061718-car-paint-loop.md).
