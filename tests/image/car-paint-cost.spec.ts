@@ -6,7 +6,8 @@
 // cannot pass for the paint's own cost. It runs only with NULL3D_PAINT_COST set, in a quiet window
 // on a computer with a GPU of its own:
 // NULL3D_PAINT_COST=1 bun run test:browser -- car-paint-cost.spec.ts --workers=1.
-// NULL3D_PAINT_PRESETS sets the presets, as a list. Each test waits for a quiet computer and prints
+// NULL3D_PAINT_PRESETS sets the presets, as a list, and NULL3D_PAINT_VARIANT picks the painted
+// side's parts: full, flakes, body, loop or loop-0. Each test waits for a quiet computer and prints
 // the load beside its figures, with each side's rounds and each round's difference, so the paint's
 // cost shows apart from the run's own variation (tests/lib/effect-cost.ts).
 import { expect, test } from '@playwright/test';
@@ -24,6 +25,8 @@ import { TIMING_BROWSER } from '../lib/timing-browser.ts';
 test.use(TIMING_BROWSER);
 
 const presets = (process.env.NULL3D_PAINT_PRESETS ?? 'low,medium,high,ultra').split(',');
+/** The painted side's parts, which the page's own list of names holds. */
+const variant = process.env.NULL3D_PAINT_VARIANT ?? 'full';
 /** The rounds of each side, the seconds of each turn and the play before them. */
 const ROUNDS = 8;
 const SECONDS = 1;
@@ -91,13 +94,13 @@ for (const gpu of ['webgpu', 'compat', 'webgl2'] as const)
 			const loadBefore = await waitForQuiet();
 			await page.setViewportSize({ width: 1920, height: 1080 });
 			await page.goto(
-				`car-paint-cost.html?gpu=${gpu}&preset=${preset}&rounds=${ROUNDS}&seconds=${SECONDS}&warm-up=${WARM_UP}`,
+				`car-paint-cost.html?gpu=${gpu}&preset=${preset}&rounds=${ROUNDS}&seconds=${SECONDS}&warm-up=${WARM_UP}&paint=${variant}`,
 			);
 			const result = await pageResult<CostResult & { buffer: [number, number] }>(page, 200_000);
 			expect(result.error).toBeUndefined();
 			console.log(
 				[
-					`PAINTCOST ${result.tier} at ${preset}, ${result.buffer[0]} by ${result.buffer[1]} pixels, ${ROUNDS} rounds of ${SECONDS} s after ${WARM_UP} s of play, load ${loadBefore} before and ${loadNow()} after`,
+					`PAINTCOST ${result.tier} at ${preset}, ${result.buffer[0]} by ${result.buffer[1]} pixels, ${variant}, ${ROUNDS} rounds of ${SECONDS} s after ${WARM_UP} s of play, load ${loadBefore} before and ${loadNow()} after`,
 					sideLine('off', result.off, 3),
 					sideLine('on', result.on, 3),
 					`off passes: ${passesLine(result.off)}`,
