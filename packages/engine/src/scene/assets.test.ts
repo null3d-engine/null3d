@@ -244,6 +244,60 @@ describe('assets', () => {
 		expect(seen.at(-1)?.[0]).toBe(4096);
 	});
 
+	test('a report that repeats the last one fires no handler, and the first report always fires', async () => {
+		const size = 8;
+		let sent = 0;
+		globalThis.fetch = (async () => {
+			const stream = new ReadableStream<Uint8Array>({
+				pull(controller) {
+					// Two empty pieces first: each reports the same state, so the handlers see one.
+					if (sent < 2) {
+						sent++;
+						controller.enqueue(new Uint8Array(0));
+						return;
+					}
+					if (sent === 2) {
+						sent++;
+						controller.enqueue(new Uint8Array(size).fill(5));
+						return;
+					}
+					controller.close();
+				},
+			});
+			return new Response(stream, { headers: { 'content-length': String(size) } });
+		}) as unknown as typeof fetch;
+		const assets = new Assets(fakeTextures().textures, PAGE);
+		const seen: [number, number, string][] = [];
+		assets.onProgress((loaded, total, url) => seen.push([loaded, total, url]));
+		const bytes = await assets.loadBinary('/empty-pieces.bin');
+		expect(bytes.byteLength).toBe(size);
+		// The first empty piece reports, the second holds the same bytes and address, and the body
+		// then reports its bytes: a repeat is dropped, a change still arrives.
+		expect(seen).toEqual([
+			[0, size, 'https://game.example/empty-pieces.bin'],
+			[size, size, 'https://game.example/empty-pieces.bin'],
+		]);
+	});
+
+	test('a handler removed during a report does not hear that report', async () => {
+		serve({ 'https://game.example/one.bin': 'abcd' });
+		const assets = new Assets(fakeTextures().textures, PAGE);
+		const heard: string[] = [];
+		let stopSecond = () => {};
+		assets.onProgress(() => {
+			heard.push('first');
+			stopSecond();
+		});
+		stopSecond = assets.onProgress(() => heard.push('second'));
+		assets.onProgress(() => heard.push('third'));
+		await assets.loadBinary('/one.bin');
+		// The first handler removed the second while the report was running. The third handler,
+		// registered after it, still hears the report, so the removal skips only its own handler.
+		expect(heard).toContain('first');
+		expect(heard).toContain('third');
+		expect(heard).not.toContain('second');
+	});
+
 	test('an image whose header claims more pixels than its use takes fails with E1412 before it decodes', async () => {
 		serve({
 			'https://game.example/huge.png': pngHeader(65536, 65536) as Uint8Array<ArrayBuffer>,
