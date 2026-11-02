@@ -268,11 +268,11 @@ describe('the generator', () => {
 		}
 		const elapsed = performance.now() - started;
 		expect(variants).toBe(ALL_SPECIES.length * 6);
-		// The measured total is 29.75 MiB of arrays, 31,192,082 bytes, the leaf targets
-		// included, and the device time
+		// The measured total is 32.75 MiB of arrays, 34,335,362 bytes, the leaf targets included,
+		// after each species took its own card density; it was 29.75 MiB before. The device time
 		// budgets are far above the Mac's. These bounds catch a generator that slowed by an order
 		// of magnitude.
-		expect(bytes).toBeLessThan(30 * 1024 * 1024);
+		expect(bytes).toBeLessThan(34 * 1024 * 1024);
 		expect(elapsed).toBeLessThan(3000);
 	});
 });

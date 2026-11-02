@@ -142,13 +142,19 @@ export default defineSketch((ctx) => {
 					(positions[chosen + i * 3 + 2] as number) - z,
 				),
 			);
+		// A cluster card is folded, so the average of its vertex normals points between the two
+		// panels; a camera along either panel's own normal would see the other edge-on.
+		let nx = 0;
+		let ny = 0;
+		let nz = 0;
+		for (let i = 0; i < per; i++) {
+			nx += normals[chosen + i * 3] as number;
+			ny += normals[chosen + i * 3 + 1] as number;
+			nz += normals[chosen + i * 3 + 2] as number;
+		}
 		card = {
 			centre: [x, y, z],
-			normal: normalize(
-				normals[chosen] as number,
-				normals[chosen + 1] as number,
-				normals[chosen + 2] as number,
-			),
+			normal: normalize(nx, ny, nz),
 			radius: Math.max(0.05, spread),
 		};
 		// One card alone: the frame shows its atlas and nothing of its neighbours, so the leaf shape
@@ -212,10 +218,13 @@ export default defineSketch((ctx) => {
 		target = card.centre;
 		fov = 34;
 		const distance = card.radius * 3.2;
+		// A card that faces straight up would put the camera's up axis along the view, which leaves
+		// the view without a basis; a small sideways lean keeps it well defined.
+		const facing = normalize(card.normal[0] + 0.18, card.normal[1] + 0.02, card.normal[2] + 0.18);
 		position = [
-			target[0] + card.normal[0] * distance,
-			target[1] + card.normal[1] * distance,
-			target[2] + card.normal[2] * distance,
+			target[0] + facing[0] * distance,
+			target[1] + facing[1] * distance,
+			target[2] + facing[2] * distance,
 		];
 	} else {
 		target = [center[0], min[1] + (max[1] - min[1]) * 0.48, center[2]];

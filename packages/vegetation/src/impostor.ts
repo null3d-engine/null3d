@@ -12,6 +12,7 @@ import {
 } from '@null3d/impostors';
 import type { PlantAsset } from './asset';
 import { LEAF_CELLS_BY_KIND, leafCellFor, type PlantAtlases } from './atlas';
+import { LEAF_CELLS_X, LEAF_CELLS_Y } from './atlas-pixels';
 import { VERSION } from './version';
 
 /**
@@ -135,14 +136,14 @@ function bakePlant(
 							height: leaf.color.height,
 							data: leaf.color.data,
 							cell,
-							cells: [4, 2] as const,
+							cells: [LEAF_CELLS_X, LEAF_CELLS_Y] as const,
 						},
 						coverage: {
 							width: leaf.surface.width,
 							height: leaf.surface.height,
 							data: leaf.surface.data,
 							cell,
-							cells: [4, 2] as const,
+							cells: [LEAF_CELLS_X, LEAF_CELLS_Y] as const,
 						},
 						alphaCutoff: 0.35,
 					}),

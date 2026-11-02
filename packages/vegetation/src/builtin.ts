@@ -148,7 +148,7 @@ export const BUILTIN_SPECIES: readonly Species[] = [
 		leaf: {
 			kind: 'cluster',
 			cell: 'cluster-f',
-			cards: 12,
+			cards: 13,
 			width: 0.6,
 			height: 0.6,
 			perCard: 12,
@@ -214,7 +214,7 @@ export const BUILTIN_SPECIES: readonly Species[] = [
 		leaf: {
 			kind: 'cluster',
 			cell: 'cluster-f',
-			cards: 6,
+			cards: 7,
 			width: 0.2,
 			height: 0.2,
 			perCard: 6,
@@ -342,7 +342,7 @@ export const CREEK_SPECIES: readonly Species[] = [
 		leaf: {
 			kind: 'cluster',
 			cell: 'cluster-a',
-			cards: 10,
+			cards: 13,
 			width: 0.5,
 			height: 0.42,
 			perCard: 9,
@@ -399,7 +399,7 @@ export const CREEK_SPECIES: readonly Species[] = [
 		leaf: {
 			kind: 'cluster',
 			cell: 'cluster-e',
-			cards: 10,
+			cards: 14,
 			width: 0.3,
 			height: 0.4,
 			perCard: 8,
@@ -448,7 +448,7 @@ export const CREEK_SPECIES: readonly Species[] = [
 		leaf: {
 			kind: 'cluster',
 			cell: 'cluster-c',
-			cards: 10,
+			cards: 8,
 			width: 0.24,
 			height: 0.24,
 			perCard: 6,
@@ -516,7 +516,7 @@ export const CREEK_SPECIES: readonly Species[] = [
 		leaf: {
 			kind: 'cluster',
 			cell: 'cluster-d',
-			cards: 11,
+			cards: 13,
 			width: 0.12,
 			height: 0.42,
 			perCard: 7,
@@ -565,7 +565,7 @@ export const CREEK_SPECIES: readonly Species[] = [
 		leaf: {
 			kind: 'cluster',
 			cell: 'cluster-c',
-			cards: 10,
+			cards: 11,
 			width: 0.28,
 			height: 0.3,
 			perCard: 7,

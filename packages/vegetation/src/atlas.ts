@@ -4,7 +4,7 @@
 // alpha keeps a leaf's coverage as it shrinks, and a masked material fades its cut edges with alpha
 // to coverage.
 import type { ColorInput, SketchContext, Texture, Textures } from '@null3d/engine';
-import { type AtlasPixels, paintBark, paintLeaf } from './atlas-pixels';
+import { type AtlasPixels, LEAF_CELLS_X, LEAF_CELLS_Y, paintBark, paintLeaf } from './atlas-pixels';
 import type { PlantWind } from './plant';
 import plantShader from './plant.wgsl';
 import plantCardsShader from './plant-cards.wgsl';
@@ -86,7 +86,7 @@ export function bakePlantAtlases(ctx: Pick<SketchContext, 'textures'>): PlantAtl
 		leaf: {
 			color: asTexture(ctx.textures, leaf.color, 'srgb', false),
 			surface: asTexture(ctx.textures, leaf.surface, 'linear', false),
-			cells: [4, 2],
+			cells: [LEAF_CELLS_X, LEAF_CELLS_Y],
 			pixels: { color: leaf.color, surface: leaf.surface },
 		},
 	};
