@@ -31,7 +31,12 @@ A loading screen covers the canvas while the engine starts and the sketch loads 
 import { defineSketch } from '@null3d/engine';
 
 export default defineSketch(async ({ assets, page, scene }) => {
-  assets.onProgress((loaded, total) => page.post('loading', Math.min(1, loaded / Math.max(total, loaded))));
+  assets.onProgress((loaded, total) =>
+    page.post('loading', {
+      text: 'Downloading the scene files',
+      value: total > 0 ? loaded / Math.max(total, loaded) : undefined,
+    }),
+  );
   await assets.preload(['/levels/one.json', '/tex/terrain.png', '/tex/rocks.png']);
 
   const level = await assets.loadJson('/levels/one.json');
@@ -41,32 +46,51 @@ export default defineSketch(async ({ assets, page, scene }) => {
 });
 ```
 
-The handler gets the files downloaded so far and the files asked for so far. A file that fails counts as done, so the bar still reaches its end. The failed load rejects with an error that says what went wrong. [Assets](../api/assets.md) covers the loading calls and their errors.
+The handler gets the bytes downloaded so far and the bytes expected so far. The total is the length of each response that announced one, so it grows as the scene starts more files. A file that fails counts as done, so the bar still reaches its end. The failed load rejects with an error that says what went wrong. [Assets](../api/assets.md) covers the loading calls and their errors.
 
 ## Show progress on the page
 
 The page passes `onSketchMessage` to `createEngine`, so it hears the messages that the sketch sends during its setup. It removes the loading screen when `engine.firstFrame` resolves: until the GPU has finished the first frame, the canvas is blank.
 
+A percentage must come from work that is counted. `onProgress` gives the engine core's bytes, measured against the length that the server announced. `assets.onProgress` gives a scene's files the same way. Neither knows how much of the whole start is left. So the page measures each phase on its own, and it names the phase beside its number. Within a phase the percentage never falls. A scene's total grows as it starts more files, so the bytes that arrived can be a smaller share than before. Across the whole start the figure can fall: a counted phase that ends returns the card to the engine's stage, and a later file starts a new measure under the same label.
+
 ```ts
 // page.ts
 import { createEngine } from '@null3d/engine';
 
+const label = document.querySelector<HTMLElement>('#label')!;
 const bar = document.querySelector<HTMLElement>('#bar')!;
+let phase = '';
 let shown = 0;
-const show = (progress: number) => {
-  shown = Math.max(shown, progress); // the bar never moves back
+/** Shows a phase's share of its own work. A new phase starts a measure of its own. */
+const show = (text: string, value?: number) => {
+  if (text !== phase) {
+    phase = text;
+    shown = 0;
+  }
+  label.textContent = text;
+  if (value === undefined) return; // no total: the bar keeps moving
+  shown = Math.max(shown, value);
   bar.style.width = `${Math.round(shown * 100)}%`;
 };
 
 const engine = await createEngine({
   canvas: document.querySelector('canvas')!,
   sketch: new URL('./sketch.ts', import.meta.url),
-  onProgress: (stage) => { if (stage === 'core') show(0.1); },
-  onSketchMessage: (name, loaded) => { if (name === 'loading') show(0.1 + 0.8 * (loaded as number)); },
+  onProgress: (stage, progress) => {
+    if (stage === 'core-download' && progress?.total)
+      show('Downloading the engine', progress.done / progress.total);
+  },
+  onSketchMessage: (name, data) => {
+    const message = data as { text?: string; value?: number };
+    if (name === 'loading') show(message.text ?? '', message.value);
+  },
 });
 await engine.firstFrame;
 document.querySelector('#loading')?.remove();
 ```
+
+A stage without a countable total shows no percentage. Keep the bar moving, or show a count that the engine does know. Do not take a number from a timer or from the stage's place in the start.
 
 A handler that `engine.onSketchMessage` adds after `createEngine` resolves hears the setup's messages late, once the setup ends. That is too late for a progress bar.
 

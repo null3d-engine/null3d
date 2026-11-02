@@ -62,6 +62,7 @@ export type {
 	EngineMode,
 	EngineOptions,
 	RenderFallback,
+	StartupProgress,
 	StartupStage,
 } from './page/engine';
 export { createEngine } from './page/engine';

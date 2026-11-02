@@ -423,6 +423,9 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 				threeRenderer,
 				stats:
 					params.get('stats') === 'off' ? false : params.get('stats') === 'open' ? 'open' : true,
+				// The card shows the null3D engine's own start and the scene's files as they arrive.
+				onProgress: (stage, progress) => loader?.stage(stage, progress),
+				onLoading: (data) => loader?.note(data),
 			});
 			loader.hide();
 			// A stop while the engine started leaves nothing running.

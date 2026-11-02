@@ -285,7 +285,13 @@ To show a page under the drawn scene, start the engine with `createEngine({ tran
 
 ```ts
 // sketch.ts
-assets.onProgress((loaded, total) => page.post('loading', Math.min(1, loaded / Math.max(total, loaded))));
+assets.onProgress((loaded, total) =>
+  // With no length announced there is no total, so the page shows the count and no fraction.
+  page.post('loading', {
+    text: 'Downloading the scene files',
+    value: total > 0 ? loaded / Math.max(total, loaded) : undefined,
+  }),
+);
 await assets.preload(['/levels/one.json', '/tex/terrain.png', '/tex/rocks.png']);
 const level = await assets.loadJson<Level>('/levels/one.json');   // from memory: preload downloaded it
 const terrain = await assets.loadTexture('/tex/terrain.png', { wrap: 'repeat', anisotropy: 8 });
@@ -295,17 +301,27 @@ await scene.warmUp();                          // build every pipeline before th
 
 ```ts
 // page.ts
+let phase = '';
 let shown = 0;
-const show = (progress: number) => {
-  shown = Math.max(shown, progress);           // the bar never moves back
+const show = (text: string, value?: number) => {
+  if (text !== phase) { phase = text; shown = 0; } // a new phase is a new measure
+  label.textContent = text;
+  if (value === undefined) return;             // no total: hold the bar moving
+  shown = Math.max(shown, value);              // the number never moves back within a phase
   bar.style.width = `${Math.round(shown * 100)}%`;
 };
 try {
   const engine = await createEngine({
     canvas,
     sketch: new URL('./sketch.ts', import.meta.url),
-    onProgress: (stage) => { if (stage === 'core') show(0.1); },
-    onSketchMessage: (type, loaded) => { if (type === 'loading') show(0.1 + 0.8 * (loaded as number)); },
+    onProgress: (stage, progress) => {
+      if (stage === 'core-download' && progress?.total)
+        show('Downloading the engine', progress.done / progress.total);
+    },
+    onSketchMessage: (type, data) => {
+      const message = data as { text?: string; value?: number };
+      if (type === 'loading') show(message.text ?? '', message.value);
+    },
   });
   engine.onFailure((error) => showMessage(`The scene stopped: ${error.message}`));
   await engine.firstFrame;                     // the GPU has finished the first frame
@@ -315,6 +331,7 @@ try {
 }
 ```
 
+- A percentage comes from measured work. `onProgress` reports the engine core's bytes, and `assets.onProgress` reports the scene's files. A phase with no total has no percentage: keep its bar moving instead of taking a number from a timer or from the stage's place in the start. The label names the phase, so the number always measures the work that it names. The figure never falls within a phase, but it can fall across the whole start, because a later phase that counts starts a new measure.
 - `onProgress` reports `memory-wait` when the browser has refused the engine's memory for 10 s (0.2). The engine then tries for about 35 s more before E1109, so show a "taking longer than usual" message.
 - Pass `onSketchMessage` to `createEngine`. A handler added after `createEngine` resolves hears the setup's messages only once setup is over, which is too late for a progress bar.
 - Remove the loading screen when `engine.firstFrame` resolves, not when setup ends. Until the GPU finishes the first frame, the canvas is blank.

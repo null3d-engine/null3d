@@ -212,9 +212,9 @@ export interface ModelMakers {
 /**
  * Called as a download's bytes arrive and when one finishes or fails. It gets the bytes downloaded
  * so far, the bytes expected so far, and the address whose bytes moved. The second is the lengths
- * of the responses that gave one, and 0 while none has. A response with no length still counts
- * into the bytes downloaded, so a page that draws a fraction takes
- * `Math.min(1, loaded / Math.max(total, loaded))`.
+ * of the responses that gave one, and 0 while none has: a page that draws a fraction takes
+ * `Math.min(1, loaded / Math.max(total, loaded))`, and draws no fraction while the total is 0. A
+ * response with no length still counts into the bytes downloaded.
  *
  * @category api/assets
  */
