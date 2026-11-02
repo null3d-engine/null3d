@@ -1,7 +1,7 @@
 // Tree species for the woodland review page: a spruce, a pine, an aspen, an open-grown oak, a
 // multi-stem oak and a willow. Each record states the numbers that make its silhouette, its
 // branch angles and its foliage, so the review page draws the shape rather than a style.
-import { type BranchLevel, branchLevel, type Species } from '@null3d/vegetation';
+import { type BranchLevel, branchLevel, builtInSpecies, type Species } from '@null3d/vegetation';
 
 /** The level that every record starts from, which each tree overrides where it differs. */
 const BASE: BranchLevel = {
@@ -108,18 +108,18 @@ const SPRUCE: Species = {
 	crown: { shape: 'conical', start: 0.02, spread: 0.25, pull: 0.04, floor: 0.03 },
 	leaf: {
 		kind: 'needle',
-		cards: 54,
-		width: 0.11,
-		height: 0.45,
+		cards: 62,
+		width: 0.15,
+		height: 0.3,
 		cell: 'needle',
 		perCard: 26,
-		up: 0.25,
-		out: 1.1,
+		up: 1.5,
+		out: 0.55,
 		start: 0.05,
 		end: 1,
 		depth: 4,
 		cross: true,
-		fill: 0.25,
+		fill: 0.6,
 	},
 	wind: { stiffness: [0.08, 0.35, 0.65, 0.85], flutter: 0.006, frequency: 2.6 },
 	color: { bark: [0.22, 0.16, 0.12], leaf: [0.12, 0.27, 0.11], tint: 0.05, transmission: 0.24 },
@@ -1078,6 +1078,10 @@ const BEECH_COPPER: Species = {
 	seedSalt: 109,
 };
 
+/** The add-on's built-in birch, drawn against its generated reference: the reference settles shape
+ * rows only, and cannot settle its bark, its colour or its species identity. */
+const BIRCH: Species = { ...(builtInSpecies('birch') as Species), id: 'review-birch' };
+
 /** The trees of the woodland review, in the order that its page draws them. */
 export const REVIEW_TREES: readonly Species[] = [
 	SPRUCE,
@@ -1091,6 +1095,7 @@ export const REVIEW_TREES: readonly Species[] = [
 	MAPLE_RED,
 	BEECH_COPPER,
 	BLUE_CANOPY,
+	BIRCH,
 ];
 
 /** The review tree with an id, or undefined when the list has none. */

@@ -225,7 +225,9 @@ describe('the painted leaves', () => {
 		const shares: number[] = [];
 		for (let index = 0; index < LEAF_CELLS_X * LEAF_CELLS_Y; index++)
 			shares.push(cellCoverage(surface, index));
-		for (const share of shares) expect(share).toBeGreaterThan(0.05);
+		// A cell may hold a sparse shoot: a pine's fascicles are thin needles on bare twig, so the
+		// floor asks that a cell holds leaves at all, not that it is full.
+		for (const share of shares) expect(share).toBeGreaterThan(0.02);
 		// A needle spray and a frond cover less of a cell than a cluster does.
 		expect(Math.max(...shares)).toBeGreaterThan(Math.min(...shares) * 1.2);
 	});

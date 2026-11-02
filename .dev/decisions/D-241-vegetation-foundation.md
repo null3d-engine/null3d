@@ -693,11 +693,13 @@ The need to keep it is what decides where it is painted.
 **What the atlases hold.** The bark block is 768 by 512 in six cells of 256, one for each painted bark family; each cell tiles
 around and along a branch:
 stretched Voronoi plates, warped by fractal noise, with cracks between them and fibers up the trunk.
-The leaf block is 768 by 256 texels, in twelve cells of 128: seven leaf clusters (a lobed oak, a
+The leaf block is 1536 by 512 texels, in twelve cells of 256: seven leaf clusters (a lobed oak, a
 smooth entire oval, a small-toothed birch, a long narrow willow, a wavy beech, a small round aspen
-and a palmately lobed maple), a needle spray, a frond, a blade, a broad leaf and one spare. Its
-color and surface maps are 0.79 MB each before mips and about 1.0 MB each with them, so the pair
-costs about 2.0 MB, 0.67 MB more than the eight-cell block it replaced. The bark block grew to 768 by 512 in six cells: six painted families, 1.57 MB a map before mips and
+and a palmately lobed maple), a spruce's needle shoot, a pine's fascicle spray, a frond, a blade
+and a broad leaf. Its cells rose from 128 texels to 256 when the conifer needles arrived: a
+conifer's needles are a small share of a card, and at 128 texels they could not be drawn as needles
+without turning into blades. Its color and surface maps are 3.0 MB each before mips and about 4.0 MB
+each with them, so the pair costs about 8 MB, 6 MB more than the 128-texel block it replaced. The bark block grew to 768 by 512 in six cells: six painted families, 1.57 MB a map before mips and
 about 2.1 MB with them, so the pair costs about 4.2 MB against 0.35 MB for the one block it
 replaced. A species names its cell; a species that shares one says so in its record, and a leaf shape
 that no cell suits waits for a new cell rather than borrowing a neighbour's. A leaf comes from an outline with veins written into a height field,

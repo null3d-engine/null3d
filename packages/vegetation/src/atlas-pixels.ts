@@ -37,7 +37,7 @@ export const BARK_HEIGHT = BARK_CELLS_Y * BARK_SIZE;
 export const LEAF_CELLS_X = 6;
 export const LEAF_CELLS_Y = 2;
 /** How many texels one leaf cell is across and down. */
-export const LEAF_CELL = 128;
+export const LEAF_CELL = 256;
 /** The leaf block's size in texels. */
 export const LEAF_WIDTH = LEAF_CELLS_X * LEAF_CELL;
 export const LEAF_HEIGHT = LEAF_CELLS_Y * LEAF_CELL;
@@ -223,7 +223,7 @@ const FAMILIES = {
 		lobeDepth: 0.2,
 		veins: 3,
 	},
-	needle: { profile: 1, aspect: 0.11, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 1 },
+	needle: { profile: 1, aspect: 0.14, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 1 },
 	fascicle: { profile: 1, aspect: 0.06, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 1 },
 	blade: { profile: 1, aspect: 0.06, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 3 },
 	hosta: {
@@ -668,25 +668,29 @@ function clumpCell(seed: number): LeafCellPainter {
 }
 
 /**
- * A spruce shoot: short needles in two ranks along a thin twig, standing out near its base and
- * leaning forward toward its tip. The twig shows between the needles, so a card reads as a spray
- * rather than as a blade with a serrated edge.
+ * A spruce shoot: a thin woody twig with short needles in two ranks, standing out from it and
+ * leaning forward toward its tip. The needle spacing is closer than a needle's width, so the ranks
+ * overlap into a spray that stands as foliage at a distance and shows its needles close up.
  */
 function shootCell(seed: number): LeafCellPainter {
 	const leaves: PlacedLeaf[] = [];
-	const count = 72;
+	const count = 120;
 	// The twig bows a little, so its silhouette is not a ruled line.
 	const bow = 0.012;
 	for (let i = 0; i < count; i++) {
 		const key = seed * 131 + i;
 		const f = (i + 0.5) / count;
+		// Every third needle fills the shoot's middle, and the rest make its two ranks.
+		const rank = i % 3;
 		const side = i % 2 === 0 ? -1 : 1;
-		const along = 0.04 + 0.92 * f + (random2(key, 7) - 0.5) * 0.014;
-		// A spruce's needles lie all round its shoot, so a card seen from one side shows two ranks.
-		// Each rank leans out from the twig, and the needles near the tip lean further forward.
-		const angle = side * (1.24 - 0.4 * f + (random2(key, 6) - 0.5) * 0.24);
-		const length = (0.34 - 0.1 * Math.abs(2 * f - 1)) * (0.86 + 0.28 * random2(key, 4));
-		const baseX = 0.5 + bow * Math.sin(Math.PI * f) + (random2(key, 5) - 0.5) * 0.008;
+		const along = 0.02 + 0.96 * f + (random2(key, 7) - 0.5) * 0.01;
+		const lean = rank === 2 ? 0.45 + 0.3 * random2(key, 6) : 1.38 + 0.16 * (random2(key, 6) - 0.5);
+		const angle = side * lean;
+		const length =
+			(0.18 - 0.05 * Math.abs(2 * f - 1)) *
+			(0.8 + 0.36 * random2(key, 4)) *
+			(rank === 2 ? 0.62 : 1);
+		const baseX = 0.5 + bow * Math.sin(Math.PI * f) + (random2(key, 5) - 0.5) * 0.012;
 		leaves.push(placeLeaf(key, FAMILIES.needle, baseX, along, angle, length));
 	}
 	return leafSpray(leaves, bow);
@@ -711,7 +715,7 @@ function fascicleCell(seed: number): LeafCellPainter {
 			const side = needle === 0 ? -1 : 1;
 			// The two needles of a bunch stay close at the base and part along their length.
 			const angle = turn + side * (0.34 + 0.34 * random2(sub, 6));
-			const length = (0.46 - 0.16 * f) * (0.9 + 0.2 * random2(sub, 4));
+			const length = (0.13 - 0.045 * f) * (0.9 + 0.2 * random2(sub, 4));
 			leaves.push(placeLeaf(sub, FAMILIES.fascicle, baseX, baseY, angle, length));
 		}
 	}
