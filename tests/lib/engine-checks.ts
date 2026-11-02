@@ -315,7 +315,7 @@ export function engineProblems(
 		problems.push('the time the GPU finished the first frame is missing');
 	if (!(stats.load.probeMs > 0 && stats.load.coreMs > 0))
 		problems.push('the probe or core load time is missing');
-	if (result.stages.join(',') !== 'core,sketch,first-frame')
+	if (result.stages.join(',') !== 'core-download,core,sketch,first-frame')
 		problems.push(`the start reported the stages ${result.stages.join(', ')}`);
 	if (result.messages.join(',') !== 'setup,count')
 		problems.push(`the page received the sketch's messages ${result.messages.join(', ')}`);

@@ -340,13 +340,16 @@ export interface EngineOptions {
 	 */
 	expectedObjects?: number;
 	/**
-	 * Called as the start reaches each stage, in this order: `core` once the engine core is compiled
-	 * and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the
-	 * GPU has finished the first frame. Before `core`, `memory-wait` comes when the browser has
-	 * refused the engine's memory for 10 seconds. The engine then tries for about 35 seconds more
-	 * before it fails with E1109.
+	 * Called as the start reaches each stage, in this order: `core-download` as the engine core's
+	 * file downloads, with the bytes that have arrived; `core` once the engine core is compiled and
+	 * the GPU paths are tested; `sketch` once the sketch's setup has run; and `first-frame` once the
+	 * GPU has finished the first frame. Before `core`, `core-download` reports the core file's bytes,
+	 * and `memory-wait` comes when the browser has refused the engine's memory for 10 seconds. The
+	 * engine then tries for about 35 seconds more before it fails with E1109. `progress` gives a
+	 * stage's figures while it has some: the bytes of a download, measured against the length that
+	 * the server announced.
 	 */
-	onProgress?: (stage: StartupStage) => void;
+	onProgress?: (stage: StartupStage, progress?: StartupProgress) => void;
 	/**
 	 * Receives the messages the sketch sends with `ctx.page.post`, from the start of the sketch's setup.
 	 * Use it for progress that the sketch reports while it loads. `engine.onSketchMessage` adds more
@@ -428,7 +431,24 @@ export interface EngineOptions {
  *
  * @category api/engine
  */
-export type StartupStage = 'memory-wait' | 'core' | 'sketch' | 'first-frame';
+export type StartupStage = 'core-download' | 'memory-wait' | 'core' | 'sketch' | 'first-frame';
+
+/**
+ * What a start stage has done, as `onProgress` reports it.
+ *
+ * @category api/engine
+ */
+export interface StartupProgress {
+	/** How much of the stage's work is done, in `unit`s. */
+	done: number;
+	/**
+	 * How much the stage expects, in `unit`s, or 0 when it knows no total: a response that
+	 * announced no length, or a stage whose work is not counted. A page shows no fraction for it.
+	 */
+	total: number;
+	/** What `done` and `total` count. */
+	unit: 'bytes';
+}
 
 /**
  * The GPU path the engine chose, and what it offers.
@@ -1663,9 +1683,9 @@ async function startEngine(
 	const { signal } = options;
 	// A page's progress handler that throws is the page's error: the console shows it, and the
 	// start goes on.
-	const onProgress = (stage: StartupStage) => {
+	const onProgress = (stage: StartupStage, progress?: StartupProgress) => {
 		try {
-			options.onProgress?.(stage);
+			options.onProgress?.(stage, progress);
 		} catch (error) {
 			console.error(error);
 		}
@@ -1733,7 +1753,14 @@ async function startEngine(
 	const sketchOnPage = sketchThread === 'main';
 	let coreMs = 0;
 	const coreLoad = awaitLater(
-		loadCore(build, maximumMiB, () => onProgress('memory-wait')).then((loaded) => {
+		loadCore(
+			build,
+			maximumMiB,
+			() => onProgress('memory-wait'),
+			// The core's bytes are a stage of their own, so a page's bar measures them apart from
+			// the scene's files and names what it counts.
+			(done, total) => onProgress('core-download', { done, total, unit: 'bytes' }),
+		).then((loaded) => {
 			coreMs = performance.now() - startedAt;
 			return loaded;
 		}),
