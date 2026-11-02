@@ -123,14 +123,22 @@ export type LeafCell = LeafCellName;
  * @category api/vegetation
  */
 export const LEAF_CELLS_BY_KIND: Readonly<Record<LeafCell, readonly [number, number]>> = {
+	// Six cluster outlines and the maple's palmate one, in the first row and the second row's first
+	// cell: a lobed oak, a smooth entire oval, a small-toothed birch, a long narrow willow, a wavy
+	// beech, a small round aspen and a palmately lobed maple.
 	'cluster-a': [0, 0],
 	'cluster-b': [1, 0],
 	'cluster-c': [2, 0],
 	'cluster-d': [3, 0],
-	needle: [0, 1],
-	frond: [1, 1],
-	blade: [2, 1],
-	broad: [3, 1],
+	'cluster-e': [4, 0],
+	'cluster-f': [5, 0],
+	'cluster-g': [0, 1],
+	needle: [1, 1],
+	frond: [2, 1],
+	blade: [3, 1],
+	broad: [4, 1],
+	// A spare round cell that no species names yet; the next leaf shape has a place to stand.
+	'cluster-h': [5, 1],
 };
 
 /**
@@ -164,7 +172,17 @@ export function leafCellFor(species: Species): LeafCell {
 		hash = Math.imul(hash, 16777619);
 	}
 	return (
-		(['cluster-a', 'cluster-b', 'cluster-c', 'cluster-d'] as const)[hash >>> 30] ?? 'cluster-a'
+		(
+			[
+				'cluster-a',
+				'cluster-b',
+				'cluster-c',
+				'cluster-d',
+				'cluster-e',
+				'cluster-f',
+				'cluster-g',
+			] as const
+		)[hash % 7] ?? 'cluster-a'
 	);
 }
 

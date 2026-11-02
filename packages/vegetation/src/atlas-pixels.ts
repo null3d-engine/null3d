@@ -26,7 +26,7 @@ export interface AtlasPixels {
 /** How many texels the bark block is across and down. It tiles, so it holds one cell. */
 export const BARK_SIZE = 256;
 /** How many cells the leaf block holds across and down. */
-export const LEAF_CELLS_X = 4;
+export const LEAF_CELLS_X = 6;
 export const LEAF_CELLS_Y = 2;
 /** How many texels one leaf cell is across and down. */
 export const LEAF_CELL = 128;
@@ -126,6 +126,10 @@ interface LeafFamily {
 	/** How many lobes each edge carries, and how deep their sinuses cut. */
 	readonly lobes: number;
 	readonly lobeDepth: number;
+	/** How many lobes radiate from the leaf's base; absent or zero for an outline along the midrib. */
+	readonly palmate?: number;
+	/** How deep the sinuses of a palmate leaf cut, as a share of its reach. */
+	readonly sinus?: number;
 	/** How many veins each half of the blade carries. */
 	readonly veins: number;
 }
@@ -159,6 +163,39 @@ const FAMILIES = {
 		lobes: 0,
 		lobeDepth: 0,
 		veins: 5,
+	},
+	// A wavy margin: many shallow teeth, so the edge undulates rather than cutting.
+	wavy: {
+		profile: 0.78,
+		aspect: 0.3,
+		teeth: 22,
+		toothDepth: 0.035,
+		lobes: 0,
+		lobeDepth: 0,
+		veins: 6,
+	},
+	// A maple's leaf: five lobes whose sinuses cut towards the base, so the outline is a hand rather
+	// than a blade with wavy edges.
+	palmate: {
+		profile: 1,
+		aspect: 0.46,
+		teeth: 0,
+		toothDepth: 0,
+		lobes: 0,
+		lobeDepth: 0,
+		veins: 5,
+		palmate: 5,
+		sinus: 0.5,
+	},
+	// A small round leaf, nearly as wide as it is long, on a flattened stalk.
+	round: {
+		profile: 0.55,
+		aspect: 0.34,
+		teeth: 0,
+		toothDepth: 0,
+		lobes: 0,
+		lobeDepth: 0,
+		veins: 4,
 	},
 	willow: {
 		profile: 1.15,
@@ -202,6 +239,9 @@ interface LeafShape extends LeafFamily {
 	/** The brightness of the leaf's own colour, and how much that brightness varies. */
 	readonly brightness: number;
 	readonly variation: number;
+	/** The palmate lobes, or zero for a leaf measured across its midrib, and their sinus depth. */
+	readonly palmate: number;
+	readonly sinus: number;
 	/** How much light the leaf's body lets through. */
 	readonly thickness: number;
 }
@@ -222,6 +262,8 @@ function leafShape(seed: number, family: LeafFamily): LeafShape {
 		veinStrength: 0.5 + 0.5 * at(9),
 		brightness: 0.55 + 0.55 * at(10),
 		variation: (at(11) * 2 - 1) * 0.75,
+		palmate: family.palmate ?? 0,
+		sinus: family.sinus ?? 0.45,
 		thickness: 0.55 + 0.3 * at(12),
 	};
 }
@@ -338,15 +380,36 @@ function leafSpotAt(leaf: PlacedLeaf, cardX: number, cardY: number): LeafSpot {
 		dx * leaf.cos -
 		dy * leaf.sin -
 		leaf.shape.bend * leaf.length * Math.sin(Math.PI * clamp(t, 0, 1));
-	const width = leafWidth(leaf, t, across);
-	let distance = Math.max(Math.abs(across) - width, -along, along - leaf.length);
+	let distance: number;
+	let scale: number;
+	if (leaf.shape.palmate > 0) {
+		// A palmate leaf's outline is a reach from its base at each angle, so its lobes radiate
+		// rather than run along the midrib. Each lobe peaks where the wave peaks, and a sinus
+		// between two lobes cuts the reach by the leaf's own depth.
+		const reachAngle = Math.atan2(across, Math.max(1e-6, along));
+		const spread = 1.2;
+		const u = clamp((reachAngle + spread) / (2 * spread), 0, 1);
+		const wave = 0.5 + 0.5 * Math.cos(2 * Math.PI * (leaf.shape.palmate - 1) * u);
+		const reach =
+			leaf.length *
+			(1 - 0.22 * (Math.abs(reachAngle) / spread) ** 2) *
+			(1 - leaf.shape.sinus * (1 - wave));
+		// Beyond the palmate spread there is no leaf, so a sideways point cannot take the end lobe's
+		// reach for a base.
+		distance = Math.abs(reachAngle) > spread ? 1 : Math.hypot(along, across) - Math.max(0, reach);
+		scale = Math.max(1e-6, leaf.length * leaf.shape.aspect);
+	} else {
+		const width = leafWidth(leaf, t, across);
+		distance = Math.max(Math.abs(across) - width, -along, along - leaf.length);
+		scale = width;
+	}
 	const bite = leaf.bite;
 	if (bite !== null)
 		distance = Math.max(
 			distance,
 			bite[2] - Math.hypot(across - bite[1], along - bite[0] * leaf.length),
 		);
-	return { t, across: width > 1e-6 ? across / width : 2, distance };
+	return { t, across: scale > 1e-6 ? across / scale : 2, distance };
 }
 
 /** How far a point of a card lies outside one leaf, which the cell's painter compares. */
@@ -606,7 +669,7 @@ function broadCell(seed: number): LeafCellPainter {
 	);
 }
 
-/** The eight cells of the leaf block, in the order that the atlas lays them out. */
+/** The twelve cells of the leaf block, in the order that the atlas lays them out. */
 function leafCells(): LeafCellPainter[] {
 	return [
 		// Four sprays of broadleaves, each a different outline: an oak's lobes, a beech's fine teeth, a
@@ -660,6 +723,44 @@ function leafCells(): LeafCellPainter[] {
 			}),
 			0.03,
 		),
+		leafSpray(
+			sprayLeaves(71, FAMILIES.wavy, {
+				count: 30,
+				from: 0.04,
+				to: 0.9,
+				lean: [0.45, 1.35],
+				turn: 0.75,
+				length: [0.32, 0.22],
+				spread: 0.17,
+			}),
+			0.02,
+		),
+		leafSpray(
+			sprayLeaves(79, FAMILIES.round, {
+				count: 26,
+				from: 0.05,
+				to: 0.88,
+				lean: [0.5, 1.3],
+				turn: 0.7,
+				length: [0.3, 0.22],
+				spread: 0.16,
+			}),
+			0.025,
+		),
+		// A maple's palmate leaf, whose lobes radiate from its base rather than running along the
+		// midrib.
+		leafSpray(
+			sprayLeaves(113, FAMILIES.palmate, {
+				count: 20,
+				from: 0.04,
+				to: 0.88,
+				lean: [0.5, 1.3],
+				turn: 0.6,
+				length: [0.34, 0.24],
+				spread: 0.2,
+			}),
+			0.03,
+		),
 		// A conifer's needle spray, a fern's frond, a clump of grass blades and a broad leaf. The
 		// needles fan out from the twig at their own angles, so a card reads as a spray and not as a
 		// row of teeth.
@@ -688,6 +789,20 @@ function leafCells(): LeafCellPainter[] {
 		),
 		clumpCell(73),
 		broadCell(83),
+		// A cell that no species names yet. It holds leaves rather than nothing, so a mip level and a
+		// normal read a full cell, and the next leaf shape has a place to stand.
+		leafSpray(
+			sprayLeaves(97, FAMILIES.round, {
+				count: 24,
+				from: 0.05,
+				to: 0.86,
+				lean: [0.5, 1.3],
+				turn: 0.7,
+				length: [0.28, 0.2],
+				spread: 0.16,
+			}),
+			0.025,
+		),
 	];
 }
 

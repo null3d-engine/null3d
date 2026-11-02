@@ -133,6 +133,10 @@ export type LeafCellName =
 	| 'cluster-b'
 	| 'cluster-c'
 	| 'cluster-d'
+	| 'cluster-e'
+	| 'cluster-f'
+	| 'cluster-g'
+	| 'cluster-h'
 	| 'needle'
 	| 'frond'
 	| 'blade'
@@ -471,13 +475,17 @@ export function speciesProblems(species: Species): string[] {
 				'cluster-b',
 				'cluster-c',
 				'cluster-d',
+				'cluster-e',
+				'cluster-f',
+				'cluster-g',
+				'cluster-h',
 				'needle',
 				'frond',
 				'blade',
 				'broad',
 			].includes(species.leaf.cell)
 		)
-			problems.push(`${at}.cell is not one of the eight leaf cells.`);
+			problems.push(`${at}.cell is not one of the leaf cells.`);
 		if (!Number.isInteger(species.leaf.cards) || species.leaf.cards < 1)
 			problems.push(`${at}.cards must be a whole number from 1.`);
 		positive(species.leaf.width, `${at}.width`);
