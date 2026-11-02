@@ -222,6 +222,7 @@ export function runNull3dPage(
 			sketch: sketchUrl,
 			...(maxPixelRatio !== undefined && { maxPixelRatio }),
 			antialias: options.antialias ?? undefined,
+			...(options.cloudSteps !== null && { cloudSteps: options.cloudSteps }),
 			shadowCascades: options.shadowCascades ?? undefined,
 			shadowMapSize: options.shadowMapSize ?? undefined,
 			...(params.has('tileShadows') && { pointLightShadows: true, shadowTiles: 24 }),

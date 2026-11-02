@@ -5,7 +5,7 @@ import { readChoice, readRunOptions } from './options';
 describe('readRunOptions', () => {
 	const read = (query: string) => readRunOptions(new URLSearchParams(query));
 
-	test('reads hold, demo, keep, the count, the warm-up and measured seconds, the soak, the shadow cascades, the far cascade interval, the governor, the anti-aliasing mode and the pixel ratio', () => {
+	test('reads hold, demo, keep, the count, the warm-up and measured seconds, the soak, the shadow cascades, the far cascade interval, the governor, the anti-aliasing mode, the cloud step count and the pixel ratio', () => {
 		expect(read('')).toEqual({
 			hold: null,
 			demo: false,
@@ -21,6 +21,7 @@ describe('readRunOptions', () => {
 			shadowFilter: null,
 			shadowCascadeBlend: null,
 			antialias: null,
+			cloudSteps: null,
 			maxPixelRatio: null,
 			governor: true,
 			renderScale: null,
@@ -40,6 +41,7 @@ describe('readRunOptions', () => {
 			shadowFilter: null,
 			shadowCascadeBlend: null,
 			antialias: null,
+			cloudSteps: null,
 			maxPixelRatio: null,
 			governor: true,
 			renderScale: null,
@@ -55,6 +57,8 @@ describe('readRunOptions', () => {
 			antialias: 'fxaa',
 			maxPixelRatio: 1.5,
 		});
+		expect(read('?cloudSteps=0').cloudSteps).toBe(0);
+		expect(read('?cloudSteps=64').cloudSteps).toBe(64);
 		expect(read('?seconds=8&measure=40')).toMatchObject({ warmupSeconds: 8, measureSeconds: 40 });
 		expect(read('?measure=40')).toMatchObject({
 			warmupSeconds: WARMUP_SECONDS,
@@ -104,6 +108,10 @@ describe('readRunOptions', () => {
 			'renderScale=0.2',
 			'renderScale=1.5',
 			'renderScale=x',
+			'cloudSteps=-1',
+			'cloudSteps=65',
+			'cloudSteps=1.5',
+			'cloudSteps=x',
 		]) {
 			expect(() => read(query)).toThrow(/is not valid: use/);
 		}
