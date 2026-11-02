@@ -682,6 +682,9 @@ pub(crate) const REBUILD_BYTES_PER_SOURCE: usize = 64;
 
 /// The bytes of an ordinary block of an [`UploadArena`]. A larger copy takes a block of its own size.
 const UPLOAD_BLOCK: usize = 256 << 10;
+/// The share of a large copy, as its divisor, that a new block for it holds to spare, so the same
+/// copy a little larger in a later frame still fits.
+const LARGE_BLOCK_SPARE: usize = 8;
 /// The frames with no large copy after which an arena gives its large blocks back. Scenes that change
 /// often keep them, so those frames take no new block.
 const LARGE_BLOCK_FRAMES: u32 = 30;
@@ -754,8 +757,13 @@ impl UploadArena {
         self.before + self.blocks.get(self.at).map_or(0, Vec::len)
     }
 
-    /// Makes the block at `at` one with room for `padded` more bytes: the present one, a later
-    /// empty one, or a new one. Reports a heap that cannot give a new one.
+    /// Makes the block at `at` one with room for `padded` more bytes: the present one, the smallest
+    /// later empty one that holds them, or a new one. Reports a heap that cannot give a new one.
+    ///
+    /// A large copy whose size changes from frame to frame, such as a large blended batch's sorted
+    /// rows while the camera moves, would otherwise take a new block whenever it outgrows the
+    /// blocks it had, and the frames would keep every older one. So a new large block takes room to
+    /// spare, and the empty large blocks that are too small for the copy go back to the heap.
     fn make_room(&mut self, padded: usize) -> Result<(), RecordError> {
         if let Some(block) = self.blocks.get(self.at)
             && block.capacity() - block.len() >= padded
@@ -769,19 +777,31 @@ impl UploadArena {
             self.at + 1
         };
         self.at = next;
-        if let Some(found) =
-            (next..self.blocks.len()).find(|&k| self.blocks[k].capacity() >= padded)
+        if let Some(found) = (next..self.blocks.len())
+            .filter(|&k| self.blocks[k].capacity() >= padded)
+            .min_by_key(|&k| self.blocks[k].capacity())
         {
             self.blocks.swap(next, found);
             return Ok(());
         }
+        let mut k = next;
+        while k < self.blocks.len() {
+            if self.blocks[k].capacity() > UPLOAD_BLOCK {
+                self.blocks.remove(k);
+            } else {
+                k += 1;
+            }
+        }
         let refused = |_| RecordError::OutOfMemory {
             bytes: u32::try_from(padded).unwrap_or(u32::MAX),
         };
+        let size = if padded > UPLOAD_BLOCK {
+            padded.saturating_add(padded / LARGE_BLOCK_SPARE)
+        } else {
+            UPLOAD_BLOCK
+        };
         let mut block = Vec::new();
-        block
-            .try_reserve_exact(padded.max(UPLOAD_BLOCK))
-            .map_err(refused)?;
+        block.try_reserve_exact(size).map_err(refused)?;
         self.blocks.try_reserve(1).map_err(refused)?;
         self.blocks.insert(next, block);
         Ok(())
@@ -4808,6 +4828,41 @@ mod tests {
                 .blocks
                 .iter()
                 .all(|block| block.capacity() <= UPLOAD_BLOCK)
+        );
+    }
+
+    /// Frames that make the same large copies at sizes that change a little from frame to frame,
+    /// as a large blended batch's sorted rows do while the camera moves, keep a bounded room: the
+    /// arena reuses its large blocks rather than adding one for each new size.
+    #[test]
+    fn an_upload_arena_keeps_bounded_room_for_large_copies_whose_sizes_change() {
+        let mut arena = UploadArena::default();
+        arena.begin_frame().unwrap();
+        let mut most = 0;
+        for frame in 0u32..200 {
+            // Two large copies whose sizes wander over a few percent, in an order that changes.
+            let wobble = |seed: u32| {
+                let hash = (frame ^ seed).wrapping_mul(0x9E37_79B1).rotate_left(13);
+                (hash % 1024) as usize * 64
+            };
+            let rows = 5 * UPLOAD_BLOCK + wobble(0x51);
+            let changed = 3 * UPLOAD_BLOCK + wobble(0xA7);
+            let sizes = if frame % 3 == 0 {
+                [changed, rows]
+            } else {
+                [rows, changed]
+            };
+            for size in sizes {
+                arena.push_zeroed(size).unwrap();
+                arena.push(&[1u8; 600]).unwrap();
+            }
+            most = most.max(arena.len());
+            arena.begin_frame().unwrap();
+        }
+        let reserved = arena.memory_use().reserved as usize;
+        assert!(
+            reserved <= most * 3 / 2,
+            "{reserved} bytes reserved for frames of at most {most}"
         );
     }
 
