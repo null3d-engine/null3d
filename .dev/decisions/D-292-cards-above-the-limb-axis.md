@@ -47,6 +47,14 @@ the limb ends, so the crown is a shell of clumps on wood rather than a filled do
 directly against the mass the same review asked for, and it is a decision about which of the
 reference's two qualities matters more, not a record value.
 
+## What this episode taught
+
+Three plausible fixes went by before anything was measured. Cards above the limb line changed the fill by under a point and showed no limb. A shell of clumps would have traded the crown's mass for limbs that are still too small to see. A change to the crown would have answered nothing, because the crown was not the problem. The measurement that found the cause took ten minutes: the render's limbs are eight centimetres thick inside a thirteen-metre crown, where the reference's leave the trunk at nearly its own thickness.
+
+So the rule: when a shape does not read against its reference, measure the geometry against the reference's before changing the foliage. Cards, fill and density are the cheapest levers to reach for and the easiest to blame.
+
+The reference pictures decode normally; an early report that they could not was my page context, not the files. A dark-run mask on a photograph returns too many fragments to measure a trunk reliably, and the reference ratios in D-291's sibling record are estimates for that reason.
+
 ## Consequences
 
 No code remains: the field, its validation and its placement were removed. The clump oak keeps the
