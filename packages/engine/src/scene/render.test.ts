@@ -546,7 +546,7 @@ describe('render passes', () => {
 			C.EFFECT_DEPTH,
 			C.PASS_SOURCE_OUTLINE_MASK,
 		]);
-		const [values, handles] = call.slice(14) as [number[], number[]];
+		const [values, handles] = call.slice(15) as [number[], number[]];
 		expect(values.slice(0, 2)).toEqual([2, 3]);
 		// The texture that the option leaves out samples as white.
 		expect(values[30]).toBe(-1);
