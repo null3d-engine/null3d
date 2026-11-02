@@ -271,7 +271,7 @@ const ASPEN: Species = {
 			curve: 8,
 			curveVariance: 4,
 			taper: 0.018,
-			start: 0.25,
+			start: 0.75,
 			end: 1,
 			sides: 5,
 			segments: 5,
@@ -307,7 +307,7 @@ const ASPEN: Species = {
 			segments: 2,
 		}),
 	],
-	crown: { shape: 'spherical', start: 0.3, spread: 0.48, pull: 0.2, floor: 0.15, fillTop: 1 },
+	crown: { shape: 'spherical', start: 0.47, spread: 0.48, pull: 0.2, floor: 0.15, fillTop: 1 },
 	leaf: {
 		kind: 'cluster',
 		cell: 'cluster-f',
