@@ -106,7 +106,12 @@ const git = (...args: string[]) =>
 /** The roots that hold a build of the engine, its tests, its demos and its published pages. */
 const CODE_ROOTS = ['crates/', 'packages/', 'tests/', 'examples/', 'bench/', 'docs/'];
 
-/** Every task ID that a kept commit's `Task:` trailer names, once that commit built something. */
+/**
+ * Every task ID that a kept commit's `Task:` trailer names, once that commit built something. The
+ * count reads every commit's trailer block, with no dateline: it reports which tasks the branch
+ * names in a footer that git reads, and a tick that rests on a footer git cannot see is a tick that
+ * nothing downstream can carry.
+ */
 function landedTasks(): Set<string> {
 	// A record-only commit claims a task without building any of it, so it must not read as work
 	// that landed with its evidence still owed: that reads to a maintainer as a finished feature

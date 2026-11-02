@@ -18,7 +18,13 @@ import { explainedFiles, growthReason, namesFile, sizeGrowthProblems } from './c
 import { checkCommitMessage as checkSkills, skillBearingFiles } from './check-skills-ack';
 import { knownTaskIds, TASK_ID_SHAPE, TASK_RULE_SINCE, taskProblem } from './check-task';
 import { keptCommits } from './check-trailers';
-import { checkAck, findAckValue, findAckValues } from './commit-ack';
+import {
+	checkAck,
+	findAckValue,
+	findAckValues,
+	readsTrailerBlock,
+	TRAILER_BLOCK_SINCE,
+} from './commit-ack';
 
 describe('docBearingFiles', () => {
 	it('flags engine code, package source and binaries, skills, tools, benchmarks and commands', () => {
@@ -69,6 +75,48 @@ describe('rules that gained paths later', () => {
 		expect(
 			checkAck(message, ['packages/engine/src/index.ts'], DOCS_ACK_RULE, '2026-01-01').ok,
 		).toBe(false);
+	});
+});
+
+describe('the trailer block dateline', () => {
+	const files = ['packages/engine/src/scene.ts'];
+	const before = '2026-11-02T14:00:00+08:00';
+	const after = '2026-11-02T16:00:00+08:00';
+	// A footer in the middle of the body: the older reading finds it, the block reading does not.
+	const midBody =
+		'feat(x): add thing\n\nDocs-Checked: re-read docs/a.md\n\nAnd a closing paragraph of prose.';
+	const proper =
+		'feat(x): add thing\n\nWhy it changed.\n\nDocs-Checked: re-read docs/a.md\nTask: none';
+
+	it('reads a commit authored before the dateline the older way', () => {
+		expect(Date.parse(TRAILER_BLOCK_SINCE)).toBeGreaterThan(Date.parse(before));
+		expect(readsTrailerBlock(before)).toBe(false);
+		expect(checkAck(midBody, files, DOCS_ACK_RULE, before).ok).toBe(true);
+	});
+
+	it('holds the same message to the trailer block after the dateline', () => {
+		expect(readsTrailerBlock(after)).toBe(true);
+		const result = checkAck(midBody, files, DOCS_ACK_RULE, after);
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain('no Docs-Checked: trailer');
+	});
+
+	it('holds a commit being made now to the trailer block', () => {
+		expect(readsTrailerBlock()).toBe(true);
+		expect(checkAck(midBody, files, DOCS_ACK_RULE).ok).toBe(false);
+	});
+
+	it('passes a proper block on either side of the dateline', () => {
+		expect(checkAck(proper, files, DOCS_ACK_RULE, before).ok).toBe(true);
+		expect(checkAck(proper, files, DOCS_ACK_RULE, after).ok).toBe(true);
+	});
+
+	it('finds an old GPU check that the block reading cannot see', () => {
+		const message =
+			'feat(x): draw it\n\nGPU-Checked: s4 medium 4.1 to 4.2 ms on the Mac\n\nAnd a closing line.';
+		const commit = { sha: 'a'.repeat(40), message, files: ['packages/engine/src/render/draw.ts'] };
+		expect(gpuCheckProblem([{ ...commit, authoredAt: before }])).toBeNull();
+		expect(gpuCheckProblem([{ ...commit, authoredAt: after }])).not.toBeNull();
 	});
 });
 

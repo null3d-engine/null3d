@@ -255,7 +255,7 @@ export function analyseMerge(
 	const [committedAt = '', ...body] = git(['log', '-1', '--format=%cI%n%B', sha], cwd).split('\n');
 	if (Date.parse(committedAt) < Date.parse(since)) return null;
 	const message = body.join('\n');
-	const trailer = findAckValue(effectiveMessage(message), MERGE_EDIT_TRAILER);
+	const trailer = findAckValue(effectiveMessage(message), MERGE_EDIT_TRAILER, committedAt);
 
 	// Exit status 1 means the automatic merge had conflicts; the tree then holds the markers.
 	const out = git(

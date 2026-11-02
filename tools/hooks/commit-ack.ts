@@ -214,16 +214,40 @@ export function trailers(message: string): Trailer[] {
 	return found;
 }
 
-/** Every value of the trailer in the message's trailer block, in order, the key in any case. */
-export function findAckValues(message: string, trailer: string): string[] {
+/**
+ * The moment the commit checks began to read trailers from the block that ends a message. A commit
+ * authored before it is read the older way, which finds a footer on any line, because a rule cannot
+ * fail a commit that was made before the rule existed (AGENTS.md, "Commit gates").
+ */
+export const TRAILER_BLOCK_SINCE = '2026-11-02T15:00:00+08:00';
+
+/** True when a commit authored at `authoredAt` is read from its trailer block. */
+export function readsTrailerBlock(authoredAt?: string): boolean {
+	return authoredAt === undefined || Date.parse(authoredAt) >= Date.parse(TRAILER_BLOCK_SINCE);
+}
+
+/** The older reading, for a commit made before the checks read the block: a footer on any line. */
+function valuesAnywhere(message: string, trailer: string): string[] {
+	return [...message.matchAll(new RegExp(`^${trailer}:[ \\t]*(.*)$`, 'gim'))].map((match) =>
+		(match[1] ?? '').trim(),
+	);
+}
+
+/**
+ * Every value of the trailer, in order, the key in any case. A commit authored before the trailer
+ * block became the rule is read the older way, so its author is not held to a rule that did not
+ * exist; a commit being made now omits `authoredAt` and is held to it.
+ */
+export function findAckValues(message: string, trailer: string, authoredAt?: string): string[] {
+	if (!readsTrailerBlock(authoredAt)) return valuesAnywhere(message, trailer);
 	const key = trailer.toLowerCase();
 	return trailers(message)
 		.filter((entry) => entry.key.toLowerCase() === key)
 		.map((entry) => entry.value);
 }
 
-export function findAckValue(message: string, trailer: string): string | null {
-	return findAckValues(message, trailer)[0] ?? null;
+export function findAckValue(message: string, trailer: string, authoredAt?: string): string | null {
+	return findAckValues(message, trailer, authoredAt)[0] ?? null;
 }
 
 /** True when the value is a rubber stamp rather than the record of a real pass. */
@@ -233,7 +257,8 @@ export function isBareAck(value: string): boolean {
 
 /**
  * Whether a commit message discharges the rule for the changed files. `authoredAt` is the commit's
- * author time, which decides the paths the rule covered then; a commit being made now omits it.
+ * author time, which decides the paths and the trailer reading that the rule covered then; a commit
+ * being made now omits it.
  */
 export function checkAck(
 	rawMessage: string,
@@ -247,7 +272,7 @@ export function checkAck(
 	const bearing = bearingFiles(changedFiles, rulePatterns(rule, authoredAt));
 	if (bearing.length === 0) return { ok: true };
 
-	const value = findAckValue(message, rule.trailer);
+	const value = findAckValue(message, rule.trailer, authoredAt);
 	if (value === null) return { ok: false, error: rule.missingMessage(bearing) };
 	if (isBareAck(value)) return { ok: false, error: rule.emptyMessage(value) };
 	return { ok: true };
