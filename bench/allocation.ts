@@ -405,12 +405,16 @@ const PROBE_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = 
  * Each budget leaves room for the run-to-run noise above the place's steady figure, and less than a
  * boxed fraction above it, so a new per-frame object fails the run while a sample that varies by a
  * few bytes still passes. CI runs the switch on each GPU path.
+ *
+ * The idle place also holds the browser's message objects that settle an answer between tasks,
+ * which a run with the field adds to the browser's own work between frames. Its budget leaves room
+ * for them beside that work.
  */
 export const WIND_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {
 		'(anonymous) null3d/addons.ts': 36,
+		'(IDLE)': 64,
 		'read src/wind.ts': 20,
-		'ask src/field.ts': 24,
 		'fillRequest src/field-layout.ts': 12,
 		'turn src/wind.ts': 16,
 		'write src/wind.ts': 24,
@@ -515,6 +519,17 @@ const CALL_BUDGETS: Readonly<Record<string, number>> = { '(IDLE)': 48, '(JS)': 2
  * and SwiftShader runs with `--splats` and the task asked about once a frame, with room above them.
  * The add-on's frame step makes no array and no number object.
  *
+ * The wind's field sends its ask from `send`, whose `then` makes a promise's record on the sketch's
+ * thread, and a fast runner charges that record, and the loader's async call's promise, to `ask`
+ * instead, where the browser inlines the call. Both places are judged per call as well: CI's
+ * SwiftShader read 35.0 bytes a frame at `send`, 66 an ask, and a run on this Mac's SwiftShader
+ * charged the same call to `ask` at 95.1 bytes a frame, 191 an ask. On this Mac's GPU the browser
+ * keeps the `then` record in a place of its own, `then (built-in)`, at 40.6 bytes a frame and 82 an
+ * ask. The answer's message makes more objects for the field's transferred array than for the
+ * splats' answer: the Mac's GPU reads 309.3 bytes a call at the handler, where CI's SwiftShader
+ * reads 217.7. The handler's budget leaves room above the Mac's figure and less than one more
+ * object, and the `then` place's budget of 96 does the same above 82.
+ *
  * A task that carries WebAssembly compiles its file in the loader once per page, and a lone file
  * needs no array, no map and no `Promise.all`; the terrain add-on's task is the first that takes
  * that path. The loader walks its runners by index too, so a call makes no iterator result for
@@ -523,7 +538,10 @@ const CALL_BUDGETS: Readonly<Record<string, number>> = { '(IDLE)': 48, '(JS)': 2
 const TASK_CALL_BUDGETS: Readonly<Record<string, number>> = {
 	'pose null3d/s1-sketch.ts': 128,
 	'run shared/tasks.ts': 560,
-	'n.onmessage shared/tasks.ts': 240,
+	'n.onmessage shared/tasks.ts': 336,
+	'send src/field.ts': 96,
+	'ask src/field.ts': 208,
+	'then (built-in)': 96,
 	'Promise (built-in)': 160,
 	'delete (built-in)': 130,
 	'leastBusy shared/tasks.ts': 100,
