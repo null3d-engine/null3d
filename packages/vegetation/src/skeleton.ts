@@ -118,20 +118,27 @@ interface Growth {
 	readonly crownStart: number;
 }
 
+/** A branch whose place in the plant is known but whose children are still to come. */
+interface BranchSpec {
+	readonly level: number;
+	/** The branch that this one leaves from, or -1 at the plant's base. */
+	readonly parent: number;
+	readonly origin: [number, number, number];
+	readonly direction: [number, number, number];
+	readonly length: number;
+	readonly key: number;
+	/** The parent's sample that this branch leaves from, which its parent records. */
+	readonly attach: number;
+}
+
 /**
- * Grows one branch and its children. The path curves and bends with the crown's pull; the children
- * start along it, each with an angle, a turn and a length of its own. Radii follow once the tips
- * exist, so a branch's thickness carries everything beyond it.
+ * Places one branch and queues its children. The path curves and bends with the crown's pull; the
+ * children start along it, each with an angle, a turn and a length of its own. The children wait in
+ * the queue, so a plant's branches grow a level at a time rather than one branch's whole subtree at
+ * a time, and a shared branch budget is shared across the plant instead of spent in walk order.
  */
-function grow(
-	growth: Growth,
-	level: number,
-	parent: number,
-	origin: [number, number, number],
-	direction: [number, number, number],
-	length: number,
-	branchKey: number,
-): number {
+function place(growth: Growth, spec: BranchSpec, queue: BranchSpec[]): number {
+	const { level, parent, origin, direction, length, key: branchKey } = spec;
 	const { species, seed, variant } = growth;
 	const levelRecord: BranchLevel | undefined = species.branchLevels[level];
 	if (!levelRecord || growth.branches.length >= MAX_BRANCHES) return -1;
@@ -154,6 +161,11 @@ function grow(
 		attach,
 	};
 	growth.branches.push(branch);
+	if (parent >= 0) {
+		const from = growth.branches[parent];
+		from?.children.push(index);
+		from?.attach.push(spec.attach);
+	}
 
 	const step = length / Math.max(1, samples - 1);
 	let [dx, dy, dz] = direction;
@@ -258,13 +270,36 @@ function grow(
 				(unitAt(seed, species.seedSalt, variant, key, KEY_TWIST) * 2 - 1) *
 					(whorls > 0 ? WHORL_YAW_JITTER : 0.4);
 			const [cdx, cdy, cdz] = rotate(tiltedX, tiltedY, tiltedZ, tx, ty, tz, yaw);
-			const child = grow(growth, level + 1, index, [cx, cy, cz], [cdx, cdy, cdz], childLength, key);
-			if (child >= 0) {
-				children.push(child);
-				attach.push(sample);
-			}
+			queue.push({
+				level: level + 1,
+				parent: index,
+				origin: [cx, cy, cz],
+				direction: [cdx, cdy, cdz],
+				length: childLength,
+				key,
+				attach: sample,
+			});
 		}
 	}
+
+	return index;
+}
+
+/**
+ * Gives one placed branch its radii: the pipe model's least thickness that carries its tip and every
+ * child's base, the record's taper, and the swells at its base and, for a trunk, at the ground. It
+ * runs after every branch exists, from the tips back, so a branch reads its children's radii.
+ */
+function finish(growth: Growth, branch: SkeletonBranch): void {
+	const { species } = growth;
+	const levelRecord = species.branchLevels[branch.level] as BranchLevel;
+	const { points, radii, children, attach, level } = branch;
+	const samples = radii.length;
+	const origin: [number, number, number] = [
+		points[0] as number,
+		points[1] as number,
+		points[2] as number,
+	];
 
 	// The pipe model: a branch's cross section carries its tip and every child's base.
 	let area = levelRecord.taper * levelRecord.taper;
@@ -315,7 +350,6 @@ function grow(
 			radii[i] = (radii[i] as number) * (1 + species.flare * t * t);
 		}
 	}
-	return index;
 }
 
 /**
@@ -350,6 +384,9 @@ export function growSkeleton(species: Species, seed: number, variant: number): S
 	const trunkLevel = species.branchLevels[0];
 	const leader = species.leader ?? 1;
 	const lean = species.stemLean ?? 0.18;
+	// The plant grows a level at a time: a branch placed now queues its children at the end, so every
+	// branch of one level exists before any branch of the next begins.
+	const queue: BranchSpec[] = [];
 	for (let t = 0; t < trunks; t++) {
 		const angle = (t / Math.max(1, trunks)) * Math.PI * 2;
 		const ring = trunks > 1 ? height * 0.035 : 0;
@@ -366,7 +403,18 @@ export function growSkeleton(species: Species, seed: number, variant: number): S
 			leader *
 			(trunks > 1 ? 0.72 + 0.25 * unitAt(seed, species.seedSalt, variant, t, KEY_LENGTH) : 1) *
 			(trunkLevel ? 1 : 0);
-		grow(growth, 0, -1, origin, direction, trunkLength, t === 0 ? 0 : 0x10000 + t);
+		queue.push({
+			level: 0,
+			parent: -1,
+			origin,
+			direction,
+			length: trunkLength,
+			key: t === 0 ? 0 : 0x10000 + t,
+			attach: 0,
+		});
 	}
+	for (let at = 0; at < queue.length; at++) place(growth, queue[at] as BranchSpec, queue);
+	// The radii run from the tips back, so every branch reads the thickness it must carry.
+	for (let at = branches.length - 1; at >= 0; at--) finish(growth, branches[at] as SkeletonBranch);
 	return { branches, height, crownStart };
 }
