@@ -2977,6 +2977,25 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/terrain-sketch.ts',
 		hold: 1,
 	},
+	// Far hills at the Low preset's split, lit from the normal map baked over the ground: a block's
+	// cells there span the ground's small folds, so the block's own vertices lose them. A correct
+	// picture carries those folds as bands of light and shade across each coarse block, on the
+	// slopes that face the sun and the slopes that turn from it. A bake that stores the slope on the
+	// wrong axis, or with the wrong sign, lights the hills from another direction and cannot match
+	// this picture, while a comparison with the same scene in vertex normals still passes because
+	// either bake moves the picture. The bake moves many pixels by a few steps, which the default
+	// threshold does not count: at a threshold that counts them, a wrong bake moves about 1.8 per
+	// cent of the frame, and the default bar would pass it.
+	{
+		name: 'terrain-baked-normals',
+		sketch: 'tests/pages/sketches/terrain-sketch.ts?normals=baked&coarse=on',
+		switches: ['preset=low'],
+		hold: 1,
+		tolerance: { threshold: 0.02, maxDiffRatio: 0.002 },
+		// The software GPU rounds the same pixels a step apart on another machine, so it may count
+		// more of them. A wrong bake still moves about 1.8 per cent of the frame.
+		swiftShaderTolerance: { threshold: 0.02, maxDiffRatio: 0.005 },
+	},
 	// Each built-in vegetation species: three of its variants, grown from the species record and a
 	// fixed seed, in a row on flat ground, drawn with the bark and leaf atlases that the GPU paints
 	// at first use. The shrub's page takes longer than the default limit on CI's software GPU, where
