@@ -1,4 +1,4 @@
-# D-294: larger cards at the crown's rim even the silhouette but add no mass
+# D-302: larger cards at the crown's rim even the silhouette but add no mass
 
 Status: decided and built, with its limit stated. Task: none.
 

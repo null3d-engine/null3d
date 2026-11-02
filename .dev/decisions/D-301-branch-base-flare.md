@@ -1,4 +1,4 @@
-# D-293: a branch swells where it leaves its parent
+# D-301: a branch swells where it leaves its parent
 
 Status: decided and built. Task: none.
 

@@ -1,4 +1,4 @@
-# D-295: the live oak's cards ride its limb ends, and spread is not openness
+# D-303: the live oak's cards ride its limb ends, and spread is not openness
 
 Status: decided and built. Task: none.
 
