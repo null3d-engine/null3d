@@ -108,6 +108,13 @@ export interface Crown {
 	 * is 0.2, which holds a rounded crown's top open; a conifer that tapers to a point asks for less.
 	 */
 	readonly floor?: number;
+	/**
+	 * How far up the branches a filled crown reaches, as a share of the branch heights, from 0 to 1.
+	 * The default is 1 for a conical crown and 0.92 for another outline: a rounded crown stops at the
+	 * height most branches reach, so a lone upper limb carries no cards above the dome, while a crown
+	 * that ends in a leader keeps its top filled.
+	 */
+	readonly fillTop?: number;
 }
 
 /**
@@ -414,6 +421,7 @@ export function speciesProblems(species: Species): string[] {
 		problems.push(`${name}: crown.spread must be a number from 0.`);
 	if (!finite(species.crown.pull)) problems.push(`${name}: crown.pull must be a number.`);
 	if (species.crown.floor !== undefined) share(species.crown.floor, `${name}: crown.floor`);
+	if (species.crown.fillTop !== undefined) share(species.crown.fillTop, `${name}: crown.fillTop`);
 
 	if (species.kind === 'fern' || species.kind === 'rosette' || species.kind === 'grass') {
 		if (!species.rosette) problems.push(`${name}: a ${species.kind} needs a rosette record.`);
