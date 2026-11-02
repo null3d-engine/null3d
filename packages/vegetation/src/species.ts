@@ -382,6 +382,13 @@ export interface Species {
 export const MAX_BRANCHES = 255;
 
 /**
+ * The most branches that a plant may grow. The wind table holds one record for each of the first
+ * `MAX_BRANCHES`, because a vertex colour names its record in a byte; a branch beyond them reads its
+ * parent's record, so a plant may subdivide further than the table is wide.
+ */
+export const MAX_PLANT_BRANCHES = 1200;
+
+/**
  * The largest number of levels that a plant gets.
  * @category api/vegetation
  */

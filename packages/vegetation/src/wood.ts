@@ -69,7 +69,7 @@ export function buildWood(
 		const sides = Math.max(3, Math.round(branch.sides * detail.sideScale));
 		const rings = ringsOf(branch, detail.ringStep);
 		const wind: VertexWind = {
-			branch: Math.min(branchLimit - 1, branchIndex),
+			branch: Math.min(branchLimit - 1, branch.wind),
 			flutter: branch.flutter,
 			stiffness: stiffnessByte(species, branch.level),
 			occlusion: 0,
