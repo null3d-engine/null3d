@@ -362,6 +362,7 @@ The opcode numbers that M2 tasks need are reserved (M2-E1), so lanes that work a
 
 - The package build strips members marked `@internal` from the type declarations (`--stripInternal`). Users then do not see the engine's own methods, such as the label projection of `ctx.ui` (review R3, R3-13). The build fails if a declaration still holds an `@internal` tag.
 - A class that only the engine makes marks its constructor `@internal`. Stripping it would leave the class constructible with no arguments, so the build writes `protected constructor();` in its place. Protected, not private, so that the engine's own subclasses still type check.
+- A member that an add-on reads must not carry `@internal`, even when the engine also reads it. Type check resolves the engine's source, where the member exists, and passes; the package build compiles against the built declarations, and `--stripInternal` has removed it, so `bun run test:packages` fails with `TS2339`. The compute draw's `counts` and `instances` are the case: an add-on's compute pass writes both, so both are public and say so in their doc comments. A build that type checks the repository and compiles a fresh project against the tarball is the pair that catches this.
 - The internal entry point that tests import (`src/internal.ts`) leaves the package. The tarball check fails if it returns (review R8, R8-10).
 
 ## Shaders in a packed add-on
