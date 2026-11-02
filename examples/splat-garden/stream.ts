@@ -3,7 +3,7 @@
 // that the view's budget asks for, nearest first, which is the path that a captured scene of this
 // size takes. The files are made in code and held as blob URLs, so the scene needs no server of its
 // own and works wherever the examples page is built.
-import { chunkSplats, encodeSpz, type SplatData } from '@null3d/splats';
+import { chunkSplats, encodeSpz, type SplatData, type Splats } from '@null3d/splats';
 
 /** A stream that a sketch can draw, with the numbers that its label shows. */
 export interface GardenStream {
@@ -67,4 +67,19 @@ export async function streamCloud(
 			for (const url of urls) URL.revokeObjectURL(url);
 		},
 	};
+}
+
+/**
+ * Waits until the chunks that the view asks for have all arrived and no more arrive, so the first
+ * frame and a held picture show the whole view.
+ */
+export async function waitForChunks(splats: Splats): Promise<void> {
+	let quiet = 0;
+	let arrived = -1;
+	for (let k = 0; k < 16 && quiet < 3; k++) {
+		quiet = splats.loaded === arrived ? quiet + 1 : 0;
+		arrived = splats.loaded;
+		await new Promise((resolve) => setTimeout(resolve, 250));
+	}
+	await splats.settle();
 }

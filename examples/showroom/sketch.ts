@@ -9,13 +9,12 @@
 // trim or the lights, and the car takes the change at once. The controls HUD offers the time of day,
 // the effects and the quality preset, as the other showcases do.
 import { defineSketch } from '@null3d/engine';
-import { type CameraBounds, type Cinematic, createCinematic } from '../lib/cinematic';
 import { CAMERA_LAYERS, SUN_LAYERS } from '../lib/layers';
-import { createShowcaseEffects, type ShadowReach } from '../lib/showcase-effects';
+import type { ShadowReach } from '../lib/showcase-effects';
 import { createMoods, isMood } from '../lib/stage';
 import { createCar } from './car';
+import { createHud } from './hud';
 import { carPose, STUDIO_Z } from './route';
-import { SHOTS } from './shots';
 import { createStreet } from './street';
 import { createStudio } from './studio';
 import { createTablet } from './tablet';
@@ -32,14 +31,6 @@ const TARGET: [number, number, number] = [0, 0.9, STUDIO_Z];
 
 /** The studio's core, which keeps its shadows as the camera moves between the studio and the street. */
 const SHADOW_REACH: ShadowReach = { distance: 38, center: [0, 2, 8], radius: 17 };
-
-/** Where the Manual camera may go: over the studio and the street, above the road. */
-const BOUNDS: Omit<CameraBounds, 'ground'> = {
-	center: [0, -4],
-	focus: 20,
-	focusHeight: [0.6, 5],
-	distance: 28,
-};
 
 const params = new URL(import.meta.url).searchParams;
 
@@ -102,66 +93,23 @@ export default defineSketch(async (ctx) => {
 	/** The z where the car stood a frame ago, which its forward travel and its wheels take from. */
 	let lastZ = opening.z;
 
-	// The scene's controls: the shared sky, fog, environment, shadow and lens switches, and its own
-	// ambient occlusion and bloom.
-	const controls = createShowcaseEffects(ctx, {
+	// The scene's controls and the route that Auto plays: the shared switches, and its own ambient
+	// occlusion and bloom.
+	const hud = createHud(ctx, {
 		camera,
 		sun,
-		shadowReach: SHADOW_REACH,
 		stage,
-		start: {
-			sky: true,
-			fog: true,
-			environment: true,
-			shadows: true,
-			contact: true,
-			ao: true,
-			bloom: true,
-			dof: false,
-			exposure: false,
-			vignette: true,
-		},
-		supported: {
-			atmosphere: ['sky', 'fog'],
-			lighting: ['shadows', 'contact', 'ao', 'environment'],
-			post: ['bloom', 'dof', 'exposure', 'vignette'],
-		},
-		apply(id, on) {
-			switch (id) {
-				case 'contact':
-					sun.setShadow({ contactDistance: on ? 0.25 : 0 });
-					break;
-				case 'ao':
-					post.set({ ao: on ? { radius: 0.7 } : false });
-					break;
-				case 'bloom':
-					post.set({ bloom: on ? { intensity: 0.45, threshold: 1 } : false });
-					break;
-			}
-		},
-		mood: (next) => stage.set(next),
-		hour: (hours) => stage.setHour(hours),
-		film: () => film,
+		shadowReach: SHADOW_REACH,
+		target,
 		fov: FOV,
 		focalLength: FOCAL_LENGTH,
-		focus: target,
 	});
-
-	let film: Cinematic;
-	film = createCinematic(ctx, camera, {
-		shots: SHOTS,
-		target,
-		groups: controls.groups,
-		bounds: { ...BOUNDS, ground: () => 0 },
-	});
-	controls.fitShadows();
 
 	return {
 		onUpdate(dt) {
 			const t = time.now;
 			stage.update(dt);
-			controls.update(t);
-			film.update(dt);
+			hud.update(dt, t);
 			const pose = carPose(t);
 			car.root.setPosition(0, 0, pose.z);
 			car.root.setRotationEuler(0, pose.heading, 0);
@@ -172,8 +120,7 @@ export default defineSketch(async (ctx) => {
 			// The lens and the Manual camera's focus stay on the car wherever it drives.
 			target[2] = pose.z;
 			tablet.update();
-			const lens = controls.lens();
-			if (lens) post.set(lens);
+			hud.lens();
 		},
 	};
 });
