@@ -1,4 +1,4 @@
-# D-285: M4 starts by auditing and fixing the showcase scenes
+# D-288: M4 starts by auditing and fixing the showcase scenes
 
 Status: decided by the owner. Tasks: M4-S1 to M4-S9.
 
