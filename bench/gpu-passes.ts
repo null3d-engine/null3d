@@ -33,7 +33,7 @@ import {
 } from './gpu-check';
 import type { BuildRun, ComparisonRecord } from './lib/compare';
 import { GPU_CHECK_PAGE } from './lib/gpu-check';
-import { type PassRun, passChanges, passTable } from './lib/gpu-passes';
+import { type PassRun, passChanges, passTable, splitRefusal } from './lib/gpu-passes';
 import type { BenchResult } from './lib/report';
 import { benchPagesFresh, comparePagesDir } from './lib/serve';
 
@@ -127,6 +127,12 @@ function measure(options: GpuPassesOptions): void {
 		`preset=${SPLIT_PRESET}`,
 	]);
 	const record = JSON.parse(readFileSync(join(folder, 'runs.json'), 'utf8')) as ComparisonRecord;
+	const refusal = splitRefusal(record.measurementChanges);
+	if (refusal) {
+		for (const line of refusal) console.error(line);
+		process.exitCode = 1;
+		return;
+	}
 	const results = record.results.filter(
 		(run) => run.scene === SPLIT_SCENE && run.kind === GPU_CHECK_PAGE,
 	);
