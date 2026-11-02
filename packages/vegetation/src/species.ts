@@ -206,6 +206,13 @@ export interface Leaf {
 	 */
 	readonly fill?: number;
 	/**
+	 * The share of a filled crown's cards that stand in the crown's volume wherever its outline puts
+	 * them, rather than on the line between two nearby twigs. A crown with few long limbs needs it:
+	 * without it its foliage follows each limb, and the crown reads as separate lobes instead of one
+	 * mass. From 0 to 1; the default 0 bridges neighbouring twigs only.
+	 */
+	readonly volume?: number;
+	/**
 	 * Whether the filled cards hang almost straight down, as a willow's shoots fall, rather than
 	 * following the crown's outward direction. The default is false.
 	 */
@@ -500,6 +507,11 @@ export function speciesProblems(species: Species): string[] {
 	}
 	if (species.leaf) {
 		const at = `${name}: leaf`;
+		if (
+			species.leaf.volume !== undefined &&
+			(!finite(species.leaf.volume) || species.leaf.volume < 0 || species.leaf.volume > 1)
+		)
+			problems.push(`${at}.volume must be a number from 0 to 1.`);
 		if (!['cluster', 'needle', 'frond', 'blade'].includes(species.leaf.kind))
 			problems.push(`${at}.kind must be cluster, needle, frond or blade.`);
 		if (

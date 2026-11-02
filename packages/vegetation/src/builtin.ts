@@ -492,6 +492,8 @@ export const CREEK_SPECIES: readonly Species[] = [
 			start: 0.15,
 			end: 1,
 			depth: 1,
+			fill: 0.35,
+			volume: 0.6,
 		},
 		wind: { stiffness: [0.15, 0.5, 0.8, 0.95], flutter: 0.03, frequency: 1.9 },
 		color: { bark: [0.62, 0.6, 0.55], leaf: [0.2, 0.34, 0.1], tint: 0.1, transmission: 0.36 },
