@@ -1035,7 +1035,12 @@ The fit through two tuft counts first put the base at 211.9 ms and was read as t
 fitted intercept is not a base frame: it carries everything the removal would also take away, whether or
 not that cost varies with the count, and only switching the thing off gives the base. Every view culls the
 kept list to its own box, the cascades among them, so a shadow view draws only the tufts inside its
-cascade. It reads the frame's own matrix and the one count that the compute pass writes.
+cascade. It reads the frame's own matrix and the one count that the compute pass writes. On the
+tablet the cull takes little back, because the cascades were never the large part: three runs at
+2,312 tufts measure 288.75, 294.98 and 298.22 ms against 306.09 before, 3 to 6 per cent, and at
+6,820 they straddle the earlier 490.73 at 466.35 to 497.68. The three cascade passes together time
+at 2.1 to 2.2 ms a frame at the valley's density and 6.3 at the strip's. The row still misses 208.3
+by about 87 ms, and the two places that could close it stand unchanged.
 Two pictures hold the look. `vegetation-grass` holds the hill. `vegetation-grass-shadow` holds it at a
 low sun, where the grass's shadows follow the count, so a view that drew the capacity would show the
 rows past it.
