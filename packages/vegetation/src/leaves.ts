@@ -237,109 +237,66 @@ export function leafCards(
 		}
 	}
 
-	// A filled crown holds cards through its volume as well as on its branches. The cards sample the
-	// crown's outline, so a crown that its twigs leave open closes as the mass that the species
-	// draws, and each card reads the nearest branch for its wind and its shade.
+	// A filled crown holds cards through its volume as well as on its branches. Every filled card
+	// sits within reach of a branch's own path, so the foliage reads as a spray that the wood carries
+	// rather than as cards left standing in the air.
 	if (fill > 0 && cards.length > 0) {
-		const count = Math.round(cards.length * fill);
-		// The crown's axis is the mean of the branches above the crown's start.
-		let axisX = 0;
-		let axisZ = 0;
-		let samples = 0;
-		for (const branch of skeleton.branches)
-			for (let i = 0; i + 2 < branch.points.length; i += 3) {
-				if ((branch.points[i + 1] as number) < crown.start) continue;
-				axisX += branch.points[i] as number;
-				axisZ += branch.points[i + 2] as number;
-				samples++;
-			}
-		if (samples > 0) {
-			axisX /= samples;
-			axisZ /= samples;
+		// The branches' samples that lie inside the crown give the places that a filled card may
+		// stand near, and the branch and level that hold it for its wind and its shade.
+		interface Hold {
+			readonly point: [number, number, number];
+			readonly tangent: [number, number, number];
+			readonly branch: number;
+			readonly level: number;
 		}
-		// A coarse grid of the branches' samples lets a filled card find the branch nearest it
-		// without walking every branch of the plant.
-		const CELL = 1.5;
-		const cellKey = (x: number, y: number, z: number) =>
-			Math.floor(x / CELL) +
-			512 +
-			1024 * (Math.floor(y / CELL) + 512 + 1024 * (Math.floor(z / CELL) + 512));
-		const buckets = new Map<number, number[]>();
-		for (const [index, branch] of skeleton.branches.entries())
-			for (let i = 0; i + 2 < branch.points.length; i += 3) {
-				const key = cellKey(
-					branch.points[i] as number,
-					branch.points[i + 1] as number,
-					branch.points[i + 2] as number,
-				);
-				let list = buckets.get(key);
-				if (!list) {
-					list = [];
-					buckets.set(key, list);
-				}
-				if (!list.includes(index)) list.push(index);
+		const holds: Hold[] = [];
+		for (const [index, branch] of skeleton.branches.entries()) {
+			const samples = branch.points.length / 3;
+			for (let i = 0; i < samples; i++) {
+				const point: [number, number, number] = [
+					branch.points[i * 3] as number,
+					branch.points[i * 3 + 1] as number,
+					branch.points[i * 3 + 2] as number,
+				];
+				if (point[1] < crown.start || point[1] > crownTop) continue;
+				holds.push({
+					point,
+					tangent: pointAndTangent(branch, i).tangent,
+					branch: index,
+					level: branch.level,
+				});
 			}
-		const seen = new Int32Array(skeleton.branches.length).fill(-1);
-		const nearestSample = (point: [number, number, number], mark: number): number => {
-			let nearest = 0;
-			let nearestDistance = Number.POSITIVE_INFINITY;
-			const walk = (index: number) => {
-				if (seen[index] === mark) return;
-				seen[index] = mark;
-				const branch = skeleton.branches[index] as SkeletonBranch;
-				for (let i = 0; i + 2 < branch.points.length; i += 3) {
-					const dx = (branch.points[i] as number) - point[0];
-					const dy = (branch.points[i + 1] as number) - point[1];
-					const dz = (branch.points[i + 2] as number) - point[2];
-					const distance = dx * dx + dy * dy + dz * dz;
-					if (distance < nearestDistance) {
-						nearestDistance = distance;
-						nearest = index;
-					}
-				}
-			};
-			const cellX = Math.floor(point[0] / CELL) + 512;
-			const cellY = Math.floor(point[1] / CELL) + 512;
-			const cellZ = Math.floor(point[2] / CELL) + 512;
-			for (let dx = -1; dx <= 1; dx++)
-				for (let dy = -1; dy <= 1; dy++)
-					for (let dz = -1; dz <= 1; dz++) {
-						const list = buckets.get(cellX + dx + 1024 * (cellY + dy + 1024 * (cellZ + dz)));
-						if (list) for (const index of list) walk(index);
-					}
-			if (nearestDistance === Number.POSITIVE_INFINITY)
-				for (let index = 0; index < skeleton.branches.length; index++) walk(index);
-			return nearest;
-		};
+		}
 		const stiffnesses = new Map<number, number>();
-		for (let k = 0; k < count; k++) {
+		const count = Math.round(cards.length * fill);
+		for (let k = 0; k < count && holds.length > 0; k++) {
 			const key = 0x400000 + k;
-			// More cards stand low in the crown, where a cone's surface is widest, and the top keeps
-			// enough to close the spire rather than spread its cards only over the lower volume.
-			const t = 1 - Math.sqrt(1 - unitAt(seed, 21, variant, key, KEY_AT));
-			const y = crown.start + Math.max(0, crownTop - crown.start) * t;
-			const shell = crown.radius * crownEnvelope(crown.shape, t);
-			// One filled card in three sits near the axis, so a crown hides its trunk through the
-			// middle and a trunk tip. A conical spire keeps its cards at the edge, because its dense
-			// whorls already hide the trunk and its apex must end in leaves.
-			const core = crown.shape !== 'conical' && k % 3 === 0;
-			const at = shell * (core ? 0.18 : 1) * Math.sqrt(unitAt(seed, 22, variant, key, KEY_SIDE));
-			const angle = unitAt(seed, 23, variant, key, KEY_ROLL) * Math.PI * 2;
-			const outward: [number, number, number] = [Math.cos(angle), 0, Math.sin(angle)];
-			const point: [number, number, number] = [axisX + outward[0] * at, y, axisZ + outward[2] * at];
-			// The nearest branch holds the card for its wind and its shade.
-			const nearest = nearestSample(point, k);
-			const level = skeleton.branches[nearest]?.level ?? 0;
-			let stiffness = stiffnesses.get(nearest);
+			const pick = holds[
+				Math.min(
+					holds.length - 1,
+					Math.floor(unitAt(seed, 21, variant, key, KEY_AT) * holds.length),
+				)
+			] as Hold;
+			// The offset spreads the card around its branch in every direction, so the spray wraps the
+			// wood instead of lining its upper side.
+			const reach = 0.12 + 0.72 * unitAt(seed, 24, variant, key, KEY_SIZE);
+			const offset = normalize(
+				unitAt(seed, 22, variant, key, KEY_SIDE) * 2 - 1,
+				unitAt(seed, 23, variant, key, KEY_ROLL) * 2 - 1,
+				unitAt(seed, 25, variant, key, KEY_LEAN) * 2 - 1,
+			);
+			const point: [number, number, number] = [
+				pick.point[0] + offset[0] * reach,
+				Math.min(crownTop, Math.max(crown.start, pick.point[1] + offset[1] * reach)),
+				pick.point[2] + offset[2] * reach,
+			];
+			const outward = normalize(point[0], 0, point[2]);
+			const tangent = leaf.hang ? normalize(outward[0] * 0.2, -1, outward[2] * 0.2) : pick.tangent;
+			let stiffness = stiffnesses.get(pick.level);
 			if (stiffness === undefined) {
-				stiffness = stiffnessByte(species, level);
-				stiffnesses.set(nearest, stiffness);
+				stiffness = stiffnessByte(species, pick.level);
+				stiffnesses.set(pick.level, stiffness);
 			}
-			// A filled card hangs a little below its own height, as a spray at the crown's edge does.
-			// A hanging species turns its cards almost straight down, as a willow's shoots fall.
-			const tangent = leaf.hang
-				? normalize(outward[0] * 0.2, -1, outward[2] * 0.2)
-				: normalize(outward[0], -0.25, outward[2]);
 			const card = makeCard(
 				leaf,
 				crown,
@@ -349,10 +306,14 @@ export function leafCards(
 				point,
 				tangent,
 				outward,
-				nearest,
+				pick.branch,
 				stiffness,
 			);
 			// The crown's top keeps finer cards, so a spire closes to a point rather than a ball.
+			const t = Math.min(
+				1,
+				Math.max(0, (point[1] - crown.start) / Math.max(1e-6, crownTop - crown.start)),
+			);
 			const shrink = 0.45 + 0.55 * crownEnvelope(crown.shape, t);
 			cards.push({ ...card, width: card.width * shrink, height: card.height * shrink });
 		}

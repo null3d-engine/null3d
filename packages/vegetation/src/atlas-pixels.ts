@@ -620,13 +620,13 @@ function leafCells(): LeafCellPainter[] {
 		),
 		leafSpray(
 			sprayLeaves(23, FAMILIES.beech, {
-				count: 64,
+				count: 40,
 				from: 0.04,
 				to: 0.9,
 				lean: [0.4, 1.4],
-				turn: 0.9,
-				length: [0.26, 0.17],
-				spread: 0.2,
+				turn: 0.8,
+				length: [0.36, 0.26],
+				spread: 0.18,
 			}),
 			0.02,
 		),
