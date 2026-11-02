@@ -347,6 +347,11 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
   `?without=traffic,roamers,rain,ssr,lamps,beams,signs,ground,towers`. The runner's `--switches`
   gives them to every page of a plan, so `--switches without=traffic` times the city without the
   lanes. A visitor's address and the picture tests name none, so the demo draws the whole scene.
+- `?settle=<seconds>` draws the demo for that long after its first frame, so a route can complete
+  its circuit before the measure. `?windows=<n>` measures n windows of `?seconds=`, one after
+  another, and reports each window's rate as its frames divided by its seconds. A settled page
+  gives the demo's own frame time; three windows show whether the rate holds while the device
+  warms.
 - The page reports the frame rate, the display's rate, the frame intervals' percentiles, the CPU
   time of each thread, the GPU time per frame and per pass, the draw calls, the triangles, the
   uploads, and the bytes that the page downloaded. On WebGL2 most phones offer no timer queries, so

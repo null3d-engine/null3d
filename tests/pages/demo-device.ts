@@ -17,6 +17,13 @@ const params = new URLSearchParams(location.search);
 /** The seconds that the page measures after the first frame. */
 const SECONDS = Number(params.get('seconds') ?? 5);
 /**
+ * The seconds that the page draws after the first frame before it measures, so a scene settles
+ * into its play: a route's full circuit takes about that long.
+ */
+const SETTLE = Number(params.get('settle') ?? 0);
+/** The windows of `SECONDS` that the page measures, one after another. The default is 1. */
+const WINDOWS = Math.max(1, Math.floor(Number(params.get('windows') ?? 1)));
+/**
  * How long the page waits for the overlay's figures after it shows the overlay. The figures need
  * about half a second of frames, and on WebGPU the count of the triangles comes back from the GPU
  * on one frame in eleven.
@@ -227,9 +234,28 @@ run('demo-device', async () => {
 		engine.postToSketch(group, id);
 		note(`turned off ${id}`);
 	}
-	const metrics = MEASURE ? await engine.measure(SECONDS) : undefined;
-	if (metrics) note(`the measure drew ${metrics.frames} frames`);
-	else note(`the measure is off; waiting for the overlay`);
+	const windows: { frames: number; seconds: number; fps: number }[] = [];
+	if (MEASURE && SETTLE > 0) {
+		note(`settling for ${SETTLE} s`);
+		await new Promise((resolve) => setTimeout(resolve, SETTLE * 1000));
+	}
+	let metrics: Awaited<ReturnType<typeof engine.measure>> | undefined;
+	if (MEASURE) {
+		for (let window = 0; window < WINDOWS; window++) {
+			const measured = await engine.measure(SECONDS);
+			// The window's own rate: the frames it counted over the seconds it ran.
+			windows.push({
+				frames: measured.frames,
+				seconds: measured.seconds,
+				fps: measured.frames / measured.seconds,
+			});
+			metrics ??= measured;
+		}
+		note(
+			`the measure drew ${windows.map((entry) => Math.round(entry.fps)).join(', ')} frames a second`,
+		);
+	}
+	if (!MEASURE) note(`the measure is off; waiting for the overlay`);
 	const bytesTotal = downloadedBytes();
 	// The overlay samples the figures that only it shows: triangles and the GPU's memory. It comes
 	// after the measure, so its sampling costs none of the frames that the figures above time.
@@ -296,6 +322,7 @@ run('demo-device', async () => {
 		off: OFF,
 		seconds: metrics?.seconds ?? null,
 		frames: metrics?.frames ?? null,
+		windows,
 		presentedFps: metrics?.presentedFps ?? overlayFps,
 		updatedFps: metrics?.updatedFps ?? null,
 		refreshHz: metrics?.refreshHz ?? null,
