@@ -526,9 +526,11 @@ const CALL_BUDGETS: Readonly<Record<string, number>> = { '(IDLE)': 48, '(JS)': 2
  * charged the same call to `ask` at 95.1 bytes a frame, 191 an ask. On this Mac's GPU the browser
  * keeps the `then` record in a place of its own, `then (built-in)`, at 40.6 bytes a frame and 82 an
  * ask. The answer's message makes more objects for the field's transferred array than for the
- * splats' answer: the Mac's GPU reads 309.3 bytes a call at the handler, where CI's SwiftShader
- * reads 217.7. The handler's budget leaves room above the Mac's figure and less than one more
- * object, and the `then` place's budget of 96 does the same above 82.
+ * splats' answer: the Mac's GPU reads 309.3 bytes a call at the handler, and CI's SwiftShader
+ * 217.7. The handler allocates per frame as well as per call, so a run whose frames outrun its
+ * answers reads it higher per call: SwiftShader's WebGL2 run made 84 calls in the sample where its
+ * WebGPU run made 161, and read 336.4. Its budget of 368 leaves room above that and catches a new
+ * promise-sized record of 32 bytes. The `then` place's budget of 96 does the same above 82.
  *
  * A task that carries WebAssembly compiles its file in the loader once per page, and a lone file
  * needs no array, no map and no `Promise.all`; the terrain add-on's task is the first that takes
@@ -538,7 +540,7 @@ const CALL_BUDGETS: Readonly<Record<string, number>> = { '(IDLE)': 48, '(JS)': 2
 const TASK_CALL_BUDGETS: Readonly<Record<string, number>> = {
 	'pose null3d/s1-sketch.ts': 128,
 	'run shared/tasks.ts': 560,
-	'n.onmessage shared/tasks.ts': 336,
+	'n.onmessage shared/tasks.ts': 368,
 	'send src/field.ts': 96,
 	'ask src/field.ts': 208,
 	'then (built-in)': 96,
