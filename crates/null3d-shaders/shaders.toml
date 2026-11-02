@@ -866,6 +866,30 @@ variants.webgl2 = { defs = ["WEBGL2", "DEPTH"], targets = ["glsl"] }
 shaders = ["weighted_composite", "weighted_depth"]
 bits = ["WEIGHTED"]
 
+# The steps of the camera's one-sample layer (single_layer.wgsl): the composite, which blends the
+# layer over the scene color, and the copy of one sample of a multisampled scene depth, which the
+# layer's pass tests against. Only WebGPU reads a multisampled depth; WebGL2 reads the copy of one
+# sample that its backend keeps.
+[shaders.single_composite]
+file = "single_layer.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "composite" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
+[shaders.single_depth]
+file = "single_layer.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "depth" }
+variants.webgpu = { defs = ["DEPTH", "MULTISAMPLED"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "DEPTH"], targets = ["glsl"] }
+
+# A page downloads the one-sample layer's steps when the first blended surface that asks for the
+# layer draws with more than one sample. The layer waits for its steps' pipelines, and such
+# surfaces draw back to front in the transparent pass until then. The surfaces draw with their own
+# builds, so the layer takes no mesh builds of its own.
+[first_use.single_layer]
+shaders = ["single_composite", "single_depth"]
+
 # The steps of the camera's moment transparency layer (moment_layer.wgsl and moment_smaa.wgsl):
 # the composite, which blends the layer over the scene color, the copy of one sample of a
 # multisampled scene depth, which the layer's two passes test against, and the three steps of SMAA

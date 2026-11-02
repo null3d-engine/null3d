@@ -950,8 +950,8 @@ pub mod layout {
     /// `textureLoad` as unfilterable floats. The copy of the camera's opaque color for
     /// transmission binds its scene color and depth the same way.
     pub const WEIGHTED_COMPOSITE: u32 = 41;
-    /// The copy of a multisampled scene depth for the weighted layer: the depth, read with
-    /// `textureLoad` as multisampled unfilterable floats. Only WebGPU has it.
+    /// The copy of a multisampled scene depth for the weighted layer and the one-sample layer: the
+    /// depth, read with `textureLoad` as multisampled unfilterable floats. Only WebGPU has it.
     pub const WEIGHTED_DEPTH_MS: u32 = 42;
     /// [`WEIGHTED_COMPOSITE`] for the copy of the camera's opaque color from a multisampled scene
     /// depth, whose sample 0 it reads. Only WebGPU has it.
@@ -2270,6 +2270,18 @@ pub mod template {
     /// Screen-space bounce light's denoise: one triangle over the grid, which blurs the traced
     /// light over a disk of taps that keeps to each texel's own surface.
     pub const BOUNCE_DENOISE: u32 = 101;
+    /// The blend of the one-sample layer over the scene color: one triangle that reads the layer,
+    /// one texel per pixel, with the layout [`VIEW_COPY`](super::layout::VIEW_COPY), and returns
+    /// its premultiplied color for the normal blending to put over the scene. It draws inside the
+    /// camera's transparent render pass, so its pipelines name the scene's depth and leave it alone.
+    pub const SINGLE_COMPOSITE: u32 = 102;
+    /// The copy of the first sample of a multisampled scene depth into the depth target of one
+    /// sample that the one-sample layer tests against: one triangle that writes each pixel's depth,
+    /// first in the layer's pass. Its pipeline names the layer's color target, which it does not
+    /// write. On WebGPU it reads the multisampled depth with the layout
+    /// [`WEIGHTED_DEPTH_MS`](super::layout::WEIGHTED_DEPTH_MS); on WebGL2 it reads the copy of one
+    /// sample that the backend keeps, with the layout [`VIEW_COPY`](super::layout::VIEW_COPY).
+    pub const SINGLE_DEPTH: u32 = 103;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -2277,7 +2289,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 101] = [
+    pub const NAMES: [(&str, u32); 103] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -2378,6 +2390,8 @@ pub mod template {
         ("MOMENT_SMAA_RESOLVE", MOMENT_SMAA_RESOLVE),
         ("BOUNCE_TRACE", BOUNCE_TRACE),
         ("BOUNCE_DENOISE", BOUNCE_DENOISE),
+        ("SINGLE_COMPOSITE", SINGLE_COMPOSITE),
+        ("SINGLE_DEPTH", SINGLE_DEPTH),
         ("CUSTOM_FIRST", CUSTOM_FIRST),
     ];
 }
@@ -2451,6 +2465,34 @@ pub mod groups {
         &[layout::PARTICLE, layout::DRAWS],
         &[layout::PARTICLE_SCENE_DEPTH, layout::INSTANCES],
         &[layout::TEXTURES],
+    ];
+    /// The groups of the one-sample layer's composite: the layer's own group, then the groups that
+    /// the meshes, custom materials and particles of the camera's transparent pass leave bound at
+    /// the higher indices of the render pass that the composite joins. Its pipeline reads none of them, and a WebGL2
+    /// program reads no binding that it does not declare.
+    const SINGLE_COMPOSITE: &[&[u32]] = &[
+        &[layout::VIEW_COPY],
+        &[
+            layout::DRAWS,
+            layout::JOINTS,
+            layout::MATERIAL_MAPS,
+            layout::TEXTURES,
+            layout::INSTANCE_INDEX,
+            layout::DECAL_DEPTH,
+            layout::DECAL_DEPTH_MS,
+            layout::MATERIAL_SCENE,
+            layout::PARTICLE,
+        ],
+        &[
+            layout::INSTANCES,
+            layout::INSTANCE_INDEX,
+            layout::DECAL_DEPTH,
+            layout::DECAL_DEPTH_MS,
+            layout::MATERIAL_SCENE,
+            layout::PARTICLE_SCENE_DEPTH,
+        ],
+        MESH[3],
+        MESH[4],
     ];
     /// [`MESH`] for the moment layer's colour builds, whose frame group carries the moment store in
     /// place of the copy of the opaque color.
@@ -2555,6 +2597,11 @@ pub mod groups {
             own!(layout::WEIGHTED_COMPOSITE),
         ),
         (template::WEIGHTED_DEPTH, own!(layout::WEIGHTED_DEPTH_MS)),
+        (template::SINGLE_COMPOSITE, SINGLE_COMPOSITE),
+        (
+            template::SINGLE_DEPTH,
+            own!(layout::WEIGHTED_DEPTH_MS, layout::VIEW_COPY),
+        ),
         (template::MOMENT_COMPOSITE, own!(layout::MOMENT_COMPOSITE)),
         (template::MOMENT_DEPTH, own!(layout::MOMENT_DEPTH_MS)),
         (template::MOMENT_SMAA_EDGES, own!(layout::MOMENT_SMAA_EDGES)),

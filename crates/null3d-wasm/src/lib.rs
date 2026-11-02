@@ -2630,7 +2630,8 @@ pub fn mesh_format(mesh: u32) -> u32 {
 /// `bias_slope`, whose positive values push the surface away. A custom material whose vertex offset
 /// sways gives the distance from the camera out to which it moves, in meters, as `sway_distance`:
 /// past it the material's casters stand still, so far shadow cascades keep their layers. Zero sways
-/// at every distance.
+/// at every distance. A `single_layer` that is not 0 draws the material's blended surfaces in the
+/// camera's one-sample layer while the scene has more than one sample.
 #[wasm_bindgen(js_name = createMaterial)]
 #[allow(clippy::too_many_arguments)]
 pub fn create_material(
@@ -2643,6 +2644,7 @@ pub fn create_material(
     bias_constant: f32,
     bias_slope: f32,
     sway_distance: f32,
+    single_layer: u32,
 ) -> u32 {
     let shading = match shading {
         shading::UNLIT => Shading::Unlit,
@@ -2674,6 +2676,9 @@ pub fn create_material(
         table.set_depth_bias(id, bias).map_err(material_failure)?;
         table
             .set_sway(id, sway_distance)
+            .map_err(material_failure)?;
+        table
+            .set_single_layer(id, single_layer != 0)
             .map_err(material_failure)?;
         // A wireframe draws each part's edge list, which the meshes keep from the first one on.
         if features & materials::feature::WIREFRAME != 0 {

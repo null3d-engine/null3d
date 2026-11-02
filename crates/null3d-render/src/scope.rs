@@ -114,6 +114,10 @@ pub const MOMENT_SMAA_BLEND: u32 = 50;
 pub const MOMENT_SMAA_RESOLVE: u32 = 51;
 /// A step of screen-space bounce light.
 pub const BOUNCE: u32 = 52;
+/// Draws the camera's blended surfaces that ask for it into the one-sample layer.
+pub const SINGLE: u32 = 53;
+/// Blends the one-sample layer over the scene color.
+pub const SINGLE_COMPOSITE: u32 = 54;
 
 /// A scope of `kind` for a step by its place, such as the fourth step of bloom's chain.
 pub fn of(kind: u32, index: u32) -> u32 {

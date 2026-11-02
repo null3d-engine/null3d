@@ -75,6 +75,8 @@ import {
 	TEMPLATE_SHADOW_CUTOUT,
 	TEMPLATE_SHADOW_CUTOUT_MAP,
 	TEMPLATE_SHADOW_DEPTH,
+	TEMPLATE_SINGLE_COMPOSITE,
+	TEMPLATE_SINGLE_DEPTH,
 	TEMPLATE_SKY_TABLE,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
@@ -389,6 +391,9 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	// The weighted layer's depth copy reads the same one-sample copy of the depth.
 	templates[TEMPLATE_WEIGHTED_COMPOSITE] = { shader: shaders.weighted_composite, pipeline: 'main' };
 	templates[TEMPLATE_WEIGHTED_DEPTH] = { shader: shaders.weighted_depth, pipeline: 'main' };
+	// So does the one-sample layer's depth copy.
+	templates[TEMPLATE_SINGLE_COMPOSITE] = { shader: shaders.single_composite, pipeline: 'main' };
+	templates[TEMPLATE_SINGLE_DEPTH] = { shader: shaders.single_depth, pipeline: 'main' };
 	// The moment layer's steps and its colour builds, which draw meshes with their own shader
 	// entries so that their builds load with the layer alone.
 	templates[TEMPLATE_MOMENT_COMPOSITE] = { shader: shaders.moment_composite, pipeline: 'main' };
