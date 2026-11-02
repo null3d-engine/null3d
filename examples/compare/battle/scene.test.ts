@@ -162,8 +162,10 @@ describe('the armies', () => {
 		const start = performance.now();
 		for (let i = 0; i < 60; i++) stepBattle(state);
 		const ms = (performance.now() - start) / 60;
-		// Both engines run the same code, so the figure only guards against a slip of the search.
-		expect(ms).toBeLessThan(25);
+		// Both engines run the same code, so the figure only guards against a slip of the search. A
+		// loaded machine stretches every step, so the budget grows with the machine's load the way
+		// every other stated budget does; on a quiet machine it stays a share of a frame.
+		expect(ms).toBeLessThan(scaledBudget(25));
 	});
 });
 
