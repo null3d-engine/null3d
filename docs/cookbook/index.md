@@ -456,21 +456,20 @@ export default defineSketch(({ scene, geometry, materials, textures, render, tim
   const above = scene.createOrthographicCamera({ height: 16, near: 1, far: 40, position: [0, 20, 0] });
   above.setRotationEuler(-Math.PI / 2, 0, 0);
   const map = render.addPass({ kind: 'scene', camera: above, writes: 'map', size: [256, 256] });
+  // The map needs a new image only every third frame.
+  render.setPassEvery(map, 3);
   scene.createMesh({
     mesh: geometry.plane({ width: 2.5, height: 2.5 }),
     material: materials.unlit({ map: textures.fromPass(map) }),
     position: [0, 2, -3],
   });
 
-  let frame = 0;
   return {
     onUpdate() {
       carts.forEach((cart, k) => {
         const angle = time.now * 0.5 + (k * Math.PI * 2) / carts.length;
         cart.setPosition(Math.cos(angle) * 6, 0.5, Math.sin(angle) * 6);
       });
-      frame++;
-      render.setPassEnabled(map, frame % 3 === 0);
     },
   };
 });
