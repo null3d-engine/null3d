@@ -96,7 +96,7 @@ A record holds only numbers and short strings. This table shows the parts that a
 | `leaf` | `kind` (`cluster`, `needle`, `frond` or `blade`), `cards`, `width`, `height`, `perCard`, `up`, `out`, `start` and `end` |
 | `rosette` | For a plant without branches: `blades`, `length`, `width`, `arch`, `segments`, `shape`, `pinnae`, `upright` and `flowers` |
 | `wind` | `stiffness` for each branch level, the flutter's `flutter` distance and its `frequency` |
-| `color` | `bark`, `leaf`, `tint` and `transmission` |
+| `color` | `bark`, `leaf`, `tint` and `transmission`, plus an optional `flower` that tints a rosette's flower heads |
 | `height`, `trunks` | The plant's height and the trunks that rise from one base |
 | `heightVariance`, `size` | How much a variant's height and a copy's scale vary |
 | `flare`, `levels`, `variants` | The root flare, the detail levels, and the variants that a scene makes |
