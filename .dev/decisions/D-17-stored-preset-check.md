@@ -93,6 +93,12 @@ A sketch's own `quality.setPreset()` keeps the mode that the device started with
 
 The move is paid inside the check, not by the viewer. The lowering applies, the runner moves the canvas on the next frame, and the check waits for the new preset's first frame before it measures again.
 
+### The wait after a lowering
+
+A lowering changes the shadow map, the tile atlas and the pipelines, so the first frames after it carry that rebuild. The check draws past them before it measures again: it waits until the GPU has finished two frames at 100 ms or less, or four seconds have passed. The frames it skips are a one-time cost of the check's own lowering, not a cost that play pays: the rebuild happens once, inside the check, before the session starts. On the iPad its longest frame took about half a second, where the window read 2.1 frames a second against 59.2 for an unlowered page.
+
+The wait cannot hide a cost that persists in play. A preset that runs slower than ten frames a second never meets the two-frame mark, so the four-second cap ends the wait and the next window measures the preset at its true rate.
+
 ### three.js
 
 three.js has no preset check. Apps choose a quality level themselves, or adapt during play. React Three Fiber's drei has `PerformanceMonitor` and `AdaptiveDpr`. They lower the pixel ratio after slow frames in front of the player, as design (a) would.

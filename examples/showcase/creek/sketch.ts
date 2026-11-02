@@ -265,12 +265,8 @@ export default defineSketch(async (ctx) => {
 	});
 	scene.setActiveCamera(camera);
 	// The valley's one wind field. The grass, the falling leaves and the water read it, and G sends
-	// a gust that a person can watch cross the banks. The water draws the valley a second time for
-	// its reflection, and on the WebGL2 path a pass's fallback beside that second draw costs the
-	// frame a full set of the valley's textures, so that path keeps no grid and its readers work the
-	// air out of the steady field, gust and swirl included.
-	const grid = ctx.engine.capabilities.tier === 'webgl2' ? 0 : undefined;
-	const wind = createWind(ctx, { camera, box: 128, grid });
+	// a gust that a person can watch cross the banks.
+	const wind = createWind(ctx, { camera, box: 128 });
 	const target: [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];
 	/** A scratch place for the camera, which the gust control reads. */
 	const here: number[] = [0, 0, 0];
