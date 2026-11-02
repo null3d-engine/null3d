@@ -167,3 +167,13 @@ record keeps both figures.
 The look reviewer approved the pictures against the plain room's. It measured the floor's bleed
 within about two levels of the bake at most sampled points, and the worst differences, about six
 levels, in the intended direction.
+
+The light draws in every image test whose preset draws it. Those tests run on WebGPU's High and
+Ultra, and on WebGL2's Medium. Compatibility mode draws the 8-bit path, so it draws none. The light
+moves the picture of each such test that shows a lit surface. A lit face moves by a few levels, and
+most where it sees a lit neighbour. A test with a zero threshold counts every pixel that moves. A
+change that adds the light, or changes its samples, redraws those tests' references in both sets. It
+does so in the same change ([hard rule 34](../../AGENTS.md#hard-rules)). CI run 41304430249 drew 106
+pictures across 58 tests away from their stored software references. All of them were on WebGPU or
+WebGL2, and none in compatibility mode. With `bounceRays` set to 0, the tests with a zero threshold
+return inside their references.
