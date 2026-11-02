@@ -91,13 +91,13 @@ A record holds only numbers and short strings. This table shows the parts that a
 | Field | Holds |
 | --- | --- |
 | `id`, `kind` | A name, and `tree`, `conifer`, `shrub`, `fern`, `rosette` or `grass` |
-| `branchLevels` | One entry per level: `children`, `prune`, `length`, `lengthVariance`, `angle`, `angleVariance`, `curve`, `curveVariance`, `taper`, `start`, `end`, `sides`, `segments`, `twist` and the optional `whorls` |
+| `branchLevels` | One entry per level: `children`, `prune`, `length`, `lengthVariance`, `angle`, `angleVariance`, `curve`, `curveVariance`, `taper`, `start`, `end`, `sides`, `segments`, `twist`, and the optional `whorls`, `upright` and `thin` |
 | `crown` | A `shape` from the nine outlines, the `start` height, a `spread`, the vertical `pull`, and the optional `floor` that a crown keeps at its narrowest |
-| `leaf` | `kind` (`cluster`, `needle`, `frond` or `blade`), `cards`, `width`, `height`, `perCard`, `up`, `out`, `start` and `end` |
+| `leaf` | `kind` (`cluster`, `needle`, `frond` or `blade`), `cards`, `width`, `height`, `perCard`, `up`, `out`, `start`, `end`, and the optional `depth`, `cross`, `fill` and `hang` |
 | `rosette` | For a plant without branches: `blades`, `length`, `width`, `arch`, `segments`, `shape`, `pinnae`, `upright` and `flowers` |
 | `wind` | `stiffness` for each branch level, the flutter's `flutter` distance and its `frequency` |
 | `color` | `bark`, `leaf`, `tint` and `transmission` |
-| `height`, `trunks` | The plant's height and the trunks that rise from one base |
+| `height`, `trunks` | The plant's height, the trunks that rise from one base, and the optional `leader` and `stemLean` |
 | `heightVariance`, `size` | How much a variant's height and a copy's scale vary |
 | `flare`, `levels`, `variants` | The root flare, the detail levels, and the variants that a scene makes |
 | `seedSalt` | A number that changes this species alone when the scene's seed changes |
@@ -109,6 +109,20 @@ A record holds only numbers and short strings. This table shows the parts that a
 **A whorled level makes shelves, not one mass.** A branch level whose record gives `whorls` places its children in rings at the same height along the parent, and a conifer grows its boughs that way. Each ring then carries its boughs as one shelf, and a crown of rings reads as layered plates with air between them, which is the shape a spruce or a pine has and an even spread of boughs cannot make. Zero, the default, spreads the children evenly, as a broadleaf's limbs grow. The crown's `floor` sets how much of a bough the outline keeps at its narrowest: the default 0.2 holds a rounded crown's top open, and a conifer that tapers to a point asks for less.
 
 **A leaf's `width` and `height` are half a card.** A card draws two of each. Many cards cost vertex memory and a few large ones do not, so a crown closes by making its cards larger rather than more numerous: a leaf cell carries sixty small leaves, and a bigger card shows more of them at the same size on the screen. The generated arrays of the whole built-in set are measured against the memory budget that D-241 records.
+
+**A level's `upright` closes the crown over its axis.** The value is a number of degrees that the generator takes from a child's angle as the child stands nearer the crown's top. A limb that leaves the trunk almost level near the ground can leave almost parallel to it near the top, which is how a broadleaf's upper limbs and a conifer's leading shoots grow. The default, 0, keeps the angle that the record states.
+
+**A level's `thin` drops children toward the crown's top.** The value is the share of children that the crown's top may drop, from 0 to 1, and a hash keeps each child or drops it against the child's own height. An upper limb then forks less than a lower one. The default, 0, keeps every child.
+
+**A tree can divide its trunk low.** A species record's `leader` is the share of its height that the trunk rises before its limbs carry the crown. The default, 1, runs the trunk to the top. A smaller value gives a low, thick trunk that breaks into heavy limbs, as an open-grown oak does. Several stems from one base lean apart, and `stemLean` sets how far each one leans, as the tangent of its angle from the vertical. The default is 0.18.
+
+**`depth` fills the crown from its inside.** A leaf record's `depth` names the branch levels that carry cards, counted from the twigs. One puts cards on the twigs alone. Two adds half as many to the level above, the default, and each further level adds half of the level below it. A crown with more levels of cards reads as one mass rather than as clumps at the tips. A trunk carries no cards of its own.
+
+**`cross` keeps a spray's coverage edge-on.** A flat card that a needle or a frond draws can vanish when the camera looks along its plane. Set a leaf record's `cross` to true and the generator draws each flat card as two panels crossed along the middle, so the spray keeps its shape from below and edge-on. A crossed card takes twice the vertices and triangles of a flat one.
+
+**`fill` closes a crown that its twigs leave open.** The value is the share of extra cards that the generator places through the crown's volume, against the cards on its branches. The cards sample the crown's outline, so a spruce ends in a closed spire and a broadleaf in one mass rather than separate clumps. Each filled card reads the nearest branch for its wind and its shade, and a card near the crown's top is smaller than one at its foot. The default, 0, draws only the branch cards. A filled crown costs the vertices of its extra cards.
+
+**`hang` turns a filled crown into a curtain.** Set it to true and the filled cards fall almost straight down, as a willow's shoots do, rather than following the crown's outward direction. The default is false.
 
 ## Detail levels
 

@@ -189,7 +189,6 @@ function grow(
 		const perWhorl = whorls > 0 ? Math.max(1, Math.ceil(count / whorls)) : count;
 		for (let k = 0; k < count; k++) {
 			const key = branchKey * 0x9e37 + k + 1;
-			if (unitAt(seed, species.seedSalt, variant, key, KEY_TILT) < levelRecord.prune) continue;
 			const jitter = (unitAt(seed, species.seedSalt, variant, key, KEY_ANGLE) - 0.5) * 0.6;
 			const along =
 				whorls > 0
@@ -203,6 +202,14 @@ function grow(
 				1,
 				Math.max(0, (cy - growth.crownStart) / Math.max(1e-6, growth.top - growth.crownStart)),
 			);
+			// The crown thins as it rises: a hash that a high child must beat drops it, so an upper
+			// limb forks less than a lower one.
+			const thin = childLevel.thin ?? 0;
+			if (
+				unitAt(seed, species.seedSalt, variant, key, KEY_TILT) <
+				levelRecord.prune + thin * heightShare
+			)
+				continue;
 			const scale = crownScale(
 				species.crown.shape,
 				species.crown.spread,
@@ -214,11 +221,13 @@ function grow(
 				(unitAt(seed, species.seedSalt, variant, key, KEY_LENGTH) * 2 - 1) *
 					childLevel.lengthVariance;
 			const childLength = Math.max(0.01, childLevel.length * scale * variance);
-			const angle =
-				(childLevel.angle +
-					(unitAt(seed, species.seedSalt, variant, key, KEY_TILT) * 2 - 1) *
-						childLevel.angleVariance) *
-				RADIANS;
+			const spread =
+				childLevel.angle +
+				(unitAt(seed, species.seedSalt, variant, key, KEY_TILT) * 2 - 1) * childLevel.angleVariance;
+			// A species turns its limbs toward the trunk as they approach the crown's top, so the
+			// crown closes over its own axis instead of keeping the lower limbs' spread angle.
+			const upright = childLevel.upright ?? 0;
+			const angle = (upright > 0 ? Math.max(0, spread - upright * heightShare) : spread) * RADIANS;
 			const [sx, sy, sz] = sideOf(tx, ty, tz);
 			const [tiltedX, tiltedY, tiltedZ] = rotate(tx, ty, tz, sx, sy, sz, angle);
 			const yaw =
@@ -280,15 +289,19 @@ export function growSkeleton(species: Species, seed: number, variant: number): S
 
 	const growth: Growth = { species, seed, variant, branches, top: height, crownStart };
 	const trunkLevel = species.branchLevels[0];
+	const leader = species.leader ?? 1;
+	const lean = species.stemLean ?? 0.18;
 	for (let t = 0; t < trunks; t++) {
 		const angle = (t / Math.max(1, trunks)) * Math.PI * 2;
 		const ring = trunks > 1 ? height * 0.035 : 0;
 		const origin: [number, number, number] = [Math.cos(angle) * ring, 0, Math.sin(angle) * ring];
-		const lean = trunks > 1 ? 0.18 : 0.045;
+		// A tree with one trunk stands nearly upright; stems of a multi-stem plant lean apart.
+		const leanAt = trunks > 1 ? lean : 0.045;
 		const yaw = unitAt(seed, species.seedSalt, variant, t, KEY_TILT) * Math.PI * 2;
-		const direction = normalize(Math.cos(yaw) * lean, 1, Math.sin(yaw) * lean);
+		const direction = normalize(Math.cos(yaw) * leanAt, 1, Math.sin(yaw) * leanAt);
 		const trunkLength =
 			height *
+			leader *
 			(trunks > 1 ? 0.72 + 0.25 * unitAt(seed, species.seedSalt, variant, t, KEY_LENGTH) : 1) *
 			(trunkLevel ? 1 : 0);
 		grow(growth, 0, -1, origin, direction, trunkLength, t === 0 ? 0 : 0x10000 + t);

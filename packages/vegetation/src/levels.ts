@@ -32,6 +32,11 @@ export interface LeafCard {
 	readonly occlusion: number;
 	/** The card's outline. */
 	readonly kind: LeafKind;
+	/**
+	 * Whether the card is drawn as two panels crossed along its middle, which keeps its coverage
+	 * when the camera looks along the card's plane.
+	 */
+	readonly cross?: boolean;
 }
 
 /**
