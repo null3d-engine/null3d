@@ -20,6 +20,9 @@ import { defaultEnvironment, launchBrowser } from '../packages/cli/src/browser.j
 /** The page type of the browser that the pictures are drawn in. */
 type BrowserPage = Awaited<ReturnType<Awaited<ReturnType<typeof launchBrowser>>['newPage']>>;
 
+/** The longest run of one pose that a clip may hold, in seconds: a tenth of a second. */
+const STILL_LIMIT_SECONDS = 0.1;
+
 /** Where the plant pictures and clips are written. */
 const DEFAULT_OUT = '.internal/coordination/tree-renders';
 
@@ -153,14 +156,17 @@ async function main(): Promise<void> {
 	}
 	const { width: gifWidth, height: gifHeight } = captured[0] as Frame;
 	const palette = quantize(joinFrames(captured, gifWidth, gifHeight), 256);
-	// Each frame is a frame of the same length as every other, and the GIF's length is the count
-	// below. A static clip is the failure this check exists for: the frames would look like a plant
-	// and prove nothing about its motion.
+	// A clip can move at its ends and stand still in the middle, so the check is the longest run of
+	// frames that do not differ rather than the average motion. A plant that trembles never holds
+	// one pose for a tenth of a second, and a run that long means the air stopped reaching it.
 	const motion = frameMotion(captured);
-	if (motion === 0)
+	const still = longestStillRun(captured);
+	const stillSeconds = still / fps;
+	if (stillSeconds > STILL_LIMIT_SECONDS)
 		throw new Error(
-			'the clip is static: no frame differs from the next. Check that the sketch takes ?wind=1 ' +
-				'and that its sketch time is the hold the tool sets.',
+			`the clip holds one pose for ${stillSeconds.toFixed(2)} s (${still + 1} identical ` +
+				`frames), past the ${STILL_LIMIT_SECONDS} s limit. Check that the sketch takes ?wind=1 ` +
+				'and that the wind advances with the sketch time.',
 		);
 	const gif = GIFEncoder();
 	for (const [i, frame] of captured.entries()) {
@@ -177,8 +183,32 @@ async function main(): Promise<void> {
 	console.log(
 		`${file}: ${gifWidth}x${gifHeight}, ${frames} frames at ${fps} fps, ` +
 			`${((gif.bytes().length as number) / 1e6).toFixed(2)} MB, ` +
-			`${(motion * 100).toFixed(1)} per cent of pixels move between neighbouring frames`,
+			`${(motion * 100).toFixed(1)} per cent of pixels move between neighbouring frames, ` +
+			`longest still run ${still} frame${still === 1 ? '' : 's'}`,
 	);
+}
+
+/** The longest run of neighbouring frames that do not differ, in frames of its own. */
+function longestStillRun(frames: readonly Frame[]): number {
+	let longest = 0;
+	let run = 0;
+	for (let i = 1; i < frames.length; i++) {
+		const before = (frames[i - 1] as Frame).pixels;
+		const after = (frames[i] as Frame).pixels;
+		let same = true;
+		for (let at = 0; at < before.length; at += 4)
+			if (
+				before[at] !== after[at] ||
+				before[at + 1] !== after[at + 1] ||
+				before[at + 2] !== after[at + 2]
+			) {
+				same = false;
+				break;
+			}
+		run = same ? run + 1 : 0;
+		longest = Math.max(longest, run);
+	}
+	return longest;
 }
 
 /**
