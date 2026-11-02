@@ -72,8 +72,6 @@ export default defineSketch((ctx) => {
 		color: SPECIES.color.leaf as [number, number, number],
 		transmission: SPECIES.color.transmission,
 		alphaCutoff: SPECIES.leaf?.kind === 'needle' ? 0.2 : 0.24,
-		// A softer gloss keeps a flat card from catching a white sheen that reads as a dead leaf.
-		leafGloss: 0.2,
 	});
 	const bark = plantMaterial(ctx, {
 		atlases,
@@ -114,6 +112,44 @@ export default defineSketch((ctx) => {
 		fov = CROWN_FOV;
 		const reach = Math.max(4, span * 1.1);
 		position = [target[0] + reach * 0.7, Math.max(1.2, start * 0.8), target[2] + reach * 0.7];
+	} else if (VIEW === 'leaf') {
+		// Stand close to one card of the crown, along its own normal, so the frame shows the atlas
+		// and the lighting of a leaf rather than the crown's mass.
+		const leavesPart = (asset.levels[0]?.parts ?? []).find((part) => part.name === 'leaves');
+		const positions = leavesPart?.arrays.positions;
+		const normals = leavesPart?.arrays.normals;
+		const per = SPECIES.leaf?.kind === 'cluster' ? 6 : SPECIES.leaf?.cross === true ? 8 : 4;
+		let chosen = 0;
+		if (positions && normals)
+			for (let at = 0; at + per * 3 <= positions.length; at += per * 3)
+				if ((normals[at + 1] as number) > 0.4) {
+					chosen = at;
+					break;
+				}
+		let x = 0;
+		let y = 0;
+		let z = 0;
+		if (positions)
+			for (let i = 0; i < per; i++) {
+				x += positions[chosen + i * 3] as number;
+				y += positions[chosen + i * 3 + 1] as number;
+				z += positions[chosen + i * 3 + 2] as number;
+			}
+		target = [x / per, y / per, z / per];
+		fov = 32;
+		const facing = normals
+			? normalize(
+					normals[chosen] as number,
+					normals[chosen + 1] as number,
+					normals[chosen + 2] as number,
+				)
+			: ([0, 1, 0] as [number, number, number]);
+		const distance = 1.1;
+		position = [
+			target[0] + facing[0] * distance,
+			target[1] + facing[1] * distance,
+			target[2] + facing[2] * distance,
+		];
 	} else {
 		target = [center[0], min[1] + (max[1] - min[1]) * 0.48, center[2]];
 		fov = WHOLE_FOV;
