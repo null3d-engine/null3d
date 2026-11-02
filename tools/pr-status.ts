@@ -85,7 +85,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-V8':
 		"the CPU path draws a hill through the add-on and is measured on this Mac's Chrome, and the task's Done-when is not met. Creek's sketch still imports its own `./grass`, so no hill of Creek draws through the add-on; the cost has a row only for this Mac, and the iPad, an S24-class phone and the Tab A9 Plus are owed; near grass shadows are not built; and the compute-built blade list waits on M3-E9's count in the near shadow views and M3-V3's graph edge, since M3-E8's same-frame output is met, as the evidence entry says",
 	'M3-X1':
-		"held open by its own line: the vegetation add-on in Creek (M3-V11) is open, so Creek's plants are not drawn by a demo yet, and the demo budgets do not hold: the Skyway rates recorded for M3-C1 sit under the 60 fps target on the iPad Pro 13 (50.0 fps at Low on WebGPU, 54.2 on WebGL2) and the cloud S24 (11.7 at Low, 7.8 in the demos plan)",
+		"held open by its own line: the vegetation add-on in Creek (M3-V11) is open, so Creek's plants are not drawn by a demo yet, and the demo budgets do not hold, though narrowly: the Skyway demo reads 56.9 frames a second on the iPad Pro 13 at Low on the newer path and 58.9 on the Galaxy S24 Plus at Low on the older one, both just under the 60 target. The cloud S24 cannot answer the target at all, because its display runs at 30 Hz and caps every figure at 30; its 1 November run holds 29.4 of that 30 at the chosen preset, so the phone-class answer is the S24 Plus's 58.9",
 };
 
 /** The plan's groups, by the first letter of a task's part, in the plan's order. */
