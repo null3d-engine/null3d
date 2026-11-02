@@ -755,20 +755,23 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 
 ### Night town's windows (M3-B2)
 
-Night town draws its window panes through the facades example add-on
-(`examples/addons/facades/`), as Skyway does, in the add-on's pane form
-([D-254](decisions/D-254-interior-mapped-facades.md)).
+Skyway draws its window panes through the facades example add-on
+(`examples/addons/facades/`), in the add-on's pane form
+([D-254](decisions/D-254-interior-mapped-facades.md)). Night town still draws its panes with the
+scene's own facade shader, in `examples/compare/night-town/shaders.ts`, and moving it to the add-on
+is what M3-B2 still owes, so the bullets below say which of the two demos each fact belongs to.
 
 - Each pane looks into a room behind its glass: a lamp's pool, a floor, a ceiling, a block of
   furniture, blinds and a curtain in some. The eye's ray meets the room's box, so the room moves in
   parallax as the camera passes, and the view from one side of a window shows more of it than the
-  view from in front.
+  view from in front. Both demos draw this.
 - The panes keep their own row values: whether the pane is lit, how warm its light is, the phase of
   its flicker and whether a screen lights it. The hour dims every pane through that value.
-- The town lights up as the scene starts, from the square outward, on the add-on's power-on wave.
-  Each pane's light rises on a damped spring once the wave reaches it.
-- The panes draw the add-on's timber finish for their frames, so the wall finish that the pages
-  carry and the pane's frame agree. The house walls keep the scene's own timber texture.
+- The add-on lights a scene window by window as it starts, on its power-on wave, and each pane's
+  light rises on a damped spring once the wave reaches it. Night town's own shader has no such
+  wave: its town is lit from the first frame.
+- The add-on draws its own timber finish for the panes' frames. Night town's panes carry the
+  scene's own timber texture, on the walls and the frames alike.
 - The add-on's own cost is about 1.0 ms of GPU time a frame against a plain wall on both WebGPU
   paths at every preset, and 0.85 ms at Low and 0.05 to 0.49 ms at Medium, High and Ultra on
   WebGL2. Compatibility mode and WebGL2 stop at Medium, so their High and Ultra cells measure
