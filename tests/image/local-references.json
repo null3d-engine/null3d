@@ -125,12 +125,6 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
-	"chromium-swiftshader/compat/demo-showroom.png": {
-		"test": "demo-showroom",
-		"tier": "compat",
-		"date": "2026-11-02",
-		"reason": "the owner's new opening view of the configurator"
-	},
 	"chromium-swiftshader/compat/demo-splat-garden.png": {
 		"test": "demo-splat-garden",
 		"tier": "compat",
@@ -460,12 +454,6 @@
 		"tier": "webgl2",
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
-	},
-	"chromium-swiftshader/webgl2/demo-showroom.png": {
-		"test": "demo-showroom",
-		"tier": "webgl2",
-		"date": "2026-11-02",
-		"reason": "the owner's new opening view of the configurator"
 	},
 	"chromium-swiftshader/webgl2/demo-splat-garden.png": {
 		"test": "demo-splat-garden",
@@ -820,12 +808,6 @@
 		"tier": "webgpu",
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
-	},
-	"chromium-swiftshader/webgpu/demo-showroom.png": {
-		"test": "demo-showroom",
-		"tier": "webgpu",
-		"date": "2026-11-02",
-		"reason": "the owner's new opening view of the configurator"
 	},
 	"chromium-swiftshader/webgpu/demo-splat-garden.png": {
 		"test": "demo-splat-garden",
