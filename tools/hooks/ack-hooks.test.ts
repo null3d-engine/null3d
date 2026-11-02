@@ -14,6 +14,7 @@ import { audienceOf, isStyleChecked, keepsDates, subjectOf } from './check-docs-
 import { gpuBearingFiles, gpuCheckProblem } from './check-gpu-ack';
 import { macReferencesProblem, unmatchedSwiftShaderReferences } from './check-mac-references';
 import { touchesRust } from './check-rust';
+import { scriptReferencesProblem } from './check-script-references';
 import { explainedFiles, growthReason, namesFile, sizeGrowthProblems } from './check-size-growth';
 import { checkCommitMessage as checkSkills, skillBearingFiles } from './check-skills-ack';
 import { knownTaskIds, TASK_ID_SHAPE, TASK_RULE_SINCE, taskProblem } from './check-task';
@@ -524,6 +525,71 @@ describe('macReferencesProblem', () => {
 		expect(
 			macReferencesProblem([change([swift('webgpu', 's4')], 'fix: a\n\nMac-References: yes')]),
 		).toContain('Mac-References value "yes" gives no reason');
+	});
+});
+
+describe('scriptReferencesProblem', () => {
+	const demo = (environment: string, tier: string, name: string) =>
+		`tests/image/references/${environment}/${tier}/demo-${name}.png`;
+	const script = (environment: string, tier: string, state: string) =>
+		`tests/image/references/${environment}/${tier}/script-demo-island-${state}.png`;
+	const states = ['turned', 'walked', 'closer'] as const;
+	const change = (files: string[], message = 'test(images): draw the island again') => ({
+		sha: 'c3d4e5f6a7',
+		message,
+		files,
+	});
+
+	it('needs nothing when the script pictures change with the demo, in one commit or across the range', () => {
+		expect(
+			scriptReferencesProblem([
+				change([
+					demo('chromium-swiftshader', 'webgl2', 'island'),
+					...states.map((state) => script('chromium-swiftshader', 'webgl2', state)),
+				]),
+			]),
+		).toBeNull();
+		expect(
+			scriptReferencesProblem([
+				change([demo('chrome-real-gpu', 'webgl2', 'island')]),
+				change(states.map((state) => script('chrome-real-gpu', 'webgl2', state))),
+			]),
+		).toBeNull();
+	});
+
+	it('fails a demo-only change and names each script picture that it left', () => {
+		const problem = scriptReferencesProblem([
+			change([demo('chromium-swiftshader', 'webgl2', 'island')]),
+		]);
+		expect(problem).toContain(
+			'chromium-swiftshader/webgl2/script-demo-island-closer.png, chromium-swiftshader/webgl2/script-demo-island-turned.png, chromium-swiftshader/webgl2/script-demo-island-walked.png',
+		);
+		expect(problem).toContain('Script-References:');
+	});
+
+	it('needs nothing for a tier the script does not draw, a demo without a script, or a set without script pictures', () => {
+		expect(
+			scriptReferencesProblem([change([demo('chromium-swiftshader', 'webgpu', 'island')])]),
+		).toBeNull();
+		expect(
+			scriptReferencesProblem([change([demo('chromium-swiftshader', 'webgl2', 'showroom')])]),
+		).toBeNull();
+		expect(scriptReferencesProblem([change([demo('ipad', 'webgl2', 'island')])])).toBeNull();
+	});
+
+	it('takes a reason on any commit, and refuses a bare one', () => {
+		const left = change([demo('chromium-swiftshader', 'webgl2', 'island')]);
+		const reason =
+			'Script-References: the script draws another time of the same page, and its pictures still match';
+		expect(scriptReferencesProblem([change([], `test: note\n\n${reason}`), left])).toBeNull();
+		expect(
+			scriptReferencesProblem([
+				change(
+					[demo('chromium-swiftshader', 'webgl2', 'island')],
+					'test(images): a\n\nScript-References: yes',
+				),
+			]),
+		).toContain('Script-References value "yes" gives no reason');
 	});
 });
 
