@@ -71,6 +71,18 @@ fn add_fullscreen<B: FrameBuilder>(
     source: PassSource,
     maps: EffectMaps,
 ) -> ViewId {
+    add_fullscreen_switched(world, name, source, maps, true)
+}
+
+/// Adds a full-screen pass as [`add_fullscreen`] does, switched `on` or off from its first frame.
+/// A pass that starts switched off has never drawn, so its passes stay out of the plan.
+fn add_fullscreen_switched<B: FrameBuilder>(
+    world: &mut World<B>,
+    name: &str,
+    source: PassSource,
+    maps: EffectMaps,
+    on: bool,
+) -> ViewId {
     let pass = Fullscreen {
         template: PASS_TEMPLATE,
         fallback: false,
@@ -85,6 +97,7 @@ fn add_fullscreen<B: FrameBuilder>(
     };
     let target = ViewTarget {
         halvings: 1,
+        enabled: on,
         ..ViewTarget::default()
     };
     let names = ViewNames {
@@ -246,6 +259,25 @@ fn passes_chain_before_and_after_the_camera_and_bind_their_textures_on_both_path
     }
 }
 
+/// The number of draws that `view`'s full-screen pass makes in a frame's commands.
+fn fullscreen_draws(commands: &[(Op, Vec<u32>)], view: ViewId) -> usize {
+    let label = pass_role::label(PassRole::Fullscreen, view.index() as u32);
+    let mut inside = false;
+    let mut count = 0;
+    for (op, operands) in commands {
+        match op {
+            Op::BeginRenderPass => {
+                let at = operands.len().saturating_sub(2);
+                inside = operands.len() >= 2 && operands[at] == label;
+            }
+            Op::EndRenderPass => inside = false,
+            Op::Draw if inside => count += 1,
+            _ => {}
+        }
+    }
+    count
+}
+
 /// Steps `world` six times with a cadence of two on its full-screen pass, and returns how many
 /// frames of each drew it: one turn, then a frame without, and so on.
 fn cadence_draws<B: FrameBuilder>(mut world: World<B>, path: &str) {
@@ -263,24 +295,10 @@ fn cadence_draws<B: FrameBuilder>(mut world: World<B>, path: &str) {
     // The frame that builds the pass draws it once, so the cadence starts after it.
     world.step(&mut mock, true);
     world.renderer.settings_mut().set_view_every(view, 2);
-    let label = pass_role::label(PassRole::Fullscreen, view.index() as u32);
     let mut draws = Vec::new();
     for _ in 0..6 {
         let commands = world.step(&mut mock, false);
-        let mut inside = false;
-        let mut count = 0;
-        for (op, operands) in &commands {
-            match op {
-                Op::BeginRenderPass => {
-                    let at = operands.len().saturating_sub(2);
-                    inside = operands.len() >= 2 && operands[at] == label;
-                }
-                Op::EndRenderPass => inside = false,
-                Op::Draw if inside => count += 1,
-                _ => {}
-            }
-        }
-        draws.push(count);
+        draws.push(fullscreen_draws(&commands, view));
     }
     // A cadence of two draws in the first frame of each pair, and its target keeps the last image
     // in the frame between.
@@ -292,6 +310,142 @@ fn a_cadenced_full_screen_pass_draws_in_one_frame_of_two() {
     let (webgpu, webgl2) = worlds(Antialias::None);
     cadence_draws(webgpu, "WebGPU");
     cadence_draws(webgl2, "WebGL2");
+}
+
+/// A pass that carries a cadence keeps its place in the plan: neither the frame that its turn
+/// comes round nor the frame that it skips compiles the graph. The enabled switch beside it is the
+/// control: it changes what the plan holds, so the counter moves when the switch does.
+fn cadence_compiles_no_plan<B: FrameBuilder>(
+    mut world: World<B>,
+    graph: impl Fn(&B) -> &RenderGraph,
+    path: &str,
+) {
+    let mut mock = MockBackend::default();
+    // A pass that starts switched off has never drawn, so its passes stay out of the plan.
+    let view = add_fullscreen_switched(
+        &mut world,
+        "Cadence",
+        PassSource::SceneColor,
+        EffectMaps::NONE,
+        false,
+    );
+    let shown = world.show(view);
+    add_screen(&mut world, shown);
+    world.renderer.check_graph().unwrap();
+    for frame in 0..3 {
+        world.step(&mut mock, frame == 0);
+    }
+
+    // The control: switching the pass on adds its passes to the plan, which compiles the graph.
+    let settled = graph(&world.renderer).compiles();
+    world.renderer.settings_mut().set_view_enabled(view, true);
+    let commands = world.step(&mut mock, false);
+    assert_eq!(
+        graph(&world.renderer).compiles(),
+        settled + 1,
+        "{path}: the enabled switch moves the counter"
+    );
+    assert_eq!(
+        fullscreen_draws(&commands, view),
+        1,
+        "{path}: the switched-on pass draws"
+    );
+
+    // The cadence changes nothing that the plan holds, so the counter does not move on either kind
+    // of frame, and the pass still draws in one frame of two.
+    world.renderer.settings_mut().set_view_every(view, 2);
+    let mut draws = Vec::new();
+    for _ in 0..6 {
+        let commands = world.step(&mut mock, false);
+        draws.push(fullscreen_draws(&commands, view));
+        assert_eq!(
+            graph(&world.renderer).compiles(),
+            settled + 1,
+            "{path}: a cadence compiles no plan"
+        );
+    }
+    assert_eq!(draws, vec![1, 0, 1, 0, 1, 0], "{path}: one turn in two");
+}
+
+#[test]
+fn a_cadence_compiles_no_plan_while_the_enabled_switch_compiles() {
+    let (webgpu, webgl2) = worlds(Antialias::None);
+    cadence_compiles_no_plan(webgpu, |r| r.render_graph(), "WebGPU");
+    cadence_compiles_no_plan(webgl2, |r| r.render_graph(), "WebGL2");
+}
+
+/// A cadenced pass that is also switched keeps the two mechanisms apart: a frame that it rests
+/// draws nothing, a frame after the switch moves nothing in the plan, and the turns pace it again
+/// once it is switched on.
+fn resting_cadenced_pass_compiles_no_plan<B: FrameBuilder>(
+    mut world: World<B>,
+    graph: impl Fn(&B) -> &RenderGraph,
+    path: &str,
+) {
+    let mut mock = MockBackend::default();
+    let view = add_fullscreen(
+        &mut world,
+        "Cadence",
+        PassSource::SceneColor,
+        EffectMaps::NONE,
+    );
+    let shown = world.show(view);
+    add_screen(&mut world, shown);
+    world.renderer.check_graph().unwrap();
+    for frame in 0..3 {
+        world.step(&mut mock, frame == 0);
+    }
+    world.renderer.settings_mut().set_view_every(view, 2);
+    // One frame with the pass and one without, so the cadence is in effect before the switch.
+    let mut draws = Vec::new();
+    for _ in 0..2 {
+        let commands = world.step(&mut mock, false);
+        draws.push(fullscreen_draws(&commands, view));
+    }
+    assert_eq!(draws, vec![1, 0], "{path}: the cadence is in effect");
+    let settled = graph(&world.renderer).compiles();
+
+    // The pass has drawn, so its passes stay in the plan while it rests: the switch stops the
+    // drawing without compiling anything.
+    world.renderer.settings_mut().set_view_enabled(view, false);
+    for _ in 0..4 {
+        let commands = world.step(&mut mock, false);
+        assert_eq!(
+            fullscreen_draws(&commands, view),
+            0,
+            "{path}: a resting pass draws nothing"
+        );
+        assert_eq!(
+            graph(&world.renderer).compiles(),
+            settled,
+            "{path}: a switch of a pass that has drawn compiles no plan"
+        );
+    }
+
+    // Switched on again, it draws in one frame of two, and the plan is still the same.
+    world.renderer.settings_mut().set_view_enabled(view, true);
+    let mut draws = Vec::new();
+    for _ in 0..4 {
+        let commands = world.step(&mut mock, false);
+        draws.push(fullscreen_draws(&commands, view));
+        assert_eq!(
+            graph(&world.renderer).compiles(),
+            settled,
+            "{path}: the cadence and the switch do not compile the plan"
+        );
+    }
+    assert_eq!(
+        draws.iter().sum::<usize>(),
+        2,
+        "{path}: the cadence paces the turns again: {draws:?}"
+    );
+}
+
+#[test]
+fn a_resting_cadenced_pass_compiles_no_plan() {
+    let (webgpu, webgl2) = worlds(Antialias::None);
+    resting_cadenced_pass_compiles_no_plan(webgpu, |r| r.render_graph(), "WebGPU");
+    resting_cadenced_pass_compiles_no_plan(webgl2, |r| r.render_graph(), "WebGL2");
 }
 
 /// Records warm-up frames of `world`'s chain, then frames in which the passes' uniforms and the
