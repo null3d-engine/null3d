@@ -619,6 +619,9 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		(bg): FeatureScene => ({
 			test: `background-${bg}`,
 			twin: `${TWINS}/backgrounds.html?bg=${bg}`,
+			// three.js draws the flat cloud layer, and the volumetric tier has no twin there: the
+			// comparison pins the engine's sky to the layer that three.js draws.
+			sketchSwitches: 'cloudSteps=0',
 		}),
 	),
 	{

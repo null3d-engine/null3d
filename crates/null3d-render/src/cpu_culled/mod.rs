@@ -115,6 +115,7 @@ use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
 use crate::bounce::BounceIds;
 use crate::cells::CellCulling;
+use crate::cloud_noise;
 use crate::compute::ComputePassIds;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
@@ -323,8 +324,10 @@ mod ids {
     pub const MOMENT_SEARCH: u32 = MOMENT_AREA + 1;
     /// The physical sky's tables and panorama.
     pub const SKY_TABLES: u32 = MOMENT_SEARCH + 1;
+    /// The noise field of the volumetric cloud tier, which the renderer makes at its first use.
+    pub const CLOUD_NOISE: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
     /// The automatic exposure's cells, its texel, which the final pass reads, and its stored texel.
-    pub const EXPOSURE_CELLS: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
+    pub const EXPOSURE_CELLS: u32 = CLOUD_NOISE + 1;
     pub const EXPOSURE_TEXEL: u32 = EXPOSURE_CELLS + 1;
     pub const EXPOSURE_STORED: u32 = EXPOSURE_TEXEL + 1;
     /// The blank color grading table and outline mask that the final pass's still build owns, so
@@ -407,8 +410,10 @@ mod ids {
     pub const TAA_SAMPLER: u32 = STILL_LUT_SAMPLER + 1;
     /// The linear sampler of the moment layer's lookup tables and of its anti-aliasing steps.
     pub const MOMENT_SAMPLER: u32 = TAA_SAMPLER + 1;
+    /// The repeating linear sampler of the volumetric cloud tier's noise field.
+    pub const CLOUD_SAMPLER: u32 = MOMENT_SAMPLER + 1;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = MOMENT_SAMPLER + 1;
+    pub const SAMPLERS: u32 = CLOUD_SAMPLER + 1;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -441,9 +446,11 @@ mod ids {
     pub const BACKGROUND_GROUP: u32 = AO_GROUPS + AO_STEPS as u32;
     /// The bind group of a sky layer's values, after the background's.
     pub const BACKGROUND_LAYER_GROUP: u32 = BACKGROUND_GROUP + 1;
+    /// The bind group of the analytic sky's volumetric cloud draw, after the layer's.
+    pub const CLOUD_GROUP: u32 = BACKGROUND_LAYER_GROUP + 1;
     /// The bind group of each custom effect, and of each group of joined effects, after the
-    /// layer's.
-    pub const EFFECT_GROUPS: u32 = BACKGROUND_LAYER_GROUP + 1;
+    /// cloud draw's.
+    pub const EFFECT_GROUPS: u32 = CLOUD_GROUP + 1;
     /// The bind group of each step of depth of field, after the effects'.
     pub const DOF_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
     /// The bind group of the copy of the camera's opaque color, after depth of field's.
@@ -693,6 +700,8 @@ pub struct CpuCulledRenderer {
     particles: ParticlePass,
     /// The physical sky's tables.
     physical_sky: PhysicalSkyPass,
+    /// True once the volumetric cloud tier's noise field is on the GPU.
+    cloud_noise_made: bool,
     /// The vertex pages' vertex and index buffers.
     meshes: MeshBuffers,
     pipelines: PipelineCache,
@@ -954,6 +963,9 @@ impl CpuCulledRenderer {
                 sampler: ids::ENVIRONMENT_SAMPLER,
                 layer_buffer: ids::BACKGROUND_LAYER,
                 layer_group: ids::BACKGROUND_LAYER_GROUP,
+                noise: ids::CLOUD_NOISE,
+                noise_sampler: ids::CLOUD_SAMPLER,
+                cloud_group: ids::CLOUD_GROUP,
             }),
             particles: ParticlePass::new(ParticleIds {
                 buffers: ids::PARTICLE_BUFFERS,
@@ -966,7 +978,10 @@ impl CpuCulledRenderer {
                 textures: ids::SKY_TABLES,
                 samplers: ids::SKY_SAMPLERS,
                 groups: ids::SKY_GROUPS,
+                noise: ids::CLOUD_NOISE,
+                noise_sampler: ids::CLOUD_SAMPLER,
             }),
+            cloud_noise_made: false,
             meshes: MeshBuffers::new(ids::PAGES),
             pipelines: PipelineCache::default(),
             textures: SharedTextures::default(),
@@ -1573,6 +1588,7 @@ impl CpuCulledRenderer {
             + self.skins.upload_bound(self.settings.meshes())
             + self.graph.upload_bound()
             + BackgroundPass::UPLOAD_BYTES
+            + cloud_noise::upload_bytes(self.cloud_noise_made, self.settings.cloud_steps())
             + self
                 .particles
                 .upload_bound(self.settings.particles(), views)
@@ -2163,6 +2179,17 @@ impl CpuCulledRenderer {
             .culling
             .frame(ViewId::CAMERA)
             .map_or(0.0, |frame| frame.uniform.camera_world[1]);
+        // The field is made whenever the tier draws: a sky map can refresh from the scene's sky
+        // while another background draws, and its steps bind the field.
+        if self.settings.cloud_steps() > 0 {
+            cloud_noise::prepare(
+                list,
+                arena,
+                ids::CLOUD_NOISE,
+                ids::CLOUD_SAMPLER,
+                &mut self.cloud_noise_made,
+            )?;
+        }
         physical_sky::record_frame(
             &mut self.physical_sky,
             &mut self.settings,
@@ -2171,8 +2198,14 @@ impl CpuCulledRenderer {
             list,
             arena,
         )?;
-        self.settings
-            .record_materials(input, list, arena, table, &self.physical_sky)?;
+        self.settings.record_materials(
+            input,
+            list,
+            arena,
+            table,
+            &self.physical_sky,
+            ids::CLOUD_NOISE,
+        )?;
         // The frame's texture work recorded the uploads, so a texture that a light's image copies
         // from is on the GPU by the time the frame's passes run.
         let array = self.settings.probes().array().map_or(0, |(id, _)| id);
@@ -2248,8 +2281,14 @@ impl CpuCulledRenderer {
             self.settings.grading(),
         )?;
         self.bind_decal_depth(list)?;
-        self.background
-            .prepare(list, arena, &self.settings, self.physical_sky.group())?;
+        self.background.prepare(
+            list,
+            arena,
+            &self.settings,
+            self.physical_sky.group(),
+            self.physical_sky.cloud_group(),
+            (&self.pipelines, input.pipelines_built),
+        )?;
         let culling = &self.culling;
         self.particles.prepare(
             list,
@@ -3444,6 +3483,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.background.reset_gpu();
         self.particles.reset_gpu();
         self.physical_sky.reset_gpu();
+        self.cloud_noise_made = false;
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();
         self.layout.built = false;

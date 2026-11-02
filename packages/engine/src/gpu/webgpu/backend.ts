@@ -11,7 +11,12 @@ import { ImageTable } from '../../shared/images';
 import { DROP_COUNTED_LABEL } from '../../shared/metrics';
 import type { DeviceShaderSet } from '../device-shaders';
 import { JoinedBuilds, joinedReady } from '../effect-join';
-import { LAYER_WORD, LIGHT_BUFFER_WORD } from '../environment-words';
+import {
+	CLOUD_FIELD_WORD,
+	CLOUD_STEPS_WORD,
+	LAYER_WORD,
+	LIGHT_BUFFER_WORD,
+} from '../environment-words';
 import { floatOfBits } from '../float-bits';
 import { GpuMemory, textureBytes } from '../memory';
 import type { ReadSink } from '../readback';
@@ -675,7 +680,12 @@ export class WebGPUBackend {
 		if (op === G.OP_SKY_MAP_STEP) {
 			const panorama = words[a + 3] as number;
 			const source = panorama === 0 ? undefined : this.need(this.textures, panorama, 'texture');
-			const encoder = this.commandEncoder();
+			// The cloud tier's noise field exists once the tier's first frame made it, and the
+			// generator reads it only while the tier draws.
+			const cloudSteps = words[a + CLOUD_STEPS_WORD] as number;
+			const field = words[a + CLOUD_FIELD_WORD] as number;
+			const noise =
+				cloudSteps > 0 && field !== 0 ? this.need(this.textures, field, 'texture') : undefined;
 			// The page's sky layer, once its shader is here: the map's texels then hold the layer
 			// that the background shows, and so do the reflections and the light taken from them.
 			const template = words[a + LAYER_WORD] as number;
@@ -689,6 +699,7 @@ export class WebGPUBackend {
 			// mapping it, which the device refuses.
 			const readback =
 				capture === 0 || this.canvasTarget ? undefined : this.need(this.buffers, capture, 'buffer');
+			const encoder = this.commandEncoder();
 			code.skyStage(
 				this.device,
 				encoder,
@@ -700,6 +711,7 @@ export class WebGPUBackend {
 				source,
 				layer,
 				readback,
+				noise,
 			);
 		} else code.run(this.device, texture, this.images.generator(id)[0]);
 	}

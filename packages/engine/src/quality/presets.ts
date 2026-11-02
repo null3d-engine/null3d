@@ -318,6 +318,15 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: 'flag',
 	},
+	// The steps of each ray of the sky's volumetric cloud tier, which replaces the flat layer on the
+	// presets above 0. Low and Medium draw the flat layer, a few reads of two-dimensional noise;
+	// High and Ultra march a cloud volume, so the steps are the tier's cost. The figures are in
+	// D-297. 0 draws the flat layer, and a change makes no GPU object until the tier first draws.
+	cloudSteps: {
+		presets: [0, 0, 32, 48],
+		changes: 'live',
+		values: { min: 0, max: 64, whole: true },
+	},
 	// Software occlusion culling on WebGL2: the job workers draw the objects marked as blockers
 	// into a small depth buffer, and hide what lies wholly behind them. Off on every preset: on
 	// phones and tablets it cost the job workers several times what it saved in drawing (D-22). A
@@ -669,6 +678,14 @@ export interface QualitySettings {
 	 * physical sky's brightness, and keeps the haze on distant objects. It changes during play.
 	 */
 	physicalSky: boolean;
+	/**
+	 * The steps of each ray of the sky's volumetric cloud tier. Above 0 the sky draws volumetric
+	 * clouds in place of the flat layer, from the same cloud settings, with this many steps along
+	 * each ray; 0 draws the flat layer, as the lighter presets do. It changes during play. The noise
+	 * field and the tier's shaders load at its first use. The sky's environment map marches at most
+	 * 16 steps, and draws them only from a start above 0, because it picks its tier's shaders then.
+	 */
+	cloudSteps: number;
 	/**
 	 * Whether the frame-budget governor runs. When frames take too long, it lowers the settings one
 	 * step at a time: a sketch's budget and the render scale in turn, a budget's step first, so a
