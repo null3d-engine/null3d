@@ -57,6 +57,11 @@ export interface FeatureCostOptions {
 	seconds?: number;
 	/** Seconds of play before the first measurement. Two by default. */
 	warmUpSeconds?: number;
+	/**
+	 * The sides to measure. Both by default; one side alone lets separate page loads be differenced
+	 * as an ablation, which a cost that sits inside a frame's own spread needs.
+	 */
+	sides?: readonly ('off' | 'on')[];
 }
 
 /** The middle of some numbers, or null without any. */
@@ -109,6 +114,7 @@ export async function featureCost(
 		const order =
 			options.alternate && round % 2 === 1 ? (['on', 'off'] as const) : (['off', 'on'] as const);
 		for (const side of order) {
+			if (options.sides && !options.sides.includes(side)) continue;
 			await turn(side === 'on');
 			const stats = await engine.measure(seconds);
 			if (stats.gpuMs) sides[side].gpuMs.push(stats.gpuMs.median);
