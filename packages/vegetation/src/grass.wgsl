@@ -232,6 +232,10 @@ fn tuft_kept(place: vec3f, eye: vec3f) -> bool {
 }
 // </tuft-density>
 
+/// A tuft's reach from its root, in meters: the farthest that a blade of the biggest tuft lies from
+/// the root, which a view's edge test keeps wholly.
+const TUFT_REACH: f32 = 1.0;
+
 fn vertexOffset(input: VertexInput) -> vec3f {
     let root = object.position;
     // A far tuft draws a share of the time. The tufts that the share leaves out collapse to their
@@ -239,6 +243,24 @@ fn vertexOffset(input: VertexInput) -> vec3f {
     var width = 1.0;
     if (material.cull > 0.5) {
         if (!tuft_kept(root, camera.position)) {
+            return -input.position;
+        }
+        // A view draws only the tufts inside its own box: the camera's view its frustum, and a
+        // light's view its cascade, whose box reaches toward the light over the casters. The root
+        // and a point a tuft's reach away go through the view's matrix, so the margin that the
+        // blades need comes from the view's own scale. The instance's row holds the root relative
+        // to the camera, which is the space that the matrix takes.
+        let relative = object.worldMatrix[3].xyz;
+        let clip = engine_frame.view_proj * vec4f(relative, 1.0);
+        let above = engine_frame.view_proj * vec4f(relative + vec3f(0.0, TUFT_REACH, 0.0), 1.0);
+        let across = engine_frame.view_proj * vec4f(relative + vec3f(TUFT_REACH, 0.0, 0.0), 1.0);
+        let reach = max(
+            max(abs(above.x - clip.x), abs(above.y - clip.y)),
+            max(abs(across.x - clip.x), abs(across.y - clip.y)),
+        );
+        if (clip.w <= 0.0
+            || clip.x < -clip.w - reach || clip.x > clip.w + reach
+            || clip.y < -clip.w - reach || clip.y > clip.w + reach) {
             return -input.position;
         }
         width = 1.0 / tuft_density(root, camera.position);
