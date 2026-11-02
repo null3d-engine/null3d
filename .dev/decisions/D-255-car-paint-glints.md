@@ -93,11 +93,15 @@ Its cost lands in the pass that draws the panel. At Low the final pass rose by 1
 Medium it did not. Compatibility mode's plain frame costs 16.06 ms against core WebGPU's 12.88 at
 the same buffer, and the paint's share there is 3.29 ms against 6.08.
 
-Two rows give no figure. At Ultra, 1080 by 1864 pixels, the plain side's rounds swung between 16.5
-and 20.1 ms. The two sides did not share a GPU clock, so the difference does not hold. WebGL2 has no
-GPU timer on Chrome for Android, and both sides kept the display's 33.3 ms period. The frame
-interval cannot show the paint. The presets differ on this page only in the pixel ratio, so each
-row's cost belongs to its drawing buffer.
+Two rows give no figure, for reasons the run shows. At Ultra, 1080 by 1864 pixels, the plain side's
+rounds swung between 16.5 and 20.1 ms, a fifth of its cost. The painted side held 19.1 to 19.2 ms.
+The two sides therefore did not share a GPU clock, and the signed difference moved between -0.85 and
++2.65 ms. The paint cannot be faster than the plain side, so the negative rounds are the clock's. A
+phone lowers its GPU clock when a frame leaves it idle. A page that sets a light side against a heavy
+one therefore needs both sides to hold the GPU at work. A device whose clock holds also answers it.
+Until then the row is refused, not blank. WebGL2 has no GPU timer on Chrome for Android, and both
+sides kept the display's 33.3 ms period. The frame interval cannot show the paint. The presets differ
+on this page only in the pixel ratio, so each row's cost belongs to its drawing buffer.
 
 The flake count's own steps, measured at Medium, are apart from the rest of the lobe. A light that
 every flake catches, over a footprint of about eight cells a pixel, costs 5.47 ms of that frame. The
