@@ -1639,6 +1639,26 @@ mod tests {
             0.0,
             "a light past the cap stays at no weight"
         );
+        // Coming back under the cap, it climbs the same way: a step a frame, up to its full weight.
+        grid.set_area_light_cap(2);
+        let mut climbing = Vec::new();
+        for _ in 0..FADE_FRAMES {
+            grid.choose(&visible);
+            climbing.push(weight_of(&grid, 2));
+        }
+        for (frame, weight) in climbing.iter().enumerate() {
+            let expected = step * (frame + 1) as f32;
+            assert!(
+                (weight - expected).abs() < 1e-6,
+                "the returning light's weight rose to {weight} at frame {frame}, not {expected}"
+            );
+        }
+        grid.choose(&visible);
+        assert_eq!(
+            weight_of(&grid, 2),
+            1.0,
+            "a light under the cap holds its full weight"
+        );
     }
 
     #[test]

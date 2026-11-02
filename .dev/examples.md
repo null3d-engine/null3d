@@ -902,8 +902,11 @@ product pages.
   hold the fade to that, and `tests/image/showroom-steady.spec.ts` holds the demo's camera still and
   measures the floor on consecutive frames as the browser presents them: its step between frames
   must not exceed one and a half times its step across two frames, which an alternating image breaks
-  and a drifting one does not. The fix brightens every area-lit picture a little, so
-  `demo-area-lights` changed with it.
+  and a drifting one does not; the run also requires the sketch's frame count to advance and the
+  car's own part of the frame to move, so a stopped engine cannot pass it. The fade covers the
+  lights that the frame lists, so a light switched off or hidden leaves the list and is not faded:
+  the fade smooths a light crossing the area lights' cap, not one switched off. The fix brightens
+  every area-lit picture a little, so `demo-area-lights` changed with it, in both sets.
 - **The lamps were not the sparkle; the paint was.** In one 60-frame-a-second capture of the car
   returning in the street on the Mac, the two lamp bars stayed at full brightness in every frame,
   while the paint on the nose sparkled. Turning the headlamp beams off or the fog off left the
