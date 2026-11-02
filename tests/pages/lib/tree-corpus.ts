@@ -57,7 +57,7 @@ const SPRUCE: Species = {
 		level({
 			children: 3,
 			prune: 0.02,
-			length: 5.2,
+			length: 4.2,
 			// A bough ring wider than this in length or angle makes the cone's outline move as the
 			// view turns, so each ring stays close to its own size and angle.
 			lengthVariance: 0.06,
@@ -73,7 +73,7 @@ const SPRUCE: Species = {
 			sides: 5,
 			segments: 6,
 			twist: 90,
-			whorls: 8,
+			whorls: 16,
 			whorlTip: true,
 			upright: 14,
 			thin: 0.12,
