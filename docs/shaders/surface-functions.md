@@ -38,7 +38,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 `materials.shader(options)` makes a custom material. Its `wgsl` option holds the WGSL. Its `uniforms` and `textures` options give the values of the WGSL's [uniforms](#uniforms) and [textures](#textures). Its other options are those of `materials.standard`, but the texture maps, which a custom material samples as textures of its own. [Materials](../api/materials.md) lists them.
 
 - Write the WGSL in a template literal right after a `/* wgsl */` comment, or in a `.wgsl` file that your sketch imports. The plugin compiles it while Vite serves or builds the project. [Custom shaders](../guides/custom-shaders.md) says how.
-- The WGSL declares `fn surface(input: SurfaceInput) -> Surface`, `fn vertexOffset(input: VertexInput) -> vec3f` ([vertex offsets](#vertex-offsets)), `fn lobe(input: LobeInput) -> vec3f` ([a material's own lobe](#a-materials-own-lobe)), `fn coverage(input: SurfaceInput) -> f32` ([shadows](#shadows)), or some of them, and no `@vertex` or `@fragment` entry point. For a look that the engine's lighting cannot give, write a [full shader](../guides/custom-shaders.md#full-shaders) instead.
+- The WGSL declares `fn surface(input: SurfaceInput) -> Surface`, `fn vertexOffset(input: VertexInput) -> vec3f` ([vertex offsets](#vertex-offsets)), `fn lobe(input: LobeInput) -> vec3f` ([a material's own lobe](#a-materials-own-lobe)), `fn coverage(input: SurfaceInput) -> f32` ([shadows](#shadows)), or some of them, and no `@vertex` or `@fragment` entry point. A surface that shows its own color with no light declares `fn unlit(input: SurfaceInput) -> vec4f` in place of `surface` ([unlit surfaces](#unlit-surfaces)). For a look that the engine's lighting cannot give, write a [full shader](../guides/custom-shaders.md#full-shaders) instead.
 - `set()` changes the standard values, such as `color` and `roughness`, as it does for a standard material. The surface function sees them through `defaultSurface`.
 - Materials made from the same WGSL share one shader. Make one material for each look, as you do for standard materials.
 - A mesh needs texture coordinates to draw with a custom material. The geometry generators give every mesh texture coordinates. For a mesh from `geometry.fromArrays`, pass `uvs`.
@@ -109,6 +109,22 @@ fn surface(input: SurfaceInput) -> Surface {
 ```
 
 To show a value while you work on a function, put it in the emissive light and make the base color black: `s.emissive = vec3f(value); s.baseColor = vec3f(0.0);`.
+
+## Unlit surfaces
+
+A surface that shows its own color, such as a glow, a hologram's light or a Gaussian splat, declares `fn unlit(input: SurfaceInput) -> vec4f` in place of `surface`. It returns the pixel's linear color and its opacity. The engine shows that color with the fog, the exposure and the output that a lit surface's light gets, and with no lights, shadows, reflections or ambient occlusion. So each pixel costs a small share of a lit one, which matters where many pixels overlap.
+
+```wgsl
+fn unlit(input: SurfaceInput) -> vec4f {
+    let corner = input.uv * 2.0 - 1.0;
+    return vec4f(1.0, 0.8, 0.4, exp(-4.0 * dot(corner, corner)));
+}
+```
+
+- The function reads the same input as a surface function: the uniforms, the textures, the row values and the scene's depth. A `vertexOffset` and a `coverage` function work beside it.
+- The material's alpha mode applies to the opacity it returns, as to a surface's `alpha`. A masked shadow caster tests the same opacity, unless the WGSL declares `coverage`.
+- `discard` in the function drops the pixel, which saves its blend.
+- `surface` and `lobe` light a surface, so the build refuses WGSL that declares either beside `unlit`.
 
 ## A normal for the diffuse light
 
