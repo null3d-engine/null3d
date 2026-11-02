@@ -3,12 +3,14 @@
 // chosen count is zero takes none either, so a chunk that arrives after the camera looked away
 // never draws where it no longer belongs.
 //
-// A prefix that keeps part of a chunk leaves gaps where the splats it drops covered the surface. So
-// the pack grows the splats that it keeps, by the factor that gives them the chunk's whole cover
-// again: the square root of the whole chunk's cover over the prefix's own, where a splat's cover is
-// its opacity times the area of its largest cross-section. A coarse level then draws the same
-// surface with fewer, larger splats, as a level of detail should, rather than a sparse one.
-import { coverOf, type SplatChunk } from './chunks';
+// A prefix that keeps part of a chunk can leave holes where the splats it drops covered the surface.
+// So the pack grows the splats that it keeps by the square root of the share of the chunk's surface
+// that the prefix leaves uncovered, which the chunk measured as it was built. A dense cloud whose
+// splats overlap keeps its surface covered and barely grows, and a scan's ground of small flat
+// splats grows until its holes close, so a coarse level draws the same surface with fewer, larger
+// splats rather than a sparse one.
+import type { SplatChunk } from './chunks';
+import { coverageAt } from './coverage';
 
 /** The most that a prefix's splats grow, so a chunk far away never draws as a few large blobs. */
 const MOST_GROWTH = 3;
@@ -89,13 +91,12 @@ export function packRows(
 
 /**
  * The factor that a chunk's first `count` splats grow by, so that together they cover what the
- * whole chunk covers: 1 for the whole chunk, and at most the cap for a small prefix.
+ * whole chunk covers: 1 for the whole chunk or a prefix that covers its surface already, and at
+ * most the cap for a prefix that leaves most of it bare.
  */
 export function growthOf(chunk: SplatChunk, count: number): number {
 	if (count >= chunk.count) return 1;
-	let kept = 0;
-	for (let i = 0; i < count; i++) kept += coverOf(chunk.scales, chunk.colors, i);
-	const whole = chunk.cover;
-	if (!(kept > 0) || !(whole > kept)) return 1;
-	return Math.min(MOST_GROWTH, Math.sqrt(whole / kept));
+	const share = coverageAt(chunk.coverage, chunk.count, count);
+	if (!(share > 0)) return MOST_GROWTH;
+	return Math.min(MOST_GROWTH, Math.max(1, Math.sqrt(1 / share)));
 }

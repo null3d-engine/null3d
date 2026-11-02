@@ -148,6 +148,6 @@ describe('chunkSplats', () => {
 		};
 		const { chunks } = await chunkSplats(data);
 		expect(chunks[0]?.scales[0]).toBe(1);
-		expect(chunks[0]?.cover).toBeCloseTo(1 + 0.04, 6);
+		expect(chunks[0]?.coverage[0]).toBe(1);
 	});
 });
