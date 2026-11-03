@@ -95,6 +95,7 @@ function fakeGlue(
 	grows = false,
 	cellsRefused = () => 0,
 	handed: { handedMs: number; timing?: boolean[] } = { handedMs: 0 },
+	readsLastFrame = () => 0,
 ): CoreGlue {
 	// Each scene field, then each ring field, in its own 4 KB block.
 	const block = (index: number) => 4096 * (index + 1);
@@ -107,6 +108,7 @@ function fakeGlue(
 		// The first block holds no field, so the call values take its start.
 		callValues: () => 0,
 		cellsRefused,
+		readsLastFrame,
 		meshMemoryBytes: () => MESH_BYTES,
 		takeHandedUs: () => (handed.timing?.at(-1) === false ? 0 : Math.round(handed.handedMs * 1000)),
 		// The fake takes numbers, so the flag arrives as one.
@@ -221,6 +223,7 @@ async function start(
 		keyCodes = [],
 		shared = false,
 		cellsRefused,
+		readsLastFrame,
 		control = controlViews(createControlBuffer(shared)),
 		maxTargetFps = 60,
 		jobs = { most: 0, handedMs: 0, asked: [] },
@@ -236,6 +239,8 @@ async function start(
 		keyCodes?: readonly string[];
 		shared?: boolean;
 		cellsRefused?: () => number;
+		/** What the core answers to `readsLastFrame`: nonzero when a pass reads the frame before. */
+		readsLastFrame?: () => number;
 		control?: ReturnType<typeof controlViews>;
 		maxTargetFps?: number;
 		/**
@@ -260,7 +265,7 @@ async function start(
 		() => {},
 		metrics,
 		{
-			glue: fakeGlue(log, memory, calls, grows, cellsRefused, jobs),
+			glue: fakeGlue(log, memory, calls, grows, cellsRefused, jobs, readsLastFrame),
 			memory,
 			control,
 			keyCodes,
@@ -1154,6 +1159,20 @@ describe('hold mode with a timed script', () => {
 			{ holdSeconds: seconds, holdScript: { steps }, keyCodes },
 		);
 
+	it('reports the held frame when a pass makes it draw one more', async () => {
+		// A pass that reads the frame before makes the hold record a settle frame after the held
+		// one. The page reports the frame that the session's steps reached, not that settle frame,
+		// and the settle frame runs none of the sketch's code.
+		let updates = 0;
+		const { control } = await start(() => ({ onUpdate: () => updates++ }), undefined, {
+			holdSeconds: 0.5,
+			readsLastFrame: () => 1,
+		});
+		expect(updates).toBe(31);
+		expect(Atomics.load(control.slots, Slot.HeldFrame)).toBe(31);
+		expect(Atomics.load(control.slots, Slot.FramesPublished)).toBe(32);
+	});
+
 	it('writes a property before the frame at its time, and dumps it after', async () => {
 		const { runner } = await holdOf([
 			{ at: 0, verb: 'set', target: 'Car', path: 'position', value: [1, 2, 3] },
@@ -1306,6 +1325,18 @@ describe('recording a session and replaying it', () => {
 			sketch: 'http://localhost/sketch.ts',
 			stopped: false,
 		});
+		// A pass that reads the frame before makes the replay record a settle frame after its last
+		// one. The session's frames stay five, and the settle frame runs none of the sketch's code.
+		const settling: string[] = [];
+		const settled = await start(logging(settling), undefined, {
+			keyCodes: KEYS,
+			replay: program,
+			readsLastFrame: () => 1,
+		});
+		expect(settling).toEqual(live);
+		expect(settled.runner.replayOutcome?.frames).toBe(5);
+		expect(Atomics.load(settled.control.slots, Slot.HeldFrame)).toBe(5);
+		expect(Atomics.load(settled.control.slots, Slot.FramesPublished)).toBe(6);
 	});
 
 	it('runs no recording when the page does not record, and no replay when it gives none', async () => {

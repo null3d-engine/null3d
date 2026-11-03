@@ -349,11 +349,29 @@ function sumOf(values: readonly number[] = []): number {
 	return sum;
 }
 
-/** Joins the records of every role by frame and summarizes them per frame and per thread. */
+/** The records of one ring for one frame alone, or none when the ring has no record of it. */
+function onlyFrame(ring: RingRecords, frame: number): RingRecords {
+	const at = ring.frames.indexOf(frame);
+	if (at < 0) return NO_RECORDS;
+	return {
+		frames: [frame],
+		busy: [ring.busy[at] as number],
+		intervals: [ring.intervals[at] as number],
+		phases: ring.phases.map((values) => [values[at] as number]),
+		counters: ring.counters.map((values) => [values[at] as number]),
+		passRoles: ring.passRoles.map((values) => [values[at] as number]),
+	};
+}
+
+/** Joins the records of every role by frame and summarizes them per frame and per thread. With
+ * `only`, it summarizes that frame alone, such as the held frame of a run that drew a settle frame
+ * after it too. */
 export function summarizeFrames(
 	records: readonly RingRecords[],
 	threads: ReadonlyMap<string, readonly number[]>,
+	only?: number,
 ): FrameSummary {
+	if (only !== undefined) records = records.map((ring) => onlyFrame(ring, only));
 	const ring = (role: number) => records[role] ?? NO_RECORDS;
 	const indexes = records.map((r) => new Map(r.frames.map((frame, i) => [frame, i])));
 	const drawn = indexes[Role.Render] ?? new Map<number, number>();
