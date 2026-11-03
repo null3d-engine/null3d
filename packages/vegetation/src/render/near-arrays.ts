@@ -17,6 +17,7 @@ import {
 	ROW_WORDS,
 	VARIANT_FLOATS,
 } from './near-task';
+import { toHalf } from './records';
 
 /** Where copies stand, as `placePlants` takes them. */
 export interface CopyRows {
@@ -63,6 +64,48 @@ export function tierBands(detail: Detail, split: number): readonly TierBand[] {
 		start: k === 0 ? 0 : (ends[k - 1] as number) / (EDGE * EDGE),
 		end,
 	}));
+}
+
+/**
+ * The sphere that a variant's copies are measured by: about its crown's centre, holding every part
+ * of the plant and every shoot. A copy's rows stand at that centre, so the engine measures its
+ * levels and draw ranges to the crown, as the near pool measures which copies are near. Each of the
+ * centre's numbers is a half float, so a device that keeps row values at half precision reads it
+ * exactly.
+ *
+ * @param kit The species' kit.
+ * @param asset The grown variant.
+ * @returns The centre in the plant's metres and the radius at scale 1.
+ */
+export function crownSphere(
+	kit: SpeciesKitData,
+	asset: PlantAsset,
+): { readonly centre: readonly [number, number, number]; readonly radius: number } {
+	const c = asset.crown.centre;
+	const centre = [toHalf(c[0]), toHalf(c[1]), toHalf(c[2])] as const;
+	// The farthest wood from the centre, with its own radius, and the farthest shoot with the reach of
+	// the longest one: tighter than the corners of the bounds, so a round crown keeps a round sphere.
+	const sizes = switchSizes(kit);
+	const reach = Math.max(sizes.shoot, sizes.card);
+	const distance = (p: ArrayLike<number>, at: number) => {
+		const dx = (p[at] as number) - centre[0];
+		const dy = (p[at + 1] as number) - centre[1];
+		const dz = (p[at + 2] as number) - centre[2];
+		return Math.sqrt(dx * dx + dy * dy + dz * dz);
+	};
+	const { skeleton, shoots } = asset;
+	let widest = 0;
+	for (let n = 0; n < skeleton.nodeCount; n++)
+		widest = Math.max(widest, distance(skeleton.position, n * 3) + (skeleton.radius[n] as number));
+	for (let r = 0; r < shoots.count; r++)
+		widest = Math.max(widest, distance(shoots.position, r * 3) + reach);
+	const { min, max } = skeleton.bounds;
+	if (shoots.count === 0)
+		// A plant without shoot rows keeps its merged leaves and extras inside its bounds.
+		for (const x of [min[0], max[0]])
+			for (const y of [min[1], max[1]])
+				for (const z of [min[2], max[2]]) widest = Math.max(widest, distance([x, y, z], 0));
+	return { centre, radius: widest };
 }
 
 /** One placed species as the near task's scene lays it out. */

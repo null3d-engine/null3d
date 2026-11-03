@@ -107,6 +107,8 @@ const TEXTURE_UV_STEPS: f32 = 65535.0;
 const WOOD_RADIUS_SPAN: f32 = 4.0;
 // The coverage at which a texel counts as leaf, the materials' alpha cutoff.
 const CUTOFF: f32 = 0.5;
+// How much a card's alpha rises for each mip level its sample reads, so far cards keep their leaves.
+const CARD_MIP_LIFT: f32 = 0.25;
 // One turn, for the phases that the records and the vertex colours carry.
 const TURN: f32 = 6.283185307179586;
 // How far the stem's top moves for each metre a second of wind, as a share of its length.
@@ -510,13 +512,17 @@ fn bark_lift(input: VertexInput) -> f32 {
 /// bark's height on the nearest wood, and moved by the wind in the plant's own space.
 fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
     var plant = box_point(input.position);
+    // A copy's rows stand at its crown's centre, which the row's values carry in the plant's own
+    // metres, so the engine measures the copy's levels and bands to its crown; the point moves back by
+    // it here. A batch without values carries zero, and its rows stand at the plant's foot.
+    let centre = object.values.yzw;
     if (mode == MODE_WOOD && material.displacement > 0.0) {
         plant += normalize(input.normal) * bark_lift(input);
     }
     var moved = plant;
     let fade = sway_fade();
     if (material.windStrength > 0.0 && fade > 0.0) {
-        let place = (object.worldMatrix * vec4f(plant, 1.0)).xyz + camera.position;
+        let place = (object.worldMatrix * vec4f(plant - centre, 1.0)).xyz + camera.position;
         let air = air_at(place);
         let m = object_frame();
         let local = transpose(m) * vec3f(air.x, 0.0, air.z);
@@ -539,7 +545,7 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
             moved = plant + (swayed - plant) * fade;
         }
     }
-    return moved - input.position;
+    return moved - centre - input.position;
 }
 
 /// A shoot row: the parent branch's sway at the shoot's base, found in the copy's plant space from
@@ -688,6 +694,25 @@ fn uv_scale(mode: i32) -> f32 {
     return 1.0 / TEXTURE_UV_STEPS;
 }
 
+/// A card's alpha, raised with the mip level that its sample reads. A mip level averages the leaves'
+/// coverage with the gaps between them, so far away a card's alpha falls under the cutoff and its
+/// leaves would vanish; raising it by a quarter for each level keeps the share of the card that
+/// leaves cover near the full-size texture's.
+fn card_alpha(alpha: f32, gx: vec2f, gy: vec2f) -> f32 {
+    let texels = vec2f(textureDimensions(colour).xy);
+    let footprint = max(length(gx * texels), length(gy * texels));
+    let level = max(log2(max(footprint, 1.0)), 0.0);
+    return saturate(alpha * (1.0 + level * CARD_MIP_LIFT));
+}
+
+/// Whether a card's point lies inside its near copy's split, where the copy's real shoots draw and
+/// its cards give way. The card row's value carries the copy's split in metres; a copy that draws no
+/// shoots carries 0.
+fn near_card(input: SurfaceInput) -> bool {
+    let split = object.values.x;
+    return split > 0.0 && length(input.relativePosition) < split * 0.96;
+}
+
 /// The coverage a point casts: a leaf's or a card's texel, and wood and stems whole.
 fn coverage(input: SurfaceInput) -> f32 {
     let mode = plant_mode();
@@ -698,7 +723,12 @@ fn coverage(input: SurfaceInput) -> f32 {
     var alpha = 1.0;
     if (mode == MODE_CARDS) {
         let layer = select(1, 0, input.frontFacing);
-        alpha = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy).a;
+        alpha = card_alpha(textureSampleGrad(colour, colourSampler, uv, layer, gx, gy).a, gx, gy);
+        // Inside a near copy's split its real shoots cast the shadow, so its cards cast none. A
+        // caster's inputs are the scene camera's, so the split is measured as the cards draw it.
+        if (near_card(input)) {
+            alpha = 0.0;
+        }
     } else if (mode == MODE_FOLIAGE
         || (mode == MODE_SHOOTS && input.vertexColor.b * 255.0 < KIND_STEM * 0.5)) {
         let layer = select(1, 0, input.frontFacing);
@@ -737,11 +767,12 @@ fn surface(input: SurfaceInput) -> Surface {
     if (mode == MODE_WOOD) {
         let radius = input.uv1.x * WOOD_RADIUS_SPAN;
         let junction = input.uv1.y;
-        // The point in the plant's own space, for zones by height.
+        // The point in the plant's own space, for zones by height: the row stands at the crown's
+        // centre, which its values carry.
         let m = object_frame();
         let origin = object.worldMatrix[3].xyz;
         let squared = max(dot(m[0], m[0]), 0.00000001);
-        let plant = transpose(m) * (input.relativePosition - origin) / squared;
+        let plant = transpose(m) * (input.relativePosition - origin) / squared + object.values.yzw;
         let zones = i32(header(HEADER_YOUNG_TILE).z + 0.5);
         // The two zones that weigh most at this point.
         var first_zone = 0;
@@ -834,11 +865,8 @@ fn surface(input: SurfaceInput) -> Surface {
         } else {
             base = texel.rgb;
         }
-        alpha = texel.a;
-        // Inside a near copy's split, which its card row's value carries, its real shoots draw and
-        // its cards give way; a copy that draws no shoots carries 0.
-        let split = object.values.x;
-        if (split > 0.0 && length(input.relativePosition) < split * 0.96) {
+        alpha = card_alpha(texel.a, gx, gy);
+        if (near_card(input)) {
             alpha = 0.0;
         }
         let e = (surface_texel.xy * 255.0 - vec2f(128.0)) / 127.0;

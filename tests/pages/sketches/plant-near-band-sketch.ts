@@ -8,7 +8,7 @@
 // The near pool follows a fixed eye, so its task settles at setup and the held frame draws its
 // answer. The sketch posts the pool's figures as `near`: the copies and triangles it draws, the
 // triangle budget it holds them to and the split distance.
-import { type Camera, defineSketch } from '@null3d/engine';
+import { type Camera, defineSketch, type Quat } from '@null3d/engine';
 import {
 	createNearPool,
 	growPlant,
@@ -22,6 +22,11 @@ import { nearOak } from '../../../packages/vegetation/src/render/near-oak.fixtur
 const params = new URL(import.meta.url).searchParams;
 const DRAW = params.get('draw') ?? 'split';
 const STEP = Number(params.get('step') ?? 0);
+/**
+ * `?view=shadow` draws the ground under one smaller oak, whose whole crown stands inside the split,
+ * lit by a sun overhead: the shadow on the ground is the shoots' alone wherever the split holds.
+ */
+const SHADOW = params.get('view') === 'shadow';
 
 /** Where the oaks stand: x, z, turn in radians, scale and variant. */
 const STAND: readonly (readonly [number, number, number, number, number])[] = [
@@ -55,6 +60,16 @@ const WALK: readonly (readonly [
 	],
 ];
 
+/** The shadow view's oak, its eye and the point the eye looks at, straight down beside the trunk. */
+const SHADOW_STAND: typeof STAND = [[0, 0, 0, 0.6, 0]];
+const SHADOW_SPOT: (typeof WALK)[number] = [
+	[1.5, 2.5, 1],
+	[1.5, 0, 1.01],
+];
+
+/** The quaternion that lays a plane, which faces +Z, flat on the ground. */
+const FLAT: Quat = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];
+
 /** The vertical field of view in degrees, and the render height that the switches are measured at. */
 const FOV = 60;
 const VIEW_HEIGHT = 1080;
@@ -63,11 +78,27 @@ export default defineSketch(async (ctx) => {
 	const { scene } = ctx;
 	if (!['split', 'shoots', 'cards'].includes(DRAW))
 		throw new Error(`?draw=${DRAW} is not split, shoots or cards.`);
-	const spot = WALK[STEP];
+	const spot = SHADOW ? SHADOW_SPOT : WALK[STEP];
 	if (!spot)
 		throw new Error(`?step=${STEP} is not a spot of the walk: give 0 to ${WALK.length - 1}.`);
 	const [eye, target] = spot;
+	const stand = SHADOW ? SHADOW_STAND : STAND;
 	scene.setBackground('#ffffff');
+	if (SHADOW) {
+		scene.createAmbientLight({ intensity: 0.3 });
+		scene.createDirectionalLight({
+			direction: [0.08, -1, 0.05],
+			intensity: 3,
+			castShadows: true,
+			shadow: { distance: 40 },
+		});
+		scene.createMesh({
+			mesh: ctx.geometry.plane({ width: 60, height: 60 }),
+			material: ctx.materials.standard({ color: '#ffffff', roughness: 1 }),
+			rotation: FLAT,
+			receiveShadows: true,
+		});
+	}
 	const camera: Camera = scene.createPerspectiveCamera({
 		fov: FOV,
 		near: 0.05,
@@ -82,11 +113,11 @@ export default defineSketch(async (ctx) => {
 		[0, 1].map((variant) => growPlant(kit, { seed: 11, variant, near: true })),
 	);
 	const copies: PlantCopies = {
-		count: STAND.length,
-		position: Float32Array.from(STAND.flatMap(([x, z]) => [x, 0, z])),
-		turn: Float32Array.from(STAND.map((s) => s[2])),
-		scale: Float32Array.from(STAND.map((s) => s[3])),
-		variant: Uint8Array.from(STAND.map((s) => s[4])),
+		count: stand.length,
+		position: Float32Array.from(stand.flatMap(([x, z]) => [x, 0, z])),
+		turn: Float32Array.from(stand.map((s) => s[2])),
+		scale: Float32Array.from(stand.map((s) => s[3])),
+		variant: Uint8Array.from(stand.map((s) => s[4])),
 	};
 	const matte = plantMaterials(ctx, kit, { matte: true });
 	const materials =
@@ -113,12 +144,14 @@ export default defineSketch(async (ctx) => {
 							out[2] = eye[2];
 						},
 					},
+					// The shadow view draws every shoot inside the split, so no budget cuts it.
+					...(SHADOW && { triangles: 1e9 }),
 				});
 	const placed = placePlants(ctx, kit, assets, copies, {
 		materials,
 		...(near && { near }),
 		view: { height: VIEW_HEIGHT, fov: FOV },
-		castShadows: false,
+		castShadows: SHADOW,
 	});
 	if (near) {
 		near.update();

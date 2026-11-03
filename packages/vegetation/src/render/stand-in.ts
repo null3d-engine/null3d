@@ -154,7 +154,7 @@ function partMesh(
 }
 
 /** Writes the rows of a batch from the copies of one variant: their places, turns and scales. */
-export function fillRows(batch: InstanceBatch, copies: PlantCopies, rows: readonly number[]): void {
+function fillRows(batch: InstanceBatch, copies: PlantCopies, rows: readonly number[]): void {
 	rows.forEach((copy, row) => {
 		batch.positions.set(copies.position.subarray(copy * 3, copy * 3 + 3), row * 3);
 		const half = (copies.turn[copy] as number) / 2;
@@ -164,13 +164,18 @@ export function fillRows(batch: InstanceBatch, copies: PlantCopies, rows: readon
 	batch.markDirty();
 }
 
-/** The far cards of one variant's copies, from its far bake, standing on the plant's lowest point. */
+/**
+ * The far cards of one variant's copies, from its far bake, standing on the plant's lowest point.
+ * `sized` keeps each card's size times its copy's scale; without it a card row takes the copy's
+ * scale alone, as the stand-ins' frozen pictures draw.
+ */
 export function farCards(
 	ctx: SketchContext,
 	asset: PlantAsset,
 	bake: NonNullable<PlaceOptions['far']>[number]['bake'],
 	copies: PlantCopies,
 	rows: readonly number[],
+	sized = false,
 ): ImpostorBatch {
 	const side = bake.views * bake.texels;
 	const positions: number[] = [];
@@ -201,7 +206,13 @@ export function farCards(
 		},
 	);
 	rows.forEach((copy, row) => {
-		cards.batch.scales.fill(copies.scale[copy] as number, row * 3, row * 3 + 3);
+		const scale = copies.scale[copy] as number;
+		if (sized) {
+			// A card row's scale is the card's size; the copy's scale multiplies it.
+			cards.batch.scales[row * 3] = bake.size[0] * scale;
+			cards.batch.scales[row * 3 + 1] = bake.size[1] * scale;
+			cards.batch.scales[row * 3 + 2] = scale;
+		} else cards.batch.scales.fill(scale, row * 3, row * 3 + 3);
 	});
 	cards.markDirty();
 	return cards;

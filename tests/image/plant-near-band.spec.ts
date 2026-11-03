@@ -45,14 +45,15 @@ interface Near {
 async function draw(
 	page: Page,
 	tier: Tier,
-	step: number,
+	step: number | 'shadow',
 	what: 'split' | 'shoots' | 'cards',
 ): Promise<{ covered: Uint8Array; near: Near }> {
 	const name = `plant-near-band-${step}-${what}`;
+	const spot = step === 'shadow' ? 'view=shadow' : `step=${step}`;
 	const [run] = imageRuns([
 		{
 			name,
-			sketch: `${SKETCH}?step=${step}&draw=${what}`,
+			sketch: `${SKETCH}?${spot}&draw=${what}`,
 			hold: 0,
 			tiers: [tier],
 			size: [WIDTH, HEIGHT],
@@ -103,3 +104,24 @@ for (const tier of TIERS)
 			expect(near.triangles).toBeLessThanOrEqual(near.budget);
 			expect(shoots.near.triangles).toBe(near.triangles);
 		});
+
+/** The share of pixels in which two pictures of the ground differ: lit in one, shadowed in the other. */
+function differing(a: Uint8Array, b: Uint8Array): number {
+	let count = 0;
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) count++;
+	return count / a.length;
+}
+
+for (const tier of TIERS)
+	test(`a near copy's cards cast no shadow inside its split on ${tier}`, async ({ page }) => {
+		test.setTimeout(1_500_000);
+		// The ground under one oak whose whole crown stands inside the split, from above beside the
+		// trunk. Inside the split the shoots cast the shadow and the cards cast none, so the split
+		// casts what the shoots alone cast, and the cards alone cast another shadow.
+		const split = await draw(page, tier, 'shadow', 'split');
+		const shoots = await draw(page, tier, 'shadow', 'shoots');
+		const cards = await draw(page, tier, 'shadow', 'cards');
+		expect(split.near.copies).toBe(1);
+		expect(differing(split.covered, shoots.covered)).toBeLessThanOrEqual(EDGE_SHARE);
+		expect(differing(cards.covered, shoots.covered)).toBeGreaterThan(0.02);
+	});

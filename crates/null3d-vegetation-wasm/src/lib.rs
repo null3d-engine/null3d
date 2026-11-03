@@ -314,7 +314,9 @@ fn compose(
             *value = 0.0;
         }
     }
-    for value in out.card_values.iter_mut() {
+    // A card row's first value is its copy's split; the other three hold the crown's centre, which
+    // the page writes once and the call keeps.
+    for value in out.card_values.iter_mut().step_by(4) {
         *value = 0.0;
     }
 
@@ -835,8 +837,15 @@ mod tests {
         let s = scene(&[30.0, 2.0, 12.0, 5.0], 4, 0.5);
         let g = group(&s, 20.0, &[(2, 0.0, 20.8)]);
         let mut b = buffers(1, 100, 4);
+        b.card_values.fill(5.0);
         run(&[g], &[0, 100], &mut b, 2, 1e9);
         assert_eq!(b.summary[1], 2.0);
+        // The crown's centre in each card row's other three values stays as the page wrote it.
+        assert!(
+            b.card_values
+                .chunks(4)
+                .all(|row| row[1..] == [5.0, 5.0, 5.0])
+        );
         // Copies at 2 m and 5 m draw shoots; the copies at 12 m and 30 m stay all cards.
         assert_eq!(b.card_values[4], 20.0);
         assert_eq!(b.card_values[12], 20.0);

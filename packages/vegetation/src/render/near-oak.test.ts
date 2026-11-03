@@ -10,10 +10,17 @@ import { fileURLToPath } from 'node:url';
 import type { PlantAsset, SpeciesKitData } from '../asset';
 import { hashBytes } from '../core/hash';
 import { bakeFarNow, buildKitNow, growPlantNow, loadPlantCode } from '../generate';
-import { levelDistances, levelStarts, REFERENCE_VIEW, switchDistance } from '../lod/levels';
+import {
+	levelDistances,
+	levelStarts,
+	REFERENCE_VIEW,
+	switchDistance,
+	switchSizes,
+} from '../lod/levels';
 import { VARIANT_RECORDS, WIND_RECORD_FLOATS } from '../wind/records';
 import {
 	bandTriangles,
+	crownSphere,
 	mostRows,
 	nearArrays,
 	nearScene,
@@ -29,6 +36,7 @@ import {
 	run,
 	SUMMARY_FLOATS,
 } from './near-task';
+import { toHalf } from './records';
 
 const WASM = fileURLToPath(new URL('../../dist/vegetation.wasm', import.meta.url));
 const built = existsSync(WASM);
@@ -73,6 +81,37 @@ describe("the oak's stages", () => {
 		const narrow = levelDistances(kit, asset.skeleton.height, { height: 540, fov: 60 });
 		expect(narrow[0]).toBeCloseTo(split / 2, 6);
 		expect(levelStarts).toBeDefined();
+	});
+
+	it('measure a copy to its crown, so the nearest wood ends where the shoots do', () => {
+		// The engine measures a row's levels to the nearest point of its sphere. From an eye one split
+		// beyond the crown's edge, every way round, the copy's sphere about its crown must read close to
+		// the split, as the near pool reads it; a sphere about the foot that holds the crown reads far
+		// nearer, and kept the nearest wood well past the split.
+		const sphere = crownSphere(kit, asset);
+		const c = asset.crown.centre;
+		const pool = asset.crown.radius + switchSizes(kit).shoot;
+		const { min, max } = asset.skeleton.bounds;
+		let foot = 0;
+		for (const x of [min[0], max[0]])
+			for (const y of [min[1], max[1]])
+				for (const z of [min[2], max[2]]) foot = Math.max(foot, Math.hypot(x, y, z));
+		for (let k = 0; k < 8; k++) {
+			const a = (k / 8) * 2 * Math.PI;
+			const eye = [c[0] + Math.cos(a) * (pool + split), c[1], c[2] + Math.sin(a) * (pool + split)];
+			const measured =
+				Math.hypot(
+					(eye[0] as number) - sphere.centre[0],
+					(eye[1] as number) - sphere.centre[1],
+					(eye[2] as number) - sphere.centre[2],
+				) - sphere.radius;
+			expect(measured).toBeGreaterThan(split * 0.8);
+			expect(measured).toBeLessThan(split * 1.1);
+			const atFoot = Math.hypot(eye[0] as number, eye[1] as number, eye[2] as number) - foot;
+			expect(atFoot).toBeLessThan(split * 0.75);
+		}
+		for (const k of [0, 1, 2])
+			expect(toHalf(sphere.centre[k] as number)).toBe(sphere.centre[k] as number);
 	});
 
 	it('bake the far cards from the first card level, the same bytes twice', () => {

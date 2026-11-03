@@ -40,6 +40,7 @@ import {
 	TABLE_FLOATS,
 } from './near-task';
 import { standInNearPool } from './stand-in';
+import { NEAR_SLOT_TEXELS, nearSlotsHeld, nearTableData } from './textures';
 
 /**
  * The near pool's caps; the preset's by default.
@@ -97,14 +98,14 @@ export interface NearCardBatch {
 	/** The variant's first card row in the species' card values, and its rows. */
 	readonly first: number;
 	readonly count: number;
+	/** The variant's crown centre, which every card row carries after its split. */
+	readonly centre: readonly [number, number, number];
 }
 
 /** What a placement gives the pool: its arrays and its batches. */
 export interface NearSpecies {
 	/** The species' near table, which its shoot rows read their copies from. */
 	readonly table: Texture;
-	/** The table's first slot the pool may take; fixed placements hold the slots below it. */
-	readonly firstSlot: number;
 	/** The split distance and the tier bands. */
 	readonly split: number;
 	readonly bands: readonly TierBand[];
@@ -217,7 +218,17 @@ interface Built {
 	readonly scales: Float32Array;
 	readonly values: Float32Array;
 	readonly rows: readonly RowViews[];
-	readonly tables: readonly { readonly texture: Texture; readonly data: Float32Array }[];
+	/**
+	 * Each near table: its texture, the slots that fixed placements hold, its shared CPU copy, and the
+	 * answer's floats of the pool's own slots, which go into the copy from float `own` on.
+	 */
+	readonly tables: readonly {
+		readonly texture: Texture;
+		readonly held: number;
+		readonly data: Float32Array;
+		readonly own: number;
+		readonly answer: Float32Array;
+	}[];
 	readonly cards: readonly { readonly batch: InstanceBatch; readonly values: Float32Array }[];
 }
 
@@ -234,7 +245,12 @@ function build(species: readonly NearSpecies[]): Built {
 	const groups = species.map((s): NearGroup => {
 		let table = tables.indexOf(s.table);
 		if (table < 0) table = tables.push(s.table) - 1;
-		return { ...s, table, capacities: s.shoots.map((shoot) => shoot?.capacity ?? 0) };
+		return {
+			...s,
+			table,
+			firstSlot: nearSlotsHeld(s.table),
+			capacities: s.shoots.map((shoot) => shoot?.capacity ?? 0),
+		};
 	});
 	const scene = nearScene(groups, tables.length);
 	const { batches, rows } = scene;
@@ -265,14 +281,15 @@ function build(species: readonly NearSpecies[]): Built {
 	const cards: Built['cards'][number][] = [];
 	let cardBase = 0;
 	for (const s of species) {
-		for (const card of s.cards)
-			cards.push({
-				batch: card.batch,
-				values: cardValues.subarray(
-					(cardBase + card.first) * 4,
-					(cardBase + card.first + card.count) * 4,
-				),
-			});
+		for (const card of s.cards) {
+			const values = cardValues.subarray(
+				(cardBase + card.first) * 4,
+				(cardBase + card.first + card.count) * 4,
+			);
+			// The split goes first, from each answer; the crown's centre after it, once, here.
+			for (let row = 0; row < card.count; row++) values.set(card.centre, row * 4 + 1);
+			cards.push({ batch: card.batch, values });
+		}
 		cardBase += s.cardRows;
 	}
 	return {
@@ -286,10 +303,17 @@ function build(species: readonly NearSpecies[]): Built {
 		scales,
 		values,
 		rows: views,
-		tables: tables.map((texture, t) => ({
-			texture,
-			data: f32(layout.tables + t * TABLE_FLOATS * 4, TABLE_FLOATS),
-		})),
+		tables: tables.map((texture, t) => {
+			const held = nearSlotsHeld(texture);
+			const own = held * NEAR_SLOT_TEXELS * 4;
+			return {
+				texture,
+				held,
+				data: nearTableData(texture),
+				own,
+				answer: f32(layout.tables + (t * TABLE_FLOATS + own) * 4, TABLE_FLOATS - own),
+			};
+		}),
 		cards,
 	};
 }
@@ -455,7 +479,10 @@ export function createNearPool(ctx: SketchContext, options: NearPoolOptions = {}
 				view.drawn = count;
 			}
 		}
-		for (const table of now.tables) table.texture.update(table.data);
+		for (const table of now.tables) {
+			table.data.set(table.answer, table.own);
+			table.texture.update(table.data);
+		}
 		for (const card of now.cards) {
 			(card.batch.values as Float32Array).set(card.values);
 			card.batch.markDirty();
@@ -494,6 +521,15 @@ export function createNearPool(ctx: SketchContext, options: NearPoolOptions = {}
 	const pool: NearPool = {
 		update() {
 			if (stopped || busy || !built) return;
+			// Fixed placements that took more slots since the scene was laid out move the pool's own.
+			for (let t = 0; t < built.tables.length; t++) {
+				const table = built.tables[t] as Built['tables'][number];
+				if (nearSlotsHeld(table.texture) !== table.held) {
+					rebuild();
+					if (!built) return;
+					break;
+				}
+			}
 			camera.getWorldPosition(eye);
 			const dx = (eye[0] as number) - (asked[0] as number);
 			const dy = (eye[1] as number) - (asked[1] as number);

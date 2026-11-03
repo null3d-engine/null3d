@@ -18,12 +18,12 @@ import type { PlantAsset, PlantPart } from '../asset';
 import { pow } from '../core/math';
 import { DETAILS, type Detail } from '../core/types';
 import type { FarPlant } from '../lod/impostor';
-import { levelDistances, switchSizes } from '../lod/levels';
+import { viewScale } from '../lod/levels';
 import { FAR, handOverToCards } from './hand-over';
 import { type PlantMaterials, plantGeometry, prototypeGeometry } from './material';
-import { EDGE, mostRows, nearArrays, tierBands } from './near-arrays';
+import { crownSphere, EDGE, mostRows, nearArrays, tierBands } from './near-arrays';
 import { type NearPool, type NearSpecies, nearPoolHost } from './near-pool';
-import { farCards, fillRows, standInPlace } from './stand-in';
+import { farCards, standInPlace } from './stand-in';
 import type { SpeciesKit } from './textures';
 
 /**
@@ -112,17 +112,36 @@ export interface PlacedPlants {
 	destroy(): void;
 }
 
-/** The radius about a variant's origin that holds every part, at scale 1. */
-function variantRadius(kit: SpeciesKit, asset: PlantAsset): number {
-	const { min, max } = asset.skeleton.bounds;
-	const sizes = switchSizes(kit);
-	const reach = Math.max(sizes.shoot, sizes.card);
-	let widest = 0;
-	for (const x of [min[0] - reach, max[0] + reach])
-		for (const y of [min[1] - reach, max[1] + reach])
-			for (const z of [min[2] - reach, max[2] + reach])
-				widest = Math.max(widest, x * x + y * y + z * z);
-	return Math.sqrt(widest);
+/**
+ * Writes a batch's rows from the copies of one variant, each standing at its crown's centre, turned
+ * and scaled with its copy, and carrying the centre in its values, which the plant shader takes back
+ * off every point. The card rows' first value, the split, starts at zero: every copy draws its cards
+ * whole until the near pool answers.
+ */
+function fillCrownRows(
+	batch: InstanceBatch,
+	copies: PlantCopies,
+	rows: readonly number[],
+	centre: readonly [number, number, number],
+): void {
+	const values = batch.values as Float32Array;
+	rows.forEach((copy, row) => {
+		const turn = copies.turn[copy] as number;
+		const s = copies.scale[copy] as number;
+		const [x, y, z] = centre;
+		batch.positions.set(
+			[
+				(copies.position[copy * 3] as number) + (Math.cos(turn) * x + Math.sin(turn) * z) * s,
+				(copies.position[copy * 3 + 1] as number) + y * s,
+				(copies.position[copy * 3 + 2] as number) + (Math.cos(turn) * z - Math.sin(turn) * x) * s,
+			],
+			row * 3,
+		);
+		batch.rotations.set([0, Math.sin(turn / 2), 0, Math.cos(turn / 2)], row * 4);
+		batch.scales.fill(s, row * 3, row * 3 + 3);
+		values.set([0, x, y, z], row * 4);
+	});
+	batch.markDirty();
 }
 
 /** One batch of a part's level, with the distances between which it draws. */
@@ -208,7 +227,9 @@ export function placePlants(
 	const castShadows = options.castShadows ?? true;
 	const host = options.near ? nearPoolHost(options.near) : undefined;
 	const view = { height: options.view.height, fov: options.view.fov };
-	const split = levelDistances(kit, assets[0]?.skeleton.height ?? 1, view)[0] * scale;
+	// The asset's switches are measured at the reference view; the page's view and bias move them.
+	const factor = viewScale(view) * scale;
+	const split = (assets[0]?.levels[1].from ?? 0) * factor;
 	const batches: InstanceBatch[] = [];
 	const impostors: ImpostorBatch[] = [];
 	const cardBatches: NearSpecies['cards'][number][] = [];
@@ -223,50 +244,57 @@ export function placePlants(
 		rows.forEach((copy, row) => {
 			cardRows[copy] = cardFirst + row;
 		});
-		const distances = levelDistances(kit, asset.skeleton.height, view).map((d) => d * scale) as [
-			number,
-			number,
-			number,
-		];
+		const distances = [
+			asset.levels[1].from * factor,
+			asset.levels[2].from * factor,
+			asset.impostor.from * factor,
+		] as const;
+		const far = options.far?.find((plant) => plant.variant === asset.variant);
+		if (far && !(distances[2] > 0)) {
+			// An impostor that starts at once, as a review asks for, draws its far cards alone.
+			const farBatch = farCards(ctx, asset, far.bake, copies, rows, true);
+			farBatch.batch.setDrawRange(0, FAR);
+			impostors.push(farBatch);
+			cardFirst += rows.length;
+			return;
+		}
 		let largest = 0;
 		for (const copy of rows) largest = Math.max(largest, copies.scale[copy] as number);
-		const radius = variantRadius(kit, asset) * Math.max(largest, 1e-3);
+		const sphere = crownSphere(kit, asset);
+		const radius = sphere.radius * Math.max(largest, 1e-3);
 		const make =
-			(material: PlantMaterials[keyof PlantMaterials], values: boolean) =>
+			(material: PlantMaterials[keyof PlantMaterials]) =>
 			(mesh: MeshGeometry): InstanceBatch => {
 				const batch = ctx.scene.createInstances(mesh, rows.length, {
 					material,
 					castShadows,
 					receiveShadows: true,
-					...(values && { values: true }),
+					values: true,
 				});
-				fillRows(batch, copies, rows);
+				fillCrownRows(batch, copies, rows, sphere.centre);
 				batch.setBoundingRadius(radius);
 				return batch;
 			};
-		const near = host !== undefined;
 		const ranged = [
-			...partBatches(ctx, asset, 'wood', distances, make(materials.wood, false)),
-			...partBatches(ctx, asset, 'foliage', distances, make(materials.foliage, false)),
-			...partBatches(ctx, asset, 'extras', distances, make(materials.extras, false)),
+			...partBatches(ctx, asset, 'wood', distances, make(materials.wood)),
+			...partBatches(ctx, asset, 'foliage', distances, make(materials.foliage)),
+			...partBatches(ctx, asset, 'extras', distances, make(materials.extras)),
 		];
 		// The cards draw from the camera out, since a near copy's cards draw beyond its split: their
 		// first level starts at once, and their second at its own switch.
-		const cards = partBatches(
-			ctx,
-			asset,
-			'cards',
-			[0, 0, distances[1]],
-			make(materials.cards, near),
-		);
+		const cards = partBatches(ctx, asset, 'cards', [0, 0, distances[1]], make(materials.cards));
 		for (const card of cards) {
-			cardBatches.push({ batch: card.batch, first: cardFirst, count: rows.length });
+			cardBatches.push({
+				batch: card.batch,
+				first: cardFirst,
+				count: rows.length,
+				centre: sphere.centre,
+			});
 			ranged.push(card);
 		}
 		cardFirst += rows.length;
-		const far = options.far?.find((plant) => plant.variant === asset.variant);
 		if (far && ranged.length > 0) {
-			const farBatch = farCards(ctx, asset, far.bake, copies, rows);
+			const farBatch = farCards(ctx, asset, far.bake, copies, rows, true);
 			const handOver = distances[2];
 			handOverToCards((ranged[0] as Ranged).batch, farBatch.batch, handOver);
 			for (const entry of ranged) entry.batch.setDrawRange(entry.start, handOver);
@@ -355,7 +383,6 @@ function nearSpecies(
 		}
 	return {
 		table: kit.textures.near,
-		firstSlot: 0,
 		split: setup.split,
 		bands,
 		arrays: nearArrays(kit, assets, copies, setup.cardRows),

@@ -23,6 +23,20 @@ export interface SwitchView {
 }
 
 /**
+ * The factor that turns a distance measured at the reference view into the same switch at another
+ * view: a taller render or a narrower field of view switches farther out.
+ *
+ * @param view The render's height and field of view.
+ * @returns The factor.
+ */
+export function viewScale(view: SwitchView): number {
+	return (
+		(view.height / REFERENCE_VIEW.height) *
+		(tan(radians(REFERENCE_VIEW.fov / 2)) / tan(radians(view.fov / 2)))
+	);
+}
+
+/**
  * The distance in metres at which a size covers a number of pixels on a render.
  *
  * @param size The size in metres.
