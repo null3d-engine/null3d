@@ -2256,8 +2256,11 @@ export function vegetationScatterPlan(): PlanItem<Check>[] {
 	];
 }
 
-/** The presets that the Skyway plan fixes on each GPU path. */
-const SKYWAY_PRESETS = ['low', 'medium'] as const;
+/**
+ * The presets that the Skyway plan fixes on each GPU path. High is the Mac's target: the display's
+ * rate at DPR 2. A WebGL2 device caps it at Medium, and its page draws that preset instead.
+ */
+const SKYWAY_PRESETS = ['low', 'medium', 'high'] as const;
 /** How long each Skyway page measures, in seconds: the route's opening hold and the glide after it. */
 const SKYWAY_SECONDS = 8;
 /**
@@ -2267,8 +2270,9 @@ const SKYWAY_SECONDS = 8;
 const SKYWAY_TIMEOUT_SECONDS = 300;
 
 /**
- * Skyway's frame on each GPU path, for M3-C1's frame target: the Low and Medium presets, each with
- * the governor off and the render scale held at 1, so every figure is the same drawing on every run.
+ * Skyway's frame on each GPU path, for M3-C1's frame target: the Low, Medium and High presets, each
+ * with the governor off and the render scale held at 1, so every figure is the same drawing on
+ * every run. High is the preset that the Mac's target names.
  * The render scale is what the governor would otherwise lower under load, and a lowered scale would
  * hide the cost that the task is looking for. A page at each path's chosen preset, with the
  * governor on, says what a visitor's device draws as the demo runs.
@@ -2387,6 +2391,39 @@ export function skywayCostPlan(): PlanItem<Check>[] {
 		),
 	);
 	return items;
+}
+
+/** The length of each window of the skyway soak plan, and how many of them fill its hour. */
+const SOAK_WINDOW_SECONDS = 300;
+const SOAK_WINDOWS = 12;
+
+/**
+ * Skyway at High with the governor off for an hour, for the task's memory target: each window
+ * carries its frame intervals and the engine's memory, and the page reads the overlay's texture and
+ * buffer figures after each one, so a run shows whether the memory holds rather than asserting it.
+ * The item's time limit covers the hour and the page's own start.
+ */
+export function skywaySoakPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		pageItem(
+			'skyway-soak-webgpu',
+			'demo-device',
+			{ kind: 'probe', tier: 'webgpu' },
+			{
+				switches: [
+					'gpu=webgpu',
+					'demo=skyway',
+					'preset=high',
+					'governor=off',
+					'render-scale=1',
+					`seconds=${SOAK_WINDOW_SECONDS}`,
+					`windows=${SOAK_WINDOWS}`,
+				],
+				timeoutSeconds: SOAK_WINDOW_SECONDS * SOAK_WINDOWS + 900,
+			},
+		),
+	];
 }
 
 /** The showcase demos that the demos plan measures. */
@@ -3025,6 +3062,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	demos: demosPlan,
 	skyway: skywayPlan,
 	'skyway-cost': skywayCostPlan,
+	'skyway-soak': skywaySoakPlan,
 	splats: splatsPlan,
 	vegetation: vegetationPlan,
 	'vegetation-wind': vegetationWindPlan,
