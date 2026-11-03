@@ -12,6 +12,7 @@ The tools reach the plant generator through one page: the plant review sketch, `
 | `references.ts` | Reads a species' reference folder. It takes frames from the turning videos, finds the plant's outline and measures it. |
 | `compare.ts` | Pairs a run with its references and lines up the turns. It measures each pair and writes contact sheets, `metrics.json` and `summary.md`. |
 | `image.ts` | Reads pictures through ffmpeg, resizes them, converts colours to CIELAB and draws the sheets with a built-in font. |
+| `cli.ts` | Reads the commands' options. |
 
 ## What you need
 

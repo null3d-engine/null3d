@@ -23,6 +23,7 @@ import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { writePng } from '../../packages/cli/src/png.js';
 import type { PlantBackground, PlantView } from '../../tests/pages/lib/plant-review.ts';
+import { flag, option } from './cli.ts';
 import {
 	blank,
 	deltaE76,
@@ -986,15 +987,23 @@ export function maskPreview(image: Rgba, plant: PlantMask): Rgba {
 	return out;
 }
 
+/** Writes a picture and its mask preview side by side, as a PNG file. */
+function writeMaskPair(path: string, image: Rgba, plant: PlantMask): void {
+	const preview = maskPreview(image, plant);
+	const both = blank(preview.width * 2, preview.height, [0, 0, 0]);
+	paste(both, resizeToWidth(image, preview.width), 0, 0);
+	paste(both, preview, preview.width, 0);
+	writePng(path, both);
+}
+
 /** Prints a folder's slots and videos, and writes each still's mask preview to `--out`. */
 async function main(): Promise<void> {
 	const folder = process.argv[2];
 	if (!folder || folder.startsWith('--'))
 		throw new Error('give a reference folder: bun tools/plant-review/references.ts <folder>');
-	const outAt = process.argv.indexOf('--out');
-	const out = outAt > 0 ? process.argv[outAt + 1] : undefined;
-	const framesAt = process.argv.indexOf('--frames');
-	const frames = framesAt > 0 ? Number(process.argv[framesAt + 1]) : 8;
+	const out = flag('out') ? option('out') : undefined;
+	if (out) mkdirSync(out, { recursive: true });
+	const frames = Number(option('frames', '8'));
 	const set = readReferenceSet(folder);
 	console.log(`${set.slug}: ${set.stills.length} stills`);
 	for (const slot of set.stills) {
@@ -1005,14 +1014,7 @@ async function main(): Promise<void> {
 			`  ${slot.file.padEnd(34)} ${slot.view.padEnd(10)} ${plant.background.plain ? 'plain' : 'busy '} ` +
 				`horizon ${m.horizon?.toFixed(3) ?? '-'} gap ${m.gapFraction.toFixed(3)} sky ${m.sky} ground ${m.ground ?? '-'}`,
 		);
-		if (out) {
-			mkdirSync(out, { recursive: true });
-			const preview = maskPreview(image, plant);
-			const both = blank(preview.width * 2, preview.height, [0, 0, 0]);
-			paste(both, resizeToWidth(image, preview.width), 0, 0);
-			paste(both, preview, preview.width, 0);
-			writePng(join(out, `${slot.file.replace(/\.\w+$/, '')}-mask.png`), both);
-		}
+		if (out) writeMaskPair(join(out, `${slot.file.replace(/\.\w+$/, '')}-mask.png`), image, plant);
 	}
 	const videos: [string, string | undefined][] = [
 		['turntable', set.turntable],
@@ -1023,20 +1025,19 @@ async function main(): Promise<void> {
 	for (const [name, video] of videos) {
 		if (!video) continue;
 		const taken = turnFrames(video, frames);
-		const measures = taken.map((frame) => measurePlant(frame.image, plantMask(frame.image)));
+		const plants = taken.map((frame) => plantMask(frame.image));
+		const measures = taken.map((frame, k) => measurePlant(frame.image, plants[k] as PlantMask));
 		console.log(
 			`  ${name} ${basename(video)}: ${taken.length} frames, horizon ` +
 				`${measures.map((m) => m.horizon?.toFixed(2) ?? '-').join(' ')}`,
 		);
 		if (out)
-			for (const [k, frame] of taken.entries()) {
-				const plant = plantMask(frame.image);
-				const preview = maskPreview(frame.image, plant);
-				const both = blank(preview.width * 2, preview.height, [0, 0, 0]);
-				paste(both, resizeToWidth(frame.image, preview.width), 0, 0);
-				paste(both, preview, preview.width, 0);
-				writePng(join(out, `${name}-${String(k).padStart(2, '0')}-mask.png`), both);
-			}
+			for (const [k, frame] of taken.entries())
+				writeMaskPair(
+					join(out, `${name}-${String(k).padStart(2, '0')}-mask.png`),
+					frame.image,
+					plants[k] as PlantMask,
+				);
 	}
 	if (out) writeFileSync(join(out, 'slots.json'), `${JSON.stringify(set, null, '\t')}\n`);
 }
