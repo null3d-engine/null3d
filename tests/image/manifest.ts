@@ -2987,6 +2987,44 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 1,
 		size: [1280, 720],
 	},
+	// A grove of grown oaks, the core's own oak until the species land, in the scene's one wind field: the plant material sways
+	// their wood, cards and real shoots, the leaves flutter and the sun's shadows follow. The two
+	// holds catch the trees at different points of their sway, the motion picture draws the sway's
+	// motion, and the still picture holds the air for the pair that the sway moves. Each page grows
+	// four oaks and compiles the plant material's builds, so each may take ten minutes. The software
+	// GPU draws the Low preset, where the grove is two oaks of two copies.
+	{
+		name: 'vegetation-wind',
+		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+		timeoutSeconds: 600,
+		swiftShaderSwitches: ['preset=low'],
+	},
+	{
+		name: 'vegetation-wind-later',
+		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts',
+		hold: 1.6,
+		size: [1280, 720],
+		timeoutSeconds: 600,
+		swiftShaderSwitches: ['preset=low'],
+	},
+	{
+		name: 'vegetation-wind-motion',
+		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts?motion',
+		hold: 1,
+		size: [1280, 720],
+		timeoutSeconds: 600,
+		swiftShaderSwitches: ['preset=low'],
+	},
+	{
+		name: 'vegetation-wind-still',
+		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts?still',
+		hold: 1,
+		size: [1280, 720],
+		timeoutSeconds: 600,
+		swiftShaderSwitches: ['preset=low'],
+	},
 	// The wind add-on's own page: a field of cards that reads the air at each vertex. A gust
 	// crosses the field between the first hold and the second, so the pairs change where the gust
 	// has reached. The part test draws the same page with the gust and the swirl taken out, from the
@@ -3062,6 +3100,18 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/impostor-turn-lean-sketch.ts?azimuth=90',
 		hold: 0,
 		size: [480, 270],
+	},
+	// A grown oak beside the far card that `bakeFarPlant` makes from it. The left copy draws
+	// the first card level, the bake's source, with the plant material; the right copy draws its far
+	// card alone. The two crowns must match in outline and colour, which proves the far bake and the
+	// leaf coverage that it reads.
+	{
+		name: 'impostor-plant',
+		sketch: 'tests/pages/sketches/impostor-plant-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		timeoutSeconds: 600,
+		swiftShaderSwitches: ['preset=low'],
 	},
 	// A row of turned pines inside the hand-over band: each draws as its mesh and as its card at the
 	// same place, the card shows the turn that its tree has, the mesh's pixels dither out over the
