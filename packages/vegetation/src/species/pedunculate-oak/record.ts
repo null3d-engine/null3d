@@ -210,7 +210,7 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			kitBytes: 6_000_000,
+			kitBytes: { low: 2_000_000, medium: 2_900_000, high: 5_300_000, ultra: 9_500_000 },
 			variantBytes: { low: 7_000_000, medium: 7_000_000, high: 7_100_000, ultra: 7_100_000 },
 			lod0Triangles: 2_300_000,
 			lod1Triangles: 150_000,

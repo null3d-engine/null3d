@@ -147,7 +147,7 @@ export function standInRecord(id: string, options: StandInOptions = {}): Species
 			impostor: { views: 8, texels: 32 },
 			shadowLevel: 1,
 			budget: {
-				kitBytes: 2_000_000,
+				kitBytes: { low: 2_000_000, medium: 2_000_000, high: 2_000_000, ultra: 2_000_000 },
 				variantBytes: { low: 2_000_000, medium: 2_000_000, high: 2_000_000, ultra: 2_000_000 },
 				lod0Triangles: 1_000_000,
 				lod1Triangles: 60_000,

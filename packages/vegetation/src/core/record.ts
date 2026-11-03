@@ -1228,8 +1228,11 @@ export interface LodSpec {
  * @category api/vegetation
  */
 export interface SpeciesBudget {
-	/** Bytes of the kit: prototypes in every tier, and the card atlas until it uploads. */
-	readonly kitBytes: number;
+	/**
+	 * Bytes of the kit at each detail tier, the tier it is built for: the shoot prototypes' meshes at
+	 * that tier and those below it, the leaf meshes, and the card atlas until it uploads.
+	 */
+	readonly kitBytes: Readonly<Record<Detail, number>>;
 	/**
 	 * Bytes of one variant at each detail tier, read at the tier the plant is built for: its levels
 	 * and wind records, the nearest wood left out.
