@@ -2718,11 +2718,15 @@ async function startEngine(
 		// The thread that draws writes the time the GPU finished the first frame; the page checks for
 		// it once per animation frame until it appears.
 		const header = new MetricsReader(metrics);
+		// The preset in force when the first frame was drawn. The engine's own preset check may step
+		// down after it, so this is not always the preset that the page ends on.
+		let firstFramePreset: string | null = null;
 		const firstFrame = new Promise<void>((resolve) => {
 			const check = () => {
 				if (Atomics.load(slots, Slot.Running) === 0) return;
 				if (header.firstFrameDoneTime > 0) {
 					onProgress('first-frame');
+					firstFramePreset = mode.preset;
 					resolve();
 					return;
 				}
@@ -2841,6 +2845,7 @@ async function startEngine(
 						warmUpMs: reader.warmUpMs,
 						firstDrawMs: reader.firstDrawMs,
 						firstFramePipelines: reader.firstFramePipelines,
+						firstFramePreset,
 					},
 					gpuLosses: Atomics.load(slots, Slot.GpuEpoch),
 					downloadBytes: { wasm: wasmDownloadBytes() },
