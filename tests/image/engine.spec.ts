@@ -417,6 +417,9 @@ const FIRST_USE_SKETCHES: Partial<Record<ShaderFeature, string>> = {
 	// the motion vectors sketch asks for that view.
 	motion: 'tests/pages/sketches/motion-vectors-sketch.ts?case=slide',
 	probe_grid: 'tests/pages/sketches/probe-grid-sketch.ts',
+	// The moment layer draws the sketch's blended panes once the page's switch turns it on, and its
+	// steps and the panes' moment builds load with them.
+	moment: 'tests/pages/sketches/moment-sketch.ts?mode=moment',
 };
 
 /** Page switches that a feature needs besides its sketch: the test switches that turn it on. */
@@ -429,6 +432,8 @@ const FIRST_USE_SWITCHES: Partial<Record<ShaderFeature, string>> = {
 	// pages draw the flat layer alone, so each keeps the one file that its own feature loads.
 	sky: '&cloudSteps=0',
 	physical_sky: '&cloudSteps=0',
+	// The moment layer draws only while the page turns it on.
+	moment: '&moments=on',
 };
 
 /**
