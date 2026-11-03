@@ -238,9 +238,10 @@ class WebGPUSceneRenderer implements Renderer {
 		const { backend } = this;
 		backend.timer?.beginFrame(input.frame);
 		const figures = record.figures;
-		// A development build always reads the culled counts, so a copy that the culling shader drops
-		// warns on a page with no stats card.
-		if ((figures || DEV) && !this.culledLoading) this.loadCulledCounts();
+		// A development build reads the culling shader's dropped copies on a page that draws a draw
+		// the GPU culls, so a copy it drops warns with no stats card. A page that draws none has no
+		// count to read, and fetches no part for one.
+		if ((figures || DEV) && backend.culledDrawn && !this.culledLoading) this.loadCulledCounts();
 		backend.culled?.beginFrame(figures || DEV);
 		this.firstPass.draw();
 		this.frames.replay(input.frame);
