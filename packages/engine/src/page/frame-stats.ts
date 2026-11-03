@@ -360,6 +360,7 @@ function onlyFrame(ring: RingRecords, frame: number): RingRecords {
 		phases: ring.phases.map((values) => [values[at] as number]),
 		counters: ring.counters.map((values) => [values[at] as number]),
 		passRoles: ring.passRoles.map((values) => [values[at] as number]),
+		later: [ring.later[at] ?? UNTIMED],
 	};
 }
 
