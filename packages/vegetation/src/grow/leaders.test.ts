@@ -103,7 +103,7 @@ describe('sympodial leaders', () => {
 		expect(cones(led)).toBe(0);
 	});
 
-	it('grows an oak with a straight bole to its fork, and no cone or loop', async () => {
+	it('grows an oak with a plumb, straight bole to its fork, and no cone or loop', async () => {
 		const record = species.record;
 		await loadPlantCode(record);
 		for (const variant of [0, 1]) {
@@ -111,6 +111,17 @@ describe('sympodial leaders', () => {
 				grower('self-organizing').grow({ record, seed: 11, variant, season: 'summer' }),
 			);
 			expect(sharpest(led, 0)).toBeLessThan(20);
+			// The bole stands plumb below the crown: no internode leans more than a few degrees.
+			const bole = led.position;
+			for (let n = led.axes.first[0] as number; n < (led.axes.last[0] as number); n++) {
+				if ((bole[n * 3 + 1] as number) >= led.crownBase) break;
+				const rise = (bole[(n + 1) * 3 + 1] as number) - (bole[n * 3 + 1] as number);
+				const across = Math.hypot(
+					(bole[(n + 1) * 3] as number) - (bole[n * 3] as number),
+					(bole[(n + 1) * 3 + 2] as number) - (bole[n * 3 + 2] as number),
+				);
+				expect((Math.atan2(across, rise) * 180) / Math.PI).toBeLessThan(5);
+			}
 			expect(cones(led)).toBe(0);
 			// Each axis's internodes against the way it set out: a level limb may dip a little past a
 			// right angle, but one that turns past 120 degrees has looped back on itself.

@@ -161,6 +161,10 @@ The record check refuses a hint that names a class the record does not grow.
 
 ### Faults fixed on the way
 
+- The bole leaned and swayed in an S below its fork: each internode leaned 3 to 23 degrees, and one
+  variant stood 0.5 m off its foot at 2.3 m. Below the crown the leader is drawn straight up toward
+  the light, but the wander that crooks a crown's shoots still turned it at every node. The bole
+  below the crown now grows on along its own line, so it leans 0 to 2 degrees.
 - Where the leader weakened and a side limb took the light, the stem ended in a cone in mid-crown.
   After growth, an axis now runs on into a child where its own continuation collapsed under the
   child's girth. The old continuation becomes the side branch.
