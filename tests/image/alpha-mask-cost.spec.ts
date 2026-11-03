@@ -6,7 +6,8 @@
 // for D-226. It runs only with NULL3D_ALPHA_MASK_COST set, in a quiet window on a computer with a
 // GPU of its own: NULL3D_ALPHA_MASK_COST=1 bun run test:browser -- alpha-mask-cost.spec.ts.
 // NULL3D_ALPHA_MASK_GPUS and NULL3D_ALPHA_MASK_MODES set the paths and the antialiasing modes, as
-// lists. Each test waits for a quiet computer and prints the load beside its figures
+// lists, and NULL3D_ALPHA_MASK_LAYERS the curtains stacked one behind another (1 and 8 by default):
+// with several, each pixel shades through several masked layers, as in a crown of leaves. Each test waits for a quiet computer and prints the load beside its figures
 // (tests/lib/cost-runs.ts).
 import { expect, test } from '@playwright/test';
 import {
@@ -26,23 +27,29 @@ test.skip(!process.env.NULL3D_ALPHA_MASK_COST, 'set NULL3D_ALPHA_MASK_COST to ti
 
 const gpus = (process.env.NULL3D_ALPHA_MASK_GPUS ?? 'webgpu,compat,webgl2').split(',');
 const modes = (process.env.NULL3D_ALPHA_MASK_MODES ?? 'msaa,none').split(',');
+const layerCounts = (process.env.NULL3D_ALPHA_MASK_LAYERS ?? '1,8').split(',').map(Number);
 
 for (const gpu of gpus)
 	for (const antialias of modes)
-		test(`${antialias} on ${gpu}, opaque and masked in turns`, async ({ page }) => {
-			test.setTimeout(COST_TEST_MS);
-			await waitForQuietLoad();
-			const loadBefore = load();
-			await page.setViewportSize({ width: 1600, height: 900 });
-			await page.goto(`alpha-mask-cost.html?gpu=${gpu}&aa=${antialias}&preset=high&prepass=off`);
-			const result = await pageResult<CostResult>(page, COST_PAGE_MS);
-			expect(result.error).toBeUndefined();
-			console.log(
-				[
-					`${result.tier} ${antialias}, load ${loadBefore} before and ${load()} after`,
-					costLine('opaque', result.off),
-					costLine('masked', result.on),
-				].join('\n'),
-			);
-			expect(result.failures).toEqual([]);
-		});
+		for (const layers of layerCounts)
+			test(`${antialias} on ${gpu}, ${layers} layer${layers === 1 ? '' : 's'}, opaque and masked in turns`, async ({
+				page,
+			}) => {
+				test.setTimeout(COST_TEST_MS);
+				await waitForQuietLoad();
+				const loadBefore = load();
+				await page.setViewportSize({ width: 1600, height: 900 });
+				await page.goto(
+					`alpha-mask-cost.html?gpu=${gpu}&aa=${antialias}&preset=high&prepass=off&layers=${layers}`,
+				);
+				const result = await pageResult<CostResult>(page, COST_PAGE_MS);
+				expect(result.error).toBeUndefined();
+				console.log(
+					[
+						`${result.tier} ${antialias}, ${layers} layers, load ${loadBefore} before and ${load()} after`,
+						costLine('opaque', result.off),
+						costLine('masked', result.on),
+					].join('\n'),
+				);
+				expect(result.failures).toEqual([]);
+			});

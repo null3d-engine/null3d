@@ -1481,26 +1481,38 @@ const ALPHA_MASK_PATHS = [
 	['webgl2', 'webgl2'],
 ] as const;
 
+/** The curtains of the alpha mask plan's pages: one, and a stack as deep as a crown's leaves. */
+const ALPHA_MASK_LAYERS = [1, 8] as const;
+
 /**
  * What an alpha-masked lit fragment costs under MSAA: the curtain of masked lit quads of the
  * alpha-mask-cost page, timed with every quad opaque and masked in turns, with MSAA and with no
- * antialiasing, on each GPU path. D-223 records the results.
+ * antialiasing, on each GPU path, as one curtain and as eight stacked one behind another. D-226
+ * records the one curtain's results, and D-319 the eight curtains', where WebKit's WebGPU pays for
+ * each masked layer under MSAA.
  */
 export function alphaMaskPlan(): PlanItem<Check>[] {
 	const items: PlanItem<Check>[] = [];
 	for (const [path, tier] of ALPHA_MASK_PATHS)
 		for (const antialias of ['msaa', 'none'] as const)
-			items.push(
-				pageItem(
-					`alpha-mask-${antialias}-${path}`,
-					'alpha-mask-cost',
-					{ kind: 'alpha-mask', tier, antialias },
-					{
-						switches: [`gpu=${path}`, `aa=${antialias}`, 'preset=high', 'prepass=off'],
-						timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
-					},
-				),
-			);
+			for (const layers of ALPHA_MASK_LAYERS)
+				items.push(
+					pageItem(
+						`alpha-mask-${antialias}-${path}${layers === 1 ? '' : `-layers${layers}`}`,
+						'alpha-mask-cost',
+						{ kind: 'alpha-mask', tier, antialias },
+						{
+							switches: [
+								`gpu=${path}`,
+								`aa=${antialias}`,
+								'preset=high',
+								'prepass=off',
+								`layers=${layers}`,
+							],
+							timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+						},
+					),
+				);
 	return items;
 }
 

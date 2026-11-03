@@ -5,7 +5,8 @@
 // a fragment shader that discards runs once per sample instead of once per pixel. After a warm-up,
 // the page measures play with the mask off and on, in turns, three times each, and reports the
 // medians of each side's GPU time per frame, where the device has a GPU timer, and of its frame
-// interval and CPU time, with each thread's. Open it with ?gpu= for each path.
+// interval and CPU time, with each thread's. Open it with ?gpu= for each path, and with ?layers= for
+// several curtains one behind another.
 import { createEngine } from '@null3d/engine';
 import { featureCost } from './lib/feature-cost';
 import { run } from './lib/result';
@@ -17,6 +18,7 @@ run('alpha-mask-cost', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
 	const sketch = new URL('./sketches/alpha-mask-cost-sketch.ts', import.meta.url);
+	sketch.search = location.search;
 	const engine = await createEngine({ canvas, sketch, antialias });
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
@@ -38,6 +40,7 @@ run('alpha-mask-cost', async () => {
 	return {
 		tier: engine.capabilities.tier,
 		antialias,
+		layers: Number(params.get('layers') ?? 1),
 		window: [innerWidth, innerHeight],
 		devicePixelRatio,
 		off,

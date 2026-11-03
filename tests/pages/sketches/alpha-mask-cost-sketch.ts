@@ -4,7 +4,10 @@
 // cut half of each quad's fragments. The page's messages swap every quad between the two builds of
 // the standard material, which read the same vertices and differ only in the masked build's alpha
 // test and the discard that follows it. The depth prepass stays off, so no quad is skipped by a
-// depth already in the target, and the governor stays off, so the render scale holds.
+// depth already in the target, and the governor stays off, so the render scale holds. `?layers=`
+// stacks that many curtains, each a little further back with its bands moved one cell along, so
+// the layers behind show through the cut bands and each pixel shades through several layers, as
+// in a crown of leaves.
 import { defineSketch, type Material, type Mesh } from '@null3d/engine';
 
 /** The quads across and down the view, and the view's height in world units. */
@@ -16,9 +19,15 @@ const GRID_WIDTH = 4.8;
 /** The cells along each edge of a quad's grid of vertices, and the cells of each alpha band. */
 const CELLS = 16;
 const BAND = 2;
+/** The curtains stacked one behind another, and the depth between two of them. */
+const LAYERS = Math.max(
+	1,
+	Math.round(Number(new URL(import.meta.url).searchParams.get('layers') ?? 1)),
+);
+const LAYER_STEP = 0.05;
 
 /** The mesh of a quad: positions, normals and colors whose alpha alternates in diagonal bands. */
-function bandMesh(width: number, height: number) {
+function bandMesh(width: number, height: number, shift: number) {
 	const side = CELLS + 1;
 	const positions = new Float32Array(side * side * 3);
 	const normals = new Float32Array(side * side * 3);
@@ -28,7 +37,7 @@ function bandMesh(width: number, height: number) {
 			const k = row * side + column;
 			positions.set([(column / CELLS - 0.5) * width, (row / CELLS - 0.5) * height, 0], k * 3);
 			normals.set([0, 0, 1], k * 3);
-			const kept = (column + row) % (BAND * 2) < BAND;
+			const kept = (column + row + shift) % (BAND * 2) < BAND;
 			colors.set([1, 1, 1, kept ? 1 : 0], k * 4);
 		}
 	}
@@ -76,20 +85,22 @@ export default defineSketch(({ scene, materials, geometry, quality, page }) => {
 	const opaque = materials.standard(look);
 
 	const quads: Mesh[] = [];
-	const tile = geometry.fromArrays(bandMesh(GRID_WIDTH / COLUMNS, VIEW_HEIGHT / ROWS));
-	for (let row = 0; row < ROWS; row++) {
-		for (let column = 0; column < COLUMNS; column++) {
-			quads.push(
-				scene.createMesh({
-					mesh: tile,
-					material: opaque,
-					position: [
-						(column + 0.5) * (GRID_WIDTH / COLUMNS) - GRID_WIDTH / 2,
-						(row + 0.5) * (VIEW_HEIGHT / ROWS) - VIEW_HEIGHT / 2,
-						0,
-					],
-				}),
-			);
+	for (let layer = 0; layer < LAYERS; layer++) {
+		const tile = geometry.fromArrays(bandMesh(GRID_WIDTH / COLUMNS, VIEW_HEIGHT / ROWS, layer));
+		for (let row = 0; row < ROWS; row++) {
+			for (let column = 0; column < COLUMNS; column++) {
+				quads.push(
+					scene.createMesh({
+						mesh: tile,
+						material: opaque,
+						position: [
+							(column + 0.5) * (GRID_WIDTH / COLUMNS) - GRID_WIDTH / 2,
+							(row + 0.5) * (VIEW_HEIGHT / ROWS) - VIEW_HEIGHT / 2,
+							-layer * LAYER_STEP,
+						],
+					}),
+				);
+			}
 		}
 	}
 
