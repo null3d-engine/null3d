@@ -31,6 +31,7 @@ import {
 	type Vector3,
 } from '../core/math';
 import type { ExtraSpec } from '../core/record';
+import { spreadMax } from '../core/types';
 import { crownSkyAt } from '../crown/visibility';
 import type { MeshInput, MeshLevel } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
@@ -38,8 +39,16 @@ import { lathe, MeshWriter, sideAxes } from './writer';
 
 /** Faces round an extra by level; the thinned level draws the fewest. */
 const SIDES: Readonly<Record<MeshLevel, number>> = { 0: 8, 1: 5, 2: 4 };
-/** Extras smaller than this, in metres, are left out of the thinned level, where they cover no pixel. */
+/**
+ * Extras smaller than this, in metres, are left out of the thinned level of a plant without shoots,
+ * where they cover no pixel.
+ */
 const SMALLEST_FAR = 0.025;
+/**
+ * An extra that spans fewer pixels than this where a card level starts is left out of it: a speck
+ * there, which the shoots' cards already colour.
+ */
+const FEWEST_PIXELS = 3;
 /** The first hash purpose of the extras, past every purpose the instancer uses. */
 const PURPOSE = 40;
 /** Extras a record can draw: the first four, whose colours the plant material's header holds. */
@@ -128,6 +137,18 @@ function hung(direction: Readonly<Vector3>, degrees: number): Vector3 {
 	return normalize3(quatRotate(q, 0, out, out));
 }
 
+/**
+ * The breadth of an extra's shape in metres, what a far eye sees of it: a lathe's widest diameter,
+ * past the thin stalk that its length counts, and otherwise its size.
+ */
+function breadthOf(extra: ExtraSpec): number {
+	const shape = extra.shape;
+	if (!('lathe' in shape)) return sizeOf(extra);
+	let breadth = 0;
+	for (const [radius] of shape.lathe) breadth = Math.max(breadth, radius * 2);
+	return breadth;
+}
+
 /** The largest size of an extra's shape, in metres. */
 function sizeOf(extra: ExtraSpec): number {
 	const shape = extra.shape;
@@ -139,6 +160,19 @@ function sizeOf(extra: ExtraSpec): number {
 	if ('petals' in shape) return shape.radius * 2;
 	if ('spines' in shape) return shape.length;
 	return shape.catkin.length;
+}
+
+/**
+ * The pixels an extra spans where a card level starts: its breadth over the largest shoot's length,
+ * times the pixels that shoot spans at the level's switch. Undefined for a plant without shoots.
+ */
+function pixelsAt(input: MeshInput, extra: ExtraSpec, level: 1 | 2): number | undefined {
+	const shoots = input.record.shoots;
+	let longest = 0;
+	for (const prototype of input.kit.prototypes) longest = Math.max(longest, prototype.length);
+	if (!shoots || longest <= 0) return undefined;
+	longest *= spreadMax(shoots.placement.scale);
+	return (breadthOf(extra) / longest) * (input.record.lod.switchPixels[level - 1] as number);
 }
 
 /** Writes one extra at a site. */
@@ -267,7 +301,13 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 	const salt = input.record.seedSalt;
 	extras.forEach((extra, index) => {
 		if (index >= MOST || !extra.seasons.includes(input.season)) return;
-		if (level === 2 && sizeOf(extra) < SMALLEST_FAR) return;
+		if (level > 0) {
+			const pixels = pixelsAt(input, extra, level as 1 | 2);
+			if (
+				pixels === undefined ? level === 2 && sizeOf(extra) < SMALLEST_FAR : pixels < FEWEST_PIXELS
+			)
+				return;
+		}
 		sitesOf(input, extra).forEach((site, s) => {
 			const purpose = input.variant * 64 + PURPOSE + index;
 			if (unitAt(input.seed, salt, purpose, s) >= extra.share) return;
