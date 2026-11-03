@@ -1,153 +1,161 @@
 # D-40: Two-phase GPU occlusion culling on WebGPU
 
-Status: method decided. Built: two-phase culling on WebGPU, off on every preset ([D-22](D-22-occlusion-presets.md)). Prototype G1 on the Mac keeps it off on desktops, and rejects a quarter-size first level of the pyramid. Open for the owner: the stall between passes under another program's GPU load. Task: M2-I1.
+Status: method decided and built. Two-phase culling runs on WebGPU with occluders that the GPU picks itself, beside the depth prepass. A check during play turns the extra passes off while they do not pay. It is on at High and Ultra on desktops: the owner approved overturning the earlier off rows ([D-22](D-22-occlusion-presets.md)). Open: an under-load run on a quiet Mac, as every run here shared the Mac with other work. Task: M2-I1.
 
-Summary: Marked occluders that showed last frame and look large draw their depth at one sample per pixel, into a depth pyramid. A second culling phase tests every object against it, so the image equals culling without it and no object shows a frame late. It saves 7% of the room's GPU time on a quiet Mac, costs 38% to 66% more under load, and stays off.
+Summary: Opaque objects and instance rows that showed last frame and look large draw their depth into a depth pyramid. A second culling phase tests every object against it, so the image equals culling without it. A check reads the counts back without waiting and compares GPU frame times with the passes on and off. It keeps the passes only while they hide a tenth of the scene and the frame gets no longer.
 
 ## Question
 
-How does the WebGPU path skip opaque objects that other objects hide, without a visible error? Where does the depth it tests against come from, and which objects hide others? What does it cost? [D-22](D-22-occlusion-presets.md) records the preset rows and their timings; this record covers the method.
+How does the WebGPU path skip opaque objects that other objects hide, without a visible error? Which objects hide others, without the page marking them? Where does the depth it tests against come from? How does the engine avoid paying for the extra passes where they do not save time? [D-22](D-22-occlusion-presets.md) records the preset rows and their timings; this record covers the method.
 
 ## Rule
 
 - The image with occlusion culling equals the image without it, pixel for pixel. That holds on the Mac's GPU and on SwiftShader, in core WebGPU and compatibility mode, with MSAA and with one sample.
 - No object that shows draws a frame late, even when the camera turns a quarter turn in one frame.
+- An occluder never hides what the scene shows. Its depth is the depth that the frame draws for it, at the level of detail and the vertex positions of this frame.
 - It stays within WebGPU's default limits and compatibility mode's (AGENTS.md hard rule 6), uses no optional feature, and keeps first-instance at 0 (hard rule 8).
-- No per-frame allocation (hard rule 1).
-- A scene that does not use it pays nothing for it.
-- A preset turns it on only where it saves more GPU time than it costs on that preset's devices (D-22).
+- No per-frame allocation (hard rule 1), and no thread waits for the GPU (hard rules 4 and 5).
+- A preset turns it on only where it saves time on a quiet machine and loses no more than 5% with another program loading the GPU (D-53, ruling 15).
 
 ## Options
 
 | Option | How | Why not, or why |
 | --- | --- | --- |
-| (a) Two phases in each frame | Keep what showed last frame, build a depth pyramid from its depth, test everything against it, draw what shows. The method of Haar and Aaltonen's "GPU-Driven Rendering Pipelines" (SIGGRAPH 2015) and of Arseny Kapoulkine's Niagara renderer | Exact: the pyramid holds only depth drawn in the same frame. The plan (6.6) names it. Three ways to draw the first phase follow |
+| (a) Two phases in each frame | Keep what showed last frame, build a depth pyramid from its depth, test everything against it, draw what shows. The method of Haar and Aaltonen's "GPU-Driven Rendering Pipelines" (SIGGRAPH 2015) and of Arseny Kapoulkine's Niagara renderer | Exact: the pyramid holds only depth drawn in the same frame. The plan (6.6) names it. The ways to draw the first phase and to pick its objects follow |
 | (a1) Every object that showed last frame draws in color; a second opaque pass draws the rest over it | The published form | With MSAA the first pass stores 4 samples of color and depth per pixel for the second pass to load, where one pass keeps them in tile memory. S1 and S3 take about 0.55 ms more GPU time per frame on the Mac, 21% to 28% |
-| (a2) Every object that showed last frame draws its depth alone, into a target of its own, at the scene's samples; then one opaque pass draws what shows | The occluders' pass uses the depth prepass's pipelines | Drawing every visible object twice makes S1's GPU time 88% longer, and reading 4 depth samples per pixel costs the pyramid 1.2 ms |
-| (a3) As (a2), but only objects that the sketch marks as occluders, and that look large on the screen, draw their depth, at one sample per pixel; a frame with none culls once, as without occlusion culling (chosen) | `setOccluder(true)` and the `occluder` option, the same marks as WebGL2's software culling (D-41) | An unmarked scene costs nothing: S1 and S3 take the same GPU time as without occlusion culling. A sketch marks objects one way for both paths |
+| (a2) Every object that showed last frame draws its depth alone, at the scene's samples | The occluders' pass at 4 samples | Drawing every visible object twice makes S1's GPU time 88% longer, and reading 4 depth samples per pixel costs the pyramid 1.2 ms |
+| (a3) Only objects that the page marks draw their depth, at one sample per pixel | `setOccluder(true)`, the mark of WebGL2's software culling (D-41) | A page that marks nothing gains nothing, and rows never hid others. The desert comparison of the meshlet study marks nothing, so the culling hid nothing there |
+| (a4) Every opaque object and row that showed last frame and looks large draws its depth, at one sample per pixel, unless the page opts it out (chosen) | The entry of each source carries the mark of a source that may hide others; `setOccluder(false)` clears it | Nothing to mark: walls, the ground, hills and large rows hide what lies behind them. Small objects stay out by the size rule, on the GPU, per frame |
 | (b) One phase against last frame's depth | Test against the pyramid of the frame before, moved to the new camera | Objects that come out from behind an occluder show a frame late, and a fast turn misses many. Moving the depth to the new camera leaves holes |
 | (c) Occlusion queries | One query per object, read back a frame or more later | A readback per object, results a frame or more late, and a CPU loop over objects that GPU culling avoids |
 | (d) A pyramid from a full depth prepass | Draw every object's depth first, then test | Draws every object's vertices twice, the hidden ones too. The prepass makes S2's GPU time 45% longer on the Mac (M1-A7) |
+| (e) Occluders at a coarser level of detail | Draw each occluder's depth at a level coarser than the one that the frame draws | A coarser level can reach past the finer surface by its error, so its depth can hide a sliver that shows. The occluders draw at the level that the frame draws instead |
+
+The check had these options:
+
+| Option | Why not, or why |
+| --- | --- |
+| Off on every preset, the page turns it on (the earlier choice) | A page that does not measure never gains, and most pages do not measure |
+| The share of hidden objects alone, as three.js r187's meshlet pipeline does (off while it culls under 30% of the visible clusters) | It cannot see the cost that another program's GPU work adds between the extra passes, the cost that kept culling off (below) |
+| The GPU timer's pass times | Timestamps need an optional feature (hard rule 11), which the engine asks for only while a page measures, and they time each pass, not the waits between them |
+| The share of hidden objects and the GPU's frame time from submit to completion, compared with the passes on and off in turns (chosen) | Every WebGPU device reports completions, the engine tracks them in every frame, and the time includes the waits behind other work |
 
 ## How it works
 
-- Each camera view keeps a history: one word per source, 1 when the source showed in the view's last frame. The history sits after the view's indirect draws, in their buffer. The culling group binds eight storage buffers, the most that every device allows a shader stage. Chrome rejects the pipeline layout with a ninth binding for the history.
-- Each source's entry in the bucket table carries an occluder bit, bit 22, below the cell index. So a layout holds at most 4,194,304 buckets, and fails with the error of too many sources past that. A change of an object's occluder mark marks the object changed in the core, as a change of its bounds does. The builder then rewrites its entry from the next frame, with no rebuild.
-- The builder counts the shown occluders. A frame with none runs the plain culling pipeline into the draws that the opaque pass reads. It records no occluders' pass, pyramid or second phase. A view that does not cull in two phases binds a 16-byte placeholder where the pyramid goes.
-- Otherwise the first phase (`early` in `cull.wgsl`) keeps the marked sources in view whose history is 1. Each must look large: its bounds span at least a sixteenth of the render size's longer side, or it reaches the camera's plane. It counts them in the pyramid's first word, and in the first set of indirect draws.
-- The occluders' pass draws their depth alone, into a depth target of one sample per pixel. It uses the depth prepass's pipelines: the depth template's prepass build, which clips at the near plane as shading does. Masked, blended and custom materials have no such pipeline, so they hide nothing, which keeps the test conservative.
-- The depth pyramid is one storage buffer: a word that counts the frame's occluders, then each level. Level 0 is half the render size each way, rounded up, and each level halves the one before, down to one texel. Each texel holds the farthest depth under it, the smallest value in reversed depth. A buffer, not a texture with mip levels, because the draw list binds whole textures, and every level reads the one before it.
-- Level 0 reads the occluders' depth as a float texture (`texture_2d<f32>`). Compatibility mode refuses `textureLoad` on depth texture types, but allows depth formats bound as float textures. So compatibility mode needs no copy of the depth.
-- The occluders' depth has one sample, at each pixel's center, where the scene may draw with 4. So each texel of level 0 keeps the farthest of the 4 x 4 pixels around its own 2 x 2. Take an object that shows at one sample of a pixel whose center an occluder covers. It lies within a pixel of a center that the occluders leave open. Only a gap between occluders thinner than a pixel could hide such a sliver.
-- One dispatch builds up to four levels. Each workgroup has 8 x 8 threads, and each thread builds one texel of the batch's first level. The workgroup then builds the next three levels of its tile in workgroup memory. At 1280 x 720 that is 3 dispatches for 10 levels. Every workgroup returns at once in a frame with no occluder.
-- The second phase (`late`) tests every source in view against the pyramid and writes its history. It counts the visible ones in the second set of indirect draws, after the first, which the opaque pass draws. It writes over the bucket slices of the compacted instances, which the occluders' pass has finished reading.
-- The test: interval arithmetic on the rows of the view-projection matrix gives the sphere's bounds on the screen and its nearest depth. It holds for perspective and orthographic lenses, and only makes the bounds larger. A sphere that reaches the camera's plane or the near plane never hides. The level is the first whose texels are at least as wide as the bounds, so at most 2 x 2 texels cover them.
-- The render graph has one rule for this. A pass that reads a resource "so far" runs after the writers declared before it, and before those declared after it. The occluders' pass reads the compacted instances that way, before the second phase writes them again. Every other read runs after the last writer.
-- Shadow cascades and tiles cull with the frustum test alone. See-through objects draw from the transparent pass's sorted rows, and hide nothing. Instance rows are never occluders.
-- It does not run with the depth prepass, which every preset leaves off on WebGPU.
+### Occluders
 
-## The stall between passes
+- Each source's entry in the bucket table carries an occluder bit, bit 22, below the cell index. So a layout holds at most 4,194,304 buckets. The bit is set for every scene object and every batch row whose bucket draws depth in the occluders' pass, unless the object's `NOT_OCCLUDER` flag (bit 9) or its batch's row bit says otherwise. A change of the flag rewrites the object's entry from the next frame, with no rebuild. A batch's change rebuilds the tables, as its shadow bits do.
+- A bucket draws depth in the occluders' pass when its pair has a depth build: an opaque pair that does not blend, cut holes with a mask, skip the depth buffer or fade between levels. Most pairs draw with the depth template. A pair that places its own vertices, such as a custom material with a vertex offset, a displaced material or a sprite, draws with its own template's prepass build, as the depth prepass does. So the terrain add-on's hills, whose vertex offset morphs them, hide what lies behind them at the depth they draw at.
+- The first phase (`early` in `cull.wgsl`) keeps the marked sources in view whose history is 1. Each must look large: its bounds span at least a sixteenth of the render size's longer side, or it reaches the camera's plane. It appends each to the level of detail that the frame draws it at, so an occluder's depth is the frame's own. A source inside a fading band appends to the fade buckets, which have no depth build, so it hides nothing.
+- A mesh with a tree of cluster patches runs the cluster pass after the first phase too, with its own set of parameters that read the first set of indirect draws. The occluders' pass then draws this frame's patches of the occluders, not last frame's, and the second run picks the patches that the opaque pass draws.
 
-Under another program's GPU work, culling makes the frame longer, though it makes the opaque pass shorter. The room scene ran with 96-segment spheres and MSAA, on a Mac that other helpers' browser tests shared. Chrome's GPU timer gave these times per frame. They are medians of each part, so they do not add up exactly.
+### The passes
 
-| Part of the frame | Culling off | Culling on |
-| --- | --- | --- |
-| Before the first pass | 0.26 ms | 1.31 ms |
-| The occluders' pass | none | 0.10 ms |
-| The compute pass of the pyramid and the second phase | none | 0.20 ms |
-| The opaque pass | 0.92 ms | 0.39 ms |
-| The final pass | 0.56 ms | 0.33 ms |
-| Between passes | 0.36 ms | 2.56 ms |
-| The whole frame | 2.16 ms | 3.70 ms |
+- Each camera view keeps a history: one word per source, 1 when the source showed in the view's last frame. The history sits after the view's indirect draws, in their buffer. The culling group binds eight storage buffers, the most that every device allows a shader stage.
+- The occluders' pass draws the occluders' depth into a depth target of one sample per pixel, from the first set of indirect draws. Its bundle holds only the buckets that held occluders in the last three readings of the check, so it draws no draw of no instances for the rest. A new layout starts with every bucket that draws depth. A bucket that becomes an occluder between readings draws no depth until the next reading, which hides less, never more.
+- The depth pyramid is one storage buffer: a word that counts the frame's occluders, then each level. Level 0 is half the render size each way, rounded up, and each level halves the one before, down to one texel. Each texel holds the farthest depth under it, the smallest value in reversed depth.
+- Level 0 reads the occluders' depth as a float texture. Compatibility mode refuses `textureLoad` on depth texture types, but allows depth formats bound as float textures.
+- The occluders' depth has one sample, at each pixel's center, where the scene may draw with 4. So each texel of level 0 keeps the farthest of the 4 x 4 pixels around its own 2 x 2.
+- One dispatch builds up to four levels, from 8 x 8 threads per workgroup. At 1280 x 720 that is 3 dispatches for 10 levels.
+- The second phase (`late`) tests every source in view against the pyramid and writes its history. It counts the visible ones in the second set of indirect draws, after the first, which the depth prepass and the opaque pass draw.
+- The test: interval arithmetic on the rows of the view-projection matrix gives the sphere's bounds on the screen and its nearest depth. It holds for perspective and orthographic lenses. A sphere that reaches the camera's plane or the near plane never hides.
+- The render graph runs the occluders' pass after the first phase and before the late phase, which writes the compacted instances again: the pass reads them "so far". The depth prepass reads them after their last writer, so it runs after the late phase. So culling runs beside the depth prepass, which ambient occlusion, contact shadows and screen-space bounce light turn on. Bounce light runs at High and Ultra, so without this the culling never ran on those presets.
+- Shadow cascades and tiles cull with the frustum test alone. See-through objects draw from the transparent pass's sorted rows, and hide nothing.
 
-What is known:
+### The check
 
-- The culling does its job: the opaque pass is 0.53 ms shorter, and the passes that culling adds take 0.30 ms.
-- The extra time falls outside every pass: about 1 ms more before the first pass, and about 2.2 ms more between passes. A pipeline switch happens inside a pass, so it would count in the pass's own time. The time lies between command encoders instead.
-- It is not the timer's rounding: its steps are 0.066 ms, and the gap is 3 ms.
-- The time before the first pass also grows, from 0.26 to 1.31 ms. That part holds the frame's uploads, and with culling on also the previous frame's tail, if its passes are still running.
-- On a quiet GPU no gap shows between passes ("Culling on a quiet GPU").
+`gpu_driven/occlusion_check.rs` holds the check. It never waits for the GPU.
 
-So the stall is probably not a barrier in the engine's frame. Other programs' GPU work runs in the gaps between its passes. Culling makes a chain of 5 dependent passes in place of 3, so a frame has more points where it waits behind other work. The GPU timestamps count that wait. A resource barrier at the two extra hand-overs between a render pass and a compute pass would fit the gap too. But a barrier would also stall the frame on a quiet GPU. A Metal trace under load, which would show whose work fills the gaps, is not read yet. Safari's WebGPU on a quiet Mac is not measured yet.
-
-### Culling on a quiet GPU
-
-A run measured the room scene again, with 96-segment spheres, MSAA and 1280 x 720, in Chrome 154 on the same Mac, with precise timestamps.
-
-| Run | Culling off | Culling on |
-| --- | --- | --- |
-| Nothing else heavy on the GPU (3 runs, 3 rounds each) | 1.64 ms | 1.04 ms (37% less) |
-| A second Chrome drawing a heavy shader, 4 passes per frame (3 rounds) | 1.25 ms | 1.49 ms (19% more) |
-| The same load, 1 round of 8 s | 1.49 ms | 2.09 ms (40% more) |
-
-- On the quiet GPU no gap shows between passes, and culling pays: the opaque pass falls from 1.48 to 0.65 ms.
-- Under load each pass runs faster, as the GPU's clock rises, but the frame with culling grows between passes. That is the pattern of the table above.
-- Images match pixel for pixel in all six views in every run.
-
-Prototype G1's run on the quiet Mac, in Chrome 155, gives a smaller saving of 7% ("Prototype G1 on the Mac").
+- The late phase counts the sources in view that would draw and those that the pyramid hides. Each workgroup sums its own in workgroup memory, and adds them with one atomic each to two words after the history. Each frame resets the words and writes its frame number beside them.
+- A frame that the check asks copies the counts and the first set of indirect draws into a buffer of a ring of two, after the frame's passes, and reads it into engine memory (`ReadBuffer`). The words land a few frames later, and name their frame, so the check takes them when the frame matches. A read that does not land within 90 frames is given up, and its buffer is made again.
+- The render worker tracks each frame's completion in every frame (`gpu/completion.ts`). The sketch thread hands each completion's busy time, from the frame's submit to its completion, to the core (`gpuFrameTime`). It holds any wait behind another program's work.
+- The check runs the passes in its mode, on or off. Every 120 frames it starts a trial of 10 frames in the other mode, and leaves out the trial's first 2 frames. It compares the median busy time of the trial's last 8 frames with the median of the 8 frames before the trial.
+- The passes pay while the pyramid hides at least 10% of the sources that would draw, and a frame with them takes no longer than 102% of a frame without. The verdict sets the mode until the next trial. Without counts the frame times decide alone, and with neither the mode stays. Its first trial starts 30 frames after the passes can first run.
+- So the passes cost a frame that does not gain 10 frames in 120 at most, about 8%. A frame that gains keeps the gain but in those 10 frames.
 
 ## Data
 
-The tests, in Chrome 154 on the Mac (Apple M5 Max) and on SwiftShader:
+The tests, in Chrome on the Mac (Apple M5 Max) and on SwiftShader:
 
 | Check | Result |
 | --- | --- |
-| The GPU occlusion page: six views of the room, each turned 65° to 180° from the one before, culled against unculled, at 320 x 180 and at 1280 x 720, with MSAA | 0 differing pixels in each view, on core WebGPU and in compatibility mode. At 320 x 180 SwiftShader gives the same |
-| The same with FXAA | 4 to 38 differing pixels per view at 320 x 180. Two runs of FXAA without culling also differ by up to 37 pixels, so this is not from culling |
-| The room's hold images, culled against unculled | Equal on SwiftShader; equal on the Mac with MSAA, and within 91 pixels of 230,400 with FXAA |
-| Copies with `?occlusion=on` of the room (MSAA and FXAA), shadows, transparency, the orthographic camera and S2 | Each matched its test's references, on core WebGPU and in compatibility mode |
-| The renderer's mock backend and the no-allocation tests, with shadows, two views, render scale changes, and occluders marked and unmarked | Valid lists; no allocation in steady frames |
+| The GPU occlusion page: six views of the room, each turned 65° to 180° from the one before, culled against unculled, at 320 x 180 and at 1280 x 720, with MSAA. Nothing is marked: the culling picks the walls, the ground and the spheres itself | 0 differing pixels in each view, on core WebGPU and in compatibility mode, in Chrome 156 on the Mac. At 1280 x 720 every timed run below matched in every pixel too |
+| The same with FXAA | 4 to 38 differing pixels per view at 320 x 180, as two runs of FXAA without culling also differ |
+| The renderer's mock backend: automatic occluders, the opt-out of objects and batch rows, the culling beside the depth prepass and ambient occlusion, the readback after the late phase, and the check that turns the passes off when they make the frame longer and keeps them when they make it shorter | Valid lists, and the passes as the rule says |
+| The check's unit tests | The mode follows the counts and the frame times, a frame recorded twice keeps its plan, and the occluders' bundle keeps a bucket for three readings after its last occluder |
 
-The cost and the saving are in [D-22](D-22-occlusion-presets.md).
+### The room with the check
 
-## Decision
+Chrome 156 on the Mac drew the `gpu-occlusion` page on WebGPU at High, with 96-segment spheres, MSAA and 1280 x 720 at a pixel ratio of 1, in a visible parked window, with exact timestamps. At High the page draws screen-space bounce light, so the depth prepass runs, and occlusion culling runs beside it. Each run timed both sides 3 times, in turns, in a new engine each time. The load page was a second Chrome that drew a heavy fragment shader in 4 full-screen passes per frame, at 101 to 120 frames per second. Other helpers' builds and browser runs shared the Mac: its 1-minute load average was 24 to 34 in the forced runs and 45 to 80 in the others. So no run was quiet, and the spread between runs of one side reaches 2 ms.
 
-Option (a3). Marked occluders that look large draw their depth at one sample per pixel. A pyramid in a storage buffer holds it, with a first level at half size, and the history sits after the indirect draws. Its shaders load on first use, once a scene marks an occluder. It meets the image rule on every WebGPU tier tested with MSAA.
+GPU time per frame, each run's median, culling off and on:
 
-It stays off on every preset until a device shows that it saves more than it costs (D-22). The owner set its preset rules in [D-53](D-53-technique-defaults.md):
+| Build | Load page | Culling off | Culling on | Median change | Objects hidden |
+| --- | --- | --- | --- | --- | --- |
+| With the check | No | 3.49, 5.17, 5.10 ms | 4.17, 4.92, 3.05 ms | 18% less | 203 of 270 in view |
+| With the check | Yes | 9.63, 5.05, 5.49 ms | 4.12, 5.08, 5.18 ms | 7% less | 0 in 2 runs: the check turned the passes off |
+| Passes forced on, no check | No | 4.21, 5.06 ms | 4.76, 4.76 ms | No clear change | 203 of 270 in view |
+| Passes forced on, no check | Yes | 4.33, 5.23 ms | 5.06, 5.05 ms | No clear change | 203 of 270 in view |
 
-- Desktops: High and Ultra turn GPU occlusion culling on only if two runs pass. A run on a quiet Mac must save time, and a run with another program loading the GPU must lose no more than 5%. On the Mac, prototype G1 loses 38% to 66% under load ("Prototype G1 on the Mac"), so desktops keep it off.
-- Android: it stays off until prototype G1 passes on the GPUs whose drivers Bevy and Unity block for GPU culling. These are Adreno 730 and older, Mali drivers before r48, and the PowerVR GPUs of the Pixel 10 and 11.
+- The culling hides 75% of the spheres that would draw in view 0. The depth prepass falls from 0.9 to 1.3 ms to 0.44 ms, and the occluders' pass takes 0.1 ms.
+- Where the passes did not pay, the check turned them off, and the engine with culling on took no more time than the one without it.
+- The pass split of a forced run, by the GPU timer's slots: compute 0.03 ms, occluders 0.10 ms, prepass 0.44 ms. Bounce light's second step dominates the frame, at 3.5 to 4.1 ms on both sides.
 
-## Consequences
+### The desert of the meshlet study
 
-- The preset table has the `gpuOcclusion` row, off on every preset. `createEngine` has the `gpuOcclusion` option, and `?occlusion=on|off` sets it on WebGPU and `softwareOcclusion` on WebGL2.
-- `concepts/culling`, `concepts/quality-presets` and `api/objects` describe it.
-- The culling stage is full. Its group binds 8 storage buffers: the matrices, the bucket table and records, the compacted instances, the indirect draws with the history, the layer table, the cell order and the pyramid. That is the most that every device allows one shader stage, compatibility mode included. A feature that culls with more data must share one of these buffers, as the history shares the indirect draws', or read it from a texture.
-- The hidden share comes from the room's geometry (`hiddenShare` in `bench/scenes/room.ts`), not from a count on the GPU. A readback of the instance counts would let `engine.measure` report what it hides on WebGPU too, in `occludedEntries`.
-- Safari 26 encodes a render bundle with indirect draws again at every `executeBundles` (5.9). The occluders' pass adds one bundle per camera view, so Safari before 27.2 pays that cost twice for the camera. On the owner's iPad in Safari 26.6.2, culling took 0.34 ms more GPU time per frame in the room scene. The render worker's CPU time did not grow. The run does not show the bundle's own share ([D-22](D-22-occlusion-presets.md)).
-- FXAA images vary by a few dozen pixels from run to run, with or without culling. The cause is not known.
-- Later options: find and remove the stall between passes. Test shadow casters against a light's own pyramid. Build every level in one dispatch, as AMD's single-pass downsampler does.
+The desert comparison's null3D page drew the walk and the aerial views at High, from a production copy of the CDN build, with `occluder=1`, which lets the ground hide others as an object without a mark does. Each view ran 3 times with culling on and off in turns, 10 s each after 4 s of warm-up.
 
-## Prototype G1 on the Mac
+| View | Culling off | Culling on |
+| --- | --- | --- |
+| Walk | 7.47, 6.74, 7.03 ms | 11.41, 6.91, 6.93 ms |
+| Aerial | 9.66, 11.41, 11.23 ms | 10.93, 10.02, 11.29 ms |
 
-Prototype G1 timed the room scene again on the quiet Mac, and tried a quarter-size first level of the pyramid. Each build ran from main at 62a125187. The quarter-size build differs only in the pyramid's level sizes, its first level's reads and the second phase's level choice, and is not merged.
+The triangles drawn stayed the same, 31.0 to 33.8 million per frame on both sides. So the check kept the passes off in the desert, where they hide little. The medians of the two sides lie within 3% of each other, inside the runs' noise. The first walk run with culling on took 11.4 ms in one run only.
 
-How it ran: Chrome 155 on the Mac (Apple M5 Max) drew the `gpu-occlusion` page on WebGPU. It used 96-segment spheres, MSAA and 1280 x 720 at a pixel ratio of 1. Each build had 3 runs of 3 rounds of 4 s with nothing else heavy on the GPU. Then it had 3 runs with a second Chrome that drew a heavy shader in 4 passes per frame. That load page held 120 frames per second throughout. Chrome started with `--enable-webgpu-developer-features`, which turns off the rounding of GPU timestamps to steps of 0.066 ms. The Mac's 1-minute load was 3.8 to 9.3 during the runs. It ran in a quiet window, with other helpers' builds and browser runs held back.
+### The Island showcase
 
-GPU time per frame, the mean of the 3 runs' medians:
+A temporary page timed the Island at High, 20 s into its route for 30 s: the low flight in toward the beach, the town's waterfront and the harbour. Ambient occlusion holds the depth prepass there, and the terrain add-on's hills are custom materials, which hide others with their own vertex shader. Two rounds per side, in turns, at a load average of 41 to 55:
+
+| Culling off | Culling on | Objects hidden, median |
+| --- | --- | --- |
+| 15.15, 16.61 ms | 13.47, 14.95 ms | 0 |
+
+The check kept the passes off over those shots, so the median frame hid nothing, and the side with culling took no more time. Its frames waited on the GPU at 60 frames per second, 24 ms from submit to completion, so the busy times that the check compares hold a frame's queue too.
+
+### The stall between passes
+
+Under another program's GPU work, culling made the frame longer in earlier runs, though it made the opaque pass shorter. In Chrome 154, the room's frame with culling took 2.56 ms between passes against 0.36 ms without it, and 3.70 ms in all against 2.16 ms. The time fell outside every pass. Culling makes a chain of 5 dependent passes in place of 3, so a frame has more points where it waits behind other work. Prototype G1 measured 38% to 66% more under load on the Mac with exact timestamps, and 7% less on a quiet GPU. A Metal trace under load, which would show whose work fills the gaps, is not read yet. The check is the answer to it: it measures the frame with those waits, and turns the passes off where they cost more.
+
+### Prototype G1 on the Mac
+
+Prototype G1 timed the room scene of marked walls, before the check and before culling ran beside the depth prepass. Chrome 155 on the Mac drew the `gpu-occlusion` page on WebGPU, with 96-segment spheres, MSAA and 1280 x 720. Each build had 3 runs of 3 rounds of 4 s quiet, then 3 runs beside a second Chrome that drew a heavy shader in 4 passes per frame, with exact timestamps. GPU time per frame, the mean of the 3 runs' medians:
 
 | Build | Run | Culling off | Culling on | Change |
 | --- | --- | --- | --- | --- |
-| Main (first level at half size) | Quiet | 2.31 ms | 2.14 ms | 7% less |
-| Main | With the load page | 2.53 ms | 3.83 ms | 38% to 66% more |
-| Quarter-size first level | Quiet | 2.30 ms | 2.38 ms | 3% more |
-| Quarter-size first level | With the load page | 2.41 ms | 3.88 ms | 57% to 66% more |
+| First level at half size | Quiet | 2.31 ms | 2.14 ms | 7% less |
+| First level at half size | With the load page | 2.53 ms | 3.83 ms | 38% to 66% more |
+| First level at a quarter size | Quiet | 2.30 ms | 2.38 ms | 3% more |
+| First level at a quarter size | With the load page | 2.41 ms | 3.88 ms | 57% to 66% more |
 
-The quiet runs agreed within 0.01 ms. All six views matched culling off in every pixel, in every run of both builds.
+- The opaque pass fell from 1.91 to 1.16 ms, and the pyramid and the second phase took 0.48 ms.
+- A first level at a quarter size hides as much, but its compute pass takes 0.72 ms against 0.48 ms. The pyramid keeps a first level at half size.
+- An earlier quiet run in Chrome 154 saved 37%, 1.64 against 1.04 ms, and cost 19% to 40% more under load.
 
-Pass times on the quiet GPU, main build. As in the stall's table, they are medians of each part and overlap, so read them as shares:
+## Decision
 
-| Part of the frame | Culling off | Culling on |
-| --- | --- | --- |
-| The occluders' pass | none | 0.08 ms |
-| The compute pass of the pyramid and the second phase | none | 0.48 ms |
-| The opaque pass | 1.91 ms | 1.16 ms |
-| The final pass | 1.18 ms | 1.07 ms |
+Option (a4) with the check. Every opaque object and row that showed last frame and looks large draws its depth at one sample per pixel, at the level of detail and the vertex positions that the frame draws. A pyramid in a storage buffer holds it, and the history sits after the indirect draws. Its shaders load on first use, once a scene holds an object that may hide others. It meets the image rule on every WebGPU tier tested with MSAA.
 
-- The culling does its job. The opaque pass is 0.75 ms shorter, close to the 0.83 ms of the Chrome 154 run. But the frame with culling off takes 2.31 ms, against 1.64 ms in that run, and the pyramid and the second phase take 0.48 ms. So the saving is 7% of the frame, not 37%. The runs do not show what moved these times.
-- The quarter-size first level saves nothing. Its opaque pass is the same (1.14 ms), so the coarser pyramid hides as much. But its compute pass takes 0.72 ms, against 0.48 ms. Fewer threads each make 36 dependent depth reads in place of 16. That is the likely cause, but it is not measured. The pyramid keeps a first level at half size.
-- Under load, culling costs 38% to 66% more, as in the Chrome 154 runs (19% to 40%). The frame with culling grows outside the culling passes, so the stall between passes shows here too.
-- A run with rounded timestamps gives the same pattern. Culling saves 6% to 7% quiet, and costs 25% to 62% more with the load page.
+The check keeps the extra passes only while they hide at least 10% of the objects that would draw, and the GPU's frame from submit to completion is no longer than 102% of the frame without them. It runs a trial in the other mode every 120 frames.
 
-So prototype G1 passes on the Mac by its quiet rule and fails by its loaded rule ([D-53](D-53-technique-defaults.md), ruling 15). It saves 7% quiet, and it loses more than 5% under load. Desktops keep GPU occlusion culling off ([D-22](D-22-occlusion-presets.md)).
+High and Ultra turn it on for desktops, by the owner's approval to overturn the earlier off choice. The runs above show no loss with the check, quiet or under load, within their noise ([D-22](D-22-occlusion-presets.md)). Phones and tablets keep it off on every preset (D-53, ruling 15), unless the page asks for it.
+
+## Consequences
+
+- The preset table's `gpuOcclusion` row is on for High and Ultra. `createEngine`'s chooser leaves it off on phones and tablets unless the page's option or `?occlusion=` sets it. `?occlusion=on|off` sets it on WebGPU and `softwareOcclusion` on WebGL2.
+- `setOccluder(false)` and the `occluder: false` option of `createMesh`, `instantiate` and `createInstances` keep an object or a batch's rows out of the occluders. `setOccluder(true)` keeps its meaning on WebGL2, and on WebGPU it equals no mark.
+- `engine.measure` reports `occludedEntries` on WebGPU too: the hidden count of the newest frame whose counts landed, and 0 while the check keeps the passes off.
+- Control slot 60 (`OcclusionRead`) is the slot that the reads raise. Nothing reads it.
+- The culling stage is full. Its group binds 8 storage buffers. The counts share the indirect draws' buffer, after the history.
+- Safari 26 encodes a render bundle with indirect draws again at every `executeBundles`. The occluders' pass adds one bundle per camera view.
+- FXAA images vary by a few dozen pixels from run to run, with or without culling. The cause is not known.
+- Later options: run the under-load comparison on a quiet Mac, and on Safari. Test shadow casters against a light's own pyramid. Build every level in one dispatch, as AMD's single-pass downsampler does. Test the patches of cluster trees against the pyramid.

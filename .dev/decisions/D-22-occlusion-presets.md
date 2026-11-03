@@ -1,8 +1,8 @@
 # D-22: Occlusion culling per preset on each path
 
-Status: decided: both methods are off on every preset. The WebGL2 rows (T-36) are the owner's decision, from the device runs of S6. The desktop WebGPU rows follow prototype G1's rules, and the iPad's and the cloud Galaxy S25's runs agree. Not run yet: G1's image check on the Android GPUs that Bevy and Unity block for GPU culling, so the Android rows stay off. Task: M2-I1 (WebGPU), M2-I3 (WebGL2).
+Status: decided. WebGL2: software occlusion culling is off on every preset, the owner's decision from the device runs of S6 (T-36). WebGPU: GPU occlusion culling is on at High and Ultra on desktops, with its check during play. The owner approved overturning the earlier off rows. Phones and tablets keep it off. Not run yet: G1's image check on the Android GPUs that Bevy and Unity block, and an under-load run on a quiet Mac. Task: M2-I1 (WebGPU), M2-I3 (WebGL2).
 
-Summary: Both methods are off on every preset. On WebGL2, software occlusion culling in S6 costs the job workers at least 3.5 times the render time it saves. On WebGPU, GPU occlusion culling saves a quiet Mac 7% in a walled room, and costs 38% to 66% more under load.
+Summary: WebGL2's software occlusion culling stays off: in S6 it costs the job workers at least 3.5 times the render time it saves. WebGPU's GPU occlusion culling is on at High and Ultra on desktops. Its check turns the extra passes off where they do not pay. The room and the desert lost no time with it, quiet or under load.
 
 ## Question
 
@@ -14,12 +14,27 @@ A preset turns a method on only where it saves more frame time than it costs on 
 
 [D-53](D-53-technique-defaults.md) sets prototype G1's rules for GPU occlusion culling on each class of device:
 
-- Desktops: High and Ultra turn it on only if a run on a quiet Mac saves time. A run with another program loading the GPU must also lose no more than 5% ([D-53](D-53-technique-defaults.md), ruling 15).
+- Desktops: High and Ultra turn it on only if a run on a quiet Mac saves time. A run with another program loading the GPU must also lose no more than 5% ([D-53](D-53-technique-defaults.md), ruling 15). The check of [D-40](D-40-gpu-occlusion.md#the-check) measures the passes in play, so the rule judges the engine with its check.
 - Android: it stays off until G1 passes on the GPUs whose drivers Bevy and Unity block for GPU culling. These are Adreno 730 and older, Mali drivers before r48, and the PowerVR GPUs of the Pixel 10 and 11.
 
 ## Data
 
 ### GPU occlusion culling on WebGPU
+
+#### With the check and the occluders that the GPU picks
+
+[D-40](D-40-gpu-occlusion.md#the-room-with-the-check) gives the method and every run. In short, on the Mac (Apple M5 Max) in Chrome 156, at High, with other helpers' work on the Mac throughout:
+
+| Scene | Run | Culling off | Culling on | Change of the medians |
+| --- | --- | --- | --- | --- |
+| The room, 96-segment spheres, MSAA, 3 runs of 3 rounds | No load page | 5.10 ms | 4.17 ms | 18% less |
+| The room | A second Chrome loading the GPU | 5.49 ms | 5.08 ms | 7% less |
+| The desert of the meshlet study, walk view, 3 runs | No load page | 7.03 ms | 6.93 ms | 1% less |
+| The desert, aerial view, 3 runs | No load page | 11.23 ms | 10.93 ms | 3% less |
+
+The Mac's load average stayed between 24 and 80, so these runs are not the quiet runs that the rule names. Each side's runs spread by up to 2 ms. Within that noise, culling with its check lost no time in any scene, quiet or under load. Where the passes did not pay, under the load page and in the desert, the check turned them off.
+
+#### Earlier runs without the check, of marked occluders
 
 These figures come from Chrome 154 on the Mac (Apple M5 Max), at the High preset. Other helpers ran builds and tests on the Mac at the same time, so each comparison ran its two sides in turns. Chrome's GPU timer counts in steps of about 0.066 ms here.
 
@@ -51,7 +66,7 @@ Prototype G1 ran the room scene on a quiet Mac, in Chrome 155 with exact GPU tim
 | Quiet (3 runs of 3 rounds) | 2.31 ms | 2.14 ms | 7% less |
 | With a second Chrome loading the GPU (3 runs) | 2.53 ms | 3.83 ms | 38% to 66% more |
 
-All six views matched culling off in every pixel. A first pyramid level at a quarter of the render size cost 3% more quiet, so it is not an option. Another quiet run gave 37% less with 96-segment spheres and MSAA, 1.64 against 1.04 ms. Under another program's GPU load it gave 19% to 40% more ([D-40](D-40-gpu-occlusion.md#culling-on-a-quiet-gpu)).
+All six views matched culling off in every pixel. A first pyramid level at a quarter of the render size cost 3% more quiet, so it is not an option. Another quiet run gave 37% less with 96-segment spheres and MSAA, 1.64 against 1.04 ms. Under another program's GPU load it gave 19% to 40% more ([D-40](D-40-gpu-occlusion.md#prototype-g1-on-the-mac)).
 
 #### The owner's iPad and a cloud Galaxy S25
 
@@ -112,12 +127,12 @@ Wrongly hidden at rest: the phones drew the frames with culling on and off exact
 
 WebGL2: software occlusion culling is off on every preset, decided by the owner. In S6 it cost the job workers 7 to 22 ms per frame on every device, and saved 2.3 ms of render time at most. That is at least 3.5 times its saving on the iPad, and 20 times or more on the phones. It hid 23% to 39% of the entries in view, but fewer than 3% of the draw calls. Most rows it hid belong to batches that still draw. It stays as the `softwareOcclusion` option of `createEngine` and the quality setting of that name. A scene that measures a gain with `?occlusion=on` and `?occlusion=off` may turn it on.
 
-WebGPU: off on every preset. On a quiet Mac it saves 7% in the room scene, which meets the quiet rule. Under another program's GPU load it costs 38% to 66% more, past the 5% that the loaded rule allows. So the desktop rows stay off, High and Ultra included. The room scene hides 94% of its spheres, so it favors culling more than most scenes. Even there, culling cost 0.34 ms (4%) of GPU time per frame on the owner's iPad, and 1.1 ms (30%) on the cloud S25. Its images matched in every pixel on both. The Android rows stay off until G1's image check passes on the GPUs that Bevy and Unity block. It stays as the `gpuOcclusion` option of `createEngine`, which costs nothing in a frame that marks no occluder. A scene may turn it on once it measures a gain with `?occlusion=on` and `?occlusion=off`.
+WebGPU: on at High and Ultra, which desktops run. The owner approved overturning the earlier off rows, once a check during play bounds what the passes cost ([D-40](D-40-gpu-occlusion.md#the-check)). Without the check, culling cost 38% to 66% more under load, past the 5% that the loaded rule allows. With it, the room and the desert lost no time with culling on, with or without the load page, within the runs' noise. The runs shared the Mac with other work, so a quiet run under load remains to be made. Phones and tablets keep it off on every preset, whatever the preset: the chooser leaves it off there unless the page asks for it. On the owner's iPad culling cost 0.34 ms (4%) of GPU time per frame without the check, and 1.1 ms (30%) on the cloud S25. The Android rows wait for G1's image check on the GPUs that Bevy and Unity block. It stays as the `gpuOcclusion` option of `createEngine`, and `?occlusion=on` and `?occlusion=off` compare a scene.
 
 ## Consequences
 
-- `gpuOcclusion` and `softwareOcclusion` in the preset table: false on every preset.
+- `gpuOcclusion` in the preset table: on at High and Ultra, off at Low and Medium, and off on phones and tablets unless the page sets it. `softwareOcclusion`: false on every preset.
 - The docs say to compare a scene with `?occlusion=on` and `?occlusion=off` before keeping either method on. GPU occlusion culling compares GPU time. Software occlusion culling compares the frame time on the slowest WebGL2 device ([Culling](../../docs/concepts/culling.md#turn-it-on-where-it-pays)).
 - S6 draws without software occlusion culling on WebGL2, as every preset leaves it off. Its `?occlusion-turns` still turns it on and off, to measure it again.
-- The stall between passes is open for the owner (D-40). A change that removes it calls for new runs of the room scene and S1, and a new look at these rows.
+- The check turns the passes off where the stall between passes makes them cost more (D-40). A change to the check, or a quiet run under load, calls for new runs of the room scene and the desert, and a new look at these rows.
 - Software occlusion culling may learn to skip whole draw calls, such as a batch whose rows all hide. Then run the `occlusion-s6` plan again, and revisit the WebGL2 rows.

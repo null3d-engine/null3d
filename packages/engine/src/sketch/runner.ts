@@ -92,7 +92,15 @@ import {
 } from '../shared/images';
 import { MEMORY_AREA_COUNT } from '../shared/memory-area';
 import { MemoryViews } from '../shared/memory-views';
-import { Counter, FrameRecorder, MemoryFigure, PHASE_NAMES, Phase, Role } from '../shared/metrics';
+import {
+	Counter,
+	FrameRecorder,
+	MemoryFigure,
+	PHASE_NAMES,
+	Phase,
+	RingFrames,
+	Role,
+} from '../shared/metrics';
 import type { Recorder, ReplayProgram, ReplayResult } from '../shared/recording';
 import { tasksPending } from '../shared/task-pending';
 import { VIDEO_FRAME, type VideoFrameMessage } from '../shared/videos';
@@ -386,6 +394,11 @@ export class SketchRunner {
 	private readonly governor = new Governor();
 	/** The governor's part of the frame loop; none in hold mode. */
 	private readonly governorLoop: GovernorLoop | undefined;
+	/**
+	 * The GPU's time for each frame that it finished, which GPU occlusion culling's check compares
+	 * with its passes on and off; none without GPU occlusion culling.
+	 */
+	private readonly frameTimes: RingFrames | undefined;
 	/** The governor's count of changes when the core last took the settings that its steps move. */
 	private stepChanges = 0;
 	/** The budgets' count of changes when the governor last took the steps that they allow. */
@@ -521,6 +534,8 @@ export class SketchRunner {
 		glue.setShadowTiles(shadowTiles, shadowTileSize, pointLightShadows);
 		glue.setMorphTargets(morphTargets);
 		if (device.occlusionBuffer > 0) glue.setOcclusionBuffer(device.occlusionBuffer);
+		if (device.gpuOcclusion) glue.setOcclusionReadSlot(Slot.OcclusionRead);
+		this.frameTimes = device.gpuOcclusion ? new RingFrames(metrics, Role.Completion) : undefined;
 		// Directional lights that name no cascades, map size or hero tile size take the preset's.
 		const values = this.core.callValues();
 		values[0] = shadowCascades;
@@ -1795,6 +1810,8 @@ export class SketchRunner {
 		const joinFailed = Atomics.exchange(slots, Slot.JoinFailed, 0);
 		if (joinFailed !== 0) this.post.dropJoin(joinFailed);
 		const scale = this.renderScale();
+		const times = this.frameTimes;
+		if (times) while (times.step()) glue.gpuFrameTime(times.frame, times.busyUs);
 		const stillEnabled = Atomics.load(slots, Slot.StillOff) === 0;
 		if (stillEnabled !== this.stillEnabled) {
 			this.stillEnabled = stillEnabled;

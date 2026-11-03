@@ -143,6 +143,11 @@ export const ClusterPatches = 58;
 /** The frame that `ClusterPatches` belongs to. The sketch thread writes it with the count. */
 export const ClusterPatchFrame = 59;
 /**
+ * Each read of GPU occlusion culling's counts: the thread that draws adds one once the counts are in
+ * engine memory. The core takes them by the frame that they name, so nothing reads this slot.
+ */
+export const OcclusionRead = 60;
+/**
  * The programs that may still be compiling in the background on WebGL2, as the thread that draws
  * found them at its last frame, for the development probe of the two-step pass.
  */
