@@ -148,14 +148,13 @@ function woodAxes(input: MeshInput, keep: number): WoodAxis[] {
 	const p = skeleton.position;
 	const base = input.variant * VARIANT_RECORDS;
 	const lastKept = keptNodes(skeleton);
-	// A limb with no parent has nothing to weld onto and would float, so only the axes rooted at
-	// the ground start the plant: stems, and a frond colony's stipes.
+	// Axes rooted at the ground, stems and a frond colony's stipes, take the stem base's flare,
+	// lobes and roots. Any other axis without a parent is the cut end of a piece, such as a cut
+	// branch, and starts plain.
+	const rooted = (a: number) =>
+		(axes.kind[a] as number) === AXIS_STEM || (axes.kind[a] as number) === AXIS_STIPE;
 	const meshed = (a: number) =>
-		(axes.order[a] as number) <= keep &&
-		(lastKept[a] as number) >= (axes.first[a] as number) &&
-		((axes.parent[a] as number) >= 0 ||
-			(axes.kind[a] as number) === AXIS_STEM ||
-			(axes.kind[a] as number) === AXIS_STIPE);
+		(axes.order[a] as number) <= keep && (lastKept[a] as number) >= (axes.first[a] as number);
 	// Leaders and the parent each axis hangs on.
 	const hangsOn = new Int32Array(axes.count);
 	const leads = new Uint8Array(axes.count);
@@ -203,7 +202,7 @@ function woodAxes(input: MeshInput, keep: number): WoodAxis[] {
 		if (parent >= 0 && parentIndex < 0) continue;
 		const pts: number[] = [];
 		const radii: number[] = [];
-		if (parent < 0) {
+		if (parent < 0 && rooted(a)) {
 			// A stem starts below the ground, along its first internode's line.
 			const r0 = skeleton.radius[first] as number;
 			const next = Math.min(kept, first + 1);
@@ -223,7 +222,7 @@ function woodAxes(input: MeshInput, keep: number): WoodAxis[] {
 				(p[first * 3 + 2] as number) - dz * depth,
 			);
 			radii.push(r0);
-		} else {
+		} else if (parent >= 0) {
 			// A child starts at its junction on the skeleton's parent: along the internode after its
 			// parent node.
 			const own = axes.parent[a] as number;
@@ -263,11 +262,12 @@ function woodAxes(input: MeshInput, keep: number): WoodAxis[] {
 			points: new Float64Array(pts),
 			radii: new Float64Array(radii),
 			count,
-			stem: parent < 0 ? stems++ : -1,
+			stem: parent < 0 && rooted(a) ? stems++ : -1,
 			fork: false,
 			leader: leads[a] === 1,
 		});
-		if (parent < 0) addRoots(input, list, list.length - 1, base + (axes.record[a] as number));
+		if (parent < 0 && rooted(a))
+			addRoots(input, list, list.length - 1, base + (axes.record[a] as number));
 		for (const child of children[a] ?? []) queue.push(child);
 	}
 	return list;

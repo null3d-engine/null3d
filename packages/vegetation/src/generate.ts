@@ -10,7 +10,14 @@
 // stage calls after it are synchronous. A kit built with `placeholders` grows the stand-in of every
 // stage (core/placeholder.ts); with `placeholders: 'missing'` it grows a stand-in only for each stage
 // that is not built yet; without either, a stage that is not built yet throws.
-import type { MeshArrays, PlantAsset, PlantPart, ShootPrototype, SpeciesKitData } from './asset';
+import type {
+	MeshArrays,
+	PlantAsset,
+	PlantPart,
+	ShootPrototype,
+	ShootRows,
+	SpeciesKitData,
+} from './asset';
 import { speciesBox } from './core/box';
 import { type MacroSkeleton, SkeletonBuilder } from './core/graph';
 import { hashText } from './core/hash';
@@ -39,7 +46,7 @@ import { loadSpeciesHooks, speciesHooks } from './core/registry';
 import type { TextureManifest } from './core/textures';
 import { DETAILS, type Detail, type Season, type Vec3 } from './core/types';
 import { lightCrown } from './crown/visibility';
-import { type CuttingOptions, cutBranch, cutFoliage, mergeShoots } from './cutting';
+import { type CuttingOptions, clusterRow, cutBranch, cutFoliage, mergeShoots } from './cutting';
 import { grower, loadGrower } from './grow/models';
 import { extrasMesh } from './leaf/extras';
 import { placeShoots } from './leaf/instancer';
@@ -340,8 +347,9 @@ function meshBounds(mesh: MeshArrays): { min: Vec3; max: Vec3 } {
 
 /**
  * Grows one piece of a plant as a plant of its own: a branch or sub-branch cut from the grown
- * skeleton and dressed and meshed at the nearest level, with its shoot rows merged into one foliage
- * part, or a leaf cluster or leaf from the kit alone. The piece has no card levels and no impostor.
+ * skeleton and dressed and meshed at the nearest level with its shoot rows, a leaf cluster as one
+ * shoot row of the kit's prototype, or a leaf from the kit alone. A stand-in kit merges the rows
+ * into one foliage part instead. The piece has no card levels and no impostor.
  */
 function growCutting(
 	kit: SpeciesKitData,
@@ -355,6 +363,11 @@ function growCutting(
 	let skeleton: MacroSkeleton;
 	let parts: PlantPart[];
 	let wind: PlantAsset['wind'];
+	// A real kit's piece keeps its shoots as rows, which draw as the whole plant's do, stems and
+	// buds included; a stand-in kit, whose placement draws no rows, merges them into its foliage.
+	const merge = kit.placeholders === true;
+	let rows: ShootRows = emptyRows();
+	let single: ReturnType<typeof clusterRow> | undefined;
 	if (cutsSkeleton(kit, cutting)) {
 		const mesh = dress(kit, options);
 		wind = stage(
@@ -362,20 +375,26 @@ function growCutting(
 			() => windRecords(mesh),
 			() => placeholderWind(mesh),
 		);
-		const shoots = mergeShoots(kit, mesh.rows, detail, wind.base);
-		parts = [
-			...nearWood(mesh),
-			...levelParts(mesh, 0),
-			...partOf(kit, 'foliage', shoots, TEXTURE_UV_STEPS),
-		];
+		parts = [...nearWood(mesh), ...levelParts(mesh, 0)];
+		if (merge)
+			parts.push(
+				...partOf(kit, 'foliage', mergeShoots(kit, mesh.rows, detail, wind.base), TEXTURE_UV_STEPS),
+			);
+		else rows = mesh.rows;
 		skeleton = mesh.skeleton;
 	} else {
-		const foliage = cutFoliage(kit, cutting, detail);
+		single = cutting.part === 'cluster' && !merge ? clusterRow(kit, cutting, detail) : undefined;
+		const foliage = single ? undefined : cutFoliage(kit, cutting, detail);
 		parts = foliage ? partOf(kit, 'foliage', foliage, TEXTURE_UV_STEPS) : [];
 		const builder = new SkeletonBuilder().finish(0);
-		const bounds = foliage ? meshBounds(foliage) : builder.bounds;
+		const bounds = single?.bounds ?? (foliage ? meshBounds(foliage) : builder.bounds);
 		skeleton = { ...builder, bounds, height: bounds.max[1] };
 		wind = { base: options.variant * VARIANT_RECORDS, count: 0, records: new Float32Array(0) };
+	}
+	if (single) rows = single.rows;
+	else if (rows.count > 0) {
+		const bounds = rowBounds(kit, rows, skeleton.bounds);
+		skeleton = { ...skeleton, bounds, height: Math.max(skeleton.height, bounds.max[1]) };
 	}
 	const near = levelOf(0, parts, 0);
 	const { min, max } = skeleton.bounds;
@@ -388,7 +407,7 @@ function growCutting(
 		season,
 		cutting,
 		skeleton,
-		shoots: emptyRows(),
+		shoots: rows,
 		levels: [near, emptyLevel(1), emptyLevel(2)],
 		wind,
 		crown: {
@@ -403,6 +422,32 @@ function growCutting(
 			bytes: wind.records.byteLength + near.bytes,
 			triangles: [near.triangles, 0, 0],
 		},
+	};
+}
+
+/**
+ * The bounds that hold a piece's shoots as well as its wood: each row's reach about its place, by
+ * its prototype's bounding radius.
+ */
+function rowBounds(
+	kit: SpeciesKitData,
+	rows: ShootRows,
+	start: MacroSkeleton['bounds'],
+): MacroSkeleton['bounds'] {
+	const min = [...start.min];
+	const max = [...start.max];
+	for (let r = 0; r < rows.count; r++) {
+		const reach =
+			(kit.prototypes[rows.prototype[r] as number]?.radius ?? 0) * (rows.scale[r] as number);
+		for (let k = 0; k < 3; k++) {
+			const at = rows.position[r * 3 + k] as number;
+			min[k] = Math.min(min[k] as number, at - reach);
+			max[k] = Math.max(max[k] as number, at + reach);
+		}
+	}
+	return {
+		min: [min[0] as number, min[1] as number, min[2] as number],
+		max: [max[0] as number, max[1] as number, max[2] as number],
 	};
 }
 
