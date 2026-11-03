@@ -83,8 +83,13 @@ fn probe_grid_irradiance(
     bounce += c3 * (2.0 * 0.511664 * normal.x);
     // The live environment's light, times the sky that the probes see. The environment already
     // carries the frame's exposure, so the sky takes the grid's intensity alone, where the baked
-    // bounce takes the intensity times the exposure.
-    let sky = environment * saturate(mask.y);
+    // bounce takes the intensity times the exposure. The visibility counts the share of the whole
+    // sphere that reaches the sky, and the environment's irradiance covers the hemisphere around
+    // the surface; a sky above the horizon fills half the sphere, so the share is weighted by the
+    // surface's own tilt toward it. The weight fades as the sky wraps around the probe, where
+    // every normal takes the environment's own light.
+    let tilt = min(1.0, 2.0 * (1.0 - mask.y));
+    let sky = environment * saturate(mask.y * (1.0 + normal.y * tilt));
     let light = bounce * grid.params.x + sky * grid.params.z;
     // A probe that geometry encloses lends no light, so the walls around it do not leak.
     return light * saturate(mask.x);

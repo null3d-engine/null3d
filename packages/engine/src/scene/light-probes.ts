@@ -30,9 +30,10 @@ import type { Texture, Textures } from './textures';
 //
 // A probe's coefficients hold the light that its surroundings bounce back. They leave out the sky
 // itself, which no longer has to bake: the fourth sub-volume holds how much sky the probe sees, and
-// the shader multiplies that by the live environment's light, so time of day needs no new bake. A
-// probe that lies inside geometry cannot light anything, and its validity is 0, which keeps its
-// light from leaking through the wall around it.
+// the shader weights that by the surface's tilt toward the sky and multiplies it by the live
+// environment's light, so time of day needs no new bake. A probe that lies inside geometry cannot
+// light anything, and its validity is 0, which keeps its light from leaking through the wall around
+// it.
 
 /** The sub-volumes of a probe's texture along Z: three of coefficients and one of its masks. */
 export const PROBE_SUBVOLUMES = 4;
@@ -114,9 +115,11 @@ export function l1Irradiance(
  * `coefficients` holds four RGB coefficients per probe, `validity` and `skyVisibility` hold one
  * number per probe, and the sample point moves half a probe spacing along the normal, so light does
  * not leak across a wall. `work` holds at least 14 numbers, the interpolated channels. Writes four
- * numbers into `out`: the light of the coefficients, weighted by the interpolated validity, and the
- * interpolated sky visibility, also weighted by it. The caller adds the environment's own light for
- * the latter, so the sky needs no bake.
+ * numbers into `out`: the light of the coefficients, and the share of the environment's own light
+ * that the sky gives, both weighted by the interpolated validity. The caller multiplies the
+ * environment's irradiance by the latter, so the sky needs no bake. The share weights the
+ * interpolated sky visibility by the surface's tilt toward the sky above the horizon, because the
+ * visibility counts the whole sphere and the irradiance covers one hemisphere.
  */
 export function sampleGrid(
 	coefficients: Float32Array,
@@ -173,9 +176,14 @@ export function sampleGrid(
 		work[c] = mix(mix(x0, x1, fy), mix(x2, x3, fy), fz);
 	}
 	const valid = work[PROBE_FLOATS] as number;
+	const sky = work[PROBE_FLOATS + 1] as number;
 	l1Irradiance(work, 0, nx, ny, nz, out);
 	for (let c = 0; c < 3; c++) out[c] = (out[c] as number) * valid;
-	out[3] = (work[PROBE_FLOATS + 1] as number) * valid;
+	// The visibility counts the whole sphere and the environment's irradiance the hemisphere around
+	// the normal, so a surface that faces a sky above the horizon takes twice the share. The weight
+	// fades as the sky wraps around the probe.
+	const tilt = Math.min(1, 2 * (1 - sky));
+	out[3] = sky * valid * Math.min(1, Math.max(0, 1 + ny * tilt));
 }
 
 function mix(a: number, b: number, t: number): number {
