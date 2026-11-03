@@ -1169,6 +1169,20 @@ struct Surface {
     /// so a crown of leaves can light as the volume it stands for and keep each leaf's own normal
     /// for its gloss and the light through it. The specular keeps `normal`.
     diffuseNormal: vec3f,
+#ifdef CUSTOM_AMBIENT_NORMAL
+    /// The unit normal that lights the surface's ambient, hemisphere and environment light alone,
+    /// in world space, where a surface function names one of its own: a bent normal toward the
+    /// open sky, such as a crown's, lights a leaf by the sky that it sees and leaves the sun's
+    /// light on the leaf's own normal. It is the mesh's normal unless the function sets it, and it
+    /// takes the place of `diffuseNormal` for that light.
+    ambientNormal: vec3f,
+#endif
+#ifdef CUSTOM_OCCLUSION_MINIMUM
+    /// True where `occlusion` already holds the shade that screen-space ambient occlusion sees,
+    /// such as a crown's baked occlusion: the two then join by the smaller of the two rather than
+    /// their product, so the shade counts once. False by default.
+    occlusionByMinimum: bool,
+#endif
     /// How much of the light behind the surface passes through it, from 0 to 1, in place of that
     /// share of its diffuse light, where the material lets light through.
     transmission: f32,
@@ -1594,6 +1608,15 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
     s.shadowOffset = vec3f(0.0);
     // The diffuse light takes the surface's own normal unless the function names another.
     s.diffuseNormal = input.normal;
+#ifdef CUSTOM_AMBIENT_NORMAL
+    // So does the sky's light, in the builds of a function that names a normal for it.
+    s.ambientNormal = input.normal;
+#endif
+#ifdef CUSTOM_OCCLUSION_MINIMUM
+    // The surface's occlusion multiplies screen-space occlusion unless the function says it
+    // already holds that shade.
+    s.occlusionByMinimum = false;
+#endif
 #endif
 #ifdef TRANSMISSION
     s.transmission = transmission_row.values.x;
@@ -2077,7 +2100,13 @@ fn probe_surrounding(
 #ifndef DECAL
     if has_probes() {
         let reflected = reflected_direction(to_view, radiance_normal, roughness);
+#ifdef CUSTOM_AMBIENT_NORMAL
+        // The probes' irradiance takes the normal of the sky's light, as the environment's does,
+        // and their reflection keeps the surface's own.
+        let local = probe_light(relative, reflected, normal, roughness);
+#else
         let local = probe_light(relative, reflected, radiance_normal, roughness);
+#endif
         radiance = local.radiance + radiance * (1.0 - local.weight);
         irradiance = local.irradiance + irradiance * (1.0 - local.weight);
     }
@@ -2186,12 +2215,19 @@ fn clustered_lobed_light(
 /// for each point and spot light. In the TRANSLUCENCY builds the lights also gather the light that
 /// reaches the surface's back, and the ambient, hemisphere and environment light from behind goes
 /// to `back_indirect`.
+/// `diffuse_normal` lights the sun's diffuse light and the ambient and hemisphere lights. In the
+/// builds of a surface that names a normal for the sky's light, `ambient_normal` lights the
+/// ambient and hemisphere lights in its place, and the environment's, the probes' and the probe
+/// grid's irradiance too. The specular light and the light from behind keep `normal`.
 fn light_surface(
     m: PbrMaterial,
     relative: vec3f,
     shadow_offset: vec3f,
     normal: vec3f,
     diffuse_normal: vec3f,
+#ifdef CUSTOM_AMBIENT_NORMAL
+    ambient_normal: vec3f,
+#endif
     vertex_normal: vec3f,
     face_normal: vec3f,
     to_view: vec3f,
@@ -2297,7 +2333,9 @@ fn light_surface(
     // the environment's diffuse light by its share, as a reflection probe's does, and the
     // environment keeps the rest where a ray left the screen.
     let bounce_share = bounce.a;
-#ifdef CUSTOM_DIFFUSE_NORMAL
+#ifdef CUSTOM_AMBIENT_NORMAL
+    let surrounding_light = ambient_light(ambient_normal) + bounce.rgb * bounce_share + extra;
+#else ifdef CUSTOM_DIFFUSE_NORMAL
     let surrounding_light = ambient_light(diffuse_normal) + bounce.rgb * bounce_share + extra;
 #else
     let surrounding_light = ambient_light(normal) + bounce.rgb * bounce_share + extra;
@@ -2323,7 +2361,13 @@ fn light_surface(
     if has_surrounding() || mirrored > 0.0 {
 #endif
         let strength = select(0.0, material_row.uv_u.w, has_environment(env));
+#ifdef CUSTOM_AMBIENT_NORMAL
+        // The irradiance around the surface takes the normal of the sky's light, and the
+        // reflection keeps the surface's own.
+        let around = probe_surrounding(relative, ambient_normal, reflection_normal(m, normal, to_view), to_view, m.roughness);
+#else
         let around = probe_surrounding(relative, normal, reflection_normal(m, normal, to_view), to_view, m.roughness);
+#endif
         // The bounce light's share takes the environment's diffuse light with it, so the two do not
         // count the same light twice.
         var irradiance = around.irradiance * (1.0 - bounce_share);
@@ -2333,7 +2377,11 @@ fn light_surface(
         if has_probe_grid(engine_frame.probe_grid) {
             // `relative` is from this view's own camera, so a reflection's view reads its own place.
             let world = engine_frame.camera_world.xyz + relative;
+#ifdef CUSTOM_AMBIENT_NORMAL
+            irradiance = mix(irradiance, probe_grid_irradiance(engine_frame.probe_grid, world, ambient_normal), engine_frame.probe_grid.params.y);
+#else
             irradiance = mix(irradiance, probe_grid_irradiance(engine_frame.probe_grid, world, normal), engine_frame.probe_grid.params.y);
+#endif
         }
 #endif
         var image = indirect_specular(m, radiance, irradiance, dfg);
@@ -2398,6 +2446,11 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let diffuse_normal = normalize(s.diffuseNormal);
 #else
     let diffuse_normal = normal;
+#endif
+#ifdef CUSTOM_AMBIENT_NORMAL
+    // The normal that lights the sky's light alone, which a surface function names apart from
+    // both: a bent normal toward the open sky shades a crown's inside without bending the sun.
+    let ambient_normal = normalize(s.ambientNormal);
 #endif
     // Where the mesh's normal changes fast between pixels, highlights widen, so they flicker less
     // as the surface moves. As in Filament, the normal is the mesh's own, before a map or a surface
@@ -2560,18 +2613,35 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let lobe_values = vec4f(0.0);
     let shadow_offset = vec3f(0.0);
 #endif
+#ifdef CUSTOM_OCCLUSION_MINIMUM
+    // A surface whose own occlusion already holds the shade that screen-space occlusion sees takes
+    // the smaller of the two, so the shade counts once. Other surfaces take their product.
+    let screen_shade = screen_occlusion(screen.values);
+    let joined_occlusion = select(
+        s.occlusion * screen_shade,
+        min(s.occlusion, screen_shade),
+        s.occlusionByMinimum,
+    );
+#endif
     let reflected = light_surface(
         pbr,
         input.relativePosition,
         shadow_offset,
         normal,
         diffuse_normal,
+#ifdef CUSTOM_AMBIENT_NORMAL
+        ambient_normal,
+#endif
         input.normal,
         plane_normal,
         input.viewDirection,
         dfg,
         s.irradiance * engine_frame.output.exposure,
+#ifdef CUSTOM_OCCLUSION_MINIMUM
+        joined_occlusion,
+#else
         s.occlusion * screen_occlusion(screen.values),
+#endif
         contact,
         reflection,
         screen.bounce,
