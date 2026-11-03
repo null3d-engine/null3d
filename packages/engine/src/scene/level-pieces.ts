@@ -65,8 +65,9 @@ export function triangleGroups(
 /**
  * The pieces of the triangle list `indices` over `positions`, or none for a list under
  * `PIECE_LIST_MIN_TRIANGLES` triangles. `split` names the parts of a split mesh that hold each
- * vertex, and the part count; the pieces then keep the order in which the parts draw the list. A
- * list that would need more than `PIECE_MAX` pieces for its groups gets none.
+ * vertex, and the part count; the pieces then keep the order in which the parts draw the list.
+ * Each group takes one piece at least, so a list of more groups than `PIECE_MAX` takes one piece
+ * a group: the parts draw a range each without pieces too, so such pieces add no draw.
  */
 export function planListPieces(
 	positions: Float32Array,
@@ -84,14 +85,14 @@ export function planListPieces(
 		sizes[g] = (sizes[g] as number) + 1;
 	}
 	const used = sizes.flatMap((size, g) => (size > 0 ? [g] : []));
-	if (used.length > PIECE_MAX) return undefined;
+	const most = Math.max(PIECE_MAX, used.length);
 	const shares = shareOut(
 		used.map((g) => sizes[g] as number),
 		Math.max(wanted, used.length),
 	);
 	// Each group takes a piece however small, so the largest shares give pieces back until the
 	// list holds no more than the most pieces.
-	for (let over = shares.reduce((sum, share) => sum + share, 0) - PIECE_MAX; over > 0; over--) {
+	for (let over = shares.reduce((sum, share) => sum + share, 0) - most; over > 0; over--) {
 		const largest = shares.indexOf(Math.max(...shares));
 		shares[largest] = (shares[largest] as number) - 1;
 	}

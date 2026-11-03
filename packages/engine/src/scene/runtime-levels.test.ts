@@ -362,6 +362,13 @@ describe('the automatic levels of a mesh made in code', () => {
 		await parts.buildLevels();
 		expect(split.record.splitPieces).toEqual([0, 8]);
 		expect(split.record.pieceLists).toHaveLength(1);
+		// A mesh that many copies draw asks for its levels' pieces alone, since its own would
+		// cost a copy of its indices for the few copies near the camera.
+		expect(asked.map((input) => input.basePieces)).toEqual([true, true, true]);
+		const rocks = geometry.fromArrays(strip(70_000));
+		draw(rocks, 400);
+		await settled();
+		expect(asked.at(-1)?.basePieces).toBe(false);
 	});
 
 	test('hand over the levels one a frame, coarsest first, and all at once in hold mode', async () => {

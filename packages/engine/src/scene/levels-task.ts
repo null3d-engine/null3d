@@ -37,6 +37,10 @@ export interface LevelsTaskInput {
 	/** The parts that the engine split the mesh into. */
 	parts: number;
 	/**
+	 * True to plan the mesh's own pieces, over a sorted copy of its indices, besides its levels'.
+	 */
+	basePieces: boolean;
+	/**
 	 * The parts that hold each vertex, one bit a part, for a mesh of several parts that its lists'
 	 * pieces may follow. A mesh of several parts without them plans no pieces.
 	 */
@@ -104,7 +108,7 @@ export async function run(
 	input: unknown,
 	wasm: (name: string) => WebAssembly.Module,
 ): Promise<TaskResult> {
-	const { words, cards, maxLevels, skipFlat, parts, masks } = input as LevelsTaskInput;
+	const { words, cards, maxLevels, skipFlat, parts, masks, basePieces } = input as LevelsTaskInput;
 	const meshopt = await start(wasm);
 	const began = performance.now();
 	const header = new Uint32Array(words, 0, 3);
@@ -164,7 +168,7 @@ export async function run(
 			};
 		return { indices, error: level.error, ...(moved && { positions: moved }) };
 	});
-	const pieces = piecesOf(indices);
+	const pieces = basePieces ? piecesOf(indices) : undefined;
 	if (meshopt.heapBytes() > KEPT_HEAP_BYTES) started = undefined;
 	const output: LevelsTaskOutput = {
 		levels,

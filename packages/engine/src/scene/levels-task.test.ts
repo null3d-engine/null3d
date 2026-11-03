@@ -68,7 +68,7 @@ async function taskLevels(
 	skipFlat = false,
 ) {
 	const result = await run(
-		{ words: planningWords(arrays), cards, maxLevels, skipFlat, parts: 1 },
+		{ words: planningWords(arrays), cards, maxLevels, skipFlat, parts: 1, basePieces: true },
 		vendoredModules(),
 	);
 	return result.output as LevelsTaskOutput;

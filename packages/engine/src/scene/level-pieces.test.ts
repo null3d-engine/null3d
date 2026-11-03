@@ -102,11 +102,16 @@ describe('the pieces of a mesh made in code', () => {
 		expectSpheresHold(grid.positions, pieces);
 	});
 
-	test('give a list of more groups than pieces none', () => {
+	test('give each part a piece of its own when the parts outnumber the pieces', () => {
 		const grid = bumpyGrid(200);
-		const split = cutMasks(grid.indices, grid.positions.length / 3, 1_000);
+		const split = cutMasks(grid.indices, grid.positions.length / 3, 2_000);
 		expect(split.parts).toBeGreaterThan(PIECE_MAX);
-		expect(planListPieces(grid.positions, grid.indices, split, asGiven)).toBeUndefined();
+		const pieces = planListPieces(grid.positions, grid.indices, split, asGiven) as ListPieces;
+		const groups = triangleGroups(pieces.indices, split.masks, split.parts);
+		expect(pieces.triangles.length).toBe(new Set(groups).size);
+		expect(triangleKeys(pieces.indices)).toEqual(triangleKeys(grid.indices));
+		for (let t = 1; t < groups.length; t++)
+			expect(groups[t] as number).toBeGreaterThanOrEqual(groups[t - 1] as number);
 	});
 
 	test('draw a triangle from the part where a corner first appears, once it holds all three', () => {

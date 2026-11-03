@@ -548,8 +548,9 @@ export class MeshGeometry {
 	 * frame for the plan, and gives it one level in each frame, coarsest first, when the plan is
 	 * done. The mesh draws its full shape until the levels arrive, and every object and instance
 	 * batch that draws it then picks its level. The mesh and each level of 32,768 triangles or more
-	 * also get 8 to 16 pieces, which each copy skips where they lie outside the view or face away:
-	 * the mesh's own pieces draw a sorted copy of its indices, in the frame after the last level.
+	 * also get 8 to 16 pieces, which each copy skips where they lie outside the view or face away.
+	 * A mesh that one object draws gets its own pieces over a sorted copy of its indices, in the
+	 * frame after the last level; copies of a mesh keep their levels' pieces alone.
 	 *
 	 * A mesh made in code plans its levels on its own the first time the scene draws it, when it
 	 * holds `geometry.automaticLevelTriangles` triangles or more, or when its copies hold
@@ -637,6 +638,11 @@ export class MeshGeometry {
 						maxLevels: MAX_LOWER_LEVELS,
 						skipFlat: automatic,
 						parts,
+						// The mesh's own pieces draw a sorted copy of its indices. A mesh that one
+						// object draws, such as a ground around the camera, draws its base wherever
+						// the camera is near, so the copy pays; copies of a mesh draw their base only
+						// when near, and their levels' pieces cost no copy.
+						basePieces: this.copies <= 1,
 						...(masks && { masks: masks.buffer as ArrayBuffer }),
 					},
 					call,

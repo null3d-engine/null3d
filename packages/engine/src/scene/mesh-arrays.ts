@@ -548,6 +548,8 @@ export function meshFromLevel(
 	const address = core.checkGrowth(core.glue.meshArrays(indices.length), call);
 	core.u32(address, indices.length).set(indices);
 	const id = core.glue.createLevelMesh(base, indices.length);
+	// The level's indices may have grown the memory.
+	core.refresh();
 	if (id !== 0) return id;
 	const { glue } = core;
 	const refused =
@@ -612,7 +614,10 @@ export function setMeshPieces(
 	call: string,
 ): boolean {
 	stagePieces(core, pieces, 0, call);
-	return core.glue.setMeshPieces(mesh, pieces.triangles.length) === 1;
+	const taken = core.glue.setMeshPieces(mesh, pieces.triangles.length);
+	// The pieces' table may have grown the memory, whether the mesh took them or not.
+	core.refresh();
+	return taken === 1;
 }
 
 /**
@@ -628,7 +633,10 @@ export function setMeshPieceList(
 ): boolean {
 	const { indices } = pieces;
 	core.u32(stagePieces(core, pieces, indices.length, call), indices.length).set(indices);
-	return core.glue.setMeshPieceList(mesh, pieces.triangles.length, indices.length) === 1;
+	const taken = core.glue.setMeshPieceList(mesh, pieces.triangles.length, indices.length);
+	// The list's indices may have grown the memory, whether the mesh took them or not.
+	core.refresh();
+	return taken === 1;
 }
 
 /**
