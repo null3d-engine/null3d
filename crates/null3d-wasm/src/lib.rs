@@ -2134,6 +2134,46 @@ pub fn create_level_mesh(base: u32, indices: u32) -> u32 {
     })
 }
 
+/// A level of the live mesh `base` that holds its own copy of the vertices that the `indices`
+/// triangles in the staging words name, which the call frees: the level of a base that is split
+/// into parts, which cannot share its vertices. The indices name the base's own vertices. Returns
+/// the mesh id.
+#[wasm_bindgen(js_name = createLevelCopy)]
+pub fn create_level_copy(base: u32, indices: u32) -> u32 {
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let words = indices as usize;
+        if staging.len() < words {
+            return Err(fail(codes::BAD_ARRAYS, [0, 0]));
+        }
+        let added = e
+            .renderer
+            .settings_mut()
+            .meshes_mut()
+            .add_level_copy(base.checked_sub(1).unwrap_or(u32::MAX), &staging[..words])
+            .map(|id| id + 1)
+            .map_err(mesh_failure);
+        drop(staging);
+        added
+    })
+}
+
+/// Writes the live mesh `mesh`'s vertices and triangles as the level planner reads them into the
+/// staging words, and returns their address: the vertex count, the index count and the format,
+/// then each attribute's floats, as `MeshStorage::planning_arrays` lays them out. The caller
+/// copies them before its next call that uses the staging words.
+#[wasm_bindgen(js_name = meshPlanningArrays)]
+pub fn mesh_planning_arrays(mesh: u32) -> u32 {
+    value_with_engine(|e| {
+        e.staging.clear();
+        let meshes = e.renderer.settings().meshes();
+        meshes
+            .planning_arrays(mesh.checked_sub(1).unwrap_or(u32::MAX), &mut e.staging)
+            .map_err(mesh_failure)?;
+        Ok(address(e.staging.as_slice()))
+    })
+}
+
 /// Gives the live mesh `mesh` the `indices` triangles that TypeScript wrote into the staging words,
 /// which the call frees, in place of the triangles it drew. A staged level that arrives after its
 /// base replaces the base's triangles this way, so the objects that draw the base draw the finer

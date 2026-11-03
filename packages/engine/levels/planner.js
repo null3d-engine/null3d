@@ -280,21 +280,69 @@ function cardsOf(indices, positions) {
 		.map(({ card }) => card);
 }
 
+/** The bits of a float, for a hash of the values that welding keeps equal. */
+const HASH_FLOAT = new Float32Array(1);
+const HASH_BITS = new Uint32Array(HASH_FLOAT.buffer);
+
 /**
- * The text that a vertex's place and the values welding must keep equal give it.
+ * True when two values are the same number: -0 matches 0, and NaN matches NaN, as their text
+ * does.
+ *
+ * @param {number} a
+ * @param {number} b
+ */
+const sameValue = (a, b) => a === b || (Number.isNaN(a) && Number.isNaN(b));
+
+/**
+ * Each vertex's first vertex with the same values in every stream, by number: the vertex itself
+ * where no earlier one has them. A hash of the values finds the earlier vertices that may match,
+ * and an exact comparison decides.
  *
  * @param {Float32Array[]} streams Streams of `sizes` values each.
  * @param {number[]} sizes
- * @param {number} v
+ * @param {number} count
+ * @returns {Uint32Array}
  */
-function vertexKey(streams, sizes, v) {
-	let key = '';
-	streams.forEach((stream, s) => {
-		const size = /** @type {number} */ (sizes[s]);
-		for (let k = 0; k < size; k++) key += `${stream[v * size + k]},`;
-		key += '|';
-	});
-	return key;
+function sameValues(streams, sizes, count) {
+	const firsts = new Uint32Array(count);
+	/** @type {Map<number, number[]>} */
+	const buckets = new Map();
+	for (let v = 0; v < count; v++) {
+		let hash = 0x811c9dc5;
+		for (let s = 0; s < streams.length; s++) {
+			const stream = /** @type {Float32Array} */ (streams[s]);
+			const size = /** @type {number} */ (sizes[s]);
+			for (let k = 0; k < size; k++) {
+				const value = /** @type {number} */ (stream[v * size + k]);
+				// -0 hashes as 0, and every NaN alike, so that values the comparison takes as the same
+				// share a bucket.
+				HASH_FLOAT[0] = value === 0 ? 0 : Number.isNaN(value) ? Number.NaN : value;
+				hash = Math.imul(hash ^ /** @type {number} */ (HASH_BITS[0]), 0x01000193);
+			}
+		}
+		const bucket = buckets.get(hash);
+		let first = v;
+		if (bucket) {
+			const match = bucket.find((other) =>
+				streams.every((stream, s) => {
+					const size = /** @type {number} */ (sizes[s]);
+					for (let k = 0; k < size; k++)
+						if (
+							!sameValue(
+								/** @type {number} */ (stream[other * size + k]),
+								/** @type {number} */ (stream[v * size + k]),
+							)
+						)
+							return false;
+					return true;
+				}),
+			);
+			if (match === undefined) bucket.push(v);
+			else first = match;
+		} else buckets.set(hash, [v]);
+		firsts[v] = first;
+	}
+	return firsts;
 }
 
 /**
@@ -308,9 +356,12 @@ function vertexKey(streams, sizes, v) {
  * @param {boolean} posed
  * @param {number} [side] The mesh's longest side, which a texture coordinate's unit weighs; 0
  *   leaves the texture coordinates out of the error, for a caller that reads only the triangles.
+ * @param {boolean} [cards] Whether a list of separate quads counts as leaf cards, whose levels
+ *   thin the cards. A posed list never does. A list that takes no cards simplifies as any other,
+ *   so separate quads that build a wall lose only the pieces that pruning drops.
  * @returns {PlanningList}
  */
-export function weldList(streams, posed = false, side = 0) {
+export function weldList(streams, posed = false, side = 0, cards = !posed) {
 	const { positions, normal, color, tangent, texcoords, indices } = streams;
 	const count = positions.length / 3;
 	const surface = [...texcoords, ...(color ? [color] : [])];
@@ -320,22 +371,28 @@ export function weldList(streams, posed = false, side = 0) {
 					Math.sign(/** @type {number} */ (tangent.values[v * 4 + 3])),
 				)
 			: new Float32Array(count);
-	const placeKeys = Array.from({ length: count }, (_, v) => vertexKey([positions], [3], v));
-	/** @type {Map<string, Set<string>>} */
-	const looks = new Map();
-	/** @type {Map<string, number[]>} */
+	// Each vertex's place and look, as the first vertex that shares them: a look is its texture
+	// coordinates, color and tangent handedness.
+	const places = sameValues([positions], [3], count);
+	const looks = sameValues(
+		[...surface.map((s) => s.values), handedness],
+		[...surface.map((s) => s.size), 1],
+		count,
+	);
+	// The look that each place takes first, and whether another look meets it there: a seam.
+	const placeLook = new Int32Array(count).fill(-1);
+	const seamAt = new Uint8Array(count);
+	/** @type {Map<number, number[]>} */
 	const firsts = new Map();
 	const remap = new Uint32Array(count);
 	const sums = new Float64Array(count * 3);
 	for (let v = 0; v < count; v++) {
-		const place = /** @type {string} */ (placeKeys[v]);
-		const look = vertexKey(
-			[...surface.map((s) => s.values), handedness],
-			[...surface.map((s) => s.size), 1],
-			v,
-		);
-		looks.set(place, (looks.get(place) ?? new Set()).add(look));
-		const key = place + look;
+		const place = /** @type {number} */ (places[v]);
+		const look = /** @type {number} */ (looks[v]);
+		const seen = /** @type {number} */ (placeLook[place]);
+		if (seen < 0) placeLook[place] = look;
+		else if (seen !== look) seamAt[place] = 1;
+		const key = place * count + look;
 		const candidates = firsts.get(key) ?? [];
 		firsts.set(key, candidates);
 		const n = normal?.values;
@@ -384,9 +441,7 @@ export function weldList(streams, posed = false, side = 0) {
 				attributes[at++] = /** @type {number} */ (values[v * size + k]);
 	}
 	const seams = Uint8Array.from({ length: count }, (_, v) =>
-		/** @type {Set<string>} */ (looks.get(/** @type {string} */ (placeKeys[v]))).size > 1
-			? SEAM
-			: 0,
+		seamAt[/** @type {number} */ (places[v])] ? SEAM : 0,
 	);
 	for (let i = 0; i < indices.length; i++)
 		indices[i] = /** @type {number} */ (remap[/** @type {number} */ (indices[i])]);
@@ -397,7 +452,7 @@ export function weldList(streams, posed = false, side = 0) {
 		weights: parts.flatMap(({ take, weight }) => Array(take).fill(weight)),
 		seams,
 		indices,
-		cards: posed ? null : cardsOf(indices, positions),
+		cards: posed || !cards ? null : cardsOf(indices, positions),
 		posed,
 	};
 }

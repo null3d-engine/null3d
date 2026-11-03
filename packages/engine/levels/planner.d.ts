@@ -86,7 +86,12 @@ export const LOD_FLOOR_TRIANGLES: number;
 export const LOD_MAX_LEVELS: number;
 
 export function longestSide(positions: Float32Array): number;
-export function weldList(streams: ListStreams, posed?: boolean, side?: number): PlanningList;
+export function weldList(
+	streams: ListStreams,
+	posed?: boolean,
+	side?: number,
+	cards?: boolean,
+): PlanningList;
 export function simplifierFlags(bends: boolean): SimplifierFlag[];
 export function simplifyStep(
 	meshopt: Meshopt,

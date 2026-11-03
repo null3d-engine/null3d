@@ -285,6 +285,12 @@ impl Triangles for MeshTriangles<'_> {
 /// the record follow it.
 const LAST_UPDATABLE: usize = 5;
 
+/// The vertex shader location of the tangents, which the level planner reads for their handedness.
+const TANGENT_LOCATION: usize = 4;
+
+/// The vertex shader location of the colors, which the level planner keeps near the mesh's.
+const COLOR_LOCATION: usize = 5;
+
 /// A vertex that the part being built does not use yet.
 const UNUSED: u32 = u32::MAX;
 
@@ -821,6 +827,176 @@ impl MeshStorage {
                 self.meshes.len() as u32 - 1
             }
         })
+    }
+
+    /// The mesh vertex that each vertex of mesh `slot`'s parts holds, part after part: its own
+    /// order for a mesh in one part, and the split mesh's table of sources otherwise.
+    fn part_sources<'a>(&'a self, slot: &MeshSlot) -> Option<&'a [u32]> {
+        (slot.sources != 0).then(|| {
+            let first = slot.first_source as usize;
+            &self.sources[first..first + slot.sources as usize]
+        })
+    }
+
+    /// The page vertex and the mesh vertex of each corner of `part`'s triangles, in triangle order.
+    fn part_corners<'a>(
+        &'a self,
+        part: &'a MeshPart,
+        sources: Option<&'a [u32]>,
+    ) -> impl Iterator<Item = (u32, u32)> + 'a {
+        // Pages store page positions; shared buffers store the part's own and the draw adds the
+        // part's first vertex.
+        let shift = match self.packing {
+            Packing::Pages => part.first_vertex,
+            Packing::SharedBuffers => 0,
+        };
+        let page = &self.pages[part.page as usize];
+        let first = part.first_index as usize;
+        page.indices[first..first + part.index_count as usize]
+            .iter()
+            .map(move |&index| {
+                let local = u32::from(index) - shift;
+                let own = sources.map_or(local, |sources| sources[local as usize]);
+                (part.first_vertex + local, own)
+            })
+    }
+
+    /// The floats of each vertex attribute that the level planner reads, for a mesh of `format`:
+    /// position and normal, then the first and second texture coordinates, the tangent and the
+    /// color where the format has them, as `(location, components)`.
+    pub fn planning_attributes(format: u32) -> impl Iterator<Item = (usize, usize)> {
+        [
+            (vertex::POSITION, 3),
+            (vertex::NORMAL, 3),
+            (vertex::UV0_LOCATION, 2),
+            (vertex::UV0_LOCATION + 1, 2),
+            (TANGENT_LOCATION, 4),
+            (COLOR_LOCATION, 4),
+        ]
+        .into_iter()
+        .filter(move |&(location, _)| vertex::has(format, location))
+    }
+
+    /// Writes mesh `id`'s vertices and triangles as the level planner reads them into `out`, after
+    /// its first `out.len()` words: the vertex count, the index count and the mesh's format, then
+    /// the floats of each attribute of [`MeshStorage::planning_attributes`] as a shader reads them,
+    /// attribute after attribute, then the triangles' indices. A split mesh gives its own vertices
+    /// and indices, as it was made, once each; its parts hold only the vertices that its triangles
+    /// name, so a vertex that no triangle names reads as zeros. Floats go in as their bits.
+    ///
+    /// # Errors
+    /// [`MeshError::UnknownMesh`] for an id of no live mesh, and [`MeshError::OutOfMemory`] when
+    /// `out` cannot grow.
+    pub fn planning_arrays(&self, id: u32, out: &mut Vec<u32>) -> Result<(), MeshError> {
+        let slot = *self.mesh(id).ok_or(MeshError::UnknownMesh)?;
+        let vertices = slot.vertex_count as usize;
+        let parts = self.parts(&slot, false);
+        let index_count: usize = parts.iter().map(|part| part.index_count as usize).sum();
+        let floats: usize = Self::planning_attributes(slot.format)
+            .map(|(_, components)| components)
+            .sum();
+        let start = out.len();
+        let words = 3 + floats * vertices + index_count;
+        reserve(out, words)?;
+        out.extend([slot.vertex_count, index_count as u32, slot.format]);
+        out.resize(start + words, 0);
+        let stride = vertex::stride(slot.format) as usize;
+        let sources = self.part_sources(&slot);
+        let mut at = start + 3;
+        for (location, components) in Self::planning_attributes(slot.format) {
+            let ty = vertex::type_of(slot.format, location).unwrap_or(vertex::Type::F32);
+            let offset = vertex::offset(slot.format, location).unwrap_or(0) as usize;
+            let size = ty.bytes() as usize;
+            let mut copied = 0;
+            for part in parts {
+                let page = &self.pages[part.page as usize];
+                for local in 0..part.vertex_count as usize {
+                    let own = sources.map_or(local, |sources| sources[copied + local] as usize);
+                    let from = (part.first_vertex as usize + local) * stride + offset;
+                    for c in 0..components {
+                        let value = ty.decode(&page.vertices[from + c * size..]);
+                        out[at + own * components + c] = value.to_bits();
+                    }
+                }
+                copied += part.vertex_count as usize;
+            }
+            at += components * vertices;
+        }
+        let mut copied = 0;
+        for part in parts {
+            let own = sources.map(|sources| &sources[copied..]);
+            for (_, index) in self.part_corners(part, own) {
+                out[at] = index;
+                at += 1;
+            }
+            copied += part.vertex_count as usize;
+        }
+        Ok(())
+    }
+
+    /// Adds a level of the live mesh `base` that holds its own copy of the vertices that the
+    /// triangles `indices` name, in the base's own numbering: the level of a split base, which
+    /// cannot share the base's vertices. The copy takes each vertex once, in the order that the
+    /// triangles first name it, so the level holds only the vertices that it draws, in the base's
+    /// format. It is a mesh of its own, which goes when the caller takes it out. Returns its id.
+    ///
+    /// # Errors
+    /// [`MeshError::UnknownMesh`] for a base that is not live, [`MeshError::SharedUnavailable`] for
+    /// a base with morph targets, whose level would draw without its poses,
+    /// [`MeshError::NotTriangles`] and [`MeshError::IndexOutOfRange`] for indices that do not fit,
+    /// and the errors of [`MeshStorage::add`].
+    pub fn add_level_copy(&mut self, base: u32, indices: &[u32]) -> Result<u32, MeshError> {
+        if !indices.len().is_multiple_of(3) {
+            return Err(MeshError::NotTriangles);
+        }
+        let slot = *self.mesh(base).ok_or(MeshError::UnknownMesh)?;
+        if slot.targets != 0 {
+            return Err(MeshError::SharedUnavailable);
+        }
+        if let Some(&index) = indices.iter().find(|&&index| index >= slot.vertex_count) {
+            return Err(MeshError::IndexOutOfRange {
+                index,
+                vertices: slot.vertex_count,
+            });
+        }
+        // The page and byte of the first copy of each base vertex.
+        let mut first_copy: Vec<(u32, u32)> = Vec::new();
+        reserve(&mut first_copy, slot.vertex_count as usize)?;
+        first_copy.resize(slot.vertex_count as usize, (u32::MAX, 0));
+        let stride = vertex::stride(slot.format);
+        let sources = self.part_sources(&slot);
+        let mut copied = 0;
+        for part in self.parts(&slot, false) {
+            for local in 0..part.vertex_count {
+                let own = sources.map_or(local, |sources| sources[copied + local as usize]);
+                let copy = &mut first_copy[own as usize];
+                if copy.0 == u32::MAX {
+                    *copy = (part.page, (part.first_vertex + local) * stride);
+                }
+            }
+            copied += part.vertex_count as usize;
+        }
+        let mut renumber: Vec<u32> = Vec::new();
+        reserve(&mut renumber, slot.vertex_count as usize)?;
+        renumber.resize(slot.vertex_count as usize, u32::MAX);
+        let mut geometry = Geometry {
+            format: slot.format,
+            vertices: Vec::new(),
+            indices: Vec::new(),
+        };
+        reserve(&mut geometry.indices, indices.len())?;
+        for &index in indices {
+            let new = &mut renumber[index as usize];
+            if *new == u32::MAX {
+                let (page, byte) = first_copy[index as usize];
+                let bytes = &self.pages[page as usize].vertices[byte as usize..][..stride as usize];
+                reserve(&mut geometry.vertices, bytes.len())?;
+                geometry.vertices.extend_from_slice(bytes);
+                *new = (geometry.vertices.len() / stride as usize) as u32 - 1;
+            }
+            geometry.indices.push(*new);
+        }
+        self.add(&geometry)
     }
 
     /// Removes the live meshes among `ids`, packs the storage over their data, and returns where
@@ -1594,6 +1770,97 @@ mod tests {
             storage.add_level(base, &grid.indices[..6]),
             Err(MeshError::SharedUnavailable)
         );
+    }
+
+    /// The floats of the planner's arrays for `id`: the header's counts and format, the attribute
+    /// floats, and the indices.
+    fn planning(storage: &MeshStorage, id: u32) -> (u32, u32, Vec<f32>, Vec<u32>) {
+        let mut out = vec![7];
+        storage.planning_arrays(id, &mut out).unwrap();
+        // The arrays go after the words that the caller holds already.
+        assert_eq!(out[0], 7);
+        let (vertices, indices) = (out[1], out[2]);
+        let floats = out.len() - 4 - indices as usize;
+        let values = out[4..4 + floats]
+            .iter()
+            .map(|&w| f32::from_bits(w))
+            .collect();
+        (vertices, out[3], values, out[4 + floats..].to_vec())
+    }
+
+    #[test]
+    fn the_planner_reads_a_split_mesh_as_it_was_made_in_both_packings() {
+        let sphere = sphere(2.0, [48, 24]);
+        for packing in [Packing::Pages, Packing::SharedBuffers] {
+            let mut whole = MeshStorage::new(packing);
+            let mut split = MeshStorage::with_page_limit(packing, 4096);
+            let one = whole.add(&sphere).unwrap();
+            let many = split.add(&sphere).unwrap();
+            assert!(split.mesh(many).unwrap().part_count > 1);
+            let (vertices, format, values, indices) = planning(&whole, one);
+            assert_eq!(vertices as usize, sphere.vertex_count());
+            assert_eq!(format, sphere.format);
+            assert_eq!(indices, sphere.indices);
+            // Positions first, then the normals and the texture coordinates of the generator.
+            for v in 0..sphere.vertex_count() {
+                assert_eq!(&values[v * 3..v * 3 + 3], &sphere.position(v));
+            }
+            assert_eq!(values.len(), sphere.vertex_count() * (3 + 3 + 2));
+            let (v2, f2, values2, indices2) = planning(&split, many);
+            assert_eq!((v2, f2), (vertices, format));
+            assert_eq!(indices2, indices);
+            // A split mesh's parts hold only the vertices that its triangles name, so the planner
+            // reads those alike, and no triangle reads the others.
+            let n = vertices as usize;
+            for &v in &indices {
+                let v = v as usize;
+                for (start, size) in [(0, 3), (3 * n, 3), (6 * n, 2)] {
+                    let range = start + v * size..start + (v + 1) * size;
+                    assert_eq!(values2[range.clone()], values[range]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_copied_level_draws_the_vertices_of_its_triangles_from_a_split_base() {
+        for packing in [Packing::Pages, Packing::SharedBuffers] {
+            let mut storage = MeshStorage::with_page_limit(packing, 2048);
+            let grid = grid(64, 64, vertex::UV0);
+            let base = storage.add(&grid).unwrap();
+            assert!(storage.mesh(base).unwrap().part_count > 1);
+            // Every other quad of the grid, across all its parts.
+            let picked: Vec<u32> = grid
+                .indices
+                .chunks(12)
+                .flat_map(|q| q[..6].to_vec())
+                .collect();
+            let level = storage.add_level_copy(base, &picked).unwrap();
+            let slot = storage.mesh(level).unwrap();
+            assert_eq!(slot.format, grid.format);
+            let used: std::collections::BTreeSet<u32> = picked.iter().copied().collect();
+            assert_eq!(slot.vertex_count as usize, used.len());
+            let expected: Vec<Vec<u8>> = picked
+                .iter()
+                .map(|&i| {
+                    let at = i as usize * grid.stride();
+                    grid.vertices[at..at + grid.stride()].to_vec()
+                })
+                .collect();
+            assert_eq!(resolved_vertices(&storage, level), expected);
+            assert_eq!(
+                storage.add_level_copy(base, &[0, 1]),
+                Err(MeshError::NotTriangles)
+            );
+            let past = grid.vertex_count() as u32;
+            assert_eq!(
+                storage.add_level_copy(base, &[0, 1, past]),
+                Err(MeshError::IndexOutOfRange {
+                    index: past,
+                    vertices: past
+                })
+            );
+        }
     }
 
     /// A skinned column of `rings` rings, its vertices naming the joint of their ring.
