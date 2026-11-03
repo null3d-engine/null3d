@@ -6,7 +6,7 @@ import { describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { PlantAsset, SpeciesKitData } from '../asset';
 import { plantAssetDigest } from '../asset';
-import { kitBytesOf, NEAR_CAPS, variantBytesOf } from '../core/caps';
+import { capsFor, kitBytesOf, NEAR_CAPS, variantBytesOf } from '../core/caps';
 import { speciesProblems } from '../core/check';
 import { radians, tan } from '../core/math';
 import type { SpeciesModule } from '../core/record';
@@ -102,12 +102,25 @@ for (const walked of WALKED) {
 
 		for (const detail of DETAILS)
 			it(
-				`keeps its kit within its own budget at the ${detail} tier`,
+				`keeps its kit and its nearest wood within their caps at the ${detail} tier`,
 				() => {
 					const kit = buildKitNow(module, { placeholders: walked.placeholders, detail });
 					expect(kitBytesOf(kit)).toBeLessThanOrEqual(record.lod.budget.kitBytes[detail]);
+					// The nearest wood of the first variants stays under the owner's cap at this tier.
+					const cap = capsFor(record).lod0WoodBytes[detail];
+					for (let variant = 0; variant < Math.min(3, record.variants); variant++) {
+						const asset = growPlantNow(kit, { seed: 11, variant, near: true });
+						let wood = 0;
+						for (const part of asset.levels[0].parts)
+							if (part.name === 'wood')
+								wood += Object.values(part.arrays).reduce(
+									(sum, array) => sum + array.byteLength,
+									0,
+								);
+						expect(wood).toBeLessThanOrEqual(cap);
+					}
 				},
-				scaledBudget(60_000),
+				scaledBudget(120_000),
 			);
 
 		it('grows the same bytes twice, and stays within its own budget', () => {
