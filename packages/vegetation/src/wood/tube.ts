@@ -11,6 +11,12 @@ import type { AxisPath } from './frames';
 /** The edge round a ring at the nearest level, in metres, by detail tier. */
 const EDGE: Record<Detail, number> = { low: 0.05, medium: 0.035, high: 0.025, ultra: 0.018 };
 
+/**
+ * Wood thinner than this radius in metres is thin: three sides, the fewest blend rings and a plain
+ * point for a tip. A macro skeleton's finest axes are mostly thin, and they are most of its axes.
+ */
+export const THIN = 0.008;
+
 /** How much longer edges and ring steps grow at each card level. */
 const LEVEL_SCALE = [1, 2, 4] as const;
 
@@ -24,10 +30,13 @@ const MAX_TURN = [0.4, 0.55, 0.8] as const;
  * How far the axis may stray from the straight line between two rings, and the radius from the
  * straight taper between them, as a share of the radius, at each level.
  */
-const STRAY = [0.04, 0.08, 0.16] as const;
+const STRAY = [0.1, 0.15, 0.25] as const;
+
+/** The stray a step may keep as a share of its own length, so long gentle bends take few rings. */
+const STRAY_ALONG = 0.02;
 
 /** The least stray in metres that counts, so twigs do not take a ring per millimetre of crook. */
-const LEAST_STRAY = [0.0006, 0.0015, 0.004] as const;
+const LEAST_STRAY = [0.002, 0.004, 0.01] as const;
 
 /**
  * How finely one level of the wood is meshed.
@@ -75,7 +84,7 @@ export function tubeDetail(level: MeshLevel, detail: Detail): TubeDetail {
  * @returns The side count.
  */
 export function sidesFor(perimeter: number, radius: number, tube: TubeDetail): number {
-	const fewest = tube.level === 0 ? (radius >= 0.015 ? 6 : radius >= 0.004 ? 5 : 4) : 3;
+	const fewest = tube.level === 0 ? (radius >= 0.02 ? 6 : radius >= THIN ? 4 : 3) : 3;
 	return Math.min(tube.maxSides, Math.max(fewest, Math.round(perimeter / tube.edge)));
 }
 
@@ -129,7 +138,11 @@ function fits(
 ): boolean {
 	const r0 = radiusAt(s);
 	const r1 = radiusAt(next);
-	const tolerance = Math.max(tube.leastStray, tube.stray * Math.min(r0, r1));
+	const tolerance = Math.max(
+		tube.leastStray,
+		tube.stray * Math.min(r0, r1),
+		STRAY_ALONG * (next - s),
+	);
 	const middle = radiusAt((s + next) / 2);
 	if (Math.abs(middle - (r0 + r1) / 2) > tolerance) return false;
 	pointAt(path, s, from);
@@ -190,13 +203,25 @@ export function ringArcs(
 	while (s < end - 1e-6) {
 		while (first < path.count - 1 && (path.arc[first + 1] as number) <= s) first++;
 		const r = radiusAt(s);
-		const longest = nearGround(s)
-			? Math.max(0.02, r / 2) * scale
-			: Math.min(1, Math.max(4 * tube.edge, 1.5 * r * scale));
+		const longest = nearGround(s) ? Math.max(0.02, r / 2) * scale : Math.min(1.2, 1.2 * scale);
+		// The longest step that fits; failing that, the farthest of the axis's points within reach,
+		// where its radius and direction kink; failing that, halves of the step.
 		let next = Math.min(end, s + longest);
-		for (let k = 0; k < 10; k++) {
-			if (next - s <= tube.edge * 0.25 || fits(path, s, next, first, radiusAt, tube)) break;
-			next = s + (next - s) / 2;
+		if (!fits(path, s, next, first, radiusAt, tube)) {
+			let found = false;
+			const knots = path.knots;
+			for (let k = knots.length - 1; k >= 0 && !found; k--) {
+				const knot = knots[k] as number;
+				if (knot >= next || knot <= s + tube.edge * 0.25) continue;
+				if (fits(path, s, knot, first, radiusAt, tube)) {
+					next = knot;
+					found = true;
+				}
+			}
+			for (let k = 0; k < 10 && !found; k++) {
+				next = s + (next - s) / 2;
+				found = next - s <= tube.edge * 0.25 || fits(path, s, next, first, radiusAt, tube);
+			}
 		}
 		// Do not leave a sliver of a step before the end.
 		if (end - next < 0.3 * (next - s)) next = end;
@@ -249,6 +274,8 @@ export class AxisRings {
 	vertices = 0;
 	/** The rings at the start that blend from a weld on the parent to the axis's own circle. */
 	welded = 0;
+	/** Whether the first ring is the parent's own last ring, as a fork's leader's is. */
+	shared = false;
 	/** Per ring: first vertex, sides, arc length on the path, `v` at the centre. */
 	first = new Int32Array(16);
 	sides = new Int32Array(16);

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { hashBytes } from '../core/hash';
+import { oakRecord } from '../grow/oak.fixture';
+import { growSelfOrganizing } from '../grow/self-organizing';
 import { dequantisePosition, quantise, WOOD_UV_STEPS } from '../lod/quantise';
 import type { MeshLevel } from '../stages';
 import { stemSection } from './flare';
@@ -7,7 +9,7 @@ import { ParentSurface } from './junction';
 import { tilesRound } from './uv';
 import { measureDensity, measureWelds } from './wood-measure';
 import { meshWood, meshWoodReport, WOOD_RADIUS_RANGE } from './wood-mesh';
-import { testMeshInput, testOak, testSkeleton } from './wood-test-tree';
+import { testMeshInput, testOak, testRecord, testSkeleton } from './wood-test-tree';
 
 const LEVELS: readonly MeshLevel[] = [0, 1, 2];
 const oak = testOak();
@@ -38,10 +40,13 @@ describe('the wood mesher', () => {
 			if (!rings) continue;
 			// The weld and its blend rings; past the joint a crooked child may bend back into its
 			// parent, which is the skeleton's shape and not a weld.
-			const end = Math.min(rings.count, rings.welded);
+			// The weld ring lies on the parent's triangles, which the weld test measures exactly; a
+			// fork's leader shares its parent's last ring. The rings after it must stand clear.
+			const from = rings.first[1] as number;
+			const end = Math.min(rings.count, Math.max(2, rings.welded));
 			const last = end < rings.count ? (rings.first[end] as number) : rings.vertices;
 			let deepest = 0;
-			for (let i = 0; i < last; i++)
+			for (let i = from; i < last; i++)
 				deepest = Math.min(
 					deepest,
 					surface.distance(
@@ -70,7 +75,9 @@ describe('the wood mesher', () => {
 		expect(tilesRound(4.2, 0.5, 6)).toBe(8);
 		expect(tilesRound(0.3, 0.5, -1)).toBe(0);
 		expect(tilesRound(0.72, 0.5, -1)).toBe(0);
-		expect(tilesRound(0.55, 0.5, -1)).toBe(1);
+		expect(tilesRound(0.55, 0.5, -1)).toBe(0);
+		expect(tilesRound(1.3, 0.5, -1)).toBe(3);
+		expect(tilesRound(1.3, 0.5, 0)).toBe(0);
 	});
 
 	it('writes bark coordinates in range, normals of unit length, and indices of its own vertices', () => {
@@ -232,5 +239,35 @@ describe('quantisation', () => {
 		expect(Array.from(q.normals)).toEqual([127, -127, 0]);
 		expect(Array.from(q.uvs)).toEqual([0, 65535]);
 		expect(Array.from(q.uvs1)).toEqual([65535, 0]);
+	});
+});
+
+describe('the wood of the grown oak', () => {
+	// The self-organizing grower's oak, with the test record's bark and stem foot.
+	const record = { ...oakRecord, bark: testRecord().bark, base: testRecord().base };
+	const skeleton = growSelfOrganizing({ record, seed: 11, variant: 0, season: 'summer' });
+	const report = meshWoodReport({ ...testMeshInput('high', skeleton), record }, 0);
+
+	it('welds every one of its children within a millimetre, with v running on', () => {
+		const welds = measureWelds(report);
+		expect(welds.length).toBeGreaterThan(1000);
+		for (const weld of welds) {
+			expect(weld.gap).toBeLessThan(0.001);
+			expect(weld.vJump).toBeLessThan(0.001);
+		}
+	});
+
+	it('keeps the bark texel density within 30 per cent of the target on every ring', () => {
+		const density = measureDensity(report);
+		expect(density.rings).toBeGreaterThan(5000);
+		expect(density.around).toBeLessThanOrEqual(0.3);
+		expect(density.along).toBeLessThanOrEqual(0.3);
+	});
+
+	it('keeps v within the 16 bits that hold it', () => {
+		let most = 0;
+		for (let i = 1; i < report.mesh.uvs.length; i += 2)
+			most = Math.max(most, report.mesh.uvs[i] as number);
+		expect(most).toBeLessThan(65535 / WOOD_UV_STEPS);
 	});
 });

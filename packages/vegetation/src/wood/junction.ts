@@ -35,6 +35,73 @@ export interface SurfaceHit {
 }
 
 /**
+ * The nearest point of a triangle to a point, and its barycentric weights.
+ *
+ * @param p The point.
+ * @param a The triangle's first corner.
+ * @param b Its second.
+ * @param c Its third.
+ * @returns The distance and the weights of the corners.
+ */
+export function nearestOnTriangle(
+	p: readonly number[],
+	a: readonly number[],
+	b: readonly number[],
+	c: readonly number[],
+): { distance: number; wa: number; wb: number; wc: number } {
+	// Ericson, Real-Time Collision Detection, 5.1.5.
+	const sub = (x: readonly number[], y: readonly number[]) => [
+		(x[0] as number) - (y[0] as number),
+		(x[1] as number) - (y[1] as number),
+		(x[2] as number) - (y[2] as number),
+	];
+	const dot = (x: readonly number[], y: readonly number[]) =>
+		(x[0] as number) * (y[0] as number) +
+		(x[1] as number) * (y[1] as number) +
+		(x[2] as number) * (y[2] as number);
+	const ab = sub(b, a);
+	const ac = sub(c, a);
+	const ap = sub(p, a);
+	const d1 = dot(ab, ap);
+	const d2 = dot(ac, ap);
+	let wa = 1;
+	let wb = 0;
+	let wc = 0;
+	const bp = sub(p, b);
+	const d3 = dot(ab, bp);
+	const d4 = dot(ac, bp);
+	const cp = sub(p, c);
+	const d5 = dot(ab, cp);
+	const d6 = dot(ac, cp);
+	const vc = d1 * d4 - d3 * d2;
+	const vb = d5 * d2 - d1 * d6;
+	const va = d3 * d6 - d5 * d4;
+	if (d1 <= 0 && d2 <= 0) [wa, wb, wc] = [1, 0, 0];
+	else if (d3 >= 0 && d4 <= d3) [wa, wb, wc] = [0, 1, 0];
+	else if (vc <= 0 && d1 >= 0 && d3 <= 0) {
+		const v = d1 / (d1 - d3);
+		[wa, wb, wc] = [1 - v, v, 0];
+	} else if (d6 >= 0 && d5 <= d6) [wa, wb, wc] = [0, 0, 1];
+	else if (vb <= 0 && d2 >= 0 && d6 <= 0) {
+		const w = d2 / (d2 - d6);
+		[wa, wb, wc] = [1 - w, 0, w];
+	} else if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
+		const w = (d4 - d3) / (d4 - d3 + (d5 - d6));
+		[wa, wb, wc] = [0, 1 - w, w];
+	} else {
+		const denom = 1 / (va + vb + vc);
+		wb = vb * denom;
+		wc = vc * denom;
+		wa = 1 - wb - wc;
+	}
+	const q = [0, 1, 2].map(
+		(k) => wa * (a[k] as number) + wb * (b[k] as number) + wc * (c[k] as number),
+	);
+	const d = sub(p, q);
+	return { distance: Math.sqrt(dot(d, d)), wa, wb, wc };
+}
+
+/**
  * The polygon radius of a ring at an angle: where a ray at that angle, of unit direction (dx, dy) in
  * the ring's plane, crosses the ring's edge.
  */
@@ -257,49 +324,67 @@ export class ParentSurface {
 	 *
 	 * @param a The segment's start, inside the parent.
 	 * @param b The segment's end, outside.
-	 * @param place The place a distance query found near the crossing.
+	 * @param place The place a distance query found near the crossing; without one, every triangle in
+	 *   the window is searched for the segment's first crossing.
 	 * @param out The hit to write.
 	 * @returns Whether the segment crosses a triangle there.
 	 */
-	snap(a: Float64Array, b: Float64Array, place: SurfacePlace, out: SurfaceHit): boolean {
+	snap(
+		a: Float64Array,
+		b: Float64Array,
+		place: SurfacePlace | undefined,
+		out: SurfaceHit,
+	): boolean {
 		const r = this.rings;
 		let best = Number.POSITIVE_INFINITY;
 		let found = false;
-		const share = (place.angle < 0 ? place.angle + 2 * PI : place.angle) / (2 * PI);
-		for (
-			let k = Math.max(this.from, place.ring - 1);
-			k <= Math.min(this.to - 1, place.ring + 1);
-			k++
-		) {
-			const triangles = this.strip(k);
-			const count = triangles.length / 3;
-			const sidesA = r.sides[k] as number;
-			const sidesB = r.sides[k + 1] as number;
-			// Triangles run round the strip in order, one per step of either ring.
-			const centre = Math.round(share * (sidesA + sidesB));
-			for (let w = -8; w <= 8; w++) {
-				const t = (((centre + w) % count) + count) % count;
-				const i0 = triangles[t * 3] as number;
-				const i1 = triangles[t * 3 + 1] as number;
-				const i2 = triangles[t * 3 + 2] as number;
-				const hit = this.crossing(a, b, i0, i1, i2);
-				if (hit === undefined) continue;
-				const [lambda, w1, w2] = hit;
-				const score = Math.abs(lambda - 0.5);
-				if (score >= best) continue;
-				best = score;
-				found = true;
-				const w0 = 1 - w1 - w2;
-				out.share = lambda;
-				out.v = w0 * (r.vv[i0] as number) + w1 * (r.vv[i1] as number) + w2 * (r.vv[i2] as number);
-				const n = r.vertexNormal;
-				for (let q = 0; q < 3; q++)
-					out.normal[q] =
-						w0 * (n[i0 * 3 + q] as number) +
-						w1 * (n[i1 * 3 + q] as number) +
-						w2 * (n[i2 * 3 + q] as number);
+		const angle = place?.angle ?? 0;
+		const share = (angle < 0 ? angle + 2 * PI : angle) / (2 * PI);
+		const ring = place?.ring ?? 0;
+		const search = (reach: number, window: number) => {
+			for (
+				let k = Math.max(this.from, ring - reach);
+				k <= Math.min(this.to - 1, ring + reach);
+				k++
+			) {
+				const triangles = this.strip(k);
+				const count = triangles.length / 3;
+				const sidesA = r.sides[k] as number;
+				const sidesB = r.sides[k + 1] as number;
+				// Triangles run round the strip in order, one per step of either ring.
+				const centre = Math.round(share * (sidesA + sidesB));
+				const span = Math.min(window, count >> 1);
+				for (let w = -span; w <= span; w++) {
+					const t = (((centre + w) % count) + count) % count;
+					const i0 = triangles[t * 3] as number;
+					const i1 = triangles[t * 3 + 1] as number;
+					const i2 = triangles[t * 3 + 2] as number;
+					const hit = this.crossing(a, b, i0, i1, i2);
+					if (hit === undefined) continue;
+					const [lambda, w1, w2] = hit;
+					// Near a place, the crossing nearest the segment's middle; without one, the first.
+					const score = place ? Math.abs(lambda - 0.5) : lambda;
+					if (score >= best) continue;
+					best = score;
+					found = true;
+					const w0 = 1 - w1 - w2;
+					out.share = lambda;
+					out.v = w0 * (r.vv[i0] as number) + w1 * (r.vv[i1] as number) + w2 * (r.vv[i2] as number);
+					const n = r.vertexNormal;
+					for (let q = 0; q < 3; q++)
+						out.normal[q] =
+							w0 * (n[i0 * 3 + q] as number) +
+							w1 * (n[i1 * 3 + q] as number) +
+							w2 * (n[i2 * 3 + q] as number);
+				}
 			}
-		}
+		};
+		// Near the place's angle first; where the rings tilt apart the place can stray, so then every
+		// triangle of the strips around it.
+		if (place) {
+			search(1, 8);
+			if (!found) search(2, Number.MAX_SAFE_INTEGER);
+		} else search(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
 		if (found) {
 			const n = out.normal;
 			const l =
@@ -309,6 +394,67 @@ export class ParentSurface {
 			n[2] = (n[2] as number) / l;
 		}
 		return found;
+	}
+
+	/**
+	 * Moves a point onto the nearest of the parent's triangles in the strips around a place, and
+	 * reads the bark's `v` and the shading normal there. The weld's last resort, where the distance
+	 * query strays too far for any line to cross the parent where it says.
+	 *
+	 * @param point The point, moved in place.
+	 * @param place The place a distance query found near the point.
+	 * @param out The hit to write: its `v` and normal.
+	 */
+	nearest(point: Float64Array, place: SurfacePlace, out: SurfaceHit): void {
+		const r = this.rings;
+		const p = [point[0] as number, point[1] as number, point[2] as number];
+		const corner = (i: number) => [
+			r.position[i * 3] as number,
+			r.position[i * 3 + 1] as number,
+			r.position[i * 3 + 2] as number,
+		];
+		let best = Number.POSITIVE_INFINITY;
+		let bestCorners = [0, 0, 0];
+		let weights = [1, 0, 0];
+		for (
+			let k = Math.max(this.from, place.ring - 2);
+			k <= Math.min(this.to - 1, place.ring + 2);
+			k++
+		) {
+			const triangles = this.strip(k);
+			for (let t = 0; t < triangles.length; t += 3) {
+				const i0 = triangles[t] as number;
+				const i1 = triangles[t + 1] as number;
+				const i2 = triangles[t + 2] as number;
+				const hit = nearestOnTriangle(p, corner(i0), corner(i1), corner(i2));
+				if (hit.distance >= best) continue;
+				best = hit.distance;
+				bestCorners = [i0, i1, i2];
+				weights = [hit.wa, hit.wb, hit.wc];
+			}
+		}
+		if (!Number.isFinite(best)) return;
+		const [i0, i1, i2] = bestCorners as [number, number, number];
+		const [w0, w1, w2] = weights as [number, number, number];
+		const n = r.vertexNormal;
+		for (let q = 0; q < 3; q++) {
+			point[q] =
+				w0 * (r.position[i0 * 3 + q] as number) +
+				w1 * (r.position[i1 * 3 + q] as number) +
+				w2 * (r.position[i2 * 3 + q] as number);
+			out.normal[q] =
+				w0 * (n[i0 * 3 + q] as number) +
+				w1 * (n[i1 * 3 + q] as number) +
+				w2 * (n[i2 * 3 + q] as number);
+		}
+		out.v = w0 * (r.vv[i0] as number) + w1 * (r.vv[i1] as number) + w2 * (r.vv[i2] as number);
+		const l =
+			Math.sqrt(
+				(out.normal[0] as number) ** 2 +
+					(out.normal[1] as number) ** 2 +
+					(out.normal[2] as number) ** 2,
+			) || 1;
+		for (let q = 0; q < 3; q++) out.normal[q] = (out.normal[q] as number) / l;
 	}
 
 	/** The segment's crossing of a triangle (Möller and Trumbore): its share and two weights. */

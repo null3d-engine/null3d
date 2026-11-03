@@ -15,6 +15,9 @@ export const DEFAULT_BARK_TILE = 0.5;
 /** Metres a young-bark tile covers round the stem when the manifest gives none. */
 export const DEFAULT_YOUNG_TILE = 0.12;
 
+/** Below this many tiles round a ring, `u` runs in true meters. */
+export const FEWEST_TILES = 2.25;
+
 /** The widest error in a ring's plate width that a run of one tile count allows. */
 export const TILE_TOLERANCE = 0.25;
 
@@ -41,6 +44,39 @@ export interface BarkScale {
 	scale(r: number): number;
 	/** The narrowest tile of any layer, so a whole number of it fits under every ring's start. */
 	readonly narrowest: number;
+	/**
+	 * Meters of bark along which every layer repeats a whole number of times, near enough: a child
+	 * may start its `v` a whole number of these lower than its parent's, so `v` stays within the
+	 * 16 bits that hold it and the bark looks the same.
+	 */
+	readonly period: number;
+}
+
+/** The shortest repeat of `v` worth taking, and the longest searched. */
+const PERIOD_RANGE = [8, 48] as const;
+
+/**
+ * The shortest length past the range's start that holds a whole number of every tile, or of the
+ * first tile, the others within the least part of a tile.
+ */
+function repeatOf(tiles: readonly number[]): number {
+	const main = tiles[0] as number;
+	let best = Math.ceil(PERIOD_RANGE[0] / main) * main;
+	let bestError = Number.POSITIVE_INFINITY;
+	for (let k = Math.ceil(PERIOD_RANGE[0] / main); k * main <= PERIOD_RANGE[1]; k++) {
+		const length = k * main;
+		let error = 0;
+		for (const tile of tiles) {
+			const count = length / tile;
+			error = Math.max(error, Math.abs(count - Math.round(count)));
+		}
+		if (error < bestError - 1e-9) {
+			best = length;
+			bestError = error;
+		}
+		if (error < 0.005) break;
+	}
+	return best;
 }
 
 /**
@@ -65,6 +101,10 @@ export function barkScale(record: Species, manifest: TextureManifest, largest: n
 	const span = largest > 0 ? largest : 1;
 	return {
 		narrowest,
+		period: repeatOf([
+			...zones.map((zone) => layers[zone.layer]?.tile[1] ?? DEFAULT_BARK_TILE),
+			manifest.bark?.young.tile[1] ?? DEFAULT_YOUNG_TILE,
+		]),
 		width(r: number, y: number): number {
 			if (r < youngRadius) return youngWidth;
 			for (const zone of zones) {
@@ -82,9 +122,8 @@ export function barkScale(record: Species, manifest: TextureManifest, largest: n
 
 /**
  * The tiles round a ring: the ring before's count while it keeps the plates within the tolerance,
- * else the nearest whole count when that does, else 0, and `u` runs in true metres. Wood thinner than
- * most of one tile, and wood between one and two tiles round, where neither count fits, takes true
- * metres.
+ * else the nearest whole count when that does, else 0, and `u` runs in true meters. Wood of fewer
+ * than a few tiles round takes true meters, as does wood where no whole count fits.
  *
  * @param perimeter The ring's perimeter in metres of bark.
  * @param width The layer's tile width in metres of bark.
@@ -93,6 +132,9 @@ export function barkScale(record: Species, manifest: TextureManifest, largest: n
  */
 export function tilesRound(perimeter: number, width: number, previous: number): number {
 	const exact = perimeter / width;
+	// Wood of a couple of tiles round takes true meters: its seam is small, and a count that flips
+	// between one and two tiles along a twig would write ring after ring twice.
+	if (exact < FEWEST_TILES || (previous === 0 && exact < FEWEST_TILES + 0.5)) return 0;
 	if (previous > 0 && Math.abs(previous / exact - 1) <= TILE_TOLERANCE) return previous;
 	const nearest = Math.round(exact);
 	if (nearest < 1 || Math.abs(nearest / exact - 1) > TILE_TOLERANCE) return 0;
