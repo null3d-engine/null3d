@@ -161,6 +161,13 @@ impl Layout {
                 *fit = (*fit).max(count);
             }
         }
+        // Each piece's slice holds every copy that picks its bucket, whichever pieces it shows.
+        for &bucket in &self.level_buckets {
+            if let Some((first, count)) = self.buckets[bucket as usize].pieces {
+                let fit = fits[bucket as usize];
+                fits[first as usize..(first + count) as usize].fill(fit);
+            }
+        }
         // A view's bundle and its buffer name the slices, so slices stay where they are while each
         // count fits. A new layout places them from its counts, and a count that outgrows its slice
         // moves them, which the frame answers by recording the bundles and sizing the buffers again.

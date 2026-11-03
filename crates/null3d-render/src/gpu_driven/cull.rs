@@ -73,6 +73,8 @@ const RANGES_WORD: usize = 26;
 const OFFSETS_ROW_WORD: usize = 27;
 const LEVELS_WORD: usize = 28;
 const DEBUG_WORD: usize = 32;
+/// The word that is 1 for a view whose positions start at its eye, where pieces take the cone test.
+const PIECE_CONE_WORD: usize = 33;
 /// Where the runs of the cell order start in the culling parameters: after the planes.
 const RANGES_OFFSET: u32 = CULL_PLANES_BYTES;
 /// Bytes of one run of the cell order: its first position, its end, its first workgroup, and
@@ -229,6 +231,14 @@ pub(super) const fn motion_group(parity: usize) -> u32 {
     } else {
         ids::index_group(ViewId::MOTION)
     }
+}
+
+/// True for a view whose instances lie relative to its own eye, so that the pieces of its copies
+/// may take the cone test: the camera's own view. Shadow views place their instances relative to
+/// the camera, not their light, and mirrors and probes keep other eyes, so they test the frustum
+/// alone. The shader also skips the test for an orthographic lens.
+pub(super) fn view_takes_cones(view: ViewId) -> bool {
+    view == ViewId::CAMERA
 }
 
 /// The part of the render size's larger side that an occluder's bounds span at least. Smaller
@@ -547,6 +557,7 @@ impl Culling {
         params[RANGES_WORD] = ranges as u32;
         params[OFFSETS_ROW_WORD] = view.index() as u32;
         params[DEBUG_WORD] = u32::from(drawn.codes);
+        params[PIECE_CONE_WORD] = u32::from(view_takes_cones(view));
         (buffers.groups, buffers.range_count) = (groups, ranges);
         let (at, planes) = arena.push(words_as_bytes(&params))?;
         let params_id = ids::cull_params(view);
