@@ -409,6 +409,8 @@ export class RenderPass {
 	arrayLayers = 1;
 	/** @internal True when a compute pass keeps two states in its texture's layers. */
 	history = false;
+	/** @internal The frames between two of its draws that the sketch asked for. */
+	every = 1;
 
 	/** @internal */
 	constructor(
@@ -466,6 +468,20 @@ export class Render {
 	private newPipelines = false;
 	/** The reads of compute passes' regions that the page waits for. */
 	private readonly reads: PassReads;
+
+	/** True while hold mode steps to its held frame, when every pass draws in every frame. */
+	private holding = false;
+
+	/**
+	 * @internal Holds every pass's cadence at one frame while hold mode steps to its held frame. The
+	 * thread that draws draws only the hold's last frames, so a pass that skipped one of them would
+	 * show a picture that no drawn frame made. Each pass takes its own cadence again after.
+	 */
+	set held(on: boolean) {
+		if (this.holding === on) return;
+		this.holding = on;
+		for (const pass of this.passes) if (pass.every > 1) this.sendEvery(pass, 'render.held');
+	}
 
 	/** @internal True while a reflection pass lives, whose picture a surface lights with. */
 	get hasReflection(): boolean {
@@ -977,13 +993,21 @@ export class Render {
 	 * texture keeps the last image that it drew in between. A cadence of 1 draws every frame. It
 	 * compiles nothing, so a sketch may change it whenever the quality preset or the frame budget
 	 * moves, as often as once a frame. Throws E1101 for a pass that was removed, and E1220 for a
-	 * cadence that is not a whole number from 1. It allocates nothing.
+	 * cadence that is not a whole number from 1. It allocates nothing. In hold mode every pass draws
+	 * in every frame, so a held frame never shows a pass's older picture.
 	 */
 	setPassEvery(pass: RenderPass, every: number): void {
 		const call = 'render.setPassEvery';
 		checkPass(pass, call);
 		if (!Number.isInteger(every) || every < 1)
 			throw invalid(call, `got every ${String(every)}; it takes a whole number from 1.`);
+		pass.every = every;
+		this.sendEvery(pass, call);
+	}
+
+	/** Gives the core a pass's cadence: its own, or every frame while hold mode steps. */
+	private sendEvery(pass: RenderPass, call: string): void {
+		const every = this.holding ? 1 : pass.every;
 		this.core.check(this.core.glue.setScenePassEvery(pass.place, every), call, undefined, true);
 	}
 
