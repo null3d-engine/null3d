@@ -235,7 +235,9 @@ scene.createInstances(ground, 400, { material: grass });
 const levels = await ground.buildLevels();
 ```
 
-Each level about halves the triangles of the level above and keeps the largest distance between its surface and the mesh's as its error. So it switches in at once, with no fade, where that distance covers less than the `lodThreshold` setting's pixels. The levels name the mesh's own vertices: a level costs its indices alone, and the mesh keeps its vertices and triangles in their order. A mesh of more than 65,535 vertices, which the engine splits into parts, gives each level a copy of the vertices that the level draws. A plan of 130,000 triangles takes about half a second of one job worker, and a plan of a million about six seconds; the frames go on meanwhile. The planner, about 23 KB after Brotli, downloads with the first mesh that plans.
+Each level about halves the triangles of the level above and keeps the largest distance between its surface and the mesh's as its error. So it switches in at once, with no fade, where that distance covers less than the `lodThreshold` setting's pixels. The levels name the mesh's own vertices: a level costs its indices alone, and the mesh keeps its vertices and triangles in their order. A mesh of more than 65,535 vertices, which the engine splits into parts, shares its vertices part by part. Only the few triangles that cross from one part to another copy their vertices. A plan of 130,000 triangles takes about half a second of one job worker, and a plan of a million about six seconds; the frames go on meanwhile. A large mesh spreads its work over frames, so no frame waits for it: the engine reads one part of the mesh in each frame for the plan, and gives the mesh one level in each frame when the plan is done, coarsest first. The planner, about 23 KB after Brotli, downloads with the first mesh that plans.
+
+The plan also sorts the mesh and each level of 32,768 triangles or more into 8 to 16 pieces, and each copy skips the pieces that lie outside the view or face away from the camera ([Pieces of a large level](../concepts/lod.md#pieces-of-a-large-level)). A mesh that one object draws gets pieces of its own too, over a sorted copy of its indices that arrives in the frame after the last level, so the mesh keeps its triangles in their order. Copies of a mesh draw their full mesh only near the camera, so only their levels get pieces. A list that faces mostly one way, such as a ground, splits by space.
 
 The `levels` option of `fromArrays` and of every generator controls the plan:
 
@@ -245,6 +247,7 @@ The `levels` option of `fromArrays` and of every generator controls the plan:
 | `false` | No levels. Give it to a mesh whose shape a shader moves, and to a mesh that you give levels by hand |
 | `true` | Levels when the mesh is made, at any size |
 | `{ cards: true }` | Levels that thin a mesh of separate quads as leaf cards: each level keeps every second card and grows it, so a crown keeps its cover |
+| `'pieces'` | No levels, and pieces by space for a mesh of 32,768 triangles or more, at the first draw by a material that does not blend or let light through. Give it to a large mesh whose levels come from elsewhere, such as a merged far cell |
 
 `mesh.buildLevels(options)` plans the levels of a mesh at any time, and returns a promise of them. Call it to plan a mesh that the default leaves out, to plan again after the vertices change, or to await the levels of a plan that runs: while a plan with the same options runs, it returns that plan's promise.
 
@@ -252,6 +255,7 @@ Some meshes take no levels on their own:
 
 - A mesh with joints, morph targets or `targets` plans none, because its shape poses or moves. `buildLevels` refuses it with [E1221](../errors/E1221.md).
 - A mesh that a material with a displacement map or a custom `vertexOffset` draws plans no automatic levels, and drops the ones it has, because the shader draws another shape than the one that the levels simplify.
+- A mesh that only blended materials, or materials that let light through, draw plans no automatic levels, because those surfaces draw the base level at every distance. A draw with another material plans them.
 - `mesh.updateVertices` takes the planned levels away at its first call, because they measured the old shape. The mesh plans no automatic levels again; call `buildLevels` for the new shape.
 - `mesh.setLevels` wins over a plan: it ends a plan that runs, and the planned levels go.
 - Separate quads, such as the panels of a wall, plan as any other mesh unless you ask for cards. A level then drops only whole small pieces, where they cover under a pixel.

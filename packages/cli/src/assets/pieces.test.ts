@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'bun:test';
 import { Document, NodeIO } from '@gltf-transform/core';
+import {
+	PIECE_BOUNDS,
+	PIECE_LIST_MIN_TRIANGLES,
+	pieceCount,
+	planPieces,
+} from '@null3d/engine/pieces-planner';
 import { MeshoptEncoder } from 'meshoptimizer';
 import { planLevels, storeLevels } from './levels.js';
 import { lodOf, MSFTLod } from './lod-extension.js';
-import { PIECE_BOUNDS, PIECE_LIST_MIN_TRIANGLES, pieceCount, planPieces } from './pieces.js';
 import { NULL3D_PIECES, Null3dPieces, piecesOf, storePieces } from './pieces-extension.js';
 
 /** A rough sphere of `around` by `rings` cells, as positions and indices. */

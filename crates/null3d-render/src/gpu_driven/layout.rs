@@ -497,6 +497,12 @@ pub(super) struct Layout {
     /// The buckets in the order that a pass draws them: each bucket's pieces in its place, and the
     /// buckets of the pieces after every other bucket in the table, which no source names.
     pub(super) draw_order: Vec<u32>,
+    /// Each bucket whose mesh draws pieces in its place, and that mesh by the storage's id, for the
+    /// check of what pieces cull.
+    pub(super) piece_parents: Vec<(u32, u32)>,
+    /// The first of the draws of the pieces and of their buckets' tallies, which follow every other
+    /// draw.
+    pub(super) first_piece_draw: u32,
     /// The entry of every source: its bucket, its occluder bit and its cell, or `HIDDEN`.
     instance_buckets: Vec<u32>,
     /// The shown scene objects whose entries carry the occluder bit, and the batches whose rows
@@ -865,6 +871,8 @@ impl Layout {
         (self.copied, self.indexed) = (0, 0);
         self.draws.clear();
         self.draw_order.clear();
+        self.piece_parents.clear();
+        self.first_piece_draw = 0;
         self.skinned.clear();
         self.waiting.clear();
         self.indirect_template.clear();
@@ -1886,6 +1894,8 @@ impl Layout {
         pieced: &[(u32, u32, bool)],
         mut copied: u32,
     ) -> u32 {
+        self.piece_parents.clear();
+        self.first_piece_draw = self.draws.len() as u32;
         for &(parent, mesh, culls_back) in pieced {
             let whole = self.buckets[parent as usize];
             let pieces = meshes.pieces(mesh - 1);
@@ -1922,7 +1932,21 @@ impl Layout {
                     vertices: None,
                 });
             });
-            self.buckets[parent as usize].pieces = Some((first, pieces.len() as u32));
+            // The bucket draws no copy of its own. Its draw is a tally that no pass draws: the
+            // culling counts each copy that waits for its pieces' tests in its instance count, for
+            // the check of what pieces cull.
+            let page = self.draws.last().map_or(0, |draw| draw.page);
+            let tally = &mut self.buckets[parent as usize];
+            tally.pieces = Some((first, pieces.len() as u32));
+            tally.first_draw = self.draws.len() as u32;
+            self.draws.push(Draw {
+                page,
+                index_count: 0,
+                first_index: 0,
+                base_vertex: 0,
+                vertices: None,
+            });
+            self.piece_parents.push((parent, mesh - 1));
         }
         self.draw_order.clear();
         for (b, bucket) in self.buckets.iter().enumerate() {
@@ -1933,6 +1957,32 @@ impl Layout {
             }
         }
         copied
+    }
+
+    /// The triangles that each mesh with pieces would draw whole in a view, and those that its
+    /// pieces drew: `instances` gives the copies that a bucket's draws took, and `waiting` the
+    /// copies that waited for a pieced bucket's tests. Gives each mesh to `out`.
+    pub(super) fn piece_counts(
+        &self,
+        instances: impl Fn(u32) -> u32,
+        waiting: impl Fn(u32) -> u32,
+        mut out: impl FnMut(u32, u64, u64),
+    ) {
+        for &(parent, mesh) in &self.piece_parents {
+            let Some((first, count)) = self.buckets[parent as usize].pieces else {
+                continue;
+            };
+            let (mut whole, mut drawn) = (0u64, 0u64);
+            for piece in first..first + count {
+                let bucket = &self.buckets[piece as usize];
+                let draws = &self.draws
+                    [bucket.first_draw as usize..(bucket.first_draw + bucket.draws) as usize];
+                let triangles: u64 = draws.iter().map(|d| u64::from(d.index_count / 3)).sum();
+                whole += triangles;
+                drawn += u64::from(instances(piece)) * triangles;
+            }
+            out(mesh, u64::from(waiting(parent)) * whole, drawn);
+        }
     }
 
     /// Sets each feature-instance draw's count in the template that a frame's reset uploads, for
