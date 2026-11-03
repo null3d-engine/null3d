@@ -239,11 +239,11 @@ const HIDDEN: u32 = 0xffffffffu;
 /// the level in the lowest bits, a mark for a source that the size rule or a draw range hid, the
 /// share of a fading band that the level keeps, and the sign that names the band's side. The
 /// levels view's shader reads the same bits.
-const LEVEL_CODE_LEVEL_MAX: u32 = 7u;
-const LEVEL_CODE_HIDDEN: u32 = 1u << 3u;
-const LEVEL_CODE_FADE_SHIFT: u32 = 4u;
+const LEVEL_CODE_LEVEL_MAX: u32 = 15u;
+const LEVEL_CODE_HIDDEN: u32 = 1u << 4u;
+const LEVEL_CODE_FADE_SHIFT: u32 = 5u;
 const LEVEL_CODE_FADE_MAX: u32 = 63u;
-const LEVEL_CODE_NEGATIVE: u32 = 1u << 10u;
+const LEVEL_CODE_NEGATIVE: u32 = 1u << 11u;
 
 /// The code of a draw at level `level`, of a source that `hidden` hides, at fade `fade`.
 fn level_code(level: u32, hidden: bool, fade: f32) -> u32 {

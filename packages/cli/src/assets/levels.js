@@ -1,10 +1,9 @@
 // The tool's levels of detail, planned as Godot plans them at import. The simplifier sees each
 // triangle list with its vertices welded, so that copies an exporter left at one place do not
 // hold it back, and with the normals and colors in its error. Each level simplifies the level
-// above to about half its triangles, and in steeper steps near the coarse end, so that the last
-// level reaches a few dozen triangles. The levels stop early where a level saves too little. Each
-// level keeps its error as a distance in the units the mesh draws in, which the engine compares
-// with the screen.
+// above to about half its triangles, down to a few dozen triangles, until a level saves too
+// little. Each level keeps its error as a distance in the units the mesh draws in, which the
+// engine compares with the screen.
 import { MathUtils } from '@gltf-transform/core';
 import { MeshoptSimplifier } from 'meshoptimizer';
 import {
@@ -23,23 +22,14 @@ import { lodOf, MSFT_LOD, MSFTLod } from './lod-extension.js';
 /** Meshes with fewer triangles get no levels of detail: they cost little to draw anyway. */
 export const LOD_MIN_TRIANGLES = 64;
 
-/**
- * The share of the level above's triangles that each level aims for, while the levels that are
- * left can still reach the floor.
- */
+/** The share of the level above's triangles that each level aims for. */
 const LOD_STEP = 0.5;
 
 /**
- * The smallest share of the level above's triangles that a level aims for. The steps near the
- * coarse end take shares this small where halving would run out of levels above the floor.
+ * A level that keeps more than this share of the level above's triangles ends the levels: it
+ * fell short of its target by more than half the cut, so the simplifier has stalled.
  */
-const LOD_STEEPEST_STEP = 1 / 8;
-
-/**
- * A steeper step pays for its larger error only when it keeps at most this share of what halving
- * aims for. Above it, the level halves instead.
- */
-const LOD_STEEP_GAIN = 3 / 4;
+const LOD_MAX_KEPT = (1 + LOD_STEP) / 2;
 
 /**
  * The triangles that the coarsest level aims for. A level of fewer than twice as many ends the
@@ -54,8 +44,11 @@ export const LOD_FLOOR_TRIANGLES = 32;
  */
 const LOD_ERROR_GROWTH = 1.5;
 
-/** The most lower levels that a mesh gets: the engine takes seven beside the mesh itself. */
-export const LOD_MAX_LEVELS = 7;
+/**
+ * The most lower levels that a mesh gets: the engine takes fifteen beside the mesh itself, which
+ * halving needs to take a mesh of a million triangles to the floor.
+ */
+export const LOD_MAX_LEVELS = 15;
 
 /**
  * The screen height in pixels that the stored screen coverage assumes, for readers of MSFT_lod
@@ -687,21 +680,6 @@ function simplifyStep(lists, from, share, limit, flags, every) {
  */
 
 /**
- * The share of its triangles that a level aims for, below a level of `triangles` with `left`
- * levels still to make: half, while the levels after it can still reach the floor at the steepest
- * step; else the even step that reaches the floor in the levels left, but no steeper than the
- * steepest. So the fine levels halve, and only the coarse end takes larger steps.
- *
- * @param {number} triangles
- * @param {number} left
- */
-export function levelStep(triangles, left) {
-	if (triangles * LOD_STEP * LOD_STEEPEST_STEP ** (left - 1) <= LOD_FLOOR_TRIANGLES)
-		return LOD_STEP;
-	return Math.max(LOD_STEEPEST_STEP, (LOD_FLOOR_TRIANGLES / triangles) ** (1 / left));
-}
-
-/**
  * True for a mesh that a file's own levels already use, as the full mesh or as a level.
  *
  * @param {Mesh} mesh
@@ -718,13 +696,12 @@ const hasLevels = (mesh) =>
 
 /**
  * Plans levels of detail for each mesh of enough triangles. Each level simplifies the level above
- * toward the share that {@link levelStep} gives, with no error limit short of the mesh's size: the
- * engine draws a level only where its error spans under a pixel, so a coarse level only draws far
- * away. A steeper step that saves little beyond halving gives way to halving, whose error is lower
- * for the triangles kept. Each level's error is at least 1.5 times the level above's. The levels
- * stop at the floor, after seven levels, or when one falls short of its target by more than half
- * the cut. They share the mesh's vertices: only their indices are new. Meshes whose levels the
- * file already has keep them.
+ * toward half its triangles, with no error limit short of the mesh's size: the engine draws a
+ * level only where its error spans under a pixel, so a coarse level only draws far away. Each
+ * level's error is at least 1.5 times the level above's. The levels stop at the floor, after
+ * fifteen levels, when one keeps more than three quarters of the triangles above it, or when its
+ * error reaches the mesh's size. They share the mesh's vertices: only their indices are new.
+ * Meshes whose levels the file already has keep them.
  *
  * A mesh with a tree of cluster patches gets the same levels, whatever `simplify` says: a viewer
  * that draws no patches, and every copy that draws whole levels, draws them in place of the tree.
@@ -758,22 +735,11 @@ export async function planLevels(doc, trees = new Map(), simplify = true) {
 		let from = lists.map((list) => list.indices);
 		let previous = total;
 		let error = 0;
-		// The share of the base mesh that the level aims for, which a list of cards thins to.
-		let kept = 1;
 		while (levels.length < LOD_MAX_LEVELS && previous >= 2 * LOD_FLOOR_TRIANGLES) {
-			let share = levelStep(previous, LOD_MAX_LEVELS - levels.length);
-			let step = simplifyStep(lists, from, share, side, flags, Math.round(1 / (kept * share)));
-			// A steep step that keeps most of what halving would keep, as where locked borders stop
-			// the simplifier, errs more for those triangles than halving does: halving serves.
-			if (share < LOD_STEP && step.triangles > previous * LOD_STEP * LOD_STEEP_GAIN) {
-				const half = simplifyStep(lists, from, LOD_STEP, side, flags, Math.round(2 / kept));
-				if (half.triangles > 0) {
-					step = half;
-					share = LOD_STEP;
-				}
-			}
-			kept *= share;
-			if (step.triangles === 0 || step.triangles > (previous * (1 + share)) / 2) break;
+			// A list of cards keeps one card of every 2^level, the level counted from the base's 0.
+			const every = 2 ** (levels.length + 1);
+			const step = simplifyStep(lists, from, LOD_STEP, side, flags, every);
+			if (step.triangles === 0 || step.triangles > previous * LOD_MAX_KEPT) break;
 			error = Math.max(error * LOD_ERROR_GROWTH, step.error);
 			if (error >= side) break;
 			levels.push({

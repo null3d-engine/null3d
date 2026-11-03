@@ -173,7 +173,7 @@ The bake skips a material, and the report says why, when:
 
 ## Levels of detail
 
-`--lod` adds levels of detail to each mesh of 64 triangles or more. Each level has about half the triangles of the level above. The engine takes at most seven levels below a mesh, so the last steps grow, up to an eighth, where halving would stop short. The coarsest level then holds about 32 triangles, so a far copy that covers a few pixels draws a few dozen triangles. The levels stop early when a level falls well short of its target, or when its error reaches the mesh's size.
+`--lod` adds levels of detail to each mesh of 64 triangles or more. Each level has about half the triangles of the level above, down to about 32 triangles, in up to 15 levels. So a far copy that covers a few pixels draws a few dozen triangles. The levels stop early when a level would keep more than three quarters of the level above. They also stop when a level's error reaches the mesh's size.
 
 The command plans the levels as follows:
 
