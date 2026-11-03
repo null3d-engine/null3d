@@ -53,7 +53,7 @@ function runStage<T>(input: PlantTaskInput): Promise<T> {
  * header.
  *
  * @param source The species' record and texture manifest, such as its module.
- * @param options The tier, whether stages that are not built yet grow stand-ins, and the store of
+ * @param options The tier, whether every stage grows its stand-in, and the store of
  *   bytes that keeps the kit across visits.
  * @returns The kit.
  * @category api/vegetation

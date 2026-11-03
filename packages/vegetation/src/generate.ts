@@ -7,8 +7,8 @@
 //
 // The orchestrator holds no engine import, so a job worker and Bun run it alike. The growers and
 // the leaf builders are lazy chunks: `loadPlantCode` loads a species' code on this thread, and the
-// stage calls after it are synchronous. A kit built with `placeholders` grows a stand-in for each
-// stage that is not built yet (core/placeholder.ts); without it such a stage throws.
+// stage calls after it are synchronous. A kit built with `placeholders` grows the stand-in of every
+// stage (core/placeholder.ts); without it, a stage that is not built yet throws.
 import type { MeshArrays, PlantAsset, PlantPart, ShootPrototype, SpeciesKitData } from './asset';
 import { speciesBox } from './core/box';
 import { hashText } from './core/hash';
@@ -81,7 +81,7 @@ export interface KitSource {
 export interface KitOptions {
 	/** The mesh tier; high by default. */
 	readonly detail?: Detail;
-	/** Grow a stand-in for each stage that is not built yet, for review pages and tests. */
+	/** Grow the stand-in of every stage, as the stand-in species that scenes place do. */
 	readonly placeholders?: boolean;
 }
 
@@ -120,14 +120,12 @@ export async function loadPlantCode(record: Species): Promise<void> {
 	]);
 }
 
-/** Runs a stage, or its stand-in when the stage is not built yet and the kit asks for stand-ins. */
+/**
+ * Runs a stage, or its stand-in when the kit asks for stand-ins. A stand-in kit always grows the
+ * stand-ins, so the stand-in species that scenes place draw the same as the real stages land.
+ */
 function stage<T>(placeholders: boolean | undefined, run: () => T, standIn: () => T): T {
-	try {
-		return run();
-	} catch (error) {
-		if (placeholders && error instanceof NotBuiltError) return standIn();
-		throw error;
-	}
+	return placeholders ? standIn() : run();
 }
 
 /**
@@ -165,7 +163,7 @@ export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
  * card atlas and its records header. Call `loadPlantCode` first.
  *
  * @param source The species' record and texture manifest, such as its module.
- * @param options The tier, and whether stages that are not built yet grow stand-ins.
+ * @param options The tier, and whether every stage grows its stand-in.
  * @returns The kit.
  * @category api/vegetation
  */

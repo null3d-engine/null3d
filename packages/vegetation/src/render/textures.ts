@@ -63,7 +63,7 @@ export interface SpeciesKit extends SpeciesKitData {
 export interface PrepareOptions {
 	/** The mesh tier; the preset's by default. */
 	readonly detail?: Detail;
-	/** Grow a stand-in for each stage that is not built yet. */
+	/** Grow the stand-in of every stage. */
 	readonly placeholders?: boolean;
 	/**
 	 * A store of bytes that keeps the kit, its variants and its far bakes across visits, such as the
