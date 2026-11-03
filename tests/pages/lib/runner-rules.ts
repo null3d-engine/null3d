@@ -9,7 +9,9 @@ export const MOST_TIME_SHARE = 3;
  * How often a runner page rewrites its heartbeat record while it waits on a page. The runner tool
  * counts a runner page that writes nothing for a page's limit and a little more as stopped. A page
  * may get longer than its limit, so the record shows the tool that the runner page still runs.
- * The beat comes well within the shortest such quiet time.
+ * The beat comes well within the shortest such quiet time. It carries the number of steps that the
+ * page under it has taken, since a runner page that beats says nothing about a page that stopped:
+ * the tool counts a beat that shows the same step for the page's quiet time as stopped too.
  */
 export const HEARTBEAT_SECONDS = 20;
 
