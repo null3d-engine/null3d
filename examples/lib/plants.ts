@@ -75,8 +75,31 @@ export function plantCopies(spots: readonly PlantSpot[]): PlantCopies {
 }
 
 /**
+ * The last call's step that makes objects on the page: its kit's textures, or its materials and
+ * copies. The growth of several species runs at once, but each call takes its turn here in the
+ * order of the calls, so the scene's objects come in one order on every run, and so do the dither
+ * patterns and the draws that follow from that order.
+ */
+const turns = {
+	prepare: Promise.resolve() as Promise<unknown>,
+	place: Promise.resolve() as Promise<unknown>,
+};
+
+/** Runs `step` after the step of the same kind that the call before this one queued. */
+function inTurn<T>(
+	kind: keyof typeof turns,
+	ready: Promise<unknown>,
+	step: () => T | Promise<T>,
+): Promise<T> {
+	const result = Promise.all([turns[kind], ready]).then(step);
+	turns[kind] = result.catch(() => {});
+	return result;
+}
+
+/**
  * Grows a species' variants in the job workers and places its copies. Every stage that the plant
- * core has not built yet grows its stand-in.
+ * core has not built yet grows its stand-in. Calls that run together grow at once, and make their
+ * objects on the page in the order of the calls.
  */
 export async function plantSpecies(
 	ctx: SketchContext,
@@ -85,25 +108,33 @@ export async function plantSpecies(
 	let variants = options.variants ?? 0;
 	if (options.variants === undefined)
 		for (const spot of options.spots) variants = Math.max(variants, spot.variant + 1);
-	const module = await loadSpeciesOrStandIn(options.id, {
+	const module = loadSpeciesOrStandIn(options.id, {
 		variants: Math.max(1, variants),
 		...options.standIn,
 	});
-	const kit = await prepareSpecies(ctx, module, { placeholders: true });
-	const materials = plantMaterials(ctx, kit, options.wind && { wind: options.wind });
-	const assets = await Promise.all(
-		Array.from({ length: variants }, (_, variant) =>
-			growPlant(kit, { seed: options.seed, variant, near: true }),
-		),
+	const kit = await inTurn('prepare', module, async () =>
+		prepareSpecies(ctx, await module, { placeholders: true }),
 	);
-	const far = options.far
-		? await Promise.all(assets.map((asset) => bakeFarPlant(kit, asset)))
-		: undefined;
-	const placed = placePlants(ctx, kit, assets, plantCopies(options.spots), {
-		materials,
-		...(far && { far }),
-		view: { height: 1080, fov: options.fov ?? 50 },
-		castShadows: options.castShadows ?? true,
+	const grown = (async () => {
+		const assets = await Promise.all(
+			Array.from({ length: variants }, (_, variant) =>
+				growPlant(kit, { seed: options.seed, variant, near: true }),
+			),
+		);
+		const far = options.far
+			? await Promise.all(assets.map((asset) => bakeFarPlant(kit, asset)))
+			: undefined;
+		return { assets, far };
+	})();
+	return inTurn('place', grown, async () => {
+		const { assets, far } = await grown;
+		const materials = plantMaterials(ctx, kit, options.wind && { wind: options.wind });
+		const placed = placePlants(ctx, kit, assets, plantCopies(options.spots), {
+			materials,
+			...(far && { far }),
+			view: { height: 1080, fov: options.fov ?? 50 },
+			castShadows: options.castShadows ?? true,
+		});
+		return { materials: Object.values(materials), placed };
 	});
-	return { materials: Object.values(materials), placed };
 }
