@@ -4,8 +4,12 @@
 
 mod common;
 
+use std::collections::HashSet;
+
 use common::{World, count, grid};
-use null3d_gpu::drawlist::{Op, index_format, template};
+use null3d_core::handle::Handle;
+use null3d_core::scene::{Command, flags};
+use null3d_gpu::drawlist::{Op, index_format, layout, template};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::frame::FrameBuilder;
 use null3d_render::materials::Shading;
@@ -176,5 +180,125 @@ fn a_mesh_past_one_parts_vertices_draws_its_patches_rather_than_its_whole_triang
         count(&commands, Op::DrawIndexedIndirect),
         whole - (parts - 1),
         "the parts' {parts} draws become one"
+    );
+}
+
+/// A tree of a root over a grid's six indices, with `error`, and two children below it that each
+/// hold `child_indices` indices, exact: a view that the root's error fails draws the children.
+fn root_and_two_children(error: f32, child_indices: usize) -> PatchTree {
+    let mut indices = vec![0, 1, 2, 0, 2, 3];
+    for _ in 0..2 * child_indices / 3 {
+        indices.extend_from_slice(&[0, 1, 2]);
+    }
+    let child = child_indices as u32;
+    PatchTree::new(
+        indices,
+        vec![
+            [0.0, 0.0, 0.0, 2.0],
+            [-0.5, 0.0, 0.0, 1.0],
+            [0.5, 0.0, 0.0, 1.0],
+        ],
+        vec![
+            [0, 6, 0, error.to_bits()],
+            [6, child, 1, 0],
+            [6 + child, child, 1, 0],
+        ],
+        0,
+        4,
+    )
+    .unwrap()
+}
+
+/// Adds a grid object at the origin that casts and receives shadows, with `tree` as its mesh's tree
+/// of cluster patches.
+fn caster_with_tree(world: &mut World, tree: PatchTree) {
+    let settings = world.renderer.settings_mut();
+    let mesh = settings.meshes_mut().add(&grid(1, 1)).unwrap() + 1;
+    let material = settings
+        .materials_mut()
+        .create(Shading::Lit, 0, [1.0, 1.0, 1.0, 1.0])
+        .unwrap()
+        + 1;
+    let object = world.scene.reserve().unwrap();
+    world.scene.set_local_radius(object, 2.0).unwrap();
+    let both = flags::VISIBLE | flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS;
+    let commands = [
+        Command::create(object, Handle::NONE, mesh, both),
+        Command::set_material(object, material),
+    ];
+    world.scene.apply_commands(&commands, world.frame).unwrap();
+    world.renderer.set_mesh_patches(mesh, Some(tree)).unwrap();
+}
+
+/// Each cluster pass group of a frame, as its list's buffer and the bytes it was made with, and the
+/// buffer of its draws.
+fn cluster_lists(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32, u32)> {
+    commands
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateBindGroup && o[1] == layout::CLUSTER_CULL)
+        .map(|(_, o)| {
+            let entry = |binding: u32| {
+                o[3..]
+                    .chunks(5)
+                    .find(|entry| entry[0] == binding)
+                    .map_or(0, |entry| entry[2])
+            };
+            let list = entry(7);
+            let bytes = commands
+                .iter()
+                .filter(|(op, c)| *op == Op::CreateBuffer && c[0] == list)
+                .map(|(_, c)| c[1])
+                .next_back()
+                .unwrap_or(0);
+            (list, bytes, entry(8))
+        })
+        .collect()
+}
+
+#[test]
+fn each_shadow_view_picks_and_draws_its_own_patches_from_a_list_sized_to_them() {
+    // Two children of 30,000 indices each below an exact root: every view picks the root alone, so
+    // each view's list holds a few patches' worth, not the tree's 60,006 indices.
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    world.cast_sun_shadows(3);
+    caster_with_tree(&mut world, root_and_two_children(0.0, 30_000));
+    world.record(true);
+    mock.replay(world.renderer.list(world.frame).words())
+        .unwrap();
+    let commands = world.commands();
+    let lists = cluster_lists(&commands);
+    // The camera's view and each of the three cascades has a list and draws of its own.
+    assert_eq!(lists.len(), 4, "{lists:?}");
+    let mut ids: Vec<u32> = lists.iter().map(|&(list, _, _)| list).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), 4, "each view has a list of its own: {lists:?}");
+    for &(_, bytes, _) in &lists {
+        assert!(bytes > 0 && bytes < 16 * 1024, "{lists:?}");
+    }
+    // Each view's pass draws its cluster mesh from its own draws.
+    let drawn: HashSet<u32> = commands
+        .iter()
+        .filter(|(op, _)| *op == Op::DrawIndexedIndirect)
+        .map(|(_, o)| o[0])
+        .collect();
+    for &(_, _, draws) in &lists {
+        assert!(
+            drawn.contains(&draws),
+            "no pass draws from {draws}: {lists:?} {drawn:?}"
+        );
+    }
+
+    // A coarse root, which no view's threshold passes near the caster, makes the camera's view
+    // pick the children: its list grows to hold them, and the frame records it again.
+    let mut world = World::new();
+    world.cast_sun_shadows(3);
+    caster_with_tree(&mut world, root_and_two_children(1.0e3, 30_000));
+    world.record(true);
+    let lists = cluster_lists(&world.commands());
+    assert!(
+        lists.iter().any(|&(_, bytes, _)| bytes >= 60_000 * 4),
+        "{lists:?}"
     );
 }

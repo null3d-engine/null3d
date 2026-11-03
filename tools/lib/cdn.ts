@@ -379,7 +379,9 @@ export function splitEntries(
 	);
 	const differ = differingFiles(
 		graph,
-		[...publicEntries].filter((path) => existsSync(join(out, path))),
+		// A public entry outside the folders of code, such as the level planner that the asset tool
+		// shares, names no build constant, so both entries share it.
+		[...publicEntries].filter((path) => existsSync(join(out, path)) && codeFolderOf(path) !== null),
 	);
 	const isFile = (path: string) =>
 		statSync(join(out, path), { throwIfNoEntry: false })?.isFile() === true;

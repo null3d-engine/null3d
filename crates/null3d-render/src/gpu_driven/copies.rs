@@ -15,9 +15,12 @@
 //! that it may pick, so a slice never falls short of the shader's writes however the two round
 //! the last bits of a distance.
 //!
-//! The count covers every source of a layout, not only the ones in view, so it reads no frustum.
-//! A bucket's slice is the largest count of any view that draws the layout, because the bucket
-//! table is one for all of them.
+//! A camera's count covers every source of a layout, not only the ones in view, so it reads no
+//! frustum. A shadow view picks its casters' levels in its own texels, so two cascades can place
+//! one caster in two levels. Each shadow view therefore counts only the casters that its frustum
+//! holds, with room to spare at its edge, so the casters of a near cascade do not take room in the
+//! levels that a far one picks for its own. A bucket's slice is the largest count of any view that
+//! draws the layout, because the bucket table is one for all of them.
 //!
 //! The count picks levels for every source in every frame, so it runs on the job workers: each
 //! thread counts its chunks of sources into a tally of its own, and the tallies add up to the
@@ -26,7 +29,7 @@
 use std::ops::Range;
 
 use null3d_core::cells::CellPosition;
-use null3d_core::culling::{NO_BUCKET, RowRanges, batch_ranges, row_center};
+use null3d_core::culling::{Frustum, NO_BUCKET, RowRanges, batch_ranges, row_center};
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::JobSystem;
@@ -41,7 +44,8 @@ use crate::levels::{StageWatches, key_level};
 
 /// How far from a switch distance a source counts toward both levels that it may pick, as a share
 /// of the distance. It dwarfs the difference that a CPU and a GPU can make of the same distance,
-/// and only the sources at a switch count twice.
+/// and only the sources at a switch count twice. A view that counts by its frustum grows each
+/// sphere by the same share, so a source at the frustum's edge counts.
 const SLACK: f32 = 1.0e-3;
 
 /// The sources that one job of the count takes: enough to outweigh handing the job out, and few
@@ -60,14 +64,17 @@ const fn with_spare_room(count: u32) -> u32 {
     count + count / 8
 }
 
-/// A view that draws a layout's buckets: the rule that picks its levels of detail, and the camera
-/// that its instances are placed relative to.
+/// A view that draws a layout's buckets: the rule that picks its levels of detail, the camera
+/// that its instances are placed relative to, and the frustum that bounds what it counts.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct CopyView {
     /// The view's rule for picking levels.
     pub rule: LevelRule,
     /// The camera that the view places its instances relative to.
     pub camera: CellPosition,
+    /// The frustum, relative to the camera, outside which the view counts no source, or `None` to
+    /// count every source.
+    pub frustum: Option<Frustum>,
 }
 
 /// The word of a bucket's record that holds its slice's capacity, the last one.
@@ -149,7 +156,7 @@ impl Layout {
             self.count_view(
                 scene,
                 batches,
-                view.rule,
+                view,
                 parity,
                 offsets.as_slice(),
                 &mut counts,
@@ -205,7 +212,7 @@ impl Layout {
         &self,
         scene: &SceneStorage,
         batches: &BatchTable,
-        rule: LevelRule,
+        view: &CopyView,
         parity: usize,
         cells: &[[f32; 4]],
         tallies: &mut [u32],
@@ -221,7 +228,7 @@ impl Layout {
                 // SAFETY: each thread writes only the tally of its own worker id, which is below
                 // the thread count that sized the tallies, and a thread runs one chunk at a time.
                 let tally = unsafe { shared.slice(worker.index() * stride, stride) };
-                self.count_sources(scene, batches, rule, parity, cells, sources, tally);
+                self.count_sources(scene, batches, view, parity, cells, sources, tally);
             },
         );
         let (counts, others) = tallies.split_at_mut(stride);
@@ -239,7 +246,7 @@ impl Layout {
         &self,
         scene: &SceneStorage,
         batches: &BatchTable,
-        rule: LevelRule,
+        view: &CopyView,
         parity: usize,
         cells: &[[f32; 4]],
         sources: Range<u32>,
@@ -261,7 +268,7 @@ impl Layout {
                 let center = row_center(&spheres, slots[source], cells, source);
                 self.count_source(
                     counts,
-                    rule,
+                    view,
                     home,
                     center,
                     spheres.radii[source],
@@ -299,7 +306,7 @@ impl Layout {
                 // around each row in place of its bucket's sphere.
                 self.count_source(
                     counts,
-                    rule,
+                    view,
                     home,
                     center,
                     spheres.radii[row],
@@ -312,16 +319,17 @@ impl Layout {
         }
     }
 
-    /// Counts one source's copies: the buckets of base bucket `home` that the rule may place it
-    /// in, for a source whose world bounding sphere is at `center` relative to the camera, with
+    /// Counts one source's copies: the buckets of base bucket `home` that `view`'s rule may place
+    /// it in, for a source whose world bounding sphere is at `center` relative to the camera, with
     /// the world radius `radius`, the local radius `local` and the threshold `bias`. `own` is true
     /// for a source that carries a bound of its own, as a batch whose rows move do, and false for
-    /// one that tests its bucket's sphere.
+    /// one that tests its bucket's sphere. A view with a frustum counts nothing for a source
+    /// outside it.
     #[allow(clippy::too_many_arguments)]
     fn count_source(
         &self,
         counts: &mut [u32],
-        rule: LevelRule,
+        view: &CopyView,
         home: u32,
         center: [f32; 3],
         radius: f32,
@@ -345,7 +353,14 @@ impl Layout {
         } else {
             self.buckets[home as usize].radius * scale
         };
-        let distance = rule.distance(center, radius);
+        let [x, y, z] = center;
+        if view.frustum.is_some_and(|frustum| {
+            !frustum.contains_sphere(x, y, z, radius * (1.0 + SLACK) + SLACK)
+        }) {
+            return;
+        }
+        let rule = view.rule;
+        let distance = rule.distances(center, radius);
         // A source at a switch distance counts toward both levels, and one inside a band toward
         // both levels' fade buckets, so the slices hold whatever the shader picks. One walk of the
         // source's levels picks at both edges of the slack.
@@ -356,8 +371,8 @@ impl Layout {
             home,
             scale,
             radius,
-            distance * (1.0 - SLACK),
-            distance * (1.0 + SLACK),
+            distance.scaled(1.0 - SLACK),
+            distance.scaled(1.0 + SLACK),
             bias,
             range,
         );
@@ -512,12 +527,16 @@ mod tests {
                 ..Bucket::default()
             },
         ];
-        let rule = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
+        let view = CopyView {
+            rule: LevelRule::new(1000.0, 1.0, false, 1.0, 0.0),
+            camera: CellPosition::default(),
+            frustum: None,
+        };
         let count = |own: bool| {
             let mut counts = [0u32; 2];
             layout.count_source(
                 &mut counts,
-                rule,
+                &view,
                 0,
                 [0.0, 0.0, 20.0],
                 2600.0,

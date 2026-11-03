@@ -427,7 +427,9 @@ impl Layout {
     /// no bucket, and the layout asks only for their pipelines. With a `prepass`, the
     /// scene's draws that the depth prepass draws get its pipelines too. The caller marks the
     /// layout built once the room it needs is made. While the motion pass draws into `motion`'s
-    /// targets, the scene's draws get their motion pipelines too.
+    /// targets, the scene's draws get their motion pipelines too. The scene's layout picks the
+    /// meshes that draw their trees of cluster patches; the casters' layout draws the trees of
+    /// `scene_trees`, the scene's, whose buffers the scene's upload makes.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn rebuild(
         &mut self,
@@ -444,6 +446,7 @@ impl Layout {
         key_counts: &mut KeyCounts,
         pick_targets: PassTargets,
         picking: bool,
+        scene_trees: &[ClusterBucket],
     ) -> Result<(), RecordError> {
         let (scene, batches) = (input.scene, input.batches);
         self.scene_rows = scene.capacity() + 1;
@@ -641,19 +644,25 @@ impl Layout {
         // object may pick one when every level of its set draws the base mesh's own vertices, which
         // the skin moves and the level then names from indices of its own.
         let levels = settings.levels();
-        // A mesh draws its tree of cluster patches in a camera's view, where one copy draws the
-        // bucket with triangles: the device draws many ranges in one call, and the tree's walk needs
-        // a single world matrix. A mesh of several parts draws its tree from a copy of its parts'
-        // vertices, only where flat values come from the first vertex. Such a bucket draws no whole
-        // level, because its patches already cover the mesh at the view's threshold. Elsewhere the
-        // mesh's whole levels draw.
+        // A mesh draws its tree of cluster patches in a camera's view and in each shadow view,
+        // where one copy draws the bucket with triangles: the device draws many ranges in one call,
+        // and the tree's walk needs a single world matrix. A mesh of several parts draws its tree
+        // from a copy of its parts' vertices, only where flat values come from the first vertex.
+        // Such a bucket draws no whole level, because its patches already cover the mesh at the
+        // view's threshold. Elsewhere the mesh's whole levels draw. A caster draws its tree where
+        // the scene's layout draws the same object's tree, whose buffers the scene's upload makes.
         let patches = settings.patches();
         let mut treed_keys: Vec<(BucketKey, u32)> = Vec::new();
-        if draws.multi_draw && drawn == Drawn::Scene {
+        if draws.multi_draw && matches!(drawn, Drawn::Scene | Drawn::Casters) {
             for slot in 0..scene.capacity() as usize + 1 {
                 let Some(key) = scene_key(slot) else {
                     continue;
                 };
+                if drawn == Drawn::Casters
+                    && !scene_trees.iter().any(|tree| tree.object == slot as u32)
+                {
+                    continue;
+                }
                 let single = key_counts
                     .binary_search_by_key(&key, |&(key, _)| key)
                     .is_ok_and(|at| key_counts[at].1 == 1);

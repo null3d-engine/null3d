@@ -47,6 +47,12 @@
 		"date": "2026-10-28",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
 	},
+	"chromium-swiftshader/compat/cluster-shadows.png": {
+		"test": "cluster-shadows",
+		"tier": "compat",
+		"date": "2026-11-03",
+		"reason": "drawn on the Mac's SwiftShader because the branch is not pushed for a CI run; a CI drawing replaces it"
+	},
 	"chromium-swiftshader/compat/creek-render-scale-opening.png": {
 		"test": "creek-render-scale-opening",
 		"tier": "compat",
@@ -113,6 +119,12 @@
 		"date": "2026-10-29",
 		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
 	},
+	"chromium-swiftshader/compat/demo-ocean.png": {
+		"test": "demo-ocean",
+		"tier": "compat",
+		"date": "2026-10-28",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the demo; the branch's CI run has not drawn it yet"
+	},
 	"chromium-swiftshader/compat/demo-post-effects.png": {
 		"test": "demo-post-effects",
 		"tier": "compat",
@@ -137,11 +149,11 @@
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
 	},
-	"chromium-swiftshader/compat/demo-ocean.png": {
-		"test": "demo-ocean",
+	"chromium-swiftshader/compat/demo-water.png": {
+		"test": "demo-water",
 		"tier": "compat",
-		"date": "2026-10-28",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the demo; the branch's CI run has not drawn it yet"
+		"date": "2026-10-31",
+		"reason": "Held frames now draw the water's reflection. Nothing is pushed yet, so CI's own drawing replaces these."
 	},
 	"chromium-swiftshader/compat/feature-instances-shadow.png": {
 		"test": "feature-instances-shadow",
@@ -346,6 +358,12 @@
 		"tier": "webgl2",
 		"date": "2026-10-28",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/webgl2/cluster-shadows.png": {
+		"test": "cluster-shadows",
+		"tier": "webgl2",
+		"date": "2026-11-03",
+		"reason": "drawn on the Mac's SwiftShader because the branch is not pushed for a CI run; a CI drawing replaces it"
 	},
 	"chromium-swiftshader/webgl2/creek-render-scale-opening.png": {
 		"test": "creek-render-scale-opening",
@@ -659,6 +677,12 @@
 		"date": "2026-10-28",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
 	},
+	"chromium-swiftshader/webgpu/cluster-shadows.png": {
+		"test": "cluster-shadows",
+		"tier": "webgpu",
+		"date": "2026-11-03",
+		"reason": "drawn on the Mac's SwiftShader because the branch is not pushed for a CI run; a CI drawing replaces it"
+	},
 	"chromium-swiftshader/webgpu/creek-render-scale-opening.png": {
 		"test": "creek-render-scale-opening",
 		"tier": "webgpu",
@@ -725,6 +749,12 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
+	"chromium-swiftshader/webgpu/demo-ocean.png": {
+		"test": "demo-ocean",
+		"tier": "webgpu",
+		"date": "2026-10-28",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the demo; the branch's CI run has not drawn it yet"
+	},
 	"chromium-swiftshader/webgpu/demo-post-effects.png": {
 		"test": "demo-post-effects",
 		"tier": "webgpu",
@@ -748,12 +778,6 @@
 		"tier": "webgpu",
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
-	},
-	"chromium-swiftshader/webgpu/demo-ocean.png": {
-		"test": "demo-ocean",
-		"tier": "webgpu",
-		"date": "2026-10-28",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the demo; the branch's CI run has not drawn it yet"
 	},
 	"chromium-swiftshader/webgpu/feature-instances-shadow.png": {
 		"test": "feature-instances-shadow",
@@ -940,11 +964,5 @@
 		"tier": "webgpu",
 		"date": "2026-10-30",
 		"reason": "No CI run has drawn this picture yet: run 41006111918 drew the three weather pictures and lost them when its shard reached the job's time limit, before the guard let a timed-out shard upload. This Mac's SwiftShader drew these three, and the next CI drawing of them replaces them."
-	},
-	"chromium-swiftshader/compat/demo-water.png": {
-		"test": "demo-water",
-		"tier": "compat",
-		"date": "2026-10-31",
-		"reason": "Held frames now draw the water's reflection. Nothing is pushed yet, so CI's own drawing replaces these."
 	}
 }
