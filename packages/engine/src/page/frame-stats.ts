@@ -339,6 +339,7 @@ const NO_RECORDS: RingRecords = {
 	phases: PHASE_NAMES.map(() => []),
 	counters: COUNTER_NAMES.map(() => []),
 	passRoles: Array.from({ length: GPU_TIMED_PASSES }, () => []),
+	later: [],
 };
 
 /** The sum of a counter's values over the frames. */
@@ -482,6 +483,16 @@ function frameParts(records: RingRecords, r: number): { name: string; ms: number
 		}
 		parts.push({ name, ms });
 		parted += ms;
+	}
+	// The passes after the seven share one span, so the seventh keeps its own time and the rest
+	// have a part that names no step.
+	if (passes > GPU_TIMED_PASSES) {
+		const later = records.later[r] ?? UNTIMED;
+		if (later === UNTIMED) whole = false;
+		else {
+			parts.push({ name: 'later passes', ms: later });
+			parted += later;
+		}
 	}
 	if (passes > 1 && whole)
 		parts.push({ name: 'between passes', ms: Math.max(0, (records.busy[r] ?? 0) - parted) });

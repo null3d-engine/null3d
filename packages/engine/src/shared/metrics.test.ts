@@ -394,13 +394,15 @@ describe('gpuPassStats', () => {
 			frameMs: number;
 			/** Each pass's label, in the order of the frame's passes. */
 			roles?: number[];
+			/** The figure of the passes after those timed one by one, where the frame has any. */
+			later?: number;
 		}[],
 	) {
 		const buffer = createMetricsBuffer(false, 0);
 		const reader = new MetricsReader(buffer);
 		reader.begin();
 		const gpu = new FrameRecorder(buffer, Role.Gpu);
-		frames.forEach(({ copies, passes, render, frameMs, roles }, index) => {
+		frames.forEach(({ copies, passes, render, frameMs, roles, later }, index) => {
 			gpu.begin(index + 1);
 			let renderPasses = 0;
 			render.forEach((isRender, pass) => {
@@ -412,6 +414,7 @@ describe('gpuPassStats', () => {
 				gpu.gpuTime(1 + pass, ms);
 				gpu.gpuPassRole(pass, roles?.[pass] ?? 0);
 			});
+			gpu.gpuLater(passes.length > GPU_TIMED_PASSES ? (later ?? 0) : UNTIMED);
 			gpu.commit(frameMs);
 		});
 		reader.end();
@@ -560,14 +563,45 @@ describe('gpuPassStats', () => {
 	it('names only the passes timed alone, and gives null without GPU records', () => {
 		const many = Array.from({ length: GPU_TIMED_PASSES + 2 }, () => 1);
 		const parts = gpuPassStats(
-			gpuRecords([{ copies: 0, passes: many, render: many.map(() => true), frameMs: 20 }]),
+			gpuRecords([
+				{ copies: 0, passes: many, render: many.map(() => true), frameMs: 20, later: 2 },
+			]),
 		);
 		expect(parts?.map((part) => part.name)).toEqual([
 			'copies',
 			...many.slice(0, GPU_TIMED_PASSES).map((_, pass) => `render ${pass + 1}`),
+			'later passes',
 			'between passes',
 		]);
 		expect(gpuPassStats(gpuRecords([]))).toBeNull();
+	});
+
+	it('keeps the passes after the seventh apart from the seventh', () => {
+		const own = [0.5, 1, 1.5, 2, 2.5, 3, 4];
+		const parts = gpuPassStats(
+			gpuRecords([
+				{
+					copies: 0.25,
+					passes: [...own, 5, 6],
+					render: Array.from({ length: 9 }, () => true),
+					frameMs: 30,
+					later: 11,
+				},
+			]),
+		);
+		const byName = new Map(parts?.map((part) => [part.name, part.ms.median]));
+		// The seventh pass reports only its own time, and the two after it share one figure.
+		expect(byName.get('render 7')).toBe(4);
+		expect(byName.get('later passes')).toBe(11);
+		expect(parts?.map((part) => part.name)).toEqual([
+			'copies',
+			...own.map((_, pass) => `render ${pass + 1}`),
+			'later passes',
+			'between passes',
+		]);
+		// The parts still cover the frame: the gap between them is what is left.
+		const ownMs = own.reduce((sum, ms) => sum + ms, 0);
+		expect(byName.get('between passes')).toBeCloseTo(30 - (0.25 + ownMs + 11), 9);
 	});
 });
 

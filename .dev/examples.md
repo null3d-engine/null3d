@@ -886,9 +886,9 @@ and a hero car with two screens.
   runs are in [tested devices](tested-devices.md).
 - **The split, from switched-off pages.** A second run left one part of the scene out per page at
   Low. It does so because the engine's per-pass GPU times do not split this frame. A tile GPU
-  overlaps the passes, and the timer times seven of them alone. So the named parts of one frame can
-  add up to more than the whole frame. One page repeats the first page, so a device's own drift
-  shows beside the parts.
+  overlaps the passes, and the timer times seven of them alone. The passes after those share one
+  figure, named `later passes`. So the named parts of one frame can add up to more than the whole
+  frame. One page repeats the first page, so a device's own drift shows beside the parts.
 
   The iPad holds its display's rate at Low on every WebGL2 page after the first. The first drew
   58.6 frames a second and the rest drew 59.6 to 59.8, the repeated page among them. Its WebGPU
