@@ -3,17 +3,22 @@
 // primitive's whole mesh.
 //
 // NULL3D_clusters, on a primitive:
-//   { "indices": <accessor>, "bounds": <accessor>, "patches": <accessor>, "root": <number> }
+//   { "indices": <accessor>, "bounds": <accessor>, "patches": <accessor>, "root": <number>,
+//     "version": <number> }
 // `indices` is a scalar accessor of unsigned 32-bit integers that holds every patch's triangles
 // one patch after another, as indices into the primitive's own vertex streams. `bounds` is a
 // vector-of-four accessor of 32-bit floats that holds each patch's bounding sphere: its centre
-// and its radius. `patches` is a vector-of-four accessor of unsigned 32-bit integers that holds
-// each patch's first index, its index count, the patch of its parent plus one (0 for the root),
-// and its error as the bits of a 32-bit float. `root` is the patch index of the tree's root.
+// and its radius. A leaf's sphere holds its triangles, and every other patch's sphere holds its
+// children's spheres. `patches` is a vector-of-four accessor of unsigned 32-bit integers that
+// holds each patch's first index, its index count, the patch of its parent plus one (0 for the
+// root), and its error as the bits of a 32-bit float. A patch's error is at least its children's.
+// `root` is the patch index of the tree's root. `version` is the layout's version
+// (`NULL3D_CLUSTERS_VERSION` below).
 //
-// A patch draws while its own error passes the view's threshold and the error of its parent does
-// not, so the patches that draw always cover the primitive once, however near or far the camera
-// is. A patch with no children is exact geometry and has an error of 0.
+// A patch draws while its own error passes the view's threshold at its own sphere, and its
+// parent's error does not pass at the parent's sphere. Because spheres and errors never shrink
+// toward the root, the patches that draw always cover the primitive once, however near or far
+// the camera is. A patch with no children is exact geometry and has an error of 0.
 //
 // glTF-Transform drops extensions it does not know, so the tool reads and writes this one itself.
 import { Extension, ExtensionProperty, PropertyType } from '@gltf-transform/core';
@@ -21,6 +26,12 @@ import { Extension, ExtensionProperty, PropertyType } from '@gltf-transform/core
 /** @import { Accessor, Primitive, ReaderContext, WriterContext } from '@gltf-transform/core' */
 
 export const NULL3D_CLUSTERS = 'NULL3D_clusters';
+
+/**
+ * The version of the tree's layout that the tool writes. A tree without one is version 1, whose
+ * spheres held their own triangles alone, and the engine draws its mesh whole.
+ */
+export const NULL3D_CLUSTERS_VERSION = 2;
 
 /**
  * A primitive's tree of cluster patches.
@@ -148,6 +159,7 @@ export class Null3dClusters extends Extension {
 				bounds: context.accessorIndexMap.get(bounds),
 				patches: context.accessorIndexMap.get(patches),
 				root: clusters.getRoot(),
+				version: NULL3D_CLUSTERS_VERSION,
 			};
 		}
 		return this;

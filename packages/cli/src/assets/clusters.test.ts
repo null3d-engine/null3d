@@ -5,13 +5,20 @@ import { join } from 'node:path';
 import { type Accessor, Document, NodeIO } from '@gltf-transform/core';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { parseGltf, readContainer } from '../../../engine/src/scene/gltf-parse.ts';
-import { clustersOf, NULL3D_CLUSTERS, Null3dClusters } from './cluster-extension.js';
+import {
+	clustersOf,
+	NULL3D_CLUSTERS,
+	NULL3D_CLUSTERS_VERSION,
+	Null3dClusters,
+} from './cluster-extension.js';
 import {
 	buildClusterFixture,
 	buildStagedClusterModel,
+	buildTreeFixtures,
 	CLUSTER_FILE,
 	CLUSTER_STAGED_FILE,
 	MODELS_DIR,
+	TREES_DIR,
 } from './cluster-fixture.js';
 import {
 	BAND_MIN_PATCHES,
@@ -207,14 +214,14 @@ describe('the tree of a large mesh', () => {
 		expect(plan.treeTriangles).toBeLessThan(plan.triangles * 2.6);
 	});
 
-	it('raises the error from every patch to its parent', async () => {
+	it('never lowers the error from a patch to its parent', async () => {
 		const { plan } = await only();
 		const patches = readTree(plan);
 		for (const [k, patch] of patches.entries()) {
 			expect(Number.isFinite(patch.error)).toBe(true);
 			expect(patch.error).toBeGreaterThanOrEqual(0);
 			if (patch.parent >= 0)
-				expect(entry(patches, patch.parent).error).toBeGreaterThan(patch.error);
+				expect(entry(patches, patch.parent).error).toBeGreaterThanOrEqual(patch.error);
 			else expect(k).toBe(plan.root);
 		}
 		const root = entry(patches, plan.root);
@@ -274,6 +281,25 @@ describe('the tree of a large mesh', () => {
 		expect(outside).toEqual([]);
 	});
 
+	it("holds each patch's sphere in its parent's, as 32-bit floats", async () => {
+		const { plan } = await only();
+		const patches = readTree(plan);
+		/** @type {number[]} */
+		const loose = [];
+		for (const [k, patch] of patches.entries()) {
+			if (patch.parent < 0) continue;
+			const at = (place: number, c: number) => value(plan.bounds, place * 4 + c);
+			const gap = Math.hypot(
+				at(k, 0) - at(patch.parent, 0),
+				at(k, 1) - at(patch.parent, 1),
+				at(k, 2) - at(patch.parent, 2),
+			);
+			// The sphere that the file stores rounds outward, so it needs no slack.
+			if (gap + at(k, 3) > at(patch.parent, 3)) loose.push(k);
+		}
+		expect(loose).toEqual([]);
+	});
+
 	it('gives a mesh of few triangles, many copies, or a cut material no tree', async () => {
 		const tiny = documentOf({
 			positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
@@ -307,7 +333,9 @@ describe('the tree of a large mesh', () => {
 				bytes.subarray(20, 20 + new DataView(bytes.buffer).getUint32(12, true)),
 			),
 		);
-		expect(json.meshes[0].primitives[0].extensions[NULL3D_CLUSTERS].root).toBe(plan.root);
+		const written = json.meshes[0].primitives[0].extensions[NULL3D_CLUSTERS];
+		expect(written.root).toBe(plan.root);
+		expect(written.version).toBe(NULL3D_CLUSTERS_VERSION);
 	});
 
 	it('adds the trees up for the report', async () => {
@@ -452,6 +480,17 @@ describe('the tree of a large mesh', () => {
 		scaledBudget(180_000),
 	);
 
+	it(
+		"writes the trees that the engine's walk test reads, byte for byte",
+		async () => {
+			for (const [name, bytes] of await buildTreeFixtures()) {
+				const file = readFileSync(join(TREES_DIR, name));
+				expect(Buffer.from(bytes).equals(file), name).toBe(true);
+			}
+		},
+		scaledBudget(180_000),
+	);
+
 	it('writes the tree where the engine reads it', async () => {
 		const { doc, plans } = await planned;
 		storeClusters(doc, plans);
@@ -464,6 +503,7 @@ describe('the tree of a large mesh', () => {
 		);
 		const patches = parsed.meshes[0]?.primitives[0]?.patches;
 		expect(patches?.root).toBe(plan.root);
+		expect(patches?.current).toBe(true);
 		expect(Array.from(patches?.indices ?? [])).toEqual(Array.from(plan.indices));
 		expect(Array.from(patches?.words ?? [])).toEqual(Array.from(plan.patches));
 		expect(Array.from(patches?.bounds ?? [])).toEqual(Array.from(plan.bounds));
