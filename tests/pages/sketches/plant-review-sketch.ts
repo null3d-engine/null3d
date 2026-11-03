@@ -297,7 +297,10 @@ export default defineSketch(async (ctx) => {
 	// would crush and saturate the sky and the foliage that the reference shows as they are.
 	post.set({ toneMapping: 'none' });
 	const notes: string[] = [];
-	const placeholders = QUERY.placeholders ?? !isSpeciesId(QUERY.species);
+	// A registered species grows through its own stages, with a stand-in only for each stage that is
+	// not built yet; any other id, or the query's `placeholders`, grows the stand-in of every stage.
+	const placeholders: boolean | 'missing' =
+		QUERY.placeholders ?? (isSpeciesId(QUERY.species) ? 'missing' : true);
 	const module = await loadSpeciesOrStandIn(QUERY.species);
 	const record = module.record;
 	const kit = await prepareSpecies(ctx, module, {
@@ -600,17 +603,15 @@ export default defineSketch(async (ctx) => {
 	// A stand-in kit's matte is plain black materials; a real kit's is the plant shader's own, which
 	// keeps its quantised parts, cut-outs and sway.
 	const plantLook =
-		MATTE && kit.placeholders
+		MATTE && kit.placeholders === true
 			? matteMaterials(ctx, kit)
 			: plantMaterials(ctx, kit, { ...(wind && { wind: wind.field }), matte: MATTE });
-	let near: NearPool | undefined;
-	if (QUERY.lod === undefined || QUERY.lod === 0) {
-		try {
-			near = createNearPool(ctx, { placeholders });
-		} catch (error) {
-			notes.push(`no near pool: ${(error as Error).message}`);
-		}
-	}
+	// A stand-in kit draws through the stand-in near pool. A real kit's one plant stands at a fixed
+	// place, so its placement composes its shoot rows once, with no pool.
+	const near: NearPool | undefined =
+		placeholders === true && (QUERY.lod === undefined || QUERY.lod === 0)
+			? createNearPool(ctx, { placeholders: true })
+			: undefined;
 	const place = (asset: PlantAsset, at: V3, far?: readonly FarPlant[]) =>
 		placePlants(
 			ctx,
@@ -640,7 +641,7 @@ export default defineSketch(async (ctx) => {
 		(QUERY.lod === undefined || QUERY.lod === 0) &&
 		main.levels[0].parts.every((part) => part.name === 'wood') &&
 		main.shoots.count > 0 &&
-		placeholders
+		placeholders === true
 	)
 		notes.push('the stand-in near pool draws no shoots, so the nearest level shows wood and cards');
 
@@ -709,7 +710,7 @@ export default defineSketch(async (ctx) => {
 	page.post('plant-review', facts);
 
 	// A stand-in's matte materials take no wind.
-	const windMaterials = MATTE && kit.placeholders ? [] : Object.values(plantLook);
+	const windMaterials = MATTE && kit.placeholders === true ? [] : Object.values(plantLook);
 	if (!wind && !near) return {};
 	return {
 		onUpdate() {

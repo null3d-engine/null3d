@@ -2,7 +2,7 @@
 // engine's transcoder worker the first time a page prepares it; its kit built in a job worker; and
 // its card atlas, its records and its near table uploaded. Nothing loads at import time, and a page
 // fetches the files of the species it prepares and of no other. A page that asks for
-// `placeholders` gets the stand-in kit of render/stand-in.ts, which loads no texture file.
+// `placeholders: true` gets the stand-in kit of render/stand-in.ts, which loads no texture file.
 import type { QualityPreset, SketchContext, Texture } from '@null3d/engine';
 import type { PlantAsset, SpeciesKitData } from '../asset';
 import type { PlantByteCache } from '../core/cache';
@@ -66,8 +66,11 @@ export interface SpeciesKit extends SpeciesKitData {
 export interface PrepareOptions {
 	/** The mesh tier; the preset's by default. */
 	readonly detail?: Detail;
-	/** Grow the stand-in of every stage. */
-	readonly placeholders?: boolean;
+	/**
+	 * Grow the stand-in of every stage with `true`, loading no texture file; or with `'missing'`,
+	 * load the species' textures and grow a stand-in only for each stage that is not built yet.
+	 */
+	readonly placeholders?: boolean | 'missing';
 	/**
 	 * A store of bytes that keeps the kit, its variants and its far bakes across visits, such as the
 	 * engine's cache of derived data. Without one, they are kept in memory for the visit alone.
@@ -274,12 +277,13 @@ export async function prepareSpecies(
 	module: SpeciesModule,
 	options?: PrepareOptions,
 ): Promise<SpeciesKit> {
-	if (options?.placeholders) return standInPrepare(ctx, module, options);
+	if (options?.placeholders === true) return standInPrepare(ctx, module, options);
 	const set = textureSetFor(ctx.quality.preset);
 	const [loaded, kit] = await Promise.all([
 		loadTextureSet(ctx, module.textures, set),
 		buildKit(module, {
 			detail: options?.detail ?? ctx.quality.preset,
+			...(options?.placeholders === 'missing' && { placeholders: 'missing' as const }),
 			...(options?.cache && { cache: options.cache }),
 		}),
 	]);
