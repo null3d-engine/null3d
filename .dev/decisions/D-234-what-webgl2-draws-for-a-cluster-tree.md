@@ -42,11 +42,14 @@ its levels.
 The route with `WEBGL_multi_draw`:
 
 - After a view's culling, the job workers walk each cluster mesh's tree, for the buckets whose
-  source list holds that one object. A patch draws where the patch's own error passes the view's
-  threshold and the error of the patch above it does not, at the distance to the patch's own
-  sphere. The walk moves each patch's sphere by the object's matrix and the cell's offset from the
+  source list holds that one object. A patch draws where its own error passes the view's
+  threshold at the distance to its own sphere. The error of the patch above it must not pass at
+  the distance to that patch's sphere. A parent's sphere holds its children's, so the patches
+  that draw cover the mesh once ([D-213](D-213-cluster-levels.md#addendum-nested-spheres-and-errors-that-do-not-compound)).
+  The walk moves each patch's sphere by the object's matrix and the cell's offset from the
   camera, and reads the view's rule. It is the same rule as the compute pass
-  (`cluster_cull.wgsl`).
+  (`cluster_cull.wgsl`). The walk lives in one place, `PatchTree::walk`, which the count of a
+  band's picks reads too.
 - A patch is a range of the tree's index list. The chosen ranges sort by their first index, and
   ranges that are neighbours in the list merge into one, so a view records fewer ranges.
 - Each range is one record of a multi-draw call, which carries at most 256 records
@@ -196,7 +199,9 @@ records. No path is dropped and no route waits on a gated feature.
   frame does not pause to upload triangles.
 - The job workers' walk and the compute pass keep one rule in two places. A change to the
   threshold, the source's matrix or the parent test in one must change the other, or a device
-  draws a different set of patches from another's.
+  draws a different set of patches from another's. `tests/cluster_cover.rs` in the render crate
+  guards the pair. It applies the shader's rule, line for line, to the pass's table of two real
+  trees, and pins the shader's lines. Its picks must match the walk's in every view.
 - The tree's index buffer costs about two bytes for each index of the tree, and the fallback levels
   grow the file.
 - A one-row instance batch draws whole levels on both paths, even though one copy draws it. The

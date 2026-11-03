@@ -30,10 +30,7 @@ export const CLUSTER_ROOT_TRIANGLES = 32;
 /** The share of a group's triangles that its patch keeps. */
 const CLUSTER_SHARE = 0.5;
 
-/** A group's patch errs by at least this many times its children's error. */
-const ERROR_GROWTH = 1.5;
-
-/** The part of the mesh's longest side that a patch errs by at least, which keeps errors rising. */
+/** The part of the mesh's longest side that a patch above the leaves errs by at least. */
 const LEAST_ERROR = 1e-6;
 
 /** The most copies of a mesh that still gets a tree: many copies cost more than they save. */
@@ -66,8 +63,10 @@ const TRIES = /** @type {const} */ ([
  * @typedef {object} Patch
  * @property {Patch[]} children The patches that this one replaces.
  * @property {Uint32Array} indices The patch's triangles, as indices into the mesh's vertices.
- * @property {number} error The largest distance between the patch's surface and the mesh's, in
- *   the units of the mesh's stored positions, plus its children's errors.
+ * @property {number} error The largest distance between the patch's surface and its children's, in
+ *   the units of the mesh's stored positions, and at least its children's errors.
+ * @property {number[]} sphere The patch's centre and radius, as 32-bit floats: around its own
+ *   triangles for a leaf, and around its children's spheres for every other patch.
  * @property {number} parent The patch's place in the tree, 0 for the root until a walk fills in
  *   the places of its children.
  */
@@ -191,12 +190,69 @@ function unionIndices(children) {
 }
 
 /**
+ * The 32-bit float nearest to `radius` that is at least `radius`, so a sphere that the file stores
+ * never shrinks below the one that the build measured. A radius is never below 0, so the next float
+ * up is the one whose bits come next.
+ *
+ * @param {number} radius
+ */
+function radiusUp(radius) {
+	const stored = Math.fround(radius);
+	if (stored >= radius) return stored;
+	const view = new DataView(new ArrayBuffer(4));
+	view.setFloat32(0, stored, true);
+	view.setUint32(0, view.getUint32(0, true) + 1, true);
+	return view.getFloat32(0, true);
+}
+
+/**
+ * The sphere around a group's spheres: the middle of the box around them, and the distance to the
+ * farthest point of any of them, as 32-bit floats that still enclose them. A parent's sphere then
+ * holds each child's, so a camera is never nearer the child than the parent, and a parent whose
+ * error passes a view's threshold leaves every child below it passing too.
+ *
+ * @param {number[][]} spheres
+ */
+function sphereAround(spheres) {
+	if (spheres.length === 1) return [.../** @type {number[]} */ (spheres[0])];
+	const centre = [0, 1, 2].map((k) => {
+		let low = Infinity;
+		let high = -Infinity;
+		for (const sphere of spheres) {
+			const middle = /** @type {number} */ (sphere[k]);
+			const radius = /** @type {number} */ (sphere[3]);
+			low = Math.min(low, middle - radius);
+			high = Math.max(high, middle + radius);
+		}
+		return Math.fround((low + high) / 2);
+	});
+	let radius = 0;
+	for (const sphere of spheres) {
+		const reach =
+			Math.hypot(
+				/** @type {number} */ (sphere[0]) - /** @type {number} */ (centre[0]),
+				/** @type {number} */ (sphere[1]) - /** @type {number} */ (centre[1]),
+				/** @type {number} */ (sphere[2]) - /** @type {number} */ (centre[2]),
+			) + /** @type {number} */ (sphere[3]);
+		radius = Math.max(radius, reach);
+	}
+	return [...centre, radiusUp(radius)];
+}
+
+/**
  * A patch that simplifies its children's triangles toward half of them, under no error limit: the
  * patch's own error is measured and stored, and the rule draws it only where that error passes the
  * view's threshold. The patch keeps its group's border in place, so a patch that draws beside a
  * finer patch still meets it.
  *
- * A group that no way simplifies keeps its children's triangles, and draws what they draw.
+ * Of the ways that reach the target, or come within half the cut of it, the patch keeps the one
+ * of least error, as the whole levels do. When none comes that near, it keeps the one with the
+ * fewest triangles. A group that no way simplifies keeps its children's triangles, and draws what
+ * they draw.
+ *
+ * The patch's error is the larger of its own simplification's and its children's, so errors never
+ * fall from a patch to its parent, and its sphere holds its children's. Together they let a view
+ * test each patch and its parent apart and still draw every part of the mesh once.
  *
  * @param {PlanningList} list
  * @param {Patch[]} children
@@ -206,6 +262,7 @@ function unionIndices(children) {
 function simplifyPatch(list, children, side) {
 	const input = unionIndices(children);
 	const target = Math.floor((input.length / 3) * CLUSTER_SHARE) * 3;
+	const enough = (input.length * (1 + CLUSTER_SHARE)) / 2;
 	const childError = children.reduce((most, child) => Math.max(most, child.error), 0);
 	/** @type {{ indices: Uint32Array, error: number } | undefined} */
 	let best;
@@ -226,8 +283,9 @@ function simplifyPatch(list, children, side) {
 			if (simplified.length === 0) continue;
 			const better =
 				!best ||
-				simplified.length < best.indices.length ||
-				(simplified.length === best.indices.length && error < best.error);
+				(simplified.length <= enough
+					? best.indices.length > enough || error < best.error
+					: best.indices.length > enough && simplified.length < best.indices.length);
 			if (better) best = { indices: Uint32Array.from(simplified), error };
 		}
 	}
@@ -235,7 +293,8 @@ function simplifyPatch(list, children, side) {
 	return {
 		children,
 		indices: patch.indices,
-		error: Math.max(childError + patch.error, childError * ERROR_GROWTH, side * LEAST_ERROR),
+		error: Math.max(childError, patch.error, side * LEAST_ERROR),
+		sphere: sphereAround(children.map((child) => child.sphere)),
 		parent: 0,
 	};
 }
@@ -254,7 +313,7 @@ function leafPatch(list, triangles) {
 			indices[t * 3 + k] = /** @type {number} */ (
 				list.indices[/** @type {number} */ (triangles[t]) * 3 + k]
 			);
-	return { children: [], indices, error: 0, parent: 0 };
+	return { children: [], indices, error: 0, sphere: sphereOf(list.positions, indices), parent: 0 };
 }
 
 /**
@@ -294,7 +353,8 @@ function buildTree(list, side) {
 }
 
 /**
- * The sphere around a patch: the middle of its box, and the distance to its farthest vertex.
+ * The sphere around a patch's own triangles: the middle of their box, and the distance to their
+ * farthest vertex, as 32-bit floats that still enclose every vertex.
  *
  * @param {Float32Array} positions
  * @param {Uint32Array} indices
@@ -312,7 +372,7 @@ function sphereOf(positions, indices) {
 	const middle = (k) => {
 		const first = /** @type {number} */ (low[k]);
 		const second = /** @type {number} */ (high[k]);
-		return (first + second) / 2;
+		return Math.fround((first + second) / 2);
 	};
 	const centre = [middle(0), middle(1), middle(2)];
 	let radius = 0;
@@ -322,7 +382,7 @@ function sphereOf(positions, indices) {
 		const dz = /** @type {number} */ (positions[v * 3 + 2]) - /** @type {number} */ (centre[2]);
 		radius = Math.max(radius, Math.hypot(dx, dy, dz));
 	}
-	return [...centre, radius];
+	return [...centre, radiusUp(radius)];
 }
 
 /**
@@ -457,7 +517,7 @@ function planPatch(prim) {
 	for (let k = 0; k < order.length; k++) {
 		const patch = /** @type {Patch} */ (order[k]);
 		patch.parent = k;
-		bounds.set(sphereOf(list.positions, patch.indices), k * 4);
+		bounds.set(patch.sphere, k * 4);
 		patches[k * 4] = at;
 		patches[k * 4 + 1] = patch.indices.length;
 		patches[k * 4 + 3] = floatBits(patch.error);
