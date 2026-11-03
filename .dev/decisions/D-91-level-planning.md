@@ -149,7 +149,7 @@ Settings:
 
 ## Consequences
 
-- The planner lives in `packages/engine/levels/planner.js`, a plain module that the engine exports as `@null3d/engine/levels-planner`. The asset tool runs it from `packages/cli/src/assets/levels.js`, which reads a file's accessors and writes the levels, and the engine runs it on its job workers for meshes made in code ([D-306](D-306-runtime-levels.md)). Both hand it meshoptimizer's simplifier of the pinned version, so one mesh gets one set of levels. `dedup.js` holds the merging. The command and the Vite plugin document `--lod`'s rule, and take `--simplify` and `--simplify-error`.
+- The planner lives in `packages/engine/levels/planner.js`, a plain module that the engine exports as `@null3d/engine/levels-planner`. The asset tool runs it from `packages/cli/src/assets/levels.js`, which reads a file's accessors and writes the levels, and the engine runs it on its job workers for meshes made in code ([D-310](D-310-runtime-levels.md)). Both hand it meshoptimizer's simplifier of the pinned version, so one mesh gets one set of levels. `dedup.js` holds the merging. The command and the Vite plugin document `--lod`'s rule, and take `--simplify` and `--simplify-error`.
 - `docs/guides/assets-pipeline.md`, `docs/cli/null3d.md` and `docs/concepts/lod.md` (experimental) describe the levels and the stored error.
 - The engine boxes a loaded skinned model as its joints place it at rest ([D-93](D-93-skinned-meshes-in-batches.md)). A box from the node alone would make the Knight's bounds about 16,000 units wide.
 - M2-I4's screen-error rule reads `NULL3D_lod_error`.

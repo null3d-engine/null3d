@@ -1,4 +1,4 @@
-# D-306: Meshes made in code plan their levels on the job workers
+# D-310: Meshes made in code plan their levels on the job workers
 
 Status: decided and built: the shared planner, `mesh.buildLevels`, the automatic levels at a mesh's first draw with the `levels` option, and their guards, on WebGPU and WebGL2. Pending: the owner's review of the thresholds, and the adoption by the add-ons and demos that set levels by hand today. Task: none.
 
