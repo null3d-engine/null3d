@@ -191,11 +191,33 @@ const TEXTURE_BY_NUMBER: Readonly<Record<number, SlotRule>> = {
 	},
 };
 
-/** The season a still's name asks for, if it names one. */
-function seasonOf(name: string): Partial<PlantReviewQuery> {
-	if (/blossom|flower/.test(name)) return { season: 'blossom' };
-	if (/autumn/.test(name)) return { season: 'autumn' };
-	if (/winter|bare/.test(name)) return { season: 'winter' };
+/**
+ * Words that place a still in a season: flowers in blossom, ripe fruit in autumn, a leafless plant in
+ * winter. Cones are left out, since a conifer carries them all year.
+ */
+const SEASON_WORDS: readonly (readonly [RegExp, NonNullable<PlantReviewQuery['season']>])[] = [
+	[/blossom|flower|catkin/, 'blossom'],
+	[/autumn|acorn|fruit|berr|\bnuts?\b|\bhips?\b|\bhaws?\b|ripe/, 'autumn'],
+	[/winter|\bbare\b|leafless/, 'winter'],
+];
+
+/** The slots that show a season of their own: flowers or fruit, and the species' extra view. */
+const SEASON_SLOTS: ReadonlySet<number> = new Set([19, 20]);
+
+/**
+ * The season a still shows, if it shows one: the one its name's words give, else, for a slot that
+ * shows a season of its own, the one its index row's "what it shows" cell gives. Other stills' rows
+ * mention seasons in passing, so only their names count.
+ */
+function seasonOf(
+	number: number,
+	name: string,
+	shows: string | undefined,
+): Partial<PlantReviewQuery> {
+	const texts = [name.replace(/-/g, ' ')];
+	if (SEASON_SLOTS.has(number) && shows) texts.push(shows.toLowerCase());
+	for (const text of texts)
+		for (const [words, season] of SEASON_WORDS) if (words.test(text)) return { season };
 	return {};
 }
 
@@ -208,8 +230,13 @@ function textureRule(number: number, name: string): SlotRule {
 	return TEXTURE_BY_NUMBER[26] as SlotRule;
 }
 
-/** The slot of a numbered still or texture source, or undefined for any other file. */
-export function classifySlot(file: string): Slot | undefined {
+/**
+ * The slot of a numbered still or texture source, or undefined for any other file.
+ *
+ * @param file The file's name.
+ * @param shows The "what it shows" cell of its index row, which may give its season.
+ */
+export function classifySlot(file: string, shows?: string): Slot | undefined {
 	const match = /^(\d\d)-(.+)\.(png|jpe?g|webp)$/i.exec(file);
 	if (!match) return undefined;
 	const number = Number(match[1]);
@@ -229,7 +256,8 @@ export function classifySlot(file: string): Slot | undefined {
 		notes.push('a young form: the variant grows the mature plant');
 	else if (number >= 29)
 		notes.push('another habit of the species: judged beside the grown variant');
-	const query = { ...seasonOf(name), ...rule.query };
+	// The season the still shows wins over its slot's default.
+	const query = { ...rule.query, ...(texture ? {} : seasonOf(number, name, shows)) };
 	const note = notes.filter(Boolean).join('; ');
 	return {
 		file,
@@ -345,7 +373,7 @@ export function readReferenceSet(folder: string): ReferenceSet {
 		if (!isReference(file)) continue;
 		const row = byFile.get(file);
 		const inUse = row?.supersededBy === undefined;
-		const slot = classifySlot(file);
+		const slot = classifySlot(file, row?.shows);
 		const turn = classifyTurn(file);
 		const wind = /wind/i.test(file) && file.toLowerCase().endsWith('.mp4');
 		const kind: ReferenceKind = slot ? slot.kind : turn ? 'turntable' : wind ? 'wind' : 'still';
