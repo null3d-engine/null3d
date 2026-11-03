@@ -68,6 +68,10 @@ export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	// Changed texture files through the WebAssembly transcoder: its heap grows on the hostile ones
 	// and does not shrink, so the checks hold every growth they have made.
 	{ file: 'packages/engine/src/scene/malformed-files.test.ts', ceilingMiB: 2560 },
+	// A compressed block of index lists past one array's limit, decoded and read list by list: the
+	// block and each list's copy, 540 MiB of arrays. 625 MiB measured on the Mac, and the ceiling
+	// leaves room for a busier machine.
+	{ file: 'packages/engine/src/scene/gltf-meshopt-block.test.ts', ceilingMiB: 1024 },
 	// A page of the add-on check's fixture, built with the source maps that the allocation gate reads.
 	// The build links the engine's compiled shader files from the shared shader build instead of
 	// bundling copies of them, so it holds the page's own code and the maps alone: 720 to 818 MiB on

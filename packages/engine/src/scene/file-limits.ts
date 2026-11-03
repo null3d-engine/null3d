@@ -10,9 +10,10 @@
 /** The limits of one file. `.dev/decisions/D-59-file-limits.md` gives each value's reason. */
 export interface FileLimits {
 	/**
-	 * The most bytes that one decoded array or texture may hold: an accessor, a decoded buffer
-	 * view, a triangle list made from a strip, or one texture's texels with every level and layer.
-	 * It is WebGPU's portable limit on a buffer's size.
+	 * The most bytes that one decoded array or texture may hold: an accessor, a triangle list made
+	 * from a strip, or one texture's texels with every level and layer. It is WebGPU's portable
+	 * limit on a buffer's size. A decoded block that arrays are read out of, such as a compressed
+	 * buffer view, never becomes one buffer, so the file's total bounds it instead.
 	 */
 	readonly itemBytes: number;
 	/** The bytes that any model file may decode to, however small it is. */
@@ -81,7 +82,16 @@ export class FileBudget {
 			this.fail(
 				`${what} decodes to ${describe(bytes)}, more than the ${describe(this.limits.itemBytes)} that one array or texture may hold`,
 			);
-		if (this.used + bytes > this.allowance)
+		this.takeBlock(bytes, what);
+	}
+
+	/**
+	 * Takes `bytes` for a block that the reader decodes and then reads arrays out of, such as a
+	 * compressed buffer view that packs many index lists. No GPU buffer holds the block whole, so
+	 * only the file's total bounds it. Each array read out of it still meets the per-item limit.
+	 */
+	takeBlock(bytes: number, what: string): void {
+		if (!(this.used + bytes <= this.allowance))
 			this.fail(
 				`${what} would bring what the file decodes to ${describe(this.used + bytes)}, more than the ${describe(this.allowance)} that a file of its size may decode to`,
 			);

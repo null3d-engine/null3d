@@ -90,4 +90,20 @@ describe('the shared limits', () => {
 		);
 		expect(budget.used).toBe(FILE_LIMITS.modelFloorBytes - 10);
 	});
+
+	test('a decoded block answers to the allowance alone, not to the item limit', () => {
+		const fail = (reason: string): never => {
+			throw new Error(reason);
+		};
+		const budget = new FileBudget(FILE_LIMITS.itemBytes, fail);
+		budget.takeBlock(FILE_LIMITS.itemBytes + 1, 'the block');
+		expect(budget.used).toBe(FILE_LIMITS.itemBytes + 1);
+		expect(() => budget.takeBlock(budget.allowance, 'the second block')).toThrow(
+			'the second block would bring what the file decodes to',
+		);
+		expect(() => budget.takeBlock(Number.NaN, 'the block')).toThrow(
+			'more bytes than a number holds',
+		);
+		expect(budget.used).toBe(FILE_LIMITS.itemBytes + 1);
+	});
 });
