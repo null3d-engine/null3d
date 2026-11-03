@@ -33,6 +33,7 @@ import {
 	plantReviewQuery,
 	WHOLE_VIEWS,
 } from '../../tests/pages/lib/plant-review.ts';
+import { flag, option } from './cli.ts';
 import { estimateFraming, framingQuery, type RunFrame } from './compare.ts';
 import { probeVideo, type Rgba, readImage } from './image.ts';
 import { measurePlant, plantMask, readReferenceSet, type Slot, turnFrames } from './references.ts';
@@ -47,22 +48,6 @@ const HOLD = 1;
 const FRAME_TIMEOUT = 360_000;
 /** The width of a frame when the run names no size. */
 const DEFAULT_WIDTH = 960;
-
-/** One named option from the command line, or its default. */
-function option(name: string, fallback?: string): string {
-	const at = process.argv.indexOf(`--${name}`);
-	const value = at >= 0 ? process.argv[at + 1] : undefined;
-	if (value === undefined || value.startsWith('--')) {
-		if (fallback !== undefined) return fallback;
-		throw new Error(`--${name} is required.`);
-	}
-	return value;
-}
-
-/** Whether a switch is on the command line. */
-function flag(name: string): boolean {
-	return process.argv.includes(`--${name}`);
-}
 
 /** One frame to draw: where it goes, what the page is asked, and the reference it pairs with. */
 interface Plan {

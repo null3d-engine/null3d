@@ -19,6 +19,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { writePng } from '../../packages/cli/src/png.js';
 import type { PlantReviewQuery } from '../../tests/pages/lib/plant-review.ts';
+import { option } from './cli.ts';
 import {
 	blank,
 	deltaE2000,
@@ -635,11 +636,7 @@ function compareTurn(
 		first.width / first.height,
 		8,
 	);
-	const sheets = pages.map((page, p) => {
-		const name = `sheet-${group}-${String(p + 1).padStart(2, '0')}.png`;
-		writePng(join(runDir, name), page);
-		return name;
-	});
+	const sheets = writeSheets(runDir, group, pages);
 	return {
 		video: basename(video),
 		alignment,
@@ -719,12 +716,7 @@ function compareSlots(runDir: string, refs: string, frames: readonly RunFrame[],
 		});
 	}
 	const pages = contactSheets(title, rows, 1.5, 6);
-	const sheets = pages.map((page, p) => {
-		const name = `sheet-slots-${String(p + 1).padStart(2, '0')}.png`;
-		writePng(join(runDir, name), page);
-		return name;
-	});
-	return { pairs: results, sheets };
+	return { pairs: results, sheets: writeSheets(runDir, 'slots', pages) };
 }
 
 /** Writes a sheet of a run's single views, which have no reference to pair with. */
@@ -747,7 +739,12 @@ function sheetOfViews(
 	}
 	const first = ok[0] ? readImage(join(runDir, ok[0].file)) : undefined;
 	const aspect = first ? first.width / first.height : 0.75;
-	return contactSheets(title, rows, aspect, 6, false).map((page, p) => {
+	return writeSheets(runDir, group, contactSheets(title, rows, aspect, 6, false));
+}
+
+/** Writes a group's sheet pages into the run folder, and returns their file names. */
+function writeSheets(runDir: string, group: string, pages: readonly Rgba[]): string[] {
+	return pages.map((page, p) => {
 		const name = `sheet-${group}-${String(p + 1).padStart(2, '0')}.png`;
 		writePng(join(runDir, name), page);
 		return name;
@@ -810,17 +807,6 @@ function turnSummary(name: string, result: TurnResult, species: string): string[
 		`- Sheets: ${result.sheets.join(', ')}.`,
 		'',
 	];
-}
-
-/** One named option from the command line, or its default. */
-function option(name: string, fallback?: string): string {
-	const at = process.argv.indexOf(`--${name}`);
-	const value = at >= 0 ? process.argv[at + 1] : undefined;
-	if (value === undefined) {
-		if (fallback !== undefined) return fallback;
-		throw new Error(`--${name} is required.`);
-	}
-	return value;
 }
 
 async function main(): Promise<void> {
