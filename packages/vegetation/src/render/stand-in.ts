@@ -230,8 +230,8 @@ function farCards(
 }
 
 /**
- * Places a stand-in kit's copies: per variant, an instance batch of its wood and one of its cards
- * or merged foliage, each mesh with its levels by distance, and far cards past the impostor's
+ * Places a stand-in kit's copies: per variant, an instance batch of each part it has (wood, cards,
+ * merged foliage, extras), each mesh with its levels by distance, and far cards past the impostor's
  * distance when the page gives the far bakes.
  */
 export function standInPlace(
@@ -243,7 +243,6 @@ export function standInPlace(
 ): PlacedPlants {
 	const batches: InstanceBatch[] = [];
 	const cards: ImpostorBatch[] = [];
-	const leafPart = kit.record.lod.nearFoliage === 'merged' ? 'foliage' : 'cards';
 	assets.forEach((asset, variant) => {
 		const rows: number[] = [];
 		for (let copy = 0; copy < copies.count; copy++)
@@ -253,7 +252,9 @@ export function standInPlace(
 		const near: InstanceBatch[] = [];
 		for (const [name, material] of [
 			['wood', options.materials.wood],
-			[leafPart, leafPart === 'cards' ? options.materials.cards : options.materials.foliage],
+			['cards', options.materials.cards],
+			['foliage', options.materials.foliage],
+			['extras', options.materials.foliage],
 		] as const) {
 			const mesh = partMesh(ctx, kit, asset, name);
 			if (!mesh) continue;
