@@ -1040,16 +1040,19 @@ const BARK_FAMILIES: Readonly<Record<BarkCellName, BarkFamily>> = {
 	// Every family counts several plates down the trunk as well as across it: a family that
 	// counts one repeats the same motif down the bole, and that reads as a border, not as bark.
 	birch: {
-		across: 6,
-		along: 5,
-		warp: 0.5,
-		crackWidth: 0.05,
-		depth: 0.22,
-		fibre: 0.015,
-		dark: [0.72, 0.71, 0.69],
-		light: [1.22, 1.21, 1.18],
-		moss: 0.08,
+		across: 1,
+		along: 9,
+		warp: 0.3,
+		crackWidth: 0.03,
+		depth: 0.45,
+		fibre: 0.02,
+		dark: [0.55, 0.53, 0.5],
+		light: [1.24, 1.22, 1.18],
+		moss: 0.05,
 		lenticels: true,
+		lenticelRows: 30,
+		lenticelDensity: 0.5,
+		scars: 2,
 	},
 	// A Scots pine's bark: orange-red plates that flake apart, smaller and greyer low on the trunk.
 	pine: {
