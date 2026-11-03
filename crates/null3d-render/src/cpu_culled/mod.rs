@@ -1224,6 +1224,7 @@ impl CpuCulledRenderer {
             &mut self.key_counts,
             pick_targets,
             picking,
+            &[],
         )?;
         self.layouts_moving = motion;
         // The casters' layout holds buckets only while a light casts shadows.
@@ -1243,6 +1244,7 @@ impl CpuCulledRenderer {
                 &mut self.key_counts,
                 pick_targets,
                 false,
+                &self.layout.cluster_buckets,
             )?;
         } else {
             self.casters.clear();
@@ -1265,6 +1267,7 @@ impl CpuCulledRenderer {
                 &mut self.key_counts,
                 pick_targets,
                 false,
+                &[],
             )?;
         } else {
             self.outlined.clear();
@@ -1287,6 +1290,7 @@ impl CpuCulledRenderer {
                 &mut self.key_counts,
                 pick_targets,
                 false,
+                &[],
             )?;
         } else {
             self.tone.clear();
@@ -1310,6 +1314,7 @@ impl CpuCulledRenderer {
                 &mut self.key_counts,
                 self.graph.pick_targets(),
                 false,
+                &[],
             )?;
         } else {
             self.scattering.clear();
@@ -2572,7 +2577,7 @@ impl CpuCulledRenderer {
                         meshes,
                         shading,
                         &never,
-                        PatchView::NONE,
+                        cascade_culling.patch_view(frame, view),
                         0,
                     )
                 }
@@ -2588,7 +2593,7 @@ impl CpuCulledRenderer {
                         meshes,
                         shading,
                         &never,
-                        PatchView::NONE,
+                        tile_culling.patch_view(frame, view),
                         0,
                     )
                 }
@@ -3206,13 +3211,18 @@ impl FrameBuilder for CpuCulledRenderer {
                     .assign(view, frame, input, exposure, &self.tiles);
             }
         }
-        // Shadow views pick the camera's levels with a larger threshold, and the outline view the
-        // camera's own.
-        let shadow_rule = self.settings.shadow_level_view(canvas);
+        // Each shadow view picks its casters' levels and patches in its own texels, and the outline
+        // view picks the camera's own.
         let camera_rule = self.settings.level_view(ViewId::CAMERA, canvas);
         // The cascades skip the cells out of their view too: the casters' layout gives every other
         // object no bucket, so the scene's cell order serves it.
         let shadow = self.shadow.as_ref();
+        let tiles = &self.tiles;
+        let shadow_rule = |view: ViewId| {
+            settings
+                .shadow_rule(view, shadow, tiles, canvas)
+                .unwrap_or_default()
+        };
         self.cascade_culling
             .cull(
                 input,
@@ -3224,13 +3234,12 @@ impl FrameBuilder for CpuCulledRenderer {
                     let shadow = shadow.filter(|s| s.draws(cascade))?;
                     Some(shadow.view_frame(cascade))
                 },
-                &|_| shadow_rule,
+                &shadow_rule,
                 None,
-                None,
+                Some(settings.patches()),
                 None,
             )
             .map_err(|_| out_of_memory(&self.casters))?;
-        let tiles = &self.tiles;
         self.tile_culling
             .cull(
                 input,
@@ -3238,9 +3247,9 @@ impl FrameBuilder for CpuCulledRenderer {
                 &mut self.clusters,
                 cells,
                 &|view| tiles.frame(view.tile_index()?).copied(),
-                &|_| shadow_rule,
+                &shadow_rule,
                 None,
-                None,
+                Some(settings.patches()),
                 None,
             )
             .map_err(|_| out_of_memory(&self.casters))?;
@@ -3380,7 +3389,11 @@ impl FrameBuilder for CpuCulledRenderer {
     }
 
     fn patch_ranges(&self, frame: u32) -> Option<u32> {
-        Some(self.culling.patch_ranges(frame))
+        Some(
+            self.culling.patch_ranges(frame)
+                + self.cascade_culling.patch_ranges(frame)
+                + self.tile_culling.patch_ranges(frame),
+        )
     }
 
     fn set_software_occlusion(&mut self, on: bool) {

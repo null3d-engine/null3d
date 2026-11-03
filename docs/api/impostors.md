@@ -35,7 +35,7 @@ bun add @null3d/engine @null3d/impostors
 
 ## Create the cards
 
-`createImpostors` makes one instance batch: one quad per position, drawn by the package's material. Each quad faces the eye about the object's middle, with the world's up kept upright in its plane, so a card seen from above holds its mesh's size, and the material blends the three atlas views nearest the direction from the card toward the eye. The cards draw both faces, so a card seen from either side draws: a flat card culled from one side would cast no shadow, because the shadow pass draws casters with their front faces culled. The batch otherwise draws as any batch does, on WebGPU and WebGL2.
+`createImpostors` makes one instance batch: one quad per position, drawn by the package's material. Each quad faces the eye about the object's middle, with the world's up kept upright in its plane, so a card seen from above holds its mesh's size, and the material blends the three atlas views nearest the direction from the card toward the eye. The cards draw both faces, so a card seen from either side draws: a flat card culled from one side would cast no shadow, because the shadow pass draws casters with their front faces culled. The batch otherwise draws as any batch does, on WebGPU and WebGL2. The card's quad takes `levels: false`: a card is the far stand-in of a mesh, and has no levels of its own.
 
 ```ts
 import { createImpostors, octahedralAtlas } from '@null3d/impostors';
@@ -133,6 +133,8 @@ for (const group of farCellGroups(centers, 64)) {
 ```
 
 `farCellGroups(centers, cellSize)` groups copies by the cell of the grid their centers fall in, so each group becomes one mesh. The detailed levels stay for what is near, and the merged far meshes draw as single objects.
+
+The merged arrays carry `levels: false`, because a cell already draws each copy's coarsest level. So the engine plans no levels of its own for a cell's mesh. Give the cell `{ ...merged, levels: true }` to plan levels for it anyway.
 
 ## Compared with three.js
 

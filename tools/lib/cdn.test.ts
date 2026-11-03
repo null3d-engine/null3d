@@ -237,6 +237,15 @@ describe('the two entries', () => {
 		expect([production.DEV, production.URL_SWITCHES]).toEqual([false, true]);
 	});
 
+	it('shares a public entry outside the code, such as the level planner', () => {
+		const out = build({ 'levels/planner.js': 'export const plan = () => 1;\n' });
+		splitEntries(out, PRODUCTION, [...ENTRIES, 'levels/planner.js']);
+		expect(existsSync(join(out, 'levels-dev/planner.js'))).toBe(false);
+		expect(readFileSync(join(out, 'levels/planner.js'), 'utf8')).toBe(
+			'export const plan = () => 1;\n',
+		);
+	});
+
 	it('refuses a constant outside the code, which no entry could define', () => {
 		const out = build({ 'vendor/decoder.js': 'const dev = __NULL3D_DEV__;\n' });
 		expect(() => splitEntries(out, PRODUCTION, ENTRIES)).toThrow(

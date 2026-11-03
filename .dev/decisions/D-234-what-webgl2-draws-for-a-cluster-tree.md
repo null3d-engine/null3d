@@ -2,16 +2,17 @@
 
 Status: decided and built by M3-L3. Built: the WebGPU path ([D-213](D-213-cluster-levels.md)), the
 whole levels that the asset tool writes beside each tree, and the WebGL2 route with `WEBGL_multi_draw`.
-Also built: that route's copy of the vertices for a mesh of several parts, and the fallback without
-multi-draw. The figures are in [D-231](D-231-cluster-levels-cost.md). Task: M3-L3.
+Also built: that route's copy of the vertices for a mesh of several parts, the fallback without
+multi-draw, and a walk of its own for each shadow view. The figures are in [D-231](D-231-cluster-levels-cost.md). Task: M3-L3.
 
 Summary: A WebGL2 page draws the patches of a tree on the job workers where the device has
 `WEBGL_multi_draw`. Each chosen patch is a range of the tree's index list in one multi-draw call.
 A mesh of more than 65,535 vertices draws from a copy of its vertices with 32-bit indices, where
 the device also has `WEBGL_provoking_vertex`. A browser without these, such as Firefox, draws the
 mesh's whole levels through the level system.
-The asset tool plans them as `--lod` does and writes them beside the tree. The WebGPU path that draws objects directly, and the shadow maps,
-draw those levels too.
+The asset tool plans them as `--lod` does and writes them beside the tree. The WebGPU path that
+draws objects directly draws those levels too. Each shadow view walks the tree for itself, in its
+own texels.
 
 ## Question
 
@@ -45,14 +46,19 @@ its levels.
 The route with `WEBGL_multi_draw`:
 
 - After a view's culling, the job workers walk each cluster mesh's tree, for the buckets whose
-  source list holds that one object. A patch draws where its own error passes the view's
+  source list holds that one object. Each camera view and each shadow view walks with its own
+  rule: a cascade or a tile measures the error in its own texels
+  ([D-137](D-137-lod-groups.md#shadows)). A patch draws where its own error passes the view's
   threshold at the distance to its own sphere. The error of the patch above it must not pass at
   the distance to that patch's sphere. A parent's sphere holds its children's, so the patches
   that draw cover the mesh once ([D-213](D-213-cluster-levels.md#decision)).
   The walk moves each patch's sphere by the object's matrix and the cell's offset from the
   camera, and reads the view's rule. It is the same rule as the compute pass
   (`cluster_cull.wgsl`). The walk lives in one place, `PatchTree::walk`, which the count of a
-  band's picks reads too.
+  band's picks and the WebGPU path's sizing of each view's list read too. It starts at the root
+  and goes down a patch's children only while the patch's own error fails, so it visits the
+  patches that draw and those above them, not the whole tree. A sphere outside the view leaves
+  out every patch below it.
 - A patch is a range of the tree's index list. The chosen ranges sort by their first index, and
   ranges that are neighbours in the list merge into one, so a view records fewer ranges.
 - Each range is one record of a multi-draw call, which carries at most 256 records
@@ -125,8 +131,7 @@ The tree draws 15 times fewer triangles than whole levels. Other agents' browser
 during these runs, so the record keeps no GPU time, and the frame rates vary. The copy costs
 12.0 MB, the mesh's vertex bytes a second time, and the tree's index list 52.6 MB. The
 graphics memory grew by 71 MB, which those two and the draw records account for.
-The mesh's own pages and whole levels stay, because the shadow maps and the other fallbacks draw
-them. With the last-vertex rule the picture was right, and the walk drew about 2,285 ranges a frame
+The mesh's own pages and whole levels stay, because the fallbacks draw them. With the last-vertex rule the picture was right, and the walk drew about 2,285 ranges a frame
 in calls of up to 256. Each frame's list replayed in under 50 ms, and the engine's threads were
 idle.
 
@@ -185,6 +190,7 @@ multiplies:
 | Ten such trees | 7.9 MB a view |
 | A hundred such trees | 78.6 MB a view |
 | The test model, 511 patches | 3 blocks a slot, 36,864 bytes a view |
+| Each shadow view, a cascade or a tile | The casters' layout's own slot, with the same blocks for each tree that it draws |
 
 The figure is an upper bound: a view chooses fewer ranges than the tree holds, and the blocks
 round up. Sizing the buffer per frame, as M3-L2 sizes the copy lists, is the trim that this memory
@@ -194,8 +200,8 @@ share of the bound.
 The fallback:
 
 - A WebGL2 device without `WEBGL_multi_draw` builds no cluster bucket. Its level buckets stay as
-  they are, so the mesh draws the whole level that its distance picks. This is the same route that
-  the WebGPU direct path and the shadow maps take.
+  they are, so the mesh draws the whole level that its distance picks, and each shadow view the
+  level that its texels pick. This is the same route that the WebGPU direct path takes.
 - The asset tool writes the levels whenever it writes a tree, whatever `--lod` says. They are the
   levels that `--lod` gives a mesh without a tree. A mesh that
   already has levels in its file keeps them.
@@ -240,8 +246,11 @@ manifest, the three cluster pictures among it, against the `chrome-real-gpu` ref
 Firefox job draws the same manifest. Either settles the browser claim, and the run can be arranged
 here while the Mac's Firefox answers.
 
-The shadow maps are not a separate test: they draw the casters' layout, which never takes a tree,
-so the same `drawn` check that the direct path exercises keeps their levels.
+The casters' layout draws a tree only where the scene's layout draws the same object's tree, whose
+buffers the scene's upload makes. `each_shadow_view_draws_the_patches_that_its_own_walk_picks` in
+`tests/cpu_culled.rs` checks that the cascades bind the tree's index list and record ranges of
+their own, and `a_caster_whose_tree_the_scene_does_not_draw_keeps_its_whole_levels` that no shadow
+view draws a tree without multi-draw.
 
 The motion pass walks the same calls as the opaque pass, with the same patch view, so a tree's
 calls keep their places in the draw records. A tree that moves draws its chosen runs from the
@@ -292,7 +301,6 @@ records. No path is dropped and no route waits on a gated feature.
   grow the file. A mesh of several parts also holds its vertices twice on WebGL2.
 - A one-row instance batch draws whole levels on both paths, even though one copy draws it. The
   walk takes one scene object's matrix, and the batch's row carries its own.
-- The plan asks for a shadow cut per cascade or tile view, with `lodShadowFactor` on the
-  threshold. The shadow maps draw the whole levels instead, on both paths, as
-  [D-213](D-213-cluster-levels.md) records. That is a deviation from the plan, and the owner
-  should accept it or ask for the cut.
+- Each cascade and tile walks its own cut through the tree, in its own texels, on both paths, as
+  the plan asks ([D-213](D-213-cluster-levels.md#shadow-views)). Each shadow view adds its own
+  block of draw records for each tree that it draws.

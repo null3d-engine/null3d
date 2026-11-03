@@ -76,7 +76,7 @@ function sphere(segments: number, color: Vec3): MeshArrays {
 export default defineSketch(({ scene, geometry, materials, quality, engine }) => {
 	const shadows = params.has('shadows');
 	const crisp = params.has('crisp');
-	quality.set({ lodThreshold: THRESHOLD, lodShadowFactor: 8 });
+	quality.set({ lodThreshold: THRESHOLD, lodShadowThreshold: 5 });
 	scene.setBackground('#20242c');
 	const camera = scene.createPerspectiveCamera({
 		fov: FOV,

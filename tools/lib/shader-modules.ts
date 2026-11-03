@@ -514,17 +514,23 @@ function staleSetMessage(root: string): string {
 	);
 }
 
-/** The machine-wide lock of shader builds. */
-const shaderLock = () => join(cacheRoot(), 'shader-modules.lock');
+/**
+ * The lock of the shader builds of one set of inputs, in the shared cache so that every checkout
+ * sees it. Two builds of the same inputs would write the same set, so the second waits and then
+ * takes the set that the first stored. Builds of other inputs take other locks and run side by
+ * side: each file that they share in the cache takes its place by a rename from a name of the
+ * writer's own, and each checkout builds the compiler in its own target folder.
+ */
+export function shaderLock(inputs: string): string {
+	return join(cacheRoot(), 'shader-modules.locks', `${inputs}.lock`);
+}
 
 /**
- * Runs the work while this process holds the lock. A process that finds the lock waits for its
- * holder, and takes over a lock whose holder has stopped. The lock lives in the shared cache, not
- * in the checkout, because two shader builds from two checkouts at once leave each of them at about
- * zero processor time and neither finishes.
+ * Runs the work while this process holds the lock of `inputs`. A process that finds the lock waits
+ * for its holder, and takes over a lock whose holder has stopped.
  */
-function withLock(work: () => void): void {
-	const release = acquireLock(shaderLock());
+function withLock(inputs: string, work: () => void): void {
+	const release = acquireLock(shaderLock(inputs));
 	try {
 		work();
 	} finally {
@@ -546,21 +552,21 @@ export function announceColdBuild(entries: string): void {
 
 /**
  * Brings the shader modules up to date as `ensureShaderModules` does, unless that needs a build
- * while another process holds the machine's shader lock and this checkout already holds a whole
- * set. It then keeps that set, which does not match the sources, says so, and returns false; it
- * returns true when the modules match. A commit's type check takes this path, so that it does not
- * wait for another checkout's shader build, which can hold the lock for many minutes: a landing's
- * commit can wait 8 minutes behind a helper's build, at no processor time.
+ * while another process holds the shader lock of these inputs and this checkout already holds a
+ * whole set. It then keeps that set, which does not match the sources, says so, and returns false;
+ * it returns true when the modules match. A commit's type check takes this path, so that it does
+ * not wait for another checkout's build of the same sources, which can hold the lock for many
+ * minutes: a landing's commit can wait 8 minutes behind a helper's build, at no processor time.
  */
 export function shaderModulesUnlessBusy(root: string): boolean {
 	refuseInQuietWindow('The shader build');
 	const inputs = inputHash(root);
 	if (isFresh(root, inputs) || restoreFromCache(root, inputs)) return true;
-	const holder = freshShadersRequired() ? undefined : liveLockHolder(shaderLock());
+	const holder = freshShadersRequired() ? undefined : liveLockHolder(shaderLock(inputs));
 	if (holder !== undefined && folderIsComplete(join(root, MODULE_DIR))) {
 		const who = holder > 0 ? `process ${holder}` : 'another process';
 		console.error(
-			`The shader modules in ${MODULE_DIR} do not match this checkout's shader sources, and ${who} holds the machine's shader lock for a build of its own, so this check reads the modules in place instead of waiting.`,
+			`The shader modules in ${MODULE_DIR} do not match this checkout's shader sources, and ${who} holds the shader lock of these sources for a build of its own, so this check reads the modules in place instead of waiting.`,
 		);
 		return false;
 	}
@@ -946,22 +952,22 @@ export function ensureShaderModules(root: string): boolean {
 	const inputs = inputHash(root);
 	if (isFresh(root, inputs)) return false;
 	if (freshShadersRequired()) throw new Error(staleSetMessage(root));
-	// A set that the shared cache holds needs no build, so it is taken without the lock, which
-	// keeps two builds from running at once: a checkout whose set is cached never waits for
-	// another checkout's build. Each module takes its place whole, and a set that lacks its record
-	// is a miss, so a restore beside a build that stores the same set reads the whole set or nothing.
+	// A set that the shared cache holds needs no build, so it is taken without the lock: a checkout
+	// whose set is cached never waits for a build. Each module takes its place whole, and a set that
+	// lacks its record is a miss, so a restore beside a build that stores the same set reads the
+	// whole set or nothing.
 	if (restoreFromCache(root, inputs)) return false;
-	// A build holds the machine-wide lock, so a queue job that starts one holds every other build
-	// back for however long the queue runs it at background priority: one such build can wait 71
-	// minutes on three hundredths of a second of processor time, while picture runs behind it cannot
-	// start. A job that reaches this line needs a real build, so it stops here and says how to make
-	// the job fast instead of making every other job slow.
+	// A queue job that starts a build holds its slot for however long the queue runs it, and at
+	// background priority one such build can wait 71 minutes on three hundredths of a second of
+	// processor time, while picture runs behind it cannot start. A job that reaches this line needs
+	// a real build, so it stops here and says how to make the job fast instead of making every other
+	// job slow.
 	if (process.env.NULL3D_HEAVY_SLOT)
 		throw new Error(
-			`the shader modules of ${root} are neither built nor cached, and building them inside the job queue holds the machine-wide shader lock for tens of minutes at background priority while every other build waits. Run \`bun tools/shaders.ts\` in that checkout outside the queue first, which takes under two minutes at normal priority, then run this job again. The queue sets NULL3D_HEAVY_SLOT, which is how this check knows it is inside one.`,
+			`the shader modules of ${root} are neither built nor cached, and building them inside the job queue holds a slot of the queue for tens of minutes, and longer at background priority, while other jobs wait for it. Run \`bun tools/shaders.ts\` in that checkout outside the queue first, which takes under two minutes at normal priority, then run this job again. The queue sets NULL3D_HEAVY_SLOT, which is how this check knows it is inside one.`,
 		);
 	let built = false;
-	withLock(() => {
+	withLock(inputs, () => {
 		// Another process may have built them, or another checkout may hold them, while this one waited.
 		if (isFresh(root, inputs)) return;
 		if (restoreFromCache(root, inputs)) return;

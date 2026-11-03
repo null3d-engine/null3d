@@ -184,7 +184,7 @@ A season is a copy of a species in another colour, not a species of its own: an 
 
 ## Detail levels
 
-A plant gets one to three whole levels, most detailed first. Each level holds the plant's parts and the largest distance that its surface lies from the base level's, in meters. Pass the lower levels to `mesh.setLevels`. The engine then picks one by distance. [Levels of detail](../concepts/lod.md) explains the rule that the engine applies.
+A plant gets one to three whole levels, most detailed first. Each level holds the plant's parts and the largest distance that its surface lies from the base level's, in meters. Pass the lower levels to `mesh.setLevels`. The engine then picks one by distance. [Levels of detail](../concepts/lod.md) explains the rule that the engine applies. Levels set by hand win over planned levels, so a plant's meshes get none on top of their own.
 
 A tree's leaf cards morph before the switch, as SpeedTree's do. Each leaf vertex carries its place at the next level, and the leaf material's vertex offset moves it there over the last part of the approach: a card that the next level keeps grows, and one that it drops shrinks to its middle. At the switch the two levels show the same crown, so no card pops. The coarser level's cards grow by the square root of the step, so the crown keeps the ground it covers.
 
@@ -317,6 +317,8 @@ The blades bend in the wind add-on's field, the same field that the leaf materia
 
 The CPU tile path draws on WebGPU and WebGL2, with one instance batch for each tuft shape. The rows are built for Ultra's share once, so a preset change only changes how many rows each batch draws, not the memory. The compute path, which builds and culls blades on the GPU for the denser presets, is not built yet.
 
+Each tuft mesh takes `levels: false`: the wind bends its blades in the shader, and the tufts thin with distance by themselves.
+
 The blades receive the sun's shadows. The ground's own colour and the blades' root colours should meet at the hill's foot.
 
 ## Floating and falling leaves
@@ -345,6 +347,8 @@ return {
 ```
 
 Two forms ride the air. `ride: 'offset'` gives each leaf a closed-form fall and pushes it by the air where it passes. It reads the field once for each leaf, and keeps no state between frames. A gust therefore moves a leaf only while the leaf stands in it. `ride: 'state'` keeps a place and a speed for each leaf in a compute pass. The pass steps them through the field, so a gust carries a leaf along its path. The state form is the default. On WebGL2 the pass runs as a fragment form, and the leaf moves the same way.
+
+The leaf quad takes `levels: false`, because the shader places and turns each leaf.
 
 The state form costs one pass and a texture of four numbers for each leaf. The offset form costs one texture read for each leaf and no pass. `leaves.update(dt)` steps the state and gives the shader the field's newest layer. `leaves.setColor` tints the leaves for a mood. `leaves.destroy()` removes them and their pass.
 

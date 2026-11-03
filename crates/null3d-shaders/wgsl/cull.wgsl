@@ -193,8 +193,14 @@ struct CullParams {
     offsets_row: u32,
     /// What the level choice reads: the level factor (0 for none), 1 for an orthographic camera,
     /// whose distance counts as 1, the share of a switch distance that a fading band covers, and
-    /// the projection's P[1][1].
+    /// the camera's projection's P[1][1].
     levels: vec4f,
+    /// Where the view measures errors and the size of a bound that hides: 0 in the last word for
+    /// the camera's distance, 1 for a light's orthographic view, which measures 1 at every
+    /// distance, and 2 for a light's perspective view, which measures from the light at the
+    /// first three words, relative to the camera. Distance ranges, and levels given by a distance
+    /// or by coverage, read the camera's distance in every view.
+    measure: vec4f,
     /// The first word is 1 while the levels debug view draws, whose copies carry each source's
     /// level code in place of the fade value. The second is 1 for a view whose positions start at
     /// its eye, where pieces take the cone test. The rest are spare.
@@ -442,6 +448,22 @@ struct Level {
     end: f32,
 }
 
+/// The distance at which the view compares errors for a sphere at `center` relative to the camera
+/// of radius `radius`, whose distance from the camera is `camera`: the camera's own distance, 1 in
+/// a light's orthographic view, or the distance from the light in a perspective one.
+fn error_distance(center: vec3f, radius: f32, camera: f32) -> f32 {
+    if params.measure.w > 1.5 {
+        return max(length(center - params.measure.xyz) - radius, LEAST_DISTANCE);
+    }
+    return select(camera, 1.0, params.measure.w > 0.5);
+}
+
+/// The distance that a level's switch compares with: the error distance for a level given by its
+/// error, and the camera's distance for one given by a distance or by coverage.
+fn distance_for(bucket: Bucket, camera: f32, error: f32) -> f32 {
+    return select(camera, error, bucket.level_switch == SWITCH_ERROR);
+}
+
 /// The level of detail that an instance in view draws, its base level where the view picks none.
 fn level_of(s: Survivor) -> Level {
     var out = Level(s.bucket, s.bucket, 0.0, 0.0, false, 0.0, s.ranges.x, s.ranges.y);
@@ -450,27 +472,29 @@ fn level_of(s: Survivor) -> Level {
     let factor = whole / bias;
     let nearest = max(length(s.center) - s.radius, LEAST_DISTANCE);
     let distance = select(nearest, 1.0, params.levels.y > 0.5);
+    let error = error_distance(s.center, s.radius, distance);
     out.distance = distance;
     var next = buckets[s.bucket].next;
     if next != 0u && whole > 0.0 {
-        while next != 0u && switch_distance(buckets[next - 1u], s.scale, s.radius, factor, bias) < distance {
+        while next != 0u && switch_distance(buckets[next - 1u], s.scale, s.radius, factor, bias) < distance_for(buckets[next - 1u], distance, error) {
             out.before = out.bucket;
             out.bucket = next - 1u;
             next = buckets[out.bucket].next;
         }
         if out.bucket != s.bucket {
-            out.past = distance / switch_distance(buckets[out.bucket], s.scale, s.radius, factor, bias) - 1.0;
+            let level = buckets[out.bucket];
+            out.past = distance_for(level, distance, error) / switch_distance(level, s.scale, s.radius, factor, bias) - 1.0;
         }
     }
-    // A bound that covers fewer pixels than the threshold draws nothing: the last level holds no
-    // geometry. Only a mesh with levels has that last level, so a bucket with no coarser level
-    // keeps drawing at every distance. The view's level factor also carries the render height,
-    // the render scale and the threshold, so all of them move the hide distance.
+    // A bound that covers fewer pixels, or texels, than the threshold draws nothing: the last level
+    // holds no geometry. Only a mesh with levels has that last level, so a bucket with no coarser
+    // level keeps drawing at every distance. The view's level factor also carries the render
+    // height, the render scale and the threshold, so all of them move the hide distance.
     let hide = 2.0 * s.radius * factor;
-    let small = buckets[s.bucket].next != 0u && hide > 0.0 && hide < distance;
+    let small = buckets[s.bucket].next != 0u && hide > 0.0 && hide < error;
     out.hidden = small || distance < out.start || distance > out.end;
     if small {
-        out.hide_past = distance / hide - 1.0;
+        out.hide_past = error / hide - 1.0;
     }
     return out;
 }

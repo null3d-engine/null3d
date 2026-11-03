@@ -501,13 +501,14 @@ fn forty_thousand_copies_of_four_levels_take_one_copy_each() {
 }
 
 /// The same forest as the test above, but its trees cast the sun's shadows in four cascades. The
-/// casters' layout is one copy list that every cascade draws, so the four cascades must not
-/// multiply the list.
+/// cascades share the casters' bucket table, so a level's slice holds the most copies that any
+/// cascade places in it. Each cascade picks a caster's level in its own texels, and counts only
+/// the casters that its frustum holds.
 #[test]
-fn forty_thousand_casters_of_four_cascades_take_one_copy_each() {
+fn forty_thousand_casters_of_four_cascades_take_a_copy_for_each_level_that_a_cascade_picks() {
     let rows: u32 = 40_000;
     let mut measured = Vec::new();
-    for with_levels in [false, true] {
+    for (with_levels, far) in [(false, false), (true, false), (true, true)] {
         let mut world = World::new();
         world.cast_sun_shadows(4);
         if with_levels {
@@ -523,20 +524,32 @@ fn forty_thousand_casters_of_four_cascades_take_one_copy_each() {
             let batch = world.batches.get_mut(batch).unwrap();
             batch.set_active_count(rows).unwrap();
             batch.set_shadows(null3d_core::scene::flags::CAST_SHADOWS);
+            // Far past the shadow distance, no cascade's box holds the trees.
+            if far {
+                for row in batch.positions_mut().as_chunks_mut::<3>().0 {
+                    *row = [5_000.0, 0.0, 0.0];
+                }
+            }
         }
         world.record(true);
         measured.push(copies(&world)[1]);
     }
-    // `measured[0]` is the casters' list without levels, and `measured[1]` with them. The four
-    // cascades draw one copy list, so the list takes one copy for each of the 40,000 trees, and
-    // the levels add nothing to it: 2.56 MB. The removed rule kept a slice for every copy in every
-    // level, and the casters' list has four levels and no fading band, because its shadow
-    // pipelines take no fading build: 10.24 MB.
+    // Without levels, the list takes one copy for each of the 40,000 trees: 2.56 MB. With levels,
+    // the trees stand together inside every cascade, and each cascade picks one level for all of
+    // them, so the list takes a copy for each level that some cascade picks: at least one and at
+    // most four. Here the four cascades pick two levels, 5.12 MB, against the 10.24 MB of a slice
+    // for every copy in every one of four levels.
+    // Trees that no cascade holds take no copy.
     let per_copy = rows * 64;
-    assert_eq!(measured[1], measured[0], "{measured:?}");
-    for bytes in measured {
-        assert!(bytes >= per_copy && bytes < per_copy + 128, "{bytes}");
-    }
+    assert!(
+        measured[0] >= per_copy && measured[0] < per_copy + 128,
+        "{measured:?}"
+    );
+    assert!(
+        measured[1] >= per_copy && measured[1] < 4 * per_copy + 128,
+        "{measured:?}"
+    );
+    assert!(measured[2] < 128 * 64, "{measured:?}");
     assert_eq!(4 * per_copy, 10_240_000);
 }
 

@@ -10,7 +10,7 @@
 //! shader's rule to it line by line. The patches it picks must be the walk's. The shader's own
 //! lines are pinned below, so a change to the shader that the copy here misses fails the test.
 
-use null3d_core::levels::{LEAST_DISTANCE, LevelRule};
+use null3d_core::levels::{LEAST_DISTANCE, LevelRule, LightLens};
 use null3d_core::math::Affine;
 use null3d_render::patches::PatchTree;
 
@@ -102,10 +102,24 @@ fn view(root: [f32; 4], v: u32) -> View {
     }
     let threshold = [0.5, 1.0, 2.0, 4.0, 16.0][(v % 5) as usize];
     let p11 = 1.0 / (30.0f32.to_radians()).tan();
-    View {
-        matrix,
-        rule: LevelRule::new(1080.0, p11, false, threshold, 0.0),
-    }
+    let camera = LevelRule::new(1080.0, p11, false, threshold, 0.0);
+    // One view in seven is a light's orthographic view, whose texels run from a ten-thousandth of
+    // the root's radius to a tenth, and one in seven a light's perspective view from a point near
+    // the copy, as a shadow cascade and a spot light's tile pick.
+    let rule = match v % 7 {
+        1 => {
+            let texel = radius * scale * (1.0e-4f32.ln() * (1.0 - unit(seed + 5))).exp() * 0.1;
+            LevelRule::for_light(&camera, LightLens::Parallel { texel }, threshold)
+        }
+        4 => {
+            let at = |k: u32| (2.0 * unit(seed + 5 + k) - 1.0) * radius * scale * 3.0;
+            let eye = [at(0), at(1), at(2)];
+            let texel = (1.0e-4f32.ln() * (1.0 - unit(seed + 6))).exp() * 0.01;
+            LevelRule::for_light(&camera, LightLens::Point { eye, texel }, threshold)
+        }
+        _ => camera,
+    };
+    View { matrix, rule }
 }
 
 /// The patches with no children.
@@ -204,13 +218,22 @@ fn shader_run(table: &[[u32; 8]], at: usize, rows: &Affine, rule: &LevelRule) ->
             float(record[3]) * scale,
         ]
     };
+    let [eye_x, eye_y, eye_z, mode] = rule.measure_uniform();
     let rule_distance = |sphere: [f32; 4]| {
+        if mode > 1.5 {
+            let from = [sphere[0] - eye_x, sphere[1] - eye_y, sphere[2] - eye_z];
+            return (length(from) - sphere[3]).max(LEAST_DISTANCE);
+        }
         let nearest = (length([sphere[0], sphere[1], sphere[2]]) - sphere[3]).max(LEAST_DISTANCE);
-        if rule.orthographic { 1.0 } else { nearest }
+        if rule.orthographic || mode > 0.5 {
+            1.0
+        } else {
+            nearest
+        }
     };
     let record = &table[at];
     let factor = rule.factor;
-    let reach = scale * factor;
+    let reach = if factor > 0.0 { scale * factor } else { 3.0e38 };
     if float(record[7]) * reach >= rule_distance(placed(record)) {
         return 0;
     }
@@ -230,9 +253,10 @@ fn the_compute_pass_picks_the_patches_that_the_walk_picks() {
     for line in [
         "const LEAST_DISTANCE: f32 = 1.0e-3;",
         "    let local = vec4f(record.centre, 1.0);\n    return vec4f(dot(m0, local), dot(m1, local), dot(m2, local), record.radius * scale);",
-        "    let nearest = max(length(sphere.xyz) - sphere.w, LEAST_DISTANCE);\n    return select(nearest, 1.0, params.levels.y > 0.5);",
+        "    if params.measure.w > 1.5 {\n        return max(length(sphere.xyz - params.measure.xyz) - sphere.w, LEAST_DISTANCE);\n    }\n    let nearest = max(length(sphere.xyz) - sphere.w, LEAST_DISTANCE);\n    return select(nearest, 1.0, params.levels.y > 0.5 || params.measure.w > 0.5);",
+        "const OFF_REACH: f32 = 3.0e38;",
         "    let sphere = placed(record, m0, m1, m2, scale);",
-        "    let factor = params.levels.x;\n    let reach = scale * factor;\n    if record.error * reach >= rule_distance(sphere) {\n        return 0u;\n    }",
+        "    let factor = params.levels.x;\n    let reach = select(OFF_REACH, scale * factor, factor > 0.0);\n    if record.error * reach >= rule_distance(sphere) {\n        return 0u;\n    }",
         "    if record.parent != 0u {\n        let parent = patch_of(record.parent - 1u);\n        if parent.error * reach < rule_distance(placed(parent, m0, m1, m2, scale)) {\n            return 0u;\n        }\n    }\n    return record.count;",
     ] {
         assert!(SHADER.contains(line), "the shader's rule moved:\n{line}");

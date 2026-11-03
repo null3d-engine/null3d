@@ -909,7 +909,7 @@ impl LevelChoice<'_> {
             RowBiases::One(bias) => bias,
             RowBiases::Rows(biases) => biases[r],
         };
-        let distance = self.rule.distance(center, radius);
+        let distance = self.rule.distances(center, radius);
         let range = rows.ranges.range(r);
         self.rule.pick(
             self.links,

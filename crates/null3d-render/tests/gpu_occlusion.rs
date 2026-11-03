@@ -794,6 +794,36 @@ fn the_camera_reads_its_counts_back_after_its_late_phase_without_waiting() {
 }
 
 #[test]
+fn a_capture_of_a_frame_whose_counts_read_waits_copies_nothing_into_the_read_buffer() {
+    let mut world = world(Antialias::Msaa, occluding());
+    world.renderer.set_occlusion_read_slot(READ_SLOT);
+    let mut mock = device();
+    frames(&mut world, &mut mock);
+    for _ in 0..60 {
+        world.record(false);
+        let words = world.renderer.list(world.frame).words().to_vec();
+        let commands = world.commands();
+        mock.replay(&words).unwrap();
+        // Hold mode's capture draws the frame again at once, while its read still waits. The
+        // mock refuses any command on a buffer whose read waits.
+        mock.replay_capture(&words).unwrap();
+        if let Some((_, read)) = commands.iter().find(|(op, _)| *op == Op::ReadBuffer) {
+            // The list copies the counts into the buffer that its read maps, which the capture
+            // left out.
+            assert!(
+                commands
+                    .iter()
+                    .any(|(op, o)| *op == Op::CopyBufferToBuffer && o[2] == read[0])
+            );
+            return;
+        }
+        mock.finish_reads();
+        world.frame += 1;
+    }
+    panic!("no frame reads the counts");
+}
+
+#[test]
 fn passes_that_make_the_frame_longer_turn_off_but_for_their_trials() {
     // Frames with the passes take a third longer, as when another program's work fills the gaps
     // between them.

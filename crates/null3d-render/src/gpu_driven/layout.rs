@@ -431,17 +431,32 @@ struct BatchRows {
     layers: u32,
 }
 
-/// One cluster mesh: its first patch in the layout's tables, the patches it has, the slot of its
+/// One cluster mesh: its first patch in the scene's tables, the patches it has, the slot of its
 /// copy in a view's compacted instances, the first of its indirect draws, and its base vertex.
+/// The casters' layout holds one for each of the scene's, in the same order, with
+/// [`NOT_DRAWN`] for the slot and the draw of a tree that no caster draws.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(super) struct ClusterMesh {
     /// The engine mesh whose tree the pass picks, which a staged band's watch reads.
     pub(super) mesh: u32,
+    /// The scene object that draws the tree, whose matrix places each patch.
+    pub(super) object: u32,
     pub(super) first_patch: u32,
     pub(super) patch_count: u32,
     pub(super) slot: u32,
     pub(super) first_draw: u32,
     pub(super) base_vertex: u32,
+}
+
+/// The slot and the draw of a tree in the casters' layout that no caster draws, which the cluster
+/// pass skips (`cluster_cull.wgsl`).
+pub(super) const NOT_DRAWN: u32 = u32::MAX;
+
+impl ClusterMesh {
+    /// True when the layout draws the tree.
+    pub(super) fn drawn(&self) -> bool {
+        self.slot != NOT_DRAWN
+    }
 }
 
 /// The source layout and bucket tables, rebuilt when the structure changes.
@@ -520,8 +535,12 @@ pub(super) struct Layout {
     pub(super) marks: Vec<u8>,
     /// The buckets that `marks` marks, in bucket order.
     pub(super) level_buckets: Vec<u32>,
-    /// The cluster meshes that the camera's views draw from their trees.
+    /// The cluster meshes that the layout's views draw from their trees. The scene's layout picks
+    /// them; the casters' layout holds one for each of the scene's, in the same order.
     pub(super) clusters: Vec<ClusterMesh>,
+    /// The scene's cluster meshes, which the casters' layout may draw: the scene's tables hold
+    /// their patches, and its own records name its own copies and draws.
+    pub(super) scene_trees: Vec<ClusterMesh>,
     /// Every cluster patch of those meshes, eight words each: its sphere and its record.
     pub(super) cluster_patches: Vec<[u32; 8]>,
     /// Every patch's indices, one patch after another.
@@ -593,6 +612,7 @@ impl Layout {
             vec_bytes(&self.marks),
             vec_bytes(&self.level_buckets),
             vec_bytes(&self.clusters),
+            vec_bytes(&self.scene_trees),
             vec_bytes(&self.cluster_patches),
             vec_bytes(&self.cluster_indices),
             vec_bytes(&self.copy_counts),
@@ -1179,13 +1199,32 @@ impl Layout {
         // fits the storage binding that the pass's tables and each view's list take, beside the
         // trees before it, or it draws whole levels.
         let patches = settings.patches();
-        let mut treed_keys: Vec<BucketKey> = Vec::new();
-        if cluster_binding > 0 && drawn == Drawn::Scene {
+        // Each key that draws a tree, with the scene object that draws it.
+        let mut treed_keys: Vec<(BucketKey, u32)> = Vec::new();
+        // A caster draws its tree in each shadow view where the scene's layout draws the same
+        // object's tree: the scene's tables hold its patches, which every view shares.
+        let shared_trees = drawn == Drawn::Casters;
+        if cluster_binding > 0 && (drawn == Drawn::Scene || shared_trees) {
             let (mut tree_patches, mut tree_indices) = (0u32, 0u32);
             for slot in 0..scene_rows as usize {
                 let Some(key) = scene_key(slot) else {
                     continue;
                 };
+                if shared_trees {
+                    let scene_tree = self
+                        .scene_trees
+                        .iter()
+                        .any(|tree| tree.object == slot as u32);
+                    let single = key_counts
+                        .binary_search_by_key(&key, |&(key, _)| key)
+                        .is_ok_and(|at| key_counts[at].1 == 1);
+                    let lines = key.0.state & state_flags::LINE_LIST != 0;
+                    let by_index = self.index_instances && key.0.reads_index();
+                    if scene_tree && single && !lines && !by_index {
+                        treed_keys.push((key, slot as u32));
+                    }
+                    continue;
+                }
                 let single = key_counts
                     .binary_search_by_key(&key, |&(key, _)| key)
                     .is_ok_and(|at| key_counts[at].1 == 1);
@@ -1215,12 +1254,18 @@ impl Layout {
                     continue;
                 }
                 (tree_patches, tree_indices) = (more_patches, more_indices);
-                treed_keys.push(key);
+                treed_keys.push((key, slot as u32));
             }
-            treed_keys.sort_unstable();
-            treed_keys.dedup();
+            treed_keys.sort_unstable_by_key(|&(key, _)| key);
+            treed_keys.dedup_by_key(|pair| pair.0);
         }
-        let treed = |key: &BucketKey| treed_keys.binary_search(key).is_ok();
+        let tree_object = |key: &BucketKey| {
+            treed_keys
+                .binary_search_by_key(key, |&(key, _)| key)
+                .ok()
+                .map(|at| treed_keys[at].1)
+        };
+        let treed = |key: &BucketKey| tree_object(key).is_some();
         let eligible = |key: &BucketKey| !treed(key) && levels.may_pick(key.3, key.0.permutation);
         // A level may name a material of its own, so its bucket key comes from the level's mesh and
         // material, while it keeps the fields of the bucket that names it: its bounds, and the
@@ -1345,6 +1390,14 @@ impl Layout {
         self.clusters.clear();
         self.cluster_patches.clear();
         self.cluster_indices.clear();
+        if shared_trees {
+            self.clusters
+                .extend(self.scene_trees.iter().map(|&tree| ClusterMesh {
+                    slot: NOT_DRAWN,
+                    first_draw: NOT_DRAWN,
+                    ..tree
+                }));
+        }
         self.parallax = false;
         self.material_views = 0;
         self.pick_views = 0;
@@ -1393,11 +1446,24 @@ impl Layout {
             };
             let slot_base = if by_index { indexed } else { copied };
             let first_draw = self.draws.len() as u32;
-            let cluster = tree.map(|tree| {
+            let cluster = tree.and_then(|tree| {
+                // The casters' record of the scene's tree names the caster's own copy and draw.
+                if shared_trees {
+                    let object = tree_object(&key)?;
+                    let index = self
+                        .clusters
+                        .iter()
+                        .position(|tree| tree.object == object)?;
+                    let record = &mut self.clusters[index];
+                    record.slot = slot_base;
+                    record.first_draw = first_draw;
+                    return Some(index as u32);
+                }
                 let index = self.clusters.len() as u32;
                 let first_patch = self.cluster_patches.len() as u32;
                 self.clusters.push(ClusterMesh {
                     mesh,
+                    object: tree_object(&key).unwrap_or(NOT_DRAWN),
                     first_patch,
                     patch_count: tree.len() as u32,
                     slot: slot_base,
@@ -1412,7 +1478,7 @@ impl Layout {
                         .map(|patch| tree.table_record(patch, first_patch, first_index)),
                 );
                 self.cluster_indices.extend_from_slice(tree.indices());
-                index
+                Some(index)
             });
             // A displaced material moves vertices past its mesh's sphere, by up to its margin.
             let margin = settings.materials().bounds_margin(material.wrapping_sub(1));

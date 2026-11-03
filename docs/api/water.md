@@ -271,6 +271,8 @@ near the eye and spends its vertices far away.
   frame as the water row's budget. It also shows the memory of the mesh arrays, the map of where bodies
   meet, and the foam texture that the add-on made. The reflection target is the render graph's. `reflectionEvery` replaces the
   preset's cadence. The pass costs no pipeline of its own, and its texture goes with `destroy`.
+- **Levels of detail.** The river, lake and ocean meshes take `levels: false`, because the waves
+  move their vertices in the shader. The engine plans no levels for them.
 - **Transmission.** The surface lets light through, so the engine copies the scene's colors in the
   frame that the water draws. The water draws both faces.
 - **Nothing before its first use.** A page that never creates water downloads none of the add-on.

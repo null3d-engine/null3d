@@ -330,6 +330,9 @@ pub(super) struct CountReads {
     waiting: [bool; READ_RING],
     next: usize,
     read: Option<WaitingRead>,
+    /// The frame that the last read copied, so a frame recorded again copies its counts no more:
+    /// that copy's read would never land, and would hold back the reads after it.
+    recorded: u32,
     /// Where reads land, made at the first read and kept, so a read that lands late never writes
     /// into memory that was given back.
     landing: Option<Box<[u8]>>,
@@ -355,7 +358,8 @@ impl CountReads {
     /// Records a read of `view`'s counts of frame `frame`, and of its first set of draws while the
     /// layout has at most [`MAX_READ_DRAWS`] draws, after the frame's passes. `layout_epoch` names
     /// the layout, so draws that land for an older one are left out. Records nothing while another
-    /// read waits, or while no slot is set. Returns true when it recorded the read.
+    /// read waits, for a frame that recorded its read already, or while no slot is set. Returns
+    /// true when it recorded the read.
     pub(super) fn record(
         &mut self,
         list: &mut DrawList,
@@ -364,7 +368,7 @@ impl CountReads {
         layout_epoch: u32,
         frame: u32,
     ) -> Result<bool, RecordError> {
-        if self.slot == 0 || frame == 0 {
+        if self.slot == 0 || frame == 0 || frame == self.recorded {
             return Ok(false);
         }
         if let Some(read) = self.read {
@@ -414,6 +418,7 @@ impl CountReads {
         list.push(Op::Submit, &[])?;
         self.waiting[ring] = true;
         self.next = (ring + 1) % READ_RING;
+        self.recorded = frame;
         self.read = Some(WaitingRead {
             frame,
             ring,
@@ -773,6 +778,40 @@ mod tests {
         buckets.update(&layout, &draws_with(&[1, 0, 0, 0]));
         assert_eq!(drawn(&buckets), [true, true, false, false]);
         assert!(buckets.take_changed());
+    }
+
+    /// The buffers of the read ring that a list copies into.
+    fn copied_into(list: &DrawList) -> Vec<u32> {
+        null3d_gpu::drawlist::decode(list.words())
+            .map(Result::unwrap)
+            .filter(|command| command.op == Op::CopyBufferToBuffer)
+            .map(|command| command.operands[2])
+            .collect()
+    }
+
+    #[test]
+    fn a_frame_recorded_again_after_its_read_landed_copies_its_counts_no_more() {
+        let layout = Layout::with_occluder_buckets(&[true]);
+        let mut reads = CountReads::default();
+        reads.set_slot(60);
+        let mut list = DrawList::with_capacity(256);
+        let view = ViewId::CAMERA;
+        assert!(reads.record(&mut list, view, &layout, 1, 40).unwrap());
+        assert_eq!(copied_into(&list), [ids::OCCLUSION_READ_BUFFERS]);
+        // While the read waits, the frame recorded again copies nothing.
+        list.clear();
+        assert!(!reads.record(&mut list, view, &layout, 1, 40).unwrap());
+        assert!(copied_into(&list).is_empty());
+        // The read lands: its words name the frame that it copied.
+        let landing = reads.landing.as_mut().expect("the landing memory");
+        landing[8..12].copy_from_slice(&40u32.to_le_bytes());
+        assert_eq!(reads.take().map(|landed| landed.counts.frame), Some(40));
+        // The frame recorded once more still copies nothing, as the GPU draws it from the list
+        // that read already, and the next frame reads into the ring's other buffer.
+        assert!(!reads.record(&mut list, view, &layout, 1, 40).unwrap());
+        assert!(copied_into(&list).is_empty());
+        assert!(reads.record(&mut list, view, &layout, 1, 41).unwrap());
+        assert_eq!(copied_into(&list), [ids::OCCLUSION_READ_BUFFERS + 1]);
     }
 
     #[test]

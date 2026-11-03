@@ -521,16 +521,18 @@ impl<B: FrameBuilder> World<B> {
             .sync(count, taken);
     }
 
-    /// Records the current frame and replays it twice on the mock, as a capture replays a frame's
-    /// list again, then moves on to the next frame. Returns the frame's operations.
+    /// Records the current frame and replays it twice on the mock: once as the frame loop draws it,
+    /// then again as a capture does, while the reads of the first replay still wait, as in hold
+    /// mode, whose capture follows the frame's draw at once. Then moves on to the next frame.
+    /// Returns the frame's operations.
     pub fn step(&mut self, mock: &mut MockBackend, structure_changed: bool) -> Vec<(Op, Vec<u32>)> {
         self.record(structure_changed);
-        for _ in 0..2 {
-            mock.replay(self.renderer.list(self.frame).words()).unwrap();
-            // The thread that draws raises a read's slot a frame or two later, and the mock holds
-            // the buffer until it does: between the two replays, that read has landed.
-            mock.finish_reads();
-        }
+        let words = self.renderer.list(self.frame).words();
+        mock.replay(words).unwrap();
+        mock.replay_capture(words).unwrap();
+        // The thread that draws raises a read's slot a frame or two later, and the mock holds the
+        // buffer until it does.
+        mock.finish_reads();
         let commands = self.commands();
         self.frame += 1;
         commands

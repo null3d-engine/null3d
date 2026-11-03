@@ -293,12 +293,18 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: { min: 0, max: 16, heavierBelow: true },
 	},
-	// What the shadow maps multiply the threshold by, so that casters draw a coarser level than the
-	// camera sees: shadows blur the difference, and the shadow passes draw every caster again.
-	lodShadowFactor: {
-		presets: [4, 2, 2, 2],
+	// The error in texels of a shadow map under which a caster's coarser level, and its tree's
+	// coarser patches, draw in that map: one texel on every preset, as three.js's meshlet pipeline
+	// picks. The normal bias moves receivers by up to a texel, so a caster's level never shadows
+	// its own surface. Each cascade and tile picks in its own texels, whatever the camera's
+	// distance, so a far cascade that keeps its depth between draws stays right. Low's smaller maps
+	// have larger texels, which pick coarser levels there already. A caster whose bounds cover fewer
+	// texels than this draws nothing in the map. 0 draws every caster's base level. D-137 gives the
+	// figures.
+	lodShadowThreshold: {
+		presets: [1, 1, 1, 1],
 		changes: 'live',
-		values: { min: 1, max: 16, heavierBelow: true },
+		values: { min: 0, max: 16, heavierBelow: true },
 	},
 	// Whether a source's distance band fades at each edge, through a short dithered band. A level's
 	// own hand-over follows the level, whatever this setting: a hand-set level fades because its
@@ -652,11 +658,14 @@ export interface QualitySettings {
 	 */
 	lodThreshold: number;
 	/**
-	 * What the shadow maps multiply `lodThreshold` by, so that shadow casters draw a coarser level
-	 * than the camera sees. 1 draws the camera's level. It takes a number from 1 to 16, and changes
-	 * during play.
+	 * The error in texels of a shadow map under which a shadow caster's coarser level of detail
+	 * draws in that map. Each cascade and each spot or point light's tile picks the level in its
+	 * own texels, whatever the camera's distance, so a shadow map that keeps its depth between
+	 * draws stays right as the camera moves. A caster whose bounds cover fewer texels than this
+	 * draws nothing in the map. A larger number draws coarser casters, which costs less. 0 draws
+	 * every caster's base level. It takes a number from 0 to 16, and changes during play.
 	 */
-	lodShadowFactor: number;
+	lodShadowThreshold: number;
 	/**
 	 * Whether a mesh's distance band, from `setDrawRange`, fades at each edge over a short band
 	 * where a dither pattern drops a growing share of the pixels, so the mesh does not pop. False

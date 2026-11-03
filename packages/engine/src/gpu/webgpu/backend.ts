@@ -1422,15 +1422,21 @@ export class WebGPUBackend {
 					computePass?.end();
 					computePass = undefined;
 					break;
-				case G.OP_COPY_BUFFER_TO_BUFFER:
+				case G.OP_COPY_BUFFER_TO_BUFFER: {
+					const target = this.need(this.buffers, words[a + 2] as number, 'buffer');
+					// A capture replays a frame that the loop replayed already, and skips its reads. A
+					// copy into a buffer that a read maps would reach it while the first replay's map
+					// may still be under way, which the device refuses.
+					if (this.canvasTarget && (target.usage & GPUBufferUsage.MAP_READ) !== 0) break;
 					this.commandEncoder().copyBufferToBuffer(
 						this.need(this.buffers, words[a] as number, 'buffer'),
 						words[a + 1] as number,
-						this.need(this.buffers, words[a + 2] as number, 'buffer'),
+						target,
 						words[a + 3] as number,
 						words[a + 4] as number,
 					);
 					break;
+				}
 				case G.OP_READ_BUFFER:
 					if (this.canvasTarget) break;
 					this.reads.add(

@@ -59,7 +59,7 @@ The `@null3d/geometry` package holds the rest of three.js's geometry classes. In
 bun add @null3d/geometry
 ```
 
-Each function takes the parameters and defaults of a three.js class, as named options, and returns arrays for `geometry.fromArrays`. The arrays hold the same numbers as the three.js geometry's attributes: the same vertices in the same order, with the same normals and texture coordinates.
+Each function takes the parameters and defaults of a three.js class, as named options, and returns arrays for `geometry.fromArrays`. The arrays hold the same numbers as the three.js geometry's attributes: the same vertices in the same order, with the same normals and texture coordinates. The mesh that `fromArrays` makes from them plans its [levels of detail](#levels-of-detail) as any mesh made in code does, and keeps that order.
 
 ```ts
 // sketch.ts

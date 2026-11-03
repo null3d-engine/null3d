@@ -2592,6 +2592,26 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [480, 270] as const,
 		switches: ['direct=off'],
 	},
+	// The ground casts its hills' shadows onto itself from a low sun, in three cascades. Each
+	// cascade draws the patches that its own texels pick, and the camera draws its own. The second
+	// test draws the finest patches in every cascade, and must match the first: a cascade's
+	// patches never shadow the ground that the camera's patches draw by more than the normal bias
+	// hides.
+	{
+		name: 'cluster-shadows',
+		sketch: 'tests/pages/sketches/cluster-sketch.ts?shadows',
+		hold: 0,
+		size: [480, 270] as const,
+		switches: ['direct=off'],
+	},
+	{
+		name: 'cluster-shadows-fine',
+		sketch: 'tests/pages/sketches/cluster-sketch.ts?shadows&fine',
+		hold: 0,
+		size: [480, 270] as const,
+		switches: ['direct=off'],
+		reference: 'cluster-shadows',
+	},
 	{
 		// The whole-level fallback: the switch hides `WEBGL_multi_draw`, so WebGL2 draws the mesh's
 		// whole levels, as a browser without the extension does. Each level errs by less than a

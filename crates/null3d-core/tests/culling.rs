@@ -594,6 +594,7 @@ fn cull_levels_in_range(
             p11: 1.0,
             orthographic: false,
             band,
+            ..LevelRule::default()
         },
         links: &links,
         rows: &rows,

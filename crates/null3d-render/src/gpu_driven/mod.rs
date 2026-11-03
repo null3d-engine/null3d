@@ -153,6 +153,7 @@ mod transparent;
 
 use std::collections::TryReserveError;
 
+use null3d_core::levels::LevelRule;
 use null3d_gpu::caps::{BUDGET, Limit, MAX_WORKGROUPS_PER_DIMENSION};
 use null3d_gpu::drawlist::{
     DrawList, MAX_WORDS, Op, buffer_usage as usage, format, layout as bind_layout, resource_kind,
@@ -1093,6 +1094,9 @@ pub struct GpuDrivenRenderer {
     /// The views that draw each layout, as the sizing of the levels' copies reads them, and the
     /// offsets from each view's camera to the cells, which that sizing computes in turn.
     copy_views: Vec<copies::CopyView>,
+    /// The shadow views that draw the casters' layout, as the sizing of the levels' copies reads
+    /// them: each cascade, and each tile that draws in the frame.
+    shadow_copy_views: Vec<copies::CopyView>,
     copy_offsets: crate::frame::CellOffsets,
     /// The capacity that each feature-instance draw's buffers were made for, by id from 1, or 0
     /// before they exist.
@@ -1369,6 +1373,7 @@ impl GpuDrivenRenderer {
             cluster_pipeline: false,
             pick: crate::pick::PickState::default(),
             copy_views: Vec::new(),
+            shadow_copy_views: Vec::new(),
             copy_offsets: crate::frame::CellOffsets::default(),
             feature_capacity: vec![0; crate::feature_instances::MAX_FEATURE_INSTANCES as usize],
             feature_readiness: 0,
@@ -1463,13 +1468,15 @@ impl GpuDrivenRenderer {
         &mut self,
         input: &FrameInput<'_>,
         parity: usize,
+        shadow: Option<&shadows::ShadowFrame>,
     ) -> Result<(), RecordError> {
         let settings = &self.settings;
         if !settings.levels().any() {
             return Ok(());
         }
         // The camera view's rule picks the levels of the plain, outlined, subsurface and motion
-        // views, which have no camera of their own, and the shadow rule picks the casters'.
+        // views, which have no camera of their own. Each shadow view picks the casters' levels in
+        // its own texels.
         let Some(camera) = self.frames.first().and_then(|frame| frame.as_ref()) else {
             return Ok(());
         };
@@ -1477,11 +1484,22 @@ impl GpuDrivenRenderer {
         let plain = copies::CopyView {
             rule: settings.level_view(ViewId::CAMERA, input.canvas),
             camera,
+            frustum: None,
         };
-        let shadow = copies::CopyView {
-            rule: settings.shadow_level_view(input.canvas),
-            camera,
-        };
+        let mut shadow_views = std::mem::take(&mut self.shadow_copy_views);
+        shadow_views.clear();
+        let tiles = &self.tiles;
+        for view in shadows::shadow_views(shadow, tiles) {
+            let rule = settings.shadow_rule(view, shadow, tiles, input.canvas);
+            let frame = shadows::shadow_view_frame(view, shadow, tiles);
+            if let (Some(rule), Some(frame)) = (rule, frame) {
+                shadow_views.push(copies::CopyView {
+                    rule,
+                    camera,
+                    frustum: Some(frame.frustum),
+                });
+            }
+        }
         let mut views = std::mem::take(&mut self.copy_views);
         views.clear();
         for (index, frame) in self.frames.iter().enumerate() {
@@ -1490,6 +1508,7 @@ impl GpuDrivenRenderer {
                 views.push(copies::CopyView {
                     rule: settings.level_view(view, input.canvas),
                     camera: frame.camera,
+                    frustum: None,
                 });
             }
         }
@@ -1508,7 +1527,7 @@ impl GpuDrivenRenderer {
         let batches = input.batches;
         for (drawn, drawn_by) in [
             (&mut *layout, &views[..]),
-            (casters, std::slice::from_ref(&shadow)),
+            (casters, &shadow_views[..]),
             (outlined, std::slice::from_ref(&plain)),
             (scattering, std::slice::from_ref(&plain)),
             (moving, std::slice::from_ref(&plain)),
@@ -1525,7 +1544,57 @@ impl GpuDrivenRenderer {
             );
         }
         self.copy_views = views;
+        self.shadow_copy_views = shadow_views;
         Ok(())
+    }
+
+    /// Notes the indices that each view's list of cluster patches must hold in this frame: what
+    /// the walk picks, with the view's own rule, for each tree that the view's layout draws. The
+    /// camera's views draw the scene's layout, and the shadow views the casters'. Returns true when
+    /// a view's list must grow, which records the views' bundles again. The direct path runs no
+    /// cluster pass, so it sizes no list.
+    fn size_cluster_lists(
+        &mut self,
+        input: &FrameInput<'_>,
+        parity: usize,
+        shadow: Option<&shadows::ShadowFrame>,
+    ) -> bool {
+        if self.config.direct_draws || self.layout.clusters.is_empty() {
+            return false;
+        }
+        let Self {
+            layout,
+            casters,
+            clusters,
+            settings,
+            frames,
+            tiles,
+            copy_offsets,
+            ..
+        } = self;
+        let scene = input.scene;
+        let mut grown = false;
+        let mut picked_in = |view: ViewId, frame: &ViewFrame, rule: &LevelRule, drawn: &Layout| {
+            copy_offsets.update(scene, &frame.camera);
+            let picked =
+                clusters::picked_indices(scene, parity, settings, drawn, frame, rule, copy_offsets);
+            grown |= clusters.set_need(view, picked);
+        };
+        for (index, frame) in frames.iter().enumerate() {
+            if let Some(frame) = frame {
+                let view = ViewId::from_index(index);
+                let rule = settings.level_view(view, input.canvas);
+                picked_in(view, frame, &rule, layout);
+            }
+        }
+        for view in shadows::shadow_views(shadow, tiles) {
+            let frame = shadows::shadow_view_frame(view, shadow, tiles);
+            let rule = settings.shadow_rule(view, shadow, tiles, input.canvas);
+            if let (Some(frame), Some(rule)) = (frame, rule) {
+                picked_in(view, &frame, &rule, casters);
+            }
+        }
+        grown
     }
 
     /// Notes the bands of each watched mesh's tree of cluster patches that the camera's view drew
@@ -1811,8 +1880,10 @@ impl GpuDrivenRenderer {
             } else {
                 self.redraw_layout = SortedLayout::redraws();
             }
-            // The casters' layout holds buckets only while a light casts shadows.
+            // The casters' layout holds buckets only while a light casts shadows. A caster draws
+            // the tree that the scene's layout draws for the same object.
             if shadows {
+                self.casters.scene_trees.clone_from(&self.layout.clusters);
                 self.casters.rebuild(
                     &self.settings,
                     &mut self.pipelines,
@@ -2458,7 +2529,7 @@ impl GpuDrivenRenderer {
         // Each level's slice holds the copies that this frame's views draw, rather than the room
         // for every source. It comes before the layouts are applied and the views' bundles are
         // recorded: both name the slices' bases in commands that the frame keeps.
-        self.fit_level_copies(input, parity)?;
+        self.fit_level_copies(input, parity, shadow.as_ref())?;
         let mut slices_moved = false;
         for drawn in [
             &mut self.layout,
@@ -2470,8 +2541,11 @@ impl GpuDrivenRenderer {
         ] {
             slices_moved |= drawn.take_slices_moved();
         }
-        // The bundles name the slices' places, and the buffers must hold them.
-        let buffers_remade = buffers_remade || slices_moved;
+        // Each view's list of cluster patches holds what its own rule picks this frame.
+        let lists_grown = self.size_cluster_lists(input, parity, shadow.as_ref());
+        // The bundles name the slices' places and the views' lists, and the buffers must hold
+        // them.
+        let buffers_remade = buffers_remade || slices_moved || lists_grown;
         self.note_stage_band_picks(input, parity);
         let (shared_recreated, casters_recreated) = if upload_everything {
             let shared = self.layout.apply(list, arena, binding_bytes)?;
@@ -2519,6 +2593,7 @@ impl GpuDrivenRenderer {
                 list,
                 arena,
                 &self.layout,
+                shadows.then_some(&self.casters),
                 upload_everything,
                 binding_bytes,
             )?
@@ -2636,7 +2711,7 @@ impl GpuDrivenRenderer {
                 self.culling
                     .apply(list, view, layout, recreated, binding_bytes, occludes)?;
                 self.clusters
-                    .apply(list, view, layout, clusters_recreated, binding_bytes)?;
+                    .apply(list, view, clusters_recreated, binding_bytes)?;
             }
             if !records || self.config.direct_draws {
                 if redepth {
@@ -2766,6 +2841,8 @@ impl GpuDrivenRenderer {
             }
             self.culling
                 .apply(list, view, &self.casters, recreated, binding_bytes, false)?;
+            self.clusters
+                .apply(list, view, clusters_recreated, binding_bytes)?;
             let (casters, meshes) = (&self.casters, &self.meshes);
             let (targets, kind) = if view.tile_index().is_some() {
                 (shadow_tiles::TARGETS, Bundle::Tile)
@@ -2882,11 +2959,11 @@ impl GpuDrivenRenderer {
                         list,
                         arena,
                         view,
-                        layout,
                         clusters::ViewRules {
                             planes: frame.frustum.planes(),
-                            levels: detail.uniform(),
+                            rule: &detail,
                             draws_before,
+                            records: clusters::RecordSet::Scene,
                         },
                         levels.is_some(),
                     )?;
@@ -3037,12 +3114,16 @@ impl GpuDrivenRenderer {
         self.cascades_held = shadow.is_some() || (self.cascades_held && !shadows);
         self.tiles
             .upload(list, arena, ids::SHADOWS, sizes::SHADOW_UNIFORM_BYTES)?;
-        let shadow_detail = self.settings.shadow_level_view(input.canvas);
         for tile in 0..tiles {
             let view = ViewId::tile(tile);
             let Some(frame) = self.tiles.frame(tile).copied() else {
                 continue;
             };
+            // Each shadow view picks its casters' levels and patches in its own texels.
+            let shadow_detail = self
+                .settings
+                .shadow_rule(view, shadow.as_ref(), &self.tiles, input.canvas)
+                .unwrap_or_default();
             opaque::upload(list, arena, view, &frame)?;
             let (layout, casters, cells) = (&self.layout, &self.casters, &self.cells);
             if self.config.direct_draws {
@@ -3073,6 +3154,18 @@ impl GpuDrivenRenderer {
                     None,
                     &shadow_detail,
                 )?;
+                self.clusters.upload(
+                    list,
+                    arena,
+                    view,
+                    clusters::ViewRules {
+                        planes: frame.frustum.planes(),
+                        rule: &shadow_detail,
+                        draws_before: 0,
+                        records: clusters::RecordSet::Casters,
+                    },
+                    false,
+                )?;
             }
             let offsets = if self.config.direct_draws {
                 self.direct.offsets()
@@ -3087,6 +3180,9 @@ impl GpuDrivenRenderer {
             for cascade in (0..cascades).filter(|&cascade| shadow.draws(cascade)) {
                 let view = ViewId::cascade(cascade);
                 let frame = shadow.view_frame(cascade);
+                let shadow_detail = self
+                    .settings
+                    .shadow_level_view(input.canvas, shadow.lens(cascade));
                 opaque::upload(list, arena, view, &frame)?;
                 let (layout, casters, cells) = (&self.layout, &self.casters, &self.cells);
                 if self.config.direct_draws {
@@ -3116,6 +3212,18 @@ impl GpuDrivenRenderer {
                         cells,
                         None,
                         &shadow_detail,
+                    )?;
+                    self.clusters.upload(
+                        list,
+                        arena,
+                        view,
+                        clusters::ViewRules {
+                            planes: frame.frustum.planes(),
+                            rule: &shadow_detail,
+                            draws_before: 0,
+                            records: clusters::RecordSet::Casters,
+                        },
+                        false,
                     )?;
                 }
                 let offsets = if self.config.direct_draws {

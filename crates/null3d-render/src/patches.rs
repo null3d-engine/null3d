@@ -86,9 +86,14 @@ pub struct PatchTree {
     /// The first patch of each band, in the order the bands arrived. The first entry is the root's
     /// band, which the tree was made with.
     bands: Vec<u32>,
-    /// The number of each patch's children that the tree holds. A patch with none draws wherever
-    /// the camera is close, so a tree whose bands have not all arrived has no holes.
-    children: Vec<u32>,
+    /// Where each patch's children start in `child_list`, and one past the last patch's end. A
+    /// patch with none draws wherever the camera is close, so a tree whose bands have not all
+    /// arrived has no holes.
+    child_starts: Vec<u32>,
+    /// Every patch's children, one patch's after another, which the walk descends through.
+    child_list: Vec<u32>,
+    /// The patches with no parent, where the walk starts.
+    tops: Vec<u32>,
 }
 
 impl PatchTree {
@@ -103,20 +108,57 @@ impl PatchTree {
         vertices: u32,
     ) -> Result<Self, PatchError> {
         let mut tree = Self {
-            children: vec![0; records.len()],
             indices,
             bounds,
             records,
             root,
             bands: vec![0],
+            child_starts: Vec::new(),
+            child_list: Vec::new(),
+            tops: Vec::new(),
         };
         tree.check(vertices)?;
-        for k in 0..tree.records.len() {
-            if let Some(parent) = tree.records[k][2].checked_sub(1) {
-                tree.children[parent as usize] += 1;
+        tree.link_children();
+        Ok(tree)
+    }
+
+    /// Lists each patch's children, and the patches with no parent, from the records.
+    fn link_children(&mut self) {
+        let count = self.records.len();
+        self.child_starts.clear();
+        self.child_starts.resize(count + 1, 0);
+        self.tops.clear();
+        for (k, record) in self.records.iter().enumerate() {
+            match record[2].checked_sub(1) {
+                Some(parent) => self.child_starts[parent as usize + 1] += 1,
+                None => self.tops.push(k as u32),
             }
         }
-        Ok(tree)
+        for k in 0..count {
+            self.child_starts[k + 1] += self.child_starts[k];
+        }
+        self.child_list.clear();
+        self.child_list.resize(self.child_starts[count] as usize, 0);
+        let mut next: Vec<u32> = self.child_starts[..count].to_vec();
+        for (k, record) in self.records.iter().enumerate() {
+            if let Some(parent) = record[2].checked_sub(1) {
+                let at = &mut next[parent as usize];
+                self.child_list[*at as usize] = k as u32;
+                *at += 1;
+            }
+        }
+    }
+
+    /// The children of patch `patch` that the tree holds.
+    fn children_of(&self, patch: u32) -> &[u32] {
+        let patch = patch as usize;
+        match (
+            self.child_starts.get(patch),
+            self.child_starts.get(patch + 1),
+        ) {
+            (Some(&start), Some(&end)) => &self.child_list[start as usize..end as usize],
+            _ => &[],
+        }
     }
 
     /// Appends the patches of one band: its spheres, its records and its indices, whose runs start
@@ -184,12 +226,7 @@ impl PatchTree {
                 .map(|&[first, count, parent, error]| [first + base, count, parent, error]),
         );
         self.indices.extend_from_slice(indices);
-        self.children.resize(self.records.len(), 0);
-        for record in &self.records[total as usize..] {
-            if let Some(parent) = record[2].checked_sub(1) {
-                self.children[parent as usize] += 1;
-            }
-        }
+        self.link_children();
         Ok(())
     }
 
@@ -302,7 +339,7 @@ impl PatchTree {
     /// children the tree does not hold, which therefore draws wherever the camera is close, so a
     /// tree whose bands have not all arrived has no holes. Every other patch gives its own error.
     pub fn rule_error(&self, patch: u32) -> f32 {
-        if self.children.get(patch as usize).copied().unwrap_or(0) == 0 {
+        if self.children_of(patch).is_empty() {
             -1.0
         } else {
             self.error(patch)
@@ -366,9 +403,15 @@ impl PatchTree {
 
     /// Calls `pick` with each patch that a view draws, for a copy that `matrix` places and whose
     /// cell lies `offset` from the view's camera: the patch's sphere lies in `frustum`, when one is
-    /// given, and `rule` draws the patch ([`PatchTree::draws`]). The job workers' walk and the
-    /// count of a band's picks both read the tree through this walk, and the compute pass applies
-    /// the same rule (`cluster_cull.wgsl`).
+    /// given, and `rule` draws the patch ([`PatchTree::draws`]). The job workers' walk, the count
+    /// that sizes a view's list on the GPU path and the count of a band's picks all read the tree
+    /// through this walk, and the compute pass applies the same rule (`cluster_cull.wgsl`).
+    ///
+    /// The walk starts at the patches with no parent and goes down a patch's children only while
+    /// the patch's own error does not pass, so it visits the patches that draw and the ones above
+    /// them. A patch's sphere holds its children's, and its error is at least theirs: a patch it
+    /// reaches has a parent that does not pass, so the patches it picks are the ones that
+    /// [`PatchTree::draws`] picks, and a sphere outside the frustum leaves out everything below it.
     pub fn walk(
         &self,
         matrix: &Affine,
@@ -377,33 +420,78 @@ impl PatchTree {
         frustum: Option<&Frustum>,
         mut pick: impl FnMut(u32),
     ) {
-        let reach = max_axis_scale(matrix) * rule.factor;
-        let place = |patch: u32| {
-            let sphere = self.bounds[patch as usize];
-            let [x, y, z, radius] =
-                world_sphere_at(matrix, [sphere[0], sphere[1], sphere[2]], sphere[3]);
-            ([x + offset[0], y + offset[1], z + offset[2]], radius)
+        let walk = Walk {
+            tree: self,
+            matrix,
+            offset,
+            rule,
+            frustum,
+            // A rule that is off draws the finest patches, as it draws every mesh's base level.
+            reach: if rule.on() {
+                max_axis_scale(matrix) * rule.factor
+            } else {
+                f32::MAX
+            },
         };
-        for patch in 0..self.len() as u32 {
-            let (centre, radius) = place(patch);
-            if frustum.is_some_and(|frustum| {
-                !frustum.contains_sphere(centre[0], centre[1], centre[2], radius)
-            }) {
-                continue;
-            }
-            let distance = rule.distance(centre, radius);
-            if self.draws(patch, reach, distance, |parent| {
-                let (centre, radius) = place(parent);
-                rule.distance(centre, radius)
-            }) {
-                pick(patch);
-            }
+        for &top in &self.tops {
+            walk.down(top, &mut pick);
         }
+    }
+
+    /// The indices of the patches that [`PatchTree::walk`] picks, which a view's list on the GPU
+    /// path holds.
+    pub fn picked_indices(
+        &self,
+        matrix: &Affine,
+        offset: [f32; 3],
+        rule: &LevelRule,
+        frustum: Option<&Frustum>,
+    ) -> u32 {
+        let mut indices = 0u32;
+        self.walk(matrix, offset, rule, frustum, |patch| {
+            indices += self.records[patch as usize][1];
+        });
+        indices
     }
 
     /// The tree's triangles, every patch's added up, against the mesh's own.
     pub fn triangles(&self) -> u32 {
         self.indices.len() as u32 / 3
+    }
+}
+
+/// One walk of a tree for one copy in one view ([`PatchTree::walk`]).
+struct Walk<'a> {
+    tree: &'a PatchTree,
+    matrix: &'a Affine,
+    offset: [f32; 3],
+    rule: &'a LevelRule,
+    frustum: Option<&'a Frustum>,
+    /// The copy's largest axis scale times the rule's factor.
+    reach: f32,
+}
+
+impl Walk<'_> {
+    /// Picks `patch` where it passes, or goes down to its children where it does not. The walk
+    /// reaches a patch only where its parent does not pass, so its depth is the tree's.
+    fn down(&self, patch: u32, pick: &mut impl FnMut(u32)) {
+        let sphere = self.tree.bounds[patch as usize];
+        let [x, y, z, radius] =
+            world_sphere_at(self.matrix, [sphere[0], sphere[1], sphere[2]], sphere[3]);
+        let centre = [x + self.offset[0], y + self.offset[1], z + self.offset[2]];
+        if self.frustum.is_some_and(|frustum| {
+            !frustum.contains_sphere(centre[0], centre[1], centre[2], radius)
+        }) {
+            return;
+        }
+        let distance = self.rule.error_distance(centre, radius);
+        if self.tree.fits(patch, self.reach, distance) {
+            pick(patch);
+            return;
+        }
+        for &child in self.tree.children_of(patch) {
+            self.down(child, pick);
+        }
     }
 }
 

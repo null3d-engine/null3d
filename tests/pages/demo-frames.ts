@@ -1,8 +1,9 @@
 // Times a demo of examples/ as a person plays it: it starts the demo live at the preset that the
 // page's own switches ask for, waits for the first frame, then measures the frames. It reports the
 // preset and the mode the engine ran, the frame rate, the first-frame time and the bytes that the
-// page downloaded before the first frame and in total. ?demo= names the demo, ?seconds= the measured
-// time. It fails when the measure drew no frame.
+// page downloaded before the first frame and in total, and the GPU time per frame and per pass, the
+// triangles and the draw calls where the device times them. ?demo= names the demo, ?seconds= the
+// measured time. It fails when the measure drew no frame.
 import { DEMOS } from '../../examples/demos';
 import { startDemo } from '../../examples/lib/run';
 import { progress, run } from './lib/result';
@@ -59,6 +60,10 @@ run('demo-frames', async () => {
 			p95: metrics.intervalMs.p95,
 			p99: metrics.intervalMs.p99,
 		},
+		gpuMs: metrics.gpuMs,
+		gpuPassMs: metrics.gpuPassMs,
+		triangles: metrics.triangles,
+		drawCalls: metrics.drawCalls,
 		firstFrameMs: metrics.load.firstFrameMs,
 		firstFrameDoneMs: metrics.load.firstFrameDoneMs,
 		engineStartMs: metrics.load.engineStartMs,

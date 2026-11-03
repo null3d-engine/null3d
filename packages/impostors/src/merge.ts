@@ -167,7 +167,8 @@ export function mergeFarGeometry(parts: readonly FarPart[]): MeshArrays {
 		if ((carried[name] as unknown[]).length !== count) carried[name] = [];
 	const positionsOut = new Float32Array(totalVertices * 3);
 	const indicesOut = new Uint32Array(totalIndices);
-	const out: MeshArrays = { positions: positionsOut, indices: indicesOut };
+	// A far cell already draws each copy's coarsest level, so its mesh plans no levels on top.
+	const out: MeshArrays = { positions: positionsOut, indices: indicesOut, levels: false };
 	const normalsOut = (carried.normals as unknown[]).length
 		? new Float32Array(totalVertices * 3)
 		: undefined;

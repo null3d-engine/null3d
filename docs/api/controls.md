@@ -253,6 +253,7 @@ A press on a handle begins a drag, and the pointer then moves, turns or scales t
 - A turn follows the pointer around the ring, so the handle stays under it. An object turns by the angle that the pointer sweeps around the axis.
 - A finger presses and drags a handle as the mouse does. Give the canvas `touch-action: none` as for the camera controls.
 - The handles draw over the scene, so a handle that lies behind a wall still shows and still takes the pointer.
+- The handle meshes take `levels: false`. The handles keep one share of the screen, so a level would never switch.
 
 The handles answer a raycast on a layer of their own, so a press tests the gizmo alone. No scene object stands between the pointer and a handle. `layers` sets the layer that the handles draw on, which the controls add to the camera's layers and take away at `destroy`. `pickLayers` sets the layer of the handles that answer a raycast, which no camera draws. Both default to layers out of the way of a scene's own: 30 and 29. Give a camera that draws every layer another pair, or its image shows the pickers.
 
