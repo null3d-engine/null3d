@@ -188,6 +188,12 @@ export type Check =
 	| { kind: 'capabilities-reload'; first: string }
 	| { kind: 'isolation' }
 	| { kind: 'image'; run: ImageRun }
+	/**
+	 * One page drawn twice in a row: the first draw is its first use of its programs in that
+	 * browser session, and the second reuses them. The pair tells a loss that belongs to the first
+	 * use from one that strikes a warm page too.
+	 */
+	| { kind: 'warm-page'; half: 'cold' | 'warm' }
 	| { kind: 'shaders' }
 	| { kind: 'shader-library'; tier: Tier }
 	| { kind: 'engine'; tier: Tier; mode: EngineMode }
@@ -484,6 +490,61 @@ function imageItem(run: ImageRun): PlanItem<Check> {
 	};
 }
 
+/** The first and second draws of the page that the checks plan draws twice in one row. */
+const WARM_PAGE_COLD = 'warm-page-cold';
+const WARM_PAGE_WARM = 'warm-page-warm';
+
+/**
+ * The one page that the checks plan draws twice in a row, cold then warm: the terrain at the High
+ * preset, on WebGL2, at the size and preset that CI's Safari loses its context on most often. The
+ * first draw is the page's first use of its programs in that browser session and the second reuses
+ * them, so a second draw that keeps its context lays the loss at the first use, which a compiled
+ * program cache can spare, while two losses show a page that loses its context whatever its
+ * programs. Both results are kept, and the run's notes give the reading that their pair makes.
+ */
+function warmPageItems(): PlanItem<Check>[] {
+	const sketch = encodeURIComponent('/tests/pages/sketches/terrain-sketch.ts');
+	const switches = ['gpu=webgl2', 'hold=1', 'preset=high', 'size=320x180', `sketch=${sketch}`];
+	return [
+		pageItem(
+			WARM_PAGE_COLD,
+			'image',
+			{ kind: 'warm-page', half: 'cold' },
+			{ switches, timeoutSeconds: 60 },
+		),
+		pageItem(
+			WARM_PAGE_WARM,
+			'image',
+			{ kind: 'warm-page', half: 'warm' },
+			{ switches, timeoutSeconds: 60 },
+		),
+	];
+}
+
+/** Whether a draw lost its WebGL2 context, as the engine reports it in hold mode. */
+const lostContext = (result: ItemResult | undefined) =>
+	result !== undefined && result.ok === false && /E1302/.test(result.error ?? '');
+
+/**
+ * What the two draws say about a context that a browser lost. Each answer is fixed here, before the
+ * run, so the pair is read the same way every time. A second draw that kept its context lays the
+ * loss at the page's first use of its programs, which compiling them once for the session, or a
+ * cache of them, can spare. Two losses, or a loss on the warm draw alone, show a page that loses
+ * its context whatever its programs, which is the browser's fault and not the page's.
+ */
+export function warmPageNote(cold: ItemResult | undefined, warm: ItemResult): string {
+	if (cold === undefined) return 'the row has no cold draw of the page, so the pair says nothing';
+	const coldLost = lostContext(cold);
+	const warmLost = lostContext(warm);
+	if (coldLost && warmLost)
+		return 'both draws lost their WebGL2 context, so the loss strikes the page whatever its programs: the browser lost the device, not only the first use of the programs';
+	if (coldLost)
+		return 'the cold draw lost its WebGL2 context and the warm draw kept it, so the loss belongs to the first use of the programs, which a cache of the compiled programs can spare';
+	if (warmLost)
+		return 'the cold draw kept its WebGL2 context and the warm draw lost it, so the loss does not belong to the first use of the programs';
+	return 'both draws kept their WebGL2 context, so this run lost none on the page, and the pair says nothing about the loss';
+}
+
 /** The shaders page's time for its loads and its WGSL modules. */
 const SHADERS_BASE_SECONDS = 30;
 
@@ -659,6 +720,7 @@ export function checksPlan({ shaders = 'all' }: PlanSettings = {}): PlanItem<Che
 			pageItem(`stats-${tier}`, 'stats', { kind: 'stats', tier }, { switches: [`gpu=${tier}`] }),
 		),
 		...IMAGE_RUNS.map(imageItem),
+		...warmPageItems(),
 		...TIERS.map((tier) =>
 			pageItem(
 				`ktx2-${tier}`,
@@ -3496,6 +3558,9 @@ export function itemsNeeded(check: Check): string[] {
 			return [check.first];
 		case 'image':
 			return check.run.sameAs === undefined ? [] : [imageItemId(check.run.sameAs)];
+		case 'warm-page':
+			// The second draw's reading needs the first, so the two share a shard and run in order.
+			return check.half === 'warm' ? [WARM_PAGE_COLD] : [];
 		case 'parity':
 			return [
 				...new Set([check.pair.reference, BASELINE_PAIR.reference, BASELINE_PAIR.candidate]),
@@ -3884,8 +3949,9 @@ export function judge(
 	if (!result.ok) {
 		const path = neededPath(check);
 		if (path && missing[path] && missingPath(path, result.error)) return 'skip';
-		// A tab memory page that gave no result in time still tells how far it got.
-		if (check.kind !== 'tab-memory') return [failureText(result)];
+		// A tab memory page that gave no result in time still tells how far it got, and the second
+		// draw of the warm page still reads the pair of draws that the row holds.
+		if (check.kind !== 'tab-memory' && check.kind !== 'warm-page') return [failureText(result)];
 	}
 	switch (check.kind) {
 		case 'capabilities':
@@ -3900,6 +3966,13 @@ export function judge(
 		}
 		case 'image':
 			return imageRunProblems(check, result, context);
+		case 'warm-page': {
+			// A lost context is the page's own failure, which the run counts. The pair's reading is
+			// noted on the second draw, whose result has the first one beside it.
+			if (check.half === 'warm')
+				context?.note?.(warmPageNote(context.resultOf(WARM_PAGE_COLD), result));
+			return result.ok ? [] : [failureText(result)];
+		}
 		case 'shaders': {
 			const failures = (result.failures ?? []) as { shader: string; stage: string; log: string }[];
 			const problems = failures.map((f) => `${f.shader} ${f.stage}: ${f.log.split('\n')[0]}`);
