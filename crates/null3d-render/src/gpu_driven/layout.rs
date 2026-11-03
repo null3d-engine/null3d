@@ -899,7 +899,9 @@ impl Layout {
     /// Skinned objects draw the skinned vertices that `skinning` lays out; the skinned objects that
     /// it hides get no bucket, and the layout asks only for their pipelines (see
     /// [`Self::waiting`]). It reuses the layout's tables and scratch space, which grow only with
-    /// the scene. A scene of more than `limit` sources fails.
+    /// the scene. A scene of more than `limit` sources fails. A mesh may draw its tree of cluster
+    /// patches where `cluster_binding` is the largest storage binding of the cluster pass that the
+    /// frame runs, and 0 where it runs none.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn rebuild(
         &mut self,
@@ -916,7 +918,7 @@ impl Layout {
         key_counts: &mut KeyCounts,
         pick_targets: PassTargets,
         picking: bool,
-        clusters: bool,
+        cluster_binding: u32,
     ) -> Result<(), RecordError> {
         let scene_rows = scene.capacity() + 1;
         self.codes = self.drawn == Drawn::Scene && settings.debug_view() == DebugView::Levels;
@@ -1092,11 +1094,15 @@ impl Layout {
         let levels = settings.levels();
         // A mesh whose bucket draws its tree of cluster patches draws no whole level: the patches
         // already cover it at the view's threshold. This holds only where the cluster pass runs,
-        // which the direct path does not, and only for the one copy and one part that the pass
-        // draws.
+        // which the direct path does not, and only for the one copy that the pass draws. The pass
+        // copies triangles, whose 32-bit indices reach every vertex of the mesh's parts from the
+        // first part's base vertex while the parts lie one after another in one page. A tree also
+        // fits the storage binding that the pass's tables and each view's list take, beside the
+        // trees before it, or it draws whole levels.
         let patches = settings.patches();
         let mut treed_keys: Vec<BucketKey> = Vec::new();
-        if clusters && drawn == Drawn::Scene {
+        if cluster_binding > 0 && drawn == Drawn::Scene {
+            let (mut tree_patches, mut tree_indices) = (0u32, 0u32);
             for slot in 0..scene_rows as usize {
                 let Some(key) = scene_key(slot) else {
                     continue;
@@ -1104,18 +1110,32 @@ impl Layout {
                 let single = key_counts
                     .binary_search_by_key(&key, |&(key, _)| key)
                     .is_ok_and(|at| key_counts[at].1 == 1);
-                if !single || patches.of(key.3).is_none() {
+                let Some(tree) = patches.of(key.3).filter(|_| single) else {
                     continue;
-                }
+                };
                 let mesh = levels.mesh_of_key(key.3).unwrap_or(key.3);
                 let Some(slot_mesh) = settings.meshes().mesh(mesh.wrapping_sub(1)) else {
                     continue;
                 };
                 let lines = key.0.state & state_flags::LINE_LIST != 0;
                 let by_index = self.index_instances && key.0.reads_index();
-                if settings.meshes().parts(slot_mesh, lines).len() != 1 || by_index {
+                if lines || by_index || settings.meshes().joined_parts(slot_mesh).is_none() {
                     continue;
                 }
+                let more_patches = tree_patches.saturating_add(tree.len() as u32);
+                let more_indices = tree_indices.saturating_add(tree.indices().len() as u32);
+                let bytes = super::clusters::table_bytes(
+                    more_patches,
+                    treed_keys.len() as u32 + 1,
+                    more_indices,
+                );
+                // The pass copies with a workgroup a patch, in one dispatch along one axis.
+                if bytes.iter().any(|&bytes| bytes > cluster_binding)
+                    || more_patches > null3d_gpu::caps::MAX_WORKGROUPS_PER_DIMENSION
+                {
+                    continue;
+                }
+                (tree_patches, tree_indices) = (more_patches, more_indices);
                 treed_keys.push(key);
             }
             treed_keys.sort_unstable();
@@ -2182,7 +2202,7 @@ mod tests {
                 &mut KeyCounts::new(),
                 targets,
                 false,
-                false,
+                0,
             )
             .unwrap();
 
@@ -2276,7 +2296,7 @@ mod tests {
                 &mut KeyCounts::new(),
                 targets,
                 false,
-                false,
+                0,
             )
             .unwrap();
         let texels = uploaded_ranges(&mut layout);
@@ -2338,7 +2358,7 @@ mod tests {
                 &mut KeyCounts::new(),
                 targets,
                 false,
-                false,
+                0,
             )
             .unwrap();
         let mut list = DrawList::with_capacity(1 << 16);
@@ -2404,7 +2424,7 @@ mod tests {
                 &mut KeyCounts::new(),
                 targets,
                 false,
-                false,
+                0,
             )
             .unwrap();
         let mesh_radius = settings.meshes().mesh(mesh - 1).unwrap().radius;
@@ -2490,7 +2510,7 @@ mod tests {
                 &mut KeyCounts::new(),
                 targets,
                 false,
-                false,
+                0,
             )
             .unwrap();
         let biases: Vec<(u32, f32)> = layout
@@ -2557,7 +2577,7 @@ mod tests {
                     &mut KeyCounts::new(),
                     targets,
                     false,
-                    false,
+                    0,
                 )
                 .unwrap();
             // The object's entry draws nowhere, so the culling shader never counts its instances.
@@ -2582,5 +2602,135 @@ mod tests {
     fn an_entry_counted_on_the_gpu_is_hidden_from_culling() {
         assert_eq!(scene_entry(4, 1.0, 3, flags::VISIBLE, true), HIDDEN);
         assert_ne!(scene_entry(4, 1.0, 3, flags::VISIBLE, false), HIDDEN);
+    }
+
+    /// A scene of one object of a mesh of 30,000 separate triangles, past what one part holds,
+    /// whose vertices each carry their own number in their first word, and a tree of `patches`
+    /// patches, each over the mesh's last triangle. Returns the layout that `cluster_binding`
+    /// builds, the settings, and the mesh's id.
+    fn split_tree_layout(cluster_binding: u32, patches: u32) -> (Layout, SceneSettings, u32) {
+        let mut settings = scene_settings(&RendererConfig::default());
+        let stride = null3d_gpu::drawlist::vertex::stride(0) as usize;
+        let count = 90_000usize;
+        let mut vertices = vec![0; count * stride];
+        for v in 0..count {
+            vertices[v * stride..v * stride + 4].copy_from_slice(&(v as u32).to_le_bytes());
+        }
+        let geometry = crate::geometry::Geometry {
+            format: 0,
+            vertices,
+            indices: (0..count as u32).collect(),
+        };
+        let index = settings.meshes_mut().add(&geometry).unwrap();
+        let mesh = index + 1;
+        let last = count as u32 - 3;
+        let mut indices = vec![last, last + 1, last + 2];
+        let part_vertices = settings.meshes().to_part_order(index, &mut indices);
+        let patches = patches as usize;
+        let tree = crate::patches::PatchTree::new(
+            indices.repeat(patches),
+            vec![[0.0, 0.0, 0.0, 1.0]; patches],
+            (0..patches as u32).map(|k| [k * 3, 3, 0, 0]).collect(),
+            0,
+            part_vertices,
+        )
+        .unwrap();
+        settings.patches_mut().set(mesh, Some(tree));
+        let material = settings
+            .materials_mut()
+            .create(Shading::Lit, 0, [1.0; 4])
+            .unwrap()
+            + 1;
+        let mut scene = SceneStorage::with_capacity(8);
+        let object = scene.reserve().unwrap();
+        scene
+            .apply_commands(
+                &[
+                    Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+                    Command::set_material(object, material),
+                ],
+                1,
+            )
+            .unwrap();
+        scene.update_transforms(&JobSystem::new(0));
+        let targets = PassTargets {
+            color_format: format::CANVAS,
+            depth_format: format::DEPTH32_FLOAT,
+            samples: 4,
+            permutation: 0,
+        };
+        let mut layout = Layout::default();
+        layout
+            .rebuild(
+                &settings,
+                &mut PipelineCache::default(),
+                targets,
+                &scene,
+                &BatchTable::with_capacity(1),
+                scene.parity(),
+                u32::MAX,
+                CasterPasses::default(),
+                Prepass::Off,
+                &Skinning::default(),
+                &mut KeyCounts::new(),
+                targets,
+                false,
+                cluster_binding,
+            )
+            .unwrap();
+        (layout, settings, mesh)
+    }
+
+    /// The cluster pass draws a split mesh's patches with 32-bit indices from the first part's base
+    /// vertex, so every index must land on the mesh vertex that the tree named, in the one page
+    /// that holds all the mesh's parts.
+    #[test]
+    fn a_split_meshs_tree_reaches_its_own_vertices_from_the_first_parts_base_vertex() {
+        let (layout, settings, mesh) = split_tree_layout(
+            null3d_gpu::drawlist::sizes::PORTABLE_STORAGE_BINDING_BYTES,
+            1,
+        );
+        let meshes = settings.meshes();
+        let slot = meshes.mesh(mesh - 1).unwrap();
+        assert!(meshes.parts(slot, false).len() > 1, "the mesh splits");
+        let [cluster] = layout.clusters[..] else {
+            panic!("the mesh draws its tree: {:?}", layout.clusters);
+        };
+        let first = meshes.joined_parts(slot).expect("one run of vertices");
+        assert_eq!(cluster.base_vertex, first.base_vertex);
+        let page = &meshes.pages()[first.page as usize];
+        let stride = null3d_gpu::drawlist::vertex::stride(0) as usize;
+        for (k, &index) in layout.cluster_indices.iter().enumerate() {
+            let at = (index + cluster.base_vertex) as usize * stride;
+            let own = u32::from_le_bytes(page.vertices[at..at + 4].try_into().unwrap());
+            assert_eq!(own, 90_000 - 3 + k as u32, "index {k}");
+        }
+    }
+
+    /// A tree whose tables would pass the cluster pass's storage binding draws the mesh's whole
+    /// triangle list, as it would where no cluster pass runs, rather than fail the frame.
+    #[test]
+    fn a_tree_past_the_cluster_binding_draws_whole() {
+        // The tree's patch and its mesh's record take 64 bytes of the patch table.
+        let [table, _] = super::super::clusters::table_bytes(1, 1, 3);
+        let (layout, ..) = split_tree_layout(table, 1);
+        assert_eq!(layout.clusters.len(), 1);
+        let (layout, ..) = split_tree_layout(table - 1, 1);
+        assert!(layout.clusters.is_empty());
+        assert!(layout.buckets.iter().all(|bucket| bucket.cluster.is_none()));
+        let (layout, ..) = split_tree_layout(0, 1);
+        assert!(layout.clusters.is_empty());
+    }
+
+    /// The pass copies each patch's indices in a workgroup of its own, in one dispatch along one
+    /// axis, so the trees that a layout draws hold at most as many patches as that axis takes.
+    #[test]
+    fn a_tree_past_one_dispatch_of_patches_draws_whole() {
+        let most = null3d_gpu::caps::MAX_WORKGROUPS_PER_DIMENSION;
+        let binding = null3d_gpu::drawlist::sizes::PORTABLE_STORAGE_BINDING_BYTES;
+        let (layout, ..) = split_tree_layout(binding, most);
+        assert_eq!(layout.clusters.len(), 1);
+        let (layout, ..) = split_tree_layout(binding, most + 1);
+        assert!(layout.clusters.is_empty());
     }
 }
