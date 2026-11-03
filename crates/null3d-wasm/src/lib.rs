@@ -2343,6 +2343,7 @@ fn mesh_failure(error: MeshError) -> u32 {
             arrays(arrays_problem::MORPH_NOT_FINITE, at | array << 28)
         }
         MeshError::SharedUnavailable => arrays(arrays_problem::LEVEL_BASE, 0),
+        MeshError::OutOfMemory { bytes } => out_of_memory(bytes),
         _ => render_failure(render_detail::BAD_MESH, 0),
     }
 }
