@@ -1,7 +1,9 @@
-// Pines made in code at four levels of detail, and the rolling hills they stand on, for the forest
-// demo and the test page that measures what the levels save. A pine is a trunk and four tiers of
-// needles, each a curved cone whose edge waves three times around it, in vertex colors, darker
-// toward each tier's base. The stone garden builds its own pines with the same grid of quads.
+// A fixed pine stand-in and the hills it stands on, for the sketches that weigh levels and impostors:
+// `impostor-shadow`, `impostor-turn`, `impostor-turn-lean`, `impostor-handover` and `lod-cost` import
+// it, and the figures those pages record are measured against this exact tree. It is not a demo's
+// plant generator: the demos grow their trees from the vegetation add-on's species records. A pine
+// is a trunk and four tiers of needles, each a curved cone whose edge waves three times around it,
+// in vertex colors, darker toward each tier's base.
 import { type Geometry, type InstanceBatch, type MeshGeometry, math } from '@null3d/engine';
 
 /**

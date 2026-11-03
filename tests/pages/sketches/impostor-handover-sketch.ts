@@ -8,7 +8,7 @@
 import { defineSketch, type MeshArrays } from '@null3d/engine';
 import { bakeImpostorAtlas, createImpostors, octahedralAtlas } from '@null3d/impostors';
 import { handOverToCards } from '@null3d/vegetation';
-import { pineArrays } from '../../../examples/lib/pines';
+import { pineArrays } from '../lib/pines';
 
 /** The distance from the camera at which the meshes hand over to the cards, in meters. */
 const SWITCH = 30;
