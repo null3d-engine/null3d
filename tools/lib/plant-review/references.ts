@@ -289,7 +289,8 @@ export interface IndexRow {
 /**
  * The rows of an INDEX.md: each table row whose first cell names a file in backticks. A row whose
  * "what it shows" cell says the file is superseded marks it out of use, with the file that
- * supersedes it when the cell names one.
+ * supersedes it when the cell names one. A later cell that says "Superseded by" a file, with a
+ * capital, marks it out of use too; "is superseded by" there speaks of another file.
  */
 export function readIndex(text: string): IndexRow[] {
 	const rows: IndexRow[] = [];
@@ -299,8 +300,10 @@ export function readIndex(text: string): IndexRow[] {
 		const file = /^`([^`]+)`$/.exec(cells[1] ?? '')?.[1];
 		if (!file) continue;
 		const shows = cells[2] ?? '';
-		const superseded = /\bsuperseded\b/i.test(shows);
-		const by = /superseded by `([^`]+)`/i.exec(shows)?.[1];
+		const later = cells.slice(3).join(' ');
+		const laterBy = /\bSuperseded by `([^`]+)`/.exec(later)?.[1];
+		const superseded = /\bsuperseded\b/i.test(shows) || laterBy !== undefined;
+		const by = /superseded by `([^`]+)`/i.exec(shows)?.[1] ?? laterBy;
 		rows.push({ file, shows, ...(superseded ? { supersededBy: by ?? 'a later file' } : {}) });
 	}
 	return rows;
@@ -754,6 +757,7 @@ export function plantMask(image: Rgba): PlantMask {
 			}
 			mask[at] = d > (below ? groundLimit : skyLimit) ? 1 : 0;
 		}
+	clearSideBands(mask, lab, width, height, horizon);
 	if (background.ground) keepHangingParts(mask, lab, width, height, horizon, background.ground);
 	else
 		keepHangingParts(
@@ -763,13 +767,111 @@ export function plantMask(image: Rgba): PlantMask {
 			height,
 			height - Math.max(2, Math.round(height * FOOT_SHARE)),
 		);
-	// The plant is the largest part; small parts near it are leaf clumps that the sky cut off, and
-	// parts wholly below the horizon that do not join it are the meadow's own texture.
+	keepPlantParts(mask, width, height, horizon);
+	return { width, height, mask, background };
+}
+
+/** How far above the horizon, as a share of the frame's height, a background band may lie. */
+const SIDE_BAND_REACH = 0.25;
+/** The CIELAB distance from the colour at the frame's side within which a band runs on. */
+const SIDE_BAND_COLOUR = 18;
+
+/** The most rows, as a share of the frame's height, of a strip that reaches only one side. */
+const SIDE_STRIP_ROWS = 0.04;
+
+/**
+ * Clears the background bands that the sky's and the meadow's surfaces miss, such as a river or a
+ * far bank along the horizon. Near or below the horizon, a row whose outline reaches both sides of
+ * the frame holds such a band, since a plant in frame reaches at most one; so does a thin run of
+ * rows that reaches one side once those are cleared, where a plant running off the frame reaches
+ * it over many rows. In each such row, the run in from each side it reaches is cleared while its
+ * colour stays near the colour at that side.
+ */
+export function clearSideBands(
+	mask: Uint8Array,
+	lab: Float32Array,
+	width: number,
+	height: number,
+	horizon: number,
+): void {
+	const sample = Math.max(2, Math.round(width * 0.01));
+	const from = Math.max(0, horizon - Math.round(height * SIDE_BAND_REACH));
+	const thin = Math.max(2, Math.round(height * SIDE_STRIP_ROWS));
+	const left = (y: number) => mask[y * width] === 1;
+	const right = (y: number) => mask[y * width + width - 1] === 1;
+	for (let y = from; y < height; y++)
+		if (left(y) && right(y)) clearSideRuns(mask, lab, width, y, sample);
+	for (let y = from; y < height; ) {
+		if (!left(y) && !right(y)) {
+			y++;
+			continue;
+		}
+		let end = y;
+		while (end < height && (left(end) || right(end))) end++;
+		if (end - y <= thin) for (let r = y; r < end; r++) clearSideRuns(mask, lab, width, r, sample);
+		y = end;
+	}
+}
+
+/**
+ * Clears a band's pixels along a row, in from each side of the frame it reaches: those whose colour
+ * stays near the colour at that side, up to the first stretch of other colours as wide as a
+ * hundredth of the frame, which is the plant. Shorter stretches between band pixels are the band's
+ * own texture and go with it.
+ */
+function clearSideRuns(
+	mask: Uint8Array,
+	lab: Float32Array,
+	width: number,
+	y: number,
+	sample: number,
+): void {
+	const row = y * width;
+	for (const [start, step] of [
+		[0, 1],
+		[width - 1, -1],
+	] as const) {
+		if (!mask[row + start]) continue;
+		const seed = [0, 0, 0];
+		let n = 0;
+		for (let k = 0, x = start; k < sample && mask[row + x]; k++, x += step) {
+			for (let c = 0; c < 3; c++)
+				seed[c] = (seed[c] as number) + (lab[(row + x) * 3 + c] as number);
+			n++;
+		}
+		for (let c = 0; c < 3; c++) seed[c] = (seed[c] as number) / n;
+		const pending: number[] = [];
+		for (let x = start; x >= 0 && x < width && pending.length < sample; x += step) {
+			if (!mask[row + x]) continue;
+			const at = (row + x) * 3;
+			const pixel = [lab[at] as number, lab[at + 1] as number, lab[at + 2] as number];
+			if (deltaE76(pixel, seed) > SIDE_BAND_COLOUR) {
+				pending.push(row + x);
+				continue;
+			}
+			for (const p of pending) mask[p] = 0;
+			pending.length = 0;
+			mask[row + x] = 0;
+		}
+	}
+}
+
+/**
+ * Keeps the plant in a mask: its largest part, and the small parts near it above the horizon,
+ * which are leaf clumps that the sky cut off. Parts wholly below the horizon that do not join it
+ * are the meadow's own texture.
+ */
+export function keepPlantParts(
+	mask: Uint8Array,
+	width: number,
+	height: number,
+	horizon: number,
+): void {
 	const { labels, sizes } = components(mask, width, height);
 	let main = 0;
 	for (let label = 1; label < sizes.length; label++)
 		if ((sizes[label] as number) > (sizes[main] as number)) main = label;
-	if (main === 0) return { width, height, mask, background };
+	if (main === 0) return;
 	const boxes = sizes.map(() => [width, height, -1, -1]);
 	for (let at = 0; at < labels.length; at++) {
 		const label = labels[at] as number;
@@ -797,7 +899,6 @@ export function plantMask(image: Rgba): PlantMask {
 	});
 	for (let at = 0; at < labels.length; at++)
 		mask[at] = keep[labels[at] as number] && labels[at] ? 1 : 0;
-	return { width, height, mask, background };
 }
 
 /** The plant's outline from a matte: the plant drawn dark on white, as the silhouette view draws it. */
