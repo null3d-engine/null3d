@@ -151,7 +151,7 @@ interface Candidate {
 	readonly axis: number;
 	readonly extent: number;
 	readonly light: number;
-	/** Axes in its subtree, itself included, and the bud sites they carry. */
+	/** Axes in its subtree, itself included, and the bud sites they carry in light enough for shoots. */
 	readonly axes: number;
 	readonly buds: number;
 }
@@ -159,12 +159,14 @@ interface Candidate {
 /**
  * The axes a branch cut can start from, ranked: those of the wanted order (any order past the stems
  * when it is undefined), by how near their subtree's extent is to `length`; among pieces as near,
- * those that carry bud sites (so shoots grow on them) and divide come first, then the sunniest.
+ * those that carry bud sites in enough light to grow shoots (at or above the record's shade line)
+ * and divide come first, then the sunniest.
  */
 function candidates(
 	skeleton: MacroSkeleton,
 	order: number | undefined,
 	length: number,
+	shade: number,
 ): Candidate[] {
 	const { axes } = skeleton;
 	const depth = depths(skeleton);
@@ -208,9 +210,11 @@ function candidates(
 		for (const owner of owners[a] as number[])
 			subtreeAxes[owner] = (subtreeAxes[owner] as number) + 1;
 	const subtreeBuds = new Uint32Array(axes.count);
-	for (let b = 0; b < skeleton.buds.count; b++)
+	for (let b = 0; b < skeleton.buds.count; b++) {
+		if ((skeleton.buds.light[b] as number) < shade) continue;
 		for (const owner of owners[skeleton.buds.axis[b] as number] as number[])
 			subtreeBuds[owner] = (subtreeBuds[owner] as number) + 1;
+	}
 	const out: Candidate[] = [];
 	for (let a = 0; a < axes.count; a++)
 		if (isCandidate(a) && (extent[a] as number) > 0)
@@ -271,8 +275,10 @@ export function cutBranch(
 		cutting.part === 'branch' || cutting.part === 'subbranch'
 			? record.cuttings?.[cutting.part]?.order
 			: undefined;
-	let ranked = candidates(skeleton, hinted, length);
-	if (ranked.length === 0 && hinted !== undefined) ranked = candidates(skeleton, undefined, length);
+	const shade = record.shoots?.placement.shadePrune ?? 0;
+	let ranked = candidates(skeleton, hinted, length, shade);
+	if (ranked.length === 0 && hinted !== undefined)
+		ranked = candidates(skeleton, undefined, length, shade);
 	if (ranked.length === 0) return undefined;
 	const chosen = ranked[(cutting.pick ?? 0) % ranked.length] as Candidate;
 	const { axes, buds } = skeleton;
