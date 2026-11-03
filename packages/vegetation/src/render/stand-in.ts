@@ -61,6 +61,7 @@ export async function standInPrepare(
 	const kit = await buildKit(module, {
 		detail: options.detail ?? ctx.quality.preset,
 		placeholders: true,
+		...(options.cache && { cache: options.cache }),
 	});
 	const white = texture(ctx, 1, 1, new Uint8Array([255, 255, 255, 255]), 'linear');
 	const size = kit.cards.size;
@@ -82,7 +83,7 @@ export async function standInPrepare(
 		near: white,
 		bytes: 4 + size * size * 4,
 	};
-	return { ...kit, textures };
+	return { ...kit, textures, ...(options.cache && { cache: options.cache }) };
 }
 
 /** The record's leaf colour, from its foliage's optics. */

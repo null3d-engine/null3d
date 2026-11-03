@@ -1,15 +1,47 @@
 // The plant core's stages in a job worker, beside the frames: the kit, a variant, its nearest wood
 // and its far cards. Each call sends plain data to the add-on's task (generate-task.ts) and resolves
-// with the same bytes that the same call on the page's own thread would give.
+// with the same bytes that the same call on the page's own thread would give. Each result is kept
+// by its key for the page's visit, and in the store of bytes that a page kit carries across visits,
+// so a second call with the same inputs grows nothing.
 import { runTask, type Task } from '@null3d/engine';
 import type { PlantAsset, PlantPart, SpeciesKitData } from './asset';
-import type { GrowOptions, KitOptions, KitSource } from './generate';
+import { cachedResult, memoryCache, type PlantByteCache } from './core/cache';
+import { type GrowOptions, type KitOptions, type KitSource, kitKey, variantKey } from './generate';
 import type { PlantTaskInput } from './generate-task';
 import type { FarPlant } from './lod/impostor';
 import type { FarBake } from './stages';
 
 /** The add-on's task, made once, so the engine keys its worker state by one object. */
 const TASK: Task = { name: 'vegetation', script: new URL('./generate-task.ts', import.meta.url) };
+
+/** Bytes of results that the page keeps for its visit; past them, the oldest go first. */
+const VISIT_BYTES = 64_000_000;
+
+/** The page's results for its visit, by key. */
+const visit = memoryCache(VISIT_BYTES);
+
+/** The variant key that each grown variant came from, so its far bake has a key too. */
+const grownFrom = new WeakMap<PlantAsset, string>();
+
+/**
+ * How a kit is built on a page: the tier, the stand-ins, and the store of bytes that keeps the
+ * plant core's results across visits.
+ *
+ * @category api/vegetation
+ */
+export interface PageKitOptions extends KitOptions {
+	/** A store of bytes across visits; without one, results are kept for the visit alone. */
+	readonly cache?: PlantByteCache;
+}
+
+/** The store of bytes that a page kit carries, if any. */
+function storeOf(kit: SpeciesKitData): PlantByteCache | undefined {
+	return (kit as { readonly cache?: PlantByteCache }).cache;
+}
+
+/** A cache key's tail that keeps a kit with stand-ins apart from one without. */
+const standIns = (kit: { readonly placeholders?: boolean }) =>
+	kit.placeholders ? ':stand-ins' : '';
 
 /** Runs one stage in a job worker. */
 function runStage<T>(input: PlantTaskInput): Promise<T> {
@@ -21,16 +53,22 @@ function runStage<T>(input: PlantTaskInput): Promise<T> {
  * header.
  *
  * @param source The species' record and texture manifest, such as its module.
- * @param options The tier, and whether stages that are not built yet grow stand-ins.
+ * @param options The tier, whether stages that are not built yet grow stand-ins, and the store of
+ *   bytes that keeps the kit across visits.
  * @returns The kit.
  * @category api/vegetation
  */
-export function buildKit(source: KitSource, options: KitOptions = {}): Promise<SpeciesKitData> {
-	return runStage({
-		stage: 'kit',
-		source: { record: source.record, textures: { manifest: source.textures.manifest } },
-		options,
-	});
+export function buildKit(source: KitSource, options: PageKitOptions = {}): Promise<SpeciesKitData> {
+	const { cache, ...kitOptions } = options;
+	const manifest = source.textures.manifest;
+	const key = `kit:${kitKey(source.record, manifest, kitOptions.detail ?? 'high')}${standIns(kitOptions)}`;
+	return cachedResult(key, visit, cache, () =>
+		runStage({
+			stage: 'kit',
+			source: { record: source.record, textures: { manifest } },
+			options: kitOptions,
+		}),
+	);
 }
 
 /**
@@ -41,8 +79,13 @@ export function buildKit(source: KitSource, options: KitOptions = {}): Promise<S
  * @returns The grown variant.
  * @category api/vegetation
  */
-export function growPlant(kit: SpeciesKitData, options: GrowOptions): Promise<PlantAsset> {
-	return runStage({ stage: 'grow', kit: kitData(kit), options });
+export async function growPlant(kit: SpeciesKitData, options: GrowOptions): Promise<PlantAsset> {
+	const key = `grow:${variantKey(kit, options)}:${options.near === true}${standIns(kit)}`;
+	const asset = await cachedResult(key, visit, storeOf(kit), () =>
+		runStage<PlantAsset>({ stage: 'grow', kit: kitData(kit), options }),
+	);
+	grownFrom.set(asset, key);
+	return asset;
 }
 
 /**
@@ -57,7 +100,10 @@ export function growNearWood(
 	kit: SpeciesKitData,
 	options: GrowOptions,
 ): Promise<PlantPart | undefined> {
-	return runStage({ stage: 'near-wood', kit: kitData(kit), options });
+	const key = `near-wood:${variantKey(kit, options)}${standIns(kit)}`;
+	return cachedResult(key, visit, storeOf(kit), () =>
+		runStage<PlantPart | undefined>({ stage: 'near-wood', kit: kitData(kit), options }),
+	);
 }
 
 /**
@@ -69,13 +115,20 @@ export function growNearWood(
  * @category api/vegetation
  */
 export async function bakeFarPlant(kit: SpeciesKitData, asset: PlantAsset): Promise<FarPlant> {
-	const bake = await runStage<FarBake>({ stage: 'far', kit: kitData(kit), asset });
+	const make = () => runStage<FarBake>({ stage: 'far', kit: kitData(kit), asset });
+	// A variant that growPlant did not give has no key, so its bake is made each time.
+	const grown = grownFrom.get(asset);
+	const bake = grown ? await cachedResult(`far:${grown}`, visit, storeOf(kit), make) : await make();
 	return { variant: asset.variant, bake };
 }
 
-/** A kit's plain data, without a page's GPU textures, which cannot cross to a worker. */
+/** A kit's plain data, without a page's GPU textures and store, which cannot cross to a worker. */
 function kitData(kit: SpeciesKitData): SpeciesKitData {
-	if (!('textures' in kit)) return kit;
-	const { textures: _textures, ...data } = kit as SpeciesKitData & { textures: unknown };
+	if (!('textures' in kit) && !('cache' in kit)) return kit;
+	const {
+		textures: _textures,
+		cache: _cache,
+		...data
+	} = kit as SpeciesKitData & { textures?: unknown; cache?: unknown };
 	return data;
 }
