@@ -280,9 +280,15 @@ export function groundLight(x: number, z: number, out: number[] | Float32Array):
 		NORMAL[2] as number,
 		occlusion,
 	);
-	out[0] = LIT[0] as number;
-	out[1] = LIT[1] as number;
-	out[2] = LIT[2] as number;
+	// The sky's reflection on the ground, which a lit surface adds and an unlit splat does not. The
+	// reflection lands hardest on the dark slope behind the blossom and on the far ground seen
+	// grazing, so it blends in with those rather than a constant over the whole glade.
+	const band = 1 - smoothstep(LIT[0] as number, 0.045, 0.055);
+	const far = smoothstep(Math.hypot(x, z), 15, 30);
+	const rim = smoothstep(Math.hypot(x, z), 30, 45);
+	out[0] = (LIT[0] as number) + 0.008 * band + 0.008 * rim;
+	out[1] = (LIT[1] as number) + 0.003 * band + 0.008 * rim;
+	out[2] = (LIT[2] as number) + 0.004 * band + 0.003 * far;
 }
 
 /** One splat of the ground, shaded by where it lies. */
