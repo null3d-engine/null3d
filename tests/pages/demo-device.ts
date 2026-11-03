@@ -234,7 +234,22 @@ run('demo-device', async () => {
 		engine.postToSketch(group, id);
 		note(`turned off ${id}`);
 	}
-	const windows: { frames: number; seconds: number; fps: number }[] = [];
+	const windows: {
+		frames: number;
+		seconds: number;
+		fps: number;
+		intervalMs: unknown;
+		memory: unknown;
+		gpuTextures: number | null;
+		gpuBuffers: number | null;
+	}[] = [];
+	// A run of several windows reads the overlay's figures after each one, so a long run shows
+	// whether the GPU's memory holds while the scene plays.
+	const perWindow = WINDOWS > 1 && OVERLAY;
+	if (perWindow) {
+		engine.stats({ collapsed: false });
+		await waitForOverlay('triangles');
+	}
 	if (MEASURE && SETTLE > 0) {
 		note(`settling for ${SETTLE} s`);
 		await new Promise((resolve) => setTimeout(resolve, SETTLE * 1000));
@@ -248,6 +263,10 @@ run('demo-device', async () => {
 				frames: measured.frames,
 				seconds: measured.seconds,
 				fps: measured.frames / measured.seconds,
+				intervalMs: measured.intervalMs,
+				memory: measured.memory,
+				gpuTextures: perWindow ? overlayMiB(overlayFigure('gpu-textures')) : null,
+				gpuBuffers: perWindow ? overlayMiB(overlayFigure('gpu-buffers')) : null,
 			});
 			metrics ??= measured;
 		}
