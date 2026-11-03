@@ -24,7 +24,7 @@ import {
 	type Vector3,
 } from './core/math';
 import type { Species } from './core/record';
-import { DETAILS, type Detail } from './core/types';
+import { DETAILS, type Detail, type Vec3 } from './core/types';
 
 /**
  * The piece a cutting takes.
@@ -535,6 +535,55 @@ export function clusterRank(kit: SpeciesKitData): readonly ShootPrototype[] {
 			b.vigor[0] - a.vigor[0] ||
 			a.index - b.index,
 	);
+}
+
+/**
+ * A 'cluster' cutting from the kit alone: one shoot row of the prototype that `pick` names, standing
+ * on its attach point at the origin, and the bounds of its mesh at the tier.
+ *
+ * @param kit The species' kit.
+ * @param cutting The piece.
+ * @param detail The mesh tier.
+ * @returns The row and its bounds, or undefined for a species without prototypes.
+ * @category api/vegetation
+ */
+export function clusterRow(
+	kit: SpeciesKitData,
+	cutting: CuttingOptions,
+	detail: Detail,
+):
+	| { readonly rows: ShootRows; readonly bounds: { readonly min: Vec3; readonly max: Vec3 } }
+	| undefined {
+	const ranked = clusterRank(kit);
+	if (ranked.length === 0) return undefined;
+	const prototype = ranked[(cutting.pick ?? 0) % ranked.length] as ShootPrototype;
+	const tier = prototype.tiers[DETAILS.indexOf(detail)] ?? prototype.tiers[2];
+	const p = tier.positions;
+	const min = [0, 0, 0];
+	const max = [0, 0, 0];
+	for (let i = 0; i < p.length; i += 3)
+		for (let k = 0; k < 3; k++) {
+			min[k] = Math.min(min[k] as number, p[i + k] as number);
+			max[k] = Math.max(max[k] as number, p[i + k] as number);
+		}
+	return {
+		rows: {
+			count: 1,
+			prototype: new Uint8Array([prototype.index]),
+			position: new Float32Array(3),
+			rotation: new Float32Array([0, 0, 0, 1]),
+			scale: new Float32Array([1]),
+			record: new Uint16Array(1),
+			phase: new Uint8Array(1),
+			sky: new Uint8Array([250]),
+			bent: new Uint8Array([0x88]),
+			order: new Uint32Array(1),
+		},
+		bounds: {
+			min: [min[0] as number, min[1] as number, min[2] as number],
+			max: [max[0] as number, max[1] as number, max[2] as number],
+		},
+	};
 }
 
 /**
