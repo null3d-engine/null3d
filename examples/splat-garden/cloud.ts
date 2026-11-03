@@ -263,9 +263,11 @@ export function groundColor(x: number, z: number, out: number[] | Float32Array):
 	out[2] = mix(mix(MOSS_DARK[2], MOSS_LIGHT[2], light), EARTH[2], earth);
 }
 
-/** One splat of the ground, shaded by where it lies. */
-function addGroundSplat(cloud: Builder, index: number, x: number, z: number, size: number): void {
-	const y = gardenHeight(x, z);
+/**
+ * The captured light on the ground at a point, in linear color. The mesh under the splats wears
+ * the same light, so the two match whatever sky the stage sets.
+ */
+export function groundLight(x: number, z: number, out: number[] | Float32Array): void {
 	groundNormal(x, z, NORMAL);
 	groundColor(x, z, GROUND_RGB);
 	const occlusion = 0.62 + 0.38 * (0.5 + 0.5 * noise.fbm2(x * 0.16 + 4, z * 0.16 - 9, 2));
@@ -278,6 +280,15 @@ function addGroundSplat(cloud: Builder, index: number, x: number, z: number, siz
 		NORMAL[2] as number,
 		occlusion,
 	);
+	out[0] = LIT[0] as number;
+	out[1] = LIT[1] as number;
+	out[2] = LIT[2] as number;
+}
+
+/** One splat of the ground, shaded by where it lies. */
+function addGroundSplat(cloud: Builder, index: number, x: number, z: number, size: number): void {
+	const y = gardenHeight(x, z);
+	groundLight(x, z, LIT);
 	cloud.flat(
 		x,
 		y + 0.01,
