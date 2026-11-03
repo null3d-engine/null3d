@@ -8,6 +8,7 @@
 // table needs a case.
 import {
 	defineSketch,
+	type ShaderOptions,
 	type SketchContext,
 	type SketchSetup,
 	type StandardOptions,
@@ -270,7 +271,31 @@ const CASES: Record<string, Case> = {
 			occluder: true,
 		});
 	},
+	// The camera's one-sample layer takes a blended surface that asks for it, which the High preset
+	// draws with several samples. The draw adapter sets `singleLayer` for an add-on feature at the
+	// `'resolve'` frame point; no page or add-on declares such a feature today, so this case is the
+	// only place that draws the layer's steps.
+	single_layer: ({ scene, geometry, materials }) => {
+		scene.createMesh({
+			mesh: geometry.plane({ width: 1.5, height: 1.5 }),
+			material: materials.shader({
+				wgsl: PLAIN,
+				color: '#7fb0d0',
+				opacity: 0.5,
+				alphaMode: 'blend',
+				singleLayer: true,
+			} as ShaderOptions<typeof PLAIN>),
+			position: [0, 1, 0],
+		});
+	},
 };
+
+/** The standard material's surface, unchanged, for the one-sample layer's blended pane. */
+const PLAIN = /* wgsl */ `
+fn surface(input: SurfaceInput) -> Surface {
+    return defaultSurface(input);
+}
+`;
 
 /** A custom effect that tints each pixel toward a color. */
 const TINT = /* wgsl */ `
