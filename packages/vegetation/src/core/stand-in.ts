@@ -1,8 +1,8 @@
 // Stand-in species: a plain record for a species whose folder has not landed yet, so a scene names
 // the species it places now and draws a simple stand-in until the real record arrives. A stand-in is
 // a small self-organizing broadleaf scaled to the size it is given, in the leaf and bark colours it
-// is given, and placed by the ecology it is given. Its kit grows a stand-in at every stage that is
-// not built yet. `loadSpeciesOrStandIn` takes the real species as soon as its folder exists.
+// is given, and placed by the ecology it is given. Its kit grows the stand-in of every stage, so it
+// draws the same as the real stages land. `loadSpeciesOrStandIn` takes the real species as soon as its folder exists.
 import { hashText } from './hash';
 import type { Species, SpeciesEcology, SpeciesModule } from './record';
 import { isSpeciesId, loadSpecies } from './registry';
