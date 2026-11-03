@@ -1294,6 +1294,7 @@ export class SketchRunner {
 		let first = 0;
 		this.holding = true;
 		this.time.held = true;
+		this.render.held = true;
 		try {
 			for (let step = 0; step <= steps; step++) {
 				this.clock.holdStep(step, steps, seconds);
@@ -1360,6 +1361,7 @@ export class SketchRunner {
 			this.holding = false;
 			this.time.held = false;
 			this.time.drawn = true;
+			this.render.held = false;
 		}
 		if (script !== undefined) this.scriptResult = { dumps, problems };
 		Atomics.store(slots, Slot.HeldFrom, first);
