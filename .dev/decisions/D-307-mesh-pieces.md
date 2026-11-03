@@ -48,6 +48,19 @@ The direct-draw path and WebGL2's job workers run the same tests in Rust (`crate
 
 The cone test is skipped where it may not hold: a material that draws both faces, a mirrored or stretched copy, shadow views, mirrors, probes and orthographic lenses. Shadow views place their instances relative to the camera, not the light, and a shadow pipeline may draw front faces or both.
 
+### The check during play
+
+Pieces pay only where the view leaves out enough of a mesh or enough of it faces away, and each costs a draw in every pass that draws its mesh. So, as the occlusion check does for its passes ([D-40](D-40-gpu-occlusion.md)), a check during play draws a mesh whole while its pieces do not pay (`crate::piece_check`). It counts, for the camera's own view, the triangles that each pieced mesh's copies would draw whole and those that its pieces draw:
+
+- On the CPU paths, WebGL2's job workers and WebGPU's direct draws, the culling has the counts already: the copies that each pieced bucket listed, and those that each piece kept.
+- On WebGPU's indirect path, the pieced bucket's own draw, which no pass draws, becomes a tally: the culling shader adds one to its instance count for each copy that waits for its pieces' tests. Every 10 frames the camera's counts copy, with the pieces' draws and the tallies, into the occlusion check's read ring, which lands them in engine memory a few frames later with no wait. Those reads go with the frame's own submit, so they add no submit inside a frame, which would end the frame's GPU timing there.
+
+Each mesh with pieces runs with them or whole. With pieces, each window of 60 frames that brought 3 counts or more gives a verdict: the pieces stay while they leave out at least 20% of the triangles that the copies in view would draw whole. A window with no copy in view says nothing. Every 600 frames each mesh drawn whole takes its pieces again for a window. Each change rebuilds the draw tables, as a change of the scene's structure does, so the probes of every mesh drawn whole fall on the same frame. `MeshStorage::pieces` gives none for a mesh drawn whole, so every layout and path follows the check.
+
+The threshold comes from the runs below. The desert's arches cut 43% to 64% of their triangles in view and keep their pieces. Its columns cut 0% to 17%, and its code-made ground 0%: a split mesh's pieces follow its parts, and the ground's 16 parts are strips across the whole map. The Island's roads cut 0% to 18%, and its stone walls 0% to 3%. In the benchmark's files, pieces that cut 23% of the walking view's triangles drew in the same GPU time as none, and above that they paid.
+
+With the check, the Island drew its frames in 7.54 and 6.42 ms of GPU time, against 8.26 ms without pieces in a run on the same build whose timer read true; another run without pieces read 2,972 ms, a timer fault that this Mac's load brings with pieces or without. The roads drew whole while the camera route flew high, and took their pieces back when it came low, where they cut 37% to 62%. The desert made in code drew its walk in 2.49 ms with the check and 2.52 ms without pieces, and its aerial view in 3.08 ms against 3.41 ms.
+
 ## Data
 
 ### The desert benchmark

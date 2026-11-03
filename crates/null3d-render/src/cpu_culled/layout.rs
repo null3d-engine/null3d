@@ -187,6 +187,9 @@ pub(super) struct PieceSet {
     pub(super) texture: u32,
     /// True when its entries come in pairs: each entry, then its fade value's bits.
     pub(super) pairs: bool,
+    /// The mesh whose pieces they are, by the storage's id, which the check of what pieces cull
+    /// counts by.
+    pub(super) mesh: u32,
 }
 
 /// A batch's place in the layout: its data texture, its first row there, whether its rows have
@@ -935,6 +938,7 @@ impl Layout {
                         count: pieces.len() as u32,
                         texture: group,
                         pairs,
+                        mesh: mesh - 1,
                     });
                     for piece in pieces {
                         piece_buckets.push(Bucket {

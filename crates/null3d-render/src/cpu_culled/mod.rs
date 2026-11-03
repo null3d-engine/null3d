@@ -645,6 +645,9 @@ pub struct CpuCulledRenderer {
     /// True when the scene's layout was built while a pick waits, so its draws hold the pick
     /// pipelines.
     layouts_picked: bool,
+    /// True when the check of what pieces cull changed a mesh's mode in the frame before, which
+    /// rebuilds the layouts.
+    pieces_switched: bool,
     /// True when the scene's layout was built with the depth prepass's pipelines.
     layout_prepass: bool,
     clusters: Clusters,
@@ -926,6 +929,7 @@ impl CpuCulledRenderer {
             motion: motion::Motion::default(),
             motion_moving: Vec::new(),
             layouts_picked: false,
+            pieces_switched: false,
             layout_prepass: false,
             clusters: Clusters::default(),
             patch_buffers: Vec::new(),
@@ -3152,6 +3156,7 @@ impl FrameBuilder for CpuCulledRenderer {
             || self.redraws_wanted() != self.redraws_built
             || picking != self.layouts_picked
             || skinned_appear
+            || self.pieces_switched
         {
             self.rebuild_layout(input, shadows, wanted, picking)?;
         }
@@ -3303,6 +3308,13 @@ impl FrameBuilder for CpuCulledRenderer {
                 None,
             )
             .map_err(|_| out_of_memory(&self.tone))?;
+        // The check of what pieces cull reads the camera's counts of this frame, and a change of a
+        // mesh's mode rebuilds the layouts in the next frame.
+        let check = self.settings.meshes_mut().piece_check_mut();
+        for count in self.culling.piece_counts() {
+            check.count(count.mesh, input.frame, count.would, count.drawn);
+        }
+        self.pieces_switched = check.step(input.frame);
         // The staged levels' watches read the levels that the camera's view picked, and the staged
         // bands' watches read the bands of patches that it drew.
         if self.settings.watches_stages() {
