@@ -5,8 +5,13 @@
 import { expect, type Page, test } from '@playwright/test';
 import { differentShare } from '../lib/images.ts';
 
-/** The route's time over the harbour, in seconds, and one frame later. */
-const HOLDS = [24, 24 + 1 / 60];
+/**
+ * The route's time in its low pass over the harbour, in seconds, and one frame later. There the
+ * frame's bottom rows show the harbour's water and its boats alone. At other times they take in the
+ * quay or the rocks, whose edges move with the camera from frame to frame, so a change of the
+ * route's shots moves this time with them.
+ */
+const HOLDS = [29.4, 29.4 + 1 / 60];
 /** The picture's size, and the rows at its bottom that show only water and boats. */
 const [WIDTH, HEIGHT] = [640, 360];
 const WATER_ROWS = 50;
