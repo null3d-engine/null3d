@@ -136,10 +136,14 @@ export function fitTurn(video: TurnVideo, frames?: readonly Rgba[]): TurnFit {
 		spread: crownBoxSpread(measures),
 	};
 	const enough = views.length >= Math.max(2, Math.ceil(LEAST_VIEWS * count));
-	const hull = enough ? hullEnvelope(views, video.file) : null;
+
 	const closing = closingOverlap(gridOf(0), gridOf(span), video.arc);
 	const framed = read.filter((o) => o.grid);
 	const camera = solveCamera(framed);
+	// The camera's distance draws the crown's near side larger, which the hull undoes.
+	const hull = enough
+		? hullEnvelope(views, video.file, camera?.distance ?? Number.POSITIVE_INFINITY)
+		: null;
 	const problems: string[] = [];
 	if (!enough)
 		problems.push(
