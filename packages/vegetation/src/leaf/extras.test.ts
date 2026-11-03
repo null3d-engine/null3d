@@ -99,7 +99,11 @@ function dressed(record: Species, season: Season): MeshInput {
 
 // The first four entries draw; the cone, the fifth, draws on a record of its own.
 const record = oakRecord({ extras: [ACORN, ...OTHERS] });
-const coned = oakRecord({ extras: [OTHERS[3] as ExtraSpec] });
+// The cones' record hands its shoots to cards where a shoot spans the pedunculate oak's pixels.
+const coned = oakRecord({
+	extras: [OTHERS[3] as ExtraSpec],
+	lod: { ...oakRecord().lod, switchPixels: [104, 12, 160] },
+});
 
 /** The vertices of each extra entry, by the entry its third colour byte names. */
 function byEntry(mesh: ReturnType<typeof extrasMesh>): number[] {
@@ -129,8 +133,8 @@ describe('the extras', () => {
 
 	it('puts one on about the record share of the matching sites', () => {
 		const input = dressed(oakRecord({ extras: [ACORN] }), 'summer');
-		const mesh = extrasMesh(input, 1);
-		const perAcorn = (ACORN.shape as { lathe: unknown[] }).lathe.length * 6;
+		const mesh = extrasMesh(input, 0);
+		const perAcorn = (ACORN.shape as { lathe: unknown[] }).lathe.length * 9;
 		const acorns = (mesh?.positions.length ?? 0) / 3 / perAcorn;
 		expect(acorns / input.rows.count).toBeGreaterThan(0.35);
 		expect(acorns / input.rows.count).toBeLessThan(0.65);
@@ -148,9 +152,16 @@ describe('the extras', () => {
 		}
 	});
 
-	it('leaves small extras off the thinned level and keeps large ones', () => {
+	it('keeps an extra on a card level only where it spans a few pixels', () => {
 		expect(byEntry(extrasMesh(dressed(record, 'summer'), 2))[2]).toBe(0); // thorns of 12 mm
-		expect(byEntry(extrasMesh(dressed(coned, 'summer'), 2))[0]).toBeGreaterThan(0); // cones of 9 cm
+		// Cones 4 cm across span several pixels where the first card level starts, and a pixel or
+		// two where the second does.
+		expect(byEntry(extrasMesh(dressed(coned, 'summer'), 1))[0]).toBeGreaterThan(0);
+		expect(byEntry(extrasMesh(dressed(coned, 'summer'), 2))[0]).toBe(0);
+		// An acorn's nut, 2 cm across, is a speck at either card level.
+		const acorned = oakRecord({ extras: [{ ...ACORN, share: 1 }] });
+		expect(extrasMesh(dressed(acorned, 'summer'), 1)).toBeUndefined();
+		expect(extrasMesh(dressed(acorned, 'summer'), 0)).toBeDefined();
 	});
 
 	it('grows the same extras from the same seed', () => {
