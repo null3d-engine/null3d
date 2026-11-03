@@ -1,10 +1,11 @@
-# D-304: the plant core grows plants at three scales, by eight growth models, one folder per species
+# D-305: the plant core grows plants at three scales, by eight growth models, one folder per species
 
 Status: decided. Built: the contracts between the stages and the module layout, with a stub for every
 stage. Also built: the generated species registry and species page, the record check, the owner's
-caps, the core's own trigonometry, and a stand-in for every stage. The first generator moves whole to
-`@null3d/vegetation/legacy`. Not built yet: the growers, the leaves and shoots, the wood, the plant
-material, placement, the near pool, the wind records and the far cards. Task: none.
+caps and the core's own trigonometry. A stand-in grows for every stage, and the demos place stand-in
+species by id until each species lands. The first generator is removed, by the owner's ruling. Not
+built yet: the growers, the leaves and shoots, the wood, the plant material and placement. The near
+pool, the wind records, the far cards and the species are not built yet either. Task: none.
 
 Summary: a plant grows as a macro skeleton per variant. Small shoot prototypes per species stand on
 the skeleton's bud sites. Each species picks one of eight growth models and lives in a folder of
@@ -78,8 +79,19 @@ prototypes take over where a shoot spans a few pixels.
   `core/math.ts`.
 - **Stubs and stand-ins.** Every stage exists from the start and throws `NotBuiltError` until it is
   built, so each part of the core fills only its own files. A kit built with `placeholders` grows a
-  deterministic stand-in for each stage that is not built. The review page and the determinism tests
-  use them, and no shipped species draws one.
+  deterministic stand-in for each stage that is not built. The review page, the determinism tests and
+  the demos use them, and no shipped species draws one. A demo names each species it places by id.
+  `loadSpeciesOrStandIn` loads the species once its folder exists. Until then it makes a stand-in
+  species of the demo's size and colors. The page side draws a stand-in kit with the engine's
+  standard material and instance batches. So a demo keeps its scatter, placement, wind and far cards
+  while its plants are stand-ins.
+- **No legacy generator.** The owner ruled that the first generator is not kept. Its code, its
+  built-in species, its tests and its pictures are removed. The demos draw stand-ins until their
+  species land.
+- **Caching.** Results are keyed by content (`kitKey`, `variantKey`), so a cached value is never
+  stale. The page keeps them in memory for a visit. Keeping them across visits is the engine's work
+  for every kind of scene, so the add-on keeps no browser storage of its own. A page passes a store
+  of bytes (`PlantByteCache`) to `prepareSpecies`, and the core encodes each result for it.
 
 Rejected:
 
@@ -92,15 +104,25 @@ Rejected:
   meter, and every species is judged against that.
 - **A hand-edited species list.** Ten workers who edit one list collide in every merge. A list that
   merges without a conflict can still be wrong, as the cell indices were.
+- **Keeping the first generator beside the core until the demos move.** The owner ruled against it:
+  two generators double the code to maintain, and every demo would move twice.
+- **An IndexedDB cache in the add-on.** Every kind of scene has derived data worth keeping across
+  visits, so the engine keeps it, with one budget and one switch.
 
 ## Consequences
 
-- `@null3d/vegetation` exports the plant core from its main entry. The first generator is at
-  `@null3d/vegetation/legacy`, which every demo and test page imports until the demos move to the
-  core. The scatter, the ground maps, the grass and the floating leaves stay at the main entry.
-- The legacy entry goes when the demos move. This record then supersedes "The generator's shape" in
-  [D-241](D-241-vegetation-foundation.md), and D-298 to D-303, which describe the first generator.
-- `docs/api/vegetation.md` describes both entries, and `docs/api/vegetation-species.md` is generated.
+- `@null3d/vegetation` has one entry. It exports the plant core beside the scatter, the ground maps,
+  the grass and the floating leaves.
+- This record supersedes four parts of [D-241](D-241-vegetation-foundation.md): "The
+  generator's shape", "The bark and leaf atlases, and why the browser paints them", "What each leaf
+  cell holds" and "The plants' look, after the owner's first review". It also supersedes D-298,
+  D-299, D-301, D-302 and D-303, which describe the first generator. D-300 stays a rejected test.
+- The first generator's tests and pictures are removed with it. They are the thirteen species
+  pictures, the atlas, leaf card, coverage, wind and impostor plant pictures, and the specs, pages
+  and device plans that only it used. The species and the core's far cards and near pool bring their own
+  tests back on the new core.
+- `docs/api/vegetation.md` describes the core and says that the species are being rebuilt.
+  `docs/api/vegetation-species.md` is generated.
 - The shipped textures live in their own package, `@null3d/vegetation-textures`, one folder per
   species, so a code update carries none of them. The package is private until its first species
   ships textures.

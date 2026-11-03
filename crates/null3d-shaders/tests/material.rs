@@ -1553,33 +1553,6 @@ fn every_buildable_permutation_of_a_full_custom_material_builds() {
     }
 }
 
-/// The vegetation add-on's plant shaders build into every variant of the standard template: the
-/// leaf and bark material's surface and wind offset, and the leaf card's, which adds the level
-/// morph. The repository's own content depends on them, so a change to the template or the library
-/// that breaks one fails here before a page builds.
-#[test]
-fn the_vegetation_plant_shaders_build() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    for name in ["plant.wgsl", "plant-cards.wgsl"] {
-        let source =
-            std::fs::read_to_string(root.join("packages/vegetation/src/legacy").join(name))
-                .unwrap_or_else(|error| panic!("{name}: {error}"));
-        let built = compile(&source).unwrap_or_else(|error| panic!("{name}: {error}"));
-        assert!(built.functions.iter().any(|f| f == "surface"), "{name}");
-        assert!(
-            built.functions.iter().any(|f| f == "vertexOffset"),
-            "{name}"
-        );
-        assert!(
-            built
-                .variants
-                .values()
-                .any(|variant| variant.permutation & permutation::TRANSLUCENCY != 0),
-            "{name} names the light through a leaf, so its builds let light through"
-        );
-    }
-}
-
 /// A surface that names its own normal for the diffuse light, as a crown of leaves does.
 const CROWN_LIT: &str = "fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);

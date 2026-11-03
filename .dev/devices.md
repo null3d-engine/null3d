@@ -5,7 +5,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `alpha-mask-cost`, `impostor-bake`, `impostor-cost`, `impostor-frame`, `canvas-cost`, `object-growth`, `cluster-cost`, `lod-cost`, `wind-field-cost`, `wind-stress`, `two-step`, `demos`, `skyway`, `vegetation`, `tree-generation`, `vegetation-scatter`, `terrain` and `terrain-shadow`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
+- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `alpha-mask-cost`, `impostor-cost`, `impostor-frame`, `canvas-cost`, `object-growth`, `cluster-cost`, `lod-cost`, `wind-field-cost`, `wind-stress`, `two-step`, `demos`, `skyway`, `vegetation`, `vegetation-scatter`, `terrain` and `terrain-shadow`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
 - The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is gray while its page waits, yellow while it runs, green when it passes and red when it fails. It is blue-gray when the runner page skips its page, because the device lacks the page's GPU path. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
@@ -286,13 +286,6 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
 - The page measures each side for 2 seconds, three times each, alternating the sides. Where the browser has a GPU timer, it reports the GPU time per frame.
 - The plan runs the page on core WebGPU, compatibility mode and WebGL2: 3 pages. The Mac times it in a quiet window: `NULL3D_IMPOSTOR_COST=1 bun run test:browser -- impostor-cost.spec.ts`. Run it on a phone and an iPad with `bun run devices:cloud --only bsgalaxys24-chrome,bsipadpro13-safari --plan impostor-cost`.
 
-## The impostor bake plan
-
-- The `impostor-bake` plan times a far-tree impostor bake, for [D-274](decisions/D-274-impostors.md). Its page (`tests/pages/impostor-bake.html`) bakes a conifer, a birch and an oak into both atlases at each preset's grid, 25 views (5 x 5) for Low up to 144 (12 x 12) for Ultra, at 64 texels a cell.
-- The sketch times each bake on the sketch thread, from the call until both atlases are handed to the texture store, and reports the bytes that the two atlases hold, four bytes a texel. The bake runs on the CPU, so one run gives every GPU path the same figures.
-- The plan runs one page. Run it on a phone and a tablet, which are the devices that bake at first use: `bun run devices:cloud --only bsgalaxys25-chrome,bsgalaxys24-chrome,bsipadpro13-safari --plan impostor-bake`. The S25 is the newest phone of the list, the S24 the phone that the record's earlier runs used, and the iPad Pro 13 the tablet. The bake reads no GPU, so the page draws on one path and one run on each device answers for both.
-- For the card field's own figure on a phone, run `--plan impostor-cost` on the same two phones. The S25 offers WebGPU, whose GPU timer gives the field's cost; the S24 has no WebGPU and no GPU timer on WebGL2, so a run there gives no usable cost and says so.
-
 ## The impostor frame plan
 
 - The `impostor-frame` plan times the impostors demo, for the far-tree task's frame check: the demo that draws the far cards must hold the frame ceiling of [D-241](decisions/D-241-vegetation-foundation.md) at each preset. Its page is `tests/pages/demo-device.html`, which the vegetation and terrain plans also use.
@@ -390,11 +383,6 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
   figures mix the preset with the scale it chose.
 - Creek at Low on WebGPU stalls an Apple device's page after its first frame. Those pages are left
   out of runs on the iPhone and the iPad ([Driver bug reports](driver-bugs.md)).
-- The `tree-generation` plan times a stand-in tree generator in a worker. It generates each species
-  at each preset's detail, six seeds each. It gives the median time, the triangles, the vertices and
-  the bytes of each variant. It draws nothing, so it needs no GPU path. The generator is the page's
-  stand-in in the style of Weber and Penn. The vegetation add-on's own generator replaces it
-  (M3-V4).
 - The `vegetation-scatter` plan places Creek's valley with the vegetation add-on's ecological rules,
   once on each GPU path. The page builds the ground maps from Creek's own height function, scatters
   the valley, and compares the points against the checksum that another device recorded. It fails
@@ -402,19 +390,9 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
   at another size and the points change. It reports the placement time, which is the figure that the
   vegetation budgets take for a valley of that size. The placement reads no GPU, so both paths must
   give the same number.
-- The `atlas-paint` plan times the bark and the leaf atlas paint, separately, for M3-V5's owed
-  figures. The page paints each atlas in turn for three rounds, with the order swapped, and reports
-  every round with the middle figure of each. The painters are the ones that `bakePlantAtlases`
-  runs, with no texture upload and no drawing between them. The paint runs on the sketch thread, so
-  one page reports both figures and no GPU path is asked of it.
-- Run it on the cloud iPad and S24-class phone:
-  `bun run devices:cloud --only bsipadpro13-safari,bsgalaxys25-chrome --plan atlas-paint`.
-- Run it on this Mac, as the car paint's page runs:
-  `NULL3D_ATLAS_PAINT_COST=1 bun run test:browser -- atlas-paint-cost.spec.ts`. The spec skips
-  without that variable, so no shard and no lane runs it unasked.
-- Run both on the cloud iPhone, the iPad, an S24-class phone and a low-end Android tablet:
+- Run the vegetation and scatter plans on the cloud iPhone, the iPad, an S24-class phone and a low-end Android tablet:
   `bun run devices:cloud --only bsiphone17-safari,bsipadpro13-safari,bsgalaxys24-chrome,bsgalaxytaba9plus-chrome --plan vegetation`,
-  and the same with `--plan tree-generation` and `--plan vegetation-scatter`.
+  and the same with `--plan vegetation-scatter`.
 - The `splats` plan also runs each GPU path at a quarter of the cloud's splat count, at the same
   pixel count. A pair of rows then shows whether the cost follows the count or the screen's fill.
 
@@ -438,10 +416,6 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
   `NULL3D_WIND_FIELD_COST=1 bun run test:browser -- wind-field-cost.spec.ts --workers=1` and
   `NULL3D_WIND_GPU`, `NULL3D_WIND_SHAPES` and `NULL3D_WIND_POINTS` naming its paths, shapes and
   pressure counts.
-- The readers' cost comes from the vegetation pages. `vegetation-cost` with `?field=analytic`
-  makes the add-on keep no grid, so every reader works the air out at each vertex, and the same
-  page without it samples the field with one read. The pair gives the field's reader against the
-  analytic one, with each pass split where the device times passes. D-283 records the figures.
 
 ## The terrain plan
 

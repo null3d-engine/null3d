@@ -2978,52 +2978,6 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/terrain-sketch.ts',
 		hold: 1,
 	},
-	// Each built-in vegetation species: three of its variants, grown from the species record and a
-	// fixed seed, in a row on flat ground, drawn with the bark and leaf atlases that the GPU paints
-	// at first use. The shrub's page takes longer than the default limit on CI's software GPU, where
-	// it ran out the 60 seconds on compatibility and on WebGL2, so it asks for three times that.
-	...[
-		'broadleaf',
-		'conifer',
-		'shrub',
-		'fern',
-		'meadow-grass',
-		'oak',
-		'beech',
-		'birch',
-		'willow',
-		'alder',
-		'hosta',
-		'sedge',
-		'rush',
-	].map((species) => ({
-		name: `vegetation-${species}`,
-		sketch: `tests/pages/sketches/vegetation-sketch.ts?species=${species}`,
-		hold: 1,
-		...(species === 'shrub' && { timeoutSeconds: 180 }),
-	})),
-	// The four maps that the GPU paints for the two atlases, each with its mip levels beside it,
-	// and below them a trunk and a leaf card drawn through the materials that sample them.
-	{
-		name: 'vegetation-atlas',
-		sketch: 'tests/pages/sketches/vegetation-atlas-sketch.ts',
-		hold: 1,
-		size: [1280, 720],
-	},
-	// The cards keep the share of the picture that they cover as they shrink, since every level of
-	// the atlas is painted with its own filter.
-	{
-		name: 'vegetation-leaf-cards',
-		sketch: 'tests/pages/sketches/leaf-card-coverage-sketch.ts',
-		hold: 1,
-		size: [1280, 720],
-	},
-	{
-		name: 'vegetation-coverage',
-		sketch: 'tests/pages/sketches/vegetation-coverage-sketch.ts',
-		hold: 1,
-		size: [640, 360],
-	},
 	// The first grass picture: a hill of tufts grown by the add-on, placed and tinted by integer
 	// hash, drawn as one band. The blades read the wind add-on's field, which this picture holds
 	// still; the camera and the light are fixed, so two runs draw the same frame.
@@ -3032,41 +2986,6 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/vegetation-grass-sketch.ts',
 		hold: 1,
 		size: [1280, 720],
-	},
-	// A grove of grown oaks in the scene's one wind field: the leaf and bark materials sway, the
-	// leaves flutter and the sun's shadows follow. The two holds catch the trees at different points
-	// of their sway, the motion picture draws the sway's motion, and the still picture holds the air
-	// for the pair that the sway moves. The page that first compiles the instanced plant materials
-	// and their shadow casters pays minutes for it on CI's software GPU, which took 2.0 to 4.6
-	// minutes a page, so these four run in the heavy job, where each has a runner of its own, and
-	// hold 600 seconds. A later test that compiles these builds first meets the same wall.
-	{
-		name: 'vegetation-wind',
-		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts',
-		hold: 1,
-		size: [1280, 720],
-		timeoutSeconds: 600,
-	},
-	{
-		name: 'vegetation-wind-later',
-		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts',
-		hold: 1.6,
-		size: [1280, 720],
-		timeoutSeconds: 600,
-	},
-	{
-		name: 'vegetation-wind-motion',
-		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts?motion',
-		hold: 1,
-		size: [1280, 720],
-		timeoutSeconds: 600,
-	},
-	{
-		name: 'vegetation-wind-still',
-		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts?still',
-		hold: 1,
-		size: [1280, 720],
-		timeoutSeconds: 600,
 	},
 	// The wind add-on's own page: a field of cards that reads the air at each vertex. A gust
 	// crosses the field between the first hold and the second, so the pairs change where the gust
@@ -3141,15 +3060,6 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	{
 		name: 'impostor-turn-lean-azimuth',
 		sketch: 'tests/pages/sketches/impostor-turn-lean-sketch.ts?azimuth=90',
-		hold: 0,
-		size: [480, 270],
-	},
-	// A grown birch beside the card that `bakeFarTree` makes from it. The mesh draws level 0 with the
-	// bark and leaf materials, and the card draws the same level baked with the same atlases and the
-	// same colours, so the two crowns match in colour at the hand-over.
-	{
-		name: 'impostor-plant',
-		sketch: 'tests/pages/sketches/impostor-plant-sketch.ts',
 		hold: 0,
 		size: [480, 270],
 	},

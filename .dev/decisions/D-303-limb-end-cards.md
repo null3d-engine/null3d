@@ -1,6 +1,6 @@
 # D-303: the live oak's cards ride its limb ends, and spread is not openness
 
-Status: decided and built. Task: none.
+Status: superseded by [D-305](D-305-plant-core-three-scales.md): the first generator that this record describes is removed, and the plant core grows the plants. Task: none.
 
 Summary: the live oak's crown cards move out of its volume and onto its limb ends, which is the
 reference's own arrangement. The crown's fill falls from 35.9 to 34.5 per cent and stays above a

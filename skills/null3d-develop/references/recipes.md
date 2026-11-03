@@ -812,63 +812,58 @@ Docs: `concepts/lighting` (Where the land ends) has the ground clamp and the haz
 ```ts
 import { defineSketch } from '@null3d/engine';
 import {
-  ALL_SPECIES,
-  bakePlantAtlases,
-  generateVariantSet,
-  leafCellFor,
-  plantMaterial,
-} from '@null3d/vegetation/legacy';
+  bakeFarPlant,
+  growPlant,
+  loadSpeciesOrStandIn,
+  placePlants,
+  plantMaterials,
+  prepareSpecies,
+} from '@null3d/vegetation';
 
-export default defineSketch((ctx) => {
-  const { scene, geometry } = ctx;
+/** Each species by its id, with the size and colors of the stand-in that draws until it ships. */
+const SPECIES = [
+  { id: 'pedunculate-oak', height: 13, leaf: [0.09, 0.19, 0.045], bark: [0.18, 0.15, 0.12] },
+  { id: 'silver-birch', height: 12, leaf: [0.2, 0.34, 0.1], bark: [0.62, 0.6, 0.55] },
+  { id: 'hawthorn-shrub', height: 2.4, leaf: [0.15, 0.3, 0.1], bark: [0.22, 0.18, 0.13] },
+] as const;
+
+export default defineSketch(async (ctx) => {
+  const { scene } = ctx;
   const camera = scene.createPerspectiveCamera({ fov: 50, near: 0.1, far: 500, position: [18, 8, 26] });
   camera.lookAt(0, 5, 0);
   scene.setActiveCamera(camera);
   scene.createDirectionalLight({ direction: [-0.4, -1, -0.3], intensity: 3, castShadows: true });
   scene.createAmbientLight({ intensity: 0.45 });
 
-  // The bark and leaf atlases, which the GPU paints at first use, and one material for each part.
-  const atlases = bakePlantAtlases(ctx);
-  const bark = plantMaterial(ctx, { atlases, part: 'wood', color: '#4a3a2a' });
-  const leaves = plantMaterial(ctx, {
-    atlases,
-    part: 'leaves',
-    cell: leafCellFor(ALL_SPECIES[0]!),
-    color: '#3f5a2a',
-  });
-
-  let x = 0;
-  for (const species of ALL_SPECIES.slice(0, 5)) {
-    for (const asset of generateVariantSet(species, { seed: 7 })) {
-      for (const part of asset.levels[0]?.parts ?? []) {
-        const mesh = geometry.fromArrays(part.arrays);
-        scene.createMesh({
-          mesh,
-          material: part.name === 'wood' ? bark : leaves,
-          position: [x, 0, 0],
-          castShadows: true,
-        });
-        // The lower levels hold the same plant with fewer rings and cards, so the engine picks
-        // one by distance without the crown changing shape.
-        const lower = asset.levels.slice(1).flatMap((level) => {
-          const match = level.parts.find((candidate) => candidate.name === part.name);
-          return match ? [{ mesh: geometry.fromArrays(match.arrays), error: level.error }] : [];
-        });
-        if (lower.length > 0) mesh.setLevels(lower);
-      }
-      x += (asset.crown.max[0] - asset.crown.min[0]) * 1.6;
-    }
+  let x = -12;
+  for (const { id, ...standIn } of SPECIES) {
+    const module = await loadSpeciesOrStandIn(id, standIn);
+    // The kit and the variants grow in the job workers, and stages not built yet grow stand-ins.
+    const kit = await prepareSpecies(ctx, module, { placeholders: true });
+    const assets = await Promise.all(
+      [0, 1, 2].map((variant) => growPlant(kit, { seed: 7, variant, near: true })),
+    );
+    const far = await Promise.all(assets.map((asset) => bakeFarPlant(kit, asset)));
+    placePlants(
+      ctx,
+      kit,
+      assets,
+      {
+        count: 3,
+        position: new Float32Array([x, 0, -6, x, 0, 0, x, 0, 6]),
+        turn: new Float32Array([0, 2, 4]),
+        scale: new Float32Array([1, 0.9, 1.1]),
+        variant: new Uint8Array([0, 1, 2]),
+      },
+      { materials: plantMaterials(ctx, kit), far, view: { height: 1080, fov: 50 }, castShadows: true },
+    );
+    x += 12;
   }
-  return {};
 });
 ```
 
-Call `generatePlantInTask` in place of `generateVariantSet` when a scene grows many plants: it runs in a job worker, so the first frames do not wait. A species record is plain data, so a themed set is a list of records and needs no code. Docs: `api/vegetation`.
+The species are being rebuilt. Until a species ships, `loadSpeciesOrStandIn` makes a stand-in of the size and colors that you give, and the same calls draw the real species once it ships. So write the scene against species ids now. `placePlants` draws each copy with its levels by distance, and with far cards from the far bakes. Docs: `api/vegetation`.
 
-To place the plants rather than set them out by hand, read the ground once with `groundMaps`, take `builtinRules` for the species, and call `scatterVegetation`. It returns flat point arrays, one record for each plant, so a page looks up the variant and draws a copy at each point. The same seed places the same plants on every device and both GPU paths, and `scatterChecksum` compares a placement with a reference that another device recorded. Pass `EcoScatter` and `addTile` when a scene should place its ground in tiles beside the frames.
+To place the plants rather than set them out by hand, read the ground once with `groundMaps`, write a rule for each species, and call `scatterVegetation`. A record's own `ecology` gives a rule through `speciesRule(record)`. The scatter returns flat point arrays, one record for each plant, so a page reads the variant and draws a copy at each point. The same seed places the same plants on every device and both GPU paths. `scatterChecksum` compares a placement with a reference that another device recorded. Pass `EcoScatter` and `addTile` when a scene should place its ground in tiles beside the frames.
 
-`bakePlantAtlases` paints the bark and the leaf atlases in the browser the first time a page asks for them, and `plantMaterial` draws a part from them: the species' colour multiplies the atlas's own, the normal map bends the light, and the leaf's coverage cuts its outline. `leafCellFor(species)` picks the leaf shape that suits a record, so give each species its own leaf material when a scene draws more than one. Call it once in the setup: it paints four textures and keeps them, and no image file is downloaded. Docs: `api/vegetation`.
-
-To cover a hill with grass, call `createGrass(ctx, { height, area, count, seed, mask, wind })`. It places tufts of bent blades on the ground by integer hash, so one seed gives the same grass on every device, and `grass.fit(preset)` draws a preset's share. Give `mask` the ground where grass may grow, so no tuft stands in the water or on a stone. Give `wind` the wind add-on's field, the one the leaf material reads, and call `grass.setWindLayer(field)` in each frame, so the grass bends with the trees and answers the same gusts. A page that gives no field grows grass that stands still. The CPU tile path draws on WebGPU and WebGL2. Docs: `api/vegetation` (Grass on the ground).
-
-A tree's leaf cards morph toward the next level, so a card that the level drops shrinks and a kept one grows before the switch. Give the leaves a material with `morph: { crownRadius }`, and give the object or batch that draws the tree the same radius with `setBounds([0, 0, 0], crownRadius)` or `batch.setBoundingRadius(crownRadius)`. Read the radius from the asset, such as the crown's radius plus the distance to its middle. One material serves plants of one crown size. Set the levels with `{ fade: false }`, since the generator measures each error and the morph covers the change. Docs: `api/vegetation` (Detail levels).
+To cover a hill with grass, call `createGrass(ctx, { height, area, count, seed, mask, wind })`. It places tufts of bent blades on the ground by integer hash, so one seed gives the same grass on every device, and `grass.fit(preset)` draws a preset's share. Give `mask` the ground where grass may grow, so no tuft stands in the water or on a stone. Give `wind` the wind add-on's field, and call `grass.setWindLayer(field)` in each frame, so the grass answers the same gusts as the rest of the scene. A page that gives no field grows grass that stands still. The CPU tile path draws on WebGPU and WebGL2. Docs: `api/vegetation` (Grass on the ground).

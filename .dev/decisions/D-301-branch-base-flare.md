@@ -1,6 +1,6 @@
 # D-301: a branch swells where it leaves its parent
 
-Status: decided and built. Task: none.
+Status: superseded by [D-305](D-305-plant-core-three-scales.md): the first generator that this record describes is removed, and the plant core grows the plants. Task: none.
 
 Summary: `BranchLevel.baseFlare` widens a branch where it leaves its parent, drawn but not piped, so
 a limb's joint reads as massive without thickening the trunk that carries it. The clump oak's
