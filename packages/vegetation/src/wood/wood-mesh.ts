@@ -545,7 +545,7 @@ class Mesher {
 		this.variant = input.variant;
 		this.crown = input.crown;
 		this.bark = barkScale(input.record, input.kit.manifest, largestRadius(input.skeleton));
-		this.tube = tubeDetail(level, input.detail);
+		this.tube = tubeDetail(level, input.detail, input.coarseness ?? 0);
 		this.rings = report
 			? { axis: [], pipe: [], span: [], perimeter: [], scale: [], v: [], arc: [], weld: [] }
 			: undefined;

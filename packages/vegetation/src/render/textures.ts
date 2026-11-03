@@ -5,6 +5,7 @@
 // page an error.
 import type { SketchContext, Texture } from '@null3d/engine';
 import type { SpeciesKitData } from '../asset';
+import { type CoarsenessOptions, checkCoarseness } from '../coarseness';
 import type { PlantByteCache } from '../core/cache';
 import { notBuilt } from '../core/not-built';
 import type { SpeciesModule } from '../core/record';
@@ -56,11 +57,12 @@ export interface SpeciesKit extends SpeciesKitData {
 }
 
 /**
- * How `prepareSpecies` prepares a species.
+ * How `prepareSpecies` prepares a species. Its coarseness options are the default of every variant
+ * that `growPlant` grows from the kit.
  *
  * @category api/vegetation
  */
-export interface PrepareOptions {
+export interface PrepareOptions extends CoarsenessOptions {
 	/** The mesh tier; the preset's by default. */
 	readonly detail?: Detail;
 	/** Grow the stand-in of every stage. */
@@ -78,7 +80,8 @@ export interface PrepareOptions {
  *
  * @param ctx The sketch's context.
  * @param module The species module, from `loadSpecies`.
- * @param options The mesh tier, the stand-ins and the store of bytes across visits.
+ * @param options The mesh tier, the variants' coarseness, the stand-ins and the store of bytes
+ *   across visits.
  * @returns The kit.
  * @category api/vegetation
  */
@@ -87,6 +90,7 @@ export function prepareSpecies(
 	module: SpeciesModule,
 	options?: PrepareOptions,
 ): Promise<SpeciesKit> {
+	if (options) checkCoarseness(options);
 	if (options?.placeholders) return standInPrepare(ctx, module, options);
 	return Promise.reject(notBuilt('preparing a species on a page'));
 }
