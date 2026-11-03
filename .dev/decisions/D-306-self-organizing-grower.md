@@ -6,7 +6,7 @@ crown's light for the shoot rows are built. Task: none.
 Summary: Broadleaves, pines, shrubs and hedges grow by Palubicki's self-organizing model with
 Stava's bud fate, in a shadow grid whose only light lies inside an envelope measured from the
 species' reference turntable. The pedunculate oak's test record fills its envelope with an IoU of
-0.885 to 0.919 at eight angles in three variants, and grows in about 300 ms of one core warm.
+0.884 to 0.919 at eight angles in three variants, and grows in about 300 ms of one core warm.
 
 ## Question
 
@@ -26,10 +26,10 @@ bole; bud sites carry resource and light; identical bytes in Bun and in a worker
 
 | Measure | Variant 0 | Variant 1 | Variant 2 |
 | --- | --- | --- | --- |
-| IoU with the envelope, eight angles, lowest | 0.889 | 0.885 | 0.898 |
+| IoU with the envelope, eight angles, lowest | 0.901 | 0.884 | 0.900 |
 | IoU with the envelope, eight angles, highest | 0.919 | 0.911 | 0.916 |
 | IoU with the reference turntable, eight angles | 0.71 to 0.85 | 0.73 to 0.84 | 0.72 to 0.85 |
-| Nodes, axes, bud sites | 7,979, 2,692, 4,978 | 7,901, 2,730, 4,884 | 11,922, 3,978, 7,605 |
+| Nodes, axes, bud sites | 7,933, 2,654, 4,837 | 7,733, 2,562, 4,884 | 11,727, 3,783, 7,649 |
 
 The envelope itself scores 0.72 to 0.89 against the same reference frames: the generated turntable's
 tree drifts between views, so no single solid matches every frame, and the grown oaks come within
@@ -96,7 +96,12 @@ Rejected:
   `crown/light-grid.ts` hold the grower. `grow/oak.fixture.ts` holds the oak's growth numbers and
   envelope for the tests, which the oak's species record copies.
 - A skeleton's axes leave their parent node with `parentT` 0, and a child's first node is one
-  internode out. Node radii are pipe radii only; the wood mesher adds collars and flare.
+  internode out. Every axis but the record's stems has a parent whose chain reaches a stem: a stub
+  stays only while the wood it stands on stays. One season can shed a branch and cut a branch on it
+  back to a stub. That stub, and a stub on a stub, goes with the branch it stands on. Kept, it would
+  float in the air with no parent, which the wood mesher skips. Without this rule the oak (seed 11)
+  held 139 to 146 such stubs a variant. A unit test holds every axis of the oak at four seeds and
+  three variants to a chain that reaches a stem, and the stems to the record's count. Node radii are pipe radii only; the wood mesher adds collars and flare.
 - The crown's light (`crown/density.ts`, `crown/visibility.ts`) gives each shoot row the sky it sees
   through the leaf area of the other rows, 0 to 250, and a bent normal as an octahedral byte with Y
   up (x in the high four bits, z in the low four, a nibble n reading back as n / 7.5 - 1). The wood
