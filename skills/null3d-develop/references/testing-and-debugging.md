@@ -101,7 +101,7 @@ Before you believe a picture that judges a change, prove the page read the chang
 
 ## 4. Testing on real devices
 
-URL switches for the dev server (engine docs `guides/testing`):
+URL switches for the dev server and other development builds, such as (0.2) the CDN build's `lib-dev/index.js` (engine docs `guides/testing`). A production build ignores them:
 
 | Switch | Effect |
 | --- | --- |
@@ -186,7 +186,7 @@ Every engine error is an `EngineError` with a code, the object's name, what fail
 E1203: setPosition() got NaN for x on "Player" (slot 12). Check the value computed before this call.
 ```
 
-Each code has a docs page, such as `errors/E1203`, with the full explanation. Release builds remove most checks, so reproduce problems in a development build.
+Each code has a docs page, such as `errors/E1203`, with the full explanation. Release builds remove most checks, so reproduce problems in a development build. Use the dev server, or (0.2) the CDN build's `lib-dev/index.js` for a page with no bundler.
 
 ## 8. Troubleshooting table
 
