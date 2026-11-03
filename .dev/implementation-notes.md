@@ -105,6 +105,17 @@ The WebGL2 path builds its layout in its cull step, before the frame graph gives
 - `errors/codes.ts` holds each code's docs text for the docs generator and the tests. Runtime code must not import it: a value import bundles every code's docs text into the engine's files.
 - `quality/preset-docs.ts` holds the preset table's docs text in the same way. The compiler asks for an entry there for each setting in `quality/presets.ts`, and runtime code must not import it.
 - The page loads the frame figures (`page/frame-stats.ts`) with a dynamic import at the first `measure()`, and in hold mode when it publishes the held figures. `threadRoles`, the one piece of that module that the start reads, lives in `shared/metrics.ts`. Other modules import only types from the frame figures. A measurement's window opens when `measure()` is called, before the import, so work that the caller starts right after the call is counted even when the import is cold. A window that opened after the import would miss such work. A page may ask its sketch to add an object right after `measure()`, and the sketch then builds the object's pipelines during the import.
+- The per-pass GPU record is a defect of the perf overlay. It names the frame's first seven passes
+  and folds every pass after them into the last of those. `GPU_TIMED_PASSES` in `shared/metrics.ts`
+  is `PHASE_NAMES.length - 1`. The timer gives each of those passes a timestamp pair. A pass after
+  them adds its time to the seventh's slot, as the note over that constant says. So a row named for
+  the seventh pass holds the cost of every pass after it. A reader then takes the frame's largest
+  cost for that pass's own. On the Tab A9 Plus the grass hill read 176 ms against the row named for
+  ambient occlusion's denoise. The same scene with the sun's contact shadows and the bounce light off
+  names the opaque pass at 138.94 ms. It measures the whole frame at 143.49, so the three ambient
+  occlusion passes cost about 43 ms ([D-241](decisions/D-241-vegetation-foundation.md)). Read a named
+  row as no more than the passes up to it, or measure a scene with fewer passes before trusting one.
+  The record should name the folded passes in a row of their own; it does not yet.
 - The page hands the key names (`shared/key-codes.ts`) to the sketch worker when it starts it. The sketch worker's file then holds no copy of the list.
 - The input ring's record format is plain constants, not enums. The bundler writes a constant into the code as a number, while a TypeScript enum ships as an object that holds each member's name. A `const enum` ships the same object.
 - In Rust that the WebAssembly files hold, write `max` and `min`, not `clamp`, when a bound is not a constant. Its check that the bounds are in order panics with a message that prints them. That pulls in the code that formats floats. In the raycasts of sprites, points and lines ([#382](https://github.com/null3d-engine/null3d/pull/382)), `f64::clamp` adds about 17 KB before Brotli. A `twiggy diff` of two builds with function names shows such a cost.
