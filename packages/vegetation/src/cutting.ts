@@ -100,8 +100,9 @@ function nodeAt(skeleton: MacroSkeleton, node: number): Vector3 {
 }
 
 /**
- * Where an axis leaves its parent: the point of the parent's internode from its parent node that
- * lies nearest the axis's first node, or the first node itself for a stem.
+ * Where an axis leaves its parent. An axis that leaves at its parent node (a share of 0 along the
+ * internode, as the growers write it) is cut there. One that leaves further along the internode is
+ * cut where its first node, projected onto that internode, meets it. A stem is cut at its first node.
  */
 function junctionOf(skeleton: MacroSkeleton, axis: number): Vector3 {
 	const { axes } = skeleton;
@@ -110,6 +111,7 @@ function junctionOf(skeleton: MacroSkeleton, axis: number): Vector3 {
 	const parentAxis = axes.parent[axis] as number;
 	if (parentNode < 0 || parentAxis < 0) return first;
 	const a = nodeAt(skeleton, parentNode);
+	if ((axes.parentT[axis] as number) <= 0) return a;
 	const next = parentNode + 1;
 	const b =
 		next <= (axes.last[parentAxis] as number) && (skeleton.axisOf[next] as number) === parentAxis
@@ -117,17 +119,8 @@ function junctionOf(skeleton: MacroSkeleton, axis: number): Vector3 {
 			: a;
 	const ab: Vector3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
 	const span = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
-	const t =
-		span > 0
-			? Math.min(
-					1,
-					Math.max(
-						0,
-						((first[0] - a[0]) * ab[0] + (first[1] - a[1]) * ab[1] + (first[2] - a[2]) * ab[2]) /
-							span,
-					),
-				)
-			: 0;
+	const along = (first[0] - a[0]) * ab[0] + (first[1] - a[1]) * ab[1] + (first[2] - a[2]) * ab[2];
+	const t = span > 0 ? Math.min(1, Math.max(0, along / span)) : 0;
 	return [a[0] + ab[0] * t, a[1] + ab[1] * t, a[2] + ab[2] * t];
 }
 

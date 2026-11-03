@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type PlantAsset, plantAssetDigest } from './asset';
+import { AXIS_LIMB, AXIS_STEM, SkeletonBuilder } from './core/graph';
 import { standInSpecies } from './core/stand-in';
 import { CUTTING_LENGTH, clusterRank, cutBranch, cutFoliage } from './cutting';
 import { buildKitNow, growPlantNow, loadPlantCode } from './generate';
@@ -51,6 +52,77 @@ describe('cuttings', () => {
 			}
 		});
 	}
+
+	it('cuts an axis that leaves at its parent node there, with every axis whose parents reach it', () => {
+		// A stem of five nodes; a limb leaving its third node; a twig on the limb; a second limb above.
+		const b = new SkeletonBuilder();
+		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		const stemNodes: number[] = [];
+		for (let k = 0; k < 5; k++)
+			stemNodes.push(
+				b.addNode({
+					x: 0,
+					y: k,
+					z: 0,
+					radius: 0.2,
+					parent: k === 0 ? -1 : (stemNodes[k - 1] as number),
+					axis: stem,
+				}),
+			);
+		const fork = stemNodes[2] as number;
+		const limb = b.addAxis({
+			parent: stem,
+			parentNode: fork,
+			parentT: 0,
+			order: 1,
+			kind: AXIS_LIMB,
+		});
+		const limbNodes: number[] = [];
+		for (let k = 1; k <= 3; k++)
+			limbNodes.push(
+				b.addNode({
+					x: 0.3 * k,
+					y: 2 + 0.3 * k,
+					z: 0,
+					radius: 0.05,
+					parent: k === 1 ? fork : (limbNodes[k - 2] as number),
+					axis: limb,
+				}),
+			);
+		const twig = b.addAxis({
+			parent: limb,
+			parentNode: limbNodes[1] as number,
+			parentT: 0,
+			order: 2,
+			kind: AXIS_LIMB,
+		});
+		b.addNode({ x: 0.6, y: 2.9, z: 0.3, radius: 0.01, parent: limbNodes[1] as number, axis: twig });
+		const other = b.addAxis({
+			parent: stem,
+			parentNode: stemNodes[3] as number,
+			parentT: 0,
+			order: 1,
+			kind: AXIS_LIMB,
+		});
+		b.addNode({ x: -0.5, y: 3.4, z: 0, radius: 0.04, parent: stemNodes[3] as number, axis: other });
+		const skeleton = b.finish();
+		const cut = cutBranch(skeleton, stub.record, {
+			part: 'branch',
+			length: 1.3,
+			orient: 'as-grown',
+		});
+		if (!cut) throw new Error('nothing was cut');
+		expect(cut.axis).toBe(limb);
+		expect(cut.skeleton.nodeCount).toBe(1 + 3 + 1);
+		expect(cut.skeleton.axes.count).toBe(2);
+		// The cut sits at the stem node the limb leaves from, so the limb's first node keeps its offset.
+		expect(Array.from(cut.skeleton.position.subarray(3, 6))).toEqual([
+			expect.closeTo(0.3, 5),
+			expect.closeTo(0.3, 5),
+			expect.closeTo(0, 5),
+		]);
+		expect(cut.extent).toBeCloseTo(Math.hypot(0.9, 0.9), 5);
+	});
 
 	it('ranks the branch nearest the asked length first, and takes others by pick', () => {
 		const best = cutBranch(whole.skeleton, stub.record, { part: 'branch' });
