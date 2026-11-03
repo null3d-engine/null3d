@@ -3,10 +3,11 @@
 // each naming its record entry in its first texture coordinate, small ones left off the thinned
 // level, and the same bytes from the same seed.
 import { describe, expect, it } from 'bun:test';
+import type { SpeciesKitData } from '../asset';
 import { placeholderSkeleton } from '../core/placeholder';
 import type { ExtraSpec, Species } from '../core/record';
 import type { Season } from '../core/types';
-import type { MeshInput, MeshLevel } from '../stages';
+import type { MeshInput } from '../stages';
 import { extrasMesh } from './extras';
 import { placeShoots } from './instancer';
 import { oakRecord, testKit } from './oak.test-support';
@@ -79,9 +80,13 @@ const OTHERS: readonly ExtraSpec[] = [
 	},
 ];
 
+/** Each record's kit, built once: a kit grows every prototype at four tiers. */
+const kits = new Map<Species, SpeciesKitData>();
+
 /** A dressed variant of a record with extras, in a season. */
 function dressed(record: Species, season: Season): MeshInput {
-	const kit = testKit(record);
+	const kit = kits.get(record) ?? testKit(record);
+	kits.set(record, kit);
 	const skeleton = placeholderSkeleton({ record, seed: 11, variant: 0, season });
 	const base = { record, seed: 11, variant: 0, season, kit, skeleton };
 	return {
@@ -92,14 +97,16 @@ function dressed(record: Species, season: Season): MeshInput {
 	};
 }
 
+// The first four entries draw; the cone, the fifth, draws on a record of its own.
 const record = oakRecord({ extras: [ACORN, ...OTHERS] });
+const coned = oakRecord({ extras: [OTHERS[3] as ExtraSpec] });
 
-/** The vertices of each extra entry, by the eighth its first texture coordinate names. */
+/** The vertices of each extra entry, by the entry its third colour byte names. */
 function byEntry(mesh: ReturnType<typeof extrasMesh>): number[] {
 	const counts = new Array<number>(8).fill(0);
 	if (!mesh) return counts;
-	for (let i = 0; i < mesh.uvs.length; i += 2) {
-		const entry = Math.floor((mesh.uvs[i] as number) * 8);
+	for (let i = 0; i < mesh.colors.length; i += 4) {
+		const entry = mesh.colors[i + 2] as number;
 		counts[entry] = (counts[entry] as number) + 1;
 	}
 	return counts;
@@ -112,7 +119,8 @@ describe('the extras', () => {
 		expect(summer[1]).toBe(0); // flowers, blossom only
 		expect(summer[2]).toBeGreaterThan(0); // thorns
 		expect(summer[3]).toBe(0); // catkins, winter only
-		expect(summer[4]).toBeGreaterThan(0); // cones on the crown's top
+		expect(summer[4]).toBe(0); // a fifth entry never draws
+		expect(byEntry(extrasMesh(dressed(coned, 'summer'), 0))[0]).toBeGreaterThan(0); // cones on the crown's top
 		const winter = byEntry(extrasMesh(dressed(record, 'winter'), 0));
 		expect(winter[0]).toBe(0);
 		expect(winter[3]).toBeGreaterThan(0);
@@ -141,9 +149,8 @@ describe('the extras', () => {
 	});
 
 	it('leaves small extras off the thinned level and keeps large ones', () => {
-		const counts = (level: MeshLevel) => byEntry(extrasMesh(dressed(record, 'summer'), level));
-		expect(counts(2)[2]).toBe(0); // thorns of 12 mm
-		expect(counts(2)[4]).toBeGreaterThan(0); // cones of 9 cm
+		expect(byEntry(extrasMesh(dressed(record, 'summer'), 2))[2]).toBe(0); // thorns of 12 mm
+		expect(byEntry(extrasMesh(dressed(coned, 'summer'), 2))[0]).toBeGreaterThan(0); // cones of 9 cm
 	});
 
 	it('grows the same extras from the same seed', () => {

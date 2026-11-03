@@ -4,9 +4,10 @@
 // by the record's degrees. Shoot tips and nodes come from the shoot rows; old wood, areoles and the
 // crown's top come from the skeleton's bud sites.
 //
-// An extra's vertices carry their axis's wind record, global in the species' table, and its first
-// texture coordinate names the extra: (index + 0.5) / 8, which the card bake and the shader read
-// the record's colour by; the second runs along the extra.
+// An extra's colour bytes hold its axis's wind record (high and low byte, global in the species'
+// table), its entry in the record's extras, which picks its colour from the plant material's header,
+// and the crown's sky visibility at its site. Only the first four entries draw. The second texture
+// coordinate runs along the extra.
 import type { MeshArrays } from '../asset';
 import { BUD_AREOLE, BUD_DORMANT, BUD_TERMINAL } from '../core/graph';
 import { unitAt } from '../core/hash';
@@ -22,6 +23,7 @@ import {
 	type Vector3,
 } from '../core/math';
 import type { ExtraSpec } from '../core/record';
+import { crownSkyAt } from '../crown/visibility';
 import type { MeshInput, MeshLevel } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
 import { lathe, MeshWriter, sideAxes } from './writer';
@@ -32,14 +34,16 @@ const SIDES: Readonly<Record<MeshLevel, number>> = { 0: 8, 1: 5, 2: 4 };
 const SMALLEST_FAR = 0.025;
 /** The first hash purpose of the extras, past every purpose the instancer uses. */
 const PURPOSE = 40;
-/** Extras a record can name, which the texture coordinate's eighths address. */
-const MOST = 8;
+/** Extras a record can draw: the first four, whose colours the plant material's header holds. */
+const MOST = 4;
 
 /** One place an extra may hang from: its point, its outward direction and its wind record. */
 interface Site {
 	readonly at: Vector3;
 	readonly direction: Vector3;
 	readonly record: number;
+	/** Sky visibility at the site, 0 to 255. */
+	sky: number;
 }
 
 /** The sites of one extra in a dressed variant. */
@@ -63,6 +67,7 @@ function sitesOf(input: MeshInput, extra: ExtraSpec): Site[] {
 				],
 				direction,
 				record: base + (rows.record[r] as number),
+				sky: 0,
 			});
 		}
 		return out;
@@ -82,6 +87,7 @@ function sitesOf(input: MeshInput, extra: ExtraSpec): Site[] {
 			at: [buds.position[b * 3] as number, y, buds.position[b * 3 + 2] as number],
 			direction: quatRotate(buds.frame, b * 4, up, [0, 0, 0]),
 			record: base + (skeleton.axes.record[buds.axis[b] as number] as number),
+			sky: 0,
 		});
 	}
 	return out;
@@ -125,8 +131,7 @@ function writeExtra(
 	sides: number,
 	turn: number,
 ): void {
-	const u = (index + 0.5) / MOST;
-	const colour = [(site.record >>> 8) & 255, site.record & 255, 0, 255];
+	const colour = [(site.record >>> 8) & 255, site.record & 255, index, site.sky];
 	const shape = extra.shape;
 	if ('lathe' in shape || 'catkin' in shape) {
 		let profile: [number, number][];
@@ -167,7 +172,7 @@ function writeExtra(
 		}
 		const first = mesh.vertices;
 		lathe(mesh, profile, site.at, direction, sides, colour);
-		for (let i = first; i < mesh.vertices; i++) mesh.uvs[i * 2] = u;
+		for (let i = first; i < mesh.vertices; i++) mesh.uvs[i * 2] = 0;
 		return;
 	}
 	const [x, y] = sideAxes(direction, [0, 1, 0]);
@@ -195,10 +200,10 @@ function writeExtra(
 				site.at[1] + petal[1] * along * r + across[1] * side * w,
 				site.at[2] + petal[2] * along * r + across[2] * side * w,
 			];
-			const a0 = mesh.vertex(point(0, 0), normal, [u, 0], [0, 0], colour);
-			const a1 = mesh.vertex(point(0.55, 0.5), normal, [u, 0.55], [0, 0], colour);
-			const a2 = mesh.vertex(point(1, 0), normal, [u, 1], [0, 0], colour);
-			const a3 = mesh.vertex(point(0.55, -0.5), normal, [u, 0.55], [0, 0], colour);
+			const a0 = mesh.vertex(point(0, 0), normal, [0, 0], [0, 0], colour);
+			const a1 = mesh.vertex(point(0.55, 0.5), normal, [0, 0.55], [0, 0], colour);
+			const a2 = mesh.vertex(point(1, 0), normal, [0, 1], [0, 0], colour);
+			const a3 = mesh.vertex(point(0.55, -0.5), normal, [0, 0.55], [0, 0], colour);
 			mesh.quad(a0, a1, a2, a3);
 		}
 		return;
@@ -225,7 +230,7 @@ function writeExtra(
 			3,
 			colour,
 		);
-		for (let i = first; i < mesh.vertices; i++) mesh.uvs[i * 2] = u;
+		for (let i = first; i < mesh.vertices; i++) mesh.uvs[i * 2] = 0;
 	}
 }
 
@@ -247,6 +252,9 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 			const purpose = input.variant * 64 + PURPOSE + index;
 			if (unitAt(input.seed, salt, purpose, s) >= extra.share) return;
 			const turn = unitAt(input.seed, salt, purpose, s, 1) * 2 * Math.PI;
+			site.sky = Math.round(
+				255 * Math.min(1, Math.max(0, crownSkyAt(input.crown, site.at[0], site.at[1], site.at[2]))),
+			);
 			writeExtra(mesh, extra, index, site, hung(site.direction, extra.hang), SIDES[level], turn);
 		});
 	});
