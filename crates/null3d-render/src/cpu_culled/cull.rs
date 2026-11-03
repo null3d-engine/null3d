@@ -47,11 +47,11 @@
 use std::collections::TryReserveError;
 
 use null3d_core::alloc::reserve_keeping;
-use null3d_core::cells::ORIGIN_CELL;
+use null3d_core::cells::{CELL_SHIFT, ORIGIN_CELL};
 use null3d_core::clusters::RowCells;
 use null3d_core::culling::{
-    self as core_culling, BY_ROW, BucketedCull, CullRun, CullSet, CullView, LevelChoice, LevelRows,
-    NO_BUCKET, RowBiases, RowRadii, RowRanges, SetLayers, SetOrder,
+    self as core_culling, BY_ROW, BucketedCull, CullRun, CullSet, CullView, Frustum, LevelChoice,
+    LevelRows, NO_BUCKET, RowBiases, RowRadii, RowRanges, SetLayers, SetOrder,
 };
 use null3d_core::levels::LevelRule;
 use null3d_core::world::MATRIX_FLOATS;
@@ -59,7 +59,7 @@ use null3d_gpu::drawlist::DrawList;
 
 use super::data::{DataTexture, RING, RingSlot, TextureRows, write_rows};
 use super::ids;
-use super::layout::{Clusters, CullRoom, Layout};
+use super::layout::{Clusters, CullRoom, Layout, STREAMED};
 use super::opaque::PatchView;
 use crate::cells::{CellCulling, CellMask, MOVING};
 use crate::frame::{
@@ -69,6 +69,7 @@ use crate::materials::MaterialTable;
 use crate::meshes::MeshStorage;
 use crate::occlusion::Occluders;
 use crate::patches::PatchStorage;
+use crate::pieces::CopyFrame;
 use crate::sorted::{SortedLayout, SortedView};
 use crate::view::{ViewFrame, ViewId};
 
@@ -210,6 +211,68 @@ fn push_view_runs(
             .map_or(RunCells::Rows(batch.cells()), RunCells::One);
         let set = FIRST_BATCH_SET + k as u32;
         push_runs(runs, set, rows, slot.bucket, slot.base, cells)?;
+    }
+    Ok(())
+}
+
+/// Where the matrices of a WebGL2 layout's entries come from: the scene's world buffer and the
+/// batches', and the offset from the view's camera to each cell in use.
+struct SourceRows<'a> {
+    input: &'a FrameInput<'a>,
+    layout: &'a Layout,
+    offsets: &'a [[f32; 4]],
+}
+
+impl SourceRows<'_> {
+    /// The rows of the world matrix of the source that an entry of data texture `texture` names,
+    /// moved by its cell's offset from the view's camera, or `None` for a row that no source holds.
+    fn rows(&self, entry: u32, texture: u32) -> Option<[[f32; 4]; 3]> {
+        let parity = self.input.parity();
+        let row = entry & ((1 << CELL_SHIFT) - 1);
+        let cell = (entry >> CELL_SHIFT) as usize;
+        let streamed = texture == STREAMED;
+        let (matrices, at) = if !streamed && row < self.layout.scene_rows {
+            (self.input.scene.world(parity).matrices(), row)
+        } else {
+            let slot = self.layout.batches.iter().find(|slot| {
+                slot.dynamic == streamed && slot.base <= row && slot.bucket != NO_BUCKET && {
+                    let batch = self.input.batches.get(slot.id);
+                    batch.is_ok_and(|batch| row < slot.base + batch.capacity())
+                }
+            })?;
+            let batch = self.input.batches.get(slot.id).ok()?;
+            (batch.world(parity).matrices(), row - slot.base)
+        };
+        let m = matrices.get(at as usize * MATRIX_FLOATS..(at as usize + 1) * MATRIX_FLOATS)?;
+        let offset = self.offsets.get(cell).copied().unwrap_or([0.0; 4]);
+        Some([
+            [m[0], m[1], m[2], m[3] + offset[0]],
+            [m[4], m[5], m[6], m[7] + offset[1]],
+            [m[8], m[9], m[10], m[11] + offset[2]],
+        ])
+    }
+}
+
+/// Lists each entry of each bucket whose mesh draws pieces again in the bucket of each piece that
+/// the copy shows in the view's `frustum`, with the cone test where `cones` allows it (see
+/// [`crate::pieces`]). The pieces' buckets follow every other bucket, so their entries follow every
+/// other entry in the view's index list.
+fn list_pieces(
+    cull: &mut BucketedCull,
+    layout: &Layout,
+    rows: &SourceRows<'_>,
+    frustum: &Frustum,
+    cones: bool,
+) -> Result<(), TryReserveError> {
+    for set in &layout.piece_sets {
+        let words = if set.pairs { 2 } else { 1 };
+        for k in 0..set.count {
+            let piece = &layout.piece_bounds[(set.first + k - layout.piece_sets[0].first) as usize];
+            cull.list_kept(set.bucket, set.first + k, words, |entry| {
+                rows.rows(entry, set.texture)
+                    .is_none_or(|matrix| CopyFrame::new(matrix).shows(frustum, piece, cones))
+            })?;
+        }
     }
     Ok(())
 }
@@ -741,6 +804,23 @@ impl Culling {
                 &mut view.culls[parity],
             );
             view.occluded = view.culls[parity].hidden() as u32;
+            if !layout.piece_sets.is_empty() {
+                // Only the camera's own view places its instances relative to its eye, where the
+                // cone test holds.
+                let cones = first + k == ViewId::CAMERA.index() && !choice.rule.orthographic;
+                let rows = SourceRows {
+                    input,
+                    layout,
+                    offsets: view.offsets.as_slice(),
+                };
+                list_pieces(
+                    &mut view.culls[parity],
+                    layout,
+                    &rows,
+                    &frame.frustum,
+                    cones,
+                )?;
+            }
             // The camera's views draw their cluster meshes from the trees, which the walk picks
             // patch by patch with the same rule as the GPU's compute pass. Every other layout
             // draws whole meshes or whole levels.

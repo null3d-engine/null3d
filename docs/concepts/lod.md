@@ -118,6 +118,12 @@ A tree can stream as a model loads, with `--clusters --stages`. The model file t
 
 The patch path draws a mesh that one copy draws, and the file may still hold a tree for a mesh with more copies. A mesh that draws several copies at once draws its whole levels, because the walk picks the patches of one copy. An instance batch draws whole levels too, even with one row. The tool counts only the copies that the file places. A mesh that page code draws in an instance batch therefore still gets a tree, and its copies draw the whole levels. The levels go down to a few dozen triangles, so far copies stay cheap. The WebGPU path that draws objects directly also draws the whole levels, because it has no cluster pass. The shadow maps draw the whole levels. Meshes that a skin or a morph target bends, and meshes whose material blends or masks, keep whole levels too.
 
+## Pieces of a large level
+
+A copy that the view cuts through, or that turns half its surface away from the camera, still draws every triangle of its level. So `--lod` also sorts each level of 32,768 triangles or more into 8 to 16 pieces. Each piece faces about one way and has its own bounds. The file stores them in `NULL3D_pieces`, and other viewers draw the same triangles in the new order.
+
+Each copy picks its level as before. It then skips each piece of that level that lies outside the view. In the camera's own view it also skips each piece whose triangles all face away from the camera. With GPU occlusion culling on, it skips each piece that the occluders hide as well. The picture is the same as without pieces. A material that draws both faces keeps every piece that faces away, and so does a copy that is mirrored or stretched. Each piece adds a draw to its level, so smaller meshes keep whole levels.
+
 ## How the engine picks a level
 
 A level given by its error switches in where that error covers fewer pixels than the `lodThreshold` quality setting:

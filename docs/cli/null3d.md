@@ -392,7 +392,7 @@ bunx @null3d/cli assets optimize models/ public/models/ --lod --max-texture-size
 
 | Option | Effect | Without it |
 | --- | --- | --- |
-| `--lod` | Adds levels of detail to each mesh of 64 triangles or more, and stores each level's error | No levels |
+| `--lod` | Adds levels of detail to each mesh of 64 triangles or more, and stores each level's error. Sorts each large level into pieces that copies cull one by one | No levels |
 | `--stages` | With `--lod` or `--clusters`, writes finer levels and cluster bands as separate files beside the model, so the page draws a coarse first picture | Levels and bands in the file |
 | `--clusters` | Adds a tree of cluster patches to each large static mesh of 20,000 triangles or more, and gives that mesh the levels that `--lod` makes | No trees |
 | `--simplify <share>` | Keeps this share of each mesh's triangles, from 0 to 1, as far as `--simplify-error` allows | 1: every triangle |

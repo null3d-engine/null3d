@@ -79,6 +79,7 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'NULL3D_mesh_bvh',
 	'NULL3D_occluder',
 	'NULL3D_clusters',
+	'NULL3D_pieces',
 ];
 
 /**
@@ -615,6 +616,20 @@ export interface PrimitiveData {
 	 * draw patch by patch where their error lets them.
 	 */
 	patches?: PatchesData;
+	/**
+	 * The pieces of the primitive's triangle list (`NULL3D_pieces`), which copies cull one by one.
+	 */
+	pieces?: PiecesData;
+}
+
+/**
+ * The pieces of a triangle list, as the asset tool sorts them: the triangles of each piece, one
+ * piece after another in the list's order, and eight floats of each piece's bounds, its bounding
+ * sphere's centre and radius, then its cone's axis and cutoff.
+ */
+export interface PiecesData {
+	triangles: Uint32Array;
+	bounds: Float32Array;
 }
 
 /**
@@ -656,6 +671,10 @@ export const MESH_BVH = 'NULL3D_mesh_bvh';
 export const OCCLUDER = 'NULL3D_occluder';
 /** The extension that holds a primitive's tree of cluster patches. */
 export const CLUSTERS = 'NULL3D_clusters';
+/** The extension that holds the pieces of a primitive's triangle list. */
+export const PIECES = 'NULL3D_pieces';
+/** The version of the pieces' layout that the engine reads. A file of another layout draws whole. */
+export const PIECES_VERSION = 1;
 /**
  * The version of the tree's layout that the engine draws: each patch's sphere holds its children's
  * and its error is at least theirs. An older tree draws its mesh whole.
@@ -1896,7 +1915,16 @@ const ATTRIBUTES: readonly [
 	name: string,
 	field: Exclude<
 		keyof PrimitiveData,
-		'accessors' | 'indices' | 'material' | 'min' | 'max' | 'rest' | 'bvh' | 'occluder' | 'patches'
+		| 'accessors'
+		| 'indices'
+		| 'material'
+		| 'min'
+		| 'max'
+		| 'rest'
+		| 'bvh'
+		| 'occluder'
+		| 'patches'
+		| 'pieces'
 	>,
 	components: readonly number[],
 	types: Readonly<Record<number, boolean | undefined>>,
@@ -2118,7 +2146,34 @@ function parsePrimitive(
 			read,
 			vertices,
 		);
+	if (extensions?.[PIECES] !== undefined) {
+		const pieces = piecesOf(entry(extensions[PIECES], `${what}'s ${PIECES}`), corners / 3);
+		if (pieces) data.pieces = pieces;
+	}
 	return data;
+}
+
+/**
+ * The pieces of a primitive's triangle list, or nothing for pieces of another layout's version, or
+ * whose triangles do not add up to the list's, which then draws whole.
+ */
+function piecesOf(extension: Entry, triangles: number): PiecesData | undefined {
+	const counts = extension.triangles;
+	const bounds = extension.bounds;
+	if (Number(extension.version ?? 0) !== PIECES_VERSION) return undefined;
+	if (!Array.isArray(counts) || !Array.isArray(bounds) || bounds.length !== counts.length * 8)
+		return undefined;
+	let sum = 0;
+	for (const count of counts) {
+		if (!Number.isInteger(count) || (count as number) <= 0) return undefined;
+		sum += count as number;
+	}
+	if (sum !== triangles || !bounds.every((v) => typeof v === 'number' && Number.isFinite(v)))
+		return undefined;
+	return {
+		triangles: Uint32Array.from(counts as number[]),
+		bounds: Float32Array.from(bounds as number[]),
+	};
 }
 
 /** The bytes of a primitive's stored tree: an accessor of unsigned 32-bit integers. */
