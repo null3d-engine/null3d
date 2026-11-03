@@ -503,10 +503,10 @@ export class Textures {
 		/** @internal True when the engine draws with WebGL2. */
 		readonly webgl2 = false,
 		/**
-		 * @internal True when KTX2 files keep their transcoded texels in the browser's Cache Storage,
-		 * so later loads of the same file skip the transcoder.
+		 * @internal True unless the page switch turns the cache of derived data off: loads then keep
+		 * what they make, such as transcoded KTX2 textures, in the browser's storage across visits.
 		 */
-		readonly textureCache = false,
+		readonly derivedCache = false,
 		private readonly ownMemory: () => void = () => {},
 		/** @internal Sends a message from the sketch to the page, as `ctx.page.post` does. */
 		private readonly page: PageSender = () => {},

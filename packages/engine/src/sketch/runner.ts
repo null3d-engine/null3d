@@ -50,6 +50,7 @@ import { FULL_SCALE, thousandths } from '../quality/budget';
 import { Governor, GovernorLoop } from '../quality/governor';
 import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
 import type { Assets, GltfExtensionHandler, ProgressHandler } from '../scene/assets';
+import type { DerivedCache } from '../scene/derived-cache';
 import { FrameCameras } from '../scene/frame-cameras';
 import { GltfExtensions } from '../scene/gltf-extensions';
 import { GradeTable } from '../scene/grade-table';
@@ -232,6 +233,8 @@ function lazyAssets(
 			if (name === 'then') return undefined;
 			if (name === 'registerGltfExtension')
 				return (handler: GltfExtensionHandler) => extensions.register(handler);
+			if (name === 'cache')
+				return (cacheName: string, version: string | number) => lazyCache(load, cacheName, version);
 			if (name === 'onProgress') {
 				return (handler: ProgressHandler) => {
 					let off: (() => void) | undefined;
@@ -247,6 +250,24 @@ function lazyAssets(
 				);
 		},
 	});
+}
+
+/**
+ * A namespace of the cache of derived data that answers at once, as `assets.cache` does, while
+ * the loader that holds the cache loads with its first read or write.
+ */
+function lazyCache(
+	load: () => Promise<Assets>,
+	name: string,
+	version: string | number,
+): DerivedCache {
+	const cache = () => load().then((assets) => assets.cache(name, version));
+	return {
+		name,
+		version: String(version),
+		get: (key) => cache().then((own) => own.get(key)),
+		put: (key, bytes) => cache().then((own) => own.put(key, bytes)),
+	};
 }
 
 /**
@@ -548,7 +569,7 @@ export class SketchRunner {
 			() => this.quality.own('uploadBytesPerFrame'),
 			(id) => imagesArrived(slots, id),
 			device.webgl2,
-			device.textureCache,
+			device.derivedCache,
 			() => this.quality.own('textureMemoryMiB'),
 			post,
 		);

@@ -209,10 +209,10 @@ export interface CoreDevice {
 	 */
 	gpuOcclusion: boolean;
 	/**
-	 * True when KTX2 files keep their transcoded texels in the browser's Cache Storage, so later
-	 * loads of the same file skip the transcoder.
+	 * True when the cache of derived data keeps what loads make, such as transcoded KTX2 textures,
+	 * in the browser's storage, so a later load of the same input skips the work.
 	 */
-	textureCache: boolean;
+	derivedCache: boolean;
 	/** The pixels that software occlusion culling's buffer holds about, or 0 for the core's default. */
 	occlusionBuffer: number;
 }
@@ -269,7 +269,7 @@ export type DeviceOptions = Pick<
 	| 'indexInstances'
 	| 'direct'
 	| 'shadowDepthBits'
-	| 'textureCache'
+	| 'derivedCache'
 	| 'occlusionBuffer'
 > & {
 	/** The anti-aliasing mode. */
@@ -449,7 +449,7 @@ export function halfPrecision(
  * the 8-bit path, so tests reach every route. `freshShaders` makes the browser compile every
  * shader again, as on a first visit. `compression` limits the compressed texture families,
  * as on a device with fewer. `cells` off makes the core cull without grid cells, for benchmarks.
- * `textureCache` off makes KTX2 files transcode on every load, to time the cache against it.
+ * `derivedCache` off makes every load make its data again, to time the cache against it.
  */
 export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOptions): CoreDevice {
 	const sceneColor = sceneColorFormat(tier, report, options);
@@ -479,7 +479,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		largeWorld: options.largeWorld,
 		expectedObjects: options.expectedObjects,
 		gpuOcclusion: options.gpuOcclusion,
-		textureCache: options.textureCache,
+		derivedCache: options.derivedCache,
 		occlusionBuffer: options.occlusionBuffer ?? 0,
 	};
 	if (tier !== 'webgl2') {

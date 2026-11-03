@@ -193,15 +193,15 @@ To collect the numbers, rest each device first and close its other tabs:
 
 ## The texture cache plan
 
-The `texture-cache` plan times the [cache of transcoded textures](decisions/D-24-transcode-cache.md) on a device. Its page, `tests/pages/texture-cache.html`, comes from the startup build under the same load addresses as the startup plan. It loads the city scene's 120 KTX2 textures at once and reports the time from navigation until every texture is on the GPU.
+The `texture-cache` plan times the [cache of transcoded textures](decisions/D-24-transcode-cache.md), a namespace of the [cache of derived data](decisions/D-311-derived-data-cache.md), on a device. Its page, `tests/pages/texture-cache.html`, comes from the startup build under the same load addresses as the startup plan. It loads the city scene's 120 KTX2 textures at once and reports the time from navigation until every texture is on the GPU.
 
 - The textures are the color, normal and roughness maps of the 40 ambientCG texture sets in the sample content. On first use, the dev server encodes each one with the asset tool's encoder into the shared samples cache. It serves them under `/sample-textures/` (`tools/lib/sample-textures.ts`). The first run on a machine encodes all 120 in about 30 s. Run `bun run samples:fetch` first.
-- A first visit (`cold`) deletes the cache of transcoded textures, and loads the engine under addresses of its own. It downloads every texture again under a query of its own. A repeat visit (`warm`) repeats the first warm load's addresses, so the browser's HTTP cache holds every file.
-- Each of five runs makes a first visit and a repeat visit. Each visit runs with the cache off (`?texture-cache=off`) and then on. `--runs` changes the number of runs.
+- A first visit (`cold`) deletes the cache of derived data, and loads the engine under addresses of its own. It downloads every texture again under a query of its own. A repeat visit (`warm`) repeats the first warm load's addresses, so the browser's HTTP cache holds every file.
+- Each of five runs makes a first visit and a repeat visit. Each visit runs with the cache off (`?derived-cache=off`) and then on. `--runs` changes the number of runs.
 - The summary gives the medians of each visit, and says how much sooner a repeat visit is ready with the cache. D-24 keeps the cache when that is at least 10% on the S24+ or the iPad, and never later.
 - After the textures are ready, the page waits for the engine's writes to the cache before it stops the engine. The writes column says how long after the textures were ready the last one landed. A visitor who closes the page sooner keeps only the entries written so far.
 
-Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/real-browsers.ts --plan texture-cache --android chrome --lan ipad-safari`. Cache Storage needs a secure context, so the iPad's runner page must be on the HTTPS server.
+Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/real-browsers.ts --plan texture-cache --android chrome --lan ipad-safari`. The origin private file system needs a secure context, so the iPad's runner page must be on the HTTPS server.
 
 ## The storage speed plan
 
