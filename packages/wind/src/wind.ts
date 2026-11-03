@@ -16,12 +16,13 @@ import {
 	createReading,
 	defaultFieldState,
 	type FieldState,
+	type Push,
 	RING_SLOTS,
 	type WindReading,
 	writeReading,
 } from './analytic';
 import { WindProbes } from './field';
-import { SLOT_FLOATS } from './field-layout';
+import { ASK_NUMBERS, ASK_PUSH_RADIUS, ASK_TIME, SLOT_FLOATS } from './field-layout';
 import fallbackShader from './grid.fallback.wgsl';
 import gridShader from './grid.wgsl';
 import { NAMESPACE } from './namespace';
@@ -204,7 +205,6 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	const box = options.box ?? 128;
 	const air: FieldState = { ...defaultFieldState(), ...options.air };
 	const pushes = createPushRing();
-	const now = (): number => ctx.time.now;
 
 	// The preset gives the field's step interval, its pressure count and its grid. A page's own
 	// grid wins over the preset's.
@@ -223,24 +223,25 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	// time owes, so the air keeps the same pace whatever the frame rate.
 	//
 	// The air starts when a page makes the wind. A held page steps its updates up to the held time
-	// and the pass runs with each step, so a held picture carries the air that the hold built.
-	let solved = now();
+	// and the pass runs with each step, so a held picture carries the air that the hold built. Each
+	// frame reads the sketch time from the engine's field, because a helper that answered it would
+	// box its fraction on a call that the browser does not inline.
+	let solved = ctx.time.now;
 	// The preset names no field at Low. A page that keeps its own grid there still gets a field, at
 	// the add-on's own step and pressure count, because air that never steps never moves.
 	const presetField = (): boolean => stepSeconds > 0;
-	const solverSeconds = (): number => (presetField() ? stepSeconds : STEP_SECONDS);
 	const solverPressureSteps = (): number => (presetField() ? pressureSteps : PRESSURE_STEPS);
 	const cycleSteps = (): number => solverPressureSteps() + 2;
 	const owedSteps = (): number => {
-		const step = solverSeconds();
+		const step = presetField() ? stepSeconds : STEP_SECONDS;
 		// The sketch time is a sum of frame times, so a frame that owes exactly one step can read a
 		// hair under it.
-		const owed = Math.floor((now() - solved) / step + 1e-6);
+		const owed = Math.floor((ctx.time.now - solved) / step + 1e-6);
 		if (owed <= 0) return 0;
 		const cycles = Math.min(owed, MAX_CYCLES);
 		// A stall that owes more than one frame runs skips the air that it missed. Crediting only
 		// the cycles that ran would leave a debt, and every later frame would pay it.
-		solved = owed > MAX_CYCLES ? now() : solved + cycles * step;
+		solved = owed > MAX_CYCLES ? ctx.time.now : solved + cycles * step;
 		return cycles * cycleSteps();
 	};
 
@@ -248,10 +249,14 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	// The ring of pushes and the gust, in the order that the field's job worker reads it. A push
 	// writes its own slot where the page sends it, so a frame copies nothing across the ring.
 	const ringValues = new Float32Array(RING_SLOTS * SLOT_FLOATS);
+	// The push's width and the sketch time reach the ask in this array, whose numbers it reads for
+	// itself: a fraction passed as an argument becomes a number object where the browser does not
+	// inline the call.
+	const askNumbers = new Float64Array(ASK_NUMBERS);
 	const place: number[] = [0, 0, 0];
 	const write = (): void => {
 		// The first vector holds the solver's step, then the air's settings.
-		values[0] = solverSeconds();
+		values[0] = presetField() ? stepSeconds : STEP_SECONDS;
 		// The ring's slots keep the numbers that the page's pushes gave them.
 		values[1] = air.speed;
 		values[2] = air.heading;
@@ -384,7 +389,7 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		const old = pass;
 		if (old) ctx.render.removePass(old);
 		pass = makePass();
-		solved = now();
+		solved = ctx.time.now;
 		host.remove('wind');
 		feature = host.add(describe());
 		feature.refresh();
@@ -408,35 +413,43 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		y: number,
 		z: number,
 		out: [number, number, number],
-	): [number, number, number] => analyticVelocity(air, pushes.slots, x, y, z, now(), out);
+	): [number, number, number] => analyticVelocity(air, pushes.slots, x, y, z, ctx.time.now, out);
 
 	const probes = new WindProbes();
 
 	// A push takes the next of the three push slots, and a gust takes the slot after them, so a
 	// page's pushes never push its gust out. A gust travels from where it was sent, and a push
-	// stays there. The slot's numbers go into the pass's values and into the ring that a job worker
-	// reads, so the call allocates nothing and no frame copies the ring.
+	// stays there. The frame writes the slot's numbers here rather than passing them into a call,
+	// where the browser would box each fraction; they go into the pass's values and into the ring
+	// that a job worker reads, so a push copies no slot.
 	const turn = (at: readonly [number, number], strength: number, gust: boolean): void => {
-		const born = now();
-		const index = pushes.add(at[0], at[1], strength, born, gust);
+		const born = ctx.time.now;
+		const index = pushes.take(gust);
+		const x = at[0];
+		const z = at[1];
+		const push = pushes.slots[index] as Push;
+		push.x = x;
+		push.z = z;
+		push.strength = strength;
+		push.born = born;
 		const slot = index * SLOT_FLOATS;
-		ringValues[slot] = at[0];
-		ringValues[slot + 1] = at[1];
+		ringValues[slot] = x;
+		ringValues[slot + 1] = z;
 		ringValues[slot + 2] = strength;
 		ringValues[slot + 3] = born;
 		// The ring follows the pass's first twelve numbers, which are the step and the air's
 		// settings.
 		const into = 12 + slot;
-		values[into] = at[0];
-		values[into + 1] = at[1];
+		values[into] = x;
+		values[into + 1] = z;
 		values[into + 2] = strength;
 		values[into + 3] = born;
 		// The steady field carries the sent gust too, so a reader that works the air out with no grid
 		// sees it travel from where it was sent.
 		if (gust) {
 			const sent = field.air.sent;
-			sent[0] = at[0];
-			sent[1] = at[1];
+			sent[0] = x;
+			sent[1] = z;
 			sent[2] = strength;
 			sent[3] = born;
 		}
@@ -475,7 +488,9 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		},
 		sample,
 		read(points, out) {
-			probes.ask(points, out, field.air, air.pushRadius, now(), ringValues);
+			askNumbers[ASK_PUSH_RADIUS] = air.pushRadius;
+			askNumbers[ASK_TIME] = ctx.time.now;
+			probes.ask(points, out, field.air, ringValues, askNumbers);
 		},
 		update: apply,
 		destroy() {
