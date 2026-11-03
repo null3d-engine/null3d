@@ -148,7 +148,7 @@ import {
 } from '../generated/gpu';
 import type { ShaderVariants } from '../generated/shaders';
 import type { CustomShader } from '../shared/images';
-import { taskEnded, taskStarted } from '../shared/task-pending';
+import { planEnded, planStarted } from '../shared/task-pending';
 import type { WgslUpdate } from '../shared/wgsl-updates';
 import { type ColorInput, linearColor, writeLinearColor } from './color';
 import type { SceneInput } from './features';
@@ -612,7 +612,9 @@ export class MeshGeometry {
 		// and the parts are in, unless a call such as setLevels has ended it by then, and its levels
 		// arrive with the task's answer, between two frames. The plan counts as a task from now
 		// until its levels are in, so a held frame draws them.
-		taskStarted();
+		const counted = planStarted(
+			`a mesh of ${this.automaticTriangles.toLocaleString('en-US')} triangles (${call})`,
+		);
 		entry.promise = (async () => {
 			try {
 				let read: PlanningWords | undefined;
@@ -653,7 +655,7 @@ export class MeshGeometry {
 				if (plan === this.plans) this.planning = undefined;
 				throw error;
 			} finally {
-				taskEnded();
+				planEnded(counted);
 			}
 		})();
 		this.planning = entry;

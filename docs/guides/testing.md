@@ -75,6 +75,8 @@ In hold mode, the engine does this:
 
 A hold at 1.5 seconds runs 91 frames: frame 1 at time 0, then 90 steps. In the last `onUpdate`, `time.now` is 1.5 and `time.frame` is 91.
 
+Before it draws the held frame, hold mode waits for the tasks that the sketch queued on the job workers, then runs one more frame at the held time, which draws what they wrote. It waits up to 10 seconds for a task, then warns and draws anyway. The levels of detail that meshes made in code plan are different: hold mode waits for them until they are in, however long the plans take on a busy machine, and says every 10 seconds which meshes still plan. So the held frame always draws every planned level. A plan that has not answered after five minutes stops the hold with [E1408](../errors/E1408.md), which names the meshes. Give a mesh `levels: false` when a test should draw it without levels.
+
 The switch wins over the option. A bare `?hold` holds at the time of the `hold` option, or at 0 without one. The time must be from 0 to 600 seconds, or the start fails with [E1407](../errors/E1407.md).
 
 Hold mode works in every thread mode and on every GPU tier. The single-threaded build runs the sketch on the page's thread, so there the page's `math.random` is seeded too. The page's `Math.random` draws from it until the engine stops.
