@@ -45,6 +45,7 @@ use crate::frame::{
 use crate::levels::{
     BucketKey, KeyLinks, expand_level_keys, is_fade_key, key_level, level_key, links_of,
 };
+use crate::meshes::MeshStorage;
 use crate::motion::ChangedRanges;
 use crate::object_ranges::ObjectRanges;
 use crate::outline::mask_keys;
@@ -259,6 +260,13 @@ pub(super) struct Bucket {
     /// The scene slot of the object that places the feature draw, or `u32::MAX` for a bucket of the
     /// engine's own.
     pub(super) feature_slot: u32,
+    /// The buckets of the pieces that this bucket's mesh draws in its place (see
+    /// [`crate::pieces`]): the first, and how many follow it. A bucket with pieces has no draws of
+    /// its own, and the culling appends each copy to the slice of each piece that it shows.
+    pub(super) pieces: Option<(u32, u32)>,
+    /// For the bucket of a piece, the piece's cone of facings in its mesh's space: its axis and its
+    /// cutoff, 1 or more where the cone test does not apply. `None` for every other bucket.
+    pub(super) cone: Option<[f32; 4]>,
 }
 
 /// One indexed indirect draw of each view: a part of a bucket's mesh.
@@ -279,6 +287,14 @@ pub(super) struct Draw {
 /// Buckets take the bits below it, and the cell index the bits from `CELL_SHIFT` up.
 pub(super) const OCCLUDER: u32 = 1 << 22;
 const _: () = assert!(OCCLUDER << 1 == 1 << CELL_SHIFT);
+
+/// The bit of a bucket record's word of index reads that marks a bucket that draws pieces in its
+/// place, which never reads by index: the word then names the bucket of its first piece, which fits
+/// below the occluder bit, and the count of its pieces from `PIECE_COUNT_SHIFT` up.
+const PIECED: u32 = 1 << 31;
+const PIECE_COUNT_SHIFT: u32 = 24;
+const _: () = assert!(OCCLUDER < 1 << PIECE_COUNT_SHIFT);
+const _: () = assert!(crate::pieces::MAX_PIECES < 1 << (31 - PIECE_COUNT_SHIFT));
 
 /// The most buckets a layout holds, so that each fits below the occluder bit, and the entry of a
 /// drawn source is never `HIDDEN`. Sources may outnumber it, but each bucket needs its own mesh,
@@ -478,6 +494,9 @@ pub(super) struct Layout {
     pub(super) indexed: u32,
     /// Every bucket's draws, bucket by bucket; a draw's place is its indirect draw's.
     pub(super) draws: Vec<Draw>,
+    /// The buckets in the order that a pass draws them: each bucket's pieces in its place, and the
+    /// buckets of the pieces after every other bucket in the table, which no source names.
+    pub(super) draw_order: Vec<u32>,
     /// The entry of every source: its bucket, its occluder bit and its cell, or `HIDDEN`.
     instance_buckets: Vec<u32>,
     /// The shown scene objects whose entries carry the occluder bit, and the batches whose rows
@@ -583,6 +602,7 @@ impl Layout {
             vec_bytes(&self.batch_bases),
             vec_bytes(&self.buckets),
             vec_bytes(&self.draws),
+            vec_bytes(&self.draw_order),
             vec_bytes(&self.instance_buckets),
             vec_bytes(&self.source_layers),
             vec_bytes(&self.source_ranges),
@@ -844,6 +864,7 @@ impl Layout {
         self.level_buckets.clear();
         (self.copied, self.indexed) = (0, 0);
         self.draws.clear();
+        self.draw_order.clear();
         self.skinned.clear();
         self.waiting.clear();
         self.indirect_template.clear();
@@ -1381,6 +1402,9 @@ impl Layout {
         self.material_views = 0;
         self.pick_views = 0;
         let (mut copied, mut indexed) = (0, 0);
+        // The buckets whose mesh draws pieces in their place, each with its mesh and whether its
+        // pipeline drops back faces.
+        let mut pieced_buckets: Vec<(u32, u32, bool)> = Vec::new();
         for &(key, count) in key_counts.iter() {
             let (pipeline, group, _, mesh, material, bounds) = key;
             let bands = |key: &BucketKey| fades && ranged(key);
@@ -1475,6 +1499,28 @@ impl Layout {
                     || regions.is_some()
                     || (pipeline.template >= template::CUSTOM_FIRST
                         && pipeline.permutation & permutation::MOTION != 0));
+            // A camera's view culls each piece of a mesh with pieces on its own, where the piece's
+            // bounds hold: the vertices stay where the mesh puts them, unmoved by a skin, morph
+            // targets, a displacement or a custom vertex offset, and each copy's matrix reaches the
+            // culling shader. A draw of lines, a tree of cluster patches and a feature's own count
+            // keep the whole list. The cone test also needs the pipeline to drop back faces.
+            let piece_count = meshes.pieces(mesh - 1).len();
+            let pieced = drawn == Drawn::Scene
+                && (2..=crate::pieces::MAX_PIECES).contains(&piece_count)
+                && tree.is_none()
+                && !by_index
+                && !skins
+                && regions.is_none()
+                && margin == 0.0
+                && pipeline.state & state_flags::LINE_LIST == 0
+                && pipeline.permutation & (permutation::SKIN | permutation::MORPH) == 0
+                && !pipeline.places_own_vertices()
+                && object.is_none_or(|slot| settings.feature_instances().id_of(slot).is_none());
+            let culls_back =
+                pipeline.state & (state_flags::CULL_NONE | state_flags::CULL_FRONT) == 0;
+            if pieced {
+                pieced_buckets.push((self.buckets.len() as u32, mesh, culls_back));
+            }
             // A surface that writes no color holds back what lies behind it, so its draws come
             // before the surfaces that write color. Only the scene's own layout draws them.
             let holdout =
@@ -1560,7 +1606,7 @@ impl Layout {
                 base: *base,
                 capacity: count,
                 first_draw,
-                draws: parts.len() as u32,
+                draws: if pieced { 0 } else { parts.len() as u32 },
                 mesh_key: key.3,
                 center,
                 radius,
@@ -1582,9 +1628,14 @@ impl Layout {
                 feature_capacity: record.map_or(0, |(_, capacity, _)| capacity),
                 feature_ready: feature.is_none_or(|id| settings.feature_instances().is_ready(id)),
                 feature_slot: object.unwrap_or(u32::MAX),
+                pieces: None,
+                cone: None,
             });
             self.bucket_levels.push(key_level(key.3).1 as u32);
             *base += count;
+            if pieced {
+                continue;
+            }
             self.draws.extend(parts.iter().enumerate().map(|(k, part)| {
                 // A skinned part draws its region of skinned vertices, from its first vertex.
                 let region = regions.and_then(|regions| regions.get(k));
@@ -1600,6 +1651,10 @@ impl Layout {
                     vertices: region.map(SkinnedPart::vertices),
                 }
             }));
+        }
+        copied = self.add_pieces(meshes, &pieced_buckets, copied);
+        if self.buckets.len() as u32 >= MAX_BUCKETS {
+            return Err(RecordError::TooManySources { limit: MAX_BUCKETS });
         }
         // The index slices follow the copies, so their bases count entries from the buffer's
         // start.
@@ -1731,6 +1786,15 @@ impl Layout {
                 }
             }
         }
+        // A piece's slice holds the copies that pick its bucket's level, so it takes the same
+        // count and moves with the level's slices.
+        for bucket in 0..self.buckets.len() {
+            if let (Some((first, count)), true) =
+                (self.buckets[bucket].pieces, self.marks[bucket] != 0)
+            {
+                self.marks[first as usize..(first + count) as usize].fill(1);
+            }
+        }
         self.level_buckets.clear();
         self.level_buckets.extend(
             (0..self.buckets.len() as u32).filter(|&bucket| self.marks[bucket as usize] != 0),
@@ -1755,6 +1819,17 @@ impl Layout {
         }
         self.bucket_records.clear();
         for bucket in &self.buckets {
+            // A piece's bucket holds its cone where a level's holds its switch and links.
+            let (value, next, fade, bias, switch) = match bucket.cone {
+                Some([x, y, z, cutoff]) => (x, y.to_bits(), z.to_bits(), cutoff, 0),
+                None => (
+                    bucket.levels.value,
+                    bucket.levels.next.map_or(0, |bucket| bucket + 1),
+                    bucket.levels.fade.map_or(0, |bucket| bucket + 1),
+                    bucket.bias,
+                    bucket.levels.switch as u32,
+                ),
+            };
             self.bucket_records.extend_from_slice(&[
                 bucket.base,
                 bucket.material - 1,
@@ -1766,14 +1841,18 @@ impl Layout {
                 bucket.center[2].to_bits(),
                 bucket.first_joint,
                 // The motion layout's buckets never read by index: the word marks those whose
-                // instances move by themselves.
-                u32::from(bucket.indexed || bucket.moves),
+                // instances move by themselves. A bucket that draws pieces in its place names them
+                // here, under the bit that marks it.
+                bucket.pieces.map_or(
+                    u32::from(bucket.indexed || bucket.moves),
+                    |(first, count)| PIECED | first | count << PIECE_COUNT_SHIFT,
+                ),
                 // The culling shader reads a bucket as its index plus one, and 0 as none.
-                bucket.levels.value.to_bits(),
-                bucket.levels.next.map_or(0, |bucket| bucket + 1),
-                bucket.levels.fade.map_or(0, |bucket| bucket + 1),
-                bucket.bias.to_bits(),
-                bucket.levels.switch as u32,
+                value.to_bits(),
+                next,
+                fade,
+                bias.to_bits(),
+                switch,
                 // The level that the bucket draws, which the levels debug view writes beside each
                 // copy in place of the fade value.
                 bucket.level,
@@ -1783,6 +1862,77 @@ impl Layout {
         self.records_dirty = Some(0..self.buckets.len() as u32);
         self.built = true;
         Ok(())
+    }
+
+    /// The buckets in the order that a pass draws them: each bucket with pieces gives way to its
+    /// pieces' buckets.
+    pub(super) fn drawn_buckets(&self) -> impl Iterator<Item = usize> + '_ {
+        // A layout that no rebuild has ordered draws its buckets in their own order.
+        let ordered = !self.draw_order.is_empty() || self.buckets.is_empty();
+        let order = self.draw_order.iter().map(|&b| b as usize);
+        let own = (0..self.buckets.len()).filter(move |_| !ordered);
+        order.chain(own)
+    }
+
+    /// Adds the buckets of the pieces of each bucket in `pieced`, with its mesh and whether its
+    /// pipeline drops back faces, after every other bucket, with their draws after every other
+    /// draw, and gives each bucket's place in the draw order. Each piece's bucket copies its
+    /// bucket's pipeline and material, takes the piece's sphere and cone, a slice of the bucket's
+    /// size after the `copied` copies before it, and a draw for each range of the mesh's parts that
+    /// the piece covers. Returns the copies with the pieces' slices.
+    fn add_pieces(
+        &mut self,
+        meshes: &MeshStorage,
+        pieced: &[(u32, u32, bool)],
+        mut copied: u32,
+    ) -> u32 {
+        for &(parent, mesh, culls_back) in pieced {
+            let whole = self.buckets[parent as usize];
+            let pieces = meshes.pieces(mesh - 1);
+            let first = self.buckets.len() as u32;
+            for piece in pieces {
+                let [x, y, z, radius] = piece.sphere;
+                let [ax, ay, az, cutoff] = piece.cone;
+                self.buckets.push(Bucket {
+                    base: copied,
+                    first_draw: self.draws.len() as u32,
+                    draws: 0,
+                    center: [x, y, z],
+                    radius,
+                    // A material that draws back faces shows the piece from either side.
+                    cone: Some([ax, ay, az, if culls_back { cutoff } else { 1.0 }]),
+                    pieces: None,
+                    levels: KeyLinks::default(),
+                    ..whole
+                });
+                self.bucket_levels.push(whole.level);
+                copied += whole.capacity;
+            }
+            crate::pieces::piece_parts(meshes.piece_parts(mesh - 1), pieces, |k, part| {
+                let bucket = &mut self.buckets[(first + k) as usize];
+                if bucket.draws == 0 {
+                    bucket.first_draw = self.draws.len() as u32;
+                }
+                bucket.draws += 1;
+                self.draws.push(Draw {
+                    page: part.page,
+                    index_count: part.index_count,
+                    first_index: part.first_index,
+                    base_vertex: part.base_vertex,
+                    vertices: None,
+                });
+            });
+            self.buckets[parent as usize].pieces = Some((first, pieces.len() as u32));
+        }
+        self.draw_order.clear();
+        for (b, bucket) in self.buckets.iter().enumerate() {
+            match (bucket.pieces, bucket.cone) {
+                (Some((first, count)), _) => self.draw_order.extend(first..first + count),
+                (None, None) => self.draw_order.push(b as u32),
+                (None, Some(_)) => {}
+            }
+        }
+        copied
     }
 
     /// Sets each feature-instance draw's count in the template that a frame's reset uploads, for
@@ -2865,6 +3015,137 @@ mod tests {
             )
             .unwrap();
         (layout, settings, mesh)
+    }
+
+    /// A mesh split into two parts whose list comes in three pieces, the last of which crosses
+    /// from the first part into the second: its bucket draws nothing of its own, and each piece's
+    /// bucket draws the ranges of the parts that it covers, in the bucket's place in the draw
+    /// order, from a slice of the bucket's size, with its sphere and cone in its record.
+    #[test]
+    fn a_mesh_in_pieces_draws_each_piece_from_a_bucket_and_slice_of_its_own() {
+        let (mut layout, mut settings, mesh) = split_tree_layout(0, 1);
+        let piece = |triangles: u32, axis: f32| crate::pieces::Piece {
+            triangles,
+            sphere: [axis, 0.0, 0.0, 2.0],
+            cone: [axis, 0.0, 0.0, 0.5],
+        };
+        settings
+            .meshes_mut()
+            .set_pieces(
+                mesh - 1,
+                &[piece(10_000, 1.0), piece(10_000, -1.0), piece(10_000, 0.0)],
+            )
+            .unwrap();
+        let material = settings
+            .materials_mut()
+            .create(Shading::Lit, 0, [1.0; 4])
+            .unwrap()
+            + 1;
+        let mut scene = SceneStorage::with_capacity(8);
+        let object = scene.reserve().unwrap();
+        scene
+            .apply_commands(
+                &[
+                    Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+                    Command::set_material(object, material),
+                ],
+                1,
+            )
+            .unwrap();
+        scene.update_transforms(&JobSystem::new(0));
+        let targets = PassTargets {
+            color_format: format::CANVAS,
+            depth_format: format::DEPTH32_FLOAT,
+            samples: 4,
+            permutation: 0,
+        };
+        layout
+            .rebuild(
+                &settings,
+                &mut PipelineCache::default(),
+                targets,
+                &scene,
+                &BatchTable::with_capacity(1),
+                scene.parity(),
+                u32::MAX,
+                CasterPasses::default(),
+                Prepass::Off,
+                &Skinning::default(),
+                &mut KeyCounts::new(),
+                targets,
+                false,
+                0,
+            )
+            .unwrap();
+        let whole = layout
+            .buckets
+            .iter()
+            .position(|bucket| bucket.pieces.is_some())
+            .expect("a bucket with pieces");
+        let (first, count) = layout.buckets[whole].pieces.unwrap();
+        assert_eq!(count, 3);
+        assert_eq!(layout.buckets[whole].draws, 0);
+        let pieces = &layout.buckets[first as usize..(first + count) as usize];
+        assert_eq!(
+            pieces.iter().map(|b| b.draws).collect::<Vec<_>>(),
+            [1, 1, 2]
+        );
+        // The ranges cover the mesh's two parts once, in order: the third piece ends the first
+        // part and starts the second.
+        let parts = settings
+            .meshes()
+            .parts(settings.meshes().mesh(mesh - 1).unwrap(), false);
+        assert_eq!(parts.len(), 2);
+        let ranges: Vec<(u32, u32, u32)> = pieces
+            .iter()
+            .flat_map(|b| &layout.draws[b.first_draw as usize..(b.first_draw + b.draws) as usize])
+            .map(|draw| (draw.first_index, draw.index_count, draw.base_vertex))
+            .collect();
+        let split = parts[0].index_count;
+        assert_eq!(
+            ranges,
+            [
+                (parts[0].first_index, 30_000, parts[0].base_vertex),
+                (parts[0].first_index + 30_000, 30_000, parts[0].base_vertex),
+                (
+                    parts[0].first_index + 60_000,
+                    split - 60_000,
+                    parts[0].base_vertex
+                ),
+                (parts[1].first_index, 90_000 - split, parts[1].base_vertex),
+            ]
+        );
+        // Each piece's slice holds every copy that its bucket's would, after the bucket's own.
+        for (k, bucket) in pieces.iter().enumerate() {
+            assert_eq!(bucket.capacity, layout.buckets[whole].capacity);
+            assert_eq!(bucket.material, layout.buckets[whole].material);
+            assert_eq!(bucket.pipeline, layout.buckets[whole].pipeline);
+            let record = &layout.bucket_records[(first as usize + k) * BUCKET_WORDS as usize..];
+            assert_eq!(
+                f32::from_bits(record[5]),
+                [1.0, -1.0, 0.0][k],
+                "the sphere's centre"
+            );
+            assert_eq!(f32::from_bits(record[2]), 2.0, "the sphere's radius");
+            assert_eq!(
+                f32::from_bits(record[10]),
+                [1.0, -1.0, 0.0][k],
+                "the cone's axis"
+            );
+            assert_eq!(f32::from_bits(record[13]), 0.5, "the cone's cutoff");
+        }
+        let starts: Vec<u32> = pieces.iter().map(|b| b.base).collect();
+        assert!(starts.windows(2).all(|w| w[1] >= w[0] + pieces[0].capacity));
+        let record = &layout.bucket_records[whole * BUCKET_WORDS as usize..];
+        assert_eq!(record[9], PIECED | first | count << PIECE_COUNT_SHIFT);
+        // A pass draws the pieces where the bucket would draw.
+        let order: Vec<usize> = layout.drawn_buckets().collect();
+        let at = order.iter().position(|&b| b == first as usize).unwrap();
+        assert_eq!(
+            &order[at..at + 3],
+            &[first as usize, first as usize + 1, first as usize + 2]
+        );
+        assert!(!order.contains(&whole));
     }
 
     /// The cluster pass draws a split mesh's patches with 32-bit indices from the first part's base

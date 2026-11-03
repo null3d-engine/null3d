@@ -708,3 +708,5 @@ export const LEVEL_PROBLEM_TOO_MANY = 1;
 export const LEVEL_PROBLEM_ERRORS = 2;
 export const LEVEL_PROBLEM_MESH = 3;
 export const LEVEL_PROBLEM_FORMAT = 4;
+
+export const LEVELS_MAX = 16;

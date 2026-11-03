@@ -55,6 +55,7 @@
 	"dependencies": {
 		"@gltf-transform/core": "4.5.1",
 		"@gltf-transform/extensions": "4.5.1",
+		"@null3d/engine": "workspace:*",
 		"draco3d": "1.5.7",
 		"fast-png": "8.0.0",
 		"jpeg-js": "0.4.4",

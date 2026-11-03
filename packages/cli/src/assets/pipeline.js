@@ -30,6 +30,7 @@ import {
 	storeStages,
 } from './levels.js';
 import { lodOf, MSFTLod } from './lod-extension.js';
+import { NULL3D_PIECES, Null3dPieces, storePieces } from './pieces-extension.js';
 import { modelReport, shownBytes } from './report.js';
 import { shaderList, writeShaderList } from './shaders.js';
 import { addSpatialData, BVH_MIN_TRIANGLES } from './spatial.js';
@@ -107,7 +108,14 @@ export const GENERATOR = `null3D asset tool ${VERSION}`;
 export async function glTFIO() {
 	await Promise.all([MeshoptDecoder.ready, MeshoptEncoder.ready]);
 	return new NodeIO()
-		.registerExtensions([...ALL_EXTENSIONS, MSFTLod, Null3dOccluder, Null3dMeshBvh, Null3dClusters])
+		.registerExtensions([
+			...ALL_EXTENSIONS,
+			MSFTLod,
+			Null3dOccluder,
+			Null3dMeshBvh,
+			Null3dClusters,
+			Null3dPieces,
+		])
 		.registerDependencies({ 'meshopt.decoder': MeshoptDecoder, 'meshopt.encoder': MeshoptEncoder });
 }
 
@@ -376,6 +384,7 @@ export async function optimizeModel(path, options, encode) {
 				NULL3D_OCCLUDER,
 				NULL3D_MESH_BVH,
 				NULL3D_CLUSTERS,
+				NULL3D_PIECES,
 			].includes(extension.extensionName)
 		)
 			extension.dispose();
@@ -402,6 +411,10 @@ export async function optimizeModel(path, options, encode) {
 		if (levels.size > 0) storeStages(doc, levels, stages, prefix, clusters);
 		else storeLevels(doc, levels);
 	} else storeLevels(doc, levels);
+	// Each large list of a mesh with levels sorts its triangles into pieces, which a viewer that
+	// draws many copies culls one by one. Raycast trees read triangles by their place, so they
+	// come after.
+	storePieces(doc);
 	storeClusters(doc, clusters);
 	merged.accessors = dedupAccessors(doc);
 	const spatial = addSpatialData(doc, {

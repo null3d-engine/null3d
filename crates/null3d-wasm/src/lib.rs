@@ -2137,6 +2137,46 @@ pub fn create_level_mesh(base: u32, indices: u32) -> u32 {
     })
 }
 
+/// A level of the live mesh `base` that holds its own copy of the vertices that the `indices`
+/// triangles in the staging words name, which the call frees: the level of a base that is split
+/// into parts, which cannot share its vertices. The indices name the base's own vertices. Returns
+/// the mesh id.
+#[wasm_bindgen(js_name = createLevelCopy)]
+pub fn create_level_copy(base: u32, indices: u32) -> u32 {
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let words = indices as usize;
+        if staging.len() < words {
+            return Err(fail(codes::BAD_ARRAYS, [0, 0]));
+        }
+        let added = e
+            .renderer
+            .settings_mut()
+            .meshes_mut()
+            .add_level_copy(base.checked_sub(1).unwrap_or(u32::MAX), &staging[..words])
+            .map(|id| id + 1)
+            .map_err(mesh_failure);
+        drop(staging);
+        added
+    })
+}
+
+/// Writes the live mesh `mesh`'s vertices and triangles as the level planner reads them into the
+/// staging words, and returns their address: the vertex count, the index count and the format,
+/// then each attribute's floats, as `MeshStorage::planning_arrays` lays them out. The caller
+/// copies them before its next call that uses the staging words.
+#[wasm_bindgen(js_name = meshPlanningArrays)]
+pub fn mesh_planning_arrays(mesh: u32) -> u32 {
+    value_with_engine(|e| {
+        e.staging.clear();
+        let meshes = e.renderer.settings().meshes();
+        meshes
+            .planning_arrays(mesh.checked_sub(1).unwrap_or(u32::MAX), &mut e.staging)
+            .map_err(mesh_failure)?;
+        Ok(address(e.staging.as_slice()))
+    })
+}
+
 /// Gives the live mesh `mesh` the `indices` triangles that TypeScript wrote into the staging words,
 /// which the call frees, in place of the triangles it drew. A staged level that arrives after its
 /// base replaces the base's triangles this way, so the objects that draw the base draw the finer
@@ -2168,6 +2208,61 @@ pub fn replace_mesh_indices(mesh: u32, indices: u32) -> u32 {
             }
             Err(error) => Ok(mesh_failure(error)),
         }
+    })
+}
+
+/// Gives the live mesh `mesh` the `count` pieces of its triangle list that TypeScript wrote into
+/// the staging words, which the call frees: each piece's triangles, then its bounding sphere and
+/// its cone of facings as the bits of 32-bit floats (`null3d_render::pieces::PIECE_WORDS` words a
+/// piece). The pieces follow the list's order, and the copies that draw the mesh cull each one from
+/// the next frame on. A mesh made in code takes them the same way as a file's, at any time after
+/// it is made. Returns 1 when the mesh takes them, and 0 when they do not fit its list, which then
+/// draws whole as before.
+#[wasm_bindgen(js_name = setMeshPieces)]
+pub fn set_mesh_pieces(mesh: u32, count: u32) -> u32 {
+    give_pieces(mesh, count, 0)
+}
+
+/// Gives the live mesh `mesh` `count` pieces over a triangle list of their own, which TypeScript
+/// wrote into the staging words after the pieces (as `setMeshPieces` lays them out): `indices`
+/// indices that hold the mesh's triangles in piece order. The list shares the mesh's vertices, and
+/// the mesh keeps its own list, so a mesh made in code keeps the triangle order that raycasts and
+/// vertex updates read. Only a mesh in one part, which has no list of pieces yet, takes one.
+/// Returns 1 when the mesh takes them, and 0 otherwise.
+#[wasm_bindgen(js_name = setMeshPieceList)]
+pub fn set_mesh_piece_list(mesh: u32, count: u32, indices: u32) -> u32 {
+    give_pieces(mesh, count, indices)
+}
+
+/// The pieces of `setMeshPieces`, over a list of `indices` indices of their own when it is not 0.
+fn give_pieces(mesh: u32, count: u32, indices: u32) -> u32 {
+    use null3d_render::pieces::{MAX_PIECES, PIECE_WORDS, Piece};
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let count = count as usize;
+        let words = count * PIECE_WORDS;
+        if count > MAX_PIECES || staging.len() < words + indices as usize {
+            return Ok(0);
+        }
+        let mut pieces = [Piece::default(); MAX_PIECES];
+        for (piece, words) in pieces.iter_mut().zip(staging.as_chunks::<PIECE_WORDS>().0) {
+            *piece = Piece::from_words(words);
+        }
+        let meshes = e.renderer.settings_mut().meshes_mut();
+        let id = mesh.checked_sub(1).unwrap_or(u32::MAX);
+        let taken = if indices == 0 {
+            meshes.set_pieces(id, &pieces[..count])
+        } else {
+            let list = &staging[words..words + indices as usize];
+            meshes.set_piece_list(id, list, &pieces[..count])
+        }
+        .is_ok();
+        drop(staging);
+        if taken {
+            // The buckets that draw the mesh draw its pieces from the next rebuild on.
+            e.structure_changed = true;
+        }
+        Ok(u32::from(taken))
     })
 }
 
