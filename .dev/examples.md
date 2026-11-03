@@ -104,6 +104,8 @@ The post effects demo sets its warm and cool grades from lift, gamma and gain in
 
 Demos load sample files through `sampleUrl('<path>')` from `examples/lib/samples.ts`, with a string literal, so the sample check and `copyNamedSamples` find each file.
 
+A mesh made in code gets the same levels of detail and culling as a mesh from a file ([AGENTS.md](../AGENTS.md#parity-with-threejs-and-add-on-modules), rule 15). Until the engine's run-time level API ships, a demo gives its meshes levels with `mesh.setLevels`. Each static mesh of a few thousand triangles or more gets them, from the most detailed down, with about half the triangles at each step. A mesh that bends, moves its vertices in each frame, or draws lines or points keeps its full mesh. A comment beside it says why. Content made in code is no reason to draw every triangle at every distance. In a desert benchmark, null3D drew 13.5 million triangles a frame where three.js's meshlet pipeline drew 1.8 million. Far copies that drew levels that were too fine caused most of the difference.
+
 ## A page backdrop under a demo
 
 A demo whose entry sets `backdrop: true` draws over a page. `startDemo` starts the engine on a see-through canvas. It puts a light page-like surface inside the canvas's parent. It moves the labels' layer there too, so the order is the backdrop, the labels, then the canvas. The sketch sets no background, so the page shows where no object draws. A page that lays out its own demos must keep the canvas's parent positioned.
