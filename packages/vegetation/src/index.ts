@@ -2,9 +2,9 @@
 // folder: a macro skeleton per variant, shoot prototypes per species, real leaves near the camera
 // and cards beyond, wood with bark in metres, one plant shader, and wind records per axis. The main
 // entry also holds the scatter that places plants by ecological rules, the ground maps it reads, the
-// grass and the floating leaves. The first generator, with its materials, wind and far trees, is at
-// `@null3d/vegetation/legacy` until the demos move to the core. Each module keeps its public names
-// in its own `public.ts`, and this file only re-exports them. Built on the engine's public API only.
+// grass and the floating leaves. Until a species ships, a page grows a stand-in of its size and
+// colours in its place. Each module keeps its public names in its own `public.ts`, and this file only
+// re-exports them. Built on the engine's public API only.
 import { checkAddonVersion, declareAddonNamespace } from '@null3d/engine';
 import { VERSION } from './version';
 

@@ -1,6 +1,6 @@
 # D-298: fill a crown through its volume, not only along its limbs
 
-Status: decided and built. Task: none.
+Status: superseded by [D-305](D-305-plant-core-three-scales.md): the first generator that this record describes is removed, and the plant core grows the plants. Task: none.
 
 Summary: a species record may give `leaf.volume` a share of its crown cards that stand where the
 crown's outline puts them rather than on the line between two nearby twigs. The aspen and the birch

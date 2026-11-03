@@ -1,6 +1,6 @@
 # D-302: larger cards at the crown's rim even the silhouette but add no mass
 
-Status: decided and built, with its limit stated. Task: none.
+Status: superseded by [D-305](D-305-plant-core-three-scales.md): the first generator that this record describes is removed, and the plant core grows the plants. Task: none.
 
 Summary: `Leaf.rim` enlarges a crown's outer cards and thins them to every other one. Measured at
 eight angles it narrows the rim's variation from 53.1 to 41.7 per cent and leaves its mean fill at

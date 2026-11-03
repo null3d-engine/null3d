@@ -23,10 +23,8 @@ const fieldFile = new URL('../shaders/field.wgsl', import.meta.url);
 const pageFile = new URL('../page/sketch.ts', import.meta.url);
 /** The page that shows a person what to copy into their own shader. */
 const docsFile = new URL('../../../docs/api/wind.md', import.meta.url);
-/** The vegetation add-on's leaf and bark material, which reads the field in its vertex offset. */
-const plantFile = new URL('../../vegetation/src/legacy/plant.wgsl', import.meta.url);
-/** The add-on's morphing leaf cards, which read the same field. */
-const cardsFile = new URL('../../vegetation/src/legacy/plant-cards.wgsl', import.meta.url);
+/** The vegetation add-on's grass, which reads the field in its vertex offset. */
+const grassFile = new URL('../../vegetation/src/grass/grass.wgsl', import.meta.url);
 describe('the shaders of the grid', () => {
 	test('the compute form, the WebGL2 form and the sampling file hold one steady field', () => {
 		// The shader build resolves only the engine's library, so a shader cannot import another
@@ -147,12 +145,10 @@ describe('the sampling function', () => {
 		// The docs page holds the copy that a person pastes, so it is kept equal too.
 		expect(marked(docsFile, 'wind-steady')).toBe(steady);
 		expect(marked(docsFile, 'wind-sample')).toBe(sample);
-		// The vegetation add-on reads this field for its plants, so its two materials carry the
-		// same blocks.
-		for (const file of [plantFile, cardsFile]) {
-			expect(marked(file, 'wind-steady')).toBe(steady);
-			expect(marked(file, 'wind-sample')).toBe(sample);
-		}
+		// The vegetation add-on reads this field for its grass, whose shader carries the same
+		// blocks; the add-on's own test holds its other readers to the grass's copy.
+		expect(marked(grassFile, 'wind-steady')).toBe(steady);
+		expect(marked(grassFile, 'wind-sample')).toBe(sample);
 	});
 
 	test('the copy reads the texture inside the box and the steady field outside it', () => {

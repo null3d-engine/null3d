@@ -1,6 +1,6 @@
 # D-299: a bough's bare reach follows its height in the crown
 
-Status: decided and built. Task: none.
+Status: superseded by [D-305](D-305-plant-core-three-scales.md): the first generator that this record describes is removed, and the plant core grows the plants. Task: none.
 
 Summary: a conifer shows wood where its whorls stand apart and wraps its leader where they crowd, so
 `leaf.startTop` lets a record vary a branch's bare reach between the crown's foot and its top. The

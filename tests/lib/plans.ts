@@ -270,11 +270,6 @@ export type Check =
 	 * holds the figures, and nothing judges them.
 	 */
 	| { kind: 'probe'; tier: Tier }
-	/**
-	 * The atlas paint page: how long the bark and the leaf atlas take to paint, in turns. The paint
-	 * runs on the page's own thread, so the figures do not depend on a GPU path.
-	 */
-	| { kind: 'atlas-paint' }
 	/** The sky map cost page: each stage of a sky map's refresh, timed on one GPU path. */
 	| { kind: 'sky-map'; tier: Tier }
 	/** The sky refresh page: the frames from a sun move until the sky's light follows it. */
@@ -1471,26 +1466,6 @@ export function grassPlan(): PlanItem<Check>[] {
 	);
 }
 
-/** The seconds that the atlas paint page may take: its painters run three rounds of each atlas. */
-const ATLAS_PAINT_TIMEOUT_SECONDS = 120;
-
-/**
- * How long the bark and the leaf atlas take to paint on each device, separately: the painters that
- * `bakePlantAtlases` runs, three rounds of each in turn. The paint runs on the sketch thread, so one
- * page on each device reports both figures, and no GPU path is asked of it. D-241's bake section
- * records the tablet's and the phone's figures from this plan.
- */
-export function atlasPaintPlan(): PlanItem<Check>[] {
-	return [
-		pageItem(
-			'atlas-paint',
-			'atlas-paint-cost',
-			{ kind: 'atlas-paint' },
-			{ timeoutSeconds: ATLAS_PAINT_TIMEOUT_SECONDS },
-		),
-	];
-}
-
 /** The GPU paths of the alpha-mask plan's pages: the two WebGPU paths draw on WebGPU's tier. */
 const ALPHA_MASK_PATHS = [
 	['webgpu', 'webgpu'],
@@ -1519,23 +1494,6 @@ export function alphaMaskPlan(): PlanItem<Check>[] {
 				),
 			);
 	return items;
-}
-
-/**
- * What a far-tree impostor bake costs on the device, at each preset's atlas grid: the bake page
- * bakes a conifer, a birch and an oak at every grid and reports each bake's time on the sketch
- * thread and the bytes that its two atlases hold. The bake runs on the CPU, so one run gives every
- * GPU path the same figures. D-274 records them.
- */
-export function impostorBakePlan(): PlanItem<Check>[] {
-	return [
-		pageItem(
-			'impostor-bake',
-			'impostor-bake',
-			{ kind: 'probe', tier: 'webgl2' },
-			{ timeoutSeconds: 180 },
-		),
-	];
 }
 
 /**
@@ -1823,17 +1781,6 @@ export function vegetationPlan(): PlanItem<Check>[] {
 }
 
 /**
- * What a grove of grown oaks costs at each preset, for M3-V7: the leaf and bark materials sway in
- * the scene's one wind field, the leaves flutter and the sun's shadows follow them. The page times
- * the frames at a fixed preset and GPU path, and reports the GPU time per frame and per pass, the
- * CPU time and the draw calls.
- */
-const VEGETATION_WIND_PATHS = [
-	['webgpu', 'webgpu'],
-	['compat', 'webgpu'],
-	['webgl2', 'webgl2'],
-] as const;
-/**
  * The GPU paths of the grass plan's pages, with the presets that each one draws. WebGL2 and
  * compatibility mode cap the preset at Medium, so a page above the cap would draw Medium again
  * under another name.
@@ -1863,27 +1810,6 @@ export function vegetationGrassPlan(): PlanItem<Check>[] {
 					{
 						switches: [`gpu=${path}`, `preset=${preset}`, 'seconds=5'],
 						timeoutSeconds: 600,
-					},
-				),
-			);
-	return items;
-}
-
-/** The presets that the vegetation wind plan runs on each path. */
-const VEGETATION_WIND_PRESETS = ['low', 'medium', 'high', 'ultra'] as const;
-
-export function vegetationWindPlan(): PlanItem<Check>[] {
-	const items: PlanItem<Check>[] = [];
-	for (const preset of VEGETATION_WIND_PRESETS)
-		for (const [path, tier] of VEGETATION_WIND_PATHS)
-			items.push(
-				pageItem(
-					`vegetation-wind-${preset}-${path}`,
-					'vegetation-cost',
-					{ kind: 'probe', tier },
-					{
-						switches: [`gpu=${path}`, `preset=${preset}`, 'seconds=5'],
-						timeoutSeconds: VEGETATION_TIMEOUT_SECONDS,
 					},
 				),
 			);
@@ -2144,22 +2070,6 @@ export function webgpuStallPlan(): PlanItem<Check>[] {
 				switches: ['gpu=compat', 'demo=creek', 'preset=low', 'target-fps=1', 'seconds=5'],
 				timeoutSeconds: 240,
 			},
-		),
-	];
-}
-
-/**
- * Procedural tree generation in a worker, for M3-V1's budgets: each species at each preset's
- * detail, generated for several seeds, with the triangles, the vertices and the bytes of each
- * variant. It draws nothing and asks for no GPU path, so every device runs it.
- */
-export function treeGenerationPlan(): PlanItem<Check>[] {
-	return [
-		pageItem(
-			'tree-generation',
-			'tree-generation',
-			{ kind: 'probe', tier: 'webgl2' },
-			{ switches: ['seeds=6'], timeoutSeconds: 120 },
 		),
 	];
 }
@@ -2940,9 +2850,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	environment: environmentPlan,
 	'environment-load': environmentLoadPlan,
 	grass: grassPlan,
-	'atlas-paint': atlasPaintPlan,
 	'alpha-mask-cost': alphaMaskPlan,
-	'impostor-bake': impostorBakePlan,
 	'impostor-cost': impostorCostPlan,
 	'impostor-frame': impostorFramePlan,
 	'cluster-cost': clusterCostPlan,
@@ -2955,14 +2863,12 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'skyway-cost': skywayCostPlan,
 	splats: splatsPlan,
 	vegetation: vegetationPlan,
-	'vegetation-wind': vegetationWindPlan,
 	'wind-field-cost': windFieldCostPlan,
 	'wind-reader-cost': windReaderCostPlan,
 	'leaves-wind-cost': leavesWindCostPlan,
 	'vegetation-grass': vegetationGrassPlan,
 	terrain: terrainPlan,
 	'terrain-shadow': terrainShadowPlan,
-	'tree-generation': treeGenerationPlan,
 	'vegetation-scatter': vegetationScatterPlan,
 	'canvas-cost': canvasCostPlan,
 	'wind-stress': windStressPlan,
@@ -3872,20 +3778,6 @@ export function judge(
 		case 'probe':
 			// The page reports what it found, and the run's result holds it.
 			return [];
-		case 'atlas-paint': {
-			const paint = result as ItemResult & {
-				times?: { bark?: number; leaf?: number }[];
-				barkMs?: number;
-				leafMs?: number;
-				failures?: string[];
-			};
-			return [
-				...(paint.failures ?? []).map((code) => `the engine failed with ${code}`),
-				...((paint.times ?? []).length > 0 ? [] : ['the page painted no round']),
-				...(paint.barkMs && paint.barkMs > 0 ? [] : ['the page measured no bark paint']),
-				...(paint.leafMs && paint.leafMs > 0 ? [] : ['the page measured no leaf paint']),
-			];
-		}
 		case 'effect':
 		case 'environment':
 		case 'grass':
