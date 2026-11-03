@@ -22,6 +22,11 @@ import { meshWood, meshWoodReport, WOOD_RADIUS_RANGE } from './wood-mesh';
 import { testMeshInput, testOak, testRecord, testSkeleton } from './wood-test-tree';
 
 const LEVELS: readonly MeshLevel[] = [0, 1, 2];
+/**
+ * How far a stem's foot may stray round the stem: it keeps the plain stem's tile count, so its
+ * plates widen by as much as the flare and the lobes swell it.
+ */
+const FOOT_SPREAD = 0.75;
 const oak = testOak();
 const reports = LEVELS.map((level) => meshWoodReport(testMeshInput('high', oak), level));
 const oakWelds = reports.map((report) => measureWelds(report));
@@ -76,6 +81,7 @@ describe('the wood mesher', () => {
 				expect(density.rings).toBeGreaterThan(20);
 				expect(density.around).toBeLessThanOrEqual(0.3);
 				expect(density.along).toBeLessThanOrEqual(0.3);
+				expect(density.foot).toBeLessThanOrEqual(FOOT_SPREAD);
 			}
 	});
 
@@ -302,6 +308,7 @@ describe('the wood of the grown oak', () => {
 		expect(density.rings).toBeGreaterThan(5000);
 		expect(density.around).toBeLessThanOrEqual(0.3);
 		expect(density.along).toBeLessThanOrEqual(0.3);
+		expect(density.foot).toBeLessThanOrEqual(FOOT_SPREAD);
 	});
 
 	it('splits into parts of 16-bit indices that hold every triangle as it was', () => {

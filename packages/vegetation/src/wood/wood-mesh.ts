@@ -460,6 +460,28 @@ interface AxisContext {
 	readonly taperLength: number;
 }
 
+/** The share over the plain radius under which a stem's foot counts as eased. */
+const FOOT_EASED = 0.12;
+/** Angles round a stem at which its foot's swell is read. */
+const FOOT_ANGLES = 16;
+
+/** The perimeter of one ring, in metres, from its vertices. */
+function ringPerimeter(rings: AxisRings, r: number): number {
+	const first = rings.first[r] as number;
+	const sides = rings.sides[r] as number;
+	let perimeter = 0;
+	for (let j = 0; j < sides; j++) {
+		const a = (first + j) * 3;
+		const b = (first + ((j + 1) % sides)) * 3;
+		perimeter += Math.sqrt(
+			((rings.position[a] as number) - (rings.position[b] as number)) ** 2 +
+				((rings.position[a + 1] as number) - (rings.position[b + 1] as number)) ** 2 +
+				((rings.position[a + 2] as number) - (rings.position[b + 2] as number)) ** 2,
+		);
+	}
+	return perimeter;
+}
+
 /**
  * How the bark's `u` runs over an axis's rings, in the order they are written: each entry a ring,
  * the metres its `u` spans once round, its top line's `u`, and whether it starts a new run of tiles,
@@ -492,7 +514,8 @@ interface RingShape {
 /**
  * A record of every plain ring the mesher built, for tests that measure the bark: per ring, its
  * axis, pipe radius, the metres of bark its `u` spans once round, its perimeter in metres, the girth
- * scale, its `v` and arc length, and whether it blends from a weld.
+ * scale, its `v` and arc length, whether it blends from a weld, and whether it stands on a stem's
+ * foot, whose plates widen over the flare.
  */
 export interface WoodRings {
 	readonly axis: number[];
@@ -503,6 +526,7 @@ export interface WoodRings {
 	readonly v: number[];
 	readonly arc: number[];
 	readonly weld: boolean[];
+	readonly foot: boolean[];
 }
 
 /**
@@ -550,7 +574,17 @@ class Mesher {
 		this.bark = barkScale(input.record, input.kit.manifest, largestRadius(input.skeleton));
 		this.tube = tubeDetail(level, input.detail, input.coarseness ?? 0);
 		this.rings = report
-			? { axis: [], pipe: [], span: [], perimeter: [], scale: [], v: [], arc: [], weld: [] }
+			? {
+					axis: [],
+					pipe: [],
+					span: [],
+					perimeter: [],
+					scale: [],
+					v: [],
+					arc: [],
+					weld: [],
+					foot: [],
+				}
 			: undefined;
 		this.welds = report ? { child: [], first: [], vertices: [], axisFirst: new Map() } : undefined;
 	}
@@ -1310,6 +1344,33 @@ class Mesher {
 	}
 
 	/**
+	 * A stem's foot: the first ring where the flare and the buttress lobes have eased to within
+	 * `FOOT_EASED` of the plain radius, and that ring's tile count, which every ring below it keeps.
+	 * Bark plates spread apart over a flared foot, so the pattern widens there rather than jumping
+	 * sideways where the count would change. Undefined for an axis that is not a stem with a base.
+	 */
+	private footTiles(
+		rings: AxisRings,
+		context: AxisContext,
+	): { readonly ring: number; readonly tiles: number; readonly width: number } | undefined {
+		const section = context.section;
+		if (!section) return undefined;
+		for (let r = 0; r < rings.count; r++) {
+			const h = rings.centre[r * 3 + 1] as number;
+			let swell = 0;
+			for (let k = 0; k < FOOT_ANGLES; k++)
+				swell = Math.max(swell, section.radius(h, (k / FOOT_ANGLES) * 2 * Math.PI, 1));
+			if (swell > 1 + FOOT_EASED) continue;
+			if (r === 0) return undefined;
+			const pipe = rings.pipe[rings.first[r] as number] as number;
+			const width = this.bark.width(pipe, h);
+			const tiles = tilesRound(ringPerimeter(rings, r) / this.bark.scale(pipe), width, -1);
+			return tiles > 0 ? { ring: r, tiles, width } : undefined;
+		}
+		return undefined;
+	}
+
+	/**
 	 * The bark's `u` over an axis's rings: the tile count by runs, a repeated ring where it changes,
 	 * and each run's top line a whole number of its tiles in, so `u` never falls below zero. The
 	 * dome keeps the last plain ring's run.
@@ -1320,30 +1381,24 @@ class Mesher {
 		let tiles = inherit ? inherit.tiles : -1;
 		let width = inherit ? inherit.width : 0;
 		let span = inherit ? inherit.span : 0;
+		const foot = inherit ? undefined : this.footTiles(rings, context);
 		for (let r = 0; r < rings.count; r++) {
 			const first = rings.first[r] as number;
-			const sides = rings.sides[r] as number;
 			const dome = (rings.arc[r] as number) > context.path.length + 1e-9;
 			if (!dome) {
-				let perimeter = 0;
-				for (let j = 0; j < sides; j++) {
-					const a = (first + j) * 3;
-					const b = (first + ((j + 1) % sides)) * 3;
-					perimeter += Math.sqrt(
-						((rings.position[a] as number) - (rings.position[b] as number)) ** 2 +
-							((rings.position[a + 1] as number) - (rings.position[b + 1] as number)) ** 2 +
-							((rings.position[a + 2] as number) - (rings.position[b + 2] as number)) ** 2,
-					);
-				}
+				const perimeter = ringPerimeter(rings, r);
 				const pipe = rings.pipe[first] as number;
 				const scale = this.bark.scale(pipe);
 				const ringWidth = this.bark.width(pipe, rings.centre[r * 3 + 1] as number);
 				const bark = perimeter / scale;
-				// A leader's first ring is its parent's last, and keeps that ring's bark.
+				// A leader's first ring is its parent's last, and keeps that ring's bark. A stem's foot
+				// keeps the count of the plain stem above it.
 				const inherited = inherit !== undefined && r === 0;
 				const ringTiles = inherited
 					? tiles
-					: tilesRound(bark, ringWidth, ringWidth === width ? tiles : -1);
+					: foot && r < foot.ring && ringWidth === foot.width
+						? foot.tiles
+						: tilesRound(bark, ringWidth, ringWidth === width ? tiles : -1);
 				const usedWidth = inherited ? width : ringWidth;
 				const ringSpan = inherited ? span : uSpan(ringTiles, ringWidth, bark);
 				const changes =
@@ -1371,6 +1426,7 @@ class Mesher {
 					record.v.push(rings.v[r] as number);
 					record.arc.push(rings.arc[r] as number);
 					record.weld.push(r < rings.welded);
+					record.foot.push(foot !== undefined && r < foot.ring);
 				}
 			}
 			out.ring.push(r);

@@ -127,12 +127,18 @@ export interface DensityMeasure {
 	readonly around: number;
 	/** The same along the axis, between neighbouring plain rings. */
 	readonly along: number;
+	/**
+	 * The largest share by which a ring on a stem's foot strays round the stem: the foot keeps the
+	 * plain stem's tile count, so its plates widen with the flare.
+	 */
+	readonly foot: number;
 }
 
 /**
  * Measures the bark's texel density on every ring against the target, one tile per tile width of
  * bark: round the ring from its `u` span over its perimeter, along the axis from the rise of `v`
- * between rings. Both are given in the record's girth scale, so 1 is on target.
+ * between rings. Both are given in the record's girth scale, so 1 is on target. Rings on a stem's
+ * foot are measured round apart, since their plates widen with the flare.
  *
  * @param report The mesher's report.
  * @returns The worst errors.
@@ -141,10 +147,12 @@ export function measureDensity(report: WoodReport): DensityMeasure {
 	const r = report.rings;
 	let around = 0;
 	let along = 0;
+	let foot = 0;
 	for (let k = 0; k < r.axis.length; k++) {
 		const scale = r.scale[k] as number;
 		const density = ((r.span[k] as number) * scale) / (r.perimeter[k] as number);
-		around = Math.max(around, Math.abs(density - 1));
+		if (r.foot[k]) foot = Math.max(foot, Math.abs(density - 1));
+		else around = Math.max(around, Math.abs(density - 1));
 		const next = k + 1;
 		if (next < r.axis.length && r.axis[next] === r.axis[k] && !r.weld[k] && !r.weld[next]) {
 			const ds = (r.arc[next] as number) - (r.arc[k] as number);
@@ -155,5 +163,5 @@ export function measureDensity(report: WoodReport): DensityMeasure {
 			}
 		}
 	}
-	return { rings: r.axis.length, around, along };
+	return { rings: r.axis.length, around, along, foot };
 }
