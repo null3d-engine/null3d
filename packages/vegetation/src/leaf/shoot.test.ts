@@ -23,7 +23,15 @@ function straight(phyllotaxis: Phyllotaxis): Species {
 			years: 1,
 			orders: 1,
 			stem: { ...OAK_SHOOTS.stem, zigzag: 0 },
-			classes: OAK_SHOOTS.classes.map((c) => ({ ...c, droop: 0, nodes: 8, internode: 1 })),
+			// No fan swing, so the arrangement is measured as the phyllotaxis alone lays it.
+			placement: { ...OAK_SHOOTS.placement, skyward: 0 },
+			classes: OAK_SHOOTS.classes.map((c) => ({
+				...c,
+				droop: 0,
+				nodes: 8,
+				internode: 1,
+				years: 1,
+			})),
 		},
 	};
 }
@@ -141,14 +149,17 @@ describe('the phyllotaxis of a shoot, measured by angle', () => {
 	it('angles each leaf from its stem by the class curve', () => {
 		const record = straight({ kind: 'spiral', divergence: 144 });
 		const plan = planShoot(record, 0, 1);
+		// The class curve's own range, and a degree either side for the stem's small wander.
+		const curve = record.shoots?.classes[0]?.leafAngle;
+		const values = typeof curve === 'number' ? [curve] : (curve ?? []).map(([, value]) => value);
 		for (const leaf of plan.leaves) {
 			const cos =
 				leaf.direction[0] * leaf.stem[0] +
 				leaf.direction[1] * leaf.stem[1] +
 				leaf.direction[2] * leaf.stem[2];
 			const degrees = (Math.acos(cos) * 180) / Math.PI;
-			expect(degrees).toBeGreaterThan(30);
-			expect(degrees).toBeLessThan(60);
+			expect(degrees).toBeGreaterThan(Math.min(...values) - 1);
+			expect(degrees).toBeLessThan(Math.max(...values) + 1);
 		}
 	});
 });
@@ -206,6 +217,19 @@ describe('the shoot prototypes', () => {
 		const nearTip = plan.leaves.filter((leaf) => leaf.along > tipAlong * 0.75);
 		expect(nearTip.length).toBeGreaterThanOrEqual(plan.leaves.length / 2);
 		expect(plan.buds.length).toBeGreaterThanOrEqual(OAK_SHOOTS.bud.tipCluster);
+	});
+
+	it("opens a lit shoot's leaves into a fan by the skyward share", () => {
+		// How far the leaves point toward the sky side or away from it, on average: a fan lies across.
+		const lift = (skyward: number) => {
+			const shoots = record.shoots as NonNullable<typeof record.shoots>;
+			const lit = { ...record, shoots: { ...shoots, placement: { ...shoots.placement, skyward } } };
+			const plan = planShoot(lit, 0, 1);
+			let sum = 0;
+			for (const leaf of plan.leaves) sum += Math.abs(leaf.direction[2]);
+			return sum / plan.leaves.length;
+		};
+		expect(lift(0.9)).toBeLessThan(lift(0) * 0.5);
 	});
 
 	it('turns leaves to face the sky side', () => {

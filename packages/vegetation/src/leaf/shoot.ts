@@ -42,8 +42,6 @@ export type UncardedPrototype = Omit<ShootPrototype, 'card'>;
 
 /** The golden angle in degrees. */
 const GOLDEN = 137.50776405;
-/** How far a leaf turns its upper face from the shoot's tip toward the sky side, 0 to 1. */
-const SKY_TURN = 0.5;
 /** Degrees between a lateral shoot of the prototype and its parent. */
 const LATERAL_ANGLE = 42;
 /** Degrees an axillary bud leans from its stem. */
@@ -258,8 +256,11 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 	const draw = (purpose: number, a = 0, b = 0) => unitAt(salt, 0x5400 + index, purpose, a, b);
 	const shootClass = classOf(shoots.classes, index, shoots.prototypes);
 	const total = Math.max(0.005, spreadAt(shootClass.length, draw(Purpose.Length)));
-	const years = Math.max(1, Math.round(shoots.years));
+	const years = Math.max(1, Math.round(shootClass.years ?? shoots.years));
 	const leafYears = Math.max(0, Math.min(years, Math.round(shoots.leafYears)));
+	// How far a leaf turns its upper face from the shoot's tip toward the sky side: the record's
+	// skyward share, all the way for flattened two-ranked sprays.
+	const skyTurn = Math.min(1, Math.max(0, shoots.placement.skyward));
 	const phyllotaxis = shoots.phyllotaxis;
 	const foliage = record.foliage;
 	const leafLength = foliage.kind === 'blade' ? spreadMean(foliage.leaf.length) : 0;
@@ -309,6 +310,8 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 			}
 			for (let k = 0; k < nodes; k++) {
 				const step = (length * (weights[k] as number)) / weightSum;
+				// How crowded the node stands: 0 at an even spacing, toward 1 where internodes shrink (a tip rosette).
+				const crowded = 1 - Math.min(1, step / (length / nodes));
 				// Zigzag in the shoot's own plane at each node, droop toward the ground side, a small wander.
 				direction = turn(direction, sky, zig * shoots.stem.zigzag);
 				zig = -zig;
@@ -329,7 +332,7 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 				span = Math.max(span, along);
 				const t = nodes === 1 ? 1 : k / (nodes - 1);
 				if (leafy && leafMeshes > 0)
-					placeLeaves(axis, node, at, direction, sky, radius, along, t, azimuthStart);
+					placeLeaves(axis, node, at, direction, sky, radius, along, t, azimuthStart, crowded);
 				node++;
 			}
 			// The end of a unit: the newest ends in its bud cluster; an older one in last year's
@@ -380,6 +383,7 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 		along: number,
 		t: number,
 		azimuthStart: number,
+		crowded: number,
 	): void => {
 		const side = normalize3(cross3(stem, sky, [0, 0, 0]));
 		const azimuths = nodeAzimuths(phyllotaxis, node, azimuthStart, (key) =>
@@ -397,10 +401,14 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 				gap -= 2 * Math.PI * Math.round(gap / (2 * Math.PI));
 				azimuth += gap * ranks;
 			}
+			// A lit shoot twists its leaves' stalks into a mosaic: by the skyward share, each leaf swings
+			// from the sky side toward the shoot's own side plane, so its leaves open as a fan that the sky
+			// looks down on.
+			const lift = sin(azimuth) * Math.min(skyTurn, 0.95);
 			const radial = normalize3([
-				side[0] * cos(azimuth) + sky[0] * sin(azimuth),
-				side[1] * cos(azimuth) + sky[1] * sin(azimuth),
-				side[2] * cos(azimuth) + sky[2] * sin(azimuth),
+				side[0] * cos(azimuth) + sky[0] * (sin(azimuth) - lift),
+				side[1] * cos(azimuth) + sky[1] * (sin(azimuth) - lift),
+				side[2] * cos(azimuth) + sky[2] * (sin(azimuth) - lift),
 			]);
 			const a = radians(leafAngle);
 			const direction = normalize3([
@@ -411,7 +419,7 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 			// The upper face looks toward the shoot's tip, turned toward the sky side.
 			const adaxial = square(stem, direction, radial);
 			const skyward = square(sky, direction, adaxial);
-			const w = Math.min(1, SKY_TURN + flatten * (1 - SKY_TURN));
+			const w = Math.min(1, skyTurn + flatten * (1 - skyTurn));
 			const face = normalize3([
 				adaxial[0] * (1 - w) + skyward[0] * w,
 				adaxial[1] * (1 - w) + skyward[1] * w,
@@ -445,15 +453,16 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 						stem[2] * cos(lean) + radial[2] * sin(lean),
 					]),
 					cluster: false,
-					length: budLength * 0.55,
-					width: budWidth * 0.55,
+					// Axil buds grow toward the tip cluster's size where the nodes crowd into a rosette.
+					length: budLength * (0.55 + 0.35 * crowded),
+					width: budWidth * (0.55 + 0.35 * crowded),
 					along,
 				});
 			}
 		}
 	};
 
-	/** The bud cluster at an axis's tip: the terminal bud and the buds crowded round it. */
+	/** The bud cluster at an axis's tip: the terminal bud and the buds stacked below it. */
 	const addCluster = (at: Vector3, direction: Vector3, sky: Vector3, along: number): void => {
 		if (budLength <= 0) return;
 		buds.push({
@@ -468,12 +477,15 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 		for (let k = 0; k < count; k++) {
 			const outward = turn(sky, direction, k * GOLDEN);
 			const lean = radians(CLUSTER_LEAN);
-			const back = budLength * 0.35;
+			// The cluster stacks down the twig's last centimetres, each bud a little below the last on a
+			// spiral, standing on the bark.
+			const back = budLength * (0.35 + 0.4 * k);
+			const out = tipRadius + budWidth * 0.2;
 			buds.push({
 				at: [
-					at[0] - direction[0] * back + outward[0] * budWidth * 0.3,
-					at[1] - direction[1] * back + outward[1] * budWidth * 0.3,
-					at[2] - direction[2] * back + outward[2] * budWidth * 0.3,
+					at[0] - direction[0] * back + outward[0] * out,
+					at[1] - direction[1] * back + outward[1] * out,
+					at[2] - direction[2] * back + outward[2] * out,
 				],
 				direction: normalize3([
 					direction[0] * cos(lean) + outward[0] * sin(lean),

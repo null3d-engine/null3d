@@ -9,7 +9,8 @@
 // the CPU never reads the KTX2 texels, and at the distance where cards draw, a leaf covers a few
 // pixels, so its mip-mapped colour is that mean. Stems and buds take the young bark's mean, extras
 // their record's colour. Colour is stored as the textures store it, sRGB, with coverage in alpha.
-// The surface map holds the normal (octahedral, in prototype space, turned toward the viewer), the
+// The surface map holds the normal (octahedral, in the plane's own frame: along its right, along its
+// up, and toward the face's viewer), the
 // depth from the plane, and one byte of the surface kind (a leaf adds 128) with the shade inside the
 // shoot in its low seven bits. Colour then spreads into the empty texels of each cell, so the mip
 // levels the GPU averages never darken a card's edge.
@@ -285,6 +286,8 @@ function drawPlane(
 	const points = new Float64Array(count * 3);
 	const rightLength = Math.hypot(...(plane.right as [number, number, number]));
 	const upLength = Math.hypot(...(plane.up as [number, number, number]));
+	const [rx0, rx1, rx2] = plane.right as [number, number, number];
+	const [ux0, ux1, ux2] = plane.up as [number, number, number];
 	const normal = plane.normal as [number, number, number];
 	const halfDepth = farthest(mesh, plane.centre, normal);
 	// The view from behind keeps the front's place on the card: only the depth test turns round.
@@ -372,8 +375,13 @@ function drawPlane(
 			ny = -ny;
 			nz = -nz;
 		}
-		const length = Math.hypot(nx, ny, nz) || 1;
-		const [ox, oy] = octahedral(nx / length, ny / length, nz / length);
+		// The normal in the plane's own frame: along its right (u grows), along its up (v grows), and
+		// toward this face's viewer, so the shader rebuilds it from the card's own derivatives.
+		const tx = (nx * rx0 + ny * rx1 + nz * rx2) / rightLength;
+		const ty = (nx * ux0 + ny * ux1 + nz * ux2) / upLength;
+		const tz = (nx * normal[0] + ny * normal[1] + nz * normal[2]) * toward;
+		const length = Math.hypot(tx, ty, tz) || 1;
+		const [ox, oy] = octahedral(tx / length, ty / length, tz / length);
 		const shade = Math.round(Math.min(255, Math.max(0, lerp(mesh.colors, 4, 3))) / 2);
 		const depth = Math.round(
 			128 + 127 * Math.max(-1, Math.min(1, (-f.depth * toward) / halfDepth)),
