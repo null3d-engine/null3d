@@ -279,6 +279,25 @@ const GL_VERTEX_TYPES: Readonly<Record<number, number>> = {
 	[G.VERTEX_TYPE_SINT16]: GL_SHORT,
 };
 
+/** The provoking vertex extension, which the DOM types may lack. */
+interface ProvokingVertex {
+	readonly FIRST_VERTEX_CONVENTION_WEBGL: number;
+	provokingVertexWEBGL(convention: number): void;
+}
+
+/**
+ * Makes each primitive's flat values come from its first vertex, where the device has
+ * `WEBGL_provoking_vertex`. The shaders' flat values come from WGSL's `@interpolate(flat, either)`,
+ * so any vertex of a primitive may give them. GLSL's default is the last vertex, which Metal does not
+ * have, so ANGLE on Metal rewrites the bound index buffer into a new buffer before each draw that
+ * reads a flat value, and that buffer is as large as the whole index buffer. The first vertex is
+ * Metal's own convention, which needs no rewrite.
+ */
+export function useFirstProvokingVertex(gl: WebGL2RenderingContext): void {
+	const provoking = gl.getExtension('WEBGL_provoking_vertex') as ProvokingVertex | null;
+	provoking?.provokingVertexWEBGL(provoking.FIRST_VERTEX_CONVENTION_WEBGL);
+}
+
 /**
  * Points a vertex array's location at a mesh attribute. Attributes that shaders read as whole
  * numbers take the integer pointer. The others take the float pointer, which reads normalized
@@ -655,6 +674,7 @@ export class WebGL2Backend {
 		// when the extensions are asked for by name.
 		gl.getExtension('EXT_color_buffer_float');
 		gl.getExtension('EXT_color_buffer_half_float');
+		useFirstProvokingVertex(gl);
 		this.anisotropic = gl.getExtension('EXT_texture_filter_anisotropic');
 		this.maxAnisotropy = this.anisotropic
 			? (gl.getParameter(this.anisotropic.MAX_TEXTURE_MAX_ANISOTROPY_EXT) as number)

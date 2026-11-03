@@ -9,7 +9,6 @@ import { MODELS_DIR, terrainDocument } from './cluster-fixture.js';
 import {
 	LOD_FLOOR_TRIANGLES,
 	LOD_MAX_LEVELS,
-	levelStep,
 	orderLevels,
 	planLevels,
 	STAGE_HEADER_SIZE,
@@ -335,33 +334,26 @@ function sphereDocument(rings: number, segments: number) {
 }
 
 describe('how far the levels go', () => {
-	it('halves while the levels left reach the floor, and steps more steeply after', () => {
-		expect(levelStep(20_480, LOD_MAX_LEVELS)).toBe(0.5);
-		expect(levelStep(1_280, 3)).toBe(0.5);
-		// Halving 640 twice ends at 160, so the last two steps share the way to the floor.
-		expect(levelStep(640, 2)).toBeCloseTo(Math.sqrt(LOD_FLOOR_TRIANGLES / 640), 6);
-		expect(levelStep(143, 1)).toBeCloseTo(LOD_FLOOR_TRIANGLES / 143, 6);
-		// No step is steeper than an eighth, so a huge mesh ends above the floor.
-		expect(levelStep(10_000_000, 1)).toBe(1 / 8);
-	});
-
-	it('takes a closed mesh down to a few dozen triangles, with errors that keep rising', async () => {
-		const { doc, mesh, triangles } = sphereDocument(64, 64);
+	it('halves a closed mesh down to a few dozen triangles, with errors that keep rising', async () => {
+		const { doc, mesh, triangles } = sphereDocument(128, 128);
 		const plan = (await planLevels(doc)).get(mesh);
 		const levels = plan?.levels ?? [];
-		expect(levels.length).toBe(LOD_MAX_LEVELS);
-		// The fine levels halve.
-		expect(levels[0]?.triangles).toBeLessThanOrEqual(triangles * 0.5 + 1);
-		expect(levels[0]?.triangles).toBeGreaterThan(triangles * 0.4);
-		const last = levels[levels.length - 1]?.triangles ?? 0;
-		expect(last).toBeLessThan(2 * LOD_FLOOR_TRIANGLES);
-		expect(last).toBeGreaterThan(LOD_FLOOR_TRIANGLES / 2);
-		for (let k = 1; k < levels.length; k++) {
-			expect(levels[k]?.triangles).toBeLessThan(levels[k - 1]?.triangles ?? 0);
-			expect(levels[k]?.error).toBeGreaterThanOrEqual(
-				(levels[k - 1]?.error as number) * 1.5 * (1 - 1e-6),
-			);
+		// Halving takes the sphere past the seven levels that the engine once took.
+		expect(levels.length).toBeGreaterThan(7);
+		expect(levels.length).toBeLessThanOrEqual(LOD_MAX_LEVELS);
+		let previous = triangles;
+		for (const [k, level] of levels.entries()) {
+			// Every level halves the level above, the coarse ones too.
+			expect(level.triangles).toBeLessThanOrEqual(previous * 0.55);
+			expect(level.triangles).toBeGreaterThanOrEqual(previous * 0.4);
+			previous = level.triangles;
+			if (k > 0)
+				expect(level.error).toBeGreaterThanOrEqual(
+					(levels[k - 1]?.error as number) * 1.5 * (1 - 1e-6),
+				);
 		}
+		// The levels stop at the floor: one more halving would save too little.
+		expect(previous).toBeLessThan(2 * LOD_FLOOR_TRIANGLES);
 		// The coarsest level still errs by less than the sphere's size, so it draws only far away.
 		expect(levels[levels.length - 1]?.error).toBeLessThan(plan?.side ?? 0);
 	});

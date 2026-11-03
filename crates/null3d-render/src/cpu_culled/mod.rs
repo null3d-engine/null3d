@@ -3557,7 +3557,10 @@ fn upload_patches(
         if sizes.len() <= at {
             sizes.resize(at + 1, 0);
         }
-        let bytes = (tree.indices().len() * 2) as u32;
+        // A buffer and its writes take whole words, and a tree's index count may be odd, so the
+        // list ends with a spare index that no run names.
+        let count = tree.indices().len().next_multiple_of(2);
+        let bytes = (count * 2) as u32;
         if sizes[at] < bytes {
             sizes[at] = bytes.max(2);
             list.push(
@@ -3571,12 +3574,13 @@ fn upload_patches(
         } else if !rebuilt {
             continue;
         }
-        let mut halves = Vec::with_capacity(tree.indices().len());
+        let mut halves = Vec::with_capacity(count);
         halves.extend(
             tree.indices()
                 .iter()
                 .map(|&index| (index + part.first_vertex) as u16),
         );
+        halves.resize(count, 0);
         let (at, length) = arena.push(indices_as_bytes(&halves))?;
         list.push(Op::WriteBuffer, &[ids::patch_index(mesh), 0, at, length])?;
     }
@@ -3663,12 +3667,22 @@ mod patch_tests {
             &mut sizes, &patches, &meshes, true, &mut list, &mut arena, true,
         )
         .unwrap();
-        null3d_gpu::drawlist::decode(list.words())
+        let commands: Vec<_> = null3d_gpu::drawlist::decode(list.words())
             .filter_map(Result::ok)
-            .find(|command| {
-                command.op == Op::WriteBuffer && command.operands[0] == ids::patch_index(mesh)
-            })
+            .filter(|command| command.operands.first() == Some(&ids::patch_index(mesh)))
+            .collect();
+        let made = commands
+            .iter()
+            .find(|command| command.op == Op::CreateBuffer)
+            .expect("the tree's buffer is made");
+        let written = commands
+            .iter()
+            .find(|command| command.op == Op::WriteBuffer)
             .expect("the tree's indices are written");
+        // The tree holds three indices, an odd count. A buffer and its writes take whole words, and
+        // a write of six bytes left the WebGL2 page drawing nothing of the tree.
+        assert_eq!(made.operands[1], 8, "the buffer rounds up to whole words");
+        assert_eq!(written.operands[3], 8, "the write rounds up to whole words");
         // The list names the arena's address, not an offset. The tree's indices are its only push.
         let at = 0;
         let bytes = arena.bytes();

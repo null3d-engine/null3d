@@ -495,16 +495,17 @@ export class MeshGeometry {
 
 	/**
 	 * Gives the mesh lower levels of detail, from the most detailed down, like three.js's
-	 * `LOD.addLevel`. Every object and instance batch that draws the mesh then picks one level per
-	 * frame. It draws the coarsest level whose error covers fewer pixels on the screen than the
-	 * `lodThreshold` quality setting. A level may name a material of its own, so a far level shades
+	 * `LOD.addLevel`. A mesh takes at most 15 lower levels. Every object and instance batch that
+	 * draws the mesh then picks one level per frame. It draws the coarsest level whose error covers
+	 * fewer pixels on the screen than the `lodThreshold` quality setting. A level may name a material of its own, so a far level shades
 	 * more cheaply; a level without one draws with the level before's material. A bound that
 	 * covers fewer pixels than the threshold draws nothing, so the mesh's last level holds no
 	 * geometry. The shadow maps pick a coarser level still. An empty list takes the levels away.
 	 * Morphed objects, and materials that blend or let light through, draw the base mesh. A
 	 * skinned object draws a level while the level names the base mesh's own vertices.
-	 * Destroying a level's mesh takes every level away. Throws E1221 for levels the mesh
-	 * cannot take, and E1101 for a destroyed mesh.
+	 * Destroying a level's mesh takes every level away. Levels set here win over the ones that
+	 * `buildLevels` or the automatic default plans: a plan that runs ends, and the planned levels
+	 * go. Throws E1221 for levels the mesh cannot take, and E1101 for a destroyed mesh.
 	 */
 	setLevels(levels: readonly MeshLevel[], options: MeshLevelOptions = {}): void {
 		const call = 'mesh.setLevels';
