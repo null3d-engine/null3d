@@ -297,6 +297,7 @@ async function start(
 				directDraws: false,
 				textureCache: true,
 				occlusionBuffer: 0,
+				occlusionCheck: true,
 				...device,
 			},
 			capabilities: CAPABILITIES,

@@ -411,6 +411,9 @@ pub trait FrameBuilder {
     /// Sets the control slot that GPU occlusion culling's reads of its counts raise. Without one,
     /// its check judges by the frame times alone. Elsewhere it does nothing.
     fn set_occlusion_read_slot(&mut self, _slot: u32) {}
+    /// Holds GPU occlusion culling's passes on in every frame, without its check's trials, for a
+    /// test that compares the image with culling and without it. Elsewhere it does nothing.
+    fn hold_occlusion_check(&mut self, _held: bool) {}
     /// The ranges of cluster-tree patches that a recorded frame's views draw, the shadow views
     /// included, where the builder walks the trees. Zero where the views draw the trees' whole
     /// levels. `None` where the GPU path picks the patches itself.

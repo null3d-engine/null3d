@@ -63,6 +63,7 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	gpuOcclusion: false,
 	textureCache: true,
 	occlusionBuffer: 0,
+	occlusionCheck: true,
 });
 
 /** What the WebGL2 probe finds of a format that the device does not draw into. */
@@ -117,6 +118,7 @@ const PLAIN: DeviceOptions = {
 	gpuOcclusion: false,
 	textureCache: true,
 	occlusionBuffer: undefined,
+	occlusionCheck: true,
 };
 
 /** The scene color format on a tier for a page with the plain options and these changes. */

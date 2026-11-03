@@ -25,6 +25,15 @@
 //! only those buckets, with those that held occluders in the last few readings, instead of every
 //! bucket with a count of zero. A bucket that becomes an occluder between readings draws no depth
 //! until the next reading, which hides less, never more.
+//!
+//! A test that compares the image with culling and without it holds the check: every frame then
+//! runs the passes and copies its counts, so no frame of the comparison draws without them.
+//!
+//! The check rests while the camera's view holds still. A view is still while each frame records
+//! what the frame two before it recorded, and only then does it accumulate and stop drawing. A
+//! trial, or a frame that copies its counts, records other commands, so the view would never come
+//! to rest. While it is still, each frame keeps the check's mode and copies nothing, and the next
+//! trial comes [`FIRST_TRIAL`] frames after the view moves again.
 
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
@@ -120,6 +129,8 @@ pub(super) struct Verdict {
 pub(super) struct OcclusionCheck {
     /// True while the check's mode runs the passes.
     on: bool,
+    /// True while a test holds the passes on in every frame, with no trials.
+    held: bool,
     /// The frame that the next trial starts at, once the check has seen a frame.
     next_trial: Option<u32>,
     pending: Option<Pending>,
@@ -140,6 +151,7 @@ impl Default for OcclusionCheck {
     fn default() -> Self {
         Self {
             on: true,
+            held: false,
             next_trial: None,
             pending: None,
             times: [(NO_FRAME, 0); TIMES],
@@ -156,6 +168,16 @@ impl OcclusionCheck {
     /// True while the check's mode runs the passes, outside its trials.
     pub(super) fn on(&self) -> bool {
         self.on
+    }
+
+    /// Holds the passes on in every frame, each frame copying its counts, or lets the check judge
+    /// them again from its next frame on.
+    pub(super) fn hold(&mut self, held: bool) {
+        self.held = held;
+        self.on = true;
+        self.next_trial = None;
+        self.pending = None;
+        self.planned = None;
     }
 
     /// The last verdict, once a trial was judged.
@@ -186,6 +208,26 @@ impl OcclusionCheck {
         self.read_for = self.next_trial;
     }
 
+    /// What frame `frame` does while the camera's view holds still: the check's mode, with no
+    /// trial and no copy of the counts. A trial that runs is dropped, and the next one starts
+    /// [`FIRST_TRIAL`] frames after the first frame that moves. A frame recorded again gets the
+    /// plan it got first.
+    pub(super) fn rest(&mut self, frame: u32) -> Plan {
+        if let Some((planned, plan)) = self.planned
+            && planned == frame
+        {
+            return plan;
+        }
+        self.next_trial = None;
+        self.pending = None;
+        let plan = Plan {
+            occlude: self.on,
+            read: false,
+        };
+        self.planned = Some((frame, plan));
+        plan
+    }
+
     /// What frame `frame` does. It judges a trial whose figures have come, or whose wait ended,
     /// and starts and ends trials. A frame recorded again gets the plan it got first.
     pub(super) fn plan(&mut self, frame: u32) -> Plan {
@@ -193,6 +235,12 @@ impl OcclusionCheck {
             && planned == frame
         {
             return plan;
+        }
+        if self.held {
+            return Plan {
+                occlude: true,
+                read: true,
+            };
         }
         let next = *self.next_trial.get_or_insert(frame + FIRST_TRIAL);
         if let Some(pending) = self.pending
@@ -586,6 +634,54 @@ mod tests {
         off_micros: 1000,
         hidden_percent: 60,
     };
+
+    #[test]
+    fn a_held_check_runs_the_passes_and_reads_their_counts_in_every_frame() {
+        let mut check = OcclusionCheck::default();
+        check.hold(true);
+        // Passes that cost more and hide nothing would turn off at the first trial.
+        let costly = Scene {
+            on_micros: 2000,
+            off_micros: 1000,
+            hidden_percent: 0,
+        };
+        let plans = run(&mut check, costly, 1, FIRST_TRIAL + 3 * PERIOD);
+        assert!(plans.iter().all(|plan| plan.occlude && plan.read));
+        // Let go, the check runs its trials again.
+        check.hold(false);
+        let plans = run(&mut check, costly, 1000, FIRST_TRIAL + TRIAL + 1);
+        assert!(plans.iter().any(|plan| !plan.occlude));
+    }
+
+    #[test]
+    fn a_still_view_keeps_the_mode_with_no_trial_or_read_until_it_moves() {
+        let mut check = OcclusionCheck::default();
+        let plans = run(&mut check, PAYS, 1, FIRST_TRIAL - 5);
+        assert!(plans.iter().all(|plan| plan.occlude));
+        // Still from here on, past the frames where the first trial and its reads would come.
+        let still = FIRST_TRIAL - 4..FIRST_TRIAL + 3 * PERIOD;
+        for frame in still.clone() {
+            assert_eq!(
+                check.rest(frame),
+                Plan {
+                    occlude: true,
+                    read: false,
+                },
+            );
+        }
+        // A frame recorded again keeps its plan.
+        assert_eq!(check.rest(still.end - 1), check.plan(still.end - 1));
+        // Moving again, the first trial comes FIRST_TRIAL frames later.
+        let moved = still.end;
+        let plans = run(&mut check, PAYS, moved, FIRST_TRIAL + TRIAL);
+        let off: Vec<u32> = (moved..)
+            .zip(&plans)
+            .filter(|(_, plan)| !plan.occlude)
+            .map(|(frame, _)| frame)
+            .collect();
+        let start = moved + FIRST_TRIAL;
+        assert_eq!(off, (start..start + TRIAL).collect::<Vec<_>>());
+    }
 
     #[test]
     fn the_passes_run_until_the_first_trial_which_turns_them_off_for_a_few_frames() {
