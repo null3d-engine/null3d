@@ -6,41 +6,18 @@
 //
 // A folder whose name starts with an underscore is not a species: `_template` holds the files to
 // copy, and `_stub` holds the stand-in species that the tests and the review page grow.
-import { existsSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { renderFrontMatter } from './frontmatter';
+import { SPECIES_DIR, type SpeciesFolder, speciesFolders } from './vegetation-folders';
 
-/** The species folders' parent. */
-export const SPECIES_DIR = 'packages/vegetation/src/species';
+export { SPECIES_DIR, type SpeciesFolder, speciesFolders };
+
 /** The generated registry. */
 export const REGISTRY_FILE = `${SPECIES_DIR}/registry.generated.ts`;
 /** The generated species page's ID and path. */
 export const SPECIES_PAGE_ID = 'api/vegetation-species';
 export const SPECIES_PAGE = `docs/${SPECIES_PAGE_ID}.md`;
-
-/** One species folder: its id, and whether it has species-only code in a `hooks.ts`. */
-export interface SpeciesFolder {
-	readonly id: string;
-	readonly hooks: boolean;
-}
-
-/**
- * The species folders, sorted: every folder under `species/` with an `index.ts`, but those whose
- * names start with an underscore.
- */
-export function speciesFolders(root: string): SpeciesFolder[] {
-	const dir = join(root, SPECIES_DIR);
-	if (!existsSync(dir)) return [];
-	return readdirSync(dir, { withFileTypes: true })
-		.filter((entry) => entry.isDirectory() && !entry.name.startsWith('_'))
-		.filter((entry) => existsSync(join(dir, entry.name, 'index.ts')))
-		.map((entry) => ({
-			id: entry.name,
-			hooks: existsSync(join(dir, entry.name, 'hooks.ts')),
-		}))
-		.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-}
 
 /** The registry's source: one lazy loader per species folder, and one per hooks file. */
 export function registrySource(folders: readonly SpeciesFolder[]): string {

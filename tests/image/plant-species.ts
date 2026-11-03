@@ -4,7 +4,7 @@
 // turn of 30 degrees, a close view of the crown, a leaf-cluster cutting and the bark at mid height.
 // `bun run check` refuses a test without its references, so a species lands with its pictures.
 import { join } from 'node:path';
-import { speciesFolders } from '../../tools/lib/vegetation-registry.ts';
+import { speciesFolders } from '../../tools/lib/vegetation-folders.ts';
 import type { ImageTest } from '../lib/images.ts';
 
 /** The repository's root. */
