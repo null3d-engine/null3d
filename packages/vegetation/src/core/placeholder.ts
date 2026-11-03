@@ -17,7 +17,6 @@ import type {
 	SpeciesKitData,
 	WindTable,
 } from '../asset';
-import type { CuttingOptions } from '../cutting';
 import type { UncardedPrototype } from '../leaf/shoot';
 import { REFERENCE_VIEW } from '../lod/levels';
 import { TEXTURE_UV_STEPS } from '../lod/quantise';
@@ -926,29 +925,4 @@ export function levelOf(level: 0 | 1 | 2, parts: readonly PlantPart[], from: num
 			a.indices.byteLength;
 	}
 	return { level, parts, from, triangles, bytes };
-}
-
-/** The stand-in cutting: one leaf, one prototype, or the whole nearest level for a branch. */
-export function placeholderCut(
-	kit: SpeciesKitData,
-	asset: PlantAsset,
-	cutting: CuttingOptions,
-): PlantAsset {
-	let parts: readonly PlantPart[] = asset.levels[0].parts;
-	if (cutting.part === 'leaf' || cutting.part === 'cluster') {
-		const prototype = kit.prototypes[(cutting.pick ?? 0) % Math.max(1, kit.prototypes.length)];
-		const mesh =
-			cutting.part === 'leaf' ? kit.leaves[0] : prototype?.tiers[DETAILS.indexOf(kit.detail)];
-		parts = mesh
-			? [{ name: 'foliage', arrays: placeholderQuantise({ ...mesh }, kit.box, TEXTURE_UV_STEPS) }]
-			: [];
-	}
-	const near = levelOf(0, parts, 0);
-	return {
-		...asset,
-		cutting,
-		shoots: cutting.part === 'branch' || cutting.part === 'subbranch' ? asset.shoots : emptyRows(),
-		levels: [near, emptyLevel(1), emptyLevel(2)],
-		stats: { ...asset.stats, triangles: [near.triangles, 0, 0] },
-	};
 }
