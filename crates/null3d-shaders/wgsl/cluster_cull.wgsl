@@ -7,11 +7,14 @@
 //   the view's compacted instances, tests it against the view's six frustum planes, and applies
 //   the level rule: a patch draws while its own error passes the view's threshold at its own
 //   sphere and the error of the patch above it does not pass at that patch's sphere. It writes the
-//   patch's run of indices, or 0.
-// - stage 1, scan: one workgroup adds each patch's count up, writes the offset of each patch's
-//   indices in the view's list, and writes each cluster mesh's indirect draw.
-// - stage 2, copy: a workgroup a patch copies the patch's indices into the view's list where the
-//   scan put them.
+//   patch's run of indices, or 0, and each workgroup writes the total of its patches' runs.
+// - stage 1, scan: one workgroup adds the workgroups' totals up into each group's first offset in
+//   the view's list, and writes each cluster mesh's indirect draw.
+// - stage 2, copy: a workgroup a patch finds the patch's offset from its group's first offset
+//   and the runs before it in the group, and copies the patch's indices into the view's list.
+//
+// The scan adds one total for each group of patches, not each patch's run, so its one workgroup
+// takes a share of the groups that is a workgroup's width smaller.
 //
 // The patches of a tree draw in place of their parent, so the patches that a view draws cover the
 // mesh once, near the camera at fine detail and far from it at coarse detail. The indirect draw's
@@ -73,7 +76,8 @@ struct Params {
 @group(0) @binding(4) var<storage, read> indirect: array<u32>;
 /// Each patch's run of indices that draws in the view, or 0.
 @group(0) @binding(5) var<storage, read_write> runs: array<u32>;
-/// Where each patch's indices start in the view's list.
+/// After one word for each patch, each group of patches' total of runs, which the scan turns into
+/// where the group's indices start in the view's list.
 @group(0) @binding(6) var<storage, read_write> offsets: array<u32>;
 /// The view's list of indices, which the view's cluster draws read.
 @group(0) @binding(7) var<storage, read_write> list: array<u32>;
@@ -81,8 +85,11 @@ struct Params {
 /// its base vertex, and a spare.
 @group(0) @binding(8) var<storage, read_write> draws: array<u32>;
 
-/// The workgroup's running sums in the scan.
+/// The workgroup's runs in the count, and its running sums in the scan.
 var<workgroup> sums: array<u32, WORKGROUP_SIZE>;
+/// The copying workgroup's patch's run, and where its indices start in the view's list.
+var<workgroup> copy_count: u32;
+var<workgroup> copy_at: u32;
 
 /// A patch's bounding sphere, its run of indices, its parent and its error.
 struct Patch {
@@ -198,26 +205,48 @@ fn run_of(at: u32) -> u32 {
 }
 
 /// The count stage: the indices that a patch draws, or 0 for a patch outside the view or too
-/// coarse for its distance.
-fn count_patch(at: u32) {
-    if (at >= params.counts.y) {
-        return;
+/// coarse for its distance, and the total of the workgroup's patches, after the patches' words.
+fn count_patch(at: u32, lane: u32, group: u32) {
+    var run = 0u;
+    if (at < params.counts.y) {
+        run = run_of(at);
+        runs[at] = run;
     }
-    runs[at] = run_of(at);
+    sums[lane] = run;
+    workgroupBarrier();
+    if (lane == 0u) {
+        var total = 0u;
+        for (var t = 0u; t < WORKGROUP_SIZE; t++) {
+            total += sums[t];
+        }
+        offsets[params.counts.y + group] = total;
+    }
 }
 
-/// The scan stage: the counts added up into the offsets of the view's list, and each cluster
-/// mesh's indirect draw from where its patches start and end.
+/// Where patch `at`'s indices start in the view's list, once the scan wrote its group's first
+/// offset: that offset and the runs of the patches before it in the group.
+fn patch_offset(at: u32) -> u32 {
+    let group = at / WORKGROUP_SIZE;
+    var offset = offsets[params.counts.y + group];
+    for (var p = group * WORKGROUP_SIZE; p < at; p++) {
+        offset += runs[p];
+    }
+    return offset;
+}
+
+/// The scan stage: the groups' totals added up into each group's first offset in the view's list,
+/// and each cluster mesh's indirect draw from where its patches start and end.
 fn scan_patches(lane: u32) {
     let patches = params.counts.y;
     let meshes = params.counts.z;
-    // This lane's run of patches, a share of the list each.
-    let share = (patches + WORKGROUP_SIZE - 1u) / WORKGROUP_SIZE;
+    let groups = (patches + WORKGROUP_SIZE - 1u) / WORKGROUP_SIZE;
+    // This lane's run of groups, a share of them each.
+    let share = (groups + WORKGROUP_SIZE - 1u) / WORKGROUP_SIZE;
     let first = lane * share;
-    let end = min(first + share, patches);
+    let end = min(first + share, groups);
     var total = 0u;
-    for (var p = first; p < end; p++) {
-        total += runs[p];
+    for (var g = first; g < end; g++) {
+        total += offsets[patches + g];
     }
     sums[lane] = total;
     workgroupBarrier();
@@ -234,10 +263,14 @@ fn scan_patches(lane: u32) {
     if (lane > 0u) {
         at = sums[lane - 1u];
     }
-    for (var p = first; p < end; p++) {
-        offsets[p] = at;
-        at += runs[p];
+    for (var g = first; g < end; g++) {
+        let total = offsets[patches + g];
+        offsets[patches + g] = at;
+        at += total;
     }
+    // Lane 0 reads the offsets that every lane wrote.
+    storageBarrier();
+    workgroupBarrier();
     if (lane != 0u || meshes == 0u) {
         return;
     }
@@ -251,10 +284,10 @@ fn scan_patches(lane: u32) {
         if (mesh.slot == NOT_DRAWN) {
             continue;
         }
-        let start = offsets[mesh.first_patch];
+        let start = patch_offset(mesh.first_patch);
         var finish = whole;
         if (m + 1u < meshes) {
-            finish = offsets[mesh_of(m + 1u).first_patch];
+            finish = patch_offset(mesh_of(m + 1u).first_patch);
         }
         finish = min(finish, capacity);
         let drawn = indirect[(params.counts.w + mesh.first_draw) * INDIRECT_WORDS + 1u];
@@ -267,17 +300,24 @@ fn scan_patches(lane: u32) {
     }
 }
 
-/// The copy stage: each drawn patch's indices, copied into the view's list where the scan put them.
+/// The copy stage: each drawn patch's indices, copied into the view's list at its offset. One lane
+/// finds the offset, which every lane reads.
 fn copy_patch(at: u32, lane: u32) {
     if (at >= params.counts.y) {
         return;
     }
-    let count = runs[at];
+    if (lane == 0u) {
+        copy_count = runs[at];
+    }
+    let count = workgroupUniformLoad(&copy_count);
     if (count == 0u) {
         return;
     }
+    if (lane == 0u) {
+        copy_at = patch_offset(at);
+    }
+    let out = workgroupUniformLoad(&copy_at);
     let record = patch_of(at);
-    let out = offsets[at];
     // The list's capacity bounds the copy, so a view whose patches outgrow its list loses the last
     // of them rather than writes past it.
     let end = min(count, params.records.y - min(out, params.records.y));
@@ -296,7 +336,7 @@ fn main(
 ) {
     let stage = params.counts.x;
     if (stage == 0u) {
-        count_patch(id.x);
+        count_patch(id.x, lane, group.x);
     } else if (stage == 1u) {
         scan_patches(lane);
     } else {
