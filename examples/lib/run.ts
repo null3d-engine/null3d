@@ -154,10 +154,31 @@ export async function startDemo({
 		hideWhenQuiet();
 	};
 	let engine: Engine | undefined;
-	/** The sketch's messages that needed the engine, before it existed. */
+	/** The presses that arrived before the engine existed, which wait for it. */
+	const pendingPresses: [string, string][] = [];
+	/** Sends a press to the sketch, or keeps it until the engine exists. */
+	const sendToSketch = (name: string, value: string): void => {
+		if (engine) engine.postToSketch(name, value);
+		else pendingPresses.push([name, value]);
+	};
+	/**
+	 * The handlers of the demo's help and controls. They need only the page, so they take their
+	 * messages as the sketch posts them. A showcase scene posts its controls once they exist, and
+	 * the scene's own builds, which a slow machine takes minutes over, then follow: a page that
+	 * held these messages until its start ended would show the controls only after the whole scene,
+	 * which is the wait that a software GPU makes too long.
+	 */
+	const pageReaders = hud
+		? [
+				hudReader(sendToSketch, hud, signal),
+				padReader(sendToSketch, hud, signal),
+				pressReader(sendToSketch),
+			]
+		: [];
+	/** The sketch's messages that need the engine, kept until it exists. */
 	const early: [string, unknown][] = [];
-	/** The handlers of the messages that carry the demo's labels, controls and help. */
-	let readers: ((type: string, data: unknown) => void)[] = [];
+	/** The handlers that need the engine, such as the labels' layer. */
+	let engineReaders: ((type: string, data: unknown) => void)[] = [];
 	// The page passes this handler at the start, so the sketch's loading messages arrive as its
 	// setup runs rather than all at once at the end: the overlay follows the scene's own progress.
 	const handleMessage = (type: string, data: unknown): void => {
@@ -167,11 +188,12 @@ export async function startDemo({
 			hideWhenQuiet();
 			return;
 		}
+		for (const reader of pageReaders) reader(type, data);
 		if (!engine) {
 			if (early.push([type, data]) > MAX_EARLY_MESSAGES) early.shift();
 			return;
 		}
-		for (const reader of readers) reader(type, data);
+		for (const reader of engineReaders) reader(type, data);
 	};
 	try {
 		// Without a preset: the engine's start-up check picks one that the device holds at its frame
@@ -200,21 +222,20 @@ export async function startDemo({
 		});
 	} catch (error) {
 		loader.fail(error instanceof Error ? error.message : String(error));
+		// The controls may have shown before the failure; they would act on a scene that never came.
+		if (hud) hud.hidden = true;
 		throw error;
 	}
 	if (choices) showChoices(engine, demo, choices);
 	// One message handler for the page: the engine gives the messages that a sketch sent before the
 	// page listened to the first handler alone, so two handlers would drop the help that a showcase
 	// scene posts at its start. The same handler carries the loading progress that a scene posts.
-	readers = [
-		...(labels ? [labelReader(engine, labels)] : []),
-		...(hud
-			? [hudReader(engine, hud, signal), padReader(engine, hud, signal), pressReader(engine)]
-			: []),
-	];
+	engineReaders = labels ? [labelReader(engine, labels)] : [];
+	for (const [name, value] of pendingPresses.splice(0)) engine.postToSketch(name, value);
 	// The engine's start handler stays the sketch's one handler, so the messages that arrived before
-	// the readers existed now reach them in the order that the sketch sent them.
-	for (const [type, data] of early.splice(0)) handleMessage(type, data);
+	// it existed now reach the handlers that need it, in the order that the sketch sent them.
+	for (const [type, data] of early.splice(0))
+		for (const reader of engineReaders) reader(type, data);
 	// The overlay leaves once the first frame is drawn and the scene's own loading has gone quiet,
 	// so a stage that reports after the frame never changes a card that is already going.
 	void engine.firstFrame.then(reachedFirstFrame, reachedFirstFrame);
@@ -571,11 +592,13 @@ function createBackdrop(): HTMLElement {
  * Sends on a press that a scene's controls took in the world, such as on a vehicle's console, as
  * the page's own controls panel sends a press: the scene answers both alike.
  */
-function pressReader(engine: Engine): (type: string, data: unknown) => void {
+function pressReader(
+	post: (name: string, value: string) => void,
+): (type: string, data: unknown) => void {
 	return (type, data) => {
 		if (type !== 'hud-press') return;
 		const { name, value } = data as { name: string; value: string };
-		engine.postToSketch(name, value);
+		post(name, value);
 	};
 }
 
@@ -584,7 +607,7 @@ function pressReader(engine: Engine): (type: string, data: unknown) => void {
  * `drive-pad` message. The pad sits under the controls panel, which stays above it.
  */
 function padReader(
-	engine: Engine,
+	post: (name: string, value: string) => void,
 	hud: HTMLElement,
 	signal?: AbortSignal,
 ): (type: string, data: unknown) => void {
@@ -595,9 +618,7 @@ function padReader(
 		const on = (data as { visible: boolean }).visible;
 		// A scene that never drives makes no pad.
 		if (!pad && !on) return;
-		pad ??= createDrivePad(hud.parentElement ?? hud, hud, (name, value) =>
-			engine.postToSketch(name, value),
-		);
+		pad ??= createDrivePad(hud.parentElement ?? hud, hud, post);
 		pad.show(on);
 	};
 }
@@ -616,12 +637,12 @@ interface HudMessage {
  * touch screen with no keyboard can press it. A held frame posts none.
  */
 function hudReader(
-	engine: Engine,
+	post: (name: string, value: string) => void,
 	element: HTMLElement,
 	signal?: AbortSignal,
 ): (type: string, data: unknown) => void {
 	const stage = element.parentElement ?? element;
-	const hud = createHud(element, stage, (name, value) => engine.postToSketch(name, value));
+	const hud = createHud(element, stage, post);
 	// The page may start another demo here: the HUD leaves with the demo's own signal.
 	signal?.addEventListener('abort', () => hud.dispose());
 	return (type, data) => {
