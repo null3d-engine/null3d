@@ -89,6 +89,11 @@ const MARK = 0x4e334443;
 const HEAD_WORDS = 5;
 const HEAD_BYTES = HEAD_WORDS * 4;
 const HOUR_AT = 4;
+
+/** The size of the whole file of an entry whose header's words are `head`. */
+const entrySize = (head: DataView) =>
+	HEAD_BYTES + head.getUint32(16, true) + head.getUint32(8, true);
+
 /** The bytes that the check samples, at evenly spaced places. */
 const CHECK_SAMPLES = 1024;
 
@@ -196,8 +201,7 @@ export function readEntry(
 	if (words.getUint32(0, true) !== MARK) return undefined;
 	const name = encoder.encode(key);
 	const start = HEAD_BYTES + words.getUint32(16, true);
-	if (start !== HEAD_BYTES + name.length || file.length - start !== words.getUint32(8, true))
-		return undefined;
+	if (start !== HEAD_BYTES + name.length || file.length !== entrySize(words)) return undefined;
 	for (let k = 0; k < name.length; k++) if (file[HEAD_BYTES + k] !== name[k]) return undefined;
 	const bytes = file.subarray(start);
 	if (checkOf(bytes) !== words.getUint32(12, true)) return undefined;
@@ -527,6 +531,13 @@ export class DerivedStore {
 	}
 }
 
+/** A file's size, and its header's words where the file is long enough to hold them. */
+async function fileHead(handle: FileSystemFileHandle): Promise<{ size: number; head?: DataView }> {
+	const file = await handle.getFile();
+	if (file.size < HEAD_BYTES) return { size: file.size };
+	return { size: file.size, head: new DataView(await file.slice(0, HEAD_BYTES).arrayBuffer()) };
+}
+
 /** Every entry's file under the root, with its size and the hour of its last use. */
 async function listEntries(root: FileSystemDirectoryHandle): Promise<Listed[]> {
 	const listed: Listed[] = [];
@@ -538,10 +549,13 @@ async function listEntries(root: FileSystemDirectoryHandle): Promise<Listed[]> {
 			for await (const entry of folder.values()) {
 				if (entry.kind !== 'file') continue;
 				try {
-					const file = await (entry as FileSystemFileHandle).getFile();
-					const head = new DataView(await file.slice(0, HEAD_BYTES).arrayBuffer());
-					const hour = head.byteLength === HEAD_BYTES ? head.getUint32(HOUR_AT, true) : 0;
-					listed.push({ folder, name: entry.name, size: file.size, hour });
+					const { size, head } = await fileHead(entry as FileSystemFileHandle);
+					listed.push({
+						folder,
+						name: entry.name,
+						size,
+						hour: head?.getUint32(HOUR_AT, true) ?? 0,
+					});
 				} catch {
 					// A file that another tab writes: the next trim reads it.
 				}
@@ -564,19 +578,27 @@ export function derivedCache(name: string, version: string, on: boolean): Derive
 }
 
 /**
- * The entries of a namespace's version, for test pages: how many the storage holds, or null where
- * the page has no origin private file system.
+ * The whole entries of a namespace's version, for test pages: how many files the storage holds
+ * whose header gives the file's own size, or null where the page has no origin private file system.
+ * A write makes its file before its bytes land, so a file that a write has not closed yet, or that
+ * a stopped engine left empty, is no entry.
  */
-export async function derivedEntries(name: string, version: string): Promise<number | null> {
-	const host = browserHost();
+export async function derivedEntries(
+	name: string,
+	version: string,
+	host: StorageHost | undefined = browserHost(),
+): Promise<number | null> {
 	if (!host) return null;
 	try {
 		const root = await (await host.root()).getDirectoryHandle(ROOT);
 		const own = await root.getDirectoryHandle(folderName(name));
 		const folder = await own.getDirectoryHandle(folderName(version));
 		let count = 0;
-		for await (const entry of folder.values())
-			if (entry.kind === 'file' && /^[0-9a-f]{16}$/.test(entry.name)) count++;
+		for await (const entry of folder.values()) {
+			if (entry.kind !== 'file' || !/^[0-9a-f]{16}$/.test(entry.name)) continue;
+			const { size, head } = await fileHead(entry as FileSystemFileHandle);
+			if (head && head.getUint32(0, true) === MARK && size === entrySize(head)) count++;
+		}
 		return count;
 	} catch {
 		return 0;
