@@ -3119,6 +3119,33 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		swiftShaderSwitches: ['preset=low'],
 		timeoutSeconds: 300,
 	},
+	// The hill with the casting sun, for the pair that measures what the sun's contact shadows and
+	// screen-space bounce light buy: both keep ambient occlusion's three passes, which cost about
+	// 43 ms of the base frame on the Tab A9 Plus. The two entries differ only in `contact=off` and
+	// `bounce=off`, and on this Mac their drawings are pixel for pixel the same.
+	{
+		name: 'vegetation-grass-contact',
+		sketch: 'tests/pages/sketches/vegetation-grass-sketch.ts',
+		switches: ['shadows'],
+		// The casting sun changes nothing in this picture, so it draws the base hill's image.
+		reference: 'vegetation-grass',
+		hold: 1,
+		size: [1280, 720],
+		// The software GPU draws the hill's shadow pass slowly, so it takes the thinner preset.
+		swiftShaderSwitches: ['preset=low'],
+		timeoutSeconds: 300,
+	},
+	{
+		name: 'vegetation-grass-contact-bounce-off',
+		sketch: 'tests/pages/sketches/vegetation-grass-sketch.ts',
+		switches: ['shadows', 'contact=off', 'bounce=off'],
+		// The two effects change nothing in this picture, so it draws the base hill's image.
+		reference: 'vegetation-grass',
+		hold: 1,
+		size: [1280, 720],
+		swiftShaderSwitches: ['preset=low'],
+		timeoutSeconds: 300,
+	},
 	// The same hill at a low sun, where the near cascades take the grass's shadows. The blade list
 	// writes the count that the engine copies into each shadow view, so a shadow view that drew the
 	// capacity, or none of it, changes the picture.

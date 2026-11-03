@@ -133,6 +133,12 @@ const CASCADE_PROBE = params.has('cascade-probe');
  */
 const RENDER_SCALE = Number(params.get('render-scale')) || undefined;
 /**
+ * False when the address asks for the sun's contact shadows and the scene's screen-space bounce
+ * light: the demo draws without them, because their passes cost a share of the frame and the
+ * pictures with and without them are the same at Low, Medium and High.
+ */
+const EFFECTS = params.get('effects') === 'on';
+/**
  * True draws the scene from just above the stream, looking along it, so the picture shows the
  * water's surface close up. The picture tests ask for it; the demo and its route never do.
  */
@@ -219,6 +225,15 @@ function createCreekWater(
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, quality, page, time } = ctx;
+	if (!EFFECTS) {
+		const still = { contactShadowSteps: 0, bounceRays: 0 } as const;
+		await quality.set(still);
+		// A preset change gives the settings their preset's values, so the demo sets them again.
+		quality.onChange(() => {
+			if (quality.settings.contactShadowSteps !== 0 || quality.settings.bounceRays !== 0)
+				void quality.set(still);
+		});
+	}
 	if (RENDER_SCALE !== undefined)
 		await quality.set({
 			minRenderScale: RENDER_SCALE,
