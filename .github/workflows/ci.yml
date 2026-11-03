@@ -78,7 +78,18 @@ jobs:
       # Git hooks are for local commits; this job runs the same checks directly.
       HUSKY: "0"
     steps:
+      # A checkout can stall on GitHub's side, and every stall seen on the night of 3 November
+      # landed in one of the four jobs that start first. These four take a second attempt and
+      # fail by name on the second, which keeps a stalled checkout from costing the check the
+      # job exists to run. The other jobs keep the single attempt and its two-minute limit.
       - uses: actions/checkout@v5
+        id: checkout
+        timeout-minutes: 2
+        continue-on-error: true
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v5
+        if: steps.checkout.outcome == 'failure'
         timeout-minutes: 2
         with:
           fetch-depth: 0
@@ -204,7 +215,18 @@ jobs:
     env:
       HUSKY: "0"
     steps:
+      # A checkout can stall on GitHub's side, and every stall seen on the night of 3 November
+      # landed in one of the four jobs that start first. These four take a second attempt and
+      # fail by name on the second, which keeps a stalled checkout from costing the check the
+      # job exists to run. The other jobs keep the single attempt and its two-minute limit.
       - uses: actions/checkout@v5
+        id: checkout
+        timeout-minutes: 2
+        continue-on-error: true
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v5
+        if: steps.checkout.outcome == 'failure'
         timeout-minutes: 2
         with:
           fetch-depth: 0
@@ -654,7 +676,18 @@ jobs:
     steps:
       # The size check finds its base in the history. A run on main compares with main's commit
       # before the push, so the growth that landed before never counts against the newest push.
+      # A checkout can stall on GitHub's side, and every stall seen on the night of 3 November
+      # landed in one of the four jobs that start first. These four take a second attempt and
+      # fail by name on the second, which keeps a stalled checkout from costing the check the
+      # job exists to run. The other jobs keep the single attempt and its two-minute limit.
       - uses: actions/checkout@v5
+        id: checkout
+        timeout-minutes: 2
+        continue-on-error: true
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v5
+        if: steps.checkout.outcome == 'failure'
         timeout-minutes: 2
         with:
           fetch-depth: 0
@@ -781,7 +814,18 @@ jobs:
       HUSKY: "0"
     steps:
       # The check reads the trailers of the commits since the base.
+      # A checkout can stall on GitHub's side, and every stall seen on the night of 3 November
+      # landed in one of the four jobs that start first. These four take a second attempt and
+      # fail by name on the second, which keeps a stalled checkout from costing the check the
+      # job exists to run. The other jobs keep the single attempt and its two-minute limit.
       - uses: actions/checkout@v5
+        id: checkout
+        timeout-minutes: 2
+        continue-on-error: true
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v5
+        if: steps.checkout.outcome == 'failure'
         timeout-minutes: 2
         with:
           fetch-depth: 0
