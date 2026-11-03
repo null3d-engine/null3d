@@ -473,6 +473,9 @@ export class WebGL2Backend {
 	readonly joins: JoinedBuilds;
 	/** True once a list has replayed, after which no frame waits for a joined shader's compile. */
 	private replayed = false;
+	/** The opcode and word of the command that the replay is carrying out. */
+	private replayOp = -1;
+	private replayWord = -1;
 	/**
 	 * The operands of each `CreateRenderPipeline` whose custom material's shader has not reached
 	 * this thread yet, by pipeline id. Each is created once its shader arrives; until then, its
@@ -697,7 +700,10 @@ export class WebGL2Backend {
 
 	private need<T>(table: (T | undefined)[], id: number, what: string): T {
 		const value = table[id];
-		if (value === undefined) throw new Error(`draw list names ${what} ${id}, which does not exist`);
+		if (value === undefined)
+			throw new Error(
+				`draw list names ${what} ${id}, which does not exist${this.replayWord < 0 ? '' : `, in command ${this.replayOp} at word ${this.replayWord}`}`,
+			);
 		return value;
 	}
 
@@ -723,6 +729,7 @@ export class WebGL2Backend {
 	 * first draw waits for its compile.
 	 */
 	prepare(words: Uint32Array, start: number, end: number): number {
+		this.replayWord = -1;
 		let i = start;
 		while (i < end && ((words[i] as number) & 0xff) === G.OP_CREATE_RENDER_PIPELINE) {
 			this.createPipeline(words, i + 1, true);
@@ -976,6 +983,8 @@ export class WebGL2Backend {
 			const length = header >>> 8;
 			if (length === 0 || i + length > end) throw new Error(`draw list is truncated at word ${i}`);
 			const a = i + 1;
+			this.replayOp = op;
+			this.replayWord = i;
 			switch (op) {
 				case G.OP_CREATE_BUFFER:
 					// A capture draws the frame again, and the buffers of that frame exist already:

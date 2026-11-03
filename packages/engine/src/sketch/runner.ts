@@ -1470,7 +1470,10 @@ export class SketchRunner {
 			) {
 				if (tasksPending() > 0) await this.settleTasks();
 				this.clock.replayStep(now, 0);
-				frame = this.frame();
+				// The settle frame draws what the recording's last frame prepared, such as a
+				// light's copied picture. It is no frame of the session, so the sketch's code does
+				// not run again and the replay gives the recording's frames, no more.
+				frame = this.frame(false);
 			}
 		} catch (error) {
 			if (error instanceof EngineError && error.code === 'E1435') throw error;
