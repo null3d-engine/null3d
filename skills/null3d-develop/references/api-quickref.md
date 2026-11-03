@@ -39,7 +39,7 @@ const engine = await createEngine({
   maxPixelRatio: 2,      // cap for devicePixelRatio in place of the preset's cap
   antialias: 'msaa',     // 'msaa' | 'fxaa' | 'none' in place of the preset's mode (FXAA on Low, MSAA above)
   depthPrepass: false,   // true draws opaque depth first, so each pixel shades once; presets: on for WebGL2, off for WebGPU
-  gpuOcclusion: false,   // true skips objects that marked occluders hide (WebGPU only); presets leave it off
+  gpuOcclusion: false,   // false keeps the GPU from skipping what large opaque objects hide (WebGPU only); on at High and Ultra on desktops
   softwareOcclusion: false,  // the same on WebGL2, on the job workers; presets leave it off; measure before keeping it
   keepTextureCopies: true,   // (0.2) default true on phones and tablets, false on desktops: keep each texture's copy, so its map comes back after a GPU loss; false frees the copy (concepts/backends)
   shadowTiles: 8, shadowTileSize: 512, pointLightShadows: false,  // spot and point light shadows; the preset sets each
@@ -190,7 +190,7 @@ obj.setLayers(mask);                 obj.getLayers();              // bit n puts
 obj.destroy();                                                      // at the next frame; its children become roots
 obj.name;                                                           // string, read-only after creation
 mesh.setOutlined(true);              // (0.2) with post.set({ outline }); a copy from scene.instantiate has it too
-obj.setOccluder(false);              // (0.2) WebGL2 path: stop this object hiding others; true makes it a blocker
+obj.setOccluder(false);              // (0.2) stop this object hiding others, on WebGPU too; true makes it a WebGL2 blocker
 obj.on('click', fn); obj.off('click', fn);  // (0.2) also 'pointerdown', 'pointerup', 'pointermove', 'pointerenter', 'pointerleave'; on parents too
 obj.animator();                      // (0.2) section 12
 ```
@@ -729,7 +729,7 @@ quality.set({ maxAnisotropy: 4, uploadBytesPerFrame: 2 * 1024 * 1024 });  // tex
 quality.settings.antialias;             // 'msaa' | 'fxaa' | 'none', fixed at the start; set it with createEngine's option
 quality.settings.depthPrepass;          // true when opaque depth draws first; fixed at the start, as antialias is
 await createEngine({ canvas, sketch, momentTransparency: true });  // (0.3) blend the blended surfaces in the moment layer, without the sort; fixed at the start, off on every preset
-quality.settings.gpuOcclusion;          // true when the GPU skips hidden opaque objects; fixed at the start
+quality.settings.gpuOcclusion;          // true when the GPU skips hidden opaque objects (High and Ultra on desktops); fixed at the start
 quality.set({ shadowFilter: 5, farCascadeInterval: 1 });  // shadow edge softness, 3 or 5 texels; far cascades every frame
 quality.set({ followMovingCasters: false }); // far cascades keep their turns while dynamic casters move in them (on by default)
 quality.set({ shadowCascadeBlend: 0.2 });  // blend each cascade into the next over its last 20% (0 hands over at once)

@@ -152,8 +152,8 @@ Drawing:
 | A loaded model, once or many times | `assets.loadGltf`, then `scene.instantiate` (0.2) | `api/assets` |
 | Hundreds to millions of copies of one mesh | `scene.createInstances` with typed arrays | `concepts/instances` |
 | Objects that move every frame | `dynamic: true`, or a dynamic batch | `concepts/static-dynamic` |
-| Less detail far away | Code meshes plan levels themselves (`levels: false` opts out); `mesh.setLevels` by hand; `assets optimize --lod` for files (0.2) | `concepts/lod` |
-| A large static mesh, detailed near and coarse far | `bunx @null3d/cli assets optimize --clusters`, which stores a tree of patches that the engine draws on both GPU paths for a mesh that draws once, and whole levels for a browser without `WEBGL_multi_draw` | `concepts/lod` |
+| Less detail far away | Code meshes plan levels (`levels: false` opts out); `mesh.setLevels` by hand; `assets optimize --lod` (0.2) | `concepts/lod` |
+| A large static mesh, detailed near and coarse far | `bunx @null3d/cli assets optimize --clusters`, which stores a tree of patches that the engine draws on both GPU paths for a mesh that draws once, and whole levels without `WEBGL_multi_draw` or, past 65,535 vertices, `WEBGL_provoking_vertex` | `concepts/lod` |
 | Camera-facing quads that the sketch moves itself | `scene.createSprites` (0.2) | `api/sprites` |
 | Point clouds | `scene.createPoints` (0.2) | `api/points` |
 | Lines with pixel or world widths | `scene.createLines` (0.2) | `api/lines` |

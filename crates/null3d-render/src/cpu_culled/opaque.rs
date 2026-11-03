@@ -180,6 +180,29 @@ impl<'a> PatchView<'a> {
     }
 }
 
+/// The bytes of one index of a tree's own index list: 32-bit indices reach every vertex of a mesh
+/// that its parts split, which 16-bit ones cannot.
+const TREE_INDEX_BYTES: u32 = 4;
+
+/// The vertex buffer, the index buffer and the index format that a draw binds. A draw of a tree
+/// binds the tree's own index list, over its mesh page's vertices or, for a mesh whose parts lie in
+/// several pages, over the tree's copy of them. Any other draw binds its page's two buffers.
+fn draw_buffers(layout: &Layout, meshes: &MeshBuffers, drawing: &Draw) -> [u32; 3] {
+    let (page_vertices, page_indices) = meshes.ids(drawing.page);
+    match drawing.cluster {
+        Some(cluster) => {
+            let tree = layout.cluster_buckets[cluster as usize];
+            let vertices = if tree.own_vertices {
+                ids::patch_vertices(tree.mesh)
+            } else {
+                page_vertices
+            };
+            [vertices, ids::patch_index(tree.mesh), index_format::UINT32]
+        }
+        None => [page_vertices, page_indices, index_format::UINT16],
+    }
+}
+
 /// One draw call of a frame: draws `from..to` of the run that starts at draw `run`, `drawn` of
 /// them with visible instances. A call that draws a tree draws the patch runs at `patches` of the
 /// one draw at `from`, in place of that draw's whole index list.
@@ -306,7 +329,7 @@ fn draw_call(
         if let Some((from, to)) = call.patches {
             let cluster = draws[call.from].cluster.expect("a patch call draws a tree");
             for (k, run) in patches.of(cluster)[from..to].iter().enumerate() {
-                put_u32(offsets, k, run[0] * 2);
+                put_u32(offsets, k, run[0] * TREE_INDEX_BYTES);
             }
         } else {
             for (k, d) in (call.from..call.to).filter(|&d| visible(d) > 0).enumerate() {
@@ -914,15 +937,9 @@ impl Opaque {
                     list.push(Op::SetBindGroup, &[TEXTURES_GROUP, maps, 0])?;
                     textures = maps;
                 }
-                let (vertices, indices) = match drawing.cluster {
-                    Some(cluster) => {
-                        let mesh = layout.cluster_buckets[cluster as usize].mesh;
-                        (meshes.ids(drawing.page).0, ids::patch_index(mesh))
-                    }
-                    None => meshes.ids(drawing.page),
-                };
+                let [vertices, indices, format] = draw_buffers(layout, meshes, &drawing);
                 list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
-                list.push(Op::SetIndexBuffer, &[indices, index_format::UINT16, 0, 0])?;
+                list.push(Op::SetIndexBuffer, &[indices, format, 0, 0])?;
             }
             list.push(
                 Op::SetBindGroup,
@@ -992,15 +1009,9 @@ impl Opaque {
                     )?;
                     textures = drawing.motion_textures;
                 }
-                let (vertices, indices) = match drawing.cluster {
-                    Some(cluster) => {
-                        let mesh = layout.cluster_buckets[cluster as usize].mesh;
-                        (meshes.ids(drawing.page).0, ids::patch_index(mesh))
-                    }
-                    None => meshes.ids(drawing.page),
-                };
+                let [vertices, indices, format] = draw_buffers(layout, meshes, &drawing);
                 list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
-                list.push(Op::SetIndexBuffer, &[indices, index_format::UINT16, 0, 0])?;
+                list.push(Op::SetIndexBuffer, &[indices, format, 0, 0])?;
             }
             list.push(
                 Op::SetBindGroup,
@@ -1106,6 +1117,7 @@ mod tests {
             bucket: 0,
             mesh: 1,
             object: 0,
+            own_vertices: false,
         });
         // Each bucket lists its one source.
         let starts = [0, 1, 2];
@@ -1154,6 +1166,7 @@ mod tests {
             bucket: 0,
             mesh: 1,
             object: 0,
+            own_vertices: false,
         });
         let starts = [0, 1];
         let runs = [[0, 3]];

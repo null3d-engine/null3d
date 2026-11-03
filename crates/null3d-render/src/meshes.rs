@@ -535,9 +535,10 @@ impl MeshStorage {
 
     /// Rewrites `indices`, which name mesh `id`'s own vertices, to name the vertices that its parts
     /// hold, one part after another, and returns how many vertices the parts hold: the order that
-    /// a tree of cluster patches draws in from the mesh's [`MeshStorage::joined_parts`]. A mesh in
-    /// one part keeps its own order. A vertex that several parts of a split mesh copy takes its
-    /// first copy. An index that names no vertex a part holds becomes `u32::MAX`, past every count.
+    /// a tree of cluster patches draws in, from the mesh's [`MeshStorage::joined_parts`] or from a
+    /// copy of [`MeshStorage::part_vertices`]. A mesh in one part keeps its own order. A vertex that
+    /// several parts of a split mesh copy takes its first copy. An index that names no vertex a part
+    /// holds becomes `u32::MAX`, past every count.
     /// Returns 0 for an id of no live mesh, or when memory cannot grow for the split mesh's table
     /// of first copies.
     pub fn to_part_order(&self, id: u32, indices: &mut [u32]) -> u32 {
@@ -561,6 +562,16 @@ impl MeshStorage {
             *index = first_copy.get(*index as usize).copied().unwrap_or(u32::MAX);
         }
         mesh.sources
+    }
+
+    /// The vertex bytes of each part of a mesh's triangles, in part order: the vertices that
+    /// [`MeshStorage::to_part_order`]'s indices name, read from their pages.
+    pub fn part_vertices<'a>(&'a self, mesh: &MeshSlot) -> impl Iterator<Item = &'a [u8]> + 'a {
+        let stride = vertex::stride(mesh.format) as usize;
+        self.parts(mesh, false).iter().map(move |part| {
+            let at = part.first_vertex as usize * stride;
+            &self.pages[part.page as usize].vertices[at..at + part.vertex_count as usize * stride]
+        })
     }
 
     /// Makes every part's edge list, which the pages upload as new indices, and from now on each
@@ -2107,9 +2118,9 @@ mod tests {
         }
     }
 
-    /// A split mesh's indices in part order reach the vertices that its own indices name, through
-    /// its parts' vertices one part after another, in both packings. On shared buffers those lie in
-    /// one page from the first part's base vertex, and stay so when a mesh before them goes.
+    /// A split mesh's indices in part order reach the vertices that its own indices name: through
+    /// its one page from the first part's base vertex on shared buffers, and through a copy of its
+    /// parts' vertices in pages. Its parts stay one after another when a mesh before them goes.
     #[test]
     fn indices_in_part_order_reach_a_split_meshs_vertices_through_one_run() {
         let big = grid(300, 300, vertex::UV0);
@@ -2128,16 +2139,7 @@ mod tests {
             assert!(storage.parts(&slot, false).len() > 1);
             let mut indices = own.clone();
             let count = storage.to_part_order(id, &mut indices);
-            let copy: Vec<u8> = storage
-                .parts(&slot, false)
-                .iter()
-                .flat_map(|part| {
-                    let at = part.first_vertex as usize * stride;
-                    let page = &storage.pages()[part.page as usize];
-                    page.vertices[at..at + part.vertex_count as usize * stride].iter()
-                })
-                .copied()
-                .collect();
+            let copy: Vec<u8> = storage.part_vertices(&slot).flatten().copied().collect();
             assert_eq!(copy.len(), count as usize * stride, "{packing:?}");
             for (k, &index) in indices.iter().enumerate() {
                 let at = index as usize * stride;

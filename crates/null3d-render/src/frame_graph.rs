@@ -17,8 +17,8 @@
 //! object in view against the pyramid. The opaque pass then draws what the late pass kept, as it
 //! does without occlusion culling, so its targets never leave tile memory between passes. The
 //! occluders' pass reads the compacted instances as the first culling pass leaves them, before the
-//! late pass writes them again. Occlusion culling and the depth prepass do not run together; the
-//! prepass wins.
+//! late pass writes them again. With the depth prepass too, the prepass reads what the late pass
+//! kept, so it runs after it.
 //!
 //! With the depth prepass, a depth prepass comes before each view's opaque pass. It creates the
 //! view's depth and draws the opaque objects' depth into it, and the opaque pass then writes into
@@ -1619,7 +1619,7 @@ impl FrameGraph {
     }
 
     /// Culls each camera view in two phases against its depth pyramid, or in one. It takes effect
-    /// on WebGPU without the depth prepass, which ambient occlusion also turns on while it draws.
+    /// on WebGPU, with or without the depth prepass.
     pub(crate) fn set_occlusion(&mut self, on: bool) {
         if on != self.occlusion {
             self.occlusion = on;
@@ -1628,19 +1628,16 @@ impl FrameGraph {
     }
 
     /// How the opaque objects' depth draws before the pass that shades them: in the depth prepass,
-    /// the way that the builder's `prepass` names, in the occluders' pass of occlusion culling, or
-    /// not at all.
+    /// the way that the builder's `prepass` names, or not at all. The occluders' pass of occlusion
+    /// culling draws with pipelines of its own beside it ([`Self::occlusion`]).
     pub(crate) fn depth_pass(&self, prepass: Prepass) -> Prepass {
-        if self.depth_prepass() {
-            prepass
-        } else {
-            Prepass::Occluders.if_on(self.occlusion())
-        }
+        prepass.if_on(self.depth_prepass())
     }
 
-    /// True when each camera view culls in two phases against its depth pyramid.
+    /// True when each camera view culls in two phases against its depth pyramid. With the depth
+    /// prepass, the prepass draws the objects that the second phase kept, after it.
     pub(crate) fn occlusion(&self) -> bool {
-        self.occlusion && self.gpu_culling && !self.depth_prepass()
+        self.occlusion && self.gpu_culling
     }
 
     /// True when each view has a depth prepass: from the builder's start, or while ambient
