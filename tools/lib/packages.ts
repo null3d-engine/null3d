@@ -163,7 +163,7 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		compile: true,
 		shaders: false,
 		docs: false,
-		required: [],
+		required: ['THIRD-PARTY-NOTICES.txt'],
 		repositoryOnly: ['species/_template/record.ts', 'species/_template/index.ts'],
 	},
 	// Data only: each species folder's textures, manifest and module, which the textures tool writes.
