@@ -2930,10 +2930,12 @@ const SOAK_START_SECONDS = 180;
 
 /**
  * The soak and recovery test. First the scene page loses its GPU on purpose in each thread mode on
- * each GPU path, and must draw the whole scene again on a new device. Then each of `scenes` plays
- * for `minutes` on each GPU path, from the benchmark pages' production build, measured once a
- * minute: the run's summary gives the GPU losses that the engine recovered from, the frame rates
- * and the memory.
+ * each GPU path, and must draw the whole scene again on a new device. Each run fixes its preset,
+ * because the image it compares is drawn in hold mode, which skips the start-up preset check: a slow
+ * device that lowered the preset would draw other anti-aliasing and fail the picture. Then each of
+ * `scenes` plays for `minutes` on each GPU path, from the benchmark pages' production build,
+ * measured once a minute: the run's summary gives the GPU losses that the engine recovered from, the
+ * frame rates and the memory.
  */
 export function soakPlan({
 	minutes = SOAK_MINUTES,
@@ -2950,7 +2952,10 @@ export function soakPlan({
 						tier,
 						run: borrowedRun(manifestRun('scene', tier, mode.name), 'scene-after-gpu-loss'),
 					},
-					{ switches: [`gpu=${tier}`, mode.query, 'lose-gpu'], timeoutSeconds: 60 },
+					{
+						switches: [`gpu=${tier}`, 'preset=medium', mode.query, 'lose-gpu'],
+						timeoutSeconds: 60,
+					},
 				),
 			),
 		),

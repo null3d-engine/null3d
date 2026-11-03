@@ -204,7 +204,7 @@ describe('the soak plan', () => {
 
 	it('loses the GPU in every thread mode first, then soaks S4 on each path from the production build', () => {
 		expect(items).toHaveLength(2 * ENGINE_MODES.length + 2);
-		expect(items[0]?.path).toBe('/tests/pages/scene.html?gpu=webgpu&lose-gpu');
+		expect(items[0]?.path).toBe('/tests/pages/scene.html?gpu=webgpu&preset=medium&lose-gpu');
 		const soaks = items.slice(-2);
 		expect(soaks.map((item) => item.id)).toEqual(['soak-s4-webgpu', 'soak-s4-webgl2']);
 		expect(soaks[0]?.path).toMatch(
