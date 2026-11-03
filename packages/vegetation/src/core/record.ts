@@ -708,6 +708,11 @@ export interface ShootClass {
 	readonly leafAngle: Curve;
 	/** Degrees the shoot hangs over its length (willow whips, birch). */
 	readonly droop: number;
+	/**
+	 * Years of growth in this class's prototypes, 1 to 3: 1 for a current-year shoot alone (an oak's
+	 * terminal rosette), more for one with older years below it. The species' `years` by default.
+	 */
+	readonly years?: number;
 }
 
 /**
