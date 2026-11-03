@@ -10,6 +10,7 @@ describe('percentiles', () => {
 			p95: 95,
 			p99: 99,
 			max: 100,
+			min: 0,
 			mean: 50,
 		});
 	});
@@ -33,6 +34,14 @@ describe('percentiles', () => {
 	});
 
 	it('reports zeros for no samples', () => {
-		expect(percentiles([])).toEqual({ count: 0, median: 0, p95: 0, p99: 0, max: 0, mean: 0 });
+		expect(percentiles([])).toEqual({
+			count: 0,
+			median: 0,
+			p95: 0,
+			p99: 0,
+			max: 0,
+			min: 0,
+			mean: 0,
+		});
 	});
 });
