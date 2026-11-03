@@ -3,13 +3,7 @@ import { Document, NodeIO } from '@gltf-transform/core';
 import { MeshoptEncoder } from 'meshoptimizer';
 import { planLevels, storeLevels } from './levels.js';
 import { lodOf, MSFTLod } from './lod-extension.js';
-import {
-	cacheMisses,
-	PIECE_BOUNDS,
-	PIECE_LIST_MIN_TRIANGLES,
-	pieceCount,
-	planPieces,
-} from './pieces.js';
+import { PIECE_BOUNDS, PIECE_LIST_MIN_TRIANGLES, pieceCount, planPieces } from './pieces.js';
 import { NULL3D_PIECES, Null3dPieces, piecesOf, storePieces } from './pieces-extension.js';
 
 /** A rough sphere of `around` by `rings` cells, as positions and indices. */
@@ -160,21 +154,6 @@ describe('pieces of a triangle list', () => {
 		const again = planPieces(positions, indices, 8);
 		expect(again?.order).toEqual(plan?.order);
 		expect(again?.bounds).toEqual(plan?.bounds);
-	});
-
-	it('cost more vertex work where they part neighbouring triangles', () => {
-		const space = planPieces(positions, indices, 16, 1);
-		if (!space) throw new Error('no plan');
-		const order = (plan: NonNullable<typeof space>) =>
-			Array.from(plan.order).flatMap((t) => [
-				indices[t * 3] as number,
-				indices[t * 3 + 1] as number,
-				indices[t * 3 + 2] as number,
-			]);
-		// Pieces by space keep neighbouring triangles together, so they repeat little more vertex
-		// work than the list in its own order, row by row.
-		expect(cacheMisses(order(space))).toBeLessThan(1.2 * cacheMisses(indices));
-		expect(cacheMisses([0, 1, 2, 0, 2, 3])).toBe(2);
 	});
 
 	it('leave a small list whole', () => {

@@ -37,15 +37,6 @@ export const PIECE_MAX = 16;
 /** The most facing groups of one list: more pieces than this split the groups by space. */
 export const PIECE_FACINGS = 14;
 
-/**
- * How many more vertex cache misses pieces by facing may cost than pieces by space, as a share,
- * for a list to take them (see {@link cacheMisses}).
- */
-export const FACING_MISS_ALLOWANCE = 0.1;
-
-/** The entries of the vertex cache that {@link cacheMisses} models. */
-const CACHE_ENTRIES = 32;
-
 /** The numbers of each piece's bounds: its sphere's centre and radius, its cone's axis and cutoff. */
 export const PIECE_BOUNDS = 8;
 
@@ -348,30 +339,4 @@ function pieceBounds(piece, positions, indices, facing, area) {
 			if (at(area, t) > 0) least = Math.min(least, dot3(facing, t * 3, axis, 0) / stored);
 	const cutoff = least <= LEAST_CONE_DOT ? 1 : roundUp(Math.sqrt(1 - least * least));
 	return [...centre, roundUp(reach), ...axis, cutoff];
-}
-
-/**
- * The vertex cache misses per triangle of a list, with a cache of the last 32 vertices that came
- * in, first in first out: a stand-in for the vertex shading that a GPU does again for a vertex that
- * it shaded too long before.
- *
- * @param {ArrayLike<number>} indices
- */
-export function cacheMisses(indices) {
-	const slots = new Int32Array(CACHE_ENTRIES).fill(-1);
-	/** @type {Map<number, number>} */
-	const held = new Map();
-	let next = 0;
-	let misses = 0;
-	for (let i = 0; i < indices.length; i++) {
-		const vertex = at(indices, i);
-		if (held.has(vertex)) continue;
-		misses += 1;
-		const old = at(slots, next);
-		if (old >= 0) held.delete(old);
-		slots[next] = vertex;
-		held.set(vertex, next);
-		next = (next + 1) % CACHE_ENTRIES;
-	}
-	return misses / Math.max(1, Math.floor(indices.length / 3));
 }
