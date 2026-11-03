@@ -76,6 +76,12 @@ export interface SketchTime {
 	readonly frame: number;
 	/** True while hold mode steps to its held frame, so work on a cadence draws in every frame. */
 	readonly held: boolean;
+	/**
+	 * False in a step of hold mode whose frame the GPU never draws, and true in every other frame.
+	 * Hold mode draws only the frames at the end of its hold, so work that a frame's GPU passes pay
+	 * for, such as a solver's runs for the time that passed, waits for a frame that draws.
+	 */
+	readonly drawn: boolean;
 }
 
 /**

@@ -304,6 +304,8 @@ render.setPassEvery(map, 4);
 
 The call compiles nothing, so a sketch may change the cadence whenever the quality preset or the frame budget moves, as often as once a frame. A material that samples the pass's texture in a frame that the pass skips shows the last image that it drew: the target is neither culled nor cleared. Do not switch a pass off to slow it down: `setPassEnabled` recompiles the render graph, so a pass that toggles every frame pays for a new plan on every frame. A pass that carried its own cadence through the toggle cost about 700 ms a frame in the ocean's measurement; the same pass with a cadence costs nothing measurable.
 
+In [hold mode](testing.md#hold-mode) every pass draws in every frame, whatever its cadence. The engine draws only the hold's last frames, so a pass that skipped one of them would show an image that no drawn frame made: an empty mirror, for one.
+
 ### What a scene pass draws
 
 A scene pass draws with the scene's materials, the sun and its shadows where the camera's shadow cascades reach. It draws the ambient and hemisphere lights, the environment's light and the fog. It also draws the point and spot lights that its camera sees. It draws the scene's background behind them, the sky included, as a three.js render target shows `scene.background`. With a `clearColor` the texture clears to that color and shows no background, which suits a minimap. A pass draws no ambient occlusion: three.js draws it as a post pass over the canvas, so its render targets have none either.
