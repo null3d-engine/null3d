@@ -30,6 +30,7 @@ import {
 	estimateFraming,
 	fixed,
 	framingQuery,
+	rubricBand,
 	type StillResult,
 	type TurnResult,
 	viewSheets,
@@ -285,15 +286,6 @@ function referenceFolder(species: string): string | undefined {
 	return undefined;
 }
 
-/** The rubric's band for the crown box's spread round a turn: 15 per cent for a conifer, else 25. */
-function band(species: string, slug: string): number {
-	return /spruce|pine|fir|cedar|larch|cypress|yew|sequoia|juniper|conifer/.test(
-		`${species} ${slug}`,
-	)
-		? 0.15
-		: 0.25;
-}
-
 /** The summary's lines for one turn. */
 function turnSummary(result: TurnResult, limit: number): string[] {
 	const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
@@ -415,7 +407,7 @@ function compareRun(
 		);
 	}
 	const turns = new Map<string, TurnResult>();
-	const limit = band(manifest.species, set.slug);
+	const limit = rubricBand(manifest.species, set.slug);
 	for (const video of set.turns) {
 		const group = `turn-${video.file.replace(/\.mp4$/, '')}`;
 		const frames = byGroup.get(group);

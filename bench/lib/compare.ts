@@ -477,8 +477,8 @@ function parseSelector(text: string, known: KnownNames): Selector {
 /**
  * Reads every expected-change trailer in the messages. A trailer's value names benchmarks, each as
  * `<scene>[/<page>[/<measure>]]` with `*` for any part and a comma between them, then a colon and
- * the reason. Lines that start with the trailer's name count anywhere in a message, because a
- * squash merge lists the messages of each commit it joins.
+ * the reason. A trailer counts only in a message's trailer block, which git reads at the end of the
+ * message, so a squash that lists the messages of several commits carries only the last one's.
  */
 export function readExpectedChanges(
 	messages: readonly string[],
@@ -689,12 +689,23 @@ export interface ReportContext {
 
 const problemsText = (count: number) => (count === 1 ? 'one problem' : `${count} problems`);
 
+/**
+ * The lines that say why a comparison judges no time: the benchmark pages or the comparison's
+ * switches changed between the builds, so each build drew different work. A tool that reads a
+ * comparison's record refuses on the same lines.
+ */
+export function measurementChangedLines(measurementChanges: readonly string[]): string[] {
+	return [
+		`**Measurement changed**: the run reports every page and judges no time, because the two builds measure in different ways. Main's next run compares with this commit.`,
+		...measurementChanges.map((change) => `- ${change}`),
+	];
+}
+
 /** The verdict's lines of the report. */
 function verdictLines({ pass, failures, unjudged, measurementChanges }: Verdict): string[] {
 	if (measurementChanges.length > 0)
 		return [
-			`**Measurement changed**: the run reports every page and judges no time, because the two builds measure in different ways. Main's next run compares with this commit.`,
-			...measurementChanges.map((change) => `- ${change}`),
+			...measurementChangedLines(measurementChanges),
 			...(failures.length > 0
 				? ['', `**Failed**: ${problemsText(failures.length)}.`, ...failures.map((f) => `- ${f}`)]
 				: []),

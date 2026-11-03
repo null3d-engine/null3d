@@ -276,6 +276,45 @@ export function spread(values: readonly number[]): number {
 	return m === 0 ? 0 : (Math.max(...values) - Math.min(...values)) / m;
 }
 
+/**
+ * The rubric's eight angles round a plant, those that a turning video's arc reaches, and the video
+ * frame nearest each when its frames stand at even turns over the arc.
+ */
+export function rubricFrames(
+	arc: number,
+	frames: number,
+): { readonly angles: number[]; readonly frames: number[] } {
+	const frameStep = arc / frames;
+	const angles = Array.from({ length: 8 }, (_, k) => k * 45).filter(
+		(a) => a < arc + 1e-6 && a / frameStep < frames,
+	);
+	return { angles, frames: angles.map((a) => Math.min(frames - 1, Math.round(a / frameStep))) };
+}
+
+/** The spread of the crown box's width and height over the frames that show a plant. */
+export function crownBoxSpread(measures: readonly PlantMeasures[]): {
+	readonly width: number;
+	readonly height: number;
+} {
+	const boxes = measures.flatMap((m) => (m.box ? [m.crownBox] : []));
+	return {
+		width: Number(spread(boxes.map((b) => b.width)).toFixed(4)),
+		height: Number(spread(boxes.map((b) => b.height)).toFixed(4)),
+	};
+}
+
+/**
+ * The rubric's band for the crown box's spread round a turn, by growth form: 15 per cent for a
+ * conifer, 25 for every other form. The reference's own spread widens it where it is wider.
+ */
+export function rubricBand(species: string, slug: string): number {
+	return /spruce|pine|fir|cedar|larch|cypress|yew|sequoia|juniper|conifer/.test(
+		`${species} ${slug}`,
+	)
+		? 0.15
+		: 0.25;
+}
+
 /** One frame of either side of a comparison: its picture, its outline and its measures. */
 interface Side {
 	readonly label: string;
@@ -372,30 +411,32 @@ const REFERENCE_COLOUR = [214, 0, 170];
 const RENDER_COLOUR = [0, 160, 60];
 
 /**
- * The outline overlay of two outlines on the comparison canvas, cropped to both and fitted to a
- * box: the reference's outline magenta, the render's green, their shared area grey and each one's
- * own area tinted with its colour.
+ * The outline overlay of two outlines on the comparison canvas, or on another canvas of the size
+ * given, cropped to both and fitted to a box: the reference's outline magenta, the render's green,
+ * their shared area grey and each one's own area tinted with its colour.
  */
 export function overlay(
 	reference: Uint8Array,
 	render: Uint8Array,
 	width: number,
 	height: number,
+	canvasWidth = NORMAL_WIDTH,
+	canvasHeight = NORMAL_HEIGHT,
 ): Rgba {
 	const union = new Uint8Array(reference.length);
 	for (let i = 0; i < union.length; i++)
 		union[i] = (reference[i] as number) | (render[i] as number);
-	const box = boxOf(union, NORMAL_WIDTH, NORMAL_HEIGHT) ?? {
+	const box = boxOf(union, canvasWidth, canvasHeight) ?? {
 		left: 0,
 		top: 0,
-		right: NORMAL_WIDTH - 1,
-		bottom: NORMAL_HEIGHT - 1,
+		right: canvasWidth - 1,
+		bottom: canvasHeight - 1,
 	};
 	const margin = 4;
 	const left = Math.max(0, box.left - margin);
 	const top = Math.max(0, box.top - margin);
-	const cropW = Math.min(NORMAL_WIDTH, box.right + margin + 1) - left;
-	const cropH = Math.min(NORMAL_HEIGHT, box.bottom + margin + 1) - top;
+	const cropW = Math.min(canvasWidth, box.right + margin + 1) - left;
+	const cropH = Math.min(canvasHeight, box.bottom + margin + 1) - top;
 	const s = Math.min(width / cropW, height / cropH);
 	const w = Math.max(1, Math.floor(cropW * s));
 	const h = Math.max(1, Math.floor(cropH * s));
@@ -403,7 +444,7 @@ export function overlay(
 		const grey = blank(cropW, cropH, [0, 0, 0]);
 		for (let y = 0; y < cropH; y++)
 			for (let x = 0; x < cropW; x++) {
-				const v = (mask[(top + y) * NORMAL_WIDTH + left + x] as number) * 255;
+				const v = (mask[(top + y) * canvasWidth + left + x] as number) * 255;
 				grey.data[(y * cropW + x) * 4] = v;
 			}
 		const big = resize(grey, w, h);
@@ -757,19 +798,10 @@ export function compareTurn(
 		};
 	});
 	const covered = pairs.filter((pair) => pair.offBy <= frameStep / 2 + 1e-6).length;
-	// The rubric's eight angles, those the video's arc reaches.
-	const angles = Array.from({ length: 8 }, (_, k) => k * 45).filter(
-		(a) => a < video.arc + 1e-6 && a / frameStep < n,
-	);
-	const atAngle = angles.map((a) => Math.min(n - 1, Math.round(a / frameStep)));
-	const boxes = (sides: readonly Side[]) =>
-		sides.flatMap((s) => (s.measures.box ? [s.measures.crownBox] : []));
+	const { angles, frames: atAngle } = rubricFrames(video.arc, n);
 	const refAt = atAngle.map((k) => refSides[k] as Side);
 	const renderAt = atAngle.map((k) => renderSides[alignment.pairs[k] as number] as Side);
-	const spreadOf = (sides: readonly Side[]) => ({
-		width: Number(spread(boxes(sides).map((b) => b.width)).toFixed(4)),
-		height: Number(spread(boxes(sides).map((b) => b.height)).toFixed(4)),
-	});
+	const spreadOf = (sides: readonly Side[]) => crownBoxSpread(sides.map((s) => s.measures));
 	const tiles: GridTile[] = pairs.map((pair, k) => {
 		const r = refSides[k] as Side;
 		const s = renderSides[alignment.pairs[k] as number] as Side;

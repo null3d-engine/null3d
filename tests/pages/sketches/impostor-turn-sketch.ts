@@ -7,7 +7,7 @@
 // light with the camera would show as a different side of the crown.
 import { defineSketch, type MeshArrays } from '@null3d/engine';
 import { bakeImpostorAtlas, createImpostors, octahedralAtlas } from '@null3d/impostors';
-import { pineArrays } from '../../../examples/lib/pines';
+import { pineArrays } from '../lib/pines';
 
 /** The turn of each pair: none, a third of a turn, two thirds of a turn. */
 const TURNS = [0, Math.PI / 3, (2 * Math.PI) / 3];

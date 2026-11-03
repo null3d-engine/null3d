@@ -202,8 +202,12 @@ const SWIFTSHADER_START_MS_DEFAULT = 90_000;
 /** The fewest frames a second that a short run may finish on SwiftShader. */
 const SWIFTSHADER_COMPLETED_FPS = 0.1;
 
-/** A run's frames, start time and frame rates, as one line for the log. */
-function runFigures(result: BenchReport): string {
+/** The error that a page reports when its window ended before it counted a frame. */
+const NO_FRAME_ERROR = 'no frame was measured';
+
+/** A run's frames, start time and frame rates, as one line for the log; or its missing frame. */
+function runFigures(result: BenchReport | undefined): string {
+	if (!result) return NO_FRAME_ERROR;
 	const start = result.stats?.load?.engineStartMs;
 	const rate = (fps: number | null | undefined) => (fps == null ? 'no' : fps.toFixed(2));
 	return [
@@ -267,9 +271,11 @@ function secondTrySeconds(
  * Runs a page's short benchmark with the switches after its seconds. A slow runner can make
  * SwiftShader take seconds over each frame, so that no frame both starts and finishes inside the
  * measured time, and the run counts none. The page then runs once more, with the same warm-up and a
- * measured time long enough for a few whole frames at that pace (`secondTrySeconds`). Such a run
- * prints both tries' figures as a warning, and fails when either try was far slower than usual, so
- * the second try never hides a slower page. Runs on real GPUs never repeat.
+ * measured time long enough for a few whole frames at that pace (`secondTrySeconds`). A window that
+ * still counts no frame measures once more at the unknown pace, because the rate it was sized from
+ * came from frames that no counted frame followed. Such a run prints every try's figures as a
+ * warning, and fails when any try was far slower than usual, so a longer window never hides a
+ * slower page. Runs on real GPUs never repeat.
  */
 async function runShortBenchmark(
 	page: Page,
@@ -277,35 +283,74 @@ async function runShortBenchmark(
 	kind: PageKind,
 	switches = `n=${shortRunAsked(scene)}`,
 ): Promise<BenchReport> {
+	const path = (seconds: number, measure?: number) =>
+		pagePath(scene, kind, `seconds=${seconds}&${measure ? `measure=${measure}&` : ''}${switches}`);
 	const run = (seconds: number, measure?: number) =>
-		runPage<BenchReport>(
-			page,
-			pagePath(
-				scene,
-				kind,
-				`seconds=${seconds}&${measure ? `measure=${measure}&` : ''}${switches}`,
-			),
-		);
+		runPage<BenchReport>(page, path(seconds, measure));
 	const seconds = shortRunSeconds(scene, kind);
-	const first = await run(seconds);
-	if (!SWIFTSHADER) return first;
+	if (!SWIFTSHADER) return run(seconds);
+	const first = await runOrNoFrame(page, path(seconds));
 	const pageKey = `${scene} on ${kind}`;
 	const name = `${pageKey} (${switches})`;
 	console.log(`${name} on SwiftShader: ${runFigures(first)}`);
-	if (first.frames > 0) return first;
+	if (first?.frames) return first;
 	test.slow();
+	if (first) expectUsualSpeed(pageKey, `${name}'s first try`, first);
 	const measure = secondTrySeconds(
 		seconds,
-		first.stats?.completedFps,
-		first.stats?.load?.engineStartMs,
+		first?.stats?.completedFps,
+		first?.stats?.load?.engineStartMs,
 	);
 	const second = await run(seconds, measure);
-	const message = `${name} counted no frame on SwiftShader in ${seconds} s, so it measured again for ${measure} s. First try: ${runFigures(first)}. Second try: ${runFigures(second)}.`;
-	console.log(`::warning title=A second try on SwiftShader::${message}`);
-	test.info().annotations.push({ type: 'second try on SwiftShader', description: message });
-	expectUsualSpeed(pageKey, `${name}'s first try`, first);
+	if (second.frames > 0) {
+		noteTries(name, seconds, first, [second], [measure]);
+		expectUsualSpeed(pageKey, `${name}'s second try`, second);
+		return second;
+	}
+	// The rate that sized the second window came from frames that no counted frame followed: the
+	// frames the renderer finished and the frames the measurement paired were not the same. Measure
+	// once more at the unknown pace, which grows with the page's own start.
+	test.slow();
 	expectUsualSpeed(pageKey, `${name}'s second try`, second);
-	return second;
+	const longest = secondTrySeconds(seconds, 0, second.stats?.load?.engineStartMs);
+	const third = await run(seconds, longest);
+	noteTries(name, seconds, first, [second, third], [measure, longest]);
+	expectUsualSpeed(pageKey, `${name}'s third try`, third);
+	return third;
+}
+
+/**
+ * Opens a short run's page and returns its report, or undefined when its window counted no frame.
+ * The three.js pages report that as an error, where the engine's pages report a run with no frames;
+ * the first window then gives way to the retries either way.
+ */
+async function runOrNoFrame(page: Page, path: string): Promise<BenchReport | undefined> {
+	const { result, errors } = await openPage<BenchReport>(page, path);
+	expect(errors).toEqual([]);
+	if (result.error === NO_FRAME_ERROR) return undefined;
+	expect(result.error).toBeUndefined();
+	expect(result.ok).toBe(true);
+	return result;
+}
+
+/** Prints the tries of a short run that counted no frame on SwiftShader, and annotates the test. */
+function noteTries(
+	name: string,
+	seconds: number,
+	first: BenchReport | undefined,
+	retries: readonly BenchReport[],
+	windows: readonly number[],
+): void {
+	const labels = ['Second', 'Third'];
+	const tries = [
+		`First try: ${runFigures(first)}`,
+		...retries.map(
+			(run, i) => `${labels[i] as string} try (${windows[i] as number} s): ${runFigures(run)}`,
+		),
+	].join('. ');
+	const message = `${name} counted no frame on SwiftShader in ${seconds} s. ${tries}.`;
+	console.log(`::warning title=A retry on SwiftShader::${message}`);
+	test.info().annotations.push({ type: 'retry on SwiftShader', description: message });
 }
 
 interface Report extends PageReport {

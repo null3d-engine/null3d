@@ -1,13 +1,12 @@
 // The page side's stand-ins: what prepareSpecies, plantMaterials, placePlants and createNearPool do
-// for a kit built with `placeholders` while the plant material and placement are not built yet. A
-// stand-in kit gets a white texture in each slot and its card atlas; its materials are the engine's
+// for a kit built with `placeholders`, which loads no texture file and grows every stage's stand-in.
+// A stand-in kit gets a white texture in each slot and its card atlas; its materials are the engine's
 // standard material in the record's bark and leaf colours, with no wind; and its copies draw as
 // instance batches of the variants' levels by distance, with far cards from the far bake past the
 // impostor's distance. Scenes keep the core's whole structure while their plants are stand-ins.
 import type {
 	MeshArrays as EngineMeshArrays,
 	InstanceBatch,
-	Material,
 	MeshGeometry,
 	SketchContext,
 	Texture,
@@ -22,21 +21,9 @@ import { buildKit } from '../tasks';
 import { handOverToCards } from './hand-over';
 import type { PlantMaterials } from './material';
 import type { NearPool } from './near-pool';
-import type { PlacedPlants, PlaceOptions, PlantCopies } from './place';
+import { type PlacedPlants, type PlaceOptions, type PlantCopies, switchScale } from './place';
+import { foliageOptics } from './records';
 import type { PrepareOptions, SpeciesKit, SpeciesTextures } from './textures';
-
-/** The stand-in materials, which take no wind. */
-const standIns = new WeakSet<Material>();
-
-/**
- * Whether a material is a stand-in's, which takes no wind.
- *
- * @param material The material.
- * @returns True for a stand-in's material.
- */
-export function isStandInMaterial(material: Material): boolean {
-	return standIns.has(material);
-}
 
 /** A texture from bytes, four a texel. */
 function texture(
@@ -83,35 +70,25 @@ export async function standInPrepare(
 		near: white,
 		bytes: 4 + size * size * 4,
 	};
-	return { ...kit, textures, ...(options.cache && { cache: options.cache }) };
+	return {
+		...kit,
+		textures,
+		...(options.cache && { cache: options.cache }),
+		...(options.coarseness !== undefined && { coarseness: options.coarseness }),
+		...(options.triangles !== undefined && { triangles: options.triangles }),
+	};
 }
 
 /** The record's leaf colour, from its foliage's optics. */
 function leafColour(record: Species): Rgb {
-	const foliage = record.foliage;
-	switch (foliage.kind) {
-		case 'blade':
-		case 'thick':
-			return foliage.leaf.optics.reflectance;
-		case 'needle':
-		case 'fascicle':
-			return foliage.needle.optics.reflectance;
-		case 'grass-blade':
-			return foliage.blade.optics.reflectance;
-		case 'scale-spray':
-			return foliage.spray.optics.reflectance;
-		case 'frond':
-			return foliage.optics.reflectance;
-		default:
-			return [0.1, 0.2, 0.06];
-	}
+	return foliageOptics(record)?.reflectance ?? [0.1, 0.2, 0.06];
 }
 
 /** The stand-in materials: the standard material in the record's bark and leaf colours. */
 export function standInMaterials(ctx: SketchContext, kit: SpeciesKit): PlantMaterials {
 	const leaf = leafColour(kit.record);
 	const bark = kit.record.bark?.zones[0]?.tint ?? [0.2, 0.16, 0.12];
-	const materials: PlantMaterials = {
+	const made = {
 		wood: ctx.materials.standard({ color: bark, roughness: 0.9 }),
 		shoots: ctx.materials.standard({ color: leaf, roughness: 0.6, doubleSided: true }),
 		cards: ctx.materials.standard({
@@ -123,8 +100,8 @@ export function standInMaterials(ctx: SketchContext, kit: SpeciesKit): PlantMate
 		}),
 		foliage: ctx.materials.standard({ color: leaf, roughness: 0.6, doubleSided: true }),
 	};
-	for (const material of Object.values(materials)) standIns.add(material);
-	return materials;
+	// Extras draw with the leaves' material.
+	return { ...made, extras: made.foliage };
 }
 
 /** A part's arrays in floats, in plant-space metres, as the engine's geometry takes them. */
@@ -150,13 +127,14 @@ const partNamed = (asset: PlantAsset, level: 0 | 1 | 2, name: PlantPart['name'])
 
 /**
  * A mesh of one part with its coarser levels by distance: the nearest level that has the part, then
- * each later one from the distance at which its level starts.
+ * each later one from the distance at which its level starts, times the page's switch scale.
  */
 function partMesh(
 	ctx: SketchContext,
 	kit: SpeciesKitData,
 	asset: PlantAsset,
 	name: PlantPart['name'],
+	scale: number,
 ): MeshGeometry | undefined {
 	const steps = name === 'wood' ? WOOD_UV_STEPS : TEXTURE_UV_STEPS;
 	const levels = ([0, 1, 2] as const)
@@ -169,7 +147,7 @@ function partMesh(
 		base.setLevels(
 			rest.map(({ level, part }) => ({
 				mesh: ctx.geometry.fromArrays(dequantise(part.arrays, kit.box, steps)),
-				distance: asset.levels[level].from,
+				distance: asset.levels[level].from * scale,
 			})),
 		);
 	return base;
@@ -234,7 +212,7 @@ function farCards(
 /**
  * Places a stand-in kit's copies: per variant, an instance batch of each part it has (wood, cards,
  * merged foliage, extras), each mesh with its levels by distance, and far cards past the impostor's
- * distance when the page gives the far bakes.
+ * distance when the page gives the far bakes. The view's switch bias moves every distance.
  */
 export function standInPlace(
 	ctx: SketchContext,
@@ -245,6 +223,7 @@ export function standInPlace(
 ): PlacedPlants {
 	const batches: InstanceBatch[] = [];
 	const cards: ImpostorBatch[] = [];
+	const scale = switchScale(options.view.switchBias);
 	assets.forEach((asset, variant) => {
 		const rows: number[] = [];
 		for (let copy = 0; copy < copies.count; copy++)
@@ -258,7 +237,7 @@ export function standInPlace(
 			['foliage', options.materials.foliage],
 			['extras', options.materials.foliage],
 		] as const) {
-			const mesh = partMesh(ctx, kit, asset, name);
+			const mesh = partMesh(ctx, kit, asset, name, scale);
 			if (!mesh) continue;
 			const batch = ctx.scene.createInstances(mesh, rows.length, {
 				material,
@@ -272,7 +251,7 @@ export function standInPlace(
 		batches.push(...near);
 		if (far) {
 			const batch = farCards(ctx, asset, far.bake, copies, rows);
-			for (const mesh of near) handOverToCards(mesh, batch.batch, asset.impostor.from);
+			for (const mesh of near) handOverToCards(mesh, batch.batch, asset.impostor.from * scale);
 			cards.push(batch);
 		}
 	});

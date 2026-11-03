@@ -122,6 +122,31 @@ describe('the plant mask', () => {
 		expect(boxOf(cone.mask, 160, 100)?.right).toBeLessThan(115);
 	});
 
+	test('clears a river along the horizon that runs behind the plant from side to side', () => {
+		const frame = scene();
+		for (let y = 88; y < 94; y++)
+			for (let x = 0; x < W; x++) if (!inPlant(x, y)) put(frame, x, y, [70, 140, 220]);
+		const river = plantMask(frame);
+		expect(river.mask[90 * W + 5]).toBe(0);
+		expect(river.mask[90 * W + W - 5]).toBe(0);
+		expect(river.mask[90 * W + 100]).toBe(1);
+		const box = boxOf(river.mask, W, H);
+		expect(box?.left).toBeGreaterThanOrEqual(48);
+		expect(box?.right).toBeLessThanOrEqual(152);
+	});
+
+	test('clears a thin strip that reaches one side, and keeps a plant that runs off the frame', () => {
+		const frame = scene();
+		for (let y = 96; y < 99; y++) for (let x = 150; x < W; x++) put(frame, x, y, [120, 170, 90]);
+		const strip = plantMask(frame);
+		expect(boxOf(strip.mask, W, H)?.right).toBeLessThanOrEqual(152);
+		const wide = blank(W, H, [0, 0, 0]);
+		for (let y = 0; y < H; y++)
+			for (let x = 0; x < W; x++) put(wide, x, y, y < HORIZON ? [180, 205, 235] : [150, 160, 95]);
+		for (let y = 30; y < HORIZON; y++) for (let x = 0; x < 120; x++) put(wide, x, y, [35, 62, 30]);
+		expect(plantMask(wide).mask[60 * W + 2]).toBe(1);
+	});
+
 	test('reads the meadow in shade as shadow and the trunk as plant', () => {
 		const meadow = labOf(150, 160, 95);
 		expect(shadowLike(labOf(80, 88, 48), meadow)).toBe(true);
@@ -249,6 +274,8 @@ describe('the index', () => {
 				'| `02-whole-profile-b.png` | Side-on, on meadow | Rows 1 and 9 |',
 				'| `common-ash-turntable.mp4` | First try at the whole-tree turn, superseded | The trunk |',
 				'| `22-subbranch-studio.png` | A frond | First frame (and of the superseded `x.mp4`) |',
+				'| `alder-turntable-b.mp4` | The whole tree | Use this one. Superseded by `alder-turntable-c.mp4`. |',
+				'| `cluster-turntable.mp4` | The cluster | (`23-a.png` is superseded by `23-b.png`) |',
 			].join('\n'),
 		);
 		expect(rows.map((row) => row.file)).toEqual([
@@ -256,10 +283,14 @@ describe('the index', () => {
 			'02-whole-profile-b.png',
 			'common-ash-turntable.mp4',
 			'22-subbranch-studio.png',
+			'alder-turntable-b.mp4',
+			'cluster-turntable.mp4',
 		]);
 		expect(rows[0]?.supersededBy).toBe('02-whole-profile-b.png');
 		expect(rows[1]?.supersededBy).toBeUndefined();
 		expect(rows[2]?.supersededBy).toBe('a later file');
 		expect(rows[3]?.supersededBy).toBeUndefined();
+		expect(rows[4]?.supersededBy).toBe('alder-turntable-c.mp4');
+		expect(rows[5]?.supersededBy).toBeUndefined();
 	});
 });

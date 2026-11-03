@@ -150,7 +150,8 @@ fn fs(in: SkyOut) -> @location(0) vec4f {
         if values.discs.z > 0.0 {
             color += sun_disc(d, values.sun.xyz, values.sun.w, values.discs.x, through);
         }
-        if d.y > 0.0 && values.clouds.z > 0.0 {
+        // The volumetric tier draws its clouds in its own pass, so the flat layer stays out here.
+        if d.y > 0.0 && values.clouds.z > 0.0 && values.view.w == 0.0 {
             let zenith = sky_view(vec3f(0.0, 1.0, 0.0));
             let sun_light = light_at_camera(values.sun.xyz, values.sun.w);
             let moon_light = light_at_camera(values.moon.xyz, values.moon.w);

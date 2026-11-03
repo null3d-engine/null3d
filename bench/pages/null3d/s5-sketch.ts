@@ -28,10 +28,9 @@ import {
 } from '../../scenes/s5';
 import { S5_MODEL_URL } from '../lib/s5-model';
 import {
+	applyQualitySwitches,
 	followPath,
 	readCount,
-	readGovernor,
-	readPinnedScale,
 	setUpView,
 	watchQuality,
 } from './sketch-common';
@@ -48,16 +47,7 @@ export default defineSketch(async (context) => {
 		dynamicResolution: true,
 		shadowDistance: S5_SHADOW_DISTANCE,
 	});
-	context.quality.set({ governor: readGovernor(import.meta.url) });
-	// A reading that names one render scale's cost holds it: the floor and the start are the same
-	// value, and the governor is off, so no step can move the scale under the reading.
-	const pinnedScale = readPinnedScale(import.meta.url);
-	if (pinnedScale !== null)
-		context.quality.set({
-			minRenderScale: pinnedScale,
-			maxRenderScale: pinnedScale,
-			governor: false,
-		});
+	applyQualitySwitches(context.quality, import.meta.url);
 	const reportQuality = watchQuality(context);
 
 	const { size, thickness, color, roughness } = S5_GROUND;

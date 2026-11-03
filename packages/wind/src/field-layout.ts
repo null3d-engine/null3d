@@ -28,20 +28,32 @@ export const MAX_PLACES = 5_400;
 export const STEP = 256;
 
 /**
+ * The numbers that a frame gives the ask, by their places in the array that carries them: the
+ * push's width and the sketch time. A frame writes them into the array rather than passing them as
+ * arguments, because the browser makes a number object of each fraction that a call it does not
+ * inline takes.
+ */
+export const ASK_PUSH_RADIUS = 0;
+/** The place of the sketch time among the numbers that a frame gives the ask. */
+export const ASK_TIME = 1;
+/** The numbers that the array holds. */
+export const ASK_NUMBERS = 2;
+
+/**
  * Writes the settings, the ring and the places into `request`, which holds the places from `POINTS`
- * on, and answers the place count. `points` holds three numbers a place, and `ring` one slot after
- * another.
+ * on. `points` holds three numbers a place, `ring` one slot after another, and `numbers` the push's
+ * width and the sketch time. The call answers nothing, so no number crosses back to the caller on a
+ * frame where the browser does not inline it; the caller already knows the count from the places it
+ * passed.
  */
 export function fillRequest(
 	request: Float32Array,
 	points: Float32Array,
 	reading: WindReading,
-	pushRadius: number,
-	time: number,
 	ring: Float32Array,
-): number {
-	const count = points.length / 3;
-	request[COUNT] = count;
+	numbers: Float64Array,
+): void {
+	request[COUNT] = points.length / 3;
 	// The settings are the three vectors that a reader already holds, the push's width and the
 	// time. The swirl's vector holds a fourth number that nothing reads, so only three of its
 	// numbers go in.
@@ -50,9 +62,8 @@ export function fillRequest(
 	request[SETTINGS + 8] = reading.swirl[0] as number;
 	request[SETTINGS + 9] = reading.swirl[1] as number;
 	request[SETTINGS + 10] = reading.swirl[2] as number;
-	request[SETTINGS + 11] = pushRadius;
-	request[SETTINGS + 12] = time;
+	request[SETTINGS + 11] = numbers[ASK_PUSH_RADIUS] as number;
+	request[SETTINGS + 12] = numbers[ASK_TIME] as number;
 	request.set(ring, RING);
 	request.set(points, POINTS);
-	return count;
 }

@@ -21,15 +21,20 @@ const WINDOW_SECONDS = 0.5;
  */
 const SETTLE_LIMIT_SECONDS = 150;
 
+/** The fog that the page asks for: the volumetric fog with ?fog=off left out, for comparison. */
+const FOG = new URLSearchParams(location.search).get('fog') === 'off' ? 'off' : 'on';
+
 run('fog-live', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
+	const sketch = new URL('./sketches/fog-volume-sketch.ts', import.meta.url);
+	sketch.searchParams.set('fog', FOG);
+	sketch.searchParams.set('slices', '32');
+	sketch.searchParams.set('scale', '1');
+	sketch.searchParams.set('fixed', '');
 	const engine = await createEngine({
 		canvas,
-		sketch: new URL(
-			'./sketches/fog-volume-sketch.ts?fog=on&slices=32&scale=1&fixed',
-			import.meta.url,
-		),
+		sketch,
 		maxPixelRatio: 1,
 	});
 	const failures: string[] = [];
@@ -53,6 +58,9 @@ run('fog-live', async () => {
 	await engine.destroy();
 	return {
 		tier: engine.capabilities.tier,
+		// The path the engine started on. The volumetric fog draws on the HDR path alone, so a
+		// compatibility path that stays 8-bit draws none, and its frame cannot be compared.
+		hdr: engine.capabilities.hdr,
 		width: frame.width,
 		height: frame.height,
 		frames,

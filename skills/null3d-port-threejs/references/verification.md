@@ -126,14 +126,29 @@ Measure both apps on the same device, browser, window size and pixel ratio, with
 
 | Measure | three.js | null3D |
 | --- | --- | --- |
-| Frame time at the 50th, 95th and 99th percentile | Intervals between `requestAnimationFrame` timestamps | `intervalMs` from `engine.measure(seconds)` on the page, or `bunx @null3d/cli bench` |
+| Frame time at the 50th, 95th and 99th percentile | Intervals between `requestAnimationFrame` timestamps of frames that drew, checked against the frames that the GPU finished (below) | `intervalMs` from `engine.measure(seconds)` on the page, or `bunx @null3d/cli bench`, with `completedFps` beside it |
 | CPU time per frame on the busiest thread | `performance.now()` around update and render in the loop | `cpuMs`, and each thread's phases in `threads` |
 | Main-thread time per frame | Same as above: everything runs there | Close to zero; this is why pages stay responsive |
 | Memory | Browser task manager or memory panel | `memory` from `engine.measure()`: WebAssembly memory and the JavaScript heap |
 | Load time to the first frame | From navigation to the first rendered frame | `load` from `engine.measure()` |
 | Download size | Network panel, compressed | Same |
 
-If the original was not optimized, part of the gain comes from idiomatic rewrites rather than from the engine. Say so in the report. Also check the WebGL2 path with `?gpu=webgl2`: phones without WebGPU use it.
+A frame callback keeps firing while the GPU falls behind, and `WebGPURenderer` can return from a render with nothing drawn while its pipelines build. So a three.js frame rate from callbacks alone can look far better than the screen. Count the frames that drew and the frames that the GPU finished, and compare null3D's figures with the lower of the two rates:
+
+```js
+// three.js baseline with WebGPURenderer's WebGPU backend: frames that drew, and frames the GPU finished
+let drawn = 0;
+let finished = 0;
+renderer.setAnimationLoop(() => {
+  renderer.render(scene, camera);
+  if (renderer.info.render.drawCalls > 0) drawn++;   // the loop resets the counts at each frame
+  renderer.backend.device.queue.onSubmittedWorkDone().then(() => { finished++; });
+});
+```
+
+With `WebGLRenderer`, place a fence with `gl.fenceSync` after each render, and count it as finished when a later frame finds it signaled. A GPU timer figure from three.js may sum several frames: check how many frames it covers before you compare it with a frame time.
+
+If the original was not optimized, part of the gain comes from idiomatic rewrites rather than from the engine. Say so in the report. A faster start can come from the engine. three.js r186 builds each `InstancedMesh`'s shaders on its own, in every pass. null3D builds a pipeline once per shading model and vertex format. Also check the WebGL2 path with `?gpu=webgl2`: phones without WebGPU use it.
 
 ## 6. The porting report
 

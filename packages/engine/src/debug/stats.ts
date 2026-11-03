@@ -115,8 +115,8 @@ export interface FrameStats {
 	 * The GPU time per frame of each step of the frame that the GPU timed one by one, in the order
 	 * the frame runs them: the engine's own passes, by their step, and a sketch's pass by its place.
 	 * A tile GPU overlaps the passes, so the steps do not add up to `gpuMs`. The engine times one
-	 * frame in eleven and at most seven passes in it. A pass after them adds its time to the last
-	 * one's, whose name then ends in `and later`. Empty on WebGL2, which times the whole frame alone.
+	 * frame in eleven and at most seven passes in it. The passes after them share one figure, named
+	 * `later passes`, which no scope names. Empty on WebGL2, which times the whole frame alone.
 	 */
 	readonly gpuSteps: readonly FrameStatsStep[];
 	/** Mean draw calls per frame, over every pass. */
@@ -285,7 +285,8 @@ const NO_STEPS: readonly FrameStatsStep[] = Object.freeze([]);
 
 /**
  * The GPU time per frame of each pass that the GPU records timed one by one, by its scope, over
- * the frames that timed the pass. A pass that the GPU left untimed stays out of the list.
+ * the frames that timed the pass, then of the passes after them. A pass that the GPU left untimed
+ * stays out of the list.
  */
 function gpuStepsOf(gpu: RingSums): readonly FrameStatsStep[] {
 	const steps: FrameStatsStep[] = [];
@@ -297,19 +298,21 @@ function gpuStepsOf(gpu: RingSums): readonly FrameStatsStep[] {
 			place: 0,
 		});
 	const passes = Math.min(gpu.last[GpuCounter.Passes] as number, GPU_TIMED_PASSES);
-	// A pass after the last one timed adds its time to that one's, so the last step names the rest.
-	const rest = (gpu.last[GpuCounter.Passes] as number) > GPU_TIMED_PASSES;
 	for (let pass = 0; pass < passes; pass++) {
 		const timed = gpu.phaseRecords[1 + pass] as number;
 		if (timed <= 0) continue;
 		const id = gpu.last[GpuCounter.Scope + pass] as number;
-		const name = scopeName(id);
 		steps.push({
-			name: rest && pass === GPU_TIMED_PASSES - 1 ? `${name} and later` : name,
+			name: scopeName(id),
 			ms: (gpu.phaseSums[1 + pass] as number) / timed,
 			place: scopePlace(id),
 		});
 	}
+	// The passes after the seven share one span, which no scope names, so they keep a figure apart
+	// from the seventh pass's own.
+	const later = gpu.laterRecords;
+	if ((gpu.last[GpuCounter.Passes] as number) > GPU_TIMED_PASSES && later > 0)
+		steps.push({ name: 'later passes', ms: gpu.laterSums / later, place: 0 });
 	return Object.freeze(steps);
 }
 
