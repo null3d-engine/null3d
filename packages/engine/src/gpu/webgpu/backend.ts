@@ -230,6 +230,12 @@ export class WebGPUBackend {
 	/** Reads back what the draws culled on the GPU drew, while the page samples. */
 	culled: CulledCounts | undefined;
 	/**
+	 * True once a replay met an indirect draw, which is a draw that the GPU's culling wrote the
+	 * count of. A page whose frames draw none has no count to read back, so it makes no counts
+	 * module and fetches no part of the engine for one.
+	 */
+	culledDrawn = false;
+	/**
 	 * The device shaders that load another module when a pipeline needs builds with other fixed
 	 * bits. Without it, every pipeline's build must be in the shaders that the backend got.
 	 */
@@ -1548,7 +1554,8 @@ export class WebGPUBackend {
 				if (this.skipDraws) return this.skipDraw();
 				this.counts.drawCalls++;
 				const buffer = this.need(this.buffers, id, 'buffer');
-				this.culled?.note(buffer, offset, this.lines);
+				if (this.culled) this.culled.note(buffer, offset, this.lines);
+				else this.culledDrawn = true;
 				if (copy) pass.drawIndexedIndirect(copy, 0);
 				else pass.drawIndexedIndirect(buffer, offset);
 				return true;
