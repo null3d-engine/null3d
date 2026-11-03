@@ -1,7 +1,8 @@
 // The public names of the plant core's contracts: the species record and its parts, the skeleton,
-// the texture files and their manifest, the registry, the record check, the owner's caps and the
-// species box.
+// the texture files and their manifest, the registry, the record check, the owner's caps, the
+// species box and the caches.
 export { type SpeciesBox, speciesBox } from './box';
+export { indexedDbCache, memoryCache, type PlantCache } from './cache';
 export {
 	type CapClass,
 	capProblems,
