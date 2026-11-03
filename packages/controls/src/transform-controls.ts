@@ -104,6 +104,11 @@ const PICK_PLANE_DEPTH = 0.12;
 const PICK_CENTER = 0.26;
 /** The order of the handles among the blended objects, which draws them over the scene. */
 const RENDER_ORDER = 1000;
+/**
+ * The handle meshes' level option. The handles keep one size on the screen at any distance, so
+ * levels would never switch: they keep their full shape.
+ */
+const WHOLE = { levels: false } as const;
 
 /** The colors of the handles, as the hex colors that an unlit material takes. */
 const COLORS: Record<GizmoAxis, string> = {
@@ -583,6 +588,7 @@ export class TransformControls {
 		const group = this.groups.translate;
 		const shaft = this.keep(
 			this.geometry.cylinder({
+				...WHOLE,
 				radiusTop: SHAFT_RADIUS,
 				radiusBottom: SHAFT_RADIUS,
 				height: SHAFT,
@@ -590,10 +596,20 @@ export class TransformControls {
 			}),
 		);
 		const head = this.keep(
-			this.geometry.cone({ radius: HEAD_RADIUS, height: HEAD_LENGTH, radialSegments: 12 }),
+			this.geometry.cone({
+				...WHOLE,
+				radius: HEAD_RADIUS,
+				height: HEAD_LENGTH,
+				radialSegments: 12,
+			}),
 		);
 		const pick = this.keep(
-			this.geometry.box({ width: PICK_ARM_WIDTH, height: PICK_ARM, depth: PICK_ARM_WIDTH }),
+			this.geometry.box({
+				...WHOLE,
+				width: PICK_ARM_WIDTH,
+				height: PICK_ARM,
+				depth: PICK_ARM_WIDTH,
+			}),
 		);
 		for (let k = 0; k < 3; k++) {
 			const { axis, unit } = AXES[k] as (typeof AXES)[number];
@@ -624,6 +640,7 @@ export class TransformControls {
 		for (const { axis, size, at } of PLANE_HANDLES) {
 			const tile = this.keep(
 				this.geometry.box({
+					...WHOLE,
 					width: size[0] as number,
 					height: size[1] as number,
 					depth: size[2] as number,
@@ -634,6 +651,7 @@ export class TransformControls {
 		for (const { axis, size, at } of PLANE_PICKERS) {
 			const tile = this.keep(
 				this.geometry.box({
+					...WHOLE,
 					width: size[0] as number,
 					height: size[1] as number,
 					depth: size[2] as number,
@@ -641,9 +659,11 @@ export class TransformControls {
 			);
 			this.add(group, 'translate', axis, tile, this.pickMaterial, at, undefined, false);
 		}
-		const cube = this.keep(this.geometry.box({ width: CENTER, height: CENTER, depth: CENTER }));
+		const cube = this.keep(
+			this.geometry.box({ ...WHOLE, width: CENTER, height: CENTER, depth: CENTER }),
+		);
 		const pickCenter = this.keep(
-			this.geometry.box({ width: PICK_CENTER, height: PICK_CENTER, depth: PICK_CENTER }),
+			this.geometry.box({ ...WHOLE, width: PICK_CENTER, height: PICK_CENTER, depth: PICK_CENTER }),
 		);
 		this.add(group, 'translate', 'XYZ', cube, this.paint('XYZ'), NO_MOVE, undefined, true);
 		this.add(group, 'translate', 'XYZ', pickCenter, this.pickMaterial, NO_MOVE, undefined, false);
@@ -653,6 +673,7 @@ export class TransformControls {
 		const group = this.groups.rotate;
 		const ring = this.keep(
 			this.geometry.torus({
+				...WHOLE,
 				radius: RING,
 				tube: RING_TUBE,
 				radialSegments: 6,
@@ -661,6 +682,7 @@ export class TransformControls {
 		);
 		const pick = this.keep(
 			this.geometry.torus({
+				...WHOLE,
 				radius: RING,
 				tube: PICK_RING_TUBE,
 				radialSegments: 6,
@@ -675,6 +697,7 @@ export class TransformControls {
 		}
 		const outer = this.keep(
 			this.geometry.torus({
+				...WHOLE,
 				radius: OUTER_RING,
 				tube: OUTER_TUBE,
 				radialSegments: 6,
@@ -683,6 +706,7 @@ export class TransformControls {
 		);
 		const outerPick = this.keep(
 			this.geometry.torus({
+				...WHOLE,
 				radius: OUTER_RING,
 				tube: PICK_RING_TUBE,
 				radialSegments: 6,
@@ -706,15 +730,21 @@ export class TransformControls {
 		const group = this.groups.scale;
 		const shaft = this.keep(
 			this.geometry.cylinder({
+				...WHOLE,
 				radiusTop: SHAFT_RADIUS,
 				radiusBottom: SHAFT_RADIUS,
 				height: SHAFT,
 				radialSegments: 8,
 			}),
 		);
-		const cube = this.keep(this.geometry.box({ width: CUBE, height: CUBE, depth: CUBE }));
+		const cube = this.keep(this.geometry.box({ ...WHOLE, width: CUBE, height: CUBE, depth: CUBE }));
 		const pick = this.keep(
-			this.geometry.box({ width: PICK_ARM_WIDTH, height: PICK_ARM, depth: PICK_ARM_WIDTH }),
+			this.geometry.box({
+				...WHOLE,
+				width: PICK_ARM_WIDTH,
+				height: PICK_ARM,
+				depth: PICK_ARM_WIDTH,
+			}),
 		);
 		for (let k = 0; k < 3; k++) {
 			const { axis, unit } = AXES[k] as (typeof AXES)[number];
@@ -734,10 +764,15 @@ export class TransformControls {
 			);
 		}
 		const center = this.keep(
-			this.geometry.box({ width: CENTER * 1.4, height: CENTER * 1.4, depth: CENTER * 1.4 }),
+			this.geometry.box({
+				...WHOLE,
+				width: CENTER * 1.4,
+				height: CENTER * 1.4,
+				depth: CENTER * 1.4,
+			}),
 		);
 		const pickCenter = this.keep(
-			this.geometry.box({ width: PICK_CENTER, height: PICK_CENTER, depth: PICK_CENTER }),
+			this.geometry.box({ ...WHOLE, width: PICK_CENTER, height: PICK_CENTER, depth: PICK_CENTER }),
 		);
 		this.add(group, 'scale', 'XYZ', center, this.paint('XYZ'), NO_MOVE, undefined, true);
 		this.add(group, 'scale', 'XYZ', pickCenter, this.pickMaterial, NO_MOVE, undefined, false);
