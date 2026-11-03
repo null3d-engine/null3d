@@ -63,7 +63,7 @@ A probe grid file holds the values of `LightProbeGridData`. They are the grid's 
 
 The probes run x fastest, then y, then z. Each probe holds four RGB coefficients in the order that the shader reads them: L0, then L1 along y, z and x. The 12 floats are three for L0 and three for each L1 axis. `bakeProbes` writes the same values. A bake that a tool makes therefore matches the engine's own bake for the same scene.
 
-The coefficients hold the light that the surfaces around the probe bounce back. The validity is 1 where the probe stands in open space, or 0 where geometry encloses it, so its light never leaks through a wall. The sky visibility is the share of the sky that the probe's rays reached; the engine multiplies it by the environment's live light, so the hour needs no new bake.
+The coefficients hold the light that the surfaces around the probe bounce back. The validity is 1 where the probe stands in open space, or 0 where geometry encloses it, so its light never leaks through a wall. The sky visibility is the share of the sky that the probe's rays reached; the engine weights it by how much a surface faces the sky above the horizon and multiplies it by the environment's live light, so the hour needs no new bake.
 
 A file without the two masks reads as one that baked the sky into its coefficients: every probe is valid, and no probe adds the live sky. A bake tool that writes version 1 without them therefore keeps the look that its coefficients alone give.
 

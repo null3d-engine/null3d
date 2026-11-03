@@ -141,8 +141,12 @@ test('the shader keeps a grid in place at an intensity of 0, lighting nothing', 
 	expect(presence).not.toContain('grid.params');
 	// Both the baked light and the live sky take the intensity, so 0 gives none of either.
 	expect(source).toContain('let light = bounce * grid.params.x + sky * grid.params.z;');
-	// The sky comes from the live environment and the fourth sub-volume, so it needs no bake.
-	expect(source).toContain('let sky = environment * saturate(mask.y);');
+	// The sky comes from the live environment and the fourth sub-volume, so it needs no bake. The
+	// mask counts the whole sphere and the environment's irradiance the surface's hemisphere, so
+	// the surface's own tilt toward a sky above the horizon weights the share. The weight fades as
+	// the probe sees the whole sphere, where every normal takes the environment's own light.
+	expect(source).toContain('let tilt = min(1.0, 2.0 * (1.0 - mask.y));');
+	expect(source).toContain('let sky = environment * saturate(mask.y * (1.0 + normal.y * tilt));');
 	expect(source).toContain('step * 3.0');
 	// A probe that geometry encloses lends no light.
 	expect(source).toContain('return light * saturate(mask.x);');
@@ -230,7 +234,9 @@ test('a uniform grid gives every surface the same light as one probe does', () =
 			);
 			expect(out[0]).toBeCloseTo(one[0] as number, 4);
 			expect(out[1]).toBeCloseTo(one[1] as number, 4);
-			expect(out[3]).toBeCloseTo(0.5, 4);
+			// The probes see half the sphere, so the sky's share doubles for a normal that faces up
+			// and fades to nothing for one that faces down, as the same probe's light would.
+			expect(out[3]).toBeCloseTo(0.5 * (1 + (normal[1] as number)), 4);
 		}
 });
 
@@ -319,7 +325,9 @@ test('the interpolated validity weights the grid light and the sky visibility', 
 	);
 	expect(out[0]).toBeCloseTo(0, 4);
 	expect(out[3]).toBeCloseTo(0, 4);
-	// Halfway between them the validity is half, so both take half of that.
+	// Halfway between them the validity is half and the sky visibility is half, so the light takes
+	// half. The sky's share doubles that half, because the normal faces a sky above the horizon, so
+	// it lands on the same half.
 	sampleGrid(
 		coefficients,
 		validity,
@@ -337,7 +345,7 @@ test('the interpolated validity weights the grid light and the sky visibility', 
 		out,
 	);
 	expect(out[0]).toBeCloseTo((0.886227 * 1) / 2, 4);
-	expect(out[3]).toBeCloseTo(0.25, 4);
+	expect(out[3]).toBeCloseTo(0.5, 4);
 });
 
 test('the byte count is 32 per probe plus the padding slices', () => {
