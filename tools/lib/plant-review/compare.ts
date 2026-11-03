@@ -1,39 +1,32 @@
-// Compares a render run of the plant review with a species' reference folder, frame by frame and
-// view by view, and writes what a reviewer reads: contact sheets of reference, render and outline
-// overlay, one row per angle or slot; the measures as metrics.json; and a short summary.md.
-//
-// - The whole plant's turn: the reference camera's framing is estimated from its video (the
-//   horizon's row and the plant's box), which render.ts passes to the page. The render's frames are
-//   matched to the video's by searching the start angle and the turning direction that give the
-//   best mean outline overlap (IoU). Each frame then gets its overlap, its width-profile error, its
-//   crown box, its gap fraction and its colour difference (CIEDE2000).
-// - The slots: each reference still beside the render of its view, with the same measures where
-//   the still's background is plain.
-// - The cut pieces: the branch, sub-branch and leaf-cluster turns beside their studio videos.
+// The comparison of a review run with a species' reference folder: the measures of an outline
+// pair (shape and frame overlap, width profile, gap fraction, crown box, colour differences), the
+// framing a render takes from a reference, the pairing of a turning video's frames with the renders
+// at their angles, the wind's motion by height band, and the contact sheets a reviewer reads.
 //
 // Outlines are compared after each is scaled to the same height and centred on its trunk, so the
 // overlap measures shape rather than framing; the frame overlap, as framed, is reported beside it.
-//
-//   bun tools/plant-review/compare.ts --run <run folder> --refs <reference folder> [--frames 16]
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { writePng } from '../../packages/cli/src/png.js';
-import type { PlantReviewQuery } from '../../tests/pages/lib/plant-review.ts';
-import { option } from './cli.ts';
+import { writePng } from '../../../packages/cli/src/png.js';
+import type { PlantReviewQuery } from '../../../tests/pages/lib/plant-review/query.ts';
 import {
 	blank,
 	deltaE2000,
 	drawText,
 	fillBox,
 	hexOf,
+	labImage,
 	labOf,
+	onColour,
 	paste,
 	pasteFitted,
+	probeVideo,
 	type Rgba,
 	readImage,
 	resize,
 	srgbOf,
 	textWidth,
+	videoFrames,
 } from './image.ts';
 import {
 	type Box,
@@ -43,10 +36,12 @@ import {
 	type PlantMask,
 	type PlantMeasures,
 	plantMask,
-	readReferenceSet,
+	type ReferenceSet,
 	rowSpans,
-	turnFrames,
+	type TurnVideo,
+	WORK_WIDTH,
 } from './references.ts';
+import type { RunFrame } from './render.ts';
 
 /** The camera's framing of a reference, in screen shares, as the review page takes it. */
 export interface ReferenceFraming {
@@ -163,7 +158,6 @@ export function framingQuery(framing: ReferenceFraming): Partial<PlantReviewQuer
 	return {
 		horizon: Math.min(1, framing.horizon),
 		targetX: framing.targetX,
-		aspect: framing.aspect,
 		sky: framing.sky,
 		...(framing.ground ? { ground: framing.ground } : {}),
 		...placed,
@@ -253,16 +247,21 @@ export interface Alignment {
 /**
  * Lines a render's turn up with a reference's: tries every start frame and both directions, and
  * keeps the pairing whose mean overlap is best. `scores[k][j]` is the overlap of reference frame k
- * with render frame j; the frames of each are at even angles round a full turn.
+ * with render frame j; the renders stand at even turns round a full circle, and each reference
+ * frame turns `ratio` render steps from the one before (the render count over the reference count
+ * when both turn a full circle).
  */
-export function alignTurn(scores: readonly (readonly number[])[]): Alignment {
+export function alignTurn(
+	scores: readonly (readonly number[])[],
+	ratio = (scores[0]?.length ?? 0) / Math.max(1, scores.length),
+): Alignment {
 	const k = scores.length;
 	const n = scores[0]?.length ?? 0;
 	let best: Alignment = { start: 0, direction: 1, meanIou: -1, pairs: [] };
 	for (const direction of [1, -1] as const)
 		for (let start = 0; start < n; start++) {
 			const pairs = Array.from({ length: k }, (_, i) => {
-				const step = Math.round((i * n) / k);
+				const step = Math.round(i * ratio);
 				return (((start + direction * step) % n) + n) % n;
 			});
 			const meanIou = mean(pairs.map((j, i) => (scores[i] as readonly number[])[j] as number));
@@ -504,29 +503,8 @@ export function contactSheets(
 	return pages;
 }
 
-/** The fields of a render run's manifest that the comparison reads. */
-export interface RunManifest {
-	readonly species: string;
-	readonly run: string;
-	readonly commit: string;
-	readonly references?: string;
-	readonly frames: readonly RunFrame[];
-}
-
-/** One frame of a render run, as the manifest records it. */
-export interface RunFrame {
-	readonly group: string;
-	readonly name: string;
-	readonly file: string;
-	readonly matte?: string;
-	readonly query: PlantReviewQuery;
-	readonly reference?: string;
-	readonly error?: string;
-	readonly facts?: unknown;
-}
-
 /** A number for a label, or a dash for none. */
-function fixed(value: number | null | undefined, digits = 2): string {
+export function fixed(value: number | null | undefined, digits = 2): string {
 	return value === null || value === undefined ? '-' : value.toFixed(digits);
 }
 
@@ -549,133 +527,488 @@ function pairLines(head: readonly string[], pair: PairMetrics): string[] {
 	];
 }
 
-/** The result of comparing one turn: the alignment, each pair, and the spreads round the turn. */
-interface TurnResult {
+/** Writes a group's sheet pages into the run folder, and returns their file names. */
+export function writeSheets(runDir: string, group: string, pages: readonly Rgba[]): string[] {
+	return pages.map((page, p) => {
+		const name = `sheet-${group}-${String(p + 1).padStart(2, '0')}.png`;
+		writePng(join(runDir, name), page);
+		return name;
+	});
+}
+
+/** One tile of a grid sheet: a reference frame over the render it was matched to, and labels. */
+export interface GridTile {
+	readonly reference?: Rgba;
+	readonly render?: Rgba;
+	readonly overlay?: Rgba;
+	readonly lines: readonly string[];
+}
+
+/**
+ * Grid sheets of matched frames: each tile holds the reference over its render and their outline
+ * overlay, with its labels, `columns` tiles a row, as many rows as fit a page.
+ */
+export function gridSheets(
+	title: string,
+	tiles: readonly GridTile[],
+	aspect: number,
+	columns = 6,
+	rowsPerPage = 4,
+): Rgba[] {
+	const tileW = Math.floor((SHEET_WIDTH - GAP * (columns + 1)) / columns);
+	const imageH = Math.max(40, Math.round(tileW / aspect));
+	const overlayH = Math.round(imageH * 0.6);
+	const labelH = 46;
+	const tileH = imageH * 2 + overlayH + labelH + GAP;
+	const header = 64;
+	const perPage = columns * rowsPerPage;
+	const pages: Rgba[] = [];
+	for (let first = 0; first < tiles.length; first += perPage) {
+		const slice = tiles.slice(first, first + perPage);
+		const rows = Math.ceil(slice.length / columns);
+		const page = blank(SHEET_WIDTH, header + rows * (tileH + GAP) + GAP, PAPER);
+		const count = Math.ceil(tiles.length / perPage);
+		drawText(
+			page,
+			count > 1 ? `${title}  (PAGE ${first / perPage + 1} OF ${count})` : title,
+			GAP,
+			10,
+			3,
+			INK,
+		);
+		drawText(page, 'EACH TILE: REFERENCE, RENDER, OUTLINES', GAP, 40, 2, DIM);
+		const keyX = GAP + textWidth('EACH TILE: REFERENCE, RENDER, OUTLINES  ', 2);
+		drawText(page, 'REFERENCE', keyX, 40, 2, REFERENCE_COLOUR);
+		drawText(page, 'RENDER', keyX + textWidth('REFERENCE ', 2), 40, 2, RENDER_COLOUR);
+		for (const [t, tile] of slice.entries()) {
+			const x = GAP + (t % columns) * (tileW + GAP);
+			const y = header + Math.floor(t / columns) * (tileH + GAP);
+			const cells: [Rgba | undefined, number][] = [
+				[tile.reference, imageH],
+				[tile.render, imageH],
+				[tile.overlay, overlayH],
+			];
+			let at = y;
+			for (const [image, h] of cells) {
+				if (image) pasteFitted(page, image, x, at, tileW, h);
+				else fillBox(page, x, at, tileW, h, [34, 34, 34]);
+				at += h;
+			}
+			for (const [l, line] of tile.lines.entries())
+				drawText(page, line, x + 2, at + 4 + l * 14, 1, l === 0 ? INK : DIM);
+		}
+		pages.push(page);
+	}
+	return pages;
+}
+
+/** An outline on the comparison canvas shrunk four times each way, a cell set when any pixel is. */
+function coarse(normal: Uint8Array): Uint8Array {
+	const w = NORMAL_WIDTH / 4;
+	const h = NORMAL_HEIGHT / 4;
+	const out = new Uint8Array(w * h);
+	for (let y = 0; y < NORMAL_HEIGHT; y++)
+		for (let x = 0; x < NORMAL_WIDTH; x++)
+			if (normal[y * NORMAL_WIDTH + x]) out[(y >> 2) * w + (x >> 2)] = 1;
+	return out;
+}
+
+/** The turn of a render frame in degrees from 0 to 360. */
+function wrap(angle: number): number {
+	return ((angle % 360) + 360) % 360;
+}
+
+/** The angular distance between two turns, in degrees. */
+function apart(a: number, b: number): number {
+	const d = Math.abs(wrap(a) - wrap(b));
+	return Math.min(d, 360 - d);
+}
+
+/** One reference frame of a turning video beside the render it was matched to. */
+export interface TurnPair extends PairMetrics {
+	readonly frame: number;
+	readonly referenceAngle: number;
+	readonly renderAngle: number;
+	readonly renderFile: string;
+	/** Degrees between the frame's angle and its render's, once aligned. */
+	readonly offBy: number;
+}
+
+/** The result of comparing one turning video with a run's turn of its view. */
+export interface TurnResult {
 	readonly video: string;
-	readonly alignment: Alignment;
-	readonly pairs: readonly (PairMetrics & {
-		readonly referenceAngle: number;
-		readonly renderAngle: number;
-	})[];
+	readonly arc: number;
+	readonly frames: number;
+	readonly renders: number;
+	/** Degrees one video frame turns, and one render turn. */
+	readonly frameStep: number;
+	readonly renderStep: number;
+	readonly alignment: Omit<Alignment, 'pairs'>;
+	/** The video frames whose render lies within half a frame's turn of the frame's own angle. */
+	readonly covered: number;
+	readonly pairs: readonly TurnPair[];
+	/** The crown box's spread over the eight angles of the rubric that the video covers. */
 	readonly spread: {
+		readonly angles: readonly number[];
 		readonly reference: { readonly width: number; readonly height: number };
 		readonly render: { readonly width: number; readonly height: number };
+		/** The render's crown box in metres at those angles, from the page's own measures. */
+		readonly metres: readonly ({ readonly width: number; readonly height: number } | null)[];
 	};
 	readonly maskCheck: number | null;
 	readonly sheets: readonly string[];
+	readonly error?: string;
 }
 
-/** Compares a render run's turn of one group with a reference video, and writes its sheets. */
-function compareTurn(
+/** A render frame's side of a comparison. */
+function renderSideOf(runDir: string, frame: RunFrame, label: string, bottomCut: boolean): Side {
+	return renderSide(
+		label,
+		join(runDir, frame.file),
+		frame.matte ? join(runDir, frame.matte) : undefined,
+		bottomCut,
+	);
+}
+
+/** The crown box in metres that the page measured for a render frame, if it did. */
+function metresOf(frame: RunFrame | undefined): { width: number; height: number } | null {
+	const measure = (frame?.cell as { measure?: { crownBox?: { width: number; height: number } } })
+		?.measure;
+	return measure?.crownBox
+		? {
+				width: Number(measure.crownBox.width.toFixed(3)),
+				height: Number(measure.crownBox.height.toFixed(3)),
+			}
+		: null;
+}
+
+/**
+ * Compares every frame of a turning video with a run's turn of the same view: the run's renders
+ * stand at even turns round a full circle, the video's frames at even turns over its arc. The
+ * pairing searches the render that matches the video's first frame and the turning direction, by
+ * the mean outline overlap, and pairs each frame with the render nearest its own angle.
+ */
+export function compareTurn(
 	runDir: string,
 	group: string,
+	video: TurnVideo,
 	frames: readonly RunFrame[],
-	video: string,
 	title: string,
 ): TurnResult {
-	const usable = frames.filter((frame) => !frame.error);
-	const n = usable.length;
-	const reference = turnFrames(video, n);
-	const refMasks = reference.map((frame) => plantMask(frame.image));
-	const refMeasures = refMasks.map((mask, i) =>
-		measurePlant((reference[i] as { image: Rgba }).image, mask),
-	);
-	const bottomCut = refMeasures.filter((m) => m.clipped.bottom).length > n / 2;
-	const refSides = reference.map((frame, i) =>
-		side(`REF ${frame.angle.toFixed(0)}°`, frame.image, refMasks[i] as PlantMask, bottomCut),
+	const facts = probeVideo(video.path);
+	const references = videoFrames(video.path, facts, WORK_WIDTH);
+	const n = references.length;
+	const usable = frames.filter((frame) => !frame.error).sort((a, b) => a.turn - b.turn);
+	const m = usable.length;
+	const frameStep = video.arc / n;
+	const renderStep = 360 / Math.max(1, m);
+	const empty = {
+		video: video.file,
+		arc: video.arc,
+		frames: n,
+		renders: m,
+		frameStep,
+		renderStep,
+		alignment: { start: 0, direction: 1 as const, meanIou: 0 },
+		covered: 0,
+		pairs: [],
+		spread: {
+			angles: [],
+			reference: { width: 0, height: 0 },
+			render: { width: 0, height: 0 },
+			metres: [],
+		},
+		maskCheck: null,
+		sheets: [],
+	};
+	if (m === 0) return { ...empty, error: 'the run drew no frame of this turn' };
+	const refMasks = references.map((image) => plantMask(image));
+	const refMeasures = refMasks.map((mask, k) => measurePlant(references[k] as Rgba, mask));
+	const bottomCut = refMeasures.filter((measure) => measure.clipped.bottom).length > n / 2;
+	const refSides = references.map((image, k) =>
+		side(`REF ${(k * frameStep).toFixed(1)}`, image, refMasks[k] as PlantMask, bottomCut),
 	);
 	const renderSides = usable.map((frame) =>
-		renderSide(
-			`RENDER ${(frame.query.turn ?? 0).toFixed(0)}°`,
-			join(runDir, frame.file),
-			frame.matte ? join(runDir, frame.matte) : undefined,
-			bottomCut,
-		),
+		renderSideOf(runDir, frame, `RENDER ${frame.turn.toFixed(1)}`, bottomCut),
 	);
-	// How well the colour outline finds a render's plant, against the matte's exact outline.
-	const checks = usable.flatMap((frame, i) => {
+	const checks = usable.flatMap((frame, j) => {
 		if (!frame.matte) return [];
-		const coloured = plantMask(renderSides[i]?.image as Rgba);
-		return [frameIou(coloured, (renderSides[i] as Side).plant)];
+		const coloured = plantMask((renderSides[j] as Side).image);
+		return [frameIou(coloured, (renderSides[j] as Side).plant)];
 	});
-	const scores = refSides.map((r) =>
-		renderSides.map((s) => (r.normal && s.normal ? iou(r.normal, s.normal) : 0)),
-	);
-	const alignment = alignTurn(scores);
-	const pairs = refSides.map((r, k) => {
+	const refCoarse = refSides.map((s) => (s.normal ? coarse(s.normal) : undefined));
+	const renderCoarse = renderSides.map((s) => (s.normal ? coarse(s.normal) : undefined));
+	const scores = refCoarse.map((r) => renderCoarse.map((s) => (r && s ? iou(r, s) : 0)));
+	const alignment = alignTurn(scores, frameStep / renderStep);
+	const firstTurn = (usable[0] as RunFrame).turn;
+	const pairs: TurnPair[] = refSides.map((r, k) => {
 		const j = alignment.pairs[k] as number;
-		const s = renderSides[j] as Side;
+		const frame = usable[j] as RunFrame;
+		const wanted =
+			firstTurn +
+			(alignment.start + alignment.direction * k * (frameStep / renderStep)) * renderStep;
 		return {
-			...pairMetrics(r, s),
-			referenceAngle: (reference[k] as { angle: number }).angle,
-			renderAngle: usable[j]?.query.turn ?? 0,
+			...pairMetrics(r, renderSides[j] as Side),
+			frame: k,
+			referenceAngle: Number((k * frameStep).toFixed(3)),
+			renderAngle: Number(wrap(frame.turn).toFixed(3)),
+			renderFile: frame.file,
+			offBy: Number(apart(wanted, frame.turn).toFixed(3)),
 		};
 	});
-	const crown = (sides: readonly Side[]) => ({
-		width: Number(
-			spread(sides.flatMap((s) => (s.measures.box ? [s.measures.crownBox.width] : []))).toFixed(4),
-		),
-		height: Number(
-			spread(sides.flatMap((s) => (s.measures.box ? [s.measures.crownBox.height] : []))).toFixed(4),
-		),
+	const covered = pairs.filter((pair) => pair.offBy <= frameStep / 2 + 1e-6).length;
+	// The rubric's eight angles, those the video's arc reaches.
+	const angles = Array.from({ length: 8 }, (_, k) => k * 45).filter(
+		(a) => a < video.arc + 1e-6 && a / frameStep < n,
+	);
+	const atAngle = angles.map((a) => Math.min(n - 1, Math.round(a / frameStep)));
+	const boxes = (sides: readonly Side[]) =>
+		sides.flatMap((s) => (s.measures.box ? [s.measures.crownBox] : []));
+	const refAt = atAngle.map((k) => refSides[k] as Side);
+	const renderAt = atAngle.map((k) => renderSides[alignment.pairs[k] as number] as Side);
+	const spreadOf = (sides: readonly Side[]) => ({
+		width: Number(spread(boxes(sides).map((b) => b.width)).toFixed(4)),
+		height: Number(spread(boxes(sides).map((b) => b.height)).toFixed(4)),
 	});
-	const rows: SheetRow[] = pairs.map((pair, k) => {
+	const tiles: GridTile[] = pairs.map((pair, k) => {
 		const r = refSides[k] as Side;
 		const s = renderSides[alignment.pairs[k] as number] as Side;
 		return {
 			reference: r.image,
 			render: s.image,
-			...(r.normal && s.normal ? { overlay: overlay(r.normal, s.normal, 456, 256) } : {}),
-			lines: pairLines([r.label, s.label], pair),
+			...(r.normal && s.normal ? { overlay: overlay(r.normal, s.normal, 300, 120) } : {}),
+			lines: [
+				`F${k} REF ${pair.referenceAngle.toFixed(1)} REN ${pair.renderAngle.toFixed(1)}`,
+				`IOU ${fixed(pair.shapeIou)} WIDTH ${fixed(pair.profileError, 3)} LEAF DE ${fixed(pair.foliageDeltaE, 1)}`,
+			],
 		};
 	});
-	const first = reference[0]?.image as Rgba;
-	const pages = contactSheets(
-		`${title}  MEAN SHAPE IOU ${alignment.meanIou.toFixed(3)}`,
-		rows,
+	const first = references[0] as Rgba;
+	const pages = gridSheets(
+		`${title}  ${n} FRAMES OVER ${video.arc} DEG  MEAN SHAPE IOU ${alignment.meanIou.toFixed(3)}`,
+		tiles,
 		first.width / first.height,
-		8,
 	);
-	const sheets = writeSheets(runDir, group, pages);
 	return {
-		video: basename(video),
-		alignment,
+		video: video.file,
+		arc: video.arc,
+		frames: n,
+		renders: m,
+		frameStep: Number(frameStep.toFixed(4)),
+		renderStep: Number(renderStep.toFixed(4)),
+		alignment: {
+			start: alignment.start,
+			direction: alignment.direction,
+			meanIou: Number(alignment.meanIou.toFixed(4)),
+		},
+		covered,
 		pairs,
-		spread: { reference: crown(refSides), render: crown(renderSides) },
+		spread: {
+			angles,
+			reference: spreadOf(refAt),
+			render: spreadOf(renderAt),
+			metres: atAngle.map((k) => metresOf(usable[alignment.pairs[k] as number])),
+		},
 		maskCheck: checks.length > 0 ? Number(mean(checks).toFixed(4)) : null,
-		sheets,
+		sheets: writeSheets(runDir, group, pages),
 	};
 }
 
-/** Compares a run's slot renders with their reference stills, and writes the slots' sheets. */
-function compareSlots(runDir: string, refs: string, frames: readonly RunFrame[], title: string) {
-	const notes = new Map(readReferenceSet(refs).stills.map((slot) => [slot.file, slot.note]));
-	const results: (PairMetrics & { slot: string; view: string; masked: boolean; note?: string })[] =
-		[];
+/** The result of comparing a wind video with a run's clip of the plant in the same wind. */
+export interface WindResult {
+	readonly video: string;
+	readonly duration: number;
+	/** Seconds from the clip's first frame to its last, and between its frames. */
+	readonly span: number;
+	readonly interval: number;
+	readonly frames: number;
+	/** Per height band of the plant, base first: the share of its outline that changes frame to frame. */
+	readonly motion: { readonly reference: readonly number[]; readonly render: readonly number[] };
+	readonly sheets: readonly string[];
+	readonly error?: string;
+}
+
+/** Height bands the wind's motion is measured in. */
+const MOTION_BANDS = 6;
+
+/**
+ * How much an outline moves per height band between frames of a clip: in each band of the first
+ * frame's plant box, base first, the pixels that differ between frames over the pixels in either,
+ * averaged over the clip.
+ */
+export function motionProfile(masks: readonly PlantMask[]): number[] {
+	const first = masks[0];
+	const box = first ? boxOf(first.mask, first.width, first.height) : null;
+	if (!first || !box || masks.length < 2) return new Array(MOTION_BANDS).fill(0);
+	const tall = box.bottom - box.top + 1;
+	const sums = new Array(MOTION_BANDS).fill(0);
+	for (let f = 1; f < masks.length; f++) {
+		const a = (masks[f - 1] as PlantMask).mask;
+		const b = (masks[f] as PlantMask).mask;
+		const changed = new Array(MOTION_BANDS).fill(0);
+		const either = new Array(MOTION_BANDS).fill(0);
+		for (let y = box.top; y <= box.bottom; y++) {
+			const band = Math.min(MOTION_BANDS - 1, Math.floor(((box.bottom - y) / tall) * MOTION_BANDS));
+			for (let x = 0; x < first.width; x++) {
+				const at = y * first.width + x;
+				const p = a[at] as number;
+				const q = b[at] as number;
+				changed[band] += p ^ q;
+				either[band] += p | q;
+			}
+		}
+		for (let k = 0; k < MOTION_BANDS; k++)
+			sums[k] += either[k] > 0 ? (changed[k] as number) / (either[k] as number) : 0;
+	}
+	return sums.map((sum) => Number((sum / (masks.length - 1)).toFixed(4)));
+}
+
+/**
+ * Compares a wind video with a run's clip of the plant in wind: each render frame, at its time on
+ * the wind clock from the clip's start, beside the video frame at the same time, and how much each
+ * height band of the outline moves over each clip.
+ */
+export function compareWind(
+	runDir: string,
+	group: string,
+	path: string,
+	frames: readonly RunFrame[],
+	start: number,
+	title: string,
+): WindResult {
+	const facts = probeVideo(path);
+	const usable = frames.filter((frame) => !frame.error).sort((a, b) => a.hold - b.hold);
+	const times = usable.map((frame) => frame.hold - start);
+	const base = {
+		video: basename(path),
+		duration: Number(facts.duration.toFixed(3)),
+		span:
+			times.length > 0 ? Number(((times.at(-1) as number) - (times[0] as number)).toFixed(3)) : 0,
+		interval:
+			times.length > 1
+				? Number(Math.max(...times.slice(1).map((t, k) => t - (times[k] as number))).toFixed(3))
+				: 0,
+		frames: usable.length,
+	};
+	if (usable.length === 0)
+		return {
+			...base,
+			motion: { reference: [], render: [] },
+			sheets: [],
+			error: 'the run drew no frame of this clip',
+		};
+	const references = videoFrames(path, facts, WORK_WIDTH);
+	const picked = times.map(
+		(t) => references[Math.min(references.length - 1, Math.round(t * facts.fps))] as Rgba,
+	);
+	const refMasks = picked.map((image) => plantMask(image));
+	const renderMasks = usable.map((frame) =>
+		frame.matte
+			? matteMask(readImage(join(runDir, frame.matte)))
+			: plantMask(readImage(join(runDir, frame.file))),
+	);
+	const reference = motionProfile(refMasks);
+	const render = motionProfile(renderMasks);
+	const tiles: GridTile[] = usable.map((frame, k) => ({
+		reference: picked[k] as Rgba,
+		render: readImage(join(runDir, frame.file)),
+		lines: [`T ${(times[k] as number).toFixed(2)} S`],
+	}));
+	const first = picked[0] as Rgba;
+	const pages = gridSheets(
+		`${title}  MOTION BY BAND, BASE FIRST: REF ${reference.map((v) => v.toFixed(3)).join(' ')}  REN ${render.map((v) => v.toFixed(3)).join(' ')}`,
+		tiles,
+		first.width / first.height,
+		8,
+		4,
+	);
+	return { ...base, motion: { reference, render }, sheets: writeSheets(runDir, group, pages) };
+}
+
+/** One still or texture source beside the render of its view. */
+export interface StillResult extends PairMetrics {
+	readonly file: string;
+	readonly kind: 'still' | 'texture';
+	readonly view: string;
+	readonly renderFile?: string;
+	/** Whether both pictures gave an outline on a plain background, so the outline measures hold. */
+	readonly masked: boolean;
+	/** For a bark texture: the CIEDE2000 difference of the middle of each picture. */
+	readonly surfaceDeltaE: number | null;
+	readonly note?: string;
+	readonly error?: string;
+}
+
+/** The mean CIELAB colour of a picture's middle third each way. */
+function middleLab(image: Rgba): number[] {
+	const lab = labImage(image);
+	const sum = [0, 0, 0];
+	let n = 0;
+	for (let y = Math.floor(image.height / 3); y < Math.floor((image.height * 2) / 3); y++)
+		for (let x = Math.floor(image.width / 3); x < Math.floor((image.width * 2) / 3); x++) {
+			const at = (y * image.width + x) * 3;
+			for (let c = 0; c < 3; c++) sum[c] = (sum[c] as number) + (lab[at + c] as number);
+			n++;
+		}
+	return sum.map((v) => v / Math.max(1, n));
+}
+
+/** A still or texture source as the comparison reads it: a cut-out laid on white. */
+function referencePicture(path: string): Rgba {
+	return onColour(readImage(path), [255, 255, 255]);
+}
+
+/** Compares each in-use still and texture source with the render of its view, and writes sheets. */
+export function compareStills(
+	runDir: string,
+	set: ReferenceSet,
+	frames: readonly RunFrame[],
+	title: string,
+): { readonly pairs: readonly StillResult[]; readonly sheets: readonly string[] } {
+	const byReference = new Map(
+		frames.flatMap((frame) => (frame.reference ? [[frame.reference, frame]] : [])),
+	);
+	const results: StillResult[] = [];
 	const rows: SheetRow[] = [];
-	for (const frame of frames) {
-		if (!frame.reference) continue;
-		const refImage = readImage(join(refs, frame.reference));
-		const refPlant = plantMask(refImage);
-		const framed = frame.matte !== undefined;
-		const refSide = side(frame.reference, refImage, refPlant, false);
-		if (frame.error) {
-			rows.push({
-				reference: refImage,
-				lines: [frame.reference, `RENDER FAILED`, frame.error.slice(0, 18)],
+	for (const slot of set.stills) {
+		const refImage = referencePicture(join(set.folder, slot.file));
+		const frame = byReference.get(slot.file);
+		const head = [slot.file.replace(/\.\w+$/, '').slice(0, 17), `VIEW ${slot.view}`];
+		const blankPair = {
+			reference: slot.file,
+			render: '',
+			shapeIou: null,
+			frameIou: null,
+			profileError: null,
+			gap: null,
+			foliageDeltaE: null,
+			barkDeltaE: null,
+			crownBox: null,
+			foliage: { reference: null, render: null },
+		};
+		if (!frame || frame.error) {
+			const error = frame?.error ?? 'the run drew no render of this view';
+			results.push({
+				...blankPair,
+				file: slot.file,
+				kind: slot.kind,
+				view: slot.view,
+				masked: false,
+				surfaceDeltaE: null,
+				error,
 			});
+			rows.push({ reference: refImage, lines: [...head, 'NO RENDER', error.slice(0, 18)] });
 			continue;
 		}
-		const renderSideOf = renderSide(
-			frame.name,
-			join(runDir, frame.file),
-			frame.matte ? join(runDir, frame.matte) : undefined,
-			false,
-		);
-		// Outline measures need the whole plant on a plain background in both pictures. A close view
-		// on a plain background, such as a leaf on white, keeps only its foliage colour difference.
-		const masked = refPlant.background.plain && framed;
-		const pair = pairMetrics(masked ? refSide : { ...refSide, normal: undefined }, renderSideOf);
+		const refPlant = plantMask(refImage);
+		const refSide = side(slot.file, refImage, refPlant, false);
+		const render = renderSideOf(runDir, frame, frame.file, false);
+		const masked = refPlant.background.plain && frame.matte !== undefined;
+		const pair = pairMetrics(masked ? refSide : { ...refSide, normal: undefined }, render);
+		const bark = slot.kind === 'texture' && !slot.view.startsWith('leaf');
+		const surfaceDeltaE = bark
+			? Number(deltaE2000(middleLab(refImage), middleLab(render.image)).toFixed(2))
+			: null;
 		const shown: PairMetrics = masked
 			? pair
 			: {
@@ -688,39 +1021,40 @@ function compareSlots(runDir: string, refs: string, frames: readonly RunFrame[],
 					crownBox: null,
 					foliageDeltaE: refPlant.background.plain ? pair.foliageDeltaE : null,
 				};
-		const note = notes.get(frame.reference);
 		results.push({
 			...shown,
-			slot: frame.reference,
-			view: frame.query.view ?? 'whole',
+			file: slot.file,
+			kind: slot.kind,
+			view: slot.view,
+			renderFile: frame.file,
 			masked,
-			...(note ? { note } : {}),
+			surfaceDeltaE,
+			...(slot.note ? { note: slot.note } : {}),
 		});
-		const head = [
-			frame.reference.replace(/\.\w+$/, '').slice(0, 17),
-			`VIEW ${frame.query.view ?? 'whole'}`,
-		];
 		rows.push({
 			reference: refImage,
-			render: renderSideOf.image,
-			...(masked && refSide.normal && renderSideOf.normal
-				? { overlay: overlay(refSide.normal, renderSideOf.normal, 456, 300) }
+			render: render.image,
+			...(masked && refSide.normal && render.normal
+				? { overlay: overlay(refSide.normal, render.normal, 456, 300) }
 				: {}),
 			lines: masked
 				? pairLines(head, shown)
 				: [
 						...head,
 						...(shown.foliageDeltaE !== null ? [`LEAF DE ${fixed(shown.foliageDeltaE, 1)}`] : []),
+						...(surfaceDeltaE !== null ? [`SURFACE DE ${fixed(surfaceDeltaE, 1)}`] : []),
 						'NO PLAIN OUTLINE',
 					],
 		});
 	}
-	const pages = contactSheets(title, rows, 1.5, 6);
-	return { pairs: results, sheets: writeSheets(runDir, 'slots', pages) };
+	return {
+		pairs: results,
+		sheets: writeSheets(runDir, 'stills', contactSheets(title, rows, 1.5, 6)),
+	};
 }
 
-/** Writes a sheet of a run's single views, which have no reference to pair with. */
-function sheetOfViews(
+/** A sheet of a run's views that no reference pairs with, three a row. */
+export function viewSheets(
 	runDir: string,
 	group: string,
 	frames: readonly RunFrame[],
@@ -734,193 +1068,8 @@ function sheetOfViews(
 			...(a ? { reference: a } : {}),
 			...(b ? { render: b } : {}),
 			...(c ? { overlay: c } : {}),
-			lines: ok.slice(i, i + 3).map((frame) => frame.name.slice(-17)),
+			lines: ok.slice(i, i + 3).map((frame) => basename(frame.file, '.png').slice(-17)),
 		});
 	}
-	const first = ok[0] ? readImage(join(runDir, ok[0].file)) : undefined;
-	const aspect = first ? first.width / first.height : 0.75;
-	return writeSheets(runDir, group, contactSheets(title, rows, aspect, 6, false));
-}
-
-/** Writes a group's sheet pages into the run folder, and returns their file names. */
-function writeSheets(runDir: string, group: string, pages: readonly Rgba[]): string[] {
-	return pages.map((page, p) => {
-		const name = `sheet-${group}-${String(p + 1).padStart(2, '0')}.png`;
-		writePng(join(runDir, name), page);
-		return name;
-	});
-}
-
-/** The rubric's band for the crown box's spread round a turn: 15 per cent for a conifer, else 25. */
-function band(species: string): number {
-	return /spruce|pine|fir|cedar|larch|cypress|yew|sequoia|juniper|conifer/.test(species)
-		? 0.15
-		: 0.25;
-}
-
-/** One line of the summary for a turn's result. */
-function turnSummary(name: string, result: TurnResult, species: string): string[] {
-	const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
-	// The mean of the values a measure has, or a dash when no pair has one.
-	const meanOf = (values: readonly (number | null | undefined)[], digits: number) => {
-		const present = values.filter((v): v is number => v !== null && v !== undefined);
-		return present.length === 0 ? '-' : mean(present).toFixed(digits);
-	};
-	const limit = band(species);
-	const ref = result.spread.reference;
-	const ren = result.spread.render;
-	// A reference that varies more round its turn than the band widens the band to its own spread,
-	// width and height each on their own.
-	const wide = Math.max(limit, ref.width);
-	const tall = Math.max(limit, ref.height);
-	const verdict = (render: number, allowed: number) =>
-		`${pct(allowed)}${allowed > limit ? " (the reference's own)" : ''}, so ${render <= allowed ? 'inside' : 'outside'}`;
-	return [
-		`### ${name} (${result.video})`,
-		'',
-		`- Alignment: the render's frame ${result.alignment.start} matches the video's first frame, turning ${result.alignment.direction === 1 ? 'the same way' : 'the other way'}; mean shape IoU ${result.alignment.meanIou.toFixed(3)}.`,
-		`- Shape IoU per frame: ${result.pairs.map((p) => fixed(p.shapeIou)).join(', ')}.`,
-		`- Width-profile error, mean: ${meanOf(
-			result.pairs.map((p) => p.profileError),
-			3,
-		)} plant heights.`,
-		`- Crown box spread round the turn: reference ${pct(ref.width)} wide and ${pct(ref.height)} tall; render ${pct(ren.width)} wide and ${pct(ren.height)} tall. The band is ${pct(limit)}: in width ${verdict(ren.width, wide)}; in height ${verdict(ren.height, tall)}.`,
-		`- Gap fraction, mean: reference ${meanOf(
-			result.pairs.map((p) => p.gap?.reference),
-			3,
-		)}, render ${meanOf(
-			result.pairs.map((p) => p.gap?.render),
-			3,
-		)}.`,
-		`- Foliage colour difference (CIEDE2000), mean: ${meanOf(
-			result.pairs.map((p) => p.foliageDeltaE),
-			1,
-		)}; bark: ${meanOf(
-			result.pairs.map((p) => p.barkDeltaE),
-			1,
-		)}.`,
-		...(result.maskCheck !== null
-			? [
-					`- Mask check: the colour outline of the render frames overlaps their exact matte by ${result.maskCheck.toFixed(3)} IoU.`,
-				]
-			: []),
-		`- Sheets: ${result.sheets.join(', ')}.`,
-		'',
-	];
-}
-
-async function main(): Promise<void> {
-	const runDir = option('run');
-	const manifest = JSON.parse(readFileSync(join(runDir, 'manifest.json'), 'utf8')) as RunManifest;
-	const refs = option('refs', manifest.references ?? '');
-	if (!refs) throw new Error('give --refs <reference folder>; the run names none');
-	const set = readReferenceSet(refs);
-	const byGroup = new Map<string, RunFrame[]>();
-	for (const frame of manifest.frames) {
-		const list = byGroup.get(frame.group) ?? [];
-		list.push(frame);
-		byGroup.set(frame.group, list);
-	}
-	const label = `${manifest.species} VS ${set.slug}`;
-	const metrics: Record<string, unknown> = {
-		run: manifest.run,
-		commit: manifest.commit,
-		species: manifest.species,
-		references: refs,
-	};
-	const summary: string[] = [
-		`# ${manifest.species} against ${set.slug}`,
-		'',
-		`Run \`${manifest.run}\` at commit \`${manifest.commit}\`. Shape IoU compares outlines scaled to the same height and centred on the trunk; frame IoU compares them as framed. Gap fraction is the share of the crown's outline that shows background. Colour differences are CIEDE2000, where about 2 is a visible step.`,
-		'',
-	];
-	const turntable = byGroup.get('turntable');
-	if (turntable && set.turntable) {
-		const result = compareTurn(
-			runDir,
-			'turntable',
-			turntable,
-			set.turntable,
-			`${label}  TURNTABLE`,
-		);
-		metrics.turntable = result;
-		summary.push(...turnSummary('Whole plant turning', result, manifest.species));
-	}
-	for (const piece of ['branch', 'subbranch', 'cluster'] as const) {
-		const frames = byGroup.get(`close-${piece}`);
-		const video = set.close[piece];
-		if (!frames) continue;
-		if (!video) {
-			summary.push(
-				`### ${piece}`,
-				'',
-				`- The reference folder has no ${piece} video yet, so the render's turn is drawn alone.`,
-				'',
-			);
-			metrics[`close-${piece}`] = {
-				sheets: sheetOfViews(
-					runDir,
-					`close-${piece}`,
-					frames,
-					`${label}  ${piece.toUpperCase()} (NO REFERENCE VIDEO)`,
-				),
-			};
-			continue;
-		}
-		const result = compareTurn(
-			runDir,
-			`close-${piece}`,
-			frames,
-			video,
-			`${label}  ${piece.toUpperCase()}`,
-		);
-		metrics[`close-${piece}`] = result;
-		summary.push(...turnSummary(`Cut ${piece}`, result, manifest.species));
-	}
-	const slots = byGroup.get('slots');
-	if (slots) {
-		const result = compareSlots(runDir, refs, slots, `${label}  SLOTS`);
-		metrics.slots = result;
-		const masked = result.pairs.filter((p) => p.masked);
-		summary.push(
-			'### Slots',
-			'',
-			`- ${result.pairs.length} stills paired with a render of their view; ${masked.length} of them show the whole plant on a plain background and carry outline measures.`,
-			...masked.map(
-				(p) =>
-					`- ${p.slot}: shape IoU ${fixed(p.shapeIou)}, width error ${fixed(p.profileError, 3)}, gap ${fixed(p.gap?.reference)} against ${fixed(p.gap?.render)}, foliage colour difference ${fixed(p.foliageDeltaE, 1)}.`,
-			),
-			...result.pairs.flatMap((p) => (p.note ? [`- ${p.slot}: ${p.note}.`] : [])),
-			`- Sheets: ${result.sheets.join(', ')}.`,
-			'',
-		);
-	}
-	const views = byGroup.get('views');
-	if (views) {
-		metrics.views = { sheets: sheetOfViews(runDir, 'views', views, `${manifest.species}  VIEWS`) };
-		summary.push(
-			'### Views',
-			'',
-			`- Sheets: ${(metrics.views as { sheets: string[] }).sheets.join(', ')}.`,
-			'',
-		);
-	}
-	summary.push(
-		'### Limits of the measures',
-		'',
-		"- The reference outline comes from colour against a plain background. Below the horizon it keeps only the plant that hangs down from above and is not a darker copy of the meadow, so foliage that sweeps the ground can be lost and a trunk's foot can be cut short.",
-		"- The render outline comes from the run's matte where the run drew one, so it is exact.",
-		'- A turning video is taken to turn at a steady rate through one full turn; the alignment cannot repair a video that speeds up or stops short.',
-		'',
-	);
-	writeFileSync(join(runDir, 'metrics.json'), `${JSON.stringify(metrics, null, '\t')}\n`);
-	writeFileSync(join(runDir, 'summary.md'), `${summary.join('\n')}\n`);
-	console.log(summary.join('\n'));
-}
-
-if (import.meta.main) {
-	main().catch((error: unknown) => {
-		console.error(`error: ${(error as Error).message}`);
-		process.exit(1);
-	});
+	return writeSheets(runDir, group, contactSheets(title, rows, 4 / 3, 5, false));
 }
