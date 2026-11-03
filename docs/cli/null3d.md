@@ -392,6 +392,8 @@ bunx @null3d/cli assets optimize models/ public/models/ --lod --max-texture-size
 | Option | Effect | Without it |
 | --- | --- | --- |
 | `--lod` | Adds levels of detail to each mesh of 64 triangles or more, and stores each level's error | No levels |
+| `--stages` | With `--lod` or `--clusters`, writes finer levels and cluster bands as separate files beside the model, so the page draws a coarse first picture | Levels and bands in the file |
+| `--clusters` | Adds a tree of cluster patches to each large static mesh of 20,000 triangles or more, and gives that mesh the levels that `--lod` makes | No trees |
 | `--simplify <share>` | Keeps this share of each mesh's triangles, from 0 to 1, as far as `--simplify-error` allows | 1: every triangle |
 | `--simplify-error <share>` | The most that `--simplify` may move a mesh's surface, as a share of the mesh's size | 0.01 |
 | `--max-texture-size <pixels>` | The largest side of a texture: a power of two up to 2048 | 2048 |
@@ -402,6 +404,8 @@ bunx @null3d/cli assets optimize models/ public/models/ --lod --max-texture-size
 | `--bvh <triangles>` | Stores the tree that raycasts walk for each mesh part of at least this many triangles, or for none with 0 | 20000 |
 | `--jobs <count>` | The worker threads that encode textures | One per CPU core |
 | `--report <file.json>` | Also writes the budget report as a JSON file | No file |
+
+`--clusters` gives no tree to a mesh that more than four copies in the file draw. The tool cannot see the copies that page code places in an instance batch, so such a mesh still gets a tree. An instance batch always draws whole levels, so its copies draw the levels that `--clusters` writes beside the tree. [Cluster levels](../guides/assets-pipeline.md#cluster-levels) has the detail.
 
 A mesh's glTF extras change two steps for that mesh alone. `"occluder": false` gives it no blocker. `"occluder": true` makes it block with its own triangles when no blocker fits. `"quantizePositions": false` keeps its positions as 32-bit floats. Use it for a mesh that spreads small parts over a large space, such as a city's buildings merged by material. Integer steps would move their corners by centimeters.
 
