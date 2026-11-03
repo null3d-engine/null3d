@@ -156,6 +156,15 @@ The runner watches each browser's results while a run goes on. Three guards keep
 - After every benchmark, scale, governor, soak or startup run, archive it: `bun run bench:archive <run>`. Commit the record in `bench/results`, and add the rows that it prints to [Benchmark results](benchmark-results.md). Do the same for runs of `bun run bench:run` and `bun run gate` on the Mac. [Benchmarks](benchmarks.md#the-results-archive) says what a record keeps.
 - After its timed runs, the bench plan runs the visual page of each scene on each GPU path, from the dev server. The first timed run of each null3D page captures its frame. The summary prints the shadow figures beside the timings, and the runner saves the frames in the run's folder. [Benchmarks](benchmarks.md#visual-figures-and-captured-frames) says what they show.
 
+## What makes a timing figure citable
+
+- A figure from one page, taken once, is not a measurement. One machine drew the same Skyway page at 90.3 frames a second on its first page. It drew 118.5 on its last, within the hour, with nothing else changed.
+- So a timing run brackets its figures. It measures a page whose figure is already known at each end of the run, before the first measurement and after the last. A bracket that disagrees with itself by more than the change claims puts the whole run's figures in doubt.
+- Record the load beside every figure. [Benchmarks](benchmarks.md) holds the load that a timing run needs; a figure written without its load cannot be sorted out afterwards.
+- Two failure modes look like findings until a bracket is taken. A page that draws fewer frames as the machine loads reads as a cost. A page that draws more as it warms reads as an improvement. Both have been seen, and both were the machine.
+- A run that shares a checkout or a worktree with another session is contaminated even when the load reads low. The other session's builds and commits move the files under it.
+- A bracket says the machine held. It does not say that no frame ran long, so a citable figure reports its worst frame beside its percentiles. A run whose 99th percentile is 10 ms can still hold one frame of 58 ms. A percentile answers how bad a typical bad frame is, and a maximum answers how bad the worst one is. A clause that no frame may exceed a limit is a maximum clause. A percentile is the wrong instrument for it rather than a weaker one.
+
 ## The showcase plan
 
 - The `showcase` plan runs gate item 1 of M2 on one device. It plays the showcase scenes S4, S5 and S6 for 10 minutes each, and each against its three.js twin.
