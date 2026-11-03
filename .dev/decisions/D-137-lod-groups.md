@@ -132,6 +132,11 @@ A cascade's box keeps its size while the camera moves and turns ([D-15](D-15-cas
 
 The look rule sets the threshold. The normal bias moves each receiver by up to one texel of its cascade along its normal ([D-16](D-16-moving-casters-and-bias.md)). A shadow level that errs by under a texel lies within that offset of the base surface, so it does not shadow the base surface. The camera's own level errs by under a pixel. The filter's square of 3 or 5 texels and the comparison with the receiver's plane absorb the rest. The image test `cluster-shadows-fine` draws a ground that shadows its own hills with the finest patches in every cascade, and must match `cluster-shadows`, which draws each cascade's own cut. A larger threshold would let a level's silhouette pass the bias, so no preset raises it.
 
+The desert benchmark with shadows shows the saving. Its three cascades of 2,048 texels draw 2.4
+times fewer triangles in the walk view and 1.8 times fewer in the aerial view, and the frame's
+triangles fall by a third. The ground's patches account for most of it; the props pick their
+levels in texels too. [D-213](D-213-cluster-levels.md#shadow-views) gives the figures.
+
 Three properties of a source keep the camera's measures in a shadow view:
 
 - A distance band reads the camera's distance in every view, so a source outside its band casts no shadow, as before.

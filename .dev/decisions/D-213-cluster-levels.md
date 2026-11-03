@@ -379,12 +379,17 @@ seconds after 4 seconds of warm-up, with the two builds in turns, and the spread
 
 Both builds presented every frame of the 120 Hz display. The cascades draw 2.4 and 1.8 times
 less, and the frame's triangles fall by a third. The compute passes grew by the cluster pass of
-each cascade. Most of that was the scan, whose one workgroup added up every patch's count; it now
-adds one total for each 64 patches, as [How the pass runs](#how-the-pass-runs) says.
+each cascade. Most of that was the scan, whose one workgroup added up every patch's count. It now
+adds one total for each 64 patches, as [How the pass runs](#how-the-pass-runs) says. Timed in
+turns with the build above, on the base with the mesh pieces and the run-time levels merged, the
+compute passes take 0.35 ms (0.34 to 0.36) in the walk view against 0.91 ms (0.86 to 0.96), and
+0.34 ms (0.34 to 0.40) in the aerial view against 1.00 ms (0.84 to 1.19). That is under the
+0.48 and 0.38 ms before the change, because the camera's own pass gains too. The cascades' passes
+take 1.42 ms (1.42 to 1.53) and 0.62 ms (0.62 to 0.75) there.
 
 How the data was produced: `bench/meshlets/run.ts` of the meshlet comparison, on the Mac's
 Chrome 156, with both CDN builds made by `bun run build:cdn --url-switches`, on a shared Mac whose
-load averaged 30 to 35.
+load averaged 30 to 35, and 70 to 80 for the grouped scan's runs.
 
 ### What is not drawn from the tree
 
