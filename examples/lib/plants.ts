@@ -1,13 +1,13 @@
 // Plants for the demos from the vegetation add-on's plant core. A demo names each species by its id
-// and gives the size, colours and ecology of its stand-in; the species draws as that stand-in until
-// its folder lands in the add-on, and as itself after. Its kit and its variants grow in the engine's
-// job workers, and its copies stand where the demo puts them, with far cards past the distance
-// where a plant spans a few pixels.
+// and gives the size, colours and ecology of its stand-in, and the species draws as that stand-in,
+// even once the species' own folder exists in the add-on: the demos keep their pictures until they
+// move to the real species and the scene-wide near pool together. Its kit and its variants grow in
+// the engine's job workers, and its copies stand where the demo puts them, with far cards past the
+// distance where a plant spans a few pixels.
 import type { SketchContext } from '@null3d/engine';
 import {
 	bakeFarPlant,
 	growPlant,
-	loadSpeciesOrStandIn,
 	type PlacedPlants,
 	type PlantCopies,
 	type PlantMaterial,
@@ -15,6 +15,7 @@ import {
 	plantMaterials,
 	prepareSpecies,
 	type StandInOptions,
+	standInSpecies,
 } from '@null3d/vegetation';
 import type { WindField } from '@null3d/wind';
 
@@ -32,7 +33,7 @@ export interface PlantSpot {
 export interface PlantSpeciesOptions {
 	/** The species' id in the add-on's catalogue, such as 'pedunculate-oak'. */
 	readonly id: string;
-	/** The stand-in's size, colours and ecology, until the species lands. */
+	/** The stand-in's size, colours and ecology. */
 	readonly standIn: StandInOptions;
 	/** The scene's seed. */
 	readonly seed: number;
@@ -97,9 +98,8 @@ function inTurn<T>(
 }
 
 /**
- * Grows a species' variants in the job workers and places its copies. Every stage that the plant
- * core has not built yet grows its stand-in. Calls that run together grow at once, and make their
- * objects on the page in the order of the calls.
+ * Grows a species' stand-in variants in the job workers and places its copies. Calls that run
+ * together grow at once, and make their objects on the page in the order of the calls.
  */
 export async function plantSpecies(
 	ctx: SketchContext,
@@ -108,10 +108,9 @@ export async function plantSpecies(
 	let variants = options.variants ?? 0;
 	if (options.variants === undefined)
 		for (const spot of options.spots) variants = Math.max(variants, spot.variant + 1);
-	const module = loadSpeciesOrStandIn(options.id, {
-		variants: Math.max(1, variants),
-		...options.standIn,
-	});
+	const module = Promise.resolve(
+		standInSpecies(options.id, { variants: Math.max(1, variants), ...options.standIn }),
+	);
 	const kit = await inTurn('prepare', module, async () =>
 		prepareSpecies(ctx, await module, { placeholders: true }),
 	);
