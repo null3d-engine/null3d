@@ -36,7 +36,7 @@ export interface CrownLight {
 	readonly min: Vec3;
 	/** A cell's edge in metres. */
 	readonly cell: number;
-	/** Sky visibility per cell, 0 to 1, x fastest. */
+	/** Sky visibility per cell, 0 to 1: x fastest, then y, then z. */
 	readonly sky: Float32Array;
 }
 
