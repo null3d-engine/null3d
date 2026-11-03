@@ -353,7 +353,9 @@ The engine checks a WebGL2 fence at its next frame callback, so there `gpuLatenc
 
 ## Measure fairly
 
-- Measure a production build, as your users get it. Development builds check each call's arguments, and check every static object in each frame. In the S2 benchmark on a MacBook Pro, that check cost about 0.06 ms per frame on WebGPU, and 0.03 ms on WebGL2. The other checks cost less than the benchmarks can measure.
+- Measure a production build, as your users get it. Development builds check each call's arguments. In each frame they also check every static object, and a share of the rows of static batches. In the S2 benchmark on a MacBook Pro, the check of static objects cost about 0.06 ms per frame on WebGPU. It cost 0.03 ms on WebGL2. These checks grow with the scene, so a large scene pays more.
+- Know which build a page runs. `vite build` with the null3D plugin makes a production build, and so does the CDN build's production entry, `lib/index.js`. These run as development builds: the Vite dev server, `bunx @null3d/cli shot` and `test`, and the CDN build's development entry, `lib-dev/index.js`. So does engine code built without the null3D plugin, or with no bundler at all ([Try null3D from a CDN](../getting-started/cdn.md#production-and-development-entries)).
+- To compare null3D with three.js, time a production build of each engine, on the same page size and the same computer.
 - Let the sketch run for several seconds before you measure, so that the browser has optimized your per-frame code.
 - Keep the page visible, the screen unlocked and the display awake. Safari stops running a page while the Mac is locked.
 - Compare runs at the same display refresh rate. `refreshHz` records it with each measurement. Runs at 120 and at 144 frames per second differed by about 10% for both engines.
