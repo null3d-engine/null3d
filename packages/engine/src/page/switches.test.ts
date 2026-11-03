@@ -33,7 +33,7 @@ describe('parseSwitches', () => {
 			indexInstances: false,
 			direct: 'auto',
 			shadowDepthBits: 16,
-			textureCache: true,
+			derivedCache: true,
 			fps: undefined,
 			targetFps: undefined,
 			queue: undefined,
@@ -88,10 +88,11 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?shadowdepth=24').shadowDepthBits).toBe(16);
 	});
 
-	it('turns the cache of transcoded textures off with ?texture-cache=off, and leaves it on otherwise', () => {
-		expect(parseSwitches('?texture-cache=off').textureCache).toBe(false);
-		expect(parseSwitches('?texture-cache=on').textureCache).toBe(true);
-		expect(parseSwitches('?texture-cache=no').textureCache).toBe(true);
+	it('turns the cache of derived data off with ?derived-cache=off, and leaves it on otherwise', () => {
+		expect(parseSwitches('?derived-cache=off').derivedCache).toBe(false);
+		expect(parseSwitches('?derived-cache=on').derivedCache).toBe(true);
+		expect(parseSwitches('?derived-cache=no').derivedCache).toBe(true);
+		expect(parseSwitches('?texture-cache=off').derivedCache).toBe(true);
 	});
 
 	it('turns occlusion culling on or off with ?occlusion=, and leaves it to the page otherwise', () => {

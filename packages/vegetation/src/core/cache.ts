@@ -17,8 +17,8 @@ export interface PlantCache {
 }
 
 /**
- * A store of bytes by key that keeps the plant core's results across visits, such as a cache of
- * derived data in the browser's storage. The plant core reads it after its memory cache misses and
+ * A store of bytes by key that keeps the plant core's results across visits, such as a namespace of
+ * the engine's cache of derived data, which `ctx.assets.cache(name, version)` gives. The plant core reads it after its memory cache misses and
  * writes each new result to it without waiting. A store that fails or answers bytes the core cannot
  * read costs a new growth, never an error.
  *
