@@ -2,6 +2,7 @@
 // is the texture's mean, coverage and colour that keep through the mip levels the GPU averages, and
 // card levels that place each row's planes and keep every second card in the thinned level.
 import { describe, expect, it } from 'bun:test';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { SpeciesKitData } from '../asset';
 import { placeholderSkeleton } from '../core/placeholder';
 import type { TextureManifest } from '../core/textures';
@@ -73,32 +74,37 @@ describe('the card bake', () => {
 		expect(atlas.color.length).toBe(atlas.size * atlas.size * 8);
 	});
 
-	it("keeps a leaf's mean colour within 3 per cent of the texture's mean", () => {
-		const one: TextureManifest = {
-			...OAK_MANIFEST,
-			leaf: {
-				...(OAK_MANIFEST.leaf as NonNullable<TextureManifest['leaf']>),
-				mean: { upper: [0.05, 0.11, 0.03], lower: [0.05, 0.11, 0.03] },
-				// A flat profile, so the check reads the colour path alone: the bands' own weighting by
-				// the leaf's pose belongs to the render, as it does on the GPU.
-				profile: { upper: [1, 1, 1, 1, 1, 1, 1, 1], lower: [1, 1, 1, 1, 1, 1, 1, 1] },
-			},
-		};
-		const { atlas: baked } = bakedKit(one);
-		const sum = [0, 0, 0];
-		let count = 0;
-		for (let i = 0; i < baked.color.length; i += 4) {
-			if ((baked.color[i + 3] as number) === 0 || (baked.surface[i + 3] as number) < 128) continue;
-			for (let c = 0; c < 3; c++)
-				sum[c] = (sum[c] as number) + linear(baked.color[i + c] as number);
-			count++;
-		}
-		expect(count).toBeGreaterThan(1000);
-		const mean = sum.map((value) => value / count);
-		[0.05, 0.11, 0.03].forEach((target, c) => {
-			expect(Math.abs((mean[c] as number) - target) / target).toBeLessThan(0.03);
-		});
-	});
+	it(
+		"keeps a leaf's mean colour within 3 per cent of the texture's mean",
+		() => {
+			const one: TextureManifest = {
+				...OAK_MANIFEST,
+				leaf: {
+					...(OAK_MANIFEST.leaf as NonNullable<TextureManifest['leaf']>),
+					mean: { upper: [0.05, 0.11, 0.03], lower: [0.05, 0.11, 0.03] },
+					// A flat profile, so the check reads the colour path alone: the bands' own weighting by
+					// the leaf's pose belongs to the render, as it does on the GPU.
+					profile: { upper: [1, 1, 1, 1, 1, 1, 1, 1], lower: [1, 1, 1, 1, 1, 1, 1, 1] },
+				},
+			};
+			const { atlas: baked } = bakedKit(one);
+			const sum = [0, 0, 0];
+			let count = 0;
+			for (let i = 0; i < baked.color.length; i += 4) {
+				if ((baked.color[i + 3] as number) === 0 || (baked.surface[i + 3] as number) < 128)
+					continue;
+				for (let c = 0; c < 3; c++)
+					sum[c] = (sum[c] as number) + linear(baked.color[i + c] as number);
+				count++;
+			}
+			expect(count).toBeGreaterThan(1000);
+			const mean = sum.map((value) => value / count);
+			[0.05, 0.11, 0.03].forEach((target, c) => {
+				expect(Math.abs((mean[c] as number) - target) / target).toBeLessThan(0.03);
+			});
+		},
+		scaledBudget(30_000),
+	);
 
 	it('keeps coverage and colour through the mip levels', () => {
 		const cell = kit.prototypes[0]?.card.planes[0]?.front;

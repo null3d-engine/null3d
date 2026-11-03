@@ -682,6 +682,9 @@ pub(crate) const REBUILD_BYTES_PER_SOURCE: usize = 64;
 
 /// The bytes of an ordinary block of an [`UploadArena`]. A larger copy takes a block of its own size.
 const UPLOAD_BLOCK: usize = 256 << 10;
+/// The share of a large copy, as its divisor, that a new block for it holds to spare, so the same
+/// copy a little larger in a later frame still fits.
+const LARGE_BLOCK_SPARE: usize = 8;
 /// The frames with no large copy after which an arena gives its large blocks back. Scenes that change
 /// often keep them, so those frames take no new block.
 const LARGE_BLOCK_FRAMES: u32 = 30;
@@ -754,8 +757,13 @@ impl UploadArena {
         self.before + self.blocks.get(self.at).map_or(0, Vec::len)
     }
 
-    /// Makes the block at `at` one with room for `padded` more bytes: the present one, a later
-    /// empty one, or a new one. Reports a heap that cannot give a new one.
+    /// Makes the block at `at` one with room for `padded` more bytes: the present one, the smallest
+    /// later empty one that holds them, or a new one. Reports a heap that cannot give a new one.
+    ///
+    /// A large copy whose size changes from frame to frame, such as a large blended batch's sorted
+    /// rows while the camera moves, would otherwise take a new block whenever it outgrows the
+    /// blocks it had, and the frames would keep every older one. So a new large block takes room to
+    /// spare, and the empty large blocks that are too small for the copy go back to the heap.
     fn make_room(&mut self, padded: usize) -> Result<(), RecordError> {
         if let Some(block) = self.blocks.get(self.at)
             && block.capacity() - block.len() >= padded
@@ -769,19 +777,31 @@ impl UploadArena {
             self.at + 1
         };
         self.at = next;
-        if let Some(found) =
-            (next..self.blocks.len()).find(|&k| self.blocks[k].capacity() >= padded)
+        if let Some(found) = (next..self.blocks.len())
+            .filter(|&k| self.blocks[k].capacity() >= padded)
+            .min_by_key(|&k| self.blocks[k].capacity())
         {
             self.blocks.swap(next, found);
             return Ok(());
         }
+        let mut k = next;
+        while k < self.blocks.len() {
+            if self.blocks[k].capacity() > UPLOAD_BLOCK {
+                self.blocks.remove(k);
+            } else {
+                k += 1;
+            }
+        }
         let refused = |_| RecordError::OutOfMemory {
             bytes: u32::try_from(padded).unwrap_or(u32::MAX),
         };
+        let size = if padded > UPLOAD_BLOCK {
+            padded.saturating_add(padded / LARGE_BLOCK_SPARE)
+        } else {
+            UPLOAD_BLOCK
+        };
         let mut block = Vec::new();
-        block
-            .try_reserve_exact(padded.max(UPLOAD_BLOCK))
-            .map_err(refused)?;
+        block.try_reserve_exact(size).map_err(refused)?;
         self.blocks.try_reserve(1).map_err(refused)?;
         self.blocks.insert(next, block);
         Ok(())
@@ -1152,6 +1172,9 @@ pub struct SceneSettings {
     air: Option<AirModel>,
     /// True while the quality settings draw the physical sky, else the analytic sky stands in.
     physical_sky: bool,
+    /// The steps of each ray of the sky's volumetric cloud tier, which the quality settings set: 0
+    /// draws the flat layer.
+    cloud_steps: u32,
     /// The analytic sky that stands in for the physical sky, and the factor of its light, while the
     /// quality settings turn the physical sky off.
     stand_in: Option<(crate::background::Sky, f32)>,
@@ -1376,6 +1399,7 @@ impl SceneSettings {
             sky_light_slot: 0,
             air: None,
             physical_sky: true,
+            cloud_steps: 0,
             stand_in: None,
             views: vec![View::default()],
             view_names: vec![ViewNames::default()],
@@ -2900,6 +2924,17 @@ impl SceneSettings {
         }
     }
 
+    /// Sets the steps of each ray of the sky's volumetric cloud tier: 0 draws the flat layer, and a
+    /// number greater than 0 the volumetric clouds, at that many steps.
+    pub fn set_cloud_steps(&mut self, steps: u32) {
+        self.cloud_steps = steps;
+    }
+
+    /// The steps of each ray of the sky's volumetric cloud tier: 0 draws the flat layer.
+    pub fn cloud_steps(&self) -> u32 {
+        self.cloud_steps
+    }
+
     /// The physical sky's settings while the scene's background is one, whichever sky draws.
     fn atmosphere(&self) -> Option<&Atmosphere> {
         match &self.background {
@@ -2998,6 +3033,7 @@ impl SceneSettings {
         arena: &mut UploadArena,
         table: MaterialStorage,
         sky: &PhysicalSkyPass,
+        noise: u32,
     ) -> Result<bool, RecordError> {
         let frame = input.frame;
         if self.textures.needs_estimate()
@@ -3017,6 +3053,7 @@ impl SceneSettings {
         // whose first frame makes it, fills it too.
         self.sky_maps.set_clock(self.clock_seconds()[0]);
         let drawn = self.sky_maps.wants_panorama(&self.textures) && sky.record_panorama(list)?;
+        let cloud_steps = self.cloud_steps;
         self.sky_maps.record(
             &self.textures,
             list,
@@ -3027,6 +3064,8 @@ impl SceneSettings {
                 buffers: self.sky_light_buffers,
                 slot: self.sky_light_slot,
             },
+            cloud_steps,
+            noise,
         )?;
         let layers_changed = self.textures.take_layers_changed();
         let textures = &self.textures;
@@ -4767,6 +4806,42 @@ mod tests {
         assert_eq!(arena.push(&[1u8; 16]).unwrap().1, 16);
     }
 
+    /// A frame that fails keeps none of its copies' blocks, so the frame that records next starts
+    /// from empty memory however large the failed frame's copies were.
+    #[test]
+    fn a_failed_frame_keeps_no_upload_blocks() {
+        let mut lists = ParityLists::new(16, 64);
+        let (list, mut arena) = lists.take(0).unwrap();
+        arena.begin_frame().unwrap();
+        arena.push(&vec![1u8; 2 * UPLOAD_BLOCK]).unwrap();
+        let marks = StillMarks {
+            settled: false,
+            words: &[],
+            weight_at: None,
+        };
+        let result = lists.restore(
+            0,
+            list,
+            arena,
+            marks,
+            Err(RecordError::OutOfMemory { bytes: 1 }),
+            HaltFigures::default(),
+        );
+        assert!(result.is_err());
+        assert!(
+            lists.arenas[0].blocks.is_empty(),
+            "the failed frame kept the blocks of copies that never replay"
+        );
+        lists.arenas[0].begin_frame().unwrap();
+        assert_eq!(
+            lists.arenas[0]
+                .push(&vec![1u8; 2 * UPLOAD_BLOCK])
+                .unwrap()
+                .1,
+            (2 * UPLOAD_BLOCK) as u32
+        );
+    }
+
     /// A copy that the heap cannot hold is reported as an error, and the core does not trap.
     #[test]
     fn an_upload_arena_reports_a_copy_that_the_heap_cannot_hold() {
@@ -4823,6 +4898,41 @@ mod tests {
                 .blocks
                 .iter()
                 .all(|block| block.capacity() <= UPLOAD_BLOCK)
+        );
+    }
+
+    /// Frames that make the same large copies at sizes that change a little from frame to frame,
+    /// as a large blended batch's sorted rows do while the camera moves, keep a bounded room: the
+    /// arena reuses its large blocks rather than adding one for each new size.
+    #[test]
+    fn an_upload_arena_keeps_bounded_room_for_large_copies_whose_sizes_change() {
+        let mut arena = UploadArena::default();
+        arena.begin_frame().unwrap();
+        let mut most = 0;
+        for frame in 0u32..200 {
+            // Two large copies whose sizes wander over a few percent, in an order that changes.
+            let wobble = |seed: u32| {
+                let hash = (frame ^ seed).wrapping_mul(0x9E37_79B1).rotate_left(13);
+                (hash % 1024) as usize * 64
+            };
+            let rows = 5 * UPLOAD_BLOCK + wobble(0x51);
+            let changed = 3 * UPLOAD_BLOCK + wobble(0xA7);
+            let sizes = if frame % 3 == 0 {
+                [changed, rows]
+            } else {
+                [rows, changed]
+            };
+            for size in sizes {
+                arena.push_zeroed(size).unwrap();
+                arena.push(&[1u8; 600]).unwrap();
+            }
+            most = most.max(arena.len());
+            arena.begin_frame().unwrap();
+        }
+        let reserved = arena.memory_use().reserved as usize;
+        assert!(
+            reserved <= most * 3 / 2,
+            "{reserved} bytes reserved for frames of at most {most}"
         );
     }
 

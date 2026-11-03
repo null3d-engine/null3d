@@ -90,6 +90,7 @@ export type {
 	ThickLeaf,
 	TrunkShape,
 	Tuft,
+	TuftHeads,
 	WindSpec,
 } from './record';
 export { isSpeciesId, loadSpecies, type SpeciesId, speciesIds } from './registry';

@@ -52,7 +52,7 @@ The command ends with status 1 when a frame failed or when the coverage is not c
 
 ## The references
 
-`references.ts` reads the folder's `INDEX.md`. A row whose "what it shows" cell says the file is superseded takes the file out of use. Every other picture and video is in use, listed or not, apart from videos' contact sheets.
+`references.ts` reads the folder's `INDEX.md`. A row whose "what it shows" cell says the file is superseded takes the file out of use, and so does a row whose later cell says "Superseded by" a file. Every other picture and video is in use, listed or not, apart from videos' contact sheets.
 
 - Numbered stills go to the review view that shows the same thing, by the words in their names first and their numbers second. A still of another habit or a young form goes to the nearest view, with a note.
 - Texture sources (24 to 28) go beside the render's own surface: the leaf faces, the bark at mid-trunk, and young bark far out on a limb. The bark views frame the metres that the species' texture manifest gives.
@@ -86,7 +86,7 @@ The page posts a `plant-review` message with the plant's height, width, crown ba
 
 ## How the measures work
 
-- **The outline.** `plantMask` fits a smooth colour surface to the frame's border, above and below the horizon apart, and calls a pixel background when it lies near the surface. Below the horizon a pixel is plant only when it hangs down from the plant above and is not a darker copy of the meadow. A render's outline comes from its matte, so it is exact.
+- **The outline.** `plantMask` fits a smooth colour surface to the frame's border, above and below the horizon apart, and calls a pixel background when it lies near the surface. A band that the surfaces miss, such as a river or a far bank along the horizon, is cleared where it reaches both sides of the frame, or one side in a thin strip. Below the horizon a pixel is plant only when it hangs down from the plant above and is not a darker copy of the meadow. A render's outline comes from its matte, so it is exact.
 - **The turn's pairing.** Each outline is scaled so the plant's height fills a fixed canvas, with the trunk on its middle column. The overlap of every reference frame with every render fills a table, and the pairing tries every start and both directions, at the video's own step against the renders' step, and keeps the best mean overlap. A frame is covered when its render lies within half a frame's turn of the frame's own angle.
 - **The measures of a pair.** Shape and frame overlap, the width profile's error, the gap fraction, the crown box, and the CIEDE2000 colour difference of foliage and bark (about 2 is a visible step). A bark texture gives the colour difference of the middle of each picture.
 - **The crown box's spread** at the rubric's eight angles that the video covers, for the reference and the render, against the rubric's band, which the reference's own spread widens.

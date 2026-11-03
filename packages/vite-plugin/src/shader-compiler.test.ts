@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
-import { MIRROR_FLOOR, WET_ROAD } from '../../../examples/showcase/showroom/floor';
+import { MIRROR_FLOOR, WET_ROAD } from '../../../examples/showroom/floor';
 import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import {
 	type ShaderVariant as EngineShaderVariant,

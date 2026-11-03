@@ -8,8 +8,10 @@
 // The orchestrator holds no engine import, so a job worker and Bun run it alike. The growers and
 // the leaf builders are lazy chunks: `loadPlantCode` loads a species' code on this thread, and the
 // stage calls after it are synchronous. A kit built with `placeholders` grows the stand-in of every
-// stage (core/placeholder.ts); without it, a stage that is not built yet throws.
+// stage (core/placeholder.ts); with `placeholders: 'missing'` it grows a stand-in only for each stage
+// that is not built yet; without either, a stage that is not built yet throws.
 import type { MeshArrays, PlantAsset, PlantPart, ShootPrototype, SpeciesKitData } from './asset';
+import { type CoarsenessOptions, coarsenessFor, coarsenessKey } from './coarseness';
 import { speciesBox } from './core/box';
 import { type MacroSkeleton, SkeletonBuilder } from './core/graph';
 import { hashText } from './core/hash';
@@ -39,6 +41,7 @@ import type { TextureManifest } from './core/textures';
 import { DETAILS, type Detail, type Season, type Vec3 } from './core/types';
 import { lightCrown } from './crown/visibility';
 import { type CuttingOptions, cutBranch, cutFoliage, mergeShoots } from './cutting';
+import { coarsenSkeleton } from './grow/coarsen';
 import { grower, loadGrower } from './grow/models';
 import { extrasMesh } from './leaf/extras';
 import { placeShoots } from './leaf/instancer';
@@ -82,16 +85,20 @@ export interface KitSource {
 export interface KitOptions {
 	/** The mesh tier; high by default. */
 	readonly detail?: Detail;
-	/** Grow the stand-in of every stage, as the stand-in species that scenes place do. */
-	readonly placeholders?: boolean;
+	/**
+	 * Grow the stand-in of every stage, as the stand-in species that scenes place do; or with
+	 * `'missing'`, grow each built stage and a stand-in only for a stage that is not built yet.
+	 */
+	readonly placeholders?: boolean | 'missing';
 }
 
 /**
- * How one variant grows.
+ * How one variant grows. Its coarseness options come from the kit, as `prepareSpecies` took them,
+ * when it gives none of its own.
  *
  * @category api/vegetation
  */
-export interface GrowOptions {
+export interface GrowOptions extends CoarsenessOptions {
 	/** The scene's seed. */
 	readonly seed: number;
 	/** The variant's index, from 0 to the record's variants less one. */
@@ -123,9 +130,23 @@ export async function loadPlantCode(record: Species): Promise<void> {
 
 /**
  * Runs a stage, or its stand-in when the kit asks for stand-ins. A stand-in kit always grows the
- * stand-ins, so the stand-in species that scenes place draw the same as the real stages land.
+ * stand-ins, so the stand-in species that scenes place draw the same as the real stages land. A kit
+ * that asks for the missing stages' stand-ins runs each stage and grows the stand-in only where the
+ * stage throws that it is not built.
  */
-function stage<T>(placeholders: boolean | undefined, run: () => T, standIn: () => T): T {
+function stage<T>(
+	placeholders: boolean | 'missing' | undefined,
+	run: () => T,
+	standIn: () => T,
+): T {
+	if (placeholders === 'missing') {
+		try {
+			return run();
+		} catch (error) {
+			if (error instanceof NotBuiltError) return standIn();
+			throw error;
+		}
+	}
 	return placeholders ? standIn() : run();
 }
 
@@ -146,7 +167,8 @@ export function kitKey(record: Species, manifest: TextureManifest, detail: Detai
 }
 
 /**
- * The key of a grown variant: its kit's key, the seed, the variant and the season.
+ * The key of a grown variant: its kit's key, the seed, the variant, the season, the tier, the
+ * cutting and the coarseness options.
  *
  * @param kit The species' kit.
  * @param options The growth's options.
@@ -156,7 +178,7 @@ export function kitKey(record: Species, manifest: TextureManifest, detail: Detai
 export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
 	const season = options.season ?? kit.record.seasons.default;
 	const cutting = options.cutting ? JSON.stringify(options.cutting) : '';
-	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}`;
+	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}`;
 }
 
 /**
@@ -172,7 +194,7 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 	const { record } = source;
 	const manifest = source.textures.manifest;
 	const detail = options.detail ?? 'high';
-	const placeholders = options.placeholders === true;
+	const placeholders = options.placeholders ?? false;
 	const box = speciesBox(record);
 	const builder = foliage(record.foliage.kind);
 	const leavesByTier = DETAILS.map((tier) =>
@@ -256,16 +278,22 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 		variant: options.variant,
 		season: options.season ?? record.seasons.default,
 	};
-	const skeleton = stage(
+	const detail = options.detail ?? kit.detail;
+	const grown = stage(
 		placeholders,
 		() => grower(record.growth.model).grow(growInput),
 		() => placeholderSkeleton(growInput),
 	);
-	speciesHooks(record.id)?.afterGrow?.(skeleton, record, growInput.seed);
+	speciesHooks(record.id)?.afterGrow?.(grown, record, growInput.seed);
+	// A stand-in grows as it is at any coarseness.
+	const coarseness = placeholders
+		? 0
+		: coarsenessFor(kit, { ...growInput, skeleton: grown }, detail, options);
 	const dressInput: DressInput = {
 		...growInput,
 		kit,
-		skeleton: cutSkeleton(kit, skeleton, options.cutting),
+		skeleton: cutSkeleton(kit, coarsenSkeleton(grown, coarseness), options.cutting),
+		coarseness,
 	};
 	const rows =
 		record.lod.nearFoliage === 'instanced' && kit.prototypes.length > 0
@@ -280,7 +308,7 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 		() => lightCrown(dressInput, rows),
 		() => placeholderCrown(dressInput),
 	);
-	return { ...dressInput, rows, crown, detail: options.detail ?? kit.detail };
+	return { ...dressInput, rows, crown, detail };
 }
 
 /** Whether a cutting is cut from the grown skeleton rather than built from the kit alone. */
@@ -337,8 +365,10 @@ function growCutting(
 	let skeleton: MacroSkeleton;
 	let parts: PlantPart[];
 	let wind: PlantAsset['wind'];
+	let coarseness = 0;
 	if (cutsSkeleton(kit, cutting)) {
 		const mesh = dress(kit, options);
+		coarseness = mesh.coarseness ?? 0;
 		wind = stage(
 			kit.placeholders,
 			() => windRecords(mesh),
@@ -368,6 +398,7 @@ function growCutting(
 		seed: options.seed >>> 0,
 		variant: options.variant,
 		season,
+		coarseness,
 		cutting,
 		skeleton,
 		shoots: emptyRows(),
@@ -495,6 +526,7 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 		seed: mesh.seed,
 		variant: options.variant,
 		season: mesh.season,
+		coarseness: mesh.coarseness ?? 0,
 		skeleton,
 		shoots: mesh.rows,
 		levels,

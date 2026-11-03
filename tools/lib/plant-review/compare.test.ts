@@ -3,6 +3,7 @@ import { projectRow, standCamera } from '../../../tests/pages/lib/plant-review/f
 import {
 	alignTurn,
 	anchorColumn,
+	crownBoxSpread,
 	framingQuery,
 	iou,
 	motionProfile,
@@ -10,10 +11,12 @@ import {
 	NORMAL_WIDTH,
 	normalise,
 	profileError,
+	rubricBand,
+	rubricFrames,
 	spread,
 } from './compare.ts';
 import { deltaE2000 } from './image.ts';
-import { boxOf, type PlantMask } from './references.ts';
+import { boxOf, type PlantMask, type PlantMeasures } from './references.ts';
 
 /** A plant mask of a rectangle crown on a one-pixel trunk, with the background fields filled in. */
 function rectangle(
@@ -126,6 +129,29 @@ describe('the measures', () => {
 		expect(profileError([0.5, 1, 0.2], [0.4, 1.2, 0.2])).toBeCloseTo(0.1);
 		expect(spread([90, 100, 110])).toBeCloseTo(0.2);
 		expect(spread([0, 0])).toBe(0);
+	});
+
+	test("take the rubric's angles that a turn reaches, with the frame nearest each", () => {
+		expect(rubricFrames(360, 193)).toEqual({
+			angles: [0, 45, 90, 135, 180, 225, 270, 315],
+			frames: [0, 24, 48, 72, 97, 121, 145, 169],
+		});
+		expect(rubricFrames(180, 97).angles).toEqual([0, 45, 90, 135]);
+	});
+
+	test("spread the crown box's width and height over the frames that show a plant", () => {
+		const box = { left: 0, top: 0, right: 1, bottom: 1 };
+		const at = (width: number, height: number) =>
+			({ box, crownBox: { width, height } }) as unknown as PlantMeasures;
+		expect(crownBoxSpread([at(90, 50), at(110, 50), { box: null } as PlantMeasures])).toEqual({
+			width: 0.2,
+			height: 0,
+		});
+	});
+
+	test('take the band of a conifer or of any other form', () => {
+		expect(rubricBand('norway-spruce', 'norway-spruce')).toBe(0.15);
+		expect(rubricBand('pedunculate-oak', 'pedunculate-oak')).toBe(0.25);
 	});
 
 	test('give a perceptual colour difference that matches the published CIEDE2000 pairs', () => {

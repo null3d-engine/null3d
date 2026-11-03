@@ -5,9 +5,11 @@
 // every run.
 import { defineSketch } from '@null3d/engine';
 import { createParticles, particleTextures } from '@null3d/particles';
+import { applySketchSwitches } from '../lib/sketch-switches';
 
 export default defineSketch(async (ctx) => {
-	const { scene, materials, geometry, textures } = ctx;
+	const { scene, materials, geometry, textures, quality } = ctx;
+	applySketchSwitches(import.meta.url, quality);
 	scene.setBackground('#1d2330');
 	scene.setActiveCamera(
 		scene.createPerspectiveCamera({ fov: 50, position: [0, 2.4, 7], target: [0, 1.2, 0] }),

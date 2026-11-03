@@ -153,6 +153,7 @@ describe('the stand-ins on the page', () => {
 				shoots: material('shoots'),
 				cards: material('cards'),
 				foliage: material('foliage'),
+				extras: material('extras'),
 			},
 			far,
 			view: { height: 1080, fov: 50 },

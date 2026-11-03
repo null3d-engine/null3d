@@ -1907,7 +1907,9 @@ fn fs(in: MotionOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef OBJECT_IDS
     input.instance = in.ids.x;
 #endif
-#ifdef CUSTOM_SURFACE
+#ifdef CUSTOM_UNLIT
+    let alpha = unlit(input).a;
+#else ifdef CUSTOM_SURFACE
     let alpha = surface(input).alpha;
 #else
     let alpha = defaultSurface(input).alpha;
@@ -2378,9 +2380,9 @@ fn light_surface(
             // `relative` is from this view's own camera, so a reflection's view reads its own place.
             let world = engine_frame.camera_world.xyz + relative;
 #ifdef CUSTOM_AMBIENT_NORMAL
-            irradiance = mix(irradiance, probe_grid_irradiance(engine_frame.probe_grid, world, ambient_normal), engine_frame.probe_grid.params.y);
+            irradiance = mix(irradiance, probe_grid_irradiance(engine_frame.probe_grid, world, ambient_normal, environment_irradiance(env, ambient_normal)), engine_frame.probe_grid.params.y);
 #else
-            irradiance = mix(irradiance, probe_grid_irradiance(engine_frame.probe_grid, world, normal), engine_frame.probe_grid.params.y);
+            irradiance = mix(irradiance, probe_grid_irradiance(engine_frame.probe_grid, world, normal, environment_irradiance(env, normal)), engine_frame.probe_grid.params.y);
 #endif
         }
 #endif
@@ -2781,6 +2783,43 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #endif
 }
 
+#ifdef CUSTOM_UNLIT
+/// The color of a surface that shows its own color: its emissive light, fogged and finished as a
+/// lit surface's light is, after the same tests of its alpha, with no lights, shadows or
+/// reflections, so a pixel of it pays for none of them.
+fn shade_unlit(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
+#ifdef ALPHA_HASH
+    if s.alpha < alpha_hash_threshold(hash_place) {
+        discard;
+    }
+#else ifdef ALPHA_COVERAGE
+    let coverage = alpha_coverage(s.alpha, fwidth(s.alpha), material_row.emissive.w);
+    if coverage <= 0.0 {
+        discard;
+    }
+#else ifdef ALPHA_MASK
+    if s.alpha < material_row.emissive.w {
+        discard;
+    }
+#endif
+#ifdef LOD_FADE
+    if !lod_kept(lod.x, pixel.xy, u32(lod.y)) {
+        discard;
+    }
+#endif
+    let finished = finish_exposed_material(
+        material_row,
+        fogged(s.emissive * engine_frame.output.exposure, input.relativePosition, material_row),
+        pixel.xy,
+    );
+#ifdef ALPHA_COVERAGE
+    return vec4f(finished.rgb, coverage);
+#else
+    return fragment_color(material_row, finished.rgb, s.alpha);
+#endif
+}
+#endif
+
 #ifndef DECAL
 /// What a surface function knows of the point that the fragment shows, from the values that the
 /// vertex stage passed on and the materials that the fragment stage loaded.
@@ -2925,7 +2964,9 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) {
 #ifdef OBJECT_IDS
     input.instance = in.ids.x;
 #endif
-#ifdef CUSTOM_SURFACE
+#ifdef CUSTOM_UNLIT
+    var alpha = unlit(input).a;
+#else ifdef CUSTOM_SURFACE
     var alpha = surface(input).alpha;
 #else
     var alpha = defaultSurface(input).alpha;
@@ -3023,12 +3064,34 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     load_custom_texture_layers(in.material);
 #endif
     let input = surface_input(in, front);
-#ifdef CUSTOM_SURFACE
+#ifdef CUSTOM_UNLIT
+    // The material's own color stands in for the surface's light, and its opacity for its alpha.
+    let own = unlit(input);
+    var s = defaultSurface(input);
+    s.emissive = own.rgb;
+    s.alpha = own.a;
+#else ifdef CUSTOM_SURFACE
     let s = surface(input);
 #else
     let s = defaultSurface(input);
 #endif
+#ifdef CUSTOM_UNLIT
 #ifdef SAMPLE_MASK
+    return masked_fragment(shade_unlit(s, input, in.clip));
+#else ifdef WEIGHTED
+    return weighted_fragment(shade_unlit(s, input, in.clip), in.relative);
+#else ifdef MOMENT
+    return moment_fragment(s.alpha, in.relative);
+#else ifdef MOMENT_COLOUR
+    return moment_colour_fragment(
+        shade_unlit(s, input, in.clip),
+        in.relative,
+        textureLoad(moment_store, vec2u(in.clip.xy), 0),
+    );
+#else
+    return shade_unlit(s, input, in.clip);
+#endif
+#else ifdef SAMPLE_MASK
     return masked_fragment(shade(s, input, in.clip));
 #else ifdef WEIGHTED
     return weighted_fragment(shade(s, input, in.clip), in.relative);

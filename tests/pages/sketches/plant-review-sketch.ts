@@ -269,6 +269,7 @@ function matteMaterials(ctx: SketchContext, kit: SpeciesKit): PlantMaterials {
 			alphaCutoff: 0.5,
 		}),
 		foliage: ctx.materials.unlit(black),
+		extras: ctx.materials.unlit(black),
 	};
 }
 
@@ -596,9 +597,12 @@ export default defineSketch(async (ctx) => {
 					air: { speed: 4 * (QUERY.wind as number) },
 				})
 			: undefined;
-	const plantLook = MATTE
-		? matteMaterials(ctx, kit)
-		: plantMaterials(ctx, kit, wind ? { wind: wind.field } : undefined);
+	// A stand-in kit's matte is plain black materials; a real kit's is the plant shader's own, which
+	// keeps its quantised parts, cut-outs and sway.
+	const plantLook =
+		MATTE && kit.placeholders
+			? matteMaterials(ctx, kit)
+			: plantMaterials(ctx, kit, { ...(wind && { wind: wind.field }), matte: MATTE });
 	let near: NearPool | undefined;
 	if (QUERY.lod === undefined || QUERY.lod === 0) {
 		try {
@@ -704,8 +708,8 @@ export default defineSketch(async (ctx) => {
 	};
 	page.post('plant-review', facts);
 
-	// A matte's plain materials take no wind.
-	const windMaterials = MATTE ? [] : Object.values(plantLook);
+	// A stand-in's matte materials take no wind.
+	const windMaterials = MATTE && kit.placeholders ? [] : Object.values(plantLook);
 	if (!wind && !near) return {};
 	return {
 		onUpdate() {

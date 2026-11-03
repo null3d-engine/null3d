@@ -8,15 +8,15 @@ export const files = {
 		"species": "pedunculate-oak",
 		"source": {
 			"repository": "null3d-engine/plant-references",
-			"commit": "local",
+			"commit": "8355243695f3bae7eec19015855ea7459d019f0b",
 			"files": [
 				{
-					"name": "24-leaf-texture-upper-c.png",
+					"name": "24-leaf-texture-upper.png",
 					"sha256": "6d81588d00cf6d56cb3a5d2dc00fb4bac07b2b0c7678009bfc16f13dcf1dda24",
 					"job": "29dfe3c1-d8b5-4746-9873-9cfb3d51e4d7"
 				},
 				{
-					"name": "25-leaf-texture-underside-c.png",
+					"name": "25-leaf-texture-underside.png",
 					"sha256": "71c06f3241545f131ad3ec162230d0ce1e6f4b718799f8f3b0eb220df3329409",
 					"job": "f6d8dbe9-affd-489a-827b-57a4bcca892d"
 				},

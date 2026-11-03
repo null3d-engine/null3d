@@ -1,15 +1,23 @@
 // The extras: cones and fruit as lathe shapes, flowers as petal cups, thorns and cactus spines as
 // spine fans, and catkins, on the sites their record names, in the seasons it names. A share of the
 // matching sites carries one, chosen by hash; each hangs from its site's direction toward the ground
-// by the record's degrees. Shoot tips and nodes come from the shoot rows; old wood, areoles and the
-// crown's top come from the skeleton's bud sites.
+// by the record's degrees. Shoot tips and nodes come from the shoot rows; old wood, areoles, the
+// crown's top, flower sites and the tips of flowering stems come from the skeleton's bud sites.
 //
 // An extra's colour bytes hold its axis's wind record (high and low byte, global in the species'
 // table), its entry in the record's extras, which picks its colour from the plant material's header,
 // and the crown's sky visibility at its site. Only the first four entries draw. The second texture
 // coordinate runs along the extra.
 import type { MeshArrays } from '../asset';
-import { BUD_AREOLE, BUD_DORMANT, BUD_TERMINAL } from '../core/graph';
+import {
+	AXIS_CULM,
+	BUD_AREOLE,
+	BUD_DORMANT,
+	BUD_FLOWER,
+	BUD_LATERAL,
+	BUD_SPUR,
+	BUD_TERMINAL,
+} from '../core/graph';
 import { unitAt } from '../core/hash';
 import {
 	cos,
@@ -73,15 +81,27 @@ function sitesOf(input: MeshInput, extra: ExtraSpec): Site[] {
 		return out;
 	}
 	const buds = skeleton.buds;
+	const axes = skeleton.axes;
 	for (let b = 0; b < buds.count; b++) {
 		const kind = buds.kind[b] as number;
 		const y = buds.position[b * 3 + 1] as number;
-		const take =
-			extra.at === 'areole'
-				? kind === BUD_AREOLE
-				: extra.at === 'old-wood'
-					? kind === BUD_DORMANT || (kind !== BUD_TERMINAL && kind !== BUD_AREOLE)
-					: kind === BUD_TERMINAL && y > skeleton.height * 0.85;
+		let take: boolean;
+		switch (extra.at) {
+			case 'areole':
+				take = kind === BUD_AREOLE;
+				break;
+			case 'old-wood':
+				take = kind === BUD_LATERAL || kind === BUD_DORMANT || kind === BUD_SPUR;
+				break;
+			case 'flower':
+				take = kind === BUD_FLOWER;
+				break;
+			case 'stem-tip':
+				take = kind === BUD_TERMINAL && (axes.kind[buds.axis[b] as number] as number) === AXIS_CULM;
+				break;
+			default:
+				take = kind === BUD_TERMINAL && y > skeleton.height * 0.85;
+		}
 		if (!take) continue;
 		out.push({
 			at: [buds.position[b * 3] as number, y, buds.position[b * 3 + 2] as number],

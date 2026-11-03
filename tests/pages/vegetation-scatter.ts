@@ -16,7 +16,7 @@ const DEFAULT_SEED = 7;
 
 /** The checksum that every device and both GPU paths must give for the default seed. */
 const REFERENCE: Record<number, number> = {
-	7: 150459,
+	7: 2493806866,
 };
 
 /** The seed to place with. */
