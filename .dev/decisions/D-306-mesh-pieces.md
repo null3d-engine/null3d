@@ -18,7 +18,7 @@ A copy of a large mesh that the view cuts through, or that turns half its surfac
 
 ## The pieces
 
-`packages/cli/src/assets/pieces.js` plans the pieces from plain typed arrays and imports nothing. So the engine's job workers can run it too. A list of 32,768 triangles or more gets one piece for each 4,096 triangles, from 8 to 16.
+`packages/engine/levels/pieces.js` (`@null3d/engine/pieces-planner`) plans the pieces from plain typed arrays and imports nothing. So the engine's job workers can run it too. A list of 32,768 triangles or more gets one piece for each 4,096 triangles, from 8 to 16.
 
 The planner groups the triangles by facing first. Spherical k-means, weighted by area, starts from directions spread evenly over the sphere and makes one group per piece, up to 14. Past 14 pieces, each group splits at the median of its triangles' middles along their longest side. A piece's sphere holds its corners. Its cone's axis is the mean facing, and its cutoff is the sine of the widest facing's angle, as meshoptimizer's `computeClusterBounds` gives it. Each number is a 32-bit float, rounded so that it culls no more than the exact bounds.
 

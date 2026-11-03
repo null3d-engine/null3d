@@ -4,8 +4,8 @@
 // outside the view, or whose every triangle faces away from the eye, draws nothing, while the
 // copy's other pieces draw.
 //
-// The planner reads plain typed arrays and imports nothing, so the asset tool and the engine's job
-// workers can both run it. It moves triangles only: every vertex stays where it is, so the list
+// The planner reads plain typed arrays and imports nothing, so the asset tool runs it in Node on a
+// glTF file's accessors, and the engine runs it on a job worker on a mesh made in code. It moves triangles only: every vertex stays where it is, so the list
 // keeps sharing its vertex streams with the levels and the base mesh beside it.
 //
 // The pieces come in two steps. Spherical k-means on the triangles' facings, weighted by their
@@ -78,6 +78,7 @@ export function pieceCount(triangles) {
  * @param {ArrayLike<number>} positions Three numbers for each vertex, as the GPU reads them.
  * @param {ArrayLike<number>} indices Three vertex numbers for each triangle.
  * @param {number} count
+ * @param {number} [facings] The most facing groups: one gives pieces by space only.
  * @returns {PiecePlan | undefined}
  */
 export function planPieces(positions, indices, count, facings = Math.min(count, PIECE_FACINGS)) {
