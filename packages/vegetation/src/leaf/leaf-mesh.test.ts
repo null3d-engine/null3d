@@ -64,11 +64,24 @@ describe('the blade leaf mesh', () => {
 		expect(figures.high).toBeGreaterThanOrEqual(0.95);
 		expect(figures.ultra).toBeGreaterThanOrEqual(0.95);
 		expect(figures.medium).toBeGreaterThanOrEqual(0.9);
-		expect(figures.low).toBeGreaterThanOrEqual(0.8);
+	});
+
+	it('draws the low tier leaf as one cut-out card that holds every covered texel', () => {
+		const { points, triangles } = leafTriangles(oak, 'low');
+		expect(triangles.length / 3).toBe(2);
+		const card = rasteriseTriangles(mask.size, points, triangles);
+		let covered = 0;
+		let held = 0;
+		for (let i = 0; i < mask.covered.length; i++) {
+			covered += mask.covered[i] as number;
+			held += (mask.covered[i] as number) & (card.covered[i] as number);
+		}
+		expect(held / covered).toBeGreaterThanOrEqual(0.999);
+		expect(bladeMesh(FLAT, oak, 'low').indices.length / 3).toBe(2);
 	});
 
 	it('keeps the triangles of a leaf within each tier', () => {
-		const limits: Record<Detail, number> = { low: 24, medium: 44, high: 110, ultra: 300 };
+		const limits: Record<Detail, number> = { low: 2, medium: 44, high: 110, ultra: 300 };
 		let previous = 0;
 		for (const detail of DETAILS) {
 			const triangles = bladeMesh(FLAT, oak, detail).indices.length / 3;
