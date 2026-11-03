@@ -2,8 +2,9 @@
 // quality preset, and the variants each preset grows. A species carries its own budget under these
 // caps (`lod.budget`), and one generic test checks every species against both. Only the owner
 // changes a figure here.
+import type { PlantAsset } from '../asset';
 import type { GrowthModel, Species } from './record';
-import type { Detail } from './types';
+import { DETAILS, type Detail } from './types';
 
 /**
  * The most that one species of a class of growth models may spend. Bytes are counted in
@@ -14,8 +15,11 @@ import type { Detail } from './types';
 export interface ModelCaps {
 	/** Bytes of the kit: prototypes in every tier, and the card atlas until it uploads. */
 	readonly kitBytes: number;
-	/** Bytes of one variant: the card levels, the shoot rows and the skeleton. */
-	readonly variantBytes: number;
+	/**
+	 * Bytes of one variant at each detail tier, read at the tier the plant is built for: its levels
+	 * and wind records, the nearest wood left out, which has its own cap.
+	 */
+	readonly variantBytes: Readonly<Record<Detail, number>>;
 	/**
 	 * Bytes of one variant's nearest wood at each detail tier, which meshes in the background; 0 where
 	 * the class has none.
@@ -52,7 +56,8 @@ const MB = 1_000_000;
 export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 	tree: {
 		kitBytes: 6 * MB,
-		variantBytes: 4 * MB,
+		// The grown oak's largest variant, with about 15 per cent to spare: 6.07, 6.09, 6.11 and 6.14 MB.
+		variantBytes: { low: 7 * MB, medium: 7 * MB, high: 7.1 * MB, ultra: 7.1 * MB },
 		// The grown oak's largest of six variants, with about 15 per cent to spare: 5.2, 5.7, 6.4 and
 		// 7.9 MB. Close-up review needs every finest macro axis as real wood.
 		lod0WoodBytes: { low: 6 * MB, medium: 6.5 * MB, high: 7.5 * MB, ultra: 9 * MB },
@@ -65,7 +70,7 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 	},
 	palm: {
 		kitBytes: 4 * MB,
-		variantBytes: 3 * MB,
+		variantBytes: { low: 3 * MB, medium: 3 * MB, high: 3 * MB, ultra: 3 * MB },
 		lod0WoodBytes: { low: 2 * MB, medium: 2 * MB, high: 2 * MB, ultra: 2 * MB },
 		lod0Triangles: 600_000,
 		lod1Triangles: 80_000,
@@ -76,8 +81,12 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 	},
 	ground: {
 		kitBytes: 2 * MB,
-		variantBytes: 1.5 * MB,
-		lod0WoodBytes: { low: 0, medium: 0, high: 0, ultra: 0 },
+		// The largest of hosta, pendulous sedge and meadow grass, with about 15 per cent to spare: 1.35,
+		// 1.39, 1.44 and 3.30 MB. Hosta's ribs at the finest tier take four columns a vein.
+		variantBytes: { low: 1.6 * MB, medium: 1.6 * MB, high: 1.7 * MB, ultra: 3.8 * MB },
+		// A frond colony's stipes and rachises are wood: the bracken test colony's largest of sixteen
+		// variants and seasons, with about 15 per cent to spare: 52, 58, 61 and 64 KB.
+		lod0WoodBytes: { low: 0.06 * MB, medium: 0.066 * MB, high: 0.07 * MB, ultra: 0.074 * MB },
 		lod0Triangles: 200_000,
 		lod1Triangles: 30_000,
 		lod2Triangles: 8_000,
@@ -102,6 +111,29 @@ export const MODEL_CLASS: Readonly<Record<GrowthModel, CapClass>> = {
 	tuft: 'ground',
 	column: 'ground',
 };
+
+/**
+ * The bytes a grown variant holds against its budget: its levels and wind records, without the
+ * nearest wood, which has a cap of its own.
+ *
+ * @param asset The grown variant.
+ * @returns The bytes.
+ */
+export function variantBytesOf(asset: PlantAsset): number {
+	let wood = 0;
+	for (const part of asset.levels[0].parts) {
+		if (part.name !== 'wood') continue;
+		const a = part.arrays;
+		wood +=
+			a.positions.byteLength +
+			a.normals.byteLength +
+			a.uvs.byteLength +
+			a.uvs1.byteLength +
+			a.colors.byteLength +
+			a.indices.byteLength;
+	}
+	return asset.stats.bytes - wood;
+}
 
 /**
  * The species whose second bark zone the owner allows a larger download, with those caps.
@@ -143,7 +175,6 @@ export function capProblems(record: Species): string[] {
 	const problems: string[] = [];
 	const figures = [
 		['kitBytes', budget.kitBytes, caps.kitBytes],
-		['variantBytes', budget.variantBytes, caps.variantBytes],
 		['lod0Triangles', budget.lod0Triangles, caps.lod0Triangles],
 		['lod1Triangles', budget.lod1Triangles, caps.lod1Triangles],
 		['lod2Triangles', budget.lod2Triangles, caps.lod2Triangles],
@@ -156,6 +187,14 @@ export function capProblems(record: Species): string[] {
 			problems.push(
 				`lod.budget.${name} is ${value}, over the cap of ${cap} for a ${record.growth.model} plant`,
 			);
+	for (const detail of DETAILS) {
+		const value = budget.variantBytes[detail];
+		const cap = caps.variantBytes[detail];
+		if (value > cap)
+			problems.push(
+				`lod.budget.variantBytes.${detail} is ${value}, over the cap of ${cap} for a ${record.growth.model} plant`,
+			);
+	}
 	return problems;
 }
 

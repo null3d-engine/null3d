@@ -146,17 +146,17 @@ interface TestHost extends StorageHost {
 
 function host(sync = true): TestHost {
 	const folder = new MemoryFolder();
-	const test: TestHost = {
+	const site: TestHost = {
 		folder,
 		quota: 1e9,
 		other: 0,
 		time: Date.UTC(2026, 0, 1),
 		sync,
 		root: async () => folder as unknown as FileSystemDirectoryHandle,
-		estimate: async () => ({ quota: test.quota, usage: folder.bytes() + test.other }),
-		now: () => test.time,
+		estimate: async () => ({ quota: site.quota, usage: folder.bytes() + site.other }),
+		now: () => site.time,
 	};
-	return test;
+	return site;
 }
 
 const bytes = (length: number, seed = 1) => {
@@ -168,8 +168,8 @@ const bytes = (length: number, seed = 1) => {
 const HOUR = 3_600_000;
 
 /** The file of an entry in the memory folder. */
-const fileOf = (test: TestHost, name: string, version: string, key: string) =>
-	test.folder.at('null3d-derived-1', name, version, entryName(key)) as MemoryFile | undefined;
+const fileOf = (site: TestHost, name: string, version: string, key: string) =>
+	site.folder.at('null3d-derived-1', name, version, entryName(key)) as MemoryFile | undefined;
 
 describe('an entry of the cache of derived data', () => {
 	test('reads back the bytes under its own key, and nothing under another key', () => {
@@ -223,25 +223,25 @@ describe('an entry of the cache of derived data', () => {
 describe('the cache of derived data', () => {
 	for (const sync of [true, false]) {
 		test(`misses a new key, then gives back the bytes that were put, ${sync ? 'in a worker' : 'on the main thread'}`, async () => {
-			const test = host(sync);
-			const cache = new DerivedStore(test).namespace('plants', '3');
+			const site = host(sync);
+			const cache = new DerivedStore(site).namespace('plants', '3');
 			expect(await cache.get('kit:1')).toBeUndefined();
 			await cache.put('kit:1', bytes(40));
 			expect([...((await cache.get('kit:1')) ?? [])]).toEqual([...bytes(40)]);
 			expect(await cache.get('kit:2')).toBeUndefined();
-			expect((fileOf(test, 'plants', '3', 'kit:1') as MemoryFile).syncOpens).toBe(sync ? 1 : 0);
+			expect((fileOf(site, 'plants', '3', 'kit:1') as MemoryFile).syncOpens).toBe(sync ? 1 : 0);
 		});
 	}
 
 	test('starts a write only after the call that asks for it returns', async () => {
-		const test = host();
-		const cache = new DerivedStore(test).namespace('plants', '3');
+		const site = host();
+		const cache = new DerivedStore(site).namespace('plants', '3');
 		await cache.get('warm-up');
 		const written = cache.put('k', bytes(8));
 		await Promise.resolve();
-		expect(fileOf(test, 'plants', '3', 'k')?.bytes.length ?? 0).toBe(0);
+		expect(fileOf(site, 'plants', '3', 'k')?.bytes.length ?? 0).toBe(0);
 		await written;
-		expect(fileOf(test, 'plants', '3', 'k')?.bytes.length).toBeGreaterThan(8);
+		expect(fileOf(site, 'plants', '3', 'k')?.bytes.length).toBeGreaterThan(8);
 	});
 
 	test('keeps namespaces apart, and gives the same namespace for the same name and version', async () => {
@@ -254,46 +254,46 @@ describe('the cache of derived data', () => {
 	});
 
 	test("deletes the entries of a name's other versions, and leaves other names", async () => {
-		const test = host();
-		const first = new DerivedStore(test);
+		const site = host();
+		const first = new DerivedStore(site);
 		await first.namespace('plants', '1').put('k', bytes(4));
 		await first.namespace('terrain', '1').put('k', bytes(4));
-		const next = new DerivedStore(test).namespace('plants', '2');
+		const next = new DerivedStore(site).namespace('plants', '2');
 		expect(await next.get('k')).toBeUndefined();
 		await new Promise((resolve) => setTimeout(resolve, 0));
-		expect(test.folder.at('null3d-derived-1', 'plants', '1')).toBeUndefined();
-		expect(test.folder.at('null3d-derived-1', 'terrain', '1')).toBeDefined();
+		expect(site.folder.at('null3d-derived-1', 'plants', '1')).toBeUndefined();
+		expect(site.folder.at('null3d-derived-1', 'terrain', '1')).toBeDefined();
 	});
 
 	test('deletes the folders of older layouts and the caches of the older store when it opens', async () => {
-		const test = host();
-		await test.folder.getDirectoryHandle('null3d-derived-0', { create: true });
-		await test.folder.getDirectoryHandle('game-data', { create: true });
+		const site = host();
+		await site.folder.getDirectoryHandle('null3d-derived-0', { create: true });
+		await site.folder.getDirectoryHandle('game-data', { create: true });
 		const deleted: string[] = [];
-		test.caches = {
+		site.caches = {
 			keys: async () => ['null3d-ktx2-basis-2.50-1', 'game-v3'],
 			delete: async (name: string) => {
 				deleted.push(name);
 				return true;
 			},
 		} as unknown as CacheStorage;
-		await new DerivedStore(test).namespace('a', '1').get('k');
+		await new DerivedStore(site).namespace('a', '1').get('k');
 		await new Promise((resolve) => setTimeout(resolve, 0));
-		expect([...test.folder.children.keys()].sort()).toEqual(['game-data', 'null3d-derived-1']);
+		expect([...site.folder.children.keys()].sort()).toEqual(['game-data', 'null3d-derived-1']);
 		expect(deleted).toEqual(['null3d-ktx2-basis-2.50-1']);
 	});
 
 	test('names folders so that no name or version leaves its folder', async () => {
-		const test = host();
-		await new DerivedStore(test).namespace('../up', 'a/b.c').put('k', bytes(4));
-		expect(test.folder.at('null3d-derived-1', '%2E%2E%2Fup', 'a%2Fb%2Ec')).toBeDefined();
+		const site = host();
+		await new DerivedStore(site).namespace('../up', 'a/b.c').put('k', bytes(4));
+		expect(site.folder.at('null3d-derived-1', '%2E%2E%2Fup', 'a%2Fb%2Ec')).toBeDefined();
 	});
 
 	test('misses a damaged entry, and writes it over', async () => {
-		const test = host();
-		const cache = new DerivedStore(test).namespace('a', '1');
+		const site = host();
+		const cache = new DerivedStore(site).namespace('a', '1');
 		await cache.put('k', bytes(64));
-		const file = fileOf(test, 'a', '1', 'k') as MemoryFile;
+		const file = fileOf(site, 'a', '1', 'k') as MemoryFile;
 		(file.bytes[file.bytes.length - 3] as number) ^= 0xff;
 		expect(await cache.get('k')).toBeUndefined();
 		await cache.put('k', bytes(64));
@@ -301,43 +301,43 @@ describe('the cache of derived data', () => {
 	});
 
 	test('shares one read between two reads of the same entry at once, each with its own bytes', async () => {
-		const test = host();
-		const cache = new DerivedStore(test).namespace('a', '1');
+		const site = host();
+		const cache = new DerivedStore(site).namespace('a', '1');
 		await cache.put('k', bytes(32));
 		const [one, two] = await Promise.all([cache.get('k'), cache.get('k')]);
 		expect(one).toBeDefined();
 		expect([...(two ?? [])]).toEqual([...(one ?? [])]);
 		expect(two).not.toBe(one);
-		expect((fileOf(test, 'a', '1', 'k') as MemoryFile).syncOpens).toBe(1);
+		expect((fileOf(site, 'a', '1', 'k') as MemoryFile).syncOpens).toBe(1);
 	});
 
 	test('keeps nothing in a namespace that the page switch turns off', async () => {
-		const test = host();
-		const cache = new DerivedStore(test).namespace('a', '1', false);
+		const site = host();
+		const cache = new DerivedStore(site).namespace('a', '1', false);
 		await cache.put('k', bytes(4));
 		expect(await cache.get('k')).toBeUndefined();
-		expect(test.folder.children.size).toBe(0);
+		expect(site.folder.children.size).toBe(0);
 	});
 
 	test('misses everything, and never rejects, where the storage refuses to open', async () => {
-		const test = host();
-		test.root = async () => {
+		const site = host();
+		site.root = async () => {
 			throw new DOMException('no', 'SecurityError');
 		};
-		const cache = new DerivedStore(test).namespace('a', '1');
+		const cache = new DerivedStore(site).namespace('a', '1');
 		await cache.put('k', bytes(4));
 		expect(await cache.get('k')).toBeUndefined();
 		expect(await new DerivedStore(undefined).namespace('a', '1').get('k')).toBeUndefined();
 	});
 
 	test('works without the storage once its open passes the time limit', async () => {
-		const test = host();
+		const site = host();
 		let opens = 0;
-		test.root = () => {
+		site.root = () => {
 			opens++;
 			return new Promise(() => {});
 		};
-		const cache = new DerivedStore(test, { openMs: 20, writingMaxBytes: 1e6 }).namespace('a', '1');
+		const cache = new DerivedStore(site, { openMs: 20, writingMaxBytes: 1e6 }).namespace('a', '1');
 		const started = performance.now();
 		expect(await cache.get('k')).toBeUndefined();
 		expect(performance.now() - started).toBeLessThan(1000);
@@ -347,39 +347,39 @@ describe('the cache of derived data', () => {
 	});
 
 	test('loses only the entry when the browser refuses a write', async () => {
-		const test = host();
-		const cache = new DerivedStore(test).namespace('a', '1');
+		const site = host();
+		const cache = new DerivedStore(site).namespace('a', '1');
 		await cache.put('k', bytes(4));
-		(fileOf(test, 'a', '1', 'k') as MemoryFile).refuseWrites = true;
+		(fileOf(site, 'a', '1', 'k') as MemoryFile).refuseWrites = true;
 		await cache.put('k', bytes(4, 9));
 		expect([...((await cache.get('k')) ?? [])]).toEqual([...bytes(4)]);
 	});
 
 	test('drops a write that would hold too many bytes at once, or that passes the budget', async () => {
-		const test = host();
-		const store = new DerivedStore(test, { openMs: 1000, writingMaxBytes: 100 });
+		const site = host();
+		const store = new DerivedStore(site, { openMs: 1000, writingMaxBytes: 100 });
 		const cache = store.namespace('a', '1');
 		await Promise.all([cache.put('one', bytes(60)), cache.put('two', bytes(60))]);
 		expect(await cache.get('one')).toBeDefined();
 		expect(await cache.get('two')).toBeUndefined();
-		test.quota = 50 / BUDGET_SHARE;
+		site.quota = 50 / BUDGET_SHARE;
 		await store.trim();
 		await cache.put('three', bytes(60));
 		expect(await cache.get('three')).toBeUndefined();
 	});
 
 	test('deletes the entries used longest ago, of every namespace, until the rest fit its budget', async () => {
-		const test = host();
-		const store = new DerivedStore(test);
+		const site = host();
+		const store = new DerivedStore(site);
 		const plants = store.namespace('plants', '1');
 		const terrain = store.namespace('terrain', '1');
 		await plants.put('old', bytes(100));
-		test.time += 2 * HOUR;
+		site.time += 2 * HOUR;
 		await terrain.put('middle', bytes(100));
-		test.time += 2 * HOUR;
+		site.time += 2 * HOUR;
 		await plants.put('new', bytes(100));
-		const entry = (fileOf(test, 'plants', '1', 'new') as MemoryFile).bytes.length;
-		test.quota = Math.ceil((2 * entry + 10) / BUDGET_SHARE);
+		const entry = (fileOf(site, 'plants', '1', 'new') as MemoryFile).bytes.length;
+		site.quota = Math.ceil((2 * entry + 10) / BUDGET_SHARE);
 		await store.trim();
 		expect(await plants.get('old')).toBeUndefined();
 		expect(await terrain.get('middle')).toBeDefined();
@@ -387,27 +387,27 @@ describe('the cache of derived data', () => {
 	});
 
 	test('trims nothing while what the origin uses fits the budget', async () => {
-		const test = host();
-		const store = new DerivedStore(test);
+		const site = host();
+		const store = new DerivedStore(site);
 		const cache = store.namespace('a', '1');
 		await cache.put('k', bytes(100));
-		test.quota = Math.ceil(test.folder.bytes() / BUDGET_SHARE);
+		site.quota = Math.ceil(site.folder.bytes() / BUDGET_SHARE);
 		await store.trim();
 		expect(await cache.get('k')).toBeDefined();
 	});
 
 	test('writes the hour of a hit again once the entry is a day old, so an entry in use stays', async () => {
-		const test = host();
-		const store = new DerivedStore(test);
+		const site = host();
+		const store = new DerivedStore(site);
 		const cache = store.namespace('a', '1');
 		await cache.put('used', bytes(100));
 		await cache.put('unused', bytes(100));
-		test.time += 30 * HOUR;
+		site.time += 30 * HOUR;
 		await cache.put('new', bytes(100));
 		expect(await cache.get('used')).toBeDefined();
 		await new Promise((resolve) => setTimeout(resolve, 5));
-		const entry = (fileOf(test, 'a', '1', 'new') as MemoryFile).bytes.length;
-		test.quota = Math.ceil((2 * entry + 10) / BUDGET_SHARE);
+		const entry = (fileOf(site, 'a', '1', 'new') as MemoryFile).bytes.length;
+		site.quota = Math.ceil((2 * entry + 10) / BUDGET_SHARE);
 		await store.trim();
 		expect(await cache.get('unused')).toBeUndefined();
 		expect(await cache.get('used')).toBeDefined();
