@@ -5,16 +5,17 @@
 // second), share (0.035) and low (0.12), and the street's layout.
 
 /**
- * The facades: walls with a window in each bay of each floor, and shop windows on the ground floor.
- * Each window's light comes from a hash of its bay, its floor and its building's lot, so the town
- * shows a different pattern on every wall: warm and cool rooms, half-drawn curtains, a few blue TV
- * screens that flicker, and a few rooms whose lights go on and off every so often. Shops glow in
- * warm light or in their neon's tint, and most carry neon: tube letters on the fascia over the
- * window, or a tube around it, in one of six colors, stuttering now and then. The roof draws as
- * dark wet tar.
+ * The buildings' walls, trim and roofs, without their windows: the bricks, plaster panels, concrete
+ * or curtain wall of each kind, the frames and mullions painted around every opening, the sill and
+ * the soot under it, and dark wet tar on the roof. Most shops carry neon: tube letters on the fascia
+ * over the window, or a tube around it, in one of six colors, stuttering now and then.
+ *
+ * The windows themselves come from the facades add-on: each one is a pane placed on the wall, with a
+ * room behind its glass and its own light. So this surface draws no room, and the pane covers the
+ * dark glass that its maps paint.
  */
-export const FACADE_WGSL = /* wgsl */ `
-struct Uniforms { time: f32, litShare: f32, windowLight: f32, shopLight: f32, neonLight: f32, winU0: f32, winU1: f32, winV0: f32, winV1: f32, roomDepth: f32 }
+export const WALL_WGSL = /* wgsl */ `
+struct Uniforms { time: f32, neonLight: f32 }
 
 var colorMap: texture_2d<f32>;
 var ormMap: texture_2d<f32>;
@@ -90,53 +91,13 @@ fn surface(input: SurfaceInput) -> Surface {
     let along = normalize(vec3f(n.z, 0.0, -n.x) + vec3f(0.0001, 0.0, 0.0));
     let wall_normal = normalize(along * bump.x + vec3f(0.0, 1.0, 0.0) * bump.y + n * bump.z);
 
-    // Each window's numbers: its bay and floor, and its building's lot.
+    // The shop's own numbers: its bay and floor, and its building's lot.
     let bay = vec2i(floor(coord));
     let lot = lot_of(input.worldPosition.xz);
-    let pick = town_hash(bay.x + lot.x * 4096, bay.y, lot.y);
-    let kind = town_hash(bay.x, bay.y + 977, lot.x * 131 + lot.y);
-    let period = i32(floor(material.time / 23.0 + kind * 7.0));
-    let toggles = kind > 0.9 && town_hash(bay.x, bay.y, period + lot.x * 7 + lot.y * 13) < 0.5;
-    let share = select(material.litShare, 0.85, ground);
-    let lit = select(0.0, 1.0, (pick < share) != toggles);
-    // The room's light: warm, soft white or cool, and a TV's flickering blue in a few.
-    let warm = vec3f(1.0, 0.55, 0.24);
-    let soft = vec3f(1.0, 0.8, 0.55);
-    let cool = vec3f(0.55, 0.72, 1.0);
-    var room = select(select(warm, soft, kind > 0.45), cool, kind > 0.78);
-    let tv = kind > 0.84 && kind <= 0.9;
-    let flicker = 0.55 + 0.45 * sin(material.time * 9.0 + pick * 60.0) * sin(material.time * 3.7 + kind * 20.0);
-    room = select(room, vec3f(0.25, 0.45, 1.0) * flicker, tv);
-    // The shop's neon color, which also tints some shops' light.
     let shop = town_hash(bay.x * 7 + lot.x, 31, lot.y * 5 + 3);
     let tint = neon_color(i32(floor(fract(shop * 13.7) * 6.0)));
-    room = select(room, mix(soft, tint, 0.55), ground && kind > 0.55);
     let stutter = select(1.0, 0.12, town_hash(i32(floor(material.time * 15.0)), bay.x + lot.x * 64, lot.y) < 0.035);
     let neon = select(0.0, shop_neon(vec2f(tile.x * 2.6, coord.y * 4.2), tile.x, shop, bay, lot), ground);
-    // A curtain half drawn in some windows, and a soft fall of the light toward the sill.
-    let fy = fract(coord.y);
-    let curtain = select(1.0, select(0.35, 1.0, tile.x > 0.5), pick * 7.0 % 1.0 < 0.35);
-    let depth = 0.55 + 0.45 * smoothstep(0.1, 0.8, fy);
-    let strength = select(material.windowLight * (0.5 + pick), material.shopLight, ground);
-    // A shop shows rows of shelves, with goods of uneven brightness along each.
-    let shelves = select(1.0, (0.45 + 0.55 * step(0.14, fract(coord.y * 4.0))) * (0.75 + 0.25 * sin(coord.x * 37.0 + pick * 20.0)), ground);
-    // The room behind the window: the eye's ray reaches the back wall of a box that starts at the
-    // glass, so a window shows more of its room from the side of the street than from in front.
-    let win = select(vec4f(0.06, 0.94, 0.06, 0.68), vec4f(material.winU0, material.winU1, material.winV0, material.winV1), !ground);
-    let floor_height = select(4.2, 3.2, !ground);
-    let floor_y = select(coord.y, fract(coord.y), !ground);
-    let span_u = max((win.y - win.x) * 2.6, 0.01);
-    let span_v = max((win.w - win.z) * floor_height, 0.01);
-    let eye = normalize(camera.position - input.worldPosition);
-    let reach = material.roomDepth / max(dot(eye, n), 0.18);
-    let room_u = (fract(coord.x) * 2.6 - win.x * 2.6) / span_u + dot(eye, along) * reach / span_u;
-    let room_v = (floor_y * floor_height - win.z * floor_height) / span_v + eye.y * reach / span_v;
-    let outside = max(max(-room_u, room_u - 1.0), max(-room_v, room_v - 1.0));
-    let inside = 1.0 - smoothstep(-0.06, 0.04, outside);
-    let side_shade = 0.55 + 0.2 * clamp(1.0 - outside * 2.0, 0.0, 1.0);
-    let back_shade = 0.82 + 0.18 * smoothstep(0.55, 0.8, room_v) + 0.07 * step(0.5, fract(room_u * 4.0 + pick * 9.0));
-    let room_shade = mix(side_shade, back_shade, inside);
-    let glow = room * strength * lit * curtain * depth * shelves * (0.7 + 0.6 * kind) * room_shade;
 
     let roof = n.y > 0.5;
     let grain = vec2i(floor(input.worldPosition.xz * 2.0));
@@ -145,7 +106,7 @@ fn surface(input: SurfaceInput) -> Surface {
     s.roughness = select(orm.g, 0.45, roof);
     s.metalness = select(orm.b, 0.0, roof);
     s.normal = select(wall_normal, n, roof);
-    s.emissive = select(glow * texel.a + tint * neon * stutter * material.neonLight, vec3f(0.0), roof);
+    s.emissive = select(tint * neon * stutter * material.neonLight, vec3f(0.0), roof);
     return s;
 }
 `;
