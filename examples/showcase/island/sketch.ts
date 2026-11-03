@@ -90,10 +90,11 @@ const params = new URL(import.meta.url).searchParams;
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, page, time } = ctx;
 	page.post('loading', 'Raising the island');
-	const [sky, room] = await Promise.all([
-		assets.skyEnvironment(),
-		assets.builtinEnvironment('room'),
-	]);
+	// The environment maps build on the GPU, and on a software GPU that takes minutes. Nothing that
+	// the visitor's controls need depends on them, so the loads run beside the scene's own build and
+	// the stage takes them when they arrive.
+	const sky = assets.skyEnvironment();
+	const room = assets.builtinEnvironment('room');
 	const sun = scene.createDirectionalLight({
 		castShadows: true,
 		layers: SUN_LAYERS | CASTER_LAYER,
@@ -122,14 +123,11 @@ export default defineSketch(async (ctx) => {
 	// The island draws no screen-space bounce light on any preset: its open daylight gains little from
 	// it, and the frame keeps the time.
 	ctx.quality.set({ physicalSky: true, bounceRays: 0 });
-	const land = createLand(ctx);
-	const sea = createSea(ctx);
-	createTown(ctx);
-	page.post('loading', 'Growing the trees');
-	const trees = await createTrees(ctx, camera);
 
 	// The mood: a summer morning at its start, with a little cloud and a thin haze for depth. `Auto`
-	// moves the sun and the moon across the sky; the other moods hold an hour.
+	// moves the sun and the moon across the sky; the other moods hold an hour. The controls and the
+	// camera's route come before the town: they need no part of it, and they post the HUD, so a
+	// visitor gets the controls while the island is still rising.
 	const stage = createMoods(ctx, sun, sky, room, {
 		heading: HEADING,
 		fogDensity: 0.000018,
@@ -202,6 +200,19 @@ export default defineSketch(async (ctx) => {
 	});
 	// The camera stands at the route's opening pose now, so the shadows reach as far as it needs.
 	controls.fitShadows();
+
+	console.log(`[probe] controls posted at ${Math.round(performance.now())} ms`);
+	console.log(`[probe] town build starts at ${Math.round(performance.now())} ms`);
+	const land = createLand(ctx);
+	const sea = createSea(ctx);
+	createTown(ctx);
+	page.post('loading', 'Growing the trees');
+	console.log(`[probe] trees build starts at ${Math.round(performance.now())} ms`);
+	const trees = await createTrees(ctx, camera);
+	console.log(`[probe] trees built at ${Math.round(performance.now())} ms`);
+	// The stage writes the light its maps give before the first frame draws.
+	await Promise.all([sky, room]);
+	console.log(`[probe] maps in at ${Math.round(performance.now())} ms, setup ends`);
 
 	const eye: [number, number, number] = [0, 0, 0];
 	return {

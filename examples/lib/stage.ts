@@ -276,15 +276,27 @@ export const isMood = (name: unknown): name is Mood => MOODS.includes(name as Mo
 
 type Vec3 = [number, number, number];
 
+/** True for a map that a scene hands over still being made, rather than one already in hand. */
+const arrivesLater = (map: Environment | Promise<Environment>): map is Promise<Environment> =>
+	typeof (map as Promise<Environment>).then === 'function';
+
 /** Sets the scene's light, sky, fog and exposure, eased from one mood to the next. */
 export function createMoods(
 	ctx: SketchContext,
 	sun: DirectionalLight,
-	sky: Environment,
-	room: Environment,
+	sky: Environment | Promise<Environment>,
+	room: Environment | Promise<Environment>,
 	options: StageOptions,
 ): Stage {
 	const { scene, post, time } = ctx;
+	/**
+	 * The maps that the hours and the studio light the scene with, once the GPU has made them. A
+	 * scene may hand them over still being made: a map that a generator fills takes minutes on a
+	 * software GPU, and the scene's controls and its own build need not wait for it. Until a map
+	 * arrives the look is written without that part, and the arrival writes the look again.
+	 */
+	let skyMap: Environment | undefined = arrivesLater(sky) ? undefined : sky;
+	let roomMap: Environment | undefined = arrivesLater(room) ? undefined : room;
 	const {
 		heading,
 		fogDensity,
@@ -507,9 +519,10 @@ export function createMoods(
 		const full = needsLook || !still;
 		needsLook = false;
 		if (!full) return;
-		if (lit()) {
+		// A map that the GPU has not made yet is left out here, and its arrival writes the look again.
+		if (lit() && skyMap) {
 			look.environment.intensity = current.skyIntensity * environmentScale;
-			scene.setEnvironment(sky, look.environment);
+			scene.setEnvironment(skyMap, look.environment);
 		}
 		sun.setDirection(current.dir[0] as number, current.dir[1] as number, current.dir[2] as number);
 		sun.setColor(current.color);
@@ -533,10 +546,10 @@ export function createMoods(
 	 * part that is off is left out.
 	 */
 	const toStudio = (): void => {
-		if (shown.sky) scene.setBackground(room, look.roomOptions);
-		if (lit()) {
+		if (shown.sky && roomMap) scene.setBackground(roomMap, look.roomOptions);
+		if (lit() && roomMap) {
 			look.environment.intensity = 0.55;
-			scene.setEnvironment(room, look.environment);
+			scene.setEnvironment(roomMap, look.environment);
 		}
 		sun.setDirection(STUDIO_KEY[0], STUDIO_KEY[1], STUDIO_KEY[2]);
 		sun.setColor('#fff4e6');
@@ -653,5 +666,19 @@ export function createMoods(
 			else apply();
 		},
 	};
+	// A map that the scene handed over still being made writes the look as it arrives. A scene
+	// waits for its maps before the first frame, so that frame draws the light its hours describe.
+	if (arrivesLater(sky) || arrivesLater(room)) {
+		void Promise.all([Promise.resolve(sky), Promise.resolve(room)]).then(([skyMade, roomMade]) => {
+			skyMap = skyMade;
+			roomMap = roomMade;
+			if (mood === 'Studio') toStudio();
+			else if (started) {
+				needsLook = true;
+				still = false;
+				apply();
+			}
+		});
+	}
 	return stage;
 }
