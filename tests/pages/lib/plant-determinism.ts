@@ -10,18 +10,25 @@ import type { GrowOptions } from '../../../packages/vegetation/src/generate.ts';
 /** The growth that every species takes: variant 0 of one seed, with its nearest wood. */
 export const DETERMINISM_GROWTH: GrowOptions = { seed: 11, variant: 0, near: true };
 
-/** One species to grow: its id, its module and whether its kit grows stand-ins. */
+/**
+ * One species to grow: its id, its module and which stages its kit grows as stand-ins: every stage,
+ * or only those not built yet.
+ */
 export interface DeterminismEntry {
 	readonly id: string;
 	readonly load: () => Promise<SpeciesModule>;
-	readonly placeholders: boolean;
+	readonly placeholders: true | 'missing';
 }
 
 /** Every species to grow, the stand-in last. */
 export function determinismEntries(): DeterminismEntry[] {
 	return [
-		...speciesIds().map((id) => ({ id, load: () => loadSpecies(id), placeholders: false })),
-		{ id: 'stub', load: async () => standInSpecies('stub'), placeholders: true },
+		...speciesIds().map((id) => ({
+			id,
+			load: () => loadSpecies(id),
+			placeholders: 'missing' as const,
+		})),
+		{ id: 'stub', load: async () => standInSpecies('stub'), placeholders: true as const },
 	];
 }
 

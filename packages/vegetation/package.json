@@ -30,6 +30,11 @@
 			"types": "./lib/index.d.ts",
 			"default": "./lib/index.js"
 		},
+		"./textures": {
+			"null3d-source": "./src/core/textures.ts",
+			"types": "./lib/core/textures.d.ts",
+			"default": "./lib/core/textures.js"
+		},
 		"./package.json": "./package.json"
 	},
 	"files": [

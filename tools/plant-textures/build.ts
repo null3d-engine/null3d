@@ -230,7 +230,7 @@ function moduleSource(species: string, manifest: string, names: readonly string[
 	return `// Written by tools/plant-textures from the reference set: the texture files of the species
 // ${species}, as \`bun run plants:textures ${species}\` writes them. A page fetches the files only
 // when it prepares the species, and the literal URLs let every bundler emit them as files.
-/** @type {import('@null3d/vegetation').SpeciesTextureFiles} */
+/** @type {import('@null3d/vegetation/textures').SpeciesTextureFiles} */
 export const files = {
 	manifest: ${manifest.trim().replaceAll('\n', '\n\t')},
 	full: {
@@ -270,7 +270,7 @@ function coverageRuns(source: string, texels: Uint8Array, size: number): Uint8Ar
 
 /** The module's types. */
 const DECLARATIONS = `// Written by tools/plant-textures: the types of the species' texture module beside it.
-import type { SpeciesTextureFiles } from '@null3d/vegetation';
+import type { SpeciesTextureFiles } from '@null3d/vegetation/textures';
 
 /** The species' texture files: its manifest, and the URLs of its full and half sets. */
 export declare const files: SpeciesTextureFiles;

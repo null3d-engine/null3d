@@ -1,7 +1,7 @@
 // Written by tools/plant-textures from the reference set: the texture files of the species
 // pedunculate-oak, as `bun run plants:textures pedunculate-oak` writes them. A page fetches the files only
 // when it prepares the species, and the literal URLs let every bundler emit them as files.
-/** @type {import('@null3d/vegetation').SpeciesTextureFiles} */
+/** @type {import('@null3d/vegetation/textures').SpeciesTextureFiles} */
 export const files = {
 	manifest: {
 		"format": 1,

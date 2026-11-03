@@ -12,16 +12,23 @@ import { standInSpecies } from '../core/stand-in';
 import { DETAILS } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 
-/** One species to walk: its folder's name, its module, and whether its stages may be stand-ins. */
+/**
+ * One species to walk: its folder's name, its module, and which of its stages grow as stand-ins:
+ * every stage, or only those not built yet.
+ */
 interface Walked {
 	readonly folder: string;
 	readonly load: () => Promise<SpeciesModule>;
-	readonly placeholders: boolean;
+	readonly placeholders: true | 'missing';
 }
 
 const WALKED: readonly Walked[] = [
-	...speciesIds().map((id) => ({ folder: id, load: () => loadSpecies(id), placeholders: false })),
-	{ folder: 'stub', load: async () => standInSpecies('stub'), placeholders: true },
+	...speciesIds().map((id) => ({
+		folder: id,
+		load: () => loadSpecies(id),
+		placeholders: 'missing' as const,
+	})),
+	{ folder: 'stub', load: async () => standInSpecies('stub'), placeholders: true as const },
 ];
 
 /** The bytes of every array a kit holds. */
