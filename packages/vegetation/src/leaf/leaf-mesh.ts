@@ -48,13 +48,22 @@ export interface LeafCut {
 
 /** How finely each tier meshes a leaf. */
 interface LeafTier extends LeafCut {
-	/** Sides of the stalk tube; 0 draws a two-triangle ribbon. */
+	/** Sides of the stalk tube; 0 draws a two-triangle ribbon, and -1 no stalk. */
 	readonly stalkSides: number;
+	/**
+	 * Whether the leaf is one cut-out card: two triangles over the outline's bounds, whose texture's
+	 * coverage draws the outline. The low tier draws leaves a few pixels long, where a stalk is
+	 * smaller than a pixel and a cut-out edge is as sharp as a meshed one.
+	 */
+	readonly card?: boolean;
 }
 
-/** The tiers' leaf meshes: rows, columns per half and outline points rise with the tier. */
+/**
+ * The tiers' leaf meshes: rows, columns per half and outline points rise with the tier; the low
+ * tier's leaf is a cut-out card.
+ */
 const TIERS: Readonly<Record<Detail, LeafTier>> = {
-	low: { rows: 2, columns: 1, smooth: 1, points: 12, stalkSides: 0 },
+	low: { rows: 1, columns: 1, smooth: 1, points: 12, stalkSides: -1, card: true },
 	medium: { rows: 3, columns: 1, smooth: 2, points: 24, stalkSides: 0 },
 	high: { rows: 6, columns: 2, smooth: 3, points: 48, stalkSides: 3 },
 	ultra: { rows: 12, columns: 4, smooth: 3, points: 96, stalkSides: 3 },
@@ -113,7 +122,42 @@ export function leafTriangles(
 	outline: LeafOutline,
 	detail: Detail,
 ): { readonly points: number[]; readonly triangles: number[] } {
-	return cutLeaf(outline, TIERS[detail]);
+	const tier = TIERS[detail];
+	return tier.card ? cardLeaf(outline) : cutLeaf(outline, tier);
+}
+
+/**
+ * A leaf as one cut-out card: two triangles over the bounds of its outline, pushed out by the
+ * margin, from the stalk's foot to the tip, so the texture's coverage draws the whole leaf.
+ *
+ * @param outline The leaf's outline.
+ * @returns The points, u then v, and the two triangles.
+ */
+function cardLeaf(outline: LeafOutline): {
+	readonly points: number[];
+	readonly triangles: number[];
+} {
+	const margin = MARGIN_TEXELS / outline.texels;
+	let low = outline.petiole[1];
+	let high = outline.tip[1];
+	let left = 0.5;
+	let right = 0.5;
+	for (let i = 0; i < outline.points.length; i += 2) {
+		const u = outline.points[i] as number;
+		const v = outline.points[i + 1] as number;
+		left = Math.min(left, u);
+		right = Math.max(right, u);
+		low = Math.min(low, v);
+		high = Math.max(high, v);
+	}
+	left = Math.max(0, left - margin);
+	right = Math.min(1, right + margin);
+	low = Math.max(0, low - margin);
+	high = Math.min(1, high + margin);
+	return {
+		points: [left, low, right, low, right, high, left, high],
+		triangles: [0, 1, 2, 0, 2, 3],
+	};
 }
 
 /**
@@ -226,7 +270,8 @@ export function bladeMesh(
 			mesh.indices.push(vertex);
 		}
 	}
-	addStalk(mesh, surface, shape, outline, TIERS[detail].stalkSides);
+	const stalkSides = TIERS[detail].stalkSides;
+	if (stalkSides >= 0) addStalk(mesh, surface, shape, outline, stalkSides);
 	return mesh.finishPrototype();
 }
 
