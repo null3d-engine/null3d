@@ -4,11 +4,11 @@
 // and one wind field moves every plant whose material names it.
 import type { SketchContext, Texture, Textures } from '@null3d/engine';
 import type { WindField } from '@null3d/wind';
+import { unitAt } from '../core/hash';
 import type { PlantAsset } from './asset';
 import type { PlantMaterial } from './atlas';
 import type { CrownData } from './crown';
 import { WIND_STRIDE } from './generate';
-import { unitAt } from './hash';
 
 /**
  * What a plant's materials read of the wind: the one field that moves the whole scene, the branch

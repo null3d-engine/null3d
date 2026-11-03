@@ -4,6 +4,7 @@
 // and the tiles are placed in a fixed order inside the build, so any order that a page adds them
 // in gives the same points.
 
+import { hashAt, pcg, unitAt } from '../core/hash';
 import {
 	checkRules,
 	type EcoInput,
@@ -11,10 +12,9 @@ import {
 	type EcoRule,
 	LAYER_ORDER,
 	ruleScore,
-} from './ecology';
-import type { GroundMaps } from './ground';
-import { hashAt, pcg, unitAt } from './hash';
-import { type VarianceMaps, varianceMaps } from './variance';
+} from '../ecology/ecology';
+import type { GroundMaps } from '../ground/ground';
+import { type VarianceMaps, varianceMaps } from '../variance/variance';
 
 /**
  * The floats that one placed point holds.

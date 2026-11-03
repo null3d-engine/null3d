@@ -1,9 +1,10 @@
 // The leaves of a plant with a branch system: cluster cards that face up and out, or narrow needle
 // cards along a conifer's twigs. Every card's place and angle is a choice of the skeleton, so a
 // coarser level drops cards and grows the rest without moving the crown.
+
+import { hashAt, unitAt } from '../core/hash';
 import { MeshBuilder, type PartArrays, type VertexWind } from './builder';
 import { type CrownField, crownEnvelope, occlusionByte } from './crown';
-import { hashAt, unitAt } from './hash';
 import type { LeafCard } from './levels';
 import type { Skeleton, SkeletonBranch } from './skeleton';
 import type { Leaf, Species } from './species';

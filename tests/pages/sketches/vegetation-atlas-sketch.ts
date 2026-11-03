@@ -3,7 +3,7 @@
 // trunk and a leaf card that sample them. Each map shows its level 0 block at the lower left and
 // the levels below it down the right-hand column.
 import { defineSketch } from '@null3d/engine';
-import { bakePlantAtlases, plantMaterial } from '@null3d/vegetation';
+import { bakePlantAtlases, plantMaterial } from '@null3d/vegetation/legacy';
 import { PLANT_CARD } from '../lib/plant-card';
 
 export default defineSketch((ctx) => {

@@ -11,7 +11,7 @@ import {
 	generatePlant,
 	leafCellFor,
 	plantMaterial,
-} from '@null3d/vegetation';
+} from '@null3d/vegetation/legacy';
 
 /** The species that the picture grows. */
 const SPECIES = builtInSpecies('birch');

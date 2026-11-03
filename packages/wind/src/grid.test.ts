@@ -24,9 +24,9 @@ const pageFile = new URL('../page/sketch.ts', import.meta.url);
 /** The page that shows a person what to copy into their own shader. */
 const docsFile = new URL('../../../docs/api/wind.md', import.meta.url);
 /** The vegetation add-on's leaf and bark material, which reads the field in its vertex offset. */
-const plantFile = new URL('../../vegetation/src/plant.wgsl', import.meta.url);
+const plantFile = new URL('../../vegetation/src/legacy/plant.wgsl', import.meta.url);
 /** The add-on's morphing leaf cards, which read the same field. */
-const cardsFile = new URL('../../vegetation/src/plant-cards.wgsl', import.meta.url);
+const cardsFile = new URL('../../vegetation/src/legacy/plant-cards.wgsl', import.meta.url);
 describe('the shaders of the grid', () => {
 	test('the compute form, the WebGL2 form and the sampling file hold one steady field', () => {
 		// The shader build resolves only the engine's library, so a shader cannot import another

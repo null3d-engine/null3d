@@ -13,8 +13,8 @@
 // so the sphere's radius comes off the camera's distance to the tree.
 import { expect, test } from '@playwright/test';
 import { compareImages, percent } from '../../packages/cli/src/compare.js';
-import { builtInSpecies } from '../../packages/vegetation/src/builtin.ts';
-import { generatePlant } from '../../packages/vegetation/src/generate.ts';
+import { builtInSpecies } from '../../packages/vegetation/src/legacy/builtin.ts';
+import { generatePlant } from '../../packages/vegetation/src/legacy/generate.ts';
 import { imageRuns, TIERS } from '../lib/images.ts';
 import { loadResult } from '../lib/page-result.ts';
 import { failureText } from '../lib/runs.ts';

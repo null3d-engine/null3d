@@ -2,9 +2,10 @@
 // clumps. Every leaf starts at the base, stands at an angle of its own and arches over. A leaf is a
 // broad folded blade, a narrow strip, or a frond whose rachis carries leaflets. Flowers stand on
 // thin stems in the middle.
+
+import { hashAt, unitAt } from '../core/hash';
 import { MeshBuilder, type PartArrays, type VertexWind } from './builder';
 import { type CrownField, occlusionByte } from './crown';
-import { hashAt, unitAt } from './hash';
 import { spaceFillingKey } from './levels';
 import type { Rosette, Species } from './species';
 

@@ -2,7 +2,7 @@
 // crown, or the crown seen from below. The species, the variant and the seed come from the query,
 // so a render run draws the same frame on every device.
 import { defineSketch } from '@null3d/engine';
-import type { PlantPart } from '@null3d/vegetation';
+import type { PlantPart } from '@null3d/vegetation/legacy';
 import {
 	bakePlantAtlases,
 	barkCellFor,
@@ -13,7 +13,7 @@ import {
 	type Species,
 	setWindLayer,
 	shadowCasterLevel,
-} from '@null3d/vegetation';
+} from '@null3d/vegetation/legacy';
 import { createWind } from '@null3d/wind';
 import { REVIEW_TREES, reviewTree } from '../lib/tree-corpus';
 

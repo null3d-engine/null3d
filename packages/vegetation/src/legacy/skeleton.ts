@@ -1,8 +1,9 @@
 // The skeleton: every branch of a plant as a curved path with a radius at each sample. Growth makes
 // every random choice here, and the meshing step only reads the result, so each detail level keeps
 // the same shape. Radii follow the pipe model: a branch's cross section carries the tips beyond it.
+
+import { hashAt, unitAt } from '../core/hash';
 import { crownScale } from './crown';
-import { hashAt, unitAt } from './hash';
 import {
 	type BranchLevel,
 	MAX_BRANCHES,

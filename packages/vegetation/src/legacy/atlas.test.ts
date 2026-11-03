@@ -299,16 +299,16 @@ describe('the plant shaders', () => {
 			const to = `// </${name}>`;
 			return source.slice(source.indexOf(from), source.indexOf(to));
 		};
-		const COST_PAGE = '../../../tests/pages/sketches/wind-reader-cost-sketch.ts';
-		const GUST_PAGE = '../../../tests/pages/sketches/gust-crossing-sketch.ts';
+		const COST_PAGE = '../../../../tests/pages/sketches/wind-reader-cost-sketch.ts';
+		const GUST_PAGE = '../../../../tests/pages/sketches/gust-crossing-sketch.ts';
 		for (const name of ['wind-steady', 'wind-sample']) {
 			const plant = block(read('./plant.wgsl'), name);
 			expect(plant.length).toBeGreaterThan(0);
 			for (const file of [
-				'./grass.wgsl',
-				'./floating-leaves.wgsl',
-				'./floating-leaves-state.wgsl',
-				'./floating-leaves-state.fallback.wgsl',
+				'../grass/grass.wgsl',
+				'../floating-leaves/floating-leaves.wgsl',
+				'../floating-leaves/floating-leaves-state.wgsl',
+				'../floating-leaves/floating-leaves-state.fallback.wgsl',
 				COST_PAGE,
 				...(name === 'wind-steady' ? [GUST_PAGE] : []),
 			])

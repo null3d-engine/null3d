@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOT = join(import.meta.dirname, '..', '..');
-const GENERATOR = readFileSync(join(ROOT, 'packages/vegetation/src/levels.ts'), 'utf8');
+const GENERATOR = readFileSync(join(ROOT, 'packages/vegetation/src/legacy/levels.ts'), 'utf8');
 const TOOL = readFileSync(join(ROOT, 'packages/cli/src/assets/levels.js'), 'utf8');
 
 describe('the leaf-card level rule, which the generator and the asset tool share', () => {

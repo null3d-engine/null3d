@@ -10,7 +10,7 @@ import {
 	generateVariantSet,
 	leafCellFor,
 	plantMaterial,
-} from '@null3d/vegetation';
+} from '@null3d/vegetation/legacy';
 
 const params = new URL(import.meta.url).searchParams;
 const SPECIES = builtInSpecies(params.get('species') ?? 'broadleaf') ?? ALL_SPECIES[0];

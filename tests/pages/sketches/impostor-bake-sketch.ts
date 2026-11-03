@@ -9,7 +9,7 @@ import {
 	builtInSpecies,
 	generatePlant,
 	type Species,
-} from '@null3d/vegetation';
+} from '@null3d/vegetation/legacy';
 
 /** The species that each bake draws: a broad conifer crown, a light birch and a heavy oak. */
 const SPECIES_IDS = ['conifer', 'birch', 'oak'];

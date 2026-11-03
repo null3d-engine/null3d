@@ -1,7 +1,12 @@
 // Tree species for the woodland review page: a spruce, a pine, an aspen, an open-grown oak, a
 // multi-stem oak and a willow. Each record states the numbers that make its silhouette, its
 // branch angles and its foliage, so the review page draws the shape rather than a style.
-import { type BranchLevel, branchLevel, builtInSpecies, type Species } from '@null3d/vegetation';
+import {
+	type BranchLevel,
+	branchLevel,
+	builtInSpecies,
+	type Species,
+} from '@null3d/vegetation/legacy';
 
 /** The level that every record starts from, which each tree overrides where it differs. */
 const BASE: BranchLevel = {

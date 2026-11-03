@@ -13,7 +13,7 @@ import {
 	setWindLayer,
 	shadowCasterLevel,
 	treeValues,
-} from '@null3d/vegetation';
+} from '@null3d/vegetation/legacy';
 import { createWind } from '@null3d/wind';
 import { reviewTree } from '../lib/tree-corpus';
 

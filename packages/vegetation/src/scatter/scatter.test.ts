@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { ALL_SPECIES } from './builtin';
-import { groundMaps } from './ground';
-import { builtinRules } from './rules';
+import { groundMaps } from '../ground/ground';
+import { ALL_SPECIES } from '../legacy/builtin';
+import { builtinRules } from '../legacy/rules';
 import {
 	EcoScatter,
 	SCATTER_STRIDE,

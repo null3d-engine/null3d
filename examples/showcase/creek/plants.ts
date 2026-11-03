@@ -27,7 +27,7 @@ import {
 	setWindLayer,
 	swayDistanceFor,
 	treeValues,
-} from '@null3d/vegetation';
+} from '@null3d/vegetation/legacy';
 import type { WindField } from '@null3d/wind';
 import { random } from '../../lib/procedural';
 import { placeValley, SEED, SPECIES, VARIANTS } from './valley';

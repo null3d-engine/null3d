@@ -25,6 +25,8 @@ flowchart LR
 
 The `@null3d/vegetation` package grows plants from a short record of numbers and a seed. A record describes a tree, a conifer, a shrub, a fern, a hosta or a grass clump. The generator makes the plant's skeleton first, then every detail level from that skeleton, so a crown keeps its shape as it thins. A plant ships no model and no texture: a page grows it at first use.
 
+The package has two entries. The main entry, `@null3d/vegetation`, holds the scatter, the ground maps, the grass and the floating leaves. The generator, its bark and leaf atlases, its material, its wind and its far trees import from `@null3d/vegetation/legacy`. A new plant core takes their place in the main entry, and this page names the entry of each import.
+
 ```sh
 bun add @null3d/vegetation
 ```
@@ -38,7 +40,7 @@ import {
   generateVariantSet,
   leafCellFor,
   plantMaterial,
-} from '@null3d/vegetation';
+} from '@null3d/vegetation/legacy';
 
 export default defineSketch((ctx) => {
   const { scene, geometry } = ctx;
@@ -227,7 +229,8 @@ A worker task's input and output are plain data and typed arrays, so an asset cr
 `scatterVegetation` places every species where its rules allow. It reads the ground once, places the layers in order and returns the points as one flat array. A page then grows one asset for each variant and draws a copy at each point.
 
 ```ts
-import { builtinRules, CREEK_SPECIES, groundMaps, scatterVegetation } from '@null3d/vegetation';
+import { groundMaps, scatterVegetation } from '@null3d/vegetation';
+import { builtinRules, CREEK_SPECIES } from '@null3d/vegetation/legacy';
 
 const ground = groundMaps({ size: 160, water: 0, height: terrain });
 const rules = builtinRules(CREEK_SPECIES);
@@ -373,7 +376,7 @@ A tree past the distance where its triangles matter draws as one card. `bakeFarT
 
 ```ts
 import { createImpostors } from '@null3d/impostors';
-import { bakeFarTree, handOverToCards } from '@null3d/vegetation';
+import { bakeFarTree, bakePlantAtlases, handOverToCards } from '@null3d/vegetation/legacy';
 
 const atlases = bakePlantAtlases(ctx);
 const far = bakeFarTree(ctx, { asset, atlases, views: 25, texels: 64 });

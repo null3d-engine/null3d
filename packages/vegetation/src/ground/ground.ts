@@ -1,7 +1,7 @@
 // The ground maps: the height and the normal of the ground read once into flat grids, so every
 // placement rule reads the same slope, water, flow and mask numbers. A scatter costs one pass over
 // the ground, never one terrain query for each plant it places.
-import { Grid } from './grid';
+import { Grid } from '../grid/grid';
 
 /**
  * The height of the ground at a point, in meters, and optionally its normal.

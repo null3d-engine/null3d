@@ -9,7 +9,7 @@ import {
 	generatePlant,
 	leafCellFor,
 	plantMaterial,
-} from '@null3d/vegetation';
+} from '@null3d/vegetation/legacy';
 
 /** The camera that frames the row: its place, the point that it looks at and its field of view. */
 const CAMERA = {

@@ -1,8 +1,9 @@
 // The variance maps: type, color and lichen at one to two meters, so neighboring plants differ a
 // little and the ground gains patches. Each map's lattice values come from the integer hash, so the
 // patches lie in the same place on every device.
-import { Grid } from './grid';
-import { hashAt } from './hash';
+
+import { hashAt } from '../core/hash';
+import { Grid } from '../grid/grid';
 
 /** The default meters between two lattice values. */
 const DEFAULT_CELL = 1.5;

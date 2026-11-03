@@ -3,7 +3,7 @@
 // nothing. The atlas paints in every frame that a plant shows it, so the difference between the two
 // medians is what a page pays for its plants' textures.
 import { defineSketch, type Mesh } from '@null3d/engine';
-import { bakePlantAtlases, plantMaterial } from '@null3d/vegetation';
+import { bakePlantAtlases, plantMaterial } from '@null3d/vegetation/legacy';
 import { PLANT_CARD } from '../lib/plant-card';
 
 /** The frames measured on each side, after the frames that the engine spends building pipelines. */
