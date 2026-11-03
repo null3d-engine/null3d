@@ -1,5 +1,5 @@
 {
-	"source": "24-leaf-texture-upper-c.png and 25-leaf-texture-underside-c.png",
+	"source": "24-leaf-texture-upper.png and 25-leaf-texture-underside.png",
 	"cutoff": 0.5,
 	"size": 512,
 	"rows": [
