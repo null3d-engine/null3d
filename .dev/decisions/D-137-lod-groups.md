@@ -429,4 +429,4 @@ Ship the design as above. The data shows a clear saving on every path and preset
 1. Levels for blended and transmissive sources, in the transparent pass's own buckets.
 2. Fading builds for custom materials, which double their builds, and for the alpha hash.
 
-Simplification in every frame is not planned: it costs CPU time and uploads every frame, and cluster levels give its result. A mesh made in code plans its levels once, on the job workers, with the asset tool's planner, and keeps them ([D-306](D-306-runtime-levels.md)). Those levels switch at once, as a file's measured levels do.
+Simplification in every frame is not planned: it costs CPU time and uploads every frame, and cluster levels give its result. A mesh made in code plans its levels once, on the job workers, with the asset tool's planner, and keeps them ([D-310](D-310-runtime-levels.md)). Those levels switch at once, as a file's measured levels do.
