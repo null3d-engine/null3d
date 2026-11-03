@@ -287,12 +287,6 @@
 		"date": "2026-11-03",
 		"reason": "the contact pair on the software GPU at the shortened far cover"
 	},
-	"chromium-swiftshader/compat/vegetation-grass-shadow.png": {
-		"test": "vegetation-grass-shadow",
-		"tier": "compat",
-		"date": "2026-11-02",
-		"reason": "a new picture, drawn here until CI's SwiftShader set draws it; the software set takes the Low preset for its shadow cost"
-	},
 	"chromium-swiftshader/compat/weather.png": {
 		"test": "weather",
 		"tier": "compat",
@@ -610,12 +604,6 @@
 		"tier": "webgl2",
 		"date": "2026-11-03",
 		"reason": "the contact pair on the software GPU at the shortened far cover"
-	},
-	"chromium-swiftshader/webgl2/vegetation-grass-shadow.png": {
-		"test": "vegetation-grass-shadow",
-		"tier": "webgl2",
-		"date": "2026-11-02",
-		"reason": "a new picture, drawn here until CI's SwiftShader set draws it; the software set takes the Low preset for its shadow cost"
 	},
 	"chromium-swiftshader/webgl2/weather.png": {
 		"test": "weather",
@@ -946,12 +934,6 @@
 		"tier": "webgpu",
 		"date": "2026-11-03",
 		"reason": "the contact pair on the software GPU at the shortened far cover"
-	},
-	"chromium-swiftshader/webgpu/vegetation-grass-shadow.png": {
-		"test": "vegetation-grass-shadow",
-		"tier": "webgpu",
-		"date": "2026-11-02",
-		"reason": "a new picture, drawn here until CI's SwiftShader set draws it; the software set takes the Low preset for its shadow cost"
 	},
 	"chromium-swiftshader/webgpu/water-bounds.png": {
 		"test": "water-bounds",
