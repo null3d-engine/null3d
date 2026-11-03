@@ -2,8 +2,10 @@
 // ?feature= names it, as the shader manifest's first-use tables do. Each case uses that feature
 // alone, so a page downloads that feature's shader file once, for its device's fixed bits. The
 // scene keeps every other such feature out: no sun that casts shadows unless the feature needs one,
-// and then no contact shadows, which would load ambient occlusion's file on a desktop. A feature
-// with no case here fails the test, so a new first-use table needs a case.
+// and then no contact shadows, which would load ambient occlusion's file on a desktop. The test
+// turns off the preset's bounce light too, with ?bounce=off, which would load ambient occlusion's
+// file and the frame's color copy. A feature with no case here fails the test, so a new first-use
+// table needs a case.
 import {
 	defineSketch,
 	type SketchContext,
@@ -17,6 +19,7 @@ import {
 	texCoordsMaterial,
 } from '@null3d/engine/internal';
 import { CROWD_CLIPS, crowdMesh, crowdRig } from '../lib/crowd-rig';
+import { applySketchSwitches } from '../lib/sketch-switches';
 
 const feature = new URL(import.meta.url).searchParams.get('feature') ?? '';
 
@@ -279,12 +282,13 @@ fn effect(input: EffectInput) -> vec4f {
 `;
 
 export default defineSketch(async (context) => {
-	const { scene, geometry, materials } = context;
+	const { scene, geometry, materials, quality } = context;
 	const use = CASES[feature];
 	if (!use)
 		throw new Error(
 			`the first-use sketch has no case for '${feature}': add one that uses that feature alone`,
 		);
+	applySketchSwitches(import.meta.url, quality);
 	scene.setBackground('#8fa3b8');
 	scene.createHemisphereLight({ skyColor: '#a8c4ff', groundColor: '#5a4a3a', intensity: 1 });
 	scene.setActiveCamera(

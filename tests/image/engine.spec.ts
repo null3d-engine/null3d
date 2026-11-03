@@ -502,9 +502,14 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			);
 			const requests: string[] = [];
 			page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
-			const sketch =
+			// The preset draws screen-space bounce light, whose steps read ambient occlusion's grid
+			// and the frame's color copy, so a page that draws it downloads those two features' files
+			// as well. The switch leaves the light out, so the page downloads its own feature's file
+			// alone. Every sketch the table names reads it.
+			const sketchModule =
 				FIRST_USE_SKETCHES[feature] ??
 				`tests/pages/sketches/first-use-sketch.ts?feature=${feature}`;
+			const sketch = `${sketchModule}${sketchModule.includes('?') ? '&' : '?'}bounce=off`;
 			const address = FIRST_USE_LIVE.has(feature)
 				? `first-use-live.html?gpu=${gpu}&sketch=${encodeURIComponent(`/${sketch}`)}`
 				: `image.html?gpu=${gpu}&hold=0&preset=high&size=320x180${FIRST_USE_SWITCHES[feature] ?? ''}&sketch=${encodeURIComponent(`/${sketch}`)}`;
@@ -542,7 +547,9 @@ test('marked occluders download no occlusion shader file with ?occlusion=off on 
 	test.skip(testInfo.project.name === 'production build', 'no image test page');
 	const requests: string[] = [];
 	page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
-	const sketch = encodeURIComponent('/tests/pages/sketches/room-sketch.ts');
+	// The preset draws screen-space bounce light, which loads ambient occlusion's file and the
+	// frame's color copy; ?bounce=off leaves it out, so the page loads no shader file at all.
+	const sketch = encodeURIComponent('/tests/pages/sketches/room-sketch.ts?bounce=off');
 	await page.goto(`image.html?gpu=webgpu&hold=0&size=320x180&occlusion=off&sketch=${sketch}`);
 	const result = await pageResult<{ error?: string }>(page, 30_000);
 	expect(result.error).toBeUndefined();
