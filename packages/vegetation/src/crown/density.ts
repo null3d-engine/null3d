@@ -9,6 +9,11 @@ import type { DressInput } from '../stages';
 
 /** Cells across the grid's longest side. */
 export const DENSITY_CELLS = 40;
+/**
+ * Cells across the grid's longest side for a plant whose nearest foliage is merged: a ground plant
+ * a metre or two across, whose light needs no finer cells, and whose growth stays within its cap.
+ */
+export const MERGED_DENSITY_CELLS = 20;
 
 /**
  * Leaf area per cubic metre over a plant.
@@ -142,8 +147,8 @@ export function leafDensity(input: DressInput, rows: ShootRows): LeafDensity {
 	const { min, max } = skeleton.bounds;
 	const low: Vector3 = [min[0] - margin, Math.max(0, min[1] - margin), min[2] - margin];
 	const size = [max[0] + margin - low[0], max[1] + margin - low[1], max[2] + margin - low[2]];
-	const cell =
-		Math.max(size[0] as number, size[1] as number, size[2] as number, 0.01) / DENSITY_CELLS;
+	const across = record.lod.nearFoliage === 'merged' ? MERGED_DENSITY_CELLS : DENSITY_CELLS;
+	const cell = Math.max(size[0] as number, size[1] as number, size[2] as number, 0.01) / across;
 	const nx = Math.max(1, Math.ceil((size[0] as number) / cell));
 	const ny = Math.max(1, Math.ceil((size[1] as number) / cell));
 	const nz = Math.max(1, Math.ceil((size[2] as number) / cell));
