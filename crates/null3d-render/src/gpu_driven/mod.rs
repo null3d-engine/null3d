@@ -1677,6 +1677,12 @@ impl GpuDrivenRenderer {
         if upload_everything {
             self.feature_readiness = self.settings.feature_instances().readiness();
             let limit = max_sources(self.config.storage_binding_bytes);
+            // The direct path runs no cluster pass, so its layouts draw no tree.
+            let cluster_binding = if self.config.direct_draws {
+                0
+            } else {
+                self.config.storage_binding_bytes
+            };
             self.settings
                 .prepare_rebuild(input.scene, input.batches, &mut self.pipelines);
             self.skinning.rebuild(
@@ -1702,7 +1708,7 @@ impl GpuDrivenRenderer {
                 &mut self.key_counts,
                 self.graph.pick_targets(),
                 picking,
-                !self.config.direct_draws,
+                cluster_binding,
             )?;
             self.layout_prepass = self.graph.depth_prepass();
             let (skinning, layout) = (&self.skinning, &self.layout);
@@ -1789,7 +1795,7 @@ impl GpuDrivenRenderer {
                     &mut self.key_counts,
                     self.graph.pick_targets(),
                     false,
-                    !self.config.direct_draws,
+                    cluster_binding,
                 )?;
             } else {
                 self.casters.clear();
@@ -1812,7 +1818,7 @@ impl GpuDrivenRenderer {
                     &mut self.key_counts,
                     self.graph.pick_targets(),
                     false,
-                    !self.config.direct_draws,
+                    cluster_binding,
                 )?;
             } else {
                 self.outlined.clear();
@@ -1835,7 +1841,7 @@ impl GpuDrivenRenderer {
                     &mut self.key_counts,
                     self.graph.pick_targets(),
                     false,
-                    !self.config.direct_draws,
+                    cluster_binding,
                 )?;
             } else {
                 self.scattering.clear();
@@ -1857,7 +1863,7 @@ impl GpuDrivenRenderer {
                     &mut self.key_counts,
                     self.graph.pick_targets(),
                     false,
-                    !self.config.direct_draws,
+                    cluster_binding,
                 )?;
             } else {
                 self.tone.clear();
@@ -1879,7 +1885,7 @@ impl GpuDrivenRenderer {
                     &mut self.key_counts,
                     self.graph.pick_targets(),
                     false,
-                    !self.config.direct_draws,
+                    cluster_binding,
                 )?;
             } else {
                 self.moving.clear();

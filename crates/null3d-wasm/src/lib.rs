@@ -72,7 +72,7 @@ use null3d_render::grading::{Lut, Vignette};
 use null3d_render::graph::{GraphError, RenderScale};
 use null3d_render::light_tables;
 use null3d_render::materials::{self, CustomShading, LayerMap, MapSlot, MaterialError, Shading};
-use null3d_render::meshes::{MeshError, MeshSlot, UpdateError};
+use null3d_render::meshes::{MeshError, MeshSlot, MeshStorage, UpdateError};
 use null3d_render::mirror::Mirror;
 use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
 use null3d_render::outline::Outline;
@@ -2308,6 +2308,51 @@ pub fn set_mesh_blocker(mesh: u32, vertices: u32, indices: u32) -> u32 {
     })
 }
 
+/// The patches of a tree or of a band of one, as the staging words hold them: `records` records of
+/// eight words each, four floats of a bounding sphere and then four integers of a run, a parent and
+/// an error, followed by `indices` indices.
+struct StagedPatches {
+    bounds: Vec<[f32; 4]>,
+    runs: Vec<[u32; 4]>,
+    /// The indices, which name the vertices that the mesh's parts hold, one part after another.
+    indices: Vec<u32>,
+    /// The vertices that the parts hold, which no index may reach.
+    vertices: u32,
+}
+
+impl StagedPatches {
+    /// Reads the patches for mesh `mesh`, by its id that counts from 1, and rewrites their
+    /// indices, which name the mesh's own vertices, into the order of its parts' vertices, which
+    /// the tree's draws read. `None` when the staging words are too few or no live mesh has the id.
+    fn read(
+        staging: &[u32],
+        records: usize,
+        indices: usize,
+        meshes: &MeshStorage,
+        mesh: u32,
+    ) -> Option<Self> {
+        let first = records * 8;
+        let list = staging.get(first..first + indices)?;
+        let mut indices = list.to_vec();
+        let vertices = meshes.to_part_order(mesh.wrapping_sub(1), &mut indices);
+        if vertices == 0 {
+            return None;
+        }
+        let bounds = (0..records)
+            .map(|k| [0, 1, 2, 3].map(|c| f32::from_bits(staging[k * 8 + c])))
+            .collect();
+        let runs = (0..records)
+            .map(|k| [0, 1, 2, 3].map(|c| staging[k * 8 + 4 + c]))
+            .collect();
+        Some(Self {
+            bounds,
+            runs,
+            indices,
+            vertices,
+        })
+    }
+}
+
 /// Gives mesh `mesh` the tree of cluster patches that a model file stores: `patches` records of
 /// eight words each, four floats of its bounding sphere and then four integers of its run, its
 /// parent and its error, followed by `indices` indices, in the staging words. Returns 1 when the
@@ -2316,43 +2361,23 @@ pub fn set_mesh_blocker(mesh: u32, vertices: u32, indices: u32) -> u32 {
 pub fn set_mesh_patches(mesh: u32, patches: u32, indices: u32, root: u32) -> u32 {
     value_with_engine(|e| {
         let staging = std::mem::take(&mut e.staging);
-        let vertices = e
-            .renderer
-            .settings()
-            .meshes()
-            .mesh(mesh.checked_sub(1).unwrap_or(u32::MAX))
-            .map_or(0, |slot| slot.vertex_count);
         let records = patches as usize;
-        let enough = vertices > 0 && staging.len() >= records * 8 + indices as usize;
-        let tree = if enough {
-            let bounds: Vec<[f32; 4]> = (0..records)
-                .map(|k| {
-                    let at = k * 8;
-                    [0, 1, 2, 3].map(|c| f32::from_bits(staging[at + c]))
-                })
-                .collect();
-            let runs: Vec<[u32; 4]> = (0..records)
-                .map(|k| {
-                    let at = k * 8 + 4;
-                    [
-                        staging[at],
-                        staging[at + 1],
-                        staging[at + 2],
-                        staging[at + 3],
-                    ]
-                })
-                .collect();
-            let first = records * 8;
-            Some(PatchTree::new(
-                staging[first..first + indices as usize].to_vec(),
-                bounds,
-                runs,
+        let tree = StagedPatches::read(
+            &staging,
+            records,
+            indices as usize,
+            e.renderer.settings().meshes(),
+            mesh,
+        )
+        .map(|staged| {
+            PatchTree::new(
+                staged.indices,
+                staged.bounds,
+                staged.runs,
                 root,
-                vertices,
-            ))
-        } else {
-            None
-        };
+                staged.vertices,
+            )
+        });
         drop(staging);
         match tree {
             Some(Ok(tree)) => {
@@ -2395,44 +2420,23 @@ fn patch_failure(error: PatchError) -> u32 {
 pub fn append_mesh_patches(mesh: u32, patches: u32, indices: u32) -> u32 {
     value_with_engine(|e| {
         let staging = std::mem::take(&mut e.staging);
-        let vertices = e
-            .renderer
-            .settings()
-            .meshes()
-            .mesh(mesh.checked_sub(1).unwrap_or(u32::MAX))
-            .map_or(0, |slot| slot.vertex_count);
-        let records = patches as usize;
-        let enough = vertices > 0 && staging.len() >= records * 8 + indices as usize;
-        let band = enough.then(|| {
-            let bounds: Vec<[f32; 4]> = (0..records)
-                .map(|k| {
-                    let at = k * 8;
-                    [0, 1, 2, 3].map(|c| f32::from_bits(staging[at + c]))
-                })
-                .collect();
-            let runs: Vec<[u32; 4]> = (0..records)
-                .map(|k| {
-                    let at = k * 8 + 4;
-                    [
-                        staging[at],
-                        staging[at + 1],
-                        staging[at + 2],
-                        staging[at + 3],
-                    ]
-                })
-                .collect();
-            let first = records * 8;
-            (
-                bounds,
-                runs,
-                staging[first..first + indices as usize].to_vec(),
+        let band = StagedPatches::read(
+            &staging,
+            patches as usize,
+            indices as usize,
+            e.renderer.settings().meshes(),
+            mesh,
+        );
+        drop(staging);
+        let appended = band.and_then(|staged| {
+            e.renderer.append_mesh_patches(
+                mesh,
+                &staged.bounds,
+                &staged.runs,
+                &staged.indices,
+                staged.vertices,
             )
         });
-        let appended = band.and_then(|(bounds, runs, list)| {
-            e.renderer
-                .append_mesh_patches(mesh, &bounds, &runs, &list, vertices)
-        });
-        drop(staging);
         match appended {
             Some(Ok(())) => {
                 e.structure_changed = true;

@@ -508,6 +508,55 @@ impl MeshStorage {
         &parts[first..first + mesh.part_count as usize]
     }
 
+    /// The first part of a mesh whose parts hold their vertices one after another in one page, in
+    /// part order, or `None` for a mesh whose parts lie apart. Indices into the parts' vertices in
+    /// that order ([`MeshStorage::to_part_order`]) then reach all of them from the first part's
+    /// vertex: from its base vertex on shared buffers, and from its first vertex in a page. A mesh in
+    /// one part always qualifies. A split mesh qualifies on shared buffers when one page held all
+    /// its parts, and never in pages, whose 16-bit indices reach too few vertices.
+    pub fn joined_parts(&self, mesh: &MeshSlot) -> Option<MeshPart> {
+        let parts = self.parts(mesh, false);
+        let first = *parts.first()?;
+        let mut next = first.first_vertex;
+        for part in parts {
+            if part.page != first.page || part.first_vertex != next {
+                return None;
+            }
+            next += part.vertex_count;
+        }
+        Some(first)
+    }
+
+    /// Rewrites `indices`, which name mesh `id`'s own vertices, to name the vertices that its parts
+    /// hold, one part after another, and returns how many vertices the parts hold: the order that
+    /// a tree of cluster patches draws in from the mesh's [`MeshStorage::joined_parts`]. A mesh in
+    /// one part keeps its own order. A vertex that several parts of a split mesh copy takes its
+    /// first copy. An index that names no vertex a part holds becomes `u32::MAX`, past every count.
+    /// Returns 0 for an id of no live mesh, or when memory cannot grow for the split mesh's table
+    /// of first copies.
+    pub fn to_part_order(&self, id: u32, indices: &mut [u32]) -> u32 {
+        let Some(mesh) = self.mesh(id) else {
+            return 0;
+        };
+        if mesh.sources == 0 {
+            return mesh.vertex_count;
+        }
+        let first = mesh.first_source as usize;
+        let sources = &self.sources[first..first + mesh.sources as usize];
+        let mut first_copy = Vec::new();
+        if reserve(&mut first_copy, mesh.vertex_count as usize).is_err() {
+            return 0;
+        }
+        first_copy.resize(mesh.vertex_count as usize, u32::MAX);
+        for (at, &source) in sources.iter().enumerate().rev() {
+            first_copy[source as usize] = at as u32;
+        }
+        for index in indices {
+            *index = first_copy.get(*index as usize).copied().unwrap_or(u32::MAX);
+        }
+        mesh.sources
+    }
+
     /// Makes every part's edge list, which the pages upload as new indices, and from now on each
     /// new part's, for draws of lines. Calls after the first change nothing.
     pub fn keep_edges(&mut self) {
@@ -991,6 +1040,57 @@ impl MeshStorage {
         Ok((vertices, indices))
     }
 
+    /// The indices that `indices` triangle indices take in a page: with edge lists, a part's edges
+    /// follow its triangles, twice as many indices again.
+    fn placed_indices(&self, indices: usize) -> usize {
+        indices * if self.edges { 3 } else { 1 }
+    }
+
+    /// True when `page` has room for `vertex_bytes` more bytes of `count` vertices and for
+    /// `indices` more indices.
+    fn has_room(&self, page: &Page, vertex_bytes: usize, count: u32, indices: usize) -> bool {
+        let limit = self.max_page_bytes;
+        let (held_vertices, held_indices) = page.buffer_bytes();
+        held_vertices + vertex_bytes as u64 <= limit
+            && held_indices + (indices * 2).next_multiple_of(4) as u64 <= limit
+            && (self.packing == Packing::SharedBuffers
+                || page.vertex_count() + count <= MAX_PAGE_VERTICES)
+    }
+
+    /// The first page of `format` with room for `vertex_bytes` more bytes of `count` vertices and
+    /// for `indices` more indices, which may be room that removed meshes left, or a new page when
+    /// none has room. It reserves that room, so what fits it can be placed there without failing.
+    fn page_with_room(
+        &mut self,
+        format: u32,
+        vertex_bytes: usize,
+        count: u32,
+        indices: usize,
+    ) -> Result<usize, MeshError> {
+        let room = self.pages.iter().position(|page| {
+            page.format == format && self.has_room(page, vertex_bytes, count, indices)
+        });
+        match room {
+            Some(first) => {
+                let page = &mut self.pages[first];
+                reserve(&mut page.vertices, vertex_bytes)?;
+                reserve(&mut page.indices, indices)?;
+                Ok(first)
+            }
+            None => {
+                let mut page = Page {
+                    format,
+                    ..Page::default()
+                };
+                reserve(&mut page.vertices, vertex_bytes)?;
+                reserve(&mut page.indices, indices)?;
+                reserve(&mut self.pages, 1)?;
+                self.pages.push(page);
+                Ok(self.pages.len() - 1)
+            }
+        }
+    }
+
     /// Puts one part's vertices and part-local indices into the first page of their format with
     /// room for them, which may be room that removed meshes left, or into a new page when none
     /// has room, and returns where the part landed. It reserves
@@ -1002,41 +1102,27 @@ impl MeshStorage {
         indices: &[u32],
     ) -> Result<MeshPart, MeshError> {
         let count = (vertices.len() / vertex::stride(format) as usize) as u32;
-        let (limit, packing) = (self.max_page_bytes, self.packing);
-        // With edge lists, the part's edges follow its triangles: twice as many indices.
-        let indices_placed = indices.len() * if self.edges { 3 } else { 1 };
-        let fits = |page: &Page| {
-            let (vertex_bytes, index_bytes) = page.buffer_bytes();
-            vertex_bytes + vertices.len() as u64 <= limit
-                && index_bytes + (indices_placed * 2).next_multiple_of(4) as u64 <= limit
-                && (packing == Packing::SharedBuffers
-                    || page.vertex_count() + count <= MAX_PAGE_VERTICES)
-        };
         reserve(&mut self.parts, 1)?;
-        let room = self
-            .pages
-            .iter()
-            .position(|page| page.format == format && fits(page));
-        let page_index = match room {
-            Some(first) => {
-                let page = &mut self.pages[first];
-                reserve(&mut page.vertices, vertices.len())?;
-                reserve(&mut page.indices, indices_placed)?;
-                first
-            }
-            None => {
-                let mut page = Page {
-                    format,
-                    ..Page::default()
-                };
-                reserve(&mut page.vertices, vertices.len())?;
-                reserve(&mut page.indices, indices_placed)?;
-                reserve(&mut self.pages, 1)?;
-                self.pages.push(page);
-                self.pages.len() - 1
-            }
-        };
+        let placed = self.placed_indices(indices.len());
+        let page = self.page_with_room(format, vertices.len(), count, placed)?;
+        self.place_in(page, format, vertices, indices)
+    }
+
+    /// Puts one part's vertices and part-local indices at the end of page `page_index`, whose room
+    /// the caller reserved, and returns where the part landed.
+    fn place_in(
+        &mut self,
+        page_index: usize,
+        format: u32,
+        vertices: &[u8],
+        indices: &[u32],
+    ) -> Result<MeshPart, MeshError> {
+        let count = (vertices.len() / vertex::stride(format) as usize) as u32;
+        reserve(&mut self.parts, 1)?;
+        let placed = self.placed_indices(indices.len());
         let page = &mut self.pages[page_index];
+        reserve(&mut page.vertices, vertices.len())?;
+        reserve(&mut page.indices, placed)?;
         let first_vertex = page.vertex_count();
         let first_index = page.indices.len() as u32;
         let (rebase, base_vertex) = match self.packing {
@@ -1060,6 +1146,11 @@ impl MeshStorage {
     /// Adds a mesh too large for one part as several: runs of whole triangles, in order, each
     /// with at most `max_vertices` vertices and `max_indices` indices. Each part copies the
     /// vertices it uses in the order its triangles first use them.
+    ///
+    /// On shared buffers, every part goes into one page when a page can hold them all. The mesh's
+    /// vertices then lie one after another in part order, so 32-bit indices reach each of them from
+    /// the first part's base vertex, as a tree of cluster patches draws them
+    /// ([`MeshStorage::joined_parts`]). Pages of WebGL2 hold too few vertices for that.
     fn split(
         &mut self,
         geometry: &Geometry,
@@ -1073,25 +1164,59 @@ impl MeshStorage {
             local,
             ..PartBuilder::default()
         };
-        for triangle in geometry.indices.as_chunks::<3>().0 {
-            let new = triangle
-                .iter()
-                .enumerate()
-                .filter(|&(k, &v)| part.local[v as usize] == UNUSED && !triangle[..k].contains(&v))
-                .count();
-            if part.used.len() + new > max_vertices as usize || part.indices.len() + 3 > max_indices
-            {
-                part.finish(self, geometry)?;
+        let page = match self.packing {
+            Packing::SharedBuffers => {
+                let (mut vertices, mut indices) = (0usize, 0usize);
+                cut_parts(geometry, max_vertices, max_indices, &mut part, |part| {
+                    vertices += part.used.len();
+                    indices += part.indices.len();
+                    part.clear();
+                    Ok(())
+                })?;
+                let bytes = vertices * geometry.stride();
+                let placed = self.placed_indices(indices);
+                let empty = Page::default();
+                if self.has_room(&empty, bytes, vertices as u32, placed) {
+                    Some(self.page_with_room(geometry.format, bytes, vertices as u32, placed)?)
+                } else {
+                    None
+                }
             }
-            for &v in triangle {
-                part.add(v);
-            }
-        }
-        if !part.indices.is_empty() {
-            part.finish(self, geometry)?;
-        }
-        Ok(())
+            Packing::Pages => None,
+        };
+        cut_parts(geometry, max_vertices, max_indices, &mut part, |part| {
+            part.finish(self, geometry, page)
+        })
     }
+}
+
+/// Cuts `geometry`'s triangles, in order, into runs of at most `max_vertices` vertices and
+/// `max_indices` indices, as [`MeshStorage::split`] places them. `part` gathers each run, and
+/// `finish` takes each full run and must start the next one.
+fn cut_parts(
+    geometry: &Geometry,
+    max_vertices: u32,
+    max_indices: usize,
+    part: &mut PartBuilder,
+    mut finish: impl FnMut(&mut PartBuilder) -> Result<(), MeshError>,
+) -> Result<(), MeshError> {
+    for triangle in geometry.indices.as_chunks::<3>().0 {
+        let new = triangle
+            .iter()
+            .enumerate()
+            .filter(|&(k, &v)| part.local[v as usize] == UNUSED && !triangle[..k].contains(&v))
+            .count();
+        if part.used.len() + new > max_vertices as usize || part.indices.len() + 3 > max_indices {
+            finish(part)?;
+        }
+        for &v in triangle {
+            part.add(v);
+        }
+    }
+    if !part.indices.is_empty() {
+        finish(part)?;
+    }
+    Ok(())
 }
 
 /// The bounding sphere of each joint's vertices in a skinned mesh, in the mesh's space, by joint
@@ -1282,23 +1407,39 @@ impl PartBuilder {
         self.indices.push(*local);
     }
 
-    /// Places the part in the storage, and starts the next one.
-    fn finish(&mut self, storage: &mut MeshStorage, geometry: &Geometry) -> Result<(), MeshError> {
+    /// Places the part in the storage, in `page` when the caller reserved room there for it, and
+    /// starts the next one.
+    fn finish(
+        &mut self,
+        storage: &mut MeshStorage,
+        geometry: &Geometry,
+        page: Option<usize>,
+    ) -> Result<(), MeshError> {
         let stride = geometry.stride();
         self.vertices.clear();
         for &v in &self.used {
             let at = v as usize * stride;
             self.vertices
                 .extend_from_slice(&geometry.vertices[at..at + stride]);
-            self.local[v as usize] = UNUSED;
         }
         reserve(&mut storage.sources, self.used.len())?;
-        let part = storage.place(geometry.format, &self.vertices, &self.indices)?;
+        let part = match page {
+            Some(page) => storage.place_in(page, geometry.format, &self.vertices, &self.indices),
+            None => storage.place(geometry.format, &self.vertices, &self.indices),
+        }?;
         storage.parts.push(part);
         storage.sources.extend_from_slice(&self.used);
+        self.clear();
+        Ok(())
+    }
+
+    /// Starts the next part: the vertices that this one used are free again.
+    fn clear(&mut self) {
+        for &v in &self.used {
+            self.local[v as usize] = UNUSED;
+        }
         self.used.clear();
         self.indices.clear();
-        Ok(())
     }
 }
 
@@ -1697,6 +1838,82 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A split mesh's indices in part order reach the vertices that its own indices name, through
+    /// its parts' vertices one part after another, in both packings. On shared buffers those lie in
+    /// one page from the first part's base vertex, and stay so when a mesh before them goes.
+    #[test]
+    fn indices_in_part_order_reach_a_split_meshs_vertices_through_one_run() {
+        let big = grid(300, 300, vertex::UV0);
+        let stride = vertex::stride(big.format) as usize;
+        let mut own: Vec<u32> = big.indices.iter().rev().step_by(7).copied().collect();
+        own.extend([0, 301 * 301 - 1]);
+        let want: Vec<&[u8]> = own
+            .iter()
+            .map(|&v| &big.vertices[v as usize * stride..(v as usize + 1) * stride])
+            .collect();
+        for packing in [Packing::SharedBuffers, Packing::Pages] {
+            let mut storage = MeshStorage::new(packing);
+            let small = storage.add(&grid(2, 2, vertex::UV0)).unwrap();
+            let id = storage.add(&big).unwrap();
+            let slot = *storage.mesh(id).unwrap();
+            assert!(storage.parts(&slot, false).len() > 1);
+            let mut indices = own.clone();
+            let count = storage.to_part_order(id, &mut indices);
+            let copy: Vec<u8> = storage
+                .parts(&slot, false)
+                .iter()
+                .flat_map(|part| {
+                    let at = part.first_vertex as usize * stride;
+                    let page = &storage.pages()[part.page as usize];
+                    page.vertices[at..at + part.vertex_count as usize * stride].iter()
+                })
+                .copied()
+                .collect();
+            assert_eq!(copy.len(), count as usize * stride, "{packing:?}");
+            for (k, &index) in indices.iter().enumerate() {
+                let at = index as usize * stride;
+                assert_eq!(&copy[at..at + stride], want[k], "{packing:?}, index {k}");
+            }
+            match packing {
+                Packing::SharedBuffers => {
+                    storage.remove(&[small]);
+                    let slot = *storage.mesh(id).unwrap();
+                    let first = storage.joined_parts(&slot).expect("one run of vertices");
+                    assert_eq!(first.first_vertex, 0, "the removed mesh's room closed up");
+                    let page = &storage.pages()[first.page as usize];
+                    for (k, &index) in indices.iter().enumerate() {
+                        let at = (index + first.base_vertex) as usize * stride;
+                        assert_eq!(&page.vertices[at..at + stride], want[k], "index {k}");
+                    }
+                }
+                Packing::Pages => assert_eq!(storage.joined_parts(&slot), None),
+            }
+        }
+        // An index past the mesh names no vertex, and a mesh in one part keeps its order.
+        let mut storage = MeshStorage::new(Packing::SharedBuffers);
+        let id = storage.add(&big).unwrap();
+        let mut past = [301 * 301];
+        storage.to_part_order(id, &mut past);
+        assert_eq!(past, [u32::MAX]);
+        let one = storage.add(&grid(2, 2, 0)).unwrap();
+        let mut same = [0, 4, 8];
+        assert_eq!(storage.to_part_order(one, &mut same), 9);
+        assert_eq!(same, [0, 4, 8]);
+    }
+
+    /// Shared buffers too small for a split mesh's every part still take it, a part at a time,
+    /// and its parts then lie apart.
+    #[test]
+    fn a_split_mesh_too_large_for_one_shared_buffer_takes_several() {
+        let mesh = grid(20, 20, 0);
+        let mut storage = MeshStorage::with_page_limit(Packing::SharedBuffers, 4096);
+        let id = storage.add(&mesh).unwrap();
+        let slot = *storage.mesh(id).unwrap();
+        assert!(storage.pages().len() > 1);
+        assert_eq!(storage.joined_parts(&slot), None);
+        assert_eq!(resolved_vertices(&storage, id), original_vertices(&mesh));
     }
 
     #[test]
