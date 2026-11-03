@@ -87,7 +87,7 @@ their real distance allows, so a far view draws far fewer triangles for the same
 4. A patch's error is its distance from the full mesh below it, and at least its children's. The tool measures each full vertex below the patch against the patch. It also measures the middle and the edge midpoints of each of the patch's triangles against the full mesh. A box tree (`surface-distance.js`) finds each nearest triangle. A leaf's sphere holds its triangles, and every other patch's sphere holds its children's spheres. So along every chain the errors never fall and the spheres never shrink, which the draw rule needs.
 5. The tree is stored in `NULL3D_clusters` on the primitive, in three accessors. The first holds the indices of every patch one after another. The second holds four floats of each patch's sphere, and the third four integers of each patch's run, its parent and its error. The extension also names its layout's version, 2. The loader draws a tree of an older version as whole levels. The core refuses a tree or a band whose spheres or errors break the order (`PatchError::Nesting`). The extension is not required, so other loaders draw the whole mesh.
 6. A mesh gets a tree when it has 20,000 triangles or more, no skin and no morph targets, a material that neither blends nor masks, and at most four copies. A mesh that bends has no fixed patch bounds, so it keeps whole levels. Many copies pay about twice their indices for no saving, so they keep whole levels too.
-7. The engine stores the tree against the mesh's id. It rewrites the tree's indices into the order of the vertices that the mesh's parts hold, and checks them against those vertices ([Meshes of several parts](#meshes-of-several-parts)). The WebGPU path draws the chosen patches ([Drawing on WebGPU](#drawing-on-webgpu)), and the WebGL2 path draws them on the job workers where the device has `WEBGL_multi_draw` and the mesh is one part. Both apply one rule, which `PatchTree::walk` holds for the job workers. Every other path draws the mesh's whole levels ([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)). [D-231](D-231-cluster-levels-cost.md) records what the pass costs.
+7. The engine stores the tree against the mesh's id. It rewrites the tree's indices into the order of the vertices that the mesh's parts hold, and checks them against those vertices ([Meshes of several parts](#meshes-of-several-parts)). The WebGPU path draws the chosen patches ([Drawing on WebGPU](#drawing-on-webgpu)). The WebGL2 path draws them on the job workers where the device has `WEBGL_multi_draw`. A mesh of several parts there also needs `WEBGL_provoking_vertex`. Both apply one rule, which `PatchTree::walk` holds for the job workers. Every other path draws the mesh's whole levels ([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)). [D-231](D-231-cluster-levels-cost.md) records what the pass costs.
 8. Each mesh with a tree gets its whole levels from the level planner of [D-91](D-91-level-planning.md), with or without `--lod`. They are the levels that a mesh without a tree gets. The tree stays as it is. The levels share the mesh's vertices. The tool orders the vertices coarsest level first, then the finer levels, then the base mesh, as for a mesh without a tree. The reorder renames the tree's indices too ([Whole levels beside the tree](#whole-levels-beside-the-tree)).
 
 ## Options rejected
@@ -127,13 +127,14 @@ their real distance allows, so a far view draws far fewer triangles for the same
 - The build needs no `partitionClusters`, so the tool keeps the meshoptimizer version that the engine pins.
 - Measuring each patch costs time. Each search stops at the first triangle within the error already
   found. Without that stop, the ground's build took 111 s, and with it 66 s.
-- A tree's index count can be odd. The WebGL2 path pads the tree's index buffer to whole words, or
-  the page drew nothing of the tree ([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)).
+- The WebGL2 path holds the tree's indices again, at 4 bytes an index. A mesh of several parts
+  there also holds a copy of its vertices ([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)).
 
 ## Whole levels beside the tree
 
 The paths that draw no patches draw a mesh's whole levels: the WebGPU direct path, WebGL2 without
 `WEBGL_multi_draw`, the shadow maps, a mesh that several copies draw, and every instance batch.
+WebGL2 without `WEBGL_provoking_vertex` draws them for a mesh of several parts.
 The tool counts only the copies that the file places. So a mesh that page code draws in a batch
 of thousands still gets a tree, and every copy draws whole levels.
 
@@ -252,10 +253,10 @@ stretched triangles instead. The WebGL2 copy reached its vertices another way an
 same holes ([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md#meshes-of-several-parts)). So
 they come from the tree's patch bounds and errors, which this change does not touch.
 
-Rejected: a vertex buffer of the tree's own, a copy of the parts' vertices. The parts already
-lie in one shared buffer here, so it would cost the mesh's vertex bytes for nothing. WebGL2's
-pages hold too few vertices for one run, so such a copy was built and measured there. The GPU ran
-the tree's draws for seconds a frame. So that path keeps whole levels for a mesh of several parts
+Rejected on WebGPU: a vertex buffer of the tree's own, a copy of the parts' vertices. The parts
+already lie in one shared buffer here, so it would cost the mesh's vertex bytes for nothing.
+WebGL2's pages hold too few vertices for one run, so that path draws from such a copy where the
+device has `WEBGL_provoking_vertex`, and whole levels without it
 ([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md#meshes-of-several-parts)).
 
 ### The pass's shader waits for a tree
@@ -313,7 +314,7 @@ them.
 - On WebGPU, a mesh whose parts no one shared buffer holds, past 128 MiB of vertices, draws whole
   levels. So does a tree that would take the cluster tables past the storage binding, or the
   scene's patches past one dispatch ([Meshes of several parts](#meshes-of-several-parts)).
-- On WebGL2, a mesh of several parts draws whole levels
+- On WebGL2 without `WEBGL_provoking_vertex`, a mesh of several parts draws whole levels
   ([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md#meshes-of-several-parts)).
 
 
