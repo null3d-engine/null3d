@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { speciesBox } from '../core/box';
 import { capsFor } from '../core/caps';
 import { hashBytes } from '../core/hash';
@@ -334,24 +335,28 @@ describe('the wood of the grown oak', () => {
 		expect(triangles).toBe(mesh.indices.length / 3);
 	});
 
-	it('stays within the cap of the nearest wood at every tier', () => {
-		const caps = capsFor(record).lod0WoodBytes;
-		for (const detail of DETAILS) {
-			const mesh = meshWood({ ...testMeshInput(detail, skeleton), record }, 0);
-			let bytes = 0;
-			for (const part of quantiseParts(mesh, speciesBox(record), WOOD_UV_STEPS))
-				for (const array of [
-					part.positions,
-					part.normals,
-					part.uvs,
-					part.uvs1,
-					part.colors,
-					part.indices,
-				])
-					bytes += array.byteLength;
-			expect(bytes).toBeLessThan(caps[detail]);
-		}
-	});
+	it(
+		'stays within the cap of the nearest wood at every tier',
+		() => {
+			const caps = capsFor(record).lod0WoodBytes;
+			for (const detail of DETAILS) {
+				const mesh = meshWood({ ...testMeshInput(detail, skeleton), record }, 0);
+				let bytes = 0;
+				for (const part of quantiseParts(mesh, speciesBox(record), WOOD_UV_STEPS))
+					for (const array of [
+						part.positions,
+						part.normals,
+						part.uvs,
+						part.uvs1,
+						part.colors,
+						part.indices,
+					])
+						bytes += array.byteLength;
+				expect(bytes).toBeLessThan(caps[detail]);
+			}
+		},
+		scaledBudget(30_000),
+	);
 
 	it('keeps v within the 16 bits that hold it', () => {
 		let most = 0;

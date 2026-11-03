@@ -90,7 +90,8 @@ export interface SourceConfig {
 /** ETC1S's default quality: the basisu command's. */
 export const DEFAULT_QUALITY = 128;
 
-const LEAF_DEFAULTS = {
+/** The leaf inputs that a species's `source.json` does not set. */
+export const LEAF_DEFAULTS: LeafConfig = {
 	upper: 24,
 	lower: 25,
 	alpha: { floor: 16, solid: 240 },
