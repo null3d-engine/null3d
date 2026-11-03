@@ -157,8 +157,8 @@ function fillRows(batch: InstanceBatch, copies: PlantCopies, rows: readonly numb
 	batch.markDirty();
 }
 
-/** The far cards of one variant's copies, from its far bake. */
-function farCards(
+/** The far cards of one variant's copies, from its far bake, standing where the copies stand. */
+export function farCards(
 	ctx: SketchContext,
 	asset: PlantAsset,
 	bake: NonNullable<PlaceOptions['far']>[number]['bake'],

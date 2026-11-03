@@ -63,11 +63,21 @@ const LEAF_SPECULAR = 0.035 / 0.04;
 /** The cutoff of every plant mask, the texture tool's coverage cutoff. */
 const ALPHA_CUTOFF = 0.5;
 
+/** The uniforms that a placement sets on a material after it is made. */
+export interface PlacedUniforms {
+	/** The distance from the camera inside which a near copy's cards give way to its real shoots. */
+	readonly nearDistance?: number;
+	/** How far into autumn the leaves stand, from 0 for summer to 1 for turned. */
+	readonly season?: number;
+}
+
 /** What each material reads beyond its own textures: its kit's records and its wind state. */
 interface Bound {
 	readonly records: Texture;
 	/** Sets the field's newest layer on the material. */
 	readonly setLayer: (layer: number) => void;
+	/** Sets the uniforms that a placement chooses. */
+	readonly setPlaced: (uniforms: PlacedUniforms) => void;
 	sentBorn: number;
 }
 
@@ -104,7 +114,7 @@ export function plantMaterials(
 	kit: SpeciesKit,
 	options?: PlantMaterialOptions,
 ): PlantMaterials {
-	if (kit.placeholders) return standInMaterials(ctx, kit);
+	if (kit.placeholders === true) return standInMaterials(ctx, kit);
 	const field = options?.wind;
 	const t = kit.textures;
 	if (field) writeFieldSettings(t.records, field.air);
@@ -148,6 +158,11 @@ export function plantMaterials(
 		BOUND.set(material, {
 			records: t.records,
 			setLayer: (layer) => material.setUniform('windLayer', layer),
+			setPlaced: (uniforms) => {
+				if (uniforms.nearDistance !== undefined)
+					material.setUniform('nearDistance', uniforms.nearDistance);
+				if (uniforms.season !== undefined) material.setUniform('season', uniforms.season);
+			},
 			sentBorn: field?.air.sent[3] ?? Number.NaN,
 		});
 		return material;
@@ -189,6 +204,21 @@ export function setWindLayer(materials: readonly PlantMaterial[], field: WindFie
 			writeFieldSettings(bound.records, field.air);
 		}
 	}
+}
+
+/**
+ * Sets the uniforms that a placement chooses on plant materials: the distance at which near copies
+ * hand their shoots to their cards, and the season of the leaves. Materials that `plantMaterials`
+ * did not make, such as a stand-in kit's, are passed over.
+ *
+ * @param materials The materials.
+ * @param uniforms The values to set.
+ */
+export function setPlacedUniforms(
+	materials: readonly PlantMaterial[],
+	uniforms: PlacedUniforms,
+): void {
+	for (const material of materials) BOUND.get(material)?.setPlaced(uniforms);
 }
 
 /**
