@@ -115,6 +115,10 @@ export interface PlannedLeaf {
 	readonly node: number;
 	/** The stem's direction at its node. */
 	readonly stem: Vector3;
+	/** The sky side at its node, square to the stem. */
+	readonly sky: Vector3;
+	/** The way its stalk leaves the stem, square to the stem. */
+	readonly radial: Vector3;
 	/** The direction the leaf leaves in. */
 	readonly direction: Vector3;
 }
@@ -241,6 +245,92 @@ function unitNodes(
 }
 
 /**
+ * Opens a lit shoot's leaves into a mosaic, by the skyward share: each leaf swings out of the sky
+ * side into the plane of its stem and the stem's side, so the sky looks down on a fan. Leaves that
+ * crowd on one axis (a tip rosette) also spread evenly round that fan in the order the spiral gave
+ * them, so their blades fill the gaps rather than lie on each other; a lone leaf keeps its own angle.
+ *
+ * @param leaves The plan's leaves, rewritten in place.
+ * @param share The skyward share, 0 to 1.
+ * @param leafLength The species' leaf length, which sets how close leaves must stand to crowd.
+ * @param rotate A leaf's turn from its direction and its node's frame.
+ */
+function openMosaic(
+	leaves: PlannedLeaf[],
+	share: number,
+	leafLength: number,
+	rotate: (direction: Vector3, stem: Vector3, sky: Vector3, radial: Vector3) => number[],
+): void {
+	// Groups of leaves on one axis that stand within a third of a leaf's length of the next.
+	const groups: number[][] = [];
+	for (let i = 0; i < leaves.length; i++) {
+		const leaf = leaves[i] as PlannedLeaf;
+		const group = groups[groups.length - 1];
+		const last = group ? (leaves[group[group.length - 1] as number] as PlannedLeaf) : undefined;
+		if (group && last && last.axis === leaf.axis && leaf.along - last.along < leafLength / 3)
+			group.push(i);
+		else groups.push([i]);
+	}
+	for (const group of groups) {
+		// Each leaf's angle in its fan plane, from the stem toward the stem's side.
+		const angles = group.map((i) => {
+			const leaf = leaves[i] as PlannedLeaf;
+			const side = normalize3(cross3(leaf.stem, leaf.sky, [0, 0, 0]));
+			const d = leaf.direction;
+			return Math.atan2(
+				d[0] * side[0] + d[1] * side[1] + d[2] * side[2],
+				d[0] * leaf.stem[0] + d[1] * leaf.stem[1] + d[2] * leaf.stem[2],
+			);
+		});
+		// A crowd spreads evenly over the widest angle its leaves stand at, either side of the stem.
+		let widest = 0;
+		for (const i of group) {
+			const leaf = leaves[i] as PlannedLeaf;
+			const d = leaf.direction;
+			widest = Math.max(
+				widest,
+				Math.acos(
+					Math.max(
+						-1,
+						Math.min(1, d[0] * leaf.stem[0] + d[1] * leaf.stem[1] + d[2] * leaf.stem[2]),
+					),
+				),
+			);
+		}
+		const order = group
+			.map((_, k) => k)
+			.sort((a, b) => (angles[a] as number) - (angles[b] as number) || a - b);
+		const targets = new Array<number>(group.length);
+		order.forEach((k, rank) => {
+			targets[k] =
+				group.length > 1
+					? -widest + (2 * widest * (rank + 0.5)) / group.length
+					: (angles[k] as number);
+		});
+		group.forEach((i, k) => {
+			const leaf = leaves[i] as PlannedLeaf;
+			const side = normalize3(cross3(leaf.stem, leaf.sky, [0, 0, 0]));
+			const d = leaf.direction;
+			const angle =
+				(angles[k] as number) + ((targets[k] as number) - (angles[k] as number)) * share;
+			// What remains of the leaf's lean toward the sky side or away from it.
+			const lift = (d[0] * leaf.sky[0] + d[1] * leaf.sky[1] + d[2] * leaf.sky[2]) * (1 - share);
+			const flat = Math.sqrt(Math.max(0, 1 - lift * lift));
+			const direction = normalize3([
+				(leaf.stem[0] * cos(angle) + side[0] * sin(angle)) * flat + leaf.sky[0] * lift,
+				(leaf.stem[1] * cos(angle) + side[1] * sin(angle)) * flat + leaf.sky[1] * lift,
+				(leaf.stem[2] * cos(angle) + side[2] * sin(angle)) * flat + leaf.sky[2] * lift,
+			]);
+			leaves[i] = {
+				...leaf,
+				direction,
+				rotation: rotate(direction, leaf.stem, leaf.sky, leaf.radial),
+			};
+		});
+	}
+}
+
+/**
  * Plans one prototype from the record: its axes, its leaves and its buds.
  *
  * @param record The species record.
@@ -275,6 +365,25 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 		foliage.kind === 'needle' || foliage.kind === 'fascicle' ? foliage.needle.angle : undefined;
 	const ranks = foliage.kind === 'needle' ? foliage.needle.ranks : 0;
 	const flatten = phyllotaxis.kind === 'distichous' ? phyllotaxis.flatten : 0;
+	/** A leaf's turn from leaf space: the upper face looks toward the shoot's tip, turned toward the sky side. */
+	const leafRotation = (
+		direction: Vector3,
+		stem: Vector3,
+		sky: Vector3,
+		radial: Vector3,
+	): number[] => {
+		const adaxial = square(stem, direction, radial);
+		const skyward = square(sky, direction, adaxial);
+		const w = Math.min(1, skyTurn + flatten * (1 - skyTurn));
+		const face = normalize3([
+			adaxial[0] * (1 - w) + skyward[0] * w,
+			adaxial[1] * (1 - w) + skyward[1] * w,
+			adaxial[2] * (1 - w) + skyward[2] * w,
+		]);
+		const rotation = [0, 0, 0, 1];
+		quatFromFrame(direction, face, rotation);
+		return rotation;
+	};
 	const [baseRadius, tipRadius] = shoots.stem.radius;
 	const axes: AxisPoint[][] = [];
 	const leaves: PlannedLeaf[] = [];
@@ -401,14 +510,10 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 				gap -= 2 * Math.PI * Math.round(gap / (2 * Math.PI));
 				azimuth += gap * ranks;
 			}
-			// A lit shoot twists its leaves' stalks into a mosaic: by the skyward share, each leaf swings
-			// from the sky side toward the shoot's own side plane, so its leaves open as a fan that the sky
-			// looks down on.
-			const lift = sin(azimuth) * Math.min(skyTurn, 0.95);
 			const radial = normalize3([
-				side[0] * cos(azimuth) + sky[0] * (sin(azimuth) - lift),
-				side[1] * cos(azimuth) + sky[1] * (sin(azimuth) - lift),
-				side[2] * cos(azimuth) + sky[2] * (sin(azimuth) - lift),
+				side[0] * cos(azimuth) + sky[0] * sin(azimuth),
+				side[1] * cos(azimuth) + sky[1] * sin(azimuth),
+				side[2] * cos(azimuth) + sky[2] * sin(azimuth),
 			]);
 			const a = radians(leafAngle);
 			const direction = normalize3([
@@ -416,17 +521,7 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 				stem[1] * cos(a) + radial[1] * sin(a),
 				stem[2] * cos(a) + radial[2] * sin(a),
 			]);
-			// The upper face looks toward the shoot's tip, turned toward the sky side.
-			const adaxial = square(stem, direction, radial);
-			const skyward = square(sky, direction, adaxial);
-			const w = Math.min(1, skyTurn + flatten * (1 - skyTurn));
-			const face = normalize3([
-				adaxial[0] * (1 - w) + skyward[0] * w,
-				adaxial[1] * (1 - w) + skyward[1] * w,
-				adaxial[2] * (1 - w) + skyward[2] * w,
-			]);
-			const rotation = [0, 0, 0, 1];
-			quatFromFrame(direction, face, rotation);
+			const rotation = leafRotation(direction, stem, sky, radial);
 			const key = node * 8 + k;
 			const size =
 				curveAt(shootClass.leafScale, t) *
@@ -441,6 +536,8 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 				axis,
 				node,
 				stem: [...stem],
+				sky: [...sky],
+				radial,
 				direction,
 			});
 			if (leafLength > 0 && budLength > 0) {
@@ -511,6 +608,8 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 		radius: baseRadius,
 		along: 0,
 	});
+	if (skyTurn > 0 && foliage.kind === 'blade')
+		openMosaic(leaves, skyTurn, leafLength, leafRotation);
 	let reach = 0;
 	for (const points of axes)
 		for (const point of points)
