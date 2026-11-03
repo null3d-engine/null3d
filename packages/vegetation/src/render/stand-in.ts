@@ -222,8 +222,10 @@ function farCards(
 			receiveShadows: true,
 		},
 	);
+	// A card's row holds its width and height at scale 1, which the copy's own scale multiplies.
 	rows.forEach((copy, row) => {
-		cards.batch.scales.fill(copies.scale[copy] as number, row * 3, row * 3 + 3);
+		const scale = copies.scale[copy] as number;
+		cards.batch.scales.set([bake.size[0] * scale, bake.size[1] * scale, 1], row * 3);
 	});
 	cards.markDirty();
 	return cards;

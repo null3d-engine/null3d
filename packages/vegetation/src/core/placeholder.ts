@@ -38,6 +38,7 @@ import {
 	cross3,
 	length3,
 	normalize3,
+	pow,
 	quatFromFrame,
 	quatRotate,
 	radians,
@@ -144,6 +145,15 @@ function colourBytes(rgb: readonly number[], alpha: number): number[] {
 		Math.round(Math.min(1, Math.max(0, rgb[2] as number)) * 255),
 		alpha,
 	];
+}
+
+/** A linear colour as sRGB bytes, as the far bake's colour atlas holds it. */
+function srgbBytes(rgb: readonly number[], alpha: number): number[] {
+	const encode = (value: number) => {
+		const c = Math.min(1, Math.max(0, value));
+		return Math.round((c <= 0.0031308 ? 12.92 * c : 1.055 * pow(c, 1 / 2.4) - 0.055) * 255);
+	};
+	return [encode(rgb[0] as number), encode(rgb[1] as number), encode(rgb[2] as number), alpha];
 }
 
 /** The species' leaf colour, or a green where it has no optics. */
@@ -888,7 +898,7 @@ export function placeholderFar(kit: SpeciesKitData, asset: PlantAsset): FarBake 
 	const side = views * texels;
 	const color = new Uint8Array(side * side * 4);
 	const surface = new Uint8Array(side * side * 4);
-	const leaf = colourBytes(leafColour(kit.record.foliage), 255);
+	const leaf = srgbBytes(leafColour(kit.record.foliage), 255);
 	const middle = (texels - 1) / 2;
 	for (let y = 0; y < side; y++)
 		for (let x = 0; x < side; x++) {
