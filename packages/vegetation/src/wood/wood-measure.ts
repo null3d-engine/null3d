@@ -34,13 +34,29 @@ export function measureWelds(report: WoodReport): WeldMeasure[] {
 	const { mesh, welds, parents } = report;
 	const triangles = mesh.indices;
 	const measures: WeldMeasure[] = [];
+	// Each axis's triangles follow its vertices and one another, so one pass finds each axis's run.
+	const ranges = [...welds.axisFirst.values()].sort((x, y) => x[0] - y[0]);
+	const runs = new Map<number, [number, number]>();
+	let r = 0;
+	for (let t = 0; t < triangles.length; t += 3) {
+		const a = triangles[t] as number;
+		while (
+			r < ranges.length &&
+			a >= (ranges[r] as [number, number])[0] + (ranges[r] as [number, number])[1]
+		)
+			r++;
+		const range = ranges[r];
+		if (!range) break;
+		const run = runs.get(range[0]);
+		if (run) run[1] = t + 3;
+		else runs.set(range[0], [t, t + 3]);
+	}
 	for (let w = 0; w < welds.child.length; w++) {
 		const child = welds.child[w] as number;
 		const parent = parents.get(child) ?? -1;
 		const range = welds.axisFirst.get(parent);
 		if (!range) continue;
-		const [from, count] = range;
-		const to = from + count;
+		const from = range[0];
 		const first = welds.first[w] as number;
 		// Only the parent's triangles that come within a centimetre of the weld ring's box can hold
 		// its nearest points: a weld vertex off by more fails the measure anyway.
@@ -53,9 +69,8 @@ export function measureWelds(report: WoodReport): WeldMeasure[] {
 				high[k] = Math.max(high[k] as number, value + 0.01);
 			}
 		const parentTriangles: number[] = [];
-		for (let t = 0; t < triangles.length; t += 3) {
-			const a = triangles[t] as number;
-			if (a < from || a >= to) continue;
+		const [runFrom, runTo] = runs.get(from) ?? [0, 0];
+		for (let t = runFrom; t < runTo; t += 3) {
 			let apart = false;
 			for (let k = 0; k < 3 && !apart; k++) {
 				let least = Number.POSITIVE_INFINITY;
