@@ -52,9 +52,9 @@ Keep setup, options, the public API and event handling in TypeScript. They run o
 
 An add-on that builds meshes in code gives each one levels of detail, as the asset tool gives a mesh from a file. A far copy then draws a few dozen triangles instead of its full mesh, and the engine hides a copy that covers less than a pixel.
 
-Give each static mesh of a few thousand triangles or more its levels with `mesh.setLevels`, from the most detailed down, each with about half the triangles of the level above ([Levels of detail](../concepts/lod.md#give-a-mesh-its-levels)). Measure each level's `error` against the full mesh when you can, so the level switches in at once with no fade. A mesh that bends, moves its vertices in each frame, or draws lines or points keeps its full mesh. Say so in a comment beside the mesh.
+A mesh from `geometry.fromArrays` or a generator plans its levels on its own, at its first draw, when it holds 4,096 triangles or more, or when its copies hold 65,536 triangles together and it holds at least 256. The plan runs on the job workers with the asset tool's planner, and the levels keep their measured errors, so they switch in at once ([Levels of detail](../concepts/lod.md#levels-of-meshes-made-in-code)). An add-on that builds its arrays in a task of its own on a job worker hands them to `fromArrays` as it does now. `await mesh.buildLevels()` plans a smaller mesh, or a mesh again after its vertices change, and resolves once the levels are in.
 
-The engine's run-time level API, which makes levels for a mesh made in code with the asset tool's own planner, is planned. When it ships, it replaces the hand-made levels.
+Pass `levels: false` for a mesh whose shape a shader moves, such as a water surface or a terrain block that morphs toward its parent, and for a mesh whose levels the add-on makes itself. Say why in a comment beside the mesh. The engine leaves out on its own a mesh with joints, morph targets or a vertex record, a mesh that a material with a displacement map or a `vertexOffset` draws, and a mesh that lies flat. A mesh of separate leaf cards asks for `levels: { cards: true }`, so each level thins its cards rather than dropping whole small pieces.
 
 ## Follow the preset and show the cost
 

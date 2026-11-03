@@ -3,7 +3,7 @@ id: concepts/lod
 title: Levels of detail
 status: experimental
 since: "0.2"
-summary: "LOD groups; generated LODs; cluster patches; staged downloads; per-instance selection; small-object hiding."
+summary: "LOD groups; levels that meshes made in code plan on the job workers; generated LODs; cluster patches; staged downloads; per-instance selection; small-object hiding."
 ---
 
 # Levels of detail
@@ -24,7 +24,21 @@ An object far from the camera covers few pixels. Its full mesh then costs vertex
 
 A mesh with levels draws one of them per frame in every object and every instance row that uses it. The engine picks the level on the GPU on WebGPU, and on its job workers on WebGL2. Both use the same rule, so a level switches in at the same distance on every GPU path.
 
-## Give a mesh its levels
+## Levels of meshes made in code
+
+A mesh made in code plans its levels the first time the scene draws it, when it holds 4,096 triangles or more, or when its copies hold 65,536 triangles together, whether `geometry.fromArrays` or a generator made it. A mesh that no object draws plans nothing, and the plan sees the material that draws the mesh first. The plan runs on the job workers, never in a frame, and the mesh draws its full shape until the levels arrive. It runs the planner that the asset tool's `--lod` runs, with the same build of meshoptimizer's simplifier, so the same mesh gets the same levels in code as in a file. The copies that already draw the mesh then pick their levels, as the streamed levels of a file refine in place.
+
+```ts
+const rock = geometry.fromArrays(rockArrays(20_000));
+scene.createInstances(rock, 5_000, { material: stone }); // the first draw plans the levels
+await rock.buildLevels(); // resolves with the levels once they are in
+```
+
+Each level about halves the triangles of the level above, down to a few dozen, and keeps its measured error, so it switches in at once where the error covers less than the `lodThreshold` setting's pixels. The levels name the mesh's own vertices, so they cost indices alone, and the mesh keeps its vertex and triangle order: raycasts and `updateVertices` see the mesh as it was made. The [geometry page](../api/geometry.md#levels-of-detail) gives the `levels` option, which turns the plan off or on, and the meshes that plan none: meshes that pose or move, meshes that a shader shapes, meshes whose vertices change, and meshes whose levels you set by hand.
+
+A mesh of separate quads plans as any other mesh unless it asks for cards with `levels: { cards: true }`. The walls of a building kit are separate quads too, and thinning them as cards would cut holes in them. Without cards, a level drops only whole small pieces, such as a shutter's slats, where they cover under a pixel.
+
+## Give a mesh its levels by hand
 
 `mesh.setLevels` takes up to 15 lower levels, from the most detailed down. Each level is another mesh with the base mesh's vertex attributes. Each gives the distance at which it switches in, in one of three ways:
 
@@ -42,7 +56,7 @@ tree.setLevels([
 scene.createInstances(tree, 20_000, { material: bark });
 ```
 
-The switch distances grow from level to level, whatever their measures. The asset tool works out each level's error for you, as the next section shows.
+The switch distances grow from level to level, whatever their measures. Levels set by hand win over planned ones: `setLevels` ends a plan that runs, and the planned levels go. The asset tool works out each level's error for you, as the next section shows.
 
 ## A material per level
 
@@ -104,6 +118,12 @@ A tree can stream as a model loads, with `--clusters --stages`. The model file t
 
 The patch path draws a mesh that one copy draws, and the file may still hold a tree for a mesh with more copies. A mesh that draws several copies at once draws its whole levels, because the walk picks the patches of one copy. An instance batch draws whole levels too, even with one row. The tool counts only the copies that the file places. A mesh that page code draws in an instance batch therefore still gets a tree, and its copies draw the whole levels. The levels go down to a few dozen triangles, so far copies stay cheap. The WebGPU path that draws objects directly also draws the whole levels, because it has no cluster pass. Meshes that a skin or a morph target bends, and meshes whose material blends or masks, keep whole levels too. A shadow map draws a caster's patches where the camera's view draws the same object's tree, and the caster's whole levels elsewhere.
 
+## Pieces of a large level
+
+A copy that the view cuts through, or that turns half its surface away from the camera, still draws every triangle of its level. So `--lod` also sorts each level of 32,768 triangles or more into 8 to 16 pieces. Each piece faces about one way and has its own bounds. The file stores them in `NULL3D_pieces`, and other viewers draw the same triangles in the new order.
+
+Each copy picks its level as before. It then skips each piece of that level that lies outside the view. In the camera's own view it also skips each piece whose triangles all face away from the camera. With GPU occlusion culling on, it skips each piece that the occluders hide as well. The picture is the same as without pieces. A material that draws both faces keeps every piece that faces away, and so does a copy that is mirrored or stretched. Each piece adds a draw to its level, so smaller meshes keep whole levels.
+
 ## How the engine picks a level
 
 A level given by its error switches in where that error covers fewer pixels than the `lodThreshold` quality setting:
@@ -138,7 +158,7 @@ The same factor moves the distance at which the object hides. A detailed hero ob
 
 A level that switches in at once can pop. The engine fades only where a switch would show:
 
-- A level with a measured error, which the asset tool writes, changes the picture by under a pixel at its switch. It switches at once, so it pays for no second draw. A file's error counts as measured only where the file also gives the coverage that the tool writes beside it.
+- A level with a measured error, which the asset tool writes and a mesh made in code plans, changes the picture by under a pixel at its switch. It switches at once, so it pays for no second draw. A file's error counts as measured only where the file also gives the coverage that the tool writes beside it.
 - A level given by a distance, by a coverage or by a hand-set error changes the picture more. It fades.
 
 A fading level hands over in a short band past its switch distance. The band is 8% of the distance long, and the old level and the new one both draw in it. A 4 × 4 dither pattern gives each pixel to one of them, and the share of the new level grows across the band. Each copy shifts the pattern by a phase from a hash of the copy, so neighboring copies do not line up into one grid. The two levels of a band take the same phase, so no pixel draws twice. Nothing sorts.
@@ -218,9 +238,10 @@ A bake stores the object from many directions, folded onto an octahedral grid, i
 | `lod.addLevel(object, distance, hysteresis)` | `{ mesh, distance }`. The bands replace hysteresis |
 | `lod.autoUpdate`, `lod.update(camera)` | None: the engine picks levels in every frame |
 | `lod.getCurrentLevel()` | None |
+| `SimplifyModifier` from three/addons, to make the far copies | None: a mesh of 4,096 triangles or more plans its levels on the job workers when it first draws, and `mesh.buildLevels()` plans a smaller one |
 
 A three.js `LOD` holds whole objects. In null3D the levels belong to the mesh, and every object and instance batch that draws it picks its own level. A level given by its distance switches in at that distance for an object of scale 1, on every screen. The distance measures to the nearest point of the object's bounds. three.js measures to the object's position instead, so a large object switches later in null3D. A level given by its error or its coverage compares at a field of view of 50 degrees, three.js's default. The `fov` option of `setLevels` names another one.
 
 ## API reference
 
-`mesh.setLevels` and the options it takes are on the [geometry page's reference](../api/reference/geometry.md). The quality settings are on [the quality page](../api/quality.md).
+`mesh.setLevels`, `mesh.buildLevels` and the options they take are on the [geometry page's reference](../api/reference/geometry.md). The quality settings are on [the quality page](../api/quality.md).

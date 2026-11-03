@@ -408,6 +408,12 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	// A page that shows no video downloads none of the support that follows one.
 	{ name: 'page-videos.js', module: 'page/videos.ts', loadedBy: 'page.js', onFirstCall: true },
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
+	// The level planner's start loads with the first mesh that plans its levels.
+	{
+		name: 'page-mesh-levels.js',
+		module: 'scene/mesh-levels.ts',
+		loadedBy: 'page-sketch-runner.js',
+	},
 	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-assets.js', module: 'scene/assets.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-baked-light.js', module: 'scene/baked-light.ts', loadedBy: 'page-assets.js' },
@@ -428,6 +434,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'task-worker.js', module: 'workers/task-worker.ts', loadedBy: 'page-tasks.js' },
 	{ name: 'task-worker-ktx2.js', module: 'scene/ktx2-transcode.ts', loadedBy: 'task-worker.js' },
 	{ name: 'task-worker-grade.js', module: 'scene/grade-task.ts', loadedBy: 'task-worker.js' },
+	{ name: 'task-worker-levels.js', module: 'scene/levels-task.ts', loadedBy: 'task-worker.js' },
 	{ name: 'page-lut.js', module: 'scene/lut-files.ts', loadedBy: 'page-sketch-runner.js' },
 	// The reader of an environment map file and the built-in environments' descriptions load at the
 	// first call that reads them, from the assets file. The page and the sketch worker each bundle
@@ -505,6 +512,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'sketch-worker-renderer.js', module: 'render/draw.ts', loadedBy: 'sketch-worker.js' },
 	...drawingParts('sketch-worker', 'sketch-worker-renderer.js'),
 	{ name: 'sketch-worker-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'sketch-worker.js' },
+	{
+		name: 'sketch-worker-mesh-levels.js',
+		module: 'scene/mesh-levels.ts',
+		loadedBy: 'sketch-worker.js',
+	},
 	{ name: 'sketch-worker-gltf.js', module: 'scene/gltf.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-assets.js', module: 'scene/assets.ts', loadedBy: 'sketch-worker.js' },
 	{
@@ -612,6 +624,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	...drawingParts('render-worker', 'render-worker.js'),
 	{ name: 'job-worker.js', module: 'workers/job-worker.ts' },
 	{ name: 'job-worker-ktx2.js', module: 'scene/ktx2-transcode.ts', loadedBy: 'job-worker.js' },
+	{ name: 'job-worker-levels.js', module: 'scene/levels-task.ts', loadedBy: 'job-worker.js' },
 	{ name: 'probe-worker.js', module: 'workers/probe-worker.ts' },
 ];
 
@@ -678,7 +691,8 @@ export function isFirstUseShaderPart(name: string): boolean {
 /**
  * The files besides code that load on first use: the WebAssembly modules that the on-demand
  * loader compiles, and the area lights' tables. They are the KTX2 transcoder, with a page's first
- * KTX2 file, the meshopt decoder, with its first glTF file that holds meshopt data, Draco's
+ * KTX2 file, the meshopt decoder, with its first glTF file that holds meshopt data, meshoptimizer's
+ * simplifier and encoder, with the first mesh that plans its levels of detail, Draco's
  * decoder, with its first glTF file that holds Draco data, and the tables, with the first
  * rectangle or tube light. A build copies each as it is, under its name with a hash. Draco's
  * decoder and the tables are recorded exceptions to the limit of files that load on first use
@@ -687,6 +701,8 @@ export function isFirstUseShaderPart(name: string): boolean {
 export const FIRST_USE_FILES = [
 	'basis_transcoder.wasm',
 	'meshopt_decoder.wasm',
+	'meshopt_simplifier.wasm',
+	'meshopt_encoder.wasm',
 	'draco_decoder_gltf.wasm',
 	'area-light-tables.bin',
 ] as const;

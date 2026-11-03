@@ -324,6 +324,8 @@ export default defineSketch(
 					normals: m.normal,
 					uvs: m.uv,
 					indices: m.index,
+					// The three.js twin draws every mesh whole, so this one does too.
+					levels: false,
 				});
 				meshes.set(name, made);
 			}

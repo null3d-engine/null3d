@@ -407,6 +407,20 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	createLevelMesh(base: number, indices: number): number;
 	/**
+	 * A level of the live mesh `base` that holds its own copy of the vertices that the `indices`
+	 * triangles at `meshArrays`'s address name, which the call frees: the level of a split base,
+	 * which cannot share its vertices. Returns the mesh id, or 0 on failure.
+	 */
+	createLevelCopy(base: number, indices: number): number;
+	/**
+	 * Writes the live mesh `mesh`'s vertices and triangles as the level planner reads them, and
+	 * returns their address, or 0 for a mesh that is not live: the vertex count, the index count
+	 * and the vertex format, then the floats of the position, the normal, and the first and second
+	 * texture coordinates, the tangent and the color where the format has them, attribute after
+	 * attribute, then the indices. The next call that uses the same words overwrites them.
+	 */
+	meshPlanningArrays(mesh: number): number;
+	/**
 	 * Gives the live mesh `mesh` the `indices` triangles at `meshArrays`'s address in place of the
 	 * ones it draws, which the call frees. 0 when the mesh takes them. A mesh that is split into
 	 * parts, morphed, a level of its own or drawn as lines returns its fault code, and keeps the
@@ -432,6 +446,20 @@ export interface CoreGlue extends CoreErrors {
 	 * cover the mesh's vertices.
 	 */
 	setMeshPatches(mesh: number, patches: number, indices: number, root: number): number;
+	/**
+	 * Gives a mesh `count` pieces of its triangle list, at `meshArrays`'s address: nine words each,
+	 * the piece's triangles, then four floats of its bounding sphere and four of its cone of
+	 * facings. The pieces follow the list's order. 1 when the mesh takes them, 0 when they do not
+	 * fit its list, which then draws whole.
+	 */
+	setMeshPieces(mesh: number, count: number): number;
+	/**
+	 * Gives a mesh `count` pieces over a triangle list of their own: the pieces as `setMeshPieces`
+	 * lays them out, then `indices` indices that hold the mesh's triangles in piece order, at
+	 * `meshArrays`'s address. The mesh keeps its own list. 1 when the mesh takes them, 0 when it
+	 * cannot: a mesh of several parts, or one that has such a list already.
+	 */
+	setMeshPieceList(mesh: number, count: number, indices: number): number;
 	/**
 	 * Appends one band to a mesh's tree of cluster patches: `patches` records of eight words each,
 	 * four floats of a bounding sphere and four integers of a run of indices, a parent and an
@@ -1428,10 +1456,14 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'meshArrays',
 	'createMeshFromArrays',
 	'createLevelMesh',
+	'createLevelCopy',
+	'meshPlanningArrays',
 	'replaceMeshIndices',
 	'setMeshBvh',
 	'setMeshBlocker',
 	'setMeshPatches',
+	'setMeshPieces',
+	'setMeshPieceList',
 	'appendMeshPatches',
 	'meshRadius',
 	'meshVertexCount',
