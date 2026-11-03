@@ -488,7 +488,13 @@ A run folder holds every page's full result, with frames and images, and stays o
 | Walk, no cap, page pump | 5.30 | 2.57 | 4.25 | 2.29 |
 | Aerial, no cap, page pump | 8.71 | 2.05 | 7.41 | 1.77 |
 
-- After the change the sketch worker still counts about a sixth of the sources itself, 0.55 ms of a 0.9 ms frame in a profile. The profile does not show why the 16 job workers take no more. A likely cause is the wake: the frame wakes them before its commands, and they may sleep again before the recording starts. Picking both edges of the slack in one walk of a source's levels would also cut the count's cost.
+- After that change the sketch worker still counted about a sixth of the sources itself, 0.55 ms of a 0.9 ms frame in a profile. A probe of the count's loop found the cause. In frames that no measurement runs, the 16 job workers sleep when the loop starts, and the first joins within about 35 µs. The sketch worker then runs 7 of the 63 chunks. But `engine.measure` samples the page's memory for its whole run, and the job workers leave the loop for it. No frame job woke them, so they joined 0.6 ms late, and the sketch worker ran half the chunks ([Measuring the page's memory](implementation-notes.md#measuring-the-pages-memory)).
+- Frame jobs now wake the job workers that left, and each source's two level picks share one walk of its levels ([D-137](decisions/D-137-lod-groups.md#copy-lists-that-follow-what-draws)). The table gives the medians of three runs of each build in turns, at the 120 Hz cap. Both builds are CDN copies with the development checks off and the address switches on, as a production build has them.
+
+| Desert view, production copies | Sketch worker before, ms | After, ms | Recording before, ms | After, ms |
+| --- | --- | --- | --- | --- |
+| Walk | 1.55 | 0.58 | 1.47 | 0.51 |
+| Aerial | 1.48 | 0.71 | 1.41 | 0.62 |
 
 ## Vegetation scatter
 

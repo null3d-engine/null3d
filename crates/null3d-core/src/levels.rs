@@ -323,12 +323,7 @@ impl LevelRule {
     ) -> Picked {
         let mut before = home;
         let mut level = home;
-        // A rule without a factor keeps every source at its base level.
-        let mut next = if self.on() {
-            links[home as usize].next
-        } else {
-            NO_LINK
-        };
+        let mut next = self.first_link(links, home);
         while next != NO_LINK
             && self.switch_distance(&links[next as usize], scale, radius, bias) < distance
         {
@@ -336,6 +331,96 @@ impl LevelRule {
             level = next;
             next = links[level as usize].next;
         }
+        self.settle(
+            links, home, level, before, scale, radius, distance, bias, range,
+        )
+    }
+
+    /// The buckets that [`LevelRule::pick`] gives at `near` and at `far`, from one walk of the
+    /// source's levels: the same two answers as two calls, for `near` no greater than `far`. A
+    /// level's switch distance stops the walk at `near` whenever it stops it at `far`, so the walk
+    /// to `far` passes the place where the walk to `near` stops.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn pick_both(
+        &self,
+        links: &[LevelLink],
+        home: u32,
+        scale: f32,
+        radius: f32,
+        near: f32,
+        far: f32,
+        bias: f32,
+        range: DrawRange,
+    ) -> [Picked; 2] {
+        debug_assert!(
+            near <= far || near.is_nan() || far.is_nan(),
+            "the near distance lies past the far one"
+        );
+        let mut before = home;
+        let mut level = home;
+        let mut stop_near = None;
+        let mut next = self.first_link(links, home);
+        while next != NO_LINK {
+            let switch = self.switch_distance(&links[next as usize], scale, radius, bias);
+            // The same comparisons as the single walk's, so a switch distance that is not a number
+            // stops both walks there.
+            let (passes_near, passes_far) = (switch < near, switch < far);
+            if stop_near.is_none() && !passes_near {
+                stop_near = Some((level, before));
+            }
+            if !passes_far {
+                break;
+            }
+            before = level;
+            level = next;
+            next = links[level as usize].next;
+        }
+        let (near_level, near_before) = stop_near.unwrap_or((level, before));
+        [
+            self.settle(
+                links,
+                home,
+                near_level,
+                near_before,
+                scale,
+                radius,
+                near,
+                bias,
+                range,
+            ),
+            self.settle(links, home, level, before, scale, radius, far, bias, range),
+        ]
+    }
+
+    /// The first link that a source of base bucket `home` walks: none for a rule without a
+    /// factor, which keeps every source at its base level.
+    #[inline(always)]
+    fn first_link(&self, links: &[LevelLink], home: u32) -> u32 {
+        if self.on() {
+            links[home as usize].next
+        } else {
+            NO_LINK
+        }
+    }
+
+    /// The buckets that a source draws at `distance` once the walk of its levels stopped at
+    /// `level`, with `before` the level ahead of it: the level's bucket, its fading bands, its
+    /// distance range and its hide distance.
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    fn settle(
+        &self,
+        links: &[LevelLink],
+        home: u32,
+        level: u32,
+        before: u32,
+        scale: f32,
+        radius: f32,
+        distance: f32,
+        bias: f32,
+        range: DrawRange,
+    ) -> Picked {
         let new_fade = links[level as usize].fade;
         // A source outside its distance range draws nothing. Inside each edge of it, the share of
         // the pixels that the dither keeps grows to one, or falls to none, over the same band that
@@ -869,5 +954,84 @@ mod tests {
             panic!("no fade in at 101 m");
         };
         assert_eq!(bucket, 7);
+    }
+
+    /// The count of a level's copies picks at both edges of its slack in one walk. Over random
+    /// chains of levels, rules, ranges and distances, the walk must give exactly what two picks
+    /// give, fading amounts included.
+    #[test]
+    fn one_walk_picks_what_two_picks_give_at_both_distances() {
+        let mut state = 0x9e37_79b9_u32;
+        let mut random = move || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            f32::from(u16::try_from(state >> 16).unwrap()) / f32::from(u16::MAX)
+        };
+        let switches = [Switch::Error, Switch::Distance, Switch::Coverage];
+        for _ in 0..20_000 {
+            let levels = 1 + (random() * 4.0) as u32;
+            let fades = random() < 0.6;
+            let mut links: Vec<LevelLink> = (0..levels * 2)
+                .map(|bucket| LevelLink {
+                    value: if bucket == 0 || bucket >= levels {
+                        0.0
+                    } else {
+                        random() * 0.5
+                    },
+                    switch: switches[(random() * 2.99) as usize],
+                    next: if bucket + 1 < levels {
+                        bucket + 1
+                    } else {
+                        NO_LINK
+                    },
+                    fade: if fades && bucket < levels {
+                        levels + bucket
+                    } else {
+                        NO_LINK
+                    },
+                })
+                .collect();
+            for link in &mut links[levels as usize..] {
+                link.next = NO_LINK;
+            }
+            let rule = LevelRule::new(
+                if random() < 0.1 {
+                    0.0
+                } else {
+                    400.0 + random() * 2000.0
+                },
+                0.5 + random() * 2.0,
+                false,
+                1.0 + random() * 4.0,
+                if random() < 0.3 { 0.0 } else { random() * 0.3 },
+            );
+            let range = match (random() * 3.0) as u32 {
+                0 => DrawRange::NONE,
+                1 => DrawRange::new(random() * 50.0, f32::INFINITY),
+                _ => DrawRange::new(random() * 20.0, 20.0 + random() * 400.0),
+            };
+            let scale = 0.1 + random() * 4.0;
+            let radius = random() * 5.0;
+            let bias = if random() < 0.2 {
+                0.0
+            } else {
+                0.25 + random() * 3.0
+            };
+            let distance = 0.01 + random() * random() * 2000.0;
+            let slack = if random() < 0.5 {
+                1.0e-3
+            } else {
+                random() * 0.5
+            };
+            let (near, far) = (distance * (1.0 - slack), distance * (1.0 + slack));
+            let both = rule.pick_both(&links, 0, scale, radius, near, far, bias, range);
+            let one = [near, far].map(|at| rule.pick(&links, 0, scale, radius, at, bias, range));
+            assert_eq!(
+                format!("{both:?}"),
+                format!("{one:?}"),
+                "{links:?} {rule:?} {range:?} {scale} {radius} {bias} {near} {far}"
+            );
+        }
     }
 }
