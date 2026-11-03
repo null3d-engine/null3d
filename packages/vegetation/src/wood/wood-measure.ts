@@ -3,66 +3,8 @@
 // density strays from the record's. They read the written mesh, not the mesher's own sums, so a
 // fault in the mesher's reasoning cannot hide in the measure.
 import type { MeshArrays } from '../asset';
+import { nearestOnTriangle } from './junction';
 import type { WoodReport } from './wood-mesh';
-
-/** The nearest point of a triangle to a point, and its barycentric weights. */
-function nearestOnTriangle(
-	p: readonly number[],
-	a: readonly number[],
-	b: readonly number[],
-	c: readonly number[],
-): { distance: number; wa: number; wb: number; wc: number } {
-	// Ericson, Real-Time Collision Detection, 5.1.5.
-	const sub = (x: readonly number[], y: readonly number[]) => [
-		(x[0] as number) - (y[0] as number),
-		(x[1] as number) - (y[1] as number),
-		(x[2] as number) - (y[2] as number),
-	];
-	const dot = (x: readonly number[], y: readonly number[]) =>
-		(x[0] as number) * (y[0] as number) +
-		(x[1] as number) * (y[1] as number) +
-		(x[2] as number) * (y[2] as number);
-	const ab = sub(b, a);
-	const ac = sub(c, a);
-	const ap = sub(p, a);
-	const d1 = dot(ab, ap);
-	const d2 = dot(ac, ap);
-	let wa = 1;
-	let wb = 0;
-	let wc = 0;
-	const bp = sub(p, b);
-	const d3 = dot(ab, bp);
-	const d4 = dot(ac, bp);
-	const cp = sub(p, c);
-	const d5 = dot(ab, cp);
-	const d6 = dot(ac, cp);
-	const vc = d1 * d4 - d3 * d2;
-	const vb = d5 * d2 - d1 * d6;
-	const va = d3 * d6 - d5 * d4;
-	if (d1 <= 0 && d2 <= 0) [wa, wb, wc] = [1, 0, 0];
-	else if (d3 >= 0 && d4 <= d3) [wa, wb, wc] = [0, 1, 0];
-	else if (vc <= 0 && d1 >= 0 && d3 <= 0) {
-		const v = d1 / (d1 - d3);
-		[wa, wb, wc] = [1 - v, v, 0];
-	} else if (d6 >= 0 && d5 <= d6) [wa, wb, wc] = [0, 0, 1];
-	else if (vb <= 0 && d2 >= 0 && d6 <= 0) {
-		const w = d2 / (d2 - d6);
-		[wa, wb, wc] = [1 - w, 0, w];
-	} else if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
-		const w = (d4 - d3) / (d4 - d3 + (d5 - d6));
-		[wa, wb, wc] = [0, 1 - w, w];
-	} else {
-		const denom = 1 / (va + vb + vc);
-		wb = vb * denom;
-		wc = vc * denom;
-		wa = 1 - wb - wc;
-	}
-	const q = [0, 1, 2].map(
-		(k) => wa * (a[k] as number) + wb * (b[k] as number) + wc * (c[k] as number),
-	);
-	const d = sub(p, q);
-	return { distance: Math.sqrt(dot(d, d)), wa, wb, wc };
-}
 
 /** One weld's measures. */
 export interface WeldMeasure {
@@ -153,7 +95,9 @@ export function measureWelds(report: WoodReport): WeldMeasure[] {
 				}
 			}
 			gap = Math.max(gap, best.distance);
-			vJump = Math.max(vJump, Math.abs(best.v - (mesh.uvs[i * 2 + 1] as number)));
+			// A child's v may run whole repeats of the bark lower than its parent's.
+			const jump = best.v - (mesh.uvs[i * 2 + 1] as number);
+			vJump = Math.max(vJump, Math.abs(jump - Math.round(jump / report.vPeriod) * report.vPeriod));
 		}
 		measures.push({ child, gap, vJump });
 	}

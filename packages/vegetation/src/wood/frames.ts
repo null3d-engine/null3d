@@ -28,6 +28,8 @@ export interface AxisPath {
 	readonly arc: Float64Array;
 	/** The arc length of the whole curve. */
 	readonly length: number;
+	/** The arc length at each of the axis's points, where its radius and its direction may kink. */
+	readonly knots: Float64Array;
 }
 
 /** Where an arc length falls on a path: the sample before it and the share to the next. */
@@ -147,7 +149,10 @@ export function axisPath(
 	for (let k = 0; k < 3; k++) position[n * 3 + k] = points[spans * 3 + k] as number;
 	radius[n] = radii[spans] as number;
 	n++;
-	return framedPath(position, radius, n, normal0);
+	const path = framedPath(position, radius, n, normal0);
+	const knots = new Float64Array(count);
+	for (let i = 0; i < count; i++) knots[i] = path.arc[i * SAMPLES_PER_SPAN] as number;
+	return { ...path, knots };
 }
 
 /**
@@ -295,6 +300,7 @@ export function framedPath(
 		radius,
 		arc,
 		length: arc[count - 1] as number,
+		knots: new Float64Array(0),
 	};
 }
 
