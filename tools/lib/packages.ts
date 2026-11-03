@@ -100,6 +100,8 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 			'vendor/ltc/area-light-tables.bin',
 			'levels/planner.js',
 			'levels/planner.d.ts',
+			'levels/pieces.js',
+			'levels/pieces.d.ts',
 			'THIRD-PARTY-NOTICES.txt',
 			'docs/index.md',
 		],

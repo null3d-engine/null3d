@@ -7,7 +7,7 @@
 // with pieces too, so far copies cull that level's pieces. On the page's 'view' message, with a
 // view's place in VIEWS, the camera moves there, and a few frames later the sketch posts 'turned'.
 import { defineSketch } from '@null3d/engine';
-import { planPieces } from '../../../packages/cli/src/assets/pieces.js';
+import { planPieces } from '../../../packages/engine/levels/pieces.js';
 import { GltfBuilder, type GltfJson } from '../lib/gltf-files';
 
 const params = new URL(import.meta.url).searchParams;

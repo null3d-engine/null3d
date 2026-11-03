@@ -1,5 +1,5 @@
-// The engine's own glTF extension for the pieces of a primitive's triangle list (see `pieces.js`),
-// which the tool writes and the engine's loader reads. It is not required: other loaders draw the
+// The engine's own glTF extension for the pieces of a primitive's triangle list (see
+// `@null3d/engine/pieces-planner`), which the tool writes and the engine's loader reads. It is not required: other loaders draw the
 // primitive's triangles as they are, since the pieces only order them.
 //
 // NULL3D_pieces, on a primitive:
@@ -15,11 +15,11 @@
 //
 // glTF-Transform drops extensions it does not know, so the tool reads and writes this one itself.
 import { Extension, ExtensionProperty, PropertyType } from '@gltf-transform/core';
+import { pieceCount, planPieces } from '@null3d/engine/pieces-planner';
 import { cacheOrder, triangleIndices, triangleLists } from './geometry.js';
 import { lodOf } from './lod-extension.js';
-import { pieceCount, planPieces } from './pieces.js';
 
-/** @import { PiecePlan } from './pieces.js' */
+/** @import { PiecePlan } from '@null3d/engine/pieces-planner' */
 
 /** @import { Accessor, Document, Mesh, Node, Primitive, ReaderContext, WriterContext } from '@gltf-transform/core' */
 
@@ -192,11 +192,11 @@ function sortedList(indices, plan) {
 }
 
 /**
- * Sorts each large triangle list of a mesh with levels into pieces (see `pieces.js`), orders each
- * piece's triangles for the vertex cache, and stores the pieces in `NULL3D_pieces`. The vertices
- * stay as they are, so the levels keep sharing them. Run after the levels are stored, since a
- * level's own mesh gets pieces too, and before any step that reads triangles by their place, such
- * as the raycast trees.
+ * Sorts each large triangle list of a mesh with levels into pieces (see the engine's pieces
+ * planner), orders each piece's triangles for the vertex cache, and stores the pieces in
+ * `NULL3D_pieces`. The vertices stay as they are, so the levels keep sharing them. Run after the
+ * levels are stored, since a level's own mesh gets pieces too, and before any step that reads
+ * triangles by their place, such as the raycast trees.
  *
  * @param {Document} doc
  * @returns {{ lists: number, pieces: number }} The lists that got pieces, and their pieces.
