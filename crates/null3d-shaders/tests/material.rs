@@ -1582,3 +1582,157 @@ fn the_diffuse_normal_reaches_only_the_builds_that_name_it() {
             && !build.source.contains("ambient_light(diffuse_normal)")
     ));
 }
+
+/// A surface that names a normal of its own for the sky's light, as a crown bent toward the open
+/// sky does, and keeps the mesh's normal for the sun.
+const SKY_LIT: &str = "fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.ambientNormal = normalize(input.normal + vec3f(0.0, 0.5, 0.0));
+    return s;
+}
+";
+
+/// A surface whose occlusion already holds the shade that screen-space occlusion sees.
+const BAKED_SHADE: &str = "fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.occlusion = 0.5;
+    s.occlusionByMinimum = true;
+    return s;
+}
+";
+
+/// Every source of a material's shading builds, which light a surface: each WGSL module and each
+/// GLSL program's fragment stage, beside the build's name. Shadow caster, motion and pick builds
+/// light nothing.
+fn shading_sources(built: &MaterialOutput) -> Vec<(String, String)> {
+    built
+        .variants
+        .iter()
+        .filter(|(name, _)| {
+            !["_shadow", "_motion", "_pick"]
+                .iter()
+                .any(|kind| name.contains(kind))
+        })
+        .flat_map(|(name, variant)| {
+            let wgsl = variant.wgsl.iter().map(|wgsl| wgsl.source.to_string());
+            let glsl = variant
+                .glsl
+                .iter()
+                .flat_map(|programs| programs.values())
+                .map(|program| program.fragment.source.to_string());
+            wgsl.chain(glsl).map(|source| (name.clone(), source))
+        })
+        .collect()
+}
+
+/// The names of a material's builds, each with its permutation word.
+fn build_words(built: &MaterialOutput) -> Vec<(String, u32)> {
+    built
+        .variants
+        .iter()
+        .map(|(name, variant)| (name.clone(), variant.permutation))
+        .collect()
+}
+
+#[test]
+fn the_ambient_normal_reaches_only_the_builds_that_name_it() {
+    // A material that names the field lights its ambient, hemisphere and environment light by it in
+    // every build of both paths, and keeps the sun's diffuse light on the surface's normal.
+    let named = compile(SKY_LIT).expect("the surface with a normal for the sky's light builds");
+    let sources = shading_sources(&named);
+    assert!(!sources.is_empty());
+    for (name, source) in &sources {
+        assert!(source.contains("ambient_normal"), "{name}");
+        assert!(!source.contains("dot(diffuse_normal, to_sun)"), "{name}");
+    }
+    // The WGSL lights the ambient light and the light around the surface by the field.
+    let webgpu = &named.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
+    assert!(webgpu.contains("ambient_light(ambient_normal"), "{webgpu}");
+    // The field is a def, not a permutation bit: the material keeps the plain material's builds.
+    let plain = compile(STRIPES).expect("the plain surface builds");
+    assert_eq!(build_words(&named), build_words(&plain));
+    // A material that never names the field, or names only the diffuse normal, has no trace of it.
+    let crown = compile(CROWN_LIT).expect("the surface with a diffuse normal builds");
+    for (name, source) in shading_sources(&plain)
+        .iter()
+        .chain(&shading_sources(&crown))
+    {
+        assert!(!source.contains("ambient_normal"), "{name}");
+    }
+}
+
+#[test]
+fn the_ambient_normal_joins_the_diffuse_normal() {
+    // With both normals named, the sun's diffuse light keeps the diffuse normal and the sky's light
+    // takes the ambient normal.
+    let both = SKY_LIT.replace(
+        "    return s;",
+        "    s.diffuseNormal = normalize(input.normal + vec3f(0.1, 0.0, 0.0));\n    return s;",
+    );
+    let built = compile(&both).expect("the surface with both normals builds");
+    let webgpu = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
+    assert!(webgpu.contains("dot(diffuse_normal, to_sun)"), "{webgpu}");
+    assert!(webgpu.contains("ambient_light(ambient_normal"), "{webgpu}");
+    assert!(!webgpu.contains("ambient_light(diffuse_normal"), "{webgpu}");
+}
+
+#[test]
+fn the_occlusion_by_minimum_reaches_only_the_builds_that_name_it() {
+    // A material that names the switch joins its occlusion with screen-space occlusion in every
+    // shading build of both paths.
+    let named = compile(BAKED_SHADE).expect("the surface with a baked shade builds");
+    let sources = shading_sources(&named);
+    assert!(!sources.is_empty());
+    for (name, source) in &sources {
+        assert!(source.contains("joined_occlusion"), "{name}");
+    }
+    let plain = compile(STRIPES).expect("the plain surface builds");
+    assert_eq!(build_words(&named), build_words(&plain));
+    for (name, source) in shading_sources(&plain) {
+        assert!(!source.contains("joined_occlusion"), "{name}");
+    }
+}
+
+/// A leaf that names both hooks, with a sway and a cut shape, as a plant material does.
+const SWAYING_LEAF: &str = "fn vertexOffset(input: VertexInput) -> vec3f {
+    return input.normal * 0.01 * sin(input.uv.x * 6.0);
+}
+
+fn coverage(input: SurfaceInput) -> f32 {
+    return step(0.5, fract(input.uv.x * 4.0));
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.alpha = coverage(input);
+    s.ambientNormal = normalize(input.normal + vec3f(0.0, 1.0, 0.0));
+    s.occlusion = 0.6;
+    s.occlusionByMinimum = true;
+    s.diffuseTransmission = 0.3;
+    return s;
+}
+";
+
+#[test]
+fn the_light_hooks_build_with_a_sway_and_a_cut_shape() {
+    // The shadow caster, motion and pick builds run the material's own WGSL, so they declare both
+    // fields too: a leaf that names them still sways and casts its cut shape.
+    let built = compile(SWAYING_LEAF).expect("the swaying leaf builds");
+    for kind in ["_shadow", "_motion", "_pick"] {
+        assert!(
+            built.variants.keys().any(|name| name.contains(kind)),
+            "the leaf has {kind} builds"
+        );
+    }
+    assert!(
+        built
+            .variants
+            .values()
+            .any(|variant| variant.permutation & permutation::TRANSLUCENCY != 0),
+        "the leaf lets light through"
+    );
+    for (name, source) in shading_sources(&built) {
+        assert!(source.contains("ambient_normal"), "{name}");
+        assert!(source.contains("joined_occlusion"), "{name}");
+    }
+}
