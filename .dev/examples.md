@@ -395,10 +395,10 @@ The image tests of both comparisons have a time limit of 600 seconds, because th
 Night town carries the Neon Harbour touches that D-172 gives it. As in the other comparisons, one description draws the same content in both halves at the same simulation time.
 
 - A lens grade splays the colors at the edges, streaks the brightest light sideways and adds film grain. Its settings are softer than Battle's, because the town is dark and its lights are small. It runs on the linear light before bloom and tone mapping in both engines, and it is a switch.
-- Every lit window shows a room behind its glass. The eye's ray reaches the back wall and the side walls of a box that starts at the glass. A window thus shows more of its room from the side of the street than from in front. The window boxes and the room's depth come from the scene description. null3D draws it in the facade's WGSL surface function. three.js draws it in the GLSL it adds to `MeshStandardMaterial`, and in the node material on WebGPURenderer. The rooms multiply the window's light, so an unlit window stays dark.
+- Every lit window shows a room behind its glass. The eye's ray reaches the back wall and the side walls of a box that starts at the glass. A window thus shows more of its room from the side of the street than from in front. The window boxes and the room's depth come from the scene description. null3D draws each window as a pane through the facades example add-on, on the wall that holds it. three.js draws it in the GLSL it adds to `MeshStandardMaterial`, and in the node material on WebGPURenderer. The rooms multiply the window's light, so an unlit window stays dark.
 - Flying cars cross the sky above the streets: four lanes, two heights and four cars a lane. The scene description gives each car's place and turn from the simulation time. Both engines draw them as batches, so they add no parts to the measured scene graph. Their nose and tail strips are emissive, with a halo in each car's layer of glows. They add no lights, so the count keeps its meaning.
-- The power-on wave stays out. It would set the intensity of every lamp, sign and car light each frame for its first seconds. Those thousands of lights are what the comparison's ramp measures. Factory shows the wave with its five spot lights.
-- The LCD screens stay out. Factory carries the LCD technique. Night town's shop windows already show shelves, neon and the room's depth, where a screen would replace the window that the touch before it adds.
+- The power-on wave stays out of the scene's lights. It would set the intensity of every lamp, sign and car light each frame for its first seconds. Those thousands of lights are what the comparison's ramp measures. Factory shows the wave with its five spot lights. The windows take the facades add-on's wave instead, which changes only their emissive light, so it costs the ramp nothing.
+- The LCD screens stay out. Factory carries the LCD technique. Night town's shop windows already show neon and the room's depth, where a screen would replace the window that the touch before it adds.
 - The reflection probes wait for M2-EX32. The page's effect list reserves the switch after the lens grade, and no half reads it yet.
 - The held frame is at 3 seconds and 96 lights, and SwiftShader draws 24 lights.
 
@@ -696,32 +696,39 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 
 ### Night town's windows (M3-B2)
 
-Skyway draws its window panes through the facades example add-on
+Skyway and Night town draw their window panes through the facades example add-on
 (`examples/addons/facades/`), in the add-on's pane form
-([D-254](decisions/D-254-interior-mapped-facades.md)). Night town still draws its panes with the
-scene's own facade shader, in `examples/compare/night-town/shaders.ts`, and moving it to the add-on
-is what M3-B2 still owes, so the bullets below say which of the two demos each fact belongs to.
+([D-254](decisions/D-254-interior-mapped-facades.md)). The add-on's wall form draws the towers of
+Skyway. Night town places a pane on each opening of each building, because its walls keep the
+town's own finish, frames and shop fronts.
 
-- **The move to the add-on is parked, and why.** A grid of panes taken from a wall's own
-  coordinates was added to the add-on, and Night town's four facade materials were moved onto it.
-  It draws, but in Night town's scene the upper-floor cells stay dark while the street-level cells
-  light. The glass coverage, the lit share, the wave's value and the room's light each read
-  nonzero, and the cell's emissive is still dark. The wave is ruled out: a facade that never starts
-  its wave draws lit in the add-on's own test. The next attempt draws the panes as instanced
-  quads with the add-on's pane form, which lights in that test. It avoids a new mapping in the
-  wall shader, whose compiled result the engine caches and which made the readings hard to trust.
-
-- Each pane looks into a room behind its glass: a lamp's pool, a floor, a ceiling, a block of
-  furniture, blinds and a curtain in some. The eye's ray meets the room's box, so the room moves in
-  parallax as the camera passes, and the view from one side of a window shows more of it than the
-  view from in front. Both demos draw this.
+- **Night town places every pane on its wall.** `eachWindow` in
+  `examples/compare/night-town/scene.ts` visits each window of each building's four walls: its
+  place, its size, its turn and the row values that light it. The sketch writes that into two
+  instance batches, one for the floors above the street and one for the shops, and the add-on's
+  pane form draws each pane's room. A pane is as wide as the opening's glass and stands a
+  centimeter off the wall, so the wall keeps its painted frame and mullions around it.
+- **The wall keeps its own surface.** `WALL_WGSL` in `examples/compare/night-town/shaders.ts`
+  draws the brick, plaster, concrete or curtain wall, the frame and sill around every opening, the
+  roof as wet tar and the neon tubes over the shop fronts. It draws no glass and no room, and the
+  windows come from the add-on alone. Night town no longer has a facade shader of its own.
+- Each pane looks into the add-on's room: a lamp's pool, a floor, a ceiling, a block of furniture,
+  blinds and a curtain in some. The eye's ray meets the room's box, so the room moves in parallax
+  as the camera passes, and the view from one side of a window shows more of it than the view from
+  in front. three.js draws its own room, from the same window boxes and the same room depth.
 - The panes keep their own row values: whether the pane is lit, how warm its light is, the phase of
-  its flicker and whether a screen lights it. The hour dims every pane through that value.
-- The add-on lights a scene window by window as it starts, on its power-on wave, and each pane's
-  light rises on a damped spring once the wave reaches it. Night town's own shader has no such
-  wave: its town is lit from the first frame.
-- The add-on draws its own timber finish for the panes' frames. Night town's panes carry the
-  scene's own timber texture, on the walls and the frames alike.
+  its flicker and whether a screen lights it. The scene description still hashes each window's bay,
+  its floor and its building's lot, so both engines light the same windows, and a few rooms still
+  go on and off every so often.
+- The add-on lights the town window by window as it starts, on its power-on wave, and each pane's
+  light rises on a damped spring once the wave reaches it. Night town's own shader had no such
+  wave: its town was lit from the first frame. The wave changes only the panes' emissive light, so
+  the lights that the ramp measures are untouched.
+- **The look moved where the add-on draws more than the old shader.** A shop window now shows the
+  add-on's room instead of the painted shelves, and the mullions and transoms inside each glass are
+  behind the pane, so the glass is one sheet. The painted frame, the sill and the shop neon stay.
+  The add-on's rooms bring their own lamp pool, furniture, blinds and curtain, so each window shows
+  a room rather than a painted pane.
 - The add-on's own cost is about 1.0 ms of GPU time a frame against a plain wall on both WebGPU
   paths at every preset, and 0.85 ms at Low and 0.05 to 0.49 ms at Medium, High and Ultra on
   WebGL2. Compatibility mode and WebGL2 stop at Medium, so their High and Ultra cells measure
