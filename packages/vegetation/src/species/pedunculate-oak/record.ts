@@ -188,6 +188,33 @@ export const record: Species = {
 		},
 		flutes: { count: { mean: 9, spread: 2 }, depth: 0.04, height: 1.6 },
 	},
+	extras: [
+		{
+			// The acorn on its long stalk, the peduncle that tells this oak from the sessile oak: a
+			// shallow scaly cup holding about a third of the nut.
+			kind: 'fruit',
+			at: 'shoot-tip',
+			share: 0.3,
+			seasons: ['autumn'],
+			shape: {
+				lathe: [
+					[0.0016, 0],
+					[0.0016, 0.045],
+					[0.006, 0.047],
+					[0.0095, 0.052],
+					[0.0098, 0.056],
+					[0.0085, 0.057],
+					[0.0088, 0.064],
+					[0.0078, 0.074],
+					[0.0045, 0.081],
+					[0, 0.083],
+				],
+				scales: 3,
+			},
+			colour: [0.16, 0.12, 0.05],
+			hang: 70,
+		},
+	],
 	seasons: {
 		default: 'summer',
 		deciduous: true,
@@ -225,8 +252,8 @@ export const record: Species = {
 	seedSalt: 1121298234,
 	roundBand,
 	cuttings: {
-		branch: { order: 2, length: 1 },
-		subbranch: { order: 2, length: 0.35 },
+		branch: { order: 3, length: 1 },
+		subbranch: { order: 3, length: 0.35 },
 		cluster: { shoot: 'short' },
 	},
 };
