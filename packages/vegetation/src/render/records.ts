@@ -86,6 +86,8 @@ export const HEADER = {
 	mossReach: 18,
 	/** The first extra's colour; the next `MAX_EXTRAS - 1` texels hold the others' in record order. */
 	extras: 19,
+	/** The shoots' buds: their colour, then 1 when the record gives one. */
+	bud: 23,
 	/** The first bark zone; each zone takes `BARK_ZONE_TEXELS` texels. */
 	barkZones: 24,
 } as const;
@@ -293,6 +295,8 @@ export function speciesHeader(
 	(record.extras ?? []).slice(0, MAX_EXTRAS).forEach((extra, index) => {
 		texel(header, HEADER.extras + index, [...extra.colour, 1]);
 	});
+	const bud = record.shoots?.bud.colour;
+	if (bud) texel(header, HEADER.bud, [...bud, 1]);
 	return header;
 }
 

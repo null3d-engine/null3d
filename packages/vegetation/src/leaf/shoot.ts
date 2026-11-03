@@ -31,7 +31,7 @@ import type { TextureManifest } from '../core/textures';
 import { curveAt, DETAILS, type Detail, spreadAt, spreadMean } from '../core/types';
 import { shootOcclusion } from './occlusion';
 import { hasBareTwins } from './season';
-import { lathe, MeshWriter, SURFACE_STEM, type TubePoint, tube } from './writer';
+import { lathe, MeshWriter, SURFACE_BUD, SURFACE_STEM, type TubePoint, tube } from './writer';
 
 /**
  * A shoot prototype before the card bake gives it its atlas cells.
@@ -694,7 +694,7 @@ export function meshShoot(
 				],
 				bud.direction,
 				shape.sides,
-				[bendByte(bud.along, plan.span), 0, SURFACE_STEM, 255],
+				[bendByte(bud.along, plan.span), 0, SURFACE_BUD, 255],
 			);
 			continue;
 		}
@@ -715,7 +715,7 @@ export function meshShoot(
 		lathe(mesh, profile, bud.at, bud.direction, shape.sides, [
 			bendByte(bud.along, plan.span),
 			0,
-			SURFACE_STEM,
+			SURFACE_BUD,
 			255,
 		]);
 	}

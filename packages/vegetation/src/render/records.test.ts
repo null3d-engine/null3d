@@ -175,6 +175,7 @@ describe('the plant shader', () => {
 			HEADER_MOSS: HEADER.moss,
 			HEADER_MOSS_REACH: HEADER.mossReach,
 			HEADER_EXTRAS: HEADER.extras,
+			HEADER_BUD: HEADER.bud,
 			HEADER_BARK_ZONES: HEADER.barkZones,
 			BARK_ZONE_TEXELS,
 			MAX_BARK_ZONES,

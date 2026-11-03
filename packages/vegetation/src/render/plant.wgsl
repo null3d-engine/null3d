@@ -94,6 +94,7 @@ const HEADER_YOUNG_TILE: i32 = 16;
 const HEADER_MOSS: i32 = 17;
 const HEADER_MOSS_REACH: i32 = 18;
 const HEADER_EXTRAS: i32 = 19;
+const HEADER_BUD: i32 = 23;
 const MAX_EXTRAS: i32 = 4;
 const HEADER_BARK_ZONES: i32 = 24;
 const BARK_ZONE_TEXELS: i32 = 4;
@@ -121,6 +122,8 @@ const SHOOT_BEND: f32 = 0.015;
 const MAX_BRANCH_DEPTH: i32 = 8;
 // The surface kind byte of a shoot's stems and buds, and of an extra.
 const KIND_STEM: f32 = 85.0;
+// The surface kind byte of a shoot's bud, which draws as a stem in the record's bud colour.
+const KIND_BUD: f32 = 128.0;
 // Texels across the near table: two for each of its sixteen slots.
 const NEAR_TEXELS: f32 = 32.0;
 // A leaf's reflectance at normal incidence and at grazing, as the plant materials set them.
@@ -861,6 +864,13 @@ fn surface(input: SurfaceInput) -> Surface {
             let y_uv = uv / young_tile;
             let y_gx = gx / young_tile;
             base = textureSampleGrad(third, thirdSampler, y_uv, y_gx, gy / young_tile).rgb;
+            // A bud takes the young bark's pattern in the record's bud colour.
+            let bud = header(HEADER_BUD);
+            let kind = input.vertexColor.b * 255.0;
+            if (bud.w > 0.5 && kind > (KIND_STEM + KIND_BUD) * 0.5) {
+                let young_mean = max(header(HEADER_YOUNG).rgb, vec3f(0.0001));
+                base = min(bud.rgb * base / young_mean, vec3f(1.0));
+            }
             roughness = 0.8;
         } else {
             let layer = select(1, 0, upper);

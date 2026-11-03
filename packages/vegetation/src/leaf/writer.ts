@@ -7,6 +7,8 @@ import { cos, cross3, normalize3, sin, type Vector3 } from '../core/math';
 /** Surface kinds in a prototype's third colour byte: leaf, stem or bud, extra. */
 export const SURFACE_LEAF = 0;
 export const SURFACE_STEM = 85;
+/** A shoot's bud: drawn as its stem, in the record's bud colour where it gives one. */
+export const SURFACE_BUD = 128;
 export const SURFACE_EXTRA = 170;
 
 /** A mesh under construction, in plain number lists. */
