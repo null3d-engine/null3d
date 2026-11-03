@@ -14,6 +14,9 @@ Measure first, then change one thing, then measure again. Read `guides/performan
 8. Per-frame code that allocates nothing
 9. Objects during play
 10. Advice written for other engines
+11. Start-up and staged loading
+12. Caching across visits
+13. Reviewing a scene
 
 ## 1. Where frame time goes
 
@@ -185,6 +188,17 @@ quality.onChange(() => { rain.setActiveCount(RAIN[quality.preset]); });
 
 `onScale` receives the budget's scale when you register it, and after each change. 1 means full quality. All budgets share one scale that moves in steps of 0.25, down to each budget's `min`. When frames run long, the governor lowers the budgets one step before each render-scale step. So your systems scale down before the render scale reaches `minRenderScale`. It raises them in the reverse order. `ai.ms` is `ms` times the scale. Use it as the time limit for work that you spread over frames, such as path searches. The engine does not time your system. Keep the callbacks cheap; they run when the scale changes, not every frame. Engine docs: `api/quality`.
 
+### Know what a value costs
+
+- Write the number itself in the table, such as `rocks: 3000`, never a level name that each builder reads its own way. Write `null` for a feature that a preset leaves out, and do not create it. A custom effect costs its full-screen pass whatever its uniforms say (`guides/performance`).
+- In `quality.onChange` and a budget's `onScale`, change only values: active counts, uniforms and update rates. Creating objects or materials there rebuilds the draw tables, and can build pipelines, on a device that is already behind.
+- Know what a value multiplies before you change it. A count costs in a straight line. A grid's columns and rows, and a texture's edge, cost with their square. A spacing between scattered objects changes their count with its inverse square: twice the spacing leaves a quarter of them.
+- Count before you choose. Keep generation in plain modules that import nothing from the engine (`references/testing-and-debugging.md`, section 3), and print the count for each candidate value under `bun test`. That takes seconds, where a look in the browser takes minutes.
+- Find each value's floor: the point where a lower value shows as a fault, such as a jagged silhouette. Cut elsewhere once a value reaches it.
+- Choose Low's values by what a phone still shows. At Low's pixel ratio, distant props and fine scatter often cover less than a pixel, so leave them out. Scaling every value by one factor keeps paying for what nobody sees.
+- Spend detail on the objects that make the silhouette, and keep the rest plain. Choosing by importance often saves more than choosing by distance.
+- Test the table with `bun test`: each value moves one way from Ultra to Low, and each stays in the range that its builder accepts. The first catches an edit that makes a lighter preset heavier. The second catches a value that a builder refuses and silently skips.
+
 ## 8. Per-frame code that allocates nothing
 
 Apply these habits to `onUpdate` and everything it calls.
@@ -225,3 +239,154 @@ Performance advice for three.js and other engines assumes things that do not hol
 | Set a needs-update flag after a change | Setters mark changes themselves |
 | Track GPU completion yourself | `engine.measure` reports `completedFps` and `gpuLatencyMs` |
 | Limit the frames in flight | The engine holds them to two |
+| Count `requestAnimationFrame` callbacks for the frame rate | A callback keeps firing while the GPU falls behind. Take the lower of `presentedFps` and `completedFps` from `engine.measure` |
+| Write an adaptive-quality loop of your own | The governor already lowers the render scale, then detail, shadows and effects, and a second loop fights it. Lighten your own systems in `quality.onChange` and through `quality.setBudget` (0.2) |
+| Pick a device class from `deviceMemory`, `hardwareConcurrency`, GPU limits or the user agent | The engine picks the preset from the main pointer and the screen's smaller edge, and lowers it after a crash. Read `quality.preset` |
+| Resize the shadow map or change sample counts when frames run long | A setting fixed at the start throws E1213 during play. The live settings are uniforms and target sizes, so changing them builds no pipeline |
+| Move the renderer into a worker with `transferControlToOffscreen` | The engine draws from a worker already. Give `createEngine` a canvas that no code has drawn on: a canvas with a context cannot move to a worker |
+| Yield with `setTimeout(0)` or a `MessageChannel` while the scene builds | The setup runs in the sketch worker, so the page stays responsive. After the first frame, build in a task on the job workers, or in slices per frame (section 11) |
+| Cache compiled shaders between visits | No page can store or read the browser's compiled shaders. Time a first visit with `?shaders=fresh` (section 11) |
+
+## 11. Start-up and staged loading
+
+The visitor waits for the setup. `createEngine` resolves after it and after the preset check, and the first frame waits for its pipelines (`guides/loading-screens`). So what the setup builds decides when anything shows.
+
+- Build the first view in the setup, with its textures, and leave the rest for later. The preset check measures what the setup built, so include everything that the first view shows, far scenery in view too.
+- Add each later stage whole, in the order the visitor reaches them: create its objects hidden, `await scene.warmUp()`, then show them. A stage that appears piece by piece looks broken, and an object whose pipeline is still building draws nothing.
+- Size each batch for the rows of the finished scene, and reveal rows with `setActiveCount`. Destroying an earlier stage's batch to make a larger one rebuilds the draw tables and uploads every matrix again.
+- Swap in one run of code. Put no `await` between hiding the old objects and showing the new ones, or a frame can show neither.
+- Create every light during setup. A light that appears later starts at intensity 0 and rises with its stage. Creating a light during play rebuilds the draw tables, and the scene's first rectangle or tube light changes its shaders (`guides/performance`).
+
+A large model can stage itself (0.3). A file that the asset tool wrote with `--stages` draws its coarsest level at once, and refines as the rest arrive (section 5).
+
+Generation after the first frame shares the sketch worker with every frame, so one long loop delays the next frame. Heavy generation belongs in a Rust module on the job workers, through `runTask` (0.3), whose answer arrives between frames (SKILL.md section 4, rule 13). Work that stays in the sketch splits into a fixed count of items per frame. A time limit would make hold mode's frame depend on the computer's speed (`references/testing-and-debugging.md`, section 2). A budget (0.2) lowers the count when frames run long:
+
+```ts
+// sketch.ts, in the setup. Keep placeRocks in a plain module, so a test runs it over the whole range.
+const ROCKS = 40_000;
+const rocks = scene.createInstances(rockMesh, ROCKS, { material: rockMaterial });
+rocks.setActiveCount(0);                     // the rocks show whole, once all are placed
+let placed = 0;
+let perFrame = 2_000;
+const building = quality.setBudget({ name: 'rocks', ms: 2, min: 0.25, onScale: (s) => { perFrame = Math.round(2_000 * s); } });  // (0.2)
+return {
+  onUpdate() {
+    if (placed === ROCKS) return;
+    const to = Math.min(ROCKS, placed + perFrame);
+    placeRocks(rocks.positions, placed, to);  // writes rows placed to to-1 of the static batch
+    placed = to;
+    if (placed < ROCKS) return;
+    rocks.markDirty(0, ROCKS);
+    rocks.setActiveCount(ROCKS);
+    building.remove();
+  },
+};
+```
+
+A plain function over a range of indexes serves tests and frames alike. A generator would do the same, but it makes a result object at every step, which SKILL.md section 4, rule 1, forbids in `onUpdate`.
+
+Measure the start:
+
+- A first visit and a repeat visit take different paths. A repeat visit takes the stored preset check, the transcoded textures, the browser's compiled shaders and your own cache (section 12). Time both from navigation, with the production build on Chrome's Slow 4G profile.
+- Reproduce a first visit in a new browser profile, or with `?check=fresh&shaders=fresh&texture-cache=off` (`references/testing-and-debugging.md`, section 4). Never plan a start that holds only when the browser's caches hit.
+- `engine.measure()` gives the start's times in `load`, and the page thread's long tasks in `mainThread`. Also click a page control while the engine starts, and time its answer: a page with no long tasks can still answer slowly.
+
+Keep the network clear for the engine. Profile the whole page first, because the page's own downloads share the connection with the engine's:
+
+- Ship only the data and translations that the page shows. A page bundle that carries more delays the engine's own downloads.
+- Turn off route prefetching on the page with the scene, and on connections that report `saveData`. Prefetches compete with the engine for the connection.
+- Add a `<link rel="preconnect">` for each other origin that the start contacts, such as a CDN for models.
+- Start no engine on pages without a scene. In a framework app, check in the network panel when the core's `.wasm` download starts: code that waits for hydration starts it late.
+
+## 12. Caching across visits
+
+Each layer keeps something different, and most are in place already:
+
+| Layer | Keeps | Set up by |
+| --- | --- | --- |
+| The HTTP cache | The build's files, models and textures | The host: a long lifetime for hashed files (`getting-started/hosting`) |
+| The stored preset check | The preset that the check chose, for a week | The engine, in the page's `localStorage` (`concepts/quality-presets`) |
+| Transcoded textures | Each KTX2 file's texels in the device's format | The engine, in Cache Storage, in caches whose names start with `null3d-` (`api/assets`) |
+| Compiled shaders | Shaders that the browser compiled before | The browser alone: no page can store or read them |
+| Generated data | Arrays that your sketch computes | You, in IndexedDB from the sketch, as below |
+| Offline files | The build and your own files | Your service worker (`getting-started/hosting`) |
+| A view of a single-page app | The running engine | `engine.detach()` and `engine.attach()` (`references/content-pages.md`) |
+| Back and forward | The whole page | The browser (`references/content-pages.md`) |
+
+The engine keeps no cache of the data that your sketch generates. `guides/content-pages` shows the read path and a `cached` helper. Cache only what comes back exactly as it went in:
+
+| Data | Cache it? |
+| --- | --- |
+| Arrays your code computes: positions, indices, heights, scatter rows, noise fields | Yes, as typed arrays |
+| Pixels read back from a 2D canvas, such as an `OffscreenCanvas` texture | No. The canvas stores partly transparent pixels premultiplied, so they come back changed, and browsers differ. A nearly equal texture hides the fault until it shows |
+| Engine objects: meshes, materials, textures, batches | No. Store the arrays that made them, and make them again, such as with `geometry.fromArrays` |
+| What the GPU made: environments, pass textures | No. Make them again |
+
+Rules for a cache of generated data:
+
+1. A hit and a miss run the same code after the lookup, so the two cannot build different scenes.
+2. Key each entry by the build and by every input that changes the output. In a production build, `import.meta.url` covers the sketch's code. It does not cover a data file that the sketch fetches, the quality preset, a seed or a size. Put each of those in the key, such as the file's version or a hash of its bytes.
+3. Check what you read: the type and the length that the build expects. Treat anything else as a miss. Test the round trip once: pass a record through `structuredClone` and compare every array.
+4. Skip the cache in development, where `import.meta.url` holds no hash.
+5. Write after the page reports its first frame, never in `onUpdate`, and one entry per transaction. IndexedDB copies a value when you call `put`, on the sketch's thread. Starting every write at once copies every array in one task, and the next frame waits.
+6. Delete the entries of older builds after you write. Each deploy changes `import.meta.url`, and old entries would stay in the visitor's storage for good.
+7. Treat storage as best effort. Give the open a time limit of about 1.5 seconds, and close a database that opens after it. On `QuotaExceededError` or any other failure, drop the writes that wait: the next visit generates as this one did.
+8. Code that resolves after the engine stops must not call it, because calls after `engine.destroy()` throw E1420. Set a flag in `onDestroy`, and check it in storage callbacks.
+9. Test the cache: build the scene's arrays with the cache and without it, and compare them.
+
+```ts
+// sketch.ts: each pending entry in its own transaction, then the sweep of older builds' entries.
+// The store 'entries' has no key path, and each key starts with this build's import.meta.url.
+async function writePending(db: IDBDatabase, pending: [string, unknown][]): Promise<void> {
+  for (const [id, value] of pending.splice(0)) {
+    try {
+      await written(db, id, value);
+    } catch {
+      return;                                  // a full disk or a closed database: generate next time
+    }
+  }
+  try {
+    const store = db.transaction('entries', 'readwrite').objectStore('entries');
+    const keys = store.openKeyCursor();
+    keys.onsuccess = () => {
+      const cursor = keys.result;
+      if (!cursor) return;
+      if (!String(cursor.key).startsWith(`${import.meta.url}:`)) store.delete(cursor.key);
+      cursor.continue();
+    };
+  } catch {
+    // the sweep runs again after the next visit's writes
+  }
+}
+
+function written(db: IDBDatabase, id: string, value: unknown): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('entries', 'readwrite');
+    tx.objectStore('entries').put(value, id);
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(tx.error);       // QuotaExceededError aborts the transaction
+  });
+}
+```
+
+What browsers keep, and for how long (MDN, "Storage quotas and eviction criteria"):
+
+- An origin may use up to about 60% of the disk in Chromium browsers and in Safari. Firefox gives the smaller of 10% of the disk and 10 GiB per site, or 50% once the site's storage is persistent.
+- `localStorage` holds about 5 MiB of text per origin, and no worker can reach it. So the sketch keeps its data in IndexedDB. The engine keeps its crash note and the stored preset check in the page's `localStorage`.
+- Safari deletes the storage that scripts wrote for a site that the visitor has not tapped or clicked in seven days of browser use. A web app on the Home Screen counts its own days of use. So a returning Safari visitor may find every cache empty.
+- When the disk runs short, browsers delete whole origins, the least recently used first, unless the origin's storage is persistent. Your cache, the engine's texture cache and the stored preset check go together.
+- A full quota throws `QuotaExceededError`, from IndexedDB, Cache Storage and `localStorage` alike.
+- Do not call `navigator.storage.persist()` for a cache. Firefox asks the visitor, and losing a cache costs only one slower visit.
+
+## 13. Reviewing a scene
+
+Ask these in order, because each answer changes what the next one means.
+
+1. How was the frame rate measured? Trust `engine.measure` or `bunx @null3d/cli bench`, which take the lower of the presented and completed rates. A count of frame callbacks can show 60 while the GPU finishes far fewer.
+2. Which preset ran, and what did the governor lower? Read `engine.mode.preset`, `quality.renderScale` and `quality.governor.steps`. Measure with `quality.set({ governor: false })` to see the scene's own cost.
+3. How many passes walk the scene in a frame? Count the shadow cascades and tiles that draw, scene passes, the depth prepass, outlines and custom effects before you count triangles (`guides/performance`).
+4. What builds or rebuilds during play? `rebuilds`, `pipelines` or `skippedDraws` above zero points to section 9.
+5. What does the page show with JavaScript off, after a failed start and after a crash (`references/content-pages.md`)?
+6. What happens on a repeat visit and on back navigation? Time both visits (section 11), and check each layer of section 12.
+7. Where does the page's thread block during the start? Read `mainThread` from `engine.measure`, and click a control while the engine starts.
+8. What does Low leave out? Read the scene's own table per preset. A Low that only scales numbers down is a smaller desktop scene, and it will not hold a phone's frame rate.
