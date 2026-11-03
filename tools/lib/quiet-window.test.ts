@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scaledBudget } from '../../tests/lib/run-budget.ts';
@@ -12,6 +12,7 @@ import {
 	quietEndTime,
 	quietFile,
 	quietHolderPid,
+	quietQueueRunWaiting,
 	quietRefusal,
 	quietWindow,
 	refuseInQuietWindow,
@@ -172,6 +173,52 @@ describe('quietWindow', () => {
 		expect(stale(marker('a sweep (about 12 minutes)\n', born), new Date(2026, 10, 3, 13, 5))).toBe(
 			false,
 		);
+	});
+});
+
+describe('quietQueueRunWaiting', () => {
+	/** A queue folder of its own, with the folders that the queue keeps its runs in. */
+	function queue(): string {
+		const folder = mkdtempSync(join(tmpdir(), 'quiet-queue-'));
+		folders.push(folder);
+		mkdirSync(join(folder, 'heavy-tickets'));
+		mkdirSync(join(folder, 'heavy-slots'));
+		return folder;
+	}
+
+	it('finds no run behind a window when the queue holds none', () => {
+		expect(quietQueueRunWaiting(queue())).toBe(false);
+		expect(quietQueueRunWaiting('/tmp/a-queue-that-is-not-there')).toBe(false);
+	});
+
+	it('finds a timing run that waits, by the pid its ticket carries', () => {
+		const folder = queue();
+		const ticket = (pid: number, suffix: string) => {
+			writeFileSync(join(folder, 'heavy-tickets', `1750000000.${pid}.${suffix}`), '');
+			return () => rmSync(join(folder, 'heavy-tickets', `1750000000.${pid}.${suffix}`));
+		};
+		const gone = ticket(999999, 'q');
+		expect(quietQueueRunWaiting(folder)).toBe(false);
+		gone();
+		// Only a timing run's ticket counts: CPU-only work does not open the window.
+		const cpu = ticket(process.pid, 'c');
+		expect(quietQueueRunWaiting(folder)).toBe(false);
+		cpu();
+		const timing = ticket(process.pid, 'q');
+		expect(quietQueueRunWaiting(folder)).toBe(true);
+		timing();
+	});
+
+	it('finds a timing run that holds a slot, until its window is closed', () => {
+		const folder = queue();
+		const slot = join(folder, 'heavy-slots', '1');
+		mkdirSync(slot);
+		writeFileSync(join(slot, 'quiet'), '');
+		writeFileSync(join(slot, 'pid'), `${process.pid}\n`);
+		expect(quietQueueRunWaiting(folder)).toBe(true);
+		// A run whose window the queue closed counts as a normal run, so it stands behind nothing.
+		writeFileSync(join(slot, 'window-closed'), 'no quiet minute in ten minutes');
+		expect(quietQueueRunWaiting(folder)).toBe(false);
 	});
 });
 
