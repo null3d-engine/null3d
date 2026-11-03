@@ -1,6 +1,7 @@
 // The plant materials: one shader, render/plant.wgsl, in five roles: wood, shoot rows, cards,
 // merged foliage and extras. Each role binds its own textures to the shader's six slots and sets its role in
-// a uniform. The meshes that the roles draw keep the plant core's quantised bytes on the GPU, and
+// a uniform. The wood covers its whole surface, so it draws without the mask, from the same shader
+// without its casters' coverage (render/wood.wgsl), and keeps the GPU's early depth test. The meshes that the roles draw keep the plant core's quantised bytes on the GPU, and
 // the shader turns them back into metres. A stand-in kit takes the standard material in its
 // record's colours instead, which no wind moves.
 import type { Material, MeshGeometry, SketchContext, Texture, Textures } from '@null3d/engine';
@@ -11,6 +12,7 @@ import plantShader from './plant.wgsl';
 import { foliageOptics, transmissionShare } from './records';
 import { standInMaterials } from './stand-in';
 import { type SpeciesKit, writeFieldSettings } from './textures';
+import woodShader from './wood.wgsl';
 
 /**
  * One plant material: a role of the one plant shader.
@@ -117,8 +119,9 @@ export function plantMaterials(
 		textures: { colour: Texture; relief: Texture; second?: Texture; third?: Texture },
 		leafy: boolean,
 	) => {
+		const whole = role === 'wood';
 		const material = ctx.materials.shader({
-			wgsl: plantShader,
+			wgsl: whole ? woodShader : plantShader,
 			textures: {
 				wind: field?.texture ?? stillWind(ctx.textures),
 				records: t.records,
@@ -129,8 +132,7 @@ export function plantMaterials(
 			metalness: 0,
 			specularIntensity: matte ? 0 : LEAF_SPECULAR,
 			doubleSided: leafy,
-			alphaMode: 'mask',
-			alphaCutoff: ALPHA_CUTOFF,
+			...(whole ? { alphaMode: 'opaque' } : { alphaMode: 'mask', alphaCutoff: ALPHA_CUTOFF }),
 			...(leafy && share > 0 && { diffuseTransmission: share }),
 			...(swayDistance > 0 && { swayDistance }),
 			uniforms: {
