@@ -52,6 +52,26 @@ function fakeContext(
 }
 
 describe('WebGL2Backend', () => {
+	it('takes flat values from the first vertex where the device lets it choose', async () => {
+		// ANGLE on Metal rewrites the whole bound index buffer before each draw with a flat value
+		// under GLSL's last-vertex rule, which took a 52.6 MB tree index list to over 100 GB.
+		const conventions: number[] = [];
+		const provoking = {
+			FIRST_VERTEX_CONVENTION_WEBGL: 0x8e4d,
+			provokingVertexWEBGL: (convention: number) => conventions.push(convention),
+		};
+		const { gl } = fakeContext(false, (name, args) =>
+			name === 'getExtension' && args[0] === 'WEBGL_provoking_vertex' ? provoking : undefined,
+		);
+		const canvas = { width: 1, height: 1 } as OffscreenCanvas;
+		new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
+		expect(conventions).toEqual([0x8e4d]);
+		// A device without the extension keeps GL's own rule, and the backend still starts.
+		const { gl: plain, log } = fakeContext();
+		new WebGL2Backend(plain, canvas, await loadGlslShaders(0), true, 'reversed');
+		expect(log).toContainEqual(['getExtension', 'WEBGL_provoking_vertex']);
+	});
+
 	it('starts to link the mip level and layer copy programs when it starts, without waiting for them', async () => {
 		const { gl, calls } = fakeContext();
 		const canvas = { width: 1, height: 1 } as OffscreenCanvas;
