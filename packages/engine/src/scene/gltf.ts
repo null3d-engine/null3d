@@ -57,6 +57,7 @@ import type {
 	NodeData,
 	NodeLevels,
 	PatchesData,
+	PiecesData,
 	PrimitiveData,
 	TextureUse,
 } from './gltf-parse';
@@ -1353,6 +1354,7 @@ function makeMeshes(
 				`${call}() found a stored tree in ${address} that does not fit primitive ${k} of mesh "${mesh.name}", so raycasts build their own. Optimize the file again.`,
 			);
 		if (typeof p.occluder === 'object') storeBlocker(context.core, made.id, p.occluder, call);
+		if (p.pieces) storePieces(context.core, made.id, p.pieces, call);
 		// A tree from an older asset tool would leave holes in the picture, so its mesh draws whole.
 		if (
 			p.patches &&
@@ -1384,6 +1386,24 @@ function storeBlocker(core: CoreMemory, mesh: number, blocker: BlockerData, call
 	core.f32(at, positions.length).set(positions);
 	core.u32(at + positions.byteLength, indices.length).set(indices);
 	core.glue.setMeshBlocker(mesh, positions.length / 3, indices.length);
+}
+
+/**
+ * Gives a mesh the pieces of its triangle list that the file stores, nine words a piece: its
+ * triangles, then its sphere's and its cone's eight floats. A mesh whose list the pieces do not
+ * fit draws whole.
+ */
+function storePieces(core: CoreMemory, mesh: number, pieces: PiecesData, call: string): void {
+	const { triangles, bounds } = pieces;
+	const count = triangles.length;
+	const at = core.checkGrowth(core.glue.meshArrays(count * 9), call);
+	const words = core.u32(at, count * 9);
+	const floats = new Float32Array(words.buffer, words.byteOffset, count * 9);
+	for (let k = 0; k < count; k++) {
+		words[k * 9] = triangles[k] as number;
+		floats.set(bounds.subarray(k * 8, k * 8 + 8), k * 9 + 1);
+	}
+	core.glue.setMeshPieces(mesh, count);
 }
 
 /**

@@ -19,8 +19,8 @@ use std::collections::TryReserveError;
 
 use null3d_core::cells::{CELL_SHIFT, ORIGIN_CELL};
 use null3d_core::culling::{
-    BY_ROW, BucketedCull, CullRun, CullSet, CullView, LevelChoice, LevelRows, NO_BUCKET, RowBiases,
-    RowCells, RowRadii, RowRanges, SetLayers, SetOrder, batch_ranges, cull_into_buckets,
+    BY_ROW, BucketedCull, CullRun, CullSet, CullView, Frustum, LevelChoice, LevelRows, NO_BUCKET,
+    RowBiases, RowCells, RowRadii, RowRanges, SetLayers, SetOrder, batch_ranges, cull_into_buckets,
 };
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
@@ -32,6 +32,7 @@ use null3d_gpu::drawlist::{DrawList, Op, sizes};
 use super::layout::Layout;
 use crate::cells::{CellCulling, CellMask, MOVING};
 use crate::frame::{CellOffsets, RecordError, RunCells, UploadArena, push_runs, words_as_bytes};
+use crate::pieces::{CopyFrame, Piece};
 use crate::view::{ViewFrame, ViewId};
 
 /// The set that lists the scene's slots in place, without grid cells.
@@ -210,6 +211,14 @@ impl Direct {
             Some(&choice),
             cull,
         );
+        let source_rows = SourceRows {
+            scene_matrices: scene.world(parity).matrices(),
+            batches,
+            sources,
+            parity,
+            offsets,
+        };
+        let cones = super::cull::view_takes_cones(view) && !rule.orthographic;
         let recorded = write_copies(
             list,
             arena,
@@ -218,11 +227,9 @@ impl Direct {
             cull,
             counts,
             &mut copies,
-            scene.world(parity).matrices(),
-            batches,
-            sources,
-            parity,
-            offsets,
+            &source_rows,
+            &frame.frustum,
+            cones,
         );
         self.bucket_copies = copies;
         recorded
@@ -242,10 +249,44 @@ impl Direct {
     }
 }
 
+/// Where the copies' matrices come from: the scene's world buffer and the batches', with the
+/// offset from the view's camera to each cell in use.
+struct SourceRows<'a> {
+    scene_matrices: &'a [f32],
+    batches: &'a BatchTable,
+    sources: &'a Layout,
+    parity: usize,
+    offsets: &'a [[f32; 4]],
+}
+
+impl SourceRows<'_> {
+    /// The rows of the world matrix of the source that a culling entry names, moved by its cell's
+    /// offset from the view's camera, as the culling shader moves them.
+    fn rows(&self, entry: u32) -> [[f32; 4]; 3] {
+        let source = entry & ENTRY_SOURCE;
+        let cell = (entry >> CELL_SHIFT) as usize;
+        let offset = self.offsets.get(cell).copied().unwrap_or([0.0; 4]);
+        let m = matrix_of(
+            source,
+            self.scene_matrices,
+            self.batches,
+            self.sources,
+            self.parity,
+        );
+        [
+            [m[0], m[1], m[2], m[3] + offset[0]],
+            [m[4], m[5], m[6], m[7] + offset[1]],
+            [m[8], m[9], m[10], m[11] + offset[2]],
+        ]
+    }
+}
+
 /// Writes each bucket's visible sources into the view's compacted instance buffer in the layout
 /// that the mesh shaders read, with its matrix moved by its cell's offset from the view's camera.
 /// Each bucket's copies go up in one write of their own, so the frame holds the visible copies
-/// instead of a copy of every row that the layout could draw.
+/// instead of a copy of every row that the layout could draw. A bucket with pieces writes each
+/// copy into the slice of each piece that it shows in the view's `frustum`, with the cone test
+/// where `cones` allows it (see [`crate::pieces`]).
 #[allow(clippy::too_many_arguments)]
 fn write_copies(
     list: &mut DrawList,
@@ -255,62 +296,111 @@ fn write_copies(
     cull: &BucketedCull,
     counts: &mut [u32],
     copies: &mut Vec<u32>,
-    scene_matrices: &[f32],
-    batches: &BatchTable,
-    sources: &Layout,
-    parity: usize,
-    offsets: &[[f32; 4]],
+    rows: &SourceRows<'_>,
+    frustum: &Frustum,
+    cones: bool,
 ) -> Result<(), RecordError> {
     let starts = cull.bucket_starts();
     let entries = cull.indices();
     for (index, bucket) in drawn.buckets.iter().enumerate() {
-        let words = &entries[starts[index] as usize..starts[index + 1] as usize];
-        // A fade bucket lists each instance as a pair: its entry, then its fade value's bits.
-        let pair = bucket.pairs;
-        let count = if pair { words.len() / 2 } else { words.len() };
-        counts[index] = count as u32;
-        if count == 0 {
+        // A piece's copies come with its bucket's, which no source names.
+        if bucket.cone.is_some() {
             continue;
         }
-        let needed = count * COPY_WORDS;
-        if copies.len() < needed {
-            copies
-                .try_reserve(needed - copies.len())
-                .map_err(out_of_memory)?;
-            copies.resize(needed, 0);
+        let words = &entries[starts[index] as usize..starts[index + 1] as usize];
+        let Some((first, count)) = bucket.pieces else {
+            counts[index] = write_bucket(
+                list,
+                arena,
+                view,
+                drawn,
+                bucket,
+                words,
+                copies,
+                rows,
+                |_| true,
+            )?;
+            continue;
+        };
+        counts[index] = 0;
+        for piece in first..first + count {
+            let target = &drawn.buckets[piece as usize];
+            let bounds = Piece {
+                triangles: 0,
+                sphere: [
+                    target.center[0],
+                    target.center[1],
+                    target.center[2],
+                    target.radius,
+                ],
+                cone: target.cone.unwrap_or([0.0, 0.0, 0.0, 1.0]),
+            };
+            let shows =
+                |matrix: &[[f32; 4]; 3]| CopyFrame::new(*matrix).shows(frustum, &bounds, cones);
+            counts[piece as usize] =
+                write_bucket(list, arena, view, drawn, target, words, copies, rows, shows)?;
         }
-        for k in 0..count {
-            let entry = words[k * if pair { 2 } else { 1 }];
-            let source = entry & ENTRY_SOURCE;
-            let cell = (entry >> CELL_SHIFT) as usize;
-            let offset = offsets.get(cell).copied().unwrap_or([0.0; 4]);
-            let matrix = matrix_of(source, scene_matrices, batches, sources, parity);
-            let dst = k * COPY_WORDS;
-            copies[dst] = matrix[0].to_bits();
-            copies[dst + 1] = matrix[1].to_bits();
-            copies[dst + 2] = matrix[2].to_bits();
-            copies[dst + 3] = (matrix[3] + offset[0]).to_bits();
-            copies[dst + 4] = matrix[4].to_bits();
-            copies[dst + 5] = matrix[5].to_bits();
-            copies[dst + 6] = matrix[6].to_bits();
-            copies[dst + 7] = (matrix[7] + offset[1]).to_bits();
-            copies[dst + 8] = matrix[8].to_bits();
-            copies[dst + 9] = matrix[9].to_bits();
-            copies[dst + 10] = matrix[10].to_bits();
-            copies[dst + 11] = (matrix[11] + offset[2]).to_bits();
-            copies[dst + IDS_MATERIAL] = bucket.material - 1;
-            copies[dst + IDS_JOINT] = first_joint(bucket, source, sources);
-            copies[dst + IDS_SOURCE] = source;
-            copies[dst + IDS_FADE] = if pair { words[k * 2 + 1] } else { 0 };
-        }
-        let (at, bytes) = arena.push(words_as_bytes(&copies[..needed]))?;
-        let offset = bucket.base * drawn.copy_stride();
-        list.push(
-            Op::WriteBuffer,
-            &[super::ids::visible(view), offset, at, bytes],
-        )?;
     }
     Ok(())
+}
+
+/// Writes the copies of the culling entries `words` that `keeps` keeps into `bucket`'s slice, in
+/// one upload, and returns their count. A fade bucket lists each instance as a pair: its entry,
+/// then its fade value's bits.
+#[allow(clippy::too_many_arguments)]
+fn write_bucket(
+    list: &mut DrawList,
+    arena: &mut UploadArena,
+    view: ViewId,
+    drawn: &Layout,
+    bucket: &super::layout::Bucket,
+    words: &[u32],
+    copies: &mut Vec<u32>,
+    rows: &SourceRows<'_>,
+    keeps: impl Fn(&[[f32; 4]; 3]) -> bool,
+) -> Result<u32, RecordError> {
+    let pair = bucket.pairs;
+    let listed = if pair { words.len() / 2 } else { words.len() };
+    if listed == 0 {
+        return Ok(0);
+    }
+    let needed = listed * COPY_WORDS;
+    if copies.len() < needed {
+        copies
+            .try_reserve(needed - copies.len())
+            .map_err(out_of_memory)?;
+        copies.resize(needed, 0);
+    }
+    let mut count = 0;
+    for k in 0..listed {
+        let entry = words[k * if pair { 2 } else { 1 }];
+        let matrix = rows.rows(entry);
+        if !keeps(&matrix) {
+            continue;
+        }
+        let source = entry & ENTRY_SOURCE;
+        let dst = count * COPY_WORDS;
+        for (r, row) in matrix.iter().enumerate() {
+            for (c, value) in row.iter().enumerate() {
+                copies[dst + r * 4 + c] = value.to_bits();
+            }
+        }
+        copies[dst + IDS_MATERIAL] = bucket.material - 1;
+        copies[dst + IDS_JOINT] = first_joint(bucket, source, rows.sources);
+        copies[dst + IDS_SOURCE] = source;
+        copies[dst + IDS_FADE] = if pair { words[k * 2 + 1] } else { 0 };
+        count += 1;
+    }
+    if count == 0 {
+        return Ok(0);
+    }
+    let (at, bytes) = arena.push(words_as_bytes(&copies[..count * COPY_WORDS]))?;
+    let offset = bucket.base * drawn.copy_stride();
+    list.push(
+        Op::WriteBuffer,
+        &[super::ids::visible(view), offset, at, bytes],
+    )?;
+    Ok(count as u32)
 }
 
 /// The twelve floats of a source's world matrix: a scene slot's from the scene's world buffer, or

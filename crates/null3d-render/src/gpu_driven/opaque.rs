@@ -572,7 +572,8 @@ impl Draws<'_> {
         let mut last_vertices = None;
         let mut groups = DrawGroups::default();
         let mut bound = None;
-        for (b, bucket) in layout.buckets.iter().enumerate() {
+        for b in layout.drawn_buckets() {
+            let bucket = &layout.buckets[b];
             if !takes(bucket) {
                 continue;
             }
