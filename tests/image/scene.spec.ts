@@ -45,9 +45,10 @@ function expectFrames(result: SceneResult, tier: 'webgpu' | 'webgl2'): void {
 	if (!stats) throw new Error('the live page measured no frames');
 	// Four buckets draw: the red box, the red sphere, the unlit blue box, and the green floor batch.
 	// WebGPU draws them from one bundle; WebGL2 in multi-draw calls, or one draw each, and again in
-	// the depth prepass that its presets draw. Where the scene draws HDR color, the final pass adds
-	// one triangle over the canvas.
-	const opaqueDraws = tier === 'webgl2' ? 8 : 4;
+	// the depth prepass that its presets draw. WebGL2's Medium also draws the bounce light, whose
+	// steps add six draws, and WebGPU's Medium leaves that light off. Where the scene draws HDR
+	// color, the final pass adds one triangle over the canvas.
+	const opaqueDraws = tier === 'webgl2' ? 14 : 4;
 	expect(stats.drawCalls.median).toBe(opaqueDraws + (result.capabilities.hdr ? 1 : 0));
 	// On WebGL2 the list of visible objects has the three meshes and one entry for the floor batch,
 	// whose 25 rows form one group once they stop changing. The GPU culls on WebGPU.
@@ -99,7 +100,11 @@ for (const tier of ['webgpu', 'webgl2'] as const)
 
 for (const tier of ['webgpu', 'webgl2'] as const)
 	for (const mode of ENGINE_MODES) {
-		const switches = `gpu=${tier}&${mode.query}`;
+		// The reference is drawn in hold mode, which keeps the preset that the engine chose for the
+		// device and skips the start-up preset check. A live engine on a slow device, CI's software
+		// GPU among them, lowers the preset, and Low smooths edges with FXAA where the reference has
+		// MSAA. Medium fixes the reference's look and the frame that the test's own figures count.
+		const switches = `gpu=${tier}&preset=medium&${mode.query}`;
 		test(`a scene draws through the engine on ${tier}, ${mode.name}`, async ({ page }) => {
 			expectFrames(await openScene(page, switches), tier);
 		});
