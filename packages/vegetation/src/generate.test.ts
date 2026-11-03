@@ -90,11 +90,11 @@ describe('the plant core with stand-ins', () => {
 
 	it('grows the same stand-ins as real stages land, so scenes that place them draw the same', () => {
 		const frozen = [
-			['stub', {}, 3133105063, '42622e3d4036c19e'],
+			['stub', {}, 3667806437, '42622e3d4036c19e'],
 			[
 				'pedunculate-oak',
 				{ height: { mean: 20, spread: 3 }, aspect: 1.2 },
-				3091311768,
+				843710834,
 				'29724ef94d149086',
 			],
 		] as const;
