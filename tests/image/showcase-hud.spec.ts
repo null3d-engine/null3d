@@ -207,10 +207,12 @@ async function openHud(page: Page, size?: { width: number; height: number }): Pr
 	// engine on the page, which is how these tests read the canvas's frames.
 	await page.goto('/examples/index.html?demo=island&preset=low&bench');
 	const hud = page.locator('.hud');
-	// The sketch posts the HUD once its setup has run, which builds the whole island: its town, its
-	// trees and its grass. That start takes minutes on a software GPU, so the controls take the same
-	// budget as the first frame that follows them. The island's held picture pays the same start and
-	// takes 222 s on CI's SwiftShader.
+	// The sketch posts the HUD as soon as its controls exist, which is before it builds the island's
+	// town, its trees and its grass, and the page shows the controls when that message arrives. The
+	// scene's own builds and its environment maps, which a software GPU spends minutes on, no longer
+	// hold the controls back. The wait keeps the first frame's budget, because the sketch itself
+	// starts first: its core, its modules and the worker the sketch's setup runs in. A page that
+	// never posts the controls still fails here, by the test's own name.
 	await expect(hud).toBeVisible({ timeout: FIRST_FRAME_MS });
 	await expect(page.getByRole('tab', { name: 'Post' })).toBeVisible();
 	// The controls come up while the sketch finishes its scene, which is before the engine's first
