@@ -41,6 +41,7 @@ use crate::levels::{
 };
 use crate::object_ranges::{ObjectRanges, STREAMED_KEY};
 use crate::outline::mask_keys;
+use crate::pieces::Piece;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
 use crate::shadows::CasterPasses;
 use crate::subsurface::skin_key;
@@ -158,6 +159,22 @@ pub(super) struct ClusterBucket {
     pub(super) object: u32,
 }
 
+/// A bucket of rows whose mesh draws pieces in its place (see [`crate::pieces`]): the job workers
+/// list each of its entries again in the bucket of each piece that the copy shows, and only the
+/// pieces' buckets draw.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct PieceSet {
+    /// The bucket of rows whose entries the pieces take.
+    pub(super) bucket: u32,
+    /// The first piece's bucket, and the pieces, whose buckets follow it.
+    pub(super) first: u32,
+    pub(super) count: u32,
+    /// The data texture that its entries' rows name: [`RESIDENT`] or [`STREAMED`].
+    pub(super) texture: u32,
+    /// True when its entries come in pairs: each entry, then its fade value's bits.
+    pub(super) pairs: bool,
+}
+
 /// A batch's place in the layout: its data texture, its first row there, whether its rows have
 /// row values, which the row values texture beside its data texture holds at the same rows, its
 /// bucket of rows (the bucket after it takes its clusters), whether its rows pick levels of
@@ -242,6 +259,11 @@ pub(super) struct Layout {
     /// The buckets whose mesh a view draws from its tree of cluster patches, with the object that
     /// draws each.
     pub(super) cluster_buckets: Vec<ClusterBucket>,
+    /// The buckets of rows whose meshes draw pieces in their place, and the bounds of every piece,
+    /// by its bucket's place after the first piece's bucket. The pieces' buckets follow every
+    /// key's pair of buckets.
+    pub(super) piece_sets: Vec<PieceSet>,
+    pub(super) piece_bounds: Vec<Piece>,
     /// True while the levels debug view draws: each entry pairs with its level's code, and a source
     /// that the size rule or a draw range hid draws at its base level, marked.
     pub(super) codes: bool,
@@ -274,6 +296,8 @@ impl Layout {
             vec_bytes(&self.batches),
             vec_bytes(&self.buckets),
             vec_bytes(&self.draws),
+            vec_bytes(&self.piece_sets),
+            vec_bytes(&self.piece_bounds),
             vec_bytes(&self.second_draws),
             vec_bytes(&self.scene_buckets),
             vec_bytes(&self.level_links),
@@ -754,9 +778,18 @@ impl Layout {
         self.bucket_levels.clear();
         self.level_buckets.clear();
         self.cluster_buckets.clear();
+        self.piece_sets.clear();
+        self.piece_bounds.clear();
         self.material_views = 0;
         self.pick_views = 0;
-        for &(key, _) in key_counts.iter() {
+        // The buckets of pieces follow every key's pair of buckets, with what each copies of its
+        // key's bucket of rows.
+        let mut piece_buckets: Vec<Bucket> = Vec::new();
+        let first_piece_bucket = 2 * key_counts.len() as u32;
+        // The most words that the pieces' buckets list in a view: each copy of a key may list
+        // again in each of its pieces.
+        let mut piece_words = 0u32;
+        for &(key, key_sources) in key_counts.iter() {
             let (pipeline, textures, _, mesh, material, group) = key;
             let mesh = levels
                 .mesh_of_key(mesh)
@@ -814,11 +847,25 @@ impl Layout {
             // before the surfaces that write color. Only the scene's own layout draws them.
             let holdout =
                 drawn == Drawn::Scene && pipeline.state & state_flags::NO_COLOR_WRITE != 0;
-            let pipeline = first;
             let cluster_object = treed_keys
                 .binary_search_by_key(&key, |&(key, _)| key)
                 .ok()
                 .map(|at| treed_keys[at].1);
+            // A camera's view culls each piece of a mesh with pieces on its own, where the piece's
+            // bounds hold: the vertices stay where the mesh puts them, unmoved by a skin, morph
+            // targets, a displacement or a custom vertex offset. A draw of lines and a tree of
+            // cluster patches keep the whole list. The cone test also needs the pipeline to drop
+            // back faces.
+            let pieces = meshes.pieces(mesh - 1);
+            let pieced = drawn == Drawn::Scene
+                && (2..=crate::pieces::MAX_PIECES).contains(&pieces.len())
+                && cluster_object.is_none()
+                && !lines
+                && pipeline.permutation & (permutation::SKIN | permutation::MORPH) == 0
+                && !pipeline.places_own_vertices();
+            let culls_back =
+                pipeline.state & (state_flags::CULL_NONE | state_flags::CULL_FRONT) == 0;
+            let pipeline = first;
             for shift in [0, CLUSTER_SHIFT] {
                 let bucket = self.buckets.len() as u32;
                 self.buckets.push(Bucket {
@@ -852,6 +899,54 @@ impl Layout {
                 if pick != 0 && pick_textures != 0 {
                     self.pick_views |= settings.textures().group_pass_views(pick_textures);
                 }
+                if pieced && shift == 0 {
+                    let words = if pairs { 2 } else { 1 };
+                    piece_words = piece_words
+                        .saturating_add(key_sources.saturating_mul(words * pieces.len() as u32));
+                    let first_piece = first_piece_bucket + piece_buckets.len() as u32;
+                    self.piece_sets.push(PieceSet {
+                        bucket,
+                        first: first_piece,
+                        count: pieces.len() as u32,
+                        texture: group,
+                        pairs,
+                    });
+                    for piece in pieces {
+                        piece_buckets.push(Bucket {
+                            material,
+                            mesh_key: key.3,
+                            group,
+                            shift: 0,
+                            moves,
+                        });
+                        let [x, y, z, cutoff] = piece.cone;
+                        // A material that draws back faces shows the piece from either side.
+                        let cutoff = if culls_back { cutoff } else { 1.0 };
+                        self.piece_bounds.push(Piece {
+                            cone: [x, y, z, cutoff],
+                            ..*piece
+                        });
+                    }
+                    crate::pieces::piece_parts(meshes.piece_parts(mesh - 1), pieces, |k, part| {
+                        self.draws.push(Draw {
+                            pipeline,
+                            prepass,
+                            textures,
+                            motion: motion_pipeline,
+                            motion_textures,
+                            page: part.page,
+                            bucket: first_piece + k,
+                            index_count: part.index_count,
+                            first_index: part.first_index,
+                            pairs,
+                            pick,
+                            pick_textures,
+                            holdout,
+                            cluster: None,
+                        });
+                    });
+                    continue;
+                }
                 for part in meshes.parts(slot, lines) {
                     let draw = Draw {
                         pipeline,
@@ -878,6 +973,17 @@ impl Layout {
                     }
                 }
             }
+        }
+        for (k, bucket) in piece_buckets.iter().enumerate() {
+            let set = self
+                .piece_sets
+                .iter()
+                .rfind(|set| set.first <= first_piece_bucket + k as u32)
+                .expect("each piece's bucket belongs to a set");
+            self.bucket_levels
+                .push(self.bucket_levels[set.bucket as usize]);
+            self.level_links.push(LevelLink::NONE);
+            self.buckets.push(*bucket);
         }
         // A surface that writes no color draws before the ones that do, so its depth holds back
         // their color. The sort keeps each pipeline's draws together for the multi-draw runs.
@@ -976,7 +1082,9 @@ impl Layout {
             }
         };
         self.room = CullRoom {
-            rows: listed.saturating_add(fading_words),
+            rows: listed
+                .saturating_add(fading_words)
+                .saturating_add(piece_words),
             runs,
             by_row,
             buckets: self.buckets.len() as u32,

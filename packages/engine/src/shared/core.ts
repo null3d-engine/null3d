@@ -432,6 +432,20 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setMeshPatches(mesh: number, patches: number, indices: number, root: number): number;
 	/**
+	 * Gives a mesh `count` pieces of its triangle list, at `meshArrays`'s address: nine words each,
+	 * the piece's triangles, then four floats of its bounding sphere and four of its cone of
+	 * facings. The pieces follow the list's order. 1 when the mesh takes them, 0 when they do not
+	 * fit its list, which then draws whole.
+	 */
+	setMeshPieces(mesh: number, count: number): number;
+	/**
+	 * Gives a mesh `count` pieces over a triangle list of their own: the pieces as `setMeshPieces`
+	 * lays them out, then `indices` indices that hold the mesh's triangles in piece order, at
+	 * `meshArrays`'s address. The mesh keeps its own list. 1 when the mesh takes them, 0 when it
+	 * cannot: a mesh of several parts, or one that has such a list already.
+	 */
+	setMeshPieceList(mesh: number, count: number, indices: number): number;
+	/**
 	 * Appends one band to a mesh's tree of cluster patches: `patches` records of eight words each,
 	 * four floats of a bounding sphere and four integers of a run of indices, a parent and an
 	 * error, then `indices` indices, at `meshArrays`'s address. A run's first index counts from the
@@ -1424,6 +1438,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMeshBvh',
 	'setMeshBlocker',
 	'setMeshPatches',
+	'setMeshPieces',
+	'setMeshPieceList',
 	'appendMeshPatches',
 	'meshRadius',
 	'meshVertexCount',

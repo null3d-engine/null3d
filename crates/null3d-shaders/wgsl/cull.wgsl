@@ -93,6 +93,18 @@
 // The OCCLUSION build holds the two phases, `early` and `late`, and the build without it holds
 // `main` alone, so a page that never culls against a pyramid downloads none of the phases.
 //
+// A bucket whose mesh has pieces (runs of its triangles that each face about one way and lie close
+// together) draws no copy of its own: each piece has a bucket, with a slice and draws of its own,
+// and the thread appends the copy to the slice of each piece that shows. A piece shows unless its
+// sphere, moved by the copy's matrix, lies outside the frustum, or, in a view whose positions start
+// at its eye, every triangle of the piece faces away from the eye: the piece's sphere, at `c` from
+// the eye with radius `r`, meets `dot(c, axis) >= cutoff * |c| + r` for the cone of its facings
+// turned by the copy's matrix. The cone test needs a matrix that keeps angles, a perspective lens
+// and a pipeline that drops back faces; the layout gives a piece of a pipeline that draws back
+// faces a cutoff of 1, which never culls. In the late occlusion phase each piece also tests its
+// own sphere against the pyramid. A piece's record holds its sphere where a bucket's holds the
+// local sphere, and its cone where a level's holds its switch and links.
+//
 // The MOTION build culls the motion view: the camera's view of the motion layout, whose buckets
 // draw each moving object's motion (decision record D-140). It reads the last frame's matrices
 // where the pyramid sits, and keeps an instance in view only when its matrix changed since the
@@ -115,6 +127,19 @@ const MAX_LEVELS: u32 = 16u;
 /// The smallest distance that the level rule compares, in meters. A camera inside an instance's
 /// bounds measures this distance, so the instance keeps its base level.
 const LEAST_DISTANCE: f32 = 1.0e-3;
+/// The bit of a bucket's `indices` word that marks a bucket that draws pieces in its place.
+const PIECED: u32 = 1u << 31u;
+/// Where the count of a bucket's pieces sits in its `indices` word, above its first piece's bucket.
+const PIECE_COUNT_SHIFT: u32 = 24u;
+/// How much wider than its cutoff a piece's cone counts, as a share of the distance to the piece,
+/// so that rounding never culls a triangle that the GPU draws.
+const CONE_MARGIN: f32 = 1.0e-3;
+/// How far a copy's matrix may stretch, or bend its axes from square, as a share of its scale, for
+/// its pieces to take the cone test.
+const SIMILAR_TOLERANCE: f32 = 1.0e-4;
+/// True while the late occlusion phase appends, so that each piece tests its own sphere against
+/// the depth pyramid too.
+var<private> piece_occlusion: bool = false;
 
 /// What the occlusion phases read: the view-projection matrix for positions relative to the
 /// camera, the render size, and the depth pyramid's levels. The levels' shapes follow from the
@@ -144,7 +169,8 @@ struct CullParams {
     /// the projection's P[1][1].
     levels: vec4f,
     /// The first word is 1 while the levels debug view draws, whose copies carry each source's
-    /// level code in place of the fade value. The rest are spare.
+    /// level code in place of the fade value. The second is 1 for a view whose positions start at
+    /// its eye, where pieces take the cone test. The rest are spare.
     debug: vec4u,
     /// Each run: its first position in the cell order, its end, and its first workgroup.
     ranges: array<vec4u, MAX_RANGES>,
@@ -159,7 +185,9 @@ struct CullParams {
 /// beside the material, or PER_SOURCE_JOINT, which sends each copy to its own. A bucket with
 /// `indices` 1 writes each survivor's index instead, one entry each, from entry `base` on. In the
 /// motion layout, whose buckets never read by index, `indices` 1 marks a bucket whose instances
-/// move by themselves.
+/// move by themselves. A bucket whose `indices` holds the PIECED bit draws pieces in its place: the
+/// bucket of its first piece sits in the bits below PIECE_COUNT_SHIFT, and the count of its pieces
+/// above them. Such a bucket never reads by index, and the vertex shaders never read its record.
 struct Bucket {
     base: u32,
     material: u32,
@@ -473,11 +501,88 @@ fn append(s: Survivor, level: Level, draws_before: u32) {
     append_to(s, level.bucket, draws_before, 0.0, false);
 }
 
+/// Appends an instance in the view to bucket `b`, or to the buckets of its pieces that show, with
+/// the fade value `fade` (see `append_copy`).
+fn append_to(s: Survivor, b: u32, draws_before: u32, fade: f32, hidden: bool) {
+    let pieces = buckets[b].indices;
+    if (pieces & PIECED) == 0u {
+        append_copy(s, b, draws_before, fade, hidden);
+        return;
+    }
+    let first = pieces & ((1u << PIECE_COUNT_SHIFT) - 1u);
+    let count = (pieces & ~PIECED) >> PIECE_COUNT_SHIFT;
+    let cone = params.debug.y != 0u && params.levels.y < 0.5 && keeps_angles(s);
+    // A copy whose sphere lies wholly inside the frustum has every piece inside it too.
+    var inside = true;
+    for (var k = 0u; k < 6u; k++) {
+        let plane = params.planes[k];
+        inside = inside && dot(plane.xyz, s.center) + plane.w >= s.radius;
+    }
+    for (var p = first; p < first + count; p++) {
+        if piece_shows(s, p, cone, inside) {
+            append_copy(s, p, draws_before, fade, hidden);
+        }
+    }
+}
+
+/// True when the instance's matrix keeps angles: a turn and the same positive scale on each axis,
+/// within SIMILAR_TOLERANCE, so that it turns its pieces' cones as it turns their facings.
+fn keeps_angles(s: Survivor) -> bool {
+    let c0 = vec3f(s.r0.x, s.r1.x, s.r2.x);
+    let c1 = vec3f(s.r0.y, s.r1.y, s.r2.y);
+    let c2 = vec3f(s.r0.z, s.r1.z, s.r2.z);
+    let lengths = vec3f(length(c0), length(c1), length(c2));
+    let least = min(lengths.x, min(lengths.y, lengths.z));
+    let square = SIMILAR_TOLERANCE * s.scale * s.scale;
+    return least > 0.0
+        && s.scale - least <= SIMILAR_TOLERANCE * s.scale
+        && abs(dot(c0, c1)) <= square
+        && abs(dot(c0, c2)) <= square
+        && abs(dot(c1, c2)) <= square
+        && dot(cross(c0, c1), c2) > 0.0;
+}
+
+/// True when the instance's piece in bucket `p` may draw in the view: its sphere reaches into the
+/// frustum, which `inside` says of every piece of a copy wholly inside it, where `cone` allows the
+/// cone test some triangle may face the eye, and in the late occlusion phase the pyramid does not
+/// hide its sphere. It reads only the words of the piece's record that it needs.
+fn piece_shows(s: Survivor, p: u32, cone: bool, inside: bool) -> bool {
+    let local = vec4f(buckets[p].center_x, buckets[p].center_y, buckets[p].center_z, 1.0);
+    let center = vec3f(dot(s.r0, local), dot(s.r1, local), dot(s.r2, local));
+    let radius = buckets[p].radius * s.scale;
+    if !inside {
+        for (var k = 0u; k < 6u; k++) {
+            let plane = params.planes[k];
+            if dot(plane.xyz, center) + plane.w < -radius {
+                return false;
+            }
+        }
+    }
+    // A piece's record holds its cone's axis and cutoff where a level's holds its switch value,
+    // its links and its bias.
+    let cutoff = buckets[p].bias;
+    if cone && cutoff < 1.0 {
+        let axis = vec3f(buckets[p].value, bitcast<f32>(buckets[p].next), bitcast<f32>(buckets[p].fade));
+        let turned = vec3f(dot(s.r0.xyz, axis), dot(s.r1.xyz, axis), dot(s.r2.xyz, axis));
+        let reach = length(turned);
+        if reach > 0.0
+            && dot(center, turned) / reach >= (cutoff + CONE_MARGIN) * length(center) + radius {
+            return false;
+        }
+    }
+#ifdef OCCLUSION
+    if piece_occlusion && occluded(center, radius) {
+        return false;
+    }
+#endif
+    return true;
+}
+
 /// Appends an instance in the view to bucket `b`'s slice with the fade value `fade`, and counts it
 /// in each of the bucket's draws, which start `draws_before` draws into the indirect draws. A
 /// source that `hidden` marks, and every source while the levels debug view draws, carries the
 /// level code that the view's shader reads in place of the fade value.
-fn append_to(s: Survivor, b: u32, draws_before: u32, fade: f32, hidden: bool) {
+fn append_copy(s: Survivor, b: u32, draws_before: u32, fade: f32, hidden: bool) {
     let bucket = buckets[b];
     let first = (draws_before + bucket.first_draw) * INDIRECT_WORDS + 1u;
     let slot = atomicAdd(&indirect[first], 1u);
@@ -648,6 +753,7 @@ fn late(
     let seen = !level.hidden && !occluded(s.center, s.radius);
     atomicStore(&indirect[params.occlusion.info.z + i], select(0u, 1u, seen));
     if seen {
+        piece_occlusion = true;
         append(s, level, params.occlusion.info.y);
     }
 }
