@@ -27,6 +27,7 @@ export {
 	type SpeciesKitData,
 	type WindTable,
 } from './asset';
+export { type CoarsenessOptions, nearTriangles } from './coarseness';
 export * from './core/public';
 export * from './crown/public';
 export { CUTTING_LENGTH, type CuttingOptions, type CuttingPart } from './cutting';
