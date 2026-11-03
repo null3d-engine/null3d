@@ -23,7 +23,7 @@
 
 #import null3d::fullscreen::{triangle}
 #import null3d::color::{luminance}
-#import null3d::depth::{view_position}
+#import null3d::depth::{toward_camera, view_position}
 
 /// The steps' settings, which the frame builder writes once for both of them.
 struct Settings {
@@ -185,7 +185,7 @@ fn trace(@builtin(position) position: vec4f) -> @location(0) vec4f {
         return vec4f(0.0);
     }
     let normal = normal_at(texel);
-    let to_view = normalize(-center);
+    let to_view = toward_camera(center, settings.projection);
     if dot(normal, to_view) <= 0.0 {
         return vec4f(0.0);
     }

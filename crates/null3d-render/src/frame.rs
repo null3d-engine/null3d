@@ -1967,12 +1967,9 @@ impl SceneSettings {
     /// What screen-space reflections' trace draws with in a frame of a canvas of `canvas` pixels,
     /// or `None` while they draw nothing or without a camera.
     pub(crate) fn ssr_frame(&self, canvas: (u32, u32)) -> Option<TraceFrame> {
-        let ssr = self.ssr()?;
-        let (_, lens) = self.views.first()?.camera()?;
         Some(TraceFrame {
-            ssr,
+            ssr: self.ssr()?,
             projection: self.camera_projection(canvas)?,
-            orthographic: matches!(lens, Lens::Orthographic(_)),
             steps: self.ssr_steps,
         })
     }
