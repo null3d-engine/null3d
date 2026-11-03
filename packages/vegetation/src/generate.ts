@@ -145,15 +145,20 @@ export async function loadPlantCode(record: Species): Promise<void> {
 	]);
 }
 
-/** A tier a kit does not hold: a mesh with no vertices. */
-const EMPTY_TIER: PrototypeArrays = {
-	positions: new Float32Array(0),
-	normals: new Float32Array(0),
-	uvs: new Float32Array(0),
-	uvs1: new Float32Array(0),
-	colors: new Uint8Array(0),
-	indices: new Uint16Array(0),
-};
+/**
+ * A tier a kit does not hold: a mesh with no vertices. Each is new, since a kit's arrays are
+ * transferred to the job worker, and a shared array would be detached at its second transfer.
+ */
+function emptyTier(): PrototypeArrays {
+	return {
+		positions: new Float32Array(0),
+		normals: new Float32Array(0),
+		uvs: new Float32Array(0),
+		uvs1: new Float32Array(0),
+		colors: new Uint8Array(0),
+		indices: new Uint16Array(0),
+	};
+}
 
 /**
  * Runs a stage, or its stand-in when the kit asks for stand-ins. A stand-in kit always grows the
@@ -256,7 +261,7 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 			const card = baked.cells[index];
 			if (!card) throw new Error(`the card bake gave no cells for prototype ${index}`);
 			const tiers = prototype.tiers.map((tier, t) =>
-				t <= kept ? tier : EMPTY_TIER,
+				t <= kept ? tier : emptyTier(),
 			) as unknown as ShootPrototype['tiers'];
 			return { ...prototype, tiers, card };
 		});

@@ -14,6 +14,7 @@ import { isSpeciesId, loadSpecies, speciesIds } from '../core/registry';
 import { standInSpecies } from '../core/stand-in';
 import { DETAILS, type Detail, spreadMax } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
+import { kitBuffers } from '../generate-task';
 import { REFERENCE_VIEW } from '../lod/levels';
 
 /**
@@ -106,6 +107,11 @@ for (const walked of WALKED) {
 				() => {
 					const kit = buildKitNow(module, { placeholders: walked.placeholders, detail });
 					expect(kitBytesOf(kit)).toBeLessThanOrEqual(record.lod.budget.kitBytes[detail]);
+					// A kit goes to the job worker by transfer, so two kits share no buffer: a shared one
+					// is detached at its second transfer.
+					const own = new Set(kitBuffers(kit));
+					const again = buildKitNow(module, { placeholders: walked.placeholders, detail });
+					expect(kitBuffers(again).filter((buffer) => own.has(buffer))).toEqual([]);
 					// The nearest wood of the first variants stays under the owner's cap at this tier.
 					const cap = capsFor(record).lod0WoodBytes[detail];
 					for (let variant = 0; variant < Math.min(3, record.variants); variant++) {

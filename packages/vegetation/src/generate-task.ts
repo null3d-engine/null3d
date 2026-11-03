@@ -40,8 +40,13 @@ export interface PlantTaskOutput {
 	readonly transfer: ArrayBuffer[];
 }
 
-/** The buffers of a kit, each once. */
-function kitBuffers(kit: SpeciesKitData): ArrayBuffer[] {
+/**
+ * The buffers of a kit, each once: what its transfer to or from the job worker hands over.
+ *
+ * @param kit The species' kit.
+ * @returns The buffers.
+ */
+export function kitBuffers(kit: SpeciesKitData): ArrayBuffer[] {
 	const buffers = new Set<ArrayBuffer>();
 	const add = (view: ArrayBufferView) => buffers.add(view.buffer as ArrayBuffer);
 	for (const prototype of kit.prototypes)
