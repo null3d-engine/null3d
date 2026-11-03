@@ -3,7 +3,14 @@
 // that builds the engine or drives a browser refuses to start while the marker stands, unless the
 // job queue started it, since the queue holds its own jobs back during a window. A build in
 // another checkout, which no queue sees, then cannot spoil the figures.
-import { existsSync, readFileSync, statSync } from 'node:fs';
+//
+// Two questions come of this, and a caller is usually asking one of them. A tool that may not run
+// asks whether a window is live: `quietRefusal`, or `quietWindow` when it wants the holder's name.
+// A waiter asks a second question as well — whose window it is, since a window that no run of its
+// own queue opened belongs to another session and must be waited for whatever the waiter intended.
+// `quietQueueRunWaiting` answers that one, and needs the queue's folders to do it.
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { cacheDir, HEAVY_SLOT_ENV } from './build-cache';
 
 /** The variable that names another path for the marker. */
@@ -135,4 +142,59 @@ export function quietWindow(file = quietFile(), now = new Date()): QuietWindow {
 			? now.getTime() >= end.getTime() + QUIET_END_GRACE_MS
 			: now.getTime() - born.getTime() >= QUIET_MARKER_LIFETIME_MS);
 	return { held: true, holder, stale };
+}
+
+/** A ticket's name ends with the part that says which kind of run it is, `.q` for a timing run. */
+const TIMING_TICKET = /\.q[.a-z]*$/;
+
+/** The pid that a ticket's name carries, in its second dot-separated part. */
+function ticketPid(name: string): number | null {
+	const pid = name.split('.')[1];
+	return pid && /^\d+$/.test(pid) ? Number(pid) : null;
+}
+
+/** True while a process stands. */
+function alive(pid: number | null): boolean {
+	if (pid === null) return false;
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code !== 'ESRCH';
+	}
+}
+
+/**
+ * True while a timing run of the queue at `queue` holds the window or waits for its place in it.
+ *
+ * The queue marks a waiting run with a ticket of its own kind, whose name carries the run's pid, and
+ * a running one with a slot that holds `quiet` and a `pid` file. This is the second question a
+ * waiter asks: a window with no such run behind it was opened by another session, and waits for it
+ * whatever the waiter intended. A queue that is not there answers false.
+ */
+export function quietQueueRunWaiting(queue: string): boolean {
+	let tickets: string[] = [];
+	try {
+		tickets = readdirSync(join(queue, 'heavy-tickets'));
+	} catch {
+		// No queue here, so no run of it is behind the window.
+	}
+	for (const ticket of tickets)
+		if (TIMING_TICKET.test(ticket) && alive(ticketPid(ticket))) return true;
+	let slots: string[] = [];
+	try {
+		slots = readdirSync(join(queue, 'heavy-slots'));
+	} catch {
+		// The same.
+	}
+	for (const slot of slots) {
+		const folder = join(queue, 'heavy-slots', slot);
+		if (!existsSync(join(folder, 'quiet')) || existsSync(join(folder, 'window-closed'))) continue;
+		try {
+			if (alive(Number(readFileSync(join(folder, 'pid'), 'utf8').trim()))) return true;
+		} catch {
+			// A slot that names no process stands behind no run.
+		}
+	}
+	return false;
 }
