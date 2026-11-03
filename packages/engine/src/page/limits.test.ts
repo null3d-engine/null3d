@@ -324,6 +324,16 @@ describe('coreDevice on WebGL2', () => {
 		expect(coreDevice('webgl2', report({}), PLAIN).capabilities).toBe(F16);
 	});
 
+	it('tells the core that flat values take the first vertex only where the extension exists', () => {
+		// Split meshes draw their trees on WebGL2 only with it: under GLSL's last-vertex rule ANGLE
+		// on Metal copies the whole bound index buffer before each draw.
+		const withIt = report({ extensions: { WEBGL_provoking_vertex: true } });
+		expect(coreDevice('webgl2', withIt, PLAIN).capabilities).toBe(
+			C.CAPABILITY_FIRST_PROVOKING_VERTEX | F16,
+		);
+		expect(coreDevice('webgl2', report({}), PLAIN).capabilities).toBe(F16);
+	});
+
 	it('tells the core about 16-bit float targets only where RGBA16F passes the probe', () => {
 		const none = report({ floatRenderTargets: null });
 		expect(coreDevice('webgl2', none, PLAIN).capabilities).toBe(0);

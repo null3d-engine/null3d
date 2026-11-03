@@ -145,6 +145,17 @@ pub(super) struct Draw {
     pub(super) cluster: Option<u32>,
 }
 
+/// What the device's draws can do, which a layout's draws and trees follow.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct DeviceDraws {
+    /// Many draws in one call (`WEBGL_multi_draw`).
+    pub(super) multi_draw: bool,
+    /// A mesh of several parts draws its tree of cluster patches, from a copy of its parts'
+    /// vertices: flat values come from a primitive's first vertex, so ANGLE on Metal draws the
+    /// tree's large index list without copying it before each draw.
+    pub(super) split_trees: bool,
+}
+
 /// A bucket whose mesh draws its tree of cluster patches: one source, one triangle list, on a
 /// device that draws many ranges in one call. The level rule picks the patches that a view draws,
 /// and each chosen patch is a range of the tree's own index list.
@@ -156,6 +167,9 @@ pub(super) struct ClusterBucket {
     pub(super) mesh: u32,
     /// The scene object that draws the bucket, whose matrix moves each patch's sphere.
     pub(super) object: u32,
+    /// True when the tree draws from its own copy of the mesh's parts' vertices, one part after
+    /// another, because the parts lie in several pages. Otherwise it draws from its one page.
+    pub(super) own_vertices: bool,
 }
 
 /// A batch's place in the layout: its data texture, its first row there, whether its rows have
@@ -381,7 +395,7 @@ impl Layout {
     /// Assigns every source to a data texture and a bucket, from the frame's world state, with
     /// each draw's pipeline id from `pipelines`, for a pass that draws into `targets`. It reuses
     /// the layout's tables, which grow only with the scene. A scene of more than `limit` sources
-    /// fails. With `multi_draw`, one block of draw records serves each multi-draw call; else each
+    /// fails. With `draws.multi_draw`, one block of draw records serves each multi-draw call; else each
     /// draw has an aligned record of its own. While `shadows` has a pass on, the scene's receivers
     /// draw with pipelines that read the shadow maps, and the casters' layout holds the casters,
     /// whose draws get a pipeline for each pass of `shadows` in place of `targets`. The objects
@@ -399,7 +413,7 @@ impl Layout {
         targets: PassTargets,
         input: &FrameInput<'_>,
         limit: u32,
-        multi_draw: bool,
+        draws: DeviceDraws,
         shadows: CasterPasses,
         prepass: Prepass,
         motion: Option<PassTargets>,
@@ -603,14 +617,15 @@ impl Layout {
         // object may pick one when every level of its set draws the base mesh's own vertices, which
         // the skin moves and the level then names from indices of its own.
         let levels = settings.levels();
-        // A mesh draws its tree of cluster patches in a camera's view, where its vertices fill one
-        // part and one copy draws the bucket: the device draws many ranges in one call, and the
-        // tree's walk needs a single world matrix. Such a bucket draws no whole level, because its
-        // patches already cover the mesh at the view's threshold. Elsewhere the mesh's whole levels
-        // draw.
+        // A mesh draws its tree of cluster patches in a camera's view, where one copy draws the
+        // bucket with triangles: the device draws many ranges in one call, and the tree's walk needs
+        // a single world matrix. A mesh of several parts draws its tree from a copy of its parts'
+        // vertices, only where flat values come from the first vertex. Such a bucket draws no whole
+        // level, because its patches already cover the mesh at the view's threshold. Elsewhere the
+        // mesh's whole levels draw.
         let patches = settings.patches();
         let mut treed_keys: Vec<(BucketKey, u32)> = Vec::new();
-        if multi_draw && drawn == Drawn::Scene {
+        if draws.multi_draw && drawn == Drawn::Scene {
             for slot in 0..scene.capacity() as usize + 1 {
                 let Some(key) = scene_key(slot) else {
                     continue;
@@ -625,7 +640,7 @@ impl Layout {
                     continue;
                 };
                 let lines = key.0.state & state_flags::LINE_LIST != 0;
-                if meshes.parts(slot_mesh, lines).len() != 1 {
+                if lines || (meshes.joined_parts(slot_mesh).is_none() && !draws.split_trees) {
                     continue;
                 }
                 treed_keys.push((key, slot as u32));
@@ -838,6 +853,7 @@ impl Layout {
                         bucket,
                         mesh: key.3,
                         object,
+                        own_vertices: meshes.joined_parts(slot).is_none(),
                     });
                 }
                 self.bucket_levels.push(key_level(key.3).1 as u32);
@@ -852,7 +868,14 @@ impl Layout {
                 if pick != 0 && pick_textures != 0 {
                     self.pick_views |= settings.textures().group_pass_views(pick_textures);
                 }
-                for part in meshes.parts(slot, lines) {
+                // A tree's one draw stands for every part, since its patches cover the whole mesh.
+                let parts = meshes.parts(slot, lines);
+                let parts = if cluster.is_some() {
+                    &parts[..parts.len().min(1)]
+                } else {
+                    parts
+                };
+                for part in parts {
                     let draw = Draw {
                         pipeline,
                         prepass,
@@ -946,7 +969,7 @@ impl Layout {
 
         // The ring slot of draw records: one block per multi-draw call, or one aligned record per
         // draw.
-        self.draws_slot_bytes = if multi_draw {
+        self.draws_slot_bytes = if draws.multi_draw {
             let mut calls = 0;
             let mut start = 0;
             while start < self.draws.len() {
