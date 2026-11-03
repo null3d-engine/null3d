@@ -152,6 +152,12 @@ import {
 import { glslProgramCountOf } from './shader-programs.ts';
 import { type SkinPassResult, skinPassNote, skinPassProblems } from './skin-pass-checks.ts';
 import { type StatsResult, statsProblems } from './stats-checks.ts';
+import {
+	type StorageSpeedCheck,
+	type StorageSpeedResult,
+	storageSpeedPlan,
+	storageSpeedProblems,
+} from './storage-speed.ts';
 import { progressName, REST_AFTER_TAB_END_SECONDS } from './tab-end.ts';
 import {
 	type TextureCacheCheck,
@@ -306,6 +312,8 @@ export type Check =
 	| { kind: 'warm-up-time'; tier: Tier; scene: string; fresh: boolean }
 	/** A load of the texture cache page with the city's textures, with the cache off or on. */
 	| TextureCacheCheck
+	/** The storage speed page: the storage allowance and each browser store's speed. */
+	| StorageSpeedCheck
 	/** The object growth page's timing mode: the create calls that grow the scene's object tables. */
 	| ObjectGrowthCheck
 	/** S6's occlusion turns at one preset and one occlusion buffer size, for T-36. */
@@ -2885,6 +2893,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'warm-up-time': warmUpTimePlan,
 	governor: governorPlan,
 	'texture-cache': textureCachePlan,
+	'storage-speed': storageSpeedPlan,
 	'object-growth': objectGrowthPlan,
 	'compare-bench': compareBenchPlan,
 	'compare-effects': compareEffectsPlan,
@@ -3765,6 +3774,8 @@ export function judge(
 			return startupProblems(result as StartupResult, check.mode);
 		case 'texture-cache':
 			return textureCacheProblems(check, result as ItemResult & TextureCacheResult);
+		case 'storage-speed':
+			return storageSpeedProblems(result as ItemResult & StorageSpeedResult);
 		case 'overload': {
 			const { overloaded, steps } = result as ItemResult & OverloadResult;
 			if (!overloaded)
