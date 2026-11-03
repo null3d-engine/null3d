@@ -306,7 +306,7 @@ Each layer keeps something different, and most are in place already:
 | --- | --- | --- |
 | The HTTP cache | The build's files, models and textures | The host: a long lifetime for hashed files (`getting-started/hosting`) |
 | The stored preset check | The preset that the check chose, for a week | The engine, in the page's `localStorage` (`concepts/quality-presets`) |
-| Transcoded textures | Each KTX2 file's texels in the device's format | The engine, in Cache Storage, in caches whose names start with `null3d-` (`api/assets`) |
+| Transcoded textures | Each KTX2 file's texels in the device's format | The engine, in Cache Storage, in caches whose names start with `null3d-` (`guides/performance`, `getting-started/hosting`) |
 | Compiled shaders | Shaders that the browser compiled before | The browser alone: no page can store or read them |
 | Generated data | Arrays that your sketch computes | You, in IndexedDB from the sketch, as below |
 | Offline files | The build and your own files | Your service worker (`getting-started/hosting`) |
