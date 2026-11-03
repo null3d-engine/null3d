@@ -110,25 +110,40 @@ Medium:
 | The tree from its own copy | about 290,000 | 5,300 to 9,000 ms |
 
 The picture was right, and the walk drew about 2,285 ranges a frame in calls of up to 256. Each
-frame's list replayed in under 50 ms, and the engine's threads were idle. A Chrome trace
-showed the GPU process waiting seconds for the GPU, in `GLContextEGL::MakeCurrent`. With the
-tree's draws skipped and nothing else changed, the frame took 3.6 ms of GPU time at 120 frames a
-second. So the GPU ran the tree's draws for seconds a frame.
+frame's list replayed in under 50 ms, and the engine's threads were idle.
 
-The same build drew a tree in one page with 32-bit indices at no such cost. The test terrain,
-spread 20 times wider, ran at 120 frames a second. It took 5.1 ms of GPU time with the 16-bit build
-and 5.5 ms with the 32-bit one. So the cost came with the split mesh's buffers: 12.5 MB of vertices
-and 52.6 MB of indices. This path keeps its 16-bit indices.
+The cause is ANGLE on Metal, which Chrome on the Mac runs WebGL2 on. Before each draw whose program
+has a flat varying, it copies the whole bound index buffer into a new one. The copy turns GLSL's
+last provoking vertex into Metal's first. The engine's programs all have flat varyings, from WGSL's
+`@interpolate(flat, either)`. A copy of a page's index list is small. The tree's list is 52.6 MB,
+and each range drawn from it made a copy of all of it:
 
-Standalone WebGL2 pages did not reproduce it. They drew 2,000 ranges from buffers of the same
-sizes and types, filled the same way. Their shader read the draw index, and they drew into a 4K
-target with four samples. Each round took 2 to 8 ms. So the cause lies in something that the
-engine's draws add, and the measurements did not isolate it.
+- `vmmap` of the GPU process listed 2,085 regions of exactly 50.2 MiB, the size of the tree's index
+  buffer. 12 s after the first frame, `footprint` put 101 GB of the process's 102 GB in
+  "IOAccelerator (graphics)". Chrome then restarted the GPU process.
+- `sample` showed Chrome's GPU thread in `-[_MTLCommandBuffer waitUntilCompleted]` in every sample.
+  Metal's submission thread waited in the kernel. A Metal System Trace showed 3 ms of GPU work from
+  the page in 8 s, and one command buffer that spent 4,878 ms in the driver.
+- Timing each call against the GPU hid the fault: with a wait for the GPU before each tree call,
+  a frame took 20 ms. So the per-call timings measured small figures, and only a pipelined frame
+  grew the memory.
+- A standalone page reproduced it with one flat varying. Ten rounds of 2,000 ranges from a 52.6 MB
+  list took 47,782 ms and grew its GPU process to 409 GB. Without the varying they took 191 ms, and
+  with a 2.4 MB list 991 ms. The earlier standalone pages had no flat varying.
+- Changing the upload path, or drawing each range with its own call instead of a multi-draw call,
+  left the copies as they were. The vertex format, the 4K target, the draw index and the copies of
+  the draw records into textures were each ruled out the same way.
 
-A route that keeps every buffer as small as a page should avoid it. It would cut the tree into
-windows of at most 65,535 vertices, as the parts cut the mesh. Each window would hold a copy of the
-vertices its patches use, with 16-bit indices. A patch, at 128 triangles, always fits one window. The calls
-would then split at each window's end. It is not built.
+`WEBGL_provoking_vertex` lets a page pick the first-vertex convention, which Metal draws without a
+copy. WGSL's `either` allows any vertex, and the WebGPU path takes the first already. The backend
+picks it at start where the extension exists (`useFirstProvokingVertex` in
+`packages/engine/src/gpu/webgl2/backend.ts`). With it the standalone page took 193 ms. The tree
+from its own copy drew 263,009 triangles a frame at 8.4 ms intervals, in a GPU process of 1.7 GB.
+A browser without the extension keeps the last-vertex rule and its copies.
+
+So the window design is not needed for this fault. The route with a copy of the vertices and
+32-bit indices is the one to build again, behind the extension. A browser without the extension
+should keep whole levels for a mesh of several parts.
 
 ### The draw-record buffer's memory
 
