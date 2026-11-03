@@ -3,12 +3,12 @@ id: api/vegetation
 title: "Vegetation (@null3d/vegetation)"
 status: experimental
 since: "0.3"
-summary: "The plant core that grows each species from its own record and a seed, stand-in species until the species ship, and the scatter that places plants by ecological rules over a ground read once into maps."
+summary: "The plant core that grows each species from its own record and a seed, the pedunculate oak as its first species, stand-ins for the rest, and the scatter that places plants by ecological rules."
 ---
 
 # Vegetation (@null3d/vegetation)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The species are being rebuilt: no species ships yet, so a page draws stand-ins in their place. Built: the self-organizing growth that broadleaves, pines, shrubs and hedges use, and the leaves and shoots: leaf meshes from each species' texture outline, compound leaves, needles and fascicles, shoot prototypes with their buds, their places on the plant, the seasons and extras, and the shoot cards baked from them. Built too: the wood, the plant material, the coarseness options that grow a simpler plant, bracken's fronds (the frond builder and the frond colony that grows them), and the ground plants' growth: rosettes of broad ribbed leaves on long stalks, and tufts of grass and sedge blades with their flowering stems, panicles and hanging spikes. Not built yet: the other growth models, near pool and far cards. The grass's compute-built blades and near shadows are not built yet either. This page covers the plant core's records and stages, the stand-ins, the scatter, the grass's CPU path and the floating leaves that ride the wind.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The species are being rebuilt: the pedunculate oak ships, and a page draws stand-ins for the other species. Built: the self-organizing growth that broadleaves, pines, shrubs and hedges use, and the leaves and shoots: leaf meshes from each species' texture outline, compound leaves, needles and fascicles, shoot prototypes with their buds, their places on the plant, the seasons and extras, and the shoot cards baked from them. Built too: the wood, the plant material, the placement of a species' copies at fixed places with real shoots near the camera, the coarseness options that grow a simpler plant, bracken's fronds (the frond builder and the frond colony that grows them), and the ground plants' growth: rosettes of broad ribbed leaves on long stalks, and tufts of grass and sedge blades with their flowering stems, panicles and hanging spikes. Not built yet: the other growth models, the wind records, the level distances, the near pool and the far cards. The grass's compute-built blades and near shadows are not built yet either. This page covers the plant core's records and stages, the stand-ins, the scatter, the grass's CPU path and the floating leaves that ride the wind.
 
 ```mermaid
 flowchart LR
@@ -23,7 +23,7 @@ flowchart LR
 
 The `@null3d/vegetation` package grows plants from a record of numbers and a seed, and places them by ecological rules. Each species lives in a folder of its own, with its record, its entry and its textures. A page loads only the species that it places, and grows them in the engine's job workers at first use.
 
-The species are being rebuilt on the plant core. Until a species ships, a page names it by its id and gives the size and colors of a stand-in. The stand-in draws in its place, through the same calls that the species will take. So a scene keeps its scatter, placement, wind and far cards, and draws the real species as soon as it ships.
+The species are being rebuilt on the plant core, and the pedunculate oak is the first to ship. For a species that has not shipped, a page names it by its id and gives the size and colors of a stand-in. The stand-in draws in its place, through the same calls that the species will take. So a scene keeps its scatter, placement, wind and far cards, and draws the real species once it ships.
 
 ```sh
 bun add @null3d/vegetation
@@ -89,11 +89,11 @@ if (isSpeciesId(id)) {
 
 `loadSpecies(id)` loads one species as a chunk of its own, so a page fetches only the species it places. Its textures load later, when the page prepares it. `checkSpecies(record)` names every problem with a record at once. `capsFor(record)` gives the limits that the record's budget must stay under. The limits depend on the growth model.
 
-The stages run in order. First, `prepareSpecies` builds the kit once for each species: its leaf meshes, shoot prototypes, card atlas and records. Each variant then grows its skeleton, shoot rows, crown light, wind records and three detail levels. Then `bakeFarPlant` bakes its far cards. The job workers run `growPlant` and `bakeFarPlant`, and the calling thread runs `growPlantNow` and `bakeFarNow`. Last, `placePlants` draws a species' copies with their levels and far cards. A near pool from `createNearPool` keeps the real shoots near the camera within the preset's limits.
+The stages run in order. First, `prepareSpecies` builds the kit once for each species: its leaf meshes, shoot prototypes, card atlas and records. Each variant then grows its skeleton, shoot rows, crown light, wind records and three detail levels. Then `bakeFarPlant` bakes its far cards. The job workers run `growPlant` and `bakeFarPlant`, and the calling thread runs `growPlantNow` and `bakeFarNow`. Last, `placePlants` draws a species' copies with their levels and far cards. Without a near pool, it draws the first 16 copies of a species with real shoots near the camera. It composes them once at setup, which suits a hero tree or a small garden. Past the distance where a shoot spans the record's first switch pixels, each copy shows its shoot cards instead, pixel by pixel. A near pool from `createNearPool` will move the real shoots with the camera within the preset's limits.
 
 Every value that reaches geometry comes from an integer hash and the core's own trigonometry. So a variant has the same bytes in every browser. `plantAssetDigest(asset)` hashes those bytes to compare two growths.
 
-A stage that is not built yet throws a `NotBuiltError`. A kit built with `placeholders: true` grows a simple stand-in at every stage, built or not, so a stand-in species draws the same while the real stages land. A kit built with `placeholders: 'missing'` runs every built stage and grows a stand-in only where a stage is not built yet, so a species can grow through its own stages before the rest exist. No shipped species draws a stand-in.
+A stage that is not built yet throws a `NotBuiltError`. A kit built with `placeholders: true` grows a simple stand-in at every stage, built or not, so a stand-in species draws the same while the real stages land. A kit built with `placeholders: 'missing'` runs every built stage and grows a stand-in only where a stage is not built yet, so a species can grow through its own stages before the rest exist. Prepare the oak that way until its wind records, level distances and far cards are built. It then loads its own textures and grows its own skeleton, shoots, leaves, wood and cards.
 
 ### Keeping results
 
