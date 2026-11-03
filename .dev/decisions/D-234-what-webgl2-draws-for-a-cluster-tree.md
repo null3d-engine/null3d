@@ -87,6 +87,45 @@ that a tree's indices depend on: a run can hold two trees, and each must bind it
 class of fault is per-page state that a new buffer path has to apply, and a path that uploads its
 own indices inherits it.
 
+### Meshes of several parts
+
+A page holds at most 65,535 vertices, which its 16-bit indices reach. A mesh of more vertices fills
+several pages, so a tree's indices cannot name its vertices through one page. Such a mesh draws
+the whole levels that the tool cuts from its tree on this path. The WebGPU path draws its patches
+from one shared buffer ([D-213](D-213-cluster-levels.md#meshes-of-several-parts)).
+
+A route for WebGL2 was built and measured, then taken out. It gave the tree a vertex buffer of its
+own: a copy of the mesh's parts' vertices, one after another, with 32-bit indices into it. The test
+was the desert benchmark of the meshlet comparison, with its ground alone (`props=0`). The ground
+has 2,000,000 triangles, 1,002,001 vertices and a tree of 32,768 patches. Chrome on the Mac, at
+Medium:
+
+| Build | Triangles a frame | Frame interval |
+| --- | --- | --- |
+| Whole levels | 4,000,007 | 8.3 ms, 120 frames a second |
+| The tree from its own copy | about 290,000 | 5,300 to 9,000 ms |
+
+The picture was right, and the walk drew about 2,285 ranges a frame in calls of up to 256. Each
+frame's list replayed in under 50 ms, and the engine's threads were idle. A Chrome trace
+showed the GPU process waiting seconds for the GPU, in `GLContextEGL::MakeCurrent`. With the
+tree's draws skipped and nothing else changed, the frame took 3.6 ms of GPU time at 120 frames a
+second. So the GPU ran the tree's draws for seconds a frame.
+
+The same build drew a tree in one page with 32-bit indices at no such cost. The test terrain,
+spread 20 times wider, ran at 120 frames a second. It took 5.1 ms of GPU time with the 16-bit build
+and 5.5 ms with the 32-bit one. So the cost came with the split mesh's buffers: 12.5 MB of vertices
+and 52.6 MB of indices. This path keeps its 16-bit indices.
+
+Standalone WebGL2 pages did not reproduce it. They drew 2,000 ranges from buffers of the same
+sizes and types, filled the same way. Their shader read the draw index, and they drew into a 4K
+target with four samples. Each round took 2 to 8 ms. So the cause lies in something that the
+engine's draws add, and the measurements did not isolate it.
+
+A route that keeps every buffer as small as a page should avoid it. It would cut the tree into
+windows of at most 65,535 vertices, as the parts cut the mesh. Each window would hold a copy of the
+vertices its patches use, with 16-bit indices. A patch, at 128 triangles, always fits one window. The calls
+would then split at each window's end. It is not built.
+
 ### The draw-record buffer's memory
 
 A multi-draw record is 16 bytes, and a call binds a block of 256 records, so a block takes 4,096
@@ -118,17 +157,19 @@ The fallback:
 - The asset tool writes the levels whenever it writes a tree, whatever `--lod` says. A mesh that
   already has levels in its file keeps them.
 - A mesh that one scene object does not draw keeps its levels on both paths: a mesh that several
-  copies draw, a mesh split over several parts, and an instance batch. The GPU pass also needs one
-  copy and one part, so this covers the same meshes on both paths.
+  copies draw, and an instance batch. The GPU pass also needs one copy, so this covers the same
+  meshes on both paths.
+- A mesh split over several parts keeps its levels on WebGL2, and draws its patches on WebGPU
+  ([Meshes of several parts](#meshes-of-several-parts)).
 
 Each fallback case has a test that fails if the case draws patched instead:
 
 - **More than one copy:** `a_tree_with_two_copies_keeps_its_whole_levels` in `tests/cpu_culled.rs`,
   and `the_gpu_path_keeps_a_trees_levels_when_two_objects_draw_the_mesh` in `tests/levels.rs`.
   Two objects share a bucket, so its count is two and the walk has no single matrix.
-- **More than one part:** `a_tree_split_into_parts_keeps_its_whole_levels` on WebGL2 and
-  `the_gpu_path_keeps_a_trees_levels_when_its_mesh_fills_several_parts` on the GPU, each of which
-  builds a grid past 65,535 vertices and asserts that it fills more than one part.
+- **More than one part, on WebGL2:** `a_tree_split_into_parts_keeps_its_whole_levels`, which
+  builds a grid past 65,535 vertices and asserts that it fills more than one part. The GPU path
+  draws that grid's patches (`the_gpu_path_draws_the_tree_of_a_mesh_that_fills_several_parts`).
 - **An instance batch:** `a_one_row_batch_keeps_its_whole_levels`, which draws the tree's mesh as
   one batch row. The row carries its own matrix, and the walk takes a scene object's. The GPU
   path's scan also reads scene object keys alone, which the same test's WebGL2 layout exercises.

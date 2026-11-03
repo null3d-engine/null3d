@@ -887,11 +887,7 @@ fn the_gpu_path_keeps_a_trees_levels_when_two_objects_draw_the_mesh() {
 }
 
 #[test]
-fn the_gpu_path_keeps_a_trees_levels_when_its_mesh_fills_several_parts() {
-    let mut plain = World::new();
-    let plain_mesh = plain.add_object(&grid(256, 256), Shading::Lit);
-    give_levels_to(&mut plain, plain_mesh, [grid(2, 2), grid(1, 1)]);
-    let without = indirect_draws(&mut plain);
+fn the_gpu_path_draws_the_tree_of_a_mesh_that_fills_several_parts() {
     let mut world = World::new();
     let mesh = world.add_object(&grid(256, 256), Shading::Lit);
     give_levels_to(&mut world, mesh, [grid(2, 2), grid(1, 1)]);
@@ -901,16 +897,23 @@ fn the_gpu_path_keeps_a_trees_levels_when_its_mesh_fills_several_parts() {
         .parts(settings.meshes().mesh(mesh - 1).unwrap(), false)
         .len();
     assert!(parts > 1, "the mesh of the test fills {parts} parts");
+    let without = indirect_draws(&mut world);
     world
         .renderer
         .set_mesh_patches(mesh, Some(one_patch_tree()))
         .unwrap();
-    // A patch's indices name one part's vertices, so a split mesh keeps its whole levels.
-    assert_eq!(indirect_draws(&mut world), without);
+    world.frame += 1;
+    // The parts lie one after another in one shared buffer, so the tree's 32-bit indices reach
+    // them all: one draw of the chosen patches replaces the parts' draws and the whole levels'.
+    let with = indirect_draws(&mut world);
+    assert!(
+        with < without,
+        "{with} draws with the tree, {without} without"
+    );
     assert!(
         world
             .commands()
             .iter()
-            .all(|(op, o)| !(*op == Op::CreateComputePipeline && o[1] == template::CLUSTER))
+            .any(|(op, o)| *op == Op::CreateComputePipeline && o[1] == template::CLUSTER)
     );
 }

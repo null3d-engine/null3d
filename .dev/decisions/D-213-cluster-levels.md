@@ -38,7 +38,7 @@ How the data was produced: `bun test packages/cli/src/assets/clusters.test.ts` a
 2. A patch's error is the largest of its children's errors plus the error of its own simplification, and at least 1.5 times the largest. Errors therefore rise strictly along every chain, which the draw rule needs. A step above the root that cannot lose a triangle ends the chain, so a patch never repeats its child's triangles.
 3. The tree is stored in `NULL3D_clusters` on the primitive, in three accessors: the indices of every patch one after another, four floats of each patch's sphere, and four integers of each patch's run, its parent and its error. The extension is not required, so other loaders draw the whole mesh.
 4. A mesh gets a tree when it has 20,000 triangles or more, no skin and no morph targets, a material that neither blends nor masks, and at most four copies. A mesh that bends has no fixed patch bounds, and many copies pay about twice their indices for no saving, so those meshes keep whole levels.
-5. The engine stores the tree against the mesh's id and checks it against the mesh's vertices. The WebGPU path draws the chosen patches ([Drawing on WebGPU](#drawing-on-webgpu)), and the WebGL2 path draws them on the job workers where the device has `WEBGL_multi_draw`. Every other path draws the whole levels cut from the tree ([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)). [D-231](D-231-cluster-levels-cost.md) records what the pass costs.
+5. The engine stores the tree against the mesh's id. It rewrites the tree's indices into the order of the vertices that the mesh's parts hold, and checks them against those vertices ([Meshes of several parts](#meshes-of-several-parts)). The WebGPU path draws the chosen patches ([Drawing on WebGPU](#drawing-on-webgpu)), and the WebGL2 path draws them on the job workers where the device has `WEBGL_multi_draw`. Every other path draws the whole levels cut from the tree ([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)). [D-231](D-231-cluster-levels-cost.md) records what the pass costs.
 
 ## Consequences
 
@@ -74,6 +74,62 @@ The copy it reads is the bucket's own: a mesh draws its patches only where its b
 and the copy's matrix, so a mesh that draws several copies draws its whole triangle list.
 The level rule reads the view's factor as whole levels do, but not a per-object bias.
 
+### Meshes of several parts
+
+The pages keep 16-bit indices. WebGL2 reads the index 65,535 as a primitive restart, so a mesh of
+more vertices splits into parts of at most 65,535 vertices. Each part copies the vertices that its
+triangles use. A tree's indices name the mesh's own vertices, so they can draw only a mesh in one
+part. The desert benchmark of the meshlet comparison has a ground of 2,000,000 triangles and
+1,002,001 vertices. On WebGPU it drew all 2,000,001 of its triangles in every frame
+(`?props=0&direct=off`).
+
+The pass's list and its indirect draw are 32-bit, so they reach any vertex of one vertex buffer.
+Two changes let them reach a split mesh:
+
+1. The engine rewrites the tree's indices into the order of the parts' vertices, one part after
+   another (`MeshStorage::to_part_order`). It does so when the tree or a band of it arrives. A
+   vertex that two parts copy takes its first copy, which holds the same bytes.
+2. On shared buffers, a split mesh puts all its parts into one buffer, one after another
+   (`MeshStorage::split`). It does so when one buffer can hold them all. A counting pass sizes
+   the parts first, so the placement fails before it changes a page. A removal moves the parts
+   together, so they stay in one run. The pass's draw then reads that buffer from the first
+   part's base vertex (`MeshStorage::joined_parts`).
+
+The layout draws a tree only over parts that lie in one run, so a mesh that one buffer cannot hold
+draws whole levels. A shared buffer holds at most the storage binding's bytes, 128 MiB by default.
+That is about 4 million vertices of 32 bytes, or 11 million of the ground's 12 bytes. The trees
+that the camera's layout draws also share the binding. The scene's index table and each view's
+list take 4 bytes an index, so they hold about 33 million indices in all. The copy step runs a
+workgroup for each patch in one dispatch. One axis of a dispatch takes at most 65,535 workgroups,
+so the trees share at most that many patches. The ground's 32,768 patches take half of them, so a mesh of about
+4 million triangles fills the dispatch. The layout takes the trees in scene order. A tree that
+does not fit draws whole levels, where it used to fail the frame
+(`a_tree_past_the_cluster_binding_draws_whole`, `a_tree_past_one_dispatch_of_patches_draws_whole`).
+Spreading the copy over rows, as the skinning pass spreads its workgroups, lifts the patch limit.
+
+The desert benchmark's figures, on the Mac's Chrome with WebGPU at Medium, `view=walk&direct=off`,
+a median over 5 s after 3 s of warm-up:
+
+| Page | Triangles a frame, before | After | Draw calls, before | After |
+| --- | --- | --- | --- | --- |
+| The ground alone (`props=0`) | 2,000,001 | 139,929 | 57 | 2 |
+| The whole desert | 13,671,589 | 11,713,827 | 214 | 159 |
+
+The ground alone draws 14 times fewer triangles. Other runs shared the GPU, so the record keeps no
+GPU time from these runs. The `props=0` switch is a local copy's, which leaves the props out.
+
+Pictures from `engine.capture()` of the walk and aerial views match the whole mesh's. The one
+difference is a few small holes in the middle distance, where a patch is missing. A wrong vertex would draw
+stretched triangles instead. The WebGL2 copy reached its vertices another way and showed the
+same holes ([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md#meshes-of-several-parts)). So
+they come from the tree's patch bounds and errors, which this change does not touch.
+
+Rejected: a vertex buffer of the tree's own, a copy of the parts' vertices. The parts already
+lie in one shared buffer here, so it would cost the mesh's vertex bytes for nothing. WebGL2's
+pages hold too few vertices for one run, so such a copy was built and measured there. The GPU ran
+the tree's draws for seconds a frame. So that path keeps whole levels for a mesh of several parts
+([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md#meshes-of-several-parts)).
+
 ### The pass's shader waits for a tree
 
 The cluster pass's shader lives in the `cluster_levels` file, which loads on first use, not in the
@@ -99,11 +155,15 @@ does not create it again.
 | The view's list | 4 bytes an index, sized for every patch in the tree rather than the chosen ones: 808,128 bytes for the test model |
 | The scene's tables | 32 bytes a patch and 4 bytes an index, shared by every view: 824,480 bytes for the test model |
 | Per-view buffers, allocated | About 1.16 MiB for the test model, half again the bytes in use |
+| The benchmark's ground | 2,000,000 triangles and 1,002,001 vertices in 16 parts or more, a tree of 32,768 patches and 13,154,310 indices |
+| The ground's scene tables | 1 MiB of patches and 52.6 MB of indices, 41% of the 128 MiB binding |
+| The ground's view list | 52.6 MB for each camera view, and 256 KiB of runs and offsets |
+| The ground's vertices | None beyond its parts, which share one buffer |
 | GPU time | [D-231](D-231-cluster-levels-cost.md) |
 
 The list is the cost the plan expected, and larger: it holds every patch's indices, so a view never
-sizes a buffer again mid-frame, but a 1,000,000-triangle mesh takes about 8 MB for each view. Sizing
-it per frame, as M3-L2 sizes the copy lists, is the trim it owes.
+sizes a buffer again mid-frame, but a 1,000,000-triangle mesh takes about 8 MB for each view, and
+the ground's 52.6 MB. Sizing it per frame, as M3-L2 sizes the copy lists, is the trim it owes.
 
 `tests/image/cluster-cost.spec.ts` times the test model at three camera distances, on both GPU
 paths and each quality preset, and prints the figures. [D-231](D-231-cluster-levels-cost.md) holds
@@ -122,3 +182,8 @@ them.
 - A mesh that several copies draw, and a one-row instance batch, draw whole levels on both paths.
   [D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md) gives the WebGL2 routes and their
   figures.
+- On WebGPU, a mesh whose parts no one shared buffer holds, past 128 MiB of vertices, draws whole
+  levels. So does a tree that would take the cluster tables past the storage binding, or the
+  scene's patches past one dispatch ([Meshes of several parts](#meshes-of-several-parts)).
+- On WebGL2, a mesh of several parts draws whole levels
+  ([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md#meshes-of-several-parts)).
