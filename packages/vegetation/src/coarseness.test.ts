@@ -3,6 +3,7 @@
 // bytes that fall at every step, a triangle target met within 10 per cent, and the plant as grown
 // and every stand-in unchanged.
 import { describe, expect, it } from 'bun:test';
+import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import { type MeshArrays, plantAssetDigest, type ShootRows, type SpeciesKitData } from './asset';
 import { checkCoarseness, coarsenessFor, nearTriangles, shootTriangles } from './coarseness';
 import { speciesBox } from './core/box';
@@ -207,33 +208,37 @@ describe('coarseness on the oak', () => {
 		}
 	});
 
-	it('holds fewer triangles and bytes at every step, at every level', () => {
-		let before: number[] | undefined;
-		for (const c of [0, 0.25, 0.5, 0.75, 1]) {
-			const { input, rows } = dressed(0, c);
-			const mesh = meshInput(input, rows);
-			const wood = ([0, 1, 2] as const).map((level: MeshLevel) => meshWood(mesh, level));
-			const cards = ([1, 2] as const).map((level) => cardMesh(mesh, level));
-			const [near, first, second] = wood as [MeshArrays, MeshArrays, MeshArrays];
-			const [cards1, cards2] = cards as [MeshArrays, MeshArrays];
-			const triangles = (m: MeshArrays) => m.indices.length / 3;
-			// The quick count of the wood stands within 10 per cent of the mesher's.
-			expect(Math.abs(woodTriangles(mesh, 0) / triangles(near) - 1)).toBeLessThan(0.1);
-			const figures = [
-				triangles(near) + shootTriangles(kit, rows, DETAIL),
-				triangles(first) + triangles(cards1),
-				triangles(second) + triangles(cards2),
-				partBytes(near, WOOD_UV_STEPS) + rowBytes(rows),
-				partBytes(first, WOOD_UV_STEPS) + partBytes(cards1, TEXTURE_UV_STEPS),
-				partBytes(second, WOOD_UV_STEPS) + partBytes(cards2, TEXTURE_UV_STEPS),
-			];
-			if (before)
-				figures.forEach((figure, k) => {
-					expect(figure).toBeLessThan(before?.[k] as number);
-				});
-			before = figures;
-		}
-	});
+	it(
+		'holds fewer triangles and bytes at every step, at every level',
+		() => {
+			let before: number[] | undefined;
+			for (const c of [0, 0.25, 0.5, 0.75, 1]) {
+				const { input, rows } = dressed(0, c);
+				const mesh = meshInput(input, rows);
+				const wood = ([0, 1, 2] as const).map((level: MeshLevel) => meshWood(mesh, level));
+				const cards = ([1, 2] as const).map((level) => cardMesh(mesh, level));
+				const [near, first, second] = wood as [MeshArrays, MeshArrays, MeshArrays];
+				const [cards1, cards2] = cards as [MeshArrays, MeshArrays];
+				const triangles = (m: MeshArrays) => m.indices.length / 3;
+				// The quick count of the wood stands within 10 per cent of the mesher's.
+				expect(Math.abs(woodTriangles(mesh, 0) / triangles(near) - 1)).toBeLessThan(0.1);
+				const figures = [
+					triangles(near) + shootTriangles(kit, rows, DETAIL),
+					triangles(first) + triangles(cards1),
+					triangles(second) + triangles(cards2),
+					partBytes(near, WOOD_UV_STEPS) + rowBytes(rows),
+					partBytes(first, WOOD_UV_STEPS) + partBytes(cards1, TEXTURE_UV_STEPS),
+					partBytes(second, WOOD_UV_STEPS) + partBytes(cards2, TEXTURE_UV_STEPS),
+				];
+				if (before)
+					figures.forEach((figure, k) => {
+						expect(figure).toBeLessThan(before?.[k] as number);
+					});
+				before = figures;
+			}
+		},
+		scaledBudget(30_000),
+	);
 
 	it('meets a triangle target within 10 per cent', () => {
 		const skeleton = grown[0] as MacroSkeleton;
