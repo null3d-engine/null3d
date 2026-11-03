@@ -23,6 +23,7 @@ import { type CoarsenessOptions, coarsenessFor, coarsenessKey } from './coarsene
 import { speciesBox } from './core/box';
 import { type MacroSkeleton, SkeletonBuilder } from './core/graph';
 import { hashText } from './core/hash';
+import { quatRotate } from './core/math';
 import { NotBuiltError } from './core/not-built';
 import {
 	emptyLevel,
@@ -457,8 +458,8 @@ function growCutting(
 }
 
 /**
- * The bounds that hold a piece's shoots as well as its wood: each row's reach about its place, by
- * its prototype's bounding radius.
+ * The bounds that hold a piece's shoots as well as its wood: every vertex of each row's prototype at
+ * the kit's tier, turned, scaled and placed as the row places it.
  */
 function rowBounds(
 	kit: SpeciesKitData,
@@ -467,13 +468,22 @@ function rowBounds(
 ): MacroSkeleton['bounds'] {
 	const min = [...start.min];
 	const max = [...start.max];
+	const tier = DETAILS.indexOf(kit.detail);
+	const p: [number, number, number] = [0, 0, 0];
 	for (let r = 0; r < rows.count; r++) {
-		const reach =
-			(kit.prototypes[rows.prototype[r] as number]?.radius ?? 0) * (rows.scale[r] as number);
-		for (let k = 0; k < 3; k++) {
-			const at = rows.position[r * 3 + k] as number;
-			min[k] = Math.min(min[k] as number, at - reach);
-			max[k] = Math.max(max[k] as number, at + reach);
+		const positions = kit.prototypes[rows.prototype[r] as number]?.tiers[tier]?.positions;
+		if (!positions) continue;
+		const scale = rows.scale[r] as number;
+		for (let i = 0; i < positions.length; i += 3) {
+			p[0] = (positions[i] as number) * scale;
+			p[1] = (positions[i + 1] as number) * scale;
+			p[2] = (positions[i + 2] as number) * scale;
+			quatRotate(rows.rotation, r * 4, p, p);
+			for (let k = 0; k < 3; k++) {
+				const at = (p[k] as number) + (rows.position[r * 3 + k] as number);
+				min[k] = Math.min(min[k] as number, at);
+				max[k] = Math.max(max[k] as number, at);
+			}
 		}
 	}
 	return {
