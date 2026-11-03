@@ -143,6 +143,13 @@ export const ClusterPatches = 58;
 /** The frame that `ClusterPatches` belongs to. The sketch thread writes it with the count. */
 export const ClusterPatchFrame = 59;
 /**
+ * The frame that the sketch held or replayed, as the page reports it: the frames that ran the
+ * session's steps. A held run records one more frame after it when a pass reads the frame before or
+ * a copied picture shows from it, and the thread that draws draws that one too, but it is no step
+ * of the session, so the reported number stays the held frame's.
+ */
+export const HeldFrame = 60;
+/**
  * The programs that may still be compiling in the background on WebGL2, as the thread that draws
  * found them at its last frame, for the development probe of the two-step pass.
  */

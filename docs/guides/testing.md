@@ -73,7 +73,7 @@ In hold mode, the engine does this:
 
 `createEngine` resolves once the frame is read back, and `engine.captureFrame()` returns that frame. `engine.mode.hold` gives the held time, and it is `null` for a live engine. After the held frame, the engine draws nothing more: it runs no frame loop, so `engine.measure()` finds no frames. The hold's result gives the held frame's own figures instead. The engine draws no frame before the held one, so the held frame creates every GPU object and uploads the whole scene.
 
-A hold at 1.5 seconds runs 91 frames: frame 1 at time 0, then 90 steps. In the last `onUpdate`, `time.now` is 1.5 and `time.frame` is 91.
+A hold at 1.5 seconds runs 91 frames: frame 1 at time 0, then 90 steps. In the last `onUpdate`, `time.now` is 1.5 and `time.frame` is 91. When a pass reads the frame before it, as screen-space bounce light does, the engine draws one more frame at the same sketch time after the held one, so the picture has the light that the earlier frame showed. That frame runs none of the sketch's code and adds no step, so the sketch still ends at frame 91 and the hold reports that number.
 
 The switch wins over the option. A bare `?hold` holds at the time of the `hold` option, or at 0 without one. The time must be from 0 to 600 seconds, or the start fails with [E1407](../errors/E1407.md).
 
