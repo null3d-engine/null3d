@@ -201,18 +201,13 @@ export default defineSketch(async (ctx) => {
 	// The camera stands at the route's opening pose now, so the shadows reach as far as it needs.
 	controls.fitShadows();
 
-	console.log(`[probe] controls posted at ${Math.round(performance.now())} ms`);
-	console.log(`[probe] town build starts at ${Math.round(performance.now())} ms`);
 	const land = createLand(ctx);
 	const sea = createSea(ctx);
 	createTown(ctx);
 	page.post('loading', 'Growing the trees');
-	console.log(`[probe] trees build starts at ${Math.round(performance.now())} ms`);
 	const trees = await createTrees(ctx, camera);
-	console.log(`[probe] trees built at ${Math.round(performance.now())} ms`);
 	// The stage writes the light its maps give before the first frame draws.
 	await Promise.all([sky, room]);
-	console.log(`[probe] maps in at ${Math.round(performance.now())} ms, setup ends`);
 
 	const eye: [number, number, number] = [0, 0, 0];
 	return {
