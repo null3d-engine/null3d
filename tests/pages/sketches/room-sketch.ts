@@ -1,6 +1,7 @@
 // The room scene (bench/scenes/room.ts): a room with a doorway in each wall, and a field of detailed
-// spheres outside that the walls hide, but for those seen through a doorway. The walls are
-// occluders. ?view= names the view to start in, by its place in the scene's list, 0 by default.
+// spheres outside that the walls hide, but for those seen through a doorway. No object is marked:
+// GPU occlusion culling picks the walls, and any other object that looks large, itself.
+// ?view= names the view to start in, by its place in the scene's list, 0 by default.
 // The render scale stays at 1 with the governor off, so frames compare from engine to engine and
 // time alike. ?segments= sets the segments around each sphere, to make hidden objects cost more.
 // On the page's 'view' message, with a view's place, the sketch turns the camera to that view. A few
@@ -40,20 +41,14 @@ export default defineSketch(({ scene, materials, geometry, quality, page }) => {
 	scene.setActiveCamera(camera);
 	scene.createDirectionalLight({ direction: [-0.4, -1, -0.6], intensity: 2 });
 	scene.createAmbientLight({ intensity: 0.4 });
-	const box = (
-		size: readonly number[],
-		position: readonly number[],
-		color: string,
-		occluder: boolean,
-	) =>
+	const box = (size: readonly number[], position: readonly number[], color: string) =>
 		scene.createMesh({
 			mesh: geometry.box({ width: size[0], height: size[1], depth: size[2] }),
 			material: materials.standard({ color, roughness: 0.9 }),
 			position: [position[0] ?? 0, position[1] ?? 0, position[2] ?? 0],
-			occluder,
 		});
-	box(ROOM_GROUND.size, ROOM_GROUND.position, ROOM_COLORS.ground, false);
-	for (const wall of ROOM_WALLS) box(wall.size, wall.position, ROOM_COLORS.wall, true);
+	box(ROOM_GROUND.size, ROOM_GROUND.position, ROOM_COLORS.ground);
+	for (const wall of ROOM_WALLS) box(wall.size, wall.position, ROOM_COLORS.wall);
 	const sphere = geometry.sphere({
 		radius: SPHERE_RADIUS,
 		widthSegments: SEGMENTS,

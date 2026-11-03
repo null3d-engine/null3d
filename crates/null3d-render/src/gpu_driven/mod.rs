@@ -83,13 +83,15 @@
 //! # Occlusion culling
 //!
 //! With two-phase occlusion culling, each camera view culls twice (see [`cull`] and [`pyramid`]).
-//! The first phase keeps the objects in view that drew in the view's last frame, and the occluders'
-//! pass draws their depth alone, into a depth target of its own, with the depth prepass's
-//! pipelines and bundle. A compute pass then builds the view's depth pyramid from that depth, and
-//! the second phase tests every object in view against it. The opaque pass draws the visible ones,
-//! as it does without occlusion culling. Every object that the depth test would show is visible to
-//! the second phase, so the image matches culling without the pyramid. Shadow views cull in one
-//! phase.
+//! The first phase keeps the opaque objects in view that drew in the view's last frame and look
+//! large, and the occluders' pass draws their depth alone, into a depth target of its own, with the
+//! depth template's pipelines and a bundle of the buckets that held occluders lately. A compute
+//! pass then builds the view's depth pyramid from that depth, and the second phase tests every
+//! object in view against it. The depth prepass, where it runs, and the opaque pass draw the
+//! visible ones, as they do without occlusion culling. Every object that the depth test would show
+//! is visible to the second phase, so the image matches culling without the pyramid. Shadow views
+//! cull in one phase. A check during play turns the extra passes off while they do not pay (see
+//! [`occlusion_check`]).
 //!
 //! # Depth prepass
 //!
@@ -142,6 +144,7 @@ mod feature_rows;
 mod layout;
 mod lights;
 mod motion;
+mod occlusion_check;
 mod opaque;
 mod pyramid;
 mod shadow;
@@ -188,7 +191,7 @@ use crate::motion::MotionIds;
 use crate::output::{Antialias, SceneColor};
 use crate::particles::{ParticleIds, ParticlePass};
 use crate::physical_sky::{self, PhysicalSkyIds, PhysicalSkyPass};
-use crate::pipelines::{PipelineCache, Prepass};
+use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::probe_grid;
 use crate::probes::{self, ProbeTextures};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
@@ -587,8 +590,11 @@ mod ids {
     pub const PASS_READ_BUFFERS: u32 = PICK_GROUP + 1;
     /// The buffers of the sky maps' light captures, one for each read that may wait for the GPU.
     pub const SKY_LIGHT_BUFFERS: u32 = PASS_READ_BUFFERS + crate::readback::RING as u32;
+    /// The buffers of the occlusion check's reads of the camera's counts, one for each read that
+    /// may wait for the GPU.
+    pub const OCCLUSION_READ_BUFFERS: u32 = SKY_LIGHT_BUFFERS + crate::sky_maps::LIGHT_RING as u32;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = SKY_LIGHT_BUFFERS + crate::sky_maps::LIGHT_RING as u32;
+    pub const TARGETS: u32 = OCCLUSION_READ_BUFFERS + super::occlusion_check::READ_RING as u32;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The scratch textures and state views of the fragment forms of compute passes, above every
@@ -834,6 +840,10 @@ mod ids {
     pub const fn prepass_bundle(view: ViewId) -> u32 {
         1 + MAX_VIEW_IDS as u32 + view.index() as u32
     }
+    /// Each camera view's bundle of its occluders' pass, after every view's prepass bundle.
+    pub const fn occluders_bundle(view: ViewId) -> u32 {
+        1 + 2 * MAX_VIEW_IDS as u32 + view.index() as u32
+    }
 
     /// The motion view's bundle for each frame parity: its own, and the place of a depth prepass's
     /// bundle, which the motion view has none of.
@@ -1000,6 +1010,13 @@ pub struct GpuDrivenRenderer {
     direct: Direct,
     /// Each camera view's depth pyramid, with occlusion culling.
     pyramids: Pyramids,
+    /// The check that turns occlusion culling's passes off while they do not pay, the reads of the
+    /// camera's counts that it judges by, and the buckets that the occluders' pass draws.
+    check: occlusion_check::OcclusionCheck,
+    count_reads: occlusion_check::CountReads,
+    occluder_buckets: occlusion_check::OccluderBuckets,
+    /// A number that changes each time the scene's layout is built, so a read names its layout.
+    layout_epoch: u32,
     lines: LinesPass,
     /// The sources of the transparent pass, and each camera view's sorted rows.
     sorted: SortedLayout,
@@ -1301,6 +1318,10 @@ impl GpuDrivenRenderer {
             clusters: clusters::Clusters::default(),
             direct: Direct::default(),
             pyramids: Pyramids::default(),
+            check: occlusion_check::OcclusionCheck::default(),
+            count_reads: occlusion_check::CountReads::default(),
+            occluder_buckets: occlusion_check::OccluderBuckets::default(),
+            layout_epoch: 0,
             lines: LinesPass::new(ids::LINES),
             sorted: SortedLayout::default(),
             transparent: Transparent::default(),
@@ -1566,6 +1587,14 @@ impl GpuDrivenRenderer {
         // A failure before the bound is known leaves no bound to compare, so a later frame retries
         // only on a changed scene.
         self.frame_bound = 0;
+        // The occlusion check takes the counts that landed since the frame before, and the
+        // occluders' pass the buckets that held occluders in them.
+        if let Some(landed) = self.count_reads.take() {
+            self.check.land(landed.counts);
+            if landed.layout == self.layout_epoch && !landed.draws.is_empty() {
+                self.occluder_buckets.update(&self.layout, landed.draws);
+            }
+        }
         // A draw whose count the GPU writes needs the indirect path: the direct path reads every
         // count on the CPU and creates no indirect buffer for the frame's count copy. The first
         // frame picks the builder's path, so a scene that holds such a draw takes the indirect one.
@@ -1688,6 +1717,7 @@ impl GpuDrivenRenderer {
             )?;
             self.skinning.open_before_first_frame(input.pipelines_built);
             let targets = self.graph.scene_targets();
+            self.layout.set_occluder_pass(self.graph.occlusion());
             self.layout.rebuild(
                 &self.settings,
                 &mut self.pipelines,
@@ -1705,6 +1735,8 @@ impl GpuDrivenRenderer {
                 !self.config.direct_draws,
             )?;
             self.layout_prepass = self.graph.depth_prepass();
+            self.layout_epoch = self.layout_epoch.wrapping_add(1);
+            self.occluder_buckets.reset(&self.layout);
             let (skinning, layout) = (&self.skinning, &self.layout);
             // The moment layer draws every blended surface that it has a build for, so while the
             // quality setting turns it on the weighted layer draws nothing.
@@ -2094,6 +2126,8 @@ impl GpuDrivenRenderer {
             .expect("the builder's graph binds a shadow atlas");
         let first_new = self.views_made;
         let depth_pass = self.graph.depth_pass(Prepass::DepthTemplate);
+        // The depth prepass and the occluders' pass both draw with the depth template's group.
+        let depth_group = depth_pass != Prepass::Off || occlusion;
         let ao_texture = self.graph.ao_texture().unwrap_or(ids::BLANK_AO);
         // Only the camera's view copies its opaque color for surfaces that let light through.
         // The probes own the frame group's shared array, which the light tables write into, so they
@@ -2139,9 +2173,8 @@ impl GpuDrivenRenderer {
                 opaque::create_frame_buffer(list, view)?;
                 self.culling.add_view(list, view)?;
             }
-            // Ambient occlusion can switch the prepass on after a view first drew, and
-            // occlusion culling's occluders' pass draws into the same depth.
-            if depth_pass != Prepass::Off && (index >= self.prepass_views || values_remade) {
+            // Ambient occlusion can switch the prepass on after a view first drew.
+            if depth_group && (index >= self.prepass_views || values_remade) {
                 shadow::bind_depth(list, ids::prepass_group(view), view)?;
             }
             if index >= first_new || self.graph.textures_made() || values_remade || probes_remade {
@@ -2161,7 +2194,7 @@ impl GpuDrivenRenderer {
             }
         }
         self.views_made = self.views_made.max(views);
-        if depth_pass != Prepass::Off {
+        if depth_group {
             self.prepass_views = self.prepass_views.max(views);
         }
         // Each depth pyramid of a view that culls in two phases, whose new buffer its culling
@@ -2573,16 +2606,23 @@ impl GpuDrivenRenderer {
             first_new
         };
         let scene_targets = self.graph.scene_targets();
+        // The occluders' pass draws the buckets that held occluders lately, so a change of them
+        // records its bundle again.
+        let occluders_changed = self.occluder_buckets.take_changed();
         for index in 0..views {
             let view = ViewId::from_index(index);
             let pyramid_made = pyramids_made & (1 << index) != 0;
             let records = index >= first_to_apply;
+            let occludes = occlusion && self.graph.occludes(view);
+            let redepth = occludes && occluders_changed && !self.config.direct_draws;
             if !records && !pyramid_made {
+                if redepth {
+                    self.record_occluders(list, view, scene_targets.occluder_depth())?;
+                }
                 continue;
             }
-            let recreated = shared_recreated || pyramid_made;
             let (layout, meshes) = (&self.layout, &self.meshes);
-            let occludes = occlusion && self.graph.occludes(view);
+            let recreated = shared_recreated || pyramid_made;
             if self.config.direct_draws {
                 self.culling
                     .apply_direct(list, view, layout, binding_bytes)?;
@@ -2593,14 +2633,17 @@ impl GpuDrivenRenderer {
                     .apply(list, view, layout, clusters_recreated, binding_bytes)?;
             }
             if !records || self.config.direct_draws {
+                if redepth {
+                    self.record_occluders(list, view, scene_targets.occluder_depth())?;
+                }
                 continue;
             }
-            // With occlusion culling, the opaque pass draws the second set of indirect draws, and
-            // the occluders' pass the first, into its depth target alone.
-            let (first_draw, depth_targets) = if occludes {
-                (layout.draws.len() as u32, scene_targets.occluder_depth())
+            // With occlusion culling, the depth prepass and the opaque pass draw the second set of
+            // indirect draws, and the occluders' pass the first, into its depth target alone.
+            let first_draw = if occludes {
+                layout.draws.len() as u32
             } else {
-                (0, scene_targets)
+                0
             };
             // A view leaves out the objects whose maps show a target that it does not read.
             let hidden_targets = self.settings.hidden_targets(view);
@@ -2624,11 +2667,14 @@ impl GpuDrivenRenderer {
                     view,
                     layout,
                     meshes,
-                    depth_targets,
+                    scene_targets,
                     depth,
-                    0,
+                    first_draw,
                     &hidden,
                 )?;
+            }
+            if occludes {
+                self.record_occluders(list, view, scene_targets.occluder_depth())?;
             }
         }
         if outline_drawn && (upload_everything || buffers_remade || new_outline) {
@@ -2821,6 +2867,7 @@ impl GpuDrivenRenderer {
                         &detail,
                     )?;
                     let draws_before = if levels.is_some() {
+                        Culling::reset_counts(list, arena, view, layout, input.frame)?;
                         layout.draws.len() as u32
                     } else {
                         0
@@ -2835,6 +2882,7 @@ impl GpuDrivenRenderer {
                             levels: detail.uniform(),
                             draws_before,
                         },
+                        levels.is_some(),
                     )?;
                 }
                 let offsets = if self.config.direct_draws {
@@ -3179,15 +3227,23 @@ impl GpuDrivenRenderer {
         // step ended.
         self.copy_feature_counts(list, input.scene.world(parity).radii(), camera_view_mask())?;
 
+        // Without an object that may hide others, until occlusion culling's pipelines are built,
+        // or while its check finds that its passes do not pay, the frame draws no occluders' depth
+        // and builds no pyramid: each camera view culls once, as without occlusion culling, into
+        // the draws its opaque pass reads.
+        let plan = if occlusion
+            && self.layout.occluders() > 0
+            && self.pyramids.built(input.pipelines_built)
+        {
+            self.check.plan(input.frame)
+        } else {
+            occlusion_check::Plan::default()
+        };
+        let occluding = plan.occlude;
         let (layout, casters, culling, lines) =
             (&self.layout, &self.casters, &self.culling, &self.lines);
         let clusters = &self.clusters;
         let pyramids = &self.pyramids;
-        // Without marked occluders, or until occlusion culling's pipelines are built, the frame
-        // draws no occluders' depth and builds no pyramid: each camera view culls once, as without
-        // occlusion culling, into the draws its opaque pass reads.
-        let occluding =
-            occlusion && self.layout.occluders() > 0 && self.pyramids.built(input.pipelines_built);
         let (outlined, scattering) = (&self.outlined, &self.scattering);
         let tone = &self.tone;
         let moving = &self.moving;
@@ -3269,6 +3325,7 @@ impl GpuDrivenRenderer {
         let pick_group = self.pick.group;
         let pick_pixel = pick_frame.map(|(_, pixel)| pixel);
         let feature_layout = &self.layout;
+        let camera_two_sets = culling.occludes(ViewId::CAMERA);
         let feature_table = self.settings.feature_instances();
         let feature_radii = input.scene.world(parity).radii();
         let feature_rows = &self.feature_rows;
@@ -3302,19 +3359,20 @@ impl GpuDrivenRenderer {
                     let early = occluding && culling.occludes(view);
                     let phase = if early { Phase::Early } else { Phase::Once };
                     culling.record(list, view, layout_of(view), phase)?;
-                    // Cluster levels follow the phase that fills the draws that the view's opaque
-                    // pass reads: the late one where the view culls in two phases.
-                    if !early {
-                        clusters.record(list, view, layout_of(view))?;
-                    }
-                    Ok(())
+                    // Cluster levels follow each phase that fills draws: after the first, the
+                    // occluders' patches, which their pass draws, and after the late one, or the
+                    // only one, the patches that the view's opaque pass draws.
+                    clusters.record(list, view, layout_of(view), early)
                 }
-                Role::Prepass(view) | Role::Occluders(view) if drawn(view) => {
+                Role::Prepass(view) if drawn(view) => {
                     if direct_draws {
                         record_direct_view(list, view, Bundle::Prepass)
                     } else {
                         opaque::record(list, view, Bundle::Prepass)
                     }
+                }
+                Role::Occluders(view) if drawn(view) => {
+                    opaque::record(list, view, Bundle::Occluders)
                 }
                 Role::Opaque(view) | Role::Shadow(view) if drawn(view) => {
                     let backdrop = settings.draws_background(view);
@@ -3341,7 +3399,7 @@ impl GpuDrivenRenderer {
                 Role::Pyramid(view) if drawn(view) && occluding => pyramids.record(list, view),
                 Role::LateCull(view) if drawn(view) && occluding => {
                     culling.record(list, view, layout, Phase::Late)?;
-                    clusters.record(list, view, layout)
+                    clusters.record(list, view, layout, false)
                 }
                 Role::OutlineMask if drawn(ViewId::OUTLINE) || drawn(ViewId::TONE) => {
                     if drawn(ViewId::OUTLINE) {
@@ -3490,6 +3548,7 @@ impl GpuDrivenRenderer {
                     feature_table,
                     feature_radii,
                     camera_view_mask(),
+                    camera_two_sets,
                 )?;
                 copy_feature_counts(
                     list,
@@ -3497,6 +3556,7 @@ impl GpuDrivenRenderer {
                     feature_table,
                     feature_radii,
                     shadow_count_views,
+                    false,
                 )
             },
             |list| {
@@ -3521,6 +3581,19 @@ impl GpuDrivenRenderer {
             )?;
             self.settings.take_pick();
         }
+        // The occlusion check's counts copy once the camera's late culling phase has counted them.
+        if plan.read
+            && self.culling.occludes(ViewId::CAMERA)
+            && self.count_reads.record(
+                list,
+                ViewId::CAMERA,
+                &self.layout,
+                self.layout_epoch,
+                input.frame,
+            )?
+        {
+            self.check.read_recorded();
+        }
         // A read of a compute pass's region copies it once the pass's runs have finished.
         if let Some(mut read) = self.settings.take_pass_read()
             && let Some((texture, size)) = self.graph.read_target(read.view as usize)
@@ -3539,6 +3612,28 @@ impl GpuDrivenRenderer {
         self.tiles
             .finish(input.frame, created_pipelines, input.pipelines_built);
         Ok(upload_everything)
+    }
+
+    /// Records the depth bundle that a two-phase view's occluders' pass replays into `targets`: the
+    /// buckets that held occluders lately, of those whose maps the view reads.
+    fn record_occluders(
+        &self,
+        list: &mut DrawList,
+        view: ViewId,
+        targets: PassTargets,
+    ) -> Result<(), RecordError> {
+        let hidden_targets = self.settings.hidden_targets(view);
+        let textures = self.settings.textures();
+        let hidden = |group| textures.group_pass_views(group) & hidden_targets != 0;
+        opaque::record_occluders_bundle(
+            list,
+            view,
+            &self.layout,
+            &self.meshes,
+            targets,
+            &hidden,
+            &self.occluder_buckets,
+        )
     }
 
     /// Makes each feature-instance draw's buffers when they do not exist or the capacity grew, and
@@ -3648,6 +3743,7 @@ impl GpuDrivenRenderer {
             self.settings.feature_instances(),
             radii,
             views,
+            self.culling.occludes(ViewId::CAMERA),
         )
     }
 
@@ -4071,6 +4167,23 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.lists.still()
     }
 
+    fn occluded_entries(&self, _frame: u32) -> Option<u32> {
+        if !self.graph.occlusion() {
+            return None;
+        }
+        // While the check keeps the passes off, nothing hides.
+        let counts = self.check.counts().filter(|_| self.check.on());
+        Some(counts.map_or(0, |counts| counts.hidden))
+    }
+
+    fn gpu_frame_time(&mut self, frame: u32, micros: u32) {
+        self.check.time(frame, micros);
+    }
+
+    fn set_occlusion_read_slot(&mut self, slot: u32) {
+        self.count_reads.set_slot(slot);
+    }
+
     fn casts_tile_shadows(&self) -> bool {
         self.tiles.shape().is_some()
     }
@@ -4139,6 +4252,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.culling.forget_gpu();
         self.clusters.forget_gpu();
         self.pyramids.forget_gpu();
+        self.count_reads.forget_gpu();
         self.views_made = 0;
         self.prepass_views = 0;
         self.cascades_made = 0;
@@ -4224,13 +4338,16 @@ const fn camera_view_mask() -> u64 {
 /// `views`, as a mask of their places in the view list. A feature's compute pass writes each word
 /// before the pass that draws it, so the frame copies the word again once every compute step has
 /// ended and before the first render step. The camera's own view and every shadow view take it, so
-/// an instance that the GPU counts draws and casts its shadow by that same count.
+/// an instance that the GPU counts draws and casts its shadow by that same count. With `two_sets`,
+/// the views cull in two phases, and the depth prepass and the opaque pass draw the second set of
+/// their draws, which takes it too.
 fn copy_feature_counts(
     list: &mut DrawList,
     layout: &Layout,
     features: &crate::feature_instances::FeatureInstanceTable,
     radii: &[f32],
     views: u64,
+    two_sets: bool,
 ) -> Result<(), RecordError> {
     if features.is_empty() || views == 0 {
         return Ok(());
@@ -4247,7 +4364,8 @@ fn copy_feature_counts(
             let place = places.trailing_zeros() as usize;
             places &= places - 1;
             let indirect = ids::indirect(ViewId::from_index(place));
-            for index in bucket.first_draw..bucket.first_draw + bucket.draws {
+            let first = u32::from(two_sets) * layout.draws.len() as u32 + bucket.first_draw;
+            for index in first..first + bucket.draws {
                 list.push(
                     Op::CopyBufferToBuffer,
                     &[count, 0, indirect, index * INDIRECT_BYTES + 4, 4],
@@ -4277,6 +4395,9 @@ mod tests {
         }
         for ring in 0..LIGHT_RING as u32 {
             reads.push(ids::SKY_LIGHT_BUFFERS + ring);
+        }
+        for ring in 0..super::occlusion_check::READ_RING as u32 {
+            reads.push(ids::OCCLUSION_READ_BUFFERS + ring);
         }
         for index in 0..MAX_VIEW_IDS {
             let view = ViewId::from_index(index);

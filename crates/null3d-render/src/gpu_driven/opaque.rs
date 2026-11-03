@@ -19,7 +19,10 @@
 //!
 //! A camera view that culls in two phases replays the depth bundle in its occluders' pass, a render
 //! pass of its own with no color target, from the first set of indirect draws. Its bundle then
-//! draws from the second set, which follows the first in the view's indirect buffer.
+//! draws from the second set, which follows the first in the view's indirect buffer. The depth
+//! bundle of such a view holds only the buckets that held occluders lately (see
+//! [`super::occlusion_check::OccluderBuckets`]), so the pass does not replay a draw of no
+//! instances for every other bucket.
 //!
 //! The outline view's bundle draws the outlined layout's buckets into the outline mask, twice: once
 //! to mark every part of each object, then again to mark the parts that nothing hides. It binds
@@ -42,6 +45,7 @@ use null3d_gpu::drawlist::{
 use super::cull::INDIRECT_BYTES;
 use super::ids;
 use super::layout::{Bucket, Layout};
+use super::occlusion_check::OccluderBuckets;
 use super::skin::DrawGroups;
 use crate::environment;
 use crate::frame::{MeshBuffers, RecordError, UploadArena};
@@ -285,8 +289,11 @@ pub(super) enum Bundle {
     /// The view's objects, each bucket with its pipeline and its material's maps: a camera view's
     /// opaque pass, or a shadow pass.
     Opaque,
-    /// The depth of the camera view's opaque objects, for the depth prepass or the occluders' pass.
+    /// The depth of the camera view's opaque objects, for the depth prepass.
     Prepass,
+    /// The depth of a camera view's occluders, for the occluders' pass of occlusion culling, into
+    /// a depth target of one sample.
+    Occluders,
     /// The outline view's objects into the outline mask: every bucket with the pipeline that marks
     /// every part, then every bucket again with the pipeline that marks the parts nothing hides.
     Outline,
@@ -311,6 +318,7 @@ impl Bundle {
                 ids::bundle(view)
             }
             Self::Prepass => ids::prepass_bundle(view),
+            Self::Occluders => ids::occluders_bundle(view),
             Self::Motion(parity) => ids::motion_bundle(parity),
         }
     }
@@ -333,8 +341,51 @@ pub(super) fn record_bundle(
     first_draw: u32,
     hidden: &dyn Fn(u32) -> bool,
 ) -> Result<(), RecordError> {
+    record_bundle_of(
+        list, view, layout, meshes, targets, kind, first_draw, hidden, None,
+    )
+}
+
+/// Records the depth bundle of a view that culls in two phases, which its occluders' pass replays:
+/// as [`record_bundle`] records a depth bundle, but only of the buckets that `occluders` draws.
+pub(super) fn record_occluders_bundle(
+    list: &mut DrawList,
+    view: ViewId,
+    layout: &Layout,
+    meshes: &MeshBuffers,
+    targets: PassTargets,
+    hidden: &dyn Fn(u32) -> bool,
+    occluders: &OccluderBuckets,
+) -> Result<(), RecordError> {
+    let kind = Bundle::Occluders;
+    record_bundle_of(
+        list,
+        view,
+        layout,
+        meshes,
+        targets,
+        kind,
+        0,
+        hidden,
+        Some(occluders),
+    )
+}
+
+/// Records a bundle as [`record_bundle`] does, of the buckets that `only` draws where it is given.
+#[allow(clippy::too_many_arguments)]
+fn record_bundle_of(
+    list: &mut DrawList,
+    view: ViewId,
+    layout: &Layout,
+    meshes: &MeshBuffers,
+    targets: PassTargets,
+    kind: Bundle,
+    first_draw: u32,
+    hidden: &dyn Fn(u32) -> bool,
+    only: Option<&OccluderBuckets>,
+) -> Result<(), RecordError> {
     let frame_group = match kind {
-        Bundle::Prepass => ids::prepass_group(view),
+        Bundle::Prepass | Bundle::Occluders => ids::prepass_group(view),
         Bundle::Subsurface => ids::frame_group(ViewId::CAMERA),
         Bundle::Motion(parity) => ids::motion_frame_group(parity),
         _ => ids::frame_group(view),
@@ -372,6 +423,7 @@ pub(super) fn record_bundle(
         counts: None,
         motion,
         scene: ids::MATERIAL_SCENE_GROUPS,
+        only,
     };
     match kind {
         Bundle::Opaque => {
@@ -387,6 +439,13 @@ pub(super) fn record_bundle(
             list,
             |b| b.prepass,
             |b| b.prepass_own,
+            |b| b.group,
+            |_| true,
+        )?,
+        Bundle::Occluders => draws.record(
+            list,
+            |b| b.occluder,
+            |b| b.occluder_own,
             |b| b.group,
             |_| true,
         )?,
@@ -419,7 +478,7 @@ pub(super) fn record_direct(
     hidden: &dyn Fn(u32) -> bool,
 ) -> Result<(), RecordError> {
     let frame_group = match kind {
-        Bundle::Prepass => ids::prepass_group(view),
+        Bundle::Prepass | Bundle::Occluders => ids::prepass_group(view),
         Bundle::Subsurface => ids::frame_group(ViewId::CAMERA),
         Bundle::Motion(parity) => ids::motion_frame_group(parity),
         _ => ids::frame_group(view),
@@ -443,6 +502,7 @@ pub(super) fn record_direct(
         hidden,
         counts: Some(counts),
         scene: ids::MATERIAL_SCENE_GROUPS,
+        only: None,
         motion: match kind {
             Bundle::Motion(parity) => Some(parity),
             _ => None,
@@ -462,6 +522,13 @@ pub(super) fn record_direct(
             list,
             |b| b.prepass,
             |b| b.prepass_own,
+            |b| b.group,
+            |_| true,
+        )?,
+        Bundle::Occluders => draws.record(
+            list,
+            |b| b.occluder,
+            |b| b.occluder_own,
             |b| b.group,
             |_| true,
         )?,
@@ -506,6 +573,7 @@ pub(super) fn record_pick(
         motion: None,
         // A pick build shades no surface, so its pipeline takes no scene group.
         scene: 0,
+        only: None,
     };
     draws.record(
         list,
@@ -539,6 +607,8 @@ struct Draws<'a> {
     /// The group that a bucket whose material reads the scene's depth binds: the blank texel, or
     /// 0 for a pass whose buckets bind none.
     scene: u32,
+    /// The buckets that the bundle draws, or `None` for every bucket.
+    only: Option<&'a OccluderBuckets>,
 }
 
 impl Draws<'_> {
@@ -567,13 +637,14 @@ impl Draws<'_> {
             counts,
             motion,
             scene,
+            only,
         } = *self;
         let (mut pipeline, mut vertices, mut indices) = (None, None, None);
         let mut last_vertices = None;
         let mut groups = DrawGroups::default();
         let mut bound = None;
         for (b, bucket) in layout.buckets.iter().enumerate() {
-            if !takes(bucket) {
+            if !takes(bucket) || only.is_some_and(|only| !only.draws(b)) {
                 continue;
             }
             let id = pipeline_of(bucket);

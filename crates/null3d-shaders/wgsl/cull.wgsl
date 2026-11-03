@@ -73,15 +73,22 @@
 // word per instance after the view's indirect draws, 1 when the instance drew in the view's last
 // frame. It shares their buffer, which frames reset only up to the draws, so that the culling
 // group stays within the eight storage buffers that every device allows a shader stage. `early`
-// keeps the instances in view that the sketch marks as occluders, whose history is 1, and that
-// cover at least the occluders' span of the screen, in the first set of indirect draws, and the view's occluders' pass draws their
-// depth. It counts them in the pyramid's first word. In a frame without occluders, the pyramid
-// skips its work and `late` tests nothing against it, so an open scene of small objects pays for
-// little more than a second culling dispatch. The GPU then builds the depth pyramid from that depth
-// (pyramid.wgsl): each level holds the farthest depth of each square of the level below it. `late`
-// tests every instance in view against the pyramid, writes its history, and keeps the visible
-// ones in the second set of indirect draws, after the first, which the view's opaque pass draws.
-// It writes over the bucket slices that the occluders' pass has finished reading.
+// keeps the instances in view that may hide others, whose history is 1, and that cover at least
+// the occluders' span of the screen, in the first set of indirect draws, and the view's occluders'
+// pass draws their depth. Every opaque instance whose bucket draws depth may hide others, unless
+// the page opts it out, so the entry's occluder bit marks it. `early` counts the occluders in the
+// pyramid's first word. In a frame without occluders, the pyramid skips its work and `late` tests
+// nothing against it, so an open scene of small objects pays for little more than a second
+// culling dispatch. The GPU then builds the depth pyramid from that depth (pyramid.wgsl): each
+// level holds the farthest depth of each square of the level below it. `late` tests every
+// instance in view against the pyramid, writes its history, and keeps the visible ones in the
+// second set of indirect draws, after the first, which the view's opaque pass draws. It writes
+// over the bucket slices that the occluders' pass has finished reading.
+//
+// `late` also counts, for the engine's check of what the culling saves, the instances in view
+// that would draw and those that the pyramid hides. Each workgroup sums its own in workgroup
+// memory and adds them with one atomic each to the two words after the history, which the frame
+// reads back.
 //
 // An instance hides when its bounding sphere lies behind the farthest depth of the pyramid's
 // texels under it. The sphere's bounds on the screen and its nearest depth come from interval
@@ -102,8 +109,8 @@
 // the move of whole cells that brings it nearest to the new matrix puts it right. An instance draws
 // its motion with the level of detail that the camera's view picks, without the fading band.
 
-/// An entry holds its bucket in the bits below OCCLUDER, the occluder mark at OCCLUDER, and the
-/// instance's cell index from CELL_SHIFT up.
+/// An entry holds its bucket in the bits below OCCLUDER, the mark of an instance that may hide
+/// others at OCCLUDER, and the instance's cell index from CELL_SHIFT up.
 const CELL_SHIFT: u32 = 23u;
 const OCCLUDER: u32 = 1u << 22u;
 /// Runs of the cell order that one dispatch covers at most.
@@ -112,6 +119,10 @@ const MAX_RANGES: u32 = 257u;
 const WORKGROUP_SIZE: u32 = 128u;
 /// Levels of the depth pyramid at most.
 const MAX_LEVELS: u32 = 16u;
+/// The words after a two-phase view's history that count, in a frame, the instances in view that
+/// would draw, then those that the pyramid hides.
+const TESTED_WORD: u32 = 0u;
+const HIDDEN_WORD: u32 = 1u;
 /// The smallest distance that the level rule compares, in meters. A camera inside an instance's
 /// bounds measures this distance, so the instance keeps its base level.
 const LEAST_DISTANCE: f32 = 1.0e-3;
@@ -296,8 +307,8 @@ fn ranges_of(index: u32) -> vec4f {
     return textureLoad(instance_ranges, vec2u(index & row, index >> 11u), 0);
 }
 
-/// An instance in the view: its bucket and its own index, whether the sketch marks it as an
-/// occluder, its matrix moved by its cell's offset, its bounding sphere relative to the camera, and
+/// An instance in the view: its bucket and its own index, whether it may hide others in occlusion
+/// culling, its matrix moved by its cell's offset, its bounding sphere relative to the camera, and
 /// the texel that holds its distance range. The bucket is `HIDDEN` for an instance that draws
 /// nowhere in the view: hidden, on none of the view's layers, or outside the frustum.
 struct Survivor {
@@ -580,7 +591,7 @@ fn main(
 
 #else ifndef OCCLUSION
 /// Culls once, against the frustum alone, into the first set of indirect draws, or for a camera
-/// view that culls in two phases, in a frame without marked occluders, into its second set.
+/// view that culls in two phases, in a frame that runs no occlusion phases, into its second set.
 @compute @workgroup_size(128)
 fn main(
     @builtin(workgroup_id) group: vec3u,
@@ -597,8 +608,8 @@ fn main(
 }
 
 #else
-/// The first occlusion phase: the occluders, the instances in view that the sketch marks as
-/// occluders, that drew in the view's last frame, and that look large enough on the screen.
+/// The first occlusion phase: the occluders, the instances in view that may hide others, that drew
+/// in the view's last frame, and that look large enough on the screen.
 @compute @workgroup_size(128)
 fn early(
     @builtin(workgroup_id) group: vec3u,
@@ -627,6 +638,11 @@ fn early(
     append(s, level, 0u);
 }
 
+/// The workgroup's counts of the instances in view that would draw and of those that the pyramid
+/// hides, which `late` adds to the counts after the history once per workgroup.
+var<workgroup> tested_here: atomic<u32>;
+var<workgroup> hidden_here: atomic<u32>;
+
 /// The second occlusion phase: tests every instance in view against the depth pyramid, keeps
 /// whether it is visible as its history, and appends the visible ones to the second set of draws.
 @compute @workgroup_size(128)
@@ -635,20 +651,38 @@ fn late(
     @builtin(local_invocation_index) lane: u32,
 ) {
     let i = instance_of(group.x, lane);
-    if i == NONE {
-        return;
+    if i != NONE {
+        let s = survivor(i);
+        if s.bucket == HIDDEN {
+            atomicStore(&indirect[params.occlusion.info.z + i], 0u);
+        } else {
+            let level = level_of(s);
+            // A hidden instance draws nothing, so its history says it did not draw.
+            let shown = !level.hidden;
+            let seen = shown && !occluded(s.center, s.radius);
+            atomicStore(&indirect[params.occlusion.info.z + i], select(0u, 1u, seen));
+            if seen {
+                append(s, level, params.occlusion.info.y);
+            }
+            if shown {
+                atomicAdd(&tested_here, 1u);
+            }
+            if shown && !seen {
+                atomicAdd(&hidden_here, 1u);
+            }
+        }
     }
-    let s = survivor(i);
-    if s.bucket == HIDDEN {
-        atomicStore(&indirect[params.occlusion.info.z + i], 0u);
-        return;
-    }
-    let level = level_of(s);
-    // A hidden instance draws nothing, so its history says it did not draw.
-    let seen = !level.hidden && !occluded(s.center, s.radius);
-    atomicStore(&indirect[params.occlusion.info.z + i], select(0u, 1u, seen));
-    if seen {
-        append(s, level, params.occlusion.info.y);
+    workgroupBarrier();
+    if lane == 0u {
+        let counts = params.occlusion.info.z + params.instance_count;
+        let tested = atomicLoad(&tested_here);
+        let hidden = atomicLoad(&hidden_here);
+        if tested != 0u {
+            atomicAdd(&indirect[counts + TESTED_WORD], tested);
+        }
+        if hidden != 0u {
+            atomicAdd(&indirect[counts + HIDDEN_WORD], hidden);
+        }
     }
 }
 

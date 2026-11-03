@@ -135,9 +135,11 @@ export interface FrameSummary {
 	 */
 	visibleEntries: Percentiles | null;
 	/**
-	 * Entries per frame that software occlusion culling took out of the list of visible objects on
-	 * WebGL2: objects, instance rows and groups of rows inside the camera's view that lie wholly
-	 * behind blockers. Null on WebGPU, where the GPU culls.
+	 * Entries per frame that occlusion culling hid inside the camera's view. On WebGL2, the objects,
+	 * instance rows and groups of rows that software occlusion culling took out of the list of
+	 * visible objects. On WebGPU, the objects and rows that GPU occlusion culling hid in the newest
+	 * frame whose counts the GPU sent back, and 0 while its check keeps the passes off. Null where
+	 * neither runs.
 	 */
 	occludedEntries: Percentiles | null;
 	/**
