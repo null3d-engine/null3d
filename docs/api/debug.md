@@ -21,7 +21,7 @@ flowchart LR
     relative --> pass["One draw of every line,<br/>after the opaque objects"]
 ```
 
-`ctx.debug` draws lines over the scene for one frame. Call it in `onUpdate` in every frame that needs the drawing. Each call adds the lines of its shape. When the frame draws, the engine moves each point relative to the camera in 64-bit floats. Then it draws every line in one call, after the opaque objects. So lines stay precise far from the origin, as objects do, and objects in front of a line hide it.
+`ctx.debug` draws lines over the scene for one frame. Call it in `onUpdate` in every frame that needs the drawing. Each call adds the lines of its shape. When the frame draws, the engine moves each point relative to the camera in 64-bit floats. Then it draws every line in one call, after the opaque objects. So lines stay precise far from the origin, as objects do, and objects in front of a line hide it. A frame that runs no `onUpdate`, such as the extra frame that hold mode draws for a pass that reads the frame before, draws the lines of the frame before it.
 
 ```ts
 export default defineSketch(({ scene, materials, geometry, debug }) => {
