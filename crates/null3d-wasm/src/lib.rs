@@ -707,6 +707,7 @@ pub fn init_engine(
             Box::new(CpuCulledRenderer::new(CpuCulledConfig {
                 canvas,
                 multi_draw: capabilities.contains(Capabilities::MULTI_DRAW),
+                first_provoking_vertex: capabilities.contains(Capabilities::FIRST_PROVOKING_VERTEX),
                 float16_targets: capabilities.contains(Capabilities::FLOAT16_TARGETS),
                 max_texture_size: max_texture_size.max(CpuCulledConfig::default().max_texture_size),
                 cell_culling,

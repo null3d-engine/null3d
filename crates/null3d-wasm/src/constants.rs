@@ -993,6 +993,10 @@ pub fn typescript() -> String {
                     Capabilities::TRANSIENT_ATTACHMENTS.0 as u32,
                 ),
                 ("FLOAT16_TARGETS", Capabilities::FLOAT16_TARGETS.0 as u32),
+                (
+                    "FIRST_PROVOKING_VERTEX",
+                    Capabilities::FIRST_PROVOKING_VERTEX.0 as u32,
+                ),
             ],
         ),
         (

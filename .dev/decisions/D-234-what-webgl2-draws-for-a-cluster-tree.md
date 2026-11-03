@@ -1,12 +1,15 @@
 # D-234: What WebGL2 draws for a tree of cluster patches
 
 Status: decided and built by M3-L3. Built: the WebGPU path ([D-213](D-213-cluster-levels.md)), the
-whole levels that the asset tool writes beside each tree, the WebGL2 route with `WEBGL_multi_draw`,
-and the fallback without it. The figures are in [D-231](D-231-cluster-levels-cost.md). Task: M3-L3.
+whole levels that the asset tool writes beside each tree, and the WebGL2 route with `WEBGL_multi_draw`.
+Also built: that route's copy of the vertices for a mesh of several parts, and the fallback without
+multi-draw. The figures are in [D-231](D-231-cluster-levels-cost.md). Task: M3-L3.
 
 Summary: A WebGL2 page draws the patches of a tree on the job workers where the device has
 `WEBGL_multi_draw`. Each chosen patch is a range of the tree's index list in one multi-draw call.
-A browser without it, such as Firefox, draws the mesh's whole levels through the level system.
+A mesh of more than 65,535 vertices draws from a copy of its vertices with 32-bit indices, where
+the device also has `WEBGL_provoking_vertex`. A browser without these, such as Firefox, draws the
+mesh's whole levels through the level system.
 The asset tool plans them as `--lod` does and writes them beside the tree. The WebGPU path that draws objects directly, and the shadow maps,
 draw those levels too.
 
@@ -57,15 +60,13 @@ The route with `WEBGL_multi_draw`:
   more when its run also holds another draw. The per-view draw record buffer is sized for every
   patch of every tree, which bounds those calls ([the code review](../code-review.md)'s finding
   R5-01).
-- The tree's indices upload once per mesh into an index buffer of its own, as 16-bit indices,
-  because a mesh that draws a tree fills one part of at most 65,535 vertices. The draw binds that
-  buffer in place of the mesh page's. The tree's index list therefore costs two bytes for each
-  index, beside the mesh's own. A buffer and its writes take whole four-byte words, and a tree's
-  index count may be odd, so the list ends with one spare index then. Without it, the test model's
-  tree of 196,941 indices made a write of 393,882 bytes, and the page drew nothing of the mesh on
-  WebGL2 with `WEBGL_multi_draw`. The unit test `a_trees_indices_add_the_meshs_first_vertex_in_its_page`
-  checks the rounding on a tree of three indices. For the test model, the tree takes 393,884 bytes,
-  and a view's chosen runs take at most 4,112 bytes, eight for each of its 514 patches.
+- The tree's indices upload once per mesh into an index buffer of its own, as 32-bit indices.
+  They then reach every vertex of a mesh of several parts. The draw binds that buffer in place of the
+  mesh page's. The tree's index list therefore costs four bytes for each index, beside the mesh's
+  own. A buffer and its writes take whole four-byte words, which 32-bit indices always fill. The
+  test model's tree of 196,941 indices takes 787,764 bytes. A view's chosen runs take at most
+  4,112 bytes, eight for each of its 514 patches. Only a mesh that the layout draws from its tree
+  gets the buffer, so a device that draws whole levels uploads no tree.
 
 ### The page's index base
 
@@ -73,8 +74,10 @@ WebGL2 packs several meshes into one page of vertex and index data, and rebases 
 list by the mesh's first vertex in the page (`Packing::Pages`). A path that uploads indices of its
 own must apply that base. The three paths answer as follows:
 
-- **This route** uploads the tree's indices, which name the mesh's own vertices, so the upload adds
-  the mesh's first vertex in its page. Without it, a tree mesh that follows another in a page draws
+- **This route** uploads the tree's indices, which name the mesh's own vertices. For a mesh in one
+  page, the upload adds the mesh's first vertex in its page. A mesh of several parts draws from its
+  own copy of its vertices, which starts at the mesh's first vertex, so it adds nothing. Without
+  the base, a tree mesh that follows another in a page draws
   the other mesh's vertices. The test model is the first mesh in its page, so no picture can see
   the fault. The unit test `a_trees_indices_add_the_meshs_first_vertex_in_its_page` fails when the
   base is left out.
@@ -98,23 +101,34 @@ own indices inherits it.
 ### Meshes of several parts
 
 A page holds at most 65,535 vertices, which its 16-bit indices reach. A mesh of more vertices fills
-several pages, so a tree's indices cannot name its vertices through one page. Such a mesh draws
-the whole levels that the tool cuts from its tree on this path. The WebGPU path draws its patches
-from one shared buffer ([D-213](D-213-cluster-levels.md#meshes-of-several-parts)).
+several pages, so a tree's indices cannot name its vertices through one page. The WebGPU path
+draws its patches from one shared buffer ([D-213](D-213-cluster-levels.md#meshes-of-several-parts)).
 
-A route for WebGL2 was built and measured, then taken out. It gave the tree a vertex buffer of its
-own: a copy of the mesh's parts' vertices, one after another, with 32-bit indices into it. The test
-was the desert benchmark of the meshlet comparison, with its ground alone (`props=0`). The ground
-has 2,000,000 triangles, 1,002,001 vertices and a tree of 32,768 patches. Chrome on the Mac, at
-Medium:
+On WebGL2, such a mesh's tree gets a vertex buffer of its own, a copy of the mesh's parts'
+vertices. The copy holds the parts one after another, in the order that the tree's indices name. The tree's 32-bit
+indices read that copy, and the draw binds it in place of the page's vertices. The copy uploads
+with the tree, and again after the mesh's vertices change. The route needs `WEBGL_provoking_vertex`,
+for the reason below. A device without it draws the whole levels that the tool writes beside the
+tree.
 
-| Build | Triangles a frame | Frame interval |
-| --- | --- | --- |
-| Whole levels | 4,000,007 | 8.3 ms, 120 frames a second |
-| The tree from its own copy | about 290,000 | 5,300 to 9,000 ms |
+The test is the desert benchmark of the meshlet comparison, with its ground alone (`props=0`). The
+ground has 2,000,000 triangles, 1,002,001 vertices of 12 bytes and a tree of 32,768 patches and
+13,154,310 indices. Chrome on the Mac, at Medium, `view=walk`:
 
-The picture was right, and the walk drew about 2,285 ranges a frame in calls of up to 256. Each
-frame's list replayed in under 50 ms, and the engine's threads were idle.
+| Build | Triangles a frame | Frame interval | GPU process |
+| --- | --- | --- | --- |
+| Whole levels (`multidraw=off`) | 4,000,007 | 8.3 ms, 120 frames a second | 1,643 MB, 464 MB of it graphics |
+| The tree from its copy, last-vertex rule | about 290,000 | 5,300 to 9,000 ms | 102 GB, then a restart |
+| The tree from its copy, first-vertex rule | 263,009 to 263,987 | 8.3 ms, 109 to 118 frames a second | 1,735 MB, 535 MB of it graphics |
+
+The tree draws 15 times fewer triangles than whole levels. Other agents' browsers shared the GPU
+during these runs, so the record keeps no GPU time, and the frame rates vary. The copy costs
+12.0 MB, the mesh's vertex bytes a second time, and the tree's index list 52.6 MB. The
+graphics memory grew by 71 MB, which those two and the draw records account for.
+The mesh's own pages and whole levels stay, because the shadow maps and the other fallbacks draw
+them. With the last-vertex rule the picture was right, and the walk drew about 2,285 ranges a frame
+in calls of up to 256. Each frame's list replayed in under 50 ms, and the engine's threads were
+idle.
 
 The cause is ANGLE on Metal, which Chrome on the Mac runs WebGL2 on. Before each draw whose program
 has a flat varying, it copies the whole bound index buffer into a new one. The copy turns GLSL's
@@ -141,13 +155,18 @@ and each range drawn from it made a copy of all of it:
 `WEBGL_provoking_vertex` lets a page pick the first-vertex convention, which Metal draws without a
 copy. WGSL's `either` allows any vertex, and the WebGPU path takes the first already. The backend
 picks it at start where the extension exists (`useFirstProvokingVertex` in
-`packages/engine/src/gpu/webgl2/backend.ts`). With it the standalone page took 193 ms. The tree
-from its own copy drew 263,009 triangles a frame at 8.4 ms intervals, in a GPU process of 1.7 GB.
-A browser without the extension keeps the last-vertex rule and its copies.
+`packages/engine/src/gpu/webgl2/backend.ts`). With it the standalone page took 193 ms. A browser
+without the extension keeps the last-vertex rule and its copies.
 
-So the window design is not needed for this fault. The route with a copy of the vertices and
-32-bit indices is the one to build again, behind the extension. A browser without the extension
-should keep whole levels for a mesh of several parts.
+The page's probe reports the extension to the engine as `CAPABILITY_FIRST_PROVOKING_VERTEX`, and
+the frame builder draws a split mesh's tree only with it. A tree in one page draws its patches
+either way. Its index list holds about 3 MB at most, against the ground's 52.6 MB, so each copy
+costs far less. No browser with `WEBGL_multi_draw` and without the extension was measured.
+
+Chrome offers the extension. Playwright's WebKit 26.6, a proxy for Safari, offers it and
+`WEBGL_multi_draw`. Safari itself is not checked: its remote automation is off on this Mac, and
+turning it on opens a window on the owner's screen. Firefox offers neither, so it draws whole
+levels.
 
 ### The draw-record buffer's memory
 
@@ -184,17 +203,24 @@ The fallback:
   copies draw, and an instance batch. The tool counts only the copies that the file places. So a
   mesh that page code draws in a batch of thousands still has a tree, and every copy draws the
   whole levels. The GPU pass also needs one copy, so this covers the same meshes on both paths.
-- A mesh split over several parts keeps its levels on WebGL2, and draws its patches on WebGPU
-  ([Meshes of several parts](#meshes-of-several-parts)).
+- A mesh split over several parts keeps its levels on a WebGL2 device without
+  `WEBGL_provoking_vertex` ([Meshes of several parts](#meshes-of-several-parts)).
 
 Each fallback case has a test that fails if the case draws patched instead:
 
 - **More than one copy:** `a_tree_with_two_copies_keeps_its_whole_levels` in `tests/cpu_culled.rs`,
   and `the_gpu_path_keeps_a_trees_levels_when_two_objects_draw_the_mesh` in `tests/levels.rs`.
   Two objects share a bucket, so its count is two and the walk has no single matrix.
-- **More than one part, on WebGL2:** `a_tree_split_into_parts_keeps_its_whole_levels`, which
-  builds a grid past 65,535 vertices and asserts that it fills more than one part. The GPU path
-  draws that grid's patches (`the_gpu_path_draws_the_tree_of_a_mesh_that_fills_several_parts`).
+- **More than one part, on WebGL2 without `WEBGL_provoking_vertex`:**
+  `a_tree_split_into_parts_keeps_its_whole_levels`, which builds a grid past 65,535 vertices and
+  asserts that it fills more than one part. With the extension, the same grid draws its patches in
+  one call from the tree's copy of its vertices, with 32-bit indices
+  (`a_tree_split_into_parts_draws_its_patches_from_a_copy_of_its_vertices`). A tree in one page
+  draws its patches with or without the extension, and makes no copy
+  (`a_tree_in_one_page_draws_its_patches_with_or_without_the_first_vertex`). The unit test
+  `a_split_meshs_tree_draws_from_a_copy_of_its_parts_vertices` checks the copy's bytes, part by
+  part. The GPU path draws the grid's patches
+  (`the_gpu_path_draws_the_tree_of_a_mesh_that_fills_several_parts`).
 - **An instance batch:** `a_one_row_batch_keeps_its_whole_levels`, which draws the tree's mesh as
   one batch row. The row carries its own matrix, and the walk takes a scene object's. The GPU
   path's scan also reads scene object keys alone, which the same test's WebGL2 layout exercises.
@@ -247,7 +273,8 @@ byte, so its new levels are part of this change.
 ## Decision
 
 Both routes are built. A WebGL2 device with `WEBGL_multi_draw` draws the tree's patches from the
-job workers, and one without it draws the mesh's whole levels. The
+job workers, and one without it draws the mesh's whole levels. A mesh of several parts also needs
+`WEBGL_provoking_vertex`, and then draws from a copy of its vertices. The
 drawing method of the WebGPU path stays as [D-213](D-213-cluster-levels.md#drawing-on-webgpu)
 records. No path is dropped and no route waits on a gated feature.
 
@@ -261,8 +288,8 @@ records. No path is dropped and no route waits on a gated feature.
   draws a different set of patches from another's. `tests/cluster_cover.rs` in the render crate
   guards the pair. It applies the shader's rule, line for line, to the pass's table of two real
   trees, and pins the shader's lines. Its picks must match the walk's in every view.
-- The tree's index buffer costs about two bytes for each index of the tree, and the fallback levels
-  grow the file.
+- The tree's index buffer costs four bytes for each index of the tree, and the fallback levels
+  grow the file. A mesh of several parts also holds its vertices twice on WebGL2.
 - A one-row instance batch draws whole levels on both paths, even though one copy draws it. The
   walk takes one scene object's matrix, and the batch's row carries its own.
 - The plan asks for a shadow cut per cascade or tile view, with `lodShadowFactor` on the

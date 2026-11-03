@@ -255,7 +255,7 @@ While an object or an instance batch still uses the mesh, `destroy` throws [E111
 
 ## Large meshes
 
-A mesh can have any number of vertices. The engine uses 16-bit indices. WebGL2 always reads the largest one, 65,535, as the end of a primitive, so one draw reaches 65,535 vertices. A mesh with more vertices splits into parts that draw one after another. Each part holds a copy of the vertices that it shares with the part before it. For the fewest draw calls, keep meshes under 65,535 vertices. A mesh that draws a cluster tree on WebGPU is the exception. Its patches draw in one draw across all its parts, as [cluster levels](../concepts/lod.md#cluster-levels) describes.
+A mesh can have any number of vertices. The engine uses 16-bit indices. WebGL2 always reads the largest one, 65,535, as the end of a primitive, so one draw reaches 65,535 vertices. A mesh with more vertices splits into parts that draw one after another. Each part holds a copy of the vertices that it shares with the part before it. For the fewest draw calls, keep meshes under 65,535 vertices. A mesh that draws a cluster tree is the exception. Its patches draw in one draw across all its parts, as [cluster levels](../concepts/lod.md#cluster-levels) describes.
 
 ## From three.js
 
