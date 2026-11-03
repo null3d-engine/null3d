@@ -83,6 +83,57 @@ export const NEAR_SLOTS = 16;
 /** Texels a near slot takes: the position's high halves and the turn, then the remainders and the scale. */
 export const NEAR_SLOT_TEXELS = 2;
 
+/** The CPU copy of each near table, and the slots that fixed placements hold at its bottom. */
+const NEAR_TABLES = new WeakMap<Texture, { readonly data: Float32Array; held: number }>();
+
+/** The near table that `kitTextures` made, or an error for any other texture. */
+function nearTable(texture: Texture): { readonly data: Float32Array; held: number } {
+	const table = NEAR_TABLES.get(texture);
+	if (!table) throw new Error('the near table was not made by kitTextures');
+	return table;
+}
+
+/**
+ * The one CPU copy of a kit's near table: two texels a slot, the copy's position in high halves and
+ * its turn, then the position's remainders and its scale. Whoever writes a slot writes it here and
+ * sends the whole copy with `texture.update`, so every writer's slots survive the others' uploads.
+ *
+ * @param texture The kit's near table.
+ * @returns Its CPU copy.
+ */
+export function nearTableData(texture: Texture): Float32Array {
+	return nearTable(texture).data;
+}
+
+/**
+ * Takes `count` slots of a kit's near table for fixed placements, from the lowest free one. The near
+ * pool takes the slots above them.
+ *
+ * @param texture The kit's near table.
+ * @param count The slots to take.
+ * @returns The first slot taken.
+ */
+export function reserveNearSlots(texture: Texture, count: number): number {
+	const table = nearTable(texture);
+	if (!(Number.isInteger(count) && count >= 0 && table.held + count <= NEAR_SLOTS))
+		throw new RangeError(
+			`@null3d/vegetation: ${count} near slots asked with ${NEAR_SLOTS - table.held} free; take at most the free slots.`,
+		);
+	const first = table.held;
+	table.held += count;
+	return first;
+}
+
+/**
+ * The slots at the bottom of a kit's near table that fixed placements hold.
+ *
+ * @param texture The kit's near table.
+ * @returns The slots held.
+ */
+export function nearSlotsHeld(texture: Texture): number {
+	return NEAR_TABLES.get(texture)?.held ?? 0;
+}
+
 /** The set of texture files that a preset loads: the half set on Low, the full set elsewhere. */
 export function textureSetFor(preset: QualityPreset): 'full' | 'half' {
 	return preset === 'low' ? 'half' : 'full';
@@ -248,13 +299,15 @@ export function kitTextures(
 ): SpeciesTextures {
 	const cards = cardTextures(ctx, kit);
 	const records = recordsTexture(ctx, kit);
+	const nearData = new Float32Array(NEAR_SLOTS * NEAR_SLOT_TEXELS * 4);
 	const near = ctx.textures.fromData({
 		width: NEAR_SLOTS * NEAR_SLOT_TEXELS,
 		height: 1,
 		format: 'rgba16float',
 		filter: 'nearest',
-		data: new Float32Array(NEAR_SLOTS * NEAR_SLOT_TEXELS * 4),
+		data: nearData,
 	});
+	NEAR_TABLES.set(near, { data: nearData, held: 0 });
 	const all = { ...loaded, ...cards, records, near };
 	const bytes = Object.values(all).reduce((sum, texture) => sum + texture.bytes, 0);
 	return { set, ...all, bytes };
