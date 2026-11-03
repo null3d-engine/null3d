@@ -81,6 +81,8 @@ Every pixel lights from a normal map that `createTerrain` bakes from the height 
 
 Each block morphs toward its parent block's surface as the camera pulls away. A block hands over to its parent at the distance where the parent's own cell would no longer show the allowed error. Over the last part of the approach, the block's vertices move to the parent grid's heights, so the two surfaces match when the switch comes and the ground does not pop. The parent grid is triangulated the same way, so a block whose morph is complete has exactly the parent's surface. The morph adds no draw and no work in a frame: each block carries the parent's height at each vertex in its own vertex record, written when the block is built or reused. `morph: false` switches each block at once instead.
 
+The quadtree is the ground's levels of detail, so each block mesh takes `levels: false`, and the engine plans no levels of its own for it.
+
 A skirt hangs from the edge of each block, a little below the ground. The selection does not restrict neighbours, so two blocks that meet can differ by more than one level. The morph ends on a block's own parent, which cannot match a neighbour two levels coarser, so the skirt still covers that seam. On a very steep seam a thin sliver of skirt can still show.
 
 ## Layers and the splat map

@@ -26,7 +26,7 @@ A mesh with levels draws one of them per frame in every object and every instanc
 
 ## Levels of meshes made in code
 
-A mesh made in code plans its levels the first time the scene draws it, when it holds 4,096 triangles or more, or when its copies hold 65,536 triangles together, whether `geometry.fromArrays` or a generator made it. A mesh that no object draws plans nothing, and the plan sees the material that draws the mesh first. The plan runs on the job workers, never in a frame, and the mesh draws its full shape until the levels arrive. It runs the planner that the asset tool's `--lod` runs, with the same build of meshoptimizer's simplifier, so the same mesh gets the same levels in code as in a file. The copies that already draw the mesh then pick their levels, as the streamed levels of a file refine in place.
+A mesh made in code plans its levels the first time the scene draws it, when it holds 4,096 triangles or more, or when its copies hold 65,536 triangles together, whether `geometry.fromArrays` or a generator made it. A page's meshes and an add-on's plan alike. A mesh that no object draws plans nothing, and the plan sees the material that draws the mesh first. The plan runs on the job workers, never in a frame, and the mesh draws its full shape until the levels arrive. It runs the planner that the asset tool's `--lod` runs, with the same build of meshoptimizer's simplifier, so the same mesh gets the same levels in code as in a file. The copies that already draw the mesh then pick their levels, as the streamed levels of a file refine in place.
 
 ```ts
 const rock = geometry.fromArrays(rockArrays(20_000));

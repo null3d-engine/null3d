@@ -1,6 +1,6 @@
 # D-310: Meshes made in code plan their levels on the job workers
 
-Status: decided and built: the shared planner, `mesh.buildLevels`, the automatic levels at a mesh's first draw with the `levels` option, and their guards, on WebGPU and WebGL2. Pending: the owner's review of the thresholds, and the adoption by the add-ons and demos that set levels by hand today. Task: none.
+Status: decided and built: the shared planner, `mesh.buildLevels`, the automatic levels at a mesh's first draw with the `levels` option, and their guards, on WebGPU and WebGL2. Pending: the owner's review of the thresholds, and the adoption by the demos that set levels by hand today. The add-ons take the default, and opt out only the meshes whose levels are wrong. Task: none.
 
 Summary: The asset tool's level planner moved into `packages/engine/levels/planner.js`, which the tool runs in Node and the engine runs on a job worker with the same build of meshoptimizer's simplifier, so one mesh gets one set of levels, index for index. A mesh made in code plans its levels at its first draw when it holds 4,096 triangles or more, or 256 or more in copies of 65,536 triangles together; `levels: false` opts out. A million triangles take about 6 s of one job worker's CPU, and no frame is late while the plan runs.
 
@@ -146,7 +146,7 @@ Guards:
 - `setLevels` ends a plan and frees the planned meshes that it leaves out.
 - The card step runs only when asked (`cards: true`): a building kit's walls are separate quads, and thinning them as cards cuts holes. Without it, a level drops only whole small pieces, and only where its error is under a pixel.
 - A plan counts as a task from its start until its levels are in, so hold mode's frame draws them.
-- glTF meshes, whose levels come from the file, and the add-ons whose shapes live in their shaders (terrain blocks, water, grass tufts, splats), pass `levels: false`. So do the compare scenes, whose three.js twins draw every mesh whole.
+- glTF meshes, whose levels come from the file, pass `levels: false`. So do the add-on meshes whose levels are wrong. A shader shapes or places some (water, grass tufts, splats, floating leaves). The terrain blocks have their own quadtree. The impostor cards and merged far cells are far stand-ins, and the gizmo handles keep one size on the screen. So do the compare scenes, whose three.js twins draw every mesh whole. Every other add-on mesh takes the default.
 
 ## Consequences
 

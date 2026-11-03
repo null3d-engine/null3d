@@ -50,11 +50,27 @@ Keep setup, options, the public API and event handling in TypeScript. They run o
 
 ## Give every mesh levels of detail
 
-An add-on that builds meshes in code gives each one levels of detail, as the asset tool gives a mesh from a file. A far copy then draws a few dozen triangles instead of its full mesh, and the engine hides a copy that covers less than a pixel.
+An add-on's meshes get levels of detail as a page's meshes do, with no call of the add-on's own. A far copy then draws a few dozen triangles instead of its full mesh. The engine hides a copy that covers less than a pixel.
 
-A mesh from `geometry.fromArrays` or a generator plans its levels on its own, at its first draw, when it holds 4,096 triangles or more, or when its copies hold 65,536 triangles together and it holds at least 256. The plan runs on the job workers with the asset tool's planner, and the levels keep their measured errors, so they switch in at once ([Levels of detail](../concepts/lod.md#levels-of-meshes-made-in-code)). An add-on that builds its arrays in a task of its own on a job worker hands them to `fromArrays` as it does now. `await mesh.buildLevels()` plans a smaller mesh, or a mesh again after its vertices change, and resolves once the levels are in.
+A mesh from `geometry.fromArrays` or a generator plans its levels at its first draw. It plans when it holds 4,096 triangles or more, or when it holds at least 256 and its copies hold 65,536 together. The plan runs on the job workers with the asset tool's planner. The levels keep their measured errors, so they switch in at once ([Levels of detail](../concepts/lod.md#levels-of-meshes-made-in-code)). They name the mesh's own vertices, so the mesh keeps its vertex and triangle order, which raycasts and `updateVertices` read.
 
-Pass `levels: false` for a mesh whose shape a shader moves, such as a water surface or a terrain block that morphs toward its parent, and for a mesh whose levels the add-on makes itself. Say why in a comment beside the mesh. The engine leaves out on its own a mesh with joints, morph targets or a vertex record, a mesh that a material with a displacement map or a `vertexOffset` draws, and a mesh that lies flat. A mesh of separate leaf cards asks for `levels: { cards: true }`, so each level thins its cards rather than dropping whole small pieces.
+So make every mesh through `fromArrays` or a generator, and leave its `levels` option out. Arrays that a task of the add-on builds on a job worker go to `fromArrays` too, and the mesh then plans as any other. An add-on that returns arrays, such as a shape generator, leaves the mesh, and its levels, to the page.
+
+Do not ask for levels mesh by mesh. The default picks the meshes whose levels save GPU time. A small mesh drawn a few times gains little, and each level adds draw work. `levels: true` and `await mesh.buildLevels()` plan at any size. Use `buildLevels()` to plan again after `updateVertices` gives a mesh a new shape, or to await the levels in a test. The one exception is a mesh of separate leaf cards. It asks for `levels: { cards: true }`, so each level thins its cards rather than dropping whole small pieces.
+
+Opt a mesh out with `levels: false` only where levels are wrong for it, and say why in a comment beside the mesh:
+
+| The mesh | Why it takes no levels | In the engine's add-ons |
+| --- | --- | --- |
+| A shader gives it its shape or its place | The levels would simplify a shape that never draws | Water surfaces, grass tufts, splat parts, floating leaves |
+| It has a level system of its own | The two systems would switch apart | Terrain blocks, which are the ground's quadtree and morph toward their parent block |
+| It is the far stand-in of other meshes | It is already the coarsest level | Impostor cards, merged far cells |
+| It keeps one size on the screen | Its levels would never switch | Gizmo handles |
+| Its vertices change in every frame | The levels would measure a shape that the next frame replaces | None |
+
+The engine refuses planned levels by itself in a few cases. A mesh with joints, morph targets or a vertex record (`targets`) plans none, and so does a mesh that lies flat. A mesh that a material with a displacement map or a custom `vertexOffset` draws drops its planned levels. The first `updateVertices` drops them too. Levels that `mesh.setLevels` gives win over the plan, so a mesh with hand-made levels, such as a generated plant's, gets no planned levels on top. Still pass `levels: false` for a mesh of the table, so the code states the decision where the mesh is made.
+
+The asset tool also sorts a large level into pieces ([Pieces of a large level](../concepts/lod.md#pieces-of-a-large-level)). Each copy skips the pieces that the view leaves out or that face away. Pieces for meshes made in code are not built yet. They will come with the planned levels, so an add-on that takes the default gets them with no change, and a mesh with `levels: false` gets none.
 
 ## Follow the preset and show the cost
 
