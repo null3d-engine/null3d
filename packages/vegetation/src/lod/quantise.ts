@@ -1,8 +1,10 @@
-// Quantisation: each part's floats into 16-bit positions inside the species box, 8-bit normals,
-// plain 16-bit UVs and 8-bit colours. It throws until quantisation is built.
+// Quantisation, after design §7.6: each part's floats become 16-bit positions inside the species
+// box, 8-bit normals, plain 16-bit UVs and 8-bit colours, 21 bytes a vertex where floats take 44.
+// One box per species means one transform per copy for every part of every variant; the plant
+// shader reads the box from the records texture's header. A 40 m box gives 0.6 mm steps, so a
+// vertex moves by at most half a step on each axis.
 import type { MeshArrays, QuantisedArrays } from '../asset';
 import type { SpeciesBox } from '../core/box';
-import { notBuilt } from '../core/not-built';
 
 /**
  * Steps of a wood UV per metre of bark.
@@ -18,8 +20,13 @@ export const WOOD_UV_STEPS = 1024;
  */
 export const TEXTURE_UV_STEPS = 65535;
 
+/** The largest 16-bit step. */
+const TOP = 65535;
+
 /**
- * One part's arrays, quantised against the species box.
+ * One part's arrays, quantised against the species box. Positions span the box in 65,535 steps on
+ * each axis; normals take 127 steps a side; `uvs` take `uvSteps` steps a unit and `uvs1` 65,535,
+ * each held within 16 bits; colours and indices are copied.
  *
  * @param arrays The part's floats.
  * @param box The species box.
@@ -27,8 +34,74 @@ export const TEXTURE_UV_STEPS = 65535;
  * @returns The quantised arrays.
  */
 export function quantise(arrays: MeshArrays, box: SpeciesBox, uvSteps: number): QuantisedArrays {
-	void arrays;
-	void box;
-	void uvSteps;
-	throw notBuilt('quantisation');
+	const count = arrays.positions.length / 3;
+	const positions = new Uint16Array(count * 3);
+	const normals = new Int8Array(count * 3);
+	const uvs = new Uint16Array(count * 2);
+	const uvs1 = new Uint16Array(count * 2);
+	const low0 = box.min[0];
+	const low1 = box.min[1];
+	const low2 = box.min[2];
+	const scale0 = TOP / (box.max[0] - low0);
+	const scale1 = TOP / (box.max[1] - low1);
+	const scale2 = TOP / (box.max[2] - low2);
+	const source = arrays.positions;
+	const normal = arrays.normals;
+	for (let i = 0; i < count; i++) {
+		const at = i * 3;
+		positions[at] = clampStep(((source[at] as number) - low0) * scale0, TOP);
+		positions[at + 1] = clampStep(((source[at + 1] as number) - low1) * scale1, TOP);
+		positions[at + 2] = clampStep(((source[at + 2] as number) - low2) * scale2, TOP);
+		normals[at] = clampSigned((normal[at] as number) * 127);
+		normals[at + 1] = clampSigned((normal[at + 1] as number) * 127);
+		normals[at + 2] = clampSigned((normal[at + 2] as number) * 127);
+	}
+	const uv = arrays.uvs;
+	const uv1 = arrays.uvs1;
+	for (let i = 0; i < count * 2; i++) {
+		uvs[i] = clampStep((uv[i] as number) * uvSteps, TOP);
+		uvs1[i] = clampStep((uv1[i] as number) * TEXTURE_UV_STEPS, TOP);
+	}
+	return {
+		positions,
+		normals,
+		uvs,
+		uvs1,
+		colors: arrays.colors.slice(),
+		indices: arrays.indices.slice(),
+	};
+}
+
+/** A value rounded to a whole step from 0 to `top`. */
+function clampStep(value: number, top: number): number {
+	const step = Math.round(value);
+	return step < 0 ? 0 : step > top ? top : step;
+}
+
+/** A value rounded to a whole step from −127 to 127. */
+function clampSigned(value: number): number {
+	const step = Math.round(value);
+	return step < -127 ? -127 : step > 127 ? 127 : step;
+}
+
+/**
+ * A quantised position back in plant-space metres, as the plant shader reads it.
+ *
+ * @param positions The quantised positions.
+ * @param index The vertex.
+ * @param box The species box.
+ * @param out The point to write.
+ * @returns `out`.
+ */
+export function dequantisePosition(
+	positions: Uint16Array,
+	index: number,
+	box: SpeciesBox,
+	out: [number, number, number],
+): [number, number, number] {
+	for (let k = 0; k < 3; k++) {
+		const low = box.min[k] as number;
+		out[k] = low + ((positions[index * 3 + k] as number) / TOP) * ((box.max[k] as number) - low);
+	}
+	return out;
 }
