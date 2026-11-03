@@ -52,9 +52,10 @@ Every texture encodes on its own worker thread, and the same input gives the sam
 every machine.
 
 Options:
-  --lod                        Add levels of detail to meshes of 64 triangles or more, each
-                               with about half the triangles of the level above, and store each
-                               level's error for the engine to pick by (MSFT_lod)
+  --lod                        Add up to seven levels of detail to meshes of 64 triangles or
+                               more, each with about half the triangles of the level above and
+                               steeper steps near the coarsest, which aims for about 32 triangles,
+                               and store each level's error for the engine to pick by (MSFT_lod)
   --stages                     With --lod, write each mesh's levels as separate files beside
                                the model, so the engine draws the coarsest level first and
                                refines it as the others arrive. With --clusters, write each
@@ -63,8 +64,8 @@ Options:
   --clusters                   Add a tree of cluster patches to each large static mesh of 20,000
                                triangles or more, whose patches draw near the camera at fine
                                detail and far from it at coarse detail (NULL3D_clusters). Also
-                               writes the whole levels that the tree cuts into, for viewers that
-                               draw no patches (MSFT_lod)
+                               gives each such mesh the levels that --lod makes, for viewers and
+                               instance batches that draw no patches (MSFT_lod)
   --simplify <share>           Keep this share of each mesh's triangles, from 0 to 1, as far as
                                --simplify-error allows (1)
   --simplify-error <share>     The most that --simplify may move the surface, as a share of each
