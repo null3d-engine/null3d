@@ -36,7 +36,7 @@ struct Air {
 struct SkyValues {
     air: Air,
     /// The camera's distance from the planet's center, the radius of the air's top, the factor of
-    /// the background's light, and a spare.
+    /// the background's light, and the cloud march's step count, 0 for the flat layer.
     view: vec4f,
     /// The unit direction toward the sun, and its light above the air.
     sun: vec4f,

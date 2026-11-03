@@ -17,6 +17,25 @@ const params = new URLSearchParams(location.search);
 /** The seconds that the page measures after the first frame. */
 const SECONDS = Number(params.get('seconds') ?? 5);
 /**
+ * The seconds that the page draws after the first frame before it measures, so a scene settles
+ * into its play: a route's full circuit takes about that long.
+ */
+const SETTLE = Number(params.get('settle') ?? 0);
+/** The windows of `SECONDS` that the page measures, one after another. The default is 1. */
+const WINDOWS = Math.max(1, Math.floor(Number(params.get('windows') ?? 1)));
+/**
+ * The interval in milliseconds above which the page reports the offending frame, with the frame's
+ * own passes, or 0 for none. With `?gpu-samples=every` the engine times every frame, so the passes
+ * belong to the long frame itself rather than to a sampled frame near it.
+ */
+const SLOW_MS = Number(params.get('slow') ?? 0);
+/** The window's changes while the page measures, so a slow frame says whether one caused it. */
+const events: { at: number; what: 'resized' | 'shown' | 'hidden' }[] = [];
+window.addEventListener('resize', () => events.push({ at: performance.now(), what: 'resized' }));
+document.addEventListener('visibilitychange', () =>
+	events.push({ at: performance.now(), what: document.hidden ? 'hidden' : 'shown' }),
+);
+/**
  * How long the page waits for the overlay's figures after it shows the overlay. The figures need
  * about half a second of frames, and on WebGPU the count of the triangles comes back from the GPU
  * on one frame in eleven.
@@ -46,6 +65,13 @@ requestAnimationFrame(function countFrame() {
 	pageFrames.count++;
 	requestAnimationFrame(countFrame);
 });
+/**
+ * The anti-aliasing mode that the page fixes from the engine's start, which a preset keeps for the
+ * engine's life. A run compares it with the mode that the preset gives.
+ */
+const antialias = params.get('antialias');
+if (antialias !== null && antialias !== 'msaa' && antialias !== 'fxaa' && antialias !== 'none')
+	throw new Error(`the page takes no anti-aliasing mode ${antialias}`);
 /** The shared effect switches that the page turns off after the first frame. */
 const OFF = (params.get('off') ?? '').split(',').filter(Boolean);
 /** The HUD group that carries each shared effect switch, which the page posts to turn it off. */
@@ -174,7 +200,12 @@ run('demo-device', async () => {
 	// A showcase scene loads its models and builds its shaders in its setup, so the start itself can
 	// hold a slow phone for minutes. The wait ends, so a page that cannot start reports why.
 	const started = KEEP_COPIES
-		? startDemo({ canvas, demo: runDemo, stats: false })
+		? startDemo({
+				canvas,
+				demo: runDemo,
+				stats: false,
+				antialias: antialias ?? undefined,
+			})
 		: createEngine({
 				canvas,
 				sketch: runDemo.sketch,
@@ -182,6 +213,7 @@ run('demo-device', async () => {
 				hdr: runDemo.hdr,
 				stats: false,
 				keepTextureCopies: false,
+				antialias: antialias ?? undefined,
 			});
 	const engine = await Promise.race([
 		started,
@@ -214,9 +246,63 @@ run('demo-device', async () => {
 		engine.postToSketch(group, id);
 		note(`turned off ${id}`);
 	}
-	const metrics = MEASURE ? await engine.measure(SECONDS) : undefined;
-	if (metrics) note(`the measure drew ${metrics.frames} frames`);
-	else note(`the measure is off; waiting for the overlay`);
+	const windows: {
+		frames: number;
+		seconds: number;
+		fps: number;
+		intervalMs: unknown;
+		gpuPassMs: unknown;
+		slow: unknown;
+		memory: unknown;
+		gpuTextures: number | null;
+		gpuBuffers: number | null;
+	}[] = [];
+	// A run of several windows reads the overlay's figures after each one, so a long run shows
+	// whether the GPU's memory holds while the scene plays.
+	const perWindow = WINDOWS > 1 && OVERLAY;
+	if (perWindow) {
+		engine.stats({ collapsed: false });
+		await waitForOverlay('triangles');
+	}
+	if (MEASURE && SETTLE > 0) {
+		note(`settling for ${SETTLE} s`);
+		await new Promise((resolve) => setTimeout(resolve, SETTLE * 1000));
+	}
+	let metrics: Awaited<ReturnType<typeof engine.measure>> | undefined;
+	if (MEASURE) {
+		for (let window = 0; window < WINDOWS; window++) {
+			const startedAt = performance.now();
+			const measured = await engine.measure(SECONDS, SLOW_MS > 0 ? { slowMs: SLOW_MS } : undefined);
+			// The window's own rate: the frames it counted over the seconds it ran.
+			windows.push({
+				frames: measured.frames,
+				seconds: measured.seconds,
+				fps: measured.frames / measured.seconds,
+				intervalMs: measured.intervalMs,
+				gpuPassMs: measured.gpuPassMs,
+				// A slow frame's own interval, moved onto the page's clock, tells whether the window
+				// changed while the frame ran: a resize or a return from hidden stalls a frame too.
+				slow: measured.slow?.map((frame) => {
+					const ended = startedAt + frame.atMs;
+					const began = ended - frame.intervalMs;
+					return {
+						...frame,
+						events: events
+							.filter((event) => event.at >= began - 1 && event.at <= ended + 1)
+							.map((event) => event.what),
+					};
+				}),
+				memory: measured.memory,
+				gpuTextures: perWindow ? overlayMiB(overlayFigure('gpu-textures')) : null,
+				gpuBuffers: perWindow ? overlayMiB(overlayFigure('gpu-buffers')) : null,
+			});
+			metrics ??= measured;
+		}
+		note(
+			`the measure drew ${windows.map((entry) => Math.round(entry.fps)).join(', ')} frames a second`,
+		);
+	}
+	if (!MEASURE) note(`the measure is off; waiting for the overlay`);
 	const bytesTotal = downloadedBytes();
 	// The overlay samples the figures that only it shows: triangles and the GPU's memory. It comes
 	// after the measure, so its sampling costs none of the frames that the figures above time.
@@ -283,6 +369,7 @@ run('demo-device', async () => {
 		off: OFF,
 		seconds: metrics?.seconds ?? null,
 		frames: metrics?.frames ?? null,
+		windows,
 		presentedFps: metrics?.presentedFps ?? overlayFps,
 		updatedFps: metrics?.updatedFps ?? null,
 		refreshHz: metrics?.refreshHz ?? null,

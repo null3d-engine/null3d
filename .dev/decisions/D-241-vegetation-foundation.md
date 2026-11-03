@@ -1,6 +1,6 @@
 # D-241: A vegetation foundation add-on, with GPU grass, generated plants and wind on custom materials
 
-Status: decided by the owner. The generator, its built-in species, its bark and leaf atlases, its plant materials and its far trees are removed. [D-305](D-305-plant-core-three-scales.md) supersedes them with the plant core. It also supersedes four sections below: "The generator's shape", "The bark and leaf atlases, and why the browser paints them", "What each leaf cell holds" and "The plants' look, after the owner's first review". Built: the `@null3d/vegetation` package (M3-V4), the scatter (M3-V6), and grass drawn from CPU-built tiles that read the same wind field ([below](#the-grasss-first-slice-and-the-edge-its-compute-half-waits-on)). The engine's vertex offsets read a compute pass in every pass (M3-V3), custom materials have the standard material's cut-out features (M3-V2), and the wind add-on's first stage is built (M3-V15, D-265). Not built yet: the compute-built grass of M3-V8, whose plan line names M3-E8 and M3-E9 and not M3-V3's graph edge ([below](#the-grasss-first-slice-and-the-edge-its-compute-half-waits-on)); and far-tree impostors (M3-V9). Branch poses (M3-V10) and Creek's move to the add-on (M3-V11) are not built yet either. Open: which wind method trees use by default, per vertex or by branch poses, which M3-V10 measures for the owner's ruling. The generated leaves wait for the owner's judgment. Tasks: M3-V1 to M3-V17.
+Status: decided by the owner. The generator, its built-in species, its bark and leaf atlases, its plant materials and its far trees are removed. [D-305](D-305-plant-core-three-scales.md) supersedes them with the plant core. It also supersedes four sections below: "The generator's shape", "The bark and leaf atlases, and why the browser paints them", "What each leaf cell holds" and "The plants' look, after the owner's first review". Built: the `@null3d/vegetation` package (M3-V4), the scatter (M3-V6), and the grass, whose blade list a compute pass builds and counts on WebGPU and whose rows an instance batch draws on WebGL2, with near shadows and the per-view cull ([below](#the-grasss-two-halves)). The engine's vertex offsets read a compute pass in every pass (M3-V3), custom materials have the standard material's cut-out features (M3-V2), and the wind add-on's first stage is built (M3-V15, D-265). Not built yet: far-tree impostors (M3-V9). Branch poses (M3-V10) and Creek's move to the add-on (M3-V11) are not built yet either. Open: which wind method trees use by default, per vertex or by branch poses, which M3-V10 measures for the owner's ruling. The generated leaves wait for the owner's judgment. Tasks: M3-V1 to M3-V17.
 
 Summary: Vegetation is the eleventh foundation add-on, `@null3d/vegetation`, which grows plants at first use and places them by ecological rules. It draws grass on the GPU, sways plants in the wind add-on's field and hands far trees to impostors. Creek drops its 3.1 MB of Blender plants for it, and custom materials, whose vertex offsets carry the wind, gain the standard material's cut-out features.
 
@@ -979,7 +979,7 @@ the field's cost on the Mac, the iPhone 17 and the Galaxy S24, the readers on th
 each figure is, whether measured, modelled from measured parts or a bound. It also names the rows
 that M3-V16 declares, and what the look runs and the owner's ruling still owe.
 
-## The grass's first slice, and the edge its compute half waits on
+## The grass's two halves
 
 M3-V8's first slice builds the CPU half of the plan's two paths: `createGrass` places tufts on a
 height function by integer hash and draws the hill in one instance batch for each tuft shape. A
@@ -1024,21 +1024,70 @@ devices. The iPad, the S24 class and the Tab A9 Plus rows are owed. The picture 
 so its blades stand straight, and its references hold the three tiers of both sets.
 `createGrass` draws on WebGL2 too, where the field's grid costs extra draws.
 
-**What its compute half waits on.** The plan's V8 line names M3-E8 and M3-E9 with shadow views. It
-does not name M3-V3, and three things stand between this slice and blades that the GPU makes and
-culls:
+**The compute half.** On WebGPU and compatibility mode a compute pass builds the blade list and
+writes its count. `createGrass` keeps the CPU's integer-hash placement, so both paths place the same
+tufts, and uploads the placed tufts in a data texture of two texels each: the place rounded to whole
+meters with the turn, then the rest of the place with the size. One workgroup of the pass loops over
+the preset's share, writes each tuft's world matrix and ids into the draw's instance buffer, and
+adds each one to the count word. The engine copies that word into the main view's indirect entry and
+every drawn shadow view's (M3-E9), so the near cascades draw the same list and count as the camera's
+view. The draw casts and receives shadows on both paths, and the blades' sway fades to nothing at
+the distance that the page gives, so a far cascade that only the grass reaches keeps its cached
+layer. The blades' tint comes from a hash of the tuft's root place on both paths, not from row
+values, so one shader serves the compute draw and the batch alike. WebGL2 keeps the instance batch,
+which the CPU fills.
 
-- **M3-E9's first version stops short of shadows.** Its line draws the main view only, with a CPU
-  count in the shadow views, until the splats are shown to cast no shadow. Near grass casts shadows,
-  so the GPU-written count must reach the near cascades. The RedGPU ruling fixes the form: copy the
-  main view's count word into each near cascade's entry, and widen the main cull toward the light.
-  E9's own bullets carry that requirement, and its finish line does not.
-- **M3-E8's same-frame output.** The pass that makes and culls the blades must be read by the draws
-  of the same frame on WebGPU. WebGL2 keeps the CPU tiles either way.
-- **M3-V3's graph edge.** V3 is what orders a pass before every pass that draws what reads it, the
-  shadow views included, and what tests the order there. Without it a grass pass runs in an order
-  that nothing checks, so a view can draw the last frame's list or an empty one. V8's dependencies
-  should name V3 beside E8 and E9.
+**The view cull and the distance bands.** The pass culls each 4 meter tile against the camera's
+frustum. It keeps a share of the far tufts from their roots' hashes. The fade reaches its floor at 24.31
+meters, shortened from the authored 45: under 10 meters from the camera it keeps all of them; at 10
+to 20 meters, 71 per cent; at 20 to 30, 28; and past 30, 25. A kept far tuft's blades widen by the
+inverse of its share, so the cover stays the same. The shortening removes 36.9 per cent of the drawn
+tufts, and it costs 0.768 per cent of the hill crest's pixels and 0.085 per cent of the demo's
+horizon against the pictures at the authored distance. The draw shader holds
+the same block, so WebGL2's batch collapses the tufts that the share leaves out. Both paths then draw
+one hill. On the hill of 20,000 tufts at High the share keeps 8,452.
 
-None of this changes V8's finish line. It names the order in which the task's remaining pieces can
-land.
+Each view then culls the kept list to its own box in the draw shader, from the frame's own matrix. The
+camera's view draws its frustum. A light's view draws its cascade, whose box reaches toward the light
+over the casters, so the near cascades no longer draw the whole kept list. A tuft's root and a point a
+tuft's reach away go through the view's matrix, so the margin that a blade crossing the edge needs comes
+from the view's own scale. The list stays the one that the compute pass writes; no second list and no
+second count.
+
+**The stress hill and the rows that compare.** The 20,000 tuft hill is a stress case: 17.3 tufts on
+each square meter, and its rows hold no ceiling. On the Tab A9 Plus its High row is 961.54 ms with
+the near shadows and 283.97 without. The rows that D-241's ceilings compare draw the hill at Creek's
+own density. On the same tablet, 2,312 tufts, its valley's 2.0 on each square meter, take 306.09 ms
+with the view cull and the far share and 318.77 without. 6,820 tufts, its bank strip's 5.9, take
+490.73 and 527.17. The cull takes 4.0 per cent back at the valley's density and 6.9 at the strip's.
+Neither row reached 208.3 before the far cover. The same page with the grass switched off measures 179.18 ms, which is
+29.12 ms inside the ceiling, so the base scene does not break it: the grass at the valley's density
+adds 126.91 ms and at the strip's 311.55. The frame's own cost sits mostly in its opaque pass: with
+the sun's contact shadows and the bounce light off, the scene measures 143.49 ms and the timer names the
+opaque pass at 138.94. The timer times the frame's first seven passes one by one and adds every pass after them to
+the last of those, so the 176.36 ms that it gave ambient occlusion's denoise was the opaque pass
+and the rest of the frame in that slot. The three ambient
+occlusion passes, which the contact shadows and the bounce light keep, cost about 43 ms: the same
+scene measures 186.25 with the contact shadows on. The pictures show that neither effect changes what
+the hill looks like: the four drawings, with either effect off and with both, are pixel for pixel the
+same. With both off the hill at Creek's density measures 235.41 ms, 27.11 ms past the ceiling, so the
+effects' 43 ms does not close the budget either. The grass's fixed cost, its shadow pass and draw
+setup, adds about 33 ms on top of the per-tuft cost. The owner ruled that the demo draws without the
+two effects: their pictures are the same at Low, Medium and High, and the Creek sketch pins the
+settings so a preset change does not bring them back. The far cover then closed the gap: at 24.31
+meters the row measures 209.72 and 196.02 ms, mean 202.87, while 25.59 meters gives 217.45 and
+216.60. The base page bracketed that block at 162.27 and 156.30, so the machine drifted about 6 ms
+within it, and 208.3 sits inside the row's spread at the chosen distance rather than outside it.
+The fit through two tuft counts first put the base at 211.9 ms and was read as the scene's own cost. A
+fitted intercept is not a base frame: it carries everything the removal would also take away, whether or
+not that cost varies with the count, and only switching the thing off gives the base. Every view culls the
+kept list to its own box, the cascades among them, so a shadow view draws only the tufts inside its
+cascade. It reads the frame's own matrix and the one count that the compute pass writes. On the
+tablet the cull takes little back, because the cascades were never the large part: three runs at
+2,312 tufts measure 288.75, 294.98 and 298.22 ms against 306.09 before, 3 to 6 per cent, and at
+6,820 they straddle the earlier 490.73 at 466.35 to 497.68. The three cascade passes together time
+at 2.1 to 2.2 ms a frame at the valley's density and 6.3 at the strip's. The row still misses 208.3
+by about 87 ms, and the two places that could close it stand unchanged.
+Two pictures hold the look. `vegetation-grass` holds the hill. `vegetation-grass-shadow` holds it at a
+low sun, where the grass's shadows follow the count, so a view that drew the capacity would show the
+rows past it.

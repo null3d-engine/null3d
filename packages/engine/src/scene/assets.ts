@@ -213,9 +213,9 @@ export interface ModelMakers {
 /**
  * Called as a download's bytes arrive and when one finishes or fails. It gets the bytes downloaded
  * so far, the bytes expected so far, and the address whose bytes moved. The second is the lengths
- * of the responses that gave one, and 0 while none has. A response with no length still counts
- * into the bytes downloaded, so a page that draws a fraction takes
- * `Math.min(1, loaded / Math.max(total, loaded))`.
+ * of the responses that gave one, and 0 while none has: a page that draws a fraction takes
+ * `Math.min(1, loaded / Math.max(total, loaded))`, and draws no fraction while the total is 0. A
+ * response with no length still counts into the bytes downloaded.
  *
  * @category api/assets
  */
@@ -235,6 +235,8 @@ export class Assets {
 	/** Downloads under way, by address, which loads at the same time share. */
 	private readonly pending = new Map<string, Promise<Blob>>();
 	private readonly handlers = new Set<ProgressHandler>();
+	/** The handlers in registration order, for the report to walk by index. */
+	private handlerList: ProgressHandler[] = [];
 	/** Bytes that have arrived, and the bytes of the responses whose length is known so far. */
 	private loadedBytes = 0;
 	private totalBytes = 0;
@@ -713,8 +715,8 @@ export class Assets {
 	 * file](../../guides/baked-light-data.md) format, as bytes to save or send. The file holds the
 	 * same values that `loadLightProbeGrid` reads, so a bake in the browser and a bake in another
 	 * tool give one format. The first call loads the writer, about 2 KB after Brotli. Throws E1108
-	 * when the grid's coefficients do not hold 12 numbers for each probe in its counts, and E1406
-	 * when the writer does not load.
+	 * when the grid's coefficients do not hold 12 numbers for each probe in its counts, or its
+	 * masks do not hold one number for each probe, and E1406 when the writer does not load.
 	 */
 	async lightProbeGridFile(grid: LightProbeGridData): Promise<Uint8Array> {
 		const call = 'assets.lightProbeGridFile';
@@ -794,8 +796,16 @@ export class Assets {
 	 * further. Returns a function that removes the handler.
 	 */
 	onProgress(handler: ProgressHandler): () => void {
-		this.handlers.add(handler);
-		return () => this.handlers.delete(handler);
+		if (!this.handlers.has(handler)) {
+			this.handlers.add(handler);
+			this.handlerList.push(handler);
+		}
+		return () => {
+			if (!this.handlers.delete(handler)) return;
+			// A new list, so a report that is walking the old one keeps its place and skips this
+			// handler by the set's membership.
+			this.handlerList = this.handlerList.filter((each) => each !== handler);
+		};
 	}
 
 	private resolve(url: string | URL): URL {
@@ -913,19 +923,34 @@ export class Assets {
 	}
 
 	/** The bytes, total and address that the handlers last saw, so a repeat reports nothing. */
-	private reported = '';
+	private reportedLoaded = 0;
+	private reportedTotal = 0;
+	private reportedUrl: string | null = null;
 
 	private report(url: string): void {
 		// A chunk's report and the download's end can hold the same numbers; the handlers see one.
-		const line = `${this.loadedBytes}/${this.totalBytes} ${url}`;
-		if (line === this.reported) return;
-		this.reported = line;
-		for (const handler of this.handlers)
+		if (
+			url === this.reportedUrl &&
+			this.loadedBytes === this.reportedLoaded &&
+			this.totalBytes === this.reportedTotal
+		)
+			return;
+		this.reportedLoaded = this.loadedBytes;
+		this.reportedTotal = this.totalBytes;
+		this.reportedUrl = url;
+		// The handlers as this report began: one removed during it is skipped. An addition is
+		// appended to the same list, so the walk reaches it unless an earlier removal replaced the
+		// list. Walking by index makes no iterator per report.
+		const handlers = this.handlerList;
+		for (let i = 0; i < handlers.length; i++) {
+			const handler = handlers[i];
+			if (handler === undefined || !this.handlers.has(handler)) continue;
 			try {
 				handler(this.loadedBytes, this.totalBytes, url);
 			} catch (error) {
 				console.error(error);
 			}
+		}
 	}
 }
 

@@ -520,6 +520,22 @@ describe('WebGPUBackend', () => {
 		]);
 	});
 
+	it('marks a frame that draws an indirect draw, so a page that draws none asks for no counts', () => {
+		const { device } = fakeDevice();
+		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		backend.canvasTarget = { createView: () => ({}) } as unknown as GPUTexture;
+		const begin: [number, ...number[]] = [
+			G.OP_BEGIN_RENDER_PASS,
+			...[0, G.NO_TARGET, G.NO_TARGET, 0, 0, 0, 0, 0, G.PASS_CLEAR_COLOR],
+		];
+		expect(backend.culledDrawn).toBe(false);
+		replay(backend, drawList([G.OP_CREATE_BUFFER, 1, 40, INDIRECT], begin, [G.OP_END_RENDER_PASS]));
+		expect(backend.culledDrawn).toBe(false);
+		replay(backend, drawList(begin, [G.OP_DRAW_INDEXED_INDIRECT, 1, 0], [G.OP_END_RENDER_PASS]));
+		expect(backend.culledDrawn).toBe(true);
+		backend.destroy();
+	});
+
 	it('draws straight from the shared buffer of arguments in other browsers', () => {
 		const { usage, log } = drawIndirect(MAC_CHROME);
 		expect(usage).toBe(INDIRECT | G.BUFFER_USAGE_COPY_SRC);

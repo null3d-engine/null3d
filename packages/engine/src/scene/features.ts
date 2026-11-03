@@ -24,7 +24,10 @@ import type { Tier } from '../shared/tier';
 
 /**
  * The point of a frame where a feature records its work, from the shadow passes to the display. A
- * feature declares one point.
+ * feature declares one point. A `'draw'` at `'resolve'` blends after the scene's other blended
+ * surfaces: with MSAA, the engine draws it back to front into a layer of one sample per pixel and
+ * blends that layer over the scene, so many overlapping blended surfaces, such as Gaussian splats,
+ * blend once per pixel instead of once per sample.
  *
  * @category api/features
  */
@@ -410,7 +413,7 @@ const FRAME_KINDS: Readonly<Record<FeatureFrame, readonly FeatureKind[]>> = {
 	background: ['draw', 'compute', 'fullscreen'],
 	opaque: ['draw', 'compute', 'fullscreen'],
 	transparent: ['draw', 'compute', 'fullscreen'],
-	resolve: ['compute', 'fullscreen'],
+	resolve: ['draw', 'compute', 'fullscreen'],
 	post: ['compute', 'fullscreen'],
 };
 

@@ -51,15 +51,17 @@ export class WindProbes {
 
 	/**
 	 * Asks for the air at each place in `points`, three numbers a place across the ground, and puts
-	 * the velocities in `out`, three numbers a place. The answer arrives before the next frame.
+	 * the velocities in `out`, three numbers a place. `numbers` holds the push's width and the sketch
+	 * time, which a frame writes into an array rather than passing as arguments, so the call takes no
+	 * fraction that the browser would make a number object of. The answer arrives before the next
+	 * frame.
 	 */
 	ask(
 		points: Float32Array,
 		out: Float32Array,
 		reading: WindReading,
-		pushRadius: number,
-		time: number,
 		ring: Float32Array,
+		numbers: Float64Array,
 	): void {
 		if (this.stopped) return;
 		if (points.length % 3 !== 0)
@@ -79,7 +81,7 @@ export class WindProbes {
 				`got ${out.length} numbers for the answer; ${points.length} places take three numbers each.`,
 			);
 		this.reserve(points.length);
-		fillRequest(this.requests[this.fill] as Float32Array, points, reading, pushRadius, time, ring);
+		fillRequest(this.requests[this.fill] as Float32Array, points, reading, ring, numbers);
 		this.nextOut = out;
 		if (this.inFlight) {
 			// One ask can wait for the answer that is on its way. A second one replaces it, because

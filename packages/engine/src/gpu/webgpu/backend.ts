@@ -11,7 +11,12 @@ import { ImageTable } from '../../shared/images';
 import { DROP_COUNTED_LABEL } from '../../shared/metrics';
 import type { DeviceShaderSet } from '../device-shaders';
 import { JoinedBuilds, joinedReady } from '../effect-join';
-import { LAYER_WORD, LIGHT_BUFFER_WORD } from '../environment-words';
+import {
+	CLOUD_FIELD_WORD,
+	CLOUD_STEPS_WORD,
+	LAYER_WORD,
+	LIGHT_BUFFER_WORD,
+} from '../environment-words';
 import { floatOfBits } from '../float-bits';
 import { GpuMemory, textureBytes } from '../memory';
 import type { ReadSink } from '../readback';
@@ -201,6 +206,9 @@ export class WebGPUBackend {
 	skinsInVertexShaders = false;
 	/** Why a pipeline failed to build, which the next replay reports. */
 	private buildFailure: string | undefined;
+	/** The opcode and word of the command that the replay is carrying out. */
+	private replayOp = -1;
+	private replayWord = -1;
 	/** True while the render pass's pipeline is building: its draws draw nothing until it is set again. */
 	private skipDraws = false;
 	/** True while the compute pass's pipeline is building: its dispatches do nothing. */
@@ -224,6 +232,12 @@ export class WebGPUBackend {
 	timer: GpuTimer | undefined;
 	/** Reads back what the draws culled on the GPU drew, while the page samples. */
 	culled: CulledCounts | undefined;
+	/**
+	 * True once a replay met an indirect draw, which is a draw that the GPU's culling wrote the
+	 * count of. A page whose frames draw none has no count to read back, so it makes no counts
+	 * module and fetches no part of the engine for one.
+	 */
+	culledDrawn = false;
 	/**
 	 * The device shaders that load another module when a pipeline needs builds with other fixed
 	 * bits. Without it, every pipeline's build must be in the shaders that the backend got.
@@ -297,7 +311,10 @@ export class WebGPUBackend {
 
 	private need<T>(table: (T | undefined)[], id: number, what: string): T {
 		const value = table[id];
-		if (value === undefined) throw new Error(`draw list names ${what} ${id}, which does not exist`);
+		if (value === undefined)
+			throw new Error(
+				`draw list names ${what} ${id}, which does not exist${this.replayWord < 0 ? '' : `, in command ${this.replayOp} at word ${this.replayWord}`}`,
+			);
 		return value;
 	}
 
@@ -675,7 +692,12 @@ export class WebGPUBackend {
 		if (op === G.OP_SKY_MAP_STEP) {
 			const panorama = words[a + 3] as number;
 			const source = panorama === 0 ? undefined : this.need(this.textures, panorama, 'texture');
-			const encoder = this.commandEncoder();
+			// The cloud tier's noise field exists once the tier's first frame made it, and the
+			// generator reads it only while the tier draws.
+			const cloudSteps = words[a + CLOUD_STEPS_WORD] as number;
+			const field = words[a + CLOUD_FIELD_WORD] as number;
+			const noise =
+				cloudSteps > 0 && field !== 0 ? this.need(this.textures, field, 'texture') : undefined;
 			// The page's sky layer, once its shader is here: the map's texels then hold the layer
 			// that the background shows, and so do the reflections and the light taken from them.
 			const template = words[a + LAYER_WORD] as number;
@@ -689,6 +711,7 @@ export class WebGPUBackend {
 			// mapping it, which the device refuses.
 			const readback =
 				capture === 0 || this.canvasTarget ? undefined : this.need(this.buffers, capture, 'buffer');
+			const encoder = this.commandEncoder();
 			code.skyStage(
 				this.device,
 				encoder,
@@ -700,6 +723,7 @@ export class WebGPUBackend {
 				source,
 				layer,
 				readback,
+				noise,
 			);
 		} else code.run(this.device, texture, this.images.generator(id)[0]);
 	}
@@ -815,6 +839,7 @@ export class WebGPUBackend {
 	 * nothing.
 	 */
 	prepare(words: Uint32Array, start: number, end: number): number {
+		this.replayWord = -1;
 		let i = start;
 		while (i < end) {
 			const header = words[i] as number;
@@ -1111,6 +1136,8 @@ export class WebGPUBackend {
 			let length = header >>> 8;
 			if (length === 0 || i + length > end) throw new Error(`draw list is truncated at word ${i}`);
 			const a = i + 1;
+			this.replayOp = op;
+			this.replayWord = i;
 			switch (op) {
 				case G.OP_CREATE_BUFFER: {
 					// A capture draws the frame again, and the buffers of that frame exist already:
@@ -1536,7 +1563,8 @@ export class WebGPUBackend {
 				if (this.skipDraws) return this.skipDraw();
 				this.counts.drawCalls++;
 				const buffer = this.need(this.buffers, id, 'buffer');
-				this.culled?.note(buffer, offset, this.lines);
+				if (this.culled) this.culled.note(buffer, offset, this.lines);
+				else this.culledDrawn = true;
 				if (copy) pass.drawIndexedIndirect(copy, 0);
 				else pass.drawIndexedIndirect(buffer, offset);
 				return true;

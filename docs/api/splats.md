@@ -77,10 +77,20 @@ file's order.
 ## What it draws
 
 A splat's shader computes the covariance that its spreads and rotation make, projects it to the
-screen, and sizes a camera-facing card to the ellipse. A fragment fades with the same ellipse, so
-the card is a Gaussian, not a disc. The card tests the scene's depth, so a splat behind a mesh
-disappears, and it fades over the last meters before a mesh, so an intersection is soft rather than
-a cut. Give `softness` to change that distance; 0 keeps a hard edge.
+screen once for each corner of its card, and spans a camera-facing card along the ellipse's own
+axes. All three of the splat's spreads add to that ellipse, so a flat splat seen edge on still gets
+a card that covers it. A pixel's place on the card is its distance from the center in standard
+deviations, so a fragment fades by it with no math of its own, and the card is a Gaussian, not a
+disc. A pixel too faint to show is dropped before it blends.
+
+Splats draw unlit, through the [unlit surface](../shaders/surface-functions.md#unlit-surfaces) of a
+custom material: a splat shows its own color with the fog and the exposure, and no lights, shadows
+or reflections. A scan's colors are the colors that its photographs saw, so a scene that shows a
+scan as it was captured sets `post.set({ toneMapping: 'none' })`.
+
+The card tests the scene's depth, so a splat behind a mesh disappears, and it fades over the last
+meters before a mesh, so an intersection is soft rather than a cut. Give `softness` to change that
+distance; 0 keeps a hard edge.
 
 The splats of a cloud that `createSplats` draws live in one instance batch. The engine culls the
 rows and sorts them back to front in each view, on its job workers, on both GPU paths. The add-on
@@ -89,8 +99,12 @@ writes only the rows that its budget keeps.
 ## Detail levels, streaming and the budget
 
 `createSplats` cuts a cloud into chunks of nearby splats, each ordered so that its first splats
-cover the most surface. A prefix of a chunk is a coarser level of it: all of it, a half, a quarter
-and an eighth.
+cover the most surface: a splat's opacity times the area of its largest cross-section. A prefix of
+a chunk is a coarser level of it: all of it, a half, a quarter and an eighth. As a chunk is built,
+the add-on measures how much of the chunk's surface each prefix covers, seen from three directions.
+A prefix grows the splats that it keeps by what it leaves uncovered, up to three times. So a scan's
+ground of small flat splats draws as the same surface with fewer, larger splats rather than a
+sparse one, and a dense cloud whose splats overlap barely grows.
 
 `update` writes the camera's position and asks a job worker, through `runTask`, which prefix each
 chunk draws. Every chunk the budget reaches keeps an eighth of itself first. The budget then
@@ -117,12 +131,21 @@ the feature's memory beside the engine's own figures. Its draw records inside th
 pass, so the row reads `gpu not measured` and shows no GPU time of its own. `setBudget(count)` caps the count below the
 preset's value, and `capacity` sets the rows that the batch holds.
 
+The batch allocates its rows when `createSplats` runs, from the preset in use then. A move to a
+higher preset after that draws no more splats, while a move to a lower one draws fewer. A scene
+that offers the Quality control at run time passes `capacity` for the highest preset it may reach,
+and pays that memory on every preset.
+
+A splat's color is the light recorded with it, so the scene's lights do not relight a cloud. Splats
+also cast and receive no shadows. Choose the light of the scene to match the light of the capture.
+
 A whole file appears as its chunks are cut: the first chunks draw while the rest are cut, and a
 large file never holds up a frame. `ready` resolves when every chunk of a file is ready. For a
 stream, it resolves once the nearest chunks have arrived, which takes about a megabyte of files, or
 the nearest chunk alone: the first view draws from those, and the cloud fills in as the rest
 arrive. Call `update` once before you await it. `settle()` resolves once the chosen splats are
-packed, which a still picture waits for.
+packed, and for a stream once the chunks that they need have arrived, which a still picture waits
+for.
 
 ## A splat stream
 
@@ -183,9 +206,9 @@ total size and `splats.loadedBytes` gives the part that has arrived.
 
 ## Costs and limits
 
-- One draw for the whole cloud, whose rows the engine culls and sorts. A splat's cost is its card
-  and the ellipse's math per pixel, so a large budget suits a fast GPU; the WebGL2 presets are lower
-  for that reason.
+- One draw for the whole cloud, whose rows the engine culls and sorts. A splat's cost is its card's
+  pixels, each an unlit fade and a blend, so a large budget suits a fast GPU; the WebGL2 presets are
+  lower for that reason.
 - The batch holds `capacity` rows of 56 bytes each, which is the cloud's memory. Without `capacity`, it holds the splats that the preset and the GPU path may draw, so a phone allocates less than a desktop.
 - The add-on reads the first band of each splat's spherical harmonics, which is its base color.
   Higher bands make a color change with the view; the add-on ignores them, which the extension

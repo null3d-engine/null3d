@@ -50,8 +50,9 @@ use crate::textures::TextureStore;
 
 /// Words of a stage's command: the texture, the generator, the stage, the panorama, the sky's 16
 /// values, the layer's template, the core sky's four cloud values that the layer obeys, the share
-/// of the sun that it hides, its opacity, its clock and the light capture's buffer.
-const STEP_WORDS: usize = 29;
+/// of the sun that it hides, its opacity, its clock, the light capture's buffer, the volumetric
+/// cloud tier's step count and its noise field's texture.
+const STEP_WORDS: usize = 31;
 
 /// The word of a stage's command that holds the template of the layer's build of the sky map's
 /// shader, or 0 for a map that draws no layer.
@@ -99,6 +100,14 @@ pub const LIGHT_RING: usize = 3;
 /// of the light that explains them. A device that lands no read must not hold a fill for good, so
 /// the wait ends after this many frames.
 const LIGHT_WAIT: u8 = LAYER_GRACE;
+
+/// The word that holds the steps of each ray of the volumetric cloud tier, or 0 for a map that
+/// draws the flat layer.
+const CLOUD_STEPS_WORD: usize = 29;
+
+/// The word that holds the noise field's texture that the volumetric cloud tier reads, or 0 while
+/// the tier draws the flat layer.
+const CLOUD_FIELD_WORD: usize = 30;
 
 /// The least turn of a sun, in radians, that a map draws again for: half a degree. A sun that
 /// turns less darkens or brightens the light it gives a surface by far less than a level of 255.
@@ -664,6 +673,7 @@ impl SkyMaps {
 
     /// Records the frame's stages of each map whose texture is ready: every stage of a map that
     /// is not full yet, and the next stage of a refresh. Forgets maps whose texture was destroyed.
+    #[allow(clippy::too_many_arguments)]
     /// `panorama_drawn` is true when the frame drew the physical sky's panorama, texture
     /// `panorama`, for the sky as it is, which a fill of the physical sky needs to start. `model`
     /// is the physical sky's CPU model.
@@ -675,6 +685,8 @@ impl SkyMaps {
         panorama: u32,
         model: Option<&AirModel>,
         target: LightTarget,
+        cloud_steps: u32,
+        noise: u32,
     ) -> Result<(), RecordError> {
         self.maps.retain(|map| textures.is_live(map.texture));
         self.compact_lights();
@@ -700,6 +712,8 @@ impl SkyMaps {
             target,
             settled,
             clock,
+            cloud_steps,
+            noise,
         );
         self.lights = lights;
         recorded
@@ -720,6 +734,8 @@ impl SkyMaps {
         target: LightTarget,
         settled: bool,
         clock: f32,
+        cloud_steps: u32,
+        noise: u32,
     ) -> Result<(), RecordError> {
         for map in &mut self.maps {
             let Some(light) = lights.get_mut(map.light) else {
@@ -795,7 +811,18 @@ impl SkyMaps {
                     false => None,
                 };
                 push_stage(
-                    list, id, generator, stage, &sky, layer, clock, panorama, capture, target,
+                    list,
+                    id,
+                    generator,
+                    stage,
+                    &sky,
+                    layer,
+                    clock,
+                    panorama,
+                    capture,
+                    target,
+                    cloud_steps,
+                    noise,
                 )?;
             }
             map.fill = if last == copy {
@@ -813,7 +840,8 @@ impl SkyMaps {
 /// Records stage `stage` of the sky map in cube texture `id`, which generator `generator` holds:
 /// of the analytic sky's settings, or of the physical sky's panorama in texture `panorama`. A stage
 /// with `capture` sums the map's light into the buffer that it names, once the fill has drawn every
-/// face of every level of the chain.
+/// face of every level of the chain. `cloud_steps` and `noise` reach the generator, which draws the
+/// volumetric cloud tier in this stage's shader while the count is above 0.
 #[allow(clippy::too_many_arguments)]
 fn push_stage(
     list: &mut DrawList,
@@ -826,14 +854,18 @@ fn push_stage(
     panorama: u32,
     capture: Option<&mut LightCapture>,
     target: LightTarget,
+    cloud_steps: u32,
+    noise: u32,
 ) -> Result<(), RecordError> {
     let mut words = [0u32; STEP_WORDS];
     words[..3].copy_from_slice(&[id, generator, stage]);
-    match sky {
+    words[CLOUD_STEPS_WORD] = cloud_steps;
+    words[CLOUD_FIELD_WORD] = noise;
+    let values = match sky {
         MapSky::Analytic { sky, .. } => {
             let [x, y, z] = sky.sun_position;
             let [heading, elevation] = sky.second_angles();
-            let values = [
+            [
                 x,
                 y,
                 z,
@@ -850,12 +882,36 @@ fn push_stage(
                 sky.time,
                 heading,
                 elevation,
-            ];
-            for (word, value) in words[4..20].iter_mut().zip(values) {
-                *word = value.to_bits();
-            }
+            ]
         }
-        MapSky::Physical { .. } => words[3] = panorama,
+        MapSky::Physical { atmosphere, .. } => {
+            // The panorama's cloud shader takes the lights' directions and the cloud settings,
+            // which stand where the analytic sky keeps its airs and second sky.
+            words[3] = panorama;
+            let [x, y, z] = atmosphere.sun();
+            let [mx, my, mz] = atmosphere.moon();
+            [
+                x,
+                y,
+                z,
+                atmosphere.sun_intensity,
+                mx,
+                my,
+                mz,
+                atmosphere.moon_intensity,
+                atmosphere.cloud_scale,
+                atmosphere.cloud_speed,
+                atmosphere.cloud_coverage,
+                atmosphere.cloud_density,
+                atmosphere.cloud_elevation,
+                atmosphere.time,
+                0.0,
+                0.0,
+            ]
+        }
+    };
+    for (word, value) in words[4..20].iter_mut().zip(values) {
+        *word = value.to_bits();
     }
     if let Some(layer) = layer {
         words[LAYER_WORD] = layer.map;

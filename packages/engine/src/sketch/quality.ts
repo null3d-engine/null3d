@@ -13,6 +13,7 @@ import { EngineError } from '../errors/engine-error';
 import { budgetScale, budgetSteps } from '../quality/budget';
 import type { PresetCheck } from '../quality/check';
 import {
+	antialiasRank,
 	capTextureMemory,
 	checkSettings,
 	LIVE_SETTINGS,
@@ -373,6 +374,8 @@ export class SketchQuality implements Quality {
 	 * when the engine starts, at their start values.
 	 */
 	private readonly options: Partial<QualitySettings>;
+	/** True when the page's own options fix the anti-aliasing mode, which no preset changes. */
+	private readonly antialiasFixed: boolean;
 	private readonly highest: QualityPreset;
 	private readonly textureCapMiB: number;
 
@@ -397,6 +400,7 @@ export class SketchQuality implements Quality {
 		const kept: Record<string, unknown> = { ...start.options };
 		for (const [name, value] of Object.entries(startValues(start.settings))) kept[name] ??= value;
 		this.options = kept as Partial<QualitySettings>;
+		this.antialiasFixed = start.options.antialias !== undefined;
 		this.highest = start.highest;
 		this.textureCapMiB = start.textureCapMiB ?? Number.POSITIVE_INFINITY;
 		const { settings } = this;
@@ -469,13 +473,26 @@ export class SketchQuality implements Quality {
 
 	/**
 	 * The preset check's step to the next lighter preset. The settings that the page's options give,
-	 * and those that the sketch chose itself, keep their values.
+	 * and those that the sketch chose itself, keep their values. A device can move to a lighter
+	 * anti-aliasing mode while it runs, so the lower preset gives that too: the check lowers a
+	 * tablet from Medium to Low, whose FXAA costs half of MSAA's draws. A heavier mode stays as the
+	 * device started with it.
 	 */
 	lower(): Promise<void> {
 		const next = lowered(this.preset, 1);
 		const kept: Record<string, unknown> = { ...this.options };
 		const current = this.settings as unknown as Record<string, unknown>;
 		for (const name of this.owned) kept[name] = current[name];
+		const wanted = presetSettings(next).antialias;
+		if (
+			!this.antialiasFixed &&
+			antialiasRank(wanted) < antialiasRank(current.antialias as QualitySettings['antialias'])
+		) {
+			kept.antialias = wanted;
+			// The device keeps the lighter mode for the rest of the session, so every later preset
+			// keeps it too, and the settings never name a mode that the canvas is not drawing.
+			this.options.antialias = wanted;
+		}
 		return this.update(next, this.presetValues(next, kept as Partial<QualitySettings>));
 	}
 

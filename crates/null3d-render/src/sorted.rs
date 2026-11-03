@@ -53,7 +53,7 @@ use crate::frame::{
 };
 use crate::materials::feature;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
-use crate::view::ViewFrame;
+use crate::view::{ViewFrame, ViewId};
 
 /// What makes a sorted bucket: what the mesh and material ask of their pipeline, the bind group of
 /// the material's map, the vertex page of the mesh's first part, the engine mesh and material ids,
@@ -101,6 +101,12 @@ pub(crate) struct SortedBucket {
     pub(crate) moment: u32,
     /// The id of the pipeline that draws its rows again into the moment layer's colour sum.
     pub(crate) moment_colour: u32,
+    /// The id of the pipeline that draws its rows in the camera's one-sample layer (see
+    /// [`crate::single_layer`]), or 0 for a bucket that the layer does not draw.
+    pub(crate) single: u32,
+    /// The id of the pipeline that draws its back faces in the one-sample layer before
+    /// [`SortedBucket::single`] draws its front faces, or 0 for a bucket that draws there once.
+    pub(crate) single_back: u32,
     /// True when its material reads the copy of the scene's depth, which its draws bind.
     pub(crate) scene_depth: bool,
 }
@@ -149,11 +155,12 @@ struct SortedBatch {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SortedRows {
     /// Every row, back to front, each bucket with its own pipeline: a view's transparent pass
-    /// while the camera draws no weighted layer.
+    /// while the camera draws no layer of its own.
     All,
-    /// The rows of buckets without a weighted pipeline, back to front: the camera's transparent
-    /// pass while it draws its weighted layer.
-    Sorted,
+    /// The rows of the buckets that no layer of the frame draws, back to front: the camera's
+    /// transparent pass while it draws a layer. `blended` leaves out the buckets of the weighted
+    /// and moment layers, and `single` those of the one-sample layer.
+    Sorted { blended: bool, single: bool },
     /// The rows of buckets with a weighted pipeline, with that pipeline: the camera's weighted
     /// pass.
     Weighted,
@@ -162,17 +169,33 @@ pub(crate) enum SortedRows {
     /// The rows of buckets with a moment colour pipeline, with that pipeline: the camera's moment
     /// colour pass.
     MomentColour,
+    /// The rows of buckets with a one-sample pipeline, back to front, with that pipeline: the
+    /// camera's one-sample layer.
+    Single,
 }
 
 impl SortedRows {
+    /// The rows of a view's transparent pass: for the camera's view, those that no layer it
+    /// draws takes, while `blended` says that it draws the weighted or the moment layer and
+    /// `single` that it draws the one-sample layer. Every other view draws every row.
+    pub(crate) fn transparent(view: ViewId, blended: bool, single: bool) -> SortedRows {
+        if view == ViewId::CAMERA && (blended || single) {
+            SortedRows::Sorted { blended, single }
+        } else {
+            SortedRows::All
+        }
+    }
+
     /// The pipelines that draw a run of `bucket`'s rows in a pass of these rows, in order, or
     /// none where the pass leaves the bucket out. In the transparent pass, a double-sided material
     /// that blends draws its back faces first, as three.js draws one, and then the bucket's own
     /// pipeline; a material with `forceSinglePass`, or a pair whose faces always face the camera,
     /// draws once. In the weighted or moment layer every bucket draws once, both faces together.
+    /// The one-sample layer keeps the transparent pass's order of faces.
     pub(crate) fn passes(self, bucket: &SortedBucket) -> impl Iterator<Item = u32> + use<> {
         let weighted = bucket.weighted != 0;
         let layered = weighted || bucket.moment != 0;
+        let single = bucket.single != 0;
         let (back, front, layer) = match self {
             SortedRows::Weighted => (None, None, weighted.then_some(bucket.weighted)),
             SortedRows::Moment => (None, None, (bucket.moment != 0).then_some(bucket.moment)),
@@ -181,7 +204,15 @@ impl SortedRows {
                 None,
                 (bucket.moment_colour != 0).then_some(bucket.moment_colour),
             ),
-            SortedRows::Sorted if layered => (None, None, None),
+            SortedRows::Single => (
+                (bucket.single_back != 0).then_some(bucket.single_back),
+                single.then_some(bucket.single),
+                None,
+            ),
+            SortedRows::Sorted {
+                blended,
+                single: skip,
+            } if (blended && layered) || (skip && single) => (None, None, None),
             _ => (
                 (bucket.back != 0).then_some(bucket.back),
                 Some(bucket.pipeline),
@@ -294,6 +325,8 @@ pub(crate) struct SortedLayout {
     weighs: bool,
     /// True when some bucket has a pipeline of the moment layer.
     moments: bool,
+    /// True when some bucket has a pipeline of the one-sample layer.
+    singles: bool,
     /// The pairs that the layout takes.
     kind: SortedKind,
     /// The layers whose objects a redraw layout draws again: those that decals skip.
@@ -406,6 +439,11 @@ impl SortedLayout {
         self.moments
     }
 
+    /// True when some bucket has a pipeline of the one-sample layer.
+    pub(crate) fn singles(&self) -> bool {
+        self.singles
+    }
+
     /// The rows that can draw in the transparent pass.
     pub(crate) fn rows(&self) -> u32 {
         self.rows
@@ -438,7 +476,10 @@ impl SortedLayout {
     /// takes the weighted blending gets that layer's pipeline too. With `moment`, the targets of
     /// the camera's moment layer, each bucket that the layer draws gets that layer's two
     /// pipelines: the one that writes the moment store and the one that writes the colour sum.
-    /// The layout then reserves every list that a frame's sort takes.
+    /// With `single`, the targets of the camera's one-sample layer, each bucket whose material
+    /// asks for that layer and blends with the normal blending, without letting light through,
+    /// gets that layer's pipelines instead of the other layers'. The layout then reserves every
+    /// list that a frame's sort takes.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn rebuild(
         &mut self,
@@ -453,6 +494,7 @@ impl SortedLayout {
         skin: impl Fn(usize, DrawKey) -> SkinnedPipeline,
         weighted: Option<PassTargets>,
         moment: Option<PassTargets>,
+        single: Option<PassTargets>,
         key_counts: &mut KeyCounts,
     ) -> Result<(), TryReserveError> {
         let meshes = settings.meshes();
@@ -556,11 +598,32 @@ impl SortedLayout {
         let (mut total, mut largest, mut most_parts) = (0u32, 0u32, 1u32);
         self.weighs = false;
         self.moments = false;
+        self.singles = false;
         for &((pipeline, textures, _, mesh, material, group), count) in key_counts.iter() {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
-            let (back, front) = match faces(pipeline, material) {
+            let sides = faces(pipeline, material);
+            let (back, front) = match sides {
                 Some((back, front)) => (pipelines.id(back.in_pass(targets)), front),
                 None => (0, pipeline),
+            };
+            // The one-sample layer composites its premultiplied color over the scene, which only
+            // the normal blending's surfaces sum to. A particle system or a vertex draw keeps its
+            // own calls in the transparent pass.
+            let single_layer = single.filter(|_| {
+                settings.materials().single_layer(material - 1)
+                    && pipeline.state & state_flags::BLEND == state_flags::BLEND_NORMAL
+                    && !pipeline.transmits()
+                    && !matches!(group & OWN_BUCKET_BITS, PARTICLE_GROUP | VERTEX_DRAW_GROUP)
+            });
+            let (single_back, single_front) = match single_layer {
+                Some(layer) => match sides {
+                    Some((back, front)) => (
+                        pipelines.id(back.in_pass(layer)),
+                        pipelines.id(front.in_pass(layer)),
+                    ),
+                    None => (0, pipelines.id(pipeline.in_pass(layer))),
+                },
+                None => (0, 0),
             };
             // Only the standard, unlit and sprite templates have builds of the weighted layer:
             // custom materials and lines sort as they blend.
@@ -575,12 +638,15 @@ impl SortedLayout {
                         | template::SPRITE_MAP
                 );
             let weighted = match weighted {
-                Some(layer) if weighs => pipelines.id(pipeline.weighted().in_pass(layer)),
+                Some(layer) if weighs && single_front == 0 => {
+                    pipelines.id(pipeline.weighted().in_pass(layer))
+                }
                 _ => 0,
             };
             // The moment layer draws every blended pair that has a build of it, whether it blends
-            // by weight or in the sorted order: one layer draws them all.
-            let draws_moment = moment.is_some() && pipeline.moment_drawn();
+            // by weight or in the sorted order: one layer draws them all, apart from the pairs that
+            // ask for the one-sample layer.
+            let draws_moment = moment.is_some() && pipeline.moment_drawn() && single_front == 0;
             let (moment_pass, moment_colour) = match moment {
                 Some(layer) if draws_moment => (
                     pipelines.id(pipeline.moment().in_pass(layer)),
@@ -590,11 +656,14 @@ impl SortedLayout {
             };
             self.weighs |= weighted != 0;
             self.moments |= moment_pass != 0;
+            self.singles |= single_front != 0;
             // A layered bucket draws its runs once more for each layer that draws it.
             let passes = if back == 0 { 1 } else { 2 }
                 + u32::from(weighted != 0)
                 + u32::from(moment_pass != 0)
-                + u32::from(moment_colour != 0);
+                + u32::from(moment_colour != 0)
+                + u32::from(single_back != 0)
+                + u32::from(single_front != 0);
             let lines = pipeline.state & state_flags::LINE_LIST != 0;
             most_parts = most_parts.max(meshes.parts(slot, lines).len() as u32 * passes);
             // A particle system's pipeline reads no draw index, so of the pass's bits it takes
@@ -615,6 +684,8 @@ impl SortedLayout {
                 weighted,
                 moment: moment_pass,
                 moment_colour,
+                single: single_front,
+                single_back,
                 // A custom material that reads the scene's depth binds its copy. A particle
                 // system's bucket draws no surface function.
                 scene_depth: group & (SKINNED_GROUP | PARTICLE_GROUP) == 0
