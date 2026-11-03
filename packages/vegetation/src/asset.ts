@@ -279,8 +279,12 @@ export interface SpeciesKitData {
 	};
 	/** The records texture's header rows. */
 	readonly header: Float32Array;
-	/** Whether stages that are not built yet grow stand-ins, for review and tests. */
-	readonly placeholders?: boolean;
+	/**
+	 * Which stages grow their stand-ins: every stage with `true`, so a stand-in species draws the same
+	 * as stages land; only the stages that are not built yet with `'missing'`, so a species grows
+	 * through every built stage before the rest exist.
+	 */
+	readonly placeholders?: boolean | 'missing';
 }
 
 /** The typed arrays of a part, in a fixed order. */

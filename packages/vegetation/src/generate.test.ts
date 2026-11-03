@@ -117,6 +117,17 @@ describe('the plant core with stand-ins', () => {
 		}
 	});
 
+	it('grows the built stages and stand-ins for the rest when the kit asks for the missing ones', () => {
+		const mixed = buildKitNow(stub, { placeholders: 'missing' });
+		expect(mixed.placeholders).toBe('missing');
+		const options = { seed: 11, variant: 0, near: true };
+		const asset = growPlantNow(mixed, options);
+		expect(plantAssetDigest(growPlantNow(mixed, options))).toBe(plantAssetDigest(asset));
+		expect(plantAssetDigest(asset)).not.toBe(plantAssetDigest(growPlantNow(kit, options)));
+		expect(asset.wind.count).toBe(asset.skeleton.axes.count);
+		expect(asset.levels[1].from).toBeGreaterThan(0);
+	});
+
 	it('throws where a stage is not built and the kit asks for no stand-ins', () => {
 		expect(() => buildKitNow(stub)).toThrow(NotBuiltError);
 	});
