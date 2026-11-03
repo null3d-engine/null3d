@@ -63,6 +63,7 @@ import {
 } from '../pages/lib/bright-scene.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
 import { MOTION_HOLD } from '../pages/lib/motion-vectors.ts';
+import { plantSpeciesTests } from './plant-species.ts';
 
 /**
  * The tolerance of a scene drawn about 1,000 km out against its image at the origin: any change of
@@ -3962,6 +3963,7 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	...GPU_OCCLUSION_SCENES.map(withGpuOcclusion),
 	...HALF_PRECISION_TESTS.map((name) => copyWithSwitch(name, 'half', 'half=on')),
 	...INDEX_INSTANCE_TESTS.map(withIndexInstances),
+	...plantSpeciesTests(),
 ];
 
 /** Every run of the manifest's tests: each test on each of its tiers, in each of its thread modes. */
