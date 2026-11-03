@@ -137,6 +137,13 @@ times fewer triangles in the walk view and 1.8 times fewer in the aerial view, a
 triangles fall by a third. The ground's patches account for most of it; the props pick their
 levels in texels too. [D-213](D-213-cluster-levels.md#shadow-views) gives the figures.
 
+The Island showcase, at High on WebGPU with the governor off, draws the same frame with either
+rule on the commit that this change starts from: 6.50 M triangles against 6.49 M, 3,727 draw calls
+in both, and its three cascades in 3.79 ms against 3.76 ms (medians of three runs on the dev
+server, at loads of 30 to 80). Its casters there carry no levels and no tree, so the rule has
+nothing to pick. The run-time levels that a mesh made in code plans ([D-310](D-310-runtime-levels.md))
+give them levels, and then each cascade picks them in its texels too.
+
 Three properties of a source keep the camera's measures in a shadow view:
 
 - A distance band reads the camera's distance in every view, so a source outside its band casts no shadow, as before.
