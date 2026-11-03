@@ -215,6 +215,8 @@ export interface CoreDevice {
 	textureCache: boolean;
 	/** The pixels that software occlusion culling's buffer holds about, or 0 for the core's default. */
 	occlusionBuffer: number;
+	/** False to hold GPU occlusion culling's passes on in every frame, without its check. */
+	occlusionCheck: boolean;
 }
 
 /**
@@ -271,6 +273,7 @@ export type DeviceOptions = Pick<
 	| 'shadowDepthBits'
 	| 'textureCache'
 	| 'occlusionBuffer'
+	| 'occlusionCheck'
 > & {
 	/** The anti-aliasing mode. */
 	antialias: AntialiasMode;
@@ -481,6 +484,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		gpuOcclusion: options.gpuOcclusion,
 		textureCache: options.textureCache,
 		occlusionBuffer: options.occlusionBuffer ?? 0,
+		occlusionCheck: options.occlusionCheck,
 	};
 	if (tier !== 'webgl2') {
 		return {

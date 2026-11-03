@@ -611,7 +611,9 @@ impl Culling {
     }
 
     /// Resets a two-phase view's counts for frame `frame`, which they then name, after the
-    /// view's other uploads of the frame.
+    /// view's other uploads of the frame. The still-camera accumulation's comparison skips the
+    /// frame's number, which every frame changes, so a view that holds still with the culling on
+    /// comes to rest.
     pub(super) fn reset_counts(
         list: &mut DrawList,
         arena: &mut UploadArena,
@@ -619,7 +621,8 @@ impl Culling {
         layout: &Layout,
         frame: u32,
     ) -> Result<(), RecordError> {
-        let (at, bytes) = arena.push(words_as_bytes(&[0, 0, frame, 0]))?;
+        const FRAME_BYTES: std::ops::Range<usize> = 8..12;
+        let (at, bytes) = arena.push_masked(words_as_bytes(&[0, 0, frame, 0]), &[FRAME_BYTES])?;
         let offset = counts_offset(layout);
         list.push(Op::WriteBuffer, &[ids::indirect(view), offset, at, bytes])?;
         Ok(())

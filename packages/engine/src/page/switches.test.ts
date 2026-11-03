@@ -29,6 +29,7 @@ describe('parseSwitches', () => {
 			prepassColor: undefined,
 			occlusion: undefined,
 			occlusionBuffer: undefined,
+			occlusionCheck: true,
 			skinning: 'vertex',
 			indexInstances: false,
 			direct: 'auto',
@@ -59,6 +60,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?occlusion-buffer=256x144').occlusionBuffer).toBe(256 * 144);
 		for (const bad of ['384', '384x', 'x216', '384x216x2', '0x216', '2048x1024', 'big'])
 			expect(parseSwitches(`?occlusion-buffer=${bad}`).occlusionBuffer).toBeUndefined();
+	});
+
+	it("holds GPU occlusion culling's passes on with ?occlusion-check=off, and keeps its check otherwise", () => {
+		expect(parseSwitches('?occlusion-check=off').occlusionCheck).toBe(false);
+		expect(parseSwitches('?occlusion-check=on').occlusionCheck).toBe(true);
+		expect(parseSwitches('').occlusionCheck).toBe(true);
 	});
 
 	it('withholds WEBGL_multi_draw with ?multidraw=off, and offers it otherwise', () => {

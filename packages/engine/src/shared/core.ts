@@ -1087,6 +1087,11 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setOcclusionBuffer(pixels: number): number;
 	/**
+	 * Holds GPU occlusion culling's passes on in every frame from the next one on, without its
+	 * check's trials, or lets the check judge them again. The WebGL2 path ignores it.
+	 */
+	holdOcclusionCheck(held: boolean): number;
+	/**
 	 * Grades the canvas color with the color grading table in a 3D texture, or with none for 0,
 	 * from the next frame on, with the post-processing values' intensity and domain.
 	 */
@@ -1599,6 +1604,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setParallax',
 	'setMomentTransparency',
 	'setOcclusionBuffer',
+	'holdOcclusionCheck',
 	'setLut',
 	'setGrade',
 	'setVignette',

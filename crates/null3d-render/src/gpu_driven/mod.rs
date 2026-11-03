@@ -3344,12 +3344,17 @@ impl GpuDrivenRenderer {
         // Without an object that may hide others, until occlusion culling's pipelines are built,
         // or while its check finds that its passes do not pay, the frame draws no occluders' depth
         // and builds no pyramid: each camera view culls once, as without occlusion culling, into
-        // the draws its opaque pass reads.
+        // the draws its opaque pass reads. While the view holds still, the check keeps its mode and
+        // copies nothing, so the frames record the same commands and the view can come to rest.
         let plan = if occlusion
             && self.layout.occluders() > 0
             && self.pyramids.built(input.pipelines_built)
         {
-            self.check.plan(input.frame)
+            if self.lists.still().accumulating() {
+                self.check.rest(input.frame)
+            } else {
+                self.check.plan(input.frame)
+            }
         } else {
             occlusion_check::Plan::default()
         };
@@ -4296,6 +4301,10 @@ impl FrameBuilder for GpuDrivenRenderer {
 
     fn set_occlusion_read_slot(&mut self, slot: u32) {
         self.count_reads.set_slot(slot);
+    }
+
+    fn hold_occlusion_check(&mut self, held: bool) {
+        self.check.hold(held);
     }
 
     fn casts_tile_shadows(&self) -> bool {

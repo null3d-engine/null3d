@@ -5,7 +5,8 @@
 // It reports the medians of each side's figures: the busiest thread's CPU time per frame, every
 // thread's together, the sketch worker's time and its culling step, the render worker's time, the
 // job workers' time together, the GPU time where the device has a timer, the frame interval, the
-// draw calls, and the index list entries that the frame drew and that the culling hid. ?light
+// draw calls, and the index list entries that the frame drew and that the culling hid. It also
+// reports whether GPU occlusion culling runs, which on WebGPU counts the objects it hid. ?light
 // draws a tenth of the city's spheres and boxes, as the image tests do. The device runner's
 // occlusion plan runs it on WebGL2.
 import { createEngine, type FrameSummary } from '@null3d/engine';
@@ -30,11 +31,14 @@ run('occlusion-cost', async () => {
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
 	await new Promise((resolve) => setTimeout(resolve, WARM_UP_SECONDS * 1000));
+	/** Whether the engine culls occluded objects on the GPU, as the sketch's last answer says. */
+	let gpuOcclusion = false;
 	const set = (side: 'on' | 'off') =>
 		new Promise<void>((resolve) => {
-			const off = engine.onSketchMessage((name) => {
+			const off = engine.onSketchMessage((name, data) => {
 				if (name !== 'occlusion') return;
 				off();
+				gpuOcclusion = (data as { gpuOcclusion: boolean }).gpuOcclusion;
 				resolve();
 			});
 			engine.postToSketch(`occlusion-${side}`, null);
@@ -57,6 +61,7 @@ run('occlusion-cost', async () => {
 	await engine.destroy();
 	return {
 		tier: engine.capabilities.tier,
+		gpuOcclusion,
 		window: [innerWidth, innerHeight],
 		devicePixelRatio,
 		off: medianFigures(sides.off),
