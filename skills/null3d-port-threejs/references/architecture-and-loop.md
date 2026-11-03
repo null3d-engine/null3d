@@ -29,6 +29,7 @@ three.js apps usually run everything on the main thread: DOM, input, scene updat
 | Video elements | `page.ts` | `engine.registerVideo` on the page and `textures.fromVideo` in the sketch (0.3): the page sends one image per frame that the video presents. Keep a frame within the upload budget (null3d-develop recipe 14) |
 | `localStorage`, cookies, URL parameters | `page.ts` | Send what the sketch needs at start; IndexedDB also works in the sketch |
 | `fetch` of JSON, binary data, models | `sketch.ts` | Workers have `fetch`; relative URLs resolve against the page |
+| A cache of generated geometry in IndexedDB | `sketch.ts` | Keep it, with arrays only, never engine objects; key it by the build (null3d-develop `references/performance.md`, section 12) |
 | `GLTFLoader` with `KTX2Loader` (0.2) | `sketch.ts` | `assets.loadGltf(url)` parses in a worker and needs no decoder paths; `scene.instantiate(prefab)` for each copy |
 | Physics libraries | `sketch.ts` | WebAssembly physics runs in workers |
 | Analytics, ads, routing | `page.ts` | Unchanged |
