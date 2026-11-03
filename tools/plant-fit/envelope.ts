@@ -16,7 +16,7 @@ import { CELLS, COLUMNS, columnX } from './silhouettes.ts';
 export const AZIMUTHS = 16;
 /** Heights the envelope holds radii at, from the crown's base to the plant's top. */
 export const LEVELS = 15;
-/** The share of a height's bounds, from the smallest, that the radius passes over. */
+/** The share of a half-turn's bounds, from the smallest, that the radius passes over. */
 export const DRIFT_SHARE = 0.07;
 /** The width in plant heights from which a row counts as crown rather than stem. */
 const CROWN_WIDTH = 0.2;
@@ -85,8 +85,13 @@ export function crownBaseRow(views: readonly Extents[]): number {
 }
 
 /**
- * The hull's radius at each row and azimuth, in plant heights: at each, the bound of each view that
- * faces it, sorted, and the one past the drift share of the smallest.
+ * The hull's radius at each row and azimuth, in plant heights. The views that see an azimuth on the
+ * plant's right and those that see it on the left are the two halves of the turn. In each half the
+ * bounds are sorted and the one past the drift share of the smallest is kept, and the radius is the
+ * mean of the two halves'. A plant that holds its shape round the turn gives both halves the same
+ * bound; a generated video whose plant is wider from one half than from the other, or a camera near
+ * enough that a crown's near side looms, gets the width between them. The smallest bound alone would
+ * keep the narrower half's, and the plant would come out short of the wide views.
  */
 function hullRows(views: readonly HullView[], extents: readonly Extents[]): Float64Array[] {
 	const rows: Float64Array[] = [];
@@ -94,19 +99,26 @@ function hullRows(views: readonly HullView[], extents: readonly Extents[]): Floa
 		const radii = new Float64Array(AZIMUTHS);
 		for (let a = 0; a < AZIMUTHS; a++) {
 			const phi = (2 * Math.PI * a) / AZIMUTHS;
-			const bounds: number[] = [];
+			const right: number[] = [];
+			const left: number[] = [];
 			views.forEach((view, k) => {
 				const e = extents[k] as Extents;
 				const c = Math.cos(phi + view.turn);
-				if (c > LEAST_COSINE) bounds.push((e.right[row] as number) / c);
-				else if (c < -LEAST_COSINE) bounds.push((e.left[row] as number) / -c);
+				if (c > LEAST_COSINE) right.push((e.right[row] as number) / c);
+				else if (c < -LEAST_COSINE) left.push((e.left[row] as number) / -c);
 			});
-			bounds.sort((p, q) => p - q);
-			radii[a] = bounds[Math.min(Math.floor(DRIFT_SHARE * bounds.length), bounds.length - 1)] ?? 0;
+			const halves = [right, left].filter((half) => half.length > 0).map(driftBound);
+			radii[a] = halves.length > 0 ? mean(halves) : 0;
 		}
 		rows.push(radii);
 	}
 	return rows;
+}
+
+/** A half-turn's bound: its bounds sorted, and the one past the drift share of the smallest. */
+function driftBound(bounds: number[]): number {
+	bounds.sort((p, q) => p - q);
+	return bounds[Math.min(Math.floor(DRIFT_SHARE * bounds.length), bounds.length - 1)] as number;
 }
 
 /** A radius rounded for the record. */
