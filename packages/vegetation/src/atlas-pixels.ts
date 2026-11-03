@@ -1241,10 +1241,16 @@ function periodicDash(u: number, band: number): number {
 function lenticel(u: number, v: number, family: BarkFamily): number {
 	const rows = family.lenticelRows ?? 18;
 	const density = family.lenticelDensity ?? 0.62;
-	const band = Math.floor(v * rows);
+	// The rows wander as the trunk's surface swells, so the marks do not sit on a ruled grid, and
+	// each dash keeps its own length, so a row is a scatter rather than a dotted line. Both waves
+	// count whole cycles across the cell, so the field still wraps at its seam.
+	const wander = (periodicBark(u, 0, 3, 1, 7) - 0.5) * 0.45;
+	const seat = v * rows + wander;
+	const band = Math.floor(seat);
 	const shift = random2(band, 3) * 4;
-	const along = teethWave(v * rows);
-	const marks = smoothstep(density, density + 0.2, periodicDash(u, band + shift));
+	const along = teethWave(seat);
+	const length = 0.55 + 0.45 * periodicBark(u, 0, 5, 1, band + 2);
+	const marks = smoothstep(density, density + 0.2, periodicDash(u, band + shift)) * length;
 	return marks * (1 - smoothstep(0.05, 0.2, along));
 }
 
@@ -1267,7 +1273,12 @@ function barkScar(u: number, v: number, family: BarkFamily): number {
 		// the mark meets itself across the cell's seam.
 		const wobble = 1 + 0.35 * (periodicDash(u, i * 7) * periodicDash(v, i * 11) - 0.25);
 		const reach = Math.hypot((u - centreX) / wide, (v - centreY) / tall) / (size * wobble);
-		scar = Math.max(scar, 1 - smoothstep(0.82, 1, reach));
+		// The bark closed over the stub in rings, so the knot is a dark core banded by its own
+		// ridges rather than one even patch: the ridge wave counts whole cycles, so it wraps.
+		const ridge =
+			0.62 +
+			0.38 * teethWave(reach * 3.5 + random2(i + 1, 61) + (periodicDash(u, i * 5) - 0.5) * 0.9);
+		scar = Math.max(scar, (1 - smoothstep(0.78, 1, reach)) * ridge);
 	}
 	return scar;
 }
