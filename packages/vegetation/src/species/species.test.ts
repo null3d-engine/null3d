@@ -8,9 +8,9 @@ import { plantAssetDigest } from '../asset';
 import { speciesProblems } from '../core/check';
 import type { SpeciesModule } from '../core/record';
 import { isSpeciesId, loadSpecies, speciesIds } from '../core/registry';
+import { standInSpecies } from '../core/stand-in';
 import { DETAILS } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
-import { species as stub } from './_stub/index';
 
 /** One species to walk: its folder's name, its module, and whether its stages may be stand-ins. */
 interface Walked {
@@ -21,7 +21,7 @@ interface Walked {
 
 const WALKED: readonly Walked[] = [
 	...speciesIds().map((id) => ({ folder: id, load: () => loadSpecies(id), placeholders: false })),
-	{ folder: 'stub', load: async () => stub, placeholders: true },
+	{ folder: 'stub', load: async () => standInSpecies('stub'), placeholders: true },
 ];
 
 /** The bytes of every array a kit holds. */

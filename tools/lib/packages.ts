@@ -137,19 +137,14 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		required: ['dist/terrain.wasm'],
 		repositoryOnly: ['reference-builder.ts', 'quadtree.ts', 'chunk-vertices.ts'],
 	},
-	// The species template and the stand-in species are folders that the repository's tests and
-	// review page read; the registry leaves them out, and so does the package.
+	// The species template is a folder to copy, which the registry leaves out, and so does the
+	// package.
 	vegetation: {
 		compile: true,
 		shaders: false,
 		docs: false,
 		required: [],
-		repositoryOnly: [
-			'species/_template/record.ts',
-			'species/_template/index.ts',
-			'species/_stub/record.ts',
-			'species/_stub/index.ts',
-		],
+		repositoryOnly: ['species/_template/record.ts', 'species/_template/index.ts'],
 	},
 	// Its tone curves and outline passes compile from .wgsl files into modules of their own.
 	'three-compat': {

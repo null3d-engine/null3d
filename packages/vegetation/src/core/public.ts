@@ -16,6 +16,7 @@ export {
 	VARIANTS_BY_PRESET,
 } from './caps';
 export { checkSpecies, speciesProblems } from './check';
+export { crownRadius, speciesRule } from './ecology';
 export {
 	AXIS_ARM,
 	AXIS_CULM,
@@ -82,6 +83,7 @@ export type {
 	ShootSpec,
 	Species,
 	SpeciesBudget,
+	SpeciesEcology,
 	SpeciesHooks,
 	SpeciesModule,
 	StemSpec,
@@ -91,6 +93,12 @@ export type {
 	WindSpec,
 } from './record';
 export { isSpeciesId, loadSpecies, type SpeciesId, speciesIds } from './registry';
+export {
+	loadSpeciesOrStandIn,
+	type StandInOptions,
+	standInRecord,
+	standInSpecies,
+} from './stand-in';
 export {
 	noTextureFiles,
 	type SpeciesTextureFiles,

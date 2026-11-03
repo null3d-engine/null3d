@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type PlantAsset, plantAssetDigest } from './asset';
 import { NotBuiltError } from './core/not-built';
+import { standInSpecies } from './core/stand-in';
 import {
 	bakeFarNow,
 	buildKitNow,
@@ -18,7 +19,8 @@ import {
 	variantKey,
 } from './generate';
 import type { PlantTaskInput } from './generate-task';
-import { species as stub } from './species/_stub/index';
+
+const stub = standInSpecies('stub');
 
 await loadPlantCode(stub.record);
 const kit = buildKitNow(stub, { placeholders: true });

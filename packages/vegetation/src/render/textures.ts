@@ -1,11 +1,14 @@
 // A species on a page: its textures loaded from the preset's set in the engine's transcoder worker
 // the first time a page prepares it, its kit built in a job worker, and its card atlas and records
-// uploaded. Nothing loads at import time. It throws until the page side is built.
+// uploaded. Nothing loads at import time. Until the textures and the records upload are built, a
+// page that asks for `placeholders` gets the stand-in kit of render/stand-in.ts, and any other
+// page an error.
 import type { SketchContext, Texture } from '@null3d/engine';
 import type { SpeciesKitData } from '../asset';
 import { notBuilt } from '../core/not-built';
 import type { SpeciesModule } from '../core/record';
 import type { Detail } from '../core/types';
+import { standInPrepare } from './stand-in';
 
 /**
  * A species' textures on the GPU, made by `prepareSpecies` from the preset's set.
@@ -50,22 +53,32 @@ export interface SpeciesKit extends SpeciesKitData {
 }
 
 /**
+ * How `prepareSpecies` prepares a species.
+ *
+ * @category api/vegetation
+ */
+export interface PrepareOptions {
+	/** The mesh tier; the preset's by default. */
+	readonly detail?: Detail;
+	/** Grow a stand-in for each stage that is not built yet. */
+	readonly placeholders?: boolean;
+}
+
+/**
  * Loads a species' textures, builds its kit in a job worker, and uploads its card atlas and its
  * records.
  *
  * @param ctx The sketch's context.
  * @param module The species module, from `loadSpecies`.
- * @param options The mesh tier; the preset's by default.
+ * @param options The mesh tier and the stand-ins.
  * @returns The kit.
  * @category api/vegetation
  */
 export function prepareSpecies(
 	ctx: SketchContext,
 	module: SpeciesModule,
-	options?: { readonly detail?: Detail },
+	options?: PrepareOptions,
 ): Promise<SpeciesKit> {
-	void ctx;
-	void module;
-	void options;
+	if (options?.placeholders) return standInPrepare(ctx, module, options);
 	return Promise.reject(notBuilt('preparing a species on a page'));
 }

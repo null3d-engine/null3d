@@ -57,9 +57,20 @@ export interface Species {
 	readonly roundBand?: number;
 	/** Which pieces a close review cuts from the plant. */
 	readonly cuttings?: CuttingHints;
-	/** The scatter's rule for this species. */
-	readonly ecology?: EcoRule;
+	/** Where the scatter places this species: its layer, spacing and tolerances. */
+	readonly ecology?: SpeciesEcology;
 }
+
+/**
+ * A species' scatter rule without what the record already gives: its id, its variants, and its
+ * radius, which defaults to its crown's. `speciesRule` makes the scatter's rule from it.
+ *
+ * @category api/vegetation
+ */
+export type SpeciesEcology = Omit<EcoRule, 'species' | 'variants' | 'radius'> & {
+	/** The radius the plant keeps to itself, in metres; its crown's by default. */
+	readonly radius?: number;
+};
 
 /**
  * The size of a mature plant.

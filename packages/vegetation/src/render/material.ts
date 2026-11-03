@@ -1,9 +1,11 @@
 // The plant materials: one shader with four roles, wood, shoots, cards and merged foliage, with an
 // energy-correct two-sided leaf, a tangent frame from derivatives, and occlusion on sky light only.
-// It throws until the materials are built.
+// Until the plant shader is built, a stand-in kit takes the standard material in its record's
+// colours, which no wind moves, and any other kit an error.
 import type { Material, SketchContext } from '@null3d/engine';
 import type { WindField } from '@null3d/wind';
 import { notBuilt } from '../core/not-built';
+import { isStandInMaterial, standInMaterials } from './stand-in';
 import type { SpeciesKit } from './textures';
 
 /**
@@ -43,8 +45,7 @@ export function plantMaterials(
 	kit: SpeciesKit,
 	options?: { readonly wind?: WindField; readonly swayDistance?: number },
 ): PlantMaterials {
-	void ctx;
-	void kit;
+	if (kit.placeholders) return standInMaterials(ctx, kit);
 	void options;
 	throw notBuilt('the plant materials');
 }
@@ -57,7 +58,7 @@ export function plantMaterials(
  * @category api/vegetation
  */
 export function setWindLayer(materials: readonly PlantMaterial[], field: WindField): void {
-	void materials;
 	void field;
+	if (materials.every(isStandInMaterial)) return;
 	throw notBuilt('the plant materials');
 }
