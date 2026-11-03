@@ -5,12 +5,14 @@
 import { describe, expect, it } from 'bun:test';
 import type { PlantAsset, SpeciesKitData } from '../asset';
 import { plantAssetDigest } from '../asset';
+import { NEAR_CAPS } from '../core/caps';
 import { speciesProblems } from '../core/check';
 import type { SpeciesModule } from '../core/record';
 import { isSpeciesId, loadSpecies, speciesIds } from '../core/registry';
 import { standInSpecies } from '../core/stand-in';
-import { DETAILS } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
+import { levelDistances, REFERENCE_VIEW } from '../lod/levels';
+import { bandTriangles, tierBands } from '../render/near-arrays';
 
 /** One species to walk: its folder's name, its module, and whether its stages may be stand-ins. */
 interface Walked {
@@ -38,15 +40,24 @@ function kitBytes(kit: SpeciesKitData): number {
 	return bytes;
 }
 
-/** Triangles of the nearest level of one copy at the high tier: its meshes and its shoot rows. */
-function nearTriangles(kit: SpeciesKitData, asset: PlantAsset): number {
-	const high = DETAILS.indexOf('high');
-	let triangles = asset.levels[0].triangles;
-	for (let row = 0; row < asset.shoots.count; row++) {
-		const prototype = kit.prototypes[asset.shoots.prototype[row] as number];
-		triangles += (prototype?.tiers[high]?.indices.length ?? 0) / 3;
-	}
-	return triangles;
+/**
+ * The triangles that one copy draws inside its near band at the High preset, at the worst of three
+ * eyes: under the crown at eye height, at the crown's centre and at its edge. Inside the split, rows
+ * draw in bands of falling leaf mesh tier, as the near pool draws them; beyond it, cards. The
+ * nearest level's wood and merged foliage count whole.
+ */
+function nearBandTriangles(kit: SpeciesKitData, asset: PlantAsset): number {
+	const split = levelDistances(kit, asset.skeleton.height, REFERENCE_VIEW)[0];
+	const bands = tierBands('high', split);
+	const { centre, radius } = asset.crown;
+	const eyes: (readonly [number, number, number])[] = [
+		[0.5, 1.7, 0.5],
+		[centre[0], centre[1], centre[2]],
+		[centre[0] + radius, Math.min(1.7, asset.skeleton.height), centre[2]],
+	];
+	let worst = 0;
+	for (const eye of eyes) worst = Math.max(worst, bandTriangles(kit, asset, eye, bands).triangles);
+	return asset.levels[0].triangles + worst;
 }
 
 for (const walked of WALKED) {
@@ -73,7 +84,9 @@ for (const walked of WALKED) {
 			const budget = record.lod.budget;
 			expect(kitBytes(kit)).toBeLessThanOrEqual(budget.kitBytes);
 			expect(asset.stats.bytes).toBeLessThanOrEqual(budget.variantBytes);
-			expect(nearTriangles(kit, asset)).toBeLessThanOrEqual(budget.lod0Triangles);
+			const near = nearBandTriangles(kit, asset);
+			expect(near).toBeLessThanOrEqual(budget.lod0Triangles);
+			expect(near).toBeLessThanOrEqual(NEAR_CAPS.high.triangles);
 			expect(asset.levels[1].triangles).toBeLessThanOrEqual(budget.lod1Triangles);
 			expect(asset.levels[2].triangles).toBeLessThanOrEqual(budget.lod2Triangles);
 			const outputs = module.textures.manifest.outputs;

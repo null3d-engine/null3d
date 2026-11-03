@@ -42,8 +42,6 @@ struct Uniforms {
     swayDistance: f32,
     // The role: 0 wood, 1 shoot rows, 2 cards, 3 merged foliage, 4 extras.
     mode: f32,
-    // The distance from the camera inside which a near copy's cards give way to its real shoots.
-    nearDistance: f32,
     // 1 to move the trunk's and the largest limbs' vertices by the bark's height, 0 to keep them.
     displacement: f32,
     // How far into autumn the leaves stand, from 0 for summer to 1 for turned.
@@ -837,9 +835,10 @@ fn surface(input: SurfaceInput) -> Surface {
             base = texel.rgb;
         }
         alpha = texel.a;
-        // In the shell where a near copy draws its real shoots, its cards give way.
-        let near_copy = object.values.x > 0.5;
-        if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
+        // Inside a near copy's split, which its card row's value carries, its real shoots draw and
+        // its cards give way; a copy that draws no shoots carries 0.
+        let split = object.values.x;
+        if (split > 0.0 && length(input.relativePosition) < split * 0.96) {
             alpha = 0.0;
         }
         let e = (surface_texel.xy * 255.0 - vec2f(128.0)) / 127.0;

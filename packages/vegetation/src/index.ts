@@ -5,21 +5,10 @@
 // grass and the floating leaves. Until a species ships, a page grows a stand-in of its size and
 // colours in its place. Each module keeps its public names in its own `public.ts`, and this file only
 // re-exports them. Built on the engine's public API only.
-import { checkAddonVersion, declareAddonNamespace } from '@null3d/engine';
+import { checkAddonVersion } from '@null3d/engine';
 import { VERSION } from './version';
 
 checkAddonVersion('@null3d/vegetation', VERSION);
-
-/**
- * The add-on's names, claimed once as the page loads: its error codes and its quality keys.
- *
- * @category api/vegetation
- */
-export const NAMESPACE = declareAddonNamespace({
-	name: 'vegetation',
-	package: '@null3d/vegetation',
-	errorCodes: [2300, 2399],
-});
 
 export {
 	type CardCell,
@@ -62,6 +51,7 @@ export * from './ground/public';
 export * from './grow/public';
 export * from './leaf/public';
 export * from './lod/public';
+export { NAMESPACE } from './namespace';
 export * from './render/public';
 export * from './scatter/public';
 export type { FarBake } from './stages';

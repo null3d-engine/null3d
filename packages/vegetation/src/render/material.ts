@@ -139,7 +139,6 @@ export function plantMaterials(
 				windLayer: field?.texture.layer ?? 0,
 				swayDistance,
 				mode: MODE[role],
-				nearDistance: 0,
 				displacement: 0,
 				season: 0,
 				matte: matte ? 1 : 0,

@@ -146,8 +146,8 @@ function partMesh(
 	return base;
 }
 
-/** Writes the rows of a batch from the copies of one variant. */
-function fillRows(batch: InstanceBatch, copies: PlantCopies, rows: readonly number[]): void {
+/** Writes the rows of a batch from the copies of one variant: their places, turns and scales. */
+export function fillRows(batch: InstanceBatch, copies: PlantCopies, rows: readonly number[]): void {
 	rows.forEach((copy, row) => {
 		batch.positions.set(copies.position.subarray(copy * 3, copy * 3 + 3), row * 3);
 		const half = (copies.turn[copy] as number) / 2;
@@ -157,8 +157,8 @@ function fillRows(batch: InstanceBatch, copies: PlantCopies, rows: readonly numb
 	batch.markDirty();
 }
 
-/** The far cards of one variant's copies, from its far bake. */
-function farCards(
+/** The far cards of one variant's copies, from its far bake, standing on the plant's lowest point. */
+export function farCards(
 	ctx: SketchContext,
 	asset: PlantAsset,
 	bake: NonNullable<PlaceOptions['far']>[number]['bake'],
@@ -247,6 +247,7 @@ export function standInPlace(
 	});
 	return {
 		copies: copies.count,
+		split: 0,
 		destroy() {
 			for (const batch of batches) batch.destroy();
 			for (const batch of cards) batch.destroy();
@@ -256,5 +257,13 @@ export function standInPlace(
 
 /** The stand-in near pool, which draws no real shoots: every copy stays on its cards. */
 export function standInNearPool(): NearPool {
-	return { copies: 0, triangles: 0, update() {}, destroy() {} };
+	return {
+		copies: 0,
+		triangles: 0,
+		budget: 0,
+		detail: 'low',
+		update() {},
+		settled: () => Promise.resolve(),
+		destroy() {},
+	};
 }

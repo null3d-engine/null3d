@@ -606,7 +606,7 @@ export default defineSketch(async (ctx) => {
 	let near: NearPool | undefined;
 	if (QUERY.lod === undefined || QUERY.lod === 0) {
 		try {
-			near = createNearPool(ctx, { placeholders });
+			near = createNearPool(ctx, { placeholders, camera: cameras[0] as Camera });
 		} catch (error) {
 			notes.push(`no near pool: ${(error as Error).message}`);
 		}
