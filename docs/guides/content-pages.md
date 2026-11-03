@@ -170,44 +170,33 @@ return {
 | Lifetime | What keeps it | How |
 | --- | --- | --- |
 | Between visits | The HTTP cache | Hosts that let browsers keep the hashed build files: [Hosting](../getting-started/hosting.md) |
-| Between visits | Data the sketch generates | An IndexedDB cache in the sketch worker, as below |
+| Between visits | Data the sketch generates | The engine's cache of derived data, through `assets.cache`, as below |
 | Views of a single-page app | The running engine | `engine.detach()` and `engine.attach(element)`: [Architecture](../concepts/architecture.md) |
 | Back and forward | The browser's back/forward cache | Listen for `pagehide`, never `unload`, and do not send `Cache-Control: no-store` on the page |
 
-Browsers decide whether they can keep a page with a running engine in the back/forward cache. Build the page so that a full reload works too.
+Browsers decide whether they can keep a page with a running engine in the back/forward cache. Build the page so that a full reload works too. [Caches between visits](../getting-started/hosting.md#caches-between-visits) shows every cache that a repeat visit uses.
 
-A sketch that generates data, such as a terrain or a scatter of objects, can store the result in IndexedDB. Workers have IndexedDB. Follow these rules:
+A sketch that generates data, such as a terrain or a scatter of objects, can keep it in the engine's cache of derived data. The call `assets.cache(name, version)` gives the sketch a namespace of it ([Caching](../api/assets.md#the-cache-of-derived-data)). Follow these rules:
 
-- Store numbers and typed arrays only. They come back exactly as they went in. Never store engine objects.
-- Key each entry by the build. In a production build, `import.meta.url` names the sketch's file with a hash of its content, so a new deploy never reads old data.
+- Store numbers and typed arrays as bytes. They come back exactly as they went in. Never store engine objects.
+- Change the version whenever the code that makes the data changes. In a production build, `import.meta.url` names the sketch's file with a hash of its content, so a new deploy never reads old data.
+- Key each entry by every input of the data, such as a seed.
 - Run the same code on a hit and a miss after the lookup, so the two cannot differ.
-- Write after the page reports its first frame, and never inside `onUpdate`. Storing large arrays takes time on the sketch's thread.
-- Treat a failed or slow database as a miss. Give the open a time limit, such as 1.5 seconds.
 - Skip the cache in development, where the file name has no hash.
 
 ```ts
-// sketch.ts: readEntry and writeEntry wrap IndexedDB. readEntry resolves to undefined on a
-// miss, on an error, and after its time limit.
-const pending: [string, unknown][] = [];
-page.onMessage((type) => {
-  if (type === 'shown') for (const [id, value] of pending.splice(0)) void writeEntry(id, value);
-});
+// sketch.ts
+const store = assets.cache('my-page/scatter', import.meta.url);
 
-async function cached<T>(key: string, generate: () => T): Promise<T> {
-  if (import.meta.env.DEV) return generate();
-  const id = `${import.meta.url}:${key}`;
-  const found = (await readEntry(id)) as T | undefined;
-  const value = found ?? generate();
-  if (found === undefined) pending.push([id, value]);
-  return value;
+async function cached(key: string, generate: () => Float32Array): Promise<Float32Array> {
+  const found = import.meta.env.DEV ? undefined : await store.get(key);
+  const values = found ? new Float32Array(found.slice().buffer) : generate();
+  if (!found && !import.meta.env.DEV) void store.put(key, new Uint8Array(values.buffer));
+  return values;
 }
 ```
 
-```ts
-// page.ts
-await engine.firstFrame;
-engine.postToSketch('shown');
-```
+The cache writes after the call that asks for it, off the sketch's frames, and a failed or slow storage counts as a miss. So the sketch needs no timer of its own, and no message from the page.
 
 ## After a crash
 

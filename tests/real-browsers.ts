@@ -66,7 +66,9 @@
 //                       count of S1's objects or S5's characters at which three.js holds 30
 //                       frames per second, or texture-cache, which times first and repeat visits
 //                       that load the city scene's 120 KTX2 textures, with the cache of
-//                       transcoded textures off and on, or object-growth, which times the create
+//                       transcoded textures off and on, or storage-speed, which reports the
+//                       storage allowance and times each browser store's writes and reads from a
+//                       worker, or object-growth, which times the create
 //                       calls that grow the scene's object tables, and the engine memory of a
 //                       small scene, on each GPU path, or occlusion-s6, T-36, which times S6 on
 //                       WebGL2 with software occlusion culling off and on in turns at the Low,
@@ -317,6 +319,7 @@ import {
 	REPO_ROOT,
 	startServer,
 } from './lib/server.ts';
+import { storageSpeedSummary } from './lib/storage-speed.ts';
 import { progressName, tabEndedResult } from './lib/tab-end.ts';
 import { textureCacheSummary } from './lib/texture-cache.ts';
 
@@ -1676,6 +1679,7 @@ async function runPlan(
 			warmUpTimeSummary,
 			governorSummary,
 			textureCacheSummary,
+			storageSpeedSummary,
 			objectGrowthSummary,
 			occlusionS6Summary,
 		].map((summary) => summary(plan.items, resultOf));

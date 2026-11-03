@@ -176,7 +176,10 @@ export interface PlantPart {
 export interface PlantLevel {
 	/** The level: 0 real geometry, 1 shoot cards, 2 thinned cards. */
 	readonly level: 0 | 1 | 2;
-	/** Its parts. */
+	/**
+	 * Its parts. Several may share a name: a large mesh comes in pieces of at most 65,536 vertices,
+	 * so every part's indices fit 16 bits.
+	 */
 	readonly parts: readonly PlantPart[];
 	/** Metres at which this level starts, for a reference view; the page sets its own from its view. */
 	readonly from: number;

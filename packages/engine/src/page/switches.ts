@@ -11,7 +11,8 @@
 // pass, or full, skip or narrow for the pass with fewer of its savings), ?instances=index for
 // vertex shaders that read instance data by index on core WebGPU, ?shadowdepth=32 for shadow
 // cascades in 32-bit float depth instead of 16-bit depth,
-// ?texture-cache=off for KTX2 files that transcode on every load, and ?join=off for custom effects
+// ?derived-cache=off for a load with no cache of derived data across visits, as on a first visit,
+// and ?join=off for custom effects
 // in a pass each, none joined, for pages that measure what joining saves. ?replay-delay= makes the
 // thread that draws wait before it replays each frame's list, for a test of memory that the sketch
 // thread frees while the list may still point at it. ?hold starts hold mode for image tests, ?preset= fixes the quality preset,
@@ -246,10 +247,10 @@ export interface Switches {
 	 */
 	shadowDepthBits: ShadowDepthBits;
 	/**
-	 * False when ?texture-cache=off makes KTX2 files transcode on every load, with no cache of
-	 * transcoded textures, to time the cache against it.
+	 * False when ?derived-cache=off turns the cache of derived data off, so every load makes its
+	 * data again, as on a first visit, and nothing is stored, to time the cache against it.
 	 */
-	textureCache: boolean;
+	derivedCache: boolean;
 	/**
 	 * The frame rate from ?fps= that the thread that draws holds, up to the display's rate, or
 	 * undefined to draw at the display's rate.
@@ -435,7 +436,7 @@ export function parseSwitches(search: string): Switches {
 		direct: oneOf(params.get('direct'), ['on', 'off'] as const) ?? 'auto',
 		hideMemoryMaximum: params.get('memory-maximum') === 'hidden',
 		shadowDepthBits: params.get('shadowdepth') === '32' ? 32 : 16,
-		textureCache: params.get('texture-cache') !== 'off',
+		derivedCache: params.get('derived-cache') !== 'off',
 		fps: positive(params.get('fps')),
 		targetFps: params.get('target-fps') === 'display' ? 'display' : whole(params.get('target-fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),

@@ -25,7 +25,7 @@ Product pages, marketing pages and landing pages that show a 3D scene next to te
 3. The load deadline and the three states: waiting, late, ready. Reveal the canvas when `engine.firstFrame` resolves.
 4. The scene itself.
 5. Pausing: off screen, under reduced motion, and a pause button for motion that lasts longer than five seconds.
-6. Second visits: HTTP caching, a cache for generated data, `detach` and `attach` in single-page apps.
+6. Second visits: HTTP caching, `assets.cache` for generated data, `detach` and `attach` in single-page apps.
 7. The crash marker.
 
 ## 3. Rules
@@ -38,7 +38,7 @@ Product pages, marketing pages and landing pages that show a 3D scene next to te
 - Pause with `engine.setPaused` while an `IntersectionObserver` sees no part of the canvas. Combine every pause reason, and pause while any holds.
 - Under `preferences.reducedMotion`, a decorative scene shows a still view. It can post a message so the page pauses the engine.
 - Scroll-driven cameras: the page sends the scroll progress at most once per animation frame, and only when it changes. The sketch eases with `k = 1 - Math.pow(0.001, dt)` and jumps to the first value it receives. Reveal after the sketch confirms the first value.
-- Cache generated data in IndexedDB from the sketch. Store numbers and typed arrays only, keyed by `import.meta.url` in production builds. Run the same code after a hit or a miss. Write after the page reports its first frame, and skip the cache in development.
+- Cache generated data in the engine's cache of derived data: `assets.cache(name, import.meta.url)` (0.3) gives the sketch a namespace with `get(key)` and `put(key, bytes)`. Store numbers and typed arrays as bytes, keyed by every input. Run the same code after a hit or a miss, and skip the cache in development. The cache writes after the call and treats any storage failure as a miss, so it needs no timer and no message from the page (`guides/content-pages`).
 - Listen for `pagehide`, never `unload`, and never send `Cache-Control: no-store` on the page. Browsers decide whether they can keep a page with a running engine in the back/forward cache, so a reload must work too.
 - Crash marker: write a time stamp to `localStorage` before `createEngine`, clear it a few seconds after the first frame and on `pagehide`. A marker younger than a week on the next load means the last start never finished: show the fallback. Wrap every storage access in `try`. The engine keeps a note of its own: after a start that crashed the tab, it starts one quality preset lower, and `engine.mode.crashedStarts` counts such starts.
 - Never call the loading wait "hold": in null3D, hold mode is the fixed-frame mode of image tests.

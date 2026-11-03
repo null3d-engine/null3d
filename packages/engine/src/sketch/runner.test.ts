@@ -295,7 +295,7 @@ async function start(
 				expectedObjects: 0,
 				gpuOcclusion: false,
 				directDraws: false,
-				textureCache: true,
+				derivedCache: true,
 				occlusionBuffer: 0,
 				...device,
 			},
