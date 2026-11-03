@@ -53,6 +53,11 @@ const FOV = QUERY.fov ?? SPEC.fov;
 const BACKGROUND = QUERY.background ?? SPEC.background;
 const SUN = QUERY.sun ?? SPEC.sun;
 const MATTE = VIEW === 'silhouette' || QUERY.matte === true;
+/**
+ * The level forced at every distance: the query's, or the nearest for a view of the wood alone,
+ * which judges the whole branching rather than what a level keeps at its distance.
+ */
+const LOD = QUERY.lod ?? (SPEC.woodOnly ? 0 : undefined);
 const DEG = Math.PI / 180;
 /** The quaternion that lays a plane, which faces +Z, flat on the ground. */
 const FLAT: [number, number, number, number] = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];
@@ -230,7 +235,7 @@ function shaped(asset: PlantAsset, woodOnly: boolean): PlantAsset {
 		from,
 	});
 	const empty = { parts: [], triangles: 0, bytes: 0 };
-	const lod = QUERY.lod;
+	const lod = LOD;
 	const rows =
 		woodOnly || (lod !== undefined && lod !== 0) ? { ...asset.shoots, count: 0 } : asset.shoots;
 	if (lod === undefined || lod === 3)
@@ -611,7 +616,7 @@ export default defineSketch(async (ctx) => {
 	// A stand-in kit draws through the stand-in near pool. A real kit's one plant stands at a fixed
 	// place, so its placement composes its shoot rows once, with no pool.
 	const near: NearPool | undefined =
-		placeholders === true && (QUERY.lod === undefined || QUERY.lod === 0)
+		placeholders === true && (LOD === undefined || LOD === 0)
 			? createNearPool(ctx, { placeholders: true })
 			: undefined;
 	const place = (asset: PlantAsset, at: V3, far?: readonly FarPlant[]) =>
@@ -635,18 +640,18 @@ export default defineSketch(async (ctx) => {
 				view: {
 					height: SIZE[1] / rows,
 					fov: FOV,
-					...(QUERY.lod === 0 && { switchBias: -FORCED_NEAR_STOPS }),
+					...(LOD === 0 && { switchBias: -FORCED_NEAR_STOPS }),
 				},
 				castShadows: !MATTE,
 			},
 		);
 	const drawn = shaped(main, SPEC.woodOnly === true);
-	const far = QUERY.lod === 3 && whole ? [await bakeFarPlant(kit, whole)] : undefined;
+	const far = LOD === 3 && whole ? [await bakeFarPlant(kit, whole)] : undefined;
 	place(drawn, [0, 0, 0], far);
 	if (VIEW === 'panels' && piece) place(shaped(piece, false), AWAY);
 	if (
 		!SPEC.woodOnly &&
-		(QUERY.lod === undefined || QUERY.lod === 0) &&
+		(LOD === undefined || LOD === 0) &&
 		main.levels[0].parts.every((part) => part.name === 'wood') &&
 		main.shoots.count > 0 &&
 		placeholders === true

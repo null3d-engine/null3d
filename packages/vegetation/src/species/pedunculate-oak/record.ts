@@ -47,11 +47,11 @@ export const record: Species = {
 				[1, 0.38],
 			],
 			dominance: [0.7, 0.6, 0.98],
-			wander: 10,
+			wander: 22,
 		},
 		light: { apical: 1, lateral: 1, shadow: [5, 0.15, 2], cells: 96 },
 		tropism: {
-			photo: 0.12,
+			photo: 0.07,
 			gravi: [
 				[0, 0.3],
 				[0.25, 0.08],
