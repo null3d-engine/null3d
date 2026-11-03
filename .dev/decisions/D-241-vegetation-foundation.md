@@ -1026,11 +1026,16 @@ with the view cull and the far share and 318.77 without. 6,820 tufts, its bank s
 490.73 and 527.17. The cull takes 4.0 per cent back at the valley's density and 6.9 at the strip's.
 Neither row reaches 208.3. The same page with the grass switched off measures 179.18 ms, which is
 29.12 ms inside the ceiling, so the base scene does not break it: the grass at the valley's density
-adds 126.91 ms and at the strip's 311.55. The preset's own cost sits mostly in one ambient occlusion
-pass, 176.36 ms of the 179.18, and the grass's fixed cost, its shadow pass and draw setup, adds about
-33 ms on top of the per-tuft cost. The ceiling is the grass's to miss at Creek's density, and the
-cull takes back 4.0 per cent at the valley's and 6.9 at the strip's. Two places make the ceiling
-reachable and neither is the grass: the demo's second ambient occlusion pass and the far cover's look.
+adds 126.91 ms and at the strip's 311.55. The frame's own cost sits mostly in its opaque pass: with
+the sun's contact shadows and the bounce light off, the scene measures 143.49 ms and the timer names the
+opaque pass at 138.94. The timer labels the pass that follows with the role of the pass before, so the
+176.36 ms that it gave ambient occlusion's denoise was the opaque pass in that slot. The three ambient
+occlusion passes, which the contact shadows and the bounce light keep, cost about 43 ms: the same
+scene measures 186.25 with the contact shadows on. The pictures show that neither effect changes what
+the hill looks like: the four drawings, with either effect off and with both, are pixel for pixel the
+same. With both off the hill at Creek's density measures 235.41 ms, 27.11 ms past the ceiling, so the
+effects' 43 ms does not close the budget either. The grass's fixed cost, its shadow pass and draw
+setup, adds about 33 ms on top of the per-tuft cost, and the far cover's look is the lever that stays.
 The fit through two tuft counts first put the base at 211.9 ms and was read as the scene's own cost. A
 fitted intercept is not a base frame: it carries everything the removal would also take away, whether or
 not that cost varies with the count, and only switching the thing off gives the base. Every view culls the
