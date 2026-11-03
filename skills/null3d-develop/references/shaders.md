@@ -58,8 +58,11 @@ struct Surface {
   metalness: f32,
   roughness: f32,          // perceptual roughness, as in glTF and three.js
   normal: vec3f,           // world space, unit length
+  diffuseNormal: vec3f,    // (0.3) lights the sun's diffuse and the ambient and hemisphere lights; starts as the mesh's normal
+  ambientNormal: vec3f,    // (0.3) lights the sky's light alone: ambient, hemisphere, environment, probes; starts as the mesh's normal
   emissive: vec3f,         // linear RGB, added after lighting
   occlusion: f32,          // ambient occlusion, 0 to 1; darkens the ambient light and irradiance
+  occlusionByMinimum: bool,  // (0.3) true joins occlusion with screen-space occlusion by the smaller, not the product; for a baked occlusion
   irradiance: vec3f,       // baked light added to the ambient light, zero by default
   reflection: vec4f,       // (0.2) light from the mirror direction in rgb, its share of the environment's reflection in a
   shadowOffset: vec3f,     // (0.3) where the sun's shadow lookup reads, relative to the point and in world space; zero reads the point itself
