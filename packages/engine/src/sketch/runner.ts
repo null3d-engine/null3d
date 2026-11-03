@@ -346,7 +346,7 @@ export class SketchRunner {
 	private resumes = -1;
 	private resumed = false;
 	/** The sketch's `time`, which each frame updates in place. Its frames are those that run the sketch. */
-	private readonly time = { now: 0, dt: 0, frame: 0, held: false };
+	private readonly time = { now: 0, dt: 0, frame: 0, held: false, drawn: true };
 	/**
 	 * The engine's number of the frame it recorded last. The setup's frames, for warm-ups and the
 	 * preset check, count here but not in `time.frame`. The core, the draw lists and the thread that
@@ -1315,6 +1315,7 @@ export class SketchRunner {
 		let first = 0;
 		this.holding = true;
 		this.time.held = true;
+		this.render.held = true;
 		try {
 			for (let step = 0; step <= steps; step++) {
 				this.clock.holdStep(step, steps, seconds);
@@ -1330,7 +1331,10 @@ export class SketchRunner {
 				// A held frame whose passes read the motion since the frame before it, as the motion
 				// debug view does, has the thread that draws draw the frame before it first.
 				const before = step === steps - 1 && glue.holdsFrameBefore() !== 0;
-				if (first === 0 && (before || step === steps)) {
+				// The thread that draws draws only the frames from the first held one on, so the steps
+				// before it tell the sketch that their GPU work never runs.
+				this.time.drawn = before || step === steps;
+				if (first === 0 && this.time.drawn) {
 					await this.context.scene.imagesSettled();
 					await this.context.scene.areaTablesSettled();
 					// A grading table bakes in a job worker: the held frame waits for the newest
@@ -1344,7 +1348,7 @@ export class SketchRunner {
 					this.gpuEpoch = -1;
 				}
 				frame = this.frame();
-				if (first === 0 && (before || step === steps)) first = frame;
+				if (first === 0 && this.time.drawn) first = frame;
 				for (const one of this.scriptDumps) this.dumpScriptStep(one, dumps, problems);
 			}
 			// A reflection probe captures in one frame and lights surfaces from then on, and the
@@ -1377,6 +1381,8 @@ export class SketchRunner {
 		} finally {
 			this.holding = false;
 			this.time.held = false;
+			this.time.drawn = true;
+			this.render.held = false;
 		}
 		if (script !== undefined) this.scriptResult = { dumps, problems };
 		Atomics.store(slots, Slot.HeldFrom, first);
@@ -1442,7 +1448,8 @@ export class SketchRunner {
 				// to wait for the scene's images, as a held frame does. A pass that reads the frame
 				// before it, as screen-space reflections do, draws the frame before the last too.
 				const before = at === frames - 2 && glue.holdsFrameBefore() !== 0;
-				if (first === 0 && (before || at === frames - 1)) {
+				this.time.drawn = before || at === frames - 1;
+				if (first === 0 && this.time.drawn) {
 					await this.context.scene.imagesSettled();
 					await this.context.scene.areaTablesSettled();
 					await this.post.gradingSettled();
@@ -1451,7 +1458,7 @@ export class SketchRunner {
 					this.gpuEpoch = -1;
 				}
 				frame = this.frame();
-				if (first === 0 && (before || at === frames - 1)) first = frame;
+				if (first === 0 && this.time.drawn) first = frame;
 			}
 			Atomics.store(slots, Slot.HeldFrom, frame);
 			if (
@@ -1472,6 +1479,7 @@ export class SketchRunner {
 			);
 		} finally {
 			this.replaying = false;
+			this.time.drawn = true;
 		}
 		this.replayResult = {
 			frames,
