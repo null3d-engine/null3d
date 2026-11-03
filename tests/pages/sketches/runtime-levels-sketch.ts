@@ -6,6 +6,7 @@
 // worker's levels with the levels that Node's planner gives. Then it moves the camera when the page
 // asks, so the page can count the triangles drawn near the grid and far from it.
 import { defineSketch, type MeshLevel, runTask } from '@null3d/engine';
+import { LOD_MAX_LEVELS } from '@null3d/engine/levels-planner';
 import { bumpyGrid, indicesHash, planningWords } from '../../lib/level-meshes';
 
 /** The grid's cells along a side, and the scale that makes it 20 meters across. */
@@ -61,7 +62,7 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 	const words = planningWords(grid);
 	const direct = runTask<{ levels: { indices: Uint32Array; error: number }[] }>(
 		PLANNER,
-		{ words, cards: false, maxLevels: 7, skipFlat: false },
+		{ words, cards: false, maxLevels: LOD_MAX_LEVELS, skipFlat: false },
 		[words],
 	);
 	Promise.all([planned.buildLevels(), split.buildLevels(), sphere.buildLevels(), direct])
