@@ -416,7 +416,7 @@ export class SketchRunner {
 	private cascadeBlend = 0;
 	/** The settings of the levels of detail, which the governor's detail steps keep. */
 	private lodThreshold = 1;
-	private lodShadowFactor = 1;
+	private lodShadowThreshold = 1;
 	private lodFade = true;
 	/** Asks the thread that draws for the shader files that the sketch will use. */
 	private readonly preloads: ShaderPreloads;
@@ -1057,7 +1057,7 @@ export class SketchRunner {
 		this.followMovers = settings.followMovingCasters;
 		this.cascadeBlend = settings.shadowCascadeBlend;
 		this.lodThreshold = settings.lodThreshold;
-		this.lodShadowFactor = settings.lodShadowFactor;
+		this.lodShadowThreshold = settings.lodShadowThreshold;
 		this.lodFade = settings.lodFade;
 		this.preloads.setUsable('lod_fade', settings.lodFade);
 		governor.setShadows(settings.shadowFilter, settings.farCascadeInterval, this.followMovers);
@@ -1102,14 +1102,14 @@ export class SketchRunner {
 	}
 
 	/**
-	 * Gives the core how the levels of detail are picked: the threshold after the governor's detail
-	 * steps, the shadows' factor and the fading bands. Returns the core's result: 0 when it took
-	 * them.
+	 * Gives the core how the levels of detail are picked: the threshold in pixels and the shadow
+	 * maps' threshold in texels, both after the governor's detail steps, and the fading bands.
+	 * Returns the core's result: 0 when it took them.
 	 */
 	private setLevelQuality(): number {
 		const values = this.core.callValues();
 		values[0] = this.lodThreshold * this.governor.detailFactor;
-		values[1] = this.lodShadowFactor;
+		values[1] = this.lodShadowThreshold * this.governor.detailFactor;
 		return this.sketch.glue.setLevelQuality(this.lodFade);
 	}
 

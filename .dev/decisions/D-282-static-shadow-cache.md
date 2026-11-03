@@ -196,6 +196,10 @@ the look matters.
   slice. A still caster moves, turns, scales, shows, hides, or changes its layers, material or mesh.
   A mover's old or new bounds need clearing. The cascade count, map size or depth format changes. A
   material starts or stops moving its vertices.
+- A still caster's level of detail, and its cluster patches, do not make a layer stale while the
+  camera moves. Each cascade picks them in its own texels, which keep their size while the camera
+  moves and turns ([D-137](D-137-lod-groups.md#shadows)). A change of the box's size or of the
+  `lodShadowThreshold` setting changes them, so it must make the layer stale too.
 - The sun steps by at most a quarter degree. A scene that needs a finer step keeps fewer frames. The
   cache stays above the bar down to about a sixteenth of a degree at 120 frames a second.
 - The cache applies to a cascade that a mover touches. Where no mover touches, the schedule already

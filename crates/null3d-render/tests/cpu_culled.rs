@@ -1663,3 +1663,56 @@ fn two_trees_in_one_run_bind_their_own_index_buffers() {
         );
     }
 }
+
+/// Adds a grid object that casts and receives shadows, with `tree` as its mesh's tree of cluster
+/// patches. Returns the engine mesh id.
+fn caster_with_tree<B: FrameBuilder>(world: &mut World<B>, tree: PatchTree) -> u32 {
+    let settings = world.renderer.settings_mut();
+    let mesh = settings.meshes_mut().add(&grid(1, 1)).unwrap() + 1;
+    let material = settings
+        .materials_mut()
+        .create(Shading::Lit, 0, [1.0, 1.0, 1.0, 1.0])
+        .unwrap()
+        + 1;
+    let object = world.scene.reserve().unwrap();
+    world.scene.set_local_radius(object, 1.0).unwrap();
+    let both = flags::VISIBLE | flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS;
+    let commands = [
+        Command::create(object, Handle::NONE, mesh, both),
+        Command::set_material(object, material),
+    ];
+    world.scene.apply_commands(&commands, world.frame).unwrap();
+    world.renderer.set_mesh_patches(mesh, Some(tree)).unwrap();
+    mesh
+}
+
+#[test]
+fn each_shadow_view_draws_the_patches_that_its_own_walk_picks() {
+    let mut world = world(true);
+    world.cast_sun_shadows(3);
+    let mesh = caster_with_tree(&mut world, one_patch());
+    world.record(true);
+    let commands = world.commands();
+    // The camera's pass and each cascade that holds the caster bind the tree's own index list, and
+    // each view records the ranges that its own walk chose.
+    let binds = bound_indices(&commands)
+        .into_iter()
+        .filter(|&id| id == PATCH_INDEX + mesh)
+        .count();
+    assert!(binds >= 2, "{binds} passes drew the tree");
+    let ranges = world.renderer.patch_ranges(world.frame).unwrap();
+    assert!(
+        ranges as usize >= binds,
+        "{ranges} ranges over {binds} passes"
+    );
+}
+
+#[test]
+fn a_caster_whose_tree_the_scene_does_not_draw_keeps_its_whole_levels() {
+    // Without multi-draw, no view draws a tree, the shadow views included.
+    let mut world = world(false);
+    world.cast_sun_shadows(3);
+    let mesh = caster_with_tree(&mut world, one_patch());
+    world.record(true);
+    assert!(!bound_indices(&world.commands()).contains(&(PATCH_INDEX + mesh)));
+}

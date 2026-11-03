@@ -106,7 +106,7 @@ The asset tool builds the tree with `--clusters`, as [the asset pipeline](../gui
 
 A view draws a patch while the patch's own error passes its threshold and the error of the patch above it does not. Each error is tested at the distance to its own patch's bounds. A patch that fails the threshold is too coarse for that distance, so the walk descends into its children. The chosen patches are the frontier of that one rule. A patch's bounds hold its children's bounds, and its error is at least theirs. So a patch never passes where one of its children fails, and the patches cover the mesh once. Neighbours of different detail meet at their edges with no gap. The engine draws a tree from an older asset tool as whole levels, and in development it asks you to optimize the file again.
 
-The engine draws a tree's patches on both GPU paths. On WebGPU, a compute pass picks the patches that a view draws, copies their indices into a list of the view's own, and the view draws them in one draw. A view that sees none of a mesh's patches draws none of it. The pass runs three dispatches: one to test each patch, one to add the counts up, and one to copy the indices that draw. The list takes about four bytes an index.
+The engine draws a tree's patches on both GPU paths, in the camera's view and in each shadow map. On WebGPU, a compute pass picks the patches that a view draws, copies their indices into a list of the view's own, and the view draws them in one draw. A view that sees none of a mesh's patches draws none of it. The pass runs three dispatches: one to test each patch, one to add the counts up, and one to copy the indices that draw. The list takes four bytes an index. The engine counts the indices that each view picks in each frame, and sizes the view's list to them with room to spare.
 
 On WebGL2, the job workers walk the tree for each view with the same rule, where the device has `WEBGL_multi_draw` (Chrome and Safari). Each chosen patch is a range of the mesh's tree in one multi-draw call, so a frame uploads ranges and no triangles. Ranges that are neighbours in the tree's index list merge, so a frame makes fewer calls. A WebGL2 browser without `WEBGL_multi_draw`, such as Firefox, draws the mesh's whole levels instead. The tool writes them beside the tree. They are the levels that `--lod` makes, and other glTF viewers draw them too.
 
@@ -116,7 +116,7 @@ On WebGL2, a vertex buffer holds at most 65,535 vertices, so a mesh of more vert
 
 A tree can stream as a model loads, with `--clusters --stages`. The model file then holds the tree's first band, and that band draws the first picture. Each later band downloads from a file of its own. A band appends its patches below the patches that already arrived, so the tree refines as the bands come and no new object appears. The patches that a page holds always form a whole tree from the root. A patch whose children have not arrived draws where the camera is close, so the first picture is coarse and still covers the whole surface. The loader holds a band until a view draws a patch of the band above it. `maxLevels` counts a band as it counts a level. [The asset pipeline](../guides/assets-pipeline.md#levels-as-separate-downloads) has the detail.
 
-The patch path draws a mesh that one copy draws, and the file may still hold a tree for a mesh with more copies. A mesh that draws several copies at once draws its whole levels, because the walk picks the patches of one copy. An instance batch draws whole levels too, even with one row. The tool counts only the copies that the file places. A mesh that page code draws in an instance batch therefore still gets a tree, and its copies draw the whole levels. The levels go down to a few dozen triangles, so far copies stay cheap. The WebGPU path that draws objects directly also draws the whole levels, because it has no cluster pass. The shadow maps draw the whole levels. Meshes that a skin or a morph target bends, and meshes whose material blends or masks, keep whole levels too.
+The patch path draws a mesh that one copy draws, and the file may still hold a tree for a mesh with more copies. A mesh that draws several copies at once draws its whole levels, because the walk picks the patches of one copy. An instance batch draws whole levels too, even with one row. The tool counts only the copies that the file places. A mesh that page code draws in an instance batch therefore still gets a tree, and its copies draw the whole levels. The levels go down to a few dozen triangles, so far copies stay cheap. The WebGPU path that draws objects directly also draws the whole levels, because it has no cluster pass. Meshes that a skin or a morph target bends, and meshes whose material blends or masks, keep whole levels too. A shadow map draws a caster's patches where the camera's view draws the same object's tree, and the caster's whole levels elsewhere.
 
 ## Pieces of a large level
 
@@ -190,7 +190,7 @@ The object hides where that diameter covers fewer pixels than the `lodThreshold`
 
 The object draws nothing past the band that follows the hide distance. That band, 8% of the hide distance long, thins the coarsest level out with the same dither. A shrinking object then fades away instead of popping. The band needs a fading build, which a level that fades has. A mesh whose levels all switch at once disappears at the hide distance.
 
-The shadow maps hide a caster at their own threshold, which is the camera's times `lodShadowFactor`. So a caster's shadow goes before the object itself, while the object covers a few pixels on the screen. The shadow passes draw no band.
+A shadow map hides a caster whose bounds cover fewer of the map's texels than the `lodShadowThreshold` setting. A pebble 1 cm across draws nothing in a cascade whose texels are 2 cm wide, wherever the camera stands. The shadow passes draw no band.
 
 ## Distance bands
 
@@ -211,9 +211,15 @@ The view reads the level that the culling picks, so it needs no shader for each 
 
 ## Shadows
 
-The shadow maps pick each caster's level by the main camera's distance too. Their threshold is the camera's times the `lodShadowFactor` quality setting: 2 from Medium up, and 4 on Low. So shadows draw a coarser level than the camera sees, and the shadow passes cost less. The shadows' softness hides the difference. Shadow maps draw no fading band.
+Each shadow map picks its casters' levels in its own texels. A cascade of the sun's shadows is an orthographic view, so its texels have one size at every distance. A caster's level draws there while its error covers fewer of the cascade's texels than the `lodShadowThreshold` quality setting. A spot or point light's tile measures from the light, as a camera measures from its eye. The setting is 1 texel on every preset. Low's smaller maps have larger texels, so they pick coarser levels already.
 
-Far shadow cascades and the shadow tiles of point and spot lights keep their depth between draws. A level that changes as the camera moves shows in them when they next draw.
+The choice does not depend on the camera. Far cascades and the tiles of spot and point lights keep their depth between draws. That depth stays right as the camera moves. A cascade picks the same level for a caster while the camera moves inside it.
+
+The normal bias moves each receiver up to one texel along its surface's normal. A caster's level that errs by less than a texel stays within that offset, so it does not shadow its own surface. A near cascade, whose texels are small, draws a near caster at a fine level, and a far cascade draws the same caster coarser.
+
+A cluster tree picks its patches in each shadow map by the same rule. Each cascade and tile draws its own cut through the tree: fine patches where its texels are small, and coarse ones where they are large. The camera's cut is never reused for a shadow map.
+
+Distance bands, and levels given by a distance or by screen coverage, keep the camera's distance in the shadow maps too, as their authors set them for the camera. Shadow maps draw no fading band.
 
 ## Cards beyond the levels
 
