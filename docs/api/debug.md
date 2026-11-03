@@ -277,7 +277,7 @@ export default defineSketch(({ debug, page, time }) => {
 | `threads` | Each engine thread's name, its CPU time per frame, and the time of each phase, as `engine.measure` names them |
 | `gpuMs` | GPU time per frame in milliseconds, from one frame in eleven, or null without timer queries. It is the latest pass end less the earliest pass begin, because a tile GPU overlaps the passes |
 | `gpuStepMs` | The step between the GPU's timestamps in milliseconds, when the browser rounds them, or null when they look exact. It is the greatest common divisor of the offsets that the timer reads back |
-| `gpuSteps` | The GPU time per frame of each pass that the GPU timed one by one, in the frame's order, each with the step's name and its time. A pass after the last one timed adds its time to it, and its name then ends in `and later`. Empty on WebGL2, which times the whole frame alone |
+| `gpuSteps` | The GPU time per frame of each pass that the GPU timed one by one, in the frame's order, each with the step's name and its time. The passes after the seven that the engine times one by one share one figure, named `later passes`, which no scope names. Empty on WebGL2, which times the whole frame alone |
 | `drawCalls`, `uploadBytes` | Draw calls and bytes uploaded to the GPU, per frame |
 | `triangles`, `objects` | Triangles and objects drawn per frame, over every pass |
 | `wasmBytes` | The size of the engine's WebAssembly memory |

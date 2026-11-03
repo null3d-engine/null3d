@@ -1,8 +1,9 @@
 //! The scope of a GPU pass: the step of the frame that a pass records, as a number that the draw
 //! list carries and the page turns into a name. A pass's scope is its declared role, and the role's
-//! index, where it has one, in the high 16 bits. The first seven scopes of a frame are in the
-//! engine's frame figures, so the stats overlay can show what each step of the frame costs and a
-//! feature can add up the passes that carry its own work.
+//! index, where it has one, in the high 16 bits. The first seven passes of a frame keep their own
+//! figures, and the passes after them share one figure that no scope names, so the stats overlay can
+//! show what each step of the frame costs and a feature can add up the passes that carry its own
+//! work without claiming another step's time.
 //!
 //! The numbers are a contract with TypeScript: `crates/null3d-wasm/src/constants.rs` writes them
 //! into `packages/engine/src/generated/core.ts`, and the page names each scope by them.
