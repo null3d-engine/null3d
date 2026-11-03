@@ -17,6 +17,7 @@ import {
 	specularBuilder,
 } from '../../../../tests/pages/lib/gltf-files';
 import {
+	CLUSTERS_VERSION,
 	type GltfData,
 	GltfError,
 	MAX_ACCESSOR_BYTES,
@@ -1872,15 +1873,28 @@ describe('trees of cluster patches', () => {
 			bounds: b.accessor(new Float32Array([0, 0, 0, 1, 0.5, 0.5, 0.5, 0.5]), 4),
 			patches: b.accessor(new Uint32Array([0, 3, 0, 0x3dcc_cccd, 3, 3, 1, 0]), 4),
 			root: 0,
+			version: CLUSTERS_VERSION,
 		},
 	});
 
 	test('a primitive keeps the tree of patches that the tool built', () => {
 		const [p] = parse(boxWith(TREE).glb()).meshes[0]?.primitives ?? [];
 		expect(p?.patches?.root).toBe(0);
+		expect(p?.patches?.current).toBe(true);
 		expect(Array.from(p?.patches?.indices ?? [])).toEqual([0, 1, 2, 3, 4, 5]);
 		expect(Array.from(p?.patches?.words ?? [])).toEqual([0, 3, 0, 0x3dcc_cccd, 3, 3, 1, 0]);
 		expect(Array.from(p?.patches?.bounds ?? [])).toEqual([0, 0, 0, 1, 0.5, 0.5, 0.5, 0.5]);
+	});
+
+	test('a tree that names no version, or an older one, is not current', () => {
+		for (const version of [undefined, 1]) {
+			const old = boxWith((b) => {
+				const tree = TREE(b);
+				return { NULL3D_clusters: { ...tree.NULL3D_clusters, version } };
+			});
+			const [p] = parse(old.glb()).meshes[0]?.primitives ?? [];
+			expect(p?.patches?.current).toBe(false);
+		}
 	});
 
 	test('a plain primitive has no tree', () => {

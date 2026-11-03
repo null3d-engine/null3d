@@ -1,13 +1,19 @@
 //! Trees of cluster patches: the patches that a large static mesh draws instead of its whole
 //! triangle list, from the asset tool (`NULL3D_clusters`).
 //!
-//! A patch holds a run of the tree's indices, a sphere around the triangles it draws, and an
-//! error: the largest distance between its surface and the surface of the patches below it, in
-//! the units of the mesh's positions. The patch above it in the tree replaces its children, so
-//! every patch's triangles lie inside the area that its children's triangles cover. A view draws
-//! a patch while the patch's error passes its threshold and its parent's does not, which makes
-//! the patches that draw cover the mesh once, whatever the distance: a patch whose error fails is
-//! too coarse for that distance, and the walk goes on into its children.
+//! A patch holds a run of the tree's indices, a sphere, and an error: the largest distance between
+//! its surface and the surface of the patches below it, in the units of the mesh's positions. The
+//! patch above it in the tree replaces its children, so every patch's triangles lie inside the
+//! area that its children's triangles cover.
+//!
+//! A view draws a patch while the patch's error passes its threshold at the patch's own sphere,
+//! and its parent's error does not pass at the parent's sphere. A patch's sphere holds its
+//! children's spheres, and its error is at least theirs, so a camera never finds a parent passing
+//! where its child fails. Along each chain from a leaf to the root, the patches that pass are one
+//! run from the leaf up, and the top of that run is the one patch of the chain that draws. The
+//! patches that draw therefore cover the mesh once, whatever the distance. The tree refuses
+//! spheres or errors that break this order ([`PatchError::Nesting`]), which trees from older
+//! asset tools do.
 //!
 //! Every patch's indices name the mesh's own vertices, so a tree adds no vertex and every patch
 //! draws with the mesh's pipelines as they are.
@@ -21,8 +27,9 @@
 //! picture coarse and still covers the whole surface. The band that a patch belongs to says how
 //! deep it lies, and the loader holds a band until a view draws a patch of the band above it.
 
+use null3d_core::culling::Frustum;
 use null3d_core::levels::LevelRule;
-use null3d_core::math::{max_axis_scale, world_sphere_at};
+use null3d_core::math::{Affine, max_axis_scale, world_sphere_at};
 use null3d_core::scene::SceneStorage;
 use null3d_core::world::MATRIX_FLOATS;
 
@@ -44,6 +51,24 @@ pub enum PatchError {
     Vertex,
     /// A patch's sphere is not a finite centre with a radius above 0.
     Bounds,
+    /// A patch's sphere does not hold the sphere of a patch below it, or its error is smaller than
+    /// that patch's. A view would then draw some parts of the mesh twice and leave holes.
+    Nesting,
+}
+
+/// The share of a parent's radius by which a child's sphere may reach past it: the rounding of the
+/// spheres to 32-bit floats, and no more.
+const NEST_SLACK: f64 = 1.0e-6;
+
+/// True when the sphere `parent` holds the sphere `child`, and the error `parent_error` is at least
+/// `child_error`, which the order of the tree needs.
+fn nests(parent: &[f32; 4], parent_error: f32, child: &[f32; 4], child_error: f32) -> bool {
+    let gap = (0..3)
+        .map(|c| (f64::from(parent[c]) - f64::from(child[c])).powi(2))
+        .sum::<f64>()
+        .sqrt();
+    let radius = f64::from(parent[3]);
+    gap + f64::from(child[3]) <= radius + radius * NEST_SLACK && child_error <= parent_error
 }
 
 /// One mesh's tree of cluster patches.
@@ -138,6 +163,19 @@ impl PatchTree {
                 return Err(PatchError::Bounds);
             }
         }
+        // A parent lies in the tree or earlier in the band, as the check above made sure.
+        let held = |place: u32| match place.checked_sub(total) {
+            None => (self.bounds[place as usize], self.error(place)),
+            Some(k) => (bounds[k as usize], f32::from_bits(records[k as usize][3])),
+        };
+        for (k, record) in records.iter().enumerate() {
+            if let Some(parent) = record[2].checked_sub(1) {
+                let (sphere, error) = held(parent);
+                if !nests(&sphere, error, &bounds[k], f32::from_bits(record[3])) {
+                    return Err(PatchError::Nesting);
+                }
+            }
+        }
         self.bands.push(total);
         self.bounds.extend_from_slice(bounds);
         self.records.extend(
@@ -187,6 +225,18 @@ impl PatchTree {
                 || sphere[3] < 0.0
             {
                 return Err(PatchError::Bounds);
+            }
+        }
+        for (k, record) in self.records.iter().enumerate() {
+            if let Some(parent) = record[2].checked_sub(1)
+                && !nests(
+                    &self.bounds[parent as usize],
+                    self.error(parent),
+                    &self.bounds[k],
+                    f32::from_bits(record[3]),
+                )
+            {
+                return Err(PatchError::Nesting);
             }
         }
         Ok(())
@@ -267,24 +317,88 @@ impl PatchTree {
         }
     }
 
-    /// True when patch `patch` draws at `distance` from the view's camera, with a world scale of
-    /// `scale` and the rule's factor of `factor`: its own error passes, and its parent's, which
-    /// would otherwise draw in its place, does not. A patch whose children the tree does not hold
-    /// passes at every distance, so it draws in place of the patches below it.
-    pub fn draws(&self, patch: u32, factor: f32, scale: f32, distance: f32) -> bool {
-        let reach = scale * factor;
-        let fits = self.rule_error(patch) * reach < distance;
-        let parent_fits = self
-            .parent(patch)
-            .is_some_and(|parent| self.rule_error(parent) * reach < distance);
-        fits && !parent_fits
+    /// True when patch `patch`'s error passes the view's threshold at `distance` from the camera,
+    /// where `reach` is the copy's largest axis scale times the rule's factor. A patch whose
+    /// children the tree does not hold passes at every distance.
+    fn fits(&self, patch: u32, reach: f32, distance: f32) -> bool {
+        self.rule_error(patch) * reach < distance
     }
 
-    /// The number of patches that draw at `distance`, which a test counts to check a cut.
-    pub fn cut(&self, factor: f32, scale: f32, distance: f32) -> usize {
-        (0..self.len() as u32)
-            .filter(|&patch| self.draws(patch, factor, scale, distance))
-            .count()
+    /// True when patch `patch` draws: its error passes at `distance`, the rule's distance to its
+    /// own sphere, and its parent's error does not pass at the distance that `parent_distance`
+    /// gives for the parent's sphere. `reach` is the copy's largest axis scale times the rule's
+    /// factor. A patch whose children the tree does not hold passes at every distance, so it draws
+    /// in place of the patches below it.
+    pub fn draws(
+        &self,
+        patch: u32,
+        reach: f32,
+        distance: f32,
+        parent_distance: impl FnOnce(u32) -> f32,
+    ) -> bool {
+        self.fits(patch, reach, distance)
+            && !self
+                .parent(patch)
+                .is_some_and(|parent| self.fits(parent, reach, parent_distance(parent)))
+    }
+
+    /// Patch `patch`'s record in the compute pass's table, where this tree's patches start at
+    /// `first_patch` and its indices at `first_index` (`cluster_cull.wgsl`): its sphere's four
+    /// floats, then its first index and index count in the scene's indices, its parent's place in
+    /// the scene's patches plus one (0 for the root), and the error that the rule compares. A
+    /// patch whose children have not arrived carries a rule error below 0, so the pass draws it
+    /// wherever the camera is close instead of leaving a hole.
+    pub fn table_record(&self, patch: u32, first_patch: u32, first_index: u32) -> [u32; 8] {
+        let sphere = self.bounds[patch as usize];
+        let [first, count, parent, _] = self.records[patch as usize];
+        let parent = if parent == 0 { 0 } else { parent + first_patch };
+        [
+            sphere[0].to_bits(),
+            sphere[1].to_bits(),
+            sphere[2].to_bits(),
+            sphere[3].to_bits(),
+            first + first_index,
+            count,
+            parent,
+            self.rule_error(patch).to_bits(),
+        ]
+    }
+
+    /// Calls `pick` with each patch that a view draws, for a copy that `matrix` places and whose
+    /// cell lies `offset` from the view's camera: the patch's sphere lies in `frustum`, when one is
+    /// given, and `rule` draws the patch ([`PatchTree::draws`]). The job workers' walk and the
+    /// count of a band's picks both read the tree through this walk, and the compute pass applies
+    /// the same rule (`cluster_cull.wgsl`).
+    pub fn walk(
+        &self,
+        matrix: &Affine,
+        offset: [f32; 3],
+        rule: &LevelRule,
+        frustum: Option<&Frustum>,
+        mut pick: impl FnMut(u32),
+    ) {
+        let reach = max_axis_scale(matrix) * rule.factor;
+        let place = |patch: u32| {
+            let sphere = self.bounds[patch as usize];
+            let [x, y, z, radius] =
+                world_sphere_at(matrix, [sphere[0], sphere[1], sphere[2]], sphere[3]);
+            ([x + offset[0], y + offset[1], z + offset[2]], radius)
+        };
+        for patch in 0..self.len() as u32 {
+            let (centre, radius) = place(patch);
+            if frustum.is_some_and(|frustum| {
+                !frustum.contains_sphere(centre[0], centre[1], centre[2], radius)
+            }) {
+                continue;
+            }
+            let distance = rule.distance(centre, radius);
+            if self.draws(patch, reach, distance, |parent| {
+                let (centre, radius) = place(parent);
+                rule.distance(centre, radius)
+            }) {
+                pick(patch);
+            }
+        }
     }
 
     /// The tree's triangles, every patch's added up, against the mesh's own.
@@ -373,9 +487,8 @@ pub(crate) struct BandView<'a> {
 /// source of restarts its warm-up, as a level does, so a page that loads a model before it
 /// instantiates it keeps its bands.
 ///
-/// A patch whose sphere lies in the view's frustum and whose own error passes the view's threshold,
-/// while its parent's does not, is a pick, as the walk that fills the view's patch runs reads the
-/// rule. The count reads the tree of each watched mesh alone, and a frame with no loader waiting
+/// A patch that the tree's walk picks for the view is a pick, as it is for the walk that fills the
+/// view's patch runs ([`PatchTree::walk`]). The count reads the tree of each watched mesh alone, and a frame with no loader waiting
 /// pays nothing. A mesh whose tree the path does not draw picks no band, so its bands wait.
 pub(crate) fn note_stage_bands(
     scene: &SceneStorage,
@@ -419,20 +532,13 @@ pub(crate) fn note_stage_bands(
             else {
                 continue;
             };
-            let matrix: &null3d_core::math::Affine = matrix;
-            let scale = max_axis_scale(matrix);
-            for (k, sphere) in tree.bounds().iter().enumerate() {
-                let [x, y, z, radius] =
-                    world_sphere_at(matrix, [sphere[0], sphere[1], sphere[2]], sphere[3]);
-                let (x, y, z) = (x + offset[0], y + offset[1], z + offset[2]);
-                if !view.view.frustum.contains_sphere(x, y, z, radius) {
-                    continue;
-                }
-                let distance = view.rule.distance([x, y, z], radius);
-                if tree.draws(k as u32, view.rule.factor, scale, distance) {
-                    picked |= 1 << tree.band(k as u32).min(31);
-                }
-            }
+            tree.walk(
+                matrix,
+                [offset[0], offset[1], offset[2]],
+                &view.rule,
+                Some(&view.view.frustum),
+                |patch| picked |= 1 << tree.band(patch).min(31),
+            );
         }
         watches.note_bands(index, picked);
     }
@@ -458,6 +564,14 @@ mod tests {
             9,
         )
         .expect("tree")
+    }
+
+    /// The patches that draw when every patch lies `distance` from the camera, at a reach of
+    /// `reach`.
+    fn cut(tree: &PatchTree, reach: f32, distance: f32) -> Vec<u32> {
+        (0..tree.len() as u32)
+            .filter(|&patch| tree.draws(patch, reach, distance, |_| distance))
+            .collect()
     }
 
     #[test]
@@ -495,17 +609,12 @@ mod tests {
         assert_eq!(tree.parent(3), Some(2));
         // At a factor of 100, the root's 0.1 m error covers a pixel past 10 m, and patch 2's
         // 0.01 m error past 1 m. The leaves are exact at every distance.
-        let draws = |distance: f32| {
-            (0..tree.len() as u32)
-                .filter(|&patch| tree.draws(patch, 100.0, 1.0, distance))
-                .collect::<Vec<_>>()
-        };
+        let draws = |distance: f32| cut(&tree, 100.0, distance);
         // Far out, the root draws alone.
         assert_eq!(draws(11.0), [0]);
         // Nearer, its children draw, and nearer still, patch 2 gives way to its own child.
         assert_eq!(draws(5.0), [1, 2]);
         assert_eq!(draws(0.5), [1, 3]);
-        assert_eq!(tree.cut(100.0, 1.0, 11.0), 1);
         // Every patch of a cut draws in place of its parent, so a cut never leaves a gap.
         for distance in [0.05, 0.2, 1.0, 2.5, 9.0, 12.0, 100.0] {
             let drawn = draws(distance);
@@ -537,6 +646,61 @@ mod tests {
         assert_eq!(tree.parent(5), Some(3));
     }
 
+    #[test]
+    fn a_tree_refuses_a_parent_that_does_not_hold_its_child_or_errs_less() {
+        let bits = |value: f32| value.to_bits();
+        let records = vec![[0, 3, 0, bits(1.0)], [0, 3, 1, bits(0.0)]];
+        let build = |bounds: Vec<[f32; 4]>, records: Vec<[u32; 4]>| {
+            PatchTree::new(vec![0, 1, 2], bounds, records, 0, 3)
+        };
+        // The child's sphere reaches past its parent's, as a sphere around the patch's own
+        // triangles may.
+        assert_eq!(
+            build(
+                vec![[0.0, 0.0, 0.0, 1.0], [0.5, 0.0, 0.0, 0.6]],
+                records.clone()
+            ),
+            Err(PatchError::Nesting)
+        );
+        // The child errs more than its parent.
+        let inside = vec![[0.0, 0.0, 0.0, 1.0], [0.5, 0.0, 0.0, 0.5]];
+        assert_eq!(
+            build(
+                inside.clone(),
+                vec![[0, 3, 0, bits(0.1)], [0, 3, 1, bits(0.2)]]
+            ),
+            Err(PatchError::Nesting)
+        );
+        let mut tree = build(inside, records).expect("a nested tree");
+        // A band whose patch reaches past its parent leaves the tree as it was.
+        let before = tree.clone();
+        assert_eq!(
+            tree.append(&[[2.0, 0.0, 0.0, 0.1]], &[[0, 3, 2, 0]], &[0, 1, 2], 3),
+            Err(PatchError::Nesting)
+        );
+        assert_eq!(tree, before);
+    }
+
+    #[test]
+    fn a_parent_passes_at_its_own_sphere_and_not_at_its_childs() {
+        let bits = |value: f32| value.to_bits();
+        // A wide parent and a small child at its far edge: the camera stands 10 m from the child
+        // and 1 m from the parent's sphere.
+        let tree = PatchTree::new(
+            vec![0, 1, 2],
+            vec![[0.0, 0.0, 0.0, 10.0], [9.0, 0.0, 0.0, 1.0]],
+            vec![[0, 3, 0, bits(0.05)], [0, 3, 1, bits(0.0)]],
+            0,
+            3,
+        )
+        .expect("a nested tree");
+        let distance = |patch: u32| if patch == 0 { 1.0 } else { 10.0 };
+        // At a reach of 100, the parent's 5 m of error do not pass at its own 1 m, so the child
+        // draws. Tested at the child's 10 m, the parent would pass, and nothing would draw there.
+        assert!(tree.draws(1, 100.0, distance(1), distance));
+        assert!(!tree.draws(0, 100.0, distance(0), distance));
+    }
+
     /// A tree whose root is above two children, with no band below them yet.
     fn partial() -> PatchTree {
         let bits = |value: f32| value.to_bits();
@@ -559,7 +723,7 @@ mod tests {
         let mut tree = partial();
         // Close in, both the root and its children err past the threshold, so only the frontier
         // rule covers the surface: the children draw instead of leaving a hole.
-        assert_eq!(tree.cut(100.0, 1.0, 1.0), 2);
+        assert_eq!(cut(&tree, 100.0, 1.0).len(), 2);
         assert_eq!(tree.rule_error(1), -1.0);
         assert_eq!(tree.rule_error(0), 10.0);
         // A band below them arrives, so the children keep their own errors and the new patches
@@ -574,7 +738,7 @@ mod tests {
         assert_eq!(tree.rule_error(1), 5.0);
         assert_eq!(tree.rule_error(3), -1.0);
         // Close in, the four patches below the root draw, and the root does not.
-        assert_eq!(tree.cut(100.0, 1.0, 1.0), 4);
+        assert_eq!(cut(&tree, 100.0, 1.0).len(), 4);
     }
 
     #[test]
