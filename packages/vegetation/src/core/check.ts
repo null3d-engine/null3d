@@ -204,6 +204,20 @@ function growthProblems(record: Species, out: string[]): void {
 	}
 }
 
+/** Cutting hints that name a shoot class the record does not grow, or cut a length of no wood. */
+function cuttingProblems(record: Species, out: string[]): void {
+	const names = new Set(record.shoots?.classes.map((shoot) => shoot.name));
+	for (const part of ['branch', 'subbranch', 'cluster'] as const) {
+		const hint = record.cuttings?.[part];
+		if (!hint) continue;
+		if ('shoot' in hint) {
+			if (!names.has(hint.shoot))
+				out.push(`cuttings.${part}.shoot '${hint.shoot}' names no class in shoots.classes`);
+		} else if (hint.length <= 0)
+			out.push(`cuttings.${part}.length is ${hint.length}; it must be above 0`);
+	}
+}
+
 /**
  * Every problem with a species record, one line each, with what to change.
  *
@@ -227,6 +241,7 @@ export function speciesProblems(record: Species): string[] {
 	growthProblems(record, out);
 	if (record.envelope) envelopeProblems(record.envelope, out);
 	if (record.shoots) shootProblems(record.shoots, out);
+	cuttingProblems(record, out);
 	if (record.lod.nearFoliage === 'instanced' && !record.shoots)
 		out.push("lod.nearFoliage is 'instanced', which needs shoots; give shoots or use 'merged'");
 	if (typeof record.textures !== 'string') {

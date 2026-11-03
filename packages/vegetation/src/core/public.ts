@@ -53,6 +53,8 @@ export type {
 	CompoundLeaf,
 	CrownRosette,
 	Culm,
+	CutFromPlant,
+	CutFromShoots,
 	CuttingHints,
 	Envelope,
 	ExtraShape,

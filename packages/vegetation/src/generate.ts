@@ -49,7 +49,14 @@ import { loadSpeciesHooks, speciesHooks } from './core/registry';
 import type { TextureManifest } from './core/textures';
 import { DETAILS, type Detail, type Season, type Vec3 } from './core/types';
 import { lightCrown } from './crown/visibility';
-import { type CuttingOptions, clusterRow, cutBranch, cutFoliage, mergeShoots } from './cutting';
+import {
+	type CuttingOptions,
+	clusterRow,
+	cutBranch,
+	cutFoliage,
+	cutsShoot,
+	mergeShoots,
+} from './cutting';
 import { coarsenSkeleton } from './grow/coarsen';
 import { leadOnThickest } from './grow/leaders';
 import { grower, loadGrower } from './grow/models';
@@ -344,12 +351,8 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 
 /** Whether a cutting is cut from the grown skeleton rather than built from the kit alone. */
 function cutsSkeleton(kit: SpeciesKitData, cutting: CuttingOptions | undefined): boolean {
-	if (!cutting) return false;
-	return (
-		cutting.part === 'branch' ||
-		cutting.part === 'subbranch' ||
-		(cutting.part === 'cluster' && kit.prototypes.length === 0)
-	);
+	if (!cutting || cutting.part === 'leaf') return false;
+	return !cutsShoot(kit.record, cutting.part) || kit.prototypes.length === 0;
 }
 
 /** The grown skeleton, or the piece a cutting takes from it. */
@@ -419,7 +422,7 @@ function growCutting(
 		else rows = mesh.rows;
 		skeleton = mesh.skeleton;
 	} else {
-		single = cutting.part === 'cluster' && !merge ? clusterRow(kit, cutting, detail) : undefined;
+		single = cutting.part !== 'leaf' && !merge ? clusterRow(kit, cutting, detail) : undefined;
 		const foliage = single ? undefined : cutFoliage(kit, cutting, detail);
 		parts = foliage ? partOf(kit, 'foliage', foliage, TEXTURE_UV_STEPS) : [];
 		const builder = new SkeletonBuilder().finish(0);

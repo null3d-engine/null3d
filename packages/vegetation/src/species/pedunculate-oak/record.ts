@@ -47,7 +47,7 @@ export const record: Species = {
 				[1, 0.38],
 			],
 			dominance: [0.7, 0.6, 0.98],
-			wander: 22,
+			wander: 16,
 		},
 		light: { apical: 1, lateral: 1, shadow: [5, 0.15, 2], cells: 96 },
 		tropism: {
@@ -115,7 +115,7 @@ export const record: Species = {
 				vigor: [0.2, 1],
 				share: 0.35,
 				years: 3,
-				length: { mean: 0.5, spread: 0.1 },
+				length: { mean: 0.75, spread: 0.12 },
 				nodes: { mean: 5, spread: 1 },
 				internode: ROSETTE,
 				leafScale: [
@@ -158,9 +158,9 @@ export const record: Species = {
 			twist: 6,
 			wave: [0.003, 5],
 			optics: {
-				reflectance: [0.062, 0.118, 0.026],
+				reflectance: [0.05, 0.1, 0.015],
 				reflectanceBack: [0.2, 0.25, 0.2],
-				transmittance: [0.08, 0.17, 0.025],
+				transmittance: [0.07, 0.15, 0.015],
 				roughness: [0.45, 0.6],
 			},
 		},
@@ -232,7 +232,7 @@ export const record: Species = {
 	},
 	lod: {
 		nearFoliage: 'instanced',
-		switchPixels: [72, 12, 160],
+		switchPixels: [104, 12, 160],
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
@@ -252,8 +252,8 @@ export const record: Species = {
 	seedSalt: 1121298234,
 	roundBand,
 	cuttings: {
-		branch: { order: 3, length: 1 },
-		subbranch: { order: 3, length: 0.35 },
+		branch: { shoot: 'spray' },
+		subbranch: { shoot: 'long' },
 		cluster: { shoot: 'short' },
 	},
 };

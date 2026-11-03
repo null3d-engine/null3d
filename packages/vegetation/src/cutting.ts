@@ -23,7 +23,7 @@ import {
 	quatRotate,
 	type Vector3,
 } from './core/math';
-import type { Species } from './core/record';
+import type { CutFromPlant, ShootClass, Species } from './core/record';
 import { DETAILS, type Detail, type Vec3 } from './core/types';
 
 /**
@@ -73,8 +73,40 @@ export const CUTTING_LENGTH: Readonly<Record<CuttingPart, number>> = {
 	leaf: 0.15,
 };
 
+/**
+ * Steps of length match within which a piece counts as near the asked length, about a third either
+ * way: among near pieces, one that divides ranks before one that matches the length more closely.
+ */
+const NEAR_STEPS = 2;
 /** Candidates whose length match falls in the same step of this many natural-log units rank as near. */
 const MATCH_STEP = 0.15;
+
+/** A branch or sub-branch hint that cuts from the grown plant, if the record gives one. */
+function plantHint(record: Species, part: CuttingPart): CutFromPlant | undefined {
+	if (part !== 'branch' && part !== 'subbranch') return undefined;
+	const hint = record.cuttings?.[part];
+	return hint && 'order' in hint ? hint : undefined;
+}
+
+/** The shoot class a cutting hint takes from the kit, if it names one. */
+function shootHint(record: Species, part: CuttingPart): ShootClass['name'] | undefined {
+	if (part === 'leaf') return undefined;
+	const hint = record.cuttings?.[part];
+	return hint && 'shoot' in hint ? hint.shoot : undefined;
+}
+
+/**
+ * Whether a cutting is one shoot prototype from the kit rather than a piece of the grown plant: a
+ * cluster, or a branch or sub-branch whose record hint names a shoot class.
+ *
+ * @param record The species record.
+ * @param part The piece.
+ * @returns Whether the kit's prototypes give the piece.
+ * @category api/vegetation
+ */
+export function cutsShoot(record: Species, part: CuttingPart): boolean {
+	return part === 'cluster' || shootHint(record, part) !== undefined;
+}
 
 /**
  * The length a cutting aims for: the option's, else the record's hint, else the default.
@@ -86,11 +118,8 @@ const MATCH_STEP = 0.15;
  */
 export function cuttingLength(record: Species, cutting: CuttingOptions): number {
 	if (cutting.length !== undefined) return cutting.length;
-	const hint =
-		cutting.part === 'branch' || cutting.part === 'subbranch'
-			? record.cuttings?.[cutting.part]?.length
-			: undefined;
-	return hint ?? CUTTING_LENGTH[cutting.part];
+	const hint = plantHint(record, cutting.part);
+	return hint?.length ?? CUTTING_LENGTH[cutting.part];
 }
 
 /** A node's position as a vector. */
@@ -158,9 +187,9 @@ interface Candidate {
 
 /**
  * The axes a branch cut can start from, ranked: those of the wanted order (any order past the stems
- * when it is undefined), by how near their subtree's extent is to `length`; among pieces as near,
- * those that carry bud sites in enough light to grow shoots (at or above the record's shade line)
- * and divide come first, then the sunniest.
+ * when it is undefined): first those that carry bud sites in enough light to grow shoots (at or
+ * above the record's shade line), then those whose subtree's extent is near `length`, then those
+ * that divide, then by how near the extent is, then the sunniest.
  */
 function candidates(
 	skeleton: MacroSkeleton,
@@ -226,13 +255,15 @@ function candidates(
 				buds: subtreeBuds[a] as number,
 			});
 	const match = (c: Candidate) => Math.round(Math.abs(log(c.extent / length)) / MATCH_STEP);
+	const near = (c: Candidate) => (match(c) <= NEAR_STEPS ? 1 : 0);
 	const leafy = (c: Candidate) => (c.buds > 0 ? 1 : 0);
 	const divides = (c: Candidate) => (c.axes > 1 ? 1 : 0);
 	return out.sort(
 		(x, y) =>
-			match(x) - match(y) ||
 			leafy(y) - leafy(x) ||
+			near(y) - near(x) ||
 			divides(y) - divides(x) ||
+			match(x) - match(y) ||
 			y.light - x.light ||
 			x.axis - y.axis,
 	);
@@ -271,10 +302,7 @@ export function cutBranch(
 	cutting: CuttingOptions,
 ): CutBranch | undefined {
 	const length = cuttingLength(record, cutting);
-	const hinted =
-		cutting.part === 'branch' || cutting.part === 'subbranch'
-			? record.cuttings?.[cutting.part]?.order
-			: undefined;
+	const hinted = plantHint(record, cutting.part)?.order;
 	const shade = record.shoots?.placement.shadePrune ?? 0;
 	let ranked = candidates(skeleton, hinted, length, shade);
 	if (ranked.length === 0 && hinted !== undefined)
@@ -540,8 +568,11 @@ function heldTier(kit: SpeciesKitData, detail: Detail): number {
  * @returns The prototypes in rank order.
  * @category api/vegetation
  */
-export function clusterRank(kit: SpeciesKitData): readonly ShootPrototype[] {
-	const hint = kit.record.cuttings?.cluster?.shoot;
+export function clusterRank(
+	kit: SpeciesKitData,
+	part: CuttingPart = 'cluster',
+): readonly ShootPrototype[] {
+	const hint = shootHint(kit.record, part);
 	return [...kit.prototypes].sort(
 		(a, b) =>
 			Number(b.class === hint) - Number(a.class === hint) ||
@@ -568,7 +599,7 @@ export function clusterRow(
 ):
 	| { readonly rows: ShootRows; readonly bounds: { readonly min: Vec3; readonly max: Vec3 } }
 	| undefined {
-	const ranked = clusterRank(kit);
+	const ranked = clusterRank(kit, cutting.part);
 	if (ranked.length === 0) return undefined;
 	const prototype = ranked[(cutting.pick ?? 0) % ranked.length] as ShootPrototype;
 	const tier = prototype.tiers[heldTier(kit, detail)] as PrototypeArrays;
@@ -626,7 +657,7 @@ export function cutFoliage(
 		append(mesh, leaf, turn, 0, 1, origin, 0);
 		return finish(mesh);
 	}
-	const ranked = clusterRank(kit);
+	const ranked = clusterRank(kit, cutting.part);
 	if (ranked.length === 0) return undefined;
 	const prototype = ranked[(cutting.pick ?? 0) % ranked.length] as ShootPrototype;
 	const tier = prototype.tiers[heldTier(kit, detail)] as PrototypeArrays;

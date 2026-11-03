@@ -18,6 +18,7 @@ describe('the record check', () => {
 			envelope: undefined,
 			size: { ...template.size, height: { mean: 1, spread: 2 } },
 			lod: { ...template.lod, woodOrders: [1, 2] },
+			cuttings: { branch: { shoot: 'none' }, subbranch: { order: 2, length: 0 } },
 		} as unknown as Species;
 		const problems = speciesProblems(broken);
 		expect(problems.some((p) => p.startsWith("id 'Bad Id'"))).toBe(true);
@@ -25,6 +26,8 @@ describe('the record check', () => {
 		expect(problems.some((p) => p.includes('needs an envelope'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('size.height can draw'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('lod.woodOrders'))).toBe(true);
+		expect(problems.some((p) => p.startsWith("cuttings.branch.shoot 'none'"))).toBe(true);
+		expect(problems.some((p) => p.startsWith('cuttings.subbranch.length is 0'))).toBe(true);
 		expect(() => checkSpecies(broken)).toThrow(/cannot grow/);
 	});
 
