@@ -247,6 +247,7 @@ The `levels` option of `fromArrays` and of every generator controls the plan:
 | `false` | No levels. Give it to a mesh whose shape a shader moves, and to a mesh that you give levels by hand |
 | `true` | Levels when the mesh is made, at any size |
 | `{ cards: true }` | Levels that thin a mesh of separate quads as leaf cards: each level keeps every second card and grows it, so a crown keeps its cover |
+| `'pieces'` | No levels, and pieces by space for a mesh of 32,768 triangles or more, at the first draw by a material that does not blend or let light through. Give it to a large mesh whose levels come from elsewhere, such as a merged far cell |
 
 `mesh.buildLevels(options)` plans the levels of a mesh at any time, and returns a promise of them. Call it to plan a mesh that the default leaves out, to plan again after the vertices change, or to await the levels of a plan that runs: while a plan with the same options runs, it returns that plan's promise.
 

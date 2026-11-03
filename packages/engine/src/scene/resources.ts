@@ -330,11 +330,20 @@ export interface BuildLevelsOptions {
  * The levels of detail that a mesh made in code plans on its own. By default it plans them the
  * first time the scene draws it, when it holds `geometry.automaticLevelTriangles` triangles or
  * more, or when its copies hold `geometry.automaticDrawnTriangles` together; `false` plans none,
- * and `true` or options plan them when the mesh is made, at any size.
+ * and `true` or options plan them when the mesh is made, at any size. `'pieces'` plans no lower
+ * levels, and sorts a mesh of 32,768 triangles or more into pieces by space at its first draw, as
+ * a merged far cell or a large ground whose levels come from elsewhere gains from.
  *
  * @category api/geometry
  */
-export type LevelsOption = boolean | BuildLevelsOptions;
+export type LevelsOption = boolean | BuildLevelsOptions | 'pieces';
+
+/**
+ * @internal The fewest triangles of a list that gets pieces: the pieces planner's own
+ * `PIECE_LIST_MIN_TRIANGLES`, which a test keeps equal, here so the sketch's thread reads it
+ * without the planner's code.
+ */
+export const PIECES_MIN_TRIANGLES = 32_768;
 
 /** The level planner's start, which loads with the first mesh that plans its levels. */
 let plannerModule: Promise<typeof import('./mesh-levels')> | undefined;
@@ -395,6 +404,8 @@ export class MeshGeometry {
 	private automaticTriangles = 0;
 	/** The copies that the scene has drawn of the mesh, for the automatic default. */
 	private copies = 0;
+	/** True while the mesh waits for its first draw to sort its pieces alone (`levels: 'pieces'`). */
+	private piecesOnly = false;
 
 	/** @internal */
 	constructor(
@@ -576,8 +587,9 @@ export class MeshGeometry {
 	 */
 	startLevels(option: LevelsOption | undefined, triangles: number, call: string): void {
 		this.automaticTriangles = triangles;
-		if (option === false) this.automaticOff = true;
-		if (option === undefined || option === false) return;
+		if (option === false || option === 'pieces') this.automaticOff = true;
+		this.piecesOnly = option === 'pieces' && triangles >= PIECES_MIN_TRIANGLES;
+		if (option === undefined || option === false || option === 'pieces') return;
 		this.planQuietly(typeof option === 'object' && option.cards === true, false, call);
 	}
 
@@ -591,8 +603,16 @@ export class MeshGeometry {
 		});
 	}
 
-	/** Starts a plan of the mesh's levels, or returns the one that runs with the same options. */
-	private plan(cards: boolean, automatic: boolean, call: string): Promise<readonly MeshLevel[]> {
+	/**
+	 * Starts a plan of the mesh's levels, or returns the one that runs with the same options. With
+	 * `piecesOnly`, the plan makes no lower levels and sorts the mesh into pieces by space alone.
+	 */
+	private plan(
+		cards: boolean,
+		automatic: boolean,
+		call: string,
+		piecesOnly = false,
+	): Promise<readonly MeshLevel[]> {
 		const id = this.id;
 		const { core } = this;
 		const format = core.glue.meshFormat(id);
@@ -637,14 +657,15 @@ export class MeshGeometry {
 					{
 						words: words.buffer as ArrayBuffer,
 						cards: cards && floatPositions(format),
-						maxLevels: MAX_LOWER_LEVELS,
+						maxLevels: piecesOnly ? 0 : MAX_LOWER_LEVELS,
 						skipFlat: automatic,
+						spacePieces: piecesOnly,
 						parts,
 						// The mesh's own pieces draw a sorted copy of its indices. A mesh that one
 						// object draws, such as a ground around the camera, draws its base wherever
 						// the camera is near, so the copy pays; copies of a mesh draw their base only
 						// when near, and their levels' pieces cost no copy.
-						basePieces: this.copies <= 1,
+						basePieces: piecesOnly || this.copies <= 1,
 						...(masks && { masks: masks.buffer as ArrayBuffer }),
 					},
 					call,
@@ -773,6 +794,18 @@ export class MeshGeometry {
 	 * takes no automatic levels from then on, and drops the ones it has.
 	 */
 	drawnWith(material: Material, copies: number, call: string): void {
+		// A mesh that asked for pieces alone sorts them at its first draw by a material that keeps
+		// its vertices where the mesh puts them and that draws in buckets, not whole and sorted.
+		if (this.piecesOnly && !material.shapesVertices && !material.wholeOnly) {
+			this.piecesOnly = false;
+			this.copies += copies;
+			this.plan(false, false, call, true).catch((error: unknown) => {
+				if (DEV)
+					console.warn(
+						`${call}() left a mesh without pieces: they did not plan. ${error instanceof Error ? error.message : String(error)}`,
+					);
+			});
+		}
 		if (this.automaticOff) return;
 		if (material.shapesVertices) {
 			this.automaticOff = true;
@@ -1413,7 +1446,8 @@ export interface MeshArrays {
 	 * plans none, and neither does one that lies flat or that a material with moving vertices
 	 * draws. `false` plans none: give it to a mesh whose shape a shader moves, or whose levels you
 	 * set by hand. `true` plans them when the mesh is made, at any size, and options such as
-	 * `{ cards: true }` plan them with those options.
+	 * `{ cards: true }` plan them with those options. `'pieces'` plans no levels, and sorts a mesh
+	 * of 32,768 triangles or more into pieces by space at its first draw.
 	 */
 	levels?: LevelsOption;
 }

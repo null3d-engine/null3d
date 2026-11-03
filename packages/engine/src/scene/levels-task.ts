@@ -34,6 +34,8 @@ export interface LevelsTaskInput {
 	maxLevels: number;
 	/** True to plan nothing for a mesh that lies flat, whose shape a shader may give it. */
 	skipFlat: boolean;
+	/** True to sort the mesh's lists into pieces by space alone, whatever way they face. */
+	spacePieces?: boolean;
 	/** The parts that the engine split the mesh into. */
 	parts: number;
 	/**
@@ -108,7 +110,8 @@ export async function run(
 	input: unknown,
 	wasm: (name: string) => WebAssembly.Module,
 ): Promise<TaskResult> {
-	const { words, cards, maxLevels, skipFlat, parts, masks, basePieces } = input as LevelsTaskInput;
+	const { words, cards, maxLevels, skipFlat, parts, masks, basePieces, spacePieces } =
+		input as LevelsTaskInput;
 	const meshopt = await start(wasm);
 	const began = performance.now();
 	const header = new Uint32Array(words, 0, 3);
@@ -129,32 +132,33 @@ export async function run(
 		output: { levels: [], side, ms: performance.now() - began } satisfies LevelsTaskOutput,
 	});
 	if (side === 0 || (skipFlat && shortestSide(positions) <= side * FLAT_SHARE)) return none();
-	const list = weldList(
-		{
-			positions,
-			normal: streams.get(1) ?? null,
-			color: streams.get(5) ?? null,
-			tangent: streams.get(4) ?? null,
-			texcoords: [streams.get(2), streams.get(3)].filter((s): s is Stream => s !== undefined),
-			indices,
-		},
-		false,
-		side,
-		cards,
-	);
-	const planned = planMeshLevels(
-		meshopt,
-		[list],
-		indexCount / 3,
-		side,
-		simplifierFlags(false),
-		maxLevels,
-	);
+	// A plan of pieces alone welds and simplifies nothing.
+	const list =
+		maxLevels === 0
+			? undefined
+			: weldList(
+					{
+						positions,
+						normal: streams.get(1) ?? null,
+						color: streams.get(5) ?? null,
+						tangent: streams.get(4) ?? null,
+						texcoords: [streams.get(2), streams.get(3)].filter((s): s is Stream => s !== undefined),
+						indices,
+					},
+					false,
+					side,
+					cards,
+				);
+	const planned = list
+		? planMeshLevels(meshopt, [list], indexCount / 3, side, simplifierFlags(false), maxLevels)
+		: [];
 	// The lists of a mesh of several parts keep the order in which the parts draw them, and a mesh
 	// of more parts than a vertex's bits hold gets no pieces.
 	const split = parts > 1 ? masks && { masks: new Uint32Array(masks), parts } : undefined;
 	const piecesOf = (list: Uint32Array) =>
-		parts > 1 && !split ? undefined : planListPieces(positions, list, split, meshopt.cacheOrder);
+		parts > 1 && !split
+			? undefined
+			: planListPieces(positions, list, split, meshopt.cacheOrder, spacePieces);
 	const levels: TaskLevel[] = planned.map((level) => {
 		const indices = level.indices[0] as Uint32Array;
 		const moved = level.positions[0];
