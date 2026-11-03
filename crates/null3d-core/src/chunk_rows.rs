@@ -54,7 +54,9 @@ fn coverage_steps(count: u32) -> usize {
     if count <= 1 {
         1
     } else {
-        (2.0 * (count as f32).log2()).floor() as usize + 1
+        // The reference computes this in double precision, so the two packs agree on the step
+        // count for every chunk size rather than on most of them.
+        (2.0 * f64::from(count).log2()).floor() as usize + 1
     }
 }
 
@@ -366,6 +368,28 @@ mod tests {
         let at = table.field(CLOUD, slot, COVERAGE) as *mut f32;
         for (i, share) in shares.iter().enumerate() {
             unsafe { *at.add(i) = *share };
+        }
+    }
+
+    #[test]
+    fn the_coverage_table_holds_as_many_steps_as_the_reference() {
+        // The figures come from the reference's formula, floor(2 log2 count) + 1, worked once by
+        // hand. A count computed in single precision gives sizes past a million an extra entry,
+        // and that entry stays at one, so a small prefix of a large chunk stops growing.
+        for (count, steps) in [
+            (2u32, 3usize),
+            (3, 4),
+            (5, 5),
+            (11, 7),
+            (17, 9),
+            (100, 14),
+            (1000, 20),
+            (25_000, 30),
+            (741_455, 39),
+            (2_000_000, 42),
+            (8_000_000, 46),
+        ] {
+            assert_eq!(coverage_steps(count), steps, "a chunk of {count} rows");
         }
     }
 
