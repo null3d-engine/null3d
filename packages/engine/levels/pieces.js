@@ -84,7 +84,118 @@ export function pieceCount(triangles) {
 export function planPieces(positions, indices, count, facings = Math.min(count, PIECE_FACINGS)) {
 	const triangles = Math.floor(indices.length / 3);
 	if (count < 1 || triangles < 2) return undefined;
-	// Each triangle's unit facing, its area and its middle.
+	const { facing, area, middle, total } = triangleFacings(positions, indices);
+	if (total === 0) return undefined;
+	const groups = facingGroups(facing, area, total, facings);
+	const shares = shareOut(
+		groups.map((group) => group.length),
+		count,
+	);
+	/** @type {Uint32Array[]} */
+	const pieces = [];
+	groups.forEach((group, g) => {
+		splitBySpace(group, middle, at(shares, g), pieces);
+	});
+	const order = new Uint32Array(triangles);
+	const counts = new Uint32Array(pieces.length);
+	const bounds = new Float32Array(pieces.length * PIECE_BOUNDS);
+	let first = 0;
+	pieces.forEach((piece, k) => {
+		order.set(piece, first);
+		first += piece.length;
+		counts[k] = piece.length;
+		bounds.set(pieceBounds(piece, positions, indices, facing, area), k * PIECE_BOUNDS);
+	});
+	return { order, counts, bounds };
+}
+
+/**
+ * Each group's share of `count` pieces, by its triangles in `sizes`, at least one: the largest
+ * remainders take the pieces left over. Groups past `count` take one each all the same.
+ *
+ * @param {number[]} sizes
+ * @param {number} count
+ * @returns {number[]}
+ */
+export function shareOut(sizes, count) {
+	const triangles = sizes.reduce((sum, size) => sum + size, 0);
+	const exact = sizes.map((size) => (size / triangles) * count);
+	const shares = exact.map((share) => Math.max(1, Math.floor(share)));
+	let left = count - shares.reduce((sum, share) => sum + share, 0);
+	const byRemainder = exact
+		.map((share, g) => ({ g, rest: share - Math.floor(share) }))
+		.sort((x, y) => y.rest - x.rest || x.g - y.g);
+	for (const { g } of byRemainder) {
+		if (left <= 0) break;
+		shares[g] = at(shares, g) + 1;
+		left -= 1;
+	}
+	return shares;
+}
+
+/**
+ * The triangles of `indices` in the order of the pieces of `plan`, each piece's triangles in the
+ * order that `cacheOrder` gives them for the GPU's vertex cache, which keeps the vertex numbers.
+ *
+ * @param {ArrayLike<number>} indices
+ * @param {PiecePlan} plan
+ * @param {(indices: Uint32Array) => Uint32Array} cacheOrder
+ * @returns {Uint32Array<ArrayBuffer>}
+ */
+export function piecesInOrder(indices, plan, cacheOrder) {
+	const sorted = new Uint32Array(plan.order.length * 3);
+	let first = 0;
+	for (const triangles of plan.counts) {
+		const piece = new Uint32Array(triangles * 3);
+		for (let k = 0; k < triangles; k++) {
+			const from = at(plan.order, first + k) * 3;
+			piece[k * 3] = at(indices, from);
+			piece[k * 3 + 1] = at(indices, from + 1);
+			piece[k * 3 + 2] = at(indices, from + 2);
+		}
+		sorted.set(cacheOrder(piece), first * 3);
+		first += triangles;
+	}
+	return sorted;
+}
+
+/**
+ * The bounds of one piece that holds the whole triangle list, as `planPieces` bounds each piece.
+ *
+ * @param {ArrayLike<number>} positions
+ * @param {ArrayLike<number>} indices
+ * @returns {Float32Array}
+ */
+export function listBounds(positions, indices) {
+	const { facing, area } = triangleFacings(positions, indices);
+	const piece = Uint32Array.from({ length: area.length }, (_, t) => t);
+	return Float32Array.from(pieceBounds(piece, positions, indices, facing, area));
+}
+
+/**
+ * How far a triangle list faces one way: the length of its triangles' facings summed by area, as
+ * a share of their area. 1 for a flat list, near 0 for a closed shape.
+ *
+ * @param {ArrayLike<number>} positions
+ * @param {ArrayLike<number>} indices
+ */
+export function meanFacing(positions, indices) {
+	const { facing, area, total } = triangleFacings(positions, indices);
+	if (total === 0) return 0;
+	const sum = [0, 0, 0];
+	for (let t = 0; t < area.length; t++)
+		for (let k = 0; k < 3; k++) sum[k] = at(sum, k) + at(area, t) * at(facing, t * 3 + k);
+	return Math.hypot(at(sum, 0), at(sum, 1), at(sum, 2)) / total;
+}
+
+/**
+ * Each triangle's unit facing, its area and its middle, and the list's whole area.
+ *
+ * @param {ArrayLike<number>} positions
+ * @param {ArrayLike<number>} indices
+ */
+function triangleFacings(positions, indices) {
+	const triangles = Math.floor(indices.length / 3);
 	const facing = new Float64Array(triangles * 3);
 	const area = new Float64Array(triangles);
 	const middle = new Float64Array(triangles * 3);
@@ -112,37 +223,7 @@ export function planPieces(positions, indices, count, facings = Math.min(count, 
 			facing[t * 3 + 2] = nz / length;
 		}
 	}
-	if (total === 0) return undefined;
-	const groups = facingGroups(facing, area, total, facings);
-	// Each group's share of the pieces, by its triangles, at least one: the largest remainders
-	// take the pieces left over.
-	const exact = groups.map((group) => (group.length / triangles) * count);
-	const shares = exact.map((share) => Math.max(1, Math.floor(share)));
-	let left = count - shares.reduce((sum, share) => sum + share, 0);
-	const byRemainder = exact
-		.map((share, g) => ({ g, rest: share - Math.floor(share) }))
-		.sort((x, y) => y.rest - x.rest || x.g - y.g);
-	for (const { g } of byRemainder) {
-		if (left <= 0) break;
-		shares[g] = at(shares, g) + 1;
-		left -= 1;
-	}
-	/** @type {Uint32Array[]} */
-	const pieces = [];
-	groups.forEach((group, g) => {
-		splitBySpace(group, middle, at(shares, g), pieces);
-	});
-	const order = new Uint32Array(triangles);
-	const counts = new Uint32Array(pieces.length);
-	const bounds = new Float32Array(pieces.length * PIECE_BOUNDS);
-	let first = 0;
-	pieces.forEach((piece, k) => {
-		order.set(piece, first);
-		first += piece.length;
-		counts[k] = piece.length;
-		bounds.set(pieceBounds(piece, positions, indices, facing, area), k * PIECE_BOUNDS);
-	});
-	return { order, counts, bounds };
+	return { facing, area, middle, total };
 }
 
 /**

@@ -45,3 +45,28 @@ export function planPieces(
 	count: number,
 	facings?: number,
 ): PiecePlan | undefined;
+
+/**
+ * Each group's share of `count` pieces, by its triangles in `sizes`, at least one: the largest
+ * remainders take the pieces left over. Groups past `count` take one each all the same.
+ */
+export function shareOut(sizes: number[], count: number): number[];
+
+/**
+ * The triangles of `indices` in the order of the pieces of `plan`, each piece's triangles in the
+ * order that `cacheOrder` gives them for the GPU's vertex cache, which keeps the vertex numbers.
+ */
+export function piecesInOrder(
+	indices: ArrayLike<number>,
+	plan: PiecePlan,
+	cacheOrder: (indices: Uint32Array) => Uint32Array,
+): Uint32Array<ArrayBuffer>;
+
+/** The bounds of one piece that holds the whole triangle list, as `planPieces` bounds each piece. */
+export function listBounds(positions: ArrayLike<number>, indices: ArrayLike<number>): Float32Array;
+
+/**
+ * How far a triangle list faces one way: the length of its triangles' facings summed by area, as
+ * a share of their area. 1 for a flat list, near 0 for a closed shape.
+ */
+export function meanFacing(positions: ArrayLike<number>, indices: ArrayLike<number>): number;
