@@ -1665,8 +1665,10 @@ export class Mesh extends Object3D {
 			if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
 		}
 		this.scene.command(C.COMMAND_SET_MATERIAL, this.handle, material.id, 0, 'setMaterial');
+		// A copy that drew with a material that draws the base level alone was not counted.
+		const counted = this.material !== undefined && !this.material.wholeOnly;
 		this.material = material;
-		mesh?.drawnWith(material, 0, 'setMaterial');
+		mesh?.drawnWith(material, counted ? 0 : 1, 'setMaterial');
 	}
 
 	/**
@@ -3699,7 +3701,7 @@ export class Scene implements ViewHolder {
 	/** @internal */
 	constructor(
 		/** @internal */ readonly core: CoreMemory,
-		private readonly time: { readonly frame: number },
+		private readonly time: { readonly frame: number; readonly held?: boolean },
 		/** True when the engine draws with WebGL2, whose devices draw fewer rows than WebGPU's. */
 		private readonly webgl2: boolean,
 		private readonly warmUpScene: () => Promise<void> = () => Promise.resolve(),
@@ -4136,6 +4138,14 @@ export class Scene implements ViewHolder {
 	private rememberBatch(batch: InstanceBatch): void {
 		this.batchSlots[batch.id & SLOT_MASK] = batch;
 		for (const part of batch.parts) this.batchSlots[part & SLOT_MASK] = batch;
+	}
+
+	/**
+	 * @internal The frame that the sketch ran last, and whether hold mode steps the frames, which a
+	 * mesh reads to hand over its planned levels one a frame.
+	 */
+	get pace(): { readonly frame: number; readonly held?: boolean } {
+		return this.time;
 	}
 
 	/**

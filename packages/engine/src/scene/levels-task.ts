@@ -1,6 +1,6 @@
 // The task that plans a mesh's levels of detail, which a job worker runs beside the frames (see
-// `shared/tasks.ts`). It reads the mesh as the engine core stores it, in the words that
-// `meshPlanningArrays` writes, and runs the level planner that the asset tool runs too
+// `shared/tasks.ts`). It reads the mesh as the engine core stores it, in the words that the
+// sketch's thread reads from the core part by part (`readPlanningPart`), and runs the level planner that the asset tool runs too
 // (levels/planner.js), with meshoptimizer's own simplifier. The levels name the mesh's own
 // vertices, so the mesh keeps its vertex and triangle order.
 
@@ -23,7 +23,7 @@ import {
 
 /** What the engine asks of the task. */
 export interface LevelsTaskInput {
-	/** The words of `meshPlanningArrays`: the counts and format, the floats, then the indices. */
+	/** The mesh's words: the counts and format, the floats, then the indices. */
 	words: ArrayBuffer;
 	/** Whether a list of separate quads counts as leaf cards, whose levels thin them. */
 	cards: boolean;

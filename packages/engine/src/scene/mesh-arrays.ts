@@ -556,6 +556,22 @@ export function meshFromLevel(
 }
 
 /**
+ * Builds a level of the live mesh `base`, which the engine split into parts, that draws the base's
+ * own vertices with the triangles `indices`, in the base's numbering, and returns its id. The few
+ * triangles that span the parts' seams draw from a copy of their vertices.
+ */
+export function meshFromSplitLevel(
+	core: CoreMemory,
+	base: number,
+	indices: Uint32Array,
+	call: string,
+): number {
+	const address = core.checkGrowth(core.glue.meshArrays(indices.length), call);
+	core.u32(address, indices.length).set(indices);
+	return core.checkGrowth(core.glue.createSplitLevel(base, indices.length), call);
+}
+
+/**
  * Builds a level of the live mesh `base` that holds its own copy of the vertices that the triangles
  * `indices` name, in the base's numbering, and returns its id: the level of a base that is split
  * into parts. The copy takes each vertex once, in the order that the triangles first name it.
@@ -582,20 +598,69 @@ export function floatPositions(format: number): boolean {
 }
 
 /**
- * A copy of the live mesh `mesh`'s vertices and triangles as the level planner reads them, from
- * the core: the vertex count, the index count and the format, then each attribute's floats, then
- * the indices. The copy owns its buffer, which moves to a job worker.
+ * A mesh's vertices and triangles as the level planner reads them, which the core gives one part
+ * of the mesh at a time: the vertex count, the index count and the format, then each attribute's
+ * floats in the mesh's numbering, then the indices. The words own their buffer, which moves to a
+ * job worker.
  */
-export function meshPlanningWords(core: CoreMemory, mesh: number, call: string): Uint32Array {
-	const at = core.checkGrowth(core.glue.meshPlanningArrays(mesh), call);
-	const header = core.u32(at, 3);
-	const vertices = header[0] as number;
-	const indices = header[1] as number;
-	const format = header[2] as number;
+export interface PlanningWords {
+	readonly words: Uint32Array;
+	/** The mesh's parts, which `readPlanningPart` reads one at a time. */
+	readonly parts: number;
+	/** The indices that the parts read so far gave. */
+	indices: number;
+}
+
+/** The words before a part's own in the core's answer: the mesh's four, then the part's two. */
+const PART_HEADER = 6;
+
+/**
+ * Reads part `part` of the live mesh `mesh`'s vertices and triangles from the core into `into`, or
+ * into new words sized for the whole mesh. Each part holds at most 65,535 vertices, so a read
+ * takes a few milliseconds whatever the mesh's size, and a large mesh reads over several calls.
+ */
+export function readPlanningPart(
+	core: CoreMemory,
+	mesh: number,
+	part: number,
+	call: string,
+	into?: PlanningWords,
+): PlanningWords {
+	const at = core.checkGrowth(core.glue.meshPlanningPart(mesh, part), call);
+	const head = core.u32(at, PART_HEADER);
+	const vertices = head[1] as number;
+	const format = head[3] as number;
+	const count = head[4] as number;
+	const indices = head[5] as number;
 	let floats = 0;
 	for (const [location, size] of PLANNED_ATTRIBUTES)
 		if (holdsAttribute(format, location)) floats += size;
-	return core.u32(at, 3 + floats * vertices + indices).slice();
+	let read = into;
+	if (!read) {
+		const all = head[2] as number;
+		const words = new Uint32Array(3 + floats * vertices + all);
+		words[0] = vertices;
+		words[1] = all;
+		words[2] = format;
+		read = { words, parts: head[0] as number, indices: 0 };
+	}
+	const { words } = read;
+	const body = core.u32(at + PART_HEADER * 4, count * (1 + floats) + indices);
+	let from = count;
+	let to = 3;
+	for (const [location, size] of PLANNED_ATTRIBUTES) {
+		if (!holdsAttribute(format, location)) continue;
+		for (let local = 0; local < count; local++) {
+			const own = body[local] as number;
+			for (let c = 0; c < size; c++)
+				words[to + own * size + c] = body[from + local * size + c] as number;
+		}
+		from += count * size;
+		to += vertices * size;
+	}
+	words.set(body.subarray(from, from + indices), to + read.indices);
+	read.indices += indices;
+	return read;
 }
 
 /**

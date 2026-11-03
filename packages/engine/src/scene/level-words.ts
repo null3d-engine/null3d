@@ -1,6 +1,6 @@
 // What the level planner's start in the sketch's thread (scene/mesh-levels.ts) and its task on a
 // job worker (scene/levels-task.ts) share: the names of meshoptimizer's modules, and the layout of
-// a mesh's words as the core writes them (`meshPlanningArrays`). A file of its own, so that
+// a mesh's words as the sketch's thread reads them from the core (`readPlanningPart`). A file of its own, so that
 // neither side's code loads with the other's.
 
 import { VERTEX_ATTRIBUTES } from '../generated/gpu';

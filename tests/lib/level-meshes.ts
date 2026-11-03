@@ -48,7 +48,7 @@ export function bumpyGrid(n: number): LevelArrays & { uvs: Float32Array } {
 /** The format bit of the attribute at a vertex shader location. */
 const bit = (location: number) => VERTEX_ATTRIBUTES[location]?.[0] ?? 0;
 
-/** The words that the core's `meshPlanningArrays` writes for `arrays`. */
+/** The words that the engine reads from the core for `arrays`, before they go to the planner. */
 export function planningWords({
 	positions,
 	normals,

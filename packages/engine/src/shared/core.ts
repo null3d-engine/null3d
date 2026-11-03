@@ -413,13 +413,22 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	createLevelCopy(base: number, indices: number): number;
 	/**
-	 * Writes the live mesh `mesh`'s vertices and triangles as the level planner reads them, and
-	 * returns their address, or 0 for a mesh that is not live: the vertex count, the index count
-	 * and the vertex format, then the floats of the position, the normal, and the first and second
-	 * texture coordinates, the tangent and the color where the format has them, attribute after
-	 * attribute, then the indices. The next call that uses the same words overwrites them.
+	 * A level of the live mesh `base`, which is split into parts, that draws the base's own
+	 * vertices from the `indices` triangles at `meshArrays`'s address, which the call frees, and
+	 * copies only the vertices of the triangles that span the parts' seams. Returns the mesh id, or 0
+	 * on failure.
 	 */
-	meshPlanningArrays(mesh: number): number;
+	createSplitLevel(base: number, indices: number): number;
+	/**
+	 * Writes part `part` of the live mesh `mesh`'s vertices and triangles as the level planner
+	 * reads them, and returns their address, or 0 for a mesh or part that does not exist: the
+	 * mesh's part count, vertex count, index count and vertex format, the part's vertex and index
+	 * counts, the mesh vertex that each of the part's vertices holds, then the floats of the
+	 * position, the normal, the first and second texture coordinates, the tangent and the color
+	 * where the format has them, attribute after attribute, then the part's indices in the mesh's
+	 * numbering. The next call that uses the same words overwrites them.
+	 */
+	meshPlanningPart(mesh: number, part: number): number;
 	/**
 	 * Gives the live mesh `mesh` the `indices` triangles at `meshArrays`'s address in place of the
 	 * ones it draws, which the call frees. 0 when the mesh takes them. A mesh that is split into
@@ -1443,7 +1452,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createMeshFromArrays',
 	'createLevelMesh',
 	'createLevelCopy',
-	'meshPlanningArrays',
+	'createSplitLevel',
+	'meshPlanningPart',
 	'replaceMeshIndices',
 	'setMeshBvh',
 	'setMeshBlocker',

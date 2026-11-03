@@ -161,8 +161,10 @@ import {
 	meshFromArrays,
 	meshFromLevel,
 	meshFromLevelCopy,
-	meshPlanningWords,
+	meshFromSplitLevel,
 	morphTargetCount,
+	type PlanningWords,
+	readPlanningPart,
 	replaceMeshIndices,
 	updateVertices,
 	type VertexLayout,
@@ -184,7 +186,21 @@ export interface ResourceUsers {
 		materials?: ReadonlySet<Material>,
 		rig?: object,
 	): string | undefined;
+	/**
+	 * The frame that the sketch ran last, and whether hold mode steps the frames, for work that a
+	 * mesh spreads over frames.
+	 */
+	readonly pace?: { readonly frame: number; readonly held?: boolean };
 }
+
+/**
+ * How long a mesh waits for the next frame before it hands over its next planned level anyway, in
+ * ms: a page whose frames stop, as a hidden tab's do, still gets its levels.
+ */
+const LEVEL_FRAME_WAIT_MS = 250;
+
+/** How often a mesh looks for the next frame while it hands over its planned levels, in ms. */
+const LEVEL_FRAME_POLL_MS = 2;
 
 /**
  * A lower level of detail of a mesh: a simpler mesh that draws in the base mesh's place. Give its
@@ -524,8 +540,11 @@ export class MeshGeometry {
 	 * between its surface and the mesh's as its error, so it switches in at once where that
 	 * distance covers less than the `lodThreshold` setting's pixels. The levels name the mesh's own
 	 * vertices, in their own order, so they cost indices alone: the mesh keeps its vertices and
-	 * triangles as they are. A mesh that the engine split into parts, past 65,535 vertices, gives
-	 * each level a copy of the vertices that it draws. The mesh draws its full shape until the
+	 * triangles as they are. A mesh that the engine split into parts, past 65,535 vertices, shares
+	 * them part by part, and copies only the vertices of the triangles that cross from one part to
+	 * another. A large mesh spreads the work over frames: the engine reads one part of it in each
+	 * frame for the plan, and gives it one level in each frame, coarsest first, when the plan is
+	 * done. The mesh draws its full shape until the
 	 * levels arrive, and every object and instance batch that draws it then picks its level.
 	 *
 	 * A mesh made in code plans its levels on its own the first time the scene draws it, when it
@@ -581,20 +600,30 @@ export class MeshGeometry {
 			);
 		const running = this.planning;
 		if (running && running.cards === cards) return running.promise;
-		const words = meshPlanningWords(core, id, call);
-		if (automatic) {
-			this.automaticTriangles = (words[1] as number) / 3;
-			if (!this.automaticWanted()) return Promise.resolve(this.levels);
-		}
 		const plan = ++this.plans;
 		const entry: LevelPlan = { promise: Promise.resolve(this.levels), cards, automatic };
-		// The mesh's words are read now, while the caller's call runs. The plan starts once the
-		// planner has loaded, unless a call such as setLevels has ended it by then, and its levels
+		// The mesh is read from the core one part a frame, between two frames, so no frame reads a
+		// large mesh whole, nor the frame that made it. The plan starts once the planner has loaded
+		// and the parts are in, unless a call such as setLevels has ended it by then, and its levels
 		// arrive with the task's answer, between two frames. The plan counts as a task from now
 		// until its levels are in, so a held frame draws them.
 		taskStarted();
 		entry.promise = (async () => {
 			try {
+				let read: PlanningWords | undefined;
+				for (let part = 0; part < (read?.parts ?? 1); part++) {
+					await this.nextFrame();
+					if (plan !== this.plans || !this.live) return this.levels;
+					read = readPlanningPart(core, this.id, part, call, read);
+				}
+				const words = (read as PlanningWords).words;
+				if (automatic) {
+					this.automaticTriangles = (words[1] as number) / 3;
+					if (!this.automaticWanted()) {
+						this.planning = undefined;
+						return this.levels;
+					}
+				}
 				const planner = await levelPlanner(call);
 				if (plan !== this.plans) return this.levels;
 				const output = await planner.planLevels(
@@ -607,7 +636,7 @@ export class MeshGeometry {
 					call,
 					levelsError,
 				);
-				return this.takePlan(output, plan, entry, call);
+				return await this.takePlan(output, plan, entry, call);
 			} catch (error) {
 				if (plan === this.plans) this.planning = undefined;
 				throw error;
@@ -622,53 +651,81 @@ export class MeshGeometry {
 	/**
 	 * Gives the mesh the levels that a plan made, unless a later call ended the plan, or the plan
 	 * was the automatic default's and the mesh has refused automatic levels or holds levels set by
-	 * hand since.
+	 * hand since. The levels arrive one a frame, coarsest first, so that no frame takes the work of
+	 * every level of a large mesh: each frame's set holds the levels made so far, and the mesh draws
+	 * its base mesh nearer than the finest of them. Hold mode takes them all at once.
 	 */
-	private takePlan(
+	private async takePlan(
 		output: LevelsTaskOutput,
 		plan: number,
 		entry: LevelPlan,
 		call: string,
-	): readonly MeshLevel[] {
-		if (plan !== this.plans || !this.live) return this.levels;
-		this.planning = undefined;
+	): Promise<readonly MeshLevel[]> {
+		const ended = () => plan !== this.plans || !this.live;
+		if (ended()) return this.levels;
 		const handSet = this.lowerLevels.length > 0 && this.built.length === 0;
-		if (entry.automatic && (this.automaticOff || handSet)) return this.levels;
-		if (output.levels.length === 0) return this.levels;
-		const meshes: MeshGeometry[] = [];
-		try {
-			for (const level of output.levels) meshes.push(this.levelMesh(level, call));
-		} catch (error) {
-			destroyMeshes(this.core, meshes, call);
-			throw error;
+		if (entry.automatic && (this.automaticOff || handSet)) {
+			this.planning = undefined;
+			return this.levels;
+		}
+		const planned = output.levels;
+		if (planned.length === 0) {
+			this.planning = undefined;
+			return this.levels;
 		}
 		const least = output.side * LEAST_LEVEL_ERROR;
 		let before = 0;
-		const levels = meshes.map((mesh, k): MeshLevel => {
-			const planned = (output.levels[k] as TaskLevel).error;
-			const error = Math.max(planned, least, before * LEVEL_ERROR_GROWTH);
+		const errors = planned.map((level) => {
+			const error = Math.max(level.error, least, before * LEVEL_ERROR_GROWTH);
 			before = error;
-			return { mesh, error, fade: false };
+			return error;
 		});
-		this.applyLevels(levels, {}, call);
 		const old = this.built;
-		this.built = meshes;
-		this.builtAutomatically = entry.automatic;
-		this.freeMeshes(old, call);
+		const made: MeshGeometry[] = [];
+		for (let k = planned.length - 1; k >= 0; k--) {
+			if (made.length > 0) await this.nextFrame();
+			if (ended()) return this.levels;
+			made.unshift(this.levelMesh(planned[k] as TaskLevel, call));
+			this.applyLevels(
+				made.map((mesh, j) => ({ mesh, error: errors[k + j] as number, fade: false })),
+				{},
+				call,
+			);
+			this.built = made.slice();
+			this.builtAutomatically = entry.automatic;
+			if (made.length === 1) this.freeMeshes(old, call);
+		}
+		this.planning = undefined;
 		return this.levels;
 	}
 
 	/**
-	 * A planned level's mesh: one that draws this mesh's vertices with the level's triangles, or a
-	 * copy of the vertices that it draws where the mesh is split into parts, or where the level
-	 * moved them, as a level of cards does.
+	 * Resolves once the sketch has run another frame, or after a short wait where frames stop.
+	 * Hold mode resolves at once, since its held frame waits for the plan.
+	 */
+	private async nextFrame(): Promise<void> {
+		const pace = this.maker?.users?.pace;
+		if (!pace || pace.held) return;
+		const frame = pace.frame;
+		const until = performance.now() + LEVEL_FRAME_WAIT_MS;
+		while (pace.frame === frame && performance.now() < until)
+			await new Promise((resolve) => setTimeout(resolve, LEVEL_FRAME_POLL_MS));
+	}
+
+	/**
+	 * A planned level's mesh: one that draws this mesh's vertices with the level's triangles, part
+	 * by part where the mesh is split into parts, or a copy of the vertices that it draws where the
+	 * level moved them, as a level of cards does.
 	 */
 	private levelMesh(level: TaskLevel, call: string): MeshGeometry {
 		const { core } = this;
 		const base = this.id;
 		const { indices, positions } = level;
-		const shared = positions ? undefined : meshFromLevel(core, base, indices, call);
-		const id = shared ?? meshFromLevelCopy(core, base, indices, call);
+		// A level of cards moves its vertices, so it copies them. Another level shares the mesh's,
+		// part by part where the engine split the mesh.
+		const id = positions
+			? meshFromLevelCopy(core, base, indices, call)
+			: (meshFromLevel(core, base, indices, call) ?? meshFromSplitLevel(core, base, indices, call));
 		const mesh = new MeshGeometry(id, core.glue.meshRadius(id), core, 0, [], this.maker);
 		if (positions) {
 			// The copy holds each vertex once, in the order that the triangles first name it.
@@ -690,7 +747,9 @@ export class MeshGeometry {
 	 * @internal Notes that the scene draws `copies` more copies of the mesh with `material`, and
 	 * plans the mesh's levels as the automatic default asks: once the mesh holds
 	 * `AUTOMATIC_LEVEL_TRIANGLES` triangles, or its copies hold `AUTOMATIC_DRAWN_TRIANGLES`
-	 * together. A flat mesh, whose shape a shader may give it, plans none. A material that moves the
+	 * together. A flat mesh, whose shape a shader may give it, plans none, and neither does a mesh
+	 * that only materials that blend or let light through draw, which draw the base level alone.
+	 * A material that moves the
 	 * vertices in its shader draws another shape than the one that the levels simplify, so the mesh
 	 * takes no automatic levels from then on, and drops the ones it has.
 	 */
@@ -701,6 +760,9 @@ export class MeshGeometry {
 			if (this.builtAutomatically || this.planning?.automatic) this.dropBuilt(call);
 			return;
 		}
+		// A material that draws the base level alone leaves the copies' detail as it is; a draw with
+		// another material later plans the levels.
+		if (material.wholeOnly) return;
 		this.copies += copies;
 		const handSet = this.lowerLevels.length > 0 && this.built.length === 0;
 		if (this.planning || this.built.length > 0 || handSet || !this.automaticWanted()) return;
@@ -3779,6 +3841,13 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 	 */
 	shapesVertices = false;
 
+	/**
+	 * @internal True when the material draws a mesh's base level at every distance, as a surface
+	 * that blends or lets light through does: a mesh that only such materials draw gains nothing
+	 * from automatic levels.
+	 */
+	wholeOnly = false;
+
 	/** True when the normal map's slot holds a bump map, whose strength `bumpScale` sets. */
 	private bump = false;
 
@@ -4134,8 +4203,15 @@ export class Materials {
 		call: string,
 		features = 0,
 	): Material<Values> {
-		const { id, owners } = this.createId(shading, options, call, hasLayers(options), features);
+		const { id, owners, wholeOnly } = this.createId(
+			shading,
+			options,
+			call,
+			hasLayers(options),
+			features,
+		);
 		const material = new Material<Values>(id, this.core, `${call}.set`, shading, owners);
+		material.wholeOnly = wholeOnly;
 		if (options.uvTransform !== undefined) material.recordUv(options.uvTransform);
 		material.recordMapUv(options.mapUvTransforms);
 		if (options.bumpMap || options.displacementMap) material.heights(options);
@@ -4154,7 +4230,7 @@ export class Materials {
 		layered = hasLayers(options),
 		extra = 0,
 		sway = 0,
-	): { id: number; owners: SlotOwners } {
+	): { id: number; owners: SlotOwners; wholeOnly: boolean } {
 		const [r, g, b] = linearColor(options.color ?? '#ffffff', call);
 		const emissive = linearOrNone(options.emissive, call, EMISSIVE);
 		const specular = specularOrNone(options.specularColor, call);
@@ -4244,7 +4320,9 @@ export class Materials {
 			numbers[1] = offsetV;
 			sendValue(core, id, MATERIAL_PARAM_LIGHT_MAP_OFFSET, call);
 		}
-		return { id, owners };
+		// Blended surfaces and surfaces that let light through draw their base level alone.
+		const wholeOnly = (features & (MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_TRANSMISSION)) !== 0;
+		return { id, owners, wholeOnly };
 	}
 
 	/**
@@ -4405,7 +4483,7 @@ export class Materials {
 		// A production build draws such a material without the light through it, as it has no
 		// builds for it.
 		const diffuseTransmission = translucent ? options.diffuseTransmission : undefined;
-		const { id } = this.createId(
+		const { id, wholeOnly } = this.createId(
 			shading,
 			{
 				...options,
@@ -4429,6 +4507,7 @@ export class Materials {
 		if (sceneDepth) this.shaders.need('particles');
 		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms, shading);
 		material.shapesVertices = compiled.functions.includes('vertexOffset');
+		material.wholeOnly = wholeOnly || lets(compiled);
 		if (options.uvTransform !== undefined) material.recordUv(options.uvTransform);
 		const { core } = this;
 		writeUniforms(core, id, uniforms, uniformValues, call);
