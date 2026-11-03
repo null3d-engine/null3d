@@ -6,6 +6,7 @@
 // same levels in the browser as in the tool.
 
 import type { Meshopt, SimplifierFlag } from '../../levels/planner.js';
+import { MemoryViews } from '../shared/memory-views';
 
 /** The exports of meshoptimizer's modules that the engine calls. */
 interface MeshoptExports {
@@ -84,8 +85,11 @@ export async function levelMeshopt(
 		start<SimplifierExports>(simplifierModule),
 		start<EncoderExports>(encoderModule),
 	]);
+	// Each call views a module's heap after its last call into the module, which may grow it.
+	const simplifierHeap = new MemoryViews(simplifier.memory);
+	const encoderHeap = new MemoryViews(encoder.memory);
 	return {
-		heapBytes: () => simplifier.memory.buffer.byteLength + encoder.memory.buffer.byteLength,
+		heapBytes: () => simplifierHeap.bytes + encoderHeap.bytes,
 		simplifyWithAttributes(
 			indices,
 			positions,
@@ -109,7 +113,7 @@ export async function levelMeshopt(
 			const sw = sbrk(weights.length * 4);
 			const si = sbrk(indices.length * 4);
 			const vl = lock ? sbrk(vertexCount) : 0;
-			let heap = new Uint8Array(simplifier.memory.buffer);
+			let heap = simplifierHeap.view(Uint8Array, 0, simplifierHeap.bytes);
 			heap.set(bytes(positions), sp);
 			heap.set(bytes(attributes), sa);
 			heap.set(bytes(new Float32Array(weights)), sw);
@@ -133,7 +137,7 @@ export async function levelMeshopt(
 				te,
 			);
 			// The heap may have grown.
-			heap = new Uint8Array(simplifier.memory.buffer);
+			heap = simplifierHeap.view(Uint8Array, 0, simplifierHeap.bytes);
 			const out = new Uint32Array(count);
 			bytes(out).set(heap.subarray(ti, ti + count * 4));
 			const result = new Float32Array(1);
@@ -147,10 +151,9 @@ export async function levelMeshopt(
 				vertices = Math.max(vertices, (indices[i] as number) + 1);
 			const { sbrk } = encoder;
 			const at = sbrk(indices.length * 4);
-			let heap = new Uint8Array(encoder.memory.buffer);
-			heap.set(bytes(indices), at);
+			encoderHeap.view(Uint8Array, at, indices.length * 4).set(bytes(indices));
 			encoder.meshopt_optimizeVertexCache(at, at, indices.length, vertices);
-			heap = new Uint8Array(encoder.memory.buffer);
+			const heap = encoderHeap.view(Uint8Array, 0, encoderHeap.bytes);
 			const out = new Uint32Array(indices.length);
 			bytes(out).set(heap.subarray(at, at + indices.length * 4));
 			sbrk(at - sbrk(0));
