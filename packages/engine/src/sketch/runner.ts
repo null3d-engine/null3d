@@ -102,7 +102,7 @@ import {
 	Role,
 } from '../shared/metrics';
 import type { Recorder, ReplayProgram, ReplayResult } from '../shared/recording';
-import { tasksPending } from '../shared/task-pending';
+import { plansPending, tasksPending } from '../shared/task-pending';
 import { VIDEO_FRAME, type VideoFrameMessage } from '../shared/videos';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import type { WgslUpdate } from '../shared/wgsl-updates';
@@ -124,6 +124,16 @@ const MAX_BATCHES = 256;
  * stopping the hold.
  */
 const TASK_SETTLE_LIMIT_MS = 10_000;
+/**
+ * How long a held frame waits for the level plans of meshes made in code. A plan of a million
+ * triangles takes about six seconds of one job worker on an idle machine, and far longer on a busy
+ * one or behind other tasks, so the limit is a guard against a plan that never answers. A held
+ * frame never draws without the levels that its meshes plan: past the limit, hold mode fails and
+ * names the meshes.
+ */
+const PLAN_SETTLE_LIMIT_MS = 300_000;
+/** How often a held frame that waits for level plans says which meshes still plan. */
+const PLAN_PROGRESS_MS = 10_000;
 const COMMAND_CAPACITY = 1 << 16;
 /** The id of the pointer that a timed script drives, and the bit of its main button. */
 const MAIN_POINTER = 1;
@@ -1385,13 +1395,39 @@ export class SketchRunner {
 	 * Waits for the tasks that the sketch queued, which write their answers between frames, so the
 	 * held frame draws what they wrote. A chain of tasks has each one queued before the promise that
 	 * answered before it runs its next code, so the count reaches zero only when the chain is done.
+	 * The level plans of meshes made in code count as tasks until their levels are in, and the wait
+	 * for them goes on past the other tasks' limit: a held frame draws every planned level, or hold
+	 * mode fails and names the meshes that still plan.
 	 */
 	private async settleTasks(): Promise<void> {
-		const deadline = performance.now() + TASK_SETTLE_LIMIT_MS;
+		const start = performance.now();
+		let warned = false;
+		let progressAt = start + PLAN_PROGRESS_MS;
 		while (tasksPending() > 0) {
-			if (performance.now() >= deadline) {
-				console.warn(`hold mode stopped waiting for ${tasksPending()} task(s) that did not answer`);
-				return;
+			const now = performance.now();
+			const planning = plansPending();
+			const others = tasksPending() - planning.length;
+			if (others > 0 && now - start >= TASK_SETTLE_LIMIT_MS) {
+				if (planning.length === 0) {
+					console.warn(`hold mode stopped waiting for ${others} task(s) that did not answer`);
+					return;
+				}
+				if (!warned)
+					console.warn(
+						`hold mode stopped waiting for ${others} task(s) that did not answer, and waits on for the levels of detail of ${planning.length} mesh(es)`,
+					);
+				warned = true;
+			}
+			if (planning.length > 0 && now - start >= PLAN_SETTLE_LIMIT_MS)
+				throw new EngineError(
+					'E1408',
+					`hold mode waited ${PLAN_SETTLE_LIMIT_MS / 1000} seconds for the levels of detail that meshes made in code plan, and these still plan: ${planning.join(', ')}. Pass levels: false for a mesh that a held frame should draw without them.`,
+				);
+			if (planning.length > 0 && now >= progressAt) {
+				console.info(
+					`hold mode waits for the levels of detail of ${planning.length} mesh(es): ${planning.join(', ')}`,
+				);
+				progressAt = now + PLAN_PROGRESS_MS;
 			}
 			await new Promise((resolve) => setTimeout(resolve, 0));
 		}
