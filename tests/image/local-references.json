@@ -137,6 +137,12 @@
 		"date": "2026-11-02",
 		"reason": "Playwright's Chromium on this Mac draws SwiftShader byte for byte as CI's does; the picture is redrawn after the ground mesh joined the scene"
 	},
+	"chromium-swiftshader/compat/demo-splats.png": {
+		"test": "demo-splats",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
+	},
 	"chromium-swiftshader/compat/demo-spot-cookies.png": {
 		"test": "demo-spot-cookies",
 		"tier": "compat",
@@ -304,6 +310,24 @@
 		"tier": "compat",
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the picture; the branch is not pushed, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/splats-budget.png": {
+		"test": "splats-budget",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "The splats add-on grows a coarse level's splats by the share of the chunk's surface that they leave uncovered, so the knot kept at a quarter of its splats draws at its own thickness; drawn on this Mac's SwiftShader before CI's first run of the branch"
+	},
+	"chromium-swiftshader/compat/splats-gltf.png": {
+		"test": "splats-gltf",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
+	},
+	"chromium-swiftshader/compat/splats.png": {
+		"test": "splats",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
 	},
 	"chromium-swiftshader/compat/spot-map-probe.png": {
 		"test": "spot-map-probe",
@@ -503,6 +527,12 @@
 		"date": "2026-11-02",
 		"reason": "Playwright's Chromium on this Mac draws SwiftShader byte for byte as CI's does; the picture is redrawn after the ground mesh joined the scene"
 	},
+	"chromium-swiftshader/webgl2/demo-splats.png": {
+		"test": "demo-splats",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
+	},
 	"chromium-swiftshader/webgl2/demo-spot-cookies.png": {
 		"test": "demo-spot-cookies",
 		"tier": "webgl2",
@@ -701,6 +731,24 @@
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the picture; the branch is not pushed, so no CI run could draw it"
 	},
+	"chromium-swiftshader/webgl2/splats-budget.png": {
+		"test": "splats-budget",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "The splats add-on grows a coarse level's splats by the share of the chunk's surface that they leave uncovered, so the knot kept at a quarter of its splats draws at its own thickness; drawn on this Mac's SwiftShader before CI's first run of the branch"
+	},
+	"chromium-swiftshader/webgl2/splats-gltf.png": {
+		"test": "splats-gltf",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
+	},
+	"chromium-swiftshader/webgl2/splats.png": {
+		"test": "splats",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
+	},
 	"chromium-swiftshader/webgl2/spot-map-probe.png": {
 		"test": "spot-map-probe",
 		"tier": "webgl2",
@@ -892,6 +940,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-02",
 		"reason": "Playwright's Chromium on this Mac draws SwiftShader byte for byte as CI's does; the picture is redrawn after the ground mesh joined the scene"
+	},
+	"chromium-swiftshader/webgpu/demo-splats.png": {
+		"test": "demo-splats",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
 	},
 	"chromium-swiftshader/webgpu/demo-spot-cookies.png": {
 		"test": "demo-spot-cookies",
@@ -1090,6 +1144,24 @@
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the picture; the branch is not pushed, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/splats-budget.png": {
+		"test": "splats-budget",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "The splats add-on grows a coarse level's splats by the share of the chunk's surface that they leave uncovered, so the knot kept at a quarter of its splats draws at its own thickness; drawn on this Mac's SwiftShader before CI's first run of the branch"
+	},
+	"chromium-swiftshader/webgpu/splats-gltf.png": {
+		"test": "splats-gltf",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
+	},
+	"chromium-swiftshader/webgpu/splats.png": {
+		"test": "splats",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
 	},
 	"chromium-swiftshader/webgpu/spot-map-probe.png": {
 		"test": "spot-map-probe",

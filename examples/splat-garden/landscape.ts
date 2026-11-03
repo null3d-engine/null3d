@@ -4,7 +4,7 @@
 import type { QualityPreset, SketchContext } from '@null3d/engine';
 import { mountainRing } from '../lib/mountains';
 import { terrain } from '../lib/procedural';
-import { gardenHeight, groundColor, LAND } from './cloud';
+import { gardenHeight, groundLight, LAND } from './cloud';
 
 /** The ground's detail around the glade, by preset: the ring's bearings and rows. */
 const DETAIL: Record<QualityPreset, readonly [number, number]> = {
@@ -50,11 +50,14 @@ export function createLandscape(ctx: SketchContext, preset: QualityPreset): void
 		tile: 9,
 		middle: 0.45,
 		height: (x, z) => gardenHeight(x, z) - 0.06,
-		color: (x, z, _y, _slope, out) => groundColor(x, z, out),
+		color: (x, z, _y, _slope, out) => groundLight(x, z, out),
 	});
 	scene.createMesh({
 		mesh: geometry.fromArrays(ground),
-		material: materials.standard({ vertexColors: true, roughness: 1 }),
+		// The mesh is the moss that shows through the splats, so it wears the capture's light
+		// rather than the stage's. A relit mesh shows a different moss wherever the splats leave
+		// a gap, and a low sun turns those gaps into a band across the ground.
+		material: materials.unlit({ vertexColors: true }),
 		castShadows: false,
 		receiveShadows: false,
 	});

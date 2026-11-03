@@ -48,7 +48,7 @@ The last word of a view's buffer of culled draws counts the rows that this guard
 
 ## A frame on a full heap
 
-A frame copies its uploads into `UploadArena`, in blocks that never move. A copy larger than the ordinary 256 KiB takes a block of its own size, and a heap that refuses a block makes the frame stop with E1109. An arena holds only what its frames copy, and it gives large blocks back after 30 frames with no large copy. So a first frame's copy of every mesh needs no long free stretch of the heap, and leaves no room standing afterwards.
+A frame copies its uploads into `UploadArena`, in blocks that never move. A copy larger than the ordinary 256 KiB takes the smallest free large block that holds it. When none does, the arena gives the free large blocks that are too small back to the heap, and makes a new block an eighth larger than the copy, so the same copy a little larger next frame still fits. A heap that refuses a block makes the frame stop with E1109. An arena holds only what its frames copy, and it gives large blocks back after 30 frames with no large copy. A frame of 800,000 splats makes two large copies whose sizes change a little every frame. An arena that made each new block at its copy's exact size and kept the blocks it outgrew reached 391 MiB in the splats demo, and the engine's memory then failed after about 20 seconds; with the reuse it holds 113 to 153 MiB ([D-298](decisions/D-298-real-scan-splats.md)). So a first frame's copy of every mesh needs no long free stretch of the heap, and leaves no room standing afterwards.
 
 Most of a frame's other requests are plain pushes, which cannot report a refusal: a refusal would trap, with `unreachable` and no message. So the heap keeps room for them (`crates/null3d-wasm/src/heap.rs`):
 
@@ -1271,7 +1271,10 @@ percent of the large variants. The rare lit features cost less: area lights and 
 ### The count the manifest may not pass
 
 `BUILD_BUDGET` in `crates/null3d-shaders/src/manifest.rs` records the figures above, and a commit
-that adds builds on purpose raises them here and in the constant together. The test
+that adds builds on purpose raises them here and in the constant together. The unlit surface hook,
+which lets a custom material show its own color with no lighting, is one such build on each
+target: it adds one WGSL build and one GLSL build, so the figures stand one higher than the
+count before it. The test
 `the_manifests_builds_stay_within_the_recorded_figure` in the shader crate counts the manifest's
 builds and fails when either target passes its figure. The test builds no shader, so it costs a
 test run almost nothing. Its problem names the figure, the file that holds it and this guide.

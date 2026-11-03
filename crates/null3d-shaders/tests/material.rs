@@ -1608,3 +1608,63 @@ fn the_diffuse_normal_reaches_only_the_builds_that_name_it() {
             && !build.source.contains("ambient_light(diffuse_normal)")
     ));
 }
+
+/// A surface that shows its own color: a soft disc whose opacity falls off from its middle.
+const GLOW: &str = "fn unlit(input: SurfaceInput) -> vec4f {
+    let corner = input.uv * 2.0 - 1.0;
+    return vec4f(1.0, 0.8, 0.4, exp(-4.0 * dot(corner, corner)));
+}
+";
+
+#[test]
+fn an_unlit_surface_shows_its_own_color_and_skips_the_lighting() {
+    // Every shading build finishes the material's own color, and none of them calls the lighting:
+    // the template's lit path is left out of the builds that the material draws with.
+    let built = compile(GLOW).expect("the unlit surface builds");
+    assert_eq!(built.functions, ["unlit"]);
+    assert!(
+        built.alpha,
+        "an unlit surface gives its opacity, so it has the builds of alpha"
+    );
+    // A masked shadow caster tests the material's opacity, which it takes from the same function.
+    let mut shading = 0;
+    for (name, variant) in &built.variants {
+        let Some(build) = variant.wgsl.as_ref() else {
+            continue;
+        };
+        if name.contains("caster") {
+            // The function and a call of it, which tests the caster's opacity.
+            let masked = name.contains("alpha_mask");
+            assert!(
+                !masked || build.source.matches("unlit(").count() >= 2,
+                "{name}"
+            );
+        } else {
+            shading += 1;
+            assert!(build.source.contains("shade_unlit("), "{name}");
+            assert!(!build.source.contains("light_surface("), "{name}");
+        }
+    }
+    assert!(shading > 0);
+    // A material that lights its surface keeps the lit path, and has no unlit one.
+    let lit = compile(STRIPES).expect("the plain surface builds");
+    let mut wgsl = lit
+        .variants
+        .values()
+        .filter_map(|variant| variant.wgsl.as_ref());
+    assert!(wgsl.all(|build| !build.source.contains("shade_unlit(")));
+}
+
+#[test]
+fn an_unlit_surface_beside_a_lit_one_is_refused_at_the_lit_function() {
+    let source = format!("{GLOW}\n{STRIPES}").replace("#import null3d::math::{square}\n", "");
+    let source = format!("#import null3d::math::{{square}}\n{source}");
+    let problem = only_problem(&source);
+    assert_eq!(problem.line, Some(8));
+    assert!(
+        problem
+            .message
+            .starts_with("`surface` lights a surface, and `unlit` shows its own color"),
+        "{problem}"
+    );
+}

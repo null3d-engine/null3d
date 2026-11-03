@@ -137,6 +137,10 @@ pub enum PassRole {
     MomentSmaaResolve = 59,
     /// A step of screen-space bounce light.
     Bounce = 60,
+    /// The camera's blended surfaces into the one-sample layer.
+    Single = 61,
+    /// The blend of the one-sample layer over the scene color.
+    SingleComposite = 62,
 }
 
 impl PassRole {
@@ -209,6 +213,8 @@ impl PassRole {
             Self::MomentSmaaBlend => "moment weights",
             Self::MomentSmaaResolve => "moment resolve",
             Self::Bounce => "screen bounce",
+            Self::Single => "one-sample layer",
+            Self::SingleComposite => "one-sample composite",
         }
     }
 
@@ -305,6 +311,8 @@ impl PassRole {
         Self::MomentSmaaBlend,
         Self::MomentSmaaResolve,
         Self::Bounce,
+        Self::Single,
+        Self::SingleComposite,
     ];
 }
 

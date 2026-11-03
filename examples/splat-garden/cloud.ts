@@ -263,9 +263,11 @@ export function groundColor(x: number, z: number, out: number[] | Float32Array):
 	out[2] = mix(mix(MOSS_DARK[2], MOSS_LIGHT[2], light), EARTH[2], earth);
 }
 
-/** One splat of the ground, shaded by where it lies. */
-function addGroundSplat(cloud: Builder, index: number, x: number, z: number, size: number): void {
-	const y = gardenHeight(x, z);
+/**
+ * The captured light on the ground at a point, in linear color. The mesh under the splats wears
+ * the same light, so the two match whatever sky the stage sets.
+ */
+export function groundLight(x: number, z: number, out: number[] | Float32Array): void {
 	groundNormal(x, z, NORMAL);
 	groundColor(x, z, GROUND_RGB);
 	const occlusion = 0.62 + 0.38 * (0.5 + 0.5 * noise.fbm2(x * 0.16 + 4, z * 0.16 - 9, 2));
@@ -278,6 +280,21 @@ function addGroundSplat(cloud: Builder, index: number, x: number, z: number, siz
 		NORMAL[2] as number,
 		occlusion,
 	);
+	// The sky's reflection on the ground, which a lit surface adds and an unlit splat does not. The
+	// reflection lands hardest on the dark slope behind the blossom and on the far ground seen
+	// grazing, so it blends in with those rather than a constant over the whole glade.
+	const band = 1 - smoothstep(LIT[0] as number, 0.045, 0.055);
+	const far = smoothstep(Math.hypot(x, z), 15, 30);
+	const rim = smoothstep(Math.hypot(x, z), 30, 45);
+	out[0] = (LIT[0] as number) + 0.008 * band + 0.008 * rim;
+	out[1] = (LIT[1] as number) + 0.003 * band + 0.008 * rim;
+	out[2] = (LIT[2] as number) + 0.004 * band + 0.003 * far;
+}
+
+/** One splat of the ground, shaded by where it lies. */
+function addGroundSplat(cloud: Builder, index: number, x: number, z: number, size: number): void {
+	const y = gardenHeight(x, z);
+	groundLight(x, z, LIT);
 	cloud.flat(
 		x,
 		y + 0.01,

@@ -124,6 +124,7 @@ pub mod readback;
 pub mod scope;
 pub mod shadow_tiles;
 pub mod shadows;
+mod single_layer;
 pub mod skinning;
 mod sky_light;
 pub mod sky_maps;
