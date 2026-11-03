@@ -71,10 +71,14 @@ interface BudShape {
 	readonly sides: number;
 	readonly round: boolean;
 }
-/** The buds of a tip cluster, which a close view reads, are rounder than those in the leaf axils. */
-const CLUSTER_BUD: Readonly<Record<Detail, BudShape>> = {
-	low: { sides: 3, round: false },
-	medium: { sides: 4, round: false },
+/**
+ * The buds of a tip cluster, which a close view reads, are rounder than those in the leaf axils.
+ * The medium tier draws a whole cluster as one cone, and the low tier, whose shoots stand a few
+ * pixels long, draws no buds.
+ */
+const CLUSTER_BUD: Readonly<Record<Detail, BudShape | undefined>> = {
+	low: undefined,
+	medium: { sides: 3, round: false },
 	high: { sides: 5, round: true },
 	ultra: { sides: 6, round: true },
 };
@@ -94,6 +98,8 @@ interface AxisPoint {
 	readonly radius: number;
 	/** Metres along the shoot from the attach point. */
 	readonly along: number;
+	/** Whether a year's growth unit ends here, where the low tier keeps a ring. */
+	readonly unitEnd?: boolean;
 }
 
 /** One leaf of the plan. */
@@ -132,6 +138,11 @@ interface PlannedBud {
 	readonly along: number;
 	/** Whether it belongs to a tip cluster, not to a leaf axil. */
 	readonly cluster: boolean;
+	/**
+	 * For a cluster's first bud, the tip one, metres from the foot of the cluster's lowest bud to the
+	 * tip, along which the medium tier draws the whole cluster as one cone.
+	 */
+	readonly stack?: number;
 }
 
 /**
@@ -444,6 +455,7 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 					placeLeaves(axis, node, at, direction, sky, radius, along, t, azimuthStart, crowded);
 				node++;
 			}
+			points[points.length - 1] = { ...(points[points.length - 1] as AxisPoint), unitEnd: true };
 			// The end of a unit: the newest ends in its bud cluster; an older one in last year's
 			// cluster, from which this year's laterals grew.
 			if (newest) addCluster(at, direction, sky, along);
@@ -562,6 +574,7 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 	/** The bud cluster at an axis's tip: the terminal bud and the buds stacked below it. */
 	const addCluster = (at: Vector3, direction: Vector3, sky: Vector3, along: number): void => {
 		if (budLength <= 0) return;
+		const count = Math.max(0, Math.round(shoots.bud.tipCluster) - 1);
 		buds.push({
 			at: [...at],
 			direction: [...direction],
@@ -569,8 +582,8 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 			width: budWidth,
 			along,
 			cluster: true,
+			stack: budLength * (count > 0 ? 0.35 + 0.4 * (count - 1) + 1 : 1),
 		});
-		const count = Math.max(0, Math.round(shoots.bud.tipCluster) - 1);
 		for (let k = 0; k < count; k++) {
 			const outward = turn(sky, direction, k * GOLDEN);
 			const lean = radians(CLUSTER_LEAN);
@@ -639,16 +652,15 @@ export function meshShoot(
 	const mesh = new MeshWriter();
 	const sides = STEM_SIDES[detail];
 	for (const points of plan.axes) {
-		// Rings no closer than twice the stem's radius, and every other one on the low tier.
+		// Rings no closer than twice the stem's radius; the low tier keeps one ring at each year's end.
 		const path: TubePoint[] = [];
-		const keepEvery = detail === 'low' ? 2 : 1;
 		for (let k = 0; k < points.length; k++) {
 			const point = points[k] as AxisPoint;
 			const last = path[path.length - 1];
 			const end = k === points.length - 1;
 			if (last && !end) {
 				const gap = point.along - last.along;
-				if (gap < point.radius * 2 || k % keepEvery !== 0) continue;
+				if (gap < point.radius * 2 || (detail === 'low' && !point.unitEnd)) continue;
 			}
 			path.push(point);
 		}
@@ -664,6 +676,28 @@ export function meshShoot(
 		const shape = (bud.cluster ? CLUSTER_BUD : AXIL_BUD)[detail];
 		mesh.mark();
 		if (!shape) continue;
+		if (bud.cluster && detail === 'medium') {
+			// The whole cluster as one cone over its stack, drawn on its tip bud's part.
+			if (bud.stack === undefined) continue;
+			const foot = bud.stack - bud.length;
+			lathe(
+				mesh,
+				[
+					[bud.width, 0],
+					[bud.width, bud.stack * 0.55],
+					[0, bud.stack],
+				],
+				[
+					bud.at[0] - bud.direction[0] * foot,
+					bud.at[1] - bud.direction[1] * foot,
+					bud.at[2] - bud.direction[2] * foot,
+				],
+				bud.direction,
+				shape.sides,
+				[bendByte(bud.along, plan.span), 0, SURFACE_STEM, 255],
+			);
+			continue;
+		}
 		const w = bud.width / 2;
 		const l = bud.length;
 		const profile: [number, number][] = shape.round
