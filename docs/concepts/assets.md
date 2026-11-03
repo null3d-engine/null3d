@@ -102,8 +102,8 @@ A model or texture file can come from a user, or be broken. So the loaders check
 
 | What | Limit | Error |
 | --- | --- | --- |
-| One array of a model: an accessor, decoded meshopt or Draco data, or the triangles of a strip or a fan | 256 MiB, the largest buffer that every WebGPU device takes | E1416 |
-| All the arrays and images that one model file decodes to | 64 MiB, plus 32 bytes for each byte of the file and its buffers, up to 1 GiB | E1416 |
+| One array of a model: an accessor, an array of decoded Draco data, or the triangles of a strip or a fan | 256 MiB, the largest buffer that every WebGPU device takes | E1416 |
+| All the arrays and images that one model file decodes to, with each block of meshopt data | 64 MiB, plus 32 bytes for each byte of the file and its buffers, up to 1 GiB | E1416 |
 | One animation clip | 4,194,304 keys, its frames times its tracks, at the clip's key rate | E1416 from `loadGltf`, E1218 elsewhere |
 | A mesh that the engine builds from a file or from arrays | What engine memory holds. The call fails, and the engine runs on | E1109 |
 | The sides of a KTX2 texture | `textures.maxSize`, checked before the transcoder runs | E1412 |
@@ -114,6 +114,8 @@ A model or texture file can come from a user, or be broken. So the loaders check
 | The sides of an image that `loadImageBitmap` decodes | 16,384, the largest canvas of browsers | E1412 |
 
 The model limit grows with the file, because compressed data decodes to several times its size. The sample models decode to at most 3 times their bytes, so a real model stays far below the limit. A model that does pass it is broken, or holds more than a scene can draw. Split it into several files.
+
+A block of meshopt data can hold many arrays. The asset tool packs every index list of one width into one block, so a large scene's block can pass 256 MiB. No GPU buffer holds the block whole, so only the file's total limits it. Each array that the engine reads from the block must still stay within 256 MiB.
 
 A primitive that names an accessor another primitive also names shares that accessor's arrays. So a file pays once for data that it uses many times.
 

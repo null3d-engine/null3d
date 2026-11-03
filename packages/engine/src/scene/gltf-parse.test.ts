@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -16,6 +16,7 @@ import {
 	shipBuilder,
 	specularBuilder,
 } from '../../../../tests/pages/lib/gltf-files';
+import { FileBudget } from './file-limits';
 import {
 	type GltfData,
 	GltfError,
@@ -1885,6 +1886,22 @@ describe('trees of cluster patches', () => {
 
 	test('a plain primitive has no tree', () => {
 		expect(parse(shipBuilder().glb()).meshes[0]?.primitives[0]?.patches).toBeUndefined();
+	});
+
+	test("the tree's arrays count once against the file's budget", () => {
+		/** The bytes that parsing a file takes from its budget. */
+		const charged = (file: Uint8Array) => {
+			const take = spyOn(FileBudget.prototype, 'takeBlock');
+			try {
+				parse(file);
+				return take.mock.calls.reduce((sum, [bytes]) => sum + bytes, 0);
+			} finally {
+				take.mockRestore();
+			}
+		};
+		// Six 32-bit indices, and two patches of four floats and four integers each.
+		const treeBytes = 6 * 4 + 2 * 16 + 2 * 16;
+		expect(charged(boxWith(TREE).glb()) - charged(boxWith(() => ({})).glb())).toBe(treeBytes);
 	});
 
 	test('a tree that breaks the rules gives E1416', () => {

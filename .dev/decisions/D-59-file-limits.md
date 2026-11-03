@@ -66,7 +66,7 @@ How the data was produced: `bun` scripts in a scratch folder ran `parseGltf` ove
 
 | Limit | Value | Reason | Code |
 | --- | --- | --- | --- |
-| `itemBytes`: one decoded array, view or texture | 256 MiB | WebGPU's portable limit on a buffer's size, which no mesh page passes anyway | E1416, E1412 |
+| `itemBytes`: one decoded array or texture | 256 MiB | WebGPU's portable limit on a buffer's size, which no mesh page passes anyway. A decoded meshopt view is a block that arrays are read out of, never one buffer, so only the file's total bounds it ([Decoded meshopt blocks](#decoded-meshopt-blocks)) | E1416, E1412 |
 | A model file's decoded total | 64 MiB + 32 x the file's bytes, up to 1 GiB | The floor lets a small file with sparse morph targets decode freely. Real files reach 2.9 times their bytes, meshopt 6.9 at most, so 32 leaves room for Draco. The cap is the engine's default memory, which a larger total could never fill | E1416 |
 | `textureLayers`: layers of one texture file | 256 | WebGPU's default limit on array layers | E1412 |
 | The sides of one texture file | `textures.maxSize` of the device | Checked from the KTX2 header, before the transcoder starts | E1412 |
@@ -176,3 +176,15 @@ Data, on main at 061177262:
 - On some copies, the Basis transcoder printed `elemental_vector::increase_capacity: Allocation failed!` and failed the file. It still transcoded the good file each time after. The engine checks a file's sides and bytes before the transcoder starts (`ktx2TooLarge`), so the sizes that a broken header claims never reach it.
 - `ktx2TooLarge` reads the header, but the sizes a file declares live in the level index that follows it. Without a bound on the index, a 149-byte file whose first level declares 1 GiB grows the transcoder's WebAssembly heap by 1,024 MiB. That happens before the refusal, and this check's run then costs 1,694 MiB. [D-184](D-184-ktx2-level-index-limits.md) bounds the index too, and the run costs 264 MiB.
 - To show that the test sees a fault, a run left out the index check of `gltf-json.ts` (an index at or past its array's length). 5 of the 26 tests then failed, each on a `TypeError` that names the change, such as "accessors.15.bufferView set to 255".
+
+## Decoded meshopt blocks
+
+glTF-Transform's meshopt writer packs every index list of one width into one compressed buffer view. Take a desert scene that `bunx @null3d/cli assets optimize --lod --clusters` writes. The file holds 196.8 MB: 17 meshes, 7.1 million triangles and a cluster tree on each mesh. Its view 2 holds 49 index lists, 262.8 MiB in all, and its largest list holds 50.2 MiB.
+
+- `itemBytes` bounds one array because one array becomes one GPU buffer. A decoded view never becomes one: the parser copies each accessor out of it, and each copy meets `itemBytes`. So a view answers to the file's total alone, through `FileBudget.takeBlock`. The parser applies that limit twice: when it checks the view's extension, and when it takes the decoded bytes. A view whose count passes the file's total fails before the decode allocates, as the hostile view of `gltf-meshopt.test.ts` does.
+- A cluster tree's arrays (`NULL3D_clusters`) count once. The parser reads them as accessors, which copies them and takes their bytes, and the worker sends those copies on. The desert's trees hold 179.8 MiB. Counted twice, the file would take 1,153.6 MiB of its 1,024 MiB.
+- The parser reads the desert file at 973.8 MiB of its 1,024 MiB, in 0.7 s, with all 17 trees. A `bun` script on the Mac ran `parseGltf` with the shipped meshopt decoder, and summed what `FileBudget` took.
+- One helper checks the indices of meshes, trees and blockers with a counted loop. A `for ... of` loop over a typed array makes an object for each index until Bun's JavaScript engine optimizes the loop. In the test of a 270 MiB block, 63 million indices make about 500 MiB of such objects. The test's process then peaks at 1,110 MiB and parses in 0.5 s. With the counted loop it peaks at 610 to 625 MiB and parses in 0.3 s.
+- Rejected: raising `itemBytes`. It is WebGPU's portable limit on a buffer, which every accessor must still meet.
+
+`gltf-meshopt-block.test.ts` loads a block of 9 lists of 30 MiB, 270 MiB in all. Its decoder writes only each list's first triangle, so the test holds no compressed data. It runs in a process of its own (`tests/lib/heavy-checks.ts`), under a ceiling of 1,024 MiB. `gltf-parse.test.ts` checks that a tree's arrays count once. Both tests fail against a parser that judges the view by `itemBytes` and counts the tree twice.
