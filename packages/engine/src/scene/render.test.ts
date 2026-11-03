@@ -320,6 +320,28 @@ describe('render passes', () => {
 		expect(thrown(() => render.setPassEvery(pass, 2)).code).toBe('E1101');
 	});
 
+	it('draws every pass in every frame while hold mode steps, then takes its cadence again', () => {
+		const { render, calls } = setup();
+		const pass = render.addPass({
+			kind: 'scene',
+			camera: camera().camera,
+			writes: 'map',
+			size: [8, 8],
+		});
+		render.setPassEvery(pass, 2);
+		// The thread that draws draws only the hold's last frames, so a pass on a cadence draws in
+		// each of them, and a cadence asked during the hold waits for its end.
+		render.held = true;
+		render.setPassEvery(pass, 4);
+		render.held = false;
+		expect(calls.slice(1)).toEqual([
+			['every', 1, 2],
+			['every', 1, 1],
+			['every', 1, 1],
+			['every', 1, 4],
+		]);
+	});
+
 	it('throws the graph error with its names, and the pass is not added', () => {
 		const { render } = setup();
 		const error = thrown(() =>
