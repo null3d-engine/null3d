@@ -1493,7 +1493,7 @@ impl GpuDrivenRenderer {
             (moving, std::slice::from_ref(&plain)),
             (tone, std::slice::from_ref(&plain)),
         ] {
-            drawn.fit_copies(scene, batches, drawn_by, parity, copy_offsets)?;
+            drawn.fit_copies(scene, batches, drawn_by, parity, copy_offsets, input.jobs)?;
         }
         // The staged levels' watches read the levels that the camera's layout put copies in.
         if settings.watches_stages() {
