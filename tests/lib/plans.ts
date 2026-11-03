@@ -2430,6 +2430,47 @@ export function demosPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * How much of the Showroom's frame belongs to the GPU path, how much to the studio's empty room,
+ * and how much to the demo's dressing. The same page runs at Low with the governor off and the
+ * render scale fixed, drawn as an empty scene, as the empty studio, and whole, on each path, with
+ * each pair beside each other in one session so the device's state moves as little as possible.
+ */
+export function showroomSplitPlan(): PlanItem<Check>[] {
+	const nothing =
+		'car,tablet,street,studio,arealights,lamps,probe,reflection,bloom,ao,sky,fog,environment,shadows';
+	const room = nothing.replace('studio,', '');
+	const parts = [
+		{ name: 'floor', without: nothing },
+		{ name: 'room', without: room },
+		{ name: 'full', without: undefined },
+	] as const;
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...parts.flatMap(({ name, without }) =>
+			(['webgpu', 'webgl2'] as const).map((tier) =>
+				pageItem(
+					`showroom-split-${name}-${tier}`,
+					'demo-frames',
+					{ kind: 'probe', tier },
+					{
+						switches: [
+							`gpu=${tier}`,
+							'demo=showroom',
+							'seconds=5',
+							'preset=low',
+							'governor=off',
+							'render-scale=1',
+							...(without === undefined ? [] : [`without=${without}`]),
+						],
+						timeoutSeconds: 300,
+					},
+				),
+			),
+		),
+	];
+}
+
+/**
  * What the shadow map's shape costs the Showroom at Low: the same page four times in one session,
  * twice with Low's two cascades at 1024 and twice with Medium's three at 2048. A check that lowers
  * the preset carries the starting preset's shape, so this pair separates the map's sampling inside
@@ -3054,6 +3095,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	sky: skyPlan,
 	demos: demosPlan,
 	'showroom-shadow': showroomShadowPlan,
+	'showroom-split': showroomSplitPlan,
 	skyway: skywayPlan,
 	'skyway-cost': skywayCostPlan,
 	splats: splatsPlan,
