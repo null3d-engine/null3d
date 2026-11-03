@@ -353,6 +353,18 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
+	"chromium-swiftshader/compat/vegetation-grass-contact-bounce-off.png": {
+		"test": "vegetation-grass-contact-bounce-off",
+		"tier": "compat",
+		"date": "2026-11-03",
+		"reason": "the contact pair on the software GPU at the shortened far cover"
+	},
+	"chromium-swiftshader/compat/vegetation-grass-contact.png": {
+		"test": "vegetation-grass-contact",
+		"tier": "compat",
+		"date": "2026-11-03",
+		"reason": "the contact pair on the software GPU at the shortened far cover"
+	},
 	"chromium-swiftshader/compat/vegetation-grass-shadow.png": {
 		"test": "vegetation-grass-shadow",
 		"tier": "compat",
@@ -760,6 +772,18 @@
 		"tier": "webgl2",
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/webgl2/vegetation-grass-contact-bounce-off.png": {
+		"test": "vegetation-grass-contact-bounce-off",
+		"tier": "webgl2",
+		"date": "2026-11-03",
+		"reason": "the contact pair on the software GPU at the shortened far cover"
+	},
+	"chromium-swiftshader/webgl2/vegetation-grass-contact.png": {
+		"test": "vegetation-grass-contact",
+		"tier": "webgl2",
+		"date": "2026-11-03",
+		"reason": "the contact pair on the software GPU at the shortened far cover"
 	},
 	"chromium-swiftshader/webgl2/vegetation-grass-shadow.png": {
 		"test": "vegetation-grass-shadow",
@@ -1174,6 +1198,18 @@
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/webgpu/vegetation-grass-contact-bounce-off.png": {
+		"test": "vegetation-grass-contact-bounce-off",
+		"tier": "webgpu",
+		"date": "2026-11-03",
+		"reason": "the contact pair on the software GPU at the shortened far cover"
+	},
+	"chromium-swiftshader/webgpu/vegetation-grass-contact.png": {
+		"test": "vegetation-grass-contact",
+		"tier": "webgpu",
+		"date": "2026-11-03",
+		"reason": "the contact pair on the software GPU at the shortened far cover"
 	},
 	"chromium-swiftshader/webgpu/vegetation-grass-shadow.png": {
 		"test": "vegetation-grass-shadow",

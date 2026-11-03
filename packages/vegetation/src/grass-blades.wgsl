@@ -51,7 +51,7 @@ const TILE_RADIUS: f32 = 4.0;
 /// blades widen by the inverse, so the hill's cover stays the same.
 const DENSITY_FAR: f32 = 0.25;
 const DENSITY_START: f32 = 10.0;
-const DENSITY_END: f32 = 45.0;
+const DENSITY_END: f32 = 25.59;
 
 /// A value from 0 up to 1 from a tuft's root place, the same on every device.
 fn tuft_hash(place: vec3f) -> f32 {
