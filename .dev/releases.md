@@ -68,6 +68,7 @@ Thirteen packages are public. Each one's `prepack` script runs `bun tools/build-
 | `@null3d/splats` | `lib/`, with its two shaders compiled into modules and their build sets beside them, the task module that the job workers import, and no raw `.wgsl` file | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
 | `@null3d/vegetation` | `lib/`, with its plant shader compiled into a module and the sets of its builds beside it, and no raw `.wgsl` file | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
 | `@null3d/water` | `lib/`, with its surface and underwater shaders compiled into modules and the sets of their builds beside them, and no raw `.wgsl` file | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
+| `@null3d/vegetation-textures` | `textures/<species>/` for each species: its KTX2 files of both sets, its manifest and the module that names the files, and no `source.json`. No code: the plant texture tool writes the files, and git keeps them | Nothing |
 | `@null3d/wind` | `lib/`, with its field, grid and projection shaders compiled into modules and the sets of their builds beside them, and no raw `.wgsl` file | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
 | `@null3d/three-compat` | `lib/`, with its two tone curves and three outline passes compiled into modules and the sets of their builds beside them, no raw `.wgsl` file, and `THIRD-PARTY-NOTICES.txt` with the three.js licence, which the Vite plugin adds to a build's notices. The plugin finds the file through the package's `./package.json` export, so the package keeps that export | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
 | `@null3d/cli` | `bin/` and `src/`, plain JavaScript with JSDoc types. The Basis Universal encoder in `vendor/`, and the asset tool's formats in `dist/assets.wasm` | Nothing |
@@ -135,7 +136,7 @@ In the dev server, Vite keeps the engine out of its prebundled copy of the contr
 
 ### The first version of a new package
 
-This is part of making 0.1.0. npm cannot publish a package's first version through trusted publishing. So the owner publishes the first version of `@null3d/engine`, `@null3d/vite-plugin`, `@null3d/controls`, `@null3d/geometry`, `@null3d/impostors`, `@null3d/particles`, `@null3d/splats`, `@null3d/terrain`, `@null3d/vegetation`, `@null3d/water` and `@null3d/three-compat` by hand. Each new add-on package, such as `@null3d/rapier`, needs the same steps. `@null3d/cli` is on npm at 0.0.0 already. A test in `tools/lib/release.test.ts` fails when a public package has no row in the table above or no command below.
+This is part of making 0.1.0. npm cannot publish a package's first version through trusted publishing. So the owner publishes the first version of `@null3d/engine`, `@null3d/vite-plugin`, `@null3d/controls`, `@null3d/geometry`, `@null3d/impostors`, `@null3d/particles`, `@null3d/splats`, `@null3d/terrain`, `@null3d/vegetation`, `@null3d/vegetation-textures`, `@null3d/water` and `@null3d/three-compat` by hand. Each new add-on package, such as `@null3d/rapier`, needs the same steps. `@null3d/cli` is on npm at 0.0.0 already. A test in `tools/lib/release.test.ts` fails when a public package has no row in the table above or no command below.
 
 1. On a clean checkout of main, run `bun install` and `bun run build`.
 2. Run `bun tools/pack-packages.ts`, which writes the tarballs to `target/packages/`.
@@ -152,12 +153,13 @@ This is part of making 0.1.0. npm cannot publish a package's first version throu
    npm publish target/packages/null3d-terrain-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-splats-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-vegetation-0.0.0.tgz --access public --provenance=false
+   npm publish target/packages/null3d-vegetation-textures-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-three-compat-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-water-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-wind-0.0.0.tgz --access public --provenance=false
    ```
 
-5. On npmjs.com, open each of the twelve packages' settings, and add a trusted publisher: GitHub Actions, the owner `null3d-engine`, the repository `null3d` and the workflow `release.yml`.
+5. On npmjs.com, open each of the thirteen packages' settings, and add a trusted publisher: GitHub Actions, the owner `null3d-engine`, the repository `null3d` and the workflow `release.yml`.
 6. Run the Release workflow with `minor`. Its `publish-npm` job publishes 0.1.0 of every package through trusted publishing, with provenance.
 
 Until step 5, the publish job fails at the first package that has no trusted publisher. It skips the versions that npm has, so run it again after the setup.

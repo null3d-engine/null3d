@@ -107,6 +107,7 @@ function shootProblems(shoots: ShootSpec, out: string[]): void {
 		curveProblems(shoot.internode, `${path}.internode`, out);
 		curveProblems(shoot.leafScale, `${path}.leafScale`, out);
 		curveProblems(shoot.leafAngle, `${path}.leafAngle`, out);
+		if (shoot.years !== undefined) wholeProblem(shoot.years, `${path}.years`, 1, 3, out);
 	});
 	if (shoots.classes.length > 0 && Math.abs(share - 1) > 0.01)
 		out.push(`shoots.classes' shares add up to ${share}; they must add up to 1`);

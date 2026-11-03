@@ -11,15 +11,16 @@
 // stage (core/placeholder.ts); without it, a stage that is not built yet throws.
 import type { MeshArrays, PlantAsset, PlantPart, ShootPrototype, SpeciesKitData } from './asset';
 import { speciesBox } from './core/box';
+import { type MacroSkeleton, SkeletonBuilder } from './core/graph';
 import { hashText } from './core/hash';
 import { NotBuiltError } from './core/not-built';
 import {
+	emptyLevel,
 	emptyRows,
 	levelOf,
 	placeholderCardBake,
 	placeholderCardMesh,
 	placeholderCrown,
-	placeholderCut,
 	placeholderFar,
 	placeholderFoliage,
 	placeholderHeader,
@@ -35,9 +36,9 @@ import {
 import type { Species, SpeciesModule } from './core/record';
 import { loadSpeciesHooks, speciesHooks } from './core/registry';
 import type { TextureManifest } from './core/textures';
-import { DETAILS, type Detail, type Season } from './core/types';
+import { DETAILS, type Detail, type Season, type Vec3 } from './core/types';
 import { lightCrown } from './crown/visibility';
-import { type CuttingOptions, cutPlant } from './cutting';
+import { type CuttingOptions, cutBranch, cutFoliage, mergeShoots } from './cutting';
 import { grower, loadGrower } from './grow/models';
 import { extrasMesh } from './leaf/extras';
 import { placeShoots } from './leaf/instancer';
@@ -50,7 +51,7 @@ import { levelStarts } from './lod/levels';
 import { quantise, TEXTURE_UV_STEPS, WOOD_UV_STEPS } from './lod/quantise';
 import { speciesHeader } from './render/records';
 import type { DressInput, FarBake, GrowInput, MeshInput, MeshLevel } from './stages';
-import { windRecords } from './wind/records';
+import { VARIANT_RECORDS, windRecords } from './wind/records';
 import { meshWood } from './wood/wood-mesh';
 
 /**
@@ -258,7 +259,11 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 		() => placeholderSkeleton(growInput),
 	);
 	speciesHooks(record.id)?.afterGrow?.(skeleton, record, growInput.seed);
-	const dressInput: DressInput = { ...growInput, kit, skeleton };
+	const dressInput: DressInput = {
+		...growInput,
+		kit,
+		skeleton: cutSkeleton(kit, skeleton, options.cutting),
+	};
 	const rows =
 		record.lod.nearFoliage === 'instanced' && kit.prototypes.length > 0
 			? stage(
@@ -273,6 +278,111 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 		() => placeholderCrown(dressInput),
 	);
 	return { ...dressInput, rows, crown, detail: options.detail ?? kit.detail };
+}
+
+/** Whether a cutting is cut from the grown skeleton rather than built from the kit alone. */
+function cutsSkeleton(kit: SpeciesKitData, cutting: CuttingOptions | undefined): boolean {
+	if (!cutting) return false;
+	return (
+		cutting.part === 'branch' ||
+		cutting.part === 'subbranch' ||
+		(cutting.part === 'cluster' && kit.prototypes.length === 0)
+	);
+}
+
+/** The grown skeleton, or the piece a cutting takes from it. */
+function cutSkeleton(
+	kit: SpeciesKitData,
+	skeleton: MacroSkeleton,
+	cutting: CuttingOptions | undefined,
+): MacroSkeleton {
+	if (!cutting || !cutsSkeleton(kit, cutting)) return skeleton;
+	return cutBranch(skeleton, kit.record, cutting)?.skeleton ?? skeleton;
+}
+
+/** The bounds of a mesh's positions, or a point at the origin for an empty one. */
+function meshBounds(mesh: MeshArrays): { min: Vec3; max: Vec3 } {
+	const min = [0, 0, 0];
+	const max = [0, 0, 0];
+	const p = mesh.positions;
+	for (let i = 0; i < p.length; i += 3)
+		for (let k = 0; k < 3; k++) {
+			const v = p[i + k] as number;
+			if (i === 0 || v < (min[k] as number)) min[k] = v;
+			if (i === 0 || v > (max[k] as number)) max[k] = v;
+		}
+	return {
+		min: [min[0] as number, min[1] as number, min[2] as number],
+		max: [max[0] as number, max[1] as number, max[2] as number],
+	};
+}
+
+/**
+ * Grows one piece of a plant as a plant of its own: a branch or sub-branch cut from the grown
+ * skeleton and dressed and meshed at the nearest level, with its shoot rows merged into one foliage
+ * part, or a leaf cluster or leaf from the kit alone. The piece has no card levels and no impostor.
+ */
+function growCutting(
+	kit: SpeciesKitData,
+	options: GrowOptions,
+	cutting: CuttingOptions,
+): PlantAsset {
+	const started = now();
+	const record = kit.record;
+	const detail = options.detail ?? kit.detail;
+	const season = options.season ?? record.seasons.default;
+	let skeleton: MacroSkeleton;
+	let parts: PlantPart[];
+	let wind: PlantAsset['wind'];
+	if (cutsSkeleton(kit, cutting)) {
+		const mesh = dress(kit, options);
+		wind = stage(
+			kit.placeholders,
+			() => windRecords(mesh),
+			() => placeholderWind(mesh),
+		);
+		const shoots = mergeShoots(kit, mesh.rows, detail, wind.base);
+		parts = [
+			...nearWood(mesh),
+			...levelParts(mesh, 0),
+			...partOf(kit, 'foliage', shoots, TEXTURE_UV_STEPS),
+		];
+		skeleton = mesh.skeleton;
+	} else {
+		const foliage = cutFoliage(kit, cutting, detail);
+		parts = foliage ? partOf(kit, 'foliage', foliage, TEXTURE_UV_STEPS) : [];
+		const builder = new SkeletonBuilder().finish(0);
+		const bounds = foliage ? meshBounds(foliage) : builder.bounds;
+		skeleton = { ...builder, bounds, height: bounds.max[1] };
+		wind = { base: options.variant * VARIANT_RECORDS, count: 0, records: new Float32Array(0) };
+	}
+	const near = levelOf(0, parts, 0);
+	const { min, max } = skeleton.bounds;
+	const base = Math.min(skeleton.crownBase, max[1]);
+	return {
+		species: record.id,
+		recordHash: hashText(JSON.stringify(record)),
+		seed: options.seed >>> 0,
+		variant: options.variant,
+		season,
+		cutting,
+		skeleton,
+		shoots: emptyRows(),
+		levels: [near, emptyLevel(1), emptyLevel(2)],
+		wind,
+		crown: {
+			centre: [(min[0] + max[0]) / 2, (base + max[1]) / 2, (min[2] + max[2]) / 2],
+			radius: Math.max((max[0] - min[0]) / 2, (max[1] - base) / 2, (max[2] - min[2]) / 2),
+			base,
+			top: max[1],
+		},
+		impostor: { level: 1, views: 0, texels: 0, from: 0 },
+		stats: {
+			milliseconds: now() - started,
+			bytes: wind.records.byteLength + near.bytes,
+			triangles: [near.triangles, 0, 0],
+		},
+	};
 }
 
 /** The nearest level's wood, quantised. */
@@ -341,6 +451,7 @@ const now = () => (typeof performance === 'undefined' ? Date.now() : performance
  * @category api/vegetation
  */
 export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAsset {
+	if (options.cutting) return growCutting(kit, options, options.cutting);
 	const started = now();
 	const record = kit.record;
 	const mesh = dress(kit, options);
@@ -398,13 +509,7 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 			triangles: [levels[0].triangles, levels[1].triangles, levels[2].triangles],
 		},
 	};
-	const cutting = options.cutting;
-	if (!cutting) return asset;
-	return stage(
-		placeholders,
-		() => cutPlant(kit, asset, cutting),
-		() => placeholderCut(kit, asset, cutting),
-	);
+	return asset;
 }
 
 /**
