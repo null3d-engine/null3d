@@ -1293,32 +1293,22 @@ impl Layout {
             let first_draw = self.draws.len() as u32;
             let cluster = tree.map(|tree| {
                 let index = self.clusters.len() as u32;
+                let first_patch = self.cluster_patches.len() as u32;
                 self.clusters.push(ClusterMesh {
                     mesh,
-                    first_patch: self.cluster_patches.len() as u32,
+                    first_patch,
                     patch_count: tree.len() as u32,
                     slot: slot_base,
                     first_draw,
                     base_vertex: parts[0].base_vertex,
                 });
-                // A patch's run starts in its own mesh's indices, which follow the indices of the
-                // meshes before it in the scene's table.
-                let base = self.cluster_indices.len() as u32;
-                for (k, record) in tree.records().iter().enumerate() {
-                    let sphere = tree.bounds()[k];
-                    // A patch whose children have not arrived carries a rule error below 0, so the
-                    // pass draws it wherever the camera is close instead of leaving a hole.
-                    self.cluster_patches.push([
-                        sphere[0].to_bits(),
-                        sphere[1].to_bits(),
-                        sphere[2].to_bits(),
-                        sphere[3].to_bits(),
-                        record[0] + base,
-                        record[1],
-                        record[2],
-                        tree.rule_error(k as u32).to_bits(),
-                    ]);
-                }
+                // A patch's run and its parent follow the indices and the patches of the meshes
+                // before it in the scene's tables.
+                let first_index = self.cluster_indices.len() as u32;
+                self.cluster_patches.extend(
+                    (0..tree.len() as u32)
+                        .map(|patch| tree.table_record(patch, first_patch, first_index)),
+                );
                 self.cluster_indices.extend_from_slice(tree.indices());
                 index
             });

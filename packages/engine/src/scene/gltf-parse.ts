@@ -622,13 +622,16 @@ export interface PrimitiveData {
  * asset tool builds them. `indices` holds every patch's triangles one patch after another, and
  * each patch's `first` and `count` name its run of them. `words` holds each patch's first index,
  * index count, its parent's place plus one (0 for the root) and its error's bits, four integers
- * each; `bounds` holds its centre and radius, four floats each.
+ * each; `bounds` holds its centre and radius, four floats each. `current` is true for a tree of the
+ * layout that the engine draws, {@link CLUSTERS_VERSION}. A file that names no version holds the
+ * first layout.
  */
 export interface PatchesData {
 	indices: Uint32Array;
 	bounds: Float32Array;
 	words: Uint32Array;
 	root: number;
+	current: boolean;
 }
 
 /**
@@ -653,6 +656,11 @@ export const MESH_BVH = 'NULL3D_mesh_bvh';
 export const OCCLUDER = 'NULL3D_occluder';
 /** The extension that holds a primitive's tree of cluster patches. */
 export const CLUSTERS = 'NULL3D_clusters';
+/**
+ * The version of the tree's layout that the engine draws: each patch's sphere holds its children's
+ * and its error is at least theirs. An older tree draws its mesh whole.
+ */
+export const CLUSTERS_VERSION = 2;
 
 /**
  * A primitive that carries an extension which an add-on's handler reads. The loader hands the
@@ -2157,6 +2165,7 @@ function patchesOf(
 		bounds: bounds.array as Float32Array,
 		words: patch,
 		root,
+		current: Number(extension.version ?? 1) === CLUSTERS_VERSION,
 	};
 }
 

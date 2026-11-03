@@ -1353,7 +1353,12 @@ function makeMeshes(
 				`${call}() found a stored tree in ${address} that does not fit primitive ${k} of mesh "${mesh.name}", so raycasts build their own. Optimize the file again.`,
 			);
 		if (typeof p.occluder === 'object') storeBlocker(context.core, made.id, p.occluder, call);
-		if (p.patches && storePatches(context.core, made.id, p.patches, call) !== 1 && DEV)
+		// A tree from an older asset tool would leave holes in the picture, so its mesh draws whole.
+		if (
+			p.patches &&
+			(!p.patches.current || storePatches(context.core, made.id, p.patches, call) !== 1) &&
+			DEV
+		)
 			console.warn(
 				`${call}() found a tree of patches in ${address} that does not fit primitive ${k} of mesh "${mesh.name}", so the mesh draws whole. Optimize the file again.`,
 			);
