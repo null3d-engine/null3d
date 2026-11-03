@@ -19,7 +19,7 @@ import { pow } from '../core/math';
 import { DETAILS, type Detail } from '../core/types';
 import type { FarPlant } from '../lod/impostor';
 import { levelDistances, switchSizes } from '../lod/levels';
-import { handOverToCards } from './hand-over';
+import { FAR, handOverToCards } from './hand-over';
 import { type PlantMaterials, plantGeometry, prototypeGeometry } from './material';
 import { EDGE, mostRows, nearArrays, tierBands } from './near-arrays';
 import { type NearPool, type NearSpecies, nearPoolHost } from './near-pool';
@@ -171,7 +171,7 @@ function partBatches(
 		for (const part of entry.parts) {
 			const batch = make(geometry(part));
 			if (next) batch.setDrawRange(start, starts[next.level]);
-			else if (start > 0) batch.setDrawRange(start, Number.POSITIVE_INFINITY);
+			else if (start > 0) batch.setDrawRange(start, FAR);
 			out.push({ batch, start });
 		}
 	});

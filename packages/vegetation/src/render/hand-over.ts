@@ -25,7 +25,7 @@ function cardsStart(cards: InstanceBatch, switchDistance: number): number {
 }
 
 /** The far edge that a card batch draws to, in meters: farther than any camera's far plane. */
-const FAR = 1e9;
+export const FAR = 1e9;
 
 /**
  * Hands a band of trees from their meshes to their cards. The meshes draw up to
