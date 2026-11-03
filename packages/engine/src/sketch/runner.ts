@@ -1876,7 +1876,8 @@ export class SketchRunner {
 		if (DEV && this.debugDraw) {
 			this.core.refresh();
 			try {
-				this.debugDraw.flush(width, height);
+				if (play) this.debugDraw.flush(width, height);
+				else this.debugDraw.flushWithoutUpdate(width, height);
 			} catch (error) {
 				this.report(error);
 			}

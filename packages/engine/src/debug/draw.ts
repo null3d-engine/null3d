@@ -139,6 +139,8 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 	private capacity = 0;
 	/** The points written for the next frame. */
 	private points = 0;
+	/** The points that the last flush handed to the core, which the arrays still hold. */
+	private drawn = 0;
 	/** The memory generation of the arrays' views. */
 	private generation = -1;
 	private warned = false;
@@ -378,10 +380,26 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 		}
 		this.followedCount = 0;
 		if (this.cullingSpheresWanted) this.drawCullingSpheres();
-		if (this.points === 0) return;
 		const points = this.points;
 		this.points = 0;
+		this.drawn = points;
+		if (points === 0) return;
 		this.core.check(this.core.glue.drawDebugLines(points), 'debug drawing', undefined, true);
+	}
+
+	/**
+	 * The flush of a frame in which the sketch's update does not run, such as a setup frame or hold
+	 * mode's settle frame. Shapes that the sketch drew since the last flush, as its setup does, draw
+	 * as `flush` draws them. With none, the core takes the points of the last flush again, which the
+	 * arrays still hold, so the settle frame shows the lines of the held frame before it.
+	 */
+	flushWithoutUpdate(width: number, height: number): void {
+		if (this.points > 0 || this.followedCount > 0) {
+			this.flush(width, height);
+			return;
+		}
+		if (this.drawn === 0) return;
+		this.core.check(this.core.glue.drawDebugLines(this.drawn), 'debug drawing', undefined, true);
 	}
 
 	skeleton(object: Object3D, color?: ColorInput): void {

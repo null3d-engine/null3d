@@ -225,6 +225,28 @@ describe('debug drawing', () => {
 		expect(frames[1]?.length).toBe(2);
 	});
 
+	test("draws the frame before's lines in a frame without an update, and a setup's own shapes", () => {
+		const { draw, frames } = fakeCore();
+		draw.line([0, 1, 2], [3, 4, 5], '#ff0000');
+		draw.flush(1, 1);
+		// Hold mode's settle frame runs no update, so the sketch draws nothing new in it. The core
+		// takes the held frame's points again, or the settle frame would show no lines.
+		draw.flushWithoutUpdate(1, 1);
+		expect(frames.length).toBe(2);
+		expect(rounded(frames[1] as Point[])).toEqual(rounded(frames[0] as Point[]));
+		// A setup frame also runs no update, and the shapes that the setup drew draw in it.
+		draw.line([0, 0, 0], [0, 0, 1]);
+		draw.flushWithoutUpdate(1, 1);
+		expect(rounded(frames[2] as Point[])).toEqual([
+			{ position: [0, 0, 0], color: 0xff00ffff },
+			{ position: [0, 0, 1], color: 0xff00ffff },
+		]);
+		// After a frame that drew nothing, there is nothing to draw again.
+		draw.flush(1, 1);
+		draw.flushWithoutUpdate(1, 1);
+		expect(frames.length).toBe(3);
+	});
+
 	test('keeps 64-bit positions far from the origin', () => {
 		const { draw, frames } = fakeCore();
 		draw.line([100_000.0125, 1e6 + 0.001, -2], [100_000.0375, 1e6, -2]);
