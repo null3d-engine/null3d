@@ -6,8 +6,11 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-/** Packages that are not add-ons: the engine, and the tools that build or serve projects. */
-const NOT_ADDONS = new Set(['engine', 'cli', 'vite-plugin']);
+/**
+ * Packages that are not add-ons: the engine, the tools that build or serve projects, and the
+ * vegetation add-on's textures, which hold files and no code that runs beside the engine.
+ */
+const NOT_ADDONS = new Set(['engine', 'cli', 'vite-plugin', 'vegetation-textures']);
 
 /** The constant that an add-on's `version.ts` exports. */
 const VERSION_CONSTANT = /export const VERSION = '[^']+';/;
