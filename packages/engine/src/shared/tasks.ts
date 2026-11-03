@@ -185,23 +185,23 @@ class Runners {
 		const files = task.wasm;
 		// One WebAssembly file is the usual case, and it needs no array, no map and no Promise.all.
 		const alone = files?.length === 1 ? files[0] : undefined;
-		const aloneModule =
-			alone === undefined
-				? undefined
-				: (compiledModule(alone) ?? (await compileOnce(alone, error)));
-		const modules =
-			alone !== undefined
-				? NO_MODULES
-				: files && files.length > 0
-					? await Promise.all(files.map((file) => compileOnce(file, error)))
-					: NO_MODULES;
-		// The files are compiled above, so a file that fails to load throws before the count starts.
-		// The count starts here, where the task is about to reach a worker, and `answer` or `end`
-		// clears it: hold mode then knows when every task that the sketch asked for has written
-		// what it draws. A failure before the request leaves clears the count here, as the count
+		// The count starts with the call, before its WebAssembly files compile, and `answer` or `end`
+		// clears it: hold mode then waits for every task that the sketch asked for, a task whose
+		// first compile is still running included, and draws what each wrote. A failure before the
+		// request leaves, such as a file that fails to compile, clears the count here, as the count
 		// must fall however that call ends.
 		taskStarted();
 		try {
+			const aloneModule =
+				alone === undefined
+					? undefined
+					: (compiledModule(alone) ?? (await compileOnce(alone, error)));
+			const modules =
+				alone !== undefined
+					? NO_MODULES
+					: files && files.length > 0
+						? await Promise.all(files.map((file) => compileOnce(file, error)))
+						: NO_MODULES;
 			if (this.ended) throw new TaskFailure('stopped', 'the engine stopped');
 			const starting = this.starting();
 			if (starting) await starting;
