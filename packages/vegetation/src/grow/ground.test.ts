@@ -9,6 +9,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from '../asset';
+import { capsFor, variantBytesOf } from '../core/caps';
 import { speciesProblems } from '../core/check';
 import { AXIS_CULM, BUD_FLOWER, BUD_TERMINAL, type MacroSkeleton } from '../core/graph';
 import type { GrassBlade, Species, ThickLeaf } from '../core/record';
@@ -100,11 +101,26 @@ describe('the ground plants grown end to end', () => {
 			expect(asset.levels[2].triangles).toBeLessThanOrEqual(budget.lod2Triangles);
 			expect(asset.levels[1].triangles).toBeLessThan(asset.levels[0].triangles);
 			expect(asset.levels[2].triangles).toBeLessThan(asset.levels[1].triangles);
-			expect(asset.stats.bytes).toBeLessThanOrEqual(budget.variantBytes);
 			const kit = kitOf(record);
 			let kitBytes = 0;
 			for (const leaf of kit.leaves) kitBytes += leaf.positions.byteLength * 3;
 			expect(kitBytes).toBeLessThanOrEqual(budget.kitBytes);
+		});
+
+		it(`${record.id}: holds its bytes within its budget and the caps at every tier`, () => {
+			const species = GROUND_TEST_SPECIES.find((entry) => entry.record === record);
+			if (!species) throw new Error('no species');
+			const caps = capsFor(record);
+			for (const detail of DETAILS) {
+				const kit = buildKitNow(species, { placeholders: 'missing', detail });
+				for (const season of [record.seasons.default, 'blossom'] as const) {
+					const bytes = variantBytesOf(growPlantNow(kit, { ...OPTIONS, season }));
+					expect(bytes).toBeLessThanOrEqual(record.lod.budget.variantBytes[detail]);
+					expect(record.lod.budget.variantBytes[detail]).toBeLessThanOrEqual(
+						caps.variantBytes[detail],
+					);
+				}
+			}
 		});
 
 		it(`${record.id}: puts every leaf's bud at its blade's base, facing out of its upper face`, () => {

@@ -6,10 +6,10 @@
 import type { Species } from '../core/record';
 import { noTextureFiles, type SpeciesTextureFiles } from '../core/textures';
 
-/** The budget the three test records share, under the owner's caps for ground plants. */
+/** The budget the three test records share, under the owner's caps for ground plants; each gives
+ * its own bytes a variant at each tier, its largest measured variant with about 15 per cent spare. */
 const BUDGET = {
 	kitBytes: 600_000,
-	variantBytes: 1_500_000,
 	lod0Triangles: 200_000,
 	lod1Triangles: 30_000,
 	lod2Triangles: 8_000,
@@ -132,7 +132,10 @@ export const hostaRecord: Species = {
 		woodOrders: [0, 0],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
-		budget: BUDGET,
+		budget: {
+			...BUDGET,
+			variantBytes: { low: 510_000, medium: 1_230_000, high: 1_660_000, ultra: 3_800_000 },
+		},
 	},
 	textures: 'own',
 	variants: 4,
@@ -263,7 +266,10 @@ export const sedgeRecord: Species = {
 		woodOrders: [0, 0],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
-		budget: BUDGET,
+		budget: {
+			...BUDGET,
+			variantBytes: { low: 470_000, medium: 520_000, high: 570_000, ultra: 790_000 },
+		},
 	},
 	textures: 'own',
 	variants: 4,
@@ -387,7 +393,10 @@ export const meadowGrassRecord: Species = {
 		woodOrders: [0, 0],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
-		budget: BUDGET,
+		budget: {
+			...BUDGET,
+			variantBytes: { low: 1_560_000, medium: 1_600_000, high: 1_640_000, ultra: 1_790_000 },
+		},
 	},
 	textures: 'own',
 	variants: 4,

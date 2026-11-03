@@ -7,7 +7,7 @@ import type { ShootPrototype } from '../asset';
 import type { EcoRule } from '../ecology/ecology';
 import type { MacroSkeleton } from './graph';
 import type { SpeciesTextureFiles } from './textures';
-import type { Curve, Rgb, Season, Spread, Vec2, Vec3 } from './types';
+import type { Curve, Detail, Rgb, Season, Spread, Vec2, Vec3 } from './types';
 
 /**
  * One species: the folder of its own under `species/`, grown by one of the eight growth models.
@@ -1230,8 +1230,11 @@ export interface LodSpec {
 export interface SpeciesBudget {
 	/** Bytes of the kit: prototypes in every tier, and the card atlas until it uploads. */
 	readonly kitBytes: number;
-	/** Bytes of one variant: the card levels, the shoot rows and the skeleton. */
-	readonly variantBytes: number;
+	/**
+	 * Bytes of one variant at each detail tier, read at the tier the plant is built for: its levels
+	 * and wind records, the nearest wood left out.
+	 */
+	readonly variantBytes: Readonly<Record<Detail, number>>;
 	/** Triangles of the nearest level of one copy, at the high tier. */
 	readonly lod0Triangles: number;
 	/** Triangles of the first card level. */

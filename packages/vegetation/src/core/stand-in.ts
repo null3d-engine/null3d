@@ -148,7 +148,7 @@ export function standInRecord(id: string, options: StandInOptions = {}): Species
 			shadowLevel: 1,
 			budget: {
 				kitBytes: 2_000_000,
-				variantBytes: 2_000_000,
+				variantBytes: { low: 2_000_000, medium: 2_000_000, high: 2_000_000, ultra: 2_000_000 },
 				lod0Triangles: 1_000_000,
 				lod1Triangles: 60_000,
 				lod2Triangles: 20_000,

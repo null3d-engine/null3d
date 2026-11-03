@@ -10,20 +10,22 @@ Task: none.
 Summary: a ground plant is a crown that is not a stem, with shoots on it and one axis per leaf or
 blade. The wood mesher skips it all, so the whole plant draws as merged foliage. Hosta takes 66,256
 triangles at the nearest level on the High tier; the sedge 8,642; the meadow grass 32,538. Each
-grows in 18 to 23 ms at best on the Mac.
+grows in 18 to 23 ms at best on the Mac. The bytes a variant may hold are capped per detail tier.
 
 ## Question
 
 How do hosta, pendulous sedge and meadow grass grow, and how do they draw? Each must match its
 references up close and from every side. Each must stay within the owner's caps for ground plants.
-Those are 200,000 triangles at the nearest level, 30,000 and 8,000 at the card levels, 1.5 MB a
-variant and 150 ms of growth.
+Those are 200,000 triangles at the nearest level, 30,000 and 8,000 at the card levels, and 150 ms
+of growth. The bytes a variant may hold were one figure, 1.5 MB, for every tier.
 
 ## Rule
 
 The plant core's design (D-305) gives each growth model its own grower, and a plant of tens of
 leaves draws them in the variant's own mesh. The owner capped a ground plant's nearest wood at 0
-bytes. The look decides between options that meet the caps.
+bytes. The look decides between options that meet the caps. The owner ruled that quality comes
+before size, and that the bytes of a variant are capped per detail tier, as the nearest wood is
+(D-308). Each tier's cap is the largest measured variant at that tier with about 15 per cent spare.
 
 ## Data
 
@@ -42,8 +44,18 @@ The median growth was 64 to 106 ms at that load. At first the crown's light took
 That is G1's grid of 40 cells across, marched from every cell. A grid of 20 cells across for merged
 plants takes 3 ms, at 5 cm cells on a plant one meter across.
 
-At the Ultra tier the hosta's nearest level takes 175,972 triangles and 3.2 MB. Its ribs have four
-columns a vein there. The caps are read at the High tier.
+The bytes a variant holds, by tier, without the nearest wood: the largest of variants 0 to 3 at seed
+11, in summer and in blossom. The oak is G1's grown oak, every variant, in summer.
+
+| Plant | Low | Medium | High | Ultra |
+| --- | --- | --- | --- | --- |
+| Hosta | 0.44 MB | 1.07 MB | 1.44 MB | 3.30 MB |
+| Pendulous sedge | 0.41 MB | 0.45 MB | 0.49 MB | 0.68 MB |
+| Meadow grass | 1.35 MB | 1.39 MB | 1.43 MB | 1.55 MB |
+| Pedunculate oak | 6.07 MB | 6.09 MB | 6.11 MB | 6.14 MB |
+
+At the Ultra tier the hosta's nearest level takes 175,972 triangles, with four columns a vein in its
+ribs. The oak's cards and levels go over the former tree cap of 4 MB at every tier.
 
 ## Look
 
@@ -91,10 +103,14 @@ foliage they could only take the leaf texture's green.
    flowering stems (`'stem-tip'`). Old wood no longer takes flower sites.
 7. **The crown's light.** A merged plant's leaves count in the leaf density, one leaf per blade
    bud. Its grid is 20 cells across.
-8. **Stand-ins only where missing.** A kit built with `placeholders: 'missing'` grows every built
+8. **Bytes a variant, per tier.** `ModelCaps.variantBytes` and `SpeciesBudget.variantBytes` hold one
+   figure per detail tier, read at the tier the plant is built for. The figure leaves out the nearest
+   wood, which has its own cap. Ground plants: 1.6, 1.6, 1.7 and 3.8 MB from Low to Ultra. Trees:
+   7, 7, 7.1 and 7.1 MB, so the oak keeps its cards. Palms stay at 3 MB, with no species measured.
+9. **Stand-ins only where missing.** A kit built with `placeholders: 'missing'` grows every built
    stage, and a stand-in only where a stage is not built. That lets these records grow end to end
    before the material and the wind, level and far stages exist.
-9. **The lawn's grass stays as it is.** `src/grass/` draws a field of short strips from a hash, on
+10. **The lawn's grass stays as it is.** `src/grass/` draws a field of short strips from a hash, on
    the engine's own material. A placed tuft needs ranks, collars, hooded tips and heads that it has
    none of. Nothing of it is shared, so its pictures do not change.
 
@@ -103,6 +119,7 @@ foliage they could only take the leaf texture's green.
 - The species packages for hosta, pendulous sedge and meadow grass copy their record from the test
   records. They fit it to their references and textures. A texture's measured outline replaces
   the parametric one, and its veins set the ribs' count, start and sweep.
-- The hosta's Ultra tier goes over the variant cap. The cap is read at High, and the owner sets caps
-  per tier.
+- A species' budget gives its own bytes at each tier, under the caps. The per-species test reads
+  them at the tier the kit is built for. A new species that goes over a tier's cap brings its figures
+  to the owner.
 - Spike and spikelet sizes are one per extra; the sedge's spikes do not vary in length.
