@@ -190,6 +190,13 @@ export async function buildSpecies(
 	files.set('manifest.json', new TextEncoder().encode(json));
 	files.set('index.js', new TextEncoder().encode(moduleSource(species, json, [...files.keys()])));
 	files.set('index.d.ts', new TextEncoder().encode(DECLARATIONS));
+	if (leaf && config.leaf) {
+		const upper = used.find((file) => file.slot === config.leaf?.upper);
+		files.set(
+			'leaf-coverage.json',
+			coverageRuns(upper?.name ?? '', leaf.half.colour[0] as Uint8Array, leaf.half.size),
+		);
+	}
 	return {
 		species,
 		files,
@@ -234,6 +241,31 @@ ${set(true)}
 	},
 };
 `;
+}
+
+/**
+ * The upper face's coverage at the alpha cutoff, as runs of covered texels per row of the half set's
+ * layer: row 0 at v = 0, the stalk end, each run a start and an exclusive end. Tests of the leaf mesh
+ * read it where neither the references nor a KTX2 decoder are at hand. The package leaves it out.
+ */
+function coverageRuns(source: string, texels: Uint8Array, size: number): Uint8Array {
+	const rows: string[] = [];
+	for (let row = 0; row < size; row++) {
+		const y = size - 1 - row;
+		const runs: number[] = [];
+		let start = -1;
+		for (let x = 0; x <= size; x++) {
+			const covered = x < size && (texels[(y * size + x) * 4 + 3] as number) >= 128;
+			if (covered && start < 0) start = x;
+			if (!covered && start >= 0) {
+				runs.push(start, x);
+				start = -1;
+			}
+		}
+		rows.push(`\t\t[${runs.join(', ')}]`);
+	}
+	const text = `{\n\t"source": ${JSON.stringify(source)},\n\t"cutoff": 0.5,\n\t"size": ${size},\n\t"rows": [\n${rows.join(',\n')}\n\t]\n}\n`;
+	return new TextEncoder().encode(text);
 }
 
 /** The module's types. */
