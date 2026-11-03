@@ -8,7 +8,7 @@ references is in progress.
 Task: none.
 
 Summary: the oak is the first real species. It grows four macro orders inside the envelope measured
-from its turning video. Three shoot classes fitted to its studio stills carry 330,000 to 530,000
+from its turning video. Three shoot classes fitted to its studio stills carry 340,000 to 520,000
 leaves. A kit holds its own mesh tier and the tiers below it, and the owner caps it per tier.
 The coarse tiers mesh no buds and draw a leaf as one cut-out card. One copy draws at most 2.5 M
 triangles inside its near band at High.
@@ -46,7 +46,7 @@ passes every rubric row against every reference.
   average 11 cm, inside the fact sheet's 7 to 12 cm.
 - **Leaf angles.** Leaves turn a third of the way toward the sky. Turned three-quarters, they stood
   edge-on from the references' near-level views, and the crown read as bare wood.
-- **Counts.** A variant holds 5,900 to 9,600 shoots and 330,000 to 530,000 leaves.
+- **Counts.** A variant holds 6,200 to 9,300 shoots and 340,000 to 520,000 leaves.
 - **Acorns.** In autumn three in ten shoot tips hang an acorn on a 4.5 cm stalk.
 
 ### What a kit holds, and its cap
@@ -70,17 +70,17 @@ one stem ring at each year's end. It draws a leaf as two triangles over its outl
 texture's coverage cuts the leaf's outline. The medium tier draws a tip cluster of buds as one cone.
 A three-year spray falls from 3,132 to 252 triangles at the low tier.
 
-The shoots hand over to cards where a shoot spans 72 pixels, since the oak's largest shoot is a
-0.6 m spray. The split then stands at 8.7 m at 1,080 pixels and 60 degrees. The per-species test
-counts the triangles inside the near band at High, each row at its band's tier. Variant 0 draws
-at most 2.5 M, the worse of an eye beside the trunk and one at the crown's edge. An eye inside the
+The shoots hand over to cards where a shoot spans 104 pixels, since the oak's largest shoot is a
+0.85 m spray. The split then stands at 9.5 m at 1,080 pixels and 60 degrees. The per-species test
+counts the triangles inside the near band at High, each row at its band's tier. Variants 0 to 2
+draw 1.3 to 1.8 M, the worse of an eye beside the trunk and one at the crown's edge. The cap is 2.5 M. An eye inside the
 crown sees more, and the near pool cuts its split nearer at run time.
 
 | Level | Variants 0 to 2 | Cap |
 | --- | --- | --- |
-| First card level | 37,600 to 61,100 triangles | 150,000 |
-| Second card level | 18,500 to 29,700 triangles | 30,000 |
-| Variant, without the nearest wood | 2.8 to 4.5 MB | 7.1 MB |
+| First card level | 43,800 to 62,700 triangles | 150,000 |
+| Second card level | 20,400 to 29,200 triangles | 30,000 |
+| Variant, without the nearest wood | 3.0 to 4.4 MB | 7.1 MB |
 
 ### The nearest wood, and its cap
 
@@ -106,8 +106,21 @@ band of distance. The first 16 copies of a species draw their real shoot rows, c
 setup, out to the split. Their first card level draws from the copy out and gives way to the
 shoots, pixel by pixel, inside the split. Placements of one species share its 16 near slots.
 
+### Cuttings
+
+An oak's branch and sub-branch stills show its three-year spray and two-year twig. Cut from the
+grown plant, a piece that long is mostly bare wood of the finest macro order. So a record's branch
+or sub-branch hint may name a shoot class, as its cluster hint does. The cutting is then one shoot
+prototype from the kit, with its twigs, buds and leaves. The oak's branch is its spray, its
+sub-branch its long shoot and its cluster its short shoot. A hint that cuts from the grown plant
+still names a macro order and a length. Among the pieces it can cut, those with lit buds come first.
+The record check refuses a hint that names a class the record does not grow.
+
 ### Faults fixed on the way
 
+- Where the leader weakened and a side limb took the light, the stem ended in a cone in mid-crown.
+  After growth, an axis now runs on into a child where its own continuation collapsed under the
+  child's girth. The old continuation becomes the side branch.
 - A cut branch's root is a limb with no parent, which the wood mesher skipped, so cuttings had no
   wood. A parentless limb now meshes plain, without the stem base's shaping.
 - A real kit's cutting keeps its shoots as rows, so its twigs and buds draw. Merged into a foliage

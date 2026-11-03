@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { type PlantAsset, plantAssetDigest } from './asset';
 import { AXIS_LIMB, AXIS_STEM, SkeletonBuilder } from './core/graph';
 import { standInSpecies } from './core/stand-in';
-import { CUTTING_LENGTH, clusterRank, cutBranch, cutFoliage } from './cutting';
+import { CUTTING_LENGTH, clusterRank, cutBranch, cutFoliage, cutsShoot } from './cutting';
 import { buildKitNow, growPlantNow, loadPlantCode } from './generate';
 import type { PlantTaskInput } from './generate-task';
 import { oakRecord } from './grow/oak.fixture';
@@ -189,6 +189,22 @@ describe('cuttings', () => {
 		expect(piece.wind.count).toBe(piece.skeleton.axes.count);
 		expect(piece.skeleton.bounds.min[1]).toBeGreaterThanOrEqual(-0.05);
 		expect(piece.skeleton.height).toBeLessThan(whole.skeleton.height);
+	});
+
+	it('takes a branch or sub-branch from the shoot class its record names', async () => {
+		const { species: oak } = await import('./species/pedunculate-oak');
+		await loadPlantCode(oak.record);
+		const oakKit = buildKitNow(oak, { placeholders: 'missing', detail: 'low' });
+		for (const part of ['branch', 'subbranch', 'cluster'] as const) {
+			const hint = oak.record.cuttings?.[part];
+			if (!hint || !('shoot' in hint)) throw new Error(`the oak names no shoot for its ${part}`);
+			expect(cutsShoot(oak.record, part)).toBe(true);
+			const piece = growPlantNow(oakKit, { seed: 11, variant: 0, cutting: { part } });
+			expect(piece.shoots.count).toBe(1);
+			expect(oakKit.prototypes[piece.shoots.prototype[0] as number]?.class).toBe(hint.shoot);
+		}
+		expect(cutsShoot(stub.record, 'branch')).toBe(false);
+		expect(cutsShoot(stub.record, 'leaf')).toBe(false);
 	});
 
 	it('cuts a leaf with either face toward +Z, and a cluster in rank order', () => {

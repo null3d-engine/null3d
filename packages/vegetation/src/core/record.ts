@@ -1260,12 +1260,39 @@ export interface SpeciesBudget {
  * @category api/vegetation
  */
 export interface CuttingHints {
-	/** A branch about 1 m long: the macro order to cut and its length. */
-	readonly branch?: { readonly order: number; readonly length: number };
-	/** A sub-branch about 0.35 m long. */
-	readonly subbranch?: { readonly order: number; readonly length: number };
+	/**
+	 * A branch about 1 m long: the macro order to cut from the grown plant and the length of its
+	 * wood, or the shoot class whose prototype stands for it.
+	 */
+	readonly branch?: CutFromPlant | CutFromShoots;
+	/** A sub-branch about 0.35 m long, in either form. */
+	readonly subbranch?: CutFromPlant | CutFromShoots;
 	/** A leaf cluster: the shoot class to cut. */
-	readonly cluster?: { readonly shoot: ShootClass['name'] };
+	readonly cluster?: CutFromShoots;
+}
+
+/**
+ * A piece cut from the grown plant: the macro order of the axis it starts from, and the metres of
+ * wood from the cut to the farthest tip.
+ *
+ * @category api/vegetation
+ */
+export interface CutFromPlant {
+	/** The macro order to cut. */
+	readonly order: number;
+	/** Metres of wood from the cut to the farthest tip. */
+	readonly length: number;
+}
+
+/**
+ * A piece taken from the kit: one shoot prototype of a class, for a species whose shoots carry the
+ * piece's twigs, as an oak's two-year twig is its sub-branch.
+ *
+ * @category api/vegetation
+ */
+export interface CutFromShoots {
+	/** The shoot class to take. */
+	readonly shoot: ShootClass['name'];
 }
 
 /**
