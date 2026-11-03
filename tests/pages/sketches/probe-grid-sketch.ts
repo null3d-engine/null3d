@@ -12,6 +12,7 @@
 // leak beside it; and ?wall-night turns the environment after the bake, which must light the grid
 // again with no new bake.
 import { bakeProbes, defineSketch, LightProbeGridData, type QueryTarget } from '@null3d/engine';
+import { applySketchSwitches } from '../lib/sketch-switches';
 
 const params = new URL(import.meta.url).searchParams;
 
@@ -31,7 +32,9 @@ fn surface(input: SurfaceInput) -> Surface {
 
 type Colour = readonly [number, number, number];
 
-export default defineSketch(async ({ scene, assets, materials, geometry, textures, render }) => {
+export default defineSketch(async (context) => {
+	const { scene, assets, materials, geometry, textures, render, quality } = context;
+	applySketchSwitches(import.meta.url, quality);
 	const environment = await assets.builtinEnvironment('room');
 	scene.setEnvironment(environment);
 	scene.setBackground('#20242c');
