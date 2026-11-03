@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type PlantAsset, plantAssetDigest } from './asset';
+import { hashBytes } from './core/hash';
 import { NotBuiltError } from './core/not-built';
 import { standInSpecies } from './core/stand-in';
 import {
@@ -83,6 +84,35 @@ describe('the plant core with stand-ins', () => {
 			expect(piece.cutting?.part).toBe(part);
 			expect(piece.levels[0].triangles).toBeGreaterThan(0);
 			expect(piece.levels[1].parts).toHaveLength(0);
+		}
+	});
+
+	it('grows the same stand-ins as real stages land, so scenes that place them draw the same', () => {
+		const frozen = [
+			['stub', {}, 3133105063, '42622e3d4036c19e'],
+			[
+				'pedunculate-oak',
+				{ height: { mean: 20, spread: 3 }, aspect: 1.2 },
+				3091311768,
+				'29724ef94d149086',
+			],
+		] as const;
+		for (const [id, options, kitHash, assetDigest] of frozen) {
+			const standIn = buildKitNow(standInSpecies(id, options), { placeholders: true });
+			let hash = 0;
+			for (const prototype of standIn.prototypes)
+				for (const tier of prototype.tiers)
+					hash =
+						hashBytes(new Uint8Array(tier.positions.buffer), hash) ^
+						hashBytes(tier.colors, hash + 1);
+			hash = hashBytes(standIn.cards.color, hash);
+			hash = hashBytes(
+				new Uint8Array(standIn.leaves[0]?.positions.buffer ?? new ArrayBuffer(0)),
+				hash,
+			);
+			expect(hash >>> 0).toBe(kitHash);
+			const grown = growPlantNow(standIn, { seed: 11, variant: 0, near: true });
+			expect(plantAssetDigest(grown)).toBe(assetDigest);
 		}
 	});
 
