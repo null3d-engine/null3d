@@ -127,6 +127,9 @@ struct ViewCull {
     patch_starts: [Vec<u32>; 2],
     /// Each frame parity's chosen patch runs, one first index and count each.
     patch_runs: [Vec<[u32; 2]>; 2],
+    /// The camera's own view's counts of what each mesh's pieces drew, in the frame that culled
+    /// last. Every other view has none.
+    piece_counts: Vec<PieceCount>,
 }
 
 /// Each view's culling output, and the runs of rows that a view culls. The views are of one kind,
@@ -256,25 +259,56 @@ impl SourceRows<'_> {
 /// Lists each entry of each bucket whose mesh draws pieces again in the bucket of each piece that
 /// the copy shows in the view's `frustum`, with the cone test where `cones` allows it (see
 /// [`crate::pieces`]). The pieces' buckets follow every other bucket, so their entries follow every
-/// other entry in the view's index list.
+/// other entry in the view's index list. With `counts`, each set adds its mesh, the triangles that
+/// its copies would draw whole and those that its pieces draw, for the check of what pieces cull.
 fn list_pieces(
     cull: &mut BucketedCull,
     layout: &Layout,
     rows: &SourceRows<'_>,
     frustum: &Frustum,
     cones: bool,
+    mut counts: Option<&mut Vec<PieceCount>>,
 ) -> Result<(), TryReserveError> {
+    if let Some(counts) = counts.as_deref_mut() {
+        counts.clear();
+        counts.try_reserve(layout.piece_sets.len())?;
+    }
     for set in &layout.piece_sets {
         let words = if set.pairs { 2 } else { 1 };
+        let starts = cull.bucket_starts();
+        let copies =
+            u64::from(starts[set.bucket as usize + 1] - starts[set.bucket as usize]) / words as u64;
+        let (mut whole, mut drawn) = (0u64, 0u64);
         for k in 0..set.count {
             let piece = &layout.piece_bounds[(set.first + k - layout.piece_sets[0].first) as usize];
+            let to = (set.first + k) as usize;
             cull.list_kept(set.bucket, set.first + k, words, |entry| {
                 rows.rows(entry, set.texture)
                     .is_none_or(|matrix| CopyFrame::new(matrix).shows(frustum, piece, cones))
             })?;
+            let starts = cull.bucket_starts();
+            let kept = u64::from(starts[to + 1] - starts[to]) / words as u64;
+            whole += u64::from(piece.triangles);
+            drawn += kept * u64::from(piece.triangles);
+        }
+        if let Some(counts) = counts.as_deref_mut() {
+            counts.push(PieceCount {
+                mesh: set.mesh,
+                would: copies * whole,
+                drawn,
+            });
         }
     }
     Ok(())
+}
+
+/// What one mesh's pieces drew in a view: the triangles that its copies in view would draw whole,
+/// and those that its pieces drew.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct PieceCount {
+    pub(super) mesh: u32,
+    pub(super) would: u64,
+    pub(super) drawn: u64,
 }
 
 impl ViewCull {
@@ -422,6 +456,12 @@ impl Culling {
     }
 
     /// The objects, rows and clusters that a view's culling tested in the frame that culled last.
+    /// What each mesh's pieces drew in the camera's own view, in the frame that culled last.
+    pub(super) fn piece_counts(&self) -> &[PieceCount] {
+        self.output(ViewId::CAMERA)
+            .map_or(&[], |view| view.piece_counts.as_slice())
+    }
+
     pub(super) fn tested(&self, view: ViewId) -> u32 {
         self.output(view).map_or(0, |view| view.tested)
     }
@@ -804,10 +844,12 @@ impl Culling {
                 &mut view.culls[parity],
             );
             view.occluded = view.culls[parity].hidden() as u32;
+            view.piece_counts.clear();
             if !layout.piece_sets.is_empty() {
                 // Only the camera's own view places its instances relative to its eye, where the
                 // cone test holds.
-                let cones = first + k == ViewId::CAMERA.index() && !choice.rule.orthographic;
+                let camera = first + k == ViewId::CAMERA.index();
+                let cones = camera && !choice.rule.orthographic;
                 let rows = SourceRows {
                     input,
                     layout,
@@ -819,6 +861,7 @@ impl Culling {
                     &rows,
                     &frame.frustum,
                     cones,
+                    camera.then_some(&mut view.piece_counts),
                 )?;
             }
             // The camera's views draw their cluster meshes from the trees, which the walk picks

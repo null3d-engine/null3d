@@ -47,7 +47,7 @@ export async function planLevels(
 		return await runTaskWithError<LevelsTaskOutput>(
 			PLANNER,
 			input,
-			[input.words],
+			input.masks ? [input.words, input.masks] : [input.words],
 			error as WasmError,
 		);
 	} catch (thrown) {

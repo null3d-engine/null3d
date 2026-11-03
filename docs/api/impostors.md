@@ -134,7 +134,7 @@ for (const group of farCellGroups(centers, 64)) {
 
 `farCellGroups(centers, cellSize)` groups copies by the cell of the grid their centers fall in, so each group becomes one mesh. The detailed levels stay for what is near, and the merged far meshes draw as single objects.
 
-The merged arrays carry `levels: false`, because a cell already draws each copy's coarsest level. So the engine plans no levels of its own for a cell's mesh. Give the cell `{ ...merged, levels: true }` to plan levels for it anyway.
+The merged arrays carry `levels: 'pieces'`, because a cell already draws each copy's coarsest level. So the engine plans no levels of its own for a cell's mesh. A cell of 32,768 triangles or more still sorts its triangles into pieces by space at its first draw, so the view leaves out the parts of the cell that lie outside it. Give the cell `{ ...merged, levels: true }` to plan levels for it anyway, or `levels: false` for neither.
 
 ## Compared with three.js
 

@@ -1,6 +1,6 @@
 # D-307: Pieces of a large mesh, culled per copy
 
-Status: decided and built on every GPU path. Built: the asset tool's pieces (`NULL3D_pieces`), the culling shader on WebGPU, the CPU culling of the direct-draw path and the job workers' culling on WebGL2. Pending: the runtime planner that gives a mesh made in code its pieces. It calls the entry points below. Task: none.
+Status: decided and built on every GPU path. Built: the asset tool's pieces (`NULL3D_pieces`), the culling shader on WebGPU, the CPU culling of the direct-draw path, the job workers' culling on WebGL2, and the pieces of meshes made in code, which their level plan gives them ([D-310](D-310-runtime-levels.md#pieces-of-meshes-made-in-code)). Task: none.
 
 Summary: Each level of 32,768 triangles or more holds its triangles in 8 to 16 pieces, each facing about one way, with a sphere and a cone of facings. Each copy picks its level as before, then culls each piece by the frustum, by the cone where it holds, and by the depth pyramid in the late occlusion phase. In the desert benchmark they cut a frame's triangles by about a quarter. From above the GPU frame falls from 5.65 to 4.32 ms, and walking it holds at 4.47 to 4.49 ms.
 
@@ -18,7 +18,7 @@ A copy of a large mesh that the view cuts through, or that turns half its surfac
 
 ## The pieces
 
-`packages/cli/src/assets/pieces.js` plans the pieces from plain typed arrays and imports nothing. So the engine's job workers can run it too. A list of 32,768 triangles or more gets one piece for each 4,096 triangles, from 8 to 16.
+`packages/engine/levels/pieces.js` (`@null3d/engine/pieces-planner`) plans the pieces from plain typed arrays and imports nothing. So the engine's job workers can run it too. A list of 32,768 triangles or more gets one piece for each 4,096 triangles, from 8 to 16.
 
 The planner groups the triangles by facing first. Spherical k-means, weighted by area, starts from directions spread evenly over the sphere and makes one group per piece, up to 14. Past 14 pieces, each group splits at the median of its triangles' middles along their longest side. A piece's sphere holds its corners. Its cone's axis is the mean facing, and its cutoff is the sine of the widest facing's angle, as meshoptimizer's `computeClusterBounds` gives it. Each number is a 32-bit float, rounded so that it culls no more than the exact bounds.
 
@@ -38,7 +38,7 @@ The table gives the share of each list's triangles that the cone and frustum tes
 
 ## The engine
 
-`MeshStorage::set_pieces` gives a live mesh pieces of its own list, at any time after the mesh is made. A new list or new vertices drop them. `MeshStorage::set_piece_list` gives a mesh in one part pieces over a list of their own. That list shares the mesh's vertices, as a level does, so a mesh made in code keeps its own triangle order for raycasts and vertex updates. The loader calls `setMeshPieces`, and a runtime planner calls `setMeshPieceList`. Either marks the scene's structure changed, so the next rebuild draws the pieces in place.
+`MeshStorage::set_pieces` gives a live mesh pieces of its own list, at any time after the mesh is made. A new list or new vertices drop them. `MeshStorage::set_piece_list` gives a mesh pieces over a list of their own. That list shares the mesh's vertices, as a level does, part by part for a mesh split into parts, so a mesh made in code keeps its own triangle order for raycasts and vertex updates. The loader calls `setMeshPieces`, and the level plan of a mesh made in code calls `setMeshPieceList`. Either marks the scene's structure changed, so the next rebuild draws the pieces in place.
 
 On WebGPU the scene's layout gives a bucket with pieces no draws of its own. Each piece gets a bucket after every other bucket. It takes the bucket's pipeline and material, a slice of the bucket's size, and a draw for each range of the mesh's parts that the piece covers. A pass draws the pieces' buckets in the bucket's place. A level's pieces take the level's copy count from `Layout::fit_copies`, so their slices move with the level's. The bucket's record names its pieces in its word of index reads, under a bit of its own, since such a bucket never reads by index. A piece's record holds its sphere where a bucket holds its local sphere, and its cone where a level holds its links.
 
@@ -47,6 +47,19 @@ The culling shader picks a copy's level as before. A copy whose level has pieces
 The direct-draw path and WebGL2's job workers run the same tests in Rust (`crate::pieces::CopyFrame`). WebGL2 lists each copy again in each piece's bucket, after the culled entries (`BucketedCull::list_kept`).
 
 The cone test is skipped where it may not hold: a material that draws both faces, a mirrored or stretched copy, shadow views, mirrors, probes and orthographic lenses. Shadow views place their instances relative to the camera, not the light, and a shadow pipeline may draw front faces or both.
+
+### The check during play
+
+Pieces pay only where the view leaves out enough of a mesh or enough of it faces away, and each costs a draw in every pass that draws its mesh. So, as the occlusion check does for its passes ([D-40](D-40-gpu-occlusion.md)), a check during play draws a mesh whole while its pieces do not pay (`crate::piece_check`). It counts, for the camera's own view, the triangles that each pieced mesh's copies would draw whole and those that its pieces draw:
+
+- On the CPU paths, WebGL2's job workers and WebGPU's direct draws, the culling has the counts already: the copies that each pieced bucket listed, and those that each piece kept.
+- On WebGPU's indirect path, the pieced bucket's own draw, which no pass draws, becomes a tally: the culling shader adds one to its instance count for each copy that waits for its pieces' tests. Every 10 frames the camera's counts copy, with the pieces' draws and the tallies, into the occlusion check's read ring, which lands them in engine memory a few frames later with no wait. Those reads go with the frame's own submit, so they add no submit inside a frame, which would end the frame's GPU timing there.
+
+Each mesh with pieces runs with them or whole. With pieces, each window of 60 frames that brought 3 counts or more gives a verdict: the pieces stay while they leave out at least 20% of the triangles that the copies in view would draw whole. A window with no copy in view says nothing. Every 600 frames each mesh drawn whole takes its pieces again for a window. Each change rebuilds the draw tables, as a change of the scene's structure does, so the probes of every mesh drawn whole fall on the same frame. `MeshStorage::pieces` gives none for a mesh drawn whole, so every layout and path follows the check.
+
+The threshold comes from the runs below. The desert's arches cut 43% to 64% of their triangles in view and keep their pieces. Its columns cut 0% to 17%, and its code-made ground 0%: a split mesh's pieces follow its parts, and the ground's 16 parts are strips across the whole map. The Island's roads cut 0% to 18%, and its stone walls 0% to 3%. In the benchmark's files, pieces that cut 23% of the walking view's triangles drew in the same GPU time as none, and above that they paid.
+
+With the check, the Island drew its frames in 7.54 and 6.42 ms of GPU time, against 8.26 ms without pieces in a run on the same build whose timer read true; another run without pieces read 2,972 ms, a timer fault that this Mac's load brings with pieces or without. The roads drew whole while the camera route flew high, and took their pieces back when it came low, where they cut 37% to 62%. The desert made in code drew its walk in 2.49 ms with the check and 2.52 ms without pieces, and its aerial view in 3.08 ms against 3.41 ms.
 
 ## Data
 
@@ -103,4 +116,4 @@ Rejected:
 
 - The culling parameters' second debug word is 1 for the camera's own view, where the cone test holds.
 - The bucket record keeps its 17 words, and only `cull.wgsl` changes. The shader build compiles the culling shader's three entries and reuses the other 94.
-- The runtime follow-up plans pieces with `planPieces` on the job workers. It calls `setMeshPieceList(mesh, count, indices)`, with the pieces' nine words each and then the sorted indices in the staging words. A mesh whose own list it may sort takes `setMeshPieces(mesh, count)` instead. A ground mesh that wraps the camera may plan spatial pieces with one facing group, `planPieces(positions, indices, count, 1)`, whose cones never cull.
+- Meshes made in code plan pieces with `planPieces` on the job workers, with their levels ([D-310](D-310-runtime-levels.md#pieces-of-meshes-made-in-code)). A mesh takes `setMeshPieceList(mesh, count, indices)`, with the pieces' nine words each and then the sorted indices in the staging words. A level, whose list the plan may sort, takes `setMeshPieces(mesh, count)`, or its pieces with `createSplitLevel` where its base is split. A list that faces mostly one way, such as a ground that wraps the camera, plans spatial pieces with one facing group.

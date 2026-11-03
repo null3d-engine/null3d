@@ -322,7 +322,9 @@ fn write_copies(
             )?;
             continue;
         };
-        counts[index] = 0;
+        // The bucket draws nothing of its own, so its count holds the copies that its pieces
+        // tested, for the check of what pieces cull.
+        counts[index] = (words.len() / if bucket.pairs { 2 } else { 1 }) as u32;
         for piece in first..first + count {
             let target = &drawn.buckets[piece as usize];
             let bounds = Piece {

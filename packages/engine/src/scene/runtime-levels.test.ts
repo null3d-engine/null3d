@@ -40,7 +40,7 @@ beforeEach(() => {
 		const triangles = (words[1] as number) / 3;
 		// Three levels that halve the first triangles, with errors that grow.
 		return {
-			levels: [0.5, 0.25, 0.125].map((share, k) => ({
+			levels: [0.5, 0.25, 0.125].slice(0, input.maxLevels).map((share, k) => ({
 				indices: new Uint32Array(Math.floor(triangles * share) * 3),
 				error: 0.01 * 2 ** k,
 			})),
@@ -51,7 +51,7 @@ beforeEach(() => {
 });
 
 /** A geometry whose fake core makes meshes, levels and copies, and records what it is asked. */
-function engine(options: { split?: boolean; format?: number } = {}) {
+function engine(options: { split?: boolean; format?: number; parts?: number } = {}) {
 	const memory = new WebAssembly.Memory({ initial: 64 });
 	const staging = 4096;
 	const vertices = new Map<number, number>();
@@ -62,7 +62,13 @@ function engine(options: { split?: boolean; format?: number } = {}) {
 		destroyed: [] as number[],
 		copies: 0,
 		shared: 0,
+		split: 0,
+		reads: [] as number[],
 		updates: 0,
+		/** The pieces that each mesh took: over a list of its own, its own list, or at its making. */
+		pieceLists: [] as { mesh: number; count: number; indices: number }[],
+		pieces: [] as { mesh: number; count: number }[],
+		splitPieces: [] as number[],
 	};
 	let next = 1;
 	let failed = 0;
@@ -84,16 +90,42 @@ function engine(options: { split?: boolean; format?: number } = {}) {
 			vertices.set(id, vertices.get(base) ?? 0);
 			return id;
 		},
+		createSplitLevel: (base: number, count: number) => {
+			record.split++;
+			record.splitPieces.push(count);
+			const id = next++;
+			vertices.set(id, vertices.get(base) ?? 0);
+			return id;
+		},
 		createLevelCopy: () => {
 			record.copies++;
 			const id = next++;
 			vertices.set(id, 3);
 			return id;
 		},
-		meshPlanningArrays: (mesh: number) => {
-			const words = new Uint32Array(memory.buffer, staging, 3);
-			words.set([vertices.get(mesh) ?? 0, (triangles.get(mesh) ?? 0) * 3, options.format ?? 0]);
+		meshPlanningPart: (mesh: number, part: number) => {
+			record.reads.push(part);
+			// The mesh's part count, vertex count, index count and format, then a part of no
+			// vertices and no triangles: the planner's stand-in reads only the counts.
+			const words = new Uint32Array(memory.buffer, staging, 6);
+			const parts = options.parts ?? 1;
+			words.set([
+				parts,
+				vertices.get(mesh) ?? 0,
+				(triangles.get(mesh) ?? 0) * 3,
+				options.format ?? 0,
+				0,
+				0,
+			]);
 			return staging;
+		},
+		setMeshPieceList: (mesh: number, count: number, indices: number) => {
+			record.pieceLists.push({ mesh, count, indices });
+			return 1;
+		},
+		setMeshPieces: (mesh: number, count: number) => {
+			record.pieces.push({ mesh, count });
+			return 1;
 		},
 		setMeshLevels: (base: number, count: number) => {
 			record.levels.set(base, [...new Uint32Array(memory.buffer, staging, count)]);
@@ -131,8 +163,12 @@ function strip(triangles: number, extra: Partial<MeshArrays> = {}): MeshArrays {
 /** The microtasks and the planner's answer settle. */
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-/** A stand-in for a material, of which the levels read whether it moves vertices. */
-const material = (shapesVertices: boolean) => ({ shapesVertices }) as unknown as Material;
+/**
+ * A stand-in for a material, of which the levels read whether it moves vertices and whether it
+ * draws the base level alone, as a blended one does.
+ */
+const material = (shapesVertices: boolean, wholeOnly = false) =>
+	({ shapesVertices, wholeOnly }) as unknown as Material;
 
 /** Notes that the scene draws `copies` of `mesh` with a plain material, as createMesh does. */
 const draw = (mesh: MeshGeometry, copies = 1) => mesh.drawnWith(material(false), copies, 'test');
@@ -267,12 +303,163 @@ describe('the automatic levels of a mesh made in code', () => {
 		expect(mesh.levels).toEqual([]);
 	});
 
-	test('copy the vertices of each level of a mesh that the engine split into parts', async () => {
+	test('plan nothing for a mesh that only blended materials draw, until another draws it', async () => {
+		const { geometry } = engine();
+		const glass = geometry.fromArrays(strip(20_000));
+		glass.drawnWith(material(false, true), 1, 'test');
+		const pebble = geometry.fromArrays(strip(960));
+		pebble.drawnWith(material(false, true), 1_000, 'test');
+		await settled();
+		expect(asked).toHaveLength(0);
+		draw(glass);
+		expect(await glass.buildLevels()).toHaveLength(3);
+		// The blended copies of the small mesh never counted toward its copies.
+		draw(pebble, 10);
+		await settled();
+		expect(asked).toHaveLength(1);
+	});
+
+	test('share the vertices of a mesh that the engine split into parts, part by part', async () => {
 		const { geometry, record } = engine({ split: true });
 		const mesh = geometry.fromArrays(strip(70_000));
 		expect(await mesh.buildLevels()).toHaveLength(3);
-		expect(record.copies).toBe(3);
+		expect(record.split).toBe(3);
+		expect(record.copies).toBe(0);
 		expect(record.shared).toBe(0);
+	});
+
+	test('give a large mesh its pieces after its levels, and each large level its own', async () => {
+		answer = (input) => {
+			const triangles = new Uint32Array(input.words)[1] as number;
+			const pieces = (count: number) => ({
+				triangles: new Uint32Array(count).fill(1),
+				bounds: new Float32Array(count * 8),
+			});
+			return {
+				levels: [
+					{ indices: new Uint32Array(triangles / 2), error: 0.01, pieces: pieces(8) },
+					{ indices: new Uint32Array(triangles / 4), error: 0.02 },
+				],
+				pieces: { ...pieces(12), indices: new Uint32Array(triangles) },
+				side: 1,
+				ms: 0,
+			};
+		};
+		const { geometry, record } = engine();
+		const mesh = geometry.fromArrays(strip(70_000));
+		expect(await mesh.buildLevels()).toHaveLength(2);
+		const [finest] = mesh.levels;
+		expect(record.pieces).toEqual([{ mesh: finest?.mesh.id as number, count: 8 }]);
+		expect(record.pieceLists).toEqual([{ mesh: mesh.id, count: 12, indices: 210_000 }]);
+		// A plan for the mesh's new shape gives it pieces again, in place of the old ones.
+		mesh.updateVertices('positions', new Float32Array(70_002 * 3));
+		await mesh.buildLevels();
+		expect(record.pieceLists).toHaveLength(2);
+		expect(record.pieces).toHaveLength(2);
+		// A split mesh's levels take their pieces as they are made, and keep their order.
+		const split = engine({ split: true });
+		const parts = split.geometry.fromArrays(strip(70_000));
+		await parts.buildLevels();
+		expect(split.record.splitPieces).toEqual([0, 8]);
+		expect(split.record.pieceLists).toHaveLength(1);
+		// A mesh that many copies draw asks for its levels' pieces alone, since its own would
+		// cost a copy of its indices for the few copies near the camera.
+		expect(asked.map((input) => input.basePieces)).toEqual([true, true, true]);
+		const rocks = geometry.fromArrays(strip(70_000));
+		draw(rocks, 400);
+		await settled();
+		expect(asked.at(-1)?.basePieces).toBe(false);
+	});
+
+	test('sort a mesh that asks for pieces alone at its first draw that takes them, by space', async () => {
+		const { geometry } = engine();
+		const cell = geometry.fromArrays(strip(40_000, { levels: 'pieces' }));
+		const small = geometry.fromArrays(strip(20_000, { levels: 'pieces' }));
+		// A blended material draws the mesh whole and sorted, so it plans nothing yet.
+		cell.drawnWith(material(false, true), 1, 'test');
+		draw(small);
+		await settled();
+		expect(asked).toHaveLength(0);
+		draw(cell);
+		draw(cell);
+		await settled();
+		expect(asked).toHaveLength(1);
+		expect(asked[0]).toMatchObject({ maxLevels: 0, spacePieces: true, basePieces: true });
+		expect(cell.levels).toHaveLength(0);
+	});
+
+	test('hand over the levels one a frame, coarsest first, and all at once in hold mode', async () => {
+		const { geometry, record } = engine();
+		const pace = { frame: 1, held: false };
+		geometry.users = { userOf: () => undefined, pace };
+		const mesh = geometry.fromArrays(strip(20_000));
+		const plan = mesh.buildLevels();
+		// The next frame reads the mesh; the coarsest level arrives first, alone, with the
+		// planner's answer.
+		pace.frame++;
+		for (let k = 0; k < 20 && mesh.levels.length === 0; k++) await settled();
+		expect(mesh.levels).toHaveLength(1);
+		const coarsest = mesh.levels[0]?.error as number;
+		await settled();
+		expect(mesh.levels).toHaveLength(1);
+		// Each frame adds the next finer level in front of the others.
+		pace.frame++;
+		for (let k = 0; k < 20 && mesh.levels.length === 1; k++) await settled();
+		expect(mesh.levels).toHaveLength(2);
+		expect(mesh.levels[1]?.error).toBe(coarsest);
+		pace.frame++;
+		const levels = await plan;
+		expect(levels).toHaveLength(3);
+		expect(record.levels.get(mesh.id)).toEqual(levels.map((level) => level.mesh.id));
+		// A held frame waits for the plan, which hands over every level at once.
+		pace.held = true;
+		const held = geometry.fromArrays(strip(20_000));
+		expect(await held.buildLevels()).toHaveLength(3);
+	});
+
+	test('read a mesh of many parts from the core one part a frame before it plans', async () => {
+		const { geometry, record } = engine({ parts: 3 });
+		const pace = { frame: 1, held: false };
+		geometry.users = { userOf: () => undefined, pace };
+		const mesh = geometry.fromArrays(strip(20_000));
+		const plan = mesh.buildLevels();
+		// Not even the frame that asks for the plan reads the mesh.
+		expect(record.reads).toEqual([]);
+		await settled();
+		expect(record.reads).toEqual([]);
+		pace.frame++;
+		for (let k = 0; k < 20 && record.reads.length < 1; k++) await settled();
+		expect(record.reads).toEqual([0]);
+		expect(asked).toHaveLength(0);
+		pace.frame++;
+		for (let k = 0; k < 20 && record.reads.length < 2; k++) await settled();
+		expect(record.reads).toEqual([0, 1]);
+		pace.frame++;
+		for (let k = 0; k < 20 && asked.length === 0; k++) await settled();
+		expect(record.reads).toEqual([0, 1, 2]);
+		expect(asked).toHaveLength(1);
+		pace.frame += 3;
+		const timer = setInterval(() => pace.frame++, 1);
+		expect(await plan).toHaveLength(3);
+		clearInterval(timer);
+	});
+
+	test('free the levels made so far when levels set by hand end the hand-over', async () => {
+		const { geometry, record } = engine();
+		const pace = { frame: 1, held: false };
+		geometry.users = { userOf: () => undefined, pace };
+		const mesh = geometry.fromArrays(strip(20_000));
+		const plan = mesh.buildLevels();
+		pace.frame++;
+		for (let k = 0; k < 20 && mesh.levels.length === 0; k++) await settled();
+		const first = mesh.levels[0]?.mesh as MeshGeometry;
+		const firstId = first.id;
+		const far = geometry.fromArrays(strip(10, { levels: false }));
+		mesh.setLevels([{ mesh: far, distance: 50 }]);
+		pace.frame++;
+		expect((await plan).map((level) => level.mesh)).toEqual([far]);
+		expect(first.live).toBe(false);
+		expect(record.destroyed).toEqual([firstId]);
 	});
 
 	test('give a level that the simplifier found exact an error above 0, and keep errors growing', async () => {

@@ -112,7 +112,9 @@
 // and a pipeline that drops back faces; the layout gives a piece of a pipeline that draws back
 // faces a cutoff of 1, which never culls. In the late occlusion phase each piece also tests its
 // own sphere against the pyramid. A piece's record holds its sphere where a bucket's holds the
-// local sphere, and its cone where a level's holds its switch and links.
+// local sphere, and its cone where a level's holds its switch and links. The pieced bucket's own
+// draw, which no pass draws, counts the copies that waited for their pieces' tests, so the engine
+// can weigh what the pieces left out.
 //
 // The MOTION build culls the motion view: the camera's view of the motion layout, whose buckets
 // draw each moving object's motion (decision record D-140). It reads the last frame's matrices
@@ -560,6 +562,9 @@ fn append_to(s: Survivor, b: u32, draws_before: u32, fade: f32, hidden: bool) {
         append_copy(s, b, draws_before, fade, hidden);
         return;
     }
+    // The bucket's own draw is a tally that no pass draws: its instance count counts the copies
+    // that wait for their pieces' tests, for the engine's check of what pieces cull.
+    atomicAdd(&indirect[(draws_before + buckets[b].first_draw) * INDIRECT_WORDS + 1u], 1u);
     // The copy waits in the workgroup's queue, whose (copy, piece) pairs every thread of the
     // workgroup then shares (see `place_pieces`).
     let count = (pieces & ~PIECED) >> PIECE_COUNT_SHIFT;

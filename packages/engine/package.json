@@ -45,6 +45,10 @@
 			"types": "./levels/planner.d.ts",
 			"default": "./levels/planner.js"
 		},
+		"./pieces-planner": {
+			"types": "./levels/pieces.d.ts",
+			"default": "./levels/pieces.js"
+		},
 		"./wasm/*": "./dist/wasm/*",
 		"./package.json": "./package.json"
 	},

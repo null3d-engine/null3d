@@ -353,8 +353,13 @@ pub(super) const READ_RING: usize = 2;
 /// The draws of the first set whose counts a read takes at most. A layout with more reads only
 /// its counts, and its occluders' pass draws every bucket that draws depth.
 const MAX_READ_DRAWS: u32 = 4096;
-/// The bytes of a read's destination: the counts, then the first set's draws.
-const READ_BYTES: usize = (COUNTS_BYTES + MAX_READ_DRAWS * sizes::INDIRECT_WORDS * 4) as usize;
+/// The draws of the pieces and of their buckets' tallies whose counts a read takes at most. A
+/// layout with more reads none of them, and the check of what pieces cull keeps its modes.
+pub(super) const MAX_PIECE_DRAWS: u32 = 2048;
+/// The bytes of a read's destination: the counts, then the first set's draws, then the first set's
+/// draws of the pieces and their tallies.
+const READ_BYTES: usize =
+    (COUNTS_BYTES + (MAX_READ_DRAWS + MAX_PIECE_DRAWS) * sizes::INDIRECT_WORDS * 4) as usize;
 /// Frames that a read may wait before the check gives it up and reads into the ring's other
 /// buffer. A list that never draws, as after a lost GPU, never lands its read.
 const READ_TIMEOUT: u32 = 90;
@@ -367,6 +372,9 @@ struct WaitingRead {
     ring: usize,
     layout: u32,
     draw_bytes: u32,
+    /// True for a read that the occlusion check asked for, whose counts it takes.
+    occlusion: bool,
+    piece_bytes: u32,
 }
 
 /// The reads of a view's counts and first set of draws into engine memory.
@@ -389,11 +397,17 @@ pub(super) struct CountReads {
     slot: u32,
 }
 
-/// What a read brought: the counts, and the first set's draws where they fit.
+/// What a read brought: the counts, the first set's draws where they fit, and the first set's
+/// draws of the pieces and their tallies where the read took them.
 pub(super) struct Landed<'a> {
     pub(super) counts: Counts,
+    /// True for a read that the occlusion check asked for, whose counts it takes.
+    pub(super) occlusion: bool,
     /// The first set of draws' words, five per draw, of the layout that `layout` names, or none.
     pub(super) draws: &'a [u8],
+    /// The words of the first set's draws from the layout's first draw of a piece on, five per
+    /// draw, or none.
+    pub(super) pieces: &'a [u8],
     pub(super) layout: u32,
 }
 
@@ -403,11 +417,14 @@ impl CountReads {
         self.slot = slot;
     }
 
-    /// Records a read of `view`'s counts of frame `frame`, and of its first set of draws while the
-    /// layout has at most [`MAX_READ_DRAWS`] draws, after the frame's passes. `layout_epoch` names
-    /// the layout, so draws that land for an older one are left out. Records nothing while another
-    /// read waits, for a frame that recorded its read already, or while no slot is set. Returns
-    /// true when it recorded the read.
+    /// Records a read of `view`'s counts of frame `frame`, after the frame's passes: for the
+    /// occlusion check with `occlusion`, its first set of draws too while the layout has at most
+    /// [`MAX_READ_DRAWS`] draws, and with `pieces` the first set's draws of the pieces and their
+    /// tallies while they number at most [`MAX_PIECE_DRAWS`]. `layout_epoch` names the layout, so
+    /// draws that land for an older one are left out. Records nothing while another read waits,
+    /// for a frame that recorded its read already, or while no slot is set. Returns true when it
+    /// recorded the read.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn record(
         &mut self,
         list: &mut DrawList,
@@ -415,6 +432,8 @@ impl CountReads {
         layout: &Layout,
         layout_epoch: u32,
         frame: u32,
+        occlusion: bool,
+        pieces: bool,
     ) -> Result<bool, RecordError> {
         if self.slot == 0 || frame == 0 || frame == self.recorded {
             return Ok(false);
@@ -426,12 +445,18 @@ impl CountReads {
             self.read = None;
         }
         let draws = layout.draws.len() as u32;
-        let draw_bytes = if draws <= MAX_READ_DRAWS {
+        let draw_bytes = if occlusion && draws <= MAX_READ_DRAWS {
             draws * sizes::INDIRECT_WORDS * 4
         } else {
             0
         };
-        let bytes = COUNTS_BYTES + draw_bytes;
+        let piece_draws = draws - layout.first_piece_draw.min(draws);
+        let piece_bytes = if pieces && piece_draws <= MAX_PIECE_DRAWS {
+            piece_draws * sizes::INDIRECT_WORDS * 4
+        } else {
+            0
+        };
+        let bytes = COUNTS_BYTES + draw_bytes + piece_bytes;
         let ring = self.next;
         let buffer = ids::OCCLUSION_READ_BUFFERS + ring as u32;
         // A buffer whose read never landed is made again, which drops that read.
@@ -457,13 +482,29 @@ impl CountReads {
                 &[indirect, 0, buffer, COUNTS_BYTES, draw_bytes],
             )?;
         }
+        if piece_bytes > 0 {
+            list.push(
+                Op::CopyBufferToBuffer,
+                &[
+                    indirect,
+                    layout.first_piece_draw * sizes::INDIRECT_WORDS * 4,
+                    buffer,
+                    COUNTS_BYTES + draw_bytes,
+                    piece_bytes,
+                ],
+            )?;
+        }
         list.push(
             Op::ReadBuffer,
             &[buffer, 0, bytes, address(landing), self.slot],
         )?;
         // The copies read the indirect draws that the next frame's uploads write, so they go to
-        // the GPU first.
-        list.push(Op::Submit, &[])?;
+        // the GPU first. A read of the pieces' counts alone goes with the frame's own submit: a
+        // submit inside a frame ends the frame's GPU timing there, and those reads come every few
+        // frames.
+        if occlusion {
+            list.push(Op::Submit, &[])?;
+        }
         self.waiting[ring] = true;
         self.next = (ring + 1) % READ_RING;
         self.recorded = frame;
@@ -472,6 +513,8 @@ impl CountReads {
             ring,
             layout: layout_epoch,
             draw_bytes,
+            occlusion,
+            piece_bytes,
         });
         Ok(true)
     }
@@ -496,13 +539,16 @@ impl CountReads {
         self.read = None;
         self.waiting[read.ring] = false;
         let start = COUNTS_BYTES as usize;
+        let pieces = start + read.draw_bytes as usize;
         Some(Landed {
             counts: Counts {
                 frame: read.frame,
                 tested: word(0),
                 hidden: word(1),
             },
-            draws: &landing[start..start + read.draw_bytes as usize],
+            occlusion: read.occlusion,
+            draws: &landing[start..pieces],
+            pieces: &landing[pieces..pieces + read.piece_bytes as usize],
             layout: read.layout,
         })
     }
@@ -892,11 +938,19 @@ mod tests {
         reads.set_slot(60);
         let mut list = DrawList::with_capacity(256);
         let view = ViewId::CAMERA;
-        assert!(reads.record(&mut list, view, &layout, 1, 40).unwrap());
+        assert!(
+            reads
+                .record(&mut list, view, &layout, 1, 40, true, false)
+                .unwrap()
+        );
         assert_eq!(copied_into(&list), [ids::OCCLUSION_READ_BUFFERS]);
         // While the read waits, the frame recorded again copies nothing.
         list.clear();
-        assert!(!reads.record(&mut list, view, &layout, 1, 40).unwrap());
+        assert!(
+            !reads
+                .record(&mut list, view, &layout, 1, 40, true, false)
+                .unwrap()
+        );
         assert!(copied_into(&list).is_empty());
         // The read lands: its words name the frame that it copied.
         let landing = reads.landing.as_mut().expect("the landing memory");
@@ -904,10 +958,66 @@ mod tests {
         assert_eq!(reads.take().map(|landed| landed.counts.frame), Some(40));
         // The frame recorded once more still copies nothing, as the GPU draws it from the list
         // that read already, and the next frame reads into the ring's other buffer.
-        assert!(!reads.record(&mut list, view, &layout, 1, 40).unwrap());
+        assert!(
+            !reads
+                .record(&mut list, view, &layout, 1, 40, true, false)
+                .unwrap()
+        );
         assert!(copied_into(&list).is_empty());
-        assert!(reads.record(&mut list, view, &layout, 1, 41).unwrap());
+        assert!(
+            reads
+                .record(&mut list, view, &layout, 1, 41, true, false)
+                .unwrap()
+        );
         assert_eq!(copied_into(&list), [ids::OCCLUSION_READ_BUFFERS + 1]);
+    }
+
+    #[test]
+    fn a_read_of_the_pieces_alone_takes_their_draws_and_leaves_the_occlusion_check_out() {
+        let mut layout = Layout::with_occluder_buckets(&[true, false, false]);
+        layout.draws = (0..3)
+            .map(|_| super::super::layout::Draw {
+                page: 0,
+                index_count: 3,
+                first_index: 0,
+                base_vertex: 0,
+                vertices: None,
+            })
+            .collect();
+        layout.first_piece_draw = 1;
+        let mut reads = CountReads::default();
+        reads.set_slot(60);
+        let mut list = DrawList::with_capacity(256);
+        let view = ViewId::CAMERA;
+        assert!(
+            reads
+                .record(&mut list, view, &layout, 1, 50, false, true)
+                .unwrap()
+        );
+        // The counts and the draws from the first piece's on, without the first set's draws.
+        let copies: Vec<[u32; 5]> = null3d_gpu::drawlist::decode(list.words())
+            .map(Result::unwrap)
+            .filter(|command| command.op == Op::CopyBufferToBuffer)
+            .map(|command| command.operands[..5].try_into().unwrap())
+            .collect();
+        let piece_bytes = 2 * sizes::INDIRECT_WORDS * 4;
+        assert_eq!(copies.len(), 2);
+        assert_eq!(
+            copies[1],
+            [
+                ids::indirect(view),
+                sizes::INDIRECT_WORDS * 4,
+                ids::OCCLUSION_READ_BUFFERS,
+                COUNTS_BYTES,
+                piece_bytes
+            ]
+        );
+        let landing = reads.landing.as_mut().expect("the landing memory");
+        landing[8..12].copy_from_slice(&50u32.to_le_bytes());
+        let landed = reads.take().expect("the read landed");
+        assert!(!landed.occlusion);
+        assert!(landed.draws.is_empty());
+        assert_eq!(landed.pieces.len(), piece_bytes as usize);
     }
 
     #[test]

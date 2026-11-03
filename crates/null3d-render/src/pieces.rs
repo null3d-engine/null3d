@@ -132,6 +132,15 @@ impl PieceTable {
             .and_then(|entry| entry.list.replace(list))
     }
 
+    /// Takes away the triangle list of mesh `mesh`'s pieces, with the pieces, and returns the mesh
+    /// that held it, which the caller removes.
+    pub fn take_list(&mut self, mesh: u32) -> Option<u32> {
+        let entry = self.by_mesh.get_mut(mesh as usize)?;
+        let list = entry.list.take()?;
+        entry.pieces = Vec::new();
+        Some(list)
+    }
+
     /// The pieces of mesh `mesh`, or none.
     pub fn of(&self, mesh: u32) -> &[Piece] {
         self.by_mesh
