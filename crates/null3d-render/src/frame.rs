@@ -2600,7 +2600,7 @@ impl SceneSettings {
         values: &[f32],
         switches: &[Switch],
         materials: &[u32],
-        fades: u8,
+        fades: u16,
     ) -> Result<(), LevelError> {
         let format = |mesh: u32| Some(self.meshes.mesh(mesh.checked_sub(1)?)?.format);
         let Some(own) = format(base) else {

@@ -58,6 +58,17 @@ function thrown(call: () => void): EngineError | undefined {
 }
 
 describe('mesh.setLevels', () => {
+	test('takes fifteen lower levels with the fade of each, and refuses sixteen', () => {
+		const { base, core, sets } = meshes();
+		const lower = Array.from({ length: 16 }, (_, k) => new MeshGeometry(10 + k, 1, core));
+		const levels = lower.map((mesh, k) => ({ mesh, error: 0.01 * (k + 1) }));
+		base.setLevels(levels.slice(0, 15));
+		expect(sets[0]?.ids).toHaveLength(15);
+		// Every level fades, the deepest one included, from bit 1 up to bit 15.
+		expect(sets[0]?.fades).toBe(0xfffe);
+		expect(thrown(() => base.setLevels(levels))?.message).toContain('at most 15');
+	});
+
 	test('hands the core the levels, from the most detailed down, with their switch values', () => {
 		const { base, a, b, sets } = meshes();
 		base.setLevels([
