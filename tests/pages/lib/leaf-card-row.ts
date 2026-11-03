@@ -3,7 +3,7 @@
 // its leaves cover is the atlas's own coverage: a level whose leaves thinned would show a smaller
 // share the further a card stands. The cards stand on the picture where their boxes do not meet.
 import type { SketchContext } from '@null3d/engine';
-import { bakePlantAtlases, plantMaterial } from '@null3d/vegetation';
+import { bakePlantAtlases, plantMaterial } from '@null3d/vegetation/legacy';
 import { PLANT_CARD } from './plant-card';
 
 /** The camera that frames the cards: its place, the point that it looks at and its field of view. */

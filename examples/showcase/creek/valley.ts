@@ -5,17 +5,19 @@
 // paths place the same valley. A plant that the camera's route would fly into is left out, so the
 // river pass never crosses a crown.
 import {
-	BUILTIN_SPECIES,
-	builtinRules,
-	CREEK_SPECIES,
 	type EcoRule,
 	groundMaps,
 	SCATTER_STRIDE,
 	type ScatterPoints,
-	type Species,
 	scatterVegetation,
-	speciesCrownRadius,
 } from '@null3d/vegetation';
+import {
+	BUILTIN_SPECIES,
+	builtinRules,
+	CREEK_SPECIES,
+	type Species,
+	speciesCrownRadius,
+} from '@null3d/vegetation/legacy';
 import { routePosition, routeTimeline } from '../../lib/cinematic';
 import { groundHeight, LAND, WATER } from './land';
 import { SHOTS } from './route';

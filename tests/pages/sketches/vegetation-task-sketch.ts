@@ -9,7 +9,7 @@ import {
 	generatePlantInTask,
 	type PartArrays,
 	type PlantAsset,
-} from '@null3d/vegetation';
+} from '@null3d/vegetation/legacy';
 
 /** The seed that every species grows for, on the thread and in the task. */
 const SEED = 12;

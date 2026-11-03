@@ -17,11 +17,11 @@ import {
 	type Texture,
 } from '@null3d/engine';
 import type { WindField } from '@null3d/wind';
+import { unitAt } from '../core/hash';
 import offsetShader from './floating-leaves.wgsl';
 import stateFallback from './floating-leaves-state.fallback.wgsl';
 import stateShader from './floating-leaves-state.wgsl';
 import stateDrawShader from './floating-leaves-state-draw.wgsl';
-import { unitAt } from './hash';
 
 /**
  * How a leaf rides the air: `offset` pushes a closed-form fall by the air where the leaf passes, and

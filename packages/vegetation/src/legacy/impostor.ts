@@ -10,6 +10,7 @@ import {
 	type OctahedralAtlas,
 	octahedralAtlas,
 } from '@null3d/impostors';
+import { VERSION } from '../version';
 import type { PlantAsset } from './asset';
 import {
 	BARK_CELLS_BY_KIND,
@@ -19,7 +20,6 @@ import {
 	type PlantAtlases,
 } from './atlas';
 import { type AtlasPixels, BARK_SIZE, LEAF_CELLS_X, LEAF_CELLS_Y } from './atlas-pixels';
-import { VERSION } from './version';
 
 /**
  * What `bakeFarTree` takes: the plant, the atlases that colour it, and the grid.

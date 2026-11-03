@@ -22,7 +22,7 @@ import {
 	setWindLayer,
 	swayDistanceFor,
 	treeValues,
-} from '@null3d/vegetation';
+} from '@null3d/vegetation/legacy';
 import { createWind } from '@null3d/wind';
 import { Noise, rock, type TexelSample, textureSet } from '../lib/procedural';
 

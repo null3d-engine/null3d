@@ -1,7 +1,7 @@
 // Generates trees for the tree generation timing page, off the page's thread, as the vegetation
 // add-on grows its species at start. It times each generation inside the worker, so the figures hold
 // the work alone and none of the page's messaging.
-import { ALL_SPECIES, generatePlant, type PlantAsset } from '@null3d/vegetation';
+import { ALL_SPECIES, generatePlant, type PlantAsset } from '@null3d/vegetation/legacy';
 
 export type DetailName = 'low' | 'medium' | 'high' | 'ultra';
 

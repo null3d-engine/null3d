@@ -11,12 +11,12 @@ import {
 	type SketchContext,
 } from '@null3d/engine';
 import { createImpostors } from '@null3d/impostors';
+import { createGrass } from '@null3d/vegetation';
 import {
 	type BranchLevel,
 	bakeFarTree,
 	bakePlantAtlases,
 	builtInSpecies,
-	createGrass,
 	generatePlant,
 	handOverToCards,
 	leafCellFor,
@@ -28,7 +28,7 @@ import {
 	setWindLayer,
 	swayDistanceFor,
 	treeValues,
-} from '@null3d/vegetation';
+} from '@null3d/vegetation/legacy';
 import { createWind, type Wind } from '@null3d/wind';
 import { Noise } from '../../lib/procedural';
 import { cypress, finish } from './kit';

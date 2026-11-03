@@ -30,6 +30,11 @@
 			"types": "./lib/index.d.ts",
 			"default": "./lib/index.js"
 		},
+		"./legacy": {
+			"null3d-source": "./src/legacy/index.ts",
+			"types": "./lib/legacy/index.d.ts",
+			"default": "./lib/legacy/index.js"
+		},
 		"./package.json": "./package.json"
 	},
 	"files": [

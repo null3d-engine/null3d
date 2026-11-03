@@ -817,7 +817,7 @@ import {
   generateVariantSet,
   leafCellFor,
   plantMaterial,
-} from '@null3d/vegetation';
+} from '@null3d/vegetation/legacy';
 
 export default defineSketch((ctx) => {
   const { scene, geometry } = ctx;

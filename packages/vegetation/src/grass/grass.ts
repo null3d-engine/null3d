@@ -11,8 +11,8 @@ import {
 	type Textures,
 } from '@null3d/engine';
 import type { WindField } from '@null3d/wind';
+import { unitAt } from '../core/hash';
 import grassShader from './grass.wgsl';
-import { unitAt } from './hash';
 
 /** The share of the High count that each preset draws. */
 const PRESET_SHARE: Record<QualityPreset, number> = {

@@ -4,7 +4,7 @@
 // each variant beside its time. It fails when the worker reported an error or gave no time.
 // ?seeds= changes the seeds per run, and ?presets= picks presets, such as low,high.
 import type { QualityPreset } from '@null3d/engine';
-import { ALL_SPECIES } from '@null3d/vegetation';
+import { ALL_SPECIES } from '@null3d/vegetation/legacy';
 import { progress, run } from './lib/result';
 import type { GenerateReply, GenerateRequest } from './lib/tree-generation-worker';
 

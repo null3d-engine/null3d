@@ -20,7 +20,7 @@ import {
 	setWindLayer,
 	swayDistanceFor,
 	treeValues,
-} from '@null3d/vegetation';
+} from '@null3d/vegetation/legacy';
 import { createWind } from '@null3d/wind';
 import { TURN } from '../lib/pines';
 import { random } from '../lib/procedural';

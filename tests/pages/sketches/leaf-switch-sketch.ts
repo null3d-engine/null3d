@@ -11,7 +11,7 @@ import {
 	generatePlant,
 	leafCellFor,
 	plantMaterial,
-} from '@null3d/vegetation';
+} from '@null3d/vegetation/legacy';
 
 const switches = new URL(import.meta.url).searchParams;
 const morph = switches.get('morph') !== 'off';

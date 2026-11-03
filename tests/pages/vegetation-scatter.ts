@@ -3,14 +3,8 @@
 // device, and neither the order of the tiles nor their size changes them. It times the placement
 // as well, which is the figure that the vegetation budgets record for a valley this size.
 // ?seed= changes the seed, ?runs= the number of timed runs, and ?tile= a second tile size to check.
-import {
-	builtinRules,
-	CREEK_SPECIES,
-	EcoScatter,
-	groundMaps,
-	scatterChecksum,
-	scatterVegetation,
-} from '@null3d/vegetation';
+import { EcoScatter, groundMaps, scatterChecksum, scatterVegetation } from '@null3d/vegetation';
+import { builtinRules, CREEK_SPECIES } from '@null3d/vegetation/legacy';
 import { groundHeight, LAND, WATER } from '../../examples/showcase/creek/land';
 import { progress, run } from './lib/result';
 

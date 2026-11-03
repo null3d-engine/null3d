@@ -4,7 +4,7 @@
 // bakePlantAtlases runs, with no texture upload and no drawing between them, so a round is the
 // paint alone.
 import { defineSketch } from '@null3d/engine';
-import { paintBark, paintLeaf } from '@null3d/vegetation';
+import { paintBark, paintLeaf } from '@null3d/vegetation/legacy';
 
 const rounds = Math.max(
 	1,

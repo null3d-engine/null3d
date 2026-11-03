@@ -1,7 +1,7 @@
 // The rules that place the built-in species: where each one grows, from the water's edge to the
 // dry slopes above. A record holds numbers only, so a themed pack writes rules of its own and the
 // package grows no plants differently.
-import type { EcoRule, ToleranceCurve } from './ecology';
+import type { EcoRule, ToleranceCurve } from '../ecology/ecology';
 import type { Species } from './species';
 
 /**
