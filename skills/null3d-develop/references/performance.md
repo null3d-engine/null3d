@@ -47,13 +47,26 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 
 ## 3. How to measure
 
+Time a production build, never a development build. Development builds run checks in every frame. Some read every static object, so a large scene times slower than it ships. Find out which build the page runs before you trust a figure:
+
+| The page comes from | Build |
+| --- | --- |
+| `bunx vite build` with the null3D plugin, served by `bunx vite preview`; `bunx @null3d/cli bench` | Production |
+| (0.2) The CDN build's `lib/index.js` | Production |
+| `bunx vite`, the dev server; `bunx @null3d/cli shot` and `test` | Development |
+| (0.2) The CDN build's `lib-dev/index.js` | Development |
+| Engine code built without the null3D plugin, by another bundler or with no bundler at all | Development |
+
+To check a page you did not build, call a setter on an object after its `destroy()`. Only a development build throws E1101 (`concepts/handles`). The engine docs pages `getting-started/cdn` and `guides/performance` give the detail.
+
 1. Measure the running page with `await engine.measure(5)`. It returns CPU time per thread and phase, GPU time where WebGPU has timestamp queries, the frame rates, draw calls, uploaded bytes, rebuilds and pipelines. The phase `update` is your code, and `commands`, `transforms`, `batches`, `cull`, `record`, `upload` and `replay` are the engine's. The preset is in `engine.mode.preset`. In the sketch, `debug.stats(true)` shows the frame rates and CPU time per thread and phase on the canvas. In 0.2 a click on its frame rate opens a card. It shows each thread's time and the GPU's time against the target frame rate, split into your code and the engine's work. A line names what holds the frame rate back. It also shows memory and the triangles and objects drawn. `?stats` in the page's address shows it too.
 2. Run the repeatable benchmark: `bunx @null3d/cli bench --gpu webgpu,webgl2`. It builds the project for production and runs the page 5 times for 30 seconds, each after a warm-up. It prints the median and the spread of CPU time per frame by thread, GPU time and frame rates, and saves each run's phases in `bench.json`. Use it before and after a change, on the same computer.
 3. Read numbers in the sketch: `debug.frameStats()` returns the overlay's figures, as means over the last half second. It allocates nothing, so a sketch can read it every frame, for example to log slow frames. A day cycle moves the time with `timeOfDay(hour, {}, day)`, which fills the `day` object of the first call instead of making one.
 4. Profile JavaScript in the browser's performance panel. Sketch code runs in the worker named `null3d-sketch`; look there, not on the main thread. With `sketchThread: 'main'` it runs on the main thread.
 5. Check the WebGL2 path: add `?gpu=webgl2` to the URL. Phones without WebGPU use this path, and it does more CPU work (culling on job workers).
-6. The engine never times the GPU on WebGL2, so `gpuMs` is null there, as on WebGPU devices without timestamp queries, such as most phones. Judge the GPU there by the completed rate, `completedFps`, and by `gpuLatencyMs`.
-7. Warm up, keep the page visible and the screen unlocked, and compare runs at the same `refreshHz`. The `guides/performance` page explains each figure and how to measure fairly.
+6. In a production build on WebGPU, `engine.measure()` counts only the triangles of the draws that the CPU issues. The sketch's call of `debug.frameStats()`, or an open stats card, adds the rest. A scene that the GPU culls can then show almost no triangles (`api/debug`).
+7. The engine never times the GPU on WebGL2, so `gpuMs` is null there, as on WebGPU devices without timestamp queries, such as most phones. Judge the GPU there by the completed rate, `completedFps`, and by `gpuLatencyMs`.
+8. Warm up, keep the page visible and the screen unlocked, and compare runs at the same `refreshHz`. The `guides/performance` page explains each figure and how to measure fairly.
 
 Read three frame rates together:
 

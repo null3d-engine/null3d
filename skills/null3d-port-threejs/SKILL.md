@@ -211,7 +211,7 @@ The resize handler, the pixel-ratio call, `scene.add` and the render call disapp
 
 - The inventory was confirmed against the code, and the user agreed on how to handle every `manual`, `post-1.0` and `unsupported` item.
 - Every camera view passes its parity test on WebGPU and WebGL2, or its difference is explained and accepted.
-- Performance was measured against the baseline on the same device and browser.
+- Performance was measured against the baseline on the same device and browser, with a production build of each app (`references/verification.md`, section 5).
 - Per-frame code allocates nothing, and many similar objects use instance batches.
 - DOM, audio and storage code sits in `page.ts`.
 - `PORTING-REPORT.md` lists results, visual changes and omissions.

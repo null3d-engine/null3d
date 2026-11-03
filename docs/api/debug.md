@@ -293,7 +293,8 @@ The engine counts every draw of every pass on the thread that draws. That covers
 
 - A draw of triangles adds its vertices or indices over 3, times its instances. A draw of lines adds no triangles.
 - A draw adds its instances to `objects`. So an object counts once in each pass that draws it. A box that casts shadows into 4 cascades counts 5 times, and 6 with the depth prepass. Each part of a mesh with several materials counts once, as each part is a mesh of its own in three.js.
-- On WebGPU, the GPU culls most objects itself, and only the GPU knows how many it drew. The engine copies those counts back from the GPU on one frame in eleven. It does so while the overlay's card is open, and after the sketch's first call of `debug.frameStats()`. The counts arrive a few frames late, and each frame adds the newest of them. Until then, the WebGPU figures count only the draws that the CPU issues.
+- On WebGPU, the GPU culls most objects itself, and only the GPU knows how many it drew. The engine copies those counts back from the GPU on one frame in eleven. It does so while the overlay's card is open, and after the sketch's first call of `debug.frameStats()`. A development build copies them back in any case, so that it can warn about copies that the culling shader drops. The counts arrive a few frames late, and each frame adds the newest of them. Until then, the WebGPU figures count only the draws that the CPU issues.
+- So in a production build on WebGPU, `engine.measure` counts only the draws that the CPU issues, unless the card is open or the sketch has called `debug.frameStats()`. A scene that the GPU culls can then show almost no triangles. Call `debug.frameStats()` once in the sketch to count them all, at the cost that [Cost](#cost) gives.
 
 ### Memory figures
 
@@ -332,7 +333,7 @@ A texture counts every mip level of every layer, as the GPU stores it. A compres
 - While the card is open, the engine times one frame in eleven on the GPU, as `engine.measure` does. On WebGPU it also copies the counts of the culled draws back on those frames. The sketch thread publishes the memory of textures and meshes in the first frame that samples, then every eighth frame. The thread that draws copies its two GPU memory totals each frame, and the page measures its own memory. Closing the card stops all of it.
 - The sketch's first call of `debug.frameStats()` turns the same sampling on for the rest of the engine's life. Reading the figures allocates nothing, so a sketch can call it every frame. `bun run bench:allocation --calls` checks it.
 - The overlay's code downloads at its first showing, and the figures' code at the first call of `debug.frameStats()` or the overlay's first showing. Pages that never call them download neither.
-- Both work in every build, production builds included.
+- Both work in every build, production builds included. A development build's figures include the cost of its development checks, so read frame times from a production build ([Measure fairly](../guides/performance.md#measure-fairly)).
 - The overlay lives in a shadow root with its own style sheet, so the page's styles do not change it. It works under a Content Security Policy without `'unsafe-inline'`.
 
 ### The same overlay for another engine
