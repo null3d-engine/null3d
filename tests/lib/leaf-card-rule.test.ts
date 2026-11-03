@@ -26,9 +26,8 @@ describe('the leaf-card level rule, which the generator and the asset tool share
 
 	test('both keep every second card of the level above', () => {
 		expect(GENERATOR).toContain('const every = 2 ** level;');
-		// The planner's step names the base mesh's cards for each kept card: 2 ** level while the
-		// levels halve.
-		expect(TOOL).toContain('Math.round(1 / (kept * share))');
+		// The planner's step names the base mesh's cards for each kept card: 2 ** level.
+		expect(TOOL).toContain('const every = 2 ** (levels.length + 1);');
 		expect(TOOL).toContain('thinCards(list, Math.min(every, Math.max(1, list.cards.length)))');
 	});
 

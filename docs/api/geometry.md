@@ -260,7 +260,7 @@ Lines, points, sprites and vertex draws have no levels. Models from glTF files t
 
 ### Levels by hand
 
-`mesh.setLevels` gives a mesh simpler copies of itself, from the most detailed down. Each level gives the distance at which it switches in. That is an `error` in the units of the mesh's positions, a `distance` in meters for an object of scale 1, or a screen `coverage` from 0 to 1. Every object and instance batch that draws the mesh then picks one level per frame:
+`mesh.setLevels` gives a mesh simpler copies of itself, from the most detailed down, up to 15 of them. Each level gives the distance at which it switches in. That is an `error` in the units of the mesh's positions, a `distance` in meters for an object of scale 1, or a screen `coverage` from 0 to 1. Every object and instance batch that draws the mesh then picks one level per frame:
 
 ```ts
 const rock = geometry.fromArrays(rockArrays(2000));

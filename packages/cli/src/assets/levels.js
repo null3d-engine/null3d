@@ -7,9 +7,9 @@ import {
 	LOD_FLOOR_TRIANGLES,
 	LOD_MAX_LEVELS,
 	LOD_MIN_TRIANGLES,
-	levelStep,
 	longestSide,
 	planMeshLevels,
+	simplifyTries as planTries,
 	simplifierFlags,
 	simplifyStep,
 	weldList,
@@ -25,10 +25,10 @@ import {
 import { lodOf, MSFT_LOD, MSFTLod } from './lod-extension.js';
 
 /** @import { Accessor, Buffer, Document, Mesh, Node, Primitive, Skin } from '@gltf-transform/core' */
-/** @import { Meshopt, PlannedLevel, PlanningList as ListPlan } from '@null3d/engine/levels-planner' */
+/** @import { Meshopt, PlannedLevel, PlanningList as ListPlan, SimplifierFlag } from '@null3d/engine/levels-planner' */
 /** @import { ClusterPlan } from './clusters.js' */
 
-export { LOD_FLOOR_TRIANGLES, LOD_MAX_LEVELS, LOD_MIN_TRIANGLES, levelStep };
+export { LOD_FLOOR_TRIANGLES, LOD_MAX_LEVELS, LOD_MIN_TRIANGLES };
 
 /**
  * The screen height in pixels that the stored screen coverage assumes, for readers of MSFT_lod
@@ -47,6 +47,21 @@ const MESHOPT = /** @type {Meshopt} */ ({
 	simplifyWithAttributes: MeshoptSimplifier.simplifyWithAttributes,
 	cacheOrder,
 });
+
+/**
+ * Simplifies a triangle list toward a share of its triangles in each of the simplifier's four
+ * ways, as the shared planner's `simplifyTries` does, with the npm package's simplifier: the whole
+ * levels and the patches of a cluster tree both choose this way.
+ *
+ * @param {PlanningList} list
+ * @param {Uint32Array} indices The triangles to simplify, a subset of the list's welded ones.
+ * @param {number} share
+ * @param {number} limit The largest error, in planning units.
+ * @param {SimplifierFlag[]} flags
+ * @param {[Uint8Array | null, Uint8Array | null]} [locks]
+ */
+export const simplifyTries = (list, indices, share, limit, flags, locks) =>
+	planTries(MESHOPT, list, indices, share, limit, flags, locks);
 
 /**
  * An accessor's values in the mesh's units: normalized integers become the fractions they

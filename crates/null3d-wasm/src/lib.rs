@@ -4299,7 +4299,7 @@ pub fn set_mesh_levels(base: u32, count: u32, fades: u32) -> u32 {
             floats,
             measures,
             material_ids,
-            fades as u8,
+            fades as u16,
         );
         match set {
             Ok(()) => {

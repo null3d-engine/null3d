@@ -107,7 +107,15 @@ export function simplifyStep(
 	error: number;
 	triangles: number;
 };
-export function levelStep(triangles: number, left: number): number;
+export function simplifyTries(
+	meshopt: Meshopt,
+	list: PlanningList,
+	indices: Uint32Array,
+	share: number,
+	limit: number,
+	flags: SimplifierFlag[],
+	locks?: [Uint8Array | null, Uint8Array | null],
+): [Uint32Array, number] | undefined;
 export function planMeshLevels(
 	meshopt: Meshopt,
 	lists: PlanningList[],
