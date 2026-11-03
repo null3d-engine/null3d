@@ -49,7 +49,8 @@ passes every rubric row against every reference.
 - **Leaf angles.** Leaves turn a third of the way toward the sky. Turned three-quarters, they stood
   edge-on from the references' near-level views, and the crown read as bare wood.
 - **Counts.** A variant holds 6,200 to 9,300 shoots and 340,000 to 520,000 leaves.
-- **Acorns.** In autumn three in ten shoot tips hang an acorn on a 4.5 cm stalk.
+- **Acorns.** In autumn three in ten shoot tips hang an acorn on a 6.5 cm stalk, nearly straight
+  down, so it clears the leaf rosette.
 
 ### What a kit holds, and its cap
 
@@ -117,6 +118,26 @@ each level of the mip chain it reads. A leaf texture's mips keep their coverage 
 so leaves read theirs plain. Over the turning video the sky fell to 19 per cent.
 The crown's outline overlap rose from 0.56 to 0.70, and its leaf color difference fell from 6.8
 to 3.9.
+
+### The fitted outline's width
+
+The crown came out narrower than the references at their wide angles. At each of 32 angles of the
+turning video, three widths over height were set side by side: the reference's silhouette, the
+fitted outline's and the render's. The render followed the fitted outline, 1.47 against 1.43 on
+average. The outline fell short of the reference at the wide angles: 1.47 against 1.70 at 0
+degrees. The generated video's plant is wider from one half of the turn than from the other, by up
+to a fifth. The hull took the smallest bound of every view, so it kept the narrower half's. The
+fitting tool now takes the near-smallest bound within each half of the turn, then the mean of the
+two halves. A steady plant comes out as before. The oak's fitted outline averages 1.46, and 1.53 at
+0 degrees. The rest of the gap is the reference's own disagreement between opposite views.
+
+### Fruit at a distance
+
+An extra stays on a card level only where its breadth spans at least 3 pixels at the level's start.
+The breadth is what a far eye sees: an acorn's nut is 2 cm across, though its stalk makes it 8.5 cm
+long. So acorns draw at the nearest level only. Drawn on the card levels, the autumn oak's fruit
+had put the first card level at 228,000 triangles and the second at 183,000, against caps of 150,000
+and 30,000. The per-species test now holds the autumn and blossom plants to those caps.
 
 ### Cuttings
 

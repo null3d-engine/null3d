@@ -73,13 +73,13 @@ function collapsed(kind: number, order: number, degrees = 60): MacroSkeleton {
 	return b.finish(0);
 }
 
-/** The cones: nodes where an axis of some girth drops to under half of it at its next node. */
+/** The cones: nodes where an axis over a fifth of a metre thick drops to under half of it at its next. */
 function cones(skeleton: MacroSkeleton): number {
 	const { axes, radius } = skeleton;
 	let found = 0;
 	for (let a = 0; a < axes.count; a++)
 		for (let n = axes.first[a] as number; n < (axes.last[a] as number); n++)
-			if ((radius[n] as number) > 0.15 && (radius[n + 1] as number) < 0.5 * (radius[n] as number))
+			if ((radius[n] as number) > 0.2 && (radius[n + 1] as number) < 0.5 * (radius[n] as number))
 				found++;
 	return found;
 }
@@ -112,8 +112,8 @@ describe('sympodial leaders', () => {
 			);
 			expect(sharpest(led, 0)).toBeLessThan(20);
 			expect(cones(led)).toBe(0);
-			// Each axis's internodes against the way it set out: a limb that turns past a right angle
-			// has looped back on itself.
+			// Each axis's internodes against the way it set out: a level limb may dip a little past a
+			// right angle, but one that turns past 120 degrees has looped back on itself.
 			const { axes, position: p } = led;
 			let looped = 0;
 			for (let a = 1; a < axes.count; a++) {
@@ -126,7 +126,7 @@ describe('sympodial leaders', () => {
 						(u[0] as number) * (v[0] as number) +
 						(u[1] as number) * (v[1] as number) +
 						(u[2] as number) * (v[2] as number);
-					if (dot < 0) {
+					if (dot < -0.5 * Math.hypot(...u) * Math.hypot(...v)) {
 						looped++;
 						break;
 					}

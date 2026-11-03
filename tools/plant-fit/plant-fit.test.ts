@@ -23,8 +23,11 @@ function crownRadius(t: number, phi: number): number {
 	return profile * plan;
 }
 
-/** The outline of the test plant seen at a turn: the crown's slab at each row, and the stem. */
-function outlineAt(turn: number): Uint8Array {
+/**
+ * The outline of the test plant seen at a turn: the crown's slab at each row, and the stem. A scale
+ * widens the crown, as a generated video's plant drifts wider in some views.
+ */
+function outlineAt(turn: number, scale = 1): Uint8Array {
 	const grid = new Uint8Array(CELLS * COLUMNS);
 	for (let row = 0; row < CELLS; row++) {
 		const t = (row + 0.5) / CELLS;
@@ -32,7 +35,7 @@ function outlineAt(turn: number): Uint8Array {
 		let left = 0.02;
 		for (let k = 0; k < 720; k++) {
 			const phi = (k / 720) * 2 * Math.PI;
-			const along = crownRadius(t, phi) * Math.cos(phi + turn);
+			const along = scale * crownRadius(t, phi) * Math.cos(phi + turn);
 			right = Math.max(right, along);
 			left = Math.max(left, -along);
 		}
@@ -79,6 +82,22 @@ describe('the envelope', () => {
 		// The crown is 1 wide along X and 0.7 along Z, so its width over the turn lies between.
 		expect(fit.aspect).toBeGreaterThan(0.7);
 		expect(fit.aspect).toBeLessThanOrEqual(1.02);
+	});
+
+	test('takes the width between two halves of a turn that disagree', () => {
+		// The plant is a fifth wider in the views of the turn's first half than in its second.
+		const wider = views(32).map((view, k) =>
+			k < 16 ? { ...view, grid: outlineAt(view.turn, 1.2) } : view,
+		);
+		const split = envelopeVolume(hullEnvelope(wider, 'test-turntable.mp4').envelope, 1, 0);
+		const steady = envelopeVolume(fit.envelope, 1, 0);
+		for (const t of [0.5, 0.65, 0.8])
+			for (let a = 0; a < AZIMUTHS; a++) {
+				const phi = (a / AZIMUTHS) * 2 * Math.PI;
+				const share = split.radius(t, phi) / steady.radius(t, phi);
+				expect(share).toBeGreaterThan(1.05);
+				expect(share).toBeLessThan(1.15);
+			}
 	});
 
 	test('passes over a few views where the plant drifts', () => {
