@@ -45,6 +45,9 @@ pub const LENS: Perspective = Perspective {
 
 pub struct World<B: FrameBuilder = GpuDrivenRenderer> {
     pub jobs: JobSystem,
+    /// A job system whose workers run on threads of their own, which the frames then use in place
+    /// of `jobs`, which has none.
+    pub workers: Option<&'static JobSystem>,
     pub scene: SceneStorage,
     pub batches: BatchTable,
     pub snapshot: FrameSnapshot,
@@ -187,6 +190,7 @@ impl<B: FrameBuilder> World<B> {
         settings.set_ambient([0.4, 0.4, 0.4]);
         World {
             jobs,
+            workers: None,
             scene,
             batches,
             snapshot: FrameSnapshot::with_capacity(256),
@@ -339,11 +343,12 @@ impl<B: FrameBuilder> World<B> {
     /// As [`World::record`], returning the renderer's error.
     pub fn try_record(&mut self, structure_changed: bool) -> Result<bool, RecordError> {
         let frame = self.frame;
+        let jobs = self.workers.unwrap_or(&self.jobs);
         if frame > 1 {
             self.scene.begin_frame(frame);
         }
         if let Some(animations) = self.animations.as_mut() {
-            animations.update(&self.jobs, self.animation_step);
+            animations.update(jobs, self.animation_step);
         }
         let settings = self.renderer.settings();
         skinning::update_bounds(
@@ -354,9 +359,9 @@ impl<B: FrameBuilder> World<B> {
             settings.materials(),
             settings.override_material(),
         );
-        self.scene.update_transforms(&self.jobs);
+        self.scene.update_transforms(jobs);
         self.batches
-            .update(&self.jobs, frame, self.scene.cell_table_mut());
+            .update(jobs, frame, self.scene.cell_table_mut());
         self.snapshot.record(frame, &self.scene, &self.batches);
         // The newest frame that the thread that draws drew with every pipeline built, as the page
         // reports it: the whole frame from the start, unless the test names a frame.
@@ -382,7 +387,7 @@ impl<B: FrameBuilder> World<B> {
             canvas: self.canvas,
             render_scale: self.render_scale,
             structure_changed,
-            jobs: &self.jobs,
+            jobs,
             lines: self.lines.lines(),
             lights: &self.lights,
             shadow_lights: &self.shadow_lights,

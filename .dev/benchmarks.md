@@ -472,6 +472,21 @@ A run folder holds every page's full result, with frames and images, and stays o
 - The phone-class GPU row is the cloud Galaxy S25, which stands in for the S24 class because the S24 times no GPU on either path. The S25 cut the GPU time by 69% at Low and 36% at High on core WebGPU, and by 70% at Low in compatibility mode. High on compatibility mode was flat. Its display ran at 30 Hz, so its frame intervals sit at the 33.3 ms cap and the runner marks them unreliable. Its GPU times do not depend on the screen. The 66.6 to 33.3 ms fall at High is that cap, not a saving. Its GPU buffers did not change, at 25.8 MiB at Low and 27.6 MiB at High.
 - The runs are in `tested-devices/macbook-pro-chrome/20261025-224727-lod-cost.md`, `tested-devices/ipad-pro-11-inch-safari/20261025-122307-lod-cost.md`, `tested-devices/ipad-pro-13-safari/20261025-092058-lod-cost.md`, `tested-devices/galaxy-s24-sm-s921b-chrome/20261025-092622-lod-cost.md` and `tested-devices/galaxy-s25-sm-s931b-chrome/20261025-150332-lod-cost.md`. [D-137](decisions/D-137-lod-groups.md#the-forest-on-an-ipad-a-phone-and-the-mac) gives every device's rows.
 
+## The desert comparison's sketch worker
+
+- The desert comparison draws a ground of 2 million triangles and 16 meshes with levels, as static instance batches of 63,000 rows in all, 214 draws a frame. Only the camera moves. It loads the engine's CDN build, so it runs as a development build.
+- Before the change below, null3D's sketch worker took 2.3 to 4.2 ms of CPU a frame there, at the display's 120 Hz cap, in Chrome 156 on the MacBook Pro M5 Max. A CPU profile of a build with the core's function names (`bun tools/build-wasm.ts --names`) split a frame of 4.6 ms. Recording took 3.6 ms, and 3.5 ms of that was the per-frame count of each level's copies ([D-137](decisions/D-137-lod-groups.md#copy-lists-that-follow-what-draws)), on the sketch worker alone. The batch step took 0.9 ms, and the batch update in it 0.005 ms. The rest was the development check of rows written without `markDirty`, which then hashed every row in every frame ([Writes that skip a mark](implementation-notes.md#writes-that-skip-a-mark)). Culling took 0.015 ms, since the GPU culls.
+- The count now runs on the job workers, and the check hashes 4,096 rows a frame over all batches. The table gives the medians of three runs of each build in turns. Each run had a 3 s warm-up and 8 s of timing. Other agents loaded the machine, at a load average near 30, so single runs spread widely.
+
+| Desert view | Sketch worker before, ms | After, ms | Recording before, ms | After, ms |
+| --- | --- | --- | --- | --- |
+| Walk, 120 Hz cap | 3.62 | 1.72 | 2.90 | 1.51 |
+| Aerial, 120 Hz cap | 3.91 | 1.64 | 2.86 | 1.40 |
+| Walk, no cap, page pump | 5.30 | 2.57 | 4.25 | 2.29 |
+| Aerial, no cap, page pump | 8.71 | 2.05 | 7.41 | 1.77 |
+
+- After the change the sketch worker still counts about a sixth of the sources itself, 0.55 ms of a 0.9 ms frame in a profile. The profile does not show why the 16 job workers take no more. A likely cause is the wake: the frame wakes them before its commands, and they may sleep again before the recording starts. Picking both edges of the slack in one walk of a source's levels would also cut the count's cost.
+
 ## Vegetation scatter
 
 - `tests/pages/vegetation-scatter.html` places Creek's 160 m valley with the vegetation add-on's ecological rules at seed 7. It compares the point list with a reference checksum, then places the tiles in reverse order and with a second tile size, which must give the same points. It times three placements and reports the middle one. The placement runs on the CPU and starts no engine, so both GPU paths give the same points. The checks plan runs it in CI, so every browser engine that CI has compares the reference.

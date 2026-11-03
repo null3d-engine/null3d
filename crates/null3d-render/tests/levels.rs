@@ -4,6 +4,7 @@
 mod common;
 
 use common::{World, base_sphere, count, grid};
+use null3d_core::jobs::JobSystem;
 use null3d_core::levels::Switch;
 use null3d_core::scene::Command;
 use null3d_gpu::drawlist::{Op, permutation, template};
@@ -537,6 +538,60 @@ fn forty_thousand_casters_of_four_cascades_take_one_copy_each() {
         assert!(bytes >= per_copy && bytes < per_copy + 128, "{bytes}");
     }
     assert_eq!(4 * per_copy, 10_240_000);
+}
+
+/// The count of each level's copies runs on the job workers. A forest whose rows spread over every
+/// level, every fading band and past the hide distance takes the same room, counted by four job
+/// workers and by the calling thread alone, in the camera's list and in the casters'.
+#[test]
+fn job_workers_count_the_same_copies_of_each_level_as_one_thread() {
+    let rows: u32 = 40_000;
+    let forest = |workers: Option<&'static JobSystem>| {
+        let mut world = World::new();
+        world.cast_sun_shadows(4);
+        give_levels_of(&mut world, &[0.01, 0.05, 0.2], 0b1110);
+        world.workers = workers;
+        let slot = world.scene.slots().resolve(world.objects[0]).unwrap() as usize;
+        let material = world.scene.materials()[slot];
+        let batch = world
+            .batches
+            .create(rows, false, false, BALL, material, 0.9)
+            .unwrap();
+        {
+            let batch = world.batches.get_mut(batch).unwrap();
+            batch.set_active_count(rows).unwrap();
+            batch.set_shadows(null3d_core::scene::flags::CAST_SHADOWS);
+            // Rows from the camera out to 4 km in front of it, over a strip 97 m wide.
+            for (row, position) in batch
+                .positions_mut()
+                .as_chunks_mut::<3>()
+                .0
+                .iter_mut()
+                .enumerate()
+            {
+                let row = row as f32;
+                *position = [(row % 97.0) - 48.0, 0.0, 20.0 - 0.1 * row];
+            }
+        }
+        world.record(true);
+        world.frame += 1;
+        world.record(false);
+        let [camera, casters, ..] = copies(&world);
+        (camera, casters)
+    };
+    let jobs: &'static JobSystem = Box::leak(Box::new(JobSystem::new(4)));
+    let measured = std::thread::scope(|scope| {
+        for i in 0..4 {
+            scope.spawn(move || jobs.worker_loop(i));
+        }
+        let measured = [forest(None), forest(Some(jobs))];
+        jobs.shutdown();
+        measured
+    });
+    assert_eq!(measured[0], measured[1], "{measured:?}");
+    // The forest's fading bands and its hidden rows make its counts differ from one copy a row.
+    let (camera, _) = measured[0];
+    assert_ne!(camera, rows * 64, "{measured:?}");
 }
 
 /// A copy list that reserves room for more copies than the device's binding holds is refused, so
