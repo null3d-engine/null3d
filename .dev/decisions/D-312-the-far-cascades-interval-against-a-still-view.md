@@ -31,6 +31,12 @@ Ten runs of the WebGL2 case at `a2b0e6e81`, same machine, same command (`bun run
 
 The figures are one family, 45 to 83, and every difference is a whole step of it: one to three cascades' worth of draw calls. The schedule is the only thing that changes between frames in a still scene, and its period is four frames at Low.
 
+### What the least counts changed, and what they leave
+
+After the change, ten runs of the same case failed once and passed nine. Most read 23 calls against 23, and two read 45 against 45, where every distance draws 39 or 61. The survivor read "the stopped grove draws 45 calls at least and the still one 23, where every distance draws 39": its window passed the four-frame guard and still held no held frame, so the cascade drew in every frame it saw.
+
+A probe of the sway distance did not explain it. At 8 m the case failed six runs of ten, at 16 m one, so the distance changes the rate and does not remove the caster, and the scene's own settings are not the answer. What remains is a per-frame account, from inside the crate, of which caster the mover test finds and which box it touches. The wasm crate has no logging path, so that account is a piece of work with its own design rather than a run.
+
 ## Look
 
 The two options look the same. The picture is unchanged either way: the question is what the test measures, not what the scene draws.
