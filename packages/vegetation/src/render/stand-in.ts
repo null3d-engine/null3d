@@ -1,13 +1,12 @@
 // The page side's stand-ins: what prepareSpecies, plantMaterials, placePlants and createNearPool do
-// for a kit built with `placeholders` while the plant material and placement are not built yet. A
-// stand-in kit gets a white texture in each slot and its card atlas; its materials are the engine's
+// for a kit built with `placeholders`, which loads no texture file and grows every stage's stand-in.
+// A stand-in kit gets a white texture in each slot and its card atlas; its materials are the engine's
 // standard material in the record's bark and leaf colours, with no wind; and its copies draw as
 // instance batches of the variants' levels by distance, with far cards from the far bake past the
 // impostor's distance. Scenes keep the core's whole structure while their plants are stand-ins.
 import type {
 	MeshArrays as EngineMeshArrays,
 	InstanceBatch,
-	Material,
 	MeshGeometry,
 	SketchContext,
 	Texture,
@@ -23,20 +22,8 @@ import { handOverToCards } from './hand-over';
 import type { PlantMaterials } from './material';
 import type { NearPool } from './near-pool';
 import type { PlacedPlants, PlaceOptions, PlantCopies } from './place';
+import { foliageOptics } from './records';
 import type { PrepareOptions, SpeciesKit, SpeciesTextures } from './textures';
-
-/** The stand-in materials, which take no wind. */
-const standIns = new WeakSet<Material>();
-
-/**
- * Whether a material is a stand-in's, which takes no wind.
- *
- * @param material The material.
- * @returns True for a stand-in's material.
- */
-export function isStandInMaterial(material: Material): boolean {
-	return standIns.has(material);
-}
 
 /** A texture from bytes, four a texel. */
 function texture(
@@ -88,30 +75,14 @@ export async function standInPrepare(
 
 /** The record's leaf colour, from its foliage's optics. */
 function leafColour(record: Species): Rgb {
-	const foliage = record.foliage;
-	switch (foliage.kind) {
-		case 'blade':
-		case 'thick':
-			return foliage.leaf.optics.reflectance;
-		case 'needle':
-		case 'fascicle':
-			return foliage.needle.optics.reflectance;
-		case 'grass-blade':
-			return foliage.blade.optics.reflectance;
-		case 'scale-spray':
-			return foliage.spray.optics.reflectance;
-		case 'frond':
-			return foliage.optics.reflectance;
-		default:
-			return [0.1, 0.2, 0.06];
-	}
+	return foliageOptics(record)?.reflectance ?? [0.1, 0.2, 0.06];
 }
 
 /** The stand-in materials: the standard material in the record's bark and leaf colours. */
 export function standInMaterials(ctx: SketchContext, kit: SpeciesKit): PlantMaterials {
 	const leaf = leafColour(kit.record);
 	const bark = kit.record.bark?.zones[0]?.tint ?? [0.2, 0.16, 0.12];
-	const materials: PlantMaterials = {
+	const made = {
 		wood: ctx.materials.standard({ color: bark, roughness: 0.9 }),
 		shoots: ctx.materials.standard({ color: leaf, roughness: 0.6, doubleSided: true }),
 		cards: ctx.materials.standard({
@@ -123,8 +94,8 @@ export function standInMaterials(ctx: SketchContext, kit: SpeciesKit): PlantMate
 		}),
 		foliage: ctx.materials.standard({ color: leaf, roughness: 0.6, doubleSided: true }),
 	};
-	for (const material of Object.values(materials)) standIns.add(material);
-	return materials;
+	// Extras draw with the leaves' material.
+	return { ...made, extras: made.foliage };
 }
 
 /** A part's arrays in floats, in plant-space metres, as the engine's geometry takes them. */

@@ -76,6 +76,17 @@ describe('vertex formats', () => {
 		expect(variantLocations([0, 1, 2, 3], both)).toEqual([0, 1, 2, 3, 4, 5]);
 	});
 
+	test('a variant reads each location once when its template already reads the colors', () => {
+		// A custom material's vertex offset reads the colors, and its vertex color variants ask again.
+		const colors = locationOfAttribute(VERTEX_COLOR);
+		expect(variantLocations([0, 1, 2, colors], PERMUTATION_VERTEX_COLOR)).toEqual([
+			0,
+			1,
+			2,
+			colors,
+		]);
+	});
+
 	test('the base format holds a position and a normal, three floats each', () => {
 		expect(vertexStride(0)).toBe(24);
 		expect(vertexAttribute(0, 0)).toEqual(floats(0, 3, 0));

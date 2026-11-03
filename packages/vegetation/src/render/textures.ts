@@ -1,14 +1,17 @@
-// A species on a page: its textures loaded from the preset's set in the engine's transcoder worker
-// the first time a page prepares it, its kit built in a job worker, and its card atlas and records
-// uploaded. Nothing loads at import time. Until the textures and the records upload are built, a
-// page that asks for `placeholders` gets the stand-in kit of render/stand-in.ts, and any other
-// page an error.
-import type { SketchContext, Texture } from '@null3d/engine';
-import type { SpeciesKitData } from '../asset';
+// A species on a page: its textures loaded from the preset's set, the half set on Low, in the
+// engine's transcoder worker the first time a page prepares it; its kit built in a job worker; and
+// its card atlas, its records and its near table uploaded. Nothing loads at import time, and a page
+// fetches the files of the species it prepares and of no other. A page that asks for
+// `placeholders` gets the stand-in kit of render/stand-in.ts, which loads no texture file.
+import type { QualityPreset, SketchContext, Texture } from '@null3d/engine';
+import type { PlantAsset, SpeciesKitData } from '../asset';
 import type { PlantByteCache } from '../core/cache';
-import { notBuilt } from '../core/not-built';
 import type { SpeciesModule } from '../core/record';
+import type { SpeciesTextureFiles, TextureSet } from '../core/textures';
 import type { Detail } from '../core/types';
+import { buildKit } from '../tasks';
+import { VARIANT_RECORDS } from '../wind/records';
+import { RECORDS_WIDTH, recordsRows, writeSteadyWind, writeWindRecords } from './records';
 import { standInPrepare } from './stand-in';
 
 /**
@@ -72,9 +75,193 @@ export interface PrepareOptions {
 	readonly cache?: PlantByteCache;
 }
 
+/** Slots in a species' near table: the copies that may draw real shoots at once. */
+export const NEAR_SLOTS = 16;
+
+/** Texels a near slot takes: the position's high halves and the turn, then the remainders and the scale. */
+export const NEAR_SLOT_TEXELS = 2;
+
+/** The set of texture files that a preset loads: the half set on Low, the full set elsewhere. */
+export function textureSetFor(preset: QualityPreset): 'full' | 'half' {
+	return preset === 'low' ? 'half' : 'full';
+}
+
+/** One white texel, as an array of one layer or as a 2D texture: what a slot with no file samples. */
+function white(ctx: SketchContext, array: boolean): Texture {
+	return ctx.textures.fromData({
+		width: 1,
+		height: 1,
+		...(array && { depth: 1 }),
+		data: new Uint8Array([255, 255, 255, 255]),
+		colorSpace: 'linear',
+	});
+}
+
+/** The six texture slots of a set, how each loads, and whether it is an array. */
+const SLOTS = [
+	{ name: 'leafColor', colorSpace: 'srgb', wrap: 'clamp', array: true, anisotropy: 4 },
+	{ name: 'leafNormal', colorSpace: 'linear', wrap: 'clamp', array: true, anisotropy: 4 },
+	{ name: 'barkColor', colorSpace: 'srgb', wrap: 'repeat', array: true, anisotropy: 8 },
+	{ name: 'barkNormal', colorSpace: 'linear', wrap: 'repeat', array: true, anisotropy: 8 },
+	{ name: 'youngColor', colorSpace: 'srgb', wrap: 'repeat', array: false, anisotropy: 8 },
+	{ name: 'youngNormal', colorSpace: 'linear', wrap: 'repeat', array: false, anisotropy: 8 },
+] as const;
+
+/** The six textures of a set that a page loads. */
+type LoadedSet = Pick<SpeciesTextures, (typeof SLOTS)[number]['name']>;
+
+/**
+ * Loads one set of a species' texture files in the engine's transcoder worker. A slot whose file
+ * the set does not name samples white.
+ *
+ * @param ctx The sketch's context.
+ * @param files The species' texture files.
+ * @param set Which set.
+ * @returns The six textures.
+ */
+export async function loadTextureSet(
+	ctx: SketchContext,
+	files: SpeciesTextureFiles,
+	set: 'full' | 'half',
+): Promise<LoadedSet> {
+	const urls: TextureSet = files[set];
+	const loaded = await Promise.all(
+		SLOTS.map((slot) => {
+			const url = urls[slot.name];
+			return url
+				? ctx.assets.loadTexture(url, {
+						colorSpace: slot.colorSpace,
+						wrap: slot.wrap,
+						anisotropy: slot.anisotropy,
+					})
+				: Promise.resolve(white(ctx, slot.array));
+		}),
+	);
+	return Object.fromEntries(SLOTS.map((slot, i) => [slot.name, loaded[i]])) as unknown as LoadedSet;
+}
+
+/** The CPU copy of each records texture, which wind records and the field's settings write into. */
+const RECORDS = new WeakMap<Texture, Float32Array>();
+
+/**
+ * Makes a species' records texture: its header rows, room for every variant's wind records, and
+ * the wind field's steady settings once a material names a field.
+ *
+ * @param ctx The sketch's context.
+ * @param kit The species' kit data.
+ * @returns The texture.
+ */
+export function recordsTexture(ctx: SketchContext, kit: SpeciesKitData): Texture {
+	const rows = recordsRows(Math.max(1, kit.record.variants), VARIANT_RECORDS);
+	const data = new Float32Array(rows * RECORDS_WIDTH * 4);
+	data.set(kit.header.subarray(0, Math.min(kit.header.length, data.length)));
+	const texture = ctx.textures.fromData({
+		width: RECORDS_WIDTH,
+		height: rows,
+		format: 'rgba16float',
+		data,
+	});
+	RECORDS.set(texture, data);
+	return texture;
+}
+
+/** The CPU copy of a records texture that `recordsTexture` made. */
+function recordsData(records: Texture): Float32Array {
+	const data = RECORDS.get(records);
+	if (!data) throw new Error('the records texture was not made by recordsTexture');
+	return data;
+}
+
+/**
+ * Puts the wind records of grown variants into their species' records texture, at their global
+ * ids, so the materials sway them. Call it once a variant has grown, before it draws.
+ *
+ * @param kit The species' kit.
+ * @param assets The grown variants.
+ */
+export function writePlantWind(kit: SpeciesKit, assets: readonly PlantAsset[]): void {
+	const data = recordsData(kit.textures.records);
+	for (const asset of assets)
+		if (!writeWindRecords(data, asset.wind))
+			throw new Error(
+				`the wind records of ${asset.species} variant ${asset.variant} pass the records texture`,
+			);
+	kit.textures.records.update(data);
+}
+
+/**
+ * Puts the wind field's steady settings into a records texture, which the materials read beyond
+ * the field's box.
+ *
+ * @param records The species' records texture.
+ * @param air The field's settings.
+ */
+export function writeFieldSettings(
+	records: Texture,
+	air: Parameters<typeof writeSteadyWind>[1],
+): void {
+	const data = recordsData(records);
+	writeSteadyWind(data, air);
+	records.update(data);
+}
+
+/** The card atlas's two layers as textures, or white where the species has no cards. */
+function cardTextures(
+	ctx: SketchContext,
+	kit: SpeciesKitData,
+): Pick<SpeciesTextures, 'cardColor' | 'cardSurface'> {
+	const size = kit.cards.size;
+	if (size <= 0) return { cardColor: white(ctx, true), cardSurface: white(ctx, true) };
+	const layer = (bytes: Uint8Array, colorSpace: 'srgb' | 'linear') =>
+		ctx.textures.fromData({
+			width: size,
+			height: size,
+			depth: 2,
+			data: bytes.subarray(0, size * size * 8),
+			colorSpace,
+			wrap: 'clamp',
+			mipmaps: true,
+		});
+	return {
+		cardColor: layer(kit.cards.color, 'srgb'),
+		cardSurface: layer(kit.cards.surface, 'linear'),
+	};
+}
+
+/**
+ * The textures of a kit on a page: a loaded set, the card atlas, the records and an empty near
+ * table.
+ *
+ * @param ctx The sketch's context.
+ * @param kit The species' kit data.
+ * @param set Which set the textures came from.
+ * @param loaded The loaded set.
+ * @returns The textures.
+ */
+export function kitTextures(
+	ctx: SketchContext,
+	kit: SpeciesKitData,
+	set: 'full' | 'half',
+	loaded: LoadedSet,
+): SpeciesTextures {
+	const cards = cardTextures(ctx, kit);
+	const records = recordsTexture(ctx, kit);
+	const near = ctx.textures.fromData({
+		width: NEAR_SLOTS * NEAR_SLOT_TEXELS,
+		height: 1,
+		format: 'rgba16float',
+		filter: 'nearest',
+		data: new Float32Array(NEAR_SLOTS * NEAR_SLOT_TEXELS * 4),
+	});
+	const all = { ...loaded, ...cards, records, near };
+	const bytes = Object.values(all).reduce((sum, texture) => sum + texture.bytes, 0);
+	return { set, ...all, bytes };
+}
+
 /**
  * Loads a species' textures, builds its kit in a job worker, and uploads its card atlas and its
- * records.
+ * records. The textures load from the preset's set, the half set on Low, the first time a page
+ * prepares the species, and the kit builds alongside them.
  *
  * @param ctx The sketch's context.
  * @param module The species module, from `loadSpecies`.
@@ -82,11 +269,20 @@ export interface PrepareOptions {
  * @returns The kit.
  * @category api/vegetation
  */
-export function prepareSpecies(
+export async function prepareSpecies(
 	ctx: SketchContext,
 	module: SpeciesModule,
 	options?: PrepareOptions,
 ): Promise<SpeciesKit> {
 	if (options?.placeholders) return standInPrepare(ctx, module, options);
-	return Promise.reject(notBuilt('preparing a species on a page'));
+	const set = textureSetFor(ctx.quality.preset);
+	const [loaded, kit] = await Promise.all([
+		loadTextureSet(ctx, module.textures, set),
+		buildKit(module, {
+			detail: options?.detail ?? ctx.quality.preset,
+			...(options?.cache && { cache: options.cache }),
+		}),
+	]);
+	const textures = kitTextures(ctx, kit, set, loaded);
+	return { ...kit, textures, ...(options?.cache && { cache: options.cache }) };
 }
