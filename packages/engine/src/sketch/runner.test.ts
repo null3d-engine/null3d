@@ -527,7 +527,7 @@ describe('SketchRunner', () => {
 			let skip = false;
 			const { runner } = await start(({ scene, time }) => {
 				const { core } = scene;
-				const mesh = { id: 1, radius: 1, core } as unknown as MeshGeometry;
+				const mesh = { id: 1, radius: 1, core, drawnWith() {} } as unknown as MeshGeometry;
 				const material = { id: 1, core } as unknown as Material;
 				const crate = scene.createMesh({ name: 'Crate', mesh, material });
 				const sign = scene.createMesh({ name: 'Sign', mesh, material });

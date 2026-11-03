@@ -407,6 +407,20 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	createLevelMesh(base: number, indices: number): number;
 	/**
+	 * A level of the live mesh `base` that holds its own copy of the vertices that the `indices`
+	 * triangles at `meshArrays`'s address name, which the call frees: the level of a split base,
+	 * which cannot share its vertices. Returns the mesh id, or 0 on failure.
+	 */
+	createLevelCopy(base: number, indices: number): number;
+	/**
+	 * Writes the live mesh `mesh`'s vertices and triangles as the level planner reads them, and
+	 * returns their address, or 0 for a mesh that is not live: the vertex count, the index count
+	 * and the vertex format, then the floats of the position, the normal, and the first and second
+	 * texture coordinates, the tangent and the color where the format has them, attribute after
+	 * attribute, then the indices. The next call that uses the same words overwrites them.
+	 */
+	meshPlanningArrays(mesh: number): number;
+	/**
 	 * Gives the live mesh `mesh` the `indices` triangles at `meshArrays`'s address in place of the
 	 * ones it draws, which the call frees. 0 when the mesh takes them. A mesh that is split into
 	 * parts, morphed, a level of its own or drawn as lines returns its fault code, and keeps the
@@ -1428,6 +1442,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'meshArrays',
 	'createMeshFromArrays',
 	'createLevelMesh',
+	'createLevelCopy',
+	'meshPlanningArrays',
 	'replaceMeshIndices',
 	'setMeshBvh',
 	'setMeshBlocker',

@@ -98,6 +98,8 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 			'vendor/draco/draco_wasm_wrapper_gltf.js',
 			'vendor/draco/draco_decoder_gltf.wasm',
 			'vendor/ltc/area-light-tables.bin',
+			'levels/planner.js',
+			'levels/planner.d.ts',
 			'THIRD-PARTY-NOTICES.txt',
 			'docs/index.md',
 		],

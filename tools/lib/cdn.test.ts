@@ -28,7 +28,7 @@ import {
 /** A checkout with the folders that the hash reads, and one source file. */
 function checkout(source: string): string {
 	const root = mkdtempSync(join(tmpdir(), 'null3d-cdn-'));
-	for (const folder of ['src', 'dist/wasm', 'vendor'])
+	for (const folder of ['src', 'dist/wasm', 'vendor', 'levels'])
 		mkdirSync(join(root, 'packages/engine', folder), { recursive: true });
 	writeFileSync(join(root, 'packages/engine/src/index.ts'), source);
 	return root;

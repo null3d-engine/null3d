@@ -329,7 +329,13 @@ mesh.morphTargets;          // (0.2) the target count; mesh.morphTargetNames lis
 mesh.destroy();             // (0.2) after the objects and batches that use it, in the same frame or before; E1111 while one does
 geometry.memoryBytes;       // (0.2) GPU bytes of every mesh; destroyed meshes give their room to later ones
 mesh.updateVertices('positions', positions, start, count);  // (0.2) new values of every vertex, same array type; start/count pick vertices; no allocation
-mesh.setLevels([{ mesh: mid, error: 0.02 }, { mesh: far, distance: 80, material: farShading }]);  // (0.2) levels of detail, most detailed first
+// (0.2) a mesh made in code plans its own levels on the job workers at its first draw, when it holds 4,096
+// triangles or more, or 256 or more whose copies hold 65,536; it draws whole until they arrive.
+// `levels: false` in its arrays or generator options plans none, `levels: true` plans at once at any size,
+// `levels: { cards: true }` thins separate quads as leaf cards
+await mesh.buildLevels({ cards: false });  // (0.2) plan now, or await the plan that runs; E1221 for joints or morph targets
+// planned levels go at the first updateVertices, and when a material with displacementMap or vertexOffset draws the mesh
+mesh.setLevels([{ mesh: mid, error: 0.02 }, { mesh: far, distance: 80, material: farShading }]);  // (0.2) levels by hand, most detailed first; wins over a plan
 // every object and batch of `mesh` draws the coarsest level whose switch the distance passes:
 // error (in the mesh's units), distance (meters at scale 1) or coverage (a share of the screen height);
 // a level given by distance or a hand-set error fades over a band, a measured error switches at once;
