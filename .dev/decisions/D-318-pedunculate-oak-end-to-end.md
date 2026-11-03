@@ -134,10 +134,11 @@ The record check refuses a hint that names a class the record does not grow.
   After growth, an axis now runs on into a child where its own continuation collapsed under the
   child's girth. The old continuation becomes the side branch.
 - Taken at any angle, those hand-ons chained into loops: one finest limb in ten turned back past a
-  right angle. The bole took a dog-leg of up to 61 degrees. A limb now runs on only into a child
-  within 40 degrees of its line, and never past a right angle from where it set out. A stem's main
-  limb turns upright as a relay leader does, bending at most 20 degrees at a node. The sky through
-  the crown at still 01-b fell from 0.25 to 0.14.
+  right angle, and the bole took a dog-leg of up to 61 degrees. Wood now runs on only into a thick
+  child within 40 degrees of the axis's line that never turns back past a right angle. Where the
+  thick child leaves more steeply, the axis divides there instead. Its withered continuation leaves
+  the same node, and the mesher draws a fork whose limbs rise from the axis's last ring. The bole
+  stands straight to its fork at 2.3 to 2.9 m, and no axis collapses into a cone.
 - A cut branch's root is a limb with no parent, which the wood mesher skipped, so cuttings had no
   wood. A parentless limb now meshes plain, without the stem base's shaping.
 - A real kit's cutting keeps its shoots as rows, so its twigs and buds draw. Merged into a foliage
