@@ -479,7 +479,7 @@ The runs, before and after each device:
 [20261030-150954-bench](tested-devices/galaxy-s25-sm-s931b-chrome/20261030-150954-bench.md) and
 [20261030-162243-bench](tested-devices/galaxy-s25-sm-s931b-chrome/20261030-162243-bench.md).
 
-## The sky's cloud tier on an iPad and an S24
+## The sky's cloud tier on an iPad, an S24 and an S25
 
 The clouds plan drew the sky alone, with the tier off and on in turn. Each page sets the step count
 itself, so the tier draws on a path whose preset stops at Medium. The pages ran through BrowserStack
@@ -490,7 +490,11 @@ Automate, and each folder's README holds the device's facts.
 | iPad (10th generation), A14 | Safari 27.0 | Medium, a tablet's start preset; the page sets the steps | The tier's 32-step WebGPU frame stays within Safari's timer noise of the flat layer, 6.10 against 4.04 ms at render scale 1, and the 64-step page is within 0.14 ms of it | The flat layer in the same session, in turn | [20261031-233224-clouds](tested-devices/ipad-10th-generation-safari/20261031-233224-clouds.md) |
 | iPad (10th generation), A14 | Safari 27.0 | Medium, a tablet's start preset; the page sets the steps | WebGL2's largest frame difference is 0.67 ms across the three step counts and both render scales | The flat layer in the same session, in turn | [20261031-233224-clouds](tested-devices/ipad-10th-generation-safari/20261031-233224-clouds.md) |
 | Galaxy S24 (SM-S921B), Xclipse 940 | Chrome 152.0.7977.54, Android 16 | Low, a phone's start preset; the page sets the steps | The device has no WebGPU path, so its six WebGL2 pages ran. Every page held the 30 Hz display's 33.3 ms, including 64 steps, so 32 steps cost under half a frame | The High preset's 16.7 ms budget at 60 frames a second | [20261031-234019-clouds](tested-devices/galaxy-s24-sm-s921b-chrome/20261031-234019-clouds.md) |
+| Galaxy S25 (SM-S931B), Adreno 830 | Chrome 152.0.7977.54, Android 15.0 | Low and Medium, the page sets the steps 32, 16 and 64 | The display is fixed at 30 Hz, so its frame intervals, 33.325 to 33.330 ms on both sides, are the floor and not the cost. The WebGPU timer reads 1.507 ms for the flat layer against 1.573 ms at 32 steps and scale 1, a cost of 0.066 ms at a timer step of 0.033 ms, far inside the 16.7 ms budget; WebGL2 gives this device no GPU timer | The High preset's 16.7 ms budget at 60 frames a second | [20261103-032559-clouds](tested-devices/galaxy-s25-sm-s931b-chrome/20261103-032559-clouds.md) |
 
 The S24's display ran at 30 Hz, so its frame intervals are not a cost and its 64-step page is a
 bound: a cost that grows with the steps puts 32 steps under half of the frame, which the page holds.
-The iPad rows compare the tier with the flat layer within one session.
+The iPad rows compare the tier with the flat layer within one session. The S25's display is fixed at
+30 Hz on this service as well, so its frame intervals are its floor; its WebGPU timer is what
+measures the tier there, at 0.066 ms for the High tier's 32 steps, and its WebGL2 path gives no
+timer.
