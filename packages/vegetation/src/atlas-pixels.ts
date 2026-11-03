@@ -1028,6 +1028,11 @@ interface BarkFamily {
 	 * trunk, as a live oak's furrows do, without changing the lattice's counts.
 	 */
 	readonly vertical?: number;
+	/**
+	 * The colour of the seam between two plates, where the bark has split and the wood behind shows.
+	 * A family that leaves it out darkens its cracks with the rest of the surface.
+	 */
+	readonly crack?: readonly [number, number, number];
 }
 
 /** The six bark families, in the order that the atlas lays them out. */
@@ -1084,15 +1089,16 @@ const BARK_FAMILIES: Readonly<Record<BarkCellName, BarkFamily>> = {
 		moss: 0.05,
 	},
 	spruce: {
-		across: 14,
-		along: 12,
-		warp: 0.35,
-		crackWidth: 0.05,
-		depth: 0.32,
-		fibre: 0.035,
-		dark: [0.31, 0.22, 0.16],
-		light: [1.08, 0.86, 0.68],
-		moss: 0.12,
+		across: 11,
+		along: 9,
+		warp: 0.7,
+		crackWidth: 0.34,
+		depth: 0.7,
+		fibre: 0.08,
+		dark: [0.34, 0.28, 0.24],
+		light: [1.02, 0.95, 0.86],
+		crack: [1.0, 0.66, 0.5],
+		moss: 0.08,
 	},
 	// An aspen's bark: one smooth pale surface, unbroken by plates, marked by dense fine horizontal
 	// lenticels and a few large dark scars where branches died.
@@ -1292,17 +1298,24 @@ function barkColorAt(
 	height: number,
 	plate: number,
 	family: BarkFamily,
+	crack: number,
 ): [number, number, number] {
 	const mix = clamp(height, 0, 1);
 	const shade = 0.72 + 0.52 * plate;
+	let split = 0;
 	const lenticels = family.lenticels ? 1 - 0.7 * lenticel(u, v, family) : 1;
 	const feature = family.ridges ? 1 - 0.25 * (1 - ridge(u, v)) : lenticels;
 	const moss = smoothstep(0.55, 0.85, periodicBark(u, v, 2, 1, 3)) * family.moss;
+	// A family that names a crack colour shows the split wood there: the seam between two plates
+	// keeps its own tone however deep the shadow falls into it.
+	if (family.crack) split = 1 - crack;
 	return [0, 1, 2].map((channel) => {
 		const dark = family.dark[channel] as number;
 		const light = family.light[channel] as number;
 		const base = dark + (light - dark) * mix;
-		const withMoss = base * shade * feature * (1 - moss) + [0.62, 0.85, 0.42][channel]! * moss;
+		const seam = family.crack?.[channel] ?? 0;
+		const laid = base + (seam - base) * split;
+		const withMoss = laid * shade * feature * (1 - moss) + [0.62, 0.85, 0.42][channel]! * moss;
 		return withMoss;
 	}) as [number, number, number];
 }
@@ -1344,12 +1357,20 @@ export function paintBark(): PaintedAtlas {
 		const heights = heightField(BARK_SIZE, BARK_SIZE, (x, y) =>
 			barkHeight(x / BARK_SIZE, y / BARK_SIZE, family),
 		);
+		// A cell's last column and row stand for the end of the cycle, which is its beginning. Copying
+		// the first column and row into them makes the slope at the neighbouring texel see the wrapped
+		// surface rather than a value a hair short of the cycle: otherwise the normal map turns up a
+		// thin ridge along every tile join, which the trunk shows as a line.
+		for (let y = 0; y < BARK_SIZE; y++)
+			heights[y * BARK_SIZE + BARK_SIZE - 1] = heights[y * BARK_SIZE] ?? 0;
+		for (let x = 0; x < BARK_SIZE; x++) heights[(BARK_SIZE - 1) * BARK_SIZE + x] = heights[x] ?? 0;
 		for (let y = 0; y < BARK_SIZE; y++)
 			for (let x = 0; x < BARK_SIZE; x++) {
 				const u = x / BARK_SIZE;
 				const v = y / BARK_SIZE;
-				const [, , near] = barkPlates(u, v, family);
-				const tint = barkColorAt(u, v, heights[y * BARK_SIZE + x] ?? 0, near, family);
+				const [first, second, near] = barkPlates(u, v, family);
+				const crack = smoothstep(0, family.crackWidth, second - first);
+				const tint = barkColorAt(u, v, heights[y * BARK_SIZE + x] ?? 0, near, family, crack);
 				const at = ((row * BARK_SIZE + y) * width + col * BARK_SIZE + x) * 4;
 				color[at] = encode(tint[0]);
 				color[at + 1] = encode(tint[1]);
@@ -1367,13 +1388,19 @@ export function paintBark(): PaintedAtlas {
 				surface[at + 2] = Math.round(clamp(roughness, 0, 1) * 255);
 				surface[at + 3] = Math.round((1 - scar) * 255);
 			}
-		// The cell's last column repeats its first, so the sampler's wrap meets itself exactly. The
-		// painters count whole cycles, but the texture's last texel still holds the value a hair
-		// before the cycle ends, and that half texel is the faint line down a trunk.
+		// The cell's last column repeats its first and its last row repeats its first, so the
+		// sampler's wrap meets itself exactly. The painters count whole cycles, but the texture's
+		// last texel still holds the value a hair before the cycle ends, and that half texel is the
+		// faint line down a trunk and across it.
 		for (const map of [color, surface]) {
 			for (let y = 0; y < BARK_SIZE; y++) {
 				const first = ((row * BARK_SIZE + y) * width + col * BARK_SIZE) * 4;
 				const last = first + (BARK_SIZE - 1) * 4;
+				for (let c = 0; c < 4; c++) map[last + c] = map[first + c] as number;
+			}
+			for (let x = 0; x < BARK_SIZE; x++) {
+				const first = (row * BARK_SIZE * width + col * BARK_SIZE + x) * 4;
+				const last = (((row + 1) * BARK_SIZE - 1) * width + col * BARK_SIZE + x) * 4;
 				for (let c = 0; c < 4; c++) map[last + c] = map[first + c] as number;
 			}
 		}
