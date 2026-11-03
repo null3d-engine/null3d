@@ -349,7 +349,7 @@ const ASPEN: Species = {
 		start: 0.1,
 		end: 1,
 		depth: 4,
-		fill: 0.3,
+		fill: 1,
 		volume: 0.55,
 	},
 	wind: { stiffness: [0.15, 0.5, 0.8, 0.95], flutter: 0.03, frequency: 1.9 },
