@@ -26,6 +26,17 @@ import { submitOne } from './reusable';
 
 /** Frames whose results can be in flight at once. */
 const SLOTS = 4;
+
+/**
+ * Drawn frames between two timed frames. A test page that hunts one long frame sets it to 1, so
+ * every frame carries its parts and the long frame's own parts are there to read.
+ */
+let sampleEvery = SAMPLED_EVERY;
+
+/** Sets how many drawn frames pass between two timed frames, from 1 for every frame. */
+export function setSampleEvery(every: number): void {
+	sampleEvery = Math.max(1, Math.floor(every));
+}
 /** Timestamps of one frame: the start mark's two, then two for each pass that the timer times alone. */
 const QUERIES = 2 + 2 * GPU_TIMED_PASSES;
 /** Where a frame's first pass begins among its timestamps. */
@@ -159,7 +170,7 @@ export class GpuTimer {
 		this.slot = -1;
 		this.passes = 0;
 		this.renderMask = 0;
-		if (!this.recorder.measuring || this.drawn++ % SAMPLED_EVERY !== 0) return;
+		if (!this.recorder.measuring || this.drawn++ % sampleEvery !== 0) return;
 		if (this.pending[this.next] !== 0) return;
 		this.slot = this.next;
 		this.frames[this.slot] = frame;

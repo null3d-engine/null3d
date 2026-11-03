@@ -330,8 +330,11 @@ For a quick look while the scene runs, add `?stats` to the page's address, or ca
 | `downloadBytes` | The size of the engine core's WebAssembly file as the page downloaded it |
 | `gpuLosses` | Times the browser took the GPU away and the engine carried on with a new device |
 | `lostRecords` | Frames that the figures miss, because the page read their records too late. It is 0 in a clean run |
+| `slow` | With `slowMs`, every frame whose interval broke it: the frame's index, the time it presented, the intervals before and after it, whether it is the window's first frame, and the frame's own GPU parts and thread times |
 
 The sketch worker's steps are `update`, `commands`, `transforms`, `batches`, `cull` and `record`, and the render worker's is `replay`. A thread's time less its `update` step is the engine's own work on that thread.
+
+`engine.measure(seconds, { slowMs: 50 })` reports each frame that breaks the ceiling, with the frame's own figures rather than an average over many frames. Each slow frame gives the pass that stalled rather than the passes of a nearby sampled frame: add `?gpu-samples=every` to the page's address, and the engine times every drawn frame instead of one in eleven. The timing costs the draw, so a rate taken with it is not the device's rate. The measuring code itself loads before the window opens, so the window's first frame is the scene's own and not the engine's bookkeeping.
 
 To measure your page with no code, run `bunx @null3d/cli bench` in your project's folder. It builds the project for production and opens the page in a headless browser with the `?bench` switch. That switch publishes the running engine as `window.__null3dEngine`. Then `bench` takes 5 fresh runs of 30 seconds, each after 5 seconds of warm-up. It prints the median and the spread of the figures above ([The `null3d` command](../cli/null3d.md#bench)).
 

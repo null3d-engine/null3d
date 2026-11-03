@@ -24,6 +24,18 @@ const SETTLE = Number(params.get('settle') ?? 0);
 /** The windows of `SECONDS` that the page measures, one after another. The default is 1. */
 const WINDOWS = Math.max(1, Math.floor(Number(params.get('windows') ?? 1)));
 /**
+ * The interval in milliseconds above which the page reports the offending frame, with the frame's
+ * own passes, or 0 for none. With `?gpu-samples=every` the engine times every frame, so the passes
+ * belong to the long frame itself rather than to a sampled frame near it.
+ */
+const SLOW_MS = Number(params.get('slow') ?? 0);
+/** The window's changes while the page measures, so a slow frame says whether one caused it. */
+const events: { at: number; what: 'resized' | 'shown' | 'hidden' }[] = [];
+window.addEventListener('resize', () => events.push({ at: performance.now(), what: 'resized' }));
+document.addEventListener('visibilitychange', () =>
+	events.push({ at: performance.now(), what: document.hidden ? 'hidden' : 'shown' }),
+);
+/**
  * How long the page waits for the overlay's figures after it shows the overlay. The figures need
  * about half a second of frames, and on WebGPU the count of the triangles comes back from the GPU
  * on one frame in eleven.
@@ -239,6 +251,8 @@ run('demo-device', async () => {
 		seconds: number;
 		fps: number;
 		intervalMs: unknown;
+		gpuPassMs: unknown;
+		slow: unknown;
 		memory: unknown;
 		gpuTextures: number | null;
 		gpuBuffers: number | null;
@@ -257,13 +271,27 @@ run('demo-device', async () => {
 	let metrics: Awaited<ReturnType<typeof engine.measure>> | undefined;
 	if (MEASURE) {
 		for (let window = 0; window < WINDOWS; window++) {
-			const measured = await engine.measure(SECONDS);
+			const startedAt = performance.now();
+			const measured = await engine.measure(SECONDS, SLOW_MS > 0 ? { slowMs: SLOW_MS } : undefined);
 			// The window's own rate: the frames it counted over the seconds it ran.
 			windows.push({
 				frames: measured.frames,
 				seconds: measured.seconds,
 				fps: measured.frames / measured.seconds,
 				intervalMs: measured.intervalMs,
+				gpuPassMs: measured.gpuPassMs,
+				// A slow frame's own interval, moved onto the page's clock, tells whether the window
+				// changed while the frame ran: a resize or a return from hidden stalls a frame too.
+				slow: measured.slow?.map((frame) => {
+					const ended = startedAt + frame.atMs;
+					const began = ended - frame.intervalMs;
+					return {
+						...frame,
+						events: events
+							.filter((event) => event.at >= began - 1 && event.at <= ended + 1)
+							.map((event) => event.what),
+					};
+				}),
 				memory: measured.memory,
 				gpuTextures: perWindow ? overlayMiB(overlayFigure('gpu-textures')) : null,
 				gpuBuffers: perWindow ? overlayMiB(overlayFigure('gpu-buffers')) : null,

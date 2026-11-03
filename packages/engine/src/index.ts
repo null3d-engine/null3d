@@ -71,8 +71,11 @@ export type {
 	FrameSummary,
 	GpuPassStats,
 	MainThreadStats,
+	MeasureOptions,
 	MemoryStats,
 	SecondRates,
+	SlowFrame,
+	SlowFrameThread,
 	ThreadStats,
 } from './page/frame-stats';
 export type {

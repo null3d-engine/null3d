@@ -50,6 +50,7 @@ describe('parseSwitches', () => {
 			stats: undefined,
 			permutations: undefined,
 			glTiming: undefined,
+			gpuSamples: undefined,
 			replayDelay: undefined,
 		});
 	});
@@ -172,6 +173,12 @@ describe('parseSwitches', () => {
 	it('reads ?gl-timing, which times each WebGL call for benchmark pages', () => {
 		expect(parseSwitches('?gpu=webgl2&gl-timing').glTiming).toBe('calls');
 		expect(parseSwitches('?gl-timing=sync').glTiming).toBe('sync');
+	});
+
+	it('times every drawn frame on the GPU with ?gpu-samples=every, and one in eleven otherwise', () => {
+		expect(parseSwitches('?gpu-samples=every').gpuSamples).toBe('every');
+		expect(parseSwitches('?gpu-samples=some').gpuSamples).toBeUndefined();
+		expect(parseSwitches('').gpuSamples).toBeUndefined();
 	});
 
 	it('keeps the text of ?hold for the engine to check, and an empty text for a bare ?hold', () => {

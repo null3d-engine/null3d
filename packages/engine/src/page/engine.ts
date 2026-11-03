@@ -77,7 +77,7 @@ import {
 } from './capabilities';
 import { CheckStore, checkConditions } from './check-store';
 import { watchDisplay } from './display';
-import type { FrameMetrics } from './frame-stats';
+import type { FrameMetrics, MeasureOptions } from './frame-stats';
 import {
 	type HoldScript,
 	type HoldScriptResult,
@@ -684,9 +684,10 @@ export interface Engine {
 	/**
 	 * Measures the running engine for a number of seconds, then returns CPU time per frame by thread
 	 * and phase, GPU time, frame intervals, uploads, draw calls, memory and load time. The first call
-	 * downloads the code that turns the frame records into these figures.
+	 * downloads the code that turns the frame records into these figures. `slowMs` adds the frames
+	 * whose interval broke that many milliseconds, each with the frame's own GPU parts.
 	 */
-	measure(seconds: number): Promise<FrameMetrics>;
+	measure(seconds: number, options?: MeasureOptions): Promise<FrameMetrics>;
 	/**
 	 * Shows an overlay of figures over the top-right corner of the canvas, or hides it with
 	 * `false`: the GPU path, the frame rates, CPU time per frame of each thread, GPU time, draw
@@ -2340,6 +2341,7 @@ async function startEngine(
 			displayChecks: switches.displayChecks,
 			hold: hold !== undefined,
 			glTiming: switches.glTiming,
+			gpuSamples: switches.gpuSamples,
 			preload: options.preload,
 			// The recording run lists the words that the scene draws with, for a narrowed build.
 			recordPermutations: switches.permutations === 'record',
@@ -2788,15 +2790,16 @@ async function startEngine(
 				watch.listen(true);
 				applyPause();
 			},
-			async measure(seconds) {
-				// The window opens now, before the frame figures load on their first use: a page that
-				// measures and then starts some work must count that work, whatever the load takes.
+			async measure(seconds, options) {
+				// The figures' code loads before the window opens, so the window's first interval is the
+				// scene's own rather than the download and compile of the engine's measuring code. A page
+				// that measures and then starts some work counts that work, whatever it takes.
+				const { HeapSampler, secondRates, slowFrames, summarizeFrames, wasmDownloadBytes } =
+					await loadFrameStats();
 				const reader = new MetricsReader(metrics);
 				const mainThread = new MainThreadWatch();
 				reader.begin();
 				const started = performance.now();
-				const { HeapSampler, secondRates, summarizeFrames, wasmDownloadBytes } =
-					await loadFrameStats();
 				const heap = new HeapSampler();
 				heap.start();
 				const drain = setInterval(() => reader.drain(), DRAIN_INTERVAL_MS);
@@ -2828,6 +2831,9 @@ async function startEngine(
 					refreshHz: reader.refreshHz > 0 ? reader.refreshHz : null,
 					mainThread: mainThread.stop(),
 					perSecond: secondRates(reader.records),
+					...(options?.slowMs === undefined
+						? {}
+						: { slow: slowFrames(reader.records, options.slowMs, threadRoles(mode)) }),
 				};
 			},
 			stats(show = true) {
