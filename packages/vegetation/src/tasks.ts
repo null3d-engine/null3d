@@ -93,16 +93,17 @@ export async function growPlant(kit: SpeciesKitData, options: GrowOptions): Prom
  *
  * @param kit The species' kit.
  * @param options The options the variant grew with.
- * @returns The nearest level's wood part, or undefined when the plant has none.
+ * @returns The nearest level's wood parts, none when the plant has no wood. A large plant's wood
+ *   comes in several parts of at most 65,536 vertices each.
  * @category api/vegetation
  */
 export function growNearWood(
 	kit: SpeciesKitData,
 	options: GrowOptions,
-): Promise<PlantPart | undefined> {
+): Promise<readonly PlantPart[]> {
 	const key = `near-wood:${variantKey(kit, options)}${standIns(kit)}`;
 	return cachedResult(key, visit, storeOf(kit), () =>
-		runStage<PlantPart | undefined>({ stage: 'near-wood', kit: kitData(kit), options }),
+		runStage<readonly PlantPart[]>({ stage: 'near-wood', kit: kitData(kit), options }),
 	);
 }
 

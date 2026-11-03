@@ -1,49 +1,60 @@
 # D-308: the plant core's wood welds each child onto its parent's own triangles, with bark in meters
 
-Status: decided. Built: the wood mesher in `packages/vegetation/src/wood/` and the quantisation of
-every part in `lod/quantise.ts`. The mesher carries frames by parallel transport and places rings by
-fit. It welds children with fillets and collars, flares and buttresses the stem's foot, and maps the
-bark in meters. Pending: forks that split their parent's last ring, surface roots and peeling fins.
+Status: decided. The wood mesher (`packages/vegetation/src/wood/`) is built, and so is the
+quantisation of every part (`lod/quantise.ts`). The mesher carries frames by parallel transport and
+places rings by fit. It welds children with fillets and collars, and a fork's leaders take their
+parent's last ring. It flares and buttresses the stem's foot, and maps the bark in meters. A large
+mesh comes in parts of at most 65,536 vertices with 16-bit indices. Pending: surface roots, branch
+scars and peeling fins.
 Task: none.
 
 Summary: each side of a child's tube runs back to its parent's mesh. The crossing is the weld
-vertex. No weld stands a micrometer off its parent, and `v` does not jump.
-The bark's `u` wraps whole tiles round a ring where they fit. Its density stays within 25 per cent
-of its target on every ring.
+vertex. On the grown oak no weld stands 0.002 mm off its parent, and `v` does not jump. The bark's
+`u` wraps whole tiles round a ring where they fit. Its density stays within 25 per cent of its target
+on every ring. The oak's nearest wood takes 5.2 to 7.9 MB from the Low tier to the Ultra tier.
 
 ## Question
 
 How does the mesher join a child to its parent and map the bark? A joint must show no gap, no crease
-and no tube inside another. The bark must keep its size from trunk to twig.
+and no tube inside another. The bark must keep its size from trunk to twig. How much may the nearest
+wood of a tree take?
 
 ## Rule
 
 The plant core's design sets the acceptance. Weld gaps stay under 1 mm. The bark's texel density
 stays within 30 per cent of its target on every ring. `v` runs on from parent to child. Quantisation
-moves no vertex by 1 mm. The look decides between options that meet the rule.
+moves no vertex by 1 mm. The look decides between options that meet the rule. The owner ruled that
+quality comes before size, and approved larger memory budgets for near trees.
 
 ## Data
 
 | Measure | Weld on the parent's triangles | Weld on a smooth cylinder | Child from the parent's axis |
 | --- | --- | --- | --- |
-| Largest weld gap, test oak of 94 axes, all levels | 0.0007 mm | 1 to 3.3 mm (8.5 mm with rings 0.5 m apart) | The tube runs through the parent's wall |
-| Largest jump of `v` at a weld | 0.002 mm | 0.5 mm | Not continuous |
+| Largest weld gap, grown oak, nearest level | 0.0015 mm | 1 to 8 mm on the test oak | The tube runs through the parent's wall |
+| Largest jump of `v` at a weld | 0.005 mm | 0.5 mm on the test oak | Not continuous |
 
 | Measure | Whole tiles where they fit, true meters elsewhere | Whole tiles always | `u` from 0 to 1 once round |
 | --- | --- | --- | --- |
-| Worst bark density round a ring, test oak, every tier and level | 25 per cent | 33 per cent (one to two tiles round) | 3 times too wide on a 0.5 m trunk, 16 times too narrow on a 1 cm twig |
-| Worst density along an axis | 0.7 per cent | 0.7 per cent | Right |
+| Worst bark density round a ring, grown oak | 25 per cent | 33 per cent (one to two tiles round) | 3 times too wide on a 0.5 m trunk, 16 times too narrow on a 1 cm twig |
+| Worst density along an axis | 15 per cent | 15 per cent | Right |
 
-| Measure | High tier | Ultra tier | Low tier |
-| --- | --- | --- | --- |
-| Nearest-level wood of the test oak | 46,051 vertices, 75,400 triangles, 1.42 MB quantised | 74,394 vertices, 127,551 triangles, 3.09 MB | 26,622 vertices, 40,459 triangles, 0.80 MB |
+| Tier | Nearest wood, largest of six oak variants | Triangles | Parts | Cap |
+| --- | --- | --- | --- | --- |
+| Low | 5.24 MB | 232,652 | 3 | 6 MB |
+| Medium | 5.66 MB | 254,267 | 4 | 6.5 MB |
+| High | 6.38 MB | 292,692 | 4 | 7.5 MB |
+| Ultra | 7.92 MB | 373,219 | 5 | 9 MB |
+
+The grown oak has 2,692 axes, 2,515 of them children. Before thin wood took fewer sides, rings by fit
+and true meters, its nearest wood took 25 MB at the High tier. With 32-bit indices it took 6.2 MB on
+one variant, against 4.8 MB with 16-bit parts.
 
 How the data was produced: `bun test packages/vegetation/src/wood` runs the measures, with Bun 1.4.3
-on the Mac. The file `wood/wood-measure.ts` measures each weld against the written triangles. The density
-comes from each ring's span and perimeter. The trees are the hand-built test tree and test oak of
-`wood/wood-test-tree.ts`. The other columns are the same measures on the mesher before each change.
-The sizes come from `meshWood` and `quantise` on the test oak. The species package's oak replaces the
-test oak in these figures when it lands.
+on the Mac. The file `wood/wood-measure.ts` measures each weld against the written triangles. The
+density comes from each ring's span and perimeter. The tree is the self-organizing grower's oak
+(`grow/oak.fixture.ts`, seed 11) with the test record's bark and stem foot. The sizes are the
+quantised parts of variants 0 to 5. The other columns are the same measures on the mesher before each
+change.
 
 ## Look
 
@@ -52,28 +63,39 @@ where facets stand inside a smooth cylinder. A fillet widens the child near the 
 That matches the oak's references, whose limbs flare into the trunk. A fillet that lies flat along the
 parent fights it for depth close up. So the fillet meets the parent at a slope of two. Whole
 tiles leave no seam down the wood. Where no whole count fits, true meters keep the bark's size, with
-one seam under thin wood.
+one seam under thin wood. A tree with fewer finest axes would cost less, but would fail close-up
+review, so the cap follows the oak's figures.
 
 ## Decision
 
 - **Welds.** A distance query on the parent's rings finds each side's seam. The weld vertex then goes
-  where that side's line crosses one of the parent's triangles. Its `v` and normal come from that
-  triangle's corners.
+  where that side's line crosses one of the parent's triangles. Where the parent's rings tilt apart,
+  the whole line is searched. Failing that, the vertex goes to the nearest point of those triangles.
+  Its `v` and normal come from that triangle's corners.
+- **Thick children.** A child nearly as thick as its parent narrows at its foot. It fits inside the
+  parent's least girth about the joint, and widens back within the blend.
+- **Forks.** A thick child at its parent's end leads a fork. Thick means half the parent's girth or
+  more. It takes the parent's last ring as its own first ring. It eases from the parent's girth to
+  its own, and carries on the parent's bark tiles. A thinner child at that end hangs on the thickest
+  leader.
 - **Blend rings** run from the seam to the child's own circle, closer together near the seam. Each
   side's fillet and the record's collar ease from that side's own seam. A blend vertex stays at least
-  half a millimeter outside the parent. So the fillet never curves back into it on the sharp side of
-  a crotch. The normal turns from the parent's to the child's. In a steep crotch it bends toward the
-  child's just enough to face out.
-- **Bark.** `v` runs in meters of bark, from the parent's `v` at the weld. `u` takes whole tiles
-  where they keep plates within a quarter of their width. Elsewhere `u` runs in true
-  meters. The count holds along an axis while it still fits. A ring where the count changes is
-  written twice, so no strip shears the bark. The girth scale divides both: thin wood shows a finer
-  figure.
+  half a millimeter outside the parent. The normal turns from the parent's to the child's.
+- **Bark.** The bark's `v` runs in meters, from the parent's `v` at the weld. A child's `v` may start
+  whole repeats lower. A repeat holds a whole number of every layer's tiles, and the lower start keeps
+  `v` within its 16 bits. The bark's `u` takes whole tiles where they keep plates within a quarter of their width.
+  Wood of fewer than a few tiles round runs in true meters. A ring where the count changes is written
+  twice, so no strip shears the bark.
 - **The vertex.** `uv1.x` holds the pipe radius over 4 m. From it the plant shader picks young bark,
   zones by radius and the fade of displacement on thin wood. `uv1.y` holds the junction mask. The
   color bytes hold the wind record, the bend weight along the axis and the crown's sky visibility.
-- **Rings** stand where a straight, evenly tapering piece stops fitting the axis or its radius. Near
-  the ground they stand every half radius. Sides follow the girth, up to 96.
+- **Rings** stand where a straight, evenly tapering piece stops fitting the axis. The piece may
+  stray by a tenth of the radius or 2 per cent of its length. Rings stand on the axis's nodes where
+  they can. Sides follow the girth, up to 96. Thin wood takes three or four sides and a plain point.
+- **Parts.** A mesh of more than 65,536 vertices is split into parts that each hold at most that
+  many, so every part's indices are 16-bit. That saves about a third of the wood's bytes.
+- **The cap** of one variant's nearest wood is per tier, from the oak's largest variant with about
+  15 per cent to spare.
 
 Rejected:
 
@@ -85,10 +107,13 @@ Rejected:
   depth.
 - **Whole tiles always.** Between one and two tiles round, no count keeps the plates within 30 per
   cent.
+- **A cap of 3 MB.** It would need cruder twigs or fewer finest axes than close-up review passes.
 
 ## Consequences
 
 - The growers need not fill the skeleton's `barkV` and `barkU`. The mesher works out the bark from
   the geometry.
+- A plant level may hold several parts of one name. `growNearWood` and `growNearWoodNow` give a list
+  of parts. The plant's placement draws each part.
 - The plant shader reads the wood vertex above.
-- Forks, surface roots and peeling fins follow in the same package.
+- `ModelCaps.lod0WoodBytes` holds one figure per detail tier.
