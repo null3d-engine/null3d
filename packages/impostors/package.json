@@ -28,6 +28,11 @@
 			"types": "./lib/index.d.ts",
 			"default": "./lib/index.js"
 		},
+		"./bake": {
+			"null3d-source": "./src/bake.ts",
+			"types": "./lib/bake.d.ts",
+			"default": "./lib/bake.js"
+		},
 		"./package.json": "./package.json"
 	},
 	"files": [
