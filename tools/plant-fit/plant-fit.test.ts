@@ -7,7 +7,7 @@ import { scaledBudget } from '../../tests/lib/run-budget.ts';
 import { REPO_ROOT } from '../../tests/lib/server.ts';
 import { iou } from '../lib/plant-review/compare.ts';
 import { readReferenceSet } from '../lib/plant-review/references.ts';
-import { AZIMUTHS, crownBaseRow, type HullView, hullEnvelope } from './envelope.ts';
+import { AZIMUTHS, crownBaseRow, type HullView, hullEnvelope, nearSilhouette } from './envelope.ts';
 import { roundBandOf } from './fit-file.ts';
 import { checkLeaf } from './leaf.ts';
 import { CELLS, COLUMNS, closingOverlap, columnX, dropThinLowRuns } from './silhouettes.ts';
@@ -23,11 +23,8 @@ function crownRadius(t: number, phi: number): number {
 	return profile * plan;
 }
 
-/**
- * The outline of the test plant seen at a turn: the crown's slab at each row, and the stem. A scale
- * widens the crown, as a generated video's plant drifts wider in some views.
- */
-function outlineAt(turn: number, scale = 1): Uint8Array {
+/** The outline of the test plant seen at a turn: the crown's slab at each row, and the stem. */
+function outlineAt(turn: number): Uint8Array {
 	const grid = new Uint8Array(CELLS * COLUMNS);
 	for (let row = 0; row < CELLS; row++) {
 		const t = (row + 0.5) / CELLS;
@@ -35,9 +32,48 @@ function outlineAt(turn: number, scale = 1): Uint8Array {
 		let left = 0.02;
 		for (let k = 0; k < 720; k++) {
 			const phi = (k / 720) * 2 * Math.PI;
-			const along = scale * crownRadius(t, phi) * Math.cos(phi + turn);
+			const along = crownRadius(t, phi) * Math.cos(phi + turn);
 			right = Math.max(right, along);
 			left = Math.max(left, -along);
+		}
+		for (let col = 0; col < COLUMNS; col++) {
+			const x = columnX(col);
+			if (x <= right && x >= -left) grid[row * COLUMNS + col] = 1;
+		}
+	}
+	return grid;
+}
+
+/**
+ * A crown heavier on one side: an egg whose plan is a disc of half a plant height set toward +Z of
+ * the axis by an eighth of a plant height.
+ */
+function heavyRadius(t: number, phi: number): number {
+	if (t < 0.3 || t > 1) return 0;
+	const s = (t - 0.3) / 0.7;
+	const profile = Math.sqrt(Math.max(0, 1 - (2 * s - 1) ** 2));
+	const offset = 0.125 * profile;
+	const disc = 0.5 * profile;
+	return offset * Math.sin(phi) + Math.sqrt(Math.max(0, disc ** 2 - (offset * Math.cos(phi)) ** 2));
+}
+
+/**
+ * The outline of the heavy crown seen at a turn by a camera at a distance from its axis, in plant
+ * heights: each point drawn larger by the distance over the distance less its reach toward the
+ * camera.
+ */
+function outlineThrough(turn: number, distance: number): Uint8Array {
+	const grid = new Uint8Array(CELLS * COLUMNS);
+	for (let row = 0; row < CELLS; row++) {
+		const t = (row + 0.5) / CELLS;
+		let right = 0.02;
+		let left = 0.02;
+		for (let k = 0; k < 720; k++) {
+			const phi = (k / 720) * 2 * Math.PI;
+			const r = heavyRadius(t, phi);
+			const x = (r * Math.cos(phi + turn) * distance) / (distance - r * Math.sin(phi + turn));
+			right = Math.max(right, x);
+			left = Math.max(left, -x);
 		}
 		for (let col = 0; col < COLUMNS; col++) {
 			const x = columnX(col);
@@ -84,20 +120,60 @@ describe('the envelope', () => {
 		expect(fit.aspect).toBeLessThanOrEqual(1.02);
 	});
 
-	test('takes the width between two halves of a turn that disagree', () => {
-		// The plant is a fifth wider in the views of the turn's first half than in its second.
-		const wider = views(32).map((view, k) =>
-			k < 16 ? { ...view, grid: outlineAt(view.turn, 1.2) } : view,
-		);
-		const split = envelopeVolume(hullEnvelope(wider, 'test-turntable.mp4').envelope, 1, 0);
-		const steady = envelopeVolume(fit.envelope, 1, 0);
+	test('fits a crown heavier on one side, seen by a near camera', () => {
+		// Two plant heights out, the camera draws the near side larger, so the crown looks wider when
+		// its heavy side faces the camera than when it faces away.
+		const distance = 2;
+		const near = Array.from({ length: 32 }, (_, k) => {
+			const turn = (k / 32) * 2 * Math.PI;
+			return { frame: k, turn, grid: outlineThrough(turn, distance) };
+		});
+		const fit = hullEnvelope(near, 'test-turntable.mp4', distance);
+		const fitted = envelopeVolume(fit.envelope, 1, 0);
+		let worst = 0;
 		for (const t of [0.5, 0.65, 0.8])
 			for (let a = 0; a < AZIMUTHS; a++) {
 				const phi = (a / AZIMUTHS) * 2 * Math.PI;
-				const share = split.radius(t, phi) / steady.radius(t, phi);
-				expect(share).toBeGreaterThan(1.05);
-				expect(share).toBeLessThan(1.15);
+				worst = Math.max(worst, Math.abs(fitted.radius(t, phi) - heavyRadius(t, phi)));
 			}
+		expect(worst).toBeLessThan(0.04);
+		// Drawn through the same camera, the fit is wider from its heavy side as the views are.
+		const frame = { left: -COLUMNS / 2 / CELLS, cell: 1 / CELLS, cols: COLUMNS, rows: CELLS };
+		const span = (grid: Uint8Array) => {
+			let most = 0;
+			for (let row = 0; row < CELLS; row++) {
+				let low = COLUMNS;
+				let high = -1;
+				for (let col = 0; col < COLUMNS; col++)
+					if (grid[row * COLUMNS + col]) {
+						low = Math.min(low, col);
+						high = Math.max(high, col);
+					}
+				if (high >= low) most = Math.max(most, high - low + 1);
+			}
+			return most;
+		};
+		for (const turn of [0, Math.PI]) {
+			const drawn = span(nearSilhouette(fitted, turn, frame, distance));
+			expect(Math.abs(drawn / span(outlineThrough(turn, distance)) - 1)).toBeLessThan(0.04);
+		}
+		expect(
+			span(outlineThrough(0, distance)) / span(outlineThrough(Math.PI, distance)),
+		).toBeGreaterThan(1.1);
+		expect(fit.consistency.lowest).toBeGreaterThan(0.9);
+		expect(fit.direction).toBe(1);
+		// A video that turns the other way: the hull finds the way from the near side's looming,
+		// and draws each view's width again at its turn the other way round.
+		const reversed = near.map((view) => ({ ...view, turn: -view.turn }));
+		const back = hullEnvelope(reversed, 'test-turntable.mp4', distance);
+		expect(back.direction).toBe(-1);
+		const backVolume = envelopeVolume(back.envelope, 1, 0);
+		for (const view of [reversed[0], reversed[16]] as HullView[])
+			expect(
+				Math.abs(
+					span(nearSilhouette(backVolume, -view.turn, frame, distance)) / span(view.grid) - 1,
+				),
+			).toBeLessThan(0.04);
 	});
 
 	test('passes over a few views where the plant drifts', () => {

@@ -123,13 +123,23 @@ to 3.9.
 
 The crown came out narrower than the references at their wide angles. At each of 32 angles of the
 turning video, three widths over height were set side by side: the reference's silhouette, the
-fitted outline's and the render's. The render followed the fitted outline, 1.47 against 1.43 on
-average. The outline fell short of the reference at the wide angles: 1.47 against 1.70 at 0
-degrees. The generated video's plant is wider from one half of the turn than from the other, by up
-to a fifth. The hull took the smallest bound of every view, so it kept the narrower half's. The
-fitting tool now takes the near-smallest bound within each half of the turn, then the mean of the
-two halves. A steady plant comes out as before. The oak's fitted outline averages 1.46, and 1.53 at
-0 degrees. The rest of the gap is the reference's own disagreement between opposite views.
+fitted outline's and the render's. The render followed the fitted outline. The outline fell short
+of the reference at the wide angles: 1.47 against 1.70 at 0 degrees.
+
+The video's camera stands about 2 plant heights out, near the ground. At that range a crown's side
+toward the camera is drawn larger, so this crown looks 14 per cent wider from one side than from the
+other. The hull took every view as seen from afar. The fitting tool now bounds each point through
+the camera's distance, and draws the outline through it to check the fit. Up close, the near side's
+looming tells which way the video turns, so the hull is fitted both ways and keeps the better match.
+The oak's video turns against its frames' order. A hull keeps only what every view allows, and the
+generated plant jitters narrower in some frames. So the hull widens by the least factor that makes
+its outline, drawn through the camera, as wide on average as the views. A steady plant needs none.
+
+| Measure, mean of 32 angles | Reference | Fitted outline |
+| --- | --- | --- |
+| Whole silhouette, width over height | 1.53 | 1.53 |
+| Crown box, as the review measures it | 1.76 | 1.71 |
+| Whole silhouette at 0 degrees | 1.70 | 1.66 |
 
 ### Fruit at a distance
 

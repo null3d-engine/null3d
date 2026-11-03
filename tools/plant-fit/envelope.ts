@@ -8,7 +8,12 @@
 // of the plant's height, azimuths turn from +X toward +Z, and the view at turn 0 looks from +Z.
 
 import type { RadialEnvelope } from '../../packages/vegetation/src/core/record.ts';
-import { envelopeSilhouette, envelopeVolume } from '../../packages/vegetation/src/grow/envelope.ts';
+import {
+	type EnvelopeVolume,
+	envelopeSilhouette,
+	envelopeVolume,
+	type SilhouetteFrame,
+} from '../../packages/vegetation/src/grow/envelope.ts';
 import { iou, mean } from '../lib/plant-review/compare.ts';
 import { CELLS, COLUMNS, columnX } from './silhouettes.ts';
 
@@ -16,8 +21,12 @@ import { CELLS, COLUMNS, columnX } from './silhouettes.ts';
 export const AZIMUTHS = 16;
 /** Heights the envelope holds radii at, from the crown's base to the plant's top. */
 export const LEVELS = 15;
-/** The share of a half-turn's bounds, from the smallest, that the radius passes over. */
+/** The share of a height's bounds, from the smallest, that the radius passes over. */
 export const DRIFT_SHARE = 0.07;
+/** The most the hull's radii widen to match the views' mean width. */
+const MOST_WIDENING = 1.5;
+/** Halvings of the search for the widening. */
+const WIDENING_STEPS = 12;
 /** The width in plant heights from which a row counts as crown rather than stem. */
 const CROWN_WIDTH = 0.2;
 /** The most rows of stem that a crown's run of wide rows passes over. */
@@ -85,40 +94,94 @@ export function crownBaseRow(views: readonly Extents[]): number {
 }
 
 /**
- * The hull's radius at each row and azimuth, in plant heights. The views that see an azimuth on the
- * plant's right and those that see it on the left are the two halves of the turn. In each half the
- * bounds are sorted and the one past the drift share of the smallest is kept, and the radius is the
- * mean of the two halves'. A plant that holds its shape round the turn gives both halves the same
- * bound; a generated video whose plant is wider from one half than from the other, or a camera near
- * enough that a crown's near side looms, gets the width between them. The smallest bound alone would
- * keep the narrower half's, and the plant would come out short of the wide views.
+ * The hull's radius at each row and azimuth, in plant heights: at each, the bound of each view that
+ * faces it, sorted, and the one past a share of the smallest. A view's camera stands at a
+ * distance from the plant's axis, in plant heights, and draws a point nearer to it larger: a point
+ * at radius r reaches r times the cosine across the view, times the distance over the distance less
+ * its reach toward the camera. So a near side bounds the radius tighter than its outline's reach and
+ * a far side looser, and a crown heavier on one side comes out wider from that side, as the video
+ * drew it. An infinite distance is a view from afar.
  */
-function hullRows(views: readonly HullView[], extents: readonly Extents[]): Float64Array[] {
+function hullRows(
+	views: readonly HullView[],
+	extents: readonly Extents[],
+	distance: number,
+	share: number,
+): Float64Array[] {
 	const rows: Float64Array[] = [];
 	for (let row = 0; row < CELLS; row++) {
 		const radii = new Float64Array(AZIMUTHS);
 		for (let a = 0; a < AZIMUTHS; a++) {
 			const phi = (2 * Math.PI * a) / AZIMUTHS;
-			const right: number[] = [];
-			const left: number[] = [];
+			const bounds: number[] = [];
 			views.forEach((view, k) => {
 				const e = extents[k] as Extents;
 				const c = Math.cos(phi + view.turn);
-				if (c > LEAST_COSINE) right.push((e.right[row] as number) / c);
-				else if (c < -LEAST_COSINE) left.push((e.left[row] as number) / -c);
+				const toward = Math.sin(phi + view.turn);
+				if (c > LEAST_COSINE) bounds.push(nearBound(e.right[row] as number, c, toward, distance));
+				else if (c < -LEAST_COSINE)
+					bounds.push(nearBound(e.left[row] as number, -c, toward, distance));
 			});
-			const halves = [right, left].filter((half) => half.length > 0).map(driftBound);
-			radii[a] = halves.length > 0 ? mean(halves) : 0;
+			bounds.sort((p, q) => p - q);
+			radii[a] = bounds[Math.min(Math.floor(share * bounds.length), bounds.length - 1)] ?? 0;
 		}
 		rows.push(radii);
 	}
 	return rows;
 }
 
-/** A half-turn's bound: its bounds sorted, and the one past the drift share of the smallest. */
-function driftBound(bounds: number[]): number {
-	bounds.sort((p, q) => p - q);
-	return bounds[Math.min(Math.floor(DRIFT_SHARE * bounds.length), bounds.length - 1)] as number;
+/**
+ * The most radius a point may have where a view's outline reaches an extent beside the axis: r with
+ * r × across × distance / (distance − r × toward) at most the extent.
+ */
+function nearBound(extent: number, across: number, toward: number, distance: number): number {
+	const looming = Number.isFinite(distance) ? (extent / distance) * toward : 0;
+	return extent / Math.max(across + looming, LEAST_COSINE);
+}
+
+/**
+ * The outline of an envelope seen at a turn by a camera at a distance from the plant's axis, in
+ * plant heights, on an outline grid: each point drawn larger by the distance over the distance less
+ * its reach toward the camera. An infinite distance draws the outline from afar.
+ *
+ * @param volume The envelope's volume.
+ * @param turn Radians the camera has turned round the plant.
+ * @param frame The grid.
+ * @param distance The camera's distance from the plant's axis.
+ * @returns The outline.
+ */
+export function nearSilhouette(
+	volume: EnvelopeVolume,
+	turn: number,
+	frame: SilhouetteFrame,
+	distance: number,
+): Uint8Array {
+	if (!Number.isFinite(distance)) return envelopeSilhouette(volume, turn, frame);
+	const mask = new Uint8Array(frame.cols * frame.rows);
+	const steps = 180;
+	for (let row = 0; row < frame.rows; row++) {
+		const y = (row + 0.5) * frame.cell;
+		let right = 0;
+		let left = 0;
+		let inside = false;
+		for (let s = 0; s < steps; s++) {
+			const azimuth = (s / steps) * 2 * Math.PI;
+			const r = volume.radius(y, azimuth);
+			if (r <= 0) continue;
+			inside = true;
+			const x =
+				(r * Math.cos(azimuth + turn) * distance) /
+				Math.max(distance - r * Math.sin(azimuth + turn), 1e-6);
+			right = Math.max(right, x);
+			left = Math.max(left, -x);
+		}
+		if (!inside) continue;
+		for (let col = 0; col < frame.cols; col++) {
+			const x = frame.left + (col + 0.5) * frame.cell;
+			if (x <= right && x >= -left) mask[row * frame.cols + col] = 1;
+		}
+	}
+	return mask;
 }
 
 /** A radius rounded for the record. */
@@ -139,6 +202,11 @@ export interface Consistency {
 /** What the hull measured. */
 export interface HullFit {
 	readonly envelope: RadialEnvelope;
+	/**
+	 * The way the video turns against the envelope's azimuths: 1 as its frames' turns run, −1 the
+	 * other way. A view at a frame's turn sees the envelope at that turn times the direction.
+	 */
+	readonly direction: 1 | -1;
 	/** The crown's base as a share of the plant's height. */
 	readonly crownBase: number;
 	/** Crown width over plant height, the mean over the views. */
@@ -154,16 +222,19 @@ function crownOnly(grid: Uint8Array, base: number): Uint8Array {
 }
 
 /**
- * The envelope of a plant from views of it round a turn.
- *
- * @param views The views, each with its turn and outline; at least two.
- * @param from The reference file, which the envelope's source names.
+ * The envelope from the hull's bounds, widened by a factor: each level's radii at its row, eased
+ * over the neighbouring azimuths, and a stemmed crown's lowest level drawn in from the next.
  */
-export function hullEnvelope(views: readonly HullView[], from: string): HullFit {
-	if (views.length < 2) throw new Error('an envelope needs at least two views of the plant');
-	const extents = views.map((view) => extentsOf(view.grid));
-	const base = crownBaseRow(extents);
-	const rows = hullRows(views, extents);
+function envelopeAt(
+	views: readonly HullView[],
+	extents: readonly Extents[],
+	base: number,
+	distance: number,
+	widening: number,
+	from: string,
+): RadialEnvelope {
+	const rows = hullRows(views, extents, distance, DRIFT_SHARE);
+	for (const row of rows) for (let a = 0; a < AZIMUTHS; a++) row[a] = (row[a] as number) * widening;
 	for (let row = 0; row < base; row++) (rows[row] as Float64Array).fill(0);
 	const baseShare = base / CELLS;
 	const heights: number[] = [];
@@ -197,11 +268,92 @@ export function hullEnvelope(views: readonly HullView[], from: string): HullFit 
 		}),
 		source: { method: 'turntable-hull', from, views: views.length },
 	};
-	const volume = envelopeVolume(envelope, 1, 0);
+	return envelope;
+}
+
+/** The widest row of an outline, in plant heights. */
+function spanOf(grid: Uint8Array): number {
+	let most = 0;
+	for (let row = 0; row < CELLS; row++) {
+		let low = COLUMNS;
+		let high = -1;
+		for (let col = 0; col < COLUMNS; col++)
+			if (grid[row * COLUMNS + col]) {
+				low = Math.min(low, col);
+				high = Math.max(high, col);
+			}
+		if (high >= low) most = Math.max(most, (high - low + 1) / CELLS);
+	}
+	return most;
+}
+
+/**
+ * The envelope of a plant from views of it round a turn.
+ *
+ * @param views The views, each with its turn and outline; at least two.
+ * @param from The reference file, which the envelope's source names.
+ * @param distance The video camera's distance from the plant's axis, in plant heights; infinite
+ *   for views from afar.
+ */
+export function hullEnvelope(
+	views: readonly HullView[],
+	from: string,
+	distance = Number.POSITIVE_INFINITY,
+): HullFit {
+	if (views.length < 2) throw new Error('an envelope needs at least two views of the plant');
+	const forward = hullOnce(views, from, distance, 1);
+	if (!Number.isFinite(distance)) return forward;
+	// Seen from afar a plant and its mirror image show the same outlines from opposite turns, but a
+	// near camera draws the side toward it larger, which tells the way the video turns: the hull is
+	// fitted both ways and keeps the one whose outlines match the views better.
+	const mirrored = hullOnce(
+		views.map((view) => ({ ...view, turn: -view.turn })),
+		from,
+		distance,
+		-1,
+	);
+	return mirrored.consistency.mean > forward.consistency.mean ? mirrored : forward;
+}
+
+/** The hull of views taken to turn one way: 1 as given, −1 with every turn reversed. */
+function hullOnce(
+	views: readonly HullView[],
+	from: string,
+	distance: number,
+	direction: 1 | -1,
+): HullFit {
+	const extents = views.map((view) => extentsOf(view.grid));
+	const base = crownBaseRow(extents);
 	const frame = { left: -COLUMNS / 2 / CELLS, cell: 1 / CELLS, cols: COLUMNS, rows: CELLS };
+	// A hull keeps only what every view allows, so a generated video whose plant jitters narrower
+	// in some frames than in others leaves it narrower than the views on average. The hull widens
+	// by the least factor that draws the crown, through the video's camera, as wide on average as
+	// its views; a plant that holds its shape needs none.
+	const viewWidth = mean(views.map((view) => spanOf(crownOnly(view.grid, base))));
+	const drawnWidth = (widening: number) => {
+		const shape = envelopeAt(views, extents, base, distance, widening, from);
+		const volume = envelopeVolume(shape, 1, 0);
+		return mean(views.map((view) => spanOf(nearSilhouette(volume, view.turn, frame, distance))));
+	};
+	let widening = 1;
+	if (drawnWidth(1) < viewWidth) {
+		let low = 1;
+		let high = MOST_WIDENING;
+		for (let step = 0; step < WIDENING_STEPS; step++) {
+			const middle = (low + high) / 2;
+			if (drawnWidth(middle) < viewWidth) low = middle;
+			else high = middle;
+		}
+		widening = high;
+	}
+	const envelope = envelopeAt(views, extents, base, distance, widening, from);
+	const volume = envelopeVolume(envelope, 1, 0);
 	const scores = views.map((view) => ({
 		frame: view.frame,
-		iou: round(iou(envelopeSilhouette(volume, view.turn, frame), crownOnly(view.grid, base)), 4),
+		iou: round(
+			iou(nearSilhouette(volume, view.turn, frame, distance), crownOnly(view.grid, base)),
+			4,
+		),
 	}));
 	const values = scores.map((s) => s.iou);
 	const widths = extents.map((e) => {
@@ -215,7 +367,8 @@ export function hullEnvelope(views: readonly HullView[], from: string): HullFit 
 	});
 	return {
 		envelope,
-		crownBase: round(baseShare),
+		direction,
+		crownBase: round(base / CELLS),
 		aspect: round(mean(widths), 2),
 		consistency: {
 			views: scores,
