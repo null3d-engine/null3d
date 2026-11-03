@@ -727,7 +727,7 @@ quality.settings.gpuOcclusion;          // true when the GPU skips hidden opaque
 quality.set({ shadowFilter: 5, farCascadeInterval: 1 });  // shadow edge softness, 3 or 5 texels; far cascades every frame
 quality.set({ followMovingCasters: false }); // far cascades keep their turns while dynamic casters move in them (on by default)
 quality.set({ shadowCascadeBlend: 0.2 });  // blend each cascade into the next over its last 20% (0 hands over at once)
-quality.set({ lodThreshold: 1, lodShadowFactor: 2, lodFade: true });  // (0.2) levels of detail: pixels, shadows' factor, distance band fades
+quality.set({ lodThreshold: 1, lodShadowThreshold: 1, lodFade: true });  // (0.2) levels of detail: pixels, shadow map texels, distance band fades
 quality.governor.steps;                 // the governor's steps past the render scale; onChange runs after each
 quality.governor.farCascadeInterval;    // the shadow settings drawn now, which the governor may lower
 quality.set({ governor: false });       // no governor: maxRenderScale, and the shadow settings as set

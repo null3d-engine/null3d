@@ -1321,8 +1321,8 @@ pub fn occluded_entries(frame: u32) -> u32 {
     })
 }
 
-/// The ranges of cluster-tree patches that a recorded frame's camera view draws, or `NOT_COUNTED`
-/// where the GPU path picks the patches itself.
+/// The ranges of cluster-tree patches that a recorded frame's views draw, the shadow views included,
+/// or `NOT_COUNTED` where the GPU path picks the patches itself.
 #[wasm_bindgen(js_name = patchRanges)]
 pub fn patch_ranges(frame: u32) -> u32 {
     value_with_engine(|e| {
@@ -4324,16 +4324,17 @@ pub fn stage_frames(mesh: u32) -> u32 {
 }
 
 /// How objects and batches pick their meshes' levels of detail, from the next frame on. The call
-/// values give the error in pixels under which a coarser level draws, 0 for none, and what shadow
-/// views multiply it by. `bands` says whether a source's distance band fades at each edge.
+/// values give the error in pixels under which a coarser level draws, 0 for none, and the error
+/// in texels of a shadow map under which a caster draws a coarser level there, 0 for none.
+/// `bands` says whether a source's distance band fades at each edge.
 /// Turning the bands on or off rebuilds the draw tables.
 #[wasm_bindgen(js_name = setLevelQuality)]
 pub fn set_level_quality(bands: bool) -> u32 {
     with_engine(|e| {
-        let [threshold, shadow_factor] = e.call_values();
+        let [threshold, shadow_threshold] = e.call_values();
         let quality = LevelQuality {
             threshold,
-            shadow_factor,
+            shadow_threshold,
             distance_bands: bands,
         };
         if e.renderer.settings_mut().set_level_quality(quality) {

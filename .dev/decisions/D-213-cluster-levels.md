@@ -1,9 +1,10 @@
 # D-213: Cluster levels in the asset tool and their file
 
 Status: decided and built. Built: the asset tool's tree and its file, the measured patch errors,
-and the paths that draw the tree on WebGPU and on WebGL2. Each mesh with a tree also gets the level
-planner's whole levels. [D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md) holds the WebGL2
-routes. Task: M3-L3.
+and the paths that draw the tree on WebGPU and on WebGL2, in the camera's views and in each
+shadow view with a cut of its own. Each mesh with a tree also gets the level planner's whole
+levels. [D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md) holds the WebGL2 routes. Task:
+M3-L3.
 
 Summary: The asset tool builds a large static mesh into a tree of patches of about 128 triangles and stores it in `NULL3D_clusters`. Each patch's sphere holds its children's, and its error is its measured distance from the full mesh below it. The benchmark ground's top patch holds 29 triangles at 10.5 m, against 10.45 m measured, where the simplifier's estimate gave 750 m on 4,006 triangles.
 
@@ -88,6 +89,7 @@ their real distance allows, so a far view draws far fewer triangles for the same
 5. The tree is stored in `NULL3D_clusters` on the primitive, in three accessors. The first holds the indices of every patch one after another. The second holds four floats of each patch's sphere, and the third four integers of each patch's run, its parent and its error. The extension also names its layout's version, 2. The loader draws a tree of an older version as whole levels. The core refuses a tree or a band whose spheres or errors break the order (`PatchError::Nesting`). The extension is not required, so other loaders draw the whole mesh.
 6. A mesh gets a tree when it has 20,000 triangles or more, no skin and no morph targets, a material that neither blends nor masks, and at most four copies. A mesh that bends has no fixed patch bounds, so it keeps whole levels. Many copies pay about twice their indices for no saving, so they keep whole levels too.
 7. The engine stores the tree against the mesh's id. It rewrites the tree's indices into the order of the vertices that the mesh's parts hold, and checks them against those vertices ([Meshes of several parts](#meshes-of-several-parts)). The WebGPU path draws the chosen patches ([Drawing on WebGPU](#drawing-on-webgpu)). The WebGL2 path draws them on the job workers where the device has `WEBGL_multi_draw`. A mesh of several parts there also needs `WEBGL_provoking_vertex`. Both apply one rule, which `PatchTree::walk` holds for the job workers. Every other path draws the mesh's whole levels ([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)). [D-231](D-231-cluster-levels-cost.md) records what the pass costs.
+9. Each shadow view, a cascade or a spot or point light's tile, picks its own cut through the tree, with its own rule in its own texels ([Shadow views](#shadow-views)). The camera's cut never stands in for a shadow view's.
 8. Each mesh with a tree gets its whole levels from the level planner of [D-91](D-91-level-planning.md), with or without `--lod`. They are the levels that a mesh without a tree gets. The tree stays as it is. The levels share the mesh's vertices. The tool orders the vertices coarsest level first, then the finer levels, then the base mesh, as for a mesh without a tree. The reorder renames the tree's indices too ([Whole levels beside the tree](#whole-levels-beside-the-tree)).
 
 ## Options rejected
@@ -133,8 +135,9 @@ their real distance allows, so a far view draws far fewer triangles for the same
 ## Whole levels beside the tree
 
 The paths that draw no patches draw a mesh's whole levels: the WebGPU direct path, WebGL2 without
-`WEBGL_multi_draw`, the shadow maps, a mesh that several copies draw, and every instance batch.
-WebGL2 without `WEBGL_provoking_vertex` draws them for a mesh of several parts.
+`WEBGL_multi_draw`, a mesh that several copies draw, and every instance batch. WebGL2 without
+`WEBGL_provoking_vertex` draws them for a mesh of several parts. A shadow view draws a caster's
+whole levels where the camera's layout draws no tree for the same object.
 The tool counts only the copies that the file places. So a mesh that page code draws in a batch
 of thousands still gets a tree, and every copy draws whole levels.
 
@@ -195,13 +198,17 @@ Three dispatches of one compute pipeline, recorded in the view's culling pass, f
    cluster mesh's indirect draw from where its patches start and end.
 3. A workgroup copies each chosen patch's indices into the list.
 
-The view's opaque pass binds that list as its index buffer and draws each cluster mesh with one
-`DrawIndexedIndirect` that the scan sized. A view that culls none of a mesh's copies writes a zero
-index count, so the mesh draws nothing without a second test. Every material build stays as it is.
+The view's opaque pass, or its shadow pass, binds that list as its index buffer and draws each
+cluster mesh with one `DrawIndexedIndirect` that the scan sized. A view that culls none of a mesh's
+copies writes a zero index count, so the mesh draws nothing without a second test. Every material
+build stays as it is. The scan stops each draw, and the copy each patch, at the end of the view's
+list, so a list that the frame sized too small loses its last patches rather than writes past
+its end.
 
 The copy it reads is the bucket's own: a mesh draws its patches only where its bucket holds one copy
 and the copy's matrix, so a mesh that draws several copies draws its whole triangle list.
-The level rule reads the view's factor as whole levels do, but not a per-object bias.
+The level rule reads the view's factor and where the view measures from, as whole levels do, but
+not a per-object bias.
 
 ### Meshes of several parts
 
@@ -281,22 +288,72 @@ does not create it again.
 | --- | --- |
 | The test model | A heightfield of 32,768 triangles, a tree of 511 patches and 202,032 indices |
 | Per-patch buffers | 4 bytes a patch for the runs and 4 for the offsets |
-| The view's list | 4 bytes an index, sized for every patch in the tree rather than the chosen ones: 808,128 bytes for the test model |
+| The view's list | 4 bytes an index, sized to the indices that the view picks in the frame, with a sixteenth and three patches to spare, and half again when it grows |
 | The scene's tables | 32 bytes a patch and 4 bytes an index, shared by every view: 824,480 bytes for the test model |
 | Per-view buffers, allocated | About 1.16 MiB for the test model, half again the bytes in use |
 | The benchmark's ground | 2,000,000 triangles and 1,002,001 vertices in 16 parts or more, a tree of 32,768 patches and 13,154,310 indices |
 | The ground's scene tables | 1 MiB of patches and 52.6 MB of indices, 41% of the 128 MiB binding |
-| The ground's view list | 52.6 MB for each camera view, and 256 KiB of runs and offsets |
+| The ground's view list | The indices that each view picks: about 420,000 in the walk view, whose camera draws 139,929 of the ground's triangles, so 1.7 MB and up to half again; 256 KiB of runs and offsets |
 | The ground's vertices | None beyond its parts, which share one buffer |
 | GPU time | [D-231](D-231-cluster-levels-cost.md) |
 
-The list is the cost the plan expected, and larger: it holds every patch's indices, so a view never
-sizes a buffer again mid-frame, but a 1,000,000-triangle mesh takes about 8 MB for each view, and
-the ground's 52.6 MB. Sizing it per frame, as M3-L2 sizes the copy lists, is the trim it owes.
+Each frame counts the indices that each view picks, with the job workers' walk
+(`PatchTree::walk`), before the frame applies the views' buffers. A view's list holds that count,
+a sixteenth more and the indices of three patches of 128 triangles, which covers a patch that the
+GPU's arithmetic finds just past a switch where the CPU's does not. A list that must grow grows to
+half again its need, and the frame then records the views' bundles again, which name the list. A
+list never shrinks, so a camera that walks onto the ground grows it once. The scan and the copy
+stop at the list's end, so a count that fell short loses patches rather than writes past the
+buffer. A list sized for the whole tree would take 52.6 MB in each view: a cascade or a tile is a
+view, so three cascades would add 158 MB for the ground alone.
+
+The walk visits the patches that draw and the ones above them, not the whole tree, so a view's
+count costs what its cut holds. A sphere outside the view leaves out everything below it.
 
 `tests/image/cluster-cost.spec.ts` times the test model at three camera distances, on both GPU
 paths and each quality preset, and prints the figures. [D-231](D-231-cluster-levels-cost.md) holds
 them.
+
+### Shadow views
+
+Each cascade of the sun's shadows, each spot or point light's tile and the sun's hero tile is a
+view with a list of its own. It picks its cut with its own rule, in its own texels
+([D-137](D-137-lod-groups.md#shadows)), and never takes the camera's. A patch near the camera can
+need far finer patches than a far cascade's texels show, and a patch far from the camera can need
+finer ones in a near cascade that holds its shadow.
+
+- The casters' layout draws a tree where the scene's layout draws the same object's tree. Its
+  bucket draws the tree from one copy, as the scene's does, and a caster that shares its key with
+  another draws whole levels.
+- The scene's tables hold each tree's patches and indices once. After the patches come two sets of
+  mesh records, one record for each tree in each set: the scene layout's and the casters'. Each
+  names its own layout's copy and draw. A tree that no caster draws has a casters' record whose
+  slot is `NOT_DRAWN`, so a shadow view picks none of its patches.
+- A shadow view's dispatch parameters name the casters' set, where the view measures errors (an
+  orthographic cascade measures 1 at every distance, and a tile from its light), and its list's
+  capacity.
+- On WebGL2, the job workers walk each tree for each cascade and tile, and the shadow passes draw
+  the ranges that each view's walk chose ([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)).
+
+What a cascade picks from the test model, the image tests' heightfield of 32,768 triangles whose
+tree holds 197,049 indices, over the whole mesh:
+
+| A cascade's texel | Indices of its cut | Share of the mesh's 98,304 |
+| --- | --- | --- |
+| 2 cm | 97,536 | 99% |
+| 4 cm | 57,960 | 59% |
+| 8 cm | 27,579 | 28% |
+| 16 cm | 19,911 | 20% |
+| 32 cm | 10,308 | 10% |
+| 65 cm | 7,617 | 8% |
+
+A cascade's frustum leaves out what its box does not hold, so its list holds less still. A
+shadow view that drew the mesh's whole levels by the camera's distance drew the base mesh's
+98,304 indices wherever the camera stood on the ground.
+
+How the data was produced: `PatchTree::picked_indices` over
+`crates/null3d-render/tests/fixtures/cluster-trees/heightfield.bin`, for an orthographic rule of
+one texel at each size, with no frustum.
 
 ### What is not drawn from the tree
 
@@ -304,10 +361,6 @@ them.
   records no cluster pass, so a cluster mesh draws its whole levels there. The image tests force
   the indirect path with `?direct=off`, and so does the cost page, because the probe's choice moves
   with the machine and with it the picture.
-- The shadow maps draw a cluster mesh's whole levels on both paths, as the concept page says.
-  The plan asks for a cut per cascade or tile view, with `lodShadowFactor` on the threshold. That
-  cut is not built, so the deviation is for the owner to accept
-  ([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)).
 - A mesh that several copies draw, and a one-row instance batch, draw whole levels on both paths.
   [D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md) gives the WebGL2 routes and their
   figures.
@@ -319,6 +372,17 @@ them.
 
 
 ## Tests
+
+- `crates/null3d-render/tests/cluster_levels.rs`:
+  `each_shadow_view_picks_and_draws_its_own_patches_from_a_list_sized_to_them` gives the camera's
+  view and each of three cascades a list and draws of its own. A tree whose root every view
+  passes takes a few patches' room in each list, not the tree's 60,006 indices, and a tree whose
+  children the camera picks grows the camera's list to hold them.
+- `crates/null3d-render/tests/cpu_culled.rs`: the cascades bind the tree's own index list and
+  record their own ranges on WebGL2 with `WEBGL_multi_draw`, and no view draws the tree without it.
+- `crates/null3d-core/src/levels.rs`: a light's orthographic rule picks by its texels at every
+  camera distance, hides a caster under a texel, keeps the camera's distance for ranges and
+  hand-set distances, and a perspective light measures from the light.
 
 - `crates/null3d-render/tests/cluster_cover.rs` walks the tool's own trees of a lumpy pebble and a
   heightfield, which `cluster-fixture.ts` writes into `tests/fixtures/cluster-trees/`. It uses
