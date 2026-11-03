@@ -1,8 +1,10 @@
-// A room full of boxes, for the effect cost page: the 'probes' message sets the baked light probe
-// grid and posts 'settled' once a frame drew with it, and 'probes-off' removes it, so the two sides
-// differ by the grid's four filtered reads at each lit pixel alone. The bake runs in the setup, so
-// it is in neither side's timing. ?scale= draws at that render scale, and ?fixed holds it with the
-// governor off, for timing.
+// A room of boxes whose light probe grid this page times, for the effect cost page: LAYERS planes
+// of the standard material fill the view, layer over layer, with no depth test, so every pixel
+// shades every plane and the grid's four filtered reads happen at each of them. The 'probes'
+// message sets the baked grid and posts 'settled' once a frame drew with it, and 'probes-off'
+// removes it, so the two sides differ by the grid's reads alone. The bake runs in the setup, so it
+// is in neither side's timing. ?scale= draws at that render scale, ?layers= sets the planes, and
+// ?fixed holds the scale with the governor off, for timing.
 //
 // The module uses no type annotations: an address whose last value holds a dot, such as scale=0.5,
 // makes the dev server read the module as JavaScript.
@@ -11,17 +13,17 @@ import { bakeProbes, defineSketch } from '@null3d/engine';
 const params = new URL(import.meta.url).searchParams;
 const SCALE = params.get('scale');
 const FIXED = params.has('fixed');
+const LAYERS = Number(params.get('layers') ?? '2048');
 
 export default defineSketch(
 	async ({ scene, assets, materials, geometry, textures, quality, page }) => {
-		if (SCALE !== null) {
-			const scale = Number(SCALE);
-			quality.set({
-				minRenderScale: FIXED ? scale : Math.min(scale, 0.5),
-				maxRenderScale: scale,
-				governor: !FIXED,
-			});
-		}
+		// The grid takes the place of the screen-space bounce light, so both sides draw without it;
+		// else the off side pays for a pass that the on side leaves out.
+		quality.set({
+			...(SCALE !== null && { minRenderScale: Number(SCALE), maxRenderScale: Number(SCALE) }),
+			bounceRays: 0,
+			governor: !FIXED,
+		});
 		const environment = await assets.builtinEnvironment('room');
 		scene.setEnvironment(environment);
 		scene.setBackground('#20242c');
@@ -46,7 +48,6 @@ export default defineSketch(
 		surface([0.8, 0.8, 0.8], [10, 6, 0.2], [0, 3, -5]);
 		surface([0.8, 0.1, 0.08], [0.2, 6, 10], [-5, 3, 0]);
 		surface([0.1, 0.7, 0.12], [0.2, 6, 10], [5, 3, 0]);
-		// Boxes fill the view with lit pixels, so the grid's read is a large part of the frame.
 		const palette: [number, number, number][] = [
 			[0.8, 0.3, 0.2],
 			[0.2, 0.6, 0.8],
@@ -61,8 +62,30 @@ export default defineSketch(
 					const colour = palette[n++ % palette.length] as [number, number, number];
 					surface(colour, [0.7, 0.7, 0.7], [x * 0.95, y, z]);
 				}
+		// The slabs fill the view, each drawn over the last, so the grid's read happens at every
+		// pixel of every layer and the frame's cost follows it. Five materials and one mesh are
+		// shared, because the material table holds few and each object would take one.
+		const slab = geometry.box({ width: 6, height: 4, depth: 0.02 });
+		const slabMaterials = palette.map((colour) =>
+			materials.standard({
+				color: colour,
+				roughness: 0.8,
+				// No layer writes depth, so every one passes and shades the view over the last.
+				depthWrite: false,
+			}),
+		);
+		for (let k = 0; k < LAYERS; k++) {
+			const material = slabMaterials.at(k % slabMaterials.length);
+			if (!material) throw new Error('the palette made no slab material');
+			const object = scene.createMesh({
+				mesh: slab,
+				material,
+				position: [0, 2, 5 - k * 0.0005],
+			});
+			colours.set(object, palette[k % palette.length] as [number, number, number]);
+		}
 		const grid = bakeProbes(scene, {
-			box: { min: [-5, 0.1, -5], max: [5, 5, 5] },
+			box: { min: [-5, 0.1, -5], max: [5, 5, 6.5] },
 			spacing: 1,
 			samples: 32,
 			environment,
