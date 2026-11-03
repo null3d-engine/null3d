@@ -50,11 +50,18 @@ export interface TextureManifest {
 	readonly format: 1;
 	/** The species folder the files belong to. */
 	readonly species: string;
-	/** The reference set the files were made from, at a pinned commit, and each source file's hash. */
+	/**
+	 * The reference set the files were made from: its commit, or `local` for files read from a
+	 * folder outside it, and each source file's name, hash and the generation job that made it.
+	 */
 	readonly source: {
 		readonly repository: 'null3d-engine/plant-references';
 		readonly commit: string;
-		readonly files: readonly { readonly name: string; readonly sha256: string }[];
+		readonly files: readonly {
+			readonly name: string;
+			readonly sha256: string;
+			readonly job?: string;
+		}[];
 	};
 	/** The tool's version and the encoder it ran. */
 	readonly tool: { readonly version: string; readonly encoder: string };
@@ -88,7 +95,11 @@ export interface TextureManifestLeaf {
 	readonly outline: readonly number[];
 	/** Linear mean colour of covered texels, per face; the shader divides by these. */
 	readonly mean: { readonly upper: Rgb; readonly lower: Rgb };
-	/** How the shader reads thickness and the vein mask from the colour's luminance. */
+	/**
+	 * How the shader reads thickness and the vein mask from the colour's linear luminance:
+	 * `luminance` is the upper face's median over the blade, and the vein mask is
+	 * clamp((texel luminance − luminance) × contrast, 0, 1), which reaches 1 at the 98th percentile.
+	 */
 	readonly veins: { readonly luminance: number; readonly contrast: number };
 	/** Luminance from base to tip in 8 bands, per face, for the CPU card bake. */
 	readonly profile: { readonly upper: readonly number[]; readonly lower: readonly number[] };

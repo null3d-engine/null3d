@@ -256,6 +256,7 @@ Never merge a generated file by hand. Take main's side, run the file's generator
 - The vendored Basis and meshopt builds
 - The benchmark records and the README's animation
 - What a release writes: the version numbers, `CHANGELOG.md` and the plugin's marketplace file
+- The vegetation species' textures, which need the private reference repository
 - The lock files and the sample content's manifest
 - The list of milestone task IDs that a `Task:` footer may name
 
