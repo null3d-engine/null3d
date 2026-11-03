@@ -202,8 +202,8 @@ describe('the wind blocks of the grass shader', () => {
 	test('read the wind field with one copy in every reader of the add-on and its test pages', () => {
 		// A shader cannot import another shader of the add-on, so each reader copies the field's
 		// steady settings and its sampling function. The grass holds the add-on's source copy, which
-		// the wind add-on's own test holds to the field's. The floating leaves and two test pages
-		// read the field too: the cost page carries both blocks, and the gust page carries the steady
+		// the wind add-on's own test holds to the field's. The plant shader, the floating leaves and
+		// two test pages read the field too: the cost page carries both blocks, and the gust page carries the steady
 		// block twice and keeps only the reading function of the other, so it is held to the steady
 		// block alone.
 		const read = (name: string) => readFileSync(new URL(name, import.meta.url), 'utf8');
@@ -218,6 +218,7 @@ describe('the wind blocks of the grass shader', () => {
 			const grass = block(read('./grass.wgsl'), name);
 			expect(grass.length).toBeGreaterThan(0);
 			for (const file of [
+				'../render/plant.wgsl',
 				'../floating-leaves/floating-leaves.wgsl',
 				'../floating-leaves/floating-leaves-state.wgsl',
 				'../floating-leaves/floating-leaves-state.fallback.wgsl',

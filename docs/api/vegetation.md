@@ -8,7 +8,7 @@ summary: "The plant core that grows each species from its own record and a seed,
 
 # Vegetation (@null3d/vegetation)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The species are being rebuilt: no species ships yet, so a page draws stand-ins in their place. Built: the self-organizing growth that broadleaves, pines, shrubs and hedges use. Not built yet: the other growth models, leaves and shoots, wood, plant material, near pool and far cards. The grass's compute-built blades and near shadows are not built yet either. This page covers the plant core's records and stages, the stand-ins, the scatter, the grass's CPU path and the floating leaves that ride the wind.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The species are being rebuilt: no species ships yet, so a page draws stand-ins in their place. Built: the self-organizing growth that broadleaves, pines, shrubs and hedges use, and the plant material. Not built yet: the other growth models, leaves and shoots, wood, near pool and far cards. The grass's compute-built blades and near shadows are not built yet either. This page covers the plant core's records and stages, the stand-ins, the scatter, the grass's CPU path and the floating leaves that ride the wind.
 
 ```mermaid
 flowchart LR
@@ -100,6 +100,19 @@ A stage that is not built yet throws a `NotBuiltError`. A kit built with `placeh
 `kitKey` and `variantKey` name a kit and a grown variant by everything they grow from. A new record or a new version of the core gives a new key, so a kept result is never stale. The page keeps each kit, variant and far bake by its key for the visit. A second call with the same inputs grows nothing. `memoryCache(limit)` makes such a cache for code of your own.
 
 To keep results across visits, give `prepareSpecies` a store of bytes as its `cache` option. A store answers `get(key)` with the bytes or `undefined`, and takes `put(key, bytes)`. The plant core encodes each result for it and reads it when its memory has no copy. It writes each new result without waiting. A store that fails costs a new growth, never an error.
+
+### The plant material
+
+`plantMaterials(ctx, kit, options)` makes one material for each part of a species: `wood`, `shoots`, `cards`, `foliage` (merged fronds, blades and rosette leaves) and `extras` (cones, fruit, flowers, catkins, thorns). They are five roles of one shader, which reads the species' textures and a small data texture of its constants and wind records.
+
+- **Leaves show their record's colors.** A leaf lit from the front shows its record's `reflectance`, its lower face its `reflectanceBack`, and a leaf with the sun behind it shows its `transmittance`. Each face draws its own texture layer, divided by that layer's mean and scaled by the record's color, so the picture keeps its veins and spots and the record sets its average. Change a species' color in its record, not in its textures.
+- **The sky's light reaches a leaf through its crown.** A shoot's sky visibility and bent normal from its crown light the sky's light alone, and its visibility joins screen-space ambient occlusion by the smaller of the two, so a crown darkens once ([Surface functions](../shaders/surface-functions.md#occlusion-counted-once)).
+- **Edges cut solid.** A leaf's or card's coverage is sharpened to a one-pixel edge at the cutoff, so a blade draws whole to its cut edge.
+- **Bark relief follows the branch.** The bark's tangent frame comes from its own texture coordinates, so its ridges run along every limb, whichever way the limb points.
+- **Wind.** Give `options.wind` the wind add-on's field, and call `setWindLayer(materials, field)` in each frame. Every part sways, and leaves and cards flutter. `options.swayDistance` stops the sway past that distance, so far shadows stay cached.
+- **A matte.** `options.matte: true` draws the plant black, with its outline, its cut-outs and its sway, for an exact silhouette.
+
+`prepareSpecies` loads the textures of the preset's set, the half set on Low, the first time a page prepares the species. A page fetches no texture file of a species it does not prepare.
 
 ## Stand-in species
 
