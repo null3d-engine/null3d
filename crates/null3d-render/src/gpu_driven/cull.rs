@@ -63,8 +63,10 @@ use null3d_core::levels::LevelRule;
 
 /// Bytes of the culling planes: six planes, the source count, the view's layer mask, the count of
 /// runs of the cell order, the view's row of the cell offsets texture, the level choice's inputs
-/// (see [`LevelRule::uniform`]), and the four words that carry the levels debug view's flag.
-const CULL_PLANES_BYTES: u32 = 144;
+/// (see [`LevelRule::uniform`]), where the view measures errors
+/// (see [`LevelRule::measure_uniform`]), and the four words that carry the levels debug view's
+/// flag.
+const CULL_PLANES_BYTES: u32 = 160;
 /// The words of the culling planes that hold the source count, the view's layer mask, the count
 /// of runs and the view's row of offsets.
 const SOURCES_WORD: usize = 24;
@@ -72,7 +74,8 @@ const LAYERS_WORD: usize = 25;
 const RANGES_WORD: usize = 26;
 const OFFSETS_ROW_WORD: usize = 27;
 const LEVELS_WORD: usize = 28;
-const DEBUG_WORD: usize = 32;
+const MEASURE_WORD: usize = 32;
+const DEBUG_WORD: usize = 36;
 /// Where the runs of the cell order start in the culling parameters: after the planes.
 const RANGES_OFFSET: u32 = CULL_PLANES_BYTES;
 /// Bytes of one run of the cell order: its first position, its end, its first workgroup, and
@@ -524,6 +527,12 @@ impl Culling {
         for (word, value) in params[LEVELS_WORD..LEVELS_WORD + 4]
             .iter_mut()
             .zip(detail.uniform())
+        {
+            *word = value.to_bits();
+        }
+        for (word, value) in params[MEASURE_WORD..MEASURE_WORD + 4]
+            .iter_mut()
+            .zip(detail.measure_uniform())
         {
             *word = value.to_bits();
         }

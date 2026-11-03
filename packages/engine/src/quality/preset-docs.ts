@@ -131,7 +131,11 @@ export const SETTING_DOCS: {
 		label: 'Level of detail threshold',
 		print: (value) => (Number(value) > 0 ? `${value} px` : 'base levels only'),
 	},
-	lodShadowFactor: { label: 'Level of detail threshold in shadows', print: (value) => `${value}x` },
+	lodShadowThreshold: {
+		label: 'Level of detail threshold in shadows',
+		print: (value) =>
+			Number(value) > 0 ? `${value} texel${Number(value) === 1 ? '' : 's'}` : 'base levels only',
+	},
 	lodFade: { label: 'Distance band fades', print: yesNo },
 	physicalSky: {
 		label: 'Physical sky',

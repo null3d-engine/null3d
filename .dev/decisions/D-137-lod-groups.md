@@ -1,8 +1,8 @@
 # D-137: Levels of detail picked by screen error
 
-Status: accepted. The owner approved the design, and chose to merge it with the forest demo as it is; a later task improves the demo's look. The owner also ruled that M3-L1 to M3-L4 build every proposal of a review of this system, cluster levels included. Built: the design below with M3-L1's and M3-L2's changes, the fade rule and distance bands of [D-211](D-211-lod-fade-and-distance-bands.md), the WebGPU path of [D-213](D-213-cluster-levels.md)'s cluster levels, and M3-L4's impostor cards that relight. Open: the two follow-ups at the end. Task: M2-I4, then M3-L1, M3-L2 and M3-L4.
+Status: accepted. The owner approved the design, and chose to merge it with the forest demo as it is; a later task improves the demo's look. The owner also ruled that M3-L1 to M3-L4 build every proposal of a review of this system, cluster levels included. Built: the design below with M3-L1's and M3-L2's changes, the fade rule and distance bands of [D-211](D-211-lod-fade-and-distance-bands.md), shadow views that pick in their own texels, the WebGPU path of [D-213](D-213-cluster-levels.md)'s cluster levels, and M3-L4's impostor cards that relight. Open: the two follow-ups at the end. Task: M2-I4, then M3-L1, M3-L2 and M3-L4.
 
-Summary: `mesh.setLevels` gives a mesh up to 15 simpler levels; each object and batch row draws the coarsest level whose screen error stays under a pixel threshold. WebGPU's culling shader and WebGL2's job workers pick with one stateless rule, so both switch at the same distances, and hand-set levels cross-fade with a dither. Shadows pick coarser levels, bounds under the threshold draw nothing, and the copy lists hold one copy per source that draws.
+Summary: `mesh.setLevels` gives a mesh up to 15 simpler levels; each object and batch row draws the coarsest level whose screen error stays under a pixel threshold. WebGPU's culling shader and WebGL2's job workers pick with one stateless rule, so both switch at the same distances, and hand-set levels cross-fade with a dither. Each shadow view picks its casters' levels by their error in its own texels, bounds under the threshold draw nothing, and the copy lists hold one copy per source that draws in each level.
 
 ## Question
 
@@ -15,7 +15,7 @@ A review compares this system with other work: Hyper3D's article "[Level of deta
 - Levels switch where the screen-error rule says, at the same distances on WebGPU, compatibility mode and WebGL2 (the task's done-when).
 - The rule is Godot's: the coarsest level whose error, projected on the screen, is under the threshold of 1 pixel. The screen's height includes the render scale ([D-53](D-53-technique-defaults.md)).
 - A switch does not pop: the levels hand over smoothly, or the record states the alternative.
-- Shadows use a coarser level. A shadow never shows another level's silhouette on its own caster's surface by more than the normal bias hides.
+- A shadow view picks a caster's level by the caster's error in the view's own texels, whatever the camera's distance, so a shadow map that keeps its depth between draws stays right. A shadow never shows another level's silhouette on its own caster's surface by more than the normal bias hides.
 - No cost for scenes without levels: no new upload, no shader download, no bucket and no branch that costs measurable time (design principle 8).
 - No allocation per frame (hard rule 1). No new storage buffer in the culling shader, which already binds the eight that every device allows.
 - A dense scene measured with and without levels on the Mac's GPU, per path.
@@ -119,15 +119,31 @@ The masks that test their alpha by the hash switch at once, so that the fading s
 
 ### Shadows
 
-Shadow cascades, shadow tiles, mirrors and the outline view already place every source relative to the main camera. So `d` is the main camera's distance in every view, and each shadow view picks with the main camera's `k`, not its own orthographic projection. A shadow view multiplies the threshold by the preset's shadow factor, so its casters draw a coarser level. Shadow views do not fade: they draw the level that the rule picks.
+Each shadow view picks its casters' levels by their error in its own texels, as three.js r187's meshlet pipeline does (its `shadowLodThreshold`). The rule keeps its form, with the view's own measure:
+
+```text
+level j draws in a cascade when  error[j] × scale < threshold × texel
+level j draws in a tile when     error[j] × scale < threshold × texel_per_meter × d_light
+```
+
+A cascade is an orthographic view whose texels have one size, `texel`, at every distance, so its distance counts as 1 and its factor is `1 / (texel × threshold)`. A spot or point light's tile is a perspective view from the light, so `d_light` is the distance from the light to the nearest point of the sphere, and its texels grow by `texel_per_meter` with each meter. The sun's hero tile is orthographic, as a cascade is. The threshold is the `lodShadowThreshold` quality setting, in texels: 1 on every preset, as three.js's default. `LevelRule::for_light` in `crates/null3d-core/src/levels.rs` builds the rule, and `cull.wgsl` reads where the view measures from (`measure`, beside the rule's factor).
+
+A cascade's box keeps its size while the camera moves and turns ([D-15](D-15-cascade-split.md)), so its texel keeps its size too. A caster's level in a cascade therefore never changes while the camera moves, and a tile's changes only when its light or the caster moves. Far cascades and tiles keep their depth between redraws ([D-16](D-16-moving-casters-and-bias.md), [D-61](D-61-shadow-tile-redraws.md)), and that depth stays right. A rule by the camera's distance would change a level as the camera moves, and a kept layer would show the change at its next redraw. A light whose shadow distance follows the farthest receiver resizes its boxes when that distance steps, by 1.25 times a step ([D-168](D-168-auto-shadow-distance.md)), and its casters' levels follow the new texels.
+
+The look rule sets the threshold. The normal bias moves each receiver by up to one texel of its cascade along its normal ([D-16](D-16-moving-casters-and-bias.md)). A shadow level that errs by under a texel lies within that offset of the base surface, so it does not shadow the base surface. The camera's own level errs by under a pixel. The filter's square of 3 or 5 texels and the comparison with the receiver's plane absorb the rest. The image test `cluster-shadows-fine` draws a ground that shadows its own hills with the finest patches in every cascade, and must match `cluster-shadows`, which draws each cascade's own cut. A larger threshold would let a level's silhouette pass the bias, so no preset raises it.
+
+Three properties of a source keep the camera's measures in a shadow view:
+
+- A distance band reads the camera's distance in every view, so a source outside its band casts no shadow, as before.
+- A level given by a distance or by screen coverage switches at the camera's distance, as its author set it for the camera. Such a level has no error to measure in texels.
+- Shadow views do not fade: they draw the level that the rule picks.
 
 | Option | Verdict |
 | --- | --- |
-| Shadows pick by the main camera's distance, with a larger threshold | Chosen |
-| Shadows pick by the light's view | Rejected. A cascade's orthographic view would pick by the cascade's texel size, and a caster could shadow its own surface with a level far from the one the camera sees |
+| Each shadow view picks by its own texels, at a threshold of one texel | Chosen. The level holds while the camera moves, so cached cascades and tiles stay right. A far cascade, whose texels are large, draws coarse levels, and a near one fine levels |
+| Shadows pick by the main camera's distance, with the camera's threshold times a shadow factor of 2, or 4 on Low | Rejected. A far cascade drew a near caster at the near caster's fine level, many times its texels' detail. A kept layer showed the level of the camera's place at its last redraw. Two cascades could not pick two levels |
+| One level for every cascade, from the finest cascade that holds the caster | Rejected. The level would follow the camera's place, as before, and a far cascade would draw the near cascade's detail |
 | Shadows always draw the base level | Rejected. The shadow passes would keep the full vertex cost of a dense forest |
-
-Far cascades and shadow tiles keep their drawn depth between redraws. A level change then shows in them at their next redraw. That comes within the far cascades' interval, or when the tile's light or a caster moves.
 
 ### A bound under a pixel draws nothing
 
@@ -141,11 +157,11 @@ This is the factor that picks every level, so the render height, the render scal
 
 Past the hide distance lies the same 8% band as a level switch. There the level that the object would draw goes into its fade bucket with a negative fade value, so the dither drops a growing share of its pixels until none remain. Without a band, or without a fading build, the object hides at the hide distance. A mesh without levels never hides, so a scene without levels still pays nothing. Both paths compare the same values: the job workers and the direct-draw culling read `levels.rs`, and the GPU's culling shader reads `cull.wgsl`.
 
-The shadow views use their own threshold, times `lodShadowFactor`, as their level choice does. A caster's shadow therefore goes at a nearer distance than the object itself. It draws no band, as the shadow maps already pick without one.
+A shadow view hides a caster whose diameter covers fewer of its texels than `lodShadowThreshold`, as its level choice measures. A pebble 1 cm across draws nothing in a cascade of 2 cm texels, wherever the camera stands. It draws no band, as the shadow maps already pick without one.
 
 ### The governor
 
-The render scale is part of the render height, so a lower scale picks coarser levels with no new step. A governor step, after the render scale's steps, doubles the threshold, up to four times the preset's. It runs only while the scene draws a level set.
+The render scale is part of the render height, so a lower scale picks coarser levels with no new step. A governor step, after the render scale's steps, doubles the threshold, up to four times the preset's. The same step doubles the shadow maps' threshold in texels. It runs only while the scene draws a level set.
 
 ### Copy lists that follow what draws
 
@@ -156,14 +172,16 @@ So the frame sizes each level's slice to the copies that it draws, and the slice
 | Copies of four levels, with fading bands | A slice per source in every bucket, by arithmetic | Sized to what draws, measured |
 | --- | --- | --- |
 | 40,000 copies, the main view | 20.5 MB | 2.6 MB |
-| 40,000 copies, the four cascades' casters list | 10.2 MB | 2.6 MB |
-| Both lists together | 30.7 MB | 5.1 MB |
+| 40,000 copies, the four cascades' casters list | 10.2 MB | 5.1 MB |
+| Both lists together | 30.7 MB | 7.7 MB |
 
-`crates/null3d-render/tests/levels.rs` measures the right-hand figures from the frame's own copy lists. `forty_thousand_copies_of_four_levels_take_one_copy_each` reads the main view, and `forty_thousand_casters_of_four_cascades_take_one_copy_each` reads the casters' layout with four cascades. The four cascades draw one copy list, so the list takes one copy for each of the 40,000 trees, and neither the levels nor the cascade count multiply it. The middle column is arithmetic at 64 bytes a copy. The main view would have eight slices, one for each of four levels and its fading band: 20.5 MB. The casters' list would have four, because its shadow pipelines take no fading build, and its fade buckets exist only in the scene layout: 10.2 MB.
+`crates/null3d-render/tests/levels.rs` measures the right-hand figures from the frame's own copy lists. `forty_thousand_copies_of_four_levels_take_one_copy_each` reads the main view, and `forty_thousand_casters_of_four_cascades_take_a_copy_for_each_level_that_a_cascade_picks` reads the casters' layout with four cascades. The cascades share one bucket table, so a level's slice holds the most copies that any cascade places in it. Each cascade picks in its own texels, so two cascades can place one caster in two levels. The test's 40,000 trees stand together inside every cascade, and the four cascades pick two levels: 5.1 MB, twice the 2.6 MB of one level. Each shadow view counts only the casters inside its frustum, with its sphere grown by the count's slack, so a caster that no cascade holds takes no copy. The same trees far past the shadow distance take none. The middle column is arithmetic at 64 bytes a copy. The main view would have eight slices, one for each of four levels and its fading band: 20.5 MB. The casters' list would have four, because its shadow pipelines take no fading build, and its fade buckets exist only in the scene layout: 10.2 MB.
+
+Counting every caster in every cascade, as the camera's view counts every source, would put a near cascade's fine levels and a far cascade's coarse levels in every caster's count. The casters' list would then approach a slice for every copy in every level, the cost that this section removes.
 
 A band adds about a tenth more, for the sources inside it, which take a copy in each of two fade buckets.
 
-The culling shader cannot size these slices itself. A draw reads its bucket's copies from a vertex buffer offset that the frame records on the CPU. An indirect draw keeps its first instance at 0 (hard rule 8). A count on the GPU would need a readback, or a second pass that costs every frame. The CPU count runs only for the sources of a mesh with levels. A list of chosen patches per view has the same sizing problem (M3-L3). Its count can read this one.
+The culling shader cannot size these slices itself. A draw reads its bucket's copies from a vertex buffer offset that the frame records on the CPU. An indirect draw keeps its first instance at 0 (hard rule 8). A count on the GPU would need a readback, or a second pass that costs every frame. The CPU count runs only for the sources of a mesh with levels. A view's list of chosen patches has the same sizing problem, and the frame counts it on the CPU too ([D-213](D-213-cluster-levels.md#what-it-costs)).
 
 The count picks a level for every source in every frame, twice for each source, at each edge of the slack. So its cost grows with the sources, even when only the camera moves. The desert comparison draws 16 batches with 63,000 rows in all. There, a CPU profile in Chrome on the MacBook Pro M5 Max put 3.5 ms of the sketch worker's 4.6 ms frame in the count. The engine had started no job worker, as no other loop of the scene asked for one. So the count runs on the job workers, in chunks of 1,024 sources. Each thread counts into a tally of its own, and the tallies are summed. The sum is the same whatever thread counts which source, so the slices are unchanged. The tallies take a cache line's multiple of words per thread, in the layout's working list. `job_workers_count_the_same_copies_of_each_level_as_one_thread` in `crates/null3d-render/tests/levels.rs` compares four job workers with one thread. Its forest spreads over every level, band and the hide distance, in the camera's list and the casters'. On the job workers, the comparison's recording step fell to 1.1 to 1.7 ms. The sketch worker's frame fell to 1.2 to 2.0 ms ([Benchmarks](../benchmarks.md#the-desert-comparisons-sketch-worker)).
 
