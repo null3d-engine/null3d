@@ -217,11 +217,39 @@ describe('the slots', () => {
 		expect(classifySlot('23-leaf-cluster-studio.png')?.background).toBe('studio-grey');
 		expect(classifySlot('22-forest-bole-dead-stubs.png')?.view).toBe('trunk');
 		expect(classifySlot('19-acorns-on-stalk.png')?.note).toContain('fruit');
+		expect(classifySlot('22-forest-bole-dead-stubs.png')?.query?.season).toBeUndefined();
 		expect(classifySlot('32-young-oak-whole.png')).toMatchObject({
 			view: 'whole',
 			note: expect.stringContaining('young'),
 		});
 		expect(classifySlot('30-sucker-clump.png')?.view).toBe('whole');
+	});
+
+	test('draw each still in the season it shows, from its name or its index row', () => {
+		expect(classifySlot('19-acorns-on-stalk.png')?.query?.season).toBe('autumn');
+		expect(classifySlot('19-hips-on-the-cane.png')?.query?.season).toBe('autumn');
+		expect(classifySlot('19-flowers.png')?.query?.season).toBe('blossom');
+		expect(classifySlot('19-cones-on-a-branch.png')?.query?.season).toBeUndefined();
+		expect(
+			classifySlot('19-hanging-clusters.png', 'The tree in full flower, white clusters')?.query
+				?.season,
+		).toBe('blossom');
+		expect(classifySlot('19-on-the-twig.png', 'Ripe red berries on the twig')?.query?.season).toBe(
+			'autumn',
+		);
+		expect(
+			classifySlot('08-limb-fork.png', 'A thick limb dividing into two')?.query,
+		).toBeUndefined();
+		expect(classifySlot('20-winter-branch-architecture.png')?.query?.season).toBe('winter');
+		expect(classifySlot('20-blossom-spring.png')?.query?.season).toBe('blossom');
+		expect(classifySlot('20-fire-scar.png')?.query?.season).toBe('winter');
+		expect(
+			classifySlot('05-crown-underneath.png', 'Bright under the leaves, bare limbs in winter')
+				?.query,
+		).toBeUndefined();
+		expect(
+			classifySlot('24-leaf-texture-upper.png', 'One leaf, autumn colours')?.query,
+		).toBeUndefined();
 	});
 
 	test('lay each texture source beside the surface it paints', () => {
