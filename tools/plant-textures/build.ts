@@ -192,9 +192,15 @@ export async function buildSpecies(
 	files.set('index.d.ts', new TextEncoder().encode(DECLARATIONS));
 	if (leaf && config.leaf) {
 		const upper = used.find((file) => file.slot === config.leaf?.upper);
+		const lower = used.find((file) => file.slot === config.leaf?.lower);
 		files.set(
 			'leaf-coverage.json',
-			coverageRuns(upper?.name ?? '', leaf.half.colour[0] as Uint8Array, leaf.half.size),
+			coverageRuns(
+				[upper?.name, lower?.name].filter((name) => name !== undefined).join(' and '),
+				leaf.half.colour[0] as Uint8Array,
+				leaf.half.colour[1] as Uint8Array,
+				leaf.half.size,
+			),
 		);
 	}
 	return {
@@ -244,18 +250,25 @@ ${set(true)}
 }
 
 /**
- * The upper face's coverage at the alpha cutoff, as runs of covered texels per row of the half set's
- * layer: row 0 at v = 0, the stalk end, each run a start and an exclusive end. Tests of the leaf mesh
- * read it where neither the references nor a KTX2 decoder are at hand. The package leaves it out.
+ * The coverage of either face at the alpha cutoff, which the leaf mesh's outline holds, as runs of
+ * covered texels per row of the half set's layers: row 0 at v = 0, the stalk end, each run a start
+ * and an exclusive end. Tests of the leaf mesh read it where neither the references nor a KTX2
+ * decoder are at hand. The package leaves it out.
  */
-function coverageRuns(source: string, texels: Uint8Array, size: number): Uint8Array {
+function coverageRuns(
+	source: string,
+	upper: Uint8Array,
+	lower: Uint8Array,
+	size: number,
+): Uint8Array {
 	const rows: string[] = [];
 	for (let row = 0; row < size; row++) {
 		const y = size - 1 - row;
 		const runs: number[] = [];
 		let start = -1;
 		for (let x = 0; x <= size; x++) {
-			const covered = x < size && (texels[(y * size + x) * 4 + 3] as number) >= 128;
+			const at = (y * size + x) * 4 + 3;
+			const covered = x < size && Math.max(upper[at] as number, lower[at] as number) >= 128;
 			if (covered && start < 0) start = x;
 			if (!covered && start >= 0) {
 				runs.push(start, x);
