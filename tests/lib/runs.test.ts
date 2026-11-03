@@ -166,11 +166,12 @@ describe('waitForRunners', () => {
 			expect(quiet).toEqual([['quiet-phone', 'a']]);
 		}));
 
-	it("keeps waiting on a runner page whose heartbeat goes on past its page's quiet time", () =>
+	it('keeps waiting on a runner page whose heartbeat shows the page getting on', () =>
 		withRun(['a'], async (plan) => {
 			writeRunnerFile(plan.run, 'slow-ipad', 'device', {});
+			let step = 0;
 			const beats = setInterval(
-				() => writeRunnerFile(plan.run, 'slow-ipad', HEARTBEAT_NAME, { item: 'a' }),
+				() => writeRunnerFile(plan.run, 'slow-ipad', HEARTBEAT_NAME, { item: 'a', step: step++ }),
 				20,
 			);
 			setTimeout(() => {
@@ -186,6 +187,26 @@ describe('waitForRunners', () => {
 			clearInterval(beats);
 			expect(quiet).toEqual([]);
 			expect(finished).toEqual(['slow-ipad']);
+		}));
+
+	it('gives up on a runner page whose heartbeat repeats one step, as a page that stopped does', () =>
+		withRun(['a'], async (plan) => {
+			writeRunnerFile(plan.run, 'slow-ipad', 'device', {});
+			const beats = setInterval(
+				() => writeRunnerFile(plan.run, 'slow-ipad', HEARTBEAT_NAME, { item: 'a', step: 7 }),
+				20,
+			);
+			const quiet: string[] = [];
+			const finished = await waitForRunners(plan, ['slow-ipad'], {
+				quietMs: () => 80,
+				onQuiet: (runner) => {
+					quiet.push(runner);
+					return false;
+				},
+			});
+			clearInterval(beats);
+			expect(quiet).toEqual(['slow-ipad']);
+			expect(finished).toEqual([]);
 		}));
 
 	it("reports a runner's longest silence that its runner page ended by writing again", () =>

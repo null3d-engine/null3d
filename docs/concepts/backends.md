@@ -57,7 +57,7 @@ WebGL2 and WebGPU's compatibility mode run at most the Medium [quality preset](q
 
 ## Color and anti-aliasing on each tier
 
-The anti-aliasing mode smooths the jagged edges of objects. The quality preset picks it: FXAA on Low, and MSAA from Medium up. The `antialias` option of `createEngine` replaces the preset's mode. The mode stays fixed while the engine runs, because the scene's targets and pipelines depend on it.
+The anti-aliasing mode smooths the jagged edges of objects. The quality preset picks it: FXAA on Low, and MSAA from Medium up. The `antialias` option of `createEngine` replaces the preset's mode. The mode stays fixed while the engine runs, because the scene's targets and pipelines depend on it. One exception: when the start-up preset check lowers the preset, the demo draws with the lower preset's mode. The engine moves the canvas to a lighter mode for that, and never under the viewer's own preset change.
 
 | Mode | How the frame draws it |
 | --- | --- |

@@ -264,6 +264,11 @@ export interface CinematicOptions {
 	 * model is posted again.
 	 */
 	groups?: () => readonly HudGroup[];
+	/**
+	 * False keeps the controls off the page, for a scene that shows no panel: the route plays and the
+	 * `c` key still switches the camera. The default is true.
+	 */
+	hud?: boolean;
 	/** How fast the keys pan the manual camera, in canvas pixels per second. The default is 420. */
 	speed?: number;
 	/** The scene's own keys. A key that the table already holds throws. */
@@ -688,6 +693,7 @@ export function createCinematic(
 
 	/** Sends the whole controls model to the page, with the camera group first. */
 	const postControls = (): void => {
+		if (options.hud === false) return;
 		const groups: HudGroup[] = [
 			radioGroup('camera', 'Camera', CAMERA_OPTIONS, mode === 'manual' ? 'Manual' : 'Auto'),
 			...(options.groups?.() ?? []),

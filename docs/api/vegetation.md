@@ -8,7 +8,7 @@ summary: "The plant core that grows each species from its own record and a seed,
 
 # Vegetation (@null3d/vegetation)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The species are being rebuilt: the pedunculate oak ships, and a page draws stand-ins for the other species. Built: the self-organizing growth that broadleaves, pines, shrubs and hedges use, and the leaves and shoots: leaf meshes from each species' texture outline, compound leaves, needles and fascicles, shoot prototypes with their buds, their places on the plant, the seasons and extras, and the shoot cards baked from them. Built too: the wood, the plant material, the placement of a species' copies at fixed places with real shoots near the camera, the coarseness options that grow a simpler plant, bracken's fronds (the frond builder and the frond colony that grows them), and the ground plants' growth: rosettes of broad ribbed leaves on long stalks, and tufts of grass and sedge blades with their flowering stems, panicles and hanging spikes. Not built yet: the other growth models, the wind records, the level distances, the near pool and the far cards. The grass's compute-built blades and near shadows are not built yet either. This page covers the plant core's records and stages, the stand-ins, the scatter, the grass's CPU path and the floating leaves that ride the wind.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The species are being rebuilt: the pedunculate oak ships, and a page draws stand-ins for the other species. Built: the self-organizing growth that broadleaves, pines, shrubs and hedges use, and the leaves and shoots: leaf meshes from each species' texture outline, compound leaves, needles and fascicles, shoot prototypes with their buds, their places on the plant, the seasons and extras, and the shoot cards baked from them. Built too: the wood, the plant material, the placement of a species' copies at fixed places with real shoots near the camera, the coarseness options that grow a simpler plant, bracken's fronds (the frond builder and the frond colony that grows them), and the ground plants' growth: rosettes of broad ribbed leaves on long stalks, and tufts of grass and sedge blades with their flowering stems, panicles and hanging spikes. Not built yet: the other growth models, the wind records, the level distances, the near pool and the far cards. This page covers the plant core's records and stages, the stand-ins, the scatter, the grass's two GPU paths and its near shadows, and the floating leaves that ride the wind.
 
 ```mermaid
 flowchart LR
@@ -211,13 +211,13 @@ A large scene need not place every plant at once. `EcoScatter` takes tiles with 
 
 ## Grass on the ground
 
-`createGrass(ctx, { height, area, count, seed, mask, wind })` draws tufts of bent blades over a square of ground. The tufts stand on `height(x, z)`, skip ground steeper than `maxSlope`, and skip the ground that `mask` refuses, such as water, a stone or a footprint. Their turn, size and tint come from integer hashes, so one seed places the same grass on every device. Each tuft's row values carry its tint, which its shader reads. `count` is the tufts at the High preset; Low, Medium and Ultra draw 0.35, 0.6 and 1.25 of it. `createGrass` fits the engine's starting preset, and `grass.fit(preset)` takes a new one.
+`await createGrass(ctx, { height, area, count, seed, mask, wind })` draws tufts of bent blades over a square of ground. The tufts stand on `height(x, z)`, skip ground steeper than `maxSlope`, and skip the ground that `mask` refuses, such as water, a stone or a footprint. Their turn and size come from integer hashes, so one seed places the same grass on every device, and each tuft's tint comes from a hash of its root's place in the shader. `count` is the tufts at the High preset; Low, Medium and Ultra draw 0.35, 0.6 and 1.25 of it. `createGrass` fits the engine's starting preset, and `grass.fit(preset)` takes a new one. Await the call in the sketch's setup, because WebGPU makes its draw then.
 
 The blades bend in the wind add-on's field. Give `createGrass` its `wind` field, and call `grass.setWindLayer(field)` in each frame with the field's newest state, as the plant materials take it. A page that gives no field grows grass that stands still.
 
-The CPU tile path draws on WebGPU and WebGL2, with one instance batch for each tuft shape. The rows are built for Ultra's share once, so a preset change only changes how many rows each batch draws, not the memory. The compute path, which builds and culls blades on the GPU for the denser presets, is not built yet.
+On WebGPU and compatibility mode a compute pass builds the blade list: it writes each tuft's row and the count into a draw that the frame culls no further, and the engine copies the count into the main view and every drawn shadow view. Give it the drawing `camera` and the pass culls the tiles outside the view and thins the far tufts: a far tuft draws the share that its root's hash picks, and its blades widen by the inverse of that share, so the hill's cover stays the same. The draw shader then culls each view to its own box, from that view's matrix: the camera's view draws its frustum, and a light's view draws its cascade, whose box reaches toward the light over the casters. So a shadow view does not draw the whole kept list. WebGL2 fills one instance batch for each tuft shape on the CPU, and its vertex shader applies the same share and the same per-view cull, so both paths draw the same hill. The rows are built for Ultra's share once, so a preset change only changes how many rows draw, not the memory. A page that drives the rows itself gives `compute: false`, which keeps the instance batch on both paths.
 
-The blades receive the sun's shadows. The ground's own color and the blades' root colors should meet at the hill's foot.
+The grass casts and receives the sun's shadows on both paths. Give it a `swayDistance` to stop the blades past that distance, so a far cascade that only the grass reaches keeps its cached layer, and call `grass.setSwayDistance(distance)` when the preset changes. `swayDistanceFor(preset)` gives each preset's distance from `PLANT_SWAY_DISTANCE`: 8, 16, 24 and 32 meters from Low to Ultra. The plant materials take the same distance. The ground's own color and the blades' root colors should meet at the hill's foot.
 
 ## Floating and falling leaves
 
@@ -248,13 +248,11 @@ Two forms ride the air. `ride: 'offset'` gives each leaf a closed-form fall and 
 
 The state form costs one pass and a texture of four numbers for each leaf. The offset form costs one texture read for each leaf and no pass. `leaves.update(dt)` steps the state and gives the shader the field's newest layer. `leaves.setColor` tints the leaves for a mood. `leaves.destroy()` removes them and their pass.
 
-On WebGL2 the state form's pass costs the frame a large upload for each frame when the scene also draws a reflection, so a scene that reflects its water or its sky rides the offset form on that path. Read the tier with `ctx.engine.capabilities.tier` and pick the form there. D-283 and D-286 hold the figures.
-
 ## Speed and memory
 
 Each species has a budget in its record: its kit's bytes, a variant's bytes, the triangles of each level, its download and its growth time. `capsFor(record)` gives the limits for its growth model, and the record check refuses a budget over them. A species' own test holds its growth to its budget.
 
-Reading Creek's 160 m valley into the ground maps and placing its species takes about 55 ms on an Apple M5 Max laptop, for about a thousand points. Ground cover is the most of it. A species at one meter of spacing offers tens of thousands of candidates.
+Reading Creek's 160 m valley into the ground maps and placing its species takes about 55 ms for each thousand points on an Apple M5 Max laptop. Ground cover is the most of it. A species at one meter of spacing offers tens of thousands of candidates.
 
 ## Far cards and the hand-over
 

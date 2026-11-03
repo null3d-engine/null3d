@@ -122,3 +122,6 @@ Options rejected:
 - The near pool package (N1) writes shoot rows' value x, a wind id up to 65,000, split as the
   records are, since a WebGL2 device may keep row values at half precision.
 - The download test skips until two species ship texture files.
+- The tangent frame is a port of three.js's `getTangentFrame`, so `@null3d/vegetation` ships a
+  `THIRD-PARTY-NOTICES.txt` with three.js's MIT licence. The notices guard refuses a package whose
+  shipped code names three.js without one (`tools/lib/notices.ts`).

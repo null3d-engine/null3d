@@ -5,7 +5,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { MEMORY_REFUSED } from '../pages/lib/room.ts';
-import { MOST_TIME_SHARE } from '../pages/lib/runner-rules.ts';
+import { HEARTBEAT_NAME, MOST_TIME_SHARE } from '../pages/lib/runner-rules.ts';
 import { type DeviceFacts, webKitOnIos } from './device-record.ts';
 import type { GpuPath, MissingAllowed } from './gpu-paths.ts';
 import { CURRENT_RUN_FILE, RUNS_DIR } from './report-collector.ts';
@@ -510,16 +510,34 @@ export function currentItem<Check>(
 	return index < 0 ? undefined : { index, item: plan.items[index] as PlanItem<Check> };
 }
 
-/** When a runner last wrote a file of the run, or undefined before its runner page starts. */
-function lastWrite(run: string, runner: string): number | undefined {
+/**
+ * When a runner last wrote a file of the run, and last wrote one other than its heartbeat:
+ * undefined before its runner page starts.
+ */
+function lastWrites(run: string, runner: string): { any?: number; beyondBeat?: number } {
 	const dir = join(RUNS_DIR, run, runner);
-	if (!existsSync(dir)) return undefined;
-	let last: number | undefined;
+	if (!existsSync(dir)) return {};
+	let any: number | undefined;
+	let beyondBeat: number | undefined;
 	for (const name of readdirSync(dir)) {
 		const time = statSync(join(dir, name)).mtimeMs;
-		if (last === undefined || time > last) last = time;
+		if (any === undefined || time > any) any = time;
+		if (name !== `${HEARTBEAT_NAME}.json` && (beyondBeat === undefined || time > beyondBeat))
+			beyondBeat = time;
 	}
-	return last;
+	return { any, beyondBeat };
+}
+
+/** What a runner page's heartbeat says: the page it waits on and how many of its steps it saw. */
+function readBeat(run: string, runner: string): { item?: string; step?: number } | undefined {
+	try {
+		const record = JSON.parse(
+			readFileSync(join(RUNS_DIR, run, runner, `${HEARTBEAT_NAME}.json`), 'utf8'),
+		) as { item?: string; step?: number };
+		return typeof record === 'object' && record !== null ? record : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 /** What a wait reports, and the quiet time after which a started runner counts as stopped. */
@@ -608,13 +626,32 @@ export async function waitForRunners<Check>(
 		}
 		silence.at = at;
 	};
+	/** For each runner, the page that its heartbeat last showed, and when that page got on. */
+	const advances = new Map<string, { at: number; item?: string; step?: number }>();
 	while (waiting.size > 0 && Date.now() < deadline) {
 		for (const runner of waiting) {
-			const written = lastWrite(plan.run, runner);
-			if (written !== undefined) noteWrite(runner, written);
+			const writes = lastWrites(plan.run, runner);
+			if (writes.any !== undefined) noteWrite(runner, writes.any);
+			// A runner page beats while it waits, so a beat on its own shows nothing about the page
+			// under it. The beat counts as getting on only when the page's steps rise or the page
+			// changes; a page that waits without getting on then goes quiet like a stopped tab.
+			const beat = readBeat(plan.run, runner);
+			const seenBeat = advances.get(runner);
+			if (
+				beat !== undefined &&
+				(seenBeat === undefined || seenBeat.item !== beat.item || seenBeat.step !== beat.step)
+			) {
+				advances.set(runner, { at: Date.now(), item: beat.item, step: beat.step });
+			}
 			const last =
-				written === undefined ? undefined : Math.max(written, reopenedAt.get(runner) ?? 0);
-			if (written !== undefined && endTurn(runner)) {
+				writes.beyondBeat === undefined && advances.get(runner) === undefined
+					? undefined
+					: Math.max(
+							writes.beyondBeat ?? 0,
+							advances.get(runner)?.at ?? 0,
+							reopenedAt.get(runner) ?? 0,
+						);
+			if (writes.any !== undefined && endTurn(runner)) {
 				waiting.delete(runner);
 				continue;
 			}

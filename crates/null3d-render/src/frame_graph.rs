@@ -199,6 +199,7 @@ use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::scope;
 use crate::shadow_tiles;
 use crate::shadows::{CascadeDepth, MAX_CASCADES, ShadowFrame};
+use crate::single_layer::{self, SingleIds, SingleLayer};
 use crate::ssr::{self, LastView, SsrIds, SsrPass, TraceFrame};
 use crate::subsurface::{self, SubsurfaceFrame, SubsurfaceIds, SubsurfacePass, SubsurfaceSources};
 use crate::taa::{self, TaaFrame, TaaIds, TaaPass, TaaSources};
@@ -258,6 +259,8 @@ pub(crate) struct GraphIds {
     pub(crate) bounce: BounceIds,
     /// The composite and the depth copy of the camera's weighted layer.
     pub(crate) weighted: WeightedIds,
+    /// The composite and the depth copy of the camera's one-sample layer.
+    pub(crate) single: SingleIds,
     /// The steps, the sampler and the lookup tables of the camera's moment layer.
     pub(crate) moment: MomentIds,
     /// The bind group of the copy of the camera's opaque depth that soft particles read.
@@ -504,6 +507,14 @@ const WEIGHTED_PASS: &str = "Weighted";
 const WEIGHTED_SUM: &str = "weightedSum";
 const WEIGHTED_COVER: &str = "weightedCover";
 const WEIGHTED_COMPOSITE_PASS: &str = "WeightedComposite";
+/// The camera's one-sample layer (see [`crate::single_layer`]): the pass that draws the blended
+/// surfaces that ask for it into its color target of one sample, with the one-sample depth target
+/// that it copies first, and the composite, which blends the layer over the scene color inside the
+/// camera's transparent render pass.
+const SINGLE_PASS: &str = "SingleLayer";
+const SINGLE_COLOR: &str = "singleColor";
+const SINGLE_DEPTH: &str = "singleDepth";
+const SINGLE_COMPOSITE_PASS: &str = "SingleComposite";
 /// The camera's moment transparency layer (see [`crate::moment`]): the pass that writes the moment
 /// store, the pass that writes the colour sum, the composite over the scene color, and the three
 /// steps of SMAA that smooth its edges under the share that its moments cover.
@@ -717,6 +728,12 @@ pub(crate) enum Role {
     Weighted,
     /// Blends the camera's weighted layer over its scene color. The graph records it itself.
     WeightedComposite,
+    /// Draws the camera's blended surfaces that ask for it into the one-sample layer. The builder
+    /// records it, after the graph's copy of the multisampled scene depth.
+    Single,
+    /// Blends the camera's one-sample layer over its scene color, in the camera's transparent
+    /// render pass. The graph records it itself.
+    SingleComposite,
     /// Writes the camera's blended surfaces into the moment layer's moment store. The builder
     /// records it, after the graph's copy of a multisampled scene depth.
     Moment,
@@ -859,6 +876,7 @@ enum BuiltGroup {
     Subsurface,
     Transmission,
     Weighted,
+    Single,
     Moment,
     ParticleDepth,
     Taa,
@@ -1236,6 +1254,20 @@ pub(crate) struct FrameGraph {
     /// The textures that the layer's composite and depth copy read, found once for each compile
     /// of the graph: the two sums, and the scene depth or 0.
     weighted_textures: CompileCache<[u32; 3]>,
+    /// The composite and the depth copy of the camera's one-sample layer.
+    single: SingleLayer,
+    /// True when the device draws into the one-sample layer's target of 16-bit floats, which the
+    /// HDR path needs.
+    single_targets: bool,
+    /// True while some sorted bucket has a pipeline of the one-sample layer.
+    single_wanted: bool,
+    /// True once the composite's pipeline and the depth copy's are built.
+    single_built: bool,
+    /// True when the declared passes hold the one-sample layer.
+    single_declared: bool,
+    /// The textures that the layer's composite and depth copy read, found once for each compile
+    /// of the graph: the layer, and the scene depth.
+    single_textures: CompileCache<[u32; 2]>,
     /// True while some object is a decal.
     decals_wanted: bool,
     /// True while objects on the layers that decals skip draw again after them.
@@ -1494,6 +1526,12 @@ impl FrameGraph {
             weighted_built: false,
             weighted_declared: false,
             weighted_textures: CompileCache::default(),
+            single: SingleLayer::new(ids.single),
+            single_targets: true,
+            single_wanted: false,
+            single_built: false,
+            single_declared: false,
+            single_textures: CompileCache::default(),
             decals_wanted: false,
             redraws_wanted: false,
             decals_declared: false,
@@ -2848,6 +2886,51 @@ impl FrameGraph {
         }
     }
 
+    /// Says whether the device draws into one-sample targets of 16-bit floats, which the camera's
+    /// one-sample layer needs on the HDR path. Without them, the surfaces that ask for the layer
+    /// draw back to front in the transparent pass. The 8-bit path's layer takes the scene color's
+    /// own format, which every device draws into.
+    pub(crate) fn set_single_targets(&mut self, supported: bool) {
+        self.single_targets = supported;
+    }
+
+    /// The format of the camera's one-sample layer: 16-bit floats on the HDR path, whose scene
+    /// color may have no alpha, and the scene color's own format on the 8-bit path, whose surfaces
+    /// blend display color.
+    fn single_format(&self) -> u32 {
+        if self.scene_color.is_hdr() {
+            single_layer::HDR_FORMAT
+        } else {
+            self.scene_color.format()
+        }
+    }
+
+    /// The targets of the camera's one-sample layer, for the pipelines of a pass whose targets are
+    /// `scene`, or `None` where the layer does not draw: a scene of one sample blends at one
+    /// sample already, and on the HDR path the device must draw into 16-bit floats. The pass
+    /// keeps the scene's permutation bits, so its pipelines take the same shader builds.
+    pub(crate) fn single_targets(&self, scene: PassTargets) -> Option<PassTargets> {
+        let supported = self.single_targets || !self.scene_color.is_hdr();
+        (self.samples > 1 && supported).then_some(PassTargets {
+            color_format: self.single_format(),
+            depth_format: DEPTH_FORMAT,
+            samples: 1,
+            ..scene
+        })
+    }
+
+    /// Turns the camera's one-sample layer on while some sorted bucket has its pipelines, and off
+    /// otherwise, for the next frames. The passes are declared again only when the layer starts or
+    /// stops drawing. Call it before [`FrameGraph::request_pipelines`], which asks for the layer's
+    /// own pipelines.
+    pub(crate) fn set_single(&mut self, on: bool) {
+        let was = self.single_draws();
+        self.single_wanted = on && self.single_targets(self.scene_targets()).is_some();
+        if self.single_draws() != was {
+            self.declared = false;
+        }
+    }
+
     /// Turns the copy of the camera's opaque depth on while a particle system fades near the
     /// surfaces behind it or a custom material reads the scene's depth, and off otherwise, as
     /// [`FrameGraph::set_transmission`] turns its copy. `materials` says whether a custom material
@@ -2969,6 +3052,19 @@ impl FrameGraph {
     /// transparent pass leaves weighted buckets to the weighted pass.
     pub(crate) fn weighted_declared(&self) -> bool {
         self.weighted_declared
+    }
+
+    /// True while the camera's one-sample layer draws: some sorted bucket has its pipelines, the
+    /// scene has more than one sample, and the layer's own pipelines are built. Until then the
+    /// surfaces that ask for it draw back to front in the transparent pass.
+    pub(crate) fn single_draws(&self) -> bool {
+        self.single_wanted && self.single_built
+    }
+
+    /// True when the declared passes hold the camera's one-sample layer, so the camera's
+    /// transparent pass leaves its buckets to the layer's pass.
+    pub(crate) fn single_declared(&self) -> bool {
+        self.single_declared
     }
 
     /// True when the camera's weighted layer copies one sample of a multisampled scene depth,
@@ -3276,10 +3372,20 @@ impl FrameGraph {
                 match view.fullscreen_pass() {
                     // The fragment form of a compute pass keeps the states in the same layers that
                     // the compute pass's target holds, so a page reads its images on both paths.
-                    Some(pass) if pass.fallback => one_sample
-                        .layers(pass.layers.max(1) * if pass.history { 2 } else { 1 })
-                        .clearable()
-                        .copy_source(),
+                    // It keeps the compute pass's own format too: an 8-bit scene color rounds the
+                    // small values a compute pass writes, and clamps their sign away. It keeps the
+                    // one sample's array and shown texture: a material samples the image outside
+                    // the graph's passes, as it does for the passes that draw a target whole.
+                    Some(pass) if pass.fallback => Target::color(if pass.format == 0 {
+                        fullscreen_target_format(self.scene_color)
+                    } else {
+                        pass.format
+                    })
+                    .array()
+                    .shown()
+                    .layers(pass.layers.max(1) * if pass.history { 2 } else { 1 })
+                    .clearable()
+                    .copy_source(),
                     _ => one_sample,
                 }
             } else {
@@ -3523,6 +3629,10 @@ impl FrameGraph {
                 .creates(PARTICLE_DEPTH, Target::color(DEPTH_COPY_FORMAT));
             self.add(copy, Role::ParticleDepthCopy);
         }
+        self.single_declared = self.single_draws() && !views.is_empty();
+        if self.single_declared {
+            self.declare_single(views, &named);
+        }
         for (index, view) in views.iter().enumerate() {
             if (self.fullscreen_views | self.compute_views) & (1 << index) != 0
                 || view.canvas_rect().is_some()
@@ -3549,6 +3659,16 @@ impl FrameGraph {
             let pass = optional_beyond_camera(pass, index);
             let pass = self.add(pass, Role::Transparent(ViewId::from_index(index)));
             self.transparent.push((index as u16, pass));
+        }
+        if self.single_declared {
+            // The composite draws into the transparent pass's targets, so it joins that render
+            // pass, and the multisampled color and depth load and store once for both.
+            let composite = Pass::new(SINGLE_COMPOSITE_PASS, PassKind::Scene)
+                .size(view_size(&views[ViewId::CAMERA.index()]))
+                .reads(SINGLE_COLOR)
+                .writes(SCENE_COLOR)
+                .writes(SCENE_DEPTH);
+            self.add(composite, Role::SingleComposite);
         }
         self.weighted_declared = self.weighted_draws() && !views.is_empty();
         if self.weighted_declared {
@@ -4296,6 +4416,29 @@ impl FrameGraph {
         self.add(composite, Role::WeightedComposite);
     }
 
+    /// Declares the pass of the camera's one-sample layer before its transparent pass (see
+    /// [`crate::single_layer`]). It draws into the layer's color target and a depth target of one
+    /// sample, which its first draw fills from the opaque scene depth. Its surfaces bind the copy of
+    /// the camera's opaque depth, as the transparent pass's do, so it reads that copy while the
+    /// frame makes it.
+    fn declare_single(&mut self, views: &[View], named: &[ViewPassNames]) {
+        let camera = &views[ViewId::CAMERA.index()];
+        let mut layer = Pass::new(SINGLE_PASS, PassKind::Scene)
+            .size(view_size(camera))
+            .layers(camera.layers())
+            .creates(SINGLE_COLOR, Target::color(self.single_format()))
+            .reads_so_far(SCENE_DEPTH)
+            .creates(SINGLE_DEPTH, Target::depth(DEPTH_FORMAT));
+        if self.particle_depth_declared {
+            layer = layer.reads(PARTICLE_DEPTH);
+        }
+        if self.skins() {
+            layer = layer.reads(SKINNED);
+        }
+        let layer = reads_targets(layer, views, named, ViewId::CAMERA.index());
+        self.add(layer, Role::Single);
+    }
+
     /// Declares the camera's moment transparency layer after its transparent pass (see
     /// [`crate::moment`]). The moment pass writes the moment store with the scene's depth as its
     /// depth target, and the colour pass writes the colour sum from it. A scene of one sample
@@ -4727,6 +4870,7 @@ impl FrameGraph {
             BuiltGroup::Subsurface => self.subsurface_built,
             BuiltGroup::Transmission => self.transmission_built,
             BuiltGroup::Weighted => self.weighted_built,
+            BuiltGroup::Single => self.single_built,
             BuiltGroup::Moment => self.moment_built,
             BuiltGroup::ParticleDepth => self.particle_depth_built,
             BuiltGroup::Taa => self.taa_built,
@@ -4743,6 +4887,7 @@ impl FrameGraph {
             BuiltGroup::Subsurface => self.subsurface_draws(),
             BuiltGroup::Transmission => self.transmission_draws(),
             BuiltGroup::Weighted => self.weighted_draws(),
+            BuiltGroup::Single => self.single_draws(),
             BuiltGroup::Moment => self.moment_draws(),
             BuiltGroup::ParticleDepth => self.particle_depth_draws(),
             BuiltGroup::Taa => self.taa_draws(),
@@ -4770,6 +4915,7 @@ impl FrameGraph {
             BuiltGroup::Subsurface => self.subsurface_built = built,
             BuiltGroup::Transmission => self.transmission_built = built,
             BuiltGroup::Weighted => self.weighted_built = built,
+            BuiltGroup::Single => self.single_built = built,
             BuiltGroup::Moment => self.moment_built = built,
             BuiltGroup::ParticleDepth => self.particle_depth_built = built,
             BuiltGroup::Taa => self.taa_built = built,
@@ -4956,6 +5102,19 @@ impl FrameGraph {
             weighted_built,
             FrameGraph::declare_again,
         );
+        let single_built = self.single_wanted && {
+            let composite = self.single.request_composite(
+                pipelines,
+                self.scene_color.format(),
+                DEPTH_FORMAT,
+                self.samples,
+            );
+            let depth = self
+                .single
+                .request_depth(pipelines, self.single_format(), DEPTH_FORMAT);
+            pipelines.built(composite, pipelines_built) && pipelines.built(depth, pipelines_built)
+        };
+        self.note_built(BuiltGroup::Single, single_built, FrameGraph::declare_again);
         let moment_built = self.moment_wanted && {
             let format = self.scene_color.format();
             let composite = self
@@ -5085,6 +5244,7 @@ impl FrameGraph {
         self.bind_transmission(list)?;
         self.prepare_motion_view(list, arena)?;
         self.bind_weighted(list)?;
+        self.bind_single(list)?;
         self.bind_moment(list, arena)?;
         self.bind_particle_depth(list)?;
         self.bind_material_scene(list)?;
@@ -5823,6 +5983,29 @@ impl FrameGraph {
         Ok(())
     }
 
+    /// Binds the composite of the camera's one-sample layer to the layer, and the depth copy to the
+    /// scene depth, while the layer is declared. It finds their textures once for each compile of
+    /// the graph.
+    fn bind_single(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
+        if !self.single_declared {
+            return Ok(());
+        }
+        let mut found = self.single_textures;
+        let [layer, depth] = found.get_or(self.graph.compiles(), || {
+            let id = |name: &str| {
+                self.sampled_id(name)
+                    .expect("the one-sample layer reads planned textures")
+            };
+            [id(SINGLE_COLOR), id(SCENE_DEPTH)]
+        });
+        self.single_textures = found;
+        let made = self.textures_made;
+        self.single.prepare_composite(list, layer, made)?;
+        // WebGL2's backend binds a copy of one sample of the multisampled depth in its place.
+        self.single
+            .prepare_depth(list, depth, self.gpu_culling, made)
+    }
+
     /// Makes the bind groups that custom materials that read the scene's depth bind: one for the
     /// blank texel, which a draw before the copy exists or in another view binds, and one for the
     /// copy of the camera's opaque depth. The groups exist from the frame that first wants the
@@ -6323,8 +6506,8 @@ impl FrameGraph {
                     if finals && let Some(meter) = self.exposure_pass.as_ref() {
                         meter.record(list)?;
                     }
-                    // The outline mask, the weighted layer's sums and the skin pass's light start
-                    // from nothing; so does the pick's id target, whose 0 names no object.
+                    // The outline mask, the layers' targets and the skin pass's light start from
+                    // nothing; so does the pick's id target, whose 0 names no object.
                     let masks = passes.iter().any(|&pass| {
                         matches!(
                             self.roles[pass.index()],
@@ -6332,6 +6515,7 @@ impl FrameGraph {
                                 | Role::SkinLight
                                 | Role::Motion
                                 | Role::Weighted
+                                | Role::Single
                                 | Role::Moment
                                 | Role::MomentColour
                                 | Role::Pick
@@ -6454,6 +6638,11 @@ impl FrameGraph {
                                 record(list, Role::Weighted)?;
                             }
                             Role::WeightedComposite => self.weighted.record_composite(list)?,
+                            Role::Single => {
+                                self.single.record_depth(list)?;
+                                record(list, Role::Single)?;
+                            }
+                            Role::SingleComposite => self.single.record_composite(list)?,
                             Role::Moment => {
                                 if self.moment_copies_depth() {
                                     self.moment.record_depth(list)?;
@@ -6571,6 +6760,8 @@ impl FrameGraph {
             Role::MotionView => (P::MotionView, 0),
             Role::Weighted => (P::Weighted, 0),
             Role::WeightedComposite => (P::WeightedComposite, 0),
+            Role::Single => (P::Single, 0),
+            Role::SingleComposite => (P::SingleComposite, 0),
             Role::Moment => (P::Moment, 0),
             Role::MomentColour => (P::MomentColour, 0),
             Role::MomentComposite => (P::MomentComposite, 0),
@@ -6863,6 +7054,7 @@ impl FrameGraph {
         self.transmission.reset_gpu();
         self.motion_step.reset_gpu();
         self.weighted.reset_gpu();
+        self.single.reset_gpu();
         self.moment.reset_gpu();
         self.particle_depth.reset_gpu();
         // The blank texel and the two groups belong to the device that was lost.
@@ -7052,6 +7244,8 @@ fn role_scope(role: Role) -> u32 {
         Role::MotionView => scope::MOTION_VIEW,
         Role::Weighted => scope::WEIGHTED,
         Role::WeightedComposite => scope::WEIGHTED_COMPOSITE,
+        Role::Single => scope::SINGLE,
+        Role::SingleComposite => scope::SINGLE_COMPOSITE,
         Role::Moment => scope::MOMENT,
         Role::MomentColour => scope::MOMENT_COLOUR,
         Role::MomentComposite => scope::MOMENT_COMPOSITE,
@@ -7227,6 +7421,7 @@ mod tests {
         let pass = Fullscreen {
             template: 70,
             fallback: false,
+            format: 0,
             history: false,
             layers: 1,
             steps: 1,
@@ -7493,6 +7688,7 @@ mod tests {
         let pass = Fullscreen {
             template: 70,
             fallback: true,
+            format: 0,
             history: true,
             layers: 1,
             steps,
@@ -8197,6 +8393,7 @@ mod tests {
             first_group: 230,
         },
         weighted: WeightedIds { first_group: 140 },
+        single: SingleIds { first_group: 280 },
         moment: MomentIds {
             first_group: 260,
             sampler: 152,
@@ -8351,6 +8548,11 @@ mod tests {
             "the weighted layer's groups".to_string(),
             IDS.weighted.first_group,
             WeightedIds::GROUPS,
+        ));
+        groups.push((
+            "the one-sample layer's groups".to_string(),
+            IDS.single.first_group,
+            SingleIds::GROUPS,
         ));
         buffers.push((
             "the subsurface blur's block".to_string(),
@@ -8520,6 +8722,8 @@ mod tests {
             scope::MOTION_VIEW,
             scope::WEIGHTED,
             scope::WEIGHTED_COMPOSITE,
+            scope::SINGLE,
+            scope::SINGLE_COMPOSITE,
             scope::PARTICLE_DEPTH_COPY,
             scope::ACCUMULATE,
             scope::FINAL,
@@ -11324,6 +11528,289 @@ mod tests {
                 .unwrap();
             assert_eq!(steps(&frames), without);
         }
+    }
+
+    #[test]
+    fn the_one_sample_layer_draws_before_the_transparent_pass_only_while_it_is_used() {
+        let canvas = (320, 180);
+        // What the builder records for the layer's surfaces and for the camera's transparent
+        // pass, as pipelines that no cache makes.
+        const LAYER_DRAWS: u32 = 9001;
+        const TRANSPARENT_DRAWS: u32 = 9002;
+        for format in [format::RGBA16_FLOAT, format::CANVAS] {
+            let hdr = format != format::CANVAS;
+            let mut frames = frame_graph(format, Antialias::Msaa, true, false);
+            let views = [View::default(), shown()];
+            frames.sync(&views);
+            frames.set_transparent(true);
+            // The layer's surfaces read the copy of the opaque depth, as the splats do.
+            frames.set_soft_particles(true, true);
+            let mut list = DrawList::with_capacity(16384);
+            let mut pipelines = PipelineCache::default();
+            frames.request_pipelines(&mut pipelines, 1);
+            pipelines.create_new(&mut list, 2).unwrap();
+            frames.request_pipelines(&mut pipelines, 2);
+            frames.sync(&views);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            let without = steps(&frames);
+            let keys = pipelines.keys().len();
+
+            // The HDR path's layer needs targets of 16-bit floats; the 8-bit path's takes the
+            // scene color's own format, which every device draws into.
+            let scene = frames.scene_targets();
+            frames.set_single_targets(false);
+            assert_eq!(frames.single_targets(scene).is_some(), !hdr);
+            frames.set_single(true);
+            frames.request_pipelines(&mut pipelines, 2);
+            assert_eq!(pipelines.keys().len() > keys, !hdr);
+            frames.set_single_targets(true);
+            let layer_targets = frames.single_targets(scene).unwrap();
+            assert_eq!(
+                layer_targets,
+                PassTargets {
+                    color_format: if hdr { format::RGBA16_FLOAT } else { format },
+                    depth_format: DEPTH_FORMAT,
+                    samples: 1,
+                    permutation: scene.permutation,
+                },
+                "the layer's surfaces keep the scene's shader builds"
+            );
+
+            // The layer waits for its own pipelines: the composite and the depth copy.
+            frames.set_single(true);
+            frames.request_pipelines(&mut pipelines, 2);
+            assert!(!frames.single_draws(), "the layer waits for its pipelines");
+            assert_eq!(pipelines.keys().len(), keys + 2);
+            let composite = pipelines
+                .keys()
+                .iter()
+                .find(|key| key.template == template::SINGLE_COMPOSITE)
+                .copied()
+                .unwrap();
+            assert_eq!(
+                (
+                    composite.color_format,
+                    composite.depth_format,
+                    composite.samples
+                ),
+                (format, DEPTH_FORMAT, 4),
+                "the composite draws in the transparent pass's targets"
+            );
+            assert_eq!(
+                composite.state
+                    & (null3d_gpu::drawlist::state_flags::NO_DEPTH_TEST
+                        | null3d_gpu::drawlist::state_flags::NO_DEPTH_WRITE),
+                null3d_gpu::drawlist::state_flags::NO_DEPTH_TEST
+                    | null3d_gpu::drawlist::state_flags::NO_DEPTH_WRITE
+            );
+            let copy = pipelines
+                .keys()
+                .iter()
+                .find(|key| key.template == template::SINGLE_DEPTH)
+                .copied()
+                .unwrap();
+            assert_eq!(
+                (copy.color_format, copy.depth_format, copy.samples),
+                (layer_targets.color_format, DEPTH_FORMAT, 1)
+            );
+            pipelines.create_new(&mut list, 3).unwrap();
+            frames.request_pipelines(&mut pipelines, 3);
+            assert!(frames.single_draws());
+            frames.sync(&views);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            assert!(frames.single_declared());
+
+            // The plan: the opaque render pass, the depth copy's, the layer's of one sample, then
+            // the transparent pass with the composite in one render pass.
+            let with = steps(&frames);
+            let step_of = |name: &str| {
+                with.iter()
+                    .position(|step| step.iter().any(|pass| pass == name))
+                    .unwrap()
+            };
+            let (copy_step, layer, transparent) = (
+                step_of(PARTICLE_DEPTH_PASS),
+                step_of(SINGLE_PASS),
+                step_of("Transparent"),
+            );
+            assert!(step_of("Opaque") < copy_step);
+            assert!(copy_step < layer && layer < transparent);
+            assert_eq!(with[layer], [SINGLE_PASS]);
+            assert_eq!(
+                step_of(SINGLE_COMPOSITE_PASS),
+                transparent,
+                "the composite joins the camera's transparent render pass"
+            );
+            let in_transparent = &with[transparent];
+            assert!(
+                in_transparent.iter().position(|pass| pass == "Transparent")
+                    < in_transparent
+                        .iter()
+                        .position(|pass| pass == SINGLE_COMPOSITE_PASS)
+            );
+            // Other views keep their own passes and draw no layer.
+            assert!(with.iter().flatten().any(|pass| pass == "Transparent1"));
+
+            let mut arena = UploadArena::default();
+            arena.begin_frame().unwrap();
+            list.clear();
+            frames
+                .upload(&mut list, &mut arena, Output::default(), Grading::default())
+                .unwrap();
+            let first = IDS.single.first_group;
+            let groups: Vec<(u32, u32)> = operands(&list, Op::CreateBindGroup)
+                .iter()
+                .map(|group| (group[0], group[1]))
+                .filter(|&(id, _)| (first..first + SingleIds::GROUPS).contains(&id))
+                .collect();
+            assert_eq!(
+                groups,
+                [
+                    (first, bind_layout::VIEW_COPY),
+                    (first + 1, bind_layout::WEIGHTED_DEPTH_MS)
+                ]
+            );
+
+            list.clear();
+            frames
+                .record(
+                    &mut list,
+                    |_| [0.5; 4],
+                    |_| false,
+                    |list, role| {
+                        let marker = match role {
+                            Role::Single => LAYER_DRAWS,
+                            Role::Transparent(ViewId::CAMERA) => TRANSPARENT_DRAWS,
+                            _ => return Ok(()),
+                        };
+                        list.push(Op::SetPipeline, &[marker])?;
+                        Ok(())
+                    },
+                    |_| Ok(()),
+                    |_| Ok(()),
+                    |_| Ok(()),
+                )
+                .unwrap();
+            // Each render pass's begin operands, with its commands up to its end.
+            type Commands = Vec<(Op, Vec<u32>)>;
+            let mut passes: Vec<(Vec<u32>, Commands)> = Vec::new();
+            for command in null3d_gpu::drawlist::decode(list.words()) {
+                let command = command.unwrap();
+                match command.op {
+                    Op::BeginRenderPass => passes.push((command.operands.to_vec(), Vec::new())),
+                    _ => {
+                        if let Some((_, inside)) = passes.last_mut() {
+                            inside.push((command.op, command.operands.to_vec()));
+                        }
+                    }
+                }
+            }
+            let holding = |pipeline: u32| {
+                passes
+                    .iter()
+                    .find(|(_, inside)| {
+                        inside
+                            .iter()
+                            .any(|(op, words)| *op == Op::SetPipeline && words[0] == pipeline)
+                    })
+                    .unwrap()
+            };
+            // The layer's render pass draws one sample: it resolves nothing. It clears its color
+            // to transparent black and stores it for the composite, and clears its own depth,
+            // which no later pass reads, so it stores none.
+            let (begin, inside) = holding(LAYER_DRAWS);
+            assert_eq!(begin[1], null3d_gpu::drawlist::NO_TARGET);
+            assert_ne!(begin[2], null3d_gpu::drawlist::NO_TARGET);
+            assert_eq!(&begin[3..7], &[0f32.to_bits(); 4]);
+            let flags = begin[8];
+            assert_eq!(
+                flags
+                    & (pass_flags::CLEAR_COLOR | pass_flags::STORE_COLOR | pass_flags::CLEAR_DEPTH),
+                pass_flags::CLEAR_COLOR | pass_flags::STORE_COLOR | pass_flags::CLEAR_DEPTH
+            );
+            assert_eq!(flags & pass_flags::STORE_DEPTH, 0);
+            assert_eq!(
+                begin[begin.len() - 1],
+                scope::SINGLE,
+                "the layer's render pass has a GPU scope of its own"
+            );
+            // The depth copy draws first, then the layer's surfaces.
+            let copy_at = inside
+                .iter()
+                .position(|(op, words)| *op == Op::SetBindGroup && words[1] == first + 1)
+                .unwrap();
+            let surfaces_at = inside
+                .iter()
+                .position(|(op, words)| *op == Op::SetPipeline && words[0] == LAYER_DRAWS)
+                .unwrap();
+            assert!(copy_at < surfaces_at);
+            // The transparent render pass loads the multisampled targets, draws the surfaces,
+            // then the composite.
+            let (begin, inside) = holding(TRANSPARENT_DRAWS);
+            assert_eq!(
+                begin[8] & (pass_flags::CLEAR_COLOR | pass_flags::CLEAR_DEPTH),
+                0
+            );
+            let surfaces_at = inside
+                .iter()
+                .position(|(op, words)| *op == Op::SetPipeline && words[0] == TRANSPARENT_DRAWS)
+                .unwrap();
+            let composite_at = inside
+                .iter()
+                .position(|(op, words)| *op == Op::SetBindGroup && words[1] == first)
+                .unwrap();
+            assert!(surfaces_at < composite_at);
+            let composites = passes
+                .iter()
+                .flat_map(|(_, inside)| inside)
+                .filter(|(op, words)| *op == Op::SetBindGroup && words[1] == first)
+                .count();
+            assert_eq!(composites, 1);
+
+            // Unused again, the layer and its targets are gone.
+            frames.set_single(false);
+            frames.sync(&views);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            assert!(!frames.single_declared());
+            assert_eq!(steps(&frames), without);
+        }
+
+        // A scene of one sample blends at one sample already: it never draws the layer, and asks
+        // for none of its pipelines.
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        frames.sync(&[View::default()]);
+        frames.set_transparent(true);
+        assert!(frames.single_targets(frames.scene_targets()).is_none());
+        frames.set_single(true);
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 1);
+        assert!(
+            !pipelines
+                .keys()
+                .iter()
+                .any(|key| key.template == template::SINGLE_COMPOSITE)
+        );
+        let mut list = DrawList::with_capacity(8192);
+        pipelines.create_new(&mut list, 2).unwrap();
+        frames.request_pipelines(&mut pipelines, 2);
+        assert!(!frames.single_draws());
+        frames.sync(&[View::default()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert!(!frames.single_declared());
+        assert!(
+            !steps(&frames)
+                .iter()
+                .flatten()
+                .any(|pass| pass == SINGLE_PASS)
+        );
     }
 
     #[test]

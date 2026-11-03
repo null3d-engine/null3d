@@ -112,10 +112,11 @@ pub(crate) struct FullscreenPasses {
     /// True when the scene's depth is multisampled and the shaders read it as such: on WebGPU
     /// with MSAA.
     multisampled_depth: bool,
-    /// The format of the passes' targets.
+    /// The format that the scene's views draw into, which a full-screen pass takes unless its
+    /// fragment form declares a compute pass's format.
     format: u32,
-    /// Each view's pipeline, with the template and depth read it was asked for.
-    pipelines: [Option<(u32, bool, u32)>; MAX_VIEWS],
+    /// Each view's pipeline, with the template, depth read and target format it was asked for.
+    pipelines: [Option<(u32, bool, u32, u32)>; MAX_VIEWS],
     created: bool,
     /// The block that each view's part of the buffer holds, or `None` before its upload.
     uploaded: [Option<Block>; MAX_VIEWS],
@@ -169,8 +170,18 @@ impl FullscreenPasses {
         self.multisampled_depth && pass.depth
     }
 
-    /// Asks `pipelines` for the pipeline of the pass at view place `place`, when its template or
-    /// its depth read changed.
+    /// The format of `pass`'s target: the one that a compute pass declares for its fragment form,
+    /// or the format that the scene's views draw into.
+    fn format_of(&self, pass: &Fullscreen) -> u32 {
+        if pass.fallback && pass.format != 0 {
+            pass.format
+        } else {
+            self.format
+        }
+    }
+
+    /// Asks `pipelines` for the pipeline of the pass at view place `place`, when its template, its
+    /// depth read or its target's format changed.
     pub(crate) fn request_pipeline(
         &mut self,
         pipelines: &mut PipelineCache,
@@ -178,10 +189,12 @@ impl FullscreenPasses {
         pass: &Fullscreen,
     ) {
         let multisampled = self.reads_multisampled(pass);
+        let format = self.format_of(pass);
         let slot = &mut self.pipelines[place];
-        if !matches!(*slot, Some((t, ms, _)) if t == pass.template && ms == multisampled) {
-            let id = pipelines.id(pipeline(pass.template, self.format, multisampled));
-            *slot = Some((pass.template, multisampled, id));
+        if !matches!(*slot, Some((t, ms, f, _)) if t == pass.template && ms == multisampled && f == format)
+        {
+            let id = pipelines.id(pipeline(pass.template, format, multisampled));
+            *slot = Some((pass.template, multisampled, format, id));
         }
     }
 
@@ -315,7 +328,7 @@ impl FullscreenPasses {
                         width,
                         height,
                         1,
-                        self.format,
+                        self.format_of(pass),
                         texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
                         1,
                         1,
@@ -442,7 +455,7 @@ impl FullscreenPasses {
         target: u32,
         state: u8,
     ) -> Result<(), RecordError> {
-        let Some((_, _, pipeline)) = self.pipelines[place] else {
+        let Some((_, _, _, pipeline)) = self.pipelines[place] else {
             return Ok(());
         };
         let Some(made) = self.fallback[place].filter(|made| made.target == target) else {
@@ -523,7 +536,7 @@ impl FullscreenPasses {
         place: usize,
         pass: &Fullscreen,
     ) -> Result<(), RecordError> {
-        let Some((_, _, pipeline)) = self.pipelines[place] else {
+        let Some((_, _, _, pipeline)) = self.pipelines[place] else {
             return Ok(());
         };
         if pass.maps.any() {

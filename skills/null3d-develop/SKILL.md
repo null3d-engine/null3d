@@ -9,7 +9,7 @@ metadata:
 
 # Building with null3D
 
-null3D is a browser 3D engine with a Rust core compiled to WebAssembly. Sketch code runs in a worker, the engine draws from another worker, and scene data lives in shared typed arrays. It renders with WebGPU where the browser has it and with WebGL2 elsewhere, from the same sketch code. Most mistakes come from writing null3D as if it were three.js, and the sections below exist to prevent that.
+null3D is a browser 3D engine with a Rust core compiled to WebAssembly. Sketch code runs in a worker, the engine draws from another worker, and scene data lives in shared typed arrays. It renders with WebGPU where the browser has it and with WebGL2 elsewhere, from the same sketch code. Most mistakes come from writing null3D as if it were three.js.
 
 ## 1. Find the docs that match the installed engine
 
@@ -244,7 +244,7 @@ Read these when the task needs them:
 
 - `references/api-quickref.md`: the API by area, with the roadmap step for each part and the doc to read. Read it before an API's first use in a session.
 - `references/recipes.md`: patterns for common tasks. They include camera controls, animated models, thousands of moving objects, pooling, picking, labels, loading screens, HTML UI, physics, video, custom effects, large worlds, particle effects and terrain.
-- `references/performance.md`: budgets, how to measure, symptom-to-fix tables and phone rules.
+- `references/performance.md`: budgets, how to measure, symptom-to-fix tables, phone rules, staged loading, caching across visits and a review order.
 - `references/shaders.md`: the surface-function contract, built-in values, uniforms and textures, portable WGSL rules, custom post effects and custom passes.
 - `references/testing-and-debugging.md`: `bunx @null3d/cli test`, image tests, testing on devices, the MCP server tools (0.3, not built yet), error codes and a troubleshooting table.
 - `references/content-pages.md`: product and marketing pages with a 3D scene: scroll-driven cameras, caching and crashes.

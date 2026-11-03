@@ -11,6 +11,8 @@
 struct Uniforms {
     // How tall the ripples stand, as a factor of their base height.
     ripple: f32,
+    // The height of the long waves and of the wind's lift, as a factor of their base height.
+    waveAmplitude: f32,
     // The meters of the gap to the bed over which the water fades to nothing at a shore.
     softness: f32,
     // The share of the water's color that reads the whole way the view runs through it, not its depth.
@@ -308,7 +310,9 @@ fn waves(p: vec2f, t: f32, current: vec3f, fine: bool, footprint: f32) -> vec3f 
         // The authored direction turned into the current's frame. A plane wave travels along its
         // own direction, so a turned set whose phases the current carries drifts all downstream.
         let dir = select(own, vec2f(current.x * own.x - current.y * own.y, current.y * own.x + current.x * own.y), moving);
-        let amplitude = material.ripple * 0.05 / w.z;
+        // The long waves take the surface's height factor, and the fine ripples keep their own.
+        let height = select(material.waveAmplitude, 1.0, k >= 3u);
+        let amplitude = material.ripple * height * 0.05 / w.z;
         // Carried: the current moves the whole pattern. Still: each wave runs at its own speed.
         let still = w.z * dot(own, p) - w.w * t;
         let carried = w.z * (dot(dir, p) - current.z * t * dot(current.xy, dir));
@@ -357,7 +361,7 @@ fn vertexOffset(input: VertexInput) -> vec3f {
             reading,
         );
         let along = dot(air.xz, vec2f(0.919, 0.394));
-        lift += 0.035 * air.a * sin(dot(input.position.xz, vec2f(0.7, 0.3)) * 0.5 + frame.time * 2.0 + along);
+        lift += material.waveAmplitude * 0.035 * air.a * sin(dot(input.position.xz, vec2f(0.7, 0.3)) * 0.5 + frame.time * 2.0 + along);
     }
     return vec3f(0.0, lift, 0.0);
 }

@@ -1826,6 +1826,20 @@ export interface ShaderOptions<Wgsl extends string | CompiledWgsl = string | Com
 	swayDistance?: number;
 }
 
+/**
+ * @internal The option of a custom material that the engine's own adapters give beside the public
+ * ones.
+ */
+export interface InternalShaderOptions {
+	/**
+	 * True to draw the material's surfaces of the normal blending in the camera's one-sample layer
+	 * while the scene has more than one sample. They then blend once per pixel, and the layer blends
+	 * over the scene after the camera's other blended surfaces. The draw adapter sets it for a
+	 * draw at the `'resolve'` frame point.
+	 */
+	readonly singleLayer?: boolean;
+}
+
 /** A uniform of a custom material: its type, and the float of the row of custom values it starts at. */
 interface CompiledUniform {
 	readonly name: string;
@@ -3708,6 +3722,7 @@ export class Materials {
 	 * Creates a material in the engine core, with its standard options and the feature bits
 	 * `extra` and its layers, and returns its id. `sway` is the distance from the camera out to
 	 * which a custom material's vertex offset moves, in meters, or 0 for every distance.
+	 * `singleLayer` draws its blended surfaces in the camera's one-sample layer.
 	 */
 	private createId(
 		shading: number,
@@ -3716,6 +3731,7 @@ export class Materials {
 		layered = hasLayers(options),
 		extra = 0,
 		sway = 0,
+		singleLayer = false,
 	): { id: number; owners: SlotOwners } {
 		const [r, g, b] = linearColor(options.color ?? '#ffffff', call);
 		const emissive = linearOrNone(options.emissive, call, EMISSIVE);
@@ -3745,13 +3761,26 @@ export class Materials {
 		// So do the builds of the weighted layer.
 		if (options.alphaMode === 'blend' && options.blending === 'weighted')
 			this.shaders.need('weighted');
+		// So do the one-sample layer's steps.
+		if (singleLayer && options.alphaMode === 'blend') this.shaders.need('single_layer');
 		if (features & MATERIAL_FEATURE_DECAL) this.shaders.need('decals');
 		if (bumps(options)) this.shaders.need('bump');
 		if (options.displacementMap) this.shaders.need('displacement');
 		const { constant = 0, slopeScale = 0 } = options.depthBias ?? {};
 		const { core } = this;
 		const id = core.checkGrowth(
-			core.glue.createMaterial(shading, features, r, g, b, opacity, constant, slopeScale, sway),
+			core.glue.createMaterial(
+				shading,
+				features,
+				r,
+				g,
+				b,
+				opacity,
+				constant,
+				slopeScale,
+				sway,
+				singleLayer ? 1 : 0,
+			),
 			call,
 		);
 		const values = { ...options, color: undefined, opacity: undefined };
@@ -3985,6 +4014,7 @@ export class Materials {
 				(alpha || compiled.functions.includes('coverage') ? MATERIAL_FEATURE_CASTER_COVERAGE : 0) |
 				(options.castsStill ? MATERIAL_FEATURE_STILL_CASTER : 0),
 			options.swayDistance ?? 0,
+			(options as InternalShaderOptions).singleLayer === true,
 		);
 		// The copy of the opaque depth draws with the particle depth shaders, so the file loads
 		// with the material, before its first frame.

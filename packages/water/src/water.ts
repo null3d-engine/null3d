@@ -30,6 +30,8 @@ export const NAMESPACE = declareAddonNamespace({
 
 /** The ripple strength that the water takes when the caller gives none. */
 const RIPPLE = 1;
+/** The wave height that the water takes when the caller gives none. */
+const WAVE_AMPLITUDE = 1;
 /** The meters of the gap to the bed over which the water fades to nothing at a shore. */
 const SOFTNESS = 0.12;
 
@@ -110,6 +112,12 @@ export interface WaterOptions {
 	readonly foam?: FoamMap;
 	/** The water's ripples, as a factor of their base height, from 0. It is 1 by default. */
 	readonly ripple?: number;
+	/**
+	 * The height of the long waves and of the wind's lift, as a factor of their base height, from 0.
+	 * It is 1 by default. The fine ripples keep the strength that `ripple` gives them, so a small
+	 * value gives a nearly flat surface that still ripples.
+	 */
+	readonly waveAmplitude?: number;
 	/** The meters of the gap to the bed over which the water fades at a shore. It is 0.12 by default. */
 	readonly softness?: number;
 	/**
@@ -168,6 +176,8 @@ export interface WaterOptions {
 export interface Water {
 	/** The height of the water's surface, in meters. */
 	readonly level: number;
+	/** The height of the long waves and of the wind's lift, as a factor of their base height. */
+	readonly waveAmplitude: number;
 	/** The bodies of water that the surface draws, in the order that the shapes give. */
 	readonly bodies: readonly WaterBody[];
 	/** The frames between two draws of the reflection now. */
@@ -209,7 +219,7 @@ function bodyList(shapes: WaterShape | readonly WaterShape[]): WaterBody[] {
  * The height of a water surface at a point and a sketch time, in meters, as its long waves move it.
  * A `current` carries the whole set downstream, with each wave's direction turned into the
  * current's frame; still water keeps the authored directions and each wave's own speed. `ripple`
- * scales them.
+ * scales them, and `waveAmplitude` scales the surface's height above the level.
  *
  * @category api/water
  */
@@ -220,6 +230,7 @@ export function waveHeight(
 	level: number,
 	current: readonly [x: number, z: number],
 	ripple: number,
+	waveAmplitude = 1,
 ): number {
 	const speed = Math.hypot(current[0], current[1]);
 	const moving = speed > 1e-5;
@@ -236,7 +247,7 @@ export function waveHeight(
 		const phase = moving
 			? k * (dx * x + dz * z - speed * t * (dx * cx + dz * cz))
 			: k * (along * x + across * z) - ownSpeed * t;
-		height += (ripple * 0.05 * Math.sin(phase)) / k;
+		height += (ripple * waveAmplitude * 0.05 * Math.sin(phase)) / k;
 	}
 	return height;
 }
@@ -340,6 +351,7 @@ function stillWind(textures: Textures): { wind: Texture; airSettings: Texture } 
 export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 	const { scene, geometry, materials, textures, render, quality } = ctx;
 	const level = options.level ?? 0;
+	const waveAmplitude = options.waveAmplitude ?? WAVE_AMPLITUDE;
 	const bodies = bodyList(options.shapes);
 	const foam = options.foam;
 	const foamOrigin = foam?.origin ?? [0, 0];
@@ -394,6 +406,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 		textures: { mirror, foamMap, junctionMap, wind: windTexture, airSettings },
 		uniforms: {
 			ripple: options.ripple ?? RIPPLE,
+			waveAmplitude,
 			softness: options.softness ?? SOFTNESS,
 			viewPath: options.colorAlongView ?? 0,
 			caustics: [0, 0, 0],
@@ -481,6 +494,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 	};
 	return {
 		level,
+		waveAmplitude,
 		bodies,
 		get reflectionEvery() {
 			return every;
@@ -506,13 +520,15 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 		surfaceHeight(x, z, t) {
 			const ripple = options.ripple ?? RIPPLE;
 			(over(x, z) ?? bodies[0])?.currentAt(x, z, current);
-			if (!junction) return waveHeight(x, z, t, level, current, ripple);
+			if (!junction) return waveHeight(x, z, t, level, current, ripple, waveAmplitude);
 			const share = junction.shareAt(x, z);
 			const flatness = junction.flatnessAt(x, z);
-			if (share >= 1 && flatness <= 0) return waveHeight(x, z, t, level, current, ripple);
+			if (share >= 1 && flatness <= 0)
+				return waveHeight(x, z, t, level, current, ripple, waveAmplitude);
 			const moving = junction.currentAt(x, z, carried) ? carried : current;
-			let height = waveHeight(x, z, t, level, moving, ripple);
-			if (share < 1) height += (waveHeight(x, z, t, level, still, ripple) - height) * (1 - share);
+			let height = waveHeight(x, z, t, level, moving, ripple, waveAmplitude);
+			if (share < 1)
+				height += (waveHeight(x, z, t, level, still, ripple, waveAmplitude) - height) * (1 - share);
 			return level + (height - level) * (1 - flatness);
 		},
 		currentAt(x, z, out) {

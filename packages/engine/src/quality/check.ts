@@ -29,6 +29,16 @@ export const CHECK_GRACE_MS = 250;
 export const CHECK_UPLOAD_WAIT_MS = 2000;
 /** How long the check measures each preset, in ms. */
 export const CHECK_WINDOW_MS = 500;
+/**
+ * The longest completion interval, in ms, that the check takes as the new preset settled. A lower
+ * preset that remakes its shadow map and pipelines draws a frame far longer than play does, and
+ * that frame must pass before the next window opens.
+ */
+export const CHECK_SETTLE_INTERVAL_MS = 100;
+/** The frames at play's rate, after a lowering, that the check waits for before its grace starts. */
+export const CHECK_SETTLE_FRAMES = 2;
+/** The longest time in ms that the check waits after a lowering for the new preset to settle. */
+export const CHECK_SETTLE_WAIT_MS = 4000;
 
 /**
  * What the preset check measured at one preset.

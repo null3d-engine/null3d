@@ -17,14 +17,15 @@ import {
 	type SketchContext,
 	timeOfDay,
 } from '@null3d/engine';
-import { createGrass } from '@null3d/vegetation';
+import { createGrass, swayDistanceFor } from '@null3d/vegetation';
 import { createUnderwater, createWater, foamMap, type Water, type WaterShape } from '@null3d/water';
 import { createWind, type WindField } from '@null3d/wind';
 import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
 import { createHaze } from '../../lib/haze';
 import { EFFECT_LAYER, SUN_LAYERS } from '../../lib/layers';
 import { reportLoading } from '../../lib/progress';
-import { createShowcaseEffects, type ShadowReach } from '../../lib/showcase-effects';
+import type { ShadowReach } from '../../lib/shadow-range';
+import { createShowcaseEffects } from '../../lib/showcase-effects';
 import { createMoods, isMood, type Mood, type MoodMix, moodMix, moodShare } from '../../lib/stage';
 import { createAir } from './air';
 import { createFlora } from './flora';
@@ -133,6 +134,12 @@ const CASCADE_PROBE = params.has('cascade-probe');
  */
 const RENDER_SCALE = Number(params.get('render-scale')) || undefined;
 /**
+ * False when the address asks for the sun's contact shadows and the scene's screen-space bounce
+ * light: the demo draws without them, because their passes cost a share of the frame and the
+ * pictures with and without them are the same at Low, Medium and High.
+ */
+const EFFECTS = params.get('effects') === 'on';
+/**
  * True draws the scene from just above the stream, looking along it, so the picture shows the
  * water's surface close up. The picture tests ask for it; the demo and its route never do.
  */
@@ -199,6 +206,9 @@ function createCreekWater(
 		],
 		level: WATER,
 		layers: 1,
+		// The stream runs slowly, so its surface stays nearly flat: the swell is a tenth of a lake's,
+		// and the fine ripples keep their full strength.
+		waveAmplitude: 0.1,
 		wind,
 		...(reflectScale !== undefined && { reflectionScale: reflectScale }),
 		...(alwaysReflect && { reflectionEvery: { low: 1, medium: 1, high: 1, ultra: 1 } }),
@@ -216,6 +226,15 @@ function createCreekWater(
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, quality, page, time } = ctx;
+	if (!EFFECTS) {
+		const still = { contactShadowSteps: 0, bounceRays: 0 } as const;
+		await quality.set(still);
+		// A preset change gives the settings their preset's values, so the demo sets them again.
+		quality.onChange(() => {
+			if (quality.settings.contactShadowSteps !== 0 || quality.settings.bounceRays !== 0)
+				void quality.set(still);
+		});
+	}
 	if (RENDER_SCALE !== undefined)
 		await quality.set({
 			minRenderScale: RENDER_SCALE,
@@ -262,12 +281,8 @@ export default defineSketch(async (ctx) => {
 	});
 	scene.setActiveCamera(camera);
 	// The valley's one wind field. The grass, the falling leaves and the water read it, and G sends
-	// a gust that a person can watch cross the banks. The water draws the valley a second time for
-	// its reflection, and on the WebGL2 path a pass's fallback beside that second draw costs the
-	// frame a full set of the valley's textures, so that path keeps no grid and its readers work the
-	// air out of the steady field, gust and swirl included.
-	const grid = ctx.engine.capabilities.tier === 'webgl2' ? 0 : undefined;
-	const wind = createWind(ctx, { camera, box: 128, grid });
+	// a gust that a person can watch cross the banks.
+	const wind = createWind(ctx, { camera, box: 128 });
 	const target: [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];
 	/** A scratch place for the camera, which the gust control reads. */
 	const here: number[] = [0, 0, 0];
@@ -314,7 +329,7 @@ export default defineSketch(async (ctx) => {
 	const bank = (x: number, z: number) => dry(x, z) && Math.abs(z - streamZ(x)) < BANK;
 	const grass = WITHOUT.has('grass')
 		? []
-		: [
+		: await Promise.all([
 				createGrass(ctx, {
 					height: groundHeight,
 					area: { x: 0, z: 0, size: LAND },
@@ -322,6 +337,8 @@ export default defineSketch(async (ctx) => {
 					seed: SEED,
 					mask: bank,
 					wind: wind.field,
+					camera,
+					swayDistance: swayDistanceFor(quality.preset),
 				}),
 				createGrass(ctx, {
 					height: groundHeight,
@@ -330,10 +347,15 @@ export default defineSketch(async (ctx) => {
 					seed: SEED + 1,
 					mask: (x, z) => dry(x, z) && !bank(x, z),
 					wind: wind.field,
+					camera,
+					swayDistance: swayDistanceFor(quality.preset),
 				}),
-			];
+			]);
 	const fit = () => {
-		for (const field of grass) field.fit(quality.preset);
+		for (const field of grass) {
+			field.fit(quality.preset);
+			field.setSwayDistance(swayDistanceFor(quality.preset));
+		}
 		stones.fit(quality.preset);
 	};
 	fit();

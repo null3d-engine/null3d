@@ -102,11 +102,6 @@ export async function createAir(
 	// The leaves ride the wind add-on's field on the GPU: each keeps a place and a speed of its own
 	// that the field steps, so a gust carries it along rather than pushing it where it stands. The
 	// box follows the camera, so the leaves fill whatever part of the valley the view shows.
-	// The state form keeps each leaf's own place and speed, which a gust carries along, but its pass
-	// costs the WebGL2 path a full-size texture copy for each frame while the water's reflection
-	// draws the scene a second time. The offset form reads the field in the vertex stage instead, so
-	// that path rides the offset form and the others keep the leaf's own state.
-	const ride = ctx.engine.capabilities.tier === 'webgl2' ? 'offset' : 'state';
 	const leaves: FloatingLeaves = createFloatingLeaves(ctx, {
 		wind,
 		camera,
@@ -114,7 +109,7 @@ export async function createAir(
 		area: { x: 0, z: 0, size: 40, high: 12, low: WATER + 0.02 },
 		size: 0.1,
 		seed: 71,
-		ride,
+		ride: 'state',
 	});
 	markEffect(leaves.batch);
 	const [motes, mist] = await Promise.all([

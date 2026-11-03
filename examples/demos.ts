@@ -144,9 +144,10 @@ export const DEMOS: readonly Demo[] = [
 
 		controls: [...SHOWCASE_CONTROLS, { keys: ['G'], does: 'Send a gust down the valley' }],
 		hold: 0.5,
-		// A software GPU draws the scene with its bloom and its full-detail meshes, which takes it
-		// well past a minute on a loaded runner, and past three on an emulated Firefox GPU.
-		timeoutSeconds: 300,
+		// A software GPU draws the scene with its bloom and the whole valley of grown plants, which
+		// takes it well past a minute on a loaded runner, past three on an emulated Firefox GPU, and
+		// past five while the machine runs other work.
+		timeoutSeconds: 600,
 	},
 	{
 		name: 'island',
@@ -160,7 +161,10 @@ export const DEMOS: readonly Demo[] = [
 		momentTransparency: true,
 		controls: SHOWCASE_CONTROLS,
 		hold: 0.5,
-		timeoutSeconds: 180,
+		// A software GPU builds the pipelines of the town, the trees and the water, and draws the
+		// island's first frame slowly while the heavy shards share a runner. The figure leaves room
+		// for that load.
+		timeoutSeconds: 600,
 	},
 	{
 		name: 'skyway',
@@ -177,14 +181,14 @@ export const DEMOS: readonly Demo[] = [
 	},
 	{
 		name: 'showroom',
-		group: 'Showcase',
-		sketch: new URL('./showcase/showroom/sketch.ts', import.meta.url),
-		code: 'showcase/showroom/',
+		group: 'Light, materials and effects',
+		sketch: new URL('./showroom/sketch.ts', import.meta.url),
+		code: 'showroom/',
 		title: 'Showroom to street',
 		scene: 'Car configurator',
 		summary:
 			'A new car under softbox area lights on a mirror floor in a dark studio, with a tablet beside it. A tap on the tablet changes the paint, the wheels, the trim or the lights, and the car takes the change at once. The car turns on the spot, then drives out through the opening into a short wet street, where the lamps and the neon signs streak down the asphalt and the lit fog catches their light.',
-		controls: [...SHOWCASE_CONTROLS, { keys: ['Click'], does: 'change the car on the tablet' }],
+		controls: [{ keys: ['Click'], does: 'change the car on the tablet' }],
 		hold: 1,
 		timeoutSeconds: 300,
 	},
@@ -528,7 +532,13 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Screen-space bounce light',
 		scene: 'Red and green room',
 		summary:
-			"One bounce of indirect light in a room with a red wall at the left and a green one at the right. Each wall's light lands on the white floor and on the white back wall, which the environment's uniform light cannot show. Every few seconds the bounce turns off and on again.",
+			"One bounce of indirect light in a room with a bright red wall at the left and a bright green one at the right. Each wall's light lands on the grey floor and back wall, which the environment's uniform light cannot show. Every few seconds the bounce turns off and on again, and B takes it over so you can switch it yourself.",
+		controls: [
+			{
+				keys: ['B'],
+				does: 'The bounce light on or off, which takes over from the automatic cycle',
+			},
+		],
 		hold: 1,
 		timeoutSeconds: 60,
 	},
@@ -807,6 +817,18 @@ export const DEMOS: readonly Demo[] = [
 			'A 1.2 km valley from the terrain add-on. The ground near the camera draws at about a meter of detail and the far hills draw coarser blocks, each with a skirt that hides the seam and normals baked over the whole ground, so the far hills keep their relief. Grass, soil, rock and snow blend by a splat map filled from the height and the slope, each layer pushing through its neighbours where two meet, and boulders made in code stand on the ground.',
 		hold: 3,
 		timeoutSeconds: 60,
+	},
+	{
+		name: 'splats',
+		group: 'Scale',
+		sketch: new URL('./splats/sketch.ts', import.meta.url),
+		title: 'Gaussian splats',
+		scene: 'Bolton Priory',
+		summary:
+			"Dok11's drone scan of Bolton Priory (CC BY 4.0), 1.7 million Gaussian splats that the splats add-on streams from 84 chunk files, nearest first. The preset's budget draws up to 800,000 of them: a far chunk draws its most covering splats, grown so they still cover its ground, and each splat shows its own color with no lighting. A survey drone made of meshes circles the ruins, and the splats and the meshes hide each other by depth.",
+		assets: 'Shows how a scan streams in from its chunk files and draws within the budget.',
+		hold: 1,
+		timeoutSeconds: 120,
 	},
 	{
 		name: 'galaxy',

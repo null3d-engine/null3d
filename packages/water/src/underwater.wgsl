@@ -15,6 +15,8 @@ struct Uniforms {
     caustics: vec3f,
     // The height of the water's surface, in meters.
     level: f32,
+    // The height of the surface's long waves, as a factor of their base height.
+    waveAmplitude: f32,
     // The camera's position, and the world directions of its right, up and back axes.
     eye: vec3f,
     // The current at the camera, in meters a second.
@@ -58,7 +60,7 @@ fn surface_height(p: vec2f, t: f32) -> f32 {
         let dir = select(own, vec2f(carry.x * own.x - carry.y * own.y, carry.y * own.x + carry.x * own.y), moving);
         let still = w.z * dot(own, p) - w.w * t;
         let carried = w.z * (dot(dir, p) - speed * t * dot(carry, dir));
-        h += 0.05 / w.z * sin(select(still, carried, moving));
+        h += uniforms.waveAmplitude * 0.05 / w.z * sin(select(still, carried, moving));
     }
     return h;
 }
