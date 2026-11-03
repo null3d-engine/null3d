@@ -129,3 +129,33 @@ Rejected:
 - `packages/vegetation/src/` holds one folder per module: `core/`, `grow/`, `crown/`, `leaf/`,
   `wood/`, `lod/`, `wind/`, `render/` and `species/`. Each has its own `public.ts` barrel, and the main
   entry only re-exports them.
+
+## The first species set
+
+By the owner's ruling, the core ships ten species first. Then work moves to the rest of the engine, and
+the other species wait as a to-do item.
+
+| Growth model | Species |
+| --- | --- |
+| Self-organizing | pedunculate oak, European beech, silver birch, common alder, weeping willow, hawthorn |
+| Ground plants | hosta, pendulous sedge, meadow grass |
+| Fronds | bracken |
+
+- These ten are the species that Creek uses, so Creek draws only real species. Creek grows pendulous
+  sedge at its wet edges where it grew soft rush.
+- The light-shafts wood becomes a beech wood. The atmosphere valley grows oak and beech. The
+  contact-shadows garden grows oak, hawthorn and meadow grass.
+- The Island keeps stand-ins until its Mediterranean species land.
+- No conifer, palm, culm or column model is built for the first set.
+
+**To do: the other 42 species.** Each one has a full, checked reference set in the references
+repository. Each one waits for its growth model and its species package:
+
+| Growth model still to build | Species |
+| --- | --- |
+| Self-organizing (built; banyan and box hedge also need its aerial-root and clipping options) | holm oak, Norway maple, Japanese maple, common ash, small-leaved lime, horse chestnut, London plane, Lombardy poplar, hazel, southern live oak, quaking aspen, English elm, bare winter oak, flowering cherry, apple, olive, river red gum, umbrella thorn acacia, baobab, rhododendron, oleander, lavender, banyan, box hedge |
+| Architectural | Norway spruce, Scots pine, Douglas fir, Italian stone pine, cedar of Lebanon, European larch, English yew, common juniper, giant sequoia, Italian cypress |
+| Crown rosette and fronds | date palm, coconut palm, Mexican fan palm, tree fern |
+| Culm | bamboo |
+| Ground plants | agave, soft rush |
+| Column | saguaro |

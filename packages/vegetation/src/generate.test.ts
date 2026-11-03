@@ -71,7 +71,8 @@ describe('the plant core with stand-ins', () => {
 		expect(later.levels[0].parts).toHaveLength(0);
 		const wood = growNearWoodNow(kit, { seed: 11, variant: 0 });
 		const atOnce = growPlantNow(kit, { seed: 11, variant: 0, near: true }).levels[0].parts[0];
-		expect(wood?.arrays.positions).toEqual(atOnce?.arrays.positions as Uint16Array);
+		expect(wood).toHaveLength(1);
+		expect(wood[0]?.arrays.positions).toEqual(atOnce?.arrays.positions as Uint16Array);
 	});
 
 	it('bakes the far cards and cuts the review pieces', () => {
