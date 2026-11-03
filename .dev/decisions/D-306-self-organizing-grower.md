@@ -1,7 +1,7 @@
 # D-306: the self-organizing grower fills a measured envelope by light, and gives resource only to the buds that flush
 
-Status: decided. The grower, its shadow grid, its envelope, shedding, pipe radii and bending are
-built; the crown's light for the shoot rows is pending. Task: none.
+Status: decided. The grower, its shadow grid, its envelope, shedding, pipe radii, bending and the
+crown's light for the shoot rows are built. Task: none.
 
 Summary: Broadleaves, pines, shrubs and hedges grow by Palubicki's self-organizing model with
 Stava's bud fate, in a shadow grid whose only light lies inside an envelope measured from the
@@ -97,5 +97,9 @@ Rejected:
   envelope for the tests, which the oak's species record copies.
 - A skeleton's axes leave their parent node with `parentT` 0, and a child's first node is one
   internode out. Node radii are pipe radii only; the wood mesher adds collars and flare.
+- The crown's light (`crown/density.ts`, `crown/visibility.ts`) gives each shoot row the sky it sees
+  through the leaf area of the other rows, 0 to 250, and a bent normal as an octahedral byte with Y
+  up (x in the high four bits, z in the low four, a nibble n reading back as n / 7.5 - 1). The wood
+  reads the same grid through `crownSkyAt`.
 - A species' envelope comes from its turntable by the method above until the fitting tools
   measure it.
