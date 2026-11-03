@@ -497,7 +497,7 @@ export function mergeShoots(
 	recordBase: number,
 ): MeshArrays {
 	const mesh = writer();
-	const tier = DETAILS.indexOf(detail);
+	const tier = heldTier(kit, detail);
 	for (let r = 0; r < rows.count; r++) {
 		const source = kit.prototypes[rows.prototype[r] as number]?.tiers[tier];
 		if (!source) continue;
@@ -516,6 +516,14 @@ export function mergeShoots(
 		);
 	}
 	return finish(mesh);
+}
+
+/**
+ * The index of the tier a cutting meshes its shoots at: the asked tier, or the kit's own where the
+ * kit holds no finer one.
+ */
+function heldTier(kit: SpeciesKitData, detail: Detail): number {
+	return Math.min(DETAILS.indexOf(detail), DETAILS.indexOf(kit.detail));
 }
 
 /**
@@ -557,7 +565,7 @@ export function clusterRow(
 	const ranked = clusterRank(kit);
 	if (ranked.length === 0) return undefined;
 	const prototype = ranked[(cutting.pick ?? 0) % ranked.length] as ShootPrototype;
-	const tier = prototype.tiers[DETAILS.indexOf(detail)] ?? prototype.tiers[2];
+	const tier = prototype.tiers[heldTier(kit, detail)] as PrototypeArrays;
 	const p = tier.positions;
 	const min = [0, 0, 0];
 	const max = [0, 0, 0];
@@ -615,7 +623,7 @@ export function cutFoliage(
 	const ranked = clusterRank(kit);
 	if (ranked.length === 0) return undefined;
 	const prototype = ranked[(cutting.pick ?? 0) % ranked.length] as ShootPrototype;
-	const tier = prototype.tiers[DETAILS.indexOf(detail)] ?? prototype.tiers[2];
+	const tier = prototype.tiers[heldTier(kit, detail)] as PrototypeArrays;
 	append(mesh, tier, [0, 0, 0, 1], 0, 1, origin, 0);
 	return finish(mesh);
 }

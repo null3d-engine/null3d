@@ -14,6 +14,7 @@ import type {
 	MeshArrays,
 	PlantAsset,
 	PlantPart,
+	PrototypeArrays,
 	ShootPrototype,
 	ShootRows,
 	SpeciesKitData,
@@ -132,6 +133,16 @@ export async function loadPlantCode(record: Species): Promise<void> {
 	]);
 }
 
+/** A tier a kit does not hold: a mesh with no vertices. */
+const EMPTY_TIER: PrototypeArrays = {
+	positions: new Float32Array(0),
+	normals: new Float32Array(0),
+	uvs: new Float32Array(0),
+	uvs1: new Float32Array(0),
+	colors: new Uint8Array(0),
+	indices: new Uint16Array(0),
+};
+
 /**
  * Runs a stage, or its stand-in when the kit asks for stand-ins. A stand-in kit always grows the
  * stand-ins, so the stand-in species that scenes place draw the same as the real stages land. A kit
@@ -224,10 +235,17 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 			() => bakeCards(record, manifest, detail, uncarded),
 			() => placeholderCardBake(record, uncarded),
 		);
+		// The kit keeps its own tier's meshes and the tiers below it, which the near band draws
+		// farther out; a page draws at one preset, so the tiers above it are left empty. The card
+		// bake, the lengths and the radii read the full build first.
+		const kept = DETAILS.indexOf(detail);
 		prototypes = uncarded.map((prototype, index) => {
 			const card = baked.cells[index];
 			if (!card) throw new Error(`the card bake gave no cells for prototype ${index}`);
-			return { ...prototype, card };
+			const tiers = prototype.tiers.map((tier, t) =>
+				t <= kept ? tier : EMPTY_TIER,
+			) as unknown as ShootPrototype['tiers'];
+			return { ...prototype, tiers, card };
 		});
 		const hooks = speciesHooks(record.id);
 		if (hooks?.shoot) for (const prototype of prototypes) hooks.shoot(prototype, record);
