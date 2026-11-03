@@ -1,5 +1,5 @@
 // Draws one sketch of the image test manifest in the engine's hold mode and publishes the held
-// frame, with the depth mode that the engine drew. ?sketch= names the sketch module from the
+// frame, with the depth mode that the engine drew and the messages that the sketch posted. ?sketch= names the sketch module from the
 // server's root, with the sketch's own query after it, and ?size= gives the canvas in pixels, such
 // as 320x180. ?transparent starts the engine with a transparent canvas, ?antialias= with an
 // anti-aliasing mode, ?shadowTileSize= with a size of the shadow atlas's tiles, and
@@ -54,6 +54,12 @@ run('image', async () => {
 		morphTargets: params.has('morphTargets') ? Number(params.get('morphTargets')) : undefined,
 		largeWorld: params.has('largeWorld'),
 	});
+	// The newest message of each name that the sketch posted, so a tool reads what the sketch
+	// measured beside the frame it drew. A sketch posts at its setup, long before the held frame.
+	const messages: Record<string, unknown> = {};
+	engine.onSketchMessage((name, data) => {
+		messages[name] = data;
+	});
 	const frame = await engine.captureFrame();
 	const hold = (globalThis as { __null3dHold?: HoldResult }).__null3dHold;
 	await engine.destroy();
@@ -75,5 +81,6 @@ run('image', async () => {
 		// The line that the two-step probe printed for the held frame, for the plan that asks for it,
 		// which keeps it in the run's result to read beside the other browsers' lines.
 		twoStep: (globalThis as { __null3dTwoStep?: string }).__null3dTwoStep ?? null,
+		sketch: messages,
 	};
 });
