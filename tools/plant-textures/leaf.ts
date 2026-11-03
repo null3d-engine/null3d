@@ -35,14 +35,14 @@ export const CUTOFF = 0.5;
 type Vec = readonly [number, number];
 
 /** Where a face's leaf sits in its source picture. */
-interface Frame {
+export interface Frame {
 	/** The stalk's bottom end and the blade's tip, in source texels. */
 	readonly petiole: Vec;
 	readonly tip: Vec;
 }
 
 /** The map from canvas texels to a face's source texels. */
-interface Placement {
+export interface Placement {
 	readonly frame: Frame;
 	/** Unit vector from the petiole to the tip, and the unit vector to its right. */
 	readonly up: Vec;
@@ -506,6 +506,43 @@ export function round(value: number, places = 5): number {
 	return Math.round(value * f) / f;
 }
 
+/** A face's leaf as the texture holds it, and where it came from. */
+export interface FramedLeaf {
+	/** The face cleaned: coverage floored and stretched, colour bled out from the solid texels. */
+	readonly clean: Picture;
+	/** The stalk's end and the tip in the source's texels. */
+	readonly frame: Frame;
+	readonly at: Placement;
+	/** The cleaned face drawn on the square canvas, the midrib upright, the stalk at the bottom. */
+	readonly face: Picture;
+}
+
+/**
+ * Cleans a face's picture and draws its leaf on a square canvas of `size` texels, placed as on the
+ * full canvas, so a smaller canvas holds the same leaf at a lower resolution.
+ */
+export function framedLeaf(source: Picture, config: LeafConfig, size: number): FramedLeaf {
+	const clean = cleanFace(source, config);
+	const frame = config.frame ?? findFrame(clean);
+	const at = place(clean, frame, LEAF_SIZE, config.margin);
+	return { clean, frame, at, face: render(clean, at, STILL, size) };
+}
+
+/**
+ * The outline of the leaf on a square canvas of coverage: its largest loop at the cutoff, thinned to
+ * 24 to 64 points, in texture coordinates with v up, counter-clockwise.
+ */
+export function leafOutline(coverage: Float32Array, size: number): Point[] {
+	const loops = traceLoops({ width: size, height: size, data: coverage }, CUTOFF);
+	const largest = loops.reduce<Point[]>(
+		(best, loop) => (Math.abs(signedArea(loop)) > Math.abs(signedArea(best)) ? loop : best),
+		[],
+	);
+	const outline = simplifyTo(largest, 24, 64).map(([x, y]) => [x / size, 1 - y / size] as Point);
+	if (signedArea(outline) < 0) outline.reverse();
+	return outline;
+}
+
 /** Makes the leaf textures from the upper and lower faces' source pictures. */
 export function leafTextures(
 	upperSource: Picture,
@@ -513,10 +550,12 @@ export function leafTextures(
 	config: LeafConfig,
 ): LeafTextures {
 	const size = LEAF_SIZE;
-	const upperClean = cleanFace(upperSource, config);
-	const upperFrame = config.frame ?? findFrame(upperClean);
-	const upperAt = place(upperClean, upperFrame, size, config.margin);
-	const upper = render(upperClean, upperAt, STILL, size);
+	const {
+		clean: upperClean,
+		frame: upperFrame,
+		at: upperAt,
+		face: upper,
+	} = framedLeaf(upperSource, config, size);
 	const target = render(upperClean, upperAt, STILL, FIT_SIZE, 1, true).a;
 	// A picture of the leaf turned over shows its outline mirrored; a generated underside may keep
 	// the upper face's outline as drawn. The lower face takes whichever fits the upper's outline.
@@ -541,13 +580,7 @@ export function leafTextures(
 	const baseRow = bladeBase(upper, petiole[1], tip[1]);
 	const uv = (x: number, y: number): Vec => [round(x / size), round(1 - y / size)];
 
-	const loops = traceLoops({ width: size, height: size, data: upper.a }, CUTOFF);
-	let outline = loops.reduce<Point[]>(
-		(best, loop) => (Math.abs(signedArea(loop)) > Math.abs(signedArea(best)) ? loop : best),
-		[],
-	);
-	outline = simplifyTo(outline, 24, 64).map(([x, y]) => [x / size, 1 - y / size] as Point);
-	if (signedArea(outline) < 0) outline.reverse();
+	const outline = leafOutline(upper.a, size);
 
 	const lum = luminance(upper);
 	const blade: number[] = [];

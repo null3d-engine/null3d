@@ -8,7 +8,7 @@ import { signedArea, simplifyTo, traceLoops } from './contour.ts';
 import { encodeKtx2 } from './encode.ts';
 import { type Picture, picture } from './image.ts';
 import { findFrame } from './leaf.ts';
-import { type SourceFolder, Sources, supersededFiles } from './sources.ts';
+import { jobIds, type SourceFolder, Sources, supersededFiles } from './sources.ts';
 
 const INDEX = `| file | what it shows | why |
 | --- | --- | --- |
@@ -60,6 +60,21 @@ describe('the source files of a slot', () => {
 	it('refuses a slot with two files in use', () => {
 		const sources = new Sources(folder(['26-bark-texture.png', '26-bark-texture-b.png']), 'oak');
 		expect(() => sources.nameOf(26)).toThrow('2 files in use');
+	});
+
+	it('finds the job of a file renamed on publishing by its final name', () => {
+		const jobs = jobIds(
+			[
+				'{"file": "24-leaf-texture-upper.png", "job_id": "first", "in_repository": false}',
+				'{"file": "24-leaf-texture-upper-b.png", "job_id": "remake", "rejected": "haze", "in_repository": false}',
+				'{"file": "24-leaf-texture-upper-c.png", "job_id": "kept", "final_name": "24-leaf-texture-upper.png"}',
+				'{"file": "26-bark-texture.png", "job_id": "bark"}',
+			].join('\n'),
+		);
+		expect(Object.fromEntries(jobs)).toEqual({
+			'24-leaf-texture-upper.png': 'kept',
+			'26-bark-texture.png': 'bark',
+		});
 	});
 });
 

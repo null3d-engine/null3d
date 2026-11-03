@@ -2,7 +2,8 @@
 // repository at the pinned commit, or in a local folder of the same layout while the references
 // change. The tool never reads `photographs/` or any other folder.
 //
-// A species' INDEX.md names the file in use for each slot. A row whose description says
+// A species' folder holds one file in use for each slot, under the slot's planned name. A folder
+// that still holds replaced files marks them in its INDEX.md: a row whose description says
 // "Superseded by" is not in use, and a remake carries a `-b` or `-c` suffix on the slot's name. So
 // the file of a slot is the one file named `<slot>-*.png` that the index does not mark superseded.
 import { spawnSync } from 'node:child_process';
@@ -124,13 +125,25 @@ export function supersededFiles(index: string): Set<string> {
 	return out;
 }
 
-/** The provenance of one source file, from the folder's `jobs.jsonl`. */
+/**
+ * The generation job of each file in the folder, from the folder's `jobs.jsonl`. A line names the
+ * file it made, under the name it had when made; a file renamed when the set was published also
+ * carries its `final_name`, which is the name in the folder. A line marked `in_repository: false`
+ * made a file that the folder does not hold, such as a rejected attempt or a replaced version.
+ */
 export function jobIds(text: string | undefined): Map<string, string> {
 	const out = new Map<string, string>();
 	for (const line of (text ?? '').split('\n')) {
 		if (!line.trim()) continue;
-		const row = JSON.parse(line) as { file?: string; job_id?: string };
-		if (row.file && row.job_id) out.set(row.file, row.job_id);
+		const row = JSON.parse(line) as {
+			file?: string;
+			final_name?: string;
+			job_id?: string;
+			in_repository?: boolean;
+		};
+		if (row.in_repository === false) continue;
+		const name = row.final_name ?? row.file;
+		if (name && row.job_id) out.set(name, row.job_id);
 	}
 	return out;
 }

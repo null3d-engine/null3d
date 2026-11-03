@@ -8,7 +8,7 @@ summary: "The plant core that grows each species from its own record and a seed,
 
 # Vegetation (@null3d/vegetation)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The species are being rebuilt: no species ships yet, so a page draws stand-ins in their place. Built: the self-organizing growth that broadleaves, pines, shrubs and hedges use, and the leaves and shoots: leaf meshes from each species' texture outline, compound leaves, needles and fascicles, shoot prototypes with their buds, their places on the plant, the seasons and extras, and the shoot cards baked from them. Built too: the wood and the plant material. Not built yet: the other growth models, near pool and far cards. This page covers the plant core's records and stages, the stand-ins, the scatter, the grass's two GPU paths and its near shadows, and the floating leaves that ride the wind.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The species are being rebuilt: no species ships yet, so a page draws stand-ins in their place. Built: the self-organizing growth that broadleaves, pines, shrubs and hedges use, and the leaves and shoots: leaf meshes from each species' texture outline, compound leaves, needles and fascicles, shoot prototypes with their buds, their places on the plant, the seasons and extras, and the shoot cards baked from them. Built too: the wood, the plant material, the coarseness options that grow a simpler plant, bracken's fronds (the frond builder and the frond colony that grows them), and the ground plants' growth: rosettes of broad ribbed leaves on long stalks, and tufts of grass and sedge blades with their flowering stems, panicles and hanging spikes. Not built yet: the other growth models, near pool and far cards. This page covers the plant core's records and stages, the stand-ins, the scatter, the grass's two GPU paths and its near shadows, and the floating leaves that ride the wind.
 
 ```mermaid
 flowchart LR
@@ -93,7 +93,7 @@ The stages run in order. First, `prepareSpecies` builds the kit once for each sp
 
 Every value that reaches geometry comes from an integer hash and the core's own trigonometry. So a variant has the same bytes in every browser. `plantAssetDigest(asset)` hashes those bytes to compare two growths.
 
-A stage that is not built yet throws a `NotBuiltError`. A kit built with `placeholders: true` grows a simple stand-in at every stage, built or not, so a stand-in species draws the same while the real stages land. No shipped species draws a stand-in.
+A stage that is not built yet throws a `NotBuiltError`. A kit built with `placeholders: true` grows a simple stand-in at every stage, built or not, so a stand-in species draws the same while the real stages land. A kit built with `placeholders: 'missing'` runs every built stage and grows a stand-in only where a stage is not built yet, so a species can grow through its own stages before the rest exist. No shipped species draws a stand-in.
 
 ### Keeping results
 
@@ -113,6 +113,23 @@ To keep results across visits, give `prepareSpecies` a store of bytes as its `ca
 - **A matte.** `options.matte: true` draws the plant black, with its outline, its cut-outs and its sway, for an exact silhouette.
 
 `prepareSpecies` loads the textures of the preset's set, the half set on Low, the first time a page prepares the species. A page fetches no texture file of a species it does not prepare.
+
+### Simpler plants
+
+The `detail` tier sets how finely the same branches and leaves are meshed. The `coarseness` option grows a simpler plant instead. It runs from 0, the plant as grown, to 1, the coarsest. A coarser plant loses a share of its finest twigs and their buds, the twigs deepest inside the crown first. It keeps fewer shoots, spread evenly through the crown, and grows each shoot it keeps, so its leaf area holds. Its wood has fewer rings and fewer sides. The twigs at the crown's edge stay, so the plant keeps its outline.
+
+```ts
+const kit = await prepareSpecies(ctx, oak, { coarseness: 0.5 });
+const hero = await growPlant(kit, { seed: 7, variant: 0, coarseness: 0 });
+const crowd = await growPlant(kit, { seed: 7, variant: 1, triangles: 2_000_000 });
+console.log(crowd.coarseness, nearTriangles(kit, crowd));
+```
+
+Give `triangles` in place of `coarseness` to set a target for one copy's nearest level: its wood, its shoots at the variant's tier and its extras. The variant grows at the coarseness that comes nearest, and the asset's `coarseness` says which one. The core finds it by counting the shoots and the wood at a few values of coarseness, before it builds any mesh. A target above the plant as grown gives the plant as grown, and a target below the coarsest plant gives the coarsest. Give one of the two options, not both.
+
+Options given to `prepareSpecies` apply to every variant that grows from its kit, and a variant's own options replace them. A coarseness of 0 grows the same bytes as no coarseness. Stand-ins grow the same at every coarseness. On a grown oak at the high tier, coarseness 1 cuts the nearest level from 26.7 million triangles to 3.8 million. Its outline stays within 0.01 of the plant as grown.
+
+A page can also move the level switches of all its species at once. Give `switchBias` in the view that every `placePlants` call takes. It counts in stops: each switch distance is multiplied by two to the power of minus the bias. A bias of 1 switches every level at half its distance, and a bias of -1 at twice its distance. `switchScale(bias)` gives that factor.
 
 ## Stand-in species
 

@@ -7,7 +7,7 @@ import type { ShootPrototype } from '../asset';
 import type { EcoRule } from '../ecology/ecology';
 import type { MacroSkeleton } from './graph';
 import type { SpeciesTextureFiles } from './textures';
-import type { Curve, Rgb, Season, Spread, Vec2, Vec3 } from './types';
+import type { Curve, Detail, Rgb, Season, Spread, Vec2, Vec3 } from './types';
 
 /**
  * One species: the folder of its own under `species/`, grown by one of the eight growth models.
@@ -455,25 +455,53 @@ export interface Culm {
 }
 
 /**
- * Leaves from one base on a golden-angle spiral: hosta, agave.
+ * Leaves on long stalks from one crown that has divided into shoots, each shoot a golden-angle spiral
+ * of leaves, with flowering scapes in season: hosta.
  *
  * @category api/vegetation
  */
 export interface Rosette {
 	/** The model's name. */
 	readonly model: 'rosette';
-	/** Leaves per plant. */
+	/** Shoots (eyes) the crown has divided into; each carries its own spiral of leaves. */
+	readonly shoots: Spread;
+	/** Radius in metres of the ring the shoots stand on round the crown's centre. */
+	readonly crown: number;
+	/** Leaves per shoot, the rolled young ones among them. */
 	readonly leaves: Spread;
-	/** Degrees between successive leaves. */
+	/** Degrees between successive leaves of a shoot. */
 	readonly divergence: number;
-	/** Degrees from vertical by leaf age (t = 0 inner, 1 outer). */
+	/** Degrees from vertical at a stalk's base, by leaf age (t = 0 youngest, 1 oldest). */
 	readonly tilt: Curve;
-	/** Degrees a leaf arches along its length, by leaf age. */
+	/** Degrees a stalk bends outward and down over its length, by leaf age. */
 	readonly arch: Curve;
-	/** A short stem under the rosette (agave), metres. */
-	readonly stem: number;
-	/** Dead leaves at the base. */
-	readonly dead: Spread;
+	/** Stalk length in metres, by leaf age. */
+	readonly stalk: Curve;
+	/** Blade length over the foliage's leaf length, by leaf age: young leaves are small. */
+	readonly size: Curve;
+	/** Degrees the blade turns down from its stalk's line where it joins it, by leaf age. */
+	readonly pitch: Curve;
+	/** Share of each shoot's leaves, the youngest, that are still rolled. */
+	readonly rolled: number;
+	/** Extra degrees of tilt in autumn, when the leaves collapse toward the ground. */
+	readonly collapse: number;
+	/** Bare flowering stems in the seasons they name, each carrying the record's flower extras. */
+	readonly scapes?: {
+		/** Scapes per plant. */
+		readonly count: Spread;
+		/** Height in metres. */
+		readonly height: Spread;
+		/** Radius at the base in metres. */
+		readonly radius: number;
+		/** Degrees from vertical. */
+		readonly lean: Spread;
+		/** Share of the scape, from its top, that carries flowers. */
+		readonly raceme: number;
+		/** Flowers per scape, all on one side. */
+		readonly flowers: Spread;
+		/** The seasons the scapes stand in. */
+		readonly seasons: readonly Season[];
+	};
 }
 
 /**
@@ -501,24 +529,80 @@ export interface FrondColony {
 }
 
 /**
- * A tuft of blades from a small base: grasses, sedges and rushes.
+ * A tuft of shoots from one crown, each shoot a column of sheaths with blades in two or three ranks,
+ * and flowering stems in season: grasses and sedges.
  *
  * @category api/vegetation
  */
 export interface Tuft {
 	/** The model's name. */
 	readonly model: 'tuft';
-	/** Blades per tuft. */
-	readonly blades: Spread;
-	/** Radius of the base in metres. */
+	/** Shoots (tillers) per tuft. */
+	readonly shoots: Spread;
+	/** Radius of the crown the shoots rise from, in metres. */
 	readonly base: number;
-	/** Outward lean in degrees by blade length (t = length / longest blade). */
+	/** Degrees a shoot leans out from vertical, by its distance from the centre (t = distance / base). */
 	readonly lean: Curve;
-	/** Seed heads: how many, their kind, and their height in metres. */
-	readonly heads?: {
+	/** Blades per shoot. */
+	readonly blades: Spread;
+	/** Ranks the blades stand in round their shoot: 2 for grasses, 3 for sedges. */
+	readonly ranks: number;
+	/** Metres of sheath under each blade's collar. */
+	readonly sheath: Spread;
+	/** The sheath's radius in metres. */
+	readonly sheathRadius: number;
+	/** Degrees a blade leaves its shoot, by blade age (t = 0 the youngest, innermost, 1 the oldest). */
+	readonly spread: Curve;
+	/** Blade length over the foliage's blade length, by blade age. */
+	readonly size: Curve;
+	/** Flowering stems: how many, how tall, how they bow, and their heads. */
+	readonly heads?: TuftHeads;
+}
+
+/**
+ * The flowering stems of a tuft and the heads they carry. Each head's flowers or spikes are the
+ * record's extras on the stem's flower sites ('flower') and its tip ('stem-tip').
+ *
+ * @category api/vegetation
+ */
+export interface TuftHeads {
+	/** Flowering stems per tuft. */
+	readonly count: Spread;
+	/** What the heads are: an open branched panicle (grasses) or spikes hanging on stalks (sedges). */
+	readonly kind: 'panicle' | 'spike';
+	/** Stem height in metres. */
+	readonly height: Spread;
+	/** The stem's radius at its base in metres. */
+	readonly radius: number;
+	/** Faces round the stem: 3 for a sedge's three-angled stem, more for a round culm. */
+	readonly sides: number;
+	/** Degrees the stem's top bows over from vertical. */
+	readonly bow: Spread;
+	/** The seasons the stems stand in. */
+	readonly seasons: readonly Season[];
+	/** A panicle: its length, whorls of branches, and flowers along each branch. */
+	readonly panicle?: {
+		/** Metres of the stem's top that the panicle takes. */
+		readonly length: Spread;
+		/** Whorls of branches up the panicle. */
+		readonly whorls: number;
+		/** Branches per whorl. */
+		readonly branches: Spread;
+		/** Degrees a branch leaves the stem, low whorls to high (t = 0 lowest, 1 highest). */
+		readonly angle: Curve;
+		/** Degrees a branch droops over its length. */
+		readonly droop: number;
+		/** Flowers (spikelets) per branch, on its outer part. */
+		readonly flowers: Spread;
+	};
+	/** Spikes hanging one below another from the stem's bowed top. */
+	readonly spikes?: {
+		/** Spikes per stem below the one at its tip. */
 		readonly count: Spread;
-		readonly kind: 'panicle' | 'spike';
-		readonly height: Spread;
+		/** Metres between spikes along the stem. */
+		readonly spacing: Spread;
+		/** Metres of the stalk each spike hangs on. */
+		readonly stalk: Spread;
 	};
 }
 
@@ -870,20 +954,27 @@ export interface ScaleSpray {
 }
 
 /**
- * A grass blade.
+ * A grass or sedge blade: a keeled ribbon on an arching curve, of even width or tapering, ending in
+ * a blunt hooded tip (meadow grass) or a long fine point (sedge).
  *
  * @category api/vegetation
  */
 export interface GrassBlade {
-	/** Blade length in metres. */
+	/** Blade length in metres, collar to tip. */
 	readonly length: Spread;
-	/** Blade width in metres. */
+	/** Blade width in metres at its widest. */
 	readonly width: number;
-	/** Degrees of the V-fold along the blade. */
+	/** Width over the widest, by position along the blade, before the tip closes it. */
+	readonly profile: Curve;
+	/** How the blade ends: a short blunt boat-shaped hood, or a long fine point. */
+	readonly tip: 'hooded' | 'pointed';
+	/** Share of the blade's length over which the tip closes. */
+	readonly tipLength: number;
+	/** Degrees each half rises from the keel. */
 	readonly fold: number;
 	/** Degrees of twist over the blade. */
 	readonly twist: number;
-	/** Degrees the blade arches. */
+	/** Degrees the blade arches over its length. */
 	readonly arch: Spread;
 	/** Share of the blade that is dry at the tip. */
 	readonly dryTip: number;
@@ -892,23 +983,38 @@ export interface GrassBlade {
 }
 
 /**
- * A thick, fleshy leaf with teeth and a spine: agave.
+ * A broad leaf of deep relief on a long channelled stalk: ribs pleated between curved parallel
+ * veins that run from the midrib to the tip, a cupped blade with a heart-shaped base: hosta.
  *
  * @category api/vegetation
  */
 export interface ThickLeaf {
-	/** Leaf length in metres. */
+	/** Blade length in metres, base to tip. */
 	readonly length: Spread;
-	/** Leaf width in metres. */
-	readonly width: number;
-	/** Thickness over width at the base, in a lens-shaped section. */
-	readonly thickness: number;
-	/** Marginal teeth: metres apart and metres long. */
-	readonly teeth: { readonly spacing: number; readonly length: number };
-	/** The terminal spine's length in metres. */
-	readonly spine: number;
-	/** Degrees the leaf arches. */
-	readonly arch: Spread;
+	/** The texture's measured contour, or a parametric outline where no texture leaf exists. */
+	readonly outline: 'texture' | ParametricOutline;
+	/**
+	 * The ribs: veins a side; the pleat's depth over the spacing between two veins; where the
+	 * innermost vein leaves the midrib, as a share of the blade's length; and how far each vein
+	 * sweeps out before it runs on to the tip, as a share of the length per unit of its rank.
+	 */
+	readonly ribs: {
+		readonly count: number;
+		readonly depth: number;
+		readonly start: number;
+		readonly sweep: number;
+	};
+	/** Degrees each half rises at its margin from the midrib's plane: a cupped blade. */
+	readonly cup: number;
+	/** Degrees the tip curls down along the length. */
+	readonly curl: number;
+	/** Margin wave: amplitude in metres and waves per side. */
+	readonly wave: readonly [amplitude: number, count: number];
+	/**
+	 * The stalk: its radius in metres where it meets the blade, and the share of that radius the
+	 * groove on its upper face sinks.
+	 */
+	readonly stalk: { readonly radius: number; readonly channel: number };
 	/** How the leaf looks under light. */
 	readonly optics: LeafOptics;
 }
@@ -1019,8 +1125,19 @@ export interface ExtraSpec {
 		| 'thorn'
 		| 'spine-cluster'
 		| 'berry';
-	/** Which bud sites carry it. */
-	readonly at: 'shoot-tip' | 'node' | 'spur' | 'old-wood' | 'areole' | 'crown-top';
+	/**
+	 * Which bud sites carry it: 'flower' takes the grower's flower sites (a head's spikelets,
+	 * florets or hanging spikes), 'stem-tip' the tip of each flowering stem.
+	 */
+	readonly at:
+		| 'shoot-tip'
+		| 'node'
+		| 'spur'
+		| 'old-wood'
+		| 'areole'
+		| 'crown-top'
+		| 'flower'
+		| 'stem-tip';
 	/** Share of matching bud sites that carry one. */
 	readonly share: number;
 	/** The seasons it shows in. */
@@ -1113,8 +1230,11 @@ export interface LodSpec {
 export interface SpeciesBudget {
 	/** Bytes of the kit: prototypes in every tier, and the card atlas until it uploads. */
 	readonly kitBytes: number;
-	/** Bytes of one variant: the card levels, the shoot rows and the skeleton. */
-	readonly variantBytes: number;
+	/**
+	 * Bytes of one variant at each detail tier, read at the tier the plant is built for: its levels
+	 * and wind records, the nearest wood left out.
+	 */
+	readonly variantBytes: Readonly<Record<Detail, number>>;
 	/** Triangles of the nearest level of one copy, at the high tier. */
 	readonly lod0Triangles: number;
 	/** Triangles of the first card level. */
