@@ -166,6 +166,8 @@ import {
 	type PlanningWords,
 	readPlanningPart,
 	replaceMeshIndices,
+	setMeshPieceList,
+	setMeshPieces,
 	updateVertices,
 	type VertexLayout,
 	valuesOf,
@@ -544,15 +546,17 @@ export class MeshGeometry {
 	 * them part by part, and copies only the vertices of the triangles that cross from one part to
 	 * another. A large mesh spreads the work over frames: the engine reads one part of it in each
 	 * frame for the plan, and gives it one level in each frame, coarsest first, when the plan is
-	 * done. The mesh draws its full shape until the
-	 * levels arrive, and every object and instance batch that draws it then picks its level.
+	 * done. The mesh draws its full shape until the levels arrive, and every object and instance
+	 * batch that draws it then picks its level. The mesh and each level of 32,768 triangles or more
+	 * also get 8 to 16 pieces, which each copy skips where they lie outside the view or face away:
+	 * the mesh's own pieces draw a sorted copy of its indices, in the frame after the last level.
 	 *
 	 * A mesh made in code plans its levels on its own the first time the scene draws it, when it
 	 * holds `geometry.automaticLevelTriangles` triangles or more, or when its copies hold
 	 * `geometry.automaticDrawnTriangles` together. Call this to plan another mesh's, to plan again
 	 * after `updateVertices`, or to await the levels of a plan that runs: a call while a plan with
-	 * the same options runs returns that plan's promise. `setLevels` wins over a plan, and `updateVertices` takes the planned
-	 * levels away. The promise resolves with the mesh's levels, which stay as they were when the
+	 * the same options runs returns that plan's promise. `setLevels` wins over a plan, and
+	 * `updateVertices` takes the planned levels away. The promise resolves with the mesh's levels, which stay as they were when the
 	 * planner finds no level worth making, and when `setLevels`, `updateVertices` or `destroy` ends
 	 * the plan first. It rejects with E1221 for a mesh with joints, morph targets or a vertex
 	 * record, whose shape poses or moves, and with E1406 when the planner does not download. The
@@ -616,7 +620,7 @@ export class MeshGeometry {
 					if (plan !== this.plans || !this.live) return this.levels;
 					read = readPlanningPart(core, this.id, part, call, read);
 				}
-				const words = (read as PlanningWords).words;
+				const { words, parts, masks } = read as PlanningWords;
 				if (automatic) {
 					this.automaticTriangles = (words[1] as number) / 3;
 					if (!this.automaticWanted()) {
@@ -632,6 +636,8 @@ export class MeshGeometry {
 						cards: cards && floatPositions(format),
 						maxLevels: MAX_LOWER_LEVELS,
 						skipFlat: automatic,
+						parts,
+						...(masks && { masks: masks.buffer as ArrayBuffer }),
 					},
 					call,
 					levelsError,
@@ -669,10 +675,6 @@ export class MeshGeometry {
 			return this.levels;
 		}
 		const planned = output.levels;
-		if (planned.length === 0) {
-			this.planning = undefined;
-			return this.levels;
-		}
 		const least = output.side * LEAST_LEVEL_ERROR;
 		let before = 0;
 		const errors = planned.map((level) => {
@@ -694,6 +696,14 @@ export class MeshGeometry {
 			this.built = made.slice();
 			this.builtAutomatically = entry.automatic;
 			if (made.length === 1) this.freeMeshes(old, call);
+		}
+		// The mesh's own pieces come last, in a frame of their own, since the copy of a large list
+		// takes as long as a level's. They take the place of the pieces of an earlier plan.
+		const { pieces } = output;
+		if (pieces) {
+			if (made.length > 0) await this.nextFrame();
+			if (ended()) return this.levels;
+			setMeshPieceList(this.core, this.id, pieces, call);
 		}
 		this.planning = undefined;
 		return this.levels;
@@ -720,12 +730,13 @@ export class MeshGeometry {
 	private levelMesh(level: TaskLevel, call: string): MeshGeometry {
 		const { core } = this;
 		const base = this.id;
-		const { indices, positions } = level;
+		const { indices, positions, pieces } = level;
 		// A level of cards moves its vertices, so it copies them. Another level shares the mesh's,
-		// part by part where the engine split the mesh.
-		const id = positions
-			? meshFromLevelCopy(core, base, indices, call)
-			: (meshFromLevel(core, base, indices, call) ?? meshFromSplitLevel(core, base, indices, call));
+		// part by part where the engine split the mesh, and a large one takes its pieces.
+		let id = positions ? meshFromLevelCopy(core, base, indices, call) : undefined;
+		id ??= meshFromLevel(core, base, indices, call);
+		if (id === undefined) id = meshFromSplitLevel(core, base, indices, call, pieces);
+		else if (pieces) setMeshPieces(core, id, pieces, call);
 		const mesh = new MeshGeometry(id, core.glue.meshRadius(id), core, 0, [], this.maker);
 		if (positions) {
 			// The copy holds each vertex once, in the order that the triangles first name it.

@@ -8,6 +8,7 @@ import {
 	MESHOPT_MODULES,
 	MESHOPT_VENDOR,
 } from '../../../../tools/lib/meshopt-wasm.ts';
+import { PIECE_LIST_MIN_TRIANGLES } from '../../levels/pieces.js';
 import { ENCODER_MODULE, SIMPLIFIER_MODULE } from './level-words';
 import { type LevelsTaskOutput, run } from './levels-task';
 
@@ -67,7 +68,7 @@ async function taskLevels(
 	skipFlat = false,
 ) {
 	const result = await run(
-		{ words: planningWords(arrays), cards, maxLevels, skipFlat },
+		{ words: planningWords(arrays), cards, maxLevels, skipFlat, parts: 1 },
 		vendoredModules(),
 	);
 	return result.output as LevelsTaskOutput;
@@ -142,6 +143,33 @@ describe('the level planner on a job worker', () => {
 		expect((await taskLevels(flat, false, 7, true)).levels).toEqual([]);
 		expect((await taskLevels(flat, false, 7, false)).levels.length).toBeGreaterThan(0);
 	});
+
+	test('gives a large mesh and each large level pieces over the same triangles', async () => {
+		const grid = bumpyGrid(200);
+		const output = await taskLevels(grid, false, 7);
+		const expected = await nodeLevels(grid, false, 7);
+		const keys = (indices: Uint32Array) => {
+			const out: string[] = [];
+			for (let t = 0; t < indices.length; t += 3)
+				out.push(`${indices[t]},${indices[t + 1]},${indices[t + 2]}`);
+			return out.sort();
+		};
+		const total = (counts: Uint32Array) => counts.reduce((sum, count) => sum + count, 0);
+		expect(output.pieces).toBeDefined();
+		const { pieces } = output as Required<LevelsTaskOutput>;
+		expect(total(pieces.triangles)).toBe(grid.indices.length / 3);
+		expect(keys(pieces.indices)).toEqual(keys(grid.indices));
+		output.levels.forEach((level, k) => {
+			const want = expected[k]?.indices[0] as Uint32Array;
+			// A level keeps the planner's triangles, in the order of its pieces where it has them.
+			expect(keys(level.indices)).toEqual(keys(want));
+			const large = level.indices.length / 3 >= PIECE_LIST_MIN_TRIANGLES;
+			expect(level.pieces !== undefined).toBe(large);
+			if (level.pieces) expect(total(level.pieces.triangles)).toBe(level.indices.length / 3);
+			else expect(Array.from(level.indices)).toEqual(Array.from(want));
+		});
+		expect(output.levels[0]?.pieces).toBeDefined();
+	}, 60_000);
 
 	test('stops at the level cap it is given', async () => {
 		expect((await taskLevels(bumpyGrid(48), false, 2)).levels.length).toBe(2);

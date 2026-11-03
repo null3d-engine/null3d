@@ -1,8 +1,9 @@
 // The task that plans a mesh's levels of detail, which a job worker runs beside the frames (see
 // `shared/tasks.ts`). It reads the mesh as the engine core stores it, in the words that the
-// sketch's thread reads from the core part by part (`readPlanningPart`), and runs the level planner that the asset tool runs too
-// (levels/planner.js), with meshoptimizer's own simplifier. The levels name the mesh's own
-// vertices, so the mesh keeps its vertex and triangle order.
+// sketch's thread reads from the core part by part (`readPlanningPart`), and runs the level
+// planner that the asset tool runs too (levels/planner.js), with meshoptimizer's own simplifier.
+// The levels name the mesh's own vertices, so the mesh keeps its vertex and triangle order. The
+// mesh and each large level get pieces too (scene/level-pieces.ts).
 
 import {
 	longestSide,
@@ -13,7 +14,9 @@ import {
 } from '../../levels/planner.js';
 import { TaskLoadError } from '../shared/task-load-error';
 import type { TaskResult } from '../workers/tasks';
+import type { PiecesData } from './gltf-parse';
 import { type LevelMeshopt, levelMeshopt } from './level-meshopt';
+import { type ListPieces, planListPieces } from './level-pieces';
 import {
 	ENCODER_MODULE,
 	holdsAttribute,
@@ -31,6 +34,13 @@ export interface LevelsTaskInput {
 	maxLevels: number;
 	/** True to plan nothing for a mesh that lies flat, whose shape a shader may give it. */
 	skipFlat: boolean;
+	/** The parts that the engine split the mesh into. */
+	parts: number;
+	/**
+	 * The parts that hold each vertex, one bit a part, for a mesh of several parts that its lists'
+	 * pieces may follow. A mesh of several parts without them plans no pieces.
+	 */
+	masks?: ArrayBuffer;
 }
 
 /** One planned level: its triangles, its error, and its own positions where the step moved them. */
@@ -38,11 +48,15 @@ export interface TaskLevel {
 	indices: Uint32Array;
 	error: number;
 	positions?: Float32Array;
+	/** The level's pieces, which its triangles follow, for a large level. */
+	pieces?: PiecesData;
 }
 
 /** The planned levels, and the time the planner took on the worker, in ms. */
 export interface LevelsTaskOutput {
 	levels: TaskLevel[];
+	/** The mesh's own pieces, over a sorted list of its triangles, for a large mesh. */
+	pieces?: ListPieces;
 	/** The mesh's longest side, in the units of its positions and of the errors. */
 	side: number;
 	ms: number;
@@ -90,7 +104,7 @@ export async function run(
 	input: unknown,
 	wasm: (name: string) => WebAssembly.Module,
 ): Promise<TaskResult> {
-	const { words, cards, maxLevels, skipFlat } = input as LevelsTaskInput;
+	const { words, cards, maxLevels, skipFlat, parts, masks } = input as LevelsTaskInput;
 	const meshopt = await start(wasm);
 	const began = performance.now();
 	const header = new Uint32Array(words, 0, 3);
@@ -132,17 +146,38 @@ export async function run(
 		simplifierFlags(false),
 		maxLevels,
 	);
-	const levels: TaskLevel[] = planned.map((level) => ({
-		indices: level.indices[0] as Uint32Array,
-		error: level.error,
-		...(level.positions[0] && { positions: level.positions[0] }),
-	}));
+	// The lists of a mesh of several parts keep the order in which the parts draw them, and a mesh
+	// of more parts than a vertex's bits hold gets no pieces.
+	const split = parts > 1 ? masks && { masks: new Uint32Array(masks), parts } : undefined;
+	const piecesOf = (list: Uint32Array) =>
+		parts > 1 && !split ? undefined : planListPieces(positions, list, split, meshopt.cacheOrder);
+	const levels: TaskLevel[] = planned.map((level) => {
+		const indices = level.indices[0] as Uint32Array;
+		const moved = level.positions[0];
+		// A level of cards moves its vertices into a copy of its own, which draws whole.
+		const pieces = moved ? undefined : piecesOf(indices);
+		if (pieces)
+			return {
+				indices: pieces.indices,
+				error: level.error,
+				pieces: { triangles: pieces.triangles, bounds: pieces.bounds },
+			};
+		return { indices, error: level.error, ...(moved && { positions: moved }) };
+	});
+	const pieces = piecesOf(indices);
 	if (meshopt.heapBytes() > KEPT_HEAP_BYTES) started = undefined;
-	const output: LevelsTaskOutput = { levels, side, ms: performance.now() - began };
-	return {
-		output,
-		transfer: levels.flatMap((level) =>
-			level.positions ? [level.indices.buffer, level.positions.buffer] : [level.indices.buffer],
-		),
+	const output: LevelsTaskOutput = {
+		levels,
+		side,
+		ms: performance.now() - began,
+		...(pieces && { pieces }),
 	};
+	const transfer: ArrayBufferLike[] = [];
+	for (const level of levels) {
+		transfer.push(level.indices.buffer);
+		if (level.positions) transfer.push(level.positions.buffer);
+		if (level.pieces) transfer.push(level.pieces.triangles.buffer, level.pieces.bounds.buffer);
+	}
+	if (pieces) transfer.push(pieces.indices.buffer, pieces.triangles.buffer, pieces.bounds.buffer);
+	return { output, transfer: transfer as ArrayBuffer[] };
 }
