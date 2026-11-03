@@ -206,6 +206,9 @@ export class WebGPUBackend {
 	skinsInVertexShaders = false;
 	/** Why a pipeline failed to build, which the next replay reports. */
 	private buildFailure: string | undefined;
+	/** The opcode and word of the command that the replay is carrying out. */
+	private replayOp = -1;
+	private replayWord = -1;
 	/** True while the render pass's pipeline is building: its draws draw nothing until it is set again. */
 	private skipDraws = false;
 	/** True while the compute pass's pipeline is building: its dispatches do nothing. */
@@ -302,7 +305,10 @@ export class WebGPUBackend {
 
 	private need<T>(table: (T | undefined)[], id: number, what: string): T {
 		const value = table[id];
-		if (value === undefined) throw new Error(`draw list names ${what} ${id}, which does not exist`);
+		if (value === undefined)
+			throw new Error(
+				`draw list names ${what} ${id}, which does not exist${this.replayWord < 0 ? '' : `, in command ${this.replayOp} at word ${this.replayWord}`}`,
+			);
 		return value;
 	}
 
@@ -827,6 +833,7 @@ export class WebGPUBackend {
 	 * nothing.
 	 */
 	prepare(words: Uint32Array, start: number, end: number): number {
+		this.replayWord = -1;
 		let i = start;
 		while (i < end) {
 			const header = words[i] as number;
@@ -1123,6 +1130,8 @@ export class WebGPUBackend {
 			let length = header >>> 8;
 			if (length === 0 || i + length > end) throw new Error(`draw list is truncated at word ${i}`);
 			const a = i + 1;
+			this.replayOp = op;
+			this.replayWord = i;
 			switch (op) {
 				case G.OP_CREATE_BUFFER: {
 					// A capture draws the frame again, and the buffers of that frame exist already:

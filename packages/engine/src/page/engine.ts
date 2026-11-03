@@ -2353,7 +2353,10 @@ async function startEngine(
 			fps: switches.fps,
 			queue: switches.queue,
 			displayChecks: switches.displayChecks,
-			hold: hold !== undefined,
+			// A replay draws the frames it holds as a hold does: from the first frame that it made
+			// every GPU object on, so that frame's creations reach the device before the last
+			// frame draws with them.
+			hold: hold !== undefined || replay !== undefined,
 			glTiming: switches.glTiming,
 			gpuSamples: switches.gpuSamples,
 			preload: options.preload,
