@@ -138,7 +138,8 @@ export function createFloatingLeaves(
 	// Each leaf's place in the box, from its own integer hash, so every device puts it in the same
 	// place. The state form moves the places that the pass holds, and the shader places every leaf,
 	// so the rows exist for the instance count rather than for the places that they name.
-	const mesh = ctx.geometry.plane({ width: 1, height: 1 });
+	// The shader places and turns every leaf, so the quad takes no levels.
+	const mesh = ctx.geometry.plane({ width: 1, height: 1, levels: false });
 	const makeBatch = (material: Material): InstanceBatch => {
 		const batch = ctx.scene.createInstances(mesh, count, {
 			material,

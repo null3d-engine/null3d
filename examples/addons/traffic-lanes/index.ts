@@ -157,6 +157,8 @@ export function createVehicleHull(
 		uvs[(k / 3) * 2] = ((positions[k] as number) + 1) * 0.5;
 		uvs[(k / 3) * 2 + 1] = positions[k + 1] as number;
 	}
+	// The hull keeps the automatic levels for a still copy. The lanes' material moves each copy in
+	// its shader, and the engine plans no levels for a mesh that such a material draws.
 	return geometry.fromArrays({
 		positions: new Float32Array(positions),
 		uvs,
@@ -203,6 +205,7 @@ export function vehicleCanopy(
 	face(CANOPY[2], CANOPY[3], CANOPY[5], CANOPY[4]);
 	face(CANOPY[0], CANOPY[2], CANOPY[4], CANOPY[6]);
 	face(CANOPY[1], CANOPY[7], CANOPY[5], CANOPY[3]);
+	// Eight triangles, which the automatic levels leave whole.
 	return geometry.fromArrays({
 		positions: new Float32Array(positions),
 		uvs: new Float32Array(uvs),
@@ -371,6 +374,8 @@ export function createFlyingCarHull(
 		uvs[(k / 3) * 2] = ((positions[k] as number) + 1) * 0.5;
 		uvs[(k / 3) * 2 + 1] = positions[k + 1] as number;
 	}
+	// The hull keeps the automatic levels for a still copy. The lanes' material moves each copy in
+	// its shader, and the engine plans no levels for a mesh that such a material draws.
 	return ctx.geometry.fromArrays({
 		positions: new Float32Array(positions),
 		uvs,
