@@ -157,9 +157,22 @@ describe('the plant core with stand-ins', () => {
 		expect(asset.levels[1].from).toBeGreaterThan(0);
 	});
 
-	it('throws where a stage is not built and the kit asks for no stand-ins', () => {
-		// Every kit stage is built; a variant's growth still meets a stage that is not.
+	it('grows every stage without stand-ins for a model that is built', () => {
 		const kit = buildKitNow(stub);
+		const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+		expect(asset.wind.count).toBe(asset.skeleton.axes.count);
+		expect(asset.levels[1].from).toBeGreaterThan(0);
+		expect(asset.impostor.from).toBeGreaterThan(asset.levels[2].from);
+	});
+
+	it('throws where a stage is not built and the kit asks for no stand-ins', async () => {
+		// The architectural grower is not built yet, so a variant of its model meets an unbuilt stage.
+		const record = {
+			...stub.record,
+			growth: { model: 'architectural' } as unknown as typeof stub.record.growth,
+		};
+		await loadPlantCode(record);
+		const kit = buildKitNow({ ...stub, record });
 		expect(() => growPlantNow(kit, { seed: 11, variant: 0, near: true })).toThrow(NotBuiltError);
 	});
 
