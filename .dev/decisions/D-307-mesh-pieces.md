@@ -1,4 +1,4 @@
-# D-306: Pieces of a large mesh, culled per copy
+# D-307: Pieces of a large mesh, culled per copy
 
 Status: decided and built on every GPU path. Built: the asset tool's pieces (`NULL3D_pieces`), the culling shader on WebGPU, the CPU culling of the direct-draw path and the job workers' culling on WebGL2. Pending: the runtime planner that gives a mesh made in code its pieces. It calls the entry points below. Task: none.
 
