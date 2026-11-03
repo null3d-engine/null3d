@@ -68,7 +68,7 @@ In hold mode, the engine does this:
 1. It seeds the engine's random generator, [`math.random`](../api/math.md#random-numbers), in the sketch's thread, and makes `Math.random` draw from it too. This happens before the sketch module loads.
 2. It runs the sketch's setup.
 3. It steps the sketch from time 0 to the held time. The first frame is at time 0 and its `onUpdate` gets a step of 0. Each later frame adds a fixed step of 1/60 second, and the last one lands on the held time exactly. The sketch's own fixed steps fall due from the sketch time, so every hold runs the same ones. At the default rate, each frame after the first runs one.
-4. It draws the last frame on the canvas, and reads its pixels back through its own GPU code.
+4. It draws the last frame on the canvas, and reads its pixels back through its own GPU code. Motion vectors read the frame before, so with them it draws the frame before the last one too. A mirror or a light probe shows its result a frame late, so with one it draws one more frame at the held time. The GPU passes of the other frames never run, and [`time.drawn`](../api/time.md#the-time-object) is false in them.
 5. It publishes the frame, or the error that stopped it, as `window.__null3dHold`.
 
 `createEngine` resolves once the frame is read back, and `engine.captureFrame()` returns that frame. `engine.mode.hold` gives the held time, and it is `null` for a live engine. After the held frame, the engine draws nothing more: it runs no frame loop, so `engine.measure()` finds no frames. The hold's result gives the held frame's own figures instead. The engine draws no frame before the held one, so the held frame creates every GPU object and uploads the whole scene.
