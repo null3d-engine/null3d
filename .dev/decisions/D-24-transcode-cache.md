@@ -1,8 +1,8 @@
 # D-24: Cache of transcoded textures
 
-Status: decided by its rule: keep the cache, on by default. Built. Task: M2-A5 (T-31).
+Status: decided by its rule: keep the cache, on by default. Built, as the namespace of transcoded textures in the engine's cache of derived data ([D-311](D-311-derived-data-cache.md)), which holds the store, the budget and the switch. Task: M2-A5 (T-31).
 
-Summary: Keep each KTX2 texture's transcoded texels in Cache Storage, up to 256 MiB, keyed by the file's SHA-256, format and mip levels. On the owner's iPad a repeat visit to S6's 120 textures is ready 50% sooner, past the rule's 10%, and a first visit no later. Cloud phones gain only 6%, because other start work takes most of their time.
+Summary: Keep each KTX2 texture's transcoded texels in the engine's cache of derived data, keyed by the file's SHA-256, format and mip levels. On the owner's iPad a repeat visit to S6's 120 textures is ready 50% sooner, past the rule's 10%, and a first visit no later. Cloud phones gain only 6%, because other start work takes most of their time.
 
 ## Question
 
@@ -16,13 +16,13 @@ Keep the cache if it makes a repeat visit that loads S6's textures ready at leas
 
 The cache sits around the one step in `scene/ktx2.ts` that hands a file to the transcoder, on the sketch's thread (`scene/ktx2-cache.ts`). That step runs the transcoder as a task of the on-demand loader in the job workers (M2-R18). The cache does not depend on where the transcoder runs. The task takes the file's bytes, so the lookup hashes them before the step. A hit skips the step, so a page whose files are all in the cache never downloads or compiles the transcoder.
 
-- Storage: Cache Storage, one cache named `null3d-ktx2-basis-2.50-1`. Each entry is a `Response` of the texels, in the layout that the transcoder writes: every mip level in turn, each level's layers in turn. IndexedDB would also serve. Cache Storage was chosen for its smaller code, and because it stores bodies as files that the browser reads back as one `ArrayBuffer`. Both need a secure context in practice: the engine's threads need cross-origin isolation, which needs one.
-- Key: the SHA-256 of the file's bytes, the transcoder's target format and the number of mip levels written. They form the path of an address under the reserved name `ktx2.null3d.invalid`. A key of the file's address and its response's validator fails in two cases. The KTX2 textures inside one glTF file share the file's address and validator. A server that sends no `ETag` or `Last-Modified` would leave its files out. The hash costs one pass over the file, which the browser's `crypto.subtle` runs off the thread. Files with the same bytes at two addresses share one entry. In S6's 120 maps, 4 have the same bytes as another, so the cache holds 116 entries.
-- Versions: the cache's name holds the transcoder's version and the layout's. An engine whose transcoder writes other bytes opens a new cache and deletes every other cache whose name starts with `null3d-ktx2-`.
-- Size: at most 256 MiB of texels. When the writes under way end, the cache deletes its oldest entries until the rest fit. S6's textures take about 105 MiB as ETC2 and ASTC, the formats a phone takes. Writes hold at most 128 MiB at once, and a texture past that skips its write. So a page that loads many textures at once never holds a second copy of all of them.
-- Checks: an entry whose size is not what the header and format give is deleted, and the file transcodes again. When a step fails, the file goes to the transcoder. Examples are a browser without Cache Storage, a private window that refuses it, and a full disk.
+- Storage: the namespace `null3d-ktx2` of the cache of derived data, at the version `basis-2.50-1`. Each entry holds the texels in the layout that the transcoder writes: every mip level in turn, each level's layers in turn. [D-311](D-311-derived-data-cache.md) measured the stores and chose the origin private file system. The rows below measured D-24's first store, Cache Storage, and D-311 times the move to the new one.
+- Key: the SHA-256 of the file's bytes, the transcoder's target format and the number of mip levels written. A key of the file's address and its response's validator fails in two cases. The KTX2 textures inside one glTF file share the file's address and validator. A server that sends no `ETag` or `Last-Modified` would leave its files out. The hash costs one pass over the file, which the browser's `crypto.subtle` runs off the thread. Files with the same bytes at two addresses share one entry. In S6's 120 maps, 4 have the same bytes as another, so the cache holds 116 entries.
+- Versions: the namespace's version holds the transcoder's version and the layout's. An engine whose transcoder writes other bytes registers another version, which deletes the entries of the old one.
+- Size: the cache of derived data's one budget, a share of the browser's allowance, which every namespace shares. S6's textures take about 105 MiB as ETC2 and ASTC, the formats a phone takes. Writes hold at most 128 MiB at once, and a texture past that skips its write. So a page that loads many textures at once never holds a second copy of all of them.
+- Checks: an entry whose size is not what the header and format give misses, and the file transcodes again and writes it over. When a step fails, the file goes to the transcoder. Examples are a browser without the storage, a private window that refuses it, and a full disk.
 - Writes run after the texture is made, so they never delay a load. A page that closes before they end keeps only the entries written so far.
-- `?texture-cache=off` turns the cache off for timing and tests.
+- `?derived-cache=off` turns the whole cache of derived data off for timing and tests. The rows below used its earlier form, `?texture-cache=off`.
 
 ## Data
 
@@ -65,7 +65,7 @@ Only the run where the job workers transcode decides, because the engine ships t
 
 ## Consequences
 
-- The KTX2 loader's file grows by the cache's code, about 1 KB after Brotli. It loads with the first KTX2 file, so no page's start grows.
+- The cache's code loads in the file of the assets loader, with the first call that reads a file, so no page's start grows ([D-311](D-311-derived-data-cache.md)).
 - Docs: `api/assets` (Caching), `concepts/assets`, `guides/testing` (the switch), and the three.js mapping entry of `KTX2Loader`. The develop skill's API quick reference and its testing switches.
 - The device runner has a `texture-cache` plan, and the dev server serves the sample content's images as KTX2 files under `/sample-textures/`.
 - `loadKtx2` runs the cache's lookup before the transcoder's task, which takes the file's bytes, and the store after the texture is made.

@@ -3,7 +3,7 @@ id: getting-started/hosting
 title: Hosting and cross-origin isolation
 status: experimental
 since: "0.1"
-summary: "COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the Content-Security-Policy; the engine's files on a CDN; Brotli; the third-party notices; offline play with a service worker and the build's file list; the single-threaded fallback."
+summary: "COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the Content-Security-Policy; the engine's files on a CDN; Brotli; the third-party notices; offline play with a service worker and the build's file list; the caches between visits; the single-threaded fallback."
 ---
 
 # Hosting and cross-origin isolation
@@ -164,6 +164,20 @@ The engine and some add-ons ship code from other projects, under their licenses.
 
 [Third-party notices](third-party-notices.md) lists every part and its license. The same text is in `node_modules/@null3d/engine/THIRD-PARTY-NOTICES.txt`. The command-line tool's notices stay out of the file, because a page ships none of the tool's code.
 
+## Caches between visits
+
+A repeat visit starts sooner when the browser keeps what the first visit downloaded and made. Five caches do that, and each keeps something else:
+
+| Cache | What it keeps | Who sets it up |
+| --- | --- | --- |
+| The HTTP cache | The build's files: the engine, its workers, the shaders and your own files | The host, with the headers below |
+| A service worker's cache | Every file the game needs, so it plays with no network | Your game, as [Offline play](#offline-play) shows |
+| The cache of derived data | Data that the engine and add-ons make from files, such as transcoded KTX2 textures, and data that your sketch makes itself | The engine, with no setup. `assets.cache` gives your sketch its own namespace ([Caching](../api/assets.md#caching)) |
+| The stored preset check | The quality preset that the device held | The engine, in `localStorage` ([Quality presets](../concepts/quality-presets.md#repeat-visits)) |
+| The back/forward cache | The whole running page, for the browser's back and forward buttons | The browser ([Content pages](../guides/content-pages.md#second-visits-and-navigation)) |
+
+The first two keep files, so a repeat visit downloads less. The cache of derived data keeps the work done on those files, so a repeat visit skips it. A page whose KTX2 files are all in it never downloads the transcoder. The browser can delete any of them to free space, and the engine then downloads or makes the data again.
+
 ## Let browsers keep the build files
 
 Every engine thread loads its own copy of its script and of the core's loader. When the host lets the browser keep those files, each copy after the first comes from the cache. When the host asks the browser to check each file again, the copies wait for one another, one round trip each. A computer with many cores starts many threads, and on a slow phone connection one round trip can take more than half a second.
@@ -260,9 +274,9 @@ The cache decides where the files come from, and `preload` decides when they loa
 
 The preset can also draw a feature that the sketch never asks for. High and Ultra, and WebGL2's Medium, draw [screen-space bounce light](../concepts/post-processing.md#screen-space-bounce-light), whose steps read `'ao'`'s depth and normals and the `'color_copy'` of the scene color from the first frame. A game that plays offline on those presets caches both features as well as the ones that it preloads.
 
-### Keep the engine's caches
+### Keep the engine's cache
 
-The engine keeps the textures that it transcodes from KTX2 files in Cache Storage, in caches whose names start with `null3d-`. The worker above deletes only its own caches, which start with `game-`. A service worker that deletes every other cache makes the engine transcode those textures again.
+The engine keeps its [cache of derived data](../api/assets.md#the-cache-of-derived-data) in the origin private file system, in a folder whose name starts with `null3d-derived-`. A service worker's cache never holds it, so the worker above can delete its old caches freely. A page that clears the origin's storage, for example with the `Clear-Site-Data` header, makes the engine transcode its textures again.
 
 ## During development
 

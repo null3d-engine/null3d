@@ -128,6 +128,7 @@ export type {
 export type { LightMapData, LightMapEncoding } from './scene/baked-light';
 export type { ChunkRowData, ChunkRowWriter } from './scene/chunk-rows';
 export type { ColorInput } from './scene/color';
+export type { DerivedCache } from './scene/derived-cache';
 export type { Effect, EffectOptions } from './scene/effects';
 export type {
 	BuiltinEnvironmentName,

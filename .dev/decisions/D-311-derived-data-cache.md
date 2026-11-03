@@ -1,8 +1,8 @@
 # D-311: Cache of derived data across visits
 
-Status: decided. Not built yet: the cache and its namespace of transcoded textures. Task: none.
+Status: decided and built. The engine keeps derived data in the origin private file system, and the KTX2 loader's cache of transcoded textures ([D-24](D-24-transcode-cache.md)) is its first namespace. Add-ons register their own through `assets.cache`, and the vegetation add-on's `cache` option takes one. Task: none.
 
-Summary: One cache keeps the derived data of every producer, by name, version and content key, as files of the origin private file system. A worker reads them through sync handles. On the Apple devices it reads 120 MiB in 17 to 36 ms, against 59 to 98 ms for Cache Storage. One budget, a tenth of the browser's allowance, replaces D-24's 256 MiB.
+Summary: One cache keeps the derived data of every producer, by name, version and content key, as files of the origin private file system. A worker reads them through sync handles. On the Apple devices it reads 120 MiB in 17 to 36 ms, against 59 to 98 ms for Cache Storage. One budget, a tenth of the browser's allowance, replaces D-24's 256 MiB, and repeat visits keep D-24's gains.
 
 ## Question
 
@@ -90,7 +90,33 @@ The cost of a check on read, in milliseconds, for the same blocks. SHA-256 runs 
 
 Two facts about the file system came from a probe page in Chrome 156 and Firefox 155. A write through a sync handle leaves the file's `lastModified` as it was in Chrome, so the cache cannot age entries by file times. Chrome lets two `read-only` sync handles share a file, and Firefox lets one handle at a time hold it.
 
-How the data was produced: the storage speed page, `tests/pages/storage-speed.html`, runs its stores from a worker in a profile that holds no data. The page ran on `f088a473`. The four devices ran the device runner's `storage-speed` plan on BrowserStack Automate, with the dev server on the Mac behind the tunnel. The command was `NULL3D_PORT=6351 bun run devices:cloud --only bsiphone17-safari,bsipadpro13-safari,bsgalaxys25-chrome,bsgalaxytaba9plus-chrome --plan storage-speed` (runs 20261103-112517-storage-speed and 20261103-112809-storage-speed). The Mac's Safari ran `bun tests/real-browsers.ts --plan storage-speed Safari` (run 20261103-112151-storage-speed). Firefox did not open the runner page there. So Playwright's own Firefox 155 loaded the page, headless, with a profile of its own, and so did the Mac's installed Chrome. The Mac ran other work beside every run, at a load average of 40 to 61.
+### The cache of transcoded textures
+
+D-24's texture cache page loads the city scene's 120 KTX2 textures at once. It reports three times. Ready runs from navigation until every texture is on the GPU. Textures runs from the engine's start to then, and loads covers the sketch's loads. The old cache is D-24's Cache Storage at `f088a473`, and the new one is this record's.
+
+Chrome 156 on the Mac's GPU, headless, from the production build that `vite preview` served. Each first visit used a new profile with `?clear&fresh`, and each repeat visit one kept profile per build. The builds and the switch took turns in each of 5 rounds. Medians, in milliseconds:
+
+| Visit | Cache | Ready, old | Ready, new | Textures, old | Textures, new | Loads, old | Loads, new |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| First | off | 4,736 | 4,473 | 1,883 | 1,666 | 1,706 | 1,468 |
+| First | on | 4,729 | 4,419 | 1,849 | 1,748 | 1,655 | 1,549 |
+| Repeat | off | 3,212 | 2,989 | 1,511 | 1,504 | 1,317 | 1,326 |
+| Repeat | on | 2,218 | 1,934 | 543 | 534 | 360 | 361 |
+
+Safari 26.6.2 on the Mac, through the device runner's `texture-cache` plan with 3 runs, once for each build. Medians, in milliseconds:
+
+| Visit | Cache | Ready, old | Ready, new | Textures, old | Textures, new | Loads, old | Loads, new |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| First | off | 3,120 | 2,334 | 1,949 | 1,258 | 1,732 | 1,061 |
+| First | on | 9,986 | 2,267 | 1,809 | 1,181 | 1,582 | 1,019 |
+| Repeat | off | 1,690 | 1,403 | 1,238 | 1,150 | 1,037 | 945 |
+| Repeat | on | 746 | 634 | 294 | 360 | 187 | 181 |
+
+With the new cache, a repeat visit was ready 35% sooner than with the cache off in Chrome, against 31% with the old one. In Safari it was 55% sooner, against 56%. A first visit was no later with the cache on, with either cache. In every repeat visit with the cache on, no file reached the transcoder, and the cache held all 116 entries. The old build's first visit with the cache on was ready after 9,986 ms in Safari. Its start waited before the engine ran, and its textures took 1,809 ms. The two Safari runs ran at different times on a Mac at a load average near 60, so their figures differ by that machine's spread. The sketch's loads agree within 6 ms.
+
+The new cache also passed both visits of the KTX2 test files in Playwright's Firefox 155 and WebKit. It passed in the single-threaded build and with the sketch on the page's thread too, where it reads without sync handles.
+
+How the data was produced: the storage speed page, `tests/pages/storage-speed.html`, runs its stores from a worker in a profile that holds no data. The page ran on `f088a473`. The four devices ran the device runner's `storage-speed` plan on BrowserStack Automate, with the dev server on the Mac behind the tunnel. The command was `NULL3D_PORT=6351 bun run devices:cloud --only bsiphone17-safari,bsipadpro13-safari,bsgalaxys25-chrome,bsgalaxytaba9plus-chrome --plan storage-speed` (runs 20261103-112517-storage-speed and 20261103-112809-storage-speed). The Mac's Safari ran `bun tests/real-browsers.ts --plan storage-speed Safari` (run 20261103-112151-storage-speed). Firefox did not open the runner page there. So Playwright's own Firefox 155 loaded the page, headless, with a profile of its own, and so did the Mac's installed Chrome. The texture cache page's Safari runs were 20261103-120146-texture-cache with the new cache and a copy of the checkout at `f088a473` with the old one. The Mac ran other work beside every run, at a load average of 40 to 61.
 
 ## Look
 

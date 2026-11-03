@@ -466,7 +466,7 @@ textures.memoryBytes; textures.maxSize;  // GPU bytes of every texture; the larg
 - `textures.fromVideo(name)` (0.3) follows the video that `engine.registerVideo(video, { name })` registered on the page. The page scales each frame to `maxSize`, 512 texels by default, and sends one image per presented frame; a paused video costs nothing. Keep a frame within the upload budget: 512 x 288 is 576 KiB. A cross-origin video needs `crossOrigin = 'anonymous'` and CORS headers.
 - Cube maps come from `assets.loadCubemap` (0.2), section 11.
 
-Use KTX2 for large textures, above all on phones: a compressed texel takes a quarter or an eighth of the GPU memory of RGBA8. Encode mip levels into the file (`basisu -mipmap`), since the GPU cannot make them for compressed texels. UASTC keeps more detail, and ETC1S makes smaller files. The first KTX2 file downloads the transcoder, about 365 KB after Brotli. A page without KTX2 files downloads none of it. The engine keeps transcoded textures in the browser's Cache Storage (0.2), so a repeat visit skips the transcoder; nothing to set up (`api/assets`). A texture from a KTX2 file takes no `update`.
+Use KTX2 for large textures, above all on phones: a compressed texel takes a quarter or an eighth of the GPU memory of RGBA8. Encode mip levels into the file (`basisu -mipmap`), since the GPU cannot make them for compressed texels. UASTC keeps more detail, and ETC1S makes smaller files. The first KTX2 file downloads the transcoder, about 365 KB after Brotli. A page without KTX2 files downloads none of it. The engine keeps transcoded textures in its cache of derived data (0.2), so a repeat visit skips the transcoder; nothing to set up (`api/assets`). A texture from a KTX2 file takes no `update`.
 
 On WebGL2 the maps of one standard material share six textures on the GPU. Maps of one size, format and sampling count once, but each KTX2 map counts on its own. Past six, the material draws without its specular maps, then its light map (`api/textures`). Pack occlusion, roughness and metalness into one map, as glTF does.
 
@@ -476,6 +476,9 @@ On WebGL2 the maps of one standard material share six textures on the GPU. Maps 
 assets.onProgress((loaded, total, url) => page.post('loading', Math.min(1, loaded / Math.max(total, loaded))));  // returns a remover
 await assets.preload(['/tex/bricks.png', '/level.json']);      // later loads take these from memory
 const data = await assets.loadJson('/level.json');             // also loadBinary, loadTexture
+const tiles = assets.cache('my-game/terrain', 3);             // (0.3) a namespace of the cache of derived data, kept across visits
+const stored = await tiles.get(key);                          // Uint8Array or undefined; never rejects. Make the data on every miss
+void tiles.put(key, new Uint8Array(heights.buffer));          // writes after the call; a new version deletes the old version's entries
 const bitmap = await assets.loadImageBitmap('/ui/logo.png', { colorSpace, flipY, premultipliedAlpha });
 // relative addresses resolve against the page; errors: E1411 download, E1412 decode, E1413 CORS
 const ship = await assets.loadGltf('/models/ship.glb');        // (0.2) Prefab
