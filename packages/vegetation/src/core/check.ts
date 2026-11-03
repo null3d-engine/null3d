@@ -143,6 +143,53 @@ function growthProblems(record: Species, out: string[]): void {
 		if (growth.pipe.exponent <= 0 || growth.pipe.tipRadius <= 0)
 			out.push('growth.pipe needs an exponent and a tip radius above 0');
 	}
+	if (growth.model === 'rosette') {
+		if (record.foliage.kind !== 'thick') out.push("a rosette's foliage is 'thick'");
+		spreadProblems(growth.shoots, 'growth.shoots', true, out);
+		spreadProblems(growth.leaves, 'growth.leaves', true, out);
+		for (const key of ['tilt', 'arch', 'stalk', 'size', 'pitch'] as const)
+			curveProblems(growth[key], `growth.${key}`, out);
+		shareProblem(growth.rolled, 'growth.rolled', out);
+		if (growth.crown < 0) out.push(`growth.crown is ${growth.crown}; a radius is not negative`);
+		if (growth.scapes) {
+			spreadProblems(growth.scapes.height, 'growth.scapes.height', true, out);
+			spreadProblems(growth.scapes.flowers, 'growth.scapes.flowers', true, out);
+			shareProblem(growth.scapes.raceme, 'growth.scapes.raceme', out);
+		}
+	}
+	if (growth.model === 'tuft') {
+		if (record.foliage.kind !== 'grass-blade') out.push("a tuft's foliage is 'grass-blade'");
+		spreadProblems(growth.shoots, 'growth.shoots', true, out);
+		spreadProblems(growth.blades, 'growth.blades', true, out);
+		spreadProblems(growth.sheath, 'growth.sheath', true, out);
+		wholeProblem(growth.ranks, 'growth.ranks', 1, 3, out);
+		for (const key of ['lean', 'spread', 'size'] as const)
+			curveProblems(growth[key], `growth.${key}`, out);
+		const heads = growth.heads;
+		if (heads) {
+			spreadProblems(heads.height, 'growth.heads.height', true, out);
+			wholeProblem(heads.sides, 'growth.heads.sides', 3, 12, out);
+			if (heads.kind === 'panicle' && !heads.panicle)
+				out.push("growth.heads is a 'panicle' and needs its panicle");
+			if (heads.kind === 'spike' && !heads.spikes)
+				out.push("growth.heads is a 'spike' head and needs its spikes");
+			if (heads.panicle) curveProblems(heads.panicle.angle, 'growth.heads.panicle.angle', out);
+		}
+	}
+	if (record.foliage.kind === 'grass-blade') {
+		const blade = record.foliage.blade;
+		curveProblems(blade.profile, 'foliage.blade.profile', out);
+		shareProblem(blade.tipLength, 'foliage.blade.tipLength', out);
+		shareProblem(blade.dryTip, 'foliage.blade.dryTip', out);
+		if (blade.width <= 0) out.push(`foliage.blade.width is ${blade.width}; it must be above 0`);
+	}
+	if (record.foliage.kind === 'thick') {
+		const ribs = record.foliage.leaf.ribs;
+		wholeProblem(ribs.count, 'foliage.leaf.ribs.count', 1, 24, out);
+		shareProblem(ribs.start, 'foliage.leaf.ribs.start', out);
+		if (ribs.depth < 0 || ribs.sweep <= 0)
+			out.push('foliage.leaf.ribs needs a depth from 0 and a sweep above 0');
+	}
 	if (growth.model === 'architectural') {
 		if (growth.orders.length === 0)
 			out.push('growth.orders is empty; give the bough order at least');
