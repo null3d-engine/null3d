@@ -152,7 +152,7 @@ Drawing:
 | A loaded model, once or many times | `assets.loadGltf`, then `scene.instantiate` (0.2) | `api/assets` |
 | Hundreds to millions of copies of one mesh | `scene.createInstances` with typed arrays | `concepts/instances` |
 | Objects that move every frame | `dynamic: true`, or a dynamic batch | `concepts/static-dynamic` |
-| Less detail far away | Code meshes plan levels themselves (`levels: false` opts out); `mesh.setLevels` by hand; `assets optimize --lod` for files (0.2) | `concepts/lod` |
+| Less detail far away | Code meshes, an add-on's too, plan levels themselves (`levels: false` opts out); `mesh.setLevels` by hand; `assets optimize --lod` for files (0.2) | `concepts/lod`, `guides/add-ons` |
 | A large static mesh, detailed near and coarse far | `assets optimize --clusters`: a tree of patches for a mesh that draws once, on both GPU paths | `concepts/lod` |
 | Camera-facing quads that the sketch moves itself | `scene.createSprites` (0.2) | `api/sprites` |
 | Point clouds | `scene.createPoints` (0.2) | `api/points` |
