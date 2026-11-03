@@ -210,7 +210,7 @@ The command splits each mesh part into patches and builds the tree above them wi
 
 1. The patches are compact pieces of the surface, so each one covers a small part of the screen.
 2. A patch above a group simplifies its children's triangles to about half of them. The group's border stays in place, so two patches of different detail still meet.
-3. Each patch stores its error, the largest distance between its surface and the surface below it, and a sphere around its triangles.
+3. Each patch stores its error and a sphere. The error is the largest distance between its surface and the surface below it, and never less than a child's error. The sphere holds the spheres of the patch's children, and a leaf's sphere holds its triangles. So a patch never passes the view's threshold where one of its children fails, and the patches that draw cover the mesh once.
 
 The tree holds about twice the mesh's triangles. Every patch's indices name the mesh's own vertices, so the tree adds no vertex. The tree goes into the file with `NULL3D_clusters`. Other glTF loaders ignore it and draw the whole mesh. The build also cuts the tree at a few errors into whole levels, which share the mesh's vertices as the levels above do, so a viewer that draws no patches shows the model at a few depths. The engine draws the patches on both GPU paths when one copy of the mesh draws: WebGPU picks them in a compute pass, and WebGL2 with `WEBGL_multi_draw` picks them on the job workers. The WebGPU path that draws objects directly, WebGL2 without `WEBGL_multi_draw`, such as Firefox, and the shadow maps draw the whole levels.
 
