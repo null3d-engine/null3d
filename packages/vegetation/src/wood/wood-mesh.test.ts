@@ -183,6 +183,35 @@ describe('the wood mesher', () => {
 		}
 	});
 
+	it('peels strips of bark at the nearest level only, in the peel zone, as many as the record asks', () => {
+		const input = testMeshInput('high', testSkeleton());
+		const bark = input.record.bark as NonNullable<typeof input.record.bark>;
+		const peel = { zone: 0, perSquareMetre: 8, width: { mean: 0.09, spread: 0.03 }, curl: 0.6 };
+		const record = { ...input.record, bark: { ...bark, peel } };
+		const plain = meshWood(input, 0);
+		const peeled = meshWood({ ...input, record }, 0);
+		// Each strip writes two faces of 5 by 3 vertices.
+		const strips = (peeled.positions.length - plain.positions.length) / 3 / 30;
+		expect(Number.isInteger(strips)).toBe(true);
+		// The zone takes all the wood: its bark's area, from the rings, sets how many strips stand.
+		let area = 0;
+		for (const rings of meshWoodReport({ ...input, record }, 0).axisRings.values())
+			for (let r = rings.welded; r + 1 < rings.count; r++) {
+				const step = (rings.arc[r + 1] as number) - (rings.arc[r] as number);
+				area += 2 * Math.PI * (rings.rho[rings.first[r] as number] as number) * step;
+			}
+		expect(strips).toBeGreaterThan(area * peel.perSquareMetre * 0.8);
+		expect(strips).toBeLessThan(area * peel.perSquareMetre * 1.2);
+		expect(meshWood({ ...input, record }, 1).positions.length).toBe(
+			meshWood(input, 1).positions.length,
+		);
+		// Inner faces carry no pipe radius, so the shader draws them with the young bark.
+		let inner = 0;
+		for (let i = 0; i < peeled.positions.length / 3; i++)
+			if ((peeled.uvs1[i * 2] as number) === 0) inner++;
+		expect(inner).toBe(strips * 15);
+	});
+
 	it('gives the same bytes every time', () => {
 		const digest = (level: MeshLevel) => {
 			const mesh = meshWood(testMeshInput('medium', oak), level);
