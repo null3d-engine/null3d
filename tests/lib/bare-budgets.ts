@@ -98,29 +98,98 @@ function budgetCalls(source: ts.SourceFile): Map<string, string> {
 	return calls;
 }
 
+/** Adds the names that a binding declares, through any destructuring. */
+function addBindingNames(name: ts.BindingName, into: Set<string>): void {
+	if (ts.isIdentifier(name)) {
+		into.add(name.text);
+		return;
+	}
+	for (const element of name.elements)
+		if (!ts.isOmittedExpression(element)) addBindingNames(element.name, into);
+}
+
+/** Adds the names that a list of statements declares directly: variables, functions and classes. */
+function addStatementNames(statements: readonly ts.Statement[], into: Set<string>): void {
+	for (const statement of statements) {
+		if (ts.isVariableStatement(statement))
+			for (const { name } of statement.declarationList.declarations) addBindingNames(name, into);
+		else if (
+			(ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) &&
+			statement.name
+		)
+			into.add(statement.name.text);
+	}
+}
+
+/** The names that a node declares for its own scope, empty for a node that opens none. */
+function scopeNames(node: ts.Node): Set<string> {
+	const names = new Set<string>();
+	if (ts.isFunctionLike(node)) {
+		for (const { name } of node.parameters) addBindingNames(name, names);
+		if (ts.isFunctionExpression(node) && node.name) names.add(node.name.text);
+	}
+	if (
+		ts.isBlock(node) ||
+		ts.isModuleBlock(node) ||
+		ts.isCaseClause(node) ||
+		ts.isDefaultClause(node)
+	)
+		addStatementNames(node.statements, names);
+	if (
+		(ts.isForStatement(node) || ts.isForInStatement(node) || ts.isForOfStatement(node)) &&
+		node.initializer &&
+		ts.isVariableDeclarationList(node.initializer)
+	)
+		for (const { name } of node.initializer.declarations) addBindingNames(name, names);
+	if (ts.isCatchClause(node) && node.variableDeclaration)
+		addBindingNames(node.variableDeclaration.name, names);
+	return names;
+}
+
+/**
+ * True when a scope around a node declares a name of its own, which hides the import of that name
+ * there: a local `test` that holds a helper is no call of Bun's test function.
+ */
+function shadowed(node: ts.Node, name: string, scopes: Map<ts.Node, Set<string>>): boolean {
+	for (let scope = node.parent; scope && !ts.isSourceFile(scope); scope = scope.parent) {
+		let names = scopes.get(scope);
+		if (!names) {
+			names = scopeNames(scope);
+			scopes.set(scope, names);
+		}
+		if (names.has(name)) return true;
+	}
+	return false;
+}
+
 /** The place of the budget among a call's arguments, or nothing for a call that takes none. */
 function budgetArgument(
-	callee: ts.Expression,
+	call: ts.CallExpression,
 	calls: ReadonlyMap<string, string>,
+	scopes: Map<ts.Node, Set<string>>,
 ): number | undefined {
+	const imported = (local: string) =>
+		shadowed(call, local, scopes) ? undefined : calls.get(local);
+	const callee = call.expression;
 	if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression)) {
-		const members = MEMBER_BUDGET_ARGUMENT.get(calls.get(callee.expression.text) ?? '');
+		const members = MEMBER_BUDGET_ARGUMENT.get(imported(callee.expression.text) ?? '');
 		if (members) return members.get(callee.name.text);
 	}
 	const local = rootName(callee);
-	const call = local === undefined ? undefined : calls.get(local);
-	return call === undefined ? undefined : BUDGET_ARGUMENT.get(call);
+	const name = local === undefined ? undefined : imported(local);
+	return name === undefined ? undefined : BUDGET_ARGUMENT.get(name);
 }
 
 /** The lines, counted from 1, at which a test file states a budget that does not grow with load. */
 export function bareBudgetLines(file: string, text: string): number[] {
-	const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, false);
+	const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
 	const calls = budgetCalls(source);
 	const scaled = scaledConstants(source);
+	const scopes = new Map<ts.Node, Set<string>>();
 	const lines: number[] = [];
 	const visit = (node: ts.Node) => {
 		if (ts.isCallExpression(node)) {
-			const place = budgetArgument(node.expression, calls);
+			const place = budgetArgument(node, calls, scopes);
 			const budget = place === undefined ? undefined : node.arguments[place];
 			if (budget && !scales(budget, scaled))
 				lines.push(source.getLineAndCharacterOfPosition(budget.getStart(source)).line + 1);

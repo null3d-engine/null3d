@@ -266,7 +266,7 @@ export const record: Species = {
 		shadowLevel: 1,
 		budget: {
 			kitBytes: 6_000_000,
-			variantBytes: 4_000_000,
+			variantBytes: { low: 7_000_000, medium: 7_000_000, high: 7_100_000, ultra: 7_100_000 },
 			lod0Triangles: 2_500_000,
 			lod1Triangles: 150_000,
 			lod2Triangles: 30_000,

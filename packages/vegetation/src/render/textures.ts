@@ -5,6 +5,7 @@
 // `placeholders: true` gets the stand-in kit of render/stand-in.ts, which loads no texture file.
 import type { QualityPreset, SketchContext, Texture } from '@null3d/engine';
 import type { PlantAsset, SpeciesKitData } from '../asset';
+import { type CoarsenessOptions, checkCoarseness } from '../coarseness';
 import type { PlantByteCache } from '../core/cache';
 import type { SpeciesModule } from '../core/record';
 import type { SpeciesTextureFiles, TextureSet } from '../core/textures';
@@ -59,11 +60,12 @@ export interface SpeciesKit extends SpeciesKitData {
 }
 
 /**
- * How `prepareSpecies` prepares a species.
+ * How `prepareSpecies` prepares a species. Its coarseness options are the default of every variant
+ * that `growPlant` grows from the kit.
  *
  * @category api/vegetation
  */
-export interface PrepareOptions {
+export interface PrepareOptions extends CoarsenessOptions {
 	/** The mesh tier; the preset's by default. */
 	readonly detail?: Detail;
 	/**
@@ -268,7 +270,8 @@ export function kitTextures(
  *
  * @param ctx The sketch's context.
  * @param module The species module, from `loadSpecies`.
- * @param options The mesh tier, the stand-ins and the store of bytes across visits.
+ * @param options The mesh tier, the variants' coarseness, the stand-ins and the store of bytes
+ *   across visits.
  * @returns The kit.
  * @category api/vegetation
  */
@@ -277,6 +280,7 @@ export async function prepareSpecies(
 	module: SpeciesModule,
 	options?: PrepareOptions,
 ): Promise<SpeciesKit> {
+	if (options) checkCoarseness(options);
 	if (options?.placeholders === true) return standInPrepare(ctx, module, options);
 	const set = textureSetFor(ctx.quality.preset);
 	const [loaded, kit] = await Promise.all([
@@ -288,5 +292,11 @@ export async function prepareSpecies(
 		}),
 	]);
 	const textures = kitTextures(ctx, kit, set, loaded);
-	return { ...kit, textures, ...(options?.cache && { cache: options.cache }) };
+	return {
+		...kit,
+		textures,
+		...(options?.cache && { cache: options.cache }),
+		...(options?.coarseness !== undefined && { coarseness: options.coarseness }),
+		...(options?.triangles !== undefined && { triangles: options.triangles }),
+	};
 }
