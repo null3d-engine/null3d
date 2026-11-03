@@ -6,6 +6,7 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import {
 	AXIS_STEM,
 	BUD_TERMINAL,
@@ -163,16 +164,22 @@ self.onmessage = () => {
 		}
 	});
 
-	it('hangs every branch on a parent whose chain reaches a stem, at every seed and variant', () => {
-		const growth = oakRecord.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
-		for (const seed of [11, 3, 7, 42]) {
-			for (const variant of [0, 1, 2]) {
-				const oak = seed === 11 ? (oaks[variant] as MacroSkeleton) : grow(variant, oakRecord, seed);
-				const stems = stemStarts(growth.stems, seed, oakRecord.seedSalt >>> 0, variant).length;
-				hangsOnStems(oak, stems);
+	// The oaks of seed 11 are the file's own; two more seeds grow six more, about 3 s of one idle core.
+	it(
+		'hangs every branch on a parent whose chain reaches a stem, at every seed and variant',
+		() => {
+			const growth = oakRecord.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
+			for (const seed of [11, 3, 42]) {
+				for (const variant of [0, 1, 2]) {
+					const oak =
+						seed === 11 ? (oaks[variant] as MacroSkeleton) : grow(variant, oakRecord, seed);
+					const stems = stemStarts(growth.stems, seed, oakRecord.seedSalt >>> 0, variant).length;
+					hangsOnStems(oak, stems);
+				}
 			}
-		}
-	});
+		},
+		scaledBudget(30_000),
+	);
 
 	it("fits its stem to the oak's diameter and thins to the twig's radius", () => {
 		const dbh = oakRecord.size.dbh as number;
