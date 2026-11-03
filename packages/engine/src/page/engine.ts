@@ -2914,7 +2914,10 @@ async function startEngine(
 		}
 		if (DEV && switches.twoStep) logTwoStep(slots, true);
 		const { summarizeFrames } = await loadFrameStats();
-		const frame = Atomics.load(slots, Slot.FramesTaken);
+		// The held frame is the one the session's steps reached. A run that draws a settle frame
+		// after it, for a pass that reads the frame before, still reports the held frame's number.
+		const drawn = Atomics.load(slots, Slot.FramesTaken);
+		const frame = Atomics.load(slots, Slot.HeldFrame);
 		const patchFrame = Atomics.load(slots, Slot.ClusterPatchFrame);
 		const patchRanges = Atomics.load(slots, Slot.ClusterPatches);
 		publishHold({
@@ -2927,8 +2930,8 @@ async function startEngine(
 			// What the frame builder recorded: the patch ranges that its tree walk chose, or none
 			// where it drew the trees' whole levels. A negative count is a path that picks the
 			// patches on the GPU, and a count from another frame tells nothing about this one.
-			clusterPatches: patchFrame === frame && patchRanges >= 0 ? patchRanges > 0 : null,
-			stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode)),
+			clusterPatches: patchFrame === drawn && patchRanges >= 0 ? patchRanges > 0 : null,
+			stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode), frame),
 			...(scriptResult !== undefined && { script: scriptResult }),
 			...(replayResult !== undefined && { replay: replayResult }),
 		});

@@ -1321,6 +1321,7 @@ export class SketchRunner {
 		let cursor = 0;
 		let frame = 0;
 		let first = 0;
+		let held = 0;
 		this.holding = true;
 		this.time.held = true;
 		try {
@@ -1359,6 +1360,7 @@ export class SketchRunner {
 			// capture views take one probe a frame, so a second frame at the same time captures the
 			// next. A light's picture copied from a texture shows from the frame after the copy, so
 			// that frame draws the picture too. The thread that draws keeps two frames' lists.
+			held = frame;
 			Atomics.store(slots, Slot.HeldFrom, frame);
 			// A task that the sketch queued in a frame answers between frames, so the last frame that
 			// the loop ran may have drawn what the task had not yet written. Once the tasks settle, one
@@ -1371,7 +1373,10 @@ export class SketchRunner {
 			) {
 				if (tasksPending() > 0) await this.settleTasks();
 				this.clock.holdStep(steps, steps, seconds);
-				frame = this.frame();
+				// The settle frame draws what the held frame prepared, such as the light that a pass
+				// reads from the frame before. It is no frame of the session, so the sketch's code
+				// does not run again and the held frame keeps its numbers.
+				frame = this.frame(false);
 			}
 		} catch (error) {
 			// The message alone rarely says where the frame stopped, so name the phase that finished
@@ -1387,6 +1392,7 @@ export class SketchRunner {
 			this.time.held = false;
 		}
 		if (script !== undefined) this.scriptResult = { dumps, problems };
+		Atomics.store(slots, Slot.HeldFrame, held);
 		Atomics.store(slots, Slot.HeldFrom, first);
 		Atomics.store(slots, Slot.FramesPublished, frame);
 		Atomics.notify(slots, Slot.FramesPublished);
@@ -1437,6 +1443,7 @@ export class SketchRunner {
 		this.replaying = true;
 		let first = 0;
 		let frame = 0;
+		let held = 0;
 		let now = 0;
 		try {
 			for (let at = 0; at < frames; at++) {
@@ -1461,6 +1468,7 @@ export class SketchRunner {
 				frame = this.frame();
 				if (first === 0 && (before || at === frames - 1)) first = frame;
 			}
+			held = frame;
 			Atomics.store(slots, Slot.HeldFrom, frame);
 			if (
 				glue.readsLastFrame() !== 0 ||
@@ -1490,6 +1498,7 @@ export class SketchRunner {
 			sketch: program.sketch,
 			stopped: program.stopped,
 		};
+		Atomics.store(slots, Slot.HeldFrame, held);
 		Atomics.store(slots, Slot.HeldFrom, first);
 		Atomics.store(slots, Slot.FramesPublished, frame);
 		Atomics.notify(slots, Slot.FramesPublished);

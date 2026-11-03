@@ -162,6 +162,26 @@ describe('frame records', () => {
 		]);
 	});
 
+	it('summarize one frame alone when a later frame follows it', () => {
+		const buffer = createMetricsBuffer(true, 0);
+		const sketch = new FrameRecorder(buffer, Role.Sketch);
+		const render = new FrameRecorder(buffer, Role.Render);
+		record(sketch, 30, 3);
+		record(render, 30, 1);
+		record(sketch, 31, 4);
+		record(render, 31, 2);
+		const records = new MetricsReader(buffer).readWritten();
+		const threads = threadRoles({
+			latency: 'pipelined',
+			renderThread: 'render-worker',
+			jobWorkers: 0,
+		});
+		const one = summarizeFrames(records, threads, 30);
+		expect([one.frames, one.cpuMs.median, one.threads['render-worker']?.busyMs.median]).toEqual([
+			1, 3, 1,
+		]);
+	});
+
 	it('keep the time and the draw time of the first frame only', () => {
 		const buffer = createMetricsBuffer(true, 0);
 		const render = new FrameRecorder(buffer, Role.Render);
