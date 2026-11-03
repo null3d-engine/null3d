@@ -1988,6 +1988,25 @@ export function vegetationGrassPlan(): PlanItem<Check>[] {
 			);
 	// The same scene and sun with no grass, which gives the base frame that the ceiling meets
 	// before the add-on draws anything.
+	// What the sun's contact shadows and screen-space bounce light cost at the base frame and at
+	// Creek's density: both keep ambient occlusion's three passes, which the cost timer names.
+	const OFF_EFFECTS = [
+		['nograss-nobounce', ['grass=off', 'bounce=off']],
+		['nograss-nocontact-nobounce', ['grass=off', 'contact=off', 'bounce=off']],
+		['creek-2-nocontact-nobounce', ['tufts=2312', 'contact=off', 'bounce=off']],
+	] as const;
+	for (const [name, extra] of OFF_EFFECTS)
+		items.push(
+			pageItem(
+				`vegetation-grass-${name}-webgpu`,
+				'vegetation-grass',
+				{ kind: 'probe', tier: 'webgpu' },
+				{
+					switches: ['gpu=webgpu', 'preset=high', 'seconds=5', 'warmup=8', 'shadows', ...extra],
+					timeoutSeconds: 600,
+				},
+			),
+		);
 	items.push(
 		pageItem(
 			'vegetation-grass-nograss-webgpu',

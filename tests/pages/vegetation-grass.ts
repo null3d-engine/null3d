@@ -19,7 +19,7 @@ run('vegetation-grass', async () => {
 	if (params.has('shadows')) sketch.searchParams.set('shadows', '');
 	// A row can draw a hill of its own density, one without the view cull and the far share, or
 	// the scene with no grass at all for its base frame.
-	for (const name of ['tufts', 'cull', 'grass']) {
+	for (const name of ['tufts', 'cull', 'grass', 'contact', 'bounce']) {
 		const value = params.get(name);
 		if (value !== null) sketch.searchParams.set(name, value);
 	}

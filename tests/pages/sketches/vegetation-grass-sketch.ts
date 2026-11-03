@@ -60,9 +60,18 @@ const TUFTS = Number(new URL(import.meta.url).searchParams.get('tufts') ?? Numbe
 const CULL = new URL(import.meta.url).searchParams.get('cull') !== 'off';
 /** True when a cost row measures the scene with no grass at all, which gives its base frame. */
 const GRASS_OFF = new URL(import.meta.url).searchParams.get('grass') === 'off';
+/** False when a row or a picture draws the scene with the sun's contact shadows off. */
+const CONTACT = new URL(import.meta.url).searchParams.get('contact') !== 'off';
+/** False when a row or a picture draws the scene with screen-space bounce light off. */
+const BOUNCE = new URL(import.meta.url).searchParams.get('bounce') !== 'off';
 
 export default defineSketch(async (ctx) => {
 	const { scene, geometry, materials } = ctx;
+	// The sun's contact shadows run ambient occlusion's three passes, which is where the cost plan
+	// finds the base frame's time; a row that draws without them measures what they buy.
+	if (!CONTACT) await ctx.quality.set({ contactShadowSteps: 0 });
+	// Screen-space bounce light reads ambient occlusion's grid, so it keeps the passes that draw it.
+	if (!BOUNCE) await ctx.quality.set({ bounceRays: 0 });
 	scene.setBackground('#a9c7e6');
 	scene.createAmbientLight({ intensity: 0.55, color: '#cfe0ff' });
 	scene.createDirectionalLight({
