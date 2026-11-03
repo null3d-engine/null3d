@@ -360,7 +360,8 @@ The engine checks a WebGL2 fence at its next frame callback, so there `gpuLatenc
 - To compare displays with different refresh rates, add `?fps=60` to the page's address. The engine then draws 60 frames per second on any display of 60 Hz or more.
 - The engine lets at most two frames wait on the GPU. To see what a browser does without that limit, add `?queue=off` to the page's address. `?queue=3` lets three frames wait.
 - Chrome rounds GPU times to a coarse privacy grid unless you start it with `--enable-webgpu-developer-features --disable-dawn-features=timestamp_quantization`. `gpuStepMs` gives the step when a browser still rounds. It is the greatest common divisor of the offsets that the engine reads back.
-- In Safari, a worker's frame callbacks run from a timer of about 15 ms, not from the display. The engine holds its frames to the display's rate, which the page measures, but `refreshHz` there reports the timer's rate.
+- In Safari, a worker's frame callbacks run from a timer of about 15 ms, not from the display. The engine holds its frames to the display's rate, which the page measures, and `refreshHz` reports that rate.
+- Chrome started with `--disable-gpu-vsync --disable-frame-rate-limit` has no frame cap. It calls a drawing worker thousands of times a second, and the engine then draws each frame as soon as it is ready. `refreshHz` there reports the rate of the page's own frame callbacks, often 48, which says nothing about the screen.
 - Compare engines in the same browser, one run after another.
 
 ## Memory peak

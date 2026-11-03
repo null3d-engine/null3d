@@ -89,6 +89,8 @@ function countingSketch(started = true): SketchRunner & { started: boolean } {
 const DISPLAY_HZ = 60;
 /** Callbacks the display makes: two refresh meter samples. */
 const CALLBACKS = 64;
+/** A worker's callbacks in a browser with no frame cap, 0.2 ms apart. */
+const UNCAPPED_CALLBACK_HZ = 5000;
 
 describe('the render loop', () => {
 	let loop: RenderLoop | undefined;
@@ -437,8 +439,17 @@ describe('the wake-up before the next frame', () => {
 	it('gives the wake-up a delay in whole milliseconds, a few before the next callback', () => {
 		expect(wakeDelayMs(60)).toBe(13);
 		expect(wakeDelayMs(120)).toBe(4);
-		// A display too fast for a wake-up gets one at once.
+		// A display too fast for a wake-up ahead of its next callback gets none.
 		expect(wakeDelayMs(360)).toBe(0);
+	});
+
+	it('sets no timer once the callbacks come too often for a wake-up', () => {
+		const { control, metrics, renderer } = setup();
+		const delays = wakeDelays(UNCAPPED_CALLBACK_HZ, () =>
+			runRenderLoop(renderer, control, metrics, {}),
+		);
+		// The callbacks before the refresh meter's first measurement assume a 60 Hz display.
+		expect(delays).toEqual(new Array(CALLBACKS / 2).fill(wakeDelayMs(60)));
 	});
 
 	it('wakes a worker before each callback, at the rate the refresh meter measured', () => {
@@ -506,6 +517,27 @@ describe('the hold to the display rate', () => {
 
 	it('draws at every timer callback when the display is faster than the timer', () => {
 		expect(runTimed(72, TIMER_HZ)).toHaveLength(CALLS);
+	});
+
+	it('draws at every callback of a browser with no frame cap, and records the page rate', () => {
+		// Chrome without vsync calls a worker thousands of times a second, and the page that draws
+		// nothing 48 times.
+		const { control, metrics, slots, drawn, renderer, reader } = setup();
+		Atomics.store(slots, Slot.DisplayInterval, Math.round(1_000_000 / 48));
+		loop = runRenderLoop(renderer, control, metrics, {});
+		refresh(UNCAPPED_CALLBACK_HZ, CALLS, (call) =>
+			Atomics.store(slots, Slot.FramesPublished, call + 1),
+		);
+		expect(drawn).toHaveLength(CALLS);
+		expect(reader.refreshHz).toBe(48);
+	});
+
+	it('draws the direct loop at every callback of a browser with no frame cap too', () => {
+		const { control, metrics, slots, drawn, renderer } = setup();
+		Atomics.store(slots, Slot.DisplayInterval, Math.round(1_000_000 / 48));
+		loop = runDirectLoop(countingSketch(), renderer, control, metrics, {});
+		refresh(UNCAPPED_CALLBACK_HZ, CALLS);
+		expect(drawn).toHaveLength(CALLS);
 	});
 
 	it('leaves a worker whose callbacks follow the display alone, whatever rate the page measured', () => {
