@@ -91,19 +91,11 @@ export function value3(px: number, py: number, pz: number): number {
  * place in the ring tells the two apart: the gust keeps the last slot, after the pushes.
  */
 export interface Push {
-	readonly x: number;
-	readonly z: number;
-	/** How hard the body shoved the air: a positive number turns it one way, a negative the other. */
-	readonly strength: number;
-	/** The sketch time in seconds when the page sent the push or the gust. */
-	readonly born: number;
-}
-
-/** One slot of the ring, which the add-on writes in place so that a push allocates nothing. */
-interface PushSlot {
 	x: number;
 	z: number;
+	/** How hard the body shoved the air: a positive number turns it one way, a negative the other. */
 	strength: number;
+	/** The sketch time in seconds when the page sent the push or the gust. */
 	born: number;
 }
 
@@ -112,6 +104,12 @@ export interface PushRing {
 	/** The slots, which the field reads: the pushes first, then the newest gust. A slot that holds no
 	 * strength turns nothing. */
 	readonly slots: readonly Push[];
+	/**
+	 * Answers the slot that a push or a gust takes, without writing its numbers. The caller writes
+	 * them in place, so a frame passes no freshly worked-out fraction into a call, where the browser
+	 * would make a number object of it.
+	 */
+	take(gust: boolean): number;
 	/**
 	 * Writes a push or a gust sent at the time `born`, and answers the slot that it wrote. A push
 	 * takes the oldest push slot, so the newest three pushes turn the air. A gust takes the gust's
@@ -123,23 +121,28 @@ export interface PushRing {
 
 /** Makes the empty ring that a page's pushes go into. The slots are made once, here. */
 export function createPushRing(): PushRing {
-	const slots: PushSlot[] = Array.from({ length: RING_SLOTS }, () => ({
+	const slots: Push[] = Array.from({ length: RING_SLOTS }, () => ({
 		x: 0,
 		z: 0,
 		strength: 0,
 		born: 0,
 	}));
 	let next = 0;
+	const take = (gust: boolean): number => {
+		const index = gust ? GUST_SLOT : next;
+		if (!gust) next = (next + 1) % PUSH_SLOTS;
+		return index;
+	};
 	return {
 		slots,
+		take,
 		add(x, z, strength, born, gust) {
-			const index = gust ? GUST_SLOT : next;
-			const slot = slots[index] as PushSlot;
+			const index = take(gust);
+			const slot = slots[index] as Push;
 			slot.x = x;
 			slot.z = z;
 			slot.strength = strength;
 			slot.born = born;
-			if (!gust) next = (next + 1) % PUSH_SLOTS;
 			return index;
 		},
 	};
