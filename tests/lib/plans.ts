@@ -1196,7 +1196,8 @@ export type CostedEffect =
 	| 'sharpen'
 	| 'compute'
 	| 'fills'
-	| 'clouds';
+	| 'clouds'
+	| 'probes';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -1308,6 +1309,8 @@ export function effectPlan(
 		],
 		// The fills plan times its own pages, at one render scale each.
 		fills: [['', []]],
+		// The probe grid's four filtered reads at each lit pixel, taken off and on in turns.
+		probes: [['', ['rounds=5', 'seconds=3']]],
 	};
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
 	const twin: PlanItem<Check>[] =
@@ -3089,6 +3092,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	clouds: () => effectPlan('clouds'),
 	'physical-sky': () => effectPlan('sky'),
 	'fills-cost': fillsCostPlan,
+	'probe-cost': () => effectPlan('probes'),
 	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,
 	'environment-load': environmentLoadPlan,

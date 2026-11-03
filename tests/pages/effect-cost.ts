@@ -76,6 +76,7 @@ const SKETCHES = {
 	compute: './sketches/compute-cost-sketch.ts',
 	clouds: './sketches/clouds-cost-sketch.ts',
 	ocean: './sketches/ocean-cost-sketch.ts',
+	probes: './sketches/probes-cost-sketch.ts',
 } as const;
 
 type Effect = keyof typeof SKETCHES;
