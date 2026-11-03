@@ -1,6 +1,6 @@
-// Sympodial leaders: a stem whose own continuation collapses runs on into its thick limb, bending a
-// little at each node instead of at once; a limb runs on only into a child near its own line; and a
-// grown oak's bole and limbs keep no sharp kink or loop.
+// Sympodial leaders: an axis whose own continuation collapses runs on into a thick child near its
+// line, and divides into a fork where the thick child leaves steeply; a grown oak keeps no cone where
+// an axis collapsed, no loop and a straight bole to its fork.
 import { describe, expect, it } from 'bun:test';
 import { AXIS_LIMB, AXIS_STEM, type MacroSkeleton, SkeletonBuilder } from '../core/graph';
 import { loadPlantCode } from '../generate';
@@ -34,9 +34,9 @@ function sharpest(skeleton: MacroSkeleton, axis: number): number {
 
 /**
  * An axis of four upright nodes whose continuation collapses to a twig past the third, and a limb
- * of the axis's girth that leaves the third at sixty degrees and runs on for five internodes.
+ * of the axis's girth that leaves the third at an angle and runs on for five internodes.
  */
-function collapsed(kind: number, order: number): MacroSkeleton {
+function collapsed(kind: number, order: number, degrees = 60): MacroSkeleton {
 	const b = new SkeletonBuilder();
 	const axis = b.addAxis({ parent: -1, parentNode: -1, order, kind });
 	const nodes: number[] = [];
@@ -59,7 +59,7 @@ function collapsed(kind: number, order: number): MacroSkeleton {
 		order: order + 1,
 		kind: AXIS_LIMB,
 	});
-	const angle = (60 * Math.PI) / 180;
+	const angle = (degrees * Math.PI) / 180;
 	let previous = fork;
 	for (let k = 1; k <= 5; k++)
 		previous = b.addNode({
@@ -73,41 +73,45 @@ function collapsed(kind: number, order: number): MacroSkeleton {
 	return b.finish(0);
 }
 
+/** The cones: nodes where an axis of some girth drops to under half of it at its next node. */
+function cones(skeleton: MacroSkeleton): number {
+	const { axes, radius } = skeleton;
+	let found = 0;
+	for (let a = 0; a < axes.count; a++)
+		for (let n = axes.first[a] as number; n < (axes.last[a] as number); n++)
+			if ((radius[n] as number) > 0.15 && (radius[n + 1] as number) < 0.5 * (radius[n] as number))
+				found++;
+	return found;
+}
+
 describe('sympodial leaders', () => {
-	it('runs a collapsed stem on into its steep limb, bending at most twenty degrees at a node', () => {
-		const grown = collapsed(AXIS_STEM, 0);
-		const led = leadOnThickest(grown);
-		// The stem now holds its own four nodes and the limb's five; the twig is a side axis.
+	it('divides a collapsed stem into a fork where its thick limb leaves steeply', () => {
+		const led = leadOnThickest(collapsed(AXIS_STEM, 0));
+		// The stem ends at the fork; the limb and the stem's old twig both leave its last node.
+		expect((led.axes.last[0] as number) - (led.axes.first[0] as number) + 1).toBe(4);
+		expect(led.axes.count).toBe(3);
+		for (let a = 1; a < led.axes.count; a++)
+			expect(led.axes.parentNode[a]).toBe(led.axes.last[0] as number);
+		expect(cones(led)).toBe(0);
+		expect(sharpest(led, 0)).toBe(0);
+	});
+
+	it('runs a collapsed limb on into a thick child near its line', () => {
+		const led = leadOnThickest(collapsed(AXIS_LIMB, 1, 30));
 		expect((led.axes.last[0] as number) - (led.axes.first[0] as number) + 1).toBe(9);
 		expect(led.axes.count).toBe(2);
-		expect(sharpest(led, 0)).toBeLessThanOrEqual(20.01);
-		// The limb's internodes keep their lengths.
-		const p = led.position;
-		const first = led.axes.first[0] as number;
-		for (let n = first + 4; n <= (led.axes.last[0] as number); n++)
-			expect(
-				Math.hypot(
-					(p[n * 3] as number) - (p[(n - 1) * 3] as number),
-					(p[n * 3 + 1] as number) - (p[(n - 1) * 3 + 1] as number),
-					(p[n * 3 + 2] as number) - (p[(n - 1) * 3 + 2] as number),
-				),
-			).toBeCloseTo(1, 4);
+		expect(cones(led)).toBe(0);
 	});
 
-	it('keeps a limb whose thick child leaves steeply off its line', () => {
-		const grown = collapsed(AXIS_LIMB, 1);
-		const led = leadOnThickest(grown);
-		expect(led).toBe(grown);
-	});
-
-	it('grows an oak whose bole bends gently and whose limbs do not loop back', async () => {
+	it('grows an oak with a straight bole to its fork, and no cone or loop', async () => {
 		const record = species.record;
 		await loadPlantCode(record);
 		for (const variant of [0, 1]) {
 			const led = leadOnThickest(
 				grower('self-organizing').grow({ record, seed: 11, variant, season: 'summer' }),
 			);
-			expect(sharpest(led, 0)).toBeLessThanOrEqual(20.01);
+			expect(sharpest(led, 0)).toBeLessThan(20);
+			expect(cones(led)).toBe(0);
 			// Each axis's internodes against the way it set out: a limb that turns past a right angle
 			// has looped back on itself.
 			const { axes, position: p } = led;
@@ -115,10 +119,8 @@ describe('sympodial leaders', () => {
 			for (let a = 1; a < axes.count; a++) {
 				const first = axes.first[a] as number;
 				const start = axes.parentNode[a] as number;
+				const u = [0, 1, 2].map((k) => (p[first * 3 + k] as number) - (p[start * 3 + k] as number));
 				for (let n = first + 1; n <= (axes.last[a] as number); n++) {
-					const u = [0, 1, 2].map(
-						(k) => (p[first * 3 + k] as number) - (p[start * 3 + k] as number),
-					);
 					const v = [0, 1, 2].map((k) => (p[n * 3 + k] as number) - (p[(n - 1) * 3 + k] as number));
 					const dot =
 						(u[0] as number) * (v[0] as number) +
@@ -130,7 +132,7 @@ describe('sympodial leaders', () => {
 					}
 				}
 			}
-			expect(looped / axes.count).toBeLessThan(0.01);
+			expect(looped).toBe(0);
 		}
 	});
 });
