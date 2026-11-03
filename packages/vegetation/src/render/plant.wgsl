@@ -110,8 +110,8 @@ const TEXTURE_UV_STEPS: f32 = 65535.0;
 const WOOD_RADIUS_SPAN: f32 = 4.0;
 // The coverage at which a texel counts as leaf, the materials' alpha cutoff.
 const CUTOFF: f32 = 0.5;
-// The share of a texel's coverage each mip level adds back, as alpha-tested foliage commonly uses.
-const MIP_KEEP: f32 = 0.25;
+// How much a card's alpha rises for each mip level its sample reads, so far cards keep their leaves.
+const CARD_MIP_LIFT: f32 = 0.25;
 // One turn, for the phases that the records and the vertex colours carry.
 const TURN: f32 = 6.283185307179586;
 // How far the stem's top moves for each metre a second of wind, as a share of its length.
@@ -684,18 +684,6 @@ fn sharpen(alpha: f32, width: f32) -> f32 {
     return saturate((alpha - CUTOFF) / max(width, 0.0001) + 0.5);
 }
 
-/// A card's coverage kept through the mip chain. The GPU averages the card atlas's mips, which thins
-/// a sparse shoot's coverage below the cutoff, and its leaves vanish with distance; each mip level
-/// the read reaches adds a share of the coverage back, so a distant crown keeps the cover it shows
-/// near. A leaf texture's mips keep their coverage when they are built, so leaves read it plain.
-fn mip_kept(alpha: f32, gx: vec2f, gy: vec2f) -> f32 {
-    let size = vec2f(textureDimensions(colour, 0));
-    let x = gx * size;
-    let y = gy * size;
-    let level = max(0.0, 0.5 * log2(max(max(dot(x, x), dot(y, y)), 1e-8)));
-    return alpha * (1.0 + level * MIP_KEEP);
-}
-
 /// The scale from a role's stored texture coordinates to the texture's own.
 fn uv_scale(mode: i32) -> f32 {
     if (mode == MODE_WOOD) {
@@ -705,6 +693,17 @@ fn uv_scale(mode: i32) -> f32 {
         return 1.0;
     }
     return 1.0 / TEXTURE_UV_STEPS;
+}
+
+/// A card's alpha, raised with the mip level that its sample reads. A mip level averages the leaves'
+/// coverage with the gaps between them, so far away a card's alpha falls under the cutoff and its
+/// leaves would vanish; raising it by a quarter for each level keeps the share of the card that
+/// leaves cover near the full-size texture's.
+fn card_alpha(alpha: f32, gx: vec2f, gy: vec2f) -> f32 {
+    let texels = vec2f(textureDimensions(colour).xy);
+    let footprint = max(length(gx * texels), length(gy * texels));
+    let level = max(log2(max(footprint, 1.0)), 0.0);
+    return saturate(alpha * (1.0 + level * CARD_MIP_LIFT));
 }
 
 /// The coverage a point casts: a leaf's or a card's texel, and wood and stems whole.
@@ -717,7 +716,7 @@ fn coverage(input: SurfaceInput) -> f32 {
     var alpha = 1.0;
     if (mode == MODE_CARDS) {
         let layer = select(1, 0, input.frontFacing);
-        alpha = mip_kept(textureSampleGrad(colour, colourSampler, uv, layer, gx, gy).a, gx, gy);
+        alpha = card_alpha(textureSampleGrad(colour, colourSampler, uv, layer, gx, gy).a, gx, gy);
     } else if (mode == MODE_FOLIAGE
         || (mode == MODE_SHOOTS && input.vertexColor.b * 255.0 < KIND_STEM * 0.5)) {
         let layer = select(1, 0, input.frontFacing);
@@ -853,7 +852,7 @@ fn surface(input: SurfaceInput) -> Surface {
         } else {
             base = texel.rgb;
         }
-        alpha = mip_kept(texel.a, gx, gy);
+        alpha = card_alpha(texel.a, gx, gy);
         // In the shell where a near copy draws its real shoots, its cards give way.
         let near_copy = object.values.x > 0.5;
         if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
