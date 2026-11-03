@@ -9,7 +9,14 @@ import {
 	type FieldState,
 } from './analytic';
 import { WindProbes } from './field';
-import { fillRequest, MAX_PLACES, POINTS } from './field-layout';
+import {
+	ASK_NUMBERS,
+	ASK_PUSH_RADIUS,
+	ASK_TIME,
+	fillRequest,
+	MAX_PLACES,
+	POINTS,
+} from './field-layout';
 import { run } from './field-task';
 
 /** What the add-on's WebAssembly exports. */
@@ -40,6 +47,14 @@ const state = (over: Partial<FieldState> = {}): FieldState => ({
 	...over,
 });
 
+/** The numbers that a frame gives the ask: the push's width and the sketch time. */
+function askNumbers(settings: FieldState, time: number): Float64Array {
+	const numbers = new Float64Array(ASK_NUMBERS);
+	numbers[ASK_PUSH_RADIUS] = settings.pushRadius;
+	numbers[ASK_TIME] = time;
+	return numbers;
+}
+
 /**
  * The air that the module gives at each place, through the layout that the add-on's task fills.
  * `ring` holds one slot after another: the place across the ground, the strength and the birth time.
@@ -53,7 +68,7 @@ function moduleAir(
 	const exports = new WebAssembly.Instance(moduleOf(), {}).exports as unknown as FieldExports;
 	const floats = POINTS + places.length;
 	const request = new Float32Array(floats);
-	fillRequest(request, places, createReading(settings), settings.pushRadius, time, ring);
+	fillRequest(request, places, createReading(settings), ring, askNumbers(settings, time));
 	const at = exports.request(floats * 4);
 	if (at === 0) throw new Error('the module took no request');
 	new Float32Array(exports.memory.buffer, at, floats).set(request);
@@ -167,7 +182,7 @@ describe('the field in WebAssembly', () => {
 		const settings = state();
 		const time = 1.25;
 		const { ring, slots } = ringOf(time, [[1, 2, 3]], undefined);
-		fillRequest(request, places, createReading(settings), settings.pushRadius, time, ring);
+		fillRequest(request, places, createReading(settings), ring, askNumbers(settings, time));
 		const result = run({ request, answer }, () => module);
 		expect(result).toBeDefined();
 		if (!(result instanceof Promise)) {
@@ -228,9 +243,8 @@ describe('the read path through the task', () => {
 			points,
 			answer,
 			createReading(settings),
-			settings.pushRadius,
-			1,
 			new Float32Array(16),
+			askNumbers(settings, 1),
 		);
 		expect(worker.waiting).toBe(1);
 		worker.flush();
@@ -251,9 +265,9 @@ describe('the read path through the task', () => {
 		const secondPoints = new Float32Array([-7, 0.5, 9]);
 		const firstAnswer = new Float32Array(3);
 		const secondAnswer = new Float32Array(3);
-		probes.ask(firstPoints, firstAnswer, createReading(settings), settings.pushRadius, 1, ring);
+		probes.ask(firstPoints, firstAnswer, createReading(settings), ring, askNumbers(settings, 1));
 		// The second call lands while the first answer is still on its way.
-		probes.ask(secondPoints, secondAnswer, createReading(settings), settings.pushRadius, 2, ring);
+		probes.ask(secondPoints, secondAnswer, createReading(settings), ring, askNumbers(settings, 2));
 		expect(worker.waiting).toBe(1);
 		worker.flush();
 		await Promise.resolve();
@@ -284,10 +298,10 @@ describe('a third ask that overlaps', () => {
 		const thirdAnswer = new Float32Array(3);
 		const reported = spyOn(console, 'error').mockImplementation(() => {});
 		try {
-			probes.ask(first, firstAnswer, createReading(settings), settings.pushRadius, 1, ring);
-			probes.ask(second, secondAnswer, createReading(settings), settings.pushRadius, 2, ring);
+			probes.ask(first, firstAnswer, createReading(settings), ring, askNumbers(settings, 1));
+			probes.ask(second, secondAnswer, createReading(settings), ring, askNumbers(settings, 2));
 			// The third lands while the first answer is on its way and a second ask already waits.
-			probes.ask(third, thirdAnswer, createReading(settings), settings.pushRadius, 3, ring);
+			probes.ask(third, thirdAnswer, createReading(settings), ring, askNumbers(settings, 3));
 			expect(reported).toHaveBeenCalledTimes(1);
 			expect(String(reported.mock.calls[0]?.[0])).toContain('newest ask replaced it');
 			expect(worker.waiting).toBe(1);
