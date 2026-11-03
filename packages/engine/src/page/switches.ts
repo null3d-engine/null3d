@@ -321,6 +321,11 @@ export interface Switches {
 	 */
 	glTiming: GlTimingMode | undefined;
 	/**
+	 * `every` for `?gpu-samples=every`, which times every drawn frame rather than one in eleven, so
+	 * a page that hunts a single long frame can read its parts. It costs the draw's own time.
+	 */
+	gpuSamples: 'every' | undefined;
+	/**
 	 * `record` for `?permutations=record`, which collects the permutation words that the scene's
 	 * pipelines ask for and publishes them on `window.__null3dPermutations`, so a tool can write the
 	 * list that a narrowed shader build builds.
@@ -450,6 +455,7 @@ export function parseSwitches(search: string): Switches {
 		view: params.get('view') || undefined,
 		stats: statsSwitch(params.get('stats')),
 		permutations: params.get('permutations') === 'record' ? 'record' : undefined,
+		gpuSamples: params.get('gpu-samples') === 'every' ? 'every' : undefined,
 		glTiming: !params.has('gl-timing')
 			? undefined
 			: params.get('gl-timing') === 'sync'

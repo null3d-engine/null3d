@@ -64,6 +64,8 @@ export interface RendererSetup extends FramePacing {
 	hold?: boolean;
 	/** How ?gl-timing asks the WebGL2 path to time each WebGL call for a benchmark page. */
 	glTiming?: GlTimingMode;
+	/** `every` for ?gpu-samples, which times every drawn frame rather than one in eleven. */
+	gpuSamples?: 'every';
 	/** The features whose shader files load before the first frame, as `createEngine` lists them. */
 	preload?: readonly string[];
 	/**

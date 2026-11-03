@@ -2489,6 +2489,41 @@ export function skywaySoakPlan(): PlanItem<Check>[] {
 	];
 }
 
+/**
+ * Skyway at High with the governor off, measuring short windows, to catch a long frame and name its
+ * parts. The engine times every drawn frame here rather than one in eleven, so the parts belong to
+ * the frame that broke the threshold, and the page reports that frame's own intervals, threads and
+ * window changes. The threshold sits under the 50 ms ceiling, so a page names the frames that come
+ * close to it as well as those that break it. The item's time limit covers the page's start and the
+ * minute of windows.
+ */
+export function skywayStallPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		pageItem(
+			'skyway-stall-webgpu',
+			'demo-device',
+			{ kind: 'probe', tier: 'webgpu' },
+			{
+				switches: [
+					'gpu=webgpu',
+					'demo=skyway',
+					'preset=high',
+					'governor=off',
+					'render-scale=1',
+					'seconds=5',
+					'windows=12',
+					'slow=20',
+					'gpu-samples=every',
+				],
+				// The demo's page downloads its modules and builds its city before it draws, and a
+				// cold server took more than five minutes to hand them over.
+				timeoutSeconds: 5 * 12 + 600,
+			},
+		),
+	];
+}
+
 /** The showcase demos that the demos plan measures. */
 const MEASURED_DEMOS = ['skyway', 'island', 'showroom'] as const;
 
@@ -3159,6 +3194,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	skyway: skywayPlan,
 	'skyway-cost': skywayCostPlan,
 	'skyway-soak': skywaySoakPlan,
+	'skyway-stall': skywayStallPlan,
 	splats: splatsPlan,
 	vegetation: vegetationPlan,
 	'vegetation-wind': vegetationWindPlan,

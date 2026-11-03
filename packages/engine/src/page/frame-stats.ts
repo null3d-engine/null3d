@@ -54,6 +54,60 @@ export interface GpuPassStats {
 }
 
 /**
+ * What a measurement reports beyond its own figures, when the page asks for it.
+ *
+ * @category api/debug
+ */
+export interface MeasureOptions {
+	/**
+	 * A frame interval in milliseconds. Every frame that breaks it comes back in
+	 * `FrameMetrics.slow`, with its own GPU parts.
+	 */
+	slowMs?: number;
+}
+
+/**
+ * A frame whose interval broke a threshold, with the frame's own GPU parts rather than an average
+ * over frames. A page that hunts one long frame reads these.
+ *
+ * @category api/debug
+ */
+export interface SlowFrame {
+	/** The frame's index among the frames that the renderer drew. */
+	frame: number;
+	/** Milliseconds from the start of the measurement to the frame's presentation. */
+	atMs: number;
+	/** The interval that broke the threshold: from the presentation before it to this one. */
+	intervalMs: number;
+	/** The interval of the frame before, or null where the measurement holds none. */
+	beforeMs: number | null;
+	/** The interval of the frame after, or null where the measurement holds none. */
+	afterMs: number | null;
+	/** Whether this is the first frame of the measurement. */
+	first: boolean;
+	/** The GPU's time for the frame, or null where the timer did not time it. */
+	gpuMs: number | null;
+	/** The frame's own GPU parts, named as `gpuPassMs` names them, or null where it went untimed. */
+	parts: { name: string; ms: number }[] | null;
+	/** The CPU time of each engine thread in the frame, and the phases that it spent the time in. */
+	threads: SlowFrameThread[];
+}
+
+/**
+ * One engine thread's CPU time in a slow frame, and the phases that it spent the time in.
+ *
+ * @category api/debug
+ */
+export interface SlowFrameThread {
+	/** The thread's name, as `FrameSummary.threads` names it. */
+	name: string;
+	/** The thread's busy time in the frame. */
+	busyMs: number;
+	/** The phases that took time, in the order the engine's phases run. */
+	phases: { name: PhaseName; ms: number }[];
+}
+
+/**
  * Per-frame figures of a measurement: CPU time by thread, GPU time, frame intervals, uploads and
  * draw calls.
  *
@@ -244,6 +298,11 @@ export interface FrameMetrics extends FrameSummary {
 	 * here when and for how long the rate fell, which the rates of the whole measurement hide.
 	 */
 	perSecond: SecondRates[];
+	/**
+	 * Frames whose interval broke the `slowMs` that the page asked for, each with its own GPU parts,
+	 * or absent when the page asked for none.
+	 */
+	slow?: SlowFrame[];
 }
 
 /**
@@ -393,49 +452,125 @@ export function secondRates(records: readonly RingRecords[]): SecondRates[] {
 }
 
 /**
- * The parts of the GPU records' frames by name, in the order the frames run them: the copies before
- * the first pass, each pass by what it draws for, and the time between passes where a frame has
- * more than one. A pass without a label keeps its kind and its place among the passes of that kind.
- * Null without GPU records.
+ * One GPU record's parts by name, in the order the frame runs them: the copies before the first
+ * pass, each pass by what it draws for, and the time between passes where the frame has more than
+ * one. A pass without a label keeps its kind and its place among the passes of that kind. A pass
+ * that the GPU left untimed has no time of its own, and leaves the time between passes out.
+ */
+function frameParts(records: RingRecords, r: number): { name: string; ms: number }[] {
+	const passes = records.counters[GpuCounter.Passes]?.[r] ?? 0;
+	const renderPasses = records.counters[GpuCounter.RenderPasses]?.[r] ?? 0;
+	const slot = (index: number) => records.phases[index]?.[r] ?? 0;
+	const parts: { name: string; ms: number }[] = [];
+	const copies = slot(0);
+	let parted = 0;
+	if (copies !== UNTIMED) {
+		parts.push({ name: 'copies', ms: copies });
+		parted = copies;
+	}
+	const kinds = { render: 0, compute: 0 };
+	let whole = true;
+	for (let pass = 0; pass < Math.min(passes, GPU_TIMED_PASSES); pass++) {
+		const kind = (renderPasses >>> pass) & 1 ? 'render' : 'compute';
+		const place = ++kinds[kind];
+		const label = records.passRoles[pass]?.[r] ?? 0;
+		const name = passRoleName(label) ?? `${kind} ${place}`;
+		const ms = slot(1 + pass);
+		if (ms === UNTIMED) {
+			whole = false;
+			continue;
+		}
+		parts.push({ name, ms });
+		parted += ms;
+	}
+	if (passes > 1 && whole)
+		parts.push({ name: 'between passes', ms: Math.max(0, (records.busy[r] ?? 0) - parted) });
+	return parts;
+}
+
+/**
+ * The parts of the GPU records' frames by name and their percentiles, in the order the frames run
+ * them. Null without GPU records.
  */
 export function gpuPassStats(records: RingRecords): GpuPassStats[] | null {
 	if (records.busy.length === 0) return null;
 	const parts = new Map<string, number[]>();
-	const add = (name: string, ms: number) => {
-		const values = parts.get(name);
-		if (values) values.push(ms);
-		else parts.set(name, [ms]);
-	};
-	const slot = (index: number, record: number) => records.phases[index]?.[record] ?? 0;
-	records.busy.forEach((frameMs, r) => {
-		const passes = records.counters[GpuCounter.Passes]?.[r] ?? 0;
-		const renderPasses = records.counters[GpuCounter.RenderPasses]?.[r] ?? 0;
-		const copies = slot(0, r);
-		let parted = 0;
-		if (copies !== UNTIMED) {
-			add('copies', copies);
-			parted = copies;
+	records.busy.forEach((_, r) => {
+		for (const part of frameParts(records, r)) {
+			const values = parts.get(part.name);
+			if (values) values.push(part.ms);
+			else parts.set(part.name, [part.ms]);
 		}
-		const kinds = { render: 0, compute: 0 };
-		let whole = true;
-		for (let pass = 0; pass < Math.min(passes, GPU_TIMED_PASSES); pass++) {
-			const kind = (renderPasses >>> pass) & 1 ? 'render' : 'compute';
-			const place = ++kinds[kind];
-			const label = records.passRoles[pass]?.[r] ?? 0;
-			const name = passRoleName(label) ?? `${kind} ${place}`;
-			const ms = slot(1 + pass, r);
-			// A pass that the GPU left untimed has no time of its own, and the time between passes
-			// would hold it.
-			if (ms === UNTIMED) {
-				whole = false;
-				continue;
-			}
-			add(name, ms);
-			parted += ms;
-		}
-		if (passes > 1 && whole) add('between passes', Math.max(0, frameMs - parted));
 	});
 	return Array.from(parts, ([name, values]) => ({ name, ms: percentiles(values) }));
+}
+
+/** One frame's CPU time on each engine thread, by phase. */
+function frameThreads(
+	records: readonly RingRecords[],
+	threads: ReadonlyMap<string, readonly number[]>,
+	frame: number,
+): SlowFrameThread[] {
+	const out: SlowFrameThread[] = [];
+	for (const [name, roles] of threads) {
+		let busyMs = 0;
+		const phases = PHASE_NAMES.map((phase) => ({ name: phase, ms: 0 }));
+		let found = false;
+		for (const role of roles) {
+			const ring = records[role] ?? NO_RECORDS;
+			const at = ring.frames.indexOf(frame);
+			if (at < 0) continue;
+			found = true;
+			busyMs += ring.busy[at] ?? 0;
+			phases.forEach((entry, p) => {
+				entry.ms += ring.phases[p]?.[at] ?? 0;
+			});
+		}
+		if (!found) continue;
+		out.push({ name, busyMs, phases: phases.filter((entry) => entry.ms > 0) });
+	}
+	return out;
+}
+
+/**
+ * The frames whose interval broke a threshold, each with its own GPU parts, so a page names the
+ * pass that stalled rather than an average over frames. With the timer set to time every frame, the
+ * parts belong to the frame that broke the threshold. A frame that the timer did not time keeps a
+ * null `gpuMs`.
+ */
+export function slowFrames(
+	records: readonly RingRecords[],
+	thresholdMs: number,
+	threads: ReadonlyMap<string, readonly number[]>,
+): SlowFrame[] {
+	const render = records[Role.Render] ?? NO_RECORDS;
+	const gpu = records[Role.Gpu] ?? NO_RECORDS;
+	const gpuAt = new Map(gpu.frames.map((frame, i) => [frame, i]));
+	const slow: SlowFrame[] = [];
+	/** The interval of a neighbouring frame, or null where none ended or the frame rested. */
+	const neighbour = (i: number) => {
+		const ms = render.intervals[i];
+		return ms !== undefined && ms > 0 ? ms : null;
+	};
+	let atMs = 0;
+	render.frames.forEach((frame, i) => {
+		const intervalMs = render.intervals[i] ?? 0;
+		atMs += intervalMs;
+		if (!(intervalMs > thresholdMs)) return;
+		const at = gpuAt.get(frame);
+		slow.push({
+			frame,
+			atMs,
+			intervalMs,
+			beforeMs: neighbour(i - 1),
+			afterMs: neighbour(i + 1),
+			first: i === 0,
+			gpuMs: at === undefined ? null : (gpu.busy[at] ?? null),
+			parts: at === undefined ? null : frameParts(gpu, at),
+			threads: frameThreads(records, threads, frame),
+		});
+	});
+	return slow;
 }
 
 /** The bits of a pass label that hold the role; the rest hold the place. */

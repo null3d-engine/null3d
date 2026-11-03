@@ -361,6 +361,13 @@ The `physical-sky` plan measures what the physical sky costs, for [D-143](decisi
   time of each thread, the GPU time per frame and per pass, the draw calls, the triangles, the
   uploads, and the bytes that the page downloaded. On WebGL2 most phones offer no timer queries, so
   the GPU times are absent there and only the frame rate answers.
+- `?slow=<ms>` reports every frame whose interval breaks that many milliseconds, each with its own
+  passes rather than an average over frames: the frame's index, the time it presented, the
+  intervals before and after it, whether it is the measurement's first frame, and any resize or
+  change of the page's visibility that fell within its interval. Add the engine's
+  `?gpu-samples=every`, which times every drawn frame instead of one in eleven, so the reported
+  passes belong to the long frame itself. Both switches cost the draw: use them to hunt a stall,
+  not for a rate.
 - The `skyway-cost` plan leaves one part of the scene out per page, all on WebGL2 at the Low preset
   with the same pinning: the base, then the traffic, the rain, the screen reflections, ambient
   occlusion, the towers and the street lamps in turn. A page repeats the base page there, so the
@@ -377,6 +384,10 @@ The `physical-sky` plan measures what the physical sky costs, for [D-143](decisi
   the run shows whether the memory holds rather than asserting it. The item's time limit covers
   the hour and the page's start. Run it on a quiet Mac:
   `bun tests/real-browsers.ts --plan skyway-soak "Google Chrome"`.
+- The `skyway-stall` plan hunts a long frame: Skyway at High with the governor off, twelve windows
+  of five seconds, the engine timing every drawn frame, and the page reporting each frame over
+  20 ms with its own passes, thread times and intervals. The timing costs the draw, so its rates
+  are not a device's rate.
 - Run them on the cloud devices with
   `bun run devices:cloud --plan skyway --only bsipadpro13-safari,bsgalaxys24-chrome`, or on the Mac
   with `bun tests/real-browsers.ts --plan skyway "Google Chrome"`.
