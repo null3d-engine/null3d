@@ -106,6 +106,16 @@ band of distance. The first 16 copies of a species draw their real shoot rows, c
 setup, out to the split. Their first card level draws from the copy out and gives way to the
 shoots, pixel by pixel, inside the split. Placements of one species share its 16 near slots.
 
+### Cover at a distance
+
+The GPU makes the card atlas's smaller copies by averaging, so a sparse shoot's coverage falls
+under the cutoff a few levels down. The oak's distant crown then let through 42 per cent sky against
+the turning video's 10. The plant shader now adds a quarter of a card texel's coverage back for
+each level of the mip chain it reads. A leaf texture's mips keep their coverage when built (D-310),
+so leaves read theirs plain. Over the turning video the sky fell to 19 per cent.
+The crown's outline overlap rose from 0.56 to 0.70, and its leaf colour difference fell from 6.8
+to 3.9.
+
 ### Cuttings
 
 An oak's branch and sub-branch stills show its three-year spray and two-year twig. Cut from the
