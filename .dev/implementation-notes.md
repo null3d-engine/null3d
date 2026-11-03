@@ -44,11 +44,11 @@ A slice that moves while a bundle keeps its old place draws the wrong rows. On t
 
 So a slice keeps its place while its count fits. A first placement is exact, and a slice that must grow takes spare room of an eighth of its count. A count that outgrows its slice moves the slices, and the frame then records the bundles and sizes the buffers again. The culling shader also refuses a row past its slice's end, which leaves one tree out for a frame and never draws another mesh with that row's matrix.
 
-The last word of a view's buffer of culled draws counts the rows that this guard refuses. `packages/engine/src/gpu/webgpu/culled-counts.ts` reads it into `dropped` while the page samples its figures. To read it, open the stats card with `?stats=open` and force the path that culls on the GPU with `?direct=off`. The direct path has no guard. A development build reads it on every page, and a production build reads it while a stats card is open. The first refused row prints one console warning. `tests/image/culled-drop.spec.ts` forces a refusal in the browser's copy of the shader. A row refused here means that the CPU's count of a level's copies fell short of the GPU's, which is an engine fault.
+The last word of a view's buffer of culled draws counts the rows that this guard refuses. `packages/engine/src/gpu/webgpu/culled-counts.ts` reads it into `dropped` while the page samples its figures. To read it, open the stats card with `?stats=open` and force the path that culls on the GPU with `?direct=off`. The direct path has no guard. A development build reads it on every page that draws a draw the GPU culls, and a production build reads it while a stats card is open. A page whose frames draw no such draw fetches no part for it. The first refused row prints one console warning. `tests/image/culled-drop.spec.ts` forces a refusal in the browser's copy of the shader. A row refused here means that the CPU's count of a level's copies fell short of the GPU's, which is an engine fault.
 
 ## A frame on a full heap
 
-A frame copies its uploads into `UploadArena`, in blocks that never move. A copy larger than the ordinary 256 KiB takes a block of its own size, and a heap that refuses a block makes the frame stop with E1109. An arena holds only what its frames copy, and it gives large blocks back after 30 frames with no large copy. So a first frame's copy of every mesh needs no long free stretch of the heap, and leaves no room standing afterwards.
+A frame copies its uploads into `UploadArena`, in blocks that never move. A copy larger than the ordinary 256 KiB takes the smallest free large block that holds it. When none does, the arena gives the free large blocks that are too small back to the heap, and makes a new block an eighth larger than the copy, so the same copy a little larger next frame still fits. A heap that refuses a block makes the frame stop with E1109. An arena holds only what its frames copy, and it gives large blocks back after 30 frames with no large copy. A frame of 800,000 splats makes two large copies whose sizes change a little every frame. An arena that made each new block at its copy's exact size and kept the blocks it outgrew reached 391 MiB in the splats demo, and the engine's memory then failed after about 20 seconds; with the reuse it holds 113 to 153 MiB ([D-298](decisions/D-298-real-scan-splats.md)). So a first frame's copy of every mesh needs no long free stretch of the heap, and leaves no room standing afterwards.
 
 Most of a frame's other requests are plain pushes, which cannot report a refusal: a refusal would trap, with `unreachable` and no message. So the heap keeps room for them (`crates/null3d-wasm/src/heap.rs`):
 
@@ -119,6 +119,7 @@ The WebGL2 path builds its layout in its cull step, before the frame graph gives
 - Hold mode and `?preset=` neither read nor write the crash marker, so a test that crashes can never lower the next test's preset.
 - Hold mode reads no display preference. Its sketch sees `preferences.reducedMotion` as false and hears of no change, whatever the machine asks for. Passing the machine's motion setting on would let a held frame change with a machine setting. GitHub's macOS runners turn Reduce Motion on, so the glTF model demo's camera would not turn in CI's Safari ([image tests](image-tests.md#the-feature-demos)).
 - `quality.set` takes the live settings only. A start-time setting changes with `quality.setPreset`. The core should take its new value in the first frame after the change, which waits for its pipelines. The sketch runner marks it where it takes the restart from `SketchQuality` in `frame()`.
+- The change handlers hear of every live change, the sketch's own `set` included, at the start of the next frame. A helper therefore cannot use a handler to hold a setting at a value: the handler meets the sketch's own change one frame later and puts the old value back. Such a helper gives the setting its value in every frame instead, where a comparison of one number costs nothing. A demo that turns a feature on against a preset that leaves it off is the case. `examples/lib/bounce.ts` does that, and its cycle is the one that failed. A handler turned the light back on one frame after the demo turned it off, so the demo never showed the difference. `examples/lib/ssr.ts` still registers a handler, which no demo's own change reaches today.
 - The preset check runs at the end of `SketchRunner.setup`, before the frame loop steps the sketch. It publishes setup frames, one after another, as a warm-up does. Its code (`sketch/preset-check.ts`) loads with a dynamic import after the first frame, and the runner keeps drawing while it arrives. The size report names its files apart from the downloads before the first frame.
 - The page sends the `?fps=` rate to the sketch thread once, in the runner's setup. The governor and the preset check both read it there. A second copy in the check's own start field, beside the governor's, would let a change to one path leave the two disagreeing (M2-R6).
 - The check reads the render and completion rings with `RingSums`, from the thread that runs the sketch. Only a preset that the engine chose, above Low, gets a check, so pages that name a preset never download its code.
@@ -361,6 +362,7 @@ The opcode numbers that M2 tasks need are reserved (M2-E1), so lanes that work a
 
 - The package build strips members marked `@internal` from the type declarations (`--stripInternal`). Users then do not see the engine's own methods, such as the label projection of `ctx.ui` (review R3, R3-13). The build fails if a declaration still holds an `@internal` tag.
 - A class that only the engine makes marks its constructor `@internal`. Stripping it would leave the class constructible with no arguments, so the build writes `protected constructor();` in its place. Protected, not private, so that the engine's own subclasses still type check.
+- A member that an add-on reads must not carry `@internal`, even when the engine also reads it. Type check resolves the engine's source, where the member exists, and passes; the package build compiles against the built declarations, and `--stripInternal` has removed it, so `bun run test:packages` fails with `TS2339`. The compute draw's `counts` and `instances` are the case: an add-on's compute pass writes both, so both are public and say so in their doc comments. A build that type checks the repository and compiles a fresh project against the tarball is the pair that catches this.
 - The internal entry point that tests import (`src/internal.ts`) leaves the package. The tarball check fails if it returns (review R8, R8-10).
 
 ## One list, not two
@@ -1284,7 +1286,10 @@ percent of the large variants. The rare lit features cost less: area lights and 
 ### The count the manifest may not pass
 
 `BUILD_BUDGET` in `crates/null3d-shaders/src/manifest.rs` records the figures above, and a commit
-that adds builds on purpose raises them here and in the constant together. The test
+that adds builds on purpose raises them here and in the constant together. The unlit surface hook,
+which lets a custom material show its own color with no lighting, is one such build on each
+target: it adds one WGSL build and one GLSL build, so the figures stand one higher than the
+count before it. The test
 `the_manifests_builds_stay_within_the_recorded_figure` in the shader crate counts the manifest's
 builds and fails when either target passes its figure. The test builds no shader, so it costs a
 test run almost nothing. Its problem names the figure, the file that holds it and this guide.
@@ -1358,6 +1363,11 @@ slots. A new binding would fail every standard material. The screen texture ther
 light in a second layer, and the frame's binding 11 is a 2D array. Ambient occlusion's denoise
 reads the reflections' trace, or a blank array while they draw none, so every texture of that
 binding is an array. The first texture of the screen steps stays a 2D image.
+The sky's volumetric cloud tier adds four shaders in M3-F11, and 6 GLSL builds and 6 WGSL builds
+with them. The analytic and physical skies' cloud draws build both targets with the `TONE_MAP`
+permutation, and the two sky-map steps build both targets once each. All four load on the tier's
+first use, so a page on Low or Medium downloads none of them (D-297). The merge makes 66,530 GLSL
+builds and 25,794 WGSL builds, and `BUILD_BUDGET` records those figures.
 
 A commit that adds builds on purpose raises the figure it passes and records the reason here, or in
 a decision record. A commit that raises the figure and gives no reason is the growth that this

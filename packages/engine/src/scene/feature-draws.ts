@@ -10,6 +10,11 @@
 // values. The transparent pass culls and sorts those rows back to front on the job workers, so a
 // draw of many blended copies needs no order of its own from the add-on.
 //
+// A draw at the 'resolve' frame point blends after the camera's other blended surfaces. While the
+// scene has more than one sample, the engine draws its surfaces into a layer of one sample per
+// pixel, back to front, and blends that layer over the multisampled scene color, so thousands of
+// overlapping blended cards cost one blend per pixel instead of one per sample.
+//
 // The add-on owns the vertices, so it changes them with the mesh's own update calls. A surface
 // function reads the vertex colors and the uniforms, and a full shader reads the attributes at
 // their engine locations. A draw records in the main view alone for now: the adapter refuses another
@@ -19,6 +24,7 @@ import type { FeatureDescription } from './features';
 import type {
 	CompiledWgsl,
 	Geometry,
+	InternalShaderOptions,
 	Material,
 	Materials,
 	MeshArrays,
@@ -261,10 +267,14 @@ export interface FeatureDrawHost {
 	fail(detail: string): Error;
 }
 
-/** The frames where a draw records, and the alpha mode that each one draws with by default. */
+/**
+ * The frames where a draw records, and the alpha mode that each one draws with by default. A draw
+ * at `'resolve'` blends in the camera's one-sample layer, after the transparent pass.
+ */
 const FRAME_ALPHA: Readonly<Record<string, 'opaque' | 'blend'>> = {
 	opaque: 'opaque',
 	transparent: 'blend',
+	resolve: 'blend',
 };
 
 /** The render order of a description's band and order, as blended objects sort. */
@@ -298,7 +308,7 @@ function checkDraw(
 	const alpha = frame === undefined ? undefined : FRAME_ALPHA[frame];
 	if (frame === undefined || alpha === undefined)
 		throw invalid(
-			`got the feature '${description.name}' with the frame ${JSON.stringify(frame)}; a draw records at 'opaque' or 'transparent'.`,
+			`got the feature '${description.name}' with the frame ${JSON.stringify(frame)}; a draw records at 'opaque', 'transparent' or 'resolve'.`,
 		);
 	const views = description.views ?? ['main'];
 	if (views.length !== 1 || views[0] !== 'main')
@@ -306,14 +316,38 @@ function checkDraw(
 			`got the feature '${description.name}' with the views ${JSON.stringify(views)}; a draw records in the main view alone, because the adapter places no other view yet.`,
 		);
 	const alphaMode = alphaModeOption ?? alpha;
-	// A material that blends draws in the transparent pass, and one that does not draws in the
-	// opaque pass. A description that names the other pass would draw somewhere it never said.
+	// A material that blends draws in the transparent pass or the one-sample layer, and one that
+	// does not draws in the opaque pass. A description that names the other pass would draw
+	// somewhere it never said.
 	const blended = alphaMode === 'blend';
 	if (blended !== (alpha === 'blend'))
 		throw invalid(
 			`got the feature '${description.name}' at the frame '${frame}' with the alpha mode '${alphaMode}'. That mode draws in the ${blended ? 'transparent' : 'opaque'} pass, so give the frame that names it, or leave the alpha mode out.`,
 		);
 	return alphaMode;
+}
+
+/**
+ * The custom material of a draw: the draw's material options, with its WGSL, its alpha mode and
+ * whether its vertices bring colors. A draw at the `'resolve'` frame point blends in the camera's
+ * one-sample layer.
+ */
+function drawMaterial<Wgsl extends string | CompiledWgsl>(
+	materials: Materials,
+	description: FeatureDescription,
+	options: Omit<ShaderOptions<Wgsl>, 'wgsl'>,
+	shader: Wgsl,
+	alphaMode: NonNullable<ShaderOptions['alphaMode']>,
+	vertexColors: boolean,
+): Material<ShaderValues<Wgsl>> {
+	const internal: InternalShaderOptions = { singleLayer: description.frame === 'resolve' };
+	return materials.shader({
+		...options,
+		...internal,
+		wgsl: shader,
+		alphaMode,
+		vertexColors: options.vertexColors ?? vertexColors,
+	} as ShaderOptions<Wgsl>);
 }
 
 /**
@@ -334,12 +368,14 @@ export function createFeatureDraw<const Wgsl extends string | CompiledWgsl>(
 	// that it reads.
 	const { shader, vertices, position, rotation, scale, layers, ...materialOptions } = options;
 	const vertexColors = vertices.colors !== undefined;
-	const material = materials.shader({
-		...materialOptions,
-		wgsl: shader,
+	const material = drawMaterial(
+		materials,
+		description,
+		materialOptions,
+		shader,
 		alphaMode,
-		vertexColors: options.vertexColors ?? vertexColors,
-	} as ShaderOptions<Wgsl>);
+		vertexColors,
+	);
 	const mesh = geometry.fromArrays(vertices);
 	let object: Mesh;
 	try {
@@ -395,12 +431,14 @@ export function createFeatureInstances<const Wgsl extends string | CompiledWgsl>
 			`${call}() got ${instances} copies. A draw of many copies repeats its shape from 1 to 16,777,216 times, in whole numbers.`,
 		);
 	const { geometry, materials } = host;
-	const material = materials.shader({
-		...materialOptions,
-		wgsl: shader,
+	const material = drawMaterial(
+		materials,
+		description,
+		materialOptions,
+		shader,
 		alphaMode,
-		vertexColors: options.vertexColors ?? vertices.colors !== undefined,
-	} as ShaderOptions<Wgsl>);
+		vertices.colors !== undefined,
+	);
 	const mesh = geometry.fromArrays(vertices);
 	let batch: InstanceBatch;
 	try {

@@ -16,6 +16,9 @@ interface WavesResult {
 	stamps: number[];
 	gpu: number[][];
 	cpu: number[][];
+	/** Each band's slopes at the read square: one along the row, then one along the column. */
+	slopes: number[][];
+	cpuSlopes: number[][];
 	frames: number[];
 	later: { time: number; gpu: number[][]; stamps: number[] };
 	tiles: number[];
@@ -32,6 +35,8 @@ const TIERS = [
 
 /** The heights that the two forms may differ by, in meters: the transform runs in 16-bit floats. */
 const TOLERANCE = 0.05;
+/** The slopes that the two forms may differ by, in meters a meter: the heights' own step. */
+const SLOPE_TOLERANCE = 0.05;
 
 /**
  * The orders that a pass's read may come back in: the rows as the transform wrote them, and the
@@ -88,13 +93,6 @@ for (const { tier, query } of TIERS) {
 			`${tier}: the sea moved by ${moved.toFixed(4)} m between ${(result.stamps[0] as number).toFixed(2)} s and ${(result.later.stamps[0] as number).toFixed(2)} s`,
 		);
 		expect(moved).toBeGreaterThan(0.01);
-		// The WebGL2 difference was measured before the engine's WebGL2 read returned the region the
-		// page asked for (D-271), and that fix names this ocean's read. The path has therefore not
-		// been compared against the merged engine yet. Remove this line once it has.
-		test.fail(
-			tier === 'webgl2',
-			'the WebGL2 path has not been compared against the merged engine yet',
-		);
 		const side = 4;
 		for (let band = 0; band < result.cpu.length; band++) {
 			const gpu = result.gpu[band] as number[];
@@ -132,6 +130,22 @@ for (const { tier, query } of TIERS) {
 			);
 			expect(largest).toBeGreaterThan(0.02);
 			expect(best.worst).toBeLessThan(TOLERANCE);
+			// The surface lights and mirrors with the slopes, so a slope that the last pass lost or
+			// turned shows as a flat or a reversed swell even while the heights agree.
+			const gpuSlopes = result.slopes[band] as number[];
+			const cpuSlopes = result.cpuSlopes[band] as number[];
+			let slopeWorst = 0;
+			let slopeCpu = 0;
+			for (let at = 0; at < cpuSlopes.length; at++)
+				slopeWorst = Math.max(
+					slopeWorst,
+					Math.abs((gpuSlopes[at] as number) - (cpuSlopes[at] as number)),
+				);
+			for (const value of cpuSlopes) slopeCpu = Math.max(slopeCpu, Math.abs(value));
+			console.log(
+				`${tier} band ${band}: slopes to ${slopeCpu.toFixed(3)}, the worst differs by ${slopeWorst.toFixed(4)}`,
+			);
+			expect(slopeWorst).toBeLessThan(SLOPE_TOLERANCE);
 		}
 	});
 }

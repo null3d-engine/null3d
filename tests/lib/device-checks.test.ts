@@ -10,6 +10,7 @@ import { ENGINE_MODES } from './engine-checks.ts';
 import {
 	benchSummary,
 	checksPlan,
+	itemsNeeded,
 	judge,
 	NONE_MISSING,
 	SHOWCASE_SCENES,
@@ -204,7 +205,7 @@ describe('the soak plan', () => {
 
 	it('loses the GPU in every thread mode first, then soaks S4 on each path from the production build', () => {
 		expect(items).toHaveLength(2 * ENGINE_MODES.length + 2);
-		expect(items[0]?.path).toBe('/tests/pages/scene.html?gpu=webgpu&lose-gpu');
+		expect(items[0]?.path).toBe('/tests/pages/scene.html?gpu=webgpu&preset=medium&lose-gpu');
 		const soaks = items.slice(-2);
 		expect(soaks.map((item) => item.id)).toEqual(['soak-s4-webgpu', 'soak-s4-webgl2']);
 		expect(soaks[0]?.path).toMatch(
@@ -584,5 +585,44 @@ describe('the GPU pages of the checks plan', () => {
 				},
 			),
 		).toBe('skip');
+	});
+});
+
+describe('the page that the checks plan draws twice', () => {
+	const items = checksPlan().filter(({ id }) => id.startsWith('warm-page-'));
+	const checkOf = (id: string) => {
+		const item = checksPlan().find(({ id: other }) => other === id);
+		if (!item) throw new Error(`the checks plan has no ${id}`);
+		return item.check;
+	};
+	const lost = {
+		ok: false,
+		error:
+			'E1302: the render worker lost its GPU: the WebGL2 context was lost, in hold mode, which draws on one device only',
+	};
+	const drew = { ok: true };
+
+	it('draws one page twice, and keeps the second draw beside the first', () => {
+		expect(items.map(({ id }) => id)).toEqual(['warm-page-cold', 'warm-page-warm']);
+		expect(items[0]?.path).toBe(items[1]?.path);
+		expect(itemsNeeded(checkOf('warm-page-warm'))).toEqual(['warm-page-cold']);
+		expect(itemsNeeded(checkOf('warm-page-cold'))).toEqual([]);
+	});
+
+	it('reads each pair of draws the same way, and says so before the run', () => {
+		const reading = (cold: ItemResult, warm: ItemResult): string => {
+			const notes: string[] = [];
+			const problems = judge(checkOf('warm-page-warm'), warm, NONE_MISSING, {
+				resultOf: (id) => (id === 'warm-page-cold' ? cold : undefined),
+				imageDir: '',
+				note: (text) => notes.push(text),
+			});
+			expect(warm.ok ? problems : problems.length).toEqual(warm.ok ? [] : 1);
+			return notes[0] ?? '';
+		};
+		expect(reading(lost, lost)).toContain('both draws lost');
+		expect(reading(lost, drew)).toContain('the cold draw lost');
+		expect(reading(drew, lost)).toContain('does not belong to the first use');
+		expect(reading(drew, drew)).toContain('lost none');
 	});
 });

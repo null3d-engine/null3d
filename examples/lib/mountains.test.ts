@@ -17,10 +17,9 @@ const SCENES = [{ name: 'creek', settings: creekLand.mountainSettings, bounds: c
 /**
  * The showcase scenes that stand with no ring, by the owner's ruling, each with its reason: every
  * other scene is one of the scenes above. The Island is an isolated island in open sea. Skyway's fog
- * and ground plane keep the plain background out of view. The showroom is a studio whose street closes
- * on its own buildings and fog, so no horizon is ever seen from it.
+ * and ground plane keep the plain background out of view.
  */
-const NO_RING = ['island', 'skyway', 'showroom'];
+const NO_RING = ['island', 'skyway'];
 /** The bearings and rows of the ring at each quality preset, the fewest and the most. */
 const DETAILS = [
 	[160, 32],

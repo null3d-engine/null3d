@@ -20,6 +20,7 @@ const POSITIONS = 0;
 const ROTATIONS = 1;
 const SCALES = 2;
 const COLORS = 3;
+const COVERAGE = 4;
 
 /** The clouds of the thread's engines, each of which takes a number of its own. */
 let lastCloud = 0;
@@ -52,6 +53,11 @@ export interface ChunkRowData {
 	readonly scales: Float32Array;
 	/** The rows' linear RGBA colors, four floats each. */
 	readonly colors: Float32Array;
+	/**
+	 * The share of the chunk's surface that each prefix covers, at the prefix lengths that halve
+	 * every two steps: index 0 is the whole chunk. The add-on measures it when it cuts the chunk.
+	 */
+	readonly coverage: Float32Array;
 }
 
 /**
@@ -138,6 +144,17 @@ export class ChunkRowWriter implements ViewHolder {
 		field(ROTATIONS).set(rows.rotations.subarray(0, count * 4));
 		field(SCALES).set(rows.scales.subarray(0, count * 3));
 		field(COLORS).set(rows.colors.subarray(0, count * 4));
+		// The pack grows a prefix's splats by the surface it leaves bare, and reads that share from
+		// this table, so a frame never measures a chunk's rows again.
+		if (rows.coverage.length > 0) {
+			const at = core.check(
+				core.glue.splatChunkField(this.cloud, slot, COVERAGE),
+				'splat chunk',
+				'a chunk of rows',
+			);
+			const shares = core.f32(at, rows.coverage.length);
+			shares.set(rows.coverage.subarray(0, shares.length));
+		}
 	}
 
 	/** Forgets a chunk at `slot`, so it takes no row. */

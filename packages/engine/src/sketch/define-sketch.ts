@@ -149,7 +149,7 @@ export interface SketchContext {
 	geometry: Geometry;
 	/** Textures from decoded images and from data. */
 	textures: Textures;
-	/** Loading of textures and files, with a count of downloads for loading screens. */
+	/** Loading of textures and files, with the bytes of their downloads for loading screens. */
 	assets: Assets;
 	/** Pointer, touch, keyboard and gamepad input, which the page forwards to the sketch. */
 	input: Input;

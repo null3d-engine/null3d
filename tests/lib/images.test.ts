@@ -188,12 +188,13 @@ describe('the manifest', () => {
 
 	it('sets an exposure in each demo that uses timeOfDay', () => {
 		// A dusk or night scene at the default exposure shows several times too dark. A demo takes
-		// the time of day's exposure or sets its own. Creek is exempt: the owner approved its look,
-		// which is tuned at the default exposure, and a new exposure would change it.
+		// the time of day's exposure or sets its own, directly or through the stage's exposure scale.
+		// Creek is exempt: the owner approved its look, which is tuned at the default exposure, and a
+		// new exposure would change it.
 		const exempt = new Set(['creek']);
 		const skipped = DEMOS.filter((demo) => {
 			const code = demoSources(demo);
-			return !exempt.has(demo.name) && /\btimeOfDay\(/.test(code) && !/\bexposure\b/.test(code);
+			return !exempt.has(demo.name) && /\btimeOfDay\(/.test(code) && !/\bexposure\w*/.test(code);
 		});
 		expect(skipped.map((demo) => demo.name)).toEqual([]);
 	});
@@ -267,19 +268,20 @@ describe('the runs of a test', () => {
 		expect(run('grid-compat').mode).toBeUndefined();
 	});
 
-	it("adds a test's SwiftShader switches only where SwiftShader draws", () => {
+	it("adds a test's SwiftShader switches, and the flat sky's step count, only where SwiftShader draws", () => {
 		expect(runIn(run('grid-compat'), 'chromium-swiftshader').path).toBe(
-			'/pages/grid.html?gpu=compat&preset=low&n=2&far=on',
+			'/pages/grid.html?gpu=compat&preset=low&n=2&far=on&cloudSteps=0',
 		);
 		expect(runIn(run('grid-compat'), 'chrome-real-gpu').path).toBe(
 			'/pages/grid.html?gpu=compat&preset=low',
 		);
-		expect(runIn(run('boxes-webgpu-pipelined'), 'chromium-swiftshader')).toBe(
-			run('boxes-webgpu-pipelined'),
+		// A test with no SwiftShader switches of its own draws the flat sky there.
+		expect(runIn(run('boxes-webgpu-pipelined'), 'chromium-swiftshader').path).toContain(
+			'&cloudSteps=0',
 		);
 	});
 
-	it('gives a switch that the page has its SwiftShader value, in place', () => {
+	it('gives a switch that the page has its SwiftShader value, in place, and the flat sky last', () => {
 		const [low] = imageRuns([
 			{
 				name: 'scene',
@@ -291,7 +293,7 @@ describe('the runs of a test', () => {
 		const path = runIn(low as ImageRun, 'chromium-swiftshader').path;
 		expect(path).toContain('&preset=low&');
 		expect(path).not.toContain('preset=high');
-		expect(path.endsWith('&far')).toBe(true);
+		expect(path.endsWith('&far&cloudSteps=0')).toBe(true);
 		expect(path).toContain('sketch=/sketches/s.ts%3Fx%3D1');
 	});
 

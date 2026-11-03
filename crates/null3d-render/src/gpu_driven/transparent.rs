@@ -209,8 +209,8 @@ impl Transparent {
     /// mesh for each of the bucket's passes, from its slice of the view's sorted instances. A skinned object's bucket draws its
     /// regions of skinned vertices, or with the vertex shaders that skin, binds the joint texture.
     /// It leaves out the objects whose maps show a target that the view does not read. `rows`
-    /// picks the buckets that draw, and their pipelines: those of the transparent pass, or of the
-    /// camera's weighted layer. The draws bind group `frame` at 0, the view's frame group, or the
+    /// picks the buckets that draw, and their pipelines: those of the transparent pass, or of one of
+    /// the camera's layers. The draws bind group `frame` at 0, the view's frame group, or the
     /// decal pass's own. Each draw binds group `scene` for a bucket whose material reads the
     /// scene's depth, and group `last` where it is not 0, after its bucket's groups, as decals bind
     /// the scene's depth.

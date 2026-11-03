@@ -9,7 +9,6 @@ import { type Camera, math, quat, type SketchContext } from '@null3d/engine';
 import { icosahedron } from '@null3d/geometry';
 import { type PlantMaterial, setWindLayer } from '@null3d/vegetation';
 import { createWind } from '@null3d/wind';
-import { TURN } from '../lib/pines';
 import { type PlantSpot, plantSpecies } from '../lib/plants';
 import { random } from '../lib/procedural';
 
@@ -28,6 +27,8 @@ const GRASS = {
 	standIn: { height: 0.5, aspect: 0.4, leaf: [0.24, 0.4, 0.1], bark: [0.2, 0.18, 0.1] },
 } as const;
 
+/** A full turn of the circle, in radians, which the scene's own scattering works in. */
+const TURN = Math.PI * 2;
 /** The sand bed's side in meters, its texels along each side, and the rake's spacing in meters. */
 const BED = 10;
 const SIZE = 512;
@@ -219,7 +220,7 @@ export async function garden(ctx: SketchContext, camera: Camera): Promise<{ upda
 	const stalks = scene.createInstances(
 		geometry.cylinder({ radiusTop: 1, radiusBottom: 1, height: 1, radialSegments: 6 }),
 		STALKS,
-		{ material: materials.standard({ color: '#ffffff', roughness: 0.45 }), colors: true },
+		{ material: materials.standard({ color: '#ffffff', roughness: 0.45 }), colors: true, ...solid },
 	);
 	const leaves = scene.createInstances(
 		geometry.cone({ radius: 1, height: 1, radialSegments: 4 }),
@@ -227,6 +228,7 @@ export async function garden(ctx: SketchContext, camera: Camera): Promise<{ upda
 		{
 			material: materials.standard({ color: '#ffffff', roughness: 0.7, doubleSided: true }),
 			colors: true,
+			...solid,
 		},
 	);
 	const [turn, twist] = [quat.create(), quat.create()];

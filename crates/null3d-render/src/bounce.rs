@@ -63,9 +63,11 @@ pub const MAX_DISTANCE: f32 = 20.0;
 /// How near the texel's own surface a sample must be to send nothing, in meters.
 const BIAS: f32 = 0.05;
 
-/// The radius of the disk of screen texels that each texel gathers, in texels of the steps. It is
-/// wide enough that a wall beside the surface shows its upper part, which is where its light is.
-const GATHER_RADIUS: f32 = 64.0;
+/// The radius of the disk of screen texels that each texel gathers, in texels of the steps, which
+/// is twice this many pixels of the picture. The disk is wide enough that a wall beside a floor
+/// still lights the floor under it, and narrow enough that the wall's color does not spread across
+/// the surface it lands on as a haze.
+const GATHER_RADIUS: f32 = 48.0;
 
 /// The share of the screen over which the light fades toward its edges.
 const EDGE_FADE: f32 = 0.1;
@@ -425,6 +427,25 @@ mod tests {
             at = found.unwrap();
         }
         assert_eq!(std::mem::size_of::<Block>(), BLOCK_BYTES as usize);
+    }
+
+    /// A sample's share of the bounce light shrinks as its own brightness rises, so one sun glint
+    /// cannot outweigh the lit surfaces around it.
+    #[test]
+    fn a_bright_sample_takes_a_bounded_share_of_the_bounce_light() {
+        let source = include_str!("../../null3d-shaders/wgsl/bounce.wgsl");
+        let gather = source
+            .split_once("fn gathered(")
+            .map(|(_, rest)| rest)
+            .expect("bounce.wgsl holds the gather");
+        assert!(
+            gather.contains("cosine / (1.0 + luminance(color))"),
+            "the gather gives a sample the share that its brightness bounds"
+        );
+        assert!(
+            gather.contains("color * share"),
+            "the sample's light takes that bounded share"
+        );
     }
 
     #[test]

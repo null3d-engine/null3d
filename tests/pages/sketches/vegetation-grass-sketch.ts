@@ -7,11 +7,11 @@ import { createGrass, type GrassOptions } from '@null3d/vegetation';
 import { createWind } from '@null3d/wind';
 
 /** The hill's width and depth, in meters. */
-const SIZE = 34;
+export const SIZE = 34;
 /** The tufts at the High preset. */
 const COUNT = 20_000;
 /** The height of the hill at a point, in meters. */
-const hill = (x: number, z: number) => 4.5 * Math.exp(-(x * x + z * z) / 220);
+export const hill = (x: number, z: number) => 4.5 * Math.exp(-(x * x + z * z) / 220);
 
 /** The grass that this page grows, which the sketch and its measurement page share. */
 export const GRASS: GrassOptions = {
@@ -22,7 +22,7 @@ export const GRASS: GrassOptions = {
 };
 
 /** The hill's ground as a grid of vertices, with its normals from the height's slope. */
-function ground(size: number, segments: number): MeshArrays {
+export function ground(size: number, segments: number): MeshArrays {
 	const n = segments + 1;
 	const positions = new Float32Array(n * n * 3);
 	const normals = new Float32Array(n * n * 3);
@@ -52,11 +52,25 @@ function ground(size: number, segments: number): MeshArrays {
 	return { positions, normals, uvs, indices };
 }
 
-export default defineSketch((ctx) => {
+/** True when the sun casts, which the cost plan asks for so its rows hold the shadow pass. */
+const SHADOWS = new URL(import.meta.url).searchParams.has('shadows');
+/** The tufts at the High count that a cost row draws, or its own count for the picture. */
+const TUFTS = Number(new URL(import.meta.url).searchParams.get('tufts') ?? Number.NaN);
+/** False when a cost row measures the hill without the view cull and the far share. */
+const CULL = new URL(import.meta.url).searchParams.get('cull') !== 'off';
+/** True when a cost row measures the scene with no grass at all, which gives its base frame. */
+const GRASS_OFF = new URL(import.meta.url).searchParams.get('grass') === 'off';
+
+export default defineSketch(async (ctx) => {
 	const { scene, geometry, materials } = ctx;
 	scene.setBackground('#a9c7e6');
 	scene.createAmbientLight({ intensity: 0.55, color: '#cfe0ff' });
-	scene.createDirectionalLight({ direction: [-0.4, -1, -0.3], intensity: 2.3, color: '#ffe9c8' });
+	scene.createDirectionalLight({
+		direction: [-0.4, -1, -0.3],
+		intensity: 2.3,
+		color: '#ffe9c8',
+		castShadows: SHADOWS,
+	});
 	const camera = scene.createPerspectiveCamera({
 		fov: 45,
 		near: 0.1,
@@ -80,7 +94,13 @@ export default defineSketch((ctx) => {
 		grid: 64,
 		air: { speed: 0, gustStrength: 0, swirl: 0 },
 	});
-	const grass = createGrass(ctx, { ...GRASS, wind: wind.field });
+	if (GRASS_OFF) return { onUpdate: () => wind.update() };
+	const grass = await createGrass(ctx, {
+		...GRASS,
+		...(Number.isFinite(TUFTS) ? { count: TUFTS } : {}),
+		wind: wind.field,
+		camera: CULL ? camera : undefined,
+	});
 	// The preset's share draws from the first frame; a change of preset takes its share then.
 	ctx.quality.onChange(() => grass.fit(ctx.quality.preset));
 	return {

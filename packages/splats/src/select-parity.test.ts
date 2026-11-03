@@ -172,6 +172,15 @@ describe.skipIf(!built)('the built module against the TypeScript reference', () 
 		compare(module, tiedBuffer([1000, 500, 250], true), 3, 400, [0, 0, 0], 61, true);
 	});
 
+	test('keeps the chunk table across the frames that share a version', async () => {
+		const module = await WebAssembly.compile(readFileSync(WASM));
+		// A moved camera asks again with the same selector and version, so the worker keeps the
+		// table it copied and reads no table from the caller.
+		const view = buffer(27, 25_000, 11, true);
+		compare(module, view, 27, 250_000, [30, 12, -40], 65, true, 1);
+		compare(module, view, 27, 250_000, [-60, 5, 90], 65, true, 1);
+	});
+
 	test('keeps the arrays of a grown selector and frees a dropped one', async () => {
 		const module = await WebAssembly.compile(readFileSync(WASM));
 		// A cloud cut into more chunks keeps one selector, whose buffer grows.

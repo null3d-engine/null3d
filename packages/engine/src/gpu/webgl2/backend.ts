@@ -26,7 +26,12 @@ import { DEV } from '../../shared/dev';
 import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { JoinedBuilds, joinedReady } from '../effect-join';
-import { LAYER_WORD, LIGHT_BUFFER_WORD } from '../environment-words';
+import {
+	CLOUD_FIELD_WORD,
+	CLOUD_STEPS_WORD,
+	LAYER_WORD,
+	LIGHT_BUFFER_WORD,
+} from '../environment-words';
 import { floatOfBits } from '../float-bits';
 import { GpuMemory, textureBytes } from '../memory';
 import type { ReadSink } from '../readback';
@@ -468,6 +473,9 @@ export class WebGL2Backend {
 	readonly joins: JoinedBuilds;
 	/** True once a list has replayed, after which no frame waits for a joined shader's compile. */
 	private replayed = false;
+	/** The opcode and word of the command that the replay is carrying out. */
+	private replayOp = -1;
+	private replayWord = -1;
 	/**
 	 * The operands of each `CreateRenderPipeline` whose custom material's shader has not reached
 	 * this thread yet, by pipeline id. Each is created once its shader arrives; until then, its
@@ -692,7 +700,10 @@ export class WebGL2Backend {
 
 	private need<T>(table: (T | undefined)[], id: number, what: string): T {
 		const value = table[id];
-		if (value === undefined) throw new Error(`draw list names ${what} ${id}, which does not exist`);
+		if (value === undefined)
+			throw new Error(
+				`draw list names ${what} ${id}, which does not exist${this.replayWord < 0 ? '' : `, in command ${this.replayOp} at word ${this.replayWord}`}`,
+			);
 		return value;
 	}
 
@@ -718,6 +729,7 @@ export class WebGL2Backend {
 	 * first draw waits for its compile.
 	 */
 	prepare(words: Uint32Array, start: number, end: number): number {
+		this.replayWord = -1;
 		let i = start;
 		while (i < end && ((words[i] as number) & 0xff) === G.OP_CREATE_RENDER_PIPELINE) {
 			this.createPipeline(words, i + 1, true);
@@ -971,6 +983,8 @@ export class WebGL2Backend {
 			const length = header >>> 8;
 			if (length === 0 || i + length > end) throw new Error(`draw list is truncated at word ${i}`);
 			const a = i + 1;
+			this.replayOp = op;
+			this.replayWord = i;
 			switch (op) {
 				case G.OP_CREATE_BUFFER:
 					// A capture draws the frame again, and the buffers of that frame exist already:
@@ -1929,6 +1943,11 @@ export class WebGL2Backend {
 		if (op === G.OP_SKY_MAP_STEP) {
 			const from = words[a + 3] as number;
 			const panorama = from === 0 ? null : (this.textureOf(from).texture as WebGLTexture);
+			// The cloud tier's noise field exists once the tier's first frame made it, and the
+			// generator reads it only while the tier draws.
+			const cloudSteps = words[a + CLOUD_STEPS_WORD] as number;
+			const field = words[a + CLOUD_FIELD_WORD] as number;
+			const noise = cloudSteps > 0 && field !== 0 ? this.textureOf(field).texture : null;
 			const host = this.programHost;
 			// The page's sky layer, once its shader is here: the map's texels then hold the layer
 			// that the background shows, and so do the reflections and the light taken from them.
@@ -1956,6 +1975,7 @@ export class WebGL2Backend {
 				panorama,
 				layer,
 				readback,
+				noise,
 			);
 		} else code.run(this.programHost, target, width, mips, this.images.generator(id)[0]);
 		this.afterGenerator();

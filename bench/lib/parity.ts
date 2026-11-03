@@ -511,6 +511,18 @@ const WEBGL_ONLY_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set([
 ]);
 
 /**
+ * The glTF model scenes whose parity comparison draws no screen-space bounce light. The light
+ * bounces one pass of the indirect light that the camera saw, which three.js does not draw, so a
+ * frame with it differs from three.js by a lighting term that neither material feature owns. The
+ * image tests keep the preset's light, and their references hold it.
+ */
+const NO_BOUNCE_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set([
+	'iridescence-dielectric',
+	'dispersion',
+	'emissive-strength',
+]);
+
+/**
  * Each feature scene that the exit gate's parity covers: standard materials, the light types
  * (point, spot and hemisphere lights, and the directional and ambient lights of the material
  * scenes), fog, tone mapping, the orthographic camera, glTF sample models through the loader, and
@@ -607,12 +619,16 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		(bg): FeatureScene => ({
 			test: `background-${bg}`,
 			twin: `${TWINS}/backgrounds.html?bg=${bg}`,
+			// three.js draws the flat cloud layer, and the volumetric tier has no twin there: the
+			// comparison pins the engine's sky to the layer that three.js draws.
+			sketchSwitches: 'cloudSteps=0',
 		}),
 	),
 	{
 		test: 'lights-16',
 		twin: `${TWINS}/lights.html?lights=16`,
-		sketchSwitches: NO_TONE,
+		// The bounce light moves the floor's picture, and three.js draws none of it.
+		sketchSwitches: `${NO_TONE}&bounce=off`,
 		limit: SPECULAR_AA_LIMITS['lights-16'],
 	},
 	// Three directional lights: the first lights the floor and the other two fill and rim it, as
@@ -650,6 +666,7 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 			twin: `${TWINS}/gltf.html?model=${model}`,
 			limit: MODEL_LIMITS[model],
 			compatLimit: MODEL_COMPAT_LIMITS[model],
+			...(NO_BOUNCE_MODELS.has(model) && { sketchSwitches: 'bounce=off' }),
 			...(WEBGL_ONLY_MODELS.has(model) && { webglOnly: true }),
 		}),
 	),

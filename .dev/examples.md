@@ -17,7 +17,6 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | `examples/lib/stage.ts`, `examples/lib/procedural.ts` | The showcase scenes' moods, and their generators of detail: seeded noise, texture sets from numbers, terrain and rocks |
 | `examples/lib/interact.ts` | `interact`, which gives a demo's camera orbit controls and lets the pointer steer the demo ([Always-on interaction](#always-on-interaction)) |
 | `examples/lib/plants.ts` | `plantSpecies`, which grows a species' variants through the vegetation add-on's plant core and places its copies with their levels and far cards. A demo names each species by its id with the size and colors of its stand-in, so it draws the stand-in until the species ships and the species after. Species that a demo plants together grow at once, but make their textures, materials and batches in the order of the calls: the batches' order sets each copy's dither pattern, so an order that followed the growths' finish would change a held picture from run to run |
-| `examples/lib/pines.ts` | Pines made in code at four levels of detail, and the hills they stand on, which the page that measures the levels' saving uses |
 | `examples/forest/woods.ts` | The forest demo's scenery: three firs and a broadleaf tree made in code at four levels of detail, the bushes of its understory, the land and its ridges, the bark, needle and leaf textures, and the cut-out cards that draw the far trees on phones |
 | `examples/forest/planting.ts` | The forest demo's build: one batch for each kind of tree and one for the understory, the far rows as cards, the hero fir and the counts that each preset draws. The sketch keeps the look and the frame, so it stays under the feature demos' 150-line rule |
 | `examples/forest/sway.ts` | The forest demo's trees' material, whose trunk and crown bend in the wind add-on's field, read at each tree's root and fading out by the sway distance |
@@ -538,6 +537,18 @@ scene hands it.
 - The held frame, 6 seconds in, stands inside the hall. Hold mode meters its one frame and takes the result at once, so the image test shows the adapted hall.
 - The walk stops at each end and turns there, with each leg eased, so the eye's change shows while the view holds still.
 
+## The bounce-light demo's room
+
+`bounce-light: Red and green room` shows one bounce of screen-space light. A red wall at the left and a green wall at the right throw their color onto the gray floor and back wall ([D-284](decisions/D-284-screen-space-bounce-light.md)).
+
+- The walls take four times the environment's light that the gray surfaces take, through each material's `envIntensity`. The walls therefore throw a strong color, and the dim gray surfaces show it instead of washing it out.
+- The figures come from the image test's 320 x 180 held frame, with the camera at the room's open front. The box under the red wall is columns 13 to 30 per cent of the picture and rows 72 to 90 per cent. It reads 58.8 levels redder with the light on than with it off. The box under the green wall is columns 70 to 87 per cent and the same rows. It reads 34.9 levels greener. The back wall reads 47.4 and -26.1 levels over columns 28 to 42 and 58 to 72 per cent, rows 35 to 55 per cent. At 960 x 540 the tuned room's floor boxes read 16.3 and -11.0 levels. A room whose surfaces all take the environment's light alike changes the floor's red-minus-green by only 7.6 and -3.8 levels.
+- The room itself is not a plain room in either half of the cycle. Its grays are dimmer and its walls brighter than a room whose surfaces take the environment's light alike. A picture of the plain room therefore does not match it. The walls must throw enough color for the bleed to show, and the neutral surfaces must stay dim enough for that color to read.
+- The camera stands at the room's open front, low and close, so each wall runs down the frame beside a wide area of floor. The screen-space gather reads a disk with a radius of 48 texels of its half-size grid, which is 96 pixels of the picture. A wall therefore colors the surfaces within that distance of it, and a distant wall colors nothing. The close view keeps a band of floor and back wall inside the reach.
+- The bleed is a soft estimate, not a sharp cast. The trace gathers that 96-pixel disk, and a 24-tap denoise smooths it within 4 texels. The edges therefore fade, and the light falls off with distance. On a 960-pixel-wide canvas, the back wall's red-minus-green is 64.3 levels at 0.1 m from the red wall's corner. It falls to 31.8 at 0.5 m, 1.5 at 1 m and 0.1 at 1.5 m. The boxes are 0.3 m wide, at rows 35 to 55 per cent of the picture. The background above the wall is unchanged with the light on and off, so the light stays on the surfaces. Eight and 16 rays change those boxes by at most 1.0 level at 960 and 2.1 at 320, so the width is the gather's, not the sampling's. The same 96 pixels reach about 1.3 m on that wall at 960 wide and about 3.9 m at 320 wide. That is 96 pixels instead of 128, a quarter narrower, which is a tighter bleed and not a sharper technique: the estimate still spreads a wall's color over distance, and at 320 by 180 the small frame still looks wide. No switch reaches the denoiser; the pass always draws the trace and the 24-tap denoise.
+- `B` takes the light from the automatic cycle and switches it on or off. The cycle does not run it again, because a visitor who takes the light in hand should keep the state that they chose.
+- A held frame shows the light, as the cycle's first half does. No input reaches a held frame, and the sketch reads no key there.
+
 ## The crystal spiral's scenery
 
 The owner wants the demos "as amazing as possible". The custom shader inputs demo (`shader-inputs`) keeps its scenery in `examples/shader-inputs/pool.ts`, beside the sketch. The sketch keeps to the crystals and the stones that show the feature.
@@ -567,6 +578,91 @@ The scenery of the contact shadows demo (`contact-shadows`, Stone garden) lives 
 - The wall stands high behind the garden, away from the sun's side. On the left, the sun's side, it stands only 0.5 m high. A wall 1.2 m high there shades half the bed under a sun this low. The bamboo behind it fills the skyline there, and casts no shadows.
 - The camera stands low and close, over a rock, its drift of pebbles and a stepping stone, and the sun stands about 10 degrees high. There, the cascades miss the pebbles' long shadows, and contact shadows draw them. On a tall screen the camera stands farther back with a wider view, and looks above the stones, so they sit low in the frame.
 
+## Showroom to street (M3-C2)
+
+Showroom to street is an ordinary demo in the Light, materials and effects group. A car stands in a
+dark studio under softbox area lights, on a mirror floor, with a tablet beside it that changes its
+paint, wheels, trim and lights.
+The car then drives out through the opening into a short wet street. The scene is a template for
+product pages.
+
+- **The studio reflects the softboxes twice.** The floor takes one planar reflection across the
+  ground, so the car, the softboxes and the tablet mirror in it, and the car shows from underneath
+  as a real mirror shows it. A reflection probe fills the room's box, so the paint's clear coat
+  reflects the softboxes and the walls wherever the camera stands. The car draws on a layer of its
+  own, which the probe leaves out, so the paint never reflects itself.
+- **Four rectangle lights carry the studio.** A wide softbox behind the car and a thin box above it
+  draw the highlights along the roof and the flanks, and a strip down each side lights the walls.
+  The Low preset shades four rectangle lights, so the scene adds no more. A warm spot from the front
+  fills the paint, so the body reads deep red under the highlights.
+- **The configurator is a screen in the world.** The tablet is an `OffscreenCanvas` through the
+  screens add-on. Four tabs pick the part, and a tap on a value, a swatch or an arrow moves the
+  choice on. The car takes the change at once: the paint and the rims keep their material and change
+  their color, and the trim swaps between carbon, brushed steel and gloss black. A low glow under
+  the car and the two head lamps take the light's color, so the choice shows on the wet road.
+- **The street is short and lit.** The road runs 56 m from the studio's opening. A row of buildings
+  with lit windows stands on each side, with four lamp posts and two neon signs. One wall closes the
+  far end. The asphalt reads the same planar reflection, with rough dry stone between puddles whose
+  water carries the picture. The stage writes the volumetric fog, so each lamp and the head lamps
+  draw their cones through the air. Low turns the fog's slices off, so its fog keeps the sun's glow.
+- **The route and the car run one loop.** The car waits in the studio and turns slowly on the spot.
+  It then drives out, turns at the street's far end and drives back. The camera route takes the same
+  36 s, so the loop meets itself with no jump. `route.test.ts` checks the poses at the points that
+  matter, and that the car moves smoothly at every step.
+- **The camera opens and settles on the configurator, as the owner asked.** The view looks at the
+  tablet with the car standing to its side; the camera then turns around the car in the studio,
+  follows it out through the opening, watches it turn at the far end, and backs away in front of it
+  as it returns, settling on the view it opened with. The first shot holds, so the held frame is
+  that view. The shots live in `shots.ts`, where `shots.test.ts` checks that the loop opens and
+  closes on that view, that both the tablet and the car fall inside its frame, and that the camera
+  is in the studio while the car waits and in the street when the car turns.
+- **The look is the scene's own.** The sketch sets the ambient occlusion, the bloom and the sun's
+  contact-shadow distance, and the stage writes the sky, the fog and the environment light. The
+  levels of detail stay off. The demo shows no controls panel: the route plays by itself, and `c`
+  hands the camera to the user.
+- **The car body is shared with the clear coat demo.** `examples/lib/car-body.ts` builds the hull,
+  the cabin, the lamps and the wheels from the materials that its caller gives. The clear coat demo
+  keeps its candy red paint and carbon trim, and the showroom repaints the same body.
+- **The wheels roll with the car.** The body builder returns the four wheel hubs, each with a group
+  that turns inside the axle. The showroom turns each group by the distance the car drove forward
+  over the wheel's radius, the left side the other way because its axle points the other way, so
+  both sides roll forward. `route.test.ts` turns a point on the tyre and checks that it moves
+  backward relative to the hub for both sides, so an inverted sign fails.
+- **The lit floor pulsed, and the rectangle lights were the cause.** On a still camera the
+  showroom's lit surfaces swung by several levels on alternate frames, and the owner saw it on the
+  street's light pool. The engine's frame-budget fade for area lights stepped a light that already
+  held its target one step *away* from it, and the next frame stepped it back, so every settled area
+  light in every scene pulsed between full and seven-eighths strength on every frame
+  (`crates/null3d-render/src/light_grid.rs`). A light at its target now keeps it. Two engine tests
+  hold the fade to that, and `tests/image/showroom-steady.spec.ts` holds the demo's camera still and
+  measures the floor on consecutive frames as the browser presents them: its step between frames
+  must not exceed one and a half times its step across two frames, which an alternating image breaks
+  and a drifting one does not; the run also requires the sketch's frame count to advance and the
+  car's own part of the frame to move, so a stopped engine cannot pass it. The fade covers the
+  lights that the frame lists, so a light switched off or hidden leaves the list and is not faded:
+  the fade smooths a light crossing the area lights' cap, not one switched off. The fix brightens
+  every area-lit picture a little, so `demo-area-lights` changed with it, in both sets.
+- **The beam pulsed with the fog's offset cycle.** The volumetric fog's light step moved each
+  cell's sample point through a sixteen-frame cycle. The blend with the last frame's grid left a
+  residual that repeated with the cycle. The lit fog, the headlight beams included, pulsed at
+  3.75 Hz. A cell now keeps a point hashed from its own place, so a still camera draws the same fog
+  every frame. The reasons are in [D-133](decisions/D-133-volumetric-fog.md).
+  `tests/image/beam-steady.spec.ts` draws a still headlight in the fog. It measures the beam over
+  the frames that the browser presents, so the pulse cannot return unseen.
+- **The lamps were not the sparkle; the paint was.** In one 60-frame-a-second capture of the car
+  returning in the street on the Mac, the two lamp bars stayed at full brightness in every frame,
+  while the paint on the nose sparkled. Turning the headlamp beams off or the fog off left the
+  sparkle, and turning the flakes off removed most of it, so the paint's flakes were its source in
+  that capture. The showroom's flakes now take a wider light and a lower glint, and its clear coat
+  is a little rougher. That is a look choice, not only a fix: it moves all three pictures, and the
+  owner should rule on the nose's look.
+- **The paint costs what its flakes count.** On a cloud Galaxy S25, one panel of the car paint filled
+  the view against the same clear-coated metal. On core WebGPU the paint raised the frame's GPU time
+  by 75 per cent at Low. That is 5.18 ms over a buffer of 540 by 932 pixels. At Medium it raised it by
+  nearly half, 6.08 ms over 720 by 1243 pixels. The flake count's loop, forced to eight steps a pixel,
+  adds 0.88 ms. [D-255](decisions/D-255-car-paint-glints.md) gives the rows, their conditions and the
+  rows that did not stand.
+
 ## Showcase scenes
 
 The showcase tier holds a few large scenes that show the engine at its best, as the best three.js scenes that people share do. The reference is "Cozy creek", a three.js scene shared online. It has clear water over a stony bed, dense grass and plants with soft shadows, and rocks and a cave. It also has time-of-day presets and a depth-of-field switch.
@@ -582,11 +678,11 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 - **Camera and help:** every showcase scene has an Auto and a Manual camera ([D-170](decisions/D-170-showcase-camera.md), the owner's ruling). Auto is the default and plays a route tailored to that scene. The route opens on a wide establishing view that shows the whole scene, holds it only briefly (about half a second to a second), and moves off, so the camera starts moving soon after the page loads; it then moves through the scene's interesting parts as a smooth flythrough. The camera's path is a centripetal Catmull-Rom spline through the shots, each shot taking its own turn of the route's parameter, so the camera passes every shot at speed and rounds the corners between them rather than easing to rest at each one. It never passes through a building or other geometry, and it never stands still: consecutive shots differ and the loop closes without a pause. A shot that holds is the one deliberate pause, and it is used for the opening view that the image tests hold. `c` switches to Manual, which halts the route's motion at once and takes the camera at the pose the route held that moment, with no drift, and then turns, zooms and pans around the point the shot was looking at, through the engine's orbit controls. On a wide screen a left drag turns the camera, the wheel zooms, a right drag pans, and `W`, `A`, `S` and `D` pan (`R` and `F` rise and fall). On a touch screen one finger turns, a pinch zooms, and a two-finger drag pans. Auto glides back onto the nearest point of the route, easing in and out over about 1.5 seconds. `examples/lib/cinematic.ts` holds the route player, the mode and the manual camera, and is generic: each scene gives its own shots and manual pan speed, so no route is copied between scenes. The route is a function of the sketch time, so the image tests' held frame is one fixed pose and never drifts. In every scene the **Auto** route never passes through an object: `examples/lib/clearance.ts` guards it, and a shot may opt in to a deliberate pass. The **Manual** camera may pass through anything, but it stays inside the scene's bounds, below the mountains around it and above the ground (the owner's ruling; see the bullets on the mountains and the bounds below).
 - **The controls HUD:** each showcase scene shows a collapsible controls HUD ([D-171](decisions/D-171-showcase-controls-hud.md), the owner's ruling). At rest it is one translucent chevron at the bottom of the panel; pressing it slides up a glass panel, and pressing it again closes it. `h` and `Escape` do the same from the keyboard. The panel is **tabbed**: one tab per group, and only the selected group's buttons show, so the panel stays short on any screen, a phone included. The tab bar scrolls across, the selected group scrolls inside a bounded panel, and the selected tab is remembered while the panel is open. The tablist is `role="tablist"`, each tab is `role="tab"` with `aria-selected` and `aria-controls`, each group is a `role="tabpanel"`, and the arrow keys, Home and End move between tabs. Every button carries a tooltip that describes its function alone, with no input device named; the tip shows on hover, keyboard focus and a press. A change shows a short toast at the top center, such as `camera: manual` or `Bloom: on`. The groups are Camera, Time of day, Atmosphere, Lighting, Post and Quality, and a scene shows only the groups it can support. `C` and `H` show as small key badges, since only the camera and the controls carry a shortcut. `examples/lib/hud.ts` holds the shell, `examples/lib/controls.ts` holds the model, and the sketch posts the model with the `hud` message, so it never touches the DOM. `tests/image/showcase-hud.spec.ts` picks a button in each group and checks its toast. It also reads the canvas after the Sky, Fog and Environment switches: each part must stay off over several frames and come back when it turns on.
 - **The time of day is a dial:** the Time of day tab shows a round dial instead of a straight slider, so the hour wraps round from night into the next dawn (the owner's ruling). The ring holds the sky's color at each hour, with midnight at the bottom and noon at the top. Its readout shows the hour as a clock time and its name: Midnight from 23:30 to 00:30, then Night, Dawn, Morning, Midday, Afternoon, Golden and Dusk. A drag round the ring, a tap on it, the arrow keys (a quarter hour) and Page Up and Page Down (an hour) set the hour. The dial is a `role="slider"` whose value text names the hour. Auto and Studio each turn on with a press and off with the next. A second press on Auto holds the hour that Auto reached. A second press on Studio gives back the hour it took the place of. Auto starts from the hour on show, so turning it on never jumps the sky. While Studio is on the dial dims, and while Auto runs the knob glows. A slider whose model carries a `dial` draws this way (`HudDial` in `examples/lib/controls.ts`). The dial and its buttons size down on a phone.
-- **The sun's layers:** a light's layer mask picks the objects that cast its shadows. The showcase suns take `SUN_LAYERS`, the default and the interior layer, so an object a visitor may enter still blocks the sun (the owner's ruling). Without the interior layer, Creek's cave rock would let the sun through onto its floor. What fills the air casts no shadow.
+- **The sun's layers:** a light's layer mask picks the objects that cast its shadows. The showcase suns take `SUN_LAYERS`, the default and the interior layer, so an object a visitor may enter still blocks the sun (the owner's ruling). Without the interior layer, the rock of a cave or the walls of a room would let the sun through onto what they hide. Creek has no cave now, since it went with the Blender models, but the layer stays for any scene whose visitor may enter a place. What fills the air casts no shadow.
 - **The stage owns the sky, fog and environment switches:** the stage writes the sky, the fog and the environment light every frame, so a scene that turns one off with its own call to the scene has it back one frame later, while the toast says it is off. So the HUD's Sky, Fog and Environment buttons call `stage.show`. The stage leaves each part that is off out of every later frame and mood, the studio included. A part that is off is written once, when it turns off. Sky off also turns off the environment light, since the scene takes that light from the sky. `examples/lib/stage.test.ts` checks it without a browser.
 - **One key table:** `examples/lib/cinematic.ts` owns every key of a showcase scene: `C` for the camera, `W`, `A`, `S`, `D`, `R` and `F` for the Manual camera, and the `H` and `Escape` that the page's controls answer. A scene adds a key through `createCinematic`'s `keys`, and a key that the table already holds throws. A `D` for the depth-of-field lens would also pan the Manual camera, so one press would do both. D-171 gives a shortcut only to the camera and the controls, so the lens has none. The Post tab's Depth of field button turns it on and off. The unit test `examples/lib/cinematic-keys.test.ts` fails on a clash, and on a showcase scene that reads a key itself.
 - **The effects start off:** a showcase scene starts with bloom, automatic exposure and the vignette off, so the scene reads as the owner approved it; the Post buttons turn each on, and the initial `post` settings match the off state. A button that starts off starts unpressed, and pressing it shows `bloom: on`.
-- **The loading overlay:** `examples/lib/run.ts` draws a glass loading overlay over the canvas before the engine starts. It names the engine's start stages (`core`, `sketch`, `first-frame`) and any progress a scene posts while it loads (`examples/lib/progress.ts` reports a scene's file count, and a scene with nothing to load posts its build phases). It fades out when the first frame draws and the scene's loading has gone quiet. So a scene that reports its stages fades it once. It shows the error text instead when the start fails.
+- **The loading overlay:** `examples/lib/run.ts` draws a glass loading overlay over the canvas before the engine starts. A phase whose work is counted shows its percentage over the bar and the count under it: the engine reports the core file's bytes against the length that the server announced, and `examples/lib/progress.ts` reports a scene's file bytes the same way from `assets.onProgress`. A phase with no countable total shows no percentage and keeps the bar moving: the engine's stages, and the build phases that a scene posts (`page.post('loading', ...)`). A phase's percentage never falls while it runs, so the number always measures the work that the label names. Across the whole start the figure can fall: a counted phase that reaches its end returns the card to the engine's stage, and a file that starts later begins a new measure under the same label. The overlay fades out when the first frame draws and the scene's loading has gone quiet, so a scene that reports its stages fades it once. It shows the error text instead when the start fails. A screen reader hears the phase and its percentage at each tenth, never a chunk.
 - **No overlapping geometry:** a demo's and a showcase scene's own geometry must not overlap (the owner's ruling): two pieces that cross or lie coplanar over one another z-fight and shimmer. `examples/lib/overlap.ts` holds `findOverlaps`, which tests each pair of triangles; a shared or deliberate intersection is named in `ignore`. The night town's unit test runs it over every house's walls, roof and chimney ([D-170](decisions/D-170-showcase-camera.md)). A scene that builds through the engine keeps no triangle arrays a unit test can read, so a general per-demo check waits for a scene readback, as D-170 records.
 - **A ring of mountains:** every showcase scene stands inside a ring of mountains made in code (the owner's ruling, [D-170](decisions/D-170-showcase-camera.md)). The Island is exempt, by the owner's ruling, because it is an isolated island in open sea: its sea reaches the horizon, so no view meets the plain background. The view then never reaches the plain background past the land's edge. `examples/lib/mountains.ts` builds the ring around the scene's square of land. The ring starts half a meter inside the land's edge, a little under the land. It rises outside the edge into foothills, climbs to a crest line of peaks and passes, and falls a little behind it. Each scene's `land.ts` gives the crest radii, the lowest crest, the highest peak and the colors of forest, rock and snow. It also names any gorge that cuts through the mountains. By the owner's ruling, Creek's stream runs on out of the valley at both ends through a gorge. There the ring takes the valley's own floor, its walls climb to the mountains either side, and the land and the water run on to 720 m. `examples/lib/haze.ts` fills the far end of each gorge with ten thin unlit sheets, from 330 m to 700 m. Each sheet hides a little more than the one before, and the last hides all, up to 60 m over the walls and thinning above. Over the gorge's floor the haze lies low: solid to 6 m and gone by 26 m. It climbs with the walls either side, which it must hide where they end. The sun rises out of one gorge and sets into the other, as the owner asked, so it shows almost down to the water. The sheets take the stage's air color each frame, so the haze matches the sky at every hour. They also glow toward the main light with the light they scatter forward, so a sun behind the haze lights it, as a real haze does, and the haze does not show as a gray wall. The engine's fog never covers the background, so the haze sheets are what hides the end of the world there. The ring casts and catches no shadows, since it lies past every shadow range. Its detail follows the quality preset: about 10,000 triangles on Low and 36,000 on Ultra.
 - **The Manual camera's bounds:** the Manual camera stays inside the ring, below its lowest crest and above the ground (the owner's ruling). Every view ray that falls then hits land or mountain, and every one that rises hits mountain or sky. A scene passes `bounds` to `createCinematic`. They hold the farthest distance from the point the camera turns around, which is the orbit controls' own `maxDistance`. They also hold a disc and a band of heights for that point, and the ground's height. A pan stops at the disc's edge, and the camera moves with the point, so the view does not turn. A camera that would go under the ground rises along its orbit and keeps its distance and bearing. The bounds' `clearance` sets how far above the ground it keeps: 1.5 m by default, and 0.15 m in Creek, whose ground under the water is the stream's bed. So Creek's camera may dip under the water but never through the bed, as the owner asked. Pushing against the ground never draws the camera in. A clamp that shortened the distance would walk the camera inward a little each frame. The camera's highest reach is the point's highest plus the distance, and each scene's lowest crest stands at least 10 m above it. The tests:
@@ -596,25 +692,37 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 - **The shadow range follows the camera:** a fixed range fails here. With the night town's sun at a fixed 70 m, its shadows fade over the last 7 m. The Manual camera can dolly out with no limit, and past about 70 m every house lies beyond the range. A quick zoom then carries the whole town across the fade in a fifth of a second, so the shadows appear at once. Even the opening view puts the back houses at 75 to 82 m. So each scene passes `shadowReach` to `createShowcaseEffects`: the range it asks for close up, and the sphere of its core. The core is the night town's houses and tower, and Creek's stream and banks. Each frame, the range is the shortest step of a ladder of 1.25 times that reaches the core's far side. It rises at once, and falls only once the need is a whole step lower. Close-up shadows stay as sharp as a fixed range gives, and the core never leaves the range. The engine's automatic distance ([D-168](decisions/D-168-auto-shadow-distance.md)) does not fit here. It follows the farthest visible receiver, which in these scenes is the ground out to the mountains. It would hold the range at 150 m or more and blur the near shadows.
 - **The sky, the sun and the moon:** the outdoor moods drive the physical sky, `scene.setBackground({ atmosphere })`, from `timeOfDay` with the physical model ([D-171](decisions/D-171-showcase-controls-hud.md)). The real sun disc lights the scene by day and the moon disc at night, the main directional light is the sun by day and the moon at night, and the lit fog and the light shafts follow that light, so a scene shows sun rays by day and moon rays at night. `Auto` advances the hour continuously and loops, so the sun rises, arcs and sets and the moon does the same, while the fixed moods hold an hour. A whole day takes 80 seconds in Auto (the owner's ruling). `examples/lib/stage.ts` holds the moods and the Auto driver.
 - **The look follows the light, not the nearest mood:** a scene's own look, such as Creek's fireflies, mist, leaf tint and caustics, blends between the moods on either side of the hour (`moodMix` in `examples/lib/stage.ts`). Through the dark hours, while the sun is more than 18 degrees under the horizon, it holds Night. Only while the sky has light does it move from each mood to the next. The dawn's look comes in through the morning twilight and is whole at Dawn's hour. A look taken from the nearest fixed mood would jump. At 02:36, halfway between Night and Dawn, Creek's warm dawn caustics would come on at once. The stream would change color in the middle of the night. The stage's own haze factor blends the same way. `examples/lib/stage.test.ts` checks that no mood's share steps between hours a minute apart.
-- **The showcase scenes are Creek, Night town, Skyway and Showroom to street.** A forest at dawn, a
-  night town under the moon, a city from the air, and a car showroom that opens onto a wet street.
+- **The showcase scenes are Creek, Night town and Skyway.** A forest at dawn, a night town under the
+  moon, and a city from the air.
 
 ### Night town's windows (M3-B2)
 
-Night town draws its window panes through the facades example add-on
-(`examples/addons/facades/`), as Skyway does, in the add-on's pane form
-([D-254](decisions/D-254-interior-mapped-facades.md)).
+Skyway draws its window panes through the facades example add-on
+(`examples/addons/facades/`), in the add-on's pane form
+([D-254](decisions/D-254-interior-mapped-facades.md)). Night town still draws its panes with the
+scene's own facade shader, in `examples/compare/night-town/shaders.ts`, and moving it to the add-on
+is what M3-B2 still owes, so the bullets below say which of the two demos each fact belongs to.
+
+- **The move to the add-on is parked, and why.** A grid of panes taken from a wall's own
+  coordinates was added to the add-on, and Night town's four facade materials were moved onto it.
+  It draws, but in Night town's scene the upper-floor cells stay dark while the street-level cells
+  light. The glass coverage, the lit share, the wave's value and the room's light each read
+  nonzero, and the cell's emissive is still dark. The wave is ruled out: a facade that never starts
+  its wave draws lit in the add-on's own test. The next attempt draws the panes as instanced
+  quads with the add-on's pane form, which lights in that test. It avoids a new mapping in the
+  wall shader, whose compiled result the engine caches and which made the readings hard to trust.
 
 - Each pane looks into a room behind its glass: a lamp's pool, a floor, a ceiling, a block of
   furniture, blinds and a curtain in some. The eye's ray meets the room's box, so the room moves in
   parallax as the camera passes, and the view from one side of a window shows more of it than the
-  view from in front.
+  view from in front. Both demos draw this.
 - The panes keep their own row values: whether the pane is lit, how warm its light is, the phase of
   its flicker and whether a screen lights it. The hour dims every pane through that value.
-- The town lights up as the scene starts, from the square outward, on the add-on's power-on wave.
-  Each pane's light rises on a damped spring once the wave reaches it.
-- The panes draw the add-on's timber finish for their frames, so the wall finish that the pages
-  carry and the pane's frame agree. The house walls keep the scene's own timber texture.
+- The add-on lights a scene window by window as it starts, on its power-on wave, and each pane's
+  light rises on a damped spring once the wave reaches it. Night town's own shader has no such
+  wave: its town is lit from the first frame.
+- The add-on draws its own timber finish for the panes' frames. Night town's panes carry the
+  scene's own timber texture, on the walls and the frames alike.
 - The add-on's own cost is about 1.0 ms of GPU time a frame against a plain wall on both WebGPU
   paths at every preset, and 0.85 ms at Low and 0.05 to 0.49 ms at Medium, High and Ultra on
   WebGL2. Compatibility mode and WebGL2 stop at Medium, so their High and Ultra cells measure
@@ -701,7 +809,12 @@ and a hero car with two screens.
 - **The user drives the car in Manual.** W and S speed it up and slow it down, A and D turn it, and
   R and F climb and sink. The towers are boxes that the car slides along or lands on. The chase
   camera pulls in before a tower that would hide the car, so the car stays in view, and eases back
-  out when the tower clears. `drive.test.ts` flies it frame by frame. A drag swings the camera round the car, and a touch
+  out when the tower clears. A turn that would put the chase camera in a tower is refused for the
+  car and for the camera: the car keeps its heading, so the camera stays behind it and stops
+  against the face rather than sliding along it, and both turn again once the way is clear. The
+  check measures the camera at the user's own zoom, not at the shorter distance the pull has taken
+  it to, so it also refuses a turn that a pulled-in camera could make.
+  `drive.test.ts` flies it frame by frame. A drag swings the camera round the car, and a touch
   screen drives with an on-screen pad. V and the View buttons put the camera behind the car or
   in its seat. The camera flies over the canopy into the seat and back out. The hero car has a
   cockpit under a tinted glass canopy, with its screens on the dashboard and a touchscreen console
@@ -774,9 +887,9 @@ and a hero car with two screens.
   runs are in [tested devices](tested-devices.md).
 - **The split, from switched-off pages.** A second run left one part of the scene out per page at
   Low. It does so because the engine's per-pass GPU times do not split this frame. A tile GPU
-  overlaps the passes, and the timer times seven of them alone. So the named parts of one frame can
-  add up to more than the whole frame. One page repeats the first page, so a device's own drift
-  shows beside the parts.
+  overlaps the passes, and the timer times seven of them alone. The passes after those share one
+  figure, named `later passes`. So the named parts of one frame can add up to more than the whole
+  frame. One page repeats the first page, so a device's own drift shows beside the parts.
 
   The iPad holds its display's rate at Low on every WebGL2 page after the first. The first drew
   58.6 frames a second and the rest drew 59.6 to 59.8, the repeated page among them. Its WebGPU
@@ -848,73 +961,6 @@ and a hero car with two screens.
   and both windows carry upload spikes of about 1.2 MB, so neither explains the first window. Night
   town's first window had no such stall. A cold phone's first seconds therefore need their own
   measurement before the 60 frames a second target has a device figure.
-
-### Showroom to street (M3-C2)
-
-Showroom to street is the fourth showcase scene. A car stands in a dark studio under softbox area
-lights, on a mirror floor, with a tablet beside it that changes its paint, wheels, trim and lights.
-The car then drives out through the opening into a short wet street. The scene is a template for
-product pages.
-
-- **The studio reflects the softboxes twice.** The floor takes one planar reflection across the
-  ground, so the car, the softboxes and the tablet mirror in it, and the car shows from underneath
-  as a real mirror shows it. A reflection probe fills the room's box, so the paint's clear coat
-  reflects the softboxes and the walls wherever the camera stands. The car draws on a layer of its
-  own, which the probe leaves out, so the paint never reflects itself.
-- **Four rectangle lights carry the studio.** A wide softbox behind the car and a thin box above it
-  draw the highlights along the roof and the flanks, and a strip down each side lights the walls.
-  The Low preset shades four rectangle lights, so the scene adds no more. A warm spot from the front
-  fills the paint, so the body reads deep red under the highlights.
-- **The configurator is a screen in the world.** The tablet is an `OffscreenCanvas` through the
-  screens add-on. Four tabs pick the part, and a tap on a value, a swatch or an arrow moves the
-  choice on. The car takes the change at once: the paint and the rims keep their material and change
-  their color, and the trim swaps between carbon, brushed steel and gloss black. A low glow under
-  the car and the two head lamps take the light's color, so the choice shows on the wet road.
-- **The street is short and lit.** The road runs 56 m from the studio's opening. A row of buildings
-  with lit windows stands on each side, with four lamp posts and two neon signs. One wall closes the
-  far end. The asphalt reads the same planar reflection, with rough dry stone between puddles whose
-  water carries the picture. The stage writes the volumetric fog, so each lamp and the head lamps
-  draw their cones through the air. Low turns the fog's slices off, so its fog keeps the sun's glow.
-- **The route and the car run one loop.** The car waits in the studio and turns slowly on the spot.
-  It then drives out, turns at the street's far end and drives back. The camera route takes the same
-  36 s, so the loop meets itself with no jump. `route.test.ts` checks the poses at the points that
-  matter, and that the car moves smoothly at every step.
-- **The camera opens and settles on the configurator, as the owner asked.** The view looks at the
-  tablet with the car standing to its side; the camera then turns around the car in the studio,
-  follows it out through the opening, watches it turn at the far end, and backs away in front of it
-  as it returns, settling on the view it opened with. The first shot holds, so the held frame is
-  that view. The shots live in `shots.ts`, where `shots.test.ts` checks that the loop opens and
-  closes on that view, that both the tablet and the car fall inside its frame, and that the camera
-  is in the studio while the car waits and in the street when the car turns.
-- **The car body is shared with the clear coat demo.** `examples/lib/car-body.ts` builds the hull,
-  the cabin, the lamps and the wheels from the materials that its caller gives. The clear coat demo
-  keeps its candy red paint and carbon trim, and the showroom repaints the same body.
-- **The wheels roll with the car.** The body builder returns the four wheel hubs, each with a group
-  that turns inside the axle. The showroom turns each group by the distance the car drove forward
-  over the wheel's radius, the left side the other way because its axle points the other way, so
-  both sides roll forward. `route.test.ts` turns a point on the tyre and checks that it moves
-  backward relative to the hub for both sides, so an inverted sign fails.
-- **The lit floor pulsed, and the rectangle lights were the cause.** On a still camera the
-  showroom's lit surfaces swung by several levels on alternate frames, and the owner saw it on the
-  street's light pool. The engine's frame-budget fade for area lights stepped a light that already
-  held its target one step *away* from it, and the next frame stepped it back, so every settled area
-  light in every scene pulsed between full and seven-eighths strength on every frame
-  (`crates/null3d-render/src/light_grid.rs`). A light at its target now keeps it. Two engine tests
-  hold the fade to that, and `tests/image/showroom-steady.spec.ts` holds the demo's camera still and
-  measures the floor on consecutive frames as the browser presents them: its step between frames
-  must not exceed one and a half times its step across two frames, which an alternating image breaks
-  and a drifting one does not; the run also requires the sketch's frame count to advance and the
-  car's own part of the frame to move, so a stopped engine cannot pass it. The fade covers the
-  lights that the frame lists, so a light switched off or hidden leaves the list and is not faded:
-  the fade smooths a light crossing the area lights' cap, not one switched off. The fix brightens
-  every area-lit picture a little, so `demo-area-lights` changed with it, in both sets.
-- **The lamps were not the sparkle; the paint was.** In one 60-frame-a-second capture of the car
-  returning in the street on the Mac, the two lamp bars stayed at full brightness in every frame,
-  while the paint on the nose sparkled. Turning the headlamp beams off or the fog off left the
-  sparkle, and turning the flakes off removed most of it, so the paint's flakes were its source in
-  that capture. The showroom's flakes now take a wider light and a lower glint, and its clear coat
-  is a little rougher. That is a look choice, not only a fix: it moves all three pictures, and the
-  owner should rule on the nose's look.
 
 ### Engine features for the showcase
 
@@ -1016,6 +1062,8 @@ At the two low-sun moods, haze can hide the scene under a bright brown veil, wit
 On Creek's held frame, the mean luminance of the whole picture is 24 of 255 at Dusk and 46 at golden hour. Night town's mean at Dusk is 46. No image test holds these moods: the held demo frames draw the afternoon and the night, and the physical sky's test sketch sets no fog.
 
 #### Frame rates of the Creek on the Mac
+
+The figures below belong to the scene before M3-V11 grew its plants: its 17 trees were model files, and the add-on's 2,216 plants are not in these readings. They stay as the record of that scene.
 
 The figures come from Chrome on a Mac with an Apple M5 Max, with the display at 120 Hz. Each figure is five readings of the stats overlay, a second apart, after each mood ran for 8 seconds. The engine chose the preset, with the governor on.
 

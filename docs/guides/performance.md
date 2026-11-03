@@ -275,7 +275,7 @@ Each post effect adds full-screen work, which grows with the pixels drawn:
 - Bloom draws a chain of small passes. In the engine's effect cost test, it added about 0.8 ms of GPU time per frame at 1920 x 1080 on a MacBook Pro. A smaller base, as on Low, costs less, and saves the most on phones ([The post-processing chain](../concepts/post-processing.md#cost)).
 - Ambient occlusion adds the depth prepass and three passes at half size. In the engine's ambient occlusion scene on a MacBook Pro, it added 2.42 ms per frame, where three.js's `GTAOPass` added about 5.3 ms. Low and Medium leave it off.
 - Each custom effect that reads other pixels costs a full-screen pass. The engine joins the effects that read only their own pixel, and can fold the last into the final pass ([Custom passes](custom-passes.md#cost)).
-- A scene pass culls and draws the scene again, at the size of its texture. Keep the texture small, and switch the pass off with `render.setPassEnabled` in frames that need no new image. A pass that nothing shows costs nothing ([Render to a texture](custom-passes.md#drawing-less-often)).
+- A scene pass culls and draws the scene again, at the size of its texture. Keep the texture small, and give the pass a cadence with `render.setPassEvery` so it draws in some frames only. A pass that nothing shows costs nothing ([Render to a texture](custom-passes.md#drawing-less-often)).
 
 ## Occlusion culling
 
@@ -330,8 +330,11 @@ For a quick look while the scene runs, add `?stats` to the page's address, or ca
 | `downloadBytes` | The size of the engine core's WebAssembly file as the page downloaded it |
 | `gpuLosses` | Times the browser took the GPU away and the engine carried on with a new device |
 | `lostRecords` | Frames that the figures miss, because the page read their records too late. It is 0 in a clean run |
+| `slow` | With `slowMs`, every frame whose interval broke it: the frame's index, the time it presented, the intervals before and after it, whether it is the window's first frame, and the frame's own GPU parts and thread times |
 
 The sketch worker's steps are `update`, `commands`, `transforms`, `batches`, `cull` and `record`, and the render worker's is `replay`. A thread's time less its `update` step is the engine's own work on that thread.
+
+`engine.measure(seconds, { slowMs: 50 })` reports each frame that breaks the ceiling, with the frame's own figures rather than an average over many frames. Each slow frame gives the pass that stalled rather than the passes of a nearby sampled frame: add `?gpu-samples=every` to the page's address, and the engine times every drawn frame instead of one in eleven. The timing costs the draw, so a rate taken with it is not the device's rate. The measuring code itself loads before the window opens, so the window's first frame is the scene's own and not the engine's bookkeeping.
 
 To measure your page with no code, run `bunx @null3d/cli bench` in your project's folder. It builds the project for production and opens the page in a headless browser with the `?bench` switch. That switch publishes the running engine as `window.__null3dEngine`. Then `bench` takes 5 fresh runs of 30 seconds, each after 5 seconds of warm-up. It prints the median and the spread of the figures above ([The `null3d` command](../cli/null3d.md#bench)).
 

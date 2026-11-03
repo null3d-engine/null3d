@@ -18,6 +18,7 @@ import {
 	SPHERE_SEGMENTS,
 	viewTarget,
 } from '../../../bench/scenes/room';
+import { applySketchSwitches } from '../lib/sketch-switches';
 
 const params = new URL(import.meta.url).searchParams;
 const START = Number(params.get('view') ?? '0');
@@ -28,6 +29,7 @@ const TURN_FRAMES = 3;
 const SEGMENTS = Number(params.get('segments') ?? SPHERE_SEGMENTS[0]);
 
 export default defineSketch(({ scene, materials, geometry, quality, page }) => {
+	applySketchSwitches(import.meta.url, quality);
 	quality.set({ minRenderScale: 1, maxRenderScale: 1, governor: false });
 	scene.setBackground(ROOM_COLORS.background);
 	const camera = scene.createPerspectiveCamera({

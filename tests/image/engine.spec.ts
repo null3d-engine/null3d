@@ -417,12 +417,23 @@ const FIRST_USE_SKETCHES: Partial<Record<ShaderFeature, string>> = {
 	// the motion vectors sketch asks for that view.
 	motion: 'tests/pages/sketches/motion-vectors-sketch.ts?case=slide',
 	probe_grid: 'tests/pages/sketches/probe-grid-sketch.ts',
+	// The moment layer draws the sketch's blended panes once the page's switch turns it on, and its
+	// steps and the panes' moment builds load with them.
+	moment: 'tests/pages/sketches/moment-sketch.ts?mode=moment',
 };
 
 /** Page switches that a feature needs besides its sketch: the test switches that turn it on. */
 const FIRST_USE_SWITCHES: Partial<Record<ShaderFeature, string>> = {
 	instance_index: '&instances=index',
 	occlusion: '&occlusion=on',
+	// The tier starts above Medium, which WebGL2 and compatibility mode stop at.
+	clouds: '&cloudSteps=32',
+	// A sky at High draws the tier over it, which would download the clouds' file as well. These
+	// pages draw the flat layer alone, so each keeps the one file that its own feature loads.
+	sky: '&cloudSteps=0',
+	physical_sky: '&cloudSteps=0',
+	// The moment layer draws only while the page turns it on.
+	moment: '&moments=on',
 };
 
 /**
@@ -431,6 +442,14 @@ const FIRST_USE_SWITCHES: Partial<Record<ShaderFeature, string>> = {
  * that the sketch tells when its pick has settled. The guide says why it differs.
  */
 const FIRST_USE_LIVE: ReadonlySet<ShaderFeature> = new Set(['picking']);
+
+/**
+ * The other features' files that a feature's first use also downloads: the cloud tier draws over
+ * the sky, so its page loads the sky's file too.
+ */
+const FEATURE_EXTRAS: Partial<Record<ShaderFeature, readonly ShaderFeature[]>> = {
+	clouds: ['sky'],
+};
 
 /**
  * The feature whose shader file a feature downloads on each GPU path, where it is another's, and
@@ -488,9 +507,14 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			);
 			const requests: string[] = [];
 			page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
-			const sketch =
+			// The preset draws screen-space bounce light, whose steps read ambient occlusion's grid
+			// and the frame's color copy, so a page that draws it downloads those two features' files
+			// as well. The switch leaves the light out, so the page downloads its own feature's file
+			// alone. Every sketch the table names reads it.
+			const sketchModule =
 				FIRST_USE_SKETCHES[feature] ??
 				`tests/pages/sketches/first-use-sketch.ts?feature=${feature}`;
+			const sketch = `${sketchModule}${sketchModule.includes('?') ? '&' : '?'}bounce=off`;
 			const address = FIRST_USE_LIVE.has(feature)
 				? `first-use-live.html?gpu=${gpu}&sketch=${encodeURIComponent(`/${sketch}`)}`
 				: `image.html?gpu=${gpu}&hold=0&preset=high&size=320x180${FIRST_USE_SWITCHES[feature] ?? ''}&sketch=${encodeURIComponent(`/${sketch}`)}`;
@@ -504,13 +528,17 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 				expect(shaderFiles).toEqual([]);
 				return;
 			}
+			// The shader files spell a feature's name with hyphens. A feature that draws another's
+			// file as well, such as the cloud tier over the sky, downloads both, and so does one
+			// whose page makes the frame copy the opaque color.
 			const also = FIRST_USE_ALSO[feature];
-			// The shader files spell a feature's name with hyphens.
-			const wanted = [owner ?? feature, ...(also ? [also] : [])].map((name) =>
-				name.replaceAll('_', '-'),
-			);
-			expect(shaderFiles).toHaveLength(wanted.length);
-			for (const file of wanted)
+			const files = [
+				owner ?? feature,
+				...(also ? [also] : []),
+				...(FEATURE_EXTRAS[feature] ?? []),
+			].map((name) => name.replaceAll('_', '-'));
+			expect(shaderFiles).toHaveLength(files.length);
+			for (const file of files)
 				expect(
 					shaderFiles.filter((path) => new RegExp(`/shaders-${file}-(wgsl|glsl)[^/]*$`).test(path)),
 				).toHaveLength(1);
@@ -524,7 +552,9 @@ test('marked occluders download no occlusion shader file with ?occlusion=off on 
 	test.skip(testInfo.project.name === 'production build', 'no image test page');
 	const requests: string[] = [];
 	page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
-	const sketch = encodeURIComponent('/tests/pages/sketches/room-sketch.ts');
+	// The preset draws screen-space bounce light, which loads ambient occlusion's file and the
+	// frame's color copy; ?bounce=off leaves it out, so the page loads no shader file at all.
+	const sketch = encodeURIComponent('/tests/pages/sketches/room-sketch.ts?bounce=off');
 	await page.goto(`image.html?gpu=webgpu&hold=0&size=320x180&occlusion=off&sketch=${sketch}`);
 	const result = await pageResult<{ error?: string }>(page, 30_000);
 	expect(result.error).toBeUndefined();

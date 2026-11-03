@@ -115,6 +115,7 @@ use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
 use crate::bounce::BounceIds;
 use crate::cells::CellCulling;
+use crate::cloud_noise;
 use crate::compute::ComputePassIds;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
@@ -148,6 +149,7 @@ use crate::probe_grid;
 use crate::probes::{self, ProbeTextures};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame, ShadowUniform};
+use crate::single_layer::SingleIds;
 use crate::sorted::{SkinnedPipeline, SortedLayout, SortedRows};
 use crate::ssr::SsrIds;
 use crate::subsurface::SubsurfaceIds;
@@ -174,6 +176,7 @@ mod ids {
     use crate::effects::EffectPass;
     use crate::moment::MomentIds;
     use crate::particles::ParticleIds;
+    use crate::single_layer::SingleIds;
     use crate::subsurface::STEPS as SUBSURFACE_STEPS;
     use crate::taa::STEPS as TAA_STEPS;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
@@ -323,8 +326,10 @@ mod ids {
     pub const MOMENT_SEARCH: u32 = MOMENT_AREA + 1;
     /// The physical sky's tables and panorama.
     pub const SKY_TABLES: u32 = MOMENT_SEARCH + 1;
+    /// The noise field of the volumetric cloud tier, which the renderer makes at its first use.
+    pub const CLOUD_NOISE: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
     /// The automatic exposure's cells, its texel, which the final pass reads, and its stored texel.
-    pub const EXPOSURE_CELLS: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
+    pub const EXPOSURE_CELLS: u32 = CLOUD_NOISE + 1;
     pub const EXPOSURE_TEXEL: u32 = EXPOSURE_CELLS + 1;
     pub const EXPOSURE_STORED: u32 = EXPOSURE_TEXEL + 1;
     /// The blank color grading table and outline mask that the final pass's still build owns, so
@@ -407,8 +412,10 @@ mod ids {
     pub const TAA_SAMPLER: u32 = STILL_LUT_SAMPLER + 1;
     /// The linear sampler of the moment layer's lookup tables and of its anti-aliasing steps.
     pub const MOMENT_SAMPLER: u32 = TAA_SAMPLER + 1;
+    /// The repeating linear sampler of the volumetric cloud tier's noise field.
+    pub const CLOUD_SAMPLER: u32 = MOMENT_SAMPLER + 1;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = MOMENT_SAMPLER + 1;
+    pub const SAMPLERS: u32 = CLOUD_SAMPLER + 1;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -441,9 +448,11 @@ mod ids {
     pub const BACKGROUND_GROUP: u32 = AO_GROUPS + AO_STEPS as u32;
     /// The bind group of a sky layer's values, after the background's.
     pub const BACKGROUND_LAYER_GROUP: u32 = BACKGROUND_GROUP + 1;
+    /// The bind group of the analytic sky's volumetric cloud draw, after the layer's.
+    pub const CLOUD_GROUP: u32 = BACKGROUND_LAYER_GROUP + 1;
     /// The bind group of each custom effect, and of each group of joined effects, after the
-    /// layer's.
-    pub const EFFECT_GROUPS: u32 = BACKGROUND_LAYER_GROUP + 1;
+    /// cloud draw's.
+    pub const EFFECT_GROUPS: u32 = CLOUD_GROUP + 1;
     /// The bind group of each step of depth of field, after the effects'.
     pub const DOF_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
     /// The bind group of the copy of the camera's opaque color, after depth of field's.
@@ -508,8 +517,11 @@ mod ids {
     pub const fn moment_frame_group(view: ViewId) -> u32 {
         MOMENT_FRAME_GROUPS + view.index() as u32
     }
-    /// The bind groups of materials' maps, after the moment layer's frame groups.
-    pub const TEXTURE_GROUPS: u32 = MOMENT_FRAME_GROUPS + MAX_VIEWS as u32;
+    /// The bind groups of the one-sample layer's composite and depth copy, after the moment
+    /// layer's frame groups.
+    pub const SINGLE_GROUPS: u32 = MOMENT_FRAME_GROUPS + MAX_VIEWS as u32;
+    /// The bind groups of materials' maps, after the one-sample layer's.
+    pub const TEXTURE_GROUPS: u32 = SINGLE_GROUPS + SingleIds::GROUPS;
 }
 
 /// The group index of the decal pass's scene depth in the decal templates on WebGL2: after the
@@ -693,6 +705,8 @@ pub struct CpuCulledRenderer {
     particles: ParticlePass,
     /// The physical sky's tables.
     physical_sky: PhysicalSkyPass,
+    /// True once the volumetric cloud tier's noise field is on the GPU.
+    cloud_noise_made: bool,
     /// The vertex pages' vertex and index buffers.
     meshes: MeshBuffers,
     pipelines: PipelineCache,
@@ -884,6 +898,9 @@ impl CpuCulledRenderer {
                         weighted: WeightedIds {
                             first_group: ids::WEIGHTED_GROUPS,
                         },
+                        single: SingleIds {
+                            first_group: ids::SINGLE_GROUPS,
+                        },
                         moment: MomentIds {
                             first_group: ids::MOMENT_GROUPS,
                             sampler: ids::MOMENT_SAMPLER,
@@ -898,6 +915,7 @@ impl CpuCulledRenderer {
                 graph.bind_shadow_map(config.cascade_depth);
                 graph.set_weighted_targets(config.float16_targets);
                 graph.set_moment_targets(config.float16_targets);
+                graph.set_single_targets(config.float16_targets);
                 graph.set_depth_prepass(config.depth_prepass);
                 graph.set_prepass_color(config.prepass_color);
                 graph
@@ -954,6 +972,9 @@ impl CpuCulledRenderer {
                 sampler: ids::ENVIRONMENT_SAMPLER,
                 layer_buffer: ids::BACKGROUND_LAYER,
                 layer_group: ids::BACKGROUND_LAYER_GROUP,
+                noise: ids::CLOUD_NOISE,
+                noise_sampler: ids::CLOUD_SAMPLER,
+                cloud_group: ids::CLOUD_GROUP,
             }),
             particles: ParticlePass::new(ParticleIds {
                 buffers: ids::PARTICLE_BUFFERS,
@@ -966,7 +987,10 @@ impl CpuCulledRenderer {
                 textures: ids::SKY_TABLES,
                 samplers: ids::SKY_SAMPLERS,
                 groups: ids::SKY_GROUPS,
+                noise: ids::CLOUD_NOISE,
+                noise_sampler: ids::CLOUD_SAMPLER,
             }),
+            cloud_noise_made: false,
             meshes: MeshBuffers::new(ids::PAGES),
             pipelines: PipelineCache::default(),
             textures: SharedTextures::default(),
@@ -1336,6 +1360,7 @@ impl CpuCulledRenderer {
                 |slot, key| skins.sorted_pipeline(slot, key),
                 weighted,
                 moment,
+                self.graph.single_targets(targets),
                 &mut self.key_counts,
             )
             .map_err(out_of_memory)?;
@@ -1352,6 +1377,7 @@ impl CpuCulledRenderer {
                 RESIDENT,
                 shadows.any(),
                 |_, _| SkinnedPipeline::NotSkinned,
+                None,
                 None,
                 None,
                 &mut self.key_counts,
@@ -1374,6 +1400,7 @@ impl CpuCulledRenderer {
                     RESIDENT,
                     shadows.any(),
                     |slot, key| skins.sorted_pipeline(slot, key),
+                    None,
                     None,
                     None,
                     &mut self.key_counts,
@@ -1573,6 +1600,7 @@ impl CpuCulledRenderer {
             + self.skins.upload_bound(self.settings.meshes())
             + self.graph.upload_bound()
             + BackgroundPass::UPLOAD_BYTES
+            + cloud_noise::upload_bytes(self.cloud_noise_made, self.settings.cloud_steps())
             + self
                 .particles
                 .upload_bound(self.settings.particles(), views)
@@ -1947,6 +1975,7 @@ impl CpuCulledRenderer {
         self.graph.set_motion(motion, motion_frame);
         self.graph.set_weighted(self.sorted.weighs());
         self.graph.set_moment(self.sorted.moments());
+        self.graph.set_single(self.sorted.singles());
         let skipped = self.settings.decal_skipped_layers();
         let redraws = self.redraws_built && skipped != 0;
         self.graph
@@ -1991,8 +2020,6 @@ impl CpuCulledRenderer {
             size: s.size,
             hero: self.tiles.hero_tile(),
         }));
-        self.settings.prepare_probe_capture(input.frame);
-        self.settings.pace_views(input.canvas, input.render_scale);
         self.settings.mark_shown_views();
         // The shadow, motion and pick passes draw their layouts' materials, so each reads the pass
         // targets those materials sample: a compute pass finds its place before them.
@@ -2163,6 +2190,17 @@ impl CpuCulledRenderer {
             .culling
             .frame(ViewId::CAMERA)
             .map_or(0.0, |frame| frame.uniform.camera_world[1]);
+        // The field is made whenever the tier draws: a sky map can refresh from the scene's sky
+        // while another background draws, and its steps bind the field.
+        if self.settings.cloud_steps() > 0 {
+            cloud_noise::prepare(
+                list,
+                arena,
+                ids::CLOUD_NOISE,
+                ids::CLOUD_SAMPLER,
+                &mut self.cloud_noise_made,
+            )?;
+        }
         physical_sky::record_frame(
             &mut self.physical_sky,
             &mut self.settings,
@@ -2171,8 +2209,14 @@ impl CpuCulledRenderer {
             list,
             arena,
         )?;
-        self.settings
-            .record_materials(input, list, arena, table, &self.physical_sky)?;
+        self.settings.record_materials(
+            input,
+            list,
+            arena,
+            table,
+            &self.physical_sky,
+            ids::CLOUD_NOISE,
+        )?;
         // The frame's texture work recorded the uploads, so a texture that a light's image copies
         // from is on the GPU by the time the frame's passes run.
         let array = self.settings.probes().array().map_or(0, |(id, _)| id);
@@ -2248,8 +2292,14 @@ impl CpuCulledRenderer {
             self.settings.grading(),
         )?;
         self.bind_decal_depth(list)?;
-        self.background
-            .prepare(list, arena, &self.settings, self.physical_sky.group())?;
+        self.background.prepare(
+            list,
+            arena,
+            &self.settings,
+            self.physical_sky.group(),
+            self.physical_sky.cloud_group(),
+            (&self.pipelines, input.pipelines_built),
+        )?;
         let culling = &self.culling;
         self.particles.prepare(
             list,
@@ -2449,8 +2499,8 @@ impl CpuCulledRenderer {
             lines_bytes,
         )?;
         let (culling, opaque, lines) = (&self.culling, &self.opaque, &self.lines);
-        let weighted = self.graph.weighted_declared();
-        let moment_layer = self.graph.moment_declared();
+        let blended_layer = self.graph.weighted_declared() || self.graph.moment_declared();
+        let single_layer = self.graph.single_declared();
         let (cascade_culling, cascade_draws) = (&self.cascade_culling, &self.cascade_draws);
         let (tile_culling, tile_draws) = (&self.tile_culling, &self.tile_draws);
         let (outline_culling, outline_draws) = (&self.outline_culling, &self.outline_draws);
@@ -2641,11 +2691,7 @@ impl CpuCulledRenderer {
                     )
                 }
                 Role::Transparent(view) if culling.frame(view).is_some() => {
-                    let rows = if (weighted || moment_layer) && view == ViewId::CAMERA {
-                        SortedRows::Sorted
-                    } else {
-                        SortedRows::All
-                    };
+                    let rows = SortedRows::transparent(view, blended_layer, single_layer);
                     let at = opaque.sorted_records_at(view, layout);
                     let draws = ids::draws_group(view);
                     let light_slot = light_textures.slot(view);
@@ -2668,36 +2714,25 @@ impl CpuCulledRenderer {
                         vertex_draws,
                     )
                 }
-                Role::Weighted if culling.frame(ViewId::CAMERA).is_some() => {
+                // The weighted and moment layers draw no custom material, so they bind no scene
+                // group. The one-sample layer draws after the copy of the opaque depth, which its
+                // surfaces read as the camera's transparent pass's do.
+                Role::Weighted | Role::Moment | Role::Single
+                    if culling.frame(ViewId::CAMERA).is_some() =>
+                {
                     let view = ViewId::CAMERA;
                     let at = opaque.sorted_records_at(view, layout);
                     let draws = ids::draws_group(view);
                     let light_slot = light_textures.slot(view);
-                    let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot, 0);
+                    let (rows, scene) = match role {
+                        Role::Weighted => (SortedRows::Weighted, 0),
+                        Role::Moment => (SortedRows::Moment, 0),
+                        _ => (SortedRows::Single, scene_groups[view.index()]),
+                    };
+                    let bind =
+                        |list: &mut DrawList| opaque.bind_view(list, view, light_slot, scene);
                     let hidden = hidden_in(view);
-                    let (index, rows) = (view.index(), SortedRows::Weighted);
-                    transparent.record(
-                        list,
-                        arena,
-                        index,
-                        rows,
-                        draws,
-                        at,
-                        meshes,
-                        bind,
-                        &hidden,
-                        particles,
-                        vertex_draws,
-                    )
-                }
-                Role::Moment if culling.frame(ViewId::CAMERA).is_some() => {
-                    let view = ViewId::CAMERA;
-                    let at = opaque.sorted_records_at(view, layout);
-                    let draws = ids::draws_group(view);
-                    let light_slot = light_textures.slot(view);
-                    let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot, 0);
-                    let hidden = hidden_in(view);
-                    let (index, rows) = (view.index(), SortedRows::Moment);
+                    let index = view.index();
                     transparent.record(
                         list,
                         arena,
@@ -3036,6 +3071,9 @@ impl FrameBuilder for CpuCulledRenderer {
     fn cull(&mut self, input: &FrameInput<'_>) -> Result<(), RecordError> {
         // The capture views of a probe that captures in this frame cull with the others.
         self.settings.prepare_probe_capture(input.frame);
+        // A view's turn moves on before the frame culls it: the objects it draws are the ones its
+        // cadence gives this frame, not the turn that the frame before saw.
+        self.settings.pace_views(input.canvas, input.render_scale);
         let (scene, parity, canvas, scale) = (
             input.scene,
             input.parity(),
@@ -3444,6 +3482,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.background.reset_gpu();
         self.particles.reset_gpu();
         self.physical_sky.reset_gpu();
+        self.cloud_noise_made = false;
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();
         self.layout.built = false;

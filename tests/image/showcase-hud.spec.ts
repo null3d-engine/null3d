@@ -42,9 +42,18 @@ const panel = (page: Page, name: string) => page.locator(`#hud-panel-${name}`);
  */
 test.describe.configure({ timeout: 1_500_000 });
 
+/** Clicks a group's button and checks the toast that names the change. */
+async function press(page: Page, group: string, button: string, text: string): Promise<void> {
+	await panel(page, group).getByRole('button', { name: button }).click();
+	// A frame on the software GPU can take a while, and the toast shows for 2 s, so allow for it.
+	const toast = page.locator('.hud__toast');
+	await expect(toast).toHaveClass(/\bshow\b/, { timeout: 20_000 });
+	await expect(toast).toHaveText(text, { timeout: 20_000 });
+}
+
 /**
  * Picks a button of a group and checks the toast that names the change: selects the group's tab,
- * then clicks the button, and reads the toast.
+ * then presses the button.
  */
 async function pick(
 	page: Page,
@@ -54,11 +63,21 @@ async function pick(
 	text: string,
 ): Promise<void> {
 	await page.getByRole('tab', { name: tab }).click();
-	await panel(page, group).getByRole('button', { name: button }).click();
-	// A frame on the software GPU can take a while, and the toast shows for 2 s, so allow for it.
-	const toast = page.locator('.hud__toast');
-	await expect(toast).toHaveClass(/\bshow\b/, { timeout: 20_000 });
-	await expect(toast).toHaveText(text, { timeout: 20_000 });
+	await press(page, group, button, text);
+}
+
+/**
+ * Turns a switch on unless the HUD shows it on already. Each scene opens with its own look: the
+ * island draws its haze, so its fog starts on, where a scene with clearer air starts it off. A test
+ * that needs the switch on reads its button rather than assuming the state it opens in.
+ */
+async function turnOn(page: Page, tab: string, group: string, label: string): Promise<void> {
+	// The group's panel is out of the accessibility tree until its tab is picked, so the tab goes
+	// first and the button's state is read from the panel it shows.
+	await page.getByRole('tab', { name: tab }).click();
+	const button = panel(page, group).getByRole('button', { name: label });
+	if ((await button.getAttribute('aria-pressed')) === 'true') return;
+	await press(page, group, label, `${label}: on`);
 }
 
 /**
@@ -188,8 +207,13 @@ async function openHud(page: Page, size?: { width: number; height: number }): Pr
 	// engine on the page, which is how these tests read the canvas's frames.
 	await page.goto('/examples/index.html?demo=island&preset=low&bench');
 	const hud = page.locator('.hud');
-	// The sketch posts the HUD once its setup has run, which loads nothing but builds the town.
-	await expect(hud).toBeVisible({ timeout: 90_000 });
+	// The sketch posts the HUD as soon as its controls exist, which is before it builds the island's
+	// town, its trees and its grass, and the page shows the controls when that message arrives. The
+	// scene's own builds and its environment maps, which a software GPU spends minutes on, no longer
+	// hold the controls back. The wait keeps the first frame's budget, because the sketch itself
+	// starts first: its core, its modules and the worker the sketch's setup runs in. A page that
+	// never posts the controls still fails here, by the test's own name.
+	await expect(hud).toBeVisible({ timeout: FIRST_FRAME_MS });
 	await expect(page.getByRole('tab', { name: 'Post' })).toBeVisible();
 	// The controls come up while the sketch finishes its scene, which is before the engine's first
 	// frame. On a software GPU that frame arrives much later, and a picture read before it is an
@@ -297,8 +321,9 @@ test('the showcase HUD keeps the fog off until it turns on', ALONE, async ({ pag
 	const errors = await openHud(page, PART_WINDOW);
 	await holdForSwitches(page);
 
-	// The fog starts off, so it is turned on before the part that checks it goes off and on.
-	await pick(page, 'Atmosphere', 'atmosphere', 'Fog', 'Fog: on');
+	// The scene's own haze leaves the fog on, so it is on before the part that checks it goes off
+	// and on.
+	await turnOn(page, 'Atmosphere', 'atmosphere', 'Fog');
 	await switchPart(page, 'Fog', 'Atmosphere', 'atmosphere');
 
 	expect(errors).toEqual([]);
@@ -311,9 +336,9 @@ test(
 		const errors = await openHud(page, PART_WINDOW);
 		await holdForSwitches(page);
 
-		// The fog starts off. It goes on first, so the environment light is checked with the sky and
-		// the fog both drawn.
-		await pick(page, 'Atmosphere', 'atmosphere', 'Fog', 'Fog: on');
+		// The fog goes on first, when the scene starts without it, so the environment light is
+		// checked with the sky and the fog both drawn.
+		await turnOn(page, 'Atmosphere', 'atmosphere', 'Fog');
 		await switchPart(page, 'Environment', 'Lighting', 'lighting');
 
 		expect(errors).toEqual([]);

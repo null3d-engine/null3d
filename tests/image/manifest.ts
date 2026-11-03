@@ -1220,7 +1220,12 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		const { uncompressed, clip, timeoutSeconds } = MODEL_SCENES[model] as ModelScene;
 		return {
 			name: `gltf-${model}`,
-			sketch: `tests/pages/sketches/gltf-sketch.ts?model=${model}`,
+			// The interpolation model's row runs the probe that posts its maps' upload facts, so a
+			// browser that loses the maps says so in the run's record; every other model frames as usual.
+			sketch:
+				model === 'texture-linear-interpolation'
+					? 'tests/pages/sketches/probe-gltf-maps-sketch.ts'
+					: `tests/pages/sketches/gltf-sketch.ts?model=${model}`,
 			size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
 			hold: clip?.time ?? 0,
 			...(uncompressed ? { reference: `gltf-${uncompressed}` } : {}),
@@ -1399,17 +1404,73 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			hold: 0,
 		}),
 	),
+	// The sky with the flat layer, a picture of its own for the pair below: the tier's march blends
+	// after the 8-bit path tone maps each fragment, so a partly covered sky draws differently on
+	// the two paths, as every surface that blends on that path does.
+	{
+		name: 'background-sky-flat',
+		sketch: 'tests/pages/sketches/backgrounds-sketch.ts?bg=sky',
+		size: [BACKGROUNDS_IMAGE.width, BACKGROUNDS_IMAGE.height],
+		hold: 0,
+		switches: ['cloudSteps=0'],
+	},
 	// The sky on the 8-bit path, where the sky's own shader tone maps its color. It must draw the
-	// HDR path's image.
+	// HDR path's image of the same flat sky.
 	{
 		name: 'background-sky-8-bit',
 		sketch: 'tests/pages/sketches/backgrounds-sketch.ts?bg=sky',
 		size: [BACKGROUNDS_IMAGE.width, BACKGROUNDS_IMAGE.height],
 		hold: 0,
 		tiers: ['webgpu', 'webgl2'],
-		switches: ['hdr=off'],
-		reference: 'background-sky',
+		switches: ['hdr=off', 'cloudSteps=0'],
+		reference: 'background-sky-flat',
 		expect: { hdr: false },
+	},
+	// The sky's volumetric cloud tier: the flat layer that the lighter presets draw, the High
+	// tier's march and the Ultra tier's, then the sky's environment map with the clouds on spheres
+	// from mirror to rough, for the analytic sky and for the physical sky. Each test sets the step
+	// count itself, so a GPU path whose preset stops at Medium draws the tier too.
+	{
+		name: 'clouds-flat',
+		sketch: 'tests/pages/sketches/clouds-sketch.ts?mode=sky',
+		hold: 0,
+		switches: ['cloudSteps=0'],
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'clouds-volume',
+		sketch: 'tests/pages/sketches/clouds-sketch.ts?mode=sky',
+		hold: 0,
+		switches: ['cloudSteps=32'],
+		timeoutSeconds: 120,
+	},
+	{
+		name: 'clouds-ultra',
+		sketch: 'tests/pages/sketches/clouds-sketch.ts?mode=sky',
+		hold: 0,
+		switches: ['cloudSteps=48'],
+		timeoutSeconds: 180,
+	},
+	{
+		name: 'clouds-environment',
+		sketch: 'tests/pages/sketches/clouds-sketch.ts?mode=environment',
+		hold: 0,
+		switches: ['cloudSteps=32'],
+		timeoutSeconds: 180,
+	},
+	{
+		name: 'clouds-environment-flat',
+		sketch: 'tests/pages/sketches/clouds-sketch.ts?mode=environment',
+		hold: 0,
+		switches: ['cloudSteps=0'],
+		timeoutSeconds: 120,
+	},
+	{
+		name: 'clouds-physical',
+		sketch: 'tests/pages/sketches/clouds-sketch.ts?mode=physical',
+		hold: 0,
+		switches: ['cloudSteps=32'],
+		timeoutSeconds: 180,
 	},
 	// The cube map through an orthographic camera, whose parallel rays all look toward one point
 	// of the cube: the view shows that point's color.
@@ -1858,14 +1919,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	),
 	// Car-sized boxes standing on a street, in the last cascade from above, and from a low angle in
 	// the first cascade and in the last. Each box's shadow must meet its base with no lit line
-	// between them.
+	// between them. The bounce light draws on WebGPU and WebGL2 but not on compatibility mode's
+	// 8-bit path (D-284), so every tier keeps a picture of its own.
 	...['', 'near', 'far'].map(
 		(view): ImageTest => ({
 			name: view === '' ? 'shadows-contact' : `shadows-contact-${view}`,
 			sketch: `tests/pages/sketches/shadow-contact-sketch.ts${view === '' ? '' : `?view=${view}`}`,
 			hold: 0,
 			size: [480, 270],
-			sameOnEveryTier: true,
 			tolerance: { maxDiffRatio: 0.005 },
 		}),
 	),
@@ -2303,9 +2364,12 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// A light probe grid that the sketch bakes in the browser, in a room with a red wall at the left
 	// and a green wall at the right (D-146): the grey spheres take red light at the left and green
 	// at the right. The same room without the grid, and with a mirror on the floor, whose reflection
-	// pass reads the grid at each reflected sphere's own place. The room's environment makes its
+	// pass reads the grid at each reflected sphere's own place. ?wall adds a partition thick enough
+	// to hold a row of probes, whose light the validity mask stops; ?wall-leak draws the same bake
+	// with every probe valid, which shows the leak beside it; and ?wall-night turns the environment
+	// after the bake, which lights the grid again with no new bake. The room's environment makes its
 	// map in the held frame, so the runs take the room's longer limit.
-	...(['', 'off', 'mirror'] as const).map(
+	...(['', 'off', 'mirror', 'wall', 'wall-leak', 'wall-night'] as const).map(
 		(variant): ImageTest => ({
 			name: variant ? `probe-grid-${variant}` : 'probe-grid',
 			sketch: `tests/pages/sketches/probe-grid-sketch.ts${variant ? `?${variant}` : ''}`,
@@ -2978,6 +3042,25 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/terrain-sketch.ts',
 		hold: 1,
 	},
+	// Far hills at the Low preset's split, lit from the normal map baked over the ground: a block's
+	// cells there span the ground's small folds, so the block's own vertices lose them. A correct
+	// picture carries those folds as bands of light and shade across each coarse block, on the
+	// slopes that face the sun and the slopes that turn from it. A bake that stores the slope on the
+	// wrong axis, or with the wrong sign, lights the hills from another direction and cannot match
+	// this picture, while a comparison with the same scene in vertex normals still passes because
+	// either bake moves the picture. The bake moves many pixels by a few steps, which the default
+	// threshold does not count: at a threshold that counts them, a wrong bake moves about 1.8 per
+	// cent of the frame, and the default bar would pass it.
+	{
+		name: 'terrain-baked-normals',
+		sketch: 'tests/pages/sketches/terrain-sketch.ts?normals=baked&coarse=on',
+		switches: ['preset=low'],
+		hold: 1,
+		tolerance: { threshold: 0.02, maxDiffRatio: 0.002 },
+		// The software GPU rounds the same pixels a step apart on another machine, so it may count
+		// more of them. A wrong bake still moves about 1.8 per cent of the frame.
+		swiftShaderTolerance: { threshold: 0.02, maxDiffRatio: 0.005 },
+	},
 	// The first grass picture: a hill of tufts grown by the add-on, placed and tinted by integer
 	// hash, drawn as one band. The blades read the wind add-on's field, which this picture holds
 	// still; the camera and the light are fixed, so two runs draw the same frame.
@@ -2986,6 +3069,47 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/vegetation-grass-sketch.ts',
 		hold: 1,
 		size: [1280, 720],
+		// The software GPU draws the hill's shadow pass slowly, so it takes the thinner preset.
+		swiftShaderSwitches: ['preset=low'],
+		timeoutSeconds: 300,
+	},
+	// The hill with the casting sun, for the pair that measures what the sun's contact shadows and
+	// screen-space bounce light buy: both keep ambient occlusion's three passes, which cost about
+	// 43 ms of the base frame on the Tab A9 Plus. The two entries differ only in `contact=off` and
+	// `bounce=off`, and on this Mac their drawings are pixel for pixel the same.
+	{
+		name: 'vegetation-grass-contact',
+		sketch: 'tests/pages/sketches/vegetation-grass-sketch.ts',
+		switches: ['shadows'],
+		// The casting sun changes nothing in this picture, so it draws the base hill's image.
+		reference: 'vegetation-grass',
+		hold: 1,
+		size: [1280, 720],
+		// The software GPU draws the hill's shadow pass slowly, so it takes the thinner preset.
+		swiftShaderSwitches: ['preset=low'],
+		timeoutSeconds: 300,
+	},
+	{
+		name: 'vegetation-grass-contact-bounce-off',
+		sketch: 'tests/pages/sketches/vegetation-grass-sketch.ts',
+		switches: ['shadows', 'contact=off', 'bounce=off'],
+		// The two effects change nothing in this picture, so it draws the base hill's image.
+		reference: 'vegetation-grass',
+		hold: 1,
+		size: [1280, 720],
+		swiftShaderSwitches: ['preset=low'],
+		timeoutSeconds: 300,
+	},
+	// The same hill at a low sun, where the near cascades take the grass's shadows. The blade list
+	// writes the count that the engine copies into each shadow view, so a shadow view that drew the
+	// capacity, or none of it, changes the picture.
+	{
+		name: 'vegetation-grass-shadow',
+		sketch: 'tests/pages/sketches/vegetation-grass-shadow-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+		swiftShaderSwitches: ['preset=low'],
+		timeoutSeconds: 300,
 	},
 	// The wind add-on's own page: a field of cards that reads the air at each vertex. A gust
 	// crosses the field between the first hold and the second, so the pairs change where the gust
@@ -3168,11 +3292,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Gaussian splats from an SPZ file that the sketch makes: a knot of splats above a ground, with a
 	// bar in front of part of it, so the picture shows the splats hiding behind a mesh and fading where
-	// they meet the ground. The selection runs on a job worker before the held frame draws.
+	// they meet the ground. The selection runs on a job worker before the held frame draws. The
+	// software GPU captures this whole cloud slowly: its page publishes the image past the default
+	// minute while other builds run, so the run waits three minutes.
 	{
 		name: 'splats',
 		sketch: 'tests/pages/sketches/splats-sketch.ts',
 		hold: 0,
+		timeoutSeconds: 180,
 		modes: ALL_MODES,
 	},
 	// The same cloud with the budget capped, so fewer splats draw: the worker keeps the most
@@ -3599,11 +3726,6 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.017 },
 			}),
 			...(demo.group === 'Showcase' && { swiftShaderSwitches: ['preset=low'] }),
-			// The ocean's WebGL2 heights differed from the other paths' when the demo was added, and
-			// the read that measured them was itself wrong on that path. Until the comparison runs
-			// against the fixed read (D-271), the demo draws the two paths that agree, and a WebGL2
-			// reference could record a sea the other paths do not draw.
-			...(demo.name === 'ocean' && { tiers: ['webgpu', 'compat'] as const }),
 			// The hero shadow is fine detail on one object, so its demo draws larger than the
 			// other demos, where the tile size's difference shows.
 			...(demo.name === 'hero-shadow' && { size: HERO_SIZE }),
@@ -3624,7 +3746,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: CREEK_SCALE_SIZE,
 		hold: 0.5,
 		swiftShaderSwitches: ['preset=low'],
-		timeoutSeconds: 300,
+		timeoutSeconds: 600,
 	},
 	{
 		name: 'creek-render-scale-route',
@@ -3632,7 +3754,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: CREEK_SCALE_SIZE,
 		hold: 17,
 		swiftShaderSwitches: ['preset=low'],
-		timeoutSeconds: 300,
+		timeoutSeconds: 600,
 	},
 	// The Creek's water from just above the stream, looking along it, so its surface fills the
 	// frame. The bank views draw the stream a few dozen pixels wide, and a fault in the surface's
@@ -3643,7 +3765,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: CREEK_WATER_SIZE,
 		hold: 0.5,
 		swiftShaderSwitches: ['preset=low'],
-		timeoutSeconds: 300,
+		timeoutSeconds: 600,
 	},
 	// The hero demo at both tile sizes. The car stands in the same place and its shadow falls the
 	// same way; the larger tile draws its edge sharper, which shows that the detail the preset pays

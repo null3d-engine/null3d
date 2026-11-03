@@ -21,7 +21,7 @@ try {
   const engine = await createEngine({
     canvas,
     sketch: new URL('./sketch.ts', import.meta.url),
-    onProgress: (stage) => console.log('start:', stage), // core, sketch, first-frame
+    onProgress: (stage, progress) => console.log('start:', stage, progress), // core-download, core, sketch, first-frame
   });
   engine.onFailure((error) => console.error(error.code, error.message));
   await engine.firstFrame; // the first frame is on the screen: remove the loading screen
@@ -36,9 +36,15 @@ try {
 
 `onProgress` reports each stage of the start, in this order:
 
+- `core-download`, as the engine core's file downloads, with the bytes that have arrived and the
+  length that the server announced;
 - `core`, once the engine core is compiled and the GPU paths are tested;
 - `sketch`, after the sketch's setup, and after the preset check when one runs;
 - `first-frame`, once the GPU has finished the first frame.
+
+The handler's second argument carries a stage's figures: `done` and `total`, in bytes, for
+`core-download`. The handler gets it only while the stage has figures. The total is 0 when the
+response announced no length, so a page shows no fraction then.
 
 Before `core`, `memory-wait` comes when the browser has refused the engine's memory for 10 seconds. A browser can hold memory that an earlier engine used for a while after it stops, and Safari at times held it for 40 seconds. The engine keeps trying for about 45 seconds in all, then fails with E1109. Show the user that the start takes longer than usual.
 
@@ -88,6 +94,7 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | `antialias` | The preset's mode | `'msaa'`, `'fxaa'` or `'none'`, in place of the preset's anti-aliasing mode: [GPU tiers and backends](../concepts/backends.md#color-and-anti-aliasing-on-each-tier) |
 | `hdr` | The device's path | `false` draws the scene into 8-bit color, where each material's shader applies the output transform, instead of HDR color, which the final pass tone maps. Both paths honour a material's `toneMapped: false`, and the 8-bit path also honours it on a blended surface: [Materials that keep their display color](../concepts/color-management.md#materials-that-keep-their-display-color). The `?hdr=off` switch takes that path too. |
 | `shadowTiles`, `shadowTileSize`, `pointLightShadows` | The preset's values | The shadows of spot and point lights, in place of the preset's settings: [Shadows](../concepts/shadows.md#settings). Each is fixed while the engine runs. |
+| `cloudSteps` | The preset's value | The steps of each ray of the sky's volumetric cloud tier, in place of the preset's value: 0 draws the flat layer, and a number above 0 the volumetric clouds, at that many steps. WebGL2 and compatibility mode stop at Medium, so a page there reaches the tier with this option or with `quality.set`. The tier's noise and shaders load at its first use: [Quality API](quality.md#settings). Another value fails with [E1213](../errors/E1213.md). |
 | `shadowCascades`, `shadowMapSize`, `heroTileSize`, `gpuOcclusion`, `morphTargets`, `softwareOcclusion`, `textureMemoryMiB` | The preset's values | These settings, in place of the preset's values: [Quality API](quality.md#settings). Another value fails with [E1213](../errors/E1213.md). |
 | `depthPrepass` | `true` on WebGL2 and `false` on WebGPU, on every preset | `true` draws the depth of the opaque objects before they are shaded: [The depth prepass](../concepts/quality-presets.md#the-depth-prepass). The `?prepass=` switch wins over it. |
 | `keepTextureCopies` | `true` on phones and tablets, `false` on desktops | `true` keeps the engine's copy of each texture's texels after their upload, so a texture draws with its map again after the browser takes the GPU away. It costs about one more copy of each image in memory: [When the GPU goes away](../concepts/backends.md#when-the-gpu-goes-away). |
@@ -101,7 +108,7 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | `expectedObjects` | None | The objects that the scene starts with room for, from 1 to 1,048,575, in place of 1,023. A scene that knows its size never grows its tables during play: [Scene limits](scene.md#limits). Another value fails with [E1213](../errors/E1213.md). |
 | `maxLabels` | `4096` | The most labels that the sketch tracks at once, from 1 to 65,536: [UI overlays and labels](ui.md). Another value fails with [E1213](../errors/E1213.md). |
 | `maxLabels3d` | `256` | The most labels whose `transform` is `'world'` or `'billboard'`, which are planes of the scene, from 0 to 65,536: [Labels as planes of the scene](ui.md#labels-as-planes-of-the-scene). Another value fails with [E1213](../errors/E1213.md). |
-| `onProgress` | None | Reports each stage of the start |
+| `onProgress` | None | Reports each stage of the start, and a download stage's bytes |
 | `onSketchMessage` | None | Receives the sketch's messages from the start of its setup: [Messages](page.md) |
 | `onSketchError` | None | Receives each distinct error that the sketch's frame code throws while the engine runs: [The running engine](#the-running-engine) |
 | `onWorkerRetry` | None | Called when the engine starts a second copy of a worker whose script did not load: [The start](#the-start) |

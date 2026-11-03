@@ -95,7 +95,8 @@ run('engine', async () => {
 				? new URL('./sketches/busy-sketch.ts', import.meta.url)
 				: new URL('./sketches/empty-sketch.ts', import.meta.url),
 		onProgress: (stage) => {
-			stages.push(stage);
+			// A stage that reports figures comes again with each figure: the page keeps its order.
+			if (stages[stages.length - 1] !== stage) stages.push(stage);
 			progress(stage);
 		},
 		powerPreference: (params.get('power') ?? undefined) as

@@ -36,7 +36,7 @@ The large values are base64. Decode them as bytes, not as text.
 
 ## A probe grid
 
-A probe grid file holds the four values of `LightProbeGridData`. They are the grid's origin, its spacing, its probe counts and its coefficients.
+A probe grid file holds the values of `LightProbeGridData`. They are the grid's origin, its spacing, its probe counts, its coefficients and its two masks.
 
 ```json
 {
@@ -46,7 +46,9 @@ A probe grid file holds the four values of `LightProbeGridData`. They are the gr
 	"origin": [0, 1, 0],
 	"spacing": [1, 1, 1],
 	"counts": [2, 2, 2],
-	"coefficients": "AAAAAAAAAD4AAIA+AADAPgAAAD8AACA/AABAPwAAYD8AAIA/AACQPwAAoD8AALA/AADAPwAA0D8AAOA/AADwPwAAAEAAAAhAAAAQQAAAGEAAACBAAAAoQAAAMEAAADhAAABAQAAASEAAAFBAAABYQAAAYEAAAGhAAABwQAAAeEAAAIBAAACEQAAAiEAAAIxAAACQQAAAlEAAAJhAAACcQAAAoEAAAKRAAACoQAAArEAAALBAAAC0QAAAuEAAALxAAADAQAAAxEAAAMhAAADMQAAA0EAAANRAAADYQAAA3EAAAOBAAADkQAAA6EAAAOxAAADwQAAA9EAAAPhAAAD8QAAAAEEAAAJBAAAEQQAABkEAAAhBAAAKQQAADEEAAA5BAAAQQQAAEkEAABRBAAAWQQAAGEEAABpBAAAcQQAAHkEAACBBAAAiQQAAJEEAACZBAAAoQQAAKkEAACxBAAAuQQAAMEEAADJBAAA0QQAANkEAADhBAAA6QQAAPEEAAD5B"
+	"coefficients": "AAAAAAAAAD4AAIA+AADAPgAAAD8AACA/AABAPwAAYD8AAIA/AACQPwAAoD8AALA/AADAPwAA0D8AAOA/AADwPwAAAEAAAAhAAAAQQAAAGEAAACBAAAAoQAAAMEAAADhAAABAQAAASEAAAFBAAABYQAAAYEAAAGhAAABwQAAAeEAAAIBAAACEQAAAiEAAAIxAAACQQAAAlEAAAJhAAACcQAAAoEAAAKRAAACoQAAArEAAALBAAAC0QAAAuEAAALxAAADAQAAAxEAAAMhAAADMQAAA0EAAANRAAADYQAAA3EAAAOBAAADkQAAA6EAAAOxAAADwQAAA9EAAAPhAAAD8QAAAAEEAAAJBAAAEQQAABkEAAAhBAAAKQQAADEEAAA5BAAAQQQAAEkEAABRBAAAWQQAAGEEAABpBAAAcQQAAHkEAACBBAAAiQQAAJEEAACZBAAAoQQAAKkEAACxBAAAuQQAAMEEAADJBAAA0QQAANkEAADhBAAA6QQAAPEEAAD5B",
+	"validity": "AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8=",
+	"skyVisibility": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 }
 ```
 
@@ -56,8 +58,14 @@ A probe grid file holds the four values of `LightProbeGridData`. They are the gr
 | `spacing` | The distance between probes along each axis, in meters: three numbers above 0 |
 | `counts` | The probes along each axis: three whole numbers of 2 or more |
 | `coefficients` | Base64 of 12 32-bit floats for each probe, little-endian |
+| `validity` | Optional. Base64 of one 32-bit float for each probe, from 0 to 1 |
+| `skyVisibility` | Optional. Base64 of one 32-bit float for each probe, from 0 to 1 |
 
 The probes run x fastest, then y, then z. Each probe holds four RGB coefficients in the order that the shader reads them: L0, then L1 along y, z and x. The 12 floats are three for L0 and three for each L1 axis. `bakeProbes` writes the same values. A bake that a tool makes therefore matches the engine's own bake for the same scene.
+
+The coefficients hold the light that the surfaces around the probe bounce back. The validity is 1 where the probe stands in open space, or 0 where geometry encloses it, so its light never leaks through a wall. The sky visibility is the share of the sky that the probe's rays reached; the engine weights it by how much a surface faces the sky above the horizon and multiplies it by the environment's live light, so the hour needs no new bake.
+
+A file without the two masks reads as one that baked the sky into its coefficients: every probe is valid, and no probe adds the live sky. A bake tool that writes version 1 without them therefore keeps the look that its coefficients alone give.
 
 ## A light map
 
@@ -156,12 +164,13 @@ A reader refuses a file whose contents do not agree with its own members. Each f
 - text that stops before its JSON is complete, as a cut-short download leaves it;
 - a `spacing` of 0 or less, or `counts` outside the grid's limits;
 - a `coefficients` payload whose floats are not 12 for each probe in `counts`;
+- a `validity` or a `skyVisibility` payload whose floats are not one for each probe, or a value outside 0 to 1;
 - a `width` or a `height` outside the texture's limits, or an unknown `encoding`;
 - a `radiance` or a `direction` payload whose bytes do not match the file's size;
 - a payload that is not base64.
 
 ## Limits
 
-- A grid takes at most 256 probes along x, 256 along y and 83 along z. Its texture is cut into sub-volumes that hold the coefficients: the first holds the probe's own colour and one direction's red, and the others hold the rest of the directions. The z side carries a padding slice at either end of every sub-volume.
+- A grid takes at most 256 probes along x, 256 along y and 62 along z. Its texture is cut into four sub-volumes: three hold the coefficients, the first with the probe's own colour and one direction's red, and the fourth holds the validity and the sky visibility. The z side carries a padding slice at either end of every sub-volume.
 - A light map's side is at most 4,096 texels, and one payload is at most 256 MiB, as every texture file is.
-- The grid's texture takes 24 bytes of GPU memory for each probe, plus the padding slices, so a grid of 24 x 8 x 24 probes takes about 117 KiB. A light map's texture takes 4 bytes for each texel from `rgb8`, and 8 from `rgba16float`.
+- The grid's texture takes 32 bytes of GPU memory for each probe, plus the padding slices, so a grid of 24 x 8 x 24 probes takes about 157 KiB. A light map's texture takes 4 bytes for each texel from `rgb8`, and 8 from `rgba16float`.
