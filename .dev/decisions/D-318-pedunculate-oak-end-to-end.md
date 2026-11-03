@@ -82,6 +82,23 @@ crown sees more, and the near pool cuts its split nearer at run time.
 | Second card level | 18,500 to 29,700 triangles | 30,000 |
 | Variant, without the nearest wood | 2.8 to 4.5 MB | 7.1 MB |
 
+### The nearest wood, and its cap
+
+The fitted oak meshes every finest macro axis as real wood near the camera. Its nearest wood
+outgrew the tree cap set before it. The owner raised the cap per tier from the oak's largest of
+three variants, with about 15 per cent to spare. The per-species test holds the real oak under it
+at every tier.
+
+| Tier | Oak's nearest wood | Tree cap |
+| --- | --- | --- |
+| Low | 7.03 MB | 8.1 MB |
+| Medium | 7.78 MB | 9 MB |
+| High | 9.13 MB | 10.5 MB |
+| Ultra | 11.67 MB | 13.4 MB |
+
+The owner's reason: twigs must stay true to the tree's anatomy, and quality comes before size. A
+page that needs fewer triangles sets the coarseness, which grows a coarser plant.
+
 ### Fixed plants
 
 `placePlants` without a near pool draws each level of each variant as instance batches over its
@@ -106,6 +123,8 @@ shoots, pixel by pixel, inside the split. Placements of one species share its 16
   reference shows. The coarse tiers' simplification keeps the leaves and drops what no pixel shows.
 - **A higher clean bole.** Raised past a tenth of the height, it made some variants stop growing at
   3 m. The bole's height comes from the weaker leader instead.
+- **Thinner twigs to keep the old wood cap.** A plainer mesh on the finest axes met the cap, but
+  it made the twigs anatomically wrong. The owner refused it.
 - **128-texel card cells.** They cost four times the atlas memory for no visible gain.
 
 ## Who decides
