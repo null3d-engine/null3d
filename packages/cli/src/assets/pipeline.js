@@ -30,7 +30,7 @@ import {
 	storeStages,
 } from './levels.js';
 import { lodOf, MSFTLod } from './lod-extension.js';
-import { modelReport } from './report.js';
+import { modelReport, shownBytes } from './report.js';
 import { shaderList, writeShaderList } from './shaders.js';
 import { addSpatialData, BVH_MIN_TRIANGLES } from './spatial.js';
 import {
@@ -190,7 +190,7 @@ export function tidyBuffers(doc) {
 
 /**
  * A binary glTF file from a document, with each encoded texture named by its file's address
- * instead of held in the file.
+ * instead of held in the file, and the file's JSON.
  *
  * @param {NodeIO} io
  * @param {Document} doc
@@ -219,7 +219,119 @@ async function writeGlb(io, doc, uris) {
 	view.setUint32(0, 0x46546c67, true);
 	view.setUint32(4, 2, true);
 	view.setUint32(8, length, true);
-	return BufferUtils.concat([header, ...chunks]);
+	return { glb: BufferUtils.concat([header, ...chunks]), json };
+}
+
+/** Bytes in a mebibyte. */
+const MIB = 1024 * 1024;
+
+/**
+ * The engine's limits on what one model file may decode to: the most bytes of one array, and the
+ * floor, ratio and cap of the whole file's total. They are `FILE_LIMITS` in the engine's
+ * `scene/file-limits.ts`, and a test keeps the two equal.
+ */
+export const ENGINE_FILE_LIMITS = Object.freeze({
+	itemBytes: 256 * MIB,
+	modelFloorBytes: 64 * MIB,
+	modelRatio: 32,
+	modelCapBytes: 1024 * MIB,
+});
+
+/** The bytes of each glTF component type. */
+const COMPONENT_BYTES = new Map([
+	[5120, 1],
+	[5121, 1],
+	[5122, 2],
+	[5123, 2],
+	[5125, 4],
+	[5126, 4],
+]);
+
+/** The values of each glTF accessor type. */
+const TYPE_VALUES = new Map([
+	['SCALAR', 1],
+	['VEC2', 2],
+	['VEC3', 3],
+	['VEC4', 4],
+	['MAT2', 4],
+	['MAT3', 9],
+	['MAT4', 16],
+]);
+
+/**
+ * What the engine's loader decodes a file to, from the file's JSON, as it takes the bytes from the
+ * file's budget: a copy of each accessor, each block of meshopt data, each image that the file
+ * holds, 8-bit index lists widened to 16 bits, and the indices of each blocker widened to 32 bits.
+ * It leaves out the small costs of skins and clips.
+ *
+ * @param {import('@gltf-transform/core').GLTF.IGLTF} json
+ * @returns {{ total: number, largest: { accessor: number, bytes: number } }}
+ */
+export function decodedBytes(json) {
+	const accessors = json.accessors ?? [];
+	const views = json.bufferViews ?? [];
+	/** @param {number | undefined} k */
+	const bytesOf = (k) => {
+		const accessor = k === undefined ? undefined : accessors[k];
+		if (!accessor) return 0;
+		return (
+			accessor.count *
+			(TYPE_VALUES.get(accessor.type) ?? 0) *
+			(COMPONENT_BYTES.get(accessor.componentType) ?? 0)
+		);
+	};
+	let total = 0;
+	const largest = { accessor: -1, bytes: 0 };
+	accessors.forEach((_, k) => {
+		const bytes = bytesOf(k);
+		total += bytes;
+		if (bytes > largest.bytes) Object.assign(largest, { accessor: k, bytes });
+	});
+	for (const view of views) {
+		const meshopt = /** @type {{ count: number, byteStride: number } | undefined} */ (
+			view.extensions?.EXT_meshopt_compression ?? view.extensions?.KHR_meshopt_compression
+		);
+		if (meshopt) total += meshopt.count * meshopt.byteStride;
+	}
+	for (const image of json.images ?? [])
+		if (image.bufferView !== undefined) total += views[image.bufferView]?.byteLength ?? 0;
+	for (const mesh of json.meshes ?? [])
+		for (const primitive of mesh.primitives) {
+			const indices = primitive.indices === undefined ? undefined : accessors[primitive.indices];
+			if (indices?.componentType === 5121) total += indices.count * 2;
+			const blocker = /** @type {{ indices?: number } | undefined} */ (
+				primitive.extensions?.[NULL3D_OCCLUDER]
+			);
+			if (blocker?.indices !== undefined) total += (accessors[blocker.indices]?.count ?? 0) * 4;
+		}
+	return { total, largest };
+}
+
+/**
+ * Throws when the engine would refuse to load the file whose JSON is `json` and whose length is
+ * `fileBytes`: an accessor larger than one array may be, or a file that decodes to more than a
+ * file of its size may. A scene that large loads as several files.
+ *
+ * @param {import('@gltf-transform/core').GLTF.IGLTF} json
+ * @param {number} fileBytes
+ */
+export function refuseWhatTheEngineRefuses(json, fileBytes) {
+	const limits = ENGINE_FILE_LIMITS;
+	const { total, largest } = decodedBytes(json);
+	const advice =
+		'Split the scene into several files, each with a part of its meshes, and load each one with assets.loadGltf()';
+	if (largest.bytes > limits.itemBytes)
+		throw new Error(
+			`the engine would refuse the output: accessor ${largest.accessor} holds ${shownBytes(largest.bytes)}, more than the ${shownBytes(limits.itemBytes)} that one array may hold. ${advice}, or simplify the mesh that holds it with --simplify.`,
+		);
+	const allowance = Math.min(
+		limits.modelCapBytes,
+		limits.modelFloorBytes + limits.modelRatio * fileBytes,
+	);
+	if (total > allowance)
+		throw new Error(
+			`the engine would refuse the output: it decodes to ${shownBytes(total)}, more than the ${shownBytes(allowance)} that one model file may decode to. ${advice}.`,
+		);
 }
 
 /**
@@ -316,7 +428,8 @@ export async function optimizeModel(path, options, encode) {
 			.createExtension(MeshoptWithRotationFilter)
 			.setRequired(true)
 			.setEncoderOptions({ method: EXTMeshoptCompression.EncoderMethod.QUANTIZE });
-	const glb = await writeGlb(io, doc, uris);
+	const { glb, json } = await writeGlb(io, doc, uris);
+	refuseWhatTheEngineRefuses(json, glb.byteLength);
 	const report = modelReport(doc, {
 		name: basename(path),
 		inputBytes,

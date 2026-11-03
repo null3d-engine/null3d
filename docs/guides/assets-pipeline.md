@@ -255,6 +255,8 @@ The default limit, a hundredth of each mesh's size, changes little that a viewer
 
 `--report` writes the same figures as JSON, with each texture's source size, output size and encode time.
 
+The command writes no model that the engine would refuse to load. One array may hold at most 256 MiB, and one file may decode to at most 1 GiB ([Limits on each file](../concepts/assets.md#limits-on-each-file)). A model that passes a limit fails with an error that names it. Split such a scene into several files, each with a part of its meshes, and load each one with `assets.loadGltf()`.
+
 ## The shader list
 
 A feature that changes what a shader costs is a permutation bit, so a pipeline without the feature does not pay for it. The engine builds a pipeline the first time an object that needs it draws. The files of some features load on first use instead of with the engine's start. A page that never uses the feature downloads none of it ([Loading screens and warm-up](loading-screens.md#loading-everything-up-front) lists them).

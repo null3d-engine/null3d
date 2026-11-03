@@ -115,7 +115,7 @@ A model or texture file can come from a user, or be broken. So the loaders check
 
 The model limit grows with the file, because compressed data decodes to several times its size. The sample models decode to at most 3 times their bytes, so a real model stays far below the limit. A model that does pass it is broken, or holds more than a scene can draw. Split it into several files.
 
-A block of meshopt data can hold many arrays. The asset tool packs every index list of one width into one block, so a large scene's block can pass 256 MiB. No GPU buffer holds the block whole, so only the file's total limits it. Each array that the engine reads from the block must still stay within 256 MiB.
+A block of meshopt data can hold many arrays. The asset tool packs every index list of one width into one block, so a large scene's block can pass 256 MiB. No GPU buffer holds the block whole, so only the file's total limits it. Each array that the engine reads from the block must still stay within 256 MiB. `bunx @null3d/cli assets optimize` writes no model that passes either limit. Its error tells you to split the scene into several files.
 
 A primitive that names an accessor another primitive also names shares that accessor's arrays. So a file pays once for data that it uses many times.
 
