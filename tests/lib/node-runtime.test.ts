@@ -8,6 +8,7 @@ import { describe, expect, it } from 'bun:test';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { withImports } from '../../tools/lib/script-imports.ts';
+import { filesBelow } from '../../tools/lib/walk';
 import { scaledBudget } from './run-budget.ts';
 
 const ROOT = join(import.meta.dirname, '../..');
@@ -24,8 +25,8 @@ const WALK_MS = scaledBudget(30_000);
 /** Every file that Node loads first: the Playwright and Vite configs, the files they name, and the Playwright specs. */
 function nodeEntries(): string[] {
 	const specs = ['tests', 'bench'].flatMap((folder) =>
-		readdirSync(join(ROOT, folder), { recursive: true, encoding: 'utf8' })
-			.filter((path) => path.endsWith('.spec.ts') && !path.includes('node_modules'))
+		filesBelow(join(ROOT, folder))
+			.filter((path) => path.endsWith('.spec.ts'))
 			.map((path) => join(folder, path)),
 	);
 	const configs = [

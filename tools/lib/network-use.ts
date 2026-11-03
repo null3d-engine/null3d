@@ -8,6 +8,7 @@
 // shader modules are not read: the shader library that the build writes them from is.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import { filesBelow } from './walk';
 
 /** What a shipped file may do that reaches the network, and why it contacts no server. */
 export interface NetworkUse {
@@ -145,15 +146,8 @@ const GENERATED = new Set(['generated', 'node_modules']);
 
 /** The shipped source files under `dir`, as absolute paths. */
 function sourceFiles(dir: string): string[] {
-	let entries: string[];
-	try {
-		entries = readdirSync(dir, { recursive: true, encoding: 'utf8' });
-	} catch {
-		return [];
-	}
-	return entries
+	return filesBelow(dir, [...GENERATED])
 		.filter((entry) => SOURCE.test(entry) && !NOT_SHIPPED.test(entry))
-		.filter((entry) => !entry.split(sep).some((part) => GENERATED.has(part)))
 		.map((entry) => join(dir, entry));
 }
 
