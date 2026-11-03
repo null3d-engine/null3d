@@ -107,6 +107,11 @@ Write `PORTING-REPORT.md` with the template in `references/verification.md`. It 
 | Resize handlers and `setSize` | Nothing | The engine follows the canvas size |
 | `EffectComposer` pass chains | `post.set` settings, and `post.addEffect` (0.2) for each custom `ShaderPass` | The chain is built in and merged into few passes. Each custom effect is a full-screen pass of its own |
 | `localStorage` in scene code | Keep it on the page, or use IndexedDB, which workers have | Workers have no `localStorage` |
+| `object.static = true` on still meshes (`WebGPURenderer`) | Nothing | Objects are static by default. In three.js r186 the flag never applies to a node material: its refresh check returns before it reads the flag |
+| Frame counters on `requestAnimationFrame`, `renderer.waitForGPU()` or `onSubmittedWorkDone` | `engine.measure()`: `completedFps`, `presentedFps` and `gpuLatencyMs` | The engine tracks every frame to the GPU's finish. three.js r186 removed `waitForGPU()` |
+| Many `InstancedMesh` objects merged into fewer, to cut shader builds | Batches and objects split as the scene needs | three.js r186 puts each instanced mesh's id in its shader cache key, so each one builds its own shaders in every pass. null3D builds a pipeline per shading model and vertex format, never per object |
+| A worker renderer of the app's own, through `transferControlToOffscreen` | Delete it, and pass the canvas to `createEngine` | The engine draws from a worker already. A canvas that has a context cannot move to a worker, so draw nothing on it first |
+| A scheduler that yields with `setTimeout(0)` or a `MessageChannel` while the scene builds | The setup builds the first view; later heavy work runs in a task on the job workers (`runTask`, 0.3), or in slices per frame | The setup runs in the sketch worker, so the page stays responsive (section 11 of the null3d-develop skill's performance reference) |
 
 ## 4. Settings that change the look
 
