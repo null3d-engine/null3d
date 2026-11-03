@@ -6,7 +6,8 @@
 // `WEBGL_multi_draw` draws the whole levels that the tool cut from the tree. Settings: `?d=<metres>`
 // sets how far the camera stands from the middle of the ground. `?coarse` raises the level
 // threshold to 16 pixels, so the patches that draw are much coarser than the mesh and the picture
-// shows the tree at work.
+// shows the tree at work. `?bounce=off` draws no screen-space bounce light, whose gather turns the
+// small difference between a coarse patch and the finest level into a visible one.
 import { defineSketch } from '@null3d/engine';
 import { AMBIENT, SUN } from '../../../bench/scenes/spec';
 
@@ -17,6 +18,7 @@ const DISTANCE = Number(params.get('d') ?? 26);
 export default defineSketch(async ({ scene, assets, post, quality }) => {
 	post.set({ toneMapping: 'aces' });
 	if (params.has('coarse')) quality.set({ lodThreshold: 16, governor: false });
+	if (params.get('bounce') === 'off') quality.set({ bounceRays: 0 });
 	scene.setBackground('#8fa4b8');
 	scene.createDirectionalLight(SUN);
 	scene.createAmbientLight(AMBIENT);
