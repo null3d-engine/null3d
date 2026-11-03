@@ -65,7 +65,7 @@ function fakeScene() {
 	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
 	const time = { frame: 0 };
 	const s = new Scene(core, time, false);
-	const mesh = { id: 1, radius: 1, core } as unknown as MeshGeometry;
+	const mesh = { id: 1, radius: 1, core, drawnWith() {} } as unknown as MeshGeometry;
 	const material = { id: 1, core } as unknown as Material;
 	return {
 		scene: s,
@@ -155,7 +155,12 @@ describe('unmarked writes to static objects', () => {
 		// The core marks the object when it applies the command that each setter queues.
 		scene.markDirty(crate.slot);
 		expect(frame()).toBeUndefined();
-		crate.setMesh({ id: 2, radius: 5, core: scene.core } as unknown as MeshGeometry);
+		crate.setMesh({
+			id: 2,
+			radius: 5,
+			core: scene.core,
+			drawnWith() {},
+		} as unknown as MeshGeometry);
 		scene.markDirty(crate.slot);
 		expect(frame()).toBeUndefined();
 	});
@@ -167,7 +172,12 @@ describe('unmarked writes to static objects', () => {
 		// A call in onLateUpdate queues its change for the next frame, after the late check.
 		crate.setBounds([0, 2, 0], 3);
 		expect(frame()).toBeUndefined();
-		crate.setMesh({ id: 2, radius: 5, core: scene.core } as unknown as MeshGeometry);
+		crate.setMesh({
+			id: 2,
+			radius: 5,
+			core: scene.core,
+			drawnWith() {},
+		} as unknown as MeshGeometry);
 		expect(frame()).toBeUndefined();
 		// Writes that skip a setter still show, before and after such a call.
 		scene.views.positions[crate.slot * 3] = 4;

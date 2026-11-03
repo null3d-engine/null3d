@@ -55,6 +55,7 @@ import {
 	VERTEX_TYPE_UNORM16,
 	VERTEX_TYPES,
 } from '../generated/gpu';
+import { holdsAttribute, PLANNED_ATTRIBUTES } from './level-words';
 import type { CoreMemory, HeapConstructor } from './memory';
 import type {
 	IntegerArray,
@@ -230,7 +231,7 @@ interface Values {
 	normalized: boolean | undefined;
 }
 
-function valuesOf(values: VertexValues): Values {
+export function valuesOf(values: VertexValues): Values {
 	if (ArrayBuffer.isView(values) || Array.isArray(values))
 		return { array: values as Values['array'], normalized: undefined };
 	const { array, normalized } = values as { array: Values['array']; normalized?: boolean };
@@ -552,6 +553,49 @@ export function meshFromLevel(
 		glue.lastErrorCode() === BAD_ARRAYS && glue.lastErrorDetail(0) === ARRAYS_PROBLEM_LEVEL_BASE;
 	if (!refused) throw coreFailure(glue, call);
 	return undefined;
+}
+
+/**
+ * Builds a level of the live mesh `base` that holds its own copy of the vertices that the triangles
+ * `indices` name, in the base's numbering, and returns its id: the level of a base that is split
+ * into parts. The copy takes each vertex once, in the order that the triangles first name it.
+ */
+export function meshFromLevelCopy(
+	core: CoreMemory,
+	base: number,
+	indices: Uint32Array,
+	call: string,
+): number {
+	const address = core.checkGrowth(core.glue.meshArrays(indices.length), call);
+	core.u32(address, indices.length).set(indices);
+	return core.checkGrowth(core.glue.createLevelCopy(base, indices.length), call);
+}
+
+/** The format bits of the attributes whose vertices pose or move: joints, and the vertex record. */
+export const MOVING_VERTEX_BITS =
+	(VERTEX_ATTRIBUTES[6]?.[0] ?? 0) | (VERTEX_ATTRIBUTES[8]?.[0] ?? 0);
+
+/** True for a format whose positions are floats, whose level of cards takes grown positions. */
+export function floatPositions(format: number): boolean {
+	const [, , shift] = VERTEX_ATTRIBUTES[0] ?? [0, 0, 0];
+	return ((format >>> shift) & 0xf) === VERTEX_TYPE_F32;
+}
+
+/**
+ * A copy of the live mesh `mesh`'s vertices and triangles as the level planner reads them, from
+ * the core: the vertex count, the index count and the format, then each attribute's floats, then
+ * the indices. The copy owns its buffer, which moves to a job worker.
+ */
+export function meshPlanningWords(core: CoreMemory, mesh: number, call: string): Uint32Array {
+	const at = core.checkGrowth(core.glue.meshPlanningArrays(mesh), call);
+	const header = core.u32(at, 3);
+	const vertices = header[0] as number;
+	const indices = header[1] as number;
+	const format = header[2] as number;
+	let floats = 0;
+	for (const [location, size] of PLANNED_ATTRIBUTES)
+		if (holdsAttribute(format, location)) floats += size;
+	return core.u32(at, 3 + floats * vertices + indices).slice();
 }
 
 /**

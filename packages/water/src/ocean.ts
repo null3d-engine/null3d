@@ -317,7 +317,8 @@ export function createOcean(ctx: SketchContext, options: OceanOptions): Ocean {
 		},
 	});
 	const mesh = scene.createMesh({
-		mesh: geometry.fromArrays(oceanMesh(reach, segments)),
+		// The waves move the grid's vertices in the shader, so the flat grid takes no levels.
+		mesh: geometry.fromArrays({ ...oceanMesh(reach, segments), levels: false }),
 		material,
 		position: [0, level, 0],
 		receiveShadows: true,

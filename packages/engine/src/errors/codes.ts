@@ -222,7 +222,7 @@ const DOCS = {
 	E1221: {
 		title: 'Invalid levels of detail',
 		cause:
-			"mesh.setLevels() received levels that the mesh cannot take, or a glTF file's MSFT_lod levels could not become them. Each level's error, or its distance, must be a finite number above 0, and larger than the level's before it. A mesh takes at most 15 lower levels. Each level must be another live mesh of the same engine, with the same vertex attributes as the base mesh. A level's material, where it gives one, must be a live material of the same engine.",
+			"mesh.setLevels() received levels that the mesh cannot take, or a glTF file's MSFT_lod levels could not become them. Each level's error, or its distance, must be a finite number above 0, and larger than the level's before it. A mesh takes at most 15 lower levels. Each level must be another live mesh of the same engine, with the same vertex attributes as the base mesh. A level's material, where it gives one, must be a live material of the same engine. mesh.buildLevels() refuses a mesh with joints, morph targets or a vertex record, whose shape poses or moves.",
 		example:
 			'E1221: mesh.setLevels() got an error of 0.02 for level 2, not above the 0.05 of level 1. Errors grow from level to level.',
 		since: '0.2',
@@ -339,7 +339,7 @@ const DOCS = {
 	E1406: {
 		title: 'Engine file not downloaded',
 		cause:
-			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder, and the first with Draco compression the Draco decoder. The first color grading table loads its readers, and the first environment its reader. The first sprite or point batch loads the sprite code, and the first line batch the line code. The first feature draw, instance draw or full-screen effect loads that adapter. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off.',
+			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first mesh that plans its levels of detail loads the level planner and its simplifier. The first glTF file with meshopt compression loads the meshopt decoder, and the first with Draco compression the Draco decoder. The first color grading table loads its readers, and the first environment its reader. The first sprite or point batch loads the sprite code, and the first line batch the line code. The first feature draw, instance draw or full-screen effect loads that adapter. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off.',
 		example:
 			'E1406: the threaded engine core did not download from /assets/null3d_bg-3f9c1a2b.wasm: HTTP 404.',
 		since: '0.1',

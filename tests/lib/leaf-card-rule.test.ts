@@ -1,5 +1,6 @@
 // The leaf-card level rule is written twice: once in the generator, which makes its levels from a
-// skeleton, and once in the asset tool, which thins cards of a mesh from a file. D-241 chose that
+// skeleton, and once in the level planner that the asset tool and the engine share, which thins
+// cards of a mesh from a file or from arrays. D-241 chose that
 // split, so this test holds both to one rule: a level keeps every second card of the
 // one above in a space-filling order, and each kept card grows about its middle by the square root
 // of that step. A change to either side that breaks the rule fails here.
@@ -9,7 +10,7 @@ import { join } from 'node:path';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 const GENERATOR = readFileSync(join(ROOT, 'packages/vegetation/src/legacy/levels.ts'), 'utf8');
-const TOOL = readFileSync(join(ROOT, 'packages/cli/src/assets/levels.js'), 'utf8');
+const TOOL = readFileSync(join(ROOT, 'packages/engine/levels/planner.js'), 'utf8');
 
 describe('the leaf-card level rule, which the generator and the asset tool share', () => {
 	test('both order cards by a space-filling curve of the same width', () => {
@@ -25,7 +26,9 @@ describe('the leaf-card level rule, which the generator and the asset tool share
 
 	test('both keep every second card of the level above', () => {
 		expect(GENERATOR).toContain('const every = 2 ** level;');
-		expect(TOOL).toContain('thinCards(list, Math.min(2 ** level, Math.max(1, list.cards.length)))');
+		// The planner's step names the base mesh's cards for each kept card: 2 ** level.
+		expect(TOOL).toContain('const every = 2 ** (levels.length + 1);');
+		expect(TOOL).toContain('thinCards(list, Math.min(every, Math.max(1, list.cards.length)))');
 	});
 
 	test('both grow a kept card about its middle by the square root of the step', () => {

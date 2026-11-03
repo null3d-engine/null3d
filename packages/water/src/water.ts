@@ -411,7 +411,8 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 	const meshes = arrays.map((mesh) => {
 		meshBytes += meshArrayBytes(mesh);
 		return scene.createMesh({
-			mesh: geometry.fromArrays(mesh),
+			// The waves move the surface's vertices in the shader, so it takes no levels.
+			mesh: geometry.fromArrays({ ...mesh, levels: false }),
 			material,
 			position: [0, 0, 0],
 			receiveShadows: true,

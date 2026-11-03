@@ -1,10 +1,19 @@
-// The tool's levels of detail, planned as Godot plans them at import. The simplifier sees each
-// triangle list with its vertices welded, so that copies an exporter left at one place do not
-// hold it back, and with the normals and colors in its error. Each level simplifies the level
-// above to about half its triangles, down to a few dozen triangles, until a level saves too
-// little. Each level keeps its error as a distance in the units the mesh draws in, which the
-// engine compares with the screen.
+// The tool's levels of detail. The planner itself is the engine's (`@null3d/engine/levels-planner`),
+// which the engine also runs on meshes made in code: this file reads a glTF file's meshes into its
+// plain arrays, poses a skinned mesh at rest, and writes the planned levels into the file, as
+// MSFT_lod gives them or as separate downloads.
 import { MathUtils } from '@gltf-transform/core';
+import {
+	LOD_FLOOR_TRIANGLES,
+	LOD_MAX_LEVELS,
+	LOD_MIN_TRIANGLES,
+	longestSide,
+	planMeshLevels,
+	simplifyTries as planTries,
+	simplifierFlags,
+	simplifyStep,
+	weldList,
+} from '@null3d/engine/levels-planner';
 import { MeshoptSimplifier } from 'meshoptimizer';
 import {
 	cacheOrder,
@@ -16,39 +25,10 @@ import {
 import { lodOf, MSFT_LOD, MSFTLod } from './lod-extension.js';
 
 /** @import { Accessor, Buffer, Document, Mesh, Node, Primitive, Skin } from '@gltf-transform/core' */
-/** @import { SimplifierFlags } from 'meshoptimizer' */
+/** @import { Meshopt, PlannedLevel, PlanningList as ListPlan, SimplifierFlag } from '@null3d/engine/levels-planner' */
 /** @import { ClusterPlan } from './clusters.js' */
 
-/** Meshes with fewer triangles get no levels of detail: they cost little to draw anyway. */
-export const LOD_MIN_TRIANGLES = 64;
-
-/** The share of the level above's triangles that each level aims for. */
-const LOD_STEP = 0.5;
-
-/**
- * A level that keeps more than this share of the level above's triangles ends the levels: it
- * fell short of its target by more than half the cut, so the simplifier has stalled.
- */
-const LOD_MAX_KEPT = (1 + LOD_STEP) / 2;
-
-/**
- * The triangles that the coarsest level aims for. A level of fewer than twice as many ends the
- * levels, since one more level would save too little. A far copy of a small mesh covers a few
- * pixels, where a few dozen triangles draw the same picture as hundreds.
- */
-export const LOD_FLOOR_TRIANGLES = 32;
-
-/**
- * Each level's error is at least this many times the level above's, so that the distances at
- * which levels switch stay apart.
- */
-const LOD_ERROR_GROWTH = 1.5;
-
-/**
- * The most lower levels that a mesh gets: the engine takes fifteen beside the mesh itself, which
- * halving needs to take a mesh of a million triangles to the floor.
- */
-export const LOD_MAX_LEVELS = 15;
+export { LOD_FLOOR_TRIANGLES, LOD_MAX_LEVELS, LOD_MIN_TRIANGLES };
 
 /**
  * The screen height in pixels that the stored screen coverage assumes, for readers of MSFT_lod
@@ -56,20 +36,32 @@ export const LOD_MAX_LEVELS = 15;
  */
 export const LOD_SCREEN_PIXELS = 1080;
 
-/** The cosine of the widest angle between two normals that welding still merges. */
-const WELD_COS = Math.cos((20 * Math.PI) / 180);
-
-/** The weight of each normal and color component in the simplifier's error. */
-const ATTRIBUTE_WEIGHT = 1;
-
 /**
  * The largest error of a simplified base mesh by default, as a share of the mesh's longest side:
  * gltfpack's default.
  */
 export const SIMPLIFY_MAX_ERROR = 0.01;
 
-/** A vertex lock that lets a vertex move along a seam but not across it, in permissive mode. */
-const SEAM = 2;
+/** The planner's calls of meshoptimizer, from its npm package, which the tool awaits first. */
+const MESHOPT = /** @type {Meshopt} */ ({
+	simplifyWithAttributes: MeshoptSimplifier.simplifyWithAttributes,
+	cacheOrder,
+});
+
+/**
+ * Simplifies a triangle list toward a share of its triangles in each of the simplifier's four
+ * ways, as the shared planner's `simplifyTries` does, with the npm package's simplifier: the whole
+ * levels and the patches of a cluster tree both choose this way.
+ *
+ * @param {PlanningList} list
+ * @param {Uint32Array} indices The triangles to simplify, a subset of the list's welded ones.
+ * @param {number} share
+ * @param {number} limit The largest error, in planning units.
+ * @param {SimplifierFlag[]} flags
+ * @param {[Uint8Array | null, Uint8Array | null]} [locks]
+ */
+export const simplifyTries = (list, indices, share, limit, flags, locks) =>
+	planTries(MESHOPT, list, indices, share, limit, flags, locks);
 
 /**
  * An accessor's values in the mesh's units: normalized integers become the fractions they
@@ -158,211 +150,15 @@ function restPose(prim, positions, skin) {
 }
 
 /**
- * The longest side of the box around a list of points.
+ * A triangle list as the simplifier plans it, with the primitive it came from.
  *
- * @param {Float32Array} positions
- */
-function longestSide(positions) {
-	const min = [Infinity, Infinity, Infinity];
-	const max = [-Infinity, -Infinity, -Infinity];
-	for (let i = 0; i < positions.length; i++) {
-		const v = /** @type {number} */ (positions[i]);
-		const k = i % 3;
-		if (v < /** @type {number} */ (min[k])) min[k] = v;
-		if (v > /** @type {number} */ (max[k])) max[k] = v;
-	}
-	return Math.max(0, ...max.map((v, k) => v - /** @type {number} */ (min[k])));
-}
-
-/**
- * A triangle list as the simplifier plans it.
- *
- * @typedef {object} PlanningList
- * @property {Primitive} prim
- * @property {Float32Array} positions Where each vertex sits while the levels are planned.
- * @property {Float32Array} attributes Each vertex's welded normal and color, as `stride` floats.
- * @property {number} stride
- * @property {number[]} weights
- * @property {Uint8Array} seams {@link SEAM} for each vertex where texture coordinates or colors
- *   change, else 0.
- * @property {Uint32Array} indices The triangles, each corner at its weld's first vertex.
- * @property {Card[] | null} cards The list's cards, where it holds separate cards alone, in an
- *   order that spreads them over the list; null for a list of any other shape.
- * @property {boolean} posed True for a list that a skin poses, whose positions are in the scene's
- *   units rather than its mesh's.
+ * @typedef {ListPlan & { prim: Primitive }} PlanningList
  */
 
 /**
- * A card: a separate piece of a list, such as a leaf's quad, in one of {@link CARD_CORNERS}'
- * shapes.
- *
- * @typedef {object} Card
- * @property {number[]} vertices The card's welded vertices, by number.
- * @property {number[]} triangles Its triangles, in threes.
- * @property {number[]} centre The middle of its vertices.
- * @property {number} size The longest distance between two of its vertices.
- */
-
-/**
- * The bits that each axis of a card's middle takes in its sorting key: three axes of 16 bits fit
- * a number exactly.
- */
-const CARD_KEY_BITS = 16;
-
-/**
- * The number that orders a card's middle along a space-filling curve, so that every other card in
- * that order spreads over the list.
- *
- * @param {number[]} centre
- * @param {{ min: number[], side: number }} box
- */
-function cardKey(centre, box) {
-	const scale = box.side > 0 ? (2 ** CARD_KEY_BITS - 1) / box.side : 0;
-	const at = centre.map((v, k) =>
-		Math.min(
-			2 ** CARD_KEY_BITS - 1,
-			Math.max(0, Math.round((v - /** @type {number} */ (box.min[k])) * scale)),
-		),
-	);
-	let key = 0;
-	for (let bit = CARD_KEY_BITS - 1; bit >= 0; bit--)
-		for (const axis of at) key = key * 2 + ((axis >> bit) & 1);
-	return key;
-}
-
-/**
- * The triangle lists of a card, by its vertices: a quad of four vertices and two triangles, or a
- * card folded along its middle, of six vertices and four triangles, as Creek makes its leaves.
- */
-const CARD_CORNERS = new Map([
-	[4, 6],
-	[6, 12],
-]);
-
-/**
- * The cards of a triangle list, where every separate piece of the list is one of {@link
- * CARD_CORNERS}' shapes, as a leaf card is; otherwise null. The cards come in an order that
- * spreads them over the list, so that each level keeps an even share of them.
- *
- * @param {Uint32Array} indices
- * @param {Float32Array} positions
- * @returns {Card[] | null}
- */
-function cardsOf(indices, positions) {
-	const count = indices.length / 3;
-	if (count === 0) return null;
-	const parent = new Map();
-	/** @param {number} v */
-	const find = (v) => {
-		let root = v;
-		while (parent.get(root) !== root) root = /** @type {number} */ (parent.get(root));
-		let at = v;
-		while (at !== root) {
-			const next = /** @type {number} */ (parent.get(at));
-			parent.set(at, root);
-			at = next;
-		}
-		return root;
-	};
-	/** @param {number} a @param {number} b */
-	const union = (a, b) => {
-		const [ra, rb] = [find(a), find(b)];
-		if (ra !== rb) parent.set(ra, rb);
-	};
-	for (let i = 0; i < indices.length; i++)
-		parent.set(/** @type {number} */ (indices[i]), indices[i]);
-	for (let t = 0; t < count; t++) {
-		const [a, b, c] = [
-			/** @type {number} */ (indices[t * 3]),
-			/** @type {number} */ (indices[t * 3 + 1]),
-			/** @type {number} */ (indices[t * 3 + 2]),
-		];
-		union(a, b);
-		union(b, c);
-	}
-	/** @type {Map<number, { vertices: Set<number>, triangles: number[] }>} */
-	const groups = new Map();
-	for (let t = 0; t < count; t++) {
-		const corners = [
-			/** @type {number} */ (indices[t * 3]),
-			/** @type {number} */ (indices[t * 3 + 1]),
-			/** @type {number} */ (indices[t * 3 + 2]),
-		];
-		const root = find(/** @type {number} */ (corners[0]));
-		let group = groups.get(root);
-		if (!group) {
-			group = { vertices: new Set(), triangles: [] };
-			groups.set(root, group);
-		}
-		for (const corner of corners) group.vertices.add(corner);
-		group.triangles.push(...corners);
-	}
-	const min = [Infinity, Infinity, Infinity];
-	const max = [-Infinity, -Infinity, -Infinity];
-	/** @type {Card[]} */
-	const cards = [];
-	for (const { vertices, triangles } of groups.values()) {
-		// A piece of any other shape is no card. A flat-shaded surface splits every face into a
-		// piece of three vertices, so it stays out.
-		if (CARD_CORNERS.get(vertices.size) !== triangles.length) return null;
-		const list = [...vertices];
-		let size = 0;
-		for (let a = 0; a < list.length; a++)
-			for (let b = a + 1; b < list.length; b++) {
-				const i = /** @type {number} */ (list[a]);
-				const j = /** @type {number} */ (list[b]);
-				size = Math.max(
-					size,
-					Math.hypot(
-						/** @type {number} */ (positions[i * 3]) - /** @type {number} */ (positions[j * 3]),
-						/** @type {number} */ (positions[i * 3 + 1]) -
-							/** @type {number} */ (positions[j * 3 + 1]),
-						/** @type {number} */ (positions[i * 3 + 2]) -
-							/** @type {number} */ (positions[j * 3 + 2]),
-					),
-				);
-			}
-		const centre = [0, 0, 0];
-		for (const v of list)
-			for (let k = 0; k < 3; k++) {
-				const value = /** @type {number} */ (positions[v * 3 + k]);
-				centre[k] = /** @type {number} */ (centre[k]) + value / list.length;
-				if (value < /** @type {number} */ (min[k])) min[k] = value;
-				if (value > /** @type {number} */ (max[k])) max[k] = value;
-			}
-		cards.push({ vertices: list, triangles, centre, size });
-	}
-	const side = Math.max(0, ...max.map((v, k) => v - /** @type {number} */ (min[k])));
-	const box = { min, side };
-	return cards
-		.map((card) => ({ card, key: cardKey(card.centre, box) }))
-		.sort((a, b) => a.key - b.key)
-		.map(({ card }) => card);
-}
-
-/**
- * The text that a vertex's place and the values welding must keep equal give it.
- *
- * @param {Float32Array[]} streams Streams of `sizes` values each.
- * @param {number[]} sizes
- * @param {number} v
- */
-function vertexKey(streams, sizes, v) {
-	let key = '';
-	streams.forEach((stream, s) => {
-		const size = /** @type {number} */ (sizes[s]);
-		for (let k = 0; k < size; k++) key += `${stream[v * size + k]},`;
-		key += '|';
-	});
-	return key;
-}
-
-/**
- * Welds a triangle list's vertices for planning. Vertices merge when they share their place,
- * texture coordinates, color and tangent handedness, and their normals lie within 20 degrees,
- * as Godot welds at import. Each weld takes its first vertex's number, and the average of its
- * normals. A merged vertex then draws with its first vertex's values, which differ from its own
- * only by that angle.
+ * Welds a primitive's vertices for planning, as the shared planner's `weldList` does: vertices
+ * merge when they share their place, texture coordinates, color and tangent handedness, and their
+ * normals lie within 20 degrees.
  *
  * @param {Primitive} prim
  * @param {Float32Array} positions
@@ -372,107 +168,26 @@ function vertexKey(streams, sizes, v) {
  * @returns {PlanningList}
  */
 export function weld(prim, positions, posed = false, side = 0) {
-	const count = positions.length / 3;
 	const stream = (/** @type {string} */ semantic) => {
 		const accessor = prim.getAttribute(semantic);
 		return accessor ? { values: floats(accessor), size: accessor.getElementSize() } : null;
 	};
-	const normal = stream('NORMAL');
-	const color = stream('COLOR_0');
-	const tangent = stream('TANGENT');
-	const texcoords = prim
-		.listSemantics()
-		.filter((s) => s.startsWith('TEXCOORD_'))
-		.map((s) => /** @type {{ values: Float32Array, size: number }} */ (stream(s)));
-	const surface = [...texcoords, ...(color ? [color] : [])];
-	const handedness =
-		tangent?.size === 4
-			? Float32Array.from({ length: count }, (_, v) =>
-					Math.sign(/** @type {number} */ (tangent.values[v * 4 + 3])),
-				)
-			: new Float32Array(count);
-	const placeKeys = Array.from({ length: count }, (_, v) => vertexKey([positions], [3], v));
-	/** @type {Map<string, Set<string>>} */
-	const looks = new Map();
-	/** @type {Map<string, number[]>} */
-	const firsts = new Map();
-	const remap = new Uint32Array(count);
-	const sums = new Float64Array(count * 3);
-	for (let v = 0; v < count; v++) {
-		const place = /** @type {string} */ (placeKeys[v]);
-		const look = vertexKey(
-			[...surface.map((s) => s.values), handedness],
-			[...surface.map((s) => s.size), 1],
-			v,
-		);
-		looks.set(place, (looks.get(place) ?? new Set()).add(look));
-		const key = place + look;
-		const candidates = firsts.get(key) ?? [];
-		firsts.set(key, candidates);
-		const n = normal?.values;
-		const match = candidates.find(
-			(first) =>
-				!n ||
-				/** @type {number} */ (n[first * 3]) * /** @type {number} */ (n[v * 3]) +
-					/** @type {number} */ (n[first * 3 + 1]) * /** @type {number} */ (n[v * 3 + 1]) +
-					/** @type {number} */ (n[first * 3 + 2]) * /** @type {number} */ (n[v * 3 + 2]) >=
-					WELD_COS,
-		);
-		const first = match ?? v;
-		if (match === undefined) candidates.push(v);
-		remap[v] = first;
-		if (n)
-			for (let k = 0; k < 3; k++)
-				sums[first * 3 + k] =
-					/** @type {number} */ (sums[first * 3 + k]) + /** @type {number} */ (n[v * 3 + k]);
-	}
-	const welded = new Float32Array(count * 3);
-	for (let v = 0; v < count; v++) {
-		const x = /** @type {number} */ (sums[v * 3]);
-		const y = /** @type {number} */ (sums[v * 3 + 1]);
-		const z = /** @type {number} */ (sums[v * 3 + 2]);
-		const length = Math.hypot(x, y, z) || 1;
-		welded.set([x / length, y / length, z / length], v * 3);
-	}
-	/**
-	 * The values that the simplifier keeps near the base mesh's, and their weights in the units of
-	 * its positions. A texture coordinate covers the texture across a UV unit, so it weighs a
-	 * sixty-fourth of the mesh's longest side: a slide of a large share of a texture counts like a
-	 * small distance, while a slide of a few texels stays under the geometry's own error.
-	 */
-	/** @type {{ values: Float32Array, size: number, take: number, weight: number }[]} */
-	const parts = [
-		...(normal ? [{ values: welded, size: 3, take: 3, weight: ATTRIBUTE_WEIGHT }] : []),
-		...texcoords.map((uv) => ({ .../** @type {typeof uv} */ (uv), take: 2, weight: side / 64 })),
-		...(color ? [{ ...color, take: 3, weight: ATTRIBUTE_WEIGHT }] : []),
-	];
-	const channels = parts.reduce((sum, part) => sum + part.take, 0);
-	const attributes = new Float32Array(count * channels);
-	for (let v = 0; v < count; v++) {
-		let at = v * channels;
-		for (const { values, size, take } of parts)
-			for (let k = 0; k < take; k++)
-				attributes[at++] = /** @type {number} */ (values[v * size + k]);
-	}
-	const seams = Uint8Array.from({ length: count }, (_, v) =>
-		/** @type {Set<string>} */ (looks.get(/** @type {string} */ (placeKeys[v]))).size > 1
-			? SEAM
-			: 0,
-	);
-	const indices = triangleIndices(prim, count);
-	for (let i = 0; i < indices.length; i++)
-		indices[i] = /** @type {number} */ (remap[/** @type {number} */ (indices[i])]);
-	return {
-		prim,
-		positions,
-		attributes,
-		stride: channels,
-		weights: parts.flatMap(({ take, weight }) => Array(take).fill(weight)),
-		seams,
-		indices,
-		cards: posed ? null : cardsOf(indices, positions),
+	const list = weldList(
+		{
+			positions,
+			normal: stream('NORMAL'),
+			color: stream('COLOR_0'),
+			tangent: stream('TANGENT'),
+			texcoords: prim
+				.listSemantics()
+				.filter((s) => s.startsWith('TEXCOORD_'))
+				.map((s) => /** @type {{ values: Float32Array, size: number }} */ (stream(s))),
+			indices: triangleIndices(prim, positions.length / 3),
+		},
 		posed,
-	};
+		side,
+	);
+	return { ...list, prim };
 }
 
 /**
@@ -512,157 +227,14 @@ function planningLists(mesh, prims) {
 	return { lists, side };
 }
 
-/** The ways each simplification tries, on top of the flags that every one takes. */
-const TRIES = /** @type {const} */ ([[], ['Prune'], ['Permissive'], ['Permissive', 'Prune']]);
-
 /**
- * A card list's level: the triangles of every `every`-th card, in the list's order, and the list's
- * positions with each kept card grown about its middle, so that the cards cover the surface that
- * the dropped ones covered. The error is the size of the largest card that the step drops.
- *
- * @param {PlanningList} list
- * @param {number} every
- * @returns {[Uint32Array, number, Float32Array]} The triangles, their error and the positions.
- */
-function thinCards(list, every) {
-	const cards = list.cards ?? [];
-	const grow = Math.sqrt(every);
-	const indices = new Uint32Array(list.indices.length);
-	const positions = new Float32Array(list.positions);
-	let at = 0;
-	let error = 0;
-	for (let k = 0; k < cards.length; k++) {
-		const card = /** @type {Card} */ (cards[k]);
-		if (k % every !== 0) {
-			error = Math.max(error, card.size);
-			continue;
-		}
-		indices.set(card.triangles, at);
-		at += card.triangles.length;
-		for (const v of card.vertices)
-			for (let c = 0; c < 3; c++) {
-				const centre = /** @type {number} */ (card.centre[c]);
-				const value = /** @type {number} */ (list.positions[v * 3 + c]);
-				positions[v * 3 + c] = centre + (value - centre) * grow;
-			}
-	}
-	return [indices.subarray(0, at), error, positions];
-}
-
-/**
- * Simplifies a triangle list toward a share of its triangles, under an error limit in planning
- * units, as {@link simplifyTries} chooses. Pruning lets small separate parts vanish. Permissive
- * simplification lets normal seams move but keeps texture and color seams: in a mesh of flat
- * faces every edge is a normal seam, so little simplifies without it. A list that every way
- * empties keeps its triangles. A list of separate cards thins its cards instead, once `every`
- * names a step.
- *
- * @param {PlanningList} list
- * @param {Uint32Array} indices The triangles to simplify, a subset of the list's welded ones.
- * @param {number} share
- * @param {number} limit
- * @param {SimplifierFlags[]} flags
- * @param {number} [every] For a level of detail, the base mesh's cards for each card that the
- *   level keeps.
- * @returns {[Uint32Array, number, Float32Array?]} The triangles, their error, and the positions
- *   when the step moved vertices.
- */
-function simplifyList(list, indices, share, limit, flags, every) {
-	if (every !== undefined && list.cards)
-		return thinCards(list, Math.min(every, Math.max(1, list.cards.length)));
-	return simplifyTries(list, indices, share, limit, flags) ?? [indices, 0];
-}
-
-/**
- * Simplifies a triangle list toward a share of its triangles in each of the four ways, and keeps
- * the result of least error among those that reach the share or come within half the cut of it.
- * When no way comes that near, it keeps the result with the fewest triangles. The whole levels and
- * the patches of a cluster tree both choose this way.
- *
- * `locks` holds the vertex marks of the ways that keep normal seams, and of the permissive ways,
- * which let them move: 1 locks a vertex, and 2 keeps it on its texture or color seam. With no
- * marks, only the permissive ways mark the seams.
- *
- * @param {PlanningList} list
- * @param {Uint32Array} indices The triangles to simplify, a subset of the list's welded ones.
- * @param {number} share
- * @param {number} limit The largest error, in planning units.
- * @param {SimplifierFlags[]} flags
- * @param {[Uint8Array | null, Uint8Array | null]} [locks]
- * @returns {[Uint32Array, number] | undefined} The triangles and their error, or none when every
- *   way leaves nothing.
- */
-export function simplifyTries(list, indices, share, limit, flags, locks = [null, list.seams]) {
-	const target = Math.floor((indices.length / 3) * share) * 3;
-	const enough = (indices.length * (1 + share)) / 2;
-	/** @type {[Uint32Array, number] | undefined} */
-	let best;
-	for (const extra of TRIES) {
-		const permissive = extra[0] === 'Permissive';
-		const result = MeshoptSimplifier.simplifyWithAttributes(
-			indices,
-			list.positions,
-			3,
-			list.attributes,
-			list.stride,
-			list.weights,
-			permissive ? locks[1] : locks[0],
-			target,
-			limit,
-			[...flags, ...extra],
-		);
-		if (result[0].length === 0 && indices.length > 0) continue;
-		const better =
-			!best ||
-			(result[0].length <= enough
-				? best[0].length > enough || result[1] < best[1]
-				: best[0].length > enough && result[0].length < best[0].length);
-		if (better) best = result;
-	}
-	return best;
-}
-
-/**
- * The flags of every simplification: borders stay, so the lists of a mesh still meet; errors are
- * distances; and meshes that bend, with joints or morph targets, keep evener triangles.
+ * True for a mesh whose lists bend, with joints or morph targets, which the simplifier keeps in
+ * evener triangles.
  *
  * @param {Primitive[]} prims
- * @returns {SimplifierFlags[]}
  */
-function simplifierFlags(prims) {
-	const bends = prims.some(
-		(prim) => prim.getAttribute('JOINTS_0') !== null || prim.listTargets().length > 0,
-	);
-	return [
-		'LockBorder',
-		'Sparse',
-		'ErrorAbsolute',
-		...(bends ? /** @type {const} */ (['Regularize']) : []),
-	];
-}
-
-/**
- * Simplifies one step: each list toward a share of its triangles.
- *
- * @param {PlanningList[]} lists
- * @param {Uint32Array[]} from Each list's triangles.
- * @param {number} share
- * @param {number} limit
- * @param {SimplifierFlags[]} flags
- * @param {number} [every] For a level of detail, the base mesh's cards for each card that the
- *   level keeps.
- */
-function simplifyStep(lists, from, share, limit, flags, every) {
-	const result = lists.map((list, p) =>
-		simplifyList(list, /** @type {Uint32Array} */ (from[p]), share, limit, flags, every),
-	);
-	return {
-		indices: result.map(([indices]) => indices),
-		positions: result.map(([, , positions]) => positions),
-		error: Math.max(0, ...result.map(([, error]) => error)),
-		triangles: result.reduce((sum, [indices]) => sum + indices.length / 3, 0),
-	};
-}
+const bends = (prims) =>
+	prims.some((prim) => prim.getAttribute('JOINTS_0') !== null || prim.listTargets().length > 0);
 
 /**
  * The levels of detail of one mesh: each level's indices for each triangle list, its error, and
@@ -671,8 +243,7 @@ function simplifyStep(lists, from, share, limit, flags, every) {
  * @typedef {object} MeshLevels
  * @property {Primitive[]} prims The mesh's triangle lists, in the order of each level's indices.
  * @property {number} side The mesh's longest side, in the units of its errors.
- * @property {{ indices: Uint32Array[], positions: (Float32Array | undefined)[], error: number,
- *   triangles: number }[]} levels The lower levels, from the most detailed down. A list of cards
+ * @property {PlannedLevel[]} levels The lower levels, from the most detailed down. A list of cards
  *   keeps its own positions, with each kept card grown; the other lists share the mesh's. The
  *   error is the largest distance between the level's surface and the full mesh's, in the units of
  *   the mesh's stored positions, or of the scene that holds its skeleton for a skinned mesh, in
@@ -695,13 +266,8 @@ const hasLevels = (mesh) =>
 		);
 
 /**
- * Plans levels of detail for each mesh of enough triangles. Each level simplifies the level above
- * toward half its triangles, with no error limit short of the mesh's size: the engine draws a
- * level only where its error spans under a pixel, so a coarse level only draws far away. Each
- * level's error is at least 1.5 times the level above's. The levels stop at the floor, after
- * fifteen levels, when one keeps more than three quarters of the triangles above it, or when its
- * error reaches the mesh's size. They share the mesh's vertices: only their indices are new.
- * Meshes whose levels the file already has keep them.
+ * Plans levels of detail for each mesh of enough triangles, with the shared planner
+ * (`planMeshLevels`). Meshes whose levels the file already has keep them.
  *
  * A mesh with a tree of cluster patches gets the same levels, whatever `simplify` says: a viewer
  * that draws no patches, and every copy that draws whole levels, draws them in place of the tree.
@@ -729,28 +295,7 @@ export async function planLevels(doc, trees = new Map(), simplify = true) {
 		if (!simplify && !prims.some((prim) => trees.has(prim))) continue;
 		const { lists, side } = planningLists(mesh, prims);
 		if (side === 0) continue;
-		const flags = simplifierFlags(prims);
-		/** @type {MeshLevels['levels']} */
-		const levels = [];
-		let from = lists.map((list) => list.indices);
-		let previous = total;
-		let error = 0;
-		while (levels.length < LOD_MAX_LEVELS && previous >= 2 * LOD_FLOOR_TRIANGLES) {
-			// A list of cards keeps one card of every 2^level, the level counted from the base's 0.
-			const every = 2 ** (levels.length + 1);
-			const step = simplifyStep(lists, from, LOD_STEP, side, flags, every);
-			if (step.triangles === 0 || step.triangles > previous * LOD_MAX_KEPT) break;
-			error = Math.max(error * LOD_ERROR_GROWTH, step.error);
-			if (error >= side) break;
-			levels.push({
-				indices: step.indices.map(cacheOrder),
-				positions: step.positions,
-				error,
-				triangles: step.triangles,
-			});
-			from = step.indices;
-			previous = step.triangles;
-		}
+		const levels = planMeshLevels(MESHOPT, lists, total, side, simplifierFlags(bends(prims)));
 		if (levels.length > 0) plans.set(mesh, { prims, side, levels });
 	}
 	return plans;
@@ -837,11 +382,12 @@ export async function simplifyMeshes(doc, share, maxError = SIMPLIFY_MAX_ERROR) 
 		const { lists, side } = planningLists(mesh, prims);
 		if (side === 0) continue;
 		const step = simplifyStep(
+			MESHOPT,
 			lists,
 			lists.map((list) => list.indices),
 			share,
 			maxError * side,
-			simplifierFlags(prims),
+			simplifierFlags(bends(prims)),
 		);
 		prims.forEach((prim, p) => {
 			const indices = /** @type {Uint32Array} */ (step.indices[p]);
