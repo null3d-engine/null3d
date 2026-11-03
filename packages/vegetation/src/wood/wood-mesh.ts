@@ -10,7 +10,7 @@
 // displacement on thin wood; `uv1.y` the junction mask; colour bytes R and G the wind record, B the
 // bend weight along the axis and A the crown's sky visibility.
 import type { MeshArrays } from '../asset';
-import { AXIS_STEM, type MacroSkeleton } from '../core/graph';
+import { AXIS_STEM, AXIS_STIPE, type MacroSkeleton } from '../core/graph';
 import { acos, cos, PI, sin, tan } from '../core/math';
 import type { Species } from '../core/record';
 import { crownSkyAt } from '../crown/visibility';
@@ -148,11 +148,14 @@ function woodAxes(input: MeshInput, keep: number): WoodAxis[] {
 	const p = skeleton.position;
 	const base = input.variant * VARIANT_RECORDS;
 	const lastKept = keptNodes(skeleton);
-	// A limb with no parent has nothing to weld onto and would float, so only stems start the tree.
+	// A limb with no parent has nothing to weld onto and would float, so only the axes rooted at
+	// the ground start the plant: stems, and a frond colony's stipes.
 	const meshed = (a: number) =>
 		(axes.order[a] as number) <= keep &&
 		(lastKept[a] as number) >= (axes.first[a] as number) &&
-		((axes.parent[a] as number) >= 0 || (axes.kind[a] as number) === AXIS_STEM);
+		((axes.parent[a] as number) >= 0 ||
+			(axes.kind[a] as number) === AXIS_STEM ||
+			(axes.kind[a] as number) === AXIS_STIPE);
 	// Leaders and the parent each axis hangs on.
 	const hangsOn = new Int32Array(axes.count);
 	const leads = new Uint8Array(axes.count);
