@@ -300,10 +300,17 @@ fn world_normal(m: &Affine, v: &[[f32; 3]; 3], direction: [f32; 3]) -> ([f32; 3]
     let (a0, a1, a2) = (column(0), column(1), column(2));
     let (c0, c1, c2) = (cross(a1, a2), cross(a2, a0), cross(a0, a1));
     let mut w: [f64; 3] = std::array::from_fn(|k| c0[k] * n[0] + c1[k] * n[1] + c2[k] * n[2]);
-    let back_facing = dot(w, direction.map(f64::from)) > 0.0;
-    if back_facing {
+    // The cofactor matrix is the inverse transpose scaled by the determinant, so a matrix that
+    // mirrors turns `w` over with it. The triangle's winding turns over too, so the side that `w`
+    // reports is the side the ray met only once the determinant's sign is taken out.
+    let mirrored = dot(c0, a0) < 0.0;
+    // The normal turns to face against the ray whatever the matrix does, so the turn is the raw
+    // side alone. Which side the ray met is that side with the mirror taken out.
+    let along_the_ray = dot(w, direction.map(f64::from)) > 0.0;
+    if along_the_ray {
         w = w.map(|x| -x);
     }
+    let back_facing = along_the_ray != mirrored;
     let len = dot(w, w).sqrt();
     if len > 0.0 {
         (w.map(|x| (x / len) as f32), back_facing)
