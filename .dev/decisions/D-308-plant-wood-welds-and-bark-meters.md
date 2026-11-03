@@ -41,12 +41,12 @@ quality comes before size, and approved larger memory budgets for near trees.
 
 | Tier | Nearest wood, largest of six oak variants | Triangles | Parts | Cap |
 | --- | --- | --- | --- | --- |
-| Low | 5.24 MB | 232,652 | 3 | 6 MB |
-| Medium | 5.66 MB | 254,267 | 4 | 6.5 MB |
-| High | 6.38 MB | 292,692 | 4 | 7.5 MB |
-| Ultra | 7.92 MB | 373,219 | 5 | 9 MB |
+| Low | 5.16 MB | 229,131 | 3 | 6 MB |
+| Medium | 5.58 MB | 250,968 | 3 | 6.5 MB |
+| High | 6.30 MB | 289,063 | 4 | 7.5 MB |
+| Ultra | 7.82 MB | 368,422 | 5 | 9 MB |
 
-The grown oak has 2,692 axes, 2,515 of them children. Before thin wood took fewer sides, rings by fit
+The grown oak has 2,654 axes, 2,653 of them children of another axis. Before thin wood took fewer sides, rings by fit
 and true meters, its nearest wood took 25 MB at the High tier. With 32-bit indices it took 6.2 MB on
 one variant, against 4.8 MB with 16-bit parts.
 
