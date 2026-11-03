@@ -342,6 +342,36 @@ describe('unmarked writes to the rows of a large batch', () => {
 		]);
 	});
 
+	test('shares its rows a frame between batches, and finds every write within one turn', () => {
+		// Two batches of 8 rows of one word each, whose check hashes 3 rows a frame in all.
+		const rows = [new Int32Array(8), new Int32Array(8)];
+		const dirty = new Int32Array(2);
+		const core = {
+			generation: 0,
+			glue: { batchArrays: (id: number, field: number) => id * 100 + field },
+			i32: (address: number) =>
+				address % 100 === C.BATCH_FIELD_DIRTY_WORDS
+					? dirty
+					: (rows[Math.floor(address / 100) - 1] as Int32Array),
+			holdViews: () => {},
+		};
+		const check = new UnmarkedRows(core, 3);
+		for (const id of [1, 2])
+			check.watch({ id, count: 8, activeRows: 8, describe: () => `batch ${id}` }, [
+				[C.BATCH_FIELD_POSITIONS, 1],
+			]);
+		const frames = Math.ceil(16 / 3);
+		for (let k = 0; k < frames; k++) expect(check.check()).toBeUndefined();
+		for (const batch of rows) batch.fill(1);
+		const found = [];
+		for (let k = 0; k < frames; k++) {
+			const message = check.check()?.message ?? '';
+			const others = Number(message.match(/(\d+) more rows? changed/)?.[1] ?? 0);
+			found.push(message === '' ? 0 : 1 + others);
+		}
+		expect(found).toEqual([3, 3, 3, 3, 3, 1]);
+	});
+
 	test('keeps a mark until its row comes round, so a marked write is never reported', () => {
 		const { rows, mark, frame } = largeBatch();
 		for (let k = 0; k < 3; k++) frame();

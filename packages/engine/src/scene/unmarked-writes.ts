@@ -197,8 +197,8 @@ export interface WatchedBatch {
 /** A row field of a batch: the field that `batchArrays` takes, and its 32-bit words per row. */
 export type RowField = readonly [field: number, words: number];
 
-/** The most rows of one batch that the check hashes in a frame. */
-export const ROWS_PER_CHECK = 8192;
+/** The most rows that the check hashes in a frame, over every batch it watches. */
+export const ROWS_PER_CHECK = 4096;
 
 /** A watched batch, with word views of its row arrays and its dirty bits, and a hash per row. */
 interface BatchWatch {
@@ -221,13 +221,16 @@ interface BatchWatch {
  * reaches the screen late or never. Before each batch update, which clears the marks, the check
  * notes every marked row. It then hashes a slice of the drawn rows, and compares each hash with the
  * one it read before. A row whose hash changed while no mark was noted since is a write that
- * skipped `markDirty`. The slices take turns, so a large batch costs a bounded time per frame, and
- * a write to one of its rows is found within a few frames.
+ * skipped `markDirty`. The slices take turns over every watched batch, so a scene of many large
+ * batches costs a bounded time per frame, and a write to one of its rows is found within one turn
+ * over all their rows.
  */
 export class UnmarkedRows implements ViewHolder {
 	private readonly watched: BatchWatch[] = [];
+	/** The watched batch whose rows the next check hashes first. */
+	private turn = 0;
 
-	/** `rowsPerCheck` is the most rows of one batch that a check hashes. */
+	/** `rowsPerCheck` is the most rows that a check hashes, over every watched batch. */
 	constructor(
 		private readonly core: BatchMemory,
 		private readonly rowsPerCheck = ROWS_PER_CHECK,
@@ -281,31 +284,46 @@ export class UnmarkedRows implements ViewHolder {
 	}
 
 	/**
-	 * Notes each static batch's marked rows, hashes its next slice of drawn rows, and returns E1110
-	 * when a row in it changed with no mark. Call it right before the batch update.
+	 * Notes each static batch's marked rows, hashes the next slice of drawn rows, and returns E1110
+	 * when a row in it changed with no mark. The slice starts where the last one ended and runs on
+	 * into the next batches while it has room. Call it right before the batch update.
 	 */
 	check(): EngineError | undefined {
+		const { watched } = this;
+		for (let b = 0; b < watched.length; b++) {
+			const watch = watched[b] as BatchWatch;
+			const views = this.viewsOf(watch);
+			const dirty = views[watch.fields.length] as Int32Array;
+			const { marked } = watch;
+			for (let w = 0; w < marked.length; w++)
+				marked[w] = (marked[w] as number) | (dirty[w] as number);
+		}
 		let first: WatchedBatch | undefined;
 		let firstRow = 0;
 		let more = 0;
-		for (let b = 0; b < this.watched.length; b++) {
-			const watch = this.watched[b] as BatchWatch;
-			const views = this.viewsOf(watch);
+		let room = this.rowsPerCheck;
+		// Each batch takes at most one slice a check, so a check ends after one pass over them.
+		for (let k = 0; k < watched.length && room > 0; k++) {
+			if (this.turn >= watched.length) this.turn = 0;
+			const watch = watched[this.turn] as BatchWatch;
+			const views = watch.views;
 			const { fields, seen, marked } = watch;
-			const dirty = views[fields.length] as Int32Array;
-			for (let w = 0; w < marked.length; w++)
-				marked[w] = (marked[w] as number) | (dirty[w] as number);
 			const rows = watch.batch.activeRows;
 			const start = watch.next < rows ? watch.next : 0;
-			const end = Math.min(rows, start + this.rowsPerCheck);
+			const end = Math.min(rows, start + room);
+			room -= end - start;
 			watch.next = end;
+			if (end >= rows) {
+				watch.next = 0;
+				this.turn++;
+			}
 			for (let row = start; row < end; row++) {
 				let hash = 0;
 				for (let f = 0; f < fields.length; f++) {
 					const words = (fields[f] as RowField)[1];
 					const view = views[f] as Int32Array;
-					for (let k = row * words, last = k + words; k < last; k++)
-						hash = (Math.imul(hash, 31) + (view[k] as number)) | 0;
+					for (let i = row * words, last = i + words; i < last; i++)
+						hash = (Math.imul(hash, 31) + (view[i] as number)) | 0;
 				}
 				const bit = 1 << (row & 31);
 				const word = row >>> 5;
