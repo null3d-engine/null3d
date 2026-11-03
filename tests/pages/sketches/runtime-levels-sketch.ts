@@ -71,7 +71,14 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 	const words = planningWords(grid);
 	const direct = runTask<{ levels: { indices: Uint32Array; error: number }[] }>(
 		PLANNER,
-		{ words, cards: false, maxLevels: LOD_MAX_LEVELS, skipFlat: false, parts: 1 },
+		{
+			words,
+			cards: false,
+			maxLevels: LOD_MAX_LEVELS,
+			skipFlat: false,
+			parts: 1,
+			basePieces: false,
+		},
 		[words],
 	);
 	Promise.all([planned.buildLevels(), split.buildLevels(), sphere.buildLevels(), direct])
