@@ -15,11 +15,9 @@
 //
 // glTF-Transform drops extensions it does not know, so the tool reads and writes this one itself.
 import { Extension, ExtensionProperty, PropertyType } from '@gltf-transform/core';
-import { pieceCount, planPieces } from '@null3d/engine/pieces-planner';
+import { pieceCount, piecesInOrder, planPieces } from '@null3d/engine/pieces-planner';
 import { cacheOrder, triangleIndices, triangleLists } from './geometry.js';
 import { lodOf } from './lod-extension.js';
-
-/** @import { PiecePlan } from '@null3d/engine/pieces-planner' */
 
 /** @import { Accessor, Document, Mesh, Node, Primitive, ReaderContext, WriterContext } from '@gltf-transform/core' */
 
@@ -171,27 +169,6 @@ function piecedMeshes(doc) {
 }
 
 /**
- * A list's triangles in the order of a plan's pieces, each piece ordered for the vertex cache.
- *
- * @param {Uint32Array} indices
- * @param {PiecePlan} plan
- */
-function sortedList(indices, plan) {
-	const sorted = new Uint32Array(indices.length);
-	let first = 0;
-	for (const triangles of plan.counts) {
-		const piece = new Uint32Array(triangles * 3);
-		for (let k = 0; k < triangles; k++) {
-			const from = /** @type {number} */ (plan.order[first + k]) * 3;
-			piece.set(indices.subarray(from, from + 3), k * 3);
-		}
-		sorted.set(cacheOrder(piece), first * 3);
-		first += triangles;
-	}
-	return sorted;
-}
-
-/**
  * Sorts each large triangle list of a mesh with levels into pieces (see the engine's pieces
  * planner), orders each piece's triangles for the vertex cache, and stores the pieces in
  * `NULL3D_pieces`. The vertices stay as they are, so the levels keep sharing them. Run after the
@@ -217,7 +194,7 @@ export function storePieces(doc) {
 			if (count === 0) continue;
 			const plan = planPieces(readPositions(position), indices, count);
 			if (!plan || plan.counts.length < 2) continue;
-			const sorted = sortedList(indices, plan);
+			const sorted = piecesInOrder(indices, plan, cacheOrder);
 			prim.setIndices(
 				doc
 					.createAccessor()
