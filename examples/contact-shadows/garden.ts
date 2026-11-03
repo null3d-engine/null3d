@@ -22,7 +22,6 @@ import {
 	treeValues,
 } from '@null3d/vegetation';
 import { createWind } from '@null3d/wind';
-import { TURN } from '../lib/pines';
 import { random } from '../lib/procedural';
 
 /**
@@ -60,6 +59,8 @@ function skylinePine(base: Species): Species {
 	};
 }
 
+/** A full turn of the circle, in radians, which the scene's own scattering works in. */
+const TURN = Math.PI * 2;
 /** The sand bed's side in meters, its texels along each side, and the rake's spacing in meters. */
 const BED = 10;
 const SIZE = 512;
