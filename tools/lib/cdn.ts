@@ -41,8 +41,11 @@ import { buildPackageLibraries, PACKAGES } from './packages.ts';
 /** The engine package that the build copies. */
 const ENGINE = 'packages/engine';
 
-/** The folders of the engine package that a page loads files from. */
-export const CDN_FOLDERS: readonly string[] = ['lib', 'dist/wasm', 'vendor'];
+/**
+ * The folders of the engine package that a page loads files from: the level planner that the
+ * engine shares with the asset tool sits in `levels`.
+ */
+export const CDN_FOLDERS: readonly string[] = ['lib', 'dist/wasm', 'vendor', 'levels'];
 
 /** The default folder that the build writes. */
 export const CDN_OUT = 'target/cdn';
@@ -146,6 +149,7 @@ export function cdnSourcesHash(root: string): string {
 	addFolder(`${ENGINE}/src`);
 	addFolder(`${ENGINE}/dist/wasm`);
 	addFolder(`${ENGINE}/vendor`);
+	addFolder(`${ENGINE}/levels`);
 	addFile(`${ENGINE}/THIRD-PARTY-NOTICES.txt`);
 	for (const name of CDN_ADDONS) {
 		addFolder(`packages/${name}/src`);

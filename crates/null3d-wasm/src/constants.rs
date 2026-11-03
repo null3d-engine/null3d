@@ -1767,6 +1767,10 @@ pub fn typescript() -> String {
                 ("FORMAT", level_problem::FORMAT),
             ],
         ),
+        (
+            "LEVELS",
+            &[("MAX", null3d_render::levels::MAX_LEVELS as u32)],
+        ),
     ];
     for &(prefix, entries) in groups {
         for (name, value) in entries {

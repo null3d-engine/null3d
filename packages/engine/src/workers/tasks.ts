@@ -62,6 +62,7 @@ export interface TaskResult {
 const ENGINE_TASKS: Record<string, () => Promise<TaskModule>> = {
 	ktx2: () => import('../scene/ktx2-transcode'),
 	grade: () => import('../scene/grade-task'),
+	levels: () => import('../scene/levels-task'),
 };
 
 /** The receiving end of the loader's requests. */

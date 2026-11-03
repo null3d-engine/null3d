@@ -65,7 +65,8 @@ function growingCore() {
 }
 
 /** A mesh the fake core never needs to know. */
-const box = (core: CoreMemory) => ({ id: 1, radius: 1, core }) as unknown as MeshGeometry;
+const box = (core: CoreMemory) =>
+	({ id: 1, radius: 1, core, drawnWith() {} }) as unknown as MeshGeometry;
 /** A material the fake core never needs to know. */
 const paint = (core: CoreMemory) => ({ id: 1, core }) as unknown as Material;
 

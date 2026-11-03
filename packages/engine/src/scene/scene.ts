@@ -1649,6 +1649,7 @@ export class Mesh extends Object3D {
 		}
 		this.scene.command(C.COMMAND_SET_MATERIAL, this.handle, material.id, 0, 'setMaterial');
 		this.material = material;
+		mesh?.drawnWith(material, 0, 'setMaterial');
 	}
 
 	/**
@@ -1664,6 +1665,7 @@ export class Mesh extends Object3D {
 		if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
 		this.scene.command(C.COMMAND_SET_MESH, this.handle, mesh.id, 0, 'setMesh');
 		this.mesh = mesh;
+		if (this.material) mesh.drawnWith(this.material, 1, 'setMesh');
 		this.keepFlag(C.FLAG_CUSTOM_BOUNDS, false);
 		// A mesh of as many morph targets keeps its weights; another gets weights of its own.
 		if (mesh.morphTargets !== this.morphCount) {
@@ -4278,6 +4280,7 @@ export class Scene implements ViewHolder {
 		);
 		object.mesh = mesh;
 		object.material = material;
+		mesh.drawnWith(material, 1, 'createMesh');
 		const block = this.makeMorph(object, mesh, undefined, 'createMesh');
 		if (block !== 0) this.command(C.COMMAND_SET_MORPH, object.handle, block, 0, 'createMesh');
 		return object;
@@ -4752,6 +4755,7 @@ export class Scene implements ViewHolder {
 			meshes: [mesh],
 			materials: [material],
 		});
+		mesh.drawnWith(material, count, call);
 		this.rememberBatch(batch);
 		if (DEV && !options.dynamic) this.unmarkedRows?.watch(batch, meshRowFields(own));
 		batch.setActiveCount(count);

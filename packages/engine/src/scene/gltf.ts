@@ -1327,6 +1327,8 @@ function makeMeshes(
 			weights: p.weights,
 			indices: p.indices,
 			computeNormals: !p.normals,
+			// A file's levels come from the file, which the asset tool plans.
+			levels: false,
 			...(p.morph && {
 				morphTargets: {
 					...p.morph,
