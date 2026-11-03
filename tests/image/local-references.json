@@ -371,6 +371,12 @@
 		"date": "2026-10-28",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
 	},
+	"chromium-swiftshader/webgl2/compare-night-town-null3d.png": {
+		"test": "compare-night-town-null3d",
+		"tier": "webgl2",
+		"date": "2026-11-03",
+		"reason": "drawn here on this Mac's SwiftShader for the windows the facades add-on now draws; CI's own drawing of the new look is still owed"
+	},
 	"chromium-swiftshader/webgl2/creek-water-close.png": {
 		"test": "creek-water-close",
 		"tier": "webgl2",
@@ -718,6 +724,12 @@
 		"tier": "webgpu",
 		"date": "2026-10-28",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/webgpu/compare-night-town-null3d.png": {
+		"test": "compare-night-town-null3d",
+		"tier": "webgpu",
+		"date": "2026-11-03",
+		"reason": "drawn here on this Mac's SwiftShader for the windows the facades add-on now draws; CI's own drawing of the new look is still owed"
 	},
 	"chromium-swiftshader/webgpu/creek-water-close.png": {
 		"test": "creek-water-close",
