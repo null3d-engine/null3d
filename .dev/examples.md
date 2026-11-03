@@ -707,7 +707,7 @@ town's own finish, frames and shop fronts.
   place, its size, its turn and the row values that light it. The sketch writes that into two
   instance batches, one for the floors above the street and one for the shops, and the add-on's
   pane form draws each pane's room. A pane is as wide as the opening's glass and stands a
-  centimeter off the wall, so the wall keeps its painted frame and mullions around it.
+  centimeter off the wall, so the wall keeps its painted frame and sill around it.
 - **The wall keeps its own surface.** `WALL_WGSL` in `examples/compare/night-town/shaders.ts`
   draws the brick, plaster, concrete or curtain wall, the frame and sill around every opening, the
   roof as wet tar and the neon tubes over the shop fronts. It draws no glass and no room, and the
