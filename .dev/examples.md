@@ -16,7 +16,6 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | `examples/showcase/<name>/` | One showcase scene: its `sketch.ts` and the modules that it imports, with no line limit ([Showcase scenes](#showcase-scenes)) |
 | `examples/lib/stage.ts`, `examples/lib/procedural.ts` | The showcase scenes' moods, and their generators of detail: seeded noise, texture sets from numbers, terrain and rocks |
 | `examples/lib/interact.ts` | `interact`, which gives a demo's camera orbit controls and lets the pointer steer the demo ([Always-on interaction](#always-on-interaction)) |
-| `examples/lib/pines.ts` | Pines made in code at four levels of detail, and the hills they stand on, which the page that measures the levels' saving uses |
 | `examples/forest/woods.ts` | The forest demo's scenery: three firs and a broadleaf tree made in code at four levels of detail, the bushes of its understory, the land and its ridges, the bark, needle and leaf textures, and the cut-out cards that draw the far trees on phones |
 | `examples/forest/planting.ts` | The forest demo's build: one batch for each kind of tree and one for the understory, the far rows as cards, the hero fir and the counts that each preset draws. The sketch keeps the look and the frame, so it stays under the feature demos' 150-line rule |
 | `examples/forest/sway.ts` | The forest demo's trees' material, whose trunk and crown bend in the wind add-on's field, read at each tree's root and fading out by the sway distance |
