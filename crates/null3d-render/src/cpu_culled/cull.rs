@@ -54,7 +54,6 @@ use null3d_core::culling::{
     NO_BUCKET, RowBiases, RowRadii, RowRanges, SetLayers, SetOrder,
 };
 use null3d_core::levels::LevelRule;
-use null3d_core::math::{max_axis_scale, world_sphere_at};
 use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::drawlist::DrawList;
 
@@ -217,9 +216,9 @@ fn push_view_runs(
 
 impl ViewCull {
     /// Picks the patches that the view draws from each cluster bucket's tree. A patch draws where
-    /// its own error passes the view's threshold and the error of the patch above it does not, at
-    /// the distance from the view's camera to the patch's own sphere, as the compute pass reads
-    /// the rule. Runs that are neighbours in the tree's index list merge, so a view uploads fewer
+    /// its own error passes the view's threshold at its own sphere and the error of the patch
+    /// above it does not pass at that patch's sphere, as the compute pass reads the rule
+    /// ([`crate::patches::PatchTree::walk`]). Runs that are neighbours in the tree's index list merge, so a view uploads fewer
     /// ranges for the same triangles.
     fn walk_patches(
         &mut self,
@@ -260,26 +259,17 @@ impl ViewCull {
                     .try_into()
                     .expect("a matrix is 12 floats");
                 let first = patch_runs.len();
-                let scale = max_axis_scale(matrix);
-                for (k, sphere) in tree.bounds().iter().enumerate() {
-                    let [x, y, z, radius] =
-                        world_sphere_at(matrix, [sphere[0], sphere[1], sphere[2]], sphere[3]);
-                    let (x, y, z) = (x + offset[0], y + offset[1], z + offset[2]);
-                    if self
-                        .frame
-                        .as_ref()
-                        .is_some_and(|frame| !frame.frustum.contains_sphere(x, y, z, radius))
-                    {
-                        continue;
-                    }
-                    let distance = rule.distance([x, y, z], radius);
-                    if let Some(run) = tree
-                        .run(k as u32)
-                        .filter(|_| tree.draws(k as u32, rule.factor, scale, distance))
-                    {
-                        patch_runs.push([run.0, run.1]);
-                    }
-                }
+                tree.walk(
+                    matrix,
+                    [offset[0], offset[1], offset[2]],
+                    rule,
+                    self.frame.as_ref().map(|frame| &frame.frustum),
+                    |patch| {
+                        if let Some((start, count)) = tree.run(patch) {
+                            patch_runs.push([start, count]);
+                        }
+                    },
+                );
                 patch_runs[first..].sort_unstable();
                 let mut write = first;
                 for read in first..patch_runs.len() {

@@ -4,8 +4,9 @@
 // Three dispatches of one pipeline fill the view's list, which the dispatch's parameters pick:
 // - stage 0, count: a thread a patch. The thread moves the patch's sphere by its mesh's copy in
 //   the view's compacted instances, tests it against the view's six frustum planes, and applies
-//   the level rule: a patch draws while its own error passes the view's threshold and the error of
-//   the patch above it does not. It writes the patch's run of indices, or 0.
+//   the level rule: a patch draws while its own error passes the view's threshold at its own
+//   sphere and the error of the patch above it does not pass at that patch's sphere. It writes the
+//   patch's run of indices, or 0.
 // - stage 1, scan: one workgroup adds each patch's count up, writes the offset of each patch's
 //   indices in the view's list, and writes each cluster mesh's indirect draw.
 // - stage 2, copy: a workgroup a patch copies the patch's indices into the view's list where the
@@ -123,6 +124,20 @@ fn mesh_of_patch(at: u32) -> ClusterMesh {
     return found;
 }
 
+/// A patch's sphere, placed by the rows `m0`, `m1` and `m2` of its copy's world matrix, whose
+/// largest axis scale is `scale`: its centre relative to the view's camera, then its radius.
+fn placed(record: Patch, m0: vec4f, m1: vec4f, m2: vec4f, scale: f32) -> vec4f {
+    let local = vec4f(record.centre, 1.0);
+    return vec4f(dot(m0, local), dot(m1, local), dot(m2, local), record.radius * scale);
+}
+
+/// The distance that the level rule compares for a placed sphere: the distance from the camera to
+/// its nearest point, at least the least distance, or 1 for an orthographic camera.
+fn rule_distance(sphere: vec4f) -> f32 {
+    let nearest = max(length(sphere.xyz) - sphere.w, LEAST_DISTANCE);
+    return select(nearest, 1.0, params.levels.y > 0.5);
+}
+
 /// The index count of a patch in this view: its run where the level rule draws it, else 0.
 fn run_of(at: u32) -> u32 {
     let record = patch_of(at);
@@ -131,28 +146,30 @@ fn run_of(at: u32) -> u32 {
     let m0 = bitcast<vec4f>(visible[copy * COPY_WORDS]);
     let m1 = bitcast<vec4f>(visible[copy * COPY_WORDS + 1u]);
     let m2 = bitcast<vec4f>(visible[copy * COPY_WORDS + 2u]);
-    let local = vec4f(record.centre, 1.0);
-    let centre = vec3f(dot(m0, local), dot(m1, local), dot(m2, local));
     let scale = max(
         length(vec3f(m0.x, m1.x, m2.x)),
         max(length(vec3f(m0.y, m1.y, m2.y)), length(vec3f(m0.z, m1.z, m2.z))),
     );
-    let radius = record.radius * scale;
+    let sphere = placed(record, m0, m1, m2, scale);
     for (var p = 0u; p < 6u; p++) {
         let plane = params.planes[p];
-        if (dot(plane.xyz, centre) + plane.w < -radius) {
+        if (dot(plane.xyz, sphere.xyz) + plane.w < -sphere.w) {
             return 0u;
         }
     }
     let factor = params.levels.x;
     let reach = scale * factor;
-    let nearest = max(length(centre) - radius, LEAST_DISTANCE);
-    let distance = select(nearest, 1.0, params.levels.y > 0.5);
-    if record.error * reach >= distance {
+    if record.error * reach >= rule_distance(sphere) {
         return 0u;
     }
-    if record.parent != 0u && patch_of(record.parent - 1u).error * reach < distance {
-        return 0u;
+    // The parent's error is tested at the parent's own sphere, which holds this patch's, so the
+    // patches that draw cover the mesh once. The record names the parent's place in the scene's
+    // patches.
+    if record.parent != 0u {
+        let parent = patch_of(record.parent - 1u);
+        if parent.error * reach < rule_distance(placed(parent, m0, m1, m2, scale)) {
+            return 0u;
+        }
     }
     return record.count;
 }

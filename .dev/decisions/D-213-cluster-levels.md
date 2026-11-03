@@ -14,7 +14,7 @@ How does the asset tool build a cluster tree, what does the file hold, and which
 ## Rule
 
 - The tool and the engine agree on every byte from one source, and the tool runs in Node without a C toolchain.
-- A patch draws where its own error passes a view's threshold and the error of the patch above it does not, so the patches that draw cover the mesh once at any distance.
+- A patch draws where its own error passes a view's threshold at its own sphere. The error of the patch above it must not pass at that patch's sphere. The patches that draw then cover the mesh once at any distance.
 - Patches of different detail still meet at their edges, with no gap and no pop.
 - Every patch names the mesh's own vertices, so a tree adds no vertex stream.
 - Other glTF loaders draw the whole mesh from the same file.
@@ -28,16 +28,17 @@ How does the asset tool build a cluster tree, what does the file hold, and which
 | Patches in the tree | Just over 500: the leaves, a parent above each pair of them, and a short chain above the root |
 | The coarsest patch | About 450 triangles: the chain above the root stops where the simplifier can go no coarser with the seam held |
 | Tree triangles against the base mesh's | About 1.5 times, and under 2.6 times |
-| Errors | Strictly rising from every patch to its parent, on every chain |
+| Errors | Never falling from a patch to its parent, on every chain |
+| Spheres | Each parent's sphere holds its children's spheres |
 | Vertices added by the tree | 0 |
 
-How the data was produced: `bun test packages/cli/src/assets/clusters.test.ts` at commit `2331d49fa`, with the build's own records read back as the engine reads them.
+How the data was produced: `bun test packages/cli/src/assets/clusters.test.ts` at commit `2331d49fa`, with the build's own records read back as the engine reads them. The errors and spheres rows follow the [addendum](#addendum-nested-spheres-and-errors-that-do-not-compound).
 
 ## Decision
 
 1. The tool's own code builds the tree, in `packages/cli/src/assets/clusters.js`. It cuts each mesh part into compact leaves across the longest axis of their centroids, joins pairs of patches upward, and simplifies each group toward half its triangles with meshoptimizer's `simplifyWithAttributes`, with the group's border locked. This is the shape that `clusterlod.h` builds, in the tool's own language, so the tool needs no C toolchain and the same input gives the same bytes on every machine. The centroid split stands in for `clusterlod.h`'s partition step.
-2. A patch's error is the largest of its children's errors plus the error of its own simplification, and at least 1.5 times the largest. Errors therefore rise strictly along every chain, which the draw rule needs. A step above the root that cannot lose a triangle ends the chain, so a patch never repeats its child's triangles.
-3. The tree is stored in `NULL3D_clusters` on the primitive, in three accessors: the indices of every patch one after another, four floats of each patch's sphere, and four integers of each patch's run, its parent and its error. The extension is not required, so other loaders draw the whole mesh.
+2. A patch's error is the larger of its children's errors and the error of its own simplification. A leaf's sphere holds its triangles, and every other patch's sphere holds its children's spheres. So along every chain the errors never fall and the spheres never shrink, which the draw rule needs. A patch keeps the simplifier's way of least error among those that reach the target or come near it. The whole levels choose the same way. A step above the root that cannot lose a triangle ends the chain, so a patch never repeats its child's triangles.
+3. The tree is stored in `NULL3D_clusters` on the primitive, in three accessors. The first holds the indices of every patch one after another. The second holds four floats of each patch's sphere, and the third four integers of each patch's run, its parent and its error. The extension also names its layout's version, 2. The extension is not required, so other loaders draw the whole mesh.
 4. A mesh gets a tree when it has 20,000 triangles or more, no skin and no morph targets, a material that neither blends nor masks, and at most four copies. A mesh that bends has no fixed patch bounds, and many copies pay about twice their indices for no saving, so those meshes keep whole levels.
 5. The engine stores the tree against the mesh's id and checks it against the mesh's vertices. The WebGPU path draws the chosen patches ([Drawing on WebGPU](#drawing-on-webgpu)), and the WebGL2 path draws them on the job workers where the device has `WEBGL_multi_draw`. Every other path draws the mesh's whole levels ([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)). [D-231](D-231-cluster-levels-cost.md) records what the pass costs.
 6. Each mesh with a tree gets its whole levels from the level planner of [D-91](D-91-level-planning.md), with or without `--lod`. They are the levels that a mesh without a tree gets. The tree stays as it is. The levels share the mesh's vertices. The tool orders the vertices coarsest level first, then the finer levels, then the base mesh, as for a mesh without a tree. The reorder renames the tree's indices too ([Whole levels beside the tree](#whole-levels-beside-the-tree)).
@@ -108,8 +109,9 @@ scenes never use, and the downloading and compiling of those builds lands at the
 Three dispatches of one compute pipeline, recorded in the view's culling pass, fill the view's list:
 
 1. A thread tests one patch: it moves the patch's sphere by the copy's world matrix, tests it against
-   the view's six frustum planes, applies the level rule to the patch's own error and the error of
-   the patch above it, and writes the patch's index count, or zero.
+   the view's six frustum planes, applies the level rule to the patch's own error at its own sphere
+   and the error of the patch above it at that patch's sphere, and writes the patch's index count,
+   or zero.
 2. One workgroup adds the counts up into each patch's offset in the view's list, and writes each
    cluster mesh's indirect draw from where its patches start and end.
 3. A workgroup copies each chosen patch's indices into the list.
@@ -170,3 +172,104 @@ them.
 - A mesh that several copies draw, and a one-row instance batch, draw whole levels on both paths.
   [D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md) gives the WebGL2 routes and their
   figures.
+
+## Addendum: nested spheres and errors that do not compound
+
+The owner's session asked for this fix. A simulation of the draw rule on the
+benchmark's pebble and boulder trees found holes and parts drawn twice from cameras outside the
+mesh.
+
+### The faults
+
+- **Holes and double draws.** Both GPU paths tested the parent's error at the child's own distance,
+  and each patch's sphere held its own triangles only. A parent's sphere then need not hold its
+  children's. Two children of one parent could disagree on whether the parent passes. One child
+  then draws with its parent, a double draw, and its sibling draws neither, a hole.
+- **Errors that compound.** A parent's error was its children's plus its own simplification's, and
+  at least 1.5 times its children's. Over 12 to 16 depths the root's error reached many times the
+  mesh's size, so the coarse patches switched in far too late.
+- **A choice of the fewest triangles.** Of the simplifier's ways, each patch kept the one with the
+  fewest triangles, whatever its error.
+- **The WebGPU table's parent.** The pass's table named each patch's parent by its place in its own
+  tree. The shader read it as a place in the scene's table, so every cluster mesh after the first
+  tested another mesh's patch as its parent.
+
+### The fix
+
+- A parent's sphere holds its children's spheres, from the leaves up, as 32-bit floats rounded
+  outward. A parent's error is the larger of its children's and its own. Both paths test the
+  parent's error at the parent's own sphere. A camera is then never nearer a child than its parent,
+  so a parent that passes leaves each child below it passing. Each chain from a leaf up holds one
+  run of passing patches, and the top of that run is the one patch that draws.
+- meshoptimizer's `clusterlod.h` takes the same approach. It tests a group's error at the merged
+  group's sphere, and notes that the precise bounds of the simplified mesh may break the order.
+- Each patch keeps the way of least error among those that come within half the cut of the target.
+  The halving planner of the whole levels chooses the same way.
+- The layout writes each parent's place in the scene's table (`PatchTree::table_record`), which the
+  shader reads.
+- `NULL3D_clusters` names its layout's version, 2. The loader draws an older tree's mesh as whole
+  levels, with the warning to optimize the file again. The core also refuses a tree or a band whose
+  spheres or errors break the order (`PatchError::Nesting`, code 8).
+- The two walks on WebGL2, the job workers' walk and the count of a band's picks, share one walk
+  (`PatchTree::walk`).
+
+### Options rejected
+
+- **A parent's sphere in each record**, as `clusterlod.h` stores it. Its groups are not records of
+  their own. Here each patch has one parent, and the parent's sphere is one record away. A second
+  copy would add 16 bytes to every patch for no gain.
+- **A margin on the old test.** No margin makes a parent's own triangles hold its children's, so
+  the order still breaks.
+- **Errors that add up.** With nested spheres, the larger of the two errors is enough for the order.
+  A sum only makes the coarse patches switch in later.
+
+### Data
+
+The data comes from the benchmark's raw meshes, before and after the fix. Each was built with
+`bun packages/cli/bin/null3d.js assets optimize <in> <out> --lod --clusters --no-blockers --bvh 0`. The pebble is `pebble-0` of the props file: 20,480 triangles, 2.06 m long.
+The ground holds 2,000,000 triangles over 800 m. The trees keep their shape: the pebble has 514
+patches over 12 depths and 2.10 times its triangles, and the ground 32,768 patches over 16 depths
+and 2.19 times.
+
+The measured distance is a two-sided distance between a patch and the full mesh below it. It
+measures the patch's vertices and triangle centers against the full mesh. It also measures up to
+6,000 of the full mesh's vertices against the patch. It takes up to 48 patches of each depth. Depth 0 is the root.
+
+| Mesh | Depth | Stored error before | Stored error after | Measured distance |
+| --- | --- | --- | --- | --- |
+| Pebble | 0 | 34.6 m | 1.74 m | 0.43 m |
+| Pebble | 5 | 3.98 m | 1.70 m | 0.22 m |
+| Pebble | 8 | 0.28 m | 0.25 m | 0.037 m |
+| Pebble | 10 | 0.0066 m | 0.0066 m | 0.0044 m |
+| Ground | 0 | 4,752 m | 750 m | 9.1 m |
+| Ground | 4 | 668 m | 315 m | 5.4 m |
+| Ground | 8 | 35.0 m | 17.4 m | 1.0 m |
+| Ground | 12 | 0.77 m | 0.67 m | 0.075 m |
+| Ground | 14 | 0.026 m | 0.026 m | 0.017 m |
+
+The figures below depth 0 are medians. Over 2,000 views each, with a threshold of 1 pixel in a
+1080-pixel view at a 60 degree field of view:
+
+| Mesh and cameras | Views with holes, before | Views with double draws, before | After |
+| --- | --- | --- | --- |
+| Pebble, outside the mesh at 1.01 to 40 root radii | 535 (27%) | 44 (2.2%) | 0 and 0 |
+| Ground, outside the mesh at 1.01 to 40 root radii | 1,559 (78%) | 168 (8.4%) | 0 and 0 |
+| Ground, 0.8 to 80 m above its highest point | 2,000 (100%) | 1,570 (79%) | 0 and 0 |
+
+The ground's top errors stay well above the measured distance. Its outer border is locked, so the
+patches near the root keep 2,000 to 4,000 triangles. At those steps the simplifier reports 200 to
+760 m of error against 9 m measured, and the larger-of-two rule carries that figure up. The fix does
+not change the simplifier's measure.
+
+### Tests
+
+`crates/null3d-render/tests/cluster_cover.rs` walks the tool's own trees of a lumpy pebble and a
+heightfield, which `cluster-fixture.ts` writes into `tests/fixtures/cluster-trees/`. It uses 2,000
+views each, inside and outside the mesh, at five thresholds, with scaled and turned copies. Every
+leaf must find exactly one drawn patch on its chain. A second test applies the shader's rule, line
+for line, to the pass's table of both trees in one scene, and pins the shader's lines. Its picks
+must match the walk's. With the old parent test, 1,392 of 2,000 pebble views fail. With the old
+table parent, 118,985 picks differ.
+
+How the data was produced: the commands above ran on this branch and on its base, `f7ffdbff`. A
+script then read each tree back and simulated the rule. The script lives outside the repository.

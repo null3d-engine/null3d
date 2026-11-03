@@ -139,3 +139,17 @@ WebGL2 draw-record buffer's figures are in
 - The WebGL2 rows for the iPad and the phone are measured at the High preset, and both devices
   report no GPU timer on that path, so their interval and CPU time are what stand in.
 - The Mac's figures are one preset's and one window's.
+
+## Addendum: the tree that the figures measured
+
+Every figure above was measured on the test model's tree before the fix in
+[D-213's addendum](D-213-cluster-levels.md#addendum-nested-spheres-and-errors-that-do-not-compound).
+That tree's errors compounded up the tree, so its coarse patches switched in later than they
+should. The fix keeps the tree's 511 patches and their triangles. It lowers the errors near the
+root and nests each parent's sphere around its children's. A view at the far distance therefore
+picks coarser patches sooner, and the far rows should fall further. The pass reads one more sphere
+for each patch whose own error passes, which adds little to the count stage.
+
+The figures were not measured again, because the Mac was busy with other sessions' GPU work. The
+GPU check's noise reached 134% on S4 at Medium in that window. Measure the `cluster-cost` page again
+in a quiet window, at Medium on both routes, before the owner's review relies on the far rows.

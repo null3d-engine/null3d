@@ -2371,7 +2371,8 @@ pub fn set_mesh_patches(mesh: u32, patches: u32, indices: u32, root: u32) -> u32
 }
 
 /// The code that a tree that the engine refused answers with: 2 for a tree without patches, 3 for
-/// a root that names none, 4 for a patch's run, 5 for a parent, 6 for an index and 7 for a sphere.
+/// a root that names none, 4 for a patch's run, 5 for a parent, 6 for an index, 7 for a sphere,
+/// and 8 for a patch whose sphere or error does not hold a child's.
 fn patch_failure(error: PatchError) -> u32 {
     match error {
         PatchError::Empty => 2,
@@ -2380,6 +2381,7 @@ fn patch_failure(error: PatchError) -> u32 {
         PatchError::Parent => 5,
         PatchError::Vertex => 6,
         PatchError::Bounds => 7,
+        PatchError::Nesting => 8,
     }
 }
 
