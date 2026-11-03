@@ -189,6 +189,10 @@
         "@null3d/wind": "workspace:*",
       },
     },
+    "packages/vegetation-textures": {
+      "name": "@null3d/vegetation-textures",
+      "version": "0.0.0",
+    },
     "packages/vite-plugin": {
       "name": "@null3d/vite-plugin",
       "version": "0.0.0",
@@ -353,6 +357,8 @@
     "@null3d/three-compat": ["@null3d/three-compat@workspace:packages/three-compat"],
 
     "@null3d/vegetation": ["@null3d/vegetation@workspace:packages/vegetation"],
+
+    "@null3d/vegetation-textures": ["@null3d/vegetation-textures@workspace:packages/vegetation-textures"],
 
     "@null3d/vite-plugin": ["@null3d/vite-plugin@workspace:packages/vite-plugin"],
 
