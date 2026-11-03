@@ -118,7 +118,9 @@ describe('the plant core with stand-ins', () => {
 	});
 
 	it('throws where a stage is not built and the kit asks for no stand-ins', () => {
-		expect(() => buildKitNow(stub)).toThrow(NotBuiltError);
+		// Every kit stage is built; a variant's growth still meets a stage that is not.
+		const kit = buildKitNow(stub);
+		expect(() => growPlantNow(kit, { seed: 11, variant: 0, near: true })).toThrow(NotBuiltError);
 	});
 
 	it('grows the same bytes in a worker that runs the job-worker task', async () => {
