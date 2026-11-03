@@ -157,5 +157,29 @@ repository. Each one waits for its growth model and its species package:
 | Architectural | Norway spruce, Scots pine, Douglas fir, Italian stone pine, cedar of Lebanon, European larch, English yew, common juniper, giant sequoia, Italian cypress |
 | Crown rosette and fronds | date palm, coconut palm, Mexican fan palm, tree fern |
 | Culm | bamboo |
-| Ground plants | agave, soft rush |
+| Ground plants | agave, soft rush, wildflower (its reference set is still to be made) |
 | Column | saguaro |
+
+## The milestone branch's changes to the first generator
+
+The milestone branch kept changing the first generator after this record deleted it. The merge of
+`m3-start` into the plant core's branch read each of those commits. The generator stays deleted, as
+the owner ruled. Each change was either dropped with the generator or ported into the new code:
+
+- **Ported: the grass's GPU blade list, view cull, far share and near shadows** (`70a124e6`,
+  `8f69e514`, `e48160ea`, `bee6de65`). The grass is kept, so its code merged into `src/grass/`, and
+  the blade list's shader moved there beside it.
+- **Ported: the sway distance of each preset** (`PLANT_SWAY_DISTANCE`, `swayDistanceFor`). The grass
+  and Creek read it, and it lived in a file that the deletion removed. It now lives in `wind/sway.ts`.
+- **Ported: the test that holds the two grass shaders' far share to one copy** (`8f69e514`). It sat in
+  the deleted atlas test. It now sits in the grass test, beside the wind block copies.
+- **Kept as a stand-in: Creek's wildflower clumps** (`6b25bccf`). The first generator's wildflower
+  record and its picture test are gone. By the lead's ruling, Creek still places the clumps by the
+  same rule, as a stand-in of the record's size and leaf color named `wildflower`. So the valley keeps
+  its layout, and the species swaps in when it ships. The stream's 13 rules now place 1,245 points,
+  320 of them wildflowers. The other species keep 925 of the 930 points that they placed before.
+- **Dropped: the trunks' prepass option** (`6b25bccf`). The plant material draws every role with the
+  mask build, the wood included, so the depth prepass already skips the wood. The stand-ins draw with
+  the standard material until their species ship, and stay as they are.
+- **Dropped: the hosta's flower color** (`99300b5c`). It was a field of the first generator's record.
+  The plant core's hosta grows its flowers as extras, from its own record and textures.
