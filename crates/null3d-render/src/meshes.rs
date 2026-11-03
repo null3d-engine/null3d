@@ -34,6 +34,7 @@ use null3d_gpu::drawlist::vertex;
 
 use crate::geometry::Geometry;
 use crate::morph::{MORPH_LOCATION, MorphError, MorphTargets, with_ranges};
+use crate::piece_check::PieceCheck;
 use crate::pieces::{Piece, PieceError, PieceTable};
 
 /// The most vertices one part of a mesh uses, and the most a WebGL2 page holds: what 16-bit
@@ -221,6 +222,8 @@ pub struct MeshStorage {
     updated: Vec<(u32, usize, usize)>,
     /// Each mesh's pieces (see [`crate::pieces`]), which a new triangle list or new vertices drop.
     pieces: PieceTable,
+    /// The check of what each mesh's pieces cull, which draws a mesh whole while they do not pay.
+    piece_check: PieceCheck,
 }
 
 /// Why [`MeshStorage::update_vertices`] refused an update. It changes no vertex then.
@@ -338,6 +341,7 @@ impl MeshStorage {
             sources: Vec::new(),
             updated: Vec::new(),
             pieces: PieceTable::default(),
+            piece_check: PieceCheck::default(),
         }
     }
 
@@ -423,13 +427,19 @@ impl MeshStorage {
             .map_or(&[], |mesh| self.parts(mesh, false))
     }
 
-    /// The pieces of mesh `id`'s triangle list, or none for a mesh that draws its list whole.
+    /// The pieces of mesh `id`'s triangle list, or none for a mesh that draws its list whole: one
+    /// without pieces, or one whose pieces did not pay at the check's last verdict.
     pub fn pieces(&self, id: u32) -> &[Piece] {
-        if self.mesh(id).is_some() {
+        if self.mesh(id).is_some() && !self.piece_check.whole(id) {
             self.pieces.of(id)
         } else {
             &[]
         }
+    }
+
+    /// The check of what each mesh's pieces cull, which the frame builders count into.
+    pub fn piece_check_mut(&mut self) -> &mut PieceCheck {
+        &mut self.piece_check
     }
 
     /// The live mesh with id `id`.
@@ -1364,6 +1374,7 @@ impl MeshStorage {
             self.live[id as usize] = false;
             self.meshes[id as usize].part_count = 0;
             self.pieces.forget(id);
+            self.piece_check.forget(id);
         }
         sources.close();
         sources.squeeze(&mut self.sources, 1);

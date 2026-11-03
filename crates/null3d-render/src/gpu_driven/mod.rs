@@ -1018,6 +1018,8 @@ pub struct GpuDrivenRenderer {
     occluder_buckets: occlusion_check::OccluderBuckets,
     /// A number that changes each time the scene's layout is built, so a read names its layout.
     layout_epoch: u32,
+    /// True when the check of what pieces cull changed a mesh's mode, which rebuilds the layouts.
+    pieces_switched: bool,
     lines: LinesPass,
     /// The sources of the transparent pass, and each camera view's sorted rows.
     sorted: SortedLayout,
@@ -1326,6 +1328,7 @@ impl GpuDrivenRenderer {
             count_reads: occlusion_check::CountReads::default(),
             occluder_buckets: occlusion_check::OccluderBuckets::default(),
             layout_epoch: 0,
+            pieces_switched: false,
             lines: LinesPass::new(ids::LINES),
             sorted: SortedLayout::default(),
             transparent: Transparent::default(),
@@ -1657,13 +1660,44 @@ impl GpuDrivenRenderer {
         // only on a changed scene.
         self.frame_bound = 0;
         // The occlusion check takes the counts that landed since the frame before, and the
-        // occluders' pass the buckets that held occluders in them.
+        // occluders' pass the buckets that held occluders in them. The check of what pieces cull
+        // takes the counts of the pieces' draws and their tallies.
+        let piece_check = self.settings.meshes_mut().piece_check_mut();
         if let Some(landed) = self.count_reads.take() {
-            self.check.land(landed.counts);
-            if landed.layout == self.layout_epoch && !landed.draws.is_empty() {
-                self.occluder_buckets.update(&self.layout, landed.draws);
+            if landed.occlusion {
+                self.check.land(landed.counts);
+                if landed.layout == self.layout_epoch && !landed.draws.is_empty() {
+                    self.occluder_buckets.update(&self.layout, landed.draws);
+                }
+            }
+            if landed.layout == self.layout_epoch && !landed.pieces.is_empty() {
+                let (layout, pieces) = (&self.layout, landed.pieces);
+                let instances = |bucket: u32| {
+                    let draw = layout.buckets[bucket as usize].first_draw;
+                    let at = (draw.wrapping_sub(layout.first_piece_draw) * sizes::INDIRECT_WORDS
+                        + 1) as usize
+                        * 4;
+                    pieces
+                        .get(at..at + 4)
+                        .map_or(0, |b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                };
+                layout.piece_counts(instances, instances, |mesh, would, drawn| {
+                    piece_check.count(mesh, landed.counts.frame, would, drawn);
+                });
             }
         }
+        // The direct path counted its pieces' copies on the CPU in the frame before, with the
+        // layout that it drew then.
+        if self.config.direct_draws {
+            let counts = self.direct.counts(ViewId::CAMERA);
+            let count = |bucket: u32| counts.get(bucket as usize).copied().unwrap_or(0);
+            self.layout
+                .piece_counts(count, count, |mesh, would, drawn| {
+                    piece_check.count(mesh, input.frame, would, drawn);
+                });
+        }
+        // A change of a mesh's mode rebuilds the layouts.
+        self.pieces_switched |= piece_check.step(input.frame);
         // A draw whose count the GPU writes needs the indirect path: the direct path reads every
         // count on the CPU and creates no indirect buffer for the frame's count copy. The first
         // frame picks the builder's path, so a scene that holds such a draw takes the indirect one.
@@ -1758,6 +1792,7 @@ impl GpuDrivenRenderer {
             .update_probe_shading(&mut self.pipelines, input.pipelines_built);
         let particles_changed = self.settings.particles_mut().take_changed();
         let upload_everything = particles_changed
+            || std::mem::take(&mut self.pieces_switched)
             || input.structure_changed
             || !self.layout.built
             || area_switched
@@ -2906,6 +2941,10 @@ impl GpuDrivenRenderer {
         let any_probes = self.settings.probes().any();
         let list_probes = self.probes_listed || any_probes;
         self.probes_listed = any_probes;
+        // The check of what pieces cull reads the counts of the camera's pieces every few frames.
+        let read_pieces = !self.config.direct_draws
+            && !self.layout.piece_parents.is_empty()
+            && input.frame.is_multiple_of(crate::piece_check::READ_FRAMES);
         for (index, frame) in self.frames.iter().enumerate() {
             let view = ViewId::from_index(index);
             if let Some(frame) = frame {
@@ -2953,6 +2992,10 @@ impl GpuDrivenRenderer {
                         Culling::reset_counts(list, arena, view, layout, input.frame)?;
                         layout.draws.len() as u32
                     } else {
+                        // A read of the pieces' counts finds its frame in the counts' words.
+                        if read_pieces && view == ViewId::CAMERA {
+                            Culling::reset_counts(list, arena, view, layout, input.frame)?;
+                        }
                         0
                     };
                     self.clusters.upload(
@@ -3695,16 +3738,20 @@ impl GpuDrivenRenderer {
             )?;
             self.settings.take_pick();
         }
-        // The occlusion check's counts copy once the camera's late culling phase has counted them.
-        if plan.read
-            && self.culling.occludes(ViewId::CAMERA)
+        // The occlusion check's counts copy once the camera's late culling phase has counted them,
+        // and the counts of the pieces' draws with them, or in a read of their own.
+        let occlusion_read = plan.read && self.culling.occludes(ViewId::CAMERA);
+        if (occlusion_read || read_pieces)
             && self.count_reads.record(
                 list,
                 ViewId::CAMERA,
                 &self.layout,
                 self.layout_epoch,
                 input.frame,
+                occlusion_read,
+                read_pieces,
             )?
+            && occlusion_read
         {
             self.check.read_recorded();
         }
