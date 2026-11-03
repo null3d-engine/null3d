@@ -1,8 +1,10 @@
-// The vegetation add-on for null3D. The main entry holds the scatter that places plants by ecological
-// rules, the ground maps it reads, the grass and the floating leaves. The first plant generator, with
-// its materials, wind and far trees, is at `@null3d/vegetation/legacy`. Each module keeps its public
-// names in its own `public.ts`, and this file only re-exports them. Built on the engine's public API
-// only.
+// The vegetation add-on for null3D. The plant core grows each species from a record in its own
+// folder: a macro skeleton per variant, shoot prototypes per species, real leaves near the camera
+// and cards beyond, wood with bark in metres, one plant shader, and wind records per axis. The main
+// entry also holds the scatter that places plants by ecological rules, the ground maps it reads, the
+// grass and the floating leaves. The first generator, with its materials, wind and far trees, is at
+// `@null3d/vegetation/legacy` until the demos move to the core. Each module keeps its public names
+// in its own `public.ts`, and this file only re-exports them. Built on the engine's public API only.
 import { checkAddonVersion, declareAddonNamespace } from '@null3d/engine';
 import { VERSION } from './version';
 
@@ -19,10 +21,50 @@ export const NAMESPACE = declareAddonNamespace({
 	errorCodes: [2300, 2399],
 });
 
+export {
+	type CardCell,
+	type MeshArrays,
+	type PartName,
+	type PlantAsset,
+	type PlantLevel,
+	type PlantPart,
+	type PrototypeArrays,
+	plantAssetBuffers,
+	plantAssetDigest,
+	type QuantisedArrays,
+	type ShootPrototype,
+	type ShootRows,
+	type SpeciesKitData,
+	type WindTable,
+} from './asset';
+export * from './core/public';
+export * from './crown/public';
+export { CUTTING_LENGTH, type CuttingOptions, type CuttingPart } from './cutting';
 export * from './ecology/public';
 export * from './floating-leaves/public';
+export {
+	bakeFarNow,
+	buildKitNow,
+	GENERATOR_VERSION,
+	type GrowOptions,
+	growNearWoodNow,
+	growPlantNow,
+	type KitOptions,
+	type KitSource,
+	kitKey,
+	loadPlantCode,
+	variantKey,
+} from './generate';
 export * from './grass/public';
 export * from './grid/public';
 export * from './ground/public';
+export * from './grow/public';
+export * from './leaf/public';
+export * from './lod/public';
+export * from './render/public';
 export * from './scatter/public';
+export type { FarBake } from './stages';
+export { bakeFarPlant, buildKit, growNearWood, growPlant } from './tasks';
 export * from './variance/public';
+export * from './wind/public';
+export * from './wood/public';

@@ -45,6 +45,7 @@ Never commit a generated file, unless [D-105](decisions/D-105-generated-files-ou
 | The three.js mapping page and the porting skill's 2 copies of the mapping | `docs/data/threejs-mapping.json` | `bun run docs` |
 | The placeholder pages of planned pages | The page inventory in `tools/lib/docs.ts` | `bun run docs` |
 | The tested device tables, `.dev/tested-device-tables.md` | The README of each folder in `.dev/tested-devices/` | `bun run docs` |
+| The vegetation add-on's species registry, `packages/vegetation/src/species/registry.generated.ts`, and its species page, `docs/api/vegetation-species.md` | The species folders in `packages/vegetation/src/species/`, and each one's record | `bun run docs`, or `bun tools/vegetation-registry.ts` for these two alone |
 | The shader modules in `packages/engine/src/generated/` | The shader crate | `bun run shaders` |
 | The WebAssembly files, and each package's built JavaScript | The Rust crates and the packages' TypeScript | `bun run build`, and each package's pack step |
 

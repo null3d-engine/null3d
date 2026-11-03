@@ -50,6 +50,8 @@ docs/guides/first-use-shaders.md
 docs/pages.md
 docs/porting/threejs-mapping.md
 docs/shaders/library.md
+docs/api/vegetation-species.md
+packages/vegetation/src/species/registry.generated.ts
 skills/null3d-port-threejs/references/api-mapping.md
 skills/null3d-port-threejs/references/threejs-mapping.json
 # Placeholder pages of planned pages. Take a page off this list when you write it.

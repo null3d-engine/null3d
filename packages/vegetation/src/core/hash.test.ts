@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { hashAt, pcg, unitAt } from './hash';
+import { hashAt, hashBytes, hashText, pcg, unitAt } from './hash';
 
 /** The shaders' pcg, worked out with exact integer arithmetic, for the first values. */
 function referencePcg(value: number): number {
@@ -50,5 +50,19 @@ describe('the integer hash', () => {
 			buckets[bucket] = (buckets[bucket] as number) + 1;
 		}
 		for (const count of buckets) expect(count).toBeGreaterThan(50);
+	});
+});
+
+describe('the byte and text hashes', () => {
+	test('change with any bit and with the length', () => {
+		const bytes = new Uint8Array([1, 2, 3, 4, 5, 6, 7]);
+		const base = hashBytes(bytes);
+		expect(hashBytes(bytes)).toBe(base);
+		const flipped = bytes.slice();
+		flipped[5] = 7;
+		expect(hashBytes(flipped)).not.toBe(base);
+		expect(hashBytes(bytes.subarray(0, 6))).not.toBe(base);
+		expect(hashText('oak')).toMatch(/^[0-9a-f]{16}$/);
+		expect(hashText('oak')).not.toBe(hashText('oaks'));
 	});
 });
