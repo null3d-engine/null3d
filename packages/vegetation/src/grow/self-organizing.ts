@@ -531,9 +531,12 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			const wz = unit(Purpose.WanderZ, year, key) * 2 - 1;
 			const wa = unit(Purpose.WanderA, year, key) * 2 * Math.PI;
 			const wr = Math.sqrt(Math.max(0, 1 - wz * wz));
-			let nx = d[0] + photo * toward[0] + wander * wr * cos(wa);
-			let ny = d[1] + photo * toward[1] + gravi + wander * wz;
-			let nz = d[2] + photo * toward[2] + wander * wr * sin(wa);
+			// The bole below the crown grows on along its own line: the wander that crooks a crown's
+			// shoots would bend it into an S.
+			const crook = corridor ? 0 : wander;
+			let nx = d[0] + photo * toward[0] + crook * wr * cos(wa);
+			let ny = d[1] + photo * toward[1] + gravi + crook * wz;
+			let nz = d[2] + photo * toward[2] + crook * wr * sin(wa);
 			if (order === 0 && py < (fusedHeight[stem] as number)) {
 				nx = 0;
 				ny = 1;
