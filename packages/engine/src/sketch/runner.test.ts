@@ -1179,15 +1179,12 @@ describe('the held frames that draw', () => {
 		expect(lines).toEqual(['0.000 false', '0.017 false', '0.033 true', '0.050 true']);
 	});
 
-	it('marks the second frame at the held time drawn, as the thread that draws draws both', async () => {
-		const { lines } = await drawnFrames({ readsLastFrame: () => 1 });
-		expect(lines).toEqual([
-			'0.000 false',
-			'0.017 false',
-			'0.033 false',
-			'0.050 true',
-			'0.050 true',
-		]);
+	it('runs no update in the settle frame after the held one, so the held update is the one drawn', async () => {
+		// The thread that draws draws a settle frame when a pass reads the frame before, but the
+		// sketch's code stays out of it, so the air and every other drawn-frame cost run once.
+		const { lines, after } = await drawnFrames({ readsLastFrame: () => 1 });
+		expect(lines).toEqual(['0.000 false', '0.017 false', '0.033 false', '0.050 true']);
+		expect(after).toBe(true);
 	});
 });
 
