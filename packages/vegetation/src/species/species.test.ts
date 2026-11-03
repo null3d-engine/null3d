@@ -41,10 +41,11 @@ function kitBytes(kit: SpeciesKitData): number {
 }
 
 /**
- * The triangles that one copy draws inside its near band at the High preset, at the worst of three
- * eyes: under the crown at eye height, at the crown's centre and at its edge. Inside the split, rows
- * draw in bands of falling leaf mesh tier, as the near pool draws them; beyond it, cards. The
- * nearest level's wood and merged foliage count whole.
+ * The triangles that one copy draws inside its near band at the High preset, at the worse of two
+ * eyes where a person stands: under the crown at eye height, and at the crown's edge. Inside the
+ * split, rows draw in bands of falling leaf mesh tier, as the near pool draws them; beyond it,
+ * cards. The nearest level's wood and merged foliage count whole. An eye inside the crown is the
+ * near pool's to bound: its frame budget then draws that copy's real shoots out to a nearer split.
  */
 function nearBandTriangles(kit: SpeciesKitData, asset: PlantAsset): number {
 	const split = levelDistances(kit, asset.skeleton.height, REFERENCE_VIEW)[0];
@@ -52,7 +53,6 @@ function nearBandTriangles(kit: SpeciesKitData, asset: PlantAsset): number {
 	const { centre, radius } = asset.crown;
 	const eyes: (readonly [number, number, number])[] = [
 		[0.5, 1.7, 0.5],
-		[centre[0], centre[1], centre[2]],
 		[centre[0] + radius, Math.min(1.7, asset.skeleton.height), centre[2]],
 	];
 	let worst = 0;
