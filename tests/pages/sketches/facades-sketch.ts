@@ -50,8 +50,9 @@ export default defineSketch((ctx) => {
 		power: { origin: [0, 0], speed: wave ? 2 : 2200, rise: 10, damping: 5 },
 	};
 	// A wave that a held frame catches crosses the wall slowly; a still wall is already lit.
+	// ?nostart leaves the wave where a look that never starts it leaves it: already complete.
 	const material = createFacade(ctx, look);
-	material.start(0);
+	if (!params.has('nostart')) material.start(0);
 	if (params.has('window')) {
 		// The window form: panes that a scene places itself, each with its own light.
 		const panes = createWindow(ctx, look);

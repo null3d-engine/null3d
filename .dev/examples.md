@@ -761,6 +761,15 @@ Skyway draws its window panes through the facades example add-on
 scene's own facade shader, in `examples/compare/night-town/shaders.ts`, and moving it to the add-on
 is what M3-B2 still owes, so the bullets below say which of the two demos each fact belongs to.
 
+- **The move to the add-on is parked, and why.** A grid of panes taken from a wall's own
+  coordinates was added to the add-on, and Night town's four facade materials were moved onto it.
+  It draws, but in Night town's scene the upper-floor cells stay dark while the street-level cells
+  light. The glass coverage, the lit share, the wave's value and the room's light each read
+  nonzero, and the cell's emissive is still dark. The wave is ruled out: a facade that never starts
+  its wave draws lit in the add-on's own test. The next attempt draws the panes as instanced
+  quads with the add-on's pane form, which lights in that test. It avoids a new mapping in the
+  wall shader, whose compiled result the engine caches and which made the readings hard to trust.
+
 - Each pane looks into a room behind its glass: a lamp's pool, a floor, a ceiling, a block of
   furniture, blinds and a curtain in some. The eye's ray meets the room's box, so the room moves in
   parallax as the camera passes, and the view from one side of a window shows more of it than the
