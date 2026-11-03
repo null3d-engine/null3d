@@ -10,7 +10,7 @@ The three rows separate what the base frame spends on the sun's contact shadows 
 | `vegetation-grass-nograss-nocontact-nobounce-webgpu` | off | off | off | 143.49 | 35 | 4 |
 | `vegetation-grass-creek-2-nocontact-nobounce-webgpu` | 2,312 | off | off | 235.41 | 24 | 3 |
 
-The first row's per-pass timer names the pass after ambient occlusion's denoise at 183.83 ms, which is the opaque pass: the timer labels the pass that follows with the role of the pass before, and the run with both effects off names the opaque pass itself at 138.94 ms and the final pass at 3.74. So the three ambient occlusion passes cost about 43 ms, the 186.25 against the 143.49, and the figure of 176.36 that the earlier record gave the second pass was the opaque pass in its slot.
+The first row's per-pass timer names the pass after ambient occlusion's denoise at 183.83 ms, which is not the denoise: the timer times the frame's first seven passes one by one and adds every pass after them to the last of those, so that slot holds the opaque pass and the rest of the frame. The run with both effects off names the opaque pass at 138.94 ms and the final pass at 3.74. So the three ambient occlusion passes cost about 43 ms, the 186.25 against the 143.49, and the figure of 176.36 that the earlier record gave the second pass was the opaque pass in its slot.
 
 The grass at Creek's density adds 91.92 ms to the effects-off base, 235.41 against 143.49, and the row is 27.11 ms past D-241's 208.3 ms ceiling.
 

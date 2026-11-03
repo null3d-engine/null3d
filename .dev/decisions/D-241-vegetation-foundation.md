@@ -1028,8 +1028,9 @@ Neither row reaches 208.3. The same page with the grass switched off measures 17
 29.12 ms inside the ceiling, so the base scene does not break it: the grass at the valley's density
 adds 126.91 ms and at the strip's 311.55. The frame's own cost sits mostly in its opaque pass: with
 the sun's contact shadows and the bounce light off, the scene measures 143.49 ms and the timer names the
-opaque pass at 138.94. The timer labels the pass that follows with the role of the pass before, so the
-176.36 ms that it gave ambient occlusion's denoise was the opaque pass in that slot. The three ambient
+opaque pass at 138.94. The timer times the frame's first seven passes one by one and adds every pass after them to
+the last of those, so the 176.36 ms that it gave ambient occlusion's denoise was the opaque pass
+and the rest of the frame in that slot. The three ambient
 occlusion passes, which the contact shadows and the bounce light keep, cost about 43 ms: the same
 scene measures 186.25 with the contact shadows on. The pictures show that neither effect changes what
 the hill looks like: the four drawings, with either effect off and with both, are pixel for pixel the
