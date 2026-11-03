@@ -54,7 +54,19 @@ export const OAK_MANIFEST: TextureManifest = {
 	outputs: [],
 };
 
-/** The oak's shoots, as the reference stills show them. */
+/** Internodes of an oak shoot: one long first internode, then the leaves crowded at the tip. */
+const ROSETTE: readonly (readonly [number, number])[] = [
+	[0, 20],
+	[0.15, 0.6],
+	[1, 0.3],
+];
+
+/**
+ * The oak's shoots, as the reference stills show them. The unit is the current-year shoot of still
+ * 23: a straight twig of about 12 cm ending in one rosette of six or seven large leaves, opening
+ * outward and turned toward the sky, round a stack of buds of about 12 by 8 mm. The long
+ * class is two years: last year's twig, whose end cluster put out this year's rosettes.
+ */
 export const OAK_SHOOTS: ShootSpec = {
 	prototypes: 6,
 	classes: [
@@ -62,60 +74,54 @@ export const OAK_SHOOTS: ShootSpec = {
 			name: 'short',
 			vigor: [0, 0.5],
 			share: 0.5,
-			length: { mean: 0.12, spread: 0.03 },
-			nodes: { mean: 6, spread: 1 },
-			internode: [
-				[0, 1.4],
-				[0.5, 0.6],
-				[1, 0.12],
-			],
+			years: 1,
+			length: { mean: 0.12, spread: 0.02 },
+			nodes: { mean: 7, spread: 1 },
+			internode: ROSETTE,
 			leafScale: [
-				[0, 0.7],
-				[1, 0.95],
+				[0, 0.85],
+				[1, 1],
 			],
 			leafAngle: [
-				[0, 55],
-				[1, 38],
+				[0, 100],
+				[0.5, 62],
+				[1, 20],
 			],
-			droop: 4,
+			droop: 3,
 		},
 		{
 			name: 'long',
 			vigor: [0.5, 1],
 			share: 0.5,
-			length: { mean: 0.3, spread: 0.06 },
+			years: 2,
+			length: { mean: 0.3, spread: 0.05 },
 			nodes: { mean: 7, spread: 1 },
-			internode: [
-				[0, 1.6],
-				[0.5, 1],
-				[0.8, 0.25],
-				[1, 0.1],
-			],
+			internode: ROSETTE,
 			leafScale: [
-				[0, 0.55],
-				[0.6, 1],
-				[1, 0.9],
+				[0, 0.8],
+				[1, 1],
 			],
 			leafAngle: [
-				[0, 55],
-				[1, 35],
+				[0, 100],
+				[0.5, 62],
+				[1, 20],
 			],
-			droop: 6,
+			droop: 5,
 		},
 	],
 	phyllotaxis: { kind: 'spiral', divergence: 144 },
 	orders: 2,
 	years: 2,
 	leafYears: 1,
-	stem: { radius: [0.0035, 0.0014], zigzag: 8 },
-	bud: { length: 0.008, width: 0.0055, tipCluster: 6 },
+	stem: { radius: [0.0035, 0.0025], zigzag: 6 },
+	bud: { length: 0.012, width: 0.008, tipCluster: 7 },
 	placement: {
 		perMetre: [
 			[0, 6],
 			[1, 10],
 		],
 		shadePrune: 0.1,
-		skyward: 0.5,
+		skyward: 0.75,
 		scale: { mean: 1, spread: 0.15 },
 	},
 };
@@ -133,7 +139,7 @@ export function oakRecord(overrides: Partial<Species> = {}): Species {
 				outline: 'texture',
 				petiole: { length: 0.005, radius: 0.0009, flat: 0, droop: 15 },
 				fold: 16,
-				curl: 26,
+				curl: 18,
 				crossCurl: -6,
 				twist: 6,
 				wave: [0.003, 5],
