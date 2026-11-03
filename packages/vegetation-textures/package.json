@@ -1,7 +1,6 @@
 {
 	"name": "@null3d/vegetation-textures",
 	"version": "0.0.0",
-	"private": true,
 	"description": "The leaf and bark textures of the null3D vegetation add-on's species: one folder per species, each with its ETC1S KTX2 files in a full set and a half set, its manifest, and a module that names the files, so a page downloads only the species it places.",
 	"license": "MIT OR Apache-2.0",
 	"author": "Ramesh Nair (https://hiddentao.com)",
@@ -27,7 +26,18 @@
 	},
 	"files": [
 		"textures",
+		"!textures/*/source.json",
 		"LICENSE-MIT",
 		"LICENSE-APACHE"
-	]
+	],
+	"publishConfig": {
+		"access": "public",
+		"provenance": true
+	},
+	"peerDependencies": {
+		"@null3d/vegetation": "workspace:*"
+	},
+	"devDependencies": {
+		"@null3d/vegetation": "workspace:*"
+	}
 }
