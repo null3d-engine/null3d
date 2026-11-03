@@ -331,7 +331,7 @@ A scene with a grid draws no [screen-space bounce light](post-processing.md#scre
 
 `bakeProbes` bakes a grid in the browser. Each probe casts directions with `scene.raycastBatch`, which tests both faces of every triangle here. A direction that reaches the sky counts toward the probe's sky visibility. A direction that meets a surface's back means geometry encloses the probe: the bake gives it no validity, and fills it from the probes around it. A direction that hits a surface's front takes that surface's colour once, as a matte bounce. The bake counts no lamps, so the grid holds one coloured bounce, the occlusion of the sky and which probes lie inside geometry. `step` bakes a few probes a frame, so a loading screen can show progress. `finish` bakes the rest at once.
 
-The sky itself never bakes. The shader multiplies each probe's sky visibility by the environment's live light, so a time of day that moves the sky, or an environment that turns or changes its intensity, lights the grid again with no new bake. Only the bounce keeps the environment that the bake read.
+The sky itself never bakes. The shader weights each probe's sky visibility by how much the surface faces the sky above the horizon, multiplies that by the environment's live light, and adds it to the baked bounce. A time of day that moves the sky, or an environment that turns or changes its intensity, then lights the grid again with no new bake. Only the bounce keeps the environment that the bake read.
 
 ### What takes the grid's light
 
