@@ -9,7 +9,7 @@ import type { DeviceShaderSet } from '../gpu/device-shaders';
 import { captureWebGPU } from '../gpu/readback';
 import { WebGPUBackend } from '../gpu/webgpu/backend';
 import { FirstPass } from '../gpu/webgpu/first-pass';
-import { GpuTimer } from '../gpu/webgpu/gpu-timer';
+import { GpuTimer, setSampleEvery } from '../gpu/webgpu/gpu-timer';
 import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
 import { DEV } from '../shared/dev';
 import type { ImageTable } from '../shared/images';
@@ -36,6 +36,7 @@ export function webgpuRenderer(
 	shaders: DeviceShaderSet | undefined,
 ): Renderer {
 	const { scene, metrics } = options;
+	if (options.gpuSamples === 'every') setSampleEvery(1);
 	if (!scene || !shaders)
 		return new WebGPURenderer(gpu.tier, gpu.device, canvas, metrics, options.gpuError);
 	return new WebGPUSceneRenderer(
