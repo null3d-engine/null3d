@@ -115,7 +115,7 @@ Rejected:
   the grass and the floating leaves.
 - This record supersedes four parts of [D-241](D-241-vegetation-foundation.md): "The
   generator's shape", "The bark and leaf atlases, and why the browser paints them", "What each leaf
-  cell holds" and "The plants' look, after the owner's first review". It also supersedes D-298,
+  cell holds" and "The plants' look, after the owner's first review". It also supersedes D-321,
   D-299, D-301, D-302 and D-303, which describe the first generator. D-300 stays a rejected test.
 - The first generator's tests and pictures are removed with it. They are the thirteen species
   pictures, the atlas, leaf card, coverage, wind and impostor plant pictures, and the specs, pages

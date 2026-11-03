@@ -6,6 +6,7 @@
 // wisp; without it, the wisp drifts over the ring.
 import { defineSketch, timeOfDay, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
+import { reportLoading } from '../lib/progress';
 import { sampleUrl } from '../lib/samples';
 import { courtyard, flicker } from './courtyard';
 
@@ -27,6 +28,7 @@ const GOLD = '#ffc46b';
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, post, time } = ctx;
+	reportLoading(ctx);
 	// Dusk: the sun sits low behind the walls, the sky's blue fills the yard, and the torches and
 	// the wisp's warm light pick out the knights.
 	const day = timeOfDay(19.1, { heading: 2.6 });

@@ -4,7 +4,8 @@
 import { describe, expect, it } from 'bun:test';
 import type { SketchContext } from '@null3d/engine';
 import { type HudGroup, TIME_NAMES, TIME_SKY } from './controls';
-import { createShowcaseEffects, shadowStep } from './showcase-effects';
+import { shadowStep } from './shadow-range';
+import { createShowcaseEffects } from './showcase-effects';
 
 /** A cinematic that records how the page's camera picks reach it. */
 function stubFilm() {

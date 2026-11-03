@@ -687,6 +687,13 @@ impl Compiler {
         std::mem::take(&mut self.warnings).problems
     }
 
+    /// Builds only the builds whose permutation word is one of `words`, and every build when the
+    /// list is empty. A recording asks for the words a device holds; a test asks for the build it
+    /// reads, so it compiles what it checks and no more.
+    pub fn build_only(&mut self, words: impl IntoIterator<Item = u32>) {
+        self.only = words.into_iter().collect();
+    }
+
     /// Compiles every variant of a shader. The same problem in several variants is listed once,
     /// with the name of each variant.
     pub fn compile(

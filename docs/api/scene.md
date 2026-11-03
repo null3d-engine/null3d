@@ -164,6 +164,8 @@ The sky takes the names and the defaults of three.js's `Sky` uniforms:
 | `time` | 0 | The time in seconds that moves the clouds, such as the sketch's time |
 | `showSunDisc` | true | Whether the sky shows the sun's disc |
 
+The quality preset's [`cloudSteps`](../concepts/quality-preset-tables.md#settings-of-each-preset) chooses which layer draws: Low and Medium draw the flat layer, and High and Ultra draw volumetric clouds, ray marched through a noise volume. Both read the same settings above, so a setting keeps its meaning when the preset changes. WebGL2 and compatibility mode stop at Medium, so a page there draws the tier with `quality.set({ cloudSteps })` or the `cloudSteps` option of `createEngine`. The tier's noise and shaders load at its first use, and a page on the flat presets downloads neither. The sky's environment map takes the clouds too, with two limits. A map marches at most 16 steps. It draws them only when the page starts with `cloudSteps` above 0, because the map picks the tier's shaders at the page's start.
+
 Two more settings are null3D's own. They add a second sky, which `timeOfDay` uses to fade the moon's sky in as night falls:
 
 | Setting | Default | What it sets |
@@ -222,7 +224,7 @@ export default defineSketch(async ({ scene, assets }) => {
 | `altitude` | 0 | The height of the scene's y = 0 above the ground, in meters |
 | `metersPerUnit` | 1 | The meters in one unit of the scene |
 | `aerialPerspective` | 1 | The factor of the haze on objects: 0 for none, 1 for the real air. More makes a small scene look as large as a landscape |
-| `cloudCoverage`, `cloudDensity`, `cloudElevation`, `cloudScale`, `cloudSpeed`, `time` | As the analytic sky's | The clouds, lit by the physical sky's sun, moon and sky |
+| `cloudCoverage`, `cloudDensity`, `cloudElevation`, `cloudScale`, `cloudSpeed`, `time` | As the analytic sky's | The clouds, lit by the physical sky's sun, moon and sky. The preset's `cloudSteps` chooses the flat layer or the volumetric clouds, as for the analytic sky |
 | `moonPosition` | `[0, 1, 0]` | A point toward the moon |
 | `moonIntensity` | 0 | The moon's light above the air. It lights the air as the sun does, and the sky shows its disc, lit from the sun's side. 0 draws no moon |
 | `stars` | 0 | The stars' brightness. They show only where the sky is dark enough. 0 draws no stars |
@@ -330,9 +332,9 @@ Each call sets both options, and an option left out takes its default. The call 
 
 ## The light probe grid
 
-`setLightProbeGrid` lights the scene with a grid of irradiance probes, so light that changes with a surface's place, bounced from colored walls or sky, reaches it. Each probe holds L1 spherical harmonics of the light that arrives at its point. Standard materials read the grid per pixel, with three filtered reads each. Its light takes the place of the environment's diffuse light, and the environment keeps its reflections.
+`setLightProbeGrid` lights the scene with a grid of irradiance probes, so light that changes with a surface's place, bounced from colored walls or sky, reaches it. Each probe holds L1 spherical harmonics of the light that its surroundings bounce back. Standard materials read the grid per pixel, with four filtered reads each. Its light takes the place of the environment's diffuse light, and the environment keeps its reflections.
 
-A grid baked elsewhere passes in through `LightProbeGridData`, which packs its coefficients into the texture. Each probe holds four RGB coefficients, 12 numbers: L0, then L1 along y, z and x. A grid that a tool outside the engine baked can also come from a file: [`assets.loadLightProbeGrid`](assets.md#baked-light) reads the [baked light file](../guides/baked-light-data.md) format and gives the options below, with the texture already made. `assets.lightProbeGridFile` writes that format from a grid that `bakeProbes` made.
+A grid baked elsewhere passes in through `LightProbeGridData`, which packs its coefficients and its two masks into the texture. Each probe holds four RGB coefficients, 12 numbers: L0, then L1 along y, z and x. It also holds a validity and a sky visibility. The validity is 1 where the probe stands in open space and 0 where geometry encloses it, which stops its light leaking through the wall around it. The sky visibility is the share of the sky that its rays reached. A grid that a tool outside the engine baked can also come from a file: [`assets.loadLightProbeGrid`](assets.md#baked-light) reads the [baked light file](../guides/baked-light-data.md) format and gives the options below, with the texture already made. `assets.lightProbeGridFile` writes that format from a grid that `bakeProbes` made.
 
 ```ts
 const grid = new LightProbeGridData(
@@ -340,6 +342,8 @@ const grid = new LightProbeGridData(
   new Float32Array([1, 2, 1]), // spacing in meters
   [25, 5, 25], // probes along each axis
   baked, // 25 * 5 * 25 * 12 numbers
+  valid, // one number per probe, 0 to 1
+  sky, // one number per probe, 0 to 1
 );
 scene.setLightProbeGrid({
   texture: grid.toTexture(textures),
@@ -351,14 +355,14 @@ scene.setLightProbeGrid({
 
 | Option | Default | What it sets |
 | --- | --- | --- |
-| `texture` | required | The `rgba16float` 3D texture of the probes' coefficients, from `LightProbeGridData.toTexture` |
+| `texture` | required | The `rgba16float` 3D texture of the probes' coefficients and masks, from `LightProbeGridData.toTexture` |
 | `origin` | required | The grid's corner of least x, y and z, in the world. This and the next two take an array or a typed array |
 | `spacing` | required | The distance between probes along each axis, in meters |
 | `counts` | required | The probes along each axis, each 2 or more |
 | `intensity` | 1 | The factor of the grid's light, 0 or more. A factor of 0 gives none of it |
 | `environmentWeight` | 1 | The share of the environment's diffuse light that the grid takes over, 0 to 1 |
 
-`bakeProbes` bakes a grid in the browser. It casts directions from each probe with `scene.raycastBatch`. A ray that reaches the sky takes the environment's light from its direction. Give `environmentOptions` the intensity and rotation that `setEnvironment` got, so the baked sky matches the scene's. Where a ray hits a surface, `albedo` gives the surface's color for one colored bounce: the surface sends back that share of the environment's light, as a matte surface does. The bake counts no lamps, so the grid holds sky light, its occlusion and its bounce. Bake a few probes a frame so a loading screen can show progress.
+`bakeProbes` bakes a grid in the browser. It casts directions from each probe with `scene.raycastBatch`, testing both faces of every triangle. A ray that reaches the sky counts toward the probe's sky visibility, which the live environment's light multiplies at draw time, weighted by how much the surface faces the sky above the horizon, so a change of the hour needs no new bake. A ray that meets a surface's back means geometry encloses the probe: the probe takes no validity, and the bake fills it from the probes around it. Where a ray hits a surface's front, `albedo` gives the surface's color for one colored bounce: the surface sends back that share of the environment's light at its normal, as a matte surface does. The bake counts no lamps, so the grid holds one colored bounce, its occlusion of the sky and which probes are enclosed. Bake a few probes a frame so a loading screen can show progress.
 
 `spacing` sets the distance between probes along each axis, in meters, or one number for every axis. The default is 2. The grid starts at the box's least corner and takes as many probes as fit the box, at least two along each axis.
 
@@ -395,7 +399,7 @@ export default defineSketch(async ({ scene, assets, textures }) => {
 });
 ```
 
-Development builds throw E1203 for a number that is not finite, E1108 for a value out of range, and E1213 for something that is not a texture. Every build throws E1101 for a texture that was destroyed, and E1222 for a texture that is not a 3D texture: make the grid's texture with `LightProbeGridData.toTexture()`. The grid takes 24 bytes of GPU memory per probe, plus a padding slice at either end of each sub-volume, and each lit pixel reads it three times. [Lighting and environment](../concepts/lighting.md#light-probe-grid) gives the grid's limits, what takes its light, and how its shaders load.
+Development builds throw E1203 for a number that is not finite, E1108 for a value out of range, and E1213 for something that is not a texture. Every build throws E1101 for a texture that was destroyed, and E1222 for a texture that is not a 3D texture: make the grid's texture with `LightProbeGridData.toTexture()`. The grid takes 32 bytes of GPU memory per probe, plus a padding slice at either end of each sub-volume, and each lit pixel reads it four times. [Lighting and environment](../concepts/lighting.md#light-probe-grid) gives the grid's limits, what takes its light, and how its shaders load.
 
 ## Reflection probes
 

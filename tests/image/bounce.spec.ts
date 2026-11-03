@@ -29,8 +29,8 @@ const MOVED = 1 / 255;
 const MOVES = 0.05;
 /**
  * How far one floor box's bleed may lie from the bake's, in 8-bit levels. The measured gaps are
- * 1.2 levels at the left box, and 2.9 at the right on WebGPU and 3.0 on WebGL2, so four levels
- * covers both boxes on both paths with a level to spare.
+ * 3.1 levels at the left box, and 0.1 at the right, on both paths, so four levels covers both
+ * boxes on both paths with a level to spare.
  */
 const BLEED_MATCH = 4;
 /** The most that the picture's own light may move one floor box's red-minus-green, in 8-bit levels. */

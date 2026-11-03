@@ -39,8 +39,11 @@ function look({ scene }: Context, camera: BackgroundCamera): void {
 }
 
 export default defineSketch(async (ctx) => {
-	const { scene, materials, geometry, assets, post } = ctx;
+	const { scene, materials, geometry, assets, post, quality } = ctx;
 	post.set({ toneMapping: 'none' });
+	// The parity comparison with three.js pins the sky to the flat cloud layer, because three.js
+	// draws that layer and the volumetric tier has no twin there.
+	if (params.has('cloudSteps')) quality.set({ cloudSteps: Number(params.get('cloudSteps')) });
 	scene.setBackground('#20242a');
 	if (bg === 'sky') {
 		look(ctx, SKY_CAMERA);

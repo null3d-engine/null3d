@@ -285,7 +285,13 @@ To show a page under the drawn scene, start the engine with `createEngine({ tran
 
 ```ts
 // sketch.ts
-assets.onProgress((loaded, total) => page.post('loading', Math.min(1, loaded / Math.max(total, loaded))));
+assets.onProgress((loaded, total) =>
+  // With no length announced there is no total, so the page shows the count and no fraction.
+  page.post('loading', {
+    text: 'Downloading the scene files',
+    value: total > 0 ? loaded / Math.max(total, loaded) : undefined,
+  }),
+);
 await assets.preload(['/levels/one.json', '/tex/terrain.png', '/tex/rocks.png']);
 const level = await assets.loadJson<Level>('/levels/one.json');   // from memory: preload downloaded it
 const terrain = await assets.loadTexture('/tex/terrain.png', { wrap: 'repeat', anisotropy: 8 });
@@ -295,17 +301,27 @@ await scene.warmUp();                          // build every pipeline before th
 
 ```ts
 // page.ts
+let phase = '';
 let shown = 0;
-const show = (progress: number) => {
-  shown = Math.max(shown, progress);           // the bar never moves back
+const show = (text: string, value?: number) => {
+  if (text !== phase) { phase = text; shown = 0; } // a new phase is a new measure
+  label.textContent = text;
+  if (value === undefined) return;             // no total: hold the bar moving
+  shown = Math.max(shown, value);              // the number never moves back within a phase
   bar.style.width = `${Math.round(shown * 100)}%`;
 };
 try {
   const engine = await createEngine({
     canvas,
     sketch: new URL('./sketch.ts', import.meta.url),
-    onProgress: (stage) => { if (stage === 'core') show(0.1); },
-    onSketchMessage: (type, loaded) => { if (type === 'loading') show(0.1 + 0.8 * (loaded as number)); },
+    onProgress: (stage, progress) => {
+      if (stage === 'core-download' && progress?.total)
+        show('Downloading the engine', progress.done / progress.total);
+    },
+    onSketchMessage: (type, data) => {
+      const message = data as { text?: string; value?: number };
+      if (type === 'loading') show(message.text ?? '', message.value);
+    },
   });
   engine.onFailure((error) => showMessage(`The scene stopped: ${error.message}`));
   await engine.firstFrame;                     // the GPU has finished the first frame
@@ -315,6 +331,7 @@ try {
 }
 ```
 
+- A percentage comes from measured work. `onProgress` reports the engine core's bytes, and `assets.onProgress` reports the scene's files. A phase with no total has no percentage: keep its bar moving instead of taking a number from a timer or from the stage's place in the start. The label names the phase, so the number always measures the work that it names. The figure never falls within a phase, but it can fall across the whole start, because a later phase that counts starts a new measure.
 - `onProgress` reports `memory-wait` when the browser has refused the engine's memory for 10 s (0.2). The engine then tries for about 35 s more before E1109, so show a "taking longer than usual" message.
 - Pass `onSketchMessage` to `createEngine`. A handler added after `createEngine` resolves hears the setup's messages only once setup is over, which is too late for a progress bar.
 - Remove the loading screen when `engine.firstFrame` resolves, not when setup ends. Until the GPU finishes the first frame, the canvas is blank.
@@ -433,7 +450,7 @@ const map = materials.unlit({ map: textures.fromPass(pass) });
 // Show `map` on a screen in the world. The pass leaves the screen out of the map by itself.
 ```
 
-To save GPU time, draw the map every few frames: `render.setPassEvery(pass, 4)`. Do not switch the pass off and on for that: `render.setPassEnabled` recompiles the render graph, and a pass that toggles every frame pays for a plan every frame. For a view of the scene shown on the canvas itself, use `scene.createView({ camera, rect })` instead. It draws after the camera's view, into a rectangle of the canvas, for a split screen or a picture in picture. Each view culls the scene again and costs one more scene draw at its rectangle's pixels. Docs: `guides/multiple-views`, `guides/custom-passes`, `api/render`.
+To save GPU time, draw the map every few frames: `render.setPassEvery(pass, 4)`. Do not pace it with the switch. A pass that has never drawn is out of the plan while it is off, so switching it on compiles the render graph. Once it has drawn, the switch only skips its recording. `setPassEvery` compiles nothing at any time. For a view of the scene shown on the canvas itself, use `scene.createView({ camera, rect })` instead. It draws after the camera's view, into a rectangle of the canvas, for a split screen or a picture in picture. Each view culls the scene again and costs one more scene draw at its rectangle's pixels. Docs: `guides/multiple-views`, `guides/custom-passes`, `api/render`.
 
 ## 13. Screenshots
 
@@ -656,7 +673,7 @@ export default defineSketch(({ scene, geometry, materials, textures, render }) =
 });
 ```
 
-The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint, foam and soft shores: read the depth behind the sheet with `sceneInputs: ['sceneDepth']` (0.3). The water's depth is the gap between the sheet and the surface behind it: convert `input.fragCoord.z` with `engine_frame.camera_range` and subtract it from `sceneDistance(uv)`. Fade the alpha over the end of that gap and the shore ends softly. Or use the height-field water recipe in `guides/custom-passes`. For a river or a lake, use `createWater` from `@null3d/water` instead: one shape gives either body, with waves that the current carries, foam, a soft shore or a bed of the shape's own, caustics, a reflection whose cadence follows the preset, and `createUnderwater` for the view from below. Build water by hand only for a shape the add-on does not take. A sheet that reads the depth takes up to seven textures of its own, so the mirror joins it. Docs: `api/water`, `api/render`, `shaders/surface-functions`.
+The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint, foam and soft shores: read the depth behind the sheet with `sceneInputs: ['sceneDepth']` (0.3). The water's depth is the gap between the sheet and the surface behind it: convert `input.fragCoord.z` with `engine_frame.camera_range` and subtract it from `sceneDistance(uv)`. Fade the alpha over the end of that gap and the shore ends softly. Or use the height-field water recipe in `guides/custom-passes`. For a river or a lake, use `createWater` from `@null3d/water` instead: one shape gives either body, with waves that the current carries, foam, a soft shore or a bed of the shape's own, caustics, a reflection whose cadence follows the preset, and `createUnderwater` for the view from below. A slow stream takes a small `waveAmplitude`, which leaves the surface nearly flat while its fine ripples stay. Build water by hand only for a shape the add-on does not take. A sheet that reads the depth takes up to seven textures of its own, so the mirror joins it. Docs: `api/water`, `api/render`, `shaders/surface-functions`.
 
 ## 21. Fire, smoke and sparks with particles
 
@@ -866,4 +883,4 @@ The species are being rebuilt. Until a species ships, `loadSpeciesOrStandIn` mak
 
 To place the plants rather than set them out by hand, read the ground once with `groundMaps`, write a rule for each species, and call `scatterVegetation`. A record's own `ecology` gives a rule through `speciesRule(record)`. The scatter returns flat point arrays, one record for each plant, so a page reads the variant and draws a copy at each point. The same seed places the same plants on every device and both GPU paths. `scatterChecksum` compares a placement with a reference that another device recorded. Pass `EcoScatter` and `addTile` when a scene should place its ground in tiles beside the frames.
 
-To cover a hill with grass, call `createGrass(ctx, { height, area, count, seed, mask, wind })`. It places tufts of bent blades on the ground by integer hash, so one seed gives the same grass on every device, and `grass.fit(preset)` draws a preset's share. Give `mask` the ground where grass may grow, so no tuft stands in the water or on a stone. Give `wind` the wind add-on's field, and call `grass.setWindLayer(field)` in each frame, so the grass answers the same gusts as the rest of the scene. A page that gives no field grows grass that stands still. The CPU tile path draws on WebGPU and WebGL2. Docs: `api/vegetation` (Grass on the ground).
+To cover a hill with grass, await `createGrass(ctx, { height, area, count, seed, mask, wind, camera })` in the sketch's setup. It places tufts of bent blades on the ground by integer hash, so one seed gives the same grass on every device, and `grass.fit(preset)` draws a preset's share. Give `mask` the ground where grass may grow, so no tuft stands in the water or on a stone. Give `wind` the wind add-on's field, the one the leaf material reads, and call `grass.setWindLayer(field)` in each frame, so the grass bends with the trees and answers the same gusts. A page that gives no field grows grass that stands still. Give the drawing `camera` to cull the tiles outside its view and thin the far tufts, whose blades widen so the cover stays the same, and each view, a shadow cascade included, then culls the kept list to its own box. On WebGPU a compute pass builds the blade list and writes its count; WebGL2 fills one instance batch for each tuft shape. The grass casts and receives the sun's shadows, and `swayDistance` stops the blades past that distance so a far cascade that only the grass reaches stays cached. Docs: `api/vegetation` (Grass on the ground).

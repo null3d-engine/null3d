@@ -11,6 +11,10 @@
 //                                                many shards as that takes
 //   bun run test:browser-weights --heavy-shards <n>  find weights for that many shards of the heavy tests
 // It needs the GitHub CLI. `.dev/image-tests.md` says when to retune the weights.
+// The default takes main's last five passing runs, and on a branch those can be old enough to time
+// only part of the suite: a test with no time takes its file's mean. The output says how many tests
+// have no time, so read that count before taking the weights, and name the runs with `--run` when it
+// is high. A branch with no passing run of its own names the full runs that it does have.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ALONE_PROJECT_SUFFIX, ALONE_TAG } from '../tests/lib/alone.ts';

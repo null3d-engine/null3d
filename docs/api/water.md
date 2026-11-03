@@ -8,7 +8,7 @@ summary: "createWater: a river and a lake from one shape, with waves that the cu
 
 # Water (@null3d/water)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The ocean's WebGL2 path is not ready: its heights were not compared with the other paths again after a readback fault on that path was fixed. Draw the ocean on WebGPU or in compatibility mode.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -121,6 +121,7 @@ the bed at a point, and the current there.
 | `level` | A number, in meters | 0 | The height of the water's surface |
 | `foam` | A `FoamMap` | None | The map of the foam around what breaks the surface. `foamMap(ctx, obstacles, { origin, size })` makes one |
 | `ripple` | A number from 0 | 1 | The height of the ripples, as a factor of their base height |
+| `waveAmplitude` | A number from 0 | 1 | The height of the long waves and of the wind's lift, as a factor of their base height. The fine ripples keep the strength that `ripple` gives them, so a small value gives a nearly flat surface that still ripples |
 | `softness` | A number above 0, in meters | 0.12 | The gap to the bed over which the water fades at a shore |
 | `colorAlongView` | A number from 0 to 1 | 0 | The share of the water's color at a low view that reads the whole way the view runs through the water, not its depth. A view from above keeps the depth. A wide sea takes a little, so a low view shows no sharp outline of the bed in the distance |
 | `reflectionEvery` | A frame count from 1 to 16 for each preset | 2 on Low and Medium, 1 on High and Ultra | The frames between two draws of the reflection. The frame-budget governor doubles it while frames take too long |
@@ -152,6 +153,8 @@ return {
 
 `createWater` takes a plain texture and its box, so the water package does not import the wind add-on. A page can connect any field that gives a texture with the same layout. A surface that names no field still declares the field's textures, which it never reads.
 
+`waveAmplitude` scales the lift that the wind gives the surface, along with the long waves. A slow stream can therefore keep a nearly flat surface, with fine ripples. Its wind field still moves the plants and the leaves around it.
+
 ## The water object
 
 `createWater` returns an object:
@@ -160,6 +163,7 @@ return {
 | --- | --- |
 | `update()` | Keeps the sketch's frame loop. The reflection pass carries its own cadence now, so the call changes nothing |
 | `reflectionEvery` | The frames between two draws of the reflection now |
+| `waveAmplitude` | The height of the long waves and of the wind's lift, as a factor of their base height |
 | `surfaceHeight(x, z, t)` | The height of the surface at a point and a sketch time, in meters, from its long waves |
 | `currentAt(x, z, out)` | The current at a point, as a velocity in meters a second, written into `out` |
 | `setCaustics(light)` | Sets the light that the ripples focus on the bed, as a linear color |

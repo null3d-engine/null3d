@@ -6,7 +6,18 @@
 // The draw packs through the engine's chunked row writer, whose pack runs in the core's memory
 // under hard rule 42 (`crates/null3d-core/src/chunk_rows.rs`). This reference keeps the same rules
 // for the unit tests and for a reader who wants the shape of the pack in TypeScript.
+//
+// A prefix that keeps part of a chunk can leave holes where the splats it drops covered the surface.
+// So the pack grows the splats that it keeps by the square root of the share of the chunk's surface
+// that the prefix leaves uncovered, which the chunk measured as it was built. A dense cloud whose
+// splats overlap keeps its surface covered and barely grows, and a scan's ground of small flat
+// splats grows until its holes close, so a coarse level draws the same surface with fewer, larger
+// splats rather than a sparse one.
 import type { SplatChunk } from './chunks';
+import { coverageAt } from './coverage';
+
+/** The most that a prefix's splats grow, so a chunk far away never draws as a few large blobs. */
+const MOST_GROWTH = 3;
 
 /** The batch rows that a pack writes, and the calls that tell the engine what changed. */
 export interface SplatRows {
@@ -60,11 +71,13 @@ export function packRows(
 		}
 		let prefix = prefixes[i];
 		if (!prefix || prefix.count !== count) {
+			const growth = growthOf(chunk, count);
+			const scales = chunk.scales.subarray(0, count * 3);
 			prefix = {
 				count,
 				positions: chunk.positions.subarray(0, count * 3),
 				rotations: chunk.rotations.subarray(0, count * 4),
-				scales: chunk.scales.subarray(0, count * 3),
+				scales: growth === 1 ? scales : scales.map((value) => value * growth),
 				colors: chunk.colors.subarray(0, count * 4),
 			};
 			prefixes[i] = prefix;
@@ -78,4 +91,16 @@ export function packRows(
 	if (at > 0) rows.markDirty(0, at);
 	rows.setActiveCount(at);
 	return at;
+}
+
+/**
+ * The factor that a chunk's first `count` splats grow by, so that together they cover what the
+ * whole chunk covers: 1 for the whole chunk or a prefix that covers its surface already, and at
+ * most the cap for a prefix that leaves most of it bare.
+ */
+export function growthOf(chunk: SplatChunk, count: number): number {
+	if (count >= chunk.count) return 1;
+	const share = coverageAt(chunk.coverage, chunk.count, count);
+	if (!(share > 0)) return MOST_GROWTH;
+	return Math.min(MOST_GROWTH, Math.max(1, Math.sqrt(1 / share)));
 }

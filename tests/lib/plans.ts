@@ -194,6 +194,12 @@ export type Check =
 	| { kind: 'capabilities-reload'; first: string }
 	| { kind: 'isolation' }
 	| { kind: 'image'; run: ImageRun }
+	/**
+	 * One page drawn twice in a row: the first draw is its first use of its programs in that
+	 * browser session, and the second reuses them. The pair tells a loss that belongs to the first
+	 * use from one that strikes a warm page too.
+	 */
+	| { kind: 'warm-page'; half: 'cold' | 'warm' }
 	| { kind: 'shaders' }
 	| { kind: 'shader-library'; tier: Tier }
 	| { kind: 'engine'; tier: Tier; mode: EngineMode }
@@ -487,6 +493,61 @@ function imageItem(run: ImageRun): PlanItem<Check> {
 	};
 }
 
+/** The first and second draws of the page that the checks plan draws twice in one row. */
+const WARM_PAGE_COLD = 'warm-page-cold';
+const WARM_PAGE_WARM = 'warm-page-warm';
+
+/**
+ * The one page that the checks plan draws twice in a row, cold then warm: the terrain at the High
+ * preset, on WebGL2, at the size and preset that CI's Safari loses its context on most often. The
+ * first draw is the page's first use of its programs in that browser session and the second reuses
+ * them, so a second draw that keeps its context lays the loss at the first use, which a compiled
+ * program cache can spare, while two losses show a page that loses its context whatever its
+ * programs. Both results are kept, and the run's notes give the reading that their pair makes.
+ */
+function warmPageItems(): PlanItem<Check>[] {
+	const sketch = encodeURIComponent('/tests/pages/sketches/terrain-sketch.ts');
+	const switches = ['gpu=webgl2', 'hold=1', 'preset=high', 'size=320x180', `sketch=${sketch}`];
+	return [
+		pageItem(
+			WARM_PAGE_COLD,
+			'image',
+			{ kind: 'warm-page', half: 'cold' },
+			{ switches, timeoutSeconds: 60 },
+		),
+		pageItem(
+			WARM_PAGE_WARM,
+			'image',
+			{ kind: 'warm-page', half: 'warm' },
+			{ switches, timeoutSeconds: 60 },
+		),
+	];
+}
+
+/** Whether a draw lost its WebGL2 context, as the engine reports it in hold mode. */
+const lostContext = (result: ItemResult | undefined) =>
+	result !== undefined && result.ok === false && /E1302/.test(result.error ?? '');
+
+/**
+ * What the two draws say about a context that a browser lost. Each answer is fixed here, before the
+ * run, so the pair is read the same way every time. A second draw that kept its context lays the
+ * loss at the page's first use of its programs, which compiling them once for the session, or a
+ * cache of them, can spare. Two losses, or a loss on the warm draw alone, show a page that loses
+ * its context whatever its programs, which is the browser's fault and not the page's.
+ */
+export function warmPageNote(cold: ItemResult | undefined, warm: ItemResult): string {
+	if (cold === undefined) return 'the row has no cold draw of the page, so the pair says nothing';
+	const coldLost = lostContext(cold);
+	const warmLost = lostContext(warm);
+	if (coldLost && warmLost)
+		return 'both draws lost their WebGL2 context, so the loss strikes the page whatever its programs: the browser lost the device, not only the first use of the programs';
+	if (coldLost)
+		return 'the cold draw lost its WebGL2 context and the warm draw kept it, so the loss belongs to the first use of the programs, which a cache of the compiled programs can spare';
+	if (warmLost)
+		return 'the cold draw kept its WebGL2 context and the warm draw lost it, so the loss does not belong to the first use of the programs';
+	return 'both draws kept their WebGL2 context, so this run lost none on the page, and the pair says nothing about the loss';
+}
+
 /** The shaders page's time for its loads and its WGSL modules. */
 const SHADERS_BASE_SECONDS = 30;
 
@@ -662,6 +723,7 @@ export function checksPlan({ shaders = 'all' }: PlanSettings = {}): PlanItem<Che
 			pageItem(`stats-${tier}`, 'stats', { kind: 'stats', tier }, { switches: [`gpu=${tier}`] }),
 		),
 		...IMAGE_RUNS.map(imageItem),
+		...warmPageItems(),
 		...TIERS.map((tier) =>
 			pageItem(
 				`ktx2-${tier}`,
@@ -1198,7 +1260,9 @@ export type CostedEffect =
 	| 'sky'
 	| 'sharpen'
 	| 'compute'
-	| 'fills';
+	| 'fills'
+	| 'clouds'
+	| 'probes';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -1300,8 +1364,18 @@ export function effectPlan(
 		sharpen: [['', []]],
 		// A compute pass whose output a vertex offset reads, for the vegetation wind path's budgets.
 		compute: [['', []]],
+		// The tier at the High preset's step count, and the tier below it.
+		clouds: [
+			['-32', ['steps=32']],
+			['-16', ['steps=16']],
+			// Twice the High preset's steps: the march's cost follows its steps, so a device with
+			// no GPU timer that holds this frame bounds the High tier's cost at half of it.
+			['-stress', ['steps=64', 'heavy']],
+		],
 		// The fills plan times its own pages, at one render scale each.
 		fills: [['', []]],
+		// The probe grid's four filtered reads at each lit pixel, taken off and on in turns.
+		probes: [['', ['rounds=3', 'seconds=2', 'pixel-ratio=2']]],
 	};
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
 	const twin: PlanItem<Check>[] =
@@ -1330,7 +1404,8 @@ export function effectPlan(
 							...switches,
 							...callSwitches,
 						],
-						timeoutSeconds: effect === 'compute' ? 180 : EFFECT_TIMEOUT_SECONDS,
+						timeoutSeconds:
+							effect === 'compute' || effect === 'probes' ? 180 : EFFECT_TIMEOUT_SECONDS,
 					},
 				),
 			),
@@ -1502,6 +1577,76 @@ export function alphaMaskPlan(): PlanItem<Check>[] {
 				),
 			);
 	return items;
+}
+
+/** The GPU paths of the car-paint cost plan, each with the presets that its ceiling allows. */
+const CAR_PAINT_PATHS = [
+	{ path: 'webgpu', tier: 'webgpu', presets: ['low', 'medium', 'high', 'ultra'] },
+	{ path: 'compat', tier: 'webgpu', presets: ['low', 'medium'] },
+	{ path: 'webgl2', tier: 'webgl2', presets: ['low', 'medium'] },
+] as const;
+
+/**
+ * How long one page of the car-paint cost plan may take: the starts of the page and its shaders
+ * through a phone's network, then the warm-up and the timed rounds of both sides.
+ */
+const CAR_PAINT_TIMEOUT_SECONDS = 240;
+
+/**
+ * What the car paint costs at each preset: the car-paint-cost page fills the view with one panel,
+ * timed with the paint and with the same clear-coated metal without it, in turns, at a fixed render
+ * scale. The paint's flakes count their facets for each light, so its cost is per pixel, and the
+ * presets differ in pixel ratio. D-255 records the figures.
+ */
+export function carPaintCostPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+	];
+	for (const { path, tier, presets } of CAR_PAINT_PATHS)
+		for (const preset of presets)
+			items.push(
+				pageItem(
+					`car-paint-${preset}-${path}`,
+					'car-paint-cost',
+					{ kind: 'probe', tier },
+					{
+						switches: [`gpu=${path}`, `preset=${preset}`, 'rounds=6', 'seconds=1', 'warm-up=3'],
+						timeoutSeconds: CAR_PAINT_TIMEOUT_SECONDS,
+					},
+				),
+			);
+	return items;
+}
+
+/**
+ * What the flake count's own steps cost: the car-paint-cost page with the painted side's flakes
+ * given a footprint whose count lands in the exact branch at each buffer the page draws, under a
+ * light that every flake catches. The same footprint runs again under a light that no flake
+ * catches, so the count breaks at its first compare. The two pages' differences from their plain
+ * sides, less each other, are the count's loop, apart from the rest of the lobe.
+ */
+export function carPaintLoopPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...(['loop', 'loop-0'] as const).map((paint) =>
+			pageItem(
+				`car-paint-${paint}-medium-webgpu`,
+				'car-paint-cost',
+				{ kind: 'probe', tier: 'webgpu' },
+				{
+					switches: [
+						'gpu=webgpu',
+						'preset=medium',
+						'rounds=6',
+						'seconds=1',
+						'warm-up=3',
+						`paint=${paint}`,
+					],
+					timeoutSeconds: CAR_PAINT_TIMEOUT_SECONDS,
+				},
+			),
+		),
+	];
 }
 
 /**
@@ -1709,8 +1854,9 @@ export function twoStepPlan(): PlanItem<Check>[] {
  * The page reports the splats that draw against the budget, the chunks and bytes that arrived, the
  * frame rate, the first-frame time and the bytes that the page downloaded. Each path runs the whole
  * cloud and a quarter of it at the same pixel count, so the two show whether the cost follows the
- * count or the screen's fill. The capabilities page comes first, so a device without WebGPU skips
- * that page.
+ * count or the screen's fill. Each path then times the splats demo, a real scan of 1.7 million
+ * splats that streams from the sample content, at the preset that the engine chooses. The
+ * capabilities page comes first, so a device without WebGPU skips that page.
  */
 export function splatsPlan(): PlanItem<Check>[] {
 	return [
@@ -1727,6 +1873,12 @@ export function splatsPlan(): PlanItem<Check>[] {
 				'splats-stream',
 				{ kind: 'probe', tier },
 				{ switches: [`gpu=${tier}`, 'splats=100000', 'seconds=3'], timeoutSeconds: 180 },
+			),
+			pageItem(
+				`splats-scan-${tier}`,
+				'demo-frames',
+				{ kind: 'probe', tier },
+				{ switches: [`gpu=${tier}`, 'demo=splats', 'seconds=5'], timeoutSeconds: 300 },
 			),
 		]),
 	];
@@ -1802,9 +1954,12 @@ const VEGETATION_GRASS_PATHS = [
 /**
  * What the grass on one hill costs at each preset that a GPU path draws, for M3-V8: the frame's
  * GPU time, its per-pass breakdown where the device times passes, the CPU time and the draw calls.
- * The page places 20,000 tufts at High, draws a preset's share of them, and measures five seconds.
- * Each of the hill's three distance bands also runs alone at High on WebGPU, so the far bands'
- * cheaper draws read as figures of their own rather than as one hill's average.
+ * The page places 20,000 tufts at High, culls each view, thins the far tufts, draws a preset's
+ * share of them, and measures five seconds. Its sun casts, so its rows hold the near shadow pass.
+ * The 20,000 hill is a stress case with no ceiling. Four rows draw the hill at Creek's own density,
+ * 2.0 tufts on each square meter of its 160 meter valley and 5.9 on its densest bank strip, which
+ * is the scene that D-241's ceilings name. Each density runs with and without the view cull and
+ * the far share, so the cull's own change shows on that scene.
  */
 export function vegetationGrassPlan(): PlanItem<Check>[] {
 	const items: PlanItem<Check>[] = [];
@@ -1816,11 +1971,51 @@ export function vegetationGrassPlan(): PlanItem<Check>[] {
 					'vegetation-grass',
 					{ kind: 'probe', tier },
 					{
-						switches: [`gpu=${path}`, `preset=${preset}`, 'seconds=5'],
+						switches: [`gpu=${path}`, `preset=${preset}`, 'seconds=5', 'warmup=8', 'shadows'],
 						timeoutSeconds: 600,
 					},
 				),
 			);
+	// The hill is 34 by 34 meters, so 2.0 tufts on each square meter is 2,312 at High and 5.9 is
+	// 6,820. The strip's own count would leave the rest of the hill bare, so the row spreads it.
+	const CREEK_DENSITY = [
+		['2', 2312],
+		['5-9', 6820],
+	] as const;
+	for (const [name, tufts] of CREEK_DENSITY)
+		for (const cull of [true, false])
+			items.push(
+				pageItem(
+					`vegetation-grass-creek-${name}${cull ? '' : '-nocull'}-webgpu`,
+					'vegetation-grass',
+					{ kind: 'probe', tier: 'webgpu' },
+					{
+						switches: [
+							'gpu=webgpu',
+							'preset=high',
+							'seconds=5',
+							'warmup=8',
+							'shadows',
+							`tufts=${tufts}`,
+							...(cull ? [] : ['cull=off']),
+						],
+						timeoutSeconds: 600,
+					},
+				),
+			);
+	// The same scene and sun with no grass, which gives the base frame that the ceiling meets
+	// before the add-on draws anything.
+	items.push(
+		pageItem(
+			'vegetation-grass-nograss-webgpu',
+			'vegetation-grass',
+			{ kind: 'probe', tier: 'webgpu' },
+			{
+				switches: ['gpu=webgpu', 'preset=high', 'seconds=5', 'warmup=8', 'shadows', 'grass=off'],
+				timeoutSeconds: 600,
+			},
+		),
+	);
 	return items;
 }
 
@@ -2104,8 +2299,11 @@ export function vegetationScatterPlan(): PlanItem<Check>[] {
 	];
 }
 
-/** The presets that the Skyway plan fixes on each GPU path. */
-const SKYWAY_PRESETS = ['low', 'medium'] as const;
+/**
+ * The presets that the Skyway plan fixes on each GPU path. High is the Mac's target: the display's
+ * rate at DPR 2. A WebGL2 device caps it at Medium, and its page draws that preset instead.
+ */
+const SKYWAY_PRESETS = ['low', 'medium', 'high'] as const;
 /** How long each Skyway page measures, in seconds: the route's opening hold and the glide after it. */
 const SKYWAY_SECONDS = 8;
 /**
@@ -2115,8 +2313,9 @@ const SKYWAY_SECONDS = 8;
 const SKYWAY_TIMEOUT_SECONDS = 300;
 
 /**
- * Skyway's frame on each GPU path, for M3-C1's frame target: the Low and Medium presets, each with
- * the governor off and the render scale held at 1, so every figure is the same drawing on every run.
+ * Skyway's frame on each GPU path, for M3-C1's frame target: the Low, Medium and High presets, each
+ * with the governor off and the render scale held at 1, so every figure is the same drawing on
+ * every run. High is the preset that the Mac's target names.
  * The render scale is what the governor would otherwise lower under load, and a lowered scale would
  * hide the cost that the task is looking for. A page at each path's chosen preset, with the
  * governor on, says what a visitor's device draws as the demo runs.
@@ -2237,6 +2436,74 @@ export function skywayCostPlan(): PlanItem<Check>[] {
 	return items;
 }
 
+/** The length of each window of the skyway soak plan, and how many of them fill its hour. */
+const SOAK_WINDOW_SECONDS = 300;
+const SOAK_WINDOWS = 12;
+
+/**
+ * Skyway at High with the governor off for an hour, for the task's memory target: each window
+ * carries its frame intervals and the engine's memory, and the page reads the overlay's texture and
+ * buffer figures after each one, so a run shows whether the memory holds rather than asserting it.
+ * The item's time limit covers the hour and the page's own start.
+ */
+export function skywaySoakPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		pageItem(
+			'skyway-soak-webgpu',
+			'demo-device',
+			{ kind: 'probe', tier: 'webgpu' },
+			{
+				switches: [
+					'gpu=webgpu',
+					'demo=skyway',
+					'preset=high',
+					'governor=off',
+					'render-scale=1',
+					`seconds=${SOAK_WINDOW_SECONDS}`,
+					`windows=${SOAK_WINDOWS}`,
+				],
+				timeoutSeconds: SOAK_WINDOW_SECONDS * SOAK_WINDOWS + 900,
+			},
+		),
+	];
+}
+
+/**
+ * Skyway at High with the governor off, measuring short windows, to catch a long frame and name its
+ * parts. The engine times every drawn frame here rather than one in eleven, so the parts belong to
+ * the frame that broke the threshold, and the page reports that frame's own intervals, threads and
+ * window changes. The threshold sits under the 50 ms ceiling, so a page names the frames that come
+ * close to it as well as those that break it. The item's time limit covers the page's start and the
+ * minute of windows.
+ */
+export function skywayStallPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		pageItem(
+			'skyway-stall-webgpu',
+			'demo-device',
+			{ kind: 'probe', tier: 'webgpu' },
+			{
+				switches: [
+					'gpu=webgpu',
+					'demo=skyway',
+					'preset=high',
+					'governor=off',
+					'render-scale=1',
+					'seconds=5',
+					'windows=12',
+					'slow=20',
+					'gpu-samples=every',
+				],
+				// The demo's page downloads its modules and builds its city before it draws, and a
+				// cold server took more than five minutes to hand them over.
+				timeoutSeconds: 5 * 12 + 600,
+			},
+		),
+	];
+}
+
 /** The showcase demos that the demos plan measures. */
 const MEASURED_DEMOS = ['skyway', 'island', 'showroom'] as const;
 
@@ -2272,6 +2539,36 @@ export function demosPlan(): PlanItem<Check>[] {
 						},
 					),
 				),
+			),
+		),
+	];
+}
+
+/**
+ * What the shadow map's shape costs the Showroom at Low: the same page four times in one session,
+ * twice with Low's two cascades at 1024 and twice with Medium's three at 2048. A check that lowers
+ * the preset carries the starting preset's shape, so this pair separates the map's sampling inside
+ * the scene draw from everything else that Low draws.
+ */
+export function showroomShadowPlan(): PlanItem<Check>[] {
+	const shapes = ['low', 'medium', 'low', 'medium'] as const;
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...shapes.map((shape, index) =>
+			pageItem(
+				`demo-showroom-webgpu-shadow-${shape}-${index + 1}`,
+				'demo-frames',
+				{ kind: 'probe', tier: 'webgpu' },
+				{
+					switches: [
+						'gpu=webgpu',
+						'demo=showroom',
+						'seconds=5',
+						'preset=low',
+						`shadow-shape=${shape}`,
+					],
+					timeoutSeconds: 300,
+				},
 			),
 		),
 	];
@@ -2613,10 +2910,12 @@ const SOAK_START_SECONDS = 180;
 
 /**
  * The soak and recovery test. First the scene page loses its GPU on purpose in each thread mode on
- * each GPU path, and must draw the whole scene again on a new device. Then each of `scenes` plays
- * for `minutes` on each GPU path, from the benchmark pages' production build, measured once a
- * minute: the run's summary gives the GPU losses that the engine recovered from, the frame rates
- * and the memory.
+ * each GPU path, and must draw the whole scene again on a new device. Each run fixes its preset,
+ * because the image it compares is drawn in hold mode, which skips the start-up preset check: a slow
+ * device that lowered the preset would draw other anti-aliasing and fail the picture. Then each of
+ * `scenes` plays for `minutes` on each GPU path, from the benchmark pages' production build,
+ * measured once a minute: the run's summary gives the GPU losses that the engine recovered from, the
+ * frame rates and the memory.
  */
 export function soakPlan({
 	minutes = SOAK_MINUTES,
@@ -2633,7 +2932,10 @@ export function soakPlan({
 						tier,
 						run: borrowedRun(manifestRun('scene', tier, mode.name), 'scene-after-gpu-loss'),
 					},
-					{ switches: [`gpu=${tier}`, mode.query, 'lose-gpu'], timeoutSeconds: 60 },
+					{
+						switches: [`gpu=${tier}`, 'preset=medium', mode.query, 'lose-gpu'],
+						timeoutSeconds: 60,
+					},
 				),
 			),
 		),
@@ -2852,13 +3154,17 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	effects: () => effectPlan('effects'),
 	sharpen: () => effectPlan('sharpen'),
 	compute: () => effectPlan('compute'),
+	clouds: () => effectPlan('clouds'),
 	'physical-sky': () => effectPlan('sky'),
 	'fills-cost': fillsCostPlan,
+	'probe-cost': () => effectPlan('probes'),
 	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,
 	'environment-load': environmentLoadPlan,
 	grass: grassPlan,
 	'alpha-mask-cost': alphaMaskPlan,
+	'car-paint-cost': carPaintCostPlan,
+	'car-paint-loop': carPaintLoopPlan,
 	'impostor-cost': impostorCostPlan,
 	'impostor-frame': impostorFramePlan,
 	'cluster-cost': clusterCostPlan,
@@ -2867,8 +3173,11 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'two-step': twoStepPlan,
 	sky: skyPlan,
 	demos: demosPlan,
+	'showroom-shadow': showroomShadowPlan,
 	skyway: skywayPlan,
 	'skyway-cost': skywayCostPlan,
+	'skyway-soak': skywaySoakPlan,
+	'skyway-stall': skywayStallPlan,
 	splats: splatsPlan,
 	vegetation: vegetationPlan,
 	'wind-field-cost': windFieldCostPlan,
@@ -3164,6 +3473,9 @@ export function itemsNeeded(check: Check): string[] {
 			return [check.first];
 		case 'image':
 			return check.run.sameAs === undefined ? [] : [imageItemId(check.run.sameAs)];
+		case 'warm-page':
+			// The second draw's reading needs the first, so the two share a shard and run in order.
+			return check.half === 'warm' ? [WARM_PAGE_COLD] : [];
 		case 'parity':
 			return [
 				...new Set([check.pair.reference, BASELINE_PAIR.reference, BASELINE_PAIR.candidate]),
@@ -3552,8 +3864,9 @@ export function judge(
 	if (!result.ok) {
 		const path = neededPath(check);
 		if (path && missing[path] && missingPath(path, result.error)) return 'skip';
-		// A tab memory page that gave no result in time still tells how far it got.
-		if (check.kind !== 'tab-memory') return [failureText(result)];
+		// A tab memory page that gave no result in time still tells how far it got, and the second
+		// draw of the warm page still reads the pair of draws that the row holds.
+		if (check.kind !== 'tab-memory' && check.kind !== 'warm-page') return [failureText(result)];
 	}
 	switch (check.kind) {
 		case 'capabilities':
@@ -3568,6 +3881,13 @@ export function judge(
 		}
 		case 'image':
 			return imageRunProblems(check, result, context);
+		case 'warm-page': {
+			// A lost context is the page's own failure, which the run counts. The pair's reading is
+			// noted on the second draw, whose result has the first one beside it.
+			if (check.half === 'warm')
+				context?.note?.(warmPageNote(context.resultOf(WARM_PAGE_COLD), result));
+			return result.ok ? [] : [failureText(result)];
+		}
 		case 'shaders': {
 			const failures = (result.failures ?? []) as { shader: string; stage: string; log: string }[];
 			const problems = failures.map((f) => `${f.shader} ${f.stage}: ${f.log.split('\n')[0]}`);

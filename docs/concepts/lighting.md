@@ -325,11 +325,13 @@ Mirror reflections win over probes: a [reflection pass](../api/render.md#reflect
 
 An environment map lights every surface the same way. A light probe grid varies the light by place. Its probes hold the light that arrives at each point, so light bounced from a red wall or blocked by a corner reaches the surfaces near it. `scene.setLightProbeGrid` sets one. [Scene](../api/scene.md#the-light-probe-grid) gives its options, and the calls that make a grid.
 
-Each probe holds L1 spherical harmonics of the light that arrives there: four RGB coefficients, 12 numbers. Standard materials read the grid per pixel, with three filtered reads. The grid's light takes the place of the environment's diffuse light, and the environment keeps its reflections. `environmentWeight` sets the share of the diffuse light that the grid takes over.
+Each probe holds L1 spherical harmonics of the light that arrives there: four RGB coefficients, 12 numbers. It also holds two masks. The first is its validity: 1 where the probe stands in open space, and 0 where geometry encloses it, so the light of a probe inside a wall never leaks through the wall. The second is its sky visibility: the share of the sky that its rays reached. Standard materials read the grid per pixel, with four filtered reads. The grid's light takes the place of the environment's diffuse light, and the environment keeps its reflections. `environmentWeight` sets the share of the diffuse light that the grid takes over.
 
 A scene with a grid draws no [screen-space bounce light](post-processing.md#screen-space-bounce-light). The grid already holds one bounce, with the occlusion the screen cannot supply, and the two would count the same light twice.
 
-`bakeProbes` bakes a grid in the browser. Each probe casts directions with `scene.raycastBatch`. A direction that reaches the sky takes the environment's light. A direction that hits a surface takes that surface's colour once, as a matte bounce. The bake counts no lamps, so the grid holds the sky's light, the scene's occlusion of it, and one coloured bounce. `step` bakes a few probes a frame, so a loading screen can show progress. `finish` bakes the rest at once.
+`bakeProbes` bakes a grid in the browser. Each probe casts directions with `scene.raycastBatch`, which tests both faces of every triangle here. A direction that reaches the sky counts toward the probe's sky visibility. A direction that meets a surface's back means geometry encloses the probe: the bake gives it no validity, and fills it from the probes around it. A direction that hits a surface's front takes that surface's colour once, as a matte bounce. The bake counts no lamps, so the grid holds one coloured bounce, the occlusion of the sky and which probes lie inside geometry. `step` bakes a few probes a frame, so a loading screen can show progress. `finish` bakes the rest at once.
+
+The sky itself never bakes. The shader weights each probe's sky visibility by how much the surface faces the sky above the horizon, multiplies that by the environment's live light, and adds it to the baked bounce. A time of day that moves the sky, or an environment that turns or changes its intensity, then lights the grid again with no new bake. Only the bounce keeps the environment that the bake read.
 
 ### What takes the grid's light
 
@@ -347,10 +349,10 @@ Such a mesh keeps the environment's diffuse light, and takes no light from the g
 ### Limits and cost
 
 - The grid's texture is a 3D texture of half floats, at most 256 texels along each side on every device. `LightProbeGridData.toTexture()` makes it.
-- A grid holds at most 256 probes along x, 256 along y and 83 along z. The z side is smaller because the texture is cut into sub-volumes that hold the coefficients, and each sub-volume has a padding slice at either end.
+- A grid holds at most 256 probes along x, 256 along y and 62 along z. The z side is smaller because the texture is cut into four sub-volumes, three of coefficients and one of the masks, and each sub-volume has a padding slice at either end.
 - `counts` takes whole numbers of 2 or more, and `spacing` must be above 0. Development builds throw E1108 for a grid too large for the texture, and the error names the limit. Use a larger spacing, or a smaller box.
-- The grid takes 24 bytes of GPU memory for each probe, the 12 half floats of its coefficients, plus two padding slices along z. A grid of 24 x 8 x 24 probes (4,608 probes, one per metre over a 24 m hall) takes about 117 KiB.
-- Each lit pixel of a standard material reads the grid three times.
+- The grid takes 32 bytes of GPU memory for each probe, the 12 half floats of its coefficients and the 2 half floats of its masks, plus the padding slices along z. A grid of 24 x 8 x 24 probes (4,608 probes, one per metre over a 24 m hall) takes about 157 KiB.
+- Each lit pixel of a standard material reads the grid four times.
 - The grid's shaders load on first use, so a page that sets no grid downloads none of it. To load them before the first frame, list `'probe_grid'` in `createEngine`'s `preload` option: [Loading screens](../guides/loading-screens.md#loading-everything-up-front).
 
 ## Sky and backgrounds

@@ -65,6 +65,8 @@ describe('defineFeature', () => {
 		expect(() => minimal({ frame: 'colour' as never })).toThrow(/E1223/);
 		expect(() => defineFeature({ name: 'glow', frame: 'post' })).toThrow(/E1223/);
 		expect(() => minimal({ frame: 'post', kind: 'draw' })).toThrow(/E1223/);
+		// A draw at the resolve point blends in the camera's one-sample layer.
+		expect(minimal({ frame: 'resolve', kind: 'draw' }).kind).toBe('draw');
 		expect(() => minimal({ frame: 'shadow', kind: 'fullscreen' })).toThrow(/E1223/);
 		// A compute feature publishes its results as outputs, not as scene resources.
 		expect(() => minimal({ kind: 'compute', writes: ['sceneColor'] })).toThrow(/E1223/);

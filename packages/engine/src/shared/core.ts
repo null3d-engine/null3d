@@ -505,7 +505,9 @@ export interface CoreGlue extends CoreErrors {
 	 * A material with a linear color and opacity. `shading` is one of the `SHADING_*` codes, and
 	 * `features` holds `MATERIAL_FEATURE_*` bits, fixed from then on, as is the depth bias: three.js's
 	 * polygon offset units and factor. `swayDistance` is the distance from the camera out to which a
-	 * custom material's vertex offset moves, in meters, or 0 for every distance.
+	 * custom material's vertex offset moves, in meters, or 0 for every distance. A `singleLayer` of
+	 * 1 draws the material's blended surfaces in the camera's one-sample layer while the scene has
+	 * more than one sample, and 0 draws them in the transparent pass.
 	 */
 	createMaterial(
 		shading: number,
@@ -517,6 +519,7 @@ export interface CoreGlue extends CoreErrors {
 		biasConstant: number,
 		biasSlope: number,
 		swayDistance: number,
+		singleLayer: number,
 	): number;
 	/**
 	 * Changes one value of a material, `param` (a `MATERIAL_PARAM_*` code), and keeps the others.
@@ -728,7 +731,9 @@ export interface CoreGlue extends CoreErrors {
 	 * texels, or with a width of 0, of `scale` of the render size each way. It reads the input
 	 * image `source` (`PASS_SOURCE_*`), the scene's depth with the flag `EFFECT_DEPTH`, the
 	 * uniforms at `effectValues` and the textures at `effectTextures`, in one frame of every
-	 * `every`. Returns the view's place from 1, or 0 on failure, as `addPass` does.
+	 * `every`. A fragment form of a compute pass draws a target of `format`, a draw list format
+	 * code, or of the scene's views' format with 0. Returns the view's place from 1, or 0 on
+	 * failure, as `addPass` does.
 	 */
 	addFullscreenPass(
 		pass: string,
@@ -744,6 +749,7 @@ export interface CoreGlue extends CoreErrors {
 		history: number,
 		layers: number,
 		steps: number,
+		format: number,
 	): number;
 	/**
 	 * Adds a compute pass named `pass`, which runs the compiled WGSL of compute pipeline template
@@ -832,6 +838,8 @@ export interface CoreGlue extends CoreErrors {
 	removeLightImage(light: number): number;
 	/** Draws the physical sky from its tables while `on`, else the analytic sky in its place. */
 	setPhysicalSky(on: boolean): number;
+	/** Sets the steps of each ray of the sky's volumetric cloud tier: 0 draws the flat layer. */
+	setCloudSteps(steps: number): number;
 	/** Removes the scene pass of a view place, or fails with the render graph's error. */
 	removeScenePass(place: number): number;
 	/** Switches the scene pass of a view place on or off. */
@@ -1492,6 +1500,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setLightMapTexture',
 	'removeLightImage',
 	'setPhysicalSky',
+	'setCloudSteps',
 	'removeScenePass',
 	'setScenePassEnabled',
 	'setScenePassEvery',

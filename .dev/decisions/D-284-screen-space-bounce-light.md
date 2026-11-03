@@ -61,9 +61,11 @@ The engine's other accumulation, M2-F11's still-camera accumulation
 - It rests the GPU once a view settles, so a still view's light would stop changing.
 
 The bounce therefore samples the screen, and denoises in space at the grid's size. The trace
-samples a spiral disk around each texel. The disk spans 64 texels of the grid, almost half its
-height, so that a wall beside a floor shows its upper part. The trace keeps the samples whose
-surface lies in the texel's hemisphere, weighted by the cosine of their direction.
+samples a spiral disk around each texel. The disk spans 48 texels of the grid either way, which is
+96 pixels of the picture. That is wide enough that a wall beside a floor still lights the floor
+under it. It is narrow enough that the wall's color does not spread across the surface it lands on
+as a haze. The trace keeps the samples whose surface lies in the texel's hemisphere, weighted by
+the cosine of their direction.
 The denoise blurs that light over 24 taps in a disk of 4 texels. Each tap keeps to the
 texel's own surface, by its distance from that surface's plane and its normal. This is the filter
 that ambient occlusion's denoise already applies to its occlusion. The opaque pass reads the light
@@ -144,26 +146,24 @@ change is inside the noise.
 ### The picture
 
 The image test draws the room at the reference preset, with the sketch setting 8 samples itself. On
-WebGPU, the floor under the red wall is 6.5 levels redder than the plain room's. The floor under the
-green wall is 4.5 levels greener. The baked grid moves those boxes by 7.7 and 1.6 levels the same
-way. The light moves 48.35% of the frame's pixels by two steps or more on WebGPU, and 46.75% on
-WebGL2. It differs from the baked room over 9.4% of the frame past the image tests' threshold; the
+WebGPU, the floor under the red wall is 5.0 levels redder than the plain room's. The floor under the
+green wall is 3.5 levels greener. The baked grid moves those boxes by 7.7 and 1.6 levels the same
+way. The light moves 41.91% of the frame's pixels by two steps or more on WebGPU, and 40.33% on
+WebGL2. It differs from the baked room over 9.63% of the frame past the image tests' threshold. The
 test does not cap that share, because the two lights are not equal by design.
 
 The owner amended the clause, so the test holds what the technique can do rather than an equality
 that a screen estimate cannot reach. The floor under each wall must take the bake's color in the
-bake's direction, within four levels of the bake's strength. The measured gaps are 1.2 levels at
-the left box, and 2.9 at the right on WebGPU and 3.0 on WebGL2, so four levels covers both paths
-with a level to spare. The test also prints the share of the frame that the light moves past the
-two-step bar, 48.35% on WebGPU and 46.75% on WebGL2, rather than requiring it to match the bake's
-share. A missing, swapped or wrongly colored bleed fails the signs and the moved share.
+bake's direction, within four levels of the bake's strength. The measured gaps are 2.6 levels at
+the left box and 1.9 at the right on WebGPU. On WebGL2 they are 2.7 and 2.0. Four levels therefore
+covers both paths with two levels to spare. The test also prints the share of the frame that the
+light moves past the two-step bar, 41.91% on WebGPU and 40.33% on WebGL2. It does not require that
+share to match the bake's. A missing, swapped or wrongly colored bleed fails the signs and the
+moved share.
 
-The two lights are not equal. On the green-wall floor the bounce reaches about -8 where the bake
-reaches -5.2, a stronger green spill over a wider reach. That is a difference of design, not of
-quality: the screen disk gives the surfaces beside a texel more of its samples than their solid
-angle would, and the intensity of three quarters trades that reach for the bleed's strength. The
-record keeps both figures.
-
-The look reviewer approved the pictures against the plain room's. It measured the floor's bleed
-within about two levels of the bake at most sampled points, and the worst differences, about six
-levels, in the intended direction.
+The two lights are not equal. The bounce gives the left box less red than the bake, 5.0 levels
+against 7.7, and the right box more green, 3.5 against 1.6. That is a difference of design, not of
+quality. The screen disk gives the surfaces beside a texel more of its samples than their solid
+angle would. The intensity of three quarters then trades that reach for the bleed's strength. The
+gather's reach is how far a wall's color lands, and the tighter disk keeps the color near the wall
+that sends it.

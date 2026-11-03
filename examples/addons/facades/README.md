@@ -67,7 +67,9 @@ scene.createInstances(geometry.plane({ width: 1, height: 1 }), count, {
 `start(at)` begins the wave at the sketch's time, or at a time in seconds. Each window waits for the
 wave to reach it, its distance from the wave's origin divided by the wave's speed, and then its
 light rises on a damped spring: it overshoots slightly and settles. A look that never calls `start`
-is already lit, so a scene that wants no wave pays nothing for it.
+is already lit, so a scene that wants no wave pays nothing for it. The spring's age is capped,
+because at a huge age the cosine in it can lose its value on some devices and the window's light
+with it.
 
 `setPower(share)` scales the whole scene's own light, from 0 by day to 1 by night. It changes no
 uniform per window: the wave, the flicker and the far fallback all read the one value.

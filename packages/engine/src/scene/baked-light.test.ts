@@ -82,8 +82,14 @@ test('the engine writes the fixture’s own text', () => {
 
 test('a grid that the engine bakes writes the format and reads back the same', () => {
 	const scene = {
-		raycastBatch(_rays: Float32Array, _options: unknown, hits: RaycastBatchHits) {
+		raycastBatchFaces(
+			_rays: Float32Array,
+			_options: unknown,
+			hits: RaycastBatchHits,
+			backFacing: Uint8Array,
+		) {
 			hits.distances.fill(-1);
+			backFacing.fill(0);
 		},
 	} as unknown as Scene;
 	const sh = new Float32Array(27);
@@ -177,7 +183,7 @@ test('a placement or a size that a grid cannot take is named', () => {
 		'its counts are not three whole numbers',
 	);
 	expect(refusal(changed('probe-grid', 'counts', '[2, 2, 300]'))).toBe(
-		'its counts give 300 probes along z, more than the 83 that a grid holds',
+		'its counts give 300 probes along z, more than the 62 that a grid holds',
 	);
 	expect(refusal(changed('probe-grid', 'spacing', '[1, 0, 1]'))).toBe(
 		'its spacing along y is 0, and it takes a number above 0',
@@ -219,16 +225,53 @@ test('an rgba16float light map holds half floats', () => {
 	expect(new DataView(file.radiance.buffer).getUint16(2, true)).toBe(green);
 });
 
+test('a grid file refuses a mask that does not cover every probe, or a value outside 0 to 1', () => {
+	const written = JSON.parse(
+		writeBakedProbeGrid(
+			new LightProbeGridData(
+				new Float32Array([0, 0, 0]),
+				new Float32Array([1, 1, 1]),
+				[2, 2, 2],
+				new Float32Array(96),
+				new Float32Array(8).fill(1),
+				new Float32Array(8),
+			),
+		),
+	);
+	const base64 = (values: number[]) => {
+		const bytes = new Uint8Array(values.length * 4);
+		const view = new DataView(bytes.buffer);
+		values.forEach((value, at) => {
+			view.setFloat32(at * 4, value, true);
+		});
+		return btoa(String.fromCharCode(...bytes));
+	};
+	written.validity = base64([1, 1, 1, 1]);
+	expect(() => readBakedLight(JSON.stringify(written))).toThrow(
+		'its validity holds 4 floats, and 8 probes need 8',
+	);
+	written.validity = base64(Array(8).fill(2));
+	expect(() => readBakedLight(JSON.stringify(written))).toThrow(
+		'its validity holds 2 at index 0, and it takes a number from 0 to 1',
+	);
+});
+
 test('a grid writes the values that LightProbeGridData holds', () => {
 	const coefficients = new Float32Array(96);
 	coefficients[0] = 1;
 	coefficients[1] = 2;
 	coefficients[2] = 4;
+	const validity = new Float32Array(8).fill(1);
+	validity[3] = 0;
+	const skyVisibility = new Float32Array(8).fill(0.5);
+	skyVisibility[5] = 0;
 	const grid = new LightProbeGridData(
 		new Float32Array([-1, 0, 2]),
 		new Float32Array([0.5, 1, 2]),
 		[2, 2, 2],
 		coefficients,
+		validity,
+		skyVisibility,
 	);
 	const text = writeBakedProbeGrid(grid);
 	expect(text).toContain('"origin": [-1, 0, 2]');
@@ -236,4 +279,28 @@ test('a grid writes the values that LightProbeGridData holds', () => {
 	const file = readBakedLight(text);
 	if (file.kind !== 'probe-grid') throw new Error('the text is not a probe grid');
 	expect(Array.from(file.grid.coefficients.subarray(0, 4))).toEqual([1, 2, 4, 0]);
+	expect(Array.from(file.grid.validity)).toEqual([1, 1, 1, 0, 1, 1, 1, 1]);
+	expect(Array.from(file.grid.skyVisibility)).toEqual([0.5, 0.5, 0.5, 0.5, 0.5, 0, 0.5, 0.5]);
+});
+
+test('a grid file without the masks reads as one that counted the sky in its coefficients', () => {
+	const written = JSON.parse(
+		writeBakedProbeGrid(
+			new LightProbeGridData(
+				new Float32Array([0, 0, 0]),
+				new Float32Array([1, 1, 1]),
+				[2, 2, 2],
+				new Float32Array(96),
+				new Float32Array(8).fill(1),
+				new Float32Array(8).fill(1),
+			),
+		),
+	);
+	delete written.validity;
+	delete written.skyVisibility;
+	const file = readBakedLight(JSON.stringify(written));
+	if (file.kind !== 'probe-grid') throw new Error('the text is not a probe grid');
+	// Every probe is valid, and no probe adds the live sky, which its coefficients already hold.
+	expect(Array.from(file.grid.validity)).toEqual(Array(8).fill(1));
+	expect(Array.from(file.grid.skyVisibility)).toEqual(Array(8).fill(0));
 });

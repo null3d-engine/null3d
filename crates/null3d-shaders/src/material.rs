@@ -65,7 +65,7 @@ struct Hook {
 }
 
 /// The functions a custom material's WGSL may declare.
-const HOOKS: [Hook; 4] = [
+const HOOKS: [Hook; 5] = [
     Hook {
         name: "surface",
         def: "CUSTOM_SURFACE",
@@ -94,7 +94,22 @@ const HOOKS: [Hook; 4] = [
         returns: "f32",
         signature: "fn coverage(input: SurfaceInput) -> f32",
     },
+    Hook {
+        name: "unlit",
+        def: UNLIT_DEF,
+        params: &["SurfaceInput"],
+        returns: "vec4f",
+        signature: "fn unlit(input: SurfaceInput) -> vec4f",
+    },
 ];
+
+/// The shader def that makes the template show a custom material's own color, which its `unlit`
+/// function gives, with no lights, shadows or reflections.
+const UNLIT_DEF: &str = "CUSTOM_UNLIT";
+
+/// The functions that only a lit surface uses, which a material that shows its own color declares
+/// in vain.
+const LIT_ONLY: [&str; 2] = ["surface", "lobe"];
 
 /// The shader def that makes the template call a custom material's vertex offset.
 const VERTEX_OFFSET_DEF: &str = "CUSTOM_VERTEX_OFFSET";
@@ -733,6 +748,20 @@ impl Compiler {
                 Some(Problem::at(path, Some(position), message))
             })
             .collect();
+        let unlit = declared.iter().any(|hook| hook.def == UNLIT_DEF);
+        if unlit {
+            for name in LIT_ONLY {
+                let Some(function) = find_function(&tokens, name) else {
+                    continue;
+                };
+                let source = &material.source;
+                let position = locate(source, source, tokens[function.name].start);
+                let message = format!(
+                    "`{name}` lights a surface, and `unlit` shows its own color with no light. Declare `fn surface(input: SurfaceInput) -> Surface` for a lit material, or `fn unlit(input: SurfaceInput) -> vec4f` for one that shows its own color, not both."
+                );
+                problems.push(Problem::at(path, Some(position), message));
+            }
+        }
         problems.extend(directive_problems(material));
         let found = textures::read(&tokens, &material.source, path, TextureOwner::Material);
         let (texture_fields, own_source, bindings) = match found {
@@ -752,7 +781,7 @@ impl Compiler {
             problems.push(Problem::at(
                 path,
                 Some(Position { line: 1, column: 1 }),
-                "the WGSL declares no function of a custom material. Declare `fn surface(input: SurfaceInput) -> Surface`, which starts from `defaultSurface(input)`, `fn vertexOffset(input: VertexInput) -> vec3f`, `fn lobe(input: LobeInput) -> vec3f`, `fn coverage(input: SurfaceInput) -> f32`, or some of them. For a shader of your own, give the WGSL a `@vertex` and a `@fragment` entry point instead.",
+                "the WGSL declares no function of a custom material. Declare `fn surface(input: SurfaceInput) -> Surface`, which starts from `defaultSurface(input)`, `fn vertexOffset(input: VertexInput) -> vec3f`, `fn lobe(input: LobeInput) -> vec3f`, `fn coverage(input: SurfaceInput) -> f32`, or some of them. For a surface that shows its own color with no light, declare `fn unlit(input: SurfaceInput) -> vec4f` in place of `surface`. For a shader of your own, give the WGSL a `@vertex` and a `@fragment` entry point instead.",
             ));
         }
         if !problems.is_empty() {
@@ -762,7 +791,8 @@ impl Compiler {
         let transmits = sets_transmission(&tokens);
         let translucent = names_diffuse_transmission(&tokens);
         let layered = names_coat_sheen(&tokens);
-        let alpha = names_alpha(&tokens);
+        // An unlit material gives its opacity in every color it returns.
+        let alpha = unlit || names_alpha(&tokens);
         let offsets = declared.iter().any(|hook| hook.def == VERTEX_OFFSET_DEF);
         let coverage = declared.iter().any(|hook| hook.def == COVERAGE_DEF);
         let inputs = read_inputs(&tokens);

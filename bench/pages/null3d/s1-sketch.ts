@@ -464,6 +464,9 @@ function createProbeGrid({ scene, textures }: SketchContext): void {
 		new Float32Array([(2 * S1_EXTENT) / 3, S1_EXTENT, (2 * S1_EXTENT) / 3]),
 		counts,
 		coefficients,
+		new Float32Array(counts[0] * counts[1] * counts[2]).fill(1),
+		// The coefficients carry all of this grid's light, so it takes no live sky beside them.
+		new Float32Array(counts[0] * counts[1] * counts[2]),
 	);
 	scene.setLightProbeGrid({
 		texture: grid.toTexture(textures),

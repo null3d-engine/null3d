@@ -74,8 +74,8 @@
 	"chromium-swiftshader/compat/demo-bounce-light.png": {
 		"test": "demo-bounce-light",
 		"tier": "compat",
-		"date": "2026-10-31",
-		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
+		"date": "2026-11-02",
+		"reason": "the Mac drew these pictures with CI=1 for the demo's new room; the session that checks the landings replaces them from CI's own SwiftShader when a run draws them"
 	},
 	"chromium-swiftshader/compat/demo-depth-only.png": {
 		"test": "demo-depth-only",
@@ -92,8 +92,8 @@
 	"chromium-swiftshader/compat/demo-ocean.png": {
 		"test": "demo-ocean",
 		"tier": "compat",
-		"date": "2026-10-28",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the demo; the branch's CI run has not drawn it yet"
+		"date": "2026-11-02",
+		"reason": "the stored compat picture recorded a sea without its mirror before the reflection kept its image, and the WebGL2 tier is new; CI's run replaces both"
 	},
 	"chromium-swiftshader/compat/demo-post-effects.png": {
 		"test": "demo-post-effects",
@@ -101,11 +101,11 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
-	"chromium-swiftshader/compat/demo-showroom.png": {
-		"test": "demo-showroom",
+	"chromium-swiftshader/compat/demo-splats.png": {
+		"test": "demo-splats",
 		"tier": "compat",
 		"date": "2026-11-02",
-		"reason": "the owner's new opening view of the configurator"
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
 	},
 	"chromium-swiftshader/compat/demo-spot-cookies.png": {
 		"test": "demo-spot-cookies",
@@ -118,12 +118,6 @@
 		"tier": "compat",
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
-	},
-	"chromium-swiftshader/compat/demo-water.png": {
-		"test": "demo-water",
-		"tier": "compat",
-		"date": "2026-10-31",
-		"reason": "Held frames now draw the water's reflection. Nothing is pushed yet, so CI's own drawing replaces these."
 	},
 	"chromium-swiftshader/compat/feature-instances-shadow.png": {
 		"test": "feature-instances-shadow",
@@ -179,18 +173,6 @@
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
 	},
-	"chromium-swiftshader/compat/impostor-handover.png": {
-		"test": "impostor-handover",
-		"tier": "compat",
-		"date": "2026-10-31",
-		"reason": "drawn on this Mac's SwiftShader on the branch that fixes the hand-over band and adds the turned-copy light picture; the branch was not pushed when the set was drawn"
-	},
-	"chromium-swiftshader/compat/impostor-shadow.png": {
-		"test": "impostor-shadow",
-		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "the shadow picture is new with the far-tree branch; drawn on the software renderer for its reference"
-	},
 	"chromium-swiftshader/compat/impostor-turn-azimuth.png": {
 		"test": "impostor-turn-azimuth",
 		"tier": "compat",
@@ -203,23 +185,41 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader on the branch that fixes the hand-over band and adds the turned-copy light picture; the branch was not pushed when the set was drawn"
 	},
-	"chromium-swiftshader/compat/impostor-turn-sun-back.png": {
-		"test": "impostor-turn-sun-back",
-		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "the card's stored normal no longer turns with the camera's bearing, so the pictures whose eye lies off the tree's forward moved; drawn on the software renderer"
-	},
 	"chromium-swiftshader/compat/impostor-turn.png": {
 		"test": "impostor-turn",
 		"tier": "compat",
 		"date": "2026-10-29",
 		"reason": "the card's stored normal no longer turns with the camera's bearing, so the pictures whose eye lies off the tree's forward moved; drawn on the software renderer"
 	},
-	"chromium-swiftshader/compat/impostors.png": {
-		"test": "impostors",
+	"chromium-swiftshader/compat/probe-grid-mirror.png": {
+		"test": "probe-grid-mirror",
 		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/compat/probe-grid-wall-leak.png": {
+		"test": "probe-grid-wall-leak",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
+		"test": "probe-grid-wall-night",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/compat/probe-grid-wall.png": {
+		"test": "probe-grid-wall",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/compat/probe-grid.png": {
+		"test": "probe-grid",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
 	},
 	"chromium-swiftshader/compat/row-colors.png": {
 		"test": "row-colors",
@@ -227,11 +227,41 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
-	"chromium-swiftshader/compat/sky-layer-scene-pass.png": {
-		"test": "sky-layer-scene-pass",
+	"chromium-swiftshader/compat/shadows-contact-far.png": {
+		"test": "shadows-contact-far",
 		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the picture; the branch is not pushed, so no CI run could draw it"
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that gives this family its per-tier software set; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/shadows-contact-near.png": {
+		"test": "shadows-contact-near",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that gives this family its per-tier software set; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/shadows-contact.png": {
+		"test": "shadows-contact",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that gives this family its per-tier software set; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/splats-budget.png": {
+		"test": "splats-budget",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "The splats add-on grows a coarse level's splats by the share of the chunk's surface that they leave uncovered, so the knot kept at a quarter of its splats draws at its own thickness; drawn on this Mac's SwiftShader before CI's first run of the branch"
+	},
+	"chromium-swiftshader/compat/splats-gltf.png": {
+		"test": "splats-gltf",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
+	},
+	"chromium-swiftshader/compat/splats.png": {
+		"test": "splats",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
 	},
 	"chromium-swiftshader/compat/spot-map-probe.png": {
 		"test": "spot-map-probe",
@@ -239,23 +269,35 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
 	},
+	"chromium-swiftshader/compat/terrain-baked-normals.png": {
+		"test": "terrain-baked-normals",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1; this Mac's software drawing stands in for CI's own Linux SwiftShader, and CI's redraw is owed and replaces these if it differs"
+	},
 	"chromium-swiftshader/compat/terrain.png": {
 		"test": "terrain",
 		"tier": "compat",
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
 	},
-	"chromium-swiftshader/compat/vegetation-grass.png": {
-		"test": "vegetation-grass",
+	"chromium-swiftshader/compat/vegetation-grass-contact-bounce-off.png": {
+		"test": "vegetation-grass-contact-bounce-off",
 		"tier": "compat",
-		"date": "2026-10-30",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 for the hill that the grass draws as one band, before the branch was pushed; CI's own software set replaces it when the branch lands"
+		"date": "2026-11-03",
+		"reason": "the contact pair on the software GPU at the shortened far cover"
 	},
-	"chromium-swiftshader/compat/water-bounds.png": {
-		"test": "water-bounds",
+	"chromium-swiftshader/compat/vegetation-grass-contact.png": {
+		"test": "vegetation-grass-contact",
 		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
+		"date": "2026-11-03",
+		"reason": "the contact pair on the software GPU at the shortened far cover"
+	},
+	"chromium-swiftshader/compat/vegetation-grass-shadow.png": {
+		"test": "vegetation-grass-shadow",
+		"tier": "compat",
+		"date": "2026-11-02",
+		"reason": "a new picture, drawn here until CI's SwiftShader set draws it; the software set takes the Low preset for its shadow cost"
 	},
 	"chromium-swiftshader/compat/weather.png": {
 		"test": "weather",
@@ -329,17 +371,11 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
-	"chromium-swiftshader/webgl2/demo-area-lights.png": {
-		"test": "demo-area-lights",
-		"tier": "webgl2",
-		"date": "2026-11-02",
-		"reason": "the area lights' fade no longer steps away from its target"
-	},
 	"chromium-swiftshader/webgl2/demo-bounce-light.png": {
 		"test": "demo-bounce-light",
 		"tier": "webgl2",
-		"date": "2026-10-31",
-		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
+		"date": "2026-11-02",
+		"reason": "the Mac drew these pictures with CI=1 for the demo's new room; the session that checks the landings replaces them from CI's own SwiftShader when a run draws them"
 	},
 	"chromium-swiftshader/webgl2/demo-depth-only.png": {
 		"test": "demo-depth-only",
@@ -347,11 +383,11 @@
 		"date": "2026-10-27",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
 	},
-	"chromium-swiftshader/webgl2/demo-impostors.png": {
-		"test": "demo-impostors",
+	"chromium-swiftshader/webgl2/demo-ocean.png": {
+		"test": "demo-ocean",
 		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+		"date": "2026-11-02",
+		"reason": "the stored compat picture recorded a sea without its mirror before the reflection kept its image, and the WebGL2 tier is new; CI's run replaces both"
 	},
 	"chromium-swiftshader/webgl2/demo-post-effects.png": {
 		"test": "demo-post-effects",
@@ -359,11 +395,11 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
-	"chromium-swiftshader/webgl2/demo-showroom.png": {
-		"test": "demo-showroom",
+	"chromium-swiftshader/webgl2/demo-splats.png": {
+		"test": "demo-splats",
 		"tier": "webgl2",
 		"date": "2026-11-02",
-		"reason": "the owner's new opening view of the configurator"
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
 	},
 	"chromium-swiftshader/webgl2/demo-spot-cookies.png": {
 		"test": "demo-spot-cookies",
@@ -431,12 +467,6 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader on the branch that fixes the hand-over band and adds the turned-copy light picture; the branch was not pushed when the set was drawn"
 	},
-	"chromium-swiftshader/webgl2/impostor-shadow.png": {
-		"test": "impostor-shadow",
-		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "the shadow picture is new with the far-tree branch; drawn on the software renderer for its reference"
-	},
 	"chromium-swiftshader/webgl2/impostor-turn-azimuth.png": {
 		"test": "impostor-turn-azimuth",
 		"tier": "webgl2",
@@ -449,23 +479,11 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader on the branch that fixes the hand-over band and adds the turned-copy light picture; the branch was not pushed when the set was drawn"
 	},
-	"chromium-swiftshader/webgl2/impostor-turn-sun-back.png": {
-		"test": "impostor-turn-sun-back",
-		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "the card's stored normal no longer turns with the camera's bearing, so the pictures whose eye lies off the tree's forward moved; drawn on the software renderer"
-	},
 	"chromium-swiftshader/webgl2/impostor-turn.png": {
 		"test": "impostor-turn",
 		"tier": "webgl2",
 		"date": "2026-10-29",
 		"reason": "the card's stored normal no longer turns with the camera's bearing, so the pictures whose eye lies off the tree's forward moved; drawn on the software renderer"
-	},
-	"chromium-swiftshader/webgl2/impostors.png": {
-		"test": "impostors",
-		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
 	"chromium-swiftshader/webgl2/lens-aberration.png": {
 		"test": "lens-aberration",
@@ -478,6 +496,36 @@
 		"tier": "webgl2",
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
+	},
+	"chromium-swiftshader/webgl2/probe-grid-mirror.png": {
+		"test": "probe-grid-mirror",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/webgl2/probe-grid-wall-leak.png": {
+		"test": "probe-grid-wall-leak",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
+		"test": "probe-grid-wall-night",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/webgl2/probe-grid-wall.png": {
+		"test": "probe-grid-wall",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/webgl2/probe-grid.png": {
+		"test": "probe-grid",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
 	},
 	"chromium-swiftshader/webgl2/proto-ao-bitmask-half.png": {
 		"test": "proto-ao-bitmask-half",
@@ -503,11 +551,47 @@
 		"date": "2026-10-30",
 		"reason": "the branch has no CI run; the prototype S3 page is a test page that draws its fixed scene with plain GPU calls, so the software set can be drawn here until a CI run replaces it"
 	},
+	"chromium-swiftshader/webgl2/shadows-contact-far.png": {
+		"test": "shadows-contact-far",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that gives this family its per-tier software set; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/shadows-contact-near.png": {
+		"test": "shadows-contact-near",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that gives this family its per-tier software set; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/shadows-contact.png": {
+		"test": "shadows-contact",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that gives this family its per-tier software set; the branch was not pushed yet, so no CI run could draw it"
+	},
 	"chromium-swiftshader/webgl2/sky-layer-scene-pass.png": {
 		"test": "sky-layer-scene-pass",
 		"tier": "webgl2",
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the picture; the branch is not pushed, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/splats-budget.png": {
+		"test": "splats-budget",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "The splats add-on grows a coarse level's splats by the share of the chunk's surface that they leave uncovered, so the knot kept at a quarter of its splats draws at its own thickness; drawn on this Mac's SwiftShader before CI's first run of the branch"
+	},
+	"chromium-swiftshader/webgl2/splats-gltf.png": {
+		"test": "splats-gltf",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
+	},
+	"chromium-swiftshader/webgl2/splats.png": {
+		"test": "splats",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
 	},
 	"chromium-swiftshader/webgl2/spot-map-probe.png": {
 		"test": "spot-map-probe",
@@ -515,23 +599,35 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
 	},
+	"chromium-swiftshader/webgl2/terrain-baked-normals.png": {
+		"test": "terrain-baked-normals",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1; this Mac's software drawing stands in for CI's own Linux SwiftShader, and CI's redraw is owed and replaces these if it differs"
+	},
 	"chromium-swiftshader/webgl2/terrain.png": {
 		"test": "terrain",
 		"tier": "webgl2",
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
 	},
-	"chromium-swiftshader/webgl2/vegetation-grass.png": {
-		"test": "vegetation-grass",
+	"chromium-swiftshader/webgl2/vegetation-grass-contact-bounce-off.png": {
+		"test": "vegetation-grass-contact-bounce-off",
 		"tier": "webgl2",
-		"date": "2026-10-30",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 for the hill that the grass draws as one band, before the branch was pushed; CI's own software set replaces it when the branch lands"
+		"date": "2026-11-03",
+		"reason": "the contact pair on the software GPU at the shortened far cover"
 	},
-	"chromium-swiftshader/webgl2/water-bounds.png": {
-		"test": "water-bounds",
+	"chromium-swiftshader/webgl2/vegetation-grass-contact.png": {
+		"test": "vegetation-grass-contact",
 		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
+		"date": "2026-11-03",
+		"reason": "the contact pair on the software GPU at the shortened far cover"
+	},
+	"chromium-swiftshader/webgl2/vegetation-grass-shadow.png": {
+		"test": "vegetation-grass-shadow",
+		"tier": "webgl2",
+		"date": "2026-11-02",
+		"reason": "a new picture, drawn here until CI's SwiftShader set draws it; the software set takes the Low preset for its shadow cost"
 	},
 	"chromium-swiftshader/webgl2/weather.png": {
 		"test": "weather",
@@ -605,17 +701,11 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
-	"chromium-swiftshader/webgpu/demo-area-lights.png": {
-		"test": "demo-area-lights",
-		"tier": "webgpu",
-		"date": "2026-11-02",
-		"reason": "the area lights' fade no longer steps away from its target"
-	},
 	"chromium-swiftshader/webgpu/demo-bounce-light.png": {
 		"test": "demo-bounce-light",
 		"tier": "webgpu",
-		"date": "2026-10-31",
-		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
+		"date": "2026-11-02",
+		"reason": "the Mac drew these pictures with CI=1 for the demo's new room; the session that checks the landings replaces them from CI's own SwiftShader when a run draws them"
 	},
 	"chromium-swiftshader/webgpu/demo-depth-only.png": {
 		"test": "demo-depth-only",
@@ -641,11 +731,11 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
-	"chromium-swiftshader/webgpu/demo-showroom.png": {
-		"test": "demo-showroom",
+	"chromium-swiftshader/webgpu/demo-splats.png": {
+		"test": "demo-splats",
 		"tier": "webgpu",
 		"date": "2026-11-02",
-		"reason": "the owner's new opening view of the configurator"
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
 	},
 	"chromium-swiftshader/webgpu/demo-spot-cookies.png": {
 		"test": "demo-spot-cookies",
@@ -658,12 +748,6 @@
 		"tier": "webgpu",
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
-	},
-	"chromium-swiftshader/webgpu/feature-instances-shadow.png": {
-		"test": "feature-instances-shadow",
-		"tier": "webgpu",
-		"date": "2026-10-25",
-		"reason": "M3-E9's picture draws no text and no 2D canvas, so this Mac's Chromium and CI's SwiftShader round the same frame alike. CI run 40223106242 compared it on both tiers and passed, so the reference stands until a later CI drawing replaces it."
 	},
 	"chromium-swiftshader/webgpu/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
@@ -713,12 +797,6 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader on the branch that fixes the hand-over band and adds the turned-copy light picture; the branch was not pushed when the set was drawn"
 	},
-	"chromium-swiftshader/webgpu/impostor-shadow.png": {
-		"test": "impostor-shadow",
-		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "the shadow picture is new with the far-tree branch; drawn on the software renderer for its reference"
-	},
 	"chromium-swiftshader/webgpu/impostor-turn-azimuth.png": {
 		"test": "impostor-turn-azimuth",
 		"tier": "webgpu",
@@ -731,23 +809,11 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader on the branch that fixes the hand-over band and adds the turned-copy light picture; the branch was not pushed when the set was drawn"
 	},
-	"chromium-swiftshader/webgpu/impostor-turn-sun-back.png": {
-		"test": "impostor-turn-sun-back",
-		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "the card's stored normal no longer turns with the camera's bearing, so the pictures whose eye lies off the tree's forward moved; drawn on the software renderer"
-	},
 	"chromium-swiftshader/webgpu/impostor-turn.png": {
 		"test": "impostor-turn",
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "the card's stored normal no longer turns with the camera's bearing, so the pictures whose eye lies off the tree's forward moved; drawn on the software renderer"
-	},
-	"chromium-swiftshader/webgpu/impostors.png": {
-		"test": "impostors",
-		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
 	"chromium-swiftshader/webgpu/lens-aberration.png": {
 		"test": "lens-aberration",
@@ -760,6 +826,36 @@
 		"tier": "webgpu",
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
+	},
+	"chromium-swiftshader/webgpu/probe-grid-mirror.png": {
+		"test": "probe-grid-mirror",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/webgpu/probe-grid-wall-leak.png": {
+		"test": "probe-grid-wall-leak",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
+		"test": "probe-grid-wall-night",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/webgpu/probe-grid-wall.png": {
+		"test": "probe-grid-wall",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+	},
+	"chromium-swiftshader/webgpu/probe-grid.png": {
+		"test": "probe-grid",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
 	},
 	"chromium-swiftshader/webgpu/proto-ao-bitmask-half.png": {
 		"test": "proto-ao-bitmask-half",
@@ -791,6 +887,24 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
+	"chromium-swiftshader/webgpu/shadows-contact-far.png": {
+		"test": "shadows-contact-far",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that gives this family its per-tier software set; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/shadows-contact-near.png": {
+		"test": "shadows-contact-near",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that gives this family its per-tier software set; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/shadows-contact.png": {
+		"test": "shadows-contact",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that gives this family its per-tier software set; the branch was not pushed yet, so no CI run could draw it"
+	},
 	"chromium-swiftshader/webgpu/skinning-shadows.png": {
 		"test": "skinning-shadows",
 		"tier": "webgpu",
@@ -803,11 +917,35 @@
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the picture; the branch is not pushed, so no CI run could draw it"
 	},
+	"chromium-swiftshader/webgpu/splats-budget.png": {
+		"test": "splats-budget",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "The splats add-on grows a coarse level's splats by the share of the chunk's surface that they leave uncovered, so the knot kept at a quarter of its splats draws at its own thickness; drawn on this Mac's SwiftShader before CI's first run of the branch"
+	},
+	"chromium-swiftshader/webgpu/splats-gltf.png": {
+		"test": "splats-gltf",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
+	},
+	"chromium-swiftshader/webgpu/splats.png": {
+		"test": "splats",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
+	},
 	"chromium-swiftshader/webgpu/spot-map-probe.png": {
 		"test": "spot-map-probe",
 		"tier": "webgpu",
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
+	},
+	"chromium-swiftshader/webgpu/terrain-baked-normals.png": {
+		"test": "terrain-baked-normals",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "drawn on this Mac's SwiftShader with CI=1; this Mac's software drawing stands in for CI's own Linux SwiftShader, and CI's redraw is owed and replaces these if it differs"
 	},
 	"chromium-swiftshader/webgpu/terrain.png": {
 		"test": "terrain",
@@ -815,11 +953,23 @@
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
 	},
-	"chromium-swiftshader/webgpu/vegetation-grass.png": {
-		"test": "vegetation-grass",
+	"chromium-swiftshader/webgpu/vegetation-grass-contact-bounce-off.png": {
+		"test": "vegetation-grass-contact-bounce-off",
 		"tier": "webgpu",
-		"date": "2026-10-30",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 for the hill that the grass draws as one band, before the branch was pushed; CI's own software set replaces it when the branch lands"
+		"date": "2026-11-03",
+		"reason": "the contact pair on the software GPU at the shortened far cover"
+	},
+	"chromium-swiftshader/webgpu/vegetation-grass-contact.png": {
+		"test": "vegetation-grass-contact",
+		"tier": "webgpu",
+		"date": "2026-11-03",
+		"reason": "the contact pair on the software GPU at the shortened far cover"
+	},
+	"chromium-swiftshader/webgpu/vegetation-grass-shadow.png": {
+		"test": "vegetation-grass-shadow",
+		"tier": "webgpu",
+		"date": "2026-11-02",
+		"reason": "a new picture, drawn here until CI's SwiftShader set draws it; the software set takes the Low preset for its shadow cost"
 	},
 	"chromium-swiftshader/webgpu/water-bounds.png": {
 		"test": "water-bounds",

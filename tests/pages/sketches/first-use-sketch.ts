@@ -2,10 +2,13 @@
 // ?feature= names it, as the shader manifest's first-use tables do. Each case uses that feature
 // alone, so a page downloads that feature's shader file once, for its device's fixed bits. The
 // scene keeps every other such feature out: no sun that casts shadows unless the feature needs one,
-// and then no contact shadows, which would load ambient occlusion's file on a desktop. A feature
-// with no case here fails the test, so a new first-use table needs a case.
+// and then no contact shadows, which would load ambient occlusion's file on a desktop. The test
+// turns off the preset's bounce light too, with ?bounce=off, which would load ambient occlusion's
+// file and the frame's color copy. A feature with no case here fails the test, so a new first-use
+// table needs a case.
 import {
 	defineSketch,
+	type ShaderOptions,
 	type SketchContext,
 	type SketchSetup,
 	type StandardOptions,
@@ -17,6 +20,7 @@ import {
 	texCoordsMaterial,
 } from '@null3d/engine/internal';
 import { CROWD_CLIPS, crowdMesh, crowdRig } from '../lib/crowd-rig';
+import { applySketchSwitches } from '../lib/sketch-switches';
 
 const feature = new URL(import.meta.url).searchParams.get('feature') ?? '';
 
@@ -252,6 +256,12 @@ const CASES: Record<string, Case> = {
 			},
 		};
 	},
+	// The volumetric cloud tier draws over the sky, which ?cloudSteps=32 turns on for every GPU
+	// path: the presets of WebGL2 and of compatibility mode stop at Medium, which draws the flat
+	// layer.
+	clouds: ({ scene }) => {
+		scene.setBackground({ sky: { cloudCoverage: 0.5, cloudDensity: 0.5, time: 4 } });
+	},
 	// The page's ?occlusion=on switch runs GPU occlusion culling, which a marked occluder starts.
 	occlusion: ({ scene, geometry, materials }) => {
 		scene.createMesh({
@@ -261,7 +271,31 @@ const CASES: Record<string, Case> = {
 			occluder: true,
 		});
 	},
+	// The camera's one-sample layer takes a blended surface that asks for it, which the High preset
+	// draws with several samples. The draw adapter sets `singleLayer` for an add-on feature at the
+	// `'resolve'` frame point; no page or add-on declares such a feature today, so this case is the
+	// only place that draws the layer's steps.
+	single_layer: ({ scene, geometry, materials }) => {
+		scene.createMesh({
+			mesh: geometry.plane({ width: 1.5, height: 1.5 }),
+			material: materials.shader({
+				wgsl: PLAIN,
+				color: '#7fb0d0',
+				opacity: 0.5,
+				alphaMode: 'blend',
+				singleLayer: true,
+			} as ShaderOptions<typeof PLAIN>),
+			position: [0, 1, 0],
+		});
+	},
 };
+
+/** The standard material's surface, unchanged, for the one-sample layer's blended pane. */
+const PLAIN = /* wgsl */ `
+fn surface(input: SurfaceInput) -> Surface {
+    return defaultSurface(input);
+}
+`;
 
 /** A custom effect that tints each pixel toward a color. */
 const TINT = /* wgsl */ `
@@ -273,12 +307,13 @@ fn effect(input: EffectInput) -> vec4f {
 `;
 
 export default defineSketch(async (context) => {
-	const { scene, geometry, materials } = context;
+	const { scene, geometry, materials, quality } = context;
 	const use = CASES[feature];
 	if (!use)
 		throw new Error(
 			`the first-use sketch has no case for '${feature}': add one that uses that feature alone`,
 		);
+	applySketchSwitches(import.meta.url, quality);
 	scene.setBackground('#8fa3b8');
 	scene.createHemisphereLight({ skyColor: '#a8c4ff', groundColor: '#5a4a3a', intensity: 1 });
 	scene.setActiveCamera(

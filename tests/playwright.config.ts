@@ -52,6 +52,15 @@ const PRODUCTION_BUILD = {
 };
 
 /**
+ * The heap limit that both page servers are given. A full picture run asks the dev server for 1,915
+ * pages, and it reached 3,542 MB of resident memory on this Mac before dying at Node's default limit;
+ * eight gigabytes leaves room above that peak. The figure is the dev server's own measurement — the
+ * preview server serves a page set rather than building one and is given the same limit so that it
+ * cannot die the same way with less room than the server that made its pages.
+ */
+const PAGE_SERVER_HEAP_ENV = { NODE_OPTIONS: '--max-old-space-size=8192' };
+
+/**
  * The dev server, which serves every page of the repository from its source. Off CI a run reuses a
  * server that already answers on its port, and the checkout setup refuses one of another copy.
  */
@@ -60,6 +69,11 @@ export const DEV_SERVER = {
 	cwd: REPO_ROOT,
 	url: `http://localhost:${HTTP_PORT}/tests/pages/index.html`,
 	reuseExistingServer: !ci,
+	// The server keeps what it has served for the whole run, and a full run asks it for 1,915 pages:
+	// it reached 3,542 MB of resident memory there and died at Node's default heap limit, after which
+	// every later page failed as E1410 with a refused connection rather than as itself. The limit
+	// leaves room above that measured peak so the server outlives the last page.
+	env: PAGE_SERVER_HEAP_ENV,
 };
 
 /** The production build of the test pages, and the preview that serves it. */
@@ -77,6 +91,9 @@ const PRODUCTION_SERVER = {
 	// build it finished in the log. A busy CI machine can take the chain past five minutes while each
 	// build is still finishing.
 	timeout: 900_000,
+	// The measured peak belongs to the dev server, so this limit carries the same figure rather than
+	// one of its own; a preview that served more than the dev server did would need its own reading.
+	env: PAGE_SERVER_HEAP_ENV,
 };
 
 export default defineConfig({

@@ -55,6 +55,7 @@ import { exactTestPath } from '../../tests/lib/test-paths';
 import { repositoryEnv } from '../lib/git-env';
 import { touchesRust } from './check-rust';
 import { keptCommits } from './check-trailers';
+import { findAckValues } from './commit-ack';
 
 /** The trailer that skips the check, with the reason for the emergency. */
 export const SKIP_TRAILER = 'Push-Check-Skipped';
@@ -122,9 +123,8 @@ export function milestoneRefusal(refs: readonly PushedRef[], landing: boolean): 
 
 /** The reason that a `Push-Check-Skipped:` trailer gives on any of the messages, if one does. */
 export function skipReason(messages: readonly string[]): string | undefined {
-	const trailer = new RegExp(`^${SKIP_TRAILER}:[ \\t]*(\\S.*)$`, 'm');
 	for (const message of messages) {
-		const reason = trailer.exec(message)?.[1]?.trim();
+		const reason = findAckValues(message, SKIP_TRAILER).find((value) => value.length > 0);
 		if (reason) return reason;
 	}
 	return undefined;

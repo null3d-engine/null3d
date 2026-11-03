@@ -39,7 +39,7 @@ export function taskProblem(
 	const message = effectiveMessage(rawMessage);
 	if (isExemptCommit(message)) return null;
 	if (authoredAt !== undefined && Date.parse(authoredAt) < Date.parse(TASK_RULE_SINCE)) return null;
-	for (const value of findAckValues(message, TASK_TRAILER)) {
+	for (const value of findAckValues(message, TASK_TRAILER, authoredAt)) {
 		if (value === 'none') continue;
 		const ids = value.split(',').map((id) => id.trim());
 		const unknown = ids.filter((id) => !known.has(id));

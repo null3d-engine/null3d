@@ -147,6 +147,23 @@ for (const { tier, query } of TIERS) {
 		expect(result.values[1]).toBe(8);
 	});
 
+	test(`a layered pass copies its map at each layer on ${tier}`, async ({ page }) => {
+		// The map's texels name their layer and place, so a map bound at the wrong layer, or a copy
+		// of the wrong row or column, shows in the read.
+		const result = await stateCase(page, query, 'map');
+		// The map's small values come back as they went in, so the upload keeps them.
+		expect(result.values[0] as number).toBeCloseTo(0.002, 4);
+		expect(result.values[1] as number).toBeCloseTo(0.002, 4);
+		// Each texel keeps its row, column and layer, so a map turned on either axis shows.
+		const expected = [
+			// The same place in each layer, then its neighbour along the row.
+			0.002, 0.0001, 1, 0, 0.002, 0.0001, 2, 0, 0.002, 0.0002, 2, 0,
+		];
+		const texels = result.texels ?? [];
+		for (let k = 0; k < expected.length; k++)
+			expect(texels[k] as number).toBeCloseTo(expected[k] as number, 4);
+	});
+
 	test(`an out-of-range read is refused on ${tier}`, async ({ page }) => {
 		const result = await stateCase(page, query, 'refuse');
 		expect(result.values[0]).toBe(1);
