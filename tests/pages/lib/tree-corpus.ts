@@ -118,7 +118,7 @@ const SPRUCE: Species = {
 		kind: 'needle',
 		// Many small sprays along a shoot, in one plane each, so the sky shows between them: a
 		// spruce's spray is a flat fan of needles, and a few large cards read as solid plates.
-		cards: 20,
+		cards: 10,
 		width: 0.16,
 		height: 0.208,
 		cell: 'needle',
