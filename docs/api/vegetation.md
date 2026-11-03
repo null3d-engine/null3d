@@ -8,7 +8,7 @@ summary: "Trees, conifers, shrubs, ferns, hostas and grass grown from a species 
 
 # Vegetation (@null3d/vegetation)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: the grass's compute-built blades and its near shadows. This page covers the species generator, the scatter, and the bark and leaf atlases that the browser paints at first use. It covers the material that draws a plant from them, the per-vertex wind that moves them, the far tree that a card draws, the grass's CPU path, and the floating leaves that ride the wind.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: the grass's compute-built blades and its near shadows, and the plant core's growth, leaves, wood, material, placement, near pool and far cards. This page covers the species generator, the scatter, and the bark and leaf atlases that the browser paints at first use. It covers the material that draws a plant from them, the per-vertex wind that moves them, the far tree that a card draws, the grass's CPU path, and the floating leaves that ride the wind.
 
 ```mermaid
 flowchart LR
@@ -75,9 +75,32 @@ export default defineSketch((ctx) => {
 
 The first level draws the plant in full detail. Pass a lower level's arrays to a mesh for a cheaper copy. Set the levels on the mesh, and the engine picks one by distance.
 
-## How a plant grows
+## The plant core
 
-The generator makes every random choice in the skeleton. The meshing step reads the skeleton and chooses nothing, so two levels of the same plant share its branches, its card places and its crown.
+The plant core replaces the generator at `@null3d/vegetation/legacy`. Its records, its registry and the contracts between its stages are built. Its stages are not built yet: growth, leaves and shoots, wood, the plant material, placement, the near pool and the far cards.
+
+A species is a folder of its own with a record and an entry. The record is a `Species`. It names one of eight growth models and that model's numbers. It also gives the outline the plant fills, its shoots, leaves, bark, seasons, wind and detail levels, and its own budget. The registry lists the folders, and [Vegetation species](vegetation-species.md) lists every species from its record.
+
+```ts
+import { checkSpecies, isSpeciesId, loadSpecies, speciesIds } from '@null3d/vegetation';
+
+console.log(speciesIds());
+const id = 'pedunculate-oak';
+if (isSpeciesId(id)) {
+  const oak = await loadSpecies(id);
+  checkSpecies(oak.record);
+}
+```
+
+`loadSpecies(id)` loads one species as a chunk of its own, so a page fetches only the species it places. Its textures load later, when the page prepares it. `checkSpecies(record)` names every problem with a record at once. `capsFor(record)` gives the limits that the record's budget must stay under. The limits depend on the growth model.
+
+The stages run in order. The kit is built once for each species. Each variant then grows its skeleton, shoot rows, crown light, wind records and three detail levels, and last its far cards. `growPlant` runs the stages in a job worker, and `growPlantNow` runs them on the calling thread. Every value that reaches geometry comes from an integer hash and the core's own trigonometry. So a variant has the same bytes in every browser. `plantAssetDigest(asset)` hashes those bytes to compare two growths.
+
+A stage that is not built yet throws a `NotBuiltError`. A kit built with `placeholders: true` grows a simple stand-in for each such stage, for review pages and tests. No shipped species draws a stand-in.
+
+## How the first generator grows a plant
+
+The generator at `@null3d/vegetation/legacy` makes every random choice in the skeleton. The meshing step reads the skeleton and chooses nothing, so two levels of the same plant share its branches, its card places and its crown.
 
 1. The skeleton grows from the record. Each branch level names its child count, length, angle, curve and taper, and the crown's outline scales a branch by its height.
 2. Radii follow the pipe model: a branch's cross section carries the tip and every child beyond it. A trunk flares where it meets the ground.
@@ -86,7 +109,7 @@ The generator makes every random choice in the skeleton. The meshing step reads 
 
 All choices come from a 32-bit integer hash of the seed, the species' salt, the variant, the branch and the card. The hash matches the shaders' `pcg`, so a page can reproduce a choice in WGSL. The same record and seed grow the same plant on every device and both GPU paths.
 
-## The species record
+## The first generator's species record
 
 A record holds only numbers and short strings. This table shows the parts that a record uses most.
 

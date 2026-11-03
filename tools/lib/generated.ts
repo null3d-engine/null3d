@@ -1,4 +1,4 @@
-// Every file that the docs generator and the skills sync write. Git keeps none of them: each is a
+// Every file that the docs generator, the vegetation registry and the skills sync write. Git keeps none of them: each is a
 // whole file that .gitignore names, and a written page links to the generated page it needs. The
 // install step, the git hooks after a checkout, merge or rebase, and `bun run docs` write them, so
 // generated output never clashes in a merge (D-105).
@@ -10,6 +10,7 @@ import { generateDocs, libraryProblems, referenceProblems, writeGeneratedDocs } 
 import { firstUseProblems, manifestFeatures } from './first-use-docs';
 import { expectedSkillCopies, syncSkills } from './skills';
 import { readRecord, recordFiles } from './tested-devices';
+import { REGISTRY_FILE, registrySource, speciesFolders } from './vegetation-registry';
 
 /**
  * Writes every generated file: the docs first, since the skills copy holds the docs generator's
@@ -21,9 +22,14 @@ export function writeGenerated(root: string): {
 	written: string[];
 	problems: string[];
 } {
+	// The vegetation add-on's species registry is source that the API reference reads, so it is
+	// written before the reference is.
+	const registry = new Map([[REGISTRY_FILE, registrySource(speciesFolders(root))]]);
+	const writtenFirst = writeGeneratedDocs(root, registry);
 	const api = readApi(root);
 	const files = generateDocs(root, api);
-	const written = writeGeneratedDocs(root, files);
+	const written = [...writtenFirst, ...writeGeneratedDocs(root, files)];
+	for (const [path, content] of registry) files.set(path, content);
 	written.push(...syncSkills(root));
 	for (const [path, content] of expectedSkillCopies(root)) files.set(path, content);
 	const problems = [

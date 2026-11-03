@@ -1,0 +1,441 @@
+// The generator's orchestrator: the stages from a species record to a grown, meshed variant, in
+// order. Stage C builds the kit once per species: leaf meshes at every tier, shoot prototypes, the
+// card atlas and the records header. Stage D grows the macro skeleton; stage E dresses it with shoot
+// rows, the crown's light and the wind records; stage F meshes the three levels and quantises them;
+// stage G bakes the far cards. Each stage is a function of its own module, and this file only calls
+// them in order, so a module fills its stage without touching this one.
+//
+// The orchestrator holds no engine import, so a job worker and Bun run it alike. The growers and
+// the leaf builders are lazy chunks: `loadPlantCode` loads a species' code on this thread, and the
+// stage calls after it are synchronous. A kit built with `placeholders` grows a stand-in for each
+// stage that is not built yet (core/placeholder.ts); without it such a stage throws.
+import type { MeshArrays, PlantAsset, PlantPart, ShootPrototype, SpeciesKitData } from './asset';
+import { speciesBox } from './core/box';
+import { hashText } from './core/hash';
+import { NotBuiltError } from './core/not-built';
+import {
+	emptyRows,
+	levelOf,
+	placeholderCardBake,
+	placeholderCardMesh,
+	placeholderCrown,
+	placeholderCut,
+	placeholderFar,
+	placeholderFoliage,
+	placeholderHeader,
+	placeholderLeaves,
+	placeholderPrototypes,
+	placeholderQuantise,
+	placeholderRows,
+	placeholderSkeleton,
+	placeholderStarts,
+	placeholderWind,
+	placeholderWood,
+} from './core/placeholder';
+import type { Species, SpeciesModule } from './core/record';
+import { loadSpeciesHooks, speciesHooks } from './core/registry';
+import type { TextureManifest } from './core/textures';
+import { DETAILS, type Detail, type Season } from './core/types';
+import { lightCrown } from './crown/visibility';
+import { type CuttingOptions, cutPlant } from './cutting';
+import { grower, loadGrower } from './grow/models';
+import { extrasMesh } from './leaf/extras';
+import { placeShoots } from './leaf/instancer';
+import { foliage, loadFoliage } from './leaf/kinds';
+import { shootPrototypes } from './leaf/shoot';
+import { bakeCards } from './lod/card-bake';
+import { cardMesh } from './lod/cards';
+import { bakeFar } from './lod/impostor';
+import { levelStarts } from './lod/levels';
+import { quantise, TEXTURE_UV_STEPS, WOOD_UV_STEPS } from './lod/quantise';
+import { speciesHeader } from './render/records';
+import type { DressInput, FarBake, GrowInput, MeshInput, MeshLevel } from './stages';
+import { windRecords } from './wind/records';
+import { meshWood } from './wood/wood-mesh';
+
+/**
+ * The generator's version, which every kit key and variant key holds, so a cached kit or variant of
+ * an older generator is never read.
+ *
+ * @category api/vegetation
+ */
+export const GENERATOR_VERSION = '1';
+
+/**
+ * What a species' kit is built from: its record and its texture manifest. A species module is one.
+ *
+ * @category api/vegetation
+ */
+export interface KitSource {
+	/** The species record. */
+	readonly record: Species;
+	/** The texture files, of which the kit reads the manifest. */
+	readonly textures: Pick<SpeciesModule['textures'], 'manifest'>;
+}
+
+/**
+ * How a kit is built.
+ *
+ * @category api/vegetation
+ */
+export interface KitOptions {
+	/** The mesh tier; high by default. */
+	readonly detail?: Detail;
+	/** Grow a stand-in for each stage that is not built yet, for review pages and tests. */
+	readonly placeholders?: boolean;
+}
+
+/**
+ * How one variant grows.
+ *
+ * @category api/vegetation
+ */
+export interface GrowOptions {
+	/** The scene's seed. */
+	readonly seed: number;
+	/** The variant's index, from 0 to the record's variants less one. */
+	readonly variant: number;
+	/** The season; the record's default when not given. */
+	readonly season?: Season;
+	/** The mesh tier; the kit's by default. */
+	readonly detail?: Detail;
+	/** Mesh the nearest level's wood at once rather than in the background. */
+	readonly near?: boolean;
+	/** Grow or cut one piece for close review instead of the whole plant. */
+	readonly cutting?: CuttingOptions;
+}
+
+/**
+ * Loads a species' code on this thread: its growth model's grower, its foliage kind's leaf builder
+ * and its own shape code, each once. Every synchronous stage call needs it first.
+ *
+ * @param record The species record.
+ * @category api/vegetation
+ */
+export async function loadPlantCode(record: Species): Promise<void> {
+	await Promise.all([
+		loadGrower(record.growth.model),
+		loadFoliage(record.foliage.kind),
+		loadSpeciesHooks(record.id),
+	]);
+}
+
+/** Runs a stage, or its stand-in when the stage is not built yet and the kit asks for stand-ins. */
+function stage<T>(placeholders: boolean | undefined, run: () => T, standIn: () => T): T {
+	try {
+		return run();
+	} catch (error) {
+		if (placeholders && error instanceof NotBuiltError) return standIn();
+		throw error;
+	}
+}
+
+/**
+ * The key of a kit: a hash of the generator's version, the record, the manifest and the tier. Two
+ * kits with one key hold the same bytes.
+ *
+ * @param record The species record.
+ * @param manifest The texture manifest.
+ * @param detail The mesh tier.
+ * @returns The key.
+ * @category api/vegetation
+ */
+export function kitKey(record: Species, manifest: TextureManifest, detail: Detail): string {
+	return hashText(
+		`${GENERATOR_VERSION}|${JSON.stringify(record)}|${JSON.stringify(manifest)}|${detail}`,
+	);
+}
+
+/**
+ * The key of a grown variant: its kit's key, the seed, the variant and the season.
+ *
+ * @param kit The species' kit.
+ * @param options The growth's options.
+ * @returns The key.
+ * @category api/vegetation
+ */
+export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
+	const season = options.season ?? kit.record.seasons.default;
+	const cutting = options.cutting ? JSON.stringify(options.cutting) : '';
+	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}`;
+}
+
+/**
+ * Builds a species' kit on this thread: its leaf meshes at every tier, its shoot prototypes, its
+ * card atlas and its records header. Call `loadPlantCode` first.
+ *
+ * @param source The species' record and texture manifest, such as its module.
+ * @param options The tier, and whether stages that are not built yet grow stand-ins.
+ * @returns The kit.
+ * @category api/vegetation
+ */
+export function buildKitNow(source: KitSource, options: KitOptions = {}): SpeciesKitData {
+	const { record } = source;
+	const manifest = source.textures.manifest;
+	const detail = options.detail ?? 'high';
+	const placeholders = options.placeholders === true;
+	const box = speciesBox(record);
+	const builder = foliage(record.foliage.kind);
+	const leavesByTier = DETAILS.map((tier) =>
+		stage(
+			placeholders,
+			() => builder.leaves(record, manifest, tier),
+			() => placeholderLeaves(record, tier),
+		),
+	);
+	let prototypes: ShootPrototype[] = [];
+	let cards: SpeciesKitData['cards'] = {
+		size: 0,
+		color: new Uint8Array(0),
+		surface: new Uint8Array(0),
+	};
+	if (record.shoots) {
+		const uncarded = stage(
+			placeholders,
+			() => shootPrototypes(record, manifest, leavesByTier),
+			() => placeholderPrototypes(record, leavesByTier),
+		);
+		const baked = stage(
+			placeholders,
+			() => bakeCards(record, manifest, detail, uncarded),
+			() => placeholderCardBake(record, uncarded),
+		);
+		prototypes = uncarded.map((prototype, index) => {
+			const card = baked.cells[index];
+			if (!card) throw new Error(`the card bake gave no cells for prototype ${index}`);
+			return { ...prototype, card };
+		});
+		const hooks = speciesHooks(record.id);
+		if (hooks?.shoot) for (const prototype of prototypes) hooks.shoot(prototype, record);
+		cards = baked.atlas;
+	}
+	const header = stage(
+		placeholders,
+		() => speciesHeader(record, manifest, box),
+		() => placeholderHeader(record, box),
+	);
+	return {
+		record,
+		manifest,
+		key: kitKey(record, manifest, detail),
+		detail,
+		box,
+		prototypes,
+		leaves: leavesByTier[DETAILS.indexOf(detail)] ?? [],
+		cards,
+		header,
+		placeholders,
+	};
+}
+
+/** A part from a mesh, quantised, or nothing when the mesh is empty. */
+function partOf(
+	kit: SpeciesKitData,
+	name: PlantPart['name'],
+	mesh: MeshArrays | undefined,
+	uvSteps: number,
+): PlantPart[] {
+	if (!mesh || mesh.indices.length === 0) return [];
+	const arrays = stage(
+		kit.placeholders,
+		() => quantise(mesh, kit.box, uvSteps),
+		() => placeholderQuantise(mesh, kit.box, uvSteps),
+	);
+	return [{ name, arrays }];
+}
+
+/** The grown skeleton and its dressing: the stages before the meshes. */
+function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
+	const record = kit.record;
+	const placeholders = kit.placeholders;
+	const growInput: GrowInput = {
+		record,
+		seed: options.seed >>> 0,
+		variant: options.variant,
+		season: options.season ?? record.seasons.default,
+	};
+	const skeleton = stage(
+		placeholders,
+		() => grower(record.growth.model).grow(growInput),
+		() => placeholderSkeleton(growInput),
+	);
+	speciesHooks(record.id)?.afterGrow?.(skeleton, record, growInput.seed);
+	const dressInput: DressInput = { ...growInput, kit, skeleton };
+	const rows =
+		record.lod.nearFoliage === 'instanced' && kit.prototypes.length > 0
+			? stage(
+					placeholders,
+					() => placeShoots(dressInput),
+					() => placeholderRows(dressInput),
+				)
+			: emptyRows();
+	const crown = stage(
+		placeholders,
+		() => lightCrown(dressInput, rows),
+		() => placeholderCrown(dressInput),
+	);
+	return { ...dressInput, rows, crown, detail: options.detail ?? kit.detail };
+}
+
+/** The nearest level's wood, quantised. */
+function nearWood(mesh: MeshInput): PlantPart[] {
+	const wood = stage(
+		mesh.kit.placeholders,
+		() => meshWood(mesh, 0),
+		() => placeholderWood(mesh, 0),
+	);
+	return partOf(mesh.kit, 'wood', wood, WOOD_UV_STEPS);
+}
+
+/** The parts of one level, without the nearest level's wood. */
+function levelParts(mesh: MeshInput, level: MeshLevel): PlantPart[] {
+	const { kit, record } = mesh;
+	const placeholders = kit.placeholders;
+	const parts: PlantPart[] = [];
+	if (level > 0) {
+		const wood = stage(
+			placeholders,
+			() => meshWood(mesh, level),
+			() => placeholderWood(mesh, level),
+		);
+		parts.push(...partOf(kit, 'wood', wood, WOOD_UV_STEPS));
+	}
+	if (record.lod.nearFoliage === 'merged') {
+		const merged = stage(
+			placeholders,
+			() => {
+				const build = grower(record.growth.model).foliage;
+				if (!build) throw new NotBuiltError(`merged ${record.growth.model} foliage`);
+				return build(mesh, level);
+			},
+			() => placeholderFoliage(mesh, level),
+		);
+		parts.push(...partOf(kit, 'foliage', merged, TEXTURE_UV_STEPS));
+	} else if (level > 0) {
+		const cardLevel = level as 1 | 2;
+		const cards = stage(
+			placeholders,
+			() => cardMesh(mesh, cardLevel),
+			() => placeholderCardMesh(mesh, cardLevel),
+		);
+		parts.push(...partOf(kit, 'cards', cards, TEXTURE_UV_STEPS));
+	}
+	const extras = stage(
+		placeholders,
+		() => extrasMesh(mesh, level),
+		() => undefined,
+	);
+	parts.push(...partOf(kit, 'extras', extras, TEXTURE_UV_STEPS));
+	return parts;
+}
+
+/** A clock for the stats, which no byte of the asset reads. */
+const now = () => (typeof performance === 'undefined' ? Date.now() : performance.now());
+
+/**
+ * Grows one variant on this thread: its skeleton, its shoot rows, its crown light, its wind records
+ * and its three levels. Call `loadPlantCode` first. The nearest level's wood is meshed only when
+ * `near` is set; otherwise `growNearWoodNow` meshes it in the background.
+ *
+ * @param kit The species' kit.
+ * @param options The seed, the variant and the season.
+ * @returns The grown variant.
+ * @category api/vegetation
+ */
+export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAsset {
+	const started = now();
+	const record = kit.record;
+	const mesh = dress(kit, options);
+	const placeholders = kit.placeholders;
+	const wind = stage(
+		placeholders,
+		() => windRecords(mesh),
+		() => placeholderWind(mesh),
+	);
+	const starts = stage(
+		placeholders,
+		() => levelStarts(mesh),
+		() => placeholderStarts(mesh),
+	);
+	const near = [...(options.near ? nearWood(mesh) : []), ...levelParts(mesh, 0)];
+	const levels = [
+		levelOf(0, near, 0),
+		levelOf(1, levelParts(mesh, 1), starts[0]),
+		levelOf(2, levelParts(mesh, 2), starts[1]),
+	] as const;
+	const { skeleton } = mesh;
+	const { min, max } = skeleton.bounds;
+	const centre = [
+		(min[0] + max[0]) / 2,
+		(skeleton.crownBase + skeleton.height) / 2,
+		(min[2] + max[2]) / 2,
+	] as const;
+	const radius = Math.max(
+		(max[0] - min[0]) / 2,
+		(skeleton.height - skeleton.crownBase) / 2,
+		(max[2] - min[2]) / 2,
+	);
+	let bytes = wind.records.byteLength;
+	for (const level of levels) bytes += level.bytes;
+	const asset: PlantAsset = {
+		species: record.id,
+		recordHash: hashText(JSON.stringify(record)),
+		seed: mesh.seed,
+		variant: options.variant,
+		season: mesh.season,
+		skeleton,
+		shoots: mesh.rows,
+		levels,
+		wind,
+		crown: { centre, radius, base: skeleton.crownBase, top: skeleton.height },
+		impostor: {
+			level: 1,
+			views: record.lod.impostor.views,
+			texels: record.lod.impostor.texels,
+			from: starts[2],
+		},
+		stats: {
+			milliseconds: now() - started,
+			bytes,
+			triangles: [levels[0].triangles, levels[1].triangles, levels[2].triangles],
+		},
+	};
+	const cutting = options.cutting;
+	if (!cutting) return asset;
+	return stage(
+		placeholders,
+		() => cutPlant(kit, asset, cutting),
+		() => placeholderCut(kit, asset, cutting),
+	);
+}
+
+/**
+ * Meshes a variant's nearest wood on this thread, for a page that grew the variant without `near`:
+ * the same skeleton grows again from the same seed, so the wood fits the asset. Call `loadPlantCode`
+ * first.
+ *
+ * @param kit The species' kit.
+ * @param options The options the variant grew with.
+ * @returns The nearest level's wood part, or undefined when the plant has none.
+ * @category api/vegetation
+ */
+export function growNearWoodNow(kit: SpeciesKitData, options: GrowOptions): PlantPart | undefined {
+	return nearWood(dress(kit, options))[0];
+}
+
+/**
+ * Bakes a variant's far cards on this thread: the impostor atlases from its first card level. Call
+ * `loadPlantCode` first.
+ *
+ * @param kit The species' kit.
+ * @param asset The grown variant.
+ * @returns The atlases.
+ * @category api/vegetation
+ */
+export function bakeFarNow(kit: SpeciesKitData, asset: PlantAsset): FarBake {
+	return stage(
+		kit.placeholders,
+		() => bakeFar(kit, asset),
+		() => placeholderFar(kit, asset),
+	);
+}

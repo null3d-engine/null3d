@@ -1,8 +1,8 @@
 // The documentation inventory and every file generated from a single source: placeholder pages for
 // planned pages, the API reference on the api/ pages, the page list in docs/index.md, the error
 // pages, the tables of the quality presets page, the shader library's page, the three.js mapping
-// page with the porting skill's copies of the mapping, and the tables of the record of tested
-// devices. Git keeps none of this output (tools/lib/generated.ts). Generation is computed in memory
+// page with the porting skill's copies of the mapping, the tables of the record of tested devices,
+// and the vegetation add-on's species page. Git keeps none of this output (tools/lib/generated.ts). Generation is computed in memory
 // first, so the check reads the same content that the generator writes.
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -41,6 +41,7 @@ import { checkLinkTree, linkedFiles } from './links';
 import { LIBRARY_PAGE_ID, libraryPage, readLibrary } from './shader-library';
 import { releaseOf, STEPS_NOTE, shipsSentence } from './steps';
 import { RECORD_TABLES_PAGE, readRecord, recordFiles, recordTablesPage } from './tested-devices';
+import { SPECIES_PAGE, speciesFolders, speciesPage } from './vegetation-registry';
 
 export interface PageEntry {
 	/** Path under docs/ without the .md extension. */
@@ -615,6 +616,8 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 
 	const record = recordFiles(root);
 	if (record.size > 0) out.set(RECORD_TABLES_PAGE, recordTablesPage(readRecord(record).rows));
+
+	out.set(SPECIES_PAGE, speciesPage(root, speciesFolders(root)));
 
 	out.set(pagePath(PAGE_LIST_ID), pageListPage(collectPages(root, out)));
 	return out;
