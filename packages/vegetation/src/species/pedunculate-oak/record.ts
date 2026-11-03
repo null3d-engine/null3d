@@ -34,8 +34,8 @@ export const record: Species = {
 		buds: {
 			arrangement: { kind: 'spiral', divergence: 137.5 },
 			angle: [
-				[0.25, 60],
-				[1, 50],
+				[0.25, 70],
+				[1, 55],
 			],
 			angleSpread: 15,
 			extinction: [0.02, 0.03],
@@ -51,7 +51,7 @@ export const record: Species = {
 		},
 		light: { apical: 1, lateral: 1, shadow: [5, 0.15, 2], cells: 96 },
 		tropism: {
-			photo: 0.07,
+			photo: 0.04,
 			gravi: [
 				[0, 0.3],
 				[0.25, 0.08],
