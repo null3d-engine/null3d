@@ -108,7 +108,7 @@ export const OAK_SHOOTS: ShootSpec = {
 	years: 2,
 	leafYears: 1,
 	stem: { radius: [0.0035, 0.0014], zigzag: 8 },
-	bud: { length: 0.006, width: 0.0042, tipCluster: 5 },
+	bud: { length: 0.008, width: 0.0055, tipCluster: 6 },
 	placement: {
 		perMetre: [
 			[0, 6],
@@ -132,11 +132,11 @@ export function oakRecord(overrides: Partial<Species> = {}): Species {
 				length: { mean: 0.1, spread: 0.02 },
 				outline: 'texture',
 				petiole: { length: 0.005, radius: 0.0009, flat: 0, droop: 15 },
-				fold: 12,
-				curl: 18,
-				crossCurl: -4,
-				twist: 4,
-				wave: [0.0015, 3],
+				fold: 16,
+				curl: 26,
+				crossCurl: -6,
+				twist: 6,
+				wave: [0.003, 5],
 				optics: {
 					reflectance: [0.046, 0.105, 0.032],
 					reflectanceBack: [0.11, 0.16, 0.09],

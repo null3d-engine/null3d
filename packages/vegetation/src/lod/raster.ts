@@ -96,13 +96,17 @@ export function rasterise(
 		const bias0 = edgeBias(bx, by, cx, cy);
 		const bias1 = edgeBias(cx, cy, ax, ay);
 		const bias2 = edgeBias(ax, ay, bx, by);
+		// Each edge's sum steps by a constant from one pixel to the next along a row.
+		const step0 = -(cy - by);
+		const step1 = -(ay - cy);
+		const step2 = -(by - ay);
 		for (let y = y0; y <= y1; y++) {
 			const py = y + 0.5;
-			for (let x = x0; x <= x1; x++) {
-				const px = x + 0.5;
-				const e0 = (cx - bx) * (py - by) - (cy - by) * (px - bx);
-				const e1 = (ax - cx) * (py - cy) - (ay - cy) * (px - cx);
-				const e2 = (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+			const px0 = x0 + 0.5;
+			let e0 = (cx - bx) * (py - by) - (cy - by) * (px0 - bx);
+			let e1 = (ax - cx) * (py - cy) - (ay - cy) * (px0 - cx);
+			let e2 = (bx - ax) * (py - ay) - (by - ay) * (px0 - ax);
+			for (let x = x0; x <= x1; x++, e0 += step0, e1 += step1, e2 += step2) {
 				if (e0 < bias0 || e1 < bias1 || e2 < bias2) continue;
 				const w0 = e0 / area;
 				const w1 = e1 / area;

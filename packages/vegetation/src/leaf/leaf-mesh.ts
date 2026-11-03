@@ -47,8 +47,8 @@ interface LeafTier {
 const TIERS: Readonly<Record<Detail, LeafTier>> = {
 	low: { rows: 2, columns: 1, smooth: 1, points: 12, stalkSides: 0 },
 	medium: { rows: 3, columns: 1, smooth: 2, points: 24, stalkSides: 0 },
-	high: { rows: 5, columns: 2, smooth: 3, points: 48, stalkSides: 3 },
-	ultra: { rows: 8, columns: 3, smooth: 3, points: 96, stalkSides: 3 },
+	high: { rows: 6, columns: 2, smooth: 3, points: 48, stalkSides: 3 },
+	ultra: { rows: 12, columns: 4, smooth: 3, points: 96, stalkSides: 3 },
 };
 
 /** Texels the mesh's outline stands outside the measured contour. */
@@ -74,6 +74,21 @@ export function outlineOf(shape: LeafShape, manifest: TextureManifest): LeafOutl
 	return textureOutline(manifest.leaf);
 }
 
+/** Swaps each point's u and v, which mirrors the polygon and turns its winding round. */
+function swapped(points: readonly number[]): number[] {
+	const out: number[] = [];
+	for (let i = 0; i < points.length; i += 2) out.push(points[i + 1] as number, points[i] as number);
+	return out;
+}
+
+/**
+ * A polygon split by the line v = `at` across the leaf: the split along a line of u, on the
+ * polygon with u and v swapped, and swapped back, which restores its winding.
+ */
+function splitAcross(points: readonly number[], at: number): number[][] {
+	return splitPolygon(swapped(points), at, []).map(swapped);
+}
+
 /**
  * The flat leaf's triangles in texture coordinates at one tier: the outline smoothed, pushed out by
  * the margin, simplified without cutting into the blade, split along the midrib and along columns
@@ -96,16 +111,21 @@ export function leafTriangles(
 		tier.points,
 	);
 	const { base, tip } = outline;
-	const stops: number[] = [];
-	for (let r = 0; r <= tier.rows; r++) stops.push(base[1] + ((tip[1] - base[1]) * r) / tier.rows);
+	// Bands across the leaf first, from the blade's base up, then the midrib and the columns: each
+	// crossing of two cuts is made once, on the band's edge, so the cells round it share it exactly.
+	let pieces = [polygon];
+	for (let r = 0; r < tier.rows; r++) {
+		const at = base[1] + ((tip[1] - base[1]) * r) / tier.rows;
+		pieces = pieces.flatMap((piece) => splitAcross(piece, at));
+	}
 	let half = 0;
 	for (let i = 0; i < polygon.length; i += 2)
 		half = Math.max(half, Math.abs((polygon[i] as number) - 0.5));
-	let pieces = splitPolygon(polygon, 0.5, stops);
+	pieces = pieces.flatMap((piece) => splitPolygon(piece, 0.5, []));
 	for (let c = 1; c < tier.columns; c++)
 		for (const sign of [1, -1])
 			pieces = pieces.flatMap((piece) =>
-				splitPolygon(piece, 0.5 + (sign * half * c) / tier.columns, stops),
+				splitPolygon(piece, 0.5 + (sign * half * c) / tier.columns, []),
 			);
 	const points: number[] = [];
 	const triangles: number[] = [];
