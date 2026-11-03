@@ -3,10 +3,12 @@ import { blank, labImage, labOf, type Rgba } from './image.ts';
 import {
 	boxOf,
 	classifySlot,
+	classifyTurn,
 	crownStartRow,
 	findHorizon,
 	measurePlant,
 	plantMask,
+	readIndex,
 	rowSpans,
 	shadowLike,
 	widthProfile,
@@ -173,26 +175,91 @@ describe('the slots', () => {
 	test('sort stills by the words in their names before their numbers', () => {
 		expect(classifySlot('13-single-needle-underside.png')?.view).toBe('leaf-under');
 		expect(classifySlot('05-crown-underneath.png')?.view).toBe('below');
-		expect(classifySlot('11-leaf-underside.png')?.view).toBe('leaf-under');
-		expect(classifySlot('02-whole-profile.png')).toMatchObject({
+		expect(classifySlot('02-whole-profile-b.png')).toMatchObject({
 			view: 'whole',
 			turn: 90,
 			framed: true,
+		});
+		expect(classifySlot('07-limb-leaving-trunk.png')?.view).toBe('junction');
+		expect(classifySlot('08-limb-fork.png')?.view).toBe('fork');
+		expect(classifySlot('10-fine-twigs-b.png')?.view).toBe('twigs');
+		expect(classifySlot('20-winter-branch-architecture.png')).toMatchObject({
+			view: 'skeleton',
+			query: { season: 'winter' },
 		});
 		expect(classifySlot('21-branch-studio.png')?.view).toBe('branch');
 		expect(classifySlot('22-subbranch-studio.png')?.view).toBe('subbranch');
 		expect(classifySlot('23-leaf-cluster-studio.png')?.background).toBe('studio-grey');
 		expect(classifySlot('22-forest-bole-dead-stubs.png')?.view).toBe('trunk');
-		expect(classifySlot('19-acorns-on-stalk.png')?.note).toContain('does not grow');
-		expect(classifySlot('21-young-tree-whole.png')).toMatchObject({
+		expect(classifySlot('19-acorns-on-stalk.png')?.note).toContain('fruit');
+		expect(classifySlot('32-young-oak-whole.png')).toMatchObject({
 			view: 'whole',
 			note: expect.stringContaining('young'),
 		});
+		expect(classifySlot('30-sucker-clump.png')?.view).toBe('whole');
 	});
 
-	test('leave out texture sources and files that are not numbered stills', () => {
-		expect(classifySlot('24-leaf-texture-upper.png')).toBeUndefined();
+	test('lay each texture source beside the surface it paints', () => {
+		expect(classifySlot('24-leaf-texture-upper-c.png')).toMatchObject({
+			kind: 'texture',
+			view: 'leaf-upper',
+		});
+		expect(classifySlot('25-leaf-texture-underside.png')?.view).toBe('leaf-under');
+		expect(classifySlot('26-bark-texture.png')).toMatchObject({
+			kind: 'texture',
+			view: 'bark-mid',
+		});
+		expect(classifySlot('28-young-bark.png')).toMatchObject({
+			kind: 'texture',
+			view: 'bark-limb',
+			query: { along: 0.85 },
+		});
+	});
+
+	test('leave out files that are not numbered pictures', () => {
 		expect(classifySlot('INDEX.md')).toBeUndefined();
 		expect(classifySlot('branch-turntable-sheet.png')).toBeUndefined();
+	});
+});
+
+describe('the videos', () => {
+	test('name the piece a turning video turns round and the arc it covers', () => {
+		expect(classifyTurn('oak-turntable.mp4')).toMatchObject({ piece: 'whole', arc: 360 });
+		expect(classifyTurn('hedge-turntable-halfturn.mp4')).toMatchObject({
+			piece: 'whole',
+			arc: 180,
+		});
+		expect(classifyTurn('branch-turntable-halfturn-b-b.mp4')).toMatchObject({
+			piece: 'branch',
+			arc: 180,
+		});
+		expect(classifyTurn('subbranch-turntable-c.mp4')?.piece).toBe('subbranch');
+		expect(classifyTurn('leaf-cluster-turntable-b.mp4')?.piece).toBe('cluster');
+		expect(classifyTurn('oak-wind-motion-b.mp4')).toBeUndefined();
+	});
+});
+
+describe('the index', () => {
+	test('marks a superseded file out of use, with the file that supersedes it', () => {
+		const rows = readIndex(
+			[
+				'| file | what it shows | why |',
+				'| --- | --- | --- |',
+				'| `02-whole-profile.png` | Side-on. Superseded by `02-whole-profile-b.png` | Rows 1 and 9 |',
+				'| `02-whole-profile-b.png` | Side-on, on meadow | Rows 1 and 9 |',
+				'| `common-ash-turntable.mp4` | First try at the whole-tree turn, superseded | The trunk |',
+				'| `22-subbranch-studio.png` | A frond | First frame (and of the superseded `x.mp4`) |',
+			].join('\n'),
+		);
+		expect(rows.map((row) => row.file)).toEqual([
+			'02-whole-profile.png',
+			'02-whole-profile-b.png',
+			'common-ash-turntable.mp4',
+			'22-subbranch-studio.png',
+		]);
+		expect(rows[0]?.supersededBy).toBe('02-whole-profile-b.png');
+		expect(rows[1]?.supersededBy).toBeUndefined();
+		expect(rows[2]?.supersededBy).toBe('a later file');
+		expect(rows[3]?.supersededBy).toBeUndefined();
 	});
 });

@@ -1,5 +1,6 @@
-// Pictures for the plant review: RGBA images in memory, read through ffmpeg from a still or from a
-// video at a time; resized by area; turned into CIELAB for colour distances;
+// Pictures for the plant review: RGBA images in memory, read through ffmpeg from a still, from a
+// video at a time or as every frame of a video; laid on a plain colour by their alpha; resized by
+// area; turned into CIELAB for colour distances;
 // and drawn on, with filled boxes, other images and a small bitmap font, so a contact sheet carries
 // its labels without a font file. The code is pure apart from the reads, which go through ffmpeg.
 import { spawnSync } from 'node:child_process';
@@ -96,6 +97,47 @@ export function videoFrame(path: string, facts: VideoFacts, seconds: number): Rg
 	if (data.length !== facts.width * facts.height * 4)
 		throw new Error(`ffmpeg gave ${data.length} bytes for the frame at ${at} s of ${path}`);
 	return { width: facts.width, height: facts.height, data: new Uint8Array(data) };
+}
+
+/**
+ * Every frame of a video, scaled to a width (its own when it is no wider), read in one ffmpeg run.
+ * Frame k is at k over the frame rate seconds.
+ */
+export function videoFrames(path: string, facts: VideoFacts, width: number): Rgba[] {
+	const w = Math.min(width, facts.width);
+	// ffmpeg keeps an even height when it scales.
+	const h = w === facts.width ? facts.height : 2 * Math.round((facts.height * w) / facts.width / 2);
+	const data = ffmpeg([
+		'-i',
+		path,
+		'-vf',
+		`scale=${w}:${h}:flags=area`,
+		'-f',
+		'rawvideo',
+		'-pix_fmt',
+		'rgba',
+		'-',
+	]);
+	const size = w * h * 4;
+	const frames: Rgba[] = [];
+	for (let at = 0; at + size <= data.length; at += size)
+		frames.push({ width: w, height: h, data: new Uint8Array(data.subarray(at, at + size)) });
+	if (frames.length === 0) throw new Error(`ffmpeg gave no frames of ${path}`);
+	return frames;
+}
+
+/** A picture laid on a plain colour by its alpha, so a cut-out texture source reads as a still. */
+export function onColour(image: Rgba, colour: readonly number[]): Rgba {
+	const out = new Uint8Array(image.data.length);
+	for (let i = 0; i < image.width * image.height; i++) {
+		const a = (image.data[i * 4 + 3] as number) / 255;
+		for (let c = 0; c < 3; c++)
+			out[i * 4 + c] = Math.round(
+				(image.data[i * 4 + c] as number) * a + (colour[c] as number) * (1 - a),
+			);
+		out[i * 4 + 3] = 255;
+	}
+	return { width: image.width, height: image.height, data: out };
 }
 
 /**

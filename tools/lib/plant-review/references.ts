@@ -1,6 +1,8 @@
-// A species' reference folder for the plant review: its stills sorted into the review's slots, its
-// turning videos, frames taken from a video at even angles, the plant's outline separated from a
-// plain background, and the measures a reviewer reads from that outline.
+// A species' reference folder for the plant review: every reference file it holds, which of them
+// are in use (the folder's INDEX.md marks a remade file's original as superseded), the stills
+// sorted into the review's views, the texture sources, the turning videos with the arc each covers,
+// the wind videos, and the plant's outline separated from a plain background with the measures a
+// reviewer reads from it.
 //
 // The outline (the mask) works on pictures whose background is plain: an open sky, a seamless grey
 // or white, and a meadow below the horizon. It fits a smooth colour surface to the frame's border,
@@ -16,44 +18,51 @@
 //   or a bright leaf edge that blends with the sky can open or close a gap.
 // - The horizon is found as the strongest colour step across the frame's left and right edges, so a
 //   picture with no ground has none, and a plant that covers both edges hides it.
-//
-//   bun tools/plant-review/references.ts <reference folder> [--frames 8] [--out <dir>]
-// prints the folder's slots and videos, and with --out writes each still's mask beside a copy of it.
-import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { writePng } from '../../packages/cli/src/png.js';
-import type { PlantBackground, PlantView } from '../../tests/pages/lib/plant-review.ts';
-import { flag, option } from './cli.ts';
+import type { PlantReviewQuery } from '../../../tests/pages/lib/plant-review/query.ts';
 import {
-	blank,
-	deltaE76,
-	hexOf,
-	labImage,
-	paste,
-	probeVideo,
-	type Rgba,
-	readImage,
-	resizeToWidth,
-	srgbOf,
-	videoFrame,
-} from './image.ts';
+	type PlantBackground,
+	type PlantView,
+	VIEW_SPECS,
+} from '../../../tests/pages/lib/plant-review/views.ts';
+import { blank, deltaE76, hexOf, labImage, type Rgba, resizeToWidth, srgbOf } from './image.ts';
 
-/** One reference still, sorted into the review slot whose view it shows. */
+/** What a reference file is. */
+export type ReferenceKind = 'still' | 'texture' | 'turntable' | 'wind';
+
+/** One file of a reference folder and whether the review must compare it. */
+export interface ReferenceFile {
+	readonly file: string;
+	readonly kind: ReferenceKind;
+	/** Whether the review compares it: listed and not superseded, or not listed at all. */
+	readonly inUse: boolean;
+	/** The file that supersedes it, when the index says it is superseded. */
+	readonly supersededBy?: string;
+	/** Whether the folder's index has a row for it. */
+	readonly listed: boolean;
+	/** The index's words for what it shows. */
+	readonly shows?: string;
+}
+
+/** One reference still or texture source, sorted into the review view that shows the same thing. */
 export interface Slot {
-	/** The still's file name. */
+	/** The file name. */
 	readonly file: string;
 	/** Its number, from the file name's prefix. */
 	readonly number: number;
 	/** Its name without the number and the extension, such as `bark-mid-trunk`. */
 	readonly name: string;
+	/** Whether it is a still of the plant or a texture source for a material. */
+	readonly kind: 'still' | 'texture';
 	/** The review view that shows the same thing. */
 	readonly view: PlantView;
 	/** The view's turn in degrees, for a slot that a side of the plant names. */
 	readonly turn?: number;
 	/** The view's elevation in degrees, for a slot that looks up or down more than the view does. */
 	readonly elevation?: number;
-	/** How far along a limb the limb view looks. */
-	readonly along?: number;
+	/** Query fields the slot sets beside its view, such as a limb share or a season. */
+	readonly query?: Partial<PlantReviewQuery>;
 	/** What the plant stands against in the still. */
 	readonly background: PlantBackground;
 	/** Whether the still shows the whole plant, so its framing can be measured and matched. */
@@ -62,226 +71,297 @@ export interface Slot {
 	readonly note?: string;
 }
 
-/** The slot rules, first match wins: words in the still's name, and the slot they name. */
-const SLOT_RULES: readonly {
-	readonly test: (name: string) => boolean;
-	readonly slot: Omit<Slot, 'file' | 'number' | 'name'>;
-}[] = [
-	{
-		test: (n) => n.includes('subbranch-studio'),
-		slot: { view: 'subbranch', background: 'studio-grey', framed: false },
-	},
-	{
-		test: (n) => n.includes('leaf-cluster-studio'),
-		slot: { view: 'cluster', background: 'studio-grey', framed: false },
-	},
-	{
-		test: (n) => n.includes('branch-studio'),
-		slot: { view: 'branch', background: 'studio-grey', framed: false },
-	},
-	{
-		test: (n) => n.includes('silhouette'),
-		slot: { view: 'silhouette', background: 'white', framed: true },
-	},
-	{
-		test: (n) => n.includes('profile'),
-		slot: { view: 'whole', turn: 90, background: 'sky-meadow', framed: true },
-	},
-	{
-		test: (n) => /(leaf|needle).*(underside|lower)/.test(n),
-		slot: { view: 'leaf-under', background: 'white', framed: false },
-	},
-	{
-		test: (n) => /(leaf|needle).*upper/.test(n),
-		slot: { view: 'leaf-upper', background: 'white', framed: false },
-	},
-	{
-		test: (n) => n.includes('from-below'),
-		slot: { view: 'below', background: 'sky-meadow', framed: false },
-	},
-	{
-		test: (n) => /(crown|canopy).*(underside|underneath)/.test(n),
-		slot: { view: 'below', elevation: -75, background: 'sky-meadow', framed: false },
-	},
-	{
-		test: (n) => n.includes('inside'),
-		slot: { view: 'inside', background: 'sky-meadow', framed: false },
-	},
-	{
-		test: (n) => /(crown|clump)-(outside|edge)/.test(n),
-		slot: { view: 'crown', background: 'sky-meadow', framed: false },
-	},
-	{
-		test: (n) => n.includes('limb-leaving') || n.includes('culm-base'),
-		slot: { view: 'bark-limb', along: 0.04, background: 'sky-meadow', framed: false },
-	},
-	{
-		test: (n) => n.includes('fork'),
-		slot: { view: 'bark-limb', along: 0.5, background: 'sky-meadow', framed: false },
-	},
-	{
-		test: (n) => n.includes('secondary-branching') || n.includes('culm-branching'),
-		slot: { view: 'branch', background: 'sky-meadow', framed: false },
-	},
-	{
-		test: (n) => n.includes('twig') || n.includes('branchlet'),
-		slot: { view: 'subbranch', background: 'sky-meadow', framed: false },
-	},
-	{
-		test: (n) => /cluster|spray|shoot-leaves|needles/.test(n),
-		slot: { view: 'cluster', background: 'white', framed: false },
-	},
-	{
-		test: (n) => n.includes('bark-base') || n.includes('root'),
-		slot: { view: 'bark-base', background: 'sky-meadow', framed: false },
-	},
-	{
-		test: (n) => n.includes('bark-mid'),
-		slot: { view: 'bark-mid', background: 'sky-meadow', framed: false },
-	},
-	{
-		test: (n) => /bark.*limb|limb.*bark/.test(n),
-		slot: { view: 'bark-limb', background: 'sky-meadow', framed: false },
-	},
-	{
-		test: (n) => n.includes('taper') || n.includes('bole') || n.includes('lower-branches'),
-		slot: { view: 'trunk', background: 'sky-meadow', framed: false },
-	},
-	{
-		test: (n) => n.includes('skirt'),
-		slot: { view: 'crown', elevation: -5, background: 'sky-meadow', framed: false },
-	},
-	{
-		test: (n) => n.includes('bark'),
-		slot: { view: 'bark-mid', background: 'sky-meadow', framed: false },
-	},
-	{
-		test: (n) => n.includes('dome-from-rise'),
-		slot: { view: 'whole', background: 'sky-meadow', framed: true },
-	},
-	{
-		test: (n) => /whole|distant|form/.test(n),
-		slot: { view: 'whole', background: 'sky-meadow', framed: true },
-	},
-];
-
-/** The slot of each standard number, for a still whose name says nothing the rules know. */
-const SLOT_BY_NUMBER: Readonly<Record<number, Omit<Slot, 'file' | 'number' | 'name'>>> = {
-	1: { view: 'whole', background: 'sky-meadow', framed: true },
-	2: { view: 'whole', turn: 90, background: 'sky-meadow', framed: true },
-	3: { view: 'below', background: 'sky-meadow', framed: false },
-	4: { view: 'crown', background: 'sky-meadow', framed: false },
-	5: { view: 'below', elevation: -75, background: 'sky-meadow', framed: false },
-	6: { view: 'inside', background: 'sky-meadow', framed: false },
-	7: { view: 'bark-limb', along: 0.04, background: 'sky-meadow', framed: false },
-	8: { view: 'bark-limb', along: 0.5, background: 'sky-meadow', framed: false },
-	9: { view: 'branch', background: 'sky-meadow', framed: false },
-	10: { view: 'subbranch', background: 'sky-meadow', framed: false },
-	11: { view: 'cluster', background: 'white', framed: false },
-	12: { view: 'leaf-upper', background: 'white', framed: false },
-	13: { view: 'leaf-under', background: 'white', framed: false },
-	14: { view: 'bark-base', background: 'sky-meadow', framed: false },
-	15: { view: 'bark-mid', background: 'sky-meadow', framed: false },
-	16: { view: 'bark-limb', background: 'sky-meadow', framed: false },
-	17: { view: 'trunk', background: 'sky-meadow', framed: false },
-	18: { view: 'silhouette', background: 'white', framed: true },
-	19: {
-		view: 'crown',
-		background: 'sky-meadow',
-		framed: false,
-		note: 'a feature the generator does not grow, such as flowers, fruit or cones: the crown stands in',
-	},
-	20: {
-		view: 'whole',
-		background: 'sky-meadow',
-		framed: false,
-		note: "the species' own extra view: judge it by eye",
-	},
-	21: { view: 'branch', background: 'studio-grey', framed: false },
-	22: { view: 'subbranch', background: 'studio-grey', framed: false },
-	23: { view: 'cluster', background: 'studio-grey', framed: false },
+/** A slot's view and settings, before its file's own facts. */
+type SlotRule = Omit<Slot, 'file' | 'number' | 'name' | 'kind' | 'background'> & {
+	readonly background?: PlantBackground;
 };
 
-/** The slot of a still's file name, or undefined for a file that is not a numbered still. */
+/** The slot rules, first match wins: words in the still's name, and the slot they name. */
+const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly slot: SlotRule }[] =
+	[
+		{ test: (n) => n.includes('subbranch-studio'), slot: { view: 'subbranch', framed: false } },
+		{ test: (n) => n.includes('leaf-cluster-studio'), slot: { view: 'cluster', framed: false } },
+		{ test: (n) => n.includes('branch-studio'), slot: { view: 'branch', framed: false } },
+		{ test: (n) => n.includes('silhouette'), slot: { view: 'silhouette', framed: true } },
+		{ test: (n) => n.includes('profile'), slot: { view: 'whole', turn: 90, framed: true } },
+		{
+			test: (n) => /(leaf|needle|frond|blade).*(underside|lower)/.test(n),
+			slot: { view: 'leaf-under', framed: false },
+		},
+		{
+			test: (n) => /(leaf|needle|frond|blade).*upper/.test(n),
+			slot: { view: 'leaf-upper', framed: false },
+		},
+		{
+			test: (n) => n.includes('from-below'),
+			slot: { view: 'below', elevation: 70, framed: false },
+		},
+		{
+			test: (n) => /(crown|canopy).*(underside|underneath)/.test(n),
+			slot: { view: 'below', elevation: 80, framed: false },
+		},
+		{ test: (n) => n.includes('inside'), slot: { view: 'inside', framed: false } },
+		{ test: (n) => /(crown|clump)-(outside|edge)/.test(n), slot: { view: 'crown', framed: false } },
+		{
+			test: (n) => n.includes('limb-leaving') || n.includes('culm-base'),
+			slot: { view: 'junction', framed: false },
+		},
+		{ test: (n) => n.includes('fork'), slot: { view: 'fork', framed: false } },
+		{
+			test: (n) => n.includes('secondary-branching') || n.includes('culm-branching'),
+			slot: { view: 'fork', query: { distance: 2.5 }, framed: false },
+		},
+		{
+			test: (n) => n.includes('twig') || n.includes('branchlet'),
+			slot: { view: 'twigs', framed: false },
+		},
+		{
+			test: (n) => /cluster|spray|shoot-leaves|needles/.test(n),
+			slot: { view: 'cluster', background: 'white', framed: false },
+		},
+		{
+			test: (n) => n.includes('bark-base') || n.includes('root'),
+			slot: { view: 'bark-base', framed: false },
+		},
+		{ test: (n) => n.includes('bark-mid'), slot: { view: 'bark-mid', framed: false } },
+		{
+			test: (n) => /bark.*limb|limb.*bark/.test(n),
+			slot: { view: 'bark-limb', framed: false },
+		},
+		{
+			test: (n) => n.includes('winter') || n.includes('architecture') || n.includes('bare'),
+			slot: { view: 'skeleton', query: { season: 'winter' }, framed: true },
+		},
+		{
+			test: (n) => n.includes('taper') || n.includes('bole') || n.includes('lower-branches'),
+			slot: { view: 'trunk', framed: false },
+		},
+		{ test: (n) => n.includes('skirt'), slot: { view: 'crown', elevation: -5, framed: false } },
+		{
+			test: (n) => n.includes('branching'),
+			slot: { view: 'fork', query: { distance: 2.5 }, framed: false },
+		},
+		{ test: (n) => n.includes('crown'), slot: { view: 'crown', framed: false } },
+		{ test: (n) => n.includes('bark'), slot: { view: 'bark-mid', framed: false } },
+		{ test: (n) => /whole|distant|form|dome/.test(n), slot: { view: 'whole', framed: true } },
+	];
+
+/** The slot of each standard number, for a still whose name says nothing the rules know. */
+const SLOT_BY_NUMBER: Readonly<Record<number, SlotRule>> = {
+	1: { view: 'whole', framed: true },
+	2: { view: 'whole', turn: 90, framed: true },
+	3: { view: 'below', framed: false },
+	4: { view: 'crown', framed: false },
+	5: { view: 'below', elevation: 80, framed: false },
+	6: { view: 'inside', framed: false },
+	7: { view: 'junction', framed: false },
+	8: { view: 'fork', framed: false },
+	9: { view: 'fork', query: { distance: 2.5 }, framed: false },
+	10: { view: 'twigs', framed: false },
+	11: { view: 'cluster', background: 'white', framed: false },
+	12: { view: 'leaf-upper', framed: false },
+	13: { view: 'leaf-under', framed: false },
+	14: { view: 'bark-base', framed: false },
+	15: { view: 'bark-mid', framed: false },
+	16: { view: 'bark-limb', framed: false },
+	17: { view: 'trunk', framed: false },
+	18: { view: 'silhouette', framed: true },
+	19: {
+		view: 'twigs',
+		framed: false,
+		note: 'flowers, fruit or cones: judged on the shoot tip, in the season the name gives',
+	},
+	20: { view: 'skeleton', query: { season: 'winter' }, framed: true },
+	21: { view: 'branch', framed: false },
+	22: { view: 'subbranch', framed: false },
+	23: { view: 'cluster', framed: false },
+};
+
+/** The texture sources by number: the render's own surface that each is laid beside, at scale. */
+const TEXTURE_BY_NUMBER: Readonly<Record<number, SlotRule>> = {
+	24: { view: 'leaf-upper', framed: false },
+	25: { view: 'leaf-under', framed: false },
+	26: { view: 'bark-mid', framed: false },
+	27: { view: 'bark-mid', framed: false, note: "the second bark zone, at the zone's own height" },
+	28: {
+		view: 'bark-limb',
+		query: { along: 0.85 },
+		framed: false,
+		note: 'young bark: thin wood far out on a limb',
+	},
+};
+
+/** The season a still's name asks for, if it names one. */
+function seasonOf(name: string): Partial<PlantReviewQuery> {
+	if (/blossom|flower/.test(name)) return { season: 'blossom' };
+	if (/autumn/.test(name)) return { season: 'autumn' };
+	if (/winter|bare/.test(name)) return { season: 'winter' };
+	return {};
+}
+
+/** The texture rule of a texture source that its number does not name. */
+function textureRule(number: number, name: string): SlotRule {
+	const known = TEXTURE_BY_NUMBER[number];
+	if (known) return known;
+	if (/leaf|needle|frond|blade/.test(name))
+		return (name.includes('under') ? TEXTURE_BY_NUMBER[25] : TEXTURE_BY_NUMBER[24]) as SlotRule;
+	return TEXTURE_BY_NUMBER[26] as SlotRule;
+}
+
+/** The slot of a numbered still or texture source, or undefined for any other file. */
 export function classifySlot(file: string): Slot | undefined {
 	const match = /^(\d\d)-(.+)\.(png|jpe?g|webp)$/i.exec(file);
 	if (!match) return undefined;
 	const number = Number(match[1]);
 	const name = (match[2] as string).toLowerCase();
-	// A texture source is a flat picture for a material, not a view of the plant.
-	if (name.includes('texture')) return undefined;
-	const rule = SLOT_RULES.find((r) => r.test(name))?.slot ?? SLOT_BY_NUMBER[number];
+	const texture =
+		name.includes('texture') || name.includes('young-bark') || number in TEXTURE_BY_NUMBER;
+	const rule = texture
+		? textureRule(number, name)
+		: (SLOT_RULES.find((r) => r.test(name))?.slot ??
+			SLOT_BY_NUMBER[number] ??
+			// A still of another form that names no part of the plant shows the whole of it.
+			(number >= 29 ? { view: 'whole', framed: true } : undefined));
 	if (!rule) return undefined;
-	// A young or juvenile form is a different plant from the mature one that a review species grows.
-	const young = /young|juvenile|sapling/.test(name)
-		? { note: 'a young form: the review species grows the mature plant' }
-		: {};
-	return { file, number, name, ...rule, ...young };
+	const notes = [rule.note];
+	// A young or other-habit form is a different plant from the mature one that a variant grows.
+	if (/young|juvenile|sapling/.test(name) && !texture)
+		notes.push('a young form: the variant grows the mature plant');
+	else if (number >= 29)
+		notes.push('another habit of the species: judged beside the grown variant');
+	const query = { ...seasonOf(name), ...rule.query };
+	const note = notes.filter(Boolean).join('; ');
+	return {
+		file,
+		number,
+		name,
+		kind: texture ? 'texture' : 'still',
+		...rule,
+		background: rule.background ?? VIEW_SPECS[rule.view].background,
+		...(Object.keys(query).length > 0 ? { query } : {}),
+		...(note ? { note } : {}),
+	};
 }
 
-/** The cut-piece videos of a reference folder, by the review view that matches each. */
-export type CloseVideos = Partial<Record<'branch' | 'subbranch' | 'cluster', string>>;
+/** The pieces a turning video turns round. */
+export type TurnPiece = 'whole' | 'branch' | 'subbranch' | 'cluster';
 
-/** A species' reference folder: its stills by slot and its turning videos. */
+/** One turning video: the piece it turns round and the arc it covers. */
+export interface TurnVideo {
+	readonly file: string;
+	readonly path: string;
+	readonly piece: TurnPiece;
+	/** Degrees the camera turns over the video's length: 360, or 180 for a half turn. */
+	readonly arc: number;
+}
+
+/** The piece and arc of a turning video's file name, or undefined for a file that is not one. */
+export function classifyTurn(file: string): Omit<TurnVideo, 'path'> | undefined {
+	const match = /^(.*?)-?turntable(-halfturn)?(-[a-z])*\.mp4$/i.exec(file);
+	if (!match) return undefined;
+	const prefix = (match[1] ?? '').toLowerCase();
+	const piece: TurnPiece =
+		prefix === 'subbranch'
+			? 'subbranch'
+			: prefix === 'branch'
+				? 'branch'
+				: prefix === 'leaf-cluster'
+					? 'cluster'
+					: 'whole';
+	return { file, piece, arc: match[2] ? 180 : 360 };
+}
+
+/** The view that a turning video's piece is drawn in. */
+export const TURN_VIEW: Readonly<Record<TurnPiece, PlantView>> = {
+	whole: 'whole',
+	branch: 'branch',
+	subbranch: 'subbranch',
+	cluster: 'cluster',
+};
+
+/** One row of a folder's index: the file it names and its words for what the file shows. */
+export interface IndexRow {
+	readonly file: string;
+	readonly shows: string;
+	readonly supersededBy?: string;
+}
+
+/**
+ * The rows of an INDEX.md: each table row whose first cell names a file in backticks. A row whose
+ * "what it shows" cell says the file is superseded marks it out of use, with the file that
+ * supersedes it when the cell names one.
+ */
+export function readIndex(text: string): IndexRow[] {
+	const rows: IndexRow[] = [];
+	for (const line of text.split('\n')) {
+		const cells = line.split('|').map((cell) => cell.trim());
+		// A table row starts and ends with a bar, so its first and last cells are empty.
+		const file = /^`([^`]+)`$/.exec(cells[1] ?? '')?.[1];
+		if (!file) continue;
+		const shows = cells[2] ?? '';
+		const superseded = /\bsuperseded\b/i.test(shows);
+		const by = /superseded by `([^`]+)`/i.exec(shows)?.[1];
+		rows.push({ file, shows, ...(superseded ? { supersededBy: by ?? 'a later file' } : {}) });
+	}
+	return rows;
+}
+
+/** A species' reference folder: every reference file, and those in use by kind. */
 export interface ReferenceSet {
 	readonly folder: string;
 	/** The folder's own name, the species' slug. */
 	readonly slug: string;
-	/** The numbered stills, in number order, each with its slot. */
+	/** Every reference file, in name order, in use or not. */
+	readonly files: readonly ReferenceFile[];
+	/** The stills and texture sources in use, in number order, each with its slot. */
 	readonly stills: readonly Slot[];
-	/** The whole plant's turning video, when the folder has one. */
-	readonly turntable?: string;
-	/** The cut pieces' turning videos. */
-	readonly close: CloseVideos;
+	/** The turning videos in use. */
+	readonly turns: readonly TurnVideo[];
+	/** The wind videos in use. */
+	readonly winds: readonly string[];
+	/** Files in use that no slot, turn or wind rule knows, which the review cannot draw a view for. */
+	readonly unknown: readonly string[];
 }
 
-/** Reads a reference folder's file names into its slots and videos. */
+/** Whether a file is a reference: a picture or a video, but not a video's contact sheet. */
+function isReference(file: string): boolean {
+	return /\.(png|jpe?g|webp|mp4)$/i.test(file) && !/-sheet\.png$/i.test(file);
+}
+
+/** Reads a reference folder: its index's rows, and every reference file sorted by kind. */
 export function readReferenceSet(folder: string): ReferenceSet {
-	const files = readdirSync(folder).sort();
-	const stills = files.flatMap((file) => classifySlot(file) ?? []);
-	const videos = files.filter((file) => file.toLowerCase().endsWith('.mp4'));
-	const close: CloseVideos = {};
-	for (const file of videos) {
-		if (file === 'branch-turntable.mp4') close.branch = join(folder, file);
-		else if (file === 'subbranch-turntable.mp4') close.subbranch = join(folder, file);
-		else if (file === 'leaf-cluster-turntable.mp4') close.cluster = join(folder, file);
+	const indexPath = join(folder, 'INDEX.md');
+	const rows = existsSync(indexPath) ? readIndex(readFileSync(indexPath, 'utf8')) : [];
+	const byFile = new Map(rows.map((row) => [row.file, row]));
+	const files: ReferenceFile[] = [];
+	const stills: Slot[] = [];
+	const turns: TurnVideo[] = [];
+	const winds: string[] = [];
+	const unknown: string[] = [];
+	for (const file of readdirSync(folder).sort()) {
+		if (!isReference(file)) continue;
+		const row = byFile.get(file);
+		const inUse = row?.supersededBy === undefined;
+		const slot = classifySlot(file);
+		const turn = classifyTurn(file);
+		const wind = /wind/i.test(file) && file.toLowerCase().endsWith('.mp4');
+		const kind: ReferenceKind = slot ? slot.kind : turn ? 'turntable' : wind ? 'wind' : 'still';
+		files.push({
+			file,
+			kind,
+			inUse,
+			listed: row !== undefined,
+			...(row?.supersededBy ? { supersededBy: row.supersededBy } : {}),
+			...(row ? { shows: row.shows } : {}),
+		});
+		if (!inUse) continue;
+		if (slot) stills.push(slot);
+		else if (turn) turns.push({ ...turn, path: join(folder, file) });
+		else if (wind) winds.push(join(folder, file));
+		else unknown.push(file);
 	}
-	// The whole plant's turning video is the one turntable that names no cut piece.
-	const whole = videos.find(
-		(file) =>
-			file.endsWith('-turntable.mp4') &&
-			!['branch-turntable.mp4', 'subbranch-turntable.mp4', 'leaf-cluster-turntable.mp4'].includes(
-				file,
-			),
-	);
-	return {
-		folder,
-		slug: basename(folder),
-		stills,
-		...(whole ? { turntable: join(folder, whole) } : {}),
-		close,
-	};
-}
-
-/** One frame of a turning video, at its share of the turn. */
-export interface TurnFrame {
-	/** The frame's angle through the turn, in degrees, assuming the camera turns at a steady rate. */
-	readonly angle: number;
-	/** The frame's time in seconds. */
-	readonly time: number;
-	readonly image: Rgba;
-}
-
-/**
- * `count` frames of a turning video at even angles. The video turns the camera once round the
- * plant over its whole length, so the frame at a share of the length is at that share of the turn.
- */
-export function turnFrames(video: string, count: number): TurnFrame[] {
-	const facts = probeVideo(video);
-	return Array.from({ length: count }, (_, k) => {
-		const time = (k * facts.duration) / count;
-		return { angle: (360 * k) / count, time, image: videoFrame(video, facts, time) };
-	});
+	stills.sort((a, b) => a.number - b.number || a.file.localeCompare(b.file));
+	return { folder, slug: basename(folder), files, stills, turns, winds, unknown };
 }
 
 /** The widest picture the masks and the measures work on, in pixels. */
@@ -985,66 +1065,4 @@ export function maskPreview(image: Rgba, plant: PlantMask): Rgba {
 			out.data[at + 2] = 0;
 		}
 	return out;
-}
-
-/** Writes a picture and its mask preview side by side, as a PNG file. */
-function writeMaskPair(path: string, image: Rgba, plant: PlantMask): void {
-	const preview = maskPreview(image, plant);
-	const both = blank(preview.width * 2, preview.height, [0, 0, 0]);
-	paste(both, resizeToWidth(image, preview.width), 0, 0);
-	paste(both, preview, preview.width, 0);
-	writePng(path, both);
-}
-
-/** Prints a folder's slots and videos, and writes each still's mask preview to `--out`. */
-async function main(): Promise<void> {
-	const folder = process.argv[2];
-	if (!folder || folder.startsWith('--'))
-		throw new Error('give a reference folder: bun tools/plant-review/references.ts <folder>');
-	const out = flag('out') ? option('out') : undefined;
-	if (out) mkdirSync(out, { recursive: true });
-	const frames = Number(option('frames', '8'));
-	const set = readReferenceSet(folder);
-	console.log(`${set.slug}: ${set.stills.length} stills`);
-	for (const slot of set.stills) {
-		const image = readImage(join(folder, slot.file));
-		const plant = plantMask(image);
-		const m = measurePlant(image, plant);
-		console.log(
-			`  ${slot.file.padEnd(34)} ${slot.view.padEnd(10)} ${plant.background.plain ? 'plain' : 'busy '} ` +
-				`horizon ${m.horizon?.toFixed(3) ?? '-'} gap ${m.gapFraction.toFixed(3)} sky ${m.sky} ground ${m.ground ?? '-'}`,
-		);
-		if (out) writeMaskPair(join(out, `${slot.file.replace(/\.\w+$/, '')}-mask.png`), image, plant);
-	}
-	const videos: [string, string | undefined][] = [
-		['turntable', set.turntable],
-		['branch', set.close.branch],
-		['subbranch', set.close.subbranch],
-		['cluster', set.close.cluster],
-	];
-	for (const [name, video] of videos) {
-		if (!video) continue;
-		const taken = turnFrames(video, frames);
-		const plants = taken.map((frame) => plantMask(frame.image));
-		const measures = taken.map((frame, k) => measurePlant(frame.image, plants[k] as PlantMask));
-		console.log(
-			`  ${name} ${basename(video)}: ${taken.length} frames, horizon ` +
-				`${measures.map((m) => m.horizon?.toFixed(2) ?? '-').join(' ')}`,
-		);
-		if (out)
-			for (const [k, frame] of taken.entries())
-				writeMaskPair(
-					join(out, `${name}-${String(k).padStart(2, '0')}-mask.png`),
-					frame.image,
-					plants[k] as PlantMask,
-				);
-	}
-	if (out) writeFileSync(join(out, 'slots.json'), `${JSON.stringify(set, null, '\t')}\n`);
-}
-
-if (import.meta.main) {
-	main().catch((error: unknown) => {
-		console.error(`error: ${(error as Error).message}`);
-		process.exit(1);
-	});
 }

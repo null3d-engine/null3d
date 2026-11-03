@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { projectRow, standCamera } from '../../tests/pages/lib/plant-review.ts';
+import { projectRow, standCamera } from '../../../tests/pages/lib/plant-review/framing.ts';
 import {
 	alignTurn,
 	anchorColumn,
 	framingQuery,
 	iou,
+	motionProfile,
 	NORMAL_HEIGHT,
 	NORMAL_WIDTH,
 	normalise,
@@ -85,6 +86,38 @@ describe('the turn alignment', () => {
 		expect(result).toMatchObject({ start: 6, direction: -1 });
 		expect(result.meanIou).toBeCloseTo(0.8);
 		expect(result.pairs.slice(0, 3)).toEqual([6, 4, 2]);
+	});
+
+	test('pairs a half turn with the renders at its own angles', () => {
+		// Twelve frames over 180 degrees, against renders every 7.5 degrees round a full circle: each
+		// frame turns two render steps, and the video starts at the render of 90 degrees.
+		const k = 12;
+		const n = 48;
+		const truth = (i: number) => (12 - 2 * i + n) % n;
+		const table = Array.from({ length: k }, (_, i) =>
+			Array.from({ length: n }, (_, j) => (j === truth(i) ? 0.9 : 0.2)),
+		);
+		const result = alignTurn(table, 2);
+		expect(result).toMatchObject({ start: 12, direction: -1 });
+		expect(result.pairs).toEqual(Array.from({ length: k }, (_, i) => truth(i)));
+	});
+});
+
+describe('the wind', () => {
+	/** A plant mask of a block that a frame's offset moves sideways in its top half only. */
+	function swaying(offset: number): PlantMask {
+		const plant = rectangle(40, 40, { left: 18, top: 20, right: 21, bottom: 39 });
+		for (let y = 0; y < 20; y++)
+			for (let x = 10 + offset; x < 30 + offset; x++) plant.mask[y * 40 + x] = 1;
+		return plant;
+	}
+
+	test('measures motion where the outline moves, and none where it holds', () => {
+		const profile = motionProfile([swaying(0), swaying(2), swaying(0)]);
+		expect(profile).toHaveLength(6);
+		expect(profile[0]).toBe(0);
+		expect(profile[5] as number).toBeGreaterThan(0.1);
+		expect(motionProfile([swaying(0), swaying(0)]).every((v) => v === 0)).toBe(true);
 	});
 });
 
