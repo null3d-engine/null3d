@@ -17,12 +17,6 @@
 		"date": "2026-10-31",
 		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
 	},
-	"chromium-swiftshader/compat/bounce-grid.png": {
-		"test": "bounce-grid",
-		"tier": "compat",
-		"date": "2026-10-31",
-		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
-	},
 	"chromium-swiftshader/compat/bounce-off.png": {
 		"test": "bounce-off",
 		"tier": "compat",
@@ -319,12 +313,6 @@
 	},
 	"chromium-swiftshader/webgl2/bounce-bounce.png": {
 		"test": "bounce-bounce",
-		"tier": "webgl2",
-		"date": "2026-10-31",
-		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
-	},
-	"chromium-swiftshader/webgl2/bounce-grid.png": {
-		"test": "bounce-grid",
 		"tier": "webgl2",
 		"date": "2026-10-31",
 		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
@@ -649,12 +637,6 @@
 	},
 	"chromium-swiftshader/webgpu/bounce-bounce.png": {
 		"test": "bounce-bounce",
-		"tier": "webgpu",
-		"date": "2026-10-31",
-		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
-	},
-	"chromium-swiftshader/webgpu/bounce-grid.png": {
-		"test": "bounce-grid",
 		"tier": "webgpu",
 		"date": "2026-10-31",
 		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
