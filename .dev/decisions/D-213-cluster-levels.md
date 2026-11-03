@@ -70,15 +70,15 @@ The table gives the first mesh of each kind; the other copies of each kind diffe
 
 | Mesh | Base triangles | Cut levels, coarsest | Planner's levels, six | Planner's levels now, coarsest |
 | --- | --- | --- | --- | --- |
-| Pebble | 20,480 | 3,592, 17.5% of the base | 320 | 32 |
-| Boulder | 81,920 | 14,504 | 1,280 | 32 |
-| Column | 518,688 | 92,130 | 8,104 | 324 |
+| Pebble | 20,480 | 3,592, 17.5% of the base | 320 | 40 |
+| Boulder | 81,920 | 14,504 | 1,280 | 40 |
+| Column | 518,688 | 92,130 | 8,104 | 306 |
 | Arch | 1,023,360 | 181,985 | 15,990 | 658 |
 
 | Measure, the first pebble | Cut levels | Planner's levels |
 | --- | --- | --- |
-| Triangles of each level | 15,360, 11,520, 8,640, 6,480, 4,800, 3,592 | 10,240, 5,120, 2,560, 1,280, 640, 142, 32 |
-| Stored errors, in the mesh's integer steps | 51.9, 65.8, 209, 262, 1,600, 2,570 | 42.3, 83.1, 172, 339, 635, 2,190, 4,830 |
+| Triangles of each level | 15,360, 11,520, 8,640, 6,480, 4,800, 3,592 | 10,240, 5,120, 2,560, 1,280, 640, 320, 160, 80, 40 |
+| Stored errors, in the mesh's integer steps | 51.9, 65.8, 209, 262, 1,600, 2,570 | 42.3, 83.1, 172, 339, 635, 953, 1,490, 2,440, 3,660 |
 | Level indices against the base mesh's | 2.46 times | 0.98 times |
 
 The cut's first level keeps three quarters of the pebble, and stores a larger error than the
@@ -93,8 +93,9 @@ How the data was produced: `bun packages/cli/bin/null3d.js assets optimize props
 --clusters --no-blockers --bvh 0` on the desert benchmark's raw props file. The file holds 16
 meshes and 5,076,704 triangles. The cut levels come from commit `f7ffdbff`, and the planner's
 levels from this change. Each run was on the owner's Mac with no other run beside it. A script
-read each node's `MSFT_lod` levels and `NULL3D_lod_error` from the written file. The middle column is the planner with its earlier cap of
-six levels; [D-91](D-91-level-planning.md) gives the deeper chain.
+read each node's `MSFT_lod` levels and `NULL3D_lod_error` from the written file. The middle
+column is the planner with its earlier cap of six levels. The last column halves down to the
+floor, in up to fifteen levels; [D-91](D-91-level-planning.md) gives that chain.
 
 ## Drawing on WebGPU
 

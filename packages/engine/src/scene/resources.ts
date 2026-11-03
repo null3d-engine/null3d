@@ -257,7 +257,7 @@ const LEVEL_SWITCH_ERROR = 0;
 const LEVEL_SWITCH_DISTANCE = 1;
 const LEVEL_SWITCH_COVERAGE = 2;
 /** The most lower levels a mesh takes. */
-const MAX_LOWER_LEVELS = 7;
+const MAX_LOWER_LEVELS = 15;
 
 /**
  * A mesh the engine can draw: its id in the engine core, its bounding radius, and its morph
@@ -381,8 +381,8 @@ export class MeshGeometry {
 
 	/**
 	 * Gives the mesh lower levels of detail, from the most detailed down, like three.js's
-	 * `LOD.addLevel`. Every object and instance batch that draws the mesh then picks one level per
-	 * frame. It draws the coarsest level whose error covers fewer pixels on the screen than the
+	 * `LOD.addLevel`. A mesh takes at most 15 lower levels. Every object and instance batch that
+	 * draws the mesh then picks one level per frame. It draws the coarsest level whose error covers fewer pixels on the screen than the
 	 * `lodThreshold` quality setting. A level may name a material of its own, so a far level shades
 	 * more cheaply; a level without one draws with the level before's material. A bound that
 	 * covers fewer pixels than the threshold draws nothing, so the mesh's last level holds no

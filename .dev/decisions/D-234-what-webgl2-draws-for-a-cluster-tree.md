@@ -31,8 +31,8 @@ test must agree.
 ## Data
 
 The asset tool gives each mesh with a tree the whole levels that `--lod` plans
-([D-91](D-91-level-planning.md)). Each level has about half the triangles of the level above.
-The steps grow at the coarse end, down to about 32 triangles. Each level shares the mesh's
+([D-91](D-91-level-planning.md)). Each level has about half the triangles of the level above,
+down to about 32 triangles. Each level shares the mesh's
 vertices and stores only its indices. An earlier build cut the tree into whole levels instead;
 [D-213](D-213-cluster-levels.md#whole-levels-beside-the-tree) gives the figures that rejected it. The tool orders the
 vertices coarsest level first, as it does for the levels of a mesh without a tree. The levels go

@@ -175,10 +175,10 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
 #ifdef LOD_FADE
     // The code's low bits name the level, its next bit marks a hidden source, and its upper bits
     // carry the share of the fading band that the level keeps, with the band's side.
-    let level = in.level_code & 7u;
-    let hidden = (in.level_code & 8u) != 0u;
-    let share = f32((in.level_code >> 4u) & 63u) / 63.0;
-    let fade = select(-share, share, (in.level_code & (1u << 10u)) == 0u);
+    let level = in.level_code & 15u;
+    let hidden = (in.level_code & 16u) != 0u;
+    let share = f32((in.level_code >> 5u) & 63u) / 63.0;
+    let fade = select(-share, share, (in.level_code & (1u << 11u)) == 0u);
     if !lod_kept(fade, in.clip.xy, in.level_phase) {
         discard;
     }
