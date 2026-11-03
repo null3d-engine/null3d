@@ -28,7 +28,7 @@ export const record: Species = {
 	growth: {
 		model: 'self-organizing',
 		years: 36,
-		macroOrders: 3,
+		macroOrders: 4,
 		internode: { length: 0.6, ageFactor: 0.99 },
 		stems: { count: 1, lean: { mean: 2, spread: 2 }, stool: 0, fused: 0 },
 		buds: {
@@ -59,7 +59,7 @@ export const record: Species = {
 			],
 		},
 		shedding: { threshold: 0.1, cleanBole: 0.1, stubs: 0.2 },
-		bending: { strength: 0.12, upturn: 0.4 },
+		bending: { strength: 0.12, upturn: 0.2 },
 		pipe: { exponent: 2.3, tipRadius: 0.004 },
 	},
 	envelope,
@@ -70,7 +70,7 @@ export const record: Species = {
 				// This year's shoot of still 23: a straight twig ending in one rosette of about six
 				// leaves round its bud cluster.
 				name: 'short',
-				vigor: [0, 0.06],
+				vigor: [0, 0.04],
 				share: 0.3,
 				years: 1,
 				length: { mean: 0.12, spread: 0.02 },
@@ -81,9 +81,9 @@ export const record: Species = {
 					[1, 0.9],
 				],
 				leafAngle: [
-					[0, 130],
-					[0.5, 75],
-					[1, 25],
+					[0, 120],
+					[0.5, 90],
+					[1, 60],
 				],
 				droop: 3,
 			},
@@ -91,7 +91,7 @@ export const record: Species = {
 				// The twig of stills 10 and 22: last year's shoot, whose end cluster put out this
 				// year's rosettes.
 				name: 'long',
-				vigor: [0.06, 0.3],
+				vigor: [0.04, 0.2],
 				share: 0.35,
 				years: 2,
 				length: { mean: 0.3, spread: 0.05 },
@@ -102,9 +102,9 @@ export const record: Species = {
 					[1, 1],
 				],
 				leafAngle: [
-					[0, 125],
-					[0.5, 75],
-					[1, 25],
+					[0, 120],
+					[0.5, 90],
+					[1, 60],
 				],
 				droop: 5,
 			},
@@ -112,20 +112,20 @@ export const record: Species = {
 				// The branch of still 21: three years of twigs, stiff and angular, with a cluster of
 				// rosettes at each end.
 				name: 'spray',
-				vigor: [0.3, 1],
+				vigor: [0.2, 1],
 				share: 0.35,
 				years: 3,
 				length: { mean: 0.5, spread: 0.1 },
-				nodes: { mean: 4, spread: 1 },
+				nodes: { mean: 5, spread: 1 },
 				internode: ROSETTE,
 				leafScale: [
 					[0, 0.8],
 					[1, 1],
 				],
 				leafAngle: [
-					[0, 125],
-					[0.5, 75],
-					[1, 25],
+					[0, 120],
+					[0.5, 90],
+					[1, 60],
 				],
 				droop: 6,
 			},
@@ -134,22 +134,22 @@ export const record: Species = {
 		orders: 3,
 		years: 3,
 		leafYears: 1,
-		stem: { radius: [0.0035, 0.0025], zigzag: 6 },
+		stem: { radius: [0.0035, 0.0025], zigzag: 12 },
 		bud: { length: 0.008, width: 0.005, tipCluster: 7 },
 		placement: {
 			perMetre: [
-				[0, 5],
-				[1, 7],
+				[0, 3.2],
+				[1, 4.6],
 			],
 			shadePrune: 0.03,
 			skyward: 0.35,
-			scale: { mean: 1, spread: 0.15 },
+			scale: { mean: 1.1, spread: 0.15 },
 		},
 	},
 	foliage: {
 		kind: 'blade',
 		leaf: {
-			length: { mean: 0.1, spread: 0.02 },
+			length: { mean: 0.11, spread: 0.02 },
 			outline: 'texture',
 			petiole: { length: 0.005, radius: 0.0009, flat: 0, droop: 15 },
 			fold: 16,
@@ -158,9 +158,9 @@ export const record: Species = {
 			twist: 6,
 			wave: [0.003, 5],
 			optics: {
-				reflectance: [0.055, 0.125, 0.03],
-				reflectanceBack: [0.15, 0.2, 0.14],
-				transmittance: [0.07, 0.17, 0.025],
+				reflectance: [0.062, 0.118, 0.026],
+				reflectanceBack: [0.2, 0.25, 0.2],
+				transmittance: [0.08, 0.17, 0.025],
 				roughness: [0.45, 0.6],
 			},
 		},
@@ -168,7 +168,7 @@ export const record: Species = {
 	bark: {
 		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [1.55, 1.45, 1.25] }],
 		young: 0,
-		youngRadius: 0.015,
+		youngRadius: 0.04,
 		girthScale: [
 			[0, 0.6],
 			[1, 1],
@@ -182,9 +182,9 @@ export const record: Species = {
 		buttress: { lobes: { mean: 6, spread: 1 }, amount: 0.55, sharpness: 3, height: 0.8 },
 		roots: {
 			count: { mean: 6, spread: 1 },
-			length: { mean: 1.4, spread: 0.5 },
-			radius: 0.16,
-			dive: 0.35,
+			length: { mean: 0.8, spread: 0.3 },
+			radius: 0.22,
+			dive: 0.25,
 		},
 		flutes: { count: { mean: 9, spread: 2 }, depth: 0.04, height: 1.6 },
 	},
@@ -205,14 +205,14 @@ export const record: Species = {
 	},
 	lod: {
 		nearFoliage: 'instanced',
-		switchPixels: [64, 12, 160],
-		woodOrders: [1, 0],
+		switchPixels: [72, 12, 160],
+		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
 			kitBytes: { low: 2_000_000, medium: 2_900_000, high: 5_300_000, ultra: 9_500_000 },
 			variantBytes: { low: 7_000_000, medium: 7_000_000, high: 7_100_000, ultra: 7_100_000 },
-			lod0Triangles: 2_300_000,
+			lod0Triangles: 2_500_000,
 			lod1Triangles: 150_000,
 			lod2Triangles: 30_000,
 			downloadBytes: 1_000_000,
