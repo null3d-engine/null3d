@@ -27,6 +27,7 @@
 	"files": [
 		"textures",
 		"!textures/*/source.json",
+		"!textures/*/leaf-coverage.json",
 		"LICENSE-MIT",
 		"LICENSE-APACHE"
 	],
