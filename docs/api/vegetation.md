@@ -94,7 +94,7 @@ if (isSpeciesId(id)) {
 
 `loadSpecies(id)` loads one species as a chunk of its own, so a page fetches only the species it places. Its textures load later, when the page prepares it. `checkSpecies(record)` names every problem with a record at once. `capsFor(record)` gives the limits that the record's budget must stay under. The limits depend on the growth model.
 
-The stages run in order. The kit is built once for each species. Each variant then grows its skeleton, shoot rows, crown light, wind records and three detail levels, and last its far cards. `growPlant` runs the stages in a job worker, and `growPlantNow` runs them on the calling thread. Every value that reaches geometry comes from an integer hash and the core's own trigonometry. So a variant has the same bytes in every browser. `plantAssetDigest(asset)` hashes those bytes to compare two growths.
+The stages run in order. The kit is built once for each species. Each variant then grows its skeleton, shoot rows, crown light, wind records and three detail levels, and last its far cards. `growPlant` runs the stages in a job worker, and `growPlantNow` runs them on the calling thread. Every value that reaches geometry comes from an integer hash and the core's own trigonometry. So a variant has the same bytes in every browser. `plantAssetDigest(asset)` hashes those bytes to compare two growths. `kitKey` and `variantKey` name a kit and a grown variant by everything they grow from. `memoryCache(limit)` keeps results by those keys for a visit, and `indexedDbCache()` keeps them across visits.
 
 A stage that is not built yet throws a `NotBuiltError`. A kit built with `placeholders: true` grows a simple stand-in for each such stage, for review pages and tests. No shipped species draws a stand-in.
 

@@ -31,6 +31,7 @@ export {
 	type PrototypeArrays,
 	plantAssetBuffers,
 	plantAssetDigest,
+	plantPartBuffers,
 	type QuantisedArrays,
 	type ShootPrototype,
 	type ShootRows,

@@ -2,7 +2,13 @@
 // engine imports this module at the add-on's address and calls `run` for each request. It holds no
 // engine import, so a worker loads the generator alone, and it loads each species' growth and leaf
 // code on first use, so a worker downloads only the code of the species it grows.
-import { type PlantAsset, type PlantPart, plantAssetBuffers, type SpeciesKitData } from './asset';
+import {
+	type PlantAsset,
+	type PlantPart,
+	plantAssetBuffers,
+	plantPartBuffers,
+	type SpeciesKitData,
+} from './asset';
 import {
 	bakeFarNow,
 	buildKitNow,
@@ -86,18 +92,7 @@ export async function run(input: unknown): Promise<PlantTaskOutput> {
 		}
 		case 'near-wood': {
 			const part = growNearWoodNow(request.kit, request.options);
-			const arrays = part?.arrays;
-			const transfer = arrays
-				? [
-						arrays.positions,
-						arrays.normals,
-						arrays.uvs,
-						arrays.uvs1,
-						arrays.colors,
-						arrays.indices,
-					].map((view) => view.buffer as ArrayBuffer)
-				: [];
-			return { output: part, transfer };
+			return { output: part, transfer: part ? plantPartBuffers(part) : [] };
 		}
 		case 'far': {
 			const far = bakeFarNow(request.kit, request.asset);

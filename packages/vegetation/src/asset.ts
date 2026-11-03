@@ -285,6 +285,17 @@ function quantisedViews(arrays: QuantisedArrays): ArrayBufferView[] {
 	return [arrays.positions, arrays.normals, arrays.uvs, arrays.uvs1, arrays.colors, arrays.indices];
 }
 
+/**
+ * Every buffer a part holds, so a job worker can move them to the page rather than copy them.
+ *
+ * @param part The part.
+ * @returns Its arrays' buffers.
+ * @category api/vegetation
+ */
+export function plantPartBuffers(part: PlantPart): ArrayBuffer[] {
+	return quantisedViews(part.arrays).map((view) => view.buffer as ArrayBuffer);
+}
+
 /** The typed arrays of shoot rows, in a fixed order. */
 function rowViews(rows: ShootRows): ArrayBufferView[] {
 	return [
