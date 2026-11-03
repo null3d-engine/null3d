@@ -13,6 +13,7 @@ import type { MeshArrays } from '../asset';
 import { AXIS_STEM, type MacroSkeleton } from '../core/graph';
 import { acos, cos, PI, sin, tan } from '../core/math';
 import type { Species } from '../core/record';
+import { crownSkyAt } from '../crown/visibility';
 import type { CrownLight, MeshInput, MeshLevel } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
 import { peelFins } from './fins';
@@ -327,33 +328,6 @@ function addRoots(input: MeshInput, list: WoodAxis[], stemIndex: number, record:
 		});
 }
 
-/** Sky visibility at a point, trilinear in the crown's grid. */
-function skyAt(crown: CrownLight, x: number, y: number, z: number): number {
-	const [nx, ny, nz] = crown.cells;
-	const cell = crown.cell > 0 ? crown.cell : 1;
-	const fx = Math.min(nx - 1, Math.max(0, (x - crown.min[0]) / cell - 0.5));
-	const fy = Math.min(ny - 1, Math.max(0, (y - crown.min[1]) / cell - 0.5));
-	const fz = Math.min(nz - 1, Math.max(0, (z - crown.min[2]) / cell - 0.5));
-	const x0 = Math.floor(fx);
-	const y0 = Math.floor(fy);
-	const z0 = Math.floor(fz);
-	const x1 = Math.min(nx - 1, x0 + 1);
-	const y1 = Math.min(ny - 1, y0 + 1);
-	const z1 = Math.min(nz - 1, z0 + 1);
-	const tx = fx - x0;
-	const ty = fy - y0;
-	const tz = fz - z0;
-	const sky = crown.sky;
-	const at = (i: number, j: number, k: number) => (sky[(k * ny + j) * nx + i] as number) ?? 1;
-	const c00 = at(x0, y0, z0) * (1 - tx) + at(x1, y0, z0) * tx;
-	const c10 = at(x0, y1, z0) * (1 - tx) + at(x1, y1, z0) * tx;
-	const c01 = at(x0, y0, z1) * (1 - tx) + at(x1, y0, z1) * tx;
-	const c11 = at(x0, y1, z1) * (1 - tx) + at(x1, y1, z1) * tx;
-	const c0 = c00 * (1 - ty) + c10 * ty;
-	const c1 = c01 * (1 - ty) + c11 * ty;
-	return Math.min(1, Math.max(0, c0 * (1 - tz) + c1 * tz));
-}
-
 /** A mesh in growable typed arrays. */
 class WoodWriter {
 	positions = new Float32Array(3 * 4096);
@@ -408,7 +382,7 @@ class WoodWriter {
 		colors[w * 4] = (record >>> 8) & 255;
 		colors[w * 4 + 1] = record & 255;
 		colors[w * 4 + 2] = Math.round(255 * Math.min(1, Math.max(0, bend)));
-		colors[w * 4 + 3] = Math.round(255 * sky);
+		colors[w * 4 + 3] = Math.round(255 * Math.min(1, Math.max(0, sky)));
 		this.vertices = w + 1;
 		return w;
 	}
@@ -443,7 +417,7 @@ class WoodWriter {
 		this.colors[w * 4] = (record >>> 8) & 255;
 		this.colors[w * 4 + 1] = record & 255;
 		this.colors[w * 4 + 2] = Math.round(255 * Math.min(1, Math.max(0, bend)));
-		this.colors[w * 4 + 3] = Math.round(255 * sky);
+		this.colors[w * 4 + 3] = Math.round(255 * Math.min(1, Math.max(0, sky)));
 		this.vertices = w + 1;
 		return w;
 	}
@@ -1462,7 +1436,7 @@ class Mesher {
 				fins.pipe[i] as number,
 				wood.record,
 				(fins.along[i] as number) / length,
-				skyAt(this.crown, x, y, z),
+				crownSkyAt(this.crown, x, y, z),
 			);
 		}
 		for (const index of fins.indices) writer.indices.push(base + index);
@@ -1490,7 +1464,7 @@ class Mesher {
 					top + (j / sides - 0.5) * span,
 					wood.record,
 					(rings.along[i] as number) / length,
-					skyAt(
+					crownSkyAt(
 						this.crown,
 						rings.position[i * 3] as number,
 						rings.position[i * 3 + 1] as number,
