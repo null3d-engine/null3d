@@ -687,10 +687,12 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			}
 		}
 		if (!any) return;
-		// Everything above a shed node or a new stub goes with it; the stub itself stays, bare.
+		// Everything above a shed node or a new stub goes with it; the stub itself stays, bare, unless
+		// the branch it stands on goes too. Parents come before their children, so one pass carries
+		// every loss to the tips.
 		for (let n = 0; n < count; n++) {
 			const p = parent[n] as number;
-			if (gone[n] === 0 && p >= 0 && gone[p] !== 0) gone[n] = 1;
+			if (p >= 0 && gone[p] !== 0) gone[n] = 1;
 			if (gone[n] === 1) live[n] = 0;
 		}
 		for (let k = 0; k < budCount; k++) {
