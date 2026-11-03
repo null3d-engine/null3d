@@ -17,7 +17,7 @@
 import { Extension, ExtensionProperty, PropertyType } from '@gltf-transform/core';
 import { cacheOrder, triangleIndices, triangleLists } from './geometry.js';
 import { lodOf } from './lod-extension.js';
-import { cacheMisses, FACING_MISS_ALLOWANCE, pieceCount, planPieces } from './pieces.js';
+import { pieceCount, planPieces } from './pieces.js';
 
 /** @import { PiecePlan } from './pieces.js' */
 
@@ -215,24 +215,9 @@ export function storePieces(doc) {
 			const indices = triangleIndices(prim, vertices);
 			const count = pieceCount(indices.length / 3);
 			if (count === 0) continue;
-			const positions = readPositions(position);
-			// Pieces by facing cull back faces, but on a rough surface they part each triangle from
-			// its neighbours, and the GPU then shades their shared vertices again. Pieces by space
-			// keep neighbours together. The list takes the facing pieces only where they repeat
-			// little more vertex work than the pieces by space.
-			const plans = [
-				planPieces(positions, indices, count),
-				planPieces(positions, indices, count, 1),
-			]
-				.filter((plan) => plan !== undefined && plan.counts.length >= 2)
-				.map((plan) => {
-					const sorted = sortedList(indices, /** @type {PiecePlan} */ (plan));
-					return { plan: /** @type {PiecePlan} */ (plan), sorted, misses: cacheMisses(sorted) };
-				});
-			const [facing, space] = plans;
-			if (!facing) continue;
-			const { plan, sorted } =
-				space && facing.misses > space.misses * (1 + FACING_MISS_ALLOWANCE) ? space : facing;
+			const plan = planPieces(readPositions(position), indices, count);
+			if (!plan || plan.counts.length < 2) continue;
+			const sorted = sortedList(indices, plan);
 			prim.setIndices(
 				doc
 					.createAccessor()
