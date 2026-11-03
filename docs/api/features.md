@@ -256,7 +256,7 @@ features.add(
 );
 ```
 
-A feature whose work records inside a pass of the engine's own, such as a draw among the transparent objects, names no scope, and its row reads `gpu not measured`. The engine times one frame in eleven and at most seven passes in it. A pass after them adds its time to the last one's, whose name then ends in `and later`. A pass that draws in some frames only keeps the figure of the window that last timed it, so its row does not blank between them. On WebGL2 the engine times the whole frame alone, so no feature has a figure there.
+A feature whose work records inside a pass of the engine's own, such as a draw among the transparent objects, names no scope, and its row reads `gpu not measured`. The engine times one frame in eleven and at most seven passes in it. The passes after them share one figure, named `later passes`, which no scope names. A feature therefore never reads another step's time. A pass that draws in some frames only keeps the figure of the window that last timed it, so its row does not blank between them. On WebGL2 the engine times the whole frame alone, so no feature has a figure there.
 
 The overlay also lists the GPU time of each step of the frame that the GPU timed, under `GPU steps` in the same tab. A step is one of the engine's own passes, by its name, or a sketch's pass, by the feature that declares it.
 
