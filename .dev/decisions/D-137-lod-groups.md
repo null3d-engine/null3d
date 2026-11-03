@@ -2,7 +2,7 @@
 
 Status: accepted. The owner approved the design, and chose to merge it with the forest demo as it is; a later task improves the demo's look. The owner also ruled that M3-L1 to M3-L4 build every proposal of a review of this system, cluster levels included. Built: the design below with M3-L1's and M3-L2's changes, the fade rule and distance bands of [D-211](D-211-lod-fade-and-distance-bands.md), the WebGPU path of [D-213](D-213-cluster-levels.md)'s cluster levels, and M3-L4's impostor cards that relight. Open: the two follow-ups at the end. Task: M2-I4, then M3-L1, M3-L2 and M3-L4.
 
-Summary: `mesh.setLevels` gives a mesh simpler levels; each object and batch row draws the coarsest level whose screen error stays under a pixel threshold. WebGPU's culling shader and WebGL2's job workers pick with one stateless rule, so both switch at the same distances, and hand-set levels cross-fade with a dither. Shadows pick coarser levels, bounds under the threshold draw nothing, and the copy lists hold one copy per source that draws.
+Summary: `mesh.setLevels` gives a mesh up to 15 simpler levels; each object and batch row draws the coarsest level whose screen error stays under a pixel threshold. WebGPU's culling shader and WebGL2's job workers pick with one stateless rule, so both switch at the same distances, and hand-set levels cross-fade with a dither. Shadows pick coarser levels, bounds under the threshold draw nothing, and the copy lists hold one copy per source that draws.
 
 ## Question
 
@@ -203,6 +203,62 @@ The step runs before the cluster planner. A mesh that takes both whole levels an
 The gain is the share of the buffer that a coarse level does not need resident. On the tool's test ball the coarsest level names 122 of 1,225 vertices of 16 bytes. Unordered, they spread over 98% of the array, so a draw needs almost the whole 19,600-byte vertex buffer. The order puts them in the first 1,952 bytes. That holds back 17,648 bytes, 90% of the buffer, until a finer level arrives. The gain scales with the base's vertex bytes, and it is a streaming and cache gain only. The levels copy no vertices, so no total memory and no picture changes. It gains nothing for the 40,000-pine scene, whose procedural levels are meshes of their own. M3-L4's staged loading is the user that spends it.
 
 `packages/cli/src/assets/levels.test.ts` holds two facts. Each level and every coarser level share one prefix of the new numbering. Every triangle keeps the positions it drew before the reorder. Unordered, the coarsest level's 515 vertices reach index 12,245, and the levels together reach the base mesh's last index, 16,640. So the prefix check fails without the order.
+
+### How many levels a mesh takes
+
+A mesh takes up to 15 lower levels, 16 with the base mesh. The asset tool halves each level down
+to about 32 triangles ([D-91](D-91-level-planning.md#how-far-the-levels-go)). So a mesh of `n`
+triangles needs about log2(n / 32) levels. A desert pebble of 20,480 needs 9, and a mesh of a
+million needs 15. The engine first took 7. The tool then took steep steps in the middle of the chain, and a
+boulder's or an arch's mid level drew far past its distance, as D-91 records.
+
+The limit lives in these places, and each one changed with it:
+
+- `MAX_LEVELS` in `crates/null3d-render/src/levels.rs`, which sizes each mesh's level set.
+- The level field of a bucket key's mesh word, 4 bits. A level key keeps its own top bit, so the
+  base mesh's id must stay under 2^27. A unit test round-trips every level of such an id.
+- The mask of the levels that fade, 16 bits through the renderer. The page passes a 32-bit word
+  already, and the WebAssembly entry point cuts it to 16.
+- The level code that the levels debug view reads: the level in 4 bits, the hidden mark at bit 4,
+  the fade's share at bits 5 to 10, and the band's side at bit 11. The core writes it on WebGL2, and
+  the culling shader on WebGPU. The debug view's shader reads it. A core unit test reads both
+  shaders' text and fails when their bits differ from the core's. From the seventh lower level on,
+  the view draws gray, its last color.
+- `setLevels` in `packages/engine/src/scene/resources.ts`, which refuses a sixteenth lower level
+  with E1221.
+
+Each mesh slot of the level table grows from 108 to 212 bytes. The table holds a slot for every
+mesh id up to the largest one with levels, so ten thousand meshes take about 2 MB. Nothing in a
+frame grows with the limit itself. A mesh with more levels adds what each level adds: a draw
+bucket for each pipeline key, and a fade bucket where a level fades. A level of the asset tool has
+a measured error, so it switches at once and takes no fade bucket. Each source's level walk also
+takes one more step for each level that it passes, on the GPU and on the job workers.
+
+The desert benchmark measured the deeper chain against the tool's seven-level chain, on this
+engine and the same ground. Each figure is the median of three uncapped runs of 10 seconds, with
+the views' pages in turns, in Chrome on the MacBook Pro M5 Max:
+
+| Page | Triangles | Draw calls | Frame interval | GPU time |
+| --- | --- | --- | --- | --- |
+| Walk, the whole scene | 15.35 M to 11.80 M | 206 to 264 | 6.84 to 6.45 ms | 3.91 to 3.61 ms |
+| Aerial, the whole scene | 15.16 M to 9.23 M | 169 to 264 | 6.76 to 6.89 ms | 3.94 to 3.89 ms |
+| Walk, pebbles alone | 2.14 M to 1.45 M | 49 to 61 | 4.81 to 4.88 ms | 1.19 to 1.26 ms |
+| Walk, boulders alone | 3.70 M to 2.49 M | 33 to 49 | 4.68 to 3.84 ms | 1.00 to 1.03 ms |
+| Walk, columns alone | 1.02 M to 0.44 M | 34 to 49 | 3.28 to 4.18 ms | 0.93 to 1.04 ms |
+| Walk, arches alone | 5.88 M to 5.12 M | 55 to 70 | 5.34 to 4.45 ms | 2.35 to 2.52 ms |
+
+Every kind draws fewer triangles, the boulders, columns and arches too, which the steep chain had
+raised. The draw calls rise by a quarter to a half, by one per level that some copy picks. The
+sketch worker's busy time fell into two modes on both chains: about 1.6 to 2.1 ms or 3.1 to 4.8 ms
+for the same page. The render worker's moved with it, so the processor's speed sets the mode.
+Within one mode, the deeper chain took 5% to 15% more of the sketch worker, for the extra draws
+and the longer walks. The frame interval and the GPU time moved within the runs' spread, apart
+from the walk view's GPU time, which fell by 8%.
+
+How the data was produced: `bench/meshlets/build.ts` of the comparison's checkout with this
+branch's asset tool, then its `run.ts --uncapped --runs 3` with `pump=1`, `warmup=3` and
+`seconds=10`, over the engine's CDN build from this branch. Both model sets held the ground that
+this branch's tool wrote, so only the props' levels differ. No other run used the machine.
 
 ### Trees with leaf cards
 

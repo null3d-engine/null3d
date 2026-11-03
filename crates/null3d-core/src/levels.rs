@@ -50,15 +50,15 @@
 pub const NO_LINK: u32 = u32::MAX;
 
 /// The highest level that a level code names, in its lowest bits.
-pub const LEVEL_CODE_LEVEL_MAX: u32 = 7;
+pub const LEVEL_CODE_LEVEL_MAX: u32 = 15;
 /// The bit of a level code that marks a source that the size rule or a draw range hid.
-pub const LEVEL_CODE_HIDDEN: u32 = 1 << 3;
+pub const LEVEL_CODE_HIDDEN: u32 = 1 << 4;
 /// The place of the fade magnitude in a level code.
-pub const LEVEL_CODE_FADE_SHIFT: u32 = 4;
+pub const LEVEL_CODE_FADE_SHIFT: u32 = 5;
 /// The largest fade magnitude of a level code, in its own bits.
 pub const LEVEL_CODE_FADE_MAX: u32 = 0x3f;
 /// The bit of a level code that marks the side of a fading band that keeps the other level.
-pub const LEVEL_CODE_NEGATIVE: u32 = 1 << 10;
+pub const LEVEL_CODE_NEGATIVE: u32 = 1 << 11;
 
 /// The word that a debug view of levels reads beside an entry: the level of the draw, whether the
 /// size rule or a draw range hid the source, and the share of a fading band that its level keeps,
@@ -489,6 +489,40 @@ pub fn fade_values(t: f32) -> (f32, f32) {
 mod tests {
     use super::*;
 
+    /// The culling shader writes the code with the same bits, and the levels debug view's shader
+    /// reads them, so a change to the layout here must change both.
+    #[test]
+    fn the_shaders_write_and_read_the_level_code_with_these_bits() {
+        let cull = include_str!("../../null3d-shaders/wgsl/cull.wgsl");
+        for line in [
+            format!("const LEVEL_CODE_LEVEL_MAX: u32 = {LEVEL_CODE_LEVEL_MAX}u;"),
+            format!(
+                "const LEVEL_CODE_HIDDEN: u32 = 1u << {}u;",
+                LEVEL_CODE_HIDDEN.trailing_zeros()
+            ),
+            format!("const LEVEL_CODE_FADE_SHIFT: u32 = {LEVEL_CODE_FADE_SHIFT}u;"),
+            format!("const LEVEL_CODE_FADE_MAX: u32 = {LEVEL_CODE_FADE_MAX}u;"),
+            format!(
+                "const LEVEL_CODE_NEGATIVE: u32 = 1u << {}u;",
+                LEVEL_CODE_NEGATIVE.trailing_zeros()
+            ),
+        ] {
+            assert!(cull.contains(&line), "cull.wgsl lacks `{line}`");
+        }
+        let view = include_str!("../../null3d-shaders/wgsl/debug_view.wgsl");
+        for line in [
+            format!("let level = in.level_code & {LEVEL_CODE_LEVEL_MAX}u;"),
+            format!("(in.level_code & {LEVEL_CODE_HIDDEN}u) != 0u"),
+            format!("(in.level_code >> {LEVEL_CODE_FADE_SHIFT}u) & {LEVEL_CODE_FADE_MAX}u"),
+            format!(
+                "(in.level_code & (1u << {}u)) == 0u",
+                LEVEL_CODE_NEGATIVE.trailing_zeros()
+            ),
+        ] {
+            assert!(view.contains(&line), "debug_view.wgsl lacks `{line}`");
+        }
+    }
+
     /// The levels debug view's shader reads the same bits, so a code round-trips through them.
     #[test]
     fn a_level_code_carries_its_level_hidden_mark_and_fade() {
@@ -507,6 +541,10 @@ mod tests {
         let old = level_code(1, false, -1.0);
         assert_eq!((old >> LEVEL_CODE_FADE_SHIFT) & LEVEL_CODE_FADE_MAX, 63);
         assert_ne!(old & LEVEL_CODE_NEGATIVE, 0);
+        // The deepest level keeps its own bits, clear of the hidden mark.
+        let deepest = level_code(LEVEL_CODE_LEVEL_MAX, false, 0.0);
+        assert_eq!(deepest & LEVEL_CODE_LEVEL_MAX, LEVEL_CODE_LEVEL_MAX);
+        assert_eq!(deepest & LEVEL_CODE_HIDDEN, 0);
         // A fade past either end clamps to the code's own bits.
         assert_eq!(
             (level_code(0, false, 9.0) >> LEVEL_CODE_FADE_SHIFT) & LEVEL_CODE_FADE_MAX,
