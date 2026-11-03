@@ -47,12 +47,6 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
 	},
-	"chromium-swiftshader/compat/custom-cutout.png": {
-		"test": "custom-cutout",
-		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
-	},
 	"chromium-swiftshader/compat/custom-dissolve.png": {
 		"test": "custom-dissolve",
 		"tier": "compat",
@@ -317,12 +311,6 @@
 		"date": "2026-10-29",
 		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
 	},
-	"chromium-swiftshader/webgl2/custom-cutout.png": {
-		"test": "custom-cutout",
-		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
-	},
 	"chromium-swiftshader/webgl2/custom-dissolve.png": {
 		"test": "custom-dissolve",
 		"tier": "webgl2",
@@ -352,12 +340,6 @@
 		"tier": "webgl2",
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
-	},
-	"chromium-swiftshader/webgl2/demo-splats.png": {
-		"test": "demo-splats",
-		"tier": "webgl2",
-		"date": "2026-11-02",
-		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
 	},
 	"chromium-swiftshader/webgl2/demo-spot-cookies.png": {
 		"test": "demo-spot-cookies",
@@ -607,12 +589,6 @@
 	},
 	"chromium-swiftshader/webgpu/custom-cutout-motion.png": {
 		"test": "custom-cutout-motion",
-		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
-	},
-	"chromium-swiftshader/webgpu/custom-cutout.png": {
-		"test": "custom-cutout",
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
