@@ -65,7 +65,7 @@ export * from './lod/public';
 export * from './render/public';
 export * from './scatter/public';
 export type { FarBake } from './stages';
-export { bakeFarPlant, buildKit, growNearWood, growPlant } from './tasks';
+export { bakeFarPlant, buildKit, growNearWood, growPlant, type PageKitOptions } from './tasks';
 export * from './variance/public';
 export * from './wind/public';
 export * from './wood/public';

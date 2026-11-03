@@ -5,6 +5,7 @@
 // page an error.
 import type { SketchContext, Texture } from '@null3d/engine';
 import type { SpeciesKitData } from '../asset';
+import type { PlantByteCache } from '../core/cache';
 import { notBuilt } from '../core/not-built';
 import type { SpeciesModule } from '../core/record';
 import type { Detail } from '../core/types';
@@ -50,6 +51,8 @@ export interface SpeciesTextures {
 export interface SpeciesKit extends SpeciesKitData {
 	/** Its textures on the GPU. */
 	readonly textures: SpeciesTextures;
+	/** The store of bytes that keeps its variants and far bakes across visits, if the page gave one. */
+	readonly cache?: PlantByteCache;
 }
 
 /**
@@ -62,6 +65,11 @@ export interface PrepareOptions {
 	readonly detail?: Detail;
 	/** Grow a stand-in for each stage that is not built yet. */
 	readonly placeholders?: boolean;
+	/**
+	 * A store of bytes that keeps the kit, its variants and its far bakes across visits, such as the
+	 * engine's cache of derived data. Without one, they are kept in memory for the visit alone.
+	 */
+	readonly cache?: PlantByteCache;
 }
 
 /**
@@ -70,7 +78,7 @@ export interface PrepareOptions {
  *
  * @param ctx The sketch's context.
  * @param module The species module, from `loadSpecies`.
- * @param options The mesh tier and the stand-ins.
+ * @param options The mesh tier, the stand-ins and the store of bytes across visits.
  * @returns The kit.
  * @category api/vegetation
  */

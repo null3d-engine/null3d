@@ -2,7 +2,7 @@
 // the texture files and their manifest, the registry, the record check, the owner's caps, the
 // species box and the caches.
 export { type SpeciesBox, speciesBox } from './box';
-export { indexedDbCache, memoryCache, type PlantCache } from './cache';
+export { memoryCache, type PlantByteCache, type PlantCache } from './cache';
 export {
 	type CapClass,
 	capProblems,
