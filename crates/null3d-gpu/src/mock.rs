@@ -211,6 +211,8 @@ pub struct MockBackend {
     /// The buffers whose `ReadBuffer` has not finished: no command may use them until the thread
     /// that draws raises the read's slot, which [`MockBackend::finish_reads`] stands for.
     reading: HashSet<u32>,
+    /// True while a list replays as a capture replays it, which leaves out its reads.
+    capturing: bool,
     textures: HashMap<u32, Texture>,
     views: HashMap<u32, View>,
     /// The texture that each bind view of a layer range names, by the view's id.
@@ -303,6 +305,30 @@ impl MockBackend {
     /// Finishes every read in flight, as the thread that draws does when it raises their slots.
     pub fn finish_reads(&mut self) {
         self.reading.clear();
+    }
+
+    /// Replays a list again as a capture does, while the reads of its first replay may still wait.
+    /// The WebGPU backend then leaves out every command that would touch a buffer that a read
+    /// maps: the creation of a buffer that exists, the copies into a buffer that a read maps, and
+    /// the reads themselves.
+    pub fn replay_capture(&mut self, words: &[u32]) -> Result<(), MockError> {
+        self.capturing = true;
+        let replayed = self.replay(words);
+        self.capturing = false;
+        replayed
+    }
+
+    /// True when a capture's replay leaves out the command.
+    fn capture_skips(&self, op: Op, o: &[u32]) -> bool {
+        match op {
+            Op::CreateBuffer => self.buffers.contains_key(&o[0]),
+            Op::CopyTextureToBuffer | Op::ReadBuffer => true,
+            Op::CopyBufferToBuffer => self
+                .buffers
+                .get(&o[2])
+                .is_some_and(|buffer| buffer.usage & buffer_usage::MAP_READ != 0),
+            _ => false,
+        }
     }
 
     pub fn replay(&mut self, words: &[u32]) -> Result<(), MockError> {
@@ -1216,6 +1242,9 @@ impl MockBackend {
     }
 
     fn execute(&mut self, Command { op, operands: o }: Command<'_>) -> Result<(), MockError> {
+        if self.capturing && self.capture_skips(op, o) {
+            return Ok(());
+        }
         match op {
             Op::CreateBuffer => {
                 let usage = o[2];
