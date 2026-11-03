@@ -74,6 +74,7 @@ export function planListPieces(
 	indices: Uint32Array,
 	split: { masks: Uint32Array; parts: number } | undefined,
 	cacheOrder: (indices: Uint32Array) => Uint32Array,
+	space = false,
 ): ListPieces | undefined {
 	const triangles = indices.length / 3;
 	const wanted = pieceCount(triangles);
@@ -96,7 +97,7 @@ export function planListPieces(
 		const largest = shares.indexOf(Math.max(...shares));
 		shares[largest] = (shares[largest] as number) - 1;
 	}
-	const facings = meanFacing(positions, indices) >= SPACE_PIECES_FACING ? 1 : undefined;
+	const facings = space || meanFacing(positions, indices) >= SPACE_PIECES_FACING ? 1 : undefined;
 	const sorted = new Uint32Array(indices.length);
 	const counts: number[] = [];
 	const bounds: number[] = [];

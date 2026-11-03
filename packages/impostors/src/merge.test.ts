@@ -35,7 +35,7 @@ describe('mergeFarGeometry', () => {
 			{ arrays: triangle },
 			{ arrays: { ...triangle, levels: true } },
 		]);
-		expect(merged.levels).toBe(false);
+		expect(merged.levels).toBe('pieces');
 	});
 
 	test('keeps every vertex and moves each copy', () => {

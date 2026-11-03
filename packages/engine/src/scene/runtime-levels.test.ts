@@ -40,7 +40,7 @@ beforeEach(() => {
 		const triangles = (words[1] as number) / 3;
 		// Three levels that halve the first triangles, with errors that grow.
 		return {
-			levels: [0.5, 0.25, 0.125].map((share, k) => ({
+			levels: [0.5, 0.25, 0.125].slice(0, input.maxLevels).map((share, k) => ({
 				indices: new Uint32Array(Math.floor(triangles * share) * 3),
 				error: 0.01 * 2 ** k,
 			})),
@@ -369,6 +369,23 @@ describe('the automatic levels of a mesh made in code', () => {
 		draw(rocks, 400);
 		await settled();
 		expect(asked.at(-1)?.basePieces).toBe(false);
+	});
+
+	test('sort a mesh that asks for pieces alone at its first draw that takes them, by space', async () => {
+		const { geometry } = engine();
+		const cell = geometry.fromArrays(strip(40_000, { levels: 'pieces' }));
+		const small = geometry.fromArrays(strip(20_000, { levels: 'pieces' }));
+		// A blended material draws the mesh whole and sorted, so it plans nothing yet.
+		cell.drawnWith(material(false, true), 1, 'test');
+		draw(small);
+		await settled();
+		expect(asked).toHaveLength(0);
+		draw(cell);
+		draw(cell);
+		await settled();
+		expect(asked).toHaveLength(1);
+		expect(asked[0]).toMatchObject({ maxLevels: 0, spacePieces: true, basePieces: true });
+		expect(cell.levels).toHaveLength(0);
 	});
 
 	test('hand over the levels one a frame, coarsest first, and all at once in hold mode', async () => {

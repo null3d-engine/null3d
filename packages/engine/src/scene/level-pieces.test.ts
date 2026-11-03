@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { bumpyGrid } from '../../../../tests/lib/level-meshes.ts';
-import { PIECE_BOUNDS, PIECE_MAX } from '../../levels/pieces.js';
+import { PIECE_BOUNDS, PIECE_LIST_MIN_TRIANGLES, PIECE_MAX } from '../../levels/pieces.js';
 import { type ListPieces, planListPieces, triangleGroups } from './level-pieces';
+import { PIECES_MIN_TRIANGLES } from './resources';
 
 /** Keeps the triangles' order: the vertex cache order changes no piece. */
 const asGiven = (indices: Uint32Array) => indices;
@@ -56,6 +57,41 @@ function expectSpheresHold(positions: Float32Array, pieces: ListPieces) {
 }
 
 describe('the pieces of a mesh made in code', () => {
+	test('start at the size that the pieces planner starts at', () => {
+		expect(PIECES_MIN_TRIANGLES).toBe(PIECE_LIST_MIN_TRIANGLES);
+	});
+
+	test('split a list by space alone when asked, whatever way it faces', () => {
+		// A closed shape, whose facings spread over the sphere, would group by facing.
+		const rows = 128;
+		const cols = 256;
+		const positions = new Float32Array((rows + 1) * (cols + 1) * 3);
+		for (let r = 0; r <= rows; r++)
+			for (let c = 0; c <= cols; c++) {
+				const th = (r / rows) * Math.PI;
+				const ph = (c / cols) * Math.PI * 2;
+				positions.set(
+					[Math.sin(th) * Math.cos(ph), Math.cos(th), Math.sin(th) * Math.sin(ph)],
+					(r * (cols + 1) + c) * 3,
+				);
+			}
+		const list: number[] = [];
+		for (let r = 0; r < rows; r++)
+			for (let c = 0; c < cols; c++) {
+				const a = r * (cols + 1) + c;
+				const d = a + cols + 1;
+				list.push(a, d, a + 1, a + 1, d, d + 1);
+			}
+		const indices = Uint32Array.from(list);
+		const radii = (pieces: ListPieces) =>
+			Array.from(pieces.triangles, (_, k) => pieces.bounds[k * PIECE_BOUNDS + 3] as number);
+		const byFacing = planListPieces(positions, indices, undefined, asGiven) as ListPieces;
+		const bySpace = planListPieces(positions, indices, undefined, asGiven, true) as ListPieces;
+		// Patches of the sphere lie close together; groups by facing reach across it.
+		expect(Math.max(...radii(bySpace))).toBeLessThan(Math.max(...radii(byFacing)));
+		expect(triangleKeys(bySpace.indices)).toEqual(triangleKeys(indices));
+	});
+
 	test('sort a large list into pieces that hold each of its triangles once', () => {
 		const grid = bumpyGrid(160);
 		const pieces = planListPieces(grid.positions, grid.indices, undefined, asGiven);
