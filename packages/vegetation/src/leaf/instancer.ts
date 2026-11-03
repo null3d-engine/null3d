@@ -5,7 +5,8 @@
 // vigor and a prototype of that class by hash, turns its leaves toward the sky by the record's
 // skyward share, bends by the plant's tropism and takes its scale. A bud in less light than the
 // shade-prune line carries none. Rows then take a space-filling order, which the thinned card level
-// keeps every second of.
+// keeps every second of. A coarser plant keeps a share of the rows, spread evenly along that order,
+// and grows each kept row so that the leaf area holds.
 import type { ShootPrototype, ShootRows } from '../asset';
 import { BUD_DORMANT, BUD_TERMINAL } from '../core/graph';
 import { hashAt, unitAt } from '../core/hash';
@@ -46,6 +47,24 @@ const Purpose = {
 	Spacing: 7,
 	Season: 8,
 } as const;
+
+/** The share of shoot rows that the coarsest plant drops. */
+export const THIN_MOST = 0.8;
+
+/** The most that a coarser plant's kept rows grow by. */
+export const GROW_MOST = 2.25;
+
+/**
+ * The share of shoot rows a plant of a coarseness keeps, and the scale that the kept rows grow by:
+ * enough to keep the leaf area, whose share is the scale squared, up to the most they grow by.
+ *
+ * @param coarseness From 0 to 1.
+ * @returns The share and the scale.
+ */
+export function rowThinning(coarseness: number): { keep: number; grow: number } {
+	const keep = 1 - THIN_MOST * Math.min(1, Math.max(0, coarseness));
+	return { keep, grow: Math.min(GROW_MOST, 1 / Math.sqrt(keep)) };
+}
 
 /**
  * The prototypes a bud of this vigor may draw: those whose class's range holds it, or those of the
@@ -150,6 +169,8 @@ export function placeShoots(input: DressInput): ShootRows {
 	const angle = radians(lateralAngle(record));
 	const tropism = radians(tropismTurn(record));
 	const skyward = Math.min(1, Math.max(0, shoots.placement.skyward));
+	const coarse = (input.coarseness ?? 0) > 0;
+	const thinning = rowThinning(input.coarseness ?? 0);
 	const bare =
 		kit.prototypes.some((p) => p.leaves === 0) && kit.prototypes.some((p) => p.leaves > 0);
 	// The previous bud on each axis, so each bud serves the stretch back to it.
@@ -273,7 +294,40 @@ export function placeShoots(input: DressInput): ShootRows {
 			});
 		}
 	}
-	return packRows(rows, skeleton.bounds);
+	return packRows(coarse ? thinned(rows, skeleton.bounds, thinning) : rows, skeleton.bounds);
+}
+
+/**
+ * The share of rows that a coarser plant keeps, spread evenly through the crown: every row whose
+ * step along the space-filling curve crosses a whole share, each grown by the thinning's scale; in
+ * their order.
+ */
+function thinned(
+	rows: readonly Row[],
+	bounds: DressInput['skeleton']['bounds'],
+	thinning: { keep: number; grow: number },
+): Row[] {
+	const ranked = spaceRanks(rows, bounds);
+	const kept = new Uint8Array(rows.length);
+	for (let k = 0; k < ranked.length; k++)
+		if (Math.floor((k + 1) * thinning.keep) > Math.floor(k * thinning.keep))
+			kept[ranked[k] as number] = 1;
+	const out: Row[] = [];
+	rows.forEach((row, r) => {
+		if (kept[r]) out.push({ ...row, scale: row.scale * thinning.grow });
+	});
+	return out;
+}
+
+/** The rows' indices along the space-filling curve through the plant's bounds. */
+function spaceRanks(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']): number[] {
+	const side = Math.max(
+		bounds.max[0] - bounds.min[0],
+		bounds.max[1] - bounds.min[1],
+		bounds.max[2] - bounds.min[2],
+	);
+	const keys = rows.map((row) => spaceKey(row.position, bounds.min, side));
+	return keys.map((_, r) => r).sort((a, b) => (keys[a] as number) - (keys[b] as number) || a - b);
 }
 
 /** The rows as the table's typed arrays, with their space-filling order. */
@@ -291,12 +345,6 @@ function packRows(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']
 		bent: new Uint8Array(count).fill(BENT_UP),
 		order: new Uint32Array(count),
 	};
-	const side = Math.max(
-		bounds.max[0] - bounds.min[0],
-		bounds.max[1] - bounds.min[1],
-		bounds.max[2] - bounds.min[2],
-	);
-	const keys: number[] = [];
 	rows.forEach((row, r) => {
 		out.prototype[r] = row.prototype;
 		out.position.set(row.position, r * 3);
@@ -304,11 +352,8 @@ function packRows(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']
 		out.scale[r] = row.scale;
 		out.record[r] = row.record;
 		out.phase[r] = row.phase;
-		keys.push(spaceKey(row.position, bounds.min, side));
 	});
-	const ranked = keys
-		.map((_, r) => r)
-		.sort((a, b) => (keys[a] as number) - (keys[b] as number) || a - b);
+	const ranked = spaceRanks(rows, bounds);
 	ranked.forEach((row, rank) => {
 		out.order[row] = rank;
 	});

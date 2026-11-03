@@ -3,6 +3,7 @@
 // places them, and any other kit's throw.
 import type { SketchContext } from '@null3d/engine';
 import type { PlantAsset } from '../asset';
+import { pow } from '../core/math';
 import { notBuilt } from '../core/not-built';
 import type { FarPlant } from '../lod/impostor';
 import type { PlantMaterials } from './material';
@@ -29,6 +30,25 @@ export interface PlantCopies {
 }
 
 /**
+ * The page's view, which turns every species' switch pixels into metres. A page gives one view to
+ * every `placePlants` call, so its switch bias moves the level switches of all its species at once.
+ *
+ * @category api/vegetation
+ */
+export interface PlantView {
+	/** The page's render height in pixels. */
+	readonly height: number;
+	/** The camera's vertical field of view in degrees. */
+	readonly fov: number;
+	/**
+	 * Stops by which every level switch moves nearer: each switch distance is multiplied by two to the
+	 * power of minus the bias. 1 switches at half the distance, -1 at twice it, 0 as the species
+	 * gives. 0 by default.
+	 */
+	readonly switchBias?: number;
+}
+
+/**
  * How `placePlants` draws copies.
  *
  * @category api/vegetation
@@ -40,10 +60,24 @@ export interface PlaceOptions {
 	readonly near?: NearPool;
 	/** The far cards, one per variant; without them, the second card level draws to the horizon. */
 	readonly far?: readonly FarPlant[];
-	/** The page's render height and vertical field of view, which turn switch pixels into metres. */
-	readonly view: { readonly height: number; readonly fov: number };
+	/** The page's view: its render height, its field of view and its switch bias. */
+	readonly view: PlantView;
 	/** Whether the plants cast shadows. */
 	readonly castShadows?: boolean;
+}
+
+/**
+ * The factor that a page's distance-switch bias gives every switch distance: two to the power of
+ * minus the bias, so a bias of 1 switches each level at half the distance and -1 at twice it.
+ *
+ * @param bias The bias in stops; 0 leaves every distance as it is.
+ * @returns The factor.
+ * @category api/vegetation
+ */
+export function switchScale(bias = 0): number {
+	if (!Number.isFinite(bias))
+		throw new Error(`@null3d/vegetation: a switch bias of ${bias} is not a number of stops.`);
+	return bias === 0 ? 1 : pow(2, -bias);
 }
 
 /**
