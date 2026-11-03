@@ -20,10 +20,14 @@
 // so.
 //
 // The canvas is 3840 by 2160 CSS pixels at a pixel ratio of 2, a 7680 by 4320 drawing buffer, at a
-// render scale of 1 with the governor off. NULL3D_LENS_PRESETS sets the presets, and NULL3D_LENS_GPUS
-// the GPU paths. NULL3D_LENS_MARKS adds one run for each mark it names, with every other value at 0,
-// at every preset that its path allows. NULL3D_LENS_ROUNDS and NULL3D_LENS_SECONDS set the sample,
-// and NULL3D_LENS_BATCHES the batches of each cell: the cheapest batch is reported, because a loaded
+// render scale of 1 with the governor off. NULL3D_LENS_SIZE sets the canvas as WIDTHxHEIGHT,
+// NULL3D_LENS_PIXEL_RATIO its ratio and NULL3D_LENS_SCALE the render scale: a smaller canvas keeps a
+// heavy preset's look-on frame inside the display interval, where the whole-frame timer still reads
+// the look, and a figure taken there is reported with its own canvas. NULL3D_LENS_PRESETS sets the
+// presets, and NULL3D_LENS_GPUS the GPU paths. NULL3D_LENS_MARKS adds one run for each mark it names,
+// with every other value at 0, at every preset that its path allows. NULL3D_LENS_ROUNDS and
+// NULL3D_LENS_SECONDS set the sample, and NULL3D_LENS_BATCHES the batches of each cell: the cheapest
+// batch is reported, because a loaded
 // machine only adds time, and the batches' spread says how finely the load allows a cell to resolve.
 // Each test waits for a quiet computer and prints the load beside its figures (tests/lib/effect-cost.ts).
 
@@ -69,9 +73,24 @@ const SECONDS = Number(process.env.NULL3D_LENS_SECONDS ?? 1);
 const BATCHES = Number(process.env.NULL3D_LENS_BATCHES ?? 1);
 if (!(Number.isSafeInteger(BATCHES) && BATCHES >= 1))
 	throw new Error(`the lens cost takes a whole number of batches from 1, not ${BATCHES}`);
-/** The canvas's CSS size, and the pixel ratio held for both sides. */
-const SIZE = { width: 3840, height: 2160 } as const;
-const PIXEL_RATIO = 2;
+/**
+ * The canvas's CSS size, its pixel ratio and the render scale. The defaults draw 33 megapixels. A
+ * smaller canvas keeps a heavy preset's frame inside the display interval, where the whole-frame
+ * timer still reads the look rather than the queue; a figure taken there is not the 33-megapixel
+ * one and is reported with its own canvas.
+ */
+function canvasSize(value: string): { width: number; height: number } {
+	const match = /^(\d+)x(\d+)$/.exec(value);
+	if (match === null) throw new Error(`the lens cost takes a canvas as WIDTHxHEIGHT, not ${value}`);
+	return { width: Number(match[1]), height: Number(match[2]) };
+}
+const SIZE = canvasSize(process.env.NULL3D_LENS_SIZE ?? '3840x2160');
+const PIXEL_RATIO = Number(process.env.NULL3D_LENS_PIXEL_RATIO ?? 2);
+const RENDER_SCALE = Number(process.env.NULL3D_LENS_SCALE ?? 1);
+if (!(PIXEL_RATIO >= 0.5))
+	throw new Error(`the lens cost takes a pixel ratio from 0.5, not ${PIXEL_RATIO}`);
+if (!(RENDER_SCALE >= 0.25 && RENDER_SCALE <= 1))
+	throw new Error(`the lens cost takes a render scale from 0.25 to 1, not ${RENDER_SCALE}`);
 
 /** The middle of some numbers, or null without any. */
 function median(values: number[]): number | null {
@@ -231,7 +250,7 @@ async function timeLook(
 	const taken: Reading[] = [];
 	for (let batch = 1; batch <= BATCHES; batch++) {
 		await page.goto(
-			`effect-cost.html?effect=lens&gpu=${gpu}&preset=${preset}&scale=1&pixel-ratio=${PIXEL_RATIO}&rounds=${ROUNDS}&seconds=${SECONDS}&clear&repeat=${repeat}${bloomOff}${bounceOff}${look}`,
+			`effect-cost.html?effect=lens&gpu=${gpu}&preset=${preset}&scale=${RENDER_SCALE}&pixel-ratio=${PIXEL_RATIO}&rounds=${ROUNDS}&seconds=${SECONDS}&clear&repeat=${repeat}${bloomOff}${bounceOff}${look}`,
 		);
 		const result = await pageResult<CostResult & { repeat: number }>(page, 400_000);
 		expect(result.error).toBeUndefined();
@@ -244,7 +263,7 @@ async function timeLook(
 		taken.push(chosen);
 		console.log(
 			[
-				`LENSCOST ${result.tier} at ${preset}${named}, batch ${batch} of ${BATCHES}, repeat ${repeat}, ${SECONDS} s turns, ${ROUNDS} rounds, step ${step === null ? 'none' : step.toFixed(6)} ms, load ${loadBefore} before and ${loadNow()} after`,
+				`LENSCOST ${result.tier} at ${preset}${named}, batch ${batch} of ${BATCHES}, repeat ${repeat}, ${SECONDS} s turns, ${ROUNDS} rounds, canvas ${SIZE.width}x${SIZE.height} at ratio ${PIXEL_RATIO} and scale ${RENDER_SCALE}, step ${step === null ? 'none' : step.toFixed(6)} ms, load ${loadBefore} before and ${loadNow()} after`,
 				`lens off passes: ${passesLine(result.off)}`,
 				`lens on passes: ${passesLine(result.on)}`,
 				sideLine('off', result.off, 3),
@@ -268,7 +287,7 @@ async function timeLook(
 	);
 	const medians = taken.map((value) => (value.ms === null ? 'none' : value.ms.toFixed(3)));
 	console.log(
-		`LENSCOST best ${gpu} at ${preset}${named}: ${printing(best)}, from ${BATCHES} batch${BATCHES === 1 ? '' : 'es'} (${medians.join(', ')} ms)`,
+		`LENSCOST best ${gpu} at ${preset}${named}, canvas ${SIZE.width}x${SIZE.height} at ratio ${PIXEL_RATIO} and scale ${RENDER_SCALE}: ${printing(best)}, from ${BATCHES} batch${BATCHES === 1 ? '' : 'es'} (${medians.join(', ')} ms)`,
 	);
 }
 
