@@ -77,7 +77,9 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 	ground: {
 		kitBytes: 2 * MB,
 		variantBytes: 1.5 * MB,
-		lod0WoodBytes: { low: 0, medium: 0, high: 0, ultra: 0 },
+		// A frond colony's stipes and rachises are wood: the bracken test colony's largest of sixteen
+		// variants and seasons, with about 15 per cent to spare: 52, 58, 61 and 64 KB.
+		lod0WoodBytes: { low: 0.06 * MB, medium: 0.066 * MB, high: 0.07 * MB, ultra: 0.074 * MB },
 		lod0Triangles: 200_000,
 		lod1Triangles: 30_000,
 		lod2Triangles: 8_000,

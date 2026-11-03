@@ -29,8 +29,13 @@ import {
 import { LeafSurface } from './surface';
 import { MeshWriter, SURFACE_LEAF } from './writer';
 
-/** How finely each tier meshes a leaf. */
-interface LeafTier {
+/**
+ * How finely a leaf's outline is cut into triangles: bands along the midrib, bands across each half,
+ * and the outline's smoothing and points.
+ *
+ * @category api/vegetation
+ */
+export interface LeafCut {
 	/** Bands along the midrib. */
 	readonly rows: number;
 	/** Bands across each half. */
@@ -39,6 +44,10 @@ interface LeafTier {
 	readonly smooth: number;
 	/** Outline points kept. */
 	readonly points: number;
+}
+
+/** How finely each tier meshes a leaf. */
+interface LeafTier extends LeafCut {
 	/** Sides of the stalk tube; 0 draws a two-triangle ribbon. */
 	readonly stalkSides: number;
 }
@@ -104,7 +113,22 @@ export function leafTriangles(
 	outline: LeafOutline,
 	detail: Detail,
 ): { readonly points: number[]; readonly triangles: number[] } {
-	const tier = TIERS[detail];
+	return cutLeaf(outline, TIERS[detail]);
+}
+
+/**
+ * The flat leaf's triangles in texture coordinates, cut as finely as asked: `leafTriangles` with
+ * the bands and outline points given rather than a tier's.
+ *
+ * @param outline The leaf's outline.
+ * @param tier The bands and outline points.
+ * @returns The points, u then v, and the triangles, three indices each.
+ * @category api/vegetation
+ */
+export function cutLeaf(
+	outline: LeafOutline,
+	tier: LeafCut,
+): { readonly points: number[]; readonly triangles: number[] } {
 	const margin = MARGIN_TEXELS / outline.texels;
 	const polygon = simplifyCovering(
 		offsetPolygon(smoothPolygon(outline.points, tier.smooth), margin),

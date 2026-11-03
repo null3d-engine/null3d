@@ -8,7 +8,8 @@
 // The orchestrator holds no engine import, so a job worker and Bun run it alike. The growers and
 // the leaf builders are lazy chunks: `loadPlantCode` loads a species' code on this thread, and the
 // stage calls after it are synchronous. A kit built with `placeholders` grows the stand-in of every
-// stage (core/placeholder.ts); without it, a stage that is not built yet throws.
+// stage (core/placeholder.ts); with `placeholders: 'missing'` it grows a stand-in only for each stage
+// that is not built yet; without either, a stage that is not built yet throws.
 import type { MeshArrays, PlantAsset, PlantPart, ShootPrototype, SpeciesKitData } from './asset';
 import { speciesBox } from './core/box';
 import { type MacroSkeleton, SkeletonBuilder } from './core/graph';
@@ -82,8 +83,11 @@ export interface KitSource {
 export interface KitOptions {
 	/** The mesh tier; high by default. */
 	readonly detail?: Detail;
-	/** Grow the stand-in of every stage, as the stand-in species that scenes place do. */
-	readonly placeholders?: boolean;
+	/**
+	 * Grow the stand-in of every stage, as the stand-in species that scenes place do; or with
+	 * `'missing'`, grow each built stage and a stand-in only for a stage that is not built yet.
+	 */
+	readonly placeholders?: boolean | 'missing';
 }
 
 /**
@@ -123,9 +127,23 @@ export async function loadPlantCode(record: Species): Promise<void> {
 
 /**
  * Runs a stage, or its stand-in when the kit asks for stand-ins. A stand-in kit always grows the
- * stand-ins, so the stand-in species that scenes place draw the same as the real stages land.
+ * stand-ins, so the stand-in species that scenes place draw the same as the real stages land. A kit
+ * that asks for the missing stages' stand-ins runs each stage and grows the stand-in only where the
+ * stage throws that it is not built.
  */
-function stage<T>(placeholders: boolean | undefined, run: () => T, standIn: () => T): T {
+function stage<T>(
+	placeholders: boolean | 'missing' | undefined,
+	run: () => T,
+	standIn: () => T,
+): T {
+	if (placeholders === 'missing') {
+		try {
+			return run();
+		} catch (error) {
+			if (error instanceof NotBuiltError) return standIn();
+			throw error;
+		}
+	}
 	return placeholders ? standIn() : run();
 }
 
@@ -172,7 +190,7 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 	const { record } = source;
 	const manifest = source.textures.manifest;
 	const detail = options.detail ?? 'high';
-	const placeholders = options.placeholders === true;
+	const placeholders = options.placeholders ?? false;
 	const box = speciesBox(record);
 	const builder = foliage(record.foliage.kind);
 	const leavesByTier = DETAILS.map((tier) =>
