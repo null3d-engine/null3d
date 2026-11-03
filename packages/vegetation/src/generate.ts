@@ -51,6 +51,7 @@ import { DETAILS, type Detail, type Season, type Vec3 } from './core/types';
 import { lightCrown } from './crown/visibility';
 import { type CuttingOptions, clusterRow, cutBranch, cutFoliage, mergeShoots } from './cutting';
 import { coarsenSkeleton } from './grow/coarsen';
+import { leadOnThickest } from './grow/leaders';
 import { grower, loadGrower } from './grow/models';
 import { extrasMesh } from './leaf/extras';
 import { placeShoots } from './leaf/instancer';
@@ -307,7 +308,11 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 	const detail = options.detail ?? kit.detail;
 	const grown = stage(
 		placeholders,
-		() => grower(record.growth.model).grow(growInput),
+		() => {
+			const skeleton = grower(record.growth.model).grow(growInput);
+			// A self-organizing plant's wood runs on into the larger limb where its leader collapsed.
+			return record.growth.model === 'self-organizing' ? leadOnThickest(skeleton) : skeleton;
+		},
 		() => placeholderSkeleton(growInput),
 	);
 	speciesHooks(record.id)?.afterGrow?.(grown, record, growInput.seed);
