@@ -4,8 +4,9 @@ Status: decided. The wood mesher (`packages/vegetation/src/wood/`) is built, and
 quantisation of every part (`lod/quantise.ts`). The mesher carries frames by parallel transport and
 places rings by fit. It welds children with fillets and collars, and a fork's leaders take their
 parent's last ring. It flares and buttresses the stem's foot, and maps the bark in meters. A large
-mesh comes in parts of at most 65,536 vertices with 16-bit indices. Pending: surface roots, branch
-scars and peeling fins.
+mesh comes in parts of at most 65,536 vertices with 16-bit indices. Surface roots leave from the
+buttress lobes, and bark peels in strips at the nearest level. Pending: the eyes of shed branches,
+which rings far apart cannot hold as a mark at the vertices.
 Task: none.
 
 Summary: each side of a child's tube runs back to its parent's mesh. The crossing is the weld
@@ -94,6 +95,11 @@ review, so the cap follows the oak's figures.
   they can. Sides follow the girth, up to 96. Thin wood takes three or four sides and a plain point.
 - **Parts.** A mesh of more than 65,536 vertices is split into parts that each hold at most that
   many, so every part's indices are 16-bit. That saves about a third of the wood's bytes.
+- **Surface roots** leave from the buttress lobes, half buried along the ground, then dive. Each is
+  a child of its stem and welds onto the flared foot.
+- **Peeling strips** hang from their upper edge and curl out, at the nearest level only, in the
+  record's peel zone. The outer face shows the bark under it. The inner face carries a pipe radius of
+  zero, so the shader draws it with the young bark, the pale inner layer.
 - **The cap** of one variant's nearest wood is per tier, from the oak's largest variant with about
   15 per cent to spare.
 

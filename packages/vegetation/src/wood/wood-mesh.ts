@@ -15,6 +15,7 @@ import { acos, cos, PI, sin, tan } from '../core/math';
 import type { Species } from '../core/record';
 import type { CrownLight, MeshInput, MeshLevel } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
+import { peelFins } from './fins';
 import { type StemSection, stemSection, surfaceRoots } from './flare';
 import {
 	type AxisPath,
@@ -412,6 +413,41 @@ class WoodWriter {
 		return w;
 	}
 
+	/** Writes a vertex given in full, as a peeling strip's are. */
+	free(
+		px: number,
+		py: number,
+		pz: number,
+		nx: number,
+		ny: number,
+		nz: number,
+		u: number,
+		v: number,
+		pipe: number,
+		record: number,
+		bend: number,
+		sky: number,
+	): number {
+		if (this.vertices * 3 >= this.positions.length) this.grow();
+		const w = this.vertices;
+		this.positions[w * 3] = px;
+		this.positions[w * 3 + 1] = py;
+		this.positions[w * 3 + 2] = pz;
+		this.normals[w * 3] = nx;
+		this.normals[w * 3 + 1] = ny;
+		this.normals[w * 3 + 2] = nz;
+		this.uvs[w * 2] = u;
+		this.uvs[w * 2 + 1] = v;
+		this.uvs1[w * 2] = Math.min(1, pipe / WOOD_RADIUS_RANGE);
+		this.uvs1[w * 2 + 1] = 0;
+		this.colors[w * 4] = (record >>> 8) & 255;
+		this.colors[w * 4 + 1] = record & 255;
+		this.colors[w * 4 + 2] = Math.round(255 * Math.min(1, Math.max(0, bend)));
+		this.colors[w * 4 + 3] = Math.round(255 * sky);
+		this.vertices = w + 1;
+		return w;
+	}
+
 	finish(): MeshArrays {
 		const n = this.vertices;
 		return {
@@ -514,6 +550,7 @@ class Mesher {
 	private readonly bark: BarkScale;
 	private readonly tube: TubeDetail;
 	private readonly seed: number;
+	private readonly variant: number;
 	private readonly crown: CrownLight;
 	private readonly writer = new WoodWriter();
 	private readonly built: (AxisRings | undefined)[] = [];
@@ -531,6 +568,7 @@ class Mesher {
 	constructor(input: MeshInput, level: MeshLevel, report: boolean) {
 		this.record = input.record;
 		this.seed = input.seed;
+		this.variant = input.variant;
 		this.crown = input.crown;
 		this.bark = barkScale(input.record, input.kit.manifest, largestRadius(input.skeleton));
 		this.tube = tubeDetail(level, input.detail);
@@ -1383,6 +1421,53 @@ class Mesher {
 		return out;
 	}
 
+	/** Writes an axis's peeling strips, at the nearest level. */
+	private fins(rings: AxisRings, bark: BarkRings, context: AxisContext, wood: WoodAxis): void {
+		const spec = this.record.bark;
+		if (!spec?.peel) return;
+		// Each ring's bark from its first written entry, and the rings before the rounded end.
+		const top = new Float64Array(rings.count);
+		const span = new Float64Array(rings.count);
+		for (let e = bark.ring.length - 1; e >= 0; e--) {
+			if (bark.restart[e]) continue;
+			const r = bark.ring[e] as number;
+			top[r] = bark.top[e] as number;
+			span[r] = bark.span[e] as number;
+		}
+		let plain = 0;
+		while (plain < rings.count && (rings.arc[plain] as number) <= context.path.length + 1e-9)
+			plain++;
+		const fins = peelFins(rings, plain, { top, span }, spec, [
+			this.seed,
+			this.record.seedSalt,
+			this.variant,
+			wood.axis & 0xffff,
+		]);
+		const writer = this.writer;
+		const base = writer.vertices;
+		const length = Math.max(context.path.length, 1e-6);
+		for (let i = 0; i < fins.u.length; i++) {
+			const x = fins.positions[i * 3] as number;
+			const y = fins.positions[i * 3 + 1] as number;
+			const z = fins.positions[i * 3 + 2] as number;
+			writer.free(
+				x,
+				y,
+				z,
+				fins.normals[i * 3] as number,
+				fins.normals[i * 3 + 1] as number,
+				fins.normals[i * 3 + 2] as number,
+				fins.u[i] as number,
+				fins.v[i] as number,
+				fins.pipe[i] as number,
+				wood.record,
+				(fins.along[i] as number) / length,
+				skyAt(this.crown, x, y, z),
+			);
+		}
+		for (const index of fins.indices) writer.indices.push(base + index);
+	}
+
 	/** Writes an axis's rings and the strips between them. */
 	private write(rings: AxisRings, bark: BarkRings, context: AxisContext, wood: WoodAxis): void {
 		const writer = this.writer;
@@ -1427,6 +1512,7 @@ class Mesher {
 			}
 			stitch(writer.indices, a, sidesA, b, rings.sides[bark.ring[e + 1] as number] as number);
 		}
+		if (this.tube.level === 0) this.fins(rings, bark, context, wood);
 		if (this.welds) {
 			this.welds.axisFirst.set(wood.axis, [firstVertex, writer.vertices - firstVertex]);
 			if (wood.parent >= 0) {
