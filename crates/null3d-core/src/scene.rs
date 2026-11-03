@@ -165,10 +165,15 @@ pub mod flags {
     /// Blocks the view on the WebGL2 path: software occlusion culling draws the object's mesh
     /// into a small depth buffer, and hides what lies wholly behind it.
     pub const OCCLUDER: u32 = 1 << 7;
+    /// Never blocks the view on the WebGPU path, where GPU occlusion culling otherwise chooses its
+    /// occluders among every opaque object by their size on the screen.
+    pub const NOT_OCCLUDER: u32 = 1 << 9;
+    /// The bits that mark an object for occlusion culling, or opt it out.
+    pub const OCCLUSION: u32 = OCCLUDER | NOT_OCCLUDER;
     /// The bits that choose the draw tables an object joins, so a change rebuilds them.
     pub const TABLES: u32 = SHADOWS | OUTLINED;
     /// The bits that [`super::op::SET_FLAGS`] changes. The other bits have operations of their own.
-    pub const SETTABLE: u32 = TABLES | BOUNDS | OCCLUDER;
+    pub const SETTABLE: u32 = TABLES | BOUNDS | OCCLUSION;
     /// Keeps its world transform current while an ancestor hides it, because the frame reads it
     /// even then, as a view reads its camera's. Set at creation only. Its ancestors stay current
     /// too, since its transform needs theirs.
@@ -1526,7 +1531,7 @@ impl SceneStorage {
                 *f = (*f & !mask) | (command.b & mask);
                 // A new world bounding sphere, or a new occluder mark, which the WebGPU builder
                 // keeps in the object's entry of its culling table, rewrites the object's data.
-                if mask & (flags::BOUNDS | flags::OCCLUDER) != 0 {
+                if mask & (flags::BOUNDS | flags::OCCLUSION) != 0 {
                     self.dirty.set(slot);
                 }
             }

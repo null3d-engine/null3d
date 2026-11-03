@@ -2,7 +2,8 @@
 //! by decoding the lists it records: the camera's first culling phase and its occluders' pass,
 //! which draws depth alone, the compute pass that builds the depth pyramid and culls again, and the
 //! one opaque pass, which draws the second set of indirect draws. Shadow views and builders without
-//! occlusion culling cull once.
+//! occlusion culling cull once. Every opaque object may hide others unless it opts out, and the
+//! check of what the passes save turns them off while they cost more than they save.
 
 mod common;
 
@@ -35,7 +36,7 @@ const TILE: u32 = 8;
 const LEVELS_PER_BATCH: usize = 4;
 
 /// The scene flag that marks an occluder.
-const OCCLUDER: u32 = 1 << 7;
+const OCCLUDER: u32 = flags::OCCLUDER;
 
 /// A world of a few objects, drawn into HDR color with `antialias` by a builder with occlusion
 /// culling and `config`'s other settings, without a marked occluder.
@@ -70,6 +71,29 @@ fn world(antialias: Antialias, config: RendererConfig) -> World {
         Command::set_material(wall, material),
     ];
     world.scene.apply_commands(&commands, world.frame).unwrap();
+    world
+}
+
+/// A world like [`unmarked`]'s, whose every object and batch row opts out of hiding others.
+fn opted_out(antialias: Antialias, config: RendererConfig) -> World {
+    let mut world = World::with_config(RendererConfig {
+        canvas: CanvasOutput {
+            scene_color: SceneColor::from_format(format::RGBA16_FLOAT),
+            antialias,
+            transparent: false,
+        },
+        ..config
+    });
+    let added = [
+        world.add_object_at(&grid(2, 2), Shading::Lit, 0, [0.0; 3]),
+        world.add_object_at(&grid(1, 1), Shading::Unlit, 0, [0.0; 3]),
+    ];
+    let commands: Vec<Command> = (world.objects.iter().chain(&added))
+        .map(|&object| Command::set_flags(object, flags::OCCLUSION, flags::NOT_OCCLUDER))
+        .collect();
+    world.scene.apply_commands(&commands, world.frame).unwrap();
+    let batch = world.batches.get_mut(world.batch).unwrap();
+    batch.set_shadows(batch.row_flags() | flags::NOT_OCCLUDER);
     world
 }
 
@@ -337,14 +361,54 @@ fn the_occluders_depth_has_one_sample_whatever_the_scenes_samples() {
 }
 
 #[test]
-fn without_occlusion_culling_or_with_the_depth_prepass_each_view_culls_once() {
-    for config in [
-        RendererConfig::default(),
-        RendererConfig {
-            depth_prepass: true,
-            ..occluding()
-        },
-    ] {
+fn with_the_depth_prepass_the_prepass_draws_what_the_second_phase_kept() {
+    let config = RendererConfig {
+        depth_prepass: true,
+        ..occluding()
+    };
+    let mut world = world(Antialias::Msaa, config);
+    let mut mock = device();
+    let (first, steady) = frames(&mut world, &mut mock);
+    let templates = pipeline_templates(&first);
+    let passes = passes(&steady, &templates);
+    let early = passes
+        .iter()
+        .position(|p| matches!(p, Pass::Compute(d) if d.contains(&template::OCCLUSION_EARLY)))
+        .expect("the camera's first phase culls");
+    let Pass::Render { bundles, .. } = &passes[early + 1] else {
+        panic!("the occluders' pass follows the first phase: {passes:?}")
+    };
+    let occluders = bundles[0];
+    let Pass::Compute(late) = &passes[early + 2] else {
+        panic!("the pyramid and the late phase follow: {passes:?}")
+    };
+    assert_eq!(late.last(), Some(&template::OCCLUSION_LATE));
+    // The prepass and the opaque pass replay their bundles in the render pass after the late
+    // phase, and both draw the second set of draws.
+    let Pass::Render { bundles, .. } = &passes[early + 3] else {
+        panic!("the scene pass follows the late phase: {passes:?}")
+    };
+    assert_eq!(
+        bundles.len(),
+        2,
+        "the prepass's bundle and the opaque bundle"
+    );
+    assert!(!bundles.contains(&occluders));
+    let draws = bundle_draws(&first);
+    let set = draws[&bundles[1]].len() as u32 * INDIRECT_BYTES;
+    for bundle in bundles {
+        assert!(
+            draws[bundle].iter().all(|&offset| offset >= set),
+            "{bundle}"
+        );
+    }
+    assert!(draws[&occluders].iter().all(|&offset| offset < set));
+}
+
+#[test]
+fn without_occlusion_culling_each_view_culls_once() {
+    {
+        let config = RendererConfig::default();
         let mut world = world(Antialias::Msaa, config);
         let mut mock = device();
         let (first, steady) = frames(&mut world, &mut mock);
@@ -443,8 +507,28 @@ fn every_camera_view_has_a_pyramid_of_its_own() {
 }
 
 #[test]
-fn without_a_marked_occluder_the_camera_culls_once_as_without_occlusion_culling() {
+fn every_opaque_object_may_hide_others_without_a_mark() {
     let mut world = unmarked(Antialias::Msaa, occluding());
+    let mut mock = device();
+    let (first, _) = frames(&mut world, &mut mock);
+    let mut templates = pipeline_templates(&first);
+    let steady = world.step(&mut mock, false);
+    templates.extend(pipeline_templates(&steady));
+    let mut phases = dispatched(&steady, &templates);
+    phases.dedup();
+    assert_eq!(
+        phases,
+        [
+            template::OCCLUSION_EARLY,
+            template::DEPTH_PYRAMID,
+            template::OCCLUSION_LATE
+        ]
+    );
+}
+
+#[test]
+fn a_scene_whose_objects_all_opt_out_culls_once_as_without_occlusion_culling() {
+    let mut world = opted_out(Antialias::Msaa, occluding());
     let mut mock = device();
     let (first, steady) = frames(&mut world, &mut mock);
     let created = compute_pipelines(&first);
@@ -467,16 +551,21 @@ fn without_a_marked_occluder_the_camera_culls_once_as_without_occlusion_culling(
 }
 
 #[test]
-fn marking_an_object_turns_the_two_phases_on_and_unmarking_turns_them_off() {
-    let mut world = unmarked(Antialias::Msaa, occluding());
+fn letting_an_object_hide_others_turns_the_two_phases_on_and_opting_it_out_turns_them_off() {
+    let mut world = opted_out(Antialias::Msaa, occluding());
     let mut mock = device();
     let (first, _) = frames(&mut world, &mut mock);
     let mut templates = pipeline_templates(&first);
     let object = world.objects[0];
-    // The frame that sees the first mark asks for the pipelines, and the next one runs them, as
-    // the mock builds every pipeline at once. Unmarking turns them off in the frame that sees it.
-    for (mark, frames, early) in [(OCCLUDER, 2, true), (0, 1, false)] {
-        let commands = [Command::set_flags(object, OCCLUDER, mark)];
+    // The frame that sees the first object that may hide others asks for the pipelines, and the
+    // next one runs them, as the mock builds every pipeline at once. Opting it out turns them off
+    // in the frame that sees it. A mark of true and no mark both let it hide others.
+    for (mark, frames, early) in [
+        (OCCLUDER, 2, true),
+        (flags::NOT_OCCLUDER, 1, false),
+        (0, 1, true),
+    ] {
+        let commands = [Command::set_flags(object, flags::OCCLUSION, mark)];
         world.scene.apply_commands(&commands, world.frame).unwrap();
         let mut last = Vec::new();
         for _ in 0..frames {
@@ -486,15 +575,14 @@ fn marking_an_object_turns_the_two_phases_on_and_unmarking_turns_them_off() {
         assert_eq!(
             dispatched(&last, &templates).contains(&template::OCCLUSION_EARLY),
             early,
-            "marked {}",
-            mark != 0
+            "marked {mark}"
         );
     }
 }
 
 #[test]
-fn occlusion_culling_makes_its_pipelines_only_once_the_scene_marks_an_occluder() {
-    let mut world = unmarked(Antialias::Msaa, occluding());
+fn occlusion_culling_makes_its_pipelines_only_once_an_object_may_hide_others() {
+    let mut world = opted_out(Antialias::Msaa, occluding());
     let mut mock = device();
     let (first, steady) = frames(&mut world, &mut mock);
     let made = |commands: &Commands| -> Vec<u32> {
@@ -505,11 +593,11 @@ fn occlusion_culling_makes_its_pipelines_only_once_the_scene_marks_an_occluder()
         made.sort_unstable();
         made
     };
-    // Their shaders load on first use, so an unmarked scene asks for none of them.
+    // Their shaders load on first use, so a scene whose objects all opt out asks for none of them.
     assert_eq!(made(&first), []);
     assert_eq!(made(&steady), []);
 
-    let commands = [Command::set_flags(world.objects[0], OCCLUDER, OCCLUDER)];
+    let commands = [Command::set_flags(world.objects[0], flags::OCCLUSION, 0)];
     world.scene.apply_commands(&commands, world.frame).unwrap();
     let marked: Vec<u32> = (0..3)
         .flat_map(|_| made(&world.step(&mut mock, false)))
@@ -521,13 +609,17 @@ fn occlusion_culling_makes_its_pipelines_only_once_the_scene_marks_an_occluder()
 
 #[test]
 fn the_camera_culls_once_until_occlusion_cullings_pipelines_are_built() {
-    let mut world = unmarked(Antialias::Msaa, occluding());
+    let mut world = opted_out(Antialias::Msaa, occluding());
     let mut mock = device();
     let (first, _) = frames(&mut world, &mut mock);
     let mut templates = pipeline_templates(&first);
     // The thread that draws reports the frames whose pipelines it has built: from here on, none.
     world.pipelines_built = world.frame;
-    let commands = [Command::set_flags(world.objects[0], OCCLUDER, OCCLUDER)];
+    let commands = [Command::set_flags(
+        world.objects[0],
+        flags::OCCLUSION,
+        OCCLUDER,
+    )];
     world.scene.apply_commands(&commands, world.frame).unwrap();
     for _ in 0..3 {
         let waiting = world.step(&mut mock, false);
@@ -555,7 +647,7 @@ fn the_camera_culls_once_until_occlusion_cullings_pipelines_are_built() {
 }
 
 #[test]
-fn culling_starts_in_two_phases_once_ambient_occlusion_turns_the_prepass_off() {
+fn culling_stays_in_two_phases_while_ambient_occlusion_turns_the_prepass_on_and_off() {
     let mut world = world(Antialias::Msaa, occluding());
     world.renderer.settings_mut().set_ao(Some(Ao::default()));
     let mut mock = device();
@@ -564,13 +656,14 @@ fn culling_starts_in_two_phases_once_ambient_occlusion_turns_the_prepass_off() {
         .iter()
         .map(|(&id, &(t, _))| (id, t))
         .collect();
-    // Ambient occlusion holds the depth prepass, so the camera culls once.
+    // Ambient occlusion holds the depth prepass, which draws after the late phase.
     let runs = |commands: &Commands, templates: &HashMap<u32, u32>, wanted: u32| {
         passes(commands, templates)
             .iter()
             .any(|p| matches!(p, Pass::Compute(d) if d.contains(&wanted)))
     };
-    assert!(!runs(&steady, &templates, template::OCCLUSION_EARLY));
+    assert!(runs(&steady, &templates, template::OCCLUSION_EARLY));
+    assert!(runs(&steady, &templates, template::OCCLUSION_LATE));
 
     world.renderer.settings_mut().set_ao(None);
     let switched = world.step(&mut mock, false);
@@ -620,4 +713,113 @@ fn a_smaller_canvas_binds_the_pyramid_to_the_occluders_depth_made_again() {
         "the pyramid's group binds again: made {remade:?}"
     );
     assert!(remade.contains(&bound[0]));
+}
+
+/// The control slot that the tests' reads of the occlusion counts raise.
+const READ_SLOT: u32 = 60;
+
+/// True when a frame's commands run the first occlusion phase.
+fn runs_early(commands: &Commands, templates: &HashMap<u32, u32>) -> bool {
+    dispatched(commands, templates).contains(&template::OCCLUSION_EARLY)
+}
+
+/// Runs `frames` frames of a world whose wall hides others, and hands the check each frame's GPU
+/// time: `with` for a frame that runs the passes and `without` for one that does not. Returns
+/// whether each frame ran them.
+fn run_timed(frames: usize, with: u32, without: u32) -> Vec<bool> {
+    let mut world = world(Antialias::Msaa, occluding());
+    let mut mock = device();
+    let (first, _) = self::frames(&mut world, &mut mock);
+    let mut templates = pipeline_templates(&first);
+    let mut ran = Vec::new();
+    for _ in 0..frames {
+        let commands = world.step(&mut mock, false);
+        templates.extend(pipeline_templates(&commands));
+        let early = runs_early(&commands, &templates);
+        ran.push(early);
+        let micros = if early { with } else { without };
+        world.renderer.gpu_frame_time(world.frame - 1, micros);
+    }
+    ran
+}
+
+#[test]
+fn the_camera_reads_its_counts_back_after_its_late_phase_without_waiting() {
+    let mut world = world(Antialias::Msaa, occluding());
+    world.renderer.set_occlusion_read_slot(READ_SLOT);
+    let mut mock = device();
+    let (first, _) = frames(&mut world, &mut mock);
+    let mut templates = pipeline_templates(&first);
+    // The check copies the counts of a frame of the window before its first trial.
+    let mut read = None;
+    for _ in 0..60 {
+        let commands = world.step(&mut mock, false);
+        templates.extend(pipeline_templates(&commands));
+        if commands.iter().any(|(op, _)| *op == Op::ReadBuffer) {
+            read = Some(commands);
+            break;
+        }
+    }
+    let commands = read.expect("a frame reads the counts");
+    assert!(runs_early(&commands, &templates));
+    let at = |wanted: Op| commands.iter().position(|(op, _)| *op == wanted).unwrap();
+    let late = commands
+        .iter()
+        .rposition(|(op, _)| *op == Op::Dispatch)
+        .expect("the frame dispatches");
+    let (copy, reading) = (at(Op::CopyBufferToBuffer), at(Op::ReadBuffer));
+    assert!(
+        late < copy && copy < reading,
+        "the copies follow the culling"
+    );
+    let read = &commands[reading].1;
+    assert_eq!(read[4], READ_SLOT);
+    // The counts' four words, then five words for each draw of the first set.
+    let copies: Vec<&Vec<u32>> = commands
+        .iter()
+        .filter(|(op, _)| *op == Op::CopyBufferToBuffer)
+        .map(|(_, o)| o)
+        .collect();
+    assert_eq!(copies.len(), 2);
+    assert_eq!(copies[0][4], 16, "the counts");
+    assert_eq!(copies[1][1], 0, "the first set starts the buffer");
+    assert_eq!(copies[1][4] % INDIRECT_BYTES, 0);
+    assert_eq!(read[2], 16 + copies[1][4]);
+    assert_eq!(
+        copies[0][0], copies[1][0],
+        "both from the camera's indirect draws"
+    );
+    // The counts follow both sets of draws and the history.
+    assert!(copies[0][1] >= 2 * copies[1][4]);
+}
+
+#[test]
+fn passes_that_make_the_frame_longer_turn_off_but_for_their_trials() {
+    // Frames with the passes take a third longer, as when another program's work fills the gaps
+    // between them.
+    let ran = run_timed(400, 4000, 3000);
+    // At first the passes run in every frame.
+    assert!(ran[..20].iter().all(|&early| early));
+    // Once judged, they run only in the check's trials.
+    let late = &ran[200..];
+    let on = late.iter().filter(|&&early| early).count();
+    assert!(on > 0, "the trials run the passes");
+    assert!(
+        on * 10 <= late.len(),
+        "{on} of {} frames ran the passes",
+        late.len()
+    );
+}
+
+#[test]
+fn passes_that_make_the_frame_shorter_stay_on_but_for_their_trials() {
+    let ran = run_timed(400, 2000, 3000);
+    let late = &ran[200..];
+    let off = late.iter().filter(|&&early| !early).count();
+    assert!(off > 0, "the trials leave the passes out");
+    assert!(
+        off * 10 <= late.len(),
+        "{off} of {} frames left the passes out",
+        late.len()
+    );
 }

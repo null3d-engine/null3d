@@ -53,7 +53,7 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 	physical_sky:
 		'with the first physical sky background (`atmosphere`). The view shows the background color until the sky is built',
 	occlusion:
-		'with the first object that `setOccluder(true)` marks, while GPU occlusion culling runs on WebGPU. Until its shaders are built, the engine draws without it. WebGL2 has no such shaders',
+		'with the first opaque object that may hide others, while GPU occlusion culling runs on WebGPU. Until its shaders are built, the engine draws without it. WebGL2 has no such shaders',
 	coverage: 'with the first masked material that MSAA smooths with alpha to coverage',
 	hash: "with the first material whose alpha mode is `'hash'`",
 	cutout:

@@ -707,6 +707,7 @@ pub fn init_engine(
             Box::new(CpuCulledRenderer::new(CpuCulledConfig {
                 canvas,
                 multi_draw: capabilities.contains(Capabilities::MULTI_DRAW),
+                first_provoking_vertex: capabilities.contains(Capabilities::FIRST_PROVOKING_VERTEX),
                 float16_targets: capabilities.contains(Capabilities::FLOAT16_TARGETS),
                 max_texture_size: max_texture_size.max(CpuCulledConfig::default().max_texture_size),
                 cell_culling,
@@ -1308,8 +1309,9 @@ pub fn visible_entries(frame: u32) -> u32 {
     })
 }
 
-/// The sources inside the camera's frustum that software occlusion culling hid in a recorded
-/// frame, where the frame builder culls on the CPU, or `NOT_COUNTED` where the GPU culls.
+/// The sources inside the camera's frustum that occlusion culling hid: in a recorded frame, where
+/// the frame builder culls on the CPU, or in the newest frame whose counts the GPU sent back, where
+/// GPU occlusion culling runs. `NOT_COUNTED` where neither runs.
 #[wasm_bindgen(js_name = occludedEntries)]
 pub fn occluded_entries(frame: u32) -> u32 {
     value_with_engine(|e| {
@@ -1823,14 +1825,15 @@ pub fn set_batch_bounds(batch: u32) -> u32 {
     })
 }
 
-/// Sets whether every row of a batch casts shadows and receives them, from the cast and receive
-/// bits of an object's flags. Sprite and line batches take neither. The renderer's tables depend on
-/// the bits, so a change rebuilds them, as an object's new flags do.
+/// Sets whether every row of a batch casts shadows, receives them and may hide others in GPU
+/// occlusion culling, from the cast, receive and opt-out bits of an object's flags. Sprite and line
+/// batches take none. The renderer's tables depend on the bits, so a change rebuilds them, as an
+/// object's new flags do.
 #[wasm_bindgen(js_name = setBatchShadows)]
 pub fn set_batch_shadows(batch: u32, bits: u32) -> u32 {
     with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
         Ok(batch) => {
-            if batch.shadows() != bits & flags::SHADOWS {
+            if batch.row_flags() != bits & null3d_core::instances::ROW_FLAGS {
                 batch.set_shadows(bits);
                 e.structure_changed = true;
             }
@@ -5172,6 +5175,26 @@ pub fn set_moment_transparency(on: bool) -> u32 {
 pub fn set_software_occlusion(on: bool) -> u32 {
     with_engine(|e| {
         e.renderer.set_software_occlusion(on);
+        0
+    })
+}
+
+/// Notes the GPU's time for frame `frame`, from its submit to its completion, in microseconds, which
+/// GPU occlusion culling's check compares with its passes on and off. Elsewhere it does nothing.
+#[wasm_bindgen(js_name = gpuFrameTime)]
+pub fn gpu_frame_time(frame: u32, micros: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.gpu_frame_time(frame, micros);
+        0
+    })
+}
+
+/// Sets the control slot that GPU occlusion culling's reads of its counts raise. Nothing reads the
+/// slot: the counts name their frame.
+#[wasm_bindgen(js_name = setOcclusionReadSlot)]
+pub fn set_occlusion_read_slot(slot: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.set_occlusion_read_slot(slot);
         0
     })
 }

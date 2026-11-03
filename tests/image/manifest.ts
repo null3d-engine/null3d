@@ -1678,9 +1678,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// and scaled arm with keepWorld, which then swings with the arm, and bounds that culling tests:
 	// one box that its bounds hide, and one that is never culled.
 	{ name: 'objects', sketch: 'tests/pages/sketches/objects-sketch.ts', hold: 1 },
-	// The room scene: a room whose walls, its occluders, hide most of a field of detailed spheres,
-	// but for a few seen through a doorway. Drawn without occlusion culling, as the references of
-	// its culled copies, with MSAA and with FXAA, whose depth has one sample.
+	// The room scene: a room whose walls hide most of a field of detailed spheres, but for a few
+	// seen through a doorway. Drawn without occlusion culling, as the references of its culled
+	// copies, with MSAA and with FXAA, whose depth has one sample.
 	{
 		name: 'room',
 		sketch: ROOM_SKETCH,
@@ -3870,11 +3870,12 @@ const PREPASS_SCENES = [
 
 /**
  * The scenes that GPU occlusion culling draws again on the WebGPU tiers, with ?occlusion=on, which
- * must match their images without it. In the room scene, with MSAA and with FXAA, the walls are
- * occluders: hold mode's frame keeps no occluder from a frame before, but the frame read back
- * draws again, and its first phase draws the walls. The other scenes mark no occluder, so they
- * check that a frame without one culls once and draws as before: shadows, see-through objects, an
- * orthographic camera and S2. Every preset leaves GPU occlusion culling off.
+ * must match their images without it. In the room scene, with MSAA and with FXAA, the walls hide
+ * most of the spheres: hold mode's frame keeps no occluder from a frame before, but the frame read
+ * back draws again, and its first phase draws the walls, which the culling chose itself. The other
+ * scenes check shadows, see-through objects, an orthographic camera and S2. The High and Ultra
+ * presets turn GPU occlusion culling on, so every other test on WebGPU at those presets draws with
+ * it too, against the same references.
  */
 const GPU_OCCLUSION_SCENES = ['room', 'room-fxaa', 'shadows', 'transparency', 'ortho-camera', 's2'];
 
