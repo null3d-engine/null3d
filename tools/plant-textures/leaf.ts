@@ -580,7 +580,12 @@ export function leafTextures(
 	const baseRow = bladeBase(upper, petiole[1], tip[1]);
 	const uv = (x: number, y: number): Vec => [round(x / size), round(1 - y / size)];
 
-	const outline = leafOutline(upper.a, size);
+	// The mesh's outline holds both faces: a generated underside's lobes may reach a little past the
+	// upper face's, and a back face cut by the upper outline alone shows straight edges there.
+	const both = new Float32Array(upper.a.length);
+	for (let i = 0; i < both.length; i++)
+		both[i] = Math.max(upper.a[i] as number, lower.a[i] as number);
+	const outline = leafOutline(both, size);
 
 	const lum = luminance(upper);
 	const blade: number[] = [];
