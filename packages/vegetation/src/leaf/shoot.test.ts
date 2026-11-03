@@ -206,8 +206,12 @@ describe('the shoot prototypes', () => {
 					);
 				return far;
 			});
+			// The low tier draws no buds, so its reach may fall short by the tip bud's length.
+			const bud = record.shoots?.bud.length ?? 0;
 			for (const value of reach)
-				expect(Math.abs(value - (reach[2] as number))).toBeLessThan((reach[2] as number) * 0.05);
+				expect(Math.abs(value - (reach[2] as number))).toBeLessThan(
+					(reach[2] as number) * 0.05 + bud,
+				);
 		}
 	});
 

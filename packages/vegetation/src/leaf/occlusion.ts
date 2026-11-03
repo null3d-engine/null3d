@@ -266,8 +266,12 @@ export function shootOcclusion(tiers: readonly MeshWriter[], source: number): vo
 		for (let part = 0; part < mesh.parts.length; part++) {
 			const start = mesh.parts[part] as number;
 			const end = mesh.parts[part + 1] ?? mesh.vertices;
-			const first = shaded.parts[part] as number;
-			const last = shaded.parts[part + 1] ?? shaded.vertices;
+			// A part the source tier leaves out, such as a bud that its cluster's one cone stands for,
+			// takes the shade of the nearest vertex anywhere in the source tier.
+			const own = shaded.parts[part] as number;
+			const ownEnd = shaded.parts[part + 1] ?? shaded.vertices;
+			const first = ownEnd > own ? own : 0;
+			const last = ownEnd > own ? ownEnd : shaded.vertices;
 			for (let i = start; i < end; i++) {
 				const x = mesh.positions[i * 3] as number;
 				const y = mesh.positions[i * 3 + 1] as number;
