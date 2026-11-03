@@ -3,13 +3,14 @@
 // lands. Each species' record must pass the record check and the owner's caps, name its own texture
 // folder, grow the same bytes twice, and stay within its own budget.
 import { describe, expect, it } from 'bun:test';
-import type { PlantAsset, SpeciesKitData } from '../asset';
+import type { SpeciesKitData } from '../asset';
 import { plantAssetDigest } from '../asset';
+import { nearTriangles } from '../coarseness';
+import { variantBytesOf } from '../core/caps';
 import { speciesProblems } from '../core/check';
 import type { SpeciesModule } from '../core/record';
 import { isSpeciesId, loadSpecies, speciesIds } from '../core/registry';
 import { standInSpecies } from '../core/stand-in';
-import { DETAILS } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 
 /**
@@ -45,17 +46,6 @@ function kitBytes(kit: SpeciesKitData): number {
 	return bytes;
 }
 
-/** Triangles of the nearest level of one copy at the high tier: its meshes and its shoot rows. */
-function nearTriangles(kit: SpeciesKitData, asset: PlantAsset): number {
-	const high = DETAILS.indexOf('high');
-	let triangles = asset.levels[0].triangles;
-	for (let row = 0; row < asset.shoots.count; row++) {
-		const prototype = kit.prototypes[asset.shoots.prototype[row] as number];
-		triangles += (prototype?.tiers[high]?.indices.length ?? 0) / 3;
-	}
-	return triangles;
-}
-
 for (const walked of WALKED) {
 	describe(`the species ${walked.folder}`, async () => {
 		const module = await walked.load();
@@ -79,8 +69,8 @@ for (const walked of WALKED) {
 			expect(plantAssetDigest(growPlantNow(kit, options))).toBe(plantAssetDigest(asset));
 			const budget = record.lod.budget;
 			expect(kitBytes(kit)).toBeLessThanOrEqual(budget.kitBytes);
-			expect(asset.stats.bytes).toBeLessThanOrEqual(budget.variantBytes);
-			expect(nearTriangles(kit, asset)).toBeLessThanOrEqual(budget.lod0Triangles);
+			expect(variantBytesOf(asset)).toBeLessThanOrEqual(budget.variantBytes[kit.detail]);
+			expect(nearTriangles(kit, asset, 'high')).toBeLessThanOrEqual(budget.lod0Triangles);
 			expect(asset.levels[1].triangles).toBeLessThanOrEqual(budget.lod1Triangles);
 			expect(asset.levels[2].triangles).toBeLessThanOrEqual(budget.lod2Triangles);
 			const outputs = module.textures.manifest.outputs;

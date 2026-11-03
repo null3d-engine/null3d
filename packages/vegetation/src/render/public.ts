@@ -13,7 +13,9 @@ export {
 	type PlacedPlants,
 	type PlaceOptions,
 	type PlantCopies,
+	type PlantView,
 	placePlants,
+	switchScale,
 } from './place';
 export {
 	type PrepareOptions,

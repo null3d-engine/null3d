@@ -46,6 +46,29 @@ describe('bareBudgetLines', () => {
 		expect(bareBudgetLines('a.test.ts', text)).toEqual([]);
 	});
 
+	it('reads no call of a local name that hides the import, nor a member call, as a check', () => {
+		const text = [
+			"import { describe, it, jest, test } from 'bun:test';",
+			"describe('a', () => {",
+			"\ttest('b', () => {",
+			'\t\tconst test = host();',
+			"\t\ttest.folder.at('root', 'name', 'version');",
+			'\t\tconst jest = mocks();',
+			'\t\tjest.setTimeout(60_000);',
+			'\t});',
+			"\tconst helper = (it) => it('c', () => {}, 5000);",
+			"\tfunction run(test) { test.skip('d', () => {}, 5000); }",
+			"\tfor (const it of checks) it('e', () => {}, 5000);",
+			"\ttry {} catch (test) { test('f', () => {}, 5000); }",
+			"\tsuite.test('g', () => {}, 5000);",
+			"\tsuite.it.only('h', () => {}, 5000);",
+			'});',
+			"test('i', () => {}, 5000);",
+			"describe('j', () => { it('k', () => {}, 5000); });",
+		].join('\n');
+		expect(bareBudgetLines('a.test.ts', text)).toEqual([16, 17]);
+	});
+
 	it('finds a budget that a setup or teardown hook states without scaling it', () => {
 		const text = [
 			"import { afterAll, afterEach, beforeAll, beforeEach, onTestFinished } from 'bun:test';",
