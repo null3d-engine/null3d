@@ -5,7 +5,7 @@
 // handing over from meshes to cards through a shared band. Press L for detail meshes instead.
 import { defineSketch, timeOfDay } from '@null3d/engine';
 import { createImpostors, farCellGroups, mergeFarGeometry } from '@null3d/impostors';
-import { handOverToCards } from '@null3d/vegetation/legacy';
+import { handOverToCards } from '@null3d/vegetation';
 import { interact } from '../lib/interact';
 import {
 	BAND_OVERLAP,

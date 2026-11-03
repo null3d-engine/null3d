@@ -2,7 +2,8 @@
 // a reflection pass mirrors the banks and the sky in it, and the bed shows through it, bent by its
 // ripples. The whole valley is dressed by the vegetation add-on, which grows every tree, shrub,
 // fern and tuft of grass from a species record and a seed, places them by the ground's own
-// ecological rules and moves them in the scene's one wind field. Fallen leaves float on the current
+// ecological rules and moves them in the scene's one wind field. Its trees, shrubs and ferns draw
+// as the plant core's stand-ins until their species land. Fallen leaves float on the current
 // and fireflies hover at night. The land, its textures, the rocks and the water are made in code.
 //
 // The controls pick a time of day and turn the effects on and off, among them a "DSLR" lens with
@@ -301,7 +302,7 @@ export default defineSketch(async (ctx) => {
 			);
 	const underwater = water && createUnderwater(ctx, camera, water);
 	const flora = await createFlora(ctx, wind);
-	const plants = createPlants(ctx, wind.field, {
+	const plants = await createPlants(ctx, wind.field, {
 		rocks: (x, z) => stones.clear(x, z),
 		mountainHeight: (x, z) => mountains.heightAt(x, z),
 	});
@@ -333,7 +334,6 @@ export default defineSketch(async (ctx) => {
 			];
 	const fit = () => {
 		for (const field of grass) field.fit(quality.preset);
-		plants.fit(quality.preset);
 		stones.fit(quality.preset);
 	};
 	fit();

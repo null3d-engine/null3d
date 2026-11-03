@@ -63,7 +63,7 @@ export default defineSketch(async (ctx) => {
 		bounds: [-6e3, -1e4, -1, 6e3, 1e4, 1],
 	});
 
-	const live = valley(ctx, camera);
+	const live = await valley(ctx, camera);
 
 	return {
 		onUpdate(dt) {
