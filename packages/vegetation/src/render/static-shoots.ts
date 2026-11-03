@@ -26,7 +26,7 @@ import {
 	prototypeGeometry,
 	setPlacedUniforms,
 } from './material';
-import type { PlacedPlants, PlaceOptions, PlantCopies } from './place';
+import { type PlacedPlants, type PlaceOptions, type PlantCopies, switchScale } from './place';
 import { toHalf, writeShootRow } from './records';
 import { farCards } from './stand-in';
 import { NEAR_SLOT_TEXELS, NEAR_SLOTS, type SpeciesKit, writePlantWind } from './textures';
@@ -111,8 +111,10 @@ export function placeStaticPlants(
 	options: PlaceOptions,
 ): PlacedPlants {
 	const materials = options.materials;
-	const scale = viewScale(options.view);
-	const near = shootSwitchDistance(kit, options.view);
+	// The page's switch bias moves every switch distance by one factor.
+	const bias = switchScale(options.view.switchBias);
+	const scale = viewScale(options.view) * bias;
+	const near = shootSwitchDistance(kit, options.view) * bias;
 	writePlantWind(kit, assets);
 	setPlacedUniforms([materials.cards], { nearDistance: near });
 	setPlacedUniforms([materials.shoots, materials.cards, materials.foliage], {

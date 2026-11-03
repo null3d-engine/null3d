@@ -64,6 +64,8 @@ const AWAY: V3 = [20000, 0, 0];
 const FAR = 9000;
 /** The share of the frame left clear round a fitted plant. */
 const MARGIN = 0.08;
+/** Stops of switch bias that carry a forced nearest level's shoots past every far plane. */
+const FORCED_NEAR_STOPS = 20;
 /** The most cells a sheet draws: the scene's views less the camera's own. */
 const MOST_CELLS = 31;
 
@@ -628,7 +630,13 @@ export default defineSketch(async (ctx) => {
 				materials: plantLook,
 				...(near && { near }),
 				...(far && { far }),
-				view: { height: SIZE[1] / rows, fov: FOV },
+				// A forced nearest level draws its real shoots at every distance: the bias moves the
+				// shoots' switch past every camera's far plane.
+				view: {
+					height: SIZE[1] / rows,
+					fov: FOV,
+					...(QUERY.lod === 0 && { switchBias: -FORCED_NEAR_STOPS }),
+				},
 				castShadows: !MATTE,
 			},
 		);
