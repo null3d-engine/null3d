@@ -183,7 +183,11 @@ export function sampleGrid(
 	// the normal, so a surface that faces a sky above the horizon takes twice the share. The weight
 	// fades as the sky wraps around the probe.
 	const tilt = Math.min(1, 2 * (1 - sky));
-	out[3] = sky * valid * Math.min(1, Math.max(0, 1 + ny * tilt));
+	// The shader saturates the whole product, not its factor: a surface facing an open sky takes
+	// twice the visibility, which can exceed one before the clamp, and that is what keeps a probe
+	// that sees half the sphere from giving half the light.
+	const share = Math.min(1, Math.max(0, sky * (1 + ny * tilt)));
+	out[3] = valid * share;
 }
 
 function mix(a: number, b: number, t: number): number {
