@@ -379,3 +379,107 @@ fn each_pass_names_the_step_that_it_records() {
     assert!(render.iter().all(|&id| id != scope::NONE), "{render:?}");
     assert!(compute.iter().all(|&id| id != scope::NONE), "{compute:?}");
 }
+
+/// Each render pass of a list, by its GPU scope, with the index counts that it draws outside
+/// bundles and the number of full-screen triangles that it draws.
+fn passes_by_scope(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, Vec<u32>, usize)> {
+    let mut passes: Vec<(u32, Vec<u32>, usize)> = Vec::new();
+    let mut in_bundle = false;
+    for (op, o) in commands {
+        match op {
+            Op::BeginRenderPass => {
+                let code = if o.len() == 12 { o[11] } else { o[10] };
+                passes.push((code, Vec::new(), 0));
+            }
+            Op::BeginBundle => in_bundle = true,
+            Op::EndBundle => in_bundle = false,
+            Op::DrawIndexed if !in_bundle => {
+                if let Some(pass) = passes.last_mut() {
+                    pass.1.push(o[0]);
+                }
+            }
+            Op::Draw if o[0] == 3 && o[1] == 1 => {
+                if let Some(pass) = passes.last_mut() {
+                    pass.2 += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    passes
+}
+
+/// A blended material that asks for the one-sample layer draws there, and only there, once the
+/// layer's pipelines are built, while another blended material keeps the transparent pass. The
+/// layer has a render pass of its own, and its composite draws in the transparent one. The mock
+/// backend checks that each pipeline fits the targets of the render pass it draws in.
+fn check_single_layer<B: FrameBuilder>(mut world: World<B>, name: &str) {
+    let sphere_mesh = base_sphere(0.5, [8, 6]);
+    let sphere = sphere_mesh.indices.len() as u32;
+    let (mesh, material) = blended_pair(&mut world, &sphere_mesh, 0);
+    world
+        .renderer
+        .settings_mut()
+        .materials_mut()
+        .set_single_layer(material - 1, true)
+        .unwrap();
+    add_blended(&mut world, mesh, material, 0.0);
+    let box_mesh = base_format(box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap());
+    let (mesh, material) = blended_pair(&mut world, &box_mesh, 0);
+    add_blended(&mut world, mesh, material, -5.0);
+    let mut mock = MockBackend::default();
+    step(&mut world, &mut mock, true);
+    // Until the layer's pipelines are built, the sphere blends in the transparent pass.
+    let first = passes_by_scope(&world_commands(&world));
+    assert!(
+        first.iter().all(|(code, ..)| *code != scope::SINGLE),
+        "{name}: {first:?}"
+    );
+    assert!(
+        first.iter().any(|(_, draws, _)| draws.contains(&sphere)),
+        "{name}: the sphere draws before the layer is built"
+    );
+    for _ in 0..3 {
+        step(&mut world, &mut mock, false);
+    }
+    let passes = passes_by_scope(&world_commands(&world));
+    let layer: Vec<_> = passes
+        .iter()
+        .filter(|(code, ..)| *code == scope::SINGLE)
+        .collect();
+    assert_eq!(layer.len(), 1, "{name}: {passes:?}");
+    let (_, draws, copies) = layer[0];
+    assert_eq!(draws, &[sphere], "{name}: the layer draws the sphere alone");
+    assert_eq!(*copies, 1, "{name}: the layer copies the depth first");
+    let transparent = passes
+        .iter()
+        .position(|(code, ..)| *code == scope::of(scope::TRANSPARENT, 0))
+        .expect("a transparent render pass");
+    let at_layer = passes
+        .iter()
+        .position(|(code, ..)| *code == scope::SINGLE)
+        .unwrap();
+    assert!(
+        at_layer < transparent,
+        "{name}: the layer draws before the transparent pass"
+    );
+    let (_, draws, composites) = &passes[transparent];
+    assert!(draws.contains(&BOX), "{name}: {draws:?}");
+    assert!(!draws.contains(&sphere), "{name}: {draws:?}");
+    assert_eq!(*composites, 1, "{name}: the composite joins the pass");
+}
+
+#[test]
+fn a_material_of_the_one_sample_layer_draws_in_it_on_webgpu() {
+    check_single_layer(World::new(), "WebGPU");
+}
+
+/// Without multi-draw, each WebGL2 draw names its index count, as the check reads it.
+#[test]
+fn a_material_of_the_one_sample_layer_draws_in_it_on_webgl2() {
+    let config = CpuCulledConfig {
+        multi_draw: false,
+        ..CpuCulledConfig::default()
+    };
+    check_single_layer(World::build(CpuCulledRenderer::new(config)), "WebGL2");
+}
