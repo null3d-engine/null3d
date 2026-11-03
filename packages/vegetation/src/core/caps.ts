@@ -2,7 +2,7 @@
 // quality preset, and the variants each preset grows. A species carries its own budget under these
 // caps (`lod.budget`), and one generic test checks every species against both. Only the owner
 // changes a figure here.
-import type { PlantAsset } from '../asset';
+import type { PlantAsset, SpeciesKitData } from '../asset';
 import type { GrowthModel, Species } from './record';
 import { DETAILS, type Detail } from './types';
 
@@ -13,8 +13,11 @@ import { DETAILS, type Detail } from './types';
  * @category api/vegetation
  */
 export interface ModelCaps {
-	/** Bytes of the kit: prototypes in every tier, and the card atlas until it uploads. */
-	readonly kitBytes: number;
+	/**
+	 * Bytes of the kit at each detail tier, the tier it is built for: the shoot prototypes' meshes at
+	 * that tier and those below it, the leaf meshes, and the card atlas until it uploads.
+	 */
+	readonly kitBytes: Readonly<Record<Detail, number>>;
 	/**
 	 * Bytes of one variant at each detail tier, read at the tier the plant is built for: its levels
 	 * and wind records, the nearest wood left out, which has its own cap.
@@ -55,7 +58,8 @@ const MB = 1_000_000;
  */
 export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 	tree: {
-		kitBytes: 6 * MB,
+		// The oak's kit, with about 15 per cent to spare: 1.74, 2.54, 4.60 and 8.25 MB.
+		kitBytes: { low: 2 * MB, medium: 2.9 * MB, high: 5.3 * MB, ultra: 9.5 * MB },
 		// The grown oak's largest variant, with about 15 per cent to spare: 6.07, 6.09, 6.11 and 6.14 MB.
 		variantBytes: { low: 7 * MB, medium: 7 * MB, high: 7.1 * MB, ultra: 7.1 * MB },
 		// The grown oak's largest of six variants, with about 15 per cent to spare: 5.2, 5.7, 6.4 and
@@ -69,7 +73,7 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		growMilliseconds: 600,
 	},
 	palm: {
-		kitBytes: 4 * MB,
+		kitBytes: { low: 4 * MB, medium: 4 * MB, high: 4 * MB, ultra: 4 * MB },
 		variantBytes: { low: 3 * MB, medium: 3 * MB, high: 3 * MB, ultra: 3 * MB },
 		lod0WoodBytes: { low: 2 * MB, medium: 2 * MB, high: 2 * MB, ultra: 2 * MB },
 		lod0Triangles: 600_000,
@@ -80,7 +84,7 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		growMilliseconds: 300,
 	},
 	ground: {
-		kitBytes: 2 * MB,
+		kitBytes: { low: 2 * MB, medium: 2 * MB, high: 2 * MB, ultra: 2 * MB },
 		// The largest of hosta, pendulous sedge and meadow grass, with about 15 per cent to spare: 1.35,
 		// 1.39, 1.44 and 3.30 MB. Hosta's ribs at the finest tier take four columns a vein.
 		variantBytes: { low: 1.6 * MB, medium: 1.6 * MB, high: 1.7 * MB, ultra: 3.8 * MB },
@@ -111,6 +115,26 @@ export const MODEL_CLASS: Readonly<Record<GrowthModel, CapClass>> = {
 	tuft: 'ground',
 	column: 'ground',
 };
+
+/**
+ * The bytes a kit holds, as its cap counts them: every mesh of its leaves and its shoot prototypes'
+ * tiers, its card atlas's pixels and its records header.
+ *
+ * @param kit The kit.
+ * @returns The bytes.
+ */
+export function kitBytesOf(kit: SpeciesKitData): number {
+	let bytes = kit.cards.color.byteLength + kit.cards.surface.byteLength + kit.header.byteLength;
+	for (const mesh of [...kit.leaves, ...kit.prototypes.flatMap((p) => p.tiers)])
+		bytes +=
+			mesh.positions.byteLength +
+			mesh.normals.byteLength +
+			mesh.uvs.byteLength +
+			mesh.uvs1.byteLength +
+			mesh.colors.byteLength +
+			mesh.indices.byteLength;
+	return bytes;
+}
 
 /**
  * The bytes a grown variant holds against its budget: its levels and wind records, without the
@@ -174,7 +198,6 @@ export function capProblems(record: Species): string[] {
 	const budget = record.lod.budget;
 	const problems: string[] = [];
 	const figures = [
-		['kitBytes', budget.kitBytes, caps.kitBytes],
 		['lod0Triangles', budget.lod0Triangles, caps.lod0Triangles],
 		['lod1Triangles', budget.lod1Triangles, caps.lod1Triangles],
 		['lod2Triangles', budget.lod2Triangles, caps.lod2Triangles],
@@ -187,14 +210,15 @@ export function capProblems(record: Species): string[] {
 			problems.push(
 				`lod.budget.${name} is ${value}, over the cap of ${cap} for a ${record.growth.model} plant`,
 			);
-	for (const detail of DETAILS) {
-		const value = budget.variantBytes[detail];
-		const cap = caps.variantBytes[detail];
-		if (value > cap)
-			problems.push(
-				`lod.budget.variantBytes.${detail} is ${value}, over the cap of ${cap} for a ${record.growth.model} plant`,
-			);
-	}
+	for (const detail of DETAILS)
+		for (const name of ['kitBytes', 'variantBytes'] as const) {
+			const value = budget[name][detail];
+			const cap = caps[name][detail];
+			if (value > cap)
+				problems.push(
+					`lod.budget.${name}.${detail} is ${value}, over the cap of ${cap} for a ${record.growth.model} plant`,
+				);
+		}
 	return problems;
 }
 

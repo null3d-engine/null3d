@@ -9,7 +9,7 @@ import { noTextureFiles, type SpeciesTextureFiles } from '../core/textures';
 /** The budget the three test records share, under the owner's caps for ground plants; each gives
  * its own bytes a variant at each tier, its largest measured variant with about 15 per cent spare. */
 const BUDGET = {
-	kitBytes: 600_000,
+	kitBytes: { low: 600_000, medium: 600_000, high: 600_000, ultra: 600_000 },
 	lod0Triangles: 200_000,
 	lod1Triangles: 30_000,
 	lod2Triangles: 8_000,

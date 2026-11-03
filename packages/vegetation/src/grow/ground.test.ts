@@ -104,7 +104,7 @@ describe('the ground plants grown end to end', () => {
 			const kit = kitOf(record);
 			let kitBytes = 0;
 			for (const leaf of kit.leaves) kitBytes += leaf.positions.byteLength * 3;
-			expect(kitBytes).toBeLessThanOrEqual(budget.kitBytes);
+			expect(kitBytes).toBeLessThanOrEqual(budget.kitBytes[kit.detail]);
 		});
 
 		it(`${record.id}: holds its bytes within its budget and the caps at every tier`, () => {

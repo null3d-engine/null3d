@@ -102,7 +102,7 @@ export const brackenRecord: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			kitBytes: 1_000_000,
+			kitBytes: { low: 1_000_000, medium: 1_000_000, high: 1_000_000, ultra: 1_000_000 },
 			variantBytes: { low: 1_500_000, medium: 1_500_000, high: 1_500_000, ultra: 1_500_000 },
 			lod0Triangles: 200_000,
 			lod1Triangles: 30_000,
