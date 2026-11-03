@@ -763,6 +763,47 @@ export class RingSums {
 	}
 }
 
+/**
+ * Steps through the frame numbers and busy times of the records that a ring receives, one record at
+ * a time, from those written after it was made. It keeps the newest record's values in its fields,
+ * so a reader on a hot path allocates nothing.
+ */
+export class RingFrames {
+	/** The frame number of the record that the last `step` reached. */
+	frame = 0;
+	/** The busy time of that record, in microseconds, rounded. */
+	busyUs = 0;
+	private readonly views: MetricsViews;
+	private next: number;
+
+	constructor(
+		buffer: ArrayBufferLike,
+		readonly ring: number,
+	) {
+		this.views = new MetricsViews(buffer);
+		this.next = Atomics.load(this.views.header, WRITTEN + ring);
+	}
+
+	/** Moves to the next whole record written since the last step; false when none is left. */
+	step(): boolean {
+		const { views } = this;
+		const written = Atomics.load(views.header, WRITTEN + this.ring);
+		if (this.next < written - views.capacity) this.next = written - views.capacity;
+		while (this.next < written) {
+			const sequence = this.next++;
+			const at = views.record(this.ring, sequence);
+			if (!views.holds(at, sequence)) continue;
+			const frame = views.words[at + FRAME] as number;
+			const busy = views.floats[at + BUSY] as number;
+			if (!views.holds(at, sequence)) continue;
+			this.frame = frame;
+			this.busyUs = Math.round(busy * 1000);
+			return true;
+		}
+		return false;
+	}
+}
+
 function dropLast(records: RingRecords): void {
 	records.frames.pop();
 	records.busy.pop();

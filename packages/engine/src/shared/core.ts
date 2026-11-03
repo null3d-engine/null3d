@@ -157,8 +157,9 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	visibleEntries(frame: number): number;
 	/**
-	 * The sources inside the camera's frustum that software occlusion culling hid in a recorded
-	 * frame, where the path culls on the CPU, or `CORE_NOT_COUNTED` where the GPU culls.
+	 * The sources inside the camera's frustum that occlusion culling hid: in a recorded frame, where
+	 * the path culls on the CPU, or in the newest frame whose counts the GPU sent back, where GPU
+	 * occlusion culling runs. `CORE_NOT_COUNTED` where neither runs.
 	 */
 	occludedEntries(frame: number): number;
 	/**
@@ -1038,6 +1039,13 @@ export interface CoreGlue extends CoreErrors {
 	setFeatureInstanceRows(id: number, start: number, count: number, values: Float32Array): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
+	/**
+	 * Notes the GPU's time for a frame that it finished, from the frame's submit to its completion,
+	 * in microseconds, which GPU occlusion culling's check compares with its passes on and off.
+	 */
+	gpuFrameTime(frame: number, micros: number): number;
+	/** Sets the control slot that GPU occlusion culling's reads of its counts raise. */
+	setOcclusionReadSlot(slot: number): number;
 	/** Lets materials with parallax draw it, or draws them with their displacement alone. */
 	setParallax(on: boolean): number;
 	/**
@@ -1554,6 +1562,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setFeatureInstanceRows',
 	'setFeatureInstanceReady',
 	'setSoftwareOcclusion',
+	'gpuFrameTime',
+	'setOcclusionReadSlot',
 	'setParallax',
 	'setMomentTransparency',
 	'setOcclusionBuffer',

@@ -231,8 +231,9 @@ export interface MeshOptions extends NodeOptions {
 	 */
 	receiveShadows?: boolean;
 	/**
-	 * True makes the mesh block the view for occlusion culling, on WebGL2 and on WebGPU, like
-	 * `setOccluder(true)`. The default is false.
+	 * Whether the mesh blocks the view for occlusion culling, like `setOccluder`. True makes it a
+	 * blocker on WebGL2 too. False keeps it from hiding anything on WebGPU. Left out, the mesh blocks
+	 * nothing on WebGL2, and on WebGPU it hides what lies behind it whenever it looks large enough.
 	 */
 	occluder?: boolean;
 }
@@ -422,6 +423,15 @@ export class SceneView {
 }
 
 /** Throws E1203 or E1213 for a camera or a rectangle that `scene.createView` does not take. */
+/**
+ * The flags of an object's `occluder` option: a blocker on both paths for true, no occluder on
+ * WebGPU for false, and none for an option left out, which lets WebGPU choose.
+ */
+function occluderFlags(occluder: boolean | undefined): number {
+	if (occluder === undefined) return 0;
+	return occluder ? C.FLAG_OCCLUDER : C.FLAG_NOT_OCCLUDER;
+}
+
 function checkViewOptions(options: SceneViewOptions, call: string): void {
 	if (typeof options !== 'object' || options === null)
 		throw new EngineError('E1213', `${call}() got ${String(options)}, which is not options.`);
@@ -516,6 +526,12 @@ export interface InstanceOptions {
 	castShadows?: boolean;
 	/** True makes shadows fall on every row, as `receiveShadows` does for a mesh. The default is false. */
 	receiveShadows?: boolean;
+	/**
+	 * False keeps every row from hiding what lies behind it in GPU occlusion culling on WebGPU, like
+	 * `setOccluder(false)`. Left out, or true, a row of an opaque mesh hides what lies behind it
+	 * whenever it looks large enough. Rows never block on WebGL2.
+	 */
+	occluder?: boolean;
 }
 
 /**
@@ -535,9 +551,10 @@ export interface InstantiateOptions extends NodeOptions {
 	 */
 	receiveShadows?: boolean;
 	/**
-	 * True makes every mesh of the copy block the view for occlusion culling, on WebGL2 and on
-	 * WebGPU, like `setOccluder(true)`, and false makes none block. Left out, the meshes that the
-	 * asset tool gave blockers block, and the others do not.
+	 * True makes every mesh of the copy block the view for occlusion culling, like
+	 * `setOccluder(true)`, and false makes none block, on WebGL2 or WebGPU, nor any row of its
+	 * instance batches on WebGPU. Left out, the meshes that the asset tool gave blockers block on
+	 * WebGL2, and on WebGPU every opaque mesh and row may hide what lies behind it.
 	 */
 	occluder?: boolean;
 	/**
@@ -1700,21 +1717,28 @@ export class Mesh extends Object3D {
 	}
 
 	/**
-	 * Makes the mesh block the view, or stop. The default is false, except for the meshes of a
-	 * model file that the asset tool gave blockers. On WebGL2, while the `softwareOcclusion`
-	 * quality setting is on, the job workers draw each blocker into a small depth buffer every
-	 * frame, and the engine skips every object that lies wholly behind the blockers. On WebGPU,
-	 * while the `gpuOcclusion` setting is on, the GPU draws the depth of the blockers that showed
-	 * in the last frame and skips every object wholly behind them. Mark large, solid meshes that
-	 * hide much of the scene, such as buildings and walls, whose mesh has at most 4,096 triangles.
-	 * On WebGL2, a mesh that the asset tool gave a blocker draws that blocker instead, a few boxes
-	 * inside the mesh, whatever the mesh's own size. A blocker's mesh must lie inside what the
-	 * object draws, as the object's own mesh does. Objects that blend, cut holes with an alpha
-	 * mask or use a custom material never block, whatever this says, nor do skinned ones on
-	 * WebGL2. A change needs no rebuild of the engine's tables.
+	 * Makes the mesh block the view, or keeps it from blocking. On WebGL2, while the
+	 * `softwareOcclusion` quality setting is on, the job workers draw each blocker into a small
+	 * depth buffer every frame, and the engine skips every object that lies wholly behind the
+	 * blockers. Only meshes marked true block there, and the meshes of a model file that the asset
+	 * tool gave blockers. Mark large, solid meshes that hide much of the scene, such as buildings
+	 * and walls, whose mesh has at most 4,096 triangles. A mesh that the asset tool gave a blocker
+	 * draws that blocker instead, a few boxes inside the mesh, whatever the mesh's own size. A
+	 * blocker's mesh must lie inside what the object draws, as the object's own mesh does. On WebGPU,
+	 * while the `gpuOcclusion` setting is on, every opaque mesh may block without a mark: the GPU
+	 * draws the depth of those that showed in the last frame and look large on the screen, and
+	 * skips every object wholly behind them. False keeps the mesh from blocking there too. Objects
+	 * that blend, cut holes with an alpha mask or use a custom material never block, whatever this
+	 * says, nor do skinned ones on WebGL2. A change needs no rebuild of the engine's tables.
 	 */
 	setOccluder(occluder: boolean): void {
-		this.setFlag('setOccluder', C.FLAG_OCCLUDER, occluder);
+		const call = 'setOccluder';
+		if (DEV) checkLive(call, this);
+		const mask = C.FLAG_OCCLUDER | C.FLAG_NOT_OCCLUDER;
+		const value = occluder ? C.FLAG_OCCLUDER : C.FLAG_NOT_OCCLUDER;
+		this.scene.command(C.COMMAND_SET_FLAGS, this.handle, mask, value, call);
+		this.keepFlag(C.FLAG_OCCLUDER, occluder);
+		this.keepFlag(C.FLAG_NOT_OCCLUDER, !occluder);
 	}
 
 	/**
@@ -2907,6 +2931,15 @@ export class InstanceBatch implements ViewHolder {
 	 */
 	setReceiveShadows(receive: boolean): void {
 		this.setShadowBit('setReceiveShadows', C.FLAG_RECEIVE_SHADOWS, receive);
+	}
+
+	/**
+	 * Lets every row hide what lies behind it in GPU occlusion culling on WebGPU, or keeps every row
+	 * from it. Rows of an opaque mesh may hide others by default, when they look large enough on the
+	 * screen. Rows never block on WebGL2. A change rebuilds the engine's tables of what it draws.
+	 */
+	setOccluder(occluder: boolean): void {
+		this.setShadowBit('setOccluder', C.FLAG_NOT_OCCLUDER, !occluder);
 	}
 
 	private shadowBits = 0;
@@ -4266,7 +4299,7 @@ export class Scene implements ViewHolder {
 		const flags =
 			(options.castShadows ? C.FLAG_CAST_SHADOWS : 0) |
 			(options.receiveShadows ? C.FLAG_RECEIVE_SHADOWS : 0) |
-			(options.occluder ? C.FLAG_OCCLUDER : 0);
+			occluderFlags(options.occluder);
 		const object = this.create(
 			Mesh,
 			options,
@@ -4304,7 +4337,7 @@ export class Scene implements ViewHolder {
 		const extra =
 			(options.castShadows ? C.FLAG_CAST_SHADOWS : 0) |
 			(options.receiveShadows ? C.FLAG_RECEIVE_SHADOWS : 0) |
-			(options.occluder ? C.FLAG_OCCLUDER : 0);
+			occluderFlags(options.occluder);
 		const root: TemplateNode = {
 			...(template[0] as TemplateNode),
 			name: options.name ?? template[0]?.name ?? '',
@@ -4616,7 +4649,7 @@ export class Scene implements ViewHolder {
 		instance: PrefabInstance,
 		spec: InstancingTemplate,
 		call: string,
-		{ layers, castShadows, receiveShadows }: InstantiateOptions,
+		{ layers, castShadows, receiveShadows, occluder }: InstantiateOptions,
 	): InstanceBatch {
 		const v = this.views;
 		const world = identityMatrix(new Float64Array(16));
@@ -4636,7 +4669,7 @@ export class Scene implements ViewHolder {
 		const batch = this.createParts(
 			spec.parts,
 			spec.count,
-			{ origin, layers, castShadows, receiveShadows },
+			{ origin, layers, castShadows, receiveShadows, occluder },
 			call,
 		);
 		const { positions, rotations, scales } = batch;
@@ -4693,6 +4726,7 @@ export class Scene implements ViewHolder {
 		if (options.layers !== undefined) batch.setLayers(options.layers);
 		if (options.castShadows) batch.setCastShadows(true);
 		if (options.receiveShadows) batch.setReceiveShadows(true);
+		if (options.occluder === false) batch.setOccluder(false);
 		if (options.origin) batch.setOrigin(options.origin, call);
 		return batch;
 	}
@@ -4758,6 +4792,7 @@ export class Scene implements ViewHolder {
 		if (layers !== undefined) batch.setLayers(layers);
 		if (options.castShadows) batch.setCastShadows(true);
 		if (options.receiveShadows) batch.setReceiveShadows(true);
+		if (options.occluder === false) batch.setOccluder(false);
 		if (options.origin) batch.setOrigin(options.origin, call);
 		return batch;
 	}

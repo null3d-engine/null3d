@@ -152,9 +152,6 @@ pub enum Prepass {
     /// both mark the position invariant: ANGLE on Metal did so in Chrome on a Mac. Two programs
     /// with the same vertex shader gave the same depths.
     OwnVertexShader,
-    /// The occluders' pass of occlusion culling: a render pass of its own with no color target,
-    /// whose depth the depth pyramid reads. The pairs then shade as they would without it.
-    Occluders,
 }
 
 impl Prepass {
@@ -539,26 +536,39 @@ impl PipelineCache {
         }
     }
 
+    /// The id of the pipeline that draws an opaque pair with `key` into the occluders' pass of
+    /// occlusion culling, a pass of depth alone of one sample beside a scene pass's `targets`, and
+    /// whether it is the pair's own template's build; or 0 for a pair that hides nothing, as one
+    /// that blends or cuts holes. Most pairs draw with the depth template. A pair that places its
+    /// own vertices, such as a custom material that moves them, draws with its own template's
+    /// prepass build, as the depth prepass does, so its depth lies where its surface does.
+    pub fn occluder(&mut self, key: DrawKey, targets: PassTargets) -> (u32, bool) {
+        let Some(depth) = key.prepass() else {
+            return (0, false);
+        };
+        let targets = targets.occluder_depth();
+        if !key.places_own_vertices() {
+            return (self.id(depth.in_pass(targets)), false);
+        }
+        let shading = key.after_prepass().in_pass(targets);
+        let own = PipelineKey {
+            color_format: format::NONE,
+            permutation: shading.permutation | permutation::PREPASS,
+            state: depth.state,
+            ..shading
+        };
+        (self.id(own), true)
+    }
+
     /// The ids of the pipelines that draw an opaque pair with `key` into a scene pass's `targets`:
     /// the one that shades it, and with a `prepass`, the one that draws its depth first, or 0 for a
     /// pair that stays out of it. After a depth prepass the pair shades only at the depth that the
-    /// prepass found; the occluders' pass leaves its shading as it is. A pair that places its own
-    /// vertices hides nothing in the occluders' pass, which draws with the depth template: its
-    /// moved vertices would hide what the pair does not.
+    /// prepass found.
     pub fn opaque(&mut self, key: DrawKey, targets: PassTargets, prepass: Prepass) -> (u32, u32) {
         let depth = match key.prepass() {
-            Some(_) if prepass == Prepass::Occluders && key.places_own_vertices() => {
-                return (self.id(key.in_pass(targets)), 0);
-            }
             Some(depth) if prepass != Prepass::Off => depth,
             _ => return (self.id(key.in_pass(targets)), 0),
         };
-        if prepass == Prepass::Occluders {
-            return (
-                self.id(key.in_pass(targets)),
-                self.id(depth.in_pass(targets.occluder_depth())),
-            );
-        }
         let shading = key.after_prepass().in_pass(targets);
         let depth = if prepass == Prepass::OwnVertexShader || key.places_own_vertices() {
             // The WebGL2 prepass draws with the shading build's own shader, whose fragment stage
@@ -1200,11 +1210,11 @@ mod tests {
     }
 
     #[test]
-    fn occluders_draw_depth_alone_and_shade_as_without_them() {
+    fn occluders_draw_depth_alone_of_one_sample() {
         let mut cache = PipelineCache::default();
-        let (shading, depth) = cache.opaque(lit(0), TARGETS, Prepass::Occluders);
+        let (depth, own) = cache.occluder(lit(0), TARGETS);
+        assert!(!own);
         let keys = cache.keys();
-        assert_eq!(keys[shading as usize - 1], lit(0).in_pass(TARGETS));
         let depth = keys[depth as usize - 1];
         assert_eq!(depth.template, template::SHADOW_DEPTH);
         assert_eq!(

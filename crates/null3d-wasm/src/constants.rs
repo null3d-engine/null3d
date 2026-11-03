@@ -802,6 +802,7 @@ pub fn typescript() -> String {
                 ("CUSTOM_BOUNDS", flags::CUSTOM_BOUNDS),
                 ("OUTLINED", flags::OUTLINED),
                 ("OCCLUDER", flags::OCCLUDER),
+                ("NOT_OCCLUDER", flags::NOT_OCCLUDER),
                 ("TRACKED", flags::TRACKED),
             ],
         ),

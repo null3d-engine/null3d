@@ -8,8 +8,9 @@
 //
 // With ?seconds=, the page then measures play in view 0, facing a doorway, for that many seconds on
 // each side, ?rounds= times in turns, and reports the medians of each side's GPU time per frame,
-// where the device has a GPU timer, and of its frame interval and CPU time, beside the share of the
-// spheres that the walls hide. The device runner's occlusion plan runs it that way.
+// where the device has a GPU timer, and of its frame interval, CPU time, GPU latency from submit to
+// completion and the objects that the culling hid, beside the share of the spheres that the walls
+// hide. The device runner's occlusion plan runs it that way.
 import { createEngine, type Engine } from '@null3d/engine';
 import { hiddenShare, ROOM_VIEWS } from '../../bench/scenes/room';
 import { differingPixels, median } from './lib/occlusion';
@@ -85,21 +86,37 @@ async function framesOf(gpuOcclusion: boolean, failures: string[]) {
 /** Each side's medians of GPU time, frame interval and CPU time in view 0, in turns. */
 async function cost() {
 	const sides = {
-		off: { gpuMs: [] as number[], intervalMs: [] as number[], cpuMs: [] as number[] },
-		on: { gpuMs: [] as number[], intervalMs: [] as number[], cpuMs: [] as number[] },
+		off: {
+			gpuMs: [] as number[],
+			intervalMs: [] as number[],
+			cpuMs: [] as number[],
+			latencyMs: [] as number[],
+			occluded: [] as number[],
+		},
+		on: {
+			gpuMs: [] as number[],
+			intervalMs: [] as number[],
+			cpuMs: [] as number[],
+			latencyMs: [] as number[],
+			occluded: [] as number[],
+		},
 	};
 	/** Each side's GPU time per frame in each pass, by the pass's name, from its last round. */
 	const passes: Record<string, Record<string, number>> = {};
 	let aspect = 16 / 9;
+	let directDraws = false;
 	for (let round = 0; round < ROUNDS; round++) {
 		for (const side of ['off', 'on'] as const) {
 			const engine = await start(side === 'on');
 			aspect = innerWidth / innerHeight;
 			await new Promise((resolve) => setTimeout(resolve, WARM_UP_SECONDS * 1000));
 			const stats = await engine.measure(SECONDS);
+			directDraws = engine.capabilities.directDraws;
 			if (stats.gpuMs) sides[side].gpuMs.push(stats.gpuMs.median);
 			sides[side].intervalMs.push(stats.intervalMs.median);
 			sides[side].cpuMs.push(stats.cpuMs.median);
+			if (stats.gpuLatencyMs) sides[side].latencyMs.push(stats.gpuLatencyMs.median);
+			if (stats.occludedEntries) sides[side].occluded.push(stats.occludedEntries.median);
 			passes[side] = Object.fromEntries(
 				(stats.gpuPassMs ?? []).map(({ name, ms }) => [name, ms.median]),
 			);
@@ -110,11 +127,14 @@ async function cost() {
 		gpuMs: median(sides[side].gpuMs),
 		intervalMs: median(sides[side].intervalMs),
 		cpuMs: median(sides[side].cpuMs),
+		latencyMs: median(sides[side].latencyMs),
+		occluded: median(sides[side].occluded),
 	});
 	return {
 		hiddenShare: hiddenShare(ROOM_VIEWS[0] ?? 0, aspect),
 		window: [innerWidth, innerHeight],
 		devicePixelRatio,
+		directDraws,
 		off: summary('off'),
 		on: summary('on'),
 		passes,
