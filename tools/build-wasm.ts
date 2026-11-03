@@ -36,7 +36,7 @@
 // them. The single-threaded build runs on pages that are not cross-origin isolated. The
 // wasm-bindgen command-line tool must match the crate version exactly, so the script downloads
 // that release into the build folder and verifies its checksum. The tools' modules run in Node and
-// Bun, never in a page. The terrain add-on's module and the splat selector load only when a page
+// Bun, never in a page. The terrain add-on's module, the splat selector and the plant near task load only when a page
 // draws them, so none has a size budget. Every mode that builds also builds the shader modules when
 // they are missing or out of date, because git does not keep them.
 //
@@ -201,7 +201,8 @@ const JS_BUILD_DIR = 'target/js-size';
  * The modules that the build tools and the foundation add-ons load, each from a crate of its own:
  * the shader compiler, which the Vite plugin runs; the asset tool's formats, which the
  * command-line tool runs; the terrain builder, which the terrain add-on runs on the engine's job
- * workers; and the splat selector, which the splats add-on runs there too. Each goes where its
+ * workers; the splat selector, which the splats add-on runs there too; and the plant near task, which
+ * the vegetation add-on runs there when the camera moves. Each goes where its
  * caller loads it from.
  */
 const TOOL_MODULES = [
@@ -225,6 +226,11 @@ const TOOL_MODULES = [
 		crate: 'null3d-splats',
 		folder: 'crates/null3d-splats',
 		path: join(root, 'packages/splats/dist/splats.wasm'),
+	},
+	{
+		crate: 'null3d-vegetation-wasm',
+		folder: 'crates/null3d-vegetation-wasm',
+		path: join(root, 'packages/vegetation/dist/vegetation.wasm'),
 	},
 ] as const;
 
@@ -1087,7 +1093,7 @@ async function buildToolModules(
 	const cached = noCache ? null : readArtifacts(ARTIFACT_CACHE_BASE, key, names);
 	if (cached) {
 		log.say(
-			"the shader compiler, the asset tool's formats, the terrain builder and the splat selector are unchanged, copying them from the cache",
+			"the shader compiler, the asset tool's formats, the terrain builder, the splat selector and the plant near task are unchanged, copying them from the cache",
 		);
 		// The entry is in use now, so pruning keeps it while this build copies from it.
 		touchCacheEntry(cached);
@@ -1098,7 +1104,7 @@ async function buildToolModules(
 	}
 	const targetDir = `${CARGO_TARGET_BASE}/wasm-shaders`;
 	log.say(
-		"building the shader compiler, the asset tool's formats, the terrain builder and the splat selector",
+		"building the shader compiler, the asset tool's formats, the terrain builder, the splat selector and the plant near task",
 	);
 	// Each module builds in a cargo call of its own. One call over every module merges the features
 	// of the dependencies they share, so each module's bytes would follow what else the call

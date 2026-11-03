@@ -1,0 +1,19 @@
+[package]
+name = "null3d-vegetation-wasm"
+description = "The vegetation add-on's near task: the copies nearest the camera, and their shoot rows placed in the world within the scene's triangle budget, as a WebAssembly module for the add-on's job workers."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# The square root that core leaves to the standard library. The WebAssembly build keeps no
+# standard library, so it takes it from here.
+libm = "0.2.16"
+
+[lints]
+workspace = true

@@ -358,6 +358,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "null3d-vegetation-wasm"
+version = "0.0.0"
+dependencies = [
+ "libm",
+]
+
+[[package]]
 name = "null3d-wasm"
 version = "0.0.0"
 dependencies = [

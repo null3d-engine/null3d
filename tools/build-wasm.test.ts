@@ -43,6 +43,7 @@ const TOOL_FOLDERS = [
 	'crates/null3d-assets-wasm',
 	'crates/null3d-terrain',
 	'crates/null3d-splats',
+	'crates/null3d-vegetation-wasm',
 ];
 
 describe('parseOptions', () => {

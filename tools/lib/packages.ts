@@ -158,12 +158,12 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		repositoryOnly: ['reference-builder.ts', 'quadtree.ts', 'chunk-vertices.ts'],
 	},
 	// The species template is a folder to copy, which the registry leaves out, and so does the
-	// package.
+	// package. The near task's WebAssembly module ships beside `lib`.
 	vegetation: {
 		compile: true,
 		shaders: false,
 		docs: false,
-		required: [],
+		required: ['dist/vegetation.wasm'],
 		repositoryOnly: ['species/_template/record.ts', 'species/_template/index.ts'],
 	},
 	// Data only: each species folder's textures, manifest and module, which the textures tool writes.
