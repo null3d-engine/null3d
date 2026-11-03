@@ -267,7 +267,7 @@ impl Clusters {
             ),
             (
                 ids::cluster_offsets(view),
-                patches * 4,
+                (patches + patches.div_ceil(WORKGROUP_SIZE)) * 4,
                 usage::STORAGE | usage::COPY_DST,
             ),
             (

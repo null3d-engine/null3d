@@ -193,10 +193,12 @@ Three dispatches of one compute pipeline, recorded in the view's culling pass, f
 1. A thread tests one patch: it moves the patch's sphere by the copy's world matrix, tests it against
    the view's six frustum planes, applies the level rule to the patch's own error at its own sphere
    and the error of the patch above it at that patch's sphere, and writes the patch's index count,
-   or zero.
-2. One workgroup adds the counts up into each patch's offset in the view's list, and writes each
-   cluster mesh's indirect draw from where its patches start and end.
-3. A workgroup copies each chosen patch's indices into the list.
+   or zero. Each workgroup of 64 patches also writes its patches' total.
+2. One workgroup adds the groups' totals up into each group's first offset in the view's list, and
+   writes each cluster mesh's indirect draw from where its patches start and end. It adds one
+   total for each 64 patches, so the ground's 32,768 patches take 512 sums.
+3. A workgroup copies each chosen patch's indices into the list, at its group's first offset and
+   the runs of the patches before it in the group.
 
 The view's opaque pass, or its shadow pass, binds that list as its index buffer and draws each
 cluster mesh with one `DrawIndexedIndirect` that the scan sized. A view that culls none of a mesh's
@@ -287,7 +289,7 @@ does not create it again.
 | Measure | Value |
 | --- | --- |
 | The test model | A heightfield of 32,768 triangles, a tree of 511 patches and 202,032 indices |
-| Per-patch buffers | 4 bytes a patch for the runs and 4 for the offsets |
+| Per-patch buffers | 4 bytes a patch for the runs, and 4 for each group of 64 patches for their total and its offset |
 | The view's list | 4 bytes an index, sized to the indices that the view picks in the frame, with a sixteenth and three patches to spare, and half again when it grows |
 | The scene's tables | 32 bytes a patch and 4 bytes an index, shared by every view: 824,480 bytes for the test model |
 | Per-view buffers, allocated | About 1.16 MiB for the test model, half again the bytes in use |
@@ -354,6 +356,35 @@ shadow view that drew the mesh's whole levels by the camera's distance drew the 
 How the data was produced: `PatchTree::picked_indices` over
 `crates/null3d-render/tests/fixtures/cluster-trees/heightfield.bin`, for an orthographic rule of
 one texel at each size, with no frustum.
+
+The desert benchmark of the meshlet comparison, with the sun's shadows on (three cascades of
+2,048 texels to 150 m), its models rebuilt by the current asset tool, at Medium on WebGPU. Before
+is the commit that this change starts from, where shadow views drew the ground's whole levels by
+the camera's distance; after is the change, where each cascade draws its own cut of the ground's
+tree and picks every caster's level in its texels. Each figure is the median of three runs of 10
+seconds after 4 seconds of warm-up, with the two builds in turns, and the spread follows it:
+
+| Page | Measure | Before | After |
+| --- | --- | --- | --- |
+| Walk | Triangles a frame | 24.61 M (24.60 to 24.88) | 16.03 M (16.00 to 16.17) |
+| Walk | Draw calls | 753 | 679 |
+| Walk | The three cascades' passes | 3.66 ms (3.56 to 3.67) | 1.50 ms (1.44 to 1.54) |
+| Walk | The compute passes | 0.48 ms (0.46 to 0.51) | 0.98 ms (0.98 to 0.99) |
+| Walk | GPU time a frame | 11.21 ms (11.00 to 11.22) | 9.97 ms (8.37 to 10.99) |
+| Aerial | Triangles a frame | 11.37 M (11.37 to 11.38) | 7.44 M (7.28 to 7.44) |
+| Aerial | Draw calls | 753 | 679 |
+| Aerial | The three cascades' passes | 1.07 ms (1.01 to 1.07) | 0.61 ms (0.60 to 0.65) |
+| Aerial | The compute passes | 0.38 ms (0.37 to 0.41) | 0.92 ms (0.90 to 0.97) |
+| Aerial | GPU time a frame | 4.82 ms (4.37 to 4.96) | 4.79 ms (4.65 to 4.79) |
+
+Both builds presented every frame of the 120 Hz display. The cascades draw 2.4 and 1.8 times
+less, and the frame's triangles fall by a third. The compute passes grew by the cluster pass of
+each cascade. Most of that was the scan, whose one workgroup added up every patch's count; it now
+adds one total for each 64 patches, as [How the pass runs](#how-the-pass-runs) says.
+
+How the data was produced: `bench/meshlets/run.ts` of the meshlet comparison, on the Mac's
+Chrome 156, with both CDN builds made by `bun run build:cdn --url-switches`, on a shared Mac whose
+load averaged 30 to 35.
 
 ### What is not drawn from the tree
 
