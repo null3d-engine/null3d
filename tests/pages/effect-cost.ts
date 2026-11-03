@@ -228,6 +228,8 @@ run('effect-cost', async () => {
 		engine.stats(false);
 	}
 	const joinBuilds = effect === 'effects' ? await requestJoinTiming() : undefined;
+	// Taken before the engine goes, which may reset the canvas.
+	const buffer: [number, number] = [canvas.width, canvas.height];
 	await engine.destroy();
 	return {
 		effect,
@@ -256,6 +258,8 @@ run('effect-cost', async () => {
 		// the drawing buffer's size from them.
 		window: [innerWidth, innerHeight],
 		devicePixelRatio,
+		// The drawing buffer's size, which tells a small render scale from a cheap frame.
+		buffer,
 		off,
 		on,
 		memory,
