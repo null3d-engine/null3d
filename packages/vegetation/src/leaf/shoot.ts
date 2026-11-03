@@ -30,6 +30,7 @@ import type { Phyllotaxis, ShootClass, Species } from '../core/record';
 import type { TextureManifest } from '../core/textures';
 import { curveAt, DETAILS, type Detail, spreadAt, spreadMean } from '../core/types';
 import { shootOcclusion } from './occlusion';
+import { hasBareTwins } from './season';
 import { lathe, MeshWriter, SURFACE_STEM, type TubePoint, tube } from './writer';
 
 /**
@@ -603,8 +604,40 @@ export function meshShoot(
 	return mesh;
 }
 
+/** One prototype from a plan: its tiers meshed and shaded, its reach and bounds measured. */
+function prototypeOf(
+	plan: ShootPlan,
+	leaves: readonly (readonly PrototypeArrays[])[],
+	index: number,
+	shootClass: ShootClass,
+): UncardedPrototype {
+	const writers = DETAILS.map((detail, tier) => meshShoot(plan, leaves[tier] ?? [], detail));
+	shootOcclusion(writers, SHADE_TIER);
+	const tiers = writers.map((writer) =>
+		writer.finishPrototype(),
+	) as unknown as UncardedPrototype['tiers'];
+	let radius = 0;
+	const positions = (tiers[DETAILS.indexOf('high')] as PrototypeArrays).positions;
+	for (let i = 0; i < positions.length; i += 3)
+		radius = Math.max(
+			radius,
+			length3(positions[i] as number, positions[i + 1] as number, positions[i + 2] as number),
+		);
+	return {
+		index,
+		class: shootClass.name,
+		vigor: shootClass.vigor,
+		length: plan.reach,
+		radius,
+		leaves: plan.leaves.length,
+		tiers,
+	};
+}
+
 /**
- * Grows a species' shoot prototypes, each at every detail tier, from its leaf meshes.
+ * Grows a species' shoot prototypes, each at every detail tier, from its leaf meshes. A deciduous
+ * species' kit holds the record's prototypes, then a leafless twin of each in the same order (its
+ * `leaves` is 0), which rows draw where the season leaves the shoot bare.
  *
  * @param record The species record.
  * @param manifest The texture manifest.
@@ -619,33 +652,23 @@ export function shootPrototypes(
 	void manifest;
 	const shoots = record.shoots;
 	if (!shoots) return [];
-	const high = DETAILS.indexOf('high');
-	const out: UncardedPrototype[] = [];
 	const leafMeshes = Math.min(...leaves.map((tier) => tier.length));
-	for (let index = 0; index < shoots.prototypes; index++) {
-		const plan = planShoot(record, index, leafMeshes);
-		const writers = DETAILS.map((detail, tier) => meshShoot(plan, leaves[tier] ?? [], detail));
-		shootOcclusion(writers, SHADE_TIER);
-		const tiers = writers.map((writer) =>
-			writer.finishPrototype(),
-		) as unknown as UncardedPrototype['tiers'];
-		let radius = 0;
-		const positions = (tiers[high] as PrototypeArrays).positions;
-		for (let i = 0; i < positions.length; i += 3)
-			radius = Math.max(
-				radius,
-				length3(positions[i] as number, positions[i + 1] as number, positions[i + 2] as number),
-			);
-		const shootClass = classOf(shoots.classes, index, shoots.prototypes);
-		out.push({
+	const plans = Array.from({ length: shoots.prototypes }, (_, index) =>
+		planShoot(record, index, leafMeshes),
+	);
+	const classes = plans.map((_, index) => classOf(shoots.classes, index, shoots.prototypes));
+	const out = plans.map((plan, index) =>
+		prototypeOf(
+			leafMeshes > 0 ? plan : { ...plan, leaves: [] },
+			leaves,
 			index,
-			class: shootClass.name,
-			vigor: shootClass.vigor,
-			length: plan.reach,
-			radius,
-			leaves: leafMeshes > 0 ? plan.leaves.length : 0,
-			tiers,
-		});
-	}
+			classes[index] as ShootClass,
+		),
+	);
+	if (leafMeshes > 0 && hasBareTwins(record))
+		for (const [index, plan] of plans.entries())
+			out.push(
+				prototypeOf({ ...plan, leaves: [] }, leaves, out.length, classes[index] as ShootClass),
+			);
 	return out;
 }

@@ -25,6 +25,7 @@ import {
 import type { Species } from '../core/record';
 import { curveAt, spreadAt } from '../core/types';
 import type { DressInput } from '../stages';
+import { inLeaf } from './season';
 
 /** Sky visibility and bent normal of a row before the crown's light gives it its own. */
 const OPEN_SKY = 250;
@@ -43,6 +44,7 @@ const Purpose = {
 	Phase: 5,
 	Azimuth: 6,
 	Spacing: 7,
+	Season: 8,
 } as const;
 
 /**
@@ -148,6 +150,8 @@ export function placeShoots(input: DressInput): ShootRows {
 	const angle = radians(lateralAngle(record));
 	const tropism = radians(tropismTurn(record));
 	const skyward = Math.min(1, Math.max(0, shoots.placement.skyward));
+	const bare =
+		kit.prototypes.some((p) => p.leaves === 0) && kit.prototypes.some((p) => p.leaves > 0);
 	// The previous bud on each axis, so each bud serves the stretch back to it.
 	const previous = new Map<number, number>();
 	const order = Array.from({ length: buds.count }, (_, b) => b).sort(
@@ -201,7 +205,14 @@ export function placeShoots(input: DressInput): ShootRows {
 			stretch > 1e-6
 				? normalize3([at[0] - from[0], at[1] - from[1], at[2] - from[2]])
 				: quatRotate(buds.frame, b * 4, [0, 1, 0], [0, 0, 0]);
-		const candidates = prototypesFor(kit.prototypes, vigor);
+		// The season picks the leafy prototypes or their leafless twins, where the kit holds twins.
+		const crownShare =
+			(at[1] - skeleton.crownBase) / Math.max(1e-6, skeleton.height - skeleton.crownBase);
+		const leafy = inLeaf(record, input.season, crownShare, draw(Purpose.Season, b));
+		const offered = bare ? kit.prototypes.filter((p) => p.leaves > 0 === leafy) : kit.prototypes;
+		const candidates = prototypesFor(offered, vigor).map(
+			(k) => (offered[k] as ShootPrototype).index,
+		);
 		const woodRadius = buds.woodRadius[b] as number;
 		const record16 = skeleton.axes.record[axis] as number;
 		const azimuth0 = draw(Purpose.Azimuth, b) * 360;

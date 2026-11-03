@@ -161,9 +161,15 @@ describe('the shoot prototypes', () => {
 	const prototypes = shootPrototypes(record, OAK_MANIFEST, leaves);
 	const milliseconds = process.cpuUsage(started).user / 1000;
 
-	it("grows the record's prototypes, each at four tiers of rising detail", () => {
-		expect(prototypes).toHaveLength(OAK_SHOOTS.prototypes);
-		for (const prototype of prototypes) {
+	it("grows the record's prototypes and their leafless twins, each at four tiers of rising detail", () => {
+		// The oak is deciduous: its kit holds a leafless twin of each prototype for winter rows.
+		expect(prototypes).toHaveLength(OAK_SHOOTS.prototypes * 2);
+		for (const twin of prototypes.slice(OAK_SHOOTS.prototypes)) {
+			expect(twin.leaves).toBe(0);
+			for (const tier of twin.tiers)
+				for (let i = 2; i < tier.colors.length; i += 4) expect(tier.colors[i]).not.toBe(0);
+		}
+		for (const prototype of prototypes.slice(0, OAK_SHOOTS.prototypes)) {
 			let previous = 0;
 			for (const tier of prototype.tiers) {
 				expect(tier.indices.length).toBeGreaterThan(previous);

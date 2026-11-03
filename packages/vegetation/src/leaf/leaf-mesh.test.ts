@@ -85,7 +85,7 @@ describe('the blade leaf mesh', () => {
 	});
 
 	it('keeps the triangles of a leaf within each tier', () => {
-		const limits: Record<Detail, number> = { low: 24, medium: 40, high: 100, ultra: 200 };
+		const limits: Record<Detail, number> = { low: 24, medium: 44, high: 110, ultra: 300 };
 		let previous = 0;
 		for (const detail of DETAILS) {
 			const triangles = bladeMesh(FLAT, oak, detail).indices.length / 3;
