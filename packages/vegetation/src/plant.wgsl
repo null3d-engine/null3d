@@ -16,6 +16,8 @@ var barkSurface: texture_2d<f32>;
 /// The leaf and bark atlases' cells across and down, which the painter fixes.
 const LEAF_CELLS = vec2f(6.0, 2.0);
 const BARK_CELLS = vec2f(4.0, 2.0);
+/// One bark cell's side in texels, which the painter fixes.
+const BARK_CELL = 256.0;
 
 var leafColor: texture_2d<f32>;
 var leafSurface: texture_2d<f32>;
@@ -390,8 +392,13 @@ fn surface(input: SurfaceInput) -> Surface {
     // family's bark. The gradients come from the tiling coordinate before the wrap: a gradient taken
     // across the wrap itself jumps, and the sampler then stretches one side of the trunk into
     // streaks along the join.
+    // The sampler's bilinear kernel reaches half a texel past the coordinate it is given, so a
+    // coordinate that lands on a cell's edge reads into the neighbouring family's cell and draws a
+    // line at every join. The wrapped coordinate stays half a texel inside the cell instead.
+    let halfBarkTexel = vec2f(0.5) / BARK_CELL;
     let barkTile = input.uv * material.tiles;
-    let barkPlace = (material.barkCell + fract(barkTile)) / BARK_CELLS;
+    let barkWrapped = clamp(fract(barkTile), halfBarkTexel, vec2f(1.0) - halfBarkTexel);
+    let barkPlace = (material.barkCell + barkWrapped) / BARK_CELLS;
     let barkGradX = dpdx(barkTile) / BARK_CELLS;
     let barkGradY = dpdy(barkTile) / BARK_CELLS;
     let leafColorSample = textureSample(leafColor, leafColorSampler, leafPlace);
@@ -406,7 +413,8 @@ fn surface(input: SurfaceInput) -> Surface {
     // knots scatter instead of repeating with the bark's own cells. A bark material reads that
     // channel for nothing else; a leaf's thickness is the same channel of a leaf's cell.
     let scarTile = barkTile * material.scarTiles;
-    let scarPlace = (material.barkCell + fract(scarTile)) / BARK_CELLS;
+    let scarPlace =
+        (material.barkCell + clamp(fract(scarTile), halfBarkTexel, vec2f(1.0) - halfBarkTexel)) / BARK_CELLS;
     let scarSample = textureSampleGrad(
         barkSurface, barkSurfaceSampler, scarPlace,
         dpdx(scarTile) / BARK_CELLS, dpdy(scarTile) / BARK_CELLS,
