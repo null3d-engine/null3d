@@ -193,7 +193,7 @@ The [hold mode demo](https://github.com/null3d-engine/null3d/tree/main/examples/
 
 ## Switches for tests
 
-The engine reads these switches from the page's address in development builds, on the dev server and in the `null3d` command's runs. A production build ignores them, so a link cannot change how a shipped game runs. To use them in a production build of test pages, turn on the Vite plugin's `urlSwitches` option: `null3d({ urlSwitches: true })`.
+The engine reads these switches from the page's address in development builds. These are the dev server, the `null3d` command's runs and the CDN build's development entry, `lib-dev/index.js`. A production build ignores them, so a link cannot change how a shipped game runs. The CDN build's production entry, `lib/index.js`, ignores them too. To use them in a production build of test pages, turn on the Vite plugin's `urlSwitches` option: `null3d({ urlSwitches: true })`. For a benchmark page that loads the CDN build, `bun run build:cdn --url-switches` does the same ([Try null3D from a CDN](../getting-started/cdn.md#production-and-development-entries)).
 
 | Switch | Effect |
 | --- | --- |

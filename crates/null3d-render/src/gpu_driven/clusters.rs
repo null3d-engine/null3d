@@ -12,6 +12,11 @@
 //! The scene's patch table and its indices are one buffer each, shared by every view, and they
 //! upload again when the layout changes. Each view has its own counts, offsets, list, draws and
 //! parameters.
+//!
+//! A view that culls in two phases runs the pass twice. After the first culling phase it picks the
+//! patches of the occluders that the first set of indirect draws counts, which the occluders' pass
+//! draws, so an occluder's depth is this frame's. After the second phase it picks them again for
+//! the opaque pass, from the second set. The two runs read the parameters of a set of stages each.
 
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, layout as bind_layout, resource_kind, sizes, template,
@@ -29,6 +34,9 @@ const _: () = assert!(PARAMS_BYTES <= PARAMS_STRIDE);
 const PARAMS_STRIDE: u32 = 256;
 /// The stages of a view's cluster pass: the count, the scan and the copy.
 const STAGES: u32 = 3;
+/// The sets of stage parameters of a view: one for the run that the opaque pass draws, and one for
+/// the run after a first culling phase, whose draws come first in the view's indirect buffer.
+const RUNS: u32 = 2;
 /// What a view's dispatch parameters hold besides the layout's counts: its frustum planes, the
 /// level rule's vector, and the draws that come before the view's own in its indirect buffer.
 pub(super) struct ViewRules<'a> {
@@ -83,7 +91,7 @@ impl Clusters {
         let patches = layout.cluster_patches.len() * PATCH_WORDS as usize;
         let meshes = layout.clusters.len() * MESH_WORDS as usize;
         let indices = layout.cluster_indices.len();
-        (patches + meshes + indices) * 4 + (PARAMS_STRIDE * STAGES) as usize
+        (patches + meshes + indices) * 4 + (PARAMS_STRIDE * STAGES * RUNS) as usize
     }
 
     /// Records the creation of the cluster pass's one pipeline.
@@ -199,7 +207,7 @@ impl Clusters {
             ),
             (
                 ids::cluster_params(view),
-                PARAMS_STRIDE * STAGES,
+                PARAMS_STRIDE * STAGES * RUNS,
                 usage::UNIFORM | usage::COPY_DST,
             ),
         ];
@@ -246,7 +254,8 @@ impl Clusters {
         Ok(())
     }
 
-    /// Uploads one view's three blocks of dispatch parameters.
+    /// Uploads one view's three blocks of dispatch parameters, and with `two_phases` the three of
+    /// the run after the first culling phase, which reads the first set of indirect draws.
     pub(super) fn upload(
         &self,
         list: &mut DrawList,
@@ -254,6 +263,7 @@ impl Clusters {
         view: ViewId,
         layout: &Layout,
         rules: ViewRules<'_>,
+        two_phases: bool,
     ) -> Result<(), RecordError> {
         let Some(buffers) = self.views.get(view.index()).and_then(Option::as_ref) else {
             return Ok(());
@@ -261,9 +271,11 @@ impl Clusters {
         if buffers.params == 0 {
             return Ok(());
         }
-        let mut bytes = [0u32; (PARAMS_STRIDE * STAGES / 4) as usize];
-        for stage in 0..STAGES {
-            let at = (stage * PARAMS_STRIDE / 4) as usize;
+        let runs = if two_phases { RUNS } else { 1 };
+        let mut bytes = [0u32; (PARAMS_STRIDE * STAGES * RUNS / 4) as usize];
+        for block in 0..STAGES * runs {
+            let (stage, first) = (block % STAGES, block >= STAGES);
+            let at = (block * PARAMS_STRIDE / 4) as usize;
             for (plane, out) in rules.planes.iter().zip(bytes[at..at + 24].chunks_mut(4)) {
                 for (value, word) in plane.iter().zip(out) {
                     *word = value.to_bits();
@@ -273,7 +285,7 @@ impl Clusters {
                 stage,
                 layout.cluster_patches.len() as u32,
                 layout.clusters.len() as u32,
-                rules.draws_before,
+                if first { 0 } else { rules.draws_before },
             ];
             for (word, value) in bytes[at + 24..at + 28].iter_mut().zip(counts) {
                 *word = value;
@@ -282,18 +294,21 @@ impl Clusters {
                 *word = value.to_bits();
             }
         }
-        let (at, length) = arena.push(words_as_bytes(&bytes))?;
+        let words = (PARAMS_STRIDE * STAGES * runs / 4) as usize;
+        let (at, length) = arena.push(words_as_bytes(&bytes[..words]))?;
         list.push(Op::WriteBuffer, &[ids::cluster_params(view), 0, at, length])?;
         Ok(())
     }
 
     /// Records a view's three dispatches: the count over the patches, the scan in one workgroup,
-    /// then a workgroup to a patch for the copy.
+    /// then a workgroup to a patch for the copy. With `first`, they pick the occluders' patches
+    /// after a first culling phase, with the parameters of that run.
     pub(super) fn record(
         &self,
         list: &mut DrawList,
         view: ViewId,
         layout: &Layout,
+        first: bool,
     ) -> Result<(), RecordError> {
         let Some(buffers) = self.views.get(view.index()).and_then(Option::as_ref) else {
             return Ok(());
@@ -303,11 +318,17 @@ impl Clusters {
             return Ok(());
         }
         let count = patches.div_ceil(WORKGROUP_SIZE);
+        let run = if first { STAGES } else { 0 };
         for (stage, groups) in [(0u32, count), (1, 1), (2, patches)] {
             list.push(Op::SetComputePipeline, &[ids::CLUSTER])?;
             list.push(
                 Op::SetBindGroup,
-                &[0, ids::cluster_group(view), 1, stage * PARAMS_STRIDE],
+                &[
+                    0,
+                    ids::cluster_group(view),
+                    1,
+                    (run + stage) * PARAMS_STRIDE,
+                ],
             )?;
             list.push(Op::Dispatch, &[groups, 1, 1])?;
         }

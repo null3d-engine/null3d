@@ -56,6 +56,7 @@ const WEBGL2_EXTENSIONS = [
 	'EXT_float_blend',
 	'OES_texture_float_linear',
 	'WEBGL_multi_draw',
+	'WEBGL_provoking_vertex',
 	'KHR_parallel_shader_compile',
 	'EXT_disjoint_timer_query_webgl2',
 	'EXT_clip_control',

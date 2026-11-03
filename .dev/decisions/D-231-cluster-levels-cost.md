@@ -8,7 +8,9 @@ and
 [`20261029-020829-cluster-cost`](../tested-devices/galaxy-s25-sm-s931b-chrome/20261029-020829-cluster-cost.md).
 [D-213](D-213-cluster-levels.md#drawing-on-webgpu) holds the WebGPU drawing method and
 [D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md) the WebGL2 one; this record holds what they
-cost. Task: M3-L3.
+cost. The figures were measured on an earlier tree of the test model, and measuring the current
+tree is pending ([The tree that the figures measured](#the-tree-that-the-figures-measured)).
+Task: M3-L3.
 
 Summary: A heightfield of 32,768 triangles in a tree of 511 patches draws its frame in 3.1 to 4.8 ms
 of GPU time on a Galaxy S25 and 3.4 to 5.1 ms on an iPad Pro 13, as the camera stands 12, 30 and 80
@@ -140,15 +142,16 @@ WebGL2 draw-record buffer's figures are in
   report no GPU timer on that path, so their interval and CPU time are what stand in.
 - The Mac's figures are one preset's and one window's.
 
-## Addendum: the tree that the figures measured
+## The tree that the figures measured
 
-Every figure above was measured on the test model's tree before the fix in
-[D-213's addendum](D-213-cluster-levels.md#addendum-nested-spheres-and-errors-that-do-not-compound).
-That tree's errors compounded up the tree, so its coarse patches switched in later than they
-should. The fix keeps the tree's 511 patches and their triangles. It lowers the errors near the
-root and nests each parent's sphere around its children's. A view at the far distance therefore
-picks coarser patches sooner, and the far rows should fall further. The pass reads one more sphere
-for each patch whose own error passes, which adds little to the count stage.
+Every figure above was measured on an earlier tree of the test model, of 511 patches. Its errors
+added up along each chain, its spheres held their own triangles alone, and its outer edge stayed
+locked, so its coarse patches switched in later than they should
+([D-213](D-213-cluster-levels.md#options-rejected)). The tree now holds 514 patches, whose errors
+are their measured distances, and its top patch holds 15 triangles where it held 512. A view at
+the far distance therefore picks coarser patches sooner, and the far rows should fall further.
+The pass reads one more sphere for each patch whose own error passes, which adds little to the
+count stage.
 
 The figures were not measured again, because the Mac was busy with other sessions' GPU work. The
 GPU check's noise reached 134% on S4 at Medium in that window. Measure the `cluster-cost` page again

@@ -24,12 +24,12 @@ use crate::pipelines::DrawKey;
 pub(crate) type BucketKey = (DrawKey, u32, u32, u32, u32, u32);
 
 /// The most levels a mesh has, its base mesh included.
-pub const MAX_LEVELS: usize = 8;
+pub const MAX_LEVELS: usize = 16;
 
 /// The bit of a bucket key's mesh field that marks a level key.
 const LEVEL_KEY: u32 = 1 << 31;
 /// The bits of a level key that hold the level.
-const LEVEL_BITS: u32 = 3;
+const LEVEL_BITS: u32 = 4;
 const _: () = assert!(1 << LEVEL_BITS == MAX_LEVELS);
 
 /// The mesh field of the bucket key of level `level` of the mesh with engine id `base`: the base
@@ -69,7 +69,7 @@ pub struct LevelSet {
     count: u8,
     /// The levels that hand over in a fading band, from the bits at their number: a level fades
     /// only where its switch would show, which a measured error does not.
-    fades: u8,
+    fades: u16,
     /// True when every level draws the base mesh's own vertices, so a skinned object may pick a
     /// level: the skin then moves the same vertices whichever level draws.
     shared: bool,
@@ -109,7 +109,7 @@ impl LevelSet {
 
     /// True when level `level` hands over in a fading band.
     pub fn fades(&self, level: usize) -> bool {
-        self.fades & (1 << level.min(7)) != 0
+        self.fades & (1 << level.min(MAX_LEVELS - 1)) != 0
     }
 
     /// True when every level draws the base mesh's own vertices, from indices of its own.
@@ -155,7 +155,7 @@ impl Levels {
         values: &[f32],
         switches: &[Switch],
         materials: &[u32],
-        fades: u8,
+        fades: u16,
         shared: bool,
     ) -> Result<(), LevelError> {
         if meshes.len() + 1 > MAX_LEVELS
@@ -708,15 +708,37 @@ mod tests {
         assert_eq!(
             levels.set(
                 1,
-                &[2; 8],
-                &[0.1; 8],
-                &[Switch::Error; 8],
-                &[0; 8],
+                &[2; MAX_LEVELS],
+                &[0.1; MAX_LEVELS],
+                &[Switch::Error; MAX_LEVELS],
+                &[0; MAX_LEVELS],
                 0,
                 false
             ),
             Err(LevelError::TooMany)
         );
+        // The deepest set the engine takes: every level fades, the last one included.
+        let deepest: Vec<f32> = (1..MAX_LEVELS).map(|k| k as f32 * 0.1).collect();
+        let meshes: Vec<u32> = (0..MAX_LEVELS as u32 - 1).map(|k| 10 + k).collect();
+        levels
+            .set(
+                9,
+                &meshes,
+                &deepest,
+                &[Switch::Error; MAX_LEVELS - 1],
+                &[0; MAX_LEVELS - 1],
+                u16::MAX << 1,
+                false,
+            )
+            .unwrap();
+        let set = levels.of(9).expect("mesh 9 has the deepest levels");
+        assert_eq!(set.len(), MAX_LEVELS);
+        assert!(set.fades(MAX_LEVELS - 1));
+        assert_eq!(
+            levels.mesh_of_key(level_key(9, MAX_LEVELS - 1)),
+            Some(10 + MAX_LEVELS as u32 - 2)
+        );
+        levels.set(9, &[], &[], &[], &[], 0, false).unwrap();
         levels
             .set(1, &[2, 3], &[0.1, 0.2], &error, &[7, 0], 0b10, false)
             .unwrap();

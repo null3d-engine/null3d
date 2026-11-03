@@ -31,7 +31,7 @@ const BALL: u32 = 2;
 /// is 360 pixels high and its camera 60 degrees high, so at a threshold of 1 pixel a level switches
 /// in past its error times 311.8: level 1 past 3.1 m, and level 2 past 15.6 m. The ball 20 m away
 /// draws level 2, past its fading band, which ends at 17.9 m.
-fn give_levels<B: FrameBuilder>(world: &mut World<B>, fades: u8) -> [u32; 2] {
+fn give_levels<B: FrameBuilder>(world: &mut World<B>, fades: u16) -> [u32; 2] {
     let settings = world.renderer.settings_mut();
     let meshes = [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])]
         .map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
@@ -343,7 +343,7 @@ fn copies(world: &World) -> [u32; 5] {
 
 /// Gives the world's ball one lower level for each error, each simpler than the one before, and
 /// fading bands when `fades`. Returns their engine mesh ids.
-fn give_levels_of<B: FrameBuilder>(world: &mut World<B>, errors: &[f32], fades: u8) -> Vec<u32> {
+fn give_levels_of<B: FrameBuilder>(world: &mut World<B>, errors: &[f32], fades: u16) -> Vec<u32> {
     let finest = [[6, 4], [4, 3], [3, 2], [2, 1]];
     let settings = world.renderer.settings_mut();
     let meshes: Vec<u32> = errors

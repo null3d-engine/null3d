@@ -191,6 +191,12 @@ pub(super) struct Bucket {
     /// True when that pipeline is the bucket's own template's, which reads the frame group and the
     /// maps' group as the shading does, and false for the depth template's.
     pub(super) prepass_own: bool,
+    /// The id of the render pipeline that draws its depth in the occluders' pass of occlusion
+    /// culling, or 0 for a bucket that hides nothing.
+    pub(super) occluder: u32,
+    /// True when that pipeline is the bucket's own template's, which reads the frame group and the
+    /// maps' group as the shading does.
+    pub(super) occluder_own: bool,
     /// True for a bucket whose surface writes no color. Its draws come first, so the depth it
     /// writes holds back the color of the surfaces behind it.
     pub(super) holdout: bool,
@@ -276,9 +282,9 @@ pub(super) struct Draw {
     pub(super) vertices: Option<(u32, u32)>,
 }
 
-/// The bit of a table entry that marks a source that the sketch marks as an occluder, which the
-/// first phase of occlusion culling draws. Buckets take the bits below it, and the cell index the
-/// bits from `CELL_SHIFT` up.
+/// The bit of a table entry that marks a source that may hide others, which the first phase of
+/// occlusion culling draws when it showed in the view's last frame and looks large on the screen.
+/// Buckets take the bits below it, and the cell index the bits from `CELL_SHIFT` up.
 pub(super) const OCCLUDER: u32 = 1 << 22;
 const _: () = assert!(OCCLUDER << 1 == 1 << CELL_SHIFT);
 
@@ -307,25 +313,45 @@ fn entry(bucket: u32, cell: u32, occluder: bool) -> u32 {
     }
 }
 
-/// A scene object's entry in the bucket table: its bucket, whether it is an occluder, and its
+/// A scene object's entry in the bucket table: its bucket, whether it may hide others, and its
 /// cell, or `HIDDEN` while it is hidden, which its world radius says, and for an object whose
-/// feature-instance draw the GPU counts, which the culling shader never visits.
-fn scene_entry(home: u32, world_radius: f32, cell: u32, object_flags: u32, gpu_count: bool) -> u32 {
+/// feature-instance draw the GPU counts, which the culling shader never visits. An object may hide
+/// others when its bucket draws depth in the occluders' pass (`occludes`), unless its flags opt it
+/// out.
+fn scene_entry(
+    home: u32,
+    world_radius: f32,
+    cell: u32,
+    object_flags: u32,
+    gpu_count: bool,
+    occludes: bool,
+) -> u32 {
     if gpu_count || world_radius == f32::NEG_INFINITY {
         HIDDEN
     } else {
-        entry(home, cell, object_flags & flags::OCCLUDER != 0)
+        let occluder = occludes && object_flags & flags::NOT_OCCLUDER == 0;
+        entry(home, cell, occluder)
     }
 }
 
-/// The entry of a batch's `row`: the batch's bucket and the row's cell while the row is active.
-/// Instance rows are never occluders.
-fn row_entry(bucket: u32, batch: &InstanceBatch, row: u32, active: u32) -> u32 {
+/// The entry of a batch's `row`: the batch's bucket and the row's cell while the row is active,
+/// with the occluder bit while the bucket draws depth in the occluders' pass (`occludes`) and the
+/// batch does not opt its rows out.
+fn row_entry(bucket: u32, batch: &InstanceBatch, row: u32, active: u32, occludes: bool) -> u32 {
     if row < active {
-        entry(bucket, batch.cells()[row as usize], false)
+        let occluder = occludes && !batch.not_occluder();
+        entry(bucket, batch.cells()[row as usize], occluder)
     } else {
         HIDDEN
     }
+}
+
+/// True when bucket `bucket` of `buckets` draws depth in the occluders' pass, which a layout with
+/// that pass gives the buckets of opaque surfaces that the depth template draws.
+fn bucket_occludes(buckets: &[Bucket], bucket: u32) -> bool {
+    buckets
+        .get(bucket as usize)
+        .is_some_and(|b| b.occluder != 0)
 }
 
 /// True when the object that places a feature-instance bucket is hidden, so its draw draws nothing
@@ -458,8 +484,12 @@ pub(super) struct Layout {
     pub(super) draw_order: Vec<u32>,
     /// The entry of every source: its bucket, its occluder bit and its cell, or `HIDDEN`.
     instance_buckets: Vec<u32>,
-    /// The shown sources whose entries carry the occluder bit.
+    /// The shown scene objects whose entries carry the occluder bit, and the batches whose rows
+    /// carry it.
     occluders: u32,
+    /// True while the layout's builds give its buckets pipelines of the occluders' pass of
+    /// occlusion culling.
+    occluder_pass: bool,
     /// The layer mask of every source.
     source_layers: Vec<u32>,
     /// The texel of the ranges texture that every source reads: its start and end distance, its own
@@ -604,6 +634,22 @@ impl Layout {
     pub(super) fn with_copies(copied: u32) -> Self {
         Self {
             copied,
+            ..Self::default()
+        }
+    }
+
+    /// A layout of one bucket of one draw for each of `depth`, which draws depth in the occluders'
+    /// pass where it is true, for the tests of the buckets that the pass draws.
+    #[cfg(test)]
+    pub(super) fn with_occluder_buckets(depth: &[bool]) -> Self {
+        let buckets = (0..depth.len() as u32).map(|b| Bucket {
+            occluder: u32::from(depth[b as usize]),
+            first_draw: b,
+            draws: 1,
+            ..Bucket::default()
+        });
+        Self {
+            buckets: buckets.collect(),
             ..Self::default()
         }
     }
@@ -807,9 +853,21 @@ impl Layout {
         self.pick_views = 0;
     }
 
-    /// The shown scene objects that the sketch marks as occluders.
+    /// The shown scene objects that may hide others, and the batches whose rows may: none means
+    /// that occlusion culling has nothing to draw into its depth pyramid.
     pub(super) fn occluders(&self) -> u32 {
         self.occluders
+    }
+
+    /// True when bucket `bucket` draws depth in the occluders' pass.
+    pub(super) fn bucket_occludes(&self, bucket: u32) -> bool {
+        bucket_occludes(&self.buckets, bucket)
+    }
+
+    /// Gives the buckets of the next builds pipelines for the occluders' pass of occlusion culling,
+    /// or none. Only the scene's own layout draws that pass.
+    pub(super) fn set_occluder_pass(&mut self, on: bool) {
+        self.occluder_pass = on && self.drawn == Drawn::Scene;
     }
 
     /// Forgets the buffers, so the next layout makes them again and uploads everything.
@@ -1420,6 +1478,11 @@ impl Layout {
                 }
                 _ => (0, false),
             };
+            let (occluder, occluder_own) = if self.occluder_pass {
+                pipelines.occluder(pipeline, targets)
+            } else {
+                (0, false)
+            };
             // The mask's second pipeline binds as the depth template does.
             let (pipeline, prepass, prepass_own) = match drawn {
                 Drawn::Outlined => {
@@ -1466,6 +1529,10 @@ impl Layout {
                 pipeline,
                 prepass,
                 prepass_own,
+                // A feature-instance draw takes the count that its add-on gives, which the
+                // culling never sees, so it hides nothing.
+                occluder: if feature.is_some() { 0 } else { occluder },
+                occluder_own,
                 holdout,
                 group,
                 material,
@@ -1533,6 +1600,8 @@ impl Layout {
 
         let counts = &*key_counts;
         let bucket_of = |key: Option<BucketKey>| bucket_of(counts, key).unwrap_or(HIDDEN);
+        let buckets = &self.buckets;
+        let occludes = |bucket: u32| bucket_occludes(buckets, bucket);
         self.instance_buckets.clear();
         self.home_buckets.clear();
         let slots = world.radii().iter().zip(scene.cells()).zip(scene.flags());
@@ -1544,8 +1613,14 @@ impl Layout {
             }
             self.home_buckets.push(home);
             let gpu_count = settings.feature_instances().id_of(slot as u32).is_some();
-            self.instance_buckets
-                .push(scene_entry(home, radius, cell, flags, gpu_count));
+            self.instance_buckets.push(scene_entry(
+                home,
+                radius,
+                cell,
+                flags,
+                gpu_count,
+                occludes(home),
+            ));
         }
         self.skinned.sort_unstable();
         if self.owns_sources() {
@@ -1582,14 +1657,20 @@ impl Layout {
         for (id, batch) in batches.iter() {
             let bucket = bucket_of(batch_key(batch));
             let (active, layers) = (batch.frame_active_count(parity), batch.layers());
+            let rows_occlude = self.bucket_occludes(bucket);
             self.batch_rows.push(BatchRows {
                 id: id.raw(),
                 bucket,
                 active,
                 layers,
             });
-            self.instance_buckets
-                .extend((0..batch.capacity()).map(|row| row_entry(bucket, batch, row, active)));
+            if rows_occlude && !batch.not_occluder() {
+                self.occluders += 1;
+            }
+            self.instance_buckets.extend(
+                (0..batch.capacity())
+                    .map(|row| row_entry(bucket, batch, row, active, rows_occlude)),
+            );
             if self.owns_sources() {
                 let rows = self.source_layers.len() + batch.capacity() as usize;
                 self.source_layers.resize(rows, layers);
@@ -2042,6 +2123,8 @@ impl Layout {
         let check_layers = owns_sources && !(all_default && self.scene_layers_default);
         self.scene_layers_default = all_default;
         let home_buckets = &self.home_buckets;
+        let buckets = &self.buckets;
+        let occludes = |bucket: u32| bucket_occludes(buckets, bucket);
         let (instance_buckets, source_layers, occluders, cull_buckets) = (
             &mut self.instance_buckets,
             &mut self.source_layers,
@@ -2058,6 +2141,7 @@ impl Layout {
                     cells[s],
                     object_flags[s],
                     counted,
+                    occludes(home_buckets[s]),
                 )
             };
             let range = slots.start as usize..slots.end as usize;
@@ -2108,8 +2192,10 @@ impl Layout {
             let Some((low, high)) = rows else {
                 continue;
             };
+            let rows_occlude = self.bucket_occludes(bucket);
             for row in low..high {
-                self.instance_buckets[(base + row) as usize] = row_entry(bucket, batch, row, now);
+                self.instance_buckets[(base + row) as usize] =
+                    row_entry(bucket, batch, row, now, rows_occlude);
             }
             self.batch_rows[index].active = now;
             let rows = base + low..base + high;
@@ -2750,8 +2836,42 @@ mod tests {
 
     #[test]
     fn an_entry_counted_on_the_gpu_is_hidden_from_culling() {
-        assert_eq!(scene_entry(4, 1.0, 3, flags::VISIBLE, true), HIDDEN);
-        assert_ne!(scene_entry(4, 1.0, 3, flags::VISIBLE, false), HIDDEN);
+        assert_eq!(scene_entry(4, 1.0, 3, flags::VISIBLE, true, true), HIDDEN);
+        assert_ne!(scene_entry(4, 1.0, 3, flags::VISIBLE, false, true), HIDDEN);
+    }
+
+    #[test]
+    fn every_object_whose_bucket_draws_depth_may_hide_others_unless_it_opts_out() {
+        let occluder = |object_flags, occludes| {
+            scene_entry(4, 1.0, 3, object_flags, false, occludes) & OCCLUDER != 0
+        };
+        // No mark is needed: the bucket's depth pipeline in the occluders' pass decides.
+        assert!(occluder(flags::VISIBLE, true));
+        assert!(occluder(flags::VISIBLE | flags::OCCLUDER, true));
+        assert!(!occluder(flags::VISIBLE | flags::NOT_OCCLUDER, true));
+        // A bucket without that pipeline, as a blended, masked or custom surface has, hides
+        // nothing, whatever the mark says.
+        assert!(!occluder(flags::VISIBLE | flags::OCCLUDER, false));
+        assert!(!occluder(flags::VISIBLE, false));
+        // The bucket and the cell stay in their bits.
+        let entry = scene_entry(4, 1.0, 3, flags::VISIBLE, false, true);
+        assert_eq!(entry & (OCCLUDER - 1), 4);
+        assert_eq!(entry >> CELL_SHIFT, 3);
+    }
+
+    #[test]
+    fn rows_may_hide_others_unless_their_batch_opts_out() {
+        let mut batch = InstanceBatch::new(4, false, false, 1, 1, 1.0);
+        batch.set_active_count(4).expect("the rows");
+        let row = |batch: &InstanceBatch, occludes| row_entry(2, batch, 1, 4, occludes);
+        assert_ne!(row(&batch, true) & OCCLUDER, 0);
+        assert_eq!(row(&batch, false) & OCCLUDER, 0);
+        batch.set_shadows(flags::CAST_SHADOWS | flags::NOT_OCCLUDER);
+        assert!(batch.not_occluder());
+        assert_eq!(batch.shadows(), flags::CAST_SHADOWS);
+        assert_eq!(row(&batch, true) & OCCLUDER, 0);
+        // A row past the active count draws nowhere.
+        assert_eq!(row_entry(2, &batch, 4, 4, true), HIDDEN);
     }
 
     /// A scene of one object of a mesh of 30,000 separate triangles, past what one part holds,
