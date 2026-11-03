@@ -72,7 +72,8 @@ export default defineSketch(async ({ scene, assets }) => {
 
 The handler turns each splat into four vertices of one mesh, and cuts the model into up to 64 parts
 in space, so the transparent pass sorts the parts by depth. The splats inside a part draw in the
-file's order.
+file's order. Each part takes `levels: false`, because the shader shapes every quad from its splat,
+so the engine plans no levels for it.
 
 ## What it draws
 

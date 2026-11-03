@@ -76,6 +76,7 @@ use null3d_core::cells::{CELL_SIZE, CellPosition};
 use null3d_core::culling::Frustum;
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
+use null3d_core::levels::LightLens;
 use null3d_core::scene::{NO_PARENT, SceneStorage, flags};
 use null3d_gpu::drawlist::sizes::{SHADOW_SETTINGS_BYTES, SHADOW_UNIFORM_BYTES};
 use null3d_gpu::drawlist::{DrawList, Op, address, buffer_usage, compare, format};
@@ -84,7 +85,7 @@ use crate::camera::{Affine, Lens, Mat4, ViewDepth, multiply};
 use crate::frame::{LINEAR_LEVEL, NEAREST_TEXELS, RecordError, UploadArena, clamp_sampler};
 use crate::frame_data::FrameUniform;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
-use crate::view::ViewFrame;
+use crate::view::{ViewFrame, ViewId};
 
 /// The most cascades a directional light's shadow map has.
 pub const MAX_CASCADES: usize = 4;
@@ -975,6 +976,38 @@ pub struct ShadowFrame {
     pub hero: Option<HeroShadow>,
 }
 
+/// The shadow views that draw the casters' layout in a frame, whose rules pick the casters' levels
+/// and patches: every cascade of `shadow`, which keeps its box between its draws, and each tile of
+/// `tiles` that draws.
+pub fn shadow_views<'a>(
+    shadow: Option<&ShadowFrame>,
+    tiles: &'a crate::shadow_tiles::ShadowTiles,
+) -> impl Iterator<Item = ViewId> + 'a {
+    let cascades = shadow.map_or(0, |shadow| shadow.cascades.count);
+    (0..cascades).map(ViewId::cascade).chain(
+        (0..crate::shadow_tiles::MAX_TILES)
+            .filter(|&tile| tiles.frame(tile).is_some())
+            .map(ViewId::tile),
+    )
+}
+
+/// The frame of shadow view `view`: a cascade of `shadow`'s, or a tile of `tiles'` that draws in
+/// the frame. `None` for a view that is neither.
+pub fn shadow_view_frame(
+    view: ViewId,
+    shadow: Option<&ShadowFrame>,
+    tiles: &crate::shadow_tiles::ShadowTiles,
+) -> Option<ViewFrame> {
+    match (view.cascade_index(), view.tile_index()) {
+        (Some(cascade), _) => {
+            let shadow = shadow.filter(|shadow| cascade < shadow.cascades.count)?;
+            Some(shadow.view_frame(cascade))
+        }
+        (None, Some(tile)) => tiles.frame(tile).copied(),
+        (None, None) => None,
+    }
+}
+
 /// The camera that a light's view shades for, as a masked custom material's caster reads it: the
 /// camera's view-projection, view and projection matrices, the size of its render target in pixels
 /// with one over each, its place as a homogeneous point, its near and far distances with the rest
@@ -1019,6 +1052,15 @@ impl ShadowFrame {
     /// True when `cascade` draws its layer in this frame.
     pub fn draws(&self, cascade: usize) -> bool {
         cascade < self.cascades.count && self.drawn & (1 << cascade) != 0
+    }
+
+    /// The lens of a cascade's view, by which its casters pick their levels and patches in its
+    /// texels. A cascade's box keeps its size while the camera moves and turns, so its choice
+    /// stays the same between its draws.
+    pub fn lens(&self, cascade: usize) -> LightLens {
+        LightLens::Parallel {
+            texel: self.cascades.cascades[cascade].texel,
+        }
     }
 
     /// The values of a cascade's view: its matrix, its culling frustum, which has no plane on the

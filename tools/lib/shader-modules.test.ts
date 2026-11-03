@@ -32,6 +32,7 @@ import {
 	modulesCacheDir,
 	RECORD,
 	setIsComplete,
+	shaderLock,
 } from './shader-modules';
 
 /**
@@ -146,17 +147,31 @@ function storeCachedSet(root: string, files: Record<string, string>): string {
 }
 
 /**
- * Runs `ensureShaderModules` on `root` in a process of its own with `env`, and returns what it
- * printed. The script is a file of its own because a `-e` import of an absolute TypeScript path is
- * not portable: on CI's runner the child prints nothing at all.
+ * Runs `ensureShaderModules` on `root` in a process of its own with `env`, stopped after `timeout`
+ * milliseconds, and returns how it ended. The script is a file of its own because a `-e` import of
+ * an absolute TypeScript path is not portable: on CI's runner the child prints nothing at all.
  */
-function ensureInChild(root: string, env: NodeJS.ProcessEnv): string {
+function runEnsureInChild(root: string, env: NodeJS.ProcessEnv, timeout: number) {
 	const script = join(root, 'copy-set.ts');
 	writeFileSync(
 		script,
 		`import { ensureShaderModules } from ${JSON.stringify(join(import.meta.dirname, 'shader-modules.ts'))};\nconsole.log(ensureShaderModules(${JSON.stringify(root)}));\n`,
 	);
-	const run = spawnSync('bun', [script], { env, encoding: 'utf8', timeout: scaledBudget(30_000) });
+	return spawnSync('bun', [script], { env, encoding: 'utf8', timeout });
+}
+
+/** Takes the lock at `lock` under the id of a running process, this test's. */
+function holdLock(lock: string): void {
+	mkdirSync(lock, { recursive: true });
+	writeFileSync(join(lock, 'pid'), String(process.pid));
+}
+
+/**
+ * Runs `ensureShaderModules` on `root` in a process of its own with `env`, and returns what it
+ * printed; it fails unless the child prints false, which says that it built nothing.
+ */
+function ensureInChild(root: string, env: NodeJS.ProcessEnv): string {
+	const run = runEnsureInChild(root, env, scaledBudget(30_000));
 	if (run.stdout.trim() !== 'false')
 		throw new Error(
 			`the child printed ${JSON.stringify(run.stdout.trim())}, not false, and wrote ${JSON.stringify(run.stderr.trim())}`,
@@ -360,9 +375,37 @@ version = "0.2.0"
 			// The stub cargo fails at once, which is what a build on a machine without the toolchain
 			// does too: the command reports the failure and the lock is released.
 			expect(() => ensureShaderModules(root)).toThrow();
-			expect(existsSync(join(root, 'target/shader-modules.lock'))).toBe(false);
+			expect(existsSync(shaderLock(inputHash(root)))).toBe(false);
 		});
 	});
+
+	it(
+		'build without waiting for a build of other sources, and wait for one of the same sources',
+		() => {
+			withScratchCaches(() => {
+				const root = repository();
+				mkdirSync(join(root, 'target'));
+				// A child inside the job queue would refuse to build before it reached the lock.
+				const { NULL3D_HEAVY_SLOT: _slot, ...env } = withoutFreshShaders(process.env);
+				// Another checkout builds other sources: the build here runs at once, and its stub cargo
+				// fails it, which is how the test sees that it started.
+				const other = shaderLock(hashOf('other sources'));
+				holdLock(other);
+				const beside = runEnsureInChild(root, env, scaledBudget(30_000));
+				expect(beside.signal, beside.stdout).toBeNull();
+				expect(beside.stderr).toContain('stub cargo');
+				expect(beside.stdout).not.toContain('waiting for the lock');
+				rmSync(other, { recursive: true, force: true });
+				// Another checkout builds the same sources: the build here waits for it, and builds nothing.
+				holdLock(shaderLock(inputHash(root)));
+				const behind = runEnsureInChild(root, env, scaledBudget(5_000));
+				expect(behind.signal).toBe('SIGTERM');
+				expect(behind.stdout).toContain(`waiting for the lock at ${shaderLock(inputHash(root))}`);
+				expect(behind.stderr).not.toContain('stub cargo');
+			});
+		},
+		scaledBudget(60_000),
+	);
 
 	it(
 		"take a set that the shared cache holds without waiting for another checkout's build",
@@ -376,10 +419,9 @@ version = "0.2.0"
 					'shaders-wgsl.js': 'export {};\n',
 				};
 				storeCachedSet(root, files);
-				// A build holds the lock, under the id of a running process: this test's.
-				const lock = join(process.env.NULL3D_BUILD_CACHE ?? '', 'shader-modules.lock');
-				mkdirSync(lock, { recursive: true });
-				writeFileSync(join(lock, 'pid'), String(process.pid));
+				// A build of the same sources holds their lock, under the id of a running process.
+				const lock = shaderLock(inputHash(root));
+				holdLock(lock);
 				// In a process of its own, so that a wait for the lock fails the test rather than hanging it.
 				// CI's docs-and-tools job asks for fresh shaders, and the child would inherit it and refuse
 				// the cached set before it read it, which is not what this test is about.

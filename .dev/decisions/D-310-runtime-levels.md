@@ -1,6 +1,6 @@
 # D-310: Meshes made in code plan their levels on the job workers
 
-Status: decided and built: the shared planner, `mesh.buildLevels`, the automatic levels at a mesh's first draw with the `levels` option, and their guards, on WebGPU and WebGL2. The owner accepted the thresholds, and asked that no frame be late for a large mesh and that meshes drawn only by blended materials plan nothing; both are built. Pending: the adoption by the add-ons and demos that set levels by hand today. Task: none.
+Status: decided and built: the shared planner, `mesh.buildLevels`, the automatic levels at a mesh's first draw with the `levels` option, their guards, and the pieces of large code meshes, on WebGPU and WebGL2. The owner accepted the thresholds, and asked that no frame be late for a large mesh and that meshes drawn only by blended materials plan nothing; both are built. The add-ons take the default, and opt out only the meshes whose levels are wrong. Pending: the adoption by the demos that set levels by hand today. Task: none.
 
 Summary: The asset tool's level planner moved into `packages/engine/levels/planner.js`, which the tool runs in Node and the engine runs on a job worker with the same build of meshoptimizer's simplifier, so one mesh gets one set of levels, index for index. A mesh made in code plans its levels at its first draw when it holds 4,096 triangles or more, or 256 or more in copies of 65,536 triangles together; `levels: false` opts out. A million triangles take about 6 s of one job worker's CPU. The engine reads such a mesh one part a frame and hands over one level a frame, so no frame is late for the plan.
 
@@ -136,7 +136,7 @@ How the data was produced: `bun test` of the two unit tests named above; a tempo
 
 ## Pieces of meshes made in code
 
-The plan gives a mesh made in code the pieces that `--lod` gives a file's large levels ([D-306](D-306-mesh-pieces.md)). The pieces planner moved beside the level planner (`packages/engine/levels/pieces.js`, `@null3d/engine/pieces-planner`), and the levels task runs it on the job worker after the levels (`scene/level-pieces.ts`). The mesh and each level of 32,768 triangles or more get 8 to 16 pieces.
+The plan gives a mesh made in code the pieces that `--lod` gives a file's large levels ([D-307](D-307-mesh-pieces.md)). The pieces planner moved beside the level planner (`packages/engine/levels/pieces.js`, `@null3d/engine/pieces-planner`), and the levels task runs it on the job worker after the levels (`scene/level-pieces.ts`). The mesh and each level of 32,768 triangles or more get 8 to 16 pieces.
 
 - The mesh keeps its own list, for raycasts and `updateVertices`. Its pieces draw a sorted list of their own that shares its vertices (`setMeshPieceList`), which arrives in the frame after the last level. A later plan's list takes the place of the earlier one, so a plan after `updateVertices` gives the new shape pieces too.
 - Only a mesh that one object draws, or none yet, gets that list. The list costs a copy of the mesh's indices, and copies of a mesh draw their base only near the camera, where their finest level's pieces take over a little further out. The desert made in code shows the cost: with a list for every large mesh, its indices passed the room of the shared index buffer, and a level failed to fit.
@@ -197,7 +197,7 @@ Guards:
 - `setLevels` ends a plan and frees the planned meshes that it leaves out.
 - The card step runs only when asked (`cards: true`): a building kit's walls are separate quads, and thinning them as cards cuts holes. Without it, a level drops only whole small pieces, and only where its error is under a pixel.
 - A plan counts as a task from its start until its levels are in, so hold mode's frame draws them.
-- glTF meshes, whose levels come from the file, and the add-ons whose shapes live in their shaders (terrain blocks, water, grass tufts, splats), pass `levels: false`. So do the compare scenes, whose three.js twins draw every mesh whole.
+- glTF meshes, whose levels come from the file, pass `levels: false`. So do the add-on meshes whose levels are wrong. A shader shapes or places some (water, grass tufts, splats, floating leaves). The terrain blocks have their own quadtree. The impostor cards and merged far cells are far stand-ins, and the gizmo handles keep one size on the screen. So do the compare scenes, whose three.js twins draw every mesh whole. Every other add-on mesh takes the default.
 
 ## Consequences
 

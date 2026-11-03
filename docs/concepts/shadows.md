@@ -420,6 +420,8 @@ Each cascade that draws in a frame has a render pass that draws its casters' dep
 - On WebGPU, a culling pass on the GPU runs before each cascade's render pass. The CPU does the same small amount of work per cascade whatever the number of casters. On a device that draws directly, the job workers test the casters on the CPU, as on WebGL2.
 - On WebGL2, the job workers test each caster against each cascade's box, as they test each object against the camera's view. They first skip the still casters of the grid cells out of the box. That CPU work grows with the number of casters.
 
+Each cascade and tile draws its casters at the level of detail that its own texels pick, and a large mesh with a cluster tree draws the patches that they pick ([Levels of detail](lod.md#shadows)). A cascade whose texels are large draws far fewer triangles than the camera's view. The `lodShadowThreshold` quality setting moves that choice: a larger value draws coarser casters, at the cost of the shadow's accuracy.
+
 A masked caster runs a fragment shader that tests its alpha, where other casters run none. So cut-out foliage costs more GPU time in each shadow pass than solid shapes. Its shader builds load the first time a masked caster draws, and it casts no shadow until they are ready. To load them before the first frame instead, pass `preload: ['cutout']` to `createEngine`.
 
 Each layer of the shadow map takes 2 bytes per texel: 8 MiB at 2,048 texels on each side. That is half of what 32-bit depth takes, and each cascade's pass writes half the bytes. On a phone's GPU, which keeps a pass's depth in its own fast memory and then writes it out, those writes cost bandwidth. Each read of the map fetches half the bytes too. [Quality presets](quality-presets.md#the-settings-of-each-preset) gives the memory of each preset. Surfaces that receive shadows read the map 4 or 9 times per pixel, as the filter's size says. On WebGL2 they read each texel on its own: 16 or 36 reads. Surfaces in a band between two cascades read both cascades, so twice as many.
@@ -430,7 +432,7 @@ A hero shadow adds one more tile pass, which draws only the casters in its box. 
 
 Contact shadows need the depth prepass. WebGL2 draws it on every preset. On WebGPU they turn it on while they draw, which costs a second pass over the opaque objects' vertices. They then cost one copy of the depth at half the render size, and one ray of `contactShadowSteps` reads per texel at that size. A blur then smooths the rays' noise without crossing objects' edges. With ambient occlusion on, they share its copy, its horizon step and its denoise.
 
-To make shadows cheaper, use fewer cascades, a smaller map, a shorter distance, a higher `farCascadeInterval` or a `shadowFilter` of 3. Mark only the objects whose shadows matter as casters. For spot and point lights, give shadows only to the lights that need them, and keep their ranges short. Prefer a spot light to a point light where a cone covers the area.
+To make shadows cheaper, use fewer cascades, a smaller map, a shorter distance, a higher `farCascadeInterval` or a `shadowFilter` of 3. Give large meshes levels or a cluster tree, so each shadow map draws only the detail its texels show. Mark only the objects whose shadows matter as casters. For spot and point lights, give shadows only to the lights that need them, and keep their ranges short. Prefer a spot light to a point light where a cone covers the area.
 
 ## On each GPU path
 
