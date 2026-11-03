@@ -193,18 +193,6 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 300,
 	},
 	{
-		name: 'splat-garden',
-		group: 'Light, materials and effects',
-		sketch: new URL('./splat-garden/sketch.ts', import.meta.url),
-		code: 'splat-garden/',
-		title: 'Splat garden',
-		scene: 'A moss garden captured as Gaussian splats',
-		summary:
-			'A glade of moss, weathered stone and blossom, captured as nearly half a million soft splats rather than meshes: a blossoming tree, a glowing stone lantern, ferns, fallen petals and drifting spores, with the cloud streamed as chunk files and held to the device budget. Turn around the glade or fly through the blossom.',
-		hold: 0.5,
-		timeoutSeconds: 300,
-	},
-	{
 		name: 'generators',
 		group: 'Building scenes',
 		sketch: new URL('./generators/sketch.ts', import.meta.url),
