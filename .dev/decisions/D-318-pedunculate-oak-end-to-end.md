@@ -38,7 +38,9 @@ passes every rubric row against every reference.
   envelope with an overlap of 0.89 to 0.94 at eight angles.
 - **Bole and limbs.** The leader's control falls from 0.4 to 0.3 early in growth, and apical
   dominance is 0.7. The stem ends at a fifth to a third of the height. There five or six limbs
-  leave it between 2.5 and 4.5 m, at 10 to 50 degrees. The trunk is 1.4 m across at breast height.
+  leave it between 2.5 and 4.5 m. The first limbs' buds open at 70 degrees from their axis and
+  rise only weakly toward the light, so they run out nearly level and fill the crown's low skirt,
+  as the fact sheet says. The trunk is 1.4 m across at breast height.
 - **Foot.** A flare, six uneven buttress lobes, nine flutes and short thick surface roots.
 - **Shoots.** Three classes, by bud vigor. The one-year shoot of still 23 ends in a rosette of six
   leaves round a stack of seven brown buds. The two-year twig of stills 10 and 22 carries three or
