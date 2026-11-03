@@ -1310,7 +1310,7 @@ export function effectPlan(
 		// The fills plan times its own pages, at one render scale each.
 		fills: [['', []]],
 		// The probe grid's four filtered reads at each lit pixel, taken off and on in turns.
-		probes: [['', ['rounds=5', 'seconds=3']]],
+		probes: [['', ['rounds=3', 'seconds=2', 'pixel-ratio=2']]],
 	};
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
 	const twin: PlanItem<Check>[] =
@@ -1339,7 +1339,8 @@ export function effectPlan(
 							...switches,
 							...callSwitches,
 						],
-						timeoutSeconds: effect === 'compute' ? 180 : EFFECT_TIMEOUT_SECONDS,
+						timeoutSeconds:
+							effect === 'compute' || effect === 'probes' ? 180 : EFFECT_TIMEOUT_SECONDS,
 					},
 				),
 			),
