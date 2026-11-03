@@ -26,15 +26,27 @@ fn surface(input: SurfaceInput) -> Surface {
 
 /// Builds a custom material into the repository's template.
 fn compile(source: &str) -> Result<MaterialOutput, BuildError> {
-    compile_share(source, None)
+    compile_with(source, None, &[])
 }
 
 /// Builds the builds of a share of a custom material, or all of them without one.
 fn compile_share(source: &str, share: Option<Share>) -> Result<MaterialOutput, BuildError> {
+    compile_with(source, share, &[])
+}
+
+/// Builds the builds of a share of a custom material, or all of them without one, and only the
+/// builds whose permutation word `only` names: an empty list builds every build the share holds.
+/// A test that reads one build asks for that build, so it compiles what it checks and no more.
+fn compile_with(
+    source: &str,
+    share: Option<Share>,
+    only: &[u32],
+) -> Result<MaterialOutput, BuildError> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let inputs = Inputs::read(&root).expect("the repository's shaders");
     let template = MaterialTemplate::load(&inputs).expect("the template of custom materials");
     let mut compiler = Compiler::new(&inputs.files).expect("the shader library");
+    compiler.build_only(only.iter().copied());
     compiler.compile_material(
         &template,
         &MaterialSource {
@@ -606,7 +618,7 @@ fn reading_one_input_turns_on_only_its_own_code() {
         let source = format!(
             "fn surface(input: SurfaceInput) -> Surface {{\n    var s = defaultSurface(input);\n    {body}\n    return s;\n}}\n"
         );
-        let built = compile(&source).expect("the surface function builds");
+        let built = compile_with(&source, None, &[0]).expect("the surface function builds");
         let wgsl = built.variants["webgpu"].wgsl.clone().expect("WGSL").source;
         (built.object_ids, built.locations, wgsl)
     };
@@ -1446,13 +1458,23 @@ fn surface(input: SurfaceInput) -> Surface {
 ";
 
 #[test]
-fn every_buildable_permutation_of_a_full_custom_material_builds() {
+fn every_buildable_permutation_of_the_webgpu_builds() {
+    every_buildable_permutation_of("webgpu");
+}
+
+#[test]
+fn every_buildable_permutation_of_the_webgl2_builds() {
+    every_buildable_permutation_of("webgl2");
+}
+
+/// Checks one variant of the template: a full material compiles every build of it that the
+/// template offers and the compiler keeps, and the bits that the compiler leaves out, and the ones
+/// the template never offers, stay out of those builds. A test for each variant lets the runner do
+/// them at once, and each test compiles only the builds that it checks. A collision of two vertex
+/// outputs fails this, whichever features cause it.
+fn every_buildable_permutation_of(variant_name: &str) {
     use std::collections::BTreeSet;
 
-    // A full material compiles every build that the template offers and the compiler keeps. A
-    // collision of two vertex outputs fails this, whichever features cause it.
-    let built = compile(EVERY_HOOK).expect("the full custom material builds every variant");
-    let words: BTreeSet<u32> = built.variants.values().map(|v| v.permutation).collect();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let inputs = Inputs::read(&root).expect("the repository's shaders");
     let manifest = Manifest::parse(&inputs.manifest).expect("the shader manifest");
@@ -1468,53 +1490,61 @@ fn every_buildable_permutation_of_a_full_custom_material_builds() {
             .map(|(_, bit)| *bit)
             .unwrap_or_else(|| panic!("the manifest names {name}, which is no permutation bit"))
     };
+    let variant = template
+        .variants
+        .get(variant_name)
+        .unwrap_or_else(|| panic!("the template has no variant {variant_name}"));
+    // The compiler keeps out the variants that a pass's own bit marks as the engine's: no custom
+    // material's word sets that bit.
+    assert!(
+        variant.required.is_empty(),
+        "{variant_name} is the engine's own variant, which no custom material builds"
+    );
     // The bits the compiler leaves out of every custom material's builds.
     let left_out: u32 = ["HALF", "MORPH", "INSTANCE_INDEX", "WEIGHTED", "AREA_LIGHTS"]
         .iter()
         .fold(0, |word, name| word | bit(name));
-    let mut expected = 0usize;
+    // The compiler drops the left-out bits from the variant's list before it expands the rest, so
+    // the free bits are the list without them.
+    let free: Vec<u32> = variant
+        .permutations
+        .iter()
+        .map(|name| bit(name))
+        .filter(|bit| left_out & bit == 0)
+        .collect();
+    let mut expected: BTreeSet<u32> = BTreeSet::new();
     let mut not_builds = 0usize;
-    for (name, variant) in &template.variants {
-        // The compiler keeps out the variants that a pass's own bit marks as the engine's: no
-        // custom material's word sets that bit.
-        if !variant.required.is_empty() {
+    for combination in 0..(1u32 << free.len()) {
+        let mut word = 0;
+        for (k, bit) in free.iter().enumerate() {
+            if combination & (1 << k) != 0 {
+                word |= bit;
+            }
+        }
+        if !permutation::buildable(word) {
+            not_builds += 1;
             continue;
         }
-        // The compiler drops the left-out bits from the variant's list before it expands the rest,
-        // so the free bits are the list without them.
-        let free: Vec<u32> = variant
-            .permutations
-            .iter()
-            .map(|name| bit(name))
-            .filter(|bit| left_out & bit == 0)
-            .collect();
-        let required: u32 = variant
-            .required
-            .iter()
-            .fold(0, |word, name| word | bit(name));
-        for combination in 0..(1u32 << free.len()) {
-            let mut word = required;
-            for (k, bit) in free.iter().enumerate() {
-                if combination & (1 << k) != 0 {
-                    word |= bit;
-                }
-            }
-            if !permutation::buildable(word) {
-                not_builds += 1;
-                continue;
-            }
-            expected += 1;
-            assert!(
-                words.contains(&word),
-                "{name}: the buildable permutation {word:#x} is not built. The built permutations are {words:#x?}"
-            );
-        }
+        expected.insert(word);
     }
-    assert!(expected > 0, "the template offers no buildable permutation");
+    assert!(
+        !expected.is_empty(),
+        "{variant_name}: the template offers no buildable permutation"
+    );
     assert!(
         not_builds > 0,
-        "the template expands no combination that is no build"
+        "{variant_name}: the template expands no combination that is no build"
     );
+    let wanted: Vec<u32> = expected.iter().copied().collect();
+    let built = compile_with(EVERY_HOOK, None, &wanted)
+        .expect("the full custom material builds every variant");
+    let words: BTreeSet<u32> = built.variants.values().map(|v| v.permutation).collect();
+    for word in &expected {
+        assert!(
+            words.contains(word),
+            "{variant_name}: the buildable permutation {word:#x} is not built. The built permutations are {words:#x?}"
+        );
+    }
     // Each bit the compiler leaves out is proven absent from every build. The message says whether
     // the template offered it: an offered bit tests the compiler's filter, and one the template does
     // not offer tests the template's own exclusion. A bit the compiler starts to keep would appear
@@ -1563,7 +1593,10 @@ fn the_vegetation_plant_shaders_build() {
     for name in ["plant.wgsl", "plant-cards.wgsl"] {
         let source = std::fs::read_to_string(root.join("packages/vegetation/src").join(name))
             .unwrap_or_else(|error| panic!("{name}: {error}"));
-        let built = compile(&source).unwrap_or_else(|error| panic!("{name}: {error}"));
+        // The two functions come from the WGSL's own declarations, and the build that lets light
+        // through a leaf is the one build this test reads, so it compiles that one.
+        let built = compile_with(&source, None, &[permutation::TRANSLUCENCY])
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
         assert!(built.functions.iter().any(|f| f == "surface"), "{name}");
         assert!(
             built.functions.iter().any(|f| f == "vertexOffset"),
