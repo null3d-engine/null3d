@@ -8,7 +8,7 @@ summary: "The plant core that grows each species from its own record and a seed,
 
 # Vegetation (@null3d/vegetation)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The species are being rebuilt: no species ships yet, so a page draws stand-ins in their place. Built: the self-organizing growth that broadleaves, pines, shrubs and hedges use, and the leaves and shoots: leaf meshes from each species' texture outline, compound leaves, needles and fascicles, shoot prototypes with their buds, their places on the plant, the seasons and extras, and the shoot cards baked from them. Built too: the wood, the plant material, the coarseness options that grow a simpler plant, bracken's fronds (the frond builder and the frond colony that grows them), and the ground plants' growth: rosettes of broad ribbed leaves on long stalks, and tufts of grass and sedge blades with their flowering stems, panicles and hanging spikes. Not built yet: the other growth models, near pool and far cards. The grass's compute-built blades and near shadows are not built yet either. This page covers the plant core's records and stages, the stand-ins, the scatter, the grass's CPU path and the floating leaves that ride the wind.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The species are being rebuilt: no species ships yet, so a page draws stand-ins in their place. Built: the self-organizing growth that broadleaves, pines, shrubs and hedges use, and the leaves and shoots: leaf meshes from each species' texture outline, compound leaves, needles and fascicles, shoot prototypes with their buds, their places on the plant, the seasons and extras, and the shoot cards baked from them. Built too: the wood, the plant material, the coarseness options that grow a simpler plant, bracken's fronds (the frond builder and the frond colony that grows them), and the ground plants' growth: rosettes of broad ribbed leaves on long stalks, and tufts of grass and sedge blades with their flowering stems, panicles and hanging spikes. Built too: the placement of grown plants, the near pool that draws real shoots near the camera, the wind records and the far cards. Not built yet: the other growth models. The grass's compute-built blades and near shadows are not built yet either. This page covers the plant core's records and stages, the stand-ins, the scatter, the grass's CPU path and the floating leaves that ride the wind.
 
 ```mermaid
 flowchart LR
@@ -255,6 +255,34 @@ On WebGL2 the state form's pass costs the frame a large upload for each frame wh
 Each species has a budget in its record: its kit's bytes, a variant's bytes, the triangles of each level, its download and its growth time. `capsFor(record)` gives the limits for its growth model, and the record check refuses a budget over them. A species' own test holds its growth to its budget.
 
 Reading Creek's 160 m valley into the ground maps and placing its species takes about 55 ms on an Apple M5 Max laptop, for about a thousand points. Ground cover is the most of it. A species at one meter of spacing offers tens of thousands of candidates.
+
+## Near plants
+
+A tree never draws whole with real leaves. A page makes one near pool for its scene with `createNearPool(ctx, { camera })`, gives it to every `placePlants` call, and calls its `update()` once a frame. Each copy in the pool draws its real shoots nearer than one split distance and its own cards beyond it, so a tree that straddles the split shows real leaves on its near side and cards on its far side.
+
+```ts
+const near = createNearPool(ctx, { camera });
+const placed = placePlants(ctx, kit, assets, copies, {
+  materials,
+  near,
+  view: { height: 1080, fov: 60 },
+});
+console.log(placed.split);
+
+return {
+  onUpdate() {
+    near.update();
+  },
+};
+```
+
+- **The split.** It is the distance at which the species' longest shoot covers the record's first switch pixels at the page's view, times the switch bias. `placed.split` gives it. The cards of a copy give way, pixel by pixel, only inside its split, and its shoots thin out just past it. The two overlap by the engine's dither, so no pixel pops or opens.
+- **Leaf detail falls with distance.** Inside the split the shoots draw in up to three bands: the preset's leaf tier out to a quarter of the split, the tier below it out to half, and the tier below that out to the split. Each band fades into the next.
+- **The caps.** The pool draws real shoots for the copies nearest the camera, at most the preset's count: 1 on Low, 3 on Medium, 6 on High and 10 on Ultra. A copy left out stays all cards.
+- **The budget.** Every near shoot of the scene draws within one budget of triangles per frame: 0.5 million on Low, 1.5 million on Medium, 5 million on High and 10 million on Ultra. Past it, every chosen copy draws real shoots out to a nearer distance, nearest leaves first, and its cards cover the rest. The frame-budget governor lowers the budget to half of it when frames take too long. The options `copies` and `triangles` replace the preset's figures.
+- **Its cost.** The pool reads the camera once a frame. When the camera has moved half a meter, at most ten times a second, the pool picks the copies and places their shoots in a job worker's WebAssembly, and writes the answer between frames. A standing camera costs one read a frame and allocates nothing. `near.copies`, `near.triangles` and `near.budget` give its figures for a stats overlay.
+
+Each variant's wood, merged foliage and extras draw with their detail levels by distance, and its cards from the camera out. A wind record of each branch moves its wood, cards and shoots, with an id that every variant of the species shares in one texture.
 
 ## Far cards and the hand-over
 

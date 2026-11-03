@@ -150,7 +150,9 @@ The fragments that the dither drops cost a tile GPU, such as a phone's or an App
 
 [Custom materials](../shaders/surface-functions.md) fade too, through their own builds, which download with the material's first use. Three kinds switch at once: a material that tests its mask by the [alpha hash](../api/materials.md#alpha-modes), a skinned material, and one that lets light through.
 
-Two add-ons morph a level instead of fading it. The terrain add-on moves each block's vertices toward its parent block's surface over the last part of the approach, so the block matches its parent when the selection hands over. The vegetation add-on moves a tree's leaf cards toward the next level before the switch: the cards that the level drops shrink and the kept ones grow. Both write the target in the mesh's four-number vertex record, which their own custom material's `vertexOffset` reads. Neither adds a draw, and neither writes a vertex in a frame. File meshes keep the dither: the asset tool's simplifier records no mapping between one level's vertices and the next.
+The terrain add-on morphs a level instead of fading it. It moves each block's vertices toward its parent block's surface over the last part of the approach, so the block matches its parent when the selection hands over. It writes the target in the mesh's four-number vertex record, which its own custom material's `vertexOffset` reads. It adds no draw and writes no vertex in a frame. File meshes keep the dither: the asset tool's simplifier records no mapping between one level's vertices and the next.
+
+The vegetation add-on splits a near tree by distance instead of switching the whole tree. Its real shoots draw nearer than one distance, and its leaf cards beyond it, with an overlap that the dither crosses. A tree that straddles the distance shows real leaves on its near side and cards on its far side. Inside the distance, the shoots draw in bands of falling detail, each a distance band of its own. [Vegetation](../api/vegetation.md#near-plants) gives the calls.
 
 ## Small objects
 
