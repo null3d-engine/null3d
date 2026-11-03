@@ -19,6 +19,7 @@ import {
 	CLUSTER_STAGED_FILE,
 	MODELS_DIR,
 	TREES_DIR,
+	terrainDocument,
 } from './cluster-fixture.js';
 import {
 	BAND_MIN_PATCHES,
@@ -32,6 +33,7 @@ import {
 	storeClusters,
 } from './clusters.js';
 import { LOD_MAX_LEVELS, orderLevels, planLevels, STAGE_BAND, STAGE_MAGIC } from './levels.js';
+import { TriangleTree } from './surface-distance.js';
 
 // The build of a mesh of 32,000 triangles simplifies its tree in a second or two on a busy
 // machine, and a CI runner of four cores takes longer.
@@ -298,6 +300,57 @@ describe('the tree of a large mesh', () => {
 			if (gap + at(k, 3) > at(patch.parent, 3)) loose.push(k);
 		}
 		expect(loose).toEqual([]);
+	});
+
+	it("stores the root's measured distance from the full mesh", async () => {
+		const { plan } = await only();
+		const patches = readTree(plan);
+		const root = entry(patches, plan.root);
+		const own = plan.indices.slice(root.first, root.first + root.count);
+		const full = new TriangleTree(mesh.positions, mesh.indices);
+		const rootTree = new TriangleTree(mesh.positions, own);
+		const corner = (v: number, c: number) => value(mesh.positions, v * 3 + c);
+		// An independent measure, denser than the build's: every full vertex against the root, and
+		// a grid of points on each root triangle against the full mesh.
+		let measured = 0;
+		for (let v = 0; v < mesh.positions.length / 3; v++)
+			measured = Math.max(measured, rootTree.distance(corner(v, 0), corner(v, 1), corner(v, 2)));
+		const steps = 6;
+		for (let t = 0; t < own.length; t += 3)
+			for (let i = 0; i <= steps; i++)
+				for (let j = 0; i + j <= steps; j++) {
+					const [wa, wb] = [i / steps, j / steps];
+					const at = (c: number) =>
+						corner(value(own, t), c) * (1 - wa - wb) +
+						corner(value(own, t + 1), c) * wa +
+						corner(value(own, t + 2), c) * wb;
+					measured = Math.max(measured, full.distance(at(0), at(1), at(2)));
+				}
+		// The stored error is the root's own distance, or a child's when that is larger.
+		const children = patches.filter((patch) => patch.parent === plan.root);
+		const childError = Math.max(0, ...children.map((patch) => patch.error));
+		expect(root.error).toBeGreaterThanOrEqual(measured * 0.9);
+		expect(root.error).toBeLessThanOrEqual(Math.max(measured * 1.25, childError));
+	});
+
+	it("keeps the open edge's corners and lets its straight runs simplify", async () => {
+		const plans = await planClusters(terrainDocument());
+		const plan = [...plans.values()][0];
+		if (!plan) throw new Error('the heightfield got no tree');
+		const root = readTree(plan)[plan.root];
+		if (!root) throw new Error('the tree has no root');
+		// The heightfield's rim holds 512 edges. Locked, it kept hundreds of triangles in the root.
+		expect(root.count / 3).toBeLessThanOrEqual(64);
+		const prim = terrainDocument().getRoot().listMeshes()[0]?.listPrimitives()[0];
+		const positions = prim?.getAttribute('POSITION')?.getArray() as Float32Array;
+		const used = new Set(plan.indices.slice(root.first, root.first + root.count));
+		// Each of the four corners of the ground is a vertex of the root.
+		const corners = [...used].filter((v) => {
+			const x = value(positions, v * 3);
+			const z = value(positions, v * 3 + 2);
+			return Math.abs(Math.abs(x) - 20) < 1e-4 && Math.abs(Math.abs(z) - 20) < 1e-4;
+		});
+		expect(corners.length).toBe(4);
 	});
 
 	it('gives a mesh of few triangles, many copies, or a cut material no tree', async () => {
