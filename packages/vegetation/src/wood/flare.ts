@@ -3,7 +3,7 @@
 // height of fade; flutes cut grooves up the stem. Lobes stand at uneven angles with uneven sizes,
 // as an old oak's foot does, so no two variants share a ground line.
 import { hashAt, unitAt } from '../core/hash';
-import { cos, exp, PI, pow } from '../core/math';
+import { cos, exp, PI, pow, sin } from '../core/math';
 import type { BaseSpec } from '../core/record';
 import { spreadAt } from '../core/types';
 
@@ -136,10 +136,94 @@ export function stemSection(
 }
 
 /**
- * The hash key of a stem's surface roots, so the roots and the lobes they leave from agree.
- *
- * @returns The purpose number.
+ * One surface root: its points from inside the stem out along the ground and down into it, and its
+ * radius at each.
  */
-export function rootPurpose(): number {
-	return Purpose.Roots;
+export interface SurfaceRoot {
+	readonly points: Float64Array;
+	readonly radii: Float64Array;
+}
+
+/**
+ * The surface roots of one stem, after methods §4.6: each leaves from a buttress lobe (or, with no
+ * lobes, at an even angle), runs along the ground for the record's length, tapering, and dives. A
+ * root starts on the stem's axis just above the ground, so the mesher welds it onto the stem's foot.
+ *
+ * @param base The record's stem base.
+ * @param section The stem's section, whose lobes the roots leave from.
+ * @param foot The stem's first node: its position and its radius.
+ * @param normal The stem's frame's normal at its foot, where angle 0 points.
+ * @param binormal The frame's binormal.
+ * @param seed The scene's seed.
+ * @param salt The species' salt.
+ * @param variant The variant.
+ * @param stem The stem's index among the plant's stems.
+ * @returns The roots.
+ */
+export function surfaceRoots(
+	base: BaseSpec | undefined,
+	section: StemSection | undefined,
+	foot: { readonly x: number; readonly y: number; readonly z: number; readonly radius: number },
+	normal: readonly [number, number, number],
+	binormal: readonly [number, number, number],
+	seed: number,
+	salt: number,
+	variant: number,
+	stem: number,
+): SurfaceRoot[] {
+	const roots = base?.roots;
+	if (!roots || roots.radius <= 0) return [];
+	const wanted = Math.max(
+		0,
+		Math.round(spreadAt(roots.count, unitAt(seed, salt, variant, Purpose.Roots, stem))),
+	);
+	const lobes = section?.lobes ?? [];
+	const count = lobes.length > 0 ? Math.min(wanted, lobes.length) : wanted;
+	const turn = unitAt(seed, salt, variant, Purpose.Roots, stem + 4096) * 2 * PI;
+	const out: SurfaceRoot[] = [];
+	const r = roots.radius;
+	for (let k = 0; k < count; k++) {
+		const key = stem * 64 + k;
+		const angle =
+			lobes.length > 0
+				? (lobes[Math.floor((k * lobes.length) / count)] as number)
+				: turn + (k / count) * 2 * PI;
+		// Along the ground from the lobe's angle, and across it for a little wander.
+		let dx = cos(angle) * normal[0] + sin(angle) * binormal[0];
+		let dz = cos(angle) * normal[2] + sin(angle) * binormal[2];
+		const l = Math.sqrt(dx * dx + dz * dz) || 1;
+		dx /= l;
+		dz /= l;
+		const length = Math.max(
+			r * 4,
+			spreadAt(roots.length, unitAt(seed, salt, variant, Purpose.Roots, key + 8192)),
+		);
+		const wander = (unitAt(seed, salt, variant, Purpose.Roots, key + 16384) - 0.5) * 0.3 * length;
+		// Out from the axis, height over the foot, and the share of the root's radius, at each point.
+		const along = [
+			0,
+			foot.radius * 0.9,
+			foot.radius + 0.35 * length,
+			foot.radius + 0.7 * length,
+			foot.radius + length,
+		];
+		// Half buried along the ground, then a slow dive.
+		const rise = [r, 0.55 * r, 0.3 * r, 0.15 * r, 0];
+		const girth = [1, 1, 0.8, 0.6, 0.45];
+		along.push(foot.radius + length + roots.dive * 1.5, foot.radius + length + roots.dive * 3);
+		rise.push(-0.45 * roots.dive, -roots.dive);
+		girth.push(0.35, 0.25);
+		const points = new Float64Array(along.length * 3);
+		const radii = new Float64Array(along.length);
+		for (let i = 0; i < along.length; i++) {
+			const out = along[i] as number;
+			const side = wander * Math.max(0, (out - foot.radius) / length) ** 2;
+			points[i * 3] = foot.x + dx * out - dz * side;
+			points[i * 3 + 1] = foot.y + (rise[i] as number);
+			points[i * 3 + 2] = foot.z + dz * out + dx * side;
+			radii[i] = r * (girth[i] as number);
+		}
+		out.push({ points, radii });
+	}
+	return out;
 }

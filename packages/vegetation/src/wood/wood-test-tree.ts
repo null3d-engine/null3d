@@ -33,6 +33,12 @@ export function testRecord(): Species {
 		base: {
 			flare: { amount: 0.6, height: 0.35 },
 			buttress: { lobes: { mean: 5, spread: 1 }, amount: 0.35, sharpness: 2, height: 0.5 },
+			roots: {
+				count: { mean: 4, spread: 1 },
+				length: { mean: 1.4, spread: 0.4 },
+				radius: 0.09,
+				dive: 0.25,
+			},
 		},
 	};
 }

@@ -10,12 +10,12 @@
 // displacement on thin wood; `uv1.y` the junction mask; colour bytes R and G the wind record, B the
 // bend weight along the axis and A the crown's sky visibility.
 import type { MeshArrays } from '../asset';
-import type { MacroSkeleton } from '../core/graph';
+import { AXIS_STEM, type MacroSkeleton } from '../core/graph';
 import { acos, cos, PI, sin, tan } from '../core/math';
 import type { Species } from '../core/record';
 import type { CrownLight, MeshInput, MeshLevel } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
-import { type StemSection, stemSection } from './flare';
+import { type StemSection, stemSection, surfaceRoots } from './flare';
 import {
 	type AxisPath,
 	axisPath,
@@ -146,8 +146,11 @@ function woodAxes(input: MeshInput, keep: number): WoodAxis[] {
 	const p = skeleton.position;
 	const base = input.variant * VARIANT_RECORDS;
 	const lastKept = keptNodes(skeleton);
+	// A limb with no parent has nothing to weld onto and would float, so only stems start the tree.
 	const meshed = (a: number) =>
-		(axes.order[a] as number) <= keep && (lastKept[a] as number) >= (axes.first[a] as number);
+		(axes.order[a] as number) <= keep &&
+		(lastKept[a] as number) >= (axes.first[a] as number) &&
+		((axes.parent[a] as number) >= 0 || (axes.kind[a] as number) === AXIS_STEM);
 	// Leaders and the parent each axis hangs on.
 	const hangsOn = new Int32Array(axes.count);
 	const leads = new Uint8Array(axes.count);
@@ -259,9 +262,68 @@ function woodAxes(input: MeshInput, keep: number): WoodAxis[] {
 			fork: false,
 			leader: leads[a] === 1,
 		});
+		if (parent < 0) addRoots(input, list, list.length - 1, base + (axes.record[a] as number));
 		for (const child of children[a] ?? []) queue.push(child);
 	}
 	return list;
+}
+
+/**
+ * Adds a stem's surface roots to the list, as children of the stem. A root's axis is a negative
+ * number, since the skeleton holds no axis for it, and it moves on the stem's wind record.
+ */
+function addRoots(input: MeshInput, list: WoodAxis[], stemIndex: number, record: number): void {
+	const stem = list[stemIndex] as WoodAxis;
+	const { record: species, seed, variant } = input;
+	const p = stem.points;
+	// The stem's first node, and the frame its path starts with: the normal from +X, square to the
+	// stem's first internode, as the mesher builds it.
+	const fx = p[3] as number;
+	const fy = p[4] as number;
+	const fz = p[5] as number;
+	let tx = (p[6] as number) - (p[0] as number);
+	let ty = (p[7] as number) - (p[1] as number);
+	let tz = (p[8] as number) - (p[2] as number);
+	const tl = Math.sqrt(tx * tx + ty * ty + tz * tz) || 1;
+	tx /= tl;
+	ty /= tl;
+	tz /= tl;
+	let nx = 1 - tx * tx;
+	let ny = -tx * ty;
+	let nz = -tx * tz;
+	const nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+	nx /= nl;
+	ny /= nl;
+	nz /= nl;
+	const binormal: [number, number, number] = [
+		ty * nz - tz * ny,
+		tz * nx - tx * nz,
+		tx * ny - ty * nx,
+	];
+	const section = stemSection(species.base, seed, species.seedSalt, variant, stem.stem);
+	const roots = surfaceRoots(
+		species.base,
+		section,
+		{ x: fx, y: fy, z: fz, radius: stem.radii[1] as number },
+		[nx, ny, nz],
+		binormal,
+		seed,
+		species.seedSalt,
+		variant,
+		stem.stem,
+	);
+	for (const [k, root] of roots.entries())
+		list.push({
+			axis: -1 - (stem.stem * 64 + k),
+			parent: stemIndex,
+			record,
+			points: root.points,
+			radii: root.radii,
+			count: root.radii.length,
+			stem: -1,
+			fork: false,
+			leader: false,
+		});
 }
 
 /** Sky visibility at a point, trilinear in the crown's grid. */
@@ -975,7 +1037,9 @@ class Mesher {
 					this.linePoint(column, s, theta, c, n, point);
 					// On the sharp side of a crotch the fillet can curve back into the parent; keep the
 					// blend just outside the parent's surface.
-					const clearance = Math.max(CLEARANCE, 0.02 * rc);
+					// The first blend ring stands further clear, so a parent that curves outward, as a
+					// flared foot does, cannot show through the short strip from the weld.
+					const clearance = Math.max(CLEARANCE, (b === 1 ? 0.08 : 0.02) * rc);
 					for (let tries = 0; tries < 4; tries++) {
 						const d = surface.distance(point[0] as number, point[1] as number, point[2] as number);
 						if (d >= clearance * 0.5) break;

@@ -177,8 +177,9 @@ describe('the wood mesher', () => {
 		const record = testMeshInput('high', oak).record;
 		for (const [level, report] of reports.entries()) {
 			const keep = level === 0 ? 255 : (record.lod.woodOrders[level - 1] as number);
+			// Surface roots have no skeleton axis: their numbers are below zero.
 			for (const axis of report.axisRings.keys())
-				expect(oak.axes.order[axis] as number).toBeLessThanOrEqual(keep);
+				if (axis >= 0) expect(oak.axes.order[axis] as number).toBeLessThanOrEqual(keep);
 		}
 	});
 
