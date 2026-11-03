@@ -166,6 +166,9 @@ pub enum MeshError {
     /// A level cannot share the base mesh's vertices: the base is split into parts, or joints or
     /// morph targets pose its vertices, so the level copies them instead.
     SharedUnavailable,
+    /// A level that must keep its triangles' order got triangles that do not come part by part,
+    /// so the parts that draw them would hold them in another order.
+    Unordered,
 }
 
 /// Room for `more` values in `v`, or the bytes they need when memory cannot grow.
@@ -353,8 +356,10 @@ impl MeshStorage {
     /// mesh's triangles in piece order and names its vertices: the way of a mesh made in code, whose
     /// own list keeps its order for raycasts and for the triangle numbers that a page reads. The list
     /// shares the mesh's vertices and costs its indices alone, as a level does, and it goes when the
-    /// mesh goes. Only a mesh in one part shares its vertices so. A list given before stays until the
-    /// mesh goes, so a mesh takes one list in its life.
+    /// mesh goes. A mesh split into parts shares them part by part, as
+    /// [`MeshStorage::add_split_level`] does, so its list must come part by part in that level's
+    /// order. A mesh that holds a list takes another once [`MeshStorage::take_piece_list`] took the
+    /// first away.
     pub fn set_piece_list(
         &mut self,
         id: u32,
@@ -378,12 +383,21 @@ impl MeshStorage {
         }
         // A list that the checks below refuse takes no room: they come before the list is made.
         crate::pieces::PieceTable::default().set(0, triangles, pieces)?;
-        let list = self
-            .add_level(id, indices)
-            .map_err(|_| PieceError::Triangles)?;
+        let list = if mesh.part_count > 1 {
+            self.add_split_level(id, indices, true)
+        } else {
+            self.add_level(id, indices)
+        }
+        .map_err(|_| PieceError::Triangles)?;
         self.pieces.set(id, triangles, pieces)?;
         self.pieces.set_list(id, list);
         Ok(())
+    }
+
+    /// Takes away the triangle list of the pieces of mesh `id`, with the pieces, and returns the
+    /// mesh that held it, which the caller removes as it removes any mesh.
+    pub fn take_piece_list(&mut self, id: u32) -> Option<u32> {
+        self.pieces.take_list(id)
     }
 
     /// The parts that the pieces of mesh `id` draw from, in piece order: the parts of their own
@@ -922,12 +936,24 @@ impl MeshStorage {
     /// the base's seams. The level holds the base's radius, format and vertex count, and goes when
     /// the base goes.
     ///
+    /// The level draws its triangles part by part: those of the base's first part, in their order
+    /// among `indices`, then those of the next, and the copied ones last. A triangle draws from
+    /// the part where one of its corners first appears, trying its corners in turn, once that part
+    /// holds all three. With `in_order`, the level keeps the order of `indices` whole, as pieces of the level need, so
+    /// they must come part by part already.
+    ///
     /// # Errors
     /// [`MeshError::UnknownMesh`] for a base that is not live, [`MeshError::SharedUnavailable`] for
     /// a base with morph targets or a level for its base, [`MeshError::NotTriangles`] and
-    /// [`MeshError::IndexOutOfRange`] for indices that do not fit, and
-    /// [`MeshError::OutOfMemory`] when the lists cannot grow.
-    pub fn add_split_level(&mut self, base: u32, indices: &[u32]) -> Result<u32, MeshError> {
+    /// [`MeshError::IndexOutOfRange`] for indices that do not fit, [`MeshError::Unordered`] for
+    /// triangles that do not come part by part with `in_order`, and [`MeshError::OutOfMemory`] when
+    /// the lists cannot grow. The storage is as it was after an error.
+    pub fn add_split_level(
+        &mut self,
+        base: u32,
+        indices: &[u32],
+        in_order: bool,
+    ) -> Result<u32, MeshError> {
         if !indices.len().is_multiple_of(3) {
             return Err(MeshError::NotTriangles);
         }
@@ -986,6 +1012,7 @@ impl MeshStorage {
         reserve(&mut lists, parts.len())?;
         lists.resize_with(parts.len(), Vec::new);
         let mut apart: Vec<u32> = Vec::new();
+        let mut last = 0;
         for triangle in indices.as_chunks::<3>().0 {
             let held = triangle.iter().find_map(|&v| {
                 let k = home[v as usize].0;
@@ -996,6 +1023,11 @@ impl MeshStorage {
                 ];
                 Some((k as usize, corners))
             });
+            let group = held.map_or(parts.len(), |(k, _)| k);
+            if in_order && group < last {
+                return Err(MeshError::Unordered);
+            }
+            last = group;
             match held {
                 Some((k, corners)) => {
                     reserve(&mut lists[k], 3)?;
@@ -2191,7 +2223,7 @@ mod tests {
                 .iter()
                 .map(|p| p.vertices.len())
                 .sum::<usize>();
-            let level = storage.add_split_level(base, &picked).unwrap();
+            let level = storage.add_split_level(base, &picked, false).unwrap();
             let after = storage
                 .pages()
                 .iter()
@@ -2225,6 +2257,67 @@ mod tests {
             // The level goes with its base, and its indices with it.
             storage.remove(&[base]);
             assert!(storage.mesh(level).is_none());
+        }
+    }
+
+    #[test]
+    fn a_split_mesh_takes_a_piece_list_that_comes_part_by_part() {
+        for packing in [Packing::Pages, Packing::SharedBuffers] {
+            let mut storage = MeshStorage::with_page_limit(packing, 4096);
+            let grid = grid(64, 64, vertex::UV0);
+            let base = storage.add(&grid).unwrap();
+            assert!(storage.mesh(base).unwrap().part_count > 2);
+            // A level of the base's own triangles draws them part by part, so its order is one
+            // that a list in order may take.
+            let (_, _, _, own) = planning(&storage, base);
+            let level = storage.add_split_level(base, &own, false).unwrap();
+            let (_, _, _, by_part) = planning(&storage, level);
+            let triangles = by_part.len() as u32 / 3;
+            let half = triangles / 2;
+            let piece = |triangles| Piece {
+                triangles,
+                sphere: [0.0, 0.0, 0.0, 100.0],
+                cone: [0.0, 1.0, 0.0, 2.0],
+            };
+            let pieces = [piece(half), piece(triangles - half)];
+            // Triangles that do not come part by part would draw in another order than the
+            // pieces name, so the list is refused and the storage stays as it was.
+            let mut reversed: Vec<[u32; 3]> = by_part.as_chunks::<3>().0.to_vec();
+            reversed.reverse();
+            let reversed = reversed.concat();
+            let parts_before = storage.parts.len();
+            assert_eq!(
+                storage.add_split_level(base, &reversed, true),
+                Err(MeshError::Unordered)
+            );
+            assert_eq!(
+                storage.set_piece_list(base, &reversed, &pieces),
+                Err(PieceError::Triangles)
+            );
+            assert_eq!(storage.parts.len(), parts_before);
+            assert!(storage.pieces(base).is_empty());
+            storage.set_piece_list(base, &by_part, &pieces).unwrap();
+            assert_eq!(storage.pieces(base), &pieces);
+            // The pieces draw the list's parts, which hold the triangles in the list's order.
+            let list = storage.pieces.list(base).unwrap();
+            let (_, _, _, drawn) = planning(&storage, list);
+            assert_eq!(drawn, by_part);
+            let ranges: u32 = storage
+                .piece_parts(base)
+                .iter()
+                .map(|part| part.index_count / 3)
+                .sum();
+            assert_eq!(ranges, triangles);
+            // A mesh takes another list once the first is taken away, and removed with its parts.
+            assert_eq!(
+                storage.set_piece_list(base, &by_part, &pieces),
+                Err(PieceError::Count)
+            );
+            assert_eq!(storage.take_piece_list(base), Some(list));
+            assert!(storage.pieces(base).is_empty());
+            storage.remove(&[list]);
+            storage.set_piece_list(base, &by_part, &pieces).unwrap();
+            assert_eq!(storage.pieces(base), &pieces);
         }
     }
 

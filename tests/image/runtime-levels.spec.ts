@@ -4,7 +4,8 @@
 // and a generator's sphere (tests/pages/sketches/runtime-levels-sketch.ts). The test checks that
 // the planner on a job worker gives the levels that Node's planner gives for the same grid, triangle
 // for triangle, that each mesh gets the levels it should, and that the frames draw far fewer
-// triangles far from the grid than near it.
+// triangles far from the grid than near it. At a corner of the grid in parts, looking out past it,
+// the grid's pieces draw a few of its triangles where the same grid without them draws them all.
 import { LOD_MAX_LEVELS } from '@null3d/engine/levels-planner';
 import { expect, test } from '@playwright/test';
 import { ENGINE_MODES, modeProblems } from '../lib/engine-checks.ts';
@@ -31,6 +32,8 @@ interface Result {
 const CELLS = 128;
 /** The grid's triangles. */
 const TRIANGLES = CELLS * CELLS * 2;
+/** The triangles of the grid in parts, which the sketch draws with pieces and without. */
+const LARGE_TRIANGLES = 300 * 300 * 2;
 
 const PATHS = [
 	{ tier: 'webgpu', query: '' },
@@ -76,4 +79,8 @@ for (const path of PATHS)
 			const far = triangles['400'] as number;
 			expect(near).toBeGreaterThan(TRIANGLES / 2);
 			expect(far).toBeLessThan(near / 16);
+			// The view takes in a corner of the grid in parts, whose pieces cull the rest of it.
+			const whole = triangles.whole as number;
+			expect(whole).toBeGreaterThanOrEqual(LARGE_TRIANGLES);
+			expect(triangles.pieces as number).toBeLessThan(whole / 4);
 		});

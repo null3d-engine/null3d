@@ -237,6 +237,8 @@ const levels = await ground.buildLevels();
 
 Each level about halves the triangles of the level above and keeps the largest distance between its surface and the mesh's as its error. So it switches in at once, with no fade, where that distance covers less than the `lodThreshold` setting's pixels. The levels name the mesh's own vertices: a level costs its indices alone, and the mesh keeps its vertices and triangles in their order. A mesh of more than 65,535 vertices, which the engine splits into parts, shares its vertices part by part. Only the few triangles that cross from one part to another copy their vertices. A plan of 130,000 triangles takes about half a second of one job worker, and a plan of a million about six seconds; the frames go on meanwhile. A large mesh spreads its work over frames, so no frame waits for it: the engine reads one part of the mesh in each frame for the plan, and gives the mesh one level in each frame when the plan is done, coarsest first. The planner, about 23 KB after Brotli, downloads with the first mesh that plans.
 
+The plan also sorts the mesh and each level of 32,768 triangles or more into 8 to 16 pieces, and each copy skips the pieces that lie outside the view or face away from the camera ([Pieces of a large level](../concepts/lod.md#pieces-of-a-large-level)). The mesh's own pieces draw a sorted copy of its indices, which arrives in the frame after the last level, so the mesh keeps its triangles in their order. A list that faces mostly one way, such as a ground, splits by space.
+
 The `levels` option of `fromArrays` and of every generator controls the plan:
 
 | `levels` | What the mesh plans |

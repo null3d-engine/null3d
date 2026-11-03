@@ -1,7 +1,7 @@
 // What the level planner's start in the sketch's thread (scene/mesh-levels.ts) and its task on a
 // job worker (scene/levels-task.ts) share: the names of meshoptimizer's modules, and the layout of
-// a mesh's words as the sketch's thread reads them from the core (`readPlanningPart`). A file of its own, so that
-// neither side's code loads with the other's.
+// a mesh's words as the sketch's thread reads them from the core (`readPlanningPart`). A file of
+// its own, so that neither side's code loads with the other's.
 
 import { VERTEX_ATTRIBUTES } from '../generated/gpu';
 
@@ -23,6 +23,12 @@ export const PLANNED_ATTRIBUTES: readonly (readonly [location: number, floats: n
 	[4, 4],
 	[5, 4],
 ];
+
+/**
+ * The most parts of a split mesh whose vertices note the parts that hold them, one bit a part in
+ * a 32-bit word. The lists of a mesh of more parts get no pieces.
+ */
+export const MAX_MASKED_PARTS = 32;
 
 /** True for a format that holds the attribute at `location`. Positions and normals it always does. */
 export function holdsAttribute(format: number, location: number): boolean {

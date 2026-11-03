@@ -1,6 +1,6 @@
 # D-306: Pieces of a large mesh, culled per copy
 
-Status: decided and built on every GPU path. Built: the asset tool's pieces (`NULL3D_pieces`), the culling shader on WebGPU, the CPU culling of the direct-draw path and the job workers' culling on WebGL2. Pending: the runtime planner that gives a mesh made in code its pieces. It calls the entry points below. Task: none.
+Status: decided and built on every GPU path. Built: the asset tool's pieces (`NULL3D_pieces`), the culling shader on WebGPU, the CPU culling of the direct-draw path, the job workers' culling on WebGL2, and the pieces of meshes made in code, which their level plan gives them ([D-310](D-310-runtime-levels.md#pieces-of-meshes-made-in-code)). Task: none.
 
 Summary: Each level of 32,768 triangles or more holds its triangles in 8 to 16 pieces, each facing about one way, with a sphere and a cone of facings. Each copy picks its level as before, then culls each piece by the frustum, by the cone where it holds, and by the depth pyramid in the late occlusion phase. In the desert benchmark they cut a frame's triangles by about a quarter. From above the GPU frame falls from 5.65 to 4.32 ms, and walking it holds at 4.47 to 4.49 ms.
 
@@ -38,7 +38,7 @@ The table gives the share of each list's triangles that the cone and frustum tes
 
 ## The engine
 
-`MeshStorage::set_pieces` gives a live mesh pieces of its own list, at any time after the mesh is made. A new list or new vertices drop them. `MeshStorage::set_piece_list` gives a mesh in one part pieces over a list of their own. That list shares the mesh's vertices, as a level does, so a mesh made in code keeps its own triangle order for raycasts and vertex updates. The loader calls `setMeshPieces`, and a runtime planner calls `setMeshPieceList`. Either marks the scene's structure changed, so the next rebuild draws the pieces in place.
+`MeshStorage::set_pieces` gives a live mesh pieces of its own list, at any time after the mesh is made. A new list or new vertices drop them. `MeshStorage::set_piece_list` gives a mesh pieces over a list of their own. That list shares the mesh's vertices, as a level does, part by part for a mesh split into parts, so a mesh made in code keeps its own triangle order for raycasts and vertex updates. The loader calls `setMeshPieces`, and the level plan of a mesh made in code calls `setMeshPieceList`. Either marks the scene's structure changed, so the next rebuild draws the pieces in place.
 
 On WebGPU the scene's layout gives a bucket with pieces no draws of its own. Each piece gets a bucket after every other bucket. It takes the bucket's pipeline and material, a slice of the bucket's size, and a draw for each range of the mesh's parts that the piece covers. A pass draws the pieces' buckets in the bucket's place. A level's pieces take the level's copy count from `Layout::fit_copies`, so their slices move with the level's. The bucket's record names its pieces in its word of index reads, under a bit of its own, since such a bucket never reads by index. A piece's record holds its sphere where a bucket holds its local sphere, and its cone where a level holds its links.
 
@@ -103,4 +103,4 @@ Rejected:
 
 - The culling parameters' second debug word is 1 for the camera's own view, where the cone test holds.
 - The bucket record keeps its 17 words, and only `cull.wgsl` changes. The shader build compiles the culling shader's three entries and reuses the other 94.
-- The runtime follow-up plans pieces with `planPieces` on the job workers. It calls `setMeshPieceList(mesh, count, indices)`, with the pieces' nine words each and then the sorted indices in the staging words. A mesh whose own list it may sort takes `setMeshPieces(mesh, count)` instead. A ground mesh that wraps the camera may plan spatial pieces with one facing group, `planPieces(positions, indices, count, 1)`, whose cones never cull.
+- Meshes made in code plan pieces with `planPieces` on the job workers, with their levels ([D-310](D-310-runtime-levels.md#pieces-of-meshes-made-in-code)). A mesh takes `setMeshPieceList(mesh, count, indices)`, with the pieces' nine words each and then the sorted indices in the staging words. A level, whose list the plan may sort, takes `setMeshPieces(mesh, count)`, or its pieces with `createSplitLevel` where its base is split. A list that faces mostly one way, such as a ground that wraps the camera, plans spatial pieces with one facing group.

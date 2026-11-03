@@ -65,6 +65,10 @@ function engine(options: { split?: boolean; format?: number; parts?: number } = 
 		split: 0,
 		reads: [] as number[],
 		updates: 0,
+		/** The pieces that each mesh took: over a list of its own, its own list, or at its making. */
+		pieceLists: [] as { mesh: number; count: number; indices: number }[],
+		pieces: [] as { mesh: number; count: number }[],
+		splitPieces: [] as number[],
 	};
 	let next = 1;
 	let failed = 0;
@@ -86,8 +90,9 @@ function engine(options: { split?: boolean; format?: number; parts?: number } = 
 			vertices.set(id, vertices.get(base) ?? 0);
 			return id;
 		},
-		createSplitLevel: (base: number) => {
+		createSplitLevel: (base: number, count: number) => {
 			record.split++;
+			record.splitPieces.push(count);
 			const id = next++;
 			vertices.set(id, vertices.get(base) ?? 0);
 			return id;
@@ -113,6 +118,14 @@ function engine(options: { split?: boolean; format?: number; parts?: number } = 
 				0,
 			]);
 			return staging;
+		},
+		setMeshPieceList: (mesh: number, count: number, indices: number) => {
+			record.pieceLists.push({ mesh, count, indices });
+			return 1;
+		},
+		setMeshPieces: (mesh: number, count: number) => {
+			record.pieces.push({ mesh, count });
+			return 1;
 		},
 		setMeshLevels: (base: number, count: number) => {
 			record.levels.set(base, [...new Uint32Array(memory.buffer, staging, count)]);
@@ -313,6 +326,42 @@ describe('the automatic levels of a mesh made in code', () => {
 		expect(record.split).toBe(3);
 		expect(record.copies).toBe(0);
 		expect(record.shared).toBe(0);
+	});
+
+	test('give a large mesh its pieces after its levels, and each large level its own', async () => {
+		answer = (input) => {
+			const triangles = new Uint32Array(input.words)[1] as number;
+			const pieces = (count: number) => ({
+				triangles: new Uint32Array(count).fill(1),
+				bounds: new Float32Array(count * 8),
+			});
+			return {
+				levels: [
+					{ indices: new Uint32Array(triangles / 2), error: 0.01, pieces: pieces(8) },
+					{ indices: new Uint32Array(triangles / 4), error: 0.02 },
+				],
+				pieces: { ...pieces(12), indices: new Uint32Array(triangles) },
+				side: 1,
+				ms: 0,
+			};
+		};
+		const { geometry, record } = engine();
+		const mesh = geometry.fromArrays(strip(70_000));
+		expect(await mesh.buildLevels()).toHaveLength(2);
+		const [finest] = mesh.levels;
+		expect(record.pieces).toEqual([{ mesh: finest?.mesh.id as number, count: 8 }]);
+		expect(record.pieceLists).toEqual([{ mesh: mesh.id, count: 12, indices: 210_000 }]);
+		// A plan for the mesh's new shape gives it pieces again, in place of the old ones.
+		mesh.updateVertices('positions', new Float32Array(70_002 * 3));
+		await mesh.buildLevels();
+		expect(record.pieceLists).toHaveLength(2);
+		expect(record.pieces).toHaveLength(2);
+		// A split mesh's levels take their pieces as they are made, and keep their order.
+		const split = engine({ split: true });
+		const parts = split.geometry.fromArrays(strip(70_000));
+		await parts.buildLevels();
+		expect(split.record.splitPieces).toEqual([0, 8]);
+		expect(split.record.pieceLists).toHaveLength(1);
 	});
 
 	test('hand over the levels one a frame, coarsest first, and all at once in hold mode', async () => {

@@ -55,7 +55,8 @@ import {
 	VERTEX_TYPE_UNORM16,
 	VERTEX_TYPES,
 } from '../generated/gpu';
-import { holdsAttribute, PLANNED_ATTRIBUTES } from './level-words';
+import type { PiecesData } from './gltf-parse';
+import { holdsAttribute, MAX_MASKED_PARTS, PLANNED_ATTRIBUTES } from './level-words';
 import type { CoreMemory, HeapConstructor } from './memory';
 import type {
 	IntegerArray,
@@ -558,17 +559,76 @@ export function meshFromLevel(
 /**
  * Builds a level of the live mesh `base`, which the engine split into parts, that draws the base's
  * own vertices with the triangles `indices`, in the base's numbering, and returns its id. The few
- * triangles that span the parts' seams draw from a copy of their vertices.
+ * triangles that span the parts' seams draw from a copy of their vertices. A level with `pieces`
+ * keeps the order of its triangles, which must come part by part as the parts draw them; one
+ * whose triangles do not draws without pieces.
  */
 export function meshFromSplitLevel(
 	core: CoreMemory,
 	base: number,
 	indices: Uint32Array,
 	call: string,
+	pieces?: PiecesData,
 ): number {
-	const address = core.checkGrowth(core.glue.meshArrays(indices.length), call);
+	const address = stagePieces(core, pieces, indices.length, call);
 	core.u32(address, indices.length).set(indices);
-	return core.checkGrowth(core.glue.createSplitLevel(base, indices.length), call);
+	const count = pieces?.triangles.length ?? 0;
+	return core.checkGrowth(core.glue.createSplitLevel(base, count, indices.length), call);
+}
+
+/** The words of one piece in the staging words: its triangles, then its eight floats of bounds. */
+const PIECE_WORDS = 9;
+
+/**
+ * Writes `pieces` into the staging words, nine words a piece, with room for `more` words after
+ * them, and returns the address of those words.
+ */
+function stagePieces(
+	core: CoreMemory,
+	pieces: PiecesData | undefined,
+	more: number,
+	call: string,
+): number {
+	const count = pieces?.triangles.length ?? 0;
+	const at = core.checkGrowth(core.glue.meshArrays(count * PIECE_WORDS + more), call);
+	if (!pieces) return at;
+	const words = core.u32(at, count * PIECE_WORDS);
+	const floats = new Float32Array(words.buffer, words.byteOffset, count * PIECE_WORDS);
+	for (let k = 0; k < count; k++) {
+		words[k * PIECE_WORDS] = pieces.triangles[k] as number;
+		floats.set(pieces.bounds.subarray(k * 8, k * 8 + 8), k * PIECE_WORDS + 1);
+	}
+	return at + count * PIECE_WORDS * 4;
+}
+
+/**
+ * Gives the live mesh `mesh` the pieces of its own triangle list, which follow the list's order.
+ * Returns false when they do not fit the list, which then draws whole.
+ */
+export function setMeshPieces(
+	core: CoreMemory,
+	mesh: number,
+	pieces: PiecesData,
+	call: string,
+): boolean {
+	stagePieces(core, pieces, 0, call);
+	return core.glue.setMeshPieces(mesh, pieces.triangles.length) === 1;
+}
+
+/**
+ * Gives the live mesh `mesh` pieces over a sorted list of its triangles of their own, which shares
+ * its vertices, so the mesh keeps its own list. The list and pieces of an earlier call go. Returns
+ * false when the mesh takes none: one whose parts would draw the list in another order.
+ */
+export function setMeshPieceList(
+	core: CoreMemory,
+	mesh: number,
+	pieces: PiecesData & { indices: Uint32Array },
+	call: string,
+): boolean {
+	const { indices } = pieces;
+	core.u32(stagePieces(core, pieces, indices.length, call), indices.length).set(indices);
+	return core.glue.setMeshPieceList(mesh, pieces.triangles.length, indices.length) === 1;
 }
 
 /**
@@ -609,6 +669,11 @@ export interface PlanningWords {
 	readonly parts: number;
 	/** The indices that the parts read so far gave. */
 	indices: number;
+	/**
+	 * The parts that hold each vertex, one bit a part, for a mesh of several parts, up to
+	 * `MAX_MASKED_PARTS`: the pieces of its lists follow the parts.
+	 */
+	readonly masks?: Uint32Array;
 }
 
 /** The words before a part's own in the core's answer: the mesh's four, then the part's two. */
@@ -642,10 +707,17 @@ export function readPlanningPart(
 		words[0] = vertices;
 		words[1] = all;
 		words[2] = format;
-		read = { words, parts: head[0] as number, indices: 0 };
+		const parts = head[0] as number;
+		const masked = parts > 1 && parts <= MAX_MASKED_PARTS;
+		read = { words, parts, indices: 0, ...(masked && { masks: new Uint32Array(vertices) }) };
 	}
-	const { words } = read;
+	const { words, masks } = read;
 	const body = core.u32(at + PART_HEADER * 4, count * (1 + floats) + indices);
+	if (masks)
+		for (let local = 0; local < count; local++) {
+			const own = body[local] as number;
+			masks[own] = (masks[own] as number) | (1 << part);
+		}
 	let from = count;
 	let to = 3;
 	for (const [location, size] of PLANNED_ATTRIBUTES) {

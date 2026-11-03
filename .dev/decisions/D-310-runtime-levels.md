@@ -134,6 +134,16 @@ The scene's late windows come in the same places with the default on and off, so
 
 How the data was produced: `bun test` of the two unit tests named above; a temporary log of each level's time around `levelMesh`; a scratch Bun test that times the task's `run` with `process.cpuUsage`; `tests/image/runtime-levels.spec.ts`; and a scratch Playwright test that opened `levels-frames.html?sketch=...` with the grid's sizes and `levels=off`, and with the Island's sketch, on this record's branch.
 
+## Pieces of meshes made in code
+
+The plan gives a mesh made in code the pieces that `--lod` gives a file's large levels ([D-306](D-306-mesh-pieces.md)). The pieces planner moved beside the level planner (`packages/engine/levels/pieces.js`, `@null3d/engine/pieces-planner`), and the levels task runs it on the job worker after the levels (`scene/level-pieces.ts`). The mesh and each level of 32,768 triangles or more get 8 to 16 pieces.
+
+- The mesh keeps its own list, for raycasts and `updateVertices`. Its pieces draw a sorted list of their own that shares its vertices (`setMeshPieceList`), which arrives in the frame after the last level. A later plan's list takes the place of the earlier one, so a plan after `updateVertices` gives the new shape pieces too.
+- A level's list is sorted before the level is made. A level over a base in one part takes its pieces with `setMeshPieces`, and one over a split base with `createSplitLevel`.
+- A list whose triangles face one way by 0.7 or more, as their facings summed by area show it, splits by space alone: a ground, a road or a wall. Groups by facing would each spread over the whole list, so the view would cut none of them.
+- A mesh of more than 65,535 vertices draws a list part by part: a triangle draws from the part where one of its corners first appears, trying its corners in turn, once that part holds all three, and the triangles that no part holds whole draw last from copies. The task notes which parts hold each vertex, one bit a part, and plans pieces within each of those groups, so the sorted list still comes part by part. The core checks the order and draws a list in another order without pieces. A mesh of more than 32 parts, or of more groups than 16 pieces, gets none.
+- The guards are the levels' and the engine's: a mesh that plans no levels gets no pieces, and the engine skips the pieces of a draw that a skin, morph targets, a displacement or a custom vertex offset moves, and the cone test where a material draws both faces.
+
 ## Look
 
 Planned levels switch where their measured error covers under the `lodThreshold` setting's pixels, as a file's measured levels do, so a mesh looks as it did. Option (a) of the planner's place and option (b) of the copy look the same; the rules of which meshes plan differ only in where the GPU's time goes.
