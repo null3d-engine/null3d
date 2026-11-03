@@ -1975,8 +1975,8 @@ async function main(): Promise<void> {
 	} finally {
 		await cloud?.closeAll();
 		forgetCloud?.();
-		local.stop();
-		lan?.stop();
+		await local.stop();
+		await lan?.stop();
 	}
 	process.exit(failures > 0 ? 1 : 0);
 }
