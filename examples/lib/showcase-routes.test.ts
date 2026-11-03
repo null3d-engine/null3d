@@ -9,8 +9,6 @@ import * as creek from '../showcase/creek/sketch';
 import * as islandPlace from '../showcase/island/island';
 import * as islandPlan from '../showcase/island/plan';
 import * as island from '../showcase/island/sketch';
-import * as splatCloud from '../splat-garden/cloud';
-import * as splatGarden from '../splat-garden/sketch';
 import {
 	BOUNDED_POLAR_ANGLE,
 	type CameraBounds,
@@ -45,7 +43,6 @@ const SCENES = [
 		ground: (x: number, z: number) =>
 			Math.max(creekLand.groundHeight(x, z), creekRing.heightAt(x, z)),
 	},
-	{ name: 'splat garden', sketch: splatGarden, ground: splatCloud.gardenHeight },
 ];
 
 /** The most that a tree on the island rises above where it stands, per unit of its scale, in meters. */
