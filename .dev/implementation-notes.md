@@ -1271,7 +1271,10 @@ percent of the large variants. The rare lit features cost less: area lights and 
 ### The count the manifest may not pass
 
 `BUILD_BUDGET` in `crates/null3d-shaders/src/manifest.rs` records the figures above, and a commit
-that adds builds on purpose raises them here and in the constant together. The test
+that adds builds on purpose raises them here and in the constant together. The unlit surface hook,
+which lets a custom material show its own color with no lighting, is one such build on each
+target: it adds one WGSL build and one GLSL build, so the figures stand one higher than the
+count before it. The test
 `the_manifests_builds_stay_within_the_recorded_figure` in the shader crate counts the manifest's
 builds and fails when either target passes its figure. The test builds no shader, so it costs a
 test run almost nothing. Its problem names the figure, the file that holds it and this guide.
