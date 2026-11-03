@@ -3,6 +3,10 @@ name: CI
 # Work lands on main by direct push (D-157 in .dev/decisions), and each push to main runs every
 # job, as .dev/pull-requests.md lists them. A run started by hand runs every job too:
 # gh workflow run ci.yml --ref main
+# A checkout can stall: four of them ran 86 to 328 seconds where the same jobs normally take 17
+# to 19, and two jobs were cancelled with their work part-run. Every checkout step carries a
+# two-minute limit, so a stall fails under its own name in two minutes rather than spending the
+# job's budget and taking every step after it down.
 # A push to a milestone branch, such as m3-start, runs only the quick checks. Its runs and the full
 # runs started by hand on the branch share the branch's caches, so neither does again the work that
 # the other saved: a pull request's runs kept caches of their own (D-249).
@@ -75,6 +79,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
@@ -168,6 +173,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         # The image tests' references are most of a checkout, and this job reads none of them. A
         # sparse checkout leaves them out and fetches no file it leaves out.
         with: &without-references
@@ -199,6 +205,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
@@ -227,6 +234,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
@@ -268,6 +276,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -377,6 +386,7 @@ jobs:
             limit: 25
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - name: Find an earlier pass with the same inputs
         id: passed
@@ -438,6 +448,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -503,6 +514,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -544,6 +556,7 @@ jobs:
       shader-entries-folder: ${{ steps.entry-folder.outputs.folder }}
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
@@ -642,6 +655,7 @@ jobs:
       # The size check finds its base in the history. A run on main compares with main's commit
       # before the push, so the growth that landed before never counts against the newest push.
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
@@ -727,6 +741,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -767,6 +782,7 @@ jobs:
     steps:
       # The check reads the trailers of the commits since the base.
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
@@ -856,6 +872,7 @@ jobs:
       NULL3D_SHADER_SHARD: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - name: Find an earlier pass with the same inputs
         id: passed
@@ -955,6 +972,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1019,6 +1037,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1091,6 +1110,7 @@ jobs:
       CITY_TESTS: '\bs6 on '
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         # The browser tests compare with the references of CI's software GPU alone, so the
         # checkout leaves out the real GPU's.
         with: &software-gpu-references
@@ -1158,6 +1178,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *software-gpu-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1205,6 +1226,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *software-gpu-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1281,6 +1303,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *software-gpu-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1345,6 +1368,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *software-gpu-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1414,6 +1438,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *software-gpu-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1522,6 +1547,7 @@ jobs:
       PWTEST_SHARD_WEIGHTS: "48:111:90"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1585,6 +1611,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1639,6 +1666,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1679,6 +1707,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1752,6 +1781,7 @@ jobs:
       PREBUILT: none
     steps: &real-browser-steps
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         # Real browsers compare with the real GPU's references and their devices' own, never with
         # the software GPU's, which the checkout leaves out.
         with: &real-browser-checkout
@@ -1840,6 +1870,7 @@ jobs:
       NULL3D_LOAD_PAGES: prebuilt
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *real-browser-checkout
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1900,6 +1931,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
