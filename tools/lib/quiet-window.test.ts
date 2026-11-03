@@ -1,15 +1,19 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scaledBudget } from '../../tests/lib/run-budget.ts';
 import { cacheDir, HEAVY_SLOT_ENV } from './build-cache';
 import {
 	QUIET_FILE_ENV,
+	QUIET_MARKER_LIFETIME_MS,
 	QUIET_PASSED_ENV,
+	quietEndTime,
 	quietFile,
+	quietHolderPid,
 	quietRefusal,
+	quietWindow,
 	refuseInQuietWindow,
 } from './quiet-window';
 
@@ -54,6 +58,21 @@ describe('quietRefusal', () => {
 			quietRefusal('The page build', { ...withMarker('a run'), [HEAVY_SLOT_ENV]: '2' }),
 		).toBeNull();
 	});
+
+	it('lets a tool start once the marker has outlived its run', () => {
+		const old = withMarker('a memory run');
+		const born = new Date(Date.now() - 2 * 60 * 60 * 1000);
+		utimesSync(old[QUIET_FILE_ENV] as string, born, born);
+		expect(quietRefusal('The page build', old)).toBeNull();
+		// A run that named when it would finish is judged by that time instead, on both sides of it.
+		const named = withMarker('a soak (until about 00:01)');
+		expect(
+			quietRefusal('The page build', named, undefined, new Date(2026, 10, 3, 23, 30)),
+		).not.toBeNull();
+		expect(
+			quietRefusal('The page build', named, undefined, new Date(2026, 10, 4, 0, 30)),
+		).toBeNull();
+	});
 });
 
 describe('refuseInQuietWindow', () => {
@@ -71,6 +90,88 @@ describe('refuseInQuietWindow', () => {
 			'The shader build did not start',
 		);
 		expect(env[QUIET_PASSED_ENV]).toBeUndefined();
+	});
+});
+
+describe('quietWindow', () => {
+	/** Whether the window at `file` has outlived its run; a vanished marker holds nothing to outlive. */
+	function stale(file: string, now: Date): boolean {
+		const window = quietWindow(file, now);
+		return window.held ? window.stale : false;
+	}
+	/** A marker file that holds `text` and claims to have been written at `born`. */
+	function marker(text: string, born: Date): string {
+		const file = withMarker(text)[QUIET_FILE_ENV] as string;
+		utimesSync(file, born, born);
+		return file;
+	}
+
+	it('reports no window when no marker stands', () => {
+		expect(quietWindow(withMarker()[QUIET_FILE_ENV] as string)).toEqual({ held: false });
+	});
+
+	it('holds a window whose marker names no end time until an hour has passed', () => {
+		const now = new Date(2026, 10, 3, 12, 0);
+		const young = marker('a memory run\n', new Date(now.getTime() - 59 * 60 * 1000));
+		expect(quietWindow(young, now)).toMatchObject({ held: true, stale: false });
+		const old = marker('a memory run\n', new Date(now.getTime() - QUIET_MARKER_LIFETIME_MS));
+		expect(quietWindow(old, now)).toMatchObject({ held: true, stale: true });
+	});
+
+	it('judges a marker that names an end time by that time alone', () => {
+		const now = new Date(2026, 10, 3, 13, 0);
+		const born = new Date(now.getTime() - 2 * 60 * 1000);
+		// An hour past the time it promised, and still a fresh file: the run outlived its marker.
+		expect(quietWindow(marker('a run (until about 12:00)\n', born), now)).toMatchObject({
+			held: true,
+			stale: true,
+		});
+		expect(quietWindow(marker('a run (until about 13:20)\n', born), now)).toMatchObject({
+			held: true,
+			stale: false,
+		});
+		// Five minutes of grace past the time it named, and no more.
+		expect(stale(marker('a run (until about 12:55)\n', born), now)).toBe(true);
+		expect(stale(marker('a run (until about 12:58)\n', born), new Date(2026, 10, 3, 13, 2))).toBe(
+			false,
+		);
+	});
+
+	it('releases a window whose holder named its process once that process has gone', () => {
+		const now = new Date();
+		// A marker naming a process that cannot be running: its run finished without removing it.
+		expect(quietWindow(marker('a soak, pid 999999 (until about 23:59)\n', now), now)).toMatchObject(
+			{
+				held: true,
+				stale: true,
+			},
+		);
+		// This test's own process stands behind its marker, so the window holds.
+		expect(stale(marker(`a soak, pid ${process.pid} (until about 23:59)\n`, now), now)).toBe(false);
+		expect(quietHolderPid('a soak, pid 12')).toBe(12);
+		expect(quietHolderPid('a soak')).toBeNull();
+	});
+
+	it('reads an end time before midnight as the day it closes on, not the day it was written', () => {
+		const now = new Date(2026, 10, 3, 23, 50);
+		const end = quietEndTime('a soak (until about 00:20)', now, now);
+		expect(end?.getTime()).toBe(new Date(2026, 10, 4, 0, 20).getTime());
+		expect(stale(marker('a soak (until about 00:20)\n', now), now)).toBe(false);
+		expect(quietEndTime('a soak', now, now)).toBeNull();
+	});
+
+	it('counts a span the holder names from the moment it opened the window', () => {
+		const now = new Date(2026, 10, 3, 13, 20);
+		const born = new Date(2026, 10, 3, 13, 0);
+		expect(quietEndTime('a sweep (M3-C1 ablation, about 12 minutes)', born, now)?.getTime()).toBe(
+			new Date(2026, 10, 3, 13, 12).getTime(),
+		);
+		// Eighteen minutes on, a twelve-minute sweep is over and its marker is one it left behind.
+		expect(stale(marker('a sweep (about 12 minutes)\n', born), now)).toBe(true);
+		// Five minutes in, the same marker still holds.
+		expect(stale(marker('a sweep (about 12 minutes)\n', born), new Date(2026, 10, 3, 13, 5))).toBe(
+			false,
+		);
 	});
 });
 
