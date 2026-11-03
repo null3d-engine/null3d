@@ -402,6 +402,30 @@ The `storage-speed` plan measures what a browser offers the [cache of derived da
 - Run the vegetation and scatter plans on the cloud iPhone, the iPad, an S24-class phone and a low-end Android tablet:
   `bun run devices:cloud --only bsiphone17-safari,bsipadpro13-safari,bsgalaxys24-chrome,bsgalaxytaba9plus-chrome --plan vegetation`,
   and the same with `--plan vegetation-scatter`.
+- The `near-shoots` plan measures what the vegetation add-on's near shoots cost, for each preset's
+  per-frame triangle budget ([D-319](decisions/D-319-near-plants-split-by-distance.md)). Its page,
+  `tests/pages/near-shoots.html`, grows a stand of six oaks and looks across it from under the first
+  crown, where the near band holds more shoots than any budget. It turns the governor off, waits
+  for the near pool's answer, and measures five seconds. Each preset that a path draws runs three
+  times: with no near shoots (`?triangles=0`, every copy on its cards), at the preset's budget and
+  at twice it. The page at no shoots is the base, so the other two give the shoots' GPU time per
+  triangle and the headroom. Phones on WebGL2 give no GPU time, so their frame interval stands in.
+  Run it on the four test devices, one session after another:
+  `NULL3D_PORT=6351 bun run devices:cloud --only bsiphone17-safari,bsipadpro13-safari,bsgalaxys25-chrome,bsgalaxytaba9plus-chrome --plan near-shoots --allow-no-webgpu`.
+- The `near-breakdown` plan takes the same page's frame apart at Medium with the preset's budget,
+  on WebGPU and on WebGL2. One page draws the frame as it ships. Each other page makes one change:
+  the wood alone, the leaves alone, every copy on its far card, the leaves without their light
+  through them and their shine, no sun shadow, no dithered fade between levels, Low's level
+  distances, the depth prepass turned on where the preset leaves it off and off where the preset
+  draws it, the wood in the prepass (no fade, so the unmasked wood enters it), no MSAA, the
+  leaves' masks without alpha to coverage, a 16-bit scene color, 8-bit color with no HDR, and
+  full-precision shading. Each page reports its per-pass GPU time where the device times passes,
+  and its draws, triangles and pipelines. On Apple GPUs the pass timers overlap, so the opaque and
+  final passes each read about the whole frame. Run it on the cloud iPhone with
+  `NULL3D_PORT=6351 bun run devices:cloud --only bsiphone17-safari --plan near-breakdown`, and on
+  the Mac with `bun tests/real-browsers.ts --plan near-breakdown 'Google Chrome'`. With the Mac's
+  screen asleep, that runner's Chrome window gets no frames and its first page never ends; run
+  each page in a Chrome window that Playwright opens instead.
 - The `splats` plan also runs each GPU path at a quarter of the cloud's splat count, at the same
   pixel count. A pair of rows then shows whether the cost follows the count or the screen's fill.
 

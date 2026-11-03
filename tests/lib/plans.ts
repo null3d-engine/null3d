@@ -1825,6 +1825,117 @@ export function vegetationGrassPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * The GPU paths of the near shoots plan's pages, with the presets that each one draws. WebGL2 and
+ * compatibility mode cap the preset at Medium.
+ */
+const NEAR_SHOOTS_PATHS = [
+	{ path: 'webgpu', tier: 'webgpu', presets: ['low', 'medium', 'high', 'ultra'] },
+	{ path: 'compat', tier: 'webgpu', presets: ['low', 'medium'] },
+	{ path: 'webgl2', tier: 'webgl2', presets: ['low', 'medium'] },
+] as const;
+
+/** The vegetation add-on's per-frame budget of near shoot triangles at each preset, as it ships. */
+const NEAR_SHOOTS_BUDGETS = { low: 500_000, medium: 1_500_000, high: 5_000_000, ultra: 10_000_000 };
+
+/**
+ * What a frame's near shoots cost on a device, for each preset's triangle budget: a stand of grown
+ * oaks seen from under a crown, at each preset that a GPU path draws, with no near shoots, with the
+ * preset's budget and with twice it. The page at no shoots is the base, so the other two give the
+ * shoots' GPU time per triangle and how far the budget may move.
+ */
+export function nearShootsPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+	];
+	for (const { path, tier, presets } of NEAR_SHOOTS_PATHS)
+		for (const preset of presets)
+			for (const share of [0, 1, 2])
+				items.push(
+					pageItem(
+						`near-shoots-${preset}-x${share}-${path}`,
+						'near-shoots',
+						{ kind: 'probe', tier },
+						{
+							switches: [
+								`gpu=${path}`,
+								`preset=${preset}`,
+								`triangles=${NEAR_SHOOTS_BUDGETS[preset] * share}`,
+								'seconds=5',
+							],
+							timeoutSeconds: 900,
+						},
+					),
+				);
+	return items;
+}
+
+/**
+ * The cases of the near breakdown plan: the probe page's frame as it ships, then one change at a
+ * time. The depth prepass case turns the prepass on where the preset leaves it off, and off where
+ * the preset draws it. The prepass leaves out every build that discards by its alpha or a fading
+ * level's dither, so the wood, which draws without the mask, enters it only without the fade, as in
+ * its own case. The last three cases change what the main pass stores for each sample: the scene
+ * color at 16 bits a channel, 8-bit color with no HDR, and full-precision shading.
+ */
+const NEAR_BREAKDOWN_CASES = [
+	{ name: 'base', switches: [] },
+	{ name: 'wood-only', switches: ['only=wood'] },
+	{ name: 'leaves-only', switches: ['only=leaves'] },
+	{ name: 'far-only', switches: ['only=far'] },
+	{ name: 'plain-light', switches: ['light=plain'] },
+	{ name: 'no-shadows', switches: ['shadows=off'] },
+	{ name: 'no-fade', switches: ['fade=off'] },
+	{ name: 'coarse-levels', switches: ['levels=coarse'] },
+	{ name: 'prepass', switches: { webgpu: ['prepass=on'], webgl2: ['prepass=off'] } },
+	{
+		name: 'wood-prepass',
+		switches: {
+			webgpu: ['fade=off', 'prepass=on'],
+			webgl2: ['fade=off'],
+		},
+	},
+	{ name: 'no-msaa', switches: ['aa=none'] },
+	{ name: 'no-coverage', switches: ['coverage=off'] },
+	{ name: 'rgba16f-scene', switches: ['scene-format=rgba16f'] },
+	{ name: 'no-hdr', switches: ['hdr=off'] },
+	{ name: 'full-precision', switches: ['half=off'] },
+] as const;
+
+/**
+ * Where a frame of the near shoots page spends its GPU time, on WebGPU and on WebGL2: the stand of
+ * oaks at Medium with the preset's budget of near shoots, as it ships and with one change at a
+ * time, each page measured for its per-pass GPU time, draws, triangles and pipelines.
+ */
+export function nearBreakdownPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+	];
+	for (const { path, tier } of [
+		{ path: 'webgpu', tier: 'webgpu' },
+		{ path: 'webgl2', tier: 'webgl2' },
+	] as const)
+		for (const { name, switches } of NEAR_BREAKDOWN_CASES)
+			items.push(
+				pageItem(
+					`near-breakdown-${name}-${path}`,
+					'near-shoots',
+					{ kind: 'probe', tier },
+					{
+						switches: [
+							`gpu=${path}`,
+							'preset=medium',
+							`triangles=${NEAR_SHOOTS_BUDGETS.medium}`,
+							'seconds=5',
+							...('webgpu' in switches ? switches[path] : switches),
+						],
+						timeoutSeconds: 900,
+					},
+				),
+			);
+	return items;
+}
+
+/**
  * The wind field's cost on a device, at the grid shapes and pressure counts that the preset rows
  * take: the two flat grids that Low would take, the flat 64x64 of Medium, the four layers of 128x128
  * of High and the volume 64x24x64 of Ultra. Each page runs the solver's shipped cycle and a chain of
@@ -2875,6 +2986,8 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'wind-reader-cost': windReaderCostPlan,
 	'leaves-wind-cost': leavesWindCostPlan,
 	'vegetation-grass': vegetationGrassPlan,
+	'near-shoots': nearShootsPlan,
+	'near-breakdown': nearBreakdownPlan,
 	terrain: terrainPlan,
 	'terrain-shadow': terrainShadowPlan,
 	'vegetation-scatter': vegetationScatterPlan,
