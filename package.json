@@ -24,6 +24,7 @@
 		"skills": "bun tools/skills.ts sync && bun tools/skills.ts check",
 		"skills:check": "bun tools/skills.ts check",
 		"samples:fetch": "bun tools/samples.ts",
+		"plants:textures": "bun tools/plant-textures/main.ts",
 		"build": "bun tools/build-wasm.ts",
 		"build:check-size": "bun tools/build-wasm.ts --check-size",
 		"build:cdn": "bun tools/build-cdn.ts",
