@@ -5254,6 +5254,16 @@ pub fn set_occlusion_read_slot(slot: u32) -> u32 {
     })
 }
 
+/// Holds GPU occlusion culling's passes on in every frame from the next one on, without its
+/// check's trials, or lets the check judge them again. Elsewhere it does nothing.
+#[wasm_bindgen(js_name = holdOcclusionCheck)]
+pub fn hold_occlusion_check(held: bool) -> u32 {
+    with_engine(|e| {
+        e.renderer.hold_occlusion_check(held);
+        0
+    })
+}
+
 /// Sets the pixels that software occlusion culling's buffer holds about from the next frame on,
 /// or 0 for the core's default, where the frame builder culls on the CPU.
 #[wasm_bindgen(js_name = setOcclusionBuffer)]

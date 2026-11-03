@@ -82,8 +82,9 @@ The extra passes cost GPU time: a depth draw of the occluders, a depth pyramid a
 - About every 120 frames, the engine runs a few frames the other way: without the passes while they run, or with them while they do not. It compares the GPU's frame times, from each frame's submit to its completion, with the frames just before.
 - The passes stay on while they hide at least a tenth of the objects that would draw, and a frame with them takes no longer than one without, within 2%. Otherwise they stay off until a later check finds that they pay.
 - The occluders' pass draws only the groups of objects that held occluders in the last few checks, so it draws nothing for the rest.
+- While the view holds still, the check pauses: the passes stay as they are and nothing is copied, so the still-camera accumulation finishes and the view rests. It starts again a little after the view moves.
 
-`engine.measure` reports the objects that the culling hid as `occludedEntries`: the count of the newest frame whose counts came back, and 0 while the check keeps the passes off.
+`engine.measure` reports the objects that the culling hid as `occludedEntries`: the count of the newest frame whose counts came back, and 0 while the check keeps the passes off. The `?occlusion-check=off` switch keeps the passes on in every frame, for a test that compares the image with culling and without it.
 
 ### Where it runs
 
