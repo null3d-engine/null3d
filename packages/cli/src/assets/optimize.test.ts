@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { NodeIO } from '@gltf-transform/core';
+import { type GLTF, NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS, KHRDracoMeshCompression } from '@gltf-transform/extensions';
 import { MeshoptDecoder } from 'meshoptimizer';
 import {
@@ -14,6 +14,7 @@ import {
 import { ASSET_SCENE, assetSceneGlb } from '../../../../tests/lib/asset-scene.ts';
 import { shippedDecoder } from '../../../../tests/lib/meshopt-checks.ts';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
+import { FILE_LIMITS, FileBudget } from '../../../engine/src/scene/file-limits.ts';
 import {
 	type GltfData,
 	type NodeData,
@@ -21,10 +22,17 @@ import {
 	readContainer,
 } from '../../../engine/src/scene/gltf-parse.ts';
 import { main } from '../cli.js';
+import { buildClusterModel } from './cluster-fixture.js';
 import { encodeOnce, encoderPool } from './encoder-pool.js';
 import { lodOf, MSFTLod } from './lod-extension.js';
 import { findModels, parseOptimizeArgs } from './optimize.js';
-import { DEFAULT_OPTIONS, optimizeModel } from './pipeline.js';
+import {
+	DEFAULT_OPTIONS,
+	decodedBytes,
+	ENGINE_FILE_LIMITS,
+	optimizeModel,
+	refuseWhatTheEngineRefuses,
+} from './pipeline.js';
 import { reportLines } from './report.js';
 
 // Texture encodes take seconds each on a busy machine or a CI runner of four cores.
@@ -508,6 +516,82 @@ describe('assets optimize on the test scene', () => {
 			bc7: mips(128, 64, 16) + mips(32, 32, 16) + mips(64, 64, 16),
 			rgba8: mips(128, 64, 0) + mips(32, 32, 0) + mips(64, 64, 0),
 		});
+	});
+});
+
+describe("the engine's limits on one file", () => {
+	const MIB = 1024 * 1024;
+
+	it('are the limits that the engine reads files with', () => {
+		const { itemBytes, modelFloorBytes, modelRatio, modelCapBytes } = FILE_LIMITS;
+		expect<Record<string, number>>(ENGINE_FILE_LIMITS).toEqual({
+			itemBytes,
+			modelFloorBytes,
+			modelRatio,
+			modelCapBytes,
+		});
+	});
+
+	it("count what the engine's loader takes from a file's budget, with trees, levels and patches", async () => {
+		const models = [
+			await optimized,
+			await lodMeshopt,
+			await withTrees,
+			await buildClusterModel(),
+			await optimizeModel(at(ASSET_SCENE.source), { ...DEFAULT_OPTIONS, meshopt: false }, encode),
+		];
+		for (const { glb } of models) {
+			const take = spyOn(FileBudget.prototype, 'takeBlock');
+			try {
+				parse(glb);
+				const charged = take.mock.calls.reduce((sum, [bytes]) => sum + bytes, 0);
+				expect(decodedBytes(glbJson(glb)).total).toBe(charged);
+			} finally {
+				take.mockRestore();
+			}
+		}
+	});
+
+	it('refuse an output that the engine refuses, and say to split the scene', () => {
+		/** A file of `lists` index lists of `bytes` each, in one block of meshopt data. */
+		const file = (lists: number, bytes: number): GLTF.IGLTF => ({
+			asset: { version: '2.0' },
+			bufferViews: [
+				{
+					buffer: 0,
+					byteLength: lists * bytes,
+					extensions: {
+						EXT_meshopt_compression: {
+							buffer: 0,
+							byteLength: 1,
+							count: (lists * bytes) / 4,
+							byteStride: 4,
+							mode: 'TRIANGLES',
+						},
+					},
+				},
+			],
+			accessors: Array.from({ length: lists }, (_, k) => ({
+				bufferView: 0,
+				byteOffset: k * bytes,
+				componentType: 5125 as const,
+				count: bytes / 4,
+				type: 'SCALAR' as const,
+			})),
+		});
+		// A block past one array's limit loads, while each list in it stays within that limit.
+		const block = file(9, 30 * MIB);
+		expect(decodedBytes(block).total).toBe(2 * 270 * MIB);
+		expect(() => refuseWhatTheEngineRefuses(block, 16 * MIB)).not.toThrow();
+		expect(() => refuseWhatTheEngineRefuses(block, 10 * MIB)).toThrow(
+			'the engine would refuse the output: it decodes to 540.0 MB, more than the 384.0 MB that one model file may decode to. Split the scene into several files',
+		);
+		expect(() => refuseWhatTheEngineRefuses(file(20, 30 * MIB), 1024 * MIB)).toThrow(
+			'more than the 1024.0 MB that one model file may decode to',
+		);
+		expect(() => refuseWhatTheEngineRefuses(file(1, 260 * MIB), 1024 * MIB)).toThrow(
+			'accessor 0 holds 260.0 MB, more than the 256.0 MB that one array may hold. Split the scene into several files',
+		);
 	});
 });
 

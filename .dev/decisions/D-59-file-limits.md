@@ -188,3 +188,12 @@ glTF-Transform's meshopt writer packs every index list of one width into one com
 - Rejected: raising `itemBytes`. It is WebGPU's portable limit on a buffer, which every accessor must still meet.
 
 `gltf-meshopt-block.test.ts` loads a block of 9 lists of 30 MiB, 270 MiB in all. Its decoder writes only each list's first triangle, so the test holds no compressed data. It runs in a process of its own (`tests/lib/heavy-checks.ts`), under a ceiling of 1,024 MiB. `gltf-parse.test.ts` checks that a tree's arrays count once. Both tests fail against a parser that judges the view by `itemBytes` and counts the tree twice.
+
+### The asset tool refuses what the engine refuses
+
+`optimizeModel` works out what the engine's parser takes from the file's budget, from the JSON that it writes, before it returns the file. It counts a copy of each accessor, each meshopt block and each image inside the file. It also counts 8-bit index lists widened to 16 bits, and each blocker's indices widened to 32 bits. The tool refuses a file whose largest accessor passes 256 MiB, or whose total passes what a file of its size may decode to. The error says to split the scene into several files.
+
+- The limits are `ENGINE_FILE_LIMITS` in `packages/cli/src/assets/pipeline.js`, a copy of the engine's `FILE_LIMITS`. A test in `optimize.test.ts` keeps the two equal, as `report.js` does for each preset's texture memory.
+- The tool's figure equals the parser's charges to the byte on five outputs of the tests. They are the asset scene with the default options, with levels, with stored trees and with no compression, and the cluster terrain. It also equals the desert file's 973.8 MiB.
+- The figure leaves out the joints and clips of skins. On the skinned Knight it is 4.6% short: 2.00 MB of 2.10 MB. So a scene of skinned characters near the cap can pass the tool and fail in the engine.
+- Rejected: running the engine's parser on the output. The tool does not depend on `@null3d/engine`, and it ships its source as it is, so it cannot import the parser. The parse would also decode the whole file again: 974 MiB more memory for the desert file.
