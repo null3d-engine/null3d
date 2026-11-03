@@ -1,11 +1,12 @@
-// Places Creek's valley by the vegetation add-on's ecological rules and checks the placement
+// Places Creek's stream species by the vegetation add-on's ecological rules (the valley's rules
+// without the spruces, bracken and hawthorns of its edges) and checks the placement
 // against the reference that every device must reach: one seed gives the same points on any
 // device, and neither the order of the tiles nor their size changes them. It times the placement
 // as well, which is the figure that the vegetation budgets record for a valley this size.
 // ?seed= changes the seed, ?runs= the number of timed runs, and ?tile= a second tile size to check.
 import { EcoScatter, groundMaps, scatterChecksum, scatterVegetation } from '@null3d/vegetation';
-import { builtinRules, CREEK_SPECIES } from '@null3d/vegetation/legacy';
 import { groundHeight, LAND, WATER } from '../../examples/showcase/creek/land';
+import { CREEK_RULES } from '../../examples/showcase/creek/valley';
 import { progress, run } from './lib/result';
 
 const params = new URLSearchParams(location.search);
@@ -37,7 +38,7 @@ run('vegetation-scatter', async () => {
 	const groundStarted = performance.now();
 	const ground = groundMaps({ size: LAND, water: WATER, height: groundHeight });
 	const groundMs = performance.now() - groundStarted;
-	const rules = builtinRules(CREEK_SPECIES);
+	const rules = CREEK_RULES;
 	progress(`ground maps in ${Math.round(groundMs)} ms`);
 
 	const times: number[] = [];

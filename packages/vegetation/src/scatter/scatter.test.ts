@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import type { EcoRule } from '../ecology/ecology';
 import { groundMaps } from '../ground/ground';
-import { ALL_SPECIES } from '../legacy/builtin';
-import { builtinRules } from '../legacy/rules';
 import {
 	EcoScatter,
 	SCATTER_STRIDE,
@@ -10,8 +9,250 @@ import {
 	scatterVegetation,
 } from './scatter';
 
-/** The rules that the built-in species place by. */
-const RULES = builtinRules(ALL_SPECIES);
+/**
+ * The rules that the tests place by: thirteen species of a temperate valley, from the waterline to
+ * the canopy and the young trees under it, with a dead-wood prop. They cover every layer, the
+ * clusters and the overlaps, and their numbers set the tests' points.
+ */
+const RULES: readonly EcoRule[] = [
+	{
+		species: 'rush',
+		variants: 6,
+		scale: [0.8, 1.3],
+		radius: 0.8800000000000001,
+		layer: 'ground',
+		spacing: 1.2,
+		tolerances: [
+			{ input: 'heightAboveWater', min: -0.75, best: -0.4, worst: 0.05, max: 0.55 },
+			{ input: 'distanceToWater', min: 0, best: 0, worst: 2.5, max: 4.5 },
+			{ input: 'wetness', min: 0.15, best: 0.4, worst: 1, max: 1.01 },
+		],
+		clump: [0.2, 1],
+	},
+	{
+		species: 'sedge',
+		variants: 6,
+		scale: [0.8, 1.4],
+		radius: 0.6400000000000001,
+		layer: 'ground',
+		spacing: 1.4,
+		tolerances: [
+			{ input: 'heightAboveWater', min: -0.5, best: -0.1, worst: 0.5, max: 1.1 },
+			{ input: 'distanceToWater', min: 0, best: 0.5, worst: 3.5, max: 6 },
+			{ input: 'wetness', min: 0.1, best: 0.3, worst: 1, max: 1.01 },
+		],
+		clump: [0.2, 1],
+	},
+	{
+		species: 'willow',
+		variants: 6,
+		scale: [0.8, 1.4],
+		radius: 4.42,
+		layer: 'canopy',
+		spacing: 7,
+		tolerances: [
+			{ input: 'heightAboveWater', min: 0.05, best: 0.3, worst: 1.5, max: 3 },
+			{ input: 'distanceToWater', min: 0.5, best: 1.5, worst: 6, max: 10 },
+			{ input: 'wetness', min: 0.05, best: 0.2, worst: 1, max: 1.01 },
+			{ input: 'slope', min: 0, best: 0, worst: 0.5, max: 0.85 },
+		],
+		clump: [0.25, 1],
+	},
+	{
+		species: 'alder',
+		variants: 6,
+		scale: [0.8, 1.3],
+		radius: 4.1000000000000005,
+		layer: 'canopy',
+		spacing: 8,
+		tolerances: [
+			{ input: 'heightAboveWater', min: 0.15, best: 0.5, worst: 2.2, max: 5 },
+			{ input: 'distanceToWater', min: 1.5, best: 4, worst: 10, max: 18 },
+			{ input: 'wetness', min: 0.04, best: 0.15, worst: 1, max: 1.01 },
+		],
+		clump: [0.25, 1],
+	},
+	{
+		species: 'oak',
+		variants: 6,
+		scale: [0.8, 1.35],
+		radius: 5.7,
+		layer: 'canopy',
+		spacing: 9,
+		tolerances: [
+			{ input: 'heightAboveWater', min: 0.6, best: 1.8, worst: 11, max: 20 },
+			{ input: 'slope', min: 0, best: 0.15, worst: 0.55, max: 0.95 },
+			{ input: 'northness', min: -1, best: -1, worst: 0.15, max: 1.01 },
+		],
+		clump: [0.25, 1],
+	},
+	{
+		species: 'beech',
+		variants: 6,
+		scale: [0.8, 1.3],
+		radius: 6.000000000000001,
+		layer: 'canopy',
+		spacing: 9,
+		tolerances: [
+			{ input: 'heightAboveWater', min: 0.6, best: 1.8, worst: 10, max: 18 },
+			{ input: 'northness', min: -0.3, best: 0.25, worst: 1, max: 1.01 },
+			{ input: 'wetness', min: 0.02, best: 0.1, worst: 1, max: 1.01 },
+		],
+		clump: [0.25, 1],
+	},
+	{
+		species: 'birch',
+		variants: 6,
+		scale: [0.75, 1.25],
+		radius: 5.500000000000001,
+		layer: 'canopy',
+		spacing: 8,
+		tolerances: [
+			{ input: 'heightAboveWater', min: 0.4, best: 1.2, worst: 8, max: 14 },
+			{ input: 'distanceToWater', min: 4, best: 9, worst: 40, max: 70 },
+			{ input: 'openness', min: 0.05, best: 0.35, worst: 1, max: 1.01 },
+		],
+		clump: [0.25, 1],
+	},
+	{
+		species: 'conifer',
+		variants: 6,
+		scale: [0.7, 1.25],
+		radius: 7.1,
+		layer: 'canopy',
+		spacing: 7,
+		tolerances: [
+			{ input: 'heightAboveWater', min: 3, best: 7, worst: 22, max: 40 },
+			{ input: 'slope', min: 0.18, best: 0.3, worst: 1.4, max: 2.2 },
+			{ input: 'northness', min: -0.6, best: 0, worst: 1, max: 1.01 },
+		],
+		clump: [0.2, 1],
+	},
+	{
+		species: 'broadleaf',
+		variants: 6,
+		scale: [0.8, 1.3],
+		radius: 4.6,
+		layer: 'canopy',
+		spacing: 9,
+		tolerances: [
+			{ input: 'heightAboveWater', min: 0.6, best: 1.8, worst: 13, max: 26 },
+			{ input: 'distanceToWater', min: 2, best: 6, worst: 70, max: 140 },
+		],
+		clump: [0.25, 1],
+	},
+	{
+		species: 'oak',
+		variants: 6,
+		scale: [0.8, 1.35],
+		radius: 1.2,
+		layer: 'young',
+		spacing: 4,
+		tolerances: [
+			{ input: 'heightAboveWater', min: 0.4, best: 1.8, worst: 11, max: 20 },
+			{ input: 'slope', min: 0, best: 0.2, worst: 0.7, max: 1.2 },
+		],
+		cluster: { species: ['oak', 'beech', 'broadleaf'], radius: 7, min: 1, max: 3 },
+		overlaps: ['young'],
+	},
+	{
+		species: 'birch',
+		variants: 6,
+		scale: [0.75, 1.25],
+		radius: 1.1,
+		layer: 'young',
+		spacing: 4,
+		tolerances: [
+			{ input: 'heightAboveWater', min: 0.3, best: 1.2, worst: 8, max: 14 },
+			{ input: 'openness', min: 0.02, best: 0.25, worst: 1, max: 1.01 },
+		],
+		cluster: { species: ['birch', 'willow', 'alder'], radius: 6, min: 1, max: 3 },
+		overlaps: ['young'],
+	},
+	{
+		species: 'alder',
+		variants: 6,
+		scale: [0.8, 1.3],
+		radius: 1,
+		layer: 'young',
+		spacing: 4,
+		tolerances: [{ input: 'heightAboveWater', min: 0.15, best: 0.5, worst: 2.2, max: 5 }],
+		cluster: { species: ['alder', 'willow'], radius: 6, min: 1, max: 2 },
+		overlaps: ['young'],
+	},
+	{
+		species: 'fern',
+		variants: 6,
+		scale: [0.7, 1.4],
+		radius: 0.7200000000000001,
+		layer: 'understory',
+		spacing: 1.8,
+		tolerances: [
+			{ input: 'canopy', min: 0.08, best: 0.3, worst: 1, max: 1.01 },
+			{ input: 'wetness', min: 0.05, best: 0.2, worst: 1, max: 1.01 },
+			{ input: 'heightAboveWater', min: 0.15, best: 0.5, worst: 6, max: 12 },
+		],
+		clump: [0.25, 1],
+		overlaps: ['understory'],
+	},
+	{
+		species: 'hosta',
+		variants: 6,
+		scale: [0.75, 1.35],
+		radius: 0.44000000000000006,
+		layer: 'ground',
+		spacing: 2.4,
+		tolerances: [
+			{ input: 'canopy', min: 0.06, best: 0.25, worst: 1, max: 1.01 },
+			{ input: 'wetness', min: 0.05, best: 0.2, worst: 1, max: 1.01 },
+			{ input: 'distanceToWater', min: 0.4, best: 1.5, worst: 14, max: 26 },
+		],
+		clump: [0.3, 1],
+		overlaps: ['ground'],
+	},
+	{
+		species: 'meadow-grass',
+		variants: 6,
+		scale: [0.8, 1.5],
+		radius: 0.4,
+		layer: 'ground',
+		spacing: 1,
+		tolerances: [
+			{ input: 'openness', min: 0.3, best: 0.6, worst: 1, max: 1.01 },
+			{ input: 'slope', min: 0, best: 0, worst: 0.6, max: 1.1 },
+			{ input: 'heightAboveWater', min: 0, best: 0.3, worst: 11, max: 20 },
+		],
+		clump: [0.25, 1],
+		overlaps: ['ground'],
+	},
+	{
+		species: 'shrub',
+		variants: 6,
+		scale: [0.7, 1.4],
+		radius: 1.16,
+		layer: 'shrub',
+		spacing: 2.6,
+		tolerances: [
+			{ input: 'edge', min: 0.1, best: 0.4, worst: 1, max: 1.01 },
+			{ input: 'heightAboveWater', min: 0.2, best: 0.5, worst: 8, max: 15 },
+			{ input: 'slope', min: 0, best: 0, worst: 0.6, max: 1.1 },
+		],
+		clump: [0.2, 1],
+		overlaps: ['shrub'],
+	},
+	{
+		species: 'deadwood',
+		layer: 'deadwood',
+		spacing: 11,
+		radius: 2.5,
+		overlaps: ['deadwood'],
+		tolerances: [
+			{ input: 'canopy', min: 0.2, best: 0.5, worst: 1, max: 1.01 },
+			{ input: 'slope', min: 0, best: 0, worst: 0.4, max: 0.8 },
+		],
+		clump: [0.3, 1],
+	},
+];
 
 /** A valley for the tests: a channel along z = 0, rising to both sides and at the ends. */
 function valley() {

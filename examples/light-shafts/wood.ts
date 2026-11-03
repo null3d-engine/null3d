@@ -1,30 +1,13 @@
 // The light shafts demo's scenery: a pine wood on gently rolling ground, with an earthen path down
 // the middle. The pines stand tall on bare trunks, with their crowns high up, so a low sun shines
 // between the trunks. The forest floor, the bark and the rocks wear maps made in code from seeded
-// noise, and the floor's vertex colors lay the needles, the moss and the path's bare earth.
-import {
-	type Camera,
-	type InstanceBatch,
-	type MeshGeometry,
-	math,
-	type SketchContext,
-} from '@null3d/engine';
-import {
-	type BranchLevel,
-	bakePlantAtlases,
-	branchLevel,
-	builtInSpecies,
-	generatePlant,
-	leafCellFor,
-	type PlantMaterial,
-	plantMaterial,
-	plantWind,
-	type Species,
-	setWindLayer,
-	swayDistanceFor,
-	treeValues,
-} from '@null3d/vegetation/legacy';
+// noise, and the floor's vertex colors lay the needles, the moss and the path's bare earth. The
+// pines come from the vegetation add-on, and draw as the plant core's stand-ins until their species
+// lands.
+import { type Camera, type MeshGeometry, math, type SketchContext } from '@null3d/engine';
+import { setWindLayer } from '@null3d/vegetation';
 import { createWind } from '@null3d/wind';
+import { type PlantSpot, plantSpecies } from '../lib/plants';
 import { Noise, rock, type TexelSample, terrain, textureSet } from '../lib/procedural';
 
 const [TREES, ROCKS] = [150, 24];
@@ -34,60 +17,14 @@ const MOSS = [0.045, 0.085, 0.02];
 const EARTH = [0.17, 0.11, 0.06];
 
 /**
- * The wood's own pine: a tall, sparse conifer, grown from the add-on's record with its boughs opened
- * out. A wood of the dense evergreen closes its canopy over the path, and the low sun never reaches
- * the haze between the trunks; this record keeps four rings of two boughs on a trunk that stands
- * bare to half its height, so the sky comes through and the shafts show. Its needle cards are short
- * and many to a twig: the light that the crowns pass then falls on the floor as fine dapple, and
- * each clump reads as a spray rather than one flat panel.
+ * The wood's pines: Norway spruces, tall and sparse, with their crowns high up so a low sun shines
+ * between the trunks.
  */
-function woodlandPine(base: Species): Species {
-	const [trunk, bough, branchlet, twig] = base.branchLevels as readonly [
-		BranchLevel,
-		BranchLevel,
-		BranchLevel,
-		BranchLevel,
-	];
-	return {
-		...base,
-		id: 'woodland-pine',
-		// Longer and narrower than the dark evergreen, so the crown stands clear of the path.
-		height: 18,
-		crown: { shape: 'conical', start: 0.52, spread: 0.3, pull: 0.02, floor: 0.12 },
-		branchLevels: [
-			branchLevel(trunk, { children: 8, prune: 0.02, length: 18, start: 0.0, end: 1 }),
-			branchLevel(bough, {
-				children: 1,
-				prune: 0.02,
-				length: 18 * 0.15,
-				whorls: 4,
-				whorlTip: true,
-				start: 0.52,
-				end: 1,
-				upright: 30,
-				thin: 0.15,
-			}),
-			branchLevel(branchlet, { children: 1, length: 18 * 0.1 }),
-			branchLevel(twig, { children: 0, length: 18 * 0.05 }),
-		],
-		leaf: {
-			kind: 'needle',
-			cell: 'needle',
-			cards: 26,
-			width: 0.2,
-			height: 0.6,
-			perCard: 40,
-			up: 0.3,
-			out: 1.1,
-			start: 0,
-			end: 1,
-			depth: 4,
-			cross: false,
-			fill: 0.35,
-		},
-		color: { ...base.color, leaf: [0.1, 0.24, 0.1] },
-	};
-}
+const PINE = {
+	id: 'norway-spruce',
+	height: 18,
+	standIn: { height: 18, aspect: 0.3, leaf: [0.1, 0.24, 0.1], bark: [0.26, 0.18, 0.13] },
+} as const;
 
 const noise = new Noise(7);
 const { smoothstep, lerp, randFloat } = math;
@@ -130,11 +67,11 @@ function barkTexel(u: number, v: number, out: TexelSample) {
 
 /** Makes the wood: the floor, the add-on's conifers and the rocks. Gives the bark's maps for
  * wooden parts, and an update that steps the scene's wind field. */
-export function createWood(
+export async function createWood(
 	ctx: SketchContext,
 	camera: Camera,
-): { bark: Record<string, unknown>; update(): void } {
-	const { scene, geometry, materials, textures, quality } = ctx;
+): Promise<{ bark: Record<string, unknown>; update(): void }> {
+	const { scene, geometry, materials, textures } = ctx;
 	const solid = { castShadows: true, receiveShadows: true };
 	const floorMaps = textureSet(textures, 256, floorTexel);
 	const bark = {
@@ -148,67 +85,23 @@ export function createWood(
 		...solid,
 	});
 
-	// The pines are the add-on's conifers, at its three levels: one variant, each copy its own
-	// height and turn, in the scene's one wind field. The wood's own crowns and trunks are gone.
-	const evergreen = builtInSpecies('conifer');
-	if (!evergreen) throw new Error('the vegetation add-on has no conifer');
-	const species = woodlandPine(evergreen);
-	const atlases = bakePlantAtlases(ctx);
+	// The pines are the vegetation add-on's spruces: each copy its own height and turn, grown in the
+	// job workers and placed with every level, in the scene's one wind field.
 	const wind = createWind(ctx, { camera, box: 32, grid: 64 });
-	const swayDistance = swayDistanceFor(quality.preset);
-	const plantMaterials: PlantMaterial[] = [];
-	const asset = generatePlant(species, { seed: 11, variant: 0, levels: species.levels });
-	const field = plantWind(ctx, asset, wind.field, { swayDistance });
-	const treeBark = plantMaterial(ctx, {
-		atlases,
-		part: 'wood',
-		color: species.color.bark,
-		barkTiles: 5,
-		wind: field,
-	});
-	const treeLeaves = plantMaterial(ctx, {
-		atlases,
-		part: 'leaves',
-		cell: leafCellFor(species),
-		color: species.color.leaf,
-		transmission: species.color.transmission,
-		// The needle cards carry thin sprays, so a lower cut keeps the crown closed at a distance.
-		alphaCutoff: 0.2,
-		// A softer gloss keeps a flat needle card from catching a pale sheen in the low sun.
-		leafGloss: 0.45,
-		wind: field,
-	});
-	plantMaterials.push(treeBark, treeLeaves);
-	const plantBatches: InstanceBatch[] = [];
-	for (const part of asset.levels[0]?.parts ?? []) {
-		const base = geometry.fromArrays(part.arrays);
-		base.setLevels(
-			asset.levels.slice(1).map((level) => {
-				const coarser = level.parts.find((other) => other.name === part.name);
-				if (!coarser) throw new Error(`a ${part.name} part has no level at ${level.error} m`);
-				return { mesh: geometry.fromArrays(coarser.arrays), error: level.error };
-			}),
-			{ fade: false },
-		);
-		const batch = scene.createInstances(base, TREES, {
-			material: part.name === 'wood' ? treeBark : treeLeaves,
-			values: true,
-			...solid,
-		});
-		plantBatches.push(batch);
-	}
+	const spots: PlantSpot[] = [];
 	math.seed(11);
 	for (let k = 0; k < TREES; k++) {
 		const [x, z] = [randFloat(2.6, 26) * (k % 2 ? 1 : -1), randFloat(-60, 14)];
 		const [tall, y, turn] = [randFloat(11, 17), height(x, z) - 0.1, randFloat(0, Math.PI)];
-		for (const batch of plantBatches) {
-			batch.positions.set([x, y, z], k * 3);
-			batch.scales.fill(tall / species.height, k * 3, k * 3 + 3);
-			batch.rotations.set([0, Math.sin(turn), 0, Math.cos(turn)], k * 4);
-			batch.values?.set(treeValues(x, z, 11, 0), k * 4);
-		}
+		spots.push({ x, y, z, turn: turn * 2, scale: tall / PINE.height, variant: 0 });
 	}
-	for (const batch of plantBatches) batch.markDirty(0, TREES);
+	const pines = await plantSpecies(ctx, {
+		id: PINE.id,
+		standIn: PINE.standIn,
+		seed: 11,
+		spots,
+		wind: wind.field,
+	});
 
 	// Mossy rocks beside the path, in three shapes.
 	const shapes = [0, 1, 2].map((s) => geometry.fromArrays(rock(20 + s, 2, [1, 0.55, 0.8])));
@@ -224,17 +117,13 @@ export function createWood(
 			...solid,
 		});
 	}
-	quality.onChange(() => {
-		const distance = swayDistanceFor(quality.preset);
-		for (const material of plantMaterials) material.setUniform('swayDistance', distance);
-	});
 	return {
 		bark,
 		update() {
 			// The field's box follows the camera, and a gust and a push fade, so it steps every frame.
 			wind.update();
 			// The field keeps two states, so the plants read the one that this frame's run wrote.
-			setWindLayer(plantMaterials, wind.field);
+			setWindLayer(pines.materials, wind.field);
 		},
 	};
 }

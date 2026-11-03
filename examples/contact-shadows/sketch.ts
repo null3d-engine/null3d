@@ -65,7 +65,7 @@ export default defineSketch(async (ctx) => {
 		castShadows: true,
 		shadow: { distance: 30, contactDistance: REACH },
 	});
-	const live = garden(ctx, camera);
+	const live = await garden(ctx, camera);
 
 	// The two settings of the light's contact shadows, which the cycle swaps between.
 	const lit = [{ contactDistance: REACH }, { contactDistance: 0 }] as const;
