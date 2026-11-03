@@ -73,7 +73,7 @@ export const CUTTING_LENGTH: Readonly<Record<CuttingPart, number>> = {
 	leaf: 0.15,
 };
 
-/** Candidates whose length match differs by less than this many natural-log steps rank by light. */
+/** Candidates whose length match falls in the same step of this many natural-log units rank as near. */
 const MATCH_STEP = 0.15;
 
 /**
@@ -151,11 +151,15 @@ interface Candidate {
 	readonly axis: number;
 	readonly extent: number;
 	readonly light: number;
+	/** Axes in its subtree, itself included, and the bud sites they carry. */
+	readonly axes: number;
+	readonly buds: number;
 }
 
 /**
  * The axes a branch cut can start from, ranked: those of the wanted order (any order past the stems
- * when it is undefined), by how near their subtree's extent is to `length`, then by light.
+ * when it is undefined), by how near their subtree's extent is to `length`; among pieces as near,
+ * those that carry bud sites (so shoots grow on them) and divide come first, then the sunniest.
  */
 function candidates(
 	skeleton: MacroSkeleton,
@@ -199,6 +203,14 @@ function candidates(
 			}
 		}
 	}
+	const subtreeAxes = new Uint32Array(axes.count);
+	for (let a = 0; a < axes.count; a++)
+		for (const owner of owners[a] as number[])
+			subtreeAxes[owner] = (subtreeAxes[owner] as number) + 1;
+	const subtreeBuds = new Uint32Array(axes.count);
+	for (let b = 0; b < skeleton.buds.count; b++)
+		for (const owner of owners[skeleton.buds.axis[b] as number] as number[])
+			subtreeBuds[owner] = (subtreeBuds[owner] as number) + 1;
 	const out: Candidate[] = [];
 	for (let a = 0; a < axes.count; a++)
 		if (isCandidate(a) && (extent[a] as number) > 0)
@@ -206,9 +218,20 @@ function candidates(
 				axis: a,
 				extent: extent[a] as number,
 				light: (light[a] as number) / Math.max(1, nodes[a] as number),
+				axes: subtreeAxes[a] as number,
+				buds: subtreeBuds[a] as number,
 			});
 	const match = (c: Candidate) => Math.round(Math.abs(log(c.extent / length)) / MATCH_STEP);
-	return out.sort((x, y) => match(x) - match(y) || y.light - x.light || x.axis - y.axis);
+	const leafy = (c: Candidate) => (c.buds > 0 ? 1 : 0);
+	const divides = (c: Candidate) => (c.axes > 1 ? 1 : 0);
+	return out.sort(
+		(x, y) =>
+			match(x) - match(y) ||
+			leafy(y) - leafy(x) ||
+			divides(y) - divides(x) ||
+			y.light - x.light ||
+			x.axis - y.axis,
+	);
 }
 
 /** What a branch cut took from the plant: the piece's own skeleton and where it came from. */

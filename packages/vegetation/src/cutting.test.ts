@@ -12,6 +12,8 @@ import { standInSpecies } from './core/stand-in';
 import { CUTTING_LENGTH, clusterRank, cutBranch, cutFoliage } from './cutting';
 import { buildKitNow, growPlantNow, loadPlantCode } from './generate';
 import type { PlantTaskInput } from './generate-task';
+import { oakRecord } from './grow/oak.fixture';
+import { growSelfOrganizing } from './grow/self-organizing';
 
 const stub = standInSpecies('stub', { height: 12, aspect: 0.8 });
 await loadPlantCode(stub.record);
@@ -122,6 +124,36 @@ describe('cuttings', () => {
 			expect.closeTo(0, 5),
 		]);
 		expect(cut.extent).toBeCloseTo(Math.hypot(0.9, 0.9), 5);
+	});
+
+	it('cuts a branch and a sub-branch from the self-organizing oak, upright on their cut', () => {
+		const oak = growSelfOrganizing({ record: oakRecord, seed: 11, variant: 0, season: 'summer' });
+		for (const [part, length] of [
+			['branch', 1],
+			['subbranch', 0.35],
+		] as const) {
+			const cut = cutBranch(oak, oakRecord, { part });
+			if (!cut) throw new Error(`the oak gave no ${part}`);
+			const piece = cut.skeleton;
+			expect(cut.order).toBeGreaterThanOrEqual(1);
+			expect(Math.abs(Math.log(cut.extent / length))).toBeLessThan(0.5);
+			expect(Array.from(piece.position.subarray(0, 3))).toEqual([0, 0, 0]);
+			const [x, y, z] = meanNode(piece.position);
+			expect(Math.hypot(x, z)).toBeLessThan(1e-4 * Math.max(1, y));
+			expect(piece.buds.count).toBeGreaterThan(0);
+			expect(piece.nodeCount).toBe(1 + countSubtreeNodes(oak.axes, oak.axes.count, cut.axis));
+			let far = 0;
+			for (let n = 0; n < piece.nodeCount; n++)
+				far = Math.max(
+					far,
+					Math.hypot(
+						piece.position[n * 3] as number,
+						piece.position[n * 3 + 1] as number,
+						piece.position[n * 3 + 2] as number,
+					),
+				);
+			expect(far).toBeCloseTo(cut.extent, 4);
+		}
 	});
 
 	it('ranks the branch nearest the asked length first, and takes others by pick', () => {
