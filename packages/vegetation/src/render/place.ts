@@ -1,11 +1,13 @@
 // Placing plants: meshes with their levels, copy rows, shoot batches in the near pool, impostor cards
-// and their hand-over. It throws until placing is built.
+// and their hand-over. Until placing is built, a stand-in kit's copies draw as render/stand-in.ts
+// places them, and any other kit's throw.
 import type { SketchContext } from '@null3d/engine';
 import type { PlantAsset } from '../asset';
 import { notBuilt } from '../core/not-built';
 import type { FarPlant } from '../lod/impostor';
 import type { PlantMaterials } from './material';
 import type { NearPool } from './near-pool';
+import { standInPlace } from './stand-in';
 import type { SpeciesKit } from './textures';
 
 /**
@@ -75,10 +77,6 @@ export function placePlants(
 	copies: PlantCopies,
 	options: PlaceOptions,
 ): PlacedPlants {
-	void ctx;
-	void kit;
-	void assets;
-	void copies;
-	void options;
+	if (kit.placeholders) return standInPlace(ctx, kit, assets, copies, options);
 	throw notBuilt('placing plants');
 }
