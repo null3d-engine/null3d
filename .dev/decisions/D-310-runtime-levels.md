@@ -106,7 +106,18 @@ The planner's files load with the first plan: `js/sketch-worker-mesh-levels.js` 
 
 No frame is late while a plan runs. The frame that first draws a large mesh reads its vertices from the core for the plan. The sketch worker's busiest frame shows it: 35 ms against 26 ms without levels for 524,288 triangles, and 72 ms against 45 ms for a million on WebGL2. Making such a mesh costs those 26 ms and 45 ms anyway. The frame that takes the levels of a split mesh of a million triangles copies their vertices and uploads them; a mesh under 65,536 vertices shares them, and no window was late when such a mesh took its levels.
 
-How the data was produced: `bun test` of the two unit tests named above; a scratch Bun test that times the task's `run` with `process.cpuUsage`; `tests/image/runtime-levels.spec.ts`; and a scratch Playwright test that opened `levels-frames.html?sketch=...` with the grid's sizes and `levels=off`, on commit `930b01bb` with this record's changes.
+The Island showcase scene ran on the same page for 20 one-second windows, once as built and once with the automatic default turned off in a local build (the thresholds set past any mesh), on WebGPU and WebGL2. The 99th percentile of the frame interval, per window:
+
+| Island | Windows at 16.7 ms | Windows from 23 to 66 ms | Windows past 100 ms |
+| --- | --- | --- | --- |
+| WebGPU, automatic levels | 11 of 20 | 9, the first at 55.8 ms | none |
+| WebGPU, none | 11 of 20 | 9, the first at 64.7 ms | none |
+| WebGL2, automatic levels | 8 of 20 | 11, the first at 48.3 ms | 1, at 912 ms, nine seconds in |
+| WebGL2, none | 9 of 20 | 9, the first at 56.3 ms | 2, at 983 ms and 306 ms, nine and ten seconds in |
+
+The scene's late windows come in the same places with the default on and off, so they are the scene's own, and so is the WebGL2 stall nine seconds in. The plans add no late window.
+
+How the data was produced: `bun test` of the two unit tests named above; a scratch Bun test that times the task's `run` with `process.cpuUsage`; `tests/image/runtime-levels.spec.ts`; and a scratch Playwright test that opened `levels-frames.html?sketch=...` with the grid's sizes and `levels=off`, and with the Island's sketch, on this record's branch.
 
 ## Look
 
