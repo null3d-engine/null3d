@@ -40,8 +40,8 @@ function storeOf(kit: SpeciesKitData): PlantByteCache | undefined {
 }
 
 /** A cache key's tail that keeps a kit with stand-ins apart from one without. */
-const standIns = (kit: { readonly placeholders?: boolean }) =>
-	kit.placeholders ? ':stand-ins' : '';
+const standIns = (kit: { readonly placeholders?: boolean | 'missing' }) =>
+	kit.placeholders === 'missing' ? ':missing-stand-ins' : kit.placeholders ? ':stand-ins' : '';
 
 /** Runs one stage in a job worker. */
 function runStage<T>(input: PlantTaskInput): Promise<T> {
