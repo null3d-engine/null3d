@@ -398,11 +398,19 @@ pub trait FrameBuilder {
     fn visible_entries(&self, _frame: u32) -> Option<u32> {
         None
     }
-    /// The sources inside the camera's frustum that software occlusion culling hid in a recorded
-    /// frame, where the builder culls on the CPU. `None` where the GPU culls.
+    /// The sources inside the camera's frustum that occlusion culling hid: in a recorded frame,
+    /// where the builder culls on the CPU, or in the newest frame whose counts the GPU sent back,
+    /// where GPU occlusion culling runs. `None` where neither runs.
     fn occluded_entries(&self, _frame: u32) -> Option<u32> {
         None
     }
+    /// Notes the GPU's time for frame `frame`, from its submit to its completion, in microseconds,
+    /// which GPU occlusion culling's check compares with its passes on and off. Elsewhere it does
+    /// nothing.
+    fn gpu_frame_time(&mut self, _frame: u32, _micros: u32) {}
+    /// Sets the control slot that GPU occlusion culling's reads of its counts raise. Without one,
+    /// its check judges by the frame times alone. Elsewhere it does nothing.
+    fn set_occlusion_read_slot(&mut self, _slot: u32) {}
     /// The ranges of cluster-tree patches that a recorded frame's camera view draws, where the
     /// builder walks the trees. Zero where the view draws the trees' whole levels. `None` where the
     /// GPU path picks the patches itself.

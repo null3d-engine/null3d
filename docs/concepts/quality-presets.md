@@ -218,9 +218,9 @@ const plain = await createEngine({ canvas, sketch, depthPrepass: false });
 
 ### GPU occlusion culling
 
-With GPU occlusion culling, each camera skips the opaque objects that others hide. It draws the depth of the marked occluders that showed in its last frame, and builds a depth pyramid from it. Then it draws only the objects that show. [Culling](culling.md#gpu-occlusion-culling-on-webgpu) describes the two phases. Every preset leaves it off. Its passes cost GPU time in each frame with marked occluders. On a fast desktop GPU they cost more than skipping hidden objects saved, in every scene measured.
+With GPU occlusion culling, each camera skips the opaque objects that others hide. It draws the depth of the large opaque objects that showed in its last frame, and builds a depth pyramid from it. Then it draws only the objects that show. [Culling](culling.md#gpu-occlusion-culling-on-webgpu) describes the two phases. High and Ultra turn it on for desktops. Phones and tablets keep it off on every preset. A check during play turns its passes off while they hide too little or make the GPU's frame longer, so a scene where they do not pay loses almost nothing.
 
-The `gpuOcclusion` option of `createEngine` replaces the preset's choice, and `?occlusion=on` or `?occlusion=off` wins over the option, to compare the scene's GPU time. It is fixed while the engine runs. It runs only on WebGPU, and not with the depth prepass, so `quality.settings.gpuOcclusion` is false on WebGL2 and when the page turns the prepass on.
+The `gpuOcclusion` option of `createEngine` replaces the preset's choice, and `?occlusion=on` or `?occlusion=off` wins over the option, to compare the scene's GPU time. It is fixed while the engine runs. It runs only on WebGPU, so `quality.settings.gpuOcclusion` is false on WebGL2. It runs beside the depth prepass, which ambient occlusion and screen-space bounce light turn on.
 
 ## Dynamic resolution
 

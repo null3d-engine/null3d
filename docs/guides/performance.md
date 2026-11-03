@@ -279,7 +279,7 @@ Each post effect adds full-screen work, which grows with the pixels drawn:
 
 ## Occlusion culling
 
-Objects marked with `setOccluder(true)` or the `occluder` option hide what lies wholly behind them, so the GPU skips those. Each GPU path does this work in its own place, so each costs something different.
+Occlusion culling skips the objects that lie wholly behind others. Each GPU path does this work in its own place, so each costs something different.
 
 ### Blockers on WebGL2
 
@@ -287,7 +287,7 @@ On WebGL2, the `softwareOcclusion` option of `createEngine` turns occlusion cull
 
 ### Occlusion culling on the GPU
 
-On WebGPU, occlusion culling runs on the GPU, in two phases for each camera. It adds a depth draw of the occluders, a depth pyramid and a second culling pass. It pays only where the hidden objects cost more GPU time than these passes. In a test room whose walls hide 94% of its spheres, it saved 7% of the GPU time on a desktop GPU. On an iPad and an Android phone, it cost more than it saved. So every preset leaves it off, and the `gpuOcclusion` option of `createEngine` turns it on. Compare `gpuMs` with `?occlusion=on` and `?occlusion=off` before you keep it ([Culling](../concepts/culling.md#gpu-occlusion-culling-on-webgpu)).
+On WebGPU, occlusion culling runs on the GPU, in two phases for each camera, and High and Ultra turn it on for desktops. The GPU picks the large opaque objects that hide others itself. It adds a depth draw of those objects, a depth pyramid and a second culling pass. A check during play keeps these passes only while they hide at least a tenth of the objects in view and the GPU's frame gets no longer. `setOccluder(false)` keeps an object whose depth costs more than it hides out of the occluders. Compare `gpuMs` with `?occlusion=on` and `?occlusion=off` to see what it saves ([Culling](../concepts/culling.md#gpu-occlusion-culling-on-webgpu)).
 
 ## The depth prepass
 
@@ -320,7 +320,7 @@ For a quick look while the scene runs, add `?stats` to the page's address, or ca
 | `mainThread` | Long tasks and input delay on the page's own thread, where the browser reports them (Chrome) |
 | `uploadBytes` and `drawCalls` | Bytes uploaded and draw calls made per frame |
 | `visibleEntries` | On WebGL2, the entries per frame in the list of visible objects. It is null on WebGPU, where the GPU culls |
-| `occludedEntries` | On WebGL2, the entries per frame that blockers hid after the frustum test. It is null on WebGPU |
+| `occludedEntries` | The entries per frame that occlusion culling hid after the frustum test. On WebGPU, the count of the newest frame that the GPU sent back, and 0 while the check keeps the passes off. Null where neither path culls occluded objects |
 | `rebuilds` | Frames whose structure change rebuilt the draw tables |
 | `gpuObjects` | GPU buffers, textures, views, samplers and bind groups that the engine made. Steady play makes none. A new render scale makes some only while a reflection pass draws: its texture, and the bind groups made again with it |
 | `pipelines` | GPU pipelines built, which can stall the frame they happen in |

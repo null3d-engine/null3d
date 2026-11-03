@@ -164,9 +164,9 @@ Two opaque surfaces at exactly the same depth show the one drawn last with the p
 
 ### GPU occlusion culling
 
-With `gpuOcclusion` on, each camera draws the depth of the opaque objects that showed in its last frame and builds a depth pyramid from it. Then it draws only the objects that show. The image matches the image without it, and no object shows a frame late. Only objects that `setOccluder(true)` marks hide others. Every preset leaves it off, because on a fast desktop GPU its passes cost more than they saved. It runs only on WebGPU, and not with the depth prepass. Engine docs: `concepts/culling`.
+With `gpuOcclusion` on, each camera draws the depth of the large opaque objects and instance rows that showed in its last frame, and builds a depth pyramid from it. Then it draws only the objects that show. The image matches the image without it, and no object shows a frame late. The GPU picks the objects that hide others, so nothing needs a mark; `setOccluder(false)` keeps one out. High and Ultra turn it on for desktops, and phones and tablets keep it off. It runs only on WebGPU. Engine docs: `concepts/culling`.
 
-It pays where walls and large objects hide many detailed objects, such as the streets of a city. In open scenes it costs a little. Compare the scene's GPU time with `?occlusion=on` and `?occlusion=off` before you change the preset's choice. Shadow passes and see-through objects do not use it.
+A check during play turns its passes off while they hide less than a tenth of the objects in view or make the GPU's frame longer, so open scenes lose almost nothing. It pays where walls, hills and large objects hide many detailed objects, such as the streets of a city. Compare the scene's GPU time with `?occlusion=on` and `?occlusion=off`. Shadow passes and see-through objects do not use it.
 
 ### Half precision
 

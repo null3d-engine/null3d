@@ -413,12 +413,14 @@ export const QUALITY_SETTINGS = {
 		changes: 'start',
 		values: 'flag',
 	},
-	// Two-phase occlusion culling on WebGPU: objects that marked occluders hide do not draw. It
-	// costs a depth-only draw of the occluders, a depth pyramid and a second culling dispatch in
-	// each frame with marked occluders. On the Mac those passes cost more GPU time than skipping
-	// hidden objects saves, in every scene measured, so every preset leaves it off (D-22).
+	// Two-phase occlusion culling on WebGPU: objects that large opaque objects hide do not draw. It
+	// costs a depth-only draw of the occluders, a depth pyramid and a second culling dispatch, and
+	// a check during play turns those passes off while they hide too little or make the GPU's frame
+	// longer, as another program's GPU work can. High and Ultra, which desktops run, turn it on.
+	// Phones and tablets keep it off on every preset until it passes on the phone GPUs whose
+	// drivers other engines block for GPU culling (chooser.ts, D-22).
 	gpuOcclusion: {
-		presets: [false, false, false, false],
+		presets: [false, false, true, true],
 		changes: 'start',
 		values: 'flag',
 	},
@@ -746,11 +748,14 @@ export interface QualitySettings {
 	 */
 	depthPrepass: boolean;
 	/**
-	 * True when GPU occlusion culling runs on WebGPU: each camera view draws the depth of the
-	 * objects that `setOccluder(true)` marks and that it showed in the last frame, and skips every
-	 * object that lies wholly behind them. A frame without marked objects pays nothing for it. The
-	 * page's `gpuOcclusion` option of `createEngine` sets it, and `set` does not take it. It is
-	 * always false on WebGL2, and when the depth prepass is on.
+	 * True when GPU occlusion culling runs on WebGPU: each camera view draws the depth of the opaque
+	 * objects that showed in the last frame and look large on the screen, and skips every object
+	 * that lies wholly behind them. `setOccluder(false)` keeps an object out of them. A check during
+	 * play turns the extra passes off while they hide too little or make the GPU's frame longer,
+	 * and on again when they pay. High and Ultra turn it on for desktops, and phones and tablets
+	 * keep it off unless the page asks for it. The page's `gpuOcclusion` option of `createEngine`
+	 * sets it, and `set` does not take it. It is always false on WebGL2, and when the depth prepass
+	 * is on.
 	 */
 	gpuOcclusion: boolean;
 	/**
