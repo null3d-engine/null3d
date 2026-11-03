@@ -3,12 +3,12 @@ id: shaders/surface-functions
 title: Surface functions
 status: experimental
 since: "0.1"
-summary: "The surface record; uniforms and textures; reflections; transmission; light through thin surfaces; clear coat and sheen; vertex-offset functions; the coverage of a shadow caster and where its lookup reads; a material's own lobe; values per row of a batch; second texture coordinates, pixel position and instance index."
+summary: "The surface record; normals for the diffuse light and the sky's light; occlusion counted once; uniforms and textures; reflections; transmission; light through thin surfaces; clear coat and sheen; vertex-offset functions; the coverage of a shadow caster and where its lookup reads; a material's own lobe; values per row of a batch; second texture coordinates, pixel position and instance index."
 ---
 
 # Surface functions
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, textures, values per row of a batch, the diffuse transmission fields, the clear coat and sheen fields, the second texture coordinates, the pixel's position and the instance's index. Step 0.3 adds a material's own specular lobe, the coverage that a shadow caster tests, and the surface's shadow offset. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, textures, values per row of a batch, the diffuse transmission fields, the clear coat and sheen fields, the second texture coordinates, the pixel's position and the instance's index. Step 0.3 adds a material's own specular lobe, the coverage that a shadow caster tests and the surface's shadow offset. It also adds the normals for the diffuse light and the sky's light, and the occlusion that counts once. The API is experimental, so it can still change between versions.
 
 A surface function changes how a material's surface looks, and keeps the engine's lighting. You write it in WGSL. For each pixel, the engine gives it a `SurfaceInput`, and it returns a `Surface`: the base color, roughness, metalness, normal and light of that point. The engine then lights the surface with the scene's lights and shadows, as it lights a standard material. The function works on every GPU path, because the null3D Vite plugin builds it into the standard material's shader for WebGPU and WebGL2.
 
@@ -76,9 +76,11 @@ A `Surface` holds the values that the engine lights. Colors are linear, as the e
 | `metalness` | `f32` | 0 for a surface such as paint or plastic, and 1 for a metal |
 | `roughness` | `f32` | The perceptual roughness: 0 is a mirror, and 1 is fully matte |
 | `normal` | `vec3f` | The unit normal that lights the point, in world space |
-| `diffuseNormal` | `vec3f` | The unit normal that lights the point's diffuse and ambient light alone, in world space. It starts as the input's normal; the specular and the light through the point keep `normal` ([A normal for the diffuse light](#a-normal-for-the-diffuse-light)) |
+| `diffuseNormal` | `vec3f` | The unit normal that lights the sun's diffuse light and the ambient and hemisphere lights at the point, in world space. It starts as the input's normal; the specular and the light through the point keep `normal` ([A normal for the diffuse light](#a-normal-for-the-diffuse-light)) |
+| `ambientNormal` | `vec3f` | The unit normal that lights the sky's light alone at the point, in world space: the ambient and hemisphere lights and the environment's diffuse light. It starts as the input's normal; the sun keeps `diffuseNormal` ([A normal for the sky's light](#a-normal-for-the-skys-light)) |
 | `emissive` | `vec3f` | Light that the point gives off itself, added after lighting |
 | `occlusion` | `f32` | How much of the ambient light and the irradiance reaches the point, from 0 to 1 |
+| `occlusionByMinimum` | `bool` | True to join `occlusion` with screen-space ambient occlusion by the smaller of the two, not by their product. It starts false ([Occlusion counted once](#occlusion-counted-once)) |
 | `irradiance` | `vec3f` | Baked light that reaches the point, such as a light map's, added to the ambient light |
 | `lobe` | `vec4f` | Four values for the material's own lobe function ([A material's own lobe](#a-materials-own-lobe)) |
 | `shadowOffset` | `vec3f` | Where the sun's shadow lookup reads, relative to the point and in world space: zero by default, so the lookup reads the point itself ([Shadows](#shadows)) |
@@ -96,7 +98,7 @@ A `Surface` holds the values that the engine lights. Colors are linear, as the e
 | `iridescenceIor` | `f32` | The film's index of refraction, 1 or more |
 | `iridescenceThickness` | `f32` | The film's thickness in nanometers |
 
-`defaultSurface(input)` returns the surface that the material's own options make. The base color is `color` times the vertex color. `metalness`, `roughness` and the emissive light come from the options too. The normal is the input's normal, the occlusion is 1, and the irradiance and the reflection are zero. The transmission, the thickness, the diffuse transmission and its color, and the layers' values are the material's, and the coat's normal is the input's. Start from it, and change only the fields that your look needs:
+`defaultSurface(input)` returns the surface that the material's own options make. The base color is `color` times the vertex color. `metalness`, `roughness` and the emissive light come from the options too. The normal, the diffuse normal and the sky's normal are the input's normal. The occlusion is 1, and it multiplies screen-space occlusion. The irradiance and the reflection are zero. The transmission, the thickness, the diffuse transmission and its color, and the layers' values are the material's, and the coat's normal is the input's. Start from it, and change only the fields that your look needs:
 
 ```wgsl
 fn surface(input: SurfaceInput) -> Surface {
@@ -124,9 +126,44 @@ fn surface(input: SurfaceInput) -> Surface {
 ```
 
 - `diffuseNormal` starts as the mesh's normal. A material that never sets it draws as it did.
-- The sun's diffuse light and the ambient, hemisphere and environment light use `diffuseNormal`. The specular, the reflection and the diffuse transmission keep `s.normal`.
-- The point and spot lights keep `s.normal` for their diffuse light too.
+- The sun's diffuse light and the ambient and hemisphere lights use `diffuseNormal`. The specular, the reflection and the diffuse transmission keep `s.normal`.
+- The point and spot lights keep `s.normal` for their diffuse light too. So do the environment's diffuse light, the reflection probes and the probe grid. To light those by a normal of their own, set `ambientNormal` ([A normal for the sky's light](#a-normal-for-the-skys-light)).
 - The engine compiles the second normal into the material's builds alone, where its WGSL names the field. A material that does not name it takes the template's single-normal path, so it pays nothing.
+
+## A normal for the sky's light
+
+A surface can light the sky's light by a normal of its own, and keep its other normals for the sun. The sky's light is the ambient and hemisphere lights and the environment's diffuse light. It also takes in the diffuse light of the reflection probes and the probe grid. A crown of leaves uses this with a bent normal, the mean open direction from each point toward the sky. A leaf deep in the crown then takes its sky light from the gaps above it. The sun still lights it by its own normal.
+
+```wgsl
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.normal = leafNormal;
+    s.ambientNormal = openSkyNormal;
+    return s;
+}
+```
+
+- `ambientNormal` starts as the mesh's normal, the input's `normal`.
+- It takes the place of `diffuseNormal` for the sky's light. With both set, the sun's diffuse light takes `diffuseNormal`, and the sky's light takes `ambientNormal`.
+- The direct lights keep their own normals: the sun, the fill lights, and the point, spot and area lights. So do the specular light, the reflection and the light through the point.
+- The engine compiles the third normal into the material's builds alone, where its WGSL names the field. A material that does not name it pays nothing, and its builds stay as they were.
+
+## Occlusion counted once
+
+`s.occlusion` darkens the light that reaches the point from all directions: the ambient and hemisphere lights, the environment's light and the probes' light. Where [ambient occlusion](../concepts/post-processing.md#ambient-occlusion) draws, the engine multiplies `s.occlusion` by the screen's occlusion. That suits an occlusion map, which holds creases too small for the screen to see. An occlusion that a bake took from the same shapes that ambient occlusion sees darkens twice instead. A crown's occlusion, baked from its own leaves, is such an occlusion. Set `s.occlusionByMinimum` to `true`, and the engine takes the smaller of the two, so the shade counts once:
+
+```wgsl
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.occlusion = crownVisibility;
+    s.occlusionByMinimum = true;
+    return s;
+}
+```
+
+- `occlusionByMinimum` starts false, and the two multiply.
+- Where ambient occlusion does not draw, both ways give `s.occlusion`.
+- The engine compiles the choice into the material's builds alone, where its WGSL names the field. A material that does not name it pays nothing, and its builds stay as they were.
 
 ## A material's own lobe
 
