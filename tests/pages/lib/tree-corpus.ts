@@ -227,7 +227,7 @@ const PINE: Species = {
 	leaf: {
 		kind: 'needle',
 		cell: 'fascicle',
-		cards: 38,
+		cards: 50,
 		width: 0.26,
 		height: 0.4,
 		perCard: 12,
@@ -237,7 +237,7 @@ const PINE: Species = {
 		end: 1,
 		depth: 3,
 		cross: true,
-		fill: 0.6,
+		fill: 1.7,
 	},
 	wind: { stiffness: [0.08, 0.4, 0.7, 0.9], flutter: 0.008, frequency: 2.2 },
 	color: { bark: [0.45, 0.22, 0.1], leaf: [0.09, 0.2, 0.08], tint: 0.05, transmission: 0.24 },

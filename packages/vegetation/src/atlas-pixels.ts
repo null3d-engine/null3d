@@ -272,8 +272,21 @@ const FAMILIES = {
 		// A needle carries no visible vein, so its blade stays smooth rather than leaf-like.
 		veinDepth: 0.2,
 	},
-	fascicle: { profile: 1, aspect: 0.11, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 1 },
+	// A pine's needle: a long, narrow blade in pairs, about twenty times its own width, with no
+	// visible vein so the pair reads as needles rather than as a fern.
+	fascicle: {
+		profile: 1.6,
+		aspect: 0.038,
+		teeth: 0,
+		toothDepth: 0,
+		lobes: 0,
+		lobeDepth: 0,
+		veins: 0,
+		veinDepth: 0.15,
+	},
 	blade: { profile: 1, aspect: 0.06, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 3 },
+	// The papery sheath at a pine fascicle's base: short, broad and pale.
+	sheath: { profile: 0.6, aspect: 0.3, teeth: 0, toothDepth: 0, lobes: 0, lobeDepth: 0, veins: 0 },
 	hosta: {
 		profile: 0.55,
 		aspect: 0.42,
@@ -803,11 +816,13 @@ function fascicleCell(seed: number): LeafCellPainter {
 		const baseY = 0.06 + 0.86 * f;
 		const baseX = 0.5 + bow * Math.sin(Math.PI * f) + (random2(key, 3) - 0.5) * 0.03;
 		const turn = (random2(key, 5) - 0.5) * 0.6;
-		for (let needle = 0; needle < 3; needle++) {
+		// The papery sheath that holds a pair together at its base.
+		leaves.push(placeLeaf(key * 3 + 1, FAMILIES.sheath, baseX, baseY, turn, 0.05));
+		for (let needle = 0; needle < 2; needle++) {
 			const sub = key * 7 + needle;
-			const side = needle - 1;
-			// The needles of a bunch stay close at the base and part along their length.
-			const angle = turn + side * (0.36 + 0.3 * random2(sub, 6));
+			const side = needle === 0 ? -1 : 1;
+			// The pair stays together at the sheath and parts along its length.
+			const angle = turn + side * (0.3 + 0.24 * random2(sub, 6));
 			const length = (0.24 - 0.07 * f) * (0.9 + 0.2 * random2(sub, 4));
 			leaves.push(placeLeaf(sub, FAMILIES.fascicle, baseX, baseY, angle, length));
 		}
