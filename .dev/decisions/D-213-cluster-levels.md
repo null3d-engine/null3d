@@ -1,10 +1,11 @@
 # D-213: Cluster levels in the asset tool and their file
 
-Status: decided and built. Built: the asset tool's tree, its file, the tree's cut into whole
-levels, and the paths that draw the tree on WebGPU and on WebGL2. [D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)
+Status: decided and built. Built: the asset tool's tree and its file, and the paths that draw
+the tree on WebGPU and on WebGL2. Each mesh with a tree also gets the level planner's whole
+levels. [D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)
 holds the WebGL2 routes. Task: M3-L3.
 
-Summary: A large static mesh becomes a tree of patches of about 128 triangles, which the asset tool builds and stores in `NULL3D_clusters`. The tool builds the tree in its own code with meshoptimizer's simplifier, not with `clusterlod.h` compiled to WebAssembly, because the tool runs in Node and has no C toolchain. Every patch's indices name the mesh's own vertices. A sphere of 32,768 triangles builds a tree of just over 500 patches that holds about 1.5 times its triangles. The same build cuts the tree into whole levels, which a viewer that draws no patches draws.
+Summary: A large static mesh becomes a tree of patches of about 128 triangles, which the asset tool builds and stores in `NULL3D_clusters`. The tool builds the tree in its own code with meshoptimizer's simplifier, not with `clusterlod.h` compiled to WebAssembly, because the tool runs in Node and has no C toolchain. Every patch's indices name the mesh's own vertices. A sphere of 32,768 triangles builds a tree of just over 500 patches that holds about 1.5 times its triangles. The same build gives each mesh with a tree the whole levels that `--lod` plans. A viewer that draws no patches draws them, and so does every copy that draws whole levels.
 
 ## Question
 
@@ -38,14 +39,61 @@ How the data was produced: `bun test packages/cli/src/assets/clusters.test.ts` a
 2. A patch's error is the largest of its children's errors plus the error of its own simplification, and at least 1.5 times the largest. Errors therefore rise strictly along every chain, which the draw rule needs. A step above the root that cannot lose a triangle ends the chain, so a patch never repeats its child's triangles.
 3. The tree is stored in `NULL3D_clusters` on the primitive, in three accessors: the indices of every patch one after another, four floats of each patch's sphere, and four integers of each patch's run, its parent and its error. The extension is not required, so other loaders draw the whole mesh.
 4. A mesh gets a tree when it has 20,000 triangles or more, no skin and no morph targets, a material that neither blends nor masks, and at most four copies. A mesh that bends has no fixed patch bounds, and many copies pay about twice their indices for no saving, so those meshes keep whole levels.
-5. The engine stores the tree against the mesh's id and checks it against the mesh's vertices. The WebGPU path draws the chosen patches ([Drawing on WebGPU](#drawing-on-webgpu)), and the WebGL2 path draws them on the job workers where the device has `WEBGL_multi_draw`. Every other path draws the whole levels cut from the tree ([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)). [D-231](D-231-cluster-levels-cost.md) records what the pass costs.
+5. The engine stores the tree against the mesh's id and checks it against the mesh's vertices. The WebGPU path draws the chosen patches ([Drawing on WebGPU](#drawing-on-webgpu)), and the WebGL2 path draws them on the job workers where the device has `WEBGL_multi_draw`. Every other path draws the mesh's whole levels ([D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)). [D-231](D-231-cluster-levels-cost.md) records what the pass costs.
+6. Each mesh with a tree gets its whole levels from the level planner of [D-91](D-91-level-planning.md), with or without `--lod`. They are the levels that a mesh without a tree gets. The tree stays as it is. The levels share the mesh's vertices. The tool orders the vertices coarsest level first, then the finer levels, then the base mesh, as for a mesh without a tree. The reorder renames the tree's indices too ([Whole levels beside the tree](#whole-levels-beside-the-tree)).
 
 ## Consequences
 
-- `--clusters` adds about twice a mesh's indices to its file, and the whole levels that the tree
-  cuts into add their own indices, so a page that draws no patches pays that size.
-- Whole levels stay in the file as well, so WebGL2 and other viewers keep their fallback. The build cuts the same tree into whole levels, in place of the separate simplification pass for these meshes. The levels share the mesh's vertices and the tool orders them coarsest level first, as it does for a mesh without a tree.
+- `--clusters` adds about twice a mesh's indices to its file. The whole levels add about as many
+  indices again as the base mesh holds.
+- Whole levels stay in the file as well, so WebGL2 and other viewers keep their fallback. Every
+  copy of an instance batch draws them too. The asset tool cannot see a batch that page code
+  makes, so a mesh drawn thousands of times can still get a tree. The levels halve at each step
+  and go down to a few dozen triangles. So those copies draw few triangles far away.
 - The build needs no `partitionClusters`, so the tool keeps the meshoptimizer version that the engine pins.
+
+## Whole levels beside the tree
+
+The paths that draw no patches draw a mesh's whole levels: the WebGPU direct path, WebGL2 without
+`WEBGL_multi_draw`, the shadow maps, a mesh that several copies draw, and every instance batch.
+The tool counts only the copies that the file places. So a mesh that page code draws in a batch
+of thousands still gets a tree, and every copy draws whole levels.
+
+The tool first cut the tree into whole levels. Each level was the set of patches whose own error
+passed the level's error and whose parent's did not. That option is rejected. A cut drops only
+what one patch saves over its children, about a quarter at each depth. The tree's errors also add
+up along each chain (decision 2). So a cut's stored error ran far above its real distance from
+the mesh. The desert benchmark's props showed it:
+
+The table gives the first mesh of each kind; the other copies of each kind differ by under 5%.
+
+| Mesh | Base triangles | Cut levels, coarsest | Planner's levels, six | Planner's levels now, coarsest |
+| --- | --- | --- | --- | --- |
+| Pebble | 20,480 | 3,592, 17.5% of the base | 320 | 32 |
+| Boulder | 81,920 | 14,504 | 1,280 | 32 |
+| Column | 518,688 | 92,130 | 8,104 | 324 |
+| Arch | 1,023,360 | 181,985 | 15,990 | 658 |
+
+| Measure, the first pebble | Cut levels | Planner's levels |
+| --- | --- | --- |
+| Triangles of each level | 15,360, 11,520, 8,640, 6,480, 4,800, 3,592 | 10,240, 5,120, 2,560, 1,280, 640, 142, 32 |
+| Stored errors, in the mesh's integer steps | 51.9, 65.8, 209, 262, 1,600, 2,570 | 42.3, 83.1, 172, 339, 635, 2,190, 4,830 |
+| Level indices against the base mesh's | 2.46 times | 0.98 times |
+
+The cut's first level keeps three quarters of the pebble, and stores a larger error than the
+planner's level of half the pebble. The cut's coarsest level, 3,592 triangles, stores 2,570 steps.
+The planner's levels of 5,120 and 2,560 triangles store 172 and 339. So a cut level switched in
+many times farther away than its real error needs. Every far copy drew the cut's 3,592
+triangles, where the planner's levels draw 320 and fewer. Each mesh of the props shows the same shape. The
+cut levels also took 2.46 times the base mesh's indices in the file, against 0.98 times for the
+planner's six levels.
+
+How the data was produced: `bun packages/cli/bin/null3d.js assets optimize props.glb out --lod
+--clusters --no-blockers --bvh 0` on the desert benchmark's raw props file. The file holds 16
+meshes and 5,076,704 triangles. The cut levels come from commit `f7ffdbff`, and the planner's
+levels from this change. Each run was on the owner's Mac with no other run beside it. A script
+read each node's `MSFT_lod` levels and `NULL3D_lod_error` from the written file. The middle column is the planner with its earlier cap of
+six levels; [D-91](D-91-level-planning.md) gives the deeper chain.
 
 ## Drawing on WebGPU
 

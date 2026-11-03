@@ -606,8 +606,8 @@ impl Layout {
         // A mesh draws its tree of cluster patches in a camera's view, where its vertices fill one
         // part and one copy draws the bucket: the device draws many ranges in one call, and the
         // tree's walk needs a single world matrix. Such a bucket draws no whole level, because its
-        // patches already cover the mesh at the view's threshold. Elsewhere the whole levels cut
-        // from the tree draw.
+        // patches already cover the mesh at the view's threshold. Elsewhere the mesh's whole levels
+        // draw.
         let patches = settings.patches();
         let mut treed_keys: Vec<(BucketKey, u32)> = Vec::new();
         if multi_draw && drawn == Drawn::Scene {

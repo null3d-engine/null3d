@@ -319,37 +319,37 @@ describe('the tree of a large mesh', () => {
 		expect(summary.bytes).toBeGreaterThan(0);
 	});
 
-	it('cuts the tree into whole levels for a viewer that draws no patches', async () => {
+	it('gives a mesh with a tree the levels that --lod makes, even without --lod', async () => {
 		const { doc, plans } = await planned;
 		const levels = await planLevels(doc, plans, false);
 		expect(levels.size).toBe(1);
-		const cut = [...levels.values()][0];
-		if (!cut) throw new Error('the mesh of the test got no levels');
-		const { plan } = await only();
-		const patches = readTree(plan);
-		expect(cut.levels.length).toBeGreaterThan(0);
-		expect(cut.levels.length).toBeLessThanOrEqual(LOD_MAX_LEVELS);
-		let previous = plan.triangles;
+		const halved = [...levels.values()][0];
+		if (!halved) throw new Error('the mesh of the test got no levels');
+		expect(halved.levels.length).toBeGreaterThan(1);
+		expect(halved.levels.length).toBeLessThanOrEqual(LOD_MAX_LEVELS);
+		// The same mesh without a tree gets the same levels from --lod, and none without it.
+		const plain = [...(await planLevels(documentOf(mesh), new Map(), true)).values()][0];
+		expect(halved.levels.map((level) => level.triangles)).toEqual(
+			plain?.levels.map((level) => level.triangles) ?? [],
+		);
+		expect(halved.levels.map((level) => level.error)).toEqual(
+			plain?.levels.map((level) => level.error) ?? [],
+		);
+		expect((await planLevels(documentOf(mesh), new Map(), false)).size).toBe(0);
+		let previous = mesh.indices.length / 3;
 		let lastError = 0;
-		for (const level of cut.levels) {
-			// Every cut errs more than the one before it, so the engine switches them in order,
-			// and holds fewer triangles, so each pays for itself.
+		for (const level of halved.levels) {
+			// Each level keeps at most three quarters of the level above, and errs at least half as
+			// much again, so far copies draw few triangles and the levels switch in order.
+			expect(level.triangles).toBeLessThanOrEqual(previous * 0.75);
+			previous = level.triangles;
+			expect(level.error).toBeGreaterThanOrEqual(lastError * 1.5);
 			expect(level.error).toBeGreaterThan(lastError);
 			lastError = level.error;
-			expect(level.triangles).toBeLessThan(previous);
-			previous = level.triangles;
-			// The level is the tree's cut at its error: each patch whose own error passes and
-			// whose parent's does not, so the level covers the mesh once.
-			let expected = 0;
-			for (const patch of patches) {
-				if (patch.error > level.error) continue;
-				if (patch.parent >= 0 && entry(patches, patch.parent).error <= level.error) continue;
-				expected += patch.count;
-			}
-			const indices = entry(/** @type {Uint32Array[]} */ (level.indices), 0);
-			expect(indices.length).toBe(expected);
 			// The level names the mesh's own vertices, as the tree does.
-			for (const index of indices) expect(index).toBeLessThan(mesh.positions.length / 3);
+			expect(level.positions.every((positions) => positions === undefined)).toBe(true);
+			for (const index of entry(/** @type {Uint32Array[]} */ (level.indices), 0))
+				expect(index).toBeLessThan(mesh.positions.length / 3);
 		}
 	});
 
