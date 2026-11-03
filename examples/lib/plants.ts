@@ -113,7 +113,10 @@ export async function plantSpecies(
 		...options.standIn,
 	});
 	const kit = await inTurn('prepare', module, async () =>
-		prepareSpecies(ctx, await module, { placeholders: true }),
+		prepareSpecies(ctx, await module, {
+			placeholders: true,
+			cache: ctx.assets.cache('@null3d/vegetation', 1),
+		}),
 	);
 	const grown = (async () => {
 		const assets = await Promise.all(
