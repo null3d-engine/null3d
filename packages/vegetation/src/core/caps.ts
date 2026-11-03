@@ -16,8 +16,11 @@ export interface ModelCaps {
 	readonly kitBytes: number;
 	/** Bytes of one variant: the card levels, the shoot rows and the skeleton. */
 	readonly variantBytes: number;
-	/** Bytes of one variant's nearest wood, which meshes in the background; 0 where the class has none. */
-	readonly lod0WoodBytes: number;
+	/**
+	 * Bytes of one variant's nearest wood at each detail tier, which meshes in the background; 0 where
+	 * the class has none.
+	 */
+	readonly lod0WoodBytes: Readonly<Record<Detail, number>>;
 	/** Triangles of the nearest level of one copy, at the high tier. */
 	readonly lod0Triangles: number;
 	/** Triangles of the first card level. */
@@ -50,7 +53,9 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 	tree: {
 		kitBytes: 6 * MB,
 		variantBytes: 4 * MB,
-		lod0WoodBytes: 3 * MB,
+		// The grown oak's largest of six variants, with about 15 per cent to spare: 5.2, 5.7, 6.4 and
+		// 7.9 MB. Close-up review needs every finest macro axis as real wood.
+		lod0WoodBytes: { low: 6 * MB, medium: 6.5 * MB, high: 7.5 * MB, ultra: 9 * MB },
 		lod0Triangles: 2_500_000,
 		lod1Triangles: 150_000,
 		lod2Triangles: 30_000,
@@ -61,7 +66,7 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 	palm: {
 		kitBytes: 4 * MB,
 		variantBytes: 3 * MB,
-		lod0WoodBytes: 2 * MB,
+		lod0WoodBytes: { low: 2 * MB, medium: 2 * MB, high: 2 * MB, ultra: 2 * MB },
 		lod0Triangles: 600_000,
 		lod1Triangles: 80_000,
 		lod2Triangles: 20_000,
@@ -72,7 +77,7 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 	ground: {
 		kitBytes: 2 * MB,
 		variantBytes: 1.5 * MB,
-		lod0WoodBytes: 0,
+		lod0WoodBytes: { low: 0, medium: 0, high: 0, ultra: 0 },
 		lod0Triangles: 200_000,
 		lod1Triangles: 30_000,
 		lod2Triangles: 8_000,
