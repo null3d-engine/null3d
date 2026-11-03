@@ -47,7 +47,7 @@ import { bakeCards } from './lod/card-bake';
 import { cardMesh } from './lod/cards';
 import { bakeFar } from './lod/impostor';
 import { levelStarts } from './lod/levels';
-import { quantise, TEXTURE_UV_STEPS, WOOD_UV_STEPS } from './lod/quantise';
+import { quantiseParts, TEXTURE_UV_STEPS, WOOD_UV_STEPS } from './lod/quantise';
 import { speciesHeader } from './render/records';
 import type { DressInput, FarBake, GrowInput, MeshInput, MeshLevel } from './stages';
 import { windRecords } from './wind/records';
@@ -226,7 +226,10 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 	};
 }
 
-/** A part from a mesh, quantised, or nothing when the mesh is empty. */
+/**
+ * The parts of a mesh, quantised: one per piece of at most `PART_VERTICES` vertices, so each has
+ * 16-bit indices; none when the mesh is empty.
+ */
 function partOf(
 	kit: SpeciesKitData,
 	name: PlantPart['name'],
@@ -234,12 +237,12 @@ function partOf(
 	uvSteps: number,
 ): PlantPart[] {
 	if (!mesh || mesh.indices.length === 0) return [];
-	const arrays = stage(
+	const pieces = stage(
 		kit.placeholders,
-		() => quantise(mesh, kit.box, uvSteps),
-		() => placeholderQuantise(mesh, kit.box, uvSteps),
+		() => quantiseParts(mesh, kit.box, uvSteps),
+		() => [placeholderQuantise(mesh, kit.box, uvSteps)],
 	);
-	return [{ name, arrays }];
+	return pieces.map((arrays) => ({ name, arrays }));
 }
 
 /** The grown skeleton and its dressing: the stages before the meshes. */
@@ -414,11 +417,12 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
  *
  * @param kit The species' kit.
  * @param options The options the variant grew with.
- * @returns The nearest level's wood part, or undefined when the plant has none.
+ * @returns The nearest level's wood parts, none when the plant has no wood. A large plant's wood
+ *   comes in several parts of at most 65,536 vertices each.
  * @category api/vegetation
  */
-export function growNearWoodNow(kit: SpeciesKitData, options: GrowOptions): PlantPart | undefined {
-	return nearWood(dress(kit, options))[0];
+export function growNearWoodNow(kit: SpeciesKitData, options: GrowOptions): readonly PlantPart[] {
+	return nearWood(dress(kit, options));
 }
 
 /**

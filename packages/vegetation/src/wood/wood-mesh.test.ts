@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'bun:test';
+import { speciesBox } from '../core/box';
+import { capsFor } from '../core/caps';
 import { hashBytes } from '../core/hash';
+import { DETAILS } from '../core/types';
 import { oakRecord } from '../grow/oak.fixture';
 import { growSelfOrganizing } from '../grow/self-organizing';
-import { dequantisePosition, quantise, WOOD_UV_STEPS } from '../lod/quantise';
+import {
+	dequantisePosition,
+	PART_VERTICES,
+	quantise,
+	quantiseParts,
+	splitMesh,
+	WOOD_UV_STEPS,
+} from '../lod/quantise';
 import type { MeshLevel } from '../stages';
 import { stemSection } from './flare';
 import { ParentSurface } from './junction';
@@ -262,6 +272,48 @@ describe('the wood of the grown oak', () => {
 		expect(density.rings).toBeGreaterThan(5000);
 		expect(density.around).toBeLessThanOrEqual(0.3);
 		expect(density.along).toBeLessThanOrEqual(0.3);
+	});
+
+	it('splits into parts of 16-bit indices that hold every triangle as it was', () => {
+		const mesh = report.mesh;
+		expect(mesh.positions.length / 3).toBeGreaterThan(PART_VERTICES);
+		const pieces = splitMesh(mesh);
+		expect(pieces.length).toBeGreaterThan(1);
+		let triangles = 0;
+		let at = 0;
+		let moved = 0;
+		for (const piece of pieces) {
+			expect(piece.indices).toBeInstanceOf(Uint16Array);
+			expect(piece.positions.length / 3).toBeLessThanOrEqual(PART_VERTICES);
+			for (let i = 0; i < piece.indices.length; i++, at++) {
+				const from = (mesh.indices[at] as number) * 3;
+				const to = (piece.indices[i] as number) * 3;
+				for (let k = 0; k < 3; k++)
+					if (piece.positions[to + k] !== mesh.positions[from + k]) moved++;
+			}
+			triangles += piece.indices.length / 3;
+		}
+		expect(moved).toBe(0);
+		expect(triangles).toBe(mesh.indices.length / 3);
+	});
+
+	it('stays within the cap of the nearest wood at every tier', () => {
+		const caps = capsFor(record).lod0WoodBytes;
+		for (const detail of DETAILS) {
+			const mesh = meshWood({ ...testMeshInput(detail, skeleton), record }, 0);
+			let bytes = 0;
+			for (const part of quantiseParts(mesh, speciesBox(record), WOOD_UV_STEPS))
+				for (const array of [
+					part.positions,
+					part.normals,
+					part.uvs,
+					part.uvs1,
+					part.colors,
+					part.indices,
+				])
+					bytes += array.byteLength;
+			expect(bytes).toBeLessThan(caps[detail]);
+		}
 	});
 
 	it('keeps v within the 16 bits that hold it', () => {
