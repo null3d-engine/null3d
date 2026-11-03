@@ -5,6 +5,7 @@
 // the planner on a job worker gives the levels that Node's planner gives for the same grid, triangle
 // for triangle, that each mesh gets the levels it should, and that the frames draw far fewer
 // triangles far from the grid than near it.
+import { LOD_MAX_LEVELS } from '@null3d/engine/levels-planner';
 import { expect, test } from '@playwright/test';
 import { ENGINE_MODES, modeProblems } from '../lib/engine-checks.ts';
 import { bumpyGrid, indicesHash } from '../lib/level-meshes.ts';
@@ -46,7 +47,7 @@ for (const path of PATHS)
 			page,
 		}) => {
 			test.setTimeout(120_000);
-			expected ??= (await nodeLevels(bumpyGrid(CELLS), false, 7)).map((level) => ({
+			expected ??= (await nodeLevels(bumpyGrid(CELLS), false, LOD_MAX_LEVELS)).map((level) => ({
 				triangles: (level.indices[0] as Uint32Array).length / 3,
 				hash: indicesHash(level.indices[0] as Uint32Array),
 				error: level.error,

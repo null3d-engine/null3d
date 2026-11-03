@@ -2,7 +2,7 @@
 
 Status: decided and built: the shared planner, `mesh.buildLevels`, the automatic levels at a mesh's first draw with the `levels` option, and their guards, on WebGPU and WebGL2. Pending: the owner's review of the thresholds, and the adoption by the add-ons and demos that set levels by hand today. Task: none.
 
-Summary: The asset tool's level planner moved into `packages/engine/levels/planner.js`, which the tool runs in Node and the engine runs on a job worker with the same build of meshoptimizer's simplifier, so one mesh gets one set of levels, index for index. A mesh made in code plans its levels at its first draw when it holds 4,096 triangles or more, or 256 or more in copies of 65,536 triangles together; `levels: false` opts out. A million triangles take about 5 to 6 s of one job worker's CPU, and no frame is late while the plan runs.
+Summary: The asset tool's level planner moved into `packages/engine/levels/planner.js`, which the tool runs in Node and the engine runs on a job worker with the same build of meshoptimizer's simplifier, so one mesh gets one set of levels, index for index. A mesh made in code plans its levels at its first draw when it holds 4,096 triangles or more, or 256 or more in copies of 65,536 triangles together; `levels: false` opts out. A million triangles take about 6 s of one job worker's CPU, and no frame is late while the plan runs.
 
 ## Question
 
@@ -58,22 +58,37 @@ The bumpy grid of 32,768 triangles, scaled to 20 m, drawn alone at the Low prese
 | WebGPU | 32,769 | 1,025 |
 | WebGL2, whose depth prepass counts each triangle again | 65,537 | 2,049 |
 
+### A building kit of separate quads
+
+The Island's house walls are separate quads and boxes, each piece with vertices of its own: frames, shutters, sills and doors. The planner ran on the first six house kinds' walls, with normals as `computeNormals` makes them, without cards. Locked borders keep every piece's outline, so the levels drop whole pieces, which pruning takes, and each level's error is the size of the pieces that it drops:
+
+| House kind | Triangles | Levels: triangles at error, in meters |
+| --- | --- | --- |
+| 0 | 1,776 | 814 at 0.50, 406 at 0.75, 70 at 1.13, 32 at 1.70 |
+| 1 | 4,218 | 1,662 at 0.52, 662 at 0.78, 124 at 1.17, 42 at 3.31 |
+| 2 | 3,337 | 1,161 at 0.67, 319 at 1.01, 159 at 1.93, 74 at 2.89, 30 at 6.19 |
+| 3 | 3,050 | 1,450 at 0.47, 246 at 0.90, 122 at 3.00, 20 at 6.48 |
+| 4 | 2,589 | 1,253 at 0.50, 625 at 0.88, 217 at 1.33, 63 at 1.99 |
+| 5 | 2,036 | 592 at 0.72, 136 at 1.08, 62 at 1.72 |
+
+An error of half a meter switches in about 580 m out on a 1,080-pixel screen at a 50-degree lens, where the scene's hand-made far house, at an error of 0.35 m, switches in at about 400 m. No level opens a hole that a pixel shows. With cards asked for, kind 5's walls read as cards and plan no level, which is why the card step runs only when asked. The scene keeps its hand-made far houses, which keep the shadow that a near house casts, so these walls take no planned levels there.
+
 ### What a plan costs
 
-CPU time of the task's `run` on one thread in Bun 1.4.3, for bumpy grids with normals and texture coordinates, after the faster weld (below):
+CPU time of the task's `run` on one thread in Bun 1.4.3, for bumpy grids with normals and texture coordinates, with the planner that halves to the floor in at most fifteen levels and the faster weld (below):
 
 | Triangles | CPU time | Levels | Level indices against the mesh's |
 | --- | --- | --- | --- |
-| 2,048 | 35 ms | 1,024 > 512 > 256 > 130 | 0.94 |
+| 2,048 | 49 ms | 1,024 > 512 > 256 > 130 | 0.94 |
 | 4,232 | 35 ms | 2,116 > 1,058 > 528 > 264 > 192 | 0.98 |
-| 32,768 | 126 ms | 16,384 > ... > 1,024 > 532 | 0.98 |
-| 131,072 | 584 ms | 65,536 > 32,768 > 16,384 > 8,192 > 1,290 | 0.95 |
-| 524,288 | 2,502 ms | 262,144 > 131,072 > 65,536 > 9,740 > 2,072 | 0.90 |
-| 1,048,352 | 5,879 ms | 524,176 > 262,088 > 131,044 > 16,380 > 2,920 | 0.89 |
+| 32,768 | 127 ms | 16,384 > 8,192 > 4,096 > 2,048 > 1,024 > 532 | 0.98 |
+| 131,072 | 677 ms | 65,536 > ... > 2,048 > 1,048 | 0.99 |
+| 524,288 | 2,799 ms | 262,144 > ... > 4,096 > 2,070 | 1.00 |
+| 1,048,352 | 6,172 ms | 524,176 > ... > 4,094 > 2,924 | 1.00 |
 
-The grids keep a locked open border, as in the tool, so the last level keeps about a triangle per border edge. The weld first keyed each vertex by the text of its values. It now hashes their bits and compares the values: the same welds, and the tool's output stays equal. In Chrome the plans of the 64,800, 131,072 and 524,288-triangle grids took 0.37 s, 0.66 s and 2.7 s from the mesh's first draw to its levels, with the load above.
+The grids keep a locked open border, as in the tool, so the last level keeps about a triangle per border edge. The weld first keyed each vertex by the text of its values. It now hashes their bits and compares the values: the same welds, and the tool's output stays equal. In Chrome the plans of the 64,800, 131,072 and 524,288-triangle grids took 0.37 s, 0.66 s and 2.7 s from the mesh's first draw to its levels, with the load above, before the planner went to fifteen levels; the deeper levels add about a tenth.
 
-The levels' indices take about as much memory again as the mesh's own (0.89 to 0.98 of them). A mesh split into parts, past 65,535 vertices, also copies the vertices of each level: about as many again as the mesh's. On the job worker, meshoptimizer's heaps grow with the largest mesh and never shrink, so a worker lets them go after a plan that took them past 32 MiB.
+The levels' indices take about as much memory again as the mesh's own (0.94 to 1.00 of them). A mesh split into parts, past 65,535 vertices, also copies the vertices of each level: about as many again as the mesh's. On the job worker, meshoptimizer's heaps grow with the largest mesh and never shrink, so a worker lets them go after a plan that took them past 32 MiB.
 
 The planner's files load with the first plan: `js/sketch-worker-mesh-levels.js` 0.4 KB, `js/job-worker-levels.js` 3.0 KB, `meshopt_simplifier.wasm` 13.5 KB and `meshopt_encoder.wasm` 5.7 KB after Brotli.
 
