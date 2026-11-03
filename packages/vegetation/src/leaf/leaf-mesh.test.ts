@@ -1,50 +1,32 @@
 // The blade leaf mesh: its texture footprint covers the oak leaf's coverage at every tier, its shape
 // in space follows the record's fold, curl and droop, and its compound form places its leaflets.
 //
-// The oak's coverage is the texture source's own (slot 24, `24-leaf-texture-upper-c.png` of the
-// reference set), cut at half coverage and halved to 512 texels a side, held as runs of covered
-// texels per row with row 0 at the stalk end. Its outline is traced and simplified to 64 points, as
-// the textures tool writes a manifest's outline.
+// The oak's outline and coverage are the textures tool's own, from slot 24 of the reference set: the
+// manifest's 64-point outline, and the upper layer's coverage at the half cutoff, 512 texels a side,
+// held as runs of covered texels per row with row 0 at the stalk end.
 import { describe, expect, it } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import type { LeafShape } from '../core/record';
 import { DETAILS, type Detail } from '../core/types';
 import { compoundLeaf, leafletPlaces } from './compound';
 import {
-	type CoverageMask,
+	type CoverageRuns,
 	intersectionOverUnion,
 	maskFromRuns,
 	rasteriseTriangles,
-	traceOutline,
 } from './coverage.test-support';
-import oakCoverage from './fixtures/pedunculate-oak-leaf-coverage.json' with { type: 'json' };
 import { bladeMesh, leafTriangles } from './leaf-mesh';
-import { type LeafOutline, parametricOutline, signedArea } from './outline';
+import { OAK_MANIFEST } from './oak.test-support';
+import { parametricOutline, signedArea, textureOutline } from './outline';
 
-/** The oak leaf's frame from its mask: the stalk's lowest texel, the blade's first wide row, its top. */
-function outlineFromMask(mask: CoverageMask, limit: number): LeafOutline {
-	const { size, covered } = mask;
-	let low = -1;
-	let base = -1;
-	let top = -1;
-	for (let row = 0; row < size; row++) {
-		let width = 0;
-		for (let x = 0; x < size; x++) width += covered[row * size + x] as number;
-		if (width === 0) continue;
-		if (low < 0) low = row;
-		if (base < 0 && width > size * 0.15) base = row;
-		top = row + 1;
-	}
-	return {
-		points: traceOutline(mask, limit),
-		petiole: [0.5, low / size],
-		base: [0.5, base / size],
-		tip: [0.5, top / size],
-		texels: 1024,
-	};
-}
+/** The oak leaf's coverage beside its manifest in the textures package. */
+const COVERAGE = new URL(
+	'../../../vegetation-textures/textures/pedunculate-oak/leaf-coverage.json',
+	import.meta.url,
+);
 
-const mask = maskFromRuns(oakCoverage);
-const oak = outlineFromMask(mask, 64);
+const mask = maskFromRuns(JSON.parse(readFileSync(COVERAGE, 'utf8')) as CoverageRuns);
+const oak = textureOutline(OAK_MANIFEST.leaf as NonNullable<typeof OAK_MANIFEST.leaf>);
 
 /** A leaf with no bend at all, so its mesh lies flat. */
 const FLAT: LeafShape = {
@@ -71,7 +53,8 @@ function overlap(detail: Detail): number {
 }
 
 describe('the blade leaf mesh', () => {
-	it('traces the oak outline counter-clockwise in 64 points at most', () => {
+	it('reads the oak outline counter-clockwise, in 24 to 64 points', () => {
+		expect(oak.points.length / 2).toBeGreaterThanOrEqual(24);
 		expect(oak.points.length / 2).toBeLessThanOrEqual(64);
 		expect(signedArea(oak.points)).toBeGreaterThan(0);
 	});
@@ -105,7 +88,10 @@ describe('the blade leaf mesh', () => {
 		}
 		const scale = 0.1 / (oak.tip[1] - oak.base[1]);
 		// The blade's top stands its length above the base, plus the drawn stalk below it.
-		expect(top).toBeCloseTo(0.1 + (oak.base[1] - oak.petiole[1]) * scale + (3 / 1024) * scale, 3);
+		// The blade, the drawn stalk below it and the outline's margin, within the outline's reach past
+		// the manifest's tip point.
+		const expected = 0.1 + (oak.base[1] - oak.petiole[1]) * scale + (3 / 1024) * scale;
+		expect(Math.abs(top - expected)).toBeLessThan(0.0015);
 	});
 
 	it('folds its halves into a V and curls its tip down', () => {

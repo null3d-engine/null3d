@@ -1,58 +1,18 @@
 // A test species for the leaf and shoot tests: the stand-in record given the pedunculate oak's
-// leaf and shoots as the reference stills show them (slots 21 to 25): a leaf of about ten
-// centimetres on a very short stalk, two-year shoots whose leaves crowd at the tip on a 2/5
-// spiral round a cluster of five buds, and a manifest whose leaf outline is traced from the oak
-// leaf's own coverage. The oak's real record lands with its species folder.
+// leaf and shoots as the reference stills show them (slots 21 to 25), and the oak's own texture
+// manifest, as the textures tool wrote it from slots 24 and 25. The oak's real record lands with its
+// species folder.
+import { files as oakTextures } from '@null3d/vegetation-textures/pedunculate-oak';
 import type { SpeciesKitData } from '../asset';
 import type { ShootSpec, Species } from '../core/record';
 import { standInRecord } from '../core/stand-in';
 import type { TextureManifest } from '../core/textures';
 import { DETAILS } from '../core/types';
-import { maskFromRuns, traceOutline } from './coverage.test-support';
-import oakCoverage from './fixtures/pedunculate-oak-leaf-coverage.json' with { type: 'json' };
 import { builder } from './leaf-mesh';
 import { shootPrototypes } from './shoot';
 
-/** The oak leaf's frame and outline, from its coverage. */
-function oakLeaf(): NonNullable<TextureManifest['leaf']> {
-	const mask = maskFromRuns(oakCoverage);
-	const { size, covered } = mask;
-	let low = -1;
-	let base = -1;
-	let top = -1;
-	for (let row = 0; row < size; row++) {
-		let width = 0;
-		for (let x = 0; x < size; x++) width += covered[row * size + x] as number;
-		if (width === 0) continue;
-		if (low < 0) low = row;
-		if (base < 0 && width > size * 0.15) base = row;
-		top = row + 1;
-	}
-	return {
-		size: 1024,
-		layers: ['upper', 'lower'],
-		length: (top - base) / size,
-		frame: { petiole: [0.5, low / size], base: [0.5, base / size], tip: [0.5, top / size] },
-		outline: traceOutline(mask, 64),
-		mean: { upper: [0.046, 0.105, 0.032], lower: [0.11, 0.16, 0.09] },
-		veins: { luminance: 0.5, contrast: 1 },
-		profile: {
-			upper: [0.9, 0.95, 1, 1.02, 1.03, 1.02, 1, 0.97],
-			lower: [0.95, 0.98, 1, 1.01, 1.01, 1, 0.99, 0.97],
-		},
-		coverage: 0.372,
-	};
-}
-
-/** A manifest that holds the oak leaf's figures and nothing else. */
-export const OAK_MANIFEST: TextureManifest = {
-	format: 1,
-	species: 'test-oak',
-	source: { repository: 'null3d-engine/plant-references', commit: '', files: [] },
-	tool: { version: '', encoder: '' },
-	leaf: oakLeaf(),
-	outputs: [],
-};
+/** The oak's texture manifest: its leaf's frame, outline, means and profiles. */
+export const OAK_MANIFEST: TextureManifest = oakTextures.manifest;
 
 /** Internodes of an oak shoot: one long first internode, then the leaves crowded at the tip. */
 const ROSETTE: readonly (readonly [number, number])[] = [
