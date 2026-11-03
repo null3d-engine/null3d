@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { PlantAsset, SpeciesKitData } from '../asset';
 import { plantAssetDigest } from '../asset';
+import { variantBytesOf } from '../core/caps';
 import { speciesProblems } from '../core/check';
 import type { SpeciesModule } from '../core/record';
 import { isSpeciesId, loadSpecies, speciesIds } from '../core/registry';
@@ -72,7 +73,7 @@ for (const walked of WALKED) {
 			expect(plantAssetDigest(growPlantNow(kit, options))).toBe(plantAssetDigest(asset));
 			const budget = record.lod.budget;
 			expect(kitBytes(kit)).toBeLessThanOrEqual(budget.kitBytes);
-			expect(asset.stats.bytes).toBeLessThanOrEqual(budget.variantBytes);
+			expect(variantBytesOf(asset)).toBeLessThanOrEqual(budget.variantBytes[kit.detail]);
 			expect(nearTriangles(kit, asset)).toBeLessThanOrEqual(budget.lod0Triangles);
 			expect(asset.levels[1].triangles).toBeLessThanOrEqual(budget.lod1Triangles);
 			expect(asset.levels[2].triangles).toBeLessThanOrEqual(budget.lod2Triangles);

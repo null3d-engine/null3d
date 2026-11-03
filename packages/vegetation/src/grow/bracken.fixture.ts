@@ -103,7 +103,7 @@ export const brackenRecord: Species = {
 		shadowLevel: 1,
 		budget: {
 			kitBytes: 1_000_000,
-			variantBytes: 1_500_000,
+			variantBytes: { low: 1_500_000, medium: 1_500_000, high: 1_500_000, ultra: 1_500_000 },
 			lod0Triangles: 200_000,
 			lod1Triangles: 30_000,
 			lod2Triangles: 8_000,
