@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { envelopeSilhouette, envelopeVolume } from '../../packages/vegetation/src/grow/envelope.ts';
 import { oakRecord } from '../../packages/vegetation/src/grow/oak.fixture.ts';
+import { scaledBudget } from '../../tests/lib/run-budget.ts';
 import { REPO_ROOT } from '../../tests/lib/server.ts';
 import { iou } from '../lib/plant-review/compare.ts';
 import { readReferenceSet } from '../lib/plant-review/references.ts';
@@ -160,6 +161,10 @@ describe('the band of the all-round test', () => {
 	});
 });
 
+/** Milliseconds to measure a turning video, and to check a leaf, on an idle machine. */
+const VIDEO_MS = scaledBudget(180_000);
+const LEAF_MS = scaledBudget(60_000);
+
 /** The reference corpus, which only a maintainer's copy holds. */
 const CORPUS =
 	process.env.NULL3D_PLANT_REFERENCES ??
@@ -168,32 +173,40 @@ const OAK = join(CORPUS, 'pedunculate-oak');
 const OAK_VIDEO = join(OAK, 'oak-turntable.mp4');
 
 describe.skipIf(!existsSync(OAK_VIDEO))('the pedunculate oak, from the private references', () => {
-	test("measures the oak's envelope that the grower's tests hold, from the video it was measured from", () => {
-		const fit = fitTurn({ file: 'oak-turntable.mp4', path: OAK_VIDEO, piece: 'whole', arc: 360 });
-		const hull = fit.hull;
-		expect(hull).not.toBeNull();
-		if (!hull || !oakRecord.envelope) return;
-		expect(Math.abs(hull.crownBase - 0.115)).toBeLessThanOrEqual(0.011);
-		const ours = envelopeVolume(hull.envelope, 1, 0);
-		const theirs = envelopeVolume(oakRecord.envelope, 1, 0);
-		const frame = { left: -COLUMNS / 2 / CELLS, cell: 1 / CELLS, cols: COLUMNS, rows: CELLS + 4 };
-		for (let k = 0; k < 32; k++) {
-			const turn = (k / 32) * 2 * Math.PI;
-			expect(
-				iou(envelopeSilhouette(ours, turn, frame), envelopeSilhouette(theirs, turn, frame)),
-			).toBeGreaterThanOrEqual(0.95);
-		}
-		// The grower's record found its envelope's outlines 0.72 to 0.89 against the views.
-		expect(hull.consistency.lowest).toBeGreaterThan(0.7);
-		expect(hull.consistency.mean).toBeGreaterThan(0.83);
-	}, 180_000);
+	test(
+		"measures the oak's envelope that the grower's tests hold, from the video it was measured from",
+		() => {
+			const fit = fitTurn({ file: 'oak-turntable.mp4', path: OAK_VIDEO, piece: 'whole', arc: 360 });
+			const hull = fit.hull;
+			expect(hull).not.toBeNull();
+			if (!hull || !oakRecord.envelope) return;
+			expect(Math.abs(hull.crownBase - 0.115)).toBeLessThanOrEqual(0.011);
+			const ours = envelopeVolume(hull.envelope, 1, 0);
+			const theirs = envelopeVolume(oakRecord.envelope, 1, 0);
+			const frame = { left: -COLUMNS / 2 / CELLS, cell: 1 / CELLS, cols: COLUMNS, rows: CELLS + 4 };
+			for (let k = 0; k < 32; k++) {
+				const turn = (k / 32) * 2 * Math.PI;
+				expect(
+					iou(envelopeSilhouette(ours, turn, frame), envelopeSilhouette(theirs, turn, frame)),
+				).toBeGreaterThanOrEqual(0.95);
+			}
+			// The grower's record found its envelope's outlines 0.72 to 0.89 against the views.
+			expect(hull.consistency.lowest).toBeGreaterThan(0.7);
+			expect(hull.consistency.mean).toBeGreaterThan(0.83);
+		},
+		VIDEO_MS,
+	);
 
-	test('finds the shipped leaf contour still covers slot 24', () => {
-		const set = readReferenceSet(OAK);
-		const leaf = checkLeaf('pedunculate-oak', OAK, set.stills);
-		expect(leaf.problems).toEqual([]);
-		expect(leaf.contour.iou).toBeGreaterThan(0.95);
-		expect(leaf.manifest?.current).toBe(true);
-		expect(leaf.manifest?.iou).toBeGreaterThan(0.95);
-	}, 60_000);
+	test(
+		'finds the shipped leaf contour still covers slot 24',
+		() => {
+			const set = readReferenceSet(OAK);
+			const leaf = checkLeaf('pedunculate-oak', OAK, set.stills);
+			expect(leaf.problems).toEqual([]);
+			expect(leaf.contour.iou).toBeGreaterThan(0.95);
+			expect(leaf.manifest?.current).toBe(true);
+			expect(leaf.manifest?.iou).toBeGreaterThan(0.95);
+		},
+		LEAF_MS,
+	);
 });
