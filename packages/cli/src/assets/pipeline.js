@@ -52,8 +52,8 @@ import { encodeTextures, TEXTURE_FOLDER } from './textures.js';
  * @property {boolean} stages Write the levels of detail as separate downloads beside the model,
  *   so the engine draws the coarsest level first and refines it as the rest arrive. It needs
  *   `lod`.
- * @property {boolean} clusters Make trees of cluster patches, and the whole levels that each tree
- *   cuts into for a viewer that draws no patches.
+ * @property {boolean} clusters Make trees of cluster patches, and give each mesh with a tree whole
+ *   levels of detail too, for a viewer that draws no patches.
  * @property {number} simplify The share of each mesh's triangles to keep, from 0 to 1, as far
  *   as the error limit allows. 1 keeps them all.
  * @property {number} simplifyError The largest error of that simplification, as a share of each
@@ -384,8 +384,8 @@ export async function optimizeModel(path, options, encode) {
 	if (options.simplify < 1) await simplifyMeshes(doc, options.simplify, options.simplifyError);
 	await reorderMeshes(doc);
 	quantizeMeshes(doc);
-	// A tree of cluster patches is planned before the levels, because the tree cuts into the whole
-	// levels that a viewer without the patches draws.
+	// The trees are planned before the levels: a mesh with a tree gets whole levels for the viewers
+	// that draw no patches, and the levels' new vertex order renames the trees' indices too.
 	const clusters = options.clusters ? await planClusters(doc) : new Map();
 	const levels =
 		options.lod || clusters.size > 0 ? await planLevels(doc, clusters, options.lod) : new Map();

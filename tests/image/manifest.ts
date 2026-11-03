@@ -2593,13 +2593,13 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		switches: ['direct=off'],
 	},
 	{
-		// The whole-level fallback: the switch hides `WEBGL_multi_draw`, so WebGL2 draws the levels
-		// that the asset tool cut from the tree, as a browser without the extension does. The cut
-		// holds the patches that the walk picks at the same threshold, so the picture stays within
-		// the test's tolerance of the patched path's. The probe's answer alone cannot tell the two
-		// pictures apart, so the page also reports the ranges that the frame builder's walk chose:
-		// the fallback draws none, and a renderer that took the patch path reports a count even
-		// where the probe withheld the extension.
+		// The whole-level fallback: the switch hides `WEBGL_multi_draw`, so WebGL2 draws the mesh's
+		// whole levels, as a browser without the extension does. Each level errs by less than a
+		// pixel where it draws, so the picture stays within the test's tolerance of the patched
+		// path's. The probe's answer alone cannot tell the two pictures apart, so the page also
+		// reports the ranges that the frame builder's walk chose: the fallback draws none, and a
+		// renderer that took the patch path reports a count even where the probe withheld the
+		// extension.
 		name: 'cluster-no-multi-draw',
 		sketch: 'tests/pages/sketches/cluster-sketch.ts',
 		hold: 0,

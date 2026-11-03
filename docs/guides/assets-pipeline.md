@@ -55,6 +55,7 @@ scene.instantiate(ship);
 | --- | --- | --- |
 | `--lod` | Adds levels of detail to each mesh of 64 triangles or more | No levels |
 | `--stages` | With `--lod` or `--clusters`, writes finer levels and cluster bands as separate files beside the model. The page then draws a coarse first picture | Levels and bands in the file |
+| `--clusters` | Adds a tree of cluster patches to each large static mesh, and gives that mesh the levels that `--lod` makes. [Cluster levels](#cluster-levels) says which meshes get a tree | No trees |
 | `--simplify <share>` | Keeps this share of each mesh's triangles, from 0 to 1, as far as `--simplify-error` allows | 1: every triangle |
 | `--simplify-error <share>` | The most that `--simplify` may move a mesh's surface, as a share of the mesh's size | 0.01 |
 | `--max-texture-size <pixels>` | The largest side of a texture: a power of two up to 2048 | 2048 |
@@ -172,7 +173,7 @@ The bake skips a material, and the report says why, when:
 
 ## Levels of detail
 
-`--lod` adds levels of detail to each mesh of 64 triangles or more. Each level has about half the triangles of the level above. The levels stop when a level would keep more than three quarters of the triangles above it.
+`--lod` adds levels of detail to each mesh of 64 triangles or more. Each level has about half the triangles of the level above. The engine takes at most seven levels below a mesh, so the last steps grow, up to an eighth, where halving would stop short. The coarsest level then holds about 32 triangles, so a far copy that covers a few pixels draws a few dozen triangles. The levels stop early when a level falls well short of its target, or when its error reaches the mesh's size.
 
 The command plans the levels as follows:
 
@@ -212,11 +213,13 @@ The command splits each mesh part into patches and builds the tree above them wi
 2. A patch above a group simplifies its children's triangles to about half of them. The group's border stays in place, so two patches of different detail still meet.
 3. Each patch stores its error, the largest distance between its surface and the surface below it, and a sphere around its triangles.
 
-The tree holds about twice the mesh's triangles. Every patch's indices name the mesh's own vertices, so the tree adds no vertex. The tree goes into the file with `NULL3D_clusters`. Other glTF loaders ignore it and draw the whole mesh. The build also cuts the tree at a few errors into whole levels, which share the mesh's vertices as the levels above do, so a viewer that draws no patches shows the model at a few depths. The engine draws the patches on both GPU paths when one copy of the mesh draws: WebGPU picks them in a compute pass, and WebGL2 with `WEBGL_multi_draw` picks them on the job workers. The WebGPU path that draws objects directly, WebGL2 without `WEBGL_multi_draw`, such as Firefox, and the shadow maps draw the whole levels.
+The tree holds about twice the mesh's triangles. Every patch's indices name the mesh's own vertices, so the tree adds no vertex. The tree goes into the file with `NULL3D_clusters`. Other glTF loaders ignore it and draw the whole mesh. The build also gives the mesh the whole levels that `--lod` makes, even without `--lod`. Each level has about half the triangles of the level above, and the levels share the mesh's vertices. A viewer that draws no patches draws these levels. The engine draws the patches on both GPU paths when one copy of the mesh draws: WebGPU picks them in a compute pass, and WebGL2 with `WEBGL_multi_draw` picks them on the job workers. The WebGPU path that draws objects directly, WebGL2 without `WEBGL_multi_draw`, such as Firefox, and the shadow maps draw the whole levels.
 
 A mesh gets no tree in four cases. It has fewer than 20,000 triangles, or a skin or a morph target bends it. It also gets none when its material blends or masks, or more than four copies draw it. Those meshes keep whole levels.
 
-A tree streams when the command takes `--stages` as well. Each band below the one that the file holds becomes a file of its own, and each node names its bands in `NULL3D_stages`. The tree then refines as the bands arrive. The whole levels that the tree cuts into stay in the file, for the readers and the paths that draw the mesh whole.
+The tool counts only the copies that the file places. It cannot see the copies that page code places in an instance batch. So a mesh that a page draws thousands of times, such as a rock, still gets a tree. An instance batch always draws whole levels, so those copies draw the levels and never the patches.
+
+A tree streams when the command takes `--stages` as well. Each band below the one that the file holds becomes a file of its own, and each node names its bands in `NULL3D_stages`. The tree then refines as the bands arrive. The mesh's whole levels stay in the file, for the readers and the paths that draw the mesh whole.
 
 ```sh
 bunx @null3d/cli assets optimize models/ public/models/ --lod --clusters

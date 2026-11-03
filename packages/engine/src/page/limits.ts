@@ -112,7 +112,7 @@ export interface CoreDevice {
 	sharedUploads: boolean;
 	/**
 	 * WebGL2: true when the context draws many ranges in one call, so a cluster mesh draws its
-	 * chosen patches; false draws the whole levels that its tree was cut into.
+	 * chosen patches; false draws the mesh's whole levels.
 	 */
 	multiDraw: boolean;
 	/** How the GPU path stores depth: always `reversed` on WebGPU. */

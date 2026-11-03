@@ -1,13 +1,13 @@
 # D-234: What WebGL2 draws for a tree of cluster patches
 
 Status: decided and built by M3-L3. Built: the WebGPU path ([D-213](D-213-cluster-levels.md)), the
-tree's cut into whole levels, the WebGL2 route with `WEBGL_multi_draw`, and the fallback without
-it. The figures are in [D-231](D-231-cluster-levels-cost.md). Task: M3-L3.
+whole levels that the asset tool writes beside each tree, the WebGL2 route with `WEBGL_multi_draw`,
+and the fallback without it. The figures are in [D-231](D-231-cluster-levels-cost.md). Task: M3-L3.
 
 Summary: A WebGL2 page draws the patches of a tree on the job workers where the device has
 `WEBGL_multi_draw`. Each chosen patch is a range of the tree's index list in one multi-draw call.
-A browser without it, such as Firefox, draws the whole levels that the asset tool cuts from the
-tree, through the level system. The WebGPU path that draws objects directly, and the shadow maps,
+A browser without it, such as Firefox, draws the mesh's whole levels through the level system.
+The asset tool plans them as `--lod` does and writes them beside the tree. The WebGPU path that draws objects directly, and the shadow maps,
 draw those levels too.
 
 ## Question
@@ -15,7 +15,7 @@ draw those levels too.
 The plan for M3-L3 gives a WebGL2 device two routes. With `WEBGL_multi_draw` (Chrome and Safari),
 the job workers walk the tree for each view and each chosen patch is one range of a multi-draw
 call, up to 256 ranges a call, so a frame uploads ranges and no triangles. Without it (Firefox),
-the mesh draws whole levels cut from its tree, through the levels of [D-137](D-137-lod-groups.md).
+the mesh draws whole levels, through the levels of [D-137](D-137-lod-groups.md).
 
 What does a WebGL2 page draw, and how does each route work?
 
@@ -30,10 +30,11 @@ test must agree.
 
 ## Data
 
-The asset tool cuts each tree into whole levels. Each cut keeps every patch whose own error is
-under the cut's error and whose parent's is not, so a cut covers the mesh once. The cuts take the
-errors where the cut holds at most three quarters of the triangles of the cut before it, up to six
-cuts. Each level shares the mesh's vertices and stores only its indices. The tool orders the
+The asset tool gives each mesh with a tree the whole levels that `--lod` plans
+([D-91](D-91-level-planning.md)). Each level has about half the triangles of the level above.
+The steps grow at the coarse end, down to about 32 triangles. Each level shares the mesh's
+vertices and stores only its indices. An earlier build cut the tree into whole levels instead;
+[D-213](D-213-cluster-levels.md#whole-levels-beside-the-tree) gives the figures that rejected it. The tool orders the
 vertices coarsest level first, as it does for the levels of a mesh without a tree. The levels go
 into the file with `MSFT_lod`, so other viewers draw them, and the engine's loader gives the mesh
 its levels.
@@ -115,10 +116,13 @@ The fallback:
 - A WebGL2 device without `WEBGL_multi_draw` builds no cluster bucket. Its level buckets stay as
   they are, so the mesh draws the whole level that its distance picks. This is the same route that
   the WebGPU direct path and the shadow maps take.
-- The asset tool writes the levels whenever it writes a tree, whatever `--lod` says. A mesh that
+- The asset tool writes the levels whenever it writes a tree, whatever `--lod` says. They are the
+  levels that `--lod` gives a mesh without a tree. A mesh that
   already has levels in its file keeps them.
 - A mesh that one scene object does not draw keeps its levels on both paths: a mesh that several
-  copies draw, a mesh split over several parts, and an instance batch. The GPU pass also needs one
+  copies draw, a mesh split over several parts, and an instance batch. The tool counts only the
+  copies that the file places. So a mesh that page code draws in a batch of thousands still has a
+  tree, and every copy draws the whole levels. The GPU pass also needs one
   copy and one part, so this covers the same meshes on both paths.
 
 Each fallback case has a test that fails if the case draws patched instead:
@@ -174,22 +178,22 @@ byte, so its new levels are part of this change.
 - `cluster-coarse` at 16 pixels changes strongly: the expectation was a picture well outside
   `cluster`'s, and the WebGL2 drawing shows much coarser triangles. It has its own reference in
   each set. The Mac set is accepted here; the Linux SwiftShader set comes from a CI run.
-- The fixture now carries whole levels as well. A viewer that draws no patches draws them, but
-  every path that draws patches ignores them, so no other picture moves. The `lod` pictures use
-  their own meshes.
+- The fixture carries whole levels as well. A viewer that draws no patches draws them, but every
+  path that draws patches ignores them, so no other picture moves. The `lod` pictures use their own
+  meshes. `cluster-no-multi-draw` draws them.
 
 ## Decision
 
 Both routes are built. A WebGL2 device with `WEBGL_multi_draw` draws the tree's patches from the
-job workers, and one without it draws the whole levels that the tool cuts from the tree. The
+job workers, and one without it draws the mesh's whole levels. The
 drawing method of the WebGPU path stays as [D-213](D-213-cluster-levels.md#drawing-on-webgpu)
 records. No path is dropped and no route waits on a gated feature.
 
 ## Consequences
 
 - A large static mesh on WebGL2 gets the tree's saving where the browser draws many ranges in one
-  call. Firefox pays one whole level, which is still less than the base mesh, and the frame does
-  not pause to upload triangles.
+  call. Firefox pays one whole level, which halves at each step away from the camera, and the
+  frame does not pause to upload triangles.
 - The job workers' walk and the compute pass keep one rule in two places. A change to the
   threshold, the source's matrix or the parent test in one must change the other, or a device
   draws a different set of patches from another's.
