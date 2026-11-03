@@ -1,4 +1,4 @@
-// Times a load of KTX2 files, for the cache of transcoded textures. The page starts the engine with
+// Times a load of KTX2 files, for the cache of derived data's transcoded textures. The page starts the engine with
 // the texture cache sketch and sends it the files that ?files= names: `test`, the KTX2 test files,
 // or `city`, the city scene's textures, which the server lists. The sketch loads them all at once
 // and answers once every texture is on the GPU. The page reports the time from navigation to that
@@ -6,9 +6,10 @@
 // once the engine wrote the new ones.
 // ?clear deletes the cache first, as on a first visit. ?fresh gives each file's address a query of
 // its own, so the browser's HTTP cache holds none of them, as on a first visit. The engine's
-// ?texture-cache=off switch turns the cache off.
+// ?derived-cache=off switch turns the cache off.
 import { createEngine } from '@null3d/engine';
-import { CACHE_NAME } from '../../packages/engine/src/scene/ktx2-cache';
+import { clearDerivedCache, derivedEntries } from '../../packages/engine/src/scene/derived-cache';
+import { KTX2_CACHE_NAME, KTX2_CACHE_VERSION } from '../../packages/engine/src/scene/ktx2-cache';
 import { SAMPLE_TEXTURES_LIST } from '../../tools/lib/sample-url';
 import { progress, run } from './lib/result';
 
@@ -31,12 +32,8 @@ async function addresses(): Promise<string[]> {
 	return textures.map((path) => new URL(path, location.href).href);
 }
 
-/** The entries of the cache of transcoded textures, or null where the page has no Cache Storage. */
-async function cacheEntries(): Promise<number | null> {
-	if (!globalThis.caches) return null;
-	if (!(await caches.has(CACHE_NAME))) return 0;
-	return (await (await caches.open(CACHE_NAME)).keys()).length;
-}
+/** The cache's entries of transcoded textures, or null where the page has no storage for them. */
+const cacheEntries = () => derivedEntries(KTX2_CACHE_NAME, KTX2_CACHE_VERSION);
 
 /** How often the page counts the cache's entries while the engine writes them. */
 const POLL_MS = 50;
@@ -52,7 +49,7 @@ const SETTLED_MS = 1000;
 async function writesDone(files: number): Promise<{ count: number | null; lastMs: number }> {
 	let count = await cacheEntries();
 	let lastMs = performance.now();
-	if (count === null || params.get('texture-cache') === 'off') return { count, lastMs };
+	if (count === null || params.get('derived-cache') === 'off') return { count, lastMs };
 	while (count < files && performance.now() - lastMs < SETTLED_MS) {
 		await new Promise((resolve) => setTimeout(resolve, POLL_MS));
 		const now = (await cacheEntries()) ?? 0;
@@ -76,7 +73,7 @@ interface SketchAnswer {
 run('texture-cache', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
-	if (params.has('clear') && globalThis.caches) await caches.delete(CACHE_NAME);
+	if (params.has('clear')) await clearDerivedCache();
 	const entriesBefore = await cacheEntries();
 	const fresh = Date.now().toString(36);
 	const urls = (await addresses()).map((address) => {
@@ -109,7 +106,7 @@ run('texture-cache', async () => {
 		tier: capabilities.tier,
 		files,
 		count: urls.length,
-		cache: params.get('texture-cache') !== 'off',
+		cache: params.get('derived-cache') !== 'off',
 		entriesBefore,
 		entriesAfter: writes.count,
 		/** Milliseconds from every texture on the GPU to the last write to the cache. */

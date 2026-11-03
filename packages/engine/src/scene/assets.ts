@@ -11,6 +11,7 @@ import { EngineError } from '../errors/engine-error';
 import { reasonOf } from '../errors/message';
 import { Cubemap, writeSkyDefaults } from './background';
 import type { BakedLight, LightMapData } from './baked-light';
+import { type DerivedCache, derivedCache } from './derived-cache';
 import { type BuiltinEnvironmentName, Environment } from './environment';
 import { FILE_LIMITS, imageSize, imageTooLarge } from './file-limits';
 import { GltfExtensions } from './gltf-extensions';
@@ -258,8 +259,8 @@ export class Assets {
 	 * texture from it. The browser decodes PNG, JPEG, WebP and AVIF files. A KTX2 file of ETC1S or
 	 * UASTC data becomes the compressed format that the device supports, with the file's mip
 	 * levels, and UASTC HDR data becomes BC6H or shared-exponent floats. The first KTX2 file loads
-	 * the transcoder. The engine keeps the transcoded texels in the browser's Cache Storage, so a
-	 * later load of a file with the same bytes skips the transcoder.
+	 * the transcoder. The engine keeps the transcoded texels in its cache of derived data, so a
+	 * later load of a file with the same bytes, on this visit or a later one, skips the transcoder.
 	 * Throws E1411 when the file does not download, E1413 when a server of another origin does not
 	 * allow the page to read it, E1412 when the file does not decode or passes a limit of the
 	 * engine's (a KTX2 file larger than the device's textures, before it transcodes), E1406 when the
@@ -749,6 +750,19 @@ export class Assets {
 	async loadBinary(url: string | URL): Promise<ArrayBuffer> {
 		const address = this.resolve(url);
 		return (await this.file(address, 'assets.loadBinary')).arrayBuffer();
+	}
+
+	/**
+	 * A namespace of the cache of derived data: bytes that a sketch or an add-on makes from its
+	 * inputs, kept in the browser's storage across visits, such as a generated terrain or grown
+	 * plants. `name` names the producer, such as an add-on's package name. `version` is the version
+	 * of the bytes it makes: the first call with a new version deletes the entries of the others.
+	 * Key each entry by every input that the bytes depend on, such as a hash of their content. The
+	 * calls never reject, and answer no entry when the cache is off or the storage fails, so the
+	 * caller makes its data again. The same name and version give the same namespace.
+	 */
+	cache(name: string, version: string | number): DerivedCache {
+		return derivedCache(name, String(version), this.textures.derivedCache);
 	}
 
 	/**

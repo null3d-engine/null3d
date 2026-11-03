@@ -161,6 +161,18 @@ describe('assets', () => {
 		);
 	});
 
+	test('gives a namespace of the cache of derived data, which keeps nothing with the switch off', async () => {
+		const assets = new Assets(
+			{ ...fakeTextures().textures, derivedCache: false } as Textures,
+			PAGE,
+		);
+		const cache = assets.cache('@game/terrain', 3);
+		expect([cache.name, cache.version]).toEqual(['@game/terrain', '3']);
+		expect(assets.cache('@game/terrain', '3')).toBe(cache);
+		await cache.put('tile:1', new Uint8Array([1, 2, 3]));
+		expect(await cache.get('tile:1')).toBeUndefined();
+	});
+
 	test('reports each download in order, and loads take preloaded files from memory', async () => {
 		serve({
 			'https://game.example/a.png': 'a',
