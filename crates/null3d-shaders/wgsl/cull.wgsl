@@ -101,8 +101,10 @@
 // `main` alone, so a page that never culls against a pyramid downloads none of the phases.
 //
 // A bucket whose mesh has pieces (runs of its triangles that each face about one way and lie close
-// together) draws no copy of its own: each piece has a bucket, with a slice and draws of its own,
-// and the thread appends the copy to the slice of each piece that shows. A piece shows unless its
+// together) draws no copy of its own: each piece has a bucket, with a slice and draws of its own.
+// The thread queues the copy in its workgroup, and once every thread has culled its own copy, the
+// workgroup's threads share the queued (copy, piece) pairs and append each copy to the slice of
+// each piece that shows. A piece shows unless its
 // sphere, moved by the copy's matrix, lies outside the frustum, or, in a view whose positions start
 // at its eye, every triangle of the piece faces away from the eye: the piece's sphere, at `c` from
 // the eye with radius `r`, meets `dot(c, axis) >= cutoff * |c| + r` for the cone of its facings
@@ -148,6 +150,20 @@ const CONE_MARGIN: f32 = 1.0e-3;
 /// How far a copy's matrix may stretch, or bend its axes from square, as a share of its scale, for
 /// its pieces to take the cone test.
 const SIMILAR_TOLERANCE: f32 = 1.0e-4;
+/// The most copies with pieces that one workgroup queues: a thread queues at most two, one for
+/// each level of a fading band.
+const PIECE_QUEUE: u32 = 256u;
+/// The marks of a queued copy's bucket word: a copy that the levels view marks as hidden, and a
+/// copy that the late occlusion phase queued, whose pieces test the pyramid.
+const QUEUED_HIDDEN: u32 = 1u << 31u;
+const QUEUED_OCCLUSION: u32 = 1u << 30u;
+/// The workgroup's queued copies with pieces: each copy's instance, its bucket with its marks, the
+/// draws before its set of draws, and its fade value's bits.
+var<workgroup> piece_queue: array<vec4u, PIECE_QUEUE>;
+/// Where each queued copy's (copy, piece) pairs start among the workgroup's pairs.
+var<workgroup> piece_starts: array<u32, PIECE_QUEUE>;
+/// The queued copies in the bits from 16 up, and their (copy, piece) pairs below.
+var<workgroup> piece_tally: atomic<u32>;
 /// True while the late occlusion phase appends, so that each piece tests its own sphere against
 /// the depth pyramid too.
 var<private> piece_occlusion: bool = false;
@@ -520,18 +536,47 @@ fn append_to(s: Survivor, b: u32, draws_before: u32, fade: f32, hidden: bool) {
         append_copy(s, b, draws_before, fade, hidden);
         return;
     }
-    let first = pieces & ((1u << PIECE_COUNT_SHIFT) - 1u);
+    // The copy waits in the workgroup's queue, whose (copy, piece) pairs every thread of the
+    // workgroup then shares (see `place_pieces`).
     let count = (pieces & ~PIECED) >> PIECE_COUNT_SHIFT;
-    let cone = params.debug.y != 0u && params.levels.y < 0.5 && keeps_angles(s);
-    // A copy whose sphere lies wholly inside the frustum has every piece inside it too.
-    var inside = true;
-    for (var k = 0u; k < 6u; k++) {
-        let plane = params.planes[k];
-        inside = inside && dot(plane.xyz, s.center) + plane.w >= s.radius;
+    let at = atomicAdd(&piece_tally, (1u << 16u) | count);
+    let entry = at >> 16u;
+    if entry < PIECE_QUEUE {
+        let marks = select(0u, QUEUED_HIDDEN, hidden) | select(0u, QUEUED_OCCLUSION, piece_occlusion);
+        piece_queue[entry] = vec4u(s.index, b | marks, draws_before, bitcast<u32>(fade));
+        piece_starts[entry] = at & 0xffffu;
     }
-    for (var p = first; p < first + count; p++) {
-        if piece_shows(s, p, cone, inside) {
-            append_copy(s, p, draws_before, fade, hidden);
+}
+
+/// Tests and places the pieces of the copies that the workgroup's threads queued, with every
+/// thread of the workgroup: each takes the next (copy, piece) pairs in turn. A copy's pieces then
+/// spread over many threads, where one thread would take a round trip to memory for each piece
+/// in turn. Every thread of the workgroup calls it, after its own copy.
+fn place_pieces(lane: u32) {
+    workgroupBarrier();
+    let tally = atomicLoad(&piece_tally);
+    let copies = min(tally >> 16u, PIECE_QUEUE);
+    let pairs = tally & 0xffffu;
+    for (var w = lane; w < pairs; w += WORKGROUP_SIZE) {
+        // The queued copy that holds pair w: the last whose first pair is at most w.
+        var low = 0u;
+        var high = copies;
+        while high - low > 1u {
+            let middle = (low + high) / 2u;
+            if piece_starts[middle] <= w {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+        let queued = piece_queue[low];
+        let b = queued.y & (OCCLUDER - 1u);
+        let p = (buckets[b].indices & ((1u << PIECE_COUNT_SHIFT) - 1u)) + w - piece_starts[low];
+        let s = survivor(queued.x);
+        let cone = params.debug.y != 0u && params.levels.y < 0.5 && keeps_angles(s);
+        piece_occlusion = (queued.y & QUEUED_OCCLUSION) != 0u;
+        if piece_shows(s, p, cone) {
+            append_copy(s, p, queued.z, bitcast<f32>(queued.w), (queued.y & QUEUED_HIDDEN) != 0u);
         }
     }
 }
@@ -554,19 +599,17 @@ fn keeps_angles(s: Survivor) -> bool {
 }
 
 /// True when the instance's piece in bucket `p` may draw in the view: its sphere reaches into the
-/// frustum, which `inside` says of every piece of a copy wholly inside it, where `cone` allows the
-/// cone test some triangle may face the eye, and in the late occlusion phase the pyramid does not
-/// hide its sphere. It reads only the words of the piece's record that it needs.
-fn piece_shows(s: Survivor, p: u32, cone: bool, inside: bool) -> bool {
+/// frustum, where `cone` allows the cone test some triangle may face the eye, and in the late
+/// occlusion phase the pyramid does not hide its sphere. It reads only the words of the piece's
+/// record that it needs.
+fn piece_shows(s: Survivor, p: u32, cone: bool) -> bool {
     let local = vec4f(buckets[p].center_x, buckets[p].center_y, buckets[p].center_z, 1.0);
     let center = vec3f(dot(s.r0, local), dot(s.r1, local), dot(s.r2, local));
     let radius = buckets[p].radius * s.scale;
-    if !inside {
-        for (var k = 0u; k < 6u; k++) {
-            let plane = params.planes[k];
-            if dot(plane.xyz, center) + plane.w < -radius {
-                return false;
-            }
+    for (var k = 0u; k < 6u; k++) {
+        let plane = params.planes[k];
+        if dot(plane.xyz, center) + plane.w < -radius {
+            return false;
         }
     }
     // A piece's record holds its cone's axis and cutoff where a level's holds its switch value,
@@ -703,13 +746,13 @@ fn main(
     @builtin(local_invocation_index) lane: u32,
 ) {
     let i = instance_of(group.x, lane);
-    if i == NONE {
-        return;
+    if i != NONE {
+        let s = survivor(i);
+        if s.bucket != HIDDEN {
+            append(s, level_of(s), params.occlusion.info.y);
+        }
     }
-    let s = survivor(i);
-    if s.bucket != HIDDEN {
-        append(s, level_of(s), params.occlusion.info.y);
-    }
+    place_pieces(lane);
 }
 
 #else
@@ -721,7 +764,15 @@ fn early(
     @builtin(local_invocation_index) lane: u32,
 ) {
     let i = instance_of(group.x, lane);
-    if i == NONE || atomicLoad(&indirect[params.occlusion.info.z + i]) == 0u {
+    if i != NONE {
+        early_one(i);
+    }
+    place_pieces(lane);
+}
+
+/// The first occlusion phase's test of instance `i`.
+fn early_one(i: u32) {
+    if atomicLoad(&indirect[params.occlusion.info.z + i]) == 0u {
         return;
     }
     let s = survivor(i);
@@ -778,6 +829,7 @@ fn late(
             }
         }
     }
+    place_pieces(lane);
     workgroupBarrier();
     if lane == 0u {
         let counts = params.occlusion.info.z + params.instance_count;

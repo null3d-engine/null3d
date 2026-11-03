@@ -2,7 +2,7 @@
 
 Status: decided and built on every GPU path. Built: the asset tool's pieces (`NULL3D_pieces`), the culling shader on WebGPU, the CPU culling of the direct-draw path and the job workers' culling on WebGL2. Pending: the runtime planner that gives a mesh made in code its pieces. It calls the entry points below. Task: none.
 
-Summary: Each level of 32,768 triangles or more holds its triangles in 8 to 16 pieces, each facing about one way, with a sphere and a cone of facings. Each copy picks its level as before, then culls each piece by the frustum, by the cone where it holds, and by the depth pyramid in the late occlusion phase. In the desert benchmark the pieces cut a frame's triangles by about a quarter. SUMMARY-FIGURES
+Summary: Each level of 32,768 triangles or more holds its triangles in 8 to 16 pieces, each facing about one way, with a sphere and a cone of facings. Each copy picks its level as before, then culls each piece by the frustum, by the cone where it holds, and by the depth pyramid in the late occlusion phase. In the desert benchmark they cut a frame's triangles by about a quarter. From above the GPU frame falls from 5.65 to 4.32 ms, and walking it holds at 4.47 to 4.49 ms.
 
 ## Question
 
@@ -42,7 +42,7 @@ The table gives the share of each list's triangles that the cone and frustum tes
 
 On WebGPU the scene's layout gives a bucket with pieces no draws of its own. Each piece gets a bucket after every other bucket. It takes the bucket's pipeline and material, a slice of the bucket's size, and a draw for each range of the mesh's parts that the piece covers. A pass draws the pieces' buckets in the bucket's place. A level's pieces take the level's copy count from `Layout::fit_copies`, so their slices move with the level's. The bucket's record names its pieces in its word of index reads, under a bit of its own, since such a bucket never reads by index. A piece's record holds its sphere where a bucket holds its local sphere, and its cone where a level holds its links.
 
-The culling shader picks a copy's level as before. It then appends the copy to the slice of each piece that shows. A piece shows when its sphere reaches into the frustum. In the camera's own view with a perspective lens, a copy whose matrix keeps angles also needs a cone that lets some triangle face the eye. In the late occlusion phase the pyramid must not hide the piece's sphere. A copy wholly inside the frustum skips the pieces' frustum tests.
+The culling shader picks a copy's level as before. A copy whose level has pieces then waits in its workgroup's queue. Once every thread has culled its own copy, all 128 threads of the workgroup share the queued (copy, piece) pairs, and append each copy to the slice of each piece that shows. One thread that walked a copy's pieces in turn would wait on a round trip to memory for each one. A piece shows when its sphere reaches into the frustum. In the camera's own view with a perspective lens, a copy whose matrix keeps angles also needs a cone that lets some triangle face the eye. In the late occlusion phase the pyramid must not hide the piece's sphere.
 
 The direct-draw path and WebGL2's job workers run the same tests in Rust (`crate::pieces::CopyFrame`). WebGL2 lists each copy again in each piece's bucket, after the culled entries (`BucketedCull::list_kept`).
 
@@ -50,7 +50,35 @@ The cone test is skipped where it may not hold: a material that draws both faces
 
 ## Data
 
-FINAL-DATA
+### The desert benchmark
+
+Medians of 3 runs in turns, in the Mac's Chrome on WebGPU at Medium, 1920 by 1080, with `direct=off`. The same engine build draws both model sets: the files with pieces, and the files that the same tool wrote before pieces existed. The Mac ran other agents' builds throughout, at a load of 60 to 105 on 18 cores.
+
+| View | GPU ms, pieces / none | Triangles a frame, M | Draws | Culling pass ms | Main pass ms |
+| --- | --- | --- | --- | --- | --- |
+| Walk | 4.49 / 4.47 | 11.94 / 15.49 | 658 / 201 | 0.259 / 0.035 | 3.85 / 4.04 |
+| Aerial | 4.32 / 5.65 | 14.12 / 16.90 | 658 / 201 | 0.270 / 0.066 | 3.80 / 5.26 |
+| Walk, arches alone | 4.25 / 4.24 | 4.56 / 6.01 | 262 / 55 | 0.053 / 0.028 | 3.68 / 3.62 |
+
+How the data was produced: `bun bench/meshlets/run.ts --runs 3` in the meshlet comparison's workspace, against `bun run build:cdn --url-switches`, after this branch merged `perf/beat-meshlets` at 43cb2186. The pieces models came from `MESHLETS_CLI=<this checkout> bun bench/meshlets/build.ts`. The run records are not kept in the repository.
+
+From above, the cones drop the back of each column and arch, and the main pass saves 1.46 ms. Walking, most of the cut is copies that the view crosses: the triangles outside the frustum cost the main pass little, so its 0.19 ms saving and the culling pass's 0.22 ms more cancel. A boulder gains nothing: only its two finest levels hold 32,768 triangles or more, and only the few nearest boulders draw them.
+
+On WebGPU's direct-draw path in the walk view, the pieces cut the triangles from 15.51 to 13.00 M, with 763 draws in place of 201, and GPU time of 4.81 against 4.56 ms in 2 runs while another build ran.
+
+### Changes that the runs ruled on
+
+| Change | Walk, GPU ms pieces / none | Aerial | Finding |
+| --- | --- | --- | --- |
+| Pieces on lists of 8,192 triangles or more, at most 32 | 5.22 / 5.04 | 5.08 / 4.53 | 1,053 draws; lists of 10,000 to 20,000 triangles had 4 or 5 pieces that cull nothing |
+| Lists of 32,768 or more, at most 32 | 5.17 / 5.00 | 5.25 / 5.74 | Same triangles, 1,007 draws |
+| At most 16 | 4.79 / 4.79 | 4.79 / 5.44 | Same triangles again, 658 draws |
+| Pieces by space alone | 5.14 / 4.85 | not comparable | Walking cuts as many triangles: the cut there is the frustum's |
+| Each thread walking its copy's pieces in turn | culling pass 0.30 to 0.35 ms | 0.32 to 0.48 ms | The shared queue brings it to 0.26 and 0.27 ms |
+
+The rows before the last come from the engine before the merge, with the same method. The pebbles alone, which have no pieces, keep their culling pass at 0.062 ms with the pieces' shader, so the shader slows only the copies that have pieces.
+
+Pieces by facing part neighbouring triangles on a rough rock. A model of a 32-entry vertex cache counts 0.86 misses per triangle on the arch's first level against 0.62 before, and pieces by space keep 0.62. The GPU runs above show no such loss: the facing pieces draw the main pass as fast as space pieces walking, 4.40 against 4.38 ms, and far faster from above. So the tool keeps facing pieces.
 
 ## Look
 
@@ -67,7 +95,9 @@ Rejected:
 - A new word in the bucket record. Every material's vertex shader includes the record's structure, so the whole shader set would build again and every shader file would grow.
 - Pieces on lists of 8,192 triangles or more. A copy draws such a list far away, where the view seldom cuts it, and its 4 or 5 pieces face too many ways to cull. They cost a draw each and cut nothing.
 - 32 pieces on a list. They cut no more triangles than 16 and add half again as many draws.
-- Each copy starting its walk of the pieces at another piece, and taking every piece's slot before writing any copy. Neither shortened the culling pass.
+- Each copy starting its walk of the pieces at another piece. It did not shorten the culling pass, since its cost is each thread's chain of round trips, not threads that add to one count.
+- Pieces by space alone, or by facing only where a vertex cache model allows. Walking they cull as many triangles, but from above they drop no back faces, and the cache model's loss did not show on the GPU.
+- Merging the draws of pieces that every copy shows into one draw. A view's bundle records its draws once, and which pieces show changes with the camera, so a merge would record the bundle again in many frames.
 
 ## Consequences
 
