@@ -52,6 +52,31 @@ function changed(a: Float32Array, b: Float32Array, step: number): number {
 	return count / a.length;
 }
 
+/** The brightest channel of an image, from 0 to 1. */
+function brightest(image: Float32Array): number {
+	let most = 0;
+	for (let k = 0; k < image.length; k++) most = Math.max(most, image[k] ?? 0);
+	return most;
+}
+
+test('a facade whose wave never starts is already lit', async ({ page }) => {
+	const runs = IMAGE_RUNS.filter((run) => run.test === 'facades');
+	expect(runs.length).toBe(3);
+	test.setTimeout(runs.length * 2 * PAGE_MS);
+	for (const run of runs) {
+		const started = await imageOf(page, run.path);
+		const never = await imageOf(page, variant(run.path, '?nostart'));
+		// A look that never starts the wave is already complete, so it draws the wall lit. Its age
+		// is then huge, and a spring read at that age can lose its value, which leaves each window's
+		// light dark or not finite. The two pictures must match, and the lit windows must show.
+		console.log(
+			`${run.tier}: never started against started ${difference(started, never).toFixed(5)} mean, brightest ${brightest(never).toFixed(3)}`,
+		);
+		expect(brightest(never)).toBeGreaterThan(0.5);
+		expect(difference(started, never)).toBeLessThan(0.004);
+	}
+});
+
 test('facades: the furniture, the blinds and the wave change the image', async ({ page }) => {
 	const runs = IMAGE_RUNS.filter((run) => run.test === 'facades');
 	expect(runs.length).toBe(3);
