@@ -289,7 +289,7 @@ A plain function over a range of indexes serves tests and frames alike. A genera
 Measure the start:
 
 - A first visit and a repeat visit take different paths. A repeat visit takes the stored preset check, the transcoded textures, the browser's compiled shaders and your own cache (section 12). Time both from navigation, with the production build on Chrome's Slow 4G profile.
-- Reproduce a first visit in a new browser profile, or with `?check=fresh&shaders=fresh&texture-cache=off` (`references/testing-and-debugging.md`, section 4). Never plan a start that holds only when the browser's caches hit.
+- Reproduce a first visit in a new browser profile, or with `?check=fresh&shaders=fresh&derived-cache=off` (`references/testing-and-debugging.md`, section 4). Never plan a start that holds only when the browser's caches hit.
 - `engine.measure()` gives the start's times in `load`, and the page thread's long tasks in `mainThread`. Also click a page control while the engine starts, and time its answer: a page with no long tasks can still answer slowly.
 
 Keep the network clear for the engine. Profile the whole page first, because the page's own downloads share the connection with the engine's:
@@ -307,76 +307,53 @@ Each layer keeps something different, and most are in place already:
 | --- | --- | --- |
 | The HTTP cache | The build's files, models and textures | The host: a long lifetime for hashed files (`getting-started/hosting`) |
 | The stored preset check | The preset that the check chose, for a week | The engine, in the page's `localStorage` (`concepts/quality-presets`) |
-| Transcoded textures | Each KTX2 file's texels in the device's format | The engine, in Cache Storage, in caches whose names start with `null3d-` (`guides/performance`, `getting-started/hosting`) |
+| The cache of derived data | Data that the engine and add-ons make from files, such as each KTX2 file's transcoded texels, and the arrays that your sketch makes | The engine, with no setup. `assets.cache(name, version)` (0.3) gives your sketch a namespace of its own (`api/assets`, "The cache of derived data") |
 | Compiled shaders | Shaders that the browser compiled before | The browser alone: no page can store or read them |
-| Generated data | Arrays that your sketch computes | You, in IndexedDB from the sketch, as below |
 | Offline files | The build and your own files | Your service worker (`getting-started/hosting`) |
 | A view of a single-page app | The running engine | `engine.detach()` and `engine.attach()` (`references/content-pages.md`) |
 | Back and forward | The whole page | The browser (`references/content-pages.md`) |
 
-The engine keeps no cache of the data that your sketch generates. `guides/content-pages` shows the read path and a `cached` helper. Cache only what comes back exactly as it went in:
+Keep the data that your sketch generates at load in a namespace of the engine's cache. `guides/content-pages` shows the read path. Cache only what comes back exactly as it went in:
 
 | Data | Cache it? |
 | --- | --- |
-| Arrays your code computes: positions, indices, heights, scatter rows, noise fields | Yes, as typed arrays |
+| Arrays your code computes: positions, indices, heights, scatter rows, noise fields | Yes, as the bytes of typed arrays |
 | Pixels read back from a 2D canvas, such as an `OffscreenCanvas` texture | No. The canvas stores partly transparent pixels premultiplied, so they come back changed, and browsers differ. A nearly equal texture hides the fault until it shows |
 | Engine objects: meshes, materials, textures, batches | No. Store the arrays that made them, and make them again, such as with `geometry.fromArrays` |
 | What the GPU made: environments, pass textures | No. Make them again |
 
-Rules for a cache of generated data:
+Rules for a namespace of your own:
 
 1. A hit and a miss run the same code after the lookup, so the two cannot build different scenes.
-2. Key each entry by the build and by every input that changes the output. In a production build, `import.meta.url` covers the sketch's code. It does not cover a data file that the sketch fetches, the quality preset, a seed or a size. Put each of those in the key, such as the file's version or a hash of its bytes.
-3. Check what you read: the type and the length that the build expects. Treat anything else as a miss. Test the round trip once: pass a record through `structuredClone` and compare every array.
-4. Skip the cache in development, where `import.meta.url` holds no hash.
-5. Write after the page reports its first frame, never in `onUpdate`, and one entry per transaction. IndexedDB copies a value when you call `put`, on the sketch's thread. Starting every write at once copies every array in one task, and the next frame waits.
-6. Delete the entries of older builds after you write. Each deploy changes `import.meta.url`, and old entries would stay in the visitor's storage for good.
-7. Treat storage as best effort. Give the open a time limit of about 1.5 seconds, and close a database that opens after it. On `QuotaExceededError` or any other failure, drop the writes that wait: the next visit generates as this one did.
-8. Code that resolves after the engine stops must not call it, because calls after `engine.destroy()` throw E1420. Set a flag in `onDestroy`, and check it in storage callbacks.
-9. Test the cache: build the scene's arrays with the cache and without it, and compare them.
+2. Name the namespace for what makes the data, and give it the version of the bytes it makes. Change the version whenever the same key would give other bytes. In a production build, `import.meta.url` names the sketch's file with a hash of its content, so it serves as the version. The first call with a new version deletes the name's older entries.
+3. Key each entry by every input that changes the output and that the version does not cover: a data file that the sketch fetches, the quality preset, a seed or a size. Use the file's version or a hash of its bytes.
+4. `get` never rejects. It answers `undefined` on a miss, a failed read, an entry that fails its check, and when the cache is off. Make the data on every such answer. The bytes may be a view of a larger buffer, so copy them before you read them as another typed array.
+5. `put` returns at once, and the write starts after the call, off the sketch's frames. So it needs no timer and no message from the page. Leave the bytes unchanged until its promise resolves. A write that fails is dropped, and the next visit generates the data again.
+6. Skip the cache in development, where `import.meta.url` holds no hash.
+7. Code that resolves after the engine stops must not call it, because calls after `engine.destroy()` throw E1420. Set a flag in `onDestroy`, and check it in the cache's callbacks.
+8. Test the cache: build the scene's arrays with the cache and without it, and compare them. The `?derived-cache=off` switch turns the whole cache off.
 
 ```ts
-// sketch.ts: each pending entry in its own transaction, then the sweep of older builds' entries.
-// The store 'entries' has no key path, and each key starts with this build's import.meta.url.
-async function writePending(db: IDBDatabase, pending: [string, unknown][]): Promise<void> {
-  for (const [id, value] of pending.splice(0)) {
-    try {
-      await written(db, id, value);
-    } catch {
-      return;                                  // a full disk or a closed database: generate next time
-    }
-  }
-  try {
-    const store = db.transaction('entries', 'readwrite').objectStore('entries');
-    const keys = store.openKeyCursor();
-    keys.onsuccess = () => {
-      const cursor = keys.result;
-      if (!cursor) return;
-      if (!String(cursor.key).startsWith(`${import.meta.url}:`)) store.delete(cursor.key);
-      cursor.continue();
-    };
-  } catch {
-    // the sweep runs again after the next visit's writes
-  }
-}
+// sketch.ts: the heights of one terrain tile, from the cache or made again.
+const tiles = assets.cache('my-game/terrain', import.meta.url);
 
-function written(db: IDBDatabase, id: string, value: unknown): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('entries', 'readwrite');
-    tx.objectStore('entries').put(value, id);
-    tx.oncomplete = () => resolve();
-    tx.onabort = () => reject(tx.error);       // QuotaExceededError aborts the transaction
-  });
+async function tile(x: number, z: number): Promise<Float32Array> {
+  const key = `${WORLD_SEED}:${x}:${z}`;
+  const stored = import.meta.env.DEV ? undefined : await tiles.get(key);
+  if (stored) return new Float32Array(stored.slice().buffer);
+  const heights = makeHeights(WORLD_SEED, x, z);
+  if (!import.meta.env.DEV) void tiles.put(key, new Uint8Array(heights.buffer));
+  return heights;
 }
 ```
 
 What browsers keep, and for how long (MDN, "Storage quotas and eviction criteria"):
 
+- The engine's cache keeps every namespace within one budget: a tenth of the storage that the browser allows the origin. Past it, the cache deletes the entries used longest ago.
 - An origin may use up to about 60% of the disk in Chromium browsers and in Safari. Firefox gives the smaller of 10% of the disk and 10 GiB per site, or 50% once the site's storage is persistent.
-- `localStorage` holds about 5 MiB of text per origin, and no worker can reach it. So the sketch keeps its data in IndexedDB. The engine keeps its crash note and the stored preset check in the page's `localStorage`.
+- `localStorage` holds about 5 MiB of text per origin, and no worker can reach it. The engine keeps its crash note and the stored preset check there.
 - Safari deletes the storage that scripts wrote for a site that the visitor has not tapped or clicked in seven days of browser use. A web app on the Home Screen counts its own days of use. So a returning Safari visitor may find every cache empty.
-- When the disk runs short, browsers delete whole origins, the least recently used first, unless the origin's storage is persistent. Your cache, the engine's texture cache and the stored preset check go together.
-- A full quota throws `QuotaExceededError`, from IndexedDB, Cache Storage and `localStorage` alike.
+- When the disk runs short, browsers delete whole origins, the least recently used first, unless the origin's storage is persistent. Your entries, the engine's texels and the stored preset check go together.
 - Do not call `navigator.storage.persist()` for a cache. Firefox asks the visitor, and losing a cache costs only one slower visit.
 
 ## 13. Reviewing a scene
