@@ -38,7 +38,10 @@
 //! Its late dispatch, after the pyramid, tests every source against the pyramid, writes the
 //! history, and counts the visible sources in a second set of indirect draws, after the first,
 //! which its opaque pass draws. Its parameters hold what the late dispatch reads: the
-//! view-projection matrix, the render size and the pyramid's levels.
+//! view-projection matrix, the render size and the pyramid's levels. After the history come four
+//! words that the late dispatch counts into: the sources in view that would draw, and those that
+//! the pyramid hides, then the frame that the counts belong to, which each frame writes as it
+//! resets them, so a readback of them names its frame (see [`super::occlusion_check`]).
 
 use null3d_core::cells::MAX_CELLS;
 use null3d_core::scene::SceneStorage;
@@ -92,6 +95,15 @@ const _: () = assert!(OCCLUSION_WORDS as u32 * 4 == sizes::CULL_OCCLUSION_BYTES)
 /// Bytes at the end of a view's indirect draws where the culling shader counts the copies that its
 /// slice's guard drops, which no draw or history reaches.
 const DROPPED_COPIES_BYTES: u32 = 4;
+/// Bytes of a two-phase view's counts after its history: the sources in view that would draw, the
+/// sources that the pyramid hides, the frame that they belong to, and a spare word.
+pub(super) const COUNTS_BYTES: u32 = 16;
+
+/// Where a two-phase view's counts start in its indirect draws' buffer, in bytes: after both sets
+/// of draws and the history of every source of `layout`.
+pub(super) fn counts_offset(layout: &Layout) -> u32 {
+    (2 * layout.draws.len() as u32 * sizes::INDIRECT_WORDS + layout.sources) * 4
+}
 /// Bytes of one indexed indirect draw.
 pub(super) const INDIRECT_BYTES: u32 = sizes::INDIRECT_WORDS * 4;
 /// The buffers of the culling pass's bind group, one per binding, the last the depth pyramid, then
@@ -433,7 +445,7 @@ impl Culling {
             .as_mut()
             .expect("a view's buffers exist before it culls");
         let (phases, history) = if occlusion {
-            (2, layout.sources)
+            (2, layout.sources * 4 + COUNTS_BYTES)
         } else {
             (1, 0)
         };
@@ -450,7 +462,7 @@ impl Culling {
             (
                 ids::indirect(view),
                 &mut buffers.indirect,
-                draws.max(1) * INDIRECT_BYTES + history * 4 + DROPPED_COPIES_BYTES,
+                draws.max(1) * INDIRECT_BYTES + history + DROPPED_COPIES_BYTES,
                 usage::INDIRECT | usage::STORAGE | usage::COPY_DST | usage::DROP_COUNTED,
             ),
         ];
@@ -586,6 +598,21 @@ impl Culling {
                 list.push(Op::WriteBuffer, &[ids::indirect(view), bytes, at, bytes])?;
             }
         }
+        Ok(())
+    }
+
+    /// Resets a two-phase view's counts for frame `frame`, which they then name, after the
+    /// view's other uploads of the frame.
+    pub(super) fn reset_counts(
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+        view: ViewId,
+        layout: &Layout,
+        frame: u32,
+    ) -> Result<(), RecordError> {
+        let (at, bytes) = arena.push(words_as_bytes(&[0, 0, frame, 0]))?;
+        let offset = counts_offset(layout);
+        list.push(Op::WriteBuffer, &[ids::indirect(view), offset, at, bytes])?;
         Ok(())
     }
 

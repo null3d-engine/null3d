@@ -87,6 +87,9 @@ pub const ROW_CHUNK: u32 = 1024;
 pub const MAX_ROW_RANGES: usize = 1024;
 
 const WORDS_PER_CHUNK: u32 = ROW_CHUNK / 64;
+/// The bits of an object's flags that a batch keeps for every row: its shadows, and its opt-out of
+/// GPU occlusion culling's occluders.
+pub const ROW_FLAGS: u32 = flags::SHADOWS | flags::NOT_OCCLUDER;
 
 /// A range of rows: `start..start + count`.
 #[repr(C)]
@@ -215,7 +218,8 @@ pub struct InstanceBatch {
     /// The rows' own distance ranges, two floats per row, which a row without an entry takes from
     /// the batch's. Empty until the first row sets one.
     row_ranges: Vec<f32>,
-    /// The shadow bits of every row: [`flags::CAST_SHADOWS`] and [`flags::RECEIVE_SHADOWS`].
+    /// The bits of every row: [`flags::CAST_SHADOWS`], [`flags::RECEIVE_SHADOWS`] and
+    /// [`flags::NOT_OCCLUDER`].
     shadows: u32,
     /// True when rows have a colour and values of their own, which the world output carries.
     with_values: bool,
@@ -801,16 +805,26 @@ impl InstanceBatch {
     /// The shadow bits of every row: whether the rows cast shadows ([`flags::CAST_SHADOWS`]) and
     /// receive them ([`flags::RECEIVE_SHADOWS`]), as an object's flags say.
     pub fn shadows(&self) -> u32 {
+        self.shadows & flags::SHADOWS
+    }
+
+    /// The bits of every row that [`Self::set_shadows`] keeps.
+    pub fn row_flags(&self) -> u32 {
         self.shadows
     }
 
-    /// Sets the shadow bits of every row, from the [`flags::SHADOWS`] bits of `bits`. Sprite and
-    /// line batches place their own vertices, so they take none. The renderer's tables depend on
-    /// the bits, so a change needs their rebuild.
+    /// Sets the bits of every row, from the [`ROW_FLAGS`] bits of `bits`. Sprite and line batches
+    /// place their own vertices, so they take none. The renderer's tables depend on the bits, so a
+    /// change needs their rebuild.
     pub fn set_shadows(&mut self, bits: u32) {
         if self.sprite.is_none() && self.line.is_none() {
-            self.shadows = bits & flags::SHADOWS;
+            self.shadows = bits & ROW_FLAGS;
         }
+    }
+
+    /// True when no row of the batch may hide others in GPU occlusion culling.
+    pub fn not_occluder(&self) -> bool {
+        self.shadows & flags::NOT_OCCLUDER != 0
     }
 
     /// Sets how many rows are drawn. Rows that become active are marked dirty. Fails with

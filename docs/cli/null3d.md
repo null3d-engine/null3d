@@ -346,6 +346,7 @@ When a run fails, `bench` says why after the figures of its path, and exits with
 
 ### Measure fairly
 
+- `bench` times a production build, as your users get it. `shot` and `test` run your project's Vite dev server. That is a development build with the engine's checks, so never read frame times from them.
 - Close other busy programs. Programs that use the CPU change the figures from run to run.
 - Compare runs on one computer, one after another.
 - Vite builds `index.html` alone, unless `build.rolldownOptions.input` in your Vite config lists more pages. For a page outside the build, `bench` says so.

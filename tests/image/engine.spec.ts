@@ -516,9 +516,9 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 				).toHaveLength(1);
 		});
 
-// GPU occlusion culling runs only on WebGPU, where the first-use test turns it on. A scene whose
-// walls are marked occluders downloads no shader file with the culling off.
-test('marked occluders download no occlusion shader file with ?occlusion=off on webgpu', async ({
+// GPU occlusion culling runs only on WebGPU. A scene whose walls may hide others downloads no shader
+// file with the culling off.
+test('occluders download no occlusion shader file with ?occlusion=off on webgpu', async ({
 	page,
 }, testInfo) => {
 	test.skip(testInfo.project.name === 'production build', 'no image test page');

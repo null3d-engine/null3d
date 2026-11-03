@@ -52,12 +52,11 @@ Every texture encodes on its own worker thread, and the same input gives the sam
 every machine.
 
 Options:
-  --lod                        Add up to seven levels of detail to meshes of 64 triangles or
-                               more, each with about half the triangles of the level above and
-                               steeper steps near the coarsest, which aims for about 32 triangles,
-                               and store each level's error for the engine to pick by (MSFT_lod).
-                               Sort each level of 32,768 triangles or more into pieces that each
-                               copy culls (NULL3D_pieces)
+  --lod                        Add up to 15 levels of detail to meshes of 64 triangles or
+                               more, each with about half the triangles of the level above, down
+                               to about 32 triangles, and store each level's error for the engine
+                               to pick by (MSFT_lod). Sort each level of 32,768 triangles or more
+                               into pieces that each copy culls (NULL3D_pieces)
   --stages                     With --lod, write each mesh's levels as separate files beside
                                the model, so the engine draws the coarsest level first and
                                refines it as the others arrive. With --clusters, write each

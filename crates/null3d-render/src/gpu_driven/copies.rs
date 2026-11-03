@@ -347,17 +347,28 @@ impl Layout {
         };
         let distance = rule.distance(center, radius);
         // A source at a switch distance counts toward both levels, and one inside a band toward
-        // both levels' fade buckets, so the slices hold whatever the shader picks.
+        // both levels' fade buckets, so the slices hold whatever the shader picks. One walk of the
+        // source's levels picks at both edges of the slack.
         let mut picked = [u32::MAX; 4];
         let mut len = 0;
-        for near in [distance * (1.0 - SLACK), distance * (1.0 + SLACK)] {
+        let edges = rule.pick_both(
+            &self.level_links,
+            home,
+            scale,
+            radius,
+            distance * (1.0 - SLACK),
+            distance * (1.0 + SLACK),
+            bias,
+            range,
+        );
+        for edge in edges {
             let mut keep = |bucket: u32| {
                 if len < picked.len() && !picked[..len].contains(&bucket) {
                     picked[len] = bucket;
                     len += 1;
                 }
             };
-            match rule.pick(&self.level_links, home, scale, radius, near, bias, range) {
+            match edge {
                 Picked::One(bucket) => keep(bucket),
                 Picked::Fade { new, old, .. } => {
                     keep(new);

@@ -224,7 +224,7 @@ Meshes of one vertex format share GPU buffers, so the engine draws them with few
 
 ## Levels of detail
 
-`mesh.setLevels` gives a mesh simpler copies of itself, from the most detailed down. Each level gives the distance at which it switches in. That is an `error` in the units of the mesh's positions, a `distance` in meters for an object of scale 1, or a screen `coverage` from 0 to 1. Every object and instance batch that draws the mesh then picks one level per frame:
+`mesh.setLevels` gives a mesh simpler copies of itself, from the most detailed down, up to 15 of them. Each level gives the distance at which it switches in. That is an `error` in the units of the mesh's positions, a `distance` in meters for an object of scale 1, or a screen `coverage` from 0 to 1. Every object and instance batch that draws the mesh then picks one level per frame:
 
 ```ts
 const rock = geometry.fromArrays(rockArrays(2000));
@@ -255,7 +255,7 @@ While an object or an instance batch still uses the mesh, `destroy` throws [E111
 
 ## Large meshes
 
-A mesh can have any number of vertices. The engine uses 16-bit indices. WebGL2 always reads the largest one, 65,535, as the end of a primitive, so one draw reaches 65,535 vertices. A mesh with more vertices splits into parts that draw one after another. Each part holds a copy of the vertices that it shares with the part before it. For the fewest draw calls, keep meshes under 65,535 vertices. A mesh that draws a cluster tree on WebGPU is the exception. Its patches draw in one draw across all its parts, as [cluster levels](../concepts/lod.md#cluster-levels) describes.
+A mesh can have any number of vertices. The engine uses 16-bit indices. WebGL2 always reads the largest one, 65,535, as the end of a primitive, so one draw reaches 65,535 vertices. A mesh with more vertices splits into parts that draw one after another. Each part holds a copy of the vertices that it shares with the part before it. For the fewest draw calls, keep meshes under 65,535 vertices. A mesh that draws a cluster tree is the exception. Its patches draw in one draw across all its parts, as [cluster levels](../concepts/lod.md#cluster-levels) describes.
 
 ## From three.js
 

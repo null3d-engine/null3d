@@ -173,7 +173,7 @@ The bake skips a material, and the report says why, when:
 
 ## Levels of detail
 
-`--lod` adds levels of detail to each mesh of 64 triangles or more. Each level has about half the triangles of the level above. The engine takes at most seven levels below a mesh, so the last steps grow, up to an eighth, where halving would stop short. The coarsest level then holds about 32 triangles, so a far copy that covers a few pixels draws a few dozen triangles. The levels stop early when a level falls well short of its target, or when its error reaches the mesh's size.
+`--lod` adds levels of detail to each mesh of 64 triangles or more. Each level has about half the triangles of the level above, down to about 32 triangles, in up to 15 levels. So a far copy that covers a few pixels draws a few dozen triangles. The levels stop early when a level would keep more than three quarters of the level above. They also stop when a level's error reaches the mesh's size.
 
 The command plans the levels as follows:
 
@@ -212,10 +212,10 @@ The same stage file layout carries a cluster tree's bands. A kind 1 stage holds 
 The command splits each mesh part into patches and builds the tree above them with meshoptimizer:
 
 1. The patches are compact pieces of the surface, so each one covers a small part of the screen.
-2. A patch above a group simplifies its children's triangles to about half of them. The group's border stays in place, so two patches of different detail still meet.
-3. Each patch stores its error and a sphere. The error is the largest distance between its surface and the surface below it, and never less than a child's error. The sphere holds the spheres of the patch's children, and a leaf's sphere holds its triangles. So a patch never passes the view's threshold where one of its children fails, and the patches that draw cover the mesh once.
+2. A patch above a group simplifies its children's triangles to about half of them. The vertices that the group shares with other groups stay in place, so two patches of different detail still meet. The mesh's own open edge simplifies too, but its corners stay.
+3. Each patch stores its error and a sphere. The error is the patch's measured distance from the full mesh below it, and never less than a child's error. The sphere holds the spheres of the patch's children, and a leaf's sphere holds its triangles. So a patch never passes the view's threshold where one of its children fails, and the patches that draw cover the mesh once.
 
-The tree holds about twice the mesh's triangles. Every patch's indices name the mesh's own vertices, so the tree adds no vertex. The tree goes into the file with `NULL3D_clusters`. Other glTF loaders ignore it and draw the whole mesh. The build also gives the mesh the whole levels that `--lod` makes, even without `--lod`. Each level has about half the triangles of the level above, and the levels share the mesh's vertices. A viewer that draws no patches draws these levels. The engine draws the patches on both GPU paths when one copy of the mesh draws: WebGPU picks them in a compute pass, and WebGL2 with `WEBGL_multi_draw` picks them on the job workers. The WebGPU path that draws objects directly, WebGL2 without `WEBGL_multi_draw`, such as Firefox, and the shadow maps draw the whole levels.
+The tree holds about twice the mesh's triangles. Every patch's indices name the mesh's own vertices, so the tree adds no vertex. On WebGL2, a mesh of more than 65,535 vertices draws its tree from a copy of its vertices, as [cluster levels](../concepts/lod.md#cluster-levels) describes. The tree goes into the file with `NULL3D_clusters`. Other glTF loaders ignore it and draw the whole mesh. The build also gives the mesh the whole levels that `--lod` makes, even without `--lod`. Each level has about half the triangles of the level above, and the levels share the mesh's vertices. A viewer that draws no patches draws these levels. The engine draws the patches on both GPU paths when one copy of the mesh draws: WebGPU picks them in a compute pass, and WebGL2 with `WEBGL_multi_draw` picks them on the job workers. The WebGPU path that draws objects directly, WebGL2 without `WEBGL_multi_draw`, such as Firefox, and the shadow maps draw the whole levels.
 
 A mesh gets no tree in four cases. It has fewer than 20,000 triangles, or a skin or a morph target bends it. It also gets none when its material blends or masks, or more than four copies draw it. Those meshes keep whole levels.
 

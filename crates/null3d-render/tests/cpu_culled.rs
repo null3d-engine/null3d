@@ -12,7 +12,7 @@ use null3d_core::levels::Switch;
 use null3d_core::lights::SunShadow;
 use null3d_core::scene::{Command, flags};
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
-use null3d_gpu::drawlist::{NO_TARGET, Op, format, sizes};
+use null3d_gpu::drawlist::{NO_TARGET, Op, format, index_format, sizes};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::camera::Perspective;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
@@ -49,6 +49,18 @@ fn world(multi_draw: bool) -> World<CpuCulledRenderer> {
 
 /// The first id that a tree's index buffer takes, which sits above every other id.
 const PATCH_INDEX: u32 = 1 << 22;
+/// The first id that a tree's copy of its mesh's vertices takes, after the index buffers' range.
+const PATCH_VERTICES: u32 = PATCH_INDEX + (1 << 21);
+
+/// A world on a device that draws many ranges in one call and takes flat values from a
+/// primitive's first vertex.
+fn first_vertex_world() -> World<CpuCulledRenderer> {
+    World::build(CpuCulledRenderer::new(CpuCulledConfig {
+        multi_draw: true,
+        first_provoking_vertex: true,
+        ..CpuCulledConfig::default()
+    }))
+}
 
 /// A tree of one exact patch over a grid's six indices, which every view draws.
 fn one_patch() -> PatchTree {
@@ -1502,9 +1514,82 @@ fn a_tree_split_into_parts_keeps_its_whole_levels() {
     world.record(true);
     let keys = bucket_counts(&world).len();
     let (after, bound) = buckets_with_tree(&mut world, mesh, one_patch());
-    // A patch's indices name one part's vertices, so a split mesh draws its whole levels.
+    // Without the first-vertex convention, ANGLE on Metal would copy the tree's whole index list
+    // before each range it draws, so a split mesh draws its whole levels.
     assert_eq!(after, keys);
     assert!(!bound);
+}
+
+#[test]
+fn a_tree_split_into_parts_draws_its_patches_from_a_copy_of_its_vertices() {
+    let mut world = first_vertex_world();
+    let (mesh, _) = copies_with_levels(&mut world, &grid(256, 256), 1);
+    let settings = world.renderer.settings();
+    let parts = settings
+        .meshes()
+        .parts(settings.meshes().mesh(mesh - 1).unwrap(), false)
+        .len();
+    assert!(parts > 1, "the mesh of the test fills {parts} parts");
+    world.record(true);
+    let keys = bucket_counts(&world).len();
+    let (after, bound) = buckets_with_tree(&mut world, mesh, one_patch());
+    // The tree covers the mesh, so its two whole levels add no bucket, and its draw binds the
+    // tree's own index list.
+    assert_eq!(
+        keys - after,
+        2,
+        "{keys} buckets without the tree, {after} with it"
+    );
+    assert!(bound);
+    let commands = world.commands();
+    // The parts lie in several pages, so the draw reads a copy of their vertices, made once, with
+    // 32-bit indices.
+    let copy = PATCH_VERTICES + mesh;
+    assert!(
+        commands
+            .iter()
+            .any(|(op, o)| *op == Op::CreateBuffer && o[0] == copy)
+    );
+    assert!(
+        commands
+            .iter()
+            .any(|(op, o)| *op == Op::SetVertexBuffer && o[1] == copy)
+    );
+    assert!(
+        commands.iter().any(|(op, o)| *op == Op::SetIndexBuffer
+            && o[..2] == [PATCH_INDEX + mesh, index_format::UINT32])
+    );
+    // One call draws the tree's one patch, whatever the number of the mesh's parts.
+    let bound_at = commands
+        .iter()
+        .position(|(op, o)| *op == Op::SetIndexBuffer && o[0] == PATCH_INDEX + mesh)
+        .unwrap();
+    let calls = commands[bound_at + 1..]
+        .iter()
+        .take_while(|(op, _)| !matches!(op, Op::SetIndexBuffer | Op::EndRenderPass))
+        .filter(|(op, _)| *op == Op::MultiDrawIndexed)
+        .count();
+    assert_eq!(calls, 1);
+}
+
+#[test]
+fn a_tree_in_one_page_draws_its_patches_with_or_without_the_first_vertex() {
+    for mut world in [world(true), first_vertex_world()] {
+        let mesh = world.add_object(&grid(1, 1), Shading::Lit);
+        world
+            .renderer
+            .set_mesh_patches(mesh, Some(one_patch()))
+            .unwrap();
+        world.record(true);
+        let commands = world.commands();
+        // The tree draws from its page's vertices, so it makes no copy of them.
+        assert!(bound_indices(&commands).contains(&(PATCH_INDEX + mesh)));
+        assert!(
+            !commands
+                .iter()
+                .any(|(op, o)| *op == Op::CreateBuffer && o[0] == PATCH_VERTICES + mesh)
+        );
+    }
 }
 
 #[test]

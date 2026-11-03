@@ -48,6 +48,14 @@ Use the engine's own calls first. The engine's per-frame loops already run in Ru
 
 Keep setup, options, the public API and event handling in TypeScript. They run once or rarely, and TypeScript is the flexible place for them.
 
+## Give every mesh levels of detail
+
+An add-on that builds meshes in code gives each one levels of detail, as the asset tool gives a mesh from a file. A far copy then draws a few dozen triangles instead of its full mesh, and the engine hides a copy that covers less than a pixel.
+
+Give each static mesh of a few thousand triangles or more its levels with `mesh.setLevels`, from the most detailed down, each with about half the triangles of the level above ([Levels of detail](../concepts/lod.md#give-a-mesh-its-levels)). Measure each level's `error` against the full mesh when you can, so the level switches in at once with no fade. A mesh that bends, moves its vertices in each frame, or draws lines or points keeps its full mesh. Say so in a comment beside the mesh.
+
+The engine's run-time level API, which makes levels for a mesh made in code with the asset tool's own planner, is planned. When it ships, it replaces the hand-made levels.
+
 ## Follow the preset and show the cost
 
 A feature declares the value that each quality preset gives it, and the engine resolves the value for the preset in use. The frame-budget governor's steps reach it too, so an add-on that costs too much lightens its own work. `FeatureHost` carries these values from the sketch's quality, and reports the feature's figures to the stats overlay. A page that imports no add-on feature downloads none of that code.

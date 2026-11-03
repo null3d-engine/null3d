@@ -419,7 +419,7 @@ describe('presetSettings', () => {
 			shadowTileSize: 1024,
 			heroTileSize: 2048,
 			pointLightShadows: true,
-			gpuOcclusion: false,
+			gpuOcclusion: true,
 			lightFit: true,
 			morphTargets: 32,
 		});
@@ -462,7 +462,7 @@ describe('presetSettings', () => {
 			shadowTileSize: 1024,
 			heroTileSize: 4096,
 			pointLightShadows: true,
-			gpuOcclusion: false,
+			gpuOcclusion: true,
 			lightFit: true,
 			morphTargets: 64,
 		});
