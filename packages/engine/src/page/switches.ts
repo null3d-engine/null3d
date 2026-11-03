@@ -7,10 +7,11 @@
 // ?moments=on or off for moment transparency, ?prepass-color= for how a prepass that a screen
 // step splits from the opaque pass starts the stand-in color that it never draws,
 // ?occlusion=on or off for occlusion culling, ?occlusion-buffer= for the size of software occlusion
-// culling's buffer, such as 384x216, ?skinning= for how WebGPU skins (compute for the skinning
-// pass, or full, skip or narrow for the pass with fewer of its savings), ?instances=index for
-// vertex shaders that read instance data by index on core WebGPU, ?shadowdepth=32 for shadow
-// cascades in 32-bit float depth instead of 16-bit depth,
+// culling's buffer, such as 384x216, ?occlusion-check=off for GPU occlusion culling's passes in
+// every frame, without the check that turns them off, ?skinning= for how WebGPU skins (compute
+// for the skinning pass, or full, skip or narrow for the pass with fewer of its savings),
+// ?instances=index for vertex shaders that read instance data by index on core WebGPU,
+// ?shadowdepth=32 for shadow cascades in 32-bit float depth instead of 16-bit depth,
 // ?texture-cache=off for KTX2 files that transcode on every load, and ?join=off for custom effects
 // in a pass each, none joined, for pages that measure what joining saves. ?replay-delay= makes the
 // thread that draws wait before it replays each frame's list, for a test of memory that the sketch
@@ -221,6 +222,12 @@ export interface Switches {
 	 * other.
 	 */
 	occlusionBuffer: number | undefined;
+	/**
+	 * False when ?occlusion-check=off holds GPU occlusion culling's passes on in every frame,
+	 * without the check that turns them off while they do not pay. A test that compares the image
+	 * with culling and without it then compares frames that all ran the passes.
+	 */
+	occlusionCheck: boolean;
 	/** How ?skinning= makes WebGPU skin, `vertex` without the switch. */
 	skinning: SkinningSwitch;
 	/**
@@ -429,6 +436,7 @@ export function parseSwitches(search: string): Switches {
 		prepassColor: oneOf(params.get('prepass-color'), ['load', 'clear', 'none'] as const),
 		occlusion: onOff(params.get('occlusion')),
 		occlusionBuffer: pixelsOf(params.get('occlusion-buffer')),
+		occlusionCheck: params.get('occlusion-check') !== 'off',
 		skinning:
 			oneOf(params.get('skinning'), ['compute', 'full', 'skip', 'narrow'] as const) ?? 'vertex',
 		indexInstances: params.get('instances') === 'index',

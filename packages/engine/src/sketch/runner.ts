@@ -535,6 +535,7 @@ export class SketchRunner {
 		glue.setMorphTargets(morphTargets);
 		if (device.occlusionBuffer > 0) glue.setOcclusionBuffer(device.occlusionBuffer);
 		if (device.gpuOcclusion) glue.setOcclusionReadSlot(Slot.OcclusionRead);
+		if (device.gpuOcclusion && !device.occlusionCheck) glue.holdOcclusionCheck(true);
 		this.frameTimes = device.gpuOcclusion ? new RingFrames(metrics, Role.Completion) : undefined;
 		// Directional lights that name no cascades, map size or hero tile size take the preset's.
 		const values = this.core.callValues();
