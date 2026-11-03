@@ -754,6 +754,8 @@ export interface ShootSpec {
 		readonly width: number;
 		/** Buds crowded at the shoot tip (oak). */
 		readonly tipCluster: number;
+		/** The buds' linear colour, which takes the young bark's pattern; the young bark's own when not given. */
+		readonly colour?: Rgb;
 	};
 	/** Where shoots attach to a variant. */
 	readonly placement: {

@@ -135,7 +135,7 @@ export const record: Species = {
 		years: 3,
 		leafYears: 1,
 		stem: { radius: [0.0035, 0.0025], zigzag: 12 },
-		bud: { length: 0.008, width: 0.005, tipCluster: 7 },
+		bud: { length: 0.009, width: 0.006, tipCluster: 7, colour: [0.2, 0.09, 0.04] },
 		placement: {
 			perMetre: [
 				[0, 3.2],
