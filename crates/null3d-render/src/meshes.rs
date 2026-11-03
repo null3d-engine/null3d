@@ -34,6 +34,7 @@ use null3d_gpu::drawlist::vertex;
 
 use crate::geometry::Geometry;
 use crate::morph::{MORPH_LOCATION, MorphError, MorphTargets, with_ranges};
+use crate::pieces::{Piece, PieceError, PieceTable};
 
 /// The most vertices one part of a mesh uses, and the most a WebGL2 page holds: what 16-bit
 /// indices reach below 65,535, the index that WebGL2 always reads as a primitive restart.
@@ -200,6 +201,8 @@ pub struct MeshStorage {
     /// The byte ranges of the pages that the last vertex update changed: each page's index, and
     /// its first and its end byte. The list keeps its room from update to update.
     updated: Vec<(u32, usize, usize)>,
+    /// Each mesh's pieces (see [`crate::pieces`]), which a new triangle list or new vertices drop.
+    pieces: PieceTable,
 }
 
 /// Why [`MeshStorage::update_vertices`] refused an update. It changes no vertex then.
@@ -316,6 +319,7 @@ impl MeshStorage {
             free: Vec::new(),
             sources: Vec::new(),
             updated: Vec::new(),
+            pieces: PieceTable::default(),
         }
     }
 
@@ -327,6 +331,76 @@ impl MeshStorage {
     /// its own: a level that [`MeshStorage::add_level`] added over that base.
     pub fn shares_vertices_with(&self, level: u32, base: u32) -> bool {
         self.mesh(level).is_some_and(|slot| slot.base == Some(base))
+    }
+
+    /// Gives the live mesh `id` pieces of its triangle list, in the list's order, from then on:
+    /// the copies that draw it cull each piece on its own. A new triangle list or new vertices drop
+    /// them. A mesh that joints or morph targets pose has no fixed bounds, so it takes none.
+    pub fn set_pieces(&mut self, id: u32, pieces: &[Piece]) -> Result<(), PieceError> {
+        let mesh = *self.mesh(id).ok_or(PieceError::UnknownMesh)?;
+        if mesh.joints > 0 || mesh.targets > 0 {
+            return Err(PieceError::Bounds);
+        }
+        let triangles = self
+            .parts(&mesh, false)
+            .iter()
+            .map(|part| part.index_count / 3)
+            .sum();
+        self.pieces.set(id, triangles, pieces)
+    }
+
+    /// Gives the live mesh `id` pieces over a triangle list of their own, `indices`, which holds the
+    /// mesh's triangles in piece order and names its vertices: the way of a mesh made in code, whose
+    /// own list keeps its order for raycasts and for the triangle numbers that a page reads. The list
+    /// shares the mesh's vertices and costs its indices alone, as a level does, and it goes when the
+    /// mesh goes. Only a mesh in one part shares its vertices so. A list given before stays until the
+    /// mesh goes, so a mesh takes one list in its life.
+    pub fn set_piece_list(
+        &mut self,
+        id: u32,
+        indices: &[u32],
+        pieces: &[Piece],
+    ) -> Result<(), PieceError> {
+        let mesh = *self.mesh(id).ok_or(PieceError::UnknownMesh)?;
+        let triangles: u32 = self
+            .parts(&mesh, false)
+            .iter()
+            .map(|part| part.index_count / 3)
+            .sum();
+        if indices.len() != triangles as usize * 3 {
+            return Err(PieceError::Triangles);
+        }
+        if self.pieces.list(id).is_some() {
+            return Err(PieceError::Count);
+        }
+        if mesh.joints > 0 || mesh.targets > 0 {
+            return Err(PieceError::Bounds);
+        }
+        // A list that the checks below refuse takes no room: they come before the list is made.
+        crate::pieces::PieceTable::default().set(0, triangles, pieces)?;
+        let list = self
+            .add_level(id, indices)
+            .map_err(|_| PieceError::Triangles)?;
+        self.pieces.set(id, triangles, pieces)?;
+        self.pieces.set_list(id, list);
+        Ok(())
+    }
+
+    /// The parts that the pieces of mesh `id` draw from, in piece order: the parts of their own
+    /// list where the mesh has one, and the mesh's own parts otherwise.
+    pub fn piece_parts(&self, id: u32) -> &[MeshPart] {
+        let source = self.pieces.list(id).unwrap_or(id);
+        self.mesh(source)
+            .map_or(&[], |mesh| self.parts(mesh, false))
+    }
+
+    /// The pieces of mesh `id`'s triangle list, or none for a mesh that draws its list whole.
+    pub fn pieces(&self, id: u32) -> &[Piece] {
+        if self.mesh(id).is_some() {
+            self.pieces.of(id)
+        } else {
+            &[]
+        }
     }
 
     /// The live mesh with id `id`.
@@ -419,6 +493,8 @@ impl MeshStorage {
         if mesh.joints > 0 || mesh.targets > 0 {
             return Err(UpdateError::Posed);
         }
+        // Moved vertices leave the pieces' bounds behind.
+        self.pieces.clear(id);
         let attribute = vertex::ATTRIBUTES
             .get(location)
             .filter(|_| location <= LAST_UPDATABLE || location == MORPH_LOCATION)
@@ -749,6 +825,8 @@ impl MeshStorage {
         let placed = &mut self.parts[slot.first_part as usize];
         placed.first_index = first_index;
         placed.index_count = indices.len() as u32;
+        // The pieces named runs of the old list.
+        self.pieces.clear(mesh);
         Ok(())
     }
 
@@ -1238,6 +1316,7 @@ impl MeshStorage {
             sources.add(mesh.first_source, mesh.sources);
             self.live[id as usize] = false;
             self.meshes[id as usize].part_count = 0;
+            self.pieces.forget(id);
         }
         sources.close();
         sources.squeeze(&mut self.sources, 1);
@@ -1253,7 +1332,8 @@ impl MeshStorage {
     /// Gives the ids of removed meshes to the next meshes added, lowest first. Ids of live meshes
     /// are skipped.
     pub fn release(&mut self, ids: &[u32]) {
-        for &id in ids {
+        let lists = self.pieces.take_released();
+        for &id in ids.iter().chain(&lists) {
             let removed = self.live.get(id as usize) == Some(&false);
             if removed && !self.free.contains(&id) {
                 self.free.push(id);

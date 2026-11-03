@@ -1040,6 +1040,39 @@ impl BucketedCull {
         self.hidden
     }
 
+    /// Lists in bucket `to` the entries of bucket `from` that `keep` keeps, after every entry
+    /// listed so far: the entries of a piece of a mesh, which each copy of a bucket's mesh draws
+    /// only where the piece shows. `to` comes after every bucket that holds entries, and calls fill
+    /// the buckets in rising order. `words` is the words of each entry: 2 for a bucket that lists
+    /// pairs, 1 for any other. Fails only when memory cannot grow for the new entries.
+    pub fn list_kept(
+        &mut self,
+        from: u32,
+        to: u32,
+        words: usize,
+        mut keep: impl FnMut(u32) -> bool,
+    ) -> Result<(), TryReserveError> {
+        let (from, to) = (from as usize, to as usize);
+        let (start, end) = (
+            self.bucket_starts[from] as usize,
+            self.bucket_starts[from + 1] as usize,
+        );
+        let room = self.len + (end - start);
+        if self.indices.len() < room {
+            reserve_keeping(&mut self.indices, room, &mut self.kept)?;
+            self.indices.resize(room, 0);
+        }
+        self.bucket_starts[to] = self.len as u32;
+        for at in (start..end).step_by(words.max(1)) {
+            if keep(self.indices[at]) {
+                self.indices.copy_within(at..at + words, self.len);
+                self.len += words;
+            }
+        }
+        self.bucket_starts[to + 1..=self.buckets].fill(self.len as u32);
+        Ok(())
+    }
+
     /// True when both outputs list the same entries in the same buckets.
     pub fn same_entries(&self, other: &BucketedCull) -> bool {
         same_words(self.bucket_starts(), other.bucket_starts())
