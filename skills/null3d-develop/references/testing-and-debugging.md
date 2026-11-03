@@ -68,6 +68,7 @@ Keep held frames the same on every run:
 - Move things with `time.now` and `dt` (also `time.dt`), or in `onFixedUpdate`, never `Date.now()` or `performance.now()`. Every hold runs the same fixed steps.
 - Draw random numbers from `math.random` or `Math.random`, which hold mode seeds; `crypto.getRandomValues` is not seeded.
 - Await every asset in the setup, because the hold starts when the setup resolves.
+- A compute pass may pay for the time that passed, as a solver whose runs follow sketch time does. Set its runs with `render.setPassSteps` only where `time.drawn` is true. The passes of the hold's other steps never run. So the first frame that draws carries the whole hold, and a second one only the time since (`api/time`).
 - Pass test settings in the sketch module's address, such as `new URL('./sketch.ts?view=harbor', import.meta.url)`, and read them from `import.meta.url` in the sketch. Page messages reach the sketch only after the hold.
 
 List the image tests that `bunx @null3d/cli test` runs in `null3d.json` in the project's folder (engine docs `cli/null3d`):
