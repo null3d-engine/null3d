@@ -141,6 +141,38 @@
         "Mentions terrainTextures or a splat-mapped surface",
         "Suggests checking the WebGL2 path"
       ]
+    },
+    {
+      "id": 11,
+      "prompt": "My null3d landing page generates a terrain height field and scatters 40,000 rocks in the sketch's setup. Every visit waits about 4 seconds before anything shows. Make repeat visits fast without making the first visit slower.",
+      "expected_output": "A cache of the generated arrays in IndexedDB from the sketch, keyed by import.meta.url plus every input that changes the output, with the same build code after a hit or a miss, written after the first frame one entry per transaction, with older builds' entries deleted and every storage failure treated as a miss. The answer also moves work that the first view does not show into a later stage, and explains how to time a first and a repeat visit.",
+      "files": [],
+      "expectations": [
+        "Stores only numbers and typed arrays (heights, rock rows) in IndexedDB from sketch.ts, never meshes, materials, textures or batches",
+        "Keys each entry by import.meta.url and by the inputs that change the output, such as the seed, the size or the quality preset, and skips the cache in development",
+        "Runs the same code to build the terrain and the rocks after a hit and after a miss",
+        "Writes after the page reports its first frame, never in onUpdate, one entry per transaction, and deletes the entries of older builds",
+        "Gives the database open a time limit and treats a failed open, a QuotaExceededError or a missing database as a miss",
+        "Says that storage is best effort: browsers can evict the origin, and Safari deletes script-written storage of a site unused for seven days",
+        "Does not claim that the engine caches generated data or compiled shaders, and presents the engine's own transcoded-texture cache and stored preset check as built",
+        "Builds only the first view in the setup and adds the rest hidden behind scene.warmUp(), or places rows over frames, without allocating in onUpdate",
+        "Explains how to time a first visit and a repeat visit, such as on Slow 4G with a new profile or ?check=fresh&shaders=fresh&texture-cache=off"
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "Review the null3d hero scene on our marketing homepage before launch. It's decorative, it sits behind the headline, and the team says it runs at 60 fps on their laptops.",
+      "expected_output": "A review in order: how the frame rate was measured, the preset and governor state, the passes, rebuilds and pipelines during play, the page without JavaScript, after a failed start and after a crash, repeat visits and back navigation, the page thread during the start, and what Low leaves out. It recommends content-page rules for a decorative scene.",
+      "files": [],
+      "expectations": [
+        "Asks how 60 fps was measured, and recommends engine.measure or bunx @null3d/cli bench, which take the lower of the presented and completed rates",
+        "Asks for measurements on a real phone and on the WebGL2 path, at the presets that phones get",
+        "Checks the page with JavaScript off, with a failed start and with the crash marker set, and checks that the headline text never hides while the scene loads",
+        "Marks the canvas aria-hidden, pauses it off screen with an IntersectionObserver, and brings it to rest under reduced motion",
+        "Suggests powerPreference: 'low-power' for a decorative scene, and a load deadline counted from navigation",
+        "Checks rebuilds, pipelines and skippedDraws during play, and long tasks on the page's thread during the start",
+        "Asks what the Low preset leaves out of the scene's own work, not only what numbers it lowers"
+      ]
     }
   ]
 }

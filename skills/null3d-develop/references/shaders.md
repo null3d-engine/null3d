@@ -116,6 +116,35 @@ Materials from the same WGSL share one shader and its pipelines. Make one WGSL p
 
 Names: your WGSL shares a file with the engine's standard material. Do not declare a name that the standard material declares or imports. The build stops at your line with a redefinition error. The names are `SurfaceInput`, `Surface`, `VertexInput`, `surface_place`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs`, `fs` and `FLAT_SHADING`. They also include the library items it imports: `Material`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish_exposed`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `with_specular`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`, and where the WGSL reads them, `object_ids`, `affine_matrix` and `affine_normal_matrix`. Other library names, such as `brdf_ggx` or `PI`, stay free. Import library items by name (`#import null3d::noise::{fbm2}`), because a whole-module import reserves the module's name. No `enable` directives.
 
+### Habits that keep custom shading cheap
+
+- Fade fine procedural detail before it shimmers. A pattern finer than a pixel aliases, and a higher resolution to hide it costs a whole frame's fill. Scale each octave by how fast its argument changes across a pixel, and call `fwidth` outside any branch that differs between pixels, as with `textureSample` (section 8):
+
+  ```wgsl
+  let w = fwidth(angle);                             // how much angle changes across one pixel
+  height += sin(angle) * amplitude / (1.0 + w * w);  // this octave fades out where it would alias
+  ```
+
+- Gate an idle effect behind one uniform test, such as `if (material.ripples > 0.0) { ... }`. Every pixel takes the same branch, so the idle effect costs one comparison.
+- Give interaction effects a fixed number of uniform slots, such as three ripple centers, and reuse the oldest slot for a new tap. A material's uniforms are fixed when you create it, and a fixed count also caps the cost per frame.
+- Work out sizes from the texture with `textureDimensions` or `textureNumLevels`, never from a number written for one size. When a preset loads a smaller texture, a constant written for the larger one samples the wrong level, and nothing reports it.
+- Blend two prepared looks, such as day and night, with one eased uniform that the sketch sets with `material.setUniform`. Each frame then costs a mix, and nothing builds. Mix see-through colors premultiplied, or their edges darken halfway:
+
+  ```wgsl
+  let a = mix(day.a, night.a, t);
+  let rgb = mix(day.rgb * day.a, night.rgb * night.a, t) / max(a, 1e-5);
+  ```
+
+- Motion that reads `frame.time` keeps moving under reduced motion, because the engine's clock runs on. Drive decorative motion from a uniform that the sketch advances, and stop advancing it while `preferences.reducedMotion` is true:
+
+  ```ts
+  const water = materials.shader({ wgsl: waves, uniforms: { phase: 0 } });  // the WGSL reads material.phase
+  let phase = 0;
+  // in onUpdate(dt):
+  if (!preferences.reducedMotion) phase += dt;
+  water.setUniform('phase', phase);
+  ```
+
 ## 3. Built-in values
 
 Globals that the vertex offset and the surface function both read (`shaders/builtins`):
@@ -233,6 +262,20 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 - Normals stay the mesh's own. Use `flatShading: true` to light faces by their moved positions, or bend `s.normal` in the surface function.
 - Shadows follow the moved vertices, and draw again in every frame. A material whose offset follows only the view that draws the object, such as a card that turns toward the camera, takes `castsStill: true`: its casters then hold their shadow while the light stands still, and far shadow cascades stay cached.
 - Vertices that move outside the mesh's bounding sphere can be culled wrongly. Give the object a sphere that holds them with `mesh.setBounds(center, radius)`, at setup, because the call rebuilds the draw tables.
+- For a part that swings about a pivot, such as a sign or a branch, center the sphere on the pivot. Give it a radius that reaches the tip at full swing, so one call at setup covers every pose.
+- The offset is in the mesh's own space. To push vertices along a world direction, such as the wind's, turn that direction into the mesh's space. For an object made of a position, a rotation and a scale, project it on the columns of `object.worldMatrix` (0.2), and divide by their squared lengths. That needs no inverse matrix, and the guard keeps an axis scaled to 0 from making the vertex NaN:
+
+  ```wgsl
+  let ax = object.worldMatrix[0].xyz;    // the object's scaled x axis, in the world
+  let ay = object.worldMatrix[1].xyz;
+  let az = object.worldMatrix[2].xyz;
+  let w = material.wind;                 // a world direction, declared in struct Uniforms
+  let local = vec3f(dot(w, ax) / max(dot(ax, ax), 1e-12),
+                    dot(w, ay) / max(dot(ay, ay), 1e-12),
+                    dot(w, az) / max(dot(az, az), 1e-12));
+  ```
+
+- A raycast tests the mesh's own triangles where the object stands, so it misses what an offset moved. Pick a moving surface with `scene.pick` (0.2), which tests the pixels that the camera drew.
 
 ### Shadows of a custom material (0.3)
 
