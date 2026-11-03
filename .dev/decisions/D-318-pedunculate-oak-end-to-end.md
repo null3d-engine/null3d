@@ -113,7 +113,7 @@ under the cutoff a few levels down. The oak's distant crown then let through 42 
 the turning video's 10. The plant shader now adds a quarter of a card texel's coverage back for
 each level of the mip chain it reads. A leaf texture's mips keep their coverage when built (D-310),
 so leaves read theirs plain. Over the turning video the sky fell to 19 per cent.
-The crown's outline overlap rose from 0.56 to 0.70, and its leaf colour difference fell from 6.8
+The crown's outline overlap rose from 0.56 to 0.70, and its leaf color difference fell from 6.8
 to 3.9.
 
 ### Cuttings
@@ -131,6 +131,11 @@ The record check refuses a hint that names a class the record does not grow.
 - Where the leader weakened and a side limb took the light, the stem ended in a cone in mid-crown.
   After growth, an axis now runs on into a child where its own continuation collapsed under the
   child's girth. The old continuation becomes the side branch.
+- Taken at any angle, those hand-ons chained into loops: one finest limb in ten turned back past a
+  right angle. The bole took a dog-leg of up to 61 degrees. A limb now runs on only into a child
+  within 40 degrees of its line, and never past a right angle from where it set out. A stem's main
+  limb turns upright as a relay leader does, bending at most 20 degrees at a node. The sky through
+  the crown at still 01-b fell from 0.25 to 0.14.
 - A cut branch's root is a limb with no parent, which the wood mesher skipped, so cuttings had no
   wood. A parentless limb now meshes plain, without the stem base's shaping.
 - A real kit's cutting keeps its shoots as rows, so its twigs and buds draw. Merged into a foliage
