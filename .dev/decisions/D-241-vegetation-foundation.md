@@ -1005,11 +1005,14 @@ values, so one shader serves the compute draw and the batch alike. WebGL2 keeps 
 which the CPU fills.
 
 **The view cull and the distance bands.** The pass culls each 4 meter tile against the camera's
-frustum. It keeps a share of the far tufts from their roots' hashes. Under 10 meters from the camera
-it keeps all of them; at 10 to 20 meters, 94 per cent; at 20 to 30, 71; and past 30, 40. A kept far
-tuft's blades widen by the inverse of its share, so the cover stays the same. The draw shader holds
+frustum. It keeps a share of the far tufts from their roots' hashes. The fade reaches its floor at 24.31
+meters, shortened from the authored 45: under 10 meters from the camera it keeps all of them; at 10
+to 20 meters, 71 per cent; at 20 to 30, 28; and past 30, 25. A kept far tuft's blades widen by the
+inverse of its share, so the cover stays the same. The shortening removes 36.9 per cent of the drawn
+tufts, and it costs 0.768 per cent of the hill crest's pixels and 0.085 per cent of the demo's
+horizon against the pictures at the authored distance. The draw shader holds
 the same block, so WebGL2's batch collapses the tufts that the share leaves out. Both paths then draw
-one hill. On the hill of 20,000 tufts at High the share keeps 13,730.
+one hill. On the hill of 20,000 tufts at High the share keeps 8,452.
 
 Each view then culls the kept list to its own box in the draw shader, from the frame's own matrix. The
 camera's view draws its frustum. A light's view draws its cascade, whose box reaches toward the light
@@ -1024,7 +1027,7 @@ the near shadows and 283.97 without. The rows that D-241's ceilings compare draw
 own density. On the same tablet, 2,312 tufts, its valley's 2.0 on each square meter, take 306.09 ms
 with the view cull and the far share and 318.77 without. 6,820 tufts, its bank strip's 5.9, take
 490.73 and 527.17. The cull takes 4.0 per cent back at the valley's density and 6.9 at the strip's.
-Neither row reaches 208.3. The same page with the grass switched off measures 179.18 ms, which is
+Neither row reached 208.3 before the far cover. The same page with the grass switched off measures 179.18 ms, which is
 29.12 ms inside the ceiling, so the base scene does not break it: the grass at the valley's density
 adds 126.91 ms and at the strip's 311.55. The frame's own cost sits mostly in its opaque pass: with
 the sun's contact shadows and the bounce light off, the scene measures 143.49 ms and the timer names the
@@ -1036,7 +1039,12 @@ scene measures 186.25 with the contact shadows on. The pictures show that neithe
 the hill looks like: the four drawings, with either effect off and with both, are pixel for pixel the
 same. With both off the hill at Creek's density measures 235.41 ms, 27.11 ms past the ceiling, so the
 effects' 43 ms does not close the budget either. The grass's fixed cost, its shadow pass and draw
-setup, adds about 33 ms on top of the per-tuft cost, and the far cover's look is the lever that stays.
+setup, adds about 33 ms on top of the per-tuft cost. The owner ruled that the demo draws without the
+two effects: their pictures are the same at Low, Medium and High, and the Creek sketch pins the
+settings so a preset change does not bring them back. The far cover then closed the gap: at 24.31
+meters the row measures 209.72 and 196.02 ms, mean 202.87, while 25.59 meters gives 217.45 and
+216.60. The base page bracketed that block at 162.27 and 156.30, so the machine drifted about 6 ms
+within it, and 208.3 sits inside the row's spread at the chosen distance rather than outside it.
 The fit through two tuft counts first put the base at 211.9 ms and was read as the scene's own cost. A
 fitted intercept is not a base frame: it carries everything the removal would also take away, whether or
 not that cost varies with the count, and only switching the thing off gives the base. Every view culls the
