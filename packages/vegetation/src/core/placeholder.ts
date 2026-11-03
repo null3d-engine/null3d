@@ -1,5 +1,5 @@
 // The stand-ins: a simple, deterministic result for every stage of the generator, which a run that
-// asks for `placeholders` uses wherever a stage is not built yet. They let the review page, the
+// asks for `placeholders` uses at every stage, so a stand-in species draws the same as stages land. They let the review page, the
 // determinism tests and the stage packages run the whole pipeline from the first day: a stem with
 // tiers of limbs and twigs, a leaf quad, small shoots, flat cards, tubes of a few sides, and an
 // impostor of flat cells. They read only the record's numbers and the integer hash, and use only the
