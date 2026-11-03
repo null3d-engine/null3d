@@ -20,6 +20,9 @@ export const THIN = 0.008;
 /** How much longer edges and ring steps grow at each card level. */
 const LEVEL_SCALE = [1, 2, 4] as const;
 
+/** How much longer edges and ring steps grow on the coarsest plant, over and above the level's. */
+export const COARSE_EDGE = 2;
+
 /** The most sides a ring has at each level. */
 const MAX_SIDES = [96, 48, 24] as const;
 
@@ -57,16 +60,19 @@ export interface TubeDetail {
 }
 
 /**
- * The tube detail of a level at a tier.
+ * The tube detail of a level at a tier. A coarser plant takes longer edges, so its rings have fewer
+ * sides and stand further apart.
  *
  * @param level The level.
  * @param detail The tier.
+ * @param coarseness From 0, as the tier meshes, to 1, the coarsest.
  * @returns The detail.
  */
-export function tubeDetail(level: MeshLevel, detail: Detail): TubeDetail {
+export function tubeDetail(level: MeshLevel, detail: Detail, coarseness = 0): TubeDetail {
+	const edge = EDGE[detail] * LEVEL_SCALE[level];
 	return {
 		level,
-		edge: EDGE[detail] * LEVEL_SCALE[level],
+		edge: coarseness > 0 ? edge * (1 + COARSE_EDGE * Math.min(1, coarseness)) : edge,
 		maxSides: MAX_SIDES[level],
 		maxTurn: MAX_TURN[level],
 		stray: STRAY[level],
