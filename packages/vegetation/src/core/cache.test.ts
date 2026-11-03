@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import type { DerivedCache } from '@null3d/engine';
 import { plantAssetDigest } from '../asset';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 import {
@@ -92,5 +93,30 @@ describe('the plant caches', () => {
 		const value = await cachedResult('k', memoryCache(1000), broken, async () => ++made);
 		await settle();
 		expect(value).toBe(1);
+	});
+
+	it("take a namespace of the engine's cache of derived data as their store", async () => {
+		const bytes = new Map<string, Uint8Array>();
+		const engineCache: DerivedCache = {
+			name: '@null3d/vegetation',
+			version: '1',
+			get: async (key) => bytes.get(key)?.slice(),
+			put: async (key, value) => {
+				bytes.set(key, value.slice());
+			},
+		};
+		const store: PlantByteCache = engineCache;
+		const make = async () => ({ heights: new Float32Array([1, 2, 3]) });
+		await cachedResult('k', memoryCache(1000), store, make);
+		await settle();
+		const later = await cachedResult(
+			'k',
+			memoryCache(1000),
+			store,
+			async (): ReturnType<typeof make> => {
+				throw new Error('a new visit grew the value again');
+			},
+		);
+		expect([...later.heights]).toEqual([1, 2, 3]);
 	});
 });

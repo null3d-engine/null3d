@@ -6,7 +6,14 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { BUD_TERMINAL, type MacroSkeleton, NODE_STUB, skeletonBuffers } from '../core/graph';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
+import {
+	AXIS_STEM,
+	BUD_TERMINAL,
+	type MacroSkeleton,
+	NODE_STUB,
+	skeletonBuffers,
+} from '../core/graph';
 import { hashAt, hashBytes, unitAt } from '../core/hash';
 import type { Species } from '../core/record';
 import { curveAt, spreadAt } from '../core/types';
@@ -19,6 +26,7 @@ import {
 } from './envelope';
 import { oakRecord } from './oak.fixture';
 import { growSelfOrganizing, shootReach } from './self-organizing';
+import { stemStarts } from './stems';
 
 /** A hash of every array a skeleton holds. */
 function digest(skeleton: MacroSkeleton): number {
@@ -56,6 +64,31 @@ function envelopeFit(skeleton: MacroSkeleton, variant: number, seed = 11): numbe
 		);
 	}
 	return fit;
+}
+
+/**
+ * Checks that the only axes without a parent are the plant's stems, each standing on the ground,
+ * and that every other axis leaves a node of its parent and has a chain of parents to a stem.
+ */
+function hangsOnStems(skeleton: MacroSkeleton, stems: number): void {
+	const { axes } = skeleton;
+	let roots = 0;
+	for (let a = 0; a < axes.count; a++) {
+		const parent = axes.parent[a] as number;
+		if (axes.kind[a] === AXIS_STEM || parent < 0) {
+			roots++;
+			expect(axes.kind[a]).toBe(AXIS_STEM);
+			expect(parent).toBe(-1);
+			expect(skeleton.position[(axes.first[a] as number) * 3 + 1]).toBe(0);
+			continue;
+		}
+		expect(parent).toBeLessThan(a);
+		expect(skeleton.axisOf[axes.parentNode[a] as number]).toBe(parent);
+		let root = a;
+		while ((axes.parent[root] as number) >= 0) root = axes.parent[root] as number;
+		expect(axes.kind[root]).toBe(AXIS_STEM);
+	}
+	expect(roots).toBe(stems);
 }
 
 const oaks = [0, 1, 2].map((variant) => grow(variant));
@@ -130,6 +163,23 @@ self.onmessage = () => {
 			}
 		}
 	});
+
+	// The oaks of seed 11 are the file's own; two more seeds grow six more, about 3 s of one idle core.
+	it(
+		'hangs every branch on a parent whose chain reaches a stem, at every seed and variant',
+		() => {
+			const growth = oakRecord.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
+			for (const seed of [11, 3, 42]) {
+				for (const variant of [0, 1, 2]) {
+					const oak =
+						seed === 11 ? (oaks[variant] as MacroSkeleton) : grow(variant, oakRecord, seed);
+					const stems = stemStarts(growth.stems, seed, oakRecord.seedSalt >>> 0, variant).length;
+					hangsOnStems(oak, stems);
+				}
+			}
+		},
+		scaledBudget(30_000),
+	);
 
 	it("fits its stem to the oak's diameter and thins to the twig's radius", () => {
 		const dbh = oakRecord.size.dbh as number;
