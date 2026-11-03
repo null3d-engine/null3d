@@ -172,11 +172,26 @@ pub enum MeshError {
 }
 
 /// Room for `more` values in `v`, or the bytes they need when memory cannot grow.
+///
+/// A list grows by a quarter of its length at a time, where `Vec` would double it: a growth copies
+/// the list into a new block while the old one still lives, so doubling a page's indices of a
+/// hundred megabytes asks for two hundred more at once. Growing by a quarter asks for a little
+/// over the list's own size, and where even that does not fit, for `more` values alone. So a scene
+/// whose meshes fill most of the memory's maximum still takes its levels.
 fn reserve<T>(v: &mut Vec<T>, more: usize) -> Result<(), MeshError> {
-    v.try_reserve(more).map_err(|_| MeshError::OutOfMemory {
-        bytes: (more as u64).saturating_mul(size_of::<T>() as u64),
-    })
+    if v.capacity() - v.len() >= more {
+        return Ok(());
+    }
+    let step = more.max(v.len() / 4).max(MIN_GROWTH);
+    v.try_reserve_exact(step)
+        .or_else(|_| v.try_reserve_exact(more))
+        .map_err(|_| MeshError::OutOfMemory {
+            bytes: (more as u64).saturating_mul(size_of::<T>() as u64),
+        })
 }
+
+/// The fewest values that a list grows by, so a small list does not grow one value at a time.
+const MIN_GROWTH: usize = 64;
 
 #[derive(Debug)]
 pub struct MeshStorage {
@@ -2258,6 +2273,22 @@ mod tests {
             storage.remove(&[base]);
             assert!(storage.mesh(level).is_none());
         }
+    }
+
+    #[test]
+    fn a_list_grows_by_a_quarter_at_a_time() {
+        let mut v: Vec<u16> = vec![0; 1000];
+        reserve(&mut v, 10).unwrap();
+        assert_eq!(v.capacity(), 1250);
+        // Room that the list has already takes no growth.
+        reserve(&mut v, 250).unwrap();
+        assert_eq!(v.capacity(), 1250);
+        // A request larger than a quarter takes its own size.
+        reserve(&mut v, 5000).unwrap();
+        assert_eq!(v.capacity(), 6000);
+        let mut small: Vec<u32> = Vec::new();
+        reserve(&mut small, 1).unwrap();
+        assert_eq!(small.capacity(), MIN_GROWTH);
     }
 
     #[test]
