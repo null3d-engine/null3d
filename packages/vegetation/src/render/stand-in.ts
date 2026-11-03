@@ -83,7 +83,13 @@ export async function standInPrepare(
 		near: white,
 		bytes: 4 + size * size * 4,
 	};
-	return { ...kit, textures, ...(options.cache && { cache: options.cache }) };
+	return {
+		...kit,
+		textures,
+		...(options.cache && { cache: options.cache }),
+		...(options.coarseness !== undefined && { coarseness: options.coarseness }),
+		...(options.triangles !== undefined && { triangles: options.triangles }),
+	};
 }
 
 /** The record's leaf colour, from its foliage's optics. */

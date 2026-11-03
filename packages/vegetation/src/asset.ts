@@ -219,6 +219,11 @@ export interface PlantAsset {
 	readonly variant: number;
 	/** The season it grew for. */
 	readonly season: Season;
+	/**
+	 * How much simpler than grown it is, from 0 to 1: the coarseness its options gave, or the one its
+	 * triangle target picked. Stand-ins are always 0.
+	 */
+	readonly coarseness: number;
 	/** The piece it was cut to, for a close review. */
 	readonly cutting?: CuttingOptions;
 	/** Its grown structure. */
@@ -281,6 +286,10 @@ export interface SpeciesKitData {
 	readonly header: Float32Array;
 	/** Whether stages that are not built yet grow stand-ins, for review and tests. */
 	readonly placeholders?: boolean;
+	/** The coarseness its variants grow at when their own options give none, as `prepareSpecies` took it. */
+	readonly coarseness?: number;
+	/** The triangle target its variants grow to when their own options give none. */
+	readonly triangles?: number;
 }
 
 /** The typed arrays of a part, in a fixed order. */
