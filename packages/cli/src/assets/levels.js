@@ -558,12 +558,11 @@ function thinCards(list, every) {
 
 /**
  * Simplifies a triangle list toward a share of its triangles, under an error limit in planning
- * units, in each of four ways, and keeps the result of least error among those that reach the
- * share or come within half the cut of it. Pruning lets small separate parts vanish. Permissive
+ * units, as {@link simplifyTries} chooses. Pruning lets small separate parts vanish. Permissive
  * simplification lets normal seams move but keeps texture and color seams: in a mesh of flat
- * faces every edge is a normal seam, so little simplifies without it. A list that no way brings
- * near its share keeps the result with the fewest triangles. A list of separate cards thins its
- * cards instead, once `every` names a step.
+ * faces every edge is a normal seam, so little simplifies without it. A list that every way
+ * empties keeps its triangles. A list of separate cards thins its cards instead, once `every`
+ * names a step.
  *
  * @param {PlanningList} list
  * @param {Uint32Array} indices The triangles to simplify, a subset of the list's welded ones.
@@ -578,6 +577,29 @@ function thinCards(list, every) {
 function simplifyList(list, indices, share, limit, flags, every) {
 	if (every !== undefined && list.cards)
 		return thinCards(list, Math.min(every, Math.max(1, list.cards.length)));
+	return simplifyTries(list, indices, share, limit, flags) ?? [indices, 0];
+}
+
+/**
+ * Simplifies a triangle list toward a share of its triangles in each of the four ways, and keeps
+ * the result of least error among those that reach the share or come within half the cut of it.
+ * When no way comes that near, it keeps the result with the fewest triangles. The whole levels and
+ * the patches of a cluster tree both choose this way.
+ *
+ * `locks` holds the vertex marks of the ways that keep normal seams, and of the permissive ways,
+ * which let them move: 1 locks a vertex, and 2 keeps it on its texture or color seam. With no
+ * marks, only the permissive ways mark the seams.
+ *
+ * @param {PlanningList} list
+ * @param {Uint32Array} indices The triangles to simplify, a subset of the list's welded ones.
+ * @param {number} share
+ * @param {number} limit The largest error, in planning units.
+ * @param {SimplifierFlags[]} flags
+ * @param {[Uint8Array | null, Uint8Array | null]} [locks]
+ * @returns {[Uint32Array, number] | undefined} The triangles and their error, or none when every
+ *   way leaves nothing.
+ */
+export function simplifyTries(list, indices, share, limit, flags, locks = [null, list.seams]) {
 	const target = Math.floor((indices.length / 3) * share) * 3;
 	const enough = (indices.length * (1 + share)) / 2;
 	/** @type {[Uint32Array, number] | undefined} */
@@ -591,7 +613,7 @@ function simplifyList(list, indices, share, limit, flags, every) {
 			list.attributes,
 			list.stride,
 			list.weights,
-			permissive ? list.seams : null,
+			permissive ? locks[1] : locks[0],
 			target,
 			limit,
 			[...flags, ...extra],
@@ -604,7 +626,7 @@ function simplifyList(list, indices, share, limit, flags, every) {
 				: best[0].length > enough && result[0].length < best[0].length);
 		if (better) best = result;
 	}
-	return best ?? [indices, 0];
+	return best;
 }
 
 /**

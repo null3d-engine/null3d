@@ -45,7 +45,7 @@ The route with `WEBGL_multi_draw`:
   source list holds that one object. A patch draws where its own error passes the view's
   threshold at the distance to its own sphere. The error of the patch above it must not pass at
   the distance to that patch's sphere. A parent's sphere holds its children's, so the patches
-  that draw cover the mesh once ([D-213](D-213-cluster-levels.md#addendum-nested-spheres-and-errors-that-do-not-compound)).
+  that draw cover the mesh once ([D-213](D-213-cluster-levels.md#decision)).
   The walk moves each patch's sphere by the object's matrix and the cell's offset from the
   camera, and reads the view's rule. It is the same rule as the compute pass
   (`cluster_cull.wgsl`). The walk lives in one place, `PatchTree::walk`, which the count of a
@@ -60,8 +60,12 @@ The route with `WEBGL_multi_draw`:
 - The tree's indices upload once per mesh into an index buffer of its own, as 16-bit indices,
   because a mesh that draws a tree fills one part of at most 65,535 vertices. The draw binds that
   buffer in place of the mesh page's. The tree's index list therefore costs two bytes for each
-  index, beside the mesh's own. For the test model, the tree's 202,032 indices take 404,064 bytes,
-  and a view's chosen runs take at most 4,088 bytes, eight for each of its 511 patches.
+  index, beside the mesh's own. A buffer and its writes take whole four-byte words, and a tree's
+  index count may be odd, so the list ends with one spare index then. Without it, the test model's
+  tree of 196,941 indices made a write of 393,882 bytes, and the page drew nothing of the mesh on
+  WebGL2 with `WEBGL_multi_draw`. The unit test `a_trees_indices_add_the_meshs_first_vertex_in_its_page`
+  checks the rounding on a tree of three indices. For the test model, the tree takes 393,884 bytes,
+  and a view's chosen runs take at most 4,112 bytes, eight for each of its 514 patches.
 
 ### The page's index base
 
