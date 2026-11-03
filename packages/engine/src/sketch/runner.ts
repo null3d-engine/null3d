@@ -337,9 +337,10 @@ export class SketchRunner {
 	/**
 	 * The engine's number of the frame it recorded last. The setup's frames, for warm-ups and the
 	 * preset check, count here but not in `time.frame`. The core, the draw lists and the thread that
-	 * draws use these numbers.
+	 * draws use these numbers. `held` is true while hold mode steps the frames, so a mesh that hands
+	 * over its planned levels one a frame takes them all at once.
 	 */
-	private readonly recorded = { frame: 0 };
+	private readonly recorded = { frame: 0, held: false };
 	/** The sketch's `engine.viewport`, which each frame updates in place when the canvas changed. */
 	private readonly viewport = { width: 0, height: 0, pixelRatio: 1 };
 	/** The page's count of canvas size changes when the viewport last read them. */
@@ -1309,6 +1310,7 @@ export class SketchRunner {
 		let first = 0;
 		this.holding = true;
 		this.time.held = true;
+		this.recorded.held = true;
 		try {
 			for (let step = 0; step <= steps; step++) {
 				this.clock.holdStep(step, steps, seconds);
@@ -1371,6 +1373,7 @@ export class SketchRunner {
 		} finally {
 			this.holding = false;
 			this.time.held = false;
+			this.recorded.held = false;
 		}
 		if (script !== undefined) this.scriptResult = { dumps, problems };
 		Atomics.store(slots, Slot.HeldFrom, first);

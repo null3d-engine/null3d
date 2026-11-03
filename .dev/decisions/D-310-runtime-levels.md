@@ -1,8 +1,8 @@
 # D-310: Meshes made in code plan their levels on the job workers
 
-Status: decided and built: the shared planner, `mesh.buildLevels`, the automatic levels at a mesh's first draw with the `levels` option, and their guards, on WebGPU and WebGL2. Pending: the owner's review of the thresholds, and the adoption by the add-ons and demos that set levels by hand today. Task: none.
+Status: decided and built: the shared planner, `mesh.buildLevels`, the automatic levels at a mesh's first draw with the `levels` option, and their guards, on WebGPU and WebGL2. The owner accepted the thresholds, and asked that no frame be late for a large mesh and that meshes drawn only by blended materials plan nothing; both are built. Pending: the adoption by the add-ons and demos that set levels by hand today. Task: none.
 
-Summary: The asset tool's level planner moved into `packages/engine/levels/planner.js`, which the tool runs in Node and the engine runs on a job worker with the same build of meshoptimizer's simplifier, so one mesh gets one set of levels, index for index. A mesh made in code plans its levels at its first draw when it holds 4,096 triangles or more, or 256 or more in copies of 65,536 triangles together; `levels: false` opts out. A million triangles take about 6 s of one job worker's CPU, and no frame is late while the plan runs.
+Summary: The asset tool's level planner moved into `packages/engine/levels/planner.js`, which the tool runs in Node and the engine runs on a job worker with the same build of meshoptimizer's simplifier, so one mesh gets one set of levels, index for index. A mesh made in code plans its levels at its first draw when it holds 4,096 triangles or more, or 256 or more in copies of 65,536 triangles together; `levels: false` opts out. A million triangles take about 6 s of one job worker's CPU. The engine reads such a mesh one part a frame and hands over one level a frame, so no frame is late for the plan.
 
 ## Question
 
@@ -88,7 +88,7 @@ CPU time of the task's `run` on one thread in Bun 1.4.3, for bumpy grids with no
 
 The grids keep a locked open border, as in the tool, so the last level keeps about a triangle per border edge. The weld first keyed each vertex by the text of its values. It now hashes their bits and compares the values: the same welds, and the tool's output stays equal. In Chrome the plans of the 64,800, 131,072 and 524,288-triangle grids took 0.37 s, 0.66 s and 2.7 s from the mesh's first draw to its levels, with the load above, before the planner went to fifteen levels; the deeper levels add about a tenth.
 
-The levels' indices take about as much memory again as the mesh's own (0.94 to 1.00 of them). A mesh split into parts, past 65,535 vertices, also copies the vertices of each level: about as many again as the mesh's. On the job worker, meshoptimizer's heaps grow with the largest mesh and never shrink, so a worker lets them go after a plan that took them past 32 MiB.
+The levels' indices take about as much memory again as the mesh's own (0.94 to 1.00 of them). A mesh split into parts, past 65,535 vertices, shares its vertices with its levels part by part, and copies only the vertices of the triangles that cross a seam between parts. On the job worker, meshoptimizer's heaps grow with the largest mesh and never shrink, so a worker lets them go after a plan that took them past 32 MiB.
 
 The planner's files load with the first plan: `js/sketch-worker-mesh-levels.js` 0.4 KB, `js/job-worker-levels.js` 3.0 KB, `meshopt_simplifier.wasm` 13.5 KB and `meshopt_encoder.wasm` 5.7 KB after Brotli.
 
@@ -96,7 +96,9 @@ The planner's files load with the first plan: `js/sketch-worker-mesh-levels.js` 
 
 `tests/pages/levels-frames.ts` runs `tests/pages/sketches/levels-large-sketch.ts`, which makes a bumpy grid two seconds in, and measures the frame interval in one-second windows. Chrome 156, the Mac's GPU, pipelined, Low preset; the 99th percentile of each window. Without levels the grid has `levels: false`.
 
-| Grid | The window of the frame that makes and draws the mesh: without levels, with them | Windows while the plan runs | The window that takes the levels |
+A first build read the whole mesh from the core in the frame that first drew it, and made every level at once when the plan's answer came, giving a split mesh's levels copies of their vertices. Its figures:
+
+| Grid, first build | The window of the frame that makes and draws the mesh: without levels, with them | Windows while the plan runs | The window that takes the levels |
 | --- | --- | --- | --- |
 | 64,800 triangles, WebGPU | not run, 23.7 ms | 16.7 ms | 16.7 ms |
 | 131,072 triangles, WebGPU | not run, 23.7 ms | 16.7 ms | 16.7 ms |
@@ -104,7 +106,20 @@ The planner's files load with the first plan: `js/sketch-worker-mesh-levels.js` 
 | 1,048,352 triangles, WebGPU | 64.5 ms, 100 ms | 16.7 ms | 64.7 ms |
 | 1,048,352 triangles, WebGL2 | 55 ms, 91.7 ms | 16.7 ms | 38.2 ms |
 
-No frame is late while a plan runs. The frame that first draws a large mesh reads its vertices from the core for the plan. The sketch worker's busiest frame shows it: 35 ms against 26 ms without levels for 524,288 triangles, and 72 ms against 45 ms for a million on WebGL2. Making such a mesh costs those 26 ms and 45 ms anyway. The frame that takes the levels of a split mesh of a million triangles copies their vertices and uploads them; a mesh under 65,536 vertices shares them, and no window was late when such a mesh took its levels.
+On the planner of fifteen levels, the same million-triangle grid made its nine levels in 101.6 ms of the sketch worker's time on WebGPU and 81.0 ms on WebGL2, between two frames, with the finest level alone taking 49.0 ms and 43.6 ms. The windows that took them reached 69.2 ms and 46.7 ms.
+
+Three changes take that work out of the frames:
+
+- The engine reads the mesh from the core one part a frame, from the frame after the one that first drew it. A part holds at most 65,535 vertices, so each read takes a few milliseconds.
+- A split mesh's level shares the base's vertices part by part (`createSplitLevel`): each triangle draws from a part that holds its three vertices, and only the triangles that cross a seam between parts copy their vertices. The million-triangle grid's finest level of 524,176 triangles then takes 14.3 ms on WebGPU and 15.1 ms on WebGL2, against 49.0 ms and 43.6 ms for a copy.
+- The levels arrive one a frame, coarsest first. Each frame's set holds the levels made so far, and the mesh draws its base nearer than the finest of them. Hold mode takes them at once, since its held frame waits for the plan.
+
+| Grid, as built | The window of the frame that makes and draws the mesh: without levels, with them | Windows while the parts read and the plan runs | Windows while the levels arrive |
+| --- | --- | --- | --- |
+| 1,048,352 triangles, WebGPU | 72.7 ms, 82 ms | 16.7 ms | 16.7 ms |
+| 1,048,352 triangles, WebGL2 | 63.7 ms, 71.5 ms | 16.7 ms | 16.7 ms |
+
+No frame but the one that makes the mesh is late. Making a mesh of a million triangles in a frame costs about 60 ms on its own. The mesh's first draw adds only the start of the plan; between the two runs the window differs by 8 to 9 ms, within this machine's spread from run to run under its load. Each level's mesh took 3 to 15 ms of the sketch worker's time between frames, and the levels arrived over nine frames.
 
 The Island showcase scene ran on the same page for 20 one-second windows, once as built and once with the automatic default turned off in a local build (the thresholds set past any mesh), on WebGPU and WebGL2. The 99th percentile of the frame interval, per window:
 
@@ -117,7 +132,7 @@ The Island showcase scene ran on the same page for 20 one-second windows, once a
 
 The scene's late windows come in the same places with the default on and off, so they are the scene's own, and so is the WebGL2 stall nine seconds in. The plans add no late window.
 
-How the data was produced: `bun test` of the two unit tests named above; a scratch Bun test that times the task's `run` with `process.cpuUsage`; `tests/image/runtime-levels.spec.ts`; and a scratch Playwright test that opened `levels-frames.html?sketch=...` with the grid's sizes and `levels=off`, and with the Island's sketch, on this record's branch.
+How the data was produced: `bun test` of the two unit tests named above; a temporary log of each level's time around `levelMesh`; a scratch Bun test that times the task's `run` with `process.cpuUsage`; `tests/image/runtime-levels.spec.ts`; and a scratch Playwright test that opened `levels-frames.html?sketch=...` with the grid's sizes and `levels=off`, and with the Island's sketch, on this record's branch.
 
 ## Look
 
@@ -131,7 +146,8 @@ The run-time API:
 
 - `mesh.buildLevels(options?)` plans on the job workers and resolves with the levels. A call while a plan with the same options runs returns its promise.
 - `levels` in `geometry.fromArrays`'s arrays and every generator's options: left out, the default below; `false`, none; `true` or `{ cards }`, a plan when the mesh is made.
-- The engine reads the mesh back from the core (`meshPlanningArrays`), so every mesh plans from what it draws, and generators plan too. The levels are index lists over the mesh's own vertices (`createLevelMesh`). A split mesh's level copies the vertices that it draws (`createLevelCopy`). A level of cards copies its vertices and writes its grown positions.
+- The engine reads the mesh back from the core one part a frame (`meshPlanningPart`), so every mesh plans from what it draws, and generators plan too. The levels are index lists over the mesh's own vertices (`createLevelMesh`). A split mesh's level shares the base's vertices part by part and copies only the vertices of the triangles that cross a seam (`createSplitLevel`). A level of cards copies its vertices and writes its grown positions (`createLevelCopy`).
+- The levels arrive one a frame, coarsest first, outside hold mode.
 - Levels keep their measured errors and switch at once. An error of 0, where the simplifier found a step exact, takes a millionth of the mesh's size, and each error is at least 1.5 times the one before.
 - The cap is the core's: `LEVELS_MAX` from `null3d_render::levels::MAX_LEVELS`, less the base mesh, in both `setLevels` and the plan.
 
@@ -142,6 +158,7 @@ Guards:
 - Joints, morph targets and the vertex record (`targets`) plan none; `buildLevels` refuses them with E1221.
 - A material with a displacement map or a custom `vertexOffset` draws another shape than the levels simplify: the mesh takes no automatic levels and drops the ones it has.
 - A mesh that lies flat plans no automatic levels, because a shader may give it its shape.
+- A blended material, or one that lets light through, draws the base level at every distance. Its copies do not count toward the default, and a mesh that only such materials draw plans nothing until another material draws it.
 - The first `updateVertices` drops the planned levels and turns the default off; `buildLevels` plans for the new shape.
 - `setLevels` ends a plan and frees the planned meshes that it leaves out.
 - The card step runs only when asked (`cards: true`): a building kit's walls are separate quads, and thinning them as cards cuts holes. Without it, a level drops only whole small pieces, and only where its error is under a pixel.
@@ -151,7 +168,7 @@ Guards:
 ## Consequences
 
 - `packages/engine/levels/` holds the planner and its declarations; the engine package ships it, and so does the CDN build. `tools/vendor-meshopt.ts` writes the simplifier and the encoder beside the decoder.
-- The core gains `meshPlanningArrays`, `createLevelCopy` and the `LEVELS_MAX` constant.
+- The core gains `meshPlanningPart`, `createSplitLevel`, `createLevelCopy` and the `LEVELS_MAX` constant.
 - `docs/api/geometry.md` and `docs/concepts/lod.md` describe the planned levels; the skills and the three.js mapping name them. [D-91](D-91-level-planning.md) and [D-137](D-137-lod-groups.md) point here.
 - E1221 covers a mesh that cannot plan, and E1406 the planner's files.
-- The frame that first draws a mesh of hundreds of thousands of triangles pays the read of its vertices, and the frame that takes a split mesh's levels pays their copies. Both stay under the cost of making such a mesh.
+- A large mesh's levels arrive over as many frames as it has levels, after its parts have read over as many frames as it has parts.

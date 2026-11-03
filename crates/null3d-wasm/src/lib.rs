@@ -2137,6 +2137,31 @@ pub fn create_level_mesh(base: u32, indices: u32) -> u32 {
     })
 }
 
+/// A level of the live mesh `base`, which is split into parts, that draws the base's own vertices
+/// from the `indices` triangles in the staging words, which the call frees: each triangle from a
+/// part that holds its three vertices, and the few that span the parts' seams from a copy of their
+/// vertices (`MeshStorage::add_split_level`). The indices name the base's own vertices. Returns
+/// the mesh id.
+#[wasm_bindgen(js_name = createSplitLevel)]
+pub fn create_split_level(base: u32, indices: u32) -> u32 {
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let words = indices as usize;
+        if staging.len() < words {
+            return Err(fail(codes::BAD_ARRAYS, [0, 0]));
+        }
+        let added = e
+            .renderer
+            .settings_mut()
+            .meshes_mut()
+            .add_split_level(base.checked_sub(1).unwrap_or(u32::MAX), &staging[..words])
+            .map(|id| id + 1)
+            .map_err(mesh_failure);
+        drop(staging);
+        added
+    })
+}
+
 /// A level of the live mesh `base` that holds its own copy of the vertices that the `indices`
 /// triangles in the staging words name, which the call frees: the level of a base that is split
 /// into parts, which cannot share its vertices. The indices name the base's own vertices. Returns
@@ -2161,17 +2186,23 @@ pub fn create_level_copy(base: u32, indices: u32) -> u32 {
     })
 }
 
-/// Writes the live mesh `mesh`'s vertices and triangles as the level planner reads them into the
-/// staging words, and returns their address: the vertex count, the index count and the format,
-/// then each attribute's floats, as `MeshStorage::planning_arrays` lays them out. The caller
-/// copies them before its next call that uses the staging words.
-#[wasm_bindgen(js_name = meshPlanningArrays)]
-pub fn mesh_planning_arrays(mesh: u32) -> u32 {
+/// Writes part `part` of the live mesh `mesh`'s vertices and triangles, as the level planner reads
+/// them, into the staging words, and returns their address: the mesh's part count, vertex count,
+/// index count and format, the part's vertex and index counts, the mesh vertex that each of its
+/// vertices holds, each attribute's floats and the part's triangles, as
+/// `MeshStorage::planning_part` lays them out. The caller copies them before its next call that
+/// uses the staging words.
+#[wasm_bindgen(js_name = meshPlanningPart)]
+pub fn mesh_planning_part(mesh: u32, part: u32) -> u32 {
     value_with_engine(|e| {
         e.staging.clear();
         let meshes = e.renderer.settings().meshes();
         meshes
-            .planning_arrays(mesh.checked_sub(1).unwrap_or(u32::MAX), &mut e.staging)
+            .planning_part(
+                mesh.checked_sub(1).unwrap_or(u32::MAX),
+                part,
+                &mut e.staging,
+            )
             .map_err(mesh_failure)?;
         Ok(address(e.staging.as_slice()))
     })
