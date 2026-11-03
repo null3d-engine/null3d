@@ -145,6 +145,29 @@ The plan gives a mesh made in code the pieces that `--lod` gives a file's large 
 - A mesh of more than 65,535 vertices draws a list part by part: a triangle draws from the part where one of its corners first appears, trying its corners in turn, once that part holds all three, and the triangles that no part holds whole draw last from copies. The task notes which parts hold each vertex, one bit a part, and plans pieces within each of those groups, so the sorted list still comes part by part. The core checks the order and draws a list in another order without pieces. A list of more groups than 16 takes one piece a group, since its parts draw a range each without pieces too. A mesh of more than 32 parts gets none.
 - The guards are the levels' and the engine's: a mesh that plans no levels gets no pieces, and the engine skips the pieces of a draw that a skin, morph targets, a displacement or a custom vertex offset moves, and the cone test where a material draws both faces.
 
+### What the pieces of code meshes measured
+
+The Island showcase builds three meshes in code that get pieces, and two of them are split into parts, so the pieces had to follow the parts:
+
+| Island mesh | Triangles | Vertices | Parts | Pieces of the mesh | Pieces of its finest level |
+| --- | --- | --- | --- | --- | --- |
+| Sea bed | 97,670 | 90,601 | 2 | 16 | 12, of 48,834 triangles |
+| Roads | 67,780 | 59,734 | 1 | 16 | 8, of 33,890 triangles |
+| Stone walls | 50,750 | 101,500 | 2 | 12 | none: 25,268 triangles |
+
+Its frames on WebGPU kept the pattern of the levels alone: 10 of 20 one-second windows at 16.7 ms, the first at 55.8 ms, none past 100 ms. Its GPU time per frame, over the same 20 seconds of its camera route after the plans, was 11.8 and 12.55 ms with pieces and 10.35 and 11.08 ms without them, in two pairs of runs. A third pair gave 9.37 ms with pieces, and its run without them timed nothing. The Mac's load stayed near 50 on 18 cores, so these runs cannot tell a change of a millisecond. The pieces cut the triangles by less than 1% and added 170 to 830 draws.
+
+The desert benchmark has no scene in code, so a temporary sketch built its meshes with `geometry.fromArrays` from the benchmark's own module and drew the same placements. Every mesh planned its levels and pieces; the ground of 2,000,000 triangles in 16 parts took 17 pieces on each level down to 62,500 triangles. Medians of one 10-second run each, WebGPU, on the camera path from the moment the levels were in:
+
+| Desert in code | GPU ms, pieces / none | Triangles a frame, M | Draws |
+| --- | --- | --- | --- |
+| Walk | 2.69 and 2.75 / 2.88 | 4.17 / 4.57 | 951 / 732 |
+| Aerial | 3.05 / 3.28 | 2.68 / 2.67 | 951 / 732 |
+
+With a piece list for every large prop, two of four runs ended with a level that the core could not make: `createLevelMesh` failed as the ground's large lists arrived, and the core reported only that the mesh did not fit. So only a mesh that one object draws plans a list of its own. With that rule one of four runs with pieces still failed so, and none of three without them. The cause is open.
+
+How the data was produced: a temporary log of each code mesh's size and each plan's pieces, the frame page of the Island, and a temporary page that measured the Island's sketch and the desert sketch with the pieces turned off on the sketch's thread, on this branch at `3c342e79`.
+
 ## Look
 
 Planned levels switch where their measured error covers under the `lodThreshold` setting's pixels, as a file's measured levels do, so a mesh looks as it did. Option (a) of the planner's place and option (b) of the copy look the same; the rules of which meshes plan differ only in where the GPU's time goes.
