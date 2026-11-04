@@ -2516,13 +2516,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// A spot light that projects a picture over its cone: a gobo with a dark cross and border and
 	// colored squares, over a floor, a wall and a sphere in the beam. The map's colors tint the
-	// light, and its pattern shows the projection on both GPU paths and in compatibility mode.
+	// light, and its pattern shows the projection on both GPU paths and in compatibility mode. The
+	// bounce light adds the beam's reflected light to the wall beside the sphere and to the sphere's
+	// lower edge on WebGPU and WebGL2, but not on compatibility mode's 8-bit path (D-284), so every
+	// tier keeps a picture of its own.
 	{
 		name: 'spot-map',
 		sketch: 'tests/pages/sketches/spot-map-sketch.ts',
 		hold: 0,
 		size: [480, 270],
-		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},
 	// The same light with a larger picture, and a reflection probe made after the picture is in the

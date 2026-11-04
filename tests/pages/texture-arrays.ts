@@ -3,8 +3,10 @@
 // frame kept to the budget, and whether the GPU memory count matches the textures' arrays. The
 // budget holds on the sketch thread's count of texture bytes in every frame, and on the count of
 // every byte the thread that draws uploads in the frames after the last wave of new objects,
-// whose tables upload whole. The page notes each of its steps, each frame of the sketch and the
-// engine's frame counters in its trail, so a run that stalls shows where it stopped.
+// whose tables upload whole. Beside the textures, those frames upload the scene's own per-frame
+// data, which the page measures once every image is on the GPU, and the material row that a
+// texture rewrites when its image lands. The page notes each of its steps, each frame of the
+// sketch and the engine's frame counters in its trail, so a run that stalls shows where it stopped.
 import { createEngine } from '@null3d/engine';
 import { watchEngine } from './lib/engine-watch';
 import { progress, run, toBase64 } from './lib/result';
@@ -21,11 +23,15 @@ interface Loaded {
 	textureBytes: number;
 }
 
-/** Bytes that the thread that draws uploads besides the textures in a frame of this scene. */
-const OTHER_UPLOADS = 4 * 1024;
-/** Bytes of one compacted instance: what the direct-draw path uploads for each visible object. */
-const INSTANCE_BYTES = 64;
-/** Seconds to measure the thread that draws while the textures load. */
+/**
+ * Bytes for the material rows that one frame rewrites as its textures land. A texture whose image
+ * reaches the GPU rewrites the row of the material that shows it, and the budget is less than one
+ * texture, so at most one texture lands in a frame. One row of the material table fits in this
+ * with room for the row to grow. A frame that uploaded a texture's band twice, or a texture whole,
+ * goes past it by at least the budget.
+ */
+const LANDED_ROW_BYTES = 1024;
+/** Seconds to measure the thread that draws, while the textures load and once they have loaded. */
 const MEASURE_SECONDS = 1;
 
 run('texture-arrays', async () => {
@@ -60,6 +66,11 @@ run('texture-arrays', async () => {
 	if (!measured) throw new Error('the sketch loaded every texture without its last wave');
 	const frames = await measured;
 	progress('measured');
+	// With every image on the GPU, a frame uploads only the scene's own per-frame data: its
+	// uniforms and tables, and on a device that draws directly, each visible object's instance.
+	const steady = await engine.measure(MEASURE_SECONDS);
+	if (steady.uploadBytes.count === 0) throw new Error('no frame drew once the textures loaded');
+	progress(`measured the loaded scene: ${steady.uploadBytes.max} bytes a frame at most`);
 	const capture = await engine.captureFrame();
 	progress('frame captured');
 	const directDraws = engine.capabilities.directDraws;
@@ -73,16 +84,14 @@ run('texture-arrays', async () => {
 	let layers = 4;
 	while (layers < stats.count) layers *= 2;
 	const imageBytes = stats.count * stats.size * stats.size * 4;
-	// A device that draws directly uploads each visible object's compacted instance in every frame,
-	// which the indirect path keeps on the GPU. Those bytes sit beside the textures' in the thread
-	// that draws, so the allowance follows the draw path.
-	const otherUploads = OTHER_UPLOADS + (directDraws ? stats.count * INSTANCE_BYTES : 0);
+	const otherUploads = steady.uploadBytes.max + LANDED_ROW_BYTES;
 	return {
 		tier: engine.capabilities.tier,
 		mode: engine.mode,
 		directDraws,
 		stats,
 		uploadBytes: frames.uploadBytes,
+		loadedUploadBytes: steady.uploadBytes,
 		rebuilds: frames.rebuilds,
 		// No frame uploads more than the budget, so the images take many frames.
 		withinBudget:
