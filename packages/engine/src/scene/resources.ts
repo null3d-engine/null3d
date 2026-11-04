@@ -345,6 +345,15 @@ export type LevelsOption = boolean | BuildLevelsOptions | 'pieces';
  */
 export const PIECES_MIN_TRIANGLES = 32_768;
 
+/**
+ * @internal The fewest triangles of a smaller mesh that plans facing pieces, and the fewest that
+ * its copies hold together: the pieces planner's own `FACING_LIST_MIN_TRIANGLES` and
+ * `FACING_DRAWN_MIN_TRIANGLES`, which a test keeps equal, here so the sketch's thread reads them
+ * without the planner's code.
+ */
+export const FACING_PIECES_MIN_TRIANGLES = 1024;
+export const FACING_PIECES_DRAWN_TRIANGLES = 65_536;
+
 /** The level planner's start, which loads with the first mesh that plans its levels. */
 let plannerModule: Promise<typeof import('./mesh-levels')> | undefined;
 
@@ -406,6 +415,8 @@ export class MeshGeometry {
 	private copies = 0;
 	/** True while the mesh waits for its first draw to sort its pieces alone (`levels: 'pieces'`). */
 	private piecesOnly = false;
+	/** True once a mesh whose levels were set by hand has planned its facing pieces. */
+	private handPieces = false;
 
 	/** @internal */
 	constructor(
@@ -560,8 +571,10 @@ export class MeshGeometry {
 	 * done. The mesh draws its full shape until the levels arrive, and every object and instance
 	 * batch that draws it then picks its level. The mesh and each level of 32,768 triangles or more
 	 * also get 8 to 16 pieces, which each copy skips where they lie outside the view or face away.
-	 * A mesh that one object draws gets its own pieces over a sorted copy of its indices, in the
-	 * frame after the last level; copies of a mesh keep their levels' pieces alone.
+	 * A smaller list that many copies draw gets a piece for each way it faces where its triangles
+	 * face a few ways, as a building's walls do. A mesh that one object draws, or a smaller mesh,
+	 * gets its own pieces over a sorted copy of its indices, in the frame after the last level;
+	 * copies of a large mesh keep their levels' pieces alone.
 	 *
 	 * A mesh made in code plans its levels on its own the first time the scene draws it, when it
 	 * holds `geometry.automaticLevelTriangles` triangles or more, or when its copies hold
@@ -605,13 +618,15 @@ export class MeshGeometry {
 
 	/**
 	 * Starts a plan of the mesh's levels, or returns the one that runs with the same options. With
-	 * `piecesOnly`, the plan makes no lower levels and sorts the mesh into pieces by space alone.
+	 * `piecesOnly`, the plan makes no lower levels and sorts the mesh into pieces alone, by space
+	 * alone with `spacePieces`.
 	 */
 	private plan(
 		cards: boolean,
 		automatic: boolean,
 		call: string,
 		piecesOnly = false,
+		spacePieces = piecesOnly,
 	): Promise<readonly MeshLevel[]> {
 		const id = this.id;
 		const { core } = this;
@@ -659,12 +674,14 @@ export class MeshGeometry {
 						cards: cards && floatPositions(format),
 						maxLevels: piecesOnly ? 0 : MAX_LOWER_LEVELS,
 						skipFlat: automatic,
-						spacePieces: piecesOnly,
+						spacePieces,
 						parts,
+						copies: this.copies,
 						// The mesh's own pieces draw a sorted copy of its indices. A mesh that one
 						// object draws, such as a ground around the camera, draws its base wherever
-						// the camera is near, so the copy pays; copies of a mesh draw their base only
-						// when near, and their levels' pieces cost no copy.
+						// the camera is near, so the copy pays; copies of a large mesh draw their base
+						// only when near, and their levels' pieces cost no copy. The task also plans
+						// the own pieces of a list under the pieces' floor, whose copy costs little.
 						basePieces: piecesOnly || this.copies <= 1,
 						...(masks && { masks: masks.buffer as ArrayBuffer }),
 					},
@@ -799,12 +816,7 @@ export class MeshGeometry {
 		if (this.piecesOnly && !material.shapesVertices && !material.wholeOnly) {
 			this.piecesOnly = false;
 			this.copies += copies;
-			this.plan(false, false, call, true).catch((error: unknown) => {
-				if (DEV)
-					console.warn(
-						`${call}() left a mesh without pieces: they did not plan. ${error instanceof Error ? error.message : String(error)}`,
-					);
-			});
+			this.planPiecesQuietly(true, call);
 		}
 		if (this.automaticOff) return;
 		if (material.shapesVertices) {
@@ -817,12 +829,52 @@ export class MeshGeometry {
 		if (material.wholeOnly) return;
 		this.copies += copies;
 		const handSet = this.lowerLevels.length > 0 && this.built.length === 0;
-		if (this.planning || this.built.length > 0 || handSet || !this.automaticWanted()) return;
+		if (handSet) {
+			this.planHandSetPieces(material, call);
+			return;
+		}
+		if (this.planning || this.built.length > 0 || !this.automaticWanted()) return;
 		if (this.morphTargets > 0 || this.core.glue.meshFormat(this.id) & MOVING_VERTEX_BITS) {
 			this.automaticOff = true;
 			return;
 		}
 		this.planQuietly(false, true, call);
+	}
+
+	/**
+	 * Plans the facing pieces of a mesh whose levels were set by hand, once its copies hold enough
+	 * triangles together, as a town's house walls do. Such a mesh plans no levels, and its copies
+	 * draw its base list out to where its own lower levels switch in, so the pieces go on the base.
+	 * A material that draws both faces drops no piece by the way it faces, so it plans none.
+	 */
+	private planHandSetPieces(material: Material, call: string): void {
+		const triangles = this.automaticTriangles;
+		if (
+			this.planning ||
+			this.handPieces ||
+			material.facesBoth ||
+			triangles < FACING_PIECES_MIN_TRIANGLES ||
+			triangles >= PIECES_MIN_TRIANGLES ||
+			triangles * this.copies < FACING_PIECES_DRAWN_TRIANGLES ||
+			this.morphTargets > 0 ||
+			this.core.glue.meshFormat(this.id) & MOVING_VERTEX_BITS
+		)
+			return;
+		this.handPieces = true;
+		this.planPiecesQuietly(false, call);
+	}
+
+	/**
+	 * Starts a plan of the mesh's pieces alone, by space alone with `space`, whose failure leaves
+	 * the mesh without pieces, with a warning in development.
+	 */
+	private planPiecesQuietly(space: boolean, call: string): void {
+		this.plan(false, false, call, true, space).catch((error: unknown) => {
+			if (DEV)
+				console.warn(
+					`${call}() left a mesh without pieces: they did not plan. ${error instanceof Error ? error.message : String(error)}`,
+				);
+		});
 	}
 
 	/** True when the mesh's triangles, or those of its copies, ask for automatic levels. */
@@ -3901,6 +3953,12 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 	 */
 	wholeOnly = false;
 
+	/**
+	 * @internal True when the material draws both faces, so no copy's pieces drop by the way they
+	 * face: a mesh that it draws plans no facing pieces.
+	 */
+	facesBoth = false;
+
 	/** True when the normal map's slot holds a bump map, whose strength `bumpScale` sets. */
 	private bump = false;
 
@@ -4256,7 +4314,7 @@ export class Materials {
 		call: string,
 		features = 0,
 	): Material<Values> {
-		const { id, owners, wholeOnly } = this.createId(
+		const { id, owners, wholeOnly, facesBoth } = this.createId(
 			shading,
 			options,
 			call,
@@ -4265,6 +4323,7 @@ export class Materials {
 		);
 		const material = new Material<Values>(id, this.core, `${call}.set`, shading, owners);
 		material.wholeOnly = wholeOnly;
+		material.facesBoth = facesBoth;
 		if (options.uvTransform !== undefined) material.recordUv(options.uvTransform);
 		material.recordMapUv(options.mapUvTransforms);
 		if (options.bumpMap || options.displacementMap) material.heights(options);
@@ -4283,7 +4342,7 @@ export class Materials {
 		layered = hasLayers(options),
 		extra = 0,
 		sway = 0,
-	): { id: number; owners: SlotOwners; wholeOnly: boolean } {
+	): { id: number; owners: SlotOwners; wholeOnly: boolean; facesBoth: boolean } {
 		const [r, g, b] = linearColor(options.color ?? '#ffffff', call);
 		const emissive = linearOrNone(options.emissive, call, EMISSIVE);
 		const specular = specularOrNone(options.specularColor, call);
@@ -4375,7 +4434,8 @@ export class Materials {
 		}
 		// Blended surfaces and surfaces that let light through draw their base level alone.
 		const wholeOnly = (features & (MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_TRANSMISSION)) !== 0;
-		return { id, owners, wholeOnly };
+		const facesBoth = (features & MATERIAL_FEATURE_DOUBLE_SIDED) !== 0;
+		return { id, owners, wholeOnly, facesBoth };
 	}
 
 	/**
@@ -4536,7 +4596,7 @@ export class Materials {
 		// A production build draws such a material without the light through it, as it has no
 		// builds for it.
 		const diffuseTransmission = translucent ? options.diffuseTransmission : undefined;
-		const { id, wholeOnly } = this.createId(
+		const { id, wholeOnly, facesBoth } = this.createId(
 			shading,
 			{
 				...options,
@@ -4561,6 +4621,7 @@ export class Materials {
 		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms, shading);
 		material.shapesVertices = compiled.functions.includes('vertexOffset');
 		material.wholeOnly = wholeOnly || lets(compiled);
+		material.facesBoth = facesBoth;
 		if (options.uvTransform !== undefined) material.recordUv(options.uvTransform);
 		const { core } = this;
 		writeUniforms(core, id, uniforms, uniformValues, call);
