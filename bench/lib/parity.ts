@@ -792,8 +792,30 @@ export function featurePagePath(
 	return [imagePath(tier), scene.switches].filter(Boolean).join('&');
 }
 
+/**
+ * Scenes that a benchmark run times against one three.js renderer, which the page tests, the image
+ * tests, the parity checks, the device plans and CI's comparison of two builds leave out. Each
+ * loads files that the run builds first, and draws on a desktop GPU's WebGPU only. The desert
+ * compares null3D with three.js r187's meshlet renderer.
+ */
+export const MATCH_SCENES = ['desert'] as const;
+export type MatchScene = (typeof MATCH_SCENES)[number];
+/** Every scene that a benchmark run can time. */
+export type RunScene = BenchScene | MatchScene;
+export const RUN_SCENES: readonly RunScene[] = [...BENCH_SCENES, ...MATCH_SCENES];
+
+/** True for a match scene. */
+export function isMatchScene(scene: string): scene is MatchScene {
+	return (MATCH_SCENES as readonly string[]).includes(scene);
+}
+
+/** The page kinds that each match scene has, in the order that a round of a run opens them. */
+export const MATCH_PAGES: Readonly<Record<MatchScene, readonly PageKind[]>> = {
+	desert: ['threejs-webgpu', 'null3d-webgpu'],
+};
+
 /** The dev-server path of one scene's page of one kind, with more switches after its own. */
-export function pagePath(scene: BenchScene, kind: BenchPageKind, switches = ''): string {
+export function pagePath(scene: RunScene, kind: BenchPageKind, switches = ''): string {
 	const page = kind === SCENE_CODE ? { folder: SCENE_CODE, switches: '' } : PAGES[kind];
 	return `/bench/pages/${page.folder}/${scene}.html?${[page.switches, switches].filter(Boolean).join('&')}`;
 }
