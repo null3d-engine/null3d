@@ -101,6 +101,10 @@ pub(crate) fn fill(texels: &mut [u8]) {
 
 /// Value noise at `p`, whose coordinates are texels of a side of [`SIZE`], with `period` cells
 /// across that side, so the noise repeats at the texture's edges. `seed` picks the pattern.
+///
+/// The field fills once, on the first frame that draws the tier, so the core keeps one copy of
+/// this function rather than a copy inlined at each of its call sites.
+#[inline(never)]
 fn value(p: [f32; 3], period: f32, seed: u32) -> f32 {
     let cells = [
         p[0] * period / SIZE as f32,

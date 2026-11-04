@@ -29,6 +29,7 @@
 //! split mesh, the mesh's vertex that each of its parts' vertices copies. A mesh in one part
 //! keeps its vertices in their order and needs no such list.
 
+use null3d_core::bvh::heap_sort_by;
 use null3d_core::bvh::mesh::Triangles;
 use null3d_gpu::drawlist::vertex;
 
@@ -1021,7 +1022,9 @@ impl MeshStorage {
             }
             at += part.vertex_count as usize;
         }
-        seams.sort_unstable();
+        // Every seam copy is a distinct part and place, so the heap sort orders the list as fully
+        // as a stable sort would.
+        heap_sort_by(&mut seams, |a, b| a < b);
         let local_in = |v: u32, k: u32| {
             let first = home[v as usize];
             if first.0 == k {
