@@ -3,7 +3,9 @@
 // other tasks, and draws a grid whose level plan waits for a worker behind them
 // (tests/pages/sketches/levels-held-sketch.ts). The frame that hold mode keeps must hold the grid's
 // levels: hold mode waits for level plans all the way, and fails naming the meshes rather than
-// capture a frame without them.
+// capture a frame without them. That frame is the settle frame after the held one, which runs none
+// of the sketch's code, so the sketch reports the levels when the plan gives them, and the page
+// records whether that came before the hold ended.
 import { expect, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 
@@ -11,6 +13,7 @@ interface Result {
 	error?: string;
 	tier: string;
 	held: number[];
+	planned?: { levels: number; beforeHold: boolean };
 	seconds: number;
 }
 
@@ -25,7 +28,11 @@ test('a held frame waits for the level plans of meshes made in code', async ({ p
 	expect(result.error).toBeUndefined();
 	// The hold waited past the busy tasks, for the plan behind them.
 	expect(result.seconds).toBeGreaterThanOrEqual(BUSY_SECONDS);
-	// The frame that hold mode keeps, the last held frame, drew the grid's planned levels.
+	// The held frames ran before the plan was in, so the wait is what gives the kept frame its levels.
 	expect(result.held.length).toBeGreaterThan(0);
-	expect(result.held.at(-1)).toBeGreaterThan(0);
+	expect(result.held.at(-1)).toBe(0);
+	// The plan gave the grid its levels before the hold ended, so the settle frame that hold mode
+	// records after the wait, the frame it keeps, drew them.
+	expect(result.planned?.levels).toBeGreaterThan(0);
+	expect(result.planned?.beforeHold).toBe(true);
 });
