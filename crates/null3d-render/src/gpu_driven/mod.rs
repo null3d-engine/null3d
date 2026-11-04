@@ -2807,10 +2807,15 @@ impl GpuDrivenRenderer {
                 self.culling
                     .apply_direct(list, view, layout, binding_bytes)?;
             } else {
-                self.culling
-                    .apply(list, view, layout, recreated, binding_bytes, occludes)?;
-                self.clusters
-                    .apply(list, view, clusters_recreated, binding_bytes)?;
+                let culled_made =
+                    self.culling
+                        .apply(list, view, layout, recreated, binding_bytes, occludes)?;
+                self.clusters.apply(
+                    list,
+                    view,
+                    clusters_recreated || culled_made,
+                    binding_bytes,
+                )?;
             }
             if !records || self.config.direct_draws {
                 if redepth {
@@ -2938,10 +2943,11 @@ impl GpuDrivenRenderer {
                     .apply_direct(list, view, &self.casters, binding_bytes)?;
                 continue;
             }
-            self.culling
-                .apply(list, view, &self.casters, recreated, binding_bytes, false)?;
+            let culled_made =
+                self.culling
+                    .apply(list, view, &self.casters, recreated, binding_bytes, false)?;
             self.clusters
-                .apply(list, view, clusters_recreated, binding_bytes)?;
+                .apply(list, view, clusters_recreated || culled_made, binding_bytes)?;
             let (casters, meshes) = (&self.casters, &self.meshes);
             let (targets, kind) = if view.tile_index().is_some() {
                 (shadow_tiles::TARGETS, Bundle::Tile)
