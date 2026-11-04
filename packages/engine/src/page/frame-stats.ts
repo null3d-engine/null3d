@@ -278,11 +278,11 @@ export interface FrameMetrics extends FrameSummary {
 		/** GPU pipelines that the first frame built, or null before the first frame. */
 		firstFramePipelines: number | null;
 		/**
-		 * The quality preset in force when the first frame was drawn, or null before it. It can differ
-		 * from the preset the page ends on: the engine's own preset check may step down afterwards,
-		 * and the frame's pipelines are the ones its preset builds.
+		 * The quality preset in force when the first frame was drawn: the one the engine starts with.
+		 * It can differ from the preset the page ends on, because the engine's own preset check may
+		 * step down afterwards, and the frame's pipelines are the ones its own preset builds.
 		 */
-		firstFramePreset: string | null;
+		firstFramePreset: string;
 	};
 	/**
 	 * Times the browser took the GPU away since the engine started, and the engine carried on with a
