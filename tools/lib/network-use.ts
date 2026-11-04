@@ -65,6 +65,10 @@ export const NETWORK_USES: Readonly<Record<string, NetworkUse>> = {
 		fetch: 2,
 		why: "the build fetches the engine's shader release, and declares the fetch it offers",
 	},
+	'packages/cli/src/browser.js': {
+		fetch: 1,
+		why: "downloads the pinned Chrome for Testing build once, on first use, into this computer's cache, to draw on its GPU; a page never makes the request",
+	},
 	'packages/cli/src/devtools.js': {
 		fetch: 1,
 		apis: { WebSocket: 2 },
@@ -103,6 +107,11 @@ export const FORBIDDEN_APIS: readonly (readonly [string, RegExp])[] = [
 export interface AllowedHost {
 	/** The host, or its suffix, as written after the scheme. */
 	readonly host: string;
+	/**
+	 * The start of every allowed path on a shared host, where only one place on it is meant. The host
+	 * must then match exactly, since its subdomains belong to other owners.
+	 */
+	readonly path?: string;
 	readonly why: string;
 }
 
@@ -113,6 +122,11 @@ export const ALLOWED_HOSTS: readonly AllowedHost[] = [
 	{ host: 'null3d.invalid', why: 'a reserved name that builds a cache key and never resolves' },
 	{ host: 'github.com', why: 'a link in a message or the help text' },
 	{ host: 'www.google.com', why: 'a link to install Chrome, printed when it is missing' },
+	{
+		host: 'storage.googleapis.com',
+		path: '/chrome-for-testing-public/',
+		why: "Google's releases of Chrome for Testing, from which the command-line tool downloads its pinned build",
+	},
 	{ host: 'localhost', why: 'a base for parsing a path, or a server on this machine' },
 	{ host: '127.0.0.1', why: 'a server on this machine' },
 	{ host: 'page', why: "a stand-in base, so that a built page's own path parses" },
@@ -133,11 +147,20 @@ const NOT_SHIPPED = /\.test\.[cm]?[jt]s$|\.d\.[cm]?ts$/;
 /** The folders that a build writes, whose code comes from the package's source. */
 const BUILT = new Set(['dist', 'generated', 'lib', 'node_modules', 'target']);
 
-/** The reason that `host` may be named, or nothing when it may not. */
-export function allowedHost(host: string): string | undefined {
+/**
+ * The reason that `address`, a host with an optional path after it, may be named, or nothing when it
+ * may not.
+ */
+export function allowedHost(address: string): string | undefined {
+	const slash = address.indexOf('/');
+	const host = slash < 0 ? address : address.slice(0, slash);
+	const path = slash < 0 ? '' : address.slice(slash);
 	const bare = host.replace(/[.;,]+$/, '').split(':')[0] ?? '';
-	return ALLOWED_HOSTS.find((allowed) => bare === allowed.host || bare.endsWith(`.${allowed.host}`))
-		?.why;
+	return ALLOWED_HOSTS.find((allowed) =>
+		allowed.path === undefined
+			? bare === allowed.host || bare.endsWith(`.${allowed.host}`)
+			: bare === allowed.host && path.startsWith(allowed.path),
+	)?.why;
 }
 
 /** A folder whose files the build writes, so they are not hand-written source. */
@@ -241,8 +264,9 @@ export function networkProblems(root: string): {
 		}
 		for (const match of text.matchAll(ABSOLUTE_URL)) {
 			const scheme = match[1] ?? '';
-			const host = (match[2] ?? '').split('/')[0] ?? '';
-			if (!allowedHost(host))
+			const address = match[2] ?? '';
+			const host = address.split('/')[0] ?? '';
+			if (!allowedHost(address))
 				problems.push(
 					`${path}: names ${scheme}://${host}, which is not a recorded example, link or local name`,
 				);
