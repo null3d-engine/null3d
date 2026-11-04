@@ -410,6 +410,7 @@ export const SIZE_MAX_CELLS = 512;
 export const SIZE_CELL_SHIFT = 23;
 export const SIZE_MAX_CULL_RANGES = 257;
 export const SIZE_CULL_OCCLUSION_BYTES = 96;
+export const SIZE_CULL_PARAMS_BYTES = 4368;
 export const SIZE_LINE_VERTEX_BYTES = 16;
 export const SIZE_SHADOW_UNIFORM_BYTES = 368;
 export const SIZE_SHADOW_TILES_UNIFORM_BYTES = 1936;

@@ -46,8 +46,8 @@
 use null3d_core::cells::MAX_CELLS;
 use null3d_core::scene::SceneStorage;
 use null3d_gpu::drawlist::{
-    DrawList, Op, buffer_usage as usage, format, layout as bind_layout, permutation, resource_kind,
-    sizes, template, texture_usage, view,
+    CullHeader, DrawList, Op, buffer_usage as usage, format, layout as bind_layout, permutation,
+    resource_kind, sizes, template, texture_usage, view,
 };
 
 use super::ids;
@@ -61,38 +61,10 @@ use crate::frame::{
 use crate::view::{MAX_VIEW_IDS, ViewFrame, ViewId};
 use null3d_core::levels::LevelRule;
 
-/// Bytes of the culling planes: six planes, the source count, the view's layer mask, the count of
-/// runs of the cell order, the view's row of the cell offsets texture, the level choice's inputs
-/// (see [`LevelRule::uniform`]), where the view measures errors
-/// (see [`LevelRule::measure_uniform`]), and the four words that carry the levels debug view's
-/// flag and whether pieces take the cone test.
-const CULL_PLANES_BYTES: u32 = 160;
-/// The words of the culling planes that hold the source count, the view's layer mask, the count
-/// of runs and the view's row of offsets.
-const SOURCES_WORD: usize = 24;
-const LAYERS_WORD: usize = 25;
-const RANGES_WORD: usize = 26;
-const OFFSETS_ROW_WORD: usize = 27;
-const LEVELS_WORD: usize = 28;
-const MEASURE_WORD: usize = 32;
-const DEBUG_WORD: usize = 36;
-/// The word that is 1 for a view whose positions start at its eye, where pieces take the cone test.
-const PIECE_CONE_WORD: usize = 37;
-/// Where the runs of the cell order start in the culling parameters: after the planes.
-const RANGES_OFFSET: u32 = CULL_PLANES_BYTES;
-/// Bytes of one run of the cell order: its first position, its end, its first workgroup, and
-/// padding.
-const RANGE_BYTES: u32 = 16;
-/// Where the occlusion phases' values start in the culling parameters: after the runs of the cell
-/// order.
-const OCCLUSION_OFFSET: u32 = RANGES_OFFSET + sizes::MAX_CULL_RANGES * RANGE_BYTES;
 /// Words of the occlusion phases' values: the view-projection matrix, the render size, the
 /// pyramid's levels, the first set's draws, where the history starts and an occluder's least span.
 /// The shader works out each level's shape from the render size.
 const OCCLUSION_WORDS: usize = 16 + 4 + 4;
-/// Bytes of the culling parameters: the planes, the runs of the cell order, then the occlusion
-/// phases' values.
-pub(super) const CULL_PARAMS_BYTES: u32 = OCCLUSION_OFFSET + sizes::CULL_OCCLUSION_BYTES;
 
 const _: () = assert!(OCCLUSION_WORDS as u32 * 4 == sizes::CULL_OCCLUSION_BYTES);
 /// Bytes at the end of a view's indirect draws where the culling shader counts the copies that its
@@ -130,6 +102,7 @@ const NO_PYRAMID_BYTES: u32 = 16;
 // Runs of the cell order that follow each other join, so a view's runs are at most one per pair
 // of cells, and one for the moving sources.
 const _: () = assert!(sizes::MAX_CULL_RANGES == MAX_CELLS / 2 + 1);
+const _: () = assert!(size_of::<[u32; 4]>() as u32 == sizes::CULL_RANGE_BYTES);
 
 /// A view's culling buffers that grow with the layout: their sizes, 0 before they exist. And the
 /// workgroups of its culling dispatch in the frame being recorded.
@@ -332,7 +305,7 @@ impl Culling {
             Op::CreateBuffer,
             &[
                 ids::cull_params(view),
-                CULL_PARAMS_BYTES,
+                sizes::CULL_PARAMS_BYTES,
                 usage::UNIFORM | usage::COPY_DST,
             ],
         )?;
@@ -544,26 +517,6 @@ impl Culling {
         pyramid: Option<&Levels>,
         detail: &LevelRule,
     ) -> Result<(), RecordError> {
-        let mut params = [0u32; (CULL_PLANES_BYTES / 4) as usize];
-        for (word, value) in params[LEVELS_WORD..LEVELS_WORD + 4]
-            .iter_mut()
-            .zip(detail.uniform())
-        {
-            *word = value.to_bits();
-        }
-        for (word, value) in params[MEASURE_WORD..MEASURE_WORD + 4]
-            .iter_mut()
-            .zip(detail.measure_uniform())
-        {
-            *word = value.to_bits();
-        }
-        for (plane, out) in frame.frustum.planes().iter().zip(params.chunks_mut(4)) {
-            for (value, word) in plane.iter().zip(out) {
-                *word = value.to_bits();
-            }
-        }
-        params[SOURCES_WORD] = sources.sources;
-        params[LAYERS_WORD] = frame.layers;
         self.offsets.update(scene, &frame.camera);
         let buffers = self.views[view.index()]
             .as_mut()
@@ -574,14 +527,25 @@ impl Culling {
         } else {
             (0, sources.sources.div_ceil(sizes::CULL_WORKGROUP_SIZE))
         };
-        params[RANGES_WORD] = ranges as u32;
-        params[OFFSETS_ROW_WORD] = view.index() as u32;
-        params[DEBUG_WORD] = u32::from(drawn.codes);
-        params[PIECE_CONE_WORD] = u32::from(view_takes_cones(view));
         (buffers.groups, buffers.range_count) = (groups, ranges);
-        let (at, planes) = arena.push(words_as_bytes(&params))?;
+        let header = CullHeader {
+            planes: *frame.frustum.planes(),
+            instance_count: sources.sources,
+            layers: frame.layers,
+            range_count: ranges as u32,
+            offsets_row: view.index() as u32,
+            levels: detail.uniform(),
+            measure: detail.measure_uniform(),
+            debug: [
+                u32::from(drawn.codes),
+                u32::from(view_takes_cones(view)),
+                0,
+                0,
+            ],
+        };
+        let (at, bytes) = arena.push(words_as_bytes(header.as_words()))?;
         let params_id = ids::cull_params(view);
-        list.push(Op::WriteBuffer, &[params_id, 0, at, planes])?;
+        list.push(Op::WriteBuffer, &[params_id, 0, at, bytes])?;
         let cells = self.offsets.as_slice().len() as u32;
         if cells > 0 {
             let (at, bytes) = arena.push(self.offsets.as_bytes())?;
@@ -604,12 +568,18 @@ impl Culling {
         if ranges > 0 {
             let words = buffers.ranges[..ranges].as_flattened();
             let (at, bytes) = arena.push(words_as_bytes(words))?;
-            list.push(Op::WriteBuffer, &[params_id, RANGES_OFFSET, at, bytes])?;
+            list.push(
+                Op::WriteBuffer,
+                &[params_id, sizes::CULL_HEADER_BYTES, at, bytes],
+            )?;
         }
         if let (Some(levels), true) = (pyramid, buffers.occlusion) {
             let words = occlusion_words(frame, levels, drawn.draws.len() as u32);
             let (at, bytes) = arena.push(words_as_bytes(&words))?;
-            list.push(Op::WriteBuffer, &[params_id, OCCLUSION_OFFSET, at, bytes])?;
+            list.push(
+                Op::WriteBuffer,
+                &[params_id, sizes::CULL_OCCLUSION_OFFSET, at, bytes],
+            )?;
         }
         if !drawn.draws.is_empty() {
             let (at, bytes) = arena.push(words_as_bytes(&drawn.indirect_template))?;
