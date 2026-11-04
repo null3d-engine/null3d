@@ -2,7 +2,7 @@
 
 Status: decided and built on every GPU path. Built: the asset tool's pieces (`NULL3D_pieces`), the culling shader on WebGPU, the CPU culling of the direct-draw path, the job workers' culling on WebGL2, and the pieces of meshes made in code, which their level plan gives them ([D-310](D-310-runtime-levels.md#pieces-of-meshes-made-in-code)). Task: none.
 
-Summary: Each level of 32,768 triangles or more holds its triangles in 8 to 16 pieces, each facing about one way, with a sphere and a cone of facings. Each copy picks its level as before, then culls each piece by the frustum, by the cone where it holds, and by the depth pyramid in the late occlusion phase. In the desert benchmark they cut a frame's triangles by about a quarter. From above the GPU frame falls from 5.65 to 4.32 ms, and walking it holds at 4.47 to 4.49 ms.
+Summary: Each level of 32,768 triangles or more holds its triangles in 8 to 16 pieces, each facing about one way, with a sphere and a cone of facings. Each copy picks its level as before, then culls each piece by the frustum, by the cone where it holds, and by the depth pyramid in the late occlusion phase. The desert's figures of their gain are void. Their build drew null3D at four times the page's pixels, and the GPU refused its frames at Medium. A run on a build with both fixes remains to be taken.
 
 ## Question
 
@@ -57,13 +57,15 @@ Pieces pay only where the view leaves out enough of a mesh or enough of it faces
 
 Each mesh with pieces runs with them or whole. With pieces, each window of 60 frames that brought 3 counts or more gives a verdict: the pieces stay while they leave out at least 20% of the triangles that the copies in view would draw whole. A window with no copy in view says nothing. Every 600 frames each mesh drawn whole takes its pieces again for a window. Each change rebuilds the draw tables, as a change of the scene's structure does, so the probes of every mesh drawn whole fall on the same frame. `MeshStorage::pieces` gives none for a mesh drawn whole, so every layout and path follows the check.
 
-The threshold comes from the runs below. The desert's arches cut 43% to 64% of their triangles in view and keep their pieces. Its columns cut 0% to 17%, and its code-made ground 0%: a split mesh's pieces follow its parts, and the ground's 16 parts are strips across the whole map. The Island's roads cut 0% to 18%, and its stone walls 0% to 3%. In the benchmark's files, pieces that cut 23% of the walking view's triangles drew in the same GPU time as none, and above that they paid.
+The threshold comes from the runs below. The desert's arches cut 43% to 64% of their triangles in view and keep their pieces. Its columns cut 0% to 17%, and its code-made ground 0%: a split mesh's pieces follow its parts, and the ground's 16 parts are strips across the whole map. The Island's roads cut 0% to 18%, and its stone walls 0% to 3%. In the benchmark's files, pieces that cut 23% of the walking view's triangles drew in the same GPU time as none, and above that they paid. Those timings come from the void desert runs below. The threshold rests on them until a run with both fixes repeats them.
 
-With the check, the Island drew its frames in 7.54 and 6.42 ms of GPU time, against 8.26 ms without pieces in a run on the same build whose timer read true; another run without pieces read 2,972 ms, a timer fault that this Mac's load brings with pieces or without. The roads drew whole while the camera route flew high, and took their pieces back when it came low, where they cut 37% to 62%. The desert made in code drew its walk in 2.49 ms with the check and 2.52 ms without pieces, and its aerial view in 3.08 ms against 3.41 ms.
+With the check, the Island drew its frames in 7.54 and 6.42 ms of GPU time, against 8.26 ms without pieces in a run on the same build whose timer read true; another run without pieces read 2,972 ms, a timer fault that this Mac's load brings with pieces or without. The roads drew whole while the camera route flew high, and took their pieces back when it came low, where they cut 37% to 62%. The desert made in code drew its walk in 2.49 ms with the check and 2.52 ms without pieces, and its aerial view in 3.08 ms against 3.41 ms. Those desert figures come from parked windows on a build that drew null3D at four times the page's pixels. So they are skewed against null3D ([D-322](D-322-benchmark-against-threejs-meshlets.md#the-canvas-size-fault)).
 
 ## Data
 
 ### The desert benchmark
+
+These figures are void. Their build drew null3D at 3840 x 2160 for a page of 1920 x 1080, with culling spheres off center ([D-322](D-322-benchmark-against-threejs-meshlets.md#the-canvas-size-fault)). At Medium a view culls in one phase. On that build the counts' read wrote past the end of its buffer there, so the GPU refused the frame's work with E1305 ([The check during play](#the-check-during-play)). The table stays as the record of the run that set the threshold. [D-322](D-322-benchmark-against-threejs-meshlets.md#results-of-the-fair-rematch) gives the desert with pieces on a build with both fixes. Walking, it draws 3.64 M triangles in 1.17 ms of GPU time, and from above 3.33 M in 1.15 ms (runs 20261104-151905-bench and 20261104-152824-bench). The engine has no switch that draws without pieces, so those runs cannot give the second column.
 
 Medians of 3 runs in turns, in the Mac's Chrome on WebGPU at Medium, 1920 by 1080, with `direct=off`. The same engine build draws both model sets: the files with pieces, and the files that the same tool wrote before pieces existed. The Mac ran other agents' builds throughout, at a load of 60 to 105 on 18 cores.
 
@@ -77,7 +79,7 @@ How the data was produced: `bun bench/meshlets/run.ts --runs 3` in the meshlet c
 
 From above, the cones drop the back of each column and arch, and the main pass saves 1.46 ms. Walking, most of the cut is copies that the view crosses: the triangles outside the frustum cost the main pass little, so its 0.19 ms saving and the culling pass's 0.22 ms more cancel. A boulder gains nothing: only its two finest levels hold 32,768 triangles or more, and only the few nearest boulders draw them.
 
-On WebGPU's direct-draw path in the walk view, the pieces cut the triangles from 15.51 to 13.00 M, with 763 draws in place of 201, and GPU time of 4.81 against 4.56 ms in 2 runs while another build ran.
+On WebGPU's direct-draw path in the walk view, the pieces cut the triangles from 15.51 to 13.00 M, with 763 draws in place of 201, and GPU time of 4.81 against 4.56 ms in 2 runs while another build ran. That run had the canvas fault too, so its figures are skewed in the same way.
 
 ### Changes that the runs ruled on
 

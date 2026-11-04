@@ -1,8 +1,8 @@
 # D-322: Benchmark against three.js's meshlet renderer
 
-Status: proposed. Built: the desert scene in `bench/`, its model build, its two pages, its place in `bun run bench:run` and its checks. Pending: the fair rematch figures, which the owner takes on a quiet computer and enters in [the results table](#results-of-the-fair-rematch). Task: none.
+Status: proposed. Built: the desert scene in `bench/`, its model build, its two pages, its place in `bun run bench:run` and its checks. Measured: the fair rematch, in [the results table](#results-of-the-fair-rematch). Pending: the owner's decision on slots, in a record of its own. Task: none.
 
-Summary: The desert scene times null3D against three.js r187's meshlet renderer on WebGPU, under rules that make both engines do the same work. Both draw one layout of 63,469 objects, about 1.74 billion triangles at full detail, at 1920 x 1080, without the frame cap, in alternating rounds. The run fails when the engines draw different sizes, a fault that drew null3D at four times three.js's pixels in every earlier figure.
+Summary: The desert scene times null3D against three.js r187's meshlet renderer on WebGPU, under rules that make both engines do the same work. Both draw one layout of 63,469 objects, about 1.74 billion triangles at full detail, at 1920 x 1080, without the frame cap, in alternating rounds. The run fails when the engines draw different sizes, a fault that drew null3D at four times three.js's pixels in every earlier figure. In the fair rematch null3D's median time between frames is 1.77 against 2.45 ms walking, and 1.55 against 5.96 ms from above. With shadows it is 2.72 against 7.42 ms and 2.03 against 8.33 ms.
 
 ## Question
 
@@ -71,26 +71,31 @@ A study of the culling code designed "slots", which keep the rules:
 - For those copies, a GPU pass culls the level's groups by the view, the cone and the late depth pyramid. It then writes the kept triangles' indices into a list and draws each slot once.
 - Other copies keep their pieces. WebGL2 and the direct path keep pieces, and the ground keeps its tree.
 
-The study estimates 3 to 4 weeks of work. In the walking view, its model of the culling gives 3.6 million triangles with pieces. With groups, it gives 1.9 million. Slots on the heaviest copies would remove about 1.0 to 1.4 million triangles. That would save about 0.3 to 0.7 ms in the main pass. The group pass would cost 0.1 to 0.2 ms, so the GPU would save about 0.2 to 0.6 ms. These are estimates, not measurements, and the aerial view gains little. Whether the 1.9 million includes hidden copies is not known. If it does, most of the gain needs occlusion tests per group too. The fair rematch below decides whether the gap is worth the work.
+The study estimates 3 to 4 weeks of work. In the walking view, its model of the culling gives 3.6 million triangles with pieces. With groups, it gives 1.9 million. Slots on the heaviest copies would remove about 1.0 to 1.4 million triangles. That would save about 0.3 to 0.7 ms in the main pass. The group pass would cost 0.1 to 0.2 ms, so the GPU would save about 0.2 to 0.6 ms. These are estimates, not measurements, and the aerial view gains little. Whether the 1.9 million includes hidden copies is not known. If it does, most of the gain needs occlusion tests per group too. In the fair rematch null3D's GPU time is already below its time between frames in every view ([results](#results-of-the-fair-rematch)). So the saving would not shorten the frame. The owner decides whether the gap is worth the work.
 
 ## Data
 
 ### Results of the fair rematch
 
-**To fill: no figure here is measured yet.** Each cell takes the median of 5 rounds from `bun run bench:run --scenes desert`, with the switches of its row, on a quiet computer.
+Each cell gives the median of 5 rounds, and the lowest and highest round in brackets. Frame is the median time between frames; GPU is the GPU time of a frame. Every page of both engines drew 1920 x 1080. Every null3D page drew on the indirect path at Medium. Its start-up probe gives that path to Chrome on an Apple GPU, which is not WebKit (`not-apple-gpu-in-webkit`). three.js drew with its meshlet pipeline.
 
-| View | Shadows | null3D frame, ms | three.js frame, ms | null3D GPU, ms | three.js GPU, ms | null3D triangles, M | three.js triangles, M | Drawn | Load, lowest to highest |
+| View | Shadows | null3D frame, ms | three.js frame, ms | null3D GPU, ms | three.js GPU, ms | null3D triangles, M | three.js triangles, M | Load as each page opened | Run |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Walk | Off |  |  |  |  |  |  |  |  |
-| Aerial | Off |  |  |  |  |  |  |  |  |
-| Walk | `shadows=3` |  |  |  |  |  |  |  |  |
-| Aerial | `shadows=3` |  |  |  |  |  |  |  |  |
+| Walk | Off | 1.77 (0.87–1.89) | 2.45 (1.74–2.65) | 1.17 (0.99–1.28) | 3.00 (2.11–3.17) | 3.64 | 1.76 | 3.7 to 7.6 | 20261104-151905-bench |
+| Aerial | Off | 1.55 (1.48–1.63) | 5.96 (5.72–6.08) | 1.15 (1.14–1.21) | 6.98 (6.71–7.18) | 3.33 | 18.64 | 4.0 to 6.9 | 20261104-152824-bench |
+| Walk | `shadows=3` | 2.72 (2.61–3.04) | 7.42 (7.02–7.56) | 1.87 (1.86–2.02) | 8.33 (8.09–8.53) | 7.94 | 1.79, without its shadow pass | 4.0 to 7.7 | 20261104-153548-bench |
+| Aerial | `shadows=3` | 2.03 (1.82–2.22) | 8.33 (7.03–8.78) | 1.32 (1.18–1.36) | 9.38 (8.26–9.89) | 3.37 | 18.65, without its shadow pass | 4.6 to 7.5 | 20261104-154422-bench |
 
-How the data was produced: the commit, the Chrome version, the computer and what else ran go here with the figures.
+- **null3D's frame takes 27% to 76% less time than three.js's, and its GPU time 61% to 86% less.** null3D's time between frames is above its GPU time in every row. So the CPU side of its frame sets its rate, and a saving in the main pass would not shorten the frame.
+- **three.js's triangle counter leaves out its shadow pass.** It reads back the meshlets that its main view drew and counts 64 triangles each. Its shadow pass culls by the view alone and draws far more. The triangle budget study measured that pass at 17.9 M triangles in the walking view, against 1.73 M in the main view. So three.js's frame with shadows draws about 19.7 M triangles, where its counter reads 1.79 M. null3D counts the triangles of every pass, its cascades included.
+- **From above, three.js draws more than five times null3D's triangles.** Its level pick measures from each copy's center and keeps every copy, however small. null3D measures from the nearest point of each copy's sphere and hides copies under a pixel ([D-137](D-137-lod-groups.md)). The cascades cover 150 m around a camera 140 m up, so they hold few casters there. null3D's shadows then add 0.04 M triangles and 518 draws.
+- **The walking row spreads more than the others.** In its first round both engines drew faster than in the next four: null3D at 0.87 ms and three.js at 1.74 ms. The order of the engines holds in every round.
+
+How the data was produced: `bun run bench:run --scenes desert --runs 5 --switches "<view and shadows of the row>"`, one run per row. The engine was at e61ad018b and the runner at b7dda9a18. Chrome for Testing 156.0.8078.80 ran on the MacBook Pro M5 Max (18 cores, 128 GB), in parked windows, without its frame cap. Each page took 5 s of warm-up and 30 s of timing. Each page passed the quiet rule above: it logged no error, its load as it opened was under 8, and no other process used more than a core during it. In the walking row the Mac's Spotlight indexer used 1.10 and 1.06 cores during two pages, and both ran again. No other page ran twice. During the counted pages, the busiest other process used at most 0.85 of a core. The load after null3D's pages with shadows reached 10.4 and 11.0, from the page's own threads. Each run's record, `bench/results/<run>.json`, keeps every page's load at both ends, its draw path and drawn size, and the three busiest other processes.
 
 ### Image quality against full detail
 
-Each engine's frame is compared with its own frame at full detail, in which every copy draws its finest level. A lower error means an image closer to full detail. The figures come from the triangle budget study, on the branch `research/triangle-budget` at 8cdcd1bc7, in `bench/research/triangle-budget/results/compare.json`.
+Each engine's frame is compared with its own frame at full detail, in which every copy draws its finest level. A lower error means an image closer to full detail. The figures come from the triangle budget study. Its results are on the branch `research/triangle-budget` at 8cdcd1bc7, in `bench/research/triangle-budget/results/compare.json`.
 
 - The study held 8 frames along the walking lap, at 1920 x 1080 with 4x MSAA, on a build with the canvas check.
 - The error is the mean FLIP of the 8 frames. "Visible" is the share of pixels whose FLIP passes 0.1.
@@ -131,4 +136,4 @@ Options rejected:
 - `bun run bench:run` takes its pages in alternating rounds. It records the computer's load around each page. `--uncapped` turns Chrome's frame cap off, and the desert always turns it off.
 - `bench/tests/desert.spec.ts` opens both pages on a real GPU and checks that both report the same drawn size.
 - [Benchmarks](../benchmarks.md#the-desert-against-threejss-meshlet-renderer) says how to run the scene and lists the fairness rules.
-- When the rematch's figures are in, this record states them, and a decision on slots follows in a record of its own.
+- The rematch's figures are in [the results table](#results-of-the-fair-rematch). A decision on slots follows in a record of its own.
