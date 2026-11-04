@@ -3,19 +3,27 @@
 //! The build composes and compiles every entry in the manifest on each run, which takes minutes
 //! when one WGSL file changed. This cache keeps each entry's compiled output, the WGSL and GLSL
 //! records that the build makes before the modules are assembled, in a folder that every checkout
-//! on the machine shares and that is keyed by the compiler's stamp. A run reuses an entry when its
+//! on the machine shares and that holds the entries of one compiler. A run reuses an entry when its
 //! own source, its manifest table and the library modules it imports are unchanged, so a change
 //! to one entry compiles only that entry, and a change to a library module compiles only the
-//! entries that import it.
+//! entries that import it. The key reads the sources without comments and without the white space
+//! between tokens, keeping only the line breaks that start or end a directive line, so an edit that
+//! leaves every token in place reuses the entry: the program that such a source compiles to is the
+//! one the entry holds.
 //!
 //! The cache never decides a build on its own. An entry that is missing, unreadable or written
 //! under another key, or whose dependency contents changed, is a miss, and the entry compiles
 //! again. A folder that cannot be read or written costs the next run its work and nothing else.
 //!
 //! An entry is one file named for its entry and its key, so two versions of one entry never
-//! overwrite each other. Each build of the entry repeats the same library texts, so a long text is
-//! stored once and referenced by every build that uses it. The folder is pruned to a size limit
-//! after each store, oldest first, with a recent entry spared because a build may be reading it.
+//! overwrite each other. A build that compiles one part of an entry's builds, as CI's shards do for
+//! the costliest entries, stores the part in a file named for the entry, its key and the part. A
+//! build that misses the whole entry joins a complete set of parts of one count into it, stores the
+//! whole entry and removes the parts, and a build of one part reads the whole entry's builds when
+//! it has them. Many builds of an entry make the same WGSL or GLSL source, so the file holds each
+//! source once and each build names its sources by number, and a read gives every build that names
+//! a source the same text in memory. The folder is pruned to a size limit after each store, oldest
+//! first, with a recent entry spared because a build may be reading it.
 //!
 //! Only the build command, which runs natively, reads and writes the cache. The shader compiler
 //! that a page or a bundler loads is built for WebAssembly, where the cache is off and its file
@@ -28,12 +36,16 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
 use std::fs;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::Arc;
 
-use crate::VariantOutput;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::{GlslProgram, GlslStage, GlslTexture, GlslUniformBlock, Pipeline, WgslOutput};
+use crate::{Part, VariantOutput};
 
 /// The version of the cache's file format and key. Bump it when either changes, so an entry an
 /// older format wrote is never read with a new meaning.
-const FORMAT: &str = "2";
+const FORMAT: &str = "4";
 
 /// How many bytes one cache folder may hold before its oldest entries go. The build tools bound the
 /// caches under their one root with the same figure (tools/lib/build-cache.ts), so one rule covers
@@ -41,20 +53,14 @@ const FORMAT: &str = "2";
 #[cfg(not(target_arch = "wasm32"))]
 const LIMIT_BYTES: u64 = 24 * 1024 * 1024 * 1024;
 
+/// How many bytes of a cache file a read takes from the disk at a time.
+#[cfg(not(target_arch = "wasm32"))]
+const READ_BUFFER: usize = 1 << 20;
+
 /// An entry written this recently stays when the folder is pruned, because the build that reads it
 /// may still be running.
 #[cfg(not(target_arch = "wasm32"))]
 const IN_USE_SECS: u64 = 2 * 60 * 60;
-
-/// A text at least this long is stored once per entry and referenced by the builds that use it. One
-/// entry holds thousands of builds, and the same library text runs through all of them: storing each
-/// of them whole made a single entry 1.5 GB (code review M-32).
-#[cfg(not(target_arch = "wasm32"))]
-const MIN_SHARED_TEXT: usize = 40;
-
-/// The field a shared text is referenced by, as `{"$text": index}`.
-#[cfg(not(target_arch = "wasm32"))]
-const TEXT_REF: &str = "$text";
 
 /// How many entries a run compiled and how many it reused.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -78,9 +84,8 @@ impl Cache {
         Self::default()
     }
 
-    /// A cache in `folder`, keyed by `stamp`: the fingerprint of the compiler that made the
-    /// entries. A different stamp writes and reads different entries, so a compiler change
-    /// invalidates every one of them.
+    /// A cache in `folder`, keyed by `stamp`: a name for the compiler that made the entries. Two
+    /// compilers never share a folder, so an entry of one is never read as the output of another.
     pub fn at(folder: &Path, stamp: &str) -> Self {
         Self {
             folder: Some(folder.to_owned()),
@@ -93,22 +98,27 @@ impl Cache {
         self.folder.is_some()
     }
 
-    /// The key of one entry: its name, file and source, its manifest table and the compiler's
-    /// stamp. A change to any of them gives another key, so the entry compiles again.
-    pub fn key(&self, name: &str, file: &str, source: &str, table: &str) -> String {
+    /// The key of one entry: its name, file and source, its manifest table, the compiler's stamp
+    /// and `only`, the listed permutation words that narrow an entry's builds. A change to any of
+    /// them gives another key, so the entry compiles again: an entry built for one list of words is
+    /// not the entry a build of another list may reuse. The source is keyed without comments and
+    /// without the width of the spaces between tokens, which cannot change the program a shader
+    /// compiles to ([`key_text`]).
+    pub fn key(&self, name: &str, file: &str, source: &str, table: &str, only: &str) -> String {
         digest(&[
             FORMAT.as_bytes(),
             self.stamp.as_bytes(),
             name.as_bytes(),
             file.as_bytes(),
-            source.as_bytes(),
+            key_text(source).as_bytes(),
             table.as_bytes(),
+            only.as_bytes(),
         ])
     }
 
     /// The compiled output of the entry `name`, when the folder holds it under `key` and every
-    /// dependency's contents match. `files` are the shader sources by path relative to the shader
-    /// folder.
+    /// dependency's contents match, or holds a complete set of its parts of one count, which it
+    /// joins. `files` are the shader sources by path relative to the shader folder.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load(
         &self,
@@ -116,18 +126,156 @@ impl Cache {
         key: &str,
         files: &BTreeMap<String, String>,
     ) -> Option<BTreeMap<String, VariantOutput>> {
+        self.read(&entry_file(name, key), key, files)
+            .or_else(|| self.join_parts(name, key, files))
+    }
+
+    /// The compiled output of one part of the entry `name`: the part's own file under `key`, or the
+    /// whole entry narrowed to `builds`, the names of the part's builds. The whole entry answers for
+    /// any part of it, so a shard that splits the entry otherwise than an earlier one still reuses
+    /// what that one stored.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn load_part(
+        &self,
+        name: &str,
+        key: &str,
+        part: Part,
+        builds: &[String],
+        files: &BTreeMap<String, String>,
+    ) -> Option<BTreeMap<String, VariantOutput>> {
+        if let Some(variants) = self.read(&part_file(name, key, part), key, files) {
+            return Some(variants);
+        }
+        let mut whole = self.read_entry(&entry_file(name, key), key, files)?;
+        builds
+            .iter()
+            .map(|build| {
+                let variant = whole.variants.remove(build)?.output(&whole.texts)?;
+                Some((build.clone(), variant))
+            })
+            .collect()
+    }
+
+    /// The variants of one cache file, when it was written under `key` and every dependency's
+    /// contents match `files`.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn read(
+        &self,
+        file: &str,
+        key: &str,
+        files: &BTreeMap<String, String>,
+    ) -> Option<BTreeMap<String, VariantOutput>> {
+        self.read_entry(file, key, files)?.outputs()
+    }
+
+    /// One cache file in its stored form, when it was written under `key` and every dependency's
+    /// contents match `files`. The file is parsed as it is read, so the largest entry, a file of
+    /// gigabytes, is never held as bytes and as data at once.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn read_entry(&self, file: &str, key: &str, files: &BTreeMap<String, String>) -> Option<Entry> {
         let folder = self.folder.as_ref()?;
-        let text = fs::read_to_string(folder.join(entry_file(name, key))).ok()?;
-        let entry: Entry = serde_json::from_str(&text).ok()?;
+        let reader =
+            std::io::BufReader::with_capacity(READ_BUFFER, fs::File::open(folder.join(file)).ok()?);
+        let entry: Entry = serde_json::from_reader(reader).ok()?;
         if entry.key != key {
             return None;
         }
         for dep in &entry.deps {
-            if digest(&[files.get(&dep.file)?.as_bytes()]) != dep.hash {
+            if dep_hash(files.get(&dep.file)?) != dep.hash {
                 return None;
             }
         }
-        variants_from(entry.variants, &entry.texts)
+        Some(entry)
+    }
+
+    /// The entry `name` joined from a complete set of its parts of one count under `key`, which the
+    /// folder's file names show without reading the files. The joined entry is stored whole, so the
+    /// next build reads one file, and its parts are removed. A set with a part that does not read
+    /// is passed over.
+    ///
+    /// The parts join in their stored form, one at a time, with each source held once for the
+    /// whole entry, and the joined entry streams to its file. So the join holds the whole entry's
+    /// sources and one part's file, as a read of the whole entry does. The costliest entry's
+    /// builds take several times its file's size when each holds its own copy of its sources, and
+    /// holding all those copies beside more for the store ran CI's build job out of memory (D-235).
+    #[cfg(not(target_arch = "wasm32"))]
+    fn join_parts(
+        &self,
+        name: &str,
+        key: &str,
+        files: &BTreeMap<String, String>,
+    ) -> Option<BTreeMap<String, VariantOutput>> {
+        let folder = self.folder.as_ref()?;
+        let prefix = format!("{name}.{key}.part-");
+        let mut counts: BTreeMap<usize, std::collections::BTreeSet<usize>> = BTreeMap::new();
+        for item in fs::read_dir(folder).ok()?.flatten() {
+            let file = item.file_name();
+            let Some(rest) = file
+                .to_str()
+                .and_then(|file| file.strip_prefix(&prefix))
+                .and_then(|rest| rest.strip_suffix(".json"))
+            else {
+                continue;
+            };
+            let Some((index, count)) = rest.split_once("-of-") else {
+                continue;
+            };
+            if let (Ok(index), Ok(count)) = (index.parse::<usize>(), count.parse::<usize>())
+                && index < count
+            {
+                counts.entry(count).or_default().insert(index);
+            }
+        }
+        for (count, indices) in counts {
+            if indices.len() != count {
+                continue;
+            }
+            let parts = (0..count).map(|index| Part { index, count });
+            let Some(entry) = self.join_entries(name, key, files, parts.clone()) else {
+                continue;
+            };
+            self.write_entry(&entry_file(name, key), &entry);
+            for part in parts {
+                let _ = fs::remove_file(folder.join(part_file(name, key, part)));
+            }
+            return entry.outputs();
+        }
+        None
+    }
+
+    /// The `parts` of the entry `name` joined into one entry in its stored form, with each source
+    /// held once for the whole entry, or nothing when a part does not read. Only one part's file is
+    /// held at a time.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn join_entries(
+        &self,
+        name: &str,
+        key: &str,
+        files: &BTreeMap<String, String>,
+        parts: impl Iterator<Item = Part>,
+    ) -> Option<Entry> {
+        let mut texts = SharedTexts::default();
+        let mut variants = BTreeMap::new();
+        let mut deps = BTreeMap::new();
+        for part in parts {
+            let mut entry = self.read_entry(&part_file(name, key, part), key, files)?;
+            let numbers: Vec<usize> = entry.texts.iter().map(|text| texts.number(text)).collect();
+            drop(entry.texts);
+            for variant in entry.variants.values_mut() {
+                variant.renumber(&numbers)?;
+            }
+            variants.append(&mut entry.variants);
+            deps.extend(entry.deps.into_iter().map(|dep| (dep.file, dep.hash)));
+        }
+        Some(Entry {
+            key: key.to_owned(),
+            deps: deps
+                .into_iter()
+                .map(|(file, hash)| Dep { file, hash })
+                .collect(),
+            texts: texts.into_list(),
+            variants,
+        })
     }
 
     /// The compiled output of an entry. The cache is off in the shader compiler, which a page or a
@@ -137,6 +285,20 @@ impl Cache {
         &self,
         _name: &str,
         _key: &str,
+        _files: &BTreeMap<String, String>,
+    ) -> Option<BTreeMap<String, VariantOutput>> {
+        None
+    }
+
+    /// The compiled output of one part of an entry. The cache is off in the shader compiler, which
+    /// a page or a bundler loads, so it never has a part.
+    #[cfg(target_arch = "wasm32")]
+    pub fn load_part(
+        &self,
+        _name: &str,
+        _key: &str,
+        _part: Part,
+        _builds: &[String],
         _files: &BTreeMap<String, String>,
     ) -> Option<BTreeMap<String, VariantOutput>> {
         None
@@ -154,40 +316,82 @@ impl Cache {
         files: &BTreeMap<String, String>,
         variants: &BTreeMap<String, VariantOutput>,
     ) {
-        let Some(folder) = self.folder.as_ref() else {
+        self.write(&entry_file(name, key), key, deps, files, variants);
+    }
+
+    /// Stores the compiled output of one part of the entry `name` under `key`, as [`Cache::store`]
+    /// stores a whole entry. A later build joins a complete set of parts into the whole entry.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn store_part(
+        &self,
+        name: &str,
+        key: &str,
+        part: Part,
+        deps: &[String],
+        files: &BTreeMap<String, String>,
+        variants: &BTreeMap<String, VariantOutput>,
+    ) {
+        self.write(&part_file(name, key, part), key, deps, files, variants);
+    }
+
+    /// Writes one cache file of `variants`, with the contents of each dependency in `deps`.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn write(
+        &self,
+        file_name: &str,
+        key: &str,
+        deps: &[String],
+        files: &BTreeMap<String, String>,
+        variants: &BTreeMap<String, VariantOutput>,
+    ) {
+        if self.folder.is_none() {
             return;
-        };
+        }
         let deps: Vec<Dep> = deps
             .iter()
             .filter_map(|file| {
                 files.get(file).map(|source| Dep {
                     file: file.clone(),
-                    hash: digest(&[source.as_bytes()]),
+                    hash: dep_hash(source),
                 })
             })
             .collect();
-        let (variants, texts) = share_texts(variants);
+        let mut texts = SharedTexts::default();
+        let variants = variants
+            .iter()
+            .map(|(name, variant)| (name.clone(), StoredVariant::of(variant, &mut texts)))
+            .collect();
         let entry = Entry {
             key: key.to_owned(),
             deps,
-            texts,
+            texts: texts.into_list(),
             variants,
         };
-        let Ok(text) = serde_json::to_string(&entry) else {
+        self.write_entry(file_name, &entry);
+    }
+
+    /// Writes one cache file, whole or not at all, and prunes the folder. The JSON streams to the
+    /// file as it is made, so a large entry is never held as data and as text at once.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn write_entry(&self, file_name: &str, entry: &Entry) {
+        let Some(folder) = self.folder.as_ref() else {
             return;
         };
         if fs::create_dir_all(folder).is_err() {
             return;
         }
-        let file = folder.join(entry_file(name, key));
-        let staging = folder.join(format!(
-            "{}.{}.tmp",
-            entry_file(name, key),
-            std::process::id()
-        ));
+        let file = folder.join(file_name);
+        let staging = folder.join(format!("{file_name}.{}.tmp", std::process::id()));
         // Write the entry whole or not at all, so a stopped run leaves no half entry.
-        if fs::write(&staging, text).is_ok() {
+        let written = fs::File::create(&staging).ok().and_then(|out| {
+            let mut out = std::io::BufWriter::new(out);
+            serde_json::to_writer(&mut out, entry).ok()?;
+            std::io::Write::flush(&mut out).ok()
+        });
+        if written.is_some() {
             let _ = fs::rename(&staging, &file);
+        } else {
+            let _ = fs::remove_file(&staging);
         }
         // Pruning here bounds the folder that this run writes into, whether the build tools or a
         // direct `cargo run` started it (code review H-16).
@@ -206,6 +410,20 @@ impl Cache {
         _variants: &BTreeMap<String, VariantOutput>,
     ) {
     }
+
+    /// Stores the compiled output of one part of an entry. The cache is off in the shader
+    /// compiler, which a page or a bundler loads, so it stores nothing.
+    #[cfg(target_arch = "wasm32")]
+    pub fn store_part(
+        &self,
+        _name: &str,
+        _key: &str,
+        _part: Part,
+        _deps: &[String],
+        _files: &BTreeMap<String, String>,
+        _variants: &BTreeMap<String, VariantOutput>,
+    ) {
+    }
 }
 
 /// One entry as the cache stores it.
@@ -216,86 +434,182 @@ struct Entry {
     key: String,
     /// The library files the entry used, with the hash of each.
     deps: Vec<Dep>,
-    /// The texts that the builds share, which they reference by index.
-    #[serde(default)]
-    texts: Vec<String>,
-    /// The compiled variants by build name, with each shared text replaced by its index.
-    variants: serde_json::Value,
+    /// The WGSL and GLSL sources of the entry's builds, each once. Thousands of builds share most
+    /// of them: writing each build's sources out whole makes a single entry 1.5 GB (code review
+    /// M-32), and holding a copy for each build takes several times the file's size in memory.
+    texts: Vec<Arc<str>>,
+    /// The builds by name, each naming its sources by their place in `texts`.
+    variants: BTreeMap<String, StoredVariant>,
 }
 
-/// The compiled variants as JSON, with every long text stored once in `texts` and referenced by
-/// index, so a text that runs through thousands of builds is held once for the entry.
 #[cfg(not(target_arch = "wasm32"))]
-fn share_texts(variants: &BTreeMap<String, VariantOutput>) -> (serde_json::Value, Vec<String>) {
-    fn walk(
-        node: &mut serde_json::Value,
-        texts: &mut Vec<String>,
-        seen: &mut std::collections::HashMap<String, usize>,
-    ) {
-        match node {
-            serde_json::Value::String(text) if text.len() >= MIN_SHARED_TEXT => {
-                let index = match seen.get(text) {
-                    Some(index) => *index,
-                    None => {
-                        texts.push(text.clone());
-                        let index = texts.len() - 1;
-                        seen.insert(text.clone(), index);
-                        index
-                    }
-                };
-                *node = serde_json::json!({ TEXT_REF: index });
-            }
-            serde_json::Value::Array(items) => {
-                for item in items.iter_mut() {
-                    walk(item, texts, seen);
-                }
-            }
-            serde_json::Value::Object(fields) => {
-                for field in fields.values_mut() {
-                    walk(field, texts, seen);
-                }
-            }
-            _ => {}
-        }
+impl Entry {
+    /// The compiled variants, each source the entry's one copy of it, or nothing when a build names
+    /// a source that the entry lacks.
+    fn outputs(self) -> Option<BTreeMap<String, VariantOutput>> {
+        let texts = self.texts;
+        self.variants
+            .into_iter()
+            .map(|(name, variant)| Some((name, variant.output(&texts)?)))
+            .collect()
     }
-    let mut value = serde_json::to_value(variants).unwrap_or(serde_json::Value::Null);
-    let mut texts = Vec::new();
-    let mut seen = std::collections::HashMap::new();
-    walk(&mut value, &mut texts, &mut seen);
-    (value, texts)
 }
 
-/// The compiled variants that `share_texts` wrote, with each shared text put back.
+/// One build as the cache stores it: a [`VariantOutput`] whose sources are numbers in its entry's
+/// texts.
 #[cfg(not(target_arch = "wasm32"))]
-fn variants_from(
-    mut value: serde_json::Value,
-    texts: &[String],
-) -> Option<BTreeMap<String, VariantOutput>> {
-    fn walk(node: &mut serde_json::Value, texts: &[String]) {
-        match node {
-            serde_json::Value::String(_) => {}
-            serde_json::Value::Array(items) => {
-                for item in items.iter_mut() {
-                    walk(item, texts);
-                }
+#[derive(Deserialize, Serialize)]
+struct StoredVariant {
+    permutation: u32,
+    wgsl: Option<StoredWgsl>,
+    glsl: Option<BTreeMap<String, StoredProgram>>,
+}
+
+/// A [`WgslOutput`] as the cache stores it.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Deserialize, Serialize)]
+struct StoredWgsl {
+    source: usize,
+    pipelines: BTreeMap<String, Pipeline>,
+}
+
+/// A [`GlslProgram`] as the cache stores it.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Deserialize, Serialize)]
+struct StoredProgram {
+    vertex: StoredStage,
+    fragment: StoredStage,
+}
+
+/// A [`GlslStage`] as the cache stores it.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Deserialize, Serialize)]
+struct StoredStage {
+    source: usize,
+    uniform_blocks: Vec<GlslUniformBlock>,
+    textures: Vec<GlslTexture>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl StoredVariant {
+    /// `variant` as the cache stores it, with each source numbered in `texts`.
+    fn of(variant: &VariantOutput, texts: &mut SharedTexts) -> Self {
+        let VariantOutput {
+            permutation,
+            wgsl,
+            glsl,
+        } = variant;
+        let stage = |stage: &GlslStage, texts: &mut SharedTexts| {
+            let GlslStage {
+                source,
+                uniform_blocks,
+                textures,
+            } = stage;
+            StoredStage {
+                source: texts.number(source),
+                uniform_blocks: uniform_blocks.clone(),
+                textures: textures.clone(),
             }
-            serde_json::Value::Object(fields) => {
-                if fields.len() == 1
-                    && let Some(serde_json::Value::Number(index)) = fields.get(TEXT_REF)
-                    && let Some(text) = index.as_u64().and_then(|index| texts.get(index as usize))
-                {
-                    *node = serde_json::Value::String(text.clone());
-                    return;
-                }
-                for field in fields.values_mut() {
-                    walk(field, texts);
-                }
-            }
-            _ => {}
+        };
+        Self {
+            permutation: *permutation,
+            wgsl: wgsl
+                .as_ref()
+                .map(|WgslOutput { source, pipelines }| StoredWgsl {
+                    source: texts.number(source),
+                    pipelines: pipelines.clone(),
+                }),
+            glsl: glsl.as_ref().map(|programs| {
+                programs
+                    .iter()
+                    .map(|(name, GlslProgram { vertex, fragment })| {
+                        let program = StoredProgram {
+                            vertex: stage(vertex, texts),
+                            fragment: stage(fragment, texts),
+                        };
+                        (name.clone(), program)
+                    })
+                    .collect()
+            }),
         }
     }
-    walk(&mut value, texts);
-    serde_json::from_value(value).ok()
+
+    /// The numbers of this build's sources, for the caller to read or change.
+    fn sources(&mut self) -> impl Iterator<Item = &mut usize> {
+        let wgsl = self.wgsl.iter_mut().map(|wgsl| &mut wgsl.source);
+        let glsl = self.glsl.iter_mut().flat_map(|programs| {
+            programs
+                .values_mut()
+                .flat_map(|program| [&mut program.vertex.source, &mut program.fragment.source])
+        });
+        wgsl.chain(glsl)
+    }
+
+    /// Moves this build's sources from a part's numbers to the joined entry's: the source a part
+    /// numbered `n` is `numbers[n]` in the joined entry. Nothing when a source is outside `numbers`.
+    fn renumber(&mut self, numbers: &[usize]) -> Option<()> {
+        for source in self.sources() {
+            *source = *numbers.get(*source)?;
+        }
+        Some(())
+    }
+
+    /// The compiled variant, each source a shared copy of its text in `texts`, or nothing when a
+    /// source is outside `texts`.
+    fn output(mut self, texts: &[Arc<str>]) -> Option<VariantOutput> {
+        if self.sources().any(|source| *source >= texts.len()) {
+            return None;
+        }
+        let stage = |stage: StoredStage| GlslStage {
+            source: Arc::clone(&texts[stage.source]),
+            uniform_blocks: stage.uniform_blocks,
+            textures: stage.textures,
+        };
+        Some(VariantOutput {
+            permutation: self.permutation,
+            wgsl: self.wgsl.map(|wgsl| WgslOutput {
+                source: Arc::clone(&texts[wgsl.source]),
+                pipelines: wgsl.pipelines,
+            }),
+            glsl: self.glsl.map(|programs| {
+                programs
+                    .into_iter()
+                    .map(|(name, program)| {
+                        let program = GlslProgram {
+                            vertex: stage(program.vertex),
+                            fragment: stage(program.fragment),
+                        };
+                        (name, program)
+                    })
+                    .collect()
+            }),
+        })
+    }
+}
+
+/// The sources of one entry, each held once and numbered in the order first met.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Default)]
+struct SharedTexts {
+    numbers: std::collections::HashMap<Arc<str>, usize>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl SharedTexts {
+    /// The number of `text`: its own when it was met before, else the next one.
+    fn number(&mut self, text: &Arc<str>) -> usize {
+        let next = self.numbers.len();
+        *self.numbers.entry(Arc::clone(text)).or_insert(next)
+    }
+
+    /// The texts in the order of their numbers.
+    fn into_list(self) -> Vec<Arc<str>> {
+        let mut list: Vec<Option<Arc<str>>> = vec![None; self.numbers.len()];
+        for (text, number) in self.numbers {
+            list[number] = Some(text);
+        }
+        list.into_iter().flatten().collect()
+    }
 }
 
 /// One library file that an entry used, and the hash of its contents.
@@ -315,6 +629,13 @@ struct Dep {
 #[cfg(not(target_arch = "wasm32"))]
 fn entry_file(name: &str, key: &str) -> String {
     format!("{name}.{key}.json")
+}
+
+/// The file name of one part of an entry's builds: the entry's name, its key and the part, so a
+/// build that misses the whole entry finds a complete set of parts by their names alone.
+#[cfg(not(target_arch = "wasm32"))]
+fn part_file(name: &str, key: &str, part: Part) -> String {
+    format!("{name}.{key}.part-{}-of-{}.json", part.index, part.count)
 }
 
 /// One cache file as pruning sees it: its path, its size and when it was written.
@@ -396,6 +717,151 @@ fn digest(parts: &[&[u8]]) -> String {
     format!("{first:016x}{second:016x}")
 }
 
+/// The hash of one library file that an entry read, from the text the cache keys. An edit to its
+/// comments or to the width of its white space leaves the hash, so the entry that read it is
+/// reused; an edit to a token changes the hash, so that entry compiles again.
+#[cfg(not(target_arch = "wasm32"))]
+fn dep_hash(source: &str) -> String {
+    digest(&[key_text(source).as_bytes()])
+}
+
+/// The words that only a line start makes into a directive. A preprocessor directive starts with
+/// `#`, and the WGSL directives are these words.
+const DIRECTIVE_WORDS: [&str; 3] = ["enable", "requires", "diagnostic"];
+
+/// True when the token that starts at `at` is one that only a line start can make a directive.
+fn directive_token(bytes: &[u8], at: usize) -> bool {
+    if bytes[at] == b'#' {
+        return true;
+    }
+    let mut end = at;
+    while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
+        end += 1;
+    }
+    DIRECTIVE_WORDS.contains(&std::str::from_utf8(&bytes[at..end]).unwrap_or(""))
+}
+
+/// True when removing the white space between the text written so far and `after` could join the
+/// two into another token. It errs towards keeping the space: a pair it calls joined only costs the
+/// entry a compile, where a pair it wrongly joins would read as another token and could ship a
+/// stale shader.
+fn needs_space(out: &[u8], after: u8) -> bool {
+    let Some(&before) = out.last() else {
+        return false;
+    };
+    let name = |byte: u8| byte == b'_' || byte.is_ascii_alphanumeric() || byte >= 0x80;
+    // Two names or two numbers would read as one, and a suffix would join the number it follows.
+    if name(before) && name(after) {
+        return true;
+    }
+    if (before.is_ascii_digit() && after == b'.') || (before == b'.' && name(after)) {
+        return true;
+    }
+    // An exponent sign joins the number whose exponent it is, and only after a digit, a point or a
+    // separator inside a number.
+    if matches!(before, b'e' | b'E' | b'p' | b'P') && matches!(after, b'+' | b'-') {
+        let before_that = out.len().checked_sub(2).and_then(|at| out.get(at)).copied();
+        if before_that.is_some_and(|byte| byte.is_ascii_digit() || byte == b'.' || byte == b'_') {
+            return true;
+        }
+    }
+    // Two punctuation characters may be one longer punctuator, such as `<<`, `::` or `->`, and a
+    // pair of slashes or a slash and a star would start a comment.
+    const PUNCTUATION: &[u8] = b"+-*/%&|^<>=!:.~@#";
+    PUNCTUATION.contains(&before) && PUNCTUATION.contains(&after)
+}
+
+/// The text of one shader source as the cache keys it: without comments, with one space only where
+/// two tokens would otherwise run together, and with a line break kept only where it can matter.
+/// The composer reads a preprocessor directive, and a WGSL directive, only as the first token on a
+/// line, so the break before such a token and the break that ends its line stay. Every other line
+/// break reads as a space or as nothing.
+///
+/// The composer and the compiler read tokens, not the lines that hold them, so two sources that
+/// differ only in comments or in the white space between tokens give one program. The key names
+/// that program, so such an edit reuses the entry. Any change to a token, its order, or a line that
+/// a directive starts or ends gives other text and another key, so the entry compiles again.
+fn key_text(text: &str) -> String {
+    let bytes = text.as_bytes();
+    // Comments become spaces, so the tokens keep their order; a line break inside a block comment
+    // stays a line break, because it may separate a directive from the line before it.
+    let mut plain = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let byte = bytes[i];
+        if byte == b'/' && bytes.get(i + 1) == Some(&b'/') {
+            i += 2;
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+            plain.push(b' ');
+        } else if byte == b'/' && bytes.get(i + 1) == Some(&b'*') {
+            // Block comments nest, as WGSL defines them.
+            let mut depth = 0usize;
+            while i < bytes.len() {
+                if bytes[i] == b'/' && bytes.get(i + 1) == Some(&b'*') {
+                    depth += 1;
+                    i += 2;
+                } else if bytes[i] == b'*' && bytes.get(i + 1) == Some(&b'/') {
+                    depth -= 1;
+                    i += 2;
+                    if depth == 0 {
+                        break;
+                    }
+                } else {
+                    plain.push(if bytes[i] == b'\n' { b'\n' } else { b' ' });
+                    i += 1;
+                }
+            }
+            plain.push(b' ');
+        } else {
+            plain.push(byte);
+            i += 1;
+        }
+    }
+    // One separator between tokens: a line break where a directive starts or ends its line, and a
+    // space where the break cannot matter.
+    let mut out = Vec::with_capacity(plain.len());
+    // The first token starts its line, as every later token does after a line break.
+    let mut line = true;
+    let mut space = false;
+    // True while the token being written is on a line that a directive starts.
+    let mut directive_line = false;
+    for (at, &byte) in plain.iter().enumerate() {
+        if byte == b'\n' {
+            line = true;
+        } else if byte.is_ascii_whitespace() {
+            space = true;
+        } else {
+            let directive = directive_token(&plain, at);
+            if line || space {
+                let separator = if out.is_empty() {
+                    // The first token starts the text, and a directive at the start still starts a
+                    // line, which the flag below records.
+                    None
+                } else if line && (directive_line || directive) {
+                    // A directive line starts or ends here, so the line break stays.
+                    Some(b'\n')
+                } else if needs_space(&out, byte) {
+                    Some(b' ')
+                } else {
+                    None
+                };
+                if let Some(separator) = separator {
+                    out.push(separator);
+                }
+            }
+            if line {
+                directive_line = directive;
+                line = false;
+            }
+            space = false;
+            out.push(byte);
+        }
+    }
+    String::from_utf8(out).expect("comments and white space keep the text's bytes")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -419,7 +885,7 @@ mod tests {
                 VariantOutput {
                     permutation: index as u32,
                     wgsl: Some(WgslOutput {
-                        source: text.to_owned(),
+                        source: text.into(),
                         pipelines: BTreeMap::new(),
                     }),
                     glsl: None,
@@ -434,8 +900,8 @@ mod tests {
         let folder = temp_folder("keys");
         let cache = Cache::at(&folder, "stamp");
         let files = BTreeMap::new();
-        let one = cache.key("mipmap", "mipmap.wgsl", "source one", "table");
-        let two = cache.key("mipmap", "mipmap.wgsl", "source two", "table");
+        let one = cache.key("mipmap", "mipmap.wgsl", "source one", "table", "");
+        let two = cache.key("mipmap", "mipmap.wgsl", "source two", "table", "");
         cache.store("mipmap", &one, &[], &files, &variants("shared module", 2));
         cache.store("mipmap", &two, &[], &files, &variants("shared module", 2));
         // Two versions of one entry do not overwrite each other, so a branch that returns to an
@@ -451,7 +917,7 @@ mod tests {
         let folder = temp_folder("texts");
         let cache = Cache::at(&folder, "stamp");
         let files = BTreeMap::new();
-        let key = cache.key("mipmap", "mipmap.wgsl", "source", "table");
+        let key = cache.key("mipmap", "mipmap.wgsl", "source", "table", "");
         // One library module, as it runs through the thousands of builds of an entry shader.
         let module = "let shared_module_value = 1.0;\n".repeat(20);
         let built = variants(&module, 200);
@@ -464,6 +930,15 @@ mod tests {
             .unwrap()
             .len();
         assert!(stored * 4 < plain, "stored {stored} bytes, plain {plain}");
+        // The builds that a read gives back hold the module as one text in memory, not a copy each.
+        let loaded = cache.load("mipmap", &key, &files).unwrap();
+        let source = |build: &VariantOutput| Arc::clone(&build.wgsl.as_ref().unwrap().source);
+        let first = source(&loaded["build0"]);
+        assert!(
+            loaded
+                .values()
+                .all(|build| Arc::ptr_eq(&source(build), &first))
+        );
         let _ = fs::remove_dir_all(&folder);
     }
 
@@ -501,11 +976,115 @@ mod tests {
         assert_ne!(one, digest(&[b"b", b"a"]));
     }
 
+    /// The key of the entry `source`, under one compiler.
+    fn key_of(source: &str) -> String {
+        Cache::at(Path::new("/nowhere"), "stamp").key("mipmap", "mipmap.wgsl", source, "", "")
+    }
+
+    #[test]
+    fn a_comment_or_a_moved_line_keeps_the_key() {
+        let plain = "@fragment\nfn fs_main() -> @location(0) vec4f {\n    return vec4f(1.0);\n}\n";
+        let edited = "// the pass.\n@fragment\nfn fs_main() -> @location(0) vec4f {\n\n\t/* a note */  return vec4f(1.0);   // done\n}\n";
+        assert_eq!(key_of(plain), key_of(edited));
+        // A comment line above the code, and a block comment that spans two lines, add lines but
+        // leave every token in the same place in the program.
+        let two_lines = "/* a note\n   on two lines */\n@fragment\nfn fs_main() -> @location(0) vec4f { return vec4f(1.0); }\n";
+        let shifted = "@fragment\n\nfn fs_main() -> @location(0) vec4f { return vec4f(1.0); }\n";
+        assert_eq!(key_of(two_lines), key_of(shifted));
+        // A call that a later edit spreads over several lines is the same program.
+        let one_line = "let p = mix(a, b, 0.5);\n";
+        let wrapped = "let p = mix(\n\ta,\n\tb,\n\t0.5\n);\n";
+        assert_eq!(key_of(one_line), key_of(wrapped));
+        // A space may go around an operator, unless the operator would join the number before it.
+        assert_eq!(
+            key_of("let x = value + 1.0;\n"),
+            key_of("let x = value+1.0;\n")
+        );
+        assert_ne!(key_of("let x = 1e+5;\n"), key_of("let x = 1e +5;\n"));
+    }
+
+    #[test]
+    fn a_change_to_a_token_or_to_a_directive_line_changes_the_key() {
+        let base = "@fragment\nfn fs_main() -> @location(0) vec4f { return vec4f(1.0); }\n";
+        // A different token, and a different token boundary.
+        assert_ne!(key_of(base), key_of(&base.replace("1.0", "2.0")));
+        assert_ne!(
+            key_of(base),
+            key_of(&base.replace("vec4f(1.0)", "vec4f(1 .0)"))
+        );
+        // A directive keeps the line it starts on, so a comment that moves it after code gives
+        // another key, even though the tokens are the same.
+        let directive = "a\n#import null3d::math\n";
+        assert_eq!(
+            key_of(directive),
+            key_of("a\n/* a note */ #import null3d::math\n")
+        );
+        assert_ne!(
+            key_of(directive),
+            key_of("a /* a note */ #import null3d::math\n")
+        );
+        // The line break that ends a directive line stays, so the code after a directive is not
+        // read as part of the directive.
+        assert_ne!(
+            key_of("#import null3d::math\nfn f() {}\n"),
+            key_of("#import null3d::math fn f() {}\n")
+        );
+        // A WGSL directive is a line of its own in the same way.
+        assert_ne!(
+            key_of("enable f16;\nfn f() {}\n"),
+            key_of("enable f16; fn f() {}\n")
+        );
+    }
+
+    /// True for each token whose gap from the token before holds a line break.
+    fn line_starts(text: &str) -> Vec<bool> {
+        let tokens = crate::scan::tokenize(text);
+        let mut starts = Vec::with_capacity(tokens.len());
+        let mut end = 0;
+        for token in &tokens {
+            starts.push(text[end..token.start].contains('\n'));
+            end = token.start + token.text.len();
+        }
+        starts
+    }
+
+    #[test]
+    fn the_key_text_keeps_every_token_of_every_source_and_the_lines_a_directive_starts() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let inputs = crate::Inputs::read(&root).expect("the repository's shader sources");
+        for (file, source) in &inputs.files {
+            let keyed = key_text(source);
+            // Keying the key text again gives the same text, so the form is settled.
+            assert_eq!(
+                key_text(&keyed),
+                keyed,
+                "{file}: the key text is not settled"
+            );
+            let before = crate::scan::tokenize(source);
+            let after = crate::scan::tokenize(&keyed);
+            assert_eq!(before.len(), after.len(), "{file}: a token went missing");
+            let starts_before = line_starts(source);
+            let starts_after = line_starts(&keyed);
+            for (index, (one, two)) in before.iter().zip(&after).enumerate() {
+                assert_eq!((one.kind, one.text), (two.kind, two.text), "{file}");
+                // A directive reads only at the start of a line, so that one property stays. The
+                // first token starts the file, which both texts read as a line start.
+                if index > 0 && directive_token(one.text.as_bytes(), 0) {
+                    assert_eq!(
+                        starts_before[index], starts_after[index],
+                        "{file}: `{}` lost the line it starts",
+                        one.text
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn a_disabled_cache_answers_with_a_miss_and_stores_nothing() {
         let cache = Cache::disabled();
         let files = BTreeMap::new();
-        let key = cache.key("mipmap", "mipmap.wgsl", "source", "table");
+        let key = cache.key("mipmap", "mipmap.wgsl", "source", "table", "");
         assert!(cache.load("mipmap", &key, &files).is_none());
         cache.store(
             "mipmap",

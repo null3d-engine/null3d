@@ -186,6 +186,9 @@ pub struct MeshArrays<'a> {
     pub joints: Option<Values<'a>>,
     /// Four joint weights per vertex, for skinned meshes.
     pub weights: Option<Values<'a>>,
+    /// Four numbers per vertex, for a generated mesh whose material reads them: the position that
+    /// a vertex takes at a coarser level of detail, and that level's error.
+    pub targets: Option<Values<'a>>,
     /// Three per triangle, or `None` when each three vertices in a row make a triangle.
     pub indices: Option<&'a [u32]>,
     /// Computes normals from the triangles, as three.js's `computeVertexNormals` does.
@@ -207,6 +210,7 @@ pub enum ArrayName {
     Indices = 6,
     Joints = 7,
     Weights = 8,
+    Targets = 9,
 }
 
 /// Why arrays make no mesh.
@@ -256,7 +260,7 @@ fn attributes<'a>(
     arrays: &MeshArrays<'a>,
     normals: Option<Values<'a>>,
     tangents: Option<Values<'a>>,
-) -> [(ArrayName, Option<Values<'a>>, usize); 8] {
+) -> [(ArrayName, Option<Values<'a>>, usize); 9] {
     use ArrayName::*;
     [
         (Positions, Some(arrays.positions), 3),
@@ -267,6 +271,7 @@ fn attributes<'a>(
         (Colors, arrays.colors, arrays.color_components),
         (Joints, arrays.joints, 4),
         (Weights, arrays.weights, 4),
+        (Targets, arrays.targets, 4),
     ]
 }
 

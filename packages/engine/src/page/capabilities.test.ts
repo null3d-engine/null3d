@@ -139,13 +139,14 @@ const probes = { behaviors: [] as ProbeBehavior[], started: 0, terminated: 0 };
  * A probe worker that acts as the next of `probes.behaviors` says. One class serves every test: the
  * engine's worker starter starts each worker through the class that the thread holds at that start.
  */
-class FakeProbeWorker {
+class FakeProbeWorker extends EventTarget {
 	onmessage: ((event: { data: unknown }) => void) | null = null;
-	onerror: ((event: { message: string }) => void) | null = null;
 	constructor() {
+		super();
 		const behavior = probes.behaviors[probes.started++] ?? 'stalls';
 		setTimeout(() => {
-			if (behavior === 'fails') return this.onerror?.({ message: 'the script did not load' });
+			// A script that did not load fails with a plain event and no message, as Firefox sends it.
+			if (behavior === 'fails') return this.dispatchEvent(new Event('error'));
 			this.onmessage?.({ data: 'loaded' });
 			if (behavior === 'answers') this.onmessage?.({ data: ANSWER });
 		}, 0);
@@ -187,7 +188,7 @@ describe('the worker probe', () => {
 		const counts = fakeProbeWorkers(['fails', 'answers']);
 		expect(await probeWorker([10, 20])).toEqual({
 			failure: 'failed-to-start',
-			error: 'the script did not load',
+			error: 'the probe worker failed to start',
 		});
 		expect(counts).toMatchObject({ started: 1, terminated: 1 });
 	});

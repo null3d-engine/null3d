@@ -1,0 +1,6 @@
+{
+	"tests": [
+		{ "name": "water", "page": "/page/index.html", "hold": 1 },
+		{ "name": "ocean", "page": "/page/ocean.html", "hold": 1 }
+	]
+}

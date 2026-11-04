@@ -59,6 +59,7 @@ fn v_ggx_smith_correlated(alpha: f32, n_dot_l: f32, n_dot_v: f32) -> f32 {
 
 /// The GGX specular reflectance for one light, as three.js's `BRDF_GGX`: the GGX distribution,
 /// Schlick's Fresnel term and the correlated Smith visibility term. `roughness` is perceptual.
+/// Where the light and the view cancel there is no half vector, and the result is zero.
 fn brdf_ggx(
     to_light: vec3f,
     to_view: vec3f,
@@ -68,13 +69,109 @@ fn brdf_ggx(
     roughness: f32,
 ) -> vec3f {
     let alpha = roughness * roughness;
-    let half_dir = normalize(to_light + to_view);
+    let half_dir = null3d::math::half_vector(to_light, to_view);
+    // Where the light and the view cancel there is no bisector, so the lobe has no value.
+    if dot(half_dir, half_dir) == 0.0 {
+        return vec3f(0.0);
+    }
     let n_dot_l = saturate(dot(normal, to_light));
     let n_dot_v = saturate(dot(normal, to_view));
     let n_dot_h = saturate(dot(normal, half_dir));
     let v_dot_h = saturate(dot(to_view, half_dir));
     let fresnel = f_schlick(f0, f90, v_dot_h);
     return fresnel * (v_ggx_smith_correlated(alpha, n_dot_l, n_dot_v) * d_ggx(alpha, n_dot_h));
+}
+
+/// The height-correlated Smith visibility term of a lobe whose GGX alpha is `alpha_t` along the
+/// tangent and `alpha_b` along the bitangent, as three.js's
+/// `V_GGX_SmithCorrelated_Anisotropic`. The cosines `t_dot_v`, `b_dot_v`, `t_dot_l` and `b_dot_l`
+/// are of the view and the light with those two axes.
+fn v_ggx_smith_correlated_anisotropic(
+    alpha_t: f32,
+    alpha_b: f32,
+    t_dot_v: f32,
+    b_dot_v: f32,
+    t_dot_l: f32,
+    b_dot_l: f32,
+    n_dot_v: f32,
+    n_dot_l: f32,
+) -> f32 {
+    let gv = n_dot_l * length(vec3f(alpha_t * t_dot_v, alpha_b * b_dot_v, n_dot_v));
+    let gl = n_dot_v * length(vec3f(alpha_t * t_dot_l, alpha_b * b_dot_l, n_dot_l));
+    return 0.5 / max(gv + gl, null3d::math::EPSILON);
+}
+
+/// The GGX distribution of a lobe that stretches along the tangent, as three.js's
+/// `D_GGX_Anisotropic`, after Filament. The cosines `t_dot_h` and `b_dot_h` are of the half vector
+/// with the tangent and the bitangent.
+fn d_ggx_anisotropic(
+    alpha_t: f32,
+    alpha_b: f32,
+    n_dot_h: f32,
+    t_dot_h: f32,
+    b_dot_h: f32,
+) -> f32 {
+    let a2 = alpha_t * alpha_b;
+    let v = vec3f(alpha_b * t_dot_h, alpha_t * b_dot_h, a2 * n_dot_h);
+    let w2 = a2 / dot(v, v);
+    return null3d::math::INV_PI * a2 * w2 * w2;
+}
+
+/// The GGX specular reflectance for one direct light of a physical material, as three.js's
+/// `BRDF_GGX`: the distribution, the Fresnel term and the visibility term, with the thin film's
+/// Fresnel term where the material is iridescent, and stretched along the tangent where it is
+/// anisotropic. Where the light and the view cancel there is no half vector, and the result is
+/// zero.
+fn brdf_ggx_physical(
+    m: PbrMaterial,
+    normal: vec3f,
+    to_view: vec3f,
+    to_light: vec3f,
+) -> vec3f {
+    let alpha = m.roughness * m.roughness;
+    let half_dir = null3d::math::half_vector(to_light, to_view);
+    // Where the light and the view cancel there is no bisector, so the lobe has no value.
+    if dot(half_dir, half_dir) == 0.0 {
+        return vec3f(0.0);
+    }
+    let n_dot_l = saturate(dot(normal, to_light));
+    let n_dot_v = saturate(dot(normal, to_view));
+    let n_dot_h = saturate(dot(normal, half_dir));
+    let v_dot_h = saturate(dot(to_view, half_dir));
+    var fresnel = f_schlick(m.specular_blended, m.specular_grazing, v_dot_h);
+    var visibility: f32;
+    var distribution: f32;
+#ifdef COAT_SHEEN
+    fresnel = mix(fresnel, m.iridescence_fresnel, m.iridescence);
+    if m.anisotropy > 0.0 {
+        let tangent = m.anisotropy_t;
+        let bitangent = m.anisotropy_b;
+        visibility = v_ggx_smith_correlated_anisotropic(
+            m.alpha_t,
+            alpha,
+            dot(tangent, to_view),
+            dot(bitangent, to_view),
+            dot(tangent, to_light),
+            dot(bitangent, to_light),
+            n_dot_v,
+            n_dot_l,
+        );
+        distribution = d_ggx_anisotropic(
+            m.alpha_t,
+            alpha,
+            n_dot_h,
+            dot(tangent, half_dir),
+            dot(bitangent, half_dir),
+        );
+    } else {
+        visibility = v_ggx_smith_correlated(alpha, n_dot_l, n_dot_v);
+        distribution = d_ggx(alpha, n_dot_h);
+    }
+#else
+    visibility = v_ggx_smith_correlated(alpha, n_dot_l, n_dot_v);
+    distribution = d_ggx(alpha, n_dot_h);
+#endif
+    return fresnel * (visibility * distribution);
 }
 
 // three.js's table of the split-sum terms of specular light from all directions has 16 x 16
@@ -231,6 +328,29 @@ struct PbrMaterial {
     roughness: f32,
     /// The metalness, from 0 to 1.
     metalness: f32,
+#ifdef COAT_SHEEN
+    /// How much a thin film above the surface tints the specular reflection, from 0 to 1: 0 for a
+    /// surface without iridescence.
+    iridescence: f32,
+    /// The film's Fresnel term at the view angle, which takes the place of the surface's own where
+    /// the iridescence applies.
+    iridescence_fresnel: vec3f,
+    /// The film's reflectance at normal incidence over a dielectric surface, and over a metal's
+    /// base color. The surface reflects light from all directions with them where the iridescence
+    /// applies.
+    iridescence_reflectance: vec3f,
+    /// The film's reflectance at normal incidence over a metal's base color.
+    iridescence_reflectance_metallic: vec3f,
+    /// How far the specular lobe stretches along the tangent, from 0 to 1: 0 for a surface without
+    /// anisotropy.
+    anisotropy: f32,
+    /// The squared GGX alpha of the lobe along the tangent, which grows with the anisotropy.
+    alpha_t: f32,
+    /// The tangent and the bitangent of the surface, along which the anisotropy stretches the lobe.
+    anisotropy_t: vec3f,
+    /// The bitangent of that frame, across the stretched axis.
+    anisotropy_b: vec3f,
+#endif
 }
 
 /// Sets up a PbrMaterial as three.js does, with Filament's specular anti-aliasing. It adds
@@ -284,8 +404,8 @@ fn direct_light(
     compensation: vec3f,
 ) -> Reflected {
     let irradiance = saturate(dot(normal, to_light)) * light;
-    let brdf = brdf_ggx(to_light, to_view, normal, m.specular_blended, m.specular_grazing, m.roughness);
-    let v_dot_h = saturate(dot(to_view, normalize(to_light + to_view)));
+    let brdf = brdf_ggx_physical(m, normal, to_view, to_light);
+    let v_dot_h = saturate(dot(to_view, null3d::math::half_vector(to_light, to_view)));
     let fresnel = f_schlick(m.specular, m.specular_grazing, v_dot_h);
     return Reflected(
         irradiance * brdf_lambert(m.diffuse) * (1.0 - fresnel),
@@ -297,7 +417,12 @@ fn direct_light(
 /// three.js's `RE_IndirectDiffuse_Physical`. It leaves out the light that the specular layer
 /// reflects. `dfg` holds the split-sum terms.
 fn indirect_diffuse(m: PbrMaterial, irradiance: vec3f, dfg: vec2f) -> vec3f {
-    let s = multiscattering(m.specular, m.specular_grazing, dfg);
+#ifdef COAT_SHEEN
+    let f0 = mix(m.specular, m.iridescence_reflectance, m.iridescence);
+#else
+    let f0 = m.specular;
+#endif
+    let s = multiscattering(f0, m.specular_grazing, dfg);
     return irradiance * brdf_lambert(m.diffuse) * (1.0 - s.single - s.multi);
 }
 
@@ -305,8 +430,17 @@ fn indirect_diffuse(m: PbrMaterial, irradiance: vec3f, dfg: vec2f) -> vec3f {
 /// `RE_IndirectSpecular_Physical`. The prefiltered reflection is `radiance`, and the environment's
 /// diffuse light is `irradiance`. The split-sum terms are in `dfg`.
 fn indirect_specular(m: PbrMaterial, radiance: vec3f, irradiance: vec3f, dfg: vec2f) -> Reflected {
-    let dielectric = multiscattering(m.specular, m.specular_grazing, dfg);
-    let metallic = multiscattering(m.base_color, m.specular_grazing, dfg);
+#ifdef COAT_SHEEN
+    // The film's reflectance at normal incidence takes the place of each path's where the
+    // iridescence applies, as three.js's `computeMultiscatteringIridescence` mixes it in.
+    let dielectric_f0 = mix(m.specular, m.iridescence_reflectance, m.iridescence);
+    let metallic_f0 = mix(m.base_color, m.iridescence_reflectance_metallic, m.iridescence);
+#else
+    let dielectric_f0 = m.specular;
+    let metallic_f0 = m.base_color;
+#endif
+    let dielectric = multiscattering(dielectric_f0, m.specular_grazing, dfg);
+    let metallic = multiscattering(metallic_f0, m.specular_grazing, dfg);
     let single = mix(dielectric.single, metallic.single, m.metalness);
     let multi = mix(dielectric.multi, metallic.multi, m.metalness);
     let cosine_weighted = irradiance * null3d::math::INV_PI;

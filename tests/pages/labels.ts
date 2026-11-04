@@ -13,8 +13,14 @@ declare global {
 	}
 }
 
-/** Frames on screen that the page samples. */
+/** Frames on screen that the page samples, at most. */
 const SAMPLES = 90;
+/**
+ * How long the page samples for, in seconds. A sample needs the frame on screen to change, and a
+ * software renderer draws only a few frames a second, so a count alone would outlast the test's
+ * wait on a busy machine. The test checks a floor of samples of its own.
+ */
+const SAMPLE_SECONDS = 25;
 
 /** The center of the element's box, from its transform, or null while it is hidden. */
 function placeOf(element: HTMLElement): [number, number] | null {
@@ -68,6 +74,7 @@ run('labels', async () => {
 	}
 	await engine.firstFrame;
 	const samples: number[] = [];
+	const until = performance.now() + SAMPLE_SECONDS * 1000;
 	await new Promise<void>((resolve) => {
 		let last = -1;
 		const sample = () => {
@@ -77,7 +84,7 @@ run('labels', async () => {
 				last = frame;
 				samples.push(frame, place[0], place[1]);
 			}
-			if (samples.length >= SAMPLES * 3) resolve();
+			if (samples.length >= SAMPLES * 3 || performance.now() >= until) resolve();
 			else requestAnimationFrame(sample);
 		};
 		requestAnimationFrame(sample);

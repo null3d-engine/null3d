@@ -2,6 +2,7 @@
 // ready, and reports how each rejected. Then starts an engine on a fresh canvas, which must run, and
 // takes the canvases off the page, so no worker keeps one.
 import { createEngine } from '@null3d/engine';
+import { framesDrawn } from './lib/measure';
 import { run } from './lib/result';
 
 const sketch = new URL('./sketches/empty-sketch.ts', import.meta.url);
@@ -45,13 +46,11 @@ run('abort', async () => {
 	);
 	const engine = await createEngine({ canvas: freshCanvas(), sketch });
 	await engine.firstFrame;
-	// A loaded software GPU can take seconds over one frame, so a measurement of the frames that
-	// followed a start runs again until it holds one, and the check reads the start and not the pace.
-	let stats = await engine.measure(0.5);
-	for (let tries = 1; stats.frames === 0 && tries < MEASUREMENTS; tries++)
-		stats = await engine.measure(0.5);
+	// The check reads the start and not the pace: the frames that followed it, in windows that
+	// repeat while the engine draws none.
+	const framesAfter = await framesDrawn(engine, 0.5, MEASUREMENTS);
 	await engine.destroy();
 	// A worker that drew keeps its canvas for the next engine while the canvas is on the page.
 	for (const canvas of document.querySelectorAll('canvas')) canvas.remove();
-	return { early, late, framesAfter: stats.frames };
+	return { early, late, framesAfter };
 });

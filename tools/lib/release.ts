@@ -9,6 +9,7 @@ import { PAGES, pagePath } from './docs';
 import { checkDocsStyle, DECISION_RECORD_SOURCE, INTERNAL_REFERENCE_SOURCE } from './docs-style';
 import { readIfExists } from './files';
 import { parseFrontMatter } from './frontmatter';
+import { repositoryEnv } from './git-env';
 
 export interface ParsedCommit {
 	/** Lowercased commit type, such as `feat`; empty when the subject is not conventional. */
@@ -63,6 +64,7 @@ export function parseCommit({ subject, body, hash }: RawCommit): ParsedCommit {
 export async function* readCommits(root: string, range: string): AsyncGenerator<ParsedCommit> {
 	const git = spawn('git', ['log', '--no-merges', '--format=%H%x00%s%x00%b%x1e', range], {
 		cwd: root,
+		env: repositoryEnv(),
 		stdio: ['ignore', 'pipe', 'pipe'],
 	});
 	const exited = new Promise<number | null>((resolve, reject) => {
@@ -263,11 +265,12 @@ const REWORDED_SUBJECTS: Readonly<Record<string, string>> = {
 
 /**
  * Why release notes cannot be published: each line that breaks the published docs' writing rules,
- * which the docs check holds `CHANGELOG.md` to. Empty when the notes pass.
+ * which the docs check holds `CHANGELOG.md` to. Empty when the notes pass. The notes are a log by
+ * design, so each release's date passes.
  */
 export function notesProblems(notes: string): string[] {
 	return checkDocsStyle(notes)
-		.filter((f) => f.severity === 'error')
+		.filter((f) => f.severity === 'error' && f.rule !== 'dated_history')
 		.map((f) => `line ${f.line}: ${f.message} (${f.excerpt})`);
 }
 
@@ -483,8 +486,9 @@ export function packageFolders(root: string): string[] {
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
- * Every copy of the release version: each package manifest, the engine's `VERSION` export, the
- * Rust workspace version (which the core reports), and the workspace crates in the lockfile.
+ * Every copy of the release version: each package manifest, the engine's `VERSION` export and the
+ * matching constant of each add-on, the Rust workspace version (which the core reports), and the
+ * workspace crates in the lockfile.
  */
 export function versionCopies(root: string): VersionCopy[] {
 	const manifests = packageFolders(root).map((name) => `packages/${name}/package.json`);
@@ -494,7 +498,17 @@ export function versionCopies(root: string): VersionCopy[] {
 	});
 	return [
 		...manifests.map((path) => ({ path, pattern: /("version":\s*")([^"]*)(")/ })),
-		{ path: 'packages/engine/src/index.ts', pattern: /(export const VERSION = ')([^']*)(')/ },
+		{
+			path: 'packages/engine/src/shared/version.ts',
+			pattern: /(export const VERSION = ')([^']*)(')/,
+		},
+		...packageFolders(root)
+			.filter((name) => name !== 'engine')
+			.filter((name) => existsSync(join(root, 'packages', name, 'src/version.ts')))
+			.map((name) => ({
+				path: `packages/${name}/src/version.ts`,
+				pattern: /(export const VERSION = ')([^']*)(')/,
+			})),
 		{ path: 'Cargo.toml', pattern: /(\[workspace\.package\][^[]*?\nversion = ")([^"]*)(")/ },
 		// The agent skills' plugin: its version, and the release tag it fetches the skills from.
 		{ path: '.claude-plugin/marketplace.json', pattern: /("version":\s*")([^"]*)(")/ },

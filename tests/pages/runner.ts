@@ -356,10 +356,13 @@ function frameLoadingSeconds(frame: HTMLIFrameElement): number {
 async function openInFrame(
 	path: string,
 	timeoutSeconds: number,
-	beat: () => void,
+	beat: (step: number) => void,
 ): Promise<Result> {
 	const frame = document.createElement('iframe');
 	frame.className = 'page';
+	// A page that plays media needs the frame's permission: browsers block a video in a frame that
+	// lacks it, and Safari can then leave the play's promise waiting with no answer.
+	frame.allow = 'autoplay';
 	frame.src = path;
 	stage.append(frame);
 	const start = performance.now();
@@ -369,14 +372,15 @@ async function openInFrame(
 	let beatAt = start;
 	try {
 		while (performance.now() < start + limit * 1000) {
-			if (performance.now() - beatAt >= HEARTBEAT_SECONDS * 1000) {
-				beatAt = performance.now();
-				beat();
-			}
 			const view = frame.contentWindow as {
 				__null3dResult?: Result;
 				__null3dEndsBy?: number;
+				__null3dProgress?: string[];
 			} | null;
+			if (performance.now() - beatAt >= HEARTBEAT_SECONDS * 1000) {
+				beatAt = performance.now();
+				beat(view?.__null3dProgress?.length ?? 0);
+			}
 			const published = view?.__null3dResult;
 			if (published) return published;
 			loading = frameLoadingSeconds(frame);
@@ -407,8 +411,8 @@ async function runItem(item: PlanItem, run: string): Promise<Result> {
 	const load = loadOf(path);
 	// The check above was a download of the load, which starts afresh after it.
 	if (load) await takeDownloads(load);
-	const beat = () =>
-		void post(run, HEARTBEAT_NAME, { item: item.id, at: new Date().toISOString() }).catch(
+	const beat = (step: number) =>
+		void post(run, HEARTBEAT_NAME, { item: item.id, step, at: new Date().toISOString() }).catch(
 			() => undefined,
 		);
 	const result = await openInFrame(path, item.timeoutSeconds, beat);

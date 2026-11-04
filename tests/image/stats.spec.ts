@@ -12,7 +12,7 @@ import {
 /** The overlay's element, which the page adds to its body. */
 const OVERLAY = '[data-null3d-stats]';
 /** The overlay's header button, which shows and hides its card. */
-const HEADER = `${OVERLAY} button[aria-controls]`;
+const HEADER = `${OVERLAY} button[aria-controls="card"]`;
 /** The overlay's card of figures. */
 const CARD = `${OVERLAY} .card`;
 /** The button of the frame mode's symbol, and its tooltip. */
@@ -133,6 +133,37 @@ for (const gpu of ['webgpu', 'webgl2'])
 			Math.floor((floors.textures * 10) / MIB),
 		);
 	});
+
+test("the stats overlay shows an add-on feature's setting, budget, memory and GPU scope", async ({
+	page,
+}) => {
+	const result = await openStats(page, 'gpu=webgl2&preset=medium&feature');
+	const { feature } = result;
+	if (!feature) throw new Error('the page added no feature');
+	// The feature's own row names it, its one GPU scope, the preset's value of its setting, its
+	// budget and the memory that it reports.
+	expect(feature.added).toEqual({
+		samples: 22,
+		budgetMs: 4,
+		budgetScale: 1,
+		bytes: 1024 * 1024,
+		gpuMs: null,
+	});
+	expect(feature.before).toBe(
+		'test-glow gpu not measured samples 22 budget 4.0 of 4.0 ms memory 1.0 MiB',
+	);
+	// Low sets the setting's lighter value and the budget's shorter time, and the overlay follows.
+	expect(feature.lowered).toEqual({
+		samples: 0,
+		budgetMs: 2,
+		budgetScale: 1,
+		bytes: 1024 * 1024,
+		gpuMs: null,
+	});
+	expect(feature.after).toBe(
+		'test-glow gpu not measured samples 0 budget 2.0 of 2.0 ms memory 1.0 MiB',
+	);
+});
 
 test('the stats overlay leaves out the figures that the browser does not give, and its memory adds up', async ({
 	page,
@@ -317,8 +348,94 @@ for (const gpu of ['webgpu', 'webgl2'])
 		await page.evaluate(showFromPage, { collapsed: false });
 		await page.waitForTimeout(500);
 		const open = await counted(softwareGpu() ? 8000 : 2000);
-		// The software GPU advertises the timer but reports none: 0 queries in 8 seconds on 20
-		// October 2026, with the card open. Its own page reports the timer from the adapter's list.
+		// The software GPU advertises the timer but reports none: 0 queries in 8 seconds, with the
+		// card open. Its own page reports the timer from the adapter's list.
 		if (result.gpuTimer && !softwareGpu())
 			expect(open.timerQueries + open.resolves + open.readbacks).toBeGreaterThan(0);
 	});
+
+/** The overlay's tabs, and the pane that each one shows. */
+const TABS = `${OVERLAY} [role=tab]`;
+const pane = (page: Page, name: string) => page.locator(`${OVERLAY} #pane-${name}`);
+
+test('the stats overlay shows one tab at a time, and each tab keeps its figures', async ({
+	page,
+}) => {
+	const result = await openStats(page, 'gpu=webgl2');
+	const tabs = page.locator(TABS);
+	await expect(tabs).toHaveText(['Frame', 'Memory', 'Steps', 'Systems']);
+	await expect(pane(page, 'frame')).toBeVisible();
+	for (const name of ['memory', 'steps', 'systems']) await expect(pane(page, name)).toBeHidden();
+	// The frame tab holds the GPU's time and the geometry figures.
+	const gpu = page.locator(`${OVERLAY} #pane-frame [data-figure="gpu"]`);
+	await expect(gpu).toBeVisible();
+	await expect(page.locator(`${OVERLAY} [data-figure="triangles"]`)).toBeVisible();
+	await expect(page.locator(`${OVERLAY} [data-figure="draws"]`)).toBeVisible();
+	// A figure in a tab that does not show is not drawn, though the overlay keeps it current.
+	const memory = page.locator(`${OVERLAY} #pane-memory [data-figure="memory"]`);
+	await expect(memory).toBeHidden();
+	await tabs.nth(1).click();
+	await expect(pane(page, 'memory')).toBeVisible();
+	await expect(pane(page, 'frame')).toBeHidden();
+	await expect(memory).toBeVisible();
+	await expect(memory).toHaveText(/^\d+\.\d MiB$/);
+	// The frame tab's figures keep their values while another tab shows.
+	await expect(gpu).toBeHidden();
+	// The systems tab holds the register, or the note that says this build reports none.
+	await tabs.nth(3).click();
+	await expect(pane(page, 'systems')).toBeVisible();
+	await expect(page.locator(`${OVERLAY} [data-figure="draws"]`)).toBeHidden();
+	if (result.register)
+		await expect(page.locator(`${OVERLAY} [data-figure="area:scene"]`)).toBeVisible();
+	else await expect(page.locator(`${OVERLAY} #pane-systems .empty`)).toBeVisible();
+	// Back on the frame tab, the figures are still correct.
+	await tabs.nth(0).click();
+	await expect(pane(page, 'frame')).toBeVisible();
+	await expect(page.locator(`${OVERLAY} [data-figure="triangles"]`)).toHaveText(/^[1-9]/);
+	await expect(gpu).toHaveText(/^\d+\.\d ms$|^not measured$/);
+});
+
+test('the stats overlay keeps the card width and takes its height from the tab', async ({
+	page,
+}) => {
+	const result = await openStats(page, 'gpu=webgl2');
+	const card = page.locator(`${OVERLAY} .card`);
+	const tabs = page.locator(TABS);
+	const heights: number[] = [];
+	for (const index of [0, 1, 2, 3]) {
+		await tabs.nth(index).click();
+		const box = await card.boundingBox();
+		if (!box) throw new Error('the card has no box');
+		// The card is 360 pixels wide whatever the tab holds, and its height is the tab's content,
+		// so no tab leaves an empty card below its figures.
+		expect(box.width).toBeCloseTo(360, 0);
+		heights.push(box.height);
+	}
+	if (result.register) {
+		await tabs.nth(3).click();
+		expect(await page.locator(`${OVERLAY} #pane-systems .area`).count()).toBe(10);
+	}
+	// No tab leaves an empty card: the card's lower edge sits within its padding of the lowest
+	// figure the tab draws.
+	for (const index of [0, 1, 2, 3]) {
+		await tabs.nth(index).click();
+		const gap = Number(
+			await page.evaluate(`(() => {
+				const root = document.querySelector('[data-null3d-stats]')?.shadowRoot;
+				const card = root?.querySelector('.card')?.getBoundingClientRect();
+				const pane = root?.querySelector('.pane:not([hidden])');
+				if (!card || !pane) return -1;
+				let lowest = -Infinity;
+				for (const node of pane.querySelectorAll('*')) {
+					const box = node.getBoundingClientRect();
+					if (box.width > 0 && box.height > 0) lowest = Math.max(lowest, box.bottom);
+				}
+				return card.bottom - lowest;
+			})()`),
+		);
+		expect(gap).toBeGreaterThanOrEqual(0);
+		expect(gap).toBeLessThan(16);
+	}
+	// The tabs hold different amounts, so a card that followed its content changes height.
+	expect(Math.max(...heights) - Math.min(...heights)).toBeGreaterThan(20);
+});

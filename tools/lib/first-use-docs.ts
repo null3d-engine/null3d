@@ -16,19 +16,24 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 	morph:
 		"with the first morphed mesh, or as soon as the sketch reads a glTF file with morph targets. WebGPU morphs in the skinning pass, so there `'morph'` downloads the skinning shaders",
 	bloom: 'when `post.set` turns bloom on',
-	ao: 'when `post.set` turns ambient occlusion on',
+	ao: 'when `post.set` turns ambient occlusion on, or when the preset draws the screen-space bounce light that reads its steps',
 	dof: 'when `post.set` turns depth of field on',
 	exposure:
 		'when `post.set` turns automatic exposure on. The camera keeps its own exposure until the meter is built',
 	fog_volume:
 		'when `scene.setFog` turns the volumetric fog on. The fog keeps its sun glow until the fog is built',
+	taa: 'when `post.set` turns the temporal resolve on, a prototype for measuring only (D-206)',
 	sprites: 'with the first sprite batch',
 	picking: 'with the first `scene.pick()` call, which waits for the shaders',
 	particles: 'with the first particle system (`@null3d/particles`)',
 	lines: 'with the first line batch',
 	decals: 'with the first mesh of a decal material (`materials.decal`)',
+	cluster_levels:
+		'with the first frame that draws a tree of cluster patches (`setMeshPatches`), which builds the pass that picks a tree of patches. A scene without a tree downloads none of it, and WebGL2 never builds that pass',
 	probe_grid: 'when the sketch first sets a light probe grid (`scene.setLightProbeGrid`)',
 	transmission: 'with the first material that lets light through (`transmission`)',
+	color_copy:
+		'with the first step that reads the color that the frame before showed: the first material that lets light through, screen-space reflections, or the bounce light that the preset draws from the start of the page',
 	translucency:
 		'with the first material that lets light through a thin surface (`diffuseTransmission`)',
 	bump: 'with the first material with a bump map',
@@ -38,11 +43,17 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 		'with the first material whose light spreads under its surface (`subsurfaceRadius`). The skin pass and the blur draw its light',
 	motion:
 		'when a pass first reads the motion. The motion debug view is such a pass, and it exists in development builds only',
-	coat_sheen: 'with the first material with a clear coat or a sheen',
+	coat_sheen: 'with the first material with a clear coat, a sheen, iridescence or anisotropy',
 	weighted: "with the first material of the `'weighted'` blending",
+	single_layer:
+		"with MSAA, when the first blended draw of a feature at the `'resolve'` frame point draws. Its surfaces blend in the transparent pass until the layer is built",
+	moment:
+		'when the quality setting `momentTransparency` is on and the first blended surface draws. The surfaces draw sorted until the layer and its anti-aliasing are built',
 	area_lights: 'with the first rectangle or tube light',
 	background: 'with the first texture, environment or cube map background',
 	sky: 'with the first sky background',
+	clouds:
+		"with the first frame that draws the sky's volumetric cloud tier: the preset's `cloudSteps` above 0, or `quality.set({ cloudSteps })`. A page that draws the flat layer downloads none of it. The noise field of its march is made in the browser then",
 	physical_sky:
 		'with the first physical sky background (`atmosphere`). The view shows the background color until the sky is built',
 	occlusion:

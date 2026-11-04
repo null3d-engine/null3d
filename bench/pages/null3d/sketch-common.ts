@@ -66,6 +66,28 @@ export function readGovernor(moduleUrl: string): boolean {
 }
 
 /**
+ * The render scale that a sketch holds, where the page harness puts `renderScale` for a page with
+ * `?renderScale=`, or null for the preset's range and the governor's steps.
+ */
+export function readPinnedScale(moduleUrl: string): number | null {
+	const scale = new URL(moduleUrl).searchParams.get('renderScale');
+	return scale === null ? null : Number(scale);
+}
+
+/**
+ * Sets the quality switches that a sketch's own address names: the governor, which `?governor=off`
+ * turns off, and a pinned render scale, which holds one scale and turns the governor off so no step
+ * can move it. Every benchmark sketch that lets the scale move uses this one path, so none can drop
+ * one of the two switches.
+ */
+export function applyQualitySwitches(quality: Quality, moduleUrl: string): void {
+	quality.set({ governor: readGovernor(moduleUrl) });
+	const pinned = readPinnedScale(moduleUrl);
+	if (pinned !== null)
+		quality.set({ minRenderScale: pinned, maxRenderScale: pinned, governor: false });
+}
+
+/**
  * Sets the background, the sun and the ambient light, and makes the active camera. The three.js
  * twins draw with no tone mapping, three.js's default, so the null3D pages turn off the engine's
  * default curve. The twins also draw every pixel of the canvas and never lighten their shadows,
@@ -106,7 +128,9 @@ export function setUpView(
 }
 
 /**
- * Moves a camera along a path of the shared scene module. It allocates nothing per call. The browser
+ * Moves a camera along a path of the shared scene module. It allocates nothing per call, and it
+ * copies the path's position into `copyTo` when the caller gives an array, so a step that reads the
+ * camera's position takes no fraction. The browser
  * boxes each fraction passed to a call that it does not inline, and it may never inline `lookAt`
  * into a function that runs once per frame. So the rotation comes from the quaternion helper, which
  * reads arrays, and goes to `setRotation`, which is as small as `setPosition`. A camera looks down
@@ -115,12 +139,15 @@ export function setUpView(
 export function followPath(
 	camera: Camera,
 	path: (t: number, outPosition: OutArray, outTarget: OutArray) => void,
+	copyTo?: Float64Array,
 ): (t: number) => void {
 	const position = new Float64Array(3);
 	const target = new Float64Array(3);
 	const rotation = quat.create();
 	return (t) => {
 		path(t, position, target);
+		// A step that reads the camera's position takes it here, where no fraction crosses a call.
+		copyTo?.set(position);
 		quat.lookAt(rotation, target, position);
 		camera.setPosition(position[0] as number, position[1] as number, position[2] as number);
 		camera.setRotation(

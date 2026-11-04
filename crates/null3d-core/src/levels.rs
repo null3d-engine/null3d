@@ -1,30 +1,77 @@
-//! The rule that picks a mesh's level of detail for a source in a view.
+//! The rule that picks a mesh's level of detail for a source in a view, and the distance band in
+//! which a source draws at all.
 //!
-//! A mesh with levels has simpler meshes for its lower levels, each with its error: the largest
-//! distance between the level's surface and the base mesh's, in the units of the base mesh's
-//! positions. Errors grow from level to level. A source draws the last level whose error passes:
+//! A mesh with levels has simpler meshes for its lower levels, each with a switch measure: an
+//! error, a distance, or the share of the screen's height that the bounds cover. Errors are the
+//! largest distance between the level's surface and the base mesh's, in the units of the base
+//! mesh's positions, as the asset tool measures them. Distances and coverage are set by hand. A
+//! source draws the last level whose switch lies under the distance from the camera:
 //!
 //! ```text
-//! level j draws while error[j] × scale × factor < distance
+//! error:    error × scale × factor / bias < distance
+//! distance: distance_set × scale / bias < distance
+//! coverage: radius × P[1][1] / (coverage × bias) < distance
 //! ```
 //!
 //! `scale` is the largest axis scale of the source's world matrix, and `distance` the distance from
-//! the view's camera to the centre of the source's bounding sphere, or 1 for an orthographic
-//! camera, whose pixels do not shrink with distance. `factor` is the render height in pixels times
-//! the projection's `P[1][1]`, over twice the threshold in pixels. The base level's error is 0, so
-//! it always passes. The rule keeps no state, so every view and both frame builders pick the same
-//! level for the same source: the job workers through [`LevelRule::pick`], and the GPU's culling
-//! shader by the same steps.
+//! the view's camera to the nearest point of the source's bounding sphere, at least
+//! [`LEAST_DISTANCE`], or 1 for an orthographic camera, whose pixels do not shrink with distance.
+//! `factor` is the render height in pixels times the projection's `P[1][1]`, over twice the
+//! threshold in pixels. `bias` raises or lowers the source's own threshold, as Godot's `lod_bias`
+//! raises or lowers an object's: a bias above 1 makes every switch happen nearer, so the source
+//! draws coarser levels, and a bias below 1 keeps its detail. The bias divides the factor of the
+//! level rule and of the rule that hides a bound under the threshold, so both move together. The
+//! base level's switch is 0, so it always passes. The rule keeps no state,
+//! so every view and both frame builders pick the same level for the same source: the job workers
+//! through [`LevelRule::pick`], and the GPU's culling shader by the same steps.
 //!
-//! Past each switch distance lies a fading band, [`FADE_BAND`] of the switch distance long, in
-//! which the new level and the one before both draw. A fade amount `t` runs from 0 to 1 across the
-//! band, and a dither gives each pixel to one level (see [`fade_values`]).
+//! A level with a measured error changes the picture by under a pixel at its switch, so it switches
+//! at once. A level given by distance or by a hand-set error changes the picture far more, and its
+//! bands fade where the switch would show: past each switch distance lies a fading band,
+//! [`FADE_BAND`] of the switch distance long, in which the new level and the one before both draw.
+//! A fade amount `t` runs from 0 to 1 across the band, and a dither gives each pixel to one level
+//! (see [`fade_values`]). The frame builders make a fade bucket only for a level that fades.
 //!
-//! The frame builders keep a bucket per level, each with a [`LevelLink`]: the level's error, the
-//! bucket of the next coarser level, and the level's fade bucket.
+//! A source whose bounding sphere covers fewer pixels than the threshold draws nothing: the last
+//! level holds no geometry. The sphere's world diameter times the factor measures the pixels it
+//! covers, so the source hides while `diameter × factor < distance`, the same comparison that picks
+//! every level. Past that hide distance a fading band gives the dither's share of the pixels to
+//! nothing, which thins the coarsest level out rather than popping it away.
+//!
+//! A source also draws only inside its distance band, [`DrawRange`]: nothing nearer than the band's
+//! start, and nothing past its end. Both edges fade over the same share of the nearest edge, so a
+//! source that fades in or out does not pop. The shader draws the share that a fading band's dither
+//! keeps, through the level's fade bucket.
+//!
+//! The frame builders keep a bucket per level, each with a [`LevelLink`]: the level's switch
+//! measure, the bucket of the next coarser level, and the level's fade bucket.
 
 /// The bucket of a link that names none.
 pub const NO_LINK: u32 = u32::MAX;
+
+/// The highest level that a level code names, in its lowest bits.
+pub const LEVEL_CODE_LEVEL_MAX: u32 = 7;
+/// The bit of a level code that marks a source that the size rule or a draw range hid.
+pub const LEVEL_CODE_HIDDEN: u32 = 1 << 3;
+/// The place of the fade magnitude in a level code.
+pub const LEVEL_CODE_FADE_SHIFT: u32 = 4;
+/// The largest fade magnitude of a level code, in its own bits.
+pub const LEVEL_CODE_FADE_MAX: u32 = 0x3f;
+/// The bit of a level code that marks the side of a fading band that keeps the other level.
+pub const LEVEL_CODE_NEGATIVE: u32 = 1 << 10;
+
+/// The word that a debug view of levels reads beside an entry: the level of the draw, whether the
+/// size rule or a draw range hid the source, and the share of a fading band that its level keeps,
+/// with the sign that marks the side of the band. A source outside such a band has a fade of 0,
+/// which keeps every pixel. The levels debug view's shader reads the same bits.
+#[inline(always)]
+pub fn level_code(level: u32, hidden: bool, fade: f32) -> u32 {
+    let share = (fade.abs().clamp(0.0, 1.0) * LEVEL_CODE_FADE_MAX as f32).round() as u32;
+    (level & LEVEL_CODE_LEVEL_MAX)
+        | if hidden { LEVEL_CODE_HIDDEN } else { 0 }
+        | (share << LEVEL_CODE_FADE_SHIFT)
+        | if fade < 0.0 { LEVEL_CODE_NEGATIVE } else { 0 }
+}
 
 /// The share of the switch distance over which two levels hand over.
 pub const FADE_BAND: f32 = 0.08;
@@ -33,12 +80,82 @@ pub const FADE_BAND: f32 = 0.08;
 /// band's start, where it covers no pixel yet.
 const LEAST_FADE: f32 = 1.0e-6;
 
-/// A bucket's level of detail: the level's error, the bucket of the next coarser level, and the
-/// level's fade bucket, each [`NO_LINK`] for none.
+/// The smallest distance that the rule compares, in meters. A camera inside a source's bounds
+/// measures this distance, so the source keeps its base level.
+pub const LEAST_DISTANCE: f32 = 1.0e-3;
+
+/// What a level's switch distance is measured by.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Switch {
+    /// The level's error, in the units of the base mesh's positions, from the asset tool's
+    /// measurement or set by hand. The default.
+    #[default]
+    Error = 0,
+    /// A distance in meters from the camera to the nearest point of the bounds, for a source of
+    /// scale 1.
+    Distance = 1,
+    /// The share of the render's height that the bounds cover, from 0 to 1: the level draws while
+    /// the bounds cover less than this, whatever the distance.
+    Coverage = 2,
+}
+
+impl Switch {
+    /// The measure that a level's stored bits name.
+    #[inline(always)]
+    pub fn from_bits(bits: u32) -> Switch {
+        match bits {
+            1 => Switch::Distance,
+            2 => Switch::Coverage,
+            _ => Switch::Error,
+        }
+    }
+}
+
+/// The distances at which a source draws: from the start distance, which is 0 for none, to the
+/// end distance, which is infinite for none. Both edges fade over a band.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DrawRange {
+    /// The nearest distance at which the source draws, 0 for none.
+    pub start: f32,
+    /// The farthest distance at which the source draws, infinite for none.
+    pub end: f32,
+}
+
+impl DrawRange {
+    /// The range of a source that draws at every distance.
+    pub const NONE: DrawRange = DrawRange {
+        start: 0.0,
+        end: f32::INFINITY,
+    };
+
+    /// The range from `start` to `end`.
+    #[inline(always)]
+    pub fn new(start: f32, end: f32) -> Self {
+        Self { start, end }
+    }
+
+    /// True when the source draws at every distance.
+    #[inline(always)]
+    pub fn is_none(&self) -> bool {
+        self.start <= 0.0 && !self.end.is_finite()
+    }
+}
+
+impl Default for DrawRange {
+    fn default() -> Self {
+        Self::NONE
+    }
+}
+
+/// A bucket's level of detail: the level's switch measure, the bucket of the next coarser level,
+/// and the level's fade bucket, each [`NO_LINK`] for none.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LevelLink {
-    /// The level's error, 0 for a base level.
-    pub error: f32,
+    /// The level's switch value, 0 for a base level.
+    pub value: f32,
+    /// What the switch distance is measured by.
+    pub switch: Switch,
     /// The bucket of the next coarser level.
     pub next: u32,
     /// The level's fade bucket.
@@ -48,7 +165,8 @@ pub struct LevelLink {
 impl LevelLink {
     /// The link of a bucket without levels.
     pub const NONE: LevelLink = LevelLink {
-        error: 0.0,
+        value: 0.0,
+        switch: Switch::Error,
         next: NO_LINK,
         fade: NO_LINK,
     };
@@ -66,13 +184,16 @@ impl Default for LevelLink {
     }
 }
 
-/// What a view's choice of levels reads: the factor of the rule, true for an orthographic camera,
-/// and the share of the switch distance that a fading band covers, 0 where levels switch at once.
-/// A factor of 0 turns the choice off: every source draws its base level.
+/// What a view's choice of levels reads: the factor of the rule, the projection's `P[1][1]`, true
+/// for an orthographic camera, and the share of the switch distance that a fading band covers, 0
+/// where levels switch at once. A factor of 0 turns the choice off: every source draws its base
+/// level.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct LevelRule {
     /// The render height times `P[1][1]`, over twice the threshold in pixels.
     pub factor: f32,
+    /// The projection's `P[1][1]`, which a level given by screen coverage reads.
+    pub p11: f32,
     /// True for an orthographic camera.
     pub orthographic: bool,
     /// The share of a switch distance that a fading band covers.
@@ -80,7 +201,8 @@ pub struct LevelRule {
 }
 
 /// The buckets that a source draws in a view: one level's bucket, or inside a fading band the fade
-/// buckets of the new level and of the level before it, with the fade amount from 0 to 1.
+/// buckets of the new level and of the level before it, with the fade amount from 0 to 1. A source
+/// inside a distance band's edge draws a share of its pixels through its level's fade bucket.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Picked {
     /// One level's bucket.
@@ -93,6 +215,25 @@ pub enum Picked {
         /// The old level's fade bucket.
         old: u32,
         /// The fade amount, from 0 to 1.
+        t: f32,
+    },
+    /// Inside the band at the start of the source's distance range: the fade bucket of the level
+    /// that draws, and the share of the pixels that it keeps, from 0 to 1.
+    FadeIn {
+        /// The level's fade bucket.
+        bucket: u32,
+        /// The share of the pixels that the dither keeps.
+        t: f32,
+    },
+    /// The source covers fewer pixels than the threshold, or lies outside its distance range: it
+    /// draws nothing.
+    Hidden,
+    /// The source lies in the band past its hide distance or its range's end: the level it would
+    /// draw keeps the dither's share of the pixels, which thins it out.
+    FadeOut {
+        /// The level's fade bucket.
+        old: u32,
+        /// The share of the pixels that the dither drops, from 0 to 1.
         t: f32,
     },
 }
@@ -114,6 +255,7 @@ impl LevelRule {
         };
         Self {
             factor,
+            p11: p11.abs(),
             orthographic,
             band,
         }
@@ -128,25 +270,57 @@ impl LevelRule {
     /// The rule as the culling shader's uniform reads it.
     pub fn uniform(&self) -> [f32; 4] {
         let orthographic = if self.orthographic { 1.0 } else { 0.0 };
-        [self.factor, orthographic, self.band, 0.0]
+        [self.factor, orthographic, self.band, self.p11]
     }
 
-    /// The distance that the rule compares for a sphere centre relative to the camera: its length,
-    /// or 1 for an orthographic camera.
+    /// The distance that the rule compares for a bounding sphere whose center lies at `center`
+    /// relative to the camera and whose radius is `radius`: the distance to its nearest point, at
+    /// least [`LEAST_DISTANCE`], or 1 for an orthographic camera.
     #[inline(always)]
-    pub fn distance(&self, center: [f32; 3]) -> f32 {
+    pub fn distance(&self, center: [f32; 3], radius: f32) -> f32 {
         if self.orthographic {
             1.0
         } else {
-            (center[0] * center[0] + center[1] * center[1] + center[2] * center[2]).sqrt()
+            let length =
+                (center[0] * center[0] + center[1] * center[1] + center[2] * center[2]).sqrt();
+            (length - radius).max(LEAST_DISTANCE)
+        }
+    }
+
+    /// The distance at which a level with `link` switches in, for a source of largest axis scale
+    /// `scale` and world radius `radius`, at a threshold bias of `bias`.
+    #[inline(always)]
+    pub fn switch_distance(&self, link: &LevelLink, scale: f32, radius: f32, bias: f32) -> f32 {
+        let bias = if bias > 0.0 { bias } else { 1.0 };
+        match link.switch {
+            Switch::Error => link.value * scale * (self.factor / bias),
+            Switch::Distance => link.value * scale / bias,
+            Switch::Coverage => {
+                if link.value > 0.0 && self.p11 > 0.0 {
+                    radius * self.p11 / (link.value * bias)
+                } else {
+                    f32::INFINITY
+                }
+            }
         }
     }
 
     /// The buckets that a source of base bucket `home` draws, at `distance` with a world matrix of
-    /// largest axis scale `scale`, given each bucket's link in `links`.
+    /// largest axis scale `scale` and a bounding sphere of world radius `radius`, given each
+    /// bucket's link in `links`, inside the distance range `range`. `bias` raises the source's
+    /// threshold above 1, for coarser levels, or lowers it below 1, for finer ones.
     #[inline]
-    pub fn pick(&self, links: &[LevelLink], home: u32, scale: f32, distance: f32) -> Picked {
-        let reach = scale * self.factor;
+    #[allow(clippy::too_many_arguments)]
+    pub fn pick(
+        &self,
+        links: &[LevelLink],
+        home: u32,
+        scale: f32,
+        radius: f32,
+        distance: f32,
+        bias: f32,
+        range: DrawRange,
+    ) -> Picked {
         let mut before = home;
         let mut level = home;
         // A rule without a factor keeps every source at its base level.
@@ -155,14 +329,41 @@ impl LevelRule {
         } else {
             NO_LINK
         };
-        while next != NO_LINK && links[next as usize].error * reach < distance {
+        while next != NO_LINK
+            && self.switch_distance(&links[next as usize], scale, radius, bias) < distance
+        {
             before = level;
             level = next;
             next = links[level as usize].next;
         }
-        let (new, old) = (links[level as usize].fade, links[before as usize].fade);
+        let new_fade = links[level as usize].fade;
+        // A source outside its distance range draws nothing. Inside each edge of it, the share of
+        // the pixels that the dither keeps grows to one, or falls to none, over the same band that
+        // a level switch fades over.
+        if distance < range.start || distance > range.end {
+            return Picked::Hidden;
+        }
+        if new_fade != NO_LINK && self.band > 0.0 {
+            if range.start > 0.0 && distance < range.start * (1.0 + self.band) {
+                let t = (distance / range.start - 1.0) / self.band;
+                return Picked::FadeIn {
+                    bucket: new_fade,
+                    t: t.max(0.0),
+                };
+            }
+            if range.end.is_finite() && distance > range.end / (1.0 + self.band) {
+                let inner = range.end / (1.0 + self.band);
+                let t = (distance - inner) / (range.end - inner);
+                return Picked::FadeOut {
+                    old: new_fade,
+                    t: t.clamp(0.0, 1.0),
+                };
+            }
+        }
+        let (new, old) = (new_fade, links[before as usize].fade);
         if level != home && self.band > 0.0 && new != NO_LINK && old != NO_LINK {
-            let t = (distance / (links[level as usize].error * reach) - 1.0) / self.band;
+            let switch = self.switch_distance(&links[level as usize], scale, radius, bias);
+            let t = (distance / switch - 1.0) / self.band;
             if t < 1.0 {
                 return Picked::Fade {
                     new,
@@ -170,6 +371,22 @@ impl LevelRule {
                     t: t.max(0.0),
                 };
             }
+        }
+        // A bound that covers fewer pixels than the threshold draws nothing: the last level holds
+        // no geometry. A mesh without levels has no such level. The band past the hide distance
+        // thins the level out with the same dither, where the pipeline has a fading build.
+        let hide = 2.0 * radius * self.factor / if bias > 0.0 { bias } else { 1.0 };
+        if self.on() && links[home as usize].has_next() && radius > 0.0 && hide < distance {
+            if self.band > 0.0 && new != NO_LINK {
+                let t = (distance / hide - 1.0) / self.band;
+                if t < 1.0 {
+                    return Picked::FadeOut {
+                        old: new,
+                        t: t.max(0.0),
+                    };
+                }
+            }
+            return Picked::Hidden;
         }
         Picked::One(level)
     }
@@ -187,12 +404,42 @@ pub fn fade_values(t: f32) -> (f32, f32) {
 mod tests {
     use super::*;
 
+    /// The levels debug view's shader reads the same bits, so a code round-trips through them.
+    #[test]
+    fn a_level_code_carries_its_level_hidden_mark_and_fade() {
+        let code = level_code(3, false, 0.5);
+        assert_eq!(code & LEVEL_CODE_LEVEL_MAX, 3);
+        assert_eq!(code & LEVEL_CODE_HIDDEN, 0);
+        assert_eq!(
+            (code >> LEVEL_CODE_FADE_SHIFT) & LEVEL_CODE_FADE_MAX,
+            32,
+            "0.5 of the fade's bits"
+        );
+        assert_eq!(code & LEVEL_CODE_NEGATIVE, 0);
+        let hid = level_code(0, true, 0.0);
+        assert_eq!(hid & LEVEL_CODE_HIDDEN, LEVEL_CODE_HIDDEN);
+        assert_eq!((hid >> LEVEL_CODE_FADE_SHIFT) & LEVEL_CODE_FADE_MAX, 0);
+        let old = level_code(1, false, -1.0);
+        assert_eq!((old >> LEVEL_CODE_FADE_SHIFT) & LEVEL_CODE_FADE_MAX, 63);
+        assert_ne!(old & LEVEL_CODE_NEGATIVE, 0);
+        // A fade past either end clamps to the code's own bits.
+        assert_eq!(
+            (level_code(0, false, 9.0) >> LEVEL_CODE_FADE_SHIFT) & LEVEL_CODE_FADE_MAX,
+            63
+        );
+        assert_eq!(
+            (level_code(0, false, -9.0) >> LEVEL_CODE_FADE_SHIFT) & LEVEL_CODE_FADE_MAX,
+            63
+        );
+    }
+
     /// Buckets 0 to 3 are the levels of one mesh, with errors growing, and buckets 4 to 7 their
     /// fade buckets.
     fn links(errors: [f32; 4], fades: bool) -> Vec<LevelLink> {
         let mut links: Vec<LevelLink> = (0..4)
             .map(|k| LevelLink {
-                error: errors[k],
+                value: errors[k],
+                switch: Switch::Error,
                 next: if k < 3 { k as u32 + 1 } else { NO_LINK },
                 fade: if fades { 4 + k as u32 } else { NO_LINK },
             })
@@ -201,13 +448,38 @@ mod tests {
         links
     }
 
+    /// The levels of one mesh, each given by `measure` with `values`.
+    fn links_by(values: [f32; 3], switch: Switch, fades: bool) -> Vec<LevelLink> {
+        let mut links: Vec<LevelLink> = (0..4)
+            .map(|k| LevelLink {
+                value: if k == 0 { 0.0 } else { values[k - 1] },
+                switch,
+                next: if k < 3 { k as u32 + 1 } else { NO_LINK },
+                fade: if fades { 4 + k as u32 } else { NO_LINK },
+            })
+            .collect();
+        links.extend([LevelLink::NONE; 4]);
+        links
+    }
+
+    /// Picks without a distance range, for a source of world radius `radius`.
+    fn pick_r(rule: &LevelRule, links: &[LevelLink], radius: f32, distance: f32) -> Picked {
+        rule.pick(links, 0, 1.0, radius, distance, 1.0, DrawRange::NONE)
+    }
+
+    /// Picks without a distance range, for a source whose world radius is half a meter.
+    fn pick(rule: &LevelRule, links: &[LevelLink], distance: f32) -> Picked {
+        pick_r(rule, links, 0.5, distance)
+    }
+
     #[test]
     fn the_coarsest_level_whose_error_is_under_the_threshold_draws() {
         // A view 1,000 pixels high and 90 degrees high, threshold 1 pixel: factor 500.
         let rule = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
         assert_eq!(rule.factor, 500.0);
         let links = links([0.0, 0.01, 0.04, 0.2], false);
-        // Level 1 switches in past 5 m, level 2 past 20 m and level 3 past 100 m.
+        // Level 1 switches in past 5 m, level 2 past 20 m and level 3 past 100 m. The bound's
+        // diameter covers a pixel only past 500 m, so every case draws a level.
         let cases = [
             (1.0, 0),
             (4.99, 0),
@@ -219,14 +491,123 @@ mod tests {
         ];
         for (distance, level) in cases {
             assert_eq!(
-                rule.pick(&links, 0, 1.0, distance),
+                pick(&rule, &links, distance),
                 Picked::One(level),
                 "{distance}"
             );
         }
         // Twice the scale doubles every switch distance.
-        assert_eq!(rule.pick(&links, 0, 2.0, 9.9), Picked::One(0));
-        assert_eq!(rule.pick(&links, 0, 2.0, 10.1), Picked::One(1));
+        assert_eq!(
+            rule.pick(&links, 0, 2.0, 0.5, 9.9, 1.0, DrawRange::NONE),
+            Picked::One(0)
+        );
+        assert_eq!(
+            rule.pick(&links, 0, 2.0, 0.5, 10.1, 1.0, DrawRange::NONE),
+            Picked::One(1)
+        );
+    }
+
+    #[test]
+    fn a_level_given_by_distance_switches_at_that_distance_whatever_the_screen() {
+        let links = links_by([20.0, 40.0, 80.0], Switch::Distance, false);
+        // A distance measures meters for a source of scale 1, so a taller screen changes nothing.
+        let small = LevelRule::new(1080.0, 1.0, false, 1.0, 0.0);
+        let tall = LevelRule::new(2160.0, 1.0, false, 1.0, 0.0);
+        for rule in [small, tall] {
+            assert_eq!(pick(&rule, &links, 19.0), Picked::One(0));
+            assert_eq!(pick(&rule, &links, 21.0), Picked::One(1));
+            assert_eq!(pick(&rule, &links, 45.0), Picked::One(2));
+            assert_eq!(pick(&rule, &links, 90.0), Picked::One(3));
+        }
+        // The scale multiplies the switch distances, so at twice the scale 45 m lies past the
+        // first switch only, and a bias above 1 switches nearer.
+        assert_eq!(
+            small.pick(&links, 0, 2.0, 0.5, 45.0, 1.0, DrawRange::NONE),
+            Picked::One(1)
+        );
+        assert_eq!(
+            small.pick(&links, 0, 1.0, 0.5, 45.0, 2.0, DrawRange::NONE),
+            Picked::One(3)
+        );
+    }
+
+    #[test]
+    fn a_level_given_by_coverage_switches_where_the_bounds_cover_that_much_of_the_screen() {
+        // A view 1,080 pixels high with a 90 degree vertical field of view: P[1][1] is 1.
+        let links = links_by([0.25, 0.1, 0.04], Switch::Coverage, false);
+        let rule = LevelRule::new(1080.0, 1.0, false, 1.0, 0.0);
+        // A world radius of 2 m covers a quarter of the height at 8 m: 2 × 1 / 0.25.
+        let sphere = |distance: f32| [0.0, 0.0, -(distance + 2.0)];
+        let case = |distance: f32| {
+            rule.pick(
+                &links,
+                0,
+                1.0,
+                2.0,
+                rule.distance(sphere(distance), 2.0),
+                1.0,
+                DrawRange::NONE,
+            )
+        };
+        assert_eq!(case(7.0), Picked::One(0));
+        assert_eq!(case(9.0), Picked::One(1));
+        assert_eq!(case(25.0), Picked::One(2));
+        assert_eq!(case(60.0), Picked::One(3));
+        // A taller screen does not move a switch that is measured by coverage.
+        let tall = LevelRule::new(2160.0, 1.0, false, 1.0, 0.0);
+        let far = tall.pick(
+            &links,
+            0,
+            1.0,
+            2.0,
+            tall.distance(sphere(9.0), 2.0),
+            1.0,
+            DrawRange::NONE,
+        );
+        assert_eq!(far, Picked::One(1));
+        // An orthographic view compares coverage with 1: a draw distance of 1 and a radius that
+        // covers less than a quarter of the screen passes the first switch, and a radius that
+        // covers more keeps the base level.
+        let flat = LevelRule::new(1080.0, 1.0, true, 1.0, 0.0);
+        assert_eq!(
+            flat.pick(&links, 0, 1.0, 0.2, 1.0, 1.0, DrawRange::NONE),
+            Picked::One(1)
+        );
+        assert_eq!(
+            flat.pick(&links, 0, 1.0, 3.0, 1.0, 1.0, DrawRange::NONE),
+            Picked::One(0)
+        );
+    }
+
+    #[test]
+    fn the_distance_runs_to_the_nearest_point_of_the_bounds() {
+        let rule = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
+        // A sphere of radius 2 m centered 5 m away has its nearest point 3 m away.
+        assert_eq!(rule.distance([3.0, 4.0, 0.0], 2.0), 3.0);
+        // A sphere that reaches past the camera measures the least distance.
+        assert_eq!(rule.distance([0.5, 0.0, 0.0], 2.0), LEAST_DISTANCE);
+        assert_eq!(rule.distance([-1.0, 0.0, 0.0], 2.0), LEAST_DISTANCE);
+        // An orthographic camera measures the same distance wherever the sphere lies.
+        let flat = LevelRule::new(1000.0, 0.2, true, 1.0, 0.0);
+        assert_eq!(flat.distance([1e5, 0.0, 0.0], 1e4), 1.0);
+    }
+
+    #[test]
+    fn a_large_object_switches_by_its_near_side() {
+        let rule = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
+        let links = links([0.0, 0.01, 0.04, 0.2], false);
+        // Level 1 switches in at a nearest point of 5 m. A sphere of radius 4 m centered at 9 m
+        // reaches 4 m, and one centered at 9.1 m reaches 5.1 m.
+        let near = rule.distance([0.0, 0.0, -9.0], 4.0);
+        assert_eq!(
+            rule.pick(&links, 0, 1.0, 4.0, near, 1.0, DrawRange::NONE),
+            Picked::One(0)
+        );
+        let far = rule.distance([0.0, 0.0, -9.1], 4.0);
+        assert_eq!(
+            rule.pick(&links, 0, 1.0, 4.0, far, 1.0, DrawRange::NONE),
+            Picked::One(1)
+        );
     }
 
     #[test]
@@ -235,24 +616,24 @@ mod tests {
         let full = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
         let half = LevelRule::new(500.0, 1.0, false, 1.0, 0.0);
         let coarse = LevelRule::new(1000.0, 1.0, false, 2.0, 0.0);
-        assert_eq!(full.pick(&links, 0, 1.0, 12.0), Picked::One(1));
-        assert_eq!(half.pick(&links, 0, 1.0, 12.0), Picked::One(2));
-        assert_eq!(coarse.pick(&links, 0, 1.0, 12.0), Picked::One(2));
+        assert_eq!(pick(&full, &links, 12.0), Picked::One(1));
+        assert_eq!(pick(&half, &links, 12.0), Picked::One(2));
+        assert_eq!(pick(&coarse, &links, 12.0), Picked::One(2));
     }
 
     #[test]
     fn an_orthographic_view_picks_by_scale_alone() {
         let links = links([0.0, 0.01, 0.04, 0.2], false);
-        // A view 10 m high on 1,000 pixels: P[1][1] is 0.2, so 100 pixels a metre at threshold 1.
+        // A view 10 m high on 1,000 pixels: P[1][1] is 0.2, so 100 pixels a meter at threshold 1.
         let rule = LevelRule::new(1000.0, 0.2, true, 1.0, 0.0);
-        let distance = rule.distance([1e5, 0.0, 0.0]);
+        let distance = rule.distance([1e5, 0.0, 0.0], 1.0);
         assert_eq!(distance, 1.0);
         // An error passes while it covers less than a pixel: level 1's 1 cm covers exactly one
         // pixel at scale 1, so the base level draws, and half a pixel at scale 0.5.
         let cases = [(1.0, 0), (0.5, 1), (0.2, 2), (0.04, 3)];
         for (scale, level) in cases {
             assert_eq!(
-                rule.pick(&links, 0, scale, distance),
+                rule.pick(&links, 0, scale, 1.0, distance, 1.0, DrawRange::NONE),
                 Picked::One(level),
                 "{scale}"
             );
@@ -260,11 +641,54 @@ mod tests {
     }
 
     #[test]
+    fn a_bias_moves_every_switch_and_the_hide_distance_together() {
+        let rule = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
+        let links = links([0.0, 0.01, 0.04, 0.2], false);
+        // Level 1 switches in past 5 m at a bias of 1: past 2.5 m at 2, and past 10 m at 0.5.
+        // Level 2 switches in past 20 m at a bias of 1, and past 10 m at 2.
+        let cases = [
+            (12.0, 1.0, 1),
+            (12.0, 2.0, 2),
+            (25.0, 1.0, 2),
+            (25.0, 0.5, 1),
+        ];
+        for (distance, bias, level) in cases {
+            assert_eq!(
+                rule.pick(&links, 0, 1.0, 0.5, distance, bias, DrawRange::NONE),
+                Picked::One(level)
+            );
+        }
+        // A bound covers a pixel past 1,000 m at a bias of 1, so a bias of 2 hides it at 600 m.
+        assert_eq!(
+            rule.pick(&links, 0, 1.0, 1.0, 600.0, 1.0, DrawRange::NONE),
+            Picked::One(3)
+        );
+        assert_eq!(
+            rule.pick(&links, 0, 1.0, 1.0, 600.0, 2.0, DrawRange::NONE),
+            Picked::Hidden
+        );
+        assert_eq!(
+            rule.pick(&links, 0, 1.0, 1.0, 1_500.0, 1.0, DrawRange::NONE),
+            Picked::Hidden
+        );
+        assert_eq!(
+            rule.pick(&links, 0, 1.0, 1.0, 1_500.0, 0.5, DrawRange::NONE),
+            Picked::One(3)
+        );
+    }
+
+    #[test]
     fn a_rule_without_a_factor_draws_the_base_level() {
         let links = links([0.0, 0.01, 0.04, 0.2], true);
         let off = LevelRule::new(1000.0, 1.0, false, 0.0, FADE_BAND);
         assert!(!off.on());
-        assert_eq!(off.pick(&links, 0, 1.0, 1e9), Picked::One(0));
+        assert_eq!(pick(&off, &links, 1e9), Picked::One(0));
+        // Without a factor, a distance range still hides a source outside it.
+        let far = DrawRange::new(0.0, 100.0);
+        assert_eq!(
+            off.pick(&links, 0, 1.0, 1.0, 200.0, 1.0, far),
+            Picked::Hidden
+        );
     }
 
     #[test]
@@ -275,26 +699,23 @@ mod tests {
         let switch_distance = 5.0;
         let band_end = switch_distance * (1.0 + FADE_BAND);
         let middle = (switch_distance + band_end) / 2.0;
-        assert_eq!(
-            rule.pick(&links, 0, 1.0, switch_distance - 0.1),
-            Picked::One(0)
-        );
-        let Picked::Fade { new, old, t } = rule.pick(&links, 0, 1.0, middle) else {
+        assert_eq!(pick(&rule, &links, switch_distance - 0.1), Picked::One(0));
+        let Picked::Fade { new, old, t } = pick(&rule, &links, middle) else {
             panic!("no fade in the band");
         };
         assert_eq!((new, old), (5, 4));
         assert!((t - 0.5).abs() < 1e-4);
-        assert_eq!(rule.pick(&links, 0, 1.0, band_end + 0.01), Picked::One(1));
+        assert_eq!(pick(&rule, &links, band_end + 0.01), Picked::One(1));
         // Level 2's band, past 20 m, fades from level 1.
-        let Picked::Fade { new, old, .. } = rule.pick(&links, 0, 1.0, 20.5) else {
+        let Picked::Fade { new, old, .. } = pick(&rule, &links, 20.5) else {
             panic!("no fade at 20.5 m");
         };
         assert_eq!((new, old), (6, 5));
         // Without fade buckets, or without a band, levels switch at once.
         let still = links_without_fades();
-        assert_eq!(rule.pick(&still, 0, 1.0, 5.375), Picked::One(1));
+        assert_eq!(pick(&rule, &still, 5.375), Picked::One(1));
         let no_band = LevelRule { band: 0.0, ..rule };
-        assert_eq!(no_band.pick(&links, 0, 1.0, 5.375), Picked::One(1));
+        assert_eq!(pick(&no_band, &links, 5.375), Picked::One(1));
         let (new, old) = fade_values(0.0);
         assert!(new > 0.0 && old == 0.0);
     }
@@ -307,6 +728,146 @@ mod tests {
     fn a_bucket_without_levels_draws_itself() {
         let rule = LevelRule::new(1000.0, 1.0, false, 1.0, FADE_BAND);
         let links = [LevelLink::NONE; 2];
-        assert_eq!(rule.pick(&links, 1, 1.0, 1e9), Picked::One(1));
+        assert_eq!(
+            rule.pick(&links, 1, 1.0, 1.0, 1e9, 1.0, DrawRange::NONE),
+            Picked::One(1)
+        );
+    }
+
+    #[test]
+    fn a_bound_that_covers_less_than_the_threshold_draws_nothing() {
+        let rule = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
+        let links = links([0.0, 0.01, 0.04, 0.2], false);
+        // A world diameter of 2 m covers 1,000 / distance pixels: one pixel at 1,000 m.
+        assert_eq!(pick_r(&rule, &links, 1.0, 999.0), Picked::One(3));
+        assert_eq!(pick_r(&rule, &links, 1.0, 1_001.0), Picked::Hidden);
+        // A bound of no radius has no size to test, and a mesh without levels has no hidden level.
+        assert_eq!(
+            rule.pick(&links, 0, 1.0, 0.0, 1e9, 1.0, DrawRange::NONE),
+            Picked::One(3)
+        );
+        let plain = [LevelLink::NONE; 2];
+        assert_eq!(
+            rule.pick(&plain, 1, 1.0, 1.0, 1e9, 1.0, DrawRange::NONE),
+            Picked::One(1)
+        );
+    }
+
+    #[test]
+    fn the_hide_distance_follows_the_threshold_and_the_render_height() {
+        let links = links([0.0, 0.01, 0.04, 0.2], false);
+        // A threshold of two pixels halves the factor, so the bound hides at half the distance.
+        let full = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
+        let low = LevelRule::new(1000.0, 1.0, false, 2.0, 0.0);
+        let half = LevelRule::new(500.0, 1.0, false, 1.0, 0.0);
+        assert_eq!(pick_r(&full, &links, 1.0, 501.0), Picked::One(3));
+        assert_eq!(pick_r(&low, &links, 1.0, 501.0), Picked::Hidden);
+        assert_eq!(pick_r(&half, &links, 1.0, 501.0), Picked::Hidden);
+    }
+
+    #[test]
+    fn the_band_past_the_hide_distance_thins_the_level_out() {
+        let rule = LevelRule::new(1000.0, 1.0, false, 1.0, FADE_BAND);
+        let links = links([0.0, 0.01, 0.04, 0.2], true);
+        // The coarsest level's fade bucket draws the dither's share near the hide distance of
+        // 1,000 m, and nothing past the band.
+        let hide = 1_000.0;
+        let middle = hide * (1.0 + FADE_BAND / 2.0);
+        let Picked::FadeOut { old, t } = pick_r(&rule, &links, 1.0, middle) else {
+            panic!("no fade out in the band");
+        };
+        assert_eq!(old, 7);
+        assert!((t - 0.5).abs() < 1e-4);
+        assert_eq!(
+            pick_r(&rule, &links, 1.0, hide * (1.0 + FADE_BAND) + 0.1),
+            Picked::Hidden
+        );
+        // Without a band or a fading build, the source hides at once.
+        let no_band = LevelRule { band: 0.0, ..rule };
+        assert_eq!(pick_r(&no_band, &links, 1.0, hide + 0.1), Picked::Hidden);
+        assert_eq!(
+            pick_r(&rule, &links_without_fades(), 1.0, hide + 0.1),
+            Picked::Hidden
+        );
+    }
+
+    #[test]
+    fn an_orthographic_view_hides_a_bound_that_covers_less_than_a_pixel() {
+        // A view 10 m high on 1,000 pixels draws 100 pixels a meter at a threshold of one pixel.
+        let rule = LevelRule::new(1000.0, 0.2, true, 1.0, 0.0);
+        let links = links([0.0, 0.01, 0.04, 0.2], false);
+        let distance = rule.distance([1e5, 0.0, 0.0], 0.005);
+        // A diameter of 1 cm covers exactly one pixel, and 9.8 mm covers under it. The base level
+        // draws at a scale of 1, where level 1's error covers exactly a pixel too.
+        assert_eq!(
+            rule.pick(&links, 0, 1.0, 0.005, distance, 1.0, DrawRange::NONE),
+            Picked::One(0)
+        );
+        assert_eq!(
+            rule.pick(&links, 0, 1.0, 0.0049, distance, 1.0, DrawRange::NONE),
+            Picked::Hidden
+        );
+    }
+
+    #[test]
+    fn a_distance_range_hides_a_source_outside_it_and_fades_at_each_edge() {
+        let rule = LevelRule::new(1000.0, 1.0, false, 1.0, FADE_BAND);
+        let links = links([0.0, 0.01, 0.04, 0.2], true);
+        // Every distance below the first switch, 5 m, so the base level draws and its fade
+        // bucket is the one at 4.
+        let range = DrawRange::new(1.0, 3.0);
+        let at = |distance: f32| rule.pick(&links, 0, 1.0, 0.5, distance, 1.0, range);
+        // Outside the range, nothing draws.
+        assert_eq!(at(0.9), Picked::Hidden);
+        assert_eq!(at(3.1), Picked::Hidden);
+        // At the start edge, the share kept grows from nothing to everything.
+        let Picked::FadeIn { bucket, t } = at(1.04) else {
+            panic!("no fade in at the start edge");
+        };
+        assert_eq!(bucket, 4);
+        assert!((t - 0.5).abs() < 1e-4);
+        assert_eq!(at(1.0 + FADE_BAND + 0.1), Picked::One(0));
+        // At the end edge, the share kept falls from everything to nothing.
+        let inner = 3.0 / (1.0 + FADE_BAND);
+        let Picked::FadeOut { old, t } = at((inner + 3.0) / 2.0) else {
+            panic!("no fade out at the end edge");
+        };
+        assert_eq!(old, 4);
+        assert!((t - 0.5).abs() < 1e-4);
+        assert_eq!(at(inner - 0.1), Picked::One(0));
+        // Without a fading band, both edges cut at once.
+        let hard = LevelRule { band: 0.0, ..rule };
+        assert_eq!(
+            hard.pick(&links, 0, 1.0, 0.5, 1.04, 1.0, range),
+            Picked::One(0)
+        );
+        assert_eq!(
+            hard.pick(&links, 0, 1.0, 0.5, (inner + 3.0) / 2.0, 1.0, range),
+            Picked::One(0)
+        );
+        // A mesh without levels needs no fade bucket to hide outside its range.
+        let plain = [LevelLink::NONE; 2];
+        assert_eq!(
+            rule.pick(&plain, 0, 1.0, 1.0, 4.0, 1.0, range),
+            Picked::Hidden
+        );
+        assert_eq!(
+            rule.pick(&plain, 0, 1.0, 1.0, 2.0, 1.0, range),
+            Picked::One(0)
+        );
+    }
+
+    #[test]
+    fn a_range_with_a_hidden_start_keeps_the_source_at_its_own_level() {
+        let rule = LevelRule::new(1000.0, 1.0, false, 1.0, FADE_BAND);
+        let links = links([0.0, 0.01, 0.04, 0.2], true);
+        // A source that draws from 100 m to 1,000 m picks its level by the same rule, and its
+        // start edge fades that level in.
+        let range = DrawRange::new(100.0, 1_000.0);
+        let Picked::FadeIn { bucket, .. } = rule.pick(&links, 0, 1.0, 0.5, 101.0, 1.0, range)
+        else {
+            panic!("no fade in at 101 m");
+        };
+        assert_eq!(bucket, 7);
     }
 }

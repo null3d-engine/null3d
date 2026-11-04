@@ -344,6 +344,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "null3d-splats"
+version = "0.0.0"
+dependencies = [
+ "libm",
+]
+
+[[package]]
+name = "null3d-terrain"
+version = "0.0.0"
+dependencies = [
+ "libm",
+]
+
+[[package]]
 name = "null3d-wasm"
 version = "0.0.0"
 dependencies = [
@@ -353,6 +367,10 @@ dependencies = [
  "null3d-render",
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "null3d-wind-wasm"
+version = "0.0.0"
 
 [[package]]
 name = "num-complex"

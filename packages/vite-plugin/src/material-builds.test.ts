@@ -15,7 +15,12 @@ import {
 	TONE_MAP,
 } from './material-builds';
 import { ShaderPack } from './pack';
-import type { CompiledMaterial, ShaderVariant } from './shader-types';
+import type {
+	CompiledEffect,
+	CompiledMaterial,
+	CompiledToneCurve,
+	ShaderVariant,
+} from './shader-types';
 
 /** Another permutation bit, which no device fixes. */
 const SHADOWS = 16;
@@ -73,6 +78,27 @@ const material = (variants: Record<string, ShaderVariant>): CompiledMaterial => 
 	attributes: 0,
 	baseColor: true,
 	objectIds: false,
+	sceneDepth: false,
+	alpha: false,
+});
+
+/** A custom effect with `variants`. */
+const effect = (variants: Record<string, ShaderVariant>): CompiledEffect => ({
+	kind: 'effect',
+	uniforms: [],
+	depth: false,
+	bloom: false,
+	joins: false,
+	textures: [],
+	variants,
+	pieces: { group: {}, fold: {} },
+});
+
+/** A custom tone curve with `variants`. */
+const curve = (variants: Record<string, ShaderVariant>): CompiledToneCurve => ({
+	kind: 'toneCurve',
+	variants,
+	pieces: { group: {}, fold: {} },
 });
 
 /** The folders of the modules that the tests ran. */
@@ -191,6 +217,76 @@ describe("a module's custom materials", () => {
 		expect(materialBuilds.module(old as string)).toBeDefined();
 		compile('b.ts', SHADOWS);
 		expect(materialBuilds.module(old as string)).toBeUndefined();
+	});
+
+	it("keep an effect's and a curve's builds out of the module, in a set for each GPU path", async () => {
+		const variants: Record<string, ShaderVariant> = {
+			webgpu: build('wgsl', 0),
+			webgpu_fxaa: build('wgsl', 256),
+			webgl2: build('glsl', 0),
+			webgl2_fxaa: build('glsl', 256),
+		};
+		const pack = new ShaderPack();
+		const moduleBuilds = new ModuleBuilds();
+		const materialBuilds = new MaterialBuilds();
+		const values = [
+			moduleBuilds.value(pack, effect(variants)),
+			moduleBuilds.value(pack, curve(variants)),
+		];
+		expect(values.join('')).not.toContain('// wgsl');
+		const end = materialBuilds.finish('src/b.ts', moduleBuilds);
+		const names = [...end.matchAll(/virtual:null3d\/builds\/((?:effect|curve)-[\w-]+)/g)].map(
+			(match) => match[1] as string,
+		);
+		expect(names).toHaveLength(4);
+		expect(names.filter((name) => name.startsWith('effect-'))).toHaveLength(2);
+		expect(names.filter((name) => name.startsWith('curve-'))).toHaveLength(2);
+		const folder = mkdtempSync(join(tmpdir(), 'null3d-effect-builds-'));
+		folders.push(folder);
+		for (const name of names) {
+			expect(MATERIAL_BUILDS_ADDRESS.test(`\0${MATERIAL_BUILDS}${name}`)).toBe(true);
+			writeFileSync(
+				join(folder, `${name}.mjs`),
+				materialBuilds.module(`\0${MATERIAL_BUILDS}${name}`) ?? '',
+			);
+		}
+		const code = `export default [${values.join(', ')}];\n${pack.unpacker()}${end}`.replaceAll(
+			MATERIAL_BUILDS,
+			'./',
+		);
+		const file = join(folder, 'module.mjs');
+		writeFileSync(file, code.replace(/\.\/((?:effect|curve)-[\w-]+)"/g, './$1.mjs"'));
+		const [effectModule, curveModule] = (await import(file)).default as [
+			CompiledEffect,
+			CompiledToneCurve,
+		];
+		for (const shader of [effectModule, curveModule]) {
+			expect(shader.variants).toEqual({});
+			expect(await shader.builds?.('wgsl', 0)).toEqual({
+				webgpu: variants.webgpu as ShaderVariant,
+				webgpu_fxaa: variants.webgpu_fxaa as ShaderVariant,
+			});
+			expect(await shader.builds?.('glsl', 0)).toEqual({
+				webgl2: variants.webgl2 as ShaderVariant,
+				webgl2_fxaa: variants.webgl2_fxaa as ShaderVariant,
+			});
+			expect(await shader.builds?.('wgsl', 64)).toEqual({});
+		}
+	});
+
+	it('keep the pieces of an effect that reads its neighbours, which still starts a group', () => {
+		const marker = 'the pieces of an effect that reads the pixels beside its own';
+		const piece = {
+			permutation: 0,
+			wgsl: { items: [marker], run: 'run' },
+			glsl: null,
+		} as const;
+		const pieces = { group: { webgpu: piece }, fold: { webgpu: piece } };
+		const variants = { webgpu: build('wgsl', 0), webgl2: build('glsl', 0) };
+		const joined = { ...effect(variants), joins: true, pieces };
+		const head = { ...effect(variants), joins: false, pieces };
+		expect(new ModuleBuilds().value(new ShaderPack(), joined)).toContain(marker);
+		expect(new ModuleBuilds().value(new ShaderPack(), head)).toContain(marker);
 	});
 
 	it('leave other shaders as the pack gives them, and a module without materials ends with nothing', () => {

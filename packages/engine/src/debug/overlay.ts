@@ -2,24 +2,27 @@
 // the top-right corner of the canvas, which the page updates from the metrics buffer a few times a
 // second. The page owns the overlay's element, and the engine's threads write the figures it reads
 // as they always do. The panel's header is a button with the frame rate, which shows and hides a
-// card of the other figures under it. The figures are judged against the engine's target frame
-// rate (frame-target.ts). While the card shows, the engine samples the costly figures: GPU time,
+// tabbed card of the other figures under it. The card's four tabs show one group at a time: the
+// frame's work and counts, the parts of memory, the add-ons and GPU steps, or the memory register.
+// The figures are judged against the engine's target frame rate (frame-target.ts). While the card shows, the engine samples the costly figures: GPU time,
 // the counts of the draws that the GPU culls, and the memory figures that the engine's threads
 // publish. Collapsed to its header, the overlay turns that sampling off and formats none of the
 // card's figures. The page adds what only it can measure, where the browser offers it: its
-// JavaScript heap and the whole page's memory. Only the header button takes the pointer, so drags
-// on the rest of the panel still reach the canvas.
+// JavaScript heap and the whole page's memory. Only the header button, the card's two symbols and
+// its tabs take the pointer, so drags on the rest of the panel still reach the canvas.
 // stats-panel.ts holds the panel on the page, which a three.js page shows too, and overlay-look.ts
 // holds its look.
 
 import type { EngineMode } from '../page/engine';
+import type { FeatureStats } from '../scene/features';
+import { MEMORY_AREA_COUNT, MEMORY_AREA_NAMES } from '../shared/memory-area';
 import { refreshRate, sampleFrames } from '../shared/metrics';
 import type { FrameMode } from './overlay-look';
 import { PageMemorySampler, pageHeapBytes } from './page-meters';
-import { type FrameStats, FrameStatsWindow, type StatsSources } from './stats';
+import { type FrameStats, type FrameStatsStep, FrameStatsWindow, type StatsSources } from './stats';
 import type { StatsOverlayOptions } from './stats-options';
 import { StatsPanel } from './stats-panel';
-import type { StatsFigures } from './stats-text';
+import type { StatsFigures, StatsMemoryArea } from './stats-text';
 
 export { OVERLAY_ATTRIBUTE } from './stats-panel';
 
@@ -41,6 +44,8 @@ export interface OverlaySetup {
 	gpuFeatures: readonly string[];
 	/** The threads that run the sketch and draw, as `engine.mode` gives them. */
 	mode: Pick<EngineMode, 'latency' | 'sketchThread' | 'renderThread'>;
+	/** The add-on features' figures, as the sketch last reported them. */
+	features?: () => readonly FeatureStats[];
 }
 
 /** How often the overlay reads new figures and follows the canvas. */
@@ -52,9 +57,28 @@ export interface PageFigures {
 	page: StatsFigures['memory']['page'];
 }
 
-/** The overlay's figures: the engine's frame figures, with the page's own. */
-export function overlayFigures(stats: FrameStats, page: PageFigures): StatsFigures {
+/**
+ * The overlay's figures: the engine's frame figures, with the page's own. `knownGpu` keeps the last
+ * GPU time measured for each feature, so a feature whose pass draws in some frames only keeps its
+ * figure between the windows that time it.
+ */
+export function overlayFigures(
+	stats: FrameStats,
+	page: PageFigures,
+	features: readonly FeatureStats[] = [],
+	knownGpu?: Map<string, number>,
+): StatsFigures {
+	// A sketch pass's step takes the name of the feature that declares it, and each feature's GPU
+	// time is the sum of its passes' steps.
+	const names = new Map<number, string>();
+	for (const feature of features)
+		for (const pass of feature.scope) names.set(pass.place, pass.name);
+	const steps = stats.gpuSteps.map((step) => ({
+		name: names.get(step.place) ?? step.name,
+		ms: step.ms,
+	}));
 	return {
+		features: featuresWithGpu(features, stats.gpuSteps, knownGpu),
 		heading: `${stats.tier}  ${stats.preset}  scale ${stats.renderScale.toFixed(2)}`,
 		frames: stats.frames,
 		presentedFps: stats.presentedFps,
@@ -63,6 +87,7 @@ export function overlayFigures(stats: FrameStats, page: PageFigures): StatsFigur
 		cpuMs: stats.cpuMs,
 		threads: stats.threads,
 		gpuMs: stats.gpuMs,
+		gpuSteps: steps,
 		drawCalls: stats.drawCalls,
 		uploadBytes: stats.uploadBytes,
 		triangles: stats.triangles,
@@ -74,8 +99,54 @@ export function overlayFigures(stats: FrameStats, page: PageFigures): StatsFigur
 			jsHeapBytes: page.jsHeapBytes,
 			page: page.page,
 		},
+		memoryAreas: memoryAreaList(stats.memoryAreas),
 		mainThread: null,
 	};
+}
+
+/**
+ * The features with the GPU time of their scopes filled in: the sum of the steps that draw into
+ * their passes, or the last figure that `knownGpu` keeps where the window timed none of them. A
+ * feature with no scope keeps null.
+ */
+function featuresWithGpu(
+	features: readonly FeatureStats[],
+	steps: readonly FrameStatsStep[],
+	knownGpu?: Map<string, number>,
+): readonly FeatureStats[] {
+	return features.map((feature) => {
+		if (feature.scope.length === 0) return feature;
+		let ms = 0;
+		let found = false;
+		for (const step of steps) {
+			if (!feature.scope.some((pass) => pass.place === step.place)) continue;
+			ms += step.ms;
+			found = true;
+		}
+		if (found) {
+			knownGpu?.set(feature.name, ms);
+			return { ...feature, gpuMs: ms };
+		}
+		const last = knownGpu?.get(feature.name);
+		return last === undefined ? feature : { ...feature, gpuMs: last };
+	});
+}
+
+/**
+ * The memory register's figures as the card lists them, or undefined where no page asked for a
+ * report: a production build, or a page that does not show the figures.
+ */
+function memoryAreaList(values: readonly number[]): StatsMemoryArea[] | undefined {
+	const areas: StatsMemoryArea[] = [];
+	let reported = false;
+	for (let k = 0; k < MEMORY_AREA_COUNT; k++) {
+		const reservedBytes = values[k * 3] as number;
+		const usedBytes = values[k * 3 + 1] as number;
+		const peakBytes = values[k * 3 + 2] as number;
+		if (reservedBytes > 0 || usedBytes > 0) reported = true;
+		areas.push({ name: MEMORY_AREA_NAMES[k] as string, reservedBytes, usedBytes, peakBytes });
+	}
+	return reported ? areas : undefined;
 }
 
 export class StatsOverlay {
@@ -91,6 +162,8 @@ export class StatsOverlay {
 	private readonly window: FrameStatsWindow;
 	private readonly timer: ReturnType<typeof setInterval>;
 	private readonly pageMemory: PageMemorySampler;
+	/** The last GPU time measured for each feature, by name, for a pass that draws in some frames. */
+	private readonly knownGpu = new Map<string, number>();
 
 	constructor(
 		private readonly setup: OverlaySetup,
@@ -156,10 +229,12 @@ export class StatsOverlay {
 	}
 
 	private updateCard(): void {
-		const figures: StatsFigures = overlayFigures(this.window.stats, {
-			jsHeapBytes: pageHeapBytes(),
-			page: this.pageMemory.page,
-		});
+		const figures: StatsFigures = overlayFigures(
+			this.window.stats,
+			{ jsHeapBytes: pageHeapBytes(), page: this.pageMemory.page },
+			this.setup.features?.(),
+			this.knownGpu,
+		);
 		this.panel.update(figures, {
 			refreshHz: this.refreshHz(),
 			maxTargetFps: this.setup.maxTargetFps,

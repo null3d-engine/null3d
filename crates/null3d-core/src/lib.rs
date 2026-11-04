@@ -16,6 +16,7 @@
 //! | [`world`] | Per-frame world output: matrices and bounding spheres, double-buffered |
 //! | [`scene`] | Scene objects by slot, 16-byte commands, the hierarchy and the transform update |
 //! | [`instances`] | Instance batches: per-row arrays, dirty ranges, the batch table, memory epoch |
+//! | [`chunk_rows`] | Chunked per-instance rows: chunks stored in the core's memory, packed into a batch's rows |
 //! | [`sprites`] | Sprites: how a sprite batch packs each sprite into its row's world matrix |
 //! | [`lines`] | Lines: how a line batch packs each segment into its row's world matrix |
 //! | [`layers`] | Render layers: the masks that choose which views draw which sources |
@@ -48,6 +49,7 @@ pub mod arena;
 pub mod bitset;
 pub mod bvh;
 pub mod cells;
+pub mod chunk_rows;
 pub mod clusters;
 pub mod culling;
 pub mod depth_sort;
@@ -61,6 +63,7 @@ pub mod levels;
 pub mod lights;
 pub mod lines;
 pub mod math;
+pub mod memory;
 pub mod morph;
 pub mod occlusion;
 pub mod scene;

@@ -91,8 +91,7 @@ const edges = (image: Image, pixels: readonly number[]) => {
 
 /**
  * Checks that the right panel's light spreads into the bar's shadow and keeps its level away.
- * Measured on 13 October 2026, the blur lifts the shadow by 0.021 to 0.030, and by 0.0003 at most
- * without it.
+ * The blur lifts the shadow by 0.021 to 0.030, and by 0.0003 at most without it.
  */
 function expectBlur(image: Image, id: string): void {
 	const [plain, skin] = [shaded(image, 0), shaded(image, 1)];
@@ -136,8 +135,7 @@ test('subsurface-maps and subsurface-scale-50: maps soften, and corners blur ali
 	expect(runs.length).toBe(3);
 	for (const run of runs) {
 		const mapped = await imageOf(page, variant(run.path, SKETCH, '?maps'));
-		// The skin's stripes have softer edges than without the blur: 0.5 to 0.6 times as steep on
-		// 13 October 2026.
+		// The skin's stripes have softer edges than without the blur: 0.5 to 0.6 times as steep.
 		const sharp = await imageOf(page, variant(run.path, SKETCH, '?maps&off'));
 		expect
 			.soft(edges(mapped, lit(mapped, 1)), `${run.id}: the skin's map softens under the blur`)

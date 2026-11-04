@@ -1,12 +1,11 @@
 // The ring of mountains around each showcase scene keeps the plain background out of view
-// ([D-170](../../.dev/decisions/D-170-showcase-camera.md), owner, 20 October 2026). Every bearing's
+// ([D-170](../../.dev/decisions/D-170-showcase-camera.md), owner's ruling). Every bearing's
 // crest stands above the highest that the Manual camera can climb, the ring lies under the land
 // where the two meet, so they never overlap, and it lies past the farthest the camera can reach.
 import { describe, expect, it } from 'bun:test';
+import { readdirSync } from 'node:fs';
 import * as creekLand from '../showcase/creek/land';
 import * as creek from '../showcase/creek/sketch';
-import * as townLand from '../showcase/night-town/land';
-import * as town from '../showcase/night-town/sketch';
 import { type MountainRingOptions, mountainRing } from './mountains';
 
 /** How far the lowest crest must stand above the camera's highest reach, in meters. */
@@ -14,10 +13,13 @@ const CREST_MARGIN = 10;
 /** How far under the land's edge the ring must lie where it passes under it, in meters. */
 const UNDER = 0.1;
 
-const SCENES = [
-	{ name: 'night town', settings: townLand.mountainSettings, bounds: town.BOUNDS },
-	{ name: 'creek', settings: creekLand.mountainSettings, bounds: creek.BOUNDS },
-];
+const SCENES = [{ name: 'creek', settings: creekLand.mountainSettings, bounds: creek.BOUNDS }];
+/**
+ * The showcase scenes that stand with no ring, by the owner's ruling, each with its reason: every
+ * other scene is one of the scenes above. The Island is an isolated island in open sea. Skyway's fog
+ * and ground plane keep the plain background out of view.
+ */
+const NO_RING = ['island', 'skyway'];
 /** The bearings and rows of the ring at each quality preset, the fewest and the most. */
 const DETAILS = [
 	[160, 32],
@@ -40,6 +42,14 @@ function crests(options: MountainRingOptions, positions: Float32Array) {
 		return { top, radius };
 	});
 }
+
+it('gives every showcase scene a ring, or names why it has none', () => {
+	const scenes = readdirSync(new URL('../showcase', import.meta.url), { withFileTypes: true })
+		.filter((entry) => entry.isDirectory())
+		.map((entry) => entry.name)
+		.sort();
+	expect(scenes).toEqual([...SCENES.map(({ name }) => name), ...NO_RING].sort());
+});
 
 for (const { name, settings, bounds } of SCENES) {
 	describe(`the ${name}'s mountains`, () => {

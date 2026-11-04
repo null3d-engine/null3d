@@ -63,10 +63,13 @@ fn check_values_draw<B: FrameBuilder>(mut world: World<B>) {
             map_size: 512,
             bias: 0.5,
             normal_bias: 1.0,
+            intensity: 1.0,
             distance: 30.0,
             auto: false,
             contact: 0.0,
             layers: DEFAULT_LAYERS,
+            hero: None,
+            hero_size: 0,
         }));
     let material = world
         .renderer
@@ -163,17 +166,20 @@ fn batch_pipelines_read_values_where_the_shading_has_such_builds() {
     let rows = permutation::ROW_VALUES;
     assert_eq!(key(lit, true).permutation & rows, rows);
     assert_eq!(key(lit, false).permutation & rows, 0);
-    // Rows with values test a mask against its cutoff.
+    // Rows with values take the mask's own test, as the meshes do.
     let masked = key(hashed, true);
     assert_eq!(
         masked.permutation & (rows | permutation::ALPHA_MASK | permutation::ALPHA_HASH),
-        rows | permutation::ALPHA_MASK
+        rows | permutation::ALPHA_MASK | permutation::ALPHA_HASH
     );
     assert_eq!(
         key(hashed, false).permutation & permutation::ALPHA_HASH,
         permutation::ALPHA_HASH
     );
-    assert_eq!(key(covered, true).state & state_flags::ALPHA_TO_COVERAGE, 0);
+    assert_eq!(
+        key(covered, true).state & state_flags::ALPHA_TO_COVERAGE,
+        state_flags::ALPHA_TO_COVERAGE
+    );
     // A surface that lets light through, and a whole shader of the sketch's, draw rows without
     // their values.
     assert_eq!(key(glass, true).permutation & rows, 0);
@@ -182,10 +188,22 @@ fn batch_pipelines_read_values_where_the_shading_has_such_builds() {
 
 #[test]
 fn custom_materials_with_a_vertex_offset_cast_with_their_own_builds() {
+    use null3d_render::materials::feature;
     let mut world = World::new();
     let table = world.renderer.settings_mut().materials_mut();
-    let sways = table.create(swaying(), 0, [1.0; 4]).unwrap() + 1;
+    let sways = table
+        .create(swaying(), feature::MOVING_VERTICES, [1.0; 4])
+        .unwrap()
+        + 1;
     let still = table.create(Shading::Lit, 0, [1.0; 4]).unwrap() + 1;
+    let covered = table
+        .create(
+            swaying(),
+            feature::MOVING_VERTICES | feature::CASTER_COVERAGE,
+            [1.0; 4],
+        )
+        .unwrap()
+        + 1;
     let settings = world.renderer.settings();
     let pipeline = DrawKey {
         template: template::CUSTOM_FIRST,
@@ -210,6 +228,25 @@ fn custom_materials_with_a_vertex_offset_cast_with_their_own_builds() {
     assert_eq!(
         key.permutation,
         permutation::CASTER | permutation::ROW_VALUES
+    );
+    // A masked card's caster keeps the mask bit, whose cutoff its coverage function tests.
+    let masked = DrawKey {
+        permutation: permutation::ALPHA_MASK | permutation::ROW_VALUES,
+        ..pipeline
+    };
+    let (key, _) = settings.caster_of(masked, sways);
+    assert_eq!(
+        key.permutation & permutation::ALPHA_MASK,
+        0,
+        "a material that names no coverage casts its whole shape"
+    );
+    let (key, _) = settings.caster_of(masked, covered);
+    assert_eq!(
+        key.permutation,
+        permutation::CASTER
+            | permutation::CASTER_OFFSET
+            | permutation::ALPHA_MASK
+            | permutation::ROW_VALUES
     );
     assert!(settings.sways(sways) && !settings.sways(still) && !settings.sways(0));
 }

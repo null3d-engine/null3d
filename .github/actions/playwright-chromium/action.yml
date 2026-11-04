@@ -2,8 +2,8 @@ name: Install Chromium for Playwright
 description: >-
   Installs Playwright's Chromium and the Ubuntu packages that it needs. Ubuntu's package mirror
   sometimes stalls for minutes, so the browser and the downloaded packages stay in the Actions
-  cache, and a job downloads them again only after Playwright's version changes. The cache saves
-  only when the workflow's SAVE_CACHES is true.
+  cache, and a job downloads them again only after Playwright's version or the runner's image
+  changes. The cache saves only when the workflow's SAVE_CACHES is true.
 
 inputs:
   cache-only:
@@ -15,6 +15,15 @@ inputs:
 runs:
   using: composite
   steps:
+    # The browser and its packages change only with Playwright's version, which the lock file
+    # names, and with the runner's image, so those two make the key: any other change to the
+    # packages keeps the cache.
+    - id: key
+      shell: bash
+      run: |
+        version=$(grep -oE '"playwright-core@[^"]+"' bun.lock | head -1 | tr -d '"')
+        if [ -z "$version" ]; then echo "::error::bun.lock names no version of playwright-core"; exit 1; fi
+        echo "key=playwright-chromium-$ImageOS-$version" >> "$GITHUB_OUTPUT"
     - uses: actions/cache/restore@v4
       id: restore
       with:
@@ -22,16 +31,37 @@ runs:
         path: |
           ~/.cache/ms-playwright
           ~/.cache/playwright-debs
-        key: playwright-chromium-${{ runner.os }}-${{ hashFiles('tests/package.json', 'bench/package.json') }}
+        key: ${{ steps.key.outputs.key }}
     - name: Install Chromium and its packages
       if: inputs.cache-only != 'true' || steps.restore.outputs.cache-hit != 'true'
       shell: bash
       working-directory: tests
+      env:
+        CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
       run: |
         debs="$HOME/.cache/playwright-debs"
         mkdir -p "$debs"
         # apt installs a package from its archive folder when the right version is already there.
         if compgen -G "$debs/*.deb" > /dev/null; then sudo cp "$debs"/*.deb /var/cache/apt/archives/; fi
+        # With the cache's browser and packages, only the packages that the image lacks install,
+        # from the cached files and the image's own package lists: no request reaches the mirror,
+        # and no package that the image already has is upgraded. Playwright's dry run names the
+        # missing packages. When the cache lacks one, apt refuses to download it, and the full
+        # install runs instead.
+        from_cache() {
+          local report missing
+          report=$(bunx playwright install-deps --dry-run chromium 2>&1) || true
+          if grep -q '^All system dependencies are installed' <<< "$report"; then return 0; fi
+          grep -q '^Missing system dependencies' <<< "$report" || return 1
+          missing=$(sed -n 's/^  \([^ ]*\)$/\1/p' <<< "$report")
+          [ -n "$missing" ] || return 1
+          # shellcheck disable=SC2086
+          sudo apt-get install -y --no-install-recommends --no-upgrade --no-download $missing
+        }
+        if [ "$CACHE_HIT" = "true" ] && from_cache && bunx playwright install chromium; then
+          echo "Chromium and the packages that it needs came from the cache."
+          exit 0
+        fi
         # A stalled mirror connection gives up after a short wait and apt tries again, instead of
         # holding the job until its time limit.
         printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "3";\n' \
@@ -55,4 +85,4 @@ runs:
         path: |
           ~/.cache/ms-playwright
           ~/.cache/playwright-debs
-        key: playwright-chromium-${{ runner.os }}-${{ hashFiles('tests/package.json', 'bench/package.json') }}
+        key: ${{ steps.key.outputs.key }}

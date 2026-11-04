@@ -2,6 +2,7 @@ import { describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { Document } from '@gltf-transform/core';
 import { KHRTextureTransform } from '@gltf-transform/extensions';
 import { ktx2Header, transcodeLevel } from '../../../../tests/lib/basis-transcoder.ts';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { encodePng } from '../png.js';
 import { encodeTexture, joinLevels } from './encoder.js';
 import { encodeOnce } from './encoder-pool.js';
@@ -11,7 +12,7 @@ import { BAKE_LIMIT, bakedRoughness, bakeLevels } from './roughness.js';
 import { encodeTextures, planBakes, type TextureRecord, textureKinds } from './textures.js';
 
 // Texture encodes take seconds each on a busy machine or a CI runner of four cores.
-setDefaultTimeout(60_000);
+setDefaultTimeout(scaledBudget(60_000));
 
 /** An RGBA8 image whose pixels `pixel` gives. */
 function image(width: number, height: number, pixel: (x: number, y: number) => readonly number[]) {
@@ -246,6 +247,7 @@ function texturesReport(
 		unbaked,
 		files: new Map(),
 		levels: [],
+		clusters: { meshes: 0, patches: 0, leaves: 0, triangles: 0, base: 0, bytes: 0 },
 		merged: { textures: 0, materials: 0, accessors: 0, meshes: 0 },
 		spatial: {
 			blockers: 0,

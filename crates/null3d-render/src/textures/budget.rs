@@ -60,6 +60,7 @@ use null3d_core::world::WorldArrays;
 
 use super::*;
 use crate::camera::Lens;
+use crate::frame::drawn_material;
 use crate::materials::MaterialTable;
 
 /// The most mip levels that the budget drops from one texture.
@@ -618,6 +619,7 @@ impl TextureStore {
         scene: &SceneStorage,
         batches: &BatchTable,
         materials: &MaterialTable,
+        override_material: u32,
         view: &NeedView,
     ) {
         let parity = view.parity;
@@ -643,7 +645,11 @@ impl TextureStore {
             let slot = sweep.object;
             sweep.object += 1;
             left -= 1;
-            let material = scene.materials()[slot as usize];
+            let material = drawn_material(
+                materials,
+                override_material,
+                scene.materials()[slot as usize],
+            );
             if material == 0 || !created.get(slot) {
                 continue;
             }
@@ -655,7 +661,7 @@ impl TextureStore {
             for (_, batch) in batches.iter().skip(sweep.batch as usize) {
                 let world = batch.world(parity);
                 let count = batch.active_count();
-                let material = batch.material();
+                let material = drawn_material(materials, override_material, batch.material());
                 while sweep.row < count && left > 0 {
                     let row = sweep.row;
                     sweep.row += 1;

@@ -79,6 +79,38 @@ export default defineSketch(({ scene, materials, geometry, textures, post, page,
 	const screen = [0, 0, 0];
 	let asked = false;
 
+	// The loss test asks for one more pick, after the first batch. The page takes the GPU away while
+	// this pick waits for its read, so the promise must reject rather than wait for a copy that the
+	// lost device never makes.
+	let lossAsked = false;
+	page.onMessage((type) => {
+		if (type !== 'pick-loss' || lossAsked) return;
+		lossAsked = true;
+		const probe = probes[0] as { name: string; point: [number, number, number] };
+		camera.worldToScreen(probe.point, screen);
+		const pick = scene.pick(screen[0] as number, screen[1] as number);
+		page.post('pick-in-flight');
+		void (async () => {
+			let outcome: string;
+			try {
+				const hit = await Promise.race([
+					pick,
+					new Promise<never>((_, reject) =>
+						setTimeout(() => reject(new Error('pick timed out')), 15_000),
+					),
+				]);
+				outcome = nameOf(hit) ?? 'null';
+			} catch (error) {
+				outcome = `error: ${error instanceof Error ? error.message : String(error)}`;
+			}
+			try {
+				page.post('pick-settled', { outcome });
+			} catch {
+				// The page took its result at its own bound and stopped the engine.
+			}
+		})();
+	});
+
 	return {
 		onUpdate() {
 			// The camera's matrices are current from the first frame on.

@@ -244,6 +244,7 @@ const node = (fields: Partial<TemplateNode> & Pick<TemplateNode, 'parent'>): Tem
 	flags: C.FLAG_VISIBLE,
 	layers: C.LAYERS_DEFAULT,
 	renderOrder: 0,
+	levelBias: 1,
 	...fields,
 });
 
@@ -433,6 +434,7 @@ describe('scene.clone', () => {
 		const cart = scene.createGroup({ name: 'cart', parent, position: [4, 0, 0] });
 		const wheel = scene.createMesh({ name: 'wheel', mesh, material: paint, parent: cart });
 		wheel.setRenderOrder(2);
+		wheel.setLevelBias(0.25);
 		wheel.setLayers(8);
 		const lamp = scene.createPointLight({ name: 'lamp', range: 5, parent: wheel });
 		scene.createGroup({ name: 'elsewhere', parent });
@@ -455,6 +457,8 @@ describe('scene.clone', () => {
 		expect(records.some((r) => r[0] === C.COMMAND_SET_RENDER_ORDER && r[1] === wheelCopy)).toBe(
 			true,
 		);
+		// The copy keeps the threshold bias that picks its levels of detail.
+		expect(records).toContainEqual([C.COMMAND_SET_LEVEL_BIAS, wheelCopy, 0x3e800000, 0]);
 		expect(creates[2]?.[2]).toBe(wheelCopy);
 		expect(lamp.constructor.name).toBe('PointLight');
 		expect(wheelCopy & SLOT_MASK).not.toBe(wheel.slot);

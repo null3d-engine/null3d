@@ -4,7 +4,15 @@
 // and the shading hold when a tree switches. A low understory of bushes covers the ground between
 // the trunks, in the same four levels. One texture holds bark, needles and leaves; another holds a
 // cut-out picture of each tree for the far cards. The hills rise into wooded ridges.
-import { type Geometry, type InstanceBatch, math } from '@null3d/engine';
+import {
+	type Geometry,
+	type InstanceBatch,
+	type Material,
+	type Mesh,
+	type MeshGeometry,
+	math,
+	type Scene,
+} from '@null3d/engine';
 
 const TURN = Math.PI * 2;
 const frac = (x: number) => x - Math.floor(x);
@@ -504,3 +512,46 @@ export const KINDS: readonly Kind[] = [
 	{ tiers: 4, low: 0.06, width: 0.4, branches: 6, droop: 0.35 },
 	{ crown: 0.62, width: 0.3 },
 ];
+
+/** The forest's counts for a preset: the near trees in full and the rest as cards on Low. */
+export function fitCounts(
+	kinds: readonly { trees: InstanceBatch; cards: InstanceBatch; count: number; near: number }[],
+	undergrowth: InstanceBatch,
+	low: boolean,
+	bushes: { all: number; near: number },
+): void {
+	for (const { trees, cards, count, near } of kinds) {
+		trees.setActiveCount(low ? near : count);
+		cards.setActiveCount(low ? count - near : 0);
+	}
+	undergrowth.setActiveCount(low ? bushes.near : bushes.all);
+}
+
+/**
+ * One hero fir beside the flight: an object rather than an instance row, whose bias keeps its finer
+ * levels at a distance where the trees around it turn coarse. `setBias` toggles it for comparison.
+ */
+export function addHero(
+	scene: Scene,
+	kind: { mesh: MeshGeometry },
+	material: Material,
+	ground: (x: number, z: number) => number,
+) {
+	const mesh: Mesh = scene.createMesh({
+		mesh: kind.mesh,
+		material,
+		position: [30, ground(30, 150), 150],
+		scale: [8, 8, 8],
+		castShadows: true,
+		receiveShadows: true,
+	});
+	let keen = true;
+	mesh.setLevelBias(0.25);
+	return {
+		setLevelBias: mesh.setLevelBias.bind(mesh),
+		setBias() {
+			keen = !keen;
+			mesh.setLevelBias(keen ? 0.25 : 1);
+		},
+	};
+}

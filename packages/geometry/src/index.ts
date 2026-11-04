@@ -1,6 +1,10 @@
 // Geometry generators for null3D, ported from three.js: torus knots, polyhedra, lathes, flat
 // shapes, extrusions and tubes, with the curves, paths and shapes they take. Each generator
 // returns plain arrays for geometry.fromArrays, with the numbers that three.js's geometry holds.
+import { checkAddonVersion } from '@null3d/engine';
+import { VERSION } from './version';
+
+checkAddonVersion('@null3d/geometry', VERSION);
 
 export { Curve, type FrenetFrames } from './curve';
 export {

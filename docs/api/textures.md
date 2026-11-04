@@ -3,12 +3,12 @@ id: api/textures
 title: Textures
 status: experimental
 since: "0.1"
-summary: "loadTexture options; KTX2 files; fromData; fromImageBitmap; fromPass."
+summary: "loadTexture options; KTX2 files; fromData; fromImageBitmap; fromCanvas; fromVideo; fromPass."
 ---
 
 # Textures
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Step 0.2 adds `textures.fromPass`. Materials cannot sample a cube map yet, so coding agents must not try. A cube map can be a background: [Assets](assets.md) loads one with `assets.loadCubemap`.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Step 0.2 adds `textures.fromPass` and `textures.fromCanvas`, and step 0.3 adds `textures.fromVideo`. Materials cannot sample a cube map yet, so coding agents must not try. A cube map can be a background: [Assets](assets.md) loads one with `assets.loadCubemap`.
 
 ```mermaid
 flowchart LR
@@ -16,13 +16,17 @@ flowchart LR
     image -->|"textures.fromImageBitmap"| texture["A texture"]
     ktx2["A KTX2 file"] -->|"assets.loadTexture:<br/>transcoded in a worker to<br/>the device's compressed format"| texture
     data["Texel data<br/>(typed array)"] -->|"textures.fromData"| texture
+    canvas["An OffscreenCanvas<br/>drawn in the sketch"] -->|"textures.fromCanvas,<br/>then texture.refresh<br/>for each change"| texture
+    video["A video element<br/>on the page"] -->|"engine.registerVideo,<br/>then textures.fromVideo<br/>for the video's name"| texture
     texture -->|"uploads a band of rows per frame,<br/>within the frame's upload budget"| layer["A layer of a texture array<br/>on the GPU, with mip levels"]
 ```
 
-A texture is an image or a block of data on the GPU, which materials sample. The scene can also show a texture behind every object ([Scene](scene.md#the-camera-and-the-background)). A sketch makes textures in three ways:
+A texture is an image or a block of data on the GPU, which materials sample. The scene can also show a texture behind every object ([Scene](scene.md#the-camera-and-the-background)). A sketch makes textures in five ways:
 
 - `assets.loadTexture(url, options)` downloads an image file or a KTX2 file and decodes it into a texture. [Assets](assets.md) covers the loading calls.
-- `textures.fromImageBitmap(bitmap, options)` makes a texture from an image that is decoded already, such as a frame drawn on an `OffscreenCanvas`.
+- `textures.fromImageBitmap(bitmap, options)` makes a texture from an image that is decoded already.
+- `textures.fromCanvas(canvas, options)` makes a texture that follows an `OffscreenCanvas`, such as a score board or a map that the sketch draws. `texture.refresh(rect)` then sends the pixels that changed.
+- `textures.fromVideo(name, options)` makes a texture that follows a video on the page, which `engine.registerVideo` registered under that name. Each frame that the video presents gives the texture new texels.
 - `textures.fromData({ width, height, depth, format, data })` makes a texture from numbers, four per texel.
 
 ```ts
@@ -115,6 +119,62 @@ const label = textures.fromImageBitmap(await createImageBitmap(canvas, { imageOr
 
 The image moves to the thread that draws, without a copy, so the sketch can use it no more. An image that is closed, or that went to a texture already, has no pixels, and the call throws E1208.
 
+## Canvases
+
+`textures.fromCanvas` makes a texture that follows an `OffscreenCanvas` drawn in the sketch, such as a score board, a map or a drawing surface. The canvas's last row goes to v = 0, the bottom of a plane, so the canvas stands upright on a plane as on a page. Its first pixels upload as any image's do.
+
+`texture.refresh(rect)` reads the canvas again. Give it the rectangle that changed, in the canvas's own coordinates. The rectangle starts at the column and row of its top-left texel, counted from the canvas's top-left corner, and gives its width and height. Only that rectangle uploads, in the texture's turn and within the frame's upload budget. The rest of the texture keeps its texels. Without a rectangle, the call reads the whole canvas.
+
+```ts
+const canvas = new OffscreenCanvas(1024, 1024);
+const context = canvas.getContext('2d', { willReadFrequently: true })!;
+context.fillStyle = '#101820';
+context.fillRect(0, 0, 1024, 1024);
+const screen = textures.fromCanvas(canvas, { refreshHz: 30 });
+
+return {
+  onUpdate() {
+    context.fillStyle = '#f0c040';
+    context.fillRect(x, y, 256, 256);
+    // Only the changed rectangle uploads, at most 30 times a second.
+    screen.refresh({ x, y, width: 256, height: 256 });
+  },
+};
+```
+
+- Ask for the 2D context with `willReadFrequently: true`, so the browser keeps the pixels where the engine reads them cheaply.
+- The rectangle must lie inside the canvas. A rectangle outside it throws E1208.
+- The `refreshHz` option caps how often the engine reads the canvas. A call that comes sooner reads nothing and returns false, and the next read covers its rectangle too.
+- A call that comes while the rectangle read before it still uploads returns false as well. The next read covers both rectangles. The whole canvas goes only before the first upload reaches the GPU, when a rectangle cannot fill the rest.
+- `texture.update` works on a canvas texture too. An update with another size gives the texture that size, and the next refresh sends the whole canvas.
+- The upload budget counts the rectangle. A 256 x 256 rectangle is 256 KiB, so a 1024 x 1024 screen that refreshes at 30 Hz sends 7.5 MiB a second. The preset's `uploadBytesPerFrame` sets the budget.
+- A refresh makes one `ImageData` for the rectangle, which the browser returns.
+
+The screen shows the canvas with the sampling of any image. Give it mip levels of its own only where it shrinks on screen, since the GPU makes them again after each refresh.
+
+## Videos
+
+A video element lives on the page, because no worker thread has a DOM. Register it there with `engine.registerVideo(video, { name })`, and follow it in the sketch with `textures.fromVideo(name)`. The page sends the sketch the image of each frame that the video presents, and the texture uploads the newest one in its turn, within the frame's upload budget.
+
+```ts
+// page.ts
+engine.registerVideo(video, { name: 'intro', maxSize: 512 });
+```
+
+```ts
+// sketch.ts
+const screen = textures.fromVideo('intro');
+```
+
+- The first frame gives the texture its size. Until a frame is on the GPU, materials draw as without the map.
+- The image stands upright on a plane, with v = 0 at its bottom row, as an image that `textures.fromImageBitmap` takes does.
+- A paused video presents no frame, so the page sends none and the texture costs nothing. The sketch's call sends the frame that the video shows then, so a video that is paused at the call still shows.
+- A frame that comes while the one before it still uploads is dropped, so a frame larger than the budget shows fewer frames a second rather than an upload that never finishes. Keep a frame within the upload budget: the page scales it down to `maxSize`, 512 texels by default.
+- `texture.destroy()` stops the page's frames. So does the function that `engine.registerVideo` returns.
+- The texture has mip levels, as an image's do, and the GPU makes them again after each frame. Give it `mipmaps: false` where it never shrinks on screen, to save that work each frame.
+
+The video element's own settings, such as its file format and its cross-origin rules, belong to the page: [Video textures](../guides/video-textures.md) covers them.
+
 ## Data
 
 `textures.fromData` takes four numbers per texel, in rows from the bottom up. It stores them in one of two formats:
@@ -140,6 +200,7 @@ const screen = materials.unlit({ map: textures.fromPass(map) });
 - The texture has the pass's size. It holds linear color after the exposure, so its `colorSpace` is `'linear'`. Its `format` is `'rgba16float'` where the device draws high dynamic range color, and `'rgba8unorm'` elsewhere.
 - The image stands upright on a plane, with v = 0 at its bottom row.
 - It samples as no texture until the pass first draws, and keeps the last image while the pass is switched off.
+- A pass that keeps two states (`history: true`) samples the state that its last run wrote. `texture.layer` gives that state's first layer, which a reader of the texture array names for the newest state.
 - `texture.update` throws E1208: the pass alone gives its texels. `render.removePass` destroys the textures of the pass.
 - A pass runs only while a texture shows it. [Render graph API](render.md) covers passes.
 
@@ -150,7 +211,7 @@ const screen = materials.unlit({ map: textures.fromPass(map) });
 - An image may have another size, and the texture then takes that size. Images fill textures of one layer in `rgba8unorm`.
 - Data must fit the texture's size and format.
 
-Until the new texels are on the GPU, materials draw with their colors alone. The scene shows its background color in place of a background texture. For a texture that changes often, such as frames of a video, keep the images small: each update decodes and uploads a whole image.
+Until the new texels are on the GPU, materials draw with their colors alone. The scene shows its background color in place of a background texture. For a texture that changes often, follow the source that changes: a canvas with `textures.fromCanvas`, whose refresh uploads only the rectangle that changed, or a video with `textures.fromVideo`, whose page sends one frame at a time. Each image update uploads a whole image.
 
 `texture.destroy()` frees the texture's GPU memory. Materials that map it draw with their colors alone, and the scene shows its background color in place of a background texture. Later calls on the texture throw [E1101](../errors/E1101.md).
 
@@ -164,7 +225,7 @@ An array holds at most 256 layers, the most that an iPad allows, and at most 128
 
 Textures of many different sizes need many arrays. Give the textures of a scene a few common sizes where you can, such as 512 x 512 and 1024 x 1024. An update with an image of another size moves the texture to the array of that size.
 
-WebGL2 promises each shader stage only 16 textures, so on WebGL2 the maps of one standard material share at most six. Maps in one array that sample the same way share one of the six. So a material whose color maps have one size and whose data maps have one size takes two. Each compressed map takes one of its own. Past six, a material draws without the maps that change its look least. It drops its specular intensity map first, then its specular color map, then its light map. A glTF material needs more than six only when its seven maps all differ in size, format or sampling.
+WebGL2 promises each shader stage only 16 textures, so on WebGL2 the maps of one standard material share at most six. Maps in one array that sample the same way share one of the six. So a material whose color maps have one size and whose data maps have one size takes two. Each compressed map takes one of its own. Past six, a material draws without the maps that change its look least. It drops its specular intensity map first, then its specular color map, then its light map. A material that lets light through keeps its transmission map in the specular intensity map's place and its thickness map in the specular color map's, so they drop in that same order. A glTF material needs more than six only when its seven maps all differ in size, format or sampling.
 
 A texture can be at most 4096 texels wide and tall, the most that every WebGPU device allows. On a WebGL2 device that allows less, the device's own limit applies: at least 2048 texels. `textures.maxSize` gives the limit, and a larger image throws E1208.
 

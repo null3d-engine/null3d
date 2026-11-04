@@ -19,6 +19,8 @@ import {
 	instanceFloors,
 	type OverlayBoxes,
 	type OverlayView,
+	type StatsFeatureReading,
+	type StatsFeatureResult,
 	type StatsFigures,
 	type StatsInstances,
 	type StatsResult,
@@ -101,8 +103,13 @@ function readOverlay(canvas: HTMLCanvasElement): OverlayView | null {
 	const root = host?.shadowRoot;
 	if (!host || !root) return null;
 	const figures: Record<string, string> = {};
+	// A tab that does not show still holds its figures, and the overlay keeps them current. Only a
+	// figure that the overlay hides for want of a value, or a lane that the mode does not run, is
+	// left out.
 	for (const node of root.querySelectorAll<HTMLElement>('[data-figure]'))
-		if (!node.closest('[hidden]')) figures[node.dataset.figure as string] = node.textContent ?? '';
+		if (!node.closest('[hidden]:not(.pane)'))
+			figures[node.dataset.figure as string] = (node.textContent ?? '').trim();
+	const card = root.querySelector<HTMLElement>('.card')?.getBoundingClientRect();
 	const box = host.getBoundingClientRect();
 	const canvasBox = canvas.getBoundingClientRect();
 	return {
@@ -110,6 +117,9 @@ function readOverlay(canvas: HTMLCanvasElement): OverlayView | null {
 		expanded: root.querySelector('button')?.getAttribute('aria-expanded') ?? null,
 		offset: [canvasBox.right - box.right, box.top - canvasBox.top],
 		pointerEvents: getComputedStyle(host).pointerEvents,
+		tabs: [...root.querySelectorAll<HTMLElement>('[role=tab]')].map((tab) => tab.textContent ?? ''),
+		tab: root.querySelector<HTMLElement>('[role=tab][aria-selected=true]')?.textContent ?? null,
+		card: card ? { width: card.width, height: card.height } : null,
 	};
 }
 
@@ -149,7 +159,10 @@ run('stats', async (): Promise<StatsResult> => {
 		mode: engine.mode,
 		gpuTimer,
 		noPageMemory: params.has('no-page-memory'),
+		// The memory register reports in development builds only.
+		register: import.meta.env.DEV,
 		instances: null,
+		feature: null,
 	};
 	if (quiet) return { ...result, overlay: readOverlay(canvas), figures: null };
 	/** Posts a message to the sketch, and resolves with the data of its answer of the same name. */
@@ -166,6 +179,24 @@ run('stats', async (): Promise<StatsResult> => {
 	const rows = Number(params.get('instances') ?? 0);
 	const instances: StatsInstances | null =
 		rows > 0 ? { rows, ...(await ask<Omit<StatsInstances, 'rows'>>('instances', rows)) } : null;
+	/** Waits until the overlay's row for the test feature holds `text`, and returns the row. */
+	const featureRow = async (text: string) => {
+		const until = performance.now() + WAIT_MS;
+		let row = readOverlay(canvas)?.figures['feature:test-glow'] ?? '';
+		while (!row.includes(text) && performance.now() < until) {
+			await new Promise((resolve) => setTimeout(resolve, 100));
+			row = readOverlay(canvas)?.figures['feature:test-glow'] ?? '';
+		}
+		return row;
+	};
+	let feature: StatsFeatureResult | null = null;
+	if (params.has('feature')) {
+		const added = await ask<StatsFeatureReading>('feature');
+		const before = await featureRow(`samples ${added.samples}`);
+		const lowered = await ask<StatsFeatureReading>('preset', 'low');
+		const after = await featureRow(`samples ${lowered.samples}`);
+		feature = { added, before, lowered, after };
+	}
 	const floors = instances && instanceFloors(instances);
 	/** True once the figures and the overlay count the GPU memory of the instances asked for. */
 	const counted = (figures: StatsFigures) => {
@@ -191,6 +222,7 @@ run('stats', async (): Promise<StatsResult> => {
 		// The overlay refreshes a few times a second, so it can show the GPU row as still measuring
 		// for a moment after the figures hold a GPU time.
 		(!gpuTimer || /^\d/.test(readOverlay(canvas)?.figures.gpu ?? '')) &&
+		(!import.meta.env.DEV || 'area:scene' in (readOverlay(canvas)?.figures ?? {})) &&
 		/^[1-9]/.test(readOverlay(canvas)?.figures.triangles ?? '');
 	const until = performance.now() + WAIT_MS;
 	let figures = await askFigures();
@@ -198,5 +230,5 @@ run('stats', async (): Promise<StatsResult> => {
 		await new Promise((resolve) => setTimeout(resolve, 100));
 		figures = await askFigures();
 	}
-	return { ...result, instances, overlay: readOverlay(canvas), figures };
+	return { ...result, instances, feature, overlay: readOverlay(canvas), figures };
 });

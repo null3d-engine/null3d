@@ -1,8 +1,10 @@
 //! The per-entry shader cache: a change to one shader compiles only that shader, a change to a
 //! library module compiles only the entries that import it, and a whole build reuses the entries
-//! that shards of the manifest stored.
+//! and the parts of entries that shards of the manifest stored.
 
-use std::collections::BTreeMap;
+mod common;
+
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -49,7 +51,33 @@ variants.plain = { targets = ["wgsl"] }
         manifest: manifest.to_owned(),
         files,
         parts: BTreeMap::new(),
+        only: Default::default(),
     }
+}
+
+/// Entry `a` with four builds, which a split by build cuts into parts, and entry `b` with one.
+fn project_with_parts() -> Inputs {
+    let mut inputs = project(A, B);
+    inputs.manifest = r#"[shaders.a]
+file = "a.wgsl"
+variants.one = { targets = ["wgsl"] }
+variants.two = { targets = ["wgsl"] }
+variants.three = { targets = ["wgsl"] }
+variants.four = { targets = ["wgsl"] }
+
+[shaders.b]
+file = "b.wgsl"
+variants.plain = { targets = ["wgsl"] }
+"#
+    .to_owned();
+    inputs
+}
+
+/// `inputs` with entry `a` narrowed to one part of its builds.
+fn with_part(inputs: &Inputs, index: usize, count: usize) -> Inputs {
+    let mut inputs = inputs.clone();
+    inputs.parts.insert("a".to_owned(), Part { index, count });
+    inputs
 }
 
 /// The math module with a change that reaches every shader that calls `square`.
@@ -92,6 +120,18 @@ impl Scratch {
             .collect();
         assert_eq!(found.len(), 1, "one cached entry named {name}");
         found.pop().unwrap()
+    }
+}
+
+impl Scratch {
+    /// The names of the cache files that hold parts of entries.
+    fn part_files(&self) -> Vec<String> {
+        fs::read_dir(&self.0)
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.contains(".part-"))
+            .collect()
     }
 }
 
@@ -147,6 +187,101 @@ fn changing_one_entry_recompiles_only_that_entry() {
     );
     assert_ne!(output.shaders["a"], first.shaders["a"]);
     assert_eq!(output.shaders["b"], first.shaders["b"]);
+}
+
+#[test]
+fn a_narrowed_build_does_not_reuse_the_entry_of_another_list() {
+    const SOURCE: &str =
+        "@fragment\nfn fs_main() -> @location(0) vec4f {\n    return vec4f(1.0);\n}\n";
+    /// The vertex color bit, as `permutation::VERTEX_COLOR` gives it.
+    const VERTEX_COLOR: u32 = 4;
+    let variants = [(
+        "v",
+        "{ permutations = [\"VERTEX_COLOR\"], targets = [\"wgsl\"] }",
+    )];
+    let inputs = common::project(SOURCE, &variants, &[]);
+    let scratch = Scratch::new();
+    build(&scratch, &inputs);
+    // One listed word is another set of builds, so the narrowed build compiles its entry again.
+    let mut narrowed = inputs.clone();
+    narrowed.only = BTreeSet::from([VERTEX_COLOR]);
+    let (output, stats) = null3d_shaders::build_with_cache(&narrowed, &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 1,
+            reused: 0
+        }
+    );
+    assert_eq!(output.shaders["shader"].len(), 1);
+    // The same list then reuses the entry it stored.
+    let (_, stats) = null3d_shaders::build_with_cache(&narrowed, &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 0,
+            reused: 1
+        }
+    );
+}
+
+#[test]
+fn a_manifest_change_recompiles_the_entry_it_names() {
+    let scratch = Scratch::new();
+    build(&scratch, &project(A, B));
+    let mut inputs = project(A, B);
+    // A new variant of `a` is another set of builds, and `b` keeps the table it had.
+    inputs.manifest = inputs.manifest.replace(
+        "file = \"a.wgsl\"\nvariants.plain = { targets = [\"wgsl\"] }",
+        "file = \"a.wgsl\"\nvariants.plain = { targets = [\"wgsl\"] }\nvariants.extra = { targets = [\"wgsl\"] }",
+    );
+    let (output, stats) = null3d_shaders::build_with_cache(&inputs, &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 1,
+            reused: 1
+        }
+    );
+    assert!(output.shaders["a"].contains_key("extra"));
+}
+
+#[test]
+fn a_comment_or_a_moved_line_reuses_the_entry() {
+    let scratch = Scratch::new();
+    let first = build(&scratch, &project(A, B));
+    // The same tokens as `A`, with a comment line, a wrapped call and other white space.
+    let reflowed = "// the pass.\n#import null3d::math\n\n@fragment\nfn fs_main() -> @location(0) vec4f\n{\n\treturn vec4f(\n\t\tnull3d::math::square(0.5)\n\t); /* the end. */\n}\n";
+    let (output, stats) =
+        null3d_shaders::build_with_cache(&project(reflowed, B), &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 0,
+            reused: 2
+        }
+    );
+    assert_eq!(output, first);
+}
+
+#[test]
+fn a_comment_in_a_library_module_reuses_the_entries_that_import_it() {
+    let scratch = Scratch::new();
+    let first = build(&scratch, &project(A, B));
+    let mut inputs = project(A, B);
+    inputs.files.insert(
+        "lib/math.wgsl".to_owned(),
+        format!("// a note that changes nothing.\n{}", math()),
+    );
+    let (output, stats) = null3d_shaders::build_with_cache(&inputs, &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 0,
+            reused: 2
+        }
+    );
+    assert_eq!(output, first);
 }
 
 #[test]
@@ -229,20 +364,16 @@ fn a_warm_cache_gives_the_same_output_as_a_cold_build() {
 #[test]
 fn a_whole_build_reuses_every_entry_that_the_shards_stored() {
     let scratch = Scratch::new();
-    let inputs = project(A, B);
-    // Each shard of whole entries fills the cache with its own entries, as CI's jobs do, each on a
-    // machine of its own. The whole build then finds every entry under the key it looks for.
-    let plan = ShardPlan::by_entry(&inputs, 2).unwrap();
+    let inputs = project_with_parts();
+    // Each shard fills the cache with its share, as CI's jobs do, each on a machine of its own. The
+    // split cuts `a` into parts, and the whole build joins them.
+    let plan = ShardPlan::by_build(&inputs, 2).unwrap();
+    assert!(
+        (0..2).any(|index| plan.inputs(&inputs, index).parts.contains_key("a")),
+        "the split cuts `a` into parts"
+    );
     for index in 0..2 {
-        let shard = plan.inputs(&inputs, index);
-        let (_, stats) = null3d_shaders::build_with_cache(&shard, &scratch.cache()).unwrap();
-        assert_eq!(
-            stats,
-            CacheStats {
-                compiled: 1,
-                reused: 0
-            }
-        );
+        null3d_shaders::build_with_cache(&plan.inputs(&inputs, index), &scratch.cache()).unwrap();
     }
     let (output, stats) = null3d_shaders::build_with_cache(&inputs, &scratch.cache()).unwrap();
     assert_eq!(
@@ -256,15 +387,107 @@ fn a_whole_build_reuses_every_entry_that_the_shards_stored() {
 }
 
 #[test]
-fn an_entry_that_builds_one_part_never_enters_the_cache() {
+fn the_parts_that_shards_stored_join_into_the_whole_entry() {
     let scratch = Scratch::new();
-    let mut inputs = project(A, B);
-    // The key covers the whole entry, so a part of its builds must never answer for it.
-    inputs
-        .parts
-        .insert("a".to_owned(), Part { index: 0, count: 2 });
+    let inputs = project_with_parts();
+    for index in 0..2 {
+        let (_, stats) =
+            null3d_shaders::build_with_cache(&with_part(&inputs, index, 2), &scratch.cache())
+                .unwrap();
+        // The first part's build stores `b` too, which the second then reuses.
+        assert_eq!(stats.compiled, 2 - index, "part {index} of `a`");
+    }
+    assert_eq!(scratch.part_files().len(), 2);
+    let (output, stats) = null3d_shaders::build_with_cache(&inputs, &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 0,
+            reused: 2
+        }
+    );
+    assert_eq!(output, null3d_shaders::build(&inputs).unwrap());
+    // The joined entry is stored whole, and its parts go.
+    assert!(
+        scratch.part_files().is_empty(),
+        "{:?}",
+        scratch.part_files()
+    );
+    // The next build reads the joined entry, which holds each shared text once, as an entry built
+    // whole does.
+    let (again, stats) = null3d_shaders::build_with_cache(&inputs, &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 0,
+            reused: 2
+        }
+    );
+    assert_eq!(again, output);
+    let whole = Scratch::new();
+    build(&whole, &inputs);
+    assert_eq!(
+        shared_texts(&scratch.entry("a")),
+        shared_texts(&whole.entry("a"))
+    );
+}
+
+/// Builds that compile to the same text hold one copy of it in memory, as the builds that a cache
+/// read gives back do, so a build that compiles every entry holds each source once.
+#[test]
+fn compiled_builds_with_the_same_text_hold_one_copy_of_it() {
+    let output = null3d_shaders::build(&project_with_parts()).unwrap();
+    let source = |name: &str| {
+        let wgsl = output.shaders["a"][name].wgsl.as_ref();
+        std::sync::Arc::clone(&wgsl.expect("the build targets WGSL").source)
+    };
+    let one = source("one");
+    for name in ["two", "three", "four"] {
+        assert!(
+            std::sync::Arc::ptr_eq(&one, &source(name)),
+            "build `{name}` holds its own copy of a text that build `one` holds"
+        );
+    }
+}
+
+/// The shared texts of one cache file, sorted, as the file stores them.
+fn shared_texts(file: &std::path::Path) -> Vec<String> {
+    let entry: serde_json::Value = serde_json::from_slice(&fs::read(file).unwrap()).unwrap();
+    let mut texts: Vec<String> = entry["texts"]
+        .as_array()
+        .expect("the entry has shared texts")
+        .iter()
+        .map(|text| text.as_str().unwrap().to_owned())
+        .collect();
+    assert!(!texts.is_empty(), "the entry shares texts");
+    texts.sort();
+    texts
+}
+
+#[test]
+fn a_part_reads_its_builds_from_the_whole_entry() {
+    let scratch = Scratch::new();
+    let inputs = project_with_parts();
     build(&scratch, &inputs);
-    let (_, stats) = null3d_shaders::build_with_cache(&inputs, &scratch.cache()).unwrap();
+    let part = with_part(&inputs, 1, 2);
+    let (output, stats) = null3d_shaders::build_with_cache(&part, &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 0,
+            reused: 2
+        }
+    );
+    assert_eq!(output, null3d_shaders::build(&part).unwrap());
+    assert!(scratch.part_files().is_empty());
+}
+
+#[test]
+fn an_incomplete_set_of_parts_compiles_the_whole_entry() {
+    let scratch = Scratch::new();
+    let inputs = project_with_parts();
+    null3d_shaders::build_with_cache(&with_part(&inputs, 0, 2), &scratch.cache()).unwrap();
+    let (output, stats) = null3d_shaders::build_with_cache(&inputs, &scratch.cache()).unwrap();
     assert_eq!(
         stats,
         CacheStats {
@@ -272,14 +495,7 @@ fn an_entry_that_builds_one_part_never_enters_the_cache() {
             reused: 1
         }
     );
-    let (_, stats) = null3d_shaders::build_with_cache(&project(A, B), &scratch.cache()).unwrap();
-    assert_eq!(
-        stats,
-        CacheStats {
-            compiled: 1,
-            reused: 1
-        }
-    );
+    assert_eq!(output, null3d_shaders::build(&inputs).unwrap());
 }
 
 #[test]

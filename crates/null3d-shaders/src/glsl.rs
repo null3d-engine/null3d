@@ -201,7 +201,7 @@ fn write_stage(
     textures.sort_by(|a, b| (a.binding, &a.name).cmp(&(b.binding, &b.name)));
 
     Ok(GlslStage {
-        source: crate::finish_source(&source),
+        source: crate::finish_source(&source).into(),
         uniform_blocks,
         textures,
     })

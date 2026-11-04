@@ -27,7 +27,8 @@ import {
 	CAPABILITY_TEXTURE_BC,
 	CAPABILITY_TEXTURE_ETC2,
 } from '../generated/core';
-import { runTask, type Task, TaskFailure } from '../shared/tasks';
+import { TaskFailure } from '../shared/task-failure';
+import { runTaskWithError, type Task } from '../shared/tasks';
 import type { WasmError } from '../shared/wasm';
 import type { LoadTextureOptions } from './assets';
 import { TranscodeCache } from './ktx2-cache';
@@ -132,7 +133,7 @@ async function transcode(
 	error: Ktx2Error,
 ): Promise<ArrayBuffer> {
 	try {
-		return await runTask<ArrayBuffer>(
+		return await runTaskWithError<ArrayBuffer>(
 			TRANSCODER,
 			{ file, format: target.transcoder, levels, layers, maxSize },
 			[file],

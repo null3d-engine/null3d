@@ -25,12 +25,13 @@ interface OcclusionResult {
 }
 
 /**
- * How long the page may take to report. On CI's software GPU the WebGPU run took 50 to 57 seconds,
- * close to the default limit, and a slower machine passed it, so the wait leaves room for that.
- * On 20 October 2026 a shard's run reached the limit without reporting, so the wait leaves room for
- * a slower shard too.
+ * How long the page may take to report. On CI's software GPU the WebGPU run takes 50 to 57 seconds,
+ * close to the default limit, and a slower machine or a loaded shard takes longer. The software
+ * renderer draws this page slower than any other: a run can pass 180 seconds without an answer,
+ * where its GPU paths answer in tens. A run that still fails at twice that needs the page looked at
+ * rather than a longer wait.
  */
-const RESULT_MS = 180_000;
+const RESULT_MS = 360_000;
 
 for (const tier of ['webgl2', 'webgpu'] as const)
 	test(`software occlusion culling hides what the buildings block on ${tier}`, async ({ page }) => {

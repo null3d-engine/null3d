@@ -25,6 +25,12 @@ pub trait Triangles {
     fn count(&self) -> u32;
     /// The three corners of triangle `i`.
     fn triangle(&self, i: u32) -> [[f32; 3]; 3];
+    /// The first texture coordinates of triangle `i`'s three corners, in the order that
+    /// [`Triangles::triangle`] gives them, or `None` for a mesh with no first texture coordinate
+    /// set. A query blends them across the triangle for a hit's `uv`.
+    fn triangle_uv(&self, _i: u32) -> Option<[[f32; 2]; 3]> {
+        None
+    }
 }
 
 /// The corner at `index` of a position array with three floats per vertex, or NaN when the index

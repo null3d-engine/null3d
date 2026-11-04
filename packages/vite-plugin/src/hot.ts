@@ -51,12 +51,27 @@ export function hotKey(path: string, literal?: number): string {
  */
 export function contractOf(shader: CompiledWgsl): string | null {
 	if (shader.kind !== 'material') return null;
-	const { uniforms, textures, locations, attributes, baseColor, objectIds } = shader;
+	const { uniforms, textures, locations, attributes, baseColor, objectIds, sceneDepth, alpha } =
+		shader;
 	// A vertex offset gives the material the builds of its shadow casters, and reading an index or
-	// an id makes the engine keep the table of object ranges. The engine fixes both when it creates
-	// the material.
+	// an id makes the engine keep the table of object ranges. Reading the scene's depth makes it
+	// bind the copy. The engine fixes each when it creates the material.
 	const casts = shader.functions.includes('vertexOffset');
-	return JSON.stringify({ uniforms, textures, locations, attributes, baseColor, casts, objectIds });
+	return JSON.stringify({
+		uniforms,
+		textures,
+		locations,
+		attributes,
+		baseColor,
+		casts,
+		objectIds,
+		sceneDepth,
+		// A surface that sets or reads the alpha gives the material the cut-out builds, and the
+		// engine fixes those and the draw list's mask when it creates it.
+		alpha,
+		// A draw shader's pipelines declare no vertex buffer, so a change to or from one reloads.
+		meshless: shader.meshless === true,
+	});
 }
 
 /**

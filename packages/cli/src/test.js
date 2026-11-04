@@ -11,15 +11,25 @@ import { heldImage, REPORTED_TIERS, TIERS } from './page.js';
 import { readPng, writePng } from './png.js';
 import { lint, typeCheck } from './project-checks.js';
 import { holdPage, startRunner } from './runner.js';
+import {
+	readScript,
+	scriptProgram,
+	scriptReads,
+	scriptReadTimes,
+	shotAt,
+	shotSteps,
+} from './script.js';
+import { dumpLine } from './shot.js';
 import { sketchPagePath, sketchPagePlugin } from './sketch-page.js';
 import { CONFIG_FILE, DEFAULT_SIZE, EXAMPLE, readTestConfig } from './test-config.js';
 import { counted, listed, shownPath } from './text.js';
 
 /** @import { Environment } from './browser.js' */
-/** @import { Tier } from './page.js' */
+/** @import { HoldReport, Tier } from './page.js' */
 /** @import { RgbaImage } from './png.js' */
 /** @import { Outcome } from './project-checks.js' */
 /** @import { Runner } from './runner.js' */
+/** @import { ScriptStep } from './script.js' */
 /** @import { ImageTest } from './test-config.js' */
 
 /** The folder of reference images, in the project's folder. */
@@ -52,8 +62,9 @@ Options:
 
 ${CONFIG_FILE} lists the tests:
   ${EXAMPLE}
-A test takes a name, a sketch module or a page, and the sketch time to hold at in seconds. It can
-also give a size (${DEFAULT_SIZE}) and its tiers (${TIERS.join(', ')}).
+A test takes a name, a sketch module or a page, and the sketch time to hold at in seconds, or a
+timed script whose shot steps each draw an image. It can also give a size (${DEFAULT_SIZE}) and its
+tiers (${TIERS.join(', ')}).
 
 The references are in ${REFERENCES_DIR}/<environment>/<tier>/<name>.png, and each run's images in
 ${RESULTS_DIR}/. It draws with Google Chrome on this computer's GPU. When the CI variable is
@@ -171,36 +182,49 @@ export function judgeImage(image, files, update) {
 }
 
 /**
- * Draws a test on a tier, and judges its image.
+ * Opens a test's page in hold mode at `time`, with the timed script that the test gives, if any.
  *
  * @param {Runner} runner
- * @param {string} root
  * @param {ImageTest} test
  * @param {Tier} tier
- * @param {boolean} update
- * @returns {Promise<Outcome>}
+ * @param {number} time The sketch time to hold at, in seconds.
+ * @param {import('./page.js').HoldScript} [script] The engine's program for the test's script.
  */
-async function imageTest(runner, root, test, tier, update) {
-	const files = imageFiles(root, runner.environment, tier, test.name);
-	// An image from an earlier run must never pass for this run's.
-	rmSync(files.image, { force: true });
-	rmSync(files.diff, { force: true });
+function holdOf(runner, test, tier, time, script) {
 	const path =
 		test.sketch === undefined
 			? /** @type {string} */ (test.page)
 			: sketchPagePath(test.sketch, test.size);
-	const { result, errors } = await holdPage(runner, {
+	return holdPage(runner, {
 		path,
-		time: test.hold,
+		time,
 		gpu: tier,
 		size: test.size,
 		timeoutMs: TIMEOUT_MS,
+		...(script && { script }),
 	});
-	const name = `${test.name} on ${tier}`;
+}
+
+/**
+ * Judges the image that one hold drew, and keeps it as the reference when `update` is set.
+ *
+ * @param {Runner} runner
+ * @param {string} root
+ * @param {Tier} tier
+ * @param {boolean} update
+ * @param {string} name The image's name: the test's own, or one of a script's states.
+ * @param {{ result: HoldReport, errors: readonly string[] }} held
+ * @returns {Outcome}
+ */
+function judgedHold(runner, root, tier, update, name, { result, errors }) {
+	const files = imageFiles(root, runner.environment, tier, name);
+	// An image from an earlier run must never pass for this run's.
+	rmSync(files.image, { force: true });
+	rmSync(files.diff, { force: true });
 	/** @type {(reason: string) => Outcome} */
 	const fail = (reason) => ({
 		status: 'FAIL',
-		text: `${name}: ${reason}`,
+		text: `${name} on ${tier}: ${reason}`,
 		details: listed(errors, 'error'),
 	});
 	if (!result.ok) return fail(result.error);
@@ -211,7 +235,82 @@ async function imageTest(runner, root, test, tier, update) {
 		return fail(`the engine drew on ${result.tier}, not on ${REPORTED_TIERS[tier]}${shown}`);
 	if (errors.length > 0) return fail(`the page logged ${counted(errors.length, 'error')}${shown}`);
 	const judged = judgeImage(image, files, update);
-	return { ...judged, text: `${name}: ${judged.text}` };
+	return { ...judged, text: `${name} on ${tier}: ${judged.text}` };
+}
+
+/**
+ * Draws a test on a tier, and judges its images. A test that a script drives holds once for each
+ * shot step, under the name of the test and the step's name, so each state keeps its own reference.
+ * A hold at each dump step's time reads what the test dumps, and the steps that failed fail it.
+ *
+ * @param {Runner} runner
+ * @param {string} root
+ * @param {ImageTest} test
+ * @param {Tier} tier
+ * @param {boolean} update
+ * @param {(line: string) => void} note Prints a line that is not a result, such as a dump.
+ * @returns {Promise<Outcome[]>}
+ */
+async function imageTest(runner, root, test, tier, update, note) {
+	if (test.script === undefined) {
+		const held = await holdOf(runner, test, tier, /** @type {number} */ (test.hold));
+		return [judgedHold(runner, root, tier, update, test.name, held)];
+	}
+	/** @type {ScriptStep[]} */
+	let steps;
+	try {
+		steps = readScript(join(root, test.script));
+	} catch (error) {
+		return [scriptFailure(test, tier, error)];
+	}
+	if (shotSteps(steps).length === 0)
+		return [
+			{
+				status: 'FAIL',
+				text: `${test.name} on ${tier}: the script ${test.script} has no shot step. A script draws an image where a step says "shot <name>"`,
+			},
+		];
+	const program = scriptProgram(steps);
+	/** @type {Outcome[]} */
+	const outcomes = [];
+	/** @type {import('./page.js').HoldScriptResult[]} */
+	const reads = [];
+	for (const at of scriptReadTimes(steps)) {
+		const shot = shotAt(steps, at);
+		const held = await holdOf(runner, test, tier, at, program);
+		if (shot !== undefined)
+			outcomes.push(judgedHold(runner, root, tier, update, `${test.name}-${shot.name}`, held));
+		else if (!held.result.ok || held.errors.length > 0) {
+			const reason = held.result.ok
+				? `the page logged ${counted(held.errors.length, 'error')}`
+				: held.result.error;
+			outcomes.push({ status: 'FAIL', text: `${test.name} at ${at} s on ${tier}: ${reason}` });
+		}
+		if (held.result.ok && held.result.script !== undefined) reads.push(held.result.script);
+	}
+	const read = scriptReads(reads);
+	for (const dump of read.dumps) note(dumpLine(dump));
+	for (const problem of read.problems)
+		outcomes.push({
+			status: 'FAIL',
+			text: `${test.name} on ${tier}: step at ${problem.at} s, ${problem.step}, failed: ${problem.error}`,
+		});
+	return outcomes;
+}
+
+/**
+ * The failure of a test whose script the command cannot read.
+ *
+ * @param {ImageTest} test
+ * @param {Tier} tier
+ * @param {unknown} error
+ * @returns {Outcome}
+ */
+function scriptFailure(test, tier, error) {
+	return {
+		status: 'FAIL',
+		text: `${test.name} on ${tier}: ${error instanceof Error ? error.message : error}`,
+	};
 }
 
 /**
@@ -260,7 +359,8 @@ async function imageTests(root, { gpu, updateReferences }, report) {
 			`The images are drawn in ${runner.browserName} on ${where}, and compared with the references in ${REFERENCES_DIR}/${environment}.`,
 		);
 		for (const { test, tier } of runs)
-			report(await imageTest(runner, root, test, tier, updateReferences));
+			for (const outcome of await imageTest(runner, root, test, tier, updateReferences, report))
+				report(outcome);
 	} finally {
 		await runner.close();
 	}
@@ -293,6 +393,8 @@ export function summaryLine(outcomes) {
 	]
 		.filter(([n]) => n)
 		.map(([n, word]) => `${n} ${word}`);
+	const warnings = count('WARN');
+	if (warnings > 0) parts.push(counted(warnings, 'warning'));
 	const saved = count('SAVED');
 	if (saved > 0) parts.push(`${counted(saved, 'reference')} saved`);
 	return `${parts.join(', ')}.`;

@@ -74,6 +74,8 @@ export interface SketchTime {
 	readonly dt: number;
 	/** The frame number: 0 during the setup function, 1 in the first frame, and one more in each frame after it. */
 	readonly frame: number;
+	/** True while hold mode steps to its held frame, so work on a cadence draws in every frame. */
+	readonly held: boolean;
 }
 
 /**
@@ -141,7 +143,7 @@ export interface SketchContext {
 	geometry: Geometry;
 	/** Textures from decoded images and from data. */
 	textures: Textures;
-	/** Loading of textures and files, with a count of downloads for loading screens. */
+	/** Loading of textures and files, with the bytes of their downloads for loading screens. */
 	assets: Assets;
 	/** Pointer, touch, keyboard and gamepad input, which the page forwards to the sketch. */
 	input: Input;

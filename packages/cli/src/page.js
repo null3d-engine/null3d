@@ -26,12 +26,73 @@ export const REPORTED_TIERS = { webgpu: 'webgpu', compat: 'webgpu-compat', webgl
 export const HOLD_RESULT = '__null3dHold';
 
 /**
+ * The global that the engine reads a timed script from as it starts in hold mode. Its name is the
+ * engine's `HOLD_SCRIPT_GLOBAL`.
+ */
+export const HOLD_SCRIPT_GLOBAL = '__null3dHoldScript';
+
+/**
+ * A timed script as the engine performs it, in the shape of its `HoldScript`: the steps that drive
+ * the page, with the times at which hold mode performs them.
+ *
+ * @typedef {object} HoldScript
+ * @property {readonly HoldScriptStep[]} steps
+ */
+
+/**
+ * @typedef {object} HoldScriptStep
+ * @property {number} at
+ * @property {'key' | 'pointer' | 'set' | 'dump'} verb
+ * @property {string} [code] A key step: the key's code name.
+ * @property {boolean} [down] A key step: true for a press.
+ * @property {'move' | 'down' | 'up' | 'wheel'} [action] A pointer step.
+ * @property {number} [x] A pointer step's first number: its place, or a wheel's scroll.
+ * @property {number} [y] A pointer step's second number.
+ * @property {string} [target] A set or dump step: the object's name, or `#camera`.
+ * @property {string} [path] A set or dump step: the property path.
+ * @property {readonly number[]} [value] A set step: the property's numbers.
+ */
+
+/**
+ * What a timed script's steps gave, as the engine publishes it with the held frame.
+ *
+ * @typedef {object} HoldScriptResult
+ * @property {HoldDump[]} dumps What each dump step read.
+ * @property {HoldScriptProblem[]} problems The steps that failed, in time order.
+ */
+
+/**
+ * @typedef {object} HoldDump
+ * @property {number} at
+ * @property {string} target
+ * @property {string} [path]
+ * @property {readonly number[] | Readonly<Record<string, unknown>>} value
+ */
+
+/**
+ * @typedef {object} HoldScriptProblem
+ * @property {number} at
+ * @property {string} step The step as a person writes it.
+ * @property {string} error Why it failed.
+ */
+
+/**
+ * What a replay gave, as the engine publishes it with the held frame.
+ *
+ * @typedef {object} ReplayResult
+ * @property {number} frames The frames that ran.
+ * @property {number} seconds The sketch time at the end.
+ * @property {string} sketch The sketch that the recording was made with.
+ * @property {boolean} stopped True when the recording stopped at its limit.
+ */
+
+/**
  * Hold mode's result as a tool reads it: the engine's own, with the pixels as base64. The held
  * frame's figures take the form of the engine's frame summary, whose per-frame figures summarize
  * the one held frame.
  *
  * @typedef {HeldReport | HoldFailure} HoldReport
- * @typedef {{ ok: true, time: number, frame: number, tier: string, width: number, height: number, pixels: string, stats?: HeldStats }} HeldReport
+ * @typedef {{ ok: true, time: number, frame: number, tier: string, width: number, height: number, pixels: string, stats?: HeldStats, script?: HoldScriptResult, replay?: ReplayResult }} HeldReport
  * @typedef {{ ok: false, code: string | null, error: string }} HoldFailure
  * @typedef {{ drawCalls: { median: number }, uploadBytes: { median: number }, pipelines: number } & Record<string, unknown>} HeldStats
  */

@@ -233,7 +233,7 @@ export const COMPARISONS: readonly Comparison[] = [
 	{
 		name: 'night-town',
 		code: 'compare/night-town/',
-		title: 'Night town',
+		title: 'Night effects',
 		summary:
 			'A rainy downtown under the moon: lit windows, neon signs over shops, street lamps and cars with their headlights on, mirrored in wet streets. Each block adds 12 lights.',
 		countUnit: 'lights',
@@ -258,7 +258,7 @@ export const COMPARISONS: readonly Comparison[] = [
 			"Each engine draws each effect its own way: null3D's shadow cascades, height fog, reflection pass, bloom chain, ambient occlusion, grading table and sprite batches, and three.js's CSM, the same fog formula in a shader, a Reflector, UnrealBloomPass or the bloom node, GTAOPass or the GTAO node, LUTPass or the 3D LUT node, and an instanced quad that faces the camera.",
 			"Both mirrors draw the town with its lights. null3D's reflection pass lists the lights that it sees in clusters of its own, and three.js's Reflector draws the scene again with every light.",
 			'A lens grade splays the colors at the edges, streaks the brightest light sideways and adds film grain. It runs on the light before bloom and tone mapping in both engines.',
-			"Every lit window shows a room behind its glass. The view ray reaches the room's back wall and side walls, so a window shows more of its room from the side of the street. Both engines draw it in the facade shade, from the same window boxes and the same room depth.",
+			"Every lit window shows a room behind its glass. The view ray reaches the room's back wall and side walls, so a window shows more of its room from the side of the street. null3D draws each window as a pane through the facades example add-on, and three.js in the shader of its wall material. Both take the window boxes and the room depth from the same scene description.",
 			'Flying cars cross the sky above the streets, on four lanes at two heights, as batches in both engines. Their lights are emissive strips, so they add no lights to the count.',
 		],
 		differences: [
@@ -290,8 +290,8 @@ export const COMPARISONS: readonly Comparison[] = [
 			},
 			{
 				topic: 'Windows',
-				null3d: 'Window boxes and room depth, drawn in the facade shade.',
-				threejs: 'The same boxes and room depth.',
+				null3d: 'One pane on each opening, from the facades add-on, with a room behind its glass.',
+				threejs: 'The same boxes and room depth, in its wall material.',
 			},
 		],
 		effects: NIGHT_EFFECTS,

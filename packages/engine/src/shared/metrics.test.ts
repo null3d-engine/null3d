@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'bun:test';
 import { CORE_NOT_COUNTED } from '../generated/core';
-import { gpuPassStats, secondRates, summarizeFrames, timerStep } from '../page/frame-stats';
+import { PASS_ROLE_NAMES } from '../generated/gpu';
+import {
+	gpuPassStats,
+	secondRates,
+	slowFrames,
+	summarizeFrames,
+	timerStep,
+} from '../page/frame-stats';
 import { QUALITY_SETTINGS } from '../quality/presets';
 import {
 	Counter,
@@ -155,6 +162,26 @@ describe('frame records', () => {
 		]);
 	});
 
+	it('summarize one frame alone when a later frame follows it', () => {
+		const buffer = createMetricsBuffer(true, 0);
+		const sketch = new FrameRecorder(buffer, Role.Sketch);
+		const render = new FrameRecorder(buffer, Role.Render);
+		record(sketch, 30, 3);
+		record(render, 30, 1);
+		record(sketch, 31, 4);
+		record(render, 31, 2);
+		const records = new MetricsReader(buffer).readWritten();
+		const threads = threadRoles({
+			latency: 'pipelined',
+			renderThread: 'render-worker',
+			jobWorkers: 0,
+		});
+		const one = summarizeFrames(records, threads, 30);
+		expect([one.frames, one.cpuMs.median, one.threads['render-worker']?.busyMs.median]).toEqual([
+			1, 3, 1,
+		]);
+	});
+
 	it('keep the time and the draw time of the first frame only', () => {
 		const buffer = createMetricsBuffer(true, 0);
 		const render = new FrameRecorder(buffer, Role.Render);
@@ -167,6 +194,38 @@ describe('frame records', () => {
 		expect(first).toBeGreaterThan(0);
 		expect(reader.firstFrameTime).toBe(first);
 		expect(reader.firstDrawMs).toBe(12.5);
+	});
+
+	it('keep the start and the length of the sketch setup, and the first builds, once', () => {
+		const buffer = createMetricsBuffer(true, 0);
+		const sketch = new FrameRecorder(buffer, Role.Sketch);
+		const reader = new MetricsReader(buffer);
+		expect([reader.setupStart, reader.setupMs, reader.warmUpStart]).toEqual([0, null, 0]);
+		sketch.markSetupStart();
+		const started = reader.setupStart;
+		expect(started).toBeGreaterThan(0);
+		expect(reader.setupMs).toBeNull();
+		sketch.markSetupStart();
+		sketch.markSetupDone(1200);
+		sketch.markSetupDone(5);
+		expect(reader.setupStart).toBe(started);
+		expect(reader.setupMs).toBe(1200);
+		sketch.markWarmUp(true);
+		const warmUp = reader.warmUpStart;
+		sketch.markWarmUp(false);
+		expect(warmUp).toBeGreaterThan(0);
+		expect(reader.warmUpStart).toBe(warmUp);
+		expect(reader.warmUpMs).not.toBeNull();
+	});
+
+	it('tell a setup that took no measurable time from one still running', () => {
+		const buffer = createMetricsBuffer(false, 0);
+		const sketch = new FrameRecorder(buffer, Role.Sketch);
+		const reader = new MetricsReader(buffer);
+		sketch.markSetupStart();
+		sketch.markSetupDone(0);
+		expect(reader.setupMs).toBeGreaterThan(0);
+		expect(Math.round(reader.setupMs as number)).toBe(0);
 	});
 
 	it('sum the records of a window without turning costly timing on', () => {
@@ -292,7 +351,11 @@ describe('summarizeFrames', () => {
 			render.count(Counter.Pipelines, frame === 1 ? 2 : 0);
 			render.count(Counter.SkippedDraws, frame === 2 ? 3 : 0);
 			render.commit(2);
-			record(gpu, frame, 0.1 * frame);
+			// The browser rounds the frame's timestamps to a step of 0.1 ms, which is the greatest
+			// common divisor of the offsets that the record carries.
+			gpu.begin(frame);
+			gpu.gpuTick(100_000 * frame);
+			gpu.commit(0.1 * frame);
 			// The GPU finishes each frame 4 ms after its submit, 32 ms apart: half the presented rate.
 			// Every completion record has an interval, since the first completion leaves none.
 			completion.begin(frame);
@@ -344,13 +407,22 @@ describe('summarizeFrames', () => {
 describe('gpuPassStats', () => {
 	/** Reads back GPU records of frames whose passes are render passes where `render` says so. */
 	function gpuRecords(
-		frames: { copies: number; passes: number[]; render: boolean[]; frameMs: number }[],
+		frames: {
+			copies: number;
+			passes: number[];
+			render: boolean[];
+			frameMs: number;
+			/** Each pass's label, in the order of the frame's passes. */
+			roles?: number[];
+			/** The figure of the passes after those timed one by one, where the frame has any. */
+			later?: number;
+		}[],
 	) {
 		const buffer = createMetricsBuffer(false, 0);
 		const reader = new MetricsReader(buffer);
 		reader.begin();
 		const gpu = new FrameRecorder(buffer, Role.Gpu);
-		frames.forEach(({ copies, passes, render, frameMs }, index) => {
+		frames.forEach(({ copies, passes, render, frameMs, roles, later }, index) => {
 			gpu.begin(index + 1);
 			let renderPasses = 0;
 			render.forEach((isRender, pass) => {
@@ -360,11 +432,20 @@ describe('gpuPassStats', () => {
 			gpu.gpuTime(0, copies);
 			passes.slice(0, GPU_TIMED_PASSES).forEach((ms, pass) => {
 				gpu.gpuTime(1 + pass, ms);
+				gpu.gpuPassRole(pass, roles?.[pass] ?? 0);
 			});
+			gpu.gpuLater(passes.length > GPU_TIMED_PASSES ? (later ?? 0) : UNTIMED);
 			gpu.commit(frameMs);
 		});
 		reader.end();
 		return reader.records[Role.Gpu] as RingRecords;
+	}
+
+	/** A pass label from the role's name and its place among the passes of that role. */
+	function label(name: string, place = 0): number {
+		const role = PASS_ROLE_NAMES.indexOf(name);
+		if (role < 0) throw new Error(`no pass role ${name}`);
+		return (role | (place << 16)) >>> 0;
 	}
 
 	it('names each pass by its kind and place, after the copies and before the gaps', () => {
@@ -384,6 +465,79 @@ describe('gpuPassStats', () => {
 		expect(parts?.[2]?.ms).toMatchObject({ count: 2, median: 1.5 });
 		// Frame 1 leaves 2 - 0.25 - 0.5 - 1 = 0.25 ms between passes, frame 2 leaves 0.75 ms.
 		expect(parts?.[3]?.ms.median).toBeCloseTo(0.5, 9);
+	});
+
+	it('names each pass by what it draws for rather than its slot', () => {
+		const parts = gpuPassStats(
+			gpuRecords([
+				{
+					copies: 0.1,
+					passes: [0.4, 0.6, 0.2],
+					render: [false, true, true],
+					roles: [label('compute'), label('shadow cascade', 1), label('shadow hero')],
+					frameMs: 1.3,
+				},
+			]),
+		);
+		expect(parts?.map((part) => part.name)).toEqual([
+			'copies',
+			'compute',
+			'shadow cascade 1',
+			'shadow hero',
+			'between passes',
+		]);
+	});
+
+	it('adds a role together across frames even where the pass moves slot', () => {
+		// The far cascade draws in the first frame only, so the hero's pass lands one slot earlier
+		// there. Both frames' cascade times belong to the cascade, not to a position.
+		const parts = gpuPassStats(
+			gpuRecords([
+				{
+					copies: 0,
+					passes: [0.5, 0.7],
+					render: [true, true],
+					roles: [label('shadow cascade', 0), label('shadow hero')],
+					frameMs: 1.2,
+				},
+				{
+					copies: 0,
+					passes: [0.3, 0.9],
+					render: [true, true],
+					roles: [label('shadow cascade', 0), label('final')],
+					frameMs: 1.2,
+				},
+			]),
+		);
+		expect(parts?.map((part) => part.name)).toEqual([
+			'copies',
+			'shadow cascade 0',
+			'shadow hero',
+			'between passes',
+			'final',
+		]);
+		expect(parts?.[1]?.ms).toMatchObject({ count: 2 });
+		expect(parts?.[1]?.ms.median).toBeCloseTo(0.4, 6);
+	});
+
+	it('prints a place only where the role has one', () => {
+		const parts = gpuPassStats(
+			gpuRecords([
+				{
+					copies: 0,
+					passes: [0.2, 0.3],
+					render: [true, true],
+					roles: [label('opaque'), label('opaque', 2)],
+					frameMs: 0.5,
+				},
+			]),
+		);
+		expect(parts?.map((part) => part.name)).toEqual([
+			'copies',
+			'opaque',
+			'opaque 2',
+			'between passes',
+		]);
 	});
 
 	it('counts passes of each kind apart, and reports no gap for a frame of one pass', () => {
@@ -429,14 +583,108 @@ describe('gpuPassStats', () => {
 	it('names only the passes timed alone, and gives null without GPU records', () => {
 		const many = Array.from({ length: GPU_TIMED_PASSES + 2 }, () => 1);
 		const parts = gpuPassStats(
-			gpuRecords([{ copies: 0, passes: many, render: many.map(() => true), frameMs: 20 }]),
+			gpuRecords([
+				{ copies: 0, passes: many, render: many.map(() => true), frameMs: 20, later: 2 },
+			]),
 		);
 		expect(parts?.map((part) => part.name)).toEqual([
 			'copies',
 			...many.slice(0, GPU_TIMED_PASSES).map((_, pass) => `render ${pass + 1}`),
+			'later passes',
 			'between passes',
 		]);
 		expect(gpuPassStats(gpuRecords([]))).toBeNull();
+	});
+
+	it('keeps the passes after the seventh apart from the seventh', () => {
+		const own = [0.5, 1, 1.5, 2, 2.5, 3, 4];
+		const parts = gpuPassStats(
+			gpuRecords([
+				{
+					copies: 0.25,
+					passes: [...own, 5, 6],
+					render: Array.from({ length: 9 }, () => true),
+					frameMs: 30,
+					later: 11,
+				},
+			]),
+		);
+		const byName = new Map(parts?.map((part) => [part.name, part.ms.median]));
+		// The seventh pass reports only its own time, and the two after it share one figure.
+		expect(byName.get('render 7')).toBe(4);
+		expect(byName.get('later passes')).toBe(11);
+		expect(parts?.map((part) => part.name)).toEqual([
+			'copies',
+			...own.map((_, pass) => `render ${pass + 1}`),
+			'later passes',
+			'between passes',
+		]);
+		// The parts still cover the frame: the gap between them is what is left.
+		const ownMs = own.reduce((sum, ms) => sum + ms, 0);
+		expect(byName.get('between passes')).toBeCloseTo(30 - (0.25 + ownMs + 11), 9);
+	});
+});
+
+describe('slowFrames', () => {
+	/** Present frames with the given intervals, and time the frames at `timed` with one pass each. */
+	function frames(intervals: readonly number[], timed: readonly number[]) {
+		const buffer = createMetricsBuffer(false, 0);
+		const reader = new MetricsReader(buffer);
+		reader.begin();
+		const render = new FrameRecorder(buffer, Role.Render);
+		const gpu = new FrameRecorder(buffer, Role.Gpu);
+		intervals.forEach((ms, index) => {
+			const frame = index + 1;
+			render.begin(frame);
+			render.interval(ms);
+			render.commit(1);
+			if (!timed.includes(frame)) return;
+			gpu.begin(frame);
+			gpu.gpuPasses(1, 1);
+			gpu.gpuTime(0, 0);
+			gpu.gpuTime(1, ms / 2);
+			gpu.commit(ms / 2);
+		});
+		reader.end();
+		return reader.records;
+	}
+
+	/** The threads of a one-threaded engine: the sketch and the renderer share the page's thread. */
+	const THREADS = threadRoles({ latency: 'pipelined', renderThread: 'main', jobWorkers: 0 });
+
+	it('reports each frame that broke the threshold with its own parts and neighbours', () => {
+		const slow = slowFrames(frames([16, 70, 16, 16, 120], [1, 2, 3, 4, 5]), 50, THREADS);
+		expect(slow.map((frame) => frame.frame)).toEqual([2, 5]);
+		expect(slow[0]).toMatchObject({
+			frame: 2,
+			atMs: 86,
+			intervalMs: 70,
+			beforeMs: 16,
+			afterMs: 16,
+			first: false,
+			gpuMs: 35,
+		});
+		expect(slow[0]?.parts?.map((part) => [part.name, part.ms])).toEqual([
+			['copies', 0],
+			['render 1', 35],
+		]);
+		// The last frame of the window has no frame after it.
+		expect(slow[1]).toMatchObject({ frame: 5, atMs: 238, intervalMs: 120, afterMs: null });
+		// The page's thread holds the frame's only record, and the frame spent its time outside the
+		// engine's phases: the stall is not the sketch or the renderer's own work.
+		expect(slow[0]?.threads).toEqual([{ name: 'main', busyMs: 1, phases: [] }]);
+	});
+
+	it('marks a slow first frame, and leaves the parts null where the timer skipped it', () => {
+		const slow = slowFrames(frames([90, 16, 16], [2]), 50, THREADS);
+		expect(slow).toHaveLength(1);
+		expect(slow[0]).toMatchObject({ frame: 1, first: true, beforeMs: null, afterMs: 16 });
+		expect(slow[0]?.gpuMs).toBeNull();
+		expect(slow[0]?.parts).toBeNull();
+	});
+
+	it('reports nothing where no frame broke the threshold', () => {
+		expect(slowFrames(frames([16, 16, 16], [1, 2, 3]), 50, THREADS)).toEqual([]);
 	});
 });
 
@@ -492,13 +740,15 @@ describe('ratePerSecond', () => {
 });
 
 describe('timerStep', () => {
-	it('finds the rounding step of GPU times, and none for exact times', () => {
-		const step = 0.065536;
-		expect(timerStep([0, step, 2 * step, step])).toBeCloseTo(step, 9);
-		expect(timerStep([0.1234, 0.2468, 0.3719])).toBeNull();
-		expect(timerStep([0.001, 0.002])).toBeNull();
+	it('finds the step as the divisor of the offsets, and none when the times look exact', () => {
+		// Every offset is a whole number of the browser's 65.536 us rounding steps.
+		expect(timerStep([65536, 131072, 196608])).toBeCloseTo(0.065536, 9);
+		// The frames' own steps may share a factor, and their divisor is still the browser's step.
+		expect(timerStep([200_000, 300_000])).toBeCloseTo(0.1, 9);
+		expect(timerStep([1, 2, 3])).toBeNull();
 		expect(timerStep([0, 0])).toBeNull();
 		expect(timerStep([])).toBeNull();
+		expect(timerStep(undefined)).toBeNull();
 	});
 });
 

@@ -221,9 +221,10 @@ export type UniformValues<Wgsl> =
 		: never;
 
 /**
- * The names of the texture declarations in WGSL text, `var name: texture_2d<f32>;`, as one union.
- * It reads each `var ` in turn, so a commented-out declaration adds a name. That costs no false
- * error: the engine still checks the names when it runs.
+ * The names of the texture declarations in WGSL text, `var name: texture_2d<f32>;` or
+ * `var name: texture_2d_array<f32>;`, as one union. It reads each `var ` in turn, so a
+ * commented-out declaration adds a name. That costs no false error: the engine still checks the
+ * names when it runs.
  */
 type TextTextures<Wgsl extends string, Found extends string = never> = string extends Wgsl
 	? string
@@ -231,7 +232,7 @@ type TextTextures<Wgsl extends string, Found extends string = never> = string ex
 		? Rest extends `${infer Name}:${infer Type};${infer After}`
 			? Trim<Name> extends `${string}${Space | ';' | '=' | '(' | '<' | '{'}${string}`
 				? TextTextures<Rest, Found>
-				: Squeeze<Type> extends 'texture_2d<f32>'
+				: Squeeze<Type> extends 'texture_2d<f32>' | 'texture_2d_array<f32>'
 					? TextTextures<After, Found | Trim<Name>>
 					: TextTextures<Rest, Found>
 			: Found

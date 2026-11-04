@@ -14,6 +14,9 @@ struct FrameValues {
     deltaTime: f32,
     /// The frame's number, counting from 1, as `time.frame` gives it.
     index: u32,
+    /// True while the engine calls a vertex offset for the frame before, as the motion pass does
+    /// for the second call: then `time`, `deltaTime` and `index` hold that frame's values.
+    lastFrame: bool,
     /// The size of the render target in pixels.
     resolution: vec2f,
 }
@@ -69,12 +72,19 @@ var<private> object: ObjectValues;
 fn fill_builtins(origin: vec3f) {
     let clock = null3d::mesh::frame.clock;
     let world = null3d::mesh::frame.camera_world.xyz;
-    let size = null3d::mesh::frame.target_size.xy;
-    frame = FrameValues(clock.x, clock.y, bitcast<u32>(clock.z), size);
+    // The camera that a material's surface reads: this view's own camera, and the scene camera in
+    // the views of lights, whose own fields belong to the light.
+    frame = FrameValues(
+        clock.x,
+        clock.y,
+        bitcast<u32>(clock.z),
+        false,
+        null3d::mesh::frame.camera_target.xy,
+    );
     let range = null3d::mesh::frame.camera_range;
     camera = CameraValues(
         world,
-        null3d::mesh::frame.view_proj,
+        null3d::mesh::frame.camera_view_proj,
         null3d::mesh::frame.view,
         null3d::mesh::frame.projection,
         range.x,

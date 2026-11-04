@@ -32,6 +32,7 @@
 	},
 	"files": [
 		"lib",
+		"dist",
 		"LICENSE-MIT",
 		"LICENSE-APACHE"
 	],
@@ -43,8 +44,7 @@
 		"prepack": "bun ../../tools/build-package.ts terrain"
 	},
 	"peerDependencies": {
-		"@null3d/engine": "workspace:*",
-		"@null3d/vite-plugin": "workspace:*"
+		"@null3d/engine": "workspace:*"
 	},
 	"devDependencies": {
 		"@null3d/engine": "workspace:*",

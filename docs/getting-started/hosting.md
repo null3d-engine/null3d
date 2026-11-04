@@ -59,6 +59,8 @@ A worker follows the policy of its own script's response, not the page's. A host
 
 ## The engine's files on a CDN
 
+A page can also load the engine from a CDN with no build step of its own. [Try null3D from a CDN](cdn.md) gives that page, and the build folder it imports.
+
 The production build's files, `dist/assets/`, may come from another origin than the HTML page, such as a CDN. Point Vite's `base` option at the CDN, and serve the HTML page from your own origin:
 
 ```ts
@@ -158,15 +160,9 @@ Netlify, Cloudflare Pages and Vercel send Brotli to browsers that accept it. Git
 
 ## Publish the third-party notices
 
-The engine ships code from other projects:
+The engine and some add-ons ship code from other projects, under their licenses. A production build with the null3D Vite plugin collects every package's notices into `null3d-third-party-notices.txt` beside the page. Keep that file with the build when you publish it, or show its text in your game's credits.
 
-- the Basis Universal transcoder for KTX2 files, with the Zstandard code inside it
-- the meshoptimizer decoder for meshopt-compressed glTF files
-- Draco's decoder for Draco-compressed glTF files
-- a table of values from three.js, in the engine core
-- the Rust crates in the engine core
-
-Their licences ask each copy to carry their notices. A production build with the null3D Vite plugin writes these notices to `null3d-third-party-notices.txt` beside the page. Keep that file with the build when you publish it, or show its text in your game's credits. The same text is in `node_modules/@null3d/engine/THIRD-PARTY-NOTICES.txt`. The command-line tool's notices stay out of the file, because a page ships none of the tool's code.
+[Third-party notices](third-party-notices.md) lists every part and its license. The same text is in `node_modules/@null3d/engine/THIRD-PARTY-NOTICES.txt`. The command-line tool's notices stay out of the file, because a page ships none of the tool's code.
 
 ## Let browsers keep the build files
 
@@ -238,7 +234,9 @@ async function update() {
   const cache = await caches.open(name);
   if (await cache.match('./')) return;
   const features = FEATURES.flatMap((feature) => list.features[feature]);
-  await cache.addAll(['./', ...list.start, ...features]);
+  // Two features can name one file, such as a shared table of shader paragraphs, and a cache
+  // refuses a list that names a file twice.
+  await cache.addAll([...new Set(['./', ...list.start, ...features])]);
   for (const old of await caches.keys())
     if (old.startsWith(PREFIX) && old !== name) await caches.delete(old);
 }
@@ -259,6 +257,8 @@ The cache keeps each response with its headers, so the cached page keeps the two
 ### The preload list and the cache
 
 The cache decides where the files come from, and `preload` decides when they load. Cache each feature that the game lists in `preload`, or an offline start fails while it waits for that feature's shaders. A feature that the game caches but does not preload loads from the cache on its first use, with no network. A feature that the game neither caches nor preloads needs the network on its first use.
+
+The preset can also draw a feature that the sketch never asks for. High and Ultra, and WebGL2's Medium, draw [screen-space bounce light](../concepts/post-processing.md#screen-space-bounce-light), whose steps read `'ao'`'s depth and normals and the `'color_copy'` of the scene color from the first frame. A game that plays offline on those presets caches both features as well as the ones that it preloads.
 
 ### Keep the engine's caches
 

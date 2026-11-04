@@ -482,7 +482,7 @@ mod tests {
         let frame = trace_frame();
         let mut prepare = |pass: &mut SsrPass, list: &mut DrawList, grid| {
             list.clear();
-            arena.reset(SsrPass::UPLOAD_BYTES);
+            arena.begin_frame().unwrap();
             pass.prepare(
                 list,
                 &mut arena,

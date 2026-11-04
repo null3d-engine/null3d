@@ -3,8 +3,9 @@
 // that the scene supports.
 import { describe, expect, it } from 'bun:test';
 import type { SketchContext } from '@null3d/engine';
-import { TIME_NAMES, TIME_SKY } from './controls';
-import { createShowcaseEffects, shadowStep } from './showcase-effects';
+import { type HudGroup, TIME_NAMES, TIME_SKY } from './controls';
+import { shadowStep } from './shadow-range';
+import { createShowcaseEffects } from './showcase-effects';
 
 /** A cinematic that records how the page's camera picks reach it. */
 function stubFilm() {
@@ -19,13 +20,21 @@ function stubFilm() {
 }
 
 /** A scene whose every part records what the controls write to it. */
-function stub(options: { dslr?: boolean; start?: Record<string, boolean> } = {}) {
+function stub(
+	options: {
+		dslr?: boolean;
+		start?: Record<string, boolean>;
+		own?: readonly string[];
+		extra?: () => readonly HudGroup[];
+		lodThreshold?: number;
+	} = {},
+) {
 	const seen: string[] = [];
 	const posts: unknown[] = [];
 	const shown: string[] = [];
 	const quality = {
 		preset: 'high' as string,
-		settings: { lodThreshold: 0 },
+		settings: { lodThreshold: options.lodThreshold ?? 0 },
 		set: (settings: { lodThreshold?: number }) => {
 			if (settings.lodThreshold !== undefined) {
 				quality.settings.lodThreshold = settings.lodThreshold;
@@ -106,6 +115,8 @@ function stub(options: { dslr?: boolean; start?: Record<string, boolean> } = {})
 			post: ['dof', 'exposure'],
 		},
 		apply: (id, on) => seen.push(`${id} ${on}`),
+		...(options.own !== undefined && { own: options.own }),
+		...(options.extra !== undefined && { extra: options.extra }),
 		mood: (mood) => seen.push(`mood ${mood}`),
 		hour: (hours) => seen.push(`hour ${hours}`),
 		film: () => film,
@@ -185,6 +196,16 @@ describe('createShowcaseEffects', () => {
 		expect(quality?.extras?.[0]?.active).toBe(false);
 		scene.handler?.('quality', 'lod');
 		expect(seen).toContain('lodThreshold 1');
+	});
+
+	it("turns a scene's levels of detail off at the start, unless its start list keeps them on", () => {
+		const off = stub({ lodThreshold: 1 });
+		expect(off.seen).toContain('lodThreshold 0');
+		const on = stub({ lodThreshold: 1, start: { lod: true } });
+		expect(on.seen).not.toContain('lodThreshold 0');
+		expect(on.effects.groups().find((group) => group.name === 'quality')?.extras?.[0]?.active).toBe(
+			true,
+		);
 	});
 
 	it('keeps the level of detail off when a preset is picked', () => {
@@ -311,6 +332,13 @@ describe('the shadow range', () => {
 		expect(held).toBe(70);
 	});
 
+	it('keeps the base range when the core lies behind the camera', () => {
+		// A camera that looks away from the core needs no reach beyond the base, and never a NaN.
+		expect(shadowStep(-11, 70, 70)).toBe(70);
+		expect(shadowStep(-11, 87.5, 70)).toBe(70);
+		expect(shadowStep(0, 109.375, 70)).toBe(70);
+	});
+
 	it('follows the camera as it draws back from the core and comes in again', () => {
 		const { effects, ranges, place } = stub();
 		expect(ranges).toEqual([70]);
@@ -327,5 +355,29 @@ describe('the shadow range', () => {
 		const writes = ranges.length;
 		effects.update(0);
 		expect(ranges.length).toBe(writes);
+	});
+});
+
+describe('a scene’s own effects', () => {
+	it('lets the scene answer a switch that a shared case would take', () => {
+		const { effects, seen, posts } = stub({ own: ['vignette'] });
+		effects.set('vignette', true);
+		// The scene's own answer runs, and the shared vignette case writes nothing.
+		expect(seen).toEqual(['vignette true']);
+		expect(posts).toEqual([]);
+	});
+
+	it('shows the scene’s own groups before Quality', () => {
+		const { effects } = stub({
+			extra: () => [{ name: 'traffic', title: 'Traffic', radio: true, buttons: [] }],
+		});
+		expect(effects.groups().map((group) => group.name)).toEqual([
+			'hour',
+			'atmosphere',
+			'lighting',
+			'post',
+			'traffic',
+			'quality',
+		]);
 	});
 });

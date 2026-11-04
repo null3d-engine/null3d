@@ -10,6 +10,7 @@
 // Each start takes a fresh canvas, as a canvas passes to the engine only once.
 import { createEngine, type EngineOptions } from '@null3d/engine';
 import { type ErrorFields, errorFields, noError } from './lib/error-fields';
+import { framesDrawn } from './lib/measure';
 import { run } from './lib/result';
 
 const notASketch = new URL('./sketches/not-a-sketch.ts', import.meta.url);
@@ -74,11 +75,7 @@ run('errors', async () => {
 	await engine.destroy();
 	const again = await createEngine({ canvas: freshCanvas(), sketch: errorSketch });
 	await again.firstFrame;
-	// A slow GPU draws a frame in more than half a second, so the window repeats until one draws.
-	let stats = await again.measure(0.5);
-	for (let window = 1; window < 10 && stats.frames === 0; window++) {
-		stats = await again.measure(0.5);
-	}
+	const framesAfterRestart = await framesDrawn(again);
 	await again.destroy();
 	return {
 		mode: again.mode,
@@ -89,6 +86,6 @@ run('errors', async () => {
 		patched,
 		queries,
 		beside,
-		framesAfterRestart: stats.frames,
+		framesAfterRestart,
 	};
 });

@@ -2,22 +2,33 @@
 // commit gates: that each subject reads well as a line of the release notes, the acknowledgement
 // trailers, that each Size-Growth trailer names a file and gives a reason, that a branch that
 // changes how the GPU draws records its GPU check, that one that remakes SwiftShader references
-// remakes the real-GPU ones or says why not, and that each Task: footer names a listed task or says
-// none. Run it before a push to main:
+// remakes the real-GPU ones or says why not, that one that remakes a demo's pictures remakes its
+// script's pictures or says why not, and that each Task: footer names a listed task or says none.
+// Run it before a push to main:
 //   bun tools/hooks/check-trailers.ts origin/main..HEAD
 import { execFileSync } from 'node:child_process';
 import { checkSubject } from '../lib/docs-style';
 import { DOCS_ACK_RULE } from './check-docs-ack';
 import { type CommitWithFiles, gpuCheckProblem } from './check-gpu-ack';
+import { LIMITS_ACK_RULE } from './check-limits-ack';
 import { macReferencesProblem } from './check-mac-references';
+import { scriptReferencesProblem } from './check-script-references';
 import { sizeGrowthProblems } from './check-size-growth';
 import { SKILLS_ACK_RULE } from './check-skills-ack';
 import { knownTaskIds, taskProblem } from './check-task';
 import { checkAck } from './commit-ack';
 
-const RULES = [DOCS_ACK_RULE, SKILLS_ACK_RULE];
+const RULES = [DOCS_ACK_RULE, SKILLS_ACK_RULE, LIMITS_ACK_RULE];
 
-const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8' });
+/**
+ * How much a `git log` of the pull request's range may print. The default of one mebibyte is lost
+ * once the range holds a night's worth of commits with their evidence in the messages, and the read
+ * then fails with ENOBUFS rather than a verdict on the range.
+ */
+const BUFFER = 64 * 1024 * 1024;
+
+const git = (...args: string[]) =>
+	execFileSync('git', args, { encoding: 'utf8', maxBuffer: BUFFER });
 
 /** A commit that main's squash of a pull request keeps. */
 export interface KeptCommit {
@@ -37,6 +48,7 @@ export function keptCommits(range: string, cwd?: string): KeptCommit[] {
 	const log = execFileSync('git', ['log', '--no-merges', '--format=%H%x1f%aI%x1f%B%x1e', range], {
 		cwd,
 		encoding: 'utf8',
+		maxBuffer: BUFFER,
 	});
 	return log
 		.split('\x1e')
@@ -58,19 +70,24 @@ function main(): void {
 		const files = git('diff-tree', '--no-commit-id', '--name-only', '-r', sha)
 			.split('\n')
 			.filter(Boolean);
-		commits.push({ sha, message, files });
+		commits.push({ sha, message, files, authoredAt });
 		const commit = `${sha.slice(0, 8)} ${message.split('\n')[0]}`;
 		for (const rule of RULES) {
 			const result = checkAck(message, files, rule, authoredAt);
 			if (!result.ok) failures.push(`${commit}: ${result.error}`);
 		}
-		for (const problem of sizeGrowthProblems(message)) failures.push(`${commit}: ${problem}`);
+		for (const problem of sizeGrowthProblems(message, undefined, authoredAt))
+			failures.push(`${commit}: ${problem}`);
 		for (const finding of checkSubject(message.split('\n')[0] ?? ''))
 			if (finding.severity === 'error') failures.push(`${commit}: ${finding.message}`);
 		const task = taskProblem(message, tasks, authoredAt);
 		if (task) failures.push(`${commit}: ${task}`);
 	}
-	for (const problem of [gpuCheckProblem(commits), macReferencesProblem(commits)])
+	for (const problem of [
+		gpuCheckProblem(commits),
+		macReferencesProblem(commits),
+		scriptReferencesProblem(commits),
+	])
 		if (problem) failures.push(problem);
 	if (failures.length === 0) {
 		console.log(`trailers OK in ${range}`);

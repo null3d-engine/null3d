@@ -68,6 +68,12 @@ concurrency:
 
 env:
   BUN_VERSION: "1.4.3"
+  # git gives up on a transfer that stays under 1 KB/s for 30 s, and actions/checkout then fetches
+  # again. Otherwise a stalled fetch waits for curl's own timeout: 23 s and then 11 minutes on a
+  # Safari shard (run 40049563192), and 35 minutes on a Firefox shard's checkout, until the job's
+  # limit cancelled it and held the whole run (run 40056066922).
+  GIT_HTTP_LOW_SPEED_LIMIT: "1000"
+  GIT_HTTP_LOW_SPEED_TIME: "30"
   # Only main's runs save caches here: each run saves the city's files under a key of its own, and
   # a branch's runs would multiply those copies. The shader action still saves a branch's own shader
   # entries, which CI's workflow saves on every run.
@@ -107,9 +113,15 @@ jobs:
         run: |
           # A pull request's number, a branch, a tag or a commit, as a commit.
           resolve() {
-            if [[ "$1" =~ ^[0-9]+$ ]]; then git fetch --quiet --no-tags origin "pull/$1/head"
-            else git fetch --quiet --no-tags origin "$1"; fi
-            git rev-parse FETCH_HEAD
+            if [[ "$1" =~ ^[0-9]+$ ]]; then
+              git fetch --quiet --no-tags origin "pull/$1/head"
+              git rev-parse FETCH_HEAD
+            elif git fetch --quiet --no-tags origin "$1" 2>/dev/null; then
+              git rev-parse FETCH_HEAD
+            else
+              # The remote serves no short commit id, but the checkout holds the whole history.
+              git rev-parse --verify "$1^{commit}"
+            fi
           }
           # The merge base with main, or the commit before for a commit on main.
           merge_base() {
@@ -184,23 +196,28 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       # CI's shader caches serve this build too. An older commit, without the action, builds every
-      # shader.
+      # shader. The build stops before its size report, as CI's build job does: the report compressed
+      # every shader module, 11 of the job's 15 minutes in run 40064495637, and no shard reads it. An
+      # older commit, whose build script has no such mode, builds with its report.
       - if: hashFiles('.github/actions/shaders/action.yml') != ''
         uses: ./.github/actions/shaders
         with:
-          run: bun run build
+          run: |
+            if grep -q -- "'--pages-only'" tools/build-wasm.ts; then bun tools/build-wasm.ts --pages-only; else bun run build; fi
       - if: hashFiles('.github/actions/shaders/action.yml') == ''
-        run: bun run build
+        run: |
+          if grep -q -- "'--pages-only'" tools/build-wasm.ts; then bun tools/build-wasm.ts --pages-only; else bun run build; fi
       # The engine's WebAssembly files, the shader compiler and the shader modules with the record
-      # of their inputs. An older commit may keep its shader modules in git, or lack the record.
+      # of their inputs. An older commit may keep its shader modules in git, or lack the record. zstd
+      # packs on every core, where gzip took about a minute on one.
       - name: Pack the build
-        run: tar -czf "$RUNNER_TEMP/build.tgz" $(ls -d packages/*/dist packages/engine/src/generated target/shader-modules.json 2>/dev/null)
+        run: tar -cf - $(ls -d packages/*/dist packages/engine/src/generated target/shader-modules.json 2>/dev/null) | zstd -T0 -3 -q -o "$RUNNER_TEMP/build.tar.zst"
       # A rerun of a failed shard downloads these files again, so they stay as long as GitHub lets
       # a run's jobs run again.
       - uses: actions/upload-artifact@v4
         with:
           name: bench-build-${{ matrix.build }}
-          path: ${{ runner.temp }}/build.tgz
+          path: ${{ runner.temp }}/build.tar.zst
           if-no-files-found: error
           overwrite: true
           retention-days: 30
@@ -209,18 +226,21 @@ jobs:
     # The Mac machine draws with a real GPU, shared with other machines. On the Linux machine the
     # software GPU draws the larger scenes at under one frame per second and takes the processor
     # from the engine's threads, so its CPU times vary far more between identical builds. Each shard
-    # runs every eighth page of the plan in both builds, and fails when its own pages fail. Every CI
+    # runs every ninth page of the plan in both builds, and fails when its own pages fail. Every CI
     # job should take at most 15 minutes (it stops at 20), and two pages take about 9 minutes with
     # the setup.
     # .dev/benchmarks.md says how the count was chosen. To change it, change the list.
     name: benchmark (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: [commits, build]
     runs-on: macos-15
-    timeout-minutes: 20
+    # A shard runs both commits' pages. With a baseline whose final pass runs its upscale loops in
+    # every build (D-236), all nine shards reach a 20-minute limit a second after printing their
+    # verdict. Thirty leaves room for that pair.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9]
     env:
       HUSKY: "0"
       BASELINE: ${{ needs.commits.outputs.baseline }}
@@ -250,13 +270,14 @@ jobs:
       # another pin downloads that pin's files once.
       - name: Set up the baseline and the new build
         run: |
+          set -o pipefail
           git fetch --quiet --no-tags origin "$BASELINE" "$NEW"
           for build in baseline new; do
             commit="$BASELINE"
             if [ "$build" = new ]; then commit="$NEW"; fi
             dir="$RUNNER_TEMP/$build"
             git worktree add --detach "$dir" "$commit"
-            (cd "$dir" && bun install --frozen-lockfile && tar -xzf "$RUNNER_TEMP/builds/bench-build-$build/build.tgz")
+            (cd "$dir" && bun install --frozen-lockfile && zstd -dc "$RUNNER_TEMP/builds/bench-build-$build/build.tar.zst" | tar -xf -)
             if [ -f "$dir/tools/samples/lock.json" ]; then (cd "$dir" && bun run samples:fetch); fi
           done
 

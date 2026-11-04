@@ -13,7 +13,9 @@
 //! A tone curve's WGSL declares `fn toneCurve(color: vec3f) -> vec3f`, which the final pass (the
 //! shader that the manifest marks with `custom_tone_curves = true`) calls in place of its own
 //! curves. The build adds the WGSL after the final pass's last line and builds every variant but
-//! the HALF builds with the shader def CUSTOM_TONE_CURVE.
+//! the HALF and UPSCALE builds with the shader def CUSTOM_TONE_CURVE: a curve's pipelines take
+//! neither bit, and the two-step pass's second step, the one build with the upscale, draws without
+//! the curve.
 //!
 //! An effect's WGSL may declare textures, as a custom material's does (see [`crate::textures`]):
 //! the build binds them in the maps' group, group 1, loads their layers from the end of the
@@ -56,6 +58,11 @@ const DEPTH_FUNCTIONS: [&str; 3] = ["effectDepth", "effectViewPosition", "effect
 /// The functions of the effect template that read the input image at other pixels than the
 /// effect's own. An effect that calls one does not join the effect before it.
 const NEIGHBOR_FUNCTIONS: [&str; 2] = ["effectPixel", "effectColor"];
+
+/// The functions of the effect template that read a level of bloom's chain. An effect that calls
+/// one binds that level, and draws in a pass of its own: a group of effects binds one color and
+/// one level for all of them.
+const BLOOM_FUNCTIONS: [&str; 1] = ["effectBloom"];
 
 /// The render pipeline of the hosts that pieces join.
 const HOST_PIPELINE: &str = "main";
@@ -132,6 +139,8 @@ pub struct EffectOutput {
     pub uniforms: Vec<Uniform>,
     /// True when the effect reads the scene's depth.
     pub depth: bool,
+    /// True when the effect reads a level of bloom's chain.
+    pub bloom: bool,
     /// True when the effect joins the effect before it: it reads its input image at its own pixel
     /// alone and declares no textures. Always false for a tone curve.
     pub joins: bool,
@@ -156,7 +165,12 @@ pub struct EffectPieces {
 
 /// True when the function's only parameter has type `param` and it returns `returns`, each of
 /// which may be spelled in one of the given ways.
-fn has_signature(tokens: &[Token], name: &str, param: &[&str], returns: &[&str]) -> bool {
+pub(crate) fn has_signature(
+    tokens: &[Token],
+    name: &str,
+    param: &[&str],
+    returns: &[&str],
+) -> bool {
     let Some(function) = find_function(tokens, name) else {
         return false;
     };
@@ -218,7 +232,7 @@ fn source_problems(
 
 impl Compiler {
     /// Builds an effect's WGSL into every variant of the effect template, or a tone curve's into
-    /// every variant of the final pass but its HALF builds.
+    /// every variant of the final pass but its HALF and UPSCALE builds.
     pub fn compile_effect(
         &mut self,
         templates: &PostTemplates,
@@ -322,7 +336,9 @@ impl Compiler {
                 .any(|pair| names.contains(&pair[0].text) && pair[1].text == "(")
         };
         let depth = function == EFFECT && calls_any(&DEPTH_FUNCTIONS);
-        let joins = function == EFFECT && !calls_any(&NEIGHBOR_FUNCTIONS) && texture_count == 0;
+        let bloom = function == EFFECT && calls_any(&BLOOM_FUNCTIONS);
+        let joins =
+            function == EFFECT && !calls_any(&NEIGHBOR_FUNCTIONS) && texture_count == 0 && !bloom;
         let variants: BTreeMap<String, Variant> = template
             .variants()
             .iter()
@@ -331,7 +347,7 @@ impl Compiler {
                 let mut permutations: Vec<String> = variant
                     .permutations
                     .iter()
-                    .filter(|bit| *bit != "HALF")
+                    .filter(|bit| *bit != "HALF" && *bit != "UPSCALE")
                     .cloned()
                     .collect();
                 if function == EFFECT {
@@ -341,6 +357,9 @@ impl Compiler {
                     }
                     if texture_count > 0 {
                         defs.push("EFFECT_TEXTURES".to_owned());
+                    }
+                    if bloom {
+                        defs.push("EFFECT_BLOOM".to_owned());
                     }
                     if depth {
                         defs.push("EFFECT_DEPTH".to_owned());
@@ -382,7 +401,7 @@ impl Compiler {
         );
         template.place_problems(&mut errors, path, &effect.source, note);
         errors.or(())?;
-        let pieces = if texture_count > 0 {
+        let pieces = if texture_count > 0 || bloom {
             EffectPieces::default()
         } else {
             self.effect_pieces(
@@ -397,6 +416,7 @@ impl Compiler {
             function: function.to_owned(),
             uniforms: uniforms.map_or_else(Vec::new, |found| found.fields),
             depth,
+            bloom,
             joins,
             textures: found.map_or_else(Vec::new, |found| found.fields),
             variants: built,

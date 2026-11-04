@@ -1,6 +1,6 @@
 # D-08: WebGL2 depth mode
 
-Status: decided by the owner on 2026-09-30. Date: 2026-09-30. Task: M1-L1. Test: T-29.
+Status: decided by the owner. Built: `reversed` depth where the browser has `EXT_clip_control`, `reversed-gl` elsewhere, and `standard` as a test mode. Task: M1-L1. Test: T-29.
 
 Summary: Draw `reversed` depth where the browser has `EXT_clip_control`, and `reversed-gl` elsewhere. `reversed` fought in no pixel out to 10 km on the Mac, the S24+ and the iPad.
 
@@ -14,10 +14,10 @@ On each device, keep the mode with the fewest fighting pixels in the precision s
 
 ## Data
 
-The three modes, as the engine now draws them. All use a 32-bit float depth buffer and the engine's reversed projection. Each GLSL vertex shader maps WebGPU's clip depth through one uniform (`null3d_depth_mapping`), so all three run the same programs:
+The three modes, as the engine draws them. All use a 32-bit float depth buffer and the engine's reversed projection. Each GLSL vertex shader maps WebGPU's clip depth through one uniform (`null3d_depth_mapping`), so all three run the same programs:
 
 - `standard`: the vertex shader writes w - 2z, GL's range -1 to 1, depth test LESS, clear to 1. This is three.js's default depth.
-- `reversed-gl`: 2z - w, GL's range -1 to 1, depth test GREATER, clear to 0. This is what WebGL2 drew before this change, everywhere.
+- `reversed-gl`: 2z - w, GL's range -1 to 1, depth test GREATER, clear to 0. This is WebGL2's depth where the browser lacks `EXT_clip_control`.
 - `reversed`: z as it is, with `clipControlEXT(LOWER_LEFT_EXT, ZERO_TO_ONE_EXT)`, depth test GREATER, clear to 0. This is the same depth as on WebGPU.
 
 The precision scene (`tests/pages/depth-precision.html`): 11 tiles, each with two surfaces 1 cm apart along their normal. The nearer surface sits at 1, 2.5, 6.3, 16, 40, 100, 250, 630, 1,600, 4,000 or 10,000 m. Each pair turns 30 degrees about the vertical axis, so depth changes across it by about 12% of its distance either way. The camera has a near plane at 0.1 m, a far plane at 20 km and a 60-degree vertical field of view. The frame is 640 x 360 pixels, with the engine's usual MSAA. The farther surface draws first, so a depth tie counts as fighting. A twelfth tile holds two surfaces at the same depth to check that. In every run below, the farther surface won all 6,912 tied pixels. A fighting pixel shows the farther surface in at least one sample.
@@ -59,19 +59,19 @@ On the phone and the tablet:
 
 For reference, not a user device: SwiftShader, the software GPU of the CI machines (Chromium 153 headless shell, through the Playwright image tests), fought in 22,859 pixels in `standard`, 8,822 in `reversed-gl` and 14,867 in `reversed`. WebGPU on SwiftShader fought in 14,867 too, at 250 m, 4 km and 10 km. SwiftShader appears to lose depth precision in its rasterizer, so it is the one place where `reversed` fights more than `reversed-gl`.
 
-How the data was produced: `NULL3D_PORT=20173 bun tests/real-browsers.ts --plan depth Safari Firefox "Google Chrome" "Brave Browser"`, on 30 September 2026 (the run names use UTC), from the worktree of the branch `feat/webgl2-clip-control`. After the image test manifest merged, the depth precision tests moved into it (`depth-precision` on every tier, and `depth-precision-<mode>` on WebGL2). A second run of the depth plan (20260929-203132-depth) gave the same counts in all four browsers. Both runs' results are in the main checkout's `target/runs`. The behavior test `tests/image/depth.spec.ts` gave the same Chrome counts, and the SwiftShader counts with `CI=1`. The unit test `packages/engine/src/gpu/webgl2/depth.test.ts` models the vertex shader's 32-bit arithmetic without the rasterizer. For 100 pairs from 5 to 10 km, only `reversed` ordered every pair; `standard` and `reversed-gl` ordered fewer than half.
+How the data was produced: `NULL3D_PORT=20173 bun tests/real-browsers.ts --plan depth Safari Firefox "Google Chrome" "Brave Browser"`, from the worktree of the branch `feat/webgl2-clip-control` (the run names use UTC). The depth precision tests are in the image test manifest: `depth-precision` on every tier, and `depth-precision-<mode>` on WebGL2. A second run of the depth plan (20260929-203132-depth) gave the same counts in all four browsers. Both runs' results are in the main checkout's `target/runs`. The behavior test `tests/image/depth.spec.ts` gave the same Chrome counts, and the SwiftShader counts with `CI=1`. The unit test `packages/engine/src/gpu/webgl2/depth.test.ts` models the vertex shader's 32-bit arithmetic without the rasterizer. For 100 pairs from 5 to 10 km, only `reversed` ordered every pair; `standard` and `reversed-gl` ordered fewer than half.
 
 Reading the counts: on the Mac, Chrome, Safari and Brave give identical counts. All three draw WebGL2 through ANGLE on Metal. The iPad's Safari and Brave give the same counts as each other, and the Mac's counts apart from 146 more fighting pixels in `standard` at 10 km. Chrome and Brave on the S24+ give identical counts. Both draw through the same ANGLE build on the phone's GPU, and both have `EXT_clip_control`. Firefox draws through Apple's OpenGL. Each tile's count depends on how its surfaces' corner depths round, so a farther tile can fight less than a nearer one (4 km in both modes). The totals over the 11 tiles decide.
 
 ## Decision
 
-Decided by the owner on 2026-09-30; every row is in, and each supports it:
+Decided by the owner, and every row of the tables supports it:
 
 - Where the browser has `EXT_clip_control`: `reversed`. It fought in the fewest pixels in every browser that has the extension: none, against 5,441 in `reversed-gl` and 16,591 in `standard`, out to 10 km.
 - Where it does not: `reversed-gl`. The rule's second clause does not apply, because `reversed-gl` is better than `standard` in all four Mac browsers. It fought in 5,441 pixels against 16,591 in the three ANGLE browsers, and in 9,156 against 14,148 in Firefox, the one browser measured that needs the fallback. In the ANGLE browsers it also keeps the surfaces apart at 250 m, where `standard` already fights in 37% of the pixels.
 - `standard` stays a test mode (`?depth=standard`).
 
-The engine already applies this: `webgl2Depth` in `packages/engine/src/page/limits.ts` picks `reversed` where the capability probe finds `EXT_clip_control`, and `DEPTH_WITHOUT_CLIP_CONTROL` (`reversed-gl`) elsewhere. `engine.capabilities.depth` reports the mode. A render context that answers no `EXT_clip_control`, such as one lost while the WebGL2 backend starts, draws `reversed-gl` instead of failing, so the engine's recovery from the loss goes on.
+The engine applies this: `webgl2Depth` in `packages/engine/src/page/limits.ts` picks `reversed` where the capability probe finds `EXT_clip_control`, and `DEPTH_WITHOUT_CLIP_CONTROL` (`reversed-gl`) elsewhere. `engine.capabilities.depth` reports the mode. A render context that answers no `EXT_clip_control`, such as one lost while the WebGL2 backend starts, draws `reversed-gl` instead of failing, so the engine's recovery from the loss goes on.
 
 The S24+ (Chrome and Brave) and the iPad (Safari and Brave) all have `EXT_clip_control`, so they draw `reversed`. Their rows confirm the decision on phone and tablet GPUs. `reversed` fought in no pixel on either device. `reversed-gl` fought in fewer pixels than `standard` on both. The S24+ counted 8,236 against 20,613, and the iPad 5,441 against 16,737.
 
@@ -86,7 +86,7 @@ null3D draws reversed depth on every GPU path, with no option to set. Where WebG
 ## Consequences
 
 - Code: pull request #47 (https://github.com/null3d-engine/null3d/pull/47, "feat(engine): draw WebGL2 depth with EXT_clip_control where the browser has it", branch `feat/webgl2-clip-control`). It holds the uniform depth mapping in the GLSL build (`crates/null3d-shaders/src/glsl.rs`) and the three modes in the WebGL2 backend (`packages/engine/src/gpu/webgl2/depth.ts`). It also holds the `?depth=` switch, `engine.capabilities.depth`, the precision scene, its image tests, and the runner's `depth` plan.
-- Shadows (M1-F2): in `reversed` and `reversed-gl`, depth textures hold WebGPU's depth values, so shadow comparisons and their reference depths work unchanged on WebGL2. Choosing `standard` anywhere would have needed a flipped comparison and a flipped reference in every shader that reads depth.
+- Shadows (M1-F2): in `reversed` and `reversed-gl`, depth textures hold WebGPU's depth values, so shadow comparisons and their reference depths work unchanged on WebGL2. Choosing `standard` anywhere would need a flipped comparison and a flipped reference in every shader that reads depth.
 - Docs: `concepts/backends` has a section on depth on each tier. The mapping entry `logarithmicDepthBuffer / reverseDepthBuffer` points there. `api/engine` lists `DepthMode` and `EngineCapabilities.depth`.
 - Design notes: the large-world design and the note on logarithmic depth say that WebGL2 draws reversed depth too. It draws in the range 0 to 1 with `EXT_clip_control`, and as `reversed-gl` without it (M1-L4).
-- T-29 closed on 2026-09-30. Every team device and browser has a row.
+- T-29 is closed: every team device and browser has a row.

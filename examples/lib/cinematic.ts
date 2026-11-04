@@ -1,6 +1,7 @@
 // A cinematic camera for the showcase scenes. In Auto, the camera follows a route of shots on a loop
 // and shows the scene's best views; in Manual, the user flies the camera with the keyboard and the
-// pointer, or with a finger on a touch screen. The `c` key toggles the two. The current mode and the
+// pointer, or with a finger on a touch screen, or drives the scene's vehicle where the scene has
+// one. The `c` key toggles the two. The current mode and the
 // scene's controls go to the page as a `hud` message, since a sketch runs in a worker and cannot
 // touch the page. The camera group of the controls is a row of buttons, so a touch screen, which has
 // no `c` key, can switch the mode too.
@@ -73,25 +74,42 @@ const KEY = {
 	fall: 'KeyF',
 } as const;
 
-/** The keys that every showcase scene shares: the camera's, then the controls', which the page reads. */
-export const SHOWCASE_KEYS: readonly SceneKey[] = [
-	{ code: KEY.mode, does: 'switch the camera between Auto and Manual' },
+/** The keys of the Manual camera, which a scene that the user drives replaces with its own. */
+const MANUAL_KEYS: readonly SceneKey[] = [
 	{ code: KEY.forward, does: 'pan the Manual camera forward' },
 	{ code: KEY.back, does: 'pan the Manual camera back' },
 	{ code: KEY.left, does: 'pan the Manual camera left' },
 	{ code: KEY.right, does: 'pan the Manual camera right' },
 	{ code: KEY.rise, does: 'raise the Manual camera' },
 	{ code: KEY.fall, does: 'lower the Manual camera' },
+];
+
+/** The keys of the controls, which the page reads. */
+const CONTROLS_KEYS: readonly SceneKey[] = [
 	{ code: 'KeyH', does: 'open and close the controls' },
 	{ code: 'Escape', does: 'close the controls' },
 ];
 
+/** The keys that every showcase scene shares: the camera's, then the controls', which the page reads. */
+export const SHOWCASE_KEYS: readonly SceneKey[] = [
+	{ code: KEY.mode, does: 'switch the camera between Auto and Manual' },
+	...MANUAL_KEYS,
+	...CONTROLS_KEYS,
+];
+
 /**
- * The whole key table of a scene: the shared keys, then the scene's own. Throws when two entries
- * take the same key, and names both.
+ * The whole key table of a scene: the shared keys, then the scene's own. A scene that the user
+ * drives in Manual gives its driving keys, which take the Manual camera's place. Throws when two
+ * entries take the same key, and names both.
  */
-export function keyTable(scene: readonly SceneKey[] = []): readonly SceneKey[] {
-	const table = [...SHOWCASE_KEYS, ...scene];
+export function keyTable(
+	scene: readonly SceneKey[] = [],
+	driving?: readonly SceneKey[],
+): readonly SceneKey[] {
+	const shared = driving
+		? [SHOWCASE_KEYS[0] as SceneKey, ...driving, ...CONTROLS_KEYS]
+		: SHOWCASE_KEYS;
+	const table = [...shared, ...scene];
 	const taken = new Map<string, string>();
 	for (const key of table) {
 		const other = taken.get(key.code);
@@ -113,6 +131,13 @@ export interface Route {
 	readonly steps: readonly number[];
 	/** The spline's parameter at each shot, plus the loop's own end. */
 	readonly knots: readonly number[];
+	/**
+	 * For each shot, how far along its stretch of the spline's parameter it has traveled, as an even
+	 * table of its share of the stretch's distance.
+	 */
+	readonly distances: readonly Float32Array[];
+	/** The rate that each shot starts and ends at, as a share of the stretch per its average rate. */
+	readonly ease: readonly (readonly [number, number])[];
 }
 
 /**
@@ -146,7 +171,25 @@ export function routeTimeline(shots: readonly Shot[]): Route {
 	}
 	const knots: number[] = [0];
 	for (let i = 0; i < shots.length; i++) knots.push((knots[i] as number) + (steps[i] as number));
-	return { shots, starts, lengths, total, steps, knots };
+	const timed = { shots, starts, lengths, total, steps, knots };
+	const distances = shots.map((shot, index) => stretchDistances(timed, index, shot));
+	// Each stretch's average rate, and the rate that it shares with the next at their join: their mean,
+	// held near the slower of the two so that the slower stretch keeps its pace. A hold's rate of zero
+	// brings the stretches on either side of it to a stop.
+	const rates = distances.map(
+		(table, index) => (table[DISTANCE_STEPS] as number) / (lengths[index] as number),
+	);
+	const count = shots.length;
+	const joins = rates.map((rate, index) => {
+		const next = rates[(index + 1) % count] as number;
+		return Math.min((rate + next) / 2, JOIN_SHARE * Math.min(rate, next));
+	});
+	const ease = rates.map((rate, index): readonly [number, number] => {
+		if (rate <= 0) return [0, 0];
+		const before = joins[(index + count - 1) % count] as number;
+		return [before / rate, (joins[index] as number) / rate];
+	});
+	return { shots, starts, lengths, total, steps, knots, distances, ease };
 }
 
 /**
@@ -175,7 +218,12 @@ export function routePosition(route: Route, phase: number, out: Float32Array): v
 	const then = (index + 2) % count;
 	const t0 = t1 - (steps[before] as number);
 	const t3 = t2 + (steps[after] as number);
-	const t = shot.move === 'hold' ? t1 : t1 + along * (t2 - t1);
+	const [start, end] = route.ease[index] as readonly [number, number];
+	const t =
+		shot.move === 'hold'
+			? t1
+			: t1 +
+				parameterAt(route.distances[index] as Float32Array, eased(along, start, end)) * (t2 - t1);
 	const first = shots[before] as Shot;
 	const second = shots[after] as Shot;
 	const third = shots[then] as Shot;
@@ -216,12 +264,46 @@ export interface CinematicOptions {
 	 * model is posted again.
 	 */
 	groups?: () => readonly HudGroup[];
+	/**
+	 * False keeps the controls off the page, for a scene that shows no panel: the route plays and the
+	 * `c` key still switches the camera. The default is true.
+	 */
+	hud?: boolean;
 	/** How fast the keys pan the manual camera, in canvas pixels per second. The default is 420. */
 	speed?: number;
 	/** The scene's own keys. A key that the table already holds throws. */
 	keys?: readonly SceneAction[];
 	/** Where the Manual camera may go. Without bounds it goes anywhere. */
 	bounds?: CameraBounds;
+	/**
+	 * Hears the controls model each time the camera sends it to the page, for a scene that shows the
+	 * controls in the world too, such as on a vehicle's console.
+	 */
+	onControls?: (groups: readonly HudGroup[]) => void;
+	/**
+	 * How fast the camera glides back onto the route after a switch to Auto, in meters per second.
+	 * Without it the glide always takes a second and a half. With it a glide from far off takes as
+	 * long as that speed needs, so a vehicle that leads the camera flies back rather than jumps.
+	 */
+	glideSpeed?: number;
+	/**
+	 * A scene that the user drives in Manual, such as a vehicle. Its keys take the Manual camera's
+	 * place, the orbit controls stay off, and it moves the camera itself.
+	 */
+	driver?: Driver;
+}
+
+/** What a scene that the user drives gives the cinematic camera. */
+export interface Driver {
+	/** The keys that drive, in the place of the Manual camera's. */
+	keys: readonly SceneKey[];
+	/** Hands the vehicle and the camera to the user, from where the route left them. */
+	take(): void;
+	/**
+	 * Moves the vehicle and places the camera, once per Manual frame. `held` answers whether one of
+	 * the driver's own keys is down, so a scene reads no key outside the table.
+	 */
+	update(dt: number, held: (code: string) => boolean): void;
 }
 
 /**
@@ -369,6 +451,91 @@ function catmullRom(
 	const b2 = ((t3 - t) * a2 + (t - t1) * a3) / (t3 - t1);
 	return ((t2 - t) * b1 + (t - t1) * b2) / (t2 - t1);
 }
+/** The even steps of a shot's table of distance along its stretch of the spline. */
+const DISTANCE_STEPS = 512;
+/** How many times its own average rate the slower of two stretches may reach at their join. */
+const JOIN_SHARE = 1.5;
+/** How much a meter that the camera's aim travels counts against a meter that the camera travels. */
+const AIM_SHARE = 0.25;
+
+/**
+ * The distance that a shot travels along its stretch of the spline, at even steps of the spline's
+ * parameter, from 0: the camera's own and a share of its aim's, so a shot that only turns still
+ * travels. A shot that holds travels nothing.
+ */
+function stretchDistances(route: Omit<Route, 'distances' | 'ease'>, index: number, shot: Shot) {
+	const table = new Float32Array(DISTANCE_STEPS + 1);
+	if (shot.move === 'hold') return table;
+	const { shots, steps, knots } = route;
+	const count = shots.length;
+	const [t1, t2] = [knots[index] as number, knots[index + 1] as number];
+	const [first, second, third] = [
+		shots[(index + count - 1) % count] as Shot,
+		shots[(index + 1) % count] as Shot,
+		shots[(index + 2) % count] as Shot,
+	];
+	const [t0, t3] = [
+		t1 - (steps[(index + count - 1) % count] as number),
+		t2 + (steps[(index + 1) % count] as number),
+	];
+	const sample = (u: number, c: number, pick: 'position' | 'target') =>
+		catmullRom(
+			first[pick][c] as number,
+			shot[pick][c] as number,
+			second[pick][c] as number,
+			third[pick][c] as number,
+			t0,
+			t1,
+			t2,
+			t3,
+			u,
+		);
+	for (let k = 1; k <= DISTANCE_STEPS; k++) {
+		const [a, b] = [
+			t1 + ((k - 1) / DISTANCE_STEPS) * (t2 - t1),
+			t1 + (k / DISTANCE_STEPS) * (t2 - t1),
+		];
+		let moved = 0;
+		let aimed = 0;
+		for (let c = 0; c < 3; c++) {
+			moved += (sample(b, c, 'position') - sample(a, c, 'position')) ** 2;
+			aimed += (sample(b, c, 'target') - sample(a, c, 'target')) ** 2;
+		}
+		table[k] = (table[k - 1] as number) + Math.sqrt(moved) + AIM_SHARE * Math.sqrt(aimed);
+	}
+	return table;
+}
+
+/**
+ * The share of a shot's distance traveled at the share `x` of its time, when it starts and ends at
+ * `start` and `end` times its average rate: a quintic whose rate takes those values at its ends and
+ * whose rate of change is zero there, so two shots meet with the same speed and no step in their
+ * acceleration. The rate stays above zero for ends of up to twice the average.
+ */
+function eased(x: number, start: number, end: number): number {
+	const [x2, x3, x4] = [x * x, x * x * x, x * x * x * x];
+	// The rate of the ends' blend is `rise`'s, whose own integral is `held`.
+	const rise = x3 * (10 - 15 * x + 6 * x2);
+	const held = x4 * (2.5 - 3 * x + x2);
+	return start * (x - held) + end * held + (1 - (start + end) / 2) * rise;
+}
+
+/** The share of a stretch's parameter at the share `traveled` of its distance. */
+function parameterAt(table: Float32Array, traveled: number): number {
+	const whole = table[DISTANCE_STEPS] as number;
+	if (whole <= 0) return traveled;
+	const wanted = traveled * whole;
+	let low = 0;
+	let high = DISTANCE_STEPS;
+	while (high - low > 1) {
+		const mid = (low + high) >> 1;
+		if ((table[mid] as number) <= wanted) low = mid;
+		else high = mid;
+	}
+	const [a, b] = [table[low] as number, table[high] as number];
+	return (low + (b > a ? (wanted - a) / (b - a) : 0)) / DISTANCE_STEPS;
+}
+
 /** Seconds to glide from the user's camera onto the route, after a switch back to Auto. */
 const GLIDE = 1.5;
 /** How finely the nearest point of the route is searched, in samples around the loop. */
@@ -387,8 +554,11 @@ export function createCinematic(
 	options: CinematicOptions,
 ): Cinematic {
 	const { input, time, page } = ctx;
-	const { shots, keys = [] } = options;
-	keyTable(keys);
+	const { shots, keys = [], driver } = options;
+	keyTable(keys, driver?.keys);
+	const driving = new Set(driver?.keys.map((key) => key.code));
+	/** Whether one of the driver's keys is down. Any other key reads as up. */
+	const driverKey = (code: string): boolean => driving.has(code) && input.isDown(code);
 	const route = routeTimeline(shots);
 	const { starts, total } = route;
 	// The pose of the route at a phase: camera position, then the point it looks at.
@@ -404,6 +574,8 @@ export function createCinematic(
 	let glide = 1;
 	/** The phase that a glide resumes from. */
 	let glideFrom = 0;
+	/** How long the glide lasts, in seconds. */
+	let glideSeconds = GLIDE;
 	let announced = false;
 
 	// The manual camera: the engine's orbit controls. A left drag or one finger turns the camera
@@ -521,11 +693,13 @@ export function createCinematic(
 
 	/** Sends the whole controls model to the page, with the camera group first. */
 	const postControls = (): void => {
+		if (options.hud === false) return;
 		const groups: HudGroup[] = [
 			radioGroup('camera', 'Camera', CAMERA_OPTIONS, mode === 'manual' ? 'Manual' : 'Auto'),
 			...(options.groups?.() ?? []),
 		];
 		page.post('hud', { groups, visible: true });
+		options.onControls?.(groups);
 	};
 
 	/** Switches the camera between the route and the user, as the `c` key and the button do. */
@@ -552,7 +726,9 @@ export function createCinematic(
 			controls.target[2] = pose[5] as number;
 			mode = 'manual';
 			glide = 1;
-			controls.enabled = true;
+			// A scene that the user drives moves the camera itself, so the orbit controls stay off.
+			if (driver) driver.take();
+			else controls.enabled = true;
 		} else {
 			// Auto glides: find the nearest point of the route, then ease onto it. The motion the
 			// controls still carry is dropped, so no fling resumes when the user takes over again.
@@ -565,6 +741,14 @@ export function createCinematic(
 			from[4] = options.target[1];
 			from[5] = options.target[2];
 			glideFrom = nearestPhase(from);
+			// A glide from far off takes as long as the scene's glide speed needs.
+			routePose(glideFrom, sample);
+			const away = Math.hypot(
+				(sample[0] as number) - (from[0] as number),
+				(sample[1] as number) - (from[1] as number),
+				(sample[2] as number) - (from[2] as number),
+			);
+			glideSeconds = options.glideSpeed ? Math.max(GLIDE, away / options.glideSpeed) : GLIDE;
 			// The glide measures the route from the moment it starts, so it lands on the moving route
 			// and takes its speed, rather than setting off from a standstill.
 			glideStart = time.now;
@@ -599,6 +783,10 @@ export function createCinematic(
 			}
 			if (input.wasPressed(KEY.mode)) toggleMode();
 			for (const key of keys) if (input.wasPressed(key.code)) key.press();
+			if (mode === 'manual' && driver) {
+				driver.update(dt, driverKey);
+				return;
+			}
 			if (mode === 'manual') {
 				// The keys pan: W and S see forward and back, A and D move across, R and F rise and
 				// fall. The controls take screen pixels, so the frame's step scales the speed.
@@ -635,7 +823,7 @@ export function createCinematic(
 			if (glide < 1) {
 				// Ease from the user's pose onto the route, which carries on while the glide runs: the
 				// blend reaches the route's own pose at the route's own speed.
-				glide = Math.min(1, glide + dt / GLIDE);
+				glide = Math.min(1, glide + dt / glideSeconds);
 				const b = smooth(glide);
 				routePose(glideFrom + (time.now - glideStart), sample);
 				for (let c = 0; c < 6; c++)

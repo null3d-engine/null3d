@@ -20,7 +20,9 @@
 //! an ancestor's, or shares no layer with the view. Of the others:
 //!
 //! - The directional light created first gives the frame's main light: the direction its light
-//!   travels and its color times its intensity.
+//!   travels and its color times its intensity. The next three directional lights, in creation
+//!   order, give the frame's fill lights: each with its own direction and color, and no shadows. A
+//!   further directional light gives no light.
 //! - Ambient lights add up.
 //! - Hemisphere lights add up too. A hemisphere light gives a surface three.js's blend from its
 //!   ground color to its sky color, by the weight `0.5 * dot(normal, up) + 0.5`. That blend is
@@ -134,11 +136,20 @@ pub mod value {
     pub const HEIGHT: u32 = 12;
     /// The radius in meters of a tube light. The default is 0.025.
     pub const RADIUS: u32 = 13;
-    /// The layer of a rectangle light's image in the frame builder's light tables, plus one, or 0
-    /// for a light without an image. The engine sets it when it places the image.
+    /// The layer of the light's image in the frame builder's light tables, plus one, or 0 for a
+    /// light without one: a rectangle light's picture, or the map that a spot light projects over
+    /// its cone. The engine sets it when it places the image.
     pub const IMAGE: u32 = 14;
+    /// Texels on each side of a directional light's hero tile: 1,024, 2,048 or 4,096. The default
+    /// is 1,024, and the quality preset sets its own through [`super::LightTable::set_default`].
+    /// A larger tile keeps the hero's shadow sharp over an object that a smaller one would blur,
+    /// at the same texel ratio to the cascades' nearest one.
+    pub const HERO_SIZE: u32 = 15;
+    /// How much of a light's shadow it draws, from 0 for none to 1, the default, for all of it.
+    /// The shader mixes each lookup's shadow toward full light by the rest.
+    pub const SHADOW_INTENSITY: u32 = 16;
     /// The last number.
-    pub const LAST: u32 = IMAGE;
+    pub const LAST: u32 = SHADOW_INTENSITY;
 }
 
 /// The shadow distance that follows the farthest visible receiver: the render worker finds the
@@ -173,6 +184,8 @@ const DEFAULT_VALUES: [f32; value::LAST as usize + 1] = [
     1.0,
     0.025,
     0.0,
+    1024.0,
+    1.0,
 ];
 
 /// The cone cosines of a point light's [`VisibleLight`] record. Every direction's cosine is above
@@ -180,12 +193,11 @@ const DEFAULT_VALUES: [f32; value::LAST as usize + 1] = [
 /// light through in full.
 pub const POINT_CONE: [f32; 2] = [-2.0, -1.0];
 
-/// A visible point, spot or area light, as one frame's list holds it: 64 bytes, four groups of four
+/// A visible point, spot or area light, as one frame's list holds it: 80 bytes, five groups of four
 /// 32-bit values, ready for the GPU.
 ///
 /// An area light needs no decay and no cone, so its record keeps its shape in their places (see
-/// [`VisibleLight::area`]): its half sides, or its half axis and radius, and its texture's layer
-/// where a point or spot light keeps its shadow tile, since area lights cast no shadows.
+/// [`VisibleLight::area`]): its half sides, or its half axis and radius.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct VisibleLight {
@@ -212,6 +224,14 @@ pub struct VisibleLight {
     /// The light's first tile in the frame builder's shadow atlas plus one, as a float, or 0 when
     /// the light has no tile. The core writes 0, and the frame builder the tile.
     pub shadow: f32,
+    /// The up axis that a spot light's projected map reads with, of length 1, or zero for another
+    /// light: the `+Y` axis of a camera that looks along the light with the world's up as near its
+    /// own as it can be, as three.js turns a spot light's shadow camera.
+    pub up: [f32; 3],
+    /// The layer of the light's image in the frame builder's light tables plus one, or 0 when the
+    /// light shows none: a spot light projects it over its cone, and a rectangle light shows it
+    /// over its area.
+    pub image: f32,
 }
 
 impl VisibleLight {
@@ -220,7 +240,7 @@ impl VisibleLight {
     /// `along` and `across`. A tube light passes half its axis as `along`, and its radius as
     /// `across[0]`. The record keeps `along` where a spot light keeps its direction, and `across`
     /// in the places of the decay and the two cone cosines, in that order. `image` is the layer of
-    /// a rectangle light's image plus one, or 0, which the record keeps in the shadow tile's place.
+    /// a rectangle light's image plus one, or 0.
     #[allow(clippy::too_many_arguments)]
     pub fn area(
         kind: u32,
@@ -242,7 +262,9 @@ impl VisibleLight {
             penumbra_cos: across[2],
             kind,
             light,
-            shadow: image,
+            shadow: 0.0,
+            up: [0.0; 3],
+            image,
         }
     }
 }
@@ -271,6 +293,8 @@ pub struct LightShadow {
     pub bias: f32,
     /// Its normal bias, in meters.
     pub normal_bias: f32,
+    /// How much of its shadow it draws, from 0 for none to 1 for all of it.
+    pub intensity: f32,
     /// The light's layer mask: its tiles draw the casters whose masks share a bit with it.
     pub layers: u32,
 }
@@ -286,6 +310,35 @@ pub struct LightView {
     pub layers: u32,
 }
 
+/// The most directional lights after the first that light one frame: the fill and rim lights. The
+/// first directional light created keeps the shadows, and this many more light surfaces with it.
+/// A further directional light gives no light.
+pub const MAX_FILL_DIRECTIONAL_LIGHTS: usize = 3;
+
+/// A directional light after the frame's main light: the direction its light travels, of length 1,
+/// and its linear color times its intensity and the frame's exposure. It casts no shadows.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FillLight {
+    /// The direction the light travels, of length 1.
+    pub direction: [f32; 3],
+    /// Its linear color times its intensity and the exposure: black when unused.
+    pub color: [f32; 3],
+}
+
+impl FillLight {
+    /// A slot that gives no light. Its direction matches [`FrameLights::default`]'s sun.
+    pub const NONE: FillLight = FillLight {
+        direction: [0.0, -1.0, 0.0],
+        color: [0.0; 3],
+    };
+}
+
+impl Default for FillLight {
+    fn default() -> Self {
+        Self::NONE
+    }
+}
+
 /// What the directional and ambient lights give one frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FrameLights {
@@ -295,6 +348,12 @@ pub struct FrameLights {
     /// The main directional light's linear color times its intensity and the exposure: black when
     /// there is none.
     pub sun_color: [f32; 3],
+    /// The directional lights after the main one, in the order they were created, up to
+    /// [`MAX_FILL_DIRECTIONAL_LIGHTS`]. They light every surface the main light reaches, without
+    /// shadows. The rest of the slots are [`FillLight::NONE`].
+    pub fills: [FillLight; MAX_FILL_DIRECTIONAL_LIGHTS],
+    /// The entries of [`FrameLights::fills`] that light the frame.
+    pub fill_count: u32,
     /// The light that reaches a surface from every direction: the sum of the ambient lights'
     /// linear colors times their intensities, plus half the sum of each hemisphere light's sky and
     /// ground colors times its intensity, all times the exposure.
@@ -315,6 +374,8 @@ impl Default for FrameLights {
         Self {
             sun_direction: [0.0, -1.0, 0.0],
             sun_color: [0.0; 3],
+            fills: [FillLight::NONE; MAX_FILL_DIRECTIONAL_LIGHTS],
+            fill_count: 0,
             ambient: [0.0; 3],
             hemisphere: [[0.0; 3]; 3],
             sun_shadow: None,
@@ -341,13 +402,21 @@ pub struct SunShadow {
     /// How far its contact shadows reach toward the light from each surface, in meters: 0 for
     /// none.
     pub contact: f32,
+    /// How much of its shadow it draws, from 0 for none to 1 for all of it.
+    pub intensity: f32,
     /// The light's layer mask: its cascades draw the casters whose masks share a bit with it.
     pub layers: u32,
+    /// The scene slot of the object whose shadow the light draws into a tile of its own, or
+    /// `None` for a light that names no hero.
+    pub hero: Option<u32>,
+    /// Texels on each side of the hero's tile.
+    pub hero_size: u32,
 }
 
 impl SunShadow {
-    /// The shadows of a light with `values`, by [`value`], and the layer mask `layers`.
-    fn of(values: &[f32; value::LAST as usize + 1], layers: u32) -> Self {
+    /// The shadows of a light with `values`, by [`value`], the layer mask `layers`, and the scene
+    /// slot of its hero object, if the light names one that still exists.
+    fn of(values: &[f32; value::LAST as usize + 1], layers: u32, hero: Option<u32>) -> Self {
         let whole = |code: u32, low: f32, high: f32| values[code as usize].clamp(low, high) as u32;
         let distance = values[value::SHADOW_DISTANCE as usize];
         Self {
@@ -358,7 +427,10 @@ impl SunShadow {
             distance,
             auto: distance <= 0.0,
             contact: values[value::SHADOW_CONTACT as usize].max(0.0),
+            intensity: values[value::SHADOW_INTENSITY as usize].clamp(0.0, 1.0),
             layers,
+            hero,
+            hero_size: whole(value::HERO_SIZE, 256.0, 16_384.0),
         }
     }
 }
@@ -435,6 +507,9 @@ struct Row {
     colors: [[f32; 3]; 2],
     /// Numbers, by [`value`].
     values: [f32; value::LAST as usize + 1],
+    /// The object that a directional light draws a shadow of its own for, or
+    /// [`Handle::NONE`] for none.
+    hero: Handle,
 }
 
 impl Row {
@@ -445,7 +520,58 @@ impl Row {
         order: 0,
         colors: [[0.0; 3]; 2],
         values: [0.0; value::LAST as usize + 1],
+        hero: Handle::NONE,
     };
+}
+
+/// A directional light that a gather kept: its creation order, its row, its scene slot and its
+/// exposed color. The gather keeps the ones created first, for the main light and the fills.
+#[derive(Clone, Copy, Debug)]
+struct KeptDirectional {
+    order: u32,
+    row: usize,
+    slot: usize,
+    color: [f32; 3],
+}
+
+impl KeptDirectional {
+    /// A slot that no light fills: a creation order past any real one.
+    const NONE: KeptDirectional = KeptDirectional {
+        order: u32::MAX,
+        row: 0,
+        slot: 0,
+        color: [0.0; 3],
+    };
+}
+
+/// Keeps a directional light among the ones created first, in creation order, dropping the light
+/// created last once the slots are full.
+fn keep_directional(
+    kept: &mut [KeptDirectional],
+    shown: &mut usize,
+    order: u32,
+    row: usize,
+    slot: usize,
+    color: [f32; 3],
+) {
+    let at = kept[..*shown]
+        .iter()
+        .position(|k| k.order > order)
+        .unwrap_or(*shown);
+    if at == kept.len() {
+        return;
+    }
+    let end = (*shown).min(kept.len() - 1);
+    for k in (at..end).rev() {
+        kept[k + 1] = kept[k];
+    }
+    kept[at] = KeptDirectional {
+        order,
+        row,
+        slot,
+        color,
+    };
+    *shown = (*shown + 1).min(kept.len());
 }
 
 /// The scene's lights, one row each. See the module documentation.
@@ -546,6 +672,7 @@ impl LightTable {
             order: self.created,
             colors: [[1.0; 3]; 2],
             values: self.defaults,
+            hero: Handle::NONE,
         };
         self.created = self.created.wrapping_add(1);
         Ok(row)
@@ -560,6 +687,7 @@ impl LightTable {
         let copy = &mut self.rows[row as usize];
         copy.colors = source.colors;
         copy.values = source.values;
+        copy.hero = source.hero;
         Ok(row)
     }
 
@@ -656,6 +784,13 @@ impl LightTable {
             .ok_or(past(which, value::LAST))
     }
 
+    /// Sets the object that a directional light draws a hero shadow of, or [`Handle::NONE`] to
+    /// stop drawing one. Fails with [`CoreError::InvalidHandle`] for a row that holds no light.
+    pub fn set_hero(&mut self, light: u32, object: Handle) -> Result<(), CoreError> {
+        self.row_mut(light)?.hero = object;
+        Ok(())
+    }
+
     /// The point and spot lights that the last [`LightTable::gather`] found visible, in row order.
     pub fn visible(&self) -> &[VisibleLight] {
         &self.visible
@@ -679,7 +814,11 @@ impl LightTable {
         exposure: f32,
     ) -> FrameLights {
         let mut frame = FrameLights::default();
-        let mut main_order = None;
+        // One slot more than the fills, for the main light, as the table reserved room for these
+        // when it grew.
+        const KEPT: usize = MAX_FILL_DIRECTIONAL_LIGHTS + 1;
+        let mut kept = [KeptDirectional::NONE; KEPT];
+        let mut shown = 0;
         self.visible.clear();
         self.shadows.clear();
         let layers = view.map_or(ALL_LAYERS, |v| v.layers);
@@ -716,14 +855,7 @@ impl LightTable {
                     }
                 }
                 kind::DIRECTIONAL => {
-                    if main_order.is_none_or(|main| row.order < main) {
-                        main_order = Some(row.order);
-                        frame.sun_direction = forward(world.matrix(s));
-                        frame.sun_color = lit;
-                        let casts = scene.flags()[s] & flags::CAST_SHADOWS != 0;
-                        frame.sun_shadow =
-                            casts.then(|| SunShadow::of(&row.values, scene.layers()[s]));
-                    }
+                    keep_directional(&mut kept, &mut shown, row.order, index, s, lit)
                 }
                 kind::POINT | kind::SPOT => {
                     let Some(view) = view else {
@@ -746,6 +878,7 @@ impl LightTable {
                             range,
                             bias,
                             normal_bias,
+                            intensity: row.values[value::SHADOW_INTENSITY as usize].clamp(0.0, 1.0),
                             layers: scene.layers()[s],
                         });
                     }
@@ -775,6 +908,27 @@ impl LightTable {
                 _ => {}
             }
         }
+        if shown > 0 {
+            let main = kept[0];
+            frame.sun_direction = forward(world.matrix(main.slot));
+            frame.sun_color = main.color;
+            let row = &self.rows[main.row];
+            let casts = scene.flags()[main.slot] & flags::CAST_SHADOWS != 0;
+            frame.sun_shadow = casts.then(|| {
+                // A hero object that the sketch destroyed leaves the light without one.
+                let hero = (row.hero != Handle::NONE)
+                    .then(|| scene.resolve(row.hero).ok())
+                    .flatten();
+                SunShadow::of(&row.values, scene.layers()[main.slot], hero)
+            });
+        }
+        if shown > 1 {
+            for (fill, kept) in frame.fills.iter_mut().zip(&kept[1..shown]) {
+                fill.direction = forward(world.matrix(kept.slot));
+                fill.color = kept.color;
+            }
+        }
+        frame.fill_count = shown.saturating_sub(1) as u32;
         frame
     }
 
@@ -818,11 +972,13 @@ impl LightTable {
 }
 
 /// Where a point, spot or area light stands for a view: its cell position, its position relative to the
-/// view's camera, the direction it points, and whether its range sphere meets the view's frustum.
+/// view's camera, the direction it points and the up axis that a spot light's map reads with, and
+/// whether its range sphere meets the view's frustum.
 struct Placed {
     at: CellPosition,
     relative: [f32; 3],
     direction: [f32; 3],
+    up: [f32; 3],
     seen: bool,
 }
 
@@ -837,15 +993,17 @@ impl Placed {
         let seen = view
             .frustum
             .contains_sphere(relative[0], relative[1], relative[2], range);
-        let direction = if row.kind == kind::SPOT {
-            forward(scene.world(parity).matrix(slot as usize))
+        let (direction, up) = if row.kind == kind::SPOT {
+            let direction = forward(scene.world(parity).matrix(slot as usize));
+            (direction, map_up(direction))
         } else {
-            [0.0; 3]
+            ([0.0; 3], [0.0; 3])
         };
         Self {
             at,
             relative,
             direction,
+            up,
             seen,
         }
     }
@@ -853,10 +1011,14 @@ impl Placed {
     /// The light's record in a visible list, with colors times `exposure` and no shadow tile.
     fn record(&self, row: &Row, light: u32, exposure: f32) -> VisibleLight {
         let [intensity, range, decay, angle, penumbra, ..] = row.values;
-        let (cone_cos, penumbra_cos) = if row.kind == kind::SPOT {
-            (cosine(angle), cosine(angle * (1.0 - penumbra)))
+        let (cone_cos, penumbra_cos, image) = if row.kind == kind::SPOT {
+            (
+                cosine(angle),
+                cosine(angle * (1.0 - penumbra)),
+                row.values[value::IMAGE as usize],
+            )
         } else {
-            (POINT_CONE[0], POINT_CONE[1])
+            (POINT_CONE[0], POINT_CONE[1], 0.0)
         };
         VisibleLight {
             position: self.relative,
@@ -869,6 +1031,8 @@ impl Placed {
             kind: row.kind,
             light,
             shadow: 0.0,
+            up: self.up,
+            image,
         }
     }
 
@@ -935,6 +1099,37 @@ fn forward(m: &[f32; 12]) -> [f32; 3] {
     unit_or([-m[2], -m[6], -m[10]], [0.0, -1.0, 0.0])
 }
 
+/// The +Y axis of the frame that a camera looking along `direction` with the world's up axis holds:
+/// the frame that a spot light's projected map reads, as three.js aims the camera that casts and
+/// projects a spot light's map. The map turns with the direction alone, so rolling the light about
+/// its own axis leaves the map as it is. A light that points along the world's up axis takes the
+/// same small tilt as three.js's `lookAt`, which keeps the frame defined there.
+fn map_up(direction: [f32; 3]) -> [f32; 3] {
+    let world_up = [0.0, 1.0, 0.0];
+    let mut z = direction.map(|v| -v);
+    let mut x = cross(world_up, z);
+    if dot(x, x) < 1e-8 {
+        z[2] += 0.0001;
+        z = unit_or(z, [0.0, 0.0, -1.0]);
+        x = cross(world_up, z);
+    }
+    cross(z, unit_or(x, [1.0, 0.0, 0.0]))
+}
+
+/// The cross product of `a` and `b`.
+fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+/// The dot product of `a` and `b`.
+fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
 /// The X and Y axes of a world matrix of three rows, made unit length and at right angles to each
 /// other and to its Z axis, so a scale or a shear in the matrix leaves an area light's shape as its
 /// numbers give it. A matrix that flattens an axis gives the world's X and Y axes.
@@ -989,6 +1184,31 @@ mod tests {
         assert_eq!(c, a);
         assert_eq!(table.object(c).unwrap(), Handle::new(6, 0));
         assert_eq!(table.kind(c), kind::AMBIENT);
+    }
+
+    #[test]
+    fn a_light_keeps_its_hero_and_a_free_row_takes_none() {
+        let mut table = LightTable::new();
+        let sun = table.create(Handle::new(1, 0), kind::DIRECTIONAL).unwrap();
+        assert_eq!(table.row(sun).unwrap().hero, Handle::NONE);
+        table.set_hero(sun, Handle::new(9, 0)).unwrap();
+        assert_eq!(table.row(sun).unwrap().hero, Handle::new(9, 0));
+        table.destroy(sun).unwrap();
+        assert!(table.set_hero(sun, Handle::new(9, 0)).is_err());
+    }
+
+    #[test]
+    fn a_lights_hero_tile_takes_its_default_and_its_own_size() {
+        let mut table = LightTable::new();
+        let sun = table.create(Handle::new(1, 0), kind::DIRECTIONAL).unwrap();
+        assert_eq!(table.value(sun, value::HERO_SIZE).unwrap(), 1024.0);
+        table.set_value(sun, value::HERO_SIZE, 4096.0).unwrap();
+        assert_eq!(table.value(sun, value::HERO_SIZE).unwrap(), 4096.0);
+        // The quality preset sets the default for the lights that come after it.
+        table.set_default(value::HERO_SIZE, 2048.0).unwrap();
+        let later = table.create(Handle::new(2, 0), kind::DIRECTIONAL).unwrap();
+        assert_eq!(table.value(later, value::HERO_SIZE).unwrap(), 2048.0);
+        assert_eq!(table.value(sun, value::HERO_SIZE).unwrap(), 4096.0);
     }
 
     #[test]

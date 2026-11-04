@@ -69,7 +69,7 @@
 //! camera, so the block uploads whenever the camera or a tile's light moves, while the tiles'
 //! depth stays.
 
-use null3d_core::cells::{CellCoords, CellPosition};
+use null3d_core::cells::{CELL_SIZE, CellCoords};
 use null3d_core::culling::Frustum;
 use null3d_core::handle::Handle;
 use null3d_core::lights::{LightShadow, NOT_VISIBLE, VisibleLight, kind};
@@ -77,7 +77,7 @@ use null3d_core::morph::NOT_LINKED;
 use null3d_core::scene::{SceneStorage, flags};
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_core::world::{HIDDEN_RADIUS, MATRIX_FLOATS};
-use null3d_gpu::drawlist::sizes::SHADOW_TILES_UNIFORM_BYTES;
+use null3d_gpu::drawlist::sizes::{SHADOW_HERO_UNIFORM_BYTES, SHADOW_TILES_UNIFORM_BYTES};
 use null3d_gpu::drawlist::{DrawList, Op, format};
 
 use crate::camera::{Affine, Mat4, ViewDepth, multiply, view_matrix};
@@ -85,11 +85,25 @@ use crate::frame::{FrameInput, NO_MESH, RecordError, UploadArena};
 use crate::frame_data::FrameUniform;
 use crate::meshes::MeshStorage;
 use crate::pipelines::PassTargets;
-use crate::shadows::camera_world;
+use crate::shadows::{HeroShadow, ShadingCamera, camera_world};
 use crate::view::ViewFrame;
 
 /// The most tiles of the shadow atlas.
 pub const MAX_TILES: usize = 24;
+
+/// The most bytes that the shadow atlas may take: one GiB. A hero tile finer than the preset's
+/// light tiles sets the size of every atlas layer, so a page that names a large tile and many
+/// shadow tiles can ask for a texture that a device cannot hold. The renderer refuses such a plan
+/// with [`RecordError::ShadowAtlasTooLarge`] before the GPU is asked, and the frame draws nothing.
+pub const MAX_ATLAS_BYTES: u64 = 1 << 30;
+
+/// A mebibyte, as the atlas's size is counted.
+const MIB: u64 = 1 << 20;
+
+/// The bytes that the atlas of `shape` takes: each layer at 4 bytes a texel.
+fn atlas_bytes(shape: AtlasShape) -> u64 {
+    u64::from(shape.layers) * u64::from(shape.size) * u64::from(shape.size) * 4
+}
 
 /// What the tiles' shadow passes draw into: the atlas's 32-bit float depth, with one sample and no
 /// color. A tile's perspective view stores most of its depth's range near its light, so 16-bit
@@ -265,7 +279,34 @@ impl Default for TileUniform {
     }
 }
 
-const _: () = assert!(size_of::<TileUniform>() == SHADOW_TILES_UNIFORM_BYTES as usize);
+const _: () = assert!(std::mem::size_of::<TileUniform>() == SHADOW_TILES_UNIFORM_BYTES as usize);
+
+/// The sun's hero tile as receivers read it, laid out as the shaders' `ShadowHero` structure.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct HeroUniform {
+    /// The matrix from positions relative to the camera into the tile's clip space.
+    pub view_proj: Mat4,
+    /// The size in meters of one texel, the light's bias and normal bias in meters, and the
+    /// tile's layer plus one, or 0 when the light names no hero.
+    pub params: [f32; 4],
+}
+
+const _: () = assert!(std::mem::size_of::<HeroUniform>() == SHADOW_HERO_UNIFORM_BYTES as usize);
+
+impl HeroUniform {
+    /// The uniform as bytes, for an upload.
+    pub fn as_bytes(&self) -> &[u8] {
+        // SAFETY: the struct is `repr(C)` and made only of `f32`s, so it has no padding, and any
+        // bytes of it are initialized.
+        unsafe {
+            std::slice::from_raw_parts(
+                (self as *const Self).cast::<u8>(),
+                std::mem::size_of::<Self>(),
+            )
+        }
+    }
+}
 
 impl TileUniform {
     /// The uniform as bytes, for an upload.
@@ -306,6 +347,22 @@ impl Caster {
         let reach = light.range + radius;
         (dot(center, center) <= reach * reach).then_some(center)
     }
+
+    /// True when the caster's sphere touches the box of the sun's `hero`, whose layers it shares.
+    fn touches_hero(&self, hero: &HeroShadow) -> bool {
+        let radius = self.sphere[3];
+        radius != HIDDEN_RADIUS
+            && hero.layers & self.layers != 0
+            && hero.bounds.touches(self.center_world(), radius)
+    }
+
+    /// Where the caster's sphere center lies from the world's origin.
+    fn center_world(&self) -> [f64; 3] {
+        let [x, y, z, _] = self.sphere;
+        std::array::from_fn(|k| {
+            f64::from(self.cell[k]) * f64::from(CELL_SIZE) + f64::from([x, y, z][k])
+        })
+    }
 }
 
 /// An instance batch that casts shadows, with its layers and active rows as the module last saw
@@ -330,6 +387,17 @@ struct Lit {
     position: [f32; 3],
 }
 
+/// The sun's hero tile's state between frames.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct HeroSlot {
+    /// The hero that the tile's depth shows, or `None` before it draws.
+    key: Option<HeroShadow>,
+    /// True when the tile's depth shows its key, so it need not draw.
+    clean: bool,
+    /// True when the tile holds depth that receivers can read.
+    held: bool,
+}
+
 /// The shadow atlas's tiles: see the module documentation.
 #[derive(Debug)]
 pub struct ShadowTiles {
@@ -350,6 +418,14 @@ pub struct ShadowTiles {
     uniform: TileUniform,
     /// The uniform that the GPU holds, or `None` before the first upload.
     held: Option<TileUniform>,
+    /// The sun's hero tile, which takes the last layer while the light names a hero.
+    hero: HeroSlot,
+    /// True when the frame planned last had a hero, so a change makes the atlas again.
+    hero_on: bool,
+    /// The hero's values as receivers read them in the frame planned last.
+    hero_uniform: HeroUniform,
+    /// The hero's uniform that the GPU holds, or `None` before the first upload.
+    held_hero: Option<HeroUniform>,
     /// Each scene slot's caster as last seen, while `casters_known` holds.
     casters: Vec<Caster>,
     casters_known: bool,
@@ -380,6 +456,10 @@ impl ShadowTiles {
             ranked: Vec::new(),
             uniform: TileUniform::default(),
             held: None,
+            hero: HeroSlot::default(),
+            hero_on: false,
+            hero_uniform: HeroUniform::default(),
+            held_hero: None,
             casters: Vec::new(),
             casters_known: false,
             posed: Vec::new(),
@@ -415,12 +495,24 @@ impl ShadowTiles {
         &self.uniform
     }
 
+    /// The sun's hero tile's values for receivers, as the frame planned last read them.
+    pub fn hero_uniform(&self) -> &HeroUniform {
+        &self.hero_uniform
+    }
+
     /// Plans the tiles of the frame `input`, with `settings` and the shadow filter's square of
     /// `filter` texels, for the camera's view `camera`, or for no camera: then no tile draws.
     /// `meshes` says which meshes' vertices changed. `sways` says whether a material, by engine id,
-    /// moves its vertices by a vertex offset, which its casters' shadows follow in every frame.
+    /// moves its vertices by a vertex offset, which its casters' shadows follow in every frame; a
+    /// material that holds its casters still leaves its tiles alone. `hero` is the sun's hero
+    /// object, which draws into the atlas's last tile.
     /// Allocates only when more lights cast shadows, or the scene holds more objects, than in any
     /// frame before.
+    ///
+    /// Fails with [`RecordError::ShadowAtlasTooLarge`] when the planned atlas would take more than
+    /// [`MAX_ATLAS_BYTES`], so a page that names a hero tile and many shadow tiles hears about the
+    /// allocation before the GPU is asked for it.
+    #[allow(clippy::too_many_arguments)]
     pub fn plan(
         &mut self,
         input: &FrameInput<'_>,
@@ -429,20 +521,34 @@ impl ShadowTiles {
         camera: Option<&ViewFrame>,
         meshes: &MeshStorage,
         sways: &dyn Fn(u32) -> bool,
-    ) {
+        hero: Option<HeroShadow>,
+    ) -> Result<(), RecordError> {
         self.frames = [None; MAX_TILES];
         self.waiting = 0;
         self.lit.clear();
+        self.hero_uniform = HeroUniform::default();
         let shadows = input.shadow_lights;
-        let shape = self.shape_for(shadows, settings);
-        if shape != self.shape || settings != self.settings {
+        let hero = hero.filter(|hero| hero.bounds.half > 0.0 && hero.bounds.away > 0.0);
+        let shape = self.shape_for(shadows, settings, hero.map(|hero| hero.size));
+        let bytes = atlas_bytes(shape);
+        if bytes > MAX_ATLAS_BYTES {
+            return Err(RecordError::ShadowAtlasTooLarge {
+                megabytes: bytes.div_ceil(MIB) as u32,
+            });
+        }
+        if shape != self.shape || settings != self.settings || hero.is_some() != self.hero_on {
             self.slots = [Slot::default(); MAX_TILES];
+            self.hero = HeroSlot::default();
             self.shape = shape;
             self.settings = settings;
+            self.hero_on = hero.is_some();
         }
         let Some(camera) = camera.filter(|_| shape.layers > 0) else {
+            // No camera reads a tile, and the hero's values go with them: the next frame that has
+            // one draws the hero's tile afresh.
             self.casters_known = false;
-            return;
+            self.hero = HeroSlot::default();
+            return Ok(());
         };
         self.assign(input.lights, shadows);
         for lit in &self.lit {
@@ -477,11 +583,14 @@ impl ShadowTiles {
                     layers: light.layers,
                 };
                 self.uniform.view_proj[tile] = view.view_proj;
+                // The tile count shares the fourth value with the light's shadow intensity, which
+                // takes half a step each: the count is the whole part and the intensity twice the
+                // rest, so neither needs a value of its own.
                 self.uniform.params[tile] = [
                     view.texel_per_meter,
                     light.bias,
                     light.normal_bias,
-                    lit.faces as f32,
+                    lit.faces as f32 + light.intensity.clamp(0.0, 1.0) * 0.5,
                 ];
                 let slot = &mut self.slots[tile];
                 if slot.key != Some(key) {
@@ -492,18 +601,85 @@ impl ShadowTiles {
                     continue;
                 }
                 fresh += usize::from(!slot.held);
-                let mut frame = view.frame(camera.camera, light.layers);
+                let mut frame = view.frame(ShadingCamera::of(camera), light.layers);
                 frame.uniform.clock = camera.uniform.clock;
                 self.frames[tile] = Some(frame);
             }
         }
         self.cap_redraws(fresh);
+        self.plan_hero(hero, camera, shape.size);
         for (slot, frame) in self.slots.iter_mut().zip(&self.frames) {
             if frame.is_some() {
                 slot.held = true;
                 slot.waited = 0;
             }
         }
+        Ok(())
+    }
+
+    /// Plans the sun's hero tile, the atlas's last layer: its values for receivers, and its view
+    /// while the tile must draw. It draws when the light names a new hero, when nothing drew yet,
+    /// and while a caster that touches its box moves.
+    fn plan_hero(&mut self, hero: Option<HeroShadow>, camera: &ViewFrame, size: u32) {
+        let Some(hero) = hero else {
+            self.hero = HeroSlot::default();
+            return;
+        };
+        let tile = self.shape.layers - 1;
+        let (view_proj, frustum, depth_per_meter) = hero.bounds.view(camera.camera.absolute());
+        self.hero_uniform = HeroUniform {
+            view_proj,
+            params: [
+                hero.bounds.texel(size),
+                hero.bias,
+                hero.normal_bias,
+                (tile + 1) as f32,
+            ],
+        };
+        if self.hero.key == Some(hero) && self.hero.clean && self.hero.held {
+            return;
+        }
+        self.hero.key = Some(hero);
+        self.hero.clean = false;
+        self.hero.held = true;
+        // Clip depth falls from 1 at the box's face toward the light to 0 over its length.
+        let m = &view_proj;
+        let length = 1.0 / depth_per_meter;
+        let depth = ViewDepth {
+            row: [-m[2], -m[6], -m[10], 1.0 - m[14]].map(|v| v * length),
+            near: 0.0,
+            far: length,
+            perspective: false,
+        };
+        let [x, y, z] = [m[2], m[6], m[10]].map(|v| v * length);
+        let side = size.max(1) as f32;
+        let shading = ShadingCamera::of(camera);
+        self.frames[tile as usize] = Some(ViewFrame {
+            uniform: FrameUniform {
+                view_proj,
+                camera_position: [x, y, z, 0.0],
+                target_size: [side, side, 1.0 / side, 1.0 / side],
+                clock: camera.uniform.clock,
+                camera_world: camera_world(camera.camera),
+                // The scene camera, which a material's surface reads where its caster runs.
+                view: shading.view,
+                projection: shading.projection,
+                camera_range: shading.range,
+                camera_view_proj: shading.view_proj,
+                camera_target: shading.target,
+                camera_eye: shading.eye,
+                ..FrameUniform::default()
+            },
+            frustum,
+            camera: camera.camera,
+            depth,
+            layers: hero.layers,
+        });
+    }
+
+    /// The hero tile's layer, while the frame planned last holds a hero.
+    pub(crate) fn hero_tile(&self) -> Option<u32> {
+        (self.hero.key.is_some() && self.shape.layers > 0).then(|| self.shape.layers - 1)
     }
 
     /// Keeps the frame's redraws, the tiles that draw again for their own light, within
@@ -561,9 +737,8 @@ impl ShadowTiles {
     }
 
     /// Writes each light's first tile into its record of `lights`, the lights that the light grid
-    /// lists in the frame planned last. A rectangle or tube light records its image's layer where a
-    /// point or spot light records its tile ([`VisibleLight::area`]), so its record keeps that
-    /// layer: the atlas holds tiles of point and spot lights alone.
+    /// lists in the frame planned last. An area light keeps its image's layer in its record's own
+    /// place, so this writes no tile there: the atlas holds tiles of point and spot lights alone.
     pub fn mark_lights(&self, lights: &mut [VisibleLight], shadows: &[LightShadow]) {
         for light in lights {
             if light.kind != kind::POINT && light.kind != kind::SPOT {
@@ -593,11 +768,18 @@ impl ShadowTiles {
                 slot.clean = true;
             }
         }
+        if let Some(tile) = self.hero_tile()
+            && self.frames[tile as usize].is_some()
+        {
+            self.hero.clean = true;
+        }
     }
 
-    /// Uploads the tiles' part of the frame's shadow settings into `uniform` at `offset`, when it
-    /// differs from what the GPU holds. The cascades hold the block's first part, so the tiles
-    /// follow them (D-146).
+    /// Uploads the tiles' part of the frame's shadow settings into `uniform` at `offset`, and the
+    /// sun's hero after them, when either differs from what the GPU holds. The cascades hold the
+    /// block's first part, so the tiles follow them (D-146). A light's tiles carry the filter's
+    /// values, which the hero's layer reads too, so a frame with a hero and no such light writes
+    /// them as well.
     pub(crate) fn upload(
         &mut self,
         list: &mut DrawList,
@@ -605,12 +787,21 @@ impl ShadowTiles {
         uniform: u32,
         offset: u32,
     ) -> Result<(), RecordError> {
-        if self.lit.is_empty() || self.held.as_ref() == Some(&self.uniform) {
-            return Ok(());
+        let tiles = !self.lit.is_empty() || self.hero.key.is_some();
+        if tiles && self.held.as_ref() != Some(&self.uniform) {
+            let (at, bytes) = arena.push(self.uniform.as_bytes())?;
+            list.push(Op::WriteBuffer, &[uniform, offset, at, bytes])?;
+            self.held = Some(self.uniform);
         }
-        let (at, bytes) = arena.push(self.uniform.as_bytes())?;
-        list.push(Op::WriteBuffer, &[uniform, offset, at, bytes])?;
-        self.held = Some(self.uniform);
+        // A hero that the light turned off writes its cleared values once, so receivers stop
+        // reading its layer.
+        let hero = self.hero.key.is_some() || self.held_hero.is_some();
+        if hero && self.held_hero.as_ref() != Some(&self.hero_uniform) {
+            let (at, bytes) = arena.push(self.hero_uniform.as_bytes())?;
+            let hero_offset = offset + SHADOW_TILES_UNIFORM_BYTES;
+            list.push(Op::WriteBuffer, &[uniform, hero_offset, at, bytes])?;
+            self.held_hero = Some(self.hero_uniform);
+        }
         Ok(())
     }
 
@@ -626,23 +817,33 @@ impl ShadowTiles {
     /// Makes every tile draw again in this frame, as after a material moved its casters' vertices.
     pub fn forget_drawn(&mut self) {
         self.slots.iter_mut().for_each(|slot| slot.clean = false);
+        self.hero.clean = false;
     }
 
     /// Forgets what the GPU holds, after the thread that draws replaced the GPU: every tile draws
-    /// again as a tile that holds no depth, and the uniform block uploads again.
+    /// again as a tile that holds no depth, and the uniform blocks upload again.
     pub fn forget_gpu(&mut self) {
         self.slots.iter_mut().for_each(|slot| {
             slot.clean = false;
             slot.held = false;
         });
+        self.hero = HeroSlot::default();
         self.held = None;
+        self.held_hero = None;
         self.last_new_pipeline = 0;
     }
 
-    /// The atlas's shape for the lights that cast shadows: a layer for each tile that they could
-    /// fill, within the budget, and no fewer than it has while some light casts and the settings
-    /// stay.
-    fn shape_for(&self, shadows: &[LightShadow], settings: TileSettings) -> AtlasShape {
+    /// The atlas's shape for the lights that cast shadows and the sun's hero, if it names one: a
+    /// layer for each tile that they could fill, within the budget, and no fewer than it has while
+    /// some light casts and the settings stay. The hero takes the last layer, which lights never
+    /// fill, so naming one costs them no tile. Every layer of an array texture has the same size,
+    /// so a hero tile finer than the preset's lights take sets the size of all of them.
+    fn shape_for(
+        &self,
+        shadows: &[LightShadow],
+        settings: TileSettings,
+        hero: Option<u32>,
+    ) -> AtlasShape {
         let tiles: u32 = shadows
             .iter()
             .map(|light| match light.kind {
@@ -651,13 +852,21 @@ impl ShadowTiles {
                 _ => 0,
             })
             .sum();
-        let mut layers = tiles.min(settings.tiles).min(MAX_TILES as u32);
-        if layers > 0 && settings == self.settings {
-            layers = layers.max(self.shape.layers);
+        let hero_size = hero.unwrap_or(0);
+        let hero = u32::from(hero.is_some());
+        let room = (MAX_TILES as u32).saturating_sub(hero);
+        let mut lights = tiles.min(settings.tiles).min(room);
+        if settings == self.settings && hero == u32::from(self.hero_on) {
+            lights = lights.max(self.shape.layers.saturating_sub(u32::from(self.hero_on)));
         }
+        let layers = lights + hero;
         AtlasShape {
             layers,
-            size: if layers > 0 { settings.size.max(1) } else { 0 },
+            size: if layers > 0 {
+                settings.size.max(hero_size).max(1)
+            } else {
+                0
+            },
         }
     }
 
@@ -783,9 +992,10 @@ impl ShadowTiles {
     }
 
     /// The first of `count` free tiles: a single tile from the last one down, or a block of six
-    /// aligned to six from the first tile up. `None` when none is free.
+    /// aligned to six from the first tile up. `None` when none is free. The hero's layer, the
+    /// atlas's last while the sun names a hero, is never free.
     fn free_tiles(&self, count: u32) -> Option<u32> {
-        let layers = self.shape.layers;
+        let layers = self.shape.layers.saturating_sub(u32::from(self.hero_on));
         let free = |t: u32| self.slots[t as usize].key.is_none();
         if count == 1 {
             return (0..layers).rev().find(|&t| free(t));
@@ -940,6 +1150,7 @@ impl ShadowTiles {
         }
         if all {
             self.slots.iter_mut().for_each(|slot| slot.clean = false);
+            self.hero.clean = false;
         }
     }
 
@@ -966,7 +1177,8 @@ impl ShadowTiles {
             let reached = self
                 .lit
                 .iter()
-                .any(|lit| before.center_from(&shadows[lit.shadow as usize]).is_some());
+                .any(|lit| before.center_from(&shadows[lit.shadow as usize]).is_some())
+                || self.hero.key.is_some_and(|hero| before.touches_hero(&hero));
             if !reached || !casts(input.scene, slot) {
                 continue;
             }
@@ -998,15 +1210,21 @@ impl ShadowTiles {
                 }
             }
         }
+        if let Some(hero) = self.hero.key
+            && (before.touches_hero(&hero) || now.touches_hero(&hero))
+        {
+            self.hero.clean = false;
+        }
     }
 
     /// True when every tile of the frame's lights must draw already, so no caster can mark more.
     fn all_marked(&self) -> bool {
-        self.lit.iter().all(|lit| {
+        let lights = self.lit.iter().all(|lit| {
             self.slots[lit.first as usize..(lit.first + lit.faces) as usize]
                 .iter()
                 .all(|slot| !slot.clean)
-        })
+        });
+        lights && (self.hero.key.is_none() || !self.hero.clean)
     }
 }
 
@@ -1213,9 +1431,11 @@ impl TileView {
         }
     }
 
-    /// The tile's view values for a camera at `camera`, culling the casters on `layers`. Its camera
-    /// is the light, and its target is the tile, whose texels the casters' offset counts.
-    pub fn frame(&self, camera: CellPosition, layers: u32) -> ViewFrame {
+    /// The tile's view values for the camera that `shading` belongs to, culling the casters on
+    /// `layers`. Its camera is the light, and its target is the tile, whose texels the casters'
+    /// offset counts. `shading` is the camera that the materials shade for, which a masked custom
+    /// material's caster places its fragment in.
+    pub fn frame(&self, shading: ShadingCamera, layers: u32) -> ViewFrame {
         let [x, y, z] = self.position;
         let size = self.size.max(1) as f32;
         ViewFrame::new(
@@ -1223,10 +1443,17 @@ impl TileView {
                 view_proj: self.view_proj,
                 camera_position: [x, y, z, 1.0],
                 target_size: [size, size, 1.0 / size, 1.0 / size],
-                camera_world: camera_world(camera),
+                // The scene camera, which a material's surface reads where its caster runs.
+                view: shading.view,
+                projection: shading.projection,
+                camera_range: shading.range,
+                camera_view_proj: shading.view_proj,
+                camera_target: shading.target,
+                camera_eye: shading.eye,
+                camera_world: camera_world(shading.camera),
                 ..FrameUniform::default()
             },
-            camera,
+            shading.camera,
             self.depth,
             layers,
         )
@@ -1235,6 +1462,8 @@ impl TileView {
 
 #[cfg(test)]
 mod tests {
+    use null3d_core::cells::CellPosition;
+
     use super::*;
 
     fn spot(direction: [f32; 3], angle: f32) -> LightShadow {
@@ -1248,6 +1477,7 @@ mod tests {
             range: 10.0,
             bias: 0.5,
             normal_bias: 1.0,
+            intensity: 1.0,
             layers: 1,
         }
     }
@@ -1296,12 +1526,30 @@ mod tests {
         let light = spot([0.0, -1.0, 0.0], 0.5);
         let at = [2.0, 5.0, -1.0];
         let view = TileView::of(&light, 0, at, 256);
-        let uniform = view.frame(CellPosition::default(), 1).uniform;
+        let shading = ShadingCamera {
+            view_proj: std::array::from_fn(|k| k as f32),
+            view: std::array::from_fn(|k| k as f32 + 20.0),
+            projection: std::array::from_fn(|k| k as f32 + 40.0),
+            target: [640.0, 360.0, 1.0 / 640.0, 1.0 / 360.0],
+            eye: [0.0, 0.0, 0.0, 1.0],
+            range: [0.1, 40.0, 0.0, 0.0],
+            camera: CellPosition::default(),
+        };
+        let uniform = view.frame(shading, 1).uniform;
         assert_eq!(uniform.camera_position, [2.0, 5.0, -1.0, 1.0]);
         assert_eq!(
             uniform.target_size,
             [256.0, 256.0, 1.0 / 256.0, 1.0 / 256.0]
         );
+        // A masked custom material's caster reads the camera that the materials shade for, not
+        // the light that the pass draws from.
+        assert_eq!(uniform.camera_view_proj, shading.view_proj);
+        assert_eq!(uniform.camera_target, shading.target);
+        assert_eq!(uniform.camera_eye, shading.eye);
+        // The camera's own fields carry the scene camera too, which the built-in `camera` reads.
+        assert_eq!(uniform.view, shading.view);
+        assert_eq!(uniform.projection, shading.projection);
+        assert_eq!(uniform.camera_range, shading.range);
         // The shadow depth shader's texel at a point 4 m along the light: two clip units over the
         // texels across, times the point's w, in meters.
         let m = &view.view_proj;
@@ -1436,5 +1684,22 @@ mod tests {
             TileUniform::default().as_bytes().len(),
             SHADOW_TILES_UNIFORM_BYTES as usize
         );
+    }
+
+    #[test]
+    fn an_atlas_above_a_gigabyte_is_refused() {
+        // The defaults fit: High's 16 light tiles and the hero's tile at 2,048 takes 272 MiB.
+        let high = AtlasShape {
+            layers: 17,
+            size: 2048,
+        };
+        assert!(atlas_bytes(high) <= MAX_ATLAS_BYTES);
+        // Ultra's 4,096 tile with 24 light tiles takes 1,600 MiB, which the renderer refuses.
+        let ultra = AtlasShape {
+            layers: 25,
+            size: 4096,
+        };
+        assert!(atlas_bytes(ultra) > MAX_ATLAS_BYTES);
+        assert_eq!(atlas_bytes(ultra), 25 * 4096 * 4096 * 4);
     }
 }

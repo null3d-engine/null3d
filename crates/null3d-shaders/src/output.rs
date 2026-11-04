@@ -1,7 +1,9 @@
 //! What the build makes: for each variant, WGSL for WebGPU and GLSL ES 3.00 with reflection for
 //! WebGL2. The records serialize with the field names of the generated TypeScript module's types.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use null3d_gpu::drawlist::permutation;
 use serde::{Deserialize, Serialize};
@@ -67,6 +69,11 @@ pub struct Output {
     /// target, which the feature's code imports.
     #[serde(skip)]
     pub first_use_shaders: BTreeSet<String>,
+    /// The permutation words that a narrowed build made, or empty when it made every word. The
+    /// module names them so that a page can say which word its build lacks, rather than draw
+    /// nothing.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub listed: BTreeSet<u32>,
 }
 
 /// The features whose builds load on first use: the feature of each shader whose builds all belong
@@ -86,6 +93,11 @@ pub struct FirstUseFeatures {
     /// that lists its name ([`shared_bits`], decision record D-156). An unshared bit counts for
     /// every template.
     pub listed: BTreeMap<String, u32>,
+    /// The bits of [`Self::bits`] that name their shaders in the manifest's `bit_shaders`: those
+    /// count only for the shaders that they name, whether or not another template names the same
+    /// value. The moment layer's pass uses the outline mask's value this way, so the outline
+    /// mask's own builds keep their device modules (decision record D-261).
+    pub limited: u32,
 }
 
 /// The character that joins the names of the features that a build needs, in the key of its files.
@@ -98,7 +110,8 @@ impl FirstUseFeatures {
     /// feature another template names too counts only for a template that lists its name, because
     /// a shared value names a different feature in each template (decision record D-156).
     pub fn file_of(&self, shader: &str, permutation: u32) -> Option<String> {
-        let allowed = self.listed.get(shader).copied().unwrap_or(0) | !shared_bits();
+        let allowed =
+            self.listed.get(shader).copied().unwrap_or(0) | (!shared_bits() & !self.limited);
         let mut features: BTreeSet<&str> = self
             .bits
             .iter()
@@ -126,11 +139,57 @@ pub struct VariantOutput {
     pub glsl: Option<BTreeMap<String, GlslProgram>>,
 }
 
+impl VariantOutput {
+    /// Every source of the build: its WGSL module and both stages of each GLSL program.
+    pub(crate) fn sources_mut(&mut self) -> impl Iterator<Item = &mut Arc<str>> {
+        let wgsl = self.wgsl.iter_mut().map(|wgsl| &mut wgsl.source);
+        let glsl = self.glsl.iter_mut().flat_map(|programs| {
+            programs
+                .values_mut()
+                .flat_map(|program| [&mut program.vertex.source, &mut program.fragment.source])
+        });
+        wgsl.chain(glsl)
+    }
+}
+
+/// How many locks the sources of [`SharedSources`] are split between.
+const SOURCE_LOCKS: usize = 32;
+
+/// One copy in memory of each source text that the builds of a run make. Thousands of builds of one
+/// entry make the same WGSL or GLSL source, and builds that each keep their own copy hold several
+/// times the memory of the copies shared (D-235), so each build's sources become the shared copies
+/// as soon as the build ends. The texts are split between locks by their hash, so the threads that
+/// compile seldom wait on one another.
+#[derive(Default)]
+pub(crate) struct SharedSources {
+    locks: [Mutex<HashSet<Arc<str>>>; SOURCE_LOCKS],
+}
+
+impl SharedSources {
+    /// Makes each source of `build` the run's copy of its text: the copy kept from an earlier build
+    /// with the same text, or this source itself, kept for later builds, when it is the first.
+    pub(crate) fn share(&self, build: &mut VariantOutput) {
+        for source in build.sources_mut() {
+            let mut hasher = DefaultHasher::new();
+            source.hash(&mut hasher);
+            let lock = &self.locks[(hasher.finish() % SOURCE_LOCKS as u64) as usize];
+            let mut texts = lock.lock().unwrap_or_else(PoisonError::into_inner);
+            match texts.get(&**source) {
+                Some(shared) => *source = Arc::clone(shared),
+                None => {
+                    texts.insert(Arc::clone(source));
+                }
+            }
+        }
+    }
+}
+
 /// One WGSL module and the entry points of each render pipeline.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct WgslOutput {
-    /// The module that naga writes from the composed, validated and compacted module.
-    pub source: String,
+    /// The module that naga writes from the composed, validated and compacted module. It is a
+    /// shared text, so the builds that the cache gives back with the same module hold one copy.
+    pub source: Arc<str>,
     /// Render pipelines by name.
     pub pipelines: BTreeMap<String, Pipeline>,
 }
@@ -148,8 +207,9 @@ pub struct GlslProgram {
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GlslStage {
-    /// The shader source.
-    pub source: String,
+    /// The shader source. It is a shared text, so the builds that the cache gives back with the
+    /// same shader hold one copy.
+    pub source: Arc<str>,
     /// Uniform blocks, sorted by WGSL binding.
     pub uniform_blocks: Vec<GlslUniformBlock>,
     /// Texture uniforms, sorted by WGSL binding.
@@ -190,10 +250,33 @@ pub struct GlslTexture {
 #[cfg(test)]
 mod tests {
     use null3d_gpu::drawlist::permutation::{
-        ALPHA_COVERAGE, ALPHA_HASH, AREA_LIGHTS, BLOOM, FXAA, MORPH, SAMPLE_MASK,
+        ALPHA_COVERAGE, ALPHA_HASH, AREA_LIGHTS, BLOOM, FXAA, MORPH, OUTLINE_VISIBLE, SAMPLE_MASK,
     };
 
     use super::*;
+
+    #[test]
+    fn a_bit_that_names_its_shaders_takes_only_their_builds() {
+        // The moment layer's pass takes the outline mask's value, and the manifest's first-use
+        // table names the six mesh templates that the bit serves: the outline mask's own builds
+        // keep their device modules (decision record D-261).
+        let mut first_use = FirstUseFeatures::default();
+        first_use.bits.insert(OUTLINE_VISIBLE, "moment".to_owned());
+        first_use.limited = OUTLINE_VISIBLE;
+        first_use.listed.insert("lit".to_owned(), OUTLINE_VISIBLE);
+        assert_eq!(
+            first_use.file_of("lit", OUTLINE_VISIBLE).as_deref(),
+            Some("moment")
+        );
+        assert_eq!(
+            first_use.file_of("outline_mask", OUTLINE_VISIBLE),
+            None,
+            "the value names no build of the outline mask here"
+        );
+        // A bit without a list still counts for every template, as before.
+        first_use.bits.insert(MORPH, "morphing".to_owned());
+        assert_eq!(first_use.file_of("lit", MORPH).as_deref(), Some("morphing"));
+    }
 
     #[test]
     fn a_build_that_needs_several_features_has_files_of_its_own() {
@@ -235,5 +318,42 @@ mod tests {
             Some("coverage"),
             "two bits of one feature"
         );
+    }
+
+    #[test]
+    fn builds_share_each_text_of_both_targets_and_keep_their_own_texts() {
+        let stage = |text: &str| GlslStage {
+            source: Arc::from(text),
+            uniform_blocks: Vec::new(),
+            textures: Vec::new(),
+        };
+        let build = |fragment: &str| VariantOutput {
+            permutation: 0,
+            wgsl: Some(WgslOutput {
+                source: Arc::from("module"),
+                pipelines: BTreeMap::new(),
+            }),
+            glsl: Some(BTreeMap::from([(
+                "main".to_owned(),
+                GlslProgram {
+                    vertex: stage("vertex"),
+                    fragment: stage(fragment),
+                },
+            )])),
+        };
+        let sources = SharedSources::default();
+        let (mut first, mut second) = (build("fragment"), build("another fragment"));
+        sources.share(&mut first);
+        sources.share(&mut second);
+        let texts =
+            |build: &mut VariantOutput| build.sources_mut().map(|s| Arc::clone(s)).collect();
+        let (one, two): (Vec<Arc<str>>, Vec<Arc<str>>) = (texts(&mut first), texts(&mut second));
+        assert!(Arc::ptr_eq(&one[0], &two[0]), "the WGSL module");
+        assert!(Arc::ptr_eq(&one[1], &two[1]), "the GLSL vertex stage");
+        assert!(
+            !Arc::ptr_eq(&one[2], &two[2]),
+            "fragment stages with other texts"
+        );
+        assert_eq!(*two[2], *"another fragment");
     }
 }

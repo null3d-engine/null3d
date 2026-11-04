@@ -7,6 +7,7 @@ import { constants } from 'node:os';
 import { join } from 'node:path';
 import type { Plugin } from 'vite';
 import { localHostName } from '../../tools/lib/host.ts';
+import { refuseInQuietWindow } from '../../tools/lib/quiet-window.ts';
 import { RUNS_DIR } from './report-collector.ts';
 
 /**
@@ -19,6 +20,36 @@ export const HTTP_PORT = devServerPort(process.env.NULL3D_PORT);
 export const HTTPS_PORT = HTTP_PORT + 1;
 /** Where `vite preview` serves the production build of the test pages. */
 export const PREVIEW_PORT = HTTP_PORT + 2;
+/**
+ * The switch of the production build of the test pages. With the value `skip` a browser run starts
+ * no production server and has no production build project. With `prebuilt` the server serves the
+ * pages that `bun run build:test-pages` built, and builds none. Unset, the server builds them.
+ */
+export const PRODUCTION_PAGES_SWITCH = 'NULL3D_PRODUCTION_PAGES';
+/**
+ * The test pages of the production build, each built on its own (see vite.config.ts), in build
+ * order: the engine test page's build empties the build's folder, and each other page adds its own.
+ */
+export const PRODUCTION_BUILD_PAGES = [
+	'engine',
+	'errors',
+	'sketch-shaders',
+	'ktx2-files',
+	'texture-cache',
+	'gltf-files',
+	'stats',
+] as const;
+/** The production build project's test files, which load the pages of the production build. */
+export const PRODUCTION_BUILD_TESTS = [
+	'content-security-policy.spec.ts',
+	'cdn.spec.ts',
+	'engine.spec.ts',
+	'errors.spec.ts',
+	'sketch-shaders.spec.ts',
+	'ktx2.spec.ts',
+	'gltf.spec.ts',
+	'stats.spec.ts',
+] as const;
 /**
  * Chrome's debugging port for the benchmark tools that drive Chrome through its debugging protocol:
  * a Chrome they start here, or Chrome on a phone that adb forwards here. Each copy of the repository
@@ -68,7 +99,8 @@ export interface DevServer {
 	url: string;
 	/** The address this computer uses: localhost for both. */
 	selfUrl: string;
-	stop(): void;
+	/** Stops the server, and resolves once its process has exited or been killed outright. */
+	stop(): Promise<void>;
 }
 
 /**
@@ -120,12 +152,25 @@ function updateSignalHandlers(): void {
 	if (!needed && listening) for (const signal of STOP_SIGNALS) process.off(signal, stopAllAndExit);
 }
 
+/** How long a stopped server may take to exit before this process kills it outright. */
+const STOP_LIMIT_MS = 5_000;
+
+/** Ends a child process, waiting a limited time for it to exit and then killing it outright. */
+async function endProcess(child: ChildProcess): Promise<void> {
+	if (child.exitCode !== null || child.signalCode !== null) return;
+	const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
+	child.kill();
+	await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, STOP_LIMIT_MS))]);
+	if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+}
+
 /**
  * Keeps track of a server that this process started, and returns the function that stops it. A
  * process stopped by a signal, such as Ctrl-C or `kill`, then stops its servers first, so no
- * server stays behind on its port for the next run to trip over.
+ * server stays behind on its port for the next run to trip over. The returned function waits for
+ * the server to exit, so a process that ends at once leaves no server for another to clear up.
  */
-export function trackServer(child: ChildProcess): () => void {
+export function trackServer(child: ChildProcess): () => Promise<void> {
 	running.add(child);
 	updateSignalHandlers();
 	const forget = () => {
@@ -133,9 +178,9 @@ export function trackServer(child: ChildProcess): () => void {
 		updateSignalHandlers();
 	};
 	child.once('exit', forget);
-	return () => {
+	return async () => {
 		forget();
-		child.kill();
+		await endProcess(child);
 	};
 }
 
@@ -192,7 +237,7 @@ async function spawnServer(
 		if (await answers(`${selfUrl}${probe}`)) return { url, selfUrl, stop };
 		await new Promise((resolve) => setTimeout(resolve, 250));
 	}
-	stop();
+	await stop();
 	throw new Error(`the server did not answer at ${selfUrl}${probe}\n${errors.trim()}`);
 }
 
@@ -233,13 +278,14 @@ export async function refuseOtherCopy(url: string, root = REPO_ROOT): Promise<vo
  * and waits until it answers.
  */
 export async function startServer(https = false): Promise<DevServer> {
+	refuseInQuietWindow('The dev server');
 	const url = https
 		? `https://${localHostName()}.local:${HTTPS_PORT}`
 		: `http://localhost:${HTTP_PORT}`;
 	const selfUrl = https ? `https://localhost:${HTTPS_PORT}` : url;
 	if (await answers(`${selfUrl}${DEV_PROBE}`)) {
 		await refuseOtherCopy(selfUrl);
-		return { url, selfUrl, stop: () => {} };
+		return { url, selfUrl, stop: async () => {} };
 	}
 	return spawnServer(REPO_ROOT, [], { NULL3D_HTTPS: https ? '1' : '0' }, url, selfUrl);
 }
@@ -268,6 +314,7 @@ export async function startPreview(
 	probe: string,
 	root = REPO_ROOT,
 ): Promise<DevServer> {
+	refuseInQuietWindow('The preview server');
 	const url = `http://localhost:${port}`;
 	await refuseTaken(url);
 	const args = ['preview', '--outDir', outDir, '--port', String(port), '--strictPort'];

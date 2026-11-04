@@ -30,13 +30,15 @@
 		"./client": {
 			"null3d-source": "./src/client.d.ts",
 			"types": "./lib/client.d.ts"
-		}
+		},
+		"./package.json": "./package.json"
 	},
 	"files": [
 		"lib",
 		"dist/shader-compiler.wasm",
 		"LICENSE-MIT",
-		"LICENSE-APACHE"
+		"LICENSE-APACHE",
+		"THIRD-PARTY-NOTICES.txt"
 	],
 	"publishConfig": {
 		"access": "public",

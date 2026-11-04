@@ -26,6 +26,9 @@ struct Backdrop {
     /// A plain color in `xyz`, exposed linear color, and 1 in `w` when the background draws it in
     /// place of the cube map, else 0.
     color: vec4f,
+    /// What of the sun the sky draws: 1 while no sky layer hides it, and less as a layer covers it.
+    /// `x` scales the disc and its glow; the rest is spare.
+    layer: vec4f,
 }
 
 /// A corner of the box around the camera, and the direction in the world that it stands for.

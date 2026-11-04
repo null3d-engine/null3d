@@ -45,6 +45,7 @@ import {
 	TEXTURE_STAT_RELOAD_TEXTURE,
 	TEXTURE_STAT_TEXTURE_BYTES,
 	TEXTURE_STAT_UPLOAD_BUDGET,
+	TEXTURE_STAT_UPLOADING,
 	TEXTURE_STAT_WAITING,
 	TEXTURE_WRAP_CLAMP,
 	TEXTURE_WRAP_MIRROR,
@@ -52,6 +53,7 @@ import {
 } from '../generated/core';
 import type { QualitySettingName, QualitySettings } from '../quality/presets';
 import type { GeneratorSource, ImageSender } from '../shared/images';
+import { VIDEO_FOLLOW, type VideoFollowMessage, type VideoFrameMessage } from '../shared/videos';
 import type { EnvironmentFormat } from './environment';
 import { toHalfFloats } from './half-float';
 import type { CoreMemory } from './memory';
@@ -151,6 +153,71 @@ export interface TextureOptions {
 }
 
 /**
+ * A rectangle of a canvas: the column and row of its top-left texel, counted from the canvas's
+ * top-left corner, and how many texels it spans.
+ *
+ * @category api/textures
+ */
+export interface CanvasRect {
+	/** The left column of the rectangle, from 0 to the canvas's width less one. */
+	x: number;
+	/** The top row of the rectangle, from 0 to the canvas's height less one. */
+	y: number;
+	/** Texels across, at least 1 and at most the canvas's width less `x`. */
+	width: number;
+	/** Texels down, at least 1 and at most the canvas's height less `y`. */
+	height: number;
+}
+
+/**
+ * What `textures.fromCanvas` takes: the options of every texture, and how often the engine reads
+ * the canvas.
+ *
+ * @category api/textures
+ */
+export interface CanvasTextureOptions extends TextureOptions {
+	/**
+	 * The most times per second that `texture.refresh` reads the canvas. A refresh that comes
+	 * sooner does not read it: the next refresh covers its rectangle too. The default is 0, which
+	 * reads the canvas at every call.
+	 */
+	refreshHz?: number;
+}
+
+/**
+ * A texture's link to a canvas: where it reads pixels, and the rectangles that still have to
+ * upload.
+ */
+interface CanvasSource {
+	readonly context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+	readonly width: number;
+	readonly height: number;
+	readonly refreshHz: number;
+	/** The sketch time of the last refresh that read the canvas. */
+	lastRefresh: number;
+	/** True while a change waits for the next refresh to read the canvas. */
+	dirty: boolean;
+	/** The change's rectangle in the canvas's coordinates, while `dirty` is true. */
+	dirtyLeft: number;
+	dirtyTop: number;
+	dirtyRight: number;
+	dirtyBottom: number;
+	/** True while the last read may still wait to upload, with its rectangle. */
+	sent: boolean;
+	sentLeft: number;
+	sentTop: number;
+	sentRight: number;
+	sentBottom: number;
+}
+
+/**
+ * A texture's link to a video on the page, which `engine.registerVideo` registered under its name.
+ */
+interface VideoSource {
+	readonly name: string;
+}
+
+/**
  * A texture's size and texels for `textures.fromData`, with its options.
  *
  * @category api/textures
@@ -193,6 +260,9 @@ export interface TextureMemory {
  * and gives them to `target`, a hidden texture of that size.
  */
 export type TextureReloader = (level: number, target: Texture) => Promise<void>;
+
+/** Sends a message from the sketch to the page, as the sketch's `page.post` does. */
+export type PageSender = (type: string, data?: unknown) => void;
 
 /** The loads again that run at once, at most, so a burst of them does not crowd the network. */
 const RELOADS_AT_ONCE = 2;
@@ -269,6 +339,10 @@ export interface FileTexels {
 export class Texture {
 	private size: [number, number];
 	private destroyed = false;
+	/** @internal How the texture follows a canvas, for a texture that `textures.fromCanvas` made. */
+	canvas?: CanvasSource;
+	/** @internal The video that the page sends frames of, for a texture that `textures.fromVideo` made. */
+	video?: VideoSource;
 
 	/** @internal */
 	constructor(
@@ -323,6 +397,15 @@ export class Texture {
 	}
 
 	/**
+	 * The array layer that a map of the texture samples now. A pass that keeps two states samples
+	 * the state that its last run wrote, so this is that state's first layer; another texture
+	 * gives 0. A reader that names layers of a texture array reads this layer for the newest state.
+	 */
+	get layer(): number {
+		return this.textures.layerOf(this);
+	}
+
+	/**
 	 * Gives the texture new texels, which upload in their turn. An image may have another size,
 	 * and the texture then takes that size; the image moves to the thread that draws, so this
 	 * thread can use it no more. Data must fit the texture's size and format. Until the new texels
@@ -347,6 +430,25 @@ export class Texture {
 		else this.textures.setImage(this, source, 0, call);
 	}
 
+	/**
+	 * Reads the canvas again and gives the texture its pixels, in the rectangle `rect` or in the
+	 * whole canvas. Only the rectangle uploads, in the texture's turn and within the frame's
+	 * upload budget, and the rest of the texture keeps its texels. The last row of the canvas is
+	 * the texture's first, so the canvas stands upright on a plane as on a page. A refresh that
+	 * comes within the texture's `refreshHz` reads nothing: the next one covers its rectangle too.
+	 * Returns true when it read the canvas, and false when the refresh rate skipped it or a read
+	 * before it still waits to upload. Throws E1208 for a rectangle outside the canvas, and for a
+	 * texture that does not follow a canvas. Throws E1101 after `destroy`.
+	 */
+	refresh(rect?: CanvasRect): boolean {
+		if (this.destroyed)
+			throw new EngineError(
+				'E1101',
+				'texture.refresh() was called on a texture that texture.destroy() destroyed.',
+			);
+		return this.textures.refresh(this, rect);
+	}
+
 	/** @internal Takes the size that an image of another size gave the texture. */
 	resize(width: number, height: number): void {
 		this.size = [width, height];
@@ -359,6 +461,8 @@ export class Texture {
 	destroy(): void {
 		this.textures.destroy(this);
 		this.destroyed = true;
+		this.canvas = undefined;
+		this.video = undefined;
 	}
 
 	/** @internal True until `destroy` runs. */
@@ -380,6 +484,8 @@ export class Textures {
 	private budgetEpoch = 0;
 	/** Loads again under way. */
 	private reloading = 0;
+	/** The texture that follows each video on the page, by the video's name. */
+	private readonly videos = new Map<string, Texture>();
 
 	/** @internal The texture memory, as `quality.textureMemory` reports it. */
 	readonly memory: TextureMemory;
@@ -388,7 +494,7 @@ export class Textures {
 	constructor(
 		private readonly core: CoreMemory,
 		private readonly send: ImageSender,
-		private readonly time: { readonly frame: number },
+		private readonly time: { readonly frame: number; readonly now: number },
 		/** @internal The device's capability flags, which say what compressed formats it has. */
 		readonly capabilities: number,
 		private readonly ownBudget: () => void = () => {},
@@ -402,6 +508,8 @@ export class Textures {
 		 */
 		readonly textureCache = false,
 		private readonly ownMemory: () => void = () => {},
+		/** @internal Sends a message from the sketch to the page, as `ctx.page.post` does. */
+		private readonly page: PageSender = () => {},
 	) {
 		const stat = (field: number) => this.stat(field);
 		this.memory = {
@@ -439,7 +547,7 @@ export class Textures {
 			handle,
 			pass.width,
 			pass.height,
-			1,
+			pass.arrayLayers * (pass.history ? 2 : 1),
 			this.passFormat,
 			'linear',
 			0,
@@ -463,6 +571,293 @@ export class Textures {
 	 */
 	fromImageBitmap(image: ImageBitmap, options: TextureOptions = {}): Texture {
 		return this.fromImage(image, options, 0, 'textures.fromImageBitmap');
+	}
+
+	/**
+	 * A texture that follows a canvas, such as the `OffscreenCanvas` that the sketch draws a score,
+	 * a map or a video frame on. The canvas's last row goes to v = 0, the bottom of a plane, so the
+	 * canvas stands upright on a plane as on a page. Its texels upload as any image's do.
+	 * `texture.refresh` then gives the texture the canvas's new pixels, and only those of the
+	 * rectangle that changed. Throws E1208 for a canvas without a 2D context, or with no pixels.
+	 * Call `getContext('2d', { willReadFrequently: true })` on the canvas, so the browser keeps its
+	 * pixels where the engine reads them.
+	 */
+	fromCanvas(
+		canvas: OffscreenCanvas | HTMLCanvasElement,
+		options: CanvasTextureOptions = {},
+	): Texture {
+		const call = 'textures.fromCanvas';
+		const { refreshHz = 0 } = options;
+		if (DEV) {
+			if (!canvas || !(canvas.width >= 1) || !(canvas.height >= 1))
+				throw invalid(call, 'got a canvas with no pixels. Give it a width and a height first.');
+			if (!(Number.isFinite(refreshHz) && refreshHz >= 0))
+				throw invalid(call, `got the refreshHz ${refreshHz}: give 0 or a positive number.`);
+		}
+		const context = canvas.getContext('2d') as
+			| CanvasRenderingContext2D
+			| OffscreenCanvasRenderingContext2D
+			| null;
+		if (!context)
+			throw invalid(
+				call,
+				'got a canvas without a 2D context. Call getContext("2d") on the canvas and draw into it first.',
+			);
+		const { width, height } = canvas;
+		const texture = this.create(width, height, 1, 'rgba8unorm', options, 'image', call);
+		texture.canvas = {
+			context,
+			width,
+			height,
+			refreshHz: refreshHz > 0 ? refreshHz : 0,
+			lastRefresh: Number.NEGATIVE_INFINITY,
+			dirty: false,
+			dirtyLeft: 0,
+			dirtyTop: 0,
+			dirtyRight: 0,
+			dirtyBottom: 0,
+			sent: false,
+			sentLeft: 0,
+			sentTop: 0,
+			sentRight: 0,
+			sentBottom: 0,
+		};
+		this.setData(texture, this.canvasRows(context, 0, 0, width, height), call, true);
+		return texture;
+	}
+
+	/**
+	 * A texture that follows a video on the page, which `engine.registerVideo` registered under
+	 * `name`. The page sends the image of each frame that the video presents, and the texture
+	 * uploads the newest one in its turn, within the frame's upload budget. A paused video presents
+	 * no frames, so its texture costs nothing then. The image stands upright on a plane, with v = 0
+	 * at its bottom row, as an image that
+	 * `textures.fromImageBitmap` takes, and the first frame gives the texture its size. Until a
+	 * frame is on the GPU, materials draw with their colors alone. Call this once for each video,
+	 * and `texture.destroy` to stop the page's frames. Throws E1208 for a name that is not a string
+	 * with at least one character, or that another texture follows.
+	 */
+	fromVideo(name: string, options: TextureOptions = {}): Texture {
+		const call = 'textures.fromVideo';
+		if (DEV) {
+			if (typeof name !== 'string' || name.length === 0)
+				throw invalid(
+					call,
+					`got ${quote(name)} as the video's name. Give the name that engine.registerVideo() gave the video on the page.`,
+				);
+			if (this.videos.has(name))
+				throw invalid(
+					call,
+					`got the name "${name}", which a texture follows already. Follow each video with one texture.`,
+				);
+		}
+		const texture = this.create(1, 1, 1, 'rgba8unorm', options, 'image', call);
+		texture.video = { name };
+		this.videos.set(name, texture);
+		// The page sends the frame that the video shows now, which a video that is paused at this
+		// call has too. The frames after it come as the video presents them.
+		this.page(VIDEO_FOLLOW, { name, follow: true } satisfies VideoFollowMessage);
+		return texture;
+	}
+
+	/**
+	 * @internal Gives the texture that follows the video under the frame's name the frame's image.
+	 * A frame that comes while the one before it still uploads is dropped, so a frame larger than
+	 * the upload budget shows fewer frames a second rather than starting its upload again. A frame
+	 * for a video that no texture follows here is closed.
+	 */
+	receiveVideoFrame(frame: VideoFrameMessage): void {
+		if (!frame?.image) return;
+		const texture = this.videos.get(frame.name);
+		if (!texture?.live || this.uploading(texture)) {
+			frame.image.close();
+			return;
+		}
+		this.setImage(texture, frame.image, 0, 'textures.fromVideo');
+	}
+
+	/** @internal Reads a canvas's rectangle, with its rows turned over so that the last comes first. */
+	private canvasRows(
+		context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+	): Uint8Array {
+		const image = context.getImageData(x, y, width, height);
+		const rows = new Uint8Array(width * 4 * height);
+		rows.set(image.data);
+		return rows;
+	}
+
+	/**
+	 * @internal Gives a canvas texture the pixels of the rectangle that changed, or of the whole
+	 * canvas when the texture holds no texels yet. The rectangle's upload covers the changes of
+	 * every refresh that did not read the canvas, and of the last one while it still waits.
+	 */
+	refresh(texture: Texture, rect?: CanvasRect): boolean {
+		const call = 'texture.refresh';
+		const source = texture.canvas;
+		if (!source)
+			throw invalid(
+				call,
+				'got a texture that does not follow a canvas. Make it with textures.fromCanvas.',
+			);
+		// The rectangle of the canvas that changed, in the canvas's coordinates, as four numbers: a
+		// refresh in every frame makes no array for them.
+		let left: number;
+		let top: number;
+		let right: number;
+		let bottom: number;
+		if (rect) {
+			left = rect.x;
+			top = rect.y;
+			right = rect.x + rect.width;
+			bottom = rect.y + rect.height;
+		} else {
+			left = 0;
+			top = 0;
+			right = source.width;
+			bottom = source.height;
+		}
+		if (DEV) {
+			const whole =
+				Number.isInteger(left) &&
+				Number.isInteger(top) &&
+				Number.isInteger(right) &&
+				Number.isInteger(bottom) &&
+				left >= 0 &&
+				top >= 0 &&
+				right > left &&
+				bottom > top &&
+				right <= source.width &&
+				bottom <= source.height;
+			if (!whole)
+				throw invalid(
+					call,
+					`got the rectangle ${left}, ${top}, ${right - left} x ${bottom - top}. Give whole numbers inside the canvas's ${source.width} x ${source.height} texels.`,
+				);
+		} else {
+			// A release build reads the part of the rectangle that the canvas holds.
+			left = Math.max(0, Math.min(source.width, Math.trunc(left)));
+			top = Math.max(0, Math.min(source.height, Math.trunc(top)));
+			right = Math.max(left, Math.min(source.width, Math.trunc(right)));
+			bottom = Math.max(top, Math.min(source.height, Math.trunc(bottom)));
+			if (right === left || bottom === top) return false;
+		}
+		// Every change joins the rectangle of the next read, so none is lost.
+		if (source.dirty) {
+			source.dirtyLeft = Math.min(source.dirtyLeft, left);
+			source.dirtyTop = Math.min(source.dirtyTop, top);
+			source.dirtyRight = Math.max(source.dirtyRight, right);
+			source.dirtyBottom = Math.max(source.dirtyBottom, bottom);
+		} else {
+			source.dirty = true;
+			source.dirtyLeft = left;
+			source.dirtyTop = top;
+			source.dirtyRight = right;
+			source.dirtyBottom = bottom;
+		}
+		const now = this.time.now;
+		if (source.refreshHz > 0 && now - source.lastRefresh < 1 / source.refreshHz) return false;
+		if (source.sent && !this.uploading(texture)) source.sent = false;
+		// True while the texture still waits for a rectangle that a read before this one sent.
+		// Another rectangle cannot join it, so this read waits and the next one covers both.
+		const pending = source.sent;
+		// The read covers every change since the last read, and a read still waiting to upload
+		// keeps its rectangle in the next read.
+		left = source.dirtyLeft;
+		top = source.dirtyTop;
+		right = source.dirtyRight;
+		bottom = source.dirtyBottom;
+		if (source.sent) {
+			left = Math.min(left, source.sentLeft);
+			top = Math.min(top, source.sentTop);
+			right = Math.max(right, source.sentRight);
+			bottom = Math.max(bottom, source.sentBottom);
+		}
+		source.lastRefresh = now;
+		source.dirty = false;
+		source.sent = false;
+		const width = right - left;
+		const height = bottom - top;
+		// A whole canvas fills a texture that waits for all its texels too.
+		if (left === 0 && top === 0 && width === source.width && height === source.height) {
+			this.setData(texture, this.canvasRows(source.context, left, top, width, height), call, true);
+			return true;
+		}
+		if (this.setRegion(texture, source, left, top, width, height, call)) {
+			source.sent = true;
+			source.sentLeft = left;
+			source.sentTop = top;
+			source.sentRight = right;
+			source.sentBottom = bottom;
+		} else if (pending) {
+			// The texture still waits for the rectangle read before this one, so it cannot take
+			// another yet. Both rectangles stay for the next read, rather than the whole canvas
+			// going in place of a rectangle that is already on its way.
+			source.dirty = true;
+			source.dirtyLeft = left;
+			source.dirtyTop = top;
+			source.dirtyRight = right;
+			source.dirtyBottom = bottom;
+			source.sent = true;
+			source.sentLeft = left;
+			source.sentTop = top;
+			source.sentRight = right;
+			source.sentBottom = bottom;
+			return false;
+		} else {
+			// The rectangle cannot fill the rest of the texture, so the whole canvas does.
+			this.setData(
+				texture,
+				this.canvasRows(source.context, 0, 0, source.width, source.height),
+				call,
+				true,
+			);
+		}
+		return true;
+	}
+
+	/**
+	 * @internal Copies a rectangle of the canvas into engine memory for a partial upload. Returns
+	 * false when the texture still waits for all its texels: the rectangle cannot fill the rest, so
+	 * the caller sends the whole canvas instead.
+	 */
+	private setRegion(
+		texture: Texture,
+		source: CanvasSource,
+		x: number,
+		top: number,
+		width: number,
+		height: number,
+		call: string,
+	): boolean {
+		// An update of another size left the texture with a size that the canvas's rectangle does
+		// not fit, so the whole canvas fills it again.
+		if (texture.width !== source.width || texture.height !== source.height) return false;
+		const { core } = this;
+		// The texture's rows count from the bottom, and the canvas's from the top.
+		const y = source.height - top - height;
+		const address = core.glue.setTextureRegion(texture.handle, x, y, width, height);
+		if (address === 0) {
+			if (core.glue.lastErrorCode() !== 0) core.fail(call, 'a texture');
+			return false;
+		}
+		core.refresh();
+		const row = width * 4;
+		// A view of the whole memory, which the engine makes again when the memory grows: a refresh
+		// in every frame writes through the same view, so the copy allocates none of its own.
+		const view = core.heap(Uint8Array);
+		const image = source.context.getImageData(x, top, width, height);
+		view.set(image.data, address);
+		core.glue.turnRows(address, row, height);
+		return true;
+	}
+
+	/** @internal True while a texture waits for texels to upload. */
+	private uploading(texture: Texture): boolean {
+		return this.core.glue.textureStat(TEXTURE_STAT_UPLOADING, texture.handle) !== 0;
 	}
 
 	/**
@@ -681,12 +1076,13 @@ export class Textures {
 	addSkyMap(
 		texture: Texture,
 		stages: number,
+		capture: number,
 		call: string,
 		defaults: (values: Float32Array) => void,
 	): void {
 		const { core } = this;
 		defaults(core.f32(core.glue.backgroundValues(), BACKGROUND_VALUE_COUNT));
-		core.check(core.glue.addSkyMap(texture.handle, stages), call, 'a texture', true);
+		core.check(core.glue.addSkyMap(texture.handle, stages, capture), call, 'a texture', true);
 	}
 
 	/**
@@ -794,8 +1190,12 @@ export class Textures {
 		this.send(id, image);
 	}
 
-	/** @internal Copies data of the texture's size and format into engine memory for its upload. */
-	setData(texture: Texture, data: TextureDataArray, call: string): void {
+	/**
+	 * @internal Copies data of the texture's size and format into engine memory for its upload.
+	 * `fromCanvas` turns the rows over once they arrive, because a canvas counts them from its top
+	 * and a texture from the bottom; the turn runs in the core, where a frame's work belongs.
+	 */
+	setData(texture: Texture, data: TextureDataArray, call: string, fromCanvas = false): void {
 		const { width, height, depth, format } = texture;
 		const values = width * height * depth * 4;
 		if (DEV) {
@@ -819,6 +1219,8 @@ export class Textures {
 		if (data instanceof Float32Array) toHalfFloats(data, core.view(Uint16Array, address, values));
 		else if (data instanceof Uint16Array) core.view(Uint16Array, address, values).set(data);
 		else core.view(Uint8Array, address, values).set(data);
+		// A canvas has one layer, so its depth is 1 and the rows are its height alone.
+		if (fromCanvas) core.glue.turnRows(address, width * 4, height);
 	}
 
 	/** @internal */
@@ -829,6 +1231,11 @@ export class Textures {
 	/** @internal */
 	droppedLevelsOf(texture: Texture): number {
 		return this.stat(TEXTURE_STAT_DROPPED_LEVELS, texture.handle);
+	}
+
+	/** @internal */
+	layerOf(texture: Texture): number {
+		return this.core.glue.textureLayer(texture.handle);
 	}
 
 	/**
@@ -918,6 +1325,15 @@ export class Textures {
 
 	/** @internal */
 	destroy(texture: Texture): void {
+		// The page stops sending a video's frames once no texture shows them.
+		if (texture.video) {
+			this.videos.delete(texture.video.name);
+			this.page(VIDEO_FOLLOW, {
+				name: texture.video.name,
+				follow: false,
+			} satisfies VideoFollowMessage);
+			texture.video = undefined;
+		}
 		this.reloaders.delete(texture.handle);
 		this.core.checkGrowth(
 			this.core.glue.destroyTexture(texture.handle, this.time.frame),

@@ -14,6 +14,8 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { build, createServer } from 'vite';
+import { scaledBudget } from '../../../tests/lib/run-budget.ts';
+import { GltfBuilder } from '../../../tests/pages/lib/gltf-files';
 import { fixture } from '../../../tools/lib/fixture';
 import {
 	ASSET_FOLDER,
@@ -26,7 +28,7 @@ import {
 import null3d from './index';
 
 // Texture encodes take seconds each on a busy machine or a CI runner of four cores.
-setDefaultTimeout(60_000);
+setDefaultTimeout(scaledBudget(60_000));
 
 const SCENE = join(import.meta.dir, '../../../tests/pages/assets/models/asset-scene.glb');
 
@@ -66,9 +68,9 @@ describe('optimized models', () => {
 	});
 
 	it('hash the tool code, so a fix to the tool changes the key of every model', () => {
-		// The tool's version stays 0.0.0 in the repository, so its version alone left the cache
-		// serving models that a pipeline before the fix wrote. The module and the file that shares
-		// its name, the WebAssembly one among them, are both part of the code's hash.
+		// The tool's version stays 0.0.0 in the repository, so its version alone would leave the
+		// cache serving models that the tool wrote before a fix. The module and the file that
+		// shares its name, the WebAssembly one among them, are both part of the code's hash.
 		const folder = mkdtempSync(join(tmpdir(), 'null3d-tool-'));
 		try {
 			const module = join(folder, 'assets.js');
@@ -151,5 +153,60 @@ describe('optimized models', () => {
 		expect(readFileSync(join(root, 'dist/assets', script), 'utf8')).toContain(
 			`${ASSET_FOLDER}/${key}/models.glb`,
 		);
+	});
+});
+
+describe('staged levels in a project', () => {
+	/** Writes a grid of 288 triangles, which the tool gives levels and so stages. */
+	function gridModel(path: string): void {
+		const side = 12;
+		const positions = new Float32Array((side + 1) * (side + 1) * 3);
+		const indices: number[] = [];
+		for (let z = 0; z <= side; z++)
+			for (let x = 0; x <= side; x++)
+				positions.set([x * 0.5, Math.sin(x * 0.4) * 0.3, z * 0.5], (z * (side + 1) + x) * 3);
+		for (let z = 0; z < side; z++)
+			for (let x = 0; x < side; x++) {
+				const a = z * (side + 1) + x;
+				const b = a + 1;
+				const c = a + side + 1;
+				const d = c + 1;
+				indices.push(a, c, b, b, c, d);
+			}
+		const builder = new GltfBuilder();
+		builder.node(
+			{
+				name: 'ground',
+				mesh: builder.mesh([
+					{
+						attributes: { POSITION: builder.positions(positions) },
+						indices: builder.accessor(new Uint32Array(indices), 1),
+					},
+				]),
+			},
+			true,
+		);
+		writeFileSync(path, builder.glb());
+	}
+
+	it('writes the stages beside the model in the cache, and serves each of them', async () => {
+		const root = project();
+		const file = join(root, 'terrain.glb');
+		gridModel(file);
+		const model = await optimizedModel(root, file, { lod: true, stages: true });
+		const stages = model.files.filter((f) => f.endsWith('.bin'));
+		expect(stages.length).toBeGreaterThan(0);
+		for (const stage of stages) expect(cachedFile(root, stage)).toBeDefined();
+		// A cache hit names the same files, which the model's own extras give it.
+		const again = await optimizedModel(root, file, { lod: true, stages: true });
+		expect(again.files).toEqual(model.files);
+	});
+
+	it('writes the levels into the model when the stages are off', async () => {
+		const root = project();
+		const file = join(root, 'terrain.glb');
+		gridModel(file);
+		const model = await optimizedModel(root, file, { lod: true });
+		expect(model.files.filter((f) => f.endsWith('.bin'))).toEqual([]);
 	});
 });

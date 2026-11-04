@@ -10,12 +10,21 @@ import { run } from './lib/result';
 
 /** Threads per workgroup of the light clustering shader. */
 const WORKGROUP_SIZE = 128;
+/** The words of the light grid's header, which the render crate's light_grid.rs writes. */
+const HEADER_WORDS = 8;
 /** The buffers, pipelines and bind group of the pass, by the ids the page gives them. */
 const PARAMS = 1;
 const LIGHTS = 2;
 const GRID = 3;
+const REDUCTION = 4;
 const GROUP = 1;
-const STEPS = [G.TEMPLATE_LIGHT_COUNT, G.TEMPLATE_LIGHT_PLACE, G.TEMPLATE_LIGHT_WRITE];
+/** The pass's dispatches, in order: the fit, the count, the sum and the write. */
+const STEPS = [
+	G.TEMPLATE_LIGHT_FIT,
+	G.TEMPLATE_LIGHT_COUNT,
+	G.TEMPLATE_LIGHT_PLACE,
+	G.TEMPLATE_LIGHT_WRITE,
+];
 
 /** One case of the fixture: the parameters' words, the light list's, and the grid's. */
 interface Case {
@@ -33,9 +42,10 @@ function cases(words: Uint32Array): Case[] {
 		at += 1 + count;
 		return part;
 	};
+	const recordWords = G.SIZE_LIGHT_RECORD_BYTES / 4;
 	return Array.from({ length: words[0] as number }, () => ({
 		params: take(1),
-		lights: take(16),
+		lights: take(recordWords),
 		expected: take(1),
 	}));
 }
@@ -44,13 +54,15 @@ function cases(words: Uint32Array): Case[] {
 async function cluster(device: GPUDevice, backend: WebGPUBackend, c: Case): Promise<Uint32Array> {
 	const [tilesX = 0, tilesY = 0, slices = 0] = c.params;
 	const [, room = 0, clusters = 0] = c.params.subarray(4);
-	const gridBytes = (clusters + room) * 4;
+	const gridBytes = (HEADER_WORDS + clusters + room) * 4;
 	const memory = new TestMemory(1 << 20, 4096);
 	const blobs = [memory.put(c.params), memory.put(c.lights)];
 	const buffers: [number, number, number][] = [
 		[PARAMS, c.params.byteLength, G.BUFFER_USAGE_UNIFORM | G.BUFFER_USAGE_COPY_DST],
 		[LIGHTS, Math.max(c.lights.byteLength, 64), G.BUFFER_USAGE_STORAGE | G.BUFFER_USAGE_COPY_DST],
 		[GRID, gridBytes, G.BUFFER_USAGE_STORAGE | G.BUFFER_USAGE_COPY_SRC],
+		// The depth reduction, which the case leaves zeroed: the fit then keeps the CPU's slicing.
+		[REDUCTION, 8, G.BUFFER_USAGE_STORAGE],
 	];
 	for (const [id, size, usage] of buffers) memory.push(G.OP_CREATE_BUFFER, id, size, usage);
 	memory.push(G.OP_WRITE_BUFFER, PARAMS, 0, blobs[0] as number, c.params.byteLength);
@@ -69,7 +81,8 @@ async function cluster(device: GPUDevice, backend: WebGPUBackend, c: Case): Prom
 	memory.push(G.OP_SET_BIND_GROUP, 0, GROUP, 0);
 	for (const [k, template] of STEPS.entries()) {
 		memory.push(G.OP_SET_COMPUTE_PIPELINE, k + 1);
-		if (template === G.TEMPLATE_LIGHT_PLACE) memory.push(G.OP_DISPATCH, 1, 1, 1);
+		if (template === G.TEMPLATE_LIGHT_PLACE || template === G.TEMPLATE_LIGHT_FIT)
+			memory.push(G.OP_DISPATCH, 1, 1, 1);
 		else memory.push(G.OP_DISPATCH, tiles, slices, 1);
 	}
 	memory.push(G.OP_END_COMPUTE_PASS);
@@ -109,7 +122,7 @@ run('light-clusters', async () => {
 				if (first < 0) first = i;
 			}
 		results.push({
-			lights: c.lights.length / 16,
+			lights: c.lights.length / (G.SIZE_LIGHT_RECORD_BYTES / 4),
 			words: c.expected.length,
 			differing,
 			// The first word that differs, the GPU's value and the job workers'.

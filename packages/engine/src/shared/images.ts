@@ -92,21 +92,64 @@ export interface CustomShader {
 	 * which binds as the final pass does, or as its bloom build does. A group of joined effects
 	 * binds as an effect does, and the final pass with effects folded into it binds the effects'
 	 * buffer and the scene's depth too. A shader without a kind draws a custom material's meshes.
+	 * A compute shader fills a storage texture of a pass of its own. A sky layer draws the box
+	 * around the camera that its template makes, with the background's frame group and its own
+	 * values, and a sky layer map draws the texels of the sky's environment map.
 	 */
-	readonly kind?: 'effect' | 'final' | 'finalBloom' | 'effectGroup' | 'effectFold';
+	readonly kind?:
+		| 'effect'
+		| 'final'
+		| 'finalBloom'
+		| 'effectGroup'
+		| 'effectFold'
+		| 'compute'
+		| 'skyLayer'
+		| 'skyLayerMap';
+	/**
+	 * True for an effect whose WGSL reads a level of bloom's chain, so it draws in a pass of its
+	 * own and binds that level.
+	 */
+	readonly bloom?: boolean;
 	/**
 	 * The shader's builds. A group's or a fold's are empty until the thread that draws joins them
 	 * from its effects' pieces, at its first pipeline.
 	 */
 	readonly variants: ShaderVariants;
 	readonly locations: readonly number[];
+	/**
+	 * True for a draw shader, whose vertex stage makes every vertex and every copy from its
+	 * indices: its pipelines declare no vertex buffer, and a draw gives only its two counts.
+	 */
+	readonly meshless?: boolean;
 	/** The textures that the material's WGSL declares, which its pipelines bind with the maps' layout. */
 	readonly textures: number;
 	/**
-	 * True for a custom material whose builds load on first use, in sets that the sketch thread
+	 * True for a custom material whose surface function reads the copy of the scene's depth, so its
+	 * pipelines bind the depth after the maps' group.
+	 */
+	readonly sceneDepth?: boolean;
+	/**
+	 * True for a custom material that declares the opacity its shadow caster tests, so its caster
+	 * builds draw a fragment stage that discards the pixels that its cutoff leaves out.
+	 */
+	readonly coverage?: boolean;
+	/**
+	 * True for a custom material whose WGSL sets or reads the surface's alpha, so its masked
+	 * caster and motion builds cut the material's holes in a fragment stage, as the masked casters
+	 * of the engine's mesh templates do.
+	 */
+	readonly alpha?: boolean;
+	/**
+	 * True for a custom shader whose builds load on first use, in sets that the sketch thread
 	 * sends: its variants hold the sets that arrived.
 	 */
 	readonly builds?: boolean;
+	/**
+	 * The set of builds to import first, when the shader's builds do not split by the permutation
+	 * bits that a device fixes. An effect and a tone curve take one set for each GPU path, so their
+	 * set is 0. Without it the shader takes the set of the device's bits, as a material does.
+	 */
+	readonly buildsSet?: number;
 	/** An effect's or a tone curve's pieces, which groups and folds join. */
 	readonly pieces?: EffectPieces;
 	/** A group's or a fold's effects, in the order they run. */
@@ -162,9 +205,9 @@ export class ImageTable {
 	/**
 	 * True when the shader of `template` can build the pipeline of `permutation` with output for
 	 * `target`, as far as its builds that load on first use go: it holds the build, or the set that
-	 * would hold it has arrived, so the backend builds the pipeline or reports its error. The first
-	 * call that needs a set asks for it, and the calls return false until it arrives. Throws E1424
-	 * when the set failed to load.
+	 * holds it has arrived, so the backend builds the pipeline or reports its error. The first call
+	 * that needs a set asks for it, and the calls return false until it arrives. Throws E1424 when
+	 * the set failed to load.
 	 */
 	buildsReady(template: number, permutation: number, target: 'wgsl' | 'glsl'): boolean {
 		const shader = this.shaders.get(template);
@@ -177,7 +220,7 @@ export class ImageTable {
 		}
 		const state = sets.get(set);
 		if (typeof state === 'string')
-			throw new Error(`E1424: the builds of a custom material did not load: ${state}.`);
+			throw new Error(`E1424: the builds of a custom shader did not load: ${state}.`);
 		if (state === undefined) {
 			sets.set(set, false);
 			this.askBuilds(template, set);
