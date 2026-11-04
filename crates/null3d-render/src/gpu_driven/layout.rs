@@ -548,6 +548,9 @@ pub(super) struct Layout {
     pub(super) marks: Vec<u8>,
     /// The buckets that `marks` marks, in bucket order.
     pub(super) level_buckets: Vec<u32>,
+    /// The sources whose home bucket `marks` marks, in source order: the only sources whose
+    /// copies the frame counts to size the levels' slices, shown or hidden.
+    pub(super) level_sources: Vec<u32>,
     /// The cluster meshes that the layout's views draw from their trees. The scene's layout picks
     /// them; the casters' layout holds one for each of the scene's, in the same order.
     pub(super) clusters: Vec<ClusterMesh>,
@@ -558,9 +561,11 @@ pub(super) struct Layout {
     pub(super) cluster_patches: Vec<[u32; 8]>,
     /// Every patch's indices, one patch after another.
     pub(super) cluster_indices: Vec<u32>,
-    /// The copies that one view places in each bucket, and the largest count over the views that
-    /// draw the layout: working space of [`Layout::fit_copies`](super::copies).
+    /// The largest count of copies that a view of the layout placed in each bucket in the last
+    /// count, each thread's tallies of the views' counts, and the counts that size the slices:
+    /// working space of [`Layout::fit_copies`](super::copies).
     pub(super) copy_counts: Vec<u32>,
+    pub(super) copy_tallies: Vec<u32>,
     pub(super) copy_fits: Vec<u32>,
     /// True once a level's slices hold the counts of a frame of this layout.
     pub(super) slices_placed: bool,
@@ -631,11 +636,13 @@ impl Layout {
             vec_bytes(&self.level_links),
             vec_bytes(&self.marks),
             vec_bytes(&self.level_buckets),
+            vec_bytes(&self.level_sources),
             vec_bytes(&self.clusters),
             vec_bytes(&self.scene_trees),
             vec_bytes(&self.cluster_patches),
             vec_bytes(&self.cluster_indices),
             vec_bytes(&self.copy_counts),
+            vec_bytes(&self.copy_tallies),
             vec_bytes(&self.copy_fits),
             vec_bytes(&self.batch_rows),
             vec_bytes(&self.indirect_template),
@@ -882,6 +889,7 @@ impl Layout {
         self.buckets.clear();
         self.marks.clear();
         self.level_buckets.clear();
+        self.level_sources.clear();
         self.idle.clear();
         self.idle_frames.clear();
         (self.copied, self.indexed) = (0, 0);
@@ -895,6 +903,35 @@ impl Layout {
         self.bucket_records.clear();
         self.material_views = 0;
         self.pick_views = 0;
+    }
+
+    /// Lists the sources whose home bucket takes a level's copies: the scene slots by their home
+    /// bucket, and every row of a batch whose bucket does. A source keeps its home bucket until
+    /// the layout is built again, so the frames' counts of the levels' copies visit these alone.
+    pub(super) fn note_level_sources(&mut self) {
+        self.level_sources.clear();
+        if self.level_buckets.is_empty() {
+            return;
+        }
+        let marks = &self.marks;
+        let marked = |bucket: u32| marks.get(bucket as usize).is_some_and(|&mark| mark != 0);
+        self.level_sources.extend(
+            (0..self.scene_rows).filter(|&source| marked(self.home_buckets[source as usize])),
+        );
+        for (index, &(_, base)) in self.batch_bases.iter().enumerate() {
+            if !self
+                .batch_rows
+                .get(index)
+                .is_some_and(|rows| marked(rows.bucket))
+            {
+                continue;
+            }
+            let end = self
+                .batch_bases
+                .get(index + 1)
+                .map_or(self.sources, |&(_, next)| next);
+            self.level_sources.extend(base..end);
+        }
     }
 
     /// The shown scene objects that may hide others, and the batches whose rows may: none means
@@ -1823,6 +1860,7 @@ impl Layout {
         self.level_buckets.extend(
             (0..self.buckets.len() as u32).filter(|&bucket| self.marks[bucket as usize] != 0),
         );
+        self.note_level_sources();
         // A new layout draws every bucket until its counts say that a level holds no copy.
         self.idle.clear();
         self.idle.resize(self.buckets.len(), false);
@@ -2741,6 +2779,82 @@ mod tests {
         layout
             .apply(&mut list, &mut arena, u32::MAX)
             .expect("the frame's tables fit the room the layout asked for");
+    }
+
+    /// The frame's count of each level's copies visits only the sources whose mesh has levels: the
+    /// scene's objects of such a mesh, shown or hidden, and every row of a batch that draws one.
+    /// Objects and rows of a mesh without levels never enter the count, however many there are.
+    #[test]
+    fn a_layout_lists_only_the_sources_of_a_mesh_with_levels_for_the_count() {
+        use null3d_core::levels::Switch;
+
+        let mut settings = scene_settings(&RendererConfig {
+            max_materials: 4,
+            ..RendererConfig::default()
+        });
+        let mut add_box = |segments: u32| {
+            let geometry = box_geometry(1.0, 1.0, 1.0, [segments; 3]).unwrap();
+            settings.meshes_mut().add(&geometry).unwrap() + 1
+        };
+        let (leveled, coarse, plain) = (add_box(2), add_box(1), add_box(1));
+        settings
+            .set_mesh_levels(leveled, &[coarse], &[0.01], &[Switch::Error], &[0], 0)
+            .unwrap();
+        let material = settings.materials_mut().create(Shading::Lit, 0, [1.0; 4]);
+        let material = material.unwrap() + 1;
+        let mut scene = SceneStorage::with_capacity(16);
+        let mut commands = Vec::new();
+        let mut leveled_slots = Vec::new();
+        for i in 0..12u32 {
+            let object = scene.reserve().unwrap();
+            let mesh = if i % 3 == 0 { leveled } else { plain };
+            // A hidden object keeps its place in the list, as showing it takes no rebuild.
+            let shown = if i == 6 { 0 } else { flags::VISIBLE };
+            commands.push(Command::create(object, Handle::NONE, mesh, shown));
+            commands.push(Command::set_material(object, material));
+            if mesh == leveled {
+                leveled_slots.push(scene.resolve(object).unwrap());
+            }
+        }
+        scene.apply_commands(&commands, 1).unwrap();
+        scene.update_transforms(&JobSystem::new(0));
+        let mut batches = BatchTable::with_capacity(2);
+        for mesh in [plain, leveled] {
+            let batch = batches
+                .create(8, false, false, mesh, material, 0.5)
+                .unwrap();
+            batches.get_mut(batch).unwrap().set_active_count(5).unwrap();
+        }
+        let mut layout = Layout::default();
+        let mut pipelines = PipelineCache::default();
+        let targets = PassTargets {
+            color_format: format::CANVAS,
+            depth_format: format::DEPTH32_FLOAT,
+            samples: 4,
+            permutation: 0,
+        };
+        layout
+            .rebuild(
+                &settings,
+                &mut pipelines,
+                targets,
+                &scene,
+                &batches,
+                scene.parity(),
+                u32::MAX,
+                CasterPasses::default(),
+                Prepass::Off,
+                &Skinning::default(),
+                &mut KeyCounts::new(),
+                targets,
+                false,
+                0,
+            )
+            .unwrap();
+        let leveled_rows = layout.batch_bases[1].1..layout.batch_bases[1].1 + 8;
+        let expected: Vec<u32> = leveled_slots.into_iter().chain(leveled_rows).collect();
+        assert_eq!(layout.level_sources, expected);
+        assert!(layout.level_sources.len() * 2 < layout.sources as usize);
     }
 
     #[test]

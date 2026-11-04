@@ -689,7 +689,7 @@ pub(crate) fn clamp_sampler(
 /// The most bytes that a layout's rebuild asks for with plain pushes, for each source: its rows in
 /// the tables, and the old table that a growth copies from. Its buckets are far fewer than its
 /// sources, and fit in the frame's headroom.
-pub(crate) const REBUILD_BYTES_PER_SOURCE: usize = 64;
+pub(crate) const REBUILD_BYTES_PER_SOURCE: usize = 72;
 
 /// The bytes of an ordinary block of an [`UploadArena`]. A larger copy takes a block of its own size.
 const UPLOAD_BLOCK: usize = 256 << 10;

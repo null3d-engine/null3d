@@ -1545,6 +1545,10 @@ impl GpuDrivenRenderer {
                 });
             }
         }
+        // Each view of the scene's layout culls its sources against its own frustum, so it counts
+        // only the sources inside it. The staged levels' watches read every level that a source of
+        // the layout picks, in view or not, so while one waits the views count every source.
+        let watches = settings.watches_stages();
         let mut views = std::mem::take(&mut self.copy_views);
         views.clear();
         for (index, frame) in self.frames.iter().enumerate() {
@@ -1553,7 +1557,7 @@ impl GpuDrivenRenderer {
                 views.push(copies::CopyView {
                     rule: settings.level_view(view, input.canvas),
                     camera: frame.camera,
-                    frustum: None,
+                    frustum: (!watches).then_some(frame.frustum),
                 });
             }
         }
