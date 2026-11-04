@@ -1,8 +1,9 @@
 // Pieces of a mesh made in code and of its planned levels, which the levels task plans on a job
 // worker (see `levels/pieces.js`, which the asset tool runs on a file's lists). A list of
 // `PIECE_LIST_MIN_TRIANGLES` triangles or more sorts its triangles into pieces that each copy culls
-// on its own. The mesh keeps its own list: its pieces draw a sorted list of their own that shares
-// its vertices, and each level's list is sorted before the level is made.
+// on its own, and a smaller list that many copies draw gets facing pieces where they pay. The mesh
+// keeps its own list: its pieces draw a sorted list of their own that shares its vertices, and each
+// level's list is sorted before the level is made.
 //
 // A mesh that the engine split into parts draws each list part by part: a triangle draws from the
 // part where one of its corners first appears, trying its corners in turn, once that part holds all
@@ -11,6 +12,7 @@
 // part and the core keeps its order. A piece may still cross from one part into the next.
 
 import {
+	facingPieces,
 	listBounds,
 	meanFacing,
 	PIECE_MAX,
@@ -63,11 +65,13 @@ export function triangleGroups(
 }
 
 /**
- * The pieces of the triangle list `indices` over `positions`, or none for a list under
- * `PIECE_LIST_MIN_TRIANGLES` triangles. `split` names the parts of a split mesh that hold each
- * vertex, and the part count; the pieces then keep the order in which the parts draw the list.
- * Each group takes one piece at least, so a list of more groups than `PIECE_MAX` takes one piece
- * a group: the parts draw a range each without pieces too, so such pieces add no draw.
+ * The pieces of the triangle list `indices` over `positions`. A list under
+ * `PIECE_LIST_MIN_TRIANGLES` triangles gets facing pieces where its `copies` and its facings make
+ * them pay, unless it splits by `space` or into parts, and none otherwise. `split` names the parts
+ * of a split mesh that hold each vertex, and the part count; the pieces then keep the order in
+ * which the parts draw the list. Each group takes one piece at least, so a list of more groups than
+ * `PIECE_MAX` takes one piece a group: the parts draw a range each without pieces too, so such
+ * pieces add no draw.
  */
 export function planListPieces(
 	positions: Float32Array,
@@ -75,10 +79,20 @@ export function planListPieces(
 	split: { masks: Uint32Array; parts: number } | undefined,
 	cacheOrder: (indices: Uint32Array) => Uint32Array,
 	space = false,
+	copies = 1,
 ): ListPieces | undefined {
 	const triangles = indices.length / 3;
 	const wanted = pieceCount(triangles);
-	if (wanted === 0) return undefined;
+	if (wanted === 0) {
+		const plan = space || split ? undefined : facingPieces(positions, indices, copies);
+		return (
+			plan && {
+				indices: piecesInOrder(indices, plan, cacheOrder),
+				triangles: plan.counts,
+				bounds: plan.bounds,
+			}
+		);
+	}
 	const groups = split && triangleGroups(indices, split.masks, split.parts);
 	const sizes = new Array<number>(split ? split.parts + 1 : 1).fill(0);
 	for (let t = 0; t < triangles; t++) {

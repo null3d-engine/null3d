@@ -5,6 +5,7 @@
 // The levels name the mesh's own vertices, so the mesh keeps its vertex and triangle order. The
 // mesh and each large level get pieces too (scene/level-pieces.ts).
 
+import { PIECE_LIST_MIN_TRIANGLES } from '../../levels/pieces.js';
 import {
 	longestSide,
 	planMeshLevels,
@@ -36,6 +37,11 @@ export interface LevelsTaskInput {
 	skipFlat: boolean;
 	/** True to sort the mesh's lists into pieces by space alone, whatever way they face. */
 	spacePieces?: boolean;
+	/**
+	 * The copies that the scene draws of the mesh, which decide whether a list smaller than the
+	 * pieces' floor gets facing pieces.
+	 */
+	copies: number;
 	/** The parts that the engine split the mesh into. */
 	parts: number;
 	/**
@@ -110,7 +116,7 @@ export async function run(
 	input: unknown,
 	wasm: (name: string) => WebAssembly.Module,
 ): Promise<TaskResult> {
-	const { words, cards, maxLevels, skipFlat, parts, masks, basePieces, spacePieces } =
+	const { words, cards, maxLevels, skipFlat, parts, masks, basePieces, spacePieces, copies } =
 		input as LevelsTaskInput;
 	const meshopt = await start(wasm);
 	const began = performance.now();
@@ -158,7 +164,7 @@ export async function run(
 	const piecesOf = (list: Uint32Array) =>
 		parts > 1 && !split
 			? undefined
-			: planListPieces(positions, list, split, meshopt.cacheOrder, spacePieces);
+			: planListPieces(positions, list, split, meshopt.cacheOrder, spacePieces, copies);
 	const levels: TaskLevel[] = planned.map((level) => {
 		const indices = level.indices[0] as Uint32Array;
 		const moved = level.positions[0];
@@ -172,7 +178,10 @@ export async function run(
 			};
 		return { indices, error: level.error, ...(moved && { positions: moved }) };
 	});
-	const pieces = basePieces ? piecesOf(indices) : undefined;
+	// A list under the pieces' floor gets facing pieces alone, over a copy of its indices that
+	// costs little, so it plans them whatever draws it.
+	const pieces =
+		basePieces || indexCount / 3 < PIECE_LIST_MIN_TRIANGLES ? piecesOf(indices) : undefined;
 	if (meshopt.heapBytes() > KEPT_HEAP_BYTES) started = undefined;
 	const output: LevelsTaskOutput = {
 		levels,

@@ -1,8 +1,18 @@
 import { describe, expect, test } from 'bun:test';
-import { bumpyGrid } from '../../../../tests/lib/level-meshes.ts';
-import { PIECE_BOUNDS, PIECE_LIST_MIN_TRIANGLES, PIECE_MAX } from '../../levels/pieces.js';
+import { bumpyGrid, quadBox } from '../../../../tests/lib/level-meshes.ts';
+import {
+	FACING_DRAWN_MIN_TRIANGLES,
+	FACING_LIST_MIN_TRIANGLES,
+	PIECE_BOUNDS,
+	PIECE_LIST_MIN_TRIANGLES,
+	PIECE_MAX,
+} from '../../levels/pieces.js';
 import { type ListPieces, planListPieces, triangleGroups } from './level-pieces';
-import { PIECES_MIN_TRIANGLES } from './resources';
+import {
+	FACING_PIECES_DRAWN_TRIANGLES,
+	FACING_PIECES_MIN_TRIANGLES,
+	PIECES_MIN_TRIANGLES,
+} from './resources';
 
 /** Keeps the triangles' order: the vertex cache order changes no piece. */
 const asGiven = (indices: Uint32Array) => indices;
@@ -59,6 +69,34 @@ function expectSpheresHold(positions: Float32Array, pieces: ListPieces) {
 describe('the pieces of a mesh made in code', () => {
 	test('start at the size that the pieces planner starts at', () => {
 		expect(PIECES_MIN_TRIANGLES).toBe(PIECE_LIST_MIN_TRIANGLES);
+		expect(FACING_PIECES_MIN_TRIANGLES).toBe(FACING_LIST_MIN_TRIANGLES);
+		expect(FACING_PIECES_DRAWN_TRIANGLES).toBe(FACING_DRAWN_MIN_TRIANGLES);
+	});
+
+	test('give a smaller list that many copies draw a piece for each way it faces', () => {
+		const box = quadBox(10);
+		const triangles = box.indices.length / 3;
+		const copies = Math.ceil(FACING_DRAWN_MIN_TRIANGLES / triangles);
+		const pieces = planListPieces(box.positions, box.indices, undefined, asGiven, false, copies);
+		expect(pieces).toBeDefined();
+		const { triangles: counts, bounds, indices } = pieces as ListPieces;
+		expect(Array.from(counts)).toEqual(new Array(6).fill(triangles / 6));
+		// Each side is flat, so its cone culls from half the directions around it.
+		for (let k = 0; k < counts.length; k++)
+			expect(bounds[k * PIECE_BOUNDS + 7] as number).toBeLessThan(1e-3);
+		expect(triangleKeys(indices)).toEqual(triangleKeys(box.indices));
+		expectSpheresHold(box.positions, pieces as ListPieces);
+		// Too few copies, a split by space, or a list split into parts get none.
+		expect(
+			planListPieces(box.positions, box.indices, undefined, asGiven, false, copies - 1),
+		).toBeUndefined();
+		expect(
+			planListPieces(box.positions, box.indices, undefined, asGiven, true, copies),
+		).toBeUndefined();
+		const split = cutMasks(box.indices, box.positions.length / 3, 1000);
+		expect(
+			planListPieces(box.positions, box.indices, split, asGiven, false, copies),
+		).toBeUndefined();
 	});
 
 	test('split a list by space alone when asked, whatever way it faces', () => {
