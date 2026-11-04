@@ -2611,6 +2611,25 @@ impl GpuDrivenRenderer {
             (&self.pipelines, input.pipelines_built),
         )?;
         let binding_bytes = self.config.storage_binding_bytes;
+        // A frame that keeps its layouts brings each layout's sources up to date first: the
+        // sources it shows or hides, and the rows that a new active count adds or removes. The
+        // count of each level's copies and the cluster lists below read the same sources as the
+        // culling shader, which culls them in this frame.
+        if !upload_everything {
+            let features = self.settings.feature_instances();
+            for (drawn, on) in [
+                (&mut self.layout, true),
+                (&mut self.casters, shadows),
+                (&mut self.outlined, outlines),
+                (&mut self.scattering, scatters),
+                (&mut self.tone, tones),
+                (&mut self.moving, motion),
+            ] {
+                if on {
+                    drawn.update_membership(list, arena, input, features, parity)?;
+                }
+            }
+        }
         // Each level's slice holds the copies that this frame's views draw, rather than the room
         // for every source. It comes before the layouts are applied and the views' bundles are
         // recorded: both name the slices' bases in commands that the frame keeps.
@@ -2646,25 +2665,6 @@ impl GpuDrivenRenderer {
             }
             (shared, casters)
         } else {
-            let features = self.settings.feature_instances();
-            self.layout
-                .update_membership(list, arena, input, features, parity)?;
-            if shadows {
-                self.casters
-                    .update_membership(list, arena, input, features, parity)?;
-            }
-            if outlines {
-                self.outlined
-                    .update_membership(list, arena, input, features, parity)?;
-            }
-            if scatters {
-                self.scattering
-                    .update_membership(list, arena, input, features, parity)?;
-            }
-            if tones {
-                self.tone
-                    .update_membership(list, arena, input, features, parity)?;
-            }
             (false, false)
         };
         // The scene's cluster tables follow its layout: they upload again when it changes. Only
@@ -2727,11 +2727,6 @@ impl GpuDrivenRenderer {
                 self.culling.add_view(list, ViewId::MOTION)?;
                 self.motion_made = true;
                 motion_new = true;
-            }
-            if !upload_everything {
-                let features = self.settings.feature_instances();
-                self.moving
-                    .update_membership(list, arena, input, features, parity)?;
             }
             self.motion.reserve(input.snapshot.uploads().len() + 1)?;
             let stale = self.motion.prepare(
