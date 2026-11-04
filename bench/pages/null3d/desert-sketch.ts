@@ -1,7 +1,8 @@
 // The null3D side of the desert. It loads the ground and the props as this checkout's asset tool
 // wrote them, draws the ground once, and draws every other mesh as an instance batch with a row for
 // each placement. The camera follows the view's path. The page's switches reach this module's
-// address: `view` picks the path, and `shadows` turns the sun's shadows on in that many cascades.
+// address: `view` picks the path, `shadows` turns the sun's shadows on in that many cascades, and
+// `lod` and `lodShadow` set the level of detail thresholds in pixels and in shadow texels.
 import { defineSketch, quat, vec3 } from '@null3d/engine';
 import {
 	DESERT_CAMERA,
@@ -21,6 +22,8 @@ const switches = new URL(import.meta.url).searchParams;
 const view = readDesertView(switches);
 const cascades = switches.has('shadows') ? Number(switches.get('shadows')) : 0;
 const shadows = cascades > 0;
+const lod = switches.get('lod');
+const lodShadow = switches.get('lodShadow');
 
 /** A linear color of the scene module as the engine's color array. */
 const rgb = (c: readonly number[]): [number, number, number] => [
@@ -34,7 +37,12 @@ export default defineSketch(async ({ scene, assets, post, quality, time, debug }
 	// for the frame figures, so the sketch asks once and the measure reports them in every build.
 	debug.frameStats();
 	post.set({ toneMapping: 'none' });
-	quality.set({ minRenderScale: 1, governor: false });
+	quality.set({
+		minRenderScale: 1,
+		governor: false,
+		...(lod !== null && { lodThreshold: Number(lod) }),
+		...(lodShadow !== null && { lodShadowThreshold: Number(lodShadow) }),
+	});
 	scene.setBackground(rgb(DESERT_SKY.color));
 	scene.createDirectionalLight({
 		direction: [...DESERT_SUN.direction],

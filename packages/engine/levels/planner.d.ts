@@ -85,7 +85,7 @@ export const LOD_STEP: number;
 export const LOD_FLOOR_TRIANGLES: number;
 export const LOD_MAX_LEVELS: number;
 
-export function longestSide(positions: Float32Array): number;
+export function longestSide(positions: Float32Array, indices?: Uint32Array): number;
 export function weldList(
 	streams: ListStreams,
 	posed?: boolean,

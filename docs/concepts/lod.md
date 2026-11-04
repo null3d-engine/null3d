@@ -142,7 +142,7 @@ A level given by its distance switches where the camera is that far from the obj
 
 An orthographic camera's pixels do not shrink with distance. So its levels follow the object's scale and the camera's zoom alone.
 
-The distance runs from the camera to the nearest point of the object's bounding sphere. A large object therefore switches by its near side, so it does not turn coarse too early. Turning the camera never changes a level. A camera inside the bounds measures almost no distance, so the object keeps its full detail. A view with a camera of its own, such as a render pass, picks with that camera. Mirrors and the outline effect pick as the main camera does.
+For a level given by its error, the distance runs from the camera to the center of the object's bounding sphere, less half the sphere's radius. A level's error is its largest anywhere on the mesh, so a large object switches by a point between its near side and its middle: it does not turn coarse too early, and its far side does not keep detail that only its near side shows. A level given by its distance or its coverage measures to the nearest point of the bounding sphere, as its author set it. Turning the camera never changes a level. A camera inside the bounds, or near its middle, measures almost no distance, so the object keeps its full detail. A view with a camera of its own, such as a render pass, picks with that camera. Mirrors and the outline effect pick as the main camera does.
 The same threshold hides an object of a mesh with levels that has nothing left to show. A bound that covers fewer pixels than the threshold draws nothing, and the mesh's last level holds no geometry. [Small objects](#small-objects) gives the distance and the fade.
 
 Levels add no second copy of each object's data. Each view keeps about the room of one copy for each object and instance row that draws, whatever the number of levels and fading bands. A forest of 40,000 copies with four levels takes about 2.6 MB in a view.
@@ -184,7 +184,7 @@ Two add-ons morph a level instead of fading it. The terrain add-on moves each bl
 
 An object far away can cover less than a pixel. Its levels then save vertex work, but the object still draws a fragment or two that no one sees. The engine hides it: the mesh's last level holds no geometry. Only a mesh with levels has that last level, so a mesh without levels draws at every distance.
 
-The rule reads the object's bounding sphere. The number of pixels that its world diameter covers follows from the same factor as every level's switch distance:
+The rule reads the object's bounding sphere, at the distance that a level given by its error measures. The number of pixels that its world diameter covers follows from the same factor as every level's switch distance:
 
 ```text
 pixels = diameter × factor × threshold / distance

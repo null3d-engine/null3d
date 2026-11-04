@@ -249,7 +249,11 @@ describe('levels of detail for leaf cards', () => {
  * A flat grid of `n` by `n` quads across one metre, with each vertex's texture coordinate from
  * `uv`, or no texture coordinates when `uv` is null.
  */
-function gridDocument(n: number, uv: ((x: number, z: number) => [number, number]) | null) {
+function gridDocument(
+	n: number,
+	uv: ((x: number, z: number) => [number, number]) | null,
+	size = 1,
+) {
 	const doc = new Document();
 	const buffer = doc.createBuffer();
 	const mesh = doc.createMesh('grid');
@@ -259,7 +263,7 @@ function gridDocument(n: number, uv: ((x: number, z: number) => [number, number]
 	for (let r = 0; r <= n; r++)
 		for (let c = 0; c <= n; c++) {
 			const [x, z] = [c / n, r / n];
-			positions.push(x, 0, z);
+			positions.push(x * size, 0, z * size);
 			if (uv) uvs.push(...uv(x, z));
 		}
 	for (let r = 0; r < n; r++)
@@ -440,6 +444,30 @@ describe('texture coordinates in the levels error', () => {
 		expect(bentError).toBeGreaterThan(0.11);
 		expect(bentError).toBeLessThan(0.12);
 		expect(bentError).toBeGreaterThan(flatError * 2);
+	});
+
+	// A quantized file stores positions in integer steps, and the planner reads them as stored.
+	// The simplifier weighs each attribute after it scales the list into a box of side 1, so a
+	// texture coordinate's weight must not grow with the units of the positions. The same bent
+	// grid, in meters and in the 16,383 steps of a quantized file, must plan the same levels: the
+	// same triangles, and errors that are the same share of the grid's side, so each level switches
+	// at the same distance once the node's scale turns steps into meters.
+	it('plans the same levels from a mesh in meters and from its quantized steps', async () => {
+		const steps = 16383;
+		const plan = async (size: number) => {
+			const { doc, mesh } = gridDocument(32, (x, z) => [(x * 8) % 1, (z * 8) % 1], size);
+			return (await planLevels(doc)).get(mesh)?.levels ?? [];
+		};
+		const meters = await plan(1);
+		const quantized = await plan(steps);
+		expect(meters.length).toBeGreaterThan(1);
+		expect(quantized.map((level) => level.triangles)).toEqual(
+			meters.map((level) => level.triangles),
+		);
+		meters.forEach((level, k) => {
+			const share = (quantized[k]?.error ?? 0) / steps;
+			expect(Math.abs(share - level.error) / level.error).toBeLessThan(0.02);
+		});
 	});
 });
 

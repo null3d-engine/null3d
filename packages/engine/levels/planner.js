@@ -71,18 +71,23 @@ const ATTRIBUTE_WEIGHT = 1;
 const SEAM = 2;
 
 /**
- * The longest side of the box around a list of points.
+ * The longest side of the box around a list of points, or around the points that a triangle list
+ * names when `indices` is given.
  *
  * @param {Float32Array} positions
+ * @param {Uint32Array} [indices]
  */
-export function longestSide(positions) {
+export function longestSide(positions, indices) {
 	const min = [Infinity, Infinity, Infinity];
 	const max = [-Infinity, -Infinity, -Infinity];
-	for (let i = 0; i < positions.length; i++) {
-		const v = /** @type {number} */ (positions[i]);
-		const k = i % 3;
-		if (v < /** @type {number} */ (min[k])) min[k] = v;
-		if (v > /** @type {number} */ (max[k])) max[k] = v;
+	const points = indices ? indices.length : positions.length / 3;
+	for (let i = 0; i < points; i++) {
+		const at = (indices ? /** @type {number} */ (indices[i]) : i) * 3;
+		for (let k = 0; k < 3; k++) {
+			const v = /** @type {number} */ (positions[at + k]);
+			if (v < /** @type {number} */ (min[k])) min[k] = v;
+			if (v > /** @type {number} */ (max[k])) max[k] = v;
+		}
 	}
 	return Math.max(0, ...max.map((v, k) => v - /** @type {number} */ (min[k])));
 }
@@ -414,15 +419,21 @@ export function weldList(streams, posed = false, side = 0, cards = !posed) {
 		welded.set([x / length, y / length, z / length], v * 3);
 	}
 	/**
-	 * The values that the simplifier keeps near the base mesh's, and their weights in the units of
-	 * its positions. A texture coordinate covers the texture across a UV unit, so it weighs a
-	 * sixty-fourth of the mesh's longest side: a slide of a large share of a texture counts like a
-	 * small distance, while a slide of a few texels stays under the geometry's own error.
+	 * The values that the simplifier keeps near the base mesh's, and their weights. The simplifier
+	 * scales the list's points into a box of side 1 before it weighs them, so each weight is a
+	 * share of the list's own longest side, whatever the units of the positions. A normal or color
+	 * component's change of 1 counts like a distance of the list's whole side. A texture
+	 * coordinate covers the texture across a UV unit, so a UV unit counts like a sixty-fourth of
+	 * the mesh's longest side: a slide of a large share of a texture counts like a small distance,
+	 * while a slide of a few texels stays under the geometry's own error. Measured against the
+	 * list's side, that is the mesh's side over 64 times the list's.
 	 */
+	const extent = longestSide(positions, indices);
+	const uvWeight = extent > 0 ? side / (64 * extent) : 0;
 	/** @type {{ values: Float32Array, size: number, take: number, weight: number }[]} */
 	const parts = [
 		...(normal ? [{ values: welded, size: 3, take: 3, weight: ATTRIBUTE_WEIGHT }] : []),
-		...texcoords.map((uv) => ({ ...uv, take: 2, weight: side / 64 })),
+		...texcoords.map((uv) => ({ ...uv, take: 2, weight: uvWeight })),
 		...(color ? [{ ...color, take: 3, weight: ATTRIBUTE_WEIGHT }] : []),
 	];
 	const channels = parts.reduce((sum, part) => sum + part.take, 0);
