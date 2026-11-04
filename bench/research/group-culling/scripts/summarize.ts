@@ -143,12 +143,12 @@ if (cascades.length > 0) {
 	out('### Shadow cascades (casters: whole levels now; groups: box planes only)');
 	out();
 	out(
-		`| Cascade | Texel (m) | Now | ${sizes.map((s) => `Off box, ${s}`).join(' | ')} | ${ks.map((k) => `K=${k}, 64`).join(' | ')} |`,
+		`| Cascade | Texel (m) | Now | Off box, pieces | ${sizes.map((s) => `Off box, ${s}`).join(' | ')} | ${ks.map((k) => `K=${k}, 64`).join(' | ')} |`,
 	);
 	out(
-		`| --- | --- | --- | ${sizes.map(() => '---').join(' | ')} | ${ks.map(() => '---').join(' | ')} |`,
+		`| --- | --- | --- | --- | ${sizes.map(() => '---').join(' | ')} | ${ks.map(() => '---').join(' | ')} |`,
 	);
-	const perFrame = { now: 0, sizes: sizes.map(() => 0), ks: ks.map(() => 0) };
+	const perFrame = { now: 0, pieces: 0, sizes: sizes.map(() => 0), ks: ks.map(() => 0) };
 	for (const c of cascades) {
 		const share = c === 0 ? 1 : 1 / interval;
 		const now = kinds.reduce((s, k) => s + get(`shadow${c}.all.${k}.now`), 0);
@@ -158,15 +158,17 @@ if (cascades.length > 0) {
 		const kOffs = ks.map((k) =>
 			kinds.reduce((s, kind) => s + get(`shadow${c}.K${k}.${kind}.g64.offscreen`), 0),
 		);
+		const pieces = kinds.reduce((s, k) => s + get(`shadow${c}.all.${k}.g0.offscreen`), 0);
 		perFrame.now += now * share;
+		perFrame.pieces += pieces * share;
 		for (const [i, v] of offs.entries()) perFrame.sizes[i] += v * share;
 		for (const [i, v] of kOffs.entries()) perFrame.ks[i] += v * share;
 		out(
-			`| ${c} | ${get(`shadow${c}.texel`).toFixed(3)} | ${M(now)} | ${offs.map(M).join(' | ')} | ${kOffs.map(M).join(' | ')} |`,
+			`| ${c} | ${get(`shadow${c}.texel`).toFixed(3)} | ${M(now)} | ${M(pieces)} | ${offs.map(M).join(' | ')} | ${kOffs.map(M).join(' | ')} |`,
 		);
 	}
 	out(
-		`| per frame (far cascades every ${interval} frames) | | ${M(perFrame.now)} | ${perFrame.sizes.map(M).join(' | ')} | ${perFrame.ks.map(M).join(' | ')} |`,
+		`| per frame (far cascades every ${interval} frames) | | ${M(perFrame.now)} | ${M(perFrame.pieces)} | ${perFrame.sizes.map(M).join(' | ')} | ${perFrame.ks.map(M).join(' | ')} |`,
 	);
 	out();
 	out('Shadow casters per kind, all cascades per frame:');
