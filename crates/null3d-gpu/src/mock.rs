@@ -56,6 +56,19 @@ pub enum MockError {
         what: &'static str,
         id: u32,
     },
+    /// A buffer made again or destroyed after a command in the same submit used it. WebGPU
+    /// rejects the submit, since the buffer that the command recorded is destroyed.
+    DestroyedInUse {
+        op: Op,
+        id: u32,
+    },
+    /// A bind group used after a buffer it binds was made again or destroyed. The group still
+    /// binds the destroyed buffer, so WebGPU rejects each submit that uses the group.
+    StaleGroup {
+        op: Op,
+        group: u32,
+        buffer: u32,
+    },
 }
 
 /// A texture, as its creation described it.
@@ -119,11 +132,13 @@ struct RenderPipeline {
     ignores_color: bool,
 }
 
-/// A bind group: the layout it was made with, and the buffers and textures it binds.
+/// A bind group: the layout it was made with, the buffers and textures it binds, and the
+/// generation that each buffer had when the group was made.
 #[derive(Clone, Debug)]
 struct BindGroup {
     layout: u32,
     resources: Vec<Resource>,
+    buffers: Vec<(u32, u32)>,
 }
 
 /// A render target of a pass: the texture it draws into, and what the pass checks it against.
@@ -208,6 +223,9 @@ pub struct MockBackend {
     /// What the device offers beyond the portable budget.
     caps: Capabilities,
     buffers: HashMap<u32, Buffer>,
+    /// How many times each buffer id was made or destroyed, so a bind group can tell that a
+    /// buffer it binds is gone.
+    buffer_generations: HashMap<u32, u32>,
     /// The buffers whose `ReadBuffer` has not finished: no command may use them until the thread
     /// that draws raises the read's slot, which [`MockBackend::finish_reads`] stands for.
     reading: HashSet<u32>,
@@ -254,6 +272,9 @@ pub struct MockBackend {
     index_buffer_set: bool,
     /// The resources that commands used since the last submit.
     used: HashSet<Resource>,
+    /// The buffers that commands recorded for the GPU used since the last submit. A read is not
+    /// one: the backends drop a buffer's read before they destroy it.
+    recorded: HashSet<u32>,
     pub draws: u32,
     pub dispatches: u32,
     pub submits: u32,
@@ -368,6 +389,9 @@ impl MockBackend {
             Some((_, uses)) => uses.push(BundleUse::Resource(resource)),
             None => {
                 self.used.insert(resource);
+                if let Resource::Buffer(id) = resource {
+                    self.recorded.insert(id);
+                }
             }
         }
     }
@@ -396,6 +420,39 @@ impl MockBackend {
             Resource::Texture(id) => ("texture", id),
         };
         Err(MockError::WriteAfterUse { op, what, id })
+    }
+
+    /// Starts a new generation of a buffer id that is made again or destroyed. Fails when a
+    /// command in this submit used the buffer that the id named.
+    fn replace_buffer(&mut self, op: Op, id: u32) -> Result<(), MockError> {
+        if self.buffers.contains_key(&id) && self.recorded.contains(&id) {
+            return Err(MockError::DestroyedInUse { op, id });
+        }
+        *self.buffer_generations.entry(id).or_default() += 1;
+        Ok(())
+    }
+
+    /// The resources of a bind group that a command uses. Fails when a buffer it binds was made
+    /// again or destroyed after the group.
+    fn group_resources(&self, op: Op, id: u32) -> Result<Vec<Resource>, MockError> {
+        let group = self
+            .bind_groups
+            .get(&id)
+            .ok_or(missing(op, "bind group", id))?;
+        if let Some(&(buffer, _)) = group.buffers.iter().find(|&&(buffer, generation)| {
+            self.buffer_generations
+                .get(&buffer)
+                .copied()
+                .unwrap_or_default()
+                != generation
+        }) {
+            return Err(MockError::StaleGroup {
+                op,
+                group: id,
+                buffer,
+            });
+        }
+        Ok(group.resources.clone())
     }
 
     /// A buffer by id. A buffer whose read is in flight fails: WebGPU is mapping it, and a write
@@ -1047,6 +1104,7 @@ impl MockBackend {
 
     fn create_bind_group(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
         let mut resources = Vec::new();
+        let mut buffers = Vec::new();
         // Only the group's own entries: the operands may hold a spare word or more after them.
         let count = o[2] as usize;
         for entry in o[3..3 + 5 * count].chunks(5) {
@@ -1055,6 +1113,8 @@ impl MockBackend {
                 resource_kind::BUFFER => {
                     Self::require(self.buffers.contains_key(&id), op, "buffer", id)?;
                     resources.push(Resource::Buffer(id));
+                    let generation = self.buffer_generations.get(&id).copied();
+                    buffers.push((id, generation.unwrap_or_default()));
                 }
                 resource_kind::TEXTURE => {
                     let base = self.bind_views.get(&id).copied().unwrap_or(id);
@@ -1077,6 +1137,7 @@ impl MockBackend {
             BindGroup {
                 layout: o[1],
                 resources,
+                buffers,
             },
         );
         Ok(())
@@ -1254,6 +1315,7 @@ impl MockBackend {
                     op,
                     "a buffer with MAP_READ usage has no other usage than COPY_DST",
                 )?;
+                self.replace_buffer(op, o[0])?;
                 self.buffers.insert(o[0], Buffer { size: o[1], usage });
                 self.reading.remove(&o[0]);
             }
@@ -1275,6 +1337,7 @@ impl MockBackend {
             Op::WriteTexture => self.write_texture(op, o)?,
             Op::DestroyBuffer => {
                 // Destroying a buffer drops its read, whose slot then never rises.
+                self.replace_buffer(op, o[0])?;
                 self.buffers.remove(&o[0]);
                 self.reading.remove(&o[0]);
             }
@@ -1329,7 +1392,7 @@ impl MockBackend {
                 if !fits(o[1], o[2], buffer.size) {
                     return Err(MockError::OutOfRange { op, id: o[0] });
                 }
-                self.use_resource(Resource::Buffer(o[0]));
+                self.used.insert(Resource::Buffer(o[0]));
                 self.reading.insert(o[0]);
             }
             Op::CreateSampler => self.create_sampler(op, o)?,
@@ -1478,11 +1541,11 @@ impl MockBackend {
                         needs: "a render pass, bundle or compute pass",
                     });
                 }
-                let group =
-                    self.bind_groups
-                        .get(&o[1])
-                        .cloned()
-                        .ok_or(missing(op, "bind group", o[1]))?;
+                let layout = self
+                    .bind_groups
+                    .get(&o[1])
+                    .ok_or(missing(op, "bind group", o[1]))?
+                    .layout;
                 if let Some(&offset) = o[3..3 + o[2] as usize]
                     .iter()
                     .find(|&&offset| offset % OFFSET_ALIGNMENT != 0)
@@ -1490,12 +1553,12 @@ impl MockBackend {
                     return Err(MockError::Unaligned { op, offset });
                 }
                 if let Some(slot) = self.bound.get_mut(o[0] as usize) {
-                    *slot = group.layout;
+                    *slot = layout;
                 }
                 match &mut self.recording {
                     Some((_, uses)) => uses.push(BundleUse::Group(o[1])),
                     None => {
-                        for resource in group.resources {
+                        for resource in self.group_resources(op, o[1])? {
                             self.read_resource(op, resource)?;
                         }
                     }
@@ -1582,12 +1645,7 @@ impl MockBackend {
                         match used {
                             BundleUse::Resource(resource) => self.read_resource(op, resource)?,
                             BundleUse::Group(group) => {
-                                let resources = self
-                                    .bind_groups
-                                    .get(&group)
-                                    .map(|group| group.resources.clone())
-                                    .ok_or(missing(op, "bind group", group))?;
-                                for resource in resources {
+                                for resource in self.group_resources(op, group)? {
                                     self.read_resource(op, resource)?;
                                 }
                             }
@@ -1667,6 +1725,7 @@ impl MockBackend {
             Op::Submit => {
                 self.outside_passes(op)?;
                 self.used.clear();
+                self.recorded.clear();
                 self.submits += 1;
             }
         }
@@ -2883,6 +2942,131 @@ mod tests {
         assert!(
             matches!(loop_back, Err(MockError::Invalid { rule, .. }) if rule.contains("draws into")),
             "{loop_back:?}"
+        );
+    }
+
+    /// Replays the shared setup, then `build`'s commands, then a submit.
+    fn run_buffers(build: &dyn Fn(&mut DrawList)) -> Result<(), MockError> {
+        let mut list = DrawList::with_capacity(256);
+        setup(&mut list);
+        list.push(Op::ResizeCanvas, &[64, 64]).unwrap();
+        build(&mut list);
+        list.push(Op::Submit, &[]).unwrap();
+        MockBackend::default().replay(list.words())
+    }
+
+    /// Draws the setup's bucket in a scene pass of its own.
+    fn draw_in_a_pass(list: &mut DrawList) {
+        begin_scene_pass(list);
+        draw_bucket(list);
+        list.push(Op::EndRenderPass, &[]).unwrap();
+    }
+
+    #[test]
+    fn a_bind_group_of_a_buffer_made_again_is_rejected_until_it_is_made_again_too() {
+        let remake_uniforms = |l: &mut DrawList| {
+            l.push(
+                Op::CreateBuffer,
+                &[3, 1024, buffer_usage::UNIFORM | buffer_usage::COPY_DST],
+            )
+            .unwrap();
+        };
+        let stale = MockError::StaleGroup {
+            op: Op::SetBindGroup,
+            group: 1,
+            buffer: 3,
+        };
+        assert_eq!(
+            run_buffers(&|l| {
+                remake_uniforms(l);
+                draw_in_a_pass(l);
+            }),
+            Err(stale)
+        );
+        assert_eq!(
+            run_buffers(&|l| {
+                l.push(Op::DestroyBuffer, &[3]).unwrap();
+                remake_uniforms(l);
+                draw_in_a_pass(l);
+            }),
+            Err(MockError::StaleGroup {
+                op: Op::SetBindGroup,
+                group: 1,
+                buffer: 3,
+            }),
+            "a destroy and a new buffer under the same id leave the group stale"
+        );
+        // A bundle looks its groups up when it runs, so the group it names must be current then.
+        assert_eq!(
+            run_buffers(&|l| {
+                l.push(
+                    Op::BeginBundle,
+                    &[9, format::CANVAS, format::DEPTH32_FLOAT, 4],
+                )
+                .unwrap();
+                draw_bucket(l);
+                l.push(Op::EndBundle, &[]).unwrap();
+                remake_uniforms(l);
+                begin_scene_pass(l);
+                l.push(Op::ExecuteBundles, &[1, 9]).unwrap();
+                l.push(Op::EndRenderPass, &[]).unwrap();
+            }),
+            Err(MockError::StaleGroup {
+                op: Op::ExecuteBundles,
+                group: 1,
+                buffer: 3,
+            })
+        );
+        assert_eq!(
+            run_buffers(&|l| {
+                remake_uniforms(l);
+                l.push(Op::CreateBindGroup, &[1, layout::FRAME, 1, 0, 0, 3, 0, 256])
+                    .unwrap();
+                draw_in_a_pass(l);
+            }),
+            Ok(()),
+            "a group made again binds the new buffer"
+        );
+    }
+
+    #[test]
+    fn a_buffer_made_again_after_a_use_in_the_same_submit_is_rejected() {
+        let remake_vertices = |l: &mut DrawList| {
+            l.push(
+                Op::CreateBuffer,
+                &[1, 8192, buffer_usage::VERTEX | buffer_usage::COPY_DST],
+            )
+            .unwrap();
+        };
+        assert_eq!(
+            run_buffers(&|l| {
+                draw_in_a_pass(l);
+                remake_vertices(l);
+            }),
+            Err(MockError::DestroyedInUse {
+                op: Op::CreateBuffer,
+                id: 1
+            })
+        );
+        assert_eq!(
+            run_buffers(&|l| {
+                draw_in_a_pass(l);
+                l.push(Op::DestroyBuffer, &[1]).unwrap();
+            }),
+            Err(MockError::DestroyedInUse {
+                op: Op::DestroyBuffer,
+                id: 1
+            })
+        );
+        assert_eq!(
+            run_buffers(&|l| {
+                draw_in_a_pass(l);
+                l.push(Op::Submit, &[]).unwrap();
+                remake_vertices(l);
+                draw_in_a_pass(l);
+            }),
+            Ok(()),
+            "a submit ends the uses, and the GPU keeps a destroyed buffer for the work it holds"
         );
     }
 
