@@ -114,6 +114,7 @@ export interface Null3dPageOptions {
  * - `setters` calls each per-frame setter in S1, colors included.
  * - `frames` makes S1 count the frames it steps, which the page publishes for the allocation check.
  * - `view` picks the desert's camera path, `walk` or `aerial`.
+ * - `lod` and `lodShadow` set the desert's level of detail thresholds, in pixels and shadow texels.
  */
 const SKETCH_SWITCHES = [
 	'blend',
@@ -168,6 +169,8 @@ const SKETCH_SWITCHES = [
 	'timeOfDay',
 	'frames',
 	'view',
+	'lod',
+	'lodShadow',
 ] as const;
 
 /**
