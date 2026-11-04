@@ -88,16 +88,27 @@ try {
 				// A page that gives no result in time is recorded with its status text and problems, and the
 				// run goes on to the next page.
 				const finished = await page
-					.waitForFunction(() => (globalThis as { __result?: unknown }).__result, null, {
-						timeout: Number(process.env.MESHLETS_TIMEOUT_S ?? 900) * 1000,
-						polling: 1000,
-					})
+					.waitForFunction(
+						// The desert's pages publish `__result`, the repository's test pages `__null3dResult`.
+						() => {
+							const g = globalThis as { __result?: object; __null3dResult?: object };
+							return g.__result ?? g.__null3dResult;
+						},
+						null,
+						{
+							timeout: Number(process.env.MESHLETS_TIMEOUT_S ?? 900) * 1000,
+							polling: 1000,
+						},
+					)
 					.then(
 						() => true,
 						() => false,
 					);
 				const result = finished
-					? await page.evaluate(() => (globalThis as { __result?: object }).__result)
+					? await page.evaluate(() => {
+							const g = globalThis as { __result?: object; __null3dResult?: object };
+							return g.__result ?? g.__null3dResult;
+						})
 					: {
 							error: `no result in time; status: ${await page.evaluate(() => document.querySelector('#status')?.textContent ?? '')}`,
 						};

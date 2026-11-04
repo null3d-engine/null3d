@@ -16,14 +16,22 @@ const MOUNTS: [string, string][] = [
 	['/models/', join(here, 'models')],
 	['/', import.meta.dirname],
 ];
+// The production build of the Island's measuring page (tests/pages/island-view.html) names its
+// files from the site's root, so a path that this folder lacks is looked up in that build.
+const island = join(here, 'island-page');
 const port = Number(process.env.MESHLETS_PORT ?? 6490);
 
 Bun.serve({
 	port,
 	fetch(request) {
 		const path = decodeURIComponent(new URL(request.url).pathname);
-		const [prefix, folder] = MOUNTS.find(([p]) => path.startsWith(p)) ?? MOUNTS[MOUNTS.length - 1];
-		const file = normalize(join(folder, path.slice(prefix.length) || 'index.html'));
+		const [prefix, base] = MOUNTS.find(([p]) => path.startsWith(p)) ?? MOUNTS[MOUNTS.length - 1];
+		let folder = base;
+		let file = normalize(join(folder, path.slice(prefix.length) || 'index.html'));
+		if (prefix === '/' && !existsSync(file)) {
+			folder = island;
+			file = normalize(join(folder, path));
+		}
 		if (!file.startsWith(folder) || !existsSync(file) || statSync(file).isDirectory()) {
 			return new Response('not found', { status: 404 });
 		}
