@@ -1,8 +1,22 @@
-// The headless browsers that draw frames: Google Chrome on the computer's own GPU, or Playwright's
-// Chromium on SwiftShader, the software GPU that machines without a GPU use, such as CI machines.
-// The two draw object edges a little differently, so each keeps its own reference images.
+// The headless browsers that draw frames: a pinned Chrome for Testing on the computer's own GPU, or
+// Playwright's Chromium on SwiftShader, the software GPU that machines without a GPU use, such as CI
+// machines. The two draw object edges a little differently, so each keeps its own reference images.
+// Chrome for Testing downloads into a cache folder on first use, and the installed Google Chrome
+// stands in when that fails or when `NULL3D_CHROME=installed` asks for it.
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import {
+	createWriteStream,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+} from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { chromium } from 'playwright-core';
 
 /** @import { Browser, LaunchOptions } from 'playwright-core' */
@@ -41,14 +55,214 @@ export const GPU_TIMING_ARGS = [
 ];
 
 /**
+ * The Chrome for Testing build that draws on the real GPU. It is the Chrome version that the
+ * real-GPU references and the GPU cost limits come from, and one build on every platform keeps the
+ * pictures the same. Google
+ * signs it with no team and no keychain rights, so it cannot keep keys in the keychain. The installed
+ * Chrome on macOS makes two keys in the keychain at each start and deletes them only when its start
+ * check finishes, so a browser that closes early leaves them for good, and each key it keeps slows
+ * every later start.
+ */
+export const CHROME_FOR_TESTING_VERSION = '156.0.8078.80';
+
+/** Chrome for Testing's name for each platform and processor that it has a build for. */
+const CHROME_FOR_TESTING_PLATFORMS = /** @type {const} */ ({
+	'darwin-arm64': 'mac-arm64',
+	'darwin-x64': 'mac-x64',
+	'linux-x64': 'linux64',
+	'win32-x64': 'win64',
+});
+
+/**
+ * Chrome for Testing's name for this computer's platform, such as `mac-arm64`.
+ *
+ * @param {string} platform
+ * @param {string} arch
+ * @returns {string}
+ */
+export function chromeForTestingPlatform(platform = process.platform, arch = process.arch) {
+	const key = /** @type {keyof typeof CHROME_FOR_TESTING_PLATFORMS} */ (`${platform}-${arch}`);
+	const name = CHROME_FOR_TESTING_PLATFORMS[key];
+	if (!name) throw new Error(`Chrome for Testing has no build for ${platform} on ${arch}.`);
+	return name;
+}
+
+/**
+ * The folder that holds the pinned Chrome for Testing, which every project and every copy of the
+ * repository on the computer shares: `null3d/chrome-for-testing/<version>` under `XDG_CACHE_HOME`,
+ * or under `~/.cache` when that is unset.
+ *
+ * @param {Readonly<Record<string, string | undefined>>} env
+ * @returns {string}
+ */
+export function chromeForTestingDir(env = process.env) {
+	const base = env.XDG_CACHE_HOME || join(env.HOME || homedir(), '.cache');
+	return join(base, 'null3d', 'chrome-for-testing', CHROME_FOR_TESTING_VERSION);
+}
+
+/**
+ * The address of the pinned build's archive, whose one top folder goes into
+ * `chromeForTestingDir()`.
+ *
+ * @param {string} platform
+ * @returns {string}
+ */
+export function chromeForTestingUrl(platform = chromeForTestingPlatform()) {
+	return `https://storage.googleapis.com/chrome-for-testing-public/${CHROME_FOR_TESTING_VERSION}/${platform}/chrome-${platform}.zip`;
+}
+
+/**
+ * The pinned build's executable under `dir`.
+ *
+ * @param {string} dir
+ * @param {string} platform
+ * @returns {string}
+ */
+export function chromeForTestingPath(
+	dir = chromeForTestingDir(),
+	platform = chromeForTestingPlatform(),
+) {
+	const folder = join(dir, `chrome-${platform}`);
+	if (platform.startsWith('mac'))
+		return join(folder, 'Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing');
+	return join(folder, platform === 'win64' ? 'chrome.exe' : 'chrome');
+}
+
+/**
+ * The builds of Chrome that draw on the real GPU: the pinned Chrome for Testing, and the installed
+ * Google Chrome.
+ *
+ * @typedef {'testing' | 'installed'} ChromeBuild
+ */
+
+/**
+ * The build of Chrome that draws on the real GPU: the installed Google Chrome when the
+ * `NULL3D_CHROME` variable is `installed`, and the pinned Chrome for Testing otherwise.
+ *
+ * @param {Readonly<Record<string, string | undefined>>} env
+ * @returns {ChromeBuild}
+ */
+export function chromeBuild(env = process.env) {
+	return env.NULL3D_CHROME === 'installed' ? 'installed' : 'testing';
+}
+
+/**
+ * Whether the installed Google Chrome may draw when Chrome for Testing cannot be installed: always,
+ * unless `NULL3D_CHROME=testing` asks for the pinned build alone.
+ *
+ * @param {Readonly<Record<string, string | undefined>>} env
+ */
+export function chromeFallback(env = process.env) {
+	return env.NULL3D_CHROME !== 'testing';
+}
+
+/**
+ * Passes bytes through, and logs how much of `total` has passed at each quarter.
+ *
+ * @param {number} total
+ * @param {(line: string) => void} log
+ */
+function downloadProgress(total, log) {
+	let passed = 0;
+	let quarter = 0;
+	return new Transform({
+		transform(chunk, _encoding, done) {
+			passed += chunk.length;
+			const reached = total > 0 ? Math.floor((passed / total) * 4) : 0;
+			if (reached > quarter && reached < 4) log(`  ${reached * 25}%`);
+			quarter = reached;
+			done(null, chunk);
+		},
+	});
+}
+
+/**
+ * Downloads the pinned Chrome for Testing into its cache folder, unless it is there already, and
+ * returns its executable. The archive unpacks into a folder of its own beside the target and moves
+ * into place whole, so a run never sees half a browser, and two downloads at once leave one copy.
+ *
+ * @param {{ log?: (line: string) => void }} [options]
+ * @returns {Promise<string>}
+ */
+export async function installChromeForTesting({ log = console.log } = {}) {
+	const dir = chromeForTestingDir();
+	const executable = chromeForTestingPath(dir);
+	if (existsSync(executable)) return executable;
+	mkdirSync(dirname(dir), { recursive: true });
+	const staging = mkdtempSync(`${dir}.download-`);
+	try {
+		const url = chromeForTestingUrl();
+		const response = await fetch(url);
+		if (!response.ok || !response.body)
+			throw new Error(`${url} answered ${response.status} ${response.statusText}`);
+		const total = Number(response.headers.get('content-length') ?? 0);
+		log(
+			`Downloading Chrome for Testing ${CHROME_FOR_TESTING_VERSION}${total ? ` (${Math.round(total / 1e6)} MB)` : ''} into ${dir}, once. null3d draws with it on this computer's GPU: Google Chrome on macOS leaves keys in the keychain.`,
+		);
+		const archive = join(staging, 'chrome.zip');
+		await pipeline(
+			Readable.fromWeb(/** @type {import('node:stream/web').ReadableStream} */ (response.body)),
+			downloadProgress(total, log),
+			createWriteStream(archive),
+		);
+		const unpacked = join(staging, 'browser');
+		mkdirSync(unpacked);
+		if (process.platform === 'win32') execFileSync('tar', ['-xf', archive, '-C', unpacked]);
+		else execFileSync('unzip', ['-q', archive, '-d', unpacked]);
+		if (!existsSync(chromeForTestingPath(unpacked)))
+			throw new Error(`${url} holds no browser at ${chromeForTestingPath(unpacked)}`);
+		try {
+			renameSync(unpacked, dir);
+		} catch (error) {
+			// Another download that ran at the same time put its copy in place first.
+			if (!existsSync(executable)) throw error;
+		}
+		log(`  installed at ${executable}`);
+		return executable;
+	} finally {
+		rmSync(staging, { recursive: true, force: true });
+	}
+}
+
+/**
+ * Gets the pinned Chrome for Testing ready, downloading it on first use, and returns the build that
+ * draws on the real GPU. When it cannot be installed, the installed Google Chrome draws instead,
+ * with a warning, if `fallback` allows it; otherwise the failure stands.
+ *
+ * @param {{ fallback: boolean, exists?: (path: string) => boolean, install?: () => Promise<unknown>, warn?: (line: string) => void }} options
+ * @returns {Promise<ChromeBuild>}
+ */
+export async function readyChromeForTesting({
+	fallback,
+	exists = existsSync,
+	install = installChromeForTesting,
+	warn = console.warn,
+}) {
+	try {
+		if (!exists(chromeForTestingPath())) await install();
+		return 'testing';
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error);
+		if (!fallback) throw new Error(`${missingBrowserFix('chrome-real-gpu', 'testing')} ${reason}`);
+		warn(
+			`Chrome for Testing ${CHROME_FOR_TESTING_VERSION} could not be installed (${reason}), so the installed Google Chrome draws instead. On macOS it may leave keys in the keychain.`,
+		);
+		return 'installed';
+	}
+}
+
+/**
  * How Playwright starts an environment's browser. On a Mac, Playwright's own headless Chromium
- * falls back to SwiftShader, so the real GPU needs the installed Google Chrome.
+ * falls back to SwiftShader, so the real GPU needs a full Chrome: the installed Google Chrome, or
+ * the pinned Chrome for Testing.
  *
  * @param {Environment} environment
+ * @param {ChromeBuild} chrome
  * @returns {LaunchOptions}
  */
-export function browserOptions(environment) {
-	return environment === 'chrome-real-gpu' ? { channel: 'chrome' } : { args: SWIFTSHADER_ARGS };
+export function browserOptions(environment, chrome = chromeBuild()) {
+	if (environment !== 'chrome-real-gpu') return { args: SWIFTSHADER_ARGS };
+	return chrome === 'testing' ? { executablePath: chromeForTestingPath() } : { channel: 'chrome' };
 }
 
 /**
@@ -72,12 +286,15 @@ function driverVersion() {
  * What to do when an environment's browser is not installed.
  *
  * @param {Environment} environment
+ * @param {ChromeBuild} chrome
  */
-export function missingBrowserFix(environment) {
+export function missingBrowserFix(environment, chrome = chromeBuild()) {
 	const chromium = `bunx playwright-core@${driverVersion()} install chromium`;
-	return environment === 'chrome-real-gpu'
-		? `Google Chrome is not installed. Install it from https://www.google.com/chrome/, or set CI=1 to draw on the software GPU of Playwright's Chromium, which ${chromium} installs.`
-		: `Playwright's Chromium is not installed. Install it with ${chromium}.`;
+	if (environment !== 'chrome-real-gpu')
+		return `Playwright's Chromium is not installed. Install it with ${chromium}.`;
+	return chrome === 'testing'
+		? `Chrome for Testing ${CHROME_FOR_TESTING_VERSION} is not installed at ${chromeForTestingPath()}. Download ${chromeForTestingUrl()} and unzip it into ${chromeForTestingDir()}.`
+		: `Google Chrome is not installed. Install it from https://www.google.com/chrome/, or set CI=1 to draw on the software GPU of Playwright's Chromium, which ${chromium} installs.`;
 }
 
 /** The code that starts the message of a call that failed because its browser's process ended. */
@@ -193,15 +410,28 @@ export function launchChromium(options) {
 }
 
 /**
- * Starts an environment's browser, headless, with any `args` besides its own flags. A browser that
- * is not installed fails with the fix.
+ * Starts an environment's browser, headless, with any `args` besides its own flags. On the real GPU
+ * it is the `chrome` build, and Chrome for Testing downloads on first use, with the installed Google
+ * Chrome in its place on a failure when `fallback` allows it. A browser that is not installed fails
+ * with the fix.
  *
  * @param {Environment} environment
  * @param {readonly string[]} [args]
+ * @param {ChromeBuild} [chrome]
+ * @param {boolean} [fallback]
  * @returns {Promise<Browser>}
  */
-export async function launchBrowser(environment, args = []) {
-	const options = browserOptions(environment);
+export async function launchBrowser(
+	environment,
+	args = [],
+	chrome = chromeBuild(),
+	fallback = chromeFallback(),
+) {
+	const build =
+		environment === 'chrome-real-gpu' && chrome === 'testing'
+			? await readyChromeForTesting({ fallback })
+			: chrome;
+	const options = browserOptions(environment, build);
 	try {
 		return await launchChromium({
 			headless: true,
@@ -211,7 +441,7 @@ export async function launchBrowser(environment, args = []) {
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		if (/Executable doesn't exist|is not found at/.test(message))
-			throw new Error(missingBrowserFix(environment));
+			throw new Error(missingBrowserFix(environment, build));
 		throw error;
 	}
 }

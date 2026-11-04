@@ -3,7 +3,8 @@
 // variants make more parts. A last test fakes Safari's Metal fault in one link, which the page
 // links again.
 import { expect, test } from '@playwright/test';
-import { browserOptions, defaultEnvironment } from '../../packages/cli/src/browser.js';
+import { defaultEnvironment } from '../../packages/cli/src/browser.js';
+import { repoBrowserOptions } from '../lib/chrome-for-testing.ts';
 import { pageResultWhileProgressing } from '../lib/page-result.ts';
 import { glslProgramCount } from '../lib/shader-programs.ts';
 
@@ -34,7 +35,7 @@ const realGpu = !process.env.CI;
  * backend has none to leave out.
  */
 const NO_LINK_WARMUP = '--disable-angle-features=warmUpPipelineCacheAtLink';
-const launchOptions = browserOptions(defaultEnvironment());
+const launchOptions = repoBrowserOptions(defaultEnvironment());
 test.use({
 	launchOptions: { ...launchOptions, args: [...(launchOptions.args ?? []), NO_LINK_WARMUP] },
 });
