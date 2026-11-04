@@ -1,0 +1,1649 @@
+{
+	"receivedAt": "2026-11-04T17:55:04.023Z",
+	"page": "island-view",
+	"userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Mobile Safari/537.36",
+	"url": "https://bs-local.com:3001/__null3d/load/warm/20261104-174850-terrain-batching.bsgalaxys25-chrome.production/terrain-ab/base/tests/pages/island-view.html?preset=medium&warm=30&seconds=3&windows=4&still-camera=off",
+	"calibrationMs": 1.6200000010430813,
+	"ok": true,
+	"tier": "webgpu",
+	"mode": {
+		"build": "threaded",
+		"latency": "pipelined",
+		"sketchThread": "worker",
+		"renderThread": "render-worker",
+		"jobWorkers": 6,
+		"hold": null,
+		"preset": "medium",
+		"presetCheck": null,
+		"crashedStarts": 0,
+		"memoryMaximumMiB": 1024,
+		"renderFallback": null,
+		"keepTextureCopies": true
+	},
+	"blocks": 355,
+	"label": "shown",
+	"frames": 30,
+	"intervalMs": {
+		"count": 31,
+		"median": 99.98500061035156,
+		"p95": 199.95000457763672,
+		"p99": 199.95850524902343,
+		"max": 199.9600067138672,
+		"min": 33.31999969482422,
+		"mean": 111.79967707972372
+	},
+	"gpuMs": {
+		"count": 3,
+		"median": 100.40115356445312,
+		"p95": 114.32099609375,
+		"p99": 115.5583154296875,
+		"max": 115.86764526367188,
+		"min": 99.6147232055664,
+		"mean": 105.2945073445638
+	},
+	"gpuPassMs": [
+		{
+			"name": "copies",
+			"ms": { "count": 3, "median": 0, "p95": 0, "p99": 0, "max": 0, "min": 0, "mean": 0 }
+		},
+		{
+			"name": "compute",
+			"ms": {
+				"count": 3,
+				"median": 0.45875200629234314,
+				"p95": 0.5767168194055557,
+				"p99": 0.5872025805711746,
+				"max": 0.5898240208625793,
+				"min": 0.45875200629234314,
+				"mean": 0.5024426778157552
+			}
+		},
+		{
+			"name": "shadow cascade 0",
+			"ms": {
+				"count": 3,
+				"median": 0.19660800695419312,
+				"p95": 0.2555904000997543,
+				"p99": 0.26083327949047086,
+				"max": 0.26214399933815,
+				"min": 0.19660800695419312,
+				"mean": 0.21845333774884543
+			}
+		},
+		{
+			"name": "shadow cascade 1",
+			"ms": {
+				"count": 3,
+				"median": 0.851967990398407,
+				"p95": 0.9109504103660584,
+				"p99": 0.9161932921409607,
+				"max": 0.9175040125846863,
+				"min": 0.851967990398407,
+				"mean": 0.8738133311271667
+			}
+		},
+		{
+			"name": "shadow cascade 2",
+			"ms": {
+				"count": 3,
+				"median": 2.3592960834503174,
+				"p95": 2.3592960834503174,
+				"p99": 2.3592960834503174,
+				"max": 2.3592960834503174,
+				"min": 2.3592960834503174,
+				"mean": 2.3592960834503174
+			}
+		},
+		{
+			"name": "view copy 1",
+			"ms": {
+				"count": 3,
+				"median": 0.0655359998345375,
+				"p95": 0.0655359998345375,
+				"p99": 0.0655359998345375,
+				"max": 0.0655359998345375,
+				"min": 0,
+				"mean": 0.04369066655635834
+			}
+		},
+		{
+			"name": "opaque",
+			"ms": {
+				"count": 3,
+				"median": 91.16057586669922,
+				"p95": 91.57345581054688,
+				"p99": 91.61015625,
+				"max": 91.61933135986328,
+				"min": 90.3741455078125,
+				"mean": 91.05135091145833
+			}
+		},
+		{
+			"name": "transmission copy",
+			"ms": {
+				"count": 2,
+				"median": 0.03276799991726875,
+				"p95": 0.06225919984281063,
+				"p99": 0.06488063983619213,
+				"max": 0.0655359998345375,
+				"min": 0,
+				"mean": 0.03276799991726875
+			}
+		},
+		{
+			"name": "later passes",
+			"ms": {
+				"count": 3,
+				"median": 5.177343845367432,
+				"p95": 5.236326265335083,
+				"p99": 5.241569147109986,
+				"max": 5.242879867553711,
+				"min": 5.111807823181152,
+				"mean": 5.177343845367432
+			}
+		},
+		{
+			"name": "between passes",
+			"ms": {
+				"count": 3,
+				"median": 0.13107376545667648,
+				"p95": 0.13107376545667648,
+				"p99": 0.13107376545667648,
+				"max": 0.13107376545667648,
+				"min": 0.06552969664335251,
+				"mean": 0.10922574251890182
+			}
+		},
+		{
+			"name": "opaque 1",
+			"ms": {
+				"count": 1,
+				"median": 14.811136245727539,
+				"p95": 14.811136245727539,
+				"p99": 14.811136245727539,
+				"max": 14.811136245727539,
+				"min": 14.811136245727539,
+				"mean": 14.811136245727539
+			}
+		}
+	],
+	"cpuMs": {
+		"count": 30,
+		"median": 5.237500190734863,
+		"p95": 8.541749954223631,
+		"p99": 10.19419987678528,
+		"max": 10.779999732971191,
+		"min": 1.8300000429153442,
+		"mean": 5.516500008106232
+	},
+	"render": {
+		"count": 30,
+		"median": 1.675000011920929,
+		"p95": 4.096000146865844,
+		"p99": 7.078749756813053,
+		"max": 8.274999618530273,
+		"min": 0.6899999976158142,
+		"mean": 2.0476666669050854
+	},
+	"sketch": {
+		"count": 30,
+		"median": 5.230000019073486,
+		"p95": 8.505749988555907,
+		"p99": 10.19419987678528,
+		"max": 10.779999732971191,
+		"min": 1.8300000429153442,
+		"mean": 5.418166681130727
+	},
+	"triangles": {
+		"count": 31,
+		"median": 3422953,
+		"p95": 3932752,
+		"p99": 3932752,
+		"max": 3932752,
+		"min": 3422941,
+		"mean": 3603843.6129032257
+	},
+	"drawCalls": {
+		"count": 31,
+		"median": 2669,
+		"p95": 2669,
+		"p99": 2669,
+		"max": 2669,
+		"min": 2073,
+		"mean": 2380.6129032258063
+	},
+	"uploadBytes": {
+		"count": 31,
+		"median": 73776,
+		"p95": 73776,
+		"p99": 73776,
+		"max": 73776,
+		"min": 59028,
+		"mean": 66641.41935483871
+	},
+	"windows": [
+		{
+			"label": "shown",
+			"frames": 30,
+			"intervalMs": {
+				"count": 31,
+				"median": 99.98500061035156,
+				"p95": 199.95000457763672,
+				"p99": 199.95850524902343,
+				"max": 199.9600067138672,
+				"min": 33.31999969482422,
+				"mean": 111.79967707972372
+			},
+			"gpuMs": {
+				"count": 3,
+				"median": 100.40115356445312,
+				"p95": 114.32099609375,
+				"p99": 115.5583154296875,
+				"max": 115.86764526367188,
+				"min": 99.6147232055664,
+				"mean": 105.2945073445638
+			},
+			"gpuPassMs": [
+				{
+					"name": "copies",
+					"ms": { "count": 3, "median": 0, "p95": 0, "p99": 0, "max": 0, "min": 0, "mean": 0 }
+				},
+				{
+					"name": "compute",
+					"ms": {
+						"count": 3,
+						"median": 0.45875200629234314,
+						"p95": 0.5767168194055557,
+						"p99": 0.5872025805711746,
+						"max": 0.5898240208625793,
+						"min": 0.45875200629234314,
+						"mean": 0.5024426778157552
+					}
+				},
+				{
+					"name": "shadow cascade 0",
+					"ms": {
+						"count": 3,
+						"median": 0.19660800695419312,
+						"p95": 0.2555904000997543,
+						"p99": 0.26083327949047086,
+						"max": 0.26214399933815,
+						"min": 0.19660800695419312,
+						"mean": 0.21845333774884543
+					}
+				},
+				{
+					"name": "shadow cascade 1",
+					"ms": {
+						"count": 3,
+						"median": 0.851967990398407,
+						"p95": 0.9109504103660584,
+						"p99": 0.9161932921409607,
+						"max": 0.9175040125846863,
+						"min": 0.851967990398407,
+						"mean": 0.8738133311271667
+					}
+				},
+				{
+					"name": "shadow cascade 2",
+					"ms": {
+						"count": 3,
+						"median": 2.3592960834503174,
+						"p95": 2.3592960834503174,
+						"p99": 2.3592960834503174,
+						"max": 2.3592960834503174,
+						"min": 2.3592960834503174,
+						"mean": 2.3592960834503174
+					}
+				},
+				{
+					"name": "view copy 1",
+					"ms": {
+						"count": 3,
+						"median": 0.0655359998345375,
+						"p95": 0.0655359998345375,
+						"p99": 0.0655359998345375,
+						"max": 0.0655359998345375,
+						"min": 0,
+						"mean": 0.04369066655635834
+					}
+				},
+				{
+					"name": "opaque",
+					"ms": {
+						"count": 3,
+						"median": 91.16057586669922,
+						"p95": 91.57345581054688,
+						"p99": 91.61015625,
+						"max": 91.61933135986328,
+						"min": 90.3741455078125,
+						"mean": 91.05135091145833
+					}
+				},
+				{
+					"name": "transmission copy",
+					"ms": {
+						"count": 2,
+						"median": 0.03276799991726875,
+						"p95": 0.06225919984281063,
+						"p99": 0.06488063983619213,
+						"max": 0.0655359998345375,
+						"min": 0,
+						"mean": 0.03276799991726875
+					}
+				},
+				{
+					"name": "later passes",
+					"ms": {
+						"count": 3,
+						"median": 5.177343845367432,
+						"p95": 5.236326265335083,
+						"p99": 5.241569147109986,
+						"max": 5.242879867553711,
+						"min": 5.111807823181152,
+						"mean": 5.177343845367432
+					}
+				},
+				{
+					"name": "between passes",
+					"ms": {
+						"count": 3,
+						"median": 0.13107376545667648,
+						"p95": 0.13107376545667648,
+						"p99": 0.13107376545667648,
+						"max": 0.13107376545667648,
+						"min": 0.06552969664335251,
+						"mean": 0.10922574251890182
+					}
+				},
+				{
+					"name": "opaque 1",
+					"ms": {
+						"count": 1,
+						"median": 14.811136245727539,
+						"p95": 14.811136245727539,
+						"p99": 14.811136245727539,
+						"max": 14.811136245727539,
+						"min": 14.811136245727539,
+						"mean": 14.811136245727539
+					}
+				}
+			],
+			"cpuMs": {
+				"count": 30,
+				"median": 5.237500190734863,
+				"p95": 8.541749954223631,
+				"p99": 10.19419987678528,
+				"max": 10.779999732971191,
+				"min": 1.8300000429153442,
+				"mean": 5.516500008106232
+			},
+			"render": {
+				"count": 30,
+				"median": 1.675000011920929,
+				"p95": 4.096000146865844,
+				"p99": 7.078749756813053,
+				"max": 8.274999618530273,
+				"min": 0.6899999976158142,
+				"mean": 2.0476666669050854
+			},
+			"sketch": {
+				"count": 30,
+				"median": 5.230000019073486,
+				"p95": 8.505749988555907,
+				"p99": 10.19419987678528,
+				"max": 10.779999732971191,
+				"min": 1.8300000429153442,
+				"mean": 5.418166681130727
+			},
+			"triangles": {
+				"count": 31,
+				"median": 3422953,
+				"p95": 3932752,
+				"p99": 3932752,
+				"max": 3932752,
+				"min": 3422941,
+				"mean": 3603843.6129032257
+			},
+			"drawCalls": {
+				"count": 31,
+				"median": 2669,
+				"p95": 2669,
+				"p99": 2669,
+				"max": 2669,
+				"min": 2073,
+				"mean": 2380.6129032258063
+			},
+			"uploadBytes": {
+				"count": 31,
+				"median": 73776,
+				"p95": 73776,
+				"p99": 73776,
+				"max": 73776,
+				"min": 59028,
+				"mean": 66641.41935483871
+			}
+		},
+		{
+			"label": "shown",
+			"frames": 26,
+			"intervalMs": {
+				"count": 27,
+				"median": 99.9749984741211,
+				"p95": 199.91000366210938,
+				"p99": 199.94700592041016,
+				"max": 199.9600067138672,
+				"min": 33.31999969482422,
+				"mean": 111.07407506306966
+			},
+			"gpuMs": {
+				"count": 2,
+				"median": 106.59430313110352,
+				"p95": 112.52203483581543,
+				"p99": 113.04894432067871,
+				"max": 113.18067169189453,
+				"min": 100.0079345703125,
+				"mean": 106.59430313110352
+			},
+			"gpuPassMs": [
+				{
+					"name": "copies",
+					"ms": { "count": 2, "median": 0, "p95": 0, "p99": 0, "max": 0, "min": 0, "mean": 0 }
+				},
+				{
+					"name": "compute",
+					"ms": {
+						"count": 2,
+						"median": 0.4259840101003647,
+						"p95": 0.4554752066731453,
+						"p99": 0.45809664636850356,
+						"max": 0.45875200629234314,
+						"min": 0.39321601390838623,
+						"mean": 0.4259840101003647
+					}
+				},
+				{
+					"name": "shadow cascade 0",
+					"ms": {
+						"count": 2,
+						"median": 0.26214399933815,
+						"p95": 0.26214399933815,
+						"p99": 0.26214399933815,
+						"max": 0.26214399933815,
+						"min": 0.26214399933815,
+						"mean": 0.26214399933815
+					}
+				},
+				{
+					"name": "shadow cascade 1",
+					"ms": {
+						"count": 2,
+						"median": 0.9175040125846863,
+						"p95": 0.9175040125846863,
+						"p99": 0.9175040125846863,
+						"max": 0.9175040125846863,
+						"min": 0.9175040125846863,
+						"mean": 0.9175040125846863
+					}
+				},
+				{
+					"name": "shadow cascade 2",
+					"ms": {
+						"count": 2,
+						"median": 2.4248321056365967,
+						"p95": 2.4248321056365967,
+						"p99": 2.4248321056365967,
+						"max": 2.4248321056365967,
+						"min": 2.4248321056365967,
+						"mean": 2.4248321056365967
+					}
+				},
+				{
+					"name": "opaque 1",
+					"ms": {
+						"count": 1,
+						"median": 13.959168434143066,
+						"p95": 13.959168434143066,
+						"p99": 13.959168434143066,
+						"max": 13.959168434143066,
+						"min": 13.959168434143066,
+						"mean": 13.959168434143066
+					}
+				},
+				{
+					"name": "view copy 1",
+					"ms": {
+						"count": 2,
+						"median": 0.03276799991726875,
+						"p95": 0.06225919984281063,
+						"p99": 0.06488063983619213,
+						"max": 0.0655359998345375,
+						"min": 0,
+						"mean": 0.03276799991726875
+					}
+				},
+				{
+					"name": "opaque",
+					"ms": {
+						"count": 2,
+						"median": 89.88262176513672,
+						"p95": 89.91211318969727,
+						"p99": 89.9147346496582,
+						"max": 89.91539001464844,
+						"min": 89.849853515625,
+						"mean": 89.88262176513672
+					}
+				},
+				{
+					"name": "later passes",
+					"ms": {
+						"count": 2,
+						"median": 5.570559978485107,
+						"p95": 5.806489658355713,
+						"p99": 5.827461185455322,
+						"max": 5.832704067230225,
+						"min": 5.30841588973999,
+						"mean": 5.570559978485107
+					}
+				},
+				{
+					"name": "between passes",
+					"ms": {
+						"count": 2,
+						"median": 0.06553704291582108,
+						"p95": 0.12451883256435393,
+						"p99": 0.1297616583108902,
+						"max": 0.13107236474752426,
+						"min": 0.0000017210841178894043,
+						"mean": 0.06553704291582108
+					}
+				},
+				{
+					"name": "transmission copy",
+					"ms": {
+						"count": 1,
+						"median": 0.0655359998345375,
+						"p95": 0.0655359998345375,
+						"p99": 0.0655359998345375,
+						"max": 0.0655359998345375,
+						"min": 0.0655359998345375,
+						"mean": 0.0655359998345375
+					}
+				}
+			],
+			"cpuMs": {
+				"count": 26,
+				"median": 4.457499980926514,
+				"p95": 7.59125018119812,
+				"p99": 8.198750138282776,
+				"max": 8.380000114440918,
+				"min": 2.1050000190734863,
+				"mean": 4.819423088660607
+			},
+			"render": {
+				"count": 26,
+				"median": 1.6175000071525574,
+				"p95": 3.631249964237213,
+				"p99": 4.5924999713897705,
+				"max": 4.894999980926514,
+				"min": 0.7450000047683716,
+				"mean": 1.8973077008357415
+			},
+			"sketch": {
+				"count": 26,
+				"median": 4.147499918937683,
+				"p95": 7.59125018119812,
+				"p99": 8.198750138282776,
+				"max": 8.380000114440918,
+				"min": 2.015000104904175,
+				"mean": 4.731730782068693
+			},
+			"triangles": {
+				"count": 27,
+				"median": 3932740,
+				"p95": 3932752,
+				"p99": 3932752,
+				"max": 3932752,
+				"min": 3422941,
+				"mean": 3706168.4444444445
+			},
+			"drawCalls": {
+				"count": 27,
+				"median": 2073,
+				"p95": 2669,
+				"p99": 2669,
+				"max": 2669,
+				"min": 2073,
+				"mean": 2359.962962962963
+			},
+			"uploadBytes": {
+				"count": 27,
+				"median": 59044,
+				"p95": 73776,
+				"p99": 73776,
+				"max": 73776,
+				"min": 59028,
+				"mean": 66130.07407407407
+			}
+		},
+		{
+			"label": "shown",
+			"frames": 26,
+			"intervalMs": {
+				"count": 27,
+				"median": 99.9749984741211,
+				"p95": 223.25799713134762,
+				"p99": 233.2597982788086,
+				"max": 233.26499938964844,
+				"min": 33.314998626708984,
+				"mean": 112.3109253777398
+			},
+			"gpuMs": {
+				"count": 3,
+				"median": 114.8190689086914,
+				"p95": 115.52686309814453,
+				"p99": 115.58977813720703,
+				"max": 115.60550689697266,
+				"min": 100.07347106933594,
+				"mean": 110.166015625
+			},
+			"gpuPassMs": [
+				{
+					"name": "copies",
+					"ms": { "count": 3, "median": 0, "p95": 0, "p99": 0, "max": 0, "min": 0, "mean": 0 }
+				},
+				{
+					"name": "compute",
+					"ms": {
+						"count": 3,
+						"median": 0.45875200629234314,
+						"p95": 0.5177343994379043,
+						"p99": 0.5229772788286209,
+						"max": 0.5242879986763,
+						"min": 0.45875200629234314,
+						"mean": 0.4805973370869954
+					}
+				},
+				{
+					"name": "shadow cascade 0",
+					"ms": {
+						"count": 3,
+						"median": 0.26214399933815,
+						"p95": 0.26214399933815,
+						"p99": 0.26214399933815,
+						"max": 0.26214399933815,
+						"min": 0.26214399933815,
+						"mean": 0.26214399933815
+					}
+				},
+				{
+					"name": "shadow cascade 1",
+					"ms": {
+						"count": 3,
+						"median": 0.9175040125846863,
+						"p95": 0.9175040125846863,
+						"p99": 0.9175040125846863,
+						"max": 0.9175040125846863,
+						"min": 0.851967990398407,
+						"mean": 0.8956586718559265
+					}
+				},
+				{
+					"name": "shadow cascade 2",
+					"ms": {
+						"count": 3,
+						"median": 2.4248321056365967,
+						"p95": 2.4248321056365967,
+						"p99": 2.4248321056365967,
+						"max": 2.4248321056365967,
+						"min": 2.3592960834503174,
+						"mean": 2.402986764907837
+					}
+				},
+				{
+					"name": "opaque 1",
+					"ms": {
+						"count": 2,
+						"median": 15.040512084960938,
+						"p95": 15.070003509521484,
+						"p99": 15.072624969482423,
+						"max": 15.073280334472656,
+						"min": 15.007743835449219,
+						"mean": 15.040512084960938
+					}
+				},
+				{
+					"name": "view copy 1",
+					"ms": { "count": 3, "median": 0, "p95": 0, "p99": 0, "max": 0, "min": 0, "mean": 0 }
+				},
+				{
+					"name": "opaque",
+					"ms": {
+						"count": 3,
+						"median": 90.63629150390625,
+						"p95": 91.2850959777832,
+						"p99": 91.34276748657227,
+						"max": 91.35718536376953,
+						"min": 90.3741455078125,
+						"mean": 90.7892074584961
+					}
+				},
+				{
+					"name": "later passes",
+					"ms": {
+						"count": 3,
+						"median": 5.242879867553711,
+						"p95": 5.301862287521362,
+						"p99": 5.307105169296265,
+						"max": 5.30841588973999,
+						"min": 5.111807823181152,
+						"mean": 5.221034526824951
+					}
+				},
+				{
+					"name": "between passes",
+					"ms": {
+						"count": 3,
+						"median": 0.0000017285346984863281,
+						"p95": 0.1769434295594692,
+						"p99": 0.19267158076167107,
+						"max": 0.19660361856222153,
+						"min": 0,
+						"mean": 0.06553511569897334
+					}
+				},
+				{
+					"name": "transmission copy",
+					"ms": {
+						"count": 1,
+						"median": 0.0655359998345375,
+						"p95": 0.0655359998345375,
+						"p99": 0.0655359998345375,
+						"max": 0.0655359998345375,
+						"min": 0.0655359998345375,
+						"mean": 0.0655359998345375
+					}
+				}
+			],
+			"cpuMs": {
+				"count": 26,
+				"median": 4.7250001430511475,
+				"p95": 8.31499969959259,
+				"p99": 8.762500047683716,
+				"max": 8.800000190734863,
+				"min": 3.109999895095825,
+				"mean": 5.085384588975173
+			},
+			"render": {
+				"count": 26,
+				"median": 1.337499976158142,
+				"p95": 4.4375,
+				"p99": 5.617500185966492,
+				"max": 6.010000228881836,
+				"min": 0.7250000238418579,
+				"mean": 1.881730774274239
+			},
+			"sketch": {
+				"count": 26,
+				"median": 4.7250001430511475,
+				"p95": 8.31499969959259,
+				"p99": 8.762500047683716,
+				"max": 8.800000190734863,
+				"min": 3.109999895095825,
+				"mean": 5.069423051980825
+			},
+			"triangles": {
+				"count": 27,
+				"median": 3932740,
+				"p95": 3932752,
+				"p99": 3932752,
+				"max": 3932752,
+				"min": 3422941,
+				"mean": 3725050.3333333335
+			},
+			"drawCalls": {
+				"count": 27,
+				"median": 2669,
+				"p95": 2669,
+				"p99": 2669,
+				"max": 2669,
+				"min": 2073,
+				"mean": 2382.037037037037
+			},
+			"uploadBytes": {
+				"count": 27,
+				"median": 73776,
+				"p95": 73776,
+				"p99": 73776,
+				"max": 73776,
+				"min": 59028,
+				"mean": 66676.88888888889
+			}
+		},
+		{
+			"label": "shown",
+			"frames": 27,
+			"intervalMs": {
+				"count": 28,
+				"median": 99.97999954223633,
+				"p95": 199.99749832153321,
+				"p99": 224.28749938964845,
+				"max": 233.26499938964844,
+				"min": 33.31999969482422,
+				"mean": 109.50071334838867
+			},
+			"gpuMs": {
+				"count": 2,
+				"median": 106.62707138061523,
+				"p95": 114.35376625061035,
+				"p99": 115.0405835723877,
+				"max": 115.21228790283203,
+				"min": 98.04185485839844,
+				"mean": 106.62707138061523
+			},
+			"gpuPassMs": [
+				{
+					"name": "copies",
+					"ms": { "count": 2, "median": 0, "p95": 0, "p99": 0, "max": 0, "min": 0, "mean": 0 }
+				},
+				{
+					"name": "compute",
+					"ms": {
+						"count": 2,
+						"median": 0.45875200629234314,
+						"p95": 0.5177343994379043,
+						"p99": 0.5229772788286209,
+						"max": 0.5242879986763,
+						"min": 0.39321601390838623,
+						"mean": 0.45875200629234314
+					}
+				},
+				{
+					"name": "shadow cascade 0",
+					"ms": {
+						"count": 2,
+						"median": 0.22937600314617157,
+						"p95": 0.25886719971895217,
+						"p99": 0.26148863941431044,
+						"max": 0.26214399933815,
+						"min": 0.19660800695419312,
+						"mean": 0.22937600314617157
+					}
+				},
+				{
+					"name": "shadow cascade 1",
+					"ms": {
+						"count": 2,
+						"median": 0.851967990398407,
+						"p95": 0.851967990398407,
+						"p99": 0.851967990398407,
+						"max": 0.851967990398407,
+						"min": 0.851967990398407,
+						"mean": 0.851967990398407
+					}
+				},
+				{
+					"name": "shadow cascade 2",
+					"ms": {
+						"count": 2,
+						"median": 2.4575999975204468,
+						"p95": 2.487091100215912,
+						"p99": 2.48971253156662,
+						"max": 2.490367889404297,
+						"min": 2.4248321056365967,
+						"mean": 2.4575999975204468
+					}
+				},
+				{
+					"name": "view copy 1",
+					"ms": {
+						"count": 2,
+						"median": 0.03276799991726875,
+						"p95": 0.06225919984281063,
+						"p99": 0.06488063983619213,
+						"max": 0.0655359998345375,
+						"min": 0,
+						"mean": 0.03276799991726875
+					}
+				},
+				{
+					"name": "opaque",
+					"ms": {
+						"count": 2,
+						"median": 90.2103042602539,
+						"p95": 91.30148010253906,
+						"p99": 91.39847351074219,
+						"max": 91.42272186279297,
+						"min": 88.99788665771484,
+						"mean": 90.2103042602539
+					}
+				},
+				{
+					"name": "transmission copy",
+					"ms": {
+						"count": 1,
+						"median": 0.0655359998345375,
+						"p95": 0.0655359998345375,
+						"p99": 0.0655359998345375,
+						"max": 0.0655359998345375,
+						"min": 0.0655359998345375,
+						"mean": 0.0655359998345375
+					}
+				},
+				{
+					"name": "later passes",
+					"ms": {
+						"count": 2,
+						"median": 4.980736017227173,
+						"p95": 5.216665482521057,
+						"p99": 5.2376369905471805,
+						"max": 5.242879867553711,
+						"min": 4.718592166900635,
+						"mean": 4.980736017227173
+					}
+				},
+				{
+					"name": "between passes",
+					"ms": {
+						"count": 2,
+						"median": 0.06553607434034348,
+						"p95": 0.1245185412466526,
+						"p99": 0.1297614271938801,
+						"max": 0.13107214868068695,
+						"min": 0,
+						"mean": 0.06553607434034348
+					}
+				},
+				{
+					"name": "opaque 1",
+					"ms": {
+						"count": 1,
+						"median": 14.614527702331543,
+						"p95": 14.614527702331543,
+						"p99": 14.614527702331543,
+						"max": 14.614527702331543,
+						"min": 14.614527702331543,
+						"mean": 14.614527702331543
+					}
+				}
+			],
+			"cpuMs": {
+				"count": 27,
+				"median": 4.400000095367432,
+				"p95": 8.049999904632568,
+				"p99": 8.37139970779419,
+				"max": 8.399999618530273,
+				"min": 2.6500000953674316,
+				"mean": 4.823703712887234
+			},
+			"render": {
+				"count": 27,
+				"median": 1.2450000047683716,
+				"p95": 2.3390000820159913,
+				"p99": 2.434400062561035,
+				"max": 2.450000047683716,
+				"min": 0.75,
+				"mean": 1.3538888979841162
+			},
+			"sketch": {
+				"count": 27,
+				"median": 4.400000095367432,
+				"p95": 8.049999904632568,
+				"p99": 8.37139970779419,
+				"max": 8.399999618530273,
+				"min": 2.6500000953674316,
+				"mean": 4.823703712887234
+			},
+			"triangles": {
+				"count": 28,
+				"median": 3422953,
+				"p95": 3932752,
+				"p99": 3932752,
+				"max": 3932752,
+				"min": 3422941,
+				"mean": 3659639.3928571427
+			},
+			"drawCalls": {
+				"count": 28,
+				"median": 2371,
+				"p95": 2669,
+				"p99": 2669,
+				"max": 2669,
+				"min": 2073,
+				"mean": 2371
+			},
+			"uploadBytes": {
+				"count": 28,
+				"median": 66410,
+				"p95": 73776,
+				"p99": 73776,
+				"max": 73776,
+				"min": 59028,
+				"mean": 66403.71428571429
+			}
+		}
+	],
+	"downloads": {
+		"requests": 88,
+		"bytes": 1721465,
+		"files": [
+			{
+				"path": "terrain-ab/base/tests/pages/island-view.html",
+				"status": 200,
+				"bytes": 320,
+				"encoding": "br",
+				"atMs": 0
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/early-core-BkUjStZD.js",
+				"status": 200,
+				"bytes": 230,
+				"encoding": "br",
+				"atMs": 503
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/island-view-X8r55eNw.js",
+				"status": 200,
+				"bytes": 2654,
+				"encoding": "br",
+				"atMs": 505
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/engine-error-_RP-0j7t.js",
+				"status": 200,
+				"bytes": 786,
+				"encoding": "br",
+				"atMs": 508
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/preload-helper-uBIymjUX.js",
+				"status": 200,
+				"bytes": 574,
+				"encoding": "br",
+				"atMs": 508
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/message-CVIGEUS_.js",
+				"status": 200,
+				"bytes": 97,
+				"encoding": "br",
+				"atMs": 520
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/gpu-7e9aChf6.js",
+				"status": 200,
+				"bytes": 709,
+				"encoding": "br",
+				"atMs": 520
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/core-BN07xuP3.js",
+				"status": 200,
+				"bytes": 356,
+				"encoding": "br",
+				"atMs": 1000
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/half-float-BiQCzExJ.js",
+				"status": 200,
+				"bytes": 306,
+				"encoding": "br",
+				"atMs": 1007
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/null3d_bg-KmDFGIPy.wasm",
+				"status": 200,
+				"bytes": 603754,
+				"encoding": "br",
+				"atMs": 1010
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/src-DDURKKg4.js",
+				"status": 200,
+				"bytes": 37418,
+				"encoding": "br",
+				"atMs": 1010
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/island-view-sketch-B_vPeq5R.js",
+				"status": 200,
+				"bytes": 138811,
+				"encoding": "br",
+				"atMs": 1678
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/sketch-worker-SKHH6lI7.js",
+				"status": 200,
+				"bytes": 75505,
+				"encoding": "br",
+				"atMs": 1682
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/render-worker-2kzg0ty6.js",
+				"status": 200,
+				"bytes": 23237,
+				"encoding": "br",
+				"atMs": 1685
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/probe-worker-WHrUeUAd.js",
+				"status": 200,
+				"bytes": 1608,
+				"encoding": "br",
+				"atMs": 1686
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/null3d-5PuRAXF_.js",
+				"status": 200,
+				"bytes": 24800,
+				"encoding": "br",
+				"atMs": 2353
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/scene-renderer-BtXbiKt_.js",
+				"status": 200,
+				"bytes": 3890,
+				"encoding": "br",
+				"atMs": 2353
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/webgpu-renderers-MqlyIyqK.js",
+				"status": 200,
+				"bytes": 18021,
+				"encoding": "br",
+				"atMs": 2355
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shaders-wgsl-fbd96f3a.js",
+				"status": 200,
+				"bytes": 38646,
+				"encoding": "br",
+				"atMs": 2355
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/island-view-sketch-B_vPeq5R.js",
+				"status": 200,
+				"bytes": 138811,
+				"encoding": "br",
+				"atMs": 2969
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/vec3-BaozeBK3.js",
+				"status": 200,
+				"bytes": 1745,
+				"encoding": "br",
+				"atMs": 3585
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/generate-BkbIoXK4.js",
+				"status": 200,
+				"bytes": 8583,
+				"encoding": "br",
+				"atMs": 3585
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/src-DDURKKg4.js",
+				"status": 200,
+				"bytes": 37418,
+				"encoding": "br",
+				"atMs": 3585
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/hash-Cm3BQvLD.js",
+				"status": 200,
+				"bytes": 285,
+				"encoding": "br",
+				"atMs": 3585
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/preload-helper-uBIymjUX.js",
+				"status": 200,
+				"bytes": 574,
+				"encoding": "br",
+				"atMs": 3585
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/generate-DfAt-g62.js",
+				"status": 200,
+				"bytes": 10644,
+				"encoding": "br",
+				"atMs": 3585
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/field-task-Bq_iChIs.js",
+				"status": 200,
+				"bytes": 599,
+				"encoding": "br",
+				"atMs": 4081
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/engine-error-_RP-0j7t.js",
+				"status": 200,
+				"bytes": 786,
+				"encoding": "br",
+				"atMs": 4103
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/gpu-7e9aChf6.js",
+				"status": 200,
+				"bytes": 709,
+				"encoding": "br",
+				"atMs": 4104
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/message-CVIGEUS_.js",
+				"status": 200,
+				"bytes": 97,
+				"encoding": "br",
+				"atMs": 4104
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/core-BN07xuP3.js",
+				"status": 200,
+				"bytes": 356,
+				"encoding": "br",
+				"atMs": 4104
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/half-float-BiQCzExJ.js",
+				"status": 200,
+				"bytes": 306,
+				"encoding": "br",
+				"atMs": 4114
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/stats-DKtTijaQ.js",
+				"status": 200,
+				"bytes": 1747,
+				"encoding": "br",
+				"atMs": 5940
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/assets-a8KmuGPA.js",
+				"status": 200,
+				"bytes": 4686,
+				"encoding": "br",
+				"atMs": 5940
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shaders-ao-wgsl-be50617d.js",
+				"status": 200,
+				"bytes": 7756,
+				"encoding": "br",
+				"atMs": 5940
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shaders-physical-sky-wgsl-39717696.js",
+				"status": 200,
+				"bytes": 8494,
+				"encoding": "br",
+				"atMs": 5940
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shader-paragraphs-wgsl.js",
+				"status": 200,
+				"bytes": 20040,
+				"encoding": "br",
+				"atMs": 6442
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shaders-views-wgsl-aad4dcc5.js",
+				"status": 200,
+				"bytes": 553,
+				"encoding": "br",
+				"atMs": 6672
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shaders-transmission-wgsl-f12fd7ba.js",
+				"status": 200,
+				"bytes": 15058,
+				"encoding": "br",
+				"atMs": 6775
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shaders-color-copy-wgsl-0654aa67.js",
+				"status": 200,
+				"bytes": 689,
+				"encoding": "br",
+				"atMs": 6777
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shaders-particles-wgsl-5936f105.js",
+				"status": 200,
+				"bytes": 6326,
+				"encoding": "br",
+				"atMs": 6779
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shader-paragraphs-wgsl-transmission.js",
+				"status": 200,
+				"bytes": 2678,
+				"encoding": "br",
+				"atMs": 7287
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shaders-translucency-wgsl-79fbdca0.js",
+				"status": 200,
+				"bytes": 11050,
+				"encoding": "br",
+				"atMs": 8603
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shader-paragraphs-wgsl-translucency.js",
+				"status": 200,
+				"bytes": 6101,
+				"encoding": "br",
+				"atMs": 9109
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/material-wgsl-0-b40e65385e3973dc-D3S_I7BU.js",
+				"status": 200,
+				"bytes": 26207,
+				"encoding": "br",
+				"atMs": 9452
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/material-wgsl-0-e7482ebf30a5c8bf-C3pWnsQZ.js",
+				"status": 200,
+				"bytes": 31555,
+				"encoding": "br",
+				"atMs": 9453
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/material-wgsl-0-59ed8e8c702f677a-BL9gcSgy.js",
+				"status": 200,
+				"bytes": 40137,
+				"encoding": "br",
+				"atMs": 9454
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/material-wgsl-0-348faa97efcfd1da-BKwYKXjF.js",
+				"status": 200,
+				"bytes": 40303,
+				"encoding": "br",
+				"atMs": 9454
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/material-wgsl-0-c12b11e26c485c4e-C7YexLBf.js",
+				"status": 200,
+				"bytes": 26433,
+				"encoding": "br",
+				"atMs": 9464
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/material-wgsl-0-01f619a5ce4d708b-B3n_SEX-.js",
+				"status": 200,
+				"bytes": 28475,
+				"encoding": "br",
+				"atMs": 9607
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/tasks-CByYkftA.js",
+				"status": 200,
+				"bytes": 2416,
+				"encoding": "br",
+				"atMs": 9956
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/worker-start-KPLTHtma.js",
+				"status": 200,
+				"bytes": 1079,
+				"encoding": "br",
+				"atMs": 9962
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/mesh-levels-D5HKEf5T.js",
+				"status": 200,
+				"bytes": 393,
+				"encoding": "br",
+				"atMs": 9971
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/builtin-environments-Cgcj277Z.js",
+				"status": 200,
+				"bytes": 215,
+				"encoding": "br",
+				"atMs": 9978
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/meshopt_simplifier-HyfpEZ7S.wasm",
+				"status": 200,
+				"bytes": 13831,
+				"encoding": "br",
+				"atMs": 10466
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/meshopt_encoder-Cdv7_p0K.wasm",
+				"status": 200,
+				"bytes": 5795,
+				"encoding": "br",
+				"atMs": 10468
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/environment-B04kAw2b.js",
+				"status": 200,
+				"bytes": 7821,
+				"encoding": "br",
+				"atMs": 10473
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shaders-probe-wgsl-DMuskxdG.js",
+				"status": 200,
+				"bytes": 1844,
+				"encoding": "br",
+				"atMs": 10476
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shaders-environment-wgsl-CVzS7aZ9.js",
+				"status": 200,
+				"bytes": 7883,
+				"encoding": "br",
+				"atMs": 10477
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/job-worker-ByAprY2_.js",
+				"status": 200,
+				"bytes": 1743,
+				"encoding": "br",
+				"atMs": 10978
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/job-worker-ByAprY2_.js",
+				"status": 200,
+				"bytes": 1743,
+				"encoding": "br",
+				"atMs": 11478
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/null3d-5PuRAXF_.js",
+				"status": 200,
+				"bytes": 24800,
+				"encoding": "br",
+				"atMs": 11485
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/tasks-jlpnrMQx.js",
+				"status": 200,
+				"bytes": 1853,
+				"encoding": "br",
+				"atMs": 11623
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shaders-wgsl-combos-row-values-Cwy7m2t2.js",
+				"status": 200,
+				"bytes": 229,
+				"encoding": "br",
+				"atMs": 11628
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shaders-wgsl-combos-lod-fade-B1TC47xM.js",
+				"status": 200,
+				"bytes": 264,
+				"encoding": "br",
+				"atMs": 11631
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shaders-wgsl-combos-moment-BpBf0i7Y.js",
+				"status": 200,
+				"bytes": 338,
+				"encoding": "br",
+				"atMs": 11636
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shaders-row-values-wgsl-3896a9eb.js",
+				"status": 200,
+				"bytes": 9268,
+				"encoding": "br",
+				"atMs": 11978
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shaders-lod-fade-wgsl-20d32cf7.js",
+				"status": 200,
+				"bytes": 11544,
+				"encoding": "br",
+				"atMs": 11988
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shaders-moment-wgsl-42471b8b.js",
+				"status": 200,
+				"bytes": 16988,
+				"encoding": "br",
+				"atMs": 12380
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/null3d-5PuRAXF_.js",
+				"status": 200,
+				"bytes": 24800,
+				"encoding": "br",
+				"atMs": 12380
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/helper-workers-BQ5mF-_v.js",
+				"status": 200,
+				"bytes": 157,
+				"encoding": "br",
+				"atMs": 12386
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shaders-lod-fade-and-row-values-wgsl-74d6b51b.js",
+				"status": 200,
+				"bytes": 11883,
+				"encoding": "br",
+				"atMs": 12386
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shader-paragraphs-wgsl-row-values.js",
+				"status": 200,
+				"bytes": 2821,
+				"encoding": "br",
+				"atMs": 12493
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shader-paragraphs-wgsl-lod-fade.js",
+				"status": 200,
+				"bytes": 1205,
+				"encoding": "br",
+				"atMs": 12497
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/terrain-Csa6B6Tj.wasm",
+				"status": 200,
+				"bytes": 2891,
+				"encoding": "br",
+				"atMs": 12897
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/levels-task-Dl5Udm77.js",
+				"status": 200,
+				"bytes": 5085,
+				"encoding": "br",
+				"atMs": 12902
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/shader-paragraphs-wgsl-moment.js",
+				"status": 200,
+				"bytes": 871,
+				"encoding": "br",
+				"atMs": 12904
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/job-worker-ByAprY2_.js",
+				"status": 200,
+				"bytes": 1743,
+				"encoding": "br",
+				"atMs": 12907
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/job-worker-ByAprY2_.js",
+				"status": 200,
+				"bytes": 1743,
+				"encoding": "br",
+				"atMs": 13404
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/null3d-5PuRAXF_.js",
+				"status": 200,
+				"bytes": 24800,
+				"encoding": "br",
+				"atMs": 13418
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/null3d-5PuRAXF_.js",
+				"status": 200,
+				"bytes": 24800,
+				"encoding": "br",
+				"atMs": 13924
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/culled-counts-Djbu8tJj.js",
+				"status": 200,
+				"bytes": 1398,
+				"encoding": "br",
+				"atMs": 15794
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/job-worker-ByAprY2_.js",
+				"status": 200,
+				"bytes": 1743,
+				"encoding": "br",
+				"atMs": 19058
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/terrain-task-BD415B2P.js",
+				"status": 200,
+				"bytes": 999,
+				"encoding": "br",
+				"atMs": 19262
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/job-worker-ByAprY2_.js",
+				"status": 200,
+				"bytes": 1743,
+				"encoding": "br",
+				"atMs": 19555
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/null3d-5PuRAXF_.js",
+				"status": 200,
+				"bytes": 24800,
+				"encoding": "br",
+				"atMs": 19561
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/null3d-5PuRAXF_.js",
+				"status": 200,
+				"bytes": 24800,
+				"encoding": "br",
+				"atMs": 20064
+			},
+			{
+				"path": "terrain-ab/base/assets/island-view/frame-stats-B-Qey2E4.js",
+				"status": 200,
+				"bytes": 2213,
+				"encoding": "br",
+				"atMs": 46263
+			}
+		]
+	},
+	"runnerRefreshHz": 30
+}
