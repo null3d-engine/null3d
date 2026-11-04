@@ -2,7 +2,7 @@
 
 Status: decided. WebGL2: software occlusion culling is off on every preset, the owner's decision from the device runs of S6 (T-36). WebGPU: GPU occlusion culling is on at High and Ultra on desktops, with its check during play. The owner approved overturning the earlier off rows. Phones and tablets keep it off. Not run yet: G1's image check on the Android GPUs that Bevy and Unity block, and an under-load run on a quiet Mac. Task: M2-I1 (WebGPU), M2-I3 (WebGL2).
 
-Summary: WebGL2's software occlusion culling stays off: in S6 it costs the job workers at least 3.5 times the render time it saves. WebGPU's GPU occlusion culling is on at High and Ultra on desktops. Its check turns the extra passes off where they do not pay. The room and the desert lost no time with it, quiet or under load.
+Summary: WebGL2's software occlusion culling stays off: in S6 it costs the job workers at least 3.5 times the render time it saves. WebGPU's GPU occlusion culling is on at High and Ultra on desktops. Its check turns the extra passes off where they do not pay. The room and the desert lost no time with it, quiet or under load, though the desert's milliseconds are skewed against null3D.
 
 ## Question
 
@@ -29,10 +29,12 @@ A preset turns a method on only where it saves more frame time than it costs on 
 | --- | --- | --- | --- | --- |
 | The room, 96-segment spheres, MSAA, 3 runs of 3 rounds | No load page | 5.10 ms | 4.17 ms | 18% less |
 | The room | A second Chrome loading the GPU | 5.49 ms | 5.08 ms | 7% less |
-| The desert of the meshlet study, walk view, 3 runs | No load page | 7.03 ms | 6.93 ms | 1% less |
-| The desert, aerial view, 3 runs | No load page | 11.23 ms | 10.93 ms | 3% less |
+| The desert of the meshlet study, walk view, 3 runs, skewed | No load page | 7.03 ms | 6.93 ms | 1% less |
+| The desert, aerial view, 3 runs, skewed | No load page | 11.23 ms | 10.93 ms | 3% less |
 
 The Mac's load average stayed between 24 and 80, so these runs are not the quiet runs that the rule names. Each side's runs spread by up to 2 ms. Within that noise, culling with its check lost no time in any scene, quiet or under load. Where the passes did not pay, under the load page and in the desert, the check turned them off.
+
+The two desert rows came from the meshlet study's own runner, on a build with two faults ([D-322](D-322-benchmark-against-threejs-meshlets.md#the-canvas-size-fault)). null3D drew 3840 x 2160 for a page of 1920 x 1080, and so picked levels twice as fine. Each mesh's culling sphere lay off its center, at about twice the true radius for an arch. So their milliseconds are skewed against null3D, and they do not give the desert's cost. Both sides of each row carry the same faults, so the change between the sides still compares culling off with culling on. [D-322](D-322-benchmark-against-threejs-meshlets.md#results-of-the-fair-rematch) gives the desert's figures without the faults. At Medium, a walking frame takes 1.77 ms and an aerial frame 1.55 ms (runs 20261104-151905-bench and 20261104-152824-bench). A run of culling off and on at High on a build with both fixes remains to be taken.
 
 #### Earlier runs without the check, of marked occluders
 

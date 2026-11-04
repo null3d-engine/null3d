@@ -132,10 +132,14 @@ A cascade's box keeps its size while the camera moves and turns ([D-15](D-15-cas
 
 The look rule sets the threshold. The normal bias moves each receiver by up to one texel of its cascade along its normal ([D-16](D-16-moving-casters-and-bias.md)). A shadow level that errs by under a texel lies within that offset of the base surface, so it does not shadow the base surface. The camera's own level errs by under a pixel. The filter's square of 3 or 5 texels and the comparison with the receiver's plane absorb the rest. The image test `cluster-shadows-fine` draws a ground that shadows its own hills with the finest patches in every cascade, and must match `cluster-shadows`, which draws each cascade's own cut. A larger threshold would let a level's silhouette pass the bias, so no preset raises it.
 
-The desert benchmark with shadows shows the saving. Its three cascades of 2,048 texels draw 2.4
-times fewer triangles in the walk view and 1.8 times fewer in the aerial view, and the frame's
-triangles fall by a third. The ground's patches account for most of it; the props pick their
-levels in texels too. [D-213](D-213-cluster-levels.md#shadow-views) gives the figures.
+The desert benchmark with shadows gave 2.4 times fewer cascade triangles in the walk view and 1.8
+times fewer in the aerial view. The frame's triangles were a third lower, mostly from the ground's
+patches ([D-213](D-213-cluster-levels.md#shadow-views)). Those figures are void. Their build drew
+null3D at 3840 x 2160 for a page of 1920 x 1080, with culling spheres off center. The GPU also
+refused its frames at Medium with E1305 ([D-322](D-322-benchmark-against-threejs-meshlets.md#the-canvas-size-fault),
+[D-307](D-307-mesh-pieces.md#the-check-during-play)). On a build with both fixes, the walk view's three cascades
+add 4.30 M triangles to the camera's 3.64 M (run 20261104-153548-bench, [D-322](D-322-benchmark-against-threejs-meshlets.md#results-of-the-fair-rematch)).
+A comparison of the two rules on that build remains to be taken.
 
 The Island showcase, at High on WebGPU with the governor off, draws the same frame with either
 rule on the commit that this change starts from: 6.50 M triangles against 6.49 M, 3,727 draw calls
@@ -195,7 +199,7 @@ A band adds about a tenth more, for the sources inside it, which take a copy in 
 
 The culling shader cannot size these slices itself. A draw reads its bucket's copies from a vertex buffer offset that the frame records on the CPU. An indirect draw keeps its first instance at 0 (hard rule 8). A count on the GPU would need a readback, or a second pass that costs every frame. The CPU count runs only for the sources of a mesh with levels. A view's list of chosen patches has the same sizing problem, and the frame counts it on the CPU too ([D-213](D-213-cluster-levels.md#what-it-costs)).
 
-The count picks a level for every source in every frame, twice for each source, at each edge of the slack. So its cost grows with the sources, even when only the camera moves. The desert comparison draws 16 batches with 63,000 rows in all. There, a CPU profile in Chrome on the MacBook Pro M5 Max put 3.5 ms of the sketch worker's 4.6 ms frame in the count. The engine had started no job worker, as no other loop of the scene asked for one. So the count runs on the job workers, in chunks of 1,024 sources. Each thread counts into a tally of its own, and the tallies are summed. The sum is the same whatever thread counts which source, so the slices are unchanged. The tallies take a cache line's multiple of words per thread, in the layout's working list. `job_workers_count_the_same_copies_of_each_level_as_one_thread` in `crates/null3d-render/tests/levels.rs` compares four job workers with one thread. Its forest spreads over every level, band and the hide distance, in the camera's list and the casters'. On the job workers, the comparison's recording step fell to 1.1 to 1.7 ms. The sketch worker's frame fell to 1.2 to 2.0 ms ([Benchmarks](../benchmarks.md#the-desert-comparisons-sketch-worker)).
+The count picks a level for every source in every frame, twice for each source, at each edge of the slack. So its cost grows with the sources, even when only the camera moves. The desert comparison draws 16 batches with 63,000 rows in all. There, a CPU profile in Chrome on the MacBook Pro M5 Max put 3.5 ms of the sketch worker's 4.6 ms frame in the count. That build drew null3D at 3840 x 2160 ([D-322](D-322-benchmark-against-threejs-meshlets.md#the-canvas-size-fault)). The count's cost follows the sources, not the pixels, so the fault leaves these CPU figures as they are. The engine had started no job worker, as no other loop of the scene asked for one. So the count runs on the job workers, in chunks of 1,024 sources. Each thread counts into a tally of its own, and the tallies are summed. The sum is the same whatever thread counts which source, so the slices are unchanged. The tallies take a cache line's multiple of words per thread, in the layout's working list. `job_workers_count_the_same_copies_of_each_level_as_one_thread` in `crates/null3d-render/tests/levels.rs` compares four job workers with one thread. Its forest spreads over every level, band and the hide distance, in the camera's list and the casters'. On the job workers, the comparison's recording step fell to 1.1 to 1.7 ms. The sketch worker's frame fell to 1.2 to 2.0 ms ([Benchmarks](../benchmarks.md#the-desert-comparisons-sketch-worker)).
 
 Each source's two picks share one walk of its levels (`LevelRule::pick_both`). A switch distance that stops the walk at the far edge stops it at the near edge too. So the walk to the far edge passes the place where the walk to the near edge stops. Each switch distance is worked out once. Both edges then settle their bands, ranges and hide distance with the code that `LevelRule::pick` runs. `one_walk_picks_what_two_picks_give_at_both_distances` in `crates/null3d-core/src/levels.rs` compares the two over 20,000 random chains, rules, ranges and distances, fading amounts included. Rejected:
 
@@ -265,7 +269,12 @@ a measured error, so it switches at once and takes no fade bucket. Each source's
 takes one more step for each level that it passes, on the GPU and on the job workers.
 
 The desert benchmark measured the deeper chain against the tool's seven-level chain, on this
-engine and the same ground. Each figure is the median of three uncapped runs of 10 seconds, with
+engine and the same ground. These figures are void. The comparison's runner drew null3D at Medium,
+where the GPU refused that build's frames with E1305, and at 3840 x 2160 for a page of
+1920 x 1080, with culling spheres off center ([D-322](D-322-benchmark-against-threejs-meshlets.md#the-canvas-size-fault)).
+They stay as the only comparison of the two chains, and a run on a build with both fixes remains
+to be taken. The deeper chain's own figures on such a build are in [D-322](D-322-benchmark-against-threejs-meshlets.md#results-of-the-fair-rematch):
+3.64 M triangles and 1.17 ms of GPU time walking, 3.33 M and 1.15 ms from above. Each figure is the median of three uncapped runs of 10 seconds, with
 the views' pages in turns, in Chrome on the MacBook Pro M5 Max:
 
 | Page | Triangles | Draw calls | Frame interval | GPU time |
