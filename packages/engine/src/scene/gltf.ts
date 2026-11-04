@@ -1907,10 +1907,11 @@ function partsOf(
 		const p = primitives.get(mesh);
 		if (p) growBox(m, p.min, p.max, min, max);
 		else {
-			// A mesh that an extension handler made gives no box of its own, so its radius around
-			// the node's origin holds it.
+			// A mesh that an extension handler made gives no box of its own, so its bounding sphere
+			// holds it.
 			const r = mesh.radius;
-			growBox(m, [-r, -r, -r], [r, r, r], min, max);
+			const [x, y, z] = mesh.center;
+			growBox(m, [x - r, y - r, z - r], [x + r, y + r, z + r], min, max);
 		}
 	};
 	const parts: PartTemplate[] = [];

@@ -15,6 +15,7 @@ import {
 	planPieces,
 } from '@null3d/engine/pieces-planner';
 import { MeshoptEncoder } from 'meshoptimizer';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { planLevels, storeLevels } from './levels.js';
 import { lodOf, MSFTLod } from './lod-extension.js';
 import { NULL3D_PIECES, Null3dPieces, piecesOf, storePieces } from './pieces-extension.js';
@@ -392,59 +393,64 @@ describe('the pieces step', () => {
 		expect(piecesOf(both.prim)).toBeNull();
 	});
 
-	it('sorts a large mesh and its levels into pieces, and keeps every triangle', async () => {
-		await MeshoptEncoder.ready;
-		// The first level halves the list and still holds enough triangles for pieces.
-		const { positions, indices } = roughSphere(256, 160);
-		expect(indices.length / 3).toBeGreaterThanOrEqual(2 * PIECE_LIST_MIN_TRIANGLES);
-		const doc = new Document();
-		const buffer = doc.createBuffer();
-		const prim = doc
-			.createPrimitive()
-			.setAttribute(
-				'POSITION',
-				doc.createAccessor().setType('VEC3').setArray(positions).setBuffer(buffer),
-			)
-			.setIndices(doc.createAccessor().setType('SCALAR').setArray(indices).setBuffer(buffer));
-		const mesh = doc.createMesh('rock').addPrimitive(prim);
-		const node = doc.createNode('rock').setMesh(mesh);
-		doc.createScene().addChild(node);
-		storeLevels(doc, await planLevels(doc));
-		const summary = storePieces(doc);
-		expect(summary.lists).toBeGreaterThanOrEqual(2);
-		const pieces = piecesOf(prim);
-		expect(pieces).not.toBeNull();
-		const sorted = Array.from(prim.getIndices()?.getArray() ?? []);
-		const key = (list: ArrayLike<number>) => {
-			const out: string[] = [];
-			for (let t = 0; t < list.length; t += 3) out.push(`${list[t]},${list[t + 1]},${list[t + 2]}`);
-			return out.sort();
-		};
-		// Each piece's triangles are ordered for the vertex cache, which may start a triangle at
-		// another corner, so the test compares each triangle's turn of corners.
-		const turned = (list: ArrayLike<number>) =>
-			key(
-				Array.from({ length: list.length }, (_, i) => {
-					const t = i - (i % 3);
-					const corners = [list[t], list[t + 1], list[t + 2]] as number[];
-					const least = corners.indexOf(Math.min(...corners));
-					return corners[(least + (i % 3)) % 3] as number;
-				}),
-			);
-		expect(turned(sorted)).toEqual(turned(indices));
-		expect(pieces?.getTriangles().reduce((sum, n) => sum + n, 0)).toBe(indices.length / 3);
-		const level = lodOf(node)?.listLevels()[0]?.getMesh()?.listPrimitives()[0];
-		expect(level && piecesOf(level)).not.toBeNull();
-		// The extension survives a write and a read.
-		const io = new NodeIO().registerExtensions([MSFTLod, Null3dPieces]);
-		const json = await io.writeJSON(doc);
-		const written = json.json.meshes?.[0]?.primitives[0]?.extensions?.[NULL3D_PIECES] as
-			| { triangles: number[]; bounds: number[]; version: number }
-			| undefined;
-		expect(written?.version).toBe(1);
-		expect(written?.bounds.length).toBe((written?.triangles.length ?? 0) * PIECE_BOUNDS);
-		const read = await io.readJSON(json);
-		const readPrim = read.getRoot().listMeshes()[0]?.listPrimitives()[0];
-		expect(readPrim && piecesOf(readPrim)?.getTriangles()).toEqual(pieces?.getTriangles());
-	}, 60_000);
+	it(
+		'sorts a large mesh and its levels into pieces, and keeps every triangle',
+		async () => {
+			await MeshoptEncoder.ready;
+			// The first level halves the list and still holds enough triangles for pieces.
+			const { positions, indices } = roughSphere(256, 160);
+			expect(indices.length / 3).toBeGreaterThanOrEqual(2 * PIECE_LIST_MIN_TRIANGLES);
+			const doc = new Document();
+			const buffer = doc.createBuffer();
+			const prim = doc
+				.createPrimitive()
+				.setAttribute(
+					'POSITION',
+					doc.createAccessor().setType('VEC3').setArray(positions).setBuffer(buffer),
+				)
+				.setIndices(doc.createAccessor().setType('SCALAR').setArray(indices).setBuffer(buffer));
+			const mesh = doc.createMesh('rock').addPrimitive(prim);
+			const node = doc.createNode('rock').setMesh(mesh);
+			doc.createScene().addChild(node);
+			storeLevels(doc, await planLevels(doc));
+			const summary = storePieces(doc);
+			expect(summary.lists).toBeGreaterThanOrEqual(2);
+			const pieces = piecesOf(prim);
+			expect(pieces).not.toBeNull();
+			const sorted = Array.from(prim.getIndices()?.getArray() ?? []);
+			const key = (list: ArrayLike<number>) => {
+				const out: string[] = [];
+				for (let t = 0; t < list.length; t += 3)
+					out.push(`${list[t]},${list[t + 1]},${list[t + 2]}`);
+				return out.sort();
+			};
+			// Each piece's triangles are ordered for the vertex cache, which may start a triangle at
+			// another corner, so the test compares each triangle's turn of corners.
+			const turned = (list: ArrayLike<number>) =>
+				key(
+					Array.from({ length: list.length }, (_, i) => {
+						const t = i - (i % 3);
+						const corners = [list[t], list[t + 1], list[t + 2]] as number[];
+						const least = corners.indexOf(Math.min(...corners));
+						return corners[(least + (i % 3)) % 3] as number;
+					}),
+				);
+			expect(turned(sorted)).toEqual(turned(indices));
+			expect(pieces?.getTriangles().reduce((sum, n) => sum + n, 0)).toBe(indices.length / 3);
+			const level = lodOf(node)?.listLevels()[0]?.getMesh()?.listPrimitives()[0];
+			expect(level && piecesOf(level)).not.toBeNull();
+			// The extension survives a write and a read.
+			const io = new NodeIO().registerExtensions([MSFTLod, Null3dPieces]);
+			const json = await io.writeJSON(doc);
+			const written = json.json.meshes?.[0]?.primitives[0]?.extensions?.[NULL3D_PIECES] as
+				| { triangles: number[]; bounds: number[]; version: number }
+				| undefined;
+			expect(written?.version).toBe(1);
+			expect(written?.bounds.length).toBe((written?.triangles.length ?? 0) * PIECE_BOUNDS);
+			const read = await io.readJSON(json);
+			const readPrim = read.getRoot().listMeshes()[0]?.listPrimitives()[0];
+			expect(readPrim && piecesOf(readPrim)?.getTriangles()).toEqual(pieces?.getTriangles());
+		},
+		scaledBudget(60_000),
+	);
 });

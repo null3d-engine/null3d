@@ -448,7 +448,7 @@ export class MeshGeometry {
 	/** @internal */
 	constructor(
 		id: number,
-		/** The distance from the mesh's origin to its farthest vertex, at rest. */
+		/** The distance from the mesh's bounding center (`center`) to its farthest vertex, at rest. */
 		readonly radius: number,
 		/** @internal */ readonly core: CoreMemory,
 		/** How many morph targets the mesh has. 0 for a mesh without any. */
@@ -463,6 +463,22 @@ export class MeshGeometry {
 	) {
 		this.liveId = id;
 	}
+
+	/**
+	 * The center of the box around the mesh's vertices at rest, in the mesh's own space. The mesh's
+	 * bounding sphere lies around it with `radius`, and culling tests that sphere. A mesh whose
+	 * positions start at a corner, as quantized glTF files store them, has its center away from the
+	 * origin.
+	 */
+	get center(): readonly [number, number, number] {
+		if (this.boundsCenter === undefined) {
+			const { glue } = this.core;
+			const id = this.id;
+			this.boundsCenter = [glue.meshCenter(id, 0), glue.meshCenter(id, 1), glue.meshCenter(id, 2)];
+		}
+		return this.boundsCenter;
+	}
+	private boundsCenter: [number, number, number] | undefined;
 
 	/** @internal The engine core's id. Throws E1101 once the mesh is destroyed. */
 	get id(): number {

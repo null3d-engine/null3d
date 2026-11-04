@@ -48,7 +48,10 @@ const PAGE = 65536;
  * each frame, and gives world matrices from a table.
  */
 function fakeCore(
-	levelMeshes: { handle: number; mesh: { radius: number; levels: readonly unknown[] } }[] = [],
+	levelMeshes: {
+		handle: number;
+		mesh: { radius: number; center: readonly number[]; levels: readonly unknown[] };
+	}[] = [],
 ) {
 	const memory = new WebAssembly.Memory({ initial: 1, maximum: 1024 });
 	let positionsAt = 0;
@@ -548,8 +551,8 @@ describe('debug.cullingSpheres', () => {
 
 	test('draws the mesh sphere in white about each level mesh, until turned off', () => {
 		const { draw, frames, matrices } = fakeCore([
-			{ handle: 21, mesh: { radius: 2, levels: [{}] } },
-			{ handle: 22, mesh: { radius: 1, levels: [{}] } },
+			{ handle: 21, mesh: { radius: 2, center: [0, 0, 0], levels: [{}] } },
+			{ handle: 22, mesh: { radius: 1, center: [0, 0, 0], levels: [{}] } },
 		]);
 		matrices.set(21, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
 		// A mesh of radius 1 at twice the scale: its sphere is the first's size, at another place.
@@ -572,7 +575,7 @@ describe('debug.cullingSpheres', () => {
 	test('draws the spheres of the first 128 objects, and no more', () => {
 		const meshes = Array.from({ length: 130 }, (_, k) => ({
 			handle: 100 + k,
-			mesh: { radius: 1, levels: [{}] },
+			mesh: { radius: 1, center: [0, 0, 0], levels: [{}] },
 		}));
 		const { draw, frames, matrices } = fakeCore(meshes);
 		for (const { handle } of meshes) matrices.set(handle, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);

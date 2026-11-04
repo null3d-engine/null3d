@@ -162,12 +162,19 @@ fn object_of(bounds: u32) -> Option<u32> {
     }
 }
 
-/// The centre and radius of the local sphere that culls a bucket with `bounds`, whose mesh's
-/// sphere has `mesh_radius`.
-fn local_sphere(scene: &SceneStorage, bounds: u32, mesh_radius: f32) -> ([f32; 3], f32) {
+/// The center and radius of the local sphere that culls a bucket with `bounds`, whose mesh's
+/// sphere lies at `mesh_center` with `mesh_radius`. The core gives the bucket's objects and batch
+/// rows the same sphere, so the copies that it counts are the ones that the GPU keeps.
+fn local_sphere(
+    scene: &SceneStorage,
+    bounds: u32,
+    mesh_center: [f32; 3],
+    mesh_radius: f32,
+) -> ([f32; 3], f32) {
     match bounds {
+        MESH_BOUNDS => (mesh_center, mesh_radius),
         // A shared bucket's sphere comes from its objects' once the layout lists them.
-        MESH_BOUNDS | SHARED_SKIN_BOUNDS => ([0.0; 3], mesh_radius),
+        SHARED_SKIN_BOUNDS => ([0.0; 3], mesh_radius),
         UNCULLED_BOUNDS => ([0.0; 3], UNBOUNDED_RADIUS),
         own => {
             let slot = (own - OWN_BOUNDS) as usize;
@@ -1490,7 +1497,7 @@ impl Layout {
             });
             // A displaced material moves vertices past its mesh's sphere, by up to its margin.
             let margin = settings.materials().bounds_margin(material.wrapping_sub(1));
-            let (center, radius) = local_sphere(scene, bounds, slot.radius + margin);
+            let (center, radius) = local_sphere(scene, bounds, slot.center, slot.radius + margin);
             let object = object_of(bounds);
             let skin = object.and_then(|object| skinning.object(object));
             if let (Some(object), Some(_)) = (object, skin) {
@@ -2024,7 +2031,8 @@ impl Layout {
     /// share, the sphere around their centres' mean that reaches past each one's.
     fn fit_skinned(&mut self, scene: &SceneStorage) {
         for objects in self.skinned.chunk_by(|a, b| a.0 == b.0) {
-            let sphere = |&(_, slot): &(u32, u32)| local_sphere(scene, OWN_BOUNDS + slot, 0.0);
+            let sphere =
+                |&(_, slot): &(u32, u32)| local_sphere(scene, OWN_BOUNDS + slot, [0.0; 3], 0.0);
             let (center, radius) = match objects {
                 [object] => sphere(object),
                 _ => {
@@ -2727,7 +2735,15 @@ mod tests {
             max_materials: 4,
             ..RendererConfig::default()
         });
-        let box_mesh = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
+        // The box's positions start at its corner on x, as a quantized file stores them, so the
+        // mesh's sphere lies half a meter along x from its origin.
+        let mut box_mesh = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
+        let stride = box_mesh.stride();
+        for v in 0..box_mesh.vertex_count() {
+            let at = v * stride;
+            let x = f32::from_le_bytes(box_mesh.vertices[at..at + 4].try_into().unwrap());
+            box_mesh.vertices[at..at + 4].copy_from_slice(&(x + 0.5).to_le_bytes());
+        }
         let mesh = settings.meshes_mut().add(&box_mesh).unwrap() + 1;
         let material = settings.materials_mut().create(Shading::Lit, 0, [1.0; 4]);
         let material = material.unwrap() + 1;
@@ -2788,7 +2804,7 @@ mod tests {
         assert_eq!(
             spheres,
             [
-                (2, [0.0; 3], mesh_radius),
+                (2, [0.5, 0.0, 0.0], mesh_radius),
                 (1, [0.0; 3], UNBOUNDED_RADIUS),
                 (1, [0.0, 1.5, 0.0], 4.0),
             ]
