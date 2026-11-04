@@ -2,7 +2,7 @@
 // own, so the image shows which level each copy draws: red, then green, blue and yellow. Each row
 // holds two copies of one switch, at 95% and 103% of the distance from the camera to the sphere's
 // nearest point, so the second copy lies inside the hand-over band at every preset. A level given by
-// its error measures to the sphere's centre less half its radius, half a radius farther than the
+// its error measures to the sphere's center less half its radius, half a radius farther than the
 // nearest point, so its switch, and the hide distance, lie that much farther out too: each copy then
 // stands at the same share of the distance that the rule measures, whatever the measure, and every
 // measure draws the same picture.
@@ -46,7 +46,7 @@ const ROWS = [0.55, -0.1, -0.6];
 const RADIUS = 1;
 /**
  * How much farther out a switch by error, and the hide distance, lie than the copies' switch by
- * the nearest point. The rule measures an error to the sphere's centre less half its radius, half a
+ * the nearest point. The rule measures an error to the sphere's center less half its radius, half a
  * radius farther than the nearest point. Shifting the switch by that half radius over the far
  * side's share keeps the far copy at exactly that share of its switch, so it keeps the same share
  * of the band's dither, and the near copy stays before the switch.

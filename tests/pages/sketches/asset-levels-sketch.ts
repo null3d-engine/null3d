@@ -21,7 +21,7 @@ const FILES = {
  * level switches as near as the tool's errors allow: the card size is a level's error, so its own
  * switch lies where the tree stands a few pixels tall, and only a bias brings it closer. The grid
  * takes 12: its coarsest level's error of about 5.5 cm then switches in 1.42 m out, past the
- * camera's level distance of 1.23 m, to the grid's centre less half its radius, so a finer level
+ * camera's level distance of 1.23 m, to the grid's center less half its radius, so a finer level
  * draws. Without the texture coordinates in the error, that level reports under a millimeter and
  * switches in a few millimeters out, and the checker slides.
  */

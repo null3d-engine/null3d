@@ -15,7 +15,7 @@
 //!
 //! `scale` is the largest axis scale of the source's world matrix. For a level given by its error,
 //! and for the rule that hides a small bound, `distance` is the level distance: the distance from
-//! the view's camera to the centre of the source's bounding sphere, less half its radius
+//! the view's camera to the center of the source's bounding sphere, less half its radius
 //! ([`LEVEL_RADIUS_SHARE`]). For a level given by a distance or by coverage, and for a distance band,
 //! it is the distance to the sphere's nearest point. Both are at least [`LEAST_DISTANCE`], and 1 for
 //! an orthographic camera, whose pixels do not shrink with distance.
@@ -88,10 +88,10 @@ const LEAST_FADE: f32 = 1.0e-6;
 pub const LEAST_DISTANCE: f32 = 1.0e-3;
 
 /// The share of a bounding sphere's radius that the camera's level distance takes off the distance
-/// to the sphere's centre. A level's error is its largest anywhere on the mesh, so measuring to the
+/// to the sphere's center. A level's error is its largest anywhere on the mesh, so measuring to the
 /// nearest point of the bounds keeps a large mesh's fine levels far out, where its near side shows
 /// them and the rest of the mesh does not. Half the radius keeps the near side within the threshold
-/// in the desert's held frames, at about 14% fewer triangles than the nearest point; the centre
+/// in the desert's held frames, at about 14% fewer triangles than the nearest point; the center
 /// itself lets the near side of a large copy show its level (D-137).
 pub const LEVEL_RADIUS_SHARE: f32 = 0.5;
 
@@ -905,7 +905,7 @@ mod tests {
         let rule = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
         let links = links([0.0, 0.01, 0.04, 0.2], false);
         // Level 1 switches in at a level distance of 5 m. A sphere of radius 4 m measures to its
-        // centre less 2 m: centered at 7 m it measures 5 m, and at 7.1 m it measures 5.1 m.
+        // center less 2 m: centered at 7 m it measures 5 m, and at 7.1 m it measures 5.1 m.
         let near = rule.distances([0.0, 0.0, -7.0], 4.0);
         assert_eq!(
             rule.pick(&links, 0, 1.0, 4.0, near, 1.0, DrawRange::NONE),
@@ -922,7 +922,7 @@ mod tests {
     fn errors_measure_halfway_into_the_bounds_and_hand_set_distances_to_the_nearest_point() {
         let rule = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
         // A sphere of radius 2 m centered 5 m away: its nearest point lies 3 m away, and its level
-        // distance, to the centre less half the radius, 4 m.
+        // distance, to the center less half the radius, 4 m.
         let at = rule.distances([3.0, 4.0, 0.0], 2.0);
         assert_eq!((at.camera, at.error), (3.0, 4.0));
         assert_eq!(at.of(Switch::Error), 4.0);
