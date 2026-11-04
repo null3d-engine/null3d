@@ -21,7 +21,7 @@ A comparison measures equal work ([D-52](D-52-intent-parity.md)). For this scene
 7. **The same light and surfaces.** One sun, one ambient light, no tone curve, MSAA in both, and the same base colors and roughness.
 8. **Named settings.** three.js runs its meshlet pipeline with occlusion culling on and `minScreenRadius` at 0, so it leaves out no copy for its size on the screen. null3D runs at Medium, with GPU occlusion culling on.
 9. **Shadows that each engine can draw.** With shadows, null3D draws 3 cascades of 2,048 texels over 150 m. three.js draws one map of 4,096 texels over the same 150 m around the camera. Its cascaded shadow node with the meshlet pipeline drew only the sky.
-10. **A quiet computer.** A figure taken at a 1-minute load of 8 or more is not a figure ([Benchmarks](../benchmarks.md#what-a-report-measures)).
+10. **A quiet computer.** A page counts only when the 1-minute load was under 8 as it opened, and no other process used more than one core while it ran. The runner's own processes, the browser among them, are part of the measure. The null3D page with shadows raises the load from about 5 to between 8 and 10 by itself, so the load after a page does not judge it. A page that fails this rule, or logs any error, runs again in its round ([Benchmarks](../benchmarks.md#what-a-report-measures)).
 
 ## The scene
 
@@ -88,9 +88,27 @@ The study estimates 3 to 4 weeks of work. In the walking view, its model of the 
 
 How the data was produced: the commit, the Chrome version, the computer and what else ran go here with the figures.
 
+### Image quality against full detail
+
+Each engine's frame is compared with its own frame at full detail, in which every copy draws its finest level. A lower error means an image closer to full detail. The figures come from the triangle budget study, on the branch `research/triangle-budget` at 8cdcd1bc7, in `bench/research/triangle-budget/results/compare.json`.
+
+- The study held 8 frames along the walking lap, at 1920 x 1080 with 4x MSAA, on a build with the canvas check.
+- The error is the mean FLIP of the 8 frames. "Visible" is the share of pixels whose FLIP passes 0.1.
+- The triangles and GPU times come from the held frames of a development build. They compare the settings with each other, and the timed rows above compare the engines.
+
+| Engine and setting | Triangles, M | GPU, ms | FLIP | Visible |
+| --- | --- | --- | --- | --- |
+| null3D, Medium | 4.98 | 1.72 | 0.0119 | 2.4% |
+| null3D, camera threshold of 2 px | 2.98 | 1.37 | 0.0196 | 6.1% |
+| three.js, default | 1.73 | 2.77 | 0.0208 | 7.1% |
+| null3D, Medium, 3 cascades | 14.05 | 2.91 | 0.0107 | n/a |
+| three.js, one shadow map | 1.73 in view, 17.9 in the shadow pass | 7.68 | 0.0576 | n/a |
+
+null3D's frame is closer to full detail than three.js's, without shadows and with them. With shadows, three.js's coarse casters shadow their own surfaces near the camera, and its error there reaches 0.104. null3D at a camera threshold of 2 px matches three.js's error with fewer GPU milliseconds. So null3D's extra triangles buy a better image, not wasted work.
+
 ## Look
 
-This record decides how to measure, not how a frame looks. Both pages draw the same scene with the same light and surfaces. No parity check compares their frames yet, because the three.js page has no held frame.
+This record decides how to measure, not how a frame looks. Both pages draw the same scene with the same light and surfaces. [Image quality against full detail](#image-quality-against-full-detail) compares each engine's frame with its own full detail, and null3D's is the closer. No parity check of the repository compares the two engines' frames, because the three.js page has no held frame.
 
 ## Decision
 

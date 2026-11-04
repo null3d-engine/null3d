@@ -20,6 +20,7 @@ import { QUIET_LOAD } from '../../tests/lib/cost-runs.ts';
 import type { DesertFigures, PixelSize } from '../pages/lib/desert';
 import { type GlTiming, sumGlTiming } from '../pages/lib/gl-timing';
 import { summarizeTrace, type TraceSecond, type TraceSummary } from '../pages/lib/trace';
+import { type OtherWork, otherWorkProblem } from './other-work';
 import { isMatchScene, SCENE_CODE } from './parity';
 
 export { median, ms, summarizeRuns } from '../../packages/cli/src/protocol.js';
@@ -59,6 +60,8 @@ export interface BenchResult extends TimedRun {
 	 * logged, such as a GPU that rejected the engine's commands, and files that failed to load.
 	 */
 	problems?: string[];
+	/** What other processes did while the page ran, from the runner's lists of processes. */
+	otherWork?: OtherWork;
 }
 
 /** The computer's 1-minute load average around a page's run. */
@@ -355,19 +358,26 @@ function machineLoadOf(results: readonly BenchResult[]): SummaryRow['machineLoad
 }
 
 /**
- * Why a page's result is no timing figure, or undefined when it is one. A page that failed, that
- * logged a problem while it ran, or whose load reached the quiet limit before it opened or after it
- * closed, measured a fault or other work along with the engine.
+ * The report that a page sends to the server as it finishes. Closing the page after its result
+ * cuts the request off, which says nothing about the engine.
+ */
+const CLOSING_REPORT = /^failed to load \S+\/__null3d\/report\?\S*: net::ERR_ABORTED$/;
+
+/**
+ * Why a page's result is no timing figure, or undefined when it is one. A page that failed or
+ * logged a problem while it ran measured a fault. A page that opened at the quiet limit's load, or
+ * during which another process used more than a core, measured other work along with the engine.
+ * The load after a page includes the page's own threads, which are part of what it measures, so
+ * only the load before it counts.
  */
 export function figureProblem(result: BenchResult): string | undefined {
 	if (!result.ok) return result.error ?? 'the page failed without a message';
-	if (result.problems && result.problems.length > 0)
-		return `the page logged problems:\n  ${result.problems.join('\n  ')}`;
-	const load = result.machineLoad;
-	const highest = load ? Math.max(load.before, load.after) : 0;
-	if (highest >= QUIET_LOAD)
-		return `the 1-minute load reached ${highest.toFixed(1)}, where other work spoils the timing figures`;
-	return undefined;
+	const problems = (result.problems ?? []).filter((problem) => !CLOSING_REPORT.test(problem));
+	if (problems.length > 0) return `the page logged problems:\n  ${problems.join('\n  ')}`;
+	const before = result.machineLoad?.before ?? 0;
+	if (before >= QUIET_LOAD)
+		return `the 1-minute load was ${before.toFixed(1)} as the page opened, where other work spoils the timing figures`;
+	return otherWorkProblem(result.otherWork);
 }
 
 /**
