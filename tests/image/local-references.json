@@ -281,6 +281,12 @@
 		"date": "2026-11-02",
 		"reason": "drawn on this Mac's SwiftShader with CI=1; this Mac's software drawing stands in for CI's own Linux SwiftShader, and CI's redraw is owed and replaces these if it differs"
 	},
+	"chromium-swiftshader/compat/terrain-vertex-normals.png": {
+		"test": "terrain-vertex-normals",
+		"tier": "compat",
+		"date": "2026-11-04",
+		"reason": "the terrain drawn by its per-block meshes before the shared-grid batches replace them; only this branch's parent draws it, so CI cannot draw it from the branch"
+	},
 	"chromium-swiftshader/compat/terrain.png": {
 		"test": "terrain",
 		"tier": "compat",
@@ -640,6 +646,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-02",
 		"reason": "drawn on this Mac's SwiftShader with CI=1; this Mac's software drawing stands in for CI's own Linux SwiftShader, and CI's redraw is owed and replaces these if it differs"
+	},
+	"chromium-swiftshader/webgl2/terrain-vertex-normals.png": {
+		"test": "terrain-vertex-normals",
+		"tier": "webgl2",
+		"date": "2026-11-04",
+		"reason": "the terrain drawn by its per-block meshes before the shared-grid batches replace them; only this branch's parent draws it, so CI cannot draw it from the branch"
 	},
 	"chromium-swiftshader/webgl2/terrain.png": {
 		"test": "terrain",
@@ -1006,6 +1018,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-02",
 		"reason": "drawn on this Mac's SwiftShader with CI=1; this Mac's software drawing stands in for CI's own Linux SwiftShader, and CI's redraw is owed and replaces these if it differs"
+	},
+	"chromium-swiftshader/webgpu/terrain-vertex-normals.png": {
+		"test": "terrain-vertex-normals",
+		"tier": "webgpu",
+		"date": "2026-11-04",
+		"reason": "the terrain drawn by its per-block meshes before the shared-grid batches replace them; only this branch's parent draws it, so CI cannot draw it from the branch"
 	},
 	"chromium-swiftshader/webgpu/terrain.png": {
 		"test": "terrain",

@@ -3062,6 +3062,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/terrain-sketch.ts',
 		hold: 1,
 	},
+	// The same ground lit from each block's own vertex normals, as the Island lights its land. The
+	// vertex shader shapes the blocks, so this picture holds their heights, their normals, the
+	// casters' normal offset and the morph toward each parent block, which the baked normals hide.
+	{
+		name: 'terrain-vertex-normals',
+		sketch: 'tests/pages/sketches/terrain-sketch.ts?normals=vertex',
+		hold: 1,
+	},
 	// Far hills at the Low preset's split, lit from the normal map baked over the ground: a block's
 	// cells there span the ground's small folds, so the block's own vertices lose them. A correct
 	// picture carries those folds as bands of light and shade across each coarse block, on the
