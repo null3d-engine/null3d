@@ -1,7 +1,11 @@
 // Levels of detail, for their image tests. A sphere has three lower levels, each in a color of its
 // own, so the image shows which level each copy draws: red, then green, blue and yellow. Each row
 // holds two copies of one switch, at 95% and 103% of the distance from the camera to the sphere's
-// nearest point, so the second copy lies inside the hand-over band at every preset.
+// nearest point, so the second copy lies inside the hand-over band at every preset. A level given by
+// its error measures to the sphere's centre less half its radius, half a radius farther than the
+// nearest point, so its switch, and the hide distance, lie that much farther out too: each copy then
+// stands at the same share of the distance that the rule measures, whatever the measure, and every
+// measure draws the same picture.
 // Each copy stands where the rule puts that distance on this canvas, so it keeps its size on the
 // screen at any canvas size. Settings: `?batch` draws the copies as rows of one instance batch,
 // `?crisp` switches the levels at once, as a measured error does, `?mask` draws with a mask smoothed
@@ -40,6 +44,14 @@ const HIDE_SIDES = [0.95, 1.03, 1.09];
 const ROWS = [0.55, -0.1, -0.6];
 /** The world radius of the base sphere, whose local radius is 1 at scale 1. */
 const RADIUS = 1;
+/**
+ * How much farther out a switch by error, and the hide distance, lie than the copies' switch by
+ * the nearest point. The rule measures an error to the sphere's centre less half its radius, half a
+ * radius farther than the nearest point. Shifting the switch by that half radius over the far
+ * side's share keeps the far copy at exactly that share of its switch, so it keeps the same share
+ * of the band's dither, and the near copy stays before the switch.
+ */
+const ERROR_SHIFT = RADIUS / 2 / (SIDES[1] as number);
 /** The start and the end of the distance band that `?range` gives every copy, in metres. */
 const BAND = [12, 30] as const;
 /** Each copy's nearest point as a share of the band's start and of its end. The first row holds a
@@ -76,7 +88,6 @@ function sphere(segments: number, color: Vec3): MeshArrays {
 export default defineSketch(({ scene, geometry, materials, quality, engine }) => {
 	const shadows = params.has('shadows');
 	const crisp = params.has('crisp');
-	quality.set({ lodThreshold: THRESHOLD, lodShadowThreshold: 5 });
 	scene.setBackground('#20242c');
 	const camera = scene.createPerspectiveCamera({
 		fov: FOV,
@@ -110,6 +121,16 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 	const tan = Math.tan((FOV * Math.PI) / 360);
 	const factor = () =>
 		(engine.viewport.height * engine.viewport.pixelRatio) / (2 * tan * THRESHOLD * BIAS);
+	// The hide distance takes the same shift as a switch by error: the threshold that hides the
+	// bound shrinks by the share that moves its hide distance out by the shift. The levels' own
+	// switches then lie far nearer, so the hide copies draw the last level.
+	const hideAt = () => 2 * RADIUS * factor();
+	quality.set({
+		lodThreshold: params.has('hide')
+			? (THRESHOLD * hideAt()) / (hideAt() + ERROR_SHIFT)
+			: THRESHOLD,
+		lodShadowThreshold: 5,
+	});
 	// `?switch` names the measure that picks the level: the measured error, the distance it works
 	// out to on this canvas, or the share of the screen's height that the same distance covers. All
 	// three pick the same level at the same place, so the pictures must agree.
@@ -119,7 +140,7 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 		if (switchBy === 'distance') return { distance: (ERRORS[k] as number) * factor() };
 		if (switchBy === 'coverage')
 			return { coverage: (2 * THRESHOLD) / ((ERRORS[k] as number) * height()) };
-		return { error: ERRORS[k] as number };
+		return { error: (ERRORS[k] as number) + ERROR_SHIFT / factor() };
 	};
 	base.setLevels(
 		lower.map((mesh, k) => ({

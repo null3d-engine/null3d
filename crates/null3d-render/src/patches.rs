@@ -484,7 +484,7 @@ impl Walk<'_> {
         }) {
             return;
         }
-        let distance = self.rule.error_distance(centre, radius);
+        let distance = self.rule.patch_distance(centre, radius);
         if self.tree.fits(patch, self.reach, distance) {
             pick(patch);
             return;

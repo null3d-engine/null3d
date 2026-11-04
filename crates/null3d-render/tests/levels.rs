@@ -258,14 +258,15 @@ fn each_object_draws_the_level_that_its_distance_picks_on_the_job_workers() {
 
 #[test]
 fn a_biased_ball_draws_the_level_that_half_its_distance_switch_picks() {
-    // The world's ball has a local radius of 0.9, so its nearest point is 0.9 m before its centre.
-    // A bias of 2 halves the first switch, which is 0.05 times 311.8 over 2, 7.795 m of nearest
-    // point: a ball at 95% of it draws the base level, and one at 103% draws level 1.
-    let place = |world: &mut World<CpuCulledRenderer>, nearest: f32| {
+    // The world's ball has a local radius of 0.9, and the rule measures an error to its centre
+    // less half that radius. A bias of 2 halves the first switch, which is 0.05 times 311.8 over
+    // 2, 7.795 m of that distance: a ball at 95% of it draws the base level, and one at 103% draws
+    // level 1.
+    let place = |world: &mut World<CpuCulledRenderer>, distance: f32| {
         let ball = world.objects[2];
         world
             .scene
-            .set_position(ball, [0.0, 0.0, 20.0 - (nearest + 0.9)])
+            .set_position(ball, [0.0, 0.0, 20.0 - (distance + 0.45)])
             .unwrap();
         world
             .scene
@@ -699,15 +700,15 @@ fn a_copy_list_past_the_binding_is_refused_rather_than_sized_over_it() {
 fn a_bias_on_an_object_makes_its_levels_switch_nearer() {
     let mut world = cpu_world();
     let [fine, coarse] = give_levels(&mut world, 0);
-    // Level 2 switches in past 15.6 m, so the ball whose nearest point lies 8.6 m away draws
-    // level 1.
+    // Level 2 switches in past 15.6 m, so the ball whose level distance, to its centre less half
+    // its radius, is 9.05 m draws level 1.
     let ball = world.objects[2];
     world.scene.set_position(ball, [0.0, 0.0, 10.5]).unwrap();
     world.record(true);
     let drawn = draws(&world);
     assert!(drawn.contains(&(indices_of(&world, fine), 1)), "{drawn:?}");
-    // A bias of 2 halves every switch distance, so the same ball draws its coarsest level at
-    // 7.8 m of nearest point.
+    // A bias of 2 halves every switch distance, so the same ball draws its coarsest level past
+    // 7.8 m.
     world
         .scene
         .apply_commands(&[Command::set_level_bias(ball, 2.0)], world.frame)
@@ -1053,9 +1054,9 @@ fn moved(mut geometry: Geometry, offset: [f32; 3]) -> Geometry {
 
 /// True when the world's visible ball, given a mesh whose positions lie `offset` from its origin
 /// with two lower levels, and turned by `rotation`, draws its first lower level. The ball stands
-/// so that the shape's center lies on the camera's axis, `nearest` meters past the near side of
-/// the shape's sphere.
-fn off_origin_ball_draws_level_1(offset: [f32; 3], rotation: [f32; 4], nearest: f32) -> bool {
+/// so that the shape's center lies on the camera's axis, with its level distance, to the shape's
+/// sphere's centre less half its radius, at `distance` meters.
+fn off_origin_ball_draws_level_1(offset: [f32; 3], rotation: [f32; 4], distance: f32) -> bool {
     let mut world = cpu_world();
     let settings = world.renderer.settings_mut();
     let base = settings
@@ -1099,7 +1100,7 @@ fn off_origin_ball_draws_level_1(offset: [f32; 3], rotation: [f32; 4], nearest: 
             [
                 -turned[0],
                 -turned[1],
-                20.0 - (nearest + radius) - turned[2],
+                20.0 - (distance + 0.5 * radius) - turned[2],
             ],
         )
         .unwrap();
@@ -1118,7 +1119,7 @@ fn a_ball_off_its_origin_keeps_its_switch_when_it_turns_half_round() {
     // at a corner. Its sphere sits on the shape, so the level that it draws follows the shape's
     // distance whichever way it faces. A sphere around the origin would reach 4.5 m, and its
     // center would move 8 m as the object turns. Level 1 switches in past 0.01 times 311.8,
-    // 3.118 m of nearest point.
+    // 3.118 m of level distance, to the sphere's centre less half its radius.
     let offset = [4.0, 0.0, 0.0];
     for rotation in [[0.0, 0.0, 0.0, 1.0], [0.0, 1.0, 0.0, 0.0]] {
         assert!(

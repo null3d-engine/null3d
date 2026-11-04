@@ -90,7 +90,16 @@ How the data was produced: the commit, the Chrome version, the computer and what
 
 ## Look
 
-This record decides how to measure, not how a frame looks. Both pages draw the same scene with the same light and surfaces. No parity check compares their frames yet, because the three.js page has no held frame.
+This record decides how to measure, not how a frame looks. Both pages draw the same scene with the same light and surfaces. No parity check compares their frames, because their lighting and shadow methods differ. Each engine's level choice is judged against its own frames drawn from base levels alone, in held frames of the walk view (`bench/research/triangle-budget/`), by FLIP, a perceptual image difference that is 0 for the same image:
+
+| Walk view | Triangles a frame | FLIP | Pixels over 0.1 |
+| --- | --- | --- | --- |
+| null3D, 1 px | 4.98 M | 0.0119 | 2.4% |
+| three.js, 1 px | 1.73 M | 0.0208 | 7.1% |
+| null3D, 1 px, shadows of 3 cascades | 14.05 M | 0.0107 | 2.4% |
+| three.js, 1 px, its one shadow map | 1.73 M, and 17.9 M in the shadow pass | 0.0576 | 11.2% |
+
+So null3D's extra triangles in the main view buy a smaller error, and null3D reaches three.js's error at about 2 pixels ([D-137](D-137-lod-groups.md#the-threshold-per-preset)). three.js's count leaves its shadow pass out, because its pipeline counts the main view alone. Its shadow map picks each caster's level by one texel of 7.3 cm, and the coarse casters shadow their own surfaces: the bottom third of its frame errs by 0.104.
 
 ## Decision
 
