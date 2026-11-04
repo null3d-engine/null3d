@@ -5,6 +5,7 @@
 // both approximations with the sorted image. `?order=reverse` adds the panes in the opposite
 // order, so a test can hold the layer to the same picture whatever order the draws take.
 import { defineSketch } from '@null3d/engine';
+import { applySketchSwitches } from '../lib/sketch-switches';
 
 const params = new URL(import.meta.url).searchParams;
 const mode = params.get('mode') ?? 'sorted';
@@ -41,7 +42,8 @@ const panes: readonly Pane[] = (() => {
 	return params.get('order') === 'reverse' ? [...list].reverse() : list;
 })();
 
-export default defineSketch(({ scene, materials, geometry }) => {
+export default defineSketch(({ scene, materials, geometry, quality }) => {
+	applySketchSwitches(import.meta.url, quality);
 	// The page starts the engine without anti-aliasing, so MSAA does not smooth the panes
 	// differently on the three images, and with `moments=on` for the moment layer's modes.
 	scene.setBackground('#20242c');

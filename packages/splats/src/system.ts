@@ -142,7 +142,8 @@ export interface Splats {
 	readonly ready: Promise<void>;
 	/**
 	 * Resolves once the splats that draw are chosen and packed, which a test or a still picture
-	 * waits for. Call it after `update`.
+	 * waits for. For a stream, it also waits for the chunks that the selection wants, so the view
+	 * draws every part that it asks for. Call it after `update`.
 	 */
 	settle(): Promise<void>;
 	/** Caps the splats that draw below the preset's budget, as a device or a test needs. */
@@ -387,6 +388,15 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 	const waiters: (() => void)[] = [];
 	const settleWaiters = (): void => {
 		if (inFlight || dirty || waiters.length === 0) return;
+		if (loader) {
+			if (!loader.idle) return;
+			// A chunk that arrived while the camera had moved waits for a selection that packs it.
+			if (packedVersion !== version) {
+				dirty = true;
+				choose();
+				return;
+			}
+		}
 		for (const resolve of waiters.splice(0)) resolve();
 	};
 
@@ -488,7 +498,10 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 				);
 				maybeReady();
 			},
-			onIdle: maybeReady,
+			onIdle: () => {
+				maybeReady();
+				settleWaiters();
+			},
 		});
 		ready = streamReady;
 		syncSelector();

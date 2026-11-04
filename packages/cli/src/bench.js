@@ -50,8 +50,8 @@ Options:
   --out <file.json>         The JSON file to write (bench.json)
   --timeout <seconds>       How long the page may take to start the engine (60)
 
-It measures in Google Chrome on this computer's GPU. When the CI variable is set, it measures in
-Playwright's Chromium on SwiftShader, the software GPU of machines without a GPU.`;
+It measures in Chrome for Testing on this computer's GPU, and downloads it on first use. When the CI
+variable is set, it measures in Playwright's Chromium on SwiftShader, the software GPU of machines without a GPU.`;
 
 /**
  * @typedef {object} BenchOptions

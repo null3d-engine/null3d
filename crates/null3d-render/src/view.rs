@@ -368,6 +368,11 @@ pub struct Fullscreen {
     pub template: u32,
     /// True for the fragment form of a compute pass, which runs in its place on WebGL2.
     pub fallback: bool,
+    /// The format of the pass's target, as a draw list format code, or 0 for the format that the
+    /// scene's views draw into. A compute pass declares its storage texture's format, and its
+    /// fragment form keeps that format on every path, so the values it writes keep the range they
+    /// have on the compute path.
+    pub format: u32,
     /// True when the pass keeps two states in its target's layers, as a compute pass with history
     /// does: a run draws one state and reads the state of the run before.
     pub history: bool,

@@ -28,11 +28,12 @@ export const GPU_BEARING_PATTERNS: RegExp[] = [
 export const gpuBearingFiles = (files: readonly string[]) =>
 	bearingFiles([...files], GPU_BEARING_PATTERNS);
 
-/** A commit that main's squash keeps, with the files it changes. */
+/** A commit that main's squash keeps, with the files it changes and when it was authored. */
 export interface CommitWithFiles {
 	sha: string;
 	message: string;
 	files: readonly string[];
+	authoredAt?: string;
 }
 
 /**
@@ -48,7 +49,7 @@ export function gpuCheckProblem(commits: readonly CommitWithFiles[]): string | n
 	// landing, which says nothing about whether a check was taken. The measurement covers the whole
 	// branch's build, so one line answers for all of it; a later drawing change re-takes it.
 	const values = commits.flatMap((commit) =>
-		findAckValues(effectiveMessage(commit.message), GPU_CHECK_TRAILER),
+		findAckValues(effectiveMessage(commit.message), GPU_CHECK_TRAILER, commit.authoredAt),
 	);
 	if (values.some((value) => !isBareAck(value))) return null;
 	const commit = `${changing.sha.slice(0, 8)} ${changing.message.split('\n')[0]}`;

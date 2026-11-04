@@ -120,6 +120,7 @@ export function createUnderwater(
 						density,
 						caustics,
 						level: water.level,
+						waveAmplitude: water.waveAmplitude,
 						eye,
 						current: [current[0], current[1]],
 						lens,

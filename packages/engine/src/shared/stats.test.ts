@@ -4,7 +4,15 @@ import { percentile, percentiles } from './stats';
 describe('percentiles', () => {
 	it('gives the count, median, percentiles and mean of the samples, in any order', () => {
 		const samples = Float64Array.from({ length: 101 }, (_, i) => 100 - i);
-		expect(percentiles(samples)).toEqual({ count: 101, median: 50, p95: 95, p99: 99, mean: 50 });
+		expect(percentiles(samples)).toEqual({
+			count: 101,
+			median: 50,
+			p95: 95,
+			p99: 99,
+			max: 100,
+			min: 0,
+			mean: 50,
+		});
 	});
 
 	it('interpolates between the nearest ranks', () => {
@@ -21,10 +29,19 @@ describe('percentiles', () => {
 		expect(summary.median).toBe(2);
 		expect(summary.p95).toBeCloseTo(2.9, 12);
 		expect(summary.p99).toBeCloseTo(2.98, 12);
+		expect(summary.max).toBe(3);
 		expect([...samples]).toEqual([3, 1, 2]);
 	});
 
 	it('reports zeros for no samples', () => {
-		expect(percentiles([])).toEqual({ count: 0, median: 0, p95: 0, p99: 0, mean: 0 });
+		expect(percentiles([])).toEqual({
+			count: 0,
+			median: 0,
+			p95: 0,
+			p99: 0,
+			max: 0,
+			min: 0,
+			mean: 0,
+		});
 	});
 });

@@ -6,7 +6,7 @@
 // itself as a whole.
 import { defineSketch } from '@null3d/engine';
 import { bakeImpostorAtlas, createImpostors, octahedralAtlas } from '@null3d/impostors';
-import { pineArrays } from '../../../examples/lib/pines';
+import { pineArrays } from '../lib/pines';
 
 /** The layer that only the sun draws: the cast-only cards. */
 const CASTER_LAYER = 2;

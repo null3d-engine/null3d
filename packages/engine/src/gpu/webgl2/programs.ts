@@ -21,6 +21,8 @@ import {
 	TEMPLATE_AO_DEPTH,
 	TEMPLATE_BACKGROUND,
 	TEMPLATE_BACKGROUND_ATMOSPHERE,
+	TEMPLATE_BACKGROUND_CLOUDS,
+	TEMPLATE_BACKGROUND_CLOUDS_ATMOSPHERE,
 	TEMPLATE_BACKGROUND_CUBE,
 	TEMPLATE_BACKGROUND_SKY,
 	TEMPLATE_BLOOM,
@@ -75,6 +77,8 @@ import {
 	TEMPLATE_SHADOW_CUTOUT,
 	TEMPLATE_SHADOW_CUTOUT_MAP,
 	TEMPLATE_SHADOW_DEPTH,
+	TEMPLATE_SINGLE_COMPOSITE,
+	TEMPLATE_SINGLE_DEPTH,
 	TEMPLATE_SKY_TABLE,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
@@ -121,17 +125,17 @@ const DEV: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV
  * The first slot of each bind group. A slot is a uniform block binding point, a sampler's place and
  * the place where a bind group leaves a texture, and each binding of a group takes its group's
  * first slot plus its binding number. The per-frame group, which holds the most bindings, comes
- * first, with sixteen. Group 1 has six slots (the backgrounds' groups, of which the physical sky's
- * holds the most: its values, three tables and two samplers), group 2 ten (the instance textures,
- * then the two textures that skinned meshes read, the two that morphed meshes read, and the two
- * textures of the row values of instance batches) and group 3 the last eighteen: the eight map
- * textures, then their samplers, of which the standard material's shared map units take the first
- * six of each, then the displacement map's texture and sampler. Group 4 holds the scene depth that
- * decals read. Slots are no texture units: each program numbers the textures it reads from unit 0,
- * so the groups' bindings never run out of units. The groups' uniform blocks stay below the fewest
- * binding points that WebGL2 allows.
+ * first, with sixteen. Group 1 has eight slots (the backgrounds' groups, of which the physical sky's
+ * holds the most: its values, three tables and two samplers, and the volumetric cloud tier's noise
+ * field and its sampler), group 2 ten (the instance textures, then the two textures that skinned
+ * meshes read, the two that morphed meshes read, and the two textures of the row values of instance
+ * batches) and group 3 the last eighteen: the eight map textures, then their samplers, of which the
+ * standard material's shared map units take the first six of each, then the displacement map's
+ * texture and sampler. Group 4 holds the scene depth that decals read. Slots are no texture units:
+ * each program numbers the textures it reads from unit 0, so the groups' bindings never run out of
+ * units. The groups' uniform blocks stay below the fewest binding points that WebGL2 allows.
  */
-const GROUP_BASES = Uint8Array.of(0, 16, 22, 32, 50);
+const GROUP_BASES = Uint8Array.of(0, 16, 24, 34, 52);
 
 /** The fewest uniform block binding points that a WebGL2 context has. */
 export const MIN_UNIFORM_BLOCK_SLOTS = 24;
@@ -357,6 +361,11 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_BACKGROUND_CUBE] = { shader: shaders.background_cube, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND_SKY] = { shader: shaders.sky, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND_ATMOSPHERE] = { shader: shaders.sky_physical, pipeline: 'main' };
+	templates[TEMPLATE_BACKGROUND_CLOUDS] = { shader: shaders.sky_volume, pipeline: 'main' };
+	templates[TEMPLATE_BACKGROUND_CLOUDS_ATMOSPHERE] = {
+		shader: shaders.sky_volume_physical,
+		pipeline: 'main',
+	};
 	templates[TEMPLATE_SKY_TABLE] = { shader: shaders.sky_tables, pipeline: 'main' };
 	// WebGL2's depth step always reads one sample: the backend keeps a copy of one sample of a
 	// multisampled depth target that a shader reads.
@@ -389,6 +398,9 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	// The weighted layer's depth copy reads the same one-sample copy of the depth.
 	templates[TEMPLATE_WEIGHTED_COMPOSITE] = { shader: shaders.weighted_composite, pipeline: 'main' };
 	templates[TEMPLATE_WEIGHTED_DEPTH] = { shader: shaders.weighted_depth, pipeline: 'main' };
+	// So does the one-sample layer's depth copy.
+	templates[TEMPLATE_SINGLE_COMPOSITE] = { shader: shaders.single_composite, pipeline: 'main' };
+	templates[TEMPLATE_SINGLE_DEPTH] = { shader: shaders.single_depth, pipeline: 'main' };
 	// The moment layer's steps and its colour builds, which draw meshes with their own shader
 	// entries so that their builds load with the layer alone.
 	templates[TEMPLATE_MOMENT_COMPOSITE] = { shader: shaders.moment_composite, pipeline: 'main' };
