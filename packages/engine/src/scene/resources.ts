@@ -152,6 +152,7 @@ import { planEnded, planStarted } from '../shared/task-pending';
 import type { WgslUpdate } from '../shared/wgsl-updates';
 import { type ColorInput, linearColor, writeLinearColor } from './color';
 import type { SceneInput } from './features';
+import type { PiecesData } from './gltf-parse';
 import type { LevelsTaskOutput, TaskLevel } from './levels-task';
 import type { CoreMemory } from './memory';
 import {
@@ -354,6 +355,20 @@ export const PIECES_MIN_TRIANGLES = 32_768;
 export const FACING_PIECES_MIN_TRIANGLES = 1024;
 export const FACING_PIECES_DRAWN_TRIANGLES = 65_536;
 
+/**
+ * @internal True when `copies` copies of a list of `triangles` triangles pay for its facing pieces:
+ * the pieces planner's own `facingPiecesPay`, which a test keeps equal, here so the sketch's thread
+ * reads it without the planner's code.
+ */
+export const facingCopiesPay = (triangles: number, copies: number): boolean =>
+	triangles >= FACING_PIECES_MIN_TRIANGLES &&
+	triangles < PIECES_MIN_TRIANGLES &&
+	triangles * copies >= FACING_PIECES_DRAWN_TRIANGLES;
+
+/** The triangles that pieces hold together. */
+const piecesTriangles = (pieces: PiecesData): number =>
+	pieces.triangles.reduce((sum, count) => sum + count, 0);
+
 /** The level planner's start, which loads with the first mesh that plans its levels. */
 let plannerModule: Promise<typeof import('./mesh-levels')> | undefined;
 
@@ -415,8 +430,20 @@ export class MeshGeometry {
 	private copies = 0;
 	/** True while the mesh waits for its first draw to sort its pieces alone (`levels: 'pieces'`). */
 	private piecesOnly = false;
-	/** True once a mesh whose levels were set by hand has planned its facing pieces. */
+	/**
+	 * True once the mesh plans its own facing pieces with no levels: a mesh whose levels come from
+	 * a file or were set by hand.
+	 */
 	private handPieces = false;
+	/** True for a mesh that a file made, whose levels and pieces come from the file. */
+	private fromFile = false;
+	/** True when the file holds pieces of the mesh's list. */
+	private filePieces = false;
+	/**
+	 * The pieces that a file holds of the mesh's smaller list, which wait until the scene's copies
+	 * of the mesh, or of the base whose level it is, hold enough triangles to pay for them.
+	 */
+	private heldPieces: PiecesData | undefined;
 
 	/** @internal */
 	constructor(
@@ -811,13 +838,17 @@ export class MeshGeometry {
 	 * takes no automatic levels from then on, and drops the ones it has.
 	 */
 	drawnWith(material: Material, copies: number, call: string): void {
-		// A mesh that asked for pieces alone sorts them at its first draw by a material that keeps
-		// its vertices where the mesh puts them and that draws in buckets, not whole and sorted.
-		if (this.piecesOnly && !material.shapesVertices && !material.wholeOnly) {
+		// Copies count toward the levels and the pieces where their material draws the mesh's own
+		// shape in buckets: one that moves the vertices draws another shape, and one that blends or
+		// lets light through draws the base level whole and sorted.
+		const counted = !material.shapesVertices && !material.wholeOnly;
+		if (counted) this.copies += copies;
+		// A mesh that asked for pieces alone sorts them at its first such draw.
+		if (this.piecesOnly && counted) {
 			this.piecesOnly = false;
-			this.copies += copies;
 			this.planPiecesQuietly(true, call);
 		}
+		if (counted && !material.facesBoth) this.facingPiecesFor(call);
 		if (this.automaticOff) return;
 		if (material.shapesVertices) {
 			this.automaticOff = true;
@@ -827,13 +858,8 @@ export class MeshGeometry {
 		// A material that draws the base level alone leaves the copies' detail as it is; a draw with
 		// another material later plans the levels.
 		if (material.wholeOnly) return;
-		this.copies += copies;
 		const handSet = this.lowerLevels.length > 0 && this.built.length === 0;
-		if (handSet) {
-			this.planHandSetPieces(material, call);
-			return;
-		}
-		if (this.planning || this.built.length > 0 || !this.automaticWanted()) return;
+		if (handSet || this.planning || this.built.length > 0 || !this.automaticWanted()) return;
 		if (this.morphTargets > 0 || this.core.glue.meshFormat(this.id) & MOVING_VERTEX_BITS) {
 			this.automaticOff = true;
 			return;
@@ -842,26 +868,48 @@ export class MeshGeometry {
 	}
 
 	/**
-	 * Plans the facing pieces of a mesh whose levels were set by hand, once its copies hold enough
-	 * triangles together, as a town's house walls do. Such a mesh plans no levels, and its copies
-	 * draw its base list out to where its own lower levels switch in, so the pieces go on the base.
-	 * A material that draws both faces drops no piece by the way it faces, so it plans none.
+	 * Gives the mesh and its levels the facing pieces that pay once its copies hold enough
+	 * triangles together, as a town's copies of a house's walls do. The pieces that a file holds of
+	 * a smaller list wait for that, so few copies draw the list whole with no draw more. A mesh whose
+	 * levels come from a file, or were set by hand, plans no levels, and its copies draw its base
+	 * list out to where its lower levels switch in: where the file holds no pieces of that list, it
+	 * plans them on the job workers, over a sorted copy of its indices. A mesh with joints, morph
+	 * targets or a vertex record plans none, and neither does one with `levels: false`.
 	 */
-	private planHandSetPieces(material: Material, call: string): void {
-		const triangles = this.automaticTriangles;
+	private facingPiecesFor(call: string): void {
+		for (const mesh of [this, ...this.lowerLevels.map((level) => level.mesh)]) {
+			const held = mesh.heldPieces;
+			if (!held || !mesh.live || !facingCopiesPay(piecesTriangles(held), this.copies)) continue;
+			mesh.heldPieces = undefined;
+			setMeshPieces(this.core, mesh.id, held, call);
+		}
+		const handSet = this.lowerLevels.length > 0 && this.built.length === 0;
+		const own = this.fromFile ? !this.filePieces : handSet && !this.automaticOff;
 		if (
+			!own ||
 			this.planning ||
 			this.handPieces ||
-			material.facesBoth ||
-			triangles < FACING_PIECES_MIN_TRIANGLES ||
-			triangles >= PIECES_MIN_TRIANGLES ||
-			triangles * this.copies < FACING_PIECES_DRAWN_TRIANGLES ||
+			!facingCopiesPay(this.automaticTriangles, this.copies) ||
 			this.morphTargets > 0 ||
 			this.core.glue.meshFormat(this.id) & MOVING_VERTEX_BITS
 		)
 			return;
 		this.handPieces = true;
 		this.planPiecesQuietly(false, call);
+	}
+
+	/**
+	 * @internal Marks a mesh that a file made, and takes the pieces that the file holds of its
+	 * list, if any: a large list's at once, and a smaller list's once the scene's copies pay for
+	 * them. A list that the pieces do not fit draws whole.
+	 */
+	fromFileWith(pieces: PiecesData | undefined, call: string): void {
+		this.fromFile = true;
+		if (!pieces) return;
+		this.filePieces = true;
+		if (piecesTriangles(pieces) >= PIECES_MIN_TRIANGLES)
+			setMeshPieces(this.core, this.id, pieces, call);
+		else this.heldPieces = pieces;
 	}
 
 	/**

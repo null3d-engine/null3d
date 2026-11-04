@@ -13,8 +13,10 @@
 
 import {
 	facingPieces,
+	facingPiecesPay,
 	listBounds,
 	meanFacing,
+	ONE_WAY_FACING,
 	PIECE_MAX,
 	pieceCount,
 	piecesInOrder,
@@ -27,13 +29,6 @@ import type { PiecesData } from './gltf-parse';
 export interface ListPieces extends PiecesData {
 	indices: Uint32Array;
 }
-
-/**
- * A list whose triangles face one way by this much, as `meanFacing` measures it, lies like a ground
- * or a wall: its pieces split it by space alone, so that the view cuts the pieces that it leaves,
- * since groups by facing would each spread over the whole list.
- */
-export const SPACE_PIECES_FACING = 0.7;
 
 /**
  * The group of each triangle of `indices` in a split mesh whose vertices name the parts that hold
@@ -84,7 +79,10 @@ export function planListPieces(
 	const triangles = indices.length / 3;
 	const wanted = pieceCount(triangles);
 	if (wanted === 0) {
-		const plan = space || split ? undefined : facingPieces(positions, indices, copies);
+		const plan =
+			space || split || !facingPiecesPay(triangles, copies)
+				? undefined
+				: facingPieces(positions, indices);
 		return (
 			plan && {
 				indices: piecesInOrder(indices, plan, cacheOrder),
@@ -111,7 +109,9 @@ export function planListPieces(
 		const largest = shares.indexOf(Math.max(...shares));
 		shares[largest] = (shares[largest] as number) - 1;
 	}
-	const facings = space || meanFacing(positions, indices) >= SPACE_PIECES_FACING ? 1 : undefined;
+	// A list that lies like a ground or a wall splits by space alone, so the view cuts the pieces
+	// that it leaves out: groups by facing would each spread over the whole list.
+	const facings = space || meanFacing(positions, indices) >= ONE_WAY_FACING ? 1 : undefined;
 	const sorted = new Uint32Array(indices.length);
 	const counts: number[] = [];
 	const bounds: number[] = [];

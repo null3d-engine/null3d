@@ -35,7 +35,11 @@ So `listPieces` holds one rule, which the tool and the engine share:
 - `facingPieces` groups the triangles into up to six facing groups. The groups start from the six ways along the list's own axes, since a kit builds square to them. Each group keeps the triangles within the angle of its mean facing that lets its cone drop the most of them. The triangles past that angle, such as a pot's, a louvre's or a sloped cap's, draw in one more piece, which seldom culls. A group that keeps fewer than 64 triangles joins that piece.
 - The list keeps its pieces only where `coneShare` reaches 0.25: the share of its triangles that the cones drop over eyes spread evenly around each piece. A cone of cutoff `s` drops its piece for `(1 - s) / 2` of the directions, so a flat piece scores a half.
 - A material that draws both faces or blends gets no facing pieces: their cone test never holds.
-- The tool counts the copies that a file places: each node of the mesh, and each row of its instancing. A file of one prop that a page places many times holds one copy, so the tool gives it no facing pieces. Such a page draws the file's levels and pieces as stored. The engine counts the copies that the scene draws ([D-310](D-310-runtime-levels.md#pieces-of-meshes-made-in-code)).
+- A list that faces one way by 0.7 or more, as `meanFacing` measures it, gets none either. A view sees a ground from above, so the cone share over eyes all around overrates it. The cluster test's heightfield passed the share on its lower levels. The same number splits a large list by space alone, and `ONE_WAY_FACING` in the planner holds it for both.
+- The tool stores a smaller list's facing pieces whatever copies the file places. A file of one prop that a page copies many times holds one copy, and only the scene knows the copies. In the file the list is in piece order already, so the pieces cost only their table of eight numbers each.
+- The engine decides at run time. It counts the copies that the scene draws of each mesh. Each object and instance batch counts whose material draws the mesh's own shape in buckets. The loader gives a large list's pieces to the core at once. It holds a smaller list's pieces, of the mesh and of each of its levels. They go to the core once the base's copies hold 65,536 of that list's triangles together. Until then the list draws whole as one range, with no draw more. The count only grows: a scene that destroys copies keeps the pieces, and the check during play draws the mesh whole where they stop paying.
+- A file's mesh whose smaller list holds no pieces, as an older file's, plans facing pieces of its base list once its copies pay. The job workers plan them over a sorted copy of its indices, as for a mesh made in code ([D-310](D-310-runtime-levels.md#pieces-of-meshes-made-in-code)). Its levels' lists stay whole: they share the base's vertices, and the plan reads only the base. A list that the tool found too rough plans again at run time and finds no pieces again, once per mesh.
+- The sketch thread decides with its own copy of the rule's numbers (`facingCopiesPay`), so it loads no planner code to decide. A unit test keeps it equal to `facingPiecesPay`.
 
 The Island's 13 wall kinds, as the rule plans them, with their copies on the island. The cone share is that of the plan that many copies would give:
 
@@ -54,6 +58,8 @@ The Island's 13 wall kinds, as the rule plans them, with their copies on the isl
 | Kind 10 | 4,469 | 96 | 7 | 37.7% |
 | Kind 11 | 1,652 | 131 | 7 | 35.5% |
 | Kind 12 | 1,906 | 110 | 7 | 36.2% |
+
+The desert benchmark's props gain nothing. Their files hold 40 lists of 1,024 to 32,767 triangles: levels of the columns, the arches, the boulders and the pebbles, and the pebbles' bases. None passes the cone share. The rocks are rough, and the fluted columns and curved arches face every way, so no facing group keeps a tight cone.
 
 Each kind's seventh piece holds 8% to 26% of its triangles. Without it, six facing groups gave a cone share of 13% to 15% on six of the kinds. There a few pots and chimney caps widened every group's cone to about 44 degrees. Groups that start from directions spread over the sphere found the same groups on the houses. On a plain box they put two sides into one group.
 
@@ -142,7 +148,8 @@ Rejected:
 - Vertex pulling of meshlets, as three.js does. Every material would need a build that reads its vertices from storage, and three.js pays more per triangle for it.
 - A new word in the bucket record. Every material's vertex shader includes the record's structure, so the whole shader set would build again and every shader file would grow.
 - Pieces on every list of 8,192 triangles or more. A copy draws such a list far away, where the view seldom cuts it, and its 4 or 5 pieces face too many ways to cull. They cost a draw each and cut nothing. The facing rule gives pieces only to a list whose cones drop a quarter of it, and only where many copies draw it.
-- Facing pieces on a list whatever its copies. A list that a few copies draw saves a few thousand triangles a pass for its draws.
+- Drawing facing pieces whatever the copies. A list that a few copies draw saves a few thousand triangles a pass for its draws.
+- The tool counting the copies that a file places. Pages copy a file's mesh in code, as the desert benchmark copies each of its props thousands of times from one copy in its file.
 - Six facing groups without a piece for the rest. A few odd triangles widen each group's cone, as the Island's walls show above.
 - 32 pieces on a list. They cut no more triangles than 16 and add half again as many draws.
 - Each copy starting its walk of the pieces at another piece. It did not shorten the culling pass, since its cost is each thread's chain of round trips, not threads that add to one count.
