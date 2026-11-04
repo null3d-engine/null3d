@@ -348,7 +348,9 @@ impl Culling {
     /// one of its own, or one that `shared_recreated` names, of the layouts or the pyramid. The
     /// group binds the layout's bucket tables beside the scene's matrices and layer table. With
     /// `occlusion`, the view culls in two phases: it has twice the indirect draws with its history
-    /// after them, and a group of the occlusion layout, which binds its pyramid too.
+    /// after them, and a group of the occlusion layout, which binds its pyramid too. Returns true
+    /// when the view's compacted instances or indirect draws are new, which other groups that bind
+    /// them must then bind again.
     pub(super) fn apply(
         &mut self,
         list: &mut DrawList,
@@ -357,8 +359,8 @@ impl Culling {
         shared_recreated: bool,
         binding_bytes: u32,
         occlusion: bool,
-    ) -> Result<(), RecordError> {
-        let recreated = self.size_buffers(
+    ) -> Result<bool, RecordError> {
+        let (recreated, made) = self.size_buffers(
             list,
             view,
             layout,
@@ -390,7 +392,7 @@ impl Culling {
                 )?;
             }
         }
-        Ok(())
+        Ok(made)
     }
 
     /// Sizes the motion view's buffers for the motion layout, as [`Self::apply`] sizes a view's,
@@ -406,7 +408,7 @@ impl Culling {
         last: [u32; 2],
     ) -> Result<(), RecordError> {
         let view = ViewId::MOTION;
-        let recreated =
+        let (recreated, _) =
             self.size_buffers(list, view, layout, shared_recreated, binding_bytes, false)?;
         if recreated {
             for (parity, last) in last.into_iter().enumerate() {
@@ -440,8 +442,9 @@ impl Culling {
     }
 
     /// Sizes a view's compacted instance and indirect buffers for the layout, at most
-    /// `binding_bytes` each. Returns true when its culling group must be made again: a buffer of
-    /// its own is new, or one that `shared_recreated` names, or its phases changed.
+    /// `binding_bytes` each. Returns whether its culling group must be made again, because a
+    /// buffer of its own is new, or one that `shared_recreated` names, or its phases changed; and
+    /// whether a buffer of its own is new.
     fn size_buffers(
         &mut self,
         list: &mut DrawList,
@@ -450,7 +453,7 @@ impl Culling {
         shared_recreated: bool,
         binding_bytes: u32,
         occlusion: bool,
-    ) -> Result<bool, RecordError> {
+    ) -> Result<(bool, bool), RecordError> {
         let buffers = self.views[view.index()]
             .as_mut()
             .expect("a view's buffers exist before it culls");
@@ -460,8 +463,9 @@ impl Culling {
             (1, COUNTS_BYTES)
         };
         let draws = layout.draws.len() as u32 * phases;
-        let mut recreated = shared_recreated || buffers.occlusion != occlusion;
+        let rebind = shared_recreated || buffers.occlusion != occlusion;
         buffers.occlusion = occlusion;
+        let mut made_any = false;
         let needed = [
             (
                 ids::visible(view),
@@ -482,10 +486,10 @@ impl Culling {
                     bytes: binding_bytes,
                 })?;
                 list.push(Op::CreateBuffer, &[id, *made, flags])?;
-                recreated = true;
+                made_any = true;
             }
         }
-        Ok(recreated)
+        Ok((rebind || made_any, made_any))
     }
 
     /// Sizes a view's compacted instance buffer for the layout on the direct-draw path, which
