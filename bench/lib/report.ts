@@ -54,6 +54,11 @@ export interface BenchResult extends TimedRun {
 	desert?: DesertFigures;
 	/** The computer's 1-minute load average before the page opened and after it closed. */
 	machineLoad?: MachineLoad;
+	/**
+	 * What went wrong in a page that still published its result: errors that the page or its workers
+	 * logged, such as a GPU that rejected the engine's commands, and files that failed to load.
+	 */
+	problems?: string[];
 }
 
 /** The computer's 1-minute load average around a page's run. */
@@ -347,6 +352,22 @@ function machineLoadOf(results: readonly BenchResult[]): SummaryRow['machineLoad
 		lowest: Math.min(...loads.map(({ before, after }) => Math.min(before, after))),
 		highest: Math.max(...loads.map(({ before, after }) => Math.max(before, after))),
 	};
+}
+
+/**
+ * Why a page's result is no timing figure, or undefined when it is one. A page that failed, that
+ * logged a problem while it ran, or whose load reached the quiet limit before it opened or after it
+ * closed, measured a fault or other work along with the engine.
+ */
+export function figureProblem(result: BenchResult): string | undefined {
+	if (!result.ok) return result.error ?? 'the page failed without a message';
+	if (result.problems && result.problems.length > 0)
+		return `the page logged problems:\n  ${result.problems.join('\n  ')}`;
+	const load = result.machineLoad;
+	const highest = load ? Math.max(load.before, load.after) : 0;
+	if (highest >= QUIET_LOAD)
+		return `the 1-minute load reached ${highest.toFixed(1)}, where other work spoils the timing figures`;
+	return undefined;
 }
 
 /**
