@@ -572,6 +572,13 @@ export function shadowCopies(
 			}
 			off.set(size, drop);
 		}
+		// The level's pieces, if cascades culled them by the box as the camera's view does: size 0.
+		let pieceDrop = 0;
+		for (const p of lv.pieces) {
+			worldSphere(copy.m, p.sphere, 0);
+			if (!inside(c.planes, scratchC, p.sphere[3] * copy.scale)) pieceDrop += p.count;
+		}
+		off.set(0, pieceDrop);
 		out.push({ copy, level, now: lv.triangles, offscreen: off, tested });
 	}
 	return out;
