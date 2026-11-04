@@ -81,7 +81,8 @@ def key(r):
     return (r["engine"], r["view"], r["shadows"], r["t"])
 
 
-refs = {key(r): r for r in records if r["lod"] == 0 and r["lodShadow"] == 0}
+# A variant, such as other model files, is judged against the plain run's reference.
+refs = {key(r): r for r in records if r["lod"] == 0 and r["lodShadow"] == 0 and not r.get("variant")}
 cache = {}
 rows = []
 for r in records:
@@ -93,6 +94,7 @@ for r in records:
         cache[ref["shot"]] = load(ref["shot"])
     figures = measures(cache[ref["shot"]], load(r["shot"]), keep_map=f"flip-{r['shot']}")
     rows.append({**{k: r[k] for k in ("engine", "view", "shadows", "lod", "lodShadow", "t", "shot")},
+                 "variant": r.get("variant", ""),
                  "triangles": r.get("triangles"), "shadowTriangles": r.get("shadowTriangles"),
                  "gpuMs": r.get("gpuMs"), "refTriangles": ref.get("triangles"),
                  "refGpuMs": ref.get("gpuMs"), **figures})
@@ -101,14 +103,14 @@ for r in records:
 # The mean over the camera times of each setting.
 summary = {}
 for row in rows:
-    s = (row["engine"], row["view"], row["shadows"], row["lod"], row["lodShadow"])
+    s = (row["engine"], row["variant"], row["view"], row["shadows"], row["lod"], row["lodShadow"])
     summary.setdefault(s, []).append(row)
 table = []
-for (engine, view, shadows, lod, lod_shadow), group in sorted(summary.items()):
+for (engine, variant, view, shadows, lod, lod_shadow), group in sorted(summary.items()):
     mean = lambda f: float(np.mean([f(g) for g in group if f(g) is not None])) if any(
         f(g) is not None for g in group) else None
     table.append({
-        "engine": engine, "view": view, "shadows": shadows, "lod": lod, "lodShadow": lod_shadow,
+        "engine": engine, "variant": variant, "view": view, "shadows": shadows, "lod": lod, "lodShadow": lod_shadow,
         "frames": len(group),
         "triangles": mean(lambda g: g["triangles"]),
         "shadowTriangles": mean(lambda g: g["shadowTriangles"]),
@@ -121,6 +123,6 @@ for (engine, view, shadows, lod, lod_shadow), group in sorted(summary.items()):
 json.dump({"frames": rows, "table": table}, open(out_path, "w"), indent="\t")
 print(f"wrote {out_path}")
 for t in table:
-    print(t["engine"], t["shadows"], t["lod"], t["lodShadow"], f"tris {t['triangles']}",
+    print(t["engine"], t["variant"] or "-", t["shadows"], t["lod"], t["lodShadow"], f"tris {t['triangles']}",
           f"flip {t['all.flip']:.4f} near {t['near.flip']:.4f} over0.1 {t['all.flipOver01']:.4f}",
           f"ssim {t['all.ssim']:.4f} mad {t['all.mad']:.3f}")

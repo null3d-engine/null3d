@@ -30,6 +30,7 @@ const engines = opt('--engines', 'null3d,three').split(',');
 const measureSeconds = Number(opt('--measure', '1'));
 const plan = opt('--plan', 'all');
 const SETTLE_SECONDS = Number(opt('--settle', '25'));
+const pagePerTime = args.includes('--page-per-time');
 /** Extra switches for every page, such as `occlusion=off`. */
 const extra = new URLSearchParams(opt('--query', ''));
 /** Only the settings named here, as lod/lodShadow pairs such as `1/1,0/0`; all of the plan's without it. */
@@ -143,10 +144,13 @@ try {
 			? job.settings.filter(([a, b]) => only.split(',').includes(`${a}/${b}`))
 			: job.settings;
 		// null3D takes its thresholds when the page starts, so each of its settings opens a page.
+		// With --page-per-time, null3D also opens a page for each camera time, which starts there.
 		const groups =
-			job.engine === 'null3d'
-				? settings.map((s) => ({ settings: [s], times }))
-				: [{ settings, times }];
+			job.engine !== 'null3d'
+				? [{ settings, times }]
+				: pagePerTime
+					? settings.flatMap((s) => times.map((t) => ({ settings: [s], times: [t] })))
+					: settings.map((s) => ({ settings: [s], times }));
 		for (const group of groups) {
 			const page = await newParkedPage(browser, { viewport: { width: 1920, height: 1080 } });
 			const problems: string[] = [];
@@ -159,6 +163,7 @@ try {
 			if (job.engine === 'null3d') {
 				query.set('lod', String(group.settings[0]?.[0]));
 				query.set('lodShadow', String(group.settings[0]?.[1]));
+				if (pagePerTime) query.set('at', String(group.times[0]));
 			}
 			for (const [k, v] of extra) query.set(k, v);
 			const address = `http://localhost:${port}/bench/research/triangle-budget/pages/${job.engine}.html?${query}`;
@@ -204,6 +209,7 @@ try {
 						lodShadow,
 						t,
 						shot: name,
+						variant: extra.toString(),
 						load: loadavg()[0],
 						problems: [...problems],
 						...figures,
