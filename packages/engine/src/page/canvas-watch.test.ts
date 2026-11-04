@@ -19,6 +19,16 @@ describe('canvasPixels', () => {
 		});
 	});
 
+	test('keeps the CSS size times the ratio where the box reports fewer device pixels', () => {
+		// Headless Chrome under an emulated ratio of 2 without a forced screen ratio: the box stays
+		// at one device pixel per CSS pixel.
+		expect(canvasPixels(1280, 720, 2, 4, { width: 1280, height: 720 }, 8192)).toEqual({
+			width: 2560,
+			height: 1440,
+			ratio: 2,
+		});
+	});
+
 	test('caps the ratio and ignores the box below the page ratio', () => {
 		expect(canvasPixels(960, 540, 2, 1, { width: 1920, height: 1080 }, 8192)).toEqual({
 			width: 960,
