@@ -1,8 +1,18 @@
 // The types of the pieces planner that the asset tool and the engine share (pieces.js). The
 // planner is plain JavaScript, so that Node runs it as it stands in the asset tool.
 
-/** The fewest triangles of one list for it to get pieces. */
+/** The fewest triangles of one list for it to get pieces whatever draws it. */
 export const PIECE_LIST_MIN_TRIANGLES: number;
+/** The fewest triangles of a smaller list for it to get facing pieces. */
+export const FACING_LIST_MIN_TRIANGLES: number;
+/** The fewest triangles that a smaller list's copies hold together for it to get facing pieces. */
+export const FACING_DRAWN_MIN_TRIANGLES: number;
+/** A list whose triangles face one way by this much lies like a ground or a wall. */
+export const ONE_WAY_FACING: number;
+/** The facing groups of a smaller list. */
+export const FACING_GROUPS: number;
+/** The least share of a smaller list's triangles that its cones drop, for it to keep its pieces. */
+export const FACING_MIN_SHARE: number;
 /** The triangles that one piece aims to hold. */
 export const PIECE_TRIANGLES: number;
 /** The fewest pieces of one list. */
@@ -45,6 +55,42 @@ export function planPieces(
 	count: number,
 	facings?: number,
 ): PiecePlan | undefined;
+
+/**
+ * True when `copies` copies of a list of `triangles` triangles pay for its facing pieces: a list
+ * from `FACING_LIST_MIN_TRIANGLES` up to `PIECE_LIST_MIN_TRIANGLES` whose copies hold
+ * `FACING_DRAWN_MIN_TRIANGLES` triangles or more together.
+ */
+export function facingPiecesPay(triangles: number, copies: number): boolean;
+
+/**
+ * The facing pieces of a list from `FACING_LIST_MIN_TRIANGLES` up to `PIECE_LIST_MIN_TRIANGLES`
+ * triangles, or `undefined` for a list outside that range or whose cones would drop less than
+ * `FACING_MIN_SHARE` of its triangles. The triangles that face between the groups draw in one piece
+ * more, which faces every way. The pieces pay only where many copies draw the list
+ * (`facingPiecesPay`).
+ */
+export function facingPieces(
+	positions: ArrayLike<number>,
+	indices: ArrayLike<number>,
+): PiecePlan | undefined;
+
+/**
+ * The pieces that a file stores for a triangle list: `pieceCount` pieces for a large list, else
+ * `facingPieces`, else none. `facing` is false for a list whose material draws both faces or
+ * blends, so a smaller list gets none.
+ */
+export function listPieces(
+	positions: ArrayLike<number>,
+	indices: ArrayLike<number>,
+	facing?: boolean,
+): PiecePlan | undefined;
+
+/**
+ * The share of a plan's triangles that its cones drop, over eyes spread evenly around each piece
+ * and far from it.
+ */
+export function coneShare(plan: PiecePlan): number;
 
 /**
  * Each group's share of `count` pieces, by its triangles in `sizes`, at least one: the largest

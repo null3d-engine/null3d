@@ -15,7 +15,7 @@
 //
 // glTF-Transform drops extensions it does not know, so the tool reads and writes this one itself.
 import { Extension, ExtensionProperty, PropertyType } from '@gltf-transform/core';
-import { pieceCount, piecesInOrder, planPieces } from '@null3d/engine/pieces-planner';
+import { listPieces, piecesInOrder } from '@null3d/engine/pieces-planner';
 import { cacheOrder, triangleIndices, triangleLists } from './geometry.js';
 import { lodOf } from './lod-extension.js';
 
@@ -143,7 +143,9 @@ function readPositions(accessor) {
 
 /**
  * The meshes whose triangle lists may get pieces: each mesh that draws a level set, with every
- * level's mesh. A list gets pieces where it holds enough triangles ({@link pieceCount}). A mesh
+ * level's mesh. A list gets pieces by the pieces planner's rule ({@link listPieces}), whatever
+ * copies the file places, since a page may place many copies of a mesh that the file holds once;
+ * the engine draws a smaller list's facing pieces only once the scene's copies pay for them. A mesh
  * that a skin poses and one with morph targets keep their lists as they are, since a posed list has
  * no fixed bounds. A mesh with a tree of cluster patches gets pieces too: its whole levels draw on
  * the paths that draw no patches, and its tree keeps its own indices.
@@ -169,8 +171,20 @@ function piecedMeshes(doc) {
 }
 
 /**
- * Sorts each large triangle list of a mesh with levels into pieces (see the engine's pieces
- * planner), orders each piece's triangles for the vertex cache, and stores the pieces in
+ * True for a list whose material lets its copies drop a piece by the way it faces: one that draws
+ * one face and does not blend.
+ *
+ * @param {Primitive} prim
+ */
+function facesOneWay(prim) {
+	const material = prim.getMaterial();
+	return !material || (!material.getDoubleSided() && material.getAlphaMode() !== 'BLEND');
+}
+
+/**
+ * Sorts each triangle list of a mesh with levels that the pieces planner's rule gives pieces into
+ * them: a large list, or a smaller one whose triangles face a few ways.
+ * It orders each piece's triangles for the vertex cache, and stores the pieces in
  * `NULL3D_pieces`. The vertices stay as they are, so the levels keep sharing them. Run after the
  * levels are stored, since a level's own mesh gets pieces too, and before any step that reads
  * triangles by their place, such as the raycast trees.
@@ -190,9 +204,7 @@ export function storePieces(doc) {
 			const position = /** @type {Accessor} */ (prim.getAttribute('POSITION'));
 			const vertices = position.getCount();
 			const indices = triangleIndices(prim, vertices);
-			const count = pieceCount(indices.length / 3);
-			if (count === 0) continue;
-			const plan = planPieces(readPositions(position), indices, count);
+			const plan = listPieces(readPositions(position), indices, facesOneWay(prim));
 			if (!plan || plan.counts.length < 2) continue;
 			const sorted = piecesInOrder(indices, plan, cacheOrder);
 			prim.setIndices(

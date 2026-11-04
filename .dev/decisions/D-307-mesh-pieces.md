@@ -2,7 +2,7 @@
 
 Status: decided and built on every GPU path. Built: the asset tool's pieces (`NULL3D_pieces`), the culling shader on WebGPU, the CPU culling of the direct-draw path, the job workers' culling on WebGL2, and the pieces of meshes made in code, which their level plan gives them ([D-310](D-310-runtime-levels.md#pieces-of-meshes-made-in-code)). Task: none.
 
-Summary: Each level of 32,768 triangles or more holds its triangles in 8 to 16 pieces, each facing about one way, with a sphere and a cone of facings. Each copy picks its level as before, then culls each piece by the frustum, by the cone where it holds, and by the depth pyramid in the late occlusion phase. The desert's figures of their gain are void. Their build drew null3D at four times the page's pixels, and the GPU refused its frames at Medium. A run on a build with both fixes remains to be taken.
+Summary: Each level of 32,768 triangles or more holds its triangles in 8 to 16 pieces, each facing about one way, with a sphere and a cone of facings. A smaller list that many copies draw gets up to six facing pieces and one for the rest. It keeps them where their cones drop a quarter of its triangles or more, as a building kit's walls do. Each copy picks its level as before, then culls each piece by the frustum, by the cone where it holds, and by the depth pyramid in the late occlusion phase. The desert's figures of their gain are void. Their build drew null3D at four times the page's pixels, and the GPU refused its frames at Medium. A run on a build with both fixes remains to be taken.
 
 ## Question
 
@@ -22,7 +22,46 @@ A copy of a large mesh that the view cuts through, or that turns half its surfac
 
 The planner groups the triangles by facing first. Spherical k-means, weighted by area, starts from directions spread evenly over the sphere and makes one group per piece, up to 14. Past 14 pieces, each group splits at the median of its triangles' middles along their longest side. A piece's sphere holds its corners. Its cone's axis is the mean facing, and its cutoff is the sine of the widest facing's angle, as meshoptimizer's `computeClusterBounds` gives it. Each number is a 32-bit float, rounded so that it culls no more than the exact bounds.
 
-The tool's step (`pieces-extension.js`) runs with `--lod`, after the levels are stored. It sorts each large list of a mesh with levels and orders each piece for the vertex cache. It then writes `NULL3D_pieces` on the primitive: each piece's triangles and its eight bounds. The extension is not required, so other loaders draw the same triangles. A mesh with a skin or morph targets keeps its lists. A mesh with a tree of cluster patches gets pieces too: its whole levels draw where no patch pass runs, such as on the direct-draw path, and its tree keeps its own indices.
+The tool's step (`pieces-extension.js`) runs with `--lod`, after the levels are stored. It sorts each list of a mesh with levels that the rule gives pieces, and orders each piece for the vertex cache. It then writes `NULL3D_pieces` on the primitive: each piece's triangles and its eight bounds. The extension is not required, so other loaders draw the same triangles. A mesh with a skin or morph targets keeps its lists. A mesh with a tree of cluster patches gets pieces too: its whole levels draw where no patch pass runs, such as on the direct-draw path, and its tree keeps its own indices.
+
+### Smaller lists that many copies draw
+
+A list under 32,768 triangles drawn once gains nothing. The view seldom cuts a small copy, and its pieces face too many ways (the rejected floor of 8,192 below). Many copies of a list that faces a few ways are another case. A building kit's walls face four sides, up and down, and each copy turns about half of them away. The Island's house walls hold 1,652 to 4,905 triangles, and 705 copies of 13 kinds stand in its towns.
+
+So `listPieces` holds one rule, which the tool and the engine share:
+
+- A list of 32,768 triangles or more gets 8 to 16 pieces, as above.
+- A list of 1,024 to 32,767 triangles gets `facingPieces` where its copies hold 65,536 triangles or more together. A list under 1,024 triangles saves less than a draw per piece. The floor of the copies' triangles is the one that plans automatic levels for a batch ([D-310](D-310-runtime-levels.md)).
+- `facingPieces` groups the triangles into up to six facing groups. The groups start from the six ways along the list's own axes, since a kit builds square to them. Each group keeps the triangles within the angle of its mean facing that lets its cone drop the most of them. The triangles past that angle, such as a pot's, a louvre's or a sloped cap's, draw in one more piece, which seldom culls. A group that keeps fewer than 64 triangles joins that piece.
+- The list keeps its pieces only where `coneShare` reaches 0.25: the share of its triangles that the cones drop over eyes spread evenly around each piece. A cone of cutoff `s` drops its piece for `(1 - s) / 2` of the directions, so a flat piece scores a half.
+- A material that draws both faces or blends gets no facing pieces: their cone test never holds.
+- A list that faces one way by 0.7 or more, as `meanFacing` measures it, gets none either. A view sees a ground from above, so the cone share over eyes all around overrates it. The cluster test's heightfield passed the share on its lower levels. The same number splits a large list by space alone, and `ONE_WAY_FACING` in the planner holds it for both.
+- The tool stores a smaller list's facing pieces whatever copies the file places. A file of one prop that a page copies many times holds one copy, and only the scene knows the copies. In the file the list is in piece order already, so the pieces cost only their table of eight numbers each.
+- The engine decides at run time. It counts the copies that the scene draws of each mesh. Each object and instance batch counts whose material draws the mesh's own shape in buckets. The loader gives a large list's pieces to the core at once. It holds a smaller list's pieces, of the mesh and of each of its levels. They go to the core once the base's copies hold 65,536 of that list's triangles together. Until then the list draws whole as one range, with no draw more. The count only grows: a scene that destroys copies keeps the pieces, and the check during play draws the mesh whole where they stop paying.
+- A file's mesh whose smaller list holds no pieces, as an older file's, plans facing pieces of its base list once its copies pay. The job workers plan them over a sorted copy of its indices, as for a mesh made in code ([D-310](D-310-runtime-levels.md#pieces-of-meshes-made-in-code)). Its levels' lists stay whole: they share the base's vertices, and the plan reads only the base. A list that the tool found too rough plans again at run time and finds no pieces again, once per mesh.
+- The sketch thread decides with its own copy of the rule's numbers (`facingCopiesPay`), so it loads no planner code to decide. A unit test keeps it equal to `facingPiecesPay`.
+
+The Island's 13 wall kinds, as the rule plans them, with their copies on the island. The cone share is that of the plan that many copies would give:
+
+| Walls | Triangles | Copies | Pieces | Cone share |
+| --- | --- | --- | --- | --- |
+| Kind 0 | 1,776 | 39 | 7 | 35.0% |
+| Kind 1 | 4,218 | 3 | none: 12,654 together | 37.9% |
+| Kind 2 | 3,337 | 4 | none: 13,348 together | 38.1% |
+| Kind 3 | 3,050 | 45 | 7 | 35.4% |
+| Kind 4 | 2,589 | 9 | none: 23,301 together | 37.4% |
+| Kind 5 | 2,036 | 2 | none | 37.9% |
+| Kind 6 | 4,905 | 6 | none: 29,430 together | 37.1% |
+| Kind 7 | 2,468 | 97 | 7 | 40.5% |
+| Kind 8 | 1,668 | 105 | 7 | 35.8% |
+| Kind 9 | 1,804 | 58 | 7 | 38.9% |
+| Kind 10 | 4,469 | 96 | 7 | 37.7% |
+| Kind 11 | 1,652 | 131 | 7 | 35.5% |
+| Kind 12 | 1,906 | 110 | 7 | 36.2% |
+
+The desert benchmark's props gain nothing. Their files hold 40 lists of 1,024 to 32,767 triangles: levels of the columns, the arches, the boulders and the pebbles, and the pebbles' bases. None passes the cone share. The rocks are rough, and the fluted columns and curved arches face every way, so no facing group keeps a tight cone.
+
+Each kind's seventh piece holds 8% to 26% of its triangles. Without it, six facing groups gave a cone share of 13% to 15% on six of the kinds. There a few pots and chimney caps widened every group's cone to about 44 degrees. Groups that start from directions spread over the sphere found the same groups on the houses. On a plain box they put two sides into one group.
 
 ### Facing groups or space
 
@@ -95,20 +134,42 @@ The rows before the last come from the engine before the merge, with the same me
 
 Pieces by facing part neighbouring triangles on a rough rock. A model of a 32-entry vertex cache counts 0.86 misses per triangle on the arch's first level against 0.62 before, and pieces by space keep 0.62. The GPU runs above show no such loss: the facing pieces draw the main pass as fast as space pieces walking, 4.40 against 4.38 ms, and far faster from above. So the tool keeps facing pieces.
 
+### The Island's house walls
+
+Two production builds of the Island drew its sketch with the camera held still. One had no facing pieces and one had them, and both planned the run-time levels. Each visit to a build waited 60 s for its plans to land, then took three windows of 5 s. The visits alternated between the builds, six to each. They ran in the Mac's Chrome for Testing on WebGPU at High, uncapped, in a 1,600 by 900 window at a pixel ratio of 1. Each visit waited for a load below 8, and ran at a load of 2.5 to 6.3. The shadow cascades and ambient occlusion are passes that pieces do not touch. A window counted only where they read within 15% of the median of every window: 15 and 14 of 18 in the town, 15 and 13 of 18 in the opening view. The busiest other process was often Spotlight's indexer, at about 100% of a core. Medians, with the lowest quartile after the slash:
+
+| View | GPU ms, no facing pieces | GPU ms, facing pieces | Frame interval ms | Triangles a frame, M | Draws |
+| --- | --- | --- | --- | --- | --- |
+| Town | 23.13 / 22.98 | 22.42 / 18.92 | 14.15 / 13.77 | 9.01 / 8.68 | 5,591 to 5,691 / 5,879 |
+| Opening, from 800 m | 16.19 / 14.22 | 16.22 / 15.99 | 10.67 / 10.77 | 5.62 / 5.62 | 4,741 / 5,029 |
+
+In the town the walls' pieces drop 0.33 M triangles a frame, and the passes that draw them fall. The depth prepass falls from 0.85 to 0.79 ms, the view copy from 0.77 to 0.65 ms and the later passes from 11.07 to 10.70 ms. The shadow cascades read the same in both builds. A model of the culling at the same view counts 432,060 wall triangles in the camera's own view, and 279,384 with the pieces.
+
+From the opening view every house draws its hand-made far level, so the pieces of the walls' full mesh hold no copy and save nothing. They still cost their 288 draws a frame, with no instance, and the later passes read 0.12 ms more. The check during play leaves such a mesh in pieces, since a window with no copy in view says nothing. So the frame's count of each level's copies, which sizes the levels' slices, now also leaves out the draws of a level that holds no copy. A level whose bucket no view has placed a copy in for 30 frames turns idle, with its pieces, and the views' bundles leave out its draws. A copy that picks it again draws it at once, and each change records the bundles again. The direct-draw path leaves out a level's bucket whose own count is 0, and WebGL2 already skips a draw with no copy. With it, the opening view draws 4,107 to 4,207 draws a frame against 4,741 without facing pieces: the idle levels of other meshes leave out their empty draws too. In four visits to each build at a load of 3.8 to 7.8, the GPU frame read 15.85 ms with the change against 15.48 ms without, and its visits spread from 10.2 to 17.0 ms, so that run cannot show a 0.1 ms change either way.
+
+The facing pieces stay. They save about 0.7 ms of 23 ms in the town, and cost about 0.1 ms of 16 ms from far away.
+
+How the data was produced: a temporary page held the Island's camera at a pose and measured windows with `engine.measure`. It was built with `NULL3D_BUILD_PAGE` against this branch and against its base at `e61ad018b`, and a script visited the two in turn. The pages and the script are not kept in the repository.
+
 ## Look
 
 Pieces draw the same picture as the whole list. `tests/image/mesh-pieces.spec.ts` compares the two pixel for pixel in four views, on WebGPU, on the direct-draw path, in compatibility mode and on WebGL2. Each has 0 differing pixels. No option changes the look.
 
+The same test draws a village of one house made in code: a box of separate quads with a round pot, a far level set by hand, and 64 copies, one mirrored and one stretched. Its facing pieces plan at its first draw. Every view draws 0 differing pixels on every path, and the pieces cut the first view's triangles from 186,535 to 106,287 on WebGPU. In compatibility mode on this Mac both scenes also fail with E1305 from the GPU, on the base of this change too; their pixels still match.
+
 ## Decision
 
-Build pieces as above, with at most 16 pieces in a list and only on lists of 32,768 triangles or more.
+Build pieces as above, with at most 16 pieces in a list of 32,768 triangles or more, and facing pieces on a smaller list of 1,024 triangles or more whose copies hold 65,536 triangles together and whose cones drop a quarter of its triangles.
 
 Rejected:
 
 - Meshlets of 64 to 128 triangles, with a compute pass that copies each copy's visible meshlets' indices, as the cluster pass does for one copy ([D-213](D-213-cluster-levels.md)). A list per view of every visible meshlet of every copy needs a work list that the GPU sizes, and a readback or a second pass. The copy of the indices also costs per triangle what null3D's indirect draw does not.
 - Vertex pulling of meshlets, as three.js does. Every material would need a build that reads its vertices from storage, and three.js pays more per triangle for it.
 - A new word in the bucket record. Every material's vertex shader includes the record's structure, so the whole shader set would build again and every shader file would grow.
-- Pieces on lists of 8,192 triangles or more. A copy draws such a list far away, where the view seldom cuts it, and its 4 or 5 pieces face too many ways to cull. They cost a draw each and cut nothing.
+- Pieces on every list of 8,192 triangles or more. A copy draws such a list far away, where the view seldom cuts it, and its 4 or 5 pieces face too many ways to cull. They cost a draw each and cut nothing. The facing rule gives pieces only to a list whose cones drop a quarter of it, and only where many copies draw it.
+- Drawing facing pieces whatever the copies. A list that a few copies draw saves a few thousand triangles a pass for its draws.
+- The tool counting the copies that a file places. Pages copy a file's mesh in code, as the desert benchmark copies each of its props thousands of times from one copy in its file.
+- Six facing groups without a piece for the rest. A few odd triangles widen each group's cone, as the Island's walls show above.
 - 32 pieces on a list. They cut no more triangles than 16 and add half again as many draws.
 - Each copy starting its walk of the pieces at another piece. It did not shorten the culling pass, since its cost is each thread's chain of round trips, not threads that add to one count.
 - Pieces by space alone, or by facing only where a vertex cache model allows. Walking they cull as many triangles, but from above they drop no back faces, and the cache model's loss did not show on the GPU.
@@ -118,4 +179,4 @@ Rejected:
 
 - The culling parameters' second debug word is 1 for the camera's own view, where the cone test holds.
 - The bucket record keeps its 17 words, and only `cull.wgsl` changes. The shader build compiles the culling shader's three entries and reuses the other 94.
-- Meshes made in code plan pieces with `planPieces` on the job workers, with their levels ([D-310](D-310-runtime-levels.md#pieces-of-meshes-made-in-code)). A mesh takes `setMeshPieceList(mesh, count, indices)`, with the pieces' nine words each and then the sorted indices in the staging words. A level, whose list the plan may sort, takes `setMeshPieces(mesh, count)`, or its pieces with `createSplitLevel` where its base is split. A list that faces mostly one way, such as a ground that wraps the camera, plans spatial pieces with one facing group.
+- Meshes made in code plan pieces with `planPieces` and `facingPieces` on the job workers, with their levels ([D-310](D-310-runtime-levels.md#pieces-of-meshes-made-in-code)). A mesh takes `setMeshPieceList(mesh, count, indices)`, with the pieces' nine words each and then the sorted indices in the staging words. A level, whose list the plan may sort, takes `setMeshPieces(mesh, count)`, or its pieces with `createSplitLevel` where its base is split. A list that faces mostly one way, such as a ground that wraps the camera, plans spatial pieces with one facing group.

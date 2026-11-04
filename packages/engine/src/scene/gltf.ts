@@ -61,7 +61,6 @@ import type {
 	TextureUse,
 } from './gltf-parse';
 import type { CoreMemory } from './memory';
-import { setMeshPieces } from './mesh-arrays';
 import {
 	boundsOf,
 	type InstancingTemplate,
@@ -1356,8 +1355,7 @@ function makeMeshes(
 				`${call}() found a stored tree in ${address} that does not fit primitive ${k} of mesh "${mesh.name}", so raycasts build their own. Optimize the file again.`,
 			);
 		if (typeof p.occluder === 'object') storeBlocker(context.core, made.id, p.occluder, call);
-		// A mesh whose list the pieces do not fit draws whole.
-		if (p.pieces) setMeshPieces(context.core, made.id, p.pieces, call);
+		made.fromFileWith(p.pieces, call);
 		// A tree from an older asset tool would leave holes in the picture, so its mesh draws whole.
 		if (
 			p.patches &&
