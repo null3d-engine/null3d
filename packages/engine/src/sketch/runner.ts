@@ -1904,7 +1904,7 @@ export class SketchRunner {
 		if (DEV && this.debugDraw) {
 			this.core.refresh();
 			try {
-				this.debugDraw.flush(width, height);
+				this.debugDraw.flush(width, height, play);
 			} catch (error) {
 				this.report(error);
 			}

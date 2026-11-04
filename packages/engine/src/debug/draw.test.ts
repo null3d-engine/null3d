@@ -228,6 +228,36 @@ describe('debug drawing', () => {
 		expect(frames[1]?.length).toBe(2);
 	});
 
+	test('a frame with no update draws the last update lines again', () => {
+		const { draw, frames, matrices } = fakeCore();
+		const object = objectAt(7);
+		matrices.set(object.handle, [1, 0, 0, 5, 0, 1, 0, 0, 0, 0, 1, 0]);
+		// Setup frames come before any update: they draw only the lines written for them.
+		draw.line([0, 0, 0], [0, 0, 1]);
+		draw.flush(1, 1, false);
+		draw.flush(1, 1, false);
+		expect(frames.length).toBe(1);
+		// A frame with no update after one that drew lines, as a hold's settle frame, draws the same
+		// lines, the shapes that follow objects among them.
+		draw.line([0, 1, 2], [3, 4, 5], '#ff0000');
+		draw.axes(object);
+		draw.flush(1, 1);
+		draw.flush(1, 1, false);
+		expect(frames.length).toBe(3);
+		expect(frames[2]?.length).toBe(8);
+		expect(frames[2]).toEqual(frames[1] as Point[]);
+		// Lines written outside an update replace them, and an update with no lines draws none.
+		draw.line([9, 9, 9], [9, 9, 8]);
+		draw.flush(1, 1, false);
+		draw.flush(1, 1, false);
+		expect(frames.map((points) => points.length)).toEqual([2, 8, 8, 2]);
+		draw.line([1, 1, 1], [2, 2, 2]);
+		draw.flush(1, 1);
+		draw.flush(1, 1);
+		draw.flush(1, 1, false);
+		expect(frames.length).toBe(5);
+	});
+
 	test('keeps 64-bit positions far from the origin', () => {
 		const { draw, frames } = fakeCore();
 		draw.line([100_000.0125, 1e6 + 0.001, -2], [100_000.0375, 1e6, -2]);

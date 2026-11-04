@@ -139,6 +139,8 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 	private capacity = 0;
 	/** The points written for the next frame. */
 	private points = 0;
+	/** The points that the last frame which ran the sketch's update handed to the core. */
+	private updated = 0;
 	/** The memory generation of the arrays' views. */
 	private generation = -1;
 	private warned = false;
@@ -360,8 +362,22 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 	 * Draws the shapes that follow objects, from their places in this frame, then hands the frame's
 	 * points to the core for the frame that records next. `width` and `height` give the canvas,
 	 * whose shape a camera's frustum takes.
+	 *
+	 * Without `update`, the frame ran none of the sketch's code, as the frame that a hold draws after
+	 * its held frame does. The update draws its lines again in each frame, so such a frame draws the
+	 * last update's lines, which the arrays keep until new lines are written. Setup frames come before
+	 * any update, so they draw only the lines written since the frame before.
 	 */
-	flush(width: number, height: number): void {
+	flush(width: number, height: number, update = true): void {
+		if (!update && this.updated > 0 && this.points === 0 && this.followedCount === 0) {
+			this.core.check(
+				this.core.glue.drawDebugLines(this.updated),
+				'debug drawing',
+				undefined,
+				true,
+			);
+			return;
+		}
 		for (let k = 0; k < this.followedCount; k++) {
 			const object = this.followed[k] as Object3D;
 			this.followed[k] = undefined;
@@ -378,8 +394,10 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 		}
 		this.followedCount = 0;
 		if (this.cullingSpheresWanted) this.drawCullingSpheres();
-		if (this.points === 0) return;
 		const points = this.points;
+		// Lines written outside an update overwrite the last update's, so none stay to draw again.
+		this.updated = update ? points : 0;
+		if (points === 0) return;
 		this.points = 0;
 		this.core.check(this.core.glue.drawDebugLines(points), 'debug drawing', undefined, true);
 	}
