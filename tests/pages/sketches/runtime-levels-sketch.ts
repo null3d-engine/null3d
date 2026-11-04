@@ -41,7 +41,10 @@ const PLANNER = {
 /** A level's error, as the page reports it. */
 const errors = (levels: readonly MeshLevel[]) => levels.map((level) => level.error ?? 0);
 
-export default defineSketch(({ scene, geometry, materials, page }) => {
+export default defineSketch(({ scene, geometry, materials, page, debug }) => {
+	// The sketch's frame figures count the triangles of the draws that the GPU culls on every
+	// build. A production build's measurement reads only the GPU time, and counts no such draw.
+	debug.frameStats();
 	scene.setBackground('#202830');
 	scene.createAmbientLight({ intensity: 1 });
 	const camera = scene.createPerspectiveCamera({
