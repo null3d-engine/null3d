@@ -95,6 +95,14 @@ export const runnerKey = (name: string) => `{run}.{runner}.${name}`;
 export const BENCH_BUILD: Load = { kind: 'warm', key: runnerKey('bench') };
 
 /**
+ * The folder of the two builds of the Island measuring page that the terrain comparison loads in
+ * turns, each a side: `base`, the terrain drawn by a mesh per block, and `shared`, the terrain drawn
+ * by shared grids as copies.
+ */
+export const TERRAIN_AB_PREFIX = 'terrain-ab';
+export const TERRAIN_AB_SIDES = ['base', 'shared'] as const;
+
+/**
  * A plan item's address with the run, the runner and the item's own name filled in, where it has
  * `{run}`, `{runner}` and `{item}`.
  */

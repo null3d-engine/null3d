@@ -121,7 +121,14 @@ import { type GpuPath, type MissingAllowed, NONE_MISSING, skippedPath } from './
 import { borrowedRun, type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
 import { JITTER_TABLE_HEAD, jitterRows, saveJitterResult } from './jitter-checks.ts';
 import { type Ktx2Result, ktx2FormatsNote, ktx2Problems } from './ktx2-checks.ts';
-import { BENCH_BUILD, type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts';
+import {
+	BENCH_BUILD,
+	type Load,
+	type LoadKind,
+	loadPath,
+	runnerKey,
+	TERRAIN_AB_PREFIX,
+} from './load-routes.ts';
 import { type MipLevelsResult, mipLevelsNote, mipLevelsProblems } from './mip-levels-checks.ts';
 import {
 	type ObjectGrowthCheck,
@@ -2313,6 +2320,36 @@ export function terrainShadowPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * How long one visit of the terrain comparison may take: a phone loads the Island's production build,
+ * builds its town, its trees and its ground, settles, and then measures its windows.
+ */
+const TERRAIN_AB_TIMEOUT_SECONDS = 900;
+
+/**
+ * The Island's town view from its measuring page, drawn in turns by the terrain's two designs: a mesh
+ * per block (`base`) and shared grids drawn as copies (`shared`). The visits run old, new, old, new,
+ * old, so a device that warms or cools over the run shows it as a drift between the outer visits of
+ * one side. Each visit loads the side's production build, settles for 30 seconds, and then measures
+ * four windows of three seconds: the render worker's time, the frame interval, the GPU time where
+ * the device times it, and the draws. The device picks its own GPU path, and the page records it.
+ */
+export function terrainBatchingPlan(): PlanItem<Check>[] {
+	const sides = ['base', 'shared', 'base', 'shared', 'base'] as const;
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...sides.map((side, visit) => ({
+			id: `island-terrain-${side}-${visit + 1}`,
+			path: loadPath(
+				PRODUCTION_BUILD,
+				`${TERRAIN_AB_PREFIX}/${side}/tests/pages/island-view.html?preset=medium&warm=30&seconds=3&windows=4`,
+			),
+			timeoutSeconds: TERRAIN_AB_TIMEOUT_SECONDS,
+			check: { kind: 'probe', tier: 'webgl2' } as Check,
+		})),
+	];
+}
+
+/**
  * One page for the bisect of the Creek stall on Apple WebGPU: Creek at Low on core WebGPU, with the
  * page's own switches naming what to measure and which shared effects to turn off. The time limit is
  * short, so a page that stalls ends its session instead of holding it for the full limit.
@@ -3271,6 +3308,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'vegetation-grass': vegetationGrassPlan,
 	terrain: terrainPlan,
 	'terrain-shadow': terrainShadowPlan,
+	'terrain-batching': terrainBatchingPlan,
 	'tree-generation': treeGenerationPlan,
 	'vegetation-scatter': vegetationScatterPlan,
 	'canvas-cost': canvasCostPlan,

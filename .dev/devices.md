@@ -5,7 +5,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `clouds`, `probe-cost`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `alpha-mask-cost`, `car-paint-cost`, `car-paint-loop`, `impostor-bake`, `impostor-cost`, `impostor-frame`, `canvas-cost`, `object-growth`, `cluster-cost`, `lod-cost`, `wind-field-cost`, `wind-stress`, `two-step`, `demos`, `skyway`, `skyway-stall`, `skyway-soak`, `vegetation`, `tree-generation`, `vegetation-scatter`, `terrain` and `terrain-shadow`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
+- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `clouds`, `probe-cost`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `alpha-mask-cost`, `car-paint-cost`, `car-paint-loop`, `impostor-bake`, `impostor-cost`, `impostor-frame`, `canvas-cost`, `object-growth`, `cluster-cost`, `lod-cost`, `wind-field-cost`, `wind-stress`, `two-step`, `demos`, `skyway`, `skyway-stall`, `skyway-soak`, `vegetation`, `tree-generation`, `vegetation-scatter`, `terrain`, `terrain-shadow` and `terrain-batching`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
 - The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is gray while its page waits, yellow while it runs, green when it passes and red when it fails. It is blue-gray when the runner page skips its page, because the device lacks the page's GPU path. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
@@ -526,6 +526,19 @@ The `physical-sky` plan measures what the physical sky costs, for [D-143](decisi
   page reports the draw calls per frame, the GPU time of each pass and the frame interval, so the
   cascades that draw again name themselves in the GPU time. Run it on the Mac in its installed
   Chrome: `bun tests/real-browsers.ts --plan terrain-shadow "Google Chrome"`.
+
+- The `terrain-batching` plan times the Island's town view with the terrain drawn two ways in turns: a
+  mesh per block (`base`) and shared grids drawn as copies (`shared`). Its five visits run base,
+  shared, base, shared, base, so a device that warms over the run shows it as a drift between the
+  outer visits of one side. Each visit loads the side's production build, settles for 30 seconds and
+  measures four windows of three seconds, at Medium on the path that the device picks.
+- The two sides come from two states of the terrain's code, so no step of the runner builds them.
+  Build each from its state with `NULL3D_BUILD_PAGE=island-view bunx vite build --base ./ --outDir
+  target/terrain-ab/<side>`. The dev server serves them under the load route, and the runner stops
+  at once and names the missing build when one is absent.
+- Run it on the USB phone with `bun tests/real-browsers.ts --plan terrain-batching --allow-no-webgpu
+  --android chrome`, and on cloud devices with `bun run devices:cloud --only
+  bsgalaxys25-chrome,bsiphone17-safari --plan terrain-batching`.
 
 ## The reflection plan
 

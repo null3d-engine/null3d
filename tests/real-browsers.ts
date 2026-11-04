@@ -94,6 +94,9 @@
 //                       off for the offset's own cost, or terrain-shadow, which draws the demo from
 //                       a still camera with the morph on, with it off and with the far cascades kept
 //                       to their turns, for the shadow redraw that a morphing caster causes, or
+//                       terrain-batching, which times the Island's town view in turns with the
+//                       terrain drawn by a mesh per block and by shared grids, from two builds
+//                       made by hand under target/terrain-ab, or
 //                       tree-generation, which times procedural tree generation in a worker, or
 //                       vegetation-scatter, which places Creek's valley by the vegetation add-on's
 //                       ecological rules and checks the placement against the reference, or
@@ -1148,6 +1151,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'vegetation-wind',
 	'terrain',
 	'terrain-shadow',
+	'terrain-batching',
 	'tree-generation',
 	'vegetation-scatter',
 	'webgpu-stall',

@@ -30,6 +30,8 @@ import {
 	loadedFile,
 	parseDownloadsPath,
 	parseLoadPath,
+	TERRAIN_AB_PREFIX,
+	TERRAIN_AB_SIDES,
 } from './load-routes.ts';
 import { send } from './report-collector.ts';
 import { localFetch, REPO_ROOT } from './server.ts';
@@ -89,6 +91,22 @@ export function buildBenchPages(root = REPO_ROOT, outDir = BENCH_PAGES_DIR): voi
 	});
 }
 
+/**
+ * Checks that both sides of the terrain comparison are built under `target`. The two come from two
+ * states of the terrain's code, so this checkout cannot make them in one step: each is built by hand,
+ * from its state, with `NULL3D_BUILD_PAGE=island-view bunx vite build --base ./ --outDir
+ * target/terrain-ab/<side>`.
+ */
+function checkTerrainBuilds(): void {
+	for (const side of TERRAIN_AB_SIDES) {
+		const page = join(REPO_ROOT, 'target', TERRAIN_AB_PREFIX, side, 'tests/pages/island-view.html');
+		if (!existsSync(page))
+			throw new Error(
+				`the terrain comparison needs ${page}: build it from its state of the terrain with NULL3D_BUILD_PAGE=island-view bunx vite build --base ./ --outDir target/${TERRAIN_AB_PREFIX}/${side}`,
+			);
+	}
+}
+
 /** A production build that the load routes serve. */
 export interface LoadBuild {
 	name: string;
@@ -107,6 +125,12 @@ export const LOAD_BUILDS: readonly (LoadBuild & { build(): void })[] = [
 		prefix: 'bench/',
 		dir: BENCH_PAGES_DIR,
 		build: () => buildBenchPages(),
+	},
+	{
+		name: 'terrain comparison',
+		prefix: `${TERRAIN_AB_PREFIX}/`,
+		dir: join(REPO_ROOT, 'target'),
+		build: checkTerrainBuilds,
 	},
 	{ name: 'startup', prefix: '', dir: STARTUP_PAGES_DIR, build: buildStartupPages },
 ];

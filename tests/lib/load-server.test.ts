@@ -75,8 +75,11 @@ describe('buildsForLoads', () => {
 		const bench = '/__null3d/load/warm/{run}.{runner}.bench/bench/pages/null3d/s1.html?gpu=webgl2';
 		expect(names([startup, startup])).toEqual(['startup']);
 		expect(names([bench, startup])).toEqual(['benchmark pages', 'startup']);
+		const terrain =
+			'/__null3d/load/warm/{run}.{runner}.production/terrain-ab/shared/tests/pages/island-view.html';
+		expect(names([terrain, startup])).toEqual(['terrain comparison', 'startup']);
 		expect(names(['/bench/pages/null3d/s1.html?hold', '/tests/pages/engine.html'])).toEqual([]);
-		expect(LOAD_BUILDS.map(({ prefix }) => prefix)).toEqual(['bench/', '']);
+		expect(LOAD_BUILDS.map(({ prefix }) => prefix)).toEqual(['bench/', 'terrain-ab/', '']);
 	});
 });
 
