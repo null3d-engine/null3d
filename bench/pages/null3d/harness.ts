@@ -33,6 +33,11 @@ export interface Null3dPageOptions {
 	 * device pixel per CSS pixel. Hold mode keeps the parity canvas either way.
 	 */
 	fillWindow?: boolean;
+	/**
+	 * The canvas of a timed run, in CSS pixels at one device pixel each, in place of the protocol's.
+	 * Hold mode keeps the parity canvas.
+	 */
+	canvas?: { width: number; height: number };
 	/** Record the trace of each measured second: frame rates, render scale and quality steps. */
 	trace?: boolean;
 	/** Options of `createEngine` that the scene needs beyond the protocol's. */
@@ -108,6 +113,7 @@ export interface Null3dPageOptions {
  *   captures them again every frame.
  * - `setters` calls each per-frame setter in S1, colors included.
  * - `frames` makes S1 count the frames it steps, which the page publishes for the allocation check.
+ * - `view` picks the desert's camera path, `walk` or `aerial`.
  */
 const SKETCH_SWITCHES = [
 	'blend',
@@ -161,6 +167,7 @@ const SKETCH_SWITCHES = [
 	'probes',
 	'timeOfDay',
 	'frames',
+	'view',
 ] as const;
 
 /**
@@ -183,7 +190,7 @@ export function runNull3dPage(
 		const options = readRunOptions(params);
 		const held = options.hold !== null;
 		const filled = pageOptions.fillWindow === true && !held;
-		const size = held ? PARITY_CANVAS : CANVAS;
+		const size = held ? PARITY_CANVAS : (pageOptions.canvas ?? CANVAS);
 		const canvas = document.createElement('canvas');
 		canvas.style.width = `${size.width}px`;
 		canvas.style.height = `${size.height}px`;
@@ -221,7 +228,7 @@ export function runNull3dPage(
 			canvas,
 			sketch: sketchUrl,
 			...(maxPixelRatio !== undefined && { maxPixelRatio }),
-			antialias: options.antialias ?? undefined,
+			antialias: options.antialias ?? pageOptions.engine?.antialias,
 			shadowCascades: options.shadowCascades ?? undefined,
 			shadowMapSize: options.shadowMapSize ?? undefined,
 			...(params.has('tileShadows') && { pointLightShadows: true, shadowTiles: 24 }),
