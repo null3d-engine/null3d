@@ -85,6 +85,9 @@ cold shader build on a CI runner takes longer than 34 minutes. A stopped run's f
 - The Mac's own screen also changes its refresh rate by itself (ProMotion). In one parked-window run, the overlay read 60 Hz in 4 of 5 readings. So a timing script logs the display rate that the engine measured with each reading. It runs a reading again when that rate is not the one it expects.
 - The timing tools guard against both traps. Before `bench:run` opens each page, it measures the display rate in the page's new window, with `displayRateCheck` in `tests/lib/app-window.ts`. It compares that rate with the main display's highest rate, which macOS reports. A window more than a twelfth below that rate gets a warning, and its result keeps the reason as `displayProblem`. A headless window at 60 Hz on a 120 Hz screen is one such case. Run such a page again. Timing scripts of your own open their pages with `launchInWindow` and `newParkedPage`, and call `displayRateCheck` before each reading. In CI, and on machines that are not Macs, the display's rate is not known, and the check measures nothing.
 - **Both engines must draw the same pixels.** A page that `newParkedPage` opens on the Mac's Retina screen reports a pixel ratio of 1, Playwright's emulated ratio. Chrome's device-pixel box for its canvas is twice as wide and high. The canvas watcher sizes the drawing buffer from that box only where the box agrees with the ratio ([Canvas size](implementation-notes.md#canvas-size)). A build without that check draws S1's page in `bench:run` at 2560 x 1440 for its canvas of 1280 x 720, while three.js's page draws 1280 x 720. So a null3D figure that a parked window took on the Retina screen with such a build drew four times three.js's pixels, and picked levels of detail twice as fine. That covers `bench:run`, `bench:gpu-check`, `bench:allocation`, `bench:profile` and the desert comparison. Its GPU time and its share of three.js lean against null3D. A comparison of two null3D builds holds when both builds have the check, or both lack it. A base without the check makes a build with it look far faster, so `bench:gpu-check` and `bench:run --compare` need a base that has it. Headless Chrome, which the image tests use, reports a box that agrees with the ratio of 1. The high-density project forces the screen's ratio, so its box agrees too. So the held frames and their references do not change.
+- `bun run bench:run` takes its pages in rounds. Each round opens every page of the run once, in the same order, and `--runs` sets the rounds. A slow spell of the computer then falls on every page alike, as it does in `--compare`.
+- Each result keeps the computer's 1-minute load average before its page opened and after it closed, as `machineLoad`. The report gives the range. When the load reached 8 or more, the report says that the timing figures do not hold.
+- `--uncapped` starts Chrome without its frame cap (`--disable-gpu-vsync --disable-frame-rate-limit`). Each page then draws as fast as it can, and the time between frames measures each engine's whole frame. The display check measures nothing then, and null3D's `refreshHz` reads the page's 48 callbacks a second ([Implementation notes](implementation-notes.md#canvas-size)). The desert always runs this way.
 - The page switch `?fps=<n>` holds null3D's drawing at n frames per second, at most the display's rate. Use it to compare runs on displays of different rates. The three.js pages do not read it.
 - On WebGL2, `measure` reports `visibleEntries`, the entries in each frame's list of visible objects, and the bench summary divides the upload by it. When only the camera moves, as in S1-static, the upload is about 4 bytes per entry.
 - null3D's benchmark pages start the warm-up when the GPU finishes the first frame. On a first visit, `createEngine` resolves only after the preset check, which runs after the first frame. A later start in the same browser takes the check's stored result, and `createEngine` resolves before the first frame. Runs on phones and tablets keep the browser's storage, so without the wait their warm-up would shrink by the time to the first frame. Playwright gives each benchmark run on the Mac fresh storage, so those runs check the preset each time.
@@ -479,9 +482,62 @@ A run folder holds every page's full result, with frames and images, and stays o
 - The phone-class GPU row is the cloud Galaxy S25, which stands in for the S24 class because the S24 times no GPU on either path. The S25 cut the GPU time by 69% at Low and 36% at High on core WebGPU, and by 70% at Low in compatibility mode. High on compatibility mode was flat. Its display ran at 30 Hz, so its frame intervals sit at the 33.3 ms cap and the runner marks them unreliable. Its GPU times do not depend on the screen. The 66.6 to 33.3 ms fall at High is that cap, not a saving. Its GPU buffers did not change, at 25.8 MiB at Low and 27.6 MiB at High.
 - The runs are in `tested-devices/macbook-pro-chrome/20261025-224727-lod-cost.md`, `tested-devices/ipad-pro-11-inch-safari/20261025-122307-lod-cost.md`, `tested-devices/ipad-pro-13-safari/20261025-092058-lod-cost.md`, `tested-devices/galaxy-s24-sm-s921b-chrome/20261025-092622-lod-cost.md` and `tested-devices/galaxy-s25-sm-s931b-chrome/20261025-150332-lod-cost.md`. [D-137](decisions/D-137-lod-groups.md#the-forest-on-an-ipad-a-phone-and-the-mac) gives every device's rows.
 
+## The desert against three.js's meshlet renderer
+
+The desert times null3D against three.js r187's meshlet renderer, `MeshletDrawingPipeline` on WebGPURenderer. [D-322](decisions/D-322-benchmark-against-threejs-meshlets.md) gives the reasons, what each engine does in a frame, and the table for the fair rematch.
+
+### The scene
+
+- `bench/scenes/desert.ts` builds the layout from fixed seeds: a dune ground of 2,000,000 triangles, 3 columns, 3 arches, 4 boulders and 6 pebbles. The unique meshes hold about 7 million triangles.
+- The ground draws once. 420 columns, 48 arches, 3,000 boulders and 60,000 pebbles draw as copies: 63,469 objects, about 1.74 billion triangles at full detail.
+- `?view=walk`, the default, loops at head height through the main temple once in 40 seconds. `?view=aerial` circles 140 m above the middle. Each engine starts the path at its first frame.
+- `?shadows=<n>` turns the sun's shadows on. null3D draws n cascades of 2,048 texels over 150 m, and the runs use 3. three.js draws one map of 4,096 texels over the same 150 m around the camera.
+- The desert is a match scene, which `bun run bench:run` takes. The page tests, the image tests, the parity checks, the device plans and CI's comparison of two builds leave it out. It draws on WebGPU only, and SwiftShader cannot draw it in a test's time.
+
+### The model files
+
+- `bun bench/lib/desert-files.ts` builds them, and `bun run bench:run` builds them before it opens the scene's pages. The first build took 227 s and 4.9 GB of memory on the Mac under other work. Later builds take the files from the caches.
+- The raw files, float vertices with no compression, go under `target/desert/raw-<key>`. The key hashes the scene module and the build module, so a change to either builds them again. three.js loads these files.
+- null3D's files come from this checkout's asset tool, through the Vite plugin's cache of optimized models. That cache keys each model by the tool's own code, its options and the file, so the scene always draws what the current tool writes. The ground gets levels and a tree of cluster patches. The props get levels, whose large lists also hold pieces. Neither gets blockers or raycast trees.
+- `target/desert/files.json` names the latest build's files with the SHA-256 of each. The dev server and `vite preview` serve them under `/bench-desert/`. Git keeps no model file.
+- The build downloads nothing. The three.js package's checksum is in `bun.lock`, and a unit test pins a checksum of the layout.
+
+### three.js r187
+
+- The bench's `three-r187` package is `npm:three@0.187.0`, and only the desert's page imports it. Every other twin stays on r186 with its patch, and their parity baselines stay as they are.
+- three.js's add-ons import `three` by name. The isolated install gives r187's own folder for that name inside the r187 package, so its add-ons load r187.
+- three.js ships no types, so `bench/pages/threejs/three-r187.d.ts` gives each module r186's types, and the meshlet pipeline's types of its own.
+
+### The rules that keep it fair
+
+- **The same scene.** Both pages build the layout from the scene module and load the same meshes. three.js loads the raw files, and null3D the asset tool's output of them.
+- **The same views and the same path,** timed from each engine's first frame.
+- **The same pixels.** Both draw 1920 x 1080 at a pixel ratio of 1. Each page reads back the size that its engine drew, and the run fails when the engines drew different sizes. Without that check, null3D drew the desert at 3840 x 2160 in parked windows on the Retina screen ([What a report measures](#what-a-report-measures)).
+- **No frame cap.** The run starts Chrome without its frame cap. The figures are each engine's median time between frames, and its GPU time.
+- **Production builds** of both pages, from the benchmark pages' build.
+- **Alternating rounds.** Each round opens three.js's page, then null3D's, each in a fresh parked window.
+- **The same light and surfaces.** One sun, one ambient light, no tone curve, MSAA, and the same base colors and roughness.
+- **three.js's settings.** The meshlet pipeline runs with occlusion culling on and `minScreenRadius` at 0, so it leaves out no copy for its size on the screen. Its other settings keep three.js's defaults. The page asks WebGPU for the adapter's largest storage binding and buffer, which the pipeline's culling records need.
+- **null3D's settings.** Medium, MSAA and GPU occlusion culling, whose check during play keeps its passes only while they pay. The engine's start-up probe picks the draw path for the device, and the run does not pin it. The report names the path of each page's runs. `?direct=off` keeps the indirect path, and `?preset=` and `?occlusion=` change the others.
+- **What three.js cannot do.** With the meshlet pipeline, its cascaded shadow node drew only the sky. So three.js draws one larger map. Its page's `?csm=on` still asks for cascades, to try a later three.js. Its `?pipeline=standard` draws with the standard pipeline, with no meshlets.
+- **A quiet computer.** The report gives the load around the pages, and a figure taken at a load of 8 or more is not a figure.
+
+### What the report gives
+
+- The usual summary table, and the desert's table. For each page, the table gives the engine, its draw path, the view, the shadows and the drawn size. It then gives the median time between frames and its rate, and the GPU time. Last come the triangles and draw calls of a frame, and the time to the first frame.
+- null3D's GPU time is `engine.measure`'s span of a frame's passes, from one frame in eleven. three.js's is the sum of its render and compute timestamps for each measured frame.
+- null3D counts the triangles that its draws drew over every pass. three.js reads back its drawn meshlets every 30 frames and counts 64 triangles each, so the two counts compare roughly. three.js does not count its meshlet draws, so its draw calls read n/a.
+- The report gives no CPU comparison for the desert: its measure is the whole frame and the GPU.
+
+### Run the desert
+
+- On the Mac, in a quiet window: `bun run bench:run --scenes desert`. Add `--switches view=aerial`, `--switches shadows=3` or `--switches "view=aerial&shadows=3"` for the other rows of D-322's table.
+- A quick check that both pages load, draw and report the same size, with no timing: `bun run test:bench desert.spec.ts`. It runs on a real GPU only.
+- By hand: build the files, then open `bench/pages/null3d/desert.html?gpu=webgpu` or `bench/pages/threejs/desert.html?renderer=webgpu` from `bun run dev`.
+
 ## The desert comparison's sketch worker
 
-- The desert comparison draws a ground of 2 million triangles and 16 meshes with levels, in 214 draws a frame. The meshes are static instance batches of 63,000 rows in all. Only the camera moves. It loads the engine's CDN build. Its timing runs use a build from `bun run build:cdn --url-switches`. That build's production entry reads the engine switches that some runs set. The table below times a development build of the engine, where the row check runs. The CDN build's `lib-dev/index.js` serves that build.
+- The figures in this section come from the desert's earlier form outside the repository. It drew a ground of 2 million triangles and 16 meshes with levels, in 214 draws a frame. The meshes are static instance batches of 63,000 rows in all. Only the camera moves. It loaded the engine's CDN build. Its timing runs used a build from `bun run build:cdn --url-switches`. That build's production entry reads the engine switches that some runs set. The table below times a development build of the engine, where the row check runs. The CDN build's `lib-dev/index.js` serves that build.
 - Before the change below, null3D's sketch worker took 2.3 to 4.2 ms of CPU a frame there, at the display's 120 Hz cap, in Chrome 156 on the MacBook Pro M5 Max. A CPU profile of a build with the core's function names (`bun tools/build-wasm.ts --names`) split a frame of 4.6 ms. Recording took 3.6 ms, and 3.5 ms of that was the per-frame count of each level's copies ([D-137](decisions/D-137-lod-groups.md#copy-lists-that-follow-what-draws)), on the sketch worker alone. The batch step took 0.9 ms, and the batch update in it 0.005 ms. The rest was the development check of rows written without `markDirty`, which then hashed every row in every frame ([Writes that skip a mark](implementation-notes.md#writes-that-skip-a-mark)). Culling took 0.015 ms, since the GPU culls.
 - The count now runs on the job workers, and the check hashes 4,096 rows a frame over all batches. The table gives the medians of three runs of each build in turns. Each run had a 3 s warm-up and 8 s of timing. Other agents loaded the machine, at a load average near 30, so single runs spread widely.
 
