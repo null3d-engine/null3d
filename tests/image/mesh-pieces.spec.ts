@@ -1,7 +1,8 @@
 // Copies that cull each piece of their mesh draw what copies that draw it whole draw, pixel for
 // pixel, on every GPU path: the culling shader on WebGPU, the CPU culling of the direct-draw path
 // and the job workers' culling on WebGL2. In the first view the pieces must also cut the triangles
-// drawn, so the test fails when the pieces never reach the culling.
+// drawn, so the test fails when the pieces never reach the culling. A file's house that too few
+// copies draw must draw whole: the same triangles and draws as the house without pieces.
 import { expect, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 
@@ -12,6 +13,7 @@ interface PiecesResult {
 	views: number;
 	differingPixels: number[];
 	triangles: { whole: number; pieces: number };
+	draws: { whole: number; pieces: number };
 	failures: string[];
 }
 
@@ -23,8 +25,18 @@ const PATHS = [
 ] as const;
 
 const SCENES = [
-	{ name: "a file's rock field", query: '' },
-	{ name: 'a village of one house made in code', query: '&scene=houses' },
+	{ name: "a file's rock field", query: '', culls: true },
+	{ name: 'a village of one house made in code', query: '&scene=houses', culls: true },
+	{
+		name: "a village of a file's house copied in code",
+		query: '&scene=houses&file=1',
+		culls: true,
+	},
+	{
+		name: "a village of a file's house that too few copies draw",
+		query: '&scene=houses&file=1&copies=8',
+		culls: false,
+	},
 ] as const;
 
 for (const scene of SCENES)
@@ -40,5 +52,9 @@ for (const scene of SCENES)
 			expect(result.tier).toBe(path.tier);
 			expect(result.failures).toEqual([]);
 			expect(result.differingPixels).toEqual(new Array(result.views).fill(0));
-			expect(result.triangles.pieces).toBeLessThan(result.triangles.whole);
+			if (scene.culls) expect(result.triangles.pieces).toBeLessThan(result.triangles.whole);
+			else {
+				expect(result.triangles.pieces).toBe(result.triangles.whole);
+				expect(result.draws.pieces).toBe(result.draws.whole);
+			}
 		});
