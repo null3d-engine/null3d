@@ -417,7 +417,8 @@ impl CountReads {
         self.slot = slot;
     }
 
-    /// Records a read of `view`'s counts of frame `frame`, after the frame's passes: for the
+    /// Records a read of `view`'s counts of frame `frame`, after the frame's passes, from where a
+    /// view that culls in `two_phases` or in one keeps them: for the
     /// occlusion check with `occlusion`, its first set of draws too while the layout has at most
     /// [`MAX_READ_DRAWS`] draws, and with `pieces` the first set's draws of the pieces and their
     /// tallies while they number at most [`MAX_PIECE_DRAWS`]. `layout_epoch` names the layout, so
@@ -432,6 +433,7 @@ impl CountReads {
         layout: &Layout,
         layout_epoch: u32,
         frame: u32,
+        two_phases: bool,
         occlusion: bool,
         pieces: bool,
     ) -> Result<bool, RecordError> {
@@ -474,7 +476,13 @@ impl CountReads {
         let indirect = ids::indirect(view);
         list.push(
             Op::CopyBufferToBuffer,
-            &[indirect, counts_offset(layout), buffer, 0, COUNTS_BYTES],
+            &[
+                indirect,
+                counts_offset(layout, two_phases),
+                buffer,
+                0,
+                COUNTS_BYTES,
+            ],
         )?;
         if draw_bytes > 0 {
             list.push(
@@ -940,7 +948,7 @@ mod tests {
         let view = ViewId::CAMERA;
         assert!(
             reads
-                .record(&mut list, view, &layout, 1, 40, true, false)
+                .record(&mut list, view, &layout, 1, 40, true, true, false)
                 .unwrap()
         );
         assert_eq!(copied_into(&list), [ids::OCCLUSION_READ_BUFFERS]);
@@ -948,7 +956,7 @@ mod tests {
         list.clear();
         assert!(
             !reads
-                .record(&mut list, view, &layout, 1, 40, true, false)
+                .record(&mut list, view, &layout, 1, 40, true, true, false)
                 .unwrap()
         );
         assert!(copied_into(&list).is_empty());
@@ -960,13 +968,13 @@ mod tests {
         // that read already, and the next frame reads into the ring's other buffer.
         assert!(
             !reads
-                .record(&mut list, view, &layout, 1, 40, true, false)
+                .record(&mut list, view, &layout, 1, 40, true, true, false)
                 .unwrap()
         );
         assert!(copied_into(&list).is_empty());
         assert!(
             reads
-                .record(&mut list, view, &layout, 1, 41, true, false)
+                .record(&mut list, view, &layout, 1, 41, true, true, false)
                 .unwrap()
         );
         assert_eq!(copied_into(&list), [ids::OCCLUSION_READ_BUFFERS + 1]);
@@ -991,10 +999,11 @@ mod tests {
         let view = ViewId::CAMERA;
         assert!(
             reads
-                .record(&mut list, view, &layout, 1, 50, false, true)
+                .record(&mut list, view, &layout, 1, 50, false, false, true)
                 .unwrap()
         );
-        // The counts and the draws from the first piece's on, without the first set's draws.
+        // The counts and the draws from the first piece's on, without the first set's draws. The
+        // view culls in one phase, so its counts follow its one set of draws.
         let copies: Vec<[u32; 5]> = null3d_gpu::drawlist::decode(list.words())
             .map(Result::unwrap)
             .filter(|command| command.op == Op::CopyBufferToBuffer)
@@ -1002,6 +1011,16 @@ mod tests {
             .collect();
         let piece_bytes = 2 * sizes::INDIRECT_WORDS * 4;
         assert_eq!(copies.len(), 2);
+        assert_eq!(
+            copies[0],
+            [
+                ids::indirect(view),
+                3 * sizes::INDIRECT_WORDS * 4,
+                ids::OCCLUSION_READ_BUFFERS,
+                0,
+                COUNTS_BYTES
+            ]
+        );
         assert_eq!(
             copies[1],
             [

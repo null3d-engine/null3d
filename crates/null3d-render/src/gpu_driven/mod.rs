@@ -3039,12 +3039,21 @@ impl GpuDrivenRenderer {
                         &detail,
                     )?;
                     let draws_before = if levels.is_some() {
-                        Culling::reset_counts(list, arena, view, layout, input.frame)?;
+                        Culling::reset_counts(list, arena, view, layout, input.frame, true)?;
                         layout.draws.len() as u32
                     } else {
-                        // A read of the pieces' counts finds its frame in the counts' words.
+                        // A read of the pieces' counts finds its frame in the counts' words, where
+                        // the view's culling phases put them.
                         if read_pieces && view == ViewId::CAMERA {
-                            Culling::reset_counts(list, arena, view, layout, input.frame)?;
+                            let two_phases = self.culling.occludes(view);
+                            Culling::reset_counts(
+                                list,
+                                arena,
+                                view,
+                                layout,
+                                input.frame,
+                                two_phases,
+                            )?;
                         }
                         0
                     };
@@ -3796,6 +3805,7 @@ impl GpuDrivenRenderer {
                 &self.layout,
                 self.layout_epoch,
                 input.frame,
+                self.culling.occludes(ViewId::CAMERA),
                 occlusion_read,
                 read_pieces,
             )?
