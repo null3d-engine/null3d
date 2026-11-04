@@ -8,6 +8,7 @@
 			"lodShadow": 1,
 			"t": 2.5,
 			"shot": "null3d-walk-s0-lod1-sh1-t2.5.png",
+			"variant": "",
 			"triangles": 6496902,
 			"shadowTriangles": null,
 			"gpuMs": 1.6984750032424927,
@@ -50,6 +51,7 @@
 			"lodShadow": 1,
 			"t": 7.5,
 			"shot": "null3d-walk-s0-lod1-sh1-t7.5.png",
+			"variant": "",
 			"triangles": 3880432,
 			"shadowTriangles": null,
 			"gpuMs": 1.6017659902572632,
@@ -92,6 +94,7 @@
 			"lodShadow": 1,
 			"t": 12.5,
 			"shot": "null3d-walk-s0-lod1-sh1-t12.5.png",
+			"variant": "",
 			"triangles": 4043076,
 			"shadowTriangles": null,
 			"gpuMs": 1.926677942276001,
@@ -134,6 +137,7 @@
 			"lodShadow": 1,
 			"t": 17.5,
 			"shot": "null3d-walk-s0-lod1-sh1-t17.5.png",
+			"variant": "",
 			"triangles": 5725777,
 			"shadowTriangles": null,
 			"gpuMs": 1.940263032913208,
@@ -176,6 +180,7 @@
 			"lodShadow": 1,
 			"t": 22.5,
 			"shot": "null3d-walk-s0-lod1-sh1-t22.5.png",
+			"variant": "",
 			"triangles": 5432330,
 			"shadowTriangles": null,
 			"gpuMs": 1.5336840152740479,
@@ -218,6 +223,7 @@
 			"lodShadow": 1,
 			"t": 27.5,
 			"shot": "null3d-walk-s0-lod1-sh1-t27.5.png",
+			"variant": "",
 			"triangles": 3671206,
 			"shadowTriangles": null,
 			"gpuMs": 1.2762935161590576,
@@ -260,6 +266,7 @@
 			"lodShadow": 1,
 			"t": 32.5,
 			"shot": "null3d-walk-s0-lod1-sh1-t32.5.png",
+			"variant": "",
 			"triangles": 5626712,
 			"shadowTriangles": null,
 			"gpuMs": 1.9544700384140015,
@@ -302,6 +309,7 @@
 			"lodShadow": 1,
 			"t": 37.5,
 			"shot": "null3d-walk-s0-lod1-sh1-t37.5.png",
+			"variant": "",
 			"triangles": 4977532,
 			"shadowTriangles": null,
 			"gpuMs": 1.8551805019378662,
@@ -344,6 +352,7 @@
 			"lodShadow": 1,
 			"t": 2.5,
 			"shot": "null3d-walk-s0-lod1.5-sh1-t2.5.png",
+			"variant": "",
 			"triangles": 4541880,
 			"shadowTriangles": null,
 			"gpuMs": 1.9528030157089233,
@@ -386,6 +395,7 @@
 			"lodShadow": 1,
 			"t": 7.5,
 			"shot": "null3d-walk-s0-lod1.5-sh1-t7.5.png",
+			"variant": "",
 			"triangles": 2368382,
 			"shadowTriangles": null,
 			"gpuMs": 1.1493159532546997,
@@ -428,6 +438,7 @@
 			"lodShadow": 1,
 			"t": 12.5,
 			"shot": "null3d-walk-s0-lod1.5-sh1-t12.5.png",
+			"variant": "",
 			"triangles": 3298440,
 			"shadowTriangles": null,
 			"gpuMs": 1.5209770202636719,
@@ -470,6 +481,7 @@
 			"lodShadow": 1,
 			"t": 17.5,
 			"shot": "null3d-walk-s0-lod1.5-sh1-t17.5.png",
+			"variant": "",
 			"triangles": 4358182,
 			"shadowTriangles": null,
 			"gpuMs": 1.6374329924583435,
@@ -512,6 +524,7 @@
 			"lodShadow": 1,
 			"t": 22.5,
 			"shot": "null3d-walk-s0-lod1.5-sh1-t22.5.png",
+			"variant": "",
 			"triangles": 4507162,
 			"shadowTriangles": null,
 			"gpuMs": 1.1234829425811768,
@@ -554,6 +567,7 @@
 			"lodShadow": 1,
 			"t": 27.5,
 			"shot": "null3d-walk-s0-lod1.5-sh1-t27.5.png",
+			"variant": "",
 			"triangles": 3335194,
 			"shadowTriangles": null,
 			"gpuMs": 1.1507749557495117,
@@ -596,6 +610,7 @@
 			"lodShadow": 1,
 			"t": 32.5,
 			"shot": "null3d-walk-s0-lod1.5-sh1-t32.5.png",
+			"variant": "",
 			"triangles": 3056816,
 			"shadowTriangles": null,
 			"gpuMs": 1.127774953842163,
@@ -638,6 +653,7 @@
 			"lodShadow": 1,
 			"t": 37.5,
 			"shot": "null3d-walk-s0-lod1.5-sh1-t37.5.png",
+			"variant": "",
 			"triangles": 4210334,
 			"shadowTriangles": null,
 			"gpuMs": 1.4991450309753418,
@@ -680,6 +696,7 @@
 			"lodShadow": 1,
 			"t": 2.5,
 			"shot": "null3d-walk-s0-lod2-sh1-t2.5.png",
+			"variant": "",
 			"triangles": 4259461.5,
 			"shadowTriangles": null,
 			"gpuMs": 1.9158459901809692,
@@ -722,6 +739,7 @@
 			"lodShadow": 1,
 			"t": 7.5,
 			"shot": "null3d-walk-s0-lod2-sh1-t7.5.png",
+			"variant": "",
 			"triangles": 1910772,
 			"shadowTriangles": null,
 			"gpuMs": 1.1357960104942322,
@@ -764,6 +782,7 @@
 			"lodShadow": 1,
 			"t": 12.5,
 			"shot": "null3d-walk-s0-lod2-sh1-t12.5.png",
+			"variant": "",
 			"triangles": 1968914,
 			"shadowTriangles": null,
 			"gpuMs": 1.1817319989204407,
@@ -806,6 +825,7 @@
 			"lodShadow": 1,
 			"t": 17.5,
 			"shot": "null3d-walk-s0-lod2-sh1-t17.5.png",
+			"variant": "",
 			"triangles": 2789661,
 			"shadowTriangles": null,
 			"gpuMs": 1.50764399766922,
@@ -848,6 +868,7 @@
 			"lodShadow": 1,
 			"t": 22.5,
 			"shot": "null3d-walk-s0-lod2-sh1-t22.5.png",
+			"variant": "",
 			"triangles": 3819712,
 			"shadowTriangles": null,
 			"gpuMs": 1.127252995967865,
@@ -890,6 +911,7 @@
 			"lodShadow": 1,
 			"t": 27.5,
 			"shot": "null3d-walk-s0-lod2-sh1-t27.5.png",
+			"variant": "",
 			"triangles": 2853238,
 			"shadowTriangles": null,
 			"gpuMs": 1.235272467136383,
@@ -932,6 +954,7 @@
 			"lodShadow": 1,
 			"t": 32.5,
 			"shot": "null3d-walk-s0-lod2-sh1-t32.5.png",
+			"variant": "",
 			"triangles": 2724599,
 			"shadowTriangles": null,
 			"gpuMs": 1.4221029877662659,
@@ -974,6 +997,7 @@
 			"lodShadow": 1,
 			"t": 37.5,
 			"shot": "null3d-walk-s0-lod2-sh1-t37.5.png",
+			"variant": "",
 			"triangles": 3513276,
 			"shadowTriangles": null,
 			"gpuMs": 1.4486654996871948,
@@ -1016,6 +1040,7 @@
 			"lodShadow": 1,
 			"t": 2.5,
 			"shot": "null3d-walk-s0-lod3-sh1-t2.5.png",
+			"variant": "",
 			"triangles": 3270000,
 			"shadowTriangles": null,
 			"gpuMs": 1.4651449918746948,
@@ -1058,6 +1083,7 @@
 			"lodShadow": 1,
 			"t": 7.5,
 			"shot": "null3d-walk-s0-lod3-sh1-t7.5.png",
+			"variant": "",
 			"triangles": 1315678,
 			"shadowTriangles": null,
 			"gpuMs": 1.1629819869995117,
@@ -1100,6 +1126,7 @@
 			"lodShadow": 1,
 			"t": 12.5,
 			"shot": "null3d-walk-s0-lod3-sh1-t12.5.png",
+			"variant": "",
 			"triangles": 1610226,
 			"shadowTriangles": null,
 			"gpuMs": 1.3566880226135254,
@@ -1142,6 +1169,7 @@
 			"lodShadow": 1,
 			"t": 17.5,
 			"shot": "null3d-walk-s0-lod3-sh1-t17.5.png",
+			"variant": "",
 			"triangles": 2256502,
 			"shadowTriangles": null,
 			"gpuMs": 1.2709804773330688,
@@ -1184,6 +1212,7 @@
 			"lodShadow": 1,
 			"t": 22.5,
 			"shot": "null3d-walk-s0-lod3-sh1-t22.5.png",
+			"variant": "",
 			"triangles": 3392904,
 			"shadowTriangles": null,
 			"gpuMs": 1.2578140497207642,
@@ -1226,6 +1255,7 @@
 			"lodShadow": 1,
 			"t": 27.5,
 			"shot": "null3d-walk-s0-lod3-sh1-t27.5.png",
+			"variant": "",
 			"triangles": 2702338,
 			"shadowTriangles": null,
 			"gpuMs": 1.2729175090789795,
@@ -1268,6 +1298,7 @@
 			"lodShadow": 1,
 			"t": 32.5,
 			"shot": "null3d-walk-s0-lod3-sh1-t32.5.png",
+			"variant": "",
 			"triangles": 1478452,
 			"shadowTriangles": null,
 			"gpuMs": 1.1161705255508423,
@@ -1310,6 +1341,7 @@
 			"lodShadow": 1,
 			"t": 37.5,
 			"shot": "null3d-walk-s0-lod3-sh1-t37.5.png",
+			"variant": "",
 			"triangles": 3107086,
 			"shadowTriangles": null,
 			"gpuMs": 1.6863069534301758,
@@ -1352,6 +1384,7 @@
 			"lodShadow": 1,
 			"t": 2.5,
 			"shot": "null3d-walk-s0-lod4-sh1-t2.5.png",
+			"variant": "",
 			"triangles": 3161422,
 			"shadowTriangles": null,
 			"gpuMs": 1.6510590314865112,
@@ -1394,6 +1427,7 @@
 			"lodShadow": 1,
 			"t": 7.5,
 			"shot": "null3d-walk-s0-lod4-sh1-t7.5.png",
+			"variant": "",
 			"triangles": 996028,
 			"shadowTriangles": null,
 			"gpuMs": 1.1176699995994568,
@@ -1436,6 +1470,7 @@
 			"lodShadow": 1,
 			"t": 12.5,
 			"shot": "null3d-walk-s0-lod4-sh1-t12.5.png",
+			"variant": "",
 			"triangles": 1190948,
 			"shadowTriangles": null,
 			"gpuMs": 1.0979830026626587,
@@ -1478,6 +1513,7 @@
 			"lodShadow": 1,
 			"t": 17.5,
 			"shot": "null3d-walk-s0-lod4-sh1-t17.5.png",
+			"variant": "",
 			"triangles": 1364220,
 			"shadowTriangles": null,
 			"gpuMs": 1.1912735104560852,
@@ -1520,6 +1556,7 @@
 			"lodShadow": 1,
 			"t": 22.5,
 			"shot": "null3d-walk-s0-lod4-sh1-t22.5.png",
+			"variant": "",
 			"triangles": 2956504,
 			"shadowTriangles": null,
 			"gpuMs": 1.1089409589767456,
@@ -1562,6 +1599,7 @@
 			"lodShadow": 1,
 			"t": 27.5,
 			"shot": "null3d-walk-s0-lod4-sh1-t27.5.png",
+			"variant": "",
 			"triangles": 2470499,
 			"shadowTriangles": null,
 			"gpuMs": 1.7253899574279785,
@@ -1604,6 +1642,7 @@
 			"lodShadow": 1,
 			"t": 32.5,
 			"shot": "null3d-walk-s0-lod4-sh1-t32.5.png",
+			"variant": "",
 			"triangles": 1323222,
 			"shadowTriangles": null,
 			"gpuMs": 1.0645664930343628,
@@ -1646,6 +1685,7 @@
 			"lodShadow": 1,
 			"t": 37.5,
 			"shot": "null3d-walk-s0-lod4-sh1-t37.5.png",
+			"variant": "",
 			"triangles": 2876589,
 			"shadowTriangles": null,
 			"gpuMs": 1.5867669582366943,
@@ -1688,6 +1728,7 @@
 			"lodShadow": 1,
 			"t": 2.5,
 			"shot": "null3d-walk-s0-lod0.5-sh1-t2.5.png",
+			"variant": "",
 			"triangles": 9032117,
 			"shadowTriangles": null,
 			"gpuMs": 2.6462515592575073,
@@ -1730,6 +1771,7 @@
 			"lodShadow": 1,
 			"t": 7.5,
 			"shot": "null3d-walk-s0-lod0.5-sh1-t7.5.png",
+			"variant": "",
 			"triangles": 7450895,
 			"shadowTriangles": null,
 			"gpuMs": 2.433775544166565,
@@ -1772,6 +1814,7 @@
 			"lodShadow": 1,
 			"t": 12.5,
 			"shot": "null3d-walk-s0-lod0.5-sh1-t12.5.png",
+			"variant": "",
 			"triangles": 8436601,
 			"shadowTriangles": null,
 			"gpuMs": 2.6168144941329956,
@@ -1814,6 +1857,7 @@
 			"lodShadow": 1,
 			"t": 17.5,
 			"shot": "null3d-walk-s0-lod0.5-sh1-t17.5.png",
+			"variant": "",
 			"triangles": 9441920,
 			"shadowTriangles": null,
 			"gpuMs": 2.82374906539917,
@@ -1856,6 +1900,7 @@
 			"lodShadow": 1,
 			"t": 22.5,
 			"shot": "null3d-walk-s0-lod0.5-sh1-t22.5.png",
+			"variant": "",
 			"triangles": 8835220,
 			"shadowTriangles": null,
 			"gpuMs": 1.769139051437378,
@@ -1898,6 +1943,7 @@
 			"lodShadow": 1,
 			"t": 27.5,
 			"shot": "null3d-walk-s0-lod0.5-sh1-t27.5.png",
+			"variant": "",
 			"triangles": 5325718,
 			"shadowTriangles": null,
 			"gpuMs": 1.5164350271224976,
@@ -1940,6 +1986,7 @@
 			"lodShadow": 1,
 			"t": 32.5,
 			"shot": "null3d-walk-s0-lod0.5-sh1-t32.5.png",
+			"variant": "",
 			"triangles": 8505362,
 			"shadowTriangles": null,
 			"gpuMs": 2.527024030685425,
@@ -1982,6 +2029,7 @@
 			"lodShadow": 1,
 			"t": 37.5,
 			"shot": "null3d-walk-s0-lod0.5-sh1-t37.5.png",
+			"variant": "",
 			"triangles": 8112611,
 			"shadowTriangles": null,
 			"gpuMs": 2.2207995653152466,
@@ -2024,6 +2072,7 @@
 			"lodShadow": 1,
 			"t": 2.5,
 			"shot": "three-walk-s0-lod1-sh1-t2.5.png",
+			"variant": "",
 			"triangles": 1624256,
 			"shadowTriangles": null,
 			"gpuMs": 2.752625,
@@ -2066,6 +2115,7 @@
 			"lodShadow": 1,
 			"t": 7.5,
 			"shot": "three-walk-s0-lod1-sh1-t7.5.png",
+			"variant": "",
 			"triangles": 1444928,
 			"shadowTriangles": null,
 			"gpuMs": 2.829289,
@@ -2108,6 +2158,7 @@
 			"lodShadow": 1,
 			"t": 12.5,
 			"shot": "three-walk-s0-lod1-sh1-t12.5.png",
+			"variant": "",
 			"triangles": 2289216,
 			"shadowTriangles": null,
 			"gpuMs": 3.5545709999999997,
@@ -2150,6 +2201,7 @@
 			"lodShadow": 1,
 			"t": 17.5,
 			"shot": "three-walk-s0-lod1-sh1-t17.5.png",
+			"variant": "",
 			"triangles": 2136832,
 			"shadowTriangles": null,
 			"gpuMs": 2.109633,
@@ -2192,6 +2244,7 @@
 			"lodShadow": 1,
 			"t": 22.5,
 			"shot": "three-walk-s0-lod1-sh1-t22.5.png",
+			"variant": "",
 			"triangles": 1964416,
 			"shadowTriangles": null,
 			"gpuMs": 3.013661,
@@ -2234,6 +2287,7 @@
 			"lodShadow": 1,
 			"t": 27.5,
 			"shot": "three-walk-s0-lod1-sh1-t27.5.png",
+			"variant": "",
 			"triangles": 591808,
 			"shadowTriangles": null,
 			"gpuMs": 1.8316359999999998,
@@ -2276,6 +2330,7 @@
 			"lodShadow": 1,
 			"t": 32.5,
 			"shot": "three-walk-s0-lod1-sh1-t32.5.png",
+			"variant": "",
 			"triangles": 1878656,
 			"shadowTriangles": null,
 			"gpuMs": 2.936037,
@@ -2318,6 +2373,7 @@
 			"lodShadow": 1,
 			"t": 37.5,
 			"shot": "three-walk-s0-lod1-sh1-t37.5.png",
+			"variant": "",
 			"triangles": 1906752,
 			"shadowTriangles": null,
 			"gpuMs": 3.1217439999999996,
@@ -2360,6 +2416,7 @@
 			"lodShadow": 1,
 			"t": 2.5,
 			"shot": "three-walk-s0-lod2-sh1-t2.5.png",
+			"variant": "",
 			"triangles": 1363584,
 			"shadowTriangles": null,
 			"gpuMs": 2.159718,
@@ -2402,6 +2459,7 @@
 			"lodShadow": 1,
 			"t": 7.5,
 			"shot": "three-walk-s0-lod2-sh1-t7.5.png",
+			"variant": "",
 			"triangles": 1185344,
 			"shadowTriangles": null,
 			"gpuMs": 2.12372,
@@ -2444,6 +2502,7 @@
 			"lodShadow": 1,
 			"t": 12.5,
 			"shot": "three-walk-s0-lod2-sh1-t12.5.png",
+			"variant": "",
 			"triangles": 2029696,
 			"shadowTriangles": null,
 			"gpuMs": 2.7192930000000004,
@@ -2486,6 +2545,7 @@
 			"lodShadow": 1,
 			"t": 17.5,
 			"shot": "three-walk-s0-lod2-sh1-t17.5.png",
+			"variant": "",
 			"triangles": 1814208,
 			"shadowTriangles": null,
 			"gpuMs": 2.8070820000000003,
@@ -2528,6 +2588,7 @@
 			"lodShadow": 1,
 			"t": 22.5,
 			"shot": "three-walk-s0-lod2-sh1-t22.5.png",
+			"variant": "",
 			"triangles": 1611712,
 			"shadowTriangles": null,
 			"gpuMs": 2.279924,
@@ -2570,6 +2631,7 @@
 			"lodShadow": 1,
 			"t": 27.5,
 			"shot": "three-walk-s0-lod2-sh1-t27.5.png",
+			"variant": "",
 			"triangles": 472768,
 			"shadowTriangles": null,
 			"gpuMs": 1.2939370000000001,
@@ -2612,6 +2674,7 @@
 			"lodShadow": 1,
 			"t": 32.5,
 			"shot": "three-walk-s0-lod2-sh1-t32.5.png",
+			"variant": "",
 			"triangles": 1560320,
 			"shadowTriangles": null,
 			"gpuMs": 2.555628,
@@ -2654,6 +2717,7 @@
 			"lodShadow": 1,
 			"t": 37.5,
 			"shot": "three-walk-s0-lod2-sh1-t37.5.png",
+			"variant": "",
 			"triangles": 1545408,
 			"shadowTriangles": null,
 			"gpuMs": 2.374672,
@@ -2696,6 +2760,7 @@
 			"lodShadow": 1,
 			"t": 2.5,
 			"shot": "null3d-walk-s3-lod1-sh1-t2.5.png",
+			"variant": "",
 			"triangles": 14061044,
 			"shadowTriangles": null,
 			"gpuMs": 3.1232024431228638,
@@ -2738,6 +2803,7 @@
 			"lodShadow": 1,
 			"t": 7.5,
 			"shot": "null3d-walk-s3-lod1-sh1-t7.5.png",
+			"variant": "",
 			"triangles": 11880324,
 			"shadowTriangles": null,
 			"gpuMs": 2.544127941131592,
@@ -2780,6 +2846,7 @@
 			"lodShadow": 1,
 			"t": 12.5,
 			"shot": "null3d-walk-s3-lod1-sh1-t12.5.png",
+			"variant": "",
 			"triangles": 14444119,
 			"shadowTriangles": null,
 			"gpuMs": 3.1545145511627197,
@@ -2822,6 +2889,7 @@
 			"lodShadow": 1,
 			"t": 17.5,
 			"shot": "null3d-walk-s3-lod1-sh1-t17.5.png",
+			"variant": "",
 			"triangles": 16933163,
 			"shadowTriangles": null,
 			"gpuMs": 3.9921685457229614,
@@ -2864,6 +2932,7 @@
 			"lodShadow": 1,
 			"t": 22.5,
 			"shot": "null3d-walk-s3-lod1-sh1-t22.5.png",
+			"variant": "",
 			"triangles": 14182645,
 			"shadowTriangles": null,
 			"gpuMs": 2.4888370037078857,
@@ -2906,6 +2975,7 @@
 			"lodShadow": 1,
 			"t": 27.5,
 			"shot": "null3d-walk-s3-lod1-sh1-t27.5.png",
+			"variant": "",
 			"triangles": 10593620,
 			"shadowTriangles": null,
 			"gpuMs": 2.3005480766296387,
@@ -2948,6 +3018,7 @@
 			"lodShadow": 1,
 			"t": 32.5,
 			"shot": "null3d-walk-s3-lod1-sh1-t32.5.png",
+			"variant": "",
 			"triangles": 14152094,
 			"shadowTriangles": null,
 			"gpuMs": 2.7923524379730225,
@@ -2990,6 +3061,7 @@
 			"lodShadow": 1,
 			"t": 37.5,
 			"shot": "null3d-walk-s3-lod1-sh1-t37.5.png",
+			"variant": "",
 			"triangles": 16151742,
 			"shadowTriangles": null,
 			"gpuMs": 2.916996955871582,
@@ -3032,6 +3104,7 @@
 			"lodShadow": 1,
 			"t": 2.5,
 			"shot": "null3d-walk-s3-lod0-sh1-t2.5.png",
+			"variant": "",
 			"triangles": 1106428270,
 			"shadowTriangles": null,
 			"gpuMs": 140.2757568359375,
@@ -3074,6 +3147,7 @@
 			"lodShadow": 1,
 			"t": 7.5,
 			"shot": "null3d-walk-s3-lod0-sh1-t7.5.png",
+			"variant": "",
 			"triangles": 839232554,
 			"shadowTriangles": null,
 			"gpuMs": 123.18513870239258,
@@ -3116,6 +3190,7 @@
 			"lodShadow": 1,
 			"t": 12.5,
 			"shot": "null3d-walk-s3-lod0-sh1-t12.5.png",
+			"variant": "",
 			"triangles": 1269987888,
 			"shadowTriangles": null,
 			"gpuMs": 182.84153747558594,
@@ -3158,6 +3233,7 @@
 			"lodShadow": 1,
 			"t": 17.5,
 			"shot": "null3d-walk-s3-lod0-sh1-t17.5.png",
+			"variant": "",
 			"triangles": 1441968504,
 			"shadowTriangles": null,
 			"gpuMs": 206.0716552734375,
@@ -3200,6 +3276,7 @@
 			"lodShadow": 1,
 			"t": 22.5,
 			"shot": "null3d-walk-s3-lod0-sh1-t22.5.png",
+			"variant": "",
 			"triangles": 1143841527,
 			"shadowTriangles": null,
 			"gpuMs": 161.34695434570312,
@@ -3242,6 +3319,7 @@
 			"lodShadow": 1,
 			"t": 27.5,
 			"shot": "null3d-walk-s3-lod0-sh1-t27.5.png",
+			"variant": "",
 			"triangles": 726139122,
 			"shadowTriangles": null,
 			"gpuMs": 102.82989120483398,
@@ -3284,6 +3362,7 @@
 			"lodShadow": 1,
 			"t": 32.5,
 			"shot": "null3d-walk-s3-lod0-sh1-t32.5.png",
+			"variant": "",
 			"triangles": 1171869428,
 			"shadowTriangles": null,
 			"gpuMs": 163.19296264648438,
@@ -3326,6 +3405,7 @@
 			"lodShadow": 1,
 			"t": 37.5,
 			"shot": "null3d-walk-s3-lod0-sh1-t37.5.png",
+			"variant": "",
 			"triangles": 1388734230,
 			"shadowTriangles": null,
 			"gpuMs": 197.1256103515625,
@@ -3368,6 +3448,7 @@
 			"lodShadow": 2,
 			"t": 2.5,
 			"shot": "null3d-walk-s3-lod0-sh2-t2.5.png",
+			"variant": "",
 			"triangles": 1106080110,
 			"shadowTriangles": null,
 			"gpuMs": 157.26010131835938,
@@ -3410,6 +3491,7 @@
 			"lodShadow": 2,
 			"t": 7.5,
 			"shot": "null3d-walk-s3-lod0-sh2-t7.5.png",
+			"variant": "",
 			"triangles": 833092468,
 			"shadowTriangles": null,
 			"gpuMs": 129.6035614013672,
@@ -3452,6 +3534,7 @@
 			"lodShadow": 2,
 			"t": 12.5,
 			"shot": "null3d-walk-s3-lod0-sh2-t12.5.png",
+			"variant": "",
 			"triangles": 1270540848,
 			"shadowTriangles": null,
 			"gpuMs": 181.5948486328125,
@@ -3494,6 +3577,7 @@
 			"lodShadow": 2,
 			"t": 17.5,
 			"shot": "null3d-walk-s3-lod0-sh2-t17.5.png",
+			"variant": "",
 			"triangles": 1443163032,
 			"shadowTriangles": null,
 			"gpuMs": 203.25244140625,
@@ -3536,6 +3620,7 @@
 			"lodShadow": 2,
 			"t": 22.5,
 			"shot": "null3d-walk-s3-lod0-sh2-t22.5.png",
+			"variant": "",
 			"triangles": 1143841526,
 			"shadowTriangles": null,
 			"gpuMs": 160.9894256591797,
@@ -3578,6 +3663,7 @@
 			"lodShadow": 2,
 			"t": 27.5,
 			"shot": "null3d-walk-s3-lod0-sh2-t27.5.png",
+			"variant": "",
 			"triangles": 726098163,
 			"shadowTriangles": null,
 			"gpuMs": 102.4356460571289,
@@ -3620,6 +3706,7 @@
 			"lodShadow": 2,
 			"t": 32.5,
 			"shot": "null3d-walk-s3-lod0-sh2-t32.5.png",
+			"variant": "",
 			"triangles": 1171869428,
 			"shadowTriangles": null,
 			"gpuMs": 155.4264678955078,
@@ -3662,6 +3749,7 @@
 			"lodShadow": 2,
 			"t": 37.5,
 			"shot": "null3d-walk-s3-lod0-sh2-t37.5.png",
+			"variant": "",
 			"triangles": 1389287190,
 			"shadowTriangles": null,
 			"gpuMs": 193.52688598632812,
@@ -3704,6 +3792,7 @@
 			"lodShadow": 4,
 			"t": 2.5,
 			"shot": "null3d-walk-s3-lod0-sh4-t2.5.png",
+			"variant": "",
 			"triangles": 1106080110,
 			"shadowTriangles": null,
 			"gpuMs": 157.75064086914062,
@@ -3746,6 +3835,7 @@
 			"lodShadow": 4,
 			"t": 7.5,
 			"shot": "null3d-walk-s3-lod0-sh4-t7.5.png",
+			"variant": "",
 			"triangles": 833092468,
 			"shadowTriangles": null,
 			"gpuMs": 106.8330192565918,
@@ -3788,6 +3878,7 @@
 			"lodShadow": 4,
 			"t": 12.5,
 			"shot": "null3d-walk-s3-lod0-sh4-t12.5.png",
+			"variant": "",
 			"triangles": 1270540847,
 			"shadowTriangles": null,
 			"gpuMs": 182.95567321777344,
@@ -3830,6 +3921,7 @@
 			"lodShadow": 4,
 			"t": 17.5,
 			"shot": "null3d-walk-s3-lod0-sh4-t17.5.png",
+			"variant": "",
 			"triangles": 1443163032,
 			"shadowTriangles": null,
 			"gpuMs": 206.11814880371094,
@@ -3872,6 +3964,7 @@
 			"lodShadow": 4,
 			"t": 22.5,
 			"shot": "null3d-walk-s3-lod0-sh4-t22.5.png",
+			"variant": "",
 			"triangles": 1143677687,
 			"shadowTriangles": null,
 			"gpuMs": 161.89486694335938,
@@ -3914,6 +4007,7 @@
 			"lodShadow": 4,
 			"t": 27.5,
 			"shot": "null3d-walk-s3-lod0-sh4-t27.5.png",
+			"variant": "",
 			"triangles": 726098163,
 			"shadowTriangles": null,
 			"gpuMs": 96.5417366027832,
@@ -3956,6 +4050,7 @@
 			"lodShadow": 4,
 			"t": 32.5,
 			"shot": "null3d-walk-s3-lod0-sh4-t32.5.png",
+			"variant": "",
 			"triangles": 1171685108,
 			"shadowTriangles": null,
 			"gpuMs": 162.26390075683594,
@@ -3998,6 +4093,7 @@
 			"lodShadow": 4,
 			"t": 37.5,
 			"shot": "null3d-walk-s3-lod0-sh4-t37.5.png",
+			"variant": "",
 			"triangles": 1389287190,
 			"shadowTriangles": null,
 			"gpuMs": null,
@@ -4040,6 +4136,7 @@
 			"lodShadow": 1,
 			"t": 2.5,
 			"shot": "null3d-walk-s3-lod2-sh1-t2.5.png",
+			"variant": "",
 			"triangles": 11823584,
 			"shadowTriangles": null,
 			"gpuMs": 2.6014599800109863,
@@ -4082,6 +4179,7 @@
 			"lodShadow": 1,
 			"t": 7.5,
 			"shot": "null3d-walk-s3-lod2-sh1-t7.5.png",
+			"variant": "",
 			"triangles": 9911344,
 			"shadowTriangles": null,
 			"gpuMs": 2.249423027038574,
@@ -4124,6 +4222,7 @@
 			"lodShadow": 1,
 			"t": 12.5,
 			"shot": "null3d-walk-s3-lod2-sh1-t12.5.png",
+			"variant": "",
 			"triangles": 12369637,
 			"shadowTriangles": null,
 			"gpuMs": 2.433505058288574,
@@ -4166,6 +4265,7 @@
 			"lodShadow": 1,
 			"t": 17.5,
 			"shot": "null3d-walk-s3-lod2-sh1-t17.5.png",
+			"variant": "",
 			"triangles": 13997047,
 			"shadowTriangles": null,
 			"gpuMs": 2.8485820293426514,
@@ -4208,6 +4308,7 @@
 			"lodShadow": 1,
 			"t": 22.5,
 			"shot": "null3d-walk-s3-lod2-sh1-t22.5.png",
+			"variant": "",
 			"triangles": 12570319,
 			"shadowTriangles": null,
 			"gpuMs": 2.1600714921951294,
@@ -4250,6 +4351,7 @@
 			"lodShadow": 1,
 			"t": 27.5,
 			"shot": "null3d-walk-s3-lod2-sh1-t27.5.png",
+			"variant": "",
 			"triangles": 9775812,
 			"shadowTriangles": null,
 			"gpuMs": 1.8840539455413818,
@@ -4292,6 +4394,7 @@
 			"lodShadow": 1,
 			"t": 32.5,
 			"shot": "null3d-walk-s3-lod2-sh1-t32.5.png",
+			"variant": "",
 			"triangles": 11250022,
 			"shadowTriangles": null,
 			"gpuMs": 2.2698609828948975,
@@ -4334,6 +4437,7 @@
 			"lodShadow": 1,
 			"t": 37.5,
 			"shot": "null3d-walk-s3-lod2-sh1-t37.5.png",
+			"variant": "",
 			"triangles": 14687486,
 			"shadowTriangles": null,
 			"gpuMs": 2.4889830350875854,
@@ -4376,6 +4480,7 @@
 			"lodShadow": 1,
 			"t": 2.5,
 			"shot": "null3d-walk-s3-lod3-sh1-t2.5.png",
+			"variant": "",
 			"triangles": 10834142,
 			"shadowTriangles": null,
 			"gpuMs": 2.3114019632339478,
@@ -4418,6 +4523,7 @@
 			"lodShadow": 1,
 			"t": 7.5,
 			"shot": "null3d-walk-s3-lod3-sh1-t7.5.png",
+			"variant": "",
 			"triangles": 9316250,
 			"shadowTriangles": null,
 			"gpuMs": 2.083051919937134,
@@ -4460,6 +4566,7 @@
 			"lodShadow": 1,
 			"t": 12.5,
 			"shot": "null3d-walk-s3-lod3-sh1-t12.5.png",
+			"variant": "",
 			"triangles": 12011268,
 			"shadowTriangles": null,
 			"gpuMs": 2.4622119665145874,
@@ -4502,6 +4609,7 @@
 			"lodShadow": 1,
 			"t": 17.5,
 			"shot": "null3d-walk-s3-lod3-sh1-t17.5.png",
+			"variant": "",
 			"triangles": 13463886,
 			"shadowTriangles": null,
 			"gpuMs": 2.551023483276367,
@@ -4544,6 +4652,7 @@
 			"lodShadow": 1,
 			"t": 22.5,
 			"shot": "null3d-walk-s3-lod3-sh1-t22.5.png",
+			"variant": "",
 			"triangles": 12143158.5,
 			"shadowTriangles": null,
 			"gpuMs": 2.256716012954712,
@@ -4586,6 +4695,7 @@
 			"lodShadow": 1,
 			"t": 27.5,
 			"shot": "null3d-walk-s3-lod3-sh1-t27.5.png",
+			"variant": "",
 			"triangles": 9624912,
 			"shadowTriangles": null,
 			"gpuMs": 2.257380962371826,
@@ -4628,6 +4738,7 @@
 			"lodShadow": 1,
 			"t": 32.5,
 			"shot": "null3d-walk-s3-lod3-sh1-t32.5.png",
+			"variant": "",
 			"triangles": 10003834,
 			"shadowTriangles": null,
 			"gpuMs": 2.054469108581543,
@@ -4670,6 +4781,7 @@
 			"lodShadow": 1,
 			"t": 37.5,
 			"shot": "null3d-walk-s3-lod3-sh1-t37.5.png",
+			"variant": "",
 			"triangles": 14281295,
 			"shadowTriangles": null,
 			"gpuMs": 2.4837955236434937,
@@ -4712,6 +4824,7 @@
 			"lodShadow": 2,
 			"t": 2.5,
 			"shot": "null3d-walk-s3-lod2-sh2-t2.5.png",
+			"variant": "",
 			"triangles": 7890846,
 			"shadowTriangles": null,
 			"gpuMs": 2.687999963760376,
@@ -4754,6 +4867,7 @@
 			"lodShadow": 2,
 			"t": 7.5,
 			"shot": "null3d-walk-s3-lod2-sh2-t7.5.png",
+			"variant": "",
 			"triangles": 6062968,
 			"shadowTriangles": null,
 			"gpuMs": 1.9343029856681824,
@@ -4796,6 +4910,7 @@
 			"lodShadow": 2,
 			"t": 12.5,
 			"shot": "null3d-walk-s3-lod2-sh2-t12.5.png",
+			"variant": "",
 			"triangles": 7168088,
 			"shadowTriangles": null,
 			"gpuMs": 2.06667697429657,
@@ -4838,6 +4953,7 @@
 			"lodShadow": 2,
 			"t": 17.5,
 			"shot": "null3d-walk-s3-lod2-sh2-t17.5.png",
+			"variant": "",
 			"triangles": 7977757,
 			"shadowTriangles": null,
 			"gpuMs": 2.509711980819702,
@@ -4880,6 +4996,7 @@
 			"lodShadow": 2,
 			"t": 22.5,
 			"shot": "null3d-walk-s3-lod2-sh2-t22.5.png",
+			"variant": "",
 			"triangles": 8115918.5,
 			"shadowTriangles": null,
 			"gpuMs": 1.8240970373153687,
@@ -4922,6 +5039,7 @@
 			"lodShadow": 2,
 			"t": 27.5,
 			"shot": "null3d-walk-s3-lod2-sh2-t27.5.png",
+			"variant": "",
 			"triangles": 6027160,
 			"shadowTriangles": null,
 			"gpuMs": 1.9646570086479187,
@@ -4964,6 +5082,7 @@
 			"lodShadow": 2,
 			"t": 32.5,
 			"shot": "null3d-walk-s3-lod2-sh2-t32.5.png",
+			"variant": "",
 			"triangles": 6643509,
 			"shadowTriangles": null,
 			"gpuMs": 1.9687199592590332,
@@ -5006,6 +5125,7 @@
 			"lodShadow": 2,
 			"t": 37.5,
 			"shot": "null3d-walk-s3-lod2-sh2-t37.5.png",
+			"variant": "",
 			"triangles": 8718743,
 			"shadowTriangles": null,
 			"gpuMs": 2.254736542701721,
@@ -5048,38 +5168,39 @@
 			"lodShadow": 4,
 			"t": 2.5,
 			"shot": "null3d-walk-s3-lod3-sh4-t2.5.png",
+			"variant": "",
 			"triangles": 4883975,
 			"shadowTriangles": null,
-			"gpuMs": 2.099176526069641,
+			"gpuMs": 2.1302380561828613,
 			"refTriangles": 1107145070,
 			"refGpuMs": 160.87692260742188,
 			"all": {
-				"flip": 0.019605249166488647,
-				"flip99": 0.2727644443511963,
-				"flipOver01": 0.059013310185185186,
-				"ssim": 0.9822283983230591,
-				"mad": 0.6300448775291443
+				"flip": 0.01744847185909748,
+				"flip99": 0.27153483033180237,
+				"flipOver01": 0.056767939814814816,
+				"ssim": 0.982003927230835,
+				"mad": 0.5711723566055298
 			},
 			"top": {
-				"flip": 0.009292195551097393,
-				"flip99": 0.13717372715473175,
-				"flipOver01": 0.016630497685185184,
-				"ssim": 0.9966268539428711,
-				"mad": 0.20001880824565887
+				"flip": 0.005577203817665577,
+				"flip99": 0.13265769183635712,
+				"flipOver01": 0.014933449074074075,
+				"ssim": 0.9967395663261414,
+				"mad": 0.13179777562618256
 			},
 			"middle": {
-				"flip": 0.03818383067846298,
-				"flip99": 0.3272586762905121,
-				"flipOver01": 0.1227734375,
-				"ssim": 0.9564220905303955,
-				"mad": 1.3432834148406982
+				"flip": 0.03607608750462532,
+				"flip99": 0.3260672688484192,
+				"flipOver01": 0.11794270833333333,
+				"ssim": 0.9558397531509399,
+				"mad": 1.242317795753479
 			},
 			"near": {
-				"flip": 0.011339719407260418,
-				"flip99": 0.27323728799819946,
-				"flipOver01": 0.03763599537037037,
-				"ssim": 0.9936360716819763,
-				"mad": 0.3468322157859802
+				"flip": 0.010692124255001545,
+				"flip99": 0.27368664741516113,
+				"flipOver01": 0.037427662037037034,
+				"ssim": 0.9934326410293579,
+				"mad": 0.3394014835357666
 			}
 		},
 		{
@@ -5090,38 +5211,39 @@
 			"lodShadow": 4,
 			"t": 7.5,
 			"shot": "null3d-walk-s3-lod3-sh4-t7.5.png",
-			"triangles": 3274276,
+			"variant": "",
+			"triangles": 3274315,
 			"shadowTriangles": null,
-			"gpuMs": 1.5861430168151855,
+			"gpuMs": 2.0579280853271484,
 			"refTriangles": 719055420,
 			"refGpuMs": 95.07054901123047,
 			"all": {
-				"flip": 0.018907994031906128,
-				"flip99": 0.27487367391586304,
-				"flipOver01": 0.06133391203703704,
-				"ssim": 0.9871122241020203,
-				"mad": 0.5826976895332336
+				"flip": 0.02158402092754841,
+				"flip99": 0.32732313871383667,
+				"flipOver01": 0.06635079089506173,
+				"ssim": 0.9828618168830872,
+				"mad": 0.7846952080726624
 			},
 			"top": {
-				"flip": 0.007508451584726572,
-				"flip99": 0.15086527168750763,
-				"flipOver01": 0.020121527777777776,
-				"ssim": 0.9961679577827454,
-				"mad": 0.2117161750793457
+				"flip": 0.009968183003365993,
+				"flip99": 0.19810068607330322,
+				"flipOver01": 0.02531105324074074,
+				"ssim": 0.9915561676025391,
+				"mad": 0.3731807768344879
 			},
 			"middle": {
-				"flip": 0.03893110901117325,
-				"flip99": 0.3225446343421936,
-				"flipOver01": 0.12826244212962962,
-				"ssim": 0.9717994332313538,
-				"mad": 1.1921254396438599
+				"flip": 0.041343819350004196,
+				"flip99": 0.3707999289035797,
+				"flipOver01": 0.1317361111111111,
+				"ssim": 0.9687744379043579,
+				"mad": 1.3985263109207153
 			},
 			"near": {
-				"flip": 0.010284429416060448,
-				"flip99": 0.280002623796463,
-				"flipOver01": 0.0356177662037037,
-				"ssim": 0.9933692216873169,
-				"mad": 0.3442513644695282
+				"flip": 0.013440052978694439,
+				"flip99": 0.3488861620426178,
+				"flipOver01": 0.042005208333333335,
+				"ssim": 0.9882548451423645,
+				"mad": 0.5823782682418823
 			}
 		},
 		{
@@ -5132,38 +5254,39 @@
 			"lodShadow": 4,
 			"t": 12.5,
 			"shot": "null3d-walk-s3-lod3-sh4-t12.5.png",
-			"triangles": 3867308,
+			"variant": "",
+			"triangles": 3867307,
 			"shadowTriangles": null,
-			"gpuMs": 1.9103254675865173,
+			"gpuMs": 2.063136100769043,
 			"refTriangles": 1270254128,
 			"refGpuMs": 185.10159301757812,
 			"all": {
-				"flip": 0.03508468344807625,
-				"flip99": 0.35502615571022034,
-				"flipOver01": 0.12599729938271606,
-				"ssim": 0.9642441272735596,
-				"mad": 1.2728403806686401
+				"flip": 0.03865588456392288,
+				"flip99": 0.39300021529197693,
+				"flipOver01": 0.1298953510802469,
+				"ssim": 0.9633504152297974,
+				"mad": 1.4494531154632568
 			},
 			"top": {
-				"flip": 0.011720222420990467,
-				"flip99": 0.20405028760433197,
-				"flipOver01": 0.0353978587962963,
-				"ssim": 0.9931945204734802,
-				"mad": 0.28988510370254517
+				"flip": 0.01711203157901764,
+				"flip99": 0.2445259988307953,
+				"flipOver01": 0.04058449074074074,
+				"ssim": 0.9894932508468628,
+				"mad": 0.4456827938556671
 			},
 			"middle": {
-				"flip": 0.06365302205085754,
-				"flip99": 0.3988440930843353,
-				"flipOver01": 0.2315379050925926,
-				"ssim": 0.9254584312438965,
-				"mad": 2.5347094535827637
+				"flip": 0.06602438539266586,
+				"flip99": 0.42878398299217224,
+				"flipOver01": 0.23344328703703704,
+				"ssim": 0.9290804266929626,
+				"mad": 2.672605037689209
 			},
 			"near": {
-				"flip": 0.029880806803703308,
-				"flip99": 0.36723580956459045,
-				"flipOver01": 0.11105613425925925,
-				"ssim": 0.9740794897079468,
-				"mad": 0.9939267039299011
+				"flip": 0.03283124417066574,
+				"flip99": 0.41878974437713623,
+				"flipOver01": 0.11565827546296296,
+				"ssim": 0.9714773297309875,
+				"mad": 1.2300716638565063
 			}
 		},
 		{
@@ -5174,38 +5297,39 @@
 			"lodShadow": 4,
 			"t": 17.5,
 			"shot": "null3d-walk-s3-lod3-sh4-t17.5.png",
-			"triangles": 5359739,
+			"variant": "",
+			"triangles": 4561919,
 			"shadowTriangles": null,
-			"gpuMs": 1.787097990512848,
+			"gpuMs": 2.2941739559173584,
 			"refTriangles": 1443074424,
 			"refGpuMs": 206.87071228027344,
 			"all": {
-				"flip": 0.8906851410865784,
-				"flip99": 0.9775450229644775,
-				"flipOver01": 1.0,
-				"ssim": 0.008027882315218449,
-				"mad": 87.20484924316406
+				"flip": 0.039292532950639725,
+				"flip99": 0.4011959731578827,
+				"flipOver01": 0.13119309413580246,
+				"ssim": 0.9647276997566223,
+				"mad": 1.447727084159851
 			},
 			"top": {
-				"flip": 0.8571817278862,
-				"flip99": 0.9814115166664124,
-				"flipOver01": 1.0,
-				"ssim": 0.011959258466959,
-				"mad": 116.18136596679688
+				"flip": 0.014468004927039146,
+				"flip99": 0.19426491856575012,
+				"flipOver01": 0.031953125,
+				"ssim": 0.9909664988517761,
+				"mad": 0.3870556652545929
 			},
 			"middle": {
-				"flip": 0.8697447180747986,
-				"flip99": 0.9798446297645569,
-				"flipOver01": 1.0,
-				"ssim": 0.010339552536606789,
-				"mad": 66.35660552978516
+				"flip": 0.059669338166713715,
+				"flip99": 0.4068293273448944,
+				"flipOver01": 0.2096383101851852,
+				"ssim": 0.9382196664810181,
+				"mad": 2.351423978805542
 			},
 			"near": {
-				"flip": 0.945128858089447,
-				"flip99": 0.9760121703147888,
-				"flipOver01": 1.0,
-				"ssim": 0.0017848353600129485,
-				"mad": 79.07657623291016
+				"flip": 0.04374026134610176,
+				"flip99": 0.4754098951816559,
+				"flipOver01": 0.15198784722222222,
+				"ssim": 0.9649969339370728,
+				"mad": 1.6047016382217407
 			}
 		},
 		{
@@ -5216,38 +5340,39 @@
 			"lodShadow": 4,
 			"t": 22.5,
 			"shot": "null3d-walk-s3-lod3-sh4-t22.5.png",
-			"triangles": 5359739,
+			"variant": "",
+			"triangles": 5178534,
 			"shadowTriangles": null,
-			"gpuMs": 1.7917649745941162,
+			"gpuMs": 2.1078429222106934,
 			"refTriangles": 1144537846,
 			"refGpuMs": 165.1625213623047,
 			"all": {
-				"flip": 0.9457424283027649,
-				"flip99": 0.9779444336891174,
-				"flipOver01": 1.0,
-				"ssim": 0.0023383370134979486,
-				"mad": 120.22518157958984
+				"flip": 0.02266286499798298,
+				"flip99": 0.3496744632720947,
+				"flipOver01": 0.07468653549382716,
+				"ssim": 0.9720235466957092,
+				"mad": 0.9792798161506653
 			},
 			"top": {
-				"flip": 0.9643459916114807,
-				"flip99": 0.9673997759819031,
-				"flipOver01": 1.0,
-				"ssim": 0.00047827401431277394,
-				"mad": 174.20294189453125
+				"flip": 0.003491752315312624,
+				"flip99": 0.0902470201253891,
+				"flipOver01": 0.00961082175925926,
+				"ssim": 0.9944661259651184,
+				"mad": 0.1918857991695404
 			},
 			"middle": {
-				"flip": 0.9136654734611511,
-				"flip99": 0.9827108383178711,
-				"flipOver01": 1.0,
-				"ssim": 0.005633499938994646,
-				"mad": 97.80658721923828
+				"flip": 0.047181203961372375,
+				"flip99": 0.40499645471572876,
+				"flipOver01": 0.15645833333333334,
+				"ssim": 0.9389786720275879,
+				"mad": 2.0342140197753906
 			},
 			"near": {
-				"flip": 0.9592159390449524,
-				"flip99": 0.9755938053131104,
-				"flipOver01": 1.0,
-				"ssim": 0.000903237727470696,
-				"mad": 88.66606140136719
+				"flip": 0.017315642908215523,
+				"flip99": 0.3438072204589844,
+				"flipOver01": 0.05799045138888889,
+				"ssim": 0.9826256632804871,
+				"mad": 0.7117396593093872
 			}
 		},
 		{
@@ -5258,38 +5383,39 @@
 			"lodShadow": 4,
 			"t": 27.5,
 			"shot": "null3d-walk-s3-lod3-sh4-t27.5.png",
-			"triangles": 5359739,
+			"variant": "",
+			"triangles": 4115541,
 			"shadowTriangles": null,
-			"gpuMs": 1.7917649745941162,
+			"gpuMs": 2.0085740089416504,
 			"refTriangles": 726098163,
 			"refGpuMs": 105.17777252197266,
 			"all": {
-				"flip": 0.7009502649307251,
-				"flip99": 0.9758501648902893,
-				"flipOver01": 1.0,
-				"ssim": 0.02874945104122162,
-				"mad": 35.13935470581055
+				"flip": 0.010640894062817097,
+				"flip99": 0.23902195692062378,
+				"flipOver01": 0.027744502314814814,
+				"ssim": 0.988865852355957,
+				"mad": 0.472258985042572
 			},
 			"top": {
-				"flip": 0.7396045923233032,
-				"flip99": 0.9788513779640198,
-				"flipOver01": 1.0,
-				"ssim": 0.025266533717513084,
-				"mad": 61.56214141845703
+				"flip": 0.007519560866057873,
+				"flip99": 0.15499386191368103,
+				"flipOver01": 0.015497685185185186,
+				"ssim": 0.9921209216117859,
+				"mad": 0.3462834656238556
 			},
 			"middle": {
-				"flip": 0.7033908367156982,
-				"flip99": 0.9776120185852051,
-				"flipOver01": 1.0,
-				"ssim": 0.02896958775818348,
-				"mad": 29.729183197021484
+				"flip": 0.017174484208226204,
+				"flip99": 0.32796427607536316,
+				"flipOver01": 0.049092881944444444,
+				"ssim": 0.9809234142303467,
+				"mad": 0.7441609501838684
 			},
 			"near": {
-				"flip": 0.6598554253578186,
-				"flip99": 0.7381194233894348,
-				"flipOver01": 1.0,
-				"ssim": 0.03201223164796829,
-				"mad": 14.126748085021973
+				"flip": 0.007228636648505926,
+				"flip99": 0.19258512556552887,
+				"flipOver01": 0.018642939814814814,
+				"ssim": 0.9935533404350281,
+				"mad": 0.32633256912231445
 			}
 		},
 		{
@@ -5300,38 +5426,39 @@
 			"lodShadow": 4,
 			"t": 32.5,
 			"shot": "null3d-walk-s3-lod3-sh4-t32.5.png",
-			"triangles": 5359739,
+			"variant": "",
+			"triangles": 3158073,
 			"shadowTriangles": null,
-			"gpuMs": 1.7917649745941162,
+			"gpuMs": 1.726868987083435,
 			"refTriangles": 1172186867.5,
 			"refGpuMs": 164.16819763183594,
 			"all": {
-				"flip": 0.9033827781677246,
-				"flip99": 0.979652464389801,
-				"flipOver01": 1.0,
-				"ssim": 0.006683112122118473,
-				"mad": 96.81379699707031
+				"flip": 0.030272604897618294,
+				"flip99": 0.37841740250587463,
+				"flipOver01": 0.10101273148148149,
+				"ssim": 0.9691097736358643,
+				"mad": 1.1205483675003052
 			},
 			"top": {
-				"flip": 0.880691647529602,
-				"flip99": 0.9804031848907471,
-				"flipOver01": 1.0,
-				"ssim": 0.009609594941139221,
-				"mad": 131.28330993652344
+				"flip": 0.007056011818349361,
+				"flip99": 0.17244018614292145,
+				"flipOver01": 0.016530671296296297,
+				"ssim": 0.9916539192199707,
+				"mad": 0.2908901274204254
 			},
 			"middle": {
-				"flip": 0.8797892928123474,
-				"flip99": 0.982909619808197,
-				"flipOver01": 1.0,
-				"ssim": 0.008973064832389355,
-				"mad": 79.46299743652344
+				"flip": 0.048382025212049484,
+				"flip99": 0.40689095854759216,
+				"flipOver01": 0.1617751736111111,
+				"ssim": 0.9445697069168091,
+				"mad": 1.8194013833999634
 			},
 			"near": {
-				"flip": 0.9496674537658691,
-				"flip99": 0.975679337978363,
-				"flipOver01": 1.0,
-				"ssim": 0.0014666762435808778,
-				"mad": 79.69510650634766
+				"flip": 0.035379767417907715,
+				"flip99": 0.41666078567504883,
+				"flipOver01": 0.12473234953703703,
+				"ssim": 0.9711055755615234,
+				"mad": 1.25135338306427
 			}
 		},
 		{
@@ -5342,38 +5469,39 @@
 			"lodShadow": 4,
 			"t": 37.5,
 			"shot": "null3d-walk-s3-lod3-sh4-t37.5.png",
-			"triangles": 5359739,
+			"variant": "",
+			"triangles": 5441912,
 			"shadowTriangles": null,
-			"gpuMs": 1.7824310064315796,
+			"gpuMs": 2.1195499897003174,
 			"refTriangles": 1389205269,
 			"refGpuMs": 196.59213256835938,
 			"all": {
-				"flip": 0.8646153211593628,
-				"flip99": 0.9796980619430542,
-				"flipOver01": 1.0,
-				"ssim": 0.009924552403390408,
-				"mad": 90.9531021118164
+				"flip": 0.024579713121056557,
+				"flip99": 0.36277762055397034,
+				"flipOver01": 0.07976948302469136,
+				"ssim": 0.9795798659324646,
+				"mad": 0.8960930109024048
 			},
 			"top": {
-				"flip": 0.9061545133590698,
-				"flip99": 0.9769624471664429,
-				"flipOver01": 1.0,
-				"ssim": 0.006808231584727764,
-				"mad": 144.43096923828125
+				"flip": 0.004221188835799694,
+				"flip99": 0.11402513831853867,
+				"flipOver01": 0.011281828703703704,
+				"ssim": 0.9943872690200806,
+				"mad": 0.18199487030506134
 			},
 			"middle": {
-				"flip": 0.8075504302978516,
-				"flip99": 0.9838268756866455,
-				"flipOver01": 1.0,
-				"ssim": 0.016416799277067184,
-				"mad": 68.10836029052734
+				"flip": 0.03180212527513504,
+				"flip99": 0.33857330679893494,
+				"flipOver01": 0.09825520833333333,
+				"ssim": 0.971523642539978,
+				"mad": 1.1576679944992065
 			},
 			"near": {
-				"flip": 0.8801410794258118,
-				"flip99": 0.975791871547699,
-				"flipOver01": 1.0,
-				"ssim": 0.006548627279698849,
-				"mad": 60.31999969482422
+				"flip": 0.03771582618355751,
+				"flip99": 0.4329606294631958,
+				"flipOver01": 0.12977141203703704,
+				"ssim": 0.9728285670280457,
+				"mad": 1.348616123199463
 			}
 		},
 		{
@@ -5384,17 +5512,18 @@
 			"lodShadow": 1,
 			"t": 2.5,
 			"shot": "three-walk-s1-lod1-sh1-t2.5.png",
-			"triangles": 4921728,
-			"shadowTriangles": 119449.86301369863,
+			"variant": "",
+			"triangles": 1624256,
+			"shadowTriangles": 17439680,
 			"gpuMs": null,
 			"refTriangles": 31883520,
 			"refGpuMs": null,
 			"all": {
-				"flip": 0.20687100291252136,
-				"flip99": 0.9101384282112122,
-				"flipOver01": 0.29755449459876543,
-				"ssim": 0.8154722452163696,
-				"mad": 15.168791770935059
+				"flip": 0.20801618695259094,
+				"flip99": 0.9102467894554138,
+				"flipOver01": 0.29924672067901237,
+				"ssim": 0.8144752979278564,
+				"mad": 15.2608642578125
 			},
 			"top": {
 				"flip": 0.05120101198554039,
@@ -5404,18 +5533,18 @@
 				"mad": 2.1632049083709717
 			},
 			"middle": {
-				"flip": 0.19899287819862366,
-				"flip99": 0.9179291725158691,
-				"flipOver01": 0.34821903935185183,
-				"ssim": 0.7853715419769287,
-				"mad": 12.139233589172363
+				"flip": 0.19859175384044647,
+				"flip99": 0.9179675579071045,
+				"flipOver01": 0.34652054398148147,
+				"ssim": 0.7860145568847656,
+				"mad": 12.130436897277832
 			},
 			"near": {
-				"flip": 0.37041911482810974,
-				"flip99": 0.9037092328071594,
-				"flipOver01": 0.4456351273148148,
-				"ssim": 0.718822717666626,
-				"mad": 31.203935623168945
+				"flip": 0.37425580620765686,
+				"flip99": 0.9039739370346069,
+				"flipOver01": 0.45241030092592593,
+				"ssim": 0.7151888012886047,
+				"mad": 31.48895263671875
 			}
 		},
 		{
@@ -5426,38 +5555,39 @@
 			"lodShadow": 1,
 			"t": 7.5,
 			"shot": "three-walk-s1-lod1-sh1-t7.5.png",
+			"variant": "",
 			"triangles": 1444928,
-			"shadowTriangles": 0,
-			"gpuMs": 6.550191,
+			"shadowTriangles": 18205376,
+			"gpuMs": null,
 			"refTriangles": 20847104,
 			"refGpuMs": null,
 			"all": {
-				"flip": 0.02057758718729019,
-				"flip99": 0.44963154196739197,
-				"flipOver01": 0.05137104552469136,
-				"ssim": 0.977899968624115,
-				"mad": 0.834436297416687
+				"flip": 0.02081812359392643,
+				"flip99": 0.4571646451950073,
+				"flipOver01": 0.05188560956790123,
+				"ssim": 0.9776384234428406,
+				"mad": 0.8486185669898987
 			},
 			"top": {
-				"flip": 0.006562225986272097,
+				"flip": 0.006562144495546818,
 				"flip99": 0.13159067928791046,
 				"flipOver01": 0.015345775462962962,
 				"ssim": 0.9944541454315186,
-				"mad": 0.17046305537223816
+				"mad": 0.17046242952346802
 			},
 			"middle": {
-				"flip": 0.03267376869916916,
-				"flip99": 0.42432263493537903,
-				"flipOver01": 0.08979890046296296,
-				"ssim": 0.9652546048164368,
-				"mad": 1.054848313331604
+				"flip": 0.03254380449652672,
+				"flip99": 0.42433515191078186,
+				"flipOver01": 0.0892578125,
+				"ssim": 0.9654051065444946,
+				"mad": 1.0531797409057617
 			},
 			"near": {
-				"flip": 0.022496765479445457,
-				"flip99": 0.6848869919776917,
-				"flipOver01": 0.04896846064814815,
-				"ssim": 0.9739910960197449,
-				"mad": 1.2779974937438965
+				"flip": 0.02334842085838318,
+				"flip99": 0.6886608600616455,
+				"flipOver01": 0.05105324074074074,
+				"ssim": 0.9730560183525085,
+				"mad": 1.3222137689590454
 			}
 		},
 		{
@@ -5468,17 +5598,18 @@
 			"lodShadow": 1,
 			"t": 12.5,
 			"shot": "three-walk-s1-lod1-sh1-t12.5.png",
+			"variant": "",
 			"triangles": 2289216,
-			"shadowTriangles": 143989,
-			"gpuMs": 7.267888999999999,
-			"refTriangles": 137811584,
+			"shadowTriangles": 18430592,
+			"gpuMs": 7.681759,
+			"refTriangles": 42555776,
 			"refGpuMs": null,
 			"all": {
-				"flip": 0.04835529625415802,
-				"flip99": 0.7515743374824524,
-				"flipOver01": 0.12036024305555555,
-				"ssim": 0.9477623701095581,
-				"mad": 2.2701783180236816
+				"flip": 0.05075903236865997,
+				"flip99": 0.7660844326019287,
+				"flipOver01": 0.12443962191358025,
+				"ssim": 0.9452934265136719,
+				"mad": 2.4330058097839355
 			},
 			"top": {
 				"flip": 0.00774006312713027,
@@ -5488,18 +5619,18 @@
 				"mad": 0.1403159201145172
 			},
 			"middle": {
-				"flip": 0.06047113612294197,
-				"flip99": 0.5751941204071045,
-				"flipOver01": 0.1788845486111111,
-				"ssim": 0.9306517839431763,
-				"mad": 2.254371404647827
+				"flip": 0.06099243834614754,
+				"flip99": 0.5805939435958862,
+				"flipOver01": 0.1797974537037037,
+				"ssim": 0.9294522404670715,
+				"mad": 2.281397581100464
 			},
 			"near": {
-				"flip": 0.07685468345880508,
-				"flip99": 0.8530694842338562,
-				"flipOver01": 0.16321469907407407,
-				"ssim": 0.9167149662971497,
-				"mad": 4.415847301483154
+				"flip": 0.08354460448026657,
+				"flip99": 0.8551024794578552,
+				"flipOver01": 0.17453993055555556,
+				"ssim": 0.9105079174041748,
+				"mad": 4.877304553985596
 			}
 		},
 		{
@@ -5510,38 +5641,39 @@
 			"lodShadow": 1,
 			"t": 17.5,
 			"shot": "three-walk-s1-lod1-sh1-t17.5.png",
+			"variant": "",
 			"triangles": 2136832,
-			"shadowTriangles": 0,
+			"shadowTriangles": 18410496,
 			"gpuMs": null,
-			"refTriangles": 141085184,
+			"refTriangles": 37414336,
 			"refGpuMs": null,
 			"all": {
-				"flip": 0.06342946738004684,
-				"flip99": 0.8137064576148987,
-				"flipOver01": 0.15064332561728394,
-				"ssim": 0.9287888407707214,
-				"mad": 3.247115135192871
+				"flip": 0.06461315602064133,
+				"flip99": 0.8271461129188538,
+				"flipOver01": 0.15130787037037038,
+				"ssim": 0.9283409714698792,
+				"mad": 3.3598508834838867
 			},
 			"top": {
-				"flip": 0.00852726399898529,
-				"flip99": 0.15051394701004028,
-				"flipOver01": 0.020645254629629628,
-				"ssim": 0.9928251504898071,
-				"mad": 0.21719740331172943
+				"flip": 0.008251264691352844,
+				"flip99": 0.14265237748622894,
+				"flipOver01": 0.019388020833333332,
+				"ssim": 0.9930282235145569,
+				"mad": 0.2065979242324829
 			},
 			"middle": {
-				"flip": 0.06759709119796753,
-				"flip99": 0.6348967552185059,
-				"flipOver01": 0.19709056712962963,
-				"ssim": 0.9145730137825012,
-				"mad": 2.752086639404297
+				"flip": 0.06621269136667252,
+				"flip99": 0.6238411068916321,
+				"flipOver01": 0.1935836226851852,
+				"ssim": 0.9165152907371521,
+				"mad": 2.678256034851074
 			},
 			"near": {
-				"flip": 0.11416405439376831,
-				"flip99": 0.862036943435669,
-				"flipOver01": 0.2341941550925926,
-				"ssim": 0.878968358039856,
-				"mad": 6.772061824798584
+				"flip": 0.11937553435564041,
+				"flip99": 0.8637503385543823,
+				"flipOver01": 0.2409519675925926,
+				"ssim": 0.8754794001579285,
+				"mad": 7.194699287414551
 			}
 		},
 		{
@@ -5552,17 +5684,18 @@
 			"lodShadow": 1,
 			"t": 22.5,
 			"shot": "three-walk-s1-lod1-sh1-t22.5.png",
+			"variant": "",
 			"triangles": 1964416,
-			"shadowTriangles": 136591.28358208956,
+			"shadowTriangles": 18303232,
 			"gpuMs": null,
-			"refTriangles": 148999744,
+			"refTriangles": 31743744,
 			"refGpuMs": null,
 			"all": {
-				"flip": 0.0240589901804924,
-				"flip99": 0.6050994396209717,
-				"flipOver01": 0.05913483796296296,
-				"ssim": 0.9724403023719788,
-				"mad": 1.1633626222610474
+				"flip": 0.02399844117462635,
+				"flip99": 0.5933538675308228,
+				"flipOver01": 0.05963975694444444,
+				"ssim": 0.9723700284957886,
+				"mad": 1.1484488248825073
 			},
 			"top": {
 				"flip": 0.00046834879321977496,
@@ -5572,18 +5705,18 @@
 				"mad": 0.011148571968078613
 			},
 			"middle": {
-				"flip": 0.03273298963904381,
-				"flip99": 0.4398741126060486,
-				"flipOver01": 0.09558883101851852,
-				"ssim": 0.9617621302604675,
-				"mad": 1.233067274093628
+				"flip": 0.03349519148468971,
+				"flip99": 0.45284172892570496,
+				"flipOver01": 0.09764178240740741,
+				"ssim": 0.9608051180839539,
+				"mad": 1.2655534744262695
 			},
 			"near": {
-				"flip": 0.038975637406110764,
-				"flip99": 0.810440719127655,
-				"flipOver01": 0.08074508101851852,
-				"ssim": 0.9558471441268921,
-				"mad": 2.2458720207214355
+				"flip": 0.03803177922964096,
+				"flip99": 0.8019782304763794,
+				"flipOver01": 0.08020688657407407,
+				"ssim": 0.9565931558609009,
+				"mad": 2.168644428253174
 			}
 		},
 		{
@@ -5594,17 +5727,18 @@
 			"lodShadow": 1,
 			"t": 27.5,
 			"shot": "three-walk-s1-lod1-sh1-t27.5.png",
+			"variant": "",
 			"triangles": 591808,
-			"shadowTriangles": 109131.6,
+			"shadowTriangles": 17461056,
 			"gpuMs": null,
-			"refTriangles": 155421440,
+			"refTriangles": 31743744,
 			"refGpuMs": null,
 			"all": {
-				"flip": 0.005068904720246792,
-				"flip99": 0.11441092193126678,
-				"flipOver01": 0.011793981481481482,
-				"ssim": 0.9963149428367615,
-				"mad": 0.14128346741199493
+				"flip": 0.005006914492696524,
+				"flip99": 0.11355819553136826,
+				"flipOver01": 0.011711033950617284,
+				"ssim": 0.9964248538017273,
+				"mad": 0.1375989317893982
 			},
 			"top": {
 				"flip": 0.0036991059314459562,
@@ -5614,11 +5748,11 @@
 				"mad": 0.08404003083705902
 			},
 			"middle": {
-				"flip": 0.009169881232082844,
-				"flip99": 0.2091818004846573,
-				"flipOver01": 0.025322627314814813,
-				"ssim": 0.9914499521255493,
-				"mad": 0.3151915967464447
+				"flip": 0.008983911946415901,
+				"flip99": 0.20525971055030823,
+				"flipOver01": 0.02507378472222222,
+				"ssim": 0.9917796850204468,
+				"mad": 0.3041380047798157
 			},
 			"near": {
 				"flip": 0.0023377256002277136,
@@ -5636,17 +5770,18 @@
 			"lodShadow": 1,
 			"t": 32.5,
 			"shot": "three-walk-s1-lod1-sh1-t32.5.png",
+			"variant": "",
 			"triangles": 1878656,
-			"shadowTriangles": 126768.23188405797,
+			"shadowTriangles": 17494016,
 			"gpuMs": null,
-			"refTriangles": 137111744,
+			"refTriangles": 31551488,
 			"refGpuMs": null,
 			"all": {
-				"flip": 0.04835762083530426,
-				"flip99": 0.7685754895210266,
-				"flipOver01": 0.11251398533950617,
-				"ssim": 0.946291446685791,
-				"mad": 2.430906057357788
+				"flip": 0.04631011560559273,
+				"flip99": 0.7559642195701599,
+				"flipOver01": 0.1088233024691358,
+				"ssim": 0.9487296342849731,
+				"mad": 2.2976982593536377
 			},
 			"top": {
 				"flip": 0.003143350360915065,
@@ -5656,18 +5791,18 @@
 				"mad": 0.05724623054265976
 			},
 			"middle": {
-				"flip": 0.04622824862599373,
-				"flip99": 0.5852062106132507,
-				"flipOver01": 0.1289091435185185,
-				"ssim": 0.943375825881958,
-				"mad": 1.7415635585784912
+				"flip": 0.04570400342345238,
+				"flip99": 0.5843263268470764,
+				"flipOver01": 0.12685474537037036,
+				"ssim": 0.944354772567749,
+				"mad": 1.721983551979065
 			},
 			"near": {
-				"flip": 0.09570126980543137,
-				"flip99": 0.8418180346488953,
-				"flipOver01": 0.20453125,
-				"ssim": 0.8969639539718628,
-				"mad": 5.493908405303955
+				"flip": 0.09008298814296722,
+				"flip99": 0.8371722102165222,
+				"flipOver01": 0.19551359953703704,
+				"ssim": 0.9032995104789734,
+				"mad": 5.113864421844482
 			}
 		},
 		{
@@ -5678,17 +5813,18 @@
 			"lodShadow": 1,
 			"t": 37.5,
 			"shot": "three-walk-s1-lod1-sh1-t37.5.png",
+			"variant": "",
 			"triangles": 1906752,
-			"shadowTriangles": 0,
+			"shadowTriangles": 17466880,
 			"gpuMs": null,
-			"refTriangles": 136898176,
+			"refTriangles": 27299776,
 			"refGpuMs": null,
 			"all": {
-				"flip": 0.040392182767391205,
-				"flip99": 0.8102535009384155,
-				"flipOver01": 0.08361400462962963,
-				"ssim": 0.9592083692550659,
-				"mad": 2.262291193008423
+				"flip": 0.04153039678931236,
+				"flip99": 0.8110619783401489,
+				"flipOver01": 0.08652922453703704,
+				"ssim": 0.9583998918533325,
+				"mad": 2.334521770477295
 			},
 			"top": {
 				"flip": 0.0013255233643576503,
@@ -5698,18 +5834,18 @@
 				"mad": 0.023045256733894348
 			},
 			"middle": {
-				"flip": 0.02188778854906559,
-				"flip99": 0.3363630771636963,
-				"flipOver01": 0.056831597222222224,
-				"ssim": 0.9764590859413147,
-				"mad": 0.6809146404266357
+				"flip": 0.02188236080110073,
+				"flip99": 0.3343762159347534,
+				"flipOver01": 0.05734953703703704,
+				"ssim": 0.9766011834144592,
+				"mad": 0.6740437746047974
 			},
 			"near": {
-				"flip": 0.09796322137117386,
-				"flip99": 0.8618461489677429,
-				"flipOver01": 0.1923799189814815,
-				"ssim": 0.9017589092254639,
-				"mad": 6.082913875579834
+				"flip": 0.10138331353664398,
+				"flip99": 0.8619378805160522,
+				"flipOver01": 0.20060763888888888,
+				"ssim": 0.8991913795471191,
+				"mad": 6.306477069854736
 			}
 		},
 		{
@@ -5720,17 +5856,18 @@
 			"lodShadow": 1,
 			"t": 2.5,
 			"shot": "three-walk-s1-lod0-sh1-t2.5.png",
+			"variant": "",
 			"triangles": 31883520,
-			"shadowTriangles": 0,
+			"shadowTriangles": 17439680,
 			"gpuMs": null,
 			"refTriangles": 31883520,
 			"refGpuMs": null,
 			"all": {
-				"flip": 0.20336586236953735,
-				"flip99": 0.9101422429084778,
-				"flipOver01": 0.2860329861111111,
-				"ssim": 0.8221532702445984,
-				"mad": 15.013510704040527
+				"flip": 0.20450598001480103,
+				"flip99": 0.9102468490600586,
+				"flipOver01": 0.28770736882716047,
+				"ssim": 0.8211603164672852,
+				"mad": 15.105607986450195
 			},
 			"top": {
 				"flip": 0.047984529286623,
@@ -5740,18 +5877,18 @@
 				"mad": 2.081247091293335
 			},
 			"middle": {
-				"flip": 0.19186925888061523,
-				"flip99": 0.9179267287254333,
-				"flipOver01": 0.3210691550925926,
-				"ssim": 0.8007919192314148,
-				"mad": 11.765671730041504
+				"flip": 0.19142888486385345,
+				"flip99": 0.9179714322090149,
+				"flipOver01": 0.319341724537037,
+				"ssim": 0.8014382719993591,
+				"mad": 11.75693416595459
 			},
 			"near": {
-				"flip": 0.37024372816085815,
-				"flip99": 0.9037342071533203,
-				"flipOver01": 0.44515190972222224,
-				"ssim": 0.7191466093063354,
-				"mad": 31.19361686706543
+				"flip": 0.37410449981689453,
+				"flip99": 0.9039756655693054,
+				"flipOver01": 0.45190248842592595,
+				"ssim": 0.7155213952064514,
+				"mad": 31.47864532470703
 			}
 		},
 		{
@@ -5762,17 +5899,18 @@
 			"lodShadow": 1,
 			"t": 7.5,
 			"shot": "three-walk-s1-lod0-sh1-t7.5.png",
+			"variant": "",
 			"triangles": 20847104,
-			"shadowTriangles": 0,
+			"shadowTriangles": 17439680,
 			"gpuMs": null,
 			"refTriangles": 20847104,
 			"refGpuMs": null,
 			"all": {
-				"flip": 0.014218817465007305,
-				"flip99": 0.43892398476600647,
-				"flipOver01": 0.03452353395061728,
-				"ssim": 0.9841852188110352,
-				"mad": 0.6420730352401733
+				"flip": 0.014451578259468079,
+				"flip99": 0.44757309556007385,
+				"flipOver01": 0.03508198302469136,
+				"ssim": 0.9839226007461548,
+				"mad": 0.6561979055404663
 			},
 			"top": {
 				"flip": 0.000677540258038789,
@@ -5782,18 +5920,18 @@
 				"mad": 0.008921121247112751
 			},
 			"middle": {
-				"flip": 0.019732188433408737,
-				"flip99": 0.4106020927429199,
-				"flipOver01": 0.053995949074074075,
-				"ssim": 0.9785128235816956,
-				"mad": 0.6531775593757629
+				"flip": 0.01956678368151188,
+				"flip99": 0.41060855984687805,
+				"flipOver01": 0.05354890046296296,
+				"ssim": 0.9786555767059326,
+				"mad": 0.651502251625061
 			},
 			"near": {
-				"flip": 0.022246725857257843,
-				"flip99": 0.6847990155220032,
-				"flipOver01": 0.048359375,
-				"ssim": 0.9743449687957764,
-				"mad": 1.2641205787658691
+				"flip": 0.023110410198569298,
+				"flip99": 0.6884256601333618,
+				"flipOver01": 0.050481770833333335,
+				"ssim": 0.973414421081543,
+				"mad": 1.3081704378128052
 			}
 		},
 		{
@@ -5804,17 +5942,18 @@
 			"lodShadow": 1,
 			"t": 12.5,
 			"shot": "three-walk-s1-lod0-sh1-t12.5.png",
+			"variant": "",
 			"triangles": 42555776,
-			"shadowTriangles": 0,
+			"shadowTriangles": 18430592,
 			"gpuMs": null,
-			"refTriangles": 137811584,
+			"refTriangles": 42555776,
 			"refGpuMs": null,
 			"all": {
-				"flip": 0.04243158921599388,
-				"flip99": 0.7515422701835632,
-				"flipOver01": 0.10369261188271604,
-				"ssim": 0.9531593322753906,
-				"mad": 2.053462266921997
+				"flip": 0.04483519867062569,
+				"flip99": 0.7658751606941223,
+				"flipOver01": 0.10767602237654321,
+				"ssim": 0.9507080912590027,
+				"mad": 2.2165865898132324
 			},
 			"top": {
 				"flip": 0.001331297680735588,
@@ -5824,18 +5963,18 @@
 				"mad": 0.015139352530241013
 			},
 			"middle": {
-				"flip": 0.049924418330192566,
-				"flip99": 0.5721305012702942,
-				"flipOver01": 0.14711516203703703,
-				"ssim": 0.9418125152587891,
-				"mad": 1.7916210889816284
+				"flip": 0.05044997110962868,
+				"flip99": 0.577729344367981,
+				"flipOver01": 0.14786458333333333,
+				"ssim": 0.9406542778015137,
+				"mad": 1.819357991218567
 			},
 			"near": {
-				"flip": 0.07603905349969864,
-				"flip99": 0.8530535101890564,
-				"flipOver01": 0.1609736689814815,
-				"ssim": 0.9183434844017029,
-				"mad": 4.3536272048950195
+				"flip": 0.08272432535886765,
+				"flip99": 0.8551324009895325,
+				"flipOver01": 0.17217447916666667,
+				"ssim": 0.9121477007865906,
+				"mad": 4.815262794494629
 			}
 		},
 		{
@@ -5846,38 +5985,39 @@
 			"lodShadow": 1,
 			"t": 17.5,
 			"shot": "three-walk-s1-lod0-sh1-t17.5.png",
+			"variant": "",
 			"triangles": 42555776,
-			"shadowTriangles": 0,
+			"shadowTriangles": 18410496,
 			"gpuMs": null,
-			"refTriangles": 141085184,
+			"refTriangles": 37414336,
 			"refGpuMs": null,
 			"all": {
-				"flip": 0.057232581079006195,
-				"flip99": 0.8136464357376099,
-				"flipOver01": 0.13261670524691357,
-				"ssim": 0.9375830888748169,
-				"mad": 2.9556326866149902
+				"flip": 0.058481596410274506,
+				"flip99": 0.8271538615226746,
+				"flipOver01": 0.13359085648148147,
+				"ssim": 0.9370426535606384,
+				"mad": 3.0711147785186768
 			},
 			"top": {
-				"flip": 0.001680391957052052,
-				"flip99": 0.04577383026480675,
-				"flipOver01": 0.004859664351851852,
-				"ssim": 0.9991811513900757,
-				"mad": 0.028239842504262924
+				"flip": 0.0013627851149067283,
+				"flip99": 0.03603234514594078,
+				"flipOver01": 0.0035749421296296297,
+				"ssim": 0.9993165731430054,
+				"mad": 0.01843349263072014
 			},
 			"middle": {
-				"flip": 0.05669378861784935,
-				"flip99": 0.6315194368362427,
-				"flipOver01": 0.1608449074074074,
-				"ssim": 0.9326052665710449,
-				"mad": 2.140026330947876
+				"flip": 0.05551505088806152,
+				"flip99": 0.6204293966293335,
+				"flipOver01": 0.1581495949074074,
+				"ssim": 0.9343717694282532,
+				"mad": 2.0746448040008545
 			},
 			"near": {
-				"flip": 0.11332354694604874,
-				"flip99": 0.8620404005050659,
-				"flipOver01": 0.2321455439814815,
-				"ssim": 0.8809627890586853,
-				"mad": 6.698631286621094
+				"flip": 0.11856693774461746,
+				"flip99": 0.8637436628341675,
+				"flipOver01": 0.2390480324074074,
+				"ssim": 0.8774394989013672,
+				"mad": 7.120265483856201
 			}
 		},
 		{
@@ -5888,17 +6028,18 @@
 			"lodShadow": 1,
 			"t": 22.5,
 			"shot": "three-walk-s1-lod0-sh1-t22.5.png",
+			"variant": "",
 			"triangles": 31743744,
-			"shadowTriangles": 0,
+			"shadowTriangles": 18410496,
 			"gpuMs": null,
-			"refTriangles": 148999744,
+			"refTriangles": 31743744,
 			"refGpuMs": null,
 			"all": {
-				"flip": 0.020695941522717476,
-				"flip99": 0.6033518314361572,
-				"flipOver01": 0.04824990354938272,
-				"ssim": 0.9764925837516785,
-				"mad": 1.0023099184036255
+				"flip": 0.0206610094755888,
+				"flip99": 0.5912618637084961,
+				"flipOver01": 0.048819926697530866,
+				"ssim": 0.9764308929443359,
+				"mad": 0.9873210191726685
 			},
 			"top": {
 				"flip": 3.3870361221488565e-5,
@@ -5908,18 +6049,18 @@
 				"mad": 0.00028875976568087935
 			},
 			"middle": {
-				"flip": 0.02343454770743847,
-				"flip99": 0.431319922208786,
-				"flipOver01": 0.06490017361111111,
-				"ssim": 0.9730165600776672,
-				"mad": 0.7853797674179077
+				"flip": 0.024246515706181526,
+				"flip99": 0.44430452585220337,
+				"flipOver01": 0.06713252314814815,
+				"ssim": 0.972070038318634,
+				"mad": 0.8176766633987427
 			},
 			"near": {
-				"flip": 0.03861941024661064,
-				"flip99": 0.8105027675628662,
-				"flipOver01": 0.07980613425925925,
-				"ssim": 0.9564737677574158,
-				"mad": 2.2212612628936768
+				"flip": 0.037702642381191254,
+				"flip99": 0.8019813895225525,
+				"flipOver01": 0.07928385416666667,
+				"ssim": 0.9572353959083557,
+				"mad": 2.1439974308013916
 			}
 		},
 		{
@@ -5930,31 +6071,32 @@
 			"lodShadow": 1,
 			"t": 27.5,
 			"shot": "three-walk-s1-lod0-sh1-t27.5.png",
+			"variant": "",
 			"triangles": 9707776,
-			"shadowTriangles": 0,
+			"shadowTriangles": 17461056,
 			"gpuMs": null,
-			"refTriangles": 155421440,
+			"refTriangles": 31743744,
 			"refGpuMs": null,
 			"all": {
-				"flip": 0.002002585679292679,
-				"flip99": 0.04634806886315346,
-				"flipOver01": 0.005584008487654321,
-				"ssim": 0.9981331825256348,
-				"mad": 0.05935395509004593
+				"flip": 0.001940174144692719,
+				"flip99": 0.04644552618265152,
+				"flipOver01": 0.0054576581790123455,
+				"ssim": 0.9982571601867676,
+				"mad": 0.0554206557571888
 			},
 			"top": {
-				"flip": 0.00035714873229153454,
+				"flip": 0.00035719695733860135,
 				"flip99": 0.006687418557703495,
 				"flipOver01": 0.0005902777777777778,
 				"ssim": 0.9998255968093872,
-				"mad": 0.00360659952275455
+				"mad": 0.0036068495828658342
 			},
 			"middle": {
-				"flip": 0.00526388268917799,
-				"flip99": 0.14936573803424835,
-				"flipOver01": 0.014567418981481482,
-				"ssim": 0.9946771860122681,
-				"mad": 0.1670415848493576
+				"flip": 0.0050766002386808395,
+				"flip99": 0.14350120723247528,
+				"flipOver01": 0.014188368055555555,
+				"ssim": 0.9950491189956665,
+				"mad": 0.155241459608078
 			},
 			"near": {
 				"flip": 0.00038672549999319017,
@@ -5972,17 +6114,18 @@
 			"lodShadow": 1,
 			"t": 32.5,
 			"shot": "three-walk-s1-lod0-sh1-t32.5.png",
+			"variant": "",
 			"triangles": 9707776,
-			"shadowTriangles": 0,
+			"shadowTriangles": 17494016,
 			"gpuMs": null,
-			"refTriangles": 137111744,
+			"refTriangles": 31551488,
 			"refGpuMs": null,
 			"all": {
-				"flip": 0.04476546868681908,
-				"flip99": 0.7685498595237732,
-				"flipOver01": 0.10385127314814815,
-				"ssim": 0.9497890472412109,
-				"mad": 2.302107810974121
+				"flip": 0.04269389808177948,
+				"flip99": 0.7559022903442383,
+				"flipOver01": 0.10013165509259259,
+				"ssim": 0.9522125720977783,
+				"mad": 2.1686294078826904
 			},
 			"top": {
 				"flip": 0.0002896879450418055,
@@ -5992,18 +6135,18 @@
 				"mad": 0.0029756503645330667
 			},
 			"middle": {
-				"flip": 0.03900407999753952,
-				"flip99": 0.584667980670929,
-				"flipOver01": 0.10873553240740741,
-				"ssim": 0.9511820673942566,
-				"mad": 1.451689600944519
+				"flip": 0.03848326578736305,
+				"flip99": 0.5837541222572327,
+				"flipOver01": 0.10669270833333333,
+				"ssim": 0.9521258473396301,
+				"mad": 1.432684302330017
 			},
 			"near": {
-				"flip": 0.09500264376401901,
-				"flip99": 0.8418198227882385,
-				"flipOver01": 0.20243055555555556,
-				"ssim": 0.8983054757118225,
-				"mad": 5.451658725738525
+				"flip": 0.08930874615907669,
+				"flip99": 0.8371170163154602,
+				"flipOver01": 0.19331452546296296,
+				"ssim": 0.9046323299407959,
+				"mad": 5.070229530334473
 			}
 		},
 		{
@@ -6014,17 +6157,18 @@
 			"lodShadow": 1,
 			"t": 37.5,
 			"shot": "three-walk-s1-lod0-sh1-t37.5.png",
+			"variant": "",
 			"triangles": 27299776,
-			"shadowTriangles": 0,
+			"shadowTriangles": 17494016,
 			"gpuMs": null,
-			"refTriangles": 136898176,
+			"refTriangles": 27299776,
 			"refGpuMs": null,
 			"all": {
-				"flip": 0.03681148588657379,
-				"flip99": 0.8102989196777344,
-				"flipOver01": 0.07566116898148148,
-				"ssim": 0.9628299474716187,
-				"mad": 2.161489963531494
+				"flip": 0.03797835484147072,
+				"flip99": 0.8110818266868591,
+				"flipOver01": 0.07860677083333334,
+				"ssim": 0.9620221257209778,
+				"mad": 2.2338736057281494
 			},
 			"top": {
 				"flip": 0.00016244188009295613,
@@ -6034,24 +6178,3809 @@
 				"mad": 0.001827442436479032
 			},
 			"middle": {
-				"flip": 0.013136656023561954,
-				"flip99": 0.3288506269454956,
-				"flipOver01": 0.03614293981481481,
-				"ssim": 0.9856694936752319,
-				"mad": 0.4328177869319916
+				"flip": 0.013161960057914257,
+				"flip99": 0.32647401094436646,
+				"flipOver01": 0.03666666666666667,
+				"ssim": 0.9858127236366272,
+				"mad": 0.4260319471359253
 			},
 			"near": {
-				"flip": 0.09713535755872726,
-				"flip99": 0.8618333339691162,
-				"flipOver01": 0.19059895833333335,
-				"ssim": 0.9028864502906799,
-				"mad": 6.0498247146606445
+				"flip": 0.1006106436252594,
+				"flip99": 0.8619340062141418,
+				"flipOver01": 0.19891203703703703,
+				"ssim": 0.9003197550773621,
+				"mad": 6.273761749267578
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 2.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t2.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 3778410,
+			"shadowTriangles": null,
+			"gpuMs": 1.7050570249557495,
+			"refTriangles": 130419029.5,
+			"refGpuMs": 13.076467514038086,
+			"all": {
+				"flip": 0.013918319717049599,
+				"flip99": 0.18131816387176514,
+				"flipOver01": 0.0333666087962963,
+				"ssim": 0.9908680319786072,
+				"mad": 0.42573192715644836
+			},
+			"top": {
+				"flip": 0.009629051201045513,
+				"flip99": 0.11348775029182434,
+				"flipOver01": 0.012848668981481482,
+				"ssim": 0.9964724183082581,
+				"mad": 0.21204492449760437
+			},
+			"middle": {
+				"flip": 0.028721315786242485,
+				"flip99": 0.2401040941476822,
+				"flipOver01": 0.0808203125,
+				"ssim": 0.9777191877365112,
+				"mad": 0.9840047359466553
+			},
+			"near": {
+				"flip": 0.003404590068385005,
+				"flip99": 0.07579586654901505,
+				"flipOver01": 0.006430844907407408,
+				"ssim": 0.9984123706817627,
+				"mad": 0.08114620298147202
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 7.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t7.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 1376472,
+			"shadowTriangles": null,
+			"gpuMs": 0.9007364809513092,
+			"refTriangles": 131976729,
+			"refGpuMs": 13.925372123718262,
+			"all": {
+				"flip": 0.020630480721592903,
+				"flip99": 0.22268536686897278,
+				"flipOver01": 0.07654706790123457,
+				"ssim": 0.9813600182533264,
+				"mad": 0.7256641387939453
+			},
+			"top": {
+				"flip": 0.011035545729100704,
+				"flip99": 0.1776873618364334,
+				"flipOver01": 0.03870949074074074,
+				"ssim": 0.9910094738006592,
+				"mad": 0.3494877219200134
+			},
+			"middle": {
+				"flip": 0.048238515853881836,
+				"flip99": 0.2754161059856415,
+				"flipOver01": 0.1833130787037037,
+				"ssim": 0.9547191262245178,
+				"mad": 1.7512249946594238
+			},
+			"near": {
+				"flip": 0.00261737615801394,
+				"flip99": 0.08179903030395508,
+				"flipOver01": 0.007618634259259259,
+				"ssim": 0.9983513951301575,
+				"mad": 0.07627984881401062
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 12.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t12.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 1539226,
+			"shadowTriangles": null,
+			"gpuMs": 0.9679849743843079,
+			"refTriangles": 157580737,
+			"refGpuMs": 17.063657760620117,
+			"all": {
+				"flip": 0.03132940083742142,
+				"flip99": 0.2511191666126251,
+				"flipOver01": 0.11467255015432098,
+				"ssim": 0.971532940864563,
+				"mad": 1.2149066925048828
+			},
+			"top": {
+				"flip": 0.022037414833903313,
+				"flip99": 0.2069931924343109,
+				"flipOver01": 0.06740162037037037,
+				"ssim": 0.9881460070610046,
+				"mad": 0.5746539235115051
+			},
+			"middle": {
+				"flip": 0.06183749809861183,
+				"flip99": 0.29439777135849,
+				"flipOver01": 0.24070023148148148,
+				"ssim": 0.9356063604354858,
+				"mad": 2.6926424503326416
+			},
+			"near": {
+				"flip": 0.010113289579749107,
+				"flip99": 0.19714829325675964,
+				"flipOver01": 0.03591579861111111,
+				"ssim": 0.9908465147018433,
+				"mad": 0.3774232864379883
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 17.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t17.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 3260588,
+			"shadowTriangles": null,
+			"gpuMs": 1.3651880025863647,
+			"refTriangles": 150706662,
+			"refGpuMs": 16.272918701171875,
+			"all": {
+				"flip": 0.03585328906774521,
+				"flip99": 0.2749134302139282,
+				"flipOver01": 0.12571855709876542,
+				"ssim": 0.9636526107788086,
+				"mad": 1.4482219219207764
+			},
+			"top": {
+				"flip": 0.028330374509096146,
+				"flip99": 0.2294793277978897,
+				"flipOver01": 0.07872395833333333,
+				"ssim": 0.9836143851280212,
+				"mad": 0.8312240242958069
+			},
+			"middle": {
+				"flip": 0.06535866111516953,
+				"flip99": 0.31425419449806213,
+				"flipOver01": 0.24821180555555555,
+				"ssim": 0.9208076596260071,
+				"mad": 2.98235821723938
+			},
+			"near": {
+				"flip": 0.013870839960873127,
+				"flip99": 0.234034463763237,
+				"flipOver01": 0.05021990740740741,
+				"ssim": 0.9865357279777527,
+				"mad": 0.531083881855011
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 22.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t22.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 3450288,
+			"shadowTriangles": null,
+			"gpuMs": 0.9944850206375122,
+			"refTriangles": 175547389,
+			"refGpuMs": 16.420394897460938,
+			"all": {
+				"flip": 0.01381717436015606,
+				"flip99": 0.21039192378520966,
+				"flipOver01": 0.052135898919753086,
+				"ssim": 0.9851028323173523,
+				"mad": 0.5544347763061523
+			},
+			"top": {
+				"flip": 0.000870598538313061,
+				"flip99": 0.015526064671576023,
+				"flipOver01": 0.003181423611111111,
+				"ssim": 0.9992952346801758,
+				"mad": 0.027797017246484756
+			},
+			"middle": {
+				"flip": 0.03721902519464493,
+				"flip99": 0.2692830264568329,
+				"flipOver01": 0.14262152777777778,
+				"ssim": 0.9590989351272583,
+				"mad": 1.5250593423843384
+			},
+			"near": {
+				"flip": 0.003361898008733988,
+				"flip99": 0.10405568033456802,
+				"flipOver01": 0.01060474537037037,
+				"ssim": 0.9969145059585571,
+				"mad": 0.11044804006814957
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 27.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t27.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 2746836,
+			"shadowTriangles": null,
+			"gpuMs": 1.0715460181236267,
+			"refTriangles": 62141548,
+			"refGpuMs": 6.543025016784668,
+			"all": {
+				"flip": 0.012140785343945026,
+				"flip99": 0.18554002046585083,
+				"flipOver01": 0.030812596450617284,
+				"ssim": 0.9924880862236023,
+				"mad": 0.3234729468822479
+			},
+			"top": {
+				"flip": 0.012891625054180622,
+				"flip99": 0.18508628010749817,
+				"flipOver01": 0.032194733796296296,
+				"ssim": 0.9925944209098816,
+				"mad": 0.30322083830833435
+			},
+			"middle": {
+				"flip": 0.018956992775201797,
+				"flip99": 0.23163406550884247,
+				"flipOver01": 0.05828125,
+				"ssim": 0.9854843020439148,
+				"mad": 0.6088935732841492
+			},
+			"near": {
+				"flip": 0.004573738668113947,
+				"flip99": 0.02833869867026806,
+				"flipOver01": 0.0019618055555555556,
+				"ssim": 0.999385416507721,
+				"mad": 0.05830446630716324
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 32.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t32.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 2275438,
+			"shadowTriangles": null,
+			"gpuMs": 0.989172488451004,
+			"refTriangles": 132136493,
+			"refGpuMs": 13.457148551940918,
+			"all": {
+				"flip": 0.015310350805521011,
+				"flip99": 0.176381915807724,
+				"flipOver01": 0.03842062114197531,
+				"ssim": 0.9879472851753235,
+				"mad": 0.49913763999938965
+			},
+			"top": {
+				"flip": 0.009515204466879368,
+				"flip99": 0.11257731914520264,
+				"flipOver01": 0.013389756944444444,
+				"ssim": 0.9931997060775757,
+				"mad": 0.21064268052577972
+			},
+			"middle": {
+				"flip": 0.028722839429974556,
+				"flip99": 0.224015012383461,
+				"flipOver01": 0.08325954861111111,
+				"ssim": 0.9761217832565308,
+				"mad": 1.0394684076309204
+			},
+			"near": {
+				"flip": 0.0076930103823542595,
+				"flip99": 0.1343354433774948,
+				"flipOver01": 0.01861255787037037,
+				"ssim": 0.9945203065872192,
+				"mad": 0.2473018616437912
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 2.5,
+			"shot": "null3d-walk-s3-lod1-sh1-t2.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 6946752,
+			"shadowTriangles": null,
+			"gpuMs": 1.97917902469635,
+			"refTriangles": 1107145070,
+			"refGpuMs": 160.87692260742188,
+			"all": {
+				"flip": 0.013566994108259678,
+				"flip99": 0.18408887088298798,
+				"flipOver01": 0.03559654706790123,
+				"ssim": 0.9904940724372864,
+				"mad": 0.42829856276512146
+			},
+			"top": {
+				"flip": 0.007537080906331539,
+				"flip99": 0.09982964396476746,
+				"flipOver01": 0.009975405092592593,
+				"ssim": 0.9978232383728027,
+				"mad": 0.15540075302124023
+			},
+			"middle": {
+				"flip": 0.02629789523780346,
+				"flip99": 0.2288544923067093,
+				"flipOver01": 0.07576533564814815,
+				"ssim": 0.9767228960990906,
+				"mad": 0.9466026425361633
+			},
+			"near": {
+				"flip": 0.006866011302918196,
+				"flip99": 0.15898999571800232,
+				"flipOver01": 0.021048900462962962,
+				"ssim": 0.9969359636306763,
+				"mad": 0.18289214372634888
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 7.5,
+			"shot": "null3d-walk-s3-lod1-sh1-t7.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 4373382,
+			"shadowTriangles": null,
+			"gpuMs": 1.6528080105781555,
+			"refTriangles": 719055420,
+			"refGpuMs": 95.07054901123047,
+			"all": {
+				"flip": 0.015403169207274914,
+				"flip99": 0.18174687027931213,
+				"flipOver01": 0.040114776234567905,
+				"ssim": 0.9916489720344543,
+				"mad": 0.42977920174598694
+			},
+			"top": {
+				"flip": 0.009938539937138557,
+				"flip99": 0.11619552969932556,
+				"flipOver01": 0.01371383101851852,
+				"ssim": 0.9967305660247803,
+				"mad": 0.2058333158493042
+			},
+			"middle": {
+				"flip": 0.029495883733034134,
+				"flip99": 0.21459095180034637,
+				"flipOver01": 0.08403211805555555,
+				"ssim": 0.981400191783905,
+				"mad": 0.8947035670280457
+			},
+			"near": {
+				"flip": 0.006775084417313337,
+				"flip99": 0.16827547550201416,
+				"flipOver01": 0.022598379629629628,
+				"ssim": 0.9968159794807434,
+				"mad": 0.18880072236061096
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 12.5,
+			"shot": "null3d-walk-s3-lod1-sh1-t12.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 5609139,
+			"shadowTriangles": null,
+			"gpuMs": 1.7926809787750244,
+			"refTriangles": 1270254128,
+			"refGpuMs": 185.10159301757812,
+			"all": {
+				"flip": 0.02455015294253826,
+				"flip99": 0.25887128710746765,
+				"flipOver01": 0.08430555555555555,
+				"ssim": 0.9782079458236694,
+				"mad": 0.8687269687652588
+			},
+			"top": {
+				"flip": 0.009818261489272118,
+				"flip99": 0.1519584357738495,
+				"flipOver01": 0.025344328703703702,
+				"ssim": 0.9945505261421204,
+				"mad": 0.22949254512786865
+			},
+			"middle": {
+				"flip": 0.046234942972660065,
+				"flip99": 0.30452635884284973,
+				"flipOver01": 0.16303096064814815,
+				"ssim": 0.9528412818908691,
+				"mad": 1.8347506523132324
+			},
+			"near": {
+				"flip": 0.017597252503037453,
+				"flip99": 0.23890572786331177,
+				"flipOver01": 0.06454137731481481,
+				"ssim": 0.987231969833374,
+				"mad": 0.5419375896453857
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 17.5,
+			"shot": "null3d-walk-s3-lod1-sh1-t17.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 7463615,
+			"shadowTriangles": null,
+			"gpuMs": 2.6606249809265137,
+			"refTriangles": 1443074424,
+			"refGpuMs": 206.87071228027344,
+			"all": {
+				"flip": 0.024697476997971535,
+				"flip99": 0.2338370382785797,
+				"flipOver01": 0.0810228587962963,
+				"ssim": 0.9844820499420166,
+				"mad": 0.8030821084976196
+			},
+			"top": {
+				"flip": 0.011070342734456062,
+				"flip99": 0.1336713284254074,
+				"flipOver01": 0.019820601851851853,
+				"ssim": 0.9961525201797485,
+				"mad": 0.22781607508659363
+			},
+			"middle": {
+				"flip": 0.03937981650233269,
+				"flip99": 0.24884389340877533,
+				"flipOver01": 0.13352719907407407,
+				"ssim": 0.9698511362075806,
+				"mad": 1.4851405620574951
+			},
+			"near": {
+				"flip": 0.023642269894480705,
+				"flip99": 0.2591765820980072,
+				"flipOver01": 0.08972077546296296,
+				"ssim": 0.9874424934387207,
+				"mad": 0.696289598941803
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 22.5,
+			"shot": "null3d-walk-s3-lod1-sh1-t22.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 7024743,
+			"shadowTriangles": null,
+			"gpuMs": 1.5960794687271118,
+			"refTriangles": 1144537846,
+			"refGpuMs": 165.1625213623047,
+			"all": {
+				"flip": 0.013680713251233101,
+				"flip99": 0.21263331174850464,
+				"flipOver01": 0.0472950424382716,
+				"ssim": 0.9871081709861755,
+				"mad": 0.5065796375274658
+			},
+			"top": {
+				"flip": 0.0007918253540992737,
+				"flip99": 0.014990545809268951,
+				"flipOver01": 0.0023668981481481484,
+				"ssim": 0.9993655681610107,
+				"mad": 0.026331380009651184
+			},
+			"middle": {
+				"flip": 0.03136686235666275,
+				"flip99": 0.26708099246025085,
+				"flipOver01": 0.10698640046296297,
+				"ssim": 0.9673582315444946,
+				"mad": 1.2399605512619019
+			},
+			"near": {
+				"flip": 0.008883451111614704,
+				"flip99": 0.18760837614536285,
+				"flipOver01": 0.032531828703703705,
+				"ssim": 0.9946005940437317,
+				"mad": 0.25344690680503845
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 27.5,
+			"shot": "null3d-walk-s3-lod1-sh1-t27.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 5229482,
+			"shadowTriangles": null,
+			"gpuMs": 1.5423109531402588,
+			"refTriangles": 726098163,
+			"refGpuMs": 105.17777252197266,
+			"all": {
+				"flip": 0.004783399868756533,
+				"flip99": 0.12155982106924057,
+				"flipOver01": 0.013510802469135802,
+				"ssim": 0.9967106580734253,
+				"mad": 0.1412384957075119
+			},
+			"top": {
+				"flip": 0.003907811362296343,
+				"flip99": 0.09705424308776855,
+				"flipOver01": 0.009458912037037037,
+				"ssim": 0.9978029131889343,
+				"mad": 0.08406411856412888
+			},
+			"middle": {
+				"flip": 0.009588298387825489,
+				"flip99": 0.18469397723674774,
+				"flipOver01": 0.03095486111111111,
+				"ssim": 0.992381751537323,
+				"mad": 0.3327348232269287
+			},
+			"near": {
+				"flip": 0.0008540909620933235,
+				"flip99": 0.020107656717300415,
+				"flipOver01": 0.00011863425925925926,
+				"ssim": 0.9999475479125977,
+				"mad": 0.00691654346883297
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 32.5,
+			"shot": "null3d-walk-s3-lod1-sh1-t32.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 5481388,
+			"shadowTriangles": null,
+			"gpuMs": 1.5257270336151123,
+			"refTriangles": 1172186867.5,
+			"refGpuMs": 164.16819763183594,
+			"all": {
+				"flip": 0.018670232966542244,
+				"flip99": 0.2211405634880066,
+				"flipOver01": 0.06352719907407407,
+				"ssim": 0.9884990453720093,
+				"mad": 0.5744431614875793
+			},
+			"top": {
+				"flip": 0.003227866953238845,
+				"flip99": 0.06896331161260605,
+				"flipOver01": 0.0057711226851851856,
+				"ssim": 0.9983581900596619,
+				"mad": 0.08477678894996643
+			},
+			"middle": {
+				"flip": 0.03093607909977436,
+				"flip99": 0.2331724762916565,
+				"flipOver01": 0.10262297453703703,
+				"ssim": 0.9783773422241211,
+				"mad": 1.0294218063354492
+			},
+			"near": {
+				"flip": 0.021846750751137733,
+				"flip99": 0.2505471706390381,
+				"flipOver01": 0.0821875,
+				"ssim": 0.9887616634368896,
+				"mad": 0.6091309189796448
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 37.5,
+			"shot": "null3d-walk-s3-lod1-sh1-t37.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 7309875,
+			"shadowTriangles": null,
+			"gpuMs": 1.6996405124664307,
+			"refTriangles": 1389205269,
+			"refGpuMs": 196.59213256835938,
+			"all": {
+				"flip": 0.01657983660697937,
+				"flip99": 0.2079596221446991,
+				"flipOver01": 0.04788532021604938,
+				"ssim": 0.9902196526527405,
+				"mad": 0.46619030833244324
+			},
+			"top": {
+				"flip": 0.005904499441385269,
+				"flip99": 0.05525045096874237,
+				"flipOver01": 0.004270833333333333,
+				"ssim": 0.9988523721694946,
+				"mad": 0.09098496288061142
+			},
+			"middle": {
+				"flip": 0.02327723801136017,
+				"flip99": 0.21307231485843658,
+				"flipOver01": 0.06375144675925926,
+				"ssim": 0.9820630550384521,
+				"mad": 0.7246803641319275
+			},
+			"near": {
+				"flip": 0.020557770505547523,
+				"flip99": 0.24822893738746643,
+				"flipOver01": 0.07563368055555555,
+				"ssim": 0.9897433519363403,
+				"mad": 0.582905650138855
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 37.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t37.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 3095240,
+			"shadowTriangles": null,
+			"gpuMs": 1.102275013923645,
+			"refTriangles": 138397104,
+			"refGpuMs": 14.946980476379395,
+			"all": {
+				"flip": 0.010725382715463638,
+				"flip99": 0.17129573225975037,
+				"flipOver01": 0.030401234567901236,
+				"ssim": 0.9928470849990845,
+				"mad": 0.30251747369766235
+			},
+			"top": {
+				"flip": 0.0016045827651396394,
+				"flip99": 0.04174202308058739,
+				"flipOver01": 0.0034765625,
+				"ssim": 0.9989147782325745,
+				"mad": 0.0433003194630146
+			},
+			"middle": {
+				"flip": 0.023714331910014153,
+				"flip99": 0.22373166680335999,
+				"flipOver01": 0.07242621527777778,
+				"ssim": 0.983135461807251,
+				"mad": 0.6836881637573242
+			},
+			"near": {
+				"flip": 0.006857234984636307,
+				"flip99": 0.1218390241265297,
+				"flipOver01": 0.015300925925925926,
+				"ssim": 0.9964910745620728,
+				"mad": 0.18056395649909973
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 2.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t2.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 2967616,
+			"shadowTriangles": null,
+			"gpuMs": 1.0558589696884155,
+			"refTriangles": 130419029.5,
+			"refGpuMs": 13.076467514038086,
+			"all": {
+				"flip": 0.01931598410010338,
+				"flip99": 0.2762751877307892,
+				"flipOver01": 0.0626832561728395,
+				"ssim": 0.9814324378967285,
+				"mad": 0.6579896211624146
+			},
+			"top": {
+				"flip": 0.010117588564753532,
+				"flip99": 0.1739530861377716,
+				"flipOver01": 0.028813657407407406,
+				"ssim": 0.9934564828872681,
+				"mad": 0.28446823358535767
+			},
+			"middle": {
+				"flip": 0.04210464656352997,
+				"flip99": 0.35563966631889343,
+				"flipOver01": 0.1402879050925926,
+				"ssim": 0.9562856554985046,
+				"mad": 1.5040059089660645
+			},
+			"near": {
+				"flip": 0.00572570925578475,
+				"flip99": 0.17450177669525146,
+				"flipOver01": 0.01894820601851852,
+				"ssim": 0.9945552945137024,
+				"mad": 0.18549484014511108
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 7.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t7.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 705898,
+			"shadowTriangles": null,
+			"gpuMs": 0.7468845248222351,
+			"refTriangles": 131976729,
+			"refGpuMs": 13.925372123718262,
+			"all": {
+				"flip": 0.02958732657134533,
+				"flip99": 0.32131317257881165,
+				"flipOver01": 0.11479552469135802,
+				"ssim": 0.9625453948974609,
+				"mad": 1.0999062061309814
+			},
+			"top": {
+				"flip": 0.01608504168689251,
+				"flip99": 0.2630861699581146,
+				"flipOver01": 0.06131365740740741,
+				"ssim": 0.9809659123420715,
+				"mad": 0.5551277995109558
+			},
+			"middle": {
+				"flip": 0.06862935423851013,
+				"flip99": 0.3835444152355194,
+				"flipOver01": 0.2708666087962963,
+				"ssim": 0.911002516746521,
+				"mad": 2.6227126121520996
+			},
+			"near": {
+				"flip": 0.004047588910907507,
+				"flip99": 0.12103639543056488,
+				"flipOver01": 0.01220630787037037,
+				"ssim": 0.9956680536270142,
+				"mad": 0.12187811732292175
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 12.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t12.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 780636,
+			"shadowTriangles": null,
+			"gpuMs": 0.7904880046844482,
+			"refTriangles": 157580737,
+			"refGpuMs": 17.063657760620117,
+			"all": {
+				"flip": 0.04311211407184601,
+				"flip99": 0.3562972843647003,
+				"flipOver01": 0.17023341049382715,
+				"ssim": 0.9436012506484985,
+				"mad": 1.7821588516235352
+			},
+			"top": {
+				"flip": 0.025539228692650795,
+				"flip99": 0.2816503643989563,
+				"flipOver01": 0.10266637731481482,
+				"ssim": 0.9767621755599976,
+				"mad": 0.7966841459274292
+			},
+			"middle": {
+				"flip": 0.08756271749734879,
+				"flip99": 0.4093312621116638,
+				"flipOver01": 0.35172453703703704,
+				"ssim": 0.8756160736083984,
+				"mad": 3.9233181476593018
+			},
+			"near": {
+				"flip": 0.01623438484966755,
+				"flip99": 0.3151516318321228,
+				"flipOver01": 0.05630931712962963,
+				"ssim": 0.9784252047538757,
+				"mad": 0.6264743208885193
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 17.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t17.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 1624477,
+			"shadowTriangles": null,
+			"gpuMs": 1.1973990201950073,
+			"refTriangles": 150706662,
+			"refGpuMs": 16.272918701171875,
+			"all": {
+				"flip": 0.048371415585279465,
+				"flip99": 0.38109540939331055,
+				"flipOver01": 0.17378038194444445,
+				"ssim": 0.9374675750732422,
+				"mad": 2.0153322219848633
+			},
+			"top": {
+				"flip": 0.03551623970270157,
+				"flip99": 0.2911013960838318,
+				"flipOver01": 0.11771267361111111,
+				"ssim": 0.9731215834617615,
+				"mad": 1.1062039136886597
+			},
+			"middle": {
+				"flip": 0.08855678141117096,
+				"flip99": 0.43673229217529297,
+				"flipOver01": 0.3313990162037037,
+				"ssim": 0.8665129542350769,
+				"mad": 4.109512805938721
+			},
+			"near": {
+				"flip": 0.02104123681783676,
+				"flip99": 0.3474944829940796,
+				"flipOver01": 0.07222945601851852,
+				"ssim": 0.9727681875228882,
+				"mad": 0.8302799463272095
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 22.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t22.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 2753394,
+			"shadowTriangles": null,
+			"gpuMs": 0.914152979850769,
+			"refTriangles": 175547389,
+			"refGpuMs": 16.420394897460938,
+			"all": {
+				"flip": 0.02600984089076519,
+				"flip99": 0.3398759067058563,
+				"flipOver01": 0.08948350694444444,
+				"ssim": 0.9630987644195557,
+				"mad": 1.1077719926834106
+			},
+			"top": {
+				"flip": 0.006586901377886534,
+				"flip99": 0.03467198461294174,
+				"flipOver01": 0.0060648148148148145,
+				"ssim": 0.9979144930839539,
+				"mad": 0.10871732234954834
+			},
+			"middle": {
+				"flip": 0.06332206726074219,
+				"flip99": 0.41073060035705566,
+				"flipOver01": 0.2367042824074074,
+				"ssim": 0.9012627601623535,
+				"mad": 2.924290657043457
+			},
+			"near": {
+				"flip": 0.008120556361973286,
+				"flip99": 0.23282936215400696,
+				"flipOver01": 0.02568142361111111,
+				"ssim": 0.9901190996170044,
+				"mad": 0.2903079688549042
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 27.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t27.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 2425373,
+			"shadowTriangles": null,
+			"gpuMs": 1.0800670385360718,
+			"refTriangles": 62141548,
+			"refGpuMs": 6.543025016784668,
+			"all": {
+				"flip": 0.018022699281573296,
+				"flip99": 0.2705901265144348,
+				"flipOver01": 0.04508101851851852,
+				"ssim": 0.9834445118904114,
+				"mad": 0.5385927557945251
+			},
+			"top": {
+				"flip": 0.01782984286546707,
+				"flip99": 0.2676381766796112,
+				"flipOver01": 0.04733072916666667,
+				"ssim": 0.9843893647193909,
+				"mad": 0.4862012267112732
+			},
+			"middle": {
+				"flip": 0.02822662889957428,
+				"flip99": 0.32833510637283325,
+				"flipOver01": 0.08315682870370371,
+				"ssim": 0.9682120084762573,
+				"mad": 1.0017788410186768
+			},
+			"near": {
+				"flip": 0.008011630736291409,
+				"flip99": 0.0579083189368248,
+				"flipOver01": 0.0047554976851851855,
+				"ssim": 0.9977322816848755,
+				"mad": 0.12779830396175385
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 32.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t32.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 1016097,
+			"shadowTriangles": null,
+			"gpuMs": 0.870903491973877,
+			"refTriangles": 132136493,
+			"refGpuMs": 13.457148551940918,
+			"all": {
+				"flip": 0.02589072473347187,
+				"flip99": 0.3062000274658203,
+				"flipOver01": 0.0842626350308642,
+				"ssim": 0.97042316198349,
+				"mad": 0.9050096273422241
+			},
+			"top": {
+				"flip": 0.014900029636919498,
+				"flip99": 0.22781221568584442,
+				"flipOver01": 0.03767650462962963,
+				"ssim": 0.9841409921646118,
+				"mad": 0.3827260434627533
+			},
+			"middle": {
+				"flip": 0.04628995060920715,
+				"flip99": 0.3577520549297333,
+				"flipOver01": 0.1591015625,
+				"ssim": 0.9443322420120239,
+				"mad": 1.8012580871582031
+			},
+			"near": {
+				"flip": 0.016482198610901833,
+				"flip99": 0.288331001996994,
+				"flipOver01": 0.056009837962962966,
+				"ssim": 0.9827964305877686,
+				"mad": 0.5310449004173279
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 37.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t37.5-variant-normals025.png",
+			"variant": "variant=normals025",
+			"triangles": 2569730,
+			"shadowTriangles": null,
+			"gpuMs": 1.4370409846305847,
+			"refTriangles": 138397104,
+			"refGpuMs": 14.946980476379395,
+			"all": {
+				"flip": 0.019438134506344795,
+				"flip99": 0.27382892370224,
+				"flipOver01": 0.05806616512345679,
+				"ssim": 0.9800428152084351,
+				"mad": 0.6315356492996216
+			},
+			"top": {
+				"flip": 0.006827183999121189,
+				"flip99": 0.07968732714653015,
+				"flipOver01": 0.007259837962962963,
+				"ssim": 0.9967176914215088,
+				"mad": 0.1312243491411209
+			},
+			"middle": {
+				"flip": 0.0372132882475853,
+				"flip99": 0.33562347292900085,
+				"flipOver01": 0.12091290509259259,
+				"ssim": 0.9583948254585266,
+				"mad": 1.2908848524093628
+			},
+			"near": {
+				"flip": 0.014273930341005325,
+				"flip99": 0.2591038942337036,
+				"flipOver01": 0.046025752314814816,
+				"ssim": 0.9850161075592041,
+				"mad": 0.4724979102611542
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 2.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t2.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 3023690,
+			"shadowTriangles": null,
+			"gpuMs": 0.9177570044994354,
+			"refTriangles": 130419029.5,
+			"refGpuMs": 13.076467514038086,
+			"all": {
+				"flip": 0.013109695166349411,
+				"flip99": 0.1408247947692871,
+				"flipOver01": 0.02537326388888889,
+				"ssim": 0.9916055202484131,
+				"mad": 0.43386152386665344
+			},
+			"top": {
+				"flip": 0.011257970705628395,
+				"flip99": 0.12336640059947968,
+				"flipOver01": 0.016498842592592593,
+				"ssim": 0.9955716729164124,
+				"mad": 0.2829936742782593
+			},
+			"middle": {
+				"flip": 0.025280151516199112,
+				"flip99": 0.17527246475219727,
+				"flipOver01": 0.056733217592592596,
+				"ssim": 0.9807240962982178,
+				"mad": 0.9400681853294373
+			},
+			"near": {
+				"flip": 0.002790963975712657,
+				"flip99": 0.05746951699256897,
+				"flipOver01": 0.0028877314814814816,
+				"ssim": 0.9985210299491882,
+				"mad": 0.07852277904748917
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 7.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t7.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 3057270,
+			"shadowTriangles": null,
+			"gpuMs": 0.9420700073242188,
+			"refTriangles": 131976729,
+			"refGpuMs": 13.925372123718262,
+			"all": {
+				"flip": 0.01466587744653225,
+				"flip99": 0.13683459162712097,
+				"flipOver01": 0.0281983024691358,
+				"ssim": 0.9925869703292847,
+				"mad": 0.472836434841156
+			},
+			"top": {
+				"flip": 0.011590894311666489,
+				"flip99": 0.12222912162542343,
+				"flipOver01": 0.01726417824074074,
+				"ssim": 0.9954978823661804,
+				"mad": 0.27941828966140747
+			},
+			"middle": {
+				"flip": 0.030332619324326515,
+				"flip99": 0.16322898864746094,
+				"flipOver01": 0.06502893518518518,
+				"ssim": 0.9832924008369446,
+				"mad": 1.083981990814209
+			},
+			"near": {
+				"flip": 0.002074123127385974,
+				"flip99": 0.04412044212222099,
+				"flipOver01": 0.0023017939814814815,
+				"ssim": 0.9989708065986633,
+				"mad": 0.05510900542140007
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 12.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t12.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 3502876,
+			"shadowTriangles": null,
+			"gpuMs": 1.0463180541992188,
+			"refTriangles": 157580737,
+			"refGpuMs": 17.063657760620117,
+			"all": {
+				"flip": 0.020423877984285355,
+				"flip99": 0.15831832587718964,
+				"flipOver01": 0.04729697145061729,
+				"ssim": 0.9877225756645203,
+				"mad": 0.7798160910606384
+			},
+			"top": {
+				"flip": 0.01673664152622223,
+				"flip99": 0.14856664836406708,
+				"flipOver01": 0.032278645833333335,
+				"ssim": 0.9941856265068054,
+				"mad": 0.4201124906539917
+			},
+			"middle": {
+				"flip": 0.038448262959718704,
+				"flip99": 0.17950117588043213,
+				"flipOver01": 0.09442997685185185,
+				"ssim": 0.9733588099479675,
+				"mad": 1.6779820919036865
+			},
+			"near": {
+				"flip": 0.006086722481995821,
+				"flip99": 0.11682596802711487,
+				"flipOver01": 0.015182291666666667,
+				"ssim": 0.9956232905387878,
+				"mad": 0.24135369062423706
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 17.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t17.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 3453313,
+			"shadowTriangles": null,
+			"gpuMs": 1.068192481994629,
+			"refTriangles": 150706662,
+			"refGpuMs": 16.272918701171875,
+			"all": {
+				"flip": 0.03161313757300377,
+				"flip99": 0.22653637826442719,
+				"flipOver01": 0.10389708719135803,
+				"ssim": 0.9708191156387329,
+				"mad": 1.267616868019104
+			},
+			"top": {
+				"flip": 0.02739797532558441,
+				"flip99": 0.19241216778755188,
+				"flipOver01": 0.07247829861111112,
+				"ssim": 0.9854609966278076,
+				"mad": 0.8099167943000793
+			},
+			"middle": {
+				"flip": 0.055001527070999146,
+				"flip99": 0.2515101730823517,
+				"flipOver01": 0.194765625,
+				"ssim": 0.9383803606033325,
+				"mad": 2.537022829055786
+			},
+			"near": {
+				"flip": 0.012439916841685772,
+				"flip99": 0.20295804738998413,
+				"flipOver01": 0.04444733796296296,
+				"ssim": 0.9886159896850586,
+				"mad": 0.45591092109680176
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 22.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t22.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 3960838,
+			"shadowTriangles": null,
+			"gpuMs": 0.9300280213356018,
+			"refTriangles": 175547389,
+			"refGpuMs": 16.420394897460938,
+			"all": {
+				"flip": 0.013178417459130287,
+				"flip99": 0.1902877539396286,
+				"flipOver01": 0.04455343364197531,
+				"ssim": 0.9851850867271423,
+				"mad": 0.606560468673706
+			},
+			"top": {
+				"flip": 0.000980592449195683,
+				"flip99": 0.021009832620620728,
+				"flipOver01": 0.0033984375,
+				"ssim": 0.9992378354072571,
+				"mad": 0.039188262075185776
+			},
+			"middle": {
+				"flip": 0.034296710044145584,
+				"flip99": 0.25093314051628113,
+				"flipOver01": 0.11820167824074074,
+				"ssim": 0.9597984552383423,
+				"mad": 1.6475824117660522
+			},
+			"near": {
+				"flip": 0.0042579518631100655,
+				"flip99": 0.11238344758749008,
+				"flipOver01": 0.012060185185185186,
+				"ssim": 0.9965189099311829,
+				"mad": 0.1329105943441391
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 27.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t27.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 2253446,
+			"shadowTriangles": null,
+			"gpuMs": 0.7919880151748657,
+			"refTriangles": 62141548,
+			"refGpuMs": 6.543025016784668,
+			"all": {
+				"flip": 0.023723460733890533,
+				"flip99": 0.16057516634464264,
+				"flipOver01": 0.035789448302469135,
+				"ssim": 0.9920063018798828,
+				"mad": 0.5777072310447693
+			},
+			"top": {
+				"flip": 0.026719406247138977,
+				"flip99": 0.31584540009498596,
+				"flipOver01": 0.048328993055555554,
+				"ssim": 0.9870537519454956,
+				"mad": 0.7719832062721252
+			},
+			"middle": {
+				"flip": 0.02696036919951439,
+				"flip99": 0.1520165652036667,
+				"flipOver01": 0.04297453703703704,
+				"ssim": 0.9912865161895752,
+				"mad": 0.6325113773345947
+			},
+			"near": {
+				"flip": 0.017490610480308533,
+				"flip99": 0.11031442135572433,
+				"flipOver01": 0.016064814814814816,
+				"ssim": 0.9976785778999329,
+				"mad": 0.32862716913223267
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 32.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t32.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 3417818,
+			"shadowTriangles": null,
+			"gpuMs": 0.9740260243415833,
+			"refTriangles": 132136493,
+			"refGpuMs": 13.457148551940918,
+			"all": {
+				"flip": 0.011814701370894909,
+				"flip99": 0.12451933324337006,
+				"flipOver01": 0.019216820987654322,
+				"ssim": 0.9920662045478821,
+				"mad": 0.40644362568855286
+			},
+			"top": {
+				"flip": 0.009000442922115326,
+				"flip99": 0.10492163896560669,
+				"flipOver01": 0.011265914351851852,
+				"ssim": 0.9943563938140869,
+				"mad": 0.20504051446914673
+			},
+			"middle": {
+				"flip": 0.02091456577181816,
+				"flip99": 0.1516362875699997,
+				"flipOver01": 0.03928385416666667,
+				"ssim": 0.9853164553642273,
+				"mad": 0.821622371673584
+			},
+			"near": {
+				"flip": 0.0055290935561060905,
+				"flip99": 0.0895010456442833,
+				"flipOver01": 0.007100694444444444,
+				"ssim": 0.9965258836746216,
+				"mad": 0.19266796112060547
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 37.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t37.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 3874256,
+			"shadowTriangles": null,
+			"gpuMs": 1.0710880160331726,
+			"refTriangles": 138397104,
+			"refGpuMs": 14.946980476379395,
+			"all": {
+				"flip": 0.008561945520341396,
+				"flip99": 0.12105008959770203,
+				"flipOver01": 0.01715036651234568,
+				"ssim": 0.9958906173706055,
+				"mad": 0.24200023710727692
+			},
+			"top": {
+				"flip": 0.001925120479427278,
+				"flip99": 0.05312667042016983,
+				"flipOver01": 0.003091724537037037,
+				"ssim": 0.9991300702095032,
+				"mad": 0.05238841474056244
+			},
+			"middle": {
+				"flip": 0.017459459602832794,
+				"flip99": 0.15069709718227386,
+				"flipOver01": 0.03640046296296296,
+				"ssim": 0.9909378886222839,
+				"mad": 0.5167877078056335
+			},
+			"near": {
+				"flip": 0.006301256828010082,
+				"flip99": 0.10618984699249268,
+				"flipOver01": 0.011958912037037037,
+				"ssim": 0.9976040124893188,
+				"mad": 0.15682467818260193
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1.5,
+			"lodShadow": 1,
+			"t": 2.5,
+			"shot": "null3d-walk-s0-lod1.5-sh1-t2.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 2171606,
+			"shadowTriangles": null,
+			"gpuMs": 0.9321939945220947,
+			"refTriangles": 130419029.5,
+			"refGpuMs": 13.076467514038086,
+			"all": {
+				"flip": 0.015405637212097645,
+				"flip99": 0.18087716400623322,
+				"flipOver01": 0.045746527777777775,
+				"ssim": 0.9898066520690918,
+				"mad": 0.48730048537254333
+			},
+			"top": {
+				"flip": 0.011168593540787697,
+				"flip99": 0.16095954179763794,
+				"flipOver01": 0.03167534722222222,
+				"ssim": 0.9943540096282959,
+				"mad": 0.32755953073501587
+			},
+			"middle": {
+				"flip": 0.03143082931637764,
+				"flip99": 0.2199200540781021,
+				"flipOver01": 0.09409577546296297,
+				"ssim": 0.9769198298454285,
+				"mad": 1.0377001762390137
+			},
+			"near": {
+				"flip": 0.0036174904089421034,
+				"flip99": 0.10892561823129654,
+				"flipOver01": 0.011468460648148148,
+				"ssim": 0.9981461763381958,
+				"mad": 0.0966416746377945
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1.5,
+			"lodShadow": 1,
+			"t": 7.5,
+			"shot": "null3d-walk-s0-lod1.5-sh1-t7.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 2019404,
+			"shadowTriangles": null,
+			"gpuMs": 0.9421949982643127,
+			"refTriangles": 131976729,
+			"refGpuMs": 13.925372123718262,
+			"all": {
+				"flip": 0.017687607556581497,
+				"flip99": 0.1728900820016861,
+				"flipOver01": 0.04713686342592593,
+				"ssim": 0.9892218708992004,
+				"mad": 0.5846492052078247
+			},
+			"top": {
+				"flip": 0.012906827963888645,
+				"flip99": 0.1471521109342575,
+				"flipOver01": 0.025815972222222223,
+				"ssim": 0.9941213726997375,
+				"mad": 0.3282007873058319
+			},
+			"middle": {
+				"flip": 0.03772220015525818,
+				"flip99": 0.21210990846157074,
+				"flipOver01": 0.11176070601851852,
+				"ssim": 0.9747180342674255,
+				"mad": 1.3611598014831543
+			},
+			"near": {
+				"flip": 0.002433787565678358,
+				"flip99": 0.05627297982573509,
+				"flipOver01": 0.003833912037037037,
+				"ssim": 0.9988263249397278,
+				"mad": 0.06458725035190582
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1.5,
+			"lodShadow": 1,
+			"t": 12.5,
+			"shot": "null3d-walk-s0-lod1.5-sh1-t12.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 2437659,
+			"shadowTriangles": null,
+			"gpuMs": 1.1388570070266724,
+			"refTriangles": 157580737,
+			"refGpuMs": 17.063657760620117,
+			"all": {
+				"flip": 0.021239861845970154,
+				"flip99": 0.18534539639949799,
+				"flipOver01": 0.061263020833333334,
+				"ssim": 0.9842116236686707,
+				"mad": 0.7675498723983765
+			},
+			"top": {
+				"flip": 0.012994377873837948,
+				"flip99": 0.14708469808101654,
+				"flipOver01": 0.03170717592592592,
+				"ssim": 0.9936964511871338,
+				"mad": 0.36394014954566956
+			},
+			"middle": {
+				"flip": 0.044328272342681885,
+				"flip99": 0.22386807203292847,
+				"flipOver01": 0.13342881944444446,
+				"ssim": 0.9644017815589905,
+				"mad": 1.7203439474105835
+			},
+			"near": {
+				"flip": 0.006396930664777756,
+				"flip99": 0.13290441036224365,
+				"flipOver01": 0.01865306712962963,
+				"ssim": 0.9945366978645325,
+				"mad": 0.21836546063423157
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1.5,
+			"lodShadow": 1,
+			"t": 17.5,
+			"shot": "null3d-walk-s0-lod1.5-sh1-t17.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 2329402,
+			"shadowTriangles": null,
+			"gpuMs": 1.2368149757385254,
+			"refTriangles": 150706662,
+			"refGpuMs": 16.272918701171875,
+			"all": {
+				"flip": 0.02959464304149151,
+				"flip99": 0.22400003671646118,
+				"flipOver01": 0.09856385030864198,
+				"ssim": 0.9708726406097412,
+				"mad": 1.1594059467315674
+			},
+			"top": {
+				"flip": 0.024773020297288895,
+				"flip99": 0.19982551038265228,
+				"flipOver01": 0.07415798611111112,
+				"ssim": 0.9850327372550964,
+				"mad": 0.7790277004241943
+			},
+			"middle": {
+				"flip": 0.053553257137537,
+				"flip99": 0.25654807686805725,
+				"flipOver01": 0.18526041666666668,
+				"ssim": 0.9382181167602539,
+				"mad": 2.325415849685669
+			},
+			"near": {
+				"flip": 0.010457656346261501,
+				"flip99": 0.18119436502456665,
+				"flipOver01": 0.03627314814814815,
+				"ssim": 0.989366888999939,
+				"mad": 0.37377411127090454
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1.5,
+			"lodShadow": 1,
+			"t": 22.5,
+			"shot": "null3d-walk-s0-lod1.5-sh1-t22.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 2435836,
+			"shadowTriangles": null,
+			"gpuMs": 0.9531935155391693,
+			"refTriangles": 175547389,
+			"refGpuMs": 16.420394897460938,
+			"all": {
+				"flip": 0.01686030440032482,
+				"flip99": 0.21031051874160767,
+				"flipOver01": 0.053681037808641974,
+				"ssim": 0.9836033582687378,
+				"mad": 0.6768229007720947
+			},
+			"top": {
+				"flip": 0.0060142092406749725,
+				"flip99": 0.023492082953453064,
+				"flipOver01": 0.0039872685185185185,
+				"ssim": 0.9990983009338379,
+				"mad": 0.085670106112957
+			},
+			"middle": {
+				"flip": 0.039905842393636703,
+				"flip99": 0.26844942569732666,
+				"flipOver01": 0.14287615740740742,
+				"ssim": 0.9553016424179077,
+				"mad": 1.7979060411453247
+			},
+			"near": {
+				"flip": 0.00466086296364665,
+				"flip99": 0.12634097039699554,
+				"flipOver01": 0.0141796875,
+				"ssim": 0.996410071849823,
+				"mad": 0.1468927264213562
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1.5,
+			"lodShadow": 1,
+			"t": 27.5,
+			"shot": "null3d-walk-s0-lod1.5-sh1-t27.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 1411418,
+			"shadowTriangles": null,
+			"gpuMs": 0.9149235188961029,
+			"refTriangles": 62141548,
+			"refGpuMs": 6.543025016784668,
+			"all": {
+				"flip": 0.043103866279125214,
+				"flip99": 0.2639366388320923,
+				"flipOver01": 0.11617283950617284,
+				"ssim": 0.9837338328361511,
+				"mad": 1.1239427328109741
+			},
+			"top": {
+				"flip": 0.04729900509119034,
+				"flip99": 0.4199264943599701,
+				"flipOver01": 0.13606770833333334,
+				"ssim": 0.9772121906280518,
+				"mad": 1.3618559837341309
+			},
+			"middle": {
+				"flip": 0.04765184596180916,
+				"flip99": 0.21628828346729279,
+				"flipOver01": 0.13598668981481482,
+				"ssim": 0.9831776022911072,
+				"mad": 1.2172954082489014
+			},
+			"near": {
+				"flip": 0.03436074033379555,
+				"flip99": 0.1820334941148758,
+				"flipOver01": 0.07646412037037037,
+				"ssim": 0.9908115267753601,
+				"mad": 0.7926767468452454
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1.5,
+			"lodShadow": 1,
+			"t": 32.5,
+			"shot": "null3d-walk-s0-lod1.5-sh1-t32.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 2009864,
+			"shadowTriangles": null,
+			"gpuMs": 0.9972350001335144,
+			"refTriangles": 132136493,
+			"refGpuMs": 13.457148551940918,
+			"all": {
+				"flip": 0.014950708486139774,
+				"flip99": 0.18189607560634613,
+				"flipOver01": 0.046593364197530865,
+				"ssim": 0.9890998601913452,
+				"mad": 0.48129260540008545
+			},
+			"top": {
+				"flip": 0.00784419383853674,
+				"flip99": 0.15690264105796814,
+				"flipOver01": 0.023548900462962964,
+				"ssim": 0.9929217100143433,
+				"mad": 0.23169071972370148
+			},
+			"middle": {
+				"flip": 0.027912354096770287,
+				"flip99": 0.21103861927986145,
+				"flipOver01": 0.0876099537037037,
+				"ssim": 0.9786796569824219,
+				"mad": 0.9766408205032349
+			},
+			"near": {
+				"flip": 0.009095576591789722,
+				"flip99": 0.15099389851093292,
+				"flipOver01": 0.028621238425925927,
+				"ssim": 0.9956983327865601,
+				"mad": 0.23554642498493195
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1.5,
+			"lodShadow": 1,
+			"t": 37.5,
+			"shot": "null3d-walk-s0-lod1.5-sh1-t37.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 2277985,
+			"shadowTriangles": null,
+			"gpuMs": 1.0244840383529663,
+			"refTriangles": 138397104,
+			"refGpuMs": 14.946980476379395,
+			"all": {
+				"flip": 0.01152035966515541,
+				"flip99": 0.16574424505233765,
+				"flipOver01": 0.03250530478395062,
+				"ssim": 0.9927017688751221,
+				"mad": 0.3438684642314911
+			},
+			"top": {
+				"flip": 0.003059176029637456,
+				"flip99": 0.08896423131227493,
+				"flipOver01": 0.00837962962962963,
+				"ssim": 0.997977077960968,
+				"mad": 0.09121131896972656
+			},
+			"middle": {
+				"flip": 0.023639949038624763,
+				"flip99": 0.2103382647037506,
+				"flipOver01": 0.06878182870370371,
+				"ssim": 0.9838544130325317,
+				"mad": 0.7358436584472656
+			},
+			"near": {
+				"flip": 0.007861955091357231,
+				"flip99": 0.13351893424987793,
+				"flipOver01": 0.02035445601851852,
+				"ssim": 0.9962738752365112,
+				"mad": 0.2045503556728363
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 2.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t2.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 1627030,
+			"shadowTriangles": null,
+			"gpuMs": 1.1830650568008423,
+			"refTriangles": 130419029.5,
+			"refGpuMs": 13.076467514038086,
+			"all": {
+				"flip": 0.020577754825353622,
+				"flip99": 0.22738876938819885,
+				"flipOver01": 0.06308641975308642,
+				"ssim": 0.9814817905426025,
+				"mad": 0.6921814680099487
+			},
+			"top": {
+				"flip": 0.015666667371988297,
+				"flip99": 0.18340043723583221,
+				"flipOver01": 0.038544560185185185,
+				"ssim": 0.9910116195678711,
+				"mad": 0.4324507713317871
+			},
+			"middle": {
+				"flip": 0.040798358619213104,
+				"flip99": 0.2822220027446747,
+				"flipOver01": 0.1349826388888889,
+				"ssim": 0.9569671154022217,
+				"mad": 1.5021182298660278
+			},
+			"near": {
+				"flip": 0.005268239416182041,
+				"flip99": 0.14098607003688812,
+				"flipOver01": 0.015732060185185186,
+				"ssim": 0.9964664578437805,
+				"mad": 0.14197535812854767
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 7.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t7.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 1495543,
+			"shadowTriangles": null,
+			"gpuMs": 1.1737534999847412,
+			"refTriangles": 131976729,
+			"refGpuMs": 13.925372123718262,
+			"all": {
+				"flip": 0.019252391532063484,
+				"flip99": 0.20854495465755463,
+				"flipOver01": 0.06763020833333333,
+				"ssim": 0.9843061566352844,
+				"mad": 0.6492230892181396
+			},
+			"top": {
+				"flip": 0.011710435152053833,
+				"flip99": 0.18757940828800201,
+				"flipOver01": 0.03999855324074074,
+				"ssim": 0.9904547333717346,
+				"mad": 0.3726321756839752
+			},
+			"middle": {
+				"flip": 0.04389830678701401,
+				"flip99": 0.2505153715610504,
+				"flipOver01": 0.1566767939814815,
+				"ssim": 0.9643859267234802,
+				"mad": 1.5132830142974854
+			},
+			"near": {
+				"flip": 0.002148432657122612,
+				"flip99": 0.06933519244194031,
+				"flipOver01": 0.006215277777777778,
+				"ssim": 0.9980778098106384,
+				"mad": 0.06175409257411957
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 12.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t12.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 1654262,
+			"shadowTriangles": null,
+			"gpuMs": 1.3886029720306396,
+			"refTriangles": 157580737,
+			"refGpuMs": 17.063657760620117,
+			"all": {
+				"flip": 0.02810726873576641,
+				"flip99": 0.23824603855609894,
+				"flipOver01": 0.10167824074074074,
+				"ssim": 0.9752046465873718,
+				"mad": 1.038278341293335
+			},
+			"top": {
+				"flip": 0.01968488283455372,
+				"flip99": 0.2246597856283188,
+				"flipOver01": 0.06936342592592593,
+				"ssim": 0.9866637587547302,
+				"mad": 0.5988259315490723
+			},
+			"middle": {
+				"flip": 0.0566658191382885,
+				"flip99": 0.2768567204475403,
+				"flipOver01": 0.20894097222222222,
+				"ssim": 0.946499764919281,
+				"mad": 2.2384414672851562
+			},
+			"near": {
+				"flip": 0.00797110702842474,
+				"flip99": 0.16414032876491547,
+				"flipOver01": 0.026730324074074073,
+				"ssim": 0.9924506545066833,
+				"mad": 0.2775682210922241
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 17.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t17.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 1755702,
+			"shadowTriangles": null,
+			"gpuMs": 1.3047720193862915,
+			"refTriangles": 150706662,
+			"refGpuMs": 16.272918701171875,
+			"all": {
+				"flip": 0.03805861249566078,
+				"flip99": 0.26911094784736633,
+				"flipOver01": 0.1391579861111111,
+				"ssim": 0.9616591930389404,
+				"mad": 1.4979870319366455
+			},
+			"top": {
+				"flip": 0.03313159942626953,
+				"flip99": 0.2347611039876938,
+				"flipOver01": 0.10805989583333334,
+				"ssim": 0.979753851890564,
+				"mad": 1.0070174932479858
+			},
+			"middle": {
+				"flip": 0.0671992376446724,
+				"flip99": 0.3047063946723938,
+				"flipOver01": 0.2590769675925926,
+				"ssim": 0.9187518358230591,
+				"mad": 2.9727566242218018
+			},
+			"near": {
+				"flip": 0.013844994828104973,
+				"flip99": 0.2286415696144104,
+				"flipOver01": 0.050337094907407405,
+				"ssim": 0.9864718914031982,
+				"mad": 0.5141874551773071
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 22.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t22.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 1957148,
+			"shadowTriangles": null,
+			"gpuMs": 1.2640849947929382,
+			"refTriangles": 175547389,
+			"refGpuMs": 16.420394897460938,
+			"all": {
+				"flip": 0.01622283272445202,
+				"flip99": 0.23183569312095642,
+				"flipOver01": 0.05958285108024691,
+				"ssim": 0.9795297980308533,
+				"mad": 0.7034823298454285
+			},
+			"top": {
+				"flip": 0.0010951521107926965,
+				"flip99": 0.023008523508906364,
+				"flipOver01": 0.0039004629629629628,
+				"ssim": 0.9990395307540894,
+				"mad": 0.04194295406341553
+			},
+			"middle": {
+				"flip": 0.04289986565709114,
+				"flip99": 0.3011351525783539,
+				"flipOver01": 0.15976707175925925,
+				"ssim": 0.9440971612930298,
+				"mad": 1.9234819412231445
+			},
+			"near": {
+				"flip": 0.00467347726225853,
+				"flip99": 0.13423018157482147,
+				"flipOver01": 0.015081018518518518,
+				"ssim": 0.9954528212547302,
+				"mad": 0.14502231776714325
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 27.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t27.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 1316798,
+			"shadowTriangles": null,
+			"gpuMs": 1.4330819845199585,
+			"refTriangles": 62141548,
+			"refGpuMs": 6.543025016784668,
+			"all": {
+				"flip": 0.04322158545255661,
+				"flip99": 0.2682548761367798,
+				"flipOver01": 0.11691743827160493,
+				"ssim": 0.9834320545196533,
+				"mad": 1.12888503074646
+			},
+			"top": {
+				"flip": 0.04709955304861069,
+				"flip99": 0.4194622337818146,
+				"flipOver01": 0.13544849537037038,
+				"ssim": 0.9774829149246216,
+				"mad": 1.3545317649841309
+			},
+			"middle": {
+				"flip": 0.04832007363438606,
+				"flip99": 0.22459791600704193,
+				"flipOver01": 0.13917390046296296,
+				"ssim": 0.9820088148117065,
+				"mad": 1.2412099838256836
+			},
+			"near": {
+				"flip": 0.034245140850543976,
+				"flip99": 0.1821935772895813,
+				"flipOver01": 0.07612991898148148,
+				"ssim": 0.9908045530319214,
+				"mad": 0.7909133434295654
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 32.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t32.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 1635159,
+			"shadowTriangles": null,
+			"gpuMs": 1.6639119982719421,
+			"refTriangles": 132136493,
+			"refGpuMs": 13.457148551940918,
+			"all": {
+				"flip": 0.01735646463930607,
+				"flip99": 0.21495458483695984,
+				"flipOver01": 0.05759500385802469,
+				"ssim": 0.9851059913635254,
+				"mad": 0.5750265717506409
+			},
+			"top": {
+				"flip": 0.007975796237587929,
+				"flip99": 0.15927135944366455,
+				"flipOver01": 0.023919270833333332,
+				"ssim": 0.9927492141723633,
+				"mad": 0.2384762018918991
+			},
+			"middle": {
+				"flip": 0.03354359790682793,
+				"flip99": 0.2596421539783478,
+				"flipOver01": 0.11338396990740741,
+				"ssim": 0.9688174724578857,
+				"mad": 1.2024359703063965
+			},
+			"near": {
+				"flip": 0.010550003498792648,
+				"flip99": 0.17736805975437164,
+				"flipOver01": 0.035481770833333336,
+				"ssim": 0.9937511086463928,
+				"mad": 0.2841675281524658
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 37.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t37.5-variant-centre.png",
+			"variant": "variant=centre",
+			"triangles": 1911200,
+			"shadowTriangles": null,
+			"gpuMs": 2.2345070838928223,
+			"refTriangles": 138397104,
+			"refGpuMs": 14.946980476379395,
+			"all": {
+				"flip": 0.013265308924019337,
+				"flip99": 0.19376248121261597,
+				"flipOver01": 0.04105661651234568,
+				"ssim": 0.9903832077980042,
+				"mad": 0.41047364473342896
+			},
+			"top": {
+				"flip": 0.003059176029637456,
+				"flip99": 0.08896423131227493,
+				"flipOver01": 0.00837962962962963,
+				"ssim": 0.997977077960968,
+				"mad": 0.09121131896972656
+			},
+			"middle": {
+				"flip": 0.02736060507595539,
+				"flip99": 0.2505016624927521,
+				"flipOver01": 0.0864525462962963,
+				"ssim": 0.9785065650939941,
+				"mad": 0.8859999179840088
+			},
+			"near": {
+				"flip": 0.009376149624586105,
+				"flip99": 0.16018731892108917,
+				"flipOver01": 0.02833767361111111,
+				"ssim": 0.9946658611297607,
+				"mad": 0.2542096972465515
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 2.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t2.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 4305010,
+			"shadowTriangles": null,
+			"gpuMs": 1.7185570001602173,
+			"refTriangles": 130419029.5,
+			"refGpuMs": 13.076467514038086,
+			"all": {
+				"flip": 0.008735847659409046,
+				"flip99": 0.11328430473804474,
+				"flipOver01": 0.0140210262345679,
+				"ssim": 0.9961684942245483,
+				"mad": 0.2497512698173523
+			},
+			"top": {
+				"flip": 0.004866371396929026,
+				"flip99": 0.0738590732216835,
+				"flipOver01": 0.004673032407407407,
+				"ssim": 0.9988091588020325,
+				"mad": 0.11686186492443085
+			},
+			"middle": {
+				"flip": 0.019099991768598557,
+				"flip99": 0.14805789291858673,
+				"flipOver01": 0.03308015046296296,
+				"ssim": 0.9904803037643433,
+				"mad": 0.5782291889190674
+			},
+			"near": {
+				"flip": 0.0022411781828850508,
+				"flip99": 0.06633495539426804,
+				"flipOver01": 0.004309895833333333,
+				"ssim": 0.9992159605026245,
+				"mad": 0.05416281148791313
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 7.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t7.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 3610994,
+			"shadowTriangles": null,
+			"gpuMs": 1.4805610179901123,
+			"refTriangles": 131976729,
+			"refGpuMs": 13.925372123718262,
+			"all": {
+				"flip": 0.013368749991059303,
+				"flip99": 0.14348651468753815,
+				"flipOver01": 0.031921296296296295,
+				"ssim": 0.9912416934967041,
+				"mad": 0.44841548800468445
+			},
+			"top": {
+				"flip": 0.007065878249704838,
+				"flip99": 0.11375284194946289,
+				"flipOver01": 0.014597800925925926,
+				"ssim": 0.9954671263694763,
+				"mad": 0.21506549417972565
+			},
+			"middle": {
+				"flip": 0.03088432364165783,
+				"flip99": 0.1738153100013733,
+				"flipOver01": 0.07577835648148148,
+				"ssim": 0.9796882271766663,
+				"mad": 1.0772775411605835
+			},
+			"near": {
+				"flip": 0.0021560511086136103,
+				"flip99": 0.06619735807180405,
+				"flipOver01": 0.005387731481481481,
+				"ssim": 0.9985697865486145,
+				"mad": 0.05290345475077629
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 12.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t12.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 4031516,
+			"shadowTriangles": null,
+			"gpuMs": 1.5547055006027222,
+			"refTriangles": 157580737,
+			"refGpuMs": 17.063657760620117,
+			"all": {
+				"flip": 0.02099231444299221,
+				"flip99": 0.16831205785274506,
+				"flipOver01": 0.05077980324074074,
+				"ssim": 0.9863360524177551,
+				"mad": 0.8037700653076172
+			},
+			"top": {
+				"flip": 0.014405948109924793,
+				"flip99": 0.12130451947450638,
+				"flipOver01": 0.018232060185185184,
+				"ssim": 0.9958600997924805,
+				"mad": 0.3460928201675415
+			},
+			"middle": {
+				"flip": 0.0407324880361557,
+				"flip99": 0.19399745762348175,
+				"flipOver01": 0.10894965277777778,
+				"ssim": 0.9687010645866394,
+				"mad": 1.7917860746383667
+			},
+			"near": {
+				"flip": 0.007838517427444458,
+				"flip99": 0.1440982073545456,
+				"flipOver01": 0.02515769675925926,
+				"ssim": 0.9944469928741455,
+				"mad": 0.2734313905239105
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 17.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t17.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 4568338,
+			"shadowTriangles": null,
+			"gpuMs": 1.6486830115318298,
+			"refTriangles": 150706662,
+			"refGpuMs": 16.272918701171875,
+			"all": {
+				"flip": 0.023046407848596573,
+				"flip99": 0.1907171905040741,
+				"flipOver01": 0.06011332947530864,
+				"ssim": 0.978629469871521,
+				"mad": 0.9110409617424011
+			},
+			"top": {
+				"flip": 0.01704907789826393,
+				"flip99": 0.14714255928993225,
+				"flipOver01": 0.027961516203703702,
+				"ssim": 0.9912698864936829,
+				"mad": 0.5183479189872742
+			},
+			"middle": {
+				"flip": 0.04283645749092102,
+				"flip99": 0.22044523060321808,
+				"flipOver01": 0.12254484953703704,
+				"ssim": 0.9535945653915405,
+				"mad": 1.8890202045440674
+			},
+			"near": {
+				"flip": 0.009253690019249916,
+				"flip99": 0.16058945655822754,
+				"flipOver01": 0.029833622685185184,
+				"ssim": 0.9910241365432739,
+				"mad": 0.32575488090515137
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 22.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t22.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 4995157,
+			"shadowTriangles": null,
+			"gpuMs": 1.2726479768753052,
+			"refTriangles": 175547389,
+			"refGpuMs": 16.420394897460938,
+			"all": {
+				"flip": 0.014956721104681492,
+				"flip99": 0.18362151086330414,
+				"flipOver01": 0.043547453703703706,
+				"ssim": 0.9867210388183594,
+				"mad": 0.606957733631134
+			},
+			"top": {
+				"flip": 0.005844797007739544,
+				"flip99": 0.02085011638700962,
+				"flipOver01": 0.003146701388888889,
+				"ssim": 0.99930340051651,
+				"mad": 0.07889533787965775
+			},
+			"middle": {
+				"flip": 0.03471481427550316,
+				"flip99": 0.2371097207069397,
+				"flipOver01": 0.1149363425925926,
+				"ssim": 0.964013397693634,
+				"mad": 1.6069660186767578
+			},
+			"near": {
+				"flip": 0.00431055249646306,
+				"flip99": 0.11517143994569778,
+				"flipOver01": 0.01255931712962963,
+				"ssim": 0.9968463182449341,
+				"mad": 0.13501183688640594
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 27.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t27.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 3666485,
+			"shadowTriangles": null,
+			"gpuMs": 1.4447075128555298,
+			"refTriangles": 62141548,
+			"refGpuMs": 6.543025016784668,
+			"all": {
+				"flip": 0.00964423269033432,
+				"flip99": 0.10200554132461548,
+				"flipOver01": 0.010536265432098766,
+				"ssim": 0.9974732398986816,
+				"mad": 0.21043501794338226
+			},
+			"top": {
+				"flip": 0.010120194405317307,
+				"flip99": 0.09861315041780472,
+				"flipOver01": 0.009607928240740742,
+				"ssim": 0.9979882836341858,
+				"mad": 0.19293688237667084
+			},
+			"middle": {
+				"flip": 0.013700434006750584,
+				"flip99": 0.12932173907756805,
+				"flipOver01": 0.020711805555555556,
+				"ssim": 0.9949036836624146,
+				"mad": 0.378633588552475
+			},
+			"near": {
+				"flip": 0.005112071055918932,
+				"flip99": 0.03085106424987316,
+				"flipOver01": 0.0012890625,
+				"ssim": 0.9995278120040894,
+				"mad": 0.05973457172513008
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 32.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t32.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 4072246,
+			"shadowTriangles": null,
+			"gpuMs": 1.3354380130767822,
+			"refTriangles": 132136493,
+			"refGpuMs": 13.457148551940918,
+			"all": {
+				"flip": 0.011637367308139801,
+				"flip99": 0.1217440664768219,
+				"flipOver01": 0.0181274112654321,
+				"ssim": 0.9922114610671997,
+				"mad": 0.40180978178977966
+			},
+			"top": {
+				"flip": 0.008953259326517582,
+				"flip99": 0.10407134890556335,
+				"flipOver01": 0.011048900462962963,
+				"ssim": 0.9943891167640686,
+				"mad": 0.2035169154405594
+			},
+			"middle": {
+				"flip": 0.02043648064136505,
+				"flip99": 0.1474766880273819,
+				"flipOver01": 0.03624710648148148,
+				"ssim": 0.9857140779495239,
+				"mad": 0.8094190359115601
+			},
+			"near": {
+				"flip": 0.005522360559552908,
+				"flip99": 0.08945295214653015,
+				"flipOver01": 0.007086226851851852,
+				"ssim": 0.9965311288833618,
+				"mad": 0.19249337911605835
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"t": 37.5,
+			"shot": "null3d-walk-s0-lod1-sh1-t37.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 4943296,
+			"shadowTriangles": null,
+			"gpuMs": 1.711974024772644,
+			"refTriangles": 138397104,
+			"refGpuMs": 14.946980476379395,
+			"all": {
+				"flip": 0.007110522128641605,
+				"flip99": 0.10480459779500961,
+				"flipOver01": 0.011422164351851852,
+				"ssim": 0.9968952536582947,
+				"mad": 0.19148240983486176
+			},
+			"top": {
+				"flip": 0.0012445122702047229,
+				"flip99": 0.034662436693906784,
+				"flipOver01": 0.0014742476851851852,
+				"ssim": 0.9996024966239929,
+				"mad": 0.03143707290291786
+			},
+			"middle": {
+				"flip": 0.015413634479045868,
+				"flip99": 0.1384117156267166,
+				"flipOver01": 0.02779079861111111,
+				"ssim": 0.9926846623420715,
+				"mad": 0.428408145904541
+			},
+			"near": {
+				"flip": 0.0046734195202589035,
+				"flip99": 0.07837235182523727,
+				"flipOver01": 0.005001446759259259,
+				"ssim": 0.9983986020088196,
+				"mad": 0.11460205167531967
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1.5,
+			"lodShadow": 1,
+			"t": 2.5,
+			"shot": "null3d-walk-s0-lod1.5-sh1-t2.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 2977708,
+			"shadowTriangles": null,
+			"gpuMs": 1.3118129968643188,
+			"refTriangles": 130419029.5,
+			"refGpuMs": 13.076467514038086,
+			"all": {
+				"flip": 0.016295764595270157,
+				"flip99": 0.18349188566207886,
+				"flipOver01": 0.04212528935185185,
+				"ssim": 0.9873855710029602,
+				"mad": 0.5440795421600342
+			},
+			"top": {
+				"flip": 0.011231517419219017,
+				"flip99": 0.11762981116771698,
+				"flipOver01": 0.015163483796296296,
+				"ssim": 0.9958667755126953,
+				"mad": 0.2813838720321655
+			},
+			"middle": {
+				"flip": 0.03287166729569435,
+				"flip99": 0.22879473865032196,
+				"flipOver01": 0.09736400462962963,
+				"ssim": 0.9691308736801147,
+				"mad": 1.2259678840637207
+			},
+			"near": {
+				"flip": 0.004784112796187401,
+				"flip99": 0.12576788663864136,
+				"flipOver01": 0.013848379629629629,
+				"ssim": 0.9971590042114258,
+				"mad": 0.12488700449466705
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1.5,
+			"lodShadow": 1,
+			"t": 7.5,
+			"shot": "null3d-walk-s0-lod1.5-sh1-t7.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 2356344,
+			"shadowTriangles": null,
+			"gpuMs": 1.202731966972351,
+			"refTriangles": 131976729,
+			"refGpuMs": 13.925372123718262,
+			"all": {
+				"flip": 0.016484592109918594,
+				"flip99": 0.15766096115112305,
+				"flipOver01": 0.039168113425925924,
+				"ssim": 0.9906066060066223,
+				"mad": 0.542131245136261
+			},
+			"top": {
+				"flip": 0.011716783046722412,
+				"flip99": 0.12291105836629868,
+				"flipOver01": 0.01818431712962963,
+				"ssim": 0.9954280853271484,
+				"mad": 0.28811734914779663
+			},
+			"middle": {
+				"flip": 0.035303205251693726,
+				"flip99": 0.19702985882759094,
+				"flipOver01": 0.0954861111111111,
+				"ssim": 0.9775654673576355,
+				"mad": 1.2736892700195312
+			},
+			"near": {
+				"flip": 0.002433787565678358,
+				"flip99": 0.05627297982573509,
+				"flipOver01": 0.003833912037037037,
+				"ssim": 0.9988263249397278,
+				"mad": 0.06458725035190582
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1.5,
+			"lodShadow": 1,
+			"t": 12.5,
+			"shot": "null3d-walk-s0-lod1.5-sh1-t12.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 2776931,
+			"shadowTriangles": null,
+			"gpuMs": 1.4140620231628418,
+			"refTriangles": 157580737,
+			"refGpuMs": 17.063657760620117,
+			"all": {
+				"flip": 0.021061308681964874,
+				"flip99": 0.18012091517448425,
+				"flipOver01": 0.057917631172839504,
+				"ssim": 0.9849751591682434,
+				"mad": 0.8049657940864563
+			},
+			"top": {
+				"flip": 0.013095222413539886,
+				"flip99": 0.14720378816127777,
+				"flipOver01": 0.03171006944444445,
+				"ssim": 0.9940594434738159,
+				"mad": 0.3781176805496216
+			},
+			"middle": {
+				"flip": 0.04326895996928215,
+				"flip99": 0.217337504029274,
+				"flipOver01": 0.12220630787037037,
+				"ssim": 0.9663914442062378,
+				"mad": 1.7792131900787354
+			},
+			"near": {
+				"flip": 0.00681974645704031,
+				"flip99": 0.134524866938591,
+				"flipOver01": 0.019836516203703705,
+				"ssim": 0.9944746494293213,
+				"mad": 0.2575668394565582
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1.5,
+			"lodShadow": 1,
+			"t": 17.5,
+			"shot": "null3d-walk-s0-lod1.5-sh1-t17.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 2720802,
+			"shadowTriangles": null,
+			"gpuMs": 1.2473565340042114,
+			"refTriangles": 150706662,
+			"refGpuMs": 16.272918701171875,
+			"all": {
+				"flip": 0.0276641845703125,
+				"flip99": 0.21753190457820892,
+				"flipOver01": 0.08564621913580248,
+				"ssim": 0.972774863243103,
+				"mad": 1.0906575918197632
+			},
+			"top": {
+				"flip": 0.021181685850024223,
+				"flip99": 0.1750728338956833,
+				"flipOver01": 0.051171875,
+				"ssim": 0.9880304336547852,
+				"mad": 0.6630100607872009
+			},
+			"middle": {
+				"flip": 0.05142686516046524,
+				"flip99": 0.2522948384284973,
+				"flipOver01": 0.16991030092592593,
+				"ssim": 0.9408286213874817,
+				"mad": 2.2379112243652344
+			},
+			"near": {
+				"flip": 0.01038400363177061,
+				"flip99": 0.17985928058624268,
+				"flipOver01": 0.03585648148148148,
+				"ssim": 0.9894657731056213,
+				"mad": 0.371051162481308
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1.5,
+			"lodShadow": 1,
+			"t": 22.5,
+			"shot": "null3d-walk-s0-lod1.5-sh1-t22.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 3153718,
+			"shadowTriangles": null,
+			"gpuMs": 1.0289440155029297,
+			"refTriangles": 175547389,
+			"refGpuMs": 16.420394897460938,
+			"all": {
+				"flip": 0.014898405410349369,
+				"flip99": 0.2137390375137329,
+				"flipOver01": 0.05354070216049383,
+				"ssim": 0.9824223518371582,
+				"mad": 0.6691394448280334
+			},
+			"top": {
+				"flip": 0.0011132725048810244,
+				"flip99": 0.023568084463477135,
+				"flipOver01": 0.004035011574074074,
+				"ssim": 0.9990585446357727,
+				"mad": 0.044456757605075836
+			},
+			"middle": {
+				"flip": 0.03899582847952843,
+				"flip99": 0.2761327624320984,
+				"flipOver01": 0.14294994212962964,
+				"ssim": 0.9521031379699707,
+				"mad": 1.8187923431396484
+			},
+			"near": {
+				"flip": 0.004586120136082172,
+				"flip99": 0.12288566678762436,
+				"flipOver01": 0.013637152777777778,
+				"ssim": 0.9961053133010864,
+				"mad": 0.14416928589344025
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1.5,
+			"lodShadow": 1,
+			"t": 27.5,
+			"shot": "null3d-walk-s0-lod1.5-sh1-t27.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 2950834,
+			"shadowTriangles": null,
+			"gpuMs": 1.1641490459442139,
+			"refTriangles": 62141548,
+			"refGpuMs": 6.543025016784668,
+			"all": {
+				"flip": 0.012951327487826347,
+				"flip99": 0.14910976588726044,
+				"flipOver01": 0.023802083333333335,
+				"ssim": 0.9948484897613525,
+				"mad": 0.3065029978752136
+			},
+			"top": {
+				"flip": 0.013525782153010368,
+				"flip99": 0.15070918202400208,
+				"flipOver01": 0.02404224537037037,
+				"ssim": 0.9955087304115295,
+				"mad": 0.28995969891548157
+			},
+			"middle": {
+				"flip": 0.018601659685373306,
+				"flip99": 0.18227580189704895,
+				"flipOver01": 0.04452980324074074,
+				"ssim": 0.9898741245269775,
+				"mad": 0.5426377654075623
+			},
+			"near": {
+				"flip": 0.006726543419063091,
+				"flip99": 0.04832005128264427,
+				"flipOver01": 0.0028342013888888887,
+				"ssim": 0.9991627931594849,
+				"mad": 0.08691154420375824
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1.5,
+			"lodShadow": 1,
+			"t": 32.5,
+			"shot": "null3d-walk-s0-lod1.5-sh1-t32.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 2284096,
+			"shadowTriangles": null,
+			"gpuMs": 1.1727739572525024,
+			"refTriangles": 132136493,
+			"refGpuMs": 13.457148551940918,
+			"all": {
+				"flip": 0.01753442920744419,
+				"flip99": 0.20606328547000885,
+				"flipOver01": 0.04898244598765432,
+				"ssim": 0.9833060503005981,
+				"mad": 0.6278254985809326
+			},
+			"top": {
+				"flip": 0.012677216902375221,
+				"flip99": 0.18353454768657684,
+				"flipOver01": 0.02863425925925926,
+				"ssim": 0.9878587126731873,
+				"mad": 0.34243279695510864
+			},
+			"middle": {
+				"flip": 0.03175051510334015,
+				"flip99": 0.25274473428726196,
+				"flipOver01": 0.09705295138888889,
+				"ssim": 0.9684156179428101,
+				"mad": 1.2784221172332764
+			},
+			"near": {
+				"flip": 0.008175554685294628,
+				"flip99": 0.1394452303647995,
+				"flipOver01": 0.021260127314814813,
+				"ssim": 0.9936434626579285,
+				"mad": 0.2626217007637024
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1.5,
+			"lodShadow": 1,
+			"t": 37.5,
+			"shot": "null3d-walk-s0-lod1.5-sh1-t37.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 3158054,
+			"shadowTriangles": null,
+			"gpuMs": 1.5661840438842773,
+			"refTriangles": 138397104,
+			"refGpuMs": 14.946980476379395,
+			"all": {
+				"flip": 0.014033096842467785,
+				"flip99": 0.1709645390510559,
+				"flipOver01": 0.037571373456790125,
+				"ssim": 0.9900248646736145,
+				"mad": 0.4371032416820526
+			},
+			"top": {
+				"flip": 0.00634011160582304,
+				"flip99": 0.06619519740343094,
+				"flipOver01": 0.0047309027777777775,
+				"ssim": 0.9980349540710449,
+				"mad": 0.11157598346471786
+			},
+			"middle": {
+				"flip": 0.025751888751983643,
+				"flip99": 0.2080436795949936,
+				"flipOver01": 0.0756886574074074,
+				"ssim": 0.9787595868110657,
+				"mad": 0.8998729586601257
+			},
+			"near": {
+				"flip": 0.010007289238274097,
+				"flip99": 0.1618250161409378,
+				"flipOver01": 0.03229456018518519,
+				"ssim": 0.9932798743247986,
+				"mad": 0.2998608350753784
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 2.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t2.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 2202950,
+			"shadowTriangles": null,
+			"gpuMs": 1.1031910181045532,
+			"refTriangles": 130419029.5,
+			"refGpuMs": 13.076467514038086,
+			"all": {
+				"flip": 0.016124693676829338,
+				"flip99": 0.1835647076368332,
+				"flipOver01": 0.03941068672839506,
+				"ssim": 0.9872394800186157,
+				"mad": 0.5296478271484375
+			},
+			"top": {
+				"flip": 0.011310199275612831,
+				"flip99": 0.12439972907304764,
+				"flipOver01": 0.016747685185185185,
+				"ssim": 0.9955165982246399,
+				"mad": 0.28522989153862
+			},
+			"middle": {
+				"flip": 0.03345813229680061,
+				"flip99": 0.2489858716726303,
+				"flipOver01": 0.09429976851851851,
+				"ssim": 0.9684543013572693,
+				"mad": 1.2061787843704224
+			},
+			"near": {
+				"flip": 0.0036057450342923403,
+				"flip99": 0.08110547065734863,
+				"flipOver01": 0.007184606481481481,
+				"ssim": 0.9977474212646484,
+				"mad": 0.0975349023938179
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 7.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t7.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 1753463,
+			"shadowTriangles": null,
+			"gpuMs": 1.1119415163993835,
+			"refTriangles": 131976729,
+			"refGpuMs": 13.925372123718262,
+			"all": {
+				"flip": 0.018025411292910576,
+				"flip99": 0.19074110686779022,
+				"flipOver01": 0.06018759645061728,
+				"ssim": 0.9864358901977539,
+				"mad": 0.6342933773994446
+			},
+			"top": {
+				"flip": 0.00979209877550602,
+				"flip99": 0.1586090624332428,
+				"flipOver01": 0.030788483796296295,
+				"ssim": 0.992955207824707,
+				"mad": 0.3219349980354309
+			},
+			"middle": {
+				"flip": 0.041946932673454285,
+				"flip99": 0.2358095943927765,
+				"flipOver01": 0.1436574074074074,
+				"ssim": 0.967846155166626,
+				"mad": 1.5134336948394775
+			},
+			"near": {
+				"flip": 0.002337201964110136,
+				"flip99": 0.07180164009332657,
+				"flipOver01": 0.006116898148148148,
+				"ssim": 0.9985064268112183,
+				"mad": 0.06751131266355515
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 12.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t12.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 1929094,
+			"shadowTriangles": null,
+			"gpuMs": 1.2001060247421265,
+			"refTriangles": 157580737,
+			"refGpuMs": 17.063657760620117,
+			"all": {
+				"flip": 0.02658941224217415,
+				"flip99": 0.22035138309001923,
+				"flipOver01": 0.08261670524691359,
+				"ssim": 0.9791644215583801,
+				"mad": 1.0053654909133911
+			},
+			"top": {
+				"flip": 0.017161963507533073,
+				"flip99": 0.15373633801937103,
+				"flipOver01": 0.034949363425925924,
+				"ssim": 0.9937350153923035,
+				"mad": 0.43505463004112244
+			},
+			"middle": {
+				"flip": 0.053911544382572174,
+				"flip99": 0.26754850149154663,
+				"flipOver01": 0.18343605324074075,
+				"ssim": 0.9509744048118591,
+				"mad": 2.2585363388061523
+			},
+			"near": {
+				"flip": 0.008694724179804325,
+				"flip99": 0.16914819180965424,
+				"flipOver01": 0.029464699074074074,
+				"ssim": 0.9927839040756226,
+				"mad": 0.32250550389289856
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 17.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t17.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 2204782,
+			"shadowTriangles": null,
+			"gpuMs": 1.300521969795227,
+			"refTriangles": 150706662,
+			"refGpuMs": 16.272918701171875,
+			"all": {
+				"flip": 0.025378508493304253,
+				"flip99": 0.209903746843338,
+				"flipOver01": 0.07248215663580247,
+				"ssim": 0.9780667424201965,
+				"mad": 0.9286969900131226
+			},
+			"top": {
+				"flip": 0.017786001786589622,
+				"flip99": 0.1445532590150833,
+				"flipOver01": 0.03365451388888889,
+				"ssim": 0.9920496940612793,
+				"mad": 0.5071409940719604
+			},
+			"middle": {
+				"flip": 0.0489722415804863,
+				"flip99": 0.2566872537136078,
+				"flipOver01": 0.1526128472222222,
+				"ssim": 0.9509496092796326,
+				"mad": 1.9470182657241821
+			},
+			"near": {
+				"flip": 0.009377287700772285,
+				"flip99": 0.1695975959300995,
+				"flipOver01": 0.031179108796296297,
+				"ssim": 0.9912011027336121,
+				"mad": 0.3319319188594818
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 22.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t22.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 2535736,
+			"shadowTriangles": null,
+			"gpuMs": 1.091358482837677,
+			"refTriangles": 175547389,
+			"refGpuMs": 16.420394897460938,
+			"all": {
+				"flip": 0.016839271411299706,
+				"flip99": 0.24029883742332458,
+				"flipOver01": 0.06167582947530864,
+				"ssim": 0.9788628220558167,
+				"mad": 0.7469908595085144
+			},
+			"top": {
+				"flip": 0.0011132725048810244,
+				"flip99": 0.023568084463477135,
+				"flipOver01": 0.004035011574074074,
+				"ssim": 0.9990585446357727,
+				"mad": 0.044456757605075836
+			},
+			"middle": {
+				"flip": 0.04428683966398239,
+				"flip99": 0.3116172254085541,
+				"flipOver01": 0.1649435763888889,
+				"ssim": 0.9422091245651245,
+				"mad": 2.0333778858184814
+			},
+			"near": {
+				"flip": 0.005117711145430803,
+				"flip99": 0.1409110724925995,
+				"flipOver01": 0.016048900462962964,
+				"ssim": 0.9953207969665527,
+				"mad": 0.16313783824443817
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 27.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t27.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 1828638,
+			"shadowTriangles": null,
+			"gpuMs": 0.9734439849853516,
+			"refTriangles": 62141548,
+			"refGpuMs": 6.543025016784668,
+			"all": {
+				"flip": 0.027257602661848068,
+				"flip99": 0.19717612862586975,
+				"flipOver01": 0.0479711612654321,
+				"ssim": 0.9887882471084595,
+				"mad": 0.7019408941268921
+			},
+			"top": {
+				"flip": 0.030076542869210243,
+				"flip99": 0.32471591234207153,
+				"flipOver01": 0.06122685185185185,
+				"ssim": 0.9844495058059692,
+				"mad": 0.8859044909477234
+			},
+			"middle": {
+				"flip": 0.0323614627122879,
+				"flip99": 0.19958390295505524,
+				"flipOver01": 0.06486979166666666,
+				"ssim": 0.9848448634147644,
+				"mad": 0.8515063524246216
+			},
+			"near": {
+				"flip": 0.019334804266691208,
+				"flip99": 0.11351370066404343,
+				"flipOver01": 0.017816840277777777,
+				"ssim": 0.9970703125,
+				"mad": 0.3684117794036865
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 32.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t32.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 1953200,
+			"shadowTriangles": null,
+			"gpuMs": 1.0273805260658264,
+			"refTriangles": 132136493,
+			"refGpuMs": 13.457148551940918,
+			"all": {
+				"flip": 0.016781428828835487,
+				"flip99": 0.19072462618350983,
+				"flipOver01": 0.044752121913580245,
+				"ssim": 0.9855630397796631,
+				"mad": 0.5519711971282959
+			},
+			"top": {
+				"flip": 0.01140088215470314,
+				"flip99": 0.15636615455150604,
+				"flipOver01": 0.023414351851851853,
+				"ssim": 0.9905540347099304,
+				"mad": 0.2802177965641022
+			},
+			"middle": {
+				"flip": 0.031114615499973297,
+				"flip99": 0.23712091147899628,
+				"flipOver01": 0.09180555555555556,
+				"ssim": 0.9717198610305786,
+				"mad": 1.1312400102615356
+			},
+			"near": {
+				"flip": 0.007828793488442898,
+				"flip99": 0.13308781385421753,
+				"flipOver01": 0.019036458333333332,
+				"ssim": 0.9944153428077698,
+				"mad": 0.24445559084415436
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"t": 37.5,
+			"shot": "null3d-walk-s0-lod2-sh1-t37.5-variant-half.png",
+			"variant": "variant=half",
+			"triangles": 2482888,
+			"shadowTriangles": null,
+			"gpuMs": 1.351103961467743,
+			"refTriangles": 138397104,
+			"refGpuMs": 14.946980476379395,
+			"all": {
+				"flip": 0.014174877665936947,
+				"flip99": 0.1799626648426056,
+				"flipOver01": 0.03581163194444444,
+				"ssim": 0.9887537360191345,
+				"mad": 0.4528667628765106
+			},
+			"top": {
+				"flip": 0.006737773306667805,
+				"flip99": 0.07972801476716995,
+				"flipOver01": 0.006833043981481482,
+				"ssim": 0.9974083304405212,
+				"mad": 0.1263742297887802
+			},
+			"middle": {
+				"flip": 0.027845192700624466,
+				"flip99": 0.24122819304466248,
+				"flipOver01": 0.0817824074074074,
+				"ssim": 0.9746959805488586,
+				"mad": 0.9705052971839905
+			},
+			"near": {
+				"flip": 0.00794166699051857,
+				"flip99": 0.12970614433288574,
+				"flipOver01": 0.018819444444444444,
+				"ssim": 0.9941568970680237,
+				"mad": 0.2617207467556
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 2,
+			"t": 2.5,
+			"shot": "null3d-walk-s3-lod1-sh2-t2.5.png",
+			"variant": "",
+			"triangles": 10128305,
+			"shadowTriangles": null,
+			"gpuMs": 2.530294895172119,
+			"refTriangles": 1107145070,
+			"refGpuMs": 160.87692260742188,
+			"all": {
+				"flip": 0.008794465102255344,
+				"flip99": 0.14503896236419678,
+				"flipOver01": 0.022609953703703705,
+				"ssim": 0.9943794012069702,
+				"mad": 0.2417561560869217
+			},
+			"top": {
+				"flip": 0.00253414548933506,
+				"flip99": 0.0668102279305458,
+				"flipOver01": 0.005135995370370371,
+				"ssim": 0.9990951418876648,
+				"mad": 0.043292343616485596
+			},
+			"middle": {
+				"flip": 0.018317515030503273,
+				"flip99": 0.16939420998096466,
+				"flipOver01": 0.04369791666666667,
+				"ssim": 0.9862233996391296,
+				"mad": 0.5366594195365906
+			},
+			"near": {
+				"flip": 0.005531733389943838,
+				"flip99": 0.15142422914505005,
+				"flipOver01": 0.018995949074074075,
+				"ssim": 0.9978195428848267,
+				"mad": 0.14531661570072174
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 2,
+			"t": 7.5,
+			"shot": "null3d-walk-s3-lod1-sh2-t7.5.png",
+			"variant": "",
+			"triangles": 8032627,
+			"shadowTriangles": null,
+			"gpuMs": 2.4429221153259277,
+			"refTriangles": 719055420,
+			"refGpuMs": 95.07054901123047,
+			"all": {
+				"flip": 0.01677682064473629,
+				"flip99": 0.19986601173877716,
+				"flipOver01": 0.03945650077160494,
+				"ssim": 0.9883379340171814,
+				"mad": 0.6250224113464355
+			},
+			"top": {
+				"flip": 0.012183556333184242,
+				"flip99": 0.16385464370250702,
+				"flipOver01": 0.018608217592592593,
+				"ssim": 0.9923656582832336,
+				"mad": 0.3741472661495209
+			},
+			"middle": {
+				"flip": 0.028534607961773872,
+				"flip99": 0.221236914396286,
+				"flipOver01": 0.07210503472222222,
+				"ssim": 0.9808648228645325,
+				"mad": 1.082258939743042
+			},
+			"near": {
+				"flip": 0.00961229857057333,
+				"flip99": 0.1953541338443756,
+				"flipOver01": 0.02765625,
+				"ssim": 0.9917833209037781,
+				"mad": 0.4186611473560333
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 2,
+			"t": 12.5,
+			"shot": "null3d-walk-s3-lod1-sh2-t12.5.png",
+			"variant": "",
+			"triangles": 9242251,
+			"shadowTriangles": null,
+			"gpuMs": 2.545501947402954,
+			"refTriangles": 1270254128,
+			"refGpuMs": 185.10159301757812,
+			"all": {
+				"flip": 0.02318219095468521,
+				"flip99": 0.23339198529720306,
+				"flipOver01": 0.06518422067901235,
+				"ssim": 0.9844731092453003,
+				"mad": 0.856159508228302
+			},
+			"top": {
+				"flip": 0.012985491193830967,
+				"flip99": 0.17287254333496094,
+				"flipOver01": 0.02151909722222222,
+				"ssim": 0.9927497506141663,
+				"mad": 0.33418434858322144
+			},
+			"middle": {
+				"flip": 0.03826940432190895,
+				"flip99": 0.2532178461551666,
+				"flipOver01": 0.11564380787037037,
+				"ssim": 0.9730416536331177,
+				"mad": 1.5413744449615479
+			},
+			"near": {
+				"flip": 0.01829167641699314,
+				"flip99": 0.2473950982093811,
+				"flipOver01": 0.05838975694444445,
+				"ssim": 0.9876280426979065,
+				"mad": 0.6929198503494263
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 2,
+			"t": 17.5,
+			"shot": "null3d-walk-s3-lod1-sh2-t17.5.png",
+			"variant": "",
+			"triangles": 10913713,
+			"shadowTriangles": null,
+			"gpuMs": 2.8623740673065186,
+			"refTriangles": 1443074424,
+			"refGpuMs": 206.87071228027344,
+			"all": {
+				"flip": 0.022353557869791985,
+				"flip99": 0.21673588454723358,
+				"flipOver01": 0.060399787808641976,
+				"ssim": 0.9853914976119995,
+				"mad": 0.8190993666648865
+			},
+			"top": {
+				"flip": 0.010755108669400215,
+				"flip99": 0.1311778575181961,
+				"flipOver01": 0.015933159722222222,
+				"ssim": 0.9935460090637207,
+				"mad": 0.283872127532959
+			},
+			"middle": {
+				"flip": 0.033496469259262085,
+				"flip99": 0.2208472490310669,
+				"flipOver01": 0.08866464120370371,
+				"ssim": 0.976305365562439,
+				"mad": 1.3740661144256592
+			},
+			"near": {
+				"flip": 0.022809090092778206,
+				"flip99": 0.2491474747657776,
+				"flipOver01": 0.0766015625,
+				"ssim": 0.9863230586051941,
+				"mad": 0.7993599772453308
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 2,
+			"t": 22.5,
+			"shot": "null3d-walk-s3-lod1-sh2-t22.5.png",
+			"variant": "",
+			"triangles": 9728291,
+			"shadowTriangles": null,
+			"gpuMs": 2.303214430809021,
+			"refTriangles": 1144537846,
+			"refGpuMs": 165.1625213623047,
+			"all": {
+				"flip": 0.016067305579781532,
+				"flip99": 0.2014746367931366,
+				"flipOver01": 0.04011525848765432,
+				"ssim": 0.986887514591217,
+				"mad": 0.6527789831161499
+			},
+			"top": {
+				"flip": 0.007915801368653774,
+				"flip99": 0.0600779689848423,
+				"flipOver01": 0.008098958333333333,
+				"ssim": 0.9950296878814697,
+				"mad": 0.21354973316192627
+			},
+			"middle": {
+				"flip": 0.02961060218513012,
+				"flip99": 0.23603498935699463,
+				"flipOver01": 0.08046585648148148,
+				"ssim": 0.9746549725532532,
+				"mad": 1.292572259902954
+			},
+			"near": {
+				"flip": 0.01067551039159298,
+				"flip99": 0.19662122428417206,
+				"flipOver01": 0.03178096064814815,
+				"ssim": 0.9909780025482178,
+				"mad": 0.45221495628356934
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 2,
+			"t": 27.5,
+			"shot": "null3d-walk-s3-lod1-sh2-t27.5.png",
+			"variant": "",
+			"triangles": 6845128,
+			"shadowTriangles": null,
+			"gpuMs": 2.1543428897857666,
+			"refTriangles": 726098163,
+			"refGpuMs": 105.17777252197266,
+			"all": {
+				"flip": 0.00855330005288124,
+				"flip99": 0.16435694694519043,
+				"flipOver01": 0.017720871913580245,
+				"ssim": 0.9917990565299988,
+				"mad": 0.402970552444458
+			},
+			"top": {
+				"flip": 0.007303186226636171,
+				"flip99": 0.128673255443573,
+				"flipOver01": 0.012621527777777778,
+				"ssim": 0.9930815696716309,
+				"mad": 0.33793094754219055
+			},
+			"middle": {
+				"flip": 0.012731267139315605,
+				"flip99": 0.21286049485206604,
+				"flipOver01": 0.03267505787037037,
+				"ssim": 0.9883562922477722,
+				"mad": 0.5829063653945923
+			},
+			"near": {
+				"flip": 0.005625444930046797,
+				"flip99": 0.07343468070030212,
+				"flipOver01": 0.007866030092592593,
+				"ssim": 0.9939592480659485,
+				"mad": 0.28807440400123596
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 2,
+			"t": 32.5,
+			"shot": "null3d-walk-s3-lod1-sh2-t32.5.png",
+			"variant": "",
+			"triangles": 9545581,
+			"shadowTriangles": null,
+			"gpuMs": 2.3780884742736816,
+			"refTriangles": 1172186867.5,
+			"refGpuMs": 164.16819763183594,
+			"all": {
+				"flip": 0.020038366317749023,
+				"flip99": 0.21854592859745026,
+				"flipOver01": 0.05375916280864197,
+				"ssim": 0.986542820930481,
+				"mad": 0.7373491525650024
+			},
+			"top": {
+				"flip": 0.008724494837224483,
+				"flip99": 0.09676503390073776,
+				"flipOver01": 0.009735243055555556,
+				"ssim": 0.9940612316131592,
+				"mad": 0.2731049358844757
+			},
+			"middle": {
+				"flip": 0.02995561994612217,
+				"flip99": 0.2263047695159912,
+				"flipOver01": 0.080859375,
+				"ssim": 0.9785662889480591,
+				"mad": 1.1814736127853394
+			},
+			"near": {
+				"flip": 0.021434981375932693,
+				"flip99": 0.24833419919013977,
+				"flipOver01": 0.07068287037037037,
+				"ssim": 0.9870009422302246,
+				"mad": 0.7574689984321594
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 2,
+			"t": 37.5,
+			"shot": "null3d-walk-s3-lod1-sh2-t37.5.png",
+			"variant": "",
+			"triangles": 10182599,
+			"shadowTriangles": null,
+			"gpuMs": 2.2641735076904297,
+			"refTriangles": 1389205269,
+			"refGpuMs": 196.59213256835938,
+			"all": {
+				"flip": 0.01779852621257305,
+				"flip99": 0.2237677276134491,
+				"flipOver01": 0.04712962962962963,
+				"ssim": 0.9874278903007507,
+				"mad": 0.6278082728385925
+			},
+			"top": {
+				"flip": 0.007850216701626778,
+				"flip99": 0.09740938246250153,
+				"flipOver01": 0.009819155092592593,
+				"ssim": 0.9944358468055725,
+				"mad": 0.21549908816814423
+			},
+			"middle": {
+				"flip": 0.02309514582157135,
+				"flip99": 0.20983806252479553,
+				"flipOver01": 0.05402633101851852,
+				"ssim": 0.981515109539032,
+				"mad": 0.8859550356864929
+			},
+			"near": {
+				"flip": 0.022450217977166176,
+				"flip99": 0.2756224572658539,
+				"flipOver01": 0.07754340277777778,
+				"ssim": 0.9863328337669373,
+				"mad": 0.7819708585739136
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 4,
+			"t": 2.5,
+			"shot": "null3d-walk-s3-lod1-sh4-t2.5.png",
+			"variant": "",
+			"triangles": 8110877,
+			"shadowTriangles": null,
+			"gpuMs": 2.4206085205078125,
+			"refTriangles": 1107145070,
+			"refGpuMs": 160.87692260742188,
+			"all": {
+				"flip": 0.011807497590780258,
+				"flip99": 0.1974048614501953,
+				"flipOver01": 0.0356712962962963,
+				"ssim": 0.9920844435691833,
+				"mad": 0.33443483710289
+			},
+			"top": {
+				"flip": 0.003620120231062174,
+				"flip99": 0.09936757385730743,
+				"flipOver01": 0.009895833333333333,
+				"ssim": 0.9985283017158508,
+				"mad": 0.061763640493154526
+			},
+			"middle": {
+				"flip": 0.022031091153621674,
+				"flip99": 0.20023910701274872,
+				"flipOver01": 0.06293981481481481,
+				"ssim": 0.9830487966537476,
+				"mad": 0.6373632550239563
+			},
+			"near": {
+				"flip": 0.00977128092199564,
+				"flip99": 0.26613685488700867,
+				"flipOver01": 0.03417824074074074,
+				"ssim": 0.9946762919425964,
+				"mad": 0.3041776418685913
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 4,
+			"t": 7.5,
+			"shot": "null3d-walk-s3-lod1-sh4-t7.5.png",
+			"variant": "",
+			"triangles": 5839030,
+			"shadowTriangles": null,
+			"gpuMs": 2.0692191123962402,
+			"refTriangles": 719055420,
+			"refGpuMs": 95.07054901123047,
+			"all": {
+				"flip": 0.021624544635415077,
+				"flip99": 0.2957492470741272,
+				"flipOver01": 0.059541859567901236,
+				"ssim": 0.9833897352218628,
+				"mad": 0.7958976626396179
+			},
+			"top": {
+				"flip": 0.014016496017575264,
+				"flip99": 0.21355433762073517,
+				"flipOver01": 0.02728587962962963,
+				"ssim": 0.9900956749916077,
+				"mad": 0.44680216908454895
+			},
+			"middle": {
+				"flip": 0.037077780812978745,
+				"flip99": 0.2976158857345581,
+				"flipOver01": 0.11194155092592592,
+				"ssim": 0.9719715714454651,
+				"mad": 1.352154016494751
+			},
+			"near": {
+				"flip": 0.013779355213046074,
+				"flip99": 0.3511199951171875,
+				"flipOver01": 0.03939814814814815,
+				"ssim": 0.9881020188331604,
+				"mad": 0.5887367129325867
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 4,
+			"t": 12.5,
+			"shot": "null3d-walk-s3-lod1-sh4-t12.5.png",
+			"variant": "",
+			"triangles": 6300517,
+			"shadowTriangles": null,
+			"gpuMs": 2.4305880069732666,
+			"refTriangles": 1270254128,
+			"refGpuMs": 185.10159301757812,
+			"all": {
+				"flip": 0.030561299994587898,
+				"flip99": 0.3357502520084381,
+				"flipOver01": 0.1049585262345679,
+				"ssim": 0.9747804403305054,
+				"mad": 1.118025779724121
+			},
+			"top": {
+				"flip": 0.012683351524174213,
+				"flip99": 0.2313181757926941,
+				"flipOver01": 0.038877314814814816,
+				"ssim": 0.9903784990310669,
+				"mad": 0.36539265513420105
+			},
+			"middle": {
+				"flip": 0.04837982356548309,
+				"flip99": 0.3115261495113373,
+				"flipOver01": 0.1708420138888889,
+				"ssim": 0.9589084982872009,
+				"mad": 1.8539597988128662
+			},
+			"near": {
+				"flip": 0.030620722100138664,
+				"flip99": 0.4183010756969452,
+				"flipOver01": 0.10515625,
+				"ssim": 0.9750544428825378,
+				"mad": 1.1347248554229736
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 4,
+			"t": 17.5,
+			"shot": "null3d-walk-s3-lod1-sh4-t17.5.png",
+			"variant": "",
+			"triangles": 8031155,
+			"shadowTriangles": null,
+			"gpuMs": 2.910142421722412,
+			"refTriangles": 1443074424,
+			"refGpuMs": 206.87071228027344,
+			"all": {
+				"flip": 0.03264051675796509,
+				"flip99": 0.3779413104057312,
+				"flipOver01": 0.10767216435185185,
+				"ssim": 0.9741145372390747,
+				"mad": 1.2135684490203857
+			},
+			"top": {
+				"flip": 0.010545985773205757,
+				"flip99": 0.18850645422935486,
+				"flipOver01": 0.029386574074074075,
+				"ssim": 0.9921684861183167,
+				"mad": 0.3096120059490204
+			},
+			"middle": {
+				"flip": 0.04500545561313629,
+				"flip99": 0.3094808757305145,
+				"flipOver01": 0.1496831597222222,
+				"ssim": 0.962825357913971,
+				"mad": 1.7788933515548706
+			},
+			"near": {
+				"flip": 0.042370110750198364,
+				"flip99": 0.47760680317878723,
+				"flipOver01": 0.14394675925925926,
+				"ssim": 0.9673497080802917,
+				"mad": 1.5521996021270752
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 4,
+			"t": 22.5,
+			"shot": "null3d-walk-s3-lod1-sh4-t22.5.png",
+			"variant": "",
+			"triangles": 7218559,
+			"shadowTriangles": null,
+			"gpuMs": 2.0492589473724365,
+			"refTriangles": 1144537846,
+			"refGpuMs": 165.1625213623047,
+			"all": {
+				"flip": 0.015707578510046005,
+				"flip99": 0.25958383083343506,
+				"flipOver01": 0.04714891975308642,
+				"ssim": 0.9861822128295898,
+				"mad": 0.6238917708396912
+			},
+			"top": {
+				"flip": 0.0028856038115918636,
+				"flip99": 0.04791567847132683,
+				"flipOver01": 0.007489872685185185,
+				"ssim": 0.995134174823761,
+				"mad": 0.16373808681964874
+			},
+			"middle": {
+				"flip": 0.028767144307494164,
+				"flip99": 0.2415439337491989,
+				"flipOver01": 0.08331452546296296,
+				"ssim": 0.9767369031906128,
+				"mad": 1.0849273204803467
+			},
+			"near": {
+				"flip": 0.015469987876713276,
+				"flip99": 0.3357336223125458,
+				"flipOver01": 0.05064236111111111,
+				"ssim": 0.9866753220558167,
+				"mad": 0.6230100989341736
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 4,
+			"t": 27.5,
+			"shot": "null3d-walk-s3-lod1-sh4-t27.5.png",
+			"variant": "",
+			"triangles": 5084249,
+			"shadowTriangles": null,
+			"gpuMs": 2.063781499862671,
+			"refTriangles": 726098163,
+			"refGpuMs": 105.17777252197266,
+			"all": {
+				"flip": 0.00871701817959547,
+				"flip99": 0.18399472534656525,
+				"flipOver01": 0.020930266203703703,
+				"ssim": 0.9918021559715271,
+				"mad": 0.3899468779563904
+			},
+			"top": {
+				"flip": 0.006735911127179861,
+				"flip99": 0.13051840662956238,
+				"flipOver01": 0.012951388888888889,
+				"ssim": 0.9930829405784607,
+				"mad": 0.3132568895816803
+			},
+			"middle": {
+				"flip": 0.012285391800105572,
+				"flip99": 0.21467651426792145,
+				"flipOver01": 0.031235532407407406,
+				"ssim": 0.9887369871139526,
+				"mad": 0.5313916206359863
+			},
+			"near": {
+				"flip": 0.007129755336791277,
+				"flip99": 0.19258512556552887,
+				"flipOver01": 0.018603877314814814,
+				"ssim": 0.9935867190361023,
+				"mad": 0.32519206404685974
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 4,
+			"t": 32.5,
+			"shot": "null3d-walk-s3-lod1-sh4-t32.5.png",
+			"variant": "",
+			"triangles": 7306292,
+			"shadowTriangles": null,
+			"gpuMs": 2.3493809700012207,
+			"refTriangles": 1172186867.5,
+			"refGpuMs": 164.16819763183594,
+			"all": {
+				"flip": 0.02586713433265686,
+				"flip99": 0.336909681558609,
+				"flipOver01": 0.07660734953703703,
+				"ssim": 0.981639564037323,
+				"mad": 0.9265158176422119
+			},
+			"top": {
+				"flip": 0.009018154814839363,
+				"flip99": 0.11081237345933914,
+				"flipOver01": 0.011027199074074075,
+				"ssim": 0.993840217590332,
+				"mad": 0.27419382333755493
+			},
+			"middle": {
+				"flip": 0.03515395522117615,
+				"flip99": 0.2898455858230591,
+				"flipOver01": 0.10586371527777778,
+				"ssim": 0.9740985631942749,
+				"mad": 1.3204069137573242
+			},
+			"near": {
+				"flip": 0.03342929109930992,
+				"flip99": 0.4163404405117035,
+				"flipOver01": 0.11293113425925926,
+				"ssim": 0.9769799709320068,
+				"mad": 1.184946894645691
+			}
+		},
+		{
+			"engine": "null3d",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 4,
+			"t": 37.5,
+			"shot": "null3d-walk-s3-lod1-sh4-t37.5.png",
+			"variant": "",
+			"triangles": 7312359,
+			"shadowTriangles": null,
+			"gpuMs": 2.2883400917053223,
+			"refTriangles": 1389205269,
+			"refGpuMs": 196.59213256835938,
+			"all": {
+				"flip": 0.019778477028012276,
+				"flip99": 0.3432106077671051,
+				"flipOver01": 0.06036217206790123,
+				"ssim": 0.9861788153648376,
+				"mad": 0.7033140659332275
+			},
+			"top": {
+				"flip": 0.0032884888350963593,
+				"flip99": 0.07823408395051956,
+				"flipOver01": 0.008586516203703704,
+				"ssim": 0.9949382543563843,
+				"mad": 0.1507643163204193
+			},
+			"middle": {
+				"flip": 0.020878951996564865,
+				"flip99": 0.21081818640232086,
+				"flipOver01": 0.05227430555555555,
+				"ssim": 0.9869462251663208,
+				"mad": 0.7138274908065796
+			},
+			"near": {
+				"flip": 0.035167984664440155,
+				"flip99": 0.43486765027046204,
+				"flipOver01": 0.12022569444444445,
+				"ssim": 0.9766520261764526,
+				"mad": 1.2453504800796509
 			}
 		}
 	],
 	"table": [
 		{
 			"engine": "null3d",
+			"variant": "",
 			"view": "walk",
 			"shadows": 0,
 			"lod": 0.5,
@@ -6085,6 +10014,7 @@
 		},
 		{
 			"engine": "null3d",
+			"variant": "",
 			"view": "walk",
 			"shadows": 0,
 			"lod": 1,
@@ -6118,6 +10048,7 @@
 		},
 		{
 			"engine": "null3d",
+			"variant": "",
 			"view": "walk",
 			"shadows": 0,
 			"lod": 1.5,
@@ -6151,6 +10082,7 @@
 		},
 		{
 			"engine": "null3d",
+			"variant": "",
 			"view": "walk",
 			"shadows": 0,
 			"lod": 2,
@@ -6184,6 +10116,7 @@
 		},
 		{
 			"engine": "null3d",
+			"variant": "",
 			"view": "walk",
 			"shadows": 0,
 			"lod": 3,
@@ -6217,6 +10150,7 @@
 		},
 		{
 			"engine": "null3d",
+			"variant": "",
 			"view": "walk",
 			"shadows": 0,
 			"lod": 4,
@@ -6250,6 +10184,7 @@
 		},
 		{
 			"engine": "null3d",
+			"variant": "",
 			"view": "walk",
 			"shadows": 3,
 			"lod": 0,
@@ -6283,6 +10218,7 @@
 		},
 		{
 			"engine": "null3d",
+			"variant": "",
 			"view": "walk",
 			"shadows": 3,
 			"lod": 0,
@@ -6316,6 +10252,7 @@
 		},
 		{
 			"engine": "null3d",
+			"variant": "",
 			"view": "walk",
 			"shadows": 3,
 			"lod": 0,
@@ -6349,6 +10286,7 @@
 		},
 		{
 			"engine": "null3d",
+			"variant": "",
 			"view": "walk",
 			"shadows": 3,
 			"lod": 1,
@@ -6382,6 +10320,75 @@
 		},
 		{
 			"engine": "null3d",
+			"variant": "",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 2,
+			"frames": 8,
+			"triangles": 9327311.875,
+			"shadowTriangles": null,
+			"gpuMs": 2.4351140409708023,
+			"all.flip": 0.01669556659180671,
+			"all.flip99": 0.20039726048707962,
+			"all.flipOver01": 0.04329692322530865,
+			"all.ssim": 0.9881549030542374,
+			"all.mad": 0.6203680504113436,
+			"top.flip": 0.008781500102486461,
+			"top.flip99": 0.11470511415973306,
+			"top.flipOver01": 0.012683919270833333,
+			"top.ssim": 0.9942956119775772,
+			"top.mad": 0.25944759882986546,
+			"middle.flip": 0.026751328958198428,
+			"middle.flip99": 0.21871681697666645,
+			"middle.flipOver01": 0.07101725260416666,
+			"middle.ssim": 0.9799409881234169,
+			"middle.mad": 1.0596582740545273,
+			"near.flip": 0.014553869143128395,
+			"near.flip99": 0.20466668717563152,
+			"near.flipOver01": 0.04618959780092592,
+			"near.ssim": 0.9902281239628792,
+			"near.mad": 0.5419983509927988,
+			"worstFlip": 0.02318219095468521,
+			"worstNearFlip": 0.022809090092778206
+		},
+		{
+			"engine": "null3d",
+			"variant": "",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 4,
+			"frames": 8,
+			"triangles": 6900379.75,
+			"shadowTriangles": null,
+			"gpuMs": 2.3226649463176727,
+			"all.flip": 0.020838008378632367,
+			"all.flip99": 0.2913180645555258,
+			"all.flipOver01": 0.06411156925154321,
+			"all.ssim": 0.983771488070488,
+			"all.mad": 0.763199407607317,
+			"top.flip": 0.007849264016840607,
+			"top.flip99": 0.13752838550135493,
+			"top.flipOver01": 0.018187572337962962,
+			"top.ssim": 0.9935208186507225,
+			"top.mad": 0.2606904483400285,
+			"middle.flip": 0.03119744930882007,
+			"middle.flip99": 0.25946827977895737,
+			"middle.flipOver01": 0.09601182725694445,
+			"middle.ssim": 0.9754091128706932,
+			"middle.mad": 1.1591154709458351,
+			"near.flip": 0.02346731099532917,
+			"near.flip99": 0.3615864459425211,
+			"near.flipOver01": 0.07813530815972222,
+			"near.ssim": 0.9823845624923706,
+			"near.mad": 0.8697922937572002,
+			"worstFlip": 0.03264051675796509,
+			"worstNearFlip": 0.042370110750198364
+		},
+		{
+			"engine": "null3d",
+			"variant": "",
 			"view": "walk",
 			"shadows": 3,
 			"lod": 2,
@@ -6415,6 +10422,7 @@
 		},
 		{
 			"engine": "null3d",
+			"variant": "",
 			"view": "walk",
 			"shadows": 3,
 			"lod": 2,
@@ -6448,6 +10456,7 @@
 		},
 		{
 			"engine": "null3d",
+			"variant": "",
 			"view": "walk",
 			"shadows": 3,
 			"lod": 3,
@@ -6481,39 +10490,347 @@
 		},
 		{
 			"engine": "null3d",
+			"variant": "",
 			"view": "walk",
 			"shadows": 3,
 			"lod": 3,
 			"lodShadow": 4,
 			"frames": 8,
-			"triangles": 4853031.75,
+			"triangles": 4310197.0,
 			"shadowTriangles": null,
-			"gpuMs": 1.817558616399765,
-			"all.flip": 0.5473717325367033,
-			"all.flip99": 0.7241693027317524,
-			"all.flipOver01": 0.6557930652006173,
-			"all.ssim": 0.3736635105742607,
-			"all.mad": 54.102733448147774,
-			"top.flip": 0.5470624177833088,
-			"top.flip99": 0.6721396986395121,
-			"top.flipOver01": 0.6340187355324074,
-			"top.ssim": 0.38001390311546857,
-			"top.mad": 78.54529356770217,
-			"middle.flip": 0.5393635891377926,
-			"middle.flip99": 0.7444439232349396,
-			"middle.flipOver01": 0.6853217230902777,
-			"middle.ssim": 0.3655015574186109,
-			"middle.mad": 43.31673149764538,
-			"near.flip": 0.5556892139138654,
-			"near.flip99": 0.6952090412378311,
-			"near.flipOver01": 0.6480387369791667,
-			"near.ssim": 0.37547504891699646,
-			"near.mad": 40.446187775582075,
-			"worstFlip": 0.9457424283027649,
-			"worstNearFlip": 0.9592159390449524
+			"gpuMs": 2.0635390132665634,
+			"all.flip": 0.025642123422585428,
+			"all.flip99": 0.34036820009350777,
+			"all.flipOver01": 0.0834275535300926,
+			"all.ssim": 0.9753153622150421,
+			"all.mad": 0.9651534929871559,
+			"top.flip": 0.008676742145325989,
+			"top.flip99": 0.162656937725842,
+			"top.flipOver01": 0.020712890625,
+			"top.ssim": 0.9926729649305344,
+			"top.mad": 0.29359640926122665,
+			"middle.flip": 0.043456683633849025,
+			"middle.flip99": 0.37636318802833557,
+			"middle.flipOver01": 0.1447927517361111,
+			"middle.ssim": 0.953488714993,
+			"middle.mad": 1.6775396838784218,
+			"near.flip": 0.02479294448858127,
+			"near.flip99": 0.3628482762724161,
+			"near.flipOver01": 0.08477701822916667,
+			"near.ssim": 0.9797843620181084,
+			"near.mad": 0.9243243485689163,
+			"worstFlip": 0.039292532950639725,
+			"worstNearFlip": 0.04374026134610176
+		},
+		{
+			"engine": "null3d",
+			"variant": "variant=centre",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"frames": 8,
+			"triangles": 3317938.375,
+			"shadowTriangles": null,
+			"gpuMs": 0.9676834531128407,
+			"all.flip": 0.01713638915680349,
+			"all.flip99": 0.15736830420792103,
+			"all.flipOver01": 0.04018446180555556,
+			"all.ssim": 0.988485299050808,
+			"all.mad": 0.5983553100377321,
+			"top.flip": 0.013201130495872349,
+			"top.flip99": 0.13518473505973816,
+			"top.flipOver01": 0.025575629340277774,
+			"top.ssim": 0.9938117787241936,
+			"top.mad": 0.35763020580634475,
+			"middle.flip": 0.0310867081861943,
+			"middle.flip99": 0.18434948660433292,
+			"middle.flipOver01": 0.08097728587962963,
+			"middle.ssim": 0.9753868728876114,
+			"middle.mad": 1.232194870710373,
+			"near.flip": 0.007121329894289374,
+			"near.flip99": 0.10497034201398492,
+			"near.flipOver01": 0.01400047019675926,
+			"near.ssim": 0.9962573125958443,
+			"near.mad": 0.2052408498711884,
+			"worstFlip": 0.03161313757300377,
+			"worstNearFlip": 0.017490610480308533
+		},
+		{
+			"engine": "null3d",
+			"variant": "variant=centre",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1.5,
+			"lodShadow": 1,
+			"frames": 8,
+			"triangles": 2136646.75,
+			"shadowTriangles": null,
+			"gpuMs": 1.0174871310591698,
+			"all.flip": 0.021295373560860753,
+			"all.flip99": 0.19812501966953278,
+			"all.flipOver01": 0.06270785108024692,
+			"all.ssim": 0.9854064509272575,
+			"all.mad": 0.7031040266156197,
+			"top.flip": 0.015757425484480336,
+			"top.flip99": 0.1680384138599038,
+			"top.flipOver01": 0.04191749855324074,
+			"top.ssim": 0.9918017312884331,
+			"top.mad": 0.44614453706890345,
+			"middle.flip": 0.03826806880533695,
+			"middle.flip99": 0.22732008807361126,
+			"middle.flipOver01": 0.11997504340277779,
+			"middle.ssim": 0.9694088846445084,
+			"middle.mad": 1.3965382128953934,
+			"near.flip": 0.009860624995781109,
+			"near.flip99": 0.13402308383956552,
+			"near.flipOver01": 0.026231011284722223,
+			"near.ssim": 0.9950087368488312,
+			"near.mad": 0.2666293438524008,
+			"worstFlip": 0.043103866279125214,
+			"worstNearFlip": 0.03436074033379555
+		},
+		{
+			"engine": "null3d",
+			"variant": "variant=centre",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"frames": 8,
+			"triangles": 1669105.25,
+			"shadowTriangles": null,
+			"gpuMs": 1.455722451210022,
+			"all.flip": 0.02450777741614729,
+			"all.flip99": 0.23151229321956635,
+			"all.flipOver01": 0.08083809558256173,
+			"all.ssim": 0.9801378548145294,
+			"all.mad": 0.8369421884417534,
+			"top.flip": 0.01742790777643677,
+			"top.flip99": 0.1901383853983134,
+			"top.flipOver01": 0.053451786747685186,
+			"top.ssim": 0.9893915876746178,
+			"top.mad": 0.5171360764652491,
+			"middle.flip": 0.045085733057931066,
+			"middle.flip99": 0.26877217181026936,
+			"middle.flipOver01": 0.15730685763888888,
+			"middle.ssim": 0.9575043320655823,
+			"middle.mad": 1.684965893626213,
+			"near.flip": 0.011009693145751953,
+			"near.flip99": 0.15713528729975224,
+			"near.flipOver01": 0.031755642361111114,
+			"near.ssim": 0.9935176447033882,
+			"near.mad": 0.30872475169599056,
+			"worstFlip": 0.04322158545255661,
+			"worstNearFlip": 0.034245140850543976
+		},
+		{
+			"engine": "null3d",
+			"variant": "variant=half",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"frames": 8,
+			"triangles": 4274130.25,
+			"shadowTriangles": null,
+			"gpuMs": 1.5209092572331429,
+			"all.flip": 0.013686520396731794,
+			"all.flip99": 0.14099697303026915,
+			"all.flipOver01": 0.030058593749999998,
+			"all.ssim": 0.990709587931633,
+			"all.mad": 0.4779578410089016,
+			"top.flip": 0.008693754833075218,
+			"top.flip99": 0.08928200579248369,
+			"top.flipOver01": 0.0113427734375,
+			"top.ssim": 0.9965861961245537,
+			"top.mad": 0.21289428835734725,
+			"middle.flip": 0.02722732804249972,
+			"middle.flip99": 0.17357946932315826,
+			"middle.flipOver01": 0.0675048828125,
+			"middle.ssim": 0.9787224978208542,
+			"middle.mad": 1.0699674747884274,
+			"near.flip": 0.005138480046298355,
+			"near.flip99": 0.09388347319327295,
+			"near.flipOver01": 0.011328125000000001,
+			"near.ssim": 0.9968200922012329,
+			"near.mad": 0.15101179713383317,
+			"worstFlip": 0.023046407848596573,
+			"worstNearFlip": 0.009253690019249916
+		},
+		{
+			"engine": "null3d",
+			"variant": "variant=half",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1.5,
+			"lodShadow": 1,
+			"frames": 8,
+			"triangles": 2797310.875,
+			"shadowTriangles": null,
+			"gpuMs": 1.2635018229484558,
+			"all.flip": 0.017615388613194227,
+			"all.flip99": 0.18483528681099415,
+			"all.flipOver01": 0.04859423225308643,
+			"all.ssim": 0.9857929944992065,
+			"all.mad": 0.6278006695210934,
+			"top.flip": 0.011360198986949399,
+			"top.flip99": 0.12335306289605796,
+			"top.flipOver01": 0.02220902054398148,
+			"top.ssim": 0.9942307099699974,
+			"top.mad": 0.2998817749321461,
+			"middle.flip": 0.034746323712170124,
+			"middle.flip99": 0.2268317397683859,
+			"middle.flipOver01": 0.10564850983796296,
+			"middle.ssim": 0.9678836092352867,
+			"middle.mad": 1.3820633441209793,
+			"near.flip": 0.006739644741173834,
+			"near.flip99": 0.12111262232065201,
+			"near.flipOver01": 0.017925166377314818,
+			"near.ssim": 0.9952646493911743,
+			"near.mad": 0.2014569528400898,
+			"worstFlip": 0.0276641845703125,
+			"worstNearFlip": 0.01038400363177061
+		},
+		{
+			"engine": "null3d",
+			"variant": "variant=half",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"frames": 8,
+			"triangles": 2111343.875,
+			"shadowTriangles": null,
+			"gpuMs": 1.144880935549736,
+			"all.flip": 0.020146400784142315,
+			"all.flip99": 0.2015904001891613,
+			"all.flipOver01": 0.05561348620756172,
+			"all.ssim": 0.9841092973947525,
+			"all.mad": 0.6939716748893261,
+			"top.flip": 0.01317234177258797,
+			"top.flip99": 0.14570956933312118,
+			"top.flipOver01": 0.026456163194444444,
+			"top.ssim": 0.9932158663868904,
+			"top.mad": 0.3607892235741019,
+			"middle.flip": 0.03923712018877268,
+			"middle.flip99": 0.24982268176972866,
+			"middle.flipOver01": 0.12217592592592594,
+			"middle.ssim": 0.9639617875218391,
+			"middle.mad": 1.488974578678608,
+			"near.flip": 0.00802974184625782,
+			"near.flip99": 0.1261089537292719,
+			"near.flipOver01": 0.018208369502314813,
+			"near.ssim": 0.9951502755284309,
+			"near.mad": 0.23215119913220406,
+			"worstFlip": 0.027257602661848068,
+			"worstNearFlip": 0.019334804266691208
+		},
+		{
+			"engine": "null3d",
+			"variant": "variant=normals025",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 1,
+			"lodShadow": 1,
+			"frames": 8,
+			"triangles": 2690312.25,
+			"shadowTriangles": null,
+			"gpuMs": 1.13705562800169,
+			"all.flip": 0.019215647946111858,
+			"all.flip99": 0.20920571498572826,
+			"all.flipOver01": 0.06275939187885803,
+			"all.ssim": 0.9832248613238335,
+			"all.mad": 0.6867609396576881,
+			"top.flip": 0.011989299637207296,
+			"top.flip99": 0.13532241492066532,
+			"top.flipOver01": 0.03124077690972222,
+			"top.ssim": 0.9929058030247688,
+			"top.mad": 0.3190464312210679,
+			"middle.flip": 0.03909614752046764,
+			"middle.flip99": 0.2591044921427965,
+			"middle.flipOver01": 0.13870424623842592,
+			"middle.ssim": 0.9615866020321846,
+			"middle.mad": 1.533417485654354,
+			"near.flip": 0.00656149722635746,
+			"near.flip99": 0.12216831254772842,
+			"near.flipOver01": 0.01833315248842593,
+			"near.ssim": 0.9951821640133858,
+			"near.mad": 0.2078189430758357,
+			"worstFlip": 0.03585328906774521,
+			"worstNearFlip": 0.013870839960873127
+		},
+		{
+			"engine": "null3d",
+			"variant": "variant=normals025",
+			"view": "walk",
+			"shadows": 0,
+			"lod": 2,
+			"lodShadow": 1,
+			"frames": 8,
+			"triangles": 1855402.625,
+			"shadowTriangles": null,
+			"gpuMs": 1.011599376797676,
+			"all.flip": 0.028718529967591166,
+			"all.flip99": 0.3156845048069954,
+			"all.flipOver01": 0.09979823736496914,
+			"all.ssim": 0.9652569890022278,
+			"all.mad": 1.092287115752697,
+			"top.flip": 0.016675257065799087,
+			"top.flip99": 0.20245009008795023,
+			"top.flipOver01": 0.05110478153935186,
+			"top.ssim": 0.9859335869550705,
+			"top.mad": 0.48141912929713726,
+			"middle.flip": 0.057738179340958595,
+			"middle.flip99": 0.3772111088037491,
+			"middle.flipOver01": 0.21176920572916663,
+			"middle.ssim": 0.9227023795247078,
+			"middle.mad": 2.397220239043236,
+			"near.flip": 0.011742154485546052,
+			"near.flip99": 0.22454460803419352,
+			"near.flipOver01": 0.03652072482638889,
+			"near.ssim": 0.9871350824832916,
+			"near.mad": 0.3982220385223627,
+			"worstFlip": 0.048371415585279465,
+			"worstNearFlip": 0.02104123681783676
+		},
+		{
+			"engine": "null3d",
+			"variant": "variant=normals025",
+			"view": "walk",
+			"shadows": 3,
+			"lod": 1,
+			"lodShadow": 1,
+			"frames": 8,
+			"triangles": 6179797.0,
+			"shadowTriangles": null,
+			"gpuMs": 1.8061313703656197,
+			"all.flip": 0.016491496993694454,
+			"all.flip99": 0.2027296731248498,
+			"all.flipOver01": 0.05165726273148148,
+			"all.ssim": 0.9884213209152222,
+			"all.mad": 0.5272923056036234,
+			"top.flip": 0.006524528522277251,
+			"top.flip99": 0.09223918616771698,
+			"top.flipOver01": 0.011340241608796296,
+			"top.ssim": 0.9974544867873192,
+			"top.mad": 0.13808749243617058,
+			"middle.flip": 0.02957212703768164,
+			"middle.flip99": 0.23685443215072155,
+			"middle.flipOver01": 0.09508391203703703,
+			"middle.ssim": 0.9751244857907295,
+			"middle.mad": 1.060999371111393,
+			"near.flip": 0.013377835181017872,
+			"near.flip99": 0.1914799902588129,
+			"near.flipOver01": 0.04854763454861111,
+			"near.ssim": 0.9926849454641342,
+			"near.mad": 0.38279000925831497,
+			"worstFlip": 0.024697476997971535,
+			"worstNearFlip": 0.023642269894480705
 		},
 		{
 			"engine": "three",
+			"variant": "",
 			"view": "walk",
 			"shadows": 0,
 			"lod": 1,
@@ -6547,6 +10864,7 @@
 		},
 		{
 			"engine": "three",
+			"variant": "",
 			"view": "walk",
 			"shadows": 0,
 			"lod": 2,
@@ -6580,69 +10898,71 @@
 		},
 		{
 			"engine": "three",
+			"variant": "",
 			"view": "walk",
 			"shadows": 1,
 			"lod": 0,
 			"lodShadow": 1,
 			"frames": 8,
 			"triangles": 27037656.0,
-			"shadowTriangles": 0.0,
+			"shadowTriangles": 17822504.0,
 			"gpuMs": null,
-			"all.flip": 0.05269054148811847,
-			"all.flip99": 0.6428504516370595,
-			"all.flipOver01": 0.09877652391975308,
-			"all.ssim": 0.948040708899498,
-			"all.mad": 3.273742542602122,
-			"top.flip": 0.006564613512637152,
-			"top.flip99": 0.11405225197086111,
-			"top.flipOver01": 0.01277560763888889,
-			"top.ssim": 0.9930436089634895,
-			"top.mad": 0.2677807324580499,
-			"middle.flip": 0.04988235258497298,
-			"middle.flip99": 0.5032978784292936,
-			"middle.flipOver01": 0.11342140480324073,
-			"middle.ssim": 0.944783478975296,
-			"middle.mad": 2.3984281811863184,
-			"near.flip": 0.10162464894165169,
-			"near.flip99": 0.7272228822112083,
-			"near.flipOver01": 0.17013255931712962,
-			"near.ssim": 0.9062950387597084,
-			"near.mad": 7.155019290687051,
-			"worstFlip": 0.20336586236953735,
-			"worstNearFlip": 0.37024372816085815
+			"all.flip": 0.053193473737337627,
+			"all.flip99": 0.6444425592198968,
+			"all.flipOver01": 0.0996340301890432,
+			"all.ssim": 0.9477195516228676,
+			"all.mad": 3.3118439936079085,
+			"top.flip": 0.00652491868549987,
+			"top.flip99": 0.11283456633100286,
+			"top.flipOver01": 0.01261501736111111,
+			"top.ssim": 0.9930605366826057,
+			"top.mad": 0.26655496998137096,
+			"middle.flip": 0.0497411290416494,
+			"middle.flip99": 0.5030965749174356,
+			"middle.flipOver01": 0.11294813368055556,
+			"middle.ssim": 0.9450222030282021,
+			"middle.mad": 2.3917591981589794,
+			"near.flip": 0.10331436634805868,
+			"near.flip99": 0.7265387251973152,
+			"near.flipOver01": 0.17333893952546298,
+			"near.ssim": 0.9050759077072144,
+			"near.mad": 7.277218304516282,
+			"worstFlip": 0.20450598001480103,
+			"worstNearFlip": 0.37410449981689453
 		},
 		{
 			"engine": "three",
+			"variant": "",
 			"view": "walk",
 			"shadows": 1,
 			"lod": 1,
 			"lodShadow": 1,
 			"frames": 8,
-			"triangles": 2141792.0,
-			"shadowTriangles": 79491.24730998077,
-			"gpuMs": 6.909039999999999,
-			"all.flip": 0.057138881529681385,
-			"all.flip99": 0.6529237646609545,
-			"all.flipOver01": 0.11087323977623456,
-			"all.ssim": 0.9430223107337952,
-			"all.mad": 3.439795607700944,
-			"top.flip": 0.010333361693483312,
-			"top.flip99": 0.17359954433050007,
-			"top.flipOver01": 0.020903139467592594,
-			"top.ssim": 0.9901078119874,
-			"top.mad": 0.35833267215639353,
-			"middle.flip": 0.058719222783111036,
-			"middle.flip99": 0.5153709854930639,
-			"middle.flipOver01": 0.1400806568287037,
-			"middle.ssim": 0.9336122423410416,
-			"middle.mad": 2.7714096270501614,
-			"near.flip": 0.10236405904288404,
-			"near.flip99": 0.7331220270134509,
-			"near.flipOver01": 0.1716359230324074,
-			"near.ssim": 0.9053469300270081,
-			"near.mad": 7.189644415397197,
-			"worstFlip": 0.20687100291252136,
-			"worstNearFlip": 0.37041911482810974
+			"triangles": 1729608.0,
+			"shadowTriangles": 17901416.0,
+			"gpuMs": 7.681759,
+			"all.flip": 0.05763154587475583,
+			"all.flip99": 0.6543225301429629,
+			"all.flipOver01": 0.11169789255401236,
+			"all.ssim": 0.9427090659737587,
+			"all.mad": 3.4775759130716324,
+			"top.flip": 0.010298851593688596,
+			"top.flip99": 0.17261684814002365,
+			"top.flipOver01": 0.020745985243055556,
+			"top.ssim": 0.9901331961154938,
+			"top.mad": 0.35700765904039145,
+			"middle.flip": 0.058550769463181496,
+			"middle.flip99": 0.515442717820406,
+			"middle.flipOver01": 0.13950991030092594,
+			"middle.ssim": 0.9338659942150116,
+			"middle.mad": 2.763623632490635,
+			"near.flip": 0.10404502155142836,
+			"near.flip99": 0.7324680746532977,
+			"near.flipOver01": 0.17483778211805556,
+			"near.ssim": 0.9041280597448349,
+			"near.mad": 7.312096868176013,
+			"worstFlip": 0.20801618695259094,
+			"worstNearFlip": 0.37425580620765686
 		}
 	]
 }
