@@ -2516,7 +2516,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// A spot light that projects a picture over its cone: a gobo with a dark cross and border and
 	// colored squares, over a floor, a wall and a sphere in the beam. The map's colors tint the
-	// light, and its pattern shows the projection on both GPU paths and in compatibility mode.
+	// light, and its pattern shows the projection on both GPU paths and in compatibility mode. The
+	// scene draws no bounce light, which compatibility mode lacks, so every path can draw one picture.
 	{
 		name: 'spot-map',
 		sketch: 'tests/pages/sketches/spot-map-sketch.ts',
