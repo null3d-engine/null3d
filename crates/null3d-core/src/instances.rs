@@ -208,6 +208,9 @@ pub struct InstanceBatch {
     dynamic: bool,
     mesh: u32,
     material: u32,
+    /// The center of the mesh's bounding sphere, in the mesh's space, which every row's sphere
+    /// shares. Sprite and line batches keep the origin, around which they pack their rows.
+    local_center: [f32; 3],
     local_radius: f32,
     active: u32,
     /// The layer mask of every row (see [`crate::layers`]).
@@ -466,6 +469,7 @@ impl InstanceBatch {
             dynamic,
             mesh,
             material,
+            local_center: [0.0; 3],
             local_radius,
             active: capacity,
             layers: DEFAULT_LAYERS,
@@ -736,10 +740,28 @@ impl InstanceBatch {
         self.local_radius
     }
 
+    /// The center of the mesh's local bounding sphere.
+    pub fn local_center(&self) -> [f32; 3] {
+        self.local_center
+    }
+
     /// Sets the mesh's local bounding radius, as a displaced material grows it, and marks every
     /// row changed, so the next update moves each row's sphere.
     pub fn set_local_radius(&mut self, radius: f32) {
-        if radius != self.local_radius {
+        self.set_local_sphere(self.local_center, radius);
+    }
+
+    /// Moves the mesh's local bounding sphere to `center`, in the mesh's space, with its radius
+    /// kept, and marks every row changed, so the next update moves each row's sphere.
+    pub fn set_local_center(&mut self, center: [f32; 3]) {
+        self.set_local_sphere(center, self.local_radius);
+    }
+
+    /// Sets the mesh's local bounding sphere, its center in the mesh's space and its radius, and
+    /// marks every row changed, so the next update moves each row's sphere.
+    pub fn set_local_sphere(&mut self, center: [f32; 3], radius: f32) {
+        if radius != self.local_radius || center != self.local_center {
+            self.local_center = center;
             self.local_radius = radius;
             self.dirty.set_range(0, self.capacity);
             self.dirty_any |= self.capacity > 0;
@@ -1105,6 +1127,7 @@ impl InstanceBatch {
             has_part: self.part.is_some(),
             sprite: rows.sprite,
             line,
+            local_center: self.local_center,
             local_radius: self.local_radius,
             unculled: self.unculled,
             out: self.world[parity].ptrs(),
@@ -1321,6 +1344,7 @@ struct RowKernel {
     sprite: Option<SpriteKernel>,
     /// A line batch's points, which each row packs into its matrix as a segment.
     line: Option<LineKernel>,
+    local_center: [f32; 3],
     local_radius: f32,
     /// True when every row keeps an unbounded radius, so culling never rejects one.
     unculled: bool,
@@ -1453,7 +1477,11 @@ impl RowKernel {
             } else {
                 f32x4::splat(self.local_radius) * max_axis_scale4(&matrices)
             };
-            self.out.write4(row, &matrices, radii);
+            let [cx, cy, cz] = self.local_center.map(f32x4::splat);
+            let centers = [0, 1, 2].map(|r| {
+                matrices[r][0] * cx + matrices[r][1] * cy + matrices[r][2] * cz + matrices[r][3]
+            });
+            self.out.write4(row, &matrices, centers, radii);
             if !self.colors.is_null() {
                 let (colors, values) = (self.colors.add(row * 4), self.values.add(row * 4));
                 self.out.write_values4(row, colors, values);
@@ -1497,12 +1525,10 @@ impl RowKernel {
             if self.has_part {
                 matrix = math::mul(&matrix, &self.part);
             }
-            let sphere = if self.unculled {
-                let [x, y, z, _] = math::world_sphere(&matrix, self.local_radius);
-                [x, y, z, crate::world::UNBOUNDED_RADIUS]
-            } else {
-                math::world_sphere(&matrix, self.local_radius)
-            };
+            let mut sphere = math::world_sphere_at(&matrix, self.local_center, self.local_radius);
+            if self.unculled {
+                sphere[3] = crate::world::UNBOUNDED_RADIUS;
+            }
             self.out.write(row, &matrix, sphere);
             if !self.colors.is_null() {
                 let (color, values) = (self.colors.add(row * 4), self.values.add(row * 4));
@@ -2697,6 +2723,40 @@ mod tests {
             assert_eq!(part.matrix(row), &placed, "row {row}");
             assert_eq!(part.sphere(row), math::world_sphere(&placed, 0.25));
             assert_eq!(table.get(first).unwrap().world(1).matrix(row), &m);
+        }
+    }
+
+    #[test]
+    fn each_rows_sphere_lies_on_the_meshs_center_moved_by_the_rows_matrix() {
+        // Nine rows take both the four-row path and the one-row path. Odd rows turn half round,
+        // which takes a center off the origin to the other side of the row.
+        let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
+        let mut table = BatchTable::with_capacity(1);
+        let batch = table.create(9, true, false, 1, 2, 0.5).unwrap();
+        let rows = table.get_mut(batch).unwrap();
+        rows.set_local_sphere([1.0, 0.0, 0.0], 0.5);
+        let half_turn = [0.0, 1.0, 0.0, 0.0];
+        for row in 0..9 {
+            rows.positions_mut()[row * 3..row * 3 + 3].copy_from_slice(&[row as f32, 0.0, 1.0]);
+            if row % 2 == 1 {
+                rows.rotations_mut()[row * 4..row * 4 + 4].copy_from_slice(&half_turn);
+            }
+        }
+        table.update(&jobs, 1, &mut cells);
+        let world = table.get(batch).unwrap().world(1);
+        for row in 0..9 {
+            let x = if row % 2 == 1 {
+                row as f32 - 1.0
+            } else {
+                row as f32 + 1.0
+            };
+            let sphere = world.sphere(row);
+            let want = [x, 0.0, 1.0, 0.5];
+            assert!(
+                (0..4).all(|k| (sphere[k] - want[k]).abs() < 1e-5),
+                "row {row}: {sphere:?} against {want:?}"
+            );
         }
     }
 
