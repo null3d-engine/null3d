@@ -275,6 +275,12 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
 	},
+	"chromium-swiftshader/compat/spot-map.png": {
+		"test": "spot-map",
+		"tier": "compat",
+		"date": "2026-11-04",
+		"reason": "the bounce light (49b215a8a) moved the WebGPU and WebGL2 pictures, and each tier now keeps a picture of its own; this Mac's SwiftShader drew the set before the branch's CI run, and CI's own SwiftShader redraws it"
+	},
 	"chromium-swiftshader/compat/terrain-baked-normals.png": {
 		"test": "terrain-baked-normals",
 		"tier": "compat",
@@ -634,6 +640,12 @@
 		"tier": "webgl2",
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
+	},
+	"chromium-swiftshader/webgl2/spot-map.png": {
+		"test": "spot-map",
+		"tier": "webgl2",
+		"date": "2026-11-04",
+		"reason": "the bounce light (49b215a8a) moved the WebGPU and WebGL2 pictures, and each tier now keeps a picture of its own; this Mac's SwiftShader drew the set before the branch's CI run, and CI's own SwiftShader redraws it"
 	},
 	"chromium-swiftshader/webgl2/terrain-baked-normals.png": {
 		"test": "terrain-baked-normals",
@@ -1000,6 +1012,12 @@
 		"tier": "webgpu",
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
+	},
+	"chromium-swiftshader/webgpu/spot-map.png": {
+		"test": "spot-map",
+		"tier": "webgpu",
+		"date": "2026-11-04",
+		"reason": "the bounce light (49b215a8a) moved the WebGPU and WebGL2 pictures, and each tier now keeps a picture of its own; this Mac's SwiftShader drew the set before the branch's CI run, and CI's own SwiftShader redraws it"
 	},
 	"chromium-swiftshader/webgpu/terrain-baked-normals.png": {
 		"test": "terrain-baked-normals",
