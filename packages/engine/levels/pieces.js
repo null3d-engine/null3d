@@ -21,11 +21,13 @@
 // faces away from every point of the sphere. A cutoff of 1 or more never culls.
 //
 // A smaller list pays only through its cones: the view seldom cuts a small copy, so a piece must
-// face away to save anything. Such a list gets facing pieces (`facingPieces`) when many copies draw
-// it, as a town draws a house's walls, and when its facings fall into a few tight groups, as a
-// building's sides do. Each facing group keeps the triangles that lie close to its mean facing, so
-// its cone stays narrow, and the triangles that face between the groups, such as a pot's or a
-// sloped cap's, draw in one more piece that never culls.
+// face away to save anything. Such a list gets facing pieces (`facingPieces`) when its facings fall
+// into a few tight groups, as a building's sides do, and a viewer uses them only where many copies
+// draw it (`facingPiecesPay`), as a town draws a house's walls. Each facing group keeps the
+// triangles that lie close to its mean facing, so its cone stays narrow, and the triangles that
+// face between the groups, such as a pot's or a sloped cap's, draw in one more piece that never
+// culls. The asset tool stores such pieces whatever copies the file places, since a page may place
+// many copies of a file's mesh; the engine draws them only once the scene's copies pay for them.
 
 /**
  * The fewest triangles of one list for it to get pieces whatever draws it. The view cuts such a
@@ -60,6 +62,13 @@ const AXIS_WAYS = Float64Array.of(1, 0, 0, -1, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 1,
  * the list to keep its facing pieces. A flat piece drops its triangles from half the directions.
  */
 export const FACING_MIN_SHARE = 0.25;
+
+/**
+ * A list whose triangles face one way by this much, as {@link meanFacing} measures it, lies like a
+ * ground or a wall. A view sees such a list from its front, so facing pieces seldom drop, and its
+ * large lists split by space alone.
+ */
+export const ONE_WAY_FACING = 0.7;
 
 /** A facing group that keeps fewer triangles than this joins the piece that never culls. */
 const FACING_PIECE_MIN_TRIANGLES = 64;
@@ -137,29 +146,40 @@ export function planPieces(positions, indices, count, facings = Math.min(count, 
 }
 
 /**
- * The facing pieces of a list smaller than {@link PIECE_LIST_MIN_TRIANGLES}, or `undefined` where
- * they would not pay: a list under {@link FACING_LIST_MIN_TRIANGLES}, one whose copies hold fewer
- * than {@link FACING_DRAWN_MIN_TRIANGLES} triangles together, or one whose cones would drop less
- * than {@link FACING_MIN_SHARE} of its triangles. The list's triangles fall into up to
- * {@link FACING_GROUPS} facing groups. Each group keeps the triangles that lie close enough to its
- * mean facing for its cone to drop the most of them, and the rest draw in one piece more, which
- * faces every way.
+ * True when `copies` copies of a list of `triangles` triangles pay for its facing pieces: a list
+ * from {@link FACING_LIST_MIN_TRIANGLES} up to {@link PIECE_LIST_MIN_TRIANGLES} whose copies hold
+ * {@link FACING_DRAWN_MIN_TRIANGLES} triangles or more together.
+ *
+ * @param {number} triangles
+ * @param {number} copies
+ */
+export function facingPiecesPay(triangles, copies) {
+	return (
+		triangles >= FACING_LIST_MIN_TRIANGLES &&
+		triangles < PIECE_LIST_MIN_TRIANGLES &&
+		triangles * copies >= FACING_DRAWN_MIN_TRIANGLES
+	);
+}
+
+/**
+ * The facing pieces of a list from {@link FACING_LIST_MIN_TRIANGLES} up to
+ * {@link PIECE_LIST_MIN_TRIANGLES} triangles, or `undefined` for a list outside that range or whose
+ * cones would drop less than {@link FACING_MIN_SHARE} of its triangles. The list's triangles fall
+ * into up to {@link FACING_GROUPS} facing groups. Each group keeps the triangles that lie close
+ * enough to its mean facing for its cone to drop the most of them, and the rest draw in one piece
+ * more, which faces every way. The pieces pay only where many copies draw the list
+ * ({@link facingPiecesPay}).
  *
  * @param {ArrayLike<number>} positions Three numbers for each vertex, as the GPU reads them.
  * @param {ArrayLike<number>} indices Three vertex numbers for each triangle.
- * @param {number} copies The copies that draw the list.
  * @returns {PiecePlan | undefined}
  */
-export function facingPieces(positions, indices, copies) {
+export function facingPieces(positions, indices) {
 	const triangles = Math.floor(indices.length / 3);
-	if (
-		triangles >= PIECE_LIST_MIN_TRIANGLES ||
-		triangles < FACING_LIST_MIN_TRIANGLES ||
-		triangles * copies < FACING_DRAWN_MIN_TRIANGLES
-	)
+	if (triangles >= PIECE_LIST_MIN_TRIANGLES || triangles < FACING_LIST_MIN_TRIANGLES)
 		return undefined;
 	const { facing, area, total } = triangleFacings(positions, indices);
-	if (total === 0) return undefined;
+	if (total === 0 || summedFacing(facing, area) / total >= ONE_WAY_FACING) return undefined;
 	/** @type {Uint32Array[]} */
 	const pieces = [];
 	/** @type {number[]} */
@@ -177,22 +197,20 @@ export function facingPieces(positions, indices, copies) {
 }
 
 /**
- * The pieces that a triangle list should have, by the rule that both the asset tool and the engine
- * follow: {@link pieceCount} pieces for a large list, else {@link facingPieces} where its copies
- * and its facings make them pay, else none. `facing` is false for a list whose material draws
- * both faces or blends: its copies never drop a piece by the way it faces, so a smaller list gets
- * none.
+ * The pieces that a file stores for a triangle list: {@link pieceCount} pieces for a large list,
+ * else {@link facingPieces} where its facings let them pay, else none. `facing` is false for a list
+ * whose material draws both faces or blends: its copies never drop a piece by the way it faces, so
+ * a smaller list gets none.
  *
  * @param {ArrayLike<number>} positions
  * @param {ArrayLike<number>} indices
- * @param {number} copies The copies that draw the list.
  * @param {boolean} [facing]
  * @returns {PiecePlan | undefined}
  */
-export function listPieces(positions, indices, copies, facing = true) {
+export function listPieces(positions, indices, facing = true) {
 	const count = pieceCount(Math.floor(indices.length / 3));
 	if (count > 0) return planPieces(positions, indices, count);
-	return facing ? facingPieces(positions, indices, copies) : undefined;
+	return facing ? facingPieces(positions, indices) : undefined;
 }
 
 /**
@@ -347,11 +365,20 @@ export function listBounds(positions, indices) {
  */
 export function meanFacing(positions, indices) {
 	const { facing, area, total } = triangleFacings(positions, indices);
-	if (total === 0) return 0;
+	return total === 0 ? 0 : summedFacing(facing, area) / total;
+}
+
+/**
+ * The length of the triangles' facings summed by area.
+ *
+ * @param {Float64Array} facing
+ * @param {Float64Array} area
+ */
+function summedFacing(facing, area) {
 	const sum = [0, 0, 0];
 	for (let t = 0; t < area.length; t++)
 		for (let k = 0; k < 3; k++) sum[k] = at(sum, k) + at(area, t) * at(facing, t * 3 + k);
-	return Math.hypot(at(sum, 0), at(sum, 1), at(sum, 2)) / total;
+	return Math.hypot(at(sum, 0), at(sum, 1), at(sum, 2));
 }
 
 /**

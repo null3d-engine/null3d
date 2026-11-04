@@ -489,6 +489,86 @@ describe('the automatic levels of a mesh made in code', () => {
 	});
 });
 
+describe('the facing pieces of a smaller mesh that many copies draw', () => {
+	/** Pieces of `counts` triangles each, as a file holds them. */
+	const filePieces = (...counts: number[]) => ({
+		triangles: Uint32Array.from(counts),
+		bounds: new Float32Array(counts.length * 8),
+	});
+	/** A mesh of `triangles` triangles whose far level is set by hand, as a file's or a kit's. */
+	const withFarLevel = (geometry: Geometry, triangles: number, levels = true) => {
+		const mesh = geometry.fromArrays(strip(triangles, levels ? {} : { levels: false }));
+		const far = geometry.fromArrays(strip(10, { levels: false }));
+		mesh.setLevels([{ mesh: far, distance: 50 }]);
+		return mesh;
+	};
+
+	test('plan for a mesh with levels set by hand once its copies pay, with no levels', async () => {
+		const { geometry } = engine();
+		const walls = withFarLevel(geometry, 2000);
+		// 10 copies of 2,000 triangles hold too few together.
+		draw(walls, 10);
+		await settled();
+		expect(asked).toHaveLength(0);
+		draw(walls, 30);
+		await settled();
+		expect(asked).toHaveLength(1);
+		expect(asked[0]).toMatchObject({
+			maxLevels: 0,
+			spacePieces: false,
+			basePieces: true,
+			copies: 40,
+		});
+		// The mesh plans its pieces once.
+		draw(walls, 100);
+		await settled();
+		expect(asked).toHaveLength(1);
+		// `levels: false` and a material that draws both faces plan none.
+		draw(withFarLevel(geometry, 2000, false), 100);
+		const both = { shapesVertices: false, wholeOnly: false, facesBoth: true } as Material;
+		withFarLevel(geometry, 2000).drawnWith(both, 100, 'test');
+		await settled();
+		expect(asked).toHaveLength(1);
+	});
+
+	test("hold a file's pieces of a smaller list until its copies pay, and give a large list's at once", async () => {
+		const { geometry, record } = engine();
+		const house = geometry.fromArrays(strip(2000, { levels: false }));
+		house.fromFileWith(filePieces(1000, 1000), 'test');
+		const finer = geometry.fromArrays(strip(1500, { levels: false }));
+		finer.fromFileWith(filePieces(800, 700), 'test');
+		house.setLevels([{ mesh: finer, distance: 50 }]);
+		expect(record.pieces).toEqual([]);
+		// 10 copies pay for neither list; 40 pay for the house's 2,000 triangles, and 50 for the
+		// level's 1,500.
+		draw(house, 10);
+		expect(record.pieces).toEqual([]);
+		draw(house, 30);
+		expect(record.pieces).toEqual([{ mesh: house.id, count: 2 }]);
+		draw(house, 10);
+		expect(record.pieces).toEqual([
+			{ mesh: house.id, count: 2 },
+			{ mesh: finer.id, count: 2 },
+		]);
+		// The file holds the pieces, so no plan runs.
+		await settled();
+		expect(asked).toHaveLength(0);
+		const large = geometry.fromArrays(strip(40_000, { levels: false }));
+		large.fromFileWith(filePieces(20_000, 20_000), 'test');
+		expect(record.pieces.at(-1)).toEqual({ mesh: large.id, count: 2 });
+	});
+
+	test("plan the pieces of a file's smaller list that holds none once its copies pay", async () => {
+		const { geometry } = engine();
+		const pebble = geometry.fromArrays(strip(2000, { levels: false }));
+		pebble.fromFileWith(undefined, 'test');
+		draw(pebble, 40);
+		await settled();
+		expect(asked).toHaveLength(1);
+		expect(asked[0]).toMatchObject({ maxLevels: 0, spacePieces: false, copies: 40 });
+	});
+});
+
 describe('meshes whose shape poses or moves', () => {
 	const joints = VERTEX_ATTRIBUTES[6]?.[0] ?? 0;
 	test('plan no automatic levels, and refuse a plan with E1221', async () => {

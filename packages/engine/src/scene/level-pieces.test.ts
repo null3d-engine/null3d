@@ -3,6 +3,7 @@ import { bumpyGrid, quadBox } from '../../../../tests/lib/level-meshes.ts';
 import {
 	FACING_DRAWN_MIN_TRIANGLES,
 	FACING_LIST_MIN_TRIANGLES,
+	facingPiecesPay,
 	PIECE_BOUNDS,
 	PIECE_LIST_MIN_TRIANGLES,
 	PIECE_MAX,
@@ -11,6 +12,7 @@ import { type ListPieces, planListPieces, triangleGroups } from './level-pieces'
 import {
 	FACING_PIECES_DRAWN_TRIANGLES,
 	FACING_PIECES_MIN_TRIANGLES,
+	facingCopiesPay,
 	PIECES_MIN_TRIANGLES,
 } from './resources';
 
@@ -71,6 +73,10 @@ describe('the pieces of a mesh made in code', () => {
 		expect(PIECES_MIN_TRIANGLES).toBe(PIECE_LIST_MIN_TRIANGLES);
 		expect(FACING_PIECES_MIN_TRIANGLES).toBe(FACING_LIST_MIN_TRIANGLES);
 		expect(FACING_PIECES_DRAWN_TRIANGLES).toBe(FACING_DRAWN_MIN_TRIANGLES);
+		// The sketch's thread asks whether copies pay as the planner does.
+		for (const triangles of [0, 1023, 1024, 4000, 32_767, 32_768, 100_000])
+			for (const copies of [0, 1, 2, 16, 17, 64, 65, 1000])
+				expect(facingCopiesPay(triangles, copies)).toBe(facingPiecesPay(triangles, copies));
 	});
 
 	test('give a smaller list that many copies draw a piece for each way it faces', () => {

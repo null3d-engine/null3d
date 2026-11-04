@@ -6,6 +6,7 @@ import {
 	FACING_LIST_MIN_TRIANGLES,
 	FACING_MIN_SHARE,
 	facingPieces,
+	facingPiecesPay,
 	listPieces,
 	PIECE_BOUNDS,
 	PIECE_LIST_MIN_TRIANGLES,
@@ -256,11 +257,11 @@ describe('pieces of a triangle list', () => {
 	});
 
 	it('follow the large rule for a large list, whatever its copies', () => {
-		const listed = listPieces(positions, indices, 1);
+		const listed = listPieces(positions, indices);
 		const planned = planPieces(positions, indices, pieceCount(triangles));
 		expect(listed?.order).toEqual(planned?.order);
 		expect(listed?.bounds).toEqual(planned?.bounds);
-		expect(facingPieces(positions, indices, 1000)).toBeUndefined();
+		expect(facingPieces(positions, indices)).toBeUndefined();
 	});
 });
 
@@ -268,14 +269,14 @@ describe('facing pieces of a smaller list', () => {
 	const { positions, indices } = house(9, 24);
 	const triangles = indices.length / 3;
 	const many = Math.ceil(FACING_DRAWN_MIN_TRIANGLES / triangles);
-	const plan = facingPieces(positions, indices, many);
+	const plan = facingPieces(positions, indices);
 
-	it('come to a list under the large floor that enough copies draw', () => {
+	it('come to a list under the large floor whose triangles face a few ways', () => {
 		expect(triangles).toBeGreaterThanOrEqual(FACING_LIST_MIN_TRIANGLES);
 		expect(triangles).toBeLessThan(PIECE_LIST_MIN_TRIANGLES);
 		if (!plan) throw new Error('no plan');
 		expectEveryTriangle(plan, triangles);
-		expect(listPieces(positions, indices, many)?.order).toEqual(plan.order);
+		expect(listPieces(positions, indices)?.order).toEqual(plan.order);
 	});
 
 	it("give each of the house's six sides a flat piece, and its pot one more", () => {
@@ -296,29 +297,48 @@ describe('facing pieces of a smaller list', () => {
 	});
 
 	it('come out the same on every run', () => {
-		const again = facingPieces(positions, indices, many);
+		const again = facingPieces(positions, indices);
 		expect(again?.order).toEqual(plan?.order);
 		expect(again?.bounds).toEqual(plan?.bounds);
 	});
 
-	it('leave a list whole whose copies draw too few triangles together', () => {
-		expect(facingPieces(positions, indices, many - 1)).toBeUndefined();
+	it('pay only where the copies hold enough triangles together', () => {
+		expect(facingPiecesPay(triangles, many)).toBe(true);
+		expect(facingPiecesPay(triangles, many - 1)).toBe(false);
+		expect(facingPiecesPay(FACING_LIST_MIN_TRIANGLES - 1, 1_000_000)).toBe(false);
+		expect(facingPiecesPay(PIECE_LIST_MIN_TRIANGLES, 1_000_000)).toBe(false);
 	});
 
 	it('leave a list whole that holds too few triangles', () => {
 		const small = house(4, 8);
 		expect(small.indices.length / 3).toBeLessThan(FACING_LIST_MIN_TRIANGLES);
-		expect(facingPieces(small.positions, small.indices, 1_000_000)).toBeUndefined();
+		expect(facingPieces(small.positions, small.indices)).toBeUndefined();
 	});
 
 	it('leave a rough list whole, whose facings fall into no tight groups', () => {
 		const rock = roughSphere(48, 24);
 		expect(rock.indices.length / 3).toBeGreaterThanOrEqual(FACING_LIST_MIN_TRIANGLES);
-		expect(facingPieces(rock.positions, rock.indices, 1_000_000)).toBeUndefined();
+		expect(facingPieces(rock.positions, rock.indices)).toBeUndefined();
+	});
+
+	it('leave a list whole that faces one way, as a ground does', () => {
+		// A bumpy heightfield of 40 by 40 cells: its sides face a few ways, but a view sees its top.
+		const positions: number[] = [];
+		const ground: number[] = [];
+		for (let z = 0; z <= 40; z++)
+			for (let x = 0; x <= 40; x++)
+				positions.push(x, 0.4 * Math.sin(x * 1.3) * Math.cos(z * 0.9), z);
+		for (let z = 0; z < 40; z++)
+			for (let x = 0; x < 40; x++) {
+				const a = z * 41 + x;
+				ground.push(a, a + 41, a + 1, a + 1, a + 41, a + 42);
+			}
+		expect(ground.length / 3).toBeGreaterThanOrEqual(FACING_LIST_MIN_TRIANGLES);
+		expect(facingPieces(new Float32Array(positions), new Uint32Array(ground))).toBeUndefined();
 	});
 
 	it('leave a list whole whose material does not let its pieces drop by facing', () => {
-		expect(listPieces(positions, indices, many, false)).toBeUndefined();
+		expect(listPieces(positions, indices, false)).toBeUndefined();
 	});
 });
 
@@ -360,18 +380,16 @@ function placedDocument(
 }
 
 describe('the pieces step', () => {
-	it('gives a smaller mesh facing pieces where enough copies of it stand in the file', async () => {
+	it('gives a smaller mesh facing pieces whatever copies of it the file places', async () => {
 		await MeshoptEncoder.ready;
-		const shape = house(9, 24);
-		const copies = Math.ceil(FACING_DRAWN_MIN_TRIANGLES / (shape.indices.length / 3));
-		const placed = placedDocument(shape, copies);
-		expect(storePieces(placed.doc).lists).toBe(1);
-		expect(piecesOf(placed.prim)?.getTriangles().length).toBe(7);
-		const few = placedDocument(shape, copies - 1);
-		expect(storePieces(few.doc).lists).toBe(0);
-		expect(piecesOf(few.prim)).toBeNull();
-		const both = placedDocument(shape, copies, true);
+		// A page may place many copies of a mesh that the file holds once, and the engine draws
+		// the pieces only once the scene's copies pay for them.
+		const once = placedDocument(house(9, 24), 1);
+		expect(storePieces(once.doc).lists).toBe(1);
+		expect(piecesOf(once.prim)?.getTriangles().length).toBe(7);
+		const both = placedDocument(house(9, 24), 1, true);
 		expect(storePieces(both.doc).lists).toBe(0);
+		expect(piecesOf(both.prim)).toBeNull();
 	});
 
 	it('sorts a large mesh and its levels into pieces, and keeps every triangle', async () => {

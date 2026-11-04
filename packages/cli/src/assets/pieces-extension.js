@@ -16,7 +16,7 @@
 // glTF-Transform drops extensions it does not know, so the tool reads and writes this one itself.
 import { Extension, ExtensionProperty, PropertyType } from '@gltf-transform/core';
 import { listPieces, piecesInOrder } from '@null3d/engine/pieces-planner';
-import { cacheOrder, copiesOf, triangleIndices, triangleLists } from './geometry.js';
+import { cacheOrder, triangleIndices, triangleLists } from './geometry.js';
 import { lodOf } from './lod-extension.js';
 
 /** @import { Accessor, Document, Mesh, Node, Primitive, ReaderContext, WriterContext } from '@gltf-transform/core' */
@@ -142,32 +142,32 @@ function readPositions(accessor) {
 }
 
 /**
- * The meshes whose triangle lists may get pieces, each with the copies that the file draws of it:
- * each mesh that draws a level set, with every level's mesh, which its base's copies draw. A list
- * gets pieces by the pieces planner's rule ({@link listPieces}). A mesh that a skin poses and one
- * with morph targets keep their lists as they are, since a posed list has no fixed bounds. A mesh
- * with a tree of cluster patches gets pieces too: its whole levels draw on the paths that draw no
- * patches, and its tree keeps its own indices.
+ * The meshes whose triangle lists may get pieces: each mesh that draws a level set, with every
+ * level's mesh. A list gets pieces by the pieces planner's rule ({@link listPieces}), whatever
+ * copies the file places, since a page may place many copies of a mesh that the file holds once;
+ * the engine draws a smaller list's facing pieces only once the scene's copies pay for them. A mesh
+ * that a skin poses and one with morph targets keep their lists as they are, since a posed list has
+ * no fixed bounds. A mesh with a tree of cluster patches gets pieces too: its whole levels draw on
+ * the paths that draw no patches, and its tree keeps its own indices.
  *
  * @param {Document} doc
- * @returns {Map<Mesh, number>}
+ * @returns {Mesh[]}
  */
 function piecedMeshes(doc) {
-	/** @type {Map<Mesh, number>} */
-	const meshes = new Map();
+	/** @type {Set<Mesh>} */
+	const meshes = new Set();
 	for (const node of doc.getRoot().listNodes()) {
 		const lod = lodOf(node);
 		const mesh = node.getMesh();
 		if (!lod || !mesh || node.getSkin()) continue;
 		if (triangleLists(mesh).some((prim) => prim.listTargets().length > 0)) continue;
-		const copies = copiesOf(mesh);
-		meshes.set(mesh, copies);
+		meshes.add(mesh);
 		for (const level of lod.listLevels()) {
 			const lower = /** @type {Node} */ (level).getMesh();
-			if (lower) meshes.set(lower, Math.max(meshes.get(lower) ?? 0, copies));
+			if (lower) meshes.add(lower);
 		}
 	}
-	return meshes;
+	return [...meshes];
 }
 
 /**
@@ -183,7 +183,7 @@ function facesOneWay(prim) {
 
 /**
  * Sorts each triangle list of a mesh with levels that the pieces planner's rule gives pieces into
- * them: a large list, or a smaller one that many copies draw and whose triangles face a few ways.
+ * them: a large list, or a smaller one whose triangles face a few ways.
  * It orders each piece's triangles for the vertex cache, and stores the pieces in
  * `NULL3D_pieces`. The vertices stay as they are, so the levels keep sharing them. Run after the
  * levels are stored, since a level's own mesh gets pieces too, and before any step that reads
@@ -195,16 +195,16 @@ function facesOneWay(prim) {
 export function storePieces(doc) {
 	const summary = { lists: 0, pieces: 0 };
 	const meshes = piecedMeshes(doc);
-	if (meshes.size === 0) return summary;
+	if (meshes.length === 0) return summary;
 	/** @type {Null3dPieces | undefined} */
 	let extension;
 	const buffer = doc.getRoot().listBuffers()[0] ?? doc.createBuffer();
-	for (const [mesh, copies] of meshes)
+	for (const mesh of meshes)
 		for (const prim of triangleLists(mesh)) {
 			const position = /** @type {Accessor} */ (prim.getAttribute('POSITION'));
 			const vertices = position.getCount();
 			const indices = triangleIndices(prim, vertices);
-			const plan = listPieces(readPositions(position), indices, copies, facesOneWay(prim));
+			const plan = listPieces(readPositions(position), indices, facesOneWay(prim));
 			if (!plan || plan.counts.length < 2) continue;
 			const sorted = piecesInOrder(indices, plan, cacheOrder);
 			prim.setIndices(
