@@ -19,8 +19,10 @@ var layerZero: texture_2d<f32>;
 var layerOne: texture_2d<f32>;
 var layerTwo: texture_2d<f32>;
 var layerThree: texture_2d<f32>;
-var normalMap: texture_2d<f32>;
-var heights: texture_2d<f32>;
+// The ground's maps, one texel for each height sample: the height field in layer 0, each texel's
+// four bytes holding one sample's 32-bit float, and the baked normals in layer 1 where the ground
+// bakes them. One texture array holds both, since a custom material samples six textures at most.
+var groundMaps: texture_2d_array<f32>;
 
 struct Uniforms {
     // The meters that one repeat of each layer's map covers.
@@ -49,13 +51,20 @@ struct Uniforms {
 
 // The height field's sample at a column and row: the 32-bit float that the texel's four bytes hold.
 fn fieldSample(col: i32, row: i32) -> f32 {
-    return bitcast<f32>(pack4x8unorm(textureLoad(heights, vec2i(col, row), 0)));
+    // The read samples the texel's own centre at the top level, through the sampler that the
+    // surface reads the normals with: a WebGL2 program samples a texture through one sampler only.
+    // At a texel's centre the filter takes that texel alone, and the rounding below keeps each
+    // byte whole. The bytes join by hand: GLSL ES 3.00, which WebGL2 runs, has no `pack4x8unorm`.
+    let size = vec2f(textureDimensions(groundMaps));
+    let at = (vec2f(f32(col), f32(row)) + vec2f(0.5)) / size;
+    let b = vec4u(round(textureSampleLevel(groundMaps, groundMapsSampler, at, 1, 0.0) * 255.0));
+    return bitcast<f32>(b.x | (b.y << 8u) | (b.z << 16u) | (b.w << 24u));
 }
 
 // The height field at a point given in samples from the ground's low corner, with bilinear
 // interpolation between the four samples around it, as the ground's `heightAt` reads it.
 fn fieldHeightAt(fx: f32, fz: f32) -> f32 {
-    let last = i32(textureDimensions(heights).x) - 2;
+    let last = i32(textureDimensions(groundMaps).x) - 2;
     let cx = clamp(i32(floor(fx)), 0, last);
     let cz = clamp(i32(floor(fz)), 0, last);
     let tx = clamp(fx - f32(cx), 0.0, 1.0);
@@ -71,7 +80,7 @@ fn fieldHeightAt(fx: f32, fz: f32) -> f32 {
 
 // The meters between two samples of the height field.
 fn fieldStep() -> f32 {
-    return material.ground.x / f32(textureDimensions(heights).x - 1u);
+    return material.ground.x / f32(textureDimensions(groundMaps).x - 1u);
 }
 
 // The block's column and row in its level's grid, and the vertex's column and row in the block's
@@ -216,7 +225,7 @@ fn surface(input: SurfaceInput) -> Surface {
     s.metalness = material.ground.z;
     // The baked normal stores x and z, each from -1 to 1 remapped to 0 to 1, and the unit length
     // rebuilds y. A back face turns it toward the camera, as a double-sided surface asks.
-    let encoded = textureSample(normalMap, normalMapSampler, uv).rg * 2.0 - 1.0;
+    let encoded = textureSample(groundMaps, groundMapsSampler, uv, 0).rg * 2.0 - 1.0;
     let rise = sqrt(max(1.0 - dot(encoded, encoded), 0.0));
     let baked = vec3f(encoded.x, rise, encoded.y) * select(-1.0, 1.0, input.frontFacing);
     s.normal = normalize(mix(input.normal, baked, material.ground.w));

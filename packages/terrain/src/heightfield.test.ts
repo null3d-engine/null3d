@@ -94,3 +94,83 @@ describe('heightfield', () => {
 		).toThrow(/needs 9/);
 	});
 });
+
+describe('heightfield raycast', () => {
+	const hills = (x: number, z: number) => Math.sin(x / 9) * 6 + Math.cos(z / 13) * 4 + x * 0.05;
+	const field = createHeightfield({ size: 100, resolution: 41, height: hills });
+
+	/** The first distance at which a fine march along the ray falls under `heightAt`. */
+	function marched(o: number[], d: number[], max: number): number {
+		const step = 0.0005;
+		for (let t = 0; t <= max; t += step) {
+			const x = (o[0] as number) + (d[0] as number) * t;
+			const z = (o[2] as number) + (d[2] as number) * t;
+			if (Math.abs(x) > 50 || Math.abs(z) > 50) continue;
+			if ((o[1] as number) + (d[1] as number) * t <= field.heightAt(x, z)) return t;
+		}
+		return -1;
+	}
+
+	const unit = (v: number[]) => {
+		const length = Math.hypot(...v);
+		return v.map((c) => c / length);
+	};
+
+	test('a ray straight down meets the ground at its height', () => {
+		const flat = createHeightfield({ size: 10, resolution: 5, height: () => 2 });
+		expect(flat.raycast(1, 12, -3, 0, -1, 0, 100)).toBeCloseTo(10, 9);
+		expect(flat.raycast(1, 12, -3, 0, 1, 0, 100)).toBe(-1);
+		// Short of the ground, the ray meets nothing.
+		expect(flat.raycast(1, 12, -3, 0, -1, 0, 9)).toBe(-1);
+	});
+
+	test('a ray that starts under the ground meets it where it starts', () => {
+		expect(field.raycast(0, -40, 0, 1, 0, 0, 100)).toBe(0);
+	});
+
+	test('a ray that never crosses the square meets nothing', () => {
+		expect(field.raycast(80, -40, 0, 0, -1, 0, 100)).toBe(-1);
+		const [dx, dy, dz] = unit([1, -0.1, 0]);
+		expect(field.raycast(-200, 5, 70, dx as number, dy as number, dz as number, 1000)).toBe(-1);
+	});
+
+	test('slanted rays meet the ground where a fine march along them first falls under it', () => {
+		let hits = 0;
+		for (let k = 0; k < 40; k++) {
+			const angle = k * 0.71;
+			const origin = [Math.cos(angle) * 70, 20 + (k % 5) * 3, Math.sin(angle * 1.3) * 70];
+			const target = [Math.sin(k) * 30, -2, Math.cos(k * 0.4) * 30];
+			const d = unit(target.map((c, i) => c - (origin[i] as number)));
+			const want = marched(origin, d, 200);
+			const got = field.raycast(
+				origin[0] as number,
+				origin[1] as number,
+				origin[2] as number,
+				d[0] as number,
+				d[1] as number,
+				d[2] as number,
+				200,
+			);
+			if (want < 0) expect(got).toBe(-1);
+			else {
+				expect(got).toBeGreaterThanOrEqual(want - 0.001);
+				expect(got).toBeLessThanOrEqual(want + 0.001);
+				hits++;
+			}
+		}
+		expect(hits).toBeGreaterThan(30);
+	});
+
+	test('a grazing ray that dips between two samples finds the dip', () => {
+		// A single raised sample: the ray passes over the low samples at each end of its cells.
+		const heights = new Float32Array(9);
+		heights[4] = 10;
+		const peak = new Heightfield({ size: 4, resolution: 3, height: heights });
+		// Level at 9, from one corner to the other: it crosses the peak's patch near the middle.
+		const [dx, dy, dz] = unit([1, 0, 1]);
+		const got = peak.raycast(-2, 9, -2, dx as number, dy as number, dz as number, 10);
+		expect(got).toBeGreaterThan(0);
+		const x = -2 + (dx as number) * got;
+		expect(peak.heightAt(x, x)).toBeCloseTo(9, 4);
+	});
+});

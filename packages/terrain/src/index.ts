@@ -9,7 +9,7 @@ checkAddonVersion('@null3d/terrain', VERSION);
 
 export type { HeightfieldOptions } from './heightfield';
 export { createHeightfield, Heightfield } from './heightfield';
-export type { SplatFunction, TerrainLayer, TerrainOptions } from './terrain';
+export type { SplatFunction, TerrainHit, TerrainLayer, TerrainOptions } from './terrain';
 export { createTerrain, Terrain } from './terrain';
 export type { TerrainTextureOptions, TerrainTextures } from './textures';
 export { terrainTextures } from './textures';

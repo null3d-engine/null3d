@@ -109,6 +109,20 @@ export interface TerrainOptions {
 }
 
 /**
+ * Where a ray met the ground, which `terrain.raycast` writes.
+ *
+ * @category api/terrain
+ */
+export interface TerrainHit {
+	/** The point where the ray met the ground, as x, y and z. */
+	point: number[] | Float32Array;
+	/** The unit normal of the ground at that point, as `normalAt` gives it. */
+	normal: number[] | Float32Array;
+	/** The distance along the ray, in meters. */
+	distance: number;
+}
+
+/**
  * The blocks of one level: the grid that they share, and the instance batch whose rows draw them,
  * one row for each block of the newest selection at that level.
  */
@@ -150,8 +164,8 @@ export class Terrain {
 	private readonly tree: Blocks;
 	private readonly material: SplatMaterial['material'];
 	private readonly splatTexture: Texture;
-	private readonly normalTexture: Texture | undefined;
-	private readonly heightTexture: Texture;
+	/** The height field, and the baked normals where the ground bakes them, as layers. */
+	private readonly mapsTexture: Texture;
 	private readonly white: Texture | undefined;
 	private readonly shape: ChunkShape;
 	private readonly fixedSkirt: number | undefined;
@@ -270,17 +284,15 @@ export class Terrain {
 			options.splatResolution ?? DEFAULT_SPLAT,
 			splat,
 		);
-		// The ground's normals, one texel for each height sample, which every block's surface reads.
-		this.normalTexture =
-			options.bakedNormals === false ? undefined : this.bakeNormals(context.textures);
-		this.heightTexture = this.heightMap(context.textures);
+		const baked = options.bakedNormals !== false;
+		this.mapsTexture = this.groundMaps(context.textures, baked);
 		const built = splatMaterial(context, {
 			layers: options.layers,
 			splat: this.splatTexture,
 			size,
 			metalness: options.metalness,
-			normals: this.normalTexture,
-			heights: this.heightTexture,
+			normals: baked,
+			maps: this.mapsTexture,
 			steepFaces: options.steepFaces,
 			scale: 0,
 			quads: chunkQuads,
@@ -291,45 +303,32 @@ export class Terrain {
 	}
 
 	/**
-	 * The ground's normals as a texture: the field's slope at one texel for each height sample,
-	 * built here in the sketch worker. A block's surface reads it, so a coarse block keeps the
-	 * relief that its vertices cannot show.
+	 * The ground's maps, one texel for each height sample. Layer 0 holds the height field, each
+	 * texel's four bytes holding one sample's 32-bit float, which the blocks' shared grids read for
+	 * their heights, so a block needs no vertices of its own. Layer 1, where the ground bakes its
+	 * normals, and zero elsewhere, holds the field's slope, which a coarse block's surface reads to keep the relief that
+	 * its vertices cannot show. Both are built here in the sketch worker.
 	 */
-	private bakeNormals(textures: SketchContext['textures']): Texture {
-		const texels = this.field.resolution;
-		const data = new Uint8Array(texels * texels * 4);
-		this.field.writeNormalMap(texels, data);
-		return textures.fromData({
-			width: texels,
-			height: texels,
-			data,
-			colorSpace: 'linear',
-			wrap: 'clamp',
-			mipmaps: true,
-			anisotropy: 8,
-		});
-	}
-
-	/**
-	 * The height field as a texture of its samples, row by row from the ground's low corner, each
-	 * texel's four bytes holding the sample's 32-bit float. The blocks' shared grids read their
-	 * heights from it, so a block needs no vertices of its own.
-	 */
-	private heightMap(textures: SketchContext['textures']): Texture {
+	private groundMaps(textures: SketchContext['textures'], baked: boolean): Texture {
 		const { resolution, heights } = this.field;
 		if (resolution > textures.maxSize)
 			throw new Error(
 				`createTerrain() got the resolution ${resolution}, but this device's textures hold at most ${textures.maxSize} texels a side. Pass a resolution of ${textures.maxSize} or less.`,
 			);
+		const layer = resolution * resolution * 4;
+		// The array always holds two layers, since the shader reads it as a texture array.
+		const data = new Uint8Array(layer * 2);
+		if (baked) this.field.writeNormalMap(resolution, data.subarray(0, layer));
+		data.set(new Uint8Array(heights.buffer, heights.byteOffset, heights.byteLength), layer);
 		return textures.fromData({
 			width: resolution,
 			height: resolution,
-			data: new Uint8Array(
-				heights.buffer.slice(heights.byteOffset, heights.byteOffset + heights.byteLength),
-			),
+			depth: 2,
+			data,
 			colorSpace: 'linear',
 			wrap: 'clamp',
-			mipmaps: false,
+			mipmaps: true,
+			anisotropy: 8,
 		});
 	}
 
@@ -382,6 +381,9 @@ export class Terrain {
 			values: true,
 			castShadows: this.cast,
 			receiveShadows: this.receive,
+			// The grid's own triangles stand at the ground's highest height until the vertex shader
+			// moves them, so a scene query would hit a roof over the field: `raycast` finds the ground.
+			queries: false,
 		});
 		batch.setActiveCount(0);
 		return batch;
@@ -428,6 +430,41 @@ export class Terrain {
 	 */
 	normalAt(x: number, z: number, out: number[] | Float32Array): void {
 		this.field.normalAt(x, z, out);
+	}
+
+	/**
+	 * Casts a ray at the ground from `origin` along `direction`, which need not be one unit long,
+	 * and writes where it first meets the ground into `hit`. True on a hit within `maxDistance`
+	 * meters. The ground is the surface that `heightAt` gives, over the terrain's square, so the
+	 * answer does not depend on the blocks that draw. The scene's own raycasts pass over the
+	 * terrain. A ray that starts under the ground meets it where it starts. Allocates nothing.
+	 */
+	raycast(
+		origin: Vec3Like,
+		direction: Vec3Like,
+		hit: TerrainHit,
+		maxDistance = Number.POSITIVE_INFINITY,
+	): boolean {
+		const ox = origin[0] as number;
+		const oy = origin[1] as number;
+		const oz = origin[2] as number;
+		const length = Math.sqrt(
+			(direction[0] as number) ** 2 + (direction[1] as number) ** 2 + (direction[2] as number) ** 2,
+		);
+		if (!(length > 0)) return false;
+		const dx = (direction[0] as number) / length;
+		const dy = (direction[1] as number) / length;
+		const dz = (direction[2] as number) / length;
+		const distance = this.field.raycast(ox, oy, oz, dx, dy, dz, maxDistance);
+		if (distance < 0) return false;
+		const x = ox + dx * distance;
+		const z = oz + dz * distance;
+		hit.point[0] = x;
+		hit.point[1] = oy + dy * distance;
+		hit.point[2] = z;
+		this.field.normalAt(x, z, hit.normal);
+		hit.distance = distance;
+		return true;
 	}
 
 	/**
@@ -634,8 +671,7 @@ export class Terrain {
 		this.levels.length = 0;
 		this.material.destroy();
 		this.splatTexture.destroy();
-		this.normalTexture?.destroy();
-		this.heightTexture.destroy();
+		this.mapsTexture.destroy();
 		this.white?.destroy();
 		this.builder.destroy();
 		this.drawnBlocks = 0;

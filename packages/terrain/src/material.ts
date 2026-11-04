@@ -41,17 +41,18 @@ export interface SplatMaterialOptions {
 	/** How much the ground acts like a metal, from 0 to 1. The default is 0. */
 	metalness?: number;
 	/**
-	 * The ground's baked normals, which light every pixel of every block. Without one the surface
-	 * lights from the mesh's own vertex normals.
+	 * True when the ground's maps hold baked normals, which light every pixel of every block.
+	 * Without them the surface lights from the vertex normals.
 	 */
-	normals?: Texture;
+	normals: boolean;
 	/** True when steep faces map the rock layer from the sides. */
 	steepFaces?: boolean;
 	/**
-	 * The height field, one 32-bit float in the four bytes of each texel, which the blocks' shared
-	 * grids read for their heights, their normals and their parents' heights.
+	 * The ground's maps, a texture of two layers or one: the height field, one 32-bit float in the
+	 * four bytes of each texel, which the blocks' shared grids read for their heights, their normals
+	 * and their parents' heights; then the baked normals, where `normals` is true.
 	 */
-	heights: Texture;
+	maps: Texture;
 	/**
 	 * The selection's scale: the screen's pixels per world meter of a block's cell, at which its
 	 * error fills the threshold. The morph reads it to find each block's split distances. 0 turns
@@ -152,8 +153,7 @@ export function splatMaterial(
 		layerOne: mapAt(1),
 		layerTwo: mapAt(2),
 		layerThree: mapAt(3),
-		...(options.normals ? { normalMap: options.normals } : {}),
-		heights: options.heights,
+		groundMaps: options.maps,
 	};
 	const material = ctx.materials.shader({
 		wgsl: terrainShader,

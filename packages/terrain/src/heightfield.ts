@@ -179,6 +179,121 @@ export class Heightfield {
 			}
 		}
 	}
+
+	/**
+	 * The distance along a ray from (`ox`, `oy`, `oz`) in the unit direction (`dx`, `dy`, `dz`)
+	 * to where it first meets the ground within the square, or -1 when it meets none within
+	 * `maxDistance`. The ground is the surface that `heightAt` gives: in each cell between four
+	 * samples it is the bilinear patch, along which a ray's height above the ground is a quadratic,
+	 * so each cell's crossing is exact. The ray walks the cells that it crosses, nearest first. A
+	 * ray that starts under the ground meets it at 0. Allocates nothing.
+	 */
+	raycast(
+		ox: number,
+		oy: number,
+		oz: number,
+		dx: number,
+		dy: number,
+		dz: number,
+		maxDistance: number,
+	): number {
+		const { step, corner, resolution, heights } = this;
+		// The ray in samples from the low corner, so a cell is one unit along each side.
+		const fx = (ox - corner) / step;
+		const fz = (oz - corner) / step;
+		const ux = dx / step;
+		const uz = dz / step;
+		const cells = resolution - 1;
+		// Clip the ray to the square: where it enters and leaves it.
+		let enter = 0;
+		let leave = maxDistance;
+		if (ux === 0) {
+			if (fx < 0 || fx > cells) return -1;
+		} else {
+			const a = (0 - fx) / ux;
+			const b = (cells - fx) / ux;
+			enter = Math.max(enter, Math.min(a, b));
+			leave = Math.min(leave, Math.max(a, b));
+		}
+		if (uz === 0) {
+			if (fz < 0 || fz > cells) return -1;
+		} else {
+			const a = (0 - fz) / uz;
+			const b = (cells - fz) / uz;
+			enter = Math.max(enter, Math.min(a, b));
+			leave = Math.min(leave, Math.max(a, b));
+		}
+		if (!(enter <= leave)) return -1;
+		// The cell where the ray enters the square, and the distances to its next column and row.
+		const last = cells - 1;
+		const ex = fx + ux * enter;
+		const ez = fz + uz * enter;
+		let cx = Math.min(Math.max(Math.floor(ex), 0), last);
+		let cz = Math.min(Math.max(Math.floor(ez), 0), last);
+		const stepX = ux > 0 ? 1 : -1;
+		const stepZ = uz > 0 ? 1 : -1;
+		const spanX = ux === 0 ? Number.POSITIVE_INFINITY : Math.abs(1 / ux);
+		const spanZ = uz === 0 ? Number.POSITIVE_INFINITY : Math.abs(1 / uz);
+		let nextX = ux === 0 ? Number.POSITIVE_INFINITY : ((ux > 0 ? cx + 1 : cx) - fx) / ux;
+		let nextZ = uz === 0 ? Number.POSITIVE_INFINITY : ((uz > 0 ? cz + 1 : cz) - fz) / uz;
+		let from = enter;
+		for (;;) {
+			const to = Math.min(nextX, nextZ, leave);
+			const a = heights[cz * resolution + cx] as number;
+			const b = heights[cz * resolution + cx + 1] as number;
+			const c = heights[(cz + 1) * resolution + cx] as number;
+			const d = heights[(cz + 1) * resolution + cx + 1] as number;
+			// The patch h(u, v) = a + k1 u + k2 v + k3 u v, with u and v the place in the cell.
+			const k1 = b - a;
+			const k2 = c - a;
+			const k3 = a - b - c + d;
+			const u0 = fx - cx;
+			const v0 = fz - cz;
+			// The ray's height above the patch, f(t) = q t^2 + p t + r, at a distance t.
+			const q = -k3 * ux * uz;
+			const p = dy - (k1 * ux + k2 * uz + k3 * (u0 * uz + v0 * ux));
+			const r = oy - (a + k1 * u0 + k2 * v0 + k3 * u0 * v0);
+			const hit = firstRoot(q, p, r, from, to);
+			if (hit >= 0) return hit;
+			if (to >= leave) return -1;
+			if (nextX < nextZ) {
+				cx += stepX;
+				nextX += spanX;
+			} else {
+				cz += stepZ;
+				nextZ += spanZ;
+			}
+			if (cx < 0 || cx > last || cz < 0 || cz > last) return -1;
+			from = to;
+		}
+	}
+}
+
+/**
+ * The first distance from `from` to `to` where `q t^2 + p t + r` reaches 0 or below, from above,
+ * or -1 when it stays above. A ray that starts under the ground meets it where it starts.
+ */
+function firstRoot(q: number, p: number, r: number, from: number, to: number): number {
+	const start = (q * from + p) * from + r;
+	if (start <= 0) return from;
+	const end = (q * to + p) * to + r;
+	if (q === 0) {
+		if (end > 0) return -1;
+		return -r / p;
+	}
+	// The quadratic's lowest point inside the span can dip under the ground with both ends above.
+	const discriminant = p * p - 4 * q * r;
+	if (discriminant < 0) return -1;
+	const root = Math.sqrt(discriminant);
+	// The two roots, computed so that neither loses digits to a near cancellation.
+	const k = -0.5 * (p + (p >= 0 ? root : -root));
+	const t1 = k / q;
+	const t2 = k === 0 ? t1 : r / k;
+	const low = Math.min(t1, t2);
+	const high = Math.max(t1, t2);
+	if (low >= from && low <= to) return low;
+	if (high >= from && high <= to) return high;
+	return -1;
 }
 
 /**

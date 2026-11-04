@@ -22,6 +22,8 @@ interface FakeBatch {
 	active: number;
 	marks: number;
 	destroyed: boolean;
+	/** The options that the batch was made with. */
+	options: { queries?: boolean };
 }
 
 /** A sketch context with just what a terrain calls, which logs every grid and batch it makes. */
@@ -63,7 +65,7 @@ function fakeContext() {
 			},
 		},
 		scene: {
-			createInstances: (mesh: FakeMesh, capacity: number) => {
+			createInstances: (mesh: FakeMesh, capacity: number, options: { queries?: boolean }) => {
 				const batch: FakeBatch = {
 					mesh,
 					capacity,
@@ -72,6 +74,7 @@ function fakeContext() {
 					active: capacity,
 					marks: 0,
 					destroyed: false,
+					options,
 				};
 				batches.push(batch);
 				return {
@@ -149,6 +152,26 @@ describe('terrain updates', () => {
 		expect(t.meshes.length).toBe(6);
 		expect(t.live().length).toBe(6);
 		expect(t.rows()).toEqual([]);
+	});
+
+	test("every batch stays out of the scene's queries, which would hit its grid's roof", () => {
+		const t = terrain();
+		for (const batch of t.batches) expect(batch.options.queries).toBe(false);
+	});
+
+	test('raycast meets the ground that heightAt gives, whatever blocks draw', () => {
+		const t = terrain({ height: (x: number, z: number) => 10 + x * 0.01 - z * 0.02 });
+		const hit = { point: [0, 0, 0], normal: [0, 0, 0], distance: 0 };
+		// The direction need not be one unit long.
+		expect(t.ground.raycast([30, 100, -40], [0, -5, 0], hit)).toBe(true);
+		expect(hit.point[1]).toBeCloseTo(t.ground.heightAt(30, -40), 4);
+		expect(hit.distance).toBeCloseTo(100 - t.ground.heightAt(30, -40), 4);
+		const normal = [0, 0, 0];
+		t.ground.normalAt(30, -40, normal);
+		expect(hit.normal).toEqual(normal);
+		expect(t.ground.raycast([30, 100, -40], [0, 1, 0], hit)).toBe(false);
+		expect(t.ground.raycast([30, 100, -40], [0, -1, 0], hit, 50)).toBe(false);
+		expect(t.ground.raycast([30, 100, -40], [0, 0, 0], hit)).toBe(false);
 	});
 
 	test('the first update draws its whole selection, which tiles the ground once', async () => {
