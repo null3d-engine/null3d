@@ -441,6 +441,56 @@ fn a_ball_inside_a_band_takes_one_copy_in_each_of_the_two_fade_buckets() {
     assert_eq!(band, picked + 2 * 64, "{band} {picked}");
 }
 
+/// A source that a frame shows without rebuilding the layout reaches the culling shader in that
+/// frame, so its level's slice must hold it in that frame too. The ball that the world hides
+/// stands as far from the camera as the one it shows, so both pick the coarsest level, whose slice
+/// held one copy before.
+#[test]
+fn a_ball_shown_without_a_rebuild_takes_room_in_its_levels_slice_at_once() {
+    let mut world = World::new();
+    give_levels(&mut world, 0);
+    world.record(true);
+    let one = copies(&world)[0];
+    world.frame += 1;
+    world
+        .scene
+        .apply_commands(&[Command::set_visible(world.objects[3], true)], world.frame)
+        .unwrap();
+    world.record(false);
+    assert_eq!(copies(&world)[0], one + 64, "the shown ball has no room");
+}
+
+/// Rows that a new active count adds reach the culling shader in the frame that adds them, so
+/// their level's slices must hold them in that frame.
+#[test]
+fn rows_added_without_a_rebuild_take_room_in_their_levels_slices_at_once() {
+    let rows = 16;
+    let mut world = World::new();
+    give_levels(&mut world, 0);
+    let slot = world.scene.slots().resolve(world.objects[0]).unwrap() as usize;
+    let material = world.scene.materials()[slot];
+    let batch = world
+        .batches
+        .create(rows, false, false, BALL, material, 0.9)
+        .unwrap();
+    let set_active = |world: &mut World, count: u32| {
+        let rows = world.batches.get_mut(batch).unwrap();
+        rows.set_active_count(count).unwrap();
+    };
+    set_active(&mut world, 0);
+    world.record(true);
+    let none = copies(&world)[0];
+    world.frame += 1;
+    set_active(&mut world, rows);
+    world.record(false);
+    // The slice that outgrows its room takes spare room past its count.
+    let added = copies(&world)[0];
+    assert!(
+        added >= none + rows * 64,
+        "the added rows have no room: {added} {none}"
+    );
+}
+
 #[test]
 fn a_coarse_level_takes_no_more_room_than_the_finest_one() {
     let mut fine = World::new();
