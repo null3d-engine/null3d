@@ -90,12 +90,12 @@ Groups of 128:
 
 ### Shadow cascades (casters: whole levels now; groups: box planes only)
 
-| Cascade | Texel (m) | Now | Off box, 64 | Off box, 128 | K=1, 64 |
-| --- | --- | --- | --- | --- | --- |
-| 0 | 0.019 | 0.23 | 0.17 | 0.17 | 0.17 |
-| 1 | 0.045 | 2.56 | 0.03 | 0.03 | 0.03 |
-| 2 | 0.156 | 2.26 | 0.00 | 0.00 | 0.00 |
-| per frame (far cascades every 3 frames) | | 1.84 | 0.18 | 0.18 | 0.18 |
+| Cascade | Texel (m) | Now | Off box, pieces | Off box, 64 | Off box, 128 | K=1, 64 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | 0.019 | 0.23 | 0.00 | 0.17 | 0.17 | 0.17 |
+| 1 | 0.045 | 2.56 | 0.00 | 0.03 | 0.03 | 0.03 |
+| 2 | 0.156 | 2.26 | 0.00 | 0.00 | 0.00 | 0.00 |
+| per frame (far cascades every 3 frames) | | 1.84 | 0.00 | 0.18 | 0.18 | 0.18 |
 
 Shadow casters per kind, all cascades per frame:
 

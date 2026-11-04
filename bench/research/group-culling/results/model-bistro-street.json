@@ -2625,6 +2625,10 @@
 			"mean": 34870,
 			"median": 34870
 		},
+		"shadow0.all.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow0.all.street.g64.tested": {
 			"mean": 958,
 			"median": 958
@@ -2648,6 +2652,10 @@
 		"shadow0.all.building.g128.offscreen": {
 			"mean": 107486,
 			"median": 107486
+		},
+		"shadow0.all.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
 		},
 		"shadow0.all.building.g64.tested": {
 			"mean": 7246,
@@ -2673,6 +2681,10 @@
 			"mean": 512,
 			"median": 512
 		},
+		"shadow0.all.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow0.all.prop.g64.tested": {
 			"mean": 4003,
 			"median": 4003
@@ -2696,6 +2708,10 @@
 		"shadow0.all.foliage.g128.offscreen": {
 			"mean": 25267,
 			"median": 25267
+		},
+		"shadow0.all.foliage.g0.offscreen": {
+			"mean": 4315,
+			"median": 4315
 		},
 		"shadow0.all.foliage.g64.tested": {
 			"mean": 6785,
@@ -2721,6 +2737,10 @@
 			"mean": 34870,
 			"median": 34870
 		},
+		"shadow0.K1.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow0.K1.street.g64.tested": {
 			"mean": 958,
 			"median": 958
@@ -2744,6 +2764,10 @@
 		"shadow0.K1.building.g128.offscreen": {
 			"mean": 107486,
 			"median": 107486
+		},
+		"shadow0.K1.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
 		},
 		"shadow0.K1.building.g64.tested": {
 			"mean": 7246,
@@ -2769,6 +2793,10 @@
 			"mean": 512,
 			"median": 512
 		},
+		"shadow0.K1.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow0.K1.prop.g64.tested": {
 			"mean": 4003,
 			"median": 4003
@@ -2792,6 +2820,10 @@
 		"shadow0.K1.foliage.g128.offscreen": {
 			"mean": 25267,
 			"median": 25267
+		},
+		"shadow0.K1.foliage.g0.offscreen": {
+			"mean": 4315,
+			"median": 4315
 		},
 		"shadow0.K1.foliage.g64.tested": {
 			"mean": 6785,
@@ -2817,6 +2849,10 @@
 			"mean": 36591,
 			"median": 36591
 		},
+		"shadow0.N16.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow0.N16.building.g64.tested": {
 			"mean": 4418,
 			"median": 4418
@@ -2840,6 +2876,10 @@
 		"shadow0.N16.street.g128.offscreen": {
 			"mean": 28747,
 			"median": 28747
+		},
+		"shadow0.N16.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
 		},
 		"shadow0.N16.street.g64.tested": {
 			"mean": 760,
@@ -2865,6 +2905,10 @@
 			"mean": 20467,
 			"median": 20467
 		},
+		"shadow0.N16.foliage.g0.offscreen": {
+			"mean": 4315,
+			"median": 4315
+		},
 		"shadow0.N16.foliage.g64.tested": {
 			"mean": 998,
 			"median": 998
@@ -2886,6 +2930,10 @@
 			"median": 0
 		},
 		"shadow0.N16.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N16.prop.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -2913,6 +2961,10 @@
 			"mean": 37999,
 			"median": 37999
 		},
+		"shadow0.N32.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow0.N32.building.g64.tested": {
 			"mean": 4716,
 			"median": 4716
@@ -2936,6 +2988,10 @@
 		"shadow0.N32.street.g128.offscreen": {
 			"mean": 28747,
 			"median": 28747
+		},
+		"shadow0.N32.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
 		},
 		"shadow0.N32.street.g64.tested": {
 			"mean": 760,
@@ -2961,6 +3017,10 @@
 			"mean": 20467,
 			"median": 20467
 		},
+		"shadow0.N32.foliage.g0.offscreen": {
+			"mean": 4315,
+			"median": 4315
+		},
 		"shadow0.N32.foliage.g64.tested": {
 			"mean": 4952,
 			"median": 4952
@@ -2982,6 +3042,10 @@
 			"median": 0
 		},
 		"shadow0.N32.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N32.prop.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -3009,6 +3073,10 @@
 			"mean": 95370,
 			"median": 95370
 		},
+		"shadow0.N64.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow0.N64.building.g64.tested": {
 			"mean": 6860,
 			"median": 6860
@@ -3032,6 +3100,10 @@
 		"shadow0.N64.street.g128.offscreen": {
 			"mean": 34870,
 			"median": 34870
+		},
+		"shadow0.N64.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
 		},
 		"shadow0.N64.street.g64.tested": {
 			"mean": 958,
@@ -3057,6 +3129,10 @@
 			"mean": 25267,
 			"median": 25267
 		},
+		"shadow0.N64.foliage.g0.offscreen": {
+			"mean": 4315,
+			"median": 4315
+		},
 		"shadow0.N64.foliage.g64.tested": {
 			"mean": 6391,
 			"median": 6391
@@ -3078,6 +3154,10 @@
 			"median": 0
 		},
 		"shadow0.N64.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N64.prop.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -3105,6 +3185,10 @@
 			"mean": 107486,
 			"median": 107486
 		},
+		"shadow0.N128.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow0.N128.building.g64.tested": {
 			"mean": 7246,
 			"median": 7246
@@ -3128,6 +3212,10 @@
 		"shadow0.N128.street.g128.offscreen": {
 			"mean": 34870,
 			"median": 34870
+		},
+		"shadow0.N128.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
 		},
 		"shadow0.N128.street.g64.tested": {
 			"mean": 958,
@@ -3153,6 +3241,10 @@
 			"mean": 25267,
 			"median": 25267
 		},
+		"shadow0.N128.foliage.g0.offscreen": {
+			"mean": 4315,
+			"median": 4315
+		},
 		"shadow0.N128.foliage.g64.tested": {
 			"mean": 6785,
 			"median": 6785
@@ -3176,6 +3268,10 @@
 		"shadow0.N128.prop.g128.offscreen": {
 			"mean": 512,
 			"median": 512
+		},
+		"shadow0.N128.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
 		},
 		"shadow0.N128.prop.g64.tested": {
 			"mean": 4003,
@@ -3201,6 +3297,10 @@
 			"mean": 107486,
 			"median": 107486
 		},
+		"shadow0.N256.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow0.N256.building.g64.tested": {
 			"mean": 7246,
 			"median": 7246
@@ -3224,6 +3324,10 @@
 		"shadow0.N256.street.g128.offscreen": {
 			"mean": 34870,
 			"median": 34870
+		},
+		"shadow0.N256.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
 		},
 		"shadow0.N256.street.g64.tested": {
 			"mean": 958,
@@ -3249,6 +3353,10 @@
 			"mean": 25267,
 			"median": 25267
 		},
+		"shadow0.N256.foliage.g0.offscreen": {
+			"mean": 4315,
+			"median": 4315
+		},
 		"shadow0.N256.foliage.g64.tested": {
 			"mean": 6785,
 			"median": 6785
@@ -3272,6 +3380,10 @@
 		"shadow0.N256.prop.g128.offscreen": {
 			"mean": 512,
 			"median": 512
+		},
+		"shadow0.N256.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
 		},
 		"shadow0.N256.prop.g64.tested": {
 			"mean": 4003,
@@ -3305,6 +3417,10 @@
 			"mean": 21070,
 			"median": 21070
 		},
+		"shadow1.all.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow1.all.street.g64.tested": {
 			"mean": 958,
 			"median": 958
@@ -3329,6 +3445,10 @@
 			"mean": 53154,
 			"median": 53154
 		},
+		"shadow1.all.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow1.all.building.g64.tested": {
 			"mean": 9385,
 			"median": 9385
@@ -3350,6 +3470,10 @@
 			"median": 0
 		},
 		"shadow1.all.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.all.prop.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -3377,6 +3501,10 @@
 			"mean": 0,
 			"median": 0
 		},
+		"shadow1.all.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow1.all.foliage.g64.tested": {
 			"mean": 7522,
 			"median": 7522
@@ -3400,6 +3528,10 @@
 		"shadow1.K1.street.g128.offscreen": {
 			"mean": 21070,
 			"median": 21070
+		},
+		"shadow1.K1.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
 		},
 		"shadow1.K1.street.g64.tested": {
 			"mean": 958,
@@ -3425,6 +3557,10 @@
 			"mean": 53154,
 			"median": 53154
 		},
+		"shadow1.K1.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow1.K1.building.g64.tested": {
 			"mean": 9385,
 			"median": 9385
@@ -3446,6 +3582,10 @@
 			"median": 0
 		},
 		"shadow1.K1.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.K1.prop.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -3473,6 +3613,10 @@
 			"mean": 0,
 			"median": 0
 		},
+		"shadow1.K1.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow1.K1.foliage.g64.tested": {
 			"mean": 7522,
 			"median": 7522
@@ -3496,6 +3640,10 @@
 		"shadow1.N16.building.g128.offscreen": {
 			"mean": 768,
 			"median": 768
+		},
+		"shadow1.N16.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
 		},
 		"shadow1.N16.building.g64.tested": {
 			"mean": 4418,
@@ -3521,6 +3669,10 @@
 			"mean": 18227,
 			"median": 18227
 		},
+		"shadow1.N16.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow1.N16.street.g64.tested": {
 			"mean": 760,
 			"median": 760
@@ -3542,6 +3694,10 @@
 			"median": 0
 		},
 		"shadow1.N16.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N16.foliage.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -3569,6 +3725,10 @@
 			"mean": 0,
 			"median": 0
 		},
+		"shadow1.N16.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow1.N16.prop.g64.tested": {
 			"mean": 2244,
 			"median": 2244
@@ -3592,6 +3752,10 @@
 		"shadow1.N32.building.g128.offscreen": {
 			"mean": 16982,
 			"median": 16982
+		},
+		"shadow1.N32.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
 		},
 		"shadow1.N32.building.g64.tested": {
 			"mean": 5328,
@@ -3617,6 +3781,10 @@
 			"mean": 18227,
 			"median": 18227
 		},
+		"shadow1.N32.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow1.N32.street.g64.tested": {
 			"mean": 760,
 			"median": 760
@@ -3638,6 +3806,10 @@
 			"median": 0
 		},
 		"shadow1.N32.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N32.foliage.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -3665,6 +3837,10 @@
 			"mean": 0,
 			"median": 0
 		},
+		"shadow1.N32.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow1.N32.prop.g64.tested": {
 			"mean": 2529,
 			"median": 2529
@@ -3688,6 +3864,10 @@
 		"shadow1.N64.building.g128.offscreen": {
 			"mean": 45346,
 			"median": 45346
+		},
+		"shadow1.N64.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
 		},
 		"shadow1.N64.building.g64.tested": {
 			"mean": 8349,
@@ -3713,6 +3893,10 @@
 			"mean": 18227,
 			"median": 18227
 		},
+		"shadow1.N64.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow1.N64.street.g64.tested": {
 			"mean": 760,
 			"median": 760
@@ -3734,6 +3918,10 @@
 			"median": 0
 		},
 		"shadow1.N64.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N64.foliage.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -3761,6 +3949,10 @@
 			"mean": 0,
 			"median": 0
 		},
+		"shadow1.N64.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow1.N64.prop.g64.tested": {
 			"mean": 2529,
 			"median": 2529
@@ -3784,6 +3976,10 @@
 		"shadow1.N128.building.g128.offscreen": {
 			"mean": 53154,
 			"median": 53154
+		},
+		"shadow1.N128.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
 		},
 		"shadow1.N128.building.g64.tested": {
 			"mean": 9385,
@@ -3809,6 +4005,10 @@
 			"mean": 21070,
 			"median": 21070
 		},
+		"shadow1.N128.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow1.N128.street.g64.tested": {
 			"mean": 958,
 			"median": 958
@@ -3830,6 +4030,10 @@
 			"median": 0
 		},
 		"shadow1.N128.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N128.foliage.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -3857,6 +4061,10 @@
 			"mean": 0,
 			"median": 0
 		},
+		"shadow1.N128.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow1.N128.prop.g64.tested": {
 			"mean": 2694,
 			"median": 2694
@@ -3880,6 +4088,10 @@
 		"shadow1.N256.building.g128.offscreen": {
 			"mean": 53154,
 			"median": 53154
+		},
+		"shadow1.N256.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
 		},
 		"shadow1.N256.building.g64.tested": {
 			"mean": 9385,
@@ -3905,6 +4117,10 @@
 			"mean": 21070,
 			"median": 21070
 		},
+		"shadow1.N256.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow1.N256.street.g64.tested": {
 			"mean": 958,
 			"median": 958
@@ -3929,6 +4145,10 @@
 			"mean": 0,
 			"median": 0
 		},
+		"shadow1.N256.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow1.N256.foliage.g64.tested": {
 			"mean": 7522,
 			"median": 7522
@@ -3950,6 +4170,10 @@
 			"median": 0
 		},
 		"shadow1.N256.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N256.prop.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -3985,6 +4209,10 @@
 			"mean": 0,
 			"median": 0
 		},
+		"shadow2.all.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow2.all.street.g64.tested": {
 			"mean": 958,
 			"median": 958
@@ -4009,6 +4237,10 @@
 			"mean": 122,
 			"median": 122
 		},
+		"shadow2.all.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow2.all.building.g64.tested": {
 			"mean": 8942,
 			"median": 8942
@@ -4030,6 +4262,10 @@
 			"median": 0
 		},
 		"shadow2.all.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.all.prop.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -4057,6 +4293,10 @@
 			"mean": 0,
 			"median": 0
 		},
+		"shadow2.all.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow2.all.foliage.g64.tested": {
 			"mean": 11846,
 			"median": 11846
@@ -4078,6 +4318,10 @@
 			"median": 0
 		},
 		"shadow2.K1.street.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.K1.street.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -4105,6 +4349,10 @@
 			"mean": 122,
 			"median": 122
 		},
+		"shadow2.K1.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow2.K1.building.g64.tested": {
 			"mean": 8942,
 			"median": 8942
@@ -4126,6 +4374,10 @@
 			"median": 0
 		},
 		"shadow2.K1.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.K1.prop.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -4153,6 +4405,10 @@
 			"mean": 0,
 			"median": 0
 		},
+		"shadow2.K1.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow2.K1.foliage.g64.tested": {
 			"mean": 11846,
 			"median": 11846
@@ -4174,6 +4430,10 @@
 			"median": 0
 		},
 		"shadow2.N16.building.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N16.building.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -4201,6 +4461,10 @@
 			"mean": 0,
 			"median": 0
 		},
+		"shadow2.N16.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow2.N16.street.g64.tested": {
 			"mean": 760,
 			"median": 760
@@ -4222,6 +4486,10 @@
 			"median": 0
 		},
 		"shadow2.N16.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N16.foliage.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -4249,6 +4517,10 @@
 			"mean": 0,
 			"median": 0
 		},
+		"shadow2.N16.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow2.N16.prop.g64.tested": {
 			"mean": 2244,
 			"median": 2244
@@ -4270,6 +4542,10 @@
 			"median": 0
 		},
 		"shadow2.N32.building.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N32.building.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -4297,6 +4573,10 @@
 			"mean": 0,
 			"median": 0
 		},
+		"shadow2.N32.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow2.N32.street.g64.tested": {
 			"mean": 760,
 			"median": 760
@@ -4318,6 +4598,10 @@
 			"median": 0
 		},
 		"shadow2.N32.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N32.foliage.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -4345,6 +4629,10 @@
 			"mean": 0,
 			"median": 0
 		},
+		"shadow2.N32.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow2.N32.prop.g64.tested": {
 			"mean": 3259,
 			"median": 3259
@@ -4366,6 +4654,10 @@
 			"median": 0
 		},
 		"shadow2.N64.building.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N64.building.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -4393,6 +4685,10 @@
 			"mean": 0,
 			"median": 0
 		},
+		"shadow2.N64.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow2.N64.street.g64.tested": {
 			"mean": 760,
 			"median": 760
@@ -4414,6 +4710,10 @@
 			"median": 0
 		},
 		"shadow2.N64.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N64.foliage.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -4441,6 +4741,10 @@
 			"mean": 0,
 			"median": 0
 		},
+		"shadow2.N64.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow2.N64.prop.g64.tested": {
 			"mean": 3259,
 			"median": 3259
@@ -4465,6 +4769,10 @@
 			"mean": 122,
 			"median": 122
 		},
+		"shadow2.N128.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow2.N128.building.g64.tested": {
 			"mean": 8942,
 			"median": 8942
@@ -4486,6 +4794,10 @@
 			"median": 0
 		},
 		"shadow2.N128.street.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N128.street.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -4513,6 +4825,10 @@
 			"mean": 0,
 			"median": 0
 		},
+		"shadow2.N128.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow2.N128.foliage.g64.tested": {
 			"mean": 11846,
 			"median": 11846
@@ -4534,6 +4850,10 @@
 			"median": 0
 		},
 		"shadow2.N128.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N128.prop.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -4561,6 +4881,10 @@
 			"mean": 122,
 			"median": 122
 		},
+		"shadow2.N256.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow2.N256.building.g64.tested": {
 			"mean": 8942,
 			"median": 8942
@@ -4582,6 +4906,10 @@
 			"median": 0
 		},
 		"shadow2.N256.street.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N256.street.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -4609,6 +4937,10 @@
 			"mean": 0,
 			"median": 0
 		},
+		"shadow2.N256.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
 		"shadow2.N256.foliage.g64.tested": {
 			"mean": 11846,
 			"median": 11846
@@ -4630,6 +4962,10 @@
 			"median": 0
 		},
 		"shadow2.N256.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N256.prop.g0.offscreen": {
 			"mean": 0,
 			"median": 0
 		},
@@ -5301,168 +5637,196 @@
 				"shadow0.all.street.now": 70303,
 				"shadow0.all.street.g64.offscreen": 37164,
 				"shadow0.all.street.g128.offscreen": 34870,
+				"shadow0.all.street.g0.offscreen": 0,
 				"shadow0.all.street.g64.tested": 958,
 				"shadow0.all.street.g128.tested": 482,
 				"shadow0.all.building.copies": 695,
 				"shadow0.all.building.now": 639301,
 				"shadow0.all.building.g64.offscreen": 117580,
 				"shadow0.all.building.g128.offscreen": 107486,
+				"shadow0.all.building.g0.offscreen": 0,
 				"shadow0.all.building.g64.tested": 7246,
 				"shadow0.all.building.g128.tested": 3637,
 				"shadow0.all.prop.copies": 276,
 				"shadow0.all.prop.now": 467421,
 				"shadow0.all.prop.g64.offscreen": 1152,
 				"shadow0.all.prop.g128.offscreen": 512,
+				"shadow0.all.prop.g0.offscreen": 0,
 				"shadow0.all.prop.g64.tested": 4003,
 				"shadow0.all.prop.g128.tested": 1997,
 				"shadow0.all.foliage.copies": 177,
 				"shadow0.all.foliage.now": 579541,
 				"shadow0.all.foliage.g64.offscreen": 26826,
 				"shadow0.all.foliage.g128.offscreen": 25267,
+				"shadow0.all.foliage.g0.offscreen": 4315,
 				"shadow0.all.foliage.g64.tested": 6785,
 				"shadow0.all.foliage.g128.tested": 3407,
 				"shadow0.K1.street.copies": 30,
 				"shadow0.K1.street.now": 70303,
 				"shadow0.K1.street.g64.offscreen": 37164,
 				"shadow0.K1.street.g128.offscreen": 34870,
+				"shadow0.K1.street.g0.offscreen": 0,
 				"shadow0.K1.street.g64.tested": 958,
 				"shadow0.K1.street.g128.tested": 482,
 				"shadow0.K1.building.copies": 695,
 				"shadow0.K1.building.now": 639301,
 				"shadow0.K1.building.g64.offscreen": 117580,
 				"shadow0.K1.building.g128.offscreen": 107486,
+				"shadow0.K1.building.g0.offscreen": 0,
 				"shadow0.K1.building.g64.tested": 7246,
 				"shadow0.K1.building.g128.tested": 3637,
 				"shadow0.K1.prop.copies": 276,
 				"shadow0.K1.prop.now": 467421,
 				"shadow0.K1.prop.g64.offscreen": 1152,
 				"shadow0.K1.prop.g128.offscreen": 512,
+				"shadow0.K1.prop.g0.offscreen": 0,
 				"shadow0.K1.prop.g64.tested": 4003,
 				"shadow0.K1.prop.g128.tested": 1997,
 				"shadow0.K1.foliage.copies": 177,
 				"shadow0.K1.foliage.now": 579541,
 				"shadow0.K1.foliage.g64.offscreen": 26826,
 				"shadow0.K1.foliage.g128.offscreen": 25267,
+				"shadow0.K1.foliage.g0.offscreen": 4315,
 				"shadow0.K1.foliage.g64.tested": 6785,
 				"shadow0.K1.foliage.g128.tested": 3407,
 				"shadow0.N16.building.copies": 7,
 				"shadow0.N16.building.now": 281175,
 				"shadow0.N16.building.g64.offscreen": 42448,
 				"shadow0.N16.building.g128.offscreen": 36591,
+				"shadow0.N16.building.g0.offscreen": 0,
 				"shadow0.N16.building.g64.tested": 4418,
 				"shadow0.N16.building.g128.tested": 2219,
 				"shadow0.N16.street.copies": 1,
 				"shadow0.N16.street.now": 41912,
 				"shadow0.N16.street.g64.offscreen": 30322,
 				"shadow0.N16.street.g128.offscreen": 28747,
+				"shadow0.N16.street.g0.offscreen": 0,
 				"shadow0.N16.street.g64.tested": 760,
 				"shadow0.N16.street.g128.tested": 383,
 				"shadow0.N16.foliage.copies": 2,
 				"shadow0.N16.foliage.now": 63420,
 				"shadow0.N16.foliage.g64.offscreen": 21629,
 				"shadow0.N16.foliage.g128.offscreen": 20467,
+				"shadow0.N16.foliage.g0.offscreen": 4315,
 				"shadow0.N16.foliage.g64.tested": 998,
 				"shadow0.N16.foliage.g128.tested": 500,
 				"shadow0.N16.prop.copies": 6,
 				"shadow0.N16.prop.now": 139633,
 				"shadow0.N16.prop.g64.offscreen": 0,
 				"shadow0.N16.prop.g128.offscreen": 0,
+				"shadow0.N16.prop.g0.offscreen": 0,
 				"shadow0.N16.prop.g64.tested": 2244,
 				"shadow0.N16.prop.g128.tested": 1115,
 				"shadow0.N32.building.copies": 8,
 				"shadow0.N32.building.now": 300235,
 				"shadow0.N32.building.g64.offscreen": 44048,
 				"shadow0.N32.building.g128.offscreen": 37999,
+				"shadow0.N32.building.g0.offscreen": 0,
 				"shadow0.N32.building.g64.tested": 4716,
 				"shadow0.N32.building.g128.tested": 2368,
 				"shadow0.N32.street.copies": 1,
 				"shadow0.N32.street.now": 41912,
 				"shadow0.N32.street.g64.offscreen": 30322,
 				"shadow0.N32.street.g128.offscreen": 28747,
+				"shadow0.N32.street.g0.offscreen": 0,
 				"shadow0.N32.street.g64.tested": 760,
 				"shadow0.N32.street.g128.tested": 383,
 				"shadow0.N32.foliage.copies": 16,
 				"shadow0.N32.foliage.now": 315819,
 				"shadow0.N32.foliage.g64.offscreen": 21629,
 				"shadow0.N32.foliage.g128.offscreen": 20467,
+				"shadow0.N32.foliage.g0.offscreen": 4315,
 				"shadow0.N32.foliage.g64.tested": 4952,
 				"shadow0.N32.foliage.g128.tested": 2484,
 				"shadow0.N32.prop.copies": 7,
 				"shadow0.N32.prop.now": 157860,
 				"shadow0.N32.prop.g64.offscreen": 0,
 				"shadow0.N32.prop.g128.offscreen": 0,
+				"shadow0.N32.prop.g0.offscreen": 0,
 				"shadow0.N32.prop.g64.tested": 2529,
 				"shadow0.N32.prop.g128.tested": 1258,
 				"shadow0.N64.building.copies": 22,
 				"shadow0.N64.building.now": 437075,
 				"shadow0.N64.building.g64.offscreen": 104140,
 				"shadow0.N64.building.g128.offscreen": 95370,
+				"shadow0.N64.building.g0.offscreen": 0,
 				"shadow0.N64.building.g64.tested": 6860,
 				"shadow0.N64.building.g128.tested": 3443,
 				"shadow0.N64.street.copies": 3,
 				"shadow0.N64.street.now": 54402,
 				"shadow0.N64.street.g64.offscreen": 37164,
 				"shadow0.N64.street.g128.offscreen": 34870,
+				"shadow0.N64.street.g0.offscreen": 0,
 				"shadow0.N64.street.g64.tested": 958,
 				"shadow0.N64.street.g128.tested": 482,
 				"shadow0.N64.foliage.copies": 25,
 				"shadow0.N64.foliage.now": 407361,
 				"shadow0.N64.foliage.g64.offscreen": 26698,
 				"shadow0.N64.foliage.g128.offscreen": 25267,
+				"shadow0.N64.foliage.g0.offscreen": 4315,
 				"shadow0.N64.foliage.g64.tested": 6391,
 				"shadow0.N64.foliage.g128.tested": 3208,
 				"shadow0.N64.prop.copies": 14,
 				"shadow0.N64.prop.now": 196984,
 				"shadow0.N64.prop.g64.offscreen": 0,
 				"shadow0.N64.prop.g128.offscreen": 0,
+				"shadow0.N64.prop.g0.offscreen": 0,
 				"shadow0.N64.prop.g64.tested": 3144,
 				"shadow0.N64.prop.g128.tested": 1566,
 				"shadow0.N128.building.copies": 36,
 				"shadow0.N128.building.now": 492405,
 				"shadow0.N128.building.g64.offscreen": 117580,
 				"shadow0.N128.building.g128.offscreen": 107486,
+				"shadow0.N128.building.g0.offscreen": 0,
 				"shadow0.N128.building.g64.tested": 7246,
 				"shadow0.N128.building.g128.tested": 3637,
 				"shadow0.N128.street.copies": 4,
 				"shadow0.N128.street.now": 57814,
 				"shadow0.N128.street.g64.offscreen": 37164,
 				"shadow0.N128.street.g128.offscreen": 34870,
+				"shadow0.N128.street.g0.offscreen": 0,
 				"shadow0.N128.street.g64.tested": 958,
 				"shadow0.N128.street.g128.tested": 482,
 				"shadow0.N128.foliage.copies": 55,
 				"shadow0.N128.foliage.now": 519421,
 				"shadow0.N128.foliage.g64.offscreen": 26826,
 				"shadow0.N128.foliage.g128.offscreen": 25267,
+				"shadow0.N128.foliage.g0.offscreen": 4315,
 				"shadow0.N128.foliage.g64.tested": 6785,
 				"shadow0.N128.foliage.g128.tested": 3407,
 				"shadow0.N128.prop.copies": 33,
 				"shadow0.N128.prop.now": 276903,
 				"shadow0.N128.prop.g64.offscreen": 1152,
 				"shadow0.N128.prop.g128.offscreen": 512,
+				"shadow0.N128.prop.g0.offscreen": 0,
 				"shadow0.N128.prop.g64.tested": 4003,
 				"shadow0.N128.prop.g128.tested": 1997,
 				"shadow0.N256.building.copies": 69,
 				"shadow0.N256.building.now": 554829,
 				"shadow0.N256.building.g64.offscreen": 117580,
 				"shadow0.N256.building.g128.offscreen": 107486,
+				"shadow0.N256.building.g0.offscreen": 0,
 				"shadow0.N256.building.g64.tested": 7246,
 				"shadow0.N256.building.g128.tested": 3637,
 				"shadow0.N256.street.copies": 6,
 				"shadow0.N256.street.now": 62007,
 				"shadow0.N256.street.g64.offscreen": 37164,
 				"shadow0.N256.street.g128.offscreen": 34870,
+				"shadow0.N256.street.g0.offscreen": 0,
 				"shadow0.N256.street.g64.tested": 958,
 				"shadow0.N256.street.g128.tested": 482,
 				"shadow0.N256.foliage.copies": 68,
 				"shadow0.N256.foliage.now": 544275,
 				"shadow0.N256.foliage.g64.offscreen": 26826,
 				"shadow0.N256.foliage.g128.offscreen": 25267,
+				"shadow0.N256.foliage.g0.offscreen": 4315,
 				"shadow0.N256.foliage.g64.tested": 6785,
 				"shadow0.N256.foliage.g128.tested": 3407,
 				"shadow0.N256.prop.copies": 113,
 				"shadow0.N256.prop.now": 418681,
 				"shadow0.N256.prop.g64.offscreen": 1152,
 				"shadow0.N256.prop.g128.offscreen": 512,
+				"shadow0.N256.prop.g0.offscreen": 0,
 				"shadow0.N256.prop.g64.tested": 4003,
 				"shadow0.N256.prop.g128.tested": 1997,
 				"shadow1.texel": 0.04513657595650593,
@@ -5471,168 +5835,196 @@
 				"shadow1.all.street.now": 71897,
 				"shadow1.all.street.g64.offscreen": 22430,
 				"shadow1.all.street.g128.offscreen": 21070,
+				"shadow1.all.street.g0.offscreen": 0,
 				"shadow1.all.street.g64.tested": 958,
 				"shadow1.all.street.g128.tested": 482,
 				"shadow1.all.building.copies": 884,
 				"shadow1.all.building.now": 832949,
 				"shadow1.all.building.g64.offscreen": 59004,
 				"shadow1.all.building.g128.offscreen": 53154,
+				"shadow1.all.building.g0.offscreen": 0,
 				"shadow1.all.building.g64.tested": 9385,
 				"shadow1.all.building.g128.tested": 4708,
 				"shadow1.all.prop.copies": 316,
 				"shadow1.all.prop.now": 422321,
 				"shadow1.all.prop.g64.offscreen": 0,
 				"shadow1.all.prop.g128.offscreen": 0,
+				"shadow1.all.prop.g0.offscreen": 0,
 				"shadow1.all.prop.g64.tested": 2694,
 				"shadow1.all.prop.g128.tested": 1341,
 				"shadow1.all.foliage.copies": 220,
 				"shadow1.all.foliage.now": 638831,
 				"shadow1.all.foliage.g64.offscreen": 0,
 				"shadow1.all.foliage.g128.offscreen": 0,
+				"shadow1.all.foliage.g0.offscreen": 0,
 				"shadow1.all.foliage.g64.tested": 7522,
 				"shadow1.all.foliage.g128.tested": 3777,
 				"shadow1.K1.street.copies": 34,
 				"shadow1.K1.street.now": 71897,
 				"shadow1.K1.street.g64.offscreen": 22430,
 				"shadow1.K1.street.g128.offscreen": 21070,
+				"shadow1.K1.street.g0.offscreen": 0,
 				"shadow1.K1.street.g64.tested": 958,
 				"shadow1.K1.street.g128.tested": 482,
 				"shadow1.K1.building.copies": 884,
 				"shadow1.K1.building.now": 832949,
 				"shadow1.K1.building.g64.offscreen": 59004,
 				"shadow1.K1.building.g128.offscreen": 53154,
+				"shadow1.K1.building.g0.offscreen": 0,
 				"shadow1.K1.building.g64.tested": 9385,
 				"shadow1.K1.building.g128.tested": 4708,
 				"shadow1.K1.prop.copies": 316,
 				"shadow1.K1.prop.now": 422321,
 				"shadow1.K1.prop.g64.offscreen": 0,
 				"shadow1.K1.prop.g128.offscreen": 0,
+				"shadow1.K1.prop.g0.offscreen": 0,
 				"shadow1.K1.prop.g64.tested": 2694,
 				"shadow1.K1.prop.g128.tested": 1341,
 				"shadow1.K1.foliage.copies": 220,
 				"shadow1.K1.foliage.now": 638831,
 				"shadow1.K1.foliage.g64.offscreen": 0,
 				"shadow1.K1.foliage.g128.offscreen": 0,
+				"shadow1.K1.foliage.g0.offscreen": 0,
 				"shadow1.K1.foliage.g64.tested": 7522,
 				"shadow1.K1.foliage.g128.tested": 3777,
 				"shadow1.N16.building.copies": 7,
 				"shadow1.N16.building.now": 281175,
 				"shadow1.N16.building.g64.offscreen": 960,
 				"shadow1.N16.building.g128.offscreen": 768,
+				"shadow1.N16.building.g0.offscreen": 0,
 				"shadow1.N16.building.g64.tested": 4418,
 				"shadow1.N16.building.g128.tested": 2219,
 				"shadow1.N16.street.copies": 1,
 				"shadow1.N16.street.now": 41912,
 				"shadow1.N16.street.g64.offscreen": 19267,
 				"shadow1.N16.street.g128.offscreen": 18227,
+				"shadow1.N16.street.g0.offscreen": 0,
 				"shadow1.N16.street.g64.tested": 760,
 				"shadow1.N16.street.g128.tested": 383,
 				"shadow1.N16.foliage.copies": 2,
 				"shadow1.N16.foliage.now": 63420,
 				"shadow1.N16.foliage.g64.offscreen": 0,
 				"shadow1.N16.foliage.g128.offscreen": 0,
+				"shadow1.N16.foliage.g0.offscreen": 0,
 				"shadow1.N16.foliage.g64.tested": 998,
 				"shadow1.N16.foliage.g128.tested": 500,
 				"shadow1.N16.prop.copies": 6,
 				"shadow1.N16.prop.now": 139633,
 				"shadow1.N16.prop.g64.offscreen": 0,
 				"shadow1.N16.prop.g128.offscreen": 0,
+				"shadow1.N16.prop.g0.offscreen": 0,
 				"shadow1.N16.prop.g64.tested": 2244,
 				"shadow1.N16.prop.g128.tested": 1115,
 				"shadow1.N32.building.copies": 10,
 				"shadow1.N32.building.now": 339319,
 				"shadow1.N32.building.g64.offscreen": 19286,
 				"shadow1.N32.building.g128.offscreen": 16982,
+				"shadow1.N32.building.g0.offscreen": 0,
 				"shadow1.N32.building.g64.tested": 5328,
 				"shadow1.N32.building.g128.tested": 2674,
 				"shadow1.N32.street.copies": 1,
 				"shadow1.N32.street.now": 41912,
 				"shadow1.N32.street.g64.offscreen": 19267,
 				"shadow1.N32.street.g128.offscreen": 18227,
+				"shadow1.N32.street.g0.offscreen": 0,
 				"shadow1.N32.street.g64.tested": 760,
 				"shadow1.N32.street.g128.tested": 383,
 				"shadow1.N32.foliage.copies": 14,
 				"shadow1.N32.foliage.now": 281772,
 				"shadow1.N32.foliage.g64.offscreen": 0,
 				"shadow1.N32.foliage.g128.offscreen": 0,
+				"shadow1.N32.foliage.g0.offscreen": 0,
 				"shadow1.N32.foliage.g64.tested": 4418,
 				"shadow1.N32.foliage.g128.tested": 2216,
 				"shadow1.N32.prop.copies": 7,
 				"shadow1.N32.prop.now": 157860,
 				"shadow1.N32.prop.g64.offscreen": 0,
 				"shadow1.N32.prop.g128.offscreen": 0,
+				"shadow1.N32.prop.g0.offscreen": 0,
 				"shadow1.N32.prop.g64.tested": 2529,
 				"shadow1.N32.prop.g128.tested": 1258,
 				"shadow1.N64.building.copies": 29,
 				"shadow1.N64.building.now": 532219,
 				"shadow1.N64.building.g64.offscreen": 49428,
 				"shadow1.N64.building.g128.offscreen": 45346,
+				"shadow1.N64.building.g0.offscreen": 0,
 				"shadow1.N64.building.g64.tested": 8349,
 				"shadow1.N64.building.g128.tested": 4187,
 				"shadow1.N64.street.copies": 1,
 				"shadow1.N64.street.now": 41912,
 				"shadow1.N64.street.g64.offscreen": 19267,
 				"shadow1.N64.street.g128.offscreen": 18227,
+				"shadow1.N64.street.g0.offscreen": 0,
 				"shadow1.N64.street.g64.tested": 760,
 				"shadow1.N64.street.g128.tested": 383,
 				"shadow1.N64.foliage.copies": 27,
 				"shadow1.N64.foliage.now": 447301,
 				"shadow1.N64.foliage.g64.offscreen": 0,
 				"shadow1.N64.foliage.g128.offscreen": 0,
+				"shadow1.N64.foliage.g0.offscreen": 0,
 				"shadow1.N64.foliage.g64.tested": 7012,
 				"shadow1.N64.foliage.g128.tested": 3519,
 				"shadow1.N64.prop.copies": 7,
 				"shadow1.N64.prop.now": 157860,
 				"shadow1.N64.prop.g64.offscreen": 0,
 				"shadow1.N64.prop.g128.offscreen": 0,
+				"shadow1.N64.prop.g0.offscreen": 0,
 				"shadow1.N64.prop.g64.tested": 2529,
 				"shadow1.N64.prop.g128.tested": 1258,
 				"shadow1.N128.building.copies": 49,
 				"shadow1.N128.building.now": 623268,
 				"shadow1.N128.building.g64.offscreen": 59004,
 				"shadow1.N128.building.g128.offscreen": 53154,
+				"shadow1.N128.building.g0.offscreen": 0,
 				"shadow1.N128.building.g64.tested": 9385,
 				"shadow1.N128.building.g128.tested": 4708,
 				"shadow1.N128.street.copies": 4,
 				"shadow1.N128.street.now": 57814,
 				"shadow1.N128.street.g64.offscreen": 22430,
 				"shadow1.N128.street.g128.offscreen": 21070,
+				"shadow1.N128.street.g0.offscreen": 0,
 				"shadow1.N128.street.g64.tested": 958,
 				"shadow1.N128.street.g128.tested": 482,
 				"shadow1.N128.foliage.copies": 61,
 				"shadow1.N128.foliage.now": 577344,
 				"shadow1.N128.foliage.g64.offscreen": 0,
 				"shadow1.N128.foliage.g128.offscreen": 0,
+				"shadow1.N128.foliage.g0.offscreen": 0,
 				"shadow1.N128.foliage.g64.tested": 7522,
 				"shadow1.N128.foliage.g128.tested": 3777,
 				"shadow1.N128.prop.copies": 14,
 				"shadow1.N128.prop.now": 184643,
 				"shadow1.N128.prop.g64.offscreen": 0,
 				"shadow1.N128.prop.g128.offscreen": 0,
+				"shadow1.N128.prop.g0.offscreen": 0,
 				"shadow1.N128.prop.g64.tested": 2694,
 				"shadow1.N128.prop.g128.tested": 1341,
 				"shadow1.N256.building.copies": 93,
 				"shadow1.N256.building.now": 716267,
 				"shadow1.N256.building.g64.offscreen": 59004,
 				"shadow1.N256.building.g128.offscreen": 53154,
+				"shadow1.N256.building.g0.offscreen": 0,
 				"shadow1.N256.building.g64.tested": 9385,
 				"shadow1.N256.building.g128.tested": 4708,
 				"shadow1.N256.street.copies": 5,
 				"shadow1.N256.street.now": 60599,
 				"shadow1.N256.street.g64.offscreen": 22430,
 				"shadow1.N256.street.g128.offscreen": 21070,
+				"shadow1.N256.street.g0.offscreen": 0,
 				"shadow1.N256.street.g64.tested": 958,
 				"shadow1.N256.street.g128.tested": 482,
 				"shadow1.N256.foliage.copies": 73,
 				"shadow1.N256.foliage.now": 600872,
 				"shadow1.N256.foliage.g64.offscreen": 0,
 				"shadow1.N256.foliage.g128.offscreen": 0,
+				"shadow1.N256.foliage.g0.offscreen": 0,
 				"shadow1.N256.foliage.g64.tested": 7522,
 				"shadow1.N256.foliage.g128.tested": 3777,
 				"shadow1.N256.prop.copies": 85,
 				"shadow1.N256.prop.now": 330237,
 				"shadow1.N256.prop.g64.offscreen": 0,
 				"shadow1.N256.prop.g128.offscreen": 0,
+				"shadow1.N256.prop.g0.offscreen": 0,
 				"shadow1.N256.prop.g64.tested": 2694,
 				"shadow1.N256.prop.g128.tested": 1341,
 				"shadow2.texel": 0.15553939997952418,
@@ -5641,172 +6033,200 @@
 				"shadow2.all.street.now": 81189,
 				"shadow2.all.street.g64.offscreen": 0,
 				"shadow2.all.street.g128.offscreen": 0,
+				"shadow2.all.street.g0.offscreen": 0,
 				"shadow2.all.street.g64.tested": 958,
 				"shadow2.all.street.g128.tested": 482,
 				"shadow2.all.building.copies": 933,
 				"shadow2.all.building.now": 828172,
 				"shadow2.all.building.g64.offscreen": 186,
 				"shadow2.all.building.g128.offscreen": 122,
+				"shadow2.all.building.g0.offscreen": 0,
 				"shadow2.all.building.g64.tested": 8942,
 				"shadow2.all.building.g128.tested": 4486,
 				"shadow2.all.prop.copies": 261,
 				"shadow2.all.prop.now": 408766,
 				"shadow2.all.prop.g64.offscreen": 0,
 				"shadow2.all.prop.g128.offscreen": 0,
+				"shadow2.all.prop.g0.offscreen": 0,
 				"shadow2.all.prop.g64.tested": 3325,
 				"shadow2.all.prop.g128.tested": 1653,
 				"shadow2.all.foliage.copies": 233,
 				"shadow2.all.foliage.now": 938139,
 				"shadow2.all.foliage.g64.offscreen": 0,
 				"shadow2.all.foliage.g128.offscreen": 0,
+				"shadow2.all.foliage.g0.offscreen": 0,
 				"shadow2.all.foliage.g64.tested": 11846,
 				"shadow2.all.foliage.g128.tested": 5945,
 				"shadow2.K1.street.copies": 51,
 				"shadow2.K1.street.now": 81189,
 				"shadow2.K1.street.g64.offscreen": 0,
 				"shadow2.K1.street.g128.offscreen": 0,
+				"shadow2.K1.street.g0.offscreen": 0,
 				"shadow2.K1.street.g64.tested": 958,
 				"shadow2.K1.street.g128.tested": 482,
 				"shadow2.K1.building.copies": 933,
 				"shadow2.K1.building.now": 828172,
 				"shadow2.K1.building.g64.offscreen": 186,
 				"shadow2.K1.building.g128.offscreen": 122,
+				"shadow2.K1.building.g0.offscreen": 0,
 				"shadow2.K1.building.g64.tested": 8942,
 				"shadow2.K1.building.g128.tested": 4486,
 				"shadow2.K1.prop.copies": 261,
 				"shadow2.K1.prop.now": 408766,
 				"shadow2.K1.prop.g64.offscreen": 0,
 				"shadow2.K1.prop.g128.offscreen": 0,
+				"shadow2.K1.prop.g0.offscreen": 0,
 				"shadow2.K1.prop.g64.tested": 3325,
 				"shadow2.K1.prop.g128.tested": 1653,
 				"shadow2.K1.foliage.copies": 233,
 				"shadow2.K1.foliage.now": 938139,
 				"shadow2.K1.foliage.g64.offscreen": 0,
 				"shadow2.K1.foliage.g128.offscreen": 0,
+				"shadow2.K1.foliage.g0.offscreen": 0,
 				"shadow2.K1.foliage.g64.tested": 11846,
 				"shadow2.K1.foliage.g128.tested": 5945,
 				"shadow2.N16.building.copies": 6,
 				"shadow2.N16.building.now": 295895,
 				"shadow2.N16.building.g64.offscreen": 0,
 				"shadow2.N16.building.g128.offscreen": 0,
+				"shadow2.N16.building.g0.offscreen": 0,
 				"shadow2.N16.building.g64.tested": 4644,
 				"shadow2.N16.building.g128.tested": 2329,
 				"shadow2.N16.street.copies": 1,
 				"shadow2.N16.street.now": 41912,
 				"shadow2.N16.street.g64.offscreen": 0,
 				"shadow2.N16.street.g128.offscreen": 0,
+				"shadow2.N16.street.g0.offscreen": 0,
 				"shadow2.N16.street.g64.tested": 760,
 				"shadow2.N16.street.g128.tested": 383,
 				"shadow2.N16.foliage.copies": 3,
 				"shadow2.N16.foliage.now": 89817,
 				"shadow2.N16.foliage.g64.offscreen": 0,
 				"shadow2.N16.foliage.g128.offscreen": 0,
+				"shadow2.N16.foliage.g0.offscreen": 0,
 				"shadow2.N16.foliage.g64.tested": 1411,
 				"shadow2.N16.foliage.g128.tested": 707,
 				"shadow2.N16.prop.copies": 6,
 				"shadow2.N16.prop.now": 139633,
 				"shadow2.N16.prop.g64.offscreen": 0,
 				"shadow2.N16.prop.g128.offscreen": 0,
+				"shadow2.N16.prop.g0.offscreen": 0,
 				"shadow2.N16.prop.g64.tested": 2244,
 				"shadow2.N16.prop.g128.tested": 1115,
 				"shadow2.N32.building.copies": 8,
 				"shadow2.N32.building.now": 335055,
 				"shadow2.N32.building.g64.offscreen": 0,
 				"shadow2.N32.building.g128.offscreen": 0,
+				"shadow2.N32.building.g0.offscreen": 0,
 				"shadow2.N32.building.g64.tested": 5257,
 				"shadow2.N32.building.g128.tested": 2636,
 				"shadow2.N32.street.copies": 1,
 				"shadow2.N32.street.now": 41912,
 				"shadow2.N32.street.g64.offscreen": 0,
 				"shadow2.N32.street.g128.offscreen": 0,
+				"shadow2.N32.street.g0.offscreen": 0,
 				"shadow2.N32.street.g64.tested": 760,
 				"shadow2.N32.street.g128.tested": 383,
 				"shadow2.N32.foliage.copies": 14,
 				"shadow2.N32.foliage.now": 289973,
 				"shadow2.N32.foliage.g64.offscreen": 0,
 				"shadow2.N32.foliage.g128.offscreen": 0,
+				"shadow2.N32.foliage.g0.offscreen": 0,
 				"shadow2.N32.foliage.g64.tested": 4546,
 				"shadow2.N32.foliage.g128.tested": 2280,
 				"shadow2.N32.prop.copies": 9,
 				"shadow2.N32.prop.now": 202970,
 				"shadow2.N32.prop.g64.offscreen": 0,
 				"shadow2.N32.prop.g128.offscreen": 0,
+				"shadow2.N32.prop.g0.offscreen": 0,
 				"shadow2.N32.prop.g64.tested": 3259,
 				"shadow2.N32.prop.g128.tested": 1620,
 				"shadow2.N64.building.copies": 13,
 				"shadow2.N64.building.now": 396810,
 				"shadow2.N64.building.g64.offscreen": 0,
 				"shadow2.N64.building.g128.offscreen": 0,
+				"shadow2.N64.building.g0.offscreen": 0,
 				"shadow2.N64.building.g64.tested": 6225,
 				"shadow2.N64.building.g128.tested": 3121,
 				"shadow2.N64.street.copies": 1,
 				"shadow2.N64.street.now": 41912,
 				"shadow2.N64.street.g64.offscreen": 0,
 				"shadow2.N64.street.g128.offscreen": 0,
+				"shadow2.N64.street.g0.offscreen": 0,
 				"shadow2.N64.street.g64.tested": 760,
 				"shadow2.N64.street.g128.tested": 383,
 				"shadow2.N64.foliage.copies": 41,
 				"shadow2.N64.foliage.now": 694106,
 				"shadow2.N64.foliage.g64.offscreen": 0,
 				"shadow2.N64.foliage.g128.offscreen": 0,
+				"shadow2.N64.foliage.g0.offscreen": 0,
 				"shadow2.N64.foliage.g64.tested": 10877,
 				"shadow2.N64.foliage.g128.tested": 5458,
 				"shadow2.N64.prop.copies": 9,
 				"shadow2.N64.prop.now": 202970,
 				"shadow2.N64.prop.g64.offscreen": 0,
 				"shadow2.N64.prop.g128.offscreen": 0,
+				"shadow2.N64.prop.g0.offscreen": 0,
 				"shadow2.N64.prop.g64.tested": 3259,
 				"shadow2.N64.prop.g128.tested": 1620,
 				"shadow2.N128.building.copies": 48,
 				"shadow2.N128.building.now": 603129,
 				"shadow2.N128.building.g64.offscreen": 186,
 				"shadow2.N128.building.g128.offscreen": 122,
+				"shadow2.N128.building.g0.offscreen": 0,
 				"shadow2.N128.building.g64.tested": 8942,
 				"shadow2.N128.building.g128.tested": 4486,
 				"shadow2.N128.street.copies": 3,
 				"shadow2.N128.street.now": 54402,
 				"shadow2.N128.street.g64.offscreen": 0,
 				"shadow2.N128.street.g128.offscreen": 0,
+				"shadow2.N128.street.g0.offscreen": 0,
 				"shadow2.N128.street.g64.tested": 958,
 				"shadow2.N128.street.g128.tested": 482,
 				"shadow2.N128.foliage.copies": 67,
 				"shadow2.N128.foliage.now": 817455,
 				"shadow2.N128.foliage.g64.offscreen": 0,
 				"shadow2.N128.foliage.g128.offscreen": 0,
+				"shadow2.N128.foliage.g0.offscreen": 0,
 				"shadow2.N128.foliage.g64.tested": 11846,
 				"shadow2.N128.foliage.g128.tested": 5945,
 				"shadow2.N128.prop.copies": 10,
 				"shadow2.N128.prop.now": 207172,
 				"shadow2.N128.prop.g64.offscreen": 0,
 				"shadow2.N128.prop.g128.offscreen": 0,
+				"shadow2.N128.prop.g0.offscreen": 0,
 				"shadow2.N128.prop.g64.tested": 3325,
 				"shadow2.N128.prop.g128.tested": 1653,
 				"shadow2.N256.building.copies": 93,
 				"shadow2.N256.building.now": 699466,
 				"shadow2.N256.building.g64.offscreen": 186,
 				"shadow2.N256.building.g128.offscreen": 122,
+				"shadow2.N256.building.g0.offscreen": 0,
 				"shadow2.N256.building.g64.tested": 8942,
 				"shadow2.N256.building.g128.tested": 4486,
 				"shadow2.N256.street.copies": 10,
 				"shadow2.N256.street.now": 67639,
 				"shadow2.N256.street.g64.offscreen": 0,
 				"shadow2.N256.street.g128.offscreen": 0,
+				"shadow2.N256.street.g0.offscreen": 0,
 				"shadow2.N256.street.g64.tested": 958,
 				"shadow2.N256.street.g128.tested": 482,
 				"shadow2.N256.foliage.copies": 104,
 				"shadow2.N256.foliage.now": 907379,
 				"shadow2.N256.foliage.g64.offscreen": 0,
 				"shadow2.N256.foliage.g128.offscreen": 0,
+				"shadow2.N256.foliage.g0.offscreen": 0,
 				"shadow2.N256.foliage.g64.tested": 11846,
 				"shadow2.N256.foliage.g128.tested": 5945,
 				"shadow2.N256.prop.copies": 49,
 				"shadow2.N256.prop.now": 295131,
 				"shadow2.N256.prop.g64.offscreen": 0,
 				"shadow2.N256.prop.g128.offscreen": 0,
+				"shadow2.N256.prop.g0.offscreen": 0,
 				"shadow2.N256.prop.g64.tested": 3325,
 				"shadow2.N256.prop.g128.tested": 1653
 			},
-			"ms": 275.70054200000004
+			"ms": 592.241542
 		}
 	]
 }
