@@ -1,7 +1,9 @@
 // The desert's null3D scene for the triangle budget study: the benchmark's sketch, with the camera
-// held at a time of the lap and the level thresholds that the page sends. The page posts `set` with
-// `{ t, lod, lodShadow }`, and the sketch answers `placed` once the camera and the settings hold.
-// `shadows` in the sketch's address turns the sun's shadows on in that many cascades.
+// held at a time of the lap that the page sends. The page posts `set` with `{ t }`, and the sketch
+// answers `placed`. The sketch's address carries `shadows`, the sun's shadow cascades, and `lod`
+// and `lodShadow`, the level thresholds, which the sketch sets before it loads the scene: a change
+// of either threshold after the desert's ground has loaded leaves that ground undrawn (the ground
+// draws from a tree of cluster patches), so each setting takes a page of its own.
 import { defineSketch, quat, vec3 } from '@null3d/engine';
 import {
 	DESERT_CAMERA,
@@ -21,6 +23,10 @@ const switches = new URL(import.meta.url).searchParams;
 const view = readDesertView(switches);
 const cascades = switches.has('shadows') ? Number(switches.get('shadows')) : 0;
 const shadows = cascades > 0;
+const lod = Number(switches.get('lod') ?? 1);
+const lodShadow = Number(switches.get('lodShadow') ?? 1);
+// Meters to raise the camera by, for checks by eye; the study's frames leave it at 0.
+const lift = Number(switches.get('lift') ?? 0);
 
 const rgb = (c: readonly number[]): [number, number, number] => [
 	c[0] as number,
@@ -31,7 +37,12 @@ const rgb = (c: readonly number[]): [number, number, number] => [
 export default defineSketch(async ({ scene, assets, post, quality, debug, page }) => {
 	debug.frameStats();
 	post.set({ toneMapping: 'none' });
-	quality.set({ minRenderScale: 1, governor: false });
+	quality.set({
+		minRenderScale: 1,
+		governor: false,
+		lodThreshold: lod,
+		lodShadowThreshold: lodShadow,
+	});
 	scene.setBackground(rgb(DESERT_SKY.color));
 	scene.createDirectionalLight({
 		direction: [...DESERT_SUN.direction],
@@ -102,21 +113,27 @@ export default defineSketch(async ({ scene, assets, post, quality, debug, page }
 		}
 	}
 
-	let held = 0;
+	let held = Number(switches.get('at') ?? 0);
+	// While the page measures, the camera sways by a millimeter, so that the engine draws each frame
+	// as a moving camera does rather than its still-camera frames.
+	let sway = false;
+	let frame = 0;
 	const place = () => {
 		const { position, target } = desertCamera(view, held);
-		camera.setPosition(...position);
-		camera.lookAt(...target);
+		const dx = sway ? (frame++ % 2) * 0.001 : 0;
+		camera.setPosition(position[0] + dx, position[1] + lift, position[2]);
+		camera.lookAt(target[0] + dx, target[1], target[2]);
 	};
 	place();
 	page.onMessage((type, data) => {
+		if (type === 'sway') {
+			sway = (data as { on: boolean }).on;
+			return;
+		}
 		if (type !== 'set') return;
-		const { t, lod, lodShadow } = data as { t: number; lod: number; lodShadow: number };
-		held = t;
-		place();
-		quality
-			.set({ lodThreshold: lod, lodShadowThreshold: lodShadow })
-			.then(() => page.post('placed', { t, lod, lodShadow }));
+		// The next update places the camera.
+		held = (data as { t: number }).t;
+		page.post('placed', { t: held });
 	});
 	page.post('ready');
 	return { onUpdate: place };

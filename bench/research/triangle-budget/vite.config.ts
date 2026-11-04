@@ -11,7 +11,8 @@ const TO =
 	'if ( culling.shadow === true ) this.info.shadowTriangles = ( this.info.shadowTriangles ?? 0 ) + drawn * MESHLET_SIZE;\n\n\t\t\tif ( culling.shadow === false ) {';
 
 const transform = (code: string, id: string) => {
-	if (!id.includes('MeshletDrawingPipeline')) return null;
+	// The prebundled copy reaches the dev server's transform again, already changed.
+	if (!id.includes('MeshletDrawingPipeline') || code.includes('info.shadowTriangles')) return null;
 	if (!code.includes(FROM))
 		throw new Error(`${id} no longer holds the line that the study patches`);
 	return code.replace(FROM, TO);
