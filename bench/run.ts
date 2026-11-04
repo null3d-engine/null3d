@@ -111,6 +111,7 @@ import {
 	shardPages,
 } from './lib/compare';
 import { ensureDesertFiles } from './lib/desert-files';
+import { otherWork, type ProcessList, parseProcessList } from './lib/other-work';
 import {
 	BENCH_PAGE_KINDS,
 	BENCH_SCENES,
@@ -400,14 +401,24 @@ async function runPage(
 	return { ...result, machineLoad: { before, after: load() } };
 }
 
+/** Every process now, and when the list was taken. */
+function listProcesses(): ProcessList {
+	const text = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,%cpu=,time=,comm='], {
+		encoding: 'utf8',
+		maxBuffer: 16 * 1024 * 1024,
+	});
+	return { atMs: Date.now(), processes: parseProcessList(text) };
+}
+
 /** Tries of a page in each round of a protocol run, while its result is no figure. */
 const PAGE_TRIES = 3;
 
 /**
  * Runs a page of a protocol run until its result is a timing figure, at most `PAGE_TRIES` times.
- * Each try first waits for a quiet computer. A try whose page failed, logged a problem, ran with
- * another job worker count than it asked for, or saw the load reach the quiet limit runs again, and
- * `rejected` hears why. Returns the last try's result, with the reason it is no figure when no try
+ * Each try first waits for a quiet computer, and lists every process as the page opens and as it
+ * closes. A try whose page failed, logged a problem, ran with another job worker count than it
+ * asked for, opened at the quiet limit's load, or shared the computer with another process that
+ * used more than a core runs again, and `rejected` hears why. Returns the last try's result, with the reason it is no figure when no try
  * gave one.
  */
 async function runPageForFigure(
@@ -422,7 +433,9 @@ async function runPageForFigure(
 		let result: BenchResult;
 		try {
 			await waitForQuietLoad();
+			const start = listProcesses();
 			result = await runPage(browser, url, timeoutMs, uncapped);
+			result = { ...result, otherWork: otherWork(start, listProcesses(), process.pid) };
 		} catch (e) {
 			result = { ok: false, error: (e as Error).message } as BenchResult;
 		}

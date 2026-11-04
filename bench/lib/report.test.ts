@@ -539,14 +539,22 @@ describe('the computer load', () => {
 	});
 
 	test('counts a page as a figure only when it ran clean on a quiet computer', () => {
-		expect(figureProblem(withLoad(3, 7.9))).toBeUndefined();
-		expect(figureProblem(withLoad(3, 8))).toContain('load reached 8.0');
-		expect(figureProblem(withLoad(9.5, 2))).toContain('load reached 9.5');
+		expect(figureProblem(withLoad(7.9, 3))).toBeUndefined();
+		expect(figureProblem(withLoad(3, 10))).toBeUndefined();
+		expect(figureProblem(withLoad(8, 2))).toContain('load was 8.0');
+		const busy = {
+			...withLoad(1, 2),
+			otherWork: { start: [], end: [], during: [{ pid: 7, name: 'indexer', cores: 1.2 }] },
+		};
+		expect(figureProblem(busy)).toContain('indexer (7) 1.20 cores');
 		const rejected = {
 			...withLoad(1, 2),
 			problems: ['console: E1305: the GPU rejected a command'],
 		};
 		expect(figureProblem(rejected)).toContain('E1305');
+		const closing =
+			'failed to load http://localhost:5175/__null3d/report?name=bench: net::ERR_ABORTED';
+		expect(figureProblem({ ...withLoad(1, 2), problems: [closing] })).toBeUndefined();
 		expect(figureProblem({ ...result(1), ok: false, error: 'timed out' })).toBe('timed out');
 	});
 });
