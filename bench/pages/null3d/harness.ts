@@ -249,6 +249,7 @@ export function runNull3dPage(
 			renderer: 'null3d',
 			tier: engine.capabilities.tier,
 			mode: engine.mode,
+			drawPath: engine.capabilities.drawPath,
 			n,
 			...(filled && {
 				canvas: {

@@ -9,6 +9,7 @@ import {
 	compact,
 	NoResultsError,
 	PLAYWRIGHT,
+	pageDetails,
 	parseResultName,
 	parseRunName,
 	resultRows,
@@ -16,6 +17,7 @@ import {
 	round,
 	slimResult,
 } from './archive';
+import type { BenchResult } from './report';
 
 const host = { name: 'Apple M5 Max, 18 cores, 128 GB' };
 
@@ -251,6 +253,21 @@ describe('slimResult', () => {
 			cpuMs: { median: 1, p95: 2, p99: 3 },
 			downloads: { requests: 3, bytes: 100 },
 		});
+	});
+});
+
+describe('pageDetails', () => {
+	it("keeps each preset and draw path that a page's runs reported, once", () => {
+		const run = (preset: string, drawPath?: string) =>
+			({ ok: true, n: 5, mode: { jobWorkers: 2, preset }, drawPath }) as BenchResult;
+		expect(
+			pageDetails([
+				run('high', 'not-apple-gpu-in-webkit'),
+				run('high', 'not-apple-gpu-in-webkit'),
+				run('low', 'forced'),
+			]),
+		).toEqual({ n: 5, presets: ['high', 'low'], drawPaths: ['not-apple-gpu-in-webkit', 'forced'] });
+		expect(pageDetails([run('high')])).toEqual({ n: 5, presets: ['high'] });
 	});
 });
 

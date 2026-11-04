@@ -1,10 +1,12 @@
-// The capability probe. It reads what the browser and device can do, by feature tests only: the
-// engine never decides anything from browser or GPU names. The report is plain JSON, so test
-// runners can store it and compare it across devices.
+// The capability probe. It reads what the browser and device can do, by feature tests. A choice
+// from browser or GPU names is made only where hard rule 14 allows it, for a measured cost that
+// belongs to one browser on one kind of GPU. The report is plain JSON, so test runners can store
+// it and compare it across devices.
 
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import { TEXTURE_USAGE_TRANSIENT_ATTACHMENT } from '../generated/gpu';
+import type { DrawPathReason } from '../gpu/webgpu/draw-path-probe';
 import type { DeviceHints } from '../quality/chooser';
 import { spawnWorker, watchWorkerError } from '../shared/worker-start';
 import type { ProbeMessage, WorkerProbe } from '../workers/probe-worker';
@@ -108,10 +110,12 @@ export interface WebGPUReport {
 	/**
 	 * True when the start-up probe measured the device drawing a bucket faster with direct draws
 	 * than with the engine's indirect draws, so the engine draws directly. The probe runs on a
-	 * worker's device. It reads no browser or GPU name, except to never choose the direct path on a
-	 * software renderer (D-174). False on WebGL2.
+	 * worker's device, and only on an Apple GPU in WebKit, whose validation of each indirect draw
+	 * the direct path removes (D-174). False on WebGL2.
 	 */
 	directDraws: boolean;
+	/** Why the probe chose that draw path, or why it did not measure. */
+	drawPath: DrawPathReason;
 	/**
 	 * Reported for the record. The engine reads no meaning from it, and only compares it with an
 	 * earlier start's, to tell whether a stored preset check came from the same GPU.
@@ -234,6 +238,7 @@ async function probeWebGPU(powerPreference?: PowerPreference): Promise<WebGPURep
 		preferredCanvasFormat: null,
 		transientAttachments: false,
 		directDraws: false,
+		drawPath: 'no-probe',
 		adapterInfo: null,
 	};
 	const gpu = globalThis.navigator?.gpu;
@@ -263,6 +268,7 @@ async function probeWebGPU(powerPreference?: PowerPreference): Promise<WebGPURep
 			// The worker's probe measures this on the device that draws; until then the engine
 			// keeps its current path.
 			directDraws: false,
+			drawPath: 'no-probe',
 			adapterInfo: info
 				? {
 						vendor: info.vendor,
@@ -568,7 +574,9 @@ export async function probeCapabilities(
 	const [webgpu, worker] = await Promise.all([probeWebGPU(powerPreference), pageWorkerProbe()]);
 	// The probe worker measures the draw paths on a device of its own, which the render worker's
 	// device answers the same way for the browser and the driver.
-	const directDraws = 'directDraws' in worker && worker.directDraws;
+	const probed = 'directDraws' in worker && webgpu.available;
+	const directDraws = probed && worker.directDraws;
+	const drawPath: DrawPathReason = probed ? worker.drawPath : 'no-probe';
 	return {
 		crossOriginIsolated: globalThis.crossOriginIsolated === true,
 		sharedArrayBuffer: typeof SharedArrayBuffer === 'function',
@@ -580,7 +588,7 @@ export async function probeCapabilities(
 		transferControlToOffscreen:
 			typeof HTMLCanvasElement === 'function' &&
 			'transferControlToOffscreen' in HTMLCanvasElement.prototype,
-		webgpu: { ...webgpu, directDraws: webgpu.available && directDraws },
+		webgpu: { ...webgpu, directDraws, drawPath },
 		webgl2: probeWebGL2(powerPreference, multiDraw),
 		worker,
 	};

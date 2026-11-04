@@ -35,6 +35,11 @@ export interface BenchResult extends TimedRun {
 	 * preset it drew with.
 	 */
 	mode?: { jobWorkers: number; preset?: string };
+	/**
+	 * null3d pages: why the engine took its WebGPU draw path, such as `not-apple-gpu-in-webkit`, as
+	 * `engine.capabilities.drawPath` gives it.
+	 */
+	drawPath?: string;
 	/** Pages that record one: the trace of each measured second. */
 	trace?: TraceSecond[];
 	/** The -timed pages: the time of each WebGL call on the thread that draws. */
