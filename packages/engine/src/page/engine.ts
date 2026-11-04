@@ -10,6 +10,7 @@ import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
 import { SHADER_FEATURES, type ShaderFeature } from '../generated/shader-features';
 import { recordPermutations, stopRecordingPermutations } from '../gpu/variants';
+import type { DrawPathReason } from '../gpu/webgpu/draw-path-probe';
 import { maxTargetFps, type PresetCheck, type TargetFps } from '../quality/check';
 import {
 	choosePreset,
@@ -90,7 +91,13 @@ import {
 import { captureInput } from './input';
 import { lostIsolationWarning, pageIsolation } from './isolation-check';
 import { type EngineLabels, labelCapacity, labelCapacity3d, PageLabels } from './labels';
-import { coreDevice, keepTextureCopiesOption, maxCanvasSize, maxInstances } from './limits';
+import {
+	coreDevice,
+	drawPath,
+	keepTextureCopiesOption,
+	maxCanvasSize,
+	maxInstances,
+} from './limits';
 import { expectedObjectCount, loadCore, memoryMaximumMiB } from './loader';
 import { MainThreadWatch } from './main-thread';
 import { keepMemory, type MemoryKey, releaseMemories } from './memory-pool';
@@ -514,11 +521,17 @@ export interface EngineCapabilities {
 	 */
 	depth: DepthMode;
 	/**
-	 * True when the start-up probe measured direct draws to be clearly faster than the engine's
-	 * indirect draws, so the engine culls buckets on the CPU and draws each one directly. A software
-	 * renderer never takes the path (D-174). False on WebGL2, which always draws directly.
+	 * True when the engine culls buckets on the CPU and draws each one directly. The start-up probe
+	 * picks this path only on an Apple GPU in Safari, or in any browser on iPhone and iPad, and only
+	 * when it measures direct draws to be clearly faster there. Every other device draws indirectly.
+	 * False on WebGL2, which always draws directly.
 	 */
 	directDraws: boolean;
+	/**
+	 * Why the engine takes its draw path, such as `not-apple-gpu-in-webkit` where the probe did not
+	 * run. A benchmark records it beside its figures.
+	 */
+	drawPath: DrawPathReason;
 }
 
 /**
@@ -2411,6 +2424,7 @@ async function startEngine(
 			maxCanvasSize: maxCanvasSize(tier, report),
 			depth: device.depth,
 			directDraws: device.directDraws,
+			drawPath: drawPath(tier, report, switches.direct).reason,
 		};
 		gpuFeatures = capabilities.features;
 		// Where the browser lacks Atomics.waitAsync, the threads wake each other with messages.
