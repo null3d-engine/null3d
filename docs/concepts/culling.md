@@ -102,7 +102,7 @@ scene.createMesh({ mesh: sculpture, material: bronze, position: [0, 0, -8], occl
 
 ## Bounds that you set
 
-By default, culling tests an object's mesh sphere: the sphere around the object's origin that holds every vertex of its mesh. The object's scale grows it, and its rotation turns it. A shader that moves vertices, such as waves on water, can move them outside that sphere. Culling then hides the object while parts of it are still in view. Two mesh calls change what culling tests:
+By default, culling tests an object's mesh sphere: the sphere around the center of the box that holds every vertex of its mesh. `mesh.center` and `mesh.radius` give it in the mesh's own space. The object's scale grows it, and its rotation turns it. A shader that moves vertices, such as waves on water, can move them outside that sphere. Culling then hides the object while parts of it are still in view. Two mesh calls change what culling tests:
 
 - `setBounds(center, radius)` gives the object a sphere of its own, with its center relative to the object's origin. Bounds that cover the moved vertices keep culling at work.
 - `setFrustumCulled(false)` turns culling off for the object, so the engine draws it wherever it is.
@@ -110,7 +110,8 @@ By default, culling tests an object's mesh sphere: the sphere around the object'
 ```ts
 // Waves lift the water's vertices by up to 2 m. A sphere 1 m higher and 1 m wider than the
 // mesh's sphere holds every lifted vertex.
-water.setBounds([0, 1, 0], waterMesh.radius + 1);
+const [x, y, z] = waterMesh.center;
+water.setBounds([x, y + 1, z], waterMesh.radius + 1);
 ```
 
 Both calls rebuild the draw tables, so make them at setup. On WebGPU, each object with a sphere of its own draws from a group of its own, as the GPU tests one sphere per group. Skinned objects without morph targets are the exception: copies of one mesh and material share a group, whose sphere holds every copy's. On WebGL2, the job workers test each object's own sphere and the cost stays the same.

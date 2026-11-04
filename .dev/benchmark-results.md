@@ -34,6 +34,7 @@ The targets use them as follows ([D-06](decisions/D-06-success-targets.md)):
 - Commit is the engine commit that the run measured. The gate and comparisons record it. For other runs it is the commit that the checkout held when the run started, from git's reflog. Edits that were not committed do not show.
 - Source is the run's name, and its record is `bench/results/<run>.json`. A row from a guide links to it.
 - Figures are medians of the runs of each page, usually 3 or 5 runs.
+- A row of `Apple M5 Max, Chrome` whose commit lacks the canvas watcher's box check drew null3D at twice three.js's width and height. Its null3D GPU time and its share lean against null3D ([Benchmarks](benchmarks.md#what-a-report-measures)).
 
 ## S1
 
