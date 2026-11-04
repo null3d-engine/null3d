@@ -132,6 +132,23 @@ The rows before the last come from the engine before the merge, with the same me
 
 Pieces by facing part neighbouring triangles on a rough rock. A model of a 32-entry vertex cache counts 0.86 misses per triangle on the arch's first level against 0.62 before, and pieces by space keep 0.62. The GPU runs above show no such loss: the facing pieces draw the main pass as fast as space pieces walking, 4.40 against 4.38 ms, and far faster from above. So the tool keeps facing pieces.
 
+### The Island's house walls
+
+Two production builds of the Island drew its sketch with the camera held still. One had no facing pieces and one had them, and both planned the run-time levels. Each visit to a build waited 60 s for its plans to land, then took three windows of 5 s. The visits alternated between the builds, six to each. They ran in the Mac's Chrome for Testing on WebGPU at High, uncapped, in a 1,600 by 900 window at a pixel ratio of 1. Each visit waited for a load below 8, and ran at a load of 2.5 to 6.3. The shadow cascades and ambient occlusion are passes that pieces do not touch. A window counted only where they read within 15% of the median of every window: 15 and 14 of 18 in the town, 15 and 13 of 18 in the opening view. The busiest other process was often Spotlight's indexer, at about 100% of a core. Medians, with the lowest quartile after the slash:
+
+| View | GPU ms, no facing pieces | GPU ms, facing pieces | Frame interval ms | Triangles a frame, M | Draws |
+| --- | --- | --- | --- | --- | --- |
+| Town | 23.13 / 22.98 | 22.42 / 18.92 | 14.15 / 13.77 | 9.01 / 8.68 | 5,591 to 5,691 / 5,879 |
+| Opening, from 800 m | 16.19 / 14.22 | 16.22 / 15.99 | 10.67 / 10.77 | 5.62 / 5.62 | 4,741 / 5,029 |
+
+In the town the walls' pieces drop 0.33 M triangles a frame, and the passes that draw them fall. The depth prepass falls from 0.85 to 0.79 ms, the view copy from 0.77 to 0.65 ms and the later passes from 11.07 to 10.70 ms. The shadow cascades read the same in both builds. A model of the culling at the same view counts 432,060 wall triangles in the camera's own view, and 279,384 with the pieces.
+
+From the opening view every house draws its hand-made far level, so the pieces of the walls' full mesh hold no copy and save nothing. They still cost their 288 draws a frame, with no instance, and the later passes read 0.12 ms more. The check during play leaves such a mesh in pieces, since a window with no copy in view says nothing. A mesh none of whose copies draw its pieced level should skip those draws; that is open.
+
+The facing pieces stay. They save about 0.7 ms of 23 ms in the town, and cost about 0.1 ms of 16 ms from far away.
+
+How the data was produced: a temporary page held the Island's camera at a pose and measured windows with `engine.measure`. It was built with `NULL3D_BUILD_PAGE` against this branch and against its base at `e61ad018b`, and a script visited the two in turn. The pages and the script are not kept in the repository.
+
 ## Look
 
 Pieces draw the same picture as the whole list. `tests/image/mesh-pieces.spec.ts` compares the two pixel for pixel in four views, on WebGPU, on the direct-draw path, in compatibility mode and on WebGL2. Each has 0 differing pixels. No option changes the look.
