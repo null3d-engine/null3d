@@ -48,6 +48,9 @@ run('vegetation-shadow-count', async () => {
 		preset: (params.get('preset') ?? 'low') as QualityPreset,
 	});
 	await engine.firstFrame;
+	// Milliseconds from the page's start to its first frame, which separates a slow machine's start
+	// from slow frames in the result.
+	const firstFrameMs = Math.round(performance.now());
 	// The first frames rebuild the draw tables and fill each cascade's layer, so the count settles
 	// after them.
 	progress('the first frame drew');
@@ -84,28 +87,32 @@ run('vegetation-shadow-count', async () => {
 		seconds = Math.min(LONGEST_SECONDS, seconds * 2);
 		stats = await engine.measure(seconds);
 	}
-	if (stats.frames === 0) {
-		await engine.destroy();
-		return {
-			...mode,
-			swayDistance: SWAY,
-			far: params.has('far'),
-			still: params.has('still'),
-			seconds,
-			frames: 0,
-			drawCalls: 0,
-			drawCallsLeast: 0,
-			gpuMs: null,
-			error: `the measurement window of ${seconds} s presented no frame`,
-		};
-	}
-	await engine.destroy();
-	return {
+	// What the probe saw, and the window it sized, so a result that read too few frames says whether
+	// the probe saw none or saw slow ones. The window's length is published to a tenth of a second,
+	// which is the resolution that a reader of a failure needs.
+	const counted = {
 		...mode,
 		swayDistance: SWAY,
 		far: params.has('far'),
 		still: params.has('still'),
-		seconds,
+		seconds: Math.round(seconds * 10) / 10,
+		firstFrameMs,
+		probe: probe === null ? null : { seconds: probeSeconds, frames: probe.frames, frameMs },
+	};
+	if (stats.frames === 0) {
+		await engine.destroy();
+		return {
+			...counted,
+			frames: 0,
+			drawCalls: 0,
+			drawCallsLeast: 0,
+			gpuMs: null,
+			error: `the measurement window of ${counted.seconds} s presented no frame${probe === null ? '' : `, after a probe that grew to ${probeSeconds} s and held ${probe.frames}`}`,
+		};
+	}
+	await engine.destroy();
+	return {
+		...counted,
 		frames: stats.frames,
 		drawCalls: stats.drawCalls.median,
 		// The least draw calls of any frame in the window. A far cascade that holds draws nothing,
