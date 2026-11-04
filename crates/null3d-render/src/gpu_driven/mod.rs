@@ -1472,6 +1472,25 @@ impl GpuDrivenRenderer {
         ]
     }
 
+    /// For each tree of cluster patches in the scene's layout, the place of its copy in a view's
+    /// compacted instances, where its bucket's slice starts, beside the place that the GPU's table
+    /// of mesh records names for the cluster pass, after the last recorded frame. The two must
+    /// match, or the pass places the tree's patches by another copy's matrix. For tests.
+    pub fn cluster_copy_slots(&self) -> Vec<(u32, u32)> {
+        let bases = self
+            .layout
+            .buckets
+            .iter()
+            .filter_map(|bucket| bucket.cluster.map(|tree| (tree, bucket.base)));
+        let mut bases: Vec<(u32, u32)> = bases.collect();
+        bases.sort_unstable();
+        bases
+            .into_iter()
+            .map(|(_, base)| base)
+            .zip(self.clusters.uploaded_slots())
+            .collect()
+    }
+
     /// The sources that a view's culling pass tests in the last recorded frame, in the order its
     /// threads take them: the sources in the runs of the cell order that it culls, or every
     /// source in place when it culls without cells. For tests; it allocates the list.
@@ -2788,10 +2807,15 @@ impl GpuDrivenRenderer {
                 self.culling
                     .apply_direct(list, view, layout, binding_bytes)?;
             } else {
-                self.culling
-                    .apply(list, view, layout, recreated, binding_bytes, occludes)?;
-                self.clusters
-                    .apply(list, view, clusters_recreated, binding_bytes)?;
+                let culled_made =
+                    self.culling
+                        .apply(list, view, layout, recreated, binding_bytes, occludes)?;
+                self.clusters.apply(
+                    list,
+                    view,
+                    clusters_recreated || culled_made,
+                    binding_bytes,
+                )?;
             }
             if !records || self.config.direct_draws {
                 if redepth {
@@ -2919,10 +2943,11 @@ impl GpuDrivenRenderer {
                     .apply_direct(list, view, &self.casters, binding_bytes)?;
                 continue;
             }
-            self.culling
-                .apply(list, view, &self.casters, recreated, binding_bytes, false)?;
+            let culled_made =
+                self.culling
+                    .apply(list, view, &self.casters, recreated, binding_bytes, false)?;
             self.clusters
-                .apply(list, view, clusters_recreated, binding_bytes)?;
+                .apply(list, view, clusters_recreated || culled_made, binding_bytes)?;
             let (casters, meshes) = (&self.casters, &self.meshes);
             let (targets, kind) = if view.tile_index().is_some() {
                 (shadow_tiles::TARGETS, Bundle::Tile)
