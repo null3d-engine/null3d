@@ -19,13 +19,50 @@
 // meshoptimizer's `computeClusterBounds` gives it. A viewer culls a piece whose sphere's centre `c`,
 // relative to the eye, and radius `r` meet `dot(c, axis) >= cutoff * |c| + r`: every triangle then
 // faces away from every point of the sphere. A cutoff of 1 or more never culls.
+//
+// A smaller list pays only through its cones: the view seldom cuts a small copy, so a piece must
+// face away to save anything. Such a list gets facing pieces (`facingPieces`) when many copies draw
+// it, as a town draws a house's walls, and when its facings fall into a few tight groups, as a
+// building's sides do. Each facing group keeps the triangles that lie close to its mean facing, so
+// its cone stays narrow, and the triangles that face between the groups, such as a pot's or a
+// sloped cap's, draw in one more piece that never culls.
 
 /**
- * The fewest triangles of one list for it to get pieces. A copy draws a smaller list far away,
- * where the view seldom cuts it and its few pieces face too many ways to cull, while each piece
- * still costs a test per copy and a draw.
+ * The fewest triangles of one list for it to get pieces whatever draws it. The view cuts such a
+ * list's copies, and its pieces cull by space as well as by facing. A smaller list gets pieces only
+ * where its copies and facings make them pay ({@link facingPieces}).
  */
 export const PIECE_LIST_MIN_TRIANGLES = 32768;
+
+/**
+ * The fewest triangles of a smaller list for it to get facing pieces. Each piece costs a draw in
+ * every pass that draws the list, so a list of a few hundred triangles saves less than its draws.
+ */
+export const FACING_LIST_MIN_TRIANGLES = 1024;
+
+/**
+ * The fewest triangles that a smaller list's copies hold together for it to get facing pieces: the
+ * list's triangles times its copies. Fewer copies save too few triangles for a draw per piece.
+ */
+export const FACING_DRAWN_MIN_TRIANGLES = 65536;
+
+/**
+ * The facing groups of a smaller list: a building's four sides, its tops and its undersides. The
+ * groups start from the six ways along the list's own axes, which a kit's pieces mostly face.
+ */
+export const FACING_GROUPS = 6;
+
+/** The six ways along a list's axes, three numbers each, where its facing groups start. */
+const AXIS_WAYS = Float64Array.of(1, 0, 0, -1, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 1, 0, 0, -1);
+
+/**
+ * The least share of a smaller list's triangles that its cones drop, over eyes all around it, for
+ * the list to keep its facing pieces. A flat piece drops its triangles from half the directions.
+ */
+export const FACING_MIN_SHARE = 0.25;
+
+/** A facing group that keeps fewer triangles than this joins the piece that never culls. */
+const FACING_PIECE_MIN_TRIANGLES = 64;
 
 /** The triangles that one piece aims to hold. */
 export const PIECE_TRIANGLES = 4096;
@@ -96,6 +133,135 @@ export function planPieces(positions, indices, count, facings = Math.min(count, 
 	groups.forEach((group, g) => {
 		splitBySpace(group, middle, at(shares, g), pieces);
 	});
+	return piecePlan(pieces, positions, indices, facing, area);
+}
+
+/**
+ * The facing pieces of a list smaller than {@link PIECE_LIST_MIN_TRIANGLES}, or `undefined` where
+ * they would not pay: a list under {@link FACING_LIST_MIN_TRIANGLES}, one whose copies hold fewer
+ * than {@link FACING_DRAWN_MIN_TRIANGLES} triangles together, or one whose cones would drop less
+ * than {@link FACING_MIN_SHARE} of its triangles. The list's triangles fall into up to
+ * {@link FACING_GROUPS} facing groups. Each group keeps the triangles that lie close enough to its
+ * mean facing for its cone to drop the most of them, and the rest draw in one piece more, which
+ * faces every way.
+ *
+ * @param {ArrayLike<number>} positions Three numbers for each vertex, as the GPU reads them.
+ * @param {ArrayLike<number>} indices Three vertex numbers for each triangle.
+ * @param {number} copies The copies that draw the list.
+ * @returns {PiecePlan | undefined}
+ */
+export function facingPieces(positions, indices, copies) {
+	const triangles = Math.floor(indices.length / 3);
+	if (
+		triangles >= PIECE_LIST_MIN_TRIANGLES ||
+		triangles < FACING_LIST_MIN_TRIANGLES ||
+		triangles * copies < FACING_DRAWN_MIN_TRIANGLES
+	)
+		return undefined;
+	const { facing, area, total } = triangleFacings(positions, indices);
+	if (total === 0) return undefined;
+	/** @type {Uint32Array[]} */
+	const pieces = [];
+	/** @type {number[]} */
+	const rest = [];
+	for (const group of facingGroups(facing, area, total, FACING_GROUPS, AXIS_WAYS)) {
+		const { kept, left } = tightCone(group, facing, area);
+		if (kept.length >= FACING_PIECE_MIN_TRIANGLES) pieces.push(kept);
+		else left.push(...kept);
+		rest.push(...left);
+	}
+	if (pieces.length < 2) return undefined;
+	if (rest.length > 0) pieces.push(Uint32Array.from(rest).sort());
+	const plan = piecePlan(pieces, positions, indices, facing, area);
+	return coneShare(plan) >= FACING_MIN_SHARE ? plan : undefined;
+}
+
+/**
+ * The pieces that a triangle list should have, by the rule that both the asset tool and the engine
+ * follow: {@link pieceCount} pieces for a large list, else {@link facingPieces} where its copies
+ * and its facings make them pay, else none. `facing` is false for a list whose material draws
+ * both faces or blends: its copies never drop a piece by the way it faces, so a smaller list gets
+ * none.
+ *
+ * @param {ArrayLike<number>} positions
+ * @param {ArrayLike<number>} indices
+ * @param {number} copies The copies that draw the list.
+ * @param {boolean} [facing]
+ * @returns {PiecePlan | undefined}
+ */
+export function listPieces(positions, indices, copies, facing = true) {
+	const count = pieceCount(Math.floor(indices.length / 3));
+	if (count > 0) return planPieces(positions, indices, count);
+	return facing ? facingPieces(positions, indices, copies) : undefined;
+}
+
+/**
+ * The share of a plan's triangles that its cones drop, over eyes spread evenly around each piece
+ * and far from it. A cone of cutoff `s` drops its piece for `(1 - s) / 2` of the directions.
+ *
+ * @param {PiecePlan} plan
+ */
+export function coneShare(plan) {
+	let dropped = 0;
+	let triangles = 0;
+	plan.counts.forEach((count, k) => {
+		const cutoff = at(plan.bounds, k * PIECE_BOUNDS + 7);
+		if (cutoff < 1) dropped += (count * (1 - cutoff)) / 2;
+		triangles += count;
+	});
+	return triangles > 0 ? dropped / triangles : 0;
+}
+
+/**
+ * Splits a facing group in two: the triangles whose facing lies within the angle of its mean
+ * facing that lets the group's cone drop the most triangles, and the rest. A triangle without area
+ * faces no way, so it stays with the group.
+ *
+ * @param {Uint32Array} group
+ * @param {Float64Array} facing
+ * @param {Float64Array} area
+ * @returns {{ kept: Uint32Array, left: number[] }}
+ */
+function tightCone(group, facing, area) {
+	const axis = [0, 0, 0];
+	for (const t of group)
+		for (let k = 0; k < 3; k++) axis[k] = at(axis, k) + at(area, t) * at(facing, t * 3 + k);
+	const length = Math.hypot(at(axis, 0), at(axis, 1), at(axis, 2));
+	if (length === 0) return { kept: new Uint32Array(0), left: Array.from(group) };
+	const dots = Array.from(group, (t) => ({
+		t,
+		dot: at(area, t) > 0 ? dot3(facing, t * 3, axis, 0) / length : 1,
+	})).sort((a, b) => b.dot - a.dot || a.t - b.t);
+	// The cone drops its piece from `(1 - cutoff) / 2` of the directions, with the cutoff the sine
+	// of the widest angle that it keeps, so the cut weighs the triangles kept by that share.
+	let best = 0;
+	let keep = 0;
+	dots.forEach(({ dot }, k) => {
+		if (dot <= LEAST_CONE_DOT) return;
+		const dropped = (k + 1) * (1 - Math.sqrt(Math.max(0, 1 - dot * dot)));
+		if (dropped > best) {
+			best = dropped;
+			keep = k + 1;
+		}
+	});
+	return {
+		kept: Uint32Array.from(dots.slice(0, keep), ({ t }) => t).sort(),
+		left: dots.slice(keep).map(({ t }) => t),
+	};
+}
+
+/**
+ * The plan of `pieces`, each a list of triangles in the order that it draws them.
+ *
+ * @param {Uint32Array[]} pieces
+ * @param {ArrayLike<number>} positions
+ * @param {ArrayLike<number>} indices
+ * @param {Float64Array} facing
+ * @param {Float64Array} area
+ * @returns {PiecePlan}
+ */
+function piecePlan(pieces, positions, indices, facing, area) {
+	const triangles = pieces.reduce((sum, piece) => sum + piece.length, 0);
 	const order = new Uint32Array(triangles);
 	const counts = new Uint32Array(pieces.length);
 	const bounds = new Float32Array(pieces.length * PIECE_BOUNDS);
@@ -262,18 +428,20 @@ function spread(count) {
 }
 
 /**
- * The triangles of each of `facings` facing groups, in their order in the list. A triangle
+ * The triangles of each of `facings` facing groups, in their order in the list. The groups start
+ * from the directions `start`, or from directions spread evenly over the sphere. A triangle
  * without area joins the first group, since it faces no way and draws nothing.
  *
  * @param {Float64Array} facing
  * @param {Float64Array} area
  * @param {number} total
  * @param {number} facings
+ * @param {Float64Array} [start] Three numbers for each group.
  * @returns {Uint32Array[]}
  */
-function facingGroups(facing, area, total, facings) {
+function facingGroups(facing, area, total, facings, start) {
 	const triangles = area.length;
-	const axes = spread(facings);
+	const axes = start ? Float64Array.from(start) : spread(facings);
 	const group = new Uint16Array(triangles);
 	// Each group's summed facing, weighted by area, and its area.
 	const sums = new Float64Array(facings * 4);
