@@ -9,7 +9,7 @@
 //
 // The switch distance comes from the same rules that the engine uses: the level's error times the
 // copy's world scale times the render height times the projection's [1][1], over twice the
-// threshold. The distance is the level distance, to the centre of the plant's bounding sphere about
+// threshold. The distance is the level distance, to the center of the plant's bounding sphere about
 // its origin less half its radius, so half the sphere's radius comes off the camera's distance to
 // the tree.
 import { expect, test } from '@playwright/test';
@@ -38,7 +38,7 @@ const crownRadius =
 	asset.crown.radius;
 /** The rule's factor for one unit of error: the render height times P[1][1], over two. */
 const factor = (HEIGHT * (1 / Math.tan((FOV * Math.PI) / 360))) / 2;
-/** The camera's level distance to the tree: to its bounding sphere's centre, less half the radius. */
+/** The camera's level distance to the tree: to its bounding sphere's center, less half the radius. */
 const near = Math.hypot(asset.crown.center[1], DISTANCE) - crownRadius / 2;
 /** The threshold at which the first lower level's switch lies at the camera. */
 const split = (error * factor) / near;

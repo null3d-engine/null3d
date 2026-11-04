@@ -388,7 +388,7 @@ fn vertexOffset(input: VertexInput) -> vec3f {
     // The card's record holds its place at the next level, then that level's error. The switch
     // distance is the error times the copy's world scale and the engine's factor: the render height
     // times the projection's [1][1], over twice the threshold. The distance is the engine's level
-    // distance: to the centre of the plant's bounding sphere, less half its radius. The mix runs
+    // distance: to the center of the plant's bounding sphere, less half its radius. The mix runs
     // over the last eighth of it, the band that a level fade covers.
     let error = input.vertexRecord.w;
     if (error <= 0.0) {

@@ -696,7 +696,7 @@ fn a_levels_debug_view_marks_a_source_that_its_draw_range_hides() {
 #[test]
 fn rows_that_cover_less_than_a_pixel_hide_and_fade_out() {
     // A bound of world radius 1 covers a pixel until 200 m. The rule measures to each sphere's
-    // centre less half its radius: row 0 stands just short of the hide distance at 195 m, row 1
+    // center less half its radius: row 0 stands just short of the hide distance at 195 m, row 1
     // lies a quarter into the band past it at 207 m, and row 2 past the band at 239 m.
     let distances = [195.5, 207.5, 239.5];
     let buckets = cull_levels(&distances, true, 0.15, false);
@@ -721,8 +721,8 @@ fn rows_that_cover_less_than_a_pixel_hide_and_fade_out() {
 
 #[test]
 fn rows_inside_a_band_list_pairs_in_both_levels_fade_buckets() {
-    // Level distances, to each sphere's centre less half its radius: 5.375 m lies halfway through
-    // level 1's band, and 21.2 m two fifths into level 2's. The spheres' centres lie 0.5 m farther
+    // Level distances, to each sphere's center less half its radius: 5.375 m lies halfway through
+    // level 1's band, and 21.2 m two fifths into level 2's. The spheres' centers lie 0.5 m farther
     // out.
     let distances = [5.875, 7.5, 21.7];
     let buckets = cull_levels(&distances, true, 0.15, false);
