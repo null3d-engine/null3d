@@ -109,9 +109,10 @@ pub(super) struct Clusters {
     tables: [u32; 2],
     /// The patches and the meshes of the table that the GPU holds.
     table_words: [u32; 2],
-    /// The casters' records that the GPU holds, so a change of the casters' layout alone writes
-    /// the table again.
-    caster_records: Vec<[u32; 8]>,
+    /// The mesh records that the GPU holds, the scene layout's then the casters', so a record
+    /// that changes without a new layout writes the table again: a tree's copy moves with its
+    /// bucket's slice, and the casters' layout changes on its own.
+    records: Vec<[u32; 8]>,
     /// Each view's buffers, by view id.
     views: Vec<Option<ViewBuffers>>,
 }
@@ -200,21 +201,25 @@ impl Clusters {
                 }),
             }
         };
-        let casters_changed = self.caster_records.len() != layout.clusters.len()
-            || (0..layout.clusters.len()).any(|k| self.caster_records[k] != caster_record(k));
-        if recreated || layout_changed || casters_changed || self.table_words != words {
+        let trees = layout.clusters.len();
+        let record = |k: usize| {
+            if k < trees {
+                mesh_record(&layout.clusters[k])
+            } else {
+                caster_record(k - trees)
+            }
+        };
+        let records_changed =
+            self.records.len() != 2 * trees || (0..2 * trees).any(|k| self.records[k] != record(k));
+        if recreated || layout_changed || records_changed || self.table_words != words {
             self.table_words = words;
-            self.caster_records.clear();
-            self.caster_records
-                .extend((0..layout.clusters.len()).map(caster_record));
+            self.records.clear();
+            self.records.extend((0..2 * trees).map(record));
             let mut table: Vec<u32> = Vec::with_capacity((patches * PATCH_WORDS) as usize);
             for patch in &layout.cluster_patches {
                 table.extend_from_slice(patch);
             }
-            for mesh in &layout.clusters {
-                table.extend_from_slice(&mesh_record(mesh));
-            }
-            for record in &self.caster_records {
+            for record in &self.records {
                 table.extend_from_slice(record);
             }
             if !table.is_empty() {
@@ -429,8 +434,14 @@ impl Clusters {
     pub(super) fn forget_gpu(&mut self) {
         self.tables = [0; 2];
         self.table_words = [0; 2];
-        self.caster_records.clear();
+        self.records.clear();
         self.views.clear();
+    }
+
+    /// The slot of each tree's copy that the GPU's table of the scene layout's mesh records names.
+    pub(super) fn uploaded_slots(&self) -> impl Iterator<Item = u32> + '_ {
+        let trees = self.records.len() / 2;
+        self.records[..trees].iter().map(|record| record[2])
     }
 
     /// The byte offset of a cluster mesh's indirect draw in a view's draw buffer.
