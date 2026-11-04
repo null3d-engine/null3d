@@ -34,6 +34,7 @@ export default defineSketch((ctx) => {
 		time: number;
 		stamps: number[];
 		gpu: number[][];
+		slopes: number[][];
 		frames: number[];
 	}[] = [];
 	const finish = (): void => {
@@ -44,6 +45,8 @@ export default defineSketch((ctx) => {
 			stamps: first?.stamps ?? [],
 			gpu: first?.gpu ?? [],
 			cpu: cpuOf(first?.stamps ?? []),
+			slopes: first?.slopes ?? [],
+			cpuSlopes: cpuSlopesOf(first?.stamps ?? []),
 			later: {
 				time: second?.time ?? 0,
 				gpu: second?.gpu ?? [],
@@ -70,6 +73,29 @@ export default defineSketch((ctx) => {
 					);
 			return values;
 		});
+	/**
+	 * The slopes that the last pass writes, from the heights beside each texel, as the surface reads
+	 * them: one along the row and one along the column, in meters a meter.
+	 */
+	const cpuSlopesOf = (stamps: number[]): number[][] =>
+		ocean.bands.map((band, layer) => {
+			const at = (column: number, row: number): number =>
+				ocean.bandHeightAt(
+					layer,
+					((FROM + column) / grid) * band.tile,
+					((FROM + row) / grid) * band.tile,
+					stamps[layer] as number,
+				);
+			const texel = band.tile / grid;
+			const values: number[] = [];
+			for (let row = 0; row < SIDE; row++)
+				for (let column = 0; column < SIDE; column++)
+					values.push(
+						(at(column + 1, row) - at(column - 1, row)) / (2 * texel),
+						(at(column, row + 1) - at(column, row - 1)) / (2 * texel),
+					);
+			return values;
+		});
 	const read = (): void => {
 		const at = time.now;
 		const reads = ocean.bands.map((_, layer) =>
@@ -83,6 +109,12 @@ export default defineSketch((ctx) => {
 				gpu: first.map((result) => {
 					const values: number[] = [];
 					for (let k = 0; k < result.data.length; k += 4) values.push(result.data[k] as number);
+					return values;
+				}),
+				slopes: first.map((result) => {
+					const values: number[] = [];
+					for (let k = 0; k < result.data.length; k += 4)
+						values.push(result.data[k + 1] as number, result.data[k + 2] as number);
 					return values;
 				}),
 				frames: first.map((result) => result.frames),

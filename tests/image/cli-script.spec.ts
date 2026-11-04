@@ -24,6 +24,7 @@ import {
 	SCRIPT_STATES,
 	SCRIPT_TEST,
 	SCRIPT_TIER,
+	SCRIPT_TIMEOUT_SECONDS,
 	scriptPage,
 } from './script-runs.ts';
 
@@ -122,41 +123,11 @@ test.describe('the fixture project through three states', () => {
 });
 
 test.describe('the island showcase through three states', () => {
-	// Each state builds the whole town again, and the software GPU that CI uses draws it slowly.
-	test.describe.configure({ timeout: 900_000 });
-
-	/** The folder that the command writes its images into, removed after the tests. */
+	/** The folder that the command writes its images into, removed after the test. */
 	let drawn = '';
-	/** What the command printed, which each test checks its own state against. */
-	let output = '';
-	let code: number | null = null;
-
-	// One run draws all three states, and each test compares one of its images with its reference.
-	test.beforeAll(async () => {
-		test.setTimeout(900_000);
-		drawn = mkdtempSync(join(REPO_ROOT, 'target/cli-script-showcase-'));
-		const environment = environmentNamed(test.info().project.name);
-		const run = await runCli(REPO_ROOT, [
-			'shot',
-			'--script',
-			join(REPO_ROOT, 'tests/image/showcase-island.script'),
-			'--page',
-			scriptPage(environment),
-			'--size',
-			`${SCRIPT_SIZE[0]}x${SCRIPT_SIZE[1]}`,
-			'--gpu',
-			SCRIPT_TIER,
-			'--timeout',
-			'180',
-			'--out',
-			join(drawn, 'island.png'),
-		]);
-		code = run.code;
-		output = run.output;
-	});
 
 	test.afterAll(() => {
-		rmSync(drawn, { recursive: true, force: true });
+		if (drawn) rmSync(drawn, { recursive: true, force: true });
 	});
 
 	/** The pose that the route holds at its opening, which the script's first step leaves. */
@@ -176,24 +147,68 @@ test.describe('the island showcase through three states', () => {
 			(match) => ({ at: Number(match[1]), position: JSON.parse(match[2] as string) as number[] }),
 		);
 
-	for (const state of SCRIPT_STATES)
-		test(`${SCRIPT_TEST}-${state} on ${SCRIPT_TIER}`, async () => {
-			expect(code, output).toBe(0);
-			expect(output).toContain(`Drew ${state} at `);
-			expect(output).not.toContain('failed:');
-			const run = SCRIPT_RUNS.find((one) => one.test === `${SCRIPT_TEST}-${state}`);
-			expect(run).toBeDefined();
-			// Each state's camera stands away from the route's opening and from the other states: a
-			// state that its steps left unmoved, or that a later step undid, would meet this figure.
-			const dumps = dumpedPositions(output);
-			const mine = dumps.find((one) => one.at === run!.hold);
-			expect(mine, output).toBeDefined();
-			expect(apart(mine!.position, OPENING)).toBeGreaterThan(1);
-			for (const other of dumps)
-				if (other !== mine) expect(apart(mine!.position, other.position)).toBeGreaterThan(1);
-			const place = { environment: environmentNamed(test.info().project.name) };
-			clearCandidate(run!, place);
-			const image = readPng(join(drawn, `island-${state}.png`));
-			expect(compareWithReference(run!, place, image)).toEqual([]);
-		});
+	// The command draws all three states in one run. It runs inside the test, so its minutes count in
+	// the test's time: the shard model reads each test's duration, and the command is most of this
+	// test. One run also means that a state which fails is not drawn again for the next state.
+	test(`${SCRIPT_TEST} on ${SCRIPT_TIER}`, async () => {
+		// The first state pays the pipelines' build; the next two wait only for their frames.
+		test.setTimeout(SCRIPT_TIMEOUT_SECONDS * 2 * 1000 + 300_000);
+		drawn = mkdtempSync(join(REPO_ROOT, 'target/cli-script-showcase-'));
+		const environment = environmentNamed(test.info().project.name);
+		const result = await runCli(REPO_ROOT, [
+			'shot',
+			'--script',
+			join(REPO_ROOT, 'tests/image/showcase-island.script'),
+			'--page',
+			scriptPage(environment),
+			'--size',
+			`${SCRIPT_SIZE[0]}x${SCRIPT_SIZE[1]}`,
+			'--gpu',
+			SCRIPT_TIER,
+			'--timeout',
+			String(SCRIPT_TIMEOUT_SECONDS),
+			'--out',
+			join(drawn, 'island.png'),
+		]);
+		const dumps = dumpedPositions(result.output);
+		const place = { environment };
+		/** Everything wrong with this run, so one state's fault still saves the others' pictures. */
+		const problems: string[] = [];
+		if (result.code !== 0)
+			problems.push(
+				`the command exited ${result.code}: ${
+					result.output
+						.split('\n')
+						.filter((line) => line.startsWith('Drew no frame') || line.includes('failed:'))
+						.join(' ') || 'no line names the fault'
+				}`,
+			);
+		for (const state of SCRIPT_STATES)
+			await test.step(`${SCRIPT_TEST}-${state} on ${SCRIPT_TIER}`, async () => {
+				const run = SCRIPT_RUNS.find((one) => one.test === `${SCRIPT_TEST}-${state}`);
+				if (run === undefined) {
+					problems.push(`${state}: no run names its reference`);
+					return;
+				}
+				if (!result.output.includes(`Drew ${state} at `)) {
+					problems.push(`${state}: the command drew no frame`);
+					return;
+				}
+				// Each state's camera stands away from the route's opening and from the other states: a
+				// state that its steps left unmoved, or that a later step undid, would meet this figure.
+				const mine = dumps.find((one) => one.at === run.hold);
+				if (mine === undefined) problems.push(`${state}: no camera dump at ${run.hold} s`);
+				else {
+					if (apart(mine.position, OPENING) <= 1)
+						problems.push(`${state}: the camera stayed at the route's opening`);
+					for (const other of dumps)
+						if (other !== mine && apart(mine.position, other.position) <= 1)
+							problems.push(`${state}: the camera met the state at ${other.at} s`);
+				}
+				clearCandidate(run, place);
+				const image = readPng(join(drawn, `island-${state}.png`));
+				problems.push(...compareWithReference(run, place, image));
+			});
+		expect(problems).toEqual([]);
+	});
 });

@@ -28,6 +28,10 @@ export interface Percentiles {
 	p95: number;
 	/** The 99th percentile: 99% of samples are at or below it. */
 	p99: number;
+	/** The largest sample, which a frame budget with a ceiling holds. */
+	max: number;
+	/** The smallest sample. */
+	min: number;
 	/** The average. */
 	mean: number;
 }
@@ -61,6 +65,8 @@ export function percentiles(samples: ArrayLike<number>): Percentiles {
 		median: percentile(sorted, 0.5),
 		p95: percentile(sorted, 0.95),
 		p99: percentile(sorted, 0.99),
+		max: sorted.length === 0 ? 0 : (sorted[sorted.length - 1] as number),
+		min: sorted.length === 0 ? 0 : (sorted[0] as number),
 		mean: sorted.length === 0 ? 0 : sum / sorted.length,
 	};
 }

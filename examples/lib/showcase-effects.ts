@@ -7,13 +7,11 @@
 // shadows, the camera and the post pass for the lens, and the post pass for automatic exposure and the
 // vignette. Everything else, such as a scene's snow, light shafts, ambient occlusion or bloom, goes to
 // the scene's own `apply`.
-import {
-	type DirectionalLight,
-	type PerspectiveCamera,
-	type QualityPreset,
-	quat,
-	type SketchContext,
-	vec3,
+import type {
+	DirectionalLight,
+	PerspectiveCamera,
+	QualityPreset,
+	SketchContext,
 } from '@null3d/engine';
 import type { Cinematic } from './cinematic';
 import {
@@ -29,6 +27,8 @@ import {
 	TIME_SKY,
 	toggleGroup,
 } from './controls';
+import { lensSettings } from './dslr-lens';
+import { createShadowRange, type ShadowReach } from './shadow-range';
 import { isMood, type Stage } from './stage';
 
 /** How a showcase scene's controls are made. */
@@ -96,44 +96,6 @@ export interface ShowcaseEffects {
 }
 
 /**
- * The sun's shadow range of a scene. Close up it holds the range the scene asks for, which keeps
- * the near shadows sharp. As the camera draws back it grows, so the scene's core never passes the
- * range's far edge and its shadows never vanish at once.
- */
-export interface ShadowReach {
-	/** The range close up, in meters, and the least it ever is. */
-	distance: number;
-	/** The middle of the part of the scene that must always have its shadows. */
-	center: readonly [number, number, number];
-	/** That part's radius, in meters. */
-	radius: number;
-}
-
-/** How much longer each step of the shadow range is than the one before, as the engine's own. */
-const SHADOW_LADDER = 1.25;
-
-/**
- * The shadow range for a need of `raw` meters, from a held range of `held`: the shortest step of the
- * ladder up from `base` that reaches the need. It rises at once, and falls only once the need is a
- * whole step below the held range, so a need that hovers at a step never flickers between two. A
- * need of zero or less is the scene's core behind the camera, which asks for the base range alone.
- */
-export function shadowStep(raw: number, held: number, base: number): number {
-	const steps = Math.max(
-		0,
-		Math.ceil(Math.log(Math.max(raw, base) / base) / Math.log(SHADOW_LADDER) - 1e-9),
-	);
-	const up = base * SHADOW_LADDER ** steps;
-	return up > held || raw < held / SHADOW_LADDER ** 2 ? up : held;
-}
-
-/** The direction a camera looks along, before its rotation. */
-const AHEAD: readonly [number, number, number] = [0, 0, -1];
-
-/** The aperture and blur of the lens, which both scenes share. */
-const DSLR_LENS = { aperture: 1.8, maxBlur: 0.025 };
-
-/**
  * Makes a scene's controls and wires them to the page's buttons. Every pick re-posts the HUD, so the
  * buttons show the state that the scene's own answer left.
  */
@@ -144,28 +106,12 @@ export function createShowcaseEffects(
 	const { page, post, quality } = ctx;
 	const { camera, sun, stage, start, supported, apply, mood, hour, film, fov, focalLength, focus } =
 		options;
-	// The shadow range in use, and the camera's place and direction that it is fitted to.
-	let shadowRange = options.shadowReach?.distance ?? 0;
-	if (options.shadowReach) sun.setShadow({ distance: shadowRange });
-	const eye = vec3.create();
-	const turn = quat.create();
-	const ahead = vec3.create();
-	/** Fits the shadow range to how far the camera looks past the far side of the scene's core. */
+	// The shadow range, fitted to how far the camera looks past the far side of the scene's core.
+	const shadows = options.shadowReach
+		? createShadowRange(sun, camera, options.shadowReach)
+		: undefined;
 	const fitShadows = (): void => {
-		const shadowReach = options.shadowReach;
-		if (!shadowReach) return;
-		camera.getPosition(eye);
-		camera.getRotation(turn);
-		vec3.transformQuat(ahead, AHEAD, turn);
-		const [cx, cy, cz] = shadowReach.center;
-		const along =
-			(cx - (eye[0] as number)) * (ahead[0] as number) +
-			(cy - (eye[1] as number)) * (ahead[1] as number) +
-			(cz - (eye[2] as number)) * (ahead[2] as number);
-		const next = shadowStep(along + shadowReach.radius, shadowRange, shadowReach.distance);
-		if (next === shadowRange) return;
-		shadowRange = next;
-		sun.setShadow({ distance: next });
+		shadows?.fit();
 	};
 	const on: Record<string, boolean> = { ...start };
 	// The level of detail starts off unless the scene's start list turns it on: every mesh then draws
@@ -181,7 +127,7 @@ export function createShowcaseEffects(
 			stage.show(part, false);
 			apply(part, false);
 		}
-	const settings = { dof: { ...DSLR_LENS, focusPoint: focus } };
+	const settings = lensSettings(focus);
 
 	/** The time of the last controls post that Auto asked for. */
 	let postedAt = Number.NEGATIVE_INFINITY;

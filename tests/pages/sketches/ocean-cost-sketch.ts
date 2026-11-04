@@ -12,6 +12,11 @@ import { createOcean } from '@null3d/water';
 const params = new URL(import.meta.url).searchParams;
 const SCALE = params.get('scale');
 const FIXED = params.has('fixed');
+/**
+ * ?reflection=off draws the reflection at the longest cadence, so its cost does not hide the
+ * transform's. The reflection draws the whole scene again, and its cost varies with the camera.
+ */
+const REFLECTION = params.get('reflection');
 
 export default defineSketch((ctx) => {
 	const { scene, page, quality, time } = ctx;
@@ -34,7 +39,12 @@ export default defineSketch((ctx) => {
 		target: [0, 1, 0],
 	});
 	scene.setActiveCamera(camera);
-	const ocean = createOcean(ctx, { camera });
+	const ocean = createOcean(ctx, {
+		camera,
+		...(REFLECTION === 'off' && {
+			reflectionEvery: { low: 16, medium: 16, high: 16, ultra: 16 },
+		}),
+	});
 	let settle: (() => void) | undefined;
 	page.onMessage((type) => {
 		if (type === 'ocean') {

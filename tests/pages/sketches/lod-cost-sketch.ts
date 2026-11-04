@@ -1,9 +1,9 @@
 // A dense forest for the page that measures what levels of detail save (tests/pages/lod-cost.ts):
-// ?count= pines, 40,000 by default, each with four levels (examples/lib/pines.ts), over hills
+// ?count= pines, 40,000 by default, each with four levels (tests/pages/lib/pines.ts), over hills
 // under the sun's shadows, seen from a fixed place above the canopy. The page turns the levels off
 // and on with messages; off draws every tree's base mesh. With ?shadows=off the sun casts none.
 import { defineSketch } from '@null3d/engine';
-import { ground, hills, pineWithLevels, plantPines } from '../../../examples/lib/pines';
+import { ground, hills, pineWithLevels, plantPines } from '../lib/pines';
 
 const params = new URL(import.meta.url).searchParams;
 const count = Number(params.get('count') ?? '40000');

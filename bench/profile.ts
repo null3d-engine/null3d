@@ -14,6 +14,7 @@
 //   bun run bench:profile --android --n 300000 --thread sketch
 import { forwardPort, phoneModel } from '../tests/lib/adb.ts';
 import { keepingFocus, launchInWindow, parkChromeWindow } from '../tests/lib/app-window.ts';
+import { chromeForTesting } from '../tests/lib/chrome-for-testing.ts';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
 import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import {
@@ -220,7 +221,7 @@ async function main(): Promise<void> {
 			devtools = await connectPhoneChrome(DEBUG_PORT);
 		} else {
 			const browser = await launchInWindow({
-				channel: 'chrome',
+				...chromeForTesting(),
 				args: [`--remote-debugging-port=${DEBUG_PORT}`],
 			});
 			stops.push(() => browser.close());

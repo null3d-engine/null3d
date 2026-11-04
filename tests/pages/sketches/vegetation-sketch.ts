@@ -58,6 +58,15 @@ export default defineSketch((ctx) => {
 		cell: leafCellFor(SPECIES),
 		color: SPECIES.color.leaf as [number, number, number],
 	});
+	// A rosette that grows flowers draws their heads in the species' own colour.
+	const flower = SPECIES.color.flower
+		? plantMaterial(ctx, {
+				atlases,
+				part: 'leaves',
+				cell: leafCellFor(SPECIES),
+				color: SPECIES.color.flower as [number, number, number],
+			})
+		: leaves;
 
 	const ground = ctx.materials.standard({ color: '#4a5137', roughness: 1, metalness: 0 });
 	scene.createMesh({
@@ -75,7 +84,7 @@ export default defineSketch((ctx) => {
 		for (const part of asset.levels[0]?.parts ?? []) {
 			scene.createMesh({
 				mesh: ctx.geometry.fromArrays(part.arrays),
-				material: part.name === 'wood' ? bark : leaves,
+				material: part.name === 'wood' ? bark : part.name === 'flower' ? flower : leaves,
 				position: [x, 0, 0],
 				castShadows: true,
 				receiveShadows: true,

@@ -1,10 +1,12 @@
 // Builds the shader modules unless they match their inputs (tools/lib/shader-modules.ts). Run from
 // anywhere in the repository:
 //   bun tools/shaders.ts
-// `--cache-keys` builds nothing. It prints the two shared shader caches' folders and the keys that a
-// build of this checkout reads them by, as name=value lines, so CI keeps those folders under the
-// same keys. `stamp` names the folder that a run with an empty entries cache writes; a build that
-// finds entries of a compiler with the same program bytes reads that compiler's folder instead.
+// `--cache-keys` builds nothing. It prints the two shared shader caches' folders and the key that a
+// build of this checkout keeps them under in CI, as name=value lines. `inputs` is the hash of every
+// source that the build reads, which a CI cache key names, so a run reads it without a compiler;
+// `stamp` names the folder that a run with an empty entries cache writes, and a build that finds
+// entries of a compiler with the same program bytes reads that compiler's folder instead. The
+// module set's own folder is `--set-folder`'s answer, because its name holds the program's bytes.
 // It also prints the Actions cache's key of the two folders, `key`, and the prefixes that a job
 // falls back on, in this order: `branch-keys`, `stamp-keys`, then `any-stamp-keys`, which names no
 // source stamp. Each branch keeps its own entries, so the next push to it restores what the last
@@ -18,6 +20,10 @@
 // compiler reads and writes, so a CI job can read, save or report the folder that a reused run
 // uses instead of the source stamp's folder. A checkout that has kept no program answers with the
 // folder that its build writes.
+// `--set-folder` prints `folder=<path>`, the shared cache folder that this checkout's module set
+// came from, or that a build now writes. It reads the folder from the checkout's record, so a job
+// that already built or restored a set answers without a compile. A checkout with neither a record
+// nor a kept program names none, and says so, which is the state a build that stopped early leaves.
 // `--entries-shard i/n` compiles only shard i of n, counted from 0, of the manifest's entries, split
 // by estimated build cost, into the per-entry cache that a normal build reads, in the folder that
 // the shader build program's bytes choose. A run that starts with an empty cache, as each CI job
@@ -40,6 +46,7 @@ import {
 	entryCacheFolder,
 	inputHash,
 	MODULE_DIR,
+	moduleSetFolder,
 	modulesCacheDir,
 } from './lib/shader-modules';
 
@@ -75,6 +82,14 @@ try {
 		console.log(`any-stamp-keys=shaders-${process.env.RUNNER_OS ?? process.platform}-`);
 	} else if (process.argv.includes('--entry-folder')) {
 		console.log(`folder=${entryCacheFolder(root)}`);
+	} else if (process.argv.includes('--set-folder')) {
+		// A checkout that never built the compiler has no folder to name, and the job that asks is
+		// usually one whose build stopped early: it keeps no set, and the build's own error stands.
+		try {
+			console.log(`folder=${moduleSetFolder(root)}`);
+		} catch (e) {
+			console.error(`no module set folder to name: ${(e as Error).message}`);
+		}
 	} else if (shard !== undefined) {
 		refuseInQuietWindow('The shader build');
 		const { stored, folder } = buildEntriesShard(root, shard, out);

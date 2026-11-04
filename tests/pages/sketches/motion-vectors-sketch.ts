@@ -27,6 +27,7 @@ import { animateObject, createAnimationRig, skinObject } from '@null3d/engine/in
 import { morphMesh } from '../../../bench/scenes/morph';
 import { CHAIN, characterMesh } from '../../../bench/scenes/skinning';
 import { FAST, MOTION_HOLD, SLOW, SWAY, VIEW_HEIGHT } from '../lib/motion-vectors';
+import { applySketchSwitches } from '../lib/sketch-switches';
 
 const params = new URL(import.meta.url).searchParams;
 const CASE = params.get('case');
@@ -87,7 +88,8 @@ function bendRig(scene: Parameters<typeof createAnimationRig>[0]) {
 	});
 }
 
-export default defineSketch(({ scene, materials, geometry, textures, debug, time }) => {
+export default defineSketch(({ scene, materials, geometry, textures, debug, time, quality }) => {
+	applySketchSwitches(import.meta.url, quality);
 	debug.view('motion');
 	scene.setBackground('#202020');
 	scene.createDirectionalLight({ direction: [-0.4, -1, -0.6], intensity: 2.5 });

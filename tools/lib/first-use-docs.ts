@@ -45,11 +45,15 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 		'when a pass first reads the motion. The motion debug view is such a pass, and it exists in development builds only',
 	coat_sheen: 'with the first material with a clear coat, a sheen, iridescence or anisotropy',
 	weighted: "with the first material of the `'weighted'` blending",
+	single_layer:
+		"with MSAA, when the first blended draw of a feature at the `'resolve'` frame point draws. Its surfaces blend in the transparent pass until the layer is built",
 	moment:
 		'when the quality setting `momentTransparency` is on and the first blended surface draws. The surfaces draw sorted until the layer and its anti-aliasing are built',
 	area_lights: 'with the first rectangle or tube light',
 	background: 'with the first texture, environment or cube map background',
 	sky: 'with the first sky background',
+	clouds:
+		"with the first frame that draws the sky's volumetric cloud tier: the preset's `cloudSteps` above 0, or `quality.set({ cloudSteps })`. A page that draws the flat layer downloads none of it. The noise field of its march is made in the browser then",
 	physical_sky:
 		'with the first physical sky background (`atmosphere`). The view shows the background color until the sky is built',
 	occlusion:

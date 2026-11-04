@@ -23,6 +23,7 @@ import {
 	TRANSMISSION_BOXES,
 	TRANSMISSION_CAMERA,
 } from '../../../bench/scenes/transmission';
+import { applySketchSwitches } from '../lib/sketch-switches';
 
 const params = new URL(import.meta.url).searchParams;
 
@@ -54,7 +55,9 @@ function texels(size: number, rgba: (u: number, v: number) => [number, number, n
 /** Every share, in the texture that both the transmission map and the thickness map read. */
 const BANDS = 4;
 
-export default defineSketch(async ({ scene, materials, geometry, post, textures, assets }) => {
+export default defineSketch(async (context) => {
+	const { scene, materials, geometry, post, textures, assets, quality } = context;
+	applySketchSwitches(import.meta.url, quality);
 	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
 	if (params.has('env')) {
 		// A bright sky broadens what the specular map varies, so a picture shows it.

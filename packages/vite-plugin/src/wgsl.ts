@@ -147,7 +147,12 @@ function blankComments(source: string): string {
 }
 
 /** The functions that a custom material's WGSL may declare for the engine to call. */
-const MATERIAL_FUNCTIONS: ReadonlySet<string> = new Set(['surface', 'vertexOffset', 'lobe']);
+const MATERIAL_FUNCTIONS: ReadonlySet<string> = new Set([
+	'surface',
+	'vertexOffset',
+	'lobe',
+	'unlit',
+]);
 
 /**
  * True when WGSL is a draw shader: its `@vertex` entry point takes the vertex and instance indices
