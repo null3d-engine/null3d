@@ -19,8 +19,20 @@ const SWAY = Math.max(0, Number(params.get('sway') ?? 16));
 const ASKED_SECONDS = params.has('seconds') ? Math.max(0.5, Number(params.get('seconds'))) : null;
 /** The shortest window, the longest, and the frames that the window aims to hold. */
 const MIN_SECONDS = 2;
-const LONGEST_SECONDS = 10;
+const LONGEST_SECONDS = 32;
 const FRAMES_WANTED = 20;
+/**
+ * The frames that a window must hold before its count means anything: a far cascade is due once in
+ * four frames at the Low preset, so a shorter window cannot hold the frame in which the schedule
+ * held. The window grows while it holds fewer.
+ */
+const LEAST_FRAMES = 4;
+/**
+ * The longest that a probe waits for the machine to present a frame. A machine that presents none
+ * in this long presents none in any window that the page allows, and the result then names the
+ * empty window rather than a wait running out.
+ */
+const PROBE_LONGEST_SECONDS = 16;
 
 run('vegetation-shadow-count', async () => {
 	const canvas = document.querySelector('canvas');
@@ -41,18 +53,37 @@ run('vegetation-shadow-count', async () => {
 	progress('the first frame drew');
 	await new Promise((resolve) => setTimeout(resolve, 1500));
 	const mode = { tier: engine.capabilities.tier, preset: engine.mode.preset };
-	// The grove is heavy enough that a fixed window can hold no frame at all on a slow machine, so
-	// a short window measures the machine's own frame time first, and the real window then aims to
-	// hold a few frames' worth of it.
-	const probe = ASKED_SECONDS === null ? await engine.measure(MIN_SECONDS / 4) : null;
-	const frameMs = probe !== null && probe.frames > 0 ? (probe.seconds * 1000) / probe.frames : null;
-	const seconds =
+	// The grove is heavy enough that a short window can hold no frame at all on a slow machine, and
+	// a window that held none says nothing about the machine's speed. The probe therefore doubles
+	// until it sees a frame, and the count window then aims to hold a few frames' worth of that
+	// frame time.
+	let probeSeconds = MIN_SECONDS;
+	let probe = ASKED_SECONDS === null ? await engine.measure(probeSeconds) : null;
+	while (probe !== null && probe.frames === 0 && probeSeconds < PROBE_LONGEST_SECONDS) {
+		probeSeconds = Math.min(PROBE_LONGEST_SECONDS, probeSeconds * 2);
+		probe = await engine.measure(probeSeconds);
+	}
+	const frameMs =
+		probe === null || probe.frames === 0
+			? null
+			: probe.frames > 1
+				? probe.intervalMs.median
+				: (probe.seconds * 1000) / probe.frames;
+	// A machine that showed no frame in the whole probe gets the longest window once, so its result
+	// names the window that stayed empty.
+	let seconds =
 		ASKED_SECONDS ??
-		Math.min(
-			LONGEST_SECONDS,
-			Math.max(MIN_SECONDS, frameMs === null ? MIN_SECONDS : (frameMs * FRAMES_WANTED) / 1000),
-		);
-	const stats = await engine.measure(seconds);
+		(frameMs === null
+			? LONGEST_SECONDS
+			: Math.min(LONGEST_SECONDS, Math.max(MIN_SECONDS, (frameMs * FRAMES_WANTED) / 1000)));
+	let stats = await engine.measure(seconds);
+	// A frame time from a window that held one frame is a guess, and a window that holds fewer
+	// frames than the cascade's interval can show cannot see the frame in which it held: both grow
+	// the window.
+	while (ASKED_SECONDS === null && stats.frames < LEAST_FRAMES && seconds < LONGEST_SECONDS) {
+		seconds = Math.min(LONGEST_SECONDS, seconds * 2);
+		stats = await engine.measure(seconds);
+	}
 	if (stats.frames === 0) {
 		await engine.destroy();
 		return {

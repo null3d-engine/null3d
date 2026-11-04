@@ -12,6 +12,13 @@ import { pageResult } from '../lib/page-result.ts';
 
 /** The frames between two far cascades' draws at the Low preset, which is four. */
 const FAR_INTERVAL = 4;
+/**
+ * The longest that one page may take: the machine's start, the page's probe and its window, which
+ * grow to a ceiling that the page enforces itself. A slow machine's start is most of it: CI's
+ * software GPU spent 42.9 s before its renderer was ready and 118 s over this sketch's first frame
+ * alone, so the budget covers a start of that size and the measurement after it.
+ */
+const PAGE_TIMEOUT_MS = 240_000;
 
 interface Result {
 	error?: string;
@@ -40,7 +47,7 @@ interface Grove {
 async function count(page: Page, gpu: string, sway: number, grove: Grove = {}): Promise<Result> {
 	const query = `gpu=${gpu}&sway=${sway}${grove.far ? '&far' : ''}${grove.still ? '&still' : ''}`;
 	await page.goto(`vegetation-shadow-count.html?${query}`);
-	const result = await pageResult<Result>(page, 120_000);
+	const result = await pageResult<Result>(page, PAGE_TIMEOUT_MS);
 	expect(result.error).toBeUndefined();
 	// A far cascade is due once in this many frames at the Low preset the page runs, so a window
 	// shorter than that cannot hold the frame in which the schedule held, and the least count would
@@ -54,7 +61,7 @@ async function count(page: Page, gpu: string, sway: number, grove: Grove = {}): 
 
 for (const gpu of ['webgpu', 'webgl2'] as const)
 	test(`a still camera keeps the far cascades of a swaying grove on ${gpu}`, async ({ page }) => {
-		test.setTimeout(300_000);
+		test.setTimeout(3 * PAGE_TIMEOUT_MS);
 		// Every row is past the near cascades. The sway distance stops all of them, the same grove
 		// holds still air, and then every plant is allowed to sway.
 		const stopped = await count(page, gpu, 16, { far: true });
