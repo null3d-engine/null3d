@@ -1661,7 +1661,8 @@ export class Mesh extends Object3D {
 		const { mesh } = this;
 		const own = this.flags & C.FLAG_CUSTOM_BOUNDS;
 		if (mesh && !own && margin !== (this.material?.boundsMargin ?? 0)) {
-			this.scene.writeBounds(this.row, 0, 0, 0, mesh.radius + margin);
+			const [x, y, z] = mesh.center;
+			this.scene.writeBounds(this.row, x, y, z, mesh.radius + margin);
 			if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
 		}
 		this.scene.command(C.COMMAND_SET_MATERIAL, this.handle, material.id, 0, 'setMaterial');
@@ -1680,7 +1681,8 @@ export class Mesh extends Object3D {
 			checkLive('setMesh', this);
 			checkSameEngine('setMesh', 'mesh', mesh.core, this.scene);
 		}
-		this.scene.writeBounds(this.row, 0, 0, 0, mesh.radius + (this.material?.boundsMargin ?? 0));
+		const [x, y, z] = mesh.center;
+		this.scene.writeBounds(this.row, x, y, z, mesh.radius + (this.material?.boundsMargin ?? 0));
 		if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
 		this.scene.command(C.COMMAND_SET_MESH, this.handle, mesh.id, 0, 'setMesh');
 		this.mesh = mesh;
@@ -2886,13 +2888,14 @@ export class InstanceBatch implements ViewHolder {
 	}
 
 	/**
-	 * Gives every row's bounding sphere the radius `radius`, in meters, in place of the mesh's own
-	 * radius, which culling tests. The spheres stay centered on their rows. A vertex shader that
-	 * carries rows away from their origins, such as traffic along a lane, needs this: the engine
-	 * culls a row moved beyond the mesh's own radius while it is still on the screen. A later change
-	 * of the mesh's radius, which a displaced material makes, replaces it. Every row is marked for
-	 * update, and the call builds the engine's draw tables again, so make it at setup. Throws E1203
-	 * for a value that is not a finite number, and E1108 for 0 or below.
+	 * Makes every row's bounding sphere, which culling tests, hold the sphere of `radius` meters
+	 * around the row's origin, in place of the mesh's own sphere. Each sphere keeps the mesh's
+	 * center (`mesh.center`), so its radius grows by that center's distance from the origin. A
+	 * vertex shader that carries rows away from their origins, such as traffic along a lane, needs
+	 * this: the engine culls a row moved beyond the mesh's own sphere while it is still on the
+	 * screen. A later change of the mesh's radius, which a displaced material makes, replaces it.
+	 * Every row is marked for update, and the call builds the engine's draw tables again, so make it
+	 * at setup. Throws E1203 for a value that is not a finite number, and E1108 for 0 or below.
 	 */
 	setBoundingRadius(radius: number): void {
 		if (DEV) {
@@ -4264,6 +4267,7 @@ export class Scene implements ViewHolder {
 		flags: number,
 		material: number,
 		call: string,
+		center: readonly number[],
 		...extra: A
 	): T {
 		const { layers } = options;
@@ -4280,7 +4284,7 @@ export class Scene implements ViewHolder {
 		this.writePosition(slot, x, y, z);
 		v.rotations.set(options.rotation ?? [0, 0, 0, 1], slot * 4);
 		v.scales.set(options.scale ?? [1, 1, 1], slot * 3);
-		v.radii[slot] = radius;
+		this.writeBounds(slot, center[0] as number, center[1] as number, center[2] as number, radius);
 		const all = flags | C.FLAG_VISIBLE | (options.dynamic ? C.FLAG_DYNAMIC : 0);
 		const parent = options.parent?.handle ?? 0;
 		this.writeCommand(write++, C.COMMAND_CREATE | (all << 8), handle, parent, mesh);
@@ -4298,7 +4302,7 @@ export class Scene implements ViewHolder {
 
 	/** An empty node, for hierarchy. */
 	createGroup(options: NodeOptions = {}): Group {
-		return this.create(Group, options, C.CORE_NO_MESH, 0, 0, 0, 'createGroup');
+		return this.create(Group, options, C.CORE_NO_MESH, 0, 0, 0, 'createGroup', ORIGIN);
 	}
 
 	/** A drawn object. It is static unless `dynamic: true`. */
@@ -4320,6 +4324,7 @@ export class Scene implements ViewHolder {
 			flags,
 			material.id,
 			'createMesh',
+			mesh.center,
 		);
 		object.mesh = mesh;
 		object.material = material;
@@ -4586,7 +4591,11 @@ export class Scene implements ViewHolder {
 			if (bounds && flags & C.FLAG_CUSTOM_BOUNDS) {
 				for (let i = 0; i < 3; i++) v.centers[slot * 3 + i] = bounds[i] as number;
 				v.radii[slot] = bounds[3] as number;
-			} else v.radii[slot] = (n.mesh?.radius ?? 0) + (n.material?.boundsMargin ?? 0);
+			} else {
+				const center = n.mesh?.center ?? ORIGIN;
+				for (let i = 0; i < 3; i++) v.centers[slot * 3 + i] = center[i] as number;
+				v.radii[slot] = (n.mesh?.radius ?? 0) + (n.material?.boundsMargin ?? 0);
+			}
 			const up = n.parent < 0 ? (parent?.handle ?? 0) : (handles[n.parent] as number);
 			const mesh = n.mesh?.id ?? C.CORE_NO_MESH;
 			this.writeCommand(write++, C.COMMAND_CREATE | (flags << 8), handle, up, mesh);
@@ -5319,7 +5328,17 @@ export class Scene implements ViewHolder {
 	): T {
 		const node = { dynamic: true, ...options };
 		// A view reads its camera's world transform even below a hidden object.
-		const camera = this.create(kind, node, C.CORE_NO_MESH, 0, C.FLAG_TRACKED, 0, call, ...lens);
+		const camera = this.create(
+			kind,
+			node,
+			C.CORE_NO_MESH,
+			0,
+			C.FLAG_TRACKED,
+			0,
+			call,
+			ORIGIN,
+			...lens,
+		);
 		camera.layers = (options.layers ?? C.LAYERS_DEFAULT) >>> 0;
 		if (options.target) camera.lookAt(...options.target);
 		return camera;
@@ -5380,7 +5399,7 @@ export class Scene implements ViewHolder {
 				`${call}() got the intensity unit ${JSON.stringify(intensityUnit)}, and this light takes only '${LIGHT_UNITS[type]}'.`,
 			);
 		const flags = options.castShadows ? C.FLAG_CAST_SHADOWS : 0;
-		const light = this.create(kind, options, C.CORE_NO_MESH, 0, flags, 0, call);
+		const light = this.create(kind, options, C.CORE_NO_MESH, 0, flags, 0, call, ORIGIN);
 		const { core } = this;
 		try {
 			light.id = core.checkGrowth(core.glue.createLight(light.handle, type), call, options.name);

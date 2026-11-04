@@ -483,6 +483,8 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	appendMeshPatches(mesh: number, patches: number, indices: number): number;
 	meshRadius(mesh: number): number;
+	/** One axis of a mesh's bounding center, 0 for x, 1 for y and 2 for z, or 0 for an unknown mesh. */
+	meshCenter(mesh: number, axis: number): number;
 	/** A mesh's vertex count, or 0 for an unknown mesh. */
 	meshVertexCount(mesh: number): number;
 	/** A mesh's vertex format: its attribute bits and type fields, or 0 for an unknown mesh. */
@@ -1494,6 +1496,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMeshPieceList',
 	'appendMeshPatches',
 	'meshRadius',
+	'meshCenter',
 	'meshVertexCount',
 	'meshFormat',
 	'turnRows',
