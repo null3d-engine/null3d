@@ -1,5 +1,5 @@
 // A held frame of a mesh made in code whose level plan waits behind busy job workers. The page
-// starts the engine with `JOB_WORKERS` job workers, and the sketch first queues a task on each that
+// starts the engine with `JOB_WORKERS` job workers, and the sketch first starts a task on each that
 // keeps it busy past the time that hold mode waits for other tasks, then draws a bumpy grid that
 // plans its levels by default, whose plan waits for a worker. Each held frame posts the levels that
 // the grid holds, and the plan posts them again when its levels are in. The frame that hold mode
@@ -19,8 +19,13 @@ const BUSY_MS = 13_000;
 /** The job workers that the page's `jobs` switch gives the engine. */
 const JOB_WORKERS = 2;
 
-export default defineSketch(({ scene, geometry, materials, page, time }) => {
-	for (let k = 0; k < JOB_WORKERS; k++) void runTask(BUSY, { ms: BUSY_MS }, []);
+export default defineSketch(async ({ scene, geometry, materials, page, time }) => {
+	// The busy tasks count themselves started. The grid waits until both run, so its plan queues
+	// behind them even when their module loads slower than the planner on a busy machine.
+	const started = new Int32Array(new SharedArrayBuffer(4));
+	for (let k = 0; k < JOB_WORKERS; k++) void runTask(BUSY, { ms: BUSY_MS, started }, []);
+	while (Atomics.load(started, 0) < JOB_WORKERS)
+		await new Promise((resolve) => setTimeout(resolve, 10));
 	scene.setBackground('#202830');
 	scene.createAmbientLight({ intensity: 1 });
 	const camera = scene.createPerspectiveCamera({
