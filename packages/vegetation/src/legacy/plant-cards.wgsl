@@ -387,9 +387,9 @@ fn vertexOffset(input: VertexInput) -> vec3f {
     let moved = wind_offset(input, true);
     // The card's record holds its place at the next level, then that level's error. The switch
     // distance is the error times the copy's world scale and the engine's factor: the render height
-    // times the projection's [1][1], over twice the threshold. The distance is to the nearest point
-    // of the plant's bounding sphere, and the mix runs over the last eighth of it, the band that a
-    // level fade covers.
+    // times the projection's [1][1], over twice the threshold. The distance is the engine's level
+    // distance: to the center of the plant's bounding sphere, less half its radius. The mix runs
+    // over the last eighth of it, the band that a level fade covers.
     let error = input.vertexRecord.w;
     if (error <= 0.0) {
         return moved;
@@ -401,7 +401,7 @@ fn vertexOffset(input: VertexInput) -> vec3f {
     );
     let handover = error * scale * factor;
     let radius = material.crownRadius * scale;
-    let away = max(length(camera.position - object.position) - radius, 0.001);
+    let away = max(length(camera.position - object.position) - 0.5 * radius, 0.001);
     let band = handover * 0.08;
     let t = clamp((away - (handover - band)) / max(band, 0.0001), 0.0, 1.0);
     return moved + (input.vertexRecord.xyz - input.position) * t;
