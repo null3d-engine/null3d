@@ -740,6 +740,7 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 - The profile samples the production build, and names its functions through the build's source maps. With `--dev`, it profiles the dev server's pages, whose development checks then count in the engine's share.
 - The profiler samples every 50 microseconds after a 20-second warm-up. Code the browser has not optimized yet counts as the engine's, so a shorter warm-up overstates the engine's share.
 - `--thread sketch` samples the sketch worker's frame step instead, and splits it between the engine's code, the engine core and the browser. It also lists the engine's per-frame phase times on that thread, such as the update and the batch pass.
+- `--switches` adds page switches to each page's address. A comparison of two builds gives S4 `governor=off` and `still-camera=off`, and the GPU check adds a preset. Pass the same switches, such as `--switches preset=medium&governor=off&still-camera=off`, so the profile samples the frames that the comparison times.
 - The shipped core has no function names. Build it with `bun tools/build-wasm.ts --names` before a profile, so the profile names the core's functions. The names add size, so that build skips the size checks: build again without it before you check sizes.
 - Chrome's page-wide memory measurement waits up to a minute for the job workers, and it counts shared memory once per worker. Chrome's debugger gives exact heaps per worker through `Runtime.getHeapUsage`.
 
