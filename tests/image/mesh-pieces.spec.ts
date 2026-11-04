@@ -22,17 +22,23 @@ const PATHS = [
 	{ name: 'webgl2', query: 'gpu=webgl2', tier: 'webgl2' },
 ] as const;
 
-for (const path of PATHS)
-	test(`copies that cull their mesh's pieces draw the whole mesh's picture on ${path.name}`, async ({
-		page,
-	}) => {
-		test.setTimeout(240_000);
-		await page.goto(`mesh-pieces.html?${path.query}`);
-		const result = await pageResult<PiecesResult>(page, 200_000);
-		console.log(`mesh pieces on ${path.name}: ${JSON.stringify(result)}`);
-		expect(result.error).toBeUndefined();
-		expect(result.tier).toBe(path.tier);
-		expect(result.failures).toEqual([]);
-		expect(result.differingPixels).toEqual(new Array(result.views).fill(0));
-		expect(result.triangles.pieces).toBeLessThan(result.triangles.whole);
-	});
+const SCENES = [
+	{ name: "a file's rock field", query: '' },
+	{ name: 'a village of one house made in code', query: '&scene=houses' },
+] as const;
+
+for (const scene of SCENES)
+	for (const path of PATHS)
+		test(`copies that cull their mesh's pieces draw the whole mesh's picture in ${scene.name} on ${path.name}`, async ({
+			page,
+		}) => {
+			test.setTimeout(240_000);
+			await page.goto(`mesh-pieces.html?${path.query}${scene.query}`);
+			const result = await pageResult<PiecesResult>(page, 200_000);
+			console.log(`mesh pieces in ${scene.name} on ${path.name}: ${JSON.stringify(result)}`);
+			expect(result.error).toBeUndefined();
+			expect(result.tier).toBe(path.tier);
+			expect(result.failures).toEqual([]);
+			expect(result.differingPixels).toEqual(new Array(result.views).fill(0));
+			expect(result.triangles.pieces).toBeLessThan(result.triangles.whole);
+		});
