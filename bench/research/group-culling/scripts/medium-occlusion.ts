@@ -1,10 +1,14 @@
 // Times GPU occlusion culling at the Medium preset, off against on, in Chrome for Testing on the
 // production builds, without the frame cap: held on in every frame (`occlusion-check=off`), and on
 // with its check deciding. Every page waits until the one-minute load falls below 8, and the pages
-// of a round run in turns, so the three modes share the machine's state. `--part desert` runs the
-// desert and Bistro pages of this folder (3 rounds, each page once a round); `--part bench` runs the
-// repository's benchmark scenes through `bun run bench:run`, one mode after another in each round.
-// `--rounds <n>` changes the rounds. Run from the repository's root once `bun run build` and
+// of a round run in turns, so the three modes share the machine's state.
+// - `--part desert`: the desert and Bistro pages of this folder, each page once a round.
+// - `--part island`: the Island at its town view and at the showcase's opening view, from the
+//   production build of tests/pages/island-view.html in target/group-culling/island-page
+//   (`NULL3D_BUILD_PAGE=island-view bunx vite build --outDir target/group-culling/island-page`).
+// - `--part bench`: the repository's benchmark scenes through `bun run bench:run`, one mode after
+//   another in each round, each round starting from another mode.
+// `--rounds <n>` changes the rounds (3). Run from the repository's root once `bun run build` and
 // `bun run build:cdn --url-switches` are done. Results land in this folder's results/.
 import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
@@ -29,6 +33,24 @@ const MODES = {
 	check: 'occlusion=on',
 } as const;
 
+/** Runs this folder's runner over `pages`, `rounds` times in turns, into `file` of the results. */
+function runPages(pages: string[], file: string): void {
+	execFileSync('bun', ['run.ts', '--uncapped', '--runs', String(rounds), ...pages], {
+		cwd: join(import.meta.dirname, '../pages'),
+		stdio: 'inherit',
+		env: {
+			...process.env,
+			MESHLETS_MAX_LOAD: String(MAX_LOAD),
+			MESHLETS_ATTEMPTS: '3',
+			MESHLETS_OUT: join(results, file),
+		},
+	});
+}
+
+/** Each page of `bases` once in each mode. */
+const inModes = (bases: string[]) =>
+	bases.flatMap((base) => Object.values(MODES).map((mode) => `${base}&${mode}`));
+
 /** Waits until the one-minute load falls below the gate, for at most half an hour. */
 async function quiet(): Promise<void> {
 	const by = Date.now() + 30 * 60_000;
@@ -49,17 +71,16 @@ if (part === 'desert') {
 		bistro('street'),
 		bistro('wide'),
 	];
-	const pages = bases.flatMap((base) => Object.values(MODES).map((mode) => `${base}&${mode}`));
-	execFileSync('bun', ['run.ts', '--uncapped', '--runs', String(rounds), ...pages], {
-		cwd: join(import.meta.dirname, '../pages'),
-		stdio: 'inherit',
-		env: {
-			...process.env,
-			MESHLETS_MAX_LOAD: String(MAX_LOAD),
-			MESHLETS_ATTEMPTS: '3',
-			MESHLETS_OUT: join(results, 'medium-occlusion-desert-bistro.json'),
-		},
-	});
+	runPages(inModes(bases), 'medium-occlusion-desert-bistro.json');
+} else if (part === 'island') {
+	// The town view is the measuring page's own pose; the default view is the showcase's opening pose.
+	// The camera holds still, so `still-camera=off` keeps every frame drawing.
+	const island = (pose: string | null) =>
+		`tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off${pose ? `&pose=${pose}` : ''}`;
+	runPages(
+		inModes([island(null), island('600,280,540,40,80,-40')]),
+		'medium-occlusion-island.json',
+	);
 } else if (part === 'bench') {
 	const out = join(results, 'medium-occlusion-bench');
 	mkdirSync(out, { recursive: true });
@@ -96,5 +117,5 @@ if (part === 'desert') {
 		}
 	}
 } else {
-	throw new Error(`--part takes desert or bench, not ${part}`);
+	throw new Error(`--part takes desert, island or bench, not ${part}`);
 }
