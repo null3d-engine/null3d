@@ -607,6 +607,19 @@ impl<'a> Draws<'a> {
             if !takes(bucket) || only.is_some_and(|only| !only.draws(b)) {
                 continue;
             }
+            // A level that holds no copy draws nothing. A bundle leaves out the draws of a level
+            // that the frame's counts have found idle, with its pieces' draws, and a direct pass
+            // leaves out a level's bucket whose count is 0.
+            let empty_level = match counts {
+                Some(counts) => {
+                    layout.marks.get(b).is_some_and(|&mark| mark != 0)
+                        && counts.get(b).copied().unwrap_or(0) == 0
+                }
+                None => layout.idle.get(b).copied().unwrap_or(false),
+            };
+            if empty_level {
+                continue;
+            }
             let id = pipeline_of(bucket);
             // A feature-instance draw whose feature does not draw now records nothing: the views
             // take no room for it, and its count word is not copied either.

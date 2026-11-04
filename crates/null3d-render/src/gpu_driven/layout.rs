@@ -566,6 +566,13 @@ pub(super) struct Layout {
     pub(super) slices_placed: bool,
     /// True while a level's slice moved and the frame has not recorded its bundles again.
     pub(super) slices_moved: bool,
+    /// True for each bucket of a level that no view of the layout has placed a copy in for
+    /// [`IDLE_FRAMES`](super::copies::IDLE_FRAMES) frames, and for the pieces of such a level. The
+    /// views' bundles leave out its draws, whose instance count would be 0.
+    pub(super) idle: Vec<bool>,
+    /// The frames in a row that each bucket of a level held no copy, up to the count that makes it
+    /// idle.
+    pub(super) idle_frames: Vec<u16>,
     /// The most words that the CPU culling lists for one view: a source that fades between levels
     /// lists three words more than one that does not.
     cull_rows: u32,
@@ -875,6 +882,8 @@ impl Layout {
         self.buckets.clear();
         self.marks.clear();
         self.level_buckets.clear();
+        self.idle.clear();
+        self.idle_frames.clear();
         (self.copied, self.indexed) = (0, 0);
         self.draws.clear();
         self.draw_order.clear();
@@ -1814,6 +1823,11 @@ impl Layout {
         self.level_buckets.extend(
             (0..self.buckets.len() as u32).filter(|&bucket| self.marks[bucket as usize] != 0),
         );
+        // A new layout draws every bucket until its counts say that a level holds no copy.
+        self.idle.clear();
+        self.idle.resize(self.buckets.len(), false);
+        self.idle_frames.clear();
+        self.idle_frames.resize(self.buckets.len(), 0);
         let fades = self.level_links.iter().any(LevelLink::has_next);
         self.cull_rows = if fades || self.has_ranges || self.codes {
             self.sources.saturating_mul(4)
@@ -3083,12 +3097,98 @@ mod tests {
         (layout, settings, mesh)
     }
 
+    /// A camera bundle draws a pieced level's pieces while the level holds copies, and leaves out
+    /// every one of their draws once the frames' counts have found the level idle. A copy that
+    /// picks the level again brings them back at once, and each change asks for the bundles again.
+    #[test]
+    fn a_bundle_leaves_out_the_pieces_of_a_level_that_holds_no_copy() {
+        let (mut layout, _settings, _, targets) = pieced_layout();
+        let whole = layout
+            .buckets
+            .iter()
+            .position(|bucket| bucket.pieces.is_some())
+            .expect("a bucket with pieces");
+        let (first, count) = layout.buckets[whole].pieces.unwrap();
+        // The bucket takes a level's copies, as a level of a set does, and its pieces with it.
+        layout.marks[whole] = 1;
+        layout.marks[first as usize..(first + count) as usize].fill(1);
+        layout.level_buckets = (0..layout.buckets.len() as u32)
+            .filter(|&b| layout.marks[b as usize] != 0)
+            .collect();
+        let meshes = crate::frame::MeshBuffers::new(100);
+        let piece_draws: u32 = layout.buckets[first as usize..(first + count) as usize]
+            .iter()
+            .map(|bucket| bucket.draws)
+            .sum();
+        assert!(piece_draws > 0);
+        let draws = |layout: &Layout| {
+            let mut list = DrawList::with_capacity(4096);
+            super::super::opaque::record_bundle(
+                &mut list,
+                crate::view::ViewId::CAMERA,
+                layout,
+                &meshes,
+                targets,
+                super::super::opaque::Bundle::Opaque,
+                0,
+                &|_| false,
+            )
+            .unwrap();
+            null3d_gpu::drawlist::decode(list.words())
+                .map(Result::unwrap)
+                .filter(|command| command.op == Op::DrawIndexedIndirect)
+                .count() as u32
+        };
+        let mut fits = vec![0u32; layout.buckets.len()];
+        fits[whole] = 5;
+        assert!(!layout.note_idle(&fits));
+        let busy = draws(&layout);
+        assert_eq!(busy, piece_draws, "a level with copies draws every piece");
+        // No copy picks the level: it stays drawn until the wait ends, then turns idle once.
+        fits[whole] = 0;
+        let changes: Vec<bool> = (0..super::super::copies::IDLE_FRAMES)
+            .map(|_| layout.note_idle(&fits))
+            .collect();
+        assert_eq!(changes.iter().filter(|&&changed| changed).count(), 1);
+        assert_eq!(changes.last(), Some(&true));
+        assert!(layout.idle[whole]);
+        assert_eq!(draws(&layout), 0, "an idle level draws no piece");
+        // A copy picks the level again, and its pieces draw at once.
+        fits[whole] = 1;
+        assert!(layout.note_idle(&fits));
+        assert_eq!(draws(&layout), busy);
+        // The direct path counts each bucket's copies itself, and leaves out a level's bucket
+        // that holds none.
+        let direct = |counts: &[u32]| {
+            let mut list = DrawList::with_capacity(4096);
+            super::super::opaque::record_direct(
+                &mut list,
+                crate::view::ViewId::CAMERA,
+                &layout,
+                &meshes,
+                super::super::opaque::Bundle::Opaque,
+                counts,
+                &|_| false,
+            )
+            .unwrap();
+            null3d_gpu::drawlist::decode(list.words())
+                .map(Result::unwrap)
+                .filter(|command| command.op == Op::DrawIndexed)
+                .count() as u32
+        };
+        let mut counts = vec![0u32; layout.buckets.len()];
+        assert_eq!(direct(&counts), 0, "pieces that hold no copy draw nothing");
+        counts[first as usize..(first + count) as usize].fill(2);
+        assert_eq!(direct(&counts), piece_draws);
+    }
+
     /// A mesh split into two parts whose list comes in three pieces, the last of which crosses
     /// from the first part into the second: its bucket draws nothing of its own, and each piece's
     /// bucket draws the ranges of the parts that it covers, in the bucket's place in the draw
     /// order, from a slice of the bucket's size, with its sphere and cone in its record.
-    #[test]
-    fn a_mesh_in_pieces_draws_each_piece_from_a_bucket_and_slice_of_its_own() {
+    /// A layout of one object whose mesh, split into two parts, holds three pieces, with the
+    /// layout's settings, the mesh and the targets that it was built for.
+    fn pieced_layout() -> (Layout, SceneSettings, u32, PassTargets) {
         let (mut layout, mut settings, mesh) = split_tree_layout(0, 1);
         let piece = |triangles: u32, axis: f32| crate::pieces::Piece {
             triangles,
@@ -3143,6 +3243,12 @@ mod tests {
                 0,
             )
             .unwrap();
+        (layout, settings, mesh, targets)
+    }
+
+    #[test]
+    fn a_mesh_in_pieces_draws_each_piece_from_a_bucket_and_slice_of_its_own() {
+        let (layout, settings, mesh, _) = pieced_layout();
         let whole = layout
             .buckets
             .iter()

@@ -66,6 +66,23 @@ export function triangleIndices(prim, vertices) {
 }
 
 /**
+ * The places that draw a mesh: its nodes, and the rows of their instancing.
+ *
+ * @param {Mesh} mesh
+ */
+export function copiesOf(mesh) {
+	let copies = 0;
+	for (const parent of mesh.listParents()) {
+		if (parent.propertyType !== 'Node') continue;
+		const node = /** @type {import('@gltf-transform/core').Node} */ (parent);
+		const instancing = /** @type {any} */ (node.getExtension('EXT_mesh_gpu_instancing'));
+		const rows = instancing?.listAttributes?.()[0]?.getCount() ?? 1;
+		copies += rows;
+	}
+	return copies;
+}
+
+/**
  * The triangle lists of a mesh that have positions, the only primitives that the steps change.
  *
  * @param {Mesh} mesh
