@@ -85,6 +85,7 @@ import { GPU_TIMING_ARGS, launchChromium, SWIFTSHADER_ARGS } from '../packages/c
 import { RUNS } from '../packages/cli/src/protocol.js';
 import { displayRateCheck, launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
 import { chromeForTesting } from '../tests/lib/chrome-for-testing.ts';
+import { waitForQuietLoad } from '../tests/lib/cost-runs.ts';
 import { jobWorkersProblem } from '../tests/lib/engine-checks.ts';
 import { pageResult, watchPageProblems } from '../tests/lib/page-result.ts';
 import { readShard, runName, SHARD_FORMAT, type Shard } from '../tests/lib/runs.ts';
@@ -133,6 +134,7 @@ import {
 	type ChartSeries,
 	drawnSizeProblem,
 	drawPathOf,
+	figureProblem,
 	lineChartSvg,
 	ms,
 	type SummaryRow,
@@ -388,6 +390,7 @@ async function runPage(
 		await page.goto(url);
 		result = await pageResult<BenchResult>(page, timeoutMs);
 		if (displayProblem) result = { ...result, displayProblem };
+		if (problems.length > 0) result = { ...result, problems: problems.slice(0, PAGE_PROBLEMS) };
 	} catch (e) {
 		const error = [(e as Error).message, ...problems.slice(0, PAGE_PROBLEMS)].join('\n  ');
 		result = { ok: false, error } as BenchResult;
@@ -395,6 +398,39 @@ async function runPage(
 		await page.close();
 	}
 	return { ...result, machineLoad: { before, after: load() } };
+}
+
+/** Tries of a page in each round of a protocol run, while its result is no figure. */
+const PAGE_TRIES = 3;
+
+/**
+ * Runs a page of a protocol run until its result is a timing figure, at most `PAGE_TRIES` times.
+ * Each try first waits for a quiet computer. A try whose page failed, logged a problem, ran with
+ * another job worker count than it asked for, or saw the load reach the quiet limit runs again, and
+ * `rejected` hears why. Returns the last try's result, with the reason it is no figure when no try
+ * gave one.
+ */
+async function runPageForFigure(
+	browser: Browser,
+	url: string,
+	timeoutMs: number,
+	uncapped: boolean,
+	jobs: number | undefined,
+	rejected: (result: BenchResult, problem: string, attempt: number) => void,
+): Promise<{ result: BenchResult; problem: string | undefined }> {
+	for (let attempt = 1; ; attempt++) {
+		let result: BenchResult;
+		try {
+			await waitForQuietLoad();
+			result = await runPage(browser, url, timeoutMs, uncapped);
+		} catch (e) {
+			result = { ok: false, error: (e as Error).message } as BenchResult;
+		}
+		// A page that ran with another job worker count would put its times under the wrong count.
+		const problem = figureProblem(result) ?? jobWorkersProblem(result.mode?.jobWorkers, jobs);
+		if (problem === undefined || attempt === PAGE_TRIES) return { result, problem };
+		rejected(result, problem, attempt);
+	}
 }
 
 /** A page of a protocol run: its scene, kind and job worker count, and the name of its results. */
@@ -453,17 +489,25 @@ async function runProtocol(
 				],
 				options,
 			);
-			const result = await runPage(
+			const { result, problem } = await runPageForFigure(
 				browser,
 				`${baseUrl}${pagePath(scene, kind, switches)}`,
 				pageTimeoutMs(seconds, scene),
 				options.uncapped,
+				jobs,
+				(tryResult, tryProblem, attempt) => {
+					writeFileSync(
+						join(dir, `${name}-${run}-try${attempt}.json`),
+						JSON.stringify({ ...tryResult, ok: false, error: tryProblem }, null, '\t'),
+					);
+					console.log(
+						`${name} run ${run} try ${attempt}: no figure, so it runs again: ${tryProblem}`,
+					);
+				},
 			);
-			writeFileSync(join(dir, `${name}-${run}.json`), JSON.stringify(result, null, '\t'));
-			// A page that ran with another job worker count would put its times under the wrong count.
-			const problem = result.ok
-				? jobWorkersProblem(result.mode?.jobWorkers, jobs)
-				: (result.error ?? 'the page failed without a message');
+			// A result that is no figure is kept as a failure, so the archive leaves it out too.
+			const kept = problem === undefined ? result : { ...result, ok: false, error: problem };
+			writeFileSync(join(dir, `${name}-${run}.json`), JSON.stringify(kept, null, '\t'));
 			if (problem === undefined) passed.set(name, [...(passed.get(name) ?? []), result]);
 			else failures.push(`${name} run ${run}: ${problem}`);
 			if (isMatchScene(scene)) matchRuns.push({ scene, kind, result });

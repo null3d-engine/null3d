@@ -7,6 +7,7 @@ import {
 	desertTable,
 	drawnSizeProblem,
 	drawPathOf,
+	figureProblem,
 	jobsTable,
 	lineChartSvg,
 	loadTable,
@@ -535,5 +536,17 @@ describe('the computer load', () => {
 		const row = summaryRow({ scene: 's1', kind: 'null3d-webgpu' }, [withLoad(7, 12)]);
 		expect(machineLoadLines([row])[0]).toContain('It reached 8 or more');
 		expect(machineLoadLines([summaryRow({ scene: 's1', kind: 'x' }, [result(1)])])).toEqual([]);
+	});
+
+	test('counts a page as a figure only when it ran clean on a quiet computer', () => {
+		expect(figureProblem(withLoad(3, 7.9))).toBeUndefined();
+		expect(figureProblem(withLoad(3, 8))).toContain('load reached 8.0');
+		expect(figureProblem(withLoad(9.5, 2))).toContain('load reached 9.5');
+		const rejected = {
+			...withLoad(1, 2),
+			problems: ['console: E1305: the GPU rejected a command'],
+		};
+		expect(figureProblem(rejected)).toContain('E1305');
+		expect(figureProblem({ ...result(1), ok: false, error: 'timed out' })).toBe('timed out');
 	});
 });
