@@ -22,14 +22,22 @@
 //   bun run bench:run -- --merge target/bench/shards
 //   bun run bench:run -- --dev --scenes s2 --pages null3d-webgpu
 //   bun run bench:run -- --scenes s2 --pages null3d-webgpu,threejs-webgpu --switches shadows=3
+//   bun run bench:run -- --scenes desert --switches view=aerial&shadows=3
 // Options:
-//   --scenes <list>   s1, s1-static, s1-cells, s2, s3, s4, s5, s6, s7; the default is s1, and
-//                     every scene with --sweep or --compare
+//   --scenes <list>   s1, s1-static, s1-cells, s2, s3, s4, s5, s6, s7, and the match scene desert;
+//                     the default is s1, and every scene but the match scenes with --sweep or
+//                     --compare. The desert runs in the protocol only: it builds its model files
+//                     first, and runs Chrome without its frame cap
 //   --pages <list>    page kinds; the default is null3d-webgpu, threejs-webgpu, threejs-webgl and
 //                     scene-code. With --jobs or --compare it is null3d-webgpu and null3d-webgl2,
 //                     and with --sweep every kind but null3d-compat. The kinds that end in -low run
-//                     null3d in low-latency mode
-//   --runs <n>        fresh runs of each page, of each build with --compare; the default is 5
+//                     null3d in low-latency mode. A match scene has its own pages: the desert's are
+//                     threejs-webgpu and null3d-webgpu
+//   --runs <n>        rounds of fresh runs, each of which opens every page once, in turns; with
+//                     --compare, runs of each build; the default is 5
+//   --uncapped        Chrome without its frame cap, so each page draws as fast as it can and the
+//                     time between frames measures each engine's whole frame. The display check
+//                     then measures nothing
 //   --seconds <n>     warm-up and measured time of each run; the default is the protocol's 5 and 30
 //   --jobs <list>     job worker counts, such as 1,2,4,8: runs each null3d page at each count
 //   --sweep           each scene at the object counts in SWEEP_COUNTS, one run each, instead of
@@ -65,10 +73,12 @@
 //   --switches <q>    page switches that every page gets, such as shadows=3: S2 with the sun's
 //                     shadows in 3 cascades on null3d, and in one map on three.js
 // Every browser starts with GPU timing on: WebGPU's developer features, and Dawn's timestamp
-// quantization off, so the timestamps are not rounded before the page reads them.
+// quantization off, so the timestamps are not rounded before the page reads them. Each result
+// keeps the computer's 1-minute load average before its page opened and after it closed, and the
+// report gives the range.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { cpus, platform } from 'node:os';
+import { cpus, loadavg, platform } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
 import type { Browser } from '@playwright/test';
 import { GPU_TIMING_ARGS, launchChromium, SWIFTSHADER_ARGS } from '../packages/cli/src/browser.js';
@@ -99,14 +109,20 @@ import {
 	roundOrder,
 	shardPages,
 } from './lib/compare';
+import { ensureDesertFiles } from './lib/desert-files';
 import {
 	BENCH_PAGE_KINDS,
 	BENCH_SCENES,
 	type BenchPageKind,
 	type BenchScene,
+	isBenchScene,
+	isMatchScene,
 	isNull3dPage,
 	JOBS_PAGES,
+	MATCH_PAGES,
 	pagePath,
+	RUN_SCENES,
+	type RunScene,
 	readJobCounts,
 	readSwitches,
 	SCENE_CODE,
@@ -115,6 +131,8 @@ import {
 	type BenchResult,
 	benchReport,
 	type ChartSeries,
+	drawnSizeProblem,
+	drawPathOf,
 	lineChartSvg,
 	ms,
 	type SummaryRow,
@@ -173,11 +191,14 @@ const DEFAULT_PAGES: BenchPageKind[] = [
 const START_MARGIN_MS = 60_000;
 /**
  * More time to start for a scene that streams in before its warm-up. S6's whole city took more than
- * the start margin on CI's Mac machines, so every run of its pages failed there.
+ * the start margin on CI's Mac machines, so every run of its pages failed there. The desert's
+ * three.js page builds the meshlets of about seven million triangles before its first frame.
  */
-const STREAM_MARGIN_MS: Partial<Record<BenchScene, number>> = { s6: 240_000 };
+const STREAM_MARGIN_MS: Partial<Record<RunScene, number>> = { s6: 240_000, desert: 600_000 };
 /** The browsers the command can drive. */
 const BROWSERS = ['chrome', 'brave', 'chromium'] as const;
+/** Chrome's switches that turn off its frame cap: the display's sync and the frame rate limit. */
+const UNCAPPED_ARGS = ['--disable-gpu-vsync', '--disable-frame-rate-limit'];
 /**
  * Rounds in a row in which a page fails in both builds before a comparison stops running it. Such a
  * page is broken in both, so more rounds only spend the job's time: S6's pages once timed out in
@@ -189,7 +210,7 @@ const MIN_COMPARE_RUNS = 3;
 
 export interface BenchOptions {
 	/** The scenes and page kinds to run; null takes the default of the run's kind. */
-	scenes: BenchScene[] | null;
+	scenes: RunScene[] | null;
 	pages: BenchPageKind[] | null;
 	runs: number;
 	seconds: number | null;
@@ -207,6 +228,8 @@ export interface BenchOptions {
 	dev: boolean;
 	/** Page switches that every page gets, such as `shadows=3`, or an empty string. */
 	switches: string;
+	/** Chrome without its frame cap; a match scene turns it on. */
+	uncapped: boolean;
 }
 
 /** A run's warm-up and measured seconds: `--seconds` for both, or the protocol's. */
@@ -216,7 +239,7 @@ const runSeconds = (seconds: number | null) => ({
 });
 
 /** How long a page of a scene may take to publish its result. */
-function pageTimeoutMs(seconds: number | null, scene: BenchScene): number {
+function pageTimeoutMs(seconds: number | null, scene: RunScene): number {
 	const { warmup, measure } = runSeconds(seconds);
 	return (warmup + measure) * 1000 + START_MARGIN_MS + (STREAM_MARGIN_MS[scene] ?? 0);
 }
@@ -252,11 +275,13 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
 		browser: 'chrome',
 		dev: false,
 		switches: '',
+		uncapped: false,
 	};
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
 		const value = () => args[++i];
-		if (arg === '--scenes') options.scenes = list(value(), BENCH_SCENES, '--scenes');
+		if (arg === '--scenes') options.scenes = list(value(), RUN_SCENES, '--scenes');
+		else if (arg === '--uncapped') options.uncapped = true;
 		else if (arg === '--pages') options.pages = list(value(), BENCH_PAGE_KINDS, '--pages');
 		else if (arg === '--runs') options.runs = Number(value());
 		else if (arg === '--seconds') options.seconds = Number(value());
@@ -297,51 +322,117 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
 	const other = mode && options.pages?.filter((kind) => !isNull3dPage(kind));
 	if (other && other.length > 0)
 		throw new Error(`${mode}: runs null3d pages only; leave out ${other.join(', ')}`);
+	const matches = (options.scenes ?? []).filter(isMatchScene);
+	const protocolOnly = mode ?? (options.sweep ? '--sweep' : null);
+	if (matches.length > 0 && protocolOnly)
+		throw new Error(`${protocolOnly}: ${matches.join(', ')} runs in the protocol only`);
+	for (const scene of matches) {
+		const extra = options.pages?.filter((kind) => !MATCH_PAGES[scene].includes(kind as never));
+		if (extra && extra.length > 0)
+			throw new Error(
+				`--pages: ${scene} has the pages ${MATCH_PAGES[scene].join(' and ')} only; leave out ${extra.join(', ')}`,
+			);
+	}
+	// A match scene compares the engines' whole frames, which a frame cap would hide.
+	if (matches.length > 0) options.uncapped = true;
 	return options;
 }
 
+/** The page kinds that a protocol run opens for a scene. */
+function pagesOf(scene: RunScene, options: BenchOptions): readonly BenchPageKind[] {
+	if (isMatchScene(scene)) return options.pages ?? MATCH_PAGES[scene];
+	return options.pages ?? (options.jobs ? JOBS_PAGES : DEFAULT_PAGES);
+}
+
 /**
- * Starts the browser: Chrome or Brave in a window, or Chromium without one on SwiftShader. A browser
- * in a window gives focus back to the app that was in front.
+ * Starts the browser: Chrome or Brave in a window, or Chromium without one on SwiftShader, with its
+ * frame cap off when `uncapped`. A browser in a window gives focus back to the app that was in
+ * front.
  */
-function launchBrowser(name: BenchOptions['browser']): Promise<Browser> {
+function launchBrowser(name: BenchOptions['browser'], uncapped: boolean): Promise<Browser> {
+	const args = [...GPU_TIMING_ARGS, ...(uncapped ? UNCAPPED_ARGS : [])];
 	if (name === 'chromium')
-		return launchChromium({
-			headless: true,
-			args: [...SWIFTSHADER_ARGS, ...GPU_TIMING_ARGS],
-		});
+		return launchChromium({ headless: true, args: [...SWIFTSHADER_ARGS, ...args] });
 	return launchInWindow({
 		...(name === 'brave' ? { executablePath: BRAVE } : chromeForTesting()),
-		args: [...GPU_TIMING_ARGS],
+		args,
 	});
 }
+
+/** The computer's 1-minute load average. */
+const load = () => loadavg()[0] ?? 0;
 
 /** Problems of a failed page that its error carries: enough to name the cause, few to print. */
 const PAGE_PROBLEMS = 8;
 
 /**
  * Opens one benchmark page in a fresh parked window and waits for its result. The window's display
- * rate is measured first, and a result whose rate fell short of the display's says why. A page that
- * fails gives its first problems with its error.
+ * rate is measured first, unless the browser runs without its frame cap, and a result whose rate fell
+ * short of the display's says why. The result keeps the computer's load before and after the page. A
+ * page that fails gives its first problems with its error.
  */
-async function runPage(browser: Browser, url: string, timeoutMs: number): Promise<BenchResult> {
+async function runPage(
+	browser: Browser,
+	url: string,
+	timeoutMs: number,
+	uncapped: boolean,
+): Promise<BenchResult> {
+	const before = load();
 	const page = await newParkedPage(browser, { viewport: { width: 1400, height: 800 } });
 	const problems = watchPageProblems(page);
+	let result: BenchResult;
 	try {
-		const displayProblem = await displayRateCheck(page);
+		const displayProblem = uncapped ? undefined : await displayRateCheck(page);
 		if (displayProblem)
 			console.warn(`${url}: ${displayProblem}, so its timing figures do not compare with others`);
 		await page.goto(url);
-		const result = await pageResult<BenchResult>(page, timeoutMs);
-		return displayProblem ? { ...result, displayProblem } : result;
+		result = await pageResult<BenchResult>(page, timeoutMs);
+		if (displayProblem) result = { ...result, displayProblem };
 	} catch (e) {
 		const error = [(e as Error).message, ...problems.slice(0, PAGE_PROBLEMS)].join('\n  ');
-		return { ok: false, error } as BenchResult;
+		result = { ok: false, error } as BenchResult;
 	} finally {
 		await page.close();
 	}
+	return { ...result, machineLoad: { before, after: load() } };
 }
 
+/** A page of a protocol run: its scene, kind and job worker count, and the name of its results. */
+interface PlannedPage {
+	scene: RunScene;
+	kind: BenchPageKind;
+	jobs: number | undefined;
+	name: string;
+}
+
+/** The pages of a protocol run, in the order that each round opens them. */
+function protocolPlan(options: BenchOptions): PlannedPage[] {
+	return (options.scenes ?? ['s1']).flatMap((scene) =>
+		(options.jobs ?? [undefined]).flatMap((jobs) =>
+			pagesOf(scene, options).map((kind) => ({
+				scene,
+				kind,
+				jobs,
+				name: jobs === undefined ? `${scene}-${kind}` : `${scene}-${kind}-jobs${jobs}`,
+			})),
+		),
+	);
+}
+
+/** A run's result in a line of the log: its CPU time, and a match scene's frame and size. */
+function resultText(result: BenchResult): string {
+	const desert = result.desert;
+	const cpu = `${ms(result.cpuMs.median)} ms`;
+	if (!desert) return cpu;
+	const { width, height } = desert.drawn;
+	return `${cpu}, interval ${ms(desert.intervalMs)} ms, GPU ${ms(desert.gpuMs)} ms, drawn ${width} x ${height}, ${drawPathOf(desert)} path`;
+}
+
+/**
+ * Runs every page of the plan once in each round, so a slow spell of the computer falls on each
+ * page alike, and reports each page's runs. A match scene whose engines drew different sizes fails
+ * the run.
+ */
 async function runProtocol(
 	browser: Browser,
 	baseUrl: string,
@@ -349,11 +440,12 @@ async function runProtocol(
 	dir: string,
 ): Promise<string> {
 	const seconds = options.seconds;
-	const rows: SummaryRow[] = [];
 	const failures: string[] = [];
-	const pages = options.pages ?? (options.jobs ? JOBS_PAGES : DEFAULT_PAGES);
-	for (const scene of options.scenes ?? ['s1']) {
-		for (const jobs of options.jobs ?? [undefined]) {
+	const plan = protocolPlan(options);
+	const passed = new Map<string, BenchResult[]>();
+	const matchRuns: { scene: RunScene; kind: string; result: BenchResult }[] = [];
+	for (let run = 1; run <= options.runs; run++)
+		for (const { scene, kind, jobs, name } of plan) {
 			const switches = withSwitches(
 				[
 					...(seconds === null ? [] : [`seconds=${seconds}`]),
@@ -361,30 +453,34 @@ async function runProtocol(
 				],
 				options,
 			);
-			for (const kind of pages) {
-				const name = jobs === undefined ? `${scene}-${kind}` : `${scene}-${kind}-jobs${jobs}`;
-				const results: BenchResult[] = [];
-				for (let run = 1; run <= options.runs; run++) {
-					const result = await runPage(
-						browser,
-						`${baseUrl}${pagePath(scene, kind, switches)}`,
-						pageTimeoutMs(seconds, scene),
-					);
-					writeFileSync(join(dir, `${name}-${run}.json`), JSON.stringify(result, null, '\t'));
-					// A page that ran with another job worker count would put its times under the wrong count.
-					const problem = result.ok
-						? jobWorkersProblem(result.mode?.jobWorkers, jobs)
-						: (result.error ?? 'the page failed without a message');
-					if (problem === undefined) results.push(result);
-					else failures.push(`${name} run ${run}: ${problem}`);
-					console.log(
-						`${name} run ${run}: ${problem === undefined ? `${ms(result.cpuMs.median)} ms` : `failed: ${problem}`}`,
-					);
-				}
-				if (results.length > 0) rows.push(summaryRow({ scene, kind, jobs }, results));
-			}
+			const result = await runPage(
+				browser,
+				`${baseUrl}${pagePath(scene, kind, switches)}`,
+				pageTimeoutMs(seconds, scene),
+				options.uncapped,
+			);
+			writeFileSync(join(dir, `${name}-${run}.json`), JSON.stringify(result, null, '\t'));
+			// A page that ran with another job worker count would put its times under the wrong count.
+			const problem = result.ok
+				? jobWorkersProblem(result.mode?.jobWorkers, jobs)
+				: (result.error ?? 'the page failed without a message');
+			if (problem === undefined) passed.set(name, [...(passed.get(name) ?? []), result]);
+			else failures.push(`${name} run ${run}: ${problem}`);
+			if (isMatchScene(scene)) matchRuns.push({ scene, kind, result });
+			console.log(
+				`${name} run ${run}: ${problem === undefined ? resultText(result) : `failed: ${problem}`}`,
+			);
 		}
+	for (const scene of new Set(matchRuns.map((run) => run.scene))) {
+		const problem = drawnSizeProblem(matchRuns.filter((run) => run.scene === scene));
+		if (!problem) continue;
+		failures.push(`${scene}: ${problem}, so its figures do not compare`);
+		process.exitCode = 1;
 	}
+	const rows: SummaryRow[] = plan.flatMap(({ scene, kind, jobs, name }) => {
+		const results = passed.get(name) ?? [];
+		return results.length > 0 ? [summaryRow({ scene, kind, jobs }, results)] : [];
+	});
 	const lines = benchReport(rows);
 	for (const failure of failures) lines.push(`Failed: ${failure}`);
 	writeFileSync(join(dir, 'summary.json'), JSON.stringify(rows, null, '\t'));
@@ -434,7 +530,7 @@ async function runSweep(
 	const report: string[] = [];
 	// A window larger than the charts; each picture is of its chart alone.
 	const chartPage = await newParkedPage(browser, { viewport: { width: 1200, height: 800 } });
-	for (const scene of options.scenes ?? BENCH_SCENES) {
+	for (const scene of (options.scenes ?? BENCH_SCENES).filter(isBenchScene)) {
 		const points: SweepPoint[] = [];
 		const series: Record<string, { x: number; y: number }[]> = {};
 		for (const n of SWEEP_COUNTS[scene]) {
@@ -444,6 +540,7 @@ async function runSweep(
 					browser,
 					`${baseUrl}${pagePath(scene, kind, withSwitches([`seconds=${seconds}`, `n=${n}`], options))}`,
 					pageTimeoutMs(seconds, scene),
+					options.uncapped,
 				);
 				writeFileSync(
 					join(dir, `sweep-${scene}-${kind}-${n}.json`),
@@ -572,9 +669,9 @@ async function runComparison(
 		baseline: preparedBaseline ? preparedPages(roots.baseline) : roots.baseline,
 		new: roots.new,
 	};
-	const plan = (options.scenes ?? BENCH_SCENES).flatMap((scene) =>
-		(options.pages ?? JOBS_PAGES).map((kind) => ({ scene, kind })),
-	);
+	const plan = (options.scenes ?? BENCH_SCENES)
+		.filter(isBenchScene)
+		.flatMap((scene) => (options.pages ?? JOBS_PAGES).map((kind) => ({ scene, kind })));
 	const share = options.shard ? shardPages(plan, options.shard) : plan;
 	// A scene that one checkout lacks, such as a benchmark that the new build adds, has nothing to
 	// compare with, so it runs in neither.
@@ -628,6 +725,7 @@ async function runComparison(
 						browser,
 						`${urls[build]}${pagePath(scene, kind, switchesOfScene(scene))}`,
 						pageTimeoutMs(options.seconds, scene),
+						options.uncapped,
 					);
 					const name = `${build}-${page}-${round}`;
 					writeFileSync(join(dir, `${name}.json`), JSON.stringify(result, null, '\t'));
@@ -688,7 +786,9 @@ function readRecords(folder: string): ComparisonRecord[] {
 
 /** Runs the pages in the browser, and returns the run's report. */
 async function runInBrowser(options: BenchOptions, dir: string): Promise<string> {
-	const browser = await launchBrowser(options.browser);
+	// A match scene's model files build before the browser starts, so no page waits for them.
+	if (options.scenes?.includes('desert')) await ensureDesertFiles(REPO_ROOT);
+	const browser = await launchBrowser(options.browser, options.uncapped);
 	try {
 		if (options.compare)
 			return judgeComparison(
@@ -701,7 +801,8 @@ async function runInBrowser(options: BenchOptions, dir: string): Promise<string>
 			const report = options.sweep
 				? await runSweep(browser, server.url, options, dir)
 				: await runProtocol(browser, server.url, options, dir);
-			return `Benchmark pages: the ${pagesText(options.dev)}.\n\n${report}`;
+			const cap = options.uncapped ? ', in a browser without its frame cap' : '';
+			return `Benchmark pages: the ${pagesText(options.dev)}${cap}.\n\n${report}`;
 		} finally {
 			server.stop();
 		}
