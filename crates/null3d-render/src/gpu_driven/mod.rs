@@ -209,7 +209,7 @@ use crate::transmission::{self, TransmissionIds};
 use crate::view::{MAX_VIEWS, ViewFrame, ViewId};
 use crate::view_copy::ViewCopyIds;
 use crate::weighted::WeightedIds;
-use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES, Phase};
+use cull::{Culling, INDIRECT_BYTES, Phase};
 use depth_fit::LightDepths;
 use direct::Direct;
 use feature_rows::FeatureRows;
@@ -4213,7 +4213,7 @@ impl GpuDrivenRenderer {
             + dfg::BYTES
             + ao::BLANK_BYTES;
         let per_view = |layout: &Layout| {
-            (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize
+            (sizes::FRAME_UNIFORM_BYTES + sizes::CULL_PARAMS_BYTES) as usize
                 + layout.draws.len() * INDIRECT_BYTES as usize
                 + if self.config.direct_draws {
                     layout.copy_upload_bytes(active_sources) as usize
