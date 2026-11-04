@@ -21,8 +21,9 @@
 // index count comes from the scan, so a view that sees no patch of a mesh draws none of it.
 //
 // The scene's patches follow each other mesh after mesh, and each mesh's record names its run of
-// them, the slot of its copy in the view's compacted instances, the first of its indirect draws,
-// and the base vertex that its indices start from. Two sets of mesh records follow the patches,
+// them, the slot of its copy in the view's compacted instances, the first of the layout's indirect
+// draws, where the culling pass counts its copy, and the base vertex that its indices start from.
+// The view's own draws hold one draw for each record, in the records' order. Two sets of mesh records follow the patches,
 // one record for each tree in each: the scene's layout's, which the camera's views read, and the
 // casters' layout's, which the shadow views read. A tree that a layout does not draw has a record
 // whose slot is NOT_DRAWN, so the view picks none of its patches and writes none of its draws.
@@ -81,8 +82,8 @@ struct Params {
 @group(0) @binding(6) var<storage, read_write> offsets: array<u32>;
 /// The view's list of indices, which the view's cluster draws read.
 @group(0) @binding(7) var<storage, read_write> list: array<u32>;
-/// Each cluster mesh's indirect draw: its index count, an instance, its first index in the list,
-/// its base vertex, and a spare.
+/// Each cluster mesh's indirect draw, in the order of the meshes' records: its index count, an
+/// instance, its first index in the list, its base vertex, and a spare.
 @group(0) @binding(8) var<storage, read_write> draws: array<u32>;
 
 /// The workgroup's runs in the count, and its running sums in the scan.
@@ -290,8 +291,10 @@ fn scan_patches(lane: u32) {
             finish = patch_offset(mesh_of(m + 1u).first_patch);
         }
         finish = min(finish, capacity);
+        // The culling pass counts the mesh's copy in the layout's draw, and the view's own draws
+        // hold one draw a tree, in the trees' order, where the passes that draw the tree read it.
         let drawn = indirect[(params.counts.w + mesh.first_draw) * INDIRECT_WORDS + 1u];
-        let at = mesh.first_draw * INDIRECT_WORDS;
+        let at = m * INDIRECT_WORDS;
         draws[at] = select(0u, finish - min(start, finish), drawn > 0u);
         draws[at + 1u] = select(0u, 1u, drawn > 0u);
         draws[at + 2u] = start;

@@ -6,10 +6,11 @@ mod common;
 
 use std::collections::HashSet;
 
-use common::{World, count, grid};
+use common::{World, base_sphere, count, grid};
 use null3d_core::handle::Handle;
+use null3d_core::levels::Switch;
 use null3d_core::scene::{Command, flags};
-use null3d_gpu::drawlist::{Op, index_format, layout, template};
+use null3d_gpu::drawlist::{Op, buffer_usage, index_format, layout, template};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::frame::FrameBuilder;
 use null3d_render::materials::Shading;
@@ -300,5 +301,124 @@ fn each_shadow_view_picks_and_draws_its_own_patches_from_a_list_sized_to_them() 
     assert!(
         lists.iter().any(|&(_, bytes, _)| bytes >= 60_000 * 4),
         "{lists:?}"
+    );
+}
+
+/// The world's box mesh, by engine id, which its first two objects and its batch draw.
+const BOX: u32 = 1;
+
+/// The world's ball mesh, by engine id, which its third object draws 20 m from the camera.
+const BALL: u32 = 2;
+
+/// Gives the world's ball two lower levels. At the world's threshold the ball 20 m away draws the
+/// coarsest one, and a camera beside it draws the finest.
+fn give_ball_levels(world: &mut World) {
+    let settings = world.renderer.settings_mut();
+    let meshes = [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])]
+        .map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
+    settings
+        .set_mesh_levels(
+            BALL,
+            &meshes,
+            &[0.01, 0.05],
+            &[Switch::Error; 2],
+            &[0, 0],
+            0,
+        )
+        .unwrap();
+}
+
+/// The cluster pass places a tree's patches by its one copy in the view's compacted instances, so
+/// the record that names that copy follows the copy wherever the frame's level slices put it: in
+/// the first frame, whose slices take an order of their own, and after a camera jump whose level
+/// counts outgrow the slices, which places them again.
+#[test]
+fn a_trees_record_names_its_copy_after_the_level_slices_move() {
+    let mut world = World::new();
+    give_ball_levels(&mut world);
+    let mesh = world.add_object(&grid(1, 1), Shading::Lit);
+    world
+        .renderer
+        .set_mesh_patches(mesh, Some(one_patch()))
+        .unwrap();
+    world.record(true);
+    let slots = world.renderer.cluster_copy_slots();
+    assert_eq!(slots.len(), 1, "the grid draws its tree: {slots:?}");
+    assert_eq!(
+        slots[0].0, slots[0].1,
+        "the first frame's record: {slots:?}"
+    );
+    let before = world.renderer.compacted_bytes()[0];
+
+    // The camera jumps beside the ball, which then draws its finest level, whose slice held no
+    // copy.
+    world.frame += 1;
+    world.aim([1.0, 0.0, 1.0], 0.0, 0.0);
+    world.record(false);
+    assert_ne!(
+        world.renderer.compacted_bytes()[0],
+        before,
+        "the jump places the slices again"
+    );
+    let slots = world.renderer.cluster_copy_slots();
+    assert_eq!(
+        slots[0].0, slots[0].1,
+        "the record after the jump: {slots:?}"
+    );
+}
+
+/// Draws the world's batch of boxes with a coarser level, 20 m from the camera, which sees them at
+/// that level, beside a caster with a tree of cluster patches, with `cascades` sun shadow
+/// cascades. Then the camera jumps beside the boxes, which moves every row into the base level's
+/// slice. Each frame replays on a mock device. Returns how many views' compacted instances the
+/// jump made again.
+fn jump_beside_the_boxes(cascades: u32) -> usize {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    if cascades > 0 {
+        world.cast_sun_shadows(cascades);
+        let batch = world.batch;
+        let rows = world.batches.get_mut(batch).unwrap();
+        rows.set_shadows(flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS);
+    }
+    let settings = world.renderer.settings_mut();
+    let coarse = settings
+        .meshes_mut()
+        .add(&base_sphere(0.5, [3, 2]))
+        .unwrap()
+        + 1;
+    settings
+        .set_mesh_levels(BOX, &[coarse], &[5.0], &[Switch::Distance], &[0], 0)
+        .unwrap();
+    caster_with_tree(&mut world, one_patch());
+    world.record(true);
+    mock.replay(world.renderer.list(world.frame).words())
+        .unwrap();
+
+    world.frame += 1;
+    world.aim([0.0, 0.0, 1.0], 0.0, 0.0);
+    world.record(false);
+    mock.replay(world.renderer.list(world.frame).words())
+        .unwrap();
+    // A view's compacted instances are the one buffer that culling writes and draws read.
+    let compacted = buffer_usage::VERTEX | buffer_usage::STORAGE;
+    world
+        .commands()
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateBuffer && o[2] == compacted)
+        .count()
+}
+
+/// The cluster pass's group binds the view's compacted instances and indirect draws, which the
+/// view's culling makes again when a camera jump outgrows them: in the camera's view, and in each
+/// shadow cascade. The group then binds the new buffers. A group that kept the destroyed ones
+/// would fail every submit after the jump, which the mock device refuses.
+#[test]
+fn the_cluster_pass_binds_the_buffers_that_a_jump_makes_again() {
+    assert_eq!(jump_beside_the_boxes(0), 1, "the camera's view grows");
+    assert_eq!(
+        jump_beside_the_boxes(1),
+        2,
+        "the camera's view and the cascade grow"
     );
 }
