@@ -34,7 +34,8 @@ The targets use them as follows ([D-06](decisions/D-06-success-targets.md)):
 - Commit is the engine commit that the run measured. The gate and comparisons record it. For other runs it is the commit that the checkout held when the run started, from git's reflog. Edits that were not committed do not show.
 - Source is the run's name, and its record is `bench/results/<run>.json`. A row from a guide links to it.
 - Figures are medians of the runs of each page, usually 3 or 5 runs.
-- A row of `Apple M5 Max, Chrome` whose commit lacks the canvas watcher's box check drew null3D at twice three.js's width and height. Its null3D GPU time and its share lean against null3D ([Benchmarks](benchmarks.md#what-a-report-measures)).
+- A build without the canvas watcher's box check draws null3D at twice three.js's width and height in a parked window. A row of `Apple M5 Max, Chrome` taken that way leans against null3D. Its GPU time and share show it most ([Benchmarks](benchmarks.md#what-a-report-measures)). No row here is of that kind. The rows dated 27 September to 4 October ran in an ordinary window, on a display of 144 Hz. The timing tools parked their windows only later. Their records keep no drawn size, so whether the fault touched them is not known.
+- The rows of 4 November ran with the box check, in parked windows on the Mac's own 120 Hz screen. They follow the quiet rules of [Benchmarks](benchmarks.md#what-a-report-measures). Their commit is the engine's. The run's checkout held later commits, which change only the benchmark tools. null3D's GPU time there is higher than in the older rows, because High now draws more. S1 draws 9 calls a frame where it drew 2. High turns on screen-space bounce light and the sun's contact shadows. Both read ambient occlusion's depth copy and horizon step, which run after a depth prepass. In S1 the prepass takes 1.20 ms of GPU time. Ambient occlusion's three steps take 0.46 to 0.51 ms each, and bounce light's two steps 0.64 and 0.97 ms. The passes overlap on the GPU. So compare GPU times only between rows of one engine state.
 
 ## S1
 
@@ -63,6 +64,7 @@ S1 moves 100,000 boxes every frame with the same scene code in both engines. It 
 | 2026-10-03 | Apple M5 Max, Chrome 154 | WebGPU | 100,000 | 2.31 / 2.97 (WebGL) | 78% | 0.15 / 0.78 (WebGL) | 20% | 144.0 / 144.0 | 1.95 | 3b79b9da | 20261003-123340-bench |
 | 2026-10-03 | Apple M5 Max, Chrome 154 | WebGPU | 100,000 | 1.67 / 2.81 (WebGL) | 59% | 0.14 / 1.50 (WebGL) | 10% | 144.0 / 144.0 | 1.94 | 21de365f | 20261003-171051-bench |
 | 2026-10-03 | Apple M5 Max, Chrome 154 | WebGPU | 100,000 | 2.10 / 2.98 (WebGL) | 70% | 0.15 / 1.07 (WebGL) | 14% | 143.9 / 144.0 | 1.94 | 21de365f | 20261003-173411-bench |
+| 2026-11-04 | Apple M5 Max, Chrome 156 | WebGPU | 100,000 | 2.62 / 3.17 (WebGL) | 83% | 0.22 / 0.44 (WebGL) | 50% | 120.0 / 120.0 | 3.85 | e61ad018 | 20261104-155425-bench |
 
 - The run folders of the rows of 27 and 28 September name the engine by another name. The archive gives their pages null3D's names.
 - Rows without three.js's own work come from runs without a scene-code page.
@@ -126,6 +128,7 @@ S1-static draws S1's boxes standing still, so only the camera moves.
 | 2026-09-29 | Apple M5 Max, Chrome 153 | WebGL2 | 100,000 | 0.26 / 0.09 (WebGL) | 300% | 0.23 / 0.09 (WebGL) | 271% | 144.0 / n/a | n/a | 99af952b | 20260929-031133-bench |
 | 2026-09-29 | Apple M5 Max, Chrome 153 | WebGL2 | 100,000 | 0.33 / 0.08 (WebGL) | 413% | 0.30 / 0.08 (WebGL) | 381% | 144.0 / n/a | n/a | 99af952b | 20260929-031330-bench |
 | 2026-09-29 | Apple M5 Max, Chrome 153 | WebGPU | 100,000 | 0.13 / 0.08 (WebGL) | 156% | 0.13 / 0.08 (WebGL) | 156% | 144.0 / n/a | 0.41 | 99af952b | 20260929-031330-bench |
+| 2026-11-04 | Apple M5 Max, Chrome 156 | WebGPU | 100,000 | 0.20 / 0.07 (WebGL) | 286% | 0.19 / 0.07 (WebGL) | 271% | 120.0 / 120.0 | 1.82 | e61ad018 | 20261104-155425-bench |
 
 - These rows measure the WebGL2 path's first branch, without its upload changes. three.js's WebGL renderer draws still boxes very cheaply, and the owner accepts ties or small losses there ([D-06](decisions/D-06-success-targets.md#faster-than-threejs-in-every-kind-of-scene)). The final sweep of that branch is 20260929-055234-sweep.
 
@@ -145,6 +148,7 @@ S1-cells spreads S1-static's boxes over 8 x 8 grid cells, and the camera flies l
 | 2026-10-03 | ipad-safari, Safari 26.6.2 | WebGL2 | 100,000 | 0.78 / 0.72 (WebGL) | 108% | 0.78 / 0.72 (WebGL) | 108% | 60.0 / 60.0 | n/a | 3b79b9da | 20261003-162541-bench |
 | 2026-10-03 | Apple M5 Max, Chrome 154 | WebGL2 | 100,000 | 0.07 / 0.07 (WebGL) | 108% | 0.06 / 0.07 (WebGL) | 92% | 144.0 / 144.0 | n/a | 21de365f | 20261003-174604-bench |
 | 2026-10-03 | Apple M5 Max, Chrome 154 | WebGPU | 100,000 | 0.08 / 0.07 (WebGL) | 123% | 0.08 / 0.07 (WebGL) | 123% | 144.0 / 144.0 | 0.22 | 21de365f | 20261003-174604-bench |
+| 2026-11-04 | Apple M5 Max, Chrome 156 | WebGPU | 100,000 | 0.18 / 0.07 (WebGL) | 264% | 0.17 / 0.07 (WebGL) | 243% | 120.0 / 120.0 | 0.68 | e61ad018 | 20261104-155425-bench |
 
 - Every figure here is under 0.15 ms, near the browser timer's step of 5 microseconds. The two rows of 30 September come from the benchmarks guide. Their run folder is not kept, so the archive has no record of them.
 
@@ -160,6 +164,7 @@ S2 is a forest of 5,096 nodes in a hierarchy of 6 levels.
 | 2026-09-29 | ipad-safari, Safari 26.6.2 | WebGPU | 5,096 | 0.32 / 10.62 (WebGL) | 3% | 0.30 / 10.62 (WebGL) | 3% | 60.6 / 55.8 | 2.19 | 419fff4b | 20260929-165718-bench |
 | 2026-09-29 | ipad-safari, Safari 26.6.2 | WebGL2 | 5,096 | 0.38 / 10.62 (WebGL) | 4% | 0.32 / 10.62 (WebGL) | 3% | 57.8 / 55.8 | n/a | 419fff4b | 20260929-165718-bench |
 | 2026-09-29 | sm-s926b-chrome, Chrome 154.0.8037.57 | WebGL2 | 5,096 | 1.72 / 10.62 (WebGL) | 16% | 1.65 / n/a | n/a | 59.9 / 59.9 | n/a | 394bafb2 | 20260929-192015-bench |
+| 2026-11-04 | Apple M5 Max, Chrome 156 | WebGPU | 5,096 | 0.35 / 3.18 (WebGL) | 11% | 0.34 / 3.18 (WebGL) | 11% | 120.0 / 120.0 | 0.78 | e61ad018 | 20261104-155425-bench |
 
 ## S3
 
@@ -188,6 +193,7 @@ S3 lights 20,000 still boxes with 256 moving point lights ([Benchmarks](benchmar
 | 2026-10-03 | Apple M5 Max, Chrome 154 | WebGPU | 20,000 | 0.07 / failed | n/a | 0.06 / failed | n/a | 144.0 / failed | 2.96 | 21de365f | 20261003-172244-bench |
 | 2026-10-03 | Apple M5 Max, Chrome 154 | WebGL2 | 20,000 | 0.27 / 0.57 (WebGPU) | 47% | 0.25 / 0.56 (WebGPU) | 44% | 143.8 / 144.0 | n/a | 21de365f | 20261003-174604-bench |
 | 2026-10-03 | Apple M5 Max, Chrome 154 | WebGPU | 20,000 | 0.12 / 0.57 (WebGPU) | 21% | 0.10 / 0.56 (WebGPU) | 17% | 143.9 / 144.0 | 2.99 | 21de365f | 20261003-174604-bench |
+| 2026-11-04 | Apple M5 Max, Chrome 156 | WebGPU | 20,000 | 0.25 / 0.71 (WebGPU) | 35% | 0.23 / 0.70 (WebGPU) | 32% | 119.9 / 120.0 | 3.70 | e61ad018 | 20261104-155425-bench |
 
 - The iPad's WebGL2 rows of 2 October measure a WebGL2 path that waits for the GPU. The rows of 3 October include [#212](https://github.com/null3d-engine/null3d/pull/212), which removes that wait.
 
@@ -214,6 +220,7 @@ S4 is the phone scene: a town of 5,000 still objects and 200 cars, with shadows,
 | 2026-10-03 | Apple M5 Max, Chrome 154 | WebGPU | 5,000 | 0.13 / 1.78 (WebGL) | 7% | 0.10 / 1.78 (WebGL) | 6% | 143.9 / 144.0 | 1.60 | 3b79b9da | 20261003-124533-bench |
 | 2026-10-03 | Apple M5 Max, Chrome 154 | WebGL2 | 5,000 | 0.33 / 1.77 (WebGL) | 19% | 0.32 / 1.76 (WebGL) | 18% | 143.9 / 144.0 | n/a | 21de365f | 20261003-174604-bench |
 | 2026-10-03 | Apple M5 Max, Chrome 154 | WebGPU | 5,000 | 0.13 / 1.77 (WebGL) | 7% | 0.10 / 1.76 (WebGL) | 5% | 144.0 / 144.0 | 1.74 | 21de365f | 20261003-174604-bench |
+| 2026-11-04 | Apple M5 Max, Chrome 156 | WebGPU | 5,000 | 0.34 / 1.85 (WebGL) | 18% | 0.32 / 1.84 (WebGL) | 17% | 120.0 / 120.0 | 3.34 | e61ad018 | 20261104-155425-bench |
 
 - The iPad's WebGL2 rows of 2 October measure the path without [#212](https://github.com/null3d-engine/null3d/pull/212), as in S3.
 
@@ -229,6 +236,20 @@ S5 draws animated characters, 500 by default, with shadows. These rows measure c
 | 2026-10-04 | Apple M5 Max, Chrome 154 | WebGL2 | 25 | 0.21 / 3.39 (WebGL) | 6% | 0.19 / n/a | n/a | 120.0 / 120.0 | n/a | 2b72afe2 | 20261004-102052-bench |
 | 2026-10-04 | Apple M5 Max, Chrome 154 | WebGL2 | 500 | 1.25 / 54.02 (WebGL) | 2% | 1.20 / 54.00 (WebGL) | 2% | 120.0 / 18.4 | n/a | 5711b3b4 | 20261004-112928-bench |
 | 2026-10-04 | Apple M5 Max, Chrome 154 | WebGPU | 500 | 2.32 / 54.02 (WebGL) | 4% | 2.32 / 54.00 (WebGL) | 4% | 60.0 / 18.4 | 7.38 | 5711b3b4 | 20261004-112928-bench |
+| 2026-11-04 | Apple M5 Max, Chrome 156 | WebGPU | 500 | 1.32 / 44.83 (WebGL) | 3% | 1.27 / 44.80 (WebGL) | 3% | 120.0 / 22.2 | 4.82 | e61ad018 | 20261104-155425-bench |
+
+## The desert
+
+The desert times null3D against three.js r187's meshlets without the frame cap ([D-322](decisions/D-322-benchmark-against-threejs-meshlets.md)). So its measure is the time between frames and the GPU time, not the CPU time of the other tables. `bun run bench:archive` prints a row of CPU figures for it. This table takes its cells from each record's desert figures instead. Each cell is the median of 5 rounds. Both engines drew 1920 x 1080, and null3D drew on the indirect path at Medium.
+
+| Date | Device and browser | View | Shadows | Frame, ms: null3D / three.js | Share | GPU ms: null3D / three.js | Triangles, M: null3D / three.js | Commit | Source |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-11-04 | Apple M5 Max, Chrome 156 | Walk | Off | 1.77 / 2.45 | 72% | 1.17 / 3.00 | 3.64 / 1.76 | e61ad018 | 20261104-151905-bench |
+| 2026-11-04 | Apple M5 Max, Chrome 156 | Aerial | Off | 1.55 / 5.96 | 26% | 1.15 / 6.98 | 3.33 / 18.64 | e61ad018 | 20261104-152824-bench |
+| 2026-11-04 | Apple M5 Max, Chrome 156 | Walk | 3 cascades / one map | 2.72 / 7.42 | 37% | 1.87 / 8.33 | 7.94 / 1.79 | e61ad018 | 20261104-153548-bench |
+| 2026-11-04 | Apple M5 Max, Chrome 156 | Aerial | 3 cascades / one map | 2.03 / 8.33 | 24% | 1.32 / 9.38 | 3.37 / 18.65 | e61ad018 | 20261104-154422-bench |
+
+- three.js's triangle counter leaves out its shadow pass, which draws about 17.9 M triangles in the walking view ([D-322](decisions/D-322-benchmark-against-threejs-meshlets.md#results-of-the-fair-rematch)).
 
 ## S7
 
