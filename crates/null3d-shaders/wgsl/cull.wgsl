@@ -40,8 +40,10 @@
 // level's bucket holds the level's switch measure: its error in the units of the base mesh, a
 // distance in meters at scale 1, or a share of the render's height that the bounds cover. An
 // instance's entry names its base level's bucket. The thread walks the links while the next
-// level's switch distance stays under its distance from the main camera to the nearest point of
-// its bounding sphere, and appends the instance to the last level that passes. Every view places its instances relative to the main camera, shadow views
+// level's switch distance stays under its distance from the main camera: for a level given by its
+// error, to the centre of its bounding sphere less half its radius, and for one given by a distance
+// or by coverage, to the sphere's nearest point. It appends the instance to the last level that
+// passes. Every view places its instances relative to the main camera, shadow views
 // too, so they all pick by its distance. Past each switch distance lies a band in which the level
 // before still draws: there, the instance goes to both levels' fade buckets, whose pipelines dither
 // each pixel to one of them, and the copy's fourth id holds the fade value, positive for the new
@@ -142,6 +144,9 @@ const HIDDEN_WORD: u32 = 1u;
 /// The smallest distance that the level rule compares, in meters. A camera inside an instance's
 /// bounds measures this distance, so the instance keeps its base level.
 const LEAST_DISTANCE: f32 = 1.0e-3;
+/// The share of a bounding sphere's radius that the camera's level distance takes off the distance
+/// to its centre (`LEVEL_RADIUS_SHARE` in `levels.rs`).
+const LEVEL_RADIUS_SHARE: f32 = 0.5;
 /// The bit of a bucket's `indices` word that marks a bucket that draws pieces in its place.
 const PIECED: u32 = 1u << 31u;
 /// Where the count of a bucket's pieces sits in its `indices` word, above its first piece's bucket.
@@ -451,8 +456,9 @@ struct Level {
 }
 
 /// The distance at which the view compares errors for a sphere at `center` relative to the camera
-/// of radius `radius`, whose distance from the camera is `camera`: the camera's own distance, 1 in
-/// a light's orthographic view, or the distance from the light in a perspective one.
+/// of radius `radius`, whose level distance from the camera is `camera`: that distance in the
+/// camera's view, 1 in a light's orthographic view, or the distance from the light to the sphere's
+/// nearest point in a perspective one.
 fn error_distance(center: vec3f, radius: f32, camera: f32) -> f32 {
     if params.measure.w > 1.5 {
         return max(length(center - params.measure.xyz) - radius, LEAST_DISTANCE);
@@ -474,7 +480,10 @@ fn level_of(s: Survivor) -> Level {
     let factor = whole / bias;
     let nearest = max(length(s.center) - s.radius, LEAST_DISTANCE);
     let distance = select(nearest, 1.0, params.levels.y > 0.5);
-    let error = error_distance(s.center, s.radius, distance);
+    // A level given by its error, and the rule that hides a small bound, measure the camera's
+    // level distance: to the sphere's centre, less a share of its radius (`levels.rs`).
+    let toward = max(length(s.center) - LEVEL_RADIUS_SHARE * s.radius, LEAST_DISTANCE);
+    let error = error_distance(s.center, s.radius, select(toward, 1.0, params.levels.y > 0.5));
     out.distance = distance;
     var next = buckets[s.bucket].next;
     if next != 0u && whole > 0.0 {
