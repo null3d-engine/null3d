@@ -16,9 +16,11 @@ import {
 	summarizeRuns,
 	type TimedRun,
 } from '../../packages/cli/src/protocol.js';
+import { QUIET_LOAD } from '../../tests/lib/cost-runs.ts';
+import type { DesertFigures, PixelSize } from '../pages/lib/desert';
 import { type GlTiming, sumGlTiming } from '../pages/lib/gl-timing';
 import { summarizeTrace, type TraceSecond, type TraceSummary } from '../pages/lib/trace';
-import { SCENE_CODE } from './parity';
+import { isMatchScene, SCENE_CODE } from './parity';
 
 export { median, ms, summarizeRuns } from '../../packages/cli/src/protocol.js';
 export type { RunSummary };
@@ -43,6 +45,16 @@ export interface BenchResult extends TimedRun {
 	load?: SceneLoad;
 	/** Why the window's display ran slower than the display's highest rate, when it did. */
 	displayProblem?: string;
+	/** The desert's pages: what each engine drew and how fast, in one shape for both engines. */
+	desert?: DesertFigures;
+	/** The computer's 1-minute load average before the page opened and after it closed. */
+	machineLoad?: MachineLoad;
+}
+
+/** The computer's 1-minute load average around a page's run. */
+export interface MachineLoad {
+	before: number;
+	after: number;
 }
 
 /**
@@ -165,6 +177,25 @@ export interface SummaryRow {
 	glTiming?: GlTiming;
 	/** Scenes that stream in: the median of each load figure over the runs. */
 	load?: LoadSummary;
+	/** The desert's pages: the medians of their figures over the runs. */
+	desert?: DesertSummary;
+	/** The lowest and highest 1-minute load average around the page's runs. */
+	machineLoad?: { lowest: number; highest: number };
+}
+
+/** The medians of a desert page's figures over its runs. */
+export interface DesertSummary {
+	runs: number;
+	engine: string;
+	view: string;
+	shadows: number | null;
+	/** The size that every run drew, or null when the runs drew different sizes. */
+	drawn: PixelSize | null;
+	intervalMs: number;
+	gpuMs: number | null;
+	triangles: number | null;
+	drawCalls: number | null;
+	firstFrameMs: number;
 }
 
 /** The medians of a page's load figures over its runs, with the count of runs that loaded. */
@@ -218,17 +249,118 @@ function visualText(value: number | undefined, limit: number | undefined): strin
 	return limit !== undefined && value > limit ? `${text} OVER ${limit}` : text;
 }
 
+/** The medians of the runs' desert figures, or undefined when no run reports them. */
+export function summarizeDesert(results: readonly BenchResult[]): DesertSummary | undefined {
+	const figures = results.flatMap((result) => (result.desert ? [result.desert] : []));
+	const first = figures[0];
+	if (!first) return undefined;
+	const of = (pick: (f: DesertFigures) => number) => median(figures.map(pick));
+	const known = (pick: (f: DesertFigures) => number | null) => {
+		const values = figures.map(pick).filter((v): v is number => v !== null);
+		return values.length > 0 ? median(values) : null;
+	};
+	const sizes = new Set(figures.map(({ drawn }) => sizeText(drawn)));
+	return {
+		runs: figures.length,
+		engine: first.engine,
+		view: first.view,
+		shadows: first.shadows,
+		drawn: sizes.size === 1 ? first.drawn : null,
+		intervalMs: of((f) => f.intervalMs),
+		gpuMs: known((f) => f.gpuMs),
+		triangles: known((f) => f.triangles),
+		drawCalls: known((f) => f.drawCalls),
+		firstFrameMs: of((f) => f.firstFrameMs),
+	};
+}
+
+/** A size in device pixels as words, such as `1920 x 1080`. */
+export const sizeText = ({ width, height }: PixelSize) => `${width} x ${height}`;
+
+/**
+ * Why the pages of a match scene do not compare, or null when they do: every run of every page
+ * must report the size it drew, and all must have drawn the same size. Two engines that draw
+ * different pixels do different work, and the figures of such a run say nothing about either.
+ */
+export function drawnSizeProblem(
+	runs: readonly { kind: string; result: BenchResult }[],
+): string | null {
+	const missing = runs.filter(({ result }) => result.ok && !result.desert?.drawn);
+	if (missing.length > 0)
+		return `${missing.map(({ kind }) => kind).join(', ')} reported no drawn size`;
+	const sizes = new Map<string, Set<string>>();
+	for (const { kind, result } of runs) {
+		const drawn = result.ok && result.desert?.drawn;
+		if (!drawn) continue;
+		const kinds = sizes.get(sizeText(drawn)) ?? new Set<string>();
+		kinds.add(kind);
+		sizes.set(sizeText(drawn), kinds);
+	}
+	if (sizes.size <= 1) return null;
+	const each = [...sizes].map(([size, kinds]) => `${[...kinds].join(' and ')} drew ${size}`);
+	return `the engines drew different sizes: ${each.join('; ')}`;
+}
+
+/**
+ * The desert's pages as a Markdown table: what each engine drew, the median time between frames
+ * and its rate, the GPU time, the triangles and draw calls of a frame, and the time to the first
+ * frame.
+ */
+export function desertTable(rows: readonly SummaryRow[]): string {
+	const lines = [
+		'| Scene | Page | Engine | View | Shadows | Runs | Drawn | Frame interval, ms | Frames a second | GPU ms | Triangles, M | Draw calls | First frame, s |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+	];
+	for (const { scene, kind, desert: d } of rows) {
+		if (!d) continue;
+		const triangles = d.triangles === null ? 'n/a' : (d.triangles / 1e6).toFixed(2);
+		lines.push(
+			`| ${scene} | ${kind} | ${d.engine} | ${d.view} | ${d.shadows ?? 'off'} | ${d.runs} | ${d.drawn ? sizeText(d.drawn) : 'DIFFERED'} | ${ms(d.intervalMs)} | ${(1000 / d.intervalMs).toFixed(1)} | ${ms(d.gpuMs)} | ${triangles} | ${d.drawCalls === null ? 'n/a' : Math.round(d.drawCalls)} | ${(d.firstFrameMs / 1000).toFixed(1)} |`,
+		);
+	}
+	return lines.join('\n');
+}
+
+/** The lowest and highest load around a page's runs, or undefined when no run recorded one. */
+function machineLoadOf(results: readonly BenchResult[]): SummaryRow['machineLoad'] {
+	const loads = results.flatMap((result) => (result.machineLoad ? [result.machineLoad] : []));
+	if (loads.length === 0) return undefined;
+	return {
+		lowest: Math.min(...loads.map(({ before, after }) => Math.min(before, after))),
+		highest: Math.max(...loads.map(({ before, after }) => Math.max(before, after))),
+	};
+}
+
+/**
+ * The computer's load across a run's pages, in words, with a warning when it reached the load at
+ * which timing figures no longer hold.
+ */
+export function machineLoadLines(rows: readonly SummaryRow[]): string[] {
+	const loads = rows.flatMap((row) => (row.machineLoad ? [row.machineLoad] : []));
+	if (loads.length === 0) return [];
+	const lowest = Math.min(...loads.map((load) => load.lowest));
+	const highest = Math.max(...loads.map((load) => load.highest));
+	const line = `The 1-minute load average ran from ${lowest.toFixed(1)} to ${highest.toFixed(1)} around the pages.`;
+	return highest < QUIET_LOAD
+		? [line]
+		: [
+				`${line} It reached ${QUIET_LOAD} or more, where other work spoils the timing figures: take them again on a quiet computer.`,
+			];
+}
+
 /**
  * One page's row of a report from its successful runs: their summary, and the summary of their
  * traces' seconds when the page records traces.
  */
 export function summaryRow(
-	row: Omit<SummaryRow, 'summary' | 'trace' | 'glTiming' | 'load'>,
+	row: Omit<SummaryRow, 'summary' | 'trace' | 'glTiming' | 'load' | 'desert' | 'machineLoad'>,
 	results: readonly BenchResult[],
 ): SummaryRow {
 	const traced = results.filter((result) => result.trace);
 	const glTiming = sumGlTiming(results.map((result) => result.glTiming));
 	const load = summarizeLoads(results);
+	const desert = summarizeDesert(results);
+	const machineLoad = machineLoadOf(results);
 	const refreshHz = results.find((result) => result.stats?.refreshHz)?.stats?.refreshHz ?? null;
 	return {
 		...row,
@@ -241,6 +373,8 @@ export function summaryRow(
 		}),
 		...(glTiming && { glTiming }),
 		...(load && { load }),
+		...(desert && { desert }),
+		...(machineLoad && { machineLoad }),
 	};
 }
 
@@ -402,15 +536,26 @@ export function jobsTable(rows: readonly SummaryRow[]): string {
 
 /**
  * A benchmark run's report as Markdown lines: the summary table and the comparisons with three.js,
- * then the tables of traces, WebGL call times and loads where pages have them, or the table of a
- * sweep of job worker counts.
+ * then the tables of traces, WebGL call times, loads and the desert where pages have them, and the
+ * computer's load around the pages, or the table of a sweep of job worker counts.
  */
 export function benchReport(rows: readonly SummaryRow[]): string[] {
 	if (rows.some((row) => row.jobs !== undefined)) return [jobsTable(rows)];
 	const traces = rows.some((row) => row.trace) ? ['', traceTable(rows)] : [];
 	const calls = rows.some((row) => row.glTiming) ? ['', glTimingTable(rows)] : [];
 	const loads = rows.some((row) => row.load) ? ['', loadTable(rows)] : [];
-	return [summaryTable(rows), '', ...comparisonLines(rows), ...traces, ...calls, ...loads];
+	const desert = rows.some((row) => row.desert) ? ['', desertTable(rows)] : [];
+	const machine = machineLoadLines(rows);
+	return [
+		summaryTable(rows),
+		'',
+		...comparisonLines(rows),
+		...traces,
+		...calls,
+		...loads,
+		...desert,
+		...(machine.length > 0 ? ['', ...machine] : []),
+	];
 }
 
 /** three.js's pages, and the name of each renderer. */
@@ -499,10 +644,11 @@ function comparedWith(c: PathComparison, what: string, sameName: string): string
 /**
  * Sentences for each scene and each null3d GPU path in the run: null3d's CPU time per frame as a
  * share of three.js's faster renderer and of three.js on the same API, and, with the scene-code
- * page's run, its own work as a share of three.js's.
+ * page's run, its own work as a share of three.js's. A match scene has none.
  */
 export function comparisonLines(rows: readonly SummaryRow[]): string[] {
-	const scenes = [...new Set(rows.map((r) => r.scene))];
+	// A match scene compares whole frames and GPU time, which its own table gives.
+	const scenes = [...new Set(rows.map((r) => r.scene))].filter((scene) => !isMatchScene(scene));
 	return scenes.flatMap((scene) => {
 		const of = (kind: string) => summaryOf(rows, scene, kind);
 		const sceneCode = of(SCENE_CODE);
