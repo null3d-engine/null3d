@@ -132,6 +132,7 @@ import {
 	benchReport,
 	type ChartSeries,
 	drawnSizeProblem,
+	drawPathOf,
 	lineChartSvg,
 	ms,
 	type SummaryRow,
@@ -424,7 +425,7 @@ function resultText(result: BenchResult): string {
 	const cpu = `${ms(result.cpuMs.median)} ms`;
 	if (!desert) return cpu;
 	const { width, height } = desert.drawn;
-	return `${cpu}, interval ${ms(desert.intervalMs)} ms, GPU ${ms(desert.gpuMs)} ms, drawn ${width} x ${height}`;
+	return `${cpu}, interval ${ms(desert.intervalMs)} ms, GPU ${ms(desert.gpuMs)} ms, drawn ${width} x ${height}, ${drawPathOf(desert)} path`;
 }
 
 /**
