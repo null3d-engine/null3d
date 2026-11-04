@@ -2311,6 +2311,12 @@ async function startEngine(
 			renderFallback,
 			keepTextureCopies,
 		};
+		/**
+		 * The preset that the first frame draws at: the one the engine starts with, because its own
+		 * preset check draws that frame before it can step down. The page can end on a lighter preset,
+		 * so the measurement keeps this one.
+		 */
+		const firstFramePreset = preset;
 		/** Each engine thread's name and the roles it runs, for the frame figures. */
 		engineThreads = [...threadRoles(mode)];
 		// A recording run gathers the words of every thread that draws, and publishes them where the
@@ -2718,15 +2724,11 @@ async function startEngine(
 		// The thread that draws writes the time the GPU finished the first frame; the page checks for
 		// it once per animation frame until it appears.
 		const header = new MetricsReader(metrics);
-		// The preset in force when the first frame was drawn. The engine's own preset check may step
-		// down after it, so this is not always the preset that the page ends on.
-		let firstFramePreset: string | null = null;
 		const firstFrame = new Promise<void>((resolve) => {
 			const check = () => {
 				if (Atomics.load(slots, Slot.Running) === 0) return;
 				if (header.firstFrameDoneTime > 0) {
 					onProgress('first-frame');
-					firstFramePreset = mode.preset;
 					resolve();
 					return;
 				}
@@ -2813,14 +2815,14 @@ async function startEngine(
 				applyPause();
 			},
 			async measure(seconds, options) {
-				// The figures' code loads before the window opens, so the window's first interval is the
-				// scene's own rather than the download and compile of the engine's measuring code. A page
-				// that measures and then starts some work counts that work, whatever it takes.
+				// The window opens at the call, before the figures' code loads, so work that the caller
+				// starts right after the call is counted even when the import is cold. A sketch that
+				// adds an object then builds its pipelines while the figures load.
+				const reader = new MetricsReader(metrics);
+				reader.begin();
 				const { HeapSampler, secondRates, slowFrames, summarizeFrames, wasmDownloadBytes } =
 					await loadFrameStats();
-				const reader = new MetricsReader(metrics);
 				const mainThread = new MainThreadWatch();
-				reader.begin();
 				const started = performance.now();
 				const heap = new HeapSampler();
 				heap.start();
