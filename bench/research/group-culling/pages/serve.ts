@@ -25,6 +25,10 @@ Bun.serve({
 	port,
 	fetch(request) {
 		const path = decodeURIComponent(new URL(request.url).pathname);
+		// The test pages post their report to the repository's collector, and the browser asks for an
+		// icon; neither has a file here, and a page whose request fails counts as invalid.
+		if (path.startsWith('/__null3d/') || path === '/favicon.ico')
+			return new Response(null, { status: 204 });
 		const [prefix, base] = MOUNTS.find(([p]) => path.startsWith(p)) ?? MOUNTS[MOUNTS.length - 1];
 		let folder = base;
 		let file = normalize(join(folder, path.slice(prefix.length) || 'index.html'));

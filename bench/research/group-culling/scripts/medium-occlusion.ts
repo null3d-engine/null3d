@@ -8,10 +8,11 @@
 //   (`NULL3D_BUILD_PAGE=island-view bunx vite build --outDir target/group-culling/island-page`).
 // - `--part bench`: the repository's benchmark scenes through `bun run bench:run`, one mode after
 //   another in each round, each round starting from another mode.
+// - `--part repeat --file <results.json>`: every page of that file whose load reached 8, once more.
 // `--rounds <n>` changes the rounds (3). Run from the repository's root once `bun run build` and
 // `bun run build:cdn --url-switches` are done. Results land in this folder's results/.
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { loadavg } from 'node:os';
 import { join } from 'node:path';
 
@@ -81,6 +82,60 @@ if (part === 'desert') {
 		inModes([island(null), island('600,280,540,40,80,-40')]),
 		'medium-occlusion-island.json',
 	);
+} else if (part === 'repeat') {
+	// Runs again, once each, every page of a results file whose one-minute load reached 8 or more
+	// before or after it, into `<name>-repeat.json`, which the table reads in their place.
+	const file = opt('--file', 'medium-occlusion-desert-bistro.json');
+	const runs = JSON.parse(readFileSync(join(results, file), 'utf8')) as {
+		address: string;
+		load?: { before?: number; after?: number };
+	}[];
+	const loaded = runs
+		.filter((r) => Math.max(r.load?.before ?? 0, r.load?.after ?? 0) >= MAX_LOAD)
+		.map((r) => r.address);
+	console.log(
+		`${loaded.length} of ${runs.length} runs of ${file} ran at a load of ${MAX_LOAD} or more`,
+	);
+	if (loaded.length > 0) {
+		execFileSync('bun', ['run.ts', '--uncapped', ...loaded], {
+			cwd: join(import.meta.dirname, '../pages'),
+			stdio: 'inherit',
+			env: {
+				...process.env,
+				MESHLETS_MAX_LOAD: String(MAX_LOAD),
+				MESHLETS_ATTEMPTS: '3',
+				MESHLETS_OUT: join(results, file.replace(/\.json$/, '-repeat.json')),
+			},
+		});
+	}
+} else if (part === 'bench-repeat') {
+	// Runs the benchmark scenes again, once, in each mode that `--modes` names (such as forced,off),
+	// into folders named repeat-<mode>-..., for the modes whose runs met a load of 8 or more.
+	const out = join(results, 'medium-occlusion-bench');
+	const benchDir = join(root, 'target/bench');
+	for (const mode of opt('--modes', 'forced,off').split(',') as (keyof typeof MODES)[]) {
+		await quiet();
+		const before = new Set(existsSync(benchDir) ? readdirSync(benchDir) : []);
+		execFileSync(
+			'bun',
+			[
+				'run',
+				'bench:run',
+				'--scenes',
+				's1,s2,s3,s4,s5,s6,s7',
+				'--pages',
+				'null3d-webgpu',
+				'--runs',
+				'1',
+				'--uncapped',
+				'--switches',
+				`preset=medium&direct=off&${MODES[mode]}`,
+			],
+			{ cwd: root, stdio: 'inherit' },
+		);
+		for (const name of readdirSync(benchDir).filter((n) => !before.has(n)))
+			cpSync(join(benchDir, name), join(out, `repeat-${mode}-${name}`), { recursive: true });
+	}
 } else if (part === 'bench') {
 	const out = join(results, 'medium-occlusion-bench');
 	mkdirSync(out, { recursive: true });
@@ -117,5 +172,5 @@ if (part === 'desert') {
 		}
 	}
 } else {
-	throw new Error(`--part takes desert, island or bench, not ${part}`);
+	throw new Error(`--part takes desert, island, bench or repeat, not ${part}`);
 }
