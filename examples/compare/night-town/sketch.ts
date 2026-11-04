@@ -20,6 +20,7 @@ import {
 	quat,
 	type SpotLight,
 } from '@null3d/engine';
+import { createWindow } from '../../addons/facades/index';
 import { createWetSurface } from '../../addons/weather/index';
 import {
 	effectsFromText,
@@ -40,8 +41,6 @@ import {
 	createNightTown,
 	drawNightSprites,
 	FACADE_KINDS,
-	FACADE_LIT_SHARE,
-	FACADE_WINDOW,
 	FLYER_COUNT,
 	facadeMaps,
 	flyerPose,
@@ -61,7 +60,10 @@ import {
 	type NightMesh,
 	nightBlocks,
 	nightMeshes,
+	PANE_GLASS,
+	PANE_GLASS_GROUND,
 	PARKED_PER_BLOCK,
+	paneWindows,
 	parkedPose,
 	ROOM_DEPTH,
 	SIDEWALK_TILE,
@@ -75,8 +77,10 @@ import {
 	signPlace,
 	streetMaps,
 	TAIL_LIGHT,
+	writeWindowLight,
+	writeWindowPanes,
 } from './scene';
-import { AWNING_WGSL, FACADE_WGSL, NEON_WGSL, SKY_WGSL, STREET_WGSL } from './shaders';
+import { AWNING_WGSL, NEON_WGSL, SKY_WGSL, STREET_WGSL, WALL_WGSL } from './shaders';
 
 /** The blocks that each frame makes or destroys, within the engine's queue of changes. */
 const BLOCKS_PER_FRAME = 40;
@@ -183,25 +187,18 @@ export default defineSketch(
 		const street = streetMaps();
 		const sidewalk = sidewalkMaps();
 
-		// Materials.
+		// Materials. The walls keep the town's own finish, frames and shop neon; every window on them
+		// is a pane that the facades add-on draws, with a room behind its glass and its own light.
 		const timed: Material[] = [];
-		const facades = FACADE_KINDS.map((kind) => {
+		const walls = FACADE_KINDS.map((kind) => {
 			const maps = facadeMaps(kind);
 			const material = materials.shader({
-				wgsl: FACADE_WGSL,
+				wgsl: WALL_WGSL,
 				roughness: 1,
 				metalness: 1,
 				uniforms: {
 					time: 0,
-					litShare: FACADE_LIT_SHARE[kind],
-					windowLight: look.windows.intensity,
-					shopLight: look.windows.shops,
 					neonLight: look.windows.neon,
-					winU0: FACADE_WINDOW[kind][0],
-					winU1: FACADE_WINDOW[kind][1],
-					winV0: FACADE_WINDOW[kind][2],
-					winV1: FACADE_WINDOW[kind][3],
-					roomDepth: ROOM_DEPTH,
 				},
 				textures: {
 					colorMap: upload(maps.color),
@@ -211,6 +208,36 @@ export default defineSketch(
 			});
 			timed.push(material);
 			return material;
+		});
+		// The panes: an upper window and a shop window, each with its own room shape. A pane's quad
+		// spans the opening's glass, so the wall keeps its painted frame and sill around it.
+		const paneRows = ([false, true] as const).map((ground) => {
+			const glass = ground ? PANE_GLASS_GROUND : PANE_GLASS;
+			const panes = createWindow(ctx, {
+				kind: 'concrete',
+				window: { width: glass[0], height: glass[1], frame: 0 },
+				room: { depth: ROOM_DEPTH, light: ground ? 0.4 : 0.45, flicker: 0.15, litShare: 1 },
+				power: { origin: [0, 0], speed: 2600 },
+			});
+			const count = paneWindows(town, capacity, ground);
+			const batch = scene.createInstances(geometry.plane({ width: 1, height: 1 }), count, {
+				material: panes.material,
+				values: true,
+			});
+			const written = writeWindowPanes(
+				town,
+				capacity,
+				ground,
+				batch.positions,
+				batch.rotations,
+				batch.scales,
+				batch.values as Float32Array,
+			);
+			batch.markDirty(0, written);
+			batch.setActiveCount(paneWindows(town, startBlocks, ground));
+			// The town lights up as the scene starts, on the add-on's power-on wave.
+			panes.start(0);
+			return { batch, ground, written };
 		});
 		// The weather add-on owns the water on the street: its planar mirror pass, its values and the
 		// black stand-in for a run with the reflections off. The street keeps its maps and its paint.
@@ -497,7 +524,7 @@ export default defineSketch(
 					objects.push(
 						scene.createMesh({
 							mesh: mesh(`facade${d}`),
-							material: facades[kind] as Material,
+							material: walls[kind] as Material,
 							position: at,
 							rotation,
 							...casts,
@@ -579,14 +606,18 @@ export default defineSketch(
 				scene.createMesh({ mesh: mesh('tailLamps'), material: tailLamp, parent: body }),
 			];
 			const fit = () => {
+				if (made.length === wanted) return;
 				if (made.length < wanted) {
 					const until = Math.min(wanted, made.length + BLOCKS_PER_FRAME);
 					while (made.length < until) createBlock(made.length);
-				} else if (made.length > wanted) {
+				} else {
 					const until = Math.max(wanted, made.length - BLOCKS_PER_FRAME);
 					while (made.length > until)
 						for (const object of made.pop()?.objects ?? []) object.destroy();
 				}
+				// The panes of the blocks that show, and no others.
+				for (const row of paneRows)
+					row.batch.setActiveCount(paneWindows(town, made.length, row.ground));
 			};
 			fit();
 			return {
@@ -650,10 +681,20 @@ export default defineSketch(
 		const cameraRotation = quat.create();
 		const time = { time: 0 };
 		let steps = 0;
+		// The period of the windows whose light goes on and off. Their rows change at its step.
+		let panePeriod = 0;
 
 		const pose = () => {
 			const seconds = steps * SIM_STEP;
 			blocks.pose(seconds);
+			const period = Math.floor(seconds / 23);
+			if (period !== panePeriod) {
+				panePeriod = period;
+				for (const row of paneRows) {
+					writeWindowLight(town, capacity, row.ground, row.batch.values as Float32Array, seconds);
+					row.batch.markDirty(0, row.written);
+				}
+			}
 			for (let i = 0; i < FLYER_COUNT; i++) {
 				flyerPose(seconds, i, flyerAt);
 				for (const batch of flyers) {
