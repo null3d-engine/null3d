@@ -456,6 +456,12 @@ impl Layout {
             self.bucket_records[index * BUCKET_WORDS as usize] = bucket.base;
             self.bucket_records[index * BUCKET_WORDS as usize + BUCKET_CAPACITY_WORD] =
                 bucket.capacity;
+            // A tree's record names its one copy's place in the view's compacted instances, which
+            // the cluster pass reads, so it follows its bucket's slice. The plain buckets come
+            // before the levels' here, unlike in the build's order, so a plain bucket moves too.
+            if let Some(tree) = bucket.cluster {
+                self.clusters[tree as usize].slot = bucket.base;
+            }
         }
         // The table goes up whole: every bucket's slice is this frame's, and the culling shader
         // reads the table before it places a copy.

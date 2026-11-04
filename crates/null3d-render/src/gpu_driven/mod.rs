@@ -1472,6 +1472,25 @@ impl GpuDrivenRenderer {
         ]
     }
 
+    /// For each tree of cluster patches in the scene's layout, the place of its copy in a view's
+    /// compacted instances, where its bucket's slice starts, beside the place that the GPU's table
+    /// of mesh records names for the cluster pass, after the last recorded frame. The two must
+    /// match, or the pass places the tree's patches by another copy's matrix. For tests.
+    pub fn cluster_copy_slots(&self) -> Vec<(u32, u32)> {
+        let bases = self
+            .layout
+            .buckets
+            .iter()
+            .filter_map(|bucket| bucket.cluster.map(|tree| (tree, bucket.base)));
+        let mut bases: Vec<(u32, u32)> = bases.collect();
+        bases.sort_unstable();
+        bases
+            .into_iter()
+            .map(|(_, base)| base)
+            .zip(self.clusters.uploaded_slots())
+            .collect()
+    }
+
     /// The sources that a view's culling pass tests in the last recorded frame, in the order its
     /// threads take them: the sources in the runs of the cell order that it culls, or every
     /// source in place when it culls without cells. For tests; it allocates the list.
