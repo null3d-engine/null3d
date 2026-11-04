@@ -17,8 +17,10 @@ import {
 	WORLD_SPRITES,
 } from '../../../bench/scenes/sprites';
 import { pictureUrl } from '../lib/picture';
+import { applySketchSwitches } from '../lib/sketch-switches';
 
-export default defineSketch(async ({ scene, materials, geometry, assets, post }) => {
+export default defineSketch(async ({ scene, materials, geometry, assets, post, quality }) => {
+	applySketchSwitches(import.meta.url, quality);
 	post.set({ toneMapping: 'none' });
 	scene.setBackground(BACKGROUND);
 	scene.createDirectionalLight({

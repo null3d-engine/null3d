@@ -733,22 +733,26 @@ preset work between the two does not touch Creek.
 
 The upload column is the engine's `uploadBytes` counter, which adds buffer writes and texture
 uploads together, and the time sits on the render worker's replay phase, not on the drawing. D-286
-splits the figures and says what a fix must show.
+splits the figures and records the cause.
 
-The water draws the valley a second time for its reflection. Beside that second draw, a pass whose
-WebGL2 form is a fragment pass costs the frame a large upload for every frame: 2.2 MB at Low and
-4.3 MB at Medium. Both passes that the branch adds hit it, the leaves' state pass and the wind
-grid's. The same scene without the reflection, and the same passes in a scene that draws once, as
-the forest does, pay nothing: the forest's Low rows hold on every path.
+The water draws the valley a second time for its reflection, at a cadence of two. Each frame the
+reflection rested, its passes left the render plan, and each frame it drew, they rejoined it. A plan
+that changed compiled again, made its targets and framebuffers again and bound everything again, and
+a new framebuffer's completeness check waits for the GPU. The leaves' state pass and the wind grid's
+are fragment forms on this path, which the graph placed with the view, so they left and rejoined the
+plan with it. The same passes in a scene that draws once, as the forest does, pay nothing, and the
+same scene with the reflection drawn every frame does not stall.
 
-The wind grid's own pass lifts Medium and above into the same cost: at Medium the branch reads
-683 ms with the grid and 33.3 ms without it, the leaves riding the offset form in both.
+The figure in that column is the scene's first fill, at the preset's upload budget for each slow
+frame: 2.2 MB is Low's 2 MiB budget and 4.3 MB is Medium's 4 MiB. A scene uploads each texel once,
+so the measurement of the seconds after the start reads the fill that the slow frames spread.
 
-So Creek rides the offset form and keeps no grid on the WebGL2 path. Its readers work the air out of
-the steady field there. The owner ruled that the gust must work on that path, so the steady field
-now carries a gust that a page sends: `gust()` writes its place, its strength and the time it was
-sent into the field's reading, the readers' settings take them as a fourth vector, and the block
-adds the same travelling wave from that place. A push still reaches readers only through the grid.
+Creek now keeps the leaves' state form and its preset's grid on every path. A reader without a grid,
+such as one on a device whose float targets fail the probe, works the air out of the steady field.
+The owner ruled that the gust must work on the WebGL2 path, so the steady field carries a gust that
+a page sends: `gust()` writes its place, its strength and the time it was sent into the field's
+reading, the readers' settings take them as a fourth vector, and the block adds the same travelling
+wave from that place. A push still reaches readers only through the grid.
 
 What this record proves is the air, not a person watching the demo. A probe sampled the block that
 the readers carry, on a line across the ground with no grid, and the gust moved 6 m in the 1 s
@@ -761,15 +765,13 @@ gust sent, which would show the grass, the water and the leaves moving. The mach
 runs when this landed.
 
 The settings go up when a page sends a gust, so the frame pays one small upload for each press and
-no upload in the frames between. The path that draws a reflection stays off the pass that cost
-[2.2 MB a frame](D-286-webgl2-texture-copies-beside-a-second-draw.md).
+no upload in the frames between.
 
 An earlier version of this record said the sent gust crossed the banks when it did not. That was
 wrong, and the code now makes it true.
 
-The cost itself is the WebGL2 backend's, not the add-ons'.
-[D-286](D-286-webgl2-texture-copies-beside-a-second-draw.md) holds it, with the figures and what a
-fix must show. No task owns that fix yet.
+The cost was the render graph's, not the add-ons'.
+[D-286](D-286-webgl2-texture-copies-beside-a-second-draw.md) records the cause and the fix.
 
 The branch and the milestone head read the same rows on the cloud devices. The branch at 8363b20a6
 runs [the iPad's rows](../tested-devices/ipad-pro-13-safari/20261101-091422-vegetation.md) and
@@ -785,8 +787,10 @@ builds no wind field.
 | Creek Low, S25 | WebGL2 | 33.3 | 33.3 | 33.32 |
 | Creek Medium, S25 | WebGL2 | 33.3 | 33.3 | 33.33 |
 
-The branch's earlier rows of 287.1, 935.0, 312.4 and 166.59 ms were that pass-and-copy cost, not
-Creek's own. The head's rows show it: they read the same frames before the branch added a reader.
+The branch's earlier rows of 287.1, 935.0, 312.4 and 166.59 ms were the stall beside the resting
+reflection, not Creek's own. The head's rows show it: they read the same frames before the branch
+added a reader. The rows at 8363b20a6 match the head because that commit moved the leaves and the
+grid around the stall; the graph's fix removes the need for that move, and Creek draws both again.
 
 The tablet's rows say the same. The head reads Creek Low at 1,487.16 ms against the class's
 1,268.5 ms ([the head's tablet run](../tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261101-091901-vegetation.md)),

@@ -62,6 +62,7 @@ export type {
 	EngineMode,
 	EngineOptions,
 	RenderFallback,
+	StartupProgress,
 	StartupStage,
 } from './page/engine';
 export { createEngine } from './page/engine';
@@ -70,8 +71,11 @@ export type {
 	FrameSummary,
 	GpuPassStats,
 	MainThreadStats,
+	MeasureOptions,
 	MemoryStats,
 	SecondRates,
+	SlowFrame,
+	SlowFrameThread,
 	ThreadStats,
 } from './page/frame-stats';
 export type {

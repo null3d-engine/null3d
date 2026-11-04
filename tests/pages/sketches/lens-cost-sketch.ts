@@ -6,11 +6,13 @@
 // ?scale= draws at that render scale, and ?fixed holds that scale alone with the governor off.
 //
 // The look's own work is a fraction of a millisecond, and the scene's frame-to-frame variation is
-// larger than that, so the page takes two options that lift it above the variation. ?repeat= draws
-// the marks' effect that many times in each frame, in place of the kit's own, and the page divides
-// what it measures by the count. ?clear draws only the background and the bars that feed bloom, so
-// the work around the look does not hide it. Bloom stays on for every case: the kit's shader names
-// a level of bloom's chain, and the frame fails when no pass writes that level.
+// larger than that, so the page takes options that lift it above the variation. ?repeat= draws the
+// marks' effect that many times in each frame, in place of the kit's own, and the page divides what
+// it measures by the count. ?clear draws only the background and the bars that feed bloom, so the
+// work around the look does not hide it. ?bloom=off leaves bloom out for a mark that draws in the
+// final pass and does not read bloom's chain; the effect's marks keep it on, because the kit's
+// shader names a level of the chain and the frame fails when no pass writes that level. ?bounce=off
+// leaves out the preset's screen-space bounce light, which the cleared scene does not use.
 //
 // The module uses no type annotations: an address whose last value holds a dot, such as scale=0.5,
 // makes the dev server read the module as JavaScript.
@@ -28,6 +30,17 @@ if (!(Number.isSafeInteger(REPEAT) && REPEAT >= 1 && REPEAT <= EFFECT_MAX))
 	throw new Error(`the page repeats the look between 1 and ${EFFECT_MAX} times, not ${REPEAT}`);
 /** True leaves the wall of boxes out, so only the look's own work and bloom's chain remain. */
 const CLEAR = params.has('clear');
+/**
+ * True leaves bloom out, for a mark that draws in the final pass and does not read bloom's chain.
+ * The effect's marks name a level of the chain, so they keep bloom on.
+ */
+const BLOOM_OFF = params.get('bloom') === 'off';
+/**
+ * True leaves out the preset's screen-space bounce light. The cleared scene holds the look's own
+ * work and the bars that feed bloom, and the bounce lights neither, so its passes only move the
+ * frame that hides the look.
+ */
+const BOUNCE_OFF = params.get('bounce') === 'off';
 /** Boxes along each side of the wall that covers the view. */
 const WALL = 32;
 
@@ -83,6 +96,16 @@ const MARKS: Record<string, LensLook> = {
 const MARK = params.get('look');
 const CHOSEN = MARK === null ? LOOK : MARKS[MARK];
 if (CHOSEN === undefined) throw new Error(`the lens kit has no mark ${MARK}`);
+/** True while the look draws the add-on's effect, whose shader names a level of bloom's chain. */
+const EFFECT_DRAWN =
+	(CHOSEN.aberration ?? 0) > 0 ||
+	(CHOSEN.streak ?? 0) > 0 ||
+	(CHOSEN.grain ?? 0) > 0 ||
+	(CHOSEN.speedBlur ?? 0) > 0;
+if (BLOOM_OFF && EFFECT_DRAWN)
+	throw new Error(
+		'a look that draws the add-on effect names a level of bloom, so it keeps bloom on',
+	);
 
 export default defineSketch((ctx) => {
 	const { scene, materials, geometry, post, quality, page } = ctx;
@@ -94,9 +117,10 @@ export default defineSketch((ctx) => {
 			governor: !FIXED,
 		});
 	}
+	if (BOUNCE_OFF) quality.set({ bounceRays: 0 });
 	// Bloom lights the streak, and it stays the same on both sides, so only the lens's own cost is
-	// timed. It stays on for every case, because the kit's shader names a level of its chain.
-	post.set({ bloom: { intensity: 0.5, threshold: 1 } });
+	// timed. It stays on for the effect's marks, because the kit's shader names a level of its chain.
+	if (!BLOOM_OFF) post.set({ bloom: { intensity: 0.5, threshold: 1 } });
 	scene.setBackground('#0e1420');
 	scene.setActiveCamera(
 		scene.createPerspectiveCamera({

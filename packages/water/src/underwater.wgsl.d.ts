@@ -8,6 +8,7 @@ declare const shader: CompiledEffect<
 		readonly density: 'f32';
 		readonly caustics: 'vec3f';
 		readonly level: 'f32';
+		readonly waveAmplitude: 'f32';
 		readonly eye: 'vec3f';
 		readonly current: 'vec2f';
 		readonly lens: 'f32';

@@ -196,11 +196,13 @@ const PARAMS = 12;
  */
 function stateFor(input: SelectInput): SelectState {
 	const kept = states.get(input.id);
-	const table = input.view.subarray(HEADER, HEADER + input.chunks * STRIDE);
 	if (kept && kept.capacity >= input.chunks) {
+		// The caller names a new version when the chunk table changes, so a moved frame keeps the
+		// copy that the worker already holds and copies no table.
+		if (kept.version === input.version && kept.chunks === input.chunks) return kept;
 		kept.version = input.version;
 		kept.chunks = input.chunks;
-		writeBytes(kept.table, table);
+		writeBytes(kept.table, input.view.subarray(HEADER, HEADER + input.chunks * STRIDE));
 		return kept;
 	}
 	const capacity = kept ? Math.max(input.chunks, kept.capacity * 2) : input.chunks;
@@ -217,7 +219,7 @@ function stateFor(input: SelectInput): SelectState {
 		order: alloc(capacity * 4),
 		scratch: alloc(capacity * 4),
 	};
-	writeBytes(state.table, table);
+	writeBytes(state.table, input.view.subarray(HEADER, HEADER + input.chunks * STRIDE));
 	states.set(input.id, state);
 	return state;
 }

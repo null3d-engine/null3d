@@ -67,8 +67,8 @@ timed script whose shot steps each draw an image. It can also give a size (${DEF
 tiers (${TIERS.join(', ')}).
 
 The references are in ${REFERENCES_DIR}/<environment>/<tier>/<name>.png, and each run's images in
-${RESULTS_DIR}/. It draws with Google Chrome on this computer's GPU. When the CI variable is
-set, it draws with Playwright's Chromium on SwiftShader, the software GPU of machines without a GPU.`;
+${RESULTS_DIR}/. It draws with Chrome for Testing on this computer's GPU, and downloads it on
+first use. When the CI variable is set, it draws with Playwright's Chromium on SwiftShader, the software GPU of machines without a GPU.`;
 
 /**
  * @typedef {object} TestOptions

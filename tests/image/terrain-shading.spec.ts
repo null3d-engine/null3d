@@ -6,7 +6,9 @@
 //
 // The normals are drawn at the Low preset with `coarse=on`, which makes every block's cells span
 // the ground's small folds. A block's own vertices then lose the far hills' relief, and the baked
-// normals keep it.
+// normals keep it. The manifest's `terrain-baked-normals` test keeps a reference picture of this
+// baked draw, so a bake that moves but lights the hills wrongly fails there, and this spec proves
+// the other half: the vertex draw is a different picture.
 import { expect, test } from '@playwright/test';
 import type { Tier } from '../../bench/lib/parity.ts';
 import { compareImages, percent, TOLERANCE } from '../../packages/cli/src/compare.js';

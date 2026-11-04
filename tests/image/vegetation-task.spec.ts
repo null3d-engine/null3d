@@ -41,7 +41,8 @@ for (const path of PATHS) {
 		expect(result.error).toBeUndefined();
 		expect(result.ok).toBe(true);
 		expect(result.tier).toBe(path.tier);
-		expect(result.species).toHaveLength(13);
+		// The page grows every species that the add-on ships, the built-in ones and Creek's.
+		expect(result.species).toHaveLength(14);
 		for (const species of result.species) {
 			expect(species.triangles).toBeGreaterThan(0);
 			expect(species.parts).toBeGreaterThan(0);

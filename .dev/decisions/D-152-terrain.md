@@ -109,7 +109,7 @@ Option A for the ground, a skirt for the seam, a custom splat surface function, 
 - The tools: the pack step compiles a package's `.wgsl` files into modules in `lib/`, beside their declarations. This serves any add-on that ships a surface function.
 - The engine: no change. The add-on adds no template, bind layout, permutation bit, opcode, state flag, control slot, format, capability or error code.
 - Docs and skills: `api/terrain`, the three.js mapping's terrain entry, and the develop skill's quick reference and recipe.
-- A demo, `examples/terrain`, and an image test on all three GPU tiers. The image test's references show the baked normals and the height blending. `tests/image/terrain-shading.spec.ts` compares each feature with its own switch, so a picture that loses the feature could not match the reference.
+- A demo, `examples/terrain`, and an image test on all three GPU tiers. The image test's references show the baked normals and the height blending. `tests/image/terrain-shading.spec.ts` compares each feature with its own switch. The manifest's `terrain-baked-normals` test judges the far hills at Low's split against a reference, so a picture that loses the feature, or that lights it wrongly, cannot match.
 - Limits: the ground carries no collision, the seam closes with a skirt rather than a morph, and a layer carries a color, a roughness and a height, not its own normal or occlusion map. The demo, the image test and the allocation switch exercise the add-on; no timed benchmark scene uses it.
 
 ## The frame path allocates nothing
