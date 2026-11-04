@@ -12,9 +12,9 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, delimiter, join } from 'node:path';
+import { basename, delimiter, dirname, join } from 'node:path';
 import { scaledBudget } from '../../tests/lib/run-budget.ts';
-import { hashFiles, hashOf } from './build-cache';
+import { hashOf } from './build-cache';
 import { fixture } from './fixture';
 import {
 	buildEntriesShard,
@@ -24,11 +24,11 @@ import {
 	entryCacheDir,
 	entryCacheFolder,
 	folderIsComplete,
-	inputFiles,
 	inputHash,
 	isShaderModule,
 	MODULE_DIR,
 	moduleHash,
+	moduleSetKey,
 	modulesCacheDir,
 	RECORD,
 	setIsComplete,
@@ -133,9 +133,47 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2222222222222222222222222222222222222222222222222222222222222222"
 `;
 
-/** Stores `files` in the shared cache as the set of `root`'s inputs, with its record. */
+/** The bytes of the program that the fixture's compiler builds, unless a test writes others. */
+const PROGRAM_TEXT = '#!/bin/sh\nexit 0\n';
+
+/**
+ * The stub cargo notes each build in the checkout's target folder, and copies the checkout's
+ * `program-shape` as the shader build. A test gives that shape the program that it needs: the
+ * program stores one new entry in the folder it is given, and writes that folder to `ENTRY_LOG`
+ * when the test sets it. A test that only reads the program's bytes gives the shape no use.
+ */
+const buildsProgram = `
+if [ "$1" = build ]; then
+	mkdir -p "$CARGO_TARGET_DIR/shader"
+	echo build >> "$CARGO_TARGET_DIR/cargo-builds"
+	cp "$PWD/program-shape" "$CARGO_TARGET_DIR/shader/shader-build"
+	chmod 755 "$CARGO_TARGET_DIR/shader/shader-build"
+fi`;
+
+const shape = `#!/bin/sh
+while [ $# -gt 0 ]; do
+	if [ "$1" = --cache ]; then
+		mkdir -p "$2"
+		if [ -n "$ENTRY_LOG" ]; then echo "$2" >> "$ENTRY_LOG"; fi
+		echo {} > "$2/lit.new.json"
+	fi
+	shift
+done`;
+
+/**
+ * Keeps a program for the checkout's sources, which the module set's key reads: its bytes name the
+ * set, so a test that stores or reads one names a compiler without running cargo.
+ */
+function keepProgram(root: string, text = PROGRAM_TEXT): void {
+	const kept = join(entryCacheDir(), compilerStamp(root), 'program', 'shader-build');
+	mkdirSync(dirname(kept), { recursive: true });
+	writeFileSync(kept, text);
+}
+
+/** Stores `files` in the shared cache as the module set of `root`'s sources, with its record. */
 function storeCachedSet(root: string, files: Record<string, string>): string {
-	const cached = join(modulesCacheDir(), inputHash(root));
+	keepProgram(root);
+	const cached = join(modulesCacheDir(), moduleSetKey(root));
 	mkdirSync(cached, { recursive: true });
 	const record: Record<string, string> = {};
 	for (const [name, text] of Object.entries(files)) {
@@ -253,33 +291,29 @@ version = "0.2.0"
 		expect(compilerStamp(root)).toBe(stamp);
 	});
 
-	it('adopt the set of the whole-lock key, so the narrowing keeps a warm cache', () => {
-		// CI asks that the set be freshly built, which this case deliberately is not: it proves that a
-		// warm set is adopted in a scratch cache, so the demand has nothing to say about it.
-		const required = process.env.NULL3D_REQUIRE_FRESH_SHADERS;
-		delete process.env.NULL3D_REQUIRE_FRESH_SHADERS;
-		try {
-			withScratchCaches(() => {
+	it('key the shared set by the compiler program and the shader sources', () => {
+		withScratchCaches(
+			() => {
 				const root = repository();
-				writeFileSync(join(root, 'Cargo.lock'), LOCKED);
-				// The set that the last build stored, under the key that hashed the whole lock.
-				const whole = join(modulesCacheDir(), hashFiles(root, inputFiles(root)));
-				mkdirSync(whole, { recursive: true });
-				const text = 'export const CACHED = 1;\n';
-				writeFileSync(join(whole, 'shaders.ts'), text);
-				writeFileSync(join(whole, 'modules.json'), JSON.stringify({ 'shaders.ts': hashOf(text) }));
-				// Only the cache can supply this set, and the stub cargo fails a build, so returning false
-				// proves that the run read the adopted set instead of building.
-				expect(ensureShaderModules(root)).toBe(false);
-				const narrow = join(modulesCacheDir(), inputHash(root));
-				expect(existsSync(narrow)).toBe(true);
-				expect(existsSync(whole)).toBe(false);
-				expect(readFileSync(join(root, MODULE_DIR, 'shaders.ts'), 'utf8')).toBe(text);
-				expect(JSON.parse(readFileSync(join(root, RECORD), 'utf8')).inputs).toBe(inputHash(root));
-			});
-		} finally {
-			if (required !== undefined) process.env.NULL3D_REQUIRE_FRESH_SHADERS = required;
-		}
+				writeFileSync(join(root, 'program-shape'), 'one compiler\n');
+				const key = moduleSetKey(root);
+				// A comment in a crate that the compiler depends on changes its sources, and the program
+				// that cargo rebuilds has the same bytes, so the set is still the one it wrote.
+				writeFileSync(join(root, 'crates/null3d-gpu/src/lib.rs'), '// a comment\n');
+				expect(moduleSetKey(root)).toBe(key);
+				// A shader source decides the set's content, so a change to it gives another key.
+				writeFileSync(join(root, 'crates/null3d-shaders/wgsl/lit.wgsl'), 'fn main() { }\n');
+				const shader = moduleSetKey(root);
+				expect(shader).not.toBe(key);
+				// A compiler source change that alters the program is another compiler, whose set is its
+				// own.
+				writeFileSync(join(root, 'crates/null3d-shaders/src/lib.rs'), 'pub fn other() {}\n');
+				writeFileSync(join(root, 'program-shape'), 'another compiler\n');
+				expect(moduleSetKey(root)).not.toBe(shader);
+			},
+			0,
+			buildsProgram,
+		);
 	});
 
 	it('are out of date when an input changes, and not when a crate test changes', () => {
@@ -397,6 +431,8 @@ version = "0.2.0"
 				expect(beside.stdout).not.toContain('waiting for the lock');
 				rmSync(other, { recursive: true, force: true });
 				// Another checkout builds the same sources: the build here waits for it, and builds nothing.
+				// A kept program names the cached set without cargo, so the stub runs only in a build.
+				keepProgram(root);
 				holdLock(shaderLock(inputHash(root)));
 				const behind = runEnsureInChild(root, env, scaledBudget(5_000));
 				expect(behind.signal).toBe('SIGTERM');
@@ -492,28 +528,6 @@ version = "0.2.0"
 });
 
 describe('a shard of the shader entries', () => {
-	// The stub cargo notes each build in the checkout's target folder, and copies the checkout's
-	// `program-shape` as the shader build. A test gives that shape the program that it needs: the
-	// program stores one new entry in the folder it is given, and writes that folder to `ENTRY_LOG`
-	// when the test sets it.
-	const buildsProgram = `
-if [ "$1" = build ]; then
-	mkdir -p "$CARGO_TARGET_DIR/shader"
-	echo build >> "$CARGO_TARGET_DIR/cargo-builds"
-	cp "$PWD/program-shape" "$CARGO_TARGET_DIR/shader/shader-build"
-	chmod 755 "$CARGO_TARGET_DIR/shader/shader-build"
-fi`;
-
-	const shape = `#!/bin/sh
-while [ $# -gt 0 ]; do
-	if [ "$1" = --cache ]; then
-		mkdir -p "$2"
-		if [ -n "$ENTRY_LOG" ]; then echo "$2" >> "$ENTRY_LOG"; fi
-		echo {} > "$2/lit.new.json"
-	fi
-	shift
-done`;
-
 	/** A repository whose stub program has the given text, and the log of the folders it read. */
 	function shardRepository(program = shape): { root: string; log: string } {
 		const root = repository();

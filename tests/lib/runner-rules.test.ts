@@ -6,6 +6,7 @@ import {
 	loadingSeconds,
 	MOST_TIME_SHARE,
 	PACE_MARGIN,
+	SLOW_PACE_SHARE,
 } from '../pages/lib/runner-rules.ts';
 
 describe('expectedEndSeconds', () => {
@@ -27,16 +28,20 @@ describe('grantedSeconds', () => {
 		expect(grantedSeconds(220, Number.NaN)).toBe(220);
 	});
 
-	it('waits until the page expects to end, up to a few times the limit', () => {
+	it('waits until the page expects to end, within half the limit again', () => {
 		expect(grantedSeconds(220, 293.4)).toBe(294);
-		expect(grantedSeconds(220, 5_000)).toBe(220 * MOST_TIME_SHARE);
+		// A page that stopped in one step keeps the end that its first steps set, however late
+		// that is: it does not borrow the share that a slow load gets.
+		expect(grantedSeconds(220, 5_000)).toBe(220 * SLOW_PACE_SHARE);
+		expect(grantedSeconds(600, 1_370)).toBe(600 * SLOW_PACE_SHARE);
 	});
 	it('adds the time that the page spent loading files, up to a few times the limit', () => {
 		// The cloud iPad 10: a model page spent 24 to 28 s of its 30 loading files through the tunnel.
 		expect(grantedSeconds(30, undefined, 26.4)).toBe(57);
 		expect(grantedSeconds(30, undefined, 500)).toBe(30 * MOST_TIME_SHARE);
-		// The page's own expected end wins when it is later.
+		// The pace share grows with the loading time, which its own measurement counts.
 		expect(grantedSeconds(220, 400, 70)).toBe(400);
+		expect(grantedSeconds(220, 5_000, 70)).toBe(220 * SLOW_PACE_SHARE + 70);
 		expect(grantedSeconds(220, 150, 70)).toBe(290);
 	});
 });

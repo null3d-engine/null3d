@@ -2,7 +2,7 @@
 // time, so a page that gets slower names no part of the frame that pays. This split puts each pass's
 // GPU time per frame in the two builds side by side, with the difference that the new build adds.
 // The arithmetic is pure, so its test needs no browser.
-import type { Build } from './compare';
+import { type Build, measurementChangedLines } from './compare';
 import { median } from './report';
 
 /** The passes that one run timed, in the order that the frame runs them. */
@@ -66,6 +66,14 @@ export function passChanges(runs: readonly PassRun[]): PassChange[] {
 		if (order !== 0 && !Number.isNaN(order)) return order;
 		return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
 	});
+}
+
+/**
+ * The lines that refuse a split, when the two builds measured different pages, or null when they
+ * measured the same ones. The comparison judges no time then, so the split names no pass from it.
+ */
+export function splitRefusal(measurementChanges: readonly string[]): string[] | null {
+	return measurementChanges.length > 0 ? measurementChangedLines(measurementChanges) : null;
 }
 
 /** A difference with two decimals and its sign, without a signed zero. */

@@ -19,6 +19,7 @@ import { parseArgs } from 'node:util';
 import type { Page } from '@playwright/test';
 import { launchChromium } from '../packages/cli/src/browser.js';
 import { refuseBackgroundPriority } from '../tests/lib/app-window.ts';
+import { chromeForTesting } from '../tests/lib/chrome-for-testing.ts';
 import { pageResult } from '../tests/lib/page-result.ts';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
 import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
@@ -207,7 +208,7 @@ async function main(): Promise<void> {
 	refuseBackgroundPriority();
 	const server = await serveBenchPages({ dev: options.dev });
 	const browser = await launchChromium({
-		channel: 'chrome',
+		...chromeForTesting(),
 		args: [`--remote-debugging-port=${DEBUG_PORT}`],
 	});
 	try {

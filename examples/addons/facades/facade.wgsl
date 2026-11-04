@@ -152,7 +152,9 @@ fn surface(input: SurfaceInput) -> Surface {
     // pixel's own place on the ground, so a single wall lights window by window as well as a batch.
     let reach = length(input.worldPosition.xz - vec2f(material.waveOriginX, material.waveOriginZ));
     let arrival = material.waveStart + reach / max(material.waveSpeed, 0.001);
-    let age = max(frame.time - arrival, 0.0);
+    // A look that never starts the wave is already lit, and its age is then huge. The cap keeps the
+    // spring's angle small enough for a float, so a window's light stays finite.
+    let age = clamp(frame.time - arrival, 0.0, 60.0);
     let rise = 1.0 - exp(-material.waveDamping * age) * cos(material.waveRise * age);
     let on = select(0.0, rise, frame.time > arrival) * material.power;
 

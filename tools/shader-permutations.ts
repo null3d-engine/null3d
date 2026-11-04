@@ -19,7 +19,8 @@
 // `--extra` adds words by hand, as hexadecimal numbers, for a path that the recording cannot reach.
 import { writeFileSync } from 'node:fs';
 import { DEMOS } from '../examples/demos.ts';
-import { defaultEnvironment, launchBrowser } from '../packages/cli/src/browser.js';
+import { defaultEnvironment } from '../packages/cli/src/browser.js';
+import { launchRepoBrowser } from '../tests/lib/chrome-for-testing.ts';
 
 /** The page's record of the permutation words that a recording run collected, in order. */
 type Recorded = {
@@ -140,7 +141,7 @@ if (pages.length === 0)
 	throw new Error('name the pages to record: --pages demos, or one --page <path> for each');
 // The real GPU where the machine has one, so both paths draw as a device draws them; the software
 // GPU elsewhere, as CI runs it.
-const browser = await launchBrowser(defaultEnvironment());
+const browser = await launchRepoBrowser(defaultEnvironment());
 const words = new Set<number>(extra);
 /**
  * Records one page's words. A page runs on its own tab, so several pages record at once: each

@@ -60,6 +60,12 @@ export interface RunOptions {
 	 */
 	antialias: 'none' | 'fxaa' | 'msaa' | null;
 	/**
+	 * `?cloudSteps=`: the steps of each ray of the sky's volumetric cloud tier, from 0 to 64, 0 for
+	 * the flat layer, in place of the preset's, or null for the preset's. The image tests pin it to 0
+	 * on the software renderer, which cannot afford the march.
+	 */
+	cloudSteps: number | null;
+	/**
 	 * `?maxPixelRatio=`: the highest pixel ratio that a null3D page draws at, in place of the preset's
 	 * cap on a page that fills the window and the protocol's on one that does not, or null for those.
 	 */
@@ -125,7 +131,8 @@ const whole = (v: number) => Number.isSafeInteger(v) && v > 0;
 
 /**
  * Reads `?hold`, `?demo`, `?keep`, `?n=`, `?seconds=`, `?measure=`, `?soak=`, `?shadows=`, `?far=`,
- * `?governor=`, `?renderScale=`, the shadow quality settings, `?antialias=` and `?maxPixelRatio=`.
+ * `?governor=`, `?renderScale=`, the shadow quality settings, `?antialias=`, `?cloudSteps=` and
+ * `?maxPixelRatio=`.
  */
 export function readRunOptions(params: URLSearchParams): RunOptions {
 	const seconds = (name: string) =>
@@ -181,6 +188,12 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
 		antialias: params.has('antialias')
 			? readChoice(params, 'antialias', ['none', 'fxaa', 'msaa'] as const)
 			: null,
+		cloudSteps: readNumber(
+			params,
+			'cloudSteps',
+			(v) => Number.isInteger(v) && v >= 0 && v <= 64,
+			'a whole step count from 0 to 64',
+		),
 		maxPixelRatio: readNumber(
 			params,
 			'maxPixelRatio',
@@ -194,5 +207,24 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
 			(v) => Number.isFinite(v) && v >= 0.25 && v <= 1,
 			'a scale from 0.25 to 1, such as 0.5',
 		),
+	};
+}
+
+/**
+ * The engine options that a page's switches set, for `createEngine`. Every switch that names a
+ * quality setting is forwarded here, so a page that builds its engine options with this function
+ * cannot drop one. `maxPixelRatio` is the page's, because a page that fills its window caps a
+ * pixel ratio the protocol's canvas does not. The governor and the render scale reach the sketch,
+ * which applies them to the engine's quality settings.
+ */
+export function engineOptionsOf(options: RunOptions) {
+	return {
+		...(options.antialias !== null && { antialias: options.antialias }),
+		...(options.cloudSteps !== null && { cloudSteps: options.cloudSteps }),
+		...(options.shadowCascades !== null && { shadowCascades: options.shadowCascades }),
+		...(options.shadowMapSize !== null && { shadowMapSize: options.shadowMapSize }),
+		...(options.shadowCascadeBlend !== null && {
+			shadowCascadeBlend: options.shadowCascadeBlend,
+		}),
 	};
 }

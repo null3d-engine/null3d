@@ -86,7 +86,7 @@ Near plants: eye-level forest floor has no litter or undergrowth, and the golf t
 
 ### M4-S6: the ocean
 
-The FFT ocean is on branch `feat/m3-f9-fft-ocean`, on the owner's other machine. Swap it in through `examples/showcase/island/sea.ts`, which keeps the swap to one file, with surf and waves. Evenly spaced foam arcs read like ripples from above, and breaking waves are missing, so both belong here.
+The FFT ocean is on the milestone. Swap it in through `examples/showcase/island/sea.ts`, which keeps the swap to one file, with surf and waves. Evenly spaced foam arcs read like ripples from above, and breaking waves are missing, so both belong here.
 
 ### M4-S7: scripted people and cars
 
