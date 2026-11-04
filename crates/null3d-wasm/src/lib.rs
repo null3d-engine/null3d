@@ -1490,15 +1490,17 @@ pub fn create_batch(
 ) -> u32 {
     value_with_engine(|e| {
         let margin = displacement_margin(e, material);
-        add_batch(e, capacity, mesh, |batches, radius| {
-            batches.create(
+        add_batch(e, capacity, mesh, |batches, center, radius| {
+            let id = batches.create(
                 capacity,
                 dynamic,
                 row_values,
                 mesh,
                 material,
                 radius + margin,
-            )
+            )?;
+            batches.get_mut(id)?.set_local_center(center);
+            Ok(id)
         })
     })
 }
@@ -1528,8 +1530,8 @@ pub fn create_batch_part(
         let n = part.len().min(matrix.len());
         matrix[..n].copy_from_slice(&part[..n]);
         let margin = displacement_margin(e, material);
-        add_batch(e, capacity, mesh, |batches, radius| {
-            batches.create_part(
+        add_batch(e, capacity, mesh, |batches, center, radius| {
+            let id = batches.create_part(
                 source,
                 capacity,
                 dynamic,
@@ -1538,7 +1540,9 @@ pub fn create_batch_part(
                 material,
                 radius + margin,
                 matrix,
-            )
+            )?;
+            batches.get_mut(id)?.set_local_center(center);
+            Ok(id)
         })
     })
 }
@@ -1562,7 +1566,7 @@ pub fn create_sprite_batch(
     let look = SpriteLook::new(columns, rows, screen_size);
     let look = if points { look.as_points() } else { look };
     value_with_engine(|e| {
-        add_batch(e, capacity, mesh, |batches, radius| {
+        add_batch(e, capacity, mesh, |batches, _, radius| {
             batches.create_sprites(capacity, dynamic, mesh, material, radius, look)
         })
     })
@@ -1592,7 +1596,7 @@ pub fn create_line_batch(
             })
         })?;
         let look = LineLook::new(mode, width, world_units, dashed);
-        add_batch(e, mode.rows(points), mesh, |batches, radius| {
+        add_batch(e, mode.rows(points), mesh, |batches, _, radius| {
             batches.create_lines(points, dynamic, mesh, material, radius, look)
         })
     })
@@ -1623,13 +1627,14 @@ fn displacement_margin(e: &Engine, material: u32) -> f32 {
         .bounds_margin(material.wrapping_sub(1))
 }
 
-/// Adds a batch of `capacity` rows of `mesh`, made by `make` with the mesh's radius, once the
-/// renderer has room for its rows, and returns its id.
+/// Adds a batch of `capacity` rows of `mesh`, made by `make` with the mesh's bounding center and
+/// radius, once the renderer has room for its rows, and returns its id. A batch of copies of the
+/// mesh takes its sphere at that center; sprite and line batches pack their rows around the origin.
 fn add_batch(
     e: &mut Engine,
     capacity: u32,
     mesh: u32,
-    make: impl FnOnce(&mut BatchTable, f32) -> Result<Handle, CoreError>,
+    make: impl FnOnce(&mut BatchTable, [f32; 3], f32) -> Result<Handle, CoreError>,
 ) -> Result<u32, u32> {
     let Some(slot) = mesh
         .checked_sub(1)
@@ -1637,7 +1642,7 @@ fn add_batch(
     else {
         return Err(render_failure(render_detail::UNKNOWN_MESH, mesh));
     };
-    let radius = slot.radius;
+    let (center, radius) = (slot.center, slot.radius);
     // Refused here, at the call that makes the scene too large to draw, before the core
     // allocates the batch's rows.
     let sources = e
@@ -1658,7 +1663,7 @@ fn add_batch(
             bytes: capacity.saturating_mul(BYTES_PER_SOURCE),
         })
     })?;
-    let id = make(&mut e.batches, radius).map_err(core_failure)?;
+    let id = make(&mut e.batches, center, radius).map_err(core_failure)?;
     e.structure_changed = true;
     Ok(id.raw())
 }
@@ -1808,15 +1813,19 @@ pub fn set_batch_layers(batch: u32, mask: u32) -> u32 {
 /// Gives every row of a batch a bounding sphere of the first call value's meters around its own
 /// origin, in place of the mesh's own radius. A vertex shader that carries rows away from their
 /// origins, such as traffic along a lane, needs this, or culling drops rows that are still on the
-/// screen. Every row is marked for update, so the next frame writes its new sphere, and the
-/// renderer's tables are built again, so the GPU culling reads the new radius too.
+/// screen. The rows of a batch share their bucket's sphere center, the mesh's, so the sphere grows
+/// around that center until it holds the one around the origin. Every row is marked for update, so
+/// the next frame writes its new sphere, and the renderer's tables are built again, so the GPU
+/// culling reads the new radius too.
 #[wasm_bindgen(js_name = setBatchBounds)]
 pub fn set_batch_bounds(batch: u32) -> u32 {
     with_engine(|e| {
         let [radius] = e.call_values();
         match e.batches.get_mut(Handle::from_raw(batch)) {
             Ok(batch) => {
-                batch.set_local_radius(radius);
+                let [x, y, z] = batch.local_center();
+                let offset = (x * x + y * y + z * z).sqrt();
+                batch.set_local_radius(radius + offset);
                 e.structure_changed = true;
                 0
             }
@@ -2840,10 +2849,17 @@ fn mesh_value<T: Default>(mesh: u32, value: impl FnOnce(&MeshSlot) -> T) -> T {
     out.unwrap_or_default()
 }
 
-/// The distance from a mesh's origin to its farthest vertex, or 0 for an unknown mesh.
+/// The distance from a mesh's bounding center to its farthest vertex, or 0 for an unknown mesh.
 #[wasm_bindgen(js_name = meshRadius)]
 pub fn mesh_radius(mesh: u32) -> f32 {
     mesh_value(mesh, |slot| slot.radius)
+}
+
+/// One axis of a mesh's bounding center, the center of the box around its vertices: 0 for x, 1
+/// for y and 2 for z. 0 for an unknown mesh.
+#[wasm_bindgen(js_name = meshCenter)]
+pub fn mesh_center(mesh: u32, axis: u32) -> f32 {
+    mesh_value(mesh, |slot| slot.center[(axis as usize).min(2)])
 }
 
 /// Turns a rectangle's rows over in place, so that its last row comes first, which a canvas needs:
@@ -3113,7 +3129,7 @@ fn grow_bounds(e: &mut Engine, material: u32) {
             continue;
         };
         e.scene
-            .set_local_sphere(slot as u32, [0.0; 3], mesh.radius + margin);
+            .set_local_sphere(slot as u32, mesh.center, mesh.radius + margin);
     }
     let ids: Vec<Handle> = e
         .batches
@@ -3126,6 +3142,7 @@ fn grow_bounds(e: &mut Engine, material: u32) {
             continue;
         };
         if let Some(mesh) = batch.mesh().checked_sub(1).and_then(|m| meshes.mesh(m)) {
+            // The batch keeps the center that it took when it was made.
             batch.set_local_radius(mesh.radius + margin);
         }
     }

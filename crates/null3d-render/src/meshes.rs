@@ -80,7 +80,11 @@ pub struct MeshSlot {
     first_part: u32,
     part_count: u32,
     pub vertex_count: u32,
-    /// The distance from the mesh's origin to its farthest vertex, for bounding spheres.
+    /// The center of the box around the mesh's vertices, which its bounding spheres share. A mesh
+    /// whose positions start at a corner, as quantized files store them, keeps its sphere on the
+    /// shape rather than on that corner.
+    pub center: [f32; 3],
+    /// The distance from the center to the mesh's farthest vertex, for bounding spheres.
     pub radius: f32,
     /// The joints that a skinned mesh's vertices name: its largest joint number plus one, or 0
     /// for a mesh without joints and weights.
@@ -770,12 +774,7 @@ impl MeshStorage {
             self.add_edge_parts();
         }
 
-        let radius = (0..geometry.vertex_count())
-            .map(|v| {
-                let [x, y, z] = geometry.position(v);
-                (x * x + y * y + z * z).sqrt()
-            })
-            .fold(0.0f32, f32::max);
+        let (center, radius) = bounding_sphere(geometry);
         let first_sphere = self.spheres.len() as u32;
         self.spheres.extend(joint_spheres(geometry));
         let slot = MeshSlot {
@@ -783,6 +782,7 @@ impl MeshStorage {
             first_part,
             part_count: self.parts.len() as u32 - first_part,
             vertex_count,
+            center,
             radius,
             joints: self.spheres.len() as u32 - first_sphere,
             first_sphere,
@@ -934,6 +934,7 @@ impl MeshStorage {
             first_part,
             part_count: 1,
             vertex_count: slot.vertex_count,
+            center: slot.center,
             radius: slot.radius,
             // The level draws the base's vertices, so it reads the base's joint spheres too: a
             // skinned object's level follows the pose that the base's skin gives those vertices.
@@ -1153,6 +1154,7 @@ impl MeshStorage {
             first_part,
             part_count: self.parts.len() as u32 - first_part,
             vertex_count: slot.vertex_count,
+            center: slot.center,
             radius: slot.radius,
             joints: slot.joints,
             first_sphere: slot.first_sphere,
@@ -1736,6 +1738,33 @@ fn cut_parts(
         finish(part)?;
     }
     Ok(())
+}
+
+/// A geometry's bounding sphere: the center of the box around its vertices, and the distance from
+/// it to the farthest vertex. A geometry without vertices has a sphere of radius 0 at the origin.
+pub fn bounding_sphere(geometry: &Geometry) -> ([f32; 3], f32) {
+    let count = geometry.vertex_count();
+    if count == 0 {
+        return ([0.0; 3], 0.0);
+    }
+    let mut low = [f32::INFINITY; 3];
+    let mut high = [f32::NEG_INFINITY; 3];
+    for v in 0..count {
+        let p = geometry.position(v);
+        for k in 0..3 {
+            low[k] = low[k].min(p[k]);
+            high[k] = high[k].max(p[k]);
+        }
+    }
+    let center: [f32; 3] = std::array::from_fn(|k| (low[k] + high[k]) * 0.5);
+    let radius = (0..count)
+        .map(|v| {
+            let p = geometry.position(v);
+            let d: [f32; 3] = std::array::from_fn(|k| p[k] - center[k]);
+            (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+        })
+        .fold(0.0f32, f32::max);
+    (center, radius)
 }
 
 /// The bounding sphere of each joint's vertices in a skinned mesh, in the mesh's space, by joint
@@ -2845,6 +2874,25 @@ mod tests {
             .add(&box_geometry(0.6, 0.6, 0.6, [1, 1, 1]).unwrap())
             .unwrap();
         assert!((storage.mesh(id).unwrap().radius - 0.3 * 3f32.sqrt()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_mesh_stored_from_a_corner_takes_its_sphere_at_its_box_center() {
+        // A quantized file stores positions from a corner of the box, at 0 to 2 on each axis.
+        let mut geometry = box_geometry(2.0, 2.0, 2.0, [1, 1, 1]).unwrap();
+        let stride = geometry.stride();
+        for v in 0..geometry.vertex_count() {
+            for k in 0..3 {
+                let at = v * stride + k * 4;
+                let value = f32::from_le_bytes(geometry.vertices[at..at + 4].try_into().unwrap());
+                geometry.vertices[at..at + 4].copy_from_slice(&(value + 1.0).to_le_bytes());
+            }
+        }
+        let mut storage = MeshStorage::new(Packing::SharedBuffers);
+        let id = storage.add(&geometry).unwrap();
+        let slot = storage.mesh(id).unwrap();
+        assert_eq!(slot.center, [1.0, 1.0, 1.0]);
+        assert!((slot.radius - 3f32.sqrt()).abs() < 1e-6, "{}", slot.radius);
     }
 
     /// The pairs of vertices that a mesh's parts draw as lines, through each part's page.

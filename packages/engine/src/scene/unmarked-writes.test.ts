@@ -65,7 +65,13 @@ function fakeScene() {
 	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
 	const time = { frame: 0 };
 	const s = new Scene(core, time, false);
-	const mesh = { id: 1, radius: 1, core, drawnWith() {} } as unknown as MeshGeometry;
+	const mesh = {
+		id: 1,
+		radius: 1,
+		center: [0, 0, 0],
+		core,
+		drawnWith() {},
+	} as unknown as MeshGeometry;
 	const material = { id: 1, core } as unknown as Material;
 	return {
 		scene: s,
@@ -158,6 +164,7 @@ describe('unmarked writes to static objects', () => {
 		crate.setMesh({
 			id: 2,
 			radius: 5,
+			center: [0, 0, 0],
 			core: scene.core,
 			drawnWith() {},
 		} as unknown as MeshGeometry);
@@ -175,6 +182,7 @@ describe('unmarked writes to static objects', () => {
 		crate.setMesh({
 			id: 2,
 			radius: 5,
+			center: [0, 0, 0],
 			core: scene.core,
 			drawnWith() {},
 		} as unknown as MeshGeometry);
