@@ -411,10 +411,15 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 			Math.hypot(m[1] as number, m[5] as number, m[9] as number),
 			Math.hypot(m[2] as number, m[6] as number, m[10] as number),
 		);
+		// The matrix moves the mesh's bounding center, as the culling does.
 		const center = this.sphereCenter;
-		center[0] = m[3] as number;
-		center[1] = m[7] as number;
-		center[2] = m[11] as number;
+		const [cx, cy, cz] = mesh.center;
+		for (let r = 0; r < 3; r++)
+			center[r] =
+				(m[r * 4] as number) * cx +
+				(m[r * 4 + 1] as number) * cy +
+				(m[r * 4 + 2] as number) * cz +
+				(m[r * 4 + 3] as number);
 		// Only a sphere whose lines reached the buffer counts, so a full buffer reports none drawn
 		// rather than a count that the frame never wrote.
 		const before = this.points;

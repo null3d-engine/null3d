@@ -89,6 +89,7 @@ function fakeCore(largeWorld = false, growOnReserve = false) {
 	/** The origin that each batch was given, by id. */
 	const origins = new Map<number, number[]>();
 	const glue = {
+		meshCenter: () => 0,
 		sceneCapacity: () => CAPACITY,
 		sceneArrays: (field: number) =>
 			({

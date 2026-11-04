@@ -324,7 +324,8 @@ const mesh = geometry.fromArrays({
   morphTargets: { positions: [smile, blink], normals, names: ['Smile', 'Blink'] },  // (0.2) deltas, 3 per vertex per target
   // morphTargets.colors: color deltas, as many per vertex as colors; morphed colors clamp to 0..1
 });
-mesh.radius;                // the distance from the mesh's origin to its farthest vertex
+mesh.center;                // the center of the box around the mesh's vertices, in its own space
+mesh.radius;                // the distance from that center to the farthest vertex
 mesh.morphTargets;          // (0.2) the target count; mesh.morphTargetNames lists their names
 mesh.destroy();             // (0.2) after the objects and batches that use it, in the same frame or before; E1111 while one does
 geometry.memoryBytes;       // (0.2) GPU bytes of every mesh; destroyed meshes give their room to later ones

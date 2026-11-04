@@ -102,6 +102,7 @@ function fakeCore(largeWorld = false) {
 	const materialValues: number[][] = [];
 	let nextView = 1;
 	const glue = {
+		meshCenter: () => 0,
 		sceneCapacity: () => CAPACITY,
 		addSceneView: (...values: number[]) => {
 			viewCalls.added.push(values);
