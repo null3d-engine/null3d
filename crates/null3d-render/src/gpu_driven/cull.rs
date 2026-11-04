@@ -98,14 +98,21 @@ const _: () = assert!(OCCLUSION_WORDS as u32 * 4 == sizes::CULL_OCCLUSION_BYTES)
 /// Bytes at the end of a view's indirect draws where the culling shader counts the copies that its
 /// slice's guard drops, which no draw or history reaches.
 const DROPPED_COPIES_BYTES: u32 = 4;
-/// Bytes of a two-phase view's counts after its history: the sources in view that would draw, the
-/// sources that the pyramid hides, the frame that they belong to, and a spare word.
+/// Bytes of a view's counts: the sources in view that would draw, the sources that the pyramid
+/// hides, the frame that they belong to, and a spare word. A view that culls in one phase keeps
+/// them too, so the check of what pieces cull can stamp and read the frame of its counts.
 pub(super) const COUNTS_BYTES: u32 = 16;
 
-/// Where a two-phase view's counts start in its indirect draws' buffer, in bytes: after both sets
-/// of draws and the history of every source of `layout`.
-pub(super) fn counts_offset(layout: &Layout) -> u32 {
-    (2 * layout.draws.len() as u32 * sizes::INDIRECT_WORDS + layout.sources) * 4
+/// Where a view's counts start in its indirect draws' buffer, in bytes. In a view that culls in
+/// `two_phases`, they follow both sets of draws and the history of every source of `layout`; in
+/// another, they follow its one set of draws.
+pub(super) fn counts_offset(layout: &Layout, two_phases: bool) -> u32 {
+    let draws = layout.draws.len() as u32 * sizes::INDIRECT_WORDS;
+    if two_phases {
+        (2 * draws + layout.sources) * 4
+    } else {
+        draws * 4
+    }
 }
 /// Bytes of one indexed indirect draw.
 pub(super) const INDIRECT_BYTES: u32 = sizes::INDIRECT_WORDS * 4;
@@ -450,7 +457,7 @@ impl Culling {
         let (phases, history) = if occlusion {
             (2, layout.sources * 4 + COUNTS_BYTES)
         } else {
-            (1, 0)
+            (1, COUNTS_BYTES)
         };
         let draws = layout.draws.len() as u32 * phases;
         let mut recreated = shared_recreated || buffers.occlusion != occlusion;
@@ -610,20 +617,21 @@ impl Culling {
         Ok(())
     }
 
-    /// Resets a two-phase view's counts for frame `frame`, which they then name, after the
-    /// view's other uploads of the frame. The still-camera accumulation's comparison skips the
-    /// frame's number, which every frame changes, so a view that holds still with the culling on
-    /// comes to rest.
+    /// Resets a view's counts for frame `frame`, which they then name, after the view's other
+    /// uploads of the frame, where a view that culls in `two_phases` or not keeps them. The
+    /// still-camera accumulation's comparison skips the frame's number, which every frame changes,
+    /// so a view that holds still with the culling on comes to rest.
     pub(super) fn reset_counts(
         list: &mut DrawList,
         arena: &mut UploadArena,
         view: ViewId,
         layout: &Layout,
         frame: u32,
+        two_phases: bool,
     ) -> Result<(), RecordError> {
         const FRAME_BYTES: std::ops::Range<usize> = 8..12;
         let (at, bytes) = arena.push_masked(words_as_bytes(&[0, 0, frame, 0]), &[FRAME_BYTES])?;
-        let offset = counts_offset(layout);
+        let offset = counts_offset(layout, two_phases);
         list.push(Op::WriteBuffer, &[ids::indirect(view), offset, at, bytes])?;
         Ok(())
     }
@@ -694,6 +702,50 @@ mod tests {
                     .then_some(command.operands[1])
             })
             .collect()
+    }
+
+    /// A view's indirect draws hold its counts whether it culls in one phase or two, before the
+    /// last word, which counts the dropped copies: the check of what pieces cull stamps and reads
+    /// the counts' frame in either.
+    #[test]
+    fn a_view_keeps_its_counts_inside_its_indirect_draws_in_either_phase() {
+        let mut layout = Layout::with_copies(4);
+        layout.draws = (0..3)
+            .map(|_| super::super::layout::Draw {
+                page: 0,
+                index_count: 3,
+                first_index: 0,
+                base_vertex: 0,
+                vertices: None,
+            })
+            .collect();
+        for two_phases in [false, true] {
+            let mut culling = Culling::default();
+            let mut list = DrawList::with_capacity(256);
+            let view = ViewId::CAMERA;
+            culling
+                .add_view(&mut list, view)
+                .expect("the view's buffers");
+            culling
+                .apply(&mut list, view, &layout, false, u32::MAX, two_phases)
+                .expect("the view's culling group");
+            assert_eq!(culling.occludes(view), two_phases);
+            let made: Vec<u32> = decode(list.words())
+                .filter_map(|command| {
+                    let command = command.expect("the buffer commands decode");
+                    (command.op == Op::CreateBuffer && command.operands[0] == ids::indirect(view))
+                        .then_some(command.operands[1])
+                })
+                .collect();
+            let size = *made.last().expect("the indirect draws' buffer");
+            let end = counts_offset(&layout, two_phases) + COUNTS_BYTES;
+            assert!(
+                end + DROPPED_COPIES_BYTES <= size,
+                "the counts end at {end} in a buffer of {size} bytes, two phases: {two_phases}"
+            );
+            let draws = layout.draws.len() as u32 * INDIRECT_BYTES;
+            assert!(counts_offset(&layout, two_phases) >= draws * if two_phases { 2 } else { 1 });
+        }
     }
 
     /// The direct path's instance buffer holds a layout that fills the largest buffer of its path,
