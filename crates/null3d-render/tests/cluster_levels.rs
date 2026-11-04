@@ -6,8 +6,9 @@ mod common;
 
 use std::collections::HashSet;
 
-use common::{World, count, grid};
+use common::{World, base_sphere, count, grid};
 use null3d_core::handle::Handle;
+use null3d_core::levels::Switch;
 use null3d_core::scene::{Command, flags};
 use null3d_gpu::drawlist::{Op, index_format, layout, template};
 use null3d_gpu::mock::MockBackend;
@@ -300,5 +301,65 @@ fn each_shadow_view_picks_and_draws_its_own_patches_from_a_list_sized_to_them() 
     assert!(
         lists.iter().any(|&(_, bytes, _)| bytes >= 60_000 * 4),
         "{lists:?}"
+    );
+}
+
+/// The world's ball mesh, by engine id, which its third object draws 20 m from the camera.
+const BALL: u32 = 2;
+
+/// Gives the world's ball two lower levels. At the world's threshold the ball 20 m away draws the
+/// coarsest one, and a camera beside it draws the finest.
+fn give_ball_levels(world: &mut World) {
+    let settings = world.renderer.settings_mut();
+    let meshes = [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])]
+        .map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
+    settings
+        .set_mesh_levels(
+            BALL,
+            &meshes,
+            &[0.01, 0.05],
+            &[Switch::Error; 2],
+            &[0, 0],
+            0,
+        )
+        .unwrap();
+}
+
+/// The cluster pass places a tree's patches by its one copy in the view's compacted instances, so
+/// the record that names that copy follows the copy wherever the frame's level slices put it: in
+/// the first frame, whose slices take an order of their own, and after a camera jump whose level
+/// counts outgrow the slices, which places them again.
+#[test]
+fn a_trees_record_names_its_copy_after_the_level_slices_move() {
+    let mut world = World::new();
+    give_ball_levels(&mut world);
+    let mesh = world.add_object(&grid(1, 1), Shading::Lit);
+    world
+        .renderer
+        .set_mesh_patches(mesh, Some(one_patch()))
+        .unwrap();
+    world.record(true);
+    let slots = world.renderer.cluster_copy_slots();
+    assert_eq!(slots.len(), 1, "the grid draws its tree: {slots:?}");
+    assert_eq!(
+        slots[0].0, slots[0].1,
+        "the first frame's record: {slots:?}"
+    );
+    let before = world.renderer.compacted_bytes()[0];
+
+    // The camera jumps beside the ball, which then draws its finest level, whose slice held no
+    // copy.
+    world.frame += 1;
+    world.aim([1.0, 0.0, 1.0], 0.0, 0.0);
+    world.record(false);
+    assert_ne!(
+        world.renderer.compacted_bytes()[0],
+        before,
+        "the jump places the slices again"
+    );
+    let slots = world.renderer.cluster_copy_slots();
+    assert_eq!(
+        slots[0].0, slots[0].1,
+        "the record after the jump: {slots:?}"
     );
 }
