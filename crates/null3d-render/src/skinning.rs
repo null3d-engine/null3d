@@ -276,7 +276,7 @@ pub fn update_bounds(
             });
         let sphere = match pose.and_then(|pose| posed_sphere(meshes, mesh, pose, extra)) {
             Some(sphere) => sphere,
-            None if morph != 0 => ([0.0; 3], mesh.radius + extra),
+            None if morph != 0 => (mesh.center, mesh.radius + extra),
             None => continue,
         };
         let s = slot;
