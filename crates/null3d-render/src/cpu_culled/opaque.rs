@@ -156,7 +156,7 @@ pub(super) struct ViewUpload<'a> {
 pub(super) struct PatchView<'a> {
     /// Each cluster bucket's first run, then one past the last.
     starts: &'a [u32],
-    runs: &'a [[u32; 2]],
+    runs: &'a [(u32, u32)],
 }
 
 impl<'a> PatchView<'a> {
@@ -167,12 +167,12 @@ impl<'a> PatchView<'a> {
     };
 
     /// The runs of each cluster bucket, from `starts`.
-    pub(super) const fn new(starts: &'a [u32], runs: &'a [[u32; 2]]) -> Self {
+    pub(super) const fn new(starts: &'a [u32], runs: &'a [(u32, u32)]) -> Self {
         Self { starts, runs }
     }
 
     /// Cluster `cluster`'s chosen runs.
-    fn of(&self, cluster: u32) -> &'a [[u32; 2]] {
+    fn of(&self, cluster: u32) -> &'a [(u32, u32)] {
         let at = cluster as usize;
         let first = self.starts.get(at).copied().unwrap_or(0) as usize;
         let end = self.starts.get(at + 1).copied().unwrap_or(first as u32) as usize;
@@ -318,7 +318,7 @@ fn draw_call(
         if let Some((from, to)) = call.patches {
             let cluster = draws[call.from].cluster.expect("a patch call draws a tree");
             for (k, run) in patches.of(cluster)[from..to].iter().enumerate() {
-                put_u32(counts, k, run[1]);
+                put_u32(counts, k, run.1);
             }
         } else {
             for (k, d) in (call.from..call.to).filter(|&d| visible(d) > 0).enumerate() {
@@ -329,7 +329,7 @@ fn draw_call(
         if let Some((from, to)) = call.patches {
             let cluster = draws[call.from].cluster.expect("a patch call draws a tree");
             for (k, run) in patches.of(cluster)[from..to].iter().enumerate() {
-                put_u32(offsets, k, run[0] * TREE_INDEX_BYTES);
+                put_u32(offsets, k, run.0 * TREE_INDEX_BYTES);
             }
         } else {
             for (k, d) in (call.from..call.to).filter(|&d| visible(d) > 0).enumerate() {
@@ -357,7 +357,7 @@ fn draw_call(
         let cluster = draws[d].cluster.expect("a patch call draws a tree");
         let instances = visible(d) << shift(d);
         for run in &patches.of(cluster)[from..to] {
-            list.push(Op::DrawIndexed, &[run[1], instances, run[0], 0, 0])?;
+            list.push(Op::DrawIndexed, &[run.1, instances, run.0, 0, 0])?;
         }
     } else {
         for d in (call.from..call.to).filter(|&d| visible(d) > 0) {
@@ -1121,7 +1121,7 @@ mod tests {
         });
         // Each bucket lists its one source.
         let starts = [0, 1, 2];
-        let runs = [[0, 3]];
+        let runs = [(0, 3)];
         let patch_starts = [0, 1];
         let patches = PatchView::new(&patch_starts, &runs);
         let mut list = DrawList::with_capacity(1024);
@@ -1169,7 +1169,7 @@ mod tests {
             own_vertices: false,
         });
         let starts = [0, 1];
-        let runs = [[0, 3]];
+        let runs = [(0, 3)];
         let patch_starts = [0, 1];
         let patches = PatchView::new(&patch_starts, &runs);
         let mut list = DrawList::with_capacity(256);
@@ -1199,7 +1199,7 @@ mod tests {
         let draws = [draw(1, 0), tree];
         // The tree lists one source, as a cluster bucket does.
         let visible = [1, 1];
-        let runs: Vec<[u32; 2]> = (0..300).map(|k| [k * 3, 3]).collect();
+        let runs: Vec<(u32, u32)> = (0..300).map(|k| (k * 3, 3)).collect();
         let starts = [0, 300];
         let patches = PatchView::new(&starts, &runs);
         let mut out = Vec::new();
