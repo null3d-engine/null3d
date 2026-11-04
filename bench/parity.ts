@@ -31,9 +31,10 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { type Browser, errors } from '@playwright/test';
-import { defaultEnvironment, launchBrowser } from '../packages/cli/src/browser.js';
+import { defaultEnvironment } from '../packages/cli/src/browser.js';
 import { watchConsole } from '../packages/cli/src/page.js';
 import { featureImagePath } from '../tests/image/manifest.ts';
+import { launchRepoBrowser } from '../tests/lib/chrome-for-testing.ts';
 import { pageResult } from '../tests/lib/page-result.ts';
 import { REPO_ROOT, startServer } from '../tests/lib/server.ts';
 import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
@@ -198,7 +199,7 @@ async function main(): Promise<void> {
 	let total = 0;
 	const measured: StoredBaselines = {};
 	try {
-		const browser = await launchBrowser(defaultEnvironment());
+		const browser = await launchRepoBrowser(defaultEnvironment());
 		try {
 			for (const scene of options.scenes) {
 				const source = sourceOf(scene, options.switches);

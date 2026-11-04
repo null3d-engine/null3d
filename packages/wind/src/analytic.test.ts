@@ -119,6 +119,24 @@ describe('the pushes ring', () => {
 		expect(ring.slots.map((slot) => slot.x)).toEqual([18, 19, 17, 0]);
 	});
 
+	test('a slot that a caller takes and writes holds what a push writes', () => {
+		const byAdd = createPushRing();
+		const byTake = createPushRing();
+		for (let i = 0; i < 8; i++) {
+			byAdd.add(i, -i, i / 2, i * 0.25, false);
+			const index = byTake.take(false);
+			const slot = byTake.slots[index] as Push;
+			slot.x = i;
+			slot.z = -i;
+			slot.strength = i / 2;
+			slot.born = i * 0.25;
+		}
+		expect(byTake.slots).toEqual(byAdd.slots);
+		// The gust keeps the slot after the pushes, which the pushes never take.
+		expect(byTake.take(true)).toBe(GUST_SLOT);
+		expect(byTake.take(false)).toBe(byAdd.add(0, 0, 0, 0, false));
+	});
+
 	test('a page’s pushes never push its gust out of the ring', () => {
 		const ring = createPushRing();
 		ring.add(-20, -14, 7, 0, true);

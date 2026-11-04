@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'bun:test';
-import { SCOPE_BLOOM, SCOPE_FINAL, SCOPE_OPAQUE } from '../generated/core';
+import {
+	SCOPE_AO,
+	SCOPE_BLOOM,
+	SCOPE_DECALS,
+	SCOPE_FINAL,
+	SCOPE_OPAQUE,
+	SCOPE_SHADOW,
+	SCOPE_TRANSPARENT,
+} from '../generated/core';
 import type { FeatureStats } from '../scene/features';
 import { MEMORY_AREA_COUNT, MEMORY_AREA_NAMES, MEMORY_AREA_VALUES } from '../shared/memory-area';
 import {
@@ -537,6 +545,49 @@ describe('FrameStatsWindow GPU time', () => {
 		expect(times.slice(1)).toEqual([2, 1, 3]);
 		// The opaque pass of the camera's view is place 0.
 		expect(window.stats.gpuSteps[1]?.place).toBe(0);
+	});
+
+	it('keeps the passes after the seventh apart from the seventh scope', () => {
+		const { buffer, recorders, window } = setUp();
+		const gpu = new FrameRecorder(buffer, Role.Gpu);
+		for (let frame = 1; frame <= 30; frame++) writeFrame(recorders, frame);
+		gpu.begin(11);
+		gpu.gpuPasses(9, 0b111111111);
+		gpu.gpuTick(1);
+		gpu.gpuTime(0, 0.2);
+		// Seven timed passes, each with its own scope and its own time, then two later passes
+		// that share one figure.
+		const scopes = [
+			SCOPE_OPAQUE,
+			SCOPE_TRANSPARENT,
+			SCOPE_SHADOW,
+			SCOPE_DECALS,
+			SCOPE_BLOOM,
+			SCOPE_AO,
+			SCOPE_FINAL,
+		];
+		scopes.forEach((scope, pass) => {
+			gpu.gpuTime(1 + pass, pass + 1);
+			gpu.gpuScope(pass, scope);
+		});
+		gpu.gpuLater(4.5);
+		gpu.commit(20);
+		window.update();
+		const steps = window.stats.gpuSteps;
+		expect(steps.map((step) => step.name)).toEqual([
+			'copies',
+			'opaque',
+			'transparent',
+			'shadow',
+			'decals',
+			'bloom',
+			'ambient occlusion',
+			'final',
+			'later passes',
+		]);
+		// The seventh pass reads its own time, and the two after it read the figure they share.
+		expect(steps.find((step) => step.name === 'final')?.ms).toBe(7);
+		expect(steps.find((step) => step.name === 'later passes')?.ms).toBe(4.5);
 	});
 
 	it('leaves an untimed pass out of its step’s mean, so a step never reads negative', () => {

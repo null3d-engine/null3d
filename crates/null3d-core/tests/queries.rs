@@ -467,6 +467,52 @@ fn queries_follow_late_updates_and_batch_updates() {
     assert_eq!(distance(&mut queries, &scene, &batches, right), None);
 }
 
+/// A query that tests every face finds a surface that encloses the ray's origin, and says that it
+/// met the surface's back. A light probe bake reads it to find the probes inside geometry.
+#[test]
+fn a_query_that_tests_every_face_finds_the_inside_of_a_box() {
+    let workers = Workers::start(1);
+    let jobs = workers.jobs();
+    let mut rng = Rng::new(9);
+    let meshes = meshes(&mut rng);
+    let mut scene = SceneStorage::with_capacity(4);
+    let batches = BatchTable::with_capacity(1);
+    let mut queries = SceneQueries::new();
+    let boxed = scene.reserve().unwrap();
+    scene.set_local_radius(boxed, 2.0).unwrap();
+    scene
+        .apply_commands(
+            &[Command::create(boxed, Handle::NONE, 3, flags::VISIBLE)],
+            1,
+        )
+        .unwrap();
+    scene.update_transforms(jobs);
+    let view = QueryScene {
+        scene: &scene,
+        batches: &batches,
+        meshes: &meshes,
+        rows: Default::default(),
+    };
+    queries.sync(&view, jobs).unwrap();
+    let inside = WorldRay::new([0.0; 3], [0.0, 0.0, 1.0]);
+    // The material draws front faces only, so a ray that starts inside the box meets nothing.
+    assert!(queries.raycast(&view, &inside, u32::MAX).is_none());
+    // A query that tests every face meets the inside of the box, whose back faces it.
+    queries.set_all_faces(true);
+    let hit = queries
+        .raycast(&view, &inside, u32::MAX)
+        .expect("the box encloses the ray's origin");
+    assert!(hit.back_facing);
+    assert_eq!(hit.distance, 1.0);
+    // A ray from outside meets the front of the same box, with or without both faces.
+    let outside = WorldRay::new([0.0, 0.0, -10.0], [0.0, 0.0, 1.0]);
+    let hit = queries
+        .raycast(&view, &outside, u32::MAX)
+        .expect("the ray reaches the box");
+    assert!(!hit.back_facing);
+    assert_eq!(hit.distance, 9.0);
+}
+
 /// A static object that a late update moves right after a query keeps its new place in the
 /// queries of later frames, as a door that a sketch opens in `onLateUpdate` after a raycast.
 #[test]

@@ -29,6 +29,7 @@ const params = new URL(import.meta.url).searchParams;
 
 export default defineSketch(({ scene, materials, geometry, post, quality }) => {
 	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
+	if (params.get('bounce') === 'off') quality.set({ bounceRays: 0 });
 	const cap = params.get('areaLights');
 	if (cap !== null) quality.set({ areaLights: Number(cap) });
 	scene.setBackground(LIGHTS_BACKGROUND);

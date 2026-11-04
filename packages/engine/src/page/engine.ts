@@ -78,7 +78,7 @@ import {
 } from './capabilities';
 import { CheckStore, checkConditions } from './check-store';
 import { watchDisplay } from './display';
-import type { FrameMetrics } from './frame-stats';
+import type { FrameMetrics, MeasureOptions } from './frame-stats';
 import {
 	type HoldScript,
 	type HoldScriptResult,
@@ -253,6 +253,17 @@ export interface EngineOptions {
 	 */
 	morphTargets?: number;
 	/**
+	 * The steps of each ray of the sky's volumetric cloud tier when the engine starts, a whole
+	 * number from 0 to 64. Above 0 the sky draws volumetric clouds in place of the flat layer, from
+	 * the same cloud settings; 0 draws the flat layer. Without it, the quality preset sets it: 0 on
+	 * Low and Medium, 32 on High and 48 on Ultra. It lets a page on WebGL2 or in compatibility mode,
+	 * whose presets stop at Medium, draw the tier. The sky's environment map marches at most 16
+	 * steps, and draws them only when this option is above 0, because the map picks its tier's
+	 * shaders at the page's start. A sketch can change the sky's count during play with
+	 * `quality.set`. Another value fails with E1213.
+	 */
+	cloudSteps?: number;
+	/**
 	 * True to run software occlusion culling on WebGL2: objects that `setOccluder(true)` marks hide
 	 * the objects that lie wholly behind them, so the GPU skips those. False turns it off. Without
 	 * it, the quality preset decides, and a sketch can change it during play with `quality.set`.
@@ -342,13 +353,16 @@ export interface EngineOptions {
 	 */
 	expectedObjects?: number;
 	/**
-	 * Called as the start reaches each stage, in this order: `core` once the engine core is compiled
-	 * and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the
-	 * GPU has finished the first frame. Before `core`, `memory-wait` comes when the browser has
-	 * refused the engine's memory for 10 seconds. The engine then tries for about 35 seconds more
-	 * before it fails with E1109.
+	 * Called as the start reaches each stage, in this order: `core-download` as the engine core's
+	 * file downloads, with the bytes that have arrived; `core` once the engine core is compiled and
+	 * the GPU paths are tested; `sketch` once the sketch's setup has run; and `first-frame` once the
+	 * GPU has finished the first frame. Before `core`, `core-download` reports the core file's bytes,
+	 * and `memory-wait` comes when the browser has refused the engine's memory for 10 seconds. The
+	 * engine then tries for about 35 seconds more before it fails with E1109. `progress` gives a
+	 * stage's figures while it has some: the bytes of a download, measured against the length that
+	 * the server announced.
 	 */
-	onProgress?: (stage: StartupStage) => void;
+	onProgress?: (stage: StartupStage, progress?: StartupProgress) => void;
 	/**
 	 * Receives the messages the sketch sends with `ctx.page.post`, from the start of the sketch's setup.
 	 * Use it for progress that the sketch reports while it loads. `engine.onSketchMessage` adds more
@@ -430,7 +444,24 @@ export interface EngineOptions {
  *
  * @category api/engine
  */
-export type StartupStage = 'memory-wait' | 'core' | 'sketch' | 'first-frame';
+export type StartupStage = 'core-download' | 'memory-wait' | 'core' | 'sketch' | 'first-frame';
+
+/**
+ * What a start stage has done, as `onProgress` reports it.
+ *
+ * @category api/engine
+ */
+export interface StartupProgress {
+	/** How much of the stage's work is done, in `unit`s. */
+	done: number;
+	/**
+	 * How much the stage expects, in `unit`s, or 0 when it knows no total: a response that
+	 * announced no length, or a stage whose work is not counted. A page shows no fraction for it.
+	 */
+	total: number;
+	/** What `done` and `total` count. */
+	unit: 'bytes';
+}
 
 /**
  * The GPU path the engine chose, and what it offers.
@@ -666,9 +697,10 @@ export interface Engine {
 	/**
 	 * Measures the running engine for a number of seconds, then returns CPU time per frame by thread
 	 * and phase, GPU time, frame intervals, uploads, draw calls, memory and load time. The first call
-	 * downloads the code that turns the frame records into these figures.
+	 * downloads the code that turns the frame records into these figures. `slowMs` adds the frames
+	 * whose interval broke that many milliseconds, each with the frame's own GPU parts.
 	 */
-	measure(seconds: number): Promise<FrameMetrics>;
+	measure(seconds: number, options?: MeasureOptions): Promise<FrameMetrics>;
 	/**
 	 * Shows an overlay of figures over the top-right corner of the canvas, or hides it with
 	 * `false`: the GPU path, the frame rates, CPU time per frame of each thread, GPU time, draw
@@ -765,10 +797,12 @@ const MAX_EARLY_MESSAGES = 256;
  * before it draws, reads the frame back and encodes it. On a software renderer that work costs
  * minutes, and the forest demo's held frame takes more than a minute on CI's SwiftShader, so this
  * figure sits well above the slowest frame that was measured and below the image tests' own limit.
- * A thread that stops taking messages then fails the request with a named error instead of leaving
+ * The heaviest picture sets their own limit of ten minutes, and a showcase scene that grows its
+ * plants at first use spends more of that on one frame, so this figure takes the same ten minutes:
+ * a thread that stops taking messages then fails the request with a named error instead of leaving
  * the page to wait with no end.
  */
-export const WORKER_REPLY_LIMIT_MS = 300_000;
+export const WORKER_REPLY_LIMIT_MS = 600_000;
 
 interface TierChoice {
 	tier: Tier;
@@ -1665,9 +1699,9 @@ async function startEngine(
 	const { signal } = options;
 	// A page's progress handler that throws is the page's error: the console shows it, and the
 	// start goes on.
-	const onProgress = (stage: StartupStage) => {
+	const onProgress = (stage: StartupStage, progress?: StartupProgress) => {
 		try {
-			options.onProgress?.(stage);
+			options.onProgress?.(stage, progress);
 		} catch (error) {
 			console.error(error);
 		}
@@ -1703,6 +1737,7 @@ async function startEngine(
 		momentTransparency: switches.moments ?? options.momentTransparency,
 		gpuOcclusion: switches.occlusion ?? options.gpuOcclusion,
 		morphTargets: options.morphTargets,
+		cloudSteps: options.cloudSteps,
 		softwareOcclusion: switches.occlusion ?? options.softwareOcclusion,
 		textureMemoryMiB: options.textureMemoryMiB,
 	};
@@ -1735,7 +1770,14 @@ async function startEngine(
 	const sketchOnPage = sketchThread === 'main';
 	let coreMs = 0;
 	const coreLoad = awaitLater(
-		loadCore(build, maximumMiB, () => onProgress('memory-wait')).then((loaded) => {
+		loadCore(
+			build,
+			maximumMiB,
+			() => onProgress('memory-wait'),
+			// The core's bytes are a stage of their own, so a page's bar measures them apart from
+			// the scene's files and names what it counts.
+			(done, total) => onProgress('core-download', { done, total, unit: 'bytes' }),
+		).then((loaded) => {
 			coreMs = performance.now() - startedAt;
 			return loaded;
 		}),
@@ -2272,6 +2314,12 @@ async function startEngine(
 			renderFallback,
 			keepTextureCopies,
 		};
+		/**
+		 * The preset that the first frame draws at: the one the engine starts with, because its own
+		 * preset check draws that frame before it can step down. The page can end on a lighter preset,
+		 * so the measurement keeps this one.
+		 */
+		const firstFramePreset = preset;
 		/** Each engine thread's name and the roles it runs, for the frame figures. */
 		engineThreads = [...threadRoles(mode)];
 		// A recording run gathers the words of every thread that draws, and publishes them where the
@@ -2314,11 +2362,16 @@ async function startEngine(
 			fps: switches.fps,
 			queue: switches.queue,
 			displayChecks: switches.displayChecks,
-			hold: hold !== undefined,
+			// A replay draws the frames it holds as a hold does: from the first frame that it made
+			// every GPU object on, so that frame's creations reach the device before the last
+			// frame draws with them.
+			hold: hold !== undefined || replay !== undefined,
 			glTiming: switches.glTiming,
+			gpuSamples: switches.gpuSamples,
 			preload: options.preload,
 			// The recording run lists the words that the scene draws with, for a narrowed build.
 			recordPermutations: switches.permutations === 'record',
+			cloudSteps: quality.settings.cloudSteps,
 		};
 
 		const device = coreDevice(tier, report, {
@@ -2764,15 +2817,16 @@ async function startEngine(
 				watch.listen(true);
 				applyPause();
 			},
-			async measure(seconds) {
-				// The window opens now, before the frame figures load on their first use: a page that
-				// measures and then starts some work must count that work, whatever the load takes.
+			async measure(seconds, options) {
+				// The window opens at the call, before the figures' code loads, so work that the caller
+				// starts right after the call is counted even when the import is cold. A sketch that
+				// adds an object then builds its pipelines while the figures load.
 				const reader = new MetricsReader(metrics);
-				const mainThread = new MainThreadWatch();
 				reader.begin();
-				const started = performance.now();
-				const { HeapSampler, secondRates, summarizeFrames, wasmDownloadBytes } =
+				const { HeapSampler, secondRates, slowFrames, summarizeFrames, wasmDownloadBytes } =
 					await loadFrameStats();
+				const mainThread = new MainThreadWatch();
+				const started = performance.now();
 				const heap = new HeapSampler();
 				heap.start();
 				const drain = setInterval(() => reader.drain(), DRAIN_INTERVAL_MS);
@@ -2796,6 +2850,7 @@ async function startEngine(
 						warmUpMs: reader.warmUpMs,
 						firstDrawMs: reader.firstDrawMs,
 						firstFramePipelines: reader.firstFramePipelines,
+						firstFramePreset,
 					},
 					gpuLosses: Atomics.load(slots, Slot.GpuEpoch),
 					downloadBytes: { wasm: wasmDownloadBytes() },
@@ -2804,6 +2859,9 @@ async function startEngine(
 					refreshHz: reader.refreshHz > 0 ? reader.refreshHz : null,
 					mainThread: mainThread.stop(),
 					perSecond: secondRates(reader.records),
+					...(options?.slowMs === undefined
+						? {}
+						: { slow: slowFrames(reader.records, options.slowMs, threadRoles(mode)) }),
 				};
 			},
 			stats(show = true) {
@@ -2866,7 +2924,10 @@ async function startEngine(
 		}
 		if (DEV && switches.twoStep) logTwoStep(slots, true);
 		const { summarizeFrames } = await loadFrameStats();
-		const frame = Atomics.load(slots, Slot.FramesTaken);
+		// The held frame is the one the session's steps reached. A run that draws a settle frame
+		// after it, for a pass that reads the frame before, still reports the held frame's number.
+		const drawn = Atomics.load(slots, Slot.FramesTaken);
+		const frame = Atomics.load(slots, Slot.HeldFrame);
 		const patchFrame = Atomics.load(slots, Slot.ClusterPatchFrame);
 		const patchRanges = Atomics.load(slots, Slot.ClusterPatches);
 		publishHold({
@@ -2879,8 +2940,8 @@ async function startEngine(
 			// What the frame builder recorded: the patch ranges that its tree walk chose, or none
 			// where it drew the trees' whole levels. A negative count is a path that picks the
 			// patches on the GPU, and a count from another frame tells nothing about this one.
-			clusterPatches: patchFrame === frame && patchRanges >= 0 ? patchRanges > 0 : null,
-			stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode)),
+			clusterPatches: patchFrame === drawn && patchRanges >= 0 ? patchRanges > 0 : null,
+			stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode), frame),
 			...(scriptResult !== undefined && { script: scriptResult }),
 			...(replayResult !== undefined && { replay: replayResult }),
 		});

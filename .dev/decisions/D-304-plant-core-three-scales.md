@@ -99,7 +99,8 @@ Rejected:
   `@null3d/vegetation/legacy`, which every demo and test page imports until the demos move to the
   core. The scatter, the ground maps, the grass and the floating leaves stay at the main entry.
 - The legacy entry goes when the demos move. This record then supersedes "The generator's shape" in
-  [D-241](D-241-vegetation-foundation.md), and D-298 to D-303, which describe the first generator.
+  [D-241](D-241-vegetation-foundation.md), and D-299 to D-303 and D-321, which describe the first
+  generator.
 - `docs/api/vegetation.md` describes both entries, and `docs/api/vegetation-species.md` is generated.
 - The shipped textures live in their own package, `@null3d/vegetation-textures`, one folder per
   species, so a code update carries none of them. The package is private until its first species

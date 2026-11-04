@@ -29,6 +29,7 @@ import {
 	CHASE,
 	CHASE_DISTANCE,
 	CHASE_TILT,
+	type ChaseView,
 	cityTowers,
 	createSight,
 	type Flight,
@@ -373,6 +374,9 @@ export function createHero(
 	 * ahead, the chase camera's distance, and the seconds since the last press.
 	 */
 	const orbit = { turn: 0, tilt: 0, distance: CHASE_DISTANCE, idle: SETTLE.wait };
+	/** The chase camera's place, which a turn keeps clear of the towers. In the seat the camera is
+	 * inside the car, so it constrains no turn there. */
+	const behind: ChaseView = { turn: 0, tilt: 0, distance: CHASE_DISTANCE };
 
 	/**
 	 * Turns the camera with a drag of the pointer or a finger, and zooms the chase camera with the
@@ -485,6 +489,7 @@ export function createHero(
 			at[1] as number,
 			at[2] as number,
 			yaw + Math.PI + orbit.turn,
+			yaw + Math.PI,
 			CHASE_TILT + orbit.tilt,
 			orbit.distance,
 			towers,
@@ -599,7 +604,11 @@ export function createHero(
 			stick.throttle = wish(held('KeyW'), held('KeyS'), pad.throttle);
 			stick.steer = wish(held('KeyA'), held('KeyD'), pad.steer);
 			stick.lift = wish(held('KeyR'), held('KeyF'), pad.lift);
-			fly(flight, stick, dt, towers);
+			// The chase camera's own place, which a turn keeps clear of the towers.
+			behind.turn = orbit.turn;
+			behind.tilt = CHASE_TILT + orbit.tilt;
+			behind.distance = orbit.distance;
+			fly(flight, stick, dt, towers, view === 'chase' ? behind : undefined);
 			vec3.set(at, flight.x, flight.y, flight.z);
 			yaw = flight.yaw;
 			// The car banks into a turn and lifts its nose as it climbs.

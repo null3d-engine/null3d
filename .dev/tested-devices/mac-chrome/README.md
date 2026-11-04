@@ -6,6 +6,7 @@
 - GPU: Apple M5 Max; WebGPU adapter: apple
 - GPU paths: WebGPU, compatibility mode, WebGL2
 - Where: the owner's Mac
+- Note: a different machine from the MacBook Pro (M3 Max) filed under `macbook-pro-m3-max-chrome`. A row here describes this machine's GPU and is not comparable with a row filed there.
 
 ## Known issues
 

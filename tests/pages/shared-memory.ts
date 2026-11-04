@@ -61,6 +61,12 @@ const ENGINE_TIMEOUT_MS = 20_000;
  */
 const START_TIMEOUT_MS = 60_000;
 /**
+ * How long the engine may take to stop. A stop takes a few milliseconds on a device that frees the
+ * memory at once, and up to 1.6 s in CI's Safari over 43 cycles. A stop that waits longer than
+ * this is stuck, and holding its cycle for the row's whole time would hide which step it was.
+ */
+const STOP_TIMEOUT_MS = 30_000;
+/**
  * How long, in all, the starts that the browser refuses may wait for it to free the stopped
  * engines' memory, beyond the engine's own wait for each start.
  */
@@ -266,22 +272,33 @@ async function startAndStopEngine(keepCanvas: boolean): Promise<void> {
 		);
 		let stopAt = 0;
 		let stopIndex = 0;
+		let frameError: unknown;
 		try {
 			await withTimeout(engine.firstFrame, ENGINE_TIMEOUT_MS, 'the first frame');
-		} finally {
-			stopAt = performance.now();
-			stopIndex = trail.length;
-			await engine.destroy({ release: RELEASE });
-			const steps = trail.slice(from);
-			starts.push({
-				firstFrameMs: Math.round(stopAt - began),
-				stopMs: Math.round(performance.now() - stopAt),
-				jobs: jobsWith(steps, 'started'),
-				jobsReadyAtStop: jobsWith(trail.slice(from, stopIndex), 'ready'),
-				jobsStopped: jobsWith(steps, 'stopped'),
-				memoryMiB: sharedMemories.last && memoryMiB(sharedMemories.last.deref()),
-			});
+		} catch (e) {
+			frameError = e;
 		}
+		stopAt = performance.now();
+		stopIndex = trail.length;
+		let stopError: unknown;
+		try {
+			await withTimeout(engine.destroy({ release: RELEASE }), STOP_TIMEOUT_MS, 'the engine stop');
+		} catch (e) {
+			stopError = e;
+		}
+		const steps = trail.slice(from);
+		starts.push({
+			firstFrameMs: Math.round(stopAt - began),
+			stopMs: Math.round(performance.now() - stopAt),
+			jobs: jobsWith(steps, 'started'),
+			jobsReadyAtStop: jobsWith(trail.slice(from, stopIndex), 'ready'),
+			jobsStopped: jobsWith(steps, 'stopped'),
+			memoryMiB: sharedMemories.last && memoryMiB(sharedMemories.last.deref()),
+		});
+		// A first frame that failed is the useful failure; a stop's own failure is reported only
+		// when the start got as far as its frame.
+		if (frameError !== undefined) throw frameError;
+		if (stopError !== undefined) throw stopError;
 	} finally {
 		if (!keepCanvas) canvas.remove();
 	}

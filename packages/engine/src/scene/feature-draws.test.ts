@@ -106,6 +106,23 @@ describe('createFeatureDraw', () => {
 		expect(shaders[0]).toMatchObject({ alphaMode: 'blend' });
 	});
 
+	it('blends a resolve description in the one-sample layer, and no other', () => {
+		const { host, shaders } = standIns();
+		createFeatureDraw(draw({ frame: 'resolve' }), { shader: WGSL, vertices: VERTICES }, host);
+		createFeatureDraw(draw({ frame: 'transparent' }), { shader: WGSL, vertices: VERTICES }, host);
+		createFeatureDraw(draw(), { shader: WGSL, vertices: VERTICES }, host);
+		expect(shaders[0]).toMatchObject({ alphaMode: 'blend', singleLayer: true });
+		expect(shaders[1]).toMatchObject({ alphaMode: 'blend', singleLayer: false });
+		expect(shaders[2]).toMatchObject({ alphaMode: 'opaque', singleLayer: false });
+		expect(() =>
+			createFeatureDraw(
+				draw({ frame: 'resolve' }),
+				{ shader: WGSL, vertices: VERTICES, alphaMode: 'opaque' },
+				host,
+			),
+		).toThrow('E1223');
+	});
+
 	it('turns the vertex colours on when the vertices have colours', () => {
 		const { host, shaders } = standIns();
 		createFeatureDraw(
@@ -216,6 +233,16 @@ describe('createFeatureInstances', () => {
 			dynamic: true,
 			origin: [10, 0, 0],
 		});
+	});
+
+	it('blends the copies of a resolve description in the one-sample layer', () => {
+		const { host, shaders } = standIns();
+		createFeatureInstances(
+			draw({ frame: 'resolve' }),
+			{ shader: WGSL, vertices: VERTICES, instances: 8 },
+			host,
+		);
+		expect(shaders[0]).toMatchObject({ alphaMode: 'blend', singleLayer: true });
 	});
 
 	it('draws only the first rows when the add-on asks for fewer copies', () => {

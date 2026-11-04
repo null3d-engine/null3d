@@ -34,9 +34,10 @@
 // reports how long each joined shader took to build, where development builds keep the times.
 // A look whose work is a fraction of a millisecond hides under a scene's own movement between
 // rounds. ?repeat=N passes the count to a sketch that draws its effect that many times in a frame,
-// ?clear asks for a scene that leaves out the work around the effect, and ?bloom=off leaves bloom
-// out for a case that draws no streak. ?seconds= sets each side's own measurement, and ?warm-up=
-// the play before the first, both in seconds.
+// ?clear asks for a scene that leaves out the work around the effect, ?bloom=off leaves bloom out
+// for a case that draws no streak, and ?bounce=off leaves out the preset's screen-space bounce light
+// for a cleared scene that it does not light. ?seconds= sets each side's own measurement, and
+// ?warm-up= the play before the first, both in seconds.
 // ?heavy makes the GPU the limit where it has no timer: 8 effects by default, at the display's
 // whole pixel ratio, so the frame interval shows what joining saves.
 import { createEngine } from '@null3d/engine';
@@ -74,7 +75,9 @@ const SKETCHES = {
 	sharpen: './sketches/sharpen-cost-sketch.ts',
 	lens: './sketches/lens-cost-sketch.ts',
 	compute: './sketches/compute-cost-sketch.ts',
+	clouds: './sketches/clouds-cost-sketch.ts',
 	ocean: './sketches/ocean-cost-sketch.ts',
+	probes: './sketches/probes-cost-sketch.ts',
 } as const;
 
 type Effect = keyof typeof SKETCHES;
@@ -110,8 +113,19 @@ const repeat = params.get('repeat');
 const clear = params.has('clear');
 /** A sketch's bloom, which the streak reads, off for a case that measures a mark without it. */
 const bloomOff = params.get('bloom') === 'off';
+/** A sketch's screen-space bounce light, off for a cleared scene that it does not light. */
+const bounceOff = params.get('bounce') === 'off';
+/** A sketch's reflection, made rare so a smaller cost, such as a transform chain, shows. */
+const reflection = params.get('reflection');
 /** The rounds of each side, with the sides in the opposite order on alternate rounds. */
 const rounds = params.get('rounds');
+/**
+ * The sides to measure: both unless `sides=on` or `sides=off`, which measures one side alone so
+ * separate page loads can be differenced as an ablation.
+ */
+const sides = params.get('sides');
+if (sides !== null && sides !== 'on' && sides !== 'off' && sides !== 'both')
+	throw new Error(`the page takes no sides ${sides}; give on, off or both`);
 if (rounds !== null && !(Number.isSafeInteger(Number(rounds)) && Number(rounds) >= 1))
 	throw new Error(`the page takes no round count ${rounds}`);
 const asked = params.get('effect') ?? 'bloom';
@@ -132,7 +146,7 @@ run('effect-cost', async () => {
 	const kind = params.get('kind');
 	const area = `${kind === null ? '' : `&kind=${kind}`}${params.has('image') ? '&image' : ''}`;
 	/** The switches that a sketch uses to lift a small cost above the frame's own movement. */
-	const smallCost = `${repeat === null ? '' : `&repeat=${repeat}`}${clear ? '&clear' : ''}${bloomOff ? '&bloom=off' : ''}`;
+	const smallCost = `${repeat === null ? '' : `&repeat=${repeat}`}${clear ? '&clear' : ''}${bloomOff ? '&bloom=off' : ''}${bounceOff ? '&bounce=off' : ''}${reflection === null ? '' : `&reflection=${reflection}`}`;
 	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${meter === null ? '' : `&meter=${meter}`}${slices === null ? '' : `&slices=${slices}`}${steps === null ? '' : `&steps=${steps}`}${strength === null ? '' : `&strength=${strength}`}${aoScale === null ? '' : `&aoscale=${aoScale}`}${area}${moving ? '&moving' : ''}${base === null ? '' : `&base=${base}`}${fill === null ? '' : `&fill=${fill}`}${background === null ? '' : `&background=${background}`}${night ? '&night' : ''}${look === null ? '' : `&look=${encodeURIComponent(look)}`}${smallCost}`;
 	const engine = await createEngine({
 		canvas,
@@ -198,14 +212,12 @@ run('effect-cost', async () => {
 			await built;
 		},
 		glSnapshot,
-		rounds === null
-			? undefined
-			: {
-					rounds: Number(rounds),
-					alternate: true,
-					...(params.has('seconds') && { seconds: Number(params.get('seconds')) }),
-					...(params.has('warm-up') && { warmUpSeconds: Number(params.get('warm-up')) }),
-				},
+		{
+			...(rounds === null ? {} : { rounds: Number(rounds), alternate: true }),
+			...(params.has('seconds') && { seconds: Number(params.get('seconds')) }),
+			...(params.has('warm-up') && { warmUpSeconds: Number(params.get('warm-up')) }),
+			...(sides !== null && sides !== 'both' && { sides: [sides] }),
+		},
 	);
 	// The memory figures come from the overlay, which samples the GPUs' tables and the wasm file.
 	// It shows after the timing, so its sampling costs none of the frames above.
@@ -219,6 +231,8 @@ run('effect-cost', async () => {
 		engine.stats(false);
 	}
 	const joinBuilds = effect === 'effects' ? await requestJoinTiming() : undefined;
+	// Taken before the engine goes, which may reset the canvas.
+	const buffer: [number, number] = [canvas.width, canvas.height];
 	await engine.destroy();
 	return {
 		effect,
@@ -247,6 +261,8 @@ run('effect-cost', async () => {
 		// the drawing buffer's size from them.
 		window: [innerWidth, innerHeight],
 		devicePixelRatio,
+		// The drawing buffer's size, which tells a small render scale from a cheap frame.
+		buffer,
 		off,
 		on,
 		memory,
