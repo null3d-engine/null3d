@@ -15,18 +15,19 @@
 //! that it may pick, so a slice never falls short of the shader's writes however the two round
 //! the last bits of a distance.
 //!
-//! A camera's count covers every source of a layout, not only the ones in view, so it reads no
-//! frustum. A shadow view picks its casters' levels in its own texels, so two cascades can place
-//! one caster in two levels. Each shadow view therefore counts only the casters that its frustum
-//! holds, with room to spare at its edge, so the casters of a near cascade do not take room in the
-//! levels that a far one picks for its own. A bucket's slice is the largest count of any view that
-//! draws the layout, because the bucket table is one for all of them.
+//! Each view counts only the sources that its frustum holds, with room to spare at its edge, as
+//! its culling pass appends no other. A view that draws for a layout without a camera of its own,
+//! such as the outlines, and the views of a scene whose staged levels a loader watches, count
+//! every source instead. A shadow view picks its casters' levels in its own texels, so two
+//! cascades can place one caster in two levels; the frustum keeps the casters of a near cascade
+//! out of the levels that a far one picks for its own. A bucket's slice is the largest count of
+//! any view that draws the layout, because the bucket table is one for all of them.
 //!
-//! The count picks levels for every source in every frame, so it runs on the job workers: each
-//! thread counts its chunks of sources into a tally of its own, and the tallies add up to the
-//! view's counts, the same whatever thread counted which source.
-
-use std::ops::Range;
+//! The count picks levels in every frame, so it visits only the sources whose home bucket takes a
+//! level's copies, which the layout lists when it is built. The views that share a camera, as the
+//! shadow views do, count in one pass that reads each source's sphere once. A large count runs on
+//! the job workers: each thread counts its chunks of sources into a tally of its own, and the
+//! tallies add up to each view's counts, the same whatever thread counted which source.
 
 use null3d_core::cells::CellPosition;
 use null3d_core::culling::{Frustum, NO_BUCKET, RowRanges, batch_ranges, row_center};
@@ -55,8 +56,11 @@ const SOURCES_PER_CHUNK: u32 = 1024;
 /// The words of each thread's tally, rounded up to a whole number of cache lines' words, so that
 /// two neighboring tallies share at most one line.
 fn tally_stride(buckets: usize) -> usize {
-    buckets.next_multiple_of(16)
+    buckets.next_multiple_of(TALLY_LINE)
 }
+
+/// The words of a cache line, which each thread's tally takes a whole number of.
+const TALLY_LINE: usize = 16;
 
 /// The frames in a row that a level's bucket must hold no copy before the views' bundles leave its
 /// draws out. A copy that picks the level draws it again at once; the wait spares the bundles from
@@ -149,30 +153,33 @@ impl Layout {
             return Ok(());
         }
         let buckets = self.buckets.len();
-        let stride = tally_stride(buckets);
-        let mut counts = std::mem::take(&mut self.copy_counts);
+        let mut tallies = std::mem::take(&mut self.copy_tallies);
         let mut fits = std::mem::take(&mut self.copy_fits);
-        counts.clear();
-        counts.resize(stride * jobs.thread_count() as usize, 0);
         fits.clear();
         fits.resize(buckets, 0);
-        for view in views {
-            offsets.update(scene, &view.camera);
-            self.count_view(
+        // The views that place their instances relative to one camera, as the shadow views do,
+        // count in one pass, which reads each source's sphere once for all of them.
+        let mut start = 0;
+        while let Some(first) = views.get(start) {
+            let shared = views[start..]
+                .iter()
+                .take_while(|view| view.camera == first.camera)
+                .count();
+            offsets.update(scene, &first.camera);
+            self.count_views(
                 scene,
                 batches,
-                view,
+                &views[start..start + shared],
                 parity,
                 offsets.as_slice(),
-                &mut counts,
+                &mut tallies,
+                &mut fits,
                 jobs,
             );
-            for &bucket in &self.level_buckets {
-                let count = counts[bucket as usize];
-                let fit = &mut fits[bucket as usize];
-                *fit = (*fit).max(count);
-            }
+            start += shared;
         }
+        self.copy_counts.clear();
+        self.copy_counts.extend_from_slice(&fits);
         // A level that no view places a copy in draws nothing, so its draws and its pieces' wait
         // out of the bundles, which the frame records again when that changes.
         if self.note_idle(&fits) {
@@ -210,7 +217,7 @@ impl Layout {
             self.slices_placed = true;
             self.slices_moved = true;
         }
-        self.copy_counts = counts;
+        self.copy_tallies = tallies;
         self.copy_fits = fits;
         Ok(())
     }
@@ -258,97 +265,133 @@ impl Layout {
         changed
     }
 
-    /// Counts the copies that one view places in each bucket of the layout, into the first
-    /// tally of `tallies`, which holds one tally for each of `jobs`' threads.
+    /// Counts the copies that each of `views`, which share one camera, places in each bucket of
+    /// the layout, and raises each level bucket's count in `fits` to the largest. Each of `jobs`'
+    /// threads that runs a chunk counts into a tally of its own in `tallies`: a count for each
+    /// view, then a word that marks the tally as begun, so a thread that runs no chunk costs
+    /// neither a clear nor a sum.
     #[allow(clippy::too_many_arguments)]
-    fn count_view(
+    fn count_views(
         &self,
         scene: &SceneStorage,
         batches: &BatchTable,
-        view: &CopyView,
+        views: &[CopyView],
         parity: usize,
         cells: &[[f32; 4]],
-        tallies: &mut [u32],
+        tallies: &mut Vec<u32>,
+        fits: &mut [u32],
         jobs: &JobSystem,
     ) {
-        tallies.fill(0);
         let stride = tally_stride(self.buckets.len());
+        let begun_at = stride * views.len();
+        let width = begun_at + TALLY_LINE;
+        let threads = jobs.thread_count() as usize;
+        tallies.resize(width * threads, 0);
+        for thread in 0..threads {
+            tallies[thread * width + begun_at] = 0;
+        }
         let shared = SharedMut::new(tallies);
+        let level_sources = &self.level_sources;
         jobs.parallel_for(
-            self.cull_buckets.len() as u32,
+            level_sources.len() as u32,
             SOURCES_PER_CHUNK,
-            &|sources, worker| {
+            &|chunk, worker| {
                 // SAFETY: each thread writes only the tally of its own worker id, which is below
                 // the thread count that sized the tallies, and a thread runs one chunk at a time.
-                let tally = unsafe { shared.slice(worker.index() * stride, stride) };
-                self.count_sources(scene, batches, view, parity, cells, sources, tally);
+                let tally = unsafe { shared.slice(worker.index() * width, width) };
+                if tally[begun_at] == 0 {
+                    tally[..begun_at].fill(0);
+                    tally[begun_at] = 1;
+                }
+                let sources = &level_sources[chunk.start as usize..chunk.end as usize];
+                self.count_sources(scene, batches, views, parity, cells, sources, tally, stride);
             },
         );
-        let (counts, others) = tallies.split_at_mut(stride);
-        for tally in others.chunks_exact(stride) {
-            for (count, &more) in counts.iter_mut().zip(tally) {
-                *count += more;
+        let begun = |thread: &usize| tallies[thread * width + begun_at] != 0;
+        let Some(first) = (0..threads).find(begun) else {
+            return;
+        };
+        let sum = first * width;
+        for other in first + 1..threads {
+            if tallies[other * width + begun_at] == 0 {
+                continue;
+            }
+            let other = other * width;
+            for view in 0..views.len() {
+                let (into, from) = (sum + view * stride, other + view * stride);
+                for &bucket in &self.level_buckets {
+                    tallies[into + bucket as usize] += tallies[from + bucket as usize];
+                }
+            }
+        }
+        for view in 0..views.len() {
+            let counts = &tallies[sum + view * stride..];
+            for &bucket in &self.level_buckets {
+                let fit = &mut fits[bucket as usize];
+                *fit = (*fit).max(counts[bucket as usize]);
             }
         }
     }
 
-    /// Counts the copies of the sources in `sources`, by their index in the layout's tables, into
-    /// `counts`.
+    /// Counts the copies that each of `views` places of `sources`, by their index in the layout's
+    /// tables in ascending order, into `tally`, which holds each view's counts `stride` words
+    /// apart.
     #[allow(clippy::too_many_arguments)]
     fn count_sources(
         &self,
         scene: &SceneStorage,
         batches: &BatchTable,
-        view: &CopyView,
+        views: &[CopyView],
         parity: usize,
         cells: &[[f32; 4]],
-        sources: Range<u32>,
-        counts: &mut [u32],
+        sources: &[u32],
+        tally: &mut [u32],
+        stride: usize,
     ) {
-        let (start, end) = (sources.start as usize, sources.end as usize);
-        let scene_end = end.min(self.scene_rows as usize);
-        if start < scene_end {
+        let scene_end = sources.partition_point(|&source| source < self.scene_rows);
+        let (slots_part, rows_part) = sources.split_at(scene_end);
+        if !slots_part.is_empty() {
             let spheres = scene.world(parity).spheres();
             let slots = scene.cells();
             let radii = scene.local_radii();
             let biases = scene.level_biases();
             let ranges = RowRanges::Rows(scene.draw_ranges());
-            for source in start..scene_end {
+            for &source in slots_part {
+                let source = source as usize;
                 let home = self.cull_buckets[source];
                 if home == NO_BUCKET || self.marks[home as usize] == 0 {
                     continue;
                 }
                 let center = row_center(&spheres, slots[source], cells, source);
-                self.count_source(
-                    counts,
-                    view,
-                    home,
-                    center,
-                    spheres.radii[source],
-                    radii[source],
-                    biases[source],
-                    ranges.range(source),
-                    false,
-                );
+                let (radius, local, bias) = (spheres.radii[source], radii[source], biases[source]);
+                let range = ranges.range(source);
+                for (view, counts) in views.iter().zip(tally.chunks_exact_mut(stride)) {
+                    self.count_source(
+                        counts, view, home, center, radius, local, bias, range, false,
+                    );
+                }
             }
         }
+        if rows_part.is_empty() {
+            return;
+        }
         for &(id, first) in &self.batch_bases {
-            let first = first as usize;
-            if first >= end {
-                continue;
-            }
             let Ok(batch) = batches.get(Handle::from_raw(id)) else {
                 continue;
             };
-            let (low, high) = (start.max(first), end.min(first + batch.capacity() as usize));
+            let end = first + batch.capacity();
+            let low = rows_part.partition_point(|&source| source < first);
+            let high = rows_part.partition_point(|&source| source < end);
             if low >= high {
                 continue;
             }
+            let first = first as usize;
             let spheres = batch.world(parity).spheres();
             let local = batch.local_radius();
             let batch_cells = batch.cells();
             let ranges = batch_ranges(batches, batch);
-            for source in low..high {
+            for &source in &rows_part[low..high] {
+                let source = source as usize;
                 let home = self.cull_buckets[source];
                 if home == NO_BUCKET || self.marks[home as usize] == 0 {
                     continue;
@@ -357,17 +400,10 @@ impl Layout {
                 let center = row_center(&spheres, batch_cells[row], cells, row);
                 // A batch's rows carry the batch's own radius, which the culling shader tests
                 // around each row in place of its bucket's sphere.
-                self.count_source(
-                    counts,
-                    view,
-                    home,
-                    center,
-                    spheres.radii[row],
-                    local,
-                    1.0,
-                    ranges.range(row),
-                    true,
-                );
+                let (radius, range) = (spheres.radii[row], ranges.range(row));
+                for (view, counts) in views.iter().zip(tally.chunks_exact_mut(stride)) {
+                    self.count_source(counts, view, home, center, radius, local, 1.0, range, true);
+                }
             }
         }
     }
