@@ -150,7 +150,7 @@ Option (a4) with the check. Every opaque object and row that showed last frame a
 
 The check keeps the extra passes only while they hide at least 10% of the objects that would draw, and the GPU's frame from submit to completion is no longer than 102% of the frame without them. It runs a trial in the other mode every 120 frames.
 
-High and Ultra turn it on for desktops, by the owner's approval to overturn the earlier off choice. The runs above show no loss with the check, quiet or under load, within their noise ([D-22](D-22-occlusion-presets.md)). Phones and tablets keep it off on every preset (D-53, ruling 15), unless the page asks for it.
+High and Ultra turn it on for desktops, by the owner's approval to overturn the earlier off choice. The runs above show no loss with the check, quiet or under load, within their noise ([D-22](D-22-occlusion-presets.md)). Medium keeps it off: at Medium it made the frame longer in the desert, the Bistro street scene and four of the benchmark scenes, with the check deciding too, and its gain in the Island lay inside the noise ([D-22](D-22-occlusion-presets.md#medium-on-desktops-rejected)). Phones and tablets keep it off on every preset (D-53, ruling 15), unless the page asks for it.
 
 ## Consequences
 
@@ -158,6 +158,7 @@ High and Ultra turn it on for desktops, by the owner's approval to overturn the 
 - `setOccluder(false)` and the `occluder: false` option of `createMesh`, `instantiate` and `createInstances` keep an object or a batch's rows out of the occluders. `setOccluder(true)` keeps its meaning on WebGL2, and on WebGPU it equals no mark.
 - `engine.measure` reports `occludedEntries` on WebGPU too: the hidden count of the newest frame whose counts landed, and 0 while the check keeps the passes off. It is null where GPU occlusion culling does not run. The software occlusion test checks both cases on WebGPU.
 - `?occlusion-check=off` holds the passes on, for tests that compare the image with culling and without it.
+- At Medium the check does not keep the cost near zero everywhere: in the Bistro street scene the main pass took about 2 ms longer with the setting on, while the check kept the passes off for most frames and culling hid at most 3 objects. The cause, outside the extra passes, is not known ([D-22](D-22-occlusion-presets.md#medium-on-desktops-rejected)).
 - Control slot 60 (`OcclusionRead`) is the slot that the reads raise. Nothing reads it.
 - The culling stage is full. Its group binds 8 storage buffers. The counts share the indirect draws' buffer, after the history.
 - Safari 26 encodes a render bundle with indirect draws again at every `executeBundles`. The occluders' pass adds one bundle per camera view.

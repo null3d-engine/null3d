@@ -34,6 +34,34 @@ A preset turns a method on only where it saves more frame time than it costs on 
 
 The Mac's load average stayed between 24 and 80, so these runs are not the quiet runs that the rule names. Each side's runs spread by up to 2 ms. Within that noise, culling with its check lost no time in any scene, quiet or under load. Where the passes did not pay, under the load page and in the desert, the check turned them off.
 
+#### Medium on desktops, rejected
+
+Turning it on at Medium for desktops, with the same check, was measured and rejected. Chrome 156 (Chrome for Testing) on the Mac drew each page at Medium from production builds, without the frame cap, on the indirect path, in 3 rounds whose three modes took turns: culling off, held on (`?occlusion-check=off`), and on with its check deciding. GPU time per frame, each mode's median of the rounds' medians, with the fastest and slowest round:
+
+| Page | Culling off | Held on | Check deciding | Objects hidden, held on |
+| --- | --- | --- | --- | --- |
+| The desert of the meshlet study, walk | 0.86 ms (0.84-0.90) | 1.16 ms (1.12-1.27), 36% more | 1.01 ms (0.97-2.09), 18% more | 4,465 |
+| The desert, walk, sun's shadows | 2.70 ms (2.69-2.98) | 3.18 ms (3.16-3.20), 18% more | 3.04 ms (2.94-3.30), 12% more | 4,511 |
+| The desert, aerial | 0.67 ms (0.65-1.57) | 0.88 ms (0.88-0.90), 31% more | 0.84 ms (0.67-2.46), 24% more | 1,351 |
+| The desert, aerial, sun's shadows | 1.18 ms (0.92-1.31) | 2.73 ms (1.17-2.86), 132% more | 1.11 ms (1.06-2.57), 6% less | 1,352 |
+| Amazon Lumberyard's Bistro, street view | 2.18 ms (2.16-2.23) | 4.95 ms (2.58-5.38), 127% more | 4.73 ms (4.26-4.96), 117% more | 3 |
+| Bistro, wide view over the roofs | 3.70 ms (3.70-5.42) | 5.87 ms (5.74-5.95), 59% more | 5.81 ms (5.24-5.85), 57% more | 636 |
+| The Island, town view | 6.71 ms (6.28-6.82) | 6.13 ms (5.99-7.26), 9% less | 6.30 ms (6.29-6.83), 6% less | 4,290 |
+| The Island, opening view | 4.44 ms (4.14-4.61) | 4.08 ms (4.04-4.43), 8% less | 4.27 ms (4.18-4.30), 4% less | 4,242 |
+| S1 | 1.32 ms (1.20-1.33) | 1.78 ms (1.36-1.80), 35% more | 1.33 ms (1.15-1.35), 1% more | 0 |
+| S2 | 0.15 ms (0.15-0.15) | 0.25 ms (0.15-0.26), 69% more | 0.13 ms (0.13-0.15), 13% less | 0 |
+| S3 | 1.24 ms (0.80-1.29) | 1.34 ms (1.15-1.48), 8% more | 1.13 ms (0.82-1.30), 8% less | 0 |
+| S4 | 0.56 ms (0.48-0.57) | 0.73 ms (0.62-1.02), 29% more | 0.57 ms (0.47-0.58), the same | 1,608 |
+| S5 | 4.63 ms (3.32-4.92) | 4.68 ms (4.38-4.98), 1% more | 4.72 ms (3.59-4.74), 2% more | 0 |
+| S6 | 1.24 ms (1.22-1.32) | 1.26 ms (1.22-1.37), 2% more | 1.27 ms (1.21-1.28), 2% more | 3,398 |
+| S7 | 0.53 ms (0.53-0.54) | 0.31 ms (0.27-0.37), 42% less | 0.20 ms (0.20-0.26), 63% less | 0 |
+
+- With the check deciding, the median frame of every page hid nothing: the check kept the passes off for most of each run.
+- Hiding thousands of objects did not shorten the main pass at Medium. In the desert walk, culling hid 4,465 objects and the main pass took 0.66 ms against 0.70 ms without it, while the occluders' pass took 0.16 ms. The objects it hides there, pebbles and boulders behind the dunes, cost little to draw.
+- In the Bistro, the setting alone made the main pass about 2 ms longer (2.07 ms against 4.17 to 4.47 ms), with the check deciding too, where culling hid 0 to 3 objects. S7 moved the other way, with no object hidden: its main pass and its copies were shorter with the setting on. Neither change comes from hidden objects, and neither is explained.
+- The Island's gains lie inside the spread of its rounds.
+- The Mac shared the GPU with no other page, but other helpers' builds raised the one-minute load to 8 to 17 during many pages. A repeat of those pages at a lower load spread as widely, with the desert walk's held-on runs at 2.00 to 2.38 ms.
+
 #### Earlier runs without the check, of marked occluders
 
 These figures come from Chrome 154 on the Mac (Apple M5 Max), at the High preset. Other helpers ran builds and tests on the Mac at the same time, so each comparison ran its two sides in turns. Chrome's GPU timer counts in steps of about 0.066 ms here.
@@ -127,11 +155,11 @@ Wrongly hidden at rest: the phones drew the frames with culling on and off exact
 
 WebGL2: software occlusion culling is off on every preset, decided by the owner. In S6 it cost the job workers 7 to 22 ms per frame on every device, and saved 2.3 ms of render time at most. That is at least 3.5 times its saving on the iPad, and 20 times or more on the phones. It hid 23% to 39% of the entries in view, but fewer than 3% of the draw calls. Most rows it hid belong to batches that still draw. It stays as the `softwareOcclusion` option of `createEngine` and the quality setting of that name. A scene that measures a gain with `?occlusion=on` and `?occlusion=off` may turn it on.
 
-WebGPU: on at High and Ultra, which desktops run. The owner approved overturning the earlier off rows, once a check during play bounds what the passes cost ([D-40](D-40-gpu-occlusion.md#the-check)). Without the check, culling cost 38% to 66% more under load, past the 5% that the loaded rule allows. With it, the room and the desert lost no time with culling on, with or without the load page, within the runs' noise. The runs shared the Mac with other work, so a quiet run under load remains to be made. Phones and tablets keep it off on every preset, whatever the preset: the chooser leaves it off there unless the page asks for it. On the owner's iPad culling cost 0.34 ms (4%) of GPU time per frame without the check, and 1.1 ms (30%) on the cloud S25. The Android rows wait for G1's image check on the GPUs that Bevy and Unity block. It stays as the `gpuOcclusion` option of `createEngine`, and `?occlusion=on` and `?occlusion=off` compare a scene.
+WebGPU: on at High and Ultra, which desktops run. The owner approved overturning the earlier off rows, once a check during play bounds what the passes cost ([D-40](D-40-gpu-occlusion.md#the-check)). Without the check, culling cost 38% to 66% more under load, past the 5% that the loaded rule allows. With it, the room and the desert lost no time with culling on, with or without the load page, within the runs' noise. The runs shared the Mac with other work, so a quiet run under load remains to be made. Medium keeps it off: on at Medium, culling made the frame longer on most pages measured, by up to 127% held on and up to 117% with its check deciding, and saved time only in the Island's views, inside their noise ([Medium on desktops, rejected](#medium-on-desktops-rejected)). Phones and tablets keep it off on every preset, whatever the preset: the chooser leaves it off there unless the page asks for it. On the owner's iPad culling cost 0.34 ms (4%) of GPU time per frame without the check, and 1.1 ms (30%) on the cloud S25. The Android rows wait for G1's image check on the GPUs that Bevy and Unity block. It stays as the `gpuOcclusion` option of `createEngine`, and `?occlusion=on` and `?occlusion=off` compare a scene.
 
 ## Consequences
 
-- `gpuOcclusion` in the preset table: on at High and Ultra, off at Low and Medium, and off on phones and tablets unless the page sets it. `softwareOcclusion`: false on every preset.
+- `gpuOcclusion` in the preset table: on at High and Ultra, off at Low and Medium, and off on phones and tablets unless the page sets it. Medium stays off until a change to the culling, or the main pass's longer time in the Bistro with the setting on, is measured again with the pages of the Medium table. `softwareOcclusion`: false on every preset.
 - The docs say to compare a scene with `?occlusion=on` and `?occlusion=off` before keeping either method on. GPU occlusion culling compares GPU time. Software occlusion culling compares the frame time on the slowest WebGL2 device ([Culling](../../docs/concepts/culling.md#turn-it-on-where-it-pays)).
 - S6 draws without software occlusion culling on WebGL2, as every preset leaves it off. Its `?occlusion-turns` still turns it on and off, to measure it again.
 - The check turns the passes off where the stall between passes makes them cost more (D-40). A change to the check, or a quiet run under load, calls for new runs of the room scene and the desert, and a new look at these rows.

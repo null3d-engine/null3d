@@ -8,9 +8,9 @@ Branch `research/group-culling` from `58dafca09` (perf/walk-view). Scripts, page
 - **Desert walk, shadows:** groups culled by each cascade's box drop 1.12 M of 4.39 M caster triangles per frame (-25%), almost all near arches in cascade 0. K=4 slots get 1.08 M. Pieces in cascades would get only 0.09 M.
 - **Bistro street view (heavy-app case):** 1.17 M now; groups 0.86 M by view and facing (-27%), 0.78 M with the hidden test. Whole-copy occlusion gets 2%. Shadows: groups drop 0.21 M of 3.16 M per frame (-7%). three.js: 0.43 M.
 - **Bistro wide view, over the roofs:** 1.97 M now; view and facing gain little (1.87 M), the hidden test gains a lot (1.24 M); with whole-copy occlusion too, 0.96 M.
-- **Biggest lever found:** null3D's existing GPU occlusion of whole copies (D-40), which Medium leaves off. In the desert walk it would hide 69% of the copies in view (23% of triangles). In browser runs held on, the main pass fell from 2.05 ms to 0.84 ms, for 0.20 ms of occluder pass. These are single runs on a busy machine; the quiet re-time is still to do.
+- **Whole-copy GPU occlusion at Medium does not pay.** A busy run first suggested a ~1 ms gain in the desert walk. The re-time at Medium (3 rounds, production builds, indirect path) found culling made the frame longer on most pages, also with its check deciding, and gain only in the Island's views, inside their noise. Medium keeps it off; D-22 and D-40 record the figures. See [GPU occlusion at Medium](#gpu-occlusion-at-medium-re-timed).
 - **Estimated saving of slots, desert walk:** about 0.3-0.5 ms for the camera's view and facing tests, minus a group pass of about 0.05-0.15 ms. Shadows: 0.15-0.25 ms, minus a similar pass. Bistro street: about 0.1 ms net, under 3% of its frame.
-- **Recommendation:** first re-time whole-copy occlusion at Medium on a quiet Mac (no new code). Then build slots for the camera pass with view and facing tests, then the hidden test at group level, then shadows.
+- **Recommendation:** build slots for the camera pass with view and facing tests first, then the hidden test at group level, then shadows. The re-time also shows the main pass costs only about 0.2 ms per million triangles at Medium (desert walk: 0.70 ms for 3.54 M), so every saving below is likely at the low end of its range.
 
 ## Method
 
@@ -124,12 +124,12 @@ Per-triangle costs come from the kind-filtered runs. These runs were taken while
 | Desert, camera view and facing, K=4 | 0.94 M | 0.28-0.42 ms | 0.05-0.15 | **0.15-0.35 ms** |
 | Desert, plus group hidden test | +0.27 M | +0.08-0.12 ms | occluder pass, see below | ~0.1 ms more |
 | Desert, shadows K=4 | 1.08 M/frame | 0.16-0.25 ms | 0.05-0.15 | **0.0-0.2 ms** (cascades partly overlap other work) |
-| Desert, whole-copy occlusion at Medium (no new code) | 0.83 M | main pass measured 2.05 to 0.84 ms | occluder pass 0.20 ms | **~1.0 ms, one busy run, needs quiet re-time** |
+| Desert, whole-copy occlusion at Medium (no new code) | 0.83 M | re-timed: main pass 0.70 ms off, 0.66 ms held on | occluder pass 0.16 ms, culling 0.07 ms | **a loss: frame 36% longer held on, 18% with the check** |
 | Bistro street, camera, all copies | 0.31 M (+0.08 hidden) | 0.09-0.14 ms | ~0.05 | **~0.05-0.1 ms** |
 | Bistro wide, hidden test plus whole copies | 1.0 M | 0.3-0.45 ms | occluders ~0.95 M depth only + pyramid ~0.1 | **~0.1-0.2 ms** |
 | Bistro shadows | 0.21 M/frame | 0.03-0.05 ms | 0.05 | ~0 |
 
-The whole-copy occlusion figure is larger than its triangle count suggests. The hidden boulders and pebbles behind the dunes seem to cost more per triangle than the average. The quiet re-time should confirm this before any decision rests on it.
+The busy run's 2.05 to 0.84 ms drop did not come back in the re-time: the hidden pebbles and boulders cost little to draw, so hiding them saves less than the occluders' pass costs.
 
 ## Would group-level occlusion pass null3D's self-check (D-40: at least 10% hidden, frame no longer than 102%)?
 
@@ -148,7 +148,7 @@ The whole-copy occlusion figure is larger than its triangle count suggests. The 
 
 **Build it, camera view first.** Step order:
 
-1. **Re-time whole-copy GPU occlusion at Medium (no code).** Run the desert walk and both Bistro views, on and off, on a quiet Mac. If the desert's ~1 ms holds, revisit D-22's Medium row. That is worth more than slots in the desert, and it is already built.
+1. **(Done, rejected) whole-copy GPU occlusion at Medium.** The re-time below shows no gain, so slots come first.
 2. **Slots in the camera pass with view and facing tests,** K=4 per mesh and groups of 64. A scene of unique meshes also needs a scene-wide budget of about 64-128 slots. This drops 27% in the desert walk and in the Bistro street, with a small group pass.
 3. **Hidden test per group** (two-phase, history per slot). Its gain shows in views over occluders (Bistro wide -0.63 M; desert -0.27 M). It also lets the occluder pass draw visible groups instead of whole heavy occluders.
 4. **Shadow slots, frustum only.** Desert -25% of caster triangles, mostly cascade 0's arches. Bistro -7%. Shadow triangles are cheaper, so this comes last. Pieces in cascades are not a substitute (0.09 M).
@@ -164,3 +164,32 @@ The whole-copy occlusion figure is larger than its triangle count suggests. The 
 - **Slots:** chosen by the largest level and then the nearest copy. A slot copy changing hands is not modelled. Bistro's per-mesh K is meaningless (one copy per mesh); a scene-wide budget stands in.
 - **three.js:** its Bistro wide view and all its shadow counts are missing. Its Bistro street count (0.43 M) is below the model's best (0.78 M); the cause, perhaps its own level choice, is not explained.
 - **Build:** `bun run build` on this branch fails its size check: the threaded WebAssembly file is over its 600 KB budget. The files are built and the CDN build is complete, so this does not touch the counts.
+
+## GPU occlusion at Medium, re-timed
+
+Chrome for Testing on the Mac, Medium, production builds, no frame cap, indirect path (Chrome on this Mac always takes it now), 3 rounds with the modes in turns. GPU time per frame: median of the rounds' medians, with the fastest and slowest round in brackets, and the change against off.
+
+| Page | Off | Held on | Check deciding | Hidden, held on |
+| --- | --- | --- | --- | --- |
+| Desert walk | 0.86 (0.84-0.90) | 1.16 (1.12-1.27), +36% | 1.01 (0.97-2.09), +18% | 4,465 |
+| Desert walk, shadows | 2.70 (2.69-2.98) | 3.18 (3.16-3.20), +18% | 3.04 (2.94-3.30), +12% | 4,511 |
+| Desert aerial | 0.67 (0.65-1.57) | 0.88 (0.88-0.90), +31% | 0.84 (0.67-2.46), +24% | 1,351 |
+| Desert aerial, shadows | 1.18 (0.92-1.31) | 2.73 (1.17-2.86), +132% | 1.11 (1.06-2.57), -6% | 1,352 |
+| Bistro street | 2.18 (2.16-2.23) | 4.95 (2.58-5.38), +127% | 4.73 (4.26-4.96), +117% | 3 |
+| Bistro wide | 3.70 (3.70-5.42) | 5.87 (5.74-5.95), +59% | 5.81 (5.24-5.85), +57% | 636 |
+| Island town | 6.71 (6.28-6.82) | 6.13 (5.99-7.26), -9% | 6.30 (6.29-6.83), -6% | 4,290 |
+| Island opening | 4.44 (4.14-4.61) | 4.08 (4.04-4.43), -8% | 4.27 (4.18-4.30), -4% | 4,242 |
+| S1 | 1.32 (1.20-1.33) | 1.78 (1.36-1.80), +35% | 1.33 (1.15-1.35), +1% | 0 |
+| S2 | 0.15 (0.15-0.15) | 0.25 (0.15-0.26), +69% | 0.13 (0.13-0.15), -13% | 0 |
+| S3 | 1.24 (0.80-1.29) | 1.34 (1.15-1.48), +8% | 1.13 (0.82-1.30), -8% | 0 |
+| S4 | 0.56 (0.48-0.57) | 0.73 (0.62-1.02), +29% | 0.57 (0.47-0.58), 0% | 1,608 |
+| S5 | 4.63 (3.32-4.92) | 4.68 (4.38-4.98), +1% | 4.72 (3.59-4.74), +2% | 0 |
+| S6 | 1.24 (1.22-1.32) | 1.26 (1.22-1.37), +2% | 1.27 (1.21-1.28), +2% | 3,398 |
+| S7 | 0.53 (0.53-0.54) | 0.31 (0.27-0.37), -42% | 0.20 (0.20-0.26), -63% | 0 |
+
+- **The check's choice:** in every page, the median frame with the check deciding hid nothing. The check kept the passes off for most of each run.
+- **Why no gain:** hiding thousands of objects did not shorten the main pass at Medium (desert walk 0.70 ms off, 0.66 ms held on), while the occluders' pass costs 0.16-0.27 ms and the culling about 0.07 ms more.
+- **Two costs not from hiding:** in the Bistro, the setting alone made the main pass about 2 ms longer, with the check deciding too, while culling hid 0-3 objects. S7 moved the other way with nothing hidden. Both need a look in the engine; neither is explained.
+- **Noise:** other helpers' builds raised the one-minute load to 8-17 during many pages. A repeat of the loaded pages at lower load (17 of 36 done before it was stopped, `results/medium-occlusion-desert-bistro-partial-repeat.json`) spread as widely, with the desert walk's held-on runs at 2.00-2.38 ms.
+- **Decision:** Medium keeps occlusion off. The prepared change stays as `medium-occlusion.patch`. D-22 records the table, and D-40 records the rejection and the Bistro cost. Tables in `results/medium-occlusion-tables.md`.
+
