@@ -1,7 +1,7 @@
 // Draws the desert's held views for the triangle budget study and saves each frame with its figures.
 // It starts the study's dev server, opens each engine's page in Chrome for Testing in a parked
 // window, and for each setting and each camera time of the plan: holds the view, saves the frame as
-// a PNG file, then measures one second of the held view (triangles, and GPU time). Results go to
+// a PNG file (a screenshot of the canvas), then measures one second of the held view (triangles, and GPU time). Results go to
 // target/triangle-budget/shots/ (the frames) and to `--out` (default
 // bench/research/triangle-budget/results/shots.json), which each page's figures extend.
 //
@@ -29,6 +29,11 @@ const times = opt('--times', '2.5,7.5,12.5,17.5,22.5,27.5,32.5,37.5').split(',')
 const engines = opt('--engines', 'null3d,three').split(',');
 const measureSeconds = Number(opt('--measure', '1'));
 const plan = opt('--plan', 'all');
+const SETTLE_SECONDS = Number(opt('--settle', '25'));
+/** Extra switches for every page, such as `occlusion=off`. */
+const extra = new URLSearchParams(opt('--query', ''));
+/** Only the settings named here, as lod/lodShadow pairs such as `1/1,0/0`; all of the plan's without it. */
+const only = opt('--settings', '');
 
 /** One page load: an engine, a view, its shadows and the level settings to hold in turn. */
 interface Job {
@@ -132,64 +137,86 @@ const browser = await launchInWindow({
 });
 try {
 	for (const job of jobs) {
-		const page = await newParkedPage(browser, { viewport: { width: 1920, height: 1080 } });
-		const problems: string[] = [];
-		page.on('pageerror', (e) => problems.push(String(e)));
-		page.on('console', (m) => {
-			if (m.type() === 'error') problems.push(m.text().slice(0, 2000));
-		});
-		const query = new URLSearchParams({ view: job.view, 'still-camera': 'off' });
-		if (job.shadows > 0) query.set('shadows', String(job.shadows));
-		const address = `http://localhost:${port}/bench/research/triangle-budget/pages/${job.engine}.html?${query}`;
-		console.log(`open ${address}`);
-		await page.goto(address);
-		await page.waitForFunction(() => (globalThis as { __tbReady?: boolean }).__tbReady, null, {
-			timeout: 20 * 60_000,
-			polling: 1000,
-		});
-		for (const [lod, lodShadow] of job.settings)
-			for (const t of times) {
-				await page.evaluate(
-					([t, lod, lodShadow]) =>
-						(
-							globalThis as unknown as { __tb: { set: (...a: number[]) => Promise<void> } }
-						).__tb.set(t as number, lod as number, lodShadow as number),
-					[t, lod, lodShadow],
-				);
-				const { png } = await page.evaluate(() =>
-					(globalThis as unknown as { __tb: { shot: () => Promise<{ png: string }> } }).__tb.shot(),
-				);
-				const name = `${job.engine}-${job.view}-s${job.shadows}-lod${lod}-sh${lodShadow}-t${t}.png`;
-				writeFileSync(join(shotsDir, name), Buffer.from(png, 'base64'));
-				const figures = await page.evaluate(
-					(seconds) =>
-						(
-							globalThis as unknown as {
-								__tb: { measure: (s: number) => Promise<Record<string, unknown>> };
-							}
-						).__tb.measure(seconds),
-					measureSeconds,
-				);
-				const record = {
-					engine: job.engine,
-					view: job.view,
-					shadows: job.shadows,
-					lod,
-					lodShadow,
-					t,
-					shot: name,
-					load: loadavg()[0],
-					problems: [...problems],
-					...figures,
-				};
-				problems.length = 0;
-				const at = results.findIndex((r) => r.shot === name);
-				if (at >= 0) results[at] = record;
-				else results.push(record);
-				save();
-				console.log(JSON.stringify(record));
+		// null3D takes its thresholds when the page starts, so each of its settings opens a page;
+		// three.js changes them on the page it has open.
+		const settings = only
+			? job.settings.filter(([a, b]) => only.split(',').includes(`${a}/${b}`))
+			: job.settings;
+		// null3D takes its thresholds when the page starts, so each of its settings opens a page.
+		const groups =
+			job.engine === 'null3d'
+				? settings.map((s) => ({ settings: [s], times }))
+				: [{ settings, times }];
+		for (const group of groups) {
+			const page = await newParkedPage(browser, { viewport: { width: 1920, height: 1080 } });
+			const problems: string[] = [];
+			page.on('pageerror', (e) => problems.push(String(e)));
+			page.on('console', (m) => {
+				if (m.type() === 'error') problems.push(m.text().slice(0, 2000));
+			});
+			const query = new URLSearchParams({ view: job.view });
+			if (job.shadows > 0) query.set('shadows', String(job.shadows));
+			if (job.engine === 'null3d') {
+				query.set('lod', String(group.settings[0]?.[0]));
+				query.set('lodShadow', String(group.settings[0]?.[1]));
 			}
-		await page.close();
+			for (const [k, v] of extra) query.set(k, v);
+			const address = `http://localhost:${port}/bench/research/triangle-budget/pages/${job.engine}.html?${query}`;
+			console.log(`open ${address}`);
+			await page.goto(address);
+			await page.waitForFunction(() => (globalThis as { __tbReady?: boolean }).__tbReady, null, {
+				timeout: 20 * 60_000,
+				polling: 1000,
+			});
+			// The desert's ground finishes loading after the first frame: its tree of patches
+			// arrives on the job workers. A frame taken sooner shows the props over the sky.
+			await new Promise((resolve) => setTimeout(resolve, SETTLE_SECONDS * 1000));
+			for (const [lod, lodShadow] of group.settings)
+				for (const t of group.times) {
+					await page.evaluate(
+						([t, lod, lodShadow]) =>
+							(
+								globalThis as unknown as { __tb: { set: (...a: number[]) => Promise<void> } }
+							).__tb.set(t as number, lod as number, lodShadow as number),
+						[t, lod, lodShadow],
+					);
+					// The canvas as the browser shows it, read the same way for both engines. The engine's
+					// own capture of a held frame leaves the desert's ground out, which a screenshot of the
+					// same frame shows.
+					const png = await page.locator('canvas').first().screenshot();
+					const tag = extra.toString() ? `-${extra.toString().replace(/[^a-z0-9]+/gi, '-')}` : '';
+					const name = `${job.engine}-${job.view}-s${job.shadows}-lod${lod}-sh${lodShadow}-t${t}${tag}.png`;
+					writeFileSync(join(shotsDir, name), png);
+					const figures = await page.evaluate(
+						(seconds) =>
+							(
+								globalThis as unknown as {
+									__tb: { measure: (s: number) => Promise<Record<string, unknown>> };
+								}
+							).__tb.measure(seconds),
+						measureSeconds,
+					);
+					const record = {
+						engine: job.engine,
+						view: job.view,
+						shadows: job.shadows,
+						lod,
+						lodShadow,
+						t,
+						shot: name,
+						load: loadavg()[0],
+						problems: [...problems],
+						...figures,
+					};
+					problems.length = 0;
+					const at = results.findIndex((r) => r.shot === name);
+					if (at >= 0) results[at] = record;
+					else results.push(record);
+					save();
+					console.log(JSON.stringify(record));
+				}
+			await page.close();
+		}
 	}
 } finally {
 	await browser.close();
