@@ -734,12 +734,12 @@ describe('the level scenes that the pictures draw', () => {
 			trunkLevel.primitives[0].attributes.POSITION,
 		);
 		// The grid's coarsest level reports the slide of its texture coordinates, which the weight
-		// makes a distance. Without the weight the same level reports near zero, so the picture
-		// draws it against the camera.
+		// makes a distance: about 5 cm for the one-meter grid. Without the weight the same level
+		// reports under a millimeter, so the picture draws it against the camera.
 		const bent = glbJson(readFileSync(at(LEVEL_SCENES.bentGridLod)));
 		const gridLevels = lodLevels(bent);
 		expect(gridLevels.errors.length).toBeGreaterThanOrEqual(2);
-		expect(Math.max(...gridLevels.errors) * gridLevels.scale).toBeGreaterThan(0.1);
+		expect(Math.max(...gridLevels.errors) * gridLevels.scale).toBeGreaterThan(0.02);
 	});
 });
 
