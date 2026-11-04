@@ -66,6 +66,9 @@ const RING = 64;
 /** The fake core's first ring block, past room for every scene field. */
 const RING_BLOCK = 16;
 
+/** Where the fake core keeps the debug line arrays, past every scene and ring block. */
+const LINES_AT = 4096 * 32;
+
 /** The GPU bytes of every mesh, as the fake core reports them. */
 const MESH_BYTES = 4096;
 
@@ -76,6 +79,7 @@ const KEPT_ARGUMENTS = new Set([
 	'setShadowQuality',
 	'setLightDefault',
 	'setCanvasOutput',
+	'drawDebugLines',
 ]);
 
 /** How the log shows a change of one of the core's texture settings. */
@@ -101,11 +105,21 @@ function fakeGlue(
 	// Each scene field, then each ring field, in its own 4 KB block.
 	const block = (index: number) => 4096 * (index + 1);
 	let slots = 0;
+	let linePoints = 0;
 	const kept: Partial<Record<keyof CoreGlue, (field: number) => number>> = {
 		sceneCapacity: () => CAPACITY,
 		sceneArrays: block,
 		commandRing: (field) => (field === C.RING_FIELD_CAPACITY ? RING : block(RING_BLOCK + field)),
 		reserveObject: () => ++slots,
+		// The debug line arrays: each point's three positions, then each point's color.
+		reserveDebugLines: (points) => {
+			linePoints = points;
+			const short = LINES_AT + points * 28 - memory.buffer.byteLength;
+			if (short > 0) memory.grow(Math.ceil(short / 65536));
+			return 0;
+		},
+		debugLineArrays: (field) =>
+			field === C.DEBUG_LINE_FIELD_POSITIONS ? LINES_AT : LINES_AT + linePoints * 24,
 		// The first block holds no field, so the call values take its start.
 		callValues: () => 0,
 		cellsRefused,
@@ -1179,6 +1193,24 @@ describe('hold mode with a timed script', () => {
 		expect(updates).toBe(31);
 		expect(Atomics.load(control.slots, Slot.HeldFrame)).toBe(31);
 		expect(Atomics.load(control.slots, Slot.FramesPublished)).toBe(32);
+	});
+
+	it('draws the held frame debug lines in the settle frame too', async () => {
+		// The update draws its debug lines again in each frame, and the settle frame runs no update,
+		// so it draws the held frame's lines: the settle frame is the one that the page captures.
+		const { calls } = await start(
+			(context) => ({
+				onUpdate: () => {
+					context.debug.line([0, 0, 0], [1, 0, 0]);
+					context.debug.box([0, 0, 0], [1, 1, 1]);
+				},
+			}),
+			undefined,
+			{ holdSeconds: 0.5, readsLastFrame: () => 1 },
+		);
+		const handed = calls.filter(([name]) => name === 'drawDebugLines').map(([, points]) => points);
+		expect(handed.length).toBe(32);
+		expect(handed.slice(-2)).toEqual([26, 26]);
 	});
 
 	it('writes a property before the frame at its time, and dumps it after', async () => {

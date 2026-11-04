@@ -108,7 +108,9 @@ In compatibility mode the floor shows the sky grayer than on core WebGPU and Web
 
 The screen-space reflection tests draw boxes, a ball and a lamp on a steel floor that reflects no environment, so the floor shows only what the reflections find ([D-134](decisions/D-134-screen-space-reflections.md)). They cover a rough floor, a wet plastic floor, a quarter-size grid, half the render scale, ambient occlusion on the same grid, a planar reflection on the floor's left half, and a glass ball. `ssr.spec.ts` checks that each box's reflection hangs below it on its own side, and that the floor shows no box without the reflections.
 
-The reflections read the frame before's colors, and hold mode draws only its last frame. So when the last frame reads the frame before, hold mode steps the sketch once more at the same time, and the thread that draws draws both frames in turn: the control slot `HeldFrom` names the first. Without that, a held frame shows no reflections.
+The reflections read the frame before's colors, and hold mode draws only its last frame. So when the last frame reads the frame before, hold mode records a settle frame at the same time. The thread that draws then draws both frames in turn, and the control slot `HeldFrom` names the first. Without that, a held frame shows no reflections. The settle frame runs none of the sketch's code, so the hold keeps its frame number and its figures (`HeldFrame` names the held frame).
+
+The capture reads the settle frame, so it must show what the held frame drew. A sketch draws its debug lines again in each update, and the core forgets them after the frame that draws them. A frame with no update therefore hands the core the last update's lines again, which the line arrays still hold (`DebugDraw.flush`). Without that, a held picture loses its lines on the paths that draw a settle frame. The debug shapes, the glTF skeletons and the water bounds view all lose them. Compatibility mode draws no settle frame, so it kept them. Setup frames come before any update, so they draw only the lines written since the frame before. `runner.test.ts` and `draw.test.ts` check both cases.
 
 ## The probe tests
 
