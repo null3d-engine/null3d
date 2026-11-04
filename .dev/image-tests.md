@@ -112,6 +112,8 @@ The reflections read the frame before's colors, and hold mode draws only its las
 
 The capture reads the settle frame, so it must show what the held frame drew. A sketch draws its debug lines again in each update, and the core forgets them after the frame that draws them. A frame with no update therefore hands the core the last update's lines again, which the line arrays still hold (`DebugDraw.flush`). Without that, a held picture loses its lines on the paths that draw a settle frame. The debug shapes, the glTF skeletons and the water bounds view all lose them. Compatibility mode draws no settle frame, so it kept them. Setup frames come before any update, so they draw only the lines written since the frame before. `runner.test.ts` and `draw.test.ts` check both cases.
 
+A test that reads the kept frame's state from the sketch's update reads the held frame, not the settle frame. The level plan test (`levels-held.spec.ts`) is the worked case. Its plan lands during the wait after the held frame, so every held update saw no levels. The sketch therefore reports the levels from the plan's own promise, and the page checks that they came before the hold ended.
+
 ## The probe tests
 
 The probe tests draw a closed room whose walls glow a color each, with a mirror floor and a chrome ball, and a reflection probe that fills the room ([D-149](decisions/D-149-reflection-probes.md)). Variants blur the floor, turn box projection off, and split the room into two probes that blend. `probes.spec.ts` checks that the ball reflects the green wall on its left and the red wall on its right, and that the floor reflects the lit room rather than the black of a scene with no environment. A probe whose faces land on the wrong sides, or whose map never fills, fails it.

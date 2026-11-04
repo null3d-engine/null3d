@@ -2,7 +2,9 @@
 // starts the engine with `JOB_WORKERS` job workers, and the sketch first queues a task on each that
 // keeps it busy past the time that hold mode waits for other tasks, then draws a bumpy grid that
 // plans its levels by default, whose plan waits for a worker. Each held frame posts the levels that
-// the grid holds, so the page can check that the frame that hold mode keeps drew them.
+// the grid holds, and the plan posts them again when its levels are in. The frame that hold mode
+// keeps runs none of the sketch's code, so the page checks that the plan's post came before the
+// hold ended: hold mode records that frame only once every plan is in.
 import { defineSketch, runTask, type Task } from '@null3d/engine';
 import { bumpyGrid } from '../../lib/level-meshes';
 
@@ -35,6 +37,8 @@ export default defineSketch(({ scene, geometry, materials, page, time }) => {
 		material: materials.standard({ color: '#8fa86a', roughness: 0.9 }),
 		scale: [20, 20, 20],
 	});
+	// Drawing the mesh started its default plan, and this call returns that plan's promise.
+	void grid.buildLevels().then((levels) => page.post('planned-levels', levels.length));
 	return {
 		onUpdate() {
 			if (time.held) page.post('held-levels', grid.levels.length);
