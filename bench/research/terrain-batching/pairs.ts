@@ -22,7 +22,7 @@ const visits = readFileSync(process.argv[2] as string, 'utf8')
 				.filter((p: any) => p.name !== 'copies')
 				.reduce((s: number, p: any) => s + p.ms.median, 0);
 		return {
-			proto: v.folder.includes('proto'),
+			proto: v.folder.includes('proto') || v.folder.includes('shared'),
 			gpu: median(ws.map((w: any) => w.gpuMs.median)),
 			interval: median(ws.map((w: any) => w.intervalMs.median)),
 			render: median(ws.map((w: any) => w.render.median)),
