@@ -298,6 +298,31 @@ describe('loadCore', () => {
 		expect(asked[0]).toEndWith('/threaded/null3d_bg.wasm');
 	});
 
+	it('reports the bytes that arrive, against the length the server announced', async () => {
+		const seen: [number, number][] = [];
+		serve({
+			'null3d_bg.wasm': () =>
+				new Response(SHARED_MEMORY_MODULE, {
+					headers: { 'content-length': String(SHARED_MEMORY_MODULE.byteLength) },
+				}),
+		});
+		await loadCore('single', 1_024, undefined, (done, total) => seen.push([done, total]));
+		const size = SHARED_MEMORY_MODULE.byteLength;
+		expect(seen[0]).toEqual([0, size]);
+		expect(seen[seen.length - 1]).toEqual([size, size]);
+		// The bytes only ever go up and end at the length that the response announced.
+		for (let k = 1; k < seen.length; k++)
+			expect(seen[k]![0]).toBeGreaterThanOrEqual(seen[k - 1]![0]);
+	});
+
+	it('reports a download that announced no length as counting to no total', async () => {
+		const seen: [number, number][] = [];
+		serve({ 'null3d_bg.wasm': wasm });
+		await loadCore('single', 1_024, undefined, (done, total) => seen.push([done, total]));
+		expect(seen[0]).toEqual([0, 0]);
+		expect(seen.every(([, total]) => total === 0)).toBe(true);
+	});
+
 	it('creates the shared memory with the maximum it is asked for', async () => {
 		serve({ 'null3d_bg.wasm': wasm });
 		const BrowserMemory = WebAssembly.Memory;

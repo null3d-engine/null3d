@@ -1147,6 +1147,9 @@ pub struct MaterialTable {
     sway: Vec<f32>,
     /// Each material's depth bias.
     biases: Vec<DepthBias>,
+    /// True for each material whose blended surfaces draw in the camera's one-sample layer (see
+    /// [`crate::single_layer`]).
+    single_layer: Vec<bool>,
     /// Where each id stands.
     states: Vec<State>,
     /// The ids that new materials take before the table grows, the lowest last.
@@ -1204,6 +1207,7 @@ impl MaterialTable {
             values: Vec::with_capacity(capacity as usize * MATERIAL_FLOATS),
             sway: Vec::with_capacity(capacity as usize),
             biases: Vec::with_capacity(capacity as usize),
+            single_layer: Vec::with_capacity(capacity as usize),
             states: Vec::with_capacity(capacity as usize),
             free: Vec::new(),
             destroyed: false,
@@ -1242,6 +1246,7 @@ impl MaterialTable {
                 self.values.extend_from_slice(&[0.0; MATERIAL_FLOATS]);
                 self.sway.push(0.0);
                 self.biases.push(DepthBias::NONE);
+                self.single_layer.push(false);
                 self.states.push(State::Live);
                 self.len() - 1
             }
@@ -1267,6 +1272,7 @@ impl MaterialTable {
         self.margins[at] = 0.0;
         self.sway[at] = 0.0;
         self.biases[at] = DepthBias::NONE;
+        self.single_layer[at] = false;
         self.states[at] = State::Live;
         self.scattering += u32::from(scatters(shading, features));
         self.unmapped += u32::from(keeps_display_color(features));
@@ -1455,6 +1461,24 @@ impl MaterialTable {
     /// and for an id that names no material.
     pub fn sway(&self, id: u32) -> f32 {
         self.sway.get(id as usize).copied().unwrap_or(0.0)
+    }
+
+    /// Sends a material's blended surfaces to the camera's one-sample layer, or back to the
+    /// transparent pass. It decides the material's pipelines, so it is set once, next to the
+    /// features.
+    pub fn set_single_layer(&mut self, id: u32, on: bool) -> Result<(), MaterialError> {
+        let slot = self
+            .single_layer
+            .get_mut(id as usize)
+            .ok_or(MaterialError::Unknown(id))?;
+        *slot = on;
+        Ok(())
+    }
+
+    /// True when a live material's blended surfaces draw in the camera's one-sample layer, and
+    /// false for an id that names no live material.
+    pub fn single_layer(&self, id: u32) -> bool {
+        self.is_live(id) && self.single_layer[id as usize]
     }
 
     /// Changes the value that starts at float `at` of a material's row (`param::*`) and keeps the
@@ -2009,6 +2033,27 @@ mod tests {
         assert!(table.custom_template_unused(first + 1));
         table.destroy(id).unwrap();
         assert!(table.custom_template_unused(first));
+    }
+
+    #[test]
+    fn a_material_keeps_its_choice_of_the_one_sample_layer_until_its_id_is_reused() {
+        let mut table = MaterialTable::with_capacity(2);
+        let first = table.create(Shading::Unlit, 0, [1.0; 4]).unwrap();
+        assert!(!table.single_layer(first));
+        table.set_single_layer(first, true).unwrap();
+        assert!(table.single_layer(first));
+        assert_eq!(
+            table.set_single_layer(9, true),
+            Err(MaterialError::Unknown(9))
+        );
+        assert!(!table.single_layer(9));
+        // A destroyed material draws nothing, and the material that takes its id starts without.
+        table.destroy(first).unwrap();
+        assert!(!table.single_layer(first));
+        table.release_unused(|_| false);
+        let again = table.create(Shading::Unlit, 0, [1.0; 4]).unwrap();
+        assert_eq!(again, first);
+        assert!(!table.single_layer(again));
     }
 
     #[test]

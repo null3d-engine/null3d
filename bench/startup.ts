@@ -27,6 +27,7 @@
 import { launchChromium } from '../packages/cli/src/browser.js';
 import { forwardPort, phoneModel } from '../tests/lib/adb.ts';
 import { refuseBackgroundPriority } from '../tests/lib/app-window.ts';
+import { chromeForTesting } from '../tests/lib/chrome-for-testing.ts';
 import { ENGINE_MODES, type EngineMode } from '../tests/lib/engine-checks.ts';
 import {
 	LOAD_KINDS,
@@ -213,7 +214,7 @@ interface Driven {
 async function macChrome(): Promise<Driven> {
 	refuseBackgroundPriority();
 	const browser = await launchChromium({
-		channel: 'chrome',
+		...chromeForTesting(),
 		args: ['--enable-unsafe-webgpu', `--remote-debugging-port=${DEBUG_PORT}`],
 	});
 	try {

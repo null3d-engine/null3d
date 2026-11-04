@@ -1319,6 +1319,45 @@ fn frames_with_a_weighted_layer_allocate_nothing() {
     }
 }
 
+/// An object with a blended material that draws in the camera's one-sample layer, rising every
+/// frame.
+fn single_layer_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    world.add_object_with(&base_sphere(0.5, [8, 8]), Shading::Unlit, feature::BLEND);
+    let materials = world.renderer.settings_mut().materials_mut();
+    let material = materials.len() - 1;
+    materials.set_single_layer(material, true).unwrap();
+    let cloud = *world.objects.last().unwrap();
+    feature_allocations(
+        &mut world,
+        "the one-sample layer",
+        &[template::SINGLE_COMPOSITE],
+        move |world, frame| {
+            let y = (frame % 24) as f32 * 0.05;
+            world.scene.set_position(cloud, [0.0, y, 0.0]).unwrap();
+        },
+    )
+}
+
+#[test]
+fn frames_with_a_one_sample_layer_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(single_layer_allocations(World::new()), 0, "WebGPU");
+    assert_eq!(single_layer_allocations(hdr_world()), 0, "WebGPU, HDR");
+    for multi_draw in [true, false] {
+        assert_eq!(
+            single_layer_allocations(webgl2_world(multi_draw)),
+            0,
+            "WebGL2, multi-draw {multi_draw}"
+        );
+        assert_eq!(
+            single_layer_allocations(hdr_webgl2_world(multi_draw)),
+            0,
+            "WebGL2, HDR, multi-draw {multi_draw}"
+        );
+    }
+}
+
 /// A particle system whose emitter writes new births every frame.
 fn particle_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
     let settings = world.renderer.settings_mut();

@@ -2,8 +2,9 @@
 
 Status: decided by the helper of M3-B5, for the owner's review. Built: the model in
 `examples/addons/car-paint/`, with a shader-crate test that builds it on both paths, and its
-picture references in both sets, drawn by the Mac and by CI. Owed: its cost per preset, which needs
-a quiet GPU. Task: M3-B5.
+picture references in both sets, drawn by the Mac and by CI. Measured: its cost at each preset on a
+phone, and the flake count's own share. Owed: its cost on the Mac, which needs a quiet window on a
+computer with a GPU of its own. Task: M3-B5.
 
 Summary: The flakes are the metal's microfacets. For each pixel, the paint counts the facets in the
 pixel's footprint that reflect the main light into the eye, with the binomial model of Deliot and
@@ -63,9 +64,62 @@ function cannot see a light, so the model needs the material lobe hook
 - The lobe computes the cap, the density, the light's solid angle, two hashes and either a short
   Poisson sum or a Gaussian sample for each pixel of each light that reaches it. The terms are a few
   dozen floating-point operations.
-- The plan estimates 0.3 to 1 ms on a full screen. The paint's own cost per preset is owed, and the
-  command is `NULL3D_PAINT_COST=1 bun run test:browser -- car-paint-cost.spec.ts`, in a quiet
-  window on a computer with a GPU of its own.
+- The cost page fills the view with one panel of the paint. It times that panel against the same
+  clear-coated metal without the flakes, the seams and the weave, in turns. Each side takes six
+  rounds of 1 second, and the sides take opposite orders on alternate rounds, so a clock that drifts
+  moves both alike. The page draws none of the preset's screen-space passes, so a preset changes the
+  pixel count alone.
+- The Mac times the page in a quiet window: `NULL3D_PAINT_COST=1 bun run test:browser --
+  car-paint-cost.spec.ts --workers=1`. The device plans `car-paint-cost` and `car-paint-loop` run the
+  same page on a phone, as the next section gives.
+
+## The cost on a phone
+
+Measured on BrowserStack's Galaxy S25 (Chrome 152.0.7977.54, Android 15, Adreno 830). The runner
+page's frame is 360 by 621 CSS pixels at a device pixel ratio of 3. Two runs agree within 0.05 ms on
+the rows that both resolve. Four rows stand:
+
+| Path | Preset | Drawing buffer | Plain, GPU ms | Painted, GPU ms | Paint, ms |
+| --- | --- | --- | --- | --- | --- |
+| core WebGPU | Low | 540 x 932 | 6.88 | 12.06 | 5.18 |
+| core WebGPU | Medium | 720 x 1243 | 12.88 | 18.94 | 6.08 |
+| core WebGPU | High | 720 x 1243 | 12.85 | 18.89 | 6.03 |
+| compatibility | Low | 540 x 932 | 6.88 | 12.06 | 5.18 |
+
+The figure is the middle of the six paired differences of the sides' GPU time. The paint adds nearly
+half again to the frame at Medium and High, and raises the frame's GPU time by 75 per cent at Low.
+Its cost lands in the pass that draws the panel. At Low the final pass rose by 1.57 ms too, while at
+Medium it did not.
+
+One row is qualified. Compatibility mode at Medium gives 16.06 ms plain and 19.33 painted, a
+difference of 3.29 ms. Its pass lines refuse the comparison with core WebGPU. The plain panel pass
+costs 15.40 ms there against 10.55 on core at the same buffer, and the painted one 18.74 against
+16.58. The compatibility frame also holds no final pass, where core's costs 1.70 ms. The extra time
+therefore sits in the pass that draws the panel. A ceiling that is not the shader's can hide the
+paint's share there. The row does not say that the same shader costs less in compatibility mode, and
+its 3.29 ms does not stand beside 6.08. A page that draws the same passes on both paths, at one
+buffer, would separate the two.
+
+Two rows are refused, for reasons the run shows. At Ultra, 1080 by 1864 pixels, the plain side's
+rounds swung between 16.5 and 20.1 ms, a fifth of its cost. The painted side held 19.1 to 19.2 ms.
+The two sides therefore did not share a GPU clock, and the signed difference moved between -0.85 and
++2.65 ms. The paint cannot be faster than the plain side, so the negative rounds are the clock's. A
+phone lowers its GPU clock when a frame leaves it idle. A page that sets a light side against a heavy
+one therefore needs both sides to hold the GPU at work. A device whose clock holds also answers it.
+Until then the row is refused, not blank. WebGL2 has no GPU timer on Chrome for Android, and both
+sides kept the display's 33.3 ms period. The frame interval cannot show the paint. The presets differ
+on this page only in the pixel ratio, so each row's cost belongs to its drawing buffer.
+
+The flake count's own steps, measured at Medium, are apart from the rest of the lobe. The painted
+sides of both pages carry the flakes alone. A light that every flake catches, over a footprint of
+about eight cells a pixel, costs 5.47 ms of that frame. The same footprint under a light that no
+flake catches costs 4.59 ms. The count's steps add 0.88 ms, 16 per cent of the flakes' cost at that
+footprint. At the page's own settings the expected count is about 0.1, so the loop runs about once
+per pixel.
+
+The runs are [the phone's cost run](../tested-devices/galaxy-s25-sm-s931b-chrome/20261102-062057-car-paint-cost.md)
+and [its loop run](../tested-devices/galaxy-s25-sm-s931b-chrome/20261102-061718-car-paint-loop.md).
+
 
 ## Every light
 
@@ -82,8 +136,10 @@ in the engine either.
 - Tests: `crates/null3d-shaders/tests/material.rs` builds the shipped WGSL on both paths. The
   add-on's pictures hold the glints, and the paint spec measures each part against the body without
   it.
-- Owed: the cost per preset, which needs a quiet GPU. At a load near 100, as the Mac ran in every
-  attempt, a timing run measures nothing.
+- Owed: the cost on the Mac. The cost page's own gate waits for a 1-minute load under 8 and fails
+  after ten minutes. The GPU check's rule also wants ten minutes with nothing drawn. A quiet window
+  on a computer with a GPU of its own gives the row with `NULL3D_PAINT_COST=1 bun run test:browser --
+  car-paint-cost.spec.ts --workers=1`.
 - The guide `docs/guides/car-paint.md` and the add-on README describe the model, its options and its
   limit.
 

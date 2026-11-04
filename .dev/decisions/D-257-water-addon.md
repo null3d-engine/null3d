@@ -2,14 +2,16 @@
 
 Status: decided. Built: the `@null3d/water` add-on, its demo, the reflection's cadence through the
 feature host, one owner for each point where bodies meet, the Creek's migration to the add-on, and
-the ocean. Owed: the cost per preset, for the water and for the ocean. Tasks: M3-F5, M3-E6, M3-F9.
+the ocean, which draws on every GPU path. Owed: a quiet run of the add-on's cost per preset, whose
+gate has run under load. Tasks: M3-F5, M3-E6, M3-F9.
 
 Summary: `@null3d/water` draws a river and a lake from one shape and an open sea of wave spectra,
 with waves, ripples, caustics, foam, soft shores, a reflection and an underwater view. The surface
 reads the copy of the scene's depth, or the bed that the shape describes, so a shore fades against
 the bed. The reflection's cadence is a feature setting of the preset and the governor. The current
-carries the whole wave set downstream, so every crest moves with the river. The Creek draws its
-water and its underwater view through the add-on, and keeps no water code of its own.
+carries the whole wave set downstream, so every crest moves with the river. A page sets the surface's
+height, so a slow stream draws nearly flat and keeps its fine ripples. The Creek draws its water and
+its underwater view through the add-on, and keeps no water code of its own.
 
 ## Question
 
@@ -64,6 +66,16 @@ reach and the foam. Measured over a band, the same gap gives the soft shore, whi
 instead of ending on the mesh's edge. A call told `bed: 'shape'` instead carries each vertex's bed
 depth in its color, and the surface reads that. The surface draws both faces, and its back face
 shows the window overhead.
+
+**The surface's height.** A page asks for a gentle surface with `waveAmplitude`. It scales the long
+waves and the wind's lift. The fine ripples keep the strength that `ripple` gives them. So the
+surface can lie nearly flat and still ripple. The view from under the water reads the same
+waterline. The Creek's water takes a tenth of the base height. At its default wind of 4 m/s the
+lift reaches 0.14 m at a crest, against 0.044 m for the three long waves together. The wind's lift
+therefore dominates the height, and the long waves set the crossing crests at 1 m to 3 m. The four
+Creek pictures draw the calmer surface, and the Mac's references are redrawn. Those references were
+already stale for the valley's new plants, so the redrawn set holds both changes. The software set
+is owed to a CI run.
 
 **The reflection cadence.** The pass redraws every other frame on Low and Medium and every frame on
 High and Ultra, and a caller may give its own cadence. [The cadence through the feature
@@ -194,10 +206,9 @@ GPU paths, without work on the page's thread?
 ### Rule
 
 - The compute hook fills the heights in the frame that the material reads them, and the same chain
-  has a fragment form for WebGL2. The compute form draws the sea. The fragment form's field differed
-  from the compute form's when this branch measured it, through a read that WebGL2 later fixed
-  ([D-271](D-271-a-fallback-pass-writes-the-image.md)), so the comparison is owed against the
-  merged engine.
+  has a fragment form for WebGL2. Both forms write the same field: the fragment form keeps the
+  row index that its shader names, and the read that compares them keeps that index
+  ([D-271](D-271-a-fallback-pass-writes-the-image.md)).
 - The add-on owns the ocean as it owns the river (D-173).
 - A pass may not read its own texture. WebGL2 draws a fragment form one texel for each pixel. So a
   stage that each pixel computes alone is the form that both paths share.
@@ -210,21 +221,73 @@ estimate is about 0.5 ms for three bands.
 
 The browser test reads each band's heights back and compares them with the transform on the page's
 thread. On WebGPU the worst texel of the read square differs by 0.004 m, and in compatibility mode
-by 0.004 m, of a field of 0.73 m. On WebGL2 it differed by 0.60 m when this branch measured it. That
-reading went through `render.readPass`, which on WebGL2 returned rows from the other end of the
-target; [D-271](D-271-a-fallback-pass-writes-the-image.md) found that fault, and its record names
-this ocean's read. The comparison against the merged engine is owed, and `ocean-waves` keeps WebGL2
-marked as an expected failure until it runs. A run in which the path agrees reports an unexpected
-pass, which fails the suite, so that first red means the gap closed and the marker's line must then
-be removed. The comparison is owed at the first CI run of `tests/image/ocean-waves.spec.ts` on a
-built core, or on a quiet machine after `bun run build` with
-`bun run test:browser -- ocean-waves.spec.ts`.
+by 0.004 m, and on WebGL2 by 0.004 m too, of a field of 0.73 m. The former 0.60 m gap on WebGL2
+came from the read: it fetched rows from the other end of the target
+([D-271](D-271-a-fallback-pass-writes-the-image.md)). With the read fixed, the three paths draw the
+same field, so `ocean-waves` judges WebGL2 like the other tiers.
 
-The transform's own cost is unmeasured. The effect page's on-and-off difference cannot resolve it:
-over one quiet run of three bands at 128 squared, the difference ranged from -0.62 to 0.54 ms on
-WebGPU, and the same work at the four presets spread the same way. `ocean-cost.spec.ts` keeps the
-instrument, gated by `NULL3D_OCEAN_COST`, and the pass timer reports each of the chain's fifteen
-passes apart.
+The reflection keeps its image in the frames that its cadence waits, on every path. The CPU-culled
+builder moves a view's turn on before it culls the view, so the turn's pass records its objects.
+The sampled texture then keeps the last image between turns. The demo draws on every path, and its
+six pictures hold in both reference sets.
+
+The rule the fault broke is worth keeping. A view's turn moves on before anything culls against it.
+The cull reads the turn to choose the objects the view draws. The recording reads it again to
+choose whether the view draws at all. A frame that reads the turn at two points in time draws an
+empty pass on the turn.
+
+**The frame rate, in a quiet window.** At 1920 by 1080 on Low on WebGL2, `ocean-rate` read 60.01
+frames a second and a 16.7 ms frame in all three states. The reflection carried its cadence through
+the setter, and the one-minute load was 7.7. The test's browser reports a 60 Hz display, so the page
+held its display's rate in every state. The page that switched the pass off and on every other
+frame read 1.21 frames a second at the same preset.
+
+**The transform's cost, as trials.** Two pairs of trials at Low, with the reflection at its
+longest cadence, read the WebGL2 fragment chain as a positive difference in every round: 1.08 to
+2.10 ms in one pair and 0.61 to 3.37 ms in the other, a median near 1.5 ms. The WebGPU compute chain
+stayed inside the frame's own noise in the same trials: the rounds' differences fell between -0.36
+and 0.37 ms, so no figure above zero resolves, and the chain sits under about 0.4 ms. The
+transform's grid and bands do not change with the preset, so one figure answers each preset. These
+are notes from a busy machine, at a load of 9 to 16, not verdicts. Other sessions built and drew
+pictures during the trials, so a round may fall in a picture draw; the two pairs agree on the
+direction and the size, which the picture draw cannot give a round, but the figures stay notes.
+
+**The simulation's cost, per path.** `ocean-ablation.spec.ts` draws the cost page with the
+simulation on in one page load and off in the next. The camera, the preset and the scale are the
+same, and the frame's own GPU time is the difference. The run held the quiet window for ten minutes. The
+shared queue held its own jobs back, and the marker in `tools/lib/quiet-window.ts` stopped builds
+in other checkouts. The one-minute load was 6.9 before the first batch and 2.0 to 2.4 for the rest. A neighbour's
+package build started just before the marker went up and ran about forty seconds into it. The least
+of the three batches is the figure that stands, so the batch that shared the machine is excluded by
+construction. The least difference of three batches was 2.850 ms on WebGL2, whose batches read
+2.850, 3.063 and 3.009 ms.
+On WebGPU the batches differ by -0.484, -1.415 and +0.062 ms, and in compatibility mode by -0.319,
++1.462 and -0.540 ms. The chain sits inside the frame's own variation on those paths, so the method
+states no cost there. The smallest resolved bound is about 1.4 ms.
+
+**The budget at each preset.** The plan's estimate is 0.5 ms for three bands at 128 squared. The
+preset does not change the bands or the grid. Its bands, the mesh's segments and reach, and the
+reflection's cadence are `createOcean`'s options. The transform's grid is the module's fixed 128.
+The add-on's only preset row is `reflectionEvery`, which paces the reflection. So the figure above
+is the figure at every preset. The Mac's 2.850 ms on WebGL2 is 5.7 times the estimate. That is a
+finding about the estimate, and the cause is the fragment form. The Mac's ocean sits well inside a
+16.7 ms frame at 60 frames a second. The only per-preset reflection figure is the Galaxy S25's,
+1.7 ms at Low and Medium and 3.4 ms at High and Ultra ([D-120](D-120-planar-reflections.md)). No
+reflection figure exists for the Mac, so the two are not one frame. The phone's reflection beside
+the Mac's ocean is a ceiling across two devices. The phone has no ocean figure. This clause does
+not ask for one, and a later row that names the class's stand-in device will need it. The Mac's
+WebGPU and compatibility chain adds at most about 1.4 ms, so its ocean stays inside the frame there
+too.
+
+**The cause of the WebGL2 figure.** The fragment form runs the fifteen 128-squared passes through
+the fragment pipeline, fifteen raster passes of 16,384 pixels each. The compute path runs the same
+work in one compute pass.
+
+`ocean-cost.spec.ts` keeps the earlier instrument, gated by `NULL3D_OCEAN_COST`: it sends the
+reflection to its longest cadence and takes more rounds and longer sides from the environment. The
+pass timer names all fifteen transform passes `compute`, so their times do not separate by name.
+The design figure for three bands at 128 squared is 0.5 ms
+([D-179](D-179-technique-rulings.md) ruling 19).
 
 The first rate runs measured the page while the reflection switched itself off every other frame.
 At 1920 by 1080 on Low the ocean drew 1.21 frames a second, and a 64 squared grid gave 1.45.
@@ -289,12 +352,11 @@ vertex's world place is the origin with its place in the mesh.
   ([D-287](D-287-a-pass-carries-its-cadence.md)). With the pass carrying its cadence, the same page
   holds 60 frames a second, so the transform's cost per path and preset is owed rather than known.
   The data's table keeps the switched page's figures as the reading that the cadence replaces.
-- The WebGL2 heights differed from the compute form by 0.60 m when this branch measured them, and
-  the demo draws only the two paths that drew one sea. The readings went through `render.readPass`,
-  which on WebGL2 returned rows from the other end of the target
-  ([D-271](D-271-a-fallback-pass-writes-the-image.md)); that record names this ocean's read. The
-  comparison is owed against the merged engine, and `ocean-waves` marks that path as an expected
-  failure until it runs.
+- The three GPU paths draw one sea. `ocean-waves` reads each band's heights back and compares them
+  with the page's transform: the worst texel differs by 0.004 m of a 0.73 m field on WebGPU, in
+  compatibility mode and on WebGL2, after [D-271](D-271-a-fallback-pass-writes-the-image.md) made
+  the read keep the rows that the shader names. The demo draws on every path: its WebGL2 tier runs
+  at Medium, whose cadence is two, and the reflection keeps its last image there.
 
 ## Consequences
 
@@ -316,10 +378,18 @@ vertex's world place is the origin with its place in the mesh.
 - The page and allocation gates ran in the browser against E4a's engine: the water page starts from
   another origin under the strict policy, threaded and single-threaded, and the add-on's own code
   allocates zero bytes a frame on all four presets. That is E4a's first user, end to end.
-- The cost per preset is owed until a quiet window, because every attempt came at a machine load of
-  90 to 155. Its command is `bun packages/cli/bin/null3d.js check-addon packages/water`, which
-  measures the add-on's page on each preset; `--skip-cost` leaves that gate out and runs the page
-  and allocation gates.
+- The add-on's cost gate has run at this head. `bun packages/cli/bin/null3d.js check-addon
+  packages/water` passed the page, cost, allocation and size gates. Its cost per preset read 2.03,
+  2.85, 2.56 and 2.85 ms of GPU time a frame. Its allocation read zero bytes a frame in the add-on's
+  own code at every preset. The machine stood at a load of about 30 to 44 through the run, so the
+  cost figures are notes until a quiet run. The transform's own cost is treated above, with the
+  WebGPU quiet window and the older path's closed one.
+- The ocean's simulation costs 2.850 ms a frame on WebGL2. That is the least of three batches of an
+  on/off ablation in separate page loads, against the plan's 0.5 ms estimate. On WebGPU and in
+  compatibility mode the same method resolves no cost. The batches straddle zero inside the frame's
+  own variation, and the bound is about 1.4 ms. The preset does not change the bands or the grid, so
+  the figure is the figure at every preset. The Mac's ocean sits inside a 16.7 ms frame on its own.
+  The only per-preset reflection figure is the S25's, and the two devices are not added.
 - The add-on's tests cover the shape, the mesh's coverage and winding, a shape's own current, bed
   and mesh, the carried wave set, the wave copies, the foam map and the size gates. The demo
   `examples/water` draws both bodies and the view from below. The package's own page

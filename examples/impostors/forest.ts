@@ -5,9 +5,9 @@
 // the tree's colour and normals and a moving sun lights them as it lights the mesh.
 import { type DirectionalLight, math, type PerspectiveCamera } from '@null3d/engine';
 import { bakeImpostorAtlas, type OctahedralAtlas, octahedralAtlas } from '@null3d/impostors';
-import { ground, pineArrays } from '../lib/pines';
+import { ground, pineArrays } from './pine';
 
-export { ground, hills, pineArrays, pineWithLevels } from '../lib/pines';
+export { ground, hills, pineArrays, pineWithLevels } from './pine';
 
 /** The side of the hills, in meters. */
 export const SIDE = 1600;

@@ -141,10 +141,10 @@ export function writeBakedProbeGrid(grid: LightProbeGridData): string {
 		throw new Error(
 			`a grid whose coefficients hold ${grid.coefficients.length} numbers, and ${probes} probes of ${PROBE_FLOATS} need ${probes * PROBE_FLOATS}`,
 		);
-	const bytes = new Uint8Array(grid.coefficients.length * 4);
-	const view = new DataView(bytes.buffer);
-	for (let at = 0; at < grid.coefficients.length; at++)
-		view.setFloat32(at * 4, grid.coefficients[at] as number, true);
+	if (grid.validity.length !== probes || grid.skyVisibility.length !== probes)
+		throw new Error(
+			`a grid whose masks hold ${grid.validity.length} and ${grid.skyVisibility.length} numbers, and ${probes} probes need ${probes} each`,
+		);
 	// The text is written out, so the three-number members stay on one line and a reader sees the
 	// file's shape at a glance. The members hold only numbers and base64, which need no escaping.
 	const three = (values: ArrayLike<number>) =>
@@ -156,9 +156,19 @@ export function writeBakedProbeGrid(grid: LightProbeGridData): string {
 \t"origin": ${three(grid.origin)},
 \t"spacing": ${three(grid.spacing)},
 \t"counts": ${three(counts)},
-\t"coefficients": "${encodeBase64(bytes)}"
+\t"coefficients": "${floatText(grid.coefficients)}",
+\t"validity": "${floatText(grid.validity)}",
+\t"skyVisibility": "${floatText(grid.skyVisibility)}"
 }
 `;
+}
+
+/** A float array's little-endian bytes as base64. */
+function floatText(values: Float32Array): string {
+	const bytes = new Uint8Array(values.length * 4);
+	const view = new DataView(bytes.buffer);
+	for (let at = 0; at < values.length; at++) view.setFloat32(at * 4, values[at] as number, true);
+	return encodeBase64(bytes);
 }
 
 /** Reads a probe-grid file's members, or throws an `Error` that names the first fault. */
@@ -191,10 +201,45 @@ function readProbeGrid(file: Record<string, unknown>): BakedProbeGrid {
 			throw new Error(`its coefficients hold a number that is not finite at index ${at}`);
 		coefficients[at] = value;
 	}
+	// Each mask is optional, so a file that a bake wrote before the masks existed still reads.
+	// Such a file counted the sky in its coefficients, so it reads with no sky term beside them,
+	// and every probe is valid.
+	const validity = mask(file.validity, 'validity', probes, 1);
+	const skyVisibility = mask(file.skyVisibility, 'skyVisibility', probes, 0);
 	return {
 		kind: 'probe-grid',
-		grid: new LightProbeGridData(origin, spacing, counts, coefficients),
+		grid: new LightProbeGridData(origin, spacing, counts, coefficients, validity, skyVisibility),
 	};
+}
+
+/**
+ * Reads a probe-grid file's mask member: one float from 0 to 1 per probe, or `missing` for each
+ * probe when the file leaves the member out.
+ */
+function mask(value: unknown, name: string, probes: number, missing: number): Float32Array {
+	const out = new Float32Array(probes).fill(missing);
+	if (value === undefined) return out;
+	const encoded = base64Text(value, name);
+	const size = base64Bytes(encoded);
+	takeBytes(size, name);
+	if (size % 4 !== 0)
+		throw new Error(`its ${name} holds ${size} bytes, not a whole number of 4-byte floats`);
+	const values = size / 4;
+	if (values !== probes)
+		throw new Error(`its ${name} holds ${values} floats, and ${probes} probes need ${probes}`);
+	const bytes = decodeBase64(encoded, name);
+	const view = new DataView(bytes.buffer);
+	for (let at = 0; at < values; at++) {
+		const number = view.getFloat32(at * 4, true);
+		if (!Number.isFinite(number))
+			throw new Error(`its ${name} holds a number that is not finite at index ${at}`);
+		if (number < 0 || number > 1)
+			throw new Error(
+				`its ${name} holds ${number} at index ${at}, and it takes a number from 0 to 1`,
+			);
+		out[at] = number;
+	}
+	return out;
 }
 
 /** Reads a light-map file's members, or throws an `Error` that names the first fault. */

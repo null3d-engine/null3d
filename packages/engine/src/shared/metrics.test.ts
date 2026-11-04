@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'bun:test';
 import { CORE_NOT_COUNTED } from '../generated/core';
 import { PASS_ROLE_NAMES } from '../generated/gpu';
-import { gpuPassStats, secondRates, summarizeFrames, timerStep } from '../page/frame-stats';
+import {
+	gpuPassStats,
+	secondRates,
+	slowFrames,
+	summarizeFrames,
+	timerStep,
+} from '../page/frame-stats';
 import { QUALITY_SETTINGS } from '../quality/presets';
 import {
 	Counter,
@@ -153,6 +159,26 @@ describe('frame records', () => {
 		const held = summarizeFrames(records, threads);
 		expect([held.frames, held.cpuMs.median, held.threads['render-worker']?.busyMs.median]).toEqual([
 			1, 6, 2,
+		]);
+	});
+
+	it('summarize one frame alone when a later frame follows it', () => {
+		const buffer = createMetricsBuffer(true, 0);
+		const sketch = new FrameRecorder(buffer, Role.Sketch);
+		const render = new FrameRecorder(buffer, Role.Render);
+		record(sketch, 30, 3);
+		record(render, 30, 1);
+		record(sketch, 31, 4);
+		record(render, 31, 2);
+		const records = new MetricsReader(buffer).readWritten();
+		const threads = threadRoles({
+			latency: 'pipelined',
+			renderThread: 'render-worker',
+			jobWorkers: 0,
+		});
+		const one = summarizeFrames(records, threads, 30);
+		expect([one.frames, one.cpuMs.median, one.threads['render-worker']?.busyMs.median]).toEqual([
+			1, 3, 1,
 		]);
 	});
 
@@ -388,13 +414,15 @@ describe('gpuPassStats', () => {
 			frameMs: number;
 			/** Each pass's label, in the order of the frame's passes. */
 			roles?: number[];
+			/** The figure of the passes after those timed one by one, where the frame has any. */
+			later?: number;
 		}[],
 	) {
 		const buffer = createMetricsBuffer(false, 0);
 		const reader = new MetricsReader(buffer);
 		reader.begin();
 		const gpu = new FrameRecorder(buffer, Role.Gpu);
-		frames.forEach(({ copies, passes, render, frameMs, roles }, index) => {
+		frames.forEach(({ copies, passes, render, frameMs, roles, later }, index) => {
 			gpu.begin(index + 1);
 			let renderPasses = 0;
 			render.forEach((isRender, pass) => {
@@ -406,6 +434,7 @@ describe('gpuPassStats', () => {
 				gpu.gpuTime(1 + pass, ms);
 				gpu.gpuPassRole(pass, roles?.[pass] ?? 0);
 			});
+			gpu.gpuLater(passes.length > GPU_TIMED_PASSES ? (later ?? 0) : UNTIMED);
 			gpu.commit(frameMs);
 		});
 		reader.end();
@@ -554,14 +583,108 @@ describe('gpuPassStats', () => {
 	it('names only the passes timed alone, and gives null without GPU records', () => {
 		const many = Array.from({ length: GPU_TIMED_PASSES + 2 }, () => 1);
 		const parts = gpuPassStats(
-			gpuRecords([{ copies: 0, passes: many, render: many.map(() => true), frameMs: 20 }]),
+			gpuRecords([
+				{ copies: 0, passes: many, render: many.map(() => true), frameMs: 20, later: 2 },
+			]),
 		);
 		expect(parts?.map((part) => part.name)).toEqual([
 			'copies',
 			...many.slice(0, GPU_TIMED_PASSES).map((_, pass) => `render ${pass + 1}`),
+			'later passes',
 			'between passes',
 		]);
 		expect(gpuPassStats(gpuRecords([]))).toBeNull();
+	});
+
+	it('keeps the passes after the seventh apart from the seventh', () => {
+		const own = [0.5, 1, 1.5, 2, 2.5, 3, 4];
+		const parts = gpuPassStats(
+			gpuRecords([
+				{
+					copies: 0.25,
+					passes: [...own, 5, 6],
+					render: Array.from({ length: 9 }, () => true),
+					frameMs: 30,
+					later: 11,
+				},
+			]),
+		);
+		const byName = new Map(parts?.map((part) => [part.name, part.ms.median]));
+		// The seventh pass reports only its own time, and the two after it share one figure.
+		expect(byName.get('render 7')).toBe(4);
+		expect(byName.get('later passes')).toBe(11);
+		expect(parts?.map((part) => part.name)).toEqual([
+			'copies',
+			...own.map((_, pass) => `render ${pass + 1}`),
+			'later passes',
+			'between passes',
+		]);
+		// The parts still cover the frame: the gap between them is what is left.
+		const ownMs = own.reduce((sum, ms) => sum + ms, 0);
+		expect(byName.get('between passes')).toBeCloseTo(30 - (0.25 + ownMs + 11), 9);
+	});
+});
+
+describe('slowFrames', () => {
+	/** Present frames with the given intervals, and time the frames at `timed` with one pass each. */
+	function frames(intervals: readonly number[], timed: readonly number[]) {
+		const buffer = createMetricsBuffer(false, 0);
+		const reader = new MetricsReader(buffer);
+		reader.begin();
+		const render = new FrameRecorder(buffer, Role.Render);
+		const gpu = new FrameRecorder(buffer, Role.Gpu);
+		intervals.forEach((ms, index) => {
+			const frame = index + 1;
+			render.begin(frame);
+			render.interval(ms);
+			render.commit(1);
+			if (!timed.includes(frame)) return;
+			gpu.begin(frame);
+			gpu.gpuPasses(1, 1);
+			gpu.gpuTime(0, 0);
+			gpu.gpuTime(1, ms / 2);
+			gpu.commit(ms / 2);
+		});
+		reader.end();
+		return reader.records;
+	}
+
+	/** The threads of a one-threaded engine: the sketch and the renderer share the page's thread. */
+	const THREADS = threadRoles({ latency: 'pipelined', renderThread: 'main', jobWorkers: 0 });
+
+	it('reports each frame that broke the threshold with its own parts and neighbours', () => {
+		const slow = slowFrames(frames([16, 70, 16, 16, 120], [1, 2, 3, 4, 5]), 50, THREADS);
+		expect(slow.map((frame) => frame.frame)).toEqual([2, 5]);
+		expect(slow[0]).toMatchObject({
+			frame: 2,
+			atMs: 86,
+			intervalMs: 70,
+			beforeMs: 16,
+			afterMs: 16,
+			first: false,
+			gpuMs: 35,
+		});
+		expect(slow[0]?.parts?.map((part) => [part.name, part.ms])).toEqual([
+			['copies', 0],
+			['render 1', 35],
+		]);
+		// The last frame of the window has no frame after it.
+		expect(slow[1]).toMatchObject({ frame: 5, atMs: 238, intervalMs: 120, afterMs: null });
+		// The page's thread holds the frame's only record, and the frame spent its time outside the
+		// engine's phases: the stall is not the sketch or the renderer's own work.
+		expect(slow[0]?.threads).toEqual([{ name: 'main', busyMs: 1, phases: [] }]);
+	});
+
+	it('marks a slow first frame, and leaves the parts null where the timer skipped it', () => {
+		const slow = slowFrames(frames([90, 16, 16], [2]), 50, THREADS);
+		expect(slow).toHaveLength(1);
+		expect(slow[0]).toMatchObject({ frame: 1, first: true, beforeMs: null, afterMs: 16 });
+		expect(slow[0]?.gpuMs).toBeNull();
+		expect(slow[0]?.parts).toBeNull();
+	});
+
+	it('reports nothing where no frame broke the threshold', () => {
+		expect(slowFrames(frames([16, 16, 16], [1, 2, 3]), 50, THREADS)).toEqual([]);
 	});
 });
 

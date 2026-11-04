@@ -25,8 +25,9 @@ for (const gpu of ['webgpu', 'webgl2'])
 	}) => {
 		await page.goto(`water-stats.html?gpu=${gpu}&preset=medium`);
 		// A page that failed gives its message and the steps it got through, which say where it
-		// spent the time.
-		const result = await pageResult<WaterStatsResult & ItemResult>(page, 45_000);
+		// spent the time. The start alone reached the sketch at 44.6 s on CI's software GPU, where
+		// the 45 s wait left no room for the overlay's own rows.
+		const result = await pageResult<WaterStatsResult & ItemResult>(page, 90_000);
 		expect(result.error, failureText(result)).toBeUndefined();
 		// The add-on's own row, on the preset's cadence and budget, with its GPU time where the
 		// device times passes and its memory.
