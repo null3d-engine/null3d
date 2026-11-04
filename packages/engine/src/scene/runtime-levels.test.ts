@@ -141,6 +141,7 @@ function engine(options: { split?: boolean; format?: number; parts?: number } = 
 			return 0;
 		},
 		meshRadius: () => 1,
+		meshCenter: () => 0,
 		meshVertexCount: (mesh: number) => vertices.get(mesh) ?? 0,
 		meshFormat: () => options.format ?? 0,
 		lastErrorCode: () => failed,

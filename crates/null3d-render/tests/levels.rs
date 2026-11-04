@@ -985,3 +985,99 @@ fn the_gpu_path_draws_the_tree_of_a_mesh_that_fills_several_parts() {
             .any(|(op, o)| *op == Op::CreateComputePipeline && o[1] == template::CLUSTER)
     );
 }
+
+/// `geometry` with every position moved by `offset`, as a quantized file stores a mesh from a
+/// corner of its box rather than around its center.
+fn moved(mut geometry: Geometry, offset: [f32; 3]) -> Geometry {
+    let stride = geometry.stride();
+    for v in 0..geometry.vertex_count() {
+        for (k, shift) in offset.iter().enumerate() {
+            let at = v * stride + k * 4;
+            let bytes: [u8; 4] = geometry.vertices[at..at + 4].try_into().unwrap();
+            let value = f32::from_le_bytes(bytes) + shift;
+            geometry.vertices[at..at + 4].copy_from_slice(&value.to_le_bytes());
+        }
+    }
+    geometry
+}
+
+/// True when the world's visible ball, given a mesh whose positions lie `offset` from its origin
+/// with two lower levels, and turned by `rotation`, draws its first lower level. The ball stands
+/// so that the shape's center lies on the camera's axis, `nearest` meters past the near side of
+/// the shape's sphere.
+fn off_origin_ball_draws_level_1(offset: [f32; 3], rotation: [f32; 4], nearest: f32) -> bool {
+    let mut world = cpu_world();
+    let settings = world.renderer.settings_mut();
+    let base = settings
+        .meshes_mut()
+        .add(&moved(base_sphere(0.5, [8, 6]), offset))
+        .unwrap()
+        + 1;
+    let levels = [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])]
+        .map(|level| settings.meshes_mut().add(&moved(level, offset)).unwrap() + 1);
+    settings
+        .set_mesh_levels(
+            base,
+            &levels,
+            &[0.01, 0.05],
+            &[Switch::Error; 2],
+            &[0, 0],
+            0,
+        )
+        .unwrap();
+    let slot = settings.meshes().mesh(base - 1).unwrap();
+    let (center, radius) = (slot.center, slot.radius);
+    assert!(
+        (0..3).all(|k| (center[k] - offset[k]).abs() < 1e-5) && radius < 0.51,
+        "the mesh's sphere lies on its shape: {center:?} {radius}"
+    );
+    let ball = world.objects[2];
+    // The page gives an object its mesh's sphere, as `createMesh` and `setMesh` do.
+    world.scene.set_local_sphere(ball.slot(), center, radius);
+    world.scene.set_rotation(ball, rotation).unwrap();
+    // A half turn about y takes the shape's center to the other side of the origin.
+    let [x, y, z, w] = rotation;
+    let turned = [
+        (1.0 - 2.0 * (y * y + z * z)) * center[0],
+        0.0,
+        2.0 * (x * z - y * w) * center[0],
+    ];
+    world
+        .scene
+        .set_position(
+            ball,
+            [
+                -turned[0],
+                -turned[1],
+                20.0 - (nearest + radius) - turned[2],
+            ],
+        )
+        .unwrap();
+    world
+        .scene
+        .apply_commands(&[Command::set_mesh(ball, base)], world.frame)
+        .unwrap();
+    world.record(true);
+    let fine = indices_of(&world, levels[0]);
+    draws(&world).iter().any(|&(indices, _)| indices == fine)
+}
+
+#[test]
+fn a_ball_off_its_origin_keeps_its_switch_when_it_turns_half_round() {
+    // The ball's positions lie 4 m along x from its origin, as a mesh from a quantized file starts
+    // at a corner. Its sphere sits on the shape, so the level that it draws follows the shape's
+    // distance whichever way it faces. A sphere around the origin would reach 4.5 m, and its
+    // center would move 8 m as the object turns. Level 1 switches in past 0.01 times 311.8,
+    // 3.118 m of nearest point.
+    let offset = [4.0, 0.0, 0.0];
+    for rotation in [[0.0, 0.0, 0.0, 1.0], [0.0, 1.0, 0.0, 0.0]] {
+        assert!(
+            !off_origin_ball_draws_level_1(offset, rotation, 0.95 * 3.118),
+            "{rotation:?}: before the switch, the base level"
+        );
+        assert!(
+            off_origin_ball_draws_level_1(offset, rotation, 1.05 * 3.118),
+            "{rotation:?}: past the switch, level 1"
+        );
+    }
+}
