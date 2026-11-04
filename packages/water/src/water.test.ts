@@ -56,12 +56,33 @@ describe('the water’s waves', () => {
 		expect(highest - lowest).toBeGreaterThan(reach);
 	});
 
+	it('scales its height with the wave amplitude, and leaves the surface at its level without one', () => {
+		const current: [number, number] = [0.3, 0];
+		const level = 4;
+		expect(waveHeight(1, 2, 3, level, current, 1, 0)).toBe(level);
+		const half = waveHeight(1, 2, 3, level, current, 1, 0.5) - level;
+		const full = waveHeight(1, 2, 3, level, current, 1, 1) - level;
+		expect(half).toBeCloseTo(full * 0.5, 10);
+	});
+
 	it('scales its waves with the ripple, and leaves a still surface flat without them', () => {
 		const current: [number, number] = [0, 0];
 		expect(waveHeight(1, 2, 3, 5, current, 0)).toBe(5);
 		const one = waveHeight(1, 2, 3, 5, current, 1) - 5;
 		const two = waveHeight(1, 2, 3, 5, current, 2) - 5;
 		expect(two).toBeCloseTo(one * 2, 10);
+	});
+
+	it('gives the long waves and the wind’s lift the surface’s height factor, and the fine ripples none', () => {
+		const surface = read('water.wgsl');
+		expect(wgslFunction(surface, 'waves')).toContain(
+			'select(material.waveAmplitude, 1.0, k >= 3u)',
+		);
+		expect(wgslFunction(surface, 'vertexOffset')).toContain('material.waveAmplitude');
+		// The view from under the water scales its waterline with the same factor.
+		expect(wgslFunction(read('underwater.wgsl'), 'surface_height')).toContain(
+			'uniforms.waveAmplitude',
+		);
 	});
 
 	it('draws the same caustics from under the water as on its surface', () => {
@@ -120,5 +141,16 @@ describe('the water’s wind', () => {
 		const shader = read('water.wgsl');
 		expect(shader).toContain('material.windStrength > 0.0');
 		expect(shader).toContain('wind_sample(');
+	});
+});
+
+describe('the water’s color along a low view', () => {
+	it('mixes the depth with the view’s whole path by the material’s share', () => {
+		const thickness =
+			wgslFunction(read('water.wgsl'), 'surface')
+				.split('\n')
+				.find((line) => line.startsWith('s.thickness =')) ?? '';
+		expect(thickness).toContain('mix(depth, gap,');
+		expect(thickness).toContain('material.viewPath');
 	});
 });

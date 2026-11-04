@@ -78,12 +78,12 @@ export default defineSketch(async ({ scene }) => {
 | Field | What a draw takes |
 | --- | --- |
 | `kind` | `'draw'`. Any other kind throws E1223. |
-| `frame` | `'opaque'` or `'transparent'`. A draw records at one of these two points. |
+| `frame` | `'opaque'`, `'transparent'` or `'resolve'`. A draw records at one of these three points. |
 | `band` | `'before'`, `'normal'` or `'after'`. It places the draw against the pass's other blended objects. |
 | `order` | The place inside the band. A lower number draws first. |
 | `views` | `['main']`. The adapter refuses another view rather than drawing in the wrong one. |
 
-The frame point and the material's blending must agree. With `'opaque'`, the draw needs an `opaque` or `mask` alpha mode. With `'transparent'`, it needs the `blend` alpha mode, which is the default for that frame. A draw that names the other one throws E1223, because the engine would draw it in a pass that the description never named.
+The frame point and the material's blending must agree. With `'opaque'`, the draw needs an `opaque` or `mask` alpha mode. With `'transparent'` or `'resolve'`, it needs the `blend` alpha mode, which is the default for those frames. A draw that names the other one throws E1223, because the engine would draw it in a pass that the description never named.
 
 ## The shader
 
@@ -109,6 +109,7 @@ A draw's vertex data and material draw as one scene object. The engine culls it 
 
 - `'opaque'` draws with the pass's other opaque objects, in the engine's own order, which the depth test decides.
 - `'transparent'` draws with the blended objects, back to front. The description's band and order place it among them, as `mesh.setRenderOrder` does: `draw.setRenderOrder(order)` changes the place later.
+- `'resolve'` blends after the camera's other blended objects. While the scene has more than one sample per pixel (MSAA), the camera draws such surfaces back to front into a layer of one sample per pixel, tested against a one-sample copy of the opaque depth, and blends the layer over the scene. Thousands of overlapping blended cards, such as Gaussian splats, then cost one blend per pixel instead of one per sample. Use it for a draw of soft, heavily overlapping surfaces. A glass or a particle in front of such a draw shows behind it, and a mesh's anti-aliased edge in front of it can show a faint fringe. With one sample, other views and frames before the layer's shaders are ready, the draw blends in the transparent pass, back to front with the other blended objects.
 
 A draw can cast the shadows that a directional light casts with `castShadows`, and receive shadows with `receiveShadows`. `draw.object` gives the scene object for every other object call: `setPosition`, `setRotation`, `setScale`, `setVisible`, `setLayers` and `destroy`.
 

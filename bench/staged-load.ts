@@ -19,6 +19,7 @@ import { copyFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { launchChromium } from '../packages/cli/src/browser.js';
 import { refuseBackgroundPriority } from '../tests/lib/app-window.ts';
+import { chromeForTesting } from '../tests/lib/chrome-for-testing.ts';
 import { type Downloads, type Load, loadPath } from '../tests/lib/load-routes.ts';
 import { buildStartupPages, prepareLoads, STARTUP_PAGES_DIR } from '../tests/lib/load-server.ts';
 import { DEBUG_PORT, PREVIEW_PORT, REPO_ROOT, startPreview } from '../tests/lib/server.ts';
@@ -196,7 +197,7 @@ async function measure(
 ): Promise<StagedStart> {
 	refuseBackgroundPriority();
 	const browser = await launchChromium({
-		channel: 'chrome',
+		...chromeForTesting(),
 		args: ['--enable-unsafe-webgpu', `--remote-debugging-port=${DEBUG_PORT}`],
 	});
 	try {

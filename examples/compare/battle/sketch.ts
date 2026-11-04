@@ -38,6 +38,7 @@ import {
 import { LENS_WGSL } from '../../lib/lens';
 import { createSpriteRows, fireAtlas, smokeAtlas } from '../../lib/particles';
 import { null3dSprites } from '../../lib/particles-null3d';
+import { reportLoading } from '../../lib/progress';
 import { sampleUrl } from '../../lib/samples';
 import { SIGNATURE_MESSAGE } from '../scene-signature';
 import {
@@ -320,7 +321,9 @@ const DIE = Object.freeze({ fade: CLIP_FADE_SECONDS, loop: false });
 const REJOIN = Array.from({ length: 8 }, (_, k) => Object.freeze({ time: k / 8 }));
 
 export default defineSketch(
-	async ({ scene, geometry, materials, textures, assets, post, quality, page }) => {
+	async (ctx) => {
+		const { scene, geometry, materials, textures, assets, post, quality, page } = ctx;
+		reportLoading(ctx);
 		const params = new URL(import.meta.url).searchParams;
 		const capacity = battleUnits(Number(params.get('capacity') ?? BATTLE_HOLD.count));
 		const effects = effectsFromText(params.get('effects'));

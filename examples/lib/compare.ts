@@ -10,7 +10,7 @@
 // - null3D with its quality governor off and a fixed preset, and every pixel drawn;
 // - three.js on the renderer that the GPU path names, in one worker with an OffscreenCanvas.
 
-import { createEngine, type Engine } from '@null3d/engine';
+import { createEngine, type Engine, type StartupProgress, type StartupStage } from '@null3d/engine';
 import {
 	MainThreadWindow,
 	type PageMemory,
@@ -82,6 +82,13 @@ export interface ComparisonOptions {
 	 * default, as on every demo.
 	 */
 	stats?: boolean | 'open';
+	/**
+	 * Hears the null3D engine's start stages and their figures, for the page's loading card. The
+	 * three.js run reports none.
+	 */
+	onProgress?: (stage: StartupStage, progress?: StartupProgress) => void;
+	/** Hears the message that a null3D sketch posts as it loads its files, for that card. */
+	onLoading?: (data: unknown) => void;
 }
 
 /** What a measurement of a running comparison gives. */
@@ -276,6 +283,23 @@ async function startNull3d(
 	const stats = options.stats ?? true;
 	// The last error that the sketch's own code threw, which a step whose update failed reports.
 	let sketchError: string | undefined;
+	// Scene-signature requests in flight, matched to the sketch's answers by token.
+	const signatures = new Map<number, (signature: SceneSignature) => void>();
+	let signatureToken = 0;
+	// The page's loading card hears a sketch's loading messages as its setup runs, and the other
+	// messages, such as a scene signature, reach the page.
+	const onSketchMessage = (name: string, data: unknown) => {
+		if (name === 'loading') {
+			options.onLoading?.(data);
+			return;
+		}
+		if (name !== SIGNATURE_MESSAGE) return;
+		const signature = data as SceneSignature;
+		const resolve = signatures.get(signature.token);
+		if (!resolve) return;
+		signatures.delete(signature.token);
+		resolve(signature);
+	};
 	const engine: Engine = await createEngine({
 		canvas,
 		sketch,
@@ -283,8 +307,13 @@ async function startNull3d(
 		onSketchError: (error) => {
 			sketchError = error.message;
 		},
+		onProgress: options.onProgress,
+		onSketchMessage,
 		// A fixed preset: High, which WebGL2 caps at Medium. The sketch turns the governor off.
 		preset: 'high',
+		// three.js draws the flat cloud layer, so a comparison pins the engine to it: the
+		// volumetric tier has no twin, and the two pictures would otherwise differ by the sky.
+		cloudSteps: 0,
 		maxPixelRatio: pixelRatio,
 		antialias: 'msaa',
 		shadowTiles: comparison.shadowTiles,
@@ -295,17 +324,6 @@ async function startNull3d(
 		hold: options.hold,
 	});
 	let shown = count;
-	// Scene-signature requests in flight, matched to the sketch's answers by token.
-	const signatures = new Map<number, (signature: SceneSignature) => void>();
-	let signatureToken = 0;
-	engine.onSketchMessage((name, data) => {
-		if (name !== SIGNATURE_MESSAGE) return;
-		const signature = data as SceneSignature;
-		const resolve = signatures.get(signature.token);
-		if (!resolve) return;
-		signatures.delete(signature.token);
-		resolve(signature);
-	});
 	const run: ComparisonRun = {
 		engine: 'null3d',
 		label: `null3D, ${engine.capabilities.tier}, ${engine.mode.preset}`,

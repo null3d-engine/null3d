@@ -11,6 +11,7 @@ use null3d_core::lights::VisibleLight;
 use null3d_core::scene::{Command, flags};
 use null3d_gpu::drawlist::{Op, format, layout};
 use null3d_gpu::mock::MockBackend;
+use null3d_gpu::pass_role::{self, PassRole};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{FrameBuilder, NO_MESH};
 use null3d_render::gpu_driven::GpuDrivenRenderer;
@@ -550,4 +551,54 @@ fn a_pass_reads_the_camera_s_shadow_tiles_from_its_own_camera_on_both_paths() {
     shadows_in_the_view(&mut World::build(CpuCulledRenderer::new(
         CpuCulledConfig::default(),
     )));
+}
+
+/// The draws that a frame records inside the pass labelled `label`.
+fn draws_in_pass(commands: &[(Op, Vec<u32>)], label: u32) -> usize {
+    let mut inside = false;
+    let mut draws = 0;
+    for (op, words) in commands {
+        match *op {
+            Op::BeginRenderPass => {
+                // A pass without a second color target leaves that word out, so the label is the
+                // last word before the scope.
+                let at = if words.len() > 11 { 10 } else { 9 };
+                inside = words.get(at) == Some(&label);
+            }
+            Op::EndRenderPass => inside = false,
+            Op::Draw | Op::DrawIndexed | Op::DrawIndexedIndirect | Op::MultiDrawIndexed
+                if inside =>
+            {
+                draws += 1;
+            }
+            _ => {}
+        }
+    }
+    draws
+}
+
+/// A view that draws in one frame of two culls the objects of the frames that are its turn. The
+/// frame that culls a view moves its turn on first: a cull that read the turn from before this
+/// frame leaves the turn's pass with no objects, and the view's image is its clear colour alone.
+#[test]
+fn a_cadenced_view_culls_the_objects_of_its_turn() {
+    let mut world = World::build(CpuCulledRenderer::new(CpuCulledConfig::default()));
+    let view = world.add_view([0.0, 0.0, 20.0]);
+    let mut mock = MockBackend::default();
+    world.renderer.check_graph().unwrap();
+    // The frame that builds the view draws it once, so the cadence starts after it.
+    world.step(&mut mock, true);
+    world.renderer.settings_mut().set_view_every(view, 2);
+    let label = pass_role::label(PassRole::Opaque, view.index() as u32);
+    let mut draws = Vec::new();
+    for _ in 0..4 {
+        let commands = world.step(&mut mock, false);
+        draws.push(draws_in_pass(&commands, label));
+    }
+    // The view draws its objects on each turn, and the frame between records no pass at all.
+    assert_eq!(
+        (draws[0] > 0, draws[1], draws[2] > 0, draws[3]),
+        (true, 0, true, 0),
+        "a cadenced view's turns draw its objects: {draws:?}"
+    );
 }
