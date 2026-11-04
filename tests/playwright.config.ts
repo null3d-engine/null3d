@@ -1,9 +1,10 @@
 import { join } from 'node:path';
 import { defineConfig } from '@playwright/test';
-import { browserOptions, defaultEnvironment } from '../packages/cli/src/browser.js';
+import { defaultEnvironment } from '../packages/cli/src/browser.js';
 import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import { ensureShaderModules } from '../tools/lib/shader-modules.ts';
 import { ALONE_PROJECT_SUFFIX, RUNS_ALONE } from './lib/alone.ts';
+import { repoBrowserOptions } from './lib/chrome-for-testing.ts';
 import {
 	HTTP_PORT,
 	PREVIEW_PORT,
@@ -27,10 +28,10 @@ const ci = Boolean(process.env.CI);
 const neighbourReporter = join(import.meta.dirname, 'lib/neighbour-reporter.ts');
 /**
  * The main project's environment, which names the references that its image tests compare with:
- * SwiftShader in CI, and the real GPU through the installed Google Chrome elsewhere.
+ * SwiftShader in CI, and the real GPU through the pinned Chrome for Testing elsewhere.
  */
 const environment = defaultEnvironment();
-const launchOptions = browserOptions(environment);
+const launchOptions = repoBrowserOptions(environment);
 /** Device pixels per CSS pixel on the screen of the resize tests, as on most phones and laptops. */
 const HIGH_DENSITY_RATIO = 2;
 /** The main project's tests: every test file but those that only the other projects run. */

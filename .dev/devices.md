@@ -293,14 +293,14 @@ The `physical-sky` plan measures what the physical sky costs, for [D-143](decisi
 - The `car-paint-cost` plan measures what the car paint costs at each preset, for [D-255](decisions/D-255-car-paint-glints.md). Its page (`tests/pages/car-paint-cost.html`) fills the view with one panel of the paint add-on. It times that panel against the same clear-coated metal without the flakes, the seams and the weave, in turns. The paint's flakes count their facets for each light, so its cost is per pixel.
 - The page draws none of the preset's own screen-space passes, so a preset changes the pixel count alone. The page holds its render scale with the governor off, and takes the sides in the opposite order on alternate rounds. It measures each side for 1 second, six rounds each, and reports each round's GPU time and each round's difference. Where the browser has a GPU timer, the difference is the paint's cost; without one, the frame interval gives it.
 - The plan runs the page at each preset that a GPU path allows. Core WebGPU runs Low to Ultra. Compatibility mode and WebGL2 cap the preset at Medium. The capabilities page comes first, so a device without WebGPU skips those pages.
-- Run it on a phone with `bun run devices:cloud --only bsgalaxys25-chrome --plan car-paint-cost`. The Mac times the same page in its installed Chrome, in a quiet window: `NULL3D_PAINT_COST=1 bun run test:browser -- car-paint-cost.spec.ts --workers=1`.
+- Run it on a phone with `bun run devices:cloud --only bsgalaxys25-chrome --plan car-paint-cost`. The Mac times the same page in the pinned Chrome for Testing, in a quiet window: `NULL3D_PAINT_COST=1 bun run test:browser -- car-paint-cost.spec.ts --workers=1`.
 - The `car-paint-loop` plan measures the flake count's own steps, apart from the rest of the lobe. Its two pages give the flakes a footprint whose count lands in the exact branch at each buffer the page draws. One catches the light at every flake, so the count takes many steps. The other catches it at none, so the count breaks at its first compare. Each page's difference from its plain side holds what the two share; the difference between those differences is the loop.
 - Run it on a phone with `bun run devices:cloud --only bsgalaxys25-chrome --plan car-paint-loop`, and set `NULL3D_PAINT_VARIANT=loop` or `loop-0` for the Mac.
 
 ## The canvas cost plan
 
 - The `canvas-cost` plan measures what a canvas texture's refresh costs, for [D-204](decisions/D-204-canvas-textures.md). Its page follows a 1024 x 1024 `OffscreenCanvas` from the sketch and refreshes a 256 x 256 rectangle of it at 30 Hz. It times the refresh in the sketch, then reports the frame's GPU and CPU time with refreshes and without them.
-- The plan runs the page on both GPU paths: 2 pages. Run it on an iPad or a phone with `bun run devices:cloud --only bsipadpro13-safari,bsgalaxys24-chrome --plan canvas-cost`. The Mac times the same page in its installed Chrome, in a quiet window: `NULL3D_CANVAS_COST=1 bun run test:browser -- canvas-texture.spec.ts --workers=1`.
+- The plan runs the page on both GPU paths: 2 pages. Run it on an iPad or a phone with `bun run devices:cloud --only bsipadpro13-safari,bsgalaxys24-chrome --plan canvas-cost`. The Mac times the same page in the pinned Chrome for Testing, in a quiet window: `NULL3D_CANVAS_COST=1 bun run test:browser -- canvas-texture.spec.ts --workers=1`.
 
 ## The impostor cost plan
 
@@ -480,7 +480,7 @@ The `physical-sky` plan measures what the physical sky costs, for [D-143](decisi
   it, because such a device takes the analytic tier ([D-265](decisions/D-265-wind-field-first-stage.md)).
 - Run it on the cloud devices with
   `bun run devices:cloud --only bsipadpro13-safari,bsgalaxys25-chrome,bsgalaxytaba9plus-chrome --plan wind-field-cost`.
-  Run it on the Mac in its installed Chrome, in a quiet window, with
+  Run it on the Mac in the pinned Chrome for Testing, in a quiet window, with
   `NULL3D_WIND_FIELD_COST=1 bun run test:browser -- wind-field-cost.spec.ts --workers=1` and
   `NULL3D_WIND_GPU`, `NULL3D_WIND_SHAPES` and `NULL3D_WIND_POINTS` naming its paths, shapes and
   pressure counts.
