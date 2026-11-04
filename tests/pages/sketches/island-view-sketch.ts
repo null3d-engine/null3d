@@ -1,7 +1,7 @@
 // Temporary measuring sketch: the Island with its camera held at a pose that the page posts. The
-// page can hide the terrain's blocks: the sketch catches the objects that the terrain's material
-// draws, keeps the visibility that the terrain asks of each, and draws none while hidden. Not kept
-// in the repository.
+// page can hide the terrain's blocks: the sketch catches the objects and the instance batches that
+// the terrain's material draws, keeps the visibility or the row count that the terrain asks of
+// each, and draws none while hidden. Not kept in the repository.
 import { defineSketch } from '@null3d/engine';
 import island from '../../../examples/showcase/island/sketch';
 
@@ -10,7 +10,7 @@ export default defineSketch(async (ctx) => {
 	// biome-ignore lint/suspicious/noExplicitAny: temporary measuring code
 	const walls: any[] = [];
 	// biome-ignore lint/suspicious/noExplicitAny: temporary measuring code
-	const ground: { object: any; set: (v: boolean) => void; wants: boolean }[] = [];
+	const ground = new Set<{ apply: () => void; drawn: () => number }>();
 	let groundShown = true;
 	let pending: { name: string; frames: number; value: unknown } | undefined;
 	ctx.page.onMessage((name, data) => {
@@ -18,11 +18,15 @@ export default defineSketch(async (ctx) => {
 		if (name === 'hide-walls') for (const w of walls) w.setActiveCount(0);
 		if (name === 'ground') {
 			groundShown = data as boolean;
-			for (const block of ground) block.set(block.wants && groundShown);
+			for (const block of ground) block.apply();
 			pending = { name: 'groundn', frames: 4, value: true };
 		}
 		if (name === 'blocks')
-			pending = { name: 'blocksn', frames: 1, value: ground.filter((b) => b.wants).length };
+			pending = {
+				name: 'blocksn',
+				frames: 1,
+				value: [...ground].reduce((sum, b) => sum + b.drawn(), 0),
+			};
 	});
 	// biome-ignore lint/suspicious/noExplicitAny: temporary measuring code
 	const scene = ctx.scene as any;
@@ -52,12 +56,18 @@ export default defineSketch(async (ctx) => {
 		const object = meshes(options);
 		if (terrainMaterial && options?.material === terrainMaterial) {
 			const set = object.setVisible.bind(object);
-			const block = { object, set, wants: true };
+			const destroy = object.destroy.bind(object);
+			let wants = true;
+			const block = { apply: () => set(wants && groundShown), drawn: () => (wants ? 1 : 0) };
 			object.setVisible = (visible: boolean) => {
-				block.wants = visible;
-				set(visible && groundShown);
+				wants = visible;
+				block.apply();
 			};
-			ground.push(block);
+			object.destroy = () => {
+				ground.delete(block);
+				destroy();
+			};
+			ground.add(block);
 		}
 		return object;
 	};
@@ -68,6 +78,21 @@ export default defineSketch(async (ctx) => {
 	// biome-ignore lint/suspicious/noExplicitAny: temporary measuring code
 	scene.createInstances = (mesh: any, count: number, options: any) => {
 		const batch = instances(mesh, count, options);
+		if (terrainMaterial && options?.material === terrainMaterial) {
+			const set = batch.setActiveCount.bind(batch);
+			const destroy = batch.destroy.bind(batch);
+			let wants = count;
+			const rows = { apply: () => set(groundShown ? wants : 0), drawn: () => wants };
+			batch.setActiveCount = (active: number) => {
+				wants = active;
+				rows.apply();
+			};
+			batch.destroy = () => {
+				ground.delete(rows);
+				destroy();
+			};
+			ground.add(rows);
+		}
 		if (options?.colors && options.castShadows && mesh.levels?.length === 1) {
 			if (houses % 2 === 0) walls.push(batch);
 			houses++;
