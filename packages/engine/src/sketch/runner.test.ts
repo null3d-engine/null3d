@@ -57,6 +57,7 @@ const CAPABILITIES: EngineCapabilities = {
 	maxCanvasSize: 4096,
 	depth: 'reversed',
 	directDraws: false,
+	drawPath: 'webgl2',
 };
 
 /** Scene slots of the fake core, and records of its command ring. */

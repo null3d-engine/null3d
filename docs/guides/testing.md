@@ -201,7 +201,7 @@ The engine reads these switches from the page's address in development builds. T
 | --- | --- |
 | `?hold=1.5` | Hold mode at 1.5 seconds of sketch time; a bare `?hold` holds at the `hold` option's time, or at 0 |
 | `?gpu=webgpu`, `?gpu=compat`, `?gpu=webgl2` | Force a GPU tier, where the device has it |
-| `?direct=on`, `?direct=off` | On WebGPU, force the direct or the indirect draw path, in place of the start-up probe's measured choice, to compare GPU time. `engine.capabilities.directDraws` says which path the engine took ([Performance guide](performance.md#how-the-engine-batches-builds-pipelines-and-times-frames)) |
+| `?direct=on`, `?direct=off` | On WebGPU, force the direct or the indirect draw path on any device, in place of the start-up probe's choice, to compare GPU time. The probe runs only on an Apple GPU in WebKit. `engine.capabilities.directDraws` says which path the engine took, and `engine.capabilities.drawPath` says why ([Performance guide](performance.md#how-the-engine-batches-builds-pipelines-and-times-frames)) |
 | `?depth=reversed`, `?depth=reversed-gl`, `?depth=standard` | Force a WebGL2 depth mode. `reversed-gl` draws as browsers without the `EXT_clip_control` extension do, such as Firefox |
 | `?uploads=copy` | On WebGL2, upload a copy of the data, as browsers that refuse to read shared memory need |
 | `?multidraw=off` | On WebGL2, draw as a browser without the `WEBGL_multi_draw` extension does: the engine probes none and draws the whole levels of a cluster tree in place of its patches ([Levels of detail](../concepts/lod.md#cluster-levels)) |
