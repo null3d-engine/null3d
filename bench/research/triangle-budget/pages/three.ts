@@ -5,7 +5,7 @@
 // - `shot()` draws one frame and returns it as a PNG file in base64;
 // - `measure(seconds)` returns the median main-view triangles, shadow triangles and GPU time.
 // The pipeline counts only the main view's triangles in `info.triangles`. The study's server
-// patches it to add each shadow pass's kept meshlets to `info.shadowTriangles`.
+// patches it to keep each shadow pass's latest count in `info.shadowTriangles`, by culling record.
 // Switches: `?view=walk|aerial`, `?shadows=1` for the one shadow map of the benchmark page.
 import { GLTFLoader } from 'three-r187/addons/loaders/GLTFLoader.js';
 import { MeshletDrawingPipeline } from 'three-r187/addons/pipelines/MeshletDrawingPipeline.js';
@@ -63,7 +63,10 @@ gpu.toneMapping = THREE.NoToneMapping;
 gpu.shadowMap.enabled = shadows;
 const pipeline = new MeshletDrawingPipeline({ ...THREE_MESHLETS });
 (gpu as unknown as { drawingPipeline: unknown }).drawingPipeline = pipeline;
-const info = pipeline.info as { triangles: number; shadowTriangles?: number };
+const info = pipeline.info as { triangles: number; shadowTriangles?: Map<unknown, number> };
+/** The shadow map's triangles in a frame: the latest count of each of its culling records, summed. */
+const shadowTriangles = () =>
+	info.shadowTriangles ? [...info.shadowTriangles.values()].reduce((a, b) => a + b, 0) : null;
 
 const scene = new THREE.Scene();
 scene.background = linear(DESERT_SKY.color);
@@ -153,7 +156,7 @@ let frames = 0;
 let sampling: {
 	gpu: number[];
 	triangles: number[];
-	shadowStart: number;
+	shadow: number[];
 	frameStart: number;
 } | null = null;
 const loop = () => {
@@ -161,6 +164,8 @@ const loop = () => {
 	frames++;
 	if (sampling) {
 		sampling.triangles.push(info.triangles);
+		const shadow = shadowTriangles();
+		if (shadow !== null) sampling.shadow.push(shadow);
 		const s = sampling;
 		Promise.all([gpu.resolveTimestampsAsync('render'), gpu.resolveTimestampsAsync('compute')]).then(
 			([render, compute]) => {
@@ -217,7 +222,7 @@ const copyContext = copy.getContext('2d') as CanvasRenderingContext2D;
 		const s = {
 			gpu: [] as number[],
 			triangles: [] as number[],
-			shadowStart: info.shadowTriangles ?? 0,
+			shadow: [] as number[],
 			frameStart: frames,
 		};
 		sampling = s;
@@ -226,10 +231,7 @@ const copyContext = copy.getContext('2d') as CanvasRenderingContext2D;
 		const counted = frames - s.frameStart;
 		return {
 			triangles: median(s.triangles),
-			shadowTriangles:
-				info.shadowTriangles === undefined
-					? null
-					: ((info.shadowTriangles as number) - s.shadowStart) / Math.max(1, counted),
+			shadowTriangles: median(s.shadow),
 			gpuMs: median(s.gpu),
 			frames: counted,
 		};
