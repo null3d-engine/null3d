@@ -230,6 +230,8 @@ export interface ArchivedPage extends PageFigures {
 	n?: number;
 	/** The quality presets that the null3D page's runs drew with. */
 	presets?: string[];
+	/** Why the null3D page's runs took their WebGPU draw path, as the engine reported it. */
+	drawPaths?: string[];
 	/** What the page's `?memory-figures` mode read, where a run asked for it. */
 	memory?: ArchivedMemory;
 	trace?: TraceSummary;
@@ -308,10 +310,14 @@ function againstLowest(
 	return { ...best, share: null3dMs / best.threeMs };
 }
 
-/** Facts of a page that the runs' summary leaves out: its object count, presets and memory. */
+/**
+ * Facts of a page that the runs' summary leaves out: its object count, presets, draw paths and
+ * memory.
+ */
 interface PageDetails {
 	n?: number;
 	presets?: string[];
+	drawPaths?: string[];
 	memory?: ArchivedMemory;
 }
 
@@ -320,6 +326,9 @@ export function pageDetails(results: readonly BenchResult[]): PageDetails {
 	const presets = [
 		...new Set(results.flatMap((result) => (result.mode?.preset ? [result.mode.preset] : []))),
 	];
+	const drawPaths = [
+		...new Set(results.flatMap((result) => (result.drawPath ? [result.drawPath] : []))),
+	];
 	const withMemory = results.find(
 		(result) => (result as BenchResult & { memory?: ArchivedMemory }).memory !== undefined,
 	) as (BenchResult & { memory?: ArchivedMemory }) | undefined;
@@ -327,6 +336,7 @@ export function pageDetails(results: readonly BenchResult[]): PageDetails {
 	return {
 		n: results[0]?.n,
 		...(presets.length > 0 && { presets }),
+		...(drawPaths.length > 0 && { drawPaths }),
 		...(memory !== undefined && { memory }),
 	};
 }

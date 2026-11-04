@@ -103,7 +103,7 @@ The engine reads what the device can do at startup and exposes it as `engine.cap
 
 ```ts
 engine.capabilities;
-// { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, maxInstances, depth, halfPrecision, directDraws }
+// { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, maxInstances, depth, halfPrecision, directDraws, drawPath }
 ```
 
 The `features` field lists the WebGPU adapter's optional features. On WebGL2 it lists the extensions that the engine asks for and the browser has. The `limits` field gives the WebGPU adapter's limits, and is empty on WebGL2. The engine acts on these tests:
@@ -115,7 +115,7 @@ The `features` field lists the WebGPU adapter's optional features. On WebGL2 it 
 - rendering into 16-bit and 32-bit float textures, and into the packed `R11F_G11F_B10F` format, on WebGL2 (`engine.report.webgl2.floatRenderTargets`)
 - transient attachments on WebGPU (`engine.report.webgpu.transientAttachments`)
 
-The engine also measures whether direct draws are clearly faster than its indirect draws. That is not a capability flag. `engine.capabilities.directDraws` reports the choice, and it is false on WebGL2, which always draws directly.
+On an Apple GPU in WebKit, the engine also measures whether direct draws are faster than its indirect draws. WebKit is the engine of Safari and of every browser on iPhone and iPad. It checks each indirect draw at a fixed cost, which direct draws do not pay. That is not a capability flag. The `directDraws` field reports the choice, and it is false on WebGL2, which always draws directly. The `drawPath` field says why the engine took its path. On other devices it is `not-apple-gpu-in-webkit`, since they skip the measurement.
 
 Where float targets take the anti-aliasing mode, the scene draws high dynamic range color, and the final pass tone maps it. That holds on core WebGPU and on WebGL2 devices that pass the float target test. It holds in compatibility mode with FXAA or none too. `hdr` says whether the engine took that path. [Color management](color-management.md) covers the 8-bit path of the other devices.
 
@@ -150,6 +150,8 @@ A 2018 iPad Pro on iPadOS 26 reports almost exactly WebGPU's default limits, whi
 ## Never branch on GPU names
 
 Some browsers hide the GPU's name. Firefox on macOS reports every adapter detail as empty, and Brave can hide them by design. A name also does not tell you which features the engine turned on. Read `engine.capabilities` instead.
+
+The engine itself reads a name only to work around a measured cost of one browser on one kind of GPU. The direct draw path is such a case. It runs only on an Apple GPU in WebKit, where the engine measures it faster. A noisy measurement on another device then cannot pick it.
 
 ## Devices with two GPUs
 

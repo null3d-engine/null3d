@@ -125,8 +125,9 @@ struct ViewCull {
     /// Each frame parity's chosen patch runs, by cluster bucket: each cluster bucket's first run,
     /// then one past the last.
     patch_starts: [Vec<u32>; 2],
-    /// Each frame parity's chosen patch runs, one first index and count each.
-    patch_runs: [Vec<[u32; 2]>; 2],
+    /// Each frame parity's chosen patch runs, one first index and count each. They are pairs, so
+    /// their sort shares the core's one copy of the pairs' sort with the layouts.
+    patch_runs: [Vec<(u32, u32)>; 2],
     /// The camera's own view's counts of what each mesh's pieces drew, in the frame that culled
     /// last. Every other view has none.
     piece_counts: Vec<PieceCount>,
@@ -363,7 +364,7 @@ impl ViewCull {
                     self.frame.as_ref().map(|frame| &frame.frustum),
                     |patch| {
                         if let Some((start, count)) = tree.run(patch) {
-                            patch_runs.push([start, count]);
+                            patch_runs.push((start, count));
                         }
                     },
                 );
@@ -373,10 +374,10 @@ impl ViewCull {
                     let run = patch_runs[read];
                     let joint = write > first && {
                         let before = patch_runs[write - 1];
-                        before[0] + before[1] == run[0]
+                        before.0 + before.1 == run.0
                     };
                     if joint {
-                        patch_runs[write - 1][1] += run[1];
+                        patch_runs[write - 1].1 += run.1;
                     } else {
                         patch_runs[write] = run;
                         write += 1;
