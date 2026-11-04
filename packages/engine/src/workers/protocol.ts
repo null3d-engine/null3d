@@ -64,6 +64,8 @@ export interface RendererSetup extends FramePacing {
 	hold?: boolean;
 	/** How ?gl-timing asks the WebGL2 path to time each WebGL call for a benchmark page. */
 	glTiming?: GlTimingMode;
+	/** `every` for ?gpu-samples, which times every drawn frame rather than one in eleven. */
+	gpuSamples?: 'every';
 	/** The features whose shader files load before the first frame, as `createEngine` lists them. */
 	preload?: readonly string[];
 	/**
@@ -71,6 +73,11 @@ export interface RendererSetup extends FramePacing {
 	 * narrowed shader set lists, through the `?permutations=record` switch.
 	 */
 	recordPermutations?: boolean;
+	/**
+	 * The steps of each ray of the sky's volumetric cloud tier at the page's start: above 0, the
+	 * thread that draws loads the tier's shaders with the first generator that it runs.
+	 */
+	cloudSteps?: number;
 }
 
 export type SketchWorkerInit = CoreHandoff & {

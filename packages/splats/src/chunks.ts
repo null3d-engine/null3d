@@ -6,6 +6,7 @@
 // The cut follows a grid in space, so a chunk holds nearby splats. That keeps a chunk's depth
 // spread small, which is what makes one distance stand for all of its splats, and it gives the
 // budget a set of independent pieces to leave out when a scene has more splats than draw.
+import { coverageShares } from './coverage';
 import type { SplatData } from './format';
 
 /**
@@ -37,6 +38,12 @@ export interface SplatChunk {
 	readonly scales: Float32Array;
 	/** Linear RGBA colors, 4 floats each. */
 	readonly colors: Float32Array;
+	/**
+	 * The share of the chunk's surface that its first splats cover: index 0 is the whole chunk,
+	 * and each next index keeps a prefix the square root of two times shorter. A coarse level grows
+	 * its splats by what its prefix leaves uncovered.
+	 */
+	readonly coverage: Float32Array;
 }
 
 /**
@@ -220,16 +227,10 @@ function buildChunk(
 	radius: number,
 ): SplatChunk {
 	const count = which.length;
+	// A splat's importance is the surface that it covers. A scan's splats are mostly flat discs
+	// whose thickness says nothing of the surface, so their volume would rank them almost at random.
 	const weight = new Float32Array(count);
-	for (let k = 0; k < count; k++) {
-		const i = which[k] as number;
-		const volume =
-			(data.scales[i * 3] as number) *
-			(data.scales[i * 3 + 1] as number) *
-			(data.scales[i * 3 + 2] as number);
-		// A splat's importance is the surface that it covers, so its volume, weighted by its opacity.
-		weight[k] = volume * Math.max(data.colors[i * 4 + 3] as number, 0);
-	}
+	for (let k = 0; k < count; k++) weight[k] = coverOf(data.scales, data.colors, which[k] as number);
 	const order = new Uint32Array(count);
 	for (let k = 0; k < count; k++) order[k] = k;
 	order.sort((a, b) => (weight[b] as number) - (weight[a] as number));
@@ -244,5 +245,17 @@ function buildChunk(
 		scales.set(data.scales.subarray(i * 3, i * 3 + 3), k * 3);
 		colors.set(data.colors.subarray(i * 4, i * 4 + 4), k * 4);
 	}
-	return { center, radius, count, positions, rotations, scales, colors };
+	const coverage = coverageShares(positions, rotations, scales, colors, count, center, radius);
+	return { center, radius, count, positions, rotations, scales, colors, coverage };
+}
+
+/**
+ * The surface that splat `i` covers: its opacity times the area of its largest cross-section, the
+ * product of its two largest spreads.
+ */
+function coverOf(scales: Float32Array, colors: Float32Array, i: number): number {
+	const a = scales[i * 3] as number;
+	const b = scales[i * 3 + 1] as number;
+	const c = scales[i * 3 + 2] as number;
+	return Math.max(a * b, b * c, a * c) * Math.max(colors[i * 4 + 3] as number, 0);
 }

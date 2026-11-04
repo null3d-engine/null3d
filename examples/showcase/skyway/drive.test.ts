@@ -5,6 +5,7 @@ import {
 	CEILING,
 	CHASE_DISTANCE,
 	CHASE_TILT,
+	type ChaseView,
 	CLEARANCE,
 	cityTowers,
 	clearSight,
@@ -224,7 +225,19 @@ function settle(
 	car: Flight = flight(),
 ): Flight {
 	for (let k = 0; k < frames; k++)
-		settleSight(sight, car.x, car.y, car.z, BEHIND, CHASE_TILT, CHASE_DISTANCE, towers, FRAME, aim);
+		settleSight(
+			sight,
+			car.x,
+			car.y,
+			car.z,
+			BEHIND,
+			BEHIND,
+			CHASE_TILT,
+			CHASE_DISTANCE,
+			towers,
+			FRAME,
+			aim,
+		);
 	return aim;
 }
 
@@ -298,7 +311,7 @@ test('a changed tower moves the distance no faster than the pull', () => {
 	const step = (towers: Float32Array, frames: number): void => {
 		for (let k = 0; k < frames; k++) {
 			car.x += SPEED * FRAME;
-			settleSight(sight, car.x, car.y, car.z, BEHIND, CHASE_TILT, ZOOM, towers, FRAME, aim);
+			settleSight(sight, car.x, car.y, car.z, BEHIND, BEHIND, CHASE_TILT, ZOOM, towers, FRAME, aim);
 		}
 	};
 	// The pull reaches the end of its travel behind the near tower.
@@ -345,7 +358,7 @@ test('a side swing at a wide zoom does not drop the camera', () => {
 		for (let k = 0; k < frames; k++) {
 			// The car creeps forward, so the tower stays inside the standoff for the whole swing.
 			car.z += CREEP * FRAME;
-			settleSight(sight, car.x, car.y, car.z, BEHIND, CHASE_TILT, ZOOM, towers, FRAME, aim);
+			settleSight(sight, car.x, car.y, car.z, BEHIND, BEHIND, CHASE_TILT, ZOOM, towers, FRAME, aim);
 		}
 	};
 	step(NONE, 30);
@@ -375,4 +388,128 @@ test('a tower dead behind the car finds a side that sees it', () => {
 	expect(sight.swing).toBeCloseTo(sight.goal, 6);
 	expect(sightBlocked([0, 50, 0], aim, towers, 0.6)).toBe(false);
 	expect(apart(aim, [0, 50, 0])).toBeGreaterThanOrEqual(SIGHT_MIN);
+});
+
+/**
+ * A tower that the camera's own turn swings into: it stands west of the car, which flies north
+ * along it seven meters clear.
+ */
+const BESIDE = new Float32Array([0, 0, 20, 90, 100]);
+const BESIDE_X = 20 + CLEARANCE + 7;
+/** How fast the drag turns the camera, in radians per second, and how fast the car flies, in
+ * meters per second. */
+const DRAG = 0.6;
+const LAPSE = 20;
+
+test('a turn that would put the camera in a tower is refused until the way is clear', () => {
+	const car = flight({ x: BESIDE_X, y: 50, z: 0, speed: LAPSE });
+	const sight = createSight(CHASE_DISTANCE);
+	const aim: Flight = { ...flight() };
+	let turn = 0;
+	/** Flies the car one frame and turns the camera's view by `drag` radians. */
+	const step = (drag: number): void => {
+		turn += drag;
+		car.z += LAPSE * FRAME;
+		settleSight(
+			sight,
+			car.x,
+			car.y,
+			car.z,
+			BEHIND + turn,
+			BEHIND,
+			CHASE_TILT,
+			CHASE_DISTANCE,
+			BESIDE,
+			FRAME,
+			aim,
+		);
+		// The camera stands clear of the tower on every frame: the keep-out moves nothing.
+		expect(keepOut({ ...aim }, BESIDE)).toBe(false);
+	};
+	for (let k = 0; k < 60; k++) step(0);
+	const behind = { x: aim.x - car.x, z: aim.z - car.z };
+	// The drag swings the camera toward the tower, and the camera follows while it can stand there.
+	for (let k = 0; k < 80; k++) step(DRAG * FRAME);
+	expect(aim.x - car.x).toBeLessThan(behind.x - 1);
+	// The camera meets the tower's face. The drag keeps turning, but the camera keeps the angle it
+	// could last stand at: its place round the car stops changing.
+	const met = { x: aim.x - car.x, z: aim.z - car.z };
+	let most = 0;
+	for (let k = 0; k < 90; k++) {
+		step(DRAG * FRAME);
+		most = Math.max(most, Math.hypot(aim.x - car.x - met.x, aim.z - car.z - met.z));
+	}
+	expect(most).toBeLessThan(1e-6);
+	// The camera stopped clear of the tower, rather than in it or sliding along it.
+	expect(aim.x).toBeGreaterThanOrEqual(20 + CLEARANCE - 1e-6);
+	expect(apart(aim, [car.x, car.y, car.z])).toBeGreaterThanOrEqual(SIGHT_MIN);
+	// The car flies past the tower, and the user lets go. The camera eases back to the view the
+	// user asked for, and never steps more than a metre and a half a frame on the way.
+	let was = { x: aim.x - car.x, z: aim.z - car.z };
+	let fastest = 0;
+	for (let k = 0; k < 240; k++) {
+		step(0);
+		fastest = Math.max(fastest, Math.hypot(aim.x - car.x - was.x, aim.z - car.z - was.z));
+		was = { x: aim.x - car.x, z: aim.z - car.z };
+	}
+	expect(fastest).toBeGreaterThan(0);
+	expect(fastest).toBeLessThan(1.5);
+	// The camera sits where the user's own turn asked, at the user's own distance.
+	expect(apart(aim, [car.x, car.y, car.z])).toBeCloseTo(CHASE_DISTANCE, 3);
+	expect(aim.x - car.x).toBeCloseTo(
+		Math.sin(BEHIND + turn) * Math.cos(CHASE_TILT) * CHASE_DISTANCE,
+		3,
+	);
+});
+
+test('the camera stays behind the car as the car turns', () => {
+	const car = flight({ x: 0, y: 50, z: 0, speed: LAPSE });
+	const view: ChaseView = { turn: 0, tilt: CHASE_TILT, distance: CHASE_DISTANCE };
+	const sight = createSight(CHASE_DISTANCE);
+	const aim: Flight = { ...flight() };
+	const keys = stick({ throttle: 1, steer: 1 });
+	// The car turns where no tower stands, so the turn is free.
+	for (let k = 0; k < 60; k++) {
+		fly(car, keys, FRAME, NONE, view);
+		settleSight(
+			sight,
+			car.x,
+			car.y,
+			car.z,
+			car.yaw + BEHIND,
+			car.yaw + BEHIND,
+			view.tilt,
+			view.distance,
+			NONE,
+			FRAME,
+			aim,
+		);
+	}
+	expect(car.yaw).toBeGreaterThan(0.4);
+	// The camera sits behind the car's own heading, not on a heading of its own.
+	const bearing = Math.atan2(aim.x - car.x, aim.z - car.z) - car.yaw - BEHIND;
+	expect(Math.atan2(Math.sin(bearing), Math.cos(bearing))).toBeCloseTo(0, 6);
+});
+
+test('a turn that would put the camera in a tower is refused by the car', () => {
+	const car = flight({ x: BESIDE_X, y: 50, z: 0, speed: LAPSE });
+	const view: ChaseView = { turn: 0.62, tilt: CHASE_TILT, distance: CHASE_DISTANCE };
+	const keys = stick({ throttle: 1, steer: 1 });
+	/** Flies the car one frame with the keys held. */
+	const step = (): void => fly(car, keys, FRAME, BESIDE, view);
+	// The drag holds the camera against the tower, and the keys ask the car to turn.
+	for (let k = 0; k < 30; k++) step();
+	const yaw = car.yaw;
+	const z = car.z;
+	for (let k = 0; k < 90; k++) {
+		step();
+		expect(car.yaw).toBe(yaw);
+	}
+	// The car keeps flying while its turn is refused.
+	expect(car.z).toBeGreaterThan(z + 20);
+	// The car passes the tower, and the turn applies again.
+	const cleared = car.z;
+	for (let k = 0; k < 180; k++) step();
+	expect(car.z).toBeGreaterThan(cleared + 20);
+	expect(car.yaw).toBeGreaterThan(yaw + 0.2);
 });

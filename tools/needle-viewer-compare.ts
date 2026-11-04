@@ -28,6 +28,7 @@ import { extname, join, resolve, sep } from 'node:path';
 import { launchChromium } from '../packages/cli/src/browser.js';
 import { compareImages, percent, TOLERANCE } from '../packages/cli/src/compare.js';
 import { decodePngRgba, writePng } from '../packages/cli/src/png.js';
+import { chromeForTesting } from '../tests/lib/chrome-for-testing.ts';
 
 /** The browser and page types that Playwright gives, without importing its module here. */
 type Browser = Awaited<ReturnType<typeof launchChromium>>;
@@ -372,7 +373,7 @@ async function main(): Promise<void> {
 		dev = options.dev
 			? { url: options.dev, stop: () => undefined }
 			: await startDev(DEFAULT_DEV_PORT);
-		browser = await launchChromium({ headless: true, channel: 'chrome' });
+		browser = await launchChromium({ headless: true, ...chromeForTesting() });
 		mkdirSync(options.out, { recursive: true });
 		const viewerUrl = `http://127.0.0.1:${viewerPort}/index.html`;
 		const viewer = await captureViewer(browser, viewerUrl);

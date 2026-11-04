@@ -503,11 +503,25 @@ Run it after you upgrade the engine alone, or when a page stops with [E1432](../
 
 ## Where the commands draw
 
-`shot`, `test` and `bench` draw with Google Chrome on your computer's GPU. When the `CI` variable is set, they draw with Playwright's Chromium on SwiftShader, a GPU in software. Most CI machines have no GPU. Set `CI=1` to draw the software GPU's images on your own computer:
+`shot`, `test` and `bench` draw with Chrome for Testing on your computer's GPU. When the `CI` variable is set, they draw with Playwright's Chromium on SwiftShader, a GPU in software. Most CI machines have no GPU. Set `CI=1` to draw the software GPU's images on your own computer:
 
 ```sh
 CI=1 bunx @null3d/cli shot --out ci-shot.png
 CI=1 bunx @null3d/cli test --update-references
 ```
 
-The two draw the edges of objects a little differently, so keep reference images for each. When a browser is missing, the command prints the command that installs it.
+The two draw the edges of objects a little differently, so keep reference images for each. When Playwright's Chromium is missing, the command prints the command that installs it.
+
+### Chrome for Testing
+
+Chrome for Testing is Google's build of Chrome for automated runs. The tool pins one version of it on every platform. So a reference image drawn on one computer matches another's. A release of the tool may move the pin to a newer Chrome, and its notes say so when pages draw differently.
+
+- **First use.** The first command that draws downloads the pinned build for your platform, about 200 MB. It prints what it downloads and how far it has got. Later commands reuse it.
+- **Where it lives.** `null3d/chrome-for-testing/<version>` under `$XDG_CACHE_HOME` when that is set, or under `~/.cache`. Every project on the computer shares it. Delete the folder to download it again.
+- **Why not Google Chrome.** On macOS, Google Chrome makes keys in the keychain each time it starts. It keeps them when it closes early, as a headless run often does. Many runs fill the keychain and slow its service down. Chrome for Testing has no access to the keychain.
+- **When the download fails.** The command draws with your installed Google Chrome instead. It warns that this may leave keys in the keychain on macOS. Its pictures can differ a little from the references when its version differs.
+- **Choosing the browser.** `NULL3D_CHROME=installed` draws with the installed Google Chrome every time. `NULL3D_CHROME=testing` draws with Chrome for Testing alone, and fails instead of falling back:
+
+```sh
+NULL3D_CHROME=installed bunx @null3d/cli shot
+```

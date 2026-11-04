@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GPU_TIMING_ARGS } from '../packages/cli/src/browser.js';
 import { displayRateCheck, launchInWindow, newParkedPage } from './lib/app-window.ts';
+import { chromeForTesting } from './lib/chrome-for-testing.ts';
 import { waitForQuietLoad } from './lib/cost-runs.ts';
 import { pageResult } from './lib/page-result.ts';
 import { startServerAt } from './lib/server.ts';
@@ -88,7 +89,7 @@ const OUT = join(ROOT, 'target/shadow-cache', stamp);
 mkdirSync(OUT, { recursive: true });
 
 const server = await startServerAt(ROOT, PORT);
-const browser = await launchInWindow({ channel: 'chrome', args: [...GPU_TIMING_ARGS] });
+const browser = await launchInWindow({ ...chromeForTesting(), args: [...GPU_TIMING_ARGS] });
 const sides = [
 	{ name: 'all casters', query: '&cascade-probe' },
 	// The same side again in the same round, so the spread between the two readings is the

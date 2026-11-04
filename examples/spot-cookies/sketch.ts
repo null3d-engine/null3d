@@ -23,7 +23,7 @@ export default defineSketch((ctx) => {
 	const camera = scene.createPerspectiveCamera({ fov: 45, position: [0, 2.4, 6], near: 0.1 });
 	camera.lookAt(...TARGET);
 	scene.setActiveCamera(camera);
-	interact(ctx, camera, { target: TARGET, groundY: 0 });
+	const view = interact(ctx, camera, { target: TARGET, groundY: 0 });
 
 	// The hall: a polished stone floor, a tall back wall and a side wall, in warm greys.
 	const floorStone = materials.standard({ color: '#6a655f', roughness: 0.15, metalness: 0.15 });
@@ -100,4 +100,10 @@ export default defineSketch((ctx) => {
 		position: [0, 1.6, 0],
 		blend: 1.5,
 	});
+
+	return {
+		onUpdate(dt) {
+			view.update(dt);
+		},
+	};
 });

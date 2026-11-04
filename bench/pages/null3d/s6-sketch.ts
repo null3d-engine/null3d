@@ -55,7 +55,7 @@ import {
 	s6PartTransform,
 } from '../../scenes/s6';
 import { loadedBytes, S6_KIT_URL, S6_TOWERS_URL } from '../lib/s6-city';
-import { followPath, readCount, readGovernor, watchQuality } from './sketch-common';
+import { applyQualitySwitches, followPath, readCount, watchQuality } from './sketch-common';
 
 /** Objects that a frame creates at most while the city streams in. */
 const CREATED_PER_FRAME = 3_000;
@@ -69,7 +69,7 @@ export default defineSketch(async (context) => {
 	const seconds = () => (performance.now() - started) / 1000;
 
 	post.set({ toneMapping: 'aces', bloom: S6_BLOOM, ao: S6_AO });
-	quality.set({ governor: readGovernor(import.meta.url) });
+	applyQualitySwitches(quality, import.meta.url);
 	const reportQuality = watchQuality(context);
 	scene.setBackground(S6_BACKGROUND);
 	const { sun, ambient } = S6_VIEW_LIGHTS;

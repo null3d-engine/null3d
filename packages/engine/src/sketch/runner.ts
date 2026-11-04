@@ -26,7 +26,9 @@ import { coreFailure, QUEUED_CHANGE } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import {
+	ANTIALIAS_FXAA,
 	ANTIALIAS_MSAA,
+	ANTIALIAS_NONE,
 	CORE_NOT_COUNTED,
 	LIGHT_VALUE_HERO_SIZE,
 	LIGHT_VALUE_SHADOW_CASCADES,
@@ -450,6 +452,8 @@ export class SketchRunner {
 	 * started on the 8-bit path.
 	 */
 	private hdrForEffects = false;
+	/** The anti-aliasing mode that the device draws with now, which is at most the start's. */
+	private canvasAntialias = 0;
 	/** True while the scene's fog is volumetric, as the governor knows it. */
 	private fogOn = false;
 	/** The volumetric fog's slices that the `fogSlices` setting gives. */
@@ -507,6 +511,7 @@ export class SketchRunner {
 		);
 		const { glue, device } = sketch;
 		const { slots } = sketch.control;
+		this.canvasAntialias = device.antialias;
 		glue.setMemoryMaximum(device.memoryMaximumMiB ?? 0);
 		const status = glue.initEngine(
 			sketch.jobWorkers,
@@ -1060,6 +1065,7 @@ export class SketchRunner {
 	 * passes that play draws the range with.
 	 */
 	private applyFrameSettings(settings: QualitySettings): void {
+		this.followAntialias(settings);
 		const low = thousandths(settings.minRenderScale);
 		const high = thousandths(settings.maxRenderScale);
 		this.heldScale = high;
@@ -1105,11 +1111,34 @@ export class SketchRunner {
 			glue.setLightFit(settings.lightFit ? 1 : 0) !== 0 ||
 			this.setLevelQuality() !== 0 ||
 			glue.setPhysicalSky(settings.physicalSky) !== 0 ||
+			glue.setCloudSteps(settings.cloudSteps) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0 ||
 			glue.setParallax(settings.parallax) !== 0 ||
 			glue.setMomentTransparency(settings.momentTransparency) !== 0 ||
 			glue.setSoftParticles(settings.softParticles) !== 0
 		)
+			this.report(coreFailure(glue, 'quality.set'));
+	}
+
+	/**
+	 * Moves the canvas to a lighter anti-aliasing mode that a preset asks for. A device fixes its
+	 * mode when it starts, so a lower preset keeps the start's MSAA unless the canvas moves: the
+	 * preset check lowers a tablet from Medium to Low that way, and MSAA draws the low preset at
+	 * twice the cost of its own FXAA. The scene colour draws with either mode, and the frame's
+	 * passes and pipelines follow the change. No mode heavier than the start's can begin.
+	 */
+	private followAntialias(settings: QualitySettings): void {
+		const wanted =
+			settings.antialias === 'msaa'
+				? ANTIALIAS_MSAA
+				: settings.antialias === 'fxaa'
+					? ANTIALIAS_FXAA
+					: ANTIALIAS_NONE;
+		if (wanted === this.canvasAntialias || wanted === ANTIALIAS_MSAA) return;
+		const { device, glue } = this.sketch;
+		this.canvasAntialias = wanted;
+		this.preloads.setUsable('coverage', false);
+		if (glue.setCanvasOutput(device.sceneColor, wanted) !== 0)
 			this.report(coreFailure(glue, 'quality.set'));
 	}
 
@@ -1319,6 +1348,7 @@ export class SketchRunner {
 		let cursor = 0;
 		let frame = 0;
 		let first = 0;
+		let held = 0;
 		this.holding = true;
 		this.time.held = true;
 		this.recorded.held = true;
@@ -1358,6 +1388,7 @@ export class SketchRunner {
 			// capture views take one probe a frame, so a second frame at the same time captures the
 			// next. A light's picture copied from a texture shows from the frame after the copy, so
 			// that frame draws the picture too. The thread that draws keeps two frames' lists.
+			held = frame;
 			Atomics.store(slots, Slot.HeldFrom, frame);
 			// A task that the sketch queued in a frame answers between frames, so the last frame that
 			// the loop ran may have drawn what the task had not yet written. Once the tasks settle, one
@@ -1370,7 +1401,10 @@ export class SketchRunner {
 			) {
 				if (tasksPending() > 0) await this.settleTasks();
 				this.clock.holdStep(steps, steps, seconds);
-				frame = this.frame();
+				// The settle frame draws what the held frame prepared, such as the light that a pass
+				// reads from the frame before. It is no frame of the session, so the sketch's code
+				// does not run again and the held frame keeps its numbers.
+				frame = this.frame(false);
 			}
 		} catch (error) {
 			// The message alone rarely says where the frame stopped, so name the phase that finished
@@ -1387,6 +1421,7 @@ export class SketchRunner {
 			this.recorded.held = false;
 		}
 		if (script !== undefined) this.scriptResult = { dumps, problems };
+		Atomics.store(slots, Slot.HeldFrame, held);
 		Atomics.store(slots, Slot.HeldFrom, first);
 		Atomics.store(slots, Slot.FramesPublished, frame);
 		Atomics.notify(slots, Slot.FramesPublished);
@@ -1463,6 +1498,7 @@ export class SketchRunner {
 		this.replaying = true;
 		let first = 0;
 		let frame = 0;
+		let held = 0;
 		let now = 0;
 		try {
 			for (let at = 0; at < frames; at++) {
@@ -1487,6 +1523,7 @@ export class SketchRunner {
 				frame = this.frame();
 				if (first === 0 && (before || at === frames - 1)) first = frame;
 			}
+			held = frame;
 			Atomics.store(slots, Slot.HeldFrom, frame);
 			if (
 				glue.readsLastFrame() !== 0 ||
@@ -1496,7 +1533,10 @@ export class SketchRunner {
 			) {
 				if (tasksPending() > 0) await this.settleTasks();
 				this.clock.replayStep(now, 0);
-				frame = this.frame();
+				// The settle frame draws what the recording's last frame prepared, such as a
+				// light's copied picture. It is no frame of the session, so the sketch's code does
+				// not run again and the replay gives the recording's frames, no more.
+				frame = this.frame(false);
 			}
 		} catch (error) {
 			if (error instanceof EngineError && error.code === 'E1435') throw error;
@@ -1513,6 +1553,7 @@ export class SketchRunner {
 			sketch: program.sketch,
 			stopped: program.stopped,
 		};
+		Atomics.store(slots, Slot.HeldFrame, held);
 		Atomics.store(slots, Slot.HeldFrom, first);
 		Atomics.store(slots, Slot.FramesPublished, frame);
 		Atomics.notify(slots, Slot.FramesPublished);

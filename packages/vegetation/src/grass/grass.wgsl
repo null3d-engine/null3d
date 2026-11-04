@@ -4,7 +4,7 @@
 // still field draws stands still.
 
 // The wind's swirl reads the engine's value noise, as the leaf material's copy of the block does.
-#import null3d::noise::{value3}
+#import null3d::noise::{pcg, value3}
 
 struct Uniforms {
     // The field's box across the ground, in meters, and how strong the air is: 1 for a field, 0
@@ -15,6 +15,10 @@ struct Uniforms {
     windLayer: f32,
     // How far the air's speed bends a blade at its tip, in meters a second.
     sway: f32,
+    // The distance from the camera out to which the blades sway, in meters: 0 for every distance.
+    swayDistance: f32,
+    // 1 draws the far share and widens its blades, as the compute path does; 0 draws every tuft.
+    cull: f32,
 }
 
 var wind: texture_2d_array<f32>;
@@ -201,48 +205,121 @@ fn wind_sample(world: vec3f, origin: vec2f, size: f32, layer: i32, air: WindAir)
 }
 // </wind-sample>
 
+// <tuft-density>
+/// The share of a tuft that the far ground draws, from all of it near the camera to this share far
+/// from it, and the distances where the share falls. A tuft's place keeps one share, and its
+/// blades widen by the inverse, so the hill's cover stays the same.
+const DENSITY_FAR: f32 = 0.25;
+const DENSITY_START: f32 = 10.0;
+const DENSITY_END: f32 = 25.59;
+
+/// A value from 0 up to 1 from a tuft's root place, the same on every device.
+fn tuft_hash(place: vec3f) -> f32 {
+    let x = bitcast<u32>(i32(round(place.x * 8.0)));
+    let z = bitcast<u32>(i32(round(place.z * 8.0)));
+    return f32(pcg(x ^ pcg(z ^ 0x9e3779b9u))) / 4294967295.0;
+}
+
+/// The share of the tufts that draw at a root's place: all of them near the camera, and the far
+/// share at the fade's end.
+fn tuft_density(place: vec3f, eye: vec3f) -> f32 {
+    return mix(1.0, DENSITY_FAR, smoothstep(DENSITY_START, DENSITY_END, length(place - eye)));
+}
+
+/// True when a tuft at `place` draws, from its hash against the share at its distance.
+fn tuft_kept(place: vec3f, eye: vec3f) -> bool {
+    return tuft_hash(place) < tuft_density(place, eye);
+}
+// </tuft-density>
+
+/// A tuft's reach from its root, in meters: the farthest that a blade of the biggest tuft lies from
+/// the root, which a view's edge test keeps wholly.
+const TUFT_REACH: f32 = 1.0;
+
 fn vertexOffset(input: VertexInput) -> vec3f {
-    if (material.windStrength <= 0.0) {
-        return vec3f(0.0);
+    let root = object.position;
+    // A far tuft draws a share of the time. The tufts that the share leaves out collapse to their
+    // root, so WebGL2's batch draws the same hill that the compute list builds.
+    var width = 1.0;
+    if (material.cull > 0.5) {
+        if (!tuft_kept(root, camera.position)) {
+            return -input.position;
+        }
+        // A view draws only the tufts inside its own box: the camera's view its frustum, and a
+        // light's view its cascade, whose box reaches toward the light over the casters. The root
+        // and a point a tuft's reach away go through the view's matrix, so the margin that the
+        // blades need comes from the view's own scale. The instance's row holds the root relative
+        // to the camera, which is the space that the matrix takes.
+        let relative = object.worldMatrix[3].xyz;
+        let clip = engine_frame.view_proj * vec4f(relative, 1.0);
+        let above = engine_frame.view_proj * vec4f(relative + vec3f(0.0, TUFT_REACH, 0.0), 1.0);
+        let across = engine_frame.view_proj * vec4f(relative + vec3f(TUFT_REACH, 0.0, 0.0), 1.0);
+        let reach = max(
+            max(abs(above.x - clip.x), abs(above.y - clip.y)),
+            max(abs(across.x - clip.x), abs(across.y - clip.y)),
+        );
+        if (clip.w <= 0.0
+            || clip.x < -clip.w - reach || clip.x > clip.w + reach
+            || clip.y < -clip.w - reach || clip.y > clip.w + reach) {
+            return -input.position;
+        }
+        width = 1.0 / tuft_density(root, camera.position);
     }
-    // The air at the blade's root: the field's grid where it covers the root, and its steady
-    // field beyond the box.
-    let base = textureLoad(airSettings, vec2i(0, 0), 0);
-    let gust = textureLoad(airSettings, vec2i(1, 0), 0);
-    let swirl = textureLoad(airSettings, vec2i(2, 0), 0);
-    let sent = textureLoad(airSettings, vec2i(3, 0), 0);
-    let reading = wind_reading(base, gust, swirl, sent, frame.time);
-    let place = (object.worldMatrix * vec4f(input.position, 1.0)).xyz + camera.position;
-    let at = wind_sample(
-        place,
-        camera.position.xz - vec2f(material.windBox * 0.5),
-        material.windBox,
-        i32(material.windLayer),
-        reading,
-    );
-    let across = vec2f(at.x, at.z);
-    let speed = at.a;
-    if (speed <= 0.0) {
-        return vec3f(0.0);
+    var offset = vec3f(0.0);
+    if (material.windStrength > 0.0) {
+        // The air at the blade's root: the field's grid where it covers the root, and its steady
+        // field beyond the box.
+        let base = textureLoad(airSettings, vec2i(0, 0), 0);
+        let gust = textureLoad(airSettings, vec2i(1, 0), 0);
+        let swirl = textureLoad(airSettings, vec2i(2, 0), 0);
+        let sent = textureLoad(airSettings, vec2i(3, 0), 0);
+        let reading = wind_reading(base, gust, swirl, sent, frame.time);
+        let place = (object.worldMatrix * vec4f(input.position, 1.0)).xyz + camera.position;
+        let at = wind_sample(
+            place,
+            camera.position.xz - vec2f(material.windBox * 0.5),
+            material.windBox,
+            i32(material.windLayer),
+            reading,
+        );
+        let across = vec2f(at.x, at.z);
+        let speed = at.a;
+        // The air's direction in the tuft's own space, so a turned tuft bends downwind.
+        let local = object.normalMatrix * vec3f(across.x, 0.0, across.y);
+        let reach = length(local);
+        if (speed > 0.0 && reach > 0.00001) {
+            let downwind = local / reach;
+            // The blade bends most at its tip, and the air's speed sets how far.
+            var bend = input.uv.y * input.uv.y * material.sway * speed;
+            // The tuft's whole crown fades with its origin's distance from the camera, so a tuft
+            // past the sway distance stands still and its shadow keeps the layer that a far
+            // cascade cached.
+            if (material.swayDistance > 0.0) {
+                let away = length(root - camera.position);
+                bend *= 1.0 - smoothstep(material.swayDistance * 0.8, material.swayDistance, away);
+            }
+            if (bend > 0.0) {
+                offset = vec3f(downwind.x * bend, -0.4 * bend * bend, downwind.z * bend);
+            }
+        }
     }
-    // The air's direction in the tuft's own space, so a turned tuft bends downwind.
-    let local = object.normalMatrix * vec3f(across.x, 0.0, across.y);
-    let reach = length(local);
-    if (reach <= 0.00001) {
-        return vec3f(0.0);
+    // Widen the strip about its radial centerline, so the far share covers the ground that the
+    // tufts it leaves out would have covered.
+    if (width > 1.0) {
+        let radial = normalize(input.position.xz);
+        let side = input.position.xz - radial * dot(input.position.xz, radial);
+        offset.x += side.x * (width - 1.0);
+        offset.z += side.y * (width - 1.0);
     }
-    let downwind = local / reach;
-    // The blade bends most at its tip, and the air's speed sets how far.
-    let bend = input.uv.y * input.uv.y * material.sway * speed;
-    return vec3f(downwind.x * bend, -0.4 * bend * bend, downwind.z * bend);
+    return offset;
 }
 
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
-    let traits = object.values;
+    let tint = tuft_hash(object.position);
     // A share of the tufts dry toward their tips, and each tuft's green differs a little.
-    let dry = smoothstep(0.62, 1.0, traits.y) * input.uv.y;
-    s.baseColor *= mix(vec3f(0.8 + 0.4 * traits.y), vec3f(1.7, 1.3, 0.45), dry);
+    let dry = smoothstep(0.62, 1.0, tint) * input.uv.y;
+    s.baseColor *= mix(vec3f(0.8 + 0.4 * tint), vec3f(1.7, 1.3, 0.45), dry);
     // Both faces light as the upper face, since the blades' normals lean up.
     s.normal = select(input.normal, -input.normal, input.normal.y < 0.0);
     return s;

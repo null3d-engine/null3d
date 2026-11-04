@@ -444,7 +444,7 @@ A pass of several layers draws each layer in a pass of its own. `input.layer` gi
 
 ### Switching and removing passes
 
-- `render.setPassEnabled(pass, false)` stops a pass from the next frame on. Its texture keeps the last image that it drew. Switching a pass marks the render graph for a compile, so a sketch switches a pass when a feature starts or stops, rather than to slow it down.
+- `render.setPassEnabled(pass, false)` stops a pass from the next frame on. Its texture keeps the last image that it drew. A pass that has never drawn is out of the plan while it is off, so switching it on compiles the render graph. Once a pass has drawn, its passes stay in the plan while it is off, so the switch compiles nothing. Switch a pass when a feature starts or stops, and pace it with `render.setPassEvery`.
 - `render.setPassEvery(pass, every)` makes a pass draw in one frame of every `every`, from the next frame on, and its texture keeps the last image that it drew in between. It compiles nothing, so a sketch may change the cadence whenever the quality preset or the frame budget moves, as often as once a frame. A cadence of 1 draws every frame. The call allocates nothing.
 - `render.removePass(pass)` removes a pass and destroys the textures that `textures.fromPass` made of it.
 - `pass.live` is false after `removePass`, and `pass.enabled` gives the switch.

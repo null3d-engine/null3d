@@ -15,10 +15,11 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { applyPalette, GIFEncoder, quantize } from 'gifenc';
-import { defaultEnvironment, launchBrowser } from '../packages/cli/src/browser.js';
+import { defaultEnvironment } from '../packages/cli/src/browser.js';
+import { launchRepoBrowser } from '../tests/lib/chrome-for-testing.ts';
 
 /** The page type of the browser that the pictures are drawn in. */
-type BrowserPage = Awaited<ReturnType<Awaited<ReturnType<typeof launchBrowser>>['newPage']>>;
+type BrowserPage = Awaited<ReturnType<Awaited<ReturnType<typeof launchRepoBrowser>>['newPage']>>;
 
 /** The longest run of one pose that a clip may hold, in seconds: a tenth of a second. */
 const STILL_LIMIT_SECONDS = 0.1;
@@ -139,7 +140,7 @@ async function main(): Promise<void> {
 		`/tests/pages/sketches/tree-review-sketch.ts?species=${species}` +
 		`&view=${view}&seed=${seed}&variant=${variant}&turn=${turn}&wind=${wind}`;
 	const base = `http://localhost:${process.env.NULL3D_PORT ?? '6173'}`;
-	const browser = await launchBrowser(defaultEnvironment());
+	const browser = await launchRepoBrowser(defaultEnvironment());
 	const captured: Frame[] = [];
 	try {
 		const page = await browser.newPage({ viewport: { width: 768, height: 1024 } });

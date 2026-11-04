@@ -7,8 +7,12 @@
 // the left and green light at the right, and the room's corners darken. ?off draws the same room without the grid. ?mirror lays a mirror on the
 // floor in front of the spheres, which a reflection pass fills: the reflected spheres must take the
 // grid's light of their own place, as the spheres above the mirror do, not that of a place below
-// the floor.
-import { bakeProbes, defineSketch, type QueryTarget } from '@null3d/engine';
+// the floor. ?wall puts a partition in the room, thick enough to hold a row of probes, whose light
+// the validity mask stops; ?wall-leak draws the same bake with every probe valid, which shows the
+// leak beside it; and ?wall-night turns the environment after the bake, which must light the grid
+// again with no new bake.
+import { bakeProbes, defineSketch, LightProbeGridData, type QueryTarget } from '@null3d/engine';
+import { applySketchSwitches } from '../lib/sketch-switches';
 
 const params = new URL(import.meta.url).searchParams;
 
@@ -28,7 +32,9 @@ fn surface(input: SurfaceInput) -> Surface {
 
 type Colour = readonly [number, number, number];
 
-export default defineSketch(async ({ scene, assets, materials, geometry, textures, render }) => {
+export default defineSketch(async (context) => {
+	const { scene, assets, materials, geometry, textures, render, quality } = context;
+	applySketchSwitches(import.meta.url, quality);
 	const environment = await assets.builtinEnvironment('room');
 	scene.setEnvironment(environment);
 	scene.setBackground('#20242c');
@@ -86,12 +92,40 @@ export default defineSketch(async ({ scene, assets, materials, geometry, texture
 	}
 
 	if (params.has('off')) return {};
-	const grid = bakeProbes(scene, {
+	// A wall thick enough to hold the row of probes along z, whose light the validity mask stops:
+	// ?wall draws it, and ?wall-night turns the environment after the bake to show that the sky
+	// needs no new one.
+	const wall = params.has('wall') || params.has('wall-leak') || params.has('wall-night');
+	if (wall) {
+		// Behind the spheres, so it holds the row of probes at z = -1.9 without meeting them.
+		surface([0.75, 0.72, 0.68], [4.4, 3, 1.2], [-0.8, 1.5, -2.3]);
+		scene.setActiveCamera(
+			scene.createPerspectiveCamera({
+				fov: 55,
+				position: [1.9, 2.3, 2.6],
+				target: [-1.4, 0.9, -2.0],
+			}),
+		);
+	}
+	const baked = bakeProbes(scene, {
 		box: { min: [-2.9, 0.1, -2.9], max: [2.9, 2.9, 2.9] },
 		spacing: 1,
 		environment,
 		albedo: (object) => (object ? colours.get(object) : undefined),
 	}).finish();
+	// ?wall-leak draws the same bake with every probe valid, which is the leak that the mask stops.
+	const grid = params.has('wall-leak')
+		? new LightProbeGridData(
+				baked.origin,
+				baked.spacing,
+				baked.counts,
+				baked.coefficients,
+				new Float32Array(baked.validity.length).fill(1),
+				baked.skyVisibility,
+			)
+		: baked;
+	if (params.has('wall-night'))
+		scene.setEnvironment(environment, { rotation: [0, Math.PI / 2, 0], intensity: 0.25 });
 	scene.setLightProbeGrid({
 		texture: grid.toTexture(textures),
 		origin: grid.origin,

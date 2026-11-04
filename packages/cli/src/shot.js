@@ -60,8 +60,8 @@ Options:
                             recording holds each frame's step and the input that the sketch read,
                             so it draws the same frames that its session drew
 
-It draws with Google Chrome on this computer's GPU. When the CI variable is set, it draws with
-Playwright's Chromium on SwiftShader, the software GPU of machines without a GPU.`;
+It draws with Chrome for Testing on this computer's GPU, and downloads it on first use. When the CI
+variable is set, it draws with Playwright's Chromium on SwiftShader, the software GPU of machines without a GPU.`;
 
 /**
  * @typedef {object} ShotOptions

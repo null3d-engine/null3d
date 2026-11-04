@@ -44,7 +44,7 @@ The WGSL can declare uniforms as `struct Uniforms`, which `set()` changes at any
 
 ## Full shaders
 
-A full shader draws a custom material with WGSL of your own from end to end: a `@vertex` and a `@fragment` entry point. Use it for a look that the engine's lighting cannot give, such as a hologram. The engine gives a full shader its meshes, its instances and the frame's values, but no lighting, shadows or fog.
+A full shader draws a custom material with WGSL of your own from end to end: a `@vertex` and a `@fragment` entry point. Use it for a look that the engine's lighting cannot give, such as a hologram. The engine gives a full shader its meshes, its instances and the frame's values, but no lighting, shadows or fog. A surface that only shows its own color keeps a custom material's uniforms, textures and scene depth with an [unlit function](../shaders/surface-functions.md#unlit-surfaces) instead.
 
 ```ts
 // sketch.ts

@@ -67,7 +67,8 @@
 //   --dev             the dev server's pages, where the engine runs its development checks,
 //                     instead of the production build; with --compare, each checkout's dev server
 //                     serves its own pages
-//   --browser <name>  chrome (the default), brave, or chromium: Playwright's Chromium without a
+//   --browser <name>  chrome (the default), the pinned Chrome for Testing of
+//                     tests/lib/chrome-for-testing.ts; brave; or chromium: Playwright's Chromium without a
 //                     window, drawing with SwiftShader as CI's Linux machines do
 //   --switches <q>    page switches that every page gets, such as shadows=3: S2 with the sun's
 //                     shadows in 3 cascades on null3d, and in one map on three.js
@@ -83,6 +84,7 @@ import type { Browser } from '@playwright/test';
 import { GPU_TIMING_ARGS, launchChromium, SWIFTSHADER_ARGS } from '../packages/cli/src/browser.js';
 import { RUNS } from '../packages/cli/src/protocol.js';
 import { displayRateCheck, launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
+import { chromeForTesting } from '../tests/lib/chrome-for-testing.ts';
 import { jobWorkersProblem } from '../tests/lib/engine-checks.ts';
 import { pageResult, watchPageProblems } from '../tests/lib/page-result.ts';
 import { readShard, runName, SHARD_FORMAT, type Shard } from '../tests/lib/runs.ts';
@@ -351,7 +353,7 @@ function launchBrowser(name: BenchOptions['browser'], uncapped: boolean): Promis
 	if (name === 'chromium')
 		return launchChromium({ headless: true, args: [...SWIFTSHADER_ARGS, ...args] });
 	return launchInWindow({
-		...(name === 'brave' ? { executablePath: BRAVE } : { channel: 'chrome' }),
+		...(name === 'brave' ? { executablePath: BRAVE } : chromeForTesting()),
 		args,
 	});
 }
