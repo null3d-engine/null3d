@@ -6,6 +6,9 @@
 // for triangle, that each mesh gets the levels it should, and that the frames draw far fewer
 // triangles far from the grid than near it. At a corner of the grid in parts, looking out past it,
 // the grid's pieces draw a few of its triangles where the same grid without them draws them all.
+// The production build project runs it too. There the sketch's bundle holds a copy of the engine of
+// its own beside the sketch worker's, and the plans go through one copy and the sketch's direct
+// task through the other, to the same job workers: each copy's tasks must get their own answers.
 import { LOD_MAX_LEVELS } from '@null3d/engine/levels-planner';
 import { expect, test } from '@playwright/test';
 import { ENGINE_MODES, modeProblems } from '../lib/engine-checks.ts';
