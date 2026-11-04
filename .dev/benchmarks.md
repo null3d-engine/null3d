@@ -518,13 +518,13 @@ The desert times null3D against three.js r187's meshlet renderer, `MeshletDrawin
 - **Alternating rounds.** Each round opens three.js's page, then null3D's, each in a fresh parked window.
 - **The same light and surfaces.** One sun, one ambient light, no tone curve, MSAA, and the same base colors and roughness.
 - **three.js's settings.** The meshlet pipeline runs with occlusion culling on and `minScreenRadius` at 0, so it leaves out no copy for its size on the screen. Its other settings keep three.js's defaults. The page asks WebGPU for the adapter's largest storage binding and buffer, which the pipeline's culling records need.
-- **null3D's settings.** Medium, MSAA and GPU occlusion culling, whose check during play keeps its passes only while they pay. The engine's start-up probe picks the GPU path, and the result's `settings.directDraws` says which ran. `?direct=off` keeps the indirect path, and `?preset=` and `?occlusion=` change the others.
+- **null3D's settings.** Medium, MSAA and GPU occlusion culling, whose check during play keeps its passes only while they pay. The engine's start-up probe picks the draw path for the device, and the run does not pin it. The report names the path of each page's runs. `?direct=off` keeps the indirect path, and `?preset=` and `?occlusion=` change the others.
 - **What three.js cannot do.** With the meshlet pipeline, its cascaded shadow node drew only the sky. So three.js draws one larger map. Its page's `?csm=on` still asks for cascades, to try a later three.js. Its `?pipeline=standard` draws with the standard pipeline, with no meshlets.
 - **A quiet computer.** The report gives the load around the pages, and a figure taken at a load of 8 or more is not a figure.
 
 ### What the report gives
 
-- The usual summary table, and the desert's table. For each page, the table gives the engine, the view, the shadows and the drawn size. It then gives the median time between frames and its rate, and the GPU time. Last come the triangles and draw calls of a frame, and the time to the first frame.
+- The usual summary table, and the desert's table. For each page, the table gives the engine, its draw path, the view, the shadows and the drawn size. It then gives the median time between frames and its rate, and the GPU time. Last come the triangles and draw calls of a frame, and the time to the first frame.
 - null3D's GPU time is `engine.measure`'s span of a frame's passes, from one frame in eleven. three.js's is the sum of its render and compute timestamps for each measured frame.
 - null3D counts the triangles that its draws drew over every pass. three.js reads back its drawn meshlets every 30 frames and counts 64 triangles each, so the two counts compare roughly. three.js does not count its meshlet draws, so its draw calls read n/a.
 - The report gives no CPU comparison for the desert: its measure is the whole frame and the GPU.

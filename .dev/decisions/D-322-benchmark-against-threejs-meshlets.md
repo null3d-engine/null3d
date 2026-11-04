@@ -42,7 +42,7 @@ null3D, on WebGPU's indirect path:
 - **The ground.** Its file holds a tree of cluster patches as well as whole levels ([D-213](D-213-cluster-levels.md)).
 - **Instance data.** Each copy's matrix reaches the vertex shader through a vertex buffer (hard rule 7). A copy's level draws as one indexed draw, so the GPU draws a whole piece or none of it.
 
-On the direct path, which the engine's start-up probe may choose, the CPU culls copies and pieces. The page reports which path ran, and `?direct=off` keeps the indirect one.
+On the direct path, which the engine's start-up probe may choose, the CPU culls copies and pieces. The run leaves the choice to the probe, as a shipped page does. The report's table names each page's path, and `?direct=off` keeps the indirect one.
 
 three.js r187's meshlet pipeline:
 

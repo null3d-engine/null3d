@@ -6,6 +6,7 @@ import {
 	comparisonLines,
 	desertTable,
 	drawnSizeProblem,
+	drawPathOf,
 	jobsTable,
 	lineChartSvg,
 	loadTable,
@@ -475,7 +476,7 @@ describe('the desert', () => {
 			desertRun('null3d', 1920, 1080),
 		]);
 		expect(desertTable([row]).split('\n')[2]).toBe(
-			'| desert | null3d-webgpu | null3d | walk | off | 1 | 1920 x 1080 | 4.00 | 250.0 | 2.00 | 2.00 | 300 | 9.0 |',
+			'| desert | null3d-webgpu | null3d | n/a | walk | off | 1 | 1920 x 1080 | 4.00 | 250.0 | 2.00 | 2.00 | 300 | 9.0 |',
 		);
 	});
 
@@ -488,6 +489,20 @@ describe('the desert', () => {
 		];
 		expect(comparisonLines(rows)).toEqual([]);
 		expect(desertTable(rows).split('\n')[2]).toContain('| n/a | 9.0 |');
+	});
+
+	test("names each run's draw path, and every path when the runs differ", () => {
+		const direct = desertRun('null3d', 1920, 1080);
+		const indirect = desertRun('null3d', 1920, 1080);
+		const three = desertRun('three.js r187 meshlets', 1920, 1080);
+		if (!direct.desert || !indirect.desert || !three.desert) throw new Error('no desert figures');
+		direct.desert.settings = { directDraws: true };
+		indirect.desert.settings = { directDraws: false };
+		three.desert.settings = { pipeline: 'meshlets' };
+		expect(drawPathOf(direct.desert)).toBe('direct');
+		expect(drawPathOf(three.desert)).toBe('meshlets');
+		expect(summarizeDesert([indirect, indirect])?.path).toBe('indirect');
+		expect(summarizeDesert([direct, indirect])?.path).toBe('direct, indirect');
 	});
 
 	test('marks a summary whose runs drew different sizes', () => {

@@ -191,6 +191,8 @@ export interface DesertSummary {
 	shadows: number | null;
 	/** The size that every run drew, or null when the runs drew different sizes. */
 	drawn: PixelSize | null;
+	/** The draw paths that the runs took, such as `indirect`, joined when they differ. */
+	path: string;
 	intervalMs: number;
 	gpuMs: number | null;
 	triangles: number | null;
@@ -266,12 +268,23 @@ export function summarizeDesert(results: readonly BenchResult[]): DesertSummary 
 		view: first.view,
 		shadows: first.shadows,
 		drawn: sizes.size === 1 ? first.drawn : null,
+		path: [...new Set(figures.map(drawPathOf))].join(', '),
 		intervalMs: of((f) => f.intervalMs),
 		gpuMs: known((f) => f.gpuMs),
 		triangles: known((f) => f.triangles),
 		drawCalls: known((f) => f.drawCalls),
 		firstFrameMs: of((f) => f.firstFrameMs),
 	};
+}
+
+/**
+ * The path that a run drew with: null3D's direct or indirect draws, which its start-up probe picks
+ * for the device, or three.js's drawing pipeline.
+ */
+export function drawPathOf({ settings }: DesertFigures): string {
+	if (typeof settings.directDraws === 'boolean')
+		return settings.directDraws ? 'direct' : 'indirect';
+	return typeof settings.pipeline === 'string' ? settings.pipeline : 'n/a';
 }
 
 /** A size in device pixels as words, such as `1920 x 1080`. */
@@ -302,20 +315,20 @@ export function drawnSizeProblem(
 }
 
 /**
- * The desert's pages as a Markdown table: what each engine drew, the median time between frames
+ * The desert's pages as a Markdown table: what each engine drew and by which path, the median time between frames
  * and its rate, the GPU time, the triangles and draw calls of a frame, and the time to the first
  * frame.
  */
 export function desertTable(rows: readonly SummaryRow[]): string {
 	const lines = [
-		'| Scene | Page | Engine | View | Shadows | Runs | Drawn | Frame interval, ms | Frames a second | GPU ms | Triangles, M | Draw calls | First frame, s |',
-		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+		'| Scene | Page | Engine | Draw path | View | Shadows | Runs | Drawn | Frame interval, ms | Frames a second | GPU ms | Triangles, M | Draw calls | First frame, s |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
 	];
 	for (const { scene, kind, desert: d } of rows) {
 		if (!d) continue;
 		const triangles = d.triangles === null ? 'n/a' : (d.triangles / 1e6).toFixed(2);
 		lines.push(
-			`| ${scene} | ${kind} | ${d.engine} | ${d.view} | ${d.shadows ?? 'off'} | ${d.runs} | ${d.drawn ? sizeText(d.drawn) : 'DIFFERED'} | ${ms(d.intervalMs)} | ${(1000 / d.intervalMs).toFixed(1)} | ${ms(d.gpuMs)} | ${triangles} | ${d.drawCalls === null ? 'n/a' : Math.round(d.drawCalls)} | ${(d.firstFrameMs / 1000).toFixed(1)} |`,
+			`| ${scene} | ${kind} | ${d.engine} | ${d.path} | ${d.view} | ${d.shadows ?? 'off'} | ${d.runs} | ${d.drawn ? sizeText(d.drawn) : 'DIFFERED'} | ${ms(d.intervalMs)} | ${(1000 / d.intervalMs).toFixed(1)} | ${ms(d.gpuMs)} | ${triangles} | ${d.drawCalls === null ? 'n/a' : Math.round(d.drawCalls)} | ${(d.firstFrameMs / 1000).toFixed(1)} |`,
 		);
 	}
 	return lines.join('\n');
