@@ -357,12 +357,40 @@ How the data was produced: `PatchTree::picked_indices` over
 `crates/null3d-render/tests/fixtures/cluster-trees/heightfield.bin`, for an orthographic rule of
 one texel at each size, with no frustum.
 
-The desert benchmark of the meshlet comparison, with the sun's shadows on (three cascades of
-2,048 texels to 150 m), its models rebuilt by the current asset tool, at Medium on WebGPU. Before
-is the commit that this change starts from, where shadow views drew the ground's whole levels by
-the camera's distance; after is the change, where each cascade draws its own cut of the ground's
-tree and picks every caster's level in its texels. Each figure is the median of three runs of 10
-seconds after 4 seconds of warm-up, with the two builds in turns, and the spread follows it:
+The desert benchmark gives the cascades' share of the frame at Medium on WebGPU, with three
+cascades. Each page draws 1920 x 1080, the size that it asks for
+([D-322](D-322-benchmark-against-threejs-meshlets.md#results-of-the-fair-rematch)). Each figure is
+the median of 5 rounds:
+
+| View | Triangles a frame, without shadows / with them | Draw calls | GPU time a frame |
+| --- | --- | --- | --- |
+| Walk | 3.64 M / 7.94 M | 686 / 1,189 | 1.17 / 1.87 ms |
+| Aerial | 3.33 M / 3.37 M | 731 / 1,249 | 1.15 / 1.32 ms |
+
+Walking, the cascades add 4.30 M triangles and 0.69 ms of GPU time. From above they add 0.04 M
+triangles and 0.17 ms. There they cover 150 m around a camera 140 m up, and hold few casters. Each
+cascade draws its own cut in these runs. So they give no figure for shadow views that draw whole
+levels by the camera's distance. A comparison of the two rules on such a build remains to be taken.
+
+How the data was produced: `bun run bench:run --scenes desert --runs 5`, one run for each row and
+shadow setting. The runs are 20261104-151905-bench, 20261104-152824-bench, 20261104-153548-bench
+and 20261104-154422-bench.
+
+#### The void comparison of the two rules
+
+These figures are void. The meshlet comparison's runner drew null3D at 3840 x 2160 for a page of
+1920 x 1080, so every view picked levels twice as fine. Each mesh's culling sphere also lay off its
+center ([D-322](D-322-benchmark-against-threejs-meshlets.md#the-canvas-size-fault)). Their builds
+have no read of the pieces' counts, so the GPU did not refuse their frames with E1305
+([D-307](D-307-mesh-pieces.md#the-check-during-play)). The canvas fault alone voids them. They stay
+as the only comparison of a cascade's own cut with whole levels by the camera's distance.
+
+The runs drew the desert with the sun's shadows on, at Medium on WebGPU. The three cascades had
+2,048 texels each and reached 150 m. The asset tool rebuilt the models. Before is the commit that
+this change starts from: its shadow views drew the ground's whole levels by the camera's distance.
+After is the change: each cascade draws its own cut of the ground's tree, and picks every caster's
+level in its texels. Each figure is the median of three runs of 10 seconds after 4 seconds of
+warm-up, with the two builds in turns, and the spread follows it:
 
 | Page | Measure | Before | After |
 | --- | --- | --- | --- |
@@ -377,15 +405,15 @@ seconds after 4 seconds of warm-up, with the two builds in turns, and the spread
 | Aerial | The compute passes | 0.38 ms (0.37 to 0.41) | 0.92 ms (0.90 to 0.97) |
 | Aerial | GPU time a frame | 4.82 ms (4.37 to 4.96) | 4.79 ms (4.65 to 4.79) |
 
-Both builds presented every frame of the 120 Hz display. The cascades draw 2.4 and 1.8 times
-less, and the frame's triangles fall by a third. The compute passes grew by the cluster pass of
-each cascade. Most of that was the scan, whose one workgroup added up every patch's count. It now
-adds one total for each 64 patches, as [How the pass runs](#how-the-pass-runs) says. Timed in
-turns with the build above, on the base with the mesh pieces and the run-time levels merged, the
-compute passes take 0.35 ms (0.34 to 0.36) in the walk view against 0.91 ms (0.86 to 0.96), and
-0.34 ms (0.34 to 0.40) in the aerial view against 1.00 ms (0.84 to 1.19). That is under the
-0.48 and 0.38 ms before the change, because the camera's own pass gains too. The cascades' passes
-take 1.42 ms (1.42 to 1.53) and 0.62 ms (0.62 to 0.75) there.
+Both builds presented every frame of the 120 Hz display. In these runs the cascades drew 2.4 and
+1.8 times fewer triangles, and the frame's triangles fell by a third. The compute passes grew by
+the cluster pass of each cascade. Most of that was the scan, whose one workgroup added up every
+patch's count. The scan now adds one total for each 64 patches, as
+[How the pass runs](#how-the-pass-runs) says. The grouped scan was timed in turns with the build
+above, on the base with the mesh pieces and the run-time levels merged. There the compute passes
+took 0.35 ms (0.34 to 0.36) in the walk view against 0.91 ms (0.86 to 0.96). In the aerial view
+they took 0.34 ms (0.34 to 0.40) against 1.00 ms (0.84 to 1.19). The cascades' passes took 1.42 ms (1.42 to 1.53) and 0.62 ms
+(0.62 to 0.75) there. These timings carry the same canvas fault and are void too.
 
 How the data was produced: `bench/meshlets/run.ts` of the meshlet comparison, on the Mac's
 Chrome 156, with both CDN builds made by `bun run build:cdn --url-switches`, on a shared Mac whose
