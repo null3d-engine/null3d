@@ -32,6 +32,10 @@ interface Result {
 	drawCallsLeast: number;
 	/** The window's length, which the page sizes to hold a few frames. */
 	seconds?: number;
+	/** The probe that sized the window: its length, the frames it held and the frame time it gave. */
+	probe?: { seconds: number; frames: number; frameMs: number | null } | null;
+	/** Milliseconds from the page's start to its first frame. */
+	firstFrameMs?: number;
 	gpuMs: number | null;
 }
 
@@ -41,6 +45,14 @@ interface Grove {
 	far?: boolean;
 	/** Hold the air still. */
 	still?: boolean;
+}
+
+/** The probe's own reading, so a failure names whether it saw no frame or saw slow ones. */
+function probeNote(result: Result): string {
+	const probe = result.probe;
+	const frame =
+		probe?.frameMs === null || probe?.frameMs === undefined ? '?' : Math.round(probe.frameMs);
+	return `${probe ? `${probe.seconds} s` : 'no'} probe held ${probe?.frames ?? '?'} frames, a frame of ${frame} ms; the page drew its first frame after ${result.firstFrameMs ?? '?'} ms`;
 }
 
 /** The draw calls a frame of the page draws, with the plants' sway distance in meters. */
@@ -54,7 +66,7 @@ async function count(page: Page, gpu: string, sway: number, grove: Grove = {}): 
 	// mean nothing.
 	expect(
 		result.frames,
-		`the ${result.seconds ?? '?'} s window held ${result.frames} frames, fewer than the ${FAR_INTERVAL} that a far cascade's interval needs`,
+		`the ${result.seconds ?? '?'} s window held ${result.frames} frames, fewer than the ${FAR_INTERVAL} that a far cascade's interval needs; its ${probeNote(result)}`,
 	).toBeGreaterThanOrEqual(FAR_INTERVAL);
 	return result;
 }
@@ -68,7 +80,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 		const stillAir = await count(page, gpu, 16, { far: true, still: true });
 		const every = await count(page, gpu, 0, { far: true });
 		console.log(
-			`${stopped.tier} at ${stopped.preset}: the stopped grove draws ${stopped.drawCallsLeast} calls at least and the still one ${stillAir.drawCallsLeast}, where every distance draws ${every.drawCallsLeast}`,
+			`${stopped.tier} at ${stopped.preset}: the stopped grove draws ${stopped.drawCallsLeast} calls at least and the still one ${stillAir.drawCallsLeast}, where every distance draws ${every.drawCallsLeast}; a frame took ${Math.round(stopped.probe?.frameMs ?? 0)} ms, and the ${stopped.seconds} s, ${stillAir.seconds} s and ${every.seconds} s windows held ${stopped.frames}, ${stillAir.frames} and ${every.frames} frames`,
 		);
 		// The far cascades hold their layers: a plant that stands still asks for no redraw, so the
 		// stopped grove draws what the still one draws. A cascade that redraws adds one draw for each
