@@ -54,6 +54,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `values` | `false` | `true` adds a `values` array: four numbers for each row, which a custom material reads |
 | `layers` | `1`, layer 0 | The [layers](render-layers.md) of every row, as a 32-bit mask |
 | `origin` | `[0, 0, 0]` | The point that every row's position is relative to, kept at full precision: [Batch origins](large-worlds.md#batch-origins) |
+| `queries` | `true` | `false` leaves every row out of raycasts, overlap queries and the pointer events that they find. Give it to a batch whose vertex shader moves its vertices, since a query tests the mesh's own triangles |
 
 `count` is the batch's capacity, which never changes. All rows draw at first. A new batch computes every row in its first frame, so rows that you write before that frame need no mark.
 

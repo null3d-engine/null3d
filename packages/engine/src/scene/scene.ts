@@ -532,6 +532,13 @@ export interface InstanceOptions {
 	 * whenever it looks large enough. Rows never block on WebGL2.
 	 */
 	occluder?: boolean;
+	/**
+	 * False leaves every row out of the scene's raycasts and overlap queries, and out of the
+	 * pointer events that they find. A batch whose vertex shader moves its rows' vertices sets it,
+	 * since a query tests the mesh's own triangles, not the moved ones. The GPU pick still finds
+	 * such rows where they draw. The default is true.
+	 */
+	queries?: boolean;
 }
 
 /**
@@ -2949,6 +2956,15 @@ export class InstanceBatch implements ViewHolder {
 		this.setShadowBit('setOccluder', C.FLAG_NOT_OCCLUDER, !occluder);
 	}
 
+	/**
+	 * Lets the scene's raycasts and overlap queries find every row, or keeps every row from them,
+	 * as the `queries` option does. Rows take part by default. A change rebuilds the engine's
+	 * tables of what it draws.
+	 */
+	setQueried(queried: boolean): void {
+		this.setShadowBit('setQueried', C.FLAG_NOT_QUERIED, !queried);
+	}
+
 	private shadowBits = 0;
 
 	private setShadowBit(call: string, bit: number, on: boolean): void {
@@ -4749,6 +4765,7 @@ export class Scene implements ViewHolder {
 		if (options.castShadows) batch.setCastShadows(true);
 		if (options.receiveShadows) batch.setReceiveShadows(true);
 		if (options.occluder === false) batch.setOccluder(false);
+		if (options.queries === false) batch.setQueried(false);
 		if (options.origin) batch.setOrigin(options.origin, call);
 		return batch;
 	}

@@ -114,6 +114,8 @@ if (input.wasPressed('Mouse0')) {
 }
 ```
 
+A query tests the triangles of each mesh as the mesh holds them. A custom material that moves its vertices in its shader draws another shape, so a query can hit triangles that the frame does not draw there. Leave such a batch out of the queries with `queries: false` in `scene.createInstances`, or `batch.setQueried(false)`. The pick below still finds its rows where they draw. The terrain add-on does this for its ground, and offers `terrain.raycast` for rays at the ground.
+
 ## Batches of rays
 
 The call `scene.raycastBatch(rays, options, out)` casts many rays at once, on the job workers. Its `rays` array holds six numbers per ray: its origin, then its direction. Its `out` object holds typed arrays with one entry per ray, or three numbers per ray for points and normals. Only `distances` is required, and the call fills each other array that you give. It returns how many rays hit something.

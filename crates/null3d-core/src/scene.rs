@@ -171,6 +171,10 @@ pub mod flags {
     pub const NOT_OCCLUDER: u32 = 1 << 9;
     /// The bits that mark an object for occlusion culling, or opt it out.
     pub const OCCLUSION: u32 = OCCLUDER | NOT_OCCLUDER;
+    /// Left out of the scene's queries: raycasts and overlap queries pass over the rows of a batch
+    /// with this bit. A batch whose vertex shader shapes its rows sets it, since the triangles that
+    /// a query tests are not the ones that the batch draws.
+    pub const NOT_QUERIED: u32 = 1 << 10;
     /// The bits that choose the draw tables an object joins, so a change rebuilds them.
     pub const TABLES: u32 = SHADOWS | OUTLINED;
     /// The bits that [`super::op::SET_FLAGS`] changes. The other bits have operations of their own.

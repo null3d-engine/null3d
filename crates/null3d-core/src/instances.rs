@@ -87,9 +87,9 @@ pub const ROW_CHUNK: u32 = 1024;
 pub const MAX_ROW_RANGES: usize = 1024;
 
 const WORDS_PER_CHUNK: u32 = ROW_CHUNK / 64;
-/// The bits of an object's flags that a batch keeps for every row: its shadows, and its opt-out of
-/// GPU occlusion culling's occluders.
-pub const ROW_FLAGS: u32 = flags::SHADOWS | flags::NOT_OCCLUDER;
+/// The bits of an object's flags that a batch keeps for every row: its shadows, its opt-out of GPU
+/// occlusion culling's occluders, and its opt-out of the scene's queries.
+pub const ROW_FLAGS: u32 = flags::SHADOWS | flags::NOT_OCCLUDER | flags::NOT_QUERIED;
 
 /// A range of rows: `start..start + count`.
 #[repr(C)]
@@ -221,8 +221,8 @@ pub struct InstanceBatch {
     /// The rows' own distance ranges, two floats per row, which a row without an entry takes from
     /// the batch's. Empty until the first row sets one.
     row_ranges: Vec<f32>,
-    /// The bits of every row: [`flags::CAST_SHADOWS`], [`flags::RECEIVE_SHADOWS`] and
-    /// [`flags::NOT_OCCLUDER`].
+    /// The bits of every row: [`flags::CAST_SHADOWS`], [`flags::RECEIVE_SHADOWS`],
+    /// [`flags::NOT_OCCLUDER`] and [`flags::NOT_QUERIED`].
     shadows: u32,
     /// True when rows have a colour and values of their own, which the world output carries.
     with_values: bool,
@@ -847,6 +847,11 @@ impl InstanceBatch {
     /// True when no row of the batch may hide others in GPU occlusion culling.
     pub fn not_occluder(&self) -> bool {
         self.shadows & flags::NOT_OCCLUDER != 0
+    }
+
+    /// True when the scene's raycasts and overlap queries pass over every row of the batch.
+    pub fn not_queried(&self) -> bool {
+        self.shadows & flags::NOT_QUERIED != 0
     }
 
     /// Sets how many rows are drawn. Rows that become active are marked dirty. Fails with

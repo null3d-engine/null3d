@@ -809,6 +809,7 @@ pub fn typescript() -> String {
                 ("OUTLINED", flags::OUTLINED),
                 ("OCCLUDER", flags::OCCLUDER),
                 ("NOT_OCCLUDER", flags::NOT_OCCLUDER),
+                ("NOT_QUERIED", flags::NOT_QUERIED),
                 ("TRACKED", flags::TRACKED),
             ],
         ),

@@ -534,6 +534,9 @@ impl SceneQueries {
             }
             Source::Row { batch, row } => {
                 let batch = view.batches.get(batch).ok()?;
+                if batch.not_queried() {
+                    return None;
+                }
                 let world = batch.current_world();
                 let r = row as usize;
                 let shown = world.radii()[r] >= 0.0 && batch.layers() & layers != 0;

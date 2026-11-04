@@ -467,6 +467,49 @@ fn queries_follow_late_updates_and_batch_updates() {
     assert_eq!(distance(&mut queries, &scene, &batches, right), None);
 }
 
+/// A batch that opts out of the scene's queries keeps drawing, but no raycast or overlap query
+/// finds its rows, and opting back in finds them again.
+#[test]
+fn a_batch_left_out_of_queries_is_never_found() {
+    let workers = Workers::start(2);
+    let jobs = workers.jobs();
+    let mut rng = Rng::new(7);
+    let meshes = meshes(&mut rng);
+    let mut scene = SceneStorage::with_capacity(4);
+    let mut batches = BatchTable::with_capacity(1);
+    let mut queries = SceneQueries::new();
+    let batch = batches.create(1, false, false, 3, 1, 2.0).unwrap();
+    batches.get_mut(batch).unwrap().positions_mut()[..3].copy_from_slice(&[0.0, 0.0, -10.0]);
+    scene.begin_frame(1);
+    scene.update_transforms(jobs);
+    batches.update(jobs, 1, scene.cell_table_mut());
+    let ray = WorldRay::new([0.0; 3], [0.0, 0.0, -1.0]);
+    let found = |queries: &mut SceneQueries, batches: &BatchTable| {
+        let view = QueryScene {
+            scene: &scene,
+            batches,
+            meshes: &meshes,
+            rows: Default::default(),
+        };
+        queries.sync(&view, jobs).unwrap();
+        let hit = queries.raycast(&view, &ray, u32::MAX).map(|h| h.distance);
+        let any = queries.raycast_any(&view, &ray, u32::MAX);
+        let near = queries
+            .overlap_sphere(&view, [0.0, 0.0, -10.0], 3.0, u32::MAX)
+            .len();
+        (hit, any, near)
+    };
+    assert_eq!(found(&mut queries, &batches), (Some(9.0), true, 1));
+    batches
+        .get_mut(batch)
+        .unwrap()
+        .set_shadows(flags::NOT_QUERIED);
+    assert!(batches.get(batch).unwrap().not_queried());
+    assert_eq!(found(&mut queries, &batches), (None, false, 0));
+    batches.get_mut(batch).unwrap().set_shadows(0);
+    assert_eq!(found(&mut queries, &batches), (Some(9.0), true, 1));
+}
+
 /// A query that tests every face finds a surface that encloses the ray's origin, and says that it
 /// met the surface's back. A light probe bake reads it to find the probes inside geometry.
 #[test]
