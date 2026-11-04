@@ -247,13 +247,14 @@ impl Clusters {
     }
 
     /// Sizes one view's buffers for the scene's tables, with the list for the indices that
-    /// [`Clusters::set_need`] noted, and binds its group again when a buffer it binds is new, or
-    /// the scene's tables are.
+    /// [`Clusters::set_need`] noted, and binds its group again when a buffer it binds is new: one
+    /// of its own, or one that `bound_recreated` names, of the scene's tables or of the view's
+    /// culling, its compacted instances and indirect draws.
     pub(super) fn apply(
         &mut self,
         list: &mut DrawList,
         view: ViewId,
-        tables_recreated: bool,
+        bound_recreated: bool,
         binding_bytes: u32,
     ) -> Result<(), RecordError> {
         if self.views.len() <= view.index() {
@@ -309,7 +310,7 @@ impl Clusters {
                 recreated = true;
             }
         }
-        if !recreated && !tables_recreated && buffers.group {
+        if !recreated && !bound_recreated && buffers.group {
             return Ok(());
         }
         let entries = [
