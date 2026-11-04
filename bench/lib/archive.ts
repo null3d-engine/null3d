@@ -22,11 +22,15 @@ import {
 	startupSummary,
 } from '../../tests/lib/plans.ts';
 import type { ItemResult, Plan, PlanItem } from '../../tests/lib/runs.ts';
+import type { DesertFigures, PixelSize } from '../pages/lib/desert.ts';
 import { summarizeTrace, type TraceSummary } from '../pages/lib/trace.ts';
 import type { ComparisonRecord } from './compare.ts';
+import type { ProcessUse } from './other-work.ts';
 import {
 	type BenchResult,
 	busiestThread,
+	drawPathOf,
+	type MachineLoad,
 	ownWorkMs,
 	type RunSummary,
 	type SummaryRow,
@@ -268,6 +272,43 @@ export interface ArchivedRun {
 	memory?: ArchivedMemory;
 	trace?: TraceSummary;
 	heat?: HeatSummary;
+	/** The computer's 1-minute load as the page opened and after it closed. */
+	machineLoad?: MachineLoad;
+	/** The other processes that used the most cores on average while the page ran. */
+	otherWork?: ProcessUse[];
+	/** The desert's figures: the size and path that the engine drew with, and how fast. */
+	desert?: ArchivedDesert;
+}
+
+/** A desert page's figures, in one shape for both engines. */
+export interface ArchivedDesert {
+	view: string;
+	shadows: number | null;
+	drawn: PixelSize;
+	path: string;
+	intervalMs: number;
+	gpuMs: number | null;
+	triangles: number | null;
+	drawCalls: number | null;
+	firstFrameMs: number;
+}
+
+/** How many of the busiest other processes a run keeps. */
+const OTHER_PROCESSES = 3;
+
+/** A desert page's figures as the archive keeps them. */
+function archivedDesert(desert: DesertFigures): ArchivedDesert {
+	return {
+		view: desert.view,
+		shadows: desert.shadows,
+		drawn: desert.drawn,
+		path: drawPathOf(desert),
+		intervalMs: desert.intervalMs,
+		gpuMs: desert.gpuMs,
+		triangles: desert.triangles,
+		drawCalls: desert.drawCalls,
+		firstFrameMs: desert.firstFrameMs,
+	};
 }
 
 /** A page's figures from the summary of its runs. `sceneCodeMs` gives three.js's own work. */
@@ -433,6 +474,9 @@ export function archiveRun(
 		...(bench.memory && { memory: bench.memory }),
 		...(bench.trace && { trace: summarizeTrace(bench.trace, refreshHz) }),
 		heat: bench.heat,
+		...(bench.machineLoad && { machineLoad: bench.machineLoad }),
+		...(bench.otherWork && { otherWork: bench.otherWork.during.slice(0, OTHER_PROCESSES) }),
+		...(bench.desert && { desert: archivedDesert(bench.desert) }),
 	};
 }
 
