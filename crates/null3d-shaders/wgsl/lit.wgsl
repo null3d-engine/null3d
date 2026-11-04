@@ -114,7 +114,8 @@ enable draw_index;
 // Custom materials build this template with their WGSL added after its last line, and with the
 // shader defs CUSTOM and UV0, which reads the first texture coordinates. CUSTOM_SURFACE makes the
 // fragment shader call their `fn surface`, and CUSTOM_VERTEX_OFFSET makes the vertex shader move
-// each vertex by their `fn vertexOffset`. Their WGSL reads the built-in values `frame`, `camera` and
+// each vertex by their `fn vertexOffset`. CUSTOM_VERTEX_NORMAL takes each vertex's normal from their
+// `fn vertexNormal`, and CUSTOM_VERTEX_INPUT builds the input that both read. Their WGSL reads the built-in values `frame`, `camera` and
 // `object` of null3d::builtins, which each stage fills under CUSTOM; the frame's uniform block is
 // `engine_frame` here. When their WGSL declares `struct Uniforms`, the build adds
 // `load_material_uniforms` after it, and CUSTOM_UNIFORMS makes each stage fill `material` with the
@@ -1676,9 +1677,9 @@ fn fill_object(found: Instance) -> vec2u {
 }
 #endif
 
-#ifdef CUSTOM_VERTEX_OFFSET
-/// What the vertex offset function reads of a vertex at `position` with `normal`, with the
-/// instance's index from `ids` when the material reads it.
+#ifdef CUSTOM_VERTEX_INPUT
+/// What the vertex offset and vertex normal functions read of a vertex at `position` with
+/// `normal`, with the instance's index from `ids` when the material reads it.
 fn vertex_input(v: VertexIn, position: vec3f, normal: vec3f, ids: vec2u) -> VertexInput {
     var input: VertexInput;
     input.position = position;
@@ -1953,6 +1954,11 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let position = rest_position;
     let normal = rest_normal;
 #endif
+#ifdef CUSTOM_VERTEX_NORMAL
+    let shaded_normal = vertexNormal(vertex_input(v, position, normal, ids));
+#else
+    let shaded_normal = normal;
+#endif
 #ifdef CUSTOM_VERTEX_OFFSET
     let offset = vertexOffset(vertex_input(v, position, normal, ids));
     out.relative = relative_position(found, position + offset);
@@ -1967,13 +1973,13 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.relative = relative_position(found, position);
 #endif
 #ifdef CASTER
-    var clip = caster_clip(found, out.relative, normal);
+    var clip = caster_clip(found, out.relative, shaded_normal);
     clip.z = min(clip.z, clip.w);
     out.clip = clip;
 #else
     out.clip = clip_of(found, out.relative);
 #endif
-    out.normal = world_normal(found, normal);
+    out.normal = world_normal(found, shaded_normal);
     out.material = found.material;
 #ifdef VERTEX_COLOR
 #ifdef MORPH

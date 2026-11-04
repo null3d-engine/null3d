@@ -7,8 +7,11 @@
 // grass along a boundary rather than fading into it. The layer's own texels set the height, so the
 // boundary follows their detail.
 //
-// The pixel's normal comes from a normal map baked over the ground, which keeps the relief that a
-// coarse block's vertices cannot show. The surface reads the ground's own coordinates, so the
+// Every block of one level draws one shared grid, as a row of that level's instance batch. The
+// vertex shader takes each vertex's height, its normal and its parent block's height from the
+// height field, which the ground keeps in a texture, one 32-bit float in the four bytes of each
+// texel. The pixel's normal comes from those vertex normals, or from a normal map baked over the
+// ground, which keeps the relief that a coarse block's vertices cannot show. The surface reads the ground's own coordinates, so the
 // tiling and the normals stay put as the camera moves and the blocks of the level of detail meet
 // without a seam.
 var splatMap: texture_2d<f32>;
@@ -17,6 +20,7 @@ var layerOne: texture_2d<f32>;
 var layerTwo: texture_2d<f32>;
 var layerThree: texture_2d<f32>;
 var normalMap: texture_2d<f32>;
+var heights: texture_2d<f32>;
 
 struct Uniforms {
     // The meters that one repeat of each layer's map covers.
@@ -37,33 +41,127 @@ struct Uniforms {
     selection: vec2f,
 }
 
-// Each block morphs toward its parent block's surface as the camera pulls away, so a block that
-// hands over to a coarser one does not pop. The block's vertex record holds the parent grid's
-// height at the vertex, the block's size in meters, and the lowest and highest height of the
-// block's ground. The size gives the block's cell, which the selection's scale turns into the
-// distance at which the block splits; the parent's split lies twice as far. The distance is the
-// one that the selection measured: to the nearest point of the block's footprint and its height
-// box, so a block's own split leaves it at its own surface and a parent's split leaves it at the
-// parent's.
-fn vertexOffset(input: VertexInput) -> vec3f {
-    let scale = material.selection.x;
-    let block = input.vertexRecord.y;
-    if (scale <= 0.0 || block <= 0.0) {
-        return vec3f(0.0);
+// The shared grid's vertex record holds, for every vertex, how far it hangs below the block's edge
+// as part of the skirt (0 inside the grid), the block's size in meters and the size of its parent
+// block, which is the block's own size for the root. A row's values hold the lowest and highest
+// height of its block's ground. The grid's positions span the level's height box, so the batch
+// culls each block by that box, and the vertex shader moves every vertex onto the ground.
+
+// The height field's sample at a column and row: the 32-bit float that the texel's four bytes hold.
+fn fieldSample(col: i32, row: i32) -> f32 {
+    return bitcast<f32>(pack4x8unorm(textureLoad(heights, vec2i(col, row), 0)));
+}
+
+// The height field at a point given in samples from the ground's low corner, with bilinear
+// interpolation between the four samples around it, as the ground's `heightAt` reads it.
+fn fieldHeightAt(fx: f32, fz: f32) -> f32 {
+    let last = i32(textureDimensions(heights).x) - 2;
+    let cx = clamp(i32(floor(fx)), 0, last);
+    let cz = clamp(i32(floor(fz)), 0, last);
+    let tx = clamp(fx - f32(cx), 0.0, 1.0);
+    let tz = clamp(fz - f32(cz), 0.0, 1.0);
+    let a = fieldSample(cx, cz);
+    let b = fieldSample(cx + 1, cz);
+    let c = fieldSample(cx, cz + 1);
+    let d = fieldSample(cx + 1, cz + 1);
+    let top = a + (b - a) * tx;
+    let bottom = c + (d - c) * tx;
+    return top + (bottom - top) * tz;
+}
+
+// The meters between two samples of the height field.
+fn fieldStep() -> f32 {
+    return material.ground.x / f32(textureDimensions(heights).x - 1u);
+}
+
+// The block's column and row in its level's grid, and the vertex's column and row in the block's
+// grid, all whole numbers, so the places below stay exact.
+struct BlockVertex {
+    block: vec2f,
+    cell: vec2f,
+}
+
+fn blockVertex(input: VertexInput) -> BlockVertex {
+    let size = input.vertexRecord.y;
+    var out: BlockVertex;
+    out.block = round((object.position.xz + vec2f(material.ground.x * 0.5)) / size);
+    out.cell = round(input.uv * material.selection.y);
+    return out;
+}
+
+// The vertex's height, and the height of its parent block's surface under it, from the height
+// field, as the ground's builder writes them.
+fn vertexHeights(input: VertexInput, v: BlockVertex) -> vec2f {
+    let size = input.vertexRecord.y;
+    let parentSize = input.vertexRecord.z;
+    let quads = material.selection.y;
+    let step = fieldStep();
+    // The vertex in meters from the ground's low corner.
+    let at = v.block * size + v.cell * (size / quads);
+    let own = fieldHeightAt(at.x / step, at.y / step);
+    // The parent's low corner, and the vertex in the parent's grid.
+    let parentCorner = floor(v.block * size / parentSize + vec2f(0.25)) * parentSize;
+    let parentCell = parentSize / quads;
+    let g = (at - parentCorner) / parentCell;
+    let c = clamp(floor(g), vec2f(0.0), vec2f(quads - 1.0));
+    let t = clamp(g - c, vec2f(0.0), vec2f(1.0));
+    let p0 = (parentCorner + c * parentCell) / step;
+    let p1 = (parentCorner + (c + vec2f(1.0)) * parentCell) / step;
+    let h00 = fieldHeightAt(p0.x, p0.y);
+    let h10 = fieldHeightAt(p1.x, p0.y);
+    let h01 = fieldHeightAt(p0.x, p1.y);
+    let h11 = fieldHeightAt(p1.x, p1.y);
+    // The parent's faces split each cell from its low corner to its high one, as the block's own
+    // grid does, so a point on either side of that diagonal takes that triangle's plane.
+    var parent: f32;
+    if (t.x + t.y <= 1.0) {
+        parent = h00 + (h10 - h00) * t.x + (h01 - h00) * t.y;
+    } else {
+        parent = h11 + (h01 - h11) * (1.0 - t.x) + (h10 - h11) * (1.0 - t.y);
     }
-    let half = block * 0.5;
-    let centerX = object.position.x + half;
-    let centerZ = object.position.z + half;
-    let dx = max(abs(camera.position.x - centerX) - half, 0.0);
-    let dz = max(abs(camera.position.z - centerZ) - half, 0.0);
-    let low = input.vertexRecord.z;
-    let high = input.vertexRecord.w;
-    let dy = max(max(low - camera.position.y, camera.position.y - high), 0.0);
-    let away = sqrt(dx * dx + dy * dy + dz * dz);
-    let own = (block / material.selection.y) * scale;
-    let parent = own * 2.0;
-    let t = clamp((away - own) / max(parent - own, 0.0001), 0.0, 1.0);
-    return vec3f(0.0, (input.vertexRecord.x - input.position.y) * t, 0.0);
+    return vec2f(own, parent);
+}
+
+// Each block morphs toward its parent block's surface as the camera pulls away, so a block that
+// hands over to a coarser one does not pop. The block's size gives its cell, which the selection's
+// scale turns into the distance at which the block splits; the parent's split lies twice as far.
+// The distance is the one that the selection measured: to the nearest point of the block's
+// footprint and its height box, so a block's own split leaves it at its own surface and a parent's
+// split leaves it at the parent's. The skirt hangs its depth below the surface that the ring moves
+// to.
+fn vertexOffset(input: VertexInput) -> vec3f {
+    let v = blockVertex(input);
+    let pair = vertexHeights(input, v);
+    let block = input.vertexRecord.y;
+    var t = 0.0;
+    let scale = material.selection.x;
+    if (scale > 0.0) {
+        let half = block * 0.5;
+        let center = v.block * block + vec2f(half - material.ground.x * 0.5);
+        let dx = max(abs(camera.position.x - center.x) - half, 0.0);
+        let dz = max(abs(camera.position.z - center.y) - half, 0.0);
+        let low = object.values.x;
+        let high = object.values.y;
+        let dy = max(max(low - camera.position.y, camera.position.y - high), 0.0);
+        let away = sqrt(dx * dx + dy * dy + dz * dz);
+        let own = (block / material.selection.y) * scale;
+        let parent = own * 2.0;
+        t = clamp((away - own) / max(parent - own, 0.0001), 0.0, 1.0);
+    }
+    let y = pair.x + (pair.y - pair.x) * t - input.vertexRecord.x;
+    return vec3f(0.0, y - input.position.y, 0.0);
+}
+
+// The ground's slope at the vertex, a sample each way across and along, made one unit long, as the
+// ground's builder writes it. The skirt takes the normal of the ring vertex that it hangs from.
+fn vertexNormal(input: VertexInput) -> vec3f {
+    let v = blockVertex(input);
+    let size = input.vertexRecord.y;
+    let step = fieldStep();
+    let at = (v.block * size + v.cell * (size / material.selection.y)) / step;
+    let dx = (fieldHeightAt(at.x + 1.0, at.y) - fieldHeightAt(at.x - 1.0, at.y)) / (2.0 * step);
+    let dz = (fieldHeightAt(at.x, at.y + 1.0) - fieldHeightAt(at.x, at.y - 1.0)) / (2.0 * step);
+    return vec3f(-dx, 1.0, -dz) / sqrt(dx * dx + 1.0 + dz * dz);
 }
 
 fn surface(input: SurfaceInput) -> Surface {

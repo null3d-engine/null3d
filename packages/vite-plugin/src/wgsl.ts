@@ -150,6 +150,7 @@ function blankComments(source: string): string {
 const MATERIAL_FUNCTIONS: ReadonlySet<string> = new Set([
 	'surface',
 	'vertexOffset',
+	'vertexNormal',
 	'lobe',
 	'unlit',
 ]);

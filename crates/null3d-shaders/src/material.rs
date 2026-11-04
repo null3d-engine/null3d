@@ -65,7 +65,7 @@ struct Hook {
 }
 
 /// The functions a custom material's WGSL may declare.
-const HOOKS: [Hook; 5] = [
+const HOOKS: [Hook; 6] = [
     Hook {
         name: "surface",
         def: "CUSTOM_SURFACE",
@@ -79,6 +79,13 @@ const HOOKS: [Hook; 5] = [
         params: &["VertexInput"],
         returns: "vec3f",
         signature: "fn vertexOffset(input: VertexInput) -> vec3f",
+    },
+    Hook {
+        name: "vertexNormal",
+        def: VERTEX_NORMAL_DEF,
+        params: &["VertexInput"],
+        returns: "vec3f",
+        signature: "fn vertexNormal(input: VertexInput) -> vec3f",
     },
     Hook {
         name: "lobe",
@@ -113,6 +120,12 @@ const LIT_ONLY: [&str; 2] = ["surface", "lobe"];
 
 /// The shader def that makes the template call a custom material's vertex offset.
 const VERTEX_OFFSET_DEF: &str = "CUSTOM_VERTEX_OFFSET";
+/// The shader def that makes the template take each vertex's normal from a custom material's
+/// `vertexNormal`, in the shading, caster and pick builds.
+const VERTEX_NORMAL_DEF: &str = "CUSTOM_VERTEX_NORMAL";
+/// The shader def that builds the vertex input that `vertexOffset` and `vertexNormal` read, which
+/// a material that declares either gets.
+const VERTEX_INPUT_DEF: &str = "CUSTOM_VERTEX_INPUT";
 /// The shader def that makes a custom material's shadow caster test the material's coverage.
 const COVERAGE_DEF: &str = "CUSTOM_COVERAGE";
 /// The shader def that makes the template light a custom surface's diffuse and ambient light by a
@@ -766,6 +779,7 @@ impl Compiler {
         // An unlit material gives its opacity in every color it returns.
         let alpha = unlit || names_alpha(&tokens);
         let offsets = declared.iter().any(|hook| hook.def == VERTEX_OFFSET_DEF);
+        let normals = declared.iter().any(|hook| hook.def == VERTEX_NORMAL_DEF);
         let coverage = declared.iter().any(|hook| hook.def == COVERAGE_DEF);
         let inputs = read_inputs(&tokens);
         let diffuse_normal = reads_diffuse_normal(&tokens);
@@ -781,6 +795,9 @@ impl Compiler {
                 let mut defs = variant.defs.clone();
                 defs.extend(CUSTOM_DEFS.map(str::to_owned));
                 defs.extend(declared.iter().map(|hook| hook.def.to_owned()));
+                if offsets || normals {
+                    defs.push(VERTEX_INPUT_DEF.to_owned());
+                }
                 defs.extend(inputs.iter().map(|&def| def.to_owned()));
                 if diffuse_normal {
                     defs.push(DIFFUSE_NORMAL_DEF.to_owned());
@@ -851,7 +868,8 @@ impl Compiler {
                 (name.clone(), variant)
             })
             .collect();
-        if offsets || alpha || coverage {
+        // A material's own normals bend its casters' normal offset, so they take the caster builds.
+        if offsets || normals || alpha || coverage {
             let more: Vec<(String, Variant)> = variants
                 .iter()
                 .flat_map(|(name, variant)| {

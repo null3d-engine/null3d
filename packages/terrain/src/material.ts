@@ -48,6 +48,11 @@ export interface SplatMaterialOptions {
 	/** True when steep faces map the rock layer from the sides. */
 	steepFaces?: boolean;
 	/**
+	 * The height field, one 32-bit float in the four bytes of each texel, which the blocks' shared
+	 * grids read for their heights, their normals and their parents' heights.
+	 */
+	heights: Texture;
+	/**
 	 * The selection's scale: the screen's pixels per world meter of a block's cell, at which its
 	 * error fills the threshold. The morph reads it to find each block's split distances. 0 turns
 	 * the morph off.
@@ -148,6 +153,7 @@ export function splatMaterial(
 		layerTwo: mapAt(2),
 		layerThree: mapAt(3),
 		...(options.normals ? { normalMap: options.normals } : {}),
+		heights: options.heights,
 	};
 	const material = ctx.materials.shader({
 		wgsl: terrainShader,

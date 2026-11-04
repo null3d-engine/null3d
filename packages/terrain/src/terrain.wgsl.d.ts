@@ -12,6 +12,6 @@ declare const shader: CompiledMaterial<
 		readonly steepFaces: 'f32';
 		readonly selection: 'vec2f';
 	},
-	'splatMap' | 'layerZero' | 'layerOne' | 'layerTwo' | 'layerThree' | 'normalMap'
+	'splatMap' | 'layerZero' | 'layerOne' | 'layerTwo' | 'layerThree' | 'normalMap' | 'heights'
 >;
 export default shader;
