@@ -58,6 +58,11 @@ fn tally_stride(buckets: usize) -> usize {
     buckets.next_multiple_of(16)
 }
 
+/// The frames in a row that a level's bucket must hold no copy before the views' bundles leave its
+/// draws out. A copy that picks the level draws it again at once; the wait spares the bundles from
+/// being recorded again in every frame while a copy wavers at a switch.
+pub(super) const IDLE_FRAMES: u16 = 30;
+
 /// The room that a level's slice takes when `count` copies outgrow it. A slice keeps its place while
 /// its count fits, so the spare room spares the frames from moving slices as the camera moves.
 const fn with_spare_room(count: u32) -> u32 {
@@ -168,6 +173,11 @@ impl Layout {
                 *fit = (*fit).max(count);
             }
         }
+        // A level that no view places a copy in draws nothing, so its draws and its pieces' wait
+        // out of the bundles, which the frame records again when that changes.
+        if self.note_idle(&fits) {
+            self.slices_moved = true;
+        }
         // Each piece's slice holds every copy that picks its bucket, whichever pieces it shows.
         for &bucket in &self.level_buckets {
             if let Some((first, count)) = self.buckets[bucket as usize].pieces {
@@ -203,6 +213,49 @@ impl Layout {
         self.copy_counts = counts;
         self.copy_fits = fits;
         Ok(())
+    }
+
+    /// Notes which buckets of a level hold no copy, by the largest count of any view in `fits`: a
+    /// level's bucket that held none for [`IDLE_FRAMES`] frames in a row turns idle, with its
+    /// pieces, and one that holds a copy draws again at once. Returns true when a bucket turned
+    /// idle or drew again, so the views' bundles must be recorded again. A piece's own count is 0,
+    /// since the shader appends a copy to a piece after it picks the piece's level, so a piece
+    /// follows the bucket that it is a piece of.
+    pub(super) fn note_idle(&mut self, fits: &[u32]) -> bool {
+        let buckets = self.buckets.len();
+        self.idle.resize(buckets, false);
+        self.idle_frames.resize(buckets, 0);
+        // The pieces' buckets come after every other bucket, and take their bucket's state.
+        let first_piece = self
+            .level_buckets
+            .iter()
+            .filter_map(|&b| self.buckets[b as usize].pieces.map(|(first, _)| first))
+            .min()
+            .unwrap_or(buckets as u32);
+        let mut changed = false;
+        for &bucket in &self.level_buckets {
+            if bucket >= first_piece {
+                continue;
+            }
+            let b = bucket as usize;
+            let pieces = self.buckets[b].pieces;
+            let frames = &mut self.idle_frames[b];
+            *frames = if fits[b] == 0 {
+                frames.saturating_add(1).min(IDLE_FRAMES)
+            } else {
+                0
+            };
+            let idle = *frames >= IDLE_FRAMES;
+            changed |= self.idle[b] != idle;
+            self.idle[b] = idle;
+            if let Some((first, count)) = pieces {
+                for piece in &mut self.idle[first as usize..(first + count) as usize] {
+                    changed |= *piece != idle;
+                    *piece = idle;
+                }
+            }
+        }
+        changed
     }
 
     /// Counts the copies that one view places in each bucket of the layout, into the first
