@@ -578,7 +578,16 @@ export default defineSketch(async (ctx) => {
 			const e = rise * DEG;
 			return scale(add(scale(facing(azimuth), Math.cos(e)), [0, Math.sin(e), 0]), -1);
 		};
-		if (SUN === 'flat') {
+		if (SUN === 'albedo') {
+			// A copy stand's light, straight from the camera at the strength that a diffuse surface
+			// shows its own reflectance: a face turned to the camera reads as its albedo, and no light
+			// reaches its back to pass through.
+			scene.createDirectionalLight({
+				direction: [0, 0, -1],
+				color: '#ffffff',
+				intensity: Math.PI * 1.05,
+			});
+		} else if (SUN === 'flat') {
 			scene.createAmbientLight({ intensity: 1 });
 			scene.createHemisphereLight({ skyColor: '#eef1f4', groundColor: '#b9b9b4', intensity: 1.5 });
 		} else {
