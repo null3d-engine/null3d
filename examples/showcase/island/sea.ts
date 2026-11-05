@@ -297,11 +297,11 @@ export function createSea(ctx: SketchContext): { update(): void } {
 		ripple: 0.45,
 		// The reflection is soft on rippled water, so a coarser one shows no less. It draws every frame at
 		// High and Ultra, since a crisp mast steps visibly at a slower cadence while the camera moves.
-		// A phone draws it every fourth frame, where the lag reads as softness in the water. A held
-		// frame draws every pass, so its picture still shows the reflection the frame before it.
+		// Low keeps the add-on's default of every second frame: a cadence of four still draws a dark
+		// sea on the software WebGL2 path, with the held-frame fix in place.
 		reflectionScale: 0.5,
 		layers: 1,
-		reflectionEvery: { low: 4, medium: 2, high: 1, ultra: 1 },
+		reflectionEvery: { high: 1, ultra: 1 },
 		// The route's camera always moves, and an old reflection lags behind the boats that it mirrors.
 		reflectionFollowsBudget: false,
 		softness: 2.5,
