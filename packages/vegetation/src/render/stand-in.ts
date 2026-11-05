@@ -143,6 +143,8 @@ function partMesh(
 	const [first, ...rest] = levels;
 	if (!first) return undefined;
 	const base = ctx.geometry.fromArrays(dequantise(first.part.arrays, kit.box, steps));
+	// The part's coarser levels are the plant core's, which grows every level from one skeleton, so
+	// they are set by hand and the engine plans none on top of them.
 	if (rest.length > 0)
 		base.setLevels(
 			rest.map(({ level, part }) => ({
@@ -164,18 +166,13 @@ function fillRows(batch: InstanceBatch, copies: PlantCopies, rows: readonly numb
 	batch.markDirty();
 }
 
-/**
- * The far cards of one variant's copies, from its far bake, standing on the plant's lowest point.
- * `sized` keeps each card's size times its copy's scale; without it a card row takes the copy's
- * scale alone, as the stand-ins' frozen pictures draw.
- */
+/** The far cards of one variant's copies, from its far bake, standing on the plant's lowest point. */
 export function farCards(
 	ctx: SketchContext,
 	asset: PlantAsset,
 	bake: NonNullable<PlaceOptions['far']>[number]['bake'],
 	copies: PlantCopies,
 	rows: readonly number[],
-	sized = false,
 ): ImpostorBatch {
 	const side = bake.views * bake.texels;
 	const positions: number[] = [];
@@ -205,14 +202,10 @@ export function farCards(
 			receiveShadows: true,
 		},
 	);
+	// A card's row holds its width and height at scale 1, which the copy's own scale multiplies.
 	rows.forEach((copy, row) => {
 		const scale = copies.scale[copy] as number;
-		if (sized) {
-			// A card row's scale is the card's size; the copy's scale multiplies it.
-			cards.batch.scales[row * 3] = bake.size[0] * scale;
-			cards.batch.scales[row * 3 + 1] = bake.size[1] * scale;
-			cards.batch.scales[row * 3 + 2] = scale;
-		} else cards.batch.scales.fill(scale, row * 3, row * 3 + 3);
+		cards.batch.scales.set([bake.size[0] * scale, bake.size[1] * scale, 1], row * 3);
 	});
 	cards.markDirty();
 	return cards;

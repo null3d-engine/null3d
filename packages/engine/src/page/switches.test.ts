@@ -29,6 +29,7 @@ describe('parseSwitches', () => {
 			prepassColor: undefined,
 			occlusion: undefined,
 			occlusionBuffer: undefined,
+			occlusionCheck: true,
 			skinning: 'vertex',
 			indexInstances: false,
 			direct: 'auto',
@@ -50,6 +51,7 @@ describe('parseSwitches', () => {
 			stats: undefined,
 			permutations: undefined,
 			glTiming: undefined,
+			gpuSamples: undefined,
 			replayDelay: undefined,
 		});
 	});
@@ -59,6 +61,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?occlusion-buffer=256x144').occlusionBuffer).toBe(256 * 144);
 		for (const bad of ['384', '384x', 'x216', '384x216x2', '0x216', '2048x1024', 'big'])
 			expect(parseSwitches(`?occlusion-buffer=${bad}`).occlusionBuffer).toBeUndefined();
+	});
+
+	it("holds GPU occlusion culling's passes on with ?occlusion-check=off, and keeps its check otherwise", () => {
+		expect(parseSwitches('?occlusion-check=off').occlusionCheck).toBe(false);
+		expect(parseSwitches('?occlusion-check=on').occlusionCheck).toBe(true);
+		expect(parseSwitches('').occlusionCheck).toBe(true);
 	});
 
 	it('withholds WEBGL_multi_draw with ?multidraw=off, and offers it otherwise', () => {
@@ -173,6 +181,12 @@ describe('parseSwitches', () => {
 	it('reads ?gl-timing, which times each WebGL call for benchmark pages', () => {
 		expect(parseSwitches('?gpu=webgl2&gl-timing').glTiming).toBe('calls');
 		expect(parseSwitches('?gl-timing=sync').glTiming).toBe('sync');
+	});
+
+	it('times every drawn frame on the GPU with ?gpu-samples=every, and one in eleven otherwise', () => {
+		expect(parseSwitches('?gpu-samples=every').gpuSamples).toBe('every');
+		expect(parseSwitches('?gpu-samples=some').gpuSamples).toBeUndefined();
+		expect(parseSwitches('').gpuSamples).toBeUndefined();
 	});
 
 	it('keeps the text of ?hold for the engine to check, and an empty text for a bare ?hold', () => {

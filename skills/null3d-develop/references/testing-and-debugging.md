@@ -102,7 +102,7 @@ Before you believe a picture that judges a change, prove the page read the chang
 
 ## 4. Testing on real devices
 
-URL switches for the dev server (engine docs `guides/testing`):
+URL switches for the dev server and other development builds, such as (0.2) the CDN build's `lib-dev/index.js` (engine docs `guides/testing`). A production build ignores them:
 
 | Switch | Effect |
 | --- | --- |
@@ -124,8 +124,9 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?latency=pipelined`, `?latency=low` | Latency mode |
 | `?prepass=on`, `?prepass=off` | Turn the depth prepass on or off over the `depthPrepass` option, to compare GPU time (`concepts/quality-presets`) |
 | `?occlusion=on`, `?occlusion=off` | Turn GPU occlusion culling on or off over the `gpuOcclusion` option, to compare GPU time (WebGPU only; `concepts/culling`) |
+| `?occlusion-check=off` | On WebGPU, keep GPU occlusion culling's passes on in every frame, without the check that turns them off where they do not pay, so a test that compares the image with culling and without it compares frames that culled (`concepts/culling`) |
 | `?occlusion-buffer=384x216` | On WebGL2, give software occlusion culling's buffer about that many pixels instead of 256 x 144, to compare the CPU time it costs and the objects it hides (`concepts/culling`) |
-| `?direct=on`, `?direct=off` | Force the direct-draw path or the indirect one on WebGPU, over the start-up probe's measured choice, to compare GPU time; `engine.capabilities.directDraws` says which path the engine took (`guides/performance`) |
+| `?direct=on`, `?direct=off` | Force the direct-draw path or the indirect one on WebGPU on any device, over the start-up probe's choice, to compare GPU time. The probe runs only on Apple GPUs in WebKit. `engine.capabilities.directDraws` says which path the engine took, and `engine.capabilities.drawPath` says why (`guides/performance`) |
 | `?cells=off` | Cull every object, with no grid cell out of view skipped first, to measure what skipping cells saves (`concepts/culling`) |
 | `?skinning=compute` | On WebGPU, skin every skinned mesh once per frame in the skinning pass, a compute pass, instead of in the vertex shader of each pass, to compare GPU time (`api/animation`) |
 | `?skinning=full`, `skip`, `narrow` | On WebGPU, skin in the skinning pass with fewer of its savings: `full` skins every drawn character every frame with 32-bit normals, `skip` keeps only the skip of unchanged poses, `narrow` keeps only the 8-bit normals (`guides/testing`) |
@@ -143,7 +144,8 @@ Reaching the dev server:
 
 - Android phone: connect by USB and run `adb reverse tcp:5173 tcp:5173`; the phone opens `http://localhost:5173`, which counts as a secure context. Plain `http` on a network address does not, and Chrome 154 asks before loading it.
 - iPhone or iPad: serve HTTPS with a local certificate through the Vite plugin's `https` option (`getting-started/hosting`). Install the root certificate on the device, and trust it in Settings > General > About > Certificate Trust Settings. Debug from Safari on a Mac through the Develop menu.
-- Record the device, browser version, GPU tier and preset with every result: `engine.capabilities.tier` and `engine.mode.preset` give the last two. `bunx @null3d/cli doctor --device` (0.3, not built yet) prints them all.
+- Record the device, browser version, GPU tier and preset with every result: `engine.capabilities.tier` and `engine.mode.preset` give the last two. `bunx @null3d/cli doctor --device` (0.3, not built yet) prints them all. Record the engine version, the canvas size in CSS pixels, the pixel ratio, any CPU throttle and where the camera stood too. Without them, two numbers cannot be compared.
+- Measure one page at a time. A second tab or a preview that draws a scene shares the GPU, and lowers what each one measures.
 - After a core rebuild or a merge that changes the shaders, delete `node_modules/.vite` and `node_modules/.cache/null3d-shaders`, then start the server with `--force`. The second folder holds the compiled custom materials, and `--force` does not clear it. An entry compiled against an older frame group keeps its old binding declarations, and the page dies with E1404 at a binding, which reads like an engine fault.
 
 ## 5. Debugging tools
@@ -187,7 +189,7 @@ Every engine error is an `EngineError` with a code, the object's name, what fail
 E1203: setPosition() got NaN for x on "Player" (slot 12). Check the value computed before this call.
 ```
 
-Each code has a docs page, such as `errors/E1203`, with the full explanation. Release builds remove most checks, so reproduce problems in a development build.
+Each code has a docs page, such as `errors/E1203`, with the full explanation. Release builds remove most checks, so reproduce problems in a development build. Use the dev server, or (0.2) the CDN build's `lib-dev/index.js` for a page with no bundler.
 
 ## 8. Troubleshooting table
 
@@ -209,7 +211,7 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | Colors too dark or washed out | Texture color space | `'srgb'` for color maps, `'linear'` for data maps | `concepts/color-management` |
 | A video surface shows its material's color and no picture | The video never played, an element that `display: none` hides gives no frame in some browsers, the two names differ, or the video's origin sent no CORS headers | Play it muted or from a click; keep the element in the layout out of sight; give `engine.registerVideo` and `textures.fromVideo` the same name; set `crossOrigin = 'anonymous'` and send CORS headers | `guides/video-textures` |
 | Lighting much brighter or darker than expected | Light units (physical, like three.js r155+) or exposure | Retune intensities; check `post.set({ exposure })` | `concepts/lighting` |
-| The background differs from the page's CSS color | Exposure and tone mapping change the background too | `post.set({ toneMapping: 'none' })`, or `createEngine({ transparent: true })` over a CSS background | `concepts/color-management` |
+| The background differs from the page's CSS color | Exposure and tone mapping change the background too | `post.set({ toneMapping: 'none' })`, or `createEngine({ transparent: true })` over a CSS background. A see-through canvas makes the browser blend it over the page in every frame, and a still view keeps drawing | `concepts/color-management` |
 | Shadows missing | A light or object not casting, a receiver not receiving, or out of range; a caster on a layer that the light lacks; a spot or point light without a tile, past the preset's `shadowTiles`; point lights on a preset without `pointLightShadows` | `castShadows` on light and caster, `receiveShadows` on the receiver, the caster's layer in the light's `layers`, `shadowTiles`, `pointLightShadows` | `concepts/shadows`, `concepts/render-layers` |
 | Shadows vanish as the camera zooms out, and come back as it zooms in | A fixed shadow `distance` that the whole subject leaves at once | `distance: 'auto'`, or set the distance each frame from the camera's distance to the subject, on steps that hold | `concepts/shadows` |
 | Shadow acne or peter-panning | Bias | Adjust `shadow.bias` and `normalBias` in small steps | `concepts/shadows` |
@@ -240,23 +242,27 @@ Work through this list before a release, on the production build (`bunx vite bui
 Rendering:
 
 - The page renders with `?gpu=webgpu` and with `?gpu=webgl2`, and the console shows no errors and no warnings.
-- The image stays right after a window resize, at phone width, and at a pixel ratio of 3.
+- The image stays right after a window resize, at phone width, and at a pixel ratio of 3. Where the scene follows the page's color theme, it stays right after a change of theme too.
 - On a real phone, a ten-minute run holds its frame rate as the phone warms up (`guides/phones`).
+- Run the scene where it misses its frame rate, such as at a heavier `?preset=` than the device starts at. Then `quality.renderScale` and `quality.governor.steps` fall to their lowest and climb back. No frame stays black or stuck, and your `quality.onChange` handlers run both ways.
 - A scene with more than 1,048,576 objects and instance rows ran on the smallest devices your users have, on both GPU paths. On WebGPU every device draws 2,097,152. On WebGL2 a device whose textures reach only 2,048 pixels draws 1,048,576. The limit of each device is in `engine.capabilities.maxInstances`.
 
 Startup:
 
 - The host sends the isolation headers, and lets browsers keep the hashed files under `assets/` (`getting-started/hosting`).
 - With the build's files on a CDN, the CDN sends `Access-Control-Allow-Origin` on every file, and the page's policy allows `blob:` workers and the CDN (`getting-started/hosting`). The engine needs no `'unsafe-eval'`.
-- A game that plays offline caches the files of `null3d-files.json` in its own service worker: the `start` group and each feature that it uses or lists in `preload`. A preset can draw a feature that the sketch never asks for: High and Ultra, and WebGL2's Medium, draw screen-space bounce light, whose steps read `'ao'`'s and `'color_copy'`'s shaders from the first frame, so cache those two on those presets. A reload with the network off starts with `crossOriginIsolated` true (`getting-started/hosting`, "Offline play").
+- A game that plays offline caches the files of `null3d-files.json` in its own service worker: the `start` group and each feature that it uses or lists in `preload`. A preset can draw a feature that the sketch never asks for: High and Ultra, and WebGL2's Medium, draw screen-space bounce light, whose steps read `'ao'`'s and `'color_copy'`'s shaders from the first frame. WebGPU's High and Ultra also read `'occlusion'`'s for GPU occlusion culling, so cache those on those presets. A reload with the network off starts with `crossOriginIsolated` true (`getting-started/hosting`, "Offline play").
 - A cold load on Chrome's Slow 4G profile, with the cache off, reaches `engine.firstFrame` in a time you accept. The loading screen stays up until then.
-- `engine.measure(5)` reports no long tasks on the page's thread (`mainThread`) while the engine starts.
+- `engine.measure(5)` reports no long tasks on the page's thread (`mainThread`) while the engine starts. A page control that you click then answers within a few milliseconds.
+- A first visit and a repeat visit are both timed, as `references/performance.md` section 11 says.
 
 Lifetime:
 
 - In a single-page app, leaving the view and coming back uses `engine.detach()` and `engine.attach()`. After `attach`, `measure` reports `rebuilds` and `pipelines` at zero.
 - Leaving the page during the start cancels it through the `signal` option, with no error in the console.
 - After `destroy`, a new engine starts cleanly, and the page's memory falls back.
+- After a deploy, the cache of generated data holds no entries of the old build (`references/performance.md`, section 12).
+- Back from another site, the page either comes back from the back/forward cache and draws, or loads again cleanly, with no error in the console.
 
 Failures:
 

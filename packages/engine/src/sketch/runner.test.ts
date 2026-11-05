@@ -57,6 +57,7 @@ const CAPABILITIES: EngineCapabilities = {
 	maxCanvasSize: 4096,
 	depth: 'reversed',
 	directDraws: false,
+	drawPath: 'webgl2',
 };
 
 /** Scene slots of the fake core, and records of its command ring. */
@@ -64,6 +65,9 @@ const CAPACITY = 15;
 const RING = 64;
 /** The fake core's first ring block, past room for every scene field. */
 const RING_BLOCK = 16;
+
+/** Where the fake core keeps the debug line arrays, past every scene and ring block. */
+const LINES_AT = 4096 * 32;
 
 /** The GPU bytes of every mesh, as the fake core reports them. */
 const MESH_BYTES = 4096;
@@ -75,6 +79,7 @@ const KEPT_ARGUMENTS = new Set([
 	'setShadowQuality',
 	'setLightDefault',
 	'setCanvasOutput',
+	'drawDebugLines',
 ]);
 
 /** How the log shows a change of one of the core's texture settings. */
@@ -95,19 +100,31 @@ function fakeGlue(
 	grows = false,
 	cellsRefused = () => 0,
 	handed: { handedMs: number; timing?: boolean[] } = { handedMs: 0 },
+	readsLastFrame = () => 0,
 	answers: GlueAnswers = {},
 ): CoreGlue {
 	// Each scene field, then each ring field, in its own 4 KB block.
 	const block = (index: number) => 4096 * (index + 1);
 	let slots = 0;
+	let linePoints = 0;
 	const kept: Partial<Record<keyof CoreGlue, (field: number) => number>> = {
 		sceneCapacity: () => CAPACITY,
 		sceneArrays: block,
 		commandRing: (field) => (field === C.RING_FIELD_CAPACITY ? RING : block(RING_BLOCK + field)),
 		reserveObject: () => ++slots,
+		// The debug line arrays: each point's three positions, then each point's color.
+		reserveDebugLines: (points) => {
+			linePoints = points;
+			const short = LINES_AT + points * 28 - memory.buffer.byteLength;
+			if (short > 0) memory.grow(Math.ceil(short / 65536));
+			return 0;
+		},
+		debugLineArrays: (field) =>
+			field === C.DEBUG_LINE_FIELD_POSITIONS ? LINES_AT : LINES_AT + linePoints * 24,
 		// The first block holds no field, so the call values take its start.
 		callValues: () => 0,
 		cellsRefused,
+		readsLastFrame,
 		meshMemoryBytes: () => MESH_BYTES,
 		takeHandedUs: () => (handed.timing?.at(-1) === false ? 0 : Math.round(handed.handedMs * 1000)),
 		// The fake takes numbers, so the flag arrives as one.
@@ -227,6 +244,7 @@ async function start(
 		keyCodes = [],
 		shared = false,
 		cellsRefused,
+		readsLastFrame,
 		control = controlViews(createControlBuffer(shared)),
 		maxTargetFps = 60,
 		jobs = { most: 0, handedMs: 0, asked: [] },
@@ -243,6 +261,8 @@ async function start(
 		keyCodes?: readonly string[];
 		shared?: boolean;
 		cellsRefused?: () => number;
+		/** What the core answers to `readsLastFrame`: nonzero when a pass reads the frame before. */
+		readsLastFrame?: () => number;
 		control?: ReturnType<typeof controlViews>;
 		maxTargetFps?: number;
 		/**
@@ -268,7 +288,7 @@ async function start(
 		() => {},
 		metrics,
 		{
-			glue: fakeGlue(log, memory, calls, grows, cellsRefused, jobs, answers),
+			glue: fakeGlue(log, memory, calls, grows, cellsRefused, jobs, readsLastFrame, answers),
 			memory,
 			control,
 			keyCodes,
@@ -305,6 +325,7 @@ async function start(
 				directDraws: false,
 				derivedCache: true,
 				occlusionBuffer: 0,
+				occlusionCheck: true,
 				...device,
 			},
 			capabilities: CAPABILITIES,
@@ -535,7 +556,13 @@ describe('SketchRunner', () => {
 			let skip = false;
 			const { runner } = await start(({ scene, time }) => {
 				const { core } = scene;
-				const mesh = { id: 1, radius: 1, core } as unknown as MeshGeometry;
+				const mesh = {
+					id: 1,
+					radius: 1,
+					center: [0, 0, 0],
+					core,
+					drawnWith() {},
+				} as unknown as MeshGeometry;
 				const material = { id: 1, core } as unknown as Material;
 				const crate = scene.createMesh({ name: 'Crate', mesh, material });
 				const sign = scene.createMesh({ name: 'Sign', mesh, material });
@@ -586,6 +613,17 @@ describe('SketchRunner', () => {
 		expect(shadowCalls()).toEqual([['setShadowQuality', 5, 3, true, 0.1]]);
 		runner.step(0);
 		expect(shadowCalls().at(-1)).toEqual(['setShadowQuality', 3, 1, false, 0.2]);
+	});
+
+	it("moves the canvas to the lower preset's anti-aliasing mode when the check lowers the preset", async () => {
+		const { runner, context, calls } = await start(() => ({}));
+		const moves = () => calls.filter((call) => call[0] === 'setCanvasOutput');
+		expect(moves()).toEqual([]);
+		// The check's step is the runner's own, not part of a sketch's quality API.
+		const quality = context.quality as unknown as { lower(): Promise<void> };
+		await quality.lower();
+		runner.step(1000 / 60);
+		expect(moves()).toEqual([['setCanvasOutput', FORMAT_RGBA16_FLOAT, C.ANTIALIAS_FXAA]]);
 	});
 
 	it('moves an 8-bit device to HDR color for the subsurface blur only once the page or the sketch gives it taps', async () => {
@@ -1163,15 +1201,12 @@ describe('the held frames that draw', () => {
 		expect(lines).toEqual(['0.000 false', '0.017 false', '0.033 true', '0.050 true']);
 	});
 
-	it('marks the second frame at the held time drawn, as the thread that draws draws both', async () => {
-		const { lines } = await drawnFrames({ readsLastFrame: () => 1 });
-		expect(lines).toEqual([
-			'0.000 false',
-			'0.017 false',
-			'0.033 false',
-			'0.050 true',
-			'0.050 true',
-		]);
+	it('runs no update in the settle frame after the held one, so the held update is the one drawn', async () => {
+		// The thread that draws draws a settle frame when a pass reads the frame before, but the
+		// sketch's code stays out of it, so the air and every other drawn-frame cost run once.
+		const { lines, after } = await drawnFrames({ readsLastFrame: () => 1 });
+		expect(lines).toEqual(['0.000 false', '0.017 false', '0.033 false', '0.050 true']);
+		expect(after).toBe(true);
 	});
 });
 
@@ -1191,6 +1226,38 @@ describe('hold mode with a timed script', () => {
 			undefined,
 			{ holdSeconds: seconds, holdScript: { steps }, keyCodes },
 		);
+
+	it('reports the held frame when a pass makes it draw one more', async () => {
+		// A pass that reads the frame before makes the hold record a settle frame after the held
+		// one. The page reports the frame that the session's steps reached, not that settle frame,
+		// and the settle frame runs none of the sketch's code.
+		let updates = 0;
+		const { control } = await start(() => ({ onUpdate: () => updates++ }), undefined, {
+			holdSeconds: 0.5,
+			readsLastFrame: () => 1,
+		});
+		expect(updates).toBe(31);
+		expect(Atomics.load(control.slots, Slot.HeldFrame)).toBe(31);
+		expect(Atomics.load(control.slots, Slot.FramesPublished)).toBe(32);
+	});
+
+	it('draws the held frame debug lines in the settle frame too', async () => {
+		// The update draws its debug lines again in each frame, and the settle frame runs no update,
+		// so it draws the held frame's lines: the settle frame is the one that the page captures.
+		const { calls } = await start(
+			(context) => ({
+				onUpdate: () => {
+					context.debug.line([0, 0, 0], [1, 0, 0]);
+					context.debug.box([0, 0, 0], [1, 1, 1]);
+				},
+			}),
+			undefined,
+			{ holdSeconds: 0.5, readsLastFrame: () => 1 },
+		);
+		const handed = calls.filter(([name]) => name === 'drawDebugLines').map(([, points]) => points);
+		expect(handed.length).toBe(32);
+		expect(handed.slice(-2)).toEqual([26, 26]);
+	});
 
 	it('writes a property before the frame at its time, and dumps it after', async () => {
 		const { runner } = await holdOf([
@@ -1344,6 +1411,18 @@ describe('recording a session and replaying it', () => {
 			sketch: 'http://localhost/sketch.ts',
 			stopped: false,
 		});
+		// A pass that reads the frame before makes the replay record a settle frame after its last
+		// one. The session's frames stay five, and the settle frame runs none of the sketch's code.
+		const settling: string[] = [];
+		const settled = await start(logging(settling), undefined, {
+			keyCodes: KEYS,
+			replay: program,
+			readsLastFrame: () => 1,
+		});
+		expect(settling).toEqual(live);
+		expect(settled.runner.replayOutcome?.frames).toBe(5);
+		expect(Atomics.load(settled.control.slots, Slot.HeldFrame)).toBe(5);
+		expect(Atomics.load(settled.control.slots, Slot.FramesPublished)).toBe(6);
 	});
 
 	it('runs no recording when the page does not record, and no replay when it gives none', async () => {

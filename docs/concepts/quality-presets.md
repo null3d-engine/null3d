@@ -90,7 +90,7 @@ Device hints only suggest a preset. A laptop with a weak GPU and a desktop with 
 1. The sketch's setup runs at the chosen preset and builds its scene.
 2. The engine draws the first frame, with every pipeline built, and then draws the scene for a moment more. The sketch's `onUpdate` does not run yet.
 3. The engine measures two rates: the frames that it presented, and the frames that the GPU finished. It reads the lower one, so frames that wait in a queue on the GPU cannot pass for a healthy rate.
-4. When that rate misses the target, the engine lowers the preset by one, waits for the new preset's first frame, and measures again. It stops at a preset that holds the target, or at Low. A setting that the setup changed with `quality.set` keeps its value on the lighter preset.
+4. When that rate misses the target, the engine lowers the preset by one, waits for the new preset's first frame, and measures again. It stops at a preset that holds the target, or at Low. A setting that the setup changed with `quality.set` keeps its value on the lighter preset. The lighter preset also gives the anti-aliasing mode, which the device moves its canvas to before it draws that preset's first frame. Every other setting that a device fixes at start keeps the value it started with.
 5. `createEngine` resolves after the check. The sketch's `quality.onChange` handlers then hear of the new preset at the start of the first frame of play.
 
 The [rules of the preset check](quality-preset-tables.md#rules-of-the-preset-check) give its target frame rate, the share of the target that passes, and its times.
@@ -185,7 +185,7 @@ A texture loses at most 3 levels, so a texture of 1024 x 1024 texels keeps at le
 
 When room returns, 5% under the budget, the engine loads the dropped levels again from the texture's file. The browser's cache usually holds the file. The texture draws with the levels it has until the new ones are on the GPU. The band of 5% on either side keeps the engine from dropping and loading the same levels in turn. The sketch reads the memory and the dropped levels in `quality.textureMemory`: [Quality API](../api/quality.md#texture-memory).
 
-Low smooths edges with FXAA, and the other presets with MSAA. MSAA draws 4 samples per pixel, which costs a phone's GPU memory and bandwidth. FXAA draws one sample and smooths edges in the final pass, at a small cost in sharpness. The `antialias` option of `createEngine` replaces the preset's mode. The mode then stays fixed while the engine runs, because the scene's targets and pipelines depend on it. [GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier) compares the modes.
+Low smooths edges with FXAA, and the other presets with MSAA. MSAA draws 4 samples per pixel, which costs a phone's GPU memory and bandwidth. FXAA draws one sample and smooths edges in the final pass, at a small cost in sharpness. The `antialias` option of `createEngine` replaces the preset's mode. The mode then stays fixed while the engine runs, because the scene's targets and pipelines depend on it. The start-up preset check is the one case that moves it: a preset that the check lowers draws with the lower preset's own mode, and the engine moves the canvas to that lighter mode before the scene plays. A sketch's own `quality.setPreset` keeps the mode that the engine started with. [GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier) compares the modes.
 
 The engine makes its memory while it tests the GPU paths. So the memory maximum follows the starting preset and the crashed starts, and the GPU path does not cap it. The `memory` option of `createEngine` replaces it: [Page API](../api/engine.md#memory).
 
@@ -218,9 +218,9 @@ const plain = await createEngine({ canvas, sketch, depthPrepass: false });
 
 ### GPU occlusion culling
 
-With GPU occlusion culling, each camera skips the opaque objects that others hide. It draws the depth of the marked occluders that showed in its last frame, and builds a depth pyramid from it. Then it draws only the objects that show. [Culling](culling.md#gpu-occlusion-culling-on-webgpu) describes the two phases. Every preset leaves it off. Its passes cost GPU time in each frame with marked occluders. On a fast desktop GPU they cost more than skipping hidden objects saved, in every scene measured.
+With GPU occlusion culling, each camera skips the opaque objects that others hide. It draws the depth of the large opaque objects that showed in its last frame, and builds a depth pyramid from it. Then it draws only the objects that show. [Culling](culling.md#gpu-occlusion-culling-on-webgpu) describes the two phases. High and Ultra turn it on for desktops. Phones and tablets keep it off on every preset. A check during play turns its passes off while they hide too little or make the GPU's frame longer, so a scene where they do not pay loses almost nothing.
 
-The `gpuOcclusion` option of `createEngine` replaces the preset's choice, and `?occlusion=on` or `?occlusion=off` wins over the option, to compare the scene's GPU time. It is fixed while the engine runs. It runs only on WebGPU, and not with the depth prepass, so `quality.settings.gpuOcclusion` is false on WebGL2 and when the page turns the prepass on.
+The `gpuOcclusion` option of `createEngine` replaces the preset's choice, and `?occlusion=on` or `?occlusion=off` wins over the option, to compare the scene's GPU time. It is fixed while the engine runs. It runs only on WebGPU, so `quality.settings.gpuOcclusion` is false on WebGL2. It runs beside the depth prepass, which ambient occlusion and screen-space bounce light turn on.
 
 ## Dynamic resolution
 

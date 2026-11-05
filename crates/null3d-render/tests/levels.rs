@@ -4,6 +4,7 @@
 mod common;
 
 use common::{World, base_sphere, count, grid};
+use null3d_core::jobs::JobSystem;
 use null3d_core::levels::Switch;
 use null3d_core::scene::Command;
 use null3d_gpu::drawlist::{Op, permutation, template};
@@ -30,7 +31,7 @@ const BALL: u32 = 2;
 /// is 360 pixels high and its camera 60 degrees high, so at a threshold of 1 pixel a level switches
 /// in past its error times 311.8: level 1 past 3.1 m, and level 2 past 15.6 m. The ball 20 m away
 /// draws level 2, past its fading band, which ends at 17.9 m.
-fn give_levels<B: FrameBuilder>(world: &mut World<B>, fades: u8) -> [u32; 2] {
+fn give_levels<B: FrameBuilder>(world: &mut World<B>, fades: u16) -> [u32; 2] {
     let settings = world.renderer.settings_mut();
     let meshes = [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])]
         .map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
@@ -134,7 +135,7 @@ fn instance_ranges(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32, u32)> {
 
 #[test]
 fn a_slice_that_a_moving_source_outgrows_moves_with_its_draws() {
-    let mut world = World::new();
+    let mut world = World::counting();
     give_levels(&mut world, 0b110);
     ball_at(&mut world, 20.0);
     world.record(true);
@@ -257,14 +258,15 @@ fn each_object_draws_the_level_that_its_distance_picks_on_the_job_workers() {
 
 #[test]
 fn a_biased_ball_draws_the_level_that_half_its_distance_switch_picks() {
-    // The world's ball has a local radius of 0.9, so its nearest point is 0.9 m before its centre.
-    // A bias of 2 halves the first switch, which is 0.05 times 311.8 over 2, 7.795 m of nearest
-    // point: a ball at 95% of it draws the base level, and one at 103% draws level 1.
-    let place = |world: &mut World<CpuCulledRenderer>, nearest: f32| {
+    // The world's ball has a local radius of 0.9, and the rule measures an error to its center
+    // less half that radius. A bias of 2 halves the first switch, which is 0.05 times 311.8 over
+    // 2, 7.795 m of that distance: a ball at 95% of it draws the base level, and one at 103% draws
+    // level 1.
+    let place = |world: &mut World<CpuCulledRenderer>, distance: f32| {
         let ball = world.objects[2];
         world
             .scene
-            .set_position(ball, [0.0, 0.0, 20.0 - (nearest + 0.9)])
+            .set_position(ball, [0.0, 0.0, 20.0 - (distance + 0.45)])
             .unwrap();
         world
             .scene
@@ -342,7 +344,7 @@ fn copies(world: &World) -> [u32; 5] {
 
 /// Gives the world's ball one lower level for each error, each simpler than the one before, and
 /// fading bands when `fades`. Returns their engine mesh ids.
-fn give_levels_of<B: FrameBuilder>(world: &mut World<B>, errors: &[f32], fades: u8) -> Vec<u32> {
+fn give_levels_of<B: FrameBuilder>(world: &mut World<B>, errors: &[f32], fades: u16) -> Vec<u32> {
     let finest = [[6, 4], [4, 3], [3, 2], [2, 1]];
     let settings = world.renderer.settings_mut();
     let meshes: Vec<u32> = errors
@@ -408,12 +410,38 @@ fn ball_at(world: &mut World, distance: f32) {
         .unwrap();
 }
 
+/// A small set of levels keeps a slot for each of its sources in every level, as the build sizes
+/// it, so no frame counts its copies and its slices never move while its copies switch levels. A
+/// counted set's slices follow the copies, and move when a copy picks a level whose slice is
+/// empty.
+#[test]
+fn a_small_sets_slices_hold_every_copy_in_every_level_and_never_move() {
+    let mut fixed = World::new();
+    let mut counted = World::counting();
+    for world in [&mut fixed, &mut counted] {
+        give_levels(world, 0b110);
+        world.record(true);
+    }
+    let (fixed_start, counted_start) = (copies(&fixed)[0], copies(&counted)[0]);
+    // Three plain and three fade buckets each keep a slot for both balls of the set.
+    assert_eq!(fixed_start, counted_start + 11 * 64);
+    for distance in [1.0, 5.0, 12.0, 16.5, 30.0, 1.0] {
+        for world in [&mut fixed, &mut counted] {
+            world.frame += 1;
+            ball_at(world, distance);
+            world.record(false);
+        }
+        assert_eq!(copies(&fixed)[0], fixed_start, "at {distance} m");
+    }
+    assert_ne!(copies(&counted)[0], counted_start);
+}
+
 #[test]
 fn a_meshs_levels_take_the_room_of_the_copy_that_draws_not_of_a_level_each() {
-    let mut plain = World::new();
+    let mut plain = World::counting();
     plain.record(true);
     let without = copies(&plain);
-    let mut world = World::new();
+    let mut world = World::counting();
     give_levels(&mut world, 0b110);
     world.record(true);
     let fading = copies(&world);
@@ -425,7 +453,7 @@ fn a_meshs_levels_take_the_room_of_the_copy_that_draws_not_of_a_level_each() {
 
 #[test]
 fn a_ball_inside_a_band_takes_one_copy_in_each_of_the_two_fade_buckets() {
-    let mut world = World::new();
+    let mut world = World::counting();
     give_levels(&mut world, 0b110);
     ball_at(&mut world, 20.0);
     world.record(true);
@@ -440,20 +468,70 @@ fn a_ball_inside_a_band_takes_one_copy_in_each_of_the_two_fade_buckets() {
     assert_eq!(band, picked + 2 * 64, "{band} {picked}");
 }
 
+/// A source that a frame shows without rebuilding the layout reaches the culling shader in that
+/// frame, so its level's slice must hold it in that frame too. The ball that the world hides
+/// stands as far from the camera as the one it shows, so both pick the coarsest level, whose slice
+/// held one copy before.
+#[test]
+fn a_ball_shown_without_a_rebuild_takes_room_in_its_levels_slice_at_once() {
+    let mut world = World::counting();
+    give_levels(&mut world, 0);
+    world.record(true);
+    let one = copies(&world)[0];
+    world.frame += 1;
+    world
+        .scene
+        .apply_commands(&[Command::set_visible(world.objects[3], true)], world.frame)
+        .unwrap();
+    world.record(false);
+    assert_eq!(copies(&world)[0], one + 64, "the shown ball has no room");
+}
+
+/// Rows that a new active count adds reach the culling shader in the frame that adds them, so
+/// their level's slices must hold them in that frame.
+#[test]
+fn rows_added_without_a_rebuild_take_room_in_their_levels_slices_at_once() {
+    let rows = 16;
+    let mut world = World::counting();
+    give_levels(&mut world, 0);
+    let slot = world.scene.slots().resolve(world.objects[0]).unwrap() as usize;
+    let material = world.scene.materials()[slot];
+    let batch = world
+        .batches
+        .create(rows, false, false, BALL, material, 0.9)
+        .unwrap();
+    let set_active = |world: &mut World, count: u32| {
+        let rows = world.batches.get_mut(batch).unwrap();
+        rows.set_active_count(count).unwrap();
+    };
+    set_active(&mut world, 0);
+    world.record(true);
+    let none = copies(&world)[0];
+    world.frame += 1;
+    set_active(&mut world, rows);
+    world.record(false);
+    // The slice that outgrows its room takes spare room past its count.
+    let added = copies(&world)[0];
+    assert!(
+        added >= none + rows * 64,
+        "the added rows have no room: {added} {none}"
+    );
+}
+
 #[test]
 fn a_coarse_level_takes_no_more_room_than_the_finest_one() {
-    let mut fine = World::new();
+    let mut fine = World::counting();
     give_levels(&mut fine, 0);
     ball_at(&mut fine, 1.0);
     fine.record(true);
-    let mut coarse = World::new();
+    let mut coarse = World::counting();
     give_levels(&mut coarse, 0);
     ball_at(&mut coarse, 100.0);
     coarse.record(true);
     // The ball draws its base mesh at 1 m and its coarsest level at 100 m: the level set takes
     // the copy of the ball that draws, whatever level the distance picks.
     assert_eq!(copies(&fine), copies(&coarse));
-    let mut hidden = World::new();
+    let mut hidden = World::counting();
     give_levels(&mut hidden, 0);
     ball_at(&mut hidden, 1.0e5);
     hidden.record(true);
@@ -466,10 +544,10 @@ fn forty_thousand_copies_of_four_levels_take_one_copy_each() {
     // A forest: a batch of 40,000 copies of a mesh that has three lower levels and fading bands.
     // The same world draws the same copies without levels.
     let rows = 40_000;
-    let mut without = World::new();
+    let mut without = World::counting();
     without.record(true);
     let mut plain = copies(&without)[0];
-    let mut sized = World::new();
+    let mut sized = World::counting();
     give_levels_of(&mut sized, &[0.01, 0.05, 0.2], 0b1110);
     sized.record(true);
     let settled = copies(&sized)[0];
@@ -500,13 +578,14 @@ fn forty_thousand_copies_of_four_levels_take_one_copy_each() {
 }
 
 /// The same forest as the test above, but its trees cast the sun's shadows in four cascades. The
-/// casters' layout is one copy list that every cascade draws, so the four cascades must not
-/// multiply the list.
+/// cascades share the casters' bucket table, so a level's slice holds the most copies that any
+/// cascade places in it. Each cascade picks a caster's level in its own texels, and counts only
+/// the casters that its frustum holds.
 #[test]
-fn forty_thousand_casters_of_four_cascades_take_one_copy_each() {
+fn forty_thousand_casters_of_four_cascades_take_a_copy_for_each_level_that_a_cascade_picks() {
     let rows: u32 = 40_000;
     let mut measured = Vec::new();
-    for with_levels in [false, true] {
+    for (with_levels, far) in [(false, false), (true, false), (true, true)] {
         let mut world = World::new();
         world.cast_sun_shadows(4);
         if with_levels {
@@ -522,21 +601,87 @@ fn forty_thousand_casters_of_four_cascades_take_one_copy_each() {
             let batch = world.batches.get_mut(batch).unwrap();
             batch.set_active_count(rows).unwrap();
             batch.set_shadows(null3d_core::scene::flags::CAST_SHADOWS);
+            // Far past the shadow distance, no cascade's box holds the trees.
+            if far {
+                for row in batch.positions_mut().as_chunks_mut::<3>().0 {
+                    *row = [5_000.0, 0.0, 0.0];
+                }
+            }
         }
         world.record(true);
         measured.push(copies(&world)[1]);
     }
-    // `measured[0]` is the casters' list without levels, and `measured[1]` with them. The four
-    // cascades draw one copy list, so the list takes one copy for each of the 40,000 trees, and
-    // the levels add nothing to it: 2.56 MB. The removed rule kept a slice for every copy in every
-    // level, and the casters' list has four levels and no fading band, because its shadow
-    // pipelines take no fading build: 10.24 MB.
+    // Without levels, the list takes one copy for each of the 40,000 trees: 2.56 MB. With levels,
+    // the trees stand together inside every cascade, and each cascade picks one level for all of
+    // them, so the list takes a copy for each level that some cascade picks: at least one and at
+    // most four. Here the four cascades pick two levels, 5.12 MB, against the 10.24 MB of a slice
+    // for every copy in every one of four levels.
+    // Trees that no cascade holds take no copy.
     let per_copy = rows * 64;
-    assert_eq!(measured[1], measured[0], "{measured:?}");
-    for bytes in measured {
-        assert!(bytes >= per_copy && bytes < per_copy + 128, "{bytes}");
-    }
+    assert!(
+        measured[0] >= per_copy && measured[0] < per_copy + 128,
+        "{measured:?}"
+    );
+    assert!(
+        measured[1] >= per_copy && measured[1] < 4 * per_copy + 128,
+        "{measured:?}"
+    );
+    assert!(measured[2] < 128 * 64, "{measured:?}");
     assert_eq!(4 * per_copy, 10_240_000);
+}
+
+/// The count of each level's copies runs on the job workers. A forest whose rows spread over every
+/// level, every fading band and past the hide distance takes the same room, counted by four job
+/// workers and by the calling thread alone, in the camera's list and in the casters'.
+#[test]
+fn job_workers_count_the_same_copies_of_each_level_as_one_thread() {
+    let rows: u32 = 40_000;
+    let forest = |workers: Option<&'static JobSystem>| {
+        let mut world = World::new();
+        world.cast_sun_shadows(4);
+        give_levels_of(&mut world, &[0.01, 0.05, 0.2], 0b1110);
+        world.workers = workers;
+        let slot = world.scene.slots().resolve(world.objects[0]).unwrap() as usize;
+        let material = world.scene.materials()[slot];
+        let batch = world
+            .batches
+            .create(rows, false, false, BALL, material, 0.9)
+            .unwrap();
+        {
+            let batch = world.batches.get_mut(batch).unwrap();
+            batch.set_active_count(rows).unwrap();
+            batch.set_shadows(null3d_core::scene::flags::CAST_SHADOWS);
+            // Rows from the camera out to 4 km in front of it, over a strip 97 m wide.
+            for (row, position) in batch
+                .positions_mut()
+                .as_chunks_mut::<3>()
+                .0
+                .iter_mut()
+                .enumerate()
+            {
+                let row = row as f32;
+                *position = [(row % 97.0) - 48.0, 0.0, 20.0 - 0.1 * row];
+            }
+        }
+        world.record(true);
+        world.frame += 1;
+        world.record(false);
+        let [camera, casters, ..] = copies(&world);
+        (camera, casters)
+    };
+    let jobs: &'static JobSystem = Box::leak(Box::new(JobSystem::new(4)));
+    let measured = std::thread::scope(|scope| {
+        for i in 0..4 {
+            scope.spawn(move || jobs.worker_loop(i));
+        }
+        let measured = [forest(None), forest(Some(jobs))];
+        jobs.shutdown();
+        measured
+    });
+    assert_eq!(measured[0], measured[1], "{measured:?}");
+    // The forest's fading bands and its hidden rows make its counts differ from one copy a row.
+    let (camera, _) = measured[0];
+    assert_ne!(camera, rows * 64, "{measured:?}");
 }
 
 /// A copy list that reserves room for more copies than the device's binding holds is refused, so
@@ -581,15 +726,15 @@ fn a_copy_list_past_the_binding_is_refused_rather_than_sized_over_it() {
 fn a_bias_on_an_object_makes_its_levels_switch_nearer() {
     let mut world = cpu_world();
     let [fine, coarse] = give_levels(&mut world, 0);
-    // Level 2 switches in past 15.6 m, so the ball whose nearest point lies 8.6 m away draws
-    // level 1.
+    // Level 2 switches in past 15.6 m, so the ball whose level distance, to its center less half
+    // its radius, is 9.05 m draws level 1.
     let ball = world.objects[2];
     world.scene.set_position(ball, [0.0, 0.0, 10.5]).unwrap();
     world.record(true);
     let drawn = draws(&world);
     assert!(drawn.contains(&(indices_of(&world, fine), 1)), "{drawn:?}");
-    // A bias of 2 halves every switch distance, so the same ball draws its coarsest level at
-    // 7.8 m of nearest point.
+    // A bias of 2 halves every switch distance, so the same ball draws its coarsest level past
+    // 7.8 m.
     world
         .scene
         .apply_commands(&[Command::set_level_bias(ball, 2.0)], world.frame)
@@ -887,11 +1032,7 @@ fn the_gpu_path_keeps_a_trees_levels_when_two_objects_draw_the_mesh() {
 }
 
 #[test]
-fn the_gpu_path_keeps_a_trees_levels_when_its_mesh_fills_several_parts() {
-    let mut plain = World::new();
-    let plain_mesh = plain.add_object(&grid(256, 256), Shading::Lit);
-    give_levels_to(&mut plain, plain_mesh, [grid(2, 2), grid(1, 1)]);
-    let without = indirect_draws(&mut plain);
+fn the_gpu_path_draws_the_tree_of_a_mesh_that_fills_several_parts() {
     let mut world = World::new();
     let mesh = world.add_object(&grid(256, 256), Shading::Lit);
     give_levels_to(&mut world, mesh, [grid(2, 2), grid(1, 1)]);
@@ -901,16 +1042,119 @@ fn the_gpu_path_keeps_a_trees_levels_when_its_mesh_fills_several_parts() {
         .parts(settings.meshes().mesh(mesh - 1).unwrap(), false)
         .len();
     assert!(parts > 1, "the mesh of the test fills {parts} parts");
+    let without = indirect_draws(&mut world);
     world
         .renderer
         .set_mesh_patches(mesh, Some(one_patch_tree()))
         .unwrap();
-    // A patch's indices name one part's vertices, so a split mesh keeps its whole levels.
-    assert_eq!(indirect_draws(&mut world), without);
+    world.frame += 1;
+    // The parts lie one after another in one shared buffer, so the tree's 32-bit indices reach
+    // them all: one draw of the chosen patches replaces the parts' draws and the whole levels'.
+    let with = indirect_draws(&mut world);
+    assert!(
+        with < without,
+        "{with} draws with the tree, {without} without"
+    );
     assert!(
         world
             .commands()
             .iter()
-            .all(|(op, o)| !(*op == Op::CreateComputePipeline && o[1] == template::CLUSTER))
+            .any(|(op, o)| *op == Op::CreateComputePipeline && o[1] == template::CLUSTER)
     );
+}
+
+/// `geometry` with every position moved by `offset`, as a quantized file stores a mesh from a
+/// corner of its box rather than around its center.
+fn moved(mut geometry: Geometry, offset: [f32; 3]) -> Geometry {
+    let stride = geometry.stride();
+    for v in 0..geometry.vertex_count() {
+        for (k, shift) in offset.iter().enumerate() {
+            let at = v * stride + k * 4;
+            let bytes: [u8; 4] = geometry.vertices[at..at + 4].try_into().unwrap();
+            let value = f32::from_le_bytes(bytes) + shift;
+            geometry.vertices[at..at + 4].copy_from_slice(&value.to_le_bytes());
+        }
+    }
+    geometry
+}
+
+/// True when the world's visible ball, given a mesh whose positions lie `offset` from its origin
+/// with two lower levels, and turned by `rotation`, draws its first lower level. The ball stands
+/// so that the shape's center lies on the camera's axis, with its level distance, to the shape's
+/// sphere's center less half its radius, at `distance` meters.
+fn off_origin_ball_draws_level_1(offset: [f32; 3], rotation: [f32; 4], distance: f32) -> bool {
+    let mut world = cpu_world();
+    let settings = world.renderer.settings_mut();
+    let base = settings
+        .meshes_mut()
+        .add(&moved(base_sphere(0.5, [8, 6]), offset))
+        .unwrap()
+        + 1;
+    let levels = [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])]
+        .map(|level| settings.meshes_mut().add(&moved(level, offset)).unwrap() + 1);
+    settings
+        .set_mesh_levels(
+            base,
+            &levels,
+            &[0.01, 0.05],
+            &[Switch::Error; 2],
+            &[0, 0],
+            0,
+        )
+        .unwrap();
+    let slot = settings.meshes().mesh(base - 1).unwrap();
+    let (center, radius) = (slot.center, slot.radius);
+    assert!(
+        (0..3).all(|k| (center[k] - offset[k]).abs() < 1e-5) && radius < 0.51,
+        "the mesh's sphere lies on its shape: {center:?} {radius}"
+    );
+    let ball = world.objects[2];
+    // The page gives an object its mesh's sphere, as `createMesh` and `setMesh` do.
+    world.scene.set_local_sphere(ball.slot(), center, radius);
+    world.scene.set_rotation(ball, rotation).unwrap();
+    // A half turn about y takes the shape's center to the other side of the origin.
+    let [x, y, z, w] = rotation;
+    let turned = [
+        (1.0 - 2.0 * (y * y + z * z)) * center[0],
+        0.0,
+        2.0 * (x * z - y * w) * center[0],
+    ];
+    world
+        .scene
+        .set_position(
+            ball,
+            [
+                -turned[0],
+                -turned[1],
+                20.0 - (distance + 0.5 * radius) - turned[2],
+            ],
+        )
+        .unwrap();
+    world
+        .scene
+        .apply_commands(&[Command::set_mesh(ball, base)], world.frame)
+        .unwrap();
+    world.record(true);
+    let fine = indices_of(&world, levels[0]);
+    draws(&world).iter().any(|&(indices, _)| indices == fine)
+}
+
+#[test]
+fn a_ball_off_its_origin_keeps_its_switch_when_it_turns_half_round() {
+    // The ball's positions lie 4 m along x from its origin, as a mesh from a quantized file starts
+    // at a corner. Its sphere sits on the shape, so the level that it draws follows the shape's
+    // distance whichever way it faces. A sphere around the origin would reach 4.5 m, and its
+    // center would move 8 m as the object turns. Level 1 switches in past 0.01 times 311.8,
+    // 3.118 m of level distance, to the sphere's center less half its radius.
+    let offset = [4.0, 0.0, 0.0];
+    for rotation in [[0.0, 0.0, 0.0, 1.0], [0.0, 1.0, 0.0, 0.0]] {
+        assert!(
+            !off_origin_ball_draws_level_1(offset, rotation, 0.95 * 3.118),
+            "{rotation:?}: before the switch, the base level"
+        );
+        assert!(
+            off_origin_ball_draws_level_1(offset, rotation, 1.05 * 3.118),
+            "{rotation:?}: past the switch, level 1"
+        );
+    }
 }

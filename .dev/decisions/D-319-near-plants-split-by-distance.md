@@ -21,7 +21,7 @@ hand-over to cards invisible, and stay within a frame's budget on every preset a
 
 ## Rule
 
-The plant core's design ([D-305](D-305-plant-core-three-scales.md)) and the lead's ruling on near
+The plant core's design ([D-323](D-323-plant-core-three-scales.md)) and the lead's ruling on near
 foliage: one split per copy, real shoot rows nearer than it and the tree's own cards beyond, a thin
 overlap, no pop and no hole; the leaf mesh tier falls with distance inside the near band; a
 per-frame drawn-triangle budget for all near foliage per preset, which the governor halves under

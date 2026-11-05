@@ -72,7 +72,7 @@ use null3d_render::grading::{Lut, Vignette};
 use null3d_render::graph::{GraphError, RenderScale};
 use null3d_render::light_tables;
 use null3d_render::materials::{self, CustomShading, LayerMap, MapSlot, MaterialError, Shading};
-use null3d_render::meshes::{MeshError, MeshSlot, UpdateError};
+use null3d_render::meshes::{MeshError, MeshSlot, MeshStorage, UpdateError};
 use null3d_render::mirror::Mirror;
 use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
 use null3d_render::outline::Outline;
@@ -707,6 +707,7 @@ pub fn init_engine(
             Box::new(CpuCulledRenderer::new(CpuCulledConfig {
                 canvas,
                 multi_draw: capabilities.contains(Capabilities::MULTI_DRAW),
+                first_provoking_vertex: capabilities.contains(Capabilities::FIRST_PROVOKING_VERTEX),
                 float16_targets: capabilities.contains(Capabilities::FLOAT16_TARGETS),
                 max_texture_size: max_texture_size.max(CpuCulledConfig::default().max_texture_size),
                 cell_culling,
@@ -1308,8 +1309,9 @@ pub fn visible_entries(frame: u32) -> u32 {
     })
 }
 
-/// The sources inside the camera's frustum that software occlusion culling hid in a recorded
-/// frame, where the frame builder culls on the CPU, or `NOT_COUNTED` where the GPU culls.
+/// The sources inside the camera's frustum that occlusion culling hid: in a recorded frame, where
+/// the frame builder culls on the CPU, or in the newest frame whose counts the GPU sent back, where
+/// GPU occlusion culling runs. `NOT_COUNTED` where neither runs.
 #[wasm_bindgen(js_name = occludedEntries)]
 pub fn occluded_entries(frame: u32) -> u32 {
     value_with_engine(|e| {
@@ -1319,8 +1321,8 @@ pub fn occluded_entries(frame: u32) -> u32 {
     })
 }
 
-/// The ranges of cluster-tree patches that a recorded frame's camera view draws, or `NOT_COUNTED`
-/// where the GPU path picks the patches itself.
+/// The ranges of cluster-tree patches that a recorded frame's views draw, the shadow views included,
+/// or `NOT_COUNTED` where the GPU path picks the patches itself.
 #[wasm_bindgen(js_name = patchRanges)]
 pub fn patch_ranges(frame: u32) -> u32 {
     value_with_engine(|e| {
@@ -1488,15 +1490,17 @@ pub fn create_batch(
 ) -> u32 {
     value_with_engine(|e| {
         let margin = displacement_margin(e, material);
-        add_batch(e, capacity, mesh, |batches, radius| {
-            batches.create(
+        add_batch(e, capacity, mesh, |batches, center, radius| {
+            let id = batches.create(
                 capacity,
                 dynamic,
                 row_values,
                 mesh,
                 material,
                 radius + margin,
-            )
+            )?;
+            batches.get_mut(id)?.set_local_center(center);
+            Ok(id)
         })
     })
 }
@@ -1526,8 +1530,8 @@ pub fn create_batch_part(
         let n = part.len().min(matrix.len());
         matrix[..n].copy_from_slice(&part[..n]);
         let margin = displacement_margin(e, material);
-        add_batch(e, capacity, mesh, |batches, radius| {
-            batches.create_part(
+        add_batch(e, capacity, mesh, |batches, center, radius| {
+            let id = batches.create_part(
                 source,
                 capacity,
                 dynamic,
@@ -1536,7 +1540,9 @@ pub fn create_batch_part(
                 material,
                 radius + margin,
                 matrix,
-            )
+            )?;
+            batches.get_mut(id)?.set_local_center(center);
+            Ok(id)
         })
     })
 }
@@ -1560,7 +1566,7 @@ pub fn create_sprite_batch(
     let look = SpriteLook::new(columns, rows, screen_size);
     let look = if points { look.as_points() } else { look };
     value_with_engine(|e| {
-        add_batch(e, capacity, mesh, |batches, radius| {
+        add_batch(e, capacity, mesh, |batches, _, radius| {
             batches.create_sprites(capacity, dynamic, mesh, material, radius, look)
         })
     })
@@ -1590,7 +1596,7 @@ pub fn create_line_batch(
             })
         })?;
         let look = LineLook::new(mode, width, world_units, dashed);
-        add_batch(e, mode.rows(points), mesh, |batches, radius| {
+        add_batch(e, mode.rows(points), mesh, |batches, _, radius| {
             batches.create_lines(points, dynamic, mesh, material, radius, look)
         })
     })
@@ -1621,13 +1627,14 @@ fn displacement_margin(e: &Engine, material: u32) -> f32 {
         .bounds_margin(material.wrapping_sub(1))
 }
 
-/// Adds a batch of `capacity` rows of `mesh`, made by `make` with the mesh's radius, once the
-/// renderer has room for its rows, and returns its id.
+/// Adds a batch of `capacity` rows of `mesh`, made by `make` with the mesh's bounding center and
+/// radius, once the renderer has room for its rows, and returns its id. A batch of copies of the
+/// mesh takes its sphere at that center; sprite and line batches pack their rows around the origin.
 fn add_batch(
     e: &mut Engine,
     capacity: u32,
     mesh: u32,
-    make: impl FnOnce(&mut BatchTable, f32) -> Result<Handle, CoreError>,
+    make: impl FnOnce(&mut BatchTable, [f32; 3], f32) -> Result<Handle, CoreError>,
 ) -> Result<u32, u32> {
     let Some(slot) = mesh
         .checked_sub(1)
@@ -1635,7 +1642,7 @@ fn add_batch(
     else {
         return Err(render_failure(render_detail::UNKNOWN_MESH, mesh));
     };
-    let radius = slot.radius;
+    let (center, radius) = (slot.center, slot.radius);
     // Refused here, at the call that makes the scene too large to draw, before the core
     // allocates the batch's rows.
     let sources = e
@@ -1656,7 +1663,7 @@ fn add_batch(
             bytes: capacity.saturating_mul(BYTES_PER_SOURCE),
         })
     })?;
-    let id = make(&mut e.batches, radius).map_err(core_failure)?;
+    let id = make(&mut e.batches, center, radius).map_err(core_failure)?;
     e.structure_changed = true;
     Ok(id.raw())
 }
@@ -1806,15 +1813,19 @@ pub fn set_batch_layers(batch: u32, mask: u32) -> u32 {
 /// Gives every row of a batch a bounding sphere of the first call value's meters around its own
 /// origin, in place of the mesh's own radius. A vertex shader that carries rows away from their
 /// origins, such as traffic along a lane, needs this, or culling drops rows that are still on the
-/// screen. Every row is marked for update, so the next frame writes its new sphere, and the
-/// renderer's tables are built again, so the GPU culling reads the new radius too.
+/// screen. The rows of a batch share their bucket's sphere center, the mesh's, so the sphere grows
+/// around that center until it holds the one around the origin. Every row is marked for update, so
+/// the next frame writes its new sphere, and the renderer's tables are built again, so the GPU
+/// culling reads the new radius too.
 #[wasm_bindgen(js_name = setBatchBounds)]
 pub fn set_batch_bounds(batch: u32) -> u32 {
     with_engine(|e| {
         let [radius] = e.call_values();
         match e.batches.get_mut(Handle::from_raw(batch)) {
             Ok(batch) => {
-                batch.set_local_radius(radius);
+                let [x, y, z] = batch.local_center();
+                let offset = (x * x + y * y + z * z).sqrt();
+                batch.set_local_radius(radius + offset);
                 e.structure_changed = true;
                 0
             }
@@ -1823,14 +1834,15 @@ pub fn set_batch_bounds(batch: u32) -> u32 {
     })
 }
 
-/// Sets whether every row of a batch casts shadows and receives them, from the cast and receive
-/// bits of an object's flags. Sprite and line batches take neither. The renderer's tables depend on
-/// the bits, so a change rebuilds them, as an object's new flags do.
+/// Sets whether every row of a batch casts shadows, receives them and may hide others in GPU
+/// occlusion culling, from the cast, receive and opt-out bits of an object's flags. Sprite and line
+/// batches take none. The renderer's tables depend on the bits, so a change rebuilds them, as an
+/// object's new flags do.
 #[wasm_bindgen(js_name = setBatchShadows)]
 pub fn set_batch_shadows(batch: u32, bits: u32) -> u32 {
     with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
         Ok(batch) => {
-            if batch.shadows() != bits & flags::SHADOWS {
+            if batch.row_flags() != bits & null3d_core::instances::ROW_FLAGS {
                 batch.set_shadows(bits);
                 e.structure_changed = true;
             }
@@ -2134,6 +2146,92 @@ pub fn create_level_mesh(base: u32, indices: u32) -> u32 {
     })
 }
 
+/// A level of the live mesh `base`, which is split into parts, that draws the base's own vertices
+/// from triangles in the staging words, which the call frees: each triangle from a part that holds
+/// its three vertices, and the few that span the parts' seams from a copy of their vertices
+/// (`MeshStorage::add_split_level`). The words hold the level's `count` pieces and `groups`
+/// groups, as `setMeshPieces` lays them out, then its `indices` indices, which name the base's own
+/// vertices. A level with pieces keeps its triangles' order, which must come part by part; one
+/// whose triangles do not draws them part by part, without pieces. Returns the mesh id.
+#[wasm_bindgen(js_name = createSplitLevel)]
+pub fn create_split_level(base: u32, count: u32, groups: u32, indices: u32) -> u32 {
+    use null3d_render::pieces::{MAX_PIECES, PIECE_WORDS};
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let count = count as usize;
+        let first = (count + groups as usize) * PIECE_WORDS;
+        if count > MAX_PIECES || staging.len() < first + indices as usize {
+            return Err(fail(codes::BAD_ARRAYS, [0, 0]));
+        }
+        let list = &staging[first..first + indices as usize];
+        let meshes = e.renderer.settings_mut().meshes_mut();
+        let base = base.checked_sub(1).unwrap_or(u32::MAX);
+        let in_order = (count > 0)
+            .then(|| meshes.add_split_level(base, list, true).ok())
+            .flatten();
+        let added = match in_order {
+            Some(id) => {
+                let pieces = staged_pieces(&staging, count);
+                let groups = staged_groups(&staging, count, groups as usize);
+                // Pieces that do not fit the level leave it drawing whole.
+                let _ = meshes.set_pieces(id, &pieces[..count], &groups);
+                Ok(id)
+            }
+            None => meshes.add_split_level(base, list, false),
+        }
+        .map(|id| id + 1)
+        .map_err(mesh_failure);
+        drop(staging);
+        added
+    })
+}
+
+/// A level of the live mesh `base` that holds its own copy of the vertices that the `indices`
+/// triangles in the staging words name, which the call frees: the level of a base that is split
+/// into parts, which cannot share its vertices. The indices name the base's own vertices. Returns
+/// the mesh id.
+#[wasm_bindgen(js_name = createLevelCopy)]
+pub fn create_level_copy(base: u32, indices: u32) -> u32 {
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let words = indices as usize;
+        if staging.len() < words {
+            return Err(fail(codes::BAD_ARRAYS, [0, 0]));
+        }
+        let added = e
+            .renderer
+            .settings_mut()
+            .meshes_mut()
+            .add_level_copy(base.checked_sub(1).unwrap_or(u32::MAX), &staging[..words])
+            .map(|id| id + 1)
+            .map_err(mesh_failure);
+        drop(staging);
+        added
+    })
+}
+
+/// Writes part `part` of the live mesh `mesh`'s vertices and triangles, as the level planner reads
+/// them, into the staging words, and returns their address: the mesh's part count, vertex count,
+/// index count and format, the part's vertex and index counts, the mesh vertex that each of its
+/// vertices holds, each attribute's floats and the part's triangles, as
+/// `MeshStorage::planning_part` lays them out. The caller copies them before its next call that
+/// uses the staging words.
+#[wasm_bindgen(js_name = meshPlanningPart)]
+pub fn mesh_planning_part(mesh: u32, part: u32) -> u32 {
+    value_with_engine(|e| {
+        e.staging.clear();
+        let meshes = e.renderer.settings().meshes();
+        meshes
+            .planning_part(
+                mesh.checked_sub(1).unwrap_or(u32::MAX),
+                part,
+                &mut e.staging,
+            )
+            .map_err(mesh_failure)?;
+        Ok(address(e.staging.as_slice()))
+    })
+}
+
 /// Gives the live mesh `mesh` the `indices` triangles that TypeScript wrote into the staging words,
 /// which the call frees, in place of the triangles it drew. A staged level that arrives after its
 /// base replaces the base's triangles this way, so the objects that draw the base draw the finer
@@ -2168,6 +2266,102 @@ pub fn replace_mesh_indices(mesh: u32, indices: u32) -> u32 {
     })
 }
 
+/// Gives the live mesh `mesh` the `count` pieces of its triangle list that TypeScript wrote into
+/// the staging words, which the call frees: each piece's triangles, then its bounding sphere and
+/// its cone of facings as the bits of 32-bit floats (`null3d_render::pieces::PIECE_WORDS` words a
+/// piece. The pieces follow the list's order, and the copies that draw the mesh cull each one from
+/// the next frame on. `groups` groups of the pieces follow them in the same layout, in the list's
+/// order, and the groups of each piece hold its triangles and no other; groups that do not split
+/// the pieces leave the pieces without groups. A mesh made in code takes them the same way as a
+/// file's, at any time after it is made. Returns 1 when the mesh takes them, and 0 when they do
+/// not fit its list, which then draws whole as before.
+#[wasm_bindgen(js_name = setMeshPieces)]
+pub fn set_mesh_pieces(mesh: u32, count: u32, groups: u32) -> u32 {
+    give_pieces(mesh, count, groups, 0)
+}
+
+/// Gives the live mesh `mesh` `count` pieces and their `groups` groups over a triangle list of
+/// their own, which TypeScript wrote into the staging words after them (as `setMeshPieces` lays
+/// them out): `indices`
+/// indices that hold the mesh's triangles in piece order. The list shares the mesh's vertices, and
+/// the mesh keeps its own list, so a mesh made in code keeps the triangle order that raycasts and
+/// vertex updates read. A mesh split into parts takes a list whose triangles come part by part,
+/// as `createSplitLevel` draws them. A list that the mesh held before goes, with its pieces, as a
+/// destroyed mesh goes. Returns 1 when the mesh takes them, and 0 otherwise.
+#[wasm_bindgen(js_name = setMeshPieceList)]
+pub fn set_mesh_piece_list(mesh: u32, count: u32, groups: u32, indices: u32) -> u32 {
+    give_pieces(mesh, count, groups, indices)
+}
+
+/// The pieces of `setMeshPieces`, over a list of `indices` indices of their own when it is not 0.
+fn give_pieces(mesh: u32, count: u32, groups: u32, indices: u32) -> u32 {
+    use null3d_render::pieces::{MAX_PIECES, PIECE_WORDS};
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let count = count as usize;
+        let words = (count + groups as usize) * PIECE_WORDS;
+        if count > MAX_PIECES || staging.len() < words + indices as usize {
+            return Ok(0);
+        }
+        let pieces = staged_pieces(&staging, count);
+        let groups = staged_groups(&staging, count, groups as usize);
+        let id = mesh.checked_sub(1).unwrap_or(u32::MAX);
+        if indices != 0 {
+            let old = e.renderer.settings_mut().meshes_mut().take_piece_list(id);
+            if let Some(old) = old {
+                e.removed_meshes.push(old + 1);
+                e.renderer.remove_meshes(&[old]);
+                e.structure_changed = true;
+            }
+        }
+        let meshes = e.renderer.settings_mut().meshes_mut();
+        let taken = if indices == 0 {
+            meshes.set_pieces(id, &pieces[..count], &groups)
+        } else {
+            let list = &staging[words..words + indices as usize];
+            meshes.set_piece_list(id, list, &pieces[..count], &groups)
+        }
+        .is_ok();
+        drop(staging);
+        if taken {
+            // The buckets that draw the mesh draw its pieces from the next rebuild on.
+            e.structure_changed = true;
+        }
+        Ok(u32::from(taken))
+    })
+}
+
+/// The first `count` pieces in the staging words `staging`, as `setMeshPieces` lays them out.
+fn staged_pieces(
+    staging: &[u32],
+    count: usize,
+) -> [null3d_render::pieces::Piece; null3d_render::pieces::MAX_PIECES] {
+    use null3d_render::pieces::{PIECE_WORDS, Piece};
+    let mut pieces = [Piece::default(); null3d_render::pieces::MAX_PIECES];
+    let words = staging[..count * PIECE_WORDS].as_chunks::<PIECE_WORDS>().0;
+    for (piece, words) in pieces.iter_mut().zip(words) {
+        *piece = Piece::from_words(words);
+    }
+    pieces
+}
+
+/// The `groups` groups that follow `count` pieces in the staging words `staging`, in the pieces'
+/// layout. The caller checked that the words hold them.
+fn staged_groups(
+    staging: &[u32],
+    count: usize,
+    groups: usize,
+) -> Vec<null3d_render::pieces::Piece> {
+    use null3d_render::pieces::{PIECE_WORDS, Piece};
+    let first = count * PIECE_WORDS;
+    staging[first..first + groups * PIECE_WORDS]
+        .as_chunks::<PIECE_WORDS>()
+        .0
+        .iter()
+        .map(Piece::from_words)
+        .collect()
+}
+
 /// The failure of a mesh that the storage refused.
 fn mesh_failure(error: MeshError) -> u32 {
     let arrays = |problem: u32, value: u32| fail(codes::BAD_ARRAYS, [problem, value]);
@@ -2180,6 +2374,7 @@ fn mesh_failure(error: MeshError) -> u32 {
             arrays(arrays_problem::MORPH_NOT_FINITE, at | array << 28)
         }
         MeshError::SharedUnavailable => arrays(arrays_problem::LEVEL_BASE, 0),
+        MeshError::OutOfMemory { bytes } => out_of_memory(bytes),
         _ => render_failure(render_detail::BAD_MESH, 0),
     }
 }
@@ -2308,6 +2503,51 @@ pub fn set_mesh_blocker(mesh: u32, vertices: u32, indices: u32) -> u32 {
     })
 }
 
+/// The patches of a tree or of a band of one, as the staging words hold them: `records` records of
+/// eight words each, four floats of a bounding sphere and then four integers of a run, a parent and
+/// an error, followed by `indices` indices.
+struct StagedPatches {
+    bounds: Vec<[f32; 4]>,
+    runs: Vec<[u32; 4]>,
+    /// The indices, which name the vertices that the mesh's parts hold, one part after another.
+    indices: Vec<u32>,
+    /// The vertices that the parts hold, which no index may reach.
+    vertices: u32,
+}
+
+impl StagedPatches {
+    /// Reads the patches for mesh `mesh`, by its id that counts from 1, and rewrites their
+    /// indices, which name the mesh's own vertices, into the order of its parts' vertices, which
+    /// the tree's draws read. `None` when the staging words are too few or no live mesh has the id.
+    fn read(
+        staging: &[u32],
+        records: usize,
+        indices: usize,
+        meshes: &MeshStorage,
+        mesh: u32,
+    ) -> Option<Self> {
+        let first = records * 8;
+        let list = staging.get(first..first + indices)?;
+        let mut indices = list.to_vec();
+        let vertices = meshes.to_part_order(mesh.wrapping_sub(1), &mut indices);
+        if vertices == 0 {
+            return None;
+        }
+        let bounds = (0..records)
+            .map(|k| [0, 1, 2, 3].map(|c| f32::from_bits(staging[k * 8 + c])))
+            .collect();
+        let runs = (0..records)
+            .map(|k| [0, 1, 2, 3].map(|c| staging[k * 8 + 4 + c]))
+            .collect();
+        Some(Self {
+            bounds,
+            runs,
+            indices,
+            vertices,
+        })
+    }
+}
+
 /// Gives mesh `mesh` the tree of cluster patches that a model file stores: `patches` records of
 /// eight words each, four floats of its bounding sphere and then four integers of its run, its
 /// parent and its error, followed by `indices` indices, in the staging words. Returns 1 when the
@@ -2316,43 +2556,23 @@ pub fn set_mesh_blocker(mesh: u32, vertices: u32, indices: u32) -> u32 {
 pub fn set_mesh_patches(mesh: u32, patches: u32, indices: u32, root: u32) -> u32 {
     value_with_engine(|e| {
         let staging = std::mem::take(&mut e.staging);
-        let vertices = e
-            .renderer
-            .settings()
-            .meshes()
-            .mesh(mesh.checked_sub(1).unwrap_or(u32::MAX))
-            .map_or(0, |slot| slot.vertex_count);
         let records = patches as usize;
-        let enough = vertices > 0 && staging.len() >= records * 8 + indices as usize;
-        let tree = if enough {
-            let bounds: Vec<[f32; 4]> = (0..records)
-                .map(|k| {
-                    let at = k * 8;
-                    [0, 1, 2, 3].map(|c| f32::from_bits(staging[at + c]))
-                })
-                .collect();
-            let runs: Vec<[u32; 4]> = (0..records)
-                .map(|k| {
-                    let at = k * 8 + 4;
-                    [
-                        staging[at],
-                        staging[at + 1],
-                        staging[at + 2],
-                        staging[at + 3],
-                    ]
-                })
-                .collect();
-            let first = records * 8;
-            Some(PatchTree::new(
-                staging[first..first + indices as usize].to_vec(),
-                bounds,
-                runs,
+        let tree = StagedPatches::read(
+            &staging,
+            records,
+            indices as usize,
+            e.renderer.settings().meshes(),
+            mesh,
+        )
+        .map(|staged| {
+            PatchTree::new(
+                staged.indices,
+                staged.bounds,
+                staged.runs,
                 root,
-                vertices,
-            ))
-        } else {
-            None
-        };
+                staged.vertices,
+            )
+        });
         drop(staging);
         match tree {
             Some(Ok(tree)) => {
@@ -2371,7 +2591,8 @@ pub fn set_mesh_patches(mesh: u32, patches: u32, indices: u32, root: u32) -> u32
 }
 
 /// The code that a tree that the engine refused answers with: 2 for a tree without patches, 3 for
-/// a root that names none, 4 for a patch's run, 5 for a parent, 6 for an index and 7 for a sphere.
+/// a root that names none, 4 for a patch's run, 5 for a parent, 6 for an index, 7 for a sphere,
+/// and 8 for a patch whose sphere or error does not hold a child's.
 fn patch_failure(error: PatchError) -> u32 {
     match error {
         PatchError::Empty => 2,
@@ -2380,6 +2601,7 @@ fn patch_failure(error: PatchError) -> u32 {
         PatchError::Parent => 5,
         PatchError::Vertex => 6,
         PatchError::Bounds => 7,
+        PatchError::Nesting => 8,
     }
 }
 
@@ -2393,44 +2615,23 @@ fn patch_failure(error: PatchError) -> u32 {
 pub fn append_mesh_patches(mesh: u32, patches: u32, indices: u32) -> u32 {
     value_with_engine(|e| {
         let staging = std::mem::take(&mut e.staging);
-        let vertices = e
-            .renderer
-            .settings()
-            .meshes()
-            .mesh(mesh.checked_sub(1).unwrap_or(u32::MAX))
-            .map_or(0, |slot| slot.vertex_count);
-        let records = patches as usize;
-        let enough = vertices > 0 && staging.len() >= records * 8 + indices as usize;
-        let band = enough.then(|| {
-            let bounds: Vec<[f32; 4]> = (0..records)
-                .map(|k| {
-                    let at = k * 8;
-                    [0, 1, 2, 3].map(|c| f32::from_bits(staging[at + c]))
-                })
-                .collect();
-            let runs: Vec<[u32; 4]> = (0..records)
-                .map(|k| {
-                    let at = k * 8 + 4;
-                    [
-                        staging[at],
-                        staging[at + 1],
-                        staging[at + 2],
-                        staging[at + 3],
-                    ]
-                })
-                .collect();
-            let first = records * 8;
-            (
-                bounds,
-                runs,
-                staging[first..first + indices as usize].to_vec(),
+        let band = StagedPatches::read(
+            &staging,
+            patches as usize,
+            indices as usize,
+            e.renderer.settings().meshes(),
+            mesh,
+        );
+        drop(staging);
+        let appended = band.and_then(|staged| {
+            e.renderer.append_mesh_patches(
+                mesh,
+                &staged.bounds,
+                &staged.runs,
+                &staged.indices,
+                staged.vertices,
             )
         });
-        let appended = band.and_then(|(bounds, runs, list)| {
-            e.renderer
-                .append_mesh_patches(mesh, &bounds, &runs, &list, vertices)
-        });
-        drop(staging);
         match appended {
             Some(Ok(())) => {
                 e.structure_changed = true;
@@ -2670,10 +2871,17 @@ fn mesh_value<T: Default>(mesh: u32, value: impl FnOnce(&MeshSlot) -> T) -> T {
     out.unwrap_or_default()
 }
 
-/// The distance from a mesh's origin to its farthest vertex, or 0 for an unknown mesh.
+/// The distance from a mesh's bounding center to its farthest vertex, or 0 for an unknown mesh.
 #[wasm_bindgen(js_name = meshRadius)]
 pub fn mesh_radius(mesh: u32) -> f32 {
     mesh_value(mesh, |slot| slot.radius)
+}
+
+/// One axis of a mesh's bounding center, the center of the box around its vertices: 0 for x, 1
+/// for y and 2 for z. 0 for an unknown mesh.
+#[wasm_bindgen(js_name = meshCenter)]
+pub fn mesh_center(mesh: u32, axis: u32) -> f32 {
+    mesh_value(mesh, |slot| slot.center[(axis as usize).min(2)])
 }
 
 /// Turns a rectangle's rows over in place, so that its last row comes first, which a canvas needs:
@@ -2736,7 +2944,8 @@ pub fn mesh_format(mesh: u32) -> u32 {
 /// `bias_slope`, whose positive values push the surface away. A custom material whose vertex offset
 /// sways gives the distance from the camera out to which it moves, in meters, as `sway_distance`:
 /// past it the material's casters stand still, so far shadow cascades keep their layers. Zero sways
-/// at every distance.
+/// at every distance. A `single_layer` that is not 0 draws the material's blended surfaces in the
+/// camera's one-sample layer while the scene has more than one sample.
 #[wasm_bindgen(js_name = createMaterial)]
 #[allow(clippy::too_many_arguments)]
 pub fn create_material(
@@ -2749,6 +2958,7 @@ pub fn create_material(
     bias_constant: f32,
     bias_slope: f32,
     sway_distance: f32,
+    single_layer: u32,
 ) -> u32 {
     let shading = match shading {
         shading::UNLIT => Shading::Unlit,
@@ -2780,6 +2990,9 @@ pub fn create_material(
         table.set_depth_bias(id, bias).map_err(material_failure)?;
         table
             .set_sway(id, sway_distance)
+            .map_err(material_failure)?;
+        table
+            .set_single_layer(id, single_layer != 0)
             .map_err(material_failure)?;
         // A wireframe draws each part's edge list, which the meshes keep from the first one on.
         if features & materials::feature::WIREFRAME != 0 {
@@ -2943,7 +3156,7 @@ fn grow_bounds(e: &mut Engine, material: u32) {
             continue;
         };
         e.scene
-            .set_local_sphere(slot as u32, [0.0; 3], mesh.radius + margin);
+            .set_local_sphere(slot as u32, mesh.center, mesh.radius + margin);
     }
     let ids: Vec<Handle> = e
         .batches
@@ -2956,6 +3169,7 @@ fn grow_bounds(e: &mut Engine, material: u32) {
             continue;
         };
         if let Some(mesh) = batch.mesh().checked_sub(1).and_then(|m| meshes.mesh(m)) {
+            // The batch keeps the center that it took when it was made.
             batch.set_local_radius(mesh.radius + margin);
         }
     }
@@ -3457,8 +3671,9 @@ pub fn add_pass(
 /// each way, 1, 0.5 or 0.25. It reads the input image `source` (`constants::pass_source`), the
 /// scene's depth with the flag `constants::effect_flag::DEPTH`, its uniforms at `effectValues` and
 /// its textures at `effectTextures`, in one frame of every `every`. `fallback` says the pass runs
-/// in place of a compute pass: it then keeps `history`'s two states of `layers` layers each, and
-/// draws `steps` runs a frame. Returns the view's place, from 1, or 0 as `addPass` does.
+/// in place of a compute pass: it then keeps `history`'s two states of `layers` layers each, draws
+/// `steps` runs a frame, and writes a target of `format`, a draw list format code, or of the
+/// scene's views' format with 0. Returns the view's place, from 1, or 0 as `addPass` does.
 #[wasm_bindgen(js_name = addFullscreenPass)]
 #[allow(clippy::too_many_arguments)]
 pub fn add_fullscreen_pass(
@@ -3475,6 +3690,7 @@ pub fn add_fullscreen_pass(
     history: u32,
     layers: u32,
     steps: u32,
+    format: u32,
 ) -> u32 {
     let target = ViewTarget {
         size: (width > 0).then_some((width, height.max(1))),
@@ -3492,6 +3708,7 @@ pub fn add_fullscreen_pass(
             let content = Fullscreen {
                 template,
                 fallback: fallback != 0,
+                format,
                 history: fallback != 0 && history != 0,
                 layers: if fallback != 0 { layers.max(1) } else { 1 },
                 steps: if fallback != 0 { steps } else { 1 },
@@ -3880,10 +4097,21 @@ pub fn set_scene_pass_every(place: u32, every: u32) -> u32 {
 pub fn create_pass_texture(place: u32, width: u32, height: u32) -> u32 {
     value_with_engine(|e| {
         let settings = e.renderer.settings_mut();
-        // The canvas's format holds 8-bit color, which the store counts as such.
-        let format = match settings.canvas().scene_color.format() {
-            format::CANVAS => format::RGBA8_UNORM,
-            other => other,
+        // The store records the format that the pass writes: a compute pass's own, which its
+        // fragment form keeps on WebGL2, or the scene color's for a scene or reflection pass.
+        let declared = settings.views().get(place as usize).and_then(|view| {
+            view.compute_pass().map(|pass| pass.format).or_else(|| {
+                view.fullscreen_pass()
+                    .filter(|pass| pass.fallback)
+                    .map(|pass| pass.format)
+            })
+        });
+        let format = match declared {
+            Some(code) if code != 0 => code,
+            _ => match settings.canvas().scene_color.format() {
+                format::CANVAS => format::RGBA8_UNORM,
+                other => other,
+            },
         };
         let texture = settings
             .textures_mut()
@@ -4253,7 +4481,7 @@ pub fn set_mesh_levels(base: u32, count: u32, fades: u32) -> u32 {
             floats,
             measures,
             material_ids,
-            fades as u8,
+            fades as u16,
         );
         match set {
             Ok(()) => {
@@ -4315,16 +4543,17 @@ pub fn stage_frames(mesh: u32) -> u32 {
 }
 
 /// How objects and batches pick their meshes' levels of detail, from the next frame on. The call
-/// values give the error in pixels under which a coarser level draws, 0 for none, and what shadow
-/// views multiply it by. `bands` says whether a source's distance band fades at each edge.
+/// values give the error in pixels under which a coarser level draws, 0 for none, and the error
+/// in texels of a shadow map under which a caster draws a coarser level there, 0 for none.
+/// `bands` says whether a source's distance band fades at each edge.
 /// Turning the bands on or off rebuilds the draw tables.
 #[wasm_bindgen(js_name = setLevelQuality)]
 pub fn set_level_quality(bands: bool) -> u32 {
     with_engine(|e| {
-        let [threshold, shadow_factor] = e.call_values();
+        let [threshold, shadow_threshold] = e.call_values();
         let quality = LevelQuality {
             threshold,
-            shadow_factor,
+            shadow_threshold,
             distance_bands: bands,
         };
         if e.renderer.settings_mut().set_level_quality(quality) {
@@ -5130,6 +5359,36 @@ pub fn set_software_occlusion(on: bool) -> u32 {
     })
 }
 
+/// Notes the GPU's time for frame `frame`, from its submit to its completion, in microseconds, which
+/// GPU occlusion culling's check compares with its passes on and off. Elsewhere it does nothing.
+#[wasm_bindgen(js_name = gpuFrameTime)]
+pub fn gpu_frame_time(frame: u32, micros: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.gpu_frame_time(frame, micros);
+        0
+    })
+}
+
+/// Sets the control slot that GPU occlusion culling's reads of its counts raise. Nothing reads the
+/// slot: the counts name their frame.
+#[wasm_bindgen(js_name = setOcclusionReadSlot)]
+pub fn set_occlusion_read_slot(slot: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.set_occlusion_read_slot(slot);
+        0
+    })
+}
+
+/// Holds GPU occlusion culling's passes on in every frame from the next one on, without its
+/// check's trials, or lets the check judge them again. Elsewhere it does nothing.
+#[wasm_bindgen(js_name = holdOcclusionCheck)]
+pub fn hold_occlusion_check(held: bool) -> u32 {
+    with_engine(|e| {
+        e.renderer.hold_occlusion_check(held);
+        0
+    })
+}
+
 /// Sets the pixels that software occlusion culling's buffer holds about from the next frame on,
 /// or 0 for the core's default, where the frame builder culls on the CPU.
 #[wasm_bindgen(js_name = setOcclusionBuffer)]
@@ -5271,6 +5530,16 @@ fn atmosphere_of(values: &[f32]) -> Atmosphere {
 pub fn set_physical_sky(on: bool) -> u32 {
     with_engine(|e| {
         e.renderer.settings_mut().set_physical_sky(on);
+        0
+    })
+}
+
+/// Sets the steps of each ray of the sky's volumetric cloud tier, from the next frame on: 0 draws
+/// the flat layer, as the lighter presets do.
+#[wasm_bindgen(js_name = setCloudSteps)]
+pub fn set_cloud_steps(steps: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_cloud_steps(steps);
         0
     })
 }
@@ -6119,6 +6388,7 @@ fn write_hit(out: &mut [f64], hit: Option<&QueryHit>) {
     }
     let uv = query::HIT_UV as usize;
     out[query::HIT_HAS_UV as usize] = f64::from(hit.uv.is_some());
+    out[query::HIT_BACK_FACING as usize] = f64::from(hit.back_facing);
     for k in 0..2 {
         out[uv + k] = hit.uv.map_or(f64::NAN, |pair| f64::from(pair[k]));
     }
@@ -6196,6 +6466,8 @@ fn run_query(f: impl FnOnce(QueryParts<'_>) -> Result<u32, u32>) -> u32 {
             meshes: e.renderer.settings(),
             rows: row_query(&e.query_input),
         };
+        e.queries
+            .set_all_faces(e.query_input[query::INPUT_ALL_FACES as usize] > 0.5);
         if let Err(error) = e.queries.sync(&view, jobs) {
             return core_failure(error);
         }
@@ -6326,14 +6598,21 @@ pub fn request_pass_read(
             };
             (format, pass.target_layers())
         } else if let Some(pass) = declared.fullscreen_pass().filter(|pass| pass.fallback) {
-            // A full-screen pass's target has an alpha channel even where the scene color packs
-            // its color, and the canvas code names the 8-bit path's target.
-            let format = match settings.canvas().scene_color.format() {
-                null3d_gpu::drawlist::format::CANVAS => null3d_gpu::drawlist::format::RGBA8_UNORM,
-                null3d_gpu::drawlist::format::RG11B10_UFLOAT => {
-                    null3d_gpu::drawlist::format::RGBA16_FLOAT
+            // The fragment form writes its compute pass's own format, or the scene's when it
+            // declares none. A full-screen pass's target has an alpha channel even where the scene
+            // color packs its color, and the canvas code names the 8-bit path's target.
+            let format = if pass.format != 0 {
+                pass.format
+            } else {
+                match settings.canvas().scene_color.format() {
+                    null3d_gpu::drawlist::format::CANVAS => {
+                        null3d_gpu::drawlist::format::RGBA8_UNORM
+                    }
+                    null3d_gpu::drawlist::format::RG11B10_UFLOAT => {
+                        null3d_gpu::drawlist::format::RGBA16_FLOAT
+                    }
+                    other => other,
                 }
-                other => other,
             };
             (
                 format,

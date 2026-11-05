@@ -130,6 +130,7 @@ const ANSWER: WorkerProbe = {
 	offscreenWebGL2: true,
 	offscreenWebGPU: false,
 	directDraws: false,
+	drawPath: 'no-probe',
 };
 
 /** What the fake probe workers do, in the order the page starts them, and how many it handled. */

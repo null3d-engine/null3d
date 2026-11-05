@@ -22,7 +22,7 @@ The engine's study chapter 04 records the method of a comparable engine. It wrap
 - null3D's `FeatureDraw` and `FeatureInstances` draw inside the engine's opaque or transparent pass, among the scene's other objects. Splitting that pass per feature would change the order that blended objects sort in, and the frame that the figures measured.
 - WebGL2 runs one `TIME_ELAPSED` query at a time, so it times the whole frame and no pass.
 
-The frame record holds the whole-frame time, the time of up to seven passes and their scopes. A pass after them adds its time to the last timed pass's. That step's figure then covers the rest of the frame, and its name ends in `and later`. The engine times one frame in eleven.
+The frame record holds the whole-frame time, up to seven pass times with their scopes, and one figure for the passes after them. A pass never adds its time to another step's: the first seven keep their own figures, and the later passes share one figure that no scope names. The engine times one frame in eleven.
 
 ### A timestamp inside a pass
 
@@ -40,7 +40,7 @@ The overlay lists the frame's steps in the card's order. The work bars come firs
 ## Decision
 
 1. `crates/null3d-render/src/scope.rs` gives each pass a scope. It names the kind of step that the pass records, such as `OPAQUE` or `BLOOM`. The step's place among steps of that kind sits in the high 16 bits. `BeginRenderPass` and `BeginComputePass` carry it as their last operand. A step of several roles takes its first pass's role, because the GPU times the step as one pass.
-2. The WebGPU timer keeps the scope of each of the first seven passes that it times. The frame record holds them in the counter slots that it does not use. The page names them with the same codes, through `packages/engine/src/shared/gpu-scope.ts`.
+2. The WebGPU timer keeps the scope of each of the first seven passes that it times. The frame record holds them in the counter slots that it does not use. The page names them with the same codes, through `packages/engine/src/shared/gpu-scope.ts`. The passes after the seventh share one span in a spare record word, so the seventh pass's figure holds only its own time. No reader attributes the later passes' time to a scope.
 3. `FeatureDescription.gpu.passes` names the render passes that carry a feature's work. `defineFeature` checks each one and keeps its name and place. The overlay adds up the steps whose place is one of them.
 4. A feature whose work has no pass of its own gives no `gpu`, and its row reads `gpu not measured`. The engine does not split a pass around a feature's draw. That would change the frame that the figures measured and the order blended objects draw in.
 5. WebGL2 times the whole frame alone, so no step and no feature has a figure there.

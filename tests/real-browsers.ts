@@ -78,7 +78,10 @@
 //                       move to the new light on each GPU path, or reflection, which times S1 with
 //                       a reflection pass at a quarter and at half the render size against none,
 //                       or alpha-mask-cost, which times masked lit quads against opaque ones with
-//                       MSAA and without on each GPU path, or canvas-cost, which times the frames
+//                       MSAA and without on each GPU path, or car-paint-cost, which times a
+//                       full-screen panel of the car paint against plain clear-coated metal at
+//                       each preset on each GPU path, or car-paint-loop, which times the flake
+//                       count's own steps, or canvas-cost, which times the frames
 //                       that refresh a canvas texture's rectangle against the same frames without
 //                       the refresh, or demos, which plays the Skyway and
 //                       Island showcases at the chosen preset and at High on each GPU path,
@@ -93,6 +96,9 @@
 //                       off for the offset's own cost, or terrain-shadow, which draws the demo from
 //                       a still camera with the morph on, with it off and with the far cascades kept
 //                       to their turns, for the shadow redraw that a morphing caster causes, or
+//                       island-phones, which times the Island's town view on a phone with each
+//                       part of the scene hidden in turn and with trial changes, from the
+//                       phones study's page (bench/research/island-phones), or
 //                       vegetation-scatter, which places Creek's valley by the vegetation add-on's
 //                       ecological rules and checks the placement against the reference, or
 //                       history-cost, which times a compute pass that keeps its state between frames,
@@ -1121,6 +1127,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'effects-joined',
 	'sharpen',
 	'physical-sky',
+	'clouds',
 	'occlusion',
 	'gpu-occlusion',
 	'occlusion-s6',
@@ -1129,6 +1136,8 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'texture-cache',
 	'reflection',
 	'alpha-mask-cost',
+	'car-paint-cost',
+	'car-paint-loop',
 	'impostor-cost',
 	'impostor-frame',
 	'wind-reader-cost',
@@ -1136,11 +1145,14 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'canvas-cost',
 	'cluster-cost',
 	'lod-cost',
+	'probe-cost',
 	'splats',
 	'demos',
+	'showroom-shadow',
 	'vegetation',
 	'terrain',
 	'terrain-shadow',
+	'island-phones',
 	'vegetation-scatter',
 	'webgpu-stall',
 ]);
@@ -1968,8 +1980,8 @@ async function main(): Promise<void> {
 	} finally {
 		await cloud?.closeAll();
 		forgetCloud?.();
-		local.stop();
-		lan?.stop();
+		await local.stop();
+		await lan?.stop();
 	}
 	process.exit(failures > 0 ? 1 : 0);
 }

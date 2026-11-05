@@ -252,7 +252,7 @@ export function placePlants(
 		const far = options.far?.find((plant) => plant.variant === asset.variant);
 		if (far && !(distances[2] > 0)) {
 			// An impostor that starts at once, as a review asks for, draws its far cards alone.
-			const farBatch = farCards(ctx, asset, far.bake, copies, rows, true);
+			const farBatch = farCards(ctx, asset, far.bake, copies, rows);
 			farBatch.batch.setDrawRange(0, FAR);
 			impostors.push(farBatch);
 			cardFirst += rows.length;
@@ -294,7 +294,7 @@ export function placePlants(
 		}
 		cardFirst += rows.length;
 		if (far && ranged.length > 0) {
-			const farBatch = farCards(ctx, asset, far.bake, copies, rows, true);
+			const farBatch = farCards(ctx, asset, far.bake, copies, rows);
 			const handOver = distances[2];
 			handOverToCards((ranged[0] as Ranged).batch, farBatch.batch, handOver);
 			for (const entry of ranged) entry.batch.setDrawRange(entry.start, handOver);

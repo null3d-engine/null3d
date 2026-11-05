@@ -7,10 +7,11 @@
 // ?moments=on or off for moment transparency, ?prepass-color= for how a prepass that a screen
 // step splits from the opaque pass starts the stand-in color that it never draws,
 // ?occlusion=on or off for occlusion culling, ?occlusion-buffer= for the size of software occlusion
-// culling's buffer, such as 384x216, ?skinning= for how WebGPU skins (compute for the skinning
-// pass, or full, skip or narrow for the pass with fewer of its savings), ?instances=index for
-// vertex shaders that read instance data by index on core WebGPU, ?shadowdepth=32 for shadow
-// cascades in 32-bit float depth instead of 16-bit depth,
+// culling's buffer, such as 384x216, ?occlusion-check=off for GPU occlusion culling's passes in
+// every frame, without the check that turns them off, ?skinning= for how WebGPU skins (compute
+// for the skinning pass, or full, skip or narrow for the pass with fewer of its savings),
+// ?instances=index for vertex shaders that read instance data by index on core WebGPU,
+// ?shadowdepth=32 for shadow cascades in 32-bit float depth instead of 16-bit depth,
 // ?derived-cache=off for a load with no cache of derived data across visits, as on a first visit,
 // and ?join=off for custom effects
 // in a pass each, none joined, for pages that measure what joining saves. ?replay-delay= makes the
@@ -222,6 +223,12 @@ export interface Switches {
 	 * other.
 	 */
 	occlusionBuffer: number | undefined;
+	/**
+	 * False when ?occlusion-check=off holds GPU occlusion culling's passes on in every frame,
+	 * without the check that turns them off while they do not pay. A test that compares the image
+	 * with culling and without it then compares frames that all ran the passes.
+	 */
+	occlusionCheck: boolean;
 	/** How ?skinning= makes WebGPU skin, `vertex` without the switch. */
 	skinning: SkinningSwitch;
 	/**
@@ -321,6 +328,11 @@ export interface Switches {
 	 * undefined to time none.
 	 */
 	glTiming: GlTimingMode | undefined;
+	/**
+	 * `every` for `?gpu-samples=every`, which times every drawn frame rather than one in eleven, so
+	 * a page that hunts a single long frame can read its parts. It costs the draw's own time.
+	 */
+	gpuSamples: 'every' | undefined;
 	/**
 	 * `record` for `?permutations=record`, which collects the permutation words that the scene's
 	 * pipelines ask for and publishes them on `window.__null3dPermutations`, so a tool can write the
@@ -430,6 +442,7 @@ export function parseSwitches(search: string): Switches {
 		prepassColor: oneOf(params.get('prepass-color'), ['load', 'clear', 'none'] as const),
 		occlusion: onOff(params.get('occlusion')),
 		occlusionBuffer: pixelsOf(params.get('occlusion-buffer')),
+		occlusionCheck: params.get('occlusion-check') !== 'off',
 		skinning:
 			oneOf(params.get('skinning'), ['compute', 'full', 'skip', 'narrow'] as const) ?? 'vertex',
 		indexInstances: params.get('instances') === 'index',
@@ -451,6 +464,7 @@ export function parseSwitches(search: string): Switches {
 		view: params.get('view') || undefined,
 		stats: statsSwitch(params.get('stats')),
 		permutations: params.get('permutations') === 'record' ? 'record' : undefined,
+		gpuSamples: params.get('gpu-samples') === 'every' ? 'every' : undefined,
 		glTiming: !params.has('gl-timing')
 			? undefined
 			: params.get('gl-timing') === 'sync'

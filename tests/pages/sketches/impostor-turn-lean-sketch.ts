@@ -7,7 +7,7 @@
 // from another side.
 import { defineSketch, type MeshArrays } from '@null3d/engine';
 import { bakeImpostorAtlas, createImpostors, octahedralAtlas } from '@null3d/impostors';
-import { pineArrays } from '../../../examples/lib/pines';
+import { pineArrays } from '../lib/pines';
 
 /** The height of each tree, in meters. */
 const HEIGHT = 4.5;

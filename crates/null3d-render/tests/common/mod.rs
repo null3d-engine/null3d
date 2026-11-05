@@ -45,6 +45,9 @@ pub const LENS: Perspective = Perspective {
 
 pub struct World<B: FrameBuilder = GpuDrivenRenderer> {
     pub jobs: JobSystem,
+    /// A job system whose workers run on threads of their own, which the frames then use in place
+    /// of `jobs`, which has none.
+    pub workers: Option<&'static JobSystem>,
     pub scene: SceneStorage,
     pub batches: BatchTable,
     pub snapshot: FrameSnapshot,
@@ -81,6 +84,15 @@ impl World {
     /// by the WebGPU frame builder.
     pub fn new() -> World {
         World::with_config(RendererConfig::default())
+    }
+
+    /// The same world, whose frames count the copies of every level set, small ones included, as
+    /// the tests of the count and of the slices that it sizes ask.
+    pub fn counting() -> World {
+        World::with_config(RendererConfig {
+            fixed_level_slots: 0,
+            ..RendererConfig::default()
+        })
     }
 
     /// The same world, drawn by a WebGPU frame builder with `config`.
@@ -187,6 +199,7 @@ impl<B: FrameBuilder> World<B> {
         settings.set_ambient([0.4, 0.4, 0.4]);
         World {
             jobs,
+            workers: None,
             scene,
             batches,
             snapshot: FrameSnapshot::with_capacity(256),
@@ -339,11 +352,12 @@ impl<B: FrameBuilder> World<B> {
     /// As [`World::record`], returning the renderer's error.
     pub fn try_record(&mut self, structure_changed: bool) -> Result<bool, RecordError> {
         let frame = self.frame;
+        let jobs = self.workers.unwrap_or(&self.jobs);
         if frame > 1 {
             self.scene.begin_frame(frame);
         }
         if let Some(animations) = self.animations.as_mut() {
-            animations.update(&self.jobs, self.animation_step);
+            animations.update(jobs, self.animation_step);
         }
         let settings = self.renderer.settings();
         skinning::update_bounds(
@@ -354,9 +368,9 @@ impl<B: FrameBuilder> World<B> {
             settings.materials(),
             settings.override_material(),
         );
-        self.scene.update_transforms(&self.jobs);
+        self.scene.update_transforms(jobs);
         self.batches
-            .update(&self.jobs, frame, self.scene.cell_table_mut());
+            .update(jobs, frame, self.scene.cell_table_mut());
         self.snapshot.record(frame, &self.scene, &self.batches);
         // The newest frame that the thread that draws drew with every pipeline built, as the page
         // reports it: the whole frame from the start, unless the test names a frame.
@@ -382,7 +396,7 @@ impl<B: FrameBuilder> World<B> {
             canvas: self.canvas,
             render_scale: self.render_scale,
             structure_changed,
-            jobs: &self.jobs,
+            jobs,
             lines: self.lines.lines(),
             lights: &self.lights,
             shadow_lights: &self.shadow_lights,
@@ -516,16 +530,18 @@ impl<B: FrameBuilder> World<B> {
             .sync(count, taken);
     }
 
-    /// Records the current frame and replays it twice on the mock, as a capture replays a frame's
-    /// list again, then moves on to the next frame. Returns the frame's operations.
+    /// Records the current frame and replays it twice on the mock: once as the frame loop draws it,
+    /// then again as a capture does, while the reads of the first replay still wait, as in hold
+    /// mode, whose capture follows the frame's draw at once. Then moves on to the next frame.
+    /// Returns the frame's operations.
     pub fn step(&mut self, mock: &mut MockBackend, structure_changed: bool) -> Vec<(Op, Vec<u32>)> {
         self.record(structure_changed);
-        for _ in 0..2 {
-            mock.replay(self.renderer.list(self.frame).words()).unwrap();
-            // The thread that draws raises a read's slot a frame or two later, and the mock holds
-            // the buffer until it does: between the two replays, that read has landed.
-            mock.finish_reads();
-        }
+        let words = self.renderer.list(self.frame).words();
+        mock.replay(words).unwrap();
+        mock.replay_capture(words).unwrap();
+        // The thread that draws raises a read's slot a frame or two later, and the mock holds the
+        // buffer until it does.
+        mock.finish_reads();
         let commands = self.commands();
         self.frame += 1;
         commands

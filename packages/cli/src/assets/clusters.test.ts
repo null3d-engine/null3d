@@ -5,13 +5,21 @@ import { join } from 'node:path';
 import { type Accessor, Document, NodeIO } from '@gltf-transform/core';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { parseGltf, readContainer } from '../../../engine/src/scene/gltf-parse.ts';
-import { clustersOf, NULL3D_CLUSTERS, Null3dClusters } from './cluster-extension.js';
+import {
+	clustersOf,
+	NULL3D_CLUSTERS,
+	NULL3D_CLUSTERS_VERSION,
+	Null3dClusters,
+} from './cluster-extension.js';
 import {
 	buildClusterFixture,
 	buildStagedClusterModel,
+	buildTreeFixtures,
 	CLUSTER_FILE,
 	CLUSTER_STAGED_FILE,
 	MODELS_DIR,
+	TREES_DIR,
+	terrainDocument,
 } from './cluster-fixture.js';
 import {
 	BAND_MIN_PATCHES,
@@ -25,6 +33,7 @@ import {
 	storeClusters,
 } from './clusters.js';
 import { LOD_MAX_LEVELS, orderLevels, planLevels, STAGE_BAND, STAGE_MAGIC } from './levels.js';
+import { TriangleTree } from './surface-distance.js';
 
 // The build of a mesh of 32,000 triangles simplifies its tree in a second or two on a busy
 // machine, and a CI runner of four cores takes longer.
@@ -207,14 +216,14 @@ describe('the tree of a large mesh', () => {
 		expect(plan.treeTriangles).toBeLessThan(plan.triangles * 2.6);
 	});
 
-	it('raises the error from every patch to its parent', async () => {
+	it('never lowers the error from a patch to its parent', async () => {
 		const { plan } = await only();
 		const patches = readTree(plan);
 		for (const [k, patch] of patches.entries()) {
 			expect(Number.isFinite(patch.error)).toBe(true);
 			expect(patch.error).toBeGreaterThanOrEqual(0);
 			if (patch.parent >= 0)
-				expect(entry(patches, patch.parent).error).toBeGreaterThan(patch.error);
+				expect(entry(patches, patch.parent).error).toBeGreaterThanOrEqual(patch.error);
 			else expect(k).toBe(plan.root);
 		}
 		const root = entry(patches, plan.root);
@@ -274,6 +283,76 @@ describe('the tree of a large mesh', () => {
 		expect(outside).toEqual([]);
 	});
 
+	it("holds each patch's sphere in its parent's, as 32-bit floats", async () => {
+		const { plan } = await only();
+		const patches = readTree(plan);
+		/** @type {number[]} */
+		const loose = [];
+		for (const [k, patch] of patches.entries()) {
+			if (patch.parent < 0) continue;
+			const at = (place: number, c: number) => value(plan.bounds, place * 4 + c);
+			const gap = Math.hypot(
+				at(k, 0) - at(patch.parent, 0),
+				at(k, 1) - at(patch.parent, 1),
+				at(k, 2) - at(patch.parent, 2),
+			);
+			// The sphere that the file stores rounds outward, so it needs no slack.
+			if (gap + at(k, 3) > at(patch.parent, 3)) loose.push(k);
+		}
+		expect(loose).toEqual([]);
+	});
+
+	it("stores the root's measured distance from the full mesh", async () => {
+		const { plan } = await only();
+		const patches = readTree(plan);
+		const root = entry(patches, plan.root);
+		const own = plan.indices.slice(root.first, root.first + root.count);
+		const full = new TriangleTree(mesh.positions, mesh.indices);
+		const rootTree = new TriangleTree(mesh.positions, own);
+		const corner = (v: number, c: number) => value(mesh.positions, v * 3 + c);
+		// An independent measure, denser than the build's: every full vertex against the root, and
+		// a grid of points on each root triangle against the full mesh.
+		let measured = 0;
+		for (let v = 0; v < mesh.positions.length / 3; v++)
+			measured = Math.max(measured, rootTree.distance(corner(v, 0), corner(v, 1), corner(v, 2)));
+		const steps = 6;
+		for (let t = 0; t < own.length; t += 3)
+			for (let i = 0; i <= steps; i++)
+				for (let j = 0; i + j <= steps; j++) {
+					const [wa, wb] = [i / steps, j / steps];
+					const at = (c: number) =>
+						corner(value(own, t), c) * (1 - wa - wb) +
+						corner(value(own, t + 1), c) * wa +
+						corner(value(own, t + 2), c) * wb;
+					measured = Math.max(measured, full.distance(at(0), at(1), at(2)));
+				}
+		// The stored error is the root's own distance, or a child's when that is larger.
+		const children = patches.filter((patch) => patch.parent === plan.root);
+		const childError = Math.max(0, ...children.map((patch) => patch.error));
+		expect(root.error).toBeGreaterThanOrEqual(measured * 0.9);
+		expect(root.error).toBeLessThanOrEqual(Math.max(measured * 1.25, childError));
+	});
+
+	it("keeps the open edge's corners and lets its straight runs simplify", async () => {
+		const plans = await planClusters(terrainDocument());
+		const plan = [...plans.values()][0];
+		if (!plan) throw new Error('the heightfield got no tree');
+		const root = readTree(plan)[plan.root];
+		if (!root) throw new Error('the tree has no root');
+		// The heightfield's rim holds 512 edges. Locked, it kept hundreds of triangles in the root.
+		expect(root.count / 3).toBeLessThanOrEqual(64);
+		const prim = terrainDocument().getRoot().listMeshes()[0]?.listPrimitives()[0];
+		const positions = prim?.getAttribute('POSITION')?.getArray() as Float32Array;
+		const used = new Set(plan.indices.slice(root.first, root.first + root.count));
+		// Each of the four corners of the ground is a vertex of the root.
+		const corners = [...used].filter((v) => {
+			const x = value(positions, v * 3);
+			const z = value(positions, v * 3 + 2);
+			return Math.abs(Math.abs(x) - 20) < 1e-4 && Math.abs(Math.abs(z) - 20) < 1e-4;
+		});
+		expect(corners.length).toBe(4);
+	});
+
 	it('gives a mesh of few triangles, many copies, or a cut material no tree', async () => {
 		const tiny = documentOf({
 			positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
@@ -307,7 +386,9 @@ describe('the tree of a large mesh', () => {
 				bytes.subarray(20, 20 + new DataView(bytes.buffer).getUint32(12, true)),
 			),
 		);
-		expect(json.meshes[0].primitives[0].extensions[NULL3D_CLUSTERS].root).toBe(plan.root);
+		const written = json.meshes[0].primitives[0].extensions[NULL3D_CLUSTERS];
+		expect(written.root).toBe(plan.root);
+		expect(written.version).toBe(NULL3D_CLUSTERS_VERSION);
 	});
 
 	it('adds the trees up for the report', async () => {
@@ -319,37 +400,37 @@ describe('the tree of a large mesh', () => {
 		expect(summary.bytes).toBeGreaterThan(0);
 	});
 
-	it('cuts the tree into whole levels for a viewer that draws no patches', async () => {
+	it('gives a mesh with a tree the levels that --lod makes, even without --lod', async () => {
 		const { doc, plans } = await planned;
 		const levels = await planLevels(doc, plans, false);
 		expect(levels.size).toBe(1);
-		const cut = [...levels.values()][0];
-		if (!cut) throw new Error('the mesh of the test got no levels');
-		const { plan } = await only();
-		const patches = readTree(plan);
-		expect(cut.levels.length).toBeGreaterThan(0);
-		expect(cut.levels.length).toBeLessThanOrEqual(LOD_MAX_LEVELS);
-		let previous = plan.triangles;
+		const halved = [...levels.values()][0];
+		if (!halved) throw new Error('the mesh of the test got no levels');
+		expect(halved.levels.length).toBeGreaterThan(1);
+		expect(halved.levels.length).toBeLessThanOrEqual(LOD_MAX_LEVELS);
+		// The same mesh without a tree gets the same levels from --lod, and none without it.
+		const plain = [...(await planLevels(documentOf(mesh), new Map(), true)).values()][0];
+		expect(halved.levels.map((level) => level.triangles)).toEqual(
+			plain?.levels.map((level) => level.triangles) ?? [],
+		);
+		expect(halved.levels.map((level) => level.error)).toEqual(
+			plain?.levels.map((level) => level.error) ?? [],
+		);
+		expect((await planLevels(documentOf(mesh), new Map(), false)).size).toBe(0);
+		let previous = mesh.indices.length / 3;
 		let lastError = 0;
-		for (const level of cut.levels) {
-			// Every cut errs more than the one before it, so the engine switches them in order,
-			// and holds fewer triangles, so each pays for itself.
+		for (const level of halved.levels) {
+			// Each level keeps at most three quarters of the level above, and errs at least half as
+			// much again, so far copies draw few triangles and the levels switch in order.
+			expect(level.triangles).toBeLessThanOrEqual(previous * 0.75);
+			previous = level.triangles;
+			expect(level.error).toBeGreaterThanOrEqual(lastError * 1.5);
 			expect(level.error).toBeGreaterThan(lastError);
 			lastError = level.error;
-			expect(level.triangles).toBeLessThan(previous);
-			previous = level.triangles;
-			// The level is the tree's cut at its error: each patch whose own error passes and
-			// whose parent's does not, so the level covers the mesh once.
-			let expected = 0;
-			for (const patch of patches) {
-				if (patch.error > level.error) continue;
-				if (patch.parent >= 0 && entry(patches, patch.parent).error <= level.error) continue;
-				expected += patch.count;
-			}
-			const indices = entry(/** @type {Uint32Array[]} */ (level.indices), 0);
-			expect(indices.length).toBe(expected);
 			// The level names the mesh's own vertices, as the tree does.
-			for (const index of indices) expect(index).toBeLessThan(mesh.positions.length / 3);
+			expect(level.positions.every((positions) => positions === undefined)).toBe(true);
+			for (const index of entry(/** @type {Uint32Array[]} */ (level.indices), 0))
+				expect(index).toBeLessThan(mesh.positions.length / 3);
 		}
 	});
 
@@ -452,6 +533,17 @@ describe('the tree of a large mesh', () => {
 		scaledBudget(180_000),
 	);
 
+	it(
+		"writes the trees that the engine's walk test reads, byte for byte",
+		async () => {
+			for (const [name, bytes] of await buildTreeFixtures()) {
+				const file = readFileSync(join(TREES_DIR, name));
+				expect(Buffer.from(bytes).equals(file), name).toBe(true);
+			}
+		},
+		scaledBudget(180_000),
+	);
+
 	it('writes the tree where the engine reads it', async () => {
 		const { doc, plans } = await planned;
 		storeClusters(doc, plans);
@@ -464,6 +556,7 @@ describe('the tree of a large mesh', () => {
 		);
 		const patches = parsed.meshes[0]?.primitives[0]?.patches;
 		expect(patches?.root).toBe(plan.root);
+		expect(patches?.current).toBe(true);
 		expect(Array.from(patches?.indices ?? [])).toEqual(Array.from(plan.indices));
 		expect(Array.from(patches?.words ?? [])).toEqual(Array.from(plan.patches));
 		expect(Array.from(patches?.bounds ?? [])).toEqual(Array.from(plan.bounds));

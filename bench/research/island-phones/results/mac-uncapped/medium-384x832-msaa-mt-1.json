@@ -1,0 +1,580 @@
+{
+	"name": "medium-384x832-msaa-mt",
+	"round": 1,
+	"query": "preset=medium&w=384&h=832&warm=20&seconds=3&steps=base,town,base,trees.shrubs.cypress,base,cards,base,grass,base,ground,base,water.reflection,base,reflection,base,shadows,base,set:{\"fogSlices\":0},set:{\"ssrScale\":0},set:{\"lodFade\":false},set:{\"physicalSky\":false},set:{\"lodThreshold\":4}",
+	"loadBefore": 2.498046875,
+	"loadAfter": 4.720703125,
+	"seconds": 124.281,
+	"displayProblem": null,
+	"errors": ["Failed to load resource: the server responded with a status of 404 (Not Found)"],
+	"result": {
+		"page": "island-phones",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"url": "http://localhost:6571/bench/research/island-phones/pages/island.html?preset=medium&w=384&h=832&warm=20&seconds=3&steps=base%2Ctown%2Cbase%2Ctrees.shrubs.cypress%2Cbase%2Ccards%2Cbase%2Cgrass%2Cbase%2Cground%2Cbase%2Cwater.reflection%2Cbase%2Creflection%2Cbase%2Cshadows%2Cbase%2Cset%3A%7B%22fogSlices%22%3A0%7D%2Cset%3A%7B%22ssrScale%22%3A0%7D%2Cset%3A%7B%22lodFade%22%3Afalse%7D%2Cset%3A%7B%22physicalSky%22%3Afalse%7D%2Cset%3A%7B%22lodThreshold%22%3A4%7D&still-camera=off",
+		"calibrationMs": 0.7300000041723251,
+		"ok": true,
+		"tier": "webgpu",
+		"mode": {
+			"build": "threaded",
+			"latency": "pipelined",
+			"sketchThread": "worker",
+			"renderThread": "render-worker",
+			"jobWorkers": 16,
+			"hold": null,
+			"preset": "medium",
+			"presetCheck": null,
+			"crashedStarts": 0,
+			"memoryMaximumMiB": 1024,
+			"renderFallback": null,
+			"keepTextureCopies": false
+		},
+		"census": {
+			"viewport": {
+				"width": 384,
+				"height": 832,
+				"pixelRatio": 1
+			},
+			"preset": "medium",
+			"groups": {
+				"ground": {
+					"objects": 496,
+					"rows": 496
+				},
+				"seabed": {
+					"objects": 2,
+					"rows": 2
+				},
+				"foam": {
+					"objects": 2,
+					"rows": 2
+				},
+				"water": {
+					"objects": 1,
+					"rows": 1
+				},
+				"reflection": {
+					"objects": 0,
+					"rows": 0
+				},
+				"town": {
+					"objects": 69,
+					"rows": 9288
+				},
+				"trees": {
+					"objects": 6,
+					"rows": 9808
+				},
+				"shrubs": {
+					"objects": 2,
+					"rows": 12292
+				},
+				"cypress": {
+					"objects": 2,
+					"rows": 4161
+				},
+				"cards": {
+					"objects": 8,
+					"rows": 15594
+				},
+				"grass": {
+					"objects": 4,
+					"rows": 10800
+				},
+				"shadows": {
+					"objects": 0,
+					"rows": 0
+				},
+				"other": {
+					"objects": 0,
+					"rows": 0
+				}
+			},
+			"reflections": 1
+		},
+		"windows": [
+			{
+				"step": "base",
+				"frames": 1173,
+				"intervalMs": 2.3075000047683716,
+				"gpuMs": 2.607377052307129,
+				"gpuPassMs": {
+					"copies": 0.2284960001707077,
+					"compute": 0.050624001771211624,
+					"shadow cascade 0": 0.04041599854826927,
+					"shadow cascade 1": 0.1965389996767044,
+					"shadow cascade 2": 0.6161569952964783,
+					"opaque 1": 0.5951370000839233,
+					"view copy 1": 0.4343689978122711,
+					"opaque": 1.5030189752578735,
+					"later passes": 1.4418950080871582,
+					"between passes": 0,
+					"transmission copy": 1.2874380350112915
+				},
+				"render": 0.3050000071525574,
+				"triangles": 3263182,
+				"drawCalls": 2951.5
+			},
+			{
+				"step": "town",
+				"frames": 1171,
+				"intervalMs": 2.8200000524520874,
+				"gpuMs": 2.844623565673828,
+				"gpuPassMs": {
+					"copies": 0.5545740127563477,
+					"compute": 0.046541500836610794,
+					"shadow cascade 0": 0.026582999154925346,
+					"shadow cascade 1": 0.16428950428962708,
+					"shadow cascade 2": 0.46118050813674927,
+					"view copy 1": 0.4585135132074356,
+					"opaque": 1.85636705160141,
+					"transmission copy": 1.6771409511566162,
+					"later passes": 1.8690329790115356,
+					"between passes": 0,
+					"opaque 1": 0.606948971748352
+				},
+				"render": 0.2849999964237213,
+				"triangles": 1539464,
+				"drawCalls": 2810.5
+			},
+			{
+				"step": "base",
+				"frames": 1143,
+				"intervalMs": 2.3524999618530273,
+				"gpuMs": 2.5285450220108032,
+				"gpuPassMs": {
+					"copies": 0.27132898569107056,
+					"compute": 0.050666000694036484,
+					"shadow cascade 0": 0.0400409996509552,
+					"shadow cascade 1": 0.19441399723291397,
+					"shadow cascade 2": 0.6056365072727203,
+					"view copy 1": 0.439410001039505,
+					"opaque": 1.4722480177879333,
+					"transmission copy": 1.25308495759964,
+					"later passes": 1.39410400390625,
+					"between passes": 0,
+					"opaque 1": 0.6048244833946228
+				},
+				"render": 0.3050000071525574,
+				"triangles": 3744787,
+				"drawCalls": 2951.5
+			},
+			{
+				"step": "trees.shrubs.cypress",
+				"frames": 1244,
+				"intervalMs": 1.9049999713897705,
+				"gpuMs": 1.9207210540771484,
+				"gpuPassMs": {
+					"copies": 0.26241299510002136,
+					"compute": 0.04291699826717377,
+					"shadow cascade 0": 0.03741699829697609,
+					"shadow cascade 1": 0.1367889940738678,
+					"shadow cascade 2": 0.5127419829368591,
+					"view copy 1": 0.33328700065612793,
+					"opaque": 1.1104830503463745,
+					"transmission copy": 1.000527024269104,
+					"later passes": 1.104024052619934,
+					"between passes": 0,
+					"opaque 1": 0.4655134975910187
+				},
+				"render": 0.30000001192092896,
+				"triangles": 2426559,
+				"drawCalls": 2556
+			},
+			{
+				"step": "base",
+				"frames": 1086,
+				"intervalMs": 2.4299999475479126,
+				"gpuMs": 2.417796015739441,
+				"gpuPassMs": {
+					"copies": 0.0043750000186264515,
+					"compute": 0.04931250028312206,
+					"shadow cascade 0": 0.0391865000128746,
+					"shadow cascade 1": 0.19078899919986725,
+					"shadow cascade 2": 0.5866580009460449,
+					"opaque 1": 0.578698992729187,
+					"view copy 1": 0.4204939901828766,
+					"opaque": 1.4804149866104126,
+					"later passes": 1.4146655201911926,
+					"between passes": 0,
+					"transmission copy": 1.2697299718856812
+				},
+				"render": 0.35500001907348633,
+				"triangles": 3263182,
+				"drawCalls": 2951.5
+			},
+			{
+				"step": "cards",
+				"frames": 1228,
+				"intervalMs": 2.0450000762939453,
+				"gpuMs": 1.9833860397338867,
+				"gpuPassMs": {
+					"copies": 0.06843699887394905,
+					"compute": 0.044874001294374466,
+					"shadow cascade 0": 0.036834001541137695,
+					"shadow cascade 1": 0.1459130048751831,
+					"shadow cascade 2": 0.3064959943294525,
+					"view copy 1": 0.1334570050239563,
+					"opaque": 1.174232006072998,
+					"transmission copy": 1.0328800082206726,
+					"later passes": 1.1177749633789062,
+					"between passes": 0,
+					"opaque 1": 0.332161009311676
+				},
+				"render": 0.29500001668930054,
+				"triangles": 3492198.5,
+				"drawCalls": 2944
+			},
+			{
+				"step": "base",
+				"frames": 1152,
+				"intervalMs": 2.759999990463257,
+				"gpuMs": 2.5847508907318115,
+				"gpuPassMs": {
+					"copies": 0.4795970022678375,
+					"compute": 0.05041699856519699,
+					"shadow cascade 0": 0.04087400063872337,
+					"shadow cascade 1": 0.19687199592590332,
+					"shadow cascade 2": 0.618366003036499,
+					"view copy 1": 0.40545299649238586,
+					"opaque": 1.5143109560012817,
+					"transmission copy": 1.2912299633026123,
+					"later passes": 1.433603048324585,
+					"between passes": 0,
+					"opaque 1": 0.6049704849720001
+				},
+				"render": 0.3050000071525574,
+				"triangles": 3744787,
+				"drawCalls": 3317
+			},
+			{
+				"step": "grass",
+				"frames": 1153,
+				"intervalMs": 2.3524999618530273,
+				"gpuMs": 2.6235439777374268,
+				"gpuPassMs": {
+					"copies": 0.28899499773979187,
+					"compute": 0.04895700141787529,
+					"shadow cascade 0": 0.04100000113248825,
+					"shadow cascade 1": 0.19953900575637817,
+					"shadow cascade 2": 0.6266160011291504,
+					"opaque 1": 0.6186149716377258,
+					"view copy 1": 0.46911799907684326,
+					"opaque": 1.5608099699020386,
+					"later passes": 1.4888520240783691,
+					"between passes": 0,
+					"transmission copy": 1.33127099275589
+				},
+				"render": 0.30000001192092896,
+				"triangles": 3744787,
+				"drawCalls": 2951.5
+			},
+			{
+				"step": "base",
+				"frames": 1130,
+				"intervalMs": 2.569999933242798,
+				"gpuMs": 2.549546003341675,
+				"gpuPassMs": {
+					"copies": 0.003937500063329935,
+					"compute": 0.05237400159239769,
+					"shadow cascade 0": 0.041374001652002335,
+					"shadow cascade 1": 0.20003700256347656,
+					"shadow cascade 2": 0.6239489912986755,
+					"opaque 1": 0.6099075078964233,
+					"view copy 1": 0.44632598757743835,
+					"opaque": 1.5272270441055298,
+					"later passes": 1.4580179452896118,
+					"between passes": 0,
+					"transmission copy": 1.291146993637085
+				},
+				"render": 0.3050000071525574,
+				"triangles": 3263182,
+				"drawCalls": 2586
+			},
+			{
+				"step": "ground",
+				"frames": 1165,
+				"intervalMs": 2.475000023841858,
+				"gpuMs": 2.787248969078064,
+				"gpuPassMs": {
+					"copies": 0.27341198921203613,
+					"compute": 0.045811500400304794,
+					"shadow cascade 0": 0.04456149972975254,
+					"shadow cascade 2": 0.6240944862365723,
+					"opaque 1": 0.7865710258483887,
+					"view copy 1": 0.5398665070533752,
+					"opaque": 1.7363485097885132,
+					"transmission copy": 1.531393051147461,
+					"later passes": 1.6222460269927979,
+					"between passes": 0,
+					"shadow cascade 1": 0.19853800535202026,
+					"particle depth copy": 1.3703949451446533
+				},
+				"render": 0.2800000011920929,
+				"triangles": 2908018,
+				"drawCalls": 2647.5
+			},
+			{
+				"step": "base",
+				"frames": 1112,
+				"intervalMs": 2.5399999618530273,
+				"gpuMs": 2.5555450916290283,
+				"gpuPassMs": {
+					"copies": 0.10576950293034315,
+					"compute": 0.05233300104737282,
+					"shadow cascade 0": 0.0416250005364418,
+					"shadow cascade 1": 0.1996220052242279,
+					"shadow cascade 2": 0.6240739822387695,
+					"opaque 1": 0.6105319857597351,
+					"view copy 1": 0.4512839913368225,
+					"opaque": 1.5469340085983276,
+					"later passes": 1.4915189743041992,
+					"between passes": 0,
+					"transmission copy": 1.32950097322464
+				},
+				"render": 0.32499998807907104,
+				"triangles": 3263182,
+				"drawCalls": 3317
+			},
+			{
+				"step": "water.reflection",
+				"frames": 1218,
+				"intervalMs": 2.4674999713897705,
+				"gpuMs": 2.6579394340515137,
+				"gpuPassMs": {
+					"copies": 0.5175750255584717,
+					"compute": 0.04468649998307228,
+					"shadow cascade 0": 0.04314499907195568,
+					"shadow cascade 1": 0.20928899943828583,
+					"shadow cascade 2": 0.6624064743518829,
+					"opaque": 1.5821430087089539,
+					"transmission copy": 1.376333475112915,
+					"particle depth copy": 1.3599799871444702,
+					"later passes": 1.4012495279312134,
+					"between passes": 0
+				},
+				"render": 0.26499998569488525,
+				"triangles": 3202289,
+				"drawCalls": 2583
+			},
+			{
+				"step": "base",
+				"frames": 1122,
+				"intervalMs": 2.512500047683716,
+				"gpuMs": 2.79612398147583,
+				"gpuPassMs": {
+					"copies": 0.3522865027189255,
+					"compute": 0.05368649959564209,
+					"shadow cascade 0": 0.04329049959778786,
+					"shadow cascade 1": 0.2093304991722107,
+					"shadow cascade 2": 0.6581359803676605,
+					"view copy 1": 0.4614714980125427,
+					"opaque": 1.635224997997284,
+					"transmission copy": 1.3570619821548462,
+					"later passes": 1.5855600237846375,
+					"between passes": 0,
+					"opaque 1": 0.6580320000648499
+				},
+				"render": 0.3050000071525574,
+				"triangles": 3503984.5,
+				"drawCalls": 2951.5
+			},
+			{
+				"step": "reflection",
+				"frames": 1199,
+				"intervalMs": 2.834999918937683,
+				"gpuMs": 2.948370933532715,
+				"gpuPassMs": {
+					"compute": 0.05033399909734726,
+					"shadow cascade 0": 0.04354099929332733,
+					"shadow cascade 1": 0.21403799951076508,
+					"shadow cascade 2": 0.6715729832649231,
+					"opaque": 1.6277669668197632,
+					"transmission copy": 1.4207279682159424,
+					"particle depth copy": 1.4207279682159424,
+					"later passes": 1.5078519582748413,
+					"between passes": 0,
+					"copies": 0.6643649935722351
+				},
+				"render": 0.25999999046325684,
+				"triangles": 3263169,
+				"drawCalls": 2585
+			},
+			{
+				"step": "base",
+				"frames": 1070,
+				"intervalMs": 2.6500000953674316,
+				"gpuMs": 2.7106045484542847,
+				"gpuPassMs": {
+					"copies": 0.3174949884414673,
+					"compute": 0.05524900183081627,
+					"shadow cascade 0": 0.0433959998190403,
+					"shadow cascade 1": 0.2106425017118454,
+					"shadow cascade 2": 0.6656984984874725,
+					"opaque 1": 0.6546980142593384,
+					"view copy 1": 0.45538899302482605,
+					"opaque": 1.6292040348052979,
+					"later passes": 1.539059042930603,
+					"between passes": 0,
+					"transmission copy": 1.3884780406951904
+				},
+				"render": 0.35500001907348633,
+				"triangles": 3744787,
+				"drawCalls": 3317
+			},
+			{
+				"step": "shadows",
+				"frames": 1915,
+				"intervalMs": 1.399999976158142,
+				"gpuMs": 1.272771954536438,
+				"gpuPassMs": {
+					"copies": 0.004958000034093857,
+					"compute": 0.025937999598681927,
+					"opaque 1": 0.28682801127433777,
+					"view copy 1": 0.16999800503253937,
+					"opaque": 0.9352155029773712,
+					"transmission copy": 0.7642379999160767,
+					"particle depth copy": 0.739656001329422,
+					"transparent": 0.7644675076007843,
+					"later passes": 0.7849259972572327,
+					"between passes": 0,
+					"moment layer": 0.7651129961013794
+				},
+				"render": 0.19499999284744263,
+				"triangles": 616850,
+				"drawCalls": 762
+			},
+			{
+				"step": "base",
+				"frames": 1028,
+				"intervalMs": 2.625,
+				"gpuMs": 2.791812539100647,
+				"gpuPassMs": {
+					"copies": 0.26955849677324295,
+					"compute": 0.055061500519514084,
+					"shadow cascade 0": 0.04370899870991707,
+					"shadow cascade 1": 0.2129340022802353,
+					"shadow cascade 2": 0.6669270098209381,
+					"opaque 1": 0.6581569910049438,
+					"view copy 1": 0.48055499792099,
+					"opaque": 1.6565580368041992,
+					"later passes": 1.5876840353012085,
+					"between passes": 0,
+					"transmission copy": 1.4133529663085938
+				},
+				"render": 0.35500001907348633,
+				"triangles": 3744787,
+				"drawCalls": 2951.5
+			},
+			{
+				"step": "set:{\"fogSlices\":0}",
+				"frames": 1024,
+				"intervalMs": 2.734999895095825,
+				"gpuMs": 2.8230820894241333,
+				"gpuPassMs": {
+					"copies": 0.47336700558662415,
+					"compute": 0.055082499980926514,
+					"shadow cascade 0": 0.04422849975526333,
+					"shadow cascade 1": 0.215767502784729,
+					"shadow cascade 2": 0.667990505695343,
+					"view copy 1": 0.4591805040836334,
+					"opaque": 1.685808002948761,
+					"transmission copy": 1.4324359893798828,
+					"later passes": 1.619392454624176,
+					"between passes": 0,
+					"opaque 1": 0.6640310287475586
+				},
+				"render": 0.36000001430511475,
+				"triangles": 3263182,
+				"drawCalls": 2586
+			},
+			{
+				"step": "set:{\"ssrScale\":0}",
+				"frames": 1021,
+				"intervalMs": 2.6699999570846558,
+				"gpuMs": 2.8411219120025635,
+				"gpuPassMs": {
+					"copies": 0.4491190016269684,
+					"compute": 0.05549899861216545,
+					"shadow cascade 0": 0.04408299922943115,
+					"shadow cascade 1": 0.2149139940738678,
+					"shadow cascade 2": 0.6719890236854553,
+					"view copy 1": 0.5066999793052673,
+					"opaque": 1.6892249584197998,
+					"transmission copy": 1.4510619640350342,
+					"later passes": 1.6011840105056763,
+					"between passes": 0,
+					"opaque 1": 0.6636565029621124
+				},
+				"render": 0.36000001430511475,
+				"triangles": 3263182,
+				"drawCalls": 2951.5
+			},
+			{
+				"step": "set:{\"lodFade\":false}",
+				"frames": 1030,
+				"intervalMs": 2.625,
+				"gpuMs": 2.8740808963775635,
+				"gpuPassMs": {
+					"copies": 0.004416999872773886,
+					"compute": 0.05820799991488457,
+					"shadow cascade 0": 0.04591599851846695,
+					"shadow cascade 1": 0.22349700331687927,
+					"shadow cascade 2": 0.7112389802932739,
+					"opaque 1": 0.6939070224761963,
+					"view copy 1": 0.5123260021209717,
+					"opaque": 1.7328490018844604,
+					"later passes": 1.6619319915771484,
+					"between passes": 0,
+					"transmission copy": 1.4968724846839905
+				},
+				"render": 0.35750001668930054,
+				"triangles": 3263182,
+				"drawCalls": 3315
+			},
+			{
+				"step": "set:{\"physicalSky\":false}",
+				"frames": 1007,
+				"intervalMs": 2.8499999046325684,
+				"gpuMs": 2.9647879600524902,
+				"gpuPassMs": {
+					"copies": 0.020083000883460045,
+					"compute": 0.057541001588106155,
+					"shadow cascade 0": 0.04625000059604645,
+					"shadow cascade 1": 0.22570499777793884,
+					"shadow cascade 2": 0.7156559824943542,
+					"opaque 1": 0.7028644979000092,
+					"view copy 1": 0.5250750184059143,
+					"opaque": 1.7645989656448364,
+					"later passes": 1.7029739618301392,
+					"between passes": 0,
+					"transmission copy": 1.5058109760284424
+				},
+				"render": 0.38999998569488525,
+				"triangles": 3744787,
+				"drawCalls": 2587
+			},
+			{
+				"step": "set:{\"lodThreshold\":4}",
+				"frames": 1014,
+				"intervalMs": 2.7850000858306885,
+				"gpuMs": 3.0820984840393066,
+				"gpuPassMs": {
+					"copies": 0.3264549970626831,
+					"compute": 0.06122799962759018,
+					"shadow cascade 0": 0.04695799946784973,
+					"shadow cascade 1": 0.23393400013446808,
+					"shadow cascade 2": 0.7213640213012695,
+					"view copy 1": 0.4936804920434952,
+					"opaque": 1.802701473236084,
+					"transmission copy": 1.6180170178413391,
+					"later passes": 1.7373895049095154,
+					"between passes": 0,
+					"opaque 1": 0.6519694924354553
+				},
+				"render": 0.3799999952316284,
+				"triangles": 3542928,
+				"drawCalls": 3209
+			}
+		]
+	}
+}

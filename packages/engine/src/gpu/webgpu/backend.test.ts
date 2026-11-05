@@ -520,6 +520,22 @@ describe('WebGPUBackend', () => {
 		]);
 	});
 
+	it('marks a frame that draws an indirect draw, so a page that draws none asks for no counts', () => {
+		const { device } = fakeDevice();
+		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		backend.canvasTarget = { createView: () => ({}) } as unknown as GPUTexture;
+		const begin: [number, ...number[]] = [
+			G.OP_BEGIN_RENDER_PASS,
+			...[0, G.NO_TARGET, G.NO_TARGET, 0, 0, 0, 0, 0, G.PASS_CLEAR_COLOR],
+		];
+		expect(backend.culledDrawn).toBe(false);
+		replay(backend, drawList([G.OP_CREATE_BUFFER, 1, 40, INDIRECT], begin, [G.OP_END_RENDER_PASS]));
+		expect(backend.culledDrawn).toBe(false);
+		replay(backend, drawList(begin, [G.OP_DRAW_INDEXED_INDIRECT, 1, 0], [G.OP_END_RENDER_PASS]));
+		expect(backend.culledDrawn).toBe(true);
+		backend.destroy();
+	});
+
 	it('draws straight from the shared buffer of arguments in other browsers', () => {
 		const { usage, log } = drawIndirect(MAC_CHROME);
 		expect(usage).toBe(INDIRECT | G.BUFFER_USAGE_COPY_SRC);
@@ -546,6 +562,41 @@ describe('WebGPUBackend', () => {
 		expect(needsOwnArguments(iPhoneChrome)).toBe(true);
 		for (const userAgent of [MAC_CHROME, macFirefox, androidChrome, ''])
 			expect(needsOwnArguments(userAgent), userAgent).toBe(false);
+	});
+
+	it("leaves a capture's copies into a buffer that a read maps out, and keeps its other copies", () => {
+		const { device, log, buffers } = fakeDevice();
+		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		const copies = G.BUFFER_USAGE_COPY_SRC | G.BUFFER_USAGE_COPY_DST;
+		replay(
+			backend,
+			drawList(
+				[G.OP_CREATE_BUFFER, 1, 256, G.BUFFER_USAGE_STORAGE | G.BUFFER_USAGE_COPY_SRC],
+				[G.OP_CREATE_BUFFER, 2, 256, G.BUFFER_USAGE_STORAGE | copies],
+				[G.OP_CREATE_BUFFER, 3, 256, G.BUFFER_USAGE_MAP_READ | G.BUFFER_USAGE_COPY_DST],
+			),
+		);
+		const [source, kept, read] = [3, 2, 1].map((back) => `buffer ${buffers.length - back}`);
+		// The frame copies counts into a GPU buffer and into the buffer that its read maps.
+		const frame = drawList(
+			[G.OP_COPY_BUFFER_TO_BUFFER, 1, 0, 2, 0, 16],
+			[G.OP_COPY_BUFFER_TO_BUFFER, 1, 0, 3, 0, 16],
+			[G.OP_READ_BUFFER, 3, 0, 16, 64, 5],
+		);
+		log.length = 0;
+		replay(backend, frame);
+		expect(log).toEqual([
+			`copy ${source} at 0 to ${kept}`,
+			`copy ${source} at 0 to ${read}`,
+			'submit',
+			`map ${read} at 0, 16 bytes`,
+		]);
+		// A capture draws the frame again while that map may still be under way.
+		log.length = 0;
+		backend.canvasTarget = device.createTexture({ size: [8, 8], format: 'rgba8unorm', usage: 0 });
+		replay(backend, frame);
+		backend.endCapture();
+		expect(log).toEqual([`copy ${source} at 0 to ${kept}`, 'submit']);
 	});
 
 	it('reads a copied box into engine memory once the frame is submitted, and raises its slot after the unmap', async () => {

@@ -18,7 +18,7 @@ use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
 use null3d_core::layers::ALL_LAYERS;
-use null3d_core::levels::{FADE_BAND, LevelRule, Switch};
+use null3d_core::levels::{FADE_BAND, LevelRule, LightLens, Switch};
 use null3d_core::lights::{
     AUTO_FALLBACK, FillLight, LightShadow, LightTable, LightView, MAX_FILL_DIRECTIONAL_LIGHTS,
     SunShadow, VisibleLight, farthest_receiver_distance, ladder_distance,
@@ -398,14 +398,25 @@ pub trait FrameBuilder {
     fn visible_entries(&self, _frame: u32) -> Option<u32> {
         None
     }
-    /// The sources inside the camera's frustum that software occlusion culling hid in a recorded
-    /// frame, where the builder culls on the CPU. `None` where the GPU culls.
+    /// The sources inside the camera's frustum that occlusion culling hid: in a recorded frame,
+    /// where the builder culls on the CPU, or in the newest frame whose counts the GPU sent back,
+    /// where GPU occlusion culling runs. `None` where neither runs.
     fn occluded_entries(&self, _frame: u32) -> Option<u32> {
         None
     }
-    /// The ranges of cluster-tree patches that a recorded frame's camera view draws, where the
-    /// builder walks the trees. Zero where the view draws the trees' whole levels. `None` where the
-    /// GPU path picks the patches itself.
+    /// Notes the GPU's time for frame `frame`, from its submit to its completion, in microseconds,
+    /// which GPU occlusion culling's check compares with its passes on and off. Elsewhere it does
+    /// nothing.
+    fn gpu_frame_time(&mut self, _frame: u32, _micros: u32) {}
+    /// Sets the control slot that GPU occlusion culling's reads of its counts raise. Without one,
+    /// its check judges by the frame times alone. Elsewhere it does nothing.
+    fn set_occlusion_read_slot(&mut self, _slot: u32) {}
+    /// Holds GPU occlusion culling's passes on in every frame, without its check's trials, for a
+    /// test that compares the image with culling and without it. Elsewhere it does nothing.
+    fn hold_occlusion_check(&mut self, _held: bool) {}
+    /// The ranges of cluster-tree patches that a recorded frame's views draw, the shadow views
+    /// included, where the builder walks the trees. Zero where the views draw the trees' whole
+    /// levels. `None` where the GPU path picks the patches itself.
     fn patch_ranges(&self, _frame: u32) -> Option<u32> {
         None
     }
@@ -678,10 +689,13 @@ pub(crate) fn clamp_sampler(
 /// The most bytes that a layout's rebuild asks for with plain pushes, for each source: its rows in
 /// the tables, and the old table that a growth copies from. Its buckets are far fewer than its
 /// sources, and fit in the frame's headroom.
-pub(crate) const REBUILD_BYTES_PER_SOURCE: usize = 64;
+pub(crate) const REBUILD_BYTES_PER_SOURCE: usize = 72;
 
 /// The bytes of an ordinary block of an [`UploadArena`]. A larger copy takes a block of its own size.
 const UPLOAD_BLOCK: usize = 256 << 10;
+/// The share of a large copy, as its divisor, that a new block for it holds to spare, so the same
+/// copy a little larger in a later frame still fits.
+const LARGE_BLOCK_SPARE: usize = 8;
 /// The frames with no large copy after which an arena gives its large blocks back. Scenes that change
 /// often keep them, so those frames take no new block.
 const LARGE_BLOCK_FRAMES: u32 = 30;
@@ -754,8 +768,13 @@ impl UploadArena {
         self.before + self.blocks.get(self.at).map_or(0, Vec::len)
     }
 
-    /// Makes the block at `at` one with room for `padded` more bytes: the present one, a later
-    /// empty one, or a new one. Reports a heap that cannot give a new one.
+    /// Makes the block at `at` one with room for `padded` more bytes: the present one, the smallest
+    /// later empty one that holds them, or a new one. Reports a heap that cannot give a new one.
+    ///
+    /// A large copy whose size changes from frame to frame, such as a large blended batch's sorted
+    /// rows while the camera moves, would otherwise take a new block whenever it outgrows the
+    /// blocks it had, and the frames would keep every older one. So a new large block takes room to
+    /// spare, and the empty large blocks that are too small for the copy go back to the heap.
     fn make_room(&mut self, padded: usize) -> Result<(), RecordError> {
         if let Some(block) = self.blocks.get(self.at)
             && block.capacity() - block.len() >= padded
@@ -769,19 +788,31 @@ impl UploadArena {
             self.at + 1
         };
         self.at = next;
-        if let Some(found) =
-            (next..self.blocks.len()).find(|&k| self.blocks[k].capacity() >= padded)
+        if let Some(found) = (next..self.blocks.len())
+            .filter(|&k| self.blocks[k].capacity() >= padded)
+            .min_by_key(|&k| self.blocks[k].capacity())
         {
             self.blocks.swap(next, found);
             return Ok(());
         }
+        let mut k = next;
+        while k < self.blocks.len() {
+            if self.blocks[k].capacity() > UPLOAD_BLOCK {
+                self.blocks.remove(k);
+            } else {
+                k += 1;
+            }
+        }
         let refused = |_| RecordError::OutOfMemory {
             bytes: u32::try_from(padded).unwrap_or(u32::MAX),
         };
+        let size = if padded > UPLOAD_BLOCK {
+            padded.saturating_add(padded / LARGE_BLOCK_SPARE)
+        } else {
+            UPLOAD_BLOCK
+        };
         let mut block = Vec::new();
-        block
-            .try_reserve_exact(padded.max(UPLOAD_BLOCK))
-            .map_err(refused)?;
+        block.try_reserve_exact(size).map_err(refused)?;
         self.blocks.try_reserve(1).map_err(refused)?;
         self.blocks.insert(next, block);
         Ok(())
@@ -1152,6 +1183,9 @@ pub struct SceneSettings {
     air: Option<AirModel>,
     /// True while the quality settings draw the physical sky, else the analytic sky stands in.
     physical_sky: bool,
+    /// The steps of each ray of the sky's volumetric cloud tier, which the quality settings set: 0
+    /// draws the flat layer.
+    cloud_steps: u32,
     /// The analytic sky that stands in for the physical sky, and the factor of its light, while the
     /// quality settings turn the physical sky off.
     stand_in: Option<(crate::background::Sky, f32)>,
@@ -1336,9 +1370,10 @@ pub struct LevelQuality {
     /// The error in pixels under which a coarser level draws, in the views of cameras, and the
     /// size below which a bound draws nothing. 0 draws every mesh's base level.
     pub threshold: f32,
-    /// What the threshold is multiplied by in the shadow maps' views, so that casters draw a
-    /// coarser level.
-    pub shadow_factor: f32,
+    /// The error in texels of a shadow map under which a caster's coarser level and coarser
+    /// patches draw in that map's view, and the size below which a caster draws nothing there. 0
+    /// draws every caster's base level and finest patches.
+    pub shadow_threshold: f32,
     /// True when a source's distance band fades at each edge. A level's own hand-over fades
     /// where the level says so, whatever this setting.
     pub distance_bands: bool,
@@ -1348,7 +1383,7 @@ impl Default for LevelQuality {
     fn default() -> Self {
         Self {
             threshold: 1.0,
-            shadow_factor: 2.0,
+            shadow_threshold: 1.0,
             distance_bands: true,
         }
     }
@@ -1376,6 +1411,7 @@ impl SceneSettings {
             sky_light_slot: 0,
             air: None,
             physical_sky: true,
+            cloud_steps: 0,
             stand_in: None,
             views: vec![View::default()],
             view_names: vec![ViewNames::default()],
@@ -1943,12 +1979,9 @@ impl SceneSettings {
     /// What screen-space reflections' trace draws with in a frame of a canvas of `canvas` pixels,
     /// or `None` while they draw nothing or without a camera.
     pub(crate) fn ssr_frame(&self, canvas: (u32, u32)) -> Option<TraceFrame> {
-        let ssr = self.ssr()?;
-        let (_, lens) = self.views.first()?.camera()?;
         Some(TraceFrame {
-            ssr,
+            ssr: self.ssr()?,
             projection: self.camera_projection(canvas)?,
-            orthographic: matches!(lens, Lens::Orthographic(_)),
             steps: self.ssr_steps,
         })
     }
@@ -2600,7 +2633,7 @@ impl SceneSettings {
         values: &[f32],
         switches: &[Switch],
         materials: &[u32],
-        fades: u8,
+        fades: u16,
     ) -> Result<(), LevelError> {
         let format = |mesh: u32| Some(self.meshes.mesh(mesh.checked_sub(1)?)?.format);
         let Some(own) = format(base) else {
@@ -2769,12 +2802,36 @@ impl SceneSettings {
         self.level_view_of(source, canvas, quality.threshold, band)
     }
 
-    /// The level inputs of the shadow maps' views: as the camera's view picks, with the threshold
-    /// times the shadow factor, so casters draw a coarser level, and no fading band.
-    pub(crate) fn shadow_level_view(&self, canvas: (u32, u32)) -> LevelRule {
+    /// The level inputs of a shadow map's view through `lens`: a caster draws the coarsest level, and
+    /// the coarsest patches, whose error covers fewer texels of the map than the shadow threshold,
+    /// whatever the camera's distance. A cached shadow map then stays valid while the camera
+    /// moves. Distance bands, and levels given by a distance or by coverage, keep the camera's
+    /// measures, and the view draws no fading band ([`LevelRule::for_light`]).
+    pub(crate) fn shadow_level_view(&self, canvas: (u32, u32), lens: LightLens) -> LevelRule {
         let quality = self.level_quality;
-        let threshold = quality.threshold * quality.shadow_factor.max(1.0);
-        self.level_view_of(self.views.first(), canvas, threshold, 0.0)
+        let camera = self.level_view_of(self.views.first(), canvas, quality.threshold, 0.0);
+        LevelRule::for_light(&camera, lens, quality.shadow_threshold)
+    }
+
+    /// The rule by which shadow view `view` picks its casters' levels and patches in its own texels:
+    /// a cascade of `shadow`'s, or a tile of `tiles`'. `None` for a view that is neither, or a
+    /// tile that does not draw in the frame.
+    pub(crate) fn shadow_rule(
+        &self,
+        view: ViewId,
+        shadow: Option<&crate::shadows::ShadowFrame>,
+        tiles: &crate::shadow_tiles::ShadowTiles,
+        canvas: (u32, u32),
+    ) -> Option<LevelRule> {
+        let lens = match (view.cascade_index(), view.tile_index()) {
+            (Some(cascade), _) => {
+                let shadow = shadow.filter(|shadow| cascade < shadow.cascades.count)?;
+                shadow.lens(cascade)
+            }
+            (None, Some(tile)) => tiles.lens(tile)?,
+            (None, None) => return None,
+        };
+        Some(self.shadow_level_view(canvas, lens))
     }
 
     /// The level inputs of a view drawn from `view`'s camera with `threshold` and `band`.
@@ -2900,6 +2957,17 @@ impl SceneSettings {
         }
     }
 
+    /// Sets the steps of each ray of the sky's volumetric cloud tier: 0 draws the flat layer, and a
+    /// number greater than 0 the volumetric clouds, at that many steps.
+    pub fn set_cloud_steps(&mut self, steps: u32) {
+        self.cloud_steps = steps;
+    }
+
+    /// The steps of each ray of the sky's volumetric cloud tier: 0 draws the flat layer.
+    pub fn cloud_steps(&self) -> u32 {
+        self.cloud_steps
+    }
+
     /// The physical sky's settings while the scene's background is one, whichever sky draws.
     fn atmosphere(&self) -> Option<&Atmosphere> {
         match &self.background {
@@ -2998,6 +3066,7 @@ impl SceneSettings {
         arena: &mut UploadArena,
         table: MaterialStorage,
         sky: &PhysicalSkyPass,
+        noise: u32,
     ) -> Result<bool, RecordError> {
         let frame = input.frame;
         if self.textures.needs_estimate()
@@ -3017,6 +3086,7 @@ impl SceneSettings {
         // whose first frame makes it, fills it too.
         self.sky_maps.set_clock(self.clock_seconds()[0]);
         let drawn = self.sky_maps.wants_panorama(&self.textures) && sky.record_panorama(list)?;
+        let cloud_steps = self.cloud_steps;
         self.sky_maps.record(
             &self.textures,
             list,
@@ -3027,6 +3097,8 @@ impl SceneSettings {
                 buffers: self.sky_light_buffers,
                 slot: self.sky_light_slot,
             },
+            cloud_steps,
+            noise,
         )?;
         let layers_changed = self.textures.take_layers_changed();
         let textures = &self.textures;
@@ -4767,6 +4839,42 @@ mod tests {
         assert_eq!(arena.push(&[1u8; 16]).unwrap().1, 16);
     }
 
+    /// A frame that fails keeps none of its copies' blocks, so the frame that records next starts
+    /// from empty memory however large the failed frame's copies were.
+    #[test]
+    fn a_failed_frame_keeps_no_upload_blocks() {
+        let mut lists = ParityLists::new(16, 64);
+        let (list, mut arena) = lists.take(0).unwrap();
+        arena.begin_frame().unwrap();
+        arena.push(&vec![1u8; 2 * UPLOAD_BLOCK]).unwrap();
+        let marks = StillMarks {
+            settled: false,
+            words: &[],
+            weight_at: None,
+        };
+        let result = lists.restore(
+            0,
+            list,
+            arena,
+            marks,
+            Err(RecordError::OutOfMemory { bytes: 1 }),
+            HaltFigures::default(),
+        );
+        assert!(result.is_err());
+        assert!(
+            lists.arenas[0].blocks.is_empty(),
+            "the failed frame kept the blocks of copies that never replay"
+        );
+        lists.arenas[0].begin_frame().unwrap();
+        assert_eq!(
+            lists.arenas[0]
+                .push(&vec![1u8; 2 * UPLOAD_BLOCK])
+                .unwrap()
+                .1,
+            (2 * UPLOAD_BLOCK) as u32
+        );
+    }
+
     /// A copy that the heap cannot hold is reported as an error, and the core does not trap.
     #[test]
     fn an_upload_arena_reports_a_copy_that_the_heap_cannot_hold() {
@@ -4823,6 +4931,41 @@ mod tests {
                 .blocks
                 .iter()
                 .all(|block| block.capacity() <= UPLOAD_BLOCK)
+        );
+    }
+
+    /// Frames that make the same large copies at sizes that change a little from frame to frame,
+    /// as a large blended batch's sorted rows do while the camera moves, keep a bounded room: the
+    /// arena reuses its large blocks rather than adding one for each new size.
+    #[test]
+    fn an_upload_arena_keeps_bounded_room_for_large_copies_whose_sizes_change() {
+        let mut arena = UploadArena::default();
+        arena.begin_frame().unwrap();
+        let mut most = 0;
+        for frame in 0u32..200 {
+            // Two large copies whose sizes wander over a few percent, in an order that changes.
+            let wobble = |seed: u32| {
+                let hash = (frame ^ seed).wrapping_mul(0x9E37_79B1).rotate_left(13);
+                (hash % 1024) as usize * 64
+            };
+            let rows = 5 * UPLOAD_BLOCK + wobble(0x51);
+            let changed = 3 * UPLOAD_BLOCK + wobble(0xA7);
+            let sizes = if frame % 3 == 0 {
+                [changed, rows]
+            } else {
+                [rows, changed]
+            };
+            for size in sizes {
+                arena.push_zeroed(size).unwrap();
+                arena.push(&[1u8; 600]).unwrap();
+            }
+            most = most.max(arena.len());
+            arena.begin_frame().unwrap();
+        }
+        let reserved = arena.memory_use().reserved as usize;
+        assert!(
+            reserved <= most * 3 / 2,
+            "{reserved} bytes reserved for frames of at most {most}"
         );
     }
 

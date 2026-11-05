@@ -4,6 +4,7 @@
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import {
+	LEVELS_MAX,
 	MAP_ROW_SLOT_ANISOTROPY,
 	MAP_ROW_SLOT_BUMP,
 	MAP_ROW_SLOT_COAT,
@@ -147,18 +148,30 @@ import {
 } from '../generated/gpu';
 import type { ShaderVariants } from '../generated/shaders';
 import type { CustomShader } from '../shared/images';
+import { planEnded, planStarted } from '../shared/task-pending';
 import type { WgslUpdate } from '../shared/wgsl-updates';
 import { type ColorInput, linearColor, writeLinearColor } from './color';
 import type { SceneInput } from './features';
+import type { PiecesData } from './gltf-parse';
+import type { LevelsTaskOutput, TaskLevel } from './levels-task';
 import type { CoreMemory } from './memory';
 import {
 	arraysProblem,
+	floatPositions,
+	MOVING_VERTEX_BITS,
 	meshFromArrays,
 	meshFromLevel,
+	meshFromLevelCopy,
+	meshFromSplitLevel,
 	morphTargetCount,
+	type PlanningWords,
+	readPlanningPart,
 	replaceMeshIndices,
+	setMeshPieceList,
+	setMeshPieces,
 	updateVertices,
 	type VertexLayout,
+	valuesOf,
 } from './mesh-arrays';
 import { ShaderPreloads } from './shader-preloads';
 import { type BuildsLoader, ShaderTemplates } from './shader-templates';
@@ -176,7 +189,21 @@ export interface ResourceUsers {
 		materials?: ReadonlySet<Material>,
 		rig?: object,
 	): string | undefined;
+	/**
+	 * The frame that the sketch ran last, and whether hold mode steps the frames, for work that a
+	 * mesh spreads over frames.
+	 */
+	readonly pace?: { readonly frame: number; readonly held?: boolean };
 }
+
+/**
+ * How long a mesh waits for the next frame before it hands over its next planned level anyway, in
+ * ms: a page whose frames stop, as a hidden tab's do, still gets its levels.
+ */
+const LEVEL_FRAME_WAIT_MS = 250;
+
+/** How often a mesh looks for the next frame while it hands over its planned levels, in ms. */
+const LEVEL_FRAME_POLL_MS = 2;
 
 /**
  * A lower level of detail of a mesh: a simpler mesh that draws in the base mesh's place. Give its
@@ -256,8 +283,120 @@ const LEVEL_REFERENCE_FOV = 50;
 const LEVEL_SWITCH_ERROR = 0;
 const LEVEL_SWITCH_DISTANCE = 1;
 const LEVEL_SWITCH_COVERAGE = 2;
-/** The most lower levels a mesh takes. */
-const MAX_LOWER_LEVELS = 7;
+/** The most lower levels a mesh takes: the core's levels, less the base mesh. */
+const MAX_LOWER_LEVELS = LEVELS_MAX - 1;
+
+/**
+ * A mesh made in code with at least this many triangles plans its levels the first time the scene
+ * draws it, unless its options say `levels: false`. A smaller mesh drawn a few times costs little
+ * at any distance, and each level adds draw buckets to every pipeline that draws the mesh.
+ */
+export const AUTOMATIC_LEVEL_TRIANGLES = 4096;
+
+/**
+ * A smaller mesh of at least `AUTOMATIC_COPY_TRIANGLES` triangles plans its levels once the copies
+ * that the scene draws of it hold this many triangles together, as a batch of pebbles does.
+ */
+export const AUTOMATIC_DRAWN_TRIANGLES = 65_536;
+
+/** The fewest triangles of a mesh that plans its levels because of its copies. */
+export const AUTOMATIC_COPY_TRIANGLES = 256;
+
+/**
+ * The least error of a planned level, as a share of the mesh's longest side. A level that the
+ * simplifier finds exact, as on a flat surface, still gives the switch a distance above 0.
+ */
+const LEAST_LEVEL_ERROR = 1e-6;
+
+/** Each planned level's error is at least this many times the error of the level before it. */
+const LEVEL_ERROR_GROWTH = 1.5;
+
+/**
+ * Options for `mesh.buildLevels`, and for the levels that a mesh made in code plans on its own.
+ *
+ * @category api/geometry
+ */
+export interface BuildLevelsOptions {
+	/**
+	 * True to plan a mesh whose every separate piece is a quad, or a quad folded along its middle,
+	 * as leaf cards: each level keeps every second card and grows it about its middle, so a crown
+	 * keeps its cover. The default is false, because separate quads also build walls and floors,
+	 * which would get holes: such a mesh then simplifies as any other, and its levels drop only
+	 * whole small pieces. A mesh whose positions are integers plans no card levels.
+	 */
+	cards?: boolean;
+}
+
+/**
+ * The levels of detail that a mesh made in code plans on its own. By default it plans them the
+ * first time the scene draws it, when it holds `geometry.automaticLevelTriangles` triangles or
+ * more, or when its copies hold `geometry.automaticDrawnTriangles` together; `false` plans none,
+ * and `true` or options plan them when the mesh is made, at any size. `'pieces'` plans no lower
+ * levels, and sorts a mesh of 32,768 triangles or more into pieces by space at its first draw, as
+ * a merged far cell or a large ground whose levels come from elsewhere gains from.
+ *
+ * @category api/geometry
+ */
+export type LevelsOption = boolean | BuildLevelsOptions | 'pieces';
+
+/**
+ * @internal The fewest triangles of a list that gets pieces: the pieces planner's own
+ * `PIECE_LIST_MIN_TRIANGLES`, which a test keeps equal, here so the sketch's thread reads it
+ * without the planner's code.
+ */
+export const PIECES_MIN_TRIANGLES = 32_768;
+
+/**
+ * @internal The fewest triangles of a smaller mesh that plans facing pieces, and the fewest that
+ * its copies hold together: the pieces planner's own `FACING_LIST_MIN_TRIANGLES` and
+ * `FACING_DRAWN_MIN_TRIANGLES`, which a test keeps equal, here so the sketch's thread reads them
+ * without the planner's code.
+ */
+export const FACING_PIECES_MIN_TRIANGLES = 1024;
+export const FACING_PIECES_DRAWN_TRIANGLES = 65_536;
+
+/**
+ * @internal True when `copies` copies of a list of `triangles` triangles pay for its facing pieces:
+ * the pieces planner's own `facingPiecesPay`, which a test keeps equal, here so the sketch's thread
+ * reads it without the planner's code.
+ */
+export const facingCopiesPay = (triangles: number, copies: number): boolean =>
+	triangles >= FACING_PIECES_MIN_TRIANGLES &&
+	triangles < PIECES_MIN_TRIANGLES &&
+	triangles * copies >= FACING_PIECES_DRAWN_TRIANGLES;
+
+/** The triangles that pieces hold together. */
+const piecesTriangles = (pieces: PiecesData): number =>
+	pieces.triangles.reduce((sum, count) => sum + count, 0);
+
+/** The level planner's start, which loads with the first mesh that plans its levels. */
+let plannerModule: Promise<typeof import('./mesh-levels')> | undefined;
+
+/** The level planner's start, imported once. Throws E1406 when it does not download. */
+function levelPlanner(call: string): Promise<typeof import('./mesh-levels')> {
+	plannerModule ??= import('./mesh-levels').catch((error: unknown) => {
+		plannerModule = undefined;
+		throw new EngineError(
+			'E1406',
+			`the level planner did not download for ${call}(): ${error instanceof Error ? error.message : String(error)}.`,
+		);
+	});
+	return plannerModule;
+}
+
+/** The engine's coded error, which the level planner's start makes its failures with. */
+const levelsError = (
+	code: 'E1405' | 'E1406' | 'E1418' | 'E1420' | 'E1422' | 'E1423',
+	message: string,
+) => new EngineError(code, message);
+
+/** A plan of a mesh's levels that runs on the job workers. */
+interface LevelPlan {
+	promise: Promise<readonly MeshLevel[]>;
+	cards: boolean;
+	/** True for the automatic default's plan, which a mesh's later state can refuse. */
+	automatic: boolean;
+}
 
 /**
  * A mesh the engine can draw: its id in the engine core, its bounding radius, and its morph
@@ -272,11 +411,44 @@ export class MeshGeometry {
 	private lowerLevels: readonly MeshLevel[] = [];
 	/** The vertex count and format, read from the engine core at the first update. */
 	private layout: VertexLayout | undefined;
+	/** The level meshes that the planner made, which the mesh owns and frees with its levels. */
+	private built: MeshGeometry[] = [];
+	/** True when the planned levels came from the automatic default. */
+	private builtAutomatically = false;
+	/** The plan that runs, if any. */
+	private planning: LevelPlan | undefined;
+	/** Counts the plans and the changes that end one, so a plan that a later call ended changes nothing. */
+	private plans = 0;
+	/**
+	 * True once the mesh takes no automatic levels: its options said `levels: false`, its vertices
+	 * changed, or a material that moves its vertices draws it.
+	 */
+	private automaticOff = false;
+	/** The most triangles that the mesh holds, as it was made, for the automatic default. */
+	private automaticTriangles = 0;
+	/** The copies that the scene has drawn of the mesh, for the automatic default. */
+	private copies = 0;
+	/** True while the mesh waits for its first draw to sort its pieces alone (`levels: 'pieces'`). */
+	private piecesOnly = false;
+	/**
+	 * True once the mesh plans its own facing pieces with no levels: a mesh whose levels come from
+	 * a file or were set by hand.
+	 */
+	private handPieces = false;
+	/** True for a mesh that a file made, whose levels and pieces come from the file. */
+	private fromFile = false;
+	/** True when the file holds pieces of the mesh's list. */
+	private filePieces = false;
+	/**
+	 * The pieces that a file holds of the mesh's smaller list, which wait until the scene's copies
+	 * of the mesh, or of the base whose level it is, hold enough triangles to pay for them.
+	 */
+	private heldPieces: PiecesData | undefined;
 
 	/** @internal */
 	constructor(
 		id: number,
-		/** The distance from the mesh's origin to its farthest vertex, at rest. */
+		/** The distance from the mesh's bounding center (`center`) to its farthest vertex, at rest. */
 		readonly radius: number,
 		/** @internal */ readonly core: CoreMemory,
 		/** How many morph targets the mesh has. 0 for a mesh without any. */
@@ -291,6 +463,22 @@ export class MeshGeometry {
 	) {
 		this.liveId = id;
 	}
+
+	/**
+	 * The center of the box around the mesh's vertices at rest, in the mesh's own space. The mesh's
+	 * bounding sphere lies around it with `radius`, and culling tests that sphere. A mesh whose
+	 * positions start at a corner, as quantized glTF files store them, has its center away from the
+	 * origin.
+	 */
+	get center(): readonly [number, number, number] {
+		if (this.boundsCenter === undefined) {
+			const { glue } = this.core;
+			const id = this.id;
+			this.boundsCenter = [glue.meshCenter(id, 0), glue.meshCenter(id, 1), glue.meshCenter(id, 2)];
+		}
+		return this.boundsCenter;
+	}
+	private boundsCenter: [number, number, number] | undefined;
 
 	/** @internal The engine core's id. Throws E1101 once the mesh is destroyed. */
 	get id(): number {
@@ -326,6 +514,7 @@ export class MeshGeometry {
 				'E1111',
 				`${call}() was called on a mesh that ${user} still uses. Destroy the objects and instance batches that use it first.`,
 			);
+		this.plans++;
 		destroyMeshes(this.core, meshes, call);
 	}
 
@@ -339,7 +528,9 @@ export class MeshGeometry {
 	 * vertices outside it bounds with `setBounds`. The four-number vertex record takes updates as
 	 * `targets`. Joints, weights, and a mesh with joints or morph targets take no updates. A level
 	 * that draws its base mesh's vertices writes them, so the base and every level of it draw the
-	 * new values. Throws E1206 for values that do not fit the mesh,
+	 * new values. The levels that `buildLevels` or the automatic default planned measured the old
+	 * shape, so the first update takes them away, and the mesh plans no automatic levels again;
+	 * `buildLevels` plans them for the new shape. Throws E1206 for values that do not fit the mesh,
 	 * and E1101 for a destroyed mesh. Allocates nothing, so a call in every frame makes no garbage.
 	 */
 	updateVertices(
@@ -350,6 +541,10 @@ export class MeshGeometry {
 	): void {
 		const call = 'mesh.updateVertices';
 		const id = this.id;
+		if (!this.automaticOff || this.built.length > 0 || this.planning) {
+			this.automaticOff = true;
+			this.dropBuilt(call);
+		}
 		let layout = this.layout;
 		if (layout === undefined) {
 			const { glue } = this.core;
@@ -368,6 +563,8 @@ export class MeshGeometry {
 	ended(): void {
 		this.liveId = 0;
 		this.lowerLevels = [];
+		this.built = [];
+		this.planning = undefined;
 	}
 
 	/**
@@ -381,19 +578,415 @@ export class MeshGeometry {
 
 	/**
 	 * Gives the mesh lower levels of detail, from the most detailed down, like three.js's
-	 * `LOD.addLevel`. Every object and instance batch that draws the mesh then picks one level per
-	 * frame. It draws the coarsest level whose error covers fewer pixels on the screen than the
-	 * `lodThreshold` quality setting. A level may name a material of its own, so a far level shades
+	 * `LOD.addLevel`. A mesh takes at most 15 lower levels. Every object and instance batch that
+	 * draws the mesh then picks one level per frame. It draws the coarsest level whose error covers
+	 * fewer pixels on the screen than the `lodThreshold` quality setting. A level may name a material of its own, so a far level shades
 	 * more cheaply; a level without one draws with the level before's material. A bound that
 	 * covers fewer pixels than the threshold draws nothing, so the mesh's last level holds no
 	 * geometry. The shadow maps pick a coarser level still. An empty list takes the levels away.
 	 * Morphed objects, and materials that blend or let light through, draw the base mesh. A
 	 * skinned object draws a level while the level names the base mesh's own vertices.
-	 * Destroying a level's mesh takes every level away. Throws E1221 for levels the mesh
-	 * cannot take, and E1101 for a destroyed mesh.
+	 * Destroying a level's mesh takes every level away. Levels set here win over the ones that
+	 * `buildLevels` or the automatic default plans: a plan that runs ends, and the planned levels
+	 * go. Throws E1221 for levels the mesh cannot take, and E1101 for a destroyed mesh.
 	 */
 	setLevels(levels: readonly MeshLevel[], options: MeshLevelOptions = {}): void {
 		const call = 'mesh.setLevels';
+		this.applyLevels(levels, options, call);
+		// Levels set by hand win over planned ones: a plan that runs ends, and the planned meshes
+		// that the new levels leave out go.
+		this.plans++;
+		this.planning = undefined;
+		this.freeBuilt(call);
+	}
+
+	/**
+	 * Plans the mesh's levels of detail on the job workers, as the asset tool's `--lod` plans a
+	 * file's, and gives them to the mesh when they arrive, between two frames. Each level about
+	 * halves the triangles of the level above, down to a few dozen, and stores the largest distance
+	 * between its surface and the mesh's as its error, so it switches in at once where that
+	 * distance covers less than the `lodThreshold` setting's pixels. The levels name the mesh's own
+	 * vertices, in their own order, so they cost indices alone: the mesh keeps its vertices and
+	 * triangles as they are. A mesh that the engine split into parts, past 65,535 vertices, shares
+	 * them part by part, and copies only the vertices of the triangles that cross from one part to
+	 * another. A large mesh spreads the work over frames: the engine reads one part of it in each
+	 * frame for the plan, and gives it one level in each frame, coarsest first, when the plan is
+	 * done. The mesh draws its full shape until the levels arrive, and every object and instance
+	 * batch that draws it then picks its level. The mesh and each level of 32,768 triangles or more
+	 * also get 8 to 16 pieces, which each copy skips where they lie outside the view or face away.
+	 * A smaller list that many copies draw gets a piece for each way it faces where its triangles
+	 * face a few ways, as a building's walls do. A mesh that one object draws, or a smaller mesh,
+	 * gets its own pieces over a sorted copy of its indices, in the frame after the last level;
+	 * copies of a large mesh keep their levels' pieces alone.
+	 *
+	 * A mesh made in code plans its levels on its own the first time the scene draws it, when it
+	 * holds `geometry.automaticLevelTriangles` triangles or more, or when its copies hold
+	 * `geometry.automaticDrawnTriangles` together. Call this to plan another mesh's, to plan again
+	 * after `updateVertices`, or to await the levels of a plan that runs: a call while a plan with
+	 * the same options runs returns that plan's promise. `setLevels` wins over a plan, and
+	 * `updateVertices` takes the planned levels away. The promise resolves with the mesh's levels, which stay as they were when the
+	 * planner finds no level worth making, and when `setLevels`, `updateVertices` or `destroy` ends
+	 * the plan first. It rejects with E1221 for a mesh with joints, morph targets or a vertex
+	 * record, whose shape poses or moves, and with E1406 when the planner does not download. The
+	 * planner downloads with the first mesh that plans: meshoptimizer's simplifier, about 23 KB.
+	 * Throws E1101 for a destroyed mesh.
+	 */
+	buildLevels(options: BuildLevelsOptions = {}): Promise<readonly MeshLevel[]> {
+		return this.plan(options.cards ?? false, false, 'mesh.buildLevels');
+	}
+
+	/**
+	 * @internal Sets up the mesh's levels as its options ask when it is made: `false` plans none,
+	 * `true` or options plan them now, and the default waits for the scene to draw the mesh.
+	 * `triangles` is the most triangles that the mesh may hold, which spares a small mesh the read
+	 * of its vertices. A failure keeps the full mesh, with a warning in development.
+	 */
+	startLevels(option: LevelsOption | undefined, triangles: number, call: string): void {
+		this.automaticTriangles = triangles;
+		if (option === false || option === 'pieces') this.automaticOff = true;
+		this.piecesOnly = option === 'pieces' && triangles >= PIECES_MIN_TRIANGLES;
+		if (option === undefined || option === false || option === 'pieces') return;
+		this.planQuietly(typeof option === 'object' && option.cards === true, false, call);
+	}
+
+	/** Starts a plan whose failure keeps the full mesh, with a warning in development. */
+	private planQuietly(cards: boolean, automatic: boolean, call: string): void {
+		this.plan(cards, automatic, call).catch((error: unknown) => {
+			if (DEV)
+				console.warn(
+					`${call}() left a mesh that draws its full shape at every distance: its levels of detail did not plan. ${error instanceof Error ? error.message : String(error)}`,
+				);
+		});
+	}
+
+	/**
+	 * Starts a plan of the mesh's levels, or returns the one that runs with the same options. With
+	 * `piecesOnly`, the plan makes no lower levels and sorts the mesh into pieces alone, by space
+	 * alone with `spacePieces`.
+	 */
+	private plan(
+		cards: boolean,
+		automatic: boolean,
+		call: string,
+		piecesOnly = false,
+		spacePieces = piecesOnly,
+	): Promise<readonly MeshLevel[]> {
+		const id = this.id;
+		const { core } = this;
+		const format = core.glue.meshFormat(id);
+		if (this.morphTargets > 0 || format & MOVING_VERTEX_BITS)
+			return Promise.reject(
+				new EngineError(
+					'E1221',
+					`${call}() got a mesh with joints, morph targets or a vertex record, whose shape poses or moves. Give such a mesh levels with setLevels.`,
+				),
+			);
+		const running = this.planning;
+		if (running && running.cards === cards) return running.promise;
+		const plan = ++this.plans;
+		const entry: LevelPlan = { promise: Promise.resolve(this.levels), cards, automatic };
+		// The mesh is read from the core one part a frame, between two frames, so no frame reads a
+		// large mesh whole, nor the frame that made it. The plan starts once the planner has loaded
+		// and the parts are in, unless a call such as setLevels has ended it by then, and its levels
+		// arrive with the task's answer, between two frames. The plan counts as a task from now
+		// until its levels are in, so a held frame draws them.
+		const counted = planStarted(
+			`a mesh of ${this.automaticTriangles.toLocaleString('en-US')} triangles (${call})`,
+		);
+		entry.promise = (async () => {
+			try {
+				let read: PlanningWords | undefined;
+				for (let part = 0; part < (read?.parts ?? 1); part++) {
+					await this.nextFrame();
+					if (plan !== this.plans || !this.live) return this.levels;
+					read = readPlanningPart(core, this.id, part, call, read);
+				}
+				const { words, parts, masks } = read as PlanningWords;
+				if (automatic) {
+					this.automaticTriangles = (words[1] as number) / 3;
+					if (!this.automaticWanted()) {
+						this.planning = undefined;
+						return this.levels;
+					}
+				}
+				const planner = await levelPlanner(call);
+				if (plan !== this.plans) return this.levels;
+				const output = await planner.planLevels(
+					{
+						words: words.buffer as ArrayBuffer,
+						cards: cards && floatPositions(format),
+						maxLevels: piecesOnly ? 0 : MAX_LOWER_LEVELS,
+						skipFlat: automatic,
+						spacePieces,
+						parts,
+						copies: this.copies,
+						// The mesh's own pieces draw a sorted copy of its indices. A mesh that one
+						// object draws, such as a ground around the camera, draws its base wherever
+						// the camera is near, so the copy pays; copies of a large mesh draw their base
+						// only when near, and their levels' pieces cost no copy. The task also plans
+						// the own pieces of a list under the pieces' floor, whose copy costs little.
+						basePieces: piecesOnly || this.copies <= 1,
+						...(masks && { masks: masks.buffer as ArrayBuffer }),
+					},
+					call,
+					levelsError,
+				);
+				return await this.takePlan(output, plan, entry, call);
+			} catch (error) {
+				if (plan === this.plans) this.planning = undefined;
+				throw error;
+			} finally {
+				planEnded(counted);
+			}
+		})();
+		this.planning = entry;
+		return entry.promise;
+	}
+
+	/**
+	 * Gives the mesh the levels that a plan made, unless a later call ended the plan, or the plan
+	 * was the automatic default's and the mesh has refused automatic levels or holds levels set by
+	 * hand since. The levels arrive one a frame, coarsest first, so that no frame takes the work of
+	 * every level of a large mesh: each frame's set holds the levels made so far, and the mesh draws
+	 * its base mesh nearer than the finest of them. Hold mode takes them all at once.
+	 */
+	private async takePlan(
+		output: LevelsTaskOutput,
+		plan: number,
+		entry: LevelPlan,
+		call: string,
+	): Promise<readonly MeshLevel[]> {
+		const ended = () => plan !== this.plans || !this.live;
+		if (ended()) return this.levels;
+		const handSet = this.lowerLevels.length > 0 && this.built.length === 0;
+		if (entry.automatic && (this.automaticOff || handSet)) {
+			this.planning = undefined;
+			return this.levels;
+		}
+		const planned = output.levels;
+		const least = output.side * LEAST_LEVEL_ERROR;
+		let before = 0;
+		const errors = planned.map((level) => {
+			const error = Math.max(level.error, least, before * LEVEL_ERROR_GROWTH);
+			before = error;
+			return error;
+		});
+		const old = this.built;
+		const made: MeshGeometry[] = [];
+		for (let k = planned.length - 1; k >= 0; k--) {
+			if (made.length > 0) await this.nextFrame();
+			if (ended()) return this.levels;
+			made.unshift(this.levelMesh(planned[k] as TaskLevel, call));
+			this.applyLevels(
+				made.map((mesh, j) => ({ mesh, error: errors[k + j] as number, fade: false })),
+				{},
+				call,
+			);
+			this.built = made.slice();
+			this.builtAutomatically = entry.automatic;
+			if (made.length === 1) this.freeMeshes(old, call);
+		}
+		// The mesh's own pieces come last, in a frame of their own, since the copy of a large list
+		// takes as long as a level's. They take the place of the pieces of an earlier plan.
+		const { pieces } = output;
+		if (pieces) {
+			if (made.length > 0) await this.nextFrame();
+			if (ended()) return this.levels;
+			setMeshPieceList(this.core, this.id, pieces, call);
+		}
+		this.planning = undefined;
+		return this.levels;
+	}
+
+	/**
+	 * Resolves once the sketch has run another frame, or after a short wait where frames stop.
+	 * Hold mode resolves at once, since its held frame waits for the plan.
+	 */
+	private async nextFrame(): Promise<void> {
+		const pace = this.maker?.users?.pace;
+		if (!pace || pace.held) return;
+		const frame = pace.frame;
+		const until = performance.now() + LEVEL_FRAME_WAIT_MS;
+		while (pace.frame === frame && performance.now() < until)
+			await new Promise((resolve) => setTimeout(resolve, LEVEL_FRAME_POLL_MS));
+	}
+
+	/**
+	 * A planned level's mesh: one that draws this mesh's vertices with the level's triangles, part
+	 * by part where the mesh is split into parts, or a copy of the vertices that it draws where the
+	 * level moved them, as a level of cards does.
+	 */
+	private levelMesh(level: TaskLevel, call: string): MeshGeometry {
+		const { core } = this;
+		const base = this.id;
+		const { indices, positions, pieces } = level;
+		// A level of cards moves its vertices, so it copies them. Another level shares the mesh's,
+		// part by part where the engine split the mesh, and a large one takes its pieces.
+		let id = positions ? meshFromLevelCopy(core, base, indices, call) : undefined;
+		id ??= meshFromLevel(core, base, indices, call);
+		if (id === undefined) id = meshFromSplitLevel(core, base, indices, call, pieces);
+		else if (pieces) setMeshPieces(core, id, pieces, call);
+		const mesh = new MeshGeometry(id, core.glue.meshRadius(id), core, 0, [], this.maker);
+		if (positions) {
+			// The copy holds each vertex once, in the order that the triangles first name it.
+			const placed = new Float32Array(core.glue.meshVertexCount(id) * 3);
+			const seen = new Set<number>();
+			let at = 0;
+			for (const index of indices) {
+				if (seen.has(index)) continue;
+				seen.add(index);
+				placed.set(positions.subarray(index * 3, index * 3 + 3), at);
+				at += 3;
+			}
+			mesh.updateVertices('positions', placed);
+		}
+		return mesh;
+	}
+
+	/**
+	 * @internal Notes that the scene draws `copies` more copies of the mesh with `material`, and
+	 * plans the mesh's levels as the automatic default asks: once the mesh holds
+	 * `AUTOMATIC_LEVEL_TRIANGLES` triangles, or its copies hold `AUTOMATIC_DRAWN_TRIANGLES`
+	 * together. A flat mesh, whose shape a shader may give it, plans none, and neither does a mesh
+	 * that only materials that blend or let light through draw, which draw the base level alone.
+	 * A material that moves the
+	 * vertices in its shader draws another shape than the one that the levels simplify, so the mesh
+	 * takes no automatic levels from then on, and drops the ones it has.
+	 */
+	drawnWith(material: Material, copies: number, call: string): void {
+		// Copies count toward the levels and the pieces where their material draws the mesh's own
+		// shape in buckets: one that moves the vertices draws another shape, and one that blends or
+		// lets light through draws the base level whole and sorted.
+		const counted = !material.shapesVertices && !material.wholeOnly;
+		if (counted) this.copies += copies;
+		// A mesh that asked for pieces alone sorts them at its first such draw.
+		if (this.piecesOnly && counted) {
+			this.piecesOnly = false;
+			this.planPiecesQuietly(true, call);
+		}
+		if (counted && !material.facesBoth) this.facingPiecesFor(call);
+		if (this.automaticOff) return;
+		if (material.shapesVertices) {
+			this.automaticOff = true;
+			if (this.builtAutomatically || this.planning?.automatic) this.dropBuilt(call);
+			return;
+		}
+		// A material that draws the base level alone leaves the copies' detail as it is; a draw with
+		// another material later plans the levels.
+		if (material.wholeOnly) return;
+		const handSet = this.lowerLevels.length > 0 && this.built.length === 0;
+		if (handSet || this.planning || this.built.length > 0 || !this.automaticWanted()) return;
+		if (this.morphTargets > 0 || this.core.glue.meshFormat(this.id) & MOVING_VERTEX_BITS) {
+			this.automaticOff = true;
+			return;
+		}
+		this.planQuietly(false, true, call);
+	}
+
+	/**
+	 * Gives the mesh and its levels the facing pieces that pay once its copies hold enough
+	 * triangles together, as a town's copies of a house's walls do. The pieces that a file holds of
+	 * a smaller list wait for that, so few copies draw the list whole with no draw more. A mesh whose
+	 * levels come from a file, or were set by hand, plans no levels, and its copies draw its base
+	 * list out to where its lower levels switch in: where the file holds no pieces of that list, it
+	 * plans them on the job workers, over a sorted copy of its indices. A mesh with joints, morph
+	 * targets or a vertex record plans none, and neither does one with `levels: false`.
+	 */
+	private facingPiecesFor(call: string): void {
+		for (const mesh of [this, ...this.lowerLevels.map((level) => level.mesh)]) {
+			const held = mesh.heldPieces;
+			if (!held || !mesh.live || !facingCopiesPay(piecesTriangles(held), this.copies)) continue;
+			mesh.heldPieces = undefined;
+			setMeshPieces(this.core, mesh.id, held, call);
+		}
+		const handSet = this.lowerLevels.length > 0 && this.built.length === 0;
+		const own = this.fromFile ? !this.filePieces : handSet && !this.automaticOff;
+		if (
+			!own ||
+			this.planning ||
+			this.handPieces ||
+			!facingCopiesPay(this.automaticTriangles, this.copies) ||
+			this.morphTargets > 0 ||
+			this.core.glue.meshFormat(this.id) & MOVING_VERTEX_BITS
+		)
+			return;
+		this.handPieces = true;
+		this.planPiecesQuietly(false, call);
+	}
+
+	/**
+	 * @internal Marks a mesh that a file made, and takes the pieces that the file holds of its
+	 * list, if any: a large list's at once, and a smaller list's once the scene's copies pay for
+	 * them. A list that the pieces do not fit draws whole.
+	 */
+	fromFileWith(pieces: PiecesData | undefined, call: string): void {
+		this.fromFile = true;
+		if (!pieces) return;
+		this.filePieces = true;
+		if (piecesTriangles(pieces) >= PIECES_MIN_TRIANGLES)
+			setMeshPieces(this.core, this.id, pieces, call);
+		else this.heldPieces = pieces;
+	}
+
+	/**
+	 * Starts a plan of the mesh's pieces alone, by space alone with `space`, whose failure leaves
+	 * the mesh without pieces, with a warning in development.
+	 */
+	private planPiecesQuietly(space: boolean, call: string): void {
+		this.plan(false, false, call, true, space).catch((error: unknown) => {
+			if (DEV)
+				console.warn(
+					`${call}() left a mesh without pieces: they did not plan. ${error instanceof Error ? error.message : String(error)}`,
+				);
+		});
+	}
+
+	/** True when the mesh's triangles, or those of its copies, ask for automatic levels. */
+	private automaticWanted(): boolean {
+		const triangles = this.automaticTriangles;
+		return (
+			triangles >= AUTOMATIC_LEVEL_TRIANGLES ||
+			(triangles >= AUTOMATIC_COPY_TRIANGLES &&
+				triangles * this.copies >= AUTOMATIC_DRAWN_TRIANGLES)
+		);
+	}
+
+	/** Takes the planned levels away and ends a plan that runs. Levels set by hand stay. */
+	private dropBuilt(call: string): void {
+		this.plans++;
+		this.planning = undefined;
+		const built = this.built;
+		if (built.length === 0) return;
+		this.applyLevels(
+			this.lowerLevels.filter((level) => !built.includes(level.mesh)),
+			{},
+			call,
+		);
+		this.freeBuilt(call);
+	}
+
+	/** Frees the planned level meshes that the mesh's levels no longer name. */
+	private freeBuilt(call: string): void {
+		const old = this.built;
+		if (old.length === 0) return;
+		this.built = old.filter((mesh) => this.lowerLevels.some((level) => level.mesh === mesh));
+		this.freeMeshes(old, call);
+	}
+
+	/**
+	 * Frees those of `meshes` that are live and that the mesh's levels do not name, unless an
+	 * object or a batch draws one.
+	 */
+	private freeMeshes(meshes: readonly MeshGeometry[], call: string): void {
+		const gone = meshes.filter(
+			(mesh) => mesh.live && !this.lowerLevels.some((level) => level.mesh === mesh),
+		);
+		if (gone.length === 0 || this.maker?.users?.userOf(new Set(gone))) return;
+		destroyMeshes(this.core, gone, call);
+	}
+
+	/** Checks levels and gives them to the core, as `setLevels` takes them. */
+	private applyLevels(levels: readonly MeshLevel[], options: MeshLevelOptions, call: string): void {
 		const id = this.id;
 		const fov = options.fov ?? LEVEL_REFERENCE_FOV;
 		if (levels.length > MAX_LOWER_LEVELS)
@@ -511,12 +1104,30 @@ export function destroyMeshes(
 }
 
 /**
+ * The levels of detail that a generator's mesh plans on its own, as `MeshArrays.levels` says.
+ *
+ * @category api/geometry
+ */
+export interface ShapeLevels {
+	/**
+	 * The levels of detail that the mesh plans on its own. By default it plans them the first time
+	 * the scene draws it, when it holds `geometry.automaticLevelTriangles` triangles or more, or
+	 * when its copies hold `geometry.automaticDrawnTriangles` together; `false` plans none, and
+	 * `true` or options plan them when the mesh is made, at any size.
+	 */
+	levels?: LevelsOption;
+}
+
+/** A generator's defaults: each of its options but the levels. */
+type ShapeDefaults<T> = Required<Omit<T, 'levels'>>;
+
+/**
  * Options for `geometry.box`. The box is centered on its origin. Segment counts are whole numbers
  * of at least 1.
  *
  * @category api/geometry
  */
-export interface BoxOptions {
+export interface BoxOptions extends ShapeLevels {
 	/** The size along the X axis. The default is 1. */
 	width?: number;
 	/** The size along the Y axis. The default is 1. */
@@ -537,7 +1148,7 @@ export interface BoxOptions {
  *
  * @category api/geometry
  */
-export interface SphereOptions {
+export interface SphereOptions extends ShapeLevels {
 	/** The radius. The default is 1. */
 	radius?: number;
 	/** How many faces go around the Y axis. The default is 32, and the least is 3. */
@@ -560,7 +1171,7 @@ export interface SphereOptions {
  *
  * @category api/geometry
  */
-export interface PlaneOptions {
+export interface PlaneOptions extends ShapeLevels {
 	/** The size along the X axis. The default is 1. */
 	width?: number;
 	/** The size along the Y axis. The default is 1. */
@@ -577,7 +1188,7 @@ export interface PlaneOptions {
  *
  * @category api/geometry
  */
-export interface CylinderOptions {
+export interface CylinderOptions extends ShapeLevels {
 	/** The radius of the top. The default is 1. With 0, the top is a point. */
 	radiusTop?: number;
 	/** The radius of the bottom. The default is 1. With 0, the bottom is a point. */
@@ -602,7 +1213,7 @@ export interface CylinderOptions {
  *
  * @category api/geometry
  */
-export interface ConeOptions {
+export interface ConeOptions extends ShapeLevels {
 	/** The radius of the bottom. The default is 1. */
 	radius?: number;
 	/** The height. The default is 1. */
@@ -625,7 +1236,7 @@ export interface ConeOptions {
  *
  * @category api/geometry
  */
-export interface TorusOptions {
+export interface TorusOptions extends ShapeLevels {
 	/** The distance from the center of the torus to the center of its tube. The default is 1. */
 	radius?: number;
 	/** The radius of the tube. The default is 0.4. */
@@ -649,7 +1260,7 @@ export interface TorusOptions {
  *
  * @category api/geometry
  */
-export interface CapsuleOptions {
+export interface CapsuleOptions extends ShapeLevels {
 	/** The radius of the capsule and of its half spheres. The default is 1. */
 	radius?: number;
 	/** The height of the middle part, between the half spheres. The default is 1. */
@@ -668,7 +1279,7 @@ export interface CapsuleOptions {
  *
  * @category api/geometry
  */
-export interface CircleOptions {
+export interface CircleOptions extends ShapeLevels {
 	/** The radius. The default is 1. */
 	radius?: number;
 	/** How many triangles make the circle: a whole number. The default is 32, and the least is 3. */
@@ -685,7 +1296,7 @@ export interface CircleOptions {
  *
  * @category api/geometry
  */
-export interface RingOptions {
+export interface RingOptions extends ShapeLevels {
 	/** The radius of the hole. The default is 0.5. */
 	innerRadius?: number;
 	/** The radius of the outer edge. The default is 1. */
@@ -704,7 +1315,7 @@ const TAU = Math.PI * 2;
 
 // Each generator's options with their defaults, in the order of the arguments of the three.js
 // class's constructor, which is the order the engine core reads them in.
-const BOX: Required<BoxOptions> = {
+const BOX: ShapeDefaults<BoxOptions> = {
 	width: 1,
 	height: 1,
 	depth: 1,
@@ -712,7 +1323,7 @@ const BOX: Required<BoxOptions> = {
 	heightSegments: 1,
 	depthSegments: 1,
 };
-const SPHERE: Required<SphereOptions> = {
+const SPHERE: ShapeDefaults<SphereOptions> = {
 	radius: 1,
 	widthSegments: 32,
 	heightSegments: 16,
@@ -721,8 +1332,13 @@ const SPHERE: Required<SphereOptions> = {
 	thetaStart: 0,
 	thetaLength: Math.PI,
 };
-const PLANE: Required<PlaneOptions> = { width: 1, height: 1, widthSegments: 1, heightSegments: 1 };
-const CYLINDER: Required<CylinderOptions> = {
+const PLANE: ShapeDefaults<PlaneOptions> = {
+	width: 1,
+	height: 1,
+	widthSegments: 1,
+	heightSegments: 1,
+};
+const CYLINDER: ShapeDefaults<CylinderOptions> = {
 	radiusTop: 1,
 	radiusBottom: 1,
 	height: 1,
@@ -732,7 +1348,7 @@ const CYLINDER: Required<CylinderOptions> = {
 	thetaStart: 0,
 	thetaLength: TAU,
 };
-const CONE: Required<ConeOptions> = {
+const CONE: ShapeDefaults<ConeOptions> = {
 	radius: 1,
 	height: 1,
 	radialSegments: 32,
@@ -741,7 +1357,7 @@ const CONE: Required<ConeOptions> = {
 	thetaStart: 0,
 	thetaLength: TAU,
 };
-const TORUS: Required<TorusOptions> = {
+const TORUS: ShapeDefaults<TorusOptions> = {
 	radius: 1,
 	tube: 0.4,
 	radialSegments: 12,
@@ -750,20 +1366,20 @@ const TORUS: Required<TorusOptions> = {
 	thetaStart: 0,
 	thetaLength: TAU,
 };
-const CAPSULE: Required<CapsuleOptions> = {
+const CAPSULE: ShapeDefaults<CapsuleOptions> = {
 	radius: 1,
 	height: 1,
 	capSegments: 4,
 	radialSegments: 8,
 	heightSegments: 1,
 };
-const CIRCLE: Required<CircleOptions> = {
+const CIRCLE: ShapeDefaults<CircleOptions> = {
 	radius: 1,
 	segments: 32,
 	thetaStart: 0,
 	thetaLength: TAU,
 };
-const RING: Required<RingOptions> = {
+const RING: ShapeDefaults<RingOptions> = {
 	innerRadius: 0.5,
 	outerRadius: 1,
 	thetaSegments: 32,
@@ -938,6 +1554,18 @@ export interface MeshArrays {
 	 * The engine keeps, for each vertex, only the targets that move it.
 	 */
 	morphTargets?: MorphTargets;
+	/**
+	 * The levels of detail that the mesh plans on its own, on the job workers, as
+	 * `mesh.buildLevels` plans them. By default it plans them the first time the scene draws it,
+	 * when it holds `geometry.automaticLevelTriangles` triangles or more, or when its copies hold
+	 * `geometry.automaticDrawnTriangles` together. A mesh with joints, morph targets or `targets`
+	 * plans none, and neither does one that lies flat or that a material with moving vertices
+	 * draws. `false` plans none: give it to a mesh whose shape a shader moves, or whose levels you
+	 * set by hand. `true` plans them when the mesh is made, at any size, and options such as
+	 * `{ cards: true }` plan them with those options. `'pieces'` plans no levels, and sorts a mesh
+	 * of 32,768 triangles or more into pieces by space at its first draw.
+	 */
+	levels?: LevelsOption;
 }
 
 /**
@@ -963,6 +1591,28 @@ export class Geometry {
 	}
 
 	/**
+	 * The triangles from which a mesh made in code plans its levels of detail, the first time the
+	 * scene draws it, unless its options say `levels: false`. A smaller mesh drawn a few times
+	 * costs little at any distance, and each level adds draw work to every pipeline that draws it.
+	 */
+	get automaticLevelTriangles(): number {
+		return AUTOMATIC_LEVEL_TRIANGLES;
+	}
+
+	/**
+	 * The triangles of the copies that the scene draws, together, from which a smaller mesh of at
+	 * least `automaticCopyTriangles` triangles plans its levels too, as a batch of pebbles does.
+	 */
+	get automaticDrawnTriangles(): number {
+		return AUTOMATIC_DRAWN_TRIANGLES;
+	}
+
+	/** The fewest triangles of a mesh that plans its levels because of its copies. */
+	get automaticCopyTriangles(): number {
+		return AUTOMATIC_COPY_TRIANGLES;
+	}
+
+	/**
 	 * @internal Frees live meshes that no object or batch uses any more, in one pass, as a model's
 	 * destroy does.
 	 */
@@ -970,9 +1620,12 @@ export class Geometry {
 		destroyMeshes(this.core, meshes, call);
 	}
 
-	private mesh(id: number, call: string): MeshGeometry {
+	private mesh(id: number, call: string, levels?: LevelsOption): MeshGeometry {
 		this.core.checkGrowth(id, call);
-		return new MeshGeometry(id, this.core.glue.meshRadius(id), this.core, 0, [], this);
+		const mesh = new MeshGeometry(id, this.core.glue.meshRadius(id), this.core, 0, [], this);
+		// A generator's grid makes at most about two triangles a vertex; the plan reads the count.
+		mesh.startLevels(levels, 2 * this.core.glue.meshVertexCount(id), call);
+		return mesh;
 	}
 
 	/**
@@ -983,19 +1636,24 @@ export class Geometry {
 	private shape<T extends object>(
 		shape: number,
 		call: string,
-		options: T,
-		defaults: Required<T>,
+		options: T & ShapeLevels,
+		defaults: ShapeDefaults<T>,
 		...first: number[]
 	): MeshGeometry {
 		for (const name in defaults) {
-			const given = options[name];
-			const value = Number(given ?? defaults[name]);
+			const key = name as keyof ShapeDefaults<T>;
+			const given = options[name as keyof T];
+			const value = Number(given ?? defaults[key]);
 			if (DEV && !Number.isFinite(value))
 				throw new EngineError('E1203', `${call}() got ${given} for ${name}.`);
 			first.push(value);
 		}
 		const [a = 0, b = 0, c = 0, d = 0, e = 0, f = 0, g = 0, h = 0] = first;
-		return this.mesh(this.core.glue.createShapeMesh(shape, a, b, c, d, e, f, g, h), call);
+		return this.mesh(
+			this.core.glue.createShapeMesh(shape, a, b, c, d, e, f, g, h),
+			call,
+			options.levels,
+		);
 	}
 
 	/** A box, like three.js's `BoxGeometry`. */
@@ -1059,7 +1717,7 @@ export class Geometry {
 		const id = meshFromArrays(this.core, arrays, call);
 		this.core.checkGrowth(id, call);
 		const { morphTargets } = arrays;
-		return new MeshGeometry(
+		const mesh = new MeshGeometry(
 			id,
 			this.core.glue.meshRadius(id),
 			this.core,
@@ -1067,6 +1725,9 @@ export class Geometry {
 			morphTargets?.names?.slice() ?? [],
 			this,
 		);
+		const corners = arrays.indices?.length ?? valuesOf(arrays.positions).array.length / 3;
+		mesh.startLevels(arrays.levels, corners / 3, call);
+		return mesh;
 	}
 
 	/**
@@ -1824,6 +2485,20 @@ export interface ShaderOptions<Wgsl extends string | CompiledWgsl = string | Com
 	 * the default, moves the offset at every distance, as an offset that follows time alone does.
 	 */
 	swayDistance?: number;
+}
+
+/**
+ * @internal The option of a custom material that the engine's own adapters give beside the public
+ * ones.
+ */
+export interface InternalShaderOptions {
+	/**
+	 * True to draw the material's surfaces of the normal blending in the camera's one-sample layer
+	 * while the scene has more than one sample. They then blend once per pixel, and the layer blends
+	 * over the scene after the camera's other blended surfaces. The draw adapter sets it for a
+	 * draw at the `'resolve'` frame point.
+	 */
+	readonly singleLayer?: boolean;
 }
 
 /** A uniform of a custom material: its type, and the float of the row of custom values it starts at. */
@@ -3342,6 +4017,26 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 	 */
 	boundsMargin = 0;
 
+	/**
+	 * @internal True when the material moves the mesh's vertices in its shader, by a displacement
+	 * map or a custom `vertexOffset`: the shape that a mesh's levels would simplify is not the one
+	 * that draws, so a mesh that it draws takes no automatic levels.
+	 */
+	shapesVertices = false;
+
+	/**
+	 * @internal True when the material draws a mesh's base level at every distance, as a surface
+	 * that blends or lets light through does: a mesh that only such materials draw gains nothing
+	 * from automatic levels.
+	 */
+	wholeOnly = false;
+
+	/**
+	 * @internal True when the material draws both faces, so no copy's pieces drop by the way they
+	 * face: a mesh that it draws plans no facing pieces.
+	 */
+	facesBoth = false;
+
 	/** True when the normal map's slot holds a bump map, whose strength `bumpScale` sets. */
 	private bump = false;
 
@@ -3448,6 +4143,7 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 		if (options.displacementMap) {
 			this.displacement = [1, 0];
 			this.boundsMargin = 1;
+			this.shapesVertices = true;
 			maps.push([options.displacementMap, MAP_SLOT_DISPLACEMENT]);
 		}
 		for (const [map, slot] of maps) {
@@ -3696,8 +4392,16 @@ export class Materials {
 		call: string,
 		features = 0,
 	): Material<Values> {
-		const { id, owners } = this.createId(shading, options, call, hasLayers(options), features);
+		const { id, owners, wholeOnly, facesBoth } = this.createId(
+			shading,
+			options,
+			call,
+			hasLayers(options),
+			features,
+		);
 		const material = new Material<Values>(id, this.core, `${call}.set`, shading, owners);
+		material.wholeOnly = wholeOnly;
+		material.facesBoth = facesBoth;
 		if (options.uvTransform !== undefined) material.recordUv(options.uvTransform);
 		material.recordMapUv(options.mapUvTransforms);
 		if (options.bumpMap || options.displacementMap) material.heights(options);
@@ -3708,6 +4412,7 @@ export class Materials {
 	 * Creates a material in the engine core, with its standard options and the feature bits
 	 * `extra` and its layers, and returns its id. `sway` is the distance from the camera out to
 	 * which a custom material's vertex offset moves, in meters, or 0 for every distance.
+	 * `singleLayer` draws its blended surfaces in the camera's one-sample layer.
 	 */
 	private createId(
 		shading: number,
@@ -3716,7 +4421,8 @@ export class Materials {
 		layered = hasLayers(options),
 		extra = 0,
 		sway = 0,
-	): { id: number; owners: SlotOwners } {
+		singleLayer = false,
+	): { id: number; owners: SlotOwners; wholeOnly: boolean; facesBoth: boolean } {
 		const [r, g, b] = linearColor(options.color ?? '#ffffff', call);
 		const emissive = linearOrNone(options.emissive, call, EMISSIVE);
 		const specular = specularOrNone(options.specularColor, call);
@@ -3745,13 +4451,26 @@ export class Materials {
 		// So do the builds of the weighted layer.
 		if (options.alphaMode === 'blend' && options.blending === 'weighted')
 			this.shaders.need('weighted');
+		// So do the one-sample layer's steps.
+		if (singleLayer && options.alphaMode === 'blend') this.shaders.need('single_layer');
 		if (features & MATERIAL_FEATURE_DECAL) this.shaders.need('decals');
 		if (bumps(options)) this.shaders.need('bump');
 		if (options.displacementMap) this.shaders.need('displacement');
 		const { constant = 0, slopeScale = 0 } = options.depthBias ?? {};
 		const { core } = this;
 		const id = core.checkGrowth(
-			core.glue.createMaterial(shading, features, r, g, b, opacity, constant, slopeScale, sway),
+			core.glue.createMaterial(
+				shading,
+				features,
+				r,
+				g,
+				b,
+				opacity,
+				constant,
+				slopeScale,
+				sway,
+				singleLayer ? 1 : 0,
+			),
 			call,
 		);
 		const values = { ...options, color: undefined, opacity: undefined };
@@ -3806,7 +4525,10 @@ export class Materials {
 			numbers[1] = offsetV;
 			sendValue(core, id, MATERIAL_PARAM_LIGHT_MAP_OFFSET, call);
 		}
-		return { id, owners };
+		// Blended surfaces and surfaces that let light through draw their base level alone.
+		const wholeOnly = (features & (MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_TRANSMISSION)) !== 0;
+		const facesBoth = (features & MATERIAL_FEATURE_DOUBLE_SIDED) !== 0;
+		return { id, owners, wholeOnly, facesBoth };
 	}
 
 	/**
@@ -3967,7 +4689,7 @@ export class Materials {
 		// A production build draws such a material without the light through it, as it has no
 		// builds for it.
 		const diffuseTransmission = translucent ? options.diffuseTransmission : undefined;
-		const { id } = this.createId(
+		const { id, wholeOnly, facesBoth } = this.createId(
 			shading,
 			{
 				...options,
@@ -3985,11 +4707,15 @@ export class Materials {
 				(alpha || compiled.functions.includes('coverage') ? MATERIAL_FEATURE_CASTER_COVERAGE : 0) |
 				(options.castsStill ? MATERIAL_FEATURE_STILL_CASTER : 0),
 			options.swayDistance ?? 0,
+			(options as InternalShaderOptions).singleLayer === true,
 		);
 		// The copy of the opaque depth draws with the particle depth shaders, so the file loads
 		// with the material, before its first frame.
 		if (sceneDepth) this.shaders.need('particles');
 		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms, shading);
+		material.shapesVertices = compiled.functions.includes('vertexOffset');
+		material.wholeOnly = wholeOnly || lets(compiled);
+		material.facesBoth = facesBoth;
 		if (options.uvTransform !== undefined) material.recordUv(options.uvTransform);
 		const { core } = this;
 		writeUniforms(core, id, uniforms, uniformValues, call);

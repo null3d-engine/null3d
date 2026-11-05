@@ -42,6 +42,7 @@ function context() {
 	const uniforms: { pass: Record<string, unknown>; values: Float32Array }[] = [];
 	const layers: number[] = [];
 	const removed: Record<string, unknown>[] = [];
+	const planes: Record<string, unknown>[] = [];
 	const camera = {
 		getPosition: (out: number[]) => {
 			out[0] = 10;
@@ -60,7 +61,12 @@ function context() {
 				};
 			},
 		},
-		geometry: { plane: () => ({}) },
+		geometry: {
+			plane: (options: Record<string, unknown>) => {
+				planes.push(options);
+				return {};
+			},
+		},
 		scene: {
 			createInstances: (_mesh: unknown, count: number) => {
 				const b = batch(count);
@@ -90,7 +96,7 @@ function context() {
 			},
 		},
 	} as unknown as SketchContext;
-	return { ctx, camera, made, materials, passes, uniforms, layers, removed };
+	return { ctx, camera, made, materials, passes, uniforms, layers, removed, planes };
 }
 
 const area = { x: 0, z: 0, size: 32, high: 12, low: 0 };
@@ -119,6 +125,13 @@ describe('the leaves', () => {
 		expect(layers).toEqual([2]);
 		leaves.destroy();
 		expect(made[0]?.destroyed).toBe(true);
+	});
+
+	test('the leaf quad takes no levels, because the shader places every leaf', () => {
+		const { ctx, camera, planes } = context();
+		createFloatingLeaves(ctx, { wind: field, camera, count: 8, area, ride: 'offset' });
+		expect(planes.length).toBe(1);
+		expect(planes[0]?.levels).toBe(false);
 	});
 
 	test('one seed puts every leaf in the same place on every device', () => {

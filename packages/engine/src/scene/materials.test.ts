@@ -121,7 +121,7 @@ import type { CoreGlue } from '../shared/core';
 import type { CustomShader } from '../shared/images';
 import { withCallValues } from './fake-call-values';
 import { CoreMemory } from './memory';
-import { Materials, slotOwners } from './resources';
+import { type InternalShaderOptions, Materials, slotOwners } from './resources';
 import { ShaderPreloads } from './shader-preloads';
 import { ShaderTemplates } from './shader-templates';
 import { Texture, type Textures } from './textures';
@@ -198,6 +198,8 @@ function fakeCore() {
 	const biases: [number, number][] = [];
 	/** The distance from the camera out to which each material's vertex offset sways, in meters. */
 	const sways: number[] = [];
+	/** 1 for each material whose blended surfaces draw in the camera's one-sample layer, else 0. */
+	const singleLayers: number[] = [];
 	/** The ids of the destroyed materials, in order. */
 	const destroyed: number[] = [];
 	/** Each displacement's material, scale and bias, as the core got them. */
@@ -224,6 +226,7 @@ function fakeCore() {
 			biasConstant: number,
 			biasSlope: number,
 			sway: number,
+			singleLayer: number,
 		) => {
 			const row = new Array<number>(SIZE_MATERIAL_BYTES / 4).fill(0);
 			row.splice(0, 4, r, g, b, a);
@@ -243,6 +246,7 @@ function fakeCore() {
 			custom.push(new Array<number>(32).fill(0));
 			biases.push([biasConstant, biasSlope]);
 			sways.push(sway);
+			singleLayers.push(singleLayer);
 			return table.push(row);
 		},
 		setMaterialValue: (material: number, param: number, x: number, y: number, z: number) =>
@@ -283,6 +287,7 @@ function fakeCore() {
 		destroyed,
 		biases,
 		sways,
+		singleLayers,
 		displacements,
 		materials: new Materials(
 			core,
@@ -535,6 +540,15 @@ describe('Material.set', () => {
 		const bad = thrown(() => materials.shader({ wgsl: compiledMaterial(), swayDistance: -1 }));
 		expect(bad.code).toBe('E1108');
 		expect(bad.message).toStartWith('E1108: materials.shader() got the swayDistance -1;');
+	});
+
+	test('only the internal option sends a custom material to the one-sample layer', () => {
+		const { singleLayers, materials } = fakeCore();
+		materials.standard({ alphaMode: 'blend' });
+		materials.shader({ wgsl: compiledMaterial(), alphaMode: 'blend' });
+		const internal: InternalShaderOptions = { singleLayer: true };
+		materials.shader({ wgsl: compiledMaterial(), alphaMode: 'blend', ...internal });
+		expect(singleLayers).toEqual([0, 0, 1]);
 	});
 
 	test('a light map direction takes its own map, and the map places the bake', () => {

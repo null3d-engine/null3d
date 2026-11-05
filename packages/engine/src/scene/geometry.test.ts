@@ -63,6 +63,9 @@ function recording() {
 	const glue = {
 		createShapeMesh: (...args: number[]) => calls.push(args),
 		meshRadius: () => 1,
+		meshCenter: () => 0,
+		// A generator's default mesh is too small to plan levels when it is made.
+		meshVertexCount: () => 24,
 		lastErrorCode: () => 0,
 		lastErrorDetail: () => 0,
 	} as unknown as CoreGlue;

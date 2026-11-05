@@ -145,9 +145,10 @@ describe('the preset table', () => {
 			'areaLights',
 			'lightFit',
 			'lodThreshold',
-			'lodShadowFactor',
+			'lodShadowThreshold',
 			'lodFade',
 			'physicalSky',
+			'cloudSteps',
 			'governor',
 			'depthPrepass',
 			'gpuOcclusion',
@@ -201,9 +202,10 @@ describe('the preset table', () => {
 			'areaLights',
 			'softParticles',
 			'lodThreshold',
-			'lodShadowFactor',
+			'lodShadowThreshold',
 			'lodFade',
 			'physicalSky',
+			'cloudSteps',
 			'softwareOcclusion',
 			'parallax',
 			'governor',
@@ -247,9 +249,10 @@ describe('the preset table', () => {
 			'areaLights',
 			'softParticles',
 			'lodThreshold',
-			'lodShadowFactor',
+			'lodShadowThreshold',
 			'lodFade',
 			'physicalSky',
+			'cloudSteps',
 			'softwareOcclusion',
 			'parallax',
 			'governor',
@@ -313,9 +316,10 @@ describe('presetSettings', () => {
 			areaLights: 4,
 			softParticles: false,
 			lodThreshold: 2,
-			lodShadowFactor: 4,
+			lodShadowThreshold: 1,
 			lodFade: false,
 			physicalSky: false,
+			cloudSteps: 0,
 			softwareOcclusion: false,
 			parallax: false,
 			shadowFilter: 3,
@@ -356,9 +360,10 @@ describe('presetSettings', () => {
 			areaLights: 8,
 			softParticles: true,
 			lodThreshold: 1,
-			lodShadowFactor: 2,
+			lodShadowThreshold: 1,
 			lodFade: true,
 			physicalSky: true,
+			cloudSteps: 0,
 			softwareOcclusion: false,
 			parallax: true,
 			shadowFilter: 5,
@@ -399,9 +404,10 @@ describe('presetSettings', () => {
 			areaLights: 16,
 			softParticles: true,
 			lodThreshold: 1,
-			lodShadowFactor: 2,
+			lodShadowThreshold: 1,
 			lodFade: true,
 			physicalSky: true,
+			cloudSteps: 32,
 			softwareOcclusion: false,
 			parallax: true,
 			shadowFilter: 5,
@@ -419,7 +425,7 @@ describe('presetSettings', () => {
 			shadowTileSize: 1024,
 			heroTileSize: 2048,
 			pointLightShadows: true,
-			gpuOcclusion: false,
+			gpuOcclusion: true,
 			lightFit: true,
 			morphTargets: 32,
 		});
@@ -442,9 +448,10 @@ describe('presetSettings', () => {
 			areaLights: 32,
 			softParticles: true,
 			lodThreshold: 1,
-			lodShadowFactor: 2,
+			lodShadowThreshold: 1,
 			lodFade: true,
 			physicalSky: true,
+			cloudSteps: 48,
 			softwareOcclusion: false,
 			parallax: true,
 			shadowFilter: 5,
@@ -462,7 +469,7 @@ describe('presetSettings', () => {
 			shadowTileSize: 1024,
 			heroTileSize: 4096,
 			pointLightShadows: true,
-			gpuOcclusion: false,
+			gpuOcclusion: true,
 			lightFit: true,
 			morphTargets: 64,
 		});
@@ -492,10 +499,10 @@ describe('presetSettings', () => {
 			expect(presetSettings(preset, { depthPrepass: false }, 'webgl2').depthPrepass).toBe(false);
 			expect(presetSettings(preset, { depthPrepass: true }, 'webgpu').depthPrepass).toBe(true);
 		}
-		// A check that lowers the preset keeps the start's WebGL2 values.
+		// A check that lowers the preset keeps the start's WebGL2 values, but takes the lower
+		// preset's anti-aliasing mode, which a device can move to while it runs.
 		expect(checkedSettings('medium', 'low', {}, 'webgl2')).toEqual({
 			...presetSettings('low', {}, 'webgl2'),
-			antialias: 'msaa',
 			shadowCascades: 3,
 			shadowMapSize: 2048,
 			shadowTiles: 8,
@@ -549,7 +556,7 @@ describe('checkSettings', () => {
 		expect(() =>
 			checkSettings('quality.set()', { shadows: { cascades: 2 } }, LIVE_SETTINGS),
 		).toThrow(
-			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, farAnimationInterval, shadowCascadeBlend, bloomSize, aoScale, contactShadowSteps, dofSamples, subsurfaceSamples, ssrScale, ssrSteps, bounceRays, exposureMeter, fogSlices, reflectionScale, probeSize, areaLights, softParticles, lodThreshold, lodShadowFactor, lodFade, physicalSky, softwareOcclusion, parallax, governor or lightFit.',
+			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, farAnimationInterval, shadowCascadeBlend, bloomSize, aoScale, contactShadowSteps, dofSamples, subsurfaceSamples, ssrScale, ssrSteps, bounceRays, exposureMeter, fogSlices, reflectionScale, probeSize, areaLights, softParticles, lodThreshold, lodShadowThreshold, lodFade, physicalSky, cloudSteps, softwareOcclusion, parallax, governor or lightFit.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(

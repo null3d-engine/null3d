@@ -48,7 +48,10 @@ const PAGE = 65536;
  * each frame, and gives world matrices from a table.
  */
 function fakeCore(
-	levelMeshes: { handle: number; mesh: { radius: number; levels: readonly unknown[] } }[] = [],
+	levelMeshes: {
+		handle: number;
+		mesh: { radius: number; center: readonly number[]; levels: readonly unknown[] };
+	}[] = [],
 ) {
 	const memory = new WebAssembly.Memory({ initial: 1, maximum: 1024 });
 	let positionsAt = 0;
@@ -223,6 +226,36 @@ describe('debug drawing', () => {
 		draw.line([0, 0, 0], [0, 0, 1]);
 		draw.flush(1, 1);
 		expect(frames[1]?.length).toBe(2);
+	});
+
+	test('a frame with no update draws the last update lines again', () => {
+		const { draw, frames, matrices } = fakeCore();
+		const object = objectAt(7);
+		matrices.set(object.handle, [1, 0, 0, 5, 0, 1, 0, 0, 0, 0, 1, 0]);
+		// Setup frames come before any update: they draw only the lines written for them.
+		draw.line([0, 0, 0], [0, 0, 1]);
+		draw.flush(1, 1, false);
+		draw.flush(1, 1, false);
+		expect(frames.length).toBe(1);
+		// A frame with no update after one that drew lines, as a hold's settle frame, draws the same
+		// lines, the shapes that follow objects among them.
+		draw.line([0, 1, 2], [3, 4, 5], '#ff0000');
+		draw.axes(object);
+		draw.flush(1, 1);
+		draw.flush(1, 1, false);
+		expect(frames.length).toBe(3);
+		expect(frames[2]?.length).toBe(8);
+		expect(frames[2]).toEqual(frames[1] as Point[]);
+		// Lines written outside an update replace them, and an update with no lines draws none.
+		draw.line([9, 9, 9], [9, 9, 8]);
+		draw.flush(1, 1, false);
+		draw.flush(1, 1, false);
+		expect(frames.map((points) => points.length)).toEqual([2, 8, 8, 2]);
+		draw.line([1, 1, 1], [2, 2, 2]);
+		draw.flush(1, 1);
+		draw.flush(1, 1);
+		draw.flush(1, 1, false);
+		expect(frames.length).toBe(5);
 	});
 
 	test('keeps 64-bit positions far from the origin', () => {
@@ -548,8 +581,8 @@ describe('debug.cullingSpheres', () => {
 
 	test('draws the mesh sphere in white about each level mesh, until turned off', () => {
 		const { draw, frames, matrices } = fakeCore([
-			{ handle: 21, mesh: { radius: 2, levels: [{}] } },
-			{ handle: 22, mesh: { radius: 1, levels: [{}] } },
+			{ handle: 21, mesh: { radius: 2, center: [0, 0, 0], levels: [{}] } },
+			{ handle: 22, mesh: { radius: 1, center: [0, 0, 0], levels: [{}] } },
 		]);
 		matrices.set(21, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
 		// A mesh of radius 1 at twice the scale: its sphere is the first's size, at another place.
@@ -572,7 +605,7 @@ describe('debug.cullingSpheres', () => {
 	test('draws the spheres of the first 128 objects, and no more', () => {
 		const meshes = Array.from({ length: 130 }, (_, k) => ({
 			handle: 100 + k,
-			mesh: { radius: 1, levels: [{}] },
+			mesh: { radius: 1, center: [0, 0, 0], levels: [{}] },
 		}));
 		const { draw, frames, matrices } = fakeCore(meshes);
 		for (const { handle } of meshes) matrices.set(handle, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);

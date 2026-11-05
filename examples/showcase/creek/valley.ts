@@ -1,7 +1,7 @@
 // Creek's valley, placed by the vegetation add-on's ecological rules: rushes and sedges at the
 // waterline, willows and alders on the banks, then oaks, beeches and birches over the flat and up
-// the slopes, with spruces at the valley's rim, bracken in the shade and hawthorns at the wood's
-// edge. The points come from the ground's own maps and one integer hash, so every device and both
+// the slopes, with spruces at the valley's rim, bracken in the shade, wildflower clumps in the open
+// patches and hawthorns at the wood's edge. The points come from the ground's own maps and one integer hash, so every device and both
 // GPU paths place the same valley. A plant that the camera's route would fly into is left out, so
 // the river pass never crosses a crown.
 import {
@@ -110,6 +110,14 @@ export const SPECIES: readonly CreekSpecies[] = [
 		crown: 0.88,
 		leaf: [0.16, 0.3, 0.09],
 		bark: [0.2, 0.19, 0.13],
+		canopy: false,
+	},
+	{
+		id: 'wildflower',
+		height: 0.4,
+		crown: 0.272,
+		leaf: [0.14, 0.3, 0.08],
+		bark: [0.2, 0.18, 0.12],
 		canopy: false,
 	},
 	{
@@ -315,6 +323,21 @@ const ALL_RULES: readonly EcoRule[] = [
 			curve('distanceToWater', 0.4, 1.5, 14, 26),
 		],
 		clump: [0.3, 1],
+		overlaps: ['ground'],
+	},
+	// The open patches: wildflower clumps where the canopy is thin and the ground is dry.
+	{
+		species: 'wildflower',
+		scale: [0.8, 1.4],
+		radius: 0.272,
+		layer: 'ground',
+		spacing: 3.2,
+		tolerances: [
+			curve('openness', 0.4, 0.6, 1, 1.01),
+			curve('heightAboveWater', 0.2, 0.5, 8, 15),
+			curve('slope', 0, 0, 0.6, 1.1),
+		],
+		clump: [0.5, 0.66],
 		overlaps: ['ground'],
 	},
 	{

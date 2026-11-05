@@ -144,7 +144,9 @@ function loadPrimitive(
 	const perPart = Math.max(PART_SPLATS, Math.ceil(count / MAX_PARTS));
 	for (let first = 0; first < count; first += perPart) {
 		const chosen = order.slice(first, Math.min(first + perPart, count));
-		parts.push({ mesh: context.geometry.fromArrays(arraysOf(splats, chosen)), material });
+		// Each quad is a splat that the shader shapes from its record, so the parts take no levels.
+		const arrays = { ...arraysOf(splats, chosen), levels: false };
+		parts.push({ mesh: context.geometry.fromArrays(arrays), material });
 	}
 	return parts;
 }

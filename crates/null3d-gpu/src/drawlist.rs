@@ -921,6 +921,13 @@ pub mod layout {
     /// [`TAA`] with a multisampled scene depth, whose samples the resolve reads. Only WebGPU has
     /// it.
     pub const TAA_MS: u32 = 58;
+    /// Group 1 of the analytic sky's volumetric cloud draw: the background's own uniform block,
+    /// then the cloud noise atlas and its sampler at bindings 6 and 7. The numbers leave room for
+    /// [`CLOUDS_ATMOSPHERE`]'s tables, so the shared cloud module names one set of bindings.
+    pub const CLOUDS: u32 = 72;
+    /// Group 1 of the physical sky's volumetric cloud draw: its values block and tables exactly as
+    /// [`ATMOSPHERE`] binds them, then the cloud noise atlas and its sampler at bindings 6 and 7.
+    pub const CLOUDS_ATMOSPHERE: u32 = 73;
     /// The final pass with custom effects folded into it: [`FINAL`]'s bindings, then the effects'
     /// uniform buffer at binding 4 and the scene's depth, or a blank texture, at binding 5, as
     /// plain floats.
@@ -950,8 +957,8 @@ pub mod layout {
     /// `textureLoad` as unfilterable floats. The copy of the camera's opaque color for
     /// transmission binds its scene color and depth the same way.
     pub const WEIGHTED_COMPOSITE: u32 = 41;
-    /// The copy of a multisampled scene depth for the weighted layer: the depth, read with
-    /// `textureLoad` as multisampled unfilterable floats. Only WebGPU has it.
+    /// The copy of a multisampled scene depth for the weighted layer and the one-sample layer: the
+    /// depth, read with `textureLoad` as multisampled unfilterable floats. Only WebGPU has it.
     pub const WEIGHTED_DEPTH_MS: u32 = 42;
     /// [`WEIGHTED_COMPOSITE`] for the copy of the camera's opaque color from a multisampled scene
     /// depth, whose sample 0 it reads. Only WebGPU has it.
@@ -1756,6 +1763,47 @@ pub mod vertex {
     }
 }
 
+/// The header of the culling parameters, the uniform block of the culling shader: the fields of
+/// `CullParams` in `cull.wgsl` before its runs of the cell order, in the same order. The runs and
+/// the occlusion phases' values follow it ([`sizes::CULL_PARAMS_BYTES`]). The shaders crate's
+/// layout test reads the shader's block and checks every field's offset and the block's size.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct CullHeader {
+    /// The view's six frustum planes, relative to its camera.
+    pub planes: [[f32; 4]; 6],
+    /// The sources that the view culls.
+    pub instance_count: u32,
+    /// The view's layer mask.
+    pub layers: u32,
+    /// The runs of the cell order to cull, or 0 to cull every source in place.
+    pub range_count: u32,
+    /// The view's row of the cell offsets texture.
+    pub offsets_row: u32,
+    /// What the level choice reads: the level factor, the orthographic flag, the share of a
+    /// switch distance that a fading band covers, and the projection's P[1][1].
+    pub levels: [f32; 4],
+    /// Where the view measures errors and the size of a bound that hides.
+    pub measure: [f32; 4],
+    /// 1 in the first word while the levels debug view draws, and 1 in the second for a view
+    /// whose pieces take the cone test. The rest are spare.
+    pub debug: [u32; 4],
+}
+
+impl CullHeader {
+    /// The header as 32-bit words, for an upload.
+    pub fn as_words(&self) -> &[u32] {
+        // SAFETY: the header is `repr(C)` and made of 32-bit values only, so it has no padding and
+        // every word of it is initialized.
+        unsafe {
+            std::slice::from_raw_parts(
+                (self as *const Self).cast::<u32>(),
+                sizes::CULL_HEADER_BYTES as usize / 4,
+            )
+        }
+    }
+}
+
 /// Sizes of the data that the render pipelines read. The shaders in `crates/null3d-shaders/wgsl/`
 /// declare the same sizes, and a test checks that they agree.
 pub mod sizes {
@@ -1875,6 +1923,18 @@ pub mod sizes {
     /// phase's draws and the history start, and an occluder's least span. Views that cull in one
     /// phase leave them unset, but the parameters have room for them.
     pub const CULL_OCCLUSION_BYTES: u32 = 96;
+    /// Bytes of the culling parameters' header, [`super::CullHeader`], where the runs of the cell
+    /// order start.
+    pub const CULL_HEADER_BYTES: u32 = size_of::<super::CullHeader>() as u32;
+    /// Bytes of one run of the cell order in the culling parameters: its first position, its end,
+    /// its first workgroup, and padding.
+    pub const CULL_RANGE_BYTES: u32 = 16;
+    /// Where the occlusion phases' values start in the culling parameters: after the runs.
+    pub const CULL_OCCLUSION_OFFSET: u32 = CULL_HEADER_BYTES + MAX_CULL_RANGES * CULL_RANGE_BYTES;
+    /// Bytes of the culling parameters, the culling shader's uniform block: the header, the runs
+    /// of the cell order, then the occlusion phases' values. Every buffer that the culling group
+    /// binds as its parameters has this size.
+    pub const CULL_PARAMS_BYTES: u32 = CULL_OCCLUSION_OFFSET + CULL_OCCLUSION_BYTES;
     /// Bytes of one vertex of the debug lines: its position relative to the camera, three 32-bit
     /// floats, then its sRGB color, four bytes from red to alpha.
     pub const LINE_VERTEX_BYTES: u32 = 16;
@@ -2270,6 +2330,28 @@ pub mod template {
     /// Screen-space bounce light's denoise: one triangle over the grid, which blurs the traced
     /// light over a disk of taps that keeps to each texel's own surface.
     pub const BOUNCE_DENOISE: u32 = 101;
+    /// The analytic sky's volumetric clouds, drawn as [`BACKGROUND_CUBE`]'s box right after the
+    /// sky and blended over it. It binds the frame's group and the background's own group, of
+    /// layout [`CLOUDS`](super::layout::CLOUDS).
+    pub const BACKGROUND_CLOUDS: u32 = 102;
+    /// The physical sky's volumetric clouds, drawn as [`BACKGROUND_CLOUDS`] is, from the physical
+    /// sky's values and tables, of layout
+    /// [`CLOUDS_ATMOSPHERE`](super::layout::CLOUDS_ATMOSPHERE).
+    pub const BACKGROUND_CLOUDS_ATMOSPHERE: u32 = 103;
+
+    /// The blend of the one-sample layer over the scene color: one triangle that reads the layer,
+    /// one texel per pixel, with the layout [`VIEW_COPY`](super::layout::VIEW_COPY), and returns
+    /// its premultiplied color for the normal blending to put over the scene. It draws inside the
+    /// camera's transparent render pass, so its pipelines name the scene's depth and leave it alone.
+    pub const SINGLE_COMPOSITE: u32 = 104;
+    /// The copy of the first sample of a multisampled scene depth into the depth target of one
+    /// sample that the one-sample layer tests against: one triangle that writes each pixel's depth,
+    /// first in the layer's pass. Its pipeline names the layer's color target, which it does not
+    /// write. On WebGPU it reads the multisampled depth with the layout
+    /// [`WEIGHTED_DEPTH_MS`](super::layout::WEIGHTED_DEPTH_MS); on WebGL2 it reads the copy of one
+    /// sample that the backend keeps, with the layout [`VIEW_COPY`](super::layout::VIEW_COPY).
+    pub const SINGLE_DEPTH: u32 = 105;
+
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -2277,7 +2359,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 101] = [
+    pub const NAMES: [(&str, u32); 105] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -2378,6 +2460,10 @@ pub mod template {
         ("MOMENT_SMAA_RESOLVE", MOMENT_SMAA_RESOLVE),
         ("BOUNCE_TRACE", BOUNCE_TRACE),
         ("BOUNCE_DENOISE", BOUNCE_DENOISE),
+        ("BACKGROUND_CLOUDS", BACKGROUND_CLOUDS),
+        ("BACKGROUND_CLOUDS_ATMOSPHERE", BACKGROUND_CLOUDS_ATMOSPHERE),
+        ("SINGLE_COMPOSITE", SINGLE_COMPOSITE),
+        ("SINGLE_DEPTH", SINGLE_DEPTH),
         ("CUSTOM_FIRST", CUSTOM_FIRST),
     ];
 }
@@ -2452,16 +2538,44 @@ pub mod groups {
         &[layout::PARTICLE_SCENE_DEPTH, layout::INSTANCES],
         &[layout::TEXTURES],
     ];
+    /// The groups of the one-sample layer's composite: the layer's own group, then the groups that
+    /// the meshes, custom materials and particles of the camera's transparent pass leave bound at
+    /// the higher indices of the render pass that the composite joins. Its pipeline reads none of them, and a WebGL2
+    /// program reads no binding that it does not declare.
+    const SINGLE_COMPOSITE: &[&[u32]] = &[
+        &[layout::VIEW_COPY],
+        &[
+            layout::DRAWS,
+            layout::JOINTS,
+            layout::MATERIAL_MAPS,
+            layout::TEXTURES,
+            layout::INSTANCE_INDEX,
+            layout::DECAL_DEPTH,
+            layout::DECAL_DEPTH_MS,
+            layout::MATERIAL_SCENE,
+            layout::PARTICLE,
+        ],
+        &[
+            layout::INSTANCES,
+            layout::INSTANCE_INDEX,
+            layout::DECAL_DEPTH,
+            layout::DECAL_DEPTH_MS,
+            layout::MATERIAL_SCENE,
+            layout::PARTICLE_SCENE_DEPTH,
+        ],
+        MESH[3],
+        MESH[4],
+    ];
     /// [`MESH`] for the moment layer's colour builds, whose frame group carries the moment store in
     /// place of the copy of the opaque color.
     const MOMENT_MESH: &[&[u32]] = &[&[layout::MOMENT_FRAME], MESH[1], MESH[2], MESH[3], MESH[4]];
-    /// The groups of the background templates: the frame's group, then a texture and the
-    /// background's own group. A cube or sky background binds only the background's own, at the
-    /// group after the frame's, and the WebGL2 path binds each view's instances group last.
+    /// The groups of the background templates: the frame's group, then the background's own, then
+    /// a texture's. A cube or sky background binds only the background's own, at the group after
+    /// the frame's, and the WebGL2 path binds each view's instances group last.
     const BACKGROUND: &[&[u32]] = &[
         &[layout::FRAME],
-        &[layout::TEXTURES, layout::BACKGROUND],
-        &[layout::BACKGROUND, layout::INSTANCES],
+        &[layout::BACKGROUND],
+        &[layout::TEXTURES, layout::INSTANCES],
     ];
     /// The physical sky's tables and its panorama.
     const SKY: &[&[u32]] = &[&[layout::ATMOSPHERE]];
@@ -2523,6 +2637,22 @@ pub mod groups {
         (template::BOUNCE_DENOISE, own!(layout::BOUNCE)),
         (template::BACKGROUND_CUBE, BACKGROUND),
         (template::BACKGROUND_SKY, BACKGROUND),
+        (
+            template::BACKGROUND_CLOUDS,
+            &[
+                &[layout::FRAME],
+                &[layout::CLOUDS],
+                &[layout::TEXTURES, layout::INSTANCES],
+            ],
+        ),
+        (
+            template::BACKGROUND_CLOUDS_ATMOSPHERE,
+            &[
+                &[layout::FRAME],
+                &[layout::CLOUDS_ATMOSPHERE],
+                &[layout::TEXTURES, layout::INSTANCES],
+            ],
+        ),
         (template::SHADOW_CUTOUT, MESH),
         (template::SHADOW_CUTOUT_MAP, MESH),
         (template::VIEW_COPY, own!(layout::VIEW_COPY)),
@@ -2555,6 +2685,11 @@ pub mod groups {
             own!(layout::WEIGHTED_COMPOSITE),
         ),
         (template::WEIGHTED_DEPTH, own!(layout::WEIGHTED_DEPTH_MS)),
+        (template::SINGLE_COMPOSITE, SINGLE_COMPOSITE),
+        (
+            template::SINGLE_DEPTH,
+            own!(layout::WEIGHTED_DEPTH_MS, layout::VIEW_COPY),
+        ),
         (template::MOMENT_COMPOSITE, own!(layout::MOMENT_COMPOSITE)),
         (template::MOMENT_DEPTH, own!(layout::MOMENT_DEPTH_MS)),
         (template::MOMENT_SMAA_EDGES, own!(layout::MOMENT_SMAA_EDGES)),
@@ -2818,6 +2953,8 @@ const GENERATED_LAYOUTS: &[(&str, u32)] = &[
     ("AO_DEPTH_MS", layout::AO_DEPTH_MS),
     ("AO", layout::AO),
     ("BACKGROUND", layout::BACKGROUND),
+    ("CLOUDS", layout::CLOUDS),
+    ("CLOUDS_ATMOSPHERE", layout::CLOUDS_ATMOSPHERE),
     ("INSTANCE_INDEX", layout::INSTANCE_INDEX),
     ("EFFECT", layout::EFFECT),
     ("EFFECT_DEPTH_MS", layout::EFFECT_DEPTH_MS),
@@ -3074,6 +3211,7 @@ pub fn typescript_constants() -> String {
                 ("CELL_SHIFT", sizes::CELL_SHIFT),
                 ("MAX_CULL_RANGES", sizes::MAX_CULL_RANGES),
                 ("CULL_OCCLUSION_BYTES", sizes::CULL_OCCLUSION_BYTES),
+                ("CULL_PARAMS_BYTES", sizes::CULL_PARAMS_BYTES),
                 ("LINE_VERTEX_BYTES", sizes::LINE_VERTEX_BYTES),
                 ("SHADOW_UNIFORM_BYTES", sizes::SHADOW_UNIFORM_BYTES),
                 (

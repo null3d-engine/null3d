@@ -11,6 +11,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import ts from 'typescript';
+import { filesBelow } from './walk';
 
 /** The engine's entry points that an add-on may import. */
 export const PUBLIC_ENTRIES: ReadonlySet<string> = new Set([
@@ -158,22 +159,12 @@ export function packageImportProblem(
 
 /** The checked source files under `dir`, as absolute paths: no tests, declarations or installed packages. */
 function sourceFiles(dir: string): string[] {
-	let entries: string[];
-	try {
-		entries = readdirSync(dir, { recursive: true, encoding: 'utf8' });
-	} catch {
-		return [];
-	}
-	return (
-		entries
-			.filter((entry) => SOURCE.test(entry) && !TEST.test(entry) && !entry.endsWith('.d.ts'))
-			.filter((entry) => !entry.split(sep).includes('node_modules'))
-			// The build writes the shader modules under the engine's source. They are generated,
-			// gigabytes large, and no add-on reads them.
-			.filter((entry) => !entry.split(sep).includes('generated'))
-			.sort()
-			.map((entry) => join(dir, entry))
-	);
+	// The build writes the shader modules under the engine's source. They are generated, gigabytes
+	// large, and no add-on reads them.
+	return filesBelow(dir, ['generated'])
+		.filter((entry) => SOURCE.test(entry) && !TEST.test(entry) && !entry.endsWith('.d.ts'))
+		.sort()
+		.map((entry) => join(dir, entry));
 }
 
 /** Which rules a checked file takes: the public-entry rule, the examples rule, or both. */

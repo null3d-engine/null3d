@@ -275,7 +275,12 @@ The sketch downloads its files at once, and posts how far the downloads have com
 import { defineSketch } from '@null3d/engine';
 
 export default defineSketch(async ({ scene, assets, page }) => {
-  assets.onProgress((loaded, total) => page.post('loading', loaded / total));
+  assets.onProgress((loaded, total) =>
+    page.post('loading', {
+      text: 'Downloading the scene files',
+      value: total > 0 ? loaded / Math.max(total, loaded) : undefined,
+    }),
+  );
   await assets.preload(['/models/knight.glb', '/env/sunset.hdr']);
 
   // Both files come from memory now.
@@ -451,21 +456,20 @@ export default defineSketch(({ scene, geometry, materials, textures, render, tim
   const above = scene.createOrthographicCamera({ height: 16, near: 1, far: 40, position: [0, 20, 0] });
   above.setRotationEuler(-Math.PI / 2, 0, 0);
   const map = render.addPass({ kind: 'scene', camera: above, writes: 'map', size: [256, 256] });
+  // The map needs a new image only every third frame.
+  render.setPassEvery(map, 3);
   scene.createMesh({
     mesh: geometry.plane({ width: 2.5, height: 2.5 }),
     material: materials.unlit({ map: textures.fromPass(map) }),
     position: [0, 2, -3],
   });
 
-  let frame = 0;
   return {
     onUpdate() {
       carts.forEach((cart, k) => {
         const angle = time.now * 0.5 + (k * Math.PI * 2) / carts.length;
         cart.setPosition(Math.cos(angle) * 6, 0.5, Math.sin(angle) * 6);
       });
-      frame++;
-      render.setPassEnabled(map, frame % 3 === 0);
     },
   };
 });
@@ -615,7 +619,7 @@ A point batch that you never change is static, and costs no uploads after its fi
 
 ## Hide what walls hide
 
-Mark large, solid objects as occluders. The engine then skips the objects that lie wholly behind them. Here a wall hides a field of crates from the camera. Every quality preset leaves occlusion culling off. On WebGL2, `createEngine`'s `softwareOcclusion` option turns it on, and on WebGPU its `gpuOcclusion` option.
+Large, solid objects hide the objects that lie wholly behind them, and the engine skips those. Here a wall hides a field of crates from the camera. On WebGPU, High and Ultra cull them on desktops without a mark, and `createEngine`'s `gpuOcclusion` option turns it on or off. On WebGL2, mark the wall with `occluder: true`, and `createEngine`'s `softwareOcclusion` option turns the culling on.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
