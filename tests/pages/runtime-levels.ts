@@ -8,6 +8,11 @@ import { progress, run } from './lib/result';
 /** The camera's distances from the grid's middle, in metres: near, then far. */
 const DISTANCES = [6, 400];
 
+/** Frames after a move before a window may count the new view: three periods of WebGPU's counts. */
+const SETTLED_FRAMES = 33;
+/** Windows that a count may take to settle before the page takes the last one as it is. */
+const MAX_WINDOWS = 40;
+
 /** Where the large grid with pieces draws, and the same grid without them, by name. */
 const CORNERS = { pieces: 500, whole: -500 };
 
@@ -37,10 +42,22 @@ run('runtime-levels', async () => {
 			});
 			engine.postToSketch(type, place);
 		});
-	// WebGPU counts the triangles that the GPU culled on one frame in eleven, a few frames late.
+	// WebGPU counts the triangles that the GPU culled on one frame in eleven, a few frames late, and
+	// the frames before a count lands repeat the count of the view before the move. A software GPU
+	// draws so few frames a second, and can pause for seconds while the planned levels land, that a
+	// window of a fixed time can hold only those frames, or none. So the page lets a few sampling
+	// periods' frames pass after the move, then takes the first window whose frames all count the
+	// same.
 	const drawn = async () => {
-		await engine.measure(0.5);
-		return (await engine.measure(1)).triangles.median;
+		let frames = 0;
+		for (let window = 0; ; window++) {
+			const measured = await engine.measure(0.5);
+			frames += measured.frames;
+			const { triangles } = measured;
+			const settled =
+				frames >= SETTLED_FRAMES && measured.frames > 0 && triangles.min === triangles.max;
+			if (settled || window === MAX_WINDOWS) return triangles.median;
+		}
 	};
 	const triangles: Record<string, number> = {};
 	for (const distance of DISTANCES) {

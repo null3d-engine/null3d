@@ -671,8 +671,17 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		const soft =
 			Boolean(process.env.CI) || test.info().project.name.startsWith('chromium-swiftshader');
 		const seconds = soft ? 30 : 4;
-		await page.goto(`engine.html?gpu=${gpu}&seconds=${seconds}&${mode.query}&sketch=busy`);
-		const result = await pageResult<EngineResult & { error?: string }>(page, 60_000);
+		// The page's start and its first frame come on top of the window. On WebGPU at High the
+		// first frame also builds GPU occlusion culling's pipelines, which a software GPU on a busy
+		// runner builds slowly, so a fixed minute left too little room past a window of 30 seconds.
+		const startMs = 60_000;
+		test.setTimeout(seconds * 1000 + startMs + 15_000);
+		await page.goto(`engine.html?gpu=${gpu}&seconds=${seconds}&${mode.query}&sketch=busy${process.env.TMP_Q ?? ''}`);
+		const result = await pageResult<EngineResult & { error?: string }>(
+			page,
+			seconds * 1000 + startMs,
+		);
+		console.log(`TMPLOAD ${gpu} ${JSON.stringify(result.stats.load)} frames ${result.stats.frames}`);
 		expect(result.error).toBeUndefined();
 		expect(engineProblems(result, mode, gpu, notPacing)).toEqual([]);
 		const jobThreads = Object.keys(result.stats.threads).filter((name) => name.startsWith('job-'));

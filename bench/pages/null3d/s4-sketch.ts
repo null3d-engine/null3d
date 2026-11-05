@@ -82,7 +82,14 @@ export default defineSketch((context) => {
 	};
 	const meshes = new Map<S4MeshName, MeshGeometry>();
 	for (const [name, spec] of Object.entries(S4_MESHES) as [S4MeshName, S4MeshSpec][])
-		meshes.set(name, generators[spec.generator](spec.options));
+		meshes.set(
+			name,
+			generators[spec.generator](
+				new URL(import.meta.url).searchParams.get('levels') === 'off'
+					? { ...spec.options, levels: false }
+					: spec.options,
+			),
+		);
 
 	const maps = new Map<string, Texture>();
 	for (const name of S4_TEXTURES)
