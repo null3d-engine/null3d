@@ -6,10 +6,12 @@ import {
 	classifyTurn,
 	crownStartRow,
 	findHorizon,
+	greenLeaves,
 	measurePlant,
 	plantMask,
 	readIndex,
 	rowSpans,
+	seasonFromPicture,
 	shadowLike,
 	widthProfile,
 } from './references.ts';
@@ -223,6 +225,22 @@ describe('the slots', () => {
 			note: expect.stringContaining('young'),
 		});
 		expect(classifySlot('30-sucker-clump.png')?.view).toBe('whole');
+	});
+
+	test('draw a still of fruit among green leaves in summer, and one among autumn leaves in autumn', () => {
+		const acorns = classifySlot('19-acorns-on-stalk.png') as NonNullable<
+			ReturnType<typeof classifySlot>
+		>;
+		// Green leaves round a few brown acorns, as still 19 shows them.
+		const late = blank(10, 10, [70, 110, 50]);
+		for (let i = 0; i < 20; i++) late.data.set([130, 80, 30, 255], i * 4);
+		expect(greenLeaves(late)).toBe(true);
+		expect(seasonFromPicture(acorns, late).query?.season).toBe('summer');
+		const turned = blank(10, 10, [190, 120, 40]);
+		expect(greenLeaves(turned)).toBe(false);
+		expect(seasonFromPicture(acorns, turned).query?.season).toBe('autumn');
+		// Grey picture: neither colour, so the name's season stands.
+		expect(seasonFromPicture(acorns, blank(4, 4, [128, 128, 128])).query?.season).toBe('autumn');
 	});
 
 	test('draw each still in the season it shows, from its name or its index row', () => {
