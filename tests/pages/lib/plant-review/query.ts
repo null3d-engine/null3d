@@ -68,6 +68,8 @@ export interface PlantReviewQuery {
 	readonly measure?: boolean;
 	/** Whether the page draws a 1 m scale bar beside the view's target. */
 	readonly scale?: boolean;
+	/** Whether the twigs view looks for the plant's fruit rather than for a sunlit tip. */
+	readonly fruit?: boolean;
 	/** Whether to draw the plant black on white with no light, for its exact outline. */
 	readonly matte?: boolean;
 	/** Whether stages not built yet grow stand-ins; true for a species that is not registered. */
@@ -128,7 +130,7 @@ const SHARE_FIELDS = new Set(['horizon', 'fill', 'targetY', 'targetX', 'top', 'a
 const COUNT_FIELDS = new Set(['turns', 'columns']);
 
 /** The switches, written as 1 when on. */
-const SWITCHES = ['measure', 'scale', 'matte'] as const;
+const SWITCHES = ['measure', 'scale', 'matte', 'fruit'] as const;
 
 /** A short form of a number for a query, so a query reads well and keeps its precision. */
 function short(value: number): string {
@@ -227,5 +229,6 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		measure: params.get('measure') === '1',
 		scale: params.get('scale') === '1',
 		matte: params.get('matte') === '1',
+		fruit: params.get('fruit') === '1',
 	};
 }
