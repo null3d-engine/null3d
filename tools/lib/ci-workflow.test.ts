@@ -719,6 +719,36 @@ describe("CI's workflow", () => {
 					expect.unreachable(`${name} moves ${given?.name} without the archive action`);
 	});
 
+	it('gives every job that serves the pages the compiled WGSL of every share', () => {
+		// A job that compiled the add-ons' materials itself spent minutes before its first page of
+		// them could start, past that page's limit.
+		const compiler = jobNamed('sketch-shaders');
+		const shares = ((compiler.strategy?.matrix?.share ?? []) as unknown[]).map(String);
+		const count = Number(shares[0]?.split('/')[1]);
+		expect(count).toBeGreaterThan(1);
+		expect(shares).toEqual(oneTo(count).map((part) => `${part}/${count}`));
+		const uploads = (compiler.steps ?? []).filter(
+			({ uses, with: given }) => uses === ARCHIVE && given?.mode === 'upload',
+		);
+		expect(uploads.map(({ with: given }) => String(given?.name))).toEqual([
+			`sketch-shaders-${expression('steps.keys.outputs.part')}`,
+		]);
+		const pages =
+			/\b(?:test:browser|test:bench|bench:allocation|tests\/real-browsers\.ts|tests\/lib\/load-server\.ts)\b/;
+		const serving = Object.entries(jobs).filter(([, job]) =>
+			(job.steps ?? []).some(({ run }) => run !== undefined && pages.test(run)),
+		);
+		expect(serving.length).toBeGreaterThan(5);
+		for (const [name, job] of serving) {
+			expect(needsOf(job), name).toContain('sketch-shaders');
+			const download = (job.steps ?? []).find(
+				({ uses, with: given }) =>
+					uses === ARCHIVE && given?.mode === 'download' && given?.name === 'sketch-shaders',
+			);
+			expect(download?.with?.pattern, name).toBe('sketch-shaders-*');
+		}
+	});
+
 	it('names in each pass key every script that its part starts, with their imports', () => {
 		const hashes = passHashGlobs();
 		for (const [name, { hashes: names }] of Object.entries(PASS_KEYED)) {
