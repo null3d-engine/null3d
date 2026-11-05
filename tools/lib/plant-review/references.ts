@@ -177,6 +177,7 @@ const SLOT_BY_NUMBER: Readonly<Record<number, SlotRule>> = {
 	18: { view: 'silhouette', framed: true },
 	19: {
 		view: 'twigs',
+		query: { fruit: true },
 		framed: false,
 		note: 'flowers, fruit or cones: judged on the shoot tip, in the season the name gives',
 	},

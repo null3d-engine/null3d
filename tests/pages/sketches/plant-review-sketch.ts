@@ -421,6 +421,24 @@ export default defineSketch(async (ctx) => {
 				return orbit(at.at, reach, e, back, fov);
 			}
 			case 'twigs': {
+				// A view of the fruit goes to the highest acorn the plant carries rather than to a tip
+				// that may stand bare; without fruit, or with none this season, it goes to a sunlit tip.
+				if (QUERY.fruit) {
+					let acorn: V3 | undefined;
+					for (const part of main.levels[0]?.parts ?? []) {
+						if (part.name !== 'extras') continue;
+						const p = partPositions(part, kit.box);
+						for (let i = 0; i < p.length; i += 3) {
+							const at: V3 = [p[i] as number, p[i + 1] as number, p[i + 2] as number];
+							if (!acorn || at[1] > acorn[1]) acorn = at;
+						}
+					}
+					if (acorn) {
+						const outward = normalize([acorn[0] - foot[0], 0, acorn[2] - foot[2]]);
+						const back = Math.atan2(outward[0], outward[2]);
+						return { ...orbit(acorn, 0.55, e, back, fov), near: 0.02 };
+					}
+				}
 				const tip = sunlitTip(skeleton, out, BUD_TERMINAL);
 				if (!tip) break;
 				let shoot = 0.2;

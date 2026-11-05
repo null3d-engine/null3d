@@ -200,7 +200,7 @@ export const record: Species = {
 			kind: 'fruit',
 			at: 'shoot-tip',
 			share: 0.3,
-			seasons: ['autumn'],
+			seasons: ['summer', 'autumn'],
 			shape: {
 				lathe: [
 					[0.0016, 0],
