@@ -2651,24 +2651,30 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	{
 		// A threshold of 16 pixels draws patches far coarser than the mesh, so the picture shows
-		// the near ground fine and the far ground simplified.
+		// the near ground fine and the far ground simplified. Firefox has no `WEBGL_multi_draw`, so
+		// there WebGL2 draws the whole level that the nearest ground needs, coarse everywhere:
+		// 1.02% of the pixels differ from the patched picture. Firefox on Linux keeps its own.
 		name: 'cluster-coarse',
 		sketch: 'tests/pages/sketches/cluster-sketch.ts?coarse',
 		hold: 0,
 		size: [480, 270] as const,
 		switches: ['direct=off'],
+		devices: ['linux'],
 	},
 	// The ground casts its hills' shadows onto itself from a low sun, in three cascades. Each
 	// cascade draws the patches that its own texels pick, and the camera draws its own. The second
 	// test draws the finest patches in every cascade, and must match the first: a cascade's
 	// patches never shadow the ground that the camera's patches draw by more than the normal bias
-	// hides.
+	// hides. Firefox has no `WEBGL_multi_draw`, so there WebGL2 draws whole levels, and the low
+	// sun's shading shows their facets: 0.91% of the pixels differ from the patched picture.
+	// Firefox on Linux keeps its own, which both tests match.
 	{
 		name: 'cluster-shadows',
 		sketch: 'tests/pages/sketches/cluster-sketch.ts?shadows',
 		hold: 0,
 		size: [480, 270] as const,
 		switches: ['direct=off'],
+		devices: ['linux'],
 	},
 	{
 		name: 'cluster-shadows-fine',
@@ -3834,7 +3840,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 				...(comparison.swiftShaderHoldCount !== undefined && {
 					swiftShaderSwitches: [`count=${comparison.swiftShaderHoldCount}`],
 				}),
-				...(comparison.imageDevices && { devices: comparison.imageDevices }),
+				...(comparison.imageDevices?.[engine] && { devices: comparison.imageDevices[engine] }),
 			};
 			// A comparison that draws another's scene holds the same frame: its test shares that
 			// comparison's references.
