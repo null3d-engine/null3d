@@ -164,7 +164,9 @@ export class Null3dPieces extends Extension {
 						groups: context.accessorIndexMap.get(groups),
 						groupBounds: context.accessorIndexMap.get(bounds),
 					}),
-				version: NULL3D_PIECES_VERSION,
+				// A file without groups keeps the first layout, so a model that asks for none
+				// writes the bytes it wrote before groups existed.
+				version: groups && bounds ? NULL3D_PIECES_VERSION : 1,
 			};
 		}
 		return this;
