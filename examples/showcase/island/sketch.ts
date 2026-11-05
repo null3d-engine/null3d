@@ -10,7 +10,7 @@
 // controls pick a time of day (a summer morning at its start) and turn the effects on and off, among them a
 // "DSLR" lens with depth of field. For held frames, the sketch's address takes the mood:
 // `?mood=Midday&dslr`.
-import { defineSketch } from '@null3d/engine';
+import { defineSketch, type QualityPreset } from '@null3d/engine';
 import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
 import { EFFECT_LAYER, INTERIOR_LAYER, SUN_LAYERS } from '../../lib/layers';
 import type { ShadowReach } from '../../lib/shadow-range';
@@ -42,6 +42,19 @@ export const SHADOW_REACH: ShadowReach = {
 	distance: 600,
 	center: [TOWN.x, TOWN.height + 20, TOWN.z],
 	radius: TOWN.radius * 1.2,
+};
+
+/**
+ * How far the sun's shadows reach on each preset, in meters. A phone draws at Low, where the shadow
+ * maps are the scene's largest cost, so its range stays short and fixed. The far hills then lose
+ * their shadows, and the town keeps them from the views a phone shows. The other presets take the
+ * scene's stretchable range, which grows as the camera draws back.
+ */
+export const SHADOW_DISTANCE: Record<QualityPreset, number> = {
+	low: 250,
+	medium: SHADOW_REACH.distance,
+	high: SHADOW_REACH.distance,
+	ultra: SHADOW_REACH.distance,
 };
 
 /**
@@ -89,6 +102,10 @@ const params = new URL(import.meta.url).searchParams;
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, page, time } = ctx;
+	const preset = ctx.quality.preset;
+	// A phone's range stands still. The stretchable range follows the town as the camera draws back,
+	// which on a phone would grow the shadow maps again over the far hills.
+	const stretchable = preset !== 'low';
 	page.post('loading', 'Raising the island');
 	// The environment maps build on the GPU, and on a software GPU that takes minutes. Nothing that
 	// the visitor's controls need depends on them, so the loads run beside the scene's own build and
@@ -100,7 +117,12 @@ export default defineSketch(async (ctx) => {
 		layers: SUN_LAYERS | CASTER_LAYER,
 		// The offsets keep the ground from shadowing itself in the far cascades, whose wide texels would
 		// band it in rings around the camera. One texel of each cascade caps them, so near things stay tight.
-		shadow: { distance: SHADOW_REACH.distance, normalBias: 1, bias: 1, contactDistance: 0.25 },
+		shadow: {
+			distance: SHADOW_DISTANCE[preset],
+			normalBias: 1,
+			bias: 1,
+			contactDistance: 0.25,
+		},
 	});
 	// Warm light thrown back from the dry ground lifts the shadows' undersides, so they do not read sky blue.
 	scene.createHemisphereLight({ skyColor: '#b9a890', groundColor: '#c2965c', intensity: 0.8 });
@@ -147,7 +169,7 @@ export default defineSketch(async (ctx) => {
 	const controls = createShowcaseEffects(ctx, {
 		camera,
 		sun,
-		shadowReach: SHADOW_REACH,
+		...(stretchable && { shadowReach: SHADOW_REACH }),
 		stage,
 		start: {
 			lod: true,
