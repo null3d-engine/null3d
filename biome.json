@@ -27,6 +27,15 @@
 					}
 				}
 			}
+		},
+		{
+			"includes": ["bench/research/group-culling/results/**/*.json"],
+			"files": {
+				"maxSize": 2097152
+			},
+			"formatter": {
+				"enabled": false
+			}
 		}
 	],
 	"formatter": {

@@ -13,6 +13,31 @@ const SWITCHES: Record<string, string> = {
 	forced: 'occlusion=on&occlusion-check=off',
 	check: 'occlusion=on',
 };
+/** The value of one figure that a benchmark record keeps. */
+interface Figure {
+	median?: number;
+}
+
+/** The stats of one benchmark scene's run. */
+interface Stats {
+	gpuMs?: Figure;
+	gpuPassMs?: unknown;
+	triangles?: Figure;
+	occludedEntries?: Figure;
+	visibleEntries?: Figure;
+	intervalMs?: Figure;
+}
+
+/** A benchmark scene's record, read from JSON. */
+interface BenchRecord {
+	scene?: string;
+	ok?: boolean;
+	drawPath?: string;
+	machineLoad?: unknown;
+	problems?: unknown[];
+	stats?: Stats;
+}
+
 const runs: object[] = [];
 const repeats: object[] = [];
 for (const run of readdirSync(folder).sort()) {
@@ -20,8 +45,7 @@ for (const run of readdirSync(folder).sort()) {
 	if (!statSync(dir).isDirectory()) continue;
 	const mode = run.split('-')[1] as string;
 	for (const file of readdirSync(dir).filter((f) => /^s\d.*\.json$/.test(f))) {
-		// biome-ignore lint/suspicious/noExplicitAny: a benchmark record read as JSON
-		const r = JSON.parse(readFileSync(join(dir, file), 'utf8')) as any;
+		const r = JSON.parse(readFileSync(join(dir, file), 'utf8')) as BenchRecord;
 		const s = r.stats ?? {};
 		(run.startsWith('repeat') ? repeats : runs).push({
 			address: `${r.scene ?? file.split('-')[0]}?${SWITCHES[mode]}`,
