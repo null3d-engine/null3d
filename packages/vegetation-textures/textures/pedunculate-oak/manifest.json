@@ -244,8 +244,8 @@
 		],
 		"young": {
 			"tile": [
-				0.05,
-				0.05
+				0.2,
+				0.2
 			],
 			"mean": [
 				0.21435,
@@ -292,8 +292,8 @@
 		},
 		{
 			"file": "young-normal.ktx2",
-			"sha256": "20ffac0b1cef098fdc7906397719910070f57751d7b5f1393c6e3125a020a997",
-			"bytes": 69681
+			"sha256": "4a8e1a3df3e1f360011ca45fc4acfd1cb22833ef75acaea169f7fc3574b54485",
+			"bytes": 55254
 		},
 		{
 			"file": "bark-color-half.ktx2",
@@ -312,8 +312,8 @@
 		},
 		{
 			"file": "young-normal-half.ktx2",
-			"sha256": "12ed0a052ecdd4191e3cc73dcdf7647c2f2039a014e27101e52c43b56a0a2fd6",
-			"bytes": 17041
+			"sha256": "8e609fdffda409f5f174389ffc66dcfce38925754ecf78c782b9c627e5b56bde",
+			"bytes": 12687
 		}
 	]
 }

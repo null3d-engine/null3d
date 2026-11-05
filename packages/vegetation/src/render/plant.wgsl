@@ -828,7 +828,9 @@ fn surface(input: SurfaceInput) -> Surface {
         let moss_reach = header(HEADER_MOSS_REACH);
         let low_enough = 1.0 - smoothstep(moss_reach.x * 0.7, max(moss_reach.x, 0.001), plant.y);
         let north = saturate(-n.z) * moss_reach.y;
-        let mossy = saturate(moss.w * low_enough * (saturate(n.y) + north) * (0.5 + cavity));
+        // The foot keeps some moss on every side, and the furrows and the crowns of the buttresses
+        // gather more than the plates do.
+        let mossy = saturate(moss.w * low_enough * (0.12 + saturate(n.y) + north) * (0.5 + cavity));
         bark = mix(bark, moss.rgb, mossy);
         // The collar's dark ridge where a branch joins its parent.
         bark *= 1.0 - 0.5 * moss_reach.z * junction;
