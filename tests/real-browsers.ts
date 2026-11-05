@@ -105,6 +105,11 @@
 //                       with the pass off and on
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
+//   --allow-image-faults
+//                       a browser whose image buffers fail the capabilities page's check skips
+//                       every page that draws, instead of failing them, and the summary names the
+//                       faults. For CI's virtual machines only: on a real device, such a fault is a
+//                       browser bug that users meet, and its pages must fail
 //   --n <count>         the instance count of the bench plan's pages
 //   --runs <count>      fresh runs of each bench or showcase plan page, the protocol's 5 by
 //                       default, loads at each maximum of the memory plan, 20 by default, where 0
@@ -232,7 +237,14 @@ import {
 	noFramesText,
 	testedDeviceEntry,
 } from './lib/device-record.ts';
-import { GPU_PATH_NAMES, type GpuPath, skippedPath, skippedPathsText } from './lib/gpu-paths.ts';
+import {
+	GPU_PATH_NAMES,
+	type GpuPath,
+	skippedForImages,
+	skippedForImagesText,
+	skippedPath,
+	skippedPathsText,
+} from './lib/gpu-paths.ts';
 import { HeatLog, type HeatSample, type HeatSummary, heatText, summarizeHeat } from './lib/heat.ts';
 import { clearCandidates } from './lib/images.ts';
 import { buildsForLoads, makeLoadBuild, prepareLoads } from './lib/load-server.ts';
@@ -333,6 +345,8 @@ export interface Options {
 	plan: string;
 	/** GPU paths a browser may lack, whose pages it then skips. */
 	missing: MissingAllowed;
+	/** A browser's image buffers may fail, and it then skips the pages that draw. */
+	imageFaults?: boolean;
 	/** The instance count of the bench plan's pages, when given. */
 	count?: number;
 	/** Fresh runs of each bench plan page, or loads at each memory maximum, when given. */
@@ -382,7 +396,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shaders all|sampled] [--shard <i>/<n>] [--only <ids>] [--prebuilt only|none] [--rounds <n>] [--shields on|off] [--quiet-cap <s>] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [--front] [<browser app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--allow-image-faults] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shaders all|sampled] [--shard <i>/<n>] [--only <ids>] [--prebuilt only|none] [--rounds <n>] [--shields on|off] [--quiet-cap <s>] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [--front] [<browser app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -425,6 +439,7 @@ export function parseArgs(args: readonly string[]): Options {
 		const arg = args[i] as string;
 		if (arg === '--allow-no-webgpu') missing.webgpu = true;
 		else if (arg === '--allow-no-webgl2') missing.webgl2 = true;
+		else if (arg === '--allow-image-faults') options.imageFaults = true;
 		else if (arg === '--n') options.count = wholeNumber(arg, args[++i]);
 		else if (arg === '--runs') options.runs = wholeNumber(arg, args[++i], 0);
 		else if (arg === '--jobs') options.jobs = readJobCounts(args[++i]);
@@ -592,6 +607,8 @@ export interface RunnerSummary {
 	unreliableTiming?: string;
 	/** The GPU paths that the device lacks, whose pages its runner page skipped. */
 	skippedPaths?: GpuPath[];
+	/** The faults of the browser's image buffers, for which its runner page skipped the pages that draw. */
+	imageFault?: string;
 	/** Brave only: the state of its Shields, or null when the run did not record it. */
 	braveShields?: ShieldsState | null;
 }
@@ -608,6 +625,7 @@ export function summaryLine(runner: string, summary: RunnerSummary): string {
 		`${runner}${browser}: ${summary.pass} passed, ${summary.skip} skipped, ${summary.fail} failed${notRun}`,
 		...(summary.braveShields === undefined ? [] : [shieldsText(summary.braveShields)]),
 		...(summary.skippedPaths?.length ? [skippedPathsText(summary.skippedPaths)] : []),
+		...(summary.imageFault ? [skippedForImagesText(summary.imageFault)] : []),
 		...(summary.endedEarly ? [`ended early: ${summary.endedEarly.reason}`] : []),
 		...(summary.unreliableTiming ? [`timing figures unreliable: ${summary.unreliableTiming}`] : []),
 	].join('; ');
@@ -1471,7 +1489,7 @@ async function runPlan(
 	const run = runName(options.plan);
 	const reruns = new Map<string, { item: PlanItem<Check>; verdict: string[] }[]>();
 	const timed = TIMED_PLANS.has(options.plan);
-	const paths = withGpuPaths(items, options.missing);
+	const paths = withGpuPaths(items, options.missing, options.imageFaults);
 	const plan = writePlan(run, paths.items, {
 		...(REPORT_ON_TOP_PLANS.has(options.plan) && { reportOnTop: true }),
 		...(timed && { measureRefresh: true }),
@@ -1637,6 +1655,12 @@ async function runPlan(
 			if (Object.keys(facts).length > 0) addToResult(run, name, item.id, facts);
 			if (verdict === 'skip') {
 				counts.skip++;
+				const imageFault = result && skippedForImages(result);
+				if (imageFault) {
+					counts.imageFault = imageFault;
+					console.log(`skip  ${name}: ${item.id}, the browser's image buffers fail`);
+					continue;
+				}
 				const path = (result && skippedPath(result)) ?? gpuPathOf(item) ?? 'webgpu';
 				const skipped = counts.skippedPaths ?? [];
 				if (!skipped.includes(path)) counts.skippedPaths = [...skipped, path];
@@ -1703,6 +1727,12 @@ async function runPlan(
 		if (heat) console.log(`${name}, heat through the run: ${heat}`);
 	}
 	for (const [name, counts] of Object.entries(summary)) console.log(summaryLine(name, counts));
+	// On GitHub's machines, pages skipped for the browser's image buffers show on the run's page too,
+	// so a run that tested no drawing in that browser does not pass unnoticed.
+	if (process.env.GITHUB_ACTIONS)
+		for (const [name, { imageFault }] of Object.entries(summary))
+			if (imageFault)
+				console.log(`::warning title=${name} skipped the pages that draw::${imageFault}`);
 	if (cloud) {
 		for (const [name, counts] of Object.entries(summary))
 			await cloud.mark(name, counts.fail === 0 && !counts.endedEarly, summaryLine(name, counts));

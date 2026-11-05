@@ -69,3 +69,48 @@ export function skippedPath(result: ItemResult): GpuPath | undefined {
 /** Says which GPU paths' pages a runner page skipped, for the run's summary and the record. */
 export const skippedPathsText = (paths: readonly GpuPath[]) =>
 	`skipped the pages for ${paths.map((path) => GPU_PATH_NAMES[path]).join(' and ')}, which the device lacks`;
+
+/** The check kinds of the pages that draw nothing with the browser's image buffers. */
+const BUFFERLESS_CHECKS: ReadonlySet<string> = new Set([
+	'capabilities',
+	'capabilities-reload',
+	'isolation',
+	'shaders',
+]);
+
+/**
+ * Why a run skips the pages that draw, from the capabilities page's report: the faults of the
+ * browser's image buffers, which every texture, canvas texture and frame capture needs. A browser
+ * with such faults draws pictures and counts frames wrongly on every GPU path, so its pages measure
+ * the machine's browser, not the engine. Undefined where the buffers work, or without a report.
+ */
+export function imageBufferFault(capabilities: ItemResult | undefined): string | undefined {
+	const report = capabilities?.ok
+		? (capabilities.report as { imageBufferFaults?: unknown } | undefined)
+		: undefined;
+	const faults = report?.imageBufferFaults;
+	if (!Array.isArray(faults) || faults.length === 0) return undefined;
+	return `the browser's image buffers fail: ${faults.join('; ')}`;
+}
+
+/** True for a page that a browser with faulty image buffers cannot run, as it draws with them. */
+export const needsImageBuffers = (item: { check: unknown }) =>
+	!BUFFERLESS_CHECKS.has((item.check as { kind?: string } | undefined)?.kind ?? '');
+
+/** The `skipped` value of a page skipped for faulty image buffers. */
+const IMAGE_BUFFERS = 'image-buffers';
+
+/** The result that a runner page posts for a page it skipped, because of `fault` in image buffers. */
+export const skippedForImagesResult = (fault: string): ItemResult => ({
+	ok: false,
+	skipped: IMAGE_BUFFERS,
+	error: fault,
+});
+
+/** The image buffer fault of a page that a runner page skipped for it, or undefined. */
+export const skippedForImages = (result: ItemResult): string | undefined =>
+	result.skipped === IMAGE_BUFFERS ? (result.error ?? 'faulty image buffers') : undefined;
+
+/** Says why a runner page skipped the pages that draw, for the run's summary and the record. */
+export const skippedForImagesText = (fault: string) =>
+	`skipped the pages that draw, since ${fault}`;
