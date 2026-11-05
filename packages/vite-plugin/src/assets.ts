@@ -32,6 +32,13 @@ export interface AssetOptions {
 	 */
 	clusters?: boolean;
 	/**
+	 * Split each piece of a large list into groups of 64 to 128 triangles, which the copies that
+	 * carry the most triangles of a level cull through slots. The default is false: groups cost
+	 * their planning time and their bytes, and only a model whose copies carry much of a level
+	 * draws them back.
+	 */
+	groups?: boolean;
+	/**
 	 * Keep this share of each mesh's triangles, above 0 and up to 1, as far as `simplifyError`
 	 * allows. The default, 1, keeps them all.
 	 */
