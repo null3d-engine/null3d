@@ -9,21 +9,46 @@
 // `bun occlusion-table.ts <results.json>...`
 import { existsSync, readFileSync } from 'node:fs';
 
-type Run = Record<string, any>;
-const median = (values: number[]) => {
-	const sorted = values.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+/** A value that a run reports as its median. */
+interface Figure {
+	median?: number;
+}
+
+/** One GPU pass's timings in a run. */
+interface Pass {
+	name?: string;
+	ms?: Figure;
+}
+
+/** One browser run in a results file. */
+interface Run {
+	address: string;
+	gpuPassMs?: Pass[];
+	load?: { before?: number; after?: number };
+	invalid?: boolean;
+	gpuMs?: Figure;
+	triangles?: Figure;
+	occludedEntries?: Figure;
+	drawPath?: string;
+	directDraws?: boolean;
+	intervalMs?: Figure;
+	problems?: string[];
+}
+
+const median = (values: (number | undefined)[]) => {
+	const sorted = values
+		.filter((v): v is number => v !== undefined && Number.isFinite(v))
+		.sort((a, b) => a - b);
 	if (sorted.length === 0) return Number.NaN;
 	const mid = sorted.length >> 1;
 	return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 };
 const pass = (r: Run, name: string) =>
-	(r.gpuPassMs ?? []).find((p: Run) => p.name === name)?.ms?.median ?? Number.NaN;
+	(r.gpuPassMs ?? []).find((p) => p.name === name)?.ms?.median ?? Number.NaN;
 /** The shadow passes' GPU time, summed over the cascades that report one. */
 const shadowPasses = (r: Run) => {
-	const list = (r.gpuPassMs ?? []).filter((p: Run) => String(p.name).startsWith('shadow'));
-	return list.length === 0
-		? Number.NaN
-		: list.reduce((s: number, p: Run) => s + (p.ms?.median ?? 0), 0);
+	const list = (r.gpuPassMs ?? []).filter((p) => String(p.name).startsWith('shadow'));
+	return list.length === 0 ? Number.NaN : list.reduce((s, p) => s + (p.ms?.median ?? 0), 0);
 };
 /** The highest one-minute load around a run's page. */
 export const loadOf = (r: Run) => Math.max(r.load?.before ?? 0, r.load?.after ?? 0);
@@ -72,15 +97,15 @@ for (const path of process.argv.slice(2)) {
 		for (const mode of ['off', 'forced', 'check']) {
 			const all = modes.get(mode) ?? [];
 			const valid = all.filter((r) => !r.invalid);
-			const gpu = valid.map((r) => r.gpuMs?.median as number);
+			const gpu = valid.map((r) => r.gpuMs?.median).filter((v): v is number => v !== undefined);
 			const m = median(gpu);
 			const loads = valid.map(loadOf);
 			console.log(
-				`| ${base} | ${mode} | ${valid.length} of ${all.length} | ${f(m)} | ${f(Math.min(...gpu))}-${f(Math.max(...gpu))} | ${f(median(valid.map((r) => pass(r, 'opaque'))))} | ${f(median(valid.map(shadowPasses)))} | ${f(median(valid.map((r) => pass(r, 'occluders'))))} | ${f(median(valid.map((r) => pass(r, 'compute'))))} | ${f(median(valid.map((r) => r.triangles?.median / 1e6)), 3)} | ${f(median(valid.map((r) => r.occludedEntries?.median)), 0)} | ${[...new Set(valid.map((r) => r.drawPath ?? (r.directDraws ? 'direct' : 'indirect')))].join(',')} | ${f(Math.min(...loads), 1)}-${f(Math.max(...loads), 1)} | ${f(median(valid.map((r) => r.intervalMs?.median)))} | ${mode === 'off' ? '' : `${f((100 * (m - offMedian)) / offMedian, 0)}%`} |`,
+				`| ${base} | ${mode} | ${valid.length} of ${all.length} | ${f(m)} | ${f(Math.min(...gpu))}-${f(Math.max(...gpu))} | ${f(median(valid.map((r) => pass(r, 'opaque'))))} | ${f(median(valid.map(shadowPasses)))} | ${f(median(valid.map((r) => pass(r, 'occluders'))))} | ${f(median(valid.map((r) => pass(r, 'compute'))))} | ${f(median(valid.map((r) => (r.triangles?.median ?? Number.NaN) / 1e6)), 3)} | ${f(median(valid.map((r) => r.occludedEntries?.median)), 0)} | ${[...new Set(valid.map((r) => r.drawPath ?? (r.directDraws ? 'direct' : 'indirect')))].join(',')} | ${f(Math.min(...loads), 1)}-${f(Math.max(...loads), 1)} | ${f(median(valid.map((r) => r.intervalMs?.median)))} | ${mode === 'off' ? '' : `${f((100 * (m - offMedian)) / offMedian, 0)}%`} |`,
 			);
 		}
 	}
-	const problems = runs.flatMap((r) => (r.problems ?? []) as string[]);
+	const problems = runs.flatMap((r) => r.problems ?? []);
 	const dropped = problems.filter((p) => p.includes('dropped'));
 	console.log(
 		`\n${runs.filter((r) => r.invalid).length} invalid runs; ${dropped.length} problems name dropped copies`,

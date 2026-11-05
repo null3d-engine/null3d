@@ -37,11 +37,15 @@ use null3d_core::jobs::JobSystem;
 use null3d_core::levels::{DrawRange, LevelRule, NO_LINK, Picked};
 use null3d_core::scene::SceneStorage;
 use null3d_core::shared::SharedMut;
-use null3d_core::world::UNBOUNDED_RADIUS;
+use null3d_core::world::{MATRIX_FLOATS, UNBOUNDED_RADIUS};
 
-use super::layout::{BUCKET_WORDS, FIXED, INDEX_ENTRIES_PER_COPY, Layout};
+use super::layout::{
+    BUCKET_WORDS, CANDIDATE_WORDS, FIXED, INDEX_ENTRIES_PER_COPY, Layout, SLOT_CANDIDATES,
+    slot_candidate_words,
+};
 use crate::frame::{CellOffsets, RecordError};
 use crate::levels::{StageWatches, key_level};
+use crate::pieces::CopyFrame;
 
 /// How far from a switch distance a source counts toward both levels that it may pick, as a share
 /// of the distance. It dwarfs the difference that a CPU and a GPU can make of the same distance,
@@ -73,6 +77,13 @@ const fn with_spare_room(count: u32) -> u32 {
     count + count / 8
 }
 
+/// The source of an empty candidate.
+const NO_CANDIDATE: u32 = u32::MAX;
+
+/// The indices that a slot's room keeps beyond an eighth of what the pieces that show hold: a few
+/// groups' worth, so that the rounding of the CPU's and the GPU's tests never cuts a triangle.
+const SLOT_SPARE_INDICES: u32 = 3 * crate::pieces::MAX_GROUP_TRIANGLES * 3;
+
 /// A view that draws a layout's buckets: the rule that picks its levels of detail, the camera
 /// that its instances are placed relative to, and the frustum that bounds what it counts.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -86,10 +97,52 @@ pub(super) struct CopyView {
     pub frustum: Option<Frustum>,
 }
 
-/// The word of a bucket's record that holds its slice's capacity, the last one.
+/// Keeps `source` among the nearest [`SLOT_CANDIDATES`] copies of slot level `level` in
+/// `candidates`, which holds each level's candidates in distance order.
+fn insert_candidate(candidates: &mut [u32], level: usize, distance: f32, source: u32) {
+    let at = level * SLOT_CANDIDATES * CANDIDATE_WORDS;
+    let bits = distance.to_bits();
+    let mut place = SLOT_CANDIDATES;
+    for k in 0..SLOT_CANDIDATES {
+        let entry = at + k * CANDIDATE_WORDS;
+        if candidates[entry + 1] == NO_CANDIDATE {
+            place = k;
+            break;
+        }
+        if candidates[entry + 1] == source {
+            return;
+        }
+        if bits < candidates[entry] {
+            place = k;
+            break;
+        }
+    }
+    if place == SLOT_CANDIDATES {
+        return;
+    }
+    for k in (place + 1..SLOT_CANDIDATES).rev() {
+        let entry = at + k * CANDIDATE_WORDS;
+        candidates[entry] = candidates[entry - CANDIDATE_WORDS];
+        candidates[entry + 1] = candidates[entry - CANDIDATE_WORDS + 1];
+    }
+    let entry = at + place * CANDIDATE_WORDS;
+    candidates[entry] = bits;
+    candidates[entry + 1] = source;
+}
+
+/// The words of a bucket's record that hold its capacity, the last one.
 const BUCKET_CAPACITY_WORD: usize = BUCKET_WORDS as usize - 1;
 
+/// The word of a bucket's record that holds the bucket of its next coarser level plus one, or a
+/// slot's assigned copy's source plus one.
+const BUCKET_NEXT_WORD: usize = 11;
+
 impl Layout {
+    /// Returns whether the slots' records changed since the last call.
+    pub(super) fn take_slot_records_dirty(&mut self) -> bool {
+        std::mem::take(&mut self.slot_records_dirty)
+    }
+
     /// Returns whether a level's slice moved since the last call.
     pub(super) fn take_slices_moved(&mut self) -> bool {
         std::mem::take(&mut self.slices_moved)
@@ -151,6 +204,7 @@ impl Layout {
         offsets: &mut CellOffsets,
         jobs: &JobSystem,
         count_fixed: bool,
+        slot_view: bool,
     ) -> Result<(), RecordError> {
         let nothing_counted = self.level_sources.is_empty() && !count_fixed;
         if !self.picks_levels() || views.is_empty() || (self.slices_placed && nothing_counted) {
@@ -159,6 +213,7 @@ impl Layout {
         let buckets = self.buckets.len();
         let mut tallies = std::mem::take(&mut self.copy_tallies);
         let mut fits = std::mem::take(&mut self.copy_fits);
+        let mut candidates = std::mem::take(&mut self.slot_candidates);
         fits.clear();
         fits.resize(buckets, 0);
         // The views that place their instances relative to one camera, as the shadow views do,
@@ -175,10 +230,13 @@ impl Layout {
             } else {
                 &[]
             };
-            for sources in [&self.level_sources[..], fixed] {
+            for (index, sources) in [&self.level_sources[..], fixed].into_iter().enumerate() {
                 if sources.is_empty() {
                     continue;
                 }
+                // The slots draw for the camera's own view, which the first group holds, and only
+                // for the sources that a level's buckets take.
+                let counted_for_slots = slot_view && start == 0 && index == 0;
                 self.count_views(
                     scene,
                     batches,
@@ -189,9 +247,17 @@ impl Layout {
                     &mut tallies,
                     &mut fits,
                     jobs,
+                    counted_for_slots.then_some(&mut candidates),
                 );
             }
             start += shared;
+        }
+        self.slot_candidates = candidates;
+        // The slots take the nearest copies that the count kept, with the room that the pieces
+        // showing for each copy need in the view's list.
+        if let Some(view) = views.first().filter(|_| slot_view) {
+            offsets.update(scene, &view.camera);
+            self.assign_slots(scene, batches, parity, offsets.as_slice(), view, &mut fits);
         }
         self.copy_counts.clear();
         self.copy_counts.extend_from_slice(&fits);
@@ -254,17 +320,12 @@ impl Layout {
         let buckets = self.buckets.len();
         self.idle.resize(buckets, false);
         self.idle_frames.resize(buckets, 0);
-        // The pieces' buckets come after every other bucket, and take their bucket's state.
-        let first_piece = self
-            .level_buckets
-            .iter()
-            .filter_map(|&b| self.buckets[b as usize].pieces.map(|(first, _)| first))
-            .min()
-            .unwrap_or(buckets as u32);
         let mut changed = false;
         for &bucket in &self.level_buckets {
-            // A set that no frame counts draws each of its levels.
-            if bucket >= first_piece || self.marks[bucket as usize] == FIXED {
+            // A piece follows the level that it draws, so its own count says nothing. A set that no
+            // frame counts draws each of its levels.
+            if self.buckets[bucket as usize].cone.is_some() || self.marks[bucket as usize] == FIXED
+            {
                 continue;
             }
             let b = bucket as usize;
@@ -306,9 +367,12 @@ impl Layout {
         tallies: &mut Vec<u32>,
         fits: &mut [u32],
         jobs: &JobSystem,
+        slot_candidates: Option<&mut Vec<u32>>,
     ) {
         let stride = tally_stride(self.buckets.len());
-        let begun_at = stride * views.len();
+        let slots = slot_candidate_words(self.slot_levels.len());
+        let area = stride + slots;
+        let begun_at = area * views.len();
         let width = begun_at + TALLY_LINE;
         let threads = jobs.thread_count() as usize;
         tallies.resize(width * threads, 0);
@@ -322,10 +386,24 @@ impl Layout {
             let tally = unsafe { shared.slice(worker.index() * width, width) };
             if tally[begun_at] == 0 {
                 tally[..begun_at].fill(0);
+                for view in 0..views.len() {
+                    tally[view * area + stride..(view + 1) * area].fill(NO_CANDIDATE);
+                }
                 tally[begun_at] = 1;
             }
             let chunk = &sources[chunk.start as usize..chunk.end as usize];
-            self.count_sources(scene, batches, views, parity, cells, chunk, tally, stride);
+            self.count_sources(
+                scene,
+                batches,
+                views,
+                parity,
+                cells,
+                chunk,
+                tally,
+                area,
+                stride,
+                slot_candidates.is_some(),
+            );
         });
         let begun = |thread: &usize| tallies[thread * width + begun_at] != 0;
         let Some(first) = (0..threads).find(begun) else {
@@ -338,18 +416,40 @@ impl Layout {
             }
             let other = other * width;
             for view in 0..views.len() {
-                let (into, from) = (sum + view * stride, other + view * stride);
+                let (into, from) = (sum + view * area, other + view * area);
                 for &bucket in &self.level_buckets {
                     tallies[into + bucket as usize] += tallies[from + bucket as usize];
+                }
+                // The slot candidates merge as sorted lists: each of the other thread's copies
+                // takes its place among the nearest of this one.
+                for level in 0..self.slot_levels.len() {
+                    for k in 0..SLOT_CANDIDATES {
+                        let at = from + stride + (level * SLOT_CANDIDATES + k) * CANDIDATE_WORDS;
+                        let source = tallies[at + 1];
+                        if source == NO_CANDIDATE {
+                            continue;
+                        }
+                        let distance = f32::from_bits(tallies[at]);
+                        insert_candidate(
+                            &mut tallies[into + stride..into + area],
+                            level,
+                            distance,
+                            source,
+                        );
+                    }
                 }
             }
         }
         for view in 0..views.len() {
-            let counts = &tallies[sum + view * stride..];
+            let counts = &tallies[sum + view * area..sum + (view + 1) * area];
             for &bucket in &self.level_buckets {
                 let fit = &mut fits[bucket as usize];
                 *fit = (*fit).max(counts[bucket as usize]);
             }
+        }
+        if let Some(candidates) = slot_candidates {
+            candidates.clear();
+            candidates.extend_from_slice(&tallies[sum + stride..sum + area]);
         }
     }
 
@@ -366,7 +466,9 @@ impl Layout {
         cells: &[[f32; 4]],
         sources: &[u32],
         tally: &mut [u32],
+        area: usize,
         stride: usize,
+        slot_view: bool,
     ) {
         let scene_end = sources.partition_point(|&source| source < self.scene_rows);
         let (slots_part, rows_part) = sources.split_at(scene_end);
@@ -385,9 +487,11 @@ impl Layout {
                 let center = row_center(&spheres, slots[source], cells, source);
                 let (radius, local, bias) = (spheres.radii[source], radii[source], biases[source]);
                 let range = ranges.range(source);
-                for (view, counts) in views.iter().zip(tally.chunks_exact_mut(stride)) {
+                for (view, counts) in views.iter().zip(tally.chunks_exact_mut(area)) {
+                    let (counts, candidates) = counts.split_at_mut(stride);
+                    let slot = slot_view.then_some((candidates, source as u32));
                     self.count_source(
-                        counts, view, home, center, radius, local, bias, range, false,
+                        counts, slot, view, home, center, radius, local, bias, range, false,
                     );
                 }
             }
@@ -421,8 +525,12 @@ impl Layout {
                 // A batch's rows carry the batch's own radius, which the culling shader tests
                 // around each row in place of its bucket's sphere.
                 let (radius, range) = (spheres.radii[row], ranges.range(row));
-                for (view, counts) in views.iter().zip(tally.chunks_exact_mut(stride)) {
-                    self.count_source(counts, view, home, center, radius, local, 1.0, range, true);
+                for (view, counts) in views.iter().zip(tally.chunks_exact_mut(area)) {
+                    let (counts, candidates) = counts.split_at_mut(stride);
+                    let slot = slot_view.then_some((candidates, source as u32));
+                    self.count_source(
+                        counts, slot, view, home, center, radius, local, 1.0, range, true,
+                    );
                 }
             }
         }
@@ -438,6 +546,7 @@ impl Layout {
     fn count_source(
         &self,
         counts: &mut [u32],
+        slot: Option<(&mut [u32], u32)>,
         view: &CopyView,
         home: u32,
         center: [f32; 3],
@@ -485,6 +594,9 @@ impl Layout {
             bias,
             range,
         );
+        // A copy inside a fading band or at a switch between levels draws two levels, so it may
+        // draw a level other than the one a slot was given.
+        let mut settled = true;
         for edge in edges {
             let mut keep = |bucket: u32| {
                 if len < picked.len() && !picked[..len].contains(&bucket) {
@@ -495,19 +607,169 @@ impl Layout {
             match edge {
                 Picked::One(bucket) => keep(bucket),
                 Picked::Fade { new, old, .. } => {
+                    settled = false;
                     keep(new);
                     keep(old);
                 }
-                Picked::FadeIn { bucket, .. } => keep(bucket),
-                Picked::FadeOut { old, .. } => keep(old),
+                Picked::FadeIn { bucket, .. } => {
+                    settled = false;
+                    keep(bucket);
+                }
+                Picked::FadeOut { old, .. } => {
+                    settled = false;
+                    keep(old);
+                }
                 // A levels debug view draws a hidden source at its base level, marked with the
                 // hidden bit, so the home bucket's slice holds it.
-                Picked::Hidden if self.codes => keep(home),
-                Picked::Hidden => {}
+                Picked::Hidden if self.codes => {
+                    settled = false;
+                    keep(home);
+                }
+                Picked::Hidden => settled = false,
             }
         }
         for &bucket in &picked[..len] {
             counts[bucket as usize] += 1;
+        }
+        // A copy that picks one level of a set with slots, away from a switch, offers itself to
+        // that level's slot: the nearest few of each level take them.
+        let Some((candidates, source)) = slot else {
+            return;
+        };
+        if !settled || len != 1 {
+            return;
+        }
+        let Some(&level) = self
+            .slot_level_of
+            .get(picked[0] as usize)
+            .filter(|&&level| level != super::layout::NO_SLOT_LEVEL)
+        else {
+            return;
+        };
+        let level = level as usize;
+        let nearest = ((center[0] * center[0] + center[1] * center[1] + center[2] * center[2])
+            .sqrt()
+            - radius)
+            .max(0.0);
+        insert_candidate(candidates, level, nearest, source);
+    }
+
+    /// The rows of the world matrix of `source`, moved by its cell's offset from the view's
+    /// camera, or `None` for a source that no row holds.
+    fn copy_rows(
+        &self,
+        scene: &SceneStorage,
+        batches: &BatchTable,
+        parity: usize,
+        cells: &[[f32; 4]],
+        source: u32,
+    ) -> Option<[[f32; 4]; 3]> {
+        let source = source as usize;
+        let (matrices, at, cell) = if source < self.scene_rows as usize {
+            let matrices = scene.world(parity).matrices();
+            (
+                matrices,
+                source,
+                scene.cells().get(source).copied().unwrap_or(0),
+            )
+        } else {
+            let mut found = None;
+            for &(id, first) in &self.batch_bases {
+                if source < first as usize {
+                    break;
+                }
+                let Ok(batch) = batches.get(Handle::from_raw(id)) else {
+                    continue;
+                };
+                let row = source - first as usize;
+                if row < batch.capacity() as usize {
+                    let cell = batch.cells().get(row).copied().unwrap_or(0);
+                    found = Some((batch.world(parity).matrices(), row, cell));
+                    break;
+                }
+            }
+            found?
+        };
+        let m = matrices.get(at * MATRIX_FLOATS..(at + 1) * MATRIX_FLOATS)?;
+        let offset = cells.get(cell as usize).copied().unwrap_or([0.0; 4]);
+        Some([
+            [m[0], m[1], m[2], m[3] + offset[0]],
+            [m[4], m[5], m[6], m[7] + offset[1]],
+            [m[8], m[9], m[10], m[11] + offset[2]],
+        ])
+    }
+
+    /// Gives each slot level's nearest copies its slots, and sizes each slot's room in the view's
+    /// list to the triangles of the pieces that show for that copy, with room to spare. A slot
+    /// that the pick left empty takes no copy, and a copy whose level the culling pass picks
+    /// another way draws through its pieces, so the picture stays right. Marks every slot whose
+    /// record's copy changed for the frame's one table upload.
+    #[allow(clippy::too_many_arguments)]
+    fn assign_slots(
+        &mut self,
+        scene: &SceneStorage,
+        batches: &BatchTable,
+        parity: usize,
+        cells: &[[f32; 4]],
+        view: &CopyView,
+        fits: &mut [u32],
+    ) {
+        if self.slot_levels.is_empty() {
+            return;
+        }
+        for level in 0..self.slot_levels.len() {
+            let slot_level = self.slot_levels[level];
+            for k in 0..slot_level.slots as usize {
+                let slot = slot_level.first_slot as usize + k;
+                let bucket = self.slot_buckets[slot] as usize;
+                let at = level * SLOT_CANDIDATES * CANDIDATE_WORDS + k * CANDIDATE_WORDS;
+                let source = self
+                    .slot_candidates
+                    .get(at + 1)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let room = if source == u32::MAX {
+                    0
+                } else {
+                    let pieces = &self.slot_pieces[slot_level.first_piece as usize
+                        ..(slot_level.first_piece + slot_level.piece_count) as usize];
+                    let triangles: u32 = self
+                        .copy_rows(scene, batches, parity, cells, source)
+                        .map_or_else(
+                            || pieces.iter().map(|piece| piece.triangles).sum(),
+                            |rows| {
+                                let frame = CopyFrame::new(rows);
+                                let cone = view.frustum.is_some();
+                                pieces
+                                    .iter()
+                                    .filter(|piece| {
+                                        view.frustum.is_none_or(|frustum| {
+                                            frame.shows(&frustum, piece, cone)
+                                        })
+                                    })
+                                    .map(|piece| piece.triangles)
+                                    .sum()
+                            },
+                        );
+                    let indices = triangles.saturating_mul(3);
+                    indices
+                        .saturating_add(indices / 8)
+                        .saturating_add(SLOT_SPARE_INDICES)
+                };
+                self.slot_records_dirty |= self.slot_room[slot] != room;
+                self.slot_room[slot] = room;
+                fits[bucket] = u32::from(room > 0);
+                let copy = if room > 0 { source + 1 } else { 0 };
+                if self.buckets[bucket].slot_copy != copy {
+                    self.buckets[bucket].slot_copy = copy;
+                    self.bucket_records[bucket * BUCKET_WORDS as usize + BUCKET_NEXT_WORD] = copy;
+                    self.mark_records(bucket as u32..bucket as u32 + 1);
+                    self.slot_records_dirty = true;
+                    // A slot with no copy draws nothing, and the views' bundles leave its draw
+                    // out: they record again when that changes.
+                    self.slices_moved = true;
+                }
+            }
         }
     }
 
@@ -555,6 +817,7 @@ impl Layout {
         }
         self.copied = copied;
         self.indexed = indexed;
+        self.slot_records_dirty |= !self.slot_buckets.is_empty();
         // A view's index entries follow its copies, so their bases count entries from the
         // buffer's start.
         let copied = self.copied;
@@ -584,6 +847,95 @@ mod tests {
 
     use super::*;
     use crate::gpu_driven::layout::Bucket;
+
+    /// The gate turns the slots on only where the copies that hold them carry enough triangles to
+    /// buy the pass back: the arithmetic is the threshold over the levels' triangles and their
+    /// slots.
+    #[test]
+    fn the_slots_pay_only_when_the_copies_carry_enough_triangles() {
+        let carried = |triangles: u32, levels: u32| triangles * levels * 4;
+        // The shipped threshold, which a test build lowers for its small meshes.
+        const SHIPPED: u32 = 2_400_000;
+        assert!(carried(50_000, 1) < SHIPPED, "the rock field's levels");
+        assert!(
+            carried(600_000, 1) >= SHIPPED,
+            "one large rock with four copies"
+        );
+        assert!(
+            carried(150_000, 4) >= SHIPPED,
+            "four levels of 150,000 triangles"
+        );
+        assert!(
+            carried(250_000, 1) < SHIPPED,
+            "a quarter of a million is short"
+        );
+    }
+
+    /// The groups of a piece nest in it: a group's sphere and cone lie inside its piece's, so a
+    /// group whose bounds show for a copy lies in a piece that shows too. The slot pass tests the
+    /// piece first and then the group, so the groups that a slot keeps never pass the pieces that
+    /// the CPU sized its room from: no overflow, whatever the copy's place and turn.
+    #[test]
+    fn the_groups_of_a_piece_nest_in_it() {
+        use crate::pieces::{CopyFrame, Piece};
+        use null3d_core::culling::Frustum;
+        let frustum = Frustum::from_planes([
+            [1.0, 0.0, 0.0, 30.0],
+            [-1.0, 0.0, 0.0, 30.0],
+            [0.0, 1.0, 0.0, 20.0],
+            [0.0, -1.0, 0.0, 20.0],
+            [0.0, 0.0, 1.0, 40.0],
+            [0.0, 0.0, -1.0, 40.0],
+        ]);
+        // A piece of radius 2 around its centre, with a cone that drops half its facings, and
+        // groups of radius 1 inside it with the same cutoff.
+        let piece = Piece {
+            triangles: 4_096,
+            sphere: [0.0, 0.0, 0.0, 2.0],
+            cone: [0.0, 0.0, 1.0, 0.5],
+        };
+        let group = |k: usize| Piece {
+            triangles: 64,
+            sphere: [
+                ((k % 5) as f32 - 2.0) * 0.3,
+                ((k / 5 % 5) as f32 - 2.0) * 0.3,
+                ((k / 25) % 5) as f32 * 0.3,
+                0.4,
+            ],
+            cone: [0.0, 0.0, 1.0, 0.5],
+        };
+        let groups: Vec<Piece> = (0..125).map(group).collect();
+        let mut seed = 0x2545_f491u32;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            (seed as f32 / u32::MAX as f32) * 2.0 - 1.0
+        };
+        for _ in 0..2_000 {
+            let angle = next() * std::f32::consts::PI;
+            let (s, c) = angle.sin_cos();
+            let other = next() * std::f32::consts::PI;
+            let (s2, c2) = other.sin_cos();
+            let scale = 0.2 + next().abs() * 2.0;
+            // A turn about z, then about y, and a place within the frustum.
+            let rows = [
+                [c * s2 * scale, -s * scale, c * c2 * scale, next() * 10.0],
+                [s * s2 * scale, c * scale, s * c2 * scale, next() * 10.0],
+                [c2 * scale, 0.0, -s2 * scale, next() * 20.0],
+            ];
+            let frame = CopyFrame::new(rows);
+            let cone = true;
+            let shows_piece = frame.shows(&frustum, &piece, cone);
+            let shows_any = groups
+                .iter()
+                .any(|group| frame.shows(&frustum, group, cone));
+            assert!(
+                !shows_any || shows_piece,
+                "a group showed where its piece did not"
+            );
+        }
+    }
 
     /// Both shaders read the bucket records as an array, so a structure of another length reads
     /// every record after the first at the wrong place.
@@ -651,6 +1003,7 @@ mod tests {
             let mut counts = [0u32; 2];
             layout.count_source(
                 &mut counts,
+                None,
                 &view,
                 0,
                 [0.0, 0.0, 20.0],

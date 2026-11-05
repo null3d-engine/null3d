@@ -118,6 +118,10 @@ A tree can stream as a model loads, with `--clusters --stages`. The model file t
 
 The patch path draws a mesh that one copy draws, and the file may still hold a tree for a mesh with more copies. A mesh that draws several copies at once draws its whole levels, because the walk picks the patches of one copy. An instance batch draws whole levels too, even with one row. The tool counts only the copies that the file places. A mesh that page code draws in an instance batch therefore still gets a tree, and its copies draw the whole levels. The levels go down to a few dozen triangles, so far copies stay cheap. The WebGPU path that draws objects directly also draws the whole levels, because it has no cluster pass. Meshes that a skin or a morph target bends, and meshes whose material blends or masks, keep whole levels too. A shadow map draws a caster's patches where the camera's view draws the same object's tree, and the caster's whole levels elsewhere.
 
+## Slots of a level
+
+A model may split each piece of a large list into groups of 64 to 128 triangles, and a view may cull those groups for the copies that carry the most triangles of a level. Those copies draw through slots: up to four a level, up to 128 in a scene, the finest levels first. A slot culls its level's groups for its one copy and packs their indices into the view's own list, so one draw draws it. The engine builds no slot where the copies would carry less than about 2.4 million triangles, because the pass costs the frame more than it saves below that. Groups are off unless the model asks for them: `assets optimize --groups` for a file, and `mesh.buildLevels({ groups: true })` for a mesh made in code. The picture is the same with or without them.
+
 ## Pieces of a large level
 
 A copy that the view cuts through, or that turns half its surface away from the camera, still draws every triangle of its level. So `--lod` also sorts each level of 32,768 triangles or more into 8 to 16 pieces. Each piece faces about one way and has its own bounds. The file stores them in `NULL3D_pieces`, and other viewers draw the same triangles in the new order.

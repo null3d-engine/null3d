@@ -51,7 +51,7 @@ for (const [name, list] of Object.entries(rows)) {
 		copies.push(copyOf(mesh, kind, world));
 	}
 }
-const ground = (MESHES as any[]).find((m) => m.name === 'ground').build();
+const ground = MESHES.find((m) => m.name === 'ground').build();
 
 const input: SceneInput = {
 	name: `desert-${view}`,

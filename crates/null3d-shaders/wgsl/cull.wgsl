@@ -571,6 +571,21 @@ fn append_to(s: Survivor, b: u32, draws_before: u32, fade: f32, hidden: bool) {
         append_copy(s, b, draws_before, fade, hidden);
         return;
     }
+    // A copy that the frame gave one of the level's slots draws through that slot, group by group,
+    // and not through the level's pieces, which would draw it twice. The level's word of its first
+    // joint names its slots, which a pieced bucket that skins nothing never reads, and a slot's
+    // link's word names its copy's source plus one.
+    if params.debug.z != 0u {
+        let word = buckets[b].first_joint;
+        let first = word & 0xffffu;
+        let slots = word >> 16u;
+        for (var k = 0u; k < slots; k++) {
+            if buckets[first + k].next == s.index + 1u {
+                append_copy(s, first + k, draws_before, 0.0, false);
+                return;
+            }
+        }
+    }
     // The bucket's own draw is a tally that no pass draws: its instance count counts the copies
     // that wait for their pieces' tests, for the engine's check of what pieces cull.
     atomicAdd(&indirect[(draws_before + buckets[b].first_draw) * INDIRECT_WORDS + 1u], 1u);

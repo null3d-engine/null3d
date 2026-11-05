@@ -50,8 +50,54 @@ export interface Mesh {
 /** The least triangles of a level that gets groups, as the slots design plans. */
 export const GROUP_FLOOR = 4096;
 
-function floatPositions(accessor: any): Float32Array {
-	const array = accessor.getArray();
+/** The values that a glTF-Transform accessor stores. */
+type StoredValues = Float32Array | Int8Array | Uint8Array | Int16Array | Uint16Array | Uint32Array;
+
+/** The part of a glTF-Transform accessor that this script reads. */
+interface GltfAccessor {
+	getArray(): StoredValues | null;
+	getNormalized(): boolean;
+	getElementSize(): number;
+}
+
+/** The part of a glTF-Transform primitive that this script reads. */
+interface GltfPrimitive {
+	getAttribute(name: string): GltfAccessor | null;
+	getIndices(): { getArray(): StoredValues | null } | null;
+	getExtension(name: string): unknown;
+}
+
+/** The part of a glTF-Transform mesh that this script reads. */
+interface GltfMesh {
+	listPrimitives(): GltfPrimitive[];
+}
+
+/** The part of a glTF-Transform node that this script reads. */
+interface GltfNode {
+	getName(): string;
+	getMesh(): GltfMesh | null;
+	getExtension(name: string): unknown;
+	getExtras(): Record<string, unknown> | null;
+	getTranslation(): number[];
+	getRotation(): number[];
+	getScale(): number[];
+	getWorldMatrix(): number[];
+}
+
+/** The MSFT_lod extension's list of levels. */
+interface LodExtension {
+	listLevels(): GltfNode[];
+}
+
+/** The NULL3D_pieces extension's counts and bounds. */
+interface PiecesExtension {
+	getTriangles(): number[];
+	getBounds(): number[];
+}
+
+function floatPositions(accessor: GltfAccessor | null): Float32Array {
+	const array = accessor?.getArray();
+	if (!accessor || !array) throw new Error('a position accessor holds no values');
 	const out = new Float32Array(array.length);
 	if (accessor.getNormalized()) {
 		const max =
@@ -63,10 +109,12 @@ function floatPositions(accessor: any): Float32Array {
 						? 32767
 						: 65535;
 		const signed = array instanceof Int8Array || array instanceof Int16Array;
-		for (let i = 0; i < array.length; i++)
-			out[i] = signed ? Math.max(array[i] / max, -1) : array[i] / max;
+		for (let i = 0; i < array.length; i++) {
+			const value = array[i] ?? 0;
+			out[i] = signed ? Math.max(value / max, -1) : value / max;
+		}
 	} else {
-		for (let i = 0; i < array.length; i++) out[i] = array[i];
+		for (let i = 0; i < array.length; i++) out[i] = array[i] ?? 0;
 	}
 	// Positions in a vec3 accessor of 16-bit values are padded to four per vertex.
 	const stride = accessor.getElementSize();
@@ -74,18 +122,19 @@ function floatPositions(accessor: any): Float32Array {
 	throw new Error(`positions with ${stride} components`);
 }
 
-function packed(accessor: any): Float32Array {
+function packed(accessor: GltfAccessor | null): Float32Array {
 	// glTF-Transform hands each element as its own components; quantized positions keep a stride of
 	// three in its arrays.
 	return floatPositions(accessor);
 }
 
-function levelOf(prim: any): Level {
+function levelOf(prim: GltfPrimitive): Level {
 	const positions = packed(prim.getAttribute('POSITION'));
-	const raw = prim.getIndices().getArray();
+	const raw = prim.getIndices()?.getArray();
+	if (!raw) throw new Error('a primitive holds no indices');
 	const indices = raw instanceof Uint32Array ? raw : Uint32Array.from(raw);
 	const pieces: Piece[] = [];
-	const ext = prim.getExtension('NULL3D_pieces');
+	const ext = prim.getExtension('NULL3D_pieces') as PiecesExtension | null;
 	if (ext) {
 		const counts: number[] = ext.getTriangles();
 		const b: number[] = ext.getBounds();
@@ -123,8 +172,8 @@ function sphereOf(positions: Float32Array): [number, number, number, number] {
 }
 
 /** A node's world matrix as a column-major 4 x 4 array. */
-export function nodeWorld(node: any): number[] {
-	return node.getWorldMatrix() as number[];
+export function nodeWorld(node: GltfNode): number[] {
+	return node.getWorldMatrix();
 }
 
 /** Every mesh node of a model that is not one of another node's lower levels, with its mesh. */
@@ -133,24 +182,30 @@ export async function loadModel(
 ): Promise<{ meshes: Mesh[]; nodes: { mesh: Mesh; world: number[]; name: string }[] }> {
 	const io = await glTFIO();
 	const doc = await io.read(path);
-	const levelNodes = new Set<any>();
-	for (const node of doc.getRoot().listNodes()) {
-		const lod = node.getExtension('MSFT_lod') as any;
+	const allNodes = doc.getRoot().listNodes() as GltfNode[];
+	const levelNodes = new Set<GltfNode>();
+	for (const node of allNodes) {
+		const lod = node.getExtension('MSFT_lod') as LodExtension | null;
 		if (lod) for (const n of lod.listLevels()) levelNodes.add(n);
 	}
-	const byMesh = new Map<any, Mesh[]>();
+	const byMesh = new Map<GltfMesh, Mesh[]>();
 	const meshes: Mesh[] = [];
 	const nodes: { mesh: Mesh; world: number[]; name: string }[] = [];
-	for (const node of doc.getRoot().listNodes()) {
+	for (const node of allNodes) {
 		const gm = node.getMesh();
 		if (!gm || levelNodes.has(node)) continue;
 		let recs = byMesh.get(gm);
 		if (!recs) {
-			const lod = node.getExtension('MSFT_lod') as any;
-			const lower = lod ? lod.listLevels().map((n: any) => n.getMesh()) : [];
+			const lod = node.getExtension('MSFT_lod') as LodExtension | null;
+			const lower = lod
+				? lod
+						.listLevels()
+						.map((n) => n.getMesh())
+						.filter((m): m is GltfMesh => m !== null)
+				: [];
 			const errors = lod ? ((node.getExtras()?.NULL3D_lod_error as number[]) ?? []) : [];
-			recs = gm.listPrimitives().map((prim: any, p: number) => {
-				const levels = [levelOf(prim), ...lower.map((m: any) => levelOf(m.listPrimitives()[p]))];
+			recs = gm.listPrimitives().map((prim, p) => {
+				const levels = [levelOf(prim), ...lower.map((m) => levelOf(m.listPrimitives()[p]))];
 				return {
 					name: `${node.getName()}${gm.listPrimitives().length > 1 ? `#${p}` : ''}`,
 					sphere: sphereOf(levels[0].positions),

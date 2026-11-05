@@ -117,26 +117,27 @@ export interface LevelMeshopt extends Meshopt {
 }
 
 /**
- * The planner's calls of meshoptimizer, started from the compiled simplifier, encoder and
- * clusterizer modules. Each call copies its arrays into the module's heap and frees them before it
- * returns.
+ * The planner's calls of meshoptimizer, started from the compiled simplifier and encoder modules
+ * and, for a plan that asks for groups, the clusterizer. Each call copies its arrays into the
+ * module's heap and frees them before it returns.
  */
 export async function levelMeshopt(
 	simplifierModule: WebAssembly.Module,
 	encoderModule: WebAssembly.Module,
-	clusterizerModule: WebAssembly.Module,
+	clusterizerModule?: WebAssembly.Module,
 ): Promise<LevelMeshopt> {
 	const [simplifier, encoder, clusterizer] = await Promise.all([
 		start<SimplifierExports>(simplifierModule),
 		start<EncoderExports>(encoderModule),
-		start<ClusterizerExports>(clusterizerModule),
+		clusterizerModule ? start<ClusterizerExports>(clusterizerModule) : undefined,
 	]);
 	// Each call views a module's heap after its last call into the module, which may grow it.
 	const simplifierHeap = new MemoryViews(simplifier.memory);
 	const encoderHeap = new MemoryViews(encoder.memory);
-	const clusterizerHeap = new MemoryViews(clusterizer.memory);
+	const clusterizerHeap = clusterizer ? new MemoryViews(clusterizer.memory) : undefined;
 	return {
-		heapBytes: () => simplifierHeap.bytes + encoderHeap.bytes + clusterizerHeap.bytes,
+		heapBytes: () =>
+			simplifierHeap.bytes + encoderHeap.bytes + (clusterizerHeap ? clusterizerHeap.bytes : 0),
 		simplifyWithAttributes(
 			indices,
 			positions,
@@ -207,6 +208,8 @@ export async function levelMeshopt(
 			return out;
 		},
 		clusterOrder(indices, positions) {
+			if (!clusterizer || !clusterizerHeap)
+				throw new Error('the clusterizer did not load for a plan that asks for groups');
 			// The package's `buildMeshlets`: the flexible build with one size of group, then each
 			// group's own order of its triangles and vertices.
 			const { sbrk } = clusterizer;

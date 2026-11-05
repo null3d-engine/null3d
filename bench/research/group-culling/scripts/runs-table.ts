@@ -2,14 +2,33 @@
 // and draws, the GPU time per pass, the machine's load, and whether the run was valid.
 import { readFileSync } from 'node:fs';
 
+/** A GPU pass's timings in a results file. */
+interface PassTiming {
+	name?: string;
+	ms?: { median?: number };
+}
+
+/** One browser run in a results file. */
+interface Run {
+	address: string;
+	gpuPassMs?: PassTiming[];
+	triangles?: { median?: number };
+	drawCalls?: { median?: number };
+	gpuMs?: { median?: number };
+	load?: { before?: number };
+	invalid?: boolean;
+	problems?: unknown[];
+	error?: unknown;
+}
+
 for (const path of process.argv.slice(2)) {
-	const runs = JSON.parse(readFileSync(path, 'utf8')) as any[];
+	const runs = JSON.parse(readFileSync(path, 'utf8')) as Run[];
 	console.log(`\n${path}`);
 	console.log('| Page | Triangles (M) | Draws | GPU ms | Passes (ms) | Load | Valid |');
 	console.log('| --- | --- | --- | --- | --- | --- | --- |');
 	for (const r of runs) {
 		const passes = (r.gpuPassMs ?? [])
-			.map((p: any) => `${p.name} ${p.ms?.median?.toFixed(2)}`)
+			.map((p) => `${p.name} ${p.ms?.median?.toFixed(2)}`)
 			.join(', ');
 		const page = r.address
 			.replace(/^[a-z0-9]+\.html\?/, '')

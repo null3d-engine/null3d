@@ -224,6 +224,19 @@ pub(super) fn view_takes_cones(view: ViewId) -> bool {
     view == ViewId::CAMERA
 }
 
+/// True when the view sends a copy that picks a pieced level to one of the level's slots, so the
+/// copy draws group by group: the camera's own view alone, which culls in one phase. A two-phase
+/// view's second pass would draw a copy that its first pass had not placed, and a shadow view
+/// draws whole levels.
+pub(super) fn view_takes_slots(view: ViewId, drawn: &Layout, two_phases: bool) -> bool {
+    // The levels debug view reads each copy's level code, which a slot's copy does not carry.
+    view == ViewId::CAMERA
+        && drawn.slots_pay
+        && !drawn.slot_buckets.is_empty()
+        && !two_phases
+        && !drawn.codes
+}
+
 /// The part of the render size's larger side that an occluder's bounds span at least. Smaller
 /// objects hide few others, and drawing their depth would cost more than it saves.
 const OCCLUDER_SPAN_DIVISOR: u32 = 16;
@@ -539,7 +552,7 @@ impl Culling {
             debug: [
                 u32::from(drawn.codes),
                 u32::from(view_takes_cones(view)),
-                0,
+                u32::from(view_takes_slots(view, drawn, pyramid.is_some())),
                 0,
             ],
         };

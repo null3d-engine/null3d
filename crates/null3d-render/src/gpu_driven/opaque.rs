@@ -681,6 +681,38 @@ impl<'a> Draws<'a> {
                 )
             };
             list.push(Op::SetVertexBuffer, &[1, instances, offset, bytes])?;
+            // A slot draws the indices that the slot pass copied for its one copy, in one draw of
+            // one instance that the pass sized. The direct-draw path runs no slot pass, so it draws
+            // nothing for a slot's bucket.
+            // A slot with no copy, as one whose scene the gate leaves the slots off for, draws
+            // nothing and takes no draw in the bundle.
+            if let Some(slot) = bucket
+                .slot
+                .filter(|_| self.counts.is_none() && bucket.slot_copy != 0)
+            {
+                let draw = layout.draws[bucket.first_draw as usize];
+                let (page_vertices, _) = meshes.ids(draw.page);
+                if vertices != Some((page_vertices, 0)) {
+                    list.push(Op::SetVertexBuffer, &[0, page_vertices, 0, 0])?;
+                    vertices = Some((page_vertices, 0));
+                }
+                let slot_list = ids::slot_list(view);
+                if indices != Some(slot_list) {
+                    list.push(
+                        Op::SetIndexBuffer,
+                        &[slot_list, super::slots::Slots::FORMAT, 0, 0],
+                    )?;
+                    indices = Some(slot_list);
+                }
+                list.push(
+                    Op::DrawIndexedIndirect,
+                    &[
+                        ids::slot_draws(view),
+                        super::slots::Slots::draw_offset(slot),
+                    ],
+                )?;
+                continue;
+            }
             // A cluster mesh draws the indices that the cluster pass copied for this view, in one
             // draw that the pass sized, instead of its whole triangle list. The direct-draw path
             // counts its own instances and records no cluster pass, so it draws the whole list.

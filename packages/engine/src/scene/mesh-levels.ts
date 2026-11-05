@@ -14,8 +14,9 @@ import { CLUSTERIZER_MODULE, ENCODER_MODULE, SIMPLIFIER_MODULE } from './level-w
 import type { LevelsTaskInput, LevelsTaskOutput } from './levels-task';
 
 /**
- * The planner's task, with meshoptimizer's simplifier, the encoder's vertex cache order and the
- * clusterizer, which splits the pieces of a large list into groups.
+ * The planner's task, with meshoptimizer's simplifier and the encoder's vertex cache order. The
+ * clusterizer joins it only for a plan that asks for groups, so a mesh without that opt-in never
+ * downloads or compiles it.
  */
 const PLANNER: Task = {
 	name: 'levels',
@@ -30,6 +31,14 @@ const PLANNER: Task = {
 			url: new URL('../../vendor/meshopt/meshopt_encoder.wasm', import.meta.url),
 			what: "meshoptimizer's vertex cache order",
 		},
+	],
+};
+
+/** The planner's task for a plan that asks for groups, with the clusterizer that splits them. */
+const PLANNER_GROUPS: Task = {
+	...PLANNER,
+	wasm: [
+		...(PLANNER.wasm ?? []),
 		{
 			name: CLUSTERIZER_MODULE,
 			url: new URL('../../vendor/meshopt/meshopt_clusterizer.wasm', import.meta.url),
@@ -53,7 +62,7 @@ export async function planLevels(
 ): Promise<LevelsTaskOutput> {
 	try {
 		return await runTaskWithError<LevelsTaskOutput>(
-			PLANNER,
+			input.groups ? PLANNER_GROUPS : PLANNER,
 			input,
 			input.masks ? [input.words, input.masks] : [input.words],
 			error as WasmError,
