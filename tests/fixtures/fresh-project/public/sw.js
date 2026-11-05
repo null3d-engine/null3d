@@ -3,9 +3,10 @@
 //
 // The page preloads the sprite shaders, and the preset draws screen-space bounce light from its
 // first frame. The light reads the depth and the normals of ambient occlusion's steps, and the
-// copy of the scene color, so the cache holds those features' files too. A feature that this list
-// leaves out costs the game nothing, because its files stay out of the cache.
-const FEATURES = ['sprites', 'ao', 'color_copy'];
+// copy of the scene color, so the cache holds those features' files too, and the preset's GPU
+// occlusion culling's. A feature that this list leaves out costs the game nothing, because its files
+// stay out of the cache.
+const FEATURES = ['sprites', 'ao', 'color_copy', 'occlusion'];
 const PREFIX = 'game-';
 
 self.addEventListener('install', (event) => event.waitUntil(update()));

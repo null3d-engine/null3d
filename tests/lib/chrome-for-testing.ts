@@ -37,7 +37,9 @@ export function chromeForTesting(): { executablePath: string } {
 
 /** How Playwright starts an environment's browser in the repository's own runs. */
 export function repoBrowserOptions(environment: Environment): ReturnType<typeof browserOptions> {
-	if (environment === 'chrome-real-gpu') chromeForTesting();
+	// CI starts no browser on the real GPU, but a module that times GPU work builds those options
+	// when it loads, so only a run off CI needs the build.
+	if (environment === 'chrome-real-gpu' && !process.env.CI) chromeForTesting();
 	return browserOptions(environment, 'testing');
 }
 
