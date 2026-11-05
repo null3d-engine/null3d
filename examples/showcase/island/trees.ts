@@ -62,6 +62,13 @@ const SWITCH: Record<QualityPreset, number> = { low: 90, medium: 130, high: 130,
 const CARD_VIEWS: Record<QualityPreset, number> = { low: 25, medium: 49, high: 81, ultra: 81 };
 
 /**
+ * The atlas views that a card blends, by preset. A card costs a call into two textures for each view,
+ * over large areas of the hills, so a phone draws one view. The other presets blend the three
+ * nearest, which a turning camera crosses without a seam.
+ */
+const CARD_DRAW_VIEWS: Record<QualityPreset, 1 | 3> = { low: 1, medium: 3, high: 3, ultra: 3 };
+
+/**
  * The error that each level of a tree's mesh switches at, from the base level on. The add-on measures
  * a level's error by the leaves it drops, whose switches lie past the distance where the card takes
  * over, so these bring the switches well inside it: the second level past about 45 meters on a 1080p
@@ -309,6 +316,8 @@ function stand(
 		cards.batch.scales.set([spot.scale * far.size[0], spot.scale * far.size[1], 1], k * 3);
 	});
 	cards.markDirty(0, spots.length);
+	const views = CARD_DRAW_VIEWS[ctx.quality.preset];
+	if (views === 1) cards.setViews(1);
 	// One batch of cards casts every tree's shadow at every distance, seen by the sun alone, so a tree's
 	// shadow and the shade it casts on itself do not change where it hands over.
 	const casters = createImpostors(
@@ -332,6 +341,7 @@ function stand(
 		casters.batch.scales.set([spot.scale * far.size[0], spot.scale * far.size[1], 1], k * 3);
 	});
 	casters.markDirty(0, spots.length);
+	if (views === 1) casters.setViews(1);
 	// The far canopy stands only as cards, past the distance where the full trees hand over.
 	if (farOnly.length > 0) {
 		const far2 = createImpostors(
@@ -353,6 +363,7 @@ function stand(
 			far2.batch.scales.set([spot.scale * far.size[0], spot.scale * far.size[1], 1], k * 3);
 		});
 		far2.markDirty(0, farOnly.length);
+		if (views === 1) far2.setViews(1);
 		far2.batch.setDrawRange(reach, FILL_REACH);
 	}
 
