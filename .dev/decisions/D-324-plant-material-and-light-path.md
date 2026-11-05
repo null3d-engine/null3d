@@ -67,6 +67,30 @@ too much light and gloss on a mirrored picture; the shader reads the lower layer
 coordinates and scales it to the record's lower colour, so the underside keeps its picture's
 colour and 92 to 93 per cent of its contrast.
 
+## Stated limit: the crown's colour under the review's light
+
+The whole-tree crown cannot reach 3 colour steps on every view at once. The review draws the tree
+under its own sun, and the photographs were taken in sunlight from a different direction. A leaf
+colour that matches the sunlit crowns over-brightens the leaf-face stills; a colour that matches the
+leaf faces leaves the crowns dark. The targets pull opposite ways, so no albedo or transmittance
+value moves all of them inside 3.
+
+Measured on the oak, seed 11, variant 0, stills and turn (colour steps, CIEDE2000; lower is better):
+
+| Leaf transmittance (red channel) | Crown 01 | Crown 02 | Cluster still 11 | Oak turn |
+| --- | --- | --- | --- | --- |
+| 0.07 (kept, `20577ca59`) | 7.9 | 6.0 | 2.5 | 3.2 |
+| about 0.15 | 2.6 | 1.6 | 9.4 | not measured |
+| 0.238 (reverted) | 1.9 | 3.3 | 16.0 to 19.4 | 8.7 |
+
+The kept record value is `[0.07, 0.15, 0.015]`; the table gives its red channel. The leaf-face
+stills use the copy-stand light, which has no light behind the leaf, so they read 2.5 on both faces
+(`24` and `25`) at every setting.
+
+**Limit.** The record keeps its transmittance. The crown reads about 7 steps at `01` and 6 at `02`;
+the leaf faces read 2.5, the cluster 2.5 and the turn 3.2. Closing the crown to 3 costs the cluster
+up to 19.4 and the turn 8.7, which is refused. This is a stated limit, not open work.
+
 ## Decision
 
 - **One file, five roles.** A `mode` uniform picks wood, shoot rows, cards, merged foliage or
