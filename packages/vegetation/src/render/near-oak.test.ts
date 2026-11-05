@@ -7,6 +7,7 @@
 import { beforeAll, describe, expect, it } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { PlantAsset, SpeciesKitData } from '../asset';
 import { hashBytes } from '../core/hash';
 import { bakeFarNow, buildKitNow, growPlantNow, loadPlantCode } from '../generate';
@@ -52,7 +53,7 @@ beforeAll(async () => {
 	kit = buildKitNow(oak, { detail: 'high' });
 	asset = growPlantNow(kit, { seed: 11, variant: 1 });
 	split = levelDistances(kit, asset.skeleton.height, REFERENCE_VIEW)[0];
-}, 120_000);
+}, scaledBudget(120_000));
 
 describe("the oak's stages", () => {
 	it('give every axis its own wind record, inside the variant share of 16-bit ids', () => {
@@ -114,18 +115,22 @@ describe("the oak's stages", () => {
 			expect(toHalf(sphere.centre[k] as number)).toBe(sphere.centre[k] as number);
 	});
 
-	it('bake the far cards from the first card level, the same bytes twice', () => {
-		const far = bakeFarNow(kit, asset);
-		expect(far.views).toBe(asset.impostor.views);
-		expect(far.texels).toBe(asset.impostor.texels);
-		const side = far.views * far.texels;
-		expect(far.color.length).toBe(side * side * 4);
-		let covered = 0;
-		for (let t = 0; t < side * side; t++) if ((far.color[t * 4 + 3] as number) > 127) covered++;
-		expect(covered / (side * side)).toBeGreaterThan(0.1);
-		expect(far.size[1]).toBeGreaterThan(asset.skeleton.height * 0.9);
-		expect(hashBytes(bakeFarNow(kit, asset).color)).toBe(hashBytes(far.color));
-	}, 60_000);
+	it(
+		'bake the far cards from the first card level, the same bytes twice',
+		() => {
+			const far = bakeFarNow(kit, asset);
+			expect(far.views).toBe(asset.impostor.views);
+			expect(far.texels).toBe(asset.impostor.texels);
+			const side = far.views * far.texels;
+			expect(far.color.length).toBe(side * side * 4);
+			let covered = 0;
+			for (let t = 0; t < side * side; t++) if ((far.color[t * 4 + 3] as number) > 127) covered++;
+			expect(covered / (side * side)).toBeGreaterThan(0.1);
+			expect(far.size[1]).toBeGreaterThan(asset.skeleton.height * 0.9);
+			expect(hashBytes(bakeFarNow(kit, asset).color)).toBe(hashBytes(far.color));
+		},
+		scaledBudget(60_000),
+	);
 });
 
 /** A scene of `count` copies of the oak along +X, every `spacing` metres, each turned. */
