@@ -2086,9 +2086,12 @@ export class Pipelines {
 	): GPURenderPipelineDescriptor {
 		const t = this.templates[template];
 		if (!t) throw new Error(`unknown render template ${template}`);
-		// A displaced material's prepass moves its vertices as its shading does.
+		// A displaced material's prepass moves its vertices as its shading does. A masked surface's
+		// prepass cuts its mask in its own build's prepass fragment stage (D-325).
 		const places = t.ownPrepass === true || (permutation & PERMUTATION_DISPLACEMENT) !== 0;
-		const ownPrepass = places && (permutation & PERMUTATION_PREPASS) !== 0;
+		const prepass = (permutation & PERMUTATION_PREPASS) !== 0;
+		const cuts = prepass && (permutation & PERMUTATION_ALPHA_MASK) !== 0;
+		const ownPrepass = prepass && (places || cuts);
 		const build = ownPrepass ? (permutation & ~PERMUTATION_PREPASS) >>> 0 : permutation;
 		const shader = variantFor(t.shader, build, 'wgsl')?.wgsl;
 		if (!shader) throw new Error(`render template ${template}: ${missingVariant(permutation)}`);
@@ -2155,8 +2158,8 @@ export class Pipelines {
 			},
 			fragment: colorFormat
 				? {
-						module: ownPrepass ? this.emptyFragmentModule() : module,
-						entryPoint: ownPrepass ? 'fs' : entryPoints?.fragment,
+						module: ownPrepass && !cuts ? this.emptyFragmentModule() : module,
+						entryPoint: cuts ? 'fs_prepass' : ownPrepass ? 'fs' : entryPoints?.fragment,
 						targets: colorTargets(colorFormat, template, permutation, stateFlags),
 					}
 				: t.depthFragment && !ownPrepass

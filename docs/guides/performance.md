@@ -297,6 +297,8 @@ On WebGL2, every preset draws the prepass. On Apple GPUs, a depth prepass restor
 
 On WebGPU, every preset leaves it off. In the S2 benchmark in Chrome on a MacBook Pro, the prepass raised WebGPU's GPU time per frame from 0.28 ms to 0.40 ms. It doubled the draw calls, from 101 to 201. S2's trees hide few others, and their shading is cheap. The `depthPrepass` option of `createEngine` replaces the preset's choice on either path. Measure your own scene with `?prepass=on` and `?prepass=off`, and compare `gpuMs`. `debug.view('overdraw')` shows where many surfaces cover one pixel, in development builds ([Debug drawing and stats](../api/debug.md)).
 
+On WebGPU with MSAA, masked surfaces, such as leaves, draw their depth first in every preset, and then shade at that depth without their masks. In Safari on a Mac, this took a stand of six oaks from 31.5 ms to 10.6 ms of GPU time a frame. Chrome drew the stand in the same time. Compare `gpuMs` with `?masked-prepass=off` ([Quality presets](../concepts/quality-presets.md#masked-surfaces-under-msaa)).
+
 ## Measure
 
 For a quick look while the scene runs, add `?stats` to the page's address, or call `debug.stats(true)` in the sketch. The overlay's header shows the frame rate. Its card shows each thread's CPU time and the GPU's time against the engine's target frame rate, with your code apart from the engine's work. It also shows memory, draw calls, triangles and objects drawn, and what holds the frame rate back ([Debug drawing and stats](../api/debug.md#stats-overlay-and-frame-figures)). While the card is open, the engine times one frame in eleven on the GPU, which costs a little GPU time. For figures that you compare between changes, measure.

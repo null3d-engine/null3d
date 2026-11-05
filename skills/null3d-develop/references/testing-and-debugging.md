@@ -123,6 +123,7 @@ URL switches for the dev server and other development builds, such as (0.2) the 
 | `?depth=reversed-gl` | On WebGL2, force a depth mode: `reversed`, `reversed-gl` (as in browsers without `EXT_clip_control`, such as Firefox) or `standard` (`concepts/backends`) |
 | `?latency=pipelined`, `?latency=low` | Latency mode |
 | `?prepass=on`, `?prepass=off` | Turn the depth prepass on or off over the `depthPrepass` option, to compare GPU time (`concepts/quality-presets`) |
+| `?masked-prepass=off` | On WebGPU with MSAA, keep masked surfaces out of every prepass, so they cut their masks where they shade, to compare GPU time (`concepts/quality-presets`) |
 | `?occlusion=on`, `?occlusion=off` | Turn GPU occlusion culling on or off over the `gpuOcclusion` option, to compare GPU time (WebGPU only; `concepts/culling`) |
 | `?occlusion-check=off` | On WebGPU, keep GPU occlusion culling's passes on in every frame, without the check that turns them off where they do not pay, so a test that compares the image with culling and without it compares frames that culled (`concepts/culling`) |
 | `?occlusion-buffer=384x216` | On WebGL2, give software occlusion culling's buffer about that many pixels instead of 256 x 144, to compare the CPU time it costs and the objects it hides (`concepts/culling`) |

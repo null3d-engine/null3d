@@ -96,7 +96,11 @@
 //! # Depth prepass
 //!
 //! With the depth prepass, each camera view also replays a bundle of its opaque buckets' depth
-//! before its opaque bundle (see [`crate::pipelines`] and [`opaque`]).
+//! before its opaque bundle (see [`crate::pipelines`] and [`opaque`]). With MSAA, the masked buckets
+//! of the lit templates cut their masks in that bundle with their own builds, and then shade at
+//! that depth without them ([`Prepass::DepthAndMasks`]). Without the depth prepass, the bundle holds
+//! only those masked buckets ([`Prepass::Masked`]): MSAA makes a masked fragment that discards cost
+//! far more than one that shades at a depth already drawn (D-325).
 //!
 //! # Outlines
 //!
@@ -920,6 +924,11 @@ pub struct RendererConfig {
     /// True to draw each camera view's opaque objects' depth in a depth prepass, before the opaque
     /// pass shades them.
     pub depth_prepass: bool,
+    /// True to let masked pairs cut their masks in a prepass while the scene draws with MSAA, in
+    /// the depth prepass or in a prepass of their own where it is off, before the opaque pass
+    /// shades them without their masks ([`Prepass::DepthAndMasks`], [`Prepass::Masked`]). False
+    /// keeps them out of every prepass.
+    pub masked_prepass: bool,
     /// Where to skin skinned meshes: in the vertex shader of each pass that draws them, or once
     /// per frame in the skinning pass, with its savings.
     pub skinning: SkinningMode,
@@ -955,6 +964,7 @@ impl Default for RendererConfig {
             cell_culling: true,
             light_limits: LightLimits::default(),
             depth_prepass: false,
+            masked_prepass: true,
             skinning: SkinningMode::default(),
             index_instances: false,
             gpu_occlusion: false,
@@ -1015,8 +1025,9 @@ pub struct GpuDrivenRenderer {
     layouts_toned: bool,
     /// True once the tone view's GPU objects exist.
     tone_made: bool,
-    /// True when the scene's layout was built with the depth prepass's pipelines.
-    layout_prepass: bool,
+    /// How the scene's layout drew its depth before the opaque pass when it was built, which
+    /// picks the pipelines it holds.
+    layout_prepass: Prepass,
     /// The views whose depth prepass has its bind group.
     prepass_views: usize,
     /// Grid-cell culling: the scene's still objects in cell order, and each cell's box.
@@ -1319,6 +1330,7 @@ impl GpuDrivenRenderer {
                 );
                 graph.bind_shadow_map(config.cascade_depth);
                 graph.set_depth_prepass(config.depth_prepass);
+                graph.set_masked_prepass(config.masked_prepass);
                 graph.set_occlusion(config.gpu_occlusion);
                 graph
             },
@@ -1340,7 +1352,7 @@ impl GpuDrivenRenderer {
             tone: Layout::new(Drawn::Tone, config.index_instances, fixed),
             layouts_toned: false,
             tone_made: false,
-            layout_prepass: false,
+            layout_prepass: Prepass::Off,
             prepass_views: 0,
             cells: CellCulling::new(config.cell_culling, config.direct_draws),
             culling: Culling::new(config.index_instances),
@@ -1862,7 +1874,7 @@ impl GpuDrivenRenderer {
             || scatters != self.layouts_scattered
             || tones != self.layouts_toned
             || motion != self.layouts_moving
-            || self.graph.depth_prepass() != self.layout_prepass
+            || self.graph.depth_pass(Prepass::DepthTemplate) != self.layout_prepass
             || self.redraws_wanted() != self.redraws_built
             || picking != self.layouts_picked
             || skinned_appear
@@ -1904,7 +1916,8 @@ impl GpuDrivenRenderer {
                 picking,
                 cluster_binding,
             )?;
-            self.layout_prepass = self.graph.depth_prepass();
+            self.layout_prepass = self.graph.depth_pass(Prepass::DepthTemplate);
+            self.graph.set_prepass_pairs(self.layout.draws_prepass());
             self.layout_epoch = self.layout_epoch.wrapping_add(1);
             self.occluder_buckets.reset(&self.layout);
             let (skinning, layout) = (&self.skinning, &self.layout);
@@ -2301,7 +2314,7 @@ impl GpuDrivenRenderer {
             .shadow_atlas()
             .expect("the builder's graph binds a shadow atlas");
         let first_new = self.views_made;
-        let depth_pass = self.graph.depth_pass(Prepass::DepthTemplate);
+        let depth_pass = self.graph.drawn_depth_pass(Prepass::DepthTemplate);
         // The depth prepass and the occluders' pass both draw with the depth template's group.
         let depth_group = depth_pass != Prepass::Off || occlusion;
         let ao_texture = self.graph.ao_texture().unwrap_or(ids::BLANK_AO);

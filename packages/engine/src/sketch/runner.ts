@@ -548,6 +548,7 @@ export class SketchRunner {
 			device.transparent,
 			device.cellCulling,
 			device.depthPrepass,
+			device.maskedPrepass,
 			device.prepassColor,
 			device.skinning,
 			device.indexInstances,

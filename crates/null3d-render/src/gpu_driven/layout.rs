@@ -833,6 +833,11 @@ impl Layout {
         self.drawn == Drawn::Scene && self.parallax
     }
 
+    /// True when some bucket draws its depth in a prepass, or in the occluders' pass.
+    pub(super) fn draws_prepass(&self) -> bool {
+        self.buckets.iter().any(|bucket| bucket.prepass != 0)
+    }
+
     /// True for the scene's layout, which owns the matrices, the layer table and the cell order.
     fn owns_sources(&self) -> bool {
         self.drawn == Drawn::Scene
@@ -1718,7 +1723,7 @@ impl Layout {
                 }
                 Drawn::Motion => (pipelines.id(pipeline.in_pass(targets)), 0, false),
                 Drawn::Scene => {
-                    let own = pipeline.places_own_vertices();
+                    let own = pipeline.prepass_binds_own();
                     let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
                     (pipeline, prepass, own)
                 }

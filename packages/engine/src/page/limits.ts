@@ -182,6 +182,11 @@ export interface CoreDevice {
 	 */
 	depthPrepass: boolean;
 	/**
+	 * True when WebGPU's masked surfaces cut their masks in a prepass under MSAA, the depth prepass
+	 * or one of their own, from the ?masked-prepass= switch.
+	 */
+	maskedPrepass: boolean;
+	/**
 	 * How a depth prepass that a screen step splits from the opaque pass starts the stand-in color
 	 * that it never draws, from the ?prepass-color= switch (`PREPASS_COLOR_*`).
 	 */
@@ -271,6 +276,7 @@ export type DeviceOptions = Pick<
 	| 'cells'
 	| 'join'
 	| 'prepassColor'
+	| 'maskedPrepass'
 	| 'skinning'
 	| 'indexInstances'
 	| 'direct'
@@ -489,6 +495,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		cellCulling: options.cells,
 		joinEffects: options.join,
 		depthPrepass: options.depthPrepass,
+		maskedPrepass: options.maskedPrepass,
 		prepassColor: PREPASS_COLOR_CODES[options.prepassColor ?? 'none'],
 		skinning: SKINNING_CODES[options.skinning],
 		shadowDepthBits: options.shadowDepthBits,

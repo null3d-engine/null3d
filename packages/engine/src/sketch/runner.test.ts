@@ -315,6 +315,7 @@ async function start(
 				cellCulling: true,
 				joinEffects: true,
 				depthPrepass: false,
+				maskedPrepass: true,
 				prepassColor: C.PREPASS_COLOR_LOAD,
 				skinning: C.SKINNING_VERTEX,
 				indexInstances: false,

@@ -23,7 +23,10 @@
 //! With the depth prepass, a depth prepass comes before each view's opaque pass. It creates the
 //! view's depth and draws the opaque objects' depth into it, and the opaque pass then writes into
 //! that depth (see [`crate::pipelines`]). Both draw in one render pass, which has the color from
-//! the start. The prepass is fixed when the builder starts.
+//! the start. The prepass is fixed when the builder starts. A builder that cuts masks in a prepass
+//! has the same pass without the depth prepass, holding only its masked pairs
+//! ([`Prepass::Masked`]). With occlusion culling it reads what the late pass kept, as the depth
+//! prepass does.
 //!
 //! A builder that binds a shadow map keeps one texture array for it (see [`crate::shadows`]),
 //! which every opaque pass samples. While a directional light casts shadows, each cascade has a
@@ -893,6 +896,12 @@ pub(crate) struct FrameGraph {
     opaque: Vec<(u16, PassId)>,
     /// True when each view has a depth prepass.
     prepass: bool,
+    /// True when masked pairs cut their masks in a prepass: in the depth prepass where each view
+    /// has one ([`Prepass::DepthAndMasks`]), else in a prepass of their own ([`Prepass::Masked`]).
+    masked_prepass: bool,
+    /// True when the scene's layout holds a pair whose depth a prepass draws, so a prepass of the
+    /// masked pairs alone has something to draw.
+    prepass_pairs: bool,
     /// How a prepass that a screen step splits from the opaque pass starts the stand-in color it
     /// never draws. WebGPU keeps a clear, which is cheap there.
     prepass_color: PrepassColor,
@@ -1355,6 +1364,8 @@ impl FrameGraph {
             roles: Vec::new(),
             opaque: Vec::new(),
             prepass: false,
+            masked_prepass: false,
+            prepass_pairs: false,
             prepass_color: PrepassColor::default(),
             skinning: false,
             prepasses: Vec::new(),
@@ -1638,6 +1649,22 @@ impl FrameGraph {
         self.declared = false;
     }
 
+    /// Lets masked pairs cut their masks in a prepass, or keeps them out of every prepass.
+    pub(crate) fn set_masked_prepass(&mut self, on: bool) {
+        self.masked_prepass = on;
+        self.declared = false;
+    }
+
+    /// Notes whether the scene's layout holds a pair whose depth a prepass draws. Without one, the
+    /// prepass of the masked pairs alone is left out of the frame. The passes are declared again
+    /// when it changes.
+    pub(crate) fn set_prepass_pairs(&mut self, on: bool) {
+        if on != self.prepass_pairs {
+            self.prepass_pairs = on;
+            self.declared = false;
+        }
+    }
+
     /// Sets how a prepass that a screen step splits from the opaque pass starts the stand-in color
     /// it never draws. The passes are declared again when it changes.
     pub(crate) fn set_prepass_color(&mut self, color: PrepassColor) {
@@ -1666,10 +1693,38 @@ impl FrameGraph {
     }
 
     /// How the opaque objects' depth draws before the pass that shades them: in the depth prepass,
-    /// the way that the builder's `prepass` names, or not at all. The occluders' pass of occlusion
-    /// culling draws with pipelines of its own beside it ([`Self::occlusion`]).
+    /// the way that the builder's `prepass` names, with the masked pairs cutting their masks in it
+    /// where they cut them in a prepass, in a prepass of the masked pairs alone, or not at all.
+    /// Masked pairs cut their masks in a prepass only while the scene draws with MSAA: without its
+    /// samples, a masked fragment that discards costs about as much as one that shades at a depth
+    /// already drawn, and the extra pass is the larger cost (D-325). The occluders' pass of
+    /// occlusion culling draws with pipelines of its own beside it ([`Self::occlusion`]).
     pub(crate) fn depth_pass(&self, prepass: Prepass) -> Prepass {
-        prepass.if_on(self.depth_prepass())
+        match (
+            self.depth_prepass(),
+            self.masked_prepass && self.samples > 1,
+        ) {
+            (true, true) if prepass == Prepass::DepthTemplate => Prepass::DepthAndMasks,
+            (true, _) => prepass,
+            (false, masked) => Prepass::Masked.if_on(masked),
+        }
+    }
+
+    /// How the frame draws the opaque objects' depth before the pass that shades them, as
+    /// [`Self::depth_pass`] gives it, with no prepass of the masked pairs alone while the layout
+    /// holds none: the layout's pipelines follow [`Self::depth_pass`], and the frame's passes,
+    /// bundles and groups follow this.
+    pub(crate) fn drawn_depth_pass(&self, prepass: Prepass) -> Prepass {
+        match self.depth_pass(prepass) {
+            Prepass::Masked if !self.prepass_pairs => Prepass::Off,
+            drawn => drawn,
+        }
+    }
+
+    /// True when each view draws a prepass before its opaque pass: the depth prepass, or the
+    /// prepass of its masked pairs alone.
+    fn prepass_drawn(&self) -> bool {
+        self.depth_prepass() || self.drawn_depth_pass(Prepass::DepthTemplate) == Prepass::Masked
     }
 
     /// True when each camera view culls in two phases against its depth pyramid. With the depth
@@ -3261,7 +3316,7 @@ impl FrameGraph {
         self.shadow_passes.clear();
         self.bloom_passes.clear();
         self.outline_passes.clear();
-        let prepass = self.depth_prepass();
+        let prepass = self.prepass_drawn();
         let color = Target::color(self.scene_color.format()).samples(self.samples);
         let depth = Target::depth(DEPTH_FORMAT).samples(self.samples);
         if self.shadow_map {
@@ -10760,6 +10815,78 @@ mod tests {
             assert!(frames.graph().find_pass("AoDepth").is_none());
             assert_eq!(frames.ao_texture(), None);
         }
+    }
+
+    #[test]
+    fn masked_pairs_alone_draw_a_prepass_only_while_the_layout_holds_one_and_nothing_else_does() {
+        let prepass_passes = |frames: &mut FrameGraph| {
+            frames.sync(&[View::default()]);
+            let mut list = DrawList::with_capacity(65536);
+            frames
+                .prepare(&mut list, (320, 180), RenderScale::FULL)
+                .unwrap();
+            frames.prepasses.len()
+        };
+        let mut frames = frame_graph(format::RG11B10_UFLOAT, Antialias::Msaa, true, true);
+        frames.set_masked_prepass(true);
+        // The layout's pipelines cut masks, and the frame draws no prepass until a pair needs it.
+        assert_eq!(frames.depth_pass(Prepass::DepthTemplate), Prepass::Masked);
+        assert_eq!(
+            frames.drawn_depth_pass(Prepass::DepthTemplate),
+            Prepass::Off
+        );
+        assert_eq!(prepass_passes(&mut frames), 0);
+        frames.set_prepass_pairs(true);
+        assert_eq!(
+            frames.drawn_depth_pass(Prepass::DepthTemplate),
+            Prepass::Masked
+        );
+        assert_eq!(prepass_passes(&mut frames), 1);
+        assert!(
+            !frames.depth_prepass(),
+            "screen steps read no depth of the masked pairs alone"
+        );
+        // The depth prepass holds the masked pairs too, and occlusion culling draws its own depth.
+        frames.set_depth_prepass(true);
+        assert_eq!(
+            frames.depth_pass(Prepass::DepthTemplate),
+            Prepass::DepthAndMasks
+        );
+        frames.set_masked_prepass(false);
+        assert_eq!(
+            frames.depth_pass(Prepass::DepthTemplate),
+            Prepass::DepthTemplate
+        );
+        frames.set_masked_prepass(true);
+        frames.set_depth_prepass(false);
+        frames.set_occlusion(true);
+        // The occluders' pass draws with pipelines of its own, beside the masked pairs' prepass.
+        assert_eq!(frames.depth_pass(Prepass::DepthTemplate), Prepass::Masked);
+        frames.set_occlusion(false);
+        frames.set_masked_prepass(false);
+        assert_eq!(frames.depth_pass(Prepass::DepthTemplate), Prepass::Off);
+        assert_eq!(prepass_passes(&mut frames), 0);
+    }
+
+    #[test]
+    fn masked_pairs_cut_their_masks_in_a_prepass_only_with_msaa() {
+        let mut frames = frame_graph(format::RG11B10_UFLOAT, Antialias::None, true, true);
+        frames.set_masked_prepass(true);
+        frames.set_prepass_pairs(true);
+        assert_eq!(frames.depth_pass(Prepass::DepthTemplate), Prepass::Off);
+        frames.set_depth_prepass(true);
+        assert_eq!(
+            frames.depth_pass(Prepass::DepthTemplate),
+            Prepass::DepthTemplate
+        );
+        frames.set_depth_prepass(false);
+        // Turning MSAA on brings the masked pairs' prepass back.
+        frames.set_canvas(CanvasOutput {
+            scene_color: SceneColor::from_format(format::RG11B10_UFLOAT),
+            antialias: Antialias::Msaa,
+            transparent: false,
+        });
+        assert_eq!(frames.depth_pass(Prepass::DepthTemplate), Prepass::Masked);
     }
 
     #[test]

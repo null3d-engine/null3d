@@ -25,6 +25,7 @@ describe('parseSwitches', () => {
 			half: undefined,
 			cells: true,
 			prepass: undefined,
+			maskedPrepass: true,
 			moments: undefined,
 			prepassColor: undefined,
 			occlusion: undefined,
@@ -119,6 +120,11 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?moments=on').moments).toBe(true);
 		expect(parseSwitches('?moments=off').moments).toBe(false);
 		expect(parseSwitches('?moments=yes').moments).toBeUndefined();
+	});
+
+	it('keeps masked surfaces out of every prepass with ?masked-prepass=off', () => {
+		expect(parseSwitches('?masked-prepass=off').maskedPrepass).toBe(false);
+		expect(parseSwitches('?masked-prepass=on').maskedPrepass).toBe(true);
 	});
 
 	it('picks how the prepass starts its stand-in color with ?prepass-color=', () => {

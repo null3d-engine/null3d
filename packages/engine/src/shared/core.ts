@@ -41,6 +41,7 @@ export interface CoreGlue extends CoreErrors {
 		transparent: boolean,
 		cellCulling: boolean,
 		depthPrepass: boolean,
+		maskedPrepass: boolean,
 		prepassColor: number,
 		skinning: number,
 		indexInstances: boolean,

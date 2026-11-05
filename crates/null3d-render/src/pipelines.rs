@@ -144,20 +144,41 @@ pub enum Prepass {
     Off,
     /// With the depth template's prepass build, which computes each position with the same steps
     /// as the shading templates. Every template marks its position invariant, and on WebGPU that
-    /// gives both programs the same depth.
+    /// gives both programs the same depth. Masked pairs shade as they would without the prepass.
     DepthTemplate,
+    /// WebGPU's depth prepass: [`Prepass::DepthTemplate`], where each masked pair of the lit
+    /// templates also draws its depth, with its own build, whose fragment stage cuts the mask
+    /// ([`DrawKey::cuts_in_prepass`]), and then shades at that depth without the mask.
+    DepthAndMasks,
     /// With the shading pipeline's own build and the `PREPASS` bit, which the WebGL2 backend draws
     /// with that build's vertex shader and a fragment shader that writes nothing. On WebGL2, two
     /// programs whose positions take the same steps can still give different depths, although
     /// both mark the position invariant: ANGLE on Metal did so in Chrome on a Mac. Two programs
     /// with the same vertex shader gave the same depths.
     OwnVertexShader,
+    /// WebGPU's prepass of masked pairs alone: each masked pair of the lit templates cuts its mask
+    /// there as in [`Prepass::DepthAndMasks`]. Every other pair draws as it would with no prepass,
+    /// so opaque pairs keep the GPU's own removal of hidden surfaces.
+    Masked,
 }
 
 impl Prepass {
     /// This way of drawing the prepass when `on`, else none.
     pub const fn if_on(self, on: bool) -> Prepass {
         if on { self } else { Prepass::Off }
+    }
+
+    /// True when masked pairs of the lit templates cut their masks in this prepass.
+    pub const fn cuts_masks(self) -> bool {
+        matches!(self, Prepass::DepthAndMasks | Prepass::Masked)
+    }
+
+    /// True when opaque pairs draw their depth in this prepass.
+    pub const fn draws_opaque(self) -> bool {
+        matches!(
+            self,
+            Prepass::DepthTemplate | Prepass::DepthAndMasks | Prepass::OwnVertexShader
+        )
     }
 }
 
@@ -220,11 +241,7 @@ impl DrawKey {
     /// ([`DrawKey::places_own_vertices`]) takes only the key's faces and state, and draws with its
     /// own vertex shader.
     pub const fn prepass(self) -> Option<DrawKey> {
-        let unfit = state_flags::BLEND
-            | state_flags::LINE_LIST
-            | state_flags::NO_DEPTH_WRITE
-            | state_flags::NO_DEPTH_TEST;
-        if self.state & unfit != 0
+        if !self.writes_prepass_depth()
             || self.permutation
                 & (permutation::ALPHA_MASK | permutation::TRANSMISSION | permutation::LOD_FADE)
                 != 0
@@ -242,6 +259,43 @@ impl DrawKey {
             state: (self.state & faces) | state_flags::NO_COLOR_WRITE,
             bias: self.bias,
         })
+    }
+
+    /// True when the pair's state lets a prepass draw its depth: it neither blends nor draws lines,
+    /// and it tests and writes depth.
+    const fn writes_prepass_depth(self) -> bool {
+        let unfit = state_flags::BLEND
+            | state_flags::LINE_LIST
+            | state_flags::NO_DEPTH_WRITE
+            | state_flags::NO_DEPTH_TEST;
+        self.state & unfit == 0
+    }
+
+    /// True for a masked pair of the lit templates (the standard material's, the light probe
+    /// grid's and custom materials'), which WebGPU's prepass draws with the pair's own build. Its
+    /// fragment stage tests the mask as the shading does, by the cutoff, by coverage or by the
+    /// hash, and a fading level's dither, so the depth it leaves holds the mask's holes and, under
+    /// alpha to coverage, only the samples that the coverage takes. The pair then shades at that
+    /// depth without the mask ([`Self::after_prepass`]). WebGPU's MSAA makes a masked fragment
+    /// that discards cost far more than one that shades at a depth already drawn (D-325). A pair
+    /// that lets light through stays out, as from every prepass.
+    pub const fn cuts_in_prepass(self) -> bool {
+        let lit = matches!(
+            self.template,
+            template::INSTANCED_LIT
+                | template::INSTANCED_STANDARD_MAPS
+                | template::PROBE_GRID
+                | template::PROBE_GRID_MAPS
+        ) || self.template >= template::CUSTOM_FIRST;
+        lit && self.writes_prepass_depth()
+            && self.permutation & permutation::ALPHA_MASK != 0
+            && self.permutation & permutation::TRANSMISSION == 0
+    }
+
+    /// True when the pair's prepass draws with a build of its own template, which binds the
+    /// template's groups and its material's maps rather than the depth template's group.
+    pub const fn prepass_binds_own(self) -> bool {
+        self.places_own_vertices() || self.cuts_in_prepass()
     }
 
     /// True for a pair whose template places its vertices in a way that the depth template does not
@@ -403,10 +457,23 @@ impl DrawKey {
     }
 
     /// The key of the pipeline that shades the pair after the depth prepass drew its depth: it
-    /// draws only where its depth equals the target's, and writes none.
+    /// draws only where its depth equals the target's, and writes none. A pair that cuts its mask
+    /// in the prepass ([`Self::cuts_in_prepass`]) shades without the mask, the alpha to coverage
+    /// and the fading level's dither: the depth holds only what they kept, so the shading neither
+    /// discards nor writes a coverage of its own.
     pub const fn after_prepass(self) -> DrawKey {
+        let (permutation, state) = if self.cuts_in_prepass() {
+            (
+                self.permutation
+                    & !(permutation::ALPHA_MASK | permutation::ALPHA_HASH | permutation::LOD_FADE),
+                self.state & !state_flags::ALPHA_TO_COVERAGE,
+            )
+        } else {
+            (self.permutation, self.state)
+        };
         DrawKey {
-            state: self.state | state_flags::DEPTH_EQUAL | state_flags::NO_DEPTH_WRITE,
+            permutation,
+            state: state | state_flags::DEPTH_EQUAL | state_flags::NO_DEPTH_WRITE,
             ..self
         }
     }
@@ -563,10 +630,26 @@ impl PipelineCache {
     /// The ids of the pipelines that draw an opaque pair with `key` into a scene pass's `targets`:
     /// the one that shades it, and with a `prepass`, the one that draws its depth first, or 0 for a
     /// pair that stays out of it. After a depth prepass the pair shades only at the depth that the
-    /// prepass found.
+    /// prepass found. On WebGPU a masked pair of the lit templates cuts its mask in the prepass with
+    /// its own build ([`DrawKey::cuts_in_prepass`]), which tests its alpha and writes its coverage
+    /// as the shading would; WebGL2's prepass writes no fragment, so there such a pair stays out.
     pub fn opaque(&mut self, key: DrawKey, targets: PassTargets, prepass: Prepass) -> (u32, u32) {
+        if key.cuts_in_prepass() && prepass.cuts_masks() {
+            let shading = key.after_prepass().in_pass(targets);
+            let cut = key.in_pass(targets);
+            // The prepass keeps the pair's faces and, where the target turns alpha into coverage,
+            // alpha to coverage, which then writes depth to the samples that the coverage takes.
+            let kept =
+                state_flags::CULL_NONE | state_flags::CULL_FRONT | state_flags::ALPHA_TO_COVERAGE;
+            let depth = PipelineKey {
+                permutation: cut.permutation | permutation::PREPASS,
+                state: (cut.state & kept) | state_flags::NO_COLOR_WRITE,
+                ..cut
+            };
+            return (self.id(shading), self.id(depth));
+        }
         let depth = match key.prepass() {
-            Some(depth) if prepass != Prepass::Off => depth,
+            Some(depth) if prepass.draws_opaque() => depth,
             _ => return (self.id(key.in_pass(targets)), 0),
         };
         let shading = key.after_prepass().in_pass(targets);
@@ -1199,14 +1282,123 @@ mod tests {
             (depth.color_format, depth.depth_format, depth.samples),
             (TARGETS.color_format, TARGETS.depth_format, TARGETS.samples)
         );
-        // A masked pair shades as it would without the prepass.
+        // A masked pair that its own template cannot cut, a basic material's, shades as it would
+        // without the prepass.
         let masked = DrawKey {
+            template: template::INSTANCED_UNLIT,
             permutation: permutation::ALPHA_MASK,
             ..lit(0)
         };
+        assert!(!masked.cuts_in_prepass());
         let (shading, depth) = cache.opaque(masked, targets, Prepass::DepthTemplate);
         assert_eq!(depth, 0);
         assert_eq!(cache.keys()[shading as usize - 1], masked.in_pass(targets));
+        // The prepass of masked pairs alone leaves the opaque pairs as they are without one.
+        let plain = cache.opaque(lit(0), targets, Prepass::Masked);
+        assert_eq!(plain, (1, 0));
+    }
+
+    #[test]
+    fn masked_lit_pairs_cut_their_masks_in_webgpus_prepass_and_shade_without_them() {
+        let masked = |template: u32, extra: u32| DrawKey {
+            template,
+            permutation: permutation::ALPHA_MASK | permutation::RECEIVE_SHADOWS | extra,
+            state: state_flags::CULL_NONE | state_flags::ALPHA_TO_COVERAGE,
+            ..lit(0)
+        };
+        for template in [
+            template::INSTANCED_LIT,
+            template::INSTANCED_STANDARD_MAPS,
+            template::PROBE_GRID,
+            template::PROBE_GRID_MAPS,
+            template::CUSTOM_FIRST + 3,
+        ] {
+            let key = masked(template, permutation::LOD_FADE);
+            assert!(key.cuts_in_prepass(), "{key:?}");
+            assert!(key.prepass_binds_own());
+            // The shading after the prepass keeps neither the mask, the fade nor the coverage, and
+            // draws only at the prepass's depth.
+            let after = key.after_prepass();
+            assert_eq!(after.permutation, permutation::RECEIVE_SHADOWS);
+            assert_eq!(
+                after.state,
+                state_flags::CULL_NONE | state_flags::DEPTH_EQUAL | state_flags::NO_DEPTH_WRITE
+            );
+            for prepass in [Prepass::DepthAndMasks, Prepass::Masked] {
+                let mut cache = PipelineCache::default();
+                let (shading, depth) = cache.opaque(key, TARGETS, prepass);
+                let [shading, depth] = [shading, depth].map(|id| cache.keys()[id as usize - 1]);
+                assert_eq!(shading, after.in_pass(TARGETS));
+                // The prepass draws the build that the pair shades with without a prepass, faces
+                // and coverage kept: the canvas's alpha turns into coverage.
+                let cut = key.in_pass(TARGETS);
+                assert_eq!(depth.template, template);
+                assert_eq!(depth.permutation, cut.permutation | permutation::PREPASS);
+                assert_ne!(depth.permutation & permutation::ALPHA_COVERAGE, 0);
+                assert_eq!(depth.permutation & permutation::SAMPLE_MASK, 0);
+                assert_eq!(
+                    depth.state,
+                    state_flags::CULL_NONE
+                        | state_flags::ALPHA_TO_COVERAGE
+                        | state_flags::NO_COLOR_WRITE
+                );
+                assert_eq!(
+                    (depth.color_format, depth.depth_format, depth.samples),
+                    (cut.color_format, cut.depth_format, cut.samples)
+                );
+            }
+        }
+        // A target without alpha takes the coverage through the shader's sample mask.
+        let hdr = PassTargets {
+            color_format: format::RG11B10_UFLOAT,
+            ..TARGETS
+        };
+        let mut cache = PipelineCache::default();
+        let (_, depth) = cache.opaque(masked(template::INSTANCED_LIT, 0), hdr, Prepass::Masked);
+        let depth = cache.keys()[depth as usize - 1];
+        assert_ne!(depth.permutation & permutation::SAMPLE_MASK, 0);
+        assert_eq!(
+            depth.state,
+            state_flags::CULL_NONE | state_flags::NO_COLOR_WRITE
+        );
+        // A mask by the alpha hash cuts in the prepass too, and shades without its test.
+        let hashed = DrawKey {
+            state: state_flags::CULL_NONE,
+            ..masked(template::INSTANCED_LIT, permutation::ALPHA_HASH)
+        };
+        assert!(hashed.cuts_in_prepass());
+        assert_eq!(
+            hashed.after_prepass().permutation,
+            permutation::RECEIVE_SHADOWS
+        );
+        // WebGL2's prepass writes no fragment, and WebGPU's may keep masks out, so there a masked
+        // pair shades with its mask.
+        let key = masked(template::INSTANCED_LIT, 0);
+        for prepass in [Prepass::OwnVertexShader, Prepass::DepthTemplate] {
+            let mut cache = PipelineCache::default();
+            let (shading, depth) = cache.opaque(key, TARGETS, prepass);
+            assert_eq!(depth, 0);
+            assert_eq!(cache.keys()[shading as usize - 1], key.in_pass(TARGETS));
+        }
+        // Pairs that blend, let light through, or skip depth stay out; an unmasked pair cuts nothing.
+        let out = [
+            DrawKey {
+                state: state_flags::BLEND_NORMAL,
+                ..key
+            },
+            masked(template::INSTANCED_LIT, permutation::TRANSMISSION),
+            DrawKey {
+                state: state_flags::NO_DEPTH_WRITE,
+                ..key
+            },
+            lit(0),
+            masked(template::INSTANCED_UNLIT_MAP, 0),
+            masked(template::SPRITE, 0),
+        ];
+        for key in out {
+            assert!(!key.cuts_in_prepass(), "{key:?}");
+            assert_eq!(key.after_prepass().permutation, key.permutation);
+        }
     }
 
     #[test]

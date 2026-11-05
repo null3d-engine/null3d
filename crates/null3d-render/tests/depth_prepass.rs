@@ -1,8 +1,10 @@
 //! The depth prepass of both frame builders, checked through the mock backend and by decoding the
 //! lists they record: each camera view draws its opaque objects' depth first, in the render pass
 //! that then shades them, and the pairs whose depth the prepass cannot draw the same way shade as
-//! they would without it. WebGPU replays a bundle of the depth template's prepass builds. WebGL2
-//! draws the same calls twice, first with each shading pipeline's own build and the prepass bit.
+//! they would without it. WebGPU replays a bundle of the depth template's prepass builds, where
+//! masked pairs cut their masks with their own builds; without the depth prepass the bundle holds
+//! the masked pairs alone. WebGL2 draws the same calls twice, first with each shading pipeline's
+//! own build and the prepass bit, and leaves masked pairs out.
 
 mod common;
 
@@ -24,6 +26,8 @@ type Commands = Vec<(Op, Vec<u32>)>;
 enum Kind {
     /// The depth template's prepass build.
     Depth,
+    /// A masked pair's own build with the prepass bit, whose fragment stage cuts its mask.
+    Cut,
     /// A shading template's build with the prepass bit, which WebGL2 draws with that build's
     /// vertex shader alone.
     OwnVertexShader,
@@ -47,6 +51,8 @@ fn pipelines(commands: &[(Op, Vec<u32>)]) -> HashMap<u32, Kind> {
                 );
                 if template == template::SHADOW_DEPTH {
                     Kind::Depth
+                } else if bits & permutation::ALPHA_MASK != 0 {
+                    Kind::Cut
                 } else {
                     Kind::OwnVertexShader
                 }
@@ -84,9 +90,10 @@ fn world_with<B: FrameBuilder>(renderer: B) -> World<B> {
     world
 }
 
-fn frames(depth_prepass: bool) -> Frames {
+fn frames(depth_prepass: bool, masked_prepass: bool) -> Frames {
     let config = RendererConfig {
         depth_prepass,
+        masked_prepass,
         ..RendererConfig::default()
     };
     let mut world = world_with(GpuDrivenRenderer::new(config));
@@ -134,7 +141,7 @@ fn the_camera_replays_its_depth_bundle_before_its_opaque_bundle_in_one_render_pa
         kinds,
         bundles,
         steady,
-    } = frames(true);
+    } = frames(true, true);
     let pass = first_render_pass(&steady);
     let executed: Vec<u32> = pass
         .iter()
@@ -146,14 +153,17 @@ fn the_camera_replays_its_depth_bundle_before_its_opaque_bundle_in_one_render_pa
         2,
         "the depth bundle, then the opaque bundle"
     );
-    // The depth bundle draws with depth pipelines alone. The opaque bundle shades the lit and
-    // unlit buckets after the prepass, and the masked one as without it.
+    // The depth bundle draws with the depth template, and the masked bucket with its own build,
+    // which cuts its mask. The opaque bundle shades every bucket after the prepass.
     let depth = &bundles[&executed[0]];
-    assert!(!depth.is_empty() && depth.iter().all(|&kind| kind == Kind::Depth));
+    assert!(depth.contains(&Kind::Depth) && depth.contains(&Kind::Cut));
+    assert!(
+        depth
+            .iter()
+            .all(|&kind| matches!(kind, Kind::Depth | Kind::Cut))
+    );
     let opaque = &bundles[&executed[1]];
-    assert!(opaque.contains(&Kind::AfterPrepass));
-    assert!(opaque.contains(&Kind::Shading));
-    assert!(!opaque.contains(&Kind::Depth));
+    assert!(!opaque.is_empty() && opaque.iter().all(|&kind| kind == Kind::AfterPrepass));
     // The blended object draws after both bundles, with a shading pipeline that tests depth as
     // it would without the prepass.
     let last_bundle = pass
@@ -169,9 +179,77 @@ fn the_camera_replays_its_depth_bundle_before_its_opaque_bundle_in_one_render_pa
 }
 
 #[test]
-fn without_the_prepass_no_pipeline_draws_depth_alone_or_tests_for_equal_depth() {
-    let Frames { kinds, steady, .. } = frames(false);
+fn without_the_depth_prepass_the_masked_pairs_alone_draw_their_depth_first() {
+    let Frames {
+        bundles, steady, ..
+    } = frames(false, true);
+    let pass = first_render_pass(&steady);
+    let executed: Vec<u32> = pass
+        .iter()
+        .filter(|(op, _)| *op == Op::ExecuteBundles)
+        .map(|(_, o)| o[1])
+        .collect();
+    assert_eq!(
+        executed.len(),
+        2,
+        "the masked bundle, then the opaque bundle"
+    );
+    assert_eq!(bundles[&executed[0]], [Kind::Cut]);
+    // The opaque buckets shade as without a prepass, and the masked one at the depth it cut.
+    let opaque = &bundles[&executed[1]];
+    assert_eq!(
+        opaque
+            .iter()
+            .filter(|&&kind| kind == Kind::AfterPrepass)
+            .count(),
+        1
+    );
+    assert!(opaque.contains(&Kind::Shading));
+}
+
+#[test]
+fn with_masks_kept_out_the_depth_prepass_holds_no_masked_pair() {
+    let Frames {
+        bundles, steady, ..
+    } = frames(true, false);
+    let pass = first_render_pass(&steady);
+    let executed: Vec<u32> = pass
+        .iter()
+        .filter(|(op, _)| *op == Op::ExecuteBundles)
+        .map(|(_, o)| o[1])
+        .collect();
+    let depth = &bundles[&executed[0]];
+    assert!(!depth.is_empty() && depth.iter().all(|&kind| kind == Kind::Depth));
+    // The masked bucket shades with its mask, as without the prepass.
+    let opaque = &bundles[&executed[1]];
+    assert!(opaque.contains(&Kind::AfterPrepass));
+    assert!(opaque.contains(&Kind::Shading));
+}
+
+#[test]
+fn without_either_prepass_no_pipeline_draws_depth_alone_or_tests_for_equal_depth() {
+    let Frames { kinds, steady, .. } = frames(false, false);
     assert!(kinds.values().all(|&kind| kind == Kind::Shading));
+    let pass = first_render_pass(&steady);
+    let executed = pass
+        .iter()
+        .filter(|(op, _)| *op == Op::ExecuteBundles)
+        .count();
+    assert_eq!(executed, 1);
+}
+
+#[test]
+fn a_scene_without_masked_pairs_draws_no_prepass_of_them() {
+    let mut world = World::build(GpuDrivenRenderer::new(RendererConfig::default()));
+    world.add_object_with(&grid(1, 1), Shading::Unlit, feature::BLEND);
+    let mut mock = MockBackend::default();
+    let first = world.step(&mut mock, true);
+    assert!(
+        pipelines(&first)
+            .values()
+            .all(|&kind| kind == Kind::Shading)
+    );
+    let steady = world.step(&mut mock, false);
     let pass = first_render_pass(&steady);
     let executed = pass
         .iter()

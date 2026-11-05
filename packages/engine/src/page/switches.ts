@@ -1,9 +1,10 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
 // ?sketch-thread=main, ?latency=, ?uploads=copy, ?multidraw=off, ?depth=, ?compile=wait, ?shaders=fresh,
-// ?check=fresh, ?wake=message, ?hdr=off, ?scene-format=, ?half= and ?compression=. Twelve more
+// ?check=fresh, ?wake=message, ?hdr=off, ?scene-format=, ?half= and ?compression=. Seventeen more
 // set what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count,
 // ?memory= for the shared memory's maximum, ?queue= for the frames that may wait on the GPU,
 // ?cells=off for culling without grid cells, ?prepass=on or off for the depth prepass,
+// ?masked-prepass=off for WebGPU's masked surfaces cut where they shade, outside every prepass,
 // ?moments=on or off for moment transparency, ?prepass-color= for how a prepass that a screen
 // step splits from the opaque pass starts the stand-in color that it never draws,
 // ?occlusion=on or off for occlusion culling, ?occlusion-buffer= for the size of software occlusion
@@ -196,6 +197,12 @@ export interface Switches {
 	 * undefined to leave it to the page's option and the quality preset.
 	 */
 	prepass: boolean | undefined;
+	/**
+	 * False when ?masked-prepass=off keeps WebGPU's masked surfaces out of every prepass, so each
+	 * one cuts its mask where it shades, for pages that measure what cutting masks in a prepass
+	 * saves (D-325).
+	 */
+	maskedPrepass: boolean;
 	/**
 	 * True when ?moments=on turns moment transparency on, false when ?moments=off turns it off, and
 	 * undefined to leave it to the page's option and the quality preset.
@@ -438,6 +445,7 @@ export function parseSwitches(search: string): Switches {
 		cells: params.get('cells') !== 'off',
 		join: params.get('join') !== 'off',
 		prepass: onOff(params.get('prepass')),
+		maskedPrepass: params.get('masked-prepass') !== 'off',
 		moments: onOff(params.get('moments')),
 		prepassColor: oneOf(params.get('prepass-color'), ['load', 'clear', 'none'] as const),
 		occlusion: onOff(params.get('occlusion')),

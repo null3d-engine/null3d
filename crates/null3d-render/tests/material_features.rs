@@ -159,7 +159,9 @@ fn mapped_triangle() -> Geometry {
 /// Custom materials draw with their own template, which materials of one template share, and
 /// only meshes with the vertex attributes that their shaders read draw with them. A full shader
 /// reads vertex colors itself and takes no mask, so neither feature changes its build.
-fn check_custom<B: FrameBuilder>(mut world: World<B>) {
+/// With `cuts`, as on WebGPU, each masked custom pair cuts its mask in a prepass of its own build
+/// and then shades at that depth without it.
+fn check_custom<B: FrameBuilder>(mut world: World<B>, cuts: bool) {
     let first = template::CUSTOM_FIRST;
     let mapped = mapped_triangle();
     add(&mut world, &mapped, CustomShading::standard(first), 0);
@@ -214,37 +216,53 @@ fn check_custom<B: FrameBuilder>(mut world: World<B>) {
     made.dedup();
     // The canvas takes 8-bit color, so every pipeline tone maps.
     let tone_map = permutation::TONE_MAP;
-    assert_eq!(
-        made,
-        vec![
-            (first, tone_map, 0),
-            (first + 1, tone_map, state_flags::CULL_NONE),
-            (first + 3, tone_map, 0),
-            (first + 4, tone_map | permutation::ALPHA_MASK, 0),
+    let masked = [
+        (tone_map | permutation::ALPHA_MASK, 0),
+        (
+            tone_map | permutation::ALPHA_MASK | permutation::ALPHA_COVERAGE,
+            state_flags::ALPHA_TO_COVERAGE,
+        ),
+        (
+            tone_map | permutation::ALPHA_MASK | permutation::ALPHA_HASH,
+            0,
+        ),
+    ];
+    let mut expected = vec![
+        (first, tone_map, 0),
+        (first + 1, tone_map, state_flags::CULL_NONE),
+        (first + 3, tone_map, 0),
+    ];
+    if cuts {
+        expected.push((
+            first + 4,
+            tone_map,
+            state_flags::DEPTH_EQUAL | state_flags::NO_DEPTH_WRITE,
+        ));
+        expected.extend(masked.map(|(bits, state)| {
             (
                 first + 4,
-                tone_map | permutation::ALPHA_MASK | permutation::ALPHA_COVERAGE,
-                state_flags::ALPHA_TO_COVERAGE,
-            ),
-            (
-                first + 4,
-                tone_map | permutation::ALPHA_MASK | permutation::ALPHA_HASH,
-                0,
-            ),
-        ]
-    );
+                bits | permutation::PREPASS,
+                state | state_flags::NO_COLOR_WRITE,
+            )
+        }));
+    } else {
+        expected.extend(masked.map(|(bits, state)| (first + 4, bits, state)));
+    }
+    expected.sort_unstable();
+    assert_eq!(made, expected);
 }
 
 #[test]
 fn custom_materials_draw_with_their_own_templates_on_webgpu() {
-    check_custom(World::new());
+    check_custom(World::new(), true);
 }
 
 #[test]
 fn custom_materials_draw_with_their_own_templates_on_webgl2() {
-    check_custom(World::build(CpuCulledRenderer::new(
-        CpuCulledConfig::default(),
-    )));
+    check_custom(
+        World::build(CpuCulledRenderer::new(CpuCulledConfig::default())),
+        false,
+    );
 }
 
 /// Each render pipeline that a list creates for meshes without vertex colors: its template,
@@ -265,8 +283,9 @@ fn plain_pipelines(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32, u32, u32, u32)
 
 /// Masked materials of each shading that reads alpha, with alpha to coverage and the alpha hash,
 /// materials without depth writes or the depth test, and one with a depth bias, each on a triangle
-/// of its own.
-fn check_mask_and_depth<B: FrameBuilder>(mut world: World<B>) {
+/// of its own. With `cuts`, as on WebGPU, each masked lit pair cuts its mask in a prepass of its own
+/// build and then shades at that depth without it.
+fn check_mask_and_depth<B: FrameBuilder>(mut world: World<B>, cuts: bool) {
     let plain = triangle(false);
     add(&mut world, &plain, Shading::Lit, feature::ALPHA_MASK);
     add(&mut world, &plain, Shading::Unlit, feature::ALPHA_MASK);
@@ -305,17 +324,29 @@ fn check_mask_and_depth<B: FrameBuilder>(mut world: World<B>) {
     // The world's own objects draw with the lit and unlit shading, unmasked.
     let mut expected = vec![
         (lit, 0, 0, 0, 0),
-        (lit, mask, 0, 0, 0),
         (unlit, 0, 0, 0, 0),
         (unlit, 0, 0, decal.constant as u32, decal.slope_bits),
         (unlit, 0, state_flags::NO_DEPTH_WRITE, 0, 0),
         (unlit, 0, state_flags::NO_DEPTH_TEST, 0, 0),
         (unlit, mask, 0, 0, 0),
-        (lit, mask | fade, state_flags::ALPHA_TO_COVERAGE, 0, 0),
         (unlit, mask | hash, 0, 0, 0),
-        (lit, mask | hash, 0, 0, 0),
         (unlit, 0, state_flags::BLEND_NORMAL, 0, 0),
     ];
+    let masked_lit = [
+        (mask, 0),
+        (mask | fade, state_flags::ALPHA_TO_COVERAGE),
+        (mask | hash, 0),
+    ];
+    if cuts {
+        let after = state_flags::DEPTH_EQUAL | state_flags::NO_DEPTH_WRITE;
+        expected.push((lit, 0, after, 0, 0));
+        expected.extend(masked_lit.map(|(bits, state)| {
+            let prepass = state | state_flags::NO_COLOR_WRITE;
+            (lit, bits | permutation::PREPASS, prepass, 0, 0)
+        }));
+    } else {
+        expected.extend(masked_lit.map(|(bits, state)| (lit, bits, state, 0, 0)));
+    }
     expected.sort_unstable();
     assert_eq!(plain_pipelines(&commands), expected);
     assert_eq!(
@@ -332,7 +363,7 @@ fn check_mask_and_depth<B: FrameBuilder>(mut world: World<B>) {
 
 #[test]
 fn masks_and_depth_options_choose_the_pipeline_on_webgpu() {
-    check_mask_and_depth(World::new());
+    check_mask_and_depth(World::new(), true);
 }
 
 #[test]
@@ -342,7 +373,7 @@ fn masks_and_depth_options_choose_the_pipeline_on_webgl2() {
             multi_draw,
             ..CpuCulledConfig::default()
         };
-        check_mask_and_depth(World::build(CpuCulledRenderer::new(config)));
+        check_mask_and_depth(World::build(CpuCulledRenderer::new(config)), false);
     }
 }
 

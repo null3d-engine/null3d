@@ -337,6 +337,51 @@ describe('the WebGPU pipeline layouts', () => {
 	});
 });
 
+describe('the WebGPU prepass builds', () => {
+	/** A device whose shader modules are their descriptors, so a stage shows the code it runs. */
+	const sourceDevice = () =>
+		({
+			...fakeDevice(),
+			createShaderModule: (descriptor: GPUShaderModuleDescriptor) => descriptor,
+		}) as unknown as GPUDevice;
+	const prepassOf = (pipelines: Pipelines, id: number, permutation: number) =>
+		pipelines.render(
+			id,
+			permutation | G.PERMUTATION_PREPASS,
+			'rgba8unorm',
+			'depth32float',
+			4,
+			G.STATE_NO_COLOR_WRITE,
+			G.VERTEX_ALL,
+			0,
+			0,
+		);
+	const codeOf = (module: GPUShaderModule | undefined) =>
+		(module as unknown as GPUShaderModuleDescriptor | undefined)?.code;
+
+	it('cut a masked surface in its own build’s prepass stage, bound as its shading is', () => {
+		const pipelines = new Pipelines(sourceDevice(), deviceShaders());
+		for (const id of [G.TEMPLATE_INSTANCED_LIT, G.TEMPLATE_INSTANCED_STANDARD_MAPS]) {
+			const prepass = prepassOf(pipelines, id, G.PERMUTATION_ALPHA_MASK);
+			const shading = renderDescriptor(pipelines, id, G.PERMUTATION_ALPHA_MASK);
+			expect(prepass.fragment?.entryPoint).toBe('fs_prepass');
+			expect(codeOf(prepass.fragment?.module)).toBe(codeOf(shading.fragment?.module));
+			expect(codeOf(prepass.fragment?.module)).toContain('fn fs_prepass(');
+			expect(prepass.layout).toBe(shading.layout);
+		}
+	});
+
+	it('give an unmasked surface that places its own vertices an empty fragment stage', () => {
+		const pipelines = new Pipelines(sourceDevice(), deviceShaders());
+		const id = G.TEMPLATE_INSTANCED_STANDARD_MAPS;
+		const prepass = prepassOf(pipelines, id, G.PERMUTATION_DISPLACEMENT);
+		const shading = renderDescriptor(pipelines, id, G.PERMUTATION_DISPLACEMENT);
+		expect(prepass.fragment?.entryPoint).toBe('fs');
+		expect(codeOf(prepass.fragment?.module)).not.toBe(codeOf(shading.fragment?.module));
+		expect(codeOf(prepass.vertex.module)).toBe(codeOf(shading.vertex.module));
+	});
+});
+
 /**
  * The templates that only the WebGPU backend registers, each with why the WebGL2 path makes none:
  * it keeps a copy of one sample of a multisampled depth target and reads that, or it copies no
