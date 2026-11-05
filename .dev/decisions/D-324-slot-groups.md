@@ -1,8 +1,8 @@
 # D-324: Slots, one copy's level culled group by group
 
-Status: decided and built on WebGPU's indirect path, for the camera's own view, where the view culls in one phase. The groups of a piece are planned and stored ([D-307](D-307-mesh-pieces.md)). The play-time check that drops slots a scene does not pay for, group-level occlusion, and slots for shadow casters are not built. The frame-time figures below show a net cost at the scene sizes measured on this Mac.
+Status: decided and built on WebGPU's indirect path, for the camera's own view, where the view culls in one phase. The groups of a piece are planned and stored ([D-307](D-307-mesh-pieces.md)). A layout takes slots only when the copies that would hold them carry about 2.4 million triangles together, which is what buys the pass's fixed cost back; a scene below that takes no slot buckets at all and draws as it did without them. Group-level occlusion, slots for shadow casters, and a check that adapts the slots as a camera moves are not built.
 
-Summary: A mesh's pieces of a large list split into groups of 64 to 128 triangles. The few copies that carry the most triangles of a level draw its groups through slots: up to four a level, 128 a scene, finest level first. A slot culls its level's groups for its one copy and packs their indices into the view's own list, so one indirect draw draws it. The picture matches the pieces' picture in every view tested, and the pass costs about 0.3 ms a frame on this Mac against savings of about 0.01 to 0.1 ms at the sizes measured.
+Summary: A mesh's pieces of a large list split into groups of 64 to 128 triangles. The few copies that carry the most triangles of a level draw its groups through slots: up to four a level, 128 a scene, finest level first. A slot culls its level's groups for its one copy and packs their indices into the view's own list, so one indirect draw draws it. The picture matches the pieces' picture in every view tested. The pass costs about 0.3 ms a frame on this Mac, so a layout takes slots only where the copies would carry about 2.4 million triangles; a scene with less draws as it did without slots.
 
 ## Question
 
@@ -72,6 +72,14 @@ The pass costs about 0.3 ms a frame at each size, and the triangles it cuts are 
 
 The GPU check of the branch, which draws s4 and s6, found no change against its parent: s4 at Medium 2.85 to 2.86 ms, s6 at Medium 3.72 to 3.67 ms, s4 at High 3.88 to 4.08 ms and s6 at High 4.66 to 4.54 ms. Neither page has a mesh whose pieces carry groups, so those figures measure the pass's absence and the layout's extra buckets, not its work.
 
+### The gate
+
+The pass costs a frame about 0.3 ms whatever the scene, and a cut triangle is worth 0.2 to 0.3 ms a million. A slot draws its whole level where its groups do not cull, so the copies that would hold the layout's slots carry a level's triangles each until the groups cull them. A half cut must therefore reach about 1.2 million triangles, and the copies must carry about 2.4 million.
+
+`Layout::add_slots` adds no slot bucket below that figure. A scene of smaller levels then keeps the buckets, the draws and the culling it had without slots, and the cost page measures the same draws on both sides. The figure is a build choice, because it depends only on the levels' triangles and their slots, not on the camera. A check that follows a camera would need the GPU's kept counts read back.
+
+The cost page's second scene is one rock of about 630,000 triangles with a coarse level and four copies, which carries about 2.5 million. It passes the gate and draws 38% fewer triangles, from 587,032 to 364,763, with 0 differing pixels. At 1600 by 900 its GPU time fell from 1.63 to 1.42 ms, with the rounds 1.59, 1.67 and 1.63 against 1.42, 1.48 and 1.34, and no overlap. At 320 by 180 the run read 0.78 against 1.24 ms at a load of 7.3, whose rounds spread too widely to judge.
+
 ## Look
 
 The picture is the pieces' picture, pixel for pixel, in every view that the picture test draws. The groups only order a piece's triangles and cull some of them conservatively, and a slot draws the copy at its level's material and pipeline. No option changes the look.
@@ -100,3 +108,4 @@ Rejected:
 - The frame's count keeps the nearest four copies of each slot level in extra tally words. The count visits the same sources as before, so no copy is walked twice.
 - The levels' slices, the bundles and the slot tables follow the pick as the level slices do: a change records the bundles again.
 - The piece check's tally leaves out a copy that draws through a slot, so its "would draw whole" count reads slightly low for such a mesh.
+- A layout takes slots or none when it is built, so a camera that flies close to a heavy mesh does not gain them until the scene's structure changes. The threshold is the constant `SLOT_PAY_TRIANGLES`.

@@ -148,7 +148,7 @@ function rockFile(): Uint8Array {
 	// A large rock for the cost page: one level of about 630,000 triangles, whose four copies carry
 	// enough for the slots to pay.
 	const fine = BIG ? rock(1024, 384) : rock(128, 64);
-	const coarse = BIG ? fine : rock(40, 20);
+	const coarse = BIG ? rock(256, 96) : rock(40, 20);
 	const sides = BIG
 		? [{ name: 'single', doubleSided: false, color: [0.62, 0.55, 0.45, 1] }]
 		: [
@@ -165,10 +165,6 @@ function rockFile(): Uint8Array {
 				metallicFactor: 0,
 			},
 		});
-		if (BIG) {
-			b.node({ name: side.name, mesh: b.mesh([primitive(fine, material)]) });
-			continue;
-		}
 		const level = b.node(
 			{ name: `${side.name}-lod1`, mesh: b.mesh([primitive(coarse, material)]) },
 			true,
