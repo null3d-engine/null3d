@@ -30,6 +30,26 @@ const MAX_SIDES = [96, 48, 24] as const;
 const MAX_TURN = [0.4, 0.55, 0.8] as const;
 
 /**
+ * The turn between two rings on thick wood, in radians, times the radius over the level's edge:
+ * thick wood turns by less between rings, so its bends draw as smooth curves, not creases.
+ */
+const SMOOTH_TURN = 0.5;
+/** The least turn, in radians, that thick wood may take between two rings. */
+const LEAST_TURN = 0.1;
+
+/**
+ * Radians wood of a radius may turn between two rings at a level: the level's turn on thin wood,
+ * less on thick wood, whose crease between two rings would show.
+ *
+ * @param radius The wood's radius in metres.
+ * @param tube The level's detail.
+ * @returns The turn.
+ */
+export function ringTurn(radius: number, tube: TubeDetail): number {
+	return Math.max(LEAST_TURN, Math.min(tube.maxTurn, (SMOOTH_TURN * tube.edge) / radius));
+}
+
+/**
  * How far the axis may stray from the straight line between two rings, and the radius from the
  * straight taper between them, as a share of the radius, at each level.
  */
@@ -157,6 +177,7 @@ function fits(
 	const cy = (to[1] as number) - (from[1] as number);
 	const cz = (to[2] as number) - (from[2] as number);
 	const c2 = cx * cx + cy * cy + cz * cz;
+	const turn = ringTurn(Math.max(r0, r1), tube);
 	const t = path.tangent;
 	const fx = t[first * 3] as number;
 	const fy = t[first * 3 + 1] as number;
@@ -167,7 +188,7 @@ function fits(
 		if (a <= s) continue;
 		const dot =
 			fx * (t[i * 3] as number) + fy * (t[i * 3 + 1] as number) + fz * (t[i * 3 + 2] as number);
-		if (acos(Math.min(1, Math.max(-1, dot))) > tube.maxTurn) return false;
+		if (acos(Math.min(1, Math.max(-1, dot))) > turn) return false;
 		const px = (path.position[i * 3] as number) - (from[0] as number);
 		const py = (path.position[i * 3 + 1] as number) - (from[1] as number);
 		const pz = (path.position[i * 3 + 2] as number) - (from[2] as number);
@@ -235,6 +256,33 @@ export function ringArcs(
 		arcs.push(s);
 	}
 	return arcs;
+}
+
+/** A child at its parent's end leads a fork when it has at least this share of the parent's girth. */
+export const LEADER_SHARE = 0.5;
+
+/**
+ * A side child of at least this share of its parent's girth is codominant with the parent's own
+ * wood: the parent's wood divides there into a fork, rather than taking the child on its side.
+ */
+export const CODOMINANT = 0.75;
+
+/** A leader bends on rings of its own only where its turn sweeps its girth over this many edges. */
+const BEND_EDGES = 2;
+
+/**
+ * The rings on the bend by which a fork's leader turns from its parent's line onto its own: one
+ * for each turn the wood allows between rings, past the first. Wood whose turn sweeps its girth
+ * over less than a few edges takes none, since its fold does not show.
+ *
+ * @param turn Radians between the parent's line and the leader's.
+ * @param girth The parent's radius at the fork, in metres.
+ * @param tube The level's detail.
+ * @returns The rings between the parent's last ring and the leader's first plain ring.
+ */
+export function bendRings(turn: number, girth: number, tube: TubeDetail): number {
+	if (girth * turn < BEND_EDGES * tube.edge) return 0;
+	return Math.max(0, Math.ceil(turn / ringTurn(girth, tube)) - 1);
 }
 
 /** The cosine and sine of each side's angle, by side count, made once. */
