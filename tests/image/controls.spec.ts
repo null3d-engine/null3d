@@ -4,6 +4,7 @@
 // match the image test manifest's controls test, which makes the same moves through the controls'
 // own calls in hold mode. And the controls' update allocates nothing, through every gesture.
 import { type CDPSession, expect, type Page, test } from '@playwright/test';
+import { REFERENCE_PRESET_SWITCH } from '../../bench/lib/parity.ts';
 import { allocatingPlaces } from '../lib/allocations.ts';
 import { ALONE } from '../lib/alone.ts';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
@@ -125,7 +126,9 @@ for (const tier of ['webgpu', 'webgl2'] as const)
 	test(`the engine draws the pose that the orbit drags reach, on ${tier}`, async ({
 		page,
 	}, testInfo) => {
-		const result = await open(page, `gpu=${tier}`);
+		// The reference draws at the fixed preset. A page that leaves the preset to the device lets
+		// the start-up check lower it on a slow GPU, and the frame then draws at another quality.
+		const result = await open(page, `gpu=${tier}&${REFERENCE_PRESET_SWITCH}`);
 		await orbitMoves(page);
 		// The thread that draws runs a frame or two behind the sketch.
 		const { frame: now = 0 } = (await page.evaluate(readPoses)).null3d;
