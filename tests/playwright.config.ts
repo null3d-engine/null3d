@@ -138,13 +138,9 @@ export default defineConfig({
 			testMatch: 'resize.spec.ts',
 			use: {
 				deviceScaleFactor: HIGH_DENSITY_RATIO,
-				launchOptions: {
-					...launchOptions,
-					args: [
-						...(launchOptions.args ?? []),
-						`--force-device-scale-factor=${HIGH_DENSITY_RATIO}`,
-					],
-				},
+				launchOptions: repoBrowserOptions(environment, [
+					`--force-device-scale-factor=${HIGH_DENSITY_RATIO}`,
+				]),
 			},
 		},
 		// The tests that run alone (`tests/lib/alone.ts`), one at a time in each project. CI runs
