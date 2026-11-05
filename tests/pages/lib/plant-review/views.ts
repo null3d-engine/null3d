@@ -37,7 +37,7 @@ export const PLANT_BACKGROUNDS = ['sky-meadow', 'studio-grey', 'white'] as const
 export type PlantBackground = (typeof PLANT_BACKGROUNDS)[number];
 
 /** The lights a view stands in. */
-export const PLANT_SUNS = ['default', 'low', 'back', 'overhead', 'flat'] as const;
+export const PLANT_SUNS = ['default', 'low', 'back', 'overhead', 'flat', 'albedo'] as const;
 
 /** One light of the page. */
 export type PlantSun = (typeof PLANT_SUNS)[number];
@@ -178,7 +178,7 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		slots: [12, 24],
 		fov: 20,
 		background: 'white',
-		sun: 'flat',
+		sun: 'albedo',
 		elevation: 0,
 		cutting: 'leaf',
 		size: [720, 960],
@@ -187,7 +187,7 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		slots: [13, 25],
 		fov: 20,
 		background: 'white',
-		sun: 'flat',
+		sun: 'albedo',
 		elevation: 0,
 		cutting: 'leaf',
 		size: [720, 960],
