@@ -1860,6 +1860,59 @@ describe('stored trees and blockers', () => {
 	});
 });
 
+describe('pieces of a triangle list', () => {
+	/** A box of 12 triangles whose primitive carries the pieces that `extensions` makes. */
+	const boxWith = (extensions: (b: GltfBuilder) => GltfJson) => {
+		const b = new GltfBuilder();
+		b.node({ mesh: b.mesh([{ ...boxPrimitive(b), extensions: extensions(b) }]) });
+		return b;
+	};
+	const BOUNDS = [0, 0, 0, 1, 0, 1, 0, 0.5, 0, 0, 0, 1, 0, -1, 0, 0.5];
+	/** Two pieces of six triangles each, with `groups` triangles in each group, at `version`. */
+	const PIECES = (groups: number[] | undefined, version: number) => (b: GltfBuilder) => ({
+		NULL3D_pieces: {
+			triangles: [6, 6],
+			bounds: BOUNDS,
+			...(groups && {
+				groups: b.accessor(Uint8Array.from(groups), 1),
+				groupBounds: b.accessor(new Float32Array(groups.length * 8).fill(0.5), 4),
+			}),
+			version,
+		},
+	});
+	const piecesOf = (b: GltfBuilder) => parse(b.glb()).meshes[0]?.primitives[0]?.pieces;
+
+	test('a file of the first layout gives its pieces without groups', () => {
+		const pieces = piecesOf(boxWith(PIECES(undefined, 1)));
+		expect(Array.from(pieces?.triangles ?? [])).toEqual([6, 6]);
+		expect(Array.from(pieces?.bounds ?? [])).toEqual(BOUNDS);
+		expect(pieces?.groups).toBeUndefined();
+	});
+
+	test('a file of the second layout gives the groups that split its pieces', () => {
+		const pieces = piecesOf(boxWith(PIECES([4, 2, 3, 3], 2)));
+		expect(Array.from(pieces?.groups ?? [])).toEqual([4, 2, 3, 3]);
+		expect(pieces?.groupBounds?.length).toBe(32);
+		expect(piecesOf(boxWith(PIECES(undefined, 2)))?.groups).toBeUndefined();
+	});
+
+	test('groups that cross a piece or miss a triangle leave the pieces without groups', () => {
+		for (const groups of [
+			[4, 4, 4],
+			[6, 5],
+			[6, 0, 6],
+		]) {
+			const pieces = piecesOf(boxWith(PIECES(groups, 2)));
+			expect(Array.from(pieces?.triangles ?? [])).toEqual([6, 6]);
+			expect(pieces?.groups).toBeUndefined();
+		}
+	});
+
+	test('a layout past the one that the engine reads draws whole', () => {
+		expect(piecesOf(boxWith(PIECES([6, 6], 3)))).toBeUndefined();
+	});
+});
+
 describe('trees of cluster patches', () => {
 	/** A box whose primitive carries the patch tree that `extensions` makes. */
 	const boxWith = (extensions: (b: GltfBuilder) => GltfJson) => {

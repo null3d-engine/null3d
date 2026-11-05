@@ -3,7 +3,13 @@
 // a glTF-Transform document in place.
 import { Accessor, Primitive } from '@gltf-transform/core';
 import { KHRMeshQuantization } from '@gltf-transform/extensions';
-import { MeshoptEncoder } from 'meshoptimizer';
+import {
+	GROUP_CONE_WEIGHT,
+	GROUP_TRIANGLES,
+	GROUP_VERTICES,
+	meshletGroups,
+} from '@null3d/engine/pieces-planner';
+import { MeshoptClusterizer, MeshoptEncoder } from 'meshoptimizer';
 import { lodOf, MSFT_LOD } from './lod-extension.js';
 
 /** @import { Document, Mesh, Node, PrimitiveTarget, Skin } from '@gltf-transform/core' */
@@ -228,6 +234,26 @@ export function cacheOrder(indices) {
 	for (let i = 0; i < work.length; i++)
 		work[i] = /** @type {number} */ (back[/** @type {number} */ (work[i])]);
 	return work;
+}
+
+/**
+ * A triangle list split into groups of triangles that lie close together, by meshoptimizer's
+ * clusterizer, as the pieces planner's `Clusterize` takes it. Call it once the clusterizer is
+ * ready.
+ *
+ * @param {Uint32Array} indices
+ * @param {Float32Array} positions
+ */
+export function clusterOrder(indices, positions) {
+	const { meshlets, vertices, triangles, meshletCount } = MeshoptClusterizer.buildMeshlets(
+		indices,
+		positions,
+		3,
+		GROUP_VERTICES,
+		GROUP_TRIANGLES,
+		GROUP_CONE_WEIGHT,
+	);
+	return meshletGroups(meshlets, vertices, triangles, meshletCount);
 }
 
 /**

@@ -40,6 +40,9 @@ export const STARTUP_PAGES_DIR = join(REPO_ROOT, 'target/startup-pages');
 export const BENCH_PAGES_DIR = join(REPO_ROOT, 'target/bench-pages');
 /** The Vite config of the benchmark pages' build, from a copy of the repository's root. */
 const BENCH_CONFIG = 'bench/vite.pages.config.ts';
+/** Where the Island phones study's page builds, and the start of its files' paths in the build. */
+export const ISLAND_PHONES_DIR = join(REPO_ROOT, 'target/island-phones');
+export const ISLAND_PHONES_PREFIX = 'bench/research/island-phones/';
 
 /** Runs `vite build` in the repository copy at `root`, with `env` added, under the page build lock. */
 function viteBuild(root: string, args: readonly string[], env: Record<string, string> = {}): void {
@@ -102,6 +105,13 @@ export interface LoadBuild {
  * lies under bench/, and the startup build holds the rest.
  */
 export const LOAD_BUILDS: readonly (LoadBuild & { build(): void })[] = [
+	// The phones study's page lies under bench/ too, so its build comes before the benchmark pages'.
+	{
+		name: 'Island phones study',
+		prefix: ISLAND_PHONES_PREFIX,
+		dir: ISLAND_PHONES_DIR,
+		build: () => viteBuild(REPO_ROOT, ['--config', `${ISLAND_PHONES_PREFIX}vite.build.config.ts`]),
+	},
 	{
 		name: 'benchmark pages',
 		prefix: 'bench/',
