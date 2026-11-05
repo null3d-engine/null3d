@@ -144,6 +144,8 @@ export const ERROR_FIXES = {
 		"Record the session again with the engine that recorded it, or update the engine that reads the file. When the message names a sketch, open the page with that sketch: a replay runs the file's frames on the scene that recorded them. When it names a key or a fixed step rate, the recording came from a sketch that this engine cannot run as it ran. A replay starts at the file's first frame, so a file must come from a session that started at the page's first frame.",
 	E1436:
 		'Ask for the pick again: the engine started a new GPU device, which answers a new pick. A pick that waits when the device is lost is rejected rather than repeated, because the frame that recorded it drew on the lost device.',
+	E1437:
+		"Run the command again. A download that broke off, or that something changed on the way, fails the check. If the check fails again, a proxy or a mirror between this computer and Google's storage changes the file, so download without it. On a platform that has no Chrome for Testing build, set CI=1 to draw with Playwright's Chromium on the software GPU, or NULL3D_CHROME=installed to draw with the installed Google Chrome.",
 	E1501:
 		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses. For a large crowd of skinned characters on WebGPU, use models with fewer vertices or fewer copies. Each copy skins its own vertices, even when copies share a mesh. The crowd draws again once it fits.',
 	E1502:

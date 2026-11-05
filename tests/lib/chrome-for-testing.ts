@@ -6,10 +6,10 @@
 // starting Chrome on the real GPU (`chrome-launches.test.ts`). Importing it sets
 // `NULL3D_CHROME=testing` for this process and every process it starts, so the command-line tool's
 // runs inside the repository's tests take the same build, with no fallback.
-import { existsSync } from 'node:fs';
 import {
 	browserOptions,
 	CHROME_FOR_TESTING_VERSION,
+	chromeForTestingInstalled,
 	chromeForTestingPath,
 	launchBrowser,
 } from '../../packages/cli/src/browser.js';
@@ -22,12 +22,15 @@ process.env.NULL3D_CHROME = 'testing';
 /** The repository's command that installs the pinned Chrome for Testing. */
 export const CHROME_INSTALL_COMMAND = 'bun run chrome:install';
 
-/** The pinned Chrome for Testing's launch options, once its executable is known to be installed. */
+/**
+ * The pinned Chrome for Testing's launch options, once its executable is known to be installed from
+ * an archive whose hash the install checked.
+ */
 export function chromeForTesting(): { executablePath: string } {
 	const executablePath = chromeForTestingPath();
-	if (!existsSync(executablePath))
+	if (!chromeForTestingInstalled())
 		throw new Error(
-			`Chrome for Testing ${CHROME_FOR_TESTING_VERSION} is not installed at ${executablePath}. Install it with ${CHROME_INSTALL_COMMAND}.`,
+			`Chrome for Testing ${CHROME_FOR_TESTING_VERSION} is not installed at ${executablePath}, or its install did not check its hash. Install it with ${CHROME_INSTALL_COMMAND}.`,
 		);
 	return { executablePath };
 }

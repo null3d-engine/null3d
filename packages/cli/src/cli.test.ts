@@ -1,15 +1,26 @@
-import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test';
-import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { ERROR_FIXES } from '../../engine/src/errors/fixes.ts';
 import {
 	browserOptions,
+	CHROME_FOR_TESTING_SHA256,
 	CHROME_FOR_TESTING_VERSION,
+	CHROME_REFUSED,
+	CHROME_REFUSED_FIX,
+	checkChromeArchive,
 	chromeBuild,
 	chromeFallback,
 	chromeForTestingDir,
+	chromeForTestingInstalled,
 	chromeForTestingPath,
 	chromeForTestingPlatform,
+	chromeForTestingSha256,
 	chromeForTestingUrl,
 	defaultEnvironment,
+	installChromeForTesting,
 	missingBrowserFix,
 	readyChromeForTesting,
 	SWIFTSHADER_ARGS,
@@ -87,7 +98,7 @@ describe('the environments', () => {
 			'Google Chrome is not installed.',
 		);
 		expect(missingBrowserFix('chrome-real-gpu', 'testing')).toBe(
-			`Chrome for Testing ${CHROME_FOR_TESTING_VERSION} is not installed at ${chromeForTestingPath()}. Download ${chromeForTestingUrl()} and unzip it into ${chromeForTestingDir()}.`,
+			`Chrome for Testing ${CHROME_FOR_TESTING_VERSION} is not installed at ${chromeForTestingPath()}. The tool downloads it from ${chromeForTestingUrl()} into ${chromeForTestingDir()} on first use, and checks its SHA-256 hash. Run the command again with a network connection.`,
 		);
 	});
 });
@@ -106,16 +117,16 @@ describe('Chrome for Testing', () => {
 	it('starts the cached copy without a download', async () => {
 		const install = mock(async () => '');
 		const warn = mock(() => {});
-		expect(await readyChromeForTesting({ fallback: true, exists: () => true, install, warn })).toBe(
-			'testing',
-		);
+		expect(
+			await readyChromeForTesting({ fallback: true, installed: () => true, install, warn }),
+		).toBe('testing');
 		expect(install).not.toHaveBeenCalled();
 		expect(warn).not.toHaveBeenCalled();
 	});
 
 	it('downloads on first use', async () => {
 		const install = mock(async () => '');
-		expect(await readyChromeForTesting({ fallback: false, exists: () => false, install })).toBe(
+		expect(await readyChromeForTesting({ fallback: false, installed: () => false, install })).toBe(
 			'testing',
 		);
 		expect(install).toHaveBeenCalledTimes(1);
@@ -127,7 +138,7 @@ describe('Chrome for Testing', () => {
 		});
 		const warn = mock((_line: string) => {});
 		expect(
-			await readyChromeForTesting({ fallback: true, exists: () => false, install, warn }),
+			await readyChromeForTesting({ fallback: true, installed: () => false, install, warn }),
 		).toBe('installed');
 		expect(warn).toHaveBeenCalledTimes(1);
 		expect(warn.mock.calls[0]?.[0]).toBe(
@@ -140,7 +151,7 @@ describe('Chrome for Testing', () => {
 			throw new Error('offline');
 		});
 		await expect(
-			readyChromeForTesting({ fallback: false, exists: () => false, install }),
+			readyChromeForTesting({ fallback: false, installed: () => false, install }),
 		).rejects.toThrow(`${missingBrowserFix('chrome-real-gpu', 'testing')} offline`);
 	});
 
@@ -158,6 +169,105 @@ describe('Chrome for Testing', () => {
 		);
 		expect(chromeForTestingPath('/c', 'linux64')).toBe('/c/chrome-linux64/chrome');
 		expect(chromeForTestingPath('/c', 'win64')).toBe(join('/c/chrome-win64', 'chrome.exe'));
+	});
+});
+
+describe("Chrome for Testing's download check", () => {
+	const PLATFORMS = ['mac-arm64', 'mac-x64', 'linux64', 'win64'];
+	const DOCS = 'https://github.com/null3d-engine/null3d/blob/generated/docs/errors/E1437.md';
+	let root = '';
+	beforeEach(() => {
+		root = mkdtempSync(join(tmpdir(), 'null3d-chrome-check-'));
+	});
+	afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+	/** A cache folder whose executable is in place, with `record` as the hash its install checked. */
+	function cached(record?: string): string {
+		const dir = join(root, 'cache', CHROME_FOR_TESTING_VERSION);
+		mkdirSync(dirname(chromeForTestingPath(dir, 'linux64')), { recursive: true });
+		writeFileSync(chromeForTestingPath(dir, 'linux64'), '');
+		if (record !== undefined) writeFileSync(join(dir, 'verified.sha256'), `${record}\n`);
+		return dir;
+	}
+
+	it('records a hash for every platform that has a build, with the fix of the engine table', () => {
+		for (const platform of PLATFORMS)
+			expect(chromeForTestingSha256(platform)).toMatch(/^[0-9a-f]{64}$/);
+		expect(Object.keys(CHROME_FOR_TESTING_SHA256).sort()).toEqual([...PLATFORMS].sort());
+		expect(CHROME_REFUSED).toBe('E1437');
+		expect(CHROME_REFUSED_FIX).toBe(ERROR_FIXES.E1437);
+	});
+
+	it('keeps an archive whose hash matches', () => {
+		const archive = join(root, 'chrome.zip');
+		writeFileSync(archive, 'the archive');
+		const digest = createHash('sha256').update('the archive').digest('hex');
+		expect(() => checkChromeArchive(archive, digest, digest, 'linux64')).not.toThrow();
+		expect(existsSync(archive)).toBe(true);
+	});
+
+	it('refuses and deletes an archive whose hash does not match', () => {
+		const archive = join(root, 'chrome.zip');
+		writeFileSync(archive, 'other bytes');
+		const digest = createHash('sha256').update('other bytes').digest('hex');
+		const expected = chromeForTestingSha256('linux64');
+		expect(() => checkChromeArchive(archive, digest, expected, 'linux64')).toThrow(
+			`E1437: the Chrome for Testing ${CHROME_FOR_TESTING_VERSION} archive for linux64 has the SHA-256 hash ${digest}, not ${expected}, so the tool deleted it. ${CHROME_REFUSED_FIX} See ${DOCS}`,
+		);
+		expect(existsSync(archive)).toBe(false);
+	});
+
+	it('installs nothing from a download whose hash does not match, and leaves no file of it', async () => {
+		const dir = join(root, 'cache', CHROME_FOR_TESTING_VERSION);
+		const download = mock(async () => new Response('not the pinned build'));
+		const install = installChromeForTesting({ dir, platform: 'linux64', download, log: () => {} });
+		await expect(install).rejects.toMatchObject({ code: 'E1437' });
+		expect(download).toHaveBeenCalledTimes(1);
+		expect(existsSync(dir)).toBe(false);
+		expect(readdirSync(join(root, 'cache'))).toEqual([]);
+	});
+
+	it('refuses a platform that has no build or no recorded hash, before any download', async () => {
+		expect(() => chromeForTestingPlatform('linux', 'arm64')).toThrow(
+			'E1437: Chrome for Testing has no build for linux on arm64.',
+		);
+		expect(() => chromeForTestingSha256('linux-arm64')).toThrow(
+			`E1437: the tool records no SHA-256 hash for Chrome for Testing ${CHROME_FOR_TESTING_VERSION} on linux-arm64, so it cannot check a download.`,
+		);
+		expect(() => chromeForTestingSha256('toString')).toThrow('E1437');
+		const download = mock(async () => new Response(''));
+		await expect(
+			installChromeForTesting({
+				dir: join(root, 'cache', CHROME_FOR_TESTING_VERSION),
+				platform: 'linux-arm64',
+				download,
+				log: () => {},
+			}),
+		).rejects.toMatchObject({ code: 'E1437' });
+		expect(download).not.toHaveBeenCalled();
+	});
+
+	it('trusts a cached copy only when its install recorded the expected hash', async () => {
+		expect(chromeForTestingInstalled(cached(), 'linux64')).toBe(false);
+		rmSync(join(root, 'cache'), { recursive: true });
+		expect(chromeForTestingInstalled(cached('0'.repeat(64)), 'linux64')).toBe(false);
+		rmSync(join(root, 'cache'), { recursive: true });
+		const dir = cached(chromeForTestingSha256('linux64'));
+		expect(chromeForTestingInstalled(dir, 'linux64')).toBe(true);
+		const download = mock(async () => new Response(''));
+		expect(await installChromeForTesting({ dir, platform: 'linux64', download })).toBe(
+			chromeForTestingPath(dir, 'linux64'),
+		);
+		expect(download).not.toHaveBeenCalled();
+	});
+
+	it('leaves an unchecked cached copy untrusted when the new download is refused', async () => {
+		const dir = cached();
+		const download = mock(async () => new Response('not the pinned build'));
+		await expect(
+			installChromeForTesting({ dir, platform: 'linux64', download, log: () => {} }),
+		).rejects.toMatchObject({ code: 'E1437' });
+		expect(chromeForTestingInstalled(dir, 'linux64')).toBe(false);
 	});
 });
 

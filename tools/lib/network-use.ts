@@ -67,7 +67,7 @@ export const NETWORK_USES: Readonly<Record<string, NetworkUse>> = {
 	},
 	'packages/cli/src/browser.js': {
 		fetch: 1,
-		why: "downloads the pinned Chrome for Testing build once, on first use, into this computer's cache, to draw on its GPU; a page never makes the request",
+		why: "downloads the pinned Chrome for Testing build once, on first use, into this computer's cache, to draw on its GPU, and refuses an archive whose SHA-256 hash is not the one it records; a page never makes the request",
 	},
 	'packages/cli/src/devtools.js': {
 		fetch: 1,
