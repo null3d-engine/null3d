@@ -1,8 +1,8 @@
 # D-323: The Island lightens its drawing on a phone
 
-Status: decided by the owner. Built: the Low preset's fixed shadow range and its cards drawn from one atlas view. The water reflection keeps every second frame, so the slower reflection is not applied. Measured: both sides on the M3 Max, two loads each, in [the data](#data), and both sides on the two cloud phones, in [the cloud phones](#the-cloud-phones). Pending: the pictures. Task: none.
+Status: decided by the owner. Built: the Low preset's fixed shadow range, its cards drawn from one atlas view, and its water reflection every fourth frame. Measured: both sides on the M3 Max, two loads each, in [the data](#data), and both sides on the two cloud phones, in [the cloud phones](#the-cloud-phones). Pending: the pictures. Task: none.
 
-Summary: A phone draws the Island at Low, where the shadow maps and the far tree cards take most of the frame. On Low the sun's shadows reach 250 m and no longer stretch with the camera. Every card draws from one atlas view. The water's reflection keeps every second frame, because a cadence of four under-draws a held frame on WebGL2, so its trial's saving is forgone. Two loads each side at 576 x 1248 on the M3 Max put the frame at 2.66 ms before and 2.32 ms after. The after side is faster by 0.34 ms, or 12.7 per cent.
+Summary: A phone draws the Island at Low, where the shadow maps and the far tree cards take most of the frame. On Low the sun's shadows reach 250 m and no longer stretch with the camera. Every card draws from one atlas view. The water's reflection draws every fourth frame, and a held frame draws every pass, so its picture still shows the reflection. Two loads each side at 576 x 1248 on the M3 Max put the frame at 2.66 ms before and 2.32 ms after. The after side is faster by 0.34 ms, or 12.7 per cent.
 
 ## Question
 
@@ -12,7 +12,7 @@ The Island's town view is the scene's slowest view on a phone, and the engine gi
 
 Hard rule 40: when options differ in how the result looks, the better-looking one wins. A cost that another rule limits is met by a preset or a cheaper technique of the same look, never by dropping the look. The scene therefore changes only on Low, and the desktop presets keep the look they have.
 
-The owner approved four changes for the Island's Low preset. They are a shorter shadow reach, cards drawn from one atlas view, shadow-casting cards limited by distance, and a smaller or slower water reflection. The last is not applied: [the look](#look) gives the reason.
+The owner approved four changes for the Island's Low preset. They are a shorter shadow reach, cards drawn from one atlas view, shadow-casting cards limited by distance, and a smaller or slower water reflection. All four are applied.
 
 ## Data
 
@@ -38,7 +38,7 @@ The first before load also gives the saving of each change on its own. A trial's
 | Shadow reach of 150 m | 2.30 ms | 14.0 per cent |
 | Reflection every fourth frame | 2.50 ms | 8.3 per cent |
 
-The trials overlap, so their savings do not add. The reflection's 8.3 per cent is forgone, because that cadence is not applied. The whole frame's triangles move between windows because the shadow cascades draw in turns. The study's own figures from its earlier Mac are in `bench/research/island-phones/findings.md`, and none of them compares with these.
+The trials overlap, so their savings do not add. The reflection's 8.3 per cent stands: Low draws it every fourth frame. The whole frame's triangles move between windows because the shadow cascades draw in turns. The study's own figures from its earlier Mac are in `bench/research/island-phones/findings.md`, and none of them compares with these.
 
 How the data was produced: `bun bench/research/island-phones/scripts/run.ts` ran the page with `preset=low&w=576&h=1248` and the frame cap off. The before steps were `base,try:cards1,base,casters,base,try:shadow300,base,try:shadow150,base,try:reflect4,base`. The after steps were `base,casters,base,cards,base`.
 
@@ -67,14 +67,14 @@ The size of the cross-run change is therefore not safe on either phone. The part
 
 The pictures are not drawn yet. At Low the opening view now ends the shadows nearer, so the far hills lose theirs, as the owner accepted. The town keeps its shadows from the views a phone shows.
 
-A slower reflection is not applied. A cadence of four under-draws a held frame on WebGL2: the sea keeps an empty reflection and darkens. Low therefore keeps the add-on's default of every second frame, and the trial's 8.3 per cent saving is forgone.
+Low draws the reflection every fourth frame. A held frame draws every pass, so its picture shows the reflection that the frame before it drew. The trial's 8.3 per cent saving counts.
 
 ## Decision
 
 - Low keeps the sun's shadows at 250 m and passes no `shadowReach`, so the range does not grow as the camera draws back. A reach of 150 m saves more, but rule 40 takes the better look: 250 m covers the town from the cloud runs' view. Medium and above keep the stretchable range of 600 m.
 - On Low every card batch draws from one atlas view: the near cards, the shadow-casting cards and the far canopy. The saving is inside this load's spread, and the card's cost grows with the area it covers, which the study measured at larger drawings. The owner approved it.
 - The shadow-casting cards keep every tree's shadow and take no draw range. The engine culls each caster against each cascade's frustum (`crates/null3d-render/src/shadows.rs`), so the shorter range already drops the casters past it. The frame's triangles fall with the range in the data above.
-- Low draws the water's reflection every second frame, the add-on's default, and High and Ultra every frame. A cadence of four under-draws a held frame on WebGL2, where the sea keeps an empty reflection, so that saving is forgone. A quarter-size reflection is not available on Low alone. The water add-on takes one scale for every preset, and High and Ultra keep the half-size reflection that a crisp mast needs.
+- Low draws the water's reflection every fourth frame, Medium every second, and High and Ultra every frame. A held frame draws every pass, so the picture shows the reflection. A quarter-size reflection is not available on Low alone. The water add-on takes one scale for every preset, and High and Ultra keep the half-size reflection that a crisp mast needs.
 - The desktop presets do not change.
 
 ## Consequences
