@@ -195,6 +195,12 @@ export function placeShoots(input: DressInput): ShootRows {
 		const before = previous.get(axis);
 		previous.set(axis, b);
 		if (kind === BUD_DORMANT) continue;
+		// The clean bole carries no shoot: the trunk below the crown is bare, as the record says.
+		if (
+			record.growth.model === 'self-organizing' &&
+			(buds.position[b * 3 + 1] as number) < record.growth.shedding.cleanBole * skeleton.height
+		)
+			continue;
 		if ((buds.light[b] as number) < shoots.placement.shadePrune) continue;
 		const vigor = buds.vigor[b] as number;
 		// The stretch this bud serves: back to the bud before it on its axis, or to its node's parent.
