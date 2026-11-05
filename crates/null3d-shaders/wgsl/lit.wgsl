@@ -281,7 +281,7 @@ fn pick_color(key: u32) -> vec4f {
 #import null3d::cutout::{alpha_hash_threshold}
 #endif
 #ifdef SAMPLE_MASK
-#import null3d::cutout::{MaskedFragment, masked_fragment}
+#import null3d::cutout::{MaskedFragment, coverage_mask, masked_fragment}
 #endif
 #ifdef WEIGHTED
 #import null3d::weighted::{WeightedFragment, weighted_fragment}
@@ -2983,53 +2983,14 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) {
 #endif
 }
 #else
-@fragment
-#ifdef SAMPLE_MASK
-fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> MaskedFragment {
-#else ifdef WEIGHTED
-fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> WeightedFragment {
-#else ifdef MOMENT_COLOUR
-fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
-#else ifdef PICK
-fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
-#else
-fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
-#endif
-#ifdef PICK
-    return pick_color(in.key);
-#else
+#ifndef PICK
+/// Loads what the surface reads besides the fragment's inputs: the material's row, its maps, the
+/// alpha hash's place, a fading level's fade, the displacement's heights and a custom material's
+/// built-in values, uniforms and textures. The shading and the masked prepass both start here.
+fn load_surface_state(in: VertexOut) {
     material_row = material_of(in.material);
 #ifdef MAPS
     map_material = in.material;
-#endif
-#ifdef MAPS
-    // Only a light-mapped material reads the light map's transform and direction layer.
-    if map_ready(material_row.more_maps.y) {
-        light_map_uv = material_light_map_uv(in.material);
-        light_map_direction = material_light_map_direction(in.material);
-    } else {
-        light_map_uv = vec4f(1.0, 1.0, 0.0, 0.0);
-        light_map_direction = -1.0;
-    }
-#endif
-#ifdef TRANSMISSION
-    transmission_row = material_transmission(in.material);
-    layer_maps_kinds = layer_maps_kind_of(in.material);
-    volume_layers = material_volume_layers(in.material);
-    volume_dispersion = material_dispersion(in.material);
-    object_scale = in.scale;
-#else ifdef TRANSLUCENCY
-    translucency_row = material_translucency(in.material);
-    volume_row = material_transmission(in.material);
-    object_scale = in.scale;
-#endif
-#ifdef SUBSURFACE
-    subsurface_row = material_subsurface(in.material);
-#endif
-#ifdef COAT_SHEEN
-    coat_sheen_row = material_coat_sheen(in.material);
-    film_row = material_iridescence(in.material);
-    anisotropy_row = material_anisotropy(in.material);
 #endif
 #ifdef ALPHA_HASH
     hash_place = in.mesh_place;
@@ -3062,6 +3023,54 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
 #ifdef CUSTOM_TEXTURES
     load_custom_texture_layers(in.material);
+#endif
+}
+
+#endif
+@fragment
+#ifdef SAMPLE_MASK
+fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> MaskedFragment {
+#else ifdef WEIGHTED
+fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> WeightedFragment {
+#else ifdef MOMENT_COLOUR
+fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
+#else ifdef PICK
+fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
+#else
+fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
+#endif
+#ifdef PICK
+    return pick_color(in.key);
+#else
+    load_surface_state(in);
+#ifdef MAPS
+    // Only a light-mapped material reads the light map's transform and direction layer.
+    if map_ready(material_row.more_maps.y) {
+        light_map_uv = material_light_map_uv(in.material);
+        light_map_direction = material_light_map_direction(in.material);
+    } else {
+        light_map_uv = vec4f(1.0, 1.0, 0.0, 0.0);
+        light_map_direction = -1.0;
+    }
+#endif
+#ifdef TRANSMISSION
+    transmission_row = material_transmission(in.material);
+    layer_maps_kinds = layer_maps_kind_of(in.material);
+    volume_layers = material_volume_layers(in.material);
+    volume_dispersion = material_dispersion(in.material);
+    object_scale = in.scale;
+#else ifdef TRANSLUCENCY
+    translucency_row = material_translucency(in.material);
+    volume_row = material_transmission(in.material);
+    object_scale = in.scale;
+#endif
+#ifdef SUBSURFACE
+    subsurface_row = material_subsurface(in.material);
+#endif
+#ifdef COAT_SHEEN
+    coat_sheen_row = material_coat_sheen(in.material);
+    film_row = material_iridescence(in.material);
+    anisotropy_row = material_anisotropy(in.material);
 #endif
     let input = surface_input(in, front);
 #ifdef CUSTOM_UNLIT
@@ -3108,6 +3117,76 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
 #endif
 }
+#ifndef WEBGL2
+#ifndef PICK
+#ifndef SUBSURFACE
+#ifndef TRANSMISSION
+#ifdef ALPHA_MASK
+// WebGPU's prepass of a masked surface, from the shading build's own vertex stage: it runs the
+// surface for its alpha alone and tests it as the shading does, by the cutoff, by alpha to coverage
+// or by the hash, then a fading level's dither. The depth it leaves holds the mask's holes, and the
+// shading after it draws at that depth with no test of its own (D-325). Under alpha to coverage it
+// takes the samples that the faded alpha covers, so depth lands only there and the resolve still
+// smooths the cut edge: through `sample_mask` where the target has no alpha, and through the alpha
+// that the pipeline turns into coverage where it has.
+#ifdef SAMPLE_MASK
+struct PrepassCoverage {
+    @builtin(sample_mask) mask: u32,
+}
+
+@fragment
+fn fs_prepass(in: VertexOut, @builtin(front_facing) front: bool) -> PrepassCoverage {
+#else ifdef ALPHA_COVERAGE
+@fragment
+fn fs_prepass(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
+#else
+@fragment
+fn fs_prepass(in: VertexOut, @builtin(front_facing) front: bool) {
+#endif
+    load_surface_state(in);
+    let input = surface_input(in, front);
+#ifdef CUSTOM_UNLIT
+    let alpha = unlit(input).a;
+#else ifdef CUSTOM_SURFACE
+    let alpha = surface(input).alpha;
+#else
+    let alpha = defaultSurface(input).alpha;
+#endif
+    // The tests' derivatives come first, in uniform control flow.
+#ifdef ALPHA_HASH
+    let threshold = alpha_hash_threshold(in.mesh_place);
+#else ifdef ALPHA_COVERAGE
+    let covered = alpha_coverage(alpha, fwidth(alpha), material_row.emissive.w);
+#endif
+#ifdef ALPHA_HASH
+    if alpha < threshold {
+        discard;
+    }
+#else ifdef ALPHA_COVERAGE
+    if covered <= 0.0 {
+        discard;
+    }
+#else
+    if alpha < material_row.emissive.w {
+        discard;
+    }
+#endif
+#ifdef LOD_FADE
+    if !lod_kept(lod.x, in.clip.xy, u32(lod.y)) {
+        discard;
+    }
+#endif
+#ifdef SAMPLE_MASK
+    return PrepassCoverage(coverage_mask(covered));
+#else ifdef ALPHA_COVERAGE
+    return vec4f(0.0, 0.0, 0.0, covered);
+#endif
+}
+#endif
+#endif
+#endif
+#endif
+#endif
 #endif
 #else
 @vertex
