@@ -79,6 +79,7 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'NULL3D_mesh_bvh',
 	'NULL3D_occluder',
 	'NULL3D_clusters',
+	'NULL3D_pieces',
 ];
 
 /**
@@ -615,6 +616,20 @@ export interface PrimitiveData {
 	 * draw patch by patch where their error lets them.
 	 */
 	patches?: PatchesData;
+	/**
+	 * The pieces of the primitive's triangle list (`NULL3D_pieces`), which copies cull one by one.
+	 */
+	pieces?: PiecesData;
+}
+
+/**
+ * The pieces of a triangle list, as the asset tool sorts them: the triangles of each piece, one
+ * piece after another in the list's order, and eight floats of each piece's bounds, its bounding
+ * sphere's centre and radius, then its cone's axis and cutoff.
+ */
+export interface PiecesData {
+	triangles: Uint32Array;
+	bounds: Float32Array;
 }
 
 /**
@@ -622,13 +637,16 @@ export interface PrimitiveData {
  * asset tool builds them. `indices` holds every patch's triangles one patch after another, and
  * each patch's `first` and `count` name its run of them. `words` holds each patch's first index,
  * index count, its parent's place plus one (0 for the root) and its error's bits, four integers
- * each; `bounds` holds its centre and radius, four floats each.
+ * each; `bounds` holds its centre and radius, four floats each. `current` is true for a tree of the
+ * layout that the engine draws, {@link CLUSTERS_VERSION}. A file that names no version holds the
+ * first layout.
  */
 export interface PatchesData {
 	indices: Uint32Array;
 	bounds: Float32Array;
 	words: Uint32Array;
 	root: number;
+	current: boolean;
 }
 
 /**
@@ -653,6 +671,15 @@ export const MESH_BVH = 'NULL3D_mesh_bvh';
 export const OCCLUDER = 'NULL3D_occluder';
 /** The extension that holds a primitive's tree of cluster patches. */
 export const CLUSTERS = 'NULL3D_clusters';
+/** The extension that holds the pieces of a primitive's triangle list. */
+export const PIECES = 'NULL3D_pieces';
+/** The version of the pieces' layout that the engine reads. A file of another layout draws whole. */
+export const PIECES_VERSION = 1;
+/**
+ * The version of the tree's layout that the engine draws: each patch's sphere holds its children's
+ * and its error is at least theirs. An older tree draws its mesh whole.
+ */
+export const CLUSTERS_VERSION = 2;
 
 /**
  * A primitive that carries an extension which an add-on's handler reads. The loader hands the
@@ -1173,7 +1200,10 @@ export function parseGltf(
 		const bytes = buffers[buffer];
 		const meshopt = meshoptOf(view);
 		if (meshopt && (decode || !bytes))
-			return { stride, meshopt: compressedView(meshopt, length, buffers, what) };
+			return {
+				stride,
+				meshopt: compressedView(meshopt, length, buffers, budget.allowance, what),
+			};
 		if (!bytes) broken(`${what} reads buffer ${buffer}, a fallback buffer that holds no data`);
 		if (offset + length > bytes.length)
 			broken(
@@ -1189,7 +1219,7 @@ export function parseGltf(
 		const { buffer, offset, length, stride, count, mode, filter } = view.meshopt as CompressedView;
 		if (!decode) broken(`bufferView ${v} holds meshopt data, and the parser has no decoder`);
 		const source = (buffers[buffer] as Uint8Array).subarray(offset, offset + length);
-		budget.take(count * stride, `bufferView ${v}'s meshopt data`);
+		budget.takeBlock(count * stride, `bufferView ${v}'s meshopt data`);
 		const target = new Uint8Array(count * stride);
 		try {
 			decode(target, count, stride, source, mode, filter);
@@ -1831,13 +1861,16 @@ interface CompressedView {
 
 /**
  * Checks a buffer view's meshopt extension: its data lies inside a buffer that holds data, its
- * mode and filter allow its stride, and its decoded bytes fill the view and stay within an
- * accessor's limit. So a decode never allocates a huge count.
+ * mode and filter allow its stride, and its decoded bytes fill the view and stay within what the
+ * whole file may decode to. So a decode never allocates a huge count. A writer can pack many
+ * arrays into one view, so the view answers to the file's total, and each accessor read out of it
+ * to the limit of one array.
  */
 function compressedView(
 	meshopt: Entry,
 	viewLength: number,
 	buffers: readonly (Uint8Array | undefined)[],
+	fileBytes: number,
 	what: string,
 ): CompressedView {
 	const name = `${what}'s meshopt data`;
@@ -1864,9 +1897,9 @@ function compressedView(
 		broken(`${name} has the byteStride ${stride}, which its mode and filter do not allow`);
 	if (mode === 'TRIANGLES' && n % 3 !== 0)
 		broken(`${name} has ${n} indices, which make no whole triangles`);
-	if (n * stride > MAX_ACCESSOR_BYTES)
+	if (n * stride > fileBytes)
 		broken(
-			`${name} decodes to ${n * stride} bytes, more than the ${MAX_ACCESSOR_BYTES} bytes an accessor may read`,
+			`${name} decodes to ${n * stride} bytes, more than the ${fileBytes} bytes that the whole file may decode to`,
 		);
 	if (n * stride !== viewLength)
 		broken(`${name} decodes to ${n * stride} bytes, and the view's byteLength says ${viewLength}`);
@@ -1882,7 +1915,16 @@ const ATTRIBUTES: readonly [
 	name: string,
 	field: Exclude<
 		keyof PrimitiveData,
-		'accessors' | 'indices' | 'material' | 'min' | 'max' | 'rest' | 'bvh' | 'occluder' | 'patches'
+		| 'accessors'
+		| 'indices'
+		| 'material'
+		| 'min'
+		| 'max'
+		| 'rest'
+		| 'bvh'
+		| 'occluder'
+		| 'patches'
+		| 'pieces'
 	>,
 	components: readonly number[],
 	types: Readonly<Record<number, boolean | undefined>>,
@@ -2065,8 +2107,12 @@ function parsePrimitive(
 			indices = Uint16Array.from(data.array);
 		} else indices = data.array;
 	}
-	for (const i of indices ?? [])
-		if (i >= vertices) broken(`${what} has the index ${i}, past its ${vertices} vertices`);
+	if (indices)
+		indicesWithin(
+			indices,
+			vertices,
+			(i) => `${what} has the index ${i}, past its ${vertices} vertices`,
+		);
 	if (mode !== TRIANGLES) indices = toTriangles(indices, vertices, mode, budget, what);
 	const corners = indices ? indices.length : vertices;
 	if (corners % 3 !== 0) broken(`${what} has ${corners} corners, which make no whole triangles`);
@@ -2099,9 +2145,35 @@ function parsePrimitive(
 			what,
 			read,
 			vertices,
-			budget,
 		);
+	if (extensions?.[PIECES] !== undefined) {
+		const pieces = piecesOf(entry(extensions[PIECES], `${what}'s ${PIECES}`), corners / 3);
+		if (pieces) data.pieces = pieces;
+	}
 	return data;
+}
+
+/**
+ * The pieces of a primitive's triangle list, or nothing for pieces of another layout's version, or
+ * whose triangles do not add up to the list's, which then draws whole.
+ */
+function piecesOf(extension: Entry, triangles: number): PiecesData | undefined {
+	const counts = extension.triangles;
+	const bounds = extension.bounds;
+	if (Number(extension.version ?? 0) !== PIECES_VERSION) return undefined;
+	if (!Array.isArray(counts) || !Array.isArray(bounds) || bounds.length !== counts.length * 8)
+		return undefined;
+	let sum = 0;
+	for (const count of counts) {
+		if (!Number.isInteger(count) || (count as number) <= 0) return undefined;
+		sum += count as number;
+	}
+	if (sum !== triangles || !bounds.every((v) => typeof v === 'number' && Number.isFinite(v)))
+		return undefined;
+	return {
+		triangles: Uint32Array.from(counts as number[]),
+		bounds: Float32Array.from(bounds as number[]),
+	};
 }
 
 /** The bytes of a primitive's stored tree: an accessor of unsigned 32-bit integers. */
@@ -2116,15 +2188,10 @@ function storedTree(extension: Entry, what: string, read: Reader): Uint8Array {
 /**
  * A primitive's tree of cluster patches: its indices, the patches' spheres and their records.
  * The tree is refused when it does not cover the primitive's vertices or its own patches, so a
- * broken file draws the whole mesh instead of patches that name nothing.
+ * broken file draws the whole mesh instead of patches that name nothing. Its arrays are the
+ * accessors' own copies, which the reader has already taken from the file's budget.
  */
-function patchesOf(
-	extension: Entry,
-	what: string,
-	read: Reader,
-	vertices: number,
-	budget: FileBudget,
-): PatchesData {
+function patchesOf(extension: Entry, what: string, read: Reader, vertices: number): PatchesData {
 	const indices = read(Number(extension.indices), `${what}'s patch indices`);
 	const bounds = read(Number(extension.bounds), `${what}'s patch bounds`);
 	const words = read(Number(extension.patches), `${what}'s patches`);
@@ -2139,7 +2206,6 @@ function patchesOf(
 	const root = count(Number(extension.root), `${what}'s patch root`);
 	if (words.count === 0 || root >= words.count)
 		broken(`${what}'s patch tree has no root among its patches`);
-	budget.take(indices.count * 4 + words.count * 32, `${what}'s patches`);
 	const patch = words.array as Uint32Array;
 	for (let k = 0; k < words.count; k++) {
 		const first = patch[k * 4] as number;
@@ -2150,14 +2216,34 @@ function patchesOf(
 		if (parent > words.count || parent === k + 1)
 			broken(`${what}'s patch ${k} names the patch ${parent} as its parent`);
 	}
-	for (const i of indices.array)
-		if (i >= vertices) broken(`${what} has the patch index ${i}, past its ${vertices} vertices`);
+	indicesWithin(
+		indices.array,
+		vertices,
+		(i) => `${what} has the patch index ${i}, past its ${vertices} vertices`,
+	);
 	return {
 		indices: indices.array as Uint32Array,
 		bounds: bounds.array as Float32Array,
 		words: patch,
 		root,
+		current: Number(extension.version ?? 1) === CLUSTERS_VERSION,
 	};
+}
+
+/**
+ * Refuses the first index at or past `count`, with the message that `refusal` makes of it. The loop
+ * counts: an iterator over a typed array makes an object for each value until the JavaScript engine
+ * optimizes the loop, and a large mesh's indices make hundreds of megabytes of them.
+ */
+function indicesWithin(
+	indices: ArrayLike<number>,
+	count: number,
+	refusal: (index: number) => string,
+): void {
+	for (let k = 0; k < indices.length; k++) {
+		const i = indices[k] as number;
+		if (i >= count) broken(refusal(i));
+	}
 }
 
 /** A primitive's blocker, or true when the primitive blocks with its own mesh. */
@@ -2184,9 +2270,11 @@ function blockerOf(
 		broken(`${what}'s blocker indices are not unsigned integers in whole triangles`);
 	budget.take(indices.count * 4, `${what}'s blocker indices`);
 	const corners = Uint32Array.from(indices.array);
-	for (const i of corners)
-		if (i >= positions.count)
-			broken(`${what}'s blocker has the index ${i}, past its ${positions.count} corners`);
+	indicesWithin(
+		corners,
+		positions.count,
+		(i) => `${what}'s blocker has the index ${i}, past its ${positions.count} corners`,
+	);
 	return { positions: positions.array as Float32Array, indices: corners };
 }
 

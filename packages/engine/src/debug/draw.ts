@@ -139,8 +139,8 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 	private capacity = 0;
 	/** The points written for the next frame. */
 	private points = 0;
-	/** The points that the last flush handed to the core, which the arrays still hold. */
-	private drawn = 0;
+	/** The points that the last frame which ran the sketch's update handed to the core. */
+	private updated = 0;
 	/** The memory generation of the arrays' views. */
 	private generation = -1;
 	private warned = false;
@@ -362,8 +362,22 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 	 * Draws the shapes that follow objects, from their places in this frame, then hands the frame's
 	 * points to the core for the frame that records next. `width` and `height` give the canvas,
 	 * whose shape a camera's frustum takes.
+	 *
+	 * Without `update`, the frame ran none of the sketch's code, as the frame that a hold draws after
+	 * its held frame does. The update draws its lines again in each frame, so such a frame draws the
+	 * last update's lines, which the arrays keep until new lines are written. Setup frames come before
+	 * any update, so they draw only the lines written since the frame before.
 	 */
-	flush(width: number, height: number): void {
+	flush(width: number, height: number, update = true): void {
+		if (!update && this.updated > 0 && this.points === 0 && this.followedCount === 0) {
+			this.core.check(
+				this.core.glue.drawDebugLines(this.updated),
+				'debug drawing',
+				undefined,
+				true,
+			);
+			return;
+		}
 		for (let k = 0; k < this.followedCount; k++) {
 			const object = this.followed[k] as Object3D;
 			this.followed[k] = undefined;
@@ -381,25 +395,11 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 		this.followedCount = 0;
 		if (this.cullingSpheresWanted) this.drawCullingSpheres();
 		const points = this.points;
-		this.points = 0;
-		this.drawn = points;
+		// Lines written outside an update overwrite the last update's, so none stay to draw again.
+		this.updated = update ? points : 0;
 		if (points === 0) return;
+		this.points = 0;
 		this.core.check(this.core.glue.drawDebugLines(points), 'debug drawing', undefined, true);
-	}
-
-	/**
-	 * The flush of a frame in which the sketch's update does not run, such as a setup frame or hold
-	 * mode's settle frame. Shapes that the sketch drew since the last flush, as its setup does, draw
-	 * as `flush` draws them. With none, the core takes the points of the last flush again, which the
-	 * arrays still hold, so the settle frame shows the lines of the held frame before it.
-	 */
-	flushWithoutUpdate(width: number, height: number): void {
-		if (this.points > 0 || this.followedCount > 0) {
-			this.flush(width, height);
-			return;
-		}
-		if (this.drawn === 0) return;
-		this.core.check(this.core.glue.drawDebugLines(this.drawn), 'debug drawing', undefined, true);
 	}
 
 	skeleton(object: Object3D, color?: ColorInput): void {
@@ -429,10 +429,15 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 			Math.hypot(m[1] as number, m[5] as number, m[9] as number),
 			Math.hypot(m[2] as number, m[6] as number, m[10] as number),
 		);
+		// The matrix moves the mesh's bounding center, as the culling does.
 		const center = this.sphereCenter;
-		center[0] = m[3] as number;
-		center[1] = m[7] as number;
-		center[2] = m[11] as number;
+		const [cx, cy, cz] = mesh.center;
+		for (let r = 0; r < 3; r++)
+			center[r] =
+				(m[r * 4] as number) * cx +
+				(m[r * 4 + 1] as number) * cy +
+				(m[r * 4 + 2] as number) * cz +
+				(m[r * 4 + 3] as number);
 		// Only a sphere whose lines reached the buffer counts, so a full buffer reports none drawn
 		// rather than a count that the frame never wrote.
 		const before = this.points;

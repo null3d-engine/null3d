@@ -55,6 +55,7 @@ scene.instantiate(ship);
 | --- | --- | --- |
 | `--lod` | Adds levels of detail to each mesh of 64 triangles or more | No levels |
 | `--stages` | With `--lod` or `--clusters`, writes finer levels and cluster bands as separate files beside the model. The page then draws a coarse first picture | Levels and bands in the file |
+| `--clusters` | Adds a tree of cluster patches to each large static mesh, and gives that mesh the levels that `--lod` makes. [Cluster levels](#cluster-levels) says which meshes get a tree | No trees |
 | `--simplify <share>` | Keeps this share of each mesh's triangles, from 0 to 1, as far as `--simplify-error` allows | 1: every triangle |
 | `--simplify-error <share>` | The most that `--simplify` may move a mesh's surface, as a share of the mesh's size | 0.01 |
 | `--max-texture-size <pixels>` | The largest side of a texture: a power of two up to 2048 | 2048 |
@@ -172,7 +173,7 @@ The bake skips a material, and the report says why, when:
 
 ## Levels of detail
 
-`--lod` adds levels of detail to each mesh of 64 triangles or more. Each level has about half the triangles of the level above. The levels stop when a level would keep more than three quarters of the triangles above it.
+`--lod` adds levels of detail to each mesh of 64 triangles or more. Each level has about half the triangles of the level above, down to about 32 triangles, in up to 15 levels. So a far copy that covers a few pixels draws a few dozen triangles. The levels stop early when a level would keep more than three quarters of the level above. They also stop when a level's error reaches the mesh's size.
 
 The command plans the levels as follows:
 
@@ -185,6 +186,8 @@ The command plans the levels as follows:
 A simplified level shares the mesh's vertices, so only its indices add to the file. The engine loads such a level over the base mesh's own vertices too. The level then costs the GPU its indices alone. A card level stores its own positions, because its kept cards grew. Its position stream adds to the file, and the engine keeps a copy of it.
 
 The levels go into the file with `MSFT_lod`. Each node with levels stores the errors in its extras, as `NULL3D_lod_error`. A level is good enough where its error covers less than one pixel. The engine can then pick the level from the real screen height and the render scale. The loader switches these measured levels at once, because their switch does not show. The extras also hold `MSFT_screencoverage` for other readers of `MSFT_lod`, made for a screen 1080 pixels high. The loader reads that coverage as the mark of a measured error. A model whose file already has levels keeps them, with or without `--lod`. Their meshes take the steps of their base mesh, so they line up when drawn in its place. Their errors in `NULL3D_lod_error` change to those steps. A file that gives errors alone, without the coverage, holds levels whose author set the switches by hand. The loader fades those levels.
+
+A large mesh also gets pieces: `--lod` sorts each of its levels of 32,768 triangles or more into 8 to 16 runs that each face about one way, and stores each run's bounds in `NULL3D_pieces`. Each copy then skips the pieces of its level that lie outside the view or face away from the camera, as [Levels of detail](../concepts/lod.md#pieces-of-a-large-level) explains. Only the order of the triangles changes, so other viewers draw the same mesh.
 
 Over the 213 models of four Kenney city kits, `--lod` gives levels to 162. The 45 models of under 64 triangles get none, and so do six flat road pieces that cannot lose a quarter of their triangles.
 
@@ -209,14 +212,16 @@ The same stage file layout carries a cluster tree's bands. A kind 1 stage holds 
 The command splits each mesh part into patches and builds the tree above them with meshoptimizer:
 
 1. The patches are compact pieces of the surface, so each one covers a small part of the screen.
-2. A patch above a group simplifies its children's triangles to about half of them. The group's border stays in place, so two patches of different detail still meet.
-3. Each patch stores its error, the largest distance between its surface and the surface below it, and a sphere around its triangles.
+2. A patch above a group simplifies its children's triangles to about half of them. The vertices that the group shares with other groups stay in place, so two patches of different detail still meet. The mesh's own open edge simplifies too, but its corners stay.
+3. Each patch stores its error and a sphere. The error is the patch's measured distance from the full mesh below it, and never less than a child's error. The sphere holds the spheres of the patch's children, and a leaf's sphere holds its triangles. So a patch never passes the view's threshold where one of its children fails, and the patches that draw cover the mesh once.
 
-The tree holds about twice the mesh's triangles. Every patch's indices name the mesh's own vertices, so the tree adds no vertex. The tree goes into the file with `NULL3D_clusters`. Other glTF loaders ignore it and draw the whole mesh. The build also cuts the tree at a few errors into whole levels, which share the mesh's vertices as the levels above do, so a viewer that draws no patches shows the model at a few depths. The engine draws the patches on both GPU paths when one copy of the mesh draws: WebGPU picks them in a compute pass, and WebGL2 with `WEBGL_multi_draw` picks them on the job workers. The WebGPU path that draws objects directly, WebGL2 without `WEBGL_multi_draw`, such as Firefox, and the shadow maps draw the whole levels.
+The tree holds about twice the mesh's triangles. Every patch's indices name the mesh's own vertices, so the tree adds no vertex. On WebGL2, a mesh of more than 65,535 vertices draws its tree from a copy of its vertices, as [cluster levels](../concepts/lod.md#cluster-levels) describes. The tree goes into the file with `NULL3D_clusters`. Other glTF loaders ignore it and draw the whole mesh. The build also gives the mesh the whole levels that `--lod` makes, even without `--lod`. Each level has about half the triangles of the level above, and the levels share the mesh's vertices. A viewer that draws no patches draws these levels. The engine draws the patches on both GPU paths when one copy of the mesh draws: WebGPU picks them in a compute pass, and WebGL2 with `WEBGL_multi_draw` picks them on the job workers. Each shadow map picks its own patches too, in its own texels. The WebGPU path that draws objects directly and WebGL2 without `WEBGL_multi_draw`, such as Firefox, draw the whole levels.
 
 A mesh gets no tree in four cases. It has fewer than 20,000 triangles, or a skin or a morph target bends it. It also gets none when its material blends or masks, or more than four copies draw it. Those meshes keep whole levels.
 
-A tree streams when the command takes `--stages` as well. Each band below the one that the file holds becomes a file of its own, and each node names its bands in `NULL3D_stages`. The tree then refines as the bands arrive. The whole levels that the tree cuts into stay in the file, for the readers and the paths that draw the mesh whole.
+The tool counts only the copies that the file places. It cannot see the copies that page code places in an instance batch. So a mesh that a page draws thousands of times, such as a rock, still gets a tree. An instance batch always draws whole levels, so those copies draw the levels and never the patches.
+
+A tree streams when the command takes `--stages` as well. Each band below the one that the file holds becomes a file of its own, and each node names its bands in `NULL3D_stages`. The tree then refines as the bands arrive. The mesh's whole levels stay in the file, for the readers and the paths that draw the mesh whole.
 
 ```sh
 bunx @null3d/cli assets optimize models/ public/models/ --lod --clusters
@@ -254,6 +259,8 @@ The default limit, a hundredth of each mesh's size, changes little that a viewer
 | `stored trees` | The mesh parts whose trees the file stores, and their bytes before compression |
 
 `--report` writes the same figures as JSON, with each texture's source size, output size and encode time.
+
+The command writes no model that the engine would refuse to load. One array may hold at most 256 MiB, and one file may decode to at most 1 GiB ([Limits on each file](../concepts/assets.md#limits-on-each-file)). A model that passes a limit fails with an error that names it. Split such a scene into several files, each with a part of its meshes, and load each one with `assets.loadGltf()`.
 
 ## The shader list
 

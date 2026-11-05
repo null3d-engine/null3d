@@ -111,6 +111,11 @@ describe('createImpostors', () => {
 		expect(seen.doubleSided).toBe(true);
 	});
 
+	test('makes the card quad without levels of its own', () => {
+		const { seen } = cardsOf([0, 0, 0]);
+		expect(seen.quad?.levels).toBe(false);
+	});
+
 	test('lets a scene withdraw the still-caster claim for cards it turns itself', () => {
 		const { seen } = cardsOf([0, 0, 0], ATLAS, undefined, false);
 		expect(seen.castsStill).toBe(false);

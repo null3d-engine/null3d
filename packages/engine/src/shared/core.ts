@@ -157,8 +157,9 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	visibleEntries(frame: number): number;
 	/**
-	 * The sources inside the camera's frustum that software occlusion culling hid in a recorded
-	 * frame, where the path culls on the CPU, or `CORE_NOT_COUNTED` where the GPU culls.
+	 * The sources inside the camera's frustum that occlusion culling hid: in a recorded frame, where
+	 * the path culls on the CPU, or in the newest frame whose counts the GPU sent back, where GPU
+	 * occlusion culling runs. `CORE_NOT_COUNTED` where neither runs.
 	 */
 	occludedEntries(frame: number): number;
 	/**
@@ -406,6 +407,32 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	createLevelMesh(base: number, indices: number): number;
 	/**
+	 * A level of the live mesh `base` that holds its own copy of the vertices that the `indices`
+	 * triangles at `meshArrays`'s address name, which the call frees: the level of a split base,
+	 * which cannot share its vertices. Returns the mesh id, or 0 on failure.
+	 */
+	createLevelCopy(base: number, indices: number): number;
+	/**
+	 * A level of the live mesh `base`, which is split into parts, that draws the base's own
+	 * vertices from triangles at `meshArrays`'s address, which the call frees, and copies only the
+	 * vertices of the triangles that span the parts' seams. The words hold the level's `count`
+	 * pieces, as `setMeshPieces` lays them out, then its `indices` indices. A level with pieces
+	 * keeps its triangles' order, which must come part by part as the parts draw them; one whose
+	 * triangles do not draws them part by part, without pieces. Returns the mesh id, or 0 on
+	 * failure.
+	 */
+	createSplitLevel(base: number, count: number, indices: number): number;
+	/**
+	 * Writes part `part` of the live mesh `mesh`'s vertices and triangles as the level planner
+	 * reads them, and returns their address, or 0 for a mesh or part that does not exist: the
+	 * mesh's part count, vertex count, index count and vertex format, the part's vertex and index
+	 * counts, the mesh vertex that each of the part's vertices holds, then the floats of the
+	 * position, the normal, the first and second texture coordinates, the tangent and the color
+	 * where the format has them, attribute after attribute, then the part's indices in the mesh's
+	 * numbering. The next call that uses the same words overwrites them.
+	 */
+	meshPlanningPart(mesh: number, part: number): number;
+	/**
 	 * Gives the live mesh `mesh` the `indices` triangles at `meshArrays`'s address in place of the
 	 * ones it draws, which the call frees. 0 when the mesh takes them. A mesh that is split into
 	 * parts, morphed, a level of its own or drawn as lines returns its fault code, and keeps the
@@ -432,6 +459,22 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setMeshPatches(mesh: number, patches: number, indices: number, root: number): number;
 	/**
+	 * Gives a mesh `count` pieces of its triangle list, at `meshArrays`'s address: nine words each,
+	 * the piece's triangles, then four floats of its bounding sphere and four of its cone of
+	 * facings. The pieces follow the list's order. 1 when the mesh takes them, 0 when they do not
+	 * fit its list, which then draws whole.
+	 */
+	setMeshPieces(mesh: number, count: number): number;
+	/**
+	 * Gives a mesh `count` pieces over a triangle list of their own: the pieces as `setMeshPieces`
+	 * lays them out, then `indices` indices that hold the mesh's triangles in piece order, at
+	 * `meshArrays`'s address. The mesh keeps its own list. A mesh of several parts takes a list
+	 * whose triangles come part by part, as `createSplitLevel` draws them. A list that the mesh held
+	 * before goes, with its pieces. 1 when the mesh takes them, 0 when it cannot: a list in another
+	 * order.
+	 */
+	setMeshPieceList(mesh: number, count: number, indices: number): number;
+	/**
 	 * Appends one band to a mesh's tree of cluster patches: `patches` records of eight words each,
 	 * four floats of a bounding sphere and four integers of a run of indices, a parent and an
 	 * error, then `indices` indices, at `meshArrays`'s address. A run's first index counts from the
@@ -440,6 +483,8 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	appendMeshPatches(mesh: number, patches: number, indices: number): number;
 	meshRadius(mesh: number): number;
+	/** One axis of a mesh's bounding center, 0 for x, 1 for y and 2 for z, or 0 for an unknown mesh. */
+	meshCenter(mesh: number, axis: number): number;
 	/** A mesh's vertex count, or 0 for an unknown mesh. */
 	meshVertexCount(mesh: number): number;
 	/** A mesh's vertex format: its attribute bits and type fields, or 0 for an unknown mesh. */
@@ -1046,6 +1091,13 @@ export interface CoreGlue extends CoreErrors {
 	setFeatureInstanceRows(id: number, start: number, count: number, values: Float32Array): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
+	/**
+	 * Notes the GPU's time for a frame that it finished, from the frame's submit to its completion,
+	 * in microseconds, which GPU occlusion culling's check compares with its passes on and off.
+	 */
+	gpuFrameTime(frame: number, micros: number): number;
+	/** Sets the control slot that GPU occlusion culling's reads of its counts raise. */
+	setOcclusionReadSlot(slot: number): number;
 	/** Lets materials with parallax draw it, or draws them with their displacement alone. */
 	setParallax(on: boolean): number;
 	/**
@@ -1058,6 +1110,11 @@ export interface CoreGlue extends CoreErrors {
 	 * on, or 0 for the core's default, where the path culls on the CPU.
 	 */
 	setOcclusionBuffer(pixels: number): number;
+	/**
+	 * Holds GPU occlusion culling's passes on in every frame from the next one on, without its
+	 * check's trials, or lets the check judge them again. The WebGL2 path ignores it.
+	 */
+	holdOcclusionCheck(held: boolean): number;
 	/**
 	 * Grades the canvas color with the color grading table in a 3D texture, or with none for 0,
 	 * from the next frame on, with the post-processing values' intensity and domain.
@@ -1428,12 +1485,18 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'meshArrays',
 	'createMeshFromArrays',
 	'createLevelMesh',
+	'createLevelCopy',
+	'createSplitLevel',
+	'meshPlanningPart',
 	'replaceMeshIndices',
 	'setMeshBvh',
 	'setMeshBlocker',
 	'setMeshPatches',
+	'setMeshPieces',
+	'setMeshPieceList',
 	'appendMeshPatches',
 	'meshRadius',
+	'meshCenter',
 	'meshVertexCount',
 	'meshFormat',
 	'turnRows',
@@ -1563,9 +1626,12 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setFeatureInstanceRows',
 	'setFeatureInstanceReady',
 	'setSoftwareOcclusion',
+	'gpuFrameTime',
+	'setOcclusionReadSlot',
 	'setParallax',
 	'setMomentTransparency',
 	'setOcclusionBuffer',
+	'holdOcclusionCheck',
 	'setLut',
 	'setGrade',
 	'setVignette',

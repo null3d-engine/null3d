@@ -17,11 +17,15 @@ const FILES = {
 } as const;
 
 /**
- * The threshold in pixels: the most that the setting takes, so that a level switches as near as
- * the tool's errors allow. The card size is a level's error, so its own switch lies where the tree
- * stands a few pixels tall, and only a bias brings it closer.
+ * The threshold in pixels of each scene. The tree takes the most that the setting takes, so that a
+ * level switches as near as the tool's errors allow: the card size is a level's error, so its own
+ * switch lies where the tree stands a few pixels tall, and only a bias brings it closer. The grid
+ * takes 12: its coarsest level's error of about 5.5 cm then switches in 1.42 m out, past the
+ * camera's level distance of 1.23 m, to the grid's center less half its radius, so a finer level
+ * draws. Without the texture coordinates in the error, that level reports under a millimeter and
+ * switches in a few millimeters out, and the checker slides.
  */
-const THRESHOLD = 16;
+const THRESHOLD = { tree: 16, grid: 12 } as const;
 
 /** The tree's bias: about four times nearer, where the crown spans about 100 of the 640 pixels. */
 const TREE_BIAS = 4;
@@ -30,7 +34,7 @@ export default defineSketch(async ({ scene, assets, post, quality }) => {
 	const name = (params.get('scene') ?? 'tree') as keyof typeof FILES;
 	const file = FILES[name];
 	if (!file) throw new Error(`no level scene is named ${name}`);
-	quality.set({ lodThreshold: THRESHOLD });
+	quality.set({ lodThreshold: THRESHOLD[name] });
 	post.set({ toneMapping: 'none' });
 	scene.setBackground('#60666e');
 	scene.createDirectionalLight(SUN);

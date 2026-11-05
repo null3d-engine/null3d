@@ -88,6 +88,7 @@ function fakeCore() {
 		[C.RING_FIELD_READ_INDEX]: AT.read,
 	};
 	const glue = {
+		meshCenter: () => 0,
 		sceneCapacity: () => CAPACITY,
 		sceneArrays: (field: number) => fields[field],
 		commandRing: (field: number) => ring[field],

@@ -265,7 +265,7 @@ describe('SketchQuality.lower', () => {
 			lightFit: low.lightFit,
 			softParticles: low.softParticles,
 			lodThreshold: low.lodThreshold,
-			lodShadowFactor: low.lodShadowFactor,
+			lodShadowThreshold: low.lodShadowThreshold,
 			lodFade: low.lodFade,
 			physicalSky: low.physicalSky,
 			cloudSteps: low.cloudSteps,
@@ -307,7 +307,6 @@ describe('SketchQuality.lower', () => {
 			'areaLights',
 			'softParticles',
 			'lodThreshold',
-			'lodShadowFactor',
 			'lodFade',
 			'physicalSky',
 			'parallax',
@@ -343,9 +342,9 @@ describe('SketchQuality.setPreset', () => {
 		expect(Object.keys(quality.settings)).toEqual([...SKETCH_SETTINGS]);
 		expect(applied.at(-1)).toEqual({ preset: 'low', settings: fromMedium('low') });
 		// Low and Medium share the highest render scale, following of moving casters, the far
-		// characters' update interval, cascade blend, software occlusion culling and governor, and on
-		// WebGPU the ambient occlusion scale, contact shadow steps and subsurface blur too. Both draw
-		// no bounce light.
+		// characters' update interval, cascade blend, software occlusion culling, governor and the
+		// shadow maps' level threshold, and on WebGPU the ambient occlusion scale, contact shadow
+		// steps and subsurface blur too. Both draw no bounce light.
 		const same = [
 			'maxRenderScale',
 			'followMovingCasters',
@@ -358,6 +357,7 @@ describe('SketchQuality.setPreset', () => {
 			'cloudSteps',
 			'softwareOcclusion',
 			'governor',
+			'lodShadowThreshold',
 		];
 		expect(changes.at(-1)).toEqual(LIVE_SETTINGS.filter((name) => !same.includes(name)));
 		expect(settled.count).toBe(1);

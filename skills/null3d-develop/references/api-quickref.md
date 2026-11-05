@@ -39,7 +39,7 @@ const engine = await createEngine({
   maxPixelRatio: 2,      // cap for devicePixelRatio in place of the preset's cap
   antialias: 'msaa',     // 'msaa' | 'fxaa' | 'none' in place of the preset's mode (FXAA on Low, MSAA above)
   depthPrepass: false,   // true draws opaque depth first, so each pixel shades once; presets: on for WebGL2, off for WebGPU
-  gpuOcclusion: false,   // true skips objects that marked occluders hide (WebGPU only); presets leave it off
+  gpuOcclusion: false,   // false keeps the GPU from skipping what large opaque objects hide (WebGPU only); on at High and Ultra on desktops
   softwareOcclusion: false,  // the same on WebGL2, on the job workers; presets leave it off; measure before keeping it
   keepTextureCopies: true,   // (0.2) default true on phones and tablets, false on desktops: keep each texture's copy, so its map comes back after a GPU loss; false frees the copy (concepts/backends)
   shadowTiles: 8, shadowTileSize: 512, pointLightShadows: false,  // spot and point light shadows; the preset sets each
@@ -74,7 +74,7 @@ const stopFrames = engine.registerVideo(video, { name: 'intro', maxSize: 512 });
 engine.detach();                         // single-page apps: canvas off the page, engine paused, scene kept
 engine.attach(container);                // canvas back on the page; the engine resumes with no new start
 engine.setPaused(true);                  // the first step after resuming counts no time
-engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, halfPrecision, maxInstances, maxCanvasSize, depth, directDraws }
+engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, halfPrecision, maxInstances, maxCanvasSize, depth, directDraws, drawPath }
 engine.mode;          // { build, latency, sketchThread, renderThread, jobWorkers, hold, preset, presetCheck, crashedStarts, memoryMaximumMiB, renderFallback, keepTextureCopies }
 const metrics = await engine.measure(5);          // CPU time per thread and phase, GPU time, frame rates, memory
 //   metrics.updatedFps: (0.2) frames per second whose scene update ran to its end; metrics.updateErrors: frames whose update threw
@@ -190,7 +190,7 @@ obj.setLayers(mask);                 obj.getLayers();              // bit n puts
 obj.destroy();                                                      // at the next frame; its children become roots
 obj.name;                                                           // string, read-only after creation
 mesh.setOutlined(true);              // (0.2) with post.set({ outline }); a copy from scene.instantiate has it too
-obj.setOccluder(false);              // (0.2) WebGL2 path: stop this object hiding others; true makes it a blocker
+obj.setOccluder(false);              // (0.2) stop this object hiding others, on WebGPU too; true makes it a WebGL2 blocker
 obj.on('click', fn); obj.off('click', fn);  // (0.2) also 'pointerdown', 'pointerup', 'pointermove', 'pointerenter', 'pointerleave'; on parents too
 obj.animator();                      // (0.2) section 12
 ```
@@ -324,12 +324,19 @@ const mesh = geometry.fromArrays({
   morphTargets: { positions: [smile, blink], normals, names: ['Smile', 'Blink'] },  // (0.2) deltas, 3 per vertex per target
   // morphTargets.colors: color deltas, as many per vertex as colors; morphed colors clamp to 0..1
 });
-mesh.radius;                // the distance from the mesh's origin to its farthest vertex
+mesh.center;                // the center of the box around the mesh's vertices, in its own space
+mesh.radius;                // the distance from that center to the farthest vertex
 mesh.morphTargets;          // (0.2) the target count; mesh.morphTargetNames lists their names
 mesh.destroy();             // (0.2) after the objects and batches that use it, in the same frame or before; E1111 while one does
 geometry.memoryBytes;       // (0.2) GPU bytes of every mesh; destroyed meshes give their room to later ones
 mesh.updateVertices('positions', positions, start, count);  // (0.2) new values of every vertex, same array type; start/count pick vertices; no allocation
-mesh.setLevels([{ mesh: mid, error: 0.02 }, { mesh: far, distance: 80, material: farShading }]);  // (0.2) levels of detail, most detailed first
+// (0.2) a mesh made in code plans its own levels on the job workers at its first draw, when it holds 4,096
+// triangles or more, or 256 or more whose copies hold 65,536; it draws whole until they arrive.
+// `levels: false` in its arrays or generator options plans none, `levels: true` plans at once at any size,
+// `levels: { cards: true }` thins separate quads as leaf cards
+await mesh.buildLevels({ cards: false });  // (0.2) plan now, or await the plan that runs; E1221 for joints or morph targets
+// planned levels go at the first updateVertices, and when a material with displacementMap or vertexOffset draws the mesh
+mesh.setLevels([{ mesh: mid, error: 0.02 }, { mesh: far, distance: 80, material: farShading }]);  // (0.2) levels by hand, most detailed first; wins over a plan
 // every object and batch of `mesh` draws the coarsest level whose switch the distance passes:
 // error (in the mesh's units), distance (meters at scale 1) or coverage (a share of the screen height);
 // a level given by distance or a hand-set error fades over a band, a measured error switches at once;
@@ -727,11 +734,11 @@ quality.set({ maxAnisotropy: 4, uploadBytesPerFrame: 2 * 1024 * 1024 });  // tex
 quality.settings.antialias;             // 'msaa' | 'fxaa' | 'none', fixed at the start; set it with createEngine's option
 quality.settings.depthPrepass;          // true when opaque depth draws first; fixed at the start, as antialias is
 await createEngine({ canvas, sketch, momentTransparency: true });  // (0.3) blend the blended surfaces in the moment layer, without the sort; fixed at the start, off on every preset
-quality.settings.gpuOcclusion;          // true when the GPU skips hidden opaque objects; fixed at the start
+quality.settings.gpuOcclusion;          // true when the GPU skips hidden opaque objects (High and Ultra on desktops); fixed at the start
 quality.set({ shadowFilter: 5, farCascadeInterval: 1 });  // shadow edge softness, 3 or 5 texels; far cascades every frame
 quality.set({ followMovingCasters: false }); // far cascades keep their turns while dynamic casters move in them (on by default)
 quality.set({ shadowCascadeBlend: 0.2 });  // blend each cascade into the next over its last 20% (0 hands over at once)
-quality.set({ lodThreshold: 1, lodShadowFactor: 2, lodFade: true });  // (0.2) levels of detail: pixels, shadows' factor, distance band fades
+quality.set({ lodThreshold: 1, lodShadowThreshold: 1, lodFade: true });  // (0.2) levels of detail: pixels, shadow map texels, distance band fades
 quality.governor.steps;                 // the governor's steps past the render scale; onChange runs after each
 quality.governor.farCascadeInterval;    // the shadow settings drawn now, which the governor may lower
 quality.set({ governor: false });       // no governor: maxRenderScale, and the shadow settings as set

@@ -25,8 +25,11 @@ export interface CostResult {
 	failures: string[];
 }
 
-/** The 1-minute load under which a test measures, and how often it checks the load. */
-const QUIET_LOAD = 8;
+/**
+ * The 1-minute load under which a timing run measures, which the benchmark summaries also name, and
+ * how often a test checks the load.
+ */
+export const QUIET_LOAD = 8;
 const LOAD_CHECK_MS = 15_000;
 /** How long a test waits for a quiet computer before it fails. */
 export const LOAD_WAIT_MS = 10 * 60_000;

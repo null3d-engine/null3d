@@ -16,7 +16,7 @@ with a trunk, limbs and twigs that read as its species, the same bytes on every 
 
 ## Rule
 
-The plant core's acceptance for the grower ([D-305](D-305-plant-core-three-scales.md)): the oak
+The plant core's acceptance for the grower ([D-323](D-323-plant-core-three-scales.md)): the oak
 record's silhouette within its envelope at an IoU of 0.85 at eight angles; at least three macro
 orders; a sweep of the apical control gives one leader and a spreading crown; shedding clears the
 bole; bud sites carry resource and light; identical bytes in Bun and in a worker; growth within

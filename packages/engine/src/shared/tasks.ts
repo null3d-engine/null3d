@@ -12,6 +12,14 @@
 // starts one task worker with its first task. The glTF worker takes compiled modules from the
 // loader too (scene/gltf.ts). When the engine on this thread stops, the loader stops its task
 // worker and fails the tasks that wait, and the next engine's tasks start afresh.
+//
+// A thread can hold two copies of this module: in a production build, the sketch worker runs the
+// engine's worker code, and the sketch's bundle, the add-ons' tasks among it, imports the engine
+// again from the page's file. Both reach the same job workers' ports, and a port has one handler
+// for its answers, so the thread's runners and compiled modules live on the thread's global
+// object under registered symbols, which every copy shares. Each copy's runners would number their
+// tasks alike and take each other's answers, and a task whose answer went to the other copy would
+// never end.
 
 import type { TaskAnswer, TaskRequest } from '../workers/tasks';
 import { onEngineStop } from './helper-workers';
@@ -68,9 +76,16 @@ export interface Task {
 	wasm?: readonly WasmFile[];
 }
 
-/** The thread's compiled modules, by name, which stays the same in every copy of this module. */
+/** The keys of the thread's state on its global object, which every copy of this module shares. */
 const COMPILED = Symbol.for('null3d.compiledModules');
-const thread = globalThis as { [COMPILED]?: Map<string, Promise<WebAssembly.Module>> };
+const RUNNERS = Symbol.for('null3d.taskRunners');
+const thread = globalThis as {
+	[COMPILED]?: Map<string, Promise<WebAssembly.Module>>;
+	[RUNNERS]?: ThreadRunners;
+};
+/** The thread's compiled modules, by address, which the first copy of this module makes. */
+const compiled = thread[COMPILED] ?? new Map<string, Promise<WebAssembly.Module>>();
+thread[COMPILED] = compiled;
 
 /** The href of each URL that a task names, so a task in every frame copies no string. */
 const HREFS = new WeakMap<URL, string>();
@@ -93,8 +108,6 @@ export function hrefOf(url: URL): string {
  * module. A failed download or compile lets a later call try again.
  */
 export function compileOnce(file: WasmFile, error: WasmError): Promise<WebAssembly.Module> {
-	thread[COMPILED] ??= new Map();
-	const compiled = thread[COMPILED];
 	const key = hrefOf(file.url);
 	let module = compiled.get(key);
 	if (!module) {
@@ -154,9 +167,17 @@ const NO_MODULES: readonly WebAssembly.Module[] = [];
 /** A waiting record's settle function before a task fills it. */
 const NO_SETTLE = (): void => {};
 
-/** The tasks that this thread has run, which the allocation check reads to judge one call. */
-let taskCalls = 0;
-(globalThis as { __null3dTaskCalls?: () => number }).__null3dTaskCalls = () => taskCalls;
+/** The thread's task runners, which every copy of this module shares. */
+interface ThreadRunners {
+	/** The runners, which start with the first task. */
+	runners?: Runners;
+	/** The tasks that this thread has run, which the allocation check reads to judge one call. */
+	calls: number;
+}
+
+const shared: ThreadRunners = thread[RUNNERS] ?? { calls: 0 };
+thread[RUNNERS] = shared;
+(globalThis as { __null3dTaskCalls?: () => number }).__null3dTaskCalls = () => shared.calls;
 
 /** The workers that run this thread's tasks, and the tasks that wait for them. */
 class Runners {
@@ -238,7 +259,7 @@ class Runners {
 			}
 			request.modules = newModules;
 			runner.running++;
-			taskCalls++;
+			shared.calls++;
 			const waiting = this.free.pop() ?? { resolve: NO_SETTLE, reject: NO_SETTLE, runner };
 			return new Promise((resolve, reject) => {
 				waiting.resolve = resolve;
@@ -426,9 +447,6 @@ class Runners {
 	}
 }
 
-/** This thread's task runners, which start with the first task. */
-let runners: Runners | undefined;
-
 /**
  * Runs `task` on `input` in a job worker, or in the task worker where the engine has no job
  * workers, moving the `transfer` objects there. The task's WebAssembly files compile once per page,
@@ -442,13 +460,15 @@ export function runTaskWithError<T>(
 	transfer: Transferable[],
 	error: WasmError,
 ): Promise<T> {
+	let runners = shared.runners;
 	if (!runners) {
 		const made: Runners = new Runners(() => {
 			forget();
-			if (runners === made) runners = undefined;
+			if (shared.runners === made) shared.runners = undefined;
 		});
 		const forget = onEngineStop(() => made.stop());
 		runners = made;
+		shared.runners = made;
 	}
 	return runners.run(task, input, transfer, error) as Promise<T>;
 }

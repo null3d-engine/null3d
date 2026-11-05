@@ -1,8 +1,9 @@
 // The leaf-card level rule is written twice: once in the vegetation add-on, which thins a plant's
-// shoot cards for its second card level, and once in the asset tool, which thins cards of a mesh
-// from a file. D-241 chose that split, so this test holds both to one rule: a level keeps every
-// second card of the one above in a space-filling order, and each kept card grows about its middle
-// by the square root of that step. A change to either side that breaks the rule fails here.
+// shoot cards for its second card level, and once in the level planner that the asset tool and the
+// engine share, which thins cards of a mesh from a file or from arrays. D-241 chose that split, so
+// this test holds both to one rule: a level keeps every second card of the one above in a
+// space-filling order, and each kept card grows about its middle by the square root of that step.
+// A change to either side that breaks the rule fails here.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -11,7 +12,7 @@ import { cardKeep } from '../../packages/vegetation/src/lod/cards.ts';
 const ROOT = join(import.meta.dirname, '..', '..');
 const CARDS = readFileSync(join(ROOT, 'packages/vegetation/src/lod/cards.ts'), 'utf8');
 const ORDER = readFileSync(join(ROOT, 'packages/vegetation/src/leaf/instancer.ts'), 'utf8');
-const TOOL = readFileSync(join(ROOT, 'packages/cli/src/assets/levels.js'), 'utf8');
+const TOOL = readFileSync(join(ROOT, 'packages/engine/levels/planner.js'), 'utf8');
 
 describe('the leaf-card level rule, which the vegetation add-on and the asset tool share', () => {
 	test('both order cards by a space-filling curve that interleaves the axes', () => {
@@ -26,7 +27,9 @@ describe('the leaf-card level rule, which the vegetation add-on and the asset to
 	test('both keep every second card of the level above', () => {
 		// The add-on's first card level holds every row; its second keeps every second.
 		expect(CARDS).toContain('const every = 2 ** (level - 1);');
-		expect(TOOL).toContain('thinCards(list, Math.min(2 ** level, Math.max(1, list.cards.length)))');
+		// The planner's step names the base mesh's cards for each kept card: 2 ** level.
+		expect(TOOL).toContain('const every = 2 ** (levels.length + 1);');
+		expect(TOOL).toContain('thinCards(list, Math.min(every, Math.max(1, list.cards.length)))');
 		expect(cardKeep(0, 2)).toBeGreaterThan(0);
 		expect(cardKeep(1, 2)).toBe(0);
 	});

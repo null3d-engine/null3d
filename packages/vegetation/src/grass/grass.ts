@@ -379,7 +379,8 @@ export async function createGrass(ctx: SketchContext, options: GrassOptions): Pr
 		} else {
 			const material = ctx.materials.shader({ ...materialOptions(), wgsl: grassShader });
 			const batch = ctx.scene.createInstances(
-				ctx.geometry.fromArrays(tuftMesh(101 + shape, blades, segments)),
+				// The wind bends the blades in the shader, and the field thins by distance itself.
+				ctx.geometry.fromArrays({ ...tuftMesh(101 + shape, blades, segments), levels: false }),
 				rows.length,
 				{
 					material,

@@ -1,4 +1,4 @@
-# D-305: the plant core grows plants at three scales, by eight growth models, one folder per species
+# D-323: the plant core grows plants at three scales, by eight growth models, one folder per species
 
 Status: decided. Built: the contracts between the stages and the module layout, with a stub for every
 stage. Also built: the generated species registry and species page, the record check, the owner's

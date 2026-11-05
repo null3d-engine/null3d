@@ -544,9 +544,10 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 				).toHaveLength(1);
 		});
 
-// GPU occlusion culling runs only on WebGPU, where the first-use test turns it on. A scene whose
-// walls are marked occluders downloads no shader file with the culling off.
-test('marked occluders download no occlusion shader file with ?occlusion=off on webgpu', async ({
+// GPU occlusion culling runs only on WebGPU. A scene whose walls may hide others downloads none of
+// the culling's shader files with the culling off. The preset's other effects, such as ambient
+// occlusion, still load their own.
+test('occluders download no occlusion shader file with ?occlusion=off on webgpu', async ({
 	page,
 }, testInfo) => {
 	test.skip(testInfo.project.name === 'production build', 'no image test page');
@@ -558,7 +559,9 @@ test('marked occluders download no occlusion shader file with ?occlusion=off on 
 	await page.goto(`image.html?gpu=webgpu&hold=0&size=320x180&occlusion=off&sketch=${sketch}`);
 	const result = await pageResult<{ error?: string }>(page, 30_000);
 	expect(result.error).toBeUndefined();
-	expect(requests.filter(isFirstUseShaderFile)).toEqual([]);
+	expect(
+		requests.filter((path) => isFirstUseShaderFile(path) && /\/shaders-occlusion-/.test(path)),
+	).toEqual([]);
 });
 
 /**

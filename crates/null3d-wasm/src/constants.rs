@@ -808,6 +808,7 @@ pub fn typescript() -> String {
                 ("CUSTOM_BOUNDS", flags::CUSTOM_BOUNDS),
                 ("OUTLINED", flags::OUTLINED),
                 ("OCCLUDER", flags::OCCLUDER),
+                ("NOT_OCCLUDER", flags::NOT_OCCLUDER),
                 ("TRACKED", flags::TRACKED),
             ],
         ),
@@ -1000,6 +1001,10 @@ pub fn typescript() -> String {
                     Capabilities::TRANSIENT_ATTACHMENTS.0 as u32,
                 ),
                 ("FLOAT16_TARGETS", Capabilities::FLOAT16_TARGETS.0 as u32),
+                (
+                    "FIRST_PROVOKING_VERTEX",
+                    Capabilities::FIRST_PROVOKING_VERTEX.0 as u32,
+                ),
             ],
         ),
         (
@@ -1776,6 +1781,10 @@ pub fn typescript() -> String {
                 ("MESH", level_problem::MESH),
                 ("FORMAT", level_problem::FORMAT),
             ],
+        ),
+        (
+            "LEVELS",
+            &[("MAX", null3d_render::levels::MAX_LEVELS as u32)],
         ),
     ];
     for &(prefix, entries) in groups {

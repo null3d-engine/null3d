@@ -30,6 +30,17 @@ describe('allowedHost', () => {
 		expect(allowedHost('127.0.0.1:8080')).toBeDefined();
 	});
 
+	test('accepts only the recorded path on a shared host', () => {
+		expect(
+			allowedHost('storage.googleapis.com/chrome-for-testing-public/1.2.3/linux64/chrome.zip'),
+		).toContain('Chrome for Testing');
+		expect(allowedHost('storage.googleapis.com/another-bucket/file.zip')).toBeUndefined();
+		expect(allowedHost('storage.googleapis.com')).toBeUndefined();
+		expect(
+			allowedHost('bucket.storage.googleapis.com/chrome-for-testing-public/chrome.zip'),
+		).toBeUndefined();
+	});
+
 	test('refuses a host that the record does not name', () => {
 		expect(allowedHost('analytics.example.net')).toBeUndefined();
 		expect(allowedHost('notexample.com')).toBeUndefined();

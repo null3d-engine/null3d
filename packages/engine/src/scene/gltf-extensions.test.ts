@@ -111,7 +111,12 @@ function fakeContext(handlers: readonly GltfExtensionHandler[]): {
 		textures: {},
 		geometry: {
 			fromArrays: () => {
-				const mesh = { id: made.meshes.length + 1, radius: 1, live: true } as MeshGeometry;
+				const mesh = {
+					id: made.meshes.length + 1,
+					radius: 1,
+					center: [0, 0, 0],
+					live: true,
+				} as unknown as MeshGeometry;
 				made.meshes.push(mesh);
 				return mesh;
 			},

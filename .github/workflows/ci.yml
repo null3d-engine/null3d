@@ -1313,7 +1313,8 @@ jobs:
   browser-production:
     # The production build projects' tests, which serve the production build of the test pages: the
     # engine and its errors after bundling, the start under a strict Content-Security-Policy and from
-    # another origin, and the KTX2, glTF and stats files that the build ships. Each page's build
+    # another origin, the KTX2, glTF and stats files that the build ships, and the level plans that
+    # the engine's copy and the sketch's copy of the engine send to the job workers. Each page's build
     # takes about half a minute and reads about a gigabyte, and up to four build at once. The pages
     # build only in this job: every other browser job leaves them out. The job runs in two parts, each of which
     # builds only the pages that its test files load, so no page builds twice. The first holds the
@@ -1338,9 +1339,9 @@ jobs:
             tests: engine.spec.ts content-security-policy.spec.ts ktx2.spec.ts
             later: cdn.spec.ts
           - id: others
-            part: the errors, sketch shaders, stats and glTF pages
-            pages: errors sketch-shaders stats gltf-files
-            tests: errors.spec.ts sketch-shaders.spec.ts stats.spec.ts gltf.spec.ts
+            part: the errors, sketch shaders, stats, glTF and runtime levels pages
+            pages: errors sketch-shaders stats gltf-files runtime-levels
+            tests: errors.spec.ts sketch-shaders.spec.ts stats.spec.ts gltf.spec.ts runtime-levels.spec.ts
             later: ""
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"

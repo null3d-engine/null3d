@@ -50,6 +50,19 @@ export function textureMemoryCap(kind: DeviceKind): number {
 	return kind === 'desktop' ? Number.POSITIVE_INFINITY : MOBILE_TEXTURE_MEMORY_MIB;
 }
 
+/**
+ * The page's choice of GPU occlusion culling on a kind of device: its own where it made one, else off
+ * on phones and tablets, where other engines block GPU culling on several drivers (D-22), and the
+ * preset's on desktops, which `undefined` leaves.
+ */
+export function gpuOcclusionChoice(
+	kind: DeviceKind,
+	page: boolean | undefined,
+): boolean | undefined {
+	if (page !== undefined) return page;
+	return kind === 'desktop' ? undefined : false;
+}
+
 /** A memory reading under this many GB lowers the preset by one. */
 export const LOW_MEMORY_GB = 4;
 

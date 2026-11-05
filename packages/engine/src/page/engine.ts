@@ -10,11 +10,13 @@ import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
 import { SHADER_FEATURES, type ShaderFeature } from '../generated/shader-features';
 import { recordPermutations, stopRecordingPermutations } from '../gpu/variants';
+import type { DrawPathReason } from '../gpu/webgpu/draw-path-probe';
 import { maxTargetFps, type PresetCheck, type TargetFps } from '../quality/check';
 import {
 	choosePreset,
 	crashTier,
 	deviceKind,
+	gpuOcclusionChoice,
 	memoryPreset,
 	type PresetRequest,
 	textureMemoryCap,
@@ -89,7 +91,13 @@ import {
 import { captureInput } from './input';
 import { lostIsolationWarning, pageIsolation } from './isolation-check';
 import { type EngineLabels, labelCapacity, labelCapacity3d, PageLabels } from './labels';
-import { coreDevice, keepTextureCopiesOption, maxCanvasSize, maxInstances } from './limits';
+import {
+	coreDevice,
+	drawPath,
+	keepTextureCopiesOption,
+	maxCanvasSize,
+	maxInstances,
+} from './limits';
 import { expectedObjectCount, loadCore, memoryMaximumMiB } from './loader';
 import { MainThreadWatch } from './main-thread';
 import { keepMemory, type MemoryKey, releaseMemories } from './memory-pool';
@@ -234,14 +242,15 @@ export interface EngineOptions {
 	 */
 	momentTransparency?: boolean;
 	/**
-	 * True to run GPU occlusion culling on WebGPU: objects that `setOccluder(true)` marks hide the
-	 * objects that lie wholly behind them, so the GPU skips those. Each camera view draws the depth
-	 * of the marked objects that it showed in the last frame and tests every object against it. It
-	 * saves GPU time where walls and large objects hide many detailed ones; a scene that marks no
-	 * object pays nothing. Every quality preset leaves it off: measure your scene's GPU time with it
-	 * first, as its passes can cost more than they save. It stays fixed while the engine runs, and
-	 * the `?occlusion=on` or `?occlusion=off` switch wins over this option. WebGL2 and the depth
-	 * prepass draw without it. Another value fails with E1213.
+	 * True to run GPU occlusion culling on WebGPU: large opaque objects hide the objects that lie
+	 * wholly behind them, so the GPU skips those. Each camera view draws the depth of the opaque
+	 * objects that it showed in the last frame and that look large on the screen, and tests every
+	 * object against it. `setOccluder(false)` keeps an object out of them. A check during play turns
+	 * the extra passes off while they hide too little or make the GPU's frame longer, and on again
+	 * when they pay. Without the option, the High and Ultra presets turn it on for desktops, and
+	 * phones and tablets leave it off. It stays fixed while the engine runs, and the
+	 * `?occlusion=on` or `?occlusion=off` switch wins over this option. WebGL2 and the depth prepass
+	 * draw without it. Another value fails with E1213.
 	 */
 	gpuOcclusion?: boolean;
 	/**
@@ -412,8 +421,8 @@ export interface EngineOptions {
 	 * lets light through to its other side,
 	 * `'subsurface'` with the first material with a `subsurfaceRadius` while the subsurface blur has
 	 * taps, `'coat_sheen'` with the first material with a clear coat or a sheen, `'weighted'` with
-	 * the first material of the `weighted` blending, and `'occlusion'` with the first object that
-	 * `setOccluder(true)` marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
+	 * the first material of the `weighted` blending, and `'occlusion'` with the first opaque object that
+	 * may hide others while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
 	 * `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed
 	 * features download beside the engine's own
 	 * shaders, so the start waits only for the largest. The shaders that two or more listed features
@@ -512,11 +521,17 @@ export interface EngineCapabilities {
 	 */
 	depth: DepthMode;
 	/**
-	 * True when the start-up probe measured direct draws to be clearly faster than the engine's
-	 * indirect draws, so the engine culls buckets on the CPU and draws each one directly. A software
-	 * renderer never takes the path (D-174). False on WebGL2, which always draws directly.
+	 * True when the engine culls buckets on the CPU and draws each one directly. The start-up probe
+	 * picks this path only on an Apple GPU in Safari, or in any browser on iPhone and iPad, and only
+	 * when it measures direct draws to be clearly faster there. Every other device draws indirectly.
+	 * False on WebGL2, which always draws directly.
 	 */
 	directDraws: boolean;
+	/**
+	 * Why the engine takes its draw path, such as `not-apple-gpu-in-webkit` where the probe did not
+	 * run. A benchmark records it beside its figures.
+	 */
+	drawPath: DrawPathReason;
 }
 
 /**
@@ -2277,12 +2292,13 @@ async function startEngine(
 		}
 		const storedCheck = switches.freshCheck ? undefined : checkStore?.read();
 		const preset = storedCheck?.rounds.at(-1)?.preset ?? chosen;
-		// Occlusion culling on the GPU needs WebGPU's compute passes, and does not run with the depth
-		// prepass, which only the page turns on outside WebGL2.
-		const tierSettings =
-			tier === 'webgl2' || pageSettings.depthPrepass
-				? { ...pageSettings, gpuOcclusion: false }
-				: pageSettings;
+		// Occlusion culling on the GPU needs WebGPU's compute passes. Phones and tablets run it only
+		// when the page asks.
+		const gpuOcclusion =
+			tier === 'webgl2'
+				? false
+				: gpuOcclusionChoice(deviceKind(presetRequest.hints), pageSettings.gpuOcclusion);
+		const tierSettings = { ...pageSettings, gpuOcclusion };
 		const textureCapMiB = textureMemoryCap(deviceKind(presetRequest.hints));
 		const quality: QualityStart = {
 			preset,
@@ -2408,6 +2424,7 @@ async function startEngine(
 			maxCanvasSize: maxCanvasSize(tier, report),
 			depth: device.depth,
 			directDraws: device.directDraws,
+			drawPath: drawPath(tier, report, switches.direct).reason,
 		};
 		gpuFeatures = capabilities.features;
 		// Where the browser lacks Atomics.waitAsync, the threads wake each other with messages.
