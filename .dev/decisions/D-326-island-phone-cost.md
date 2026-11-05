@@ -1,6 +1,6 @@
 # D-326: The Island lightens its drawing on a phone
 
-Status: decided by the owner. Built: the Low preset's fixed shadow range. The one-view cards are not applied: their saving was inside the load's spread. The slower water reflection is not applied. Measured: both sides on the M3 Max, two loads each, in [the data](#data), with the cards change in; both sides on the two cloud phones, in [the cloud phones](#the-cloud-phones), also with it in. Pending: the pictures, a paired load without the cards change, and the software WebGL2 gap. Task: none.
+Status: decided by the owner. Built: the Low preset's fixed shadow range. The one-view cards are not applied: their saving was inside the load's spread. The slower water reflection is not applied. Measured: both sides on the M3 Max, two loads each, in [the data](#data), with the cards change in; both sides on the two cloud phones, in [the cloud phones](#the-cloud-phones), also with it in. Pending: the pictures, a second load of the shipped code, and the software WebGL2 gap. Task: none.
 
 Summary: A phone draws the Island at Low, where the shadow maps and the far tree cards take most of the frame. On Low the sun's shadows reach 250 m and no longer stretch with the camera. The water's reflection keeps every second frame. A cadence of four still draws a dark sea on the software WebGL2 path, and the held-frame fix is not in this branch. Its trial's saving is forgone. The cards keep their three views, because one view saved 1.5 per cent and the software picture darkens with either change, so the picture is owed whatever this branch keeps. Two loads each side at 576 x 1248 on the M3 Max put the frame at 2.66 ms before and 2.32 ms after with all three changes in. The shorter shadow range is what the branch ships, so the paired figure is smaller and is still owed.
 
@@ -41,6 +41,8 @@ The first before load also gives the saving of each change on its own. A trial's
 The trials overlap, so their savings do not add. The reflection's 8.3 per cent is forgone, because that cadence is not applied. The whole frame's triangles move between windows because the shadow cascades draw in turns. The study's own figures from its earlier Mac are in `bench/research/island-phones/findings.md`, and none of them compares with these.
 
 How the data was produced: `bun bench/research/island-phones/scripts/run.ts` ran the page with `preset=low&w=576&h=1248` and the frame cap off. The before steps were `base,try:cards1,base,casters,base,try:shadow300,base,try:shadow150,base,try:reflect4,base`. The after steps were `base,casters,base,cards,base`.
+
+One later load drew the shipped code, which carries the range alone: its whole-scene windows read 2.448 and 2.529 ms, a mean of 2.488, at a 1-minute load of 3.25 that rose to 4.45. A second load was stopped when the load rose to 8.90, so the pair is owed. The figure is not compared with the before side: it is hours later, and the machine drifted between the day's sessions, as the extra after loads of the earlier comparison did. The file is `island-low/after-cards/after-cards-low-576x1248-1.json`.
 
 The pictures are not measured yet.
 
