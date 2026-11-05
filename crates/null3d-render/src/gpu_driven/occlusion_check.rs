@@ -380,9 +380,8 @@ struct WaitingRead {
 /// The reads of a view's counts and first set of draws into engine memory.
 #[derive(Debug, Default)]
 pub(super) struct CountReads {
-    /// Each buffer of the ring's size, 0 before it exists, and whether a read into it may still
-    /// land.
-    made: [u32; READ_RING],
+    /// Whether each buffer of the ring exists, and whether a read into it may still land.
+    made: [bool; READ_RING],
     waiting: [bool; READ_RING],
     next: usize,
     read: Option<WaitingRead>,
@@ -461,14 +460,21 @@ impl CountReads {
         let bytes = COUNTS_BYTES + draw_bytes + piece_bytes;
         let ring = self.next;
         let buffer = ids::OCCLUSION_READ_BUFFERS + ring as u32;
-        // A buffer whose read never landed is made again, which drops that read.
-        if self.made[ring] < bytes || self.waiting[ring] {
-            let size = self.made[ring].max(bytes);
-            list.push(
-                Op::CreateBuffer,
-                &[buffer, size, usage::MAP_READ | usage::COPY_DST],
-            )?;
-            self.made[ring] = size;
+        // The first read makes every buffer of the ring, each at the largest read's size, so a
+        // read later in play makes no GPU object. A buffer whose read never landed is made again,
+        // which drops that read.
+        for (index, made) in self.made.iter_mut().enumerate() {
+            if !*made || (index == ring && self.waiting[index]) {
+                list.push(
+                    Op::CreateBuffer,
+                    &[
+                        ids::OCCLUSION_READ_BUFFERS + index as u32,
+                        READ_BYTES as u32,
+                        usage::MAP_READ | usage::COPY_DST,
+                    ],
+                )?;
+                *made = true;
+            }
         }
         let landing = self
             .landing
@@ -564,7 +570,7 @@ impl CountReads {
     /// Forgets the GPU's buffers after the thread that draws replaced the GPU. A read in flight
     /// never lands.
     pub(super) fn forget_gpu(&mut self) {
-        self.made = [0; READ_RING];
+        self.made = [false; READ_RING];
         self.waiting = [false; READ_RING];
         self.read = None;
     }
@@ -978,6 +984,45 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(copied_into(&list), [ids::OCCLUSION_READ_BUFFERS + 1]);
+    }
+
+    #[test]
+    fn the_first_read_makes_every_buffer_of_the_ring_and_later_reads_make_none() {
+        let made = |list: &DrawList| -> Vec<(u32, u32)> {
+            null3d_gpu::drawlist::decode(list.words())
+                .map(Result::unwrap)
+                .filter(|command| command.op == Op::CreateBuffer)
+                .map(|command| (command.operands[0], command.operands[1]))
+                .collect()
+        };
+        let layout = Layout::with_occluder_buckets(&[true]);
+        let mut reads = CountReads::default();
+        reads.set_slot(60);
+        let mut list = DrawList::with_capacity(256);
+        let view = ViewId::CAMERA;
+        // A read of the pieces alone comes first, and is the smallest read.
+        assert!(
+            reads
+                .record(&mut list, view, &layout, 1, 40, true, false, true)
+                .unwrap()
+        );
+        let ring: Vec<(u32, u32)> = (0..READ_RING as u32)
+            .map(|index| (ids::OCCLUSION_READ_BUFFERS + index, READ_BYTES as u32))
+            .collect();
+        assert_eq!(made(&list), ring);
+        // The reads that follow, the occlusion check's among them, land in those buffers.
+        for frame in 41..45 {
+            let landing = reads.landing.as_mut().expect("the landing memory");
+            landing[8..12].copy_from_slice(&(frame - 1u32).to_le_bytes());
+            assert!(reads.take().is_some());
+            list.clear();
+            assert!(
+                reads
+                    .record(&mut list, view, &layout, 1, frame, true, true, true)
+                    .unwrap()
+            );
+            assert!(made(&list).is_empty(), "frame {frame}");
+        }
     }
 
     #[test]
