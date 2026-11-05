@@ -238,6 +238,25 @@ export function prototypeGeometry(ctx: SketchContext, arrays: PrototypeArrays): 
 }
 
 /**
+ * The sphere around the species box, in metres, which an object that draws a quantised part gives
+ * `setBounds`: the mesh's own sphere lies around the 16-bit steps, not the box.
+ *
+ * @param box The species box.
+ * @returns The sphere's center about the object's origin, and its radius, at scale 1.
+ */
+export function plantBounds(box: SpeciesBox): { center: [number, number, number]; radius: number } {
+	const center: [number, number, number] = [0, 1, 2].map(
+		(k) => ((box.min[k] as number) + (box.max[k] as number)) / 2,
+	) as [number, number, number];
+	const radius = Math.hypot(
+		(box.max[0] as number) - (box.min[0] as number),
+		(box.max[1] as number) - (box.min[1] as number),
+		(box.max[2] as number) - (box.min[2] as number),
+	);
+	return { center, radius: radius / 2 };
+}
+
+/**
  * The radius about a copy's origin that holds the whole species box, which a batch of quantised
  * parts gives `setBoundingRadius`: the mesh's own sphere holds the 16-bit steps, not metres.
  *

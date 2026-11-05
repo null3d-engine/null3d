@@ -12,7 +12,11 @@ import type { MeshArrays } from '../../../packages/vegetation/src/asset';
 import { placeholderQuantise } from '../../../packages/vegetation/src/core/placeholder';
 import { noTextureFiles } from '../../../packages/vegetation/src/core/textures';
 import { WOOD_UV_STEPS } from '../../../packages/vegetation/src/lod/quantise';
-import { plantGeometry, plantMaterials } from '../../../packages/vegetation/src/render/material';
+import {
+	plantBounds,
+	plantGeometry,
+	plantMaterials,
+} from '../../../packages/vegetation/src/render/material';
 import { speciesHeader } from '../../../packages/vegetation/src/render/records';
 import { kitTextures } from '../../../packages/vegetation/src/render/textures';
 import { BARK_FRAME } from '../lib/plant-bark-frame';
@@ -162,7 +166,7 @@ export default defineSketch((ctx) => {
 	const mesh = plantGeometry(ctx, placeholderQuantise(limb(), kit.box, WOOD_UV_STEPS));
 	const half = BARK_FRAME.length / 2;
 	const quarter = Math.SQRT1_2;
-	scene.createMesh({
+	const part = scene.createMesh({
 		mesh,
 		material: wood,
 		position: LYING ? [half, 0, 0] : [0, -half, 0],
@@ -170,4 +174,7 @@ export default defineSketch((ctx) => {
 		castShadows: false,
 		receiveShadows: false,
 	});
+	// The part's mesh holds 16-bit steps, so its own sphere misses the box that the shader draws.
+	const { center, radius } = plantBounds(kit.box);
+	part.setBounds(center, radius);
 });
