@@ -2887,6 +2887,28 @@ pub fn mesh_center(mesh: u32, axis: u32) -> f32 {
     mesh_value(mesh, |slot| slot.center[(axis as usize).min(2)])
 }
 
+/// Gives mesh `mesh` the bounding sphere of the four call values, a center's x, y and z and a
+/// radius, in place of the sphere around its vertices, for a mesh whose material places its
+/// vertices elsewhere than its positions say. The objects and rows made from the mesh afterwards
+/// take it. Returns 0, or a failure code for an unknown mesh.
+#[wasm_bindgen(js_name = setMeshSphere)]
+pub fn set_mesh_sphere(mesh: u32) -> u32 {
+    with_engine(|e| {
+        let [x, y, z, radius] = e.call_values();
+        let set = mesh.checked_sub(1).is_some_and(|id| {
+            e.renderer
+                .settings_mut()
+                .meshes_mut()
+                .set_sphere(id, [x, y, z], radius)
+        });
+        if set {
+            0
+        } else {
+            render_failure(render_detail::BAD_MESH, mesh)
+        }
+    })
+}
+
 /// Turns a rectangle's rows over in place, so that its last row comes first, which a canvas needs:
 /// it counts rows from its top, and a texture counts them from the bottom.
 ///

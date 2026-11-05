@@ -11,6 +11,7 @@ const READS: Readonly<Record<string, number>> = {
 	setLineWidth: 1,
 	setBatchOrigin: 3,
 	setBatchBounds: 1,
+	setMeshSphere: 4,
 	setMaterialValue: 3,
 	setMaterialValues: 4,
 	setPerspectiveCamera: 3,

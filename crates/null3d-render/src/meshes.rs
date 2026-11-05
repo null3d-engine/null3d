@@ -472,6 +472,21 @@ impl MeshStorage {
             .filter(|_| self.live[id as usize])
     }
 
+    /// Gives the live mesh with id `id` the bounding sphere `center` and `radius` in place of the
+    /// one around its vertices, for a mesh whose material places its vertices elsewhere than its
+    /// positions say, such as integer steps that the shader turns into meters. The objects, rows
+    /// and buckets made from the mesh afterwards take this sphere, and the levels made from it
+    /// share it. Returns false for an unknown mesh.
+    pub fn set_sphere(&mut self, id: u32, center: [f32; 3], radius: f32) -> bool {
+        if !self.live.get(id as usize).copied().unwrap_or(false) {
+            return false;
+        }
+        let slot = &mut self.meshes[id as usize];
+        slot.center = center;
+        slot.radius = radius;
+        true
+    }
+
     /// The joint spheres of a skinned mesh, one per joint it names (see [`joint_spheres`]), or
     /// none for a mesh without joints.
     pub fn joint_spheres(&self, mesh: &MeshSlot) -> &[[f32; 4]] {
@@ -2899,6 +2914,22 @@ mod tests {
             .add(&box_geometry(0.6, 0.6, 0.6, [1, 1, 1]).unwrap())
             .unwrap();
         assert!((storage.mesh(id).unwrap().radius - 0.3 * 3f32.sqrt()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_mesh_takes_a_sphere_that_its_material_places_and_its_levels_share_it() {
+        let mut storage = MeshStorage::new(Packing::SharedBuffers);
+        let id = storage
+            .add(&box_geometry(0.6, 0.6, 0.6, [1, 1, 1]).unwrap())
+            .unwrap();
+        assert!(storage.set_sphere(id, [1.0, 2.0, 3.0], 4.0));
+        let slot = *storage.mesh(id).unwrap();
+        assert_eq!((slot.center, slot.radius), ([1.0, 2.0, 3.0], 4.0));
+        let level = storage.add_level(id, &[0, 1, 2]).unwrap();
+        let level = storage.mesh(level).unwrap();
+        assert_eq!((level.center, level.radius), ([1.0, 2.0, 3.0], 4.0));
+        // An unknown mesh takes no sphere.
+        assert!(!storage.set_sphere(id + 100, [0.0; 3], 1.0));
     }
 
     #[test]

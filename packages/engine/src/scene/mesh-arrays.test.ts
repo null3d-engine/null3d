@@ -65,6 +65,14 @@ describe('the shape checks of geometry.fromArrays', () => {
 		const cases: [MeshArrays, string][] = [
 			[{ ...QUAD, positions: [] }, 'got no positions.'],
 			[
+				{ ...QUAD, bounds: { center: [0, 1, 0], radius: 0 } },
+				'got bounds with the radius 0, not a number above 0.',
+			],
+			[
+				{ ...QUAD, bounds: { center: [0, Number.NaN, 0], radius: 1 } },
+				'got bounds of [0,null,0,1], which are not four finite numbers.',
+			],
+			[
 				{ ...QUAD, positions: [0, 0, 0, 1] },
 				'got 4 numbers in positions, which is not three per vertex.',
 			],

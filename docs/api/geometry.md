@@ -150,6 +150,8 @@ scene.createMesh({ mesh: quad, material: materials.standard(), scale: [0.001, 0.
 
 Integer positions keep their own units. Give the object the scale and the position that turn them into meters, as a glTF node's transform does for a quantized mesh. The engine's bounds and culling then see the object's size in meters. A material's `uvTransform` does the same for integer texture coordinates, as glTF's `KHR_texture_transform` does.
 
+A custom material's vertex stage can turn integer positions into meters itself, such as 16-bit steps inside a box that the material knows. The engine's bounds would then lie around the steps, not where the material draws the mesh. Culling, levels of detail and draw ranges all read those bounds. Give such a mesh `bounds: { center, radius }`, in meters about the origin of the object or row that draws it, before its scale. The engine then uses that sphere for every object and row of the mesh.
+
 ## Computing normals and tangents
 
 `computeNormals: true` computes the normals as three.js's `computeVertexNormals` does. Each vertex gets the average of the normals of its triangles, weighted by their areas. Vertices that triangles share get smooth normals. For hard edges, give each face its own vertices. The [meshes from arrays demo](https://github.com/null3d-engine/null3d/tree/main/examples/mesh-arrays) shows both: a smooth height field, an island with a color at each vertex, and a crystal with hard edges.

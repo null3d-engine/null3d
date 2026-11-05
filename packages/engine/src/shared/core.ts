@@ -490,6 +490,11 @@ export interface CoreGlue extends CoreErrors {
 	meshRadius(mesh: number): number;
 	/** One axis of a mesh's bounding center, 0 for x, 1 for y and 2 for z, or 0 for an unknown mesh. */
 	meshCenter(mesh: number, axis: number): number;
+	/**
+	 * Gives a mesh the bounding sphere of the four call values, a center's x, y and z and a radius,
+	 * in place of the sphere around its vertices.
+	 */
+	setMeshSphere(mesh: number): number;
 	/** A mesh's vertex count, or 0 for an unknown mesh. */
 	meshVertexCount(mesh: number): number;
 	/** A mesh's vertex format: its attribute bits and type fields, or 0 for an unknown mesh. */
@@ -1502,6 +1507,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'appendMeshPatches',
 	'meshRadius',
 	'meshCenter',
+	'setMeshSphere',
 	'meshVertexCount',
 	'meshFormat',
 	'turnRows',

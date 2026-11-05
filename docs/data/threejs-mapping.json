@@ -792,7 +792,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "geometry.fromArrays({ ..., computeNormals: true, computeTangents: true })",
-      "notes": "The results match three.js's bit for bit. computeTangents needs uvs, and works without indices too. Bounds are always automatic, so computeBoundingSphere and computeBoundingBox need no call.",
+      "notes": "The results match three.js's bit for bit. computeTangents needs uvs, and works without indices too. Bounds are always automatic, so computeBoundingSphere and computeBoundingBox need no call. A custom material that turns integer positions into meters itself gives the sphere in meters with bounds: { center, radius }.",
       "docs": "api/geometry",
       "detect": "\\.compute(VertexNormals|Tangents|BoundingSphere|BoundingBox)\\s*\\("
     },

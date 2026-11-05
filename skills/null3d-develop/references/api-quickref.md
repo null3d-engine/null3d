@@ -321,6 +321,7 @@ const mesh = geometry.fromArrays({
   joints, weights,          // (0.2) 4 per vertex each, together, for skinning
   targets,                  // (0.3) 4 per vertex for a generated shape's level morph, which a custom material's vertex offset reads as input.vertexRecord; not with morphTargets
   indices,                  // Uint16Array, Uint32Array or number[]; omit for one triangle per 3 vertices
+  bounds: { center, radius },  // the sphere where a custom material that decodes positions itself draws them, in meters; by default the box around the positions
   morphTargets: { positions: [smile, blink], normals, names: ['Smile', 'Blink'] },  // (0.2) deltas, 3 per vertex per target
   // morphTargets.colors: color deltas, as many per vertex as colors; morphed colors clamp to 0..1
 });

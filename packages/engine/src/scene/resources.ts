@@ -147,6 +147,7 @@ import {
 	SIZE_MAP_SLOTS,
 } from '../generated/gpu';
 import type { ShaderVariants } from '../generated/shaders';
+import type { Vec3Like } from '../math/types';
 import type { CustomShader } from '../shared/images';
 import { planEnded, planStarted } from '../shared/task-pending';
 import type { WgslUpdate } from '../shared/wgsl-updates';
@@ -1555,6 +1556,15 @@ export interface MeshArrays {
 	 */
 	morphTargets?: MorphTargets;
 	/**
+	 * The mesh's bounding sphere where its material places the vertices: a center and a radius in
+	 * the space that an object's transform moves. Give it for a custom material whose vertex stage
+	 * decodes the positions itself, such as integer steps inside a box that it turns into meters.
+	 * The engine would otherwise take the box around the positions as they are, and culling, levels
+	 * and draw ranges would read a sphere in the wrong place. By default the engine finds the sphere
+	 * around the positions.
+	 */
+	bounds?: { readonly center: Vec3Like; readonly radius: number };
+	/**
 	 * The levels of detail that the mesh plans on its own, on the job workers, as
 	 * `mesh.buildLevels` plans them. By default it plans them the first time the scene draws it,
 	 * when it holds `geometry.automaticLevelTriangles` triangles or more, or when its copies hold
@@ -1716,6 +1726,13 @@ export class Geometry {
 		if (problem) throw new EngineError('E1206', `${call}() ${problem}`);
 		const id = meshFromArrays(this.core, arrays, call);
 		this.core.checkGrowth(id, call);
+		if (arrays.bounds) {
+			const { center, radius } = arrays.bounds;
+			this.core
+				.callValues()
+				.set([center[0] as number, center[1] as number, center[2] as number, radius]);
+			this.core.check(this.core.glue.setMeshSphere(id), call, undefined, true);
+		}
 		const { morphTargets } = arrays;
 		const mesh = new MeshGeometry(
 			id,

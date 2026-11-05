@@ -392,6 +392,13 @@ export function arraysProblem(arrays: MeshArrays): string | undefined {
 	if (arrays.weights && !arrays.joints) return 'got weights but no joints.';
 	if (arrays.targets && arrays.morphTargets)
 		return 'got targets and morphTargets; a vertex holds either its morph data or a generated target record, not both.';
+	if (arrays.bounds) {
+		const { center, radius } = arrays.bounds;
+		const numbers = [center[0], center[1], center[2], radius];
+		if (!numbers.every((n) => typeof n === 'number' && Number.isFinite(n)))
+			return `got bounds of ${JSON.stringify(numbers)}, which are not four finite numbers.`;
+		if (radius <= 0) return `got bounds with the radius ${radius}, not a number above 0.`;
+	}
 	if (arrays.morphTargets)
 		return morphProblem(arrays.morphTargets, vertices, colorValues(arrays, vertices));
 	return undefined;
