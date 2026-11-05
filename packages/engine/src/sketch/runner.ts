@@ -1380,6 +1380,9 @@ export class SketchRunner {
 					// does after a GPU loss.
 					this.gpuEpoch = -1;
 				}
+				// The picture holds every pass's image at the held time, so each pass draws in the
+				// frames that the hold keeps, whatever cadence the sketch gave it.
+				if (before || step === steps) glue.turnEveryView();
 				frame = this.frame();
 				if (first === 0 && (before || step === steps)) first = frame;
 				for (const one of this.scriptDumps) this.dumpScriptStep(one, dumps, problems);
@@ -1404,6 +1407,7 @@ export class SketchRunner {
 				// The settle frame draws what the held frame prepared, such as the light that a pass
 				// reads from the frame before. It is no frame of the session, so the sketch's code
 				// does not run again and the held frame keeps its numbers.
+				glue.turnEveryView();
 				frame = this.frame(false);
 			}
 		} catch (error) {
@@ -1520,6 +1524,9 @@ export class SketchRunner {
 					glue.setTextureOption(TEXTURE_OPTION_UPLOAD_ALL, 1);
 					this.gpuEpoch = -1;
 				}
+				// The picture holds every pass's image at the last recorded time, so each pass draws
+				// in the frames that the replay keeps, whatever cadence the sketch gave it.
+				if (before || at === frames - 1) glue.turnEveryView();
 				frame = this.frame();
 				if (first === 0 && (before || at === frames - 1)) first = frame;
 			}
@@ -1536,6 +1543,7 @@ export class SketchRunner {
 				// The settle frame draws what the recording's last frame prepared, such as a
 				// light's copied picture. It is no frame of the session, so the sketch's code does
 				// not run again and the replay gives the recording's frames, no more.
+				glue.turnEveryView();
 				frame = this.frame(false);
 			}
 		} catch (error) {

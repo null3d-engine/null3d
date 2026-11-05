@@ -25,6 +25,9 @@ function fakeContext(start: QualityPreset = 'medium') {
 	/** The options that each material was made with, and the arrays of each mesh. */
 	const shaderOptions: Record<string, unknown>[] = [];
 	const meshes: MeshArrays[] = [];
+	/** The cadence that the add-on gave each pass, and each switch it set: the calls that it made. */
+	const passEvery: [unknown, number][] = [];
+	const passEnabled: [unknown, boolean][] = [];
 	const quality = {
 		preset: start,
 		settings: {},
@@ -84,8 +87,12 @@ function fakeContext(start: QualityPreset = 'medium') {
 		},
 		render: {
 			addPass: () => ({ name: 'water', writes: 'water', place: 1 }),
-			setPassEnabled() {},
-			setPassEvery() {},
+			setPassEnabled(pass: unknown, on: boolean) {
+				passEnabled.push([pass, on]);
+			},
+			setPassEvery(pass: unknown, every: number) {
+				passEvery.push([pass, every]);
+			},
 			removePass() {},
 		},
 		debug: {
@@ -104,6 +111,9 @@ function fakeContext(start: QualityPreset = 'medium') {
 		/** The options of the material, and the arrays of the meshes, that the last water made. */
 		shaderOptions,
 		meshes,
+		/** The cadence and switch calls that the add-on made. */
+		passEvery,
+		passEnabled,
 		/** Moves the governor's steps, as the frame loop does. */
 		step(next: number) {
 			level = next;
@@ -265,26 +275,24 @@ describe('the water’s figures in the stats overlay', () => {
 });
 
 describe('a held frame', () => {
-	it('draws the reflection in every frame, whatever the cadence', () => {
+	it('gives the reflection pass a cadence, and leaves it to the engine’s hold', () => {
 		const context = fakeContext();
 		const water = createWater(
 			context.ctx as unknown as SketchContext,
 			{ shapes: RIVER, reflectionEvery: { high: 4, medium: 4, low: 4, ultra: 4 } } as WaterOptions,
 		);
+		// The add-on paces the pass with the preset's cadence rather than switching it on and off,
+		// and the pass that it paces is the one that its feature draws and the overlay shows.
+		expect(context.passEvery).toHaveLength(1);
+		const [pass, every] = context.passEvery[0] as [{ name: string; place: number }, number];
+		expect(every).toBe(4);
+		expect(waterFigure(context)?.scope).toEqual([{ name: pass.name, place: pass.place }]);
+		// The engine draws every pass in the frame that a hold captures, whatever its cadence, so
+		// the add-on neither switches the pass off nor changes its cadence while the frame is held.
 		(context.ctx as unknown as { time: { held: boolean } }).time.held = true;
-		const seen: boolean[] = [];
-		const { setPassEnabled } = context.ctx.render as unknown as {
-			setPassEnabled: (pass: unknown, on: boolean) => void;
-		};
-		(context.ctx.render as unknown as { setPassEnabled: unknown }).setPassEnabled = (
-			pass: unknown,
-			on: boolean,
-		) => {
-			seen.push(on);
-			setPassEnabled(pass, on);
-		};
 		for (let k = 0; k < 8; k++) water.update();
-		expect(seen.every(Boolean)).toBe(true);
+		expect(context.passEnabled).toEqual([]);
+		expect(context.passEvery).toHaveLength(1);
 		water.destroy();
 	});
 });
