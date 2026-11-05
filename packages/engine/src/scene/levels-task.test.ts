@@ -9,8 +9,13 @@ import {
 	MESHOPT_MODULES,
 	MESHOPT_VENDOR,
 } from '../../../../tools/lib/meshopt-wasm.ts';
-import { PIECE_LIST_MIN_TRIANGLES } from '../../levels/pieces.js';
-import { ENCODER_MODULE, SIMPLIFIER_MODULE } from './level-words';
+import {
+	GROUP_LIST_MIN_TRIANGLES,
+	GROUP_TRIANGLES,
+	PIECE_LIST_MIN_TRIANGLES,
+} from '../../levels/pieces.js';
+import { groupsSplit, type PiecesData } from './gltf-parse';
+import { CLUSTERIZER_MODULE, ENCODER_MODULE, SIMPLIFIER_MODULE } from './level-words';
 import { type LevelsTaskOutput, run } from './levels-task';
 
 /**
@@ -56,6 +61,10 @@ function vendoredModules(): (name: string) => WebAssembly.Module {
 		[
 			ENCODER_MODULE,
 			new WebAssembly.Module(readFileSync(join(MESHOPT_VENDOR, 'meshopt_encoder.wasm'))),
+		],
+		[
+			CLUSTERIZER_MODULE,
+			new WebAssembly.Module(readFileSync(join(MESHOPT_VENDOR, 'meshopt_clusterizer.wasm'))),
 		],
 	]);
 	return (name) => modules.get(name) as WebAssembly.Module;
@@ -146,30 +155,48 @@ describe('the level planner on a job worker', () => {
 	});
 
 	test(
-		'gives a large mesh and each large level pieces over the same triangles',
+		'gives a large mesh and each large level pieces and groups over the same triangles',
 		async () => {
 			const grid = bumpyGrid(200);
 			const output = await taskLevels(grid, false, 7);
 			const expected = await nodeLevels(grid, false, 7);
+			// Each triangle from its least corner, which keeps the turn of its corners: a group's
+			// own order may start a triangle at another corner.
 			const keys = (indices: Uint32Array) => {
 				const out: string[] = [];
-				for (let t = 0; t < indices.length; t += 3)
-					out.push(`${indices[t]},${indices[t + 1]},${indices[t + 2]}`);
+				for (let t = 0; t < indices.length; t += 3) {
+					const corners = [indices[t], indices[t + 1], indices[t + 2]] as number[];
+					const least = corners.indexOf(Math.min(...corners));
+					out.push([0, 1, 2].map((k) => corners[(least + k) % 3]).join(','));
+				}
 				return out.sort();
+			};
+			// The groups of a large list split its pieces, each of up to the most triangles, with
+			// two vectors of bounds each.
+			const expectGroups = (pieces: PiecesData, triangles: number) => {
+				const grouped = triangles >= GROUP_LIST_MIN_TRIANGLES;
+				expect(pieces.groups !== undefined).toBe(grouped);
+				if (!pieces.groups) return;
+				expect(groupsSplit(pieces.groups, pieces.triangles)).toBe(true);
+				expect(Math.max(...pieces.groups)).toBeLessThanOrEqual(GROUP_TRIANGLES);
+				expect(pieces.groupBounds?.length).toBe(pieces.groups.length * 8);
 			};
 			const total = (counts: Uint32Array) => counts.reduce((sum, count) => sum + count, 0);
 			expect(output.pieces).toBeDefined();
 			const { pieces } = output as Required<LevelsTaskOutput>;
 			expect(total(pieces.triangles)).toBe(grid.indices.length / 3);
 			expect(keys(pieces.indices)).toEqual(keys(grid.indices));
+			expectGroups(pieces, grid.indices.length / 3);
 			output.levels.forEach((level, k) => {
 				const want = expected[k]?.indices[0] as Uint32Array;
 				// A level keeps the planner's triangles, in the order of its pieces where it has them.
 				expect(keys(level.indices)).toEqual(keys(want));
 				const large = level.indices.length / 3 >= PIECE_LIST_MIN_TRIANGLES;
 				expect(level.pieces !== undefined).toBe(large);
-				if (level.pieces) expect(total(level.pieces.triangles)).toBe(level.indices.length / 3);
-				else expect(Array.from(level.indices)).toEqual(Array.from(want));
+				if (level.pieces) {
+					expect(total(level.pieces.triangles)).toBe(level.indices.length / 3);
+					expectGroups(level.pieces, level.indices.length / 3);
+				} else expect(Array.from(level.indices)).toEqual(Array.from(want));
 			});
 			expect(output.levels[0]?.pieces).toBeDefined();
 		},

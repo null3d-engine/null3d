@@ -361,9 +361,16 @@ impl MeshStorage {
     }
 
     /// Gives the live mesh `id` pieces of its triangle list, in the list's order, from then on:
-    /// the copies that draw it cull each piece on its own. A new triangle list or new vertices drop
-    /// them. A mesh that joints or morph targets pose has no fixed bounds, so it takes none.
-    pub fn set_pieces(&mut self, id: u32, pieces: &[Piece]) -> Result<(), PieceError> {
+    /// the copies that draw it cull each piece on its own. `groups` split the pieces into groups of
+    /// a few triangles each, in the list's order, or the pieces take none where they do not split
+    /// them ([`crate::pieces::groups_split`]). A new triangle list or new vertices drop them. A
+    /// mesh that joints or morph targets pose has no fixed bounds, so it takes none.
+    pub fn set_pieces(
+        &mut self,
+        id: u32,
+        pieces: &[Piece],
+        groups: &[Piece],
+    ) -> Result<(), PieceError> {
         let mesh = *self.mesh(id).ok_or(PieceError::UnknownMesh)?;
         if mesh.joints > 0 || mesh.targets > 0 {
             return Err(PieceError::Bounds);
@@ -373,7 +380,7 @@ impl MeshStorage {
             .iter()
             .map(|part| part.index_count / 3)
             .sum();
-        self.pieces.set(id, triangles, pieces)
+        self.pieces.set(id, triangles, pieces, groups)
     }
 
     /// Gives the live mesh `id` pieces over a triangle list of their own, `indices`, which holds the
@@ -383,12 +390,13 @@ impl MeshStorage {
     /// mesh goes. A mesh split into parts shares them part by part, as
     /// [`MeshStorage::add_split_level`] does, so its list must come part by part in that level's
     /// order. A mesh that holds a list takes another once [`MeshStorage::take_piece_list`] took the
-    /// first away.
+    /// first away. `groups` split the pieces, as [`MeshStorage::set_pieces`] takes them.
     pub fn set_piece_list(
         &mut self,
         id: u32,
         indices: &[u32],
         pieces: &[Piece],
+        groups: &[Piece],
     ) -> Result<(), PieceError> {
         let mesh = *self.mesh(id).ok_or(PieceError::UnknownMesh)?;
         let triangles: u32 = self
@@ -406,14 +414,14 @@ impl MeshStorage {
             return Err(PieceError::Bounds);
         }
         // A list that the checks below refuse takes no room: they come before the list is made.
-        crate::pieces::PieceTable::default().set(0, triangles, pieces)?;
+        crate::pieces::PieceTable::default().set(0, triangles, pieces, &[])?;
         let list = if mesh.part_count > 1 {
             self.add_split_level(id, indices, true)
         } else {
             self.add_level(id, indices)
         }
         .map_err(|_| PieceError::Triangles)?;
-        self.pieces.set(id, triangles, pieces)?;
+        self.pieces.set(id, triangles, pieces, groups)?;
         self.pieces.set_list(id, list);
         Ok(())
     }
@@ -439,6 +447,16 @@ impl MeshStorage {
             self.pieces.of(id)
         } else {
             &[]
+        }
+    }
+
+    /// The groups of the pieces of mesh `id`, in the list's order, or none where
+    /// [`MeshStorage::pieces`] gives none or the pieces have no groups.
+    pub fn groups(&self, id: u32) -> &[Piece] {
+        if self.pieces(id).is_empty() {
+            &[]
+        } else {
+            self.pieces.groups(id)
         }
     }
 
@@ -2365,12 +2383,14 @@ mod tests {
                 Err(MeshError::Unordered)
             );
             assert_eq!(
-                storage.set_piece_list(base, &reversed, &pieces),
+                storage.set_piece_list(base, &reversed, &pieces, &[]),
                 Err(PieceError::Triangles)
             );
             assert_eq!(storage.parts.len(), parts_before);
             assert!(storage.pieces(base).is_empty());
-            storage.set_piece_list(base, &by_part, &pieces).unwrap();
+            storage
+                .set_piece_list(base, &by_part, &pieces, &[])
+                .unwrap();
             assert_eq!(storage.pieces(base), &pieces);
             // The pieces draw the list's parts, which hold the triangles in the list's order.
             let list = storage.pieces.list(base).unwrap();
@@ -2384,13 +2404,15 @@ mod tests {
             assert_eq!(ranges, triangles);
             // A mesh takes another list once the first is taken away, and removed with its parts.
             assert_eq!(
-                storage.set_piece_list(base, &by_part, &pieces),
+                storage.set_piece_list(base, &by_part, &pieces, &[]),
                 Err(PieceError::Count)
             );
             assert_eq!(storage.take_piece_list(base), Some(list));
             assert!(storage.pieces(base).is_empty());
             storage.remove(&[list]);
-            storage.set_piece_list(base, &by_part, &pieces).unwrap();
+            storage
+                .set_piece_list(base, &by_part, &pieces, &[])
+                .unwrap();
             assert_eq!(storage.pieces(base), &pieces);
         }
     }
@@ -3230,6 +3252,33 @@ mod tests {
                 .flat_map(|v| [v as f32, -(v as f32), 2.0])
                 .collect::<Vec<_>>(),
         )
+    }
+
+    /// A mesh keeps the groups that split its pieces, and new vertices drop them with the pieces.
+    #[test]
+    fn a_mesh_keeps_the_groups_of_its_pieces_until_its_vertices_move() {
+        let mut storage = MeshStorage::new(Packing::SharedBuffers);
+        let id = storage.add(&grid(4, 4, vertex::UV0)).unwrap();
+        let run = |triangles| Piece {
+            triangles,
+            sphere: [0.0, 0.0, 0.0, 10.0],
+            cone: [0.0, 1.0, 0.0, 2.0],
+        };
+        let pieces = [run(16), run(16)];
+        let groups = [run(10), run(6), run(16)];
+        storage.set_pieces(id, &pieces, &groups).unwrap();
+        assert_eq!(storage.pieces(id), &pieces);
+        assert_eq!(storage.groups(id), &groups);
+        storage
+            .set_pieces(id, &pieces, &[run(20), run(12)])
+            .unwrap();
+        assert!(storage.groups(id).is_empty());
+        storage.set_pieces(id, &pieces, &groups).unwrap();
+        storage
+            .update_vertices(id, 0, 3, 3, 4, &moved_positions(3..7))
+            .unwrap();
+        assert!(storage.pieces(id).is_empty());
+        assert!(storage.groups(id).is_empty());
     }
 
     #[test]

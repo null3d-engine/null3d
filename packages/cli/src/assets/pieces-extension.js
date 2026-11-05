@@ -3,7 +3,8 @@
 // primitive's triangles as they are, since the pieces only order them.
 //
 // NULL3D_pieces, on a primitive:
-//   { "triangles": [<number>, ...], "bounds": [<number>, ...], "version": <number> }
+//   { "triangles": [<number>, ...], "bounds": [<number>, ...], "groups": <accessor>,
+//     "groupBounds": <accessor>, "version": <number> }
 // `triangles` holds the triangles of each piece, one piece after another, in the order of the
 // primitive's indices: the first piece is the list's first triangles, and the counts add up to
 // all of them. `bounds` holds eight numbers for each piece, in the units of the primitive's
@@ -13,18 +14,28 @@
 // more never culls. Every number is a 32-bit float, rounded so that it culls no more than the
 // exact bounds. `version` is the layout's version (`NULL3D_PIECES_VERSION` below).
 //
+// A large list's pieces also split into groups of up to 128 triangles each. `groups` is a scalar
+// accessor of unsigned bytes that holds the triangles of each group, one group after another in
+// the order of the primitive's indices: the groups of each piece hold its triangles and no
+// other. `groupBounds` is a vector-of-four accessor of 32-bit floats that holds two entries for
+// each group, its sphere and then its cone, as `bounds` holds a piece's. A list without groups
+// names neither.
+//
 // glTF-Transform drops extensions it does not know, so the tool reads and writes this one itself.
 import { Extension, ExtensionProperty, PropertyType } from '@gltf-transform/core';
-import { listPieces, piecesInOrder } from '@null3d/engine/pieces-planner';
-import { cacheOrder, triangleIndices, triangleLists } from './geometry.js';
+import { listPieces, piecesInOrder, planGroups } from '@null3d/engine/pieces-planner';
+import { cacheOrder, clusterOrder, triangleIndices, triangleLists } from './geometry.js';
 import { lodOf } from './lod-extension.js';
 
 /** @import { Accessor, Document, Mesh, Node, Primitive, ReaderContext, WriterContext } from '@gltf-transform/core' */
 
 export const NULL3D_PIECES = 'NULL3D_pieces';
 
-/** The version of the layout that the tool writes. */
-export const NULL3D_PIECES_VERSION = 1;
+/**
+ * The version of the layout that the tool writes. The first version held no groups; the engine
+ * reads its pieces all the same.
+ */
+export const NULL3D_PIECES_VERSION = 2;
 
 /**
  * A primitive's pieces.
@@ -45,7 +56,12 @@ export class Pieces extends ExtensionProperty {
 
 	/** @returns {any} */
 	getDefaults() {
-		return Object.assign(super.getDefaults(), { triangles: [], bounds: [] });
+		return Object.assign(super.getDefaults(), {
+			triangles: [],
+			bounds: [],
+			groups: null,
+			groupBounds: null,
+		});
 	}
 
 	/** The triangles of each piece. @returns {number[]} */
@@ -64,6 +80,26 @@ export class Pieces extends ExtensionProperty {
 	 */
 	setPieces(triangles, bounds) {
 		return this.set('triangles', triangles).set('bounds', bounds);
+	}
+
+	/** The triangles of each group, or `null` for pieces without groups. @returns {Accessor | null} */
+	getGroups() {
+		return this.getRef('groups');
+	}
+
+	/** Two entries for each group: its sphere, then its cone. @returns {Accessor | null} */
+	getGroupBounds() {
+		return this.getRef('groupBounds');
+	}
+
+	/**
+	 * @param {Accessor} groups
+	 * @param {Accessor} bounds
+	 */
+	setGroups(groups, bounds) {
+		return this.setRef('groups', groups, { usage: 'OTHER' }).setRef('groupBounds', bounds, {
+			usage: 'OTHER',
+		});
 	}
 }
 
@@ -102,10 +138,11 @@ export class Null3dPieces extends Extension {
 			const def = /** @type {any} */ (context.jsonDoc.json.meshes?.[m]?.primitives[p])
 				?.extensions?.[NULL3D_PIECES];
 			if (!def || !Array.isArray(def.triangles) || !Array.isArray(def.bounds)) continue;
-			prim.setExtension(
-				NULL3D_PIECES,
-				/** @type {any} */ (this.createPieces().setPieces(def.triangles, def.bounds)),
-			);
+			const pieces = this.createPieces().setPieces(def.triangles, def.bounds);
+			const groups = context.accessors[def.groups];
+			const bounds = context.accessors[def.groupBounds];
+			if (groups && bounds) pieces.setGroups(groups, bounds);
+			prim.setExtension(NULL3D_PIECES, /** @type {any} */ (pieces));
 		}
 		return this;
 	}
@@ -116,10 +153,17 @@ export class Null3dPieces extends Extension {
 			const pieces = piecesOf(prim);
 			const def = context.jsonDoc.json.meshes?.[m]?.primitives[p];
 			if (!pieces || !def) continue;
+			const groups = pieces.getGroups();
+			const bounds = pieces.getGroupBounds();
 			def.extensions ??= {};
 			def.extensions[NULL3D_PIECES] = {
 				triangles: pieces.getTriangles(),
 				bounds: pieces.getBounds(),
+				...(groups &&
+					bounds && {
+						groups: context.accessorIndexMap.get(groups),
+						groupBounds: context.accessorIndexMap.get(bounds),
+					}),
 				version: NULL3D_PIECES_VERSION,
 			};
 		}
@@ -184,16 +228,18 @@ function facesOneWay(prim) {
 /**
  * Sorts each triangle list of a mesh with levels that the pieces planner's rule gives pieces into
  * them: a large list, or a smaller one whose triangles face a few ways.
- * It orders each piece's triangles for the vertex cache, and stores the pieces in
- * `NULL3D_pieces`. The vertices stay as they are, so the levels keep sharing them. Run after the
+ * It orders each piece's triangles for the vertex cache, splits the pieces of a large list into
+ * groups, which keep the order that the clusterizer gives them, and stores the pieces in
+ * `NULL3D_pieces`. The clusterizer must be ready. The vertices stay as they are, so the levels keep sharing them. Run after the
  * levels are stored, since a level's own mesh gets pieces too, and before any step that reads
  * triangles by their place, such as the raycast trees.
  *
  * @param {Document} doc
- * @returns {{ lists: number, pieces: number }} The lists that got pieces, and their pieces.
+ * @returns {{ lists: number, pieces: number, groups: number }} The lists that got pieces, their
+ *   pieces and the pieces' groups.
  */
 export function storePieces(doc) {
-	const summary = { lists: 0, pieces: 0 };
+	const summary = { lists: 0, pieces: 0, groups: 0 };
 	const meshes = piecedMeshes(doc);
 	if (meshes.length === 0) return summary;
 	/** @type {Null3dPieces | undefined} */
@@ -204,9 +250,12 @@ export function storePieces(doc) {
 			const position = /** @type {Accessor} */ (prim.getAttribute('POSITION'));
 			const vertices = position.getCount();
 			const indices = triangleIndices(prim, vertices);
-			const plan = listPieces(readPositions(position), indices, facesOneWay(prim));
+			const positions = readPositions(position);
+			const plan = listPieces(positions, indices, facesOneWay(prim));
 			if (!plan || plan.counts.length < 2) continue;
-			const sorted = piecesInOrder(indices, plan, cacheOrder);
+			const inPieces = piecesInOrder(indices, plan, cacheOrder);
+			const groups = planGroups(positions, inPieces, plan.counts, clusterOrder);
+			const sorted = groups?.indices ?? inPieces;
 			prim.setIndices(
 				doc
 					.createAccessor()
@@ -216,12 +265,17 @@ export function storePieces(doc) {
 			);
 			// A file names the extension only when a list holds pieces.
 			extension ??= doc.createExtension(Null3dPieces);
-			prim.setExtension(
-				NULL3D_PIECES,
-				/** @type {any} */ (
-					extension.createPieces().setPieces(Array.from(plan.counts), Array.from(plan.bounds))
-				),
-			);
+			const pieces = extension
+				.createPieces()
+				.setPieces(Array.from(plan.counts), Array.from(plan.bounds));
+			if (groups) {
+				pieces.setGroups(
+					doc.createAccessor().setType('SCALAR').setArray(groups.counts).setBuffer(buffer),
+					doc.createAccessor().setType('VEC4').setArray(groups.bounds).setBuffer(buffer),
+				);
+				summary.groups += groups.counts.length;
+			}
+			prim.setExtension(NULL3D_PIECES, /** @type {any} */ (pieces));
 			summary.lists += 1;
 			summary.pieces += plan.counts.length;
 		}

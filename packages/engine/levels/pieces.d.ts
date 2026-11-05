@@ -24,6 +24,66 @@ export const PIECE_FACINGS: number;
 /** The numbers of each piece's bounds: its sphere's centre and radius, its cone's axis and cutoff. */
 export const PIECE_BOUNDS: number;
 
+/** The most triangles of one group of a piece. */
+export const GROUP_TRIANGLES: number;
+/** The most vertices that one group uses: the most that meshoptimizer's clusterizer takes. */
+export const GROUP_VERTICES: number;
+/** The fewest triangles of a list with pieces for its pieces to split into groups. */
+export const GROUP_LIST_MIN_TRIANGLES: number;
+/** How much the clusterizer weighs a group's spread of facings against its size in space. */
+export const GROUP_CONE_WEIGHT: number;
+
+/**
+ * The groups of a list's pieces: the list's triangles in group order, which keeps each piece's
+ * triangles in the piece, and each group's triangles and bounds.
+ */
+export interface GroupPlan {
+	/** The list's triangles, each piece's in the order of its groups. */
+	readonly indices: Uint32Array<ArrayBuffer>;
+	/**
+	 * The triangles of each group, one group after another, piece by piece: the groups of each
+	 * piece hold its triangles and no other.
+	 */
+	readonly counts: Uint8Array<ArrayBuffer>;
+	/** `PIECE_BOUNDS` numbers for each group, as a piece's. */
+	readonly bounds: Float32Array<ArrayBuffer>;
+}
+
+/**
+ * Splits a list of triangles into groups of up to `GROUP_TRIANGLES` triangles that lie close
+ * together, as meshoptimizer's clusterizer makes them: the same triangles in group order, and the
+ * triangles of each group.
+ */
+export type Clusterize = (
+	indices: Uint32Array,
+	positions: Float32Array,
+) => { indices: Uint32Array; counts: Uint32Array };
+
+/**
+ * The groups that meshoptimizer's clusterizer made, from its buffers: `meshlets` holds four
+ * numbers for each of `count` groups (where its vertices and its triangles start, its vertices
+ * and its triangles), `vertices` the vertices that the groups use, and `triangles` three places in
+ * a group's vertices for each triangle.
+ */
+export function meshletGroups(
+	meshlets: ArrayLike<number>,
+	vertices: ArrayLike<number>,
+	triangles: ArrayLike<number>,
+	count: number,
+): { indices: Uint32Array; counts: Uint32Array };
+
+/**
+ * The groups of the pieces of a list of `GROUP_LIST_MIN_TRIANGLES` triangles or more, or
+ * `undefined` for a smaller list. `indices` holds the list in piece order, and `pieces` the
+ * triangles of each piece. A group never crosses from one piece into the next.
+ */
+export function planGroups(
+	positions: ArrayLike<number>,
+	indices: Uint32Array,
+	pieces: ArrayLike<number>,
+	clusterize: Clusterize,
+): GroupPlan | undefined;
+
 /** The pieces of a triangle list. */
 export interface PiecePlan {
 	/**

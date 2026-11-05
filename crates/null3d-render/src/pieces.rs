@@ -16,6 +16,11 @@
 //! skips it, and so do views whose eye is not where their positions start, such as shadow views,
 //! and orthographic views. A double-sided material draws back faces, so its pieces skip it too.
 //! The frustum test needs none of these and runs for every piece of every copy.
+//!
+//! The pieces of a large list also split into groups of up to [`MAX_GROUP_TRIANGLES`] triangles
+//! that lie close together, each with a sphere and a cone of its own, in the pieces' layout. The
+//! groups of each piece hold its triangles and no other, in the list's order, so a viewer that
+//! culls a near copy group by group still culls within its pieces.
 
 use null3d_core::culling::Frustum;
 
@@ -29,6 +34,10 @@ pub const PIECE_WORDS: usize = 9;
 /// the first piece's bucket, below the bit that marks a bucket with pieces.
 pub const MAX_PIECES: usize = 127;
 
+/// The most triangles of one group of a piece: what the file's byte of each group's triangles
+/// holds.
+pub const MAX_GROUP_TRIANGLES: u32 = u8::MAX as u32;
+
 /// How much wider than its cutoff a cone counts, as a share of the distance to its piece, so that
 /// the rounding of a copy's matrix and of the eye never culls a triangle that the GPU draws. It
 /// widens each cone by about a twentieth of a degree.
@@ -38,8 +47,8 @@ pub const CONE_MARGIN: f32 = 1.0e-3;
 /// for its pieces to take the cone test. The cone margin covers what such a stretch turns a facing.
 pub const SIMILAR_TOLERANCE: f32 = 1.0e-4;
 
-/// One piece of a mesh's triangle list: its triangles, which follow the pieces before it in the
-/// list, and its bounds in the mesh's own space.
+/// One piece of a mesh's triangle list, or one group of a piece: its triangles, which follow the
+/// pieces or groups before it in the list, and its bounds in the mesh's own space.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Piece {
     pub triangles: u32,
@@ -75,11 +84,41 @@ pub enum PieceError {
     Bounds,
 }
 
-/// One mesh's pieces, and the mesh that holds their triangle list where it is not the mesh's own.
+/// One mesh's pieces, their groups, and the mesh that holds their triangle list where it is not
+/// the mesh's own.
 #[derive(Debug, Default)]
 struct MeshPieces {
     pieces: Vec<Piece>,
+    groups: Vec<Piece>,
     list: Option<u32>,
+}
+
+/// True when each bound of `run` is finite, and its radius is 0 or more.
+fn finite(run: &Piece) -> bool {
+    run.sphere.iter().chain(&run.cone).all(|v| v.is_finite()) && run.sphere[3] >= 0.0
+}
+
+/// True when `groups` split each of `pieces` in the list's order, with no group that crosses from
+/// one piece into the next, each of 1 to [`MAX_GROUP_TRIANGLES`] triangles and with finite bounds.
+pub fn groups_split(pieces: &[Piece], groups: &[Piece]) -> bool {
+    let mut next = groups.iter();
+    for piece in pieces {
+        let mut left = piece.triangles;
+        while left > 0 {
+            let Some(group) = next.next() else {
+                return false;
+            };
+            if group.triangles == 0
+                || group.triangles > MAX_GROUP_TRIANGLES
+                || group.triangles > left
+                || !finite(group)
+            {
+                return false;
+            }
+            left -= group.triangles;
+        }
+    }
+    next.next().is_none()
 }
 
 /// Each mesh's pieces, by mesh id: none for a mesh that draws its list whole.
@@ -92,8 +131,15 @@ pub struct PieceTable {
 }
 
 impl PieceTable {
-    /// Gives mesh `mesh`, whose list holds `triangles` triangles, the pieces `pieces`.
-    pub fn set(&mut self, mesh: u32, triangles: u32, pieces: &[Piece]) -> Result<(), PieceError> {
+    /// Gives mesh `mesh`, whose list holds `triangles` triangles, the pieces `pieces`, with the
+    /// groups `groups` where they split the pieces ([`groups_split`]) and none otherwise.
+    pub fn set(
+        &mut self,
+        mesh: u32,
+        triangles: u32,
+        pieces: &[Piece],
+        groups: &[Piece],
+    ) -> Result<(), PieceError> {
         if pieces.len() < 2 || pieces.len() > MAX_PIECES {
             return Err(PieceError::Count);
         }
@@ -103,14 +149,6 @@ impl PieceTable {
         if sum != Some(triangles) || pieces.iter().any(|piece| piece.triangles == 0) {
             return Err(PieceError::Triangles);
         }
-        let finite = |piece: &Piece| {
-            piece
-                .sphere
-                .iter()
-                .chain(&piece.cone)
-                .all(|v| v.is_finite())
-                && piece.sphere[3] >= 0.0
-        };
         if !pieces.iter().all(finite) {
             return Err(PieceError::Bounds);
         }
@@ -121,6 +159,10 @@ impl PieceTable {
         let entry = &mut self.by_mesh[at];
         entry.pieces.clear();
         entry.pieces.extend_from_slice(pieces);
+        entry.groups.clear();
+        if groups_split(pieces, groups) {
+            entry.groups.extend_from_slice(groups);
+        }
         Ok(())
     }
 
@@ -138,6 +180,7 @@ impl PieceTable {
         let entry = self.by_mesh.get_mut(mesh as usize)?;
         let list = entry.list.take()?;
         entry.pieces = Vec::new();
+        entry.groups = Vec::new();
         Some(list)
     }
 
@@ -146,6 +189,13 @@ impl PieceTable {
         self.by_mesh
             .get(mesh as usize)
             .map_or(&[], |entry| entry.pieces.as_slice())
+    }
+
+    /// The groups of the pieces of mesh `mesh`, in the list's order, or none.
+    pub fn groups(&self, mesh: u32) -> &[Piece] {
+        self.by_mesh
+            .get(mesh as usize)
+            .map_or(&[], |entry| entry.groups.as_slice())
     }
 
     /// The mesh that holds the triangle list of mesh `mesh`'s pieces, or `None` where the pieces
@@ -159,6 +209,7 @@ impl PieceTable {
     pub fn clear(&mut self, mesh: u32) {
         if let Some(entry) = self.by_mesh.get_mut(mesh as usize) {
             entry.pieces = Vec::new();
+            entry.groups = Vec::new();
         }
     }
 
@@ -167,6 +218,7 @@ impl PieceTable {
     pub fn forget(&mut self, mesh: u32) {
         if let Some(entry) = self.by_mesh.get_mut(mesh as usize) {
             entry.pieces = Vec::new();
+            entry.groups = Vec::new();
             if let Some(list) = entry.list.take() {
                 self.released.push(list);
             }
@@ -356,15 +408,49 @@ mod tests {
     fn the_table_refuses_pieces_that_miss_the_meshs_triangles() {
         let mut table = PieceTable::default();
         assert_eq!(
-            table.set(3, 10, &[piece(4), piece(5)]),
+            table.set(3, 10, &[piece(4), piece(5)], &[]),
             Err(PieceError::Triangles)
         );
-        assert_eq!(table.set(3, 10, &[piece(10)]), Err(PieceError::Count));
-        assert_eq!(table.set(3, 10, &[piece(4), piece(6)]), Ok(()));
+        assert_eq!(table.set(3, 10, &[piece(10)], &[]), Err(PieceError::Count));
+        assert_eq!(table.set(3, 10, &[piece(4), piece(6)], &[]), Ok(()));
         assert_eq!(table.of(3).len(), 2);
         assert!(table.of(2).is_empty());
         table.clear(3);
         assert!(table.of(3).is_empty());
+    }
+
+    /// Groups that split each piece stay with the pieces, and groups that cross from one piece
+    /// into the next, miss a triangle or hold a bad bound leave the pieces without groups.
+    #[test]
+    fn the_table_keeps_only_groups_that_split_each_piece() {
+        let pieces = [piece(4), piece(6)];
+        let mut table = PieceTable::default();
+        let split = [piece(3), piece(1), piece(2), piece(4)];
+        assert_eq!(table.set(5, 10, &pieces, &split), Ok(()));
+        assert_eq!(table.groups(5), split);
+        let crossing = [piece(3), piece(3), piece(4)];
+        let short = [piece(4), piece(5)];
+        let empty = [piece(4), piece(0), piece(6)];
+        let broken = [
+            piece(4),
+            Piece {
+                triangles: 6,
+                sphere: [f32::NAN, 0.0, 0.0, 1.0],
+                cone: [0.0; 4],
+            },
+        ];
+        let large = [piece(300), piece(6)];
+        for groups in [&crossing[..], &short, &empty, &broken] {
+            assert_eq!(table.set(5, 10, &pieces, groups), Ok(()));
+            assert!(table.groups(5).is_empty(), "{groups:?}");
+            assert_eq!(table.of(5).len(), 2);
+        }
+        let many = [piece(300), piece(6)];
+        assert_eq!(table.set(6, 306, &many, &large), Ok(()));
+        assert!(table.groups(6).is_empty());
+        table.set(5, 10, &pieces, &split).unwrap();
+        table.clear(5);
+        assert!(table.groups(5).is_empty());
     }
 
     /// A piece of triangles that face +z, one metre across at the origin, seen by a copy turned a
