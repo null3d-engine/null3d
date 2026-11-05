@@ -141,7 +141,25 @@ describe('the species header', () => {
 	test("writes no bark zone past the shader's and no extra past its colours", () => {
 		expect(HEADER.barkZones + MAX_BARK_ZONES * BARK_ZONE_TEXELS).toBeLessThanOrEqual(RECORDS_WIDTH);
 		expect(HEADER.extras + MAX_EXTRAS).toBeLessThanOrEqual(HEADER.barkZones);
+		expect(texel(header, HEADER.lichen)).toEqual([0, 0, 0, 0]);
 		expect(texel(header, HEADER.youngTile)[2]).toBe(1);
+	});
+
+	test('writes the lichen colour, amount and heights', () => {
+		const bark = record.bark;
+		if (!bark) throw new Error('the stand-in has no bark');
+		const colour: Rgb = [0.4, 0.45, 0.38];
+		const withLichen: Species = {
+			...record,
+			bark: { ...bark, lichen: { amount: 0.85, from: 1.4, to: 1000, colour } },
+		};
+		const lichenHeader = speciesHeader(withLichen, manifest, speciesBox(withLichen));
+		const near = (a: readonly number[], b: readonly number[]) => {
+			for (const [k, v] of a.entries()) expect(v).toBeCloseTo(b[k] as number, 5);
+		};
+		near(texel(lichenHeader, HEADER.lichen).slice(0, 3), colour);
+		expect(texel(lichenHeader, HEADER.lichen)[3]).toBeCloseTo(0.85, 5);
+		near(texel(lichenHeader, HEADER.lichenReach).slice(0, 2), [1.4, 1000]);
 	});
 });
 
@@ -177,6 +195,8 @@ describe('the plant shader', () => {
 			HEADER_EXTRAS: HEADER.extras,
 			HEADER_BUD: HEADER.bud,
 			HEADER_BARK_ZONES: HEADER.barkZones,
+			HEADER_LICHEN: HEADER.lichen,
+			HEADER_LICHEN_REACH: HEADER.lichenReach,
 			BARK_ZONE_TEXELS,
 			MAX_BARK_ZONES,
 			MAX_EXTRAS,

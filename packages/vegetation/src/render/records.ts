@@ -41,6 +41,9 @@ export const MAX_BARK_ZONES = 4;
 /** The most extras whose colours the header holds. */
 export const MAX_EXTRAS = 4;
 
+/** The largest whole number a half float keeps, the height a limit that names none takes. */
+const HALF_MAX = 65504;
+
 /**
  * The texels of the header row. The plant shader holds the same numbers as `HEADER_*` constants,
  * and a test keeps the two equal.
@@ -90,6 +93,10 @@ export const HEADER = {
 	bud: 23,
 	/** The first bark zone; each zone takes `BARK_ZONE_TEXELS` texels. */
 	barkZones: 24,
+	/** Lichen: its colour, then how much. */
+	lichen: 40,
+	/** Lichen: its lowest and highest height in metres. */
+	lichenReach: 41,
 } as const;
 
 /**
@@ -278,6 +285,9 @@ export function speciesHeader(
 			bark.collar.ridge,
 			bark.scars ?? 0,
 		]);
+		const lichen = bark.lichen;
+		texel(header, HEADER.lichen, [...(lichen?.colour ?? [0, 0, 0]), lichen?.amount ?? 0]);
+		texel(header, HEADER.lichenReach, [lichen?.from ?? 0, lichen?.to ?? HALF_MAX, 0, 0]);
 		zones.forEach((zone, index) => {
 			const layer = barkManifest?.layers[zone.layer];
 			const at = HEADER.barkZones + index * BARK_ZONE_TEXELS;

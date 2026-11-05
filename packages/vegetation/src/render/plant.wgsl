@@ -99,6 +99,8 @@ const MAX_EXTRAS: i32 = 4;
 const HEADER_BARK_ZONES: i32 = 24;
 const BARK_ZONE_TEXELS: i32 = 4;
 const MAX_BARK_ZONES: i32 = 4;
+const HEADER_LICHEN: i32 = 40;
+const HEADER_LICHEN_REACH: i32 = 41;
 // Rows before the wind records, and wind records in a row.
 const HEADER_ROWS: i32 = 2;
 const RECORDS_PER_ROW: i32 = 256;
@@ -832,11 +834,23 @@ fn surface(input: SurfaceInput) -> Surface {
         // gather more than the plates do.
         let mossy = saturate(moss.w * low_enough * (0.12 + saturate(n.y) + north) * (0.5 + cavity));
         bark = mix(bark, moss.rgb, mossy);
+        // Lichen grows in pale rosettes on the crests, where the bark stands proud of its furrows,
+        // above the mossy foot and along the limbs.
+        let lichen = header(HEADER_LICHEN);
+        let lichen_reach = header(HEADER_LICHEN_REACH);
+        let in_zone = smoothstep(lichen_reach.x, lichen_reach.x + 0.6, plant.y)
+            * (1.0 - smoothstep(lichen_reach.y - 0.6, lichen_reach.y, plant.y));
+        let grain = value3(plant * 22.0) * 0.6 + value3(plant * 60.0) * 0.4;
+        let crest = 0.45 + 0.55 * (1.0 - cavity);
+        let lichen_mask =
+            smoothstep(0.60, 0.68, grain) * crest * in_zone * lichen.w * (1.0 - youth);
+        bark = mix(bark, lichen.rgb * (0.88 + 0.24 * grain), lichen_mask);
         // The collar's dark ridge where a branch joins its parent.
         bark *= 1.0 - 0.5 * moss_reach.z * junction;
         base = bark * (1.0 - CAVITY_DARK * cavity);
         roughness = saturate(0.82 + CAVITY_ROUGH * cavity);
-        mapped = bark_normal;
+        // A lichen patch is a flat, matte crust: it hides the furrows under it.
+        mapped = normalize(mix(bark_normal, vec3f(0.0, 0.0, 1.0), lichen_mask * 0.8));
         occlusion = input.vertexColor.a;
     } else if (mode == MODE_CARDS) {
         let layer = select(1, 0, upper);
