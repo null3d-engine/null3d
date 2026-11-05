@@ -18,7 +18,11 @@ import { files } from '@null3d/vegetation-textures/pedunculate-oak';
 import type { MeshArrays } from '../../../packages/vegetation/src/asset';
 import { placeholderQuantise } from '../../../packages/vegetation/src/core/placeholder';
 import { TEXTURE_UV_STEPS } from '../../../packages/vegetation/src/lod/quantise';
-import { plantGeometry, plantMaterials } from '../../../packages/vegetation/src/render/material';
+import {
+	plantBounds,
+	plantGeometry,
+	plantMaterials,
+} from '../../../packages/vegetation/src/render/material';
 import { speciesHeader } from '../../../packages/vegetation/src/render/records';
 import { kitTextures, loadTextureSet } from '../../../packages/vegetation/src/render/textures';
 import {
@@ -131,7 +135,7 @@ export default defineSketch(async (ctx) => {
 	const kit = await calibrationKit(ctx, record);
 	const plant = plantMaterials(ctx, kit);
 	const mesh = plantGeometry(ctx, placeholderQuantise(leafSquare(), kit.box, TEXTURE_UV_STEPS));
-	scene.createMesh({
+	const part = scene.createMesh({
 		mesh,
 		material: plant.foliage,
 		position: [LEAF_PLACE[0], LEAF_PLACE[1], 0],
@@ -139,6 +143,9 @@ export default defineSketch(async (ctx) => {
 		castShadows: false,
 		receiveShadows: false,
 	});
+	// The part's mesh holds 16-bit steps, so its own sphere misses the box that the shader draws.
+	const { center, radius } = plantBounds(kit.box);
+	part.setBounds(center, radius);
 	const square = geometry.plane({ width: REFERENCE_SIDE, height: REFERENCE_SIDE });
 	const roughness = optics.roughness[FACE === 'lower' ? 1 : 0];
 	// The face's reflectance, with the leaf's own gloss, and the transmittance, which carries none.
