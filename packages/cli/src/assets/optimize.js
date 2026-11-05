@@ -18,6 +18,7 @@ const OPTIONS = /** @type {const} */ ({
 	lod: { type: 'boolean', default: false },
 	stages: { type: 'boolean', default: false },
 	clusters: { type: 'boolean', default: false },
+	groups: { type: 'boolean', default: false },
 	simplify: { type: 'string', default: String(DEFAULT_OPTIONS.simplify) },
 	'simplify-error': { type: 'string', default: String(DEFAULT_OPTIONS.simplifyError) },
 	'max-texture-size': { type: 'string', default: String(MAX_TEXTURE_SIDE) },
@@ -62,6 +63,10 @@ Options:
                                refines it as the others arrive. With --clusters, write each
                                tree's bands after the patches that the file holds, so the tree
                                refines as its bands arrive (NULL3D_stages)
+  --groups                    Split each piece that --lod makes of a large list into groups of
+                              64 to 128 triangles, which the copies that carry the most triangles
+                               of a level cull through slots (NULL3D_pieces version 2). Off by
+                              default: groups cost their planning time and about 5.6% more bytes
   --clusters                   Add a tree of cluster patches to each large static mesh of 20,000
                                triangles or more, whose patches draw near the camera at fine
                                detail and far from it at coarse detail (NULL3D_clusters). Also
@@ -150,6 +155,7 @@ export function parseOptimizeArgs(args) {
 			lod: values.lod,
 			stages: values.stages,
 			clusters: values.clusters,
+			groups: values.groups,
 			simplify,
 			simplifyError,
 			maxTextureSize: side,

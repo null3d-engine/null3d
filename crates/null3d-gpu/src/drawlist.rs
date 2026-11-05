@@ -2351,6 +2351,9 @@ pub mod template {
     /// [`WEIGHTED_DEPTH_MS`](super::layout::WEIGHTED_DEPTH_MS); on WebGL2 it reads the copy of one
     /// sample that the backend keeps, with the layout [`VIEW_COPY`](super::layout::VIEW_COPY).
     pub const SINGLE_DEPTH: u32 = 105;
+    /// Slots: one compute pipeline whose dispatch counts, scans or copies the groups of a view's
+    /// slots, which the dispatch's parameters pick. It binds the cluster levels' pass. WebGPU only.
+    pub const SLOT: u32 = 106;
 
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
@@ -2359,7 +2362,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 105] = [
+    pub const NAMES: [(&str, u32); 106] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -2464,6 +2467,7 @@ pub mod template {
         ("BACKGROUND_CLOUDS_ATMOSPHERE", BACKGROUND_CLOUDS_ATMOSPHERE),
         ("SINGLE_COMPOSITE", SINGLE_COMPOSITE),
         ("SINGLE_DEPTH", SINGLE_DEPTH),
+        ("SLOT", SLOT),
         ("CUSTOM_FIRST", CUSTOM_FIRST),
     ];
 }
@@ -2605,6 +2609,7 @@ pub mod groups {
         (template::EXPOSURE_LUMINANCE, own!(layout::EFFECT)),
         (template::CULL, own!(layout::CULL)),
         (template::CLUSTER, own!(layout::CLUSTER_CULL)),
+        (template::SLOT, own!(layout::CLUSTER_CULL)),
         (template::TAA_RESOLVE, own!(layout::TAA)),
         (template::TAA_RESOLVE_MS, own!(layout::TAA_MS)),
         (template::TAA_COPY, own!(layout::VIEW_COPY)),

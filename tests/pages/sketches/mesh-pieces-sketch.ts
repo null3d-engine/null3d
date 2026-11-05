@@ -7,11 +7,23 @@
 // with pieces too, so far copies cull that level's pieces. On the page's 'view' message, with a
 // view's place in VIEWS, the camera moves there, and a few frames later the sketch posts 'turned'.
 import { defineSketch } from '@null3d/engine';
-import { planPieces } from '../../../packages/engine/levels/pieces.js';
+import { planGroups, planPieces } from '../../../packages/engine/levels/pieces.js';
 import { GltfBuilder, type GltfJson } from '../lib/gltf-files';
 
 const params = new URL(import.meta.url).searchParams;
 const PIECES = params.get('pieces') === '1';
+/** True when the fine pieces split into groups too, which a slot pass culls one by one. */
+const GROUPS = PIECES && params.get('groups') === '1';
+/** The most triangles of one group, which a group's byte of triangles holds. */
+const GROUP_TRIANGLES = 64;
+/** The copies of the single-sided rock that a cost page asks for, or 0 for the page's own count. */
+const ROCKS = Number(params.get('rocks') ?? '') || 0;
+/**
+ * True for one large rock and a few copies of it, a scene whose nearest copies carry enough
+ * triangles for the slot pass to buy itself back. The cost page asks for it; the picture tests do
+ * not.
+ */
+const BIG = params.get('big') === '1';
 /** Frames after a move before 'turned': a pipelined engine draws a frame or two behind the sketch. */
 const TURN_FRAMES = 3;
 
@@ -89,34 +101,60 @@ function rock(around: number, rings: number) {
 	return { positions: new Float32Array(positions), normals, indices: sorted, plan };
 }
 
+/**
+ * The groups of a rock's pieces, in runs of {@link GROUP_TRIANGLES} triangles of the list's order,
+ * or undefined for a list too small to split: a plain clusterizer, which keeps each piece's
+ * triangles in their order and cuts them into runs.
+ */
+function rockGroups(shape: ReturnType<typeof rock>) {
+	const clusterize = (indices: Uint32Array) => {
+		const counts: number[] = [];
+		for (let at = 0; at < indices.length / 3; at += GROUP_TRIANGLES)
+			counts.push(Math.min(GROUP_TRIANGLES, indices.length / 3 - at));
+		return { indices, counts: Uint32Array.from(counts) };
+	};
+	return planGroups(shape.positions, shape.indices, shape.plan.counts, clusterize);
+}
+
 /** The file: a rock mesh for each material, each with its coarser level, with or without pieces. */
 function rockFile(): Uint8Array {
 	const b = new GltfBuilder();
 	if (PIECES) b.uses('NULL3D_pieces');
 	b.uses('MSFT_lod');
-	const primitive = (shape: ReturnType<typeof rock>, material: number): GltfJson => ({
-		attributes: {
-			POSITION: b.positions(shape.positions),
-			NORMAL: b.accessor(shape.normals, 3),
-		},
-		indices: b.accessor(shape.indices, 1),
-		material,
-		...(PIECES && {
-			extensions: {
-				NULL3D_pieces: {
-					triangles: Array.from(shape.plan.counts),
-					bounds: Array.from(shape.plan.bounds),
-					version: 1,
-				},
+	const primitive = (shape: ReturnType<typeof rock>, material: number): GltfJson => {
+		const groups = GROUPS ? rockGroups(shape) : undefined;
+		return {
+			attributes: {
+				POSITION: b.positions(shape.positions),
+				NORMAL: b.accessor(shape.normals, 3),
 			},
-		}),
-	});
-	const fine = rock(128, 64);
-	const coarse = rock(40, 20);
-	const sides = [
-		{ name: 'single', doubleSided: false, color: [0.62, 0.55, 0.45, 1] },
-		{ name: 'double', doubleSided: true, color: [0.4, 0.5, 0.62, 1] },
-	];
+			indices: b.accessor(groups?.indices ?? shape.indices, 1),
+			material,
+			...(PIECES && {
+				extensions: {
+					NULL3D_pieces: {
+						triangles: Array.from(shape.plan.counts),
+						bounds: Array.from(shape.plan.bounds),
+						version: groups ? 2 : 1,
+						...(groups && {
+							groups: b.accessor(groups.counts, 1),
+							groupBounds: b.accessor(groups.bounds, 4),
+						}),
+					},
+				},
+			}),
+		};
+	};
+	// A large rock for the cost page: one level of about 630,000 triangles, whose four copies carry
+	// enough for the slots to pay.
+	const fine = BIG ? rock(1024, 384) : rock(128, 64);
+	const coarse = BIG ? rock(256, 96) : rock(40, 20);
+	const sides = BIG
+		? [{ name: 'single', doubleSided: false, color: [0.62, 0.55, 0.45, 1] }]
+		: [
+				{ name: 'single', doubleSided: false, color: [0.62, 0.55, 0.45, 1] },
+				{ name: 'double', doubleSided: true, color: [0.4, 0.5, 0.62, 1] },
+			];
 	for (const side of sides) {
 		const material = b.material({
 			name: side.name,
@@ -168,17 +206,19 @@ export default defineSketch(async ({ scene, assets, quality, page }) => {
 		new Blob([rockFile() as Uint8Array<ArrayBuffer>], { type: 'model/gltf-binary' }),
 	);
 	const file = await assets.loadGltf(url);
-	for (const [side, count] of [
-		['single', 60],
-		['double', 24],
-	] as const) {
+	for (const [side, count] of (BIG
+		? [['single', 4]]
+		: [
+				['single', ROCKS || 60],
+				['double', ROCKS ? Math.round(ROCKS * 0.4) : 24],
+			]) as (readonly [string, number])[]) {
 		const node = file.find(side);
 		if (!node?.mesh || !node.material) throw new Error(`no ${side} rock`);
 		const batch = scene.createInstances(node.mesh, count, { material: node.material });
 		for (let k = 0; k < count; k++) {
 			const seed = (side === 'single' ? 0 : 1000) + k * 7;
 			const angle = hash(seed) * Math.PI * 2;
-			const distance = 2 + hash(seed + 1) * 22;
+			const distance = BIG ? 3 + hash(seed + 1) * 4 : 2 + hash(seed + 1) * 22;
 			batch.positions.set(
 				[Math.cos(angle) * distance, hash(seed + 2) * 0.8, Math.sin(angle) * distance],
 				k * 3,
@@ -189,7 +229,7 @@ export default defineSketch(async ({ scene, assets, quality, page }) => {
 			const half = hash(seed + 6) * Math.PI;
 			const s = Math.sin(half) / length;
 			batch.rotations.set([ax * s, ay * s, az * s, Math.cos(half)], k * 4);
-			const size = 0.5 + hash(seed + 5) * 1.5;
+			const size = BIG ? 2.2 : 0.5 + hash(seed + 5) * 1.5;
 			// One copy mirrored and one stretched, whose pieces skip the cone test.
 			const scale =
 				k === 1

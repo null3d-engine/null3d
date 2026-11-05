@@ -4541,6 +4541,9 @@ pub(crate) fn bucket_of(table: &[(BucketKey, u32)], key: Option<BucketKey>) -> O
 struct PageBuffers {
     vertex_bytes: u32,
     index_bytes: u32,
+    /// True when the page's index buffer is made to be read as a storage buffer too, as the slot
+    /// pass reads the indices of the page that its slots draw from.
+    storage: bool,
     /// The page's vertex bytes that the buffers hold.
     vertices: usize,
     indices: usize,
@@ -4622,6 +4625,7 @@ impl MeshBuffers {
         list: &mut DrawList,
         arena: &mut UploadArena,
         pages: &[Page],
+        storage_pages: u32,
     ) -> Result<bool, RecordError> {
         let mut remade = false;
         for (p, page) in pages.iter().enumerate() {
@@ -4629,14 +4633,18 @@ impl MeshBuffers {
                 self.pages.push(PageBuffers::default());
             }
             let (vertex_id, index_id) = self.ids(p as u32);
+            // A page whose indices the slot pass reads as storage takes that use from its first
+            // buffer, since a buffer's uses are fixed when it is made.
+            let storage = p < 32 && storage_pages & (1 << p) != 0;
             let buffers = &mut self.pages[p];
-            if buffers.outgrown(page) {
+            if buffers.outgrown(page) || (storage && !buffers.storage) {
                 let limit = MAX_BUFFER_BYTES as u32;
                 let full = || RecordError::BufferFull { bytes: limit };
                 let (vertex_bytes, index_bytes) = page.buffer_bytes();
                 *buffers = PageBuffers {
                     vertex_bytes: grown_size(vertex_bytes as u32, limit).ok_or_else(full)?,
                     index_bytes: grown_size(index_bytes as u32, limit).ok_or_else(full)?,
+                    storage,
                     ..PageBuffers::default()
                 };
                 let copied = buffer_usage::COPY_DST;
@@ -4652,9 +4660,14 @@ impl MeshBuffers {
                         buffer_usage::VERTEX | copied | read,
                     ],
                 )?;
+                let read = if storage { buffer_usage::STORAGE } else { 0 };
                 list.push(
                     Op::CreateBuffer,
-                    &[index_id, buffers.index_bytes, buffer_usage::INDEX | copied],
+                    &[
+                        index_id,
+                        buffers.index_bytes,
+                        buffer_usage::INDEX | copied | read,
+                    ],
                 )?;
                 remade = true;
             }

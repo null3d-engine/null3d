@@ -195,6 +195,7 @@ import {
 	TEMPLATE_SINGLE_DEPTH,
 	TEMPLATE_SKIN,
 	TEMPLATE_SKY_TABLE,
+	TEMPLATE_SLOT,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
 	TEMPLATE_SSR_REDUCE,
@@ -680,11 +681,16 @@ export class Pipelines {
 	/** The conversion's pipeline layout, made at its first pipeline. */
 	private featureRowsLayout: GPUPipelineLayout | undefined;
 	/**
-	 * The cluster pass's builds, which arrive with the cluster levels feature's shader file. It is
-	 * read by name so that a build whose generated modules are older than the manifest still type
-	 * checks, and the pipeline reports the shader as missing instead.
+	 * The cluster pass's and the slot pass's builds, which arrive with the cluster levels feature's
+	 * shader file. One file holds both, so each names its variant: neither has a permutation bit of
+	 * its own. It is read by name so that a build whose generated modules are older than the
+	 * manifest still type checks, and the pipeline reports the shader as missing instead.
 	 */
 	private readonly cluster: ShaderVariants | undefined;
+	/** The cluster levels' builds, by variant name: the tree's patches and the slots' groups. */
+	private clusterBuild(variant: 'webgpu' | 'groups'): WgslShader | undefined {
+		return this.cluster?.[variant]?.wgsl ?? undefined;
+	}
 	private readonly clusterLayout: GPUPipelineLayout;
 	private readonly lightLayout: GPUPipelineLayout;
 	private readonly lightClusters: WgslShader | undefined;
@@ -2279,6 +2285,7 @@ export class Pipelines {
 		if (template === TEMPLATE_DEPTH_PYRAMID) return this.pyramid;
 		if (template === TEMPLATE_FEATURE_ROWS) return this.featureRows;
 		if (template === TEMPLATE_CLUSTER) return this.cluster;
+		if (template === TEMPLATE_SLOT) return this.cluster;
 		if (template === TEMPLATE_CULL && permutation & PERMUTATION_MOTION) return this.cullMotion;
 		if (EXPOSURE_ENTRY_POINTS[template] !== undefined) return this.exposureHistogram;
 		return OCCLUSION_ENTRY_POINTS[template] !== undefined ? this.occlusion : undefined;
@@ -2343,12 +2350,21 @@ export class Pipelines {
 			};
 		}
 		if (template === TEMPLATE_CLUSTER) {
-			const shader = this.cluster ? variantFor(this.cluster, 0, 'wgsl')?.wgsl : undefined;
+			const shader = this.clusterBuild('webgpu');
 			if (!shader) throw new Error("the device's shader modules have no cluster shader");
 			return {
 				label: 'cluster cull',
 				layout: this.clusterLayout,
 				compute: { module: this.module('cluster cull', shader), entryPoint: 'main' },
+			};
+		}
+		if (template === TEMPLATE_SLOT) {
+			const shader = this.clusterBuild('groups');
+			if (!shader) throw new Error("the device's shader modules have no slot shader");
+			return {
+				label: 'slot cull',
+				layout: this.clusterLayout,
+				compute: { module: this.module('slot cull', shader), entryPoint: 'main' },
 			};
 		}
 		if (template === TEMPLATE_DEPTH_PYRAMID) {

@@ -149,6 +149,7 @@ mod opaque;
 mod pyramid;
 mod shadow;
 mod skin;
+mod slots;
 mod transparent;
 
 use std::collections::TryReserveError;
@@ -376,7 +377,34 @@ mod ids {
     pub const CLUSTER_INDICES: u32 = CLUSTER_PATCHES + 1;
     /// The cluster pass's one compute pipeline.
     pub const CLUSTER: u32 = CLUSTER_INDICES + 1;
-    pub const BLOOM: u32 = CLUSTER + 1;
+    /// Each view's slot pass: its runs, offsets, list, indirect draws and parameters, five ids from
+    /// `SLOT_BUFFERS + 5 * view`, the view's bind group after them, and the scene's slot table after
+    /// every view's.
+    const SLOT_BUFFERS: u32 = CLUSTER + 1;
+
+    pub const fn slot_runs(view: ViewId) -> u32 {
+        SLOT_BUFFERS + 5 * view.index() as u32
+    }
+    pub const fn slot_offsets(view: ViewId) -> u32 {
+        slot_runs(view) + 1
+    }
+    pub const fn slot_list(view: ViewId) -> u32 {
+        slot_runs(view) + 2
+    }
+    pub const fn slot_draws(view: ViewId) -> u32 {
+        slot_runs(view) + 3
+    }
+    pub const fn slot_params(view: ViewId) -> u32 {
+        slot_runs(view) + 4
+    }
+    pub const fn slot_group(view: ViewId) -> u32 {
+        SLOT_BUFFERS + 5 * MAX_VIEW_IDS as u32 + view.index() as u32
+    }
+    /// The slots' records, then their groups', their pieces' and their parts'.
+    pub const SLOT_TABLE: u32 = SLOT_BUFFERS + 6 * MAX_VIEW_IDS as u32;
+    /// The slot pass's one compute pipeline.
+    pub const SLOT: u32 = SLOT_TABLE + 1;
+    pub const BLOOM: u32 = SLOT + 1;
     /// The skinned vertex buffers that the skinning pass writes and the passes that draw skinned
     /// meshes read, one id each from here.
     const SKINNED: u32 = BLOOM + 1;
@@ -1024,6 +1052,8 @@ pub struct GpuDrivenRenderer {
     culling: Culling,
     /// The cluster levels' tables and each view's buffers.
     clusters: clusters::Clusters,
+    /// The slot pass's scene table and each view's buffers.
+    slots: slots::Slots,
     /// The views' CPU culling on the direct-draw path.
     direct: Direct,
     /// Each camera view's depth pyramid, with occlusion culling.
@@ -1092,6 +1122,9 @@ pub struct GpuDrivenRenderer {
     /// True once the frame created the cluster pass's pipeline, which waits for a tree of cluster
     /// patches to draw.
     cluster_pipeline: bool,
+    /// True once the frame created the slot pass's pipeline, which waits for a mesh whose pieces
+    /// have groups.
+    slot_pipeline: bool,
     /// True from the creation of three.js's table of specular terms until a frame uploads it.
     dfg_pending: bool,
     /// The cube texture that the camera views' frame groups bind: the environment's, or the
@@ -1345,6 +1378,7 @@ impl GpuDrivenRenderer {
             cells: CellCulling::new(config.cell_culling, config.direct_draws),
             culling: Culling::new(config.index_instances),
             clusters: clusters::Clusters::default(),
+            slots: slots::Slots::default(),
             direct: Direct::default(),
             pyramids: Pyramids::default(),
             check: occlusion_check::OcclusionCheck::default(),
@@ -1403,6 +1437,7 @@ impl GpuDrivenRenderer {
             cascades_held: false,
             created: false,
             cluster_pipeline: false,
+            slot_pipeline: false,
             pick: crate::pick::PickState::default(),
             copy_views: Vec::new(),
             shadow_copy_views: Vec::new(),
@@ -1588,6 +1623,10 @@ impl GpuDrivenRenderer {
             (moving, std::slice::from_ref(&plain)),
             (tone, std::slice::from_ref(&plain)),
         ] {
+            // Slots draw for the camera's own view alone, which culls in one phase: a two-phase
+            // view's second pass would draw copies that the first pass had not placed yet. The
+            // scene layout holds the slots, and no other layout has any.
+            let slot_view = !drawn.slot_buckets.is_empty();
             drawn.fit_copies(
                 scene,
                 batches,
@@ -1596,6 +1635,7 @@ impl GpuDrivenRenderer {
                 copy_offsets,
                 input.jobs,
                 watches,
+                slot_view,
             )?;
         }
         // The staged levels' watches read the levels that the camera's layout put copies in.
@@ -2143,6 +2183,14 @@ impl GpuDrivenRenderer {
             self.cluster_pipeline = true;
             created_pipelines = true;
         }
+        // The slot pass's shader loads with the cluster levels' file, and its pipeline is made with
+        // the first frame that draws a slot.
+        if !self.slot_pipeline && !self.config.direct_draws && !self.layout.slot_buckets.is_empty()
+        {
+            slots::Slots::create_pipeline(list)?;
+            self.slot_pipeline = true;
+            created_pipelines = true;
+        }
         if motion {
             created_pipelines |= self.motion.create_pipeline(list)?;
         }
@@ -2525,9 +2573,15 @@ impl GpuDrivenRenderer {
             dfg::upload(list, arena, ids::CUSTOM_VALUES, MATERIAL_TEXELS)?;
             ao::upload_blank(list, arena, ids::BLANK_AO)?;
         }
-        let pages_remade = self
-            .meshes
-            .upload(list, arena, self.settings.meshes().pages())?;
+        // The slot pass reads one page's indices in place, so that page's buffer takes the storage
+        // use.
+        let storage_pages = match self.layout.slot_page {
+            0..=31 => 1 << self.layout.slot_page,
+            _ => 0,
+        };
+        let pages_remade =
+            self.meshes
+                .upload(list, arena, self.settings.meshes().pages(), storage_pages)?;
         let skinned_remade = self.skinning.apply(
             list,
             input.animations,
@@ -2684,9 +2738,15 @@ impl GpuDrivenRenderer {
         }
         // Each view's list of cluster patches holds what its own rule picks this frame.
         let lists_grown = self.size_cluster_lists(input, parity, shadow.as_ref());
+        // The slots' rooms in the camera's list change with the copies that hold them.
+        let slot_buffers_made = if self.config.direct_draws {
+            false
+        } else {
+            self.slots.size(list, &self.layout, binding_bytes)?
+        };
         // The bundles name the slices' places and the views' lists, and the buffers must hold
         // them.
-        let buffers_remade = buffers_remade || slices_moved || lists_grown;
+        let buffers_remade = buffers_remade || slices_moved || lists_grown || slot_buffers_made;
         self.note_stage_band_picks(input, parity);
         let (shared_recreated, casters_recreated) = if upload_everything {
             let shared = self.layout.apply(list, arena, binding_bytes)?;
@@ -2708,6 +2768,18 @@ impl GpuDrivenRenderer {
         // the path that runs the cluster pass builds them, whose group binds each table whole and
         // whose dispatch reads it. The direct path binds neither and reads neither, so it builds
         // neither.
+        // The slots' groups, pieces and parts follow the layout.
+        let slots_recreated = if self.config.direct_draws {
+            false
+        } else {
+            self.slots
+                .apply_table(list, arena, &self.layout, upload_everything, binding_bytes)?
+        };
+        // The culling pass writes each slot's copy into the bucket table, and the slot pass reads
+        // the records that name it. They follow the pick and the slices.
+        if self.layout.take_slot_records_dirty() {
+            self.slots.write_records(list, arena, &self.layout)?;
+        }
         let clusters_recreated = if self.config.direct_draws {
             false
         } else {
@@ -2832,6 +2904,14 @@ impl GpuDrivenRenderer {
                     list,
                     view,
                     clusters_recreated || culled_made,
+                    binding_bytes,
+                )?;
+                self.slots.apply(
+                    list,
+                    view,
+                    layout,
+                    meshes,
+                    slots_recreated || culled_made || buffers_remade,
                     binding_bytes,
                 )?;
             }
@@ -3107,6 +3187,7 @@ impl GpuDrivenRenderer {
                         },
                         levels.is_some(),
                     )?;
+                    self.slots.upload(list, arena, view, layout, frame)?;
                 }
                 let offsets = if self.config.direct_draws {
                     self.direct.offsets()
@@ -3502,6 +3583,7 @@ impl GpuDrivenRenderer {
         let (layout, casters, culling, lines) =
             (&self.layout, &self.casters, &self.culling, &self.lines);
         let clusters = &self.clusters;
+        let slots = &self.slots;
         let pyramids = &self.pyramids;
         let (outlined, scattering) = (&self.outlined, &self.scattering);
         let tone = &self.tone;
@@ -3621,7 +3703,9 @@ impl GpuDrivenRenderer {
                     // Cluster levels follow each phase that fills draws: after the first, the
                     // occluders' patches, which their pass draws, and after the late one, or the
                     // only one, the patches that the view's opaque pass draws.
-                    clusters.record(list, view, layout_of(view), early)
+                    clusters.record(list, view, layout_of(view), early)?;
+                    // The slots read the copies that the pass placed, so they follow it too.
+                    slots.record(list, view, layout_of(view), early)
                 }
                 Role::Prepass(view) if drawn(view) => {
                     if direct_draws {
@@ -3658,6 +3742,7 @@ impl GpuDrivenRenderer {
                 Role::Pyramid(view) if drawn(view) && occluding => pyramids.record(list, view),
                 Role::LateCull(view) if drawn(view) && occluding => {
                     culling.record(list, view, layout, Phase::Late)?;
+                    slots.record(list, view, layout, true)?;
                     clusters.record(list, view, layout, false)
                 }
                 Role::OutlineMask if drawn(ViewId::OUTLINE) || drawn(ViewId::TONE) => {
@@ -4226,6 +4311,7 @@ impl GpuDrivenRenderer {
         } else {
             clusters::Clusters::upload_bytes(&self.layout)
                 + clusters::Clusters::upload_bytes(&self.casters)
+                + slots::Slots::upload_bytes(&self.layout)
         };
         let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 * 2
             + dfg::BYTES
@@ -4514,6 +4600,8 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.pick.reset_gpu();
         self.culling.forget_gpu();
         self.clusters.forget_gpu();
+        self.slots.forget_gpu();
+        self.slot_pipeline = false;
         self.pyramids.forget_gpu();
         self.count_reads.forget_gpu();
         self.views_made = 0;

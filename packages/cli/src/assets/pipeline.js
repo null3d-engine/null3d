@@ -55,6 +55,9 @@ import { encodeTextures, TEXTURE_FOLDER } from './textures.js';
  *   `lod`.
  * @property {boolean} clusters Make trees of cluster patches, and give each mesh with a tree whole
  *   levels of detail too, for a viewer that draws no patches.
+ * @property {boolean} groups Split each piece of a large list into groups of 64 to 128 triangles,
+ *   which the copies that carry the most triangles of a level cull through slots. The default is
+ *   false, because groups cost their planning time and their bytes and only such a level pays.
  * @property {number} simplify The share of each mesh's triangles to keep, from 0 to 1, as far
  *   as the error limit allows. 1 keeps them all.
  * @property {number} simplifyError The largest error of that simplification, as a share of each
@@ -77,6 +80,7 @@ export const DEFAULT_OPTIONS = /** @type {const} */ ({
 	lod: false,
 	stages: false,
 	clusters: false,
+	groups: false,
 	simplify: 1,
 	simplifyError: SIMPLIFY_MAX_ERROR,
 	maxTextureSize: MAX_TEXTURE_SIDE,
@@ -414,7 +418,7 @@ export async function optimizeModel(path, options, encode) {
 	// Each large list of a mesh with levels sorts its triangles into pieces, which a viewer that
 	// draws many copies culls one by one. Raycast trees read triangles by their place, so they
 	// come after.
-	storePieces(doc);
+	storePieces(doc, { groups: options.groups });
 	storeClusters(doc, clusters);
 	merged.accessors = dedupAccessors(doc);
 	const spatial = addSpatialData(doc, {

@@ -56,6 +56,7 @@ scene.instantiate(ship);
 | `--lod` | Adds levels of detail to each mesh of 64 triangles or more | No levels |
 | `--stages` | With `--lod` or `--clusters`, writes finer levels and cluster bands as separate files beside the model. The page then draws a coarse first picture | Levels and bands in the file |
 | `--clusters` | Adds a tree of cluster patches to each large static mesh, and gives that mesh the levels that `--lod` makes. [Cluster levels](#cluster-levels) says which meshes get a tree | No trees |
+| `--groups` | With `--lod`, splits each piece of a large list into groups of 64 to 128 triangles, which copies that carry the most triangles of a level cull through slots. [Groups](#groups) says when it pays | No groups |
 | `--simplify <share>` | Keeps this share of each mesh's triangles, from 0 to 1, as far as `--simplify-error` allows | 1: every triangle |
 | `--simplify-error <share>` | The most that `--simplify` may move a mesh's surface, as a share of the mesh's size | 0.01 |
 | `--max-texture-size <pixels>` | The largest side of a texture: a power of two up to 2048 | 2048 |
@@ -188,6 +189,10 @@ A simplified level shares the mesh's vertices, so only its indices add to the fi
 The levels go into the file with `MSFT_lod`. Each node with levels stores the errors in its extras, as `NULL3D_lod_error`. A level is good enough where its error covers less than one pixel. The engine can then pick the level from the real screen height and the render scale. The loader switches these measured levels at once, because their switch does not show. The extras also hold `MSFT_screencoverage` for other readers of `MSFT_lod`, made for a screen 1080 pixels high. The loader reads that coverage as the mark of a measured error. A model whose file already has levels keeps them, with or without `--lod`. Their meshes take the steps of their base mesh, so they line up when drawn in its place. Their errors in `NULL3D_lod_error` change to those steps. A file that gives errors alone, without the coverage, holds levels whose author set the switches by hand. The loader fades those levels.
 
 A large mesh also gets pieces: `--lod` sorts each of its levels of 32,768 triangles or more into 8 to 16 runs that each face about one way, and stores each run's bounds in `NULL3D_pieces`. Each copy then skips the pieces of its level that lie outside the view or face away from the camera, as [Levels of detail](../concepts/lod.md#pieces-of-a-large-level) explains. Only the order of the triangles changes, so other viewers draw the same mesh.
+
+### Groups
+
+`--groups` adds a finer grain: each piece splits into groups of 64 to 128 triangles, with bounds of its own. The copies that carry the most triangles of a level then draw its groups through slots, as [Levels of detail](../concepts/lod.md#slots-of-a-level) explains. It is off by default, because a group costs its bounds, its share of the list and its planning time, and only a model whose nearest copies carry about 2.4 million triangles draws them back. The file holds about 5.6% more bytes with groups, and a viewer that meets no such copies draws exactly what it drew without them.
 
 Over the 213 models of four Kenney city kits, `--lod` gives levels to 162. The 45 models of under 64 triangles get none, and so do six flat road pieces that cannot lose a quarter of their triangles.
 

@@ -164,7 +164,9 @@ export class Null3dPieces extends Extension {
 						groups: context.accessorIndexMap.get(groups),
 						groupBounds: context.accessorIndexMap.get(bounds),
 					}),
-				version: NULL3D_PIECES_VERSION,
+				// A file without groups keeps the first layout, so a model that asks for none
+				// writes the bytes it wrote before groups existed.
+				version: groups && bounds ? NULL3D_PIECES_VERSION : 1,
 			};
 		}
 		return this;
@@ -234,11 +236,16 @@ function facesOneWay(prim) {
  * levels are stored, since a level's own mesh gets pieces too, and before any step that reads
  * triangles by their place, such as the raycast trees.
  *
+ * Groups cost their planning time and bytes, so they are opt-in: a file writes them only when
+ * `options.groups` asks, and a model that expects copies carrying much of a level's triangles
+ * asks.
+ *
  * @param {Document} doc
+ * @param {{ groups?: boolean }} [options]
  * @returns {{ lists: number, pieces: number, groups: number }} The lists that got pieces, their
  *   pieces and the pieces' groups.
  */
-export function storePieces(doc) {
+export function storePieces(doc, options = {}) {
 	const summary = { lists: 0, pieces: 0, groups: 0 };
 	const meshes = piecedMeshes(doc);
 	if (meshes.length === 0) return summary;
@@ -254,7 +261,9 @@ export function storePieces(doc) {
 			const plan = listPieces(positions, indices, facesOneWay(prim));
 			if (!plan || plan.counts.length < 2) continue;
 			const inPieces = piecesInOrder(indices, plan, cacheOrder);
-			const groups = planGroups(positions, inPieces, plan.counts, clusterOrder);
+			const groups = options.groups
+				? planGroups(positions, inPieces, plan.counts, clusterOrder)
+				: undefined;
 			const sorted = groups?.indices ?? inPieces;
 			prim.setIndices(
 				doc

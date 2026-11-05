@@ -2193,8 +2193,9 @@ impl CpuCulledRenderer {
             dfg::upload(list, arena, ids::MATERIALS, MATERIAL_TEXELS)?;
             ao::upload_blank(list, arena, ids::BLANK_AO)?;
         }
+        // The CPU-culled path draws whole levels, so no page's indices are read as storage.
         self.meshes
-            .upload(list, arena, self.settings.meshes().pages())?;
+            .upload(list, arena, self.settings.meshes().pages(), 0)?;
         upload_patches(
             &mut self.patch_buffers,
             self.settings.patches(),
