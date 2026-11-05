@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { speciesBox } from '../core/box';
 import { capsFor } from '../core/caps';
+import { NODE_STUB } from '../core/graph';
 import { hashBytes } from '../core/hash';
 import { DETAILS } from '../core/types';
 import { oakRecord } from '../grow/oak.fixture';
@@ -435,6 +436,21 @@ describe('the wood of the grown oak', () => {
 				expect(from === axis || skeleton.axes.parent[from] === axis).toBe(true);
 			}
 		expect(runOn).toBeGreaterThan(0);
+	});
+
+	it('gives a dead stub the grown bark of the wood it stands on, not young bark', () => {
+		const young = record.bark?.youngRadius ?? 0;
+		let stubs = 0;
+		for (const [key, rings] of report.axisRings) {
+			const axis = report.axisOf.get(key) as number;
+			if (axis < 0 || key !== axis) continue;
+			if (((skeleton.flags[skeleton.axes.first[axis] as number] as number) & NODE_STUB) === 0)
+				continue;
+			stubs++;
+			for (let i = 0; i < rings.vertices; i++)
+				expect(rings.pipe[i] as number).toBeGreaterThanOrEqual(young);
+		}
+		expect(stubs).toBeGreaterThan(0);
 	});
 
 	it('keeps v within the 16 bits that hold it', () => {

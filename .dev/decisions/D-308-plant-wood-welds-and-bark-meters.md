@@ -114,6 +114,10 @@ review, so the cap follows the oak's figures.
 - **Peeling strips** hang from their upper edge and curl out, at the nearest level only, in the
   record's peel zone. The outer face shows the bark under it. The inner face carries a pipe radius of
   zero, so the shader draws it with the young bark, the pale inner layer.
+- **Stubs.** A dead stub left where a branch was shed carries a pipe radius of at least a quarter
+  more than the young bark's. The shader then draws it with grown bark, like the wood it stands on.
+  With its own pipe radius, a stub of 5 cm drew with the smooth young bark of a live shoot, a pale
+  stick on the oak's trunk.
 - **The cap** of one variant's nearest wood is per tier, from the oak's largest variant with about
   15 per cent to spare.
 
