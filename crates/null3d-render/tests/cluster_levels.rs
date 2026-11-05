@@ -334,7 +334,7 @@ fn give_ball_levels(world: &mut World) {
 /// counts outgrow the slices, which places them again.
 #[test]
 fn a_trees_record_names_its_copy_after_the_level_slices_move() {
-    let mut world = World::new();
+    let mut world = World::counting();
     give_ball_levels(&mut world);
     let mesh = world.add_object(&grid(1, 1), Shading::Lit);
     world
@@ -373,7 +373,7 @@ fn a_trees_record_names_its_copy_after_the_level_slices_move() {
 /// slice. Each frame replays on a mock device. Returns how many views' compacted instances the
 /// jump made again.
 fn jump_beside_the_boxes(cascades: u32) -> usize {
-    let mut world = World::new();
+    let mut world = World::counting();
     let mut mock = MockBackend::default();
     if cascades > 0 {
         world.cast_sun_shadows(cascades);

@@ -937,6 +937,10 @@ pub struct RendererConfig {
     pub direct_draws: bool,
     /// How the shadow cascades store depth.
     pub cascade_depth: CascadeDepth,
+    /// The most slots that each layout gives, over its level sets, to the small sets whose slices
+    /// hold a copy of every source of the set in each level, so no frame counts their copies.
+    /// 0 counts the copies of every set in every frame, as the tests of the count ask.
+    pub fixed_level_slots: u32,
 }
 
 impl Default for RendererConfig {
@@ -956,6 +960,7 @@ impl Default for RendererConfig {
             gpu_occlusion: false,
             direct_draws: false,
             cascade_depth: CascadeDepth::default(),
+            fixed_level_slots: layout::FIXED_LEVEL_SLOTS,
         }
     }
 }
@@ -1160,6 +1165,7 @@ impl GpuDrivenRenderer {
             config.index_instances = false;
             config.gpu_occlusion = false;
         }
+        let fixed = config.fixed_level_slots;
         Self {
             config,
             settings: scene_settings(&config),
@@ -1316,10 +1322,10 @@ impl GpuDrivenRenderer {
                 graph.set_occlusion(config.gpu_occlusion);
                 graph
             },
-            layout: Layout::new(Drawn::Scene, config.index_instances),
-            casters: Layout::new(Drawn::Casters, config.index_instances),
-            outlined: Layout::new(Drawn::Outlined, config.index_instances),
-            moving: Layout::new(Drawn::Motion, false),
+            layout: Layout::new(Drawn::Scene, config.index_instances, fixed),
+            casters: Layout::new(Drawn::Casters, config.index_instances, fixed),
+            outlined: Layout::new(Drawn::Outlined, config.index_instances, fixed),
+            moving: Layout::new(Drawn::Motion, false, fixed),
             layouts_moving: false,
             motion_made: false,
             motion: motion::Motion::default(),
@@ -1328,10 +1334,10 @@ impl GpuDrivenRenderer {
             layouts_outlined: false,
             layouts_picked: false,
             outline_made: false,
-            scattering: Layout::new(Drawn::Subsurface, config.index_instances),
+            scattering: Layout::new(Drawn::Subsurface, config.index_instances, fixed),
             layouts_scattered: false,
             subsurface_made: false,
-            tone: Layout::new(Drawn::Tone, config.index_instances),
+            tone: Layout::new(Drawn::Tone, config.index_instances, fixed),
             layouts_toned: false,
             tone_made: false,
             layout_prepass: false,
@@ -1582,7 +1588,15 @@ impl GpuDrivenRenderer {
             (moving, std::slice::from_ref(&plain)),
             (tone, std::slice::from_ref(&plain)),
         ] {
-            drawn.fit_copies(scene, batches, drawn_by, parity, copy_offsets, input.jobs)?;
+            drawn.fit_copies(
+                scene,
+                batches,
+                drawn_by,
+                parity,
+                copy_offsets,
+                input.jobs,
+                watches,
+            )?;
         }
         // The staged levels' watches read the levels that the camera's layout put copies in.
         if settings.watches_stages() {

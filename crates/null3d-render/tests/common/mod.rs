@@ -86,6 +86,15 @@ impl World {
         World::with_config(RendererConfig::default())
     }
 
+    /// The same world, whose frames count the copies of every level set, small ones included, as
+    /// the tests of the count and of the slices that it sizes ask.
+    pub fn counting() -> World {
+        World::with_config(RendererConfig {
+            fixed_level_slots: 0,
+            ..RendererConfig::default()
+        })
+    }
+
     /// The same world, drawn by a WebGPU frame builder with `config`.
     pub fn with_config(config: RendererConfig) -> World {
         World::build(GpuDrivenRenderer::new(config))

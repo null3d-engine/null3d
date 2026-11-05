@@ -135,7 +135,7 @@ fn instance_ranges(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32, u32)> {
 
 #[test]
 fn a_slice_that_a_moving_source_outgrows_moves_with_its_draws() {
-    let mut world = World::new();
+    let mut world = World::counting();
     give_levels(&mut world, 0b110);
     ball_at(&mut world, 20.0);
     world.record(true);
@@ -410,12 +410,38 @@ fn ball_at(world: &mut World, distance: f32) {
         .unwrap();
 }
 
+/// A small set of levels keeps a slot for each of its sources in every level, as the build sizes
+/// it, so no frame counts its copies and its slices never move while its copies switch levels. A
+/// counted set's slices follow the copies, and move when a copy picks a level whose slice is
+/// empty.
+#[test]
+fn a_small_sets_slices_hold_every_copy_in_every_level_and_never_move() {
+    let mut fixed = World::new();
+    let mut counted = World::counting();
+    for world in [&mut fixed, &mut counted] {
+        give_levels(world, 0b110);
+        world.record(true);
+    }
+    let (fixed_start, counted_start) = (copies(&fixed)[0], copies(&counted)[0]);
+    // Three plain and three fade buckets each keep a slot for both balls of the set.
+    assert_eq!(fixed_start, counted_start + 11 * 64);
+    for distance in [1.0, 5.0, 12.0, 16.5, 30.0, 1.0] {
+        for world in [&mut fixed, &mut counted] {
+            world.frame += 1;
+            ball_at(world, distance);
+            world.record(false);
+        }
+        assert_eq!(copies(&fixed)[0], fixed_start, "at {distance} m");
+    }
+    assert_ne!(copies(&counted)[0], counted_start);
+}
+
 #[test]
 fn a_meshs_levels_take_the_room_of_the_copy_that_draws_not_of_a_level_each() {
-    let mut plain = World::new();
+    let mut plain = World::counting();
     plain.record(true);
     let without = copies(&plain);
-    let mut world = World::new();
+    let mut world = World::counting();
     give_levels(&mut world, 0b110);
     world.record(true);
     let fading = copies(&world);
@@ -427,7 +453,7 @@ fn a_meshs_levels_take_the_room_of_the_copy_that_draws_not_of_a_level_each() {
 
 #[test]
 fn a_ball_inside_a_band_takes_one_copy_in_each_of_the_two_fade_buckets() {
-    let mut world = World::new();
+    let mut world = World::counting();
     give_levels(&mut world, 0b110);
     ball_at(&mut world, 20.0);
     world.record(true);
@@ -448,7 +474,7 @@ fn a_ball_inside_a_band_takes_one_copy_in_each_of_the_two_fade_buckets() {
 /// held one copy before.
 #[test]
 fn a_ball_shown_without_a_rebuild_takes_room_in_its_levels_slice_at_once() {
-    let mut world = World::new();
+    let mut world = World::counting();
     give_levels(&mut world, 0);
     world.record(true);
     let one = copies(&world)[0];
@@ -466,7 +492,7 @@ fn a_ball_shown_without_a_rebuild_takes_room_in_its_levels_slice_at_once() {
 #[test]
 fn rows_added_without_a_rebuild_take_room_in_their_levels_slices_at_once() {
     let rows = 16;
-    let mut world = World::new();
+    let mut world = World::counting();
     give_levels(&mut world, 0);
     let slot = world.scene.slots().resolve(world.objects[0]).unwrap() as usize;
     let material = world.scene.materials()[slot];
@@ -494,18 +520,18 @@ fn rows_added_without_a_rebuild_take_room_in_their_levels_slices_at_once() {
 
 #[test]
 fn a_coarse_level_takes_no_more_room_than_the_finest_one() {
-    let mut fine = World::new();
+    let mut fine = World::counting();
     give_levels(&mut fine, 0);
     ball_at(&mut fine, 1.0);
     fine.record(true);
-    let mut coarse = World::new();
+    let mut coarse = World::counting();
     give_levels(&mut coarse, 0);
     ball_at(&mut coarse, 100.0);
     coarse.record(true);
     // The ball draws its base mesh at 1 m and its coarsest level at 100 m: the level set takes
     // the copy of the ball that draws, whatever level the distance picks.
     assert_eq!(copies(&fine), copies(&coarse));
-    let mut hidden = World::new();
+    let mut hidden = World::counting();
     give_levels(&mut hidden, 0);
     ball_at(&mut hidden, 1.0e5);
     hidden.record(true);
@@ -518,10 +544,10 @@ fn forty_thousand_copies_of_four_levels_take_one_copy_each() {
     // A forest: a batch of 40,000 copies of a mesh that has three lower levels and fading bands.
     // The same world draws the same copies without levels.
     let rows = 40_000;
-    let mut without = World::new();
+    let mut without = World::counting();
     without.record(true);
     let mut plain = copies(&without)[0];
-    let mut sized = World::new();
+    let mut sized = World::counting();
     give_levels_of(&mut sized, &[0.01, 0.05, 0.2], 0b1110);
     sized.record(true);
     let settled = copies(&sized)[0];
