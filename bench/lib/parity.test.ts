@@ -249,6 +249,7 @@ describe('feature scenes', () => {
 		// A scene whose picture the bounce light moves compares without it, so three.js and null3D
 		// draw the same lighting terms.
 		for (const name of [
+			'standard-grid',
 			'gltf-iridescence-dielectric',
 			'gltf-dispersion',
 			'gltf-emissive-strength',

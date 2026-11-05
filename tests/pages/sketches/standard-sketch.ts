@@ -6,7 +6,9 @@
 // load. `&rotate` turns the environment a quarter turn, and `&hemisphere` adds a hemisphere light
 // to the environment's light. ?tone=none turns off the engine's
 // default curve, as the parity test asks: the grid's three.js twin draws with no tone mapping,
-// three.js's default. `?scene=features` draws what a material fixes when it is created, in
+// three.js's default. ?bounce=off draws without the preset's screen-space bounce light, which
+// three.js does not have, so the parity test compares the same lighting terms. `?scene=features`
+// draws what a material fixes when it is created, in
 // pairs: an emissive sphere beside a plain one, a flat-shaded sphere beside a smooth one, a
 // double-sided plane seen from behind beside a single-sided one that draws nothing, and a quad of
 // vertex colors with the standard material, with the unlit material, and with a material that
@@ -26,6 +28,7 @@ import {
 	type GridEnvironmentName,
 } from '../../../bench/scenes/standard-grid';
 import { sampleEnvironment } from '../../../tools/lib/sample-url';
+import { applySketchSwitches } from '../lib/sketch-switches';
 
 const params = new URL(import.meta.url).searchParams;
 const scene = params.get('scene') ?? 'grid';
@@ -40,7 +43,8 @@ const QUAD = {
 };
 
 export default defineSketch(async (ctx) => {
-	const { scene: world, post, assets } = ctx;
+	const { scene: world, post, assets, quality } = ctx;
+	applySketchSwitches(import.meta.url, quality);
 	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
 	world.setBackground(GRID_BACKGROUND);
 	world.setActiveCamera(world.createPerspectiveCamera(GRID_CAMERA));

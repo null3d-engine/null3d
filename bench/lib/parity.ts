@@ -535,7 +535,8 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	{
 		test: 'standard-grid',
 		twin: `${TWINS}/standard-grid.html`,
-		sketchSwitches: NO_TONE,
+		// The bounce light moves the smooth spheres' highlights, and three.js draws none of it.
+		sketchSwitches: `${NO_TONE}&bounce=off`,
 		limit: SPECULAR_AA_LIMITS['standard-grid'],
 	},
 	// The grid lit by an environment alone, against three.js's scene.environment from
