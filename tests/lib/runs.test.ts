@@ -1057,7 +1057,7 @@ describe('the checks plan', () => {
 		// The real-browser job's own lines: other jobs have shard lists of their own. Its shards
 		// leave out the pages of the prebuilt job.
 		const job = workflowJob('real-browsers');
-		expect(job).toContain("matrix.browser == 'Safari' && '--shaders sampled'");
+		expect(job).toContain("matrix.browser == 'Safari' && '--shaders sampled --allow-image-faults'");
 		expect(job).toMatch(/--prebuilt \$\{\{ env\.PREBUILT \}\}/);
 		expect(job).toMatch(/^\s+PREBUILT: none$/m);
 		// Each browser has a job of its own, because a job's condition cannot read `matrix` and the
