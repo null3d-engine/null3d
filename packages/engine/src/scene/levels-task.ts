@@ -91,20 +91,26 @@ const FLAT_SHARE = 1e-6;
  */
 const KEPT_HEAP_BYTES = 32 * 1024 * 1024;
 
-/** This worker's planner calls, once started. */
-let started: Promise<LevelMeshopt> | undefined;
+/** This worker's planner calls once started, with whether the clusterizer is among their modules. */
+let started: { groups: boolean; meshopt: Promise<LevelMeshopt> } | undefined;
 
-/** Starts meshoptimizer's modules. A failed start lets the next mesh try again. */
-function start(wasm: (name: string) => WebAssembly.Module): Promise<LevelMeshopt> {
-	started ??= levelMeshopt(
+/**
+ * Starts meshoptimizer's modules, with the clusterizer for a plan that asks for groups. A plan of
+ * the levels alone keeps its planner when a plan of groups asks for one, and starts again with the
+ * clusterizer.
+ */
+function start(wasm: (name: string) => WebAssembly.Module, groups: boolean): Promise<LevelMeshopt> {
+	if (started && (started.groups || !groups)) return started.meshopt;
+	const meshopt = levelMeshopt(
 		wasm(SIMPLIFIER_MODULE),
 		wasm(ENCODER_MODULE),
-		wasm(CLUSTERIZER_MODULE),
+		groups ? wasm(CLUSTERIZER_MODULE) : undefined,
 	).catch((error: unknown): never => {
 		started = undefined;
 		throw new TaskLoadError(error instanceof Error ? error.message : String(error));
 	});
-	return started;
+	started = { groups, meshopt };
+	return meshopt;
 }
 
 /** The shortest side of the box around a list of points. */
@@ -137,7 +143,7 @@ export async function run(
 		copies,
 		groups,
 	} = input as LevelsTaskInput;
-	const meshopt = await start(wasm);
+	const meshopt = await start(wasm, groups === true);
 	const began = performance.now();
 	const header = new Uint32Array(words, 0, 3);
 	const vertices = header[0] as number;

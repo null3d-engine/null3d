@@ -90,7 +90,7 @@ The grids keep a locked open border, as in the tool, so the last level keeps abo
 
 The levels' indices take about as much memory again as the mesh's own (0.94 to 1.00 of them). A mesh split into parts, past 65,535 vertices, shares its vertices with its levels part by part, and copies only the vertices of the triangles that cross a seam between parts. On the job worker, meshoptimizer's heaps grow with the largest mesh and never shrink, so a worker lets them go after a plan that took them past 32 MiB.
 
-The planner's files load with the first plan: `js/sketch-worker-mesh-levels.js` 0.4 KB, `js/job-worker-levels.js` 3.0 KB, `meshopt_simplifier.wasm` 13.5 KB and `meshopt_encoder.wasm` 5.7 KB after Brotli.
+The planner's files load with the first plan: `js/sketch-worker-mesh-levels.js` 0.4 KB, `js/job-worker-levels.js` 3.0 KB, `meshopt_simplifier.wasm` 13.5 KB and `meshopt_encoder.wasm` 5.7 KB after Brotli. The clusterizer, `meshopt_clusterizer.wasm` 7.0 KB, joins them only for a plan that asks for groups. The task starts the modules that its plan sends, so a plan of the levels alone never asks for the clusterizer, and the first plan of groups after one without it starts the three modules again.
 
 ### Frames while a mesh plans
 

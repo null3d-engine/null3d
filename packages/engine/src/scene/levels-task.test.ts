@@ -76,9 +76,18 @@ async function taskLevels(
 	cards: boolean,
 	maxLevels: number,
 	skipFlat = false,
+	groups = false,
 ) {
 	const result = await run(
-		{ words: planningWords(arrays), cards, maxLevels, skipFlat, parts: 1, basePieces: true },
+		{
+			words: planningWords(arrays),
+			cards,
+			maxLevels,
+			skipFlat,
+			parts: 1,
+			basePieces: true,
+			groups,
+		},
 		vendoredModules(),
 	);
 	return result.output as LevelsTaskOutput;
@@ -158,7 +167,7 @@ describe('the level planner on a job worker', () => {
 		'gives a large mesh and each large level pieces and groups over the same triangles',
 		async () => {
 			const grid = bumpyGrid(200);
-			const output = await taskLevels(grid, false, 7);
+			const output = await taskLevels(grid, false, 7, false, true);
 			const expected = await nodeLevels(grid, false, 7);
 			// Each triangle from its least corner, which keeps the turn of its corners: a group's
 			// own order may start a triangle at another corner.
