@@ -16,6 +16,8 @@ const PIECES = params.get('pieces') === '1';
 const GROUPS = PIECES && params.get('groups') === '1';
 /** The most triangles of one group, which a group's byte of triangles holds. */
 const GROUP_TRIANGLES = 64;
+/** The copies of the single-sided rock that a cost page asks for, or 0 for the page's own count. */
+const ROCKS = Number(params.get('rocks') ?? '') || 0;
 /** Frames after a move before 'turned': a pipelined engine draws a frame or two behind the sketch. */
 const TURN_FRAMES = 3;
 
@@ -195,8 +197,8 @@ export default defineSketch(async ({ scene, assets, quality, page }) => {
 	);
 	const file = await assets.loadGltf(url);
 	for (const [side, count] of [
-		['single', 60],
-		['double', 24],
+		['single', ROCKS || 60],
+		['double', ROCKS ? Math.round(ROCKS * 0.4) : 24],
 	] as const) {
 		const node = file.find(side);
 		if (!node?.mesh || !node.material) throw new Error(`no ${side} rock`);
