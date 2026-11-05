@@ -261,9 +261,11 @@ function subtreePipes(skeleton: MacroSkeleton): Float64Array {
  * A line with no sibling beside it is not a fork: the same line continues, bent. Still 20 shows a
  * thick limb turning about 15 to 30 degrees at a joint, and its short stiff twigs turning more
  * sharply; the mesher rounds such a kink over six of the wood's radii. A kink of wood 10 cm or more
- * across may turn up to 35 degrees, the limit the stem's own line above a fork takes. Thinner wood
- * keeps its sharp crook (D-308): only a line that turns past 120 degrees, a loop, fails here, and
- * the bole test's loop check covers every axis too.
+ * across may turn up to 35 degrees, the limit the stem's own line above a fork takes, where the stem
+ * and the great limbs live and a bend reads as a fault. Thinner wood keeps its sharp crook, as
+ * still 20 shows and rows 1 and 3 ask for ("angular joints in the fine orders", "a kink at every
+ * joint"): nine twigs of this plant bend 60 to 62 degrees at 3 to 4 cm, so only a line that turns
+ * past 120 degrees, a loop, fails here, and the bole test's loop check covers every axis too.
  */
 function brokenForks(skeleton: MacroSkeleton): string[] {
 	const { axes, radius, position: p } = skeleton;
