@@ -1089,7 +1089,8 @@ describe('the checks plan', () => {
 	it("runs every page that loads the load pages job's builds in CI's prebuilt shard, and no other", () => {
 		const job = workflowJob('real-browsers-prebuilt');
 		expect(job).toMatch(/^\s+PREBUILT: only$/m);
-		expect(job).toContain('needs: [build, load-pages, load-startup-pages]');
+		// The shard waits for the compiled sketch shaders as well as the pages it loads.
+		expect(job).toContain('needs: [build, sketch-shaders, load-pages, load-startup-pages]');
 		const [prebuilt = []] = shardsOf(1, ['--prebuilt', 'only']);
 		expect(prebuilt[0]?.id).toBe('capabilities');
 		const others = new Set(shardsOf(1, ['--prebuilt', 'none'])[0]?.map(({ id }) => id));
