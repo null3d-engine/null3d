@@ -83,6 +83,11 @@ review, so the cap follows the oak's figures.
   Both arms rise from the fork as leaders. A dividing limb then draws as one fork, not as a limb
   pushed through the side of another. Each leader bends onto its own line over a curve with rings
   on it. The curve is one and a half girths long per radian of turn, so its inner side never folds.
+  Each ring of the bend is a circle about that curve. The girth eases from the parent's own to the
+  leader's, so the fork's collar swells wide at its base and the surfaces meet without a step at
+  either end. Each side's `v` runs over the bend in step with the length of its own line, as a
+  weld's does. A ring whose vertices each followed their own curve left the bend's rings oval, and
+  the bark sheared up to three and a quarter times across the joint.
 - **Blend rings** run from the seam to the child's own circle, closer together near the seam. Each
   side's fillet and the record's collar ease from that side's own seam. A blend vertex stays at least
   half a millimeter outside the parent. The normal turns from the parent's to the child's. Each
