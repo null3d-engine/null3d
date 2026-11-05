@@ -42,7 +42,7 @@ The trials overlap, so their savings do not add. The reflection's 8.3 per cent i
 
 How the data was produced: `bun bench/research/island-phones/scripts/run.ts` ran the page with `preset=low&w=576&h=1248` and the frame cap off. The before steps were `base,try:cards1,base,casters,base,try:shadow300,base,try:shadow150,base,try:reflect4,base`. The after steps were `base,casters,base,cards,base`.
 
-One later load drew the shipped code, which carries the range alone: its whole-scene windows read 2.448 and 2.529 ms, a mean of 2.488, at a 1-minute load of 3.25 that rose to 4.45. A second load was stopped when the load rose to 8.90, so the pair is owed. The figure is not compared with the before side: it is hours later, and the machine drifted between the day's sessions, as the extra after loads of the earlier comparison did. The file is `island-low/after-cards/after-cards-low-576x1248-1.json`.
+Two later loads drew the shipped code, which carries the range alone. Their whole-scene windows read 2.448 and 2.529 ms in the first, at a 1-minute load of 3.25 that rose to 4.45, and 2.481 and 2.464 ms in the second, at 2.57 rising to 3.92. The four windows give 2.480 ms. A try between them was stopped when the load rose to 8.90. Both loads wrote the file that the runner names by round, so the first load's figures were read before the second overwrote it. The pair is not compared with the before side: it is hours later, and the machine drifted between the day's sessions, as the extra after loads of the earlier comparison did.
 
 The pictures are not measured yet.
 
