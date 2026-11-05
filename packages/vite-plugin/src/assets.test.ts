@@ -2,6 +2,7 @@ import { describe, expect, it, setDefaultTimeout } from 'bun:test';
 import {
 	copyFileSync,
 	existsSync,
+	mkdirSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
@@ -21,9 +22,9 @@ import {
 	ASSET_FOLDER,
 	cachedFile,
 	cacheFolder,
-	fileCodeHash,
 	modelKey,
 	optimizedModel,
+	toolCodeHash,
 } from './assets';
 import null3d from './index';
 
@@ -67,22 +68,80 @@ describe('optimized models', () => {
 		expect(modelKey('1.0.0', { lod: false }, [SCENE, file])).not.toBe(key);
 	});
 
-	it('hash the tool code, so a fix to the tool changes the key of every model', () => {
+	it('hash every module that the tool reads, so a fix to any of them changes the key of every model', () => {
 		// The tool's version stays 0.0.0 in the repository, so its version alone would leave the
-		// cache serving models that the tool wrote before a fix. The module and the file that
-		// shares its name, the WebAssembly one among them, are both part of the code's hash.
+		// cache serving models that the tool wrote before a fix. The entry names a planner, which
+		// names a writer, and either one decides the output, so both are part of the code's hash.
 		const folder = mkdtempSync(join(tmpdir(), 'null3d-tool-'));
 		try {
-			const module = join(folder, 'assets.js');
-			writeFileSync(module, 'export const VERSION = "0.0.0";\n');
-			writeFileSync(join(folder, 'assets.wasm'), 'wasm bytes');
-			const before = fileCodeHash(module);
+			const entry = join(folder, 'assets.js');
+			writeFileSync(join(folder, 'package.json'), '{"name":"@null3d/tool","version":"0.0.0"}');
+			writeFileSync(
+				entry,
+				'import { plan } from "./planner.js";\nexport const VERSION = "0.0.0";\n',
+			);
+			writeFileSync(
+				join(folder, 'planner.js'),
+				'import { write } from "./writer.js";\nexport const plan = write;\n',
+			);
+			writeFileSync(join(folder, 'writer.js'), 'export const write = 1;\n');
+			writeFileSync(join(folder, 'unread.js'), 'export const spare = 1;\n');
+			const before = toolCodeHash(entry);
 			expect(before).not.toBeNull();
-			expect(fileCodeHash(module)).toBe(before);
-			writeFileSync(join(folder, 'assets.wasm'), 'other wasm bytes');
-			expect(fileCodeHash(module)).not.toBe(before);
-			writeFileSync(join(folder, 'assets.js'), 'export const VERSION = "0.0.1";\n');
-			expect(fileCodeHash(join(folder, 'missing.js'))).toBeNull();
+			expect(toolCodeHash(entry)).toBe(before);
+			// A module that the entry does not read is not part of the key.
+			writeFileSync(join(folder, 'unread.js'), 'export const spare = 2;\n');
+			expect(toolCodeHash(entry)).toBe(before);
+			// The planner decides what the output holds.
+			writeFileSync(join(folder, 'planner.js'), 'export const plan = 2;\n');
+			expect(toolCodeHash(entry)).not.toBe(before);
+			expect(toolCodeHash(join(folder, 'missing.js'))).toBeNull();
+		} finally {
+			rmSync(folder, { recursive: true, force: true });
+		}
+	});
+
+	it('name the files that the tool reads beside itself, including one that a build has yet to write', () => {
+		const folder = mkdtempSync(join(tmpdir(), 'null3d-tool-'));
+		try {
+			const entry = join(folder, 'assets.js');
+			writeFileSync(join(folder, 'package.json'), '{"name":"@null3d/tool","version":"0.0.0"}');
+			writeFileSync(entry, "export const data = new URL('./build/data.wasm', import.meta.url);\n");
+			const before = toolCodeHash(entry);
+			expect(before).not.toBeNull();
+			// A built module that is absent keeps its absence, so the entry changes when a build writes it.
+			expect(toolCodeHash(entry)).toBe(before);
+			mkdirSync(join(folder, 'build'));
+			writeFileSync(join(folder, 'build/data.wasm'), 'wasm bytes');
+			expect(toolCodeHash(entry)).not.toBe(before);
+		} finally {
+			rmSync(folder, { recursive: true, force: true });
+		}
+	});
+
+	it('name each package outside the tool by its version', () => {
+		const folder = mkdtempSync(join(tmpdir(), 'null3d-tool-'));
+		try {
+			const entry = join(folder, 'assets.js');
+			const dependency = join(folder, 'node_modules', 'codec');
+			mkdirSync(dependency, { recursive: true });
+			writeFileSync(join(folder, 'package.json'), '{"name":"@null3d/tool","version":"0.0.0"}');
+			writeFileSync(entry, 'import codec from "codec";\nexport const VERSION = "0.0.0";\n');
+			writeFileSync(
+				join(dependency, 'package.json'),
+				'{"name":"codec","version":"1.0.0","main":"index.js"}',
+			);
+			writeFileSync(join(dependency, 'index.js'), 'export default 1;\n');
+			const before = toolCodeHash(entry);
+			expect(before).not.toBeNull();
+			// A version fixes a package's files, so the tag alone decides them.
+			writeFileSync(join(dependency, 'index.js'), 'export default 2;\n');
+			expect(toolCodeHash(entry)).toBe(before);
+			writeFileSync(
+				join(dependency, 'package.json'),
+				'{"name":"codec","version":"1.0.1","main":"index.js"}',
+			);
+			expect(toolCodeHash(entry)).not.toBe(before);
 		} finally {
 			rmSync(folder, { recursive: true, force: true });
 		}
