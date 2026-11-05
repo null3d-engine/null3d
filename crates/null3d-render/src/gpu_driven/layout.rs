@@ -679,6 +679,9 @@ pub(super) struct Layout {
     pub(super) slot_candidates: Vec<u32>,
     /// True while the slots' records changed and the frame has not written them again.
     pub(super) slot_records_dirty: bool,
+    /// True while the slot copies together carry enough triangles to buy back the pass's cost, so
+    /// the culling pass sends copies to their slots. A layout of small levels leaves it false.
+    pub(super) slots_pay: bool,
 }
 
 /// The bucket of no slot level.
@@ -693,6 +696,17 @@ pub(super) const SLOTS_PER_LEVEL: u32 = 4;
 /// The most slots of one layout: each takes a draw, a slice of the copies and a run of the slot
 /// pass's groups.
 pub(super) const MAX_SLOTS: u32 = 128;
+
+/// The triangles that the copies holding the layout's slots must carry together for the pass to
+/// buy itself back. The pass costs about 0.3 ms a frame on this Mac, at 0.2 to 0.3 ms a million
+/// triangles cut, so a half cut must reach about 1.2 million triangles, and at that share the
+/// copies carry 2.4 million. A sharper cut pays sooner, and a duller one later.
+#[cfg(not(test))]
+pub(super) const SLOT_PAY_TRIANGLES: u32 = 2_400_000;
+/// The shipped figure is 2.4 million. A unit test's mesh is small, so its builds lower the figure
+/// to one that a level of 30,000 triangles and four slots meets.
+#[cfg(test)]
+pub(super) const SLOT_PAY_TRIANGLES: u32 = 100_000;
 
 /// The copies that each slot level keeps as its nearest, one for each of its slots, and the words
 /// that one candidate takes in a frame's count: its distance's bits, which order as the distances
@@ -731,6 +745,8 @@ pub(super) struct SlotLevel {
     /// The layout's first slot of the level, and how many follow it.
     pub(super) first_slot: u32,
     pub(super) slots: u32,
+    /// The triangles of the level's list, which a slot would draw where its groups do not cull.
+    pub(super) triangles: u32,
 }
 
 impl Layout {
@@ -1655,6 +1671,7 @@ impl Layout {
         self.slot_level_of.clear();
         self.slot_candidates.clear();
         self.slot_records_dirty = false;
+        self.slots_pay = false;
         self.slot_page = NO_SLOT_PAGE;
         self.slot_page_bytes = 0;
         if shared_trees {
@@ -2299,6 +2316,31 @@ impl Layout {
         let Some(&(_, _, _, page)) = candidates.first() else {
             return;
         };
+        // The pass costs about 0.3 ms a frame, and a cut triangle is worth 0.2 to 0.3 ms a million,
+        // so a half cut must reach about 1.2 million triangles for the pass to buy itself back. The
+        // copies that would hold the slots carry a level's triangles each, so they must carry about
+        // 2.4 million together. A scene of smaller levels takes no slots, and it keeps the buckets,
+        // the draws and the pass that it had without them.
+        let carried: u64 = candidates
+            .iter()
+            .filter(|candidate| candidate.3 == page)
+            .map(|&(_, _parent, mesh, _)| {
+                let triangles = meshes.mesh(mesh - 1).map_or(0, |slot| {
+                    meshes
+                        .parts(slot, false)
+                        .iter()
+                        .map(|part| u64::from(part.index_count))
+                        .sum::<u64>()
+                        / 3
+                });
+                let slots = SLOTS_PER_LEVEL.min(MAX_SLOTS) as u64;
+                triangles * slots
+            })
+            .sum();
+        if carried < u64::from(SLOT_PAY_TRIANGLES) {
+            return;
+        }
+        self.slots_pay = true;
         self.slot_page = page;
         self.slot_page_bytes = meshes
             .pages()
@@ -2330,6 +2372,7 @@ impl Layout {
                 part_count: parts.len() as u32,
                 first_slot: self.slot_buckets.len() as u32,
                 slots,
+                triangles: parts.iter().map(|part| part.index_count).sum::<u32>() / 3,
             };
             // A material that draws back faces shows its pieces from either side, so the record
             // holds a cutoff that never culls.

@@ -8,6 +8,7 @@
 // the viewport's canvas from the spec's viewport, for a frame that is short of pixels rather than
 // triangles.
 import { createEngine, type Engine } from '@null3d/engine';
+import { differingPixels } from './lib/occlusion';
 import { run } from './lib/result';
 import { VIEWS } from './sketches/mesh-pieces-sketch';
 
@@ -37,7 +38,8 @@ async function start(groups: boolean): Promise<Engine> {
 	}
 	document.body.prepend(canvas);
 	const sketch = new URL('./sketches/mesh-pieces-sketch.ts', import.meta.url);
-	sketch.search = `?pieces=1${groups ? '&groups=1' : ''}${ROCKS ? `&rocks=${ROCKS}` : ''}`;
+	const big = params.get('big') === '1' ? '&big=1' : '';
+	sketch.search = `?pieces=1${groups ? '&groups=1' : ''}${ROCKS ? `&rocks=${ROCKS}` : ''}${big}`;
 	const engine = await createEngine({ canvas, sketch, preset: 'medium', maxPixelRatio: 1 });
 	await engine.firstFrame;
 	return engine;
@@ -64,7 +66,9 @@ async function measure(groups: boolean) {
 	const stats = await engine.measure(SECONDS);
 	const threads: Record<string, number | null> = {};
 	for (const [name, thread] of Object.entries(stats.threads)) threads[name] = thread.busyMs.median;
+	const frame = (await engine.captureFrame()).pixels;
 	const side = {
+		frame,
 		tier: engine.capabilities.tier,
 		gpuMs: stats.gpuMs?.median ?? null,
 		intervalMs: stats.intervalMs.median,
@@ -91,7 +95,9 @@ run('mesh-groups-cost', async () => {
 		(offFirst ? ons : offs).push(b);
 	}
 	const median = (values: number[]) => values.slice().sort((x, y) => x - y)[1] ?? null;
-	const side = (rounds: Side[]) => ({
+	type Measured = Side & { frame?: Uint8Array };
+	type Stripped = Omit<Measured, 'frame'>;
+	const side = (rounds: Stripped[]) => ({
 		gpuMs: median(rounds.map((round) => round.gpuMs).filter((ms) => ms !== null) as number[]),
 		intervalMs: median(rounds.map((round) => round.intervalMs)),
 		cpuMs: median(rounds.map((round) => round.cpuMs)),
@@ -105,11 +111,20 @@ run('mesh-groups-cost', async () => {
 		triangles: median(rounds.map((round) => round.triangles)),
 		draws: median(rounds.map((round) => round.draws)),
 	});
+	// The two sides draw the same pixels: the groups only order a piece's triangles, and the slots
+	// that cull them draw conservatively.
+	const differing =
+		offs[0]?.frame && ons[0]?.frame ? differingPixels(offs[0].frame, ons[0].frame) : -1;
+	const strip = (round: (typeof offs)[number]) => {
+		const { frame: _frame, ...rest } = round;
+		return rest;
+	};
 	return {
+		differingPixels: differing,
 		tier: offs[0]?.tier ?? 'webgpu',
 		window: [innerWidth, innerHeight] as [number, number],
-		off: side(offs),
-		on: side(ons),
+		off: side(offs.map(strip)),
+		on: side(ons.map(strip)),
 		failures,
 	};
 });

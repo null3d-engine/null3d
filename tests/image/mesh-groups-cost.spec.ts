@@ -29,6 +29,7 @@ interface CostResult {
 	window: [number, number];
 	off: Side;
 	on: Side;
+	differingPixels: number;
 	failures: string[];
 }
 
@@ -43,27 +44,42 @@ const SIZES = [
 
 const ms = (value: number | null | undefined) => (value == null ? '-' : value.toFixed(2));
 
-for (const { name, size, pixels } of SIZES)
-	test(`the slot pass on the rock field at ${name}`, async ({ page }) => {
-		test.skip(!process.env.NULL3D_MESH_GROUPS_COST, 'set NULL3D_MESH_GROUPS_COST to time the pass');
-		test.setTimeout(costTimeout(600_000));
-		const loadBefore = await waitForQuiet();
-		await page.setViewportSize(size);
-		// `NULL3D_MESH_GROUPS_ROCKS` sets the copies of the field, for a scene where the few nearest
-		// copies carry most of its triangles, which is where the slots have triangles to cull.
-		const rocks = process.env.NULL3D_MESH_GROUPS_ROCKS;
-		const copies = rocks ? `&rocks=${rocks}` : '';
-		await page.goto(`mesh-groups-cost.html?gpu=webgpu&direct=off${pixels}${copies}`);
-		const result = await pageResult<CostResult>(page, 400_000);
-		console.log(`slot cost at ${name}, load ${loadBefore} to ${result.tier}`);
-		console.log(sideLine('pieces alone', result.off, 2, true));
-		console.log(sideLine('with slots', result.on, 2, true));
-		console.log(
-			`triangles ${result.off.triangles} to ${result.on.triangles}, draws ${result.off.draws} to ${result.on.draws}`,
-		);
-		console.log(
-			`GPU rounds off ${result.off.gpuRoundsMs.map(ms).join(' ')}, on ${result.on.gpuRoundsMs.map(ms).join(' ')}`,
-		);
-		expect(result.error).toBeUndefined();
-		expect(result.failures).toEqual([]);
-	});
+/**
+ * The scenes: the rock field, whose nearest copies carry about 60,000 triangles, and one large rock
+ * with four copies, which carries about 2,500,000 and so passes the gate.
+ */
+const SCENES = [
+	{ name: 'the rock field', query: '', rocks: '' },
+	{ name: 'one large rock', query: '&big=1', rocks: '' },
+] as const;
+
+for (const scene of SCENES)
+	for (const { name, size, pixels } of SIZES)
+		test(`the slot pass on ${scene.name} at ${name}`, async ({ page }) => {
+			test.skip(
+				!process.env.NULL3D_MESH_GROUPS_COST,
+				'set NULL3D_MESH_GROUPS_COST to time the pass',
+			);
+			test.setTimeout(costTimeout(600_000));
+			const loadBefore = await waitForQuiet();
+			await page.setViewportSize(size);
+			// `NULL3D_MESH_GROUPS_ROCKS` sets the copies of the field, for a scene where the few nearest
+			// copies carry most of its triangles, which is where the slots have triangles to cull.
+			const rocks = process.env.NULL3D_MESH_GROUPS_ROCKS;
+			const copies = rocks && !scene.query ? `&rocks=${rocks}` : '';
+			await page.goto(
+				`mesh-groups-cost.html?gpu=webgpu&direct=off${pixels}${copies}${scene.query}`,
+			);
+			const result = await pageResult<CostResult>(page, 400_000);
+			console.log(`slot cost on ${scene.name} at ${name}, load ${loadBefore} to ${result.tier}`);
+			console.log(sideLine('pieces alone', result.off, 2, true));
+			console.log(sideLine('with slots', result.on, 2, true));
+			console.log(
+				`triangles ${result.off.triangles} to ${result.on.triangles}, draws ${result.off.draws} to ${result.on.draws}, differing pixels ${result.differingPixels}`,
+			);
+			console.log(
+				`GPU rounds off ${result.off.gpuRoundsMs.map(ms).join(' ')}, on ${result.on.gpuRoundsMs.map(ms).join(' ')}`,
+			);
+			expect(result.error).toBeUndefined();
+			expect(result.failures).toEqual([]);
+		});

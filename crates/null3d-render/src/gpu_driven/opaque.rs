@@ -681,7 +681,12 @@ impl<'a> Draws<'a> {
             // A slot draws the indices that the slot pass copied for its one copy, in one draw of
             // one instance that the pass sized. The direct-draw path runs no slot pass, so it draws
             // nothing for a slot's bucket.
-            if let Some(slot) = bucket.slot.filter(|_| self.counts.is_none()) {
+            // A slot with no copy, as one whose scene the gate leaves the slots off for, draws
+            // nothing and takes no draw in the bundle.
+            if let Some(slot) = bucket
+                .slot
+                .filter(|_| self.counts.is_none() && bucket.slot_copy != 0)
+            {
                 let draw = layout.draws[bucket.first_draw as usize];
                 let (page_vertices, _) = meshes.ids(draw.page);
                 if vertices != Some((page_vertices, 0)) {

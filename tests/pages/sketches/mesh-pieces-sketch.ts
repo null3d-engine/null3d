@@ -18,6 +18,12 @@ const GROUPS = PIECES && params.get('groups') === '1';
 const GROUP_TRIANGLES = 64;
 /** The copies of the single-sided rock that a cost page asks for, or 0 for the page's own count. */
 const ROCKS = Number(params.get('rocks') ?? '') || 0;
+/**
+ * True for one large rock and a few copies of it, a scene whose nearest copies carry enough
+ * triangles for the slot pass to buy itself back. The cost page asks for it; the picture tests do
+ * not.
+ */
+const BIG = params.get('big') === '1';
 /** Frames after a move before 'turned': a pipelined engine draws a frame or two behind the sketch. */
 const TURN_FRAMES = 3;
 
@@ -139,12 +145,16 @@ function rockFile(): Uint8Array {
 			}),
 		};
 	};
-	const fine = rock(128, 64);
-	const coarse = rock(40, 20);
-	const sides = [
-		{ name: 'single', doubleSided: false, color: [0.62, 0.55, 0.45, 1] },
-		{ name: 'double', doubleSided: true, color: [0.4, 0.5, 0.62, 1] },
-	];
+	// A large rock for the cost page: one level of about 630,000 triangles, whose four copies carry
+	// enough for the slots to pay.
+	const fine = BIG ? rock(1024, 384) : rock(128, 64);
+	const coarse = BIG ? fine : rock(40, 20);
+	const sides = BIG
+		? [{ name: 'single', doubleSided: false, color: [0.62, 0.55, 0.45, 1] }]
+		: [
+				{ name: 'single', doubleSided: false, color: [0.62, 0.55, 0.45, 1] },
+				{ name: 'double', doubleSided: true, color: [0.4, 0.5, 0.62, 1] },
+			];
 	for (const side of sides) {
 		const material = b.material({
 			name: side.name,
@@ -155,6 +165,10 @@ function rockFile(): Uint8Array {
 				metallicFactor: 0,
 			},
 		});
+		if (BIG) {
+			b.node({ name: side.name, mesh: b.mesh([primitive(fine, material)]) });
+			continue;
+		}
 		const level = b.node(
 			{ name: `${side.name}-lod1`, mesh: b.mesh([primitive(coarse, material)]) },
 			true,
@@ -196,17 +210,19 @@ export default defineSketch(async ({ scene, assets, quality, page }) => {
 		new Blob([rockFile() as Uint8Array<ArrayBuffer>], { type: 'model/gltf-binary' }),
 	);
 	const file = await assets.loadGltf(url);
-	for (const [side, count] of [
-		['single', ROCKS || 60],
-		['double', ROCKS ? Math.round(ROCKS * 0.4) : 24],
-	] as const) {
+	for (const [side, count] of (BIG
+		? [['single', 4]]
+		: [
+				['single', ROCKS || 60],
+				['double', ROCKS ? Math.round(ROCKS * 0.4) : 24],
+			]) as (readonly [string, number])[]) {
 		const node = file.find(side);
 		if (!node?.mesh || !node.material) throw new Error(`no ${side} rock`);
 		const batch = scene.createInstances(node.mesh, count, { material: node.material });
 		for (let k = 0; k < count; k++) {
 			const seed = (side === 'single' ? 0 : 1000) + k * 7;
 			const angle = hash(seed) * Math.PI * 2;
-			const distance = 2 + hash(seed + 1) * 22;
+			const distance = BIG ? 3 + hash(seed + 1) * 4 : 2 + hash(seed + 1) * 22;
 			batch.positions.set(
 				[Math.cos(angle) * distance, hash(seed + 2) * 0.8, Math.sin(angle) * distance],
 				k * 3,
@@ -217,7 +233,7 @@ export default defineSketch(async ({ scene, assets, quality, page }) => {
 			const half = hash(seed + 6) * Math.PI;
 			const s = Math.sin(half) / length;
 			batch.rotations.set([ax * s, ay * s, az * s, Math.cos(half)], k * 4);
-			const size = 0.5 + hash(seed + 5) * 1.5;
+			const size = BIG ? 2.2 : 0.5 + hash(seed + 5) * 1.5;
 			// One copy mirrored and one stretched, whose pieces skip the cone test.
 			const scale =
 				k === 1

@@ -1,7 +1,8 @@
-// Copies that cull each group of their level draw what copies that cull only its pieces draw,
-// pixel for pixel: the slot pass runs only on WebGPU's indirect path, which the first path takes,
-// so the other paths check that groups change nothing where slots stay off. The side with groups
-// must also draw fewer triangles in the first view, which shows that the slot pass culled them.
+// Copies whose level carries groups draw what copies that cull only its pieces draw, pixel for
+// pixel. The groups of this rock field are small, so the slot pass's gate keeps the slots off: the
+// two sides must draw the same triangles too, which shows that a scene the pass does not pay for is
+// unchanged. `mesh-groups-cost.spec.ts` holds the other side of the gate, on a rock whose copies
+// carry enough triangles for the slots to pay.
 import { expect, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 
@@ -17,10 +18,10 @@ interface GroupsResult {
 }
 
 const PATHS = [
-	{ name: 'webgpu', query: 'gpu=webgpu&direct=off', tier: 'webgpu', slots: true },
-	{ name: 'webgpu direct draws', query: 'gpu=webgpu&direct=on', tier: 'webgpu', slots: false },
-	{ name: 'webgpu-compat', query: 'gpu=compat&direct=off', tier: 'webgpu-compat', slots: true },
-	{ name: 'webgl2', query: 'gpu=webgl2', tier: 'webgl2', slots: false },
+	{ name: 'webgpu', query: 'gpu=webgpu&direct=off', tier: 'webgpu' },
+	{ name: 'webgpu direct draws', query: 'gpu=webgpu&direct=on', tier: 'webgpu' },
+	{ name: 'webgpu-compat', query: 'gpu=compat&direct=off', tier: 'webgpu-compat' },
+	{ name: 'webgl2', query: 'gpu=webgl2', tier: 'webgl2' },
 ] as const;
 
 for (const path of PATHS)
@@ -35,6 +36,6 @@ for (const path of PATHS)
 		expect(result.tier).toBe(path.tier);
 		expect(result.failures).toEqual([]);
 		expect(result.differingPixels).toEqual(new Array(result.views).fill(0));
-		if (path.slots) expect(result.triangles.groups).toBeLessThan(result.triangles.pieces);
-		else expect(result.triangles.groups).toBe(result.triangles.pieces);
+		// The gate keeps the slots off for this scene, on every path.
+		expect(result.triangles.groups).toBe(result.triangles.pieces);
 	});

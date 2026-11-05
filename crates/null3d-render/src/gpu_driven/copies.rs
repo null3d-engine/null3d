@@ -765,6 +765,9 @@ impl Layout {
                     self.bucket_records[bucket * BUCKET_WORDS as usize + BUCKET_NEXT_WORD] = copy;
                     self.mark_records(bucket as u32..bucket as u32 + 1);
                     self.slot_records_dirty = true;
+                    // A slot with no copy draws nothing, and the views' bundles leave its draw
+                    // out: they record again when that changes.
+                    self.slices_moved = true;
                 }
             }
         }
@@ -844,6 +847,29 @@ mod tests {
 
     use super::*;
     use crate::gpu_driven::layout::Bucket;
+
+    /// The gate turns the slots on only where the copies that hold them carry enough triangles to
+    /// buy the pass back: the arithmetic is the threshold over the levels' triangles and their
+    /// slots.
+    #[test]
+    fn the_slots_pay_only_when_the_copies_carry_enough_triangles() {
+        let carried = |triangles: u32, levels: u32| triangles * levels * 4;
+        // The shipped threshold, which a test build lowers for its small meshes.
+        const SHIPPED: u32 = 2_400_000;
+        assert!(carried(50_000, 1) < SHIPPED, "the rock field's levels");
+        assert!(
+            carried(600_000, 1) >= SHIPPED,
+            "one large rock with four copies"
+        );
+        assert!(
+            carried(150_000, 4) >= SHIPPED,
+            "four levels of 150,000 triangles"
+        );
+        assert!(
+            carried(250_000, 1) < SHIPPED,
+            "a quarter of a million is short"
+        );
+    }
 
     /// The groups of a piece nest in it: a group's sphere and cone lie inside its piece's, so a
     /// group whose bounds show for a copy lies in a piece that shows too. The slot pass tests the

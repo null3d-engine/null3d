@@ -230,7 +230,11 @@ pub(super) fn view_takes_cones(view: ViewId) -> bool {
 /// draws whole levels.
 pub(super) fn view_takes_slots(view: ViewId, drawn: &Layout, two_phases: bool) -> bool {
     // The levels debug view reads each copy's level code, which a slot's copy does not carry.
-    view == ViewId::CAMERA && !drawn.slot_buckets.is_empty() && !two_phases && !drawn.codes
+    view == ViewId::CAMERA
+        && drawn.slots_pay
+        && !drawn.slot_buckets.is_empty()
+        && !two_phases
+        && !drawn.codes
 }
 
 /// The part of the render size's larger side that an occluder's bounds span at least. Smaller
