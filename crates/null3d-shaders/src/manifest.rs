@@ -268,7 +268,7 @@ pub struct BuildCounts {
 /// `the_manifests_builds_stay_within_the_recorded_figure` refuses a count past it.
 pub const BUILD_BUDGET: BuildCounts = BuildCounts {
     glsl: 66_531,
-    wgsl: 25_795,
+    wgsl: 25_796,
 };
 
 impl Manifest {

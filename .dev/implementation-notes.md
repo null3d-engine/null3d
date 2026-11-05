@@ -1317,7 +1317,9 @@ percent of the large variants. The rare lit features cost less: area lights and 
 that adds builds on purpose raises them here and in the constant together. The unlit surface hook,
 which lets a custom material show its own color with no lighting, is one such build on each
 target: it adds one WGSL build and one GLSL build, so the figures stand one higher than the
-count before it. The test
+count before it. The cluster levels' `GROUPS` pass, which culls a copy's level group by group and
+packs a slot's indices into the view's list (`8e8dee1f2`), is one more: it adds one WGSL build, so
+the WGSL figure stands at 25,796 and the GLSL figure is unchanged. The test
 `the_manifests_builds_stay_within_the_recorded_figure` in the shader crate counts the manifest's
 builds and fails when either target passes its figure. The test builds no shader, so it costs a
 test run almost nothing. Its problem names the figure, the file that holds it and this guide.
