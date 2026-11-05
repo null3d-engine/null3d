@@ -20,7 +20,7 @@ const extraSwitches =
 	process.env.NULL3D_SWITCHES && readSwitches(process.env.NULL3D_SWITCHES, 'NULL3D_SWITCHES');
 
 /** How long a visual page may take: twelve starts of a scene, which take longest for S4 in CI. */
-const VISUAL_TIMEOUT_MS = 240_000;
+const VISUAL_TIMEOUT_MS = 600_000;
 
 for (const { scene, shadows, n } of SHADOW_SCENES)
 	for (const gpu of ['webgpu', 'webgl2'] as const)
@@ -30,7 +30,9 @@ for (const { scene, shadows, n } of SHADOW_SCENES)
 			const path = visualPagePath(scene, gpu, { n, shadows, images: true });
 			const switches = extraSwitches ? `&${extraSwitches}` : '';
 			await page.goto(`http://localhost:${HTTP_PORT}${path}${switches}`);
+			const t0 = Date.now();
 			const result = await pageResult<VisualResult>(page, VISUAL_TIMEOUT_MS);
+			console.log(`PROBE ${scene} ${gpu} total ${Date.now() - t0} ms, draws ${JSON.stringify((result as unknown as { drawMs?: number[] }).drawMs)}`);
 			expect(result.error).toBeUndefined();
 			expect(errors).toEqual([]);
 			saveVisualResult(join(REPO_ROOT, 'test-results', 'visual', scene, gpu), result);

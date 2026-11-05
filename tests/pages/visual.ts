@@ -68,7 +68,9 @@ run('visual', async () => {
 	const images: Record<string, string> = {};
 
 	/** Draws `sketch` held at `time`, and returns its pixels, with a PNG file of it when named. */
+	const drawMs: number[] = [];
 	const draw = async (sketch: string, time: number, image?: string): Promise<Uint8Array> => {
+		const t0 = performance.now();
 		// A canvas that an engine drew on belongs to that engine's worker, so each engine gets its own.
 		document.querySelector('canvas')?.remove();
 		const canvas = document.createElement('canvas');
@@ -92,6 +94,7 @@ run('visual', async () => {
 			return frame.pixels;
 		} finally {
 			await engine.destroy();
+			drawMs.push(Math.round(performance.now() - t0));
 		}
 	};
 	const checked = (check: ShadowCheck) =>
@@ -124,5 +127,6 @@ run('visual', async () => {
 		contact: contactFigures(first, normals, width),
 		acne: acneFigures(first, reference, normals, width),
 		...(withImages && { images }),
+		drawMs,
 	};
 });

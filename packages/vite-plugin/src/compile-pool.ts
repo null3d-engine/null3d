@@ -54,7 +54,7 @@ export class CompilerPool implements ShaderCompiler {
 	private readonly workers: PoolWorker[] = [];
 	private nextId = 0;
 
-	constructor(size: number = defaultWorkers()) {
+	constructor(size: number = Number(process.env.TMP_POOL_SIZE ?? 0) || defaultWorkers()) {
 		this.size = size;
 	}
 
@@ -63,6 +63,13 @@ export class CompilerPool implements ShaderCompiler {
 	}
 
 	async material(material: MaterialSource): Promise<MaterialResult> {
+		const t0 = performance.now();
+		try { return await this.material0(material); } finally {
+			console.error(`TMPLOG material ${(material as { path?: string }).path ?? '?'} ${Math.round(performance.now() - t0)} ms`);
+		}
+	}
+
+	async material0(material: MaterialSource): Promise<MaterialResult> {
 		const count = this.size;
 		if (count === 1)
 			return materialResult(await this.run<MaterialBuild>('compile_material', material));

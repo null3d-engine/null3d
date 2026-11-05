@@ -679,7 +679,9 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 					return `export default new URL(import.meta.ROLLUP_FILE_URL_${ref}, import.meta.url).href;\n`;
 				}
 				const path = projectPath(root, id);
+				const tmpT0 = performance.now();
 				const compiled = await compileWgslFile(path, id, readFileSync(id, 'utf8'), shaders);
+				console.error(`TMPLOG file ${path} ${Math.round(performance.now() - tmpT0)} ms`);
 				if ('error' in compiled) return this.error(compiled.error);
 				for (const warning of compiled.warnings) this.warn(warning);
 				const key = keyOf(id, path);
@@ -713,7 +715,9 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 				let out: MagicString | undefined;
 				if (SCRIPT_FILE.test(file) && WGSL_TAG.test(code)) {
 					const path = projectPath(root, file);
+					const tmpT0 = performance.now();
 					const tagged = await compileTaggedWgsl(code, file, path, shaders);
+					console.error(`TMPLOG tagged ${path} ${Math.round(performance.now() - tmpT0)} ms`);
 					if ('error' in tagged) return this.error(tagged.error);
 					for (const warning of tagged.warnings) this.warn(warning);
 					const pack = new ShaderPack();
