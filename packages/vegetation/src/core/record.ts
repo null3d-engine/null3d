@@ -1090,6 +1090,16 @@ export interface BarkSpec {
 		readonly north: number;
 		readonly colour: Rgb;
 	};
+	/**
+	 * Lichen: pale rosettes on the crests, from a height towards the top of the plant (unless `to`
+	 * gives a higher limit), and its colour.
+	 */
+	readonly lichen?: {
+		readonly amount: number;
+		readonly from: number;
+		readonly to?: number;
+		readonly colour: Rgb;
+	};
 	/** Eyes where shed branches were (beech, aspen, birch), per metre of stem. */
 	readonly scars?: number;
 	/** Peeling strips as fin meshes at the nearest level (birch, plane, eucalyptus). */
