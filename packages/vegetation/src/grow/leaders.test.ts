@@ -20,15 +20,17 @@ function bend(p: Float32Array, a: number, b: number, c: number): number {
 	return (Math.acos(Math.max(-1, Math.min(1, cosine))) * 180) / Math.PI;
 }
 
-/** The sharpest bend along an axis's own nodes. */
-function sharpest(skeleton: MacroSkeleton, axis: number): number {
+/** The sharpest bend along an axis's own nodes, or along those from one node to another. */
+function sharpest(
+	skeleton: MacroSkeleton,
+	axis: number,
+	from = skeleton.axes.first[axis] as number,
+	to = skeleton.axes.last[axis] as number,
+): number {
 	let most = 0;
-	for (
-		let n = (skeleton.axes.first[axis] as number) + 1;
-		n < (skeleton.axes.last[axis] as number);
-		n++
-	)
-		most = Math.max(most, bend(skeleton.position, n - 1, n, n + 1));
+	for (let n = Math.max(from, (skeleton.axes.first[axis] as number) + 1); n <= to; n++)
+		if (n < (skeleton.axes.last[axis] as number))
+			most = Math.max(most, bend(skeleton.position, n - 1, n, n + 1));
 	return most;
 }
 
@@ -84,6 +86,24 @@ function cones(skeleton: MacroSkeleton): number {
 	return found;
 }
 
+/** A child axis's share of its parent's cross-section where it leaves. */
+function shareOf(skeleton: MacroSkeleton, axis: number): number {
+	const { axes, radius } = skeleton;
+	const ratio =
+		(radius[axes.first[axis] as number] as number) /
+		(radius[axes.parentNode[axis] as number] as number);
+	return ratio * ratio;
+}
+
+/** The stem's first fork: its lowest node that a child of a fifth of its cross-section or more leaves. */
+function stemFork(skeleton: MacroSkeleton): number {
+	const { axes } = skeleton;
+	for (let n = axes.first[0] as number; n <= (axes.last[0] as number); n++)
+		for (let a = 1; a < axes.count; a++)
+			if (axes.parentNode[a] === n && axes.parent[a] === 0 && shareOf(skeleton, a) >= 0.2) return n;
+	return axes.last[0] as number;
+}
+
 describe('sympodial leaders', () => {
 	it('divides a collapsed stem into a fork where its thick limb leaves steeply', () => {
 		const led = leadOnThickest(collapsed(AXIS_STEM, 0));
@@ -110,7 +130,14 @@ describe('sympodial leaders', () => {
 			const led = leadOnThickest(
 				grower('self-organizing').grow({ record, seed: 11, variant, season: 'summer' }),
 			);
-			expect(sharpest(led, 0)).toBeLessThan(20);
+			const fork = stemFork(led);
+			expect(sharpest(led, 0, led.axes.first[0] as number, fork)).toBeLessThan(20);
+			// Above its first fork the stem's line runs up into the crown and thins, and like every
+			// limb there it bends at each joint where a side branch leaves: still 20 shows a limb's
+			// line turning by about 15 to 30 degrees at such joints, and stills 05 and 06 show the
+			// crown's upper limbs zigzagging by as much while the thick wood below sweeps round in
+			// long, smooth curves. A joint past that limit is an elbow, which draws as a mitred pipe.
+			expect(sharpest(led, 0, fork + 1)).toBeLessThan(35);
 			// The bole stands plumb below the crown: no internode leans more than a few degrees.
 			const bole = led.position;
 			for (let n = led.axes.first[0] as number; n < (led.axes.last[0] as number); n++) {
