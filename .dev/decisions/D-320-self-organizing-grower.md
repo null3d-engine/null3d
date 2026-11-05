@@ -75,6 +75,20 @@ masks of frames 1, 25, 49 and so on of the turntable.
   axis's line, and a stem's leader below the crown is spared chance loss. No oak of the 40 dies.
   The relay is on unless a record turns it off; the stand-in species turn it off, so their frozen
   geometry stays the same.
+- **The fork rule rights a shoot by its share of the wood.** An oak's thick forks leave at narrow
+  angles, and its thin side branches at wide ones. The grown oak had about 300 thick forks a
+  variant at 45 to 90 degrees. Each was a side shoot that took over from a withered leader, and
+  the wood drew it as a mitred pipe. Now a side shoot that holds a fifth or more of its fork's
+  wood turns toward its parent's line, while its own branch is still small. It turns by a few
+  degrees a year, until it leaves at the rule's angle for its share. That angle is 80 degrees for
+  the thinnest, 65 at a fifth and 15 once the shoot leads. Kinked growth goes with the rule. The
+  wander kinks each internode about a heading that keeps half of it. A shoot then zigzags along a
+  slowly drifting line, as an oak's shoots do; with all the wander in the heading, it drifted as a
+  random walk. On six oaks at seed 11, no takeover leaves at over 35 degrees. No child of a fifth
+  to three fifths leaves at over 65. The crown still fills its outline: 0.94 of the outline's
+  reach in the low crown, and 0.95 over the whole. Rejected: narrowing each side shoot's opening
+  angle by its share as it set out, which pulled the low crown in to 0.30 to 0.62 of the outline.
+  Also rejected: turning grown limbs, which narrowed the crown.
 - **The finest order branches on.** Side shoots past the deepest macro order keep that order. A
   strict cap made the deepest axes grow on for decades as long whips; with the cap on the order
   number alone, the outer crown branches as a tree does and the order count stays within the record.

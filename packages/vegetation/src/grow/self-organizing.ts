@@ -43,7 +43,15 @@ import { ShadowGrid } from '../crown/light-grid';
 import type { GrowInput } from '../stages';
 import { bendUnderLoad } from './bend';
 import { type EnvelopeVolume, envelopeVolume, insetVolume } from './envelope';
-import { forkAngle, narrowToward } from './forks';
+import {
+	forkAngle,
+	forkShare,
+	narrowToward,
+	RIGHT_FORK,
+	RIGHT_SHARE,
+	RIGHT_TIPS,
+	RIGHT_TURN,
+} from './forks';
 import type { Grower } from './models';
 import { fitRadii, pipeRadii } from './radii';
 import { stemStarts } from './stems';
@@ -56,6 +64,8 @@ const MOST_INTERNODES = 4;
 const SHORT_STEPS = [0.75, 0.5, 0.3] as const;
 /** Height in metres where the stem's diameter is measured. */
 const BREAST_HEIGHT = 1.3;
+/** The share of a kinked shoot's wander that its heading keeps, so its line drifts slowly. */
+const KINK_DRIFT = 0.5;
 /** A child at least this share of its parent's radius makes a fork. */
 const FORK_SHARE = 0.7;
 
@@ -394,6 +404,9 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	const scratchU: Vector3 = [0, 0, 0];
 	const scratchW: Vector3 = [0, 0, 0];
 	const toward: [number, number, number] = [0, 0, 0];
+	const heading: Vector3 = [0, 0, 0];
+	const internode: Vector3 = [0, 0, 0];
+	const kinks = g.kinks === true;
 	const relay = g.relay !== false;
 	let mainAcc = new Float64Array(0);
 	let latAcc = new Float64Array(0);
@@ -556,6 +569,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			plant.budDy[b] as number,
 			plant.budDz[b] as number,
 		];
+		const opening = !terminal && g.forkRule === true;
 		let axis = terminal ? parentAxis : -1;
 		let previous = fromNode;
 		let added = 0;
@@ -576,15 +590,43 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			const wa = unit(Purpose.WanderA, year, key) * 2 * Math.PI;
 			const wr = Math.sqrt(Math.max(0, 1 - wz * wz));
 			// The bole below the crown grows on along its own line: the wander that crooks a crown's
-			// shoots would bend it into an S.
-			const crook = corridor ? 0 : wander;
-			let nx = d[0] + photo * toward[0] + crook * wr * cos(wa);
-			let ny = d[1] + photo * toward[1] + gravi + crook * wz;
-			let nz = d[2] + photo * toward[2] + crook * wr * sin(wa);
+			// shoots would bend it into an S. By the fork rule a side shoot's first internode leaves at
+			// the angle the rule opened it at, and the wander crooks it from the next. A kinked stem
+			// kinks by half the wander, so its joints stay within the wander.
+			const crook =
+				corridor || (opening && k === 0) ? 0 : kinks && order === 0 ? wander / 2 : wander;
+			let nx = d[0] + photo * toward[0];
+			let ny = d[1] + photo * toward[1] + gravi;
+			let nz = d[2] + photo * toward[2];
 			if (order === 0 && py < (fusedHeight[stem] as number)) {
 				nx = 0;
 				ny = 1;
 				nz = 0;
+			}
+			if (kinks) {
+				// The heading takes the tropisms and keeps a share of the wander; the internode takes
+				// the whole wander, so it kinks about the heading.
+				const h = Math.sqrt(nx * nx + ny * ny + nz * nz);
+				heading[0] = nx / h;
+				heading[1] = ny / h;
+				heading[2] = nz / h;
+				nx = heading[0];
+				ny = heading[1];
+				nz = heading[2];
+			}
+			if (!(order === 0 && py < (fusedHeight[stem] as number))) {
+				nx += crook * wr * cos(wa);
+				ny += crook * wz;
+				nz += crook * wr * sin(wa);
+				if (kinks) {
+					heading[0] += KINK_DRIFT * crook * wr * cos(wa);
+					heading[1] += KINK_DRIFT * crook * wz;
+					heading[2] += KINK_DRIFT * crook * wr * sin(wa);
+					const hl = Math.hypot(heading[0], heading[1], heading[2]);
+					heading[0] /= hl;
+					heading[1] /= hl;
+					heading[2] /= hl;
+				}
 			}
 			const l = Math.sqrt(nx * nx + ny * ny + nz * nz);
 			nx /= l;
@@ -614,13 +656,17 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			const y = py + ny * step;
 			const z = pz + nz * step;
 			if (axis < 0) axis = plant.addAxis(fromNode, order, stem);
-			d[0] = nx;
-			d[1] = ny;
-			d[2] = nz;
-			const node = plant.addNode(x, y, z, d, previous, axis, year);
+			internode[0] = nx;
+			internode[1] = ny;
+			internode[2] = nz;
+			const node = plant.addNode(x, y, z, internode, previous, axis, year);
 			previous = node;
 			added++;
-			if (volume.room(x, y, z) >= 0) addLaterals(node, axis, order, d, year);
+			if (volume.room(x, y, z) >= 0) addLaterals(node, axis, order, internode, year);
+			const next = kinks ? heading : internode;
+			d[0] = next[0];
+			d[1] = next[1];
+			d[2] = next[2];
 			if (last) break;
 		}
 		if (added === 0) return;
@@ -666,6 +712,142 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	let subNodes = new Float64Array(0);
 	let subPipes = new Float64Array(0);
 	let doomed = new Uint8Array(0);
+	/** Each live node's live children, as runs of one array, indexed for walking a branch. */
+	let childStart = new Int32Array(0);
+	let childList = new Int32Array(0);
+	let stack = new Int32Array(0);
+	const indexChildren = () => {
+		const count = plant.nodes;
+		if (childStart.length < count + 1) {
+			const size = Math.max(count + 1, childStart.length * 2);
+			childStart = new Int32Array(size);
+			childList = new Int32Array(size);
+			stack = new Int32Array(size);
+		}
+		childStart.fill(0, 0, count + 1);
+		for (let n = 0; n < count; n++) {
+			const p = plant.parent[n] as number;
+			if (p >= 0 && plant.live[n]) childStart[p + 1] = (childStart[p + 1] as number) + 1;
+		}
+		for (let n = 0; n < count; n++)
+			childStart[n + 1] = (childStart[n + 1] as number) + (childStart[n] as number);
+		// The stack serves as each node's fill cursor here, before any branch is walked.
+		stack.set(childStart.subarray(0, count));
+		for (let n = 0; n < count; n++) {
+			const p = plant.parent[n] as number;
+			if (p < 0 || !plant.live[n]) continue;
+			const at = stack[p] as number;
+			childList[at] = n;
+			stack[p] = at + 1;
+		}
+	};
+
+	/**
+	 * Turns a branch rigidly about the node it leaves: every node from its first, the directions of
+	 * their internodes and the directions of their buds, about a unit axis through the angle. Each live
+	 * bud's shadow leaves the light grid before its node moves and falls again after.
+	 */
+	const turnBranch = (first: number, from: number, axis: Readonly<Vector3>, angle: number) => {
+		const [ax, ay, az] = axis;
+		const c = cos(angle);
+		const sn = sin(angle);
+		const out: Vector3 = [0, 0, 0];
+		// Rodrigues' rotation of a vector about the unit axis.
+		const turn = (x: number, y: number, z: number) => {
+			const d = ax * x + ay * y + az * z;
+			out[0] = x * c + (ay * z - az * y) * sn + ax * d * (1 - c);
+			out[1] = y * c + (az * x - ax * z) * sn + ay * d * (1 - c);
+			out[2] = z * c + (ax * y - ay * x) * sn + az * d * (1 - c);
+		};
+		// A bud's shadow leaves the grid at its node's old place, and its direction turns.
+		const liftAndTurn = (b: number) => {
+			if (plant.budState[b] === ALIVE) shade(b, -1);
+			turn(plant.budDx[b] as number, plant.budDy[b] as number, plant.budDz[b] as number);
+			plant.budDx[b] = out[0];
+			plant.budDy[b] = out[1];
+			plant.budDz[b] = out[2];
+		};
+		const px = plant.x[from] as number;
+		const py = plant.y[from] as number;
+		const pz = plant.z[from] as number;
+		let depth = 0;
+		stack[depth++] = first;
+		while (depth > 0) {
+			const n = stack[--depth] as number;
+			const own = plant.axisOf[n] as number;
+			const tipBud = plant.axisBud[own] as number;
+			const terminal =
+				plant.axisTip[own] === n && tipBud >= 0 && plant.budNode[tipBud] === n ? tipBud : -1;
+			for (let b = plant.firstBud[n] as number; b >= 0; b = plant.budNext[b] as number)
+				liftAndTurn(b);
+			if (terminal >= 0) liftAndTurn(terminal);
+			turn((plant.x[n] as number) - px, (plant.y[n] as number) - py, (plant.z[n] as number) - pz);
+			plant.x[n] = px + out[0];
+			plant.y[n] = py + out[1];
+			plant.z[n] = pz + out[2];
+			if ((plant.y[n] as number) > plant.top) plant.top = plant.y[n] as number;
+			turn(plant.dx[n] as number, plant.dy[n] as number, plant.dz[n] as number);
+			plant.dx[n] = out[0];
+			plant.dy[n] = out[1];
+			plant.dz[n] = out[2];
+			for (let b = plant.firstBud[n] as number; b >= 0; b = plant.budNext[b] as number)
+				if (plant.budState[b] === ALIVE) shade(b, 1);
+			if (terminal >= 0 && plant.budState[terminal] === ALIVE) shade(terminal, 1);
+			for (let k = childStart[n] as number; k < (childStart[n + 1] as number); k++)
+				stack[depth++] = childList[k] as number;
+		}
+	};
+
+	/**
+	 * Rights the side shoots whose share of the wood has grown past what their angle allows, as
+	 * reaction wood turns a vigorous shoot toward its parent's line. Each year a side shoot that holds
+	 * at least a fifth of its fork's wood, on a fork past a twig's size, while its own branch is still
+	 * small, turns its branch toward its parent's line by a few degrees, until it leaves at the fork
+	 * rule's angle for its share. A shoot that took over from a withered leader becomes the leader's
+	 * line in a few years; a grown limb keeps the angle it grew at. Shares come from this season's
+	 * pipes, which the shedding pass counts.
+	 */
+	const rightShoots = () => {
+		const pipes = subPipes;
+		const count = plant.nodes;
+		const most = radians(RIGHT_TURN);
+		const axis: Vector3 = [0, 0, 0];
+		let indexed = false;
+		for (let a = 0; a < plant.axes; a++) {
+			if (plant.axisShed[a] || plant.axisOrder[a] === 0) continue;
+			const first = plant.axisFirst[a] as number;
+			const from = plant.axisParentNode[a] as number;
+			if (first < 0 || from < 0 || first >= count || !plant.live[first]) continue;
+			const fork = pipes[from] as number;
+			const own = pipes[first] as number;
+			if (fork < RIGHT_FORK || own > RIGHT_TIPS) continue;
+			const share = forkShare(own, fork, g.pipe.exponent);
+			if (share < RIGHT_SHARE) continue;
+			const lx = plant.dx[from] as number;
+			const ly = plant.dy[from] as number;
+			const lz = plant.dz[from] as number;
+			const cx = plant.dx[first] as number;
+			const cy = plant.dy[first] as number;
+			const cz = plant.dz[first] as number;
+			// The axis across the child and the line, about which the child turns toward the line.
+			axis[0] = cy * lz - cz * ly;
+			axis[1] = cz * lx - cx * lz;
+			axis[2] = cx * ly - cy * lx;
+			const across = Math.sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
+			if (across <= 1e-9) continue;
+			const step = Math.min(most, atan2(across, cx * lx + cy * ly + cz * lz) - forkAngle(share));
+			if (step <= 0) continue;
+			axis[0] /= across;
+			axis[1] /= across;
+			axis[2] /= across;
+			if (!indexed) {
+				indexChildren();
+				indexed = true;
+			}
+			turnBranch(first, from, axis, step);
+		}
+	};
+
 	/**
 	 * Sheds the side branches whose light per node falls under the record's threshold, and those that
 	 * leave a stem below the clean bole, after Takenaka (1994) as Palubicki et al. use it. A share of
@@ -760,6 +942,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 		plant.compact();
 		readLight();
 		shedBranches(year);
+		if (g.forkRule) rightShoots();
 		if (takes.length < plant.buds) takes = new Uint8Array(plant.buds * 2);
 		takes.fill(0);
 		// The buds' fates, axis by axis from the tip down, so a flushing bud suppresses those below it.
@@ -820,6 +1003,14 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	// The light and resource of every bud at the end of growth, which the bud sites carry.
 	plant.compact();
 	readLight();
+	if (g.forkRule) {
+		// The next season's start, without its growth: the shedding and the righting of the shoots
+		// whose share the last season's growth raised.
+		shedBranches(years);
+		rightShoots();
+		plant.compact();
+		readLight();
+	}
 	if (takes.length < plant.buds) takes = new Uint8Array(plant.buds);
 	takes.fill(1);
 	allocate(curveAt(g.apical.control, 1), takes);

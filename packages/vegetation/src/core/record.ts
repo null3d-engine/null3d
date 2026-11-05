@@ -175,6 +175,21 @@ export interface SelfOrganizing {
 	/** Sag under the subtree's load, then the tip's upturn (reaction wood). */
 	readonly bending: { readonly strength: number; readonly upturn: number };
 	/**
+	 * The fork rule: a child's widest angle to its parent shrinks as its share of the parent's wood
+	 * grows, from 80 degrees for the thinnest through 65 at a fifth to 15 once it leads its fork. A
+	 * side shoot's first internode leaves along its bud, and a small branch whose share grows past
+	 * what its angle allows turns toward its parent's line by a few degrees a year, as reaction wood
+	 * rights it. Absent or false, shoots keep the angle they grew at.
+	 */
+	readonly forkRule?: boolean;
+	/**
+	 * Kinked growth: the wander kinks each internode about the shoot's heading, which takes the
+	 * tropisms and only half the wander, so a shoot zigzags, angled at every joint, along a line that
+	 * drifts slowly; a stem kinks by half as much. Absent or false, the wander turns the heading
+	 * itself, and a long shoot drifts as a random walk.
+	 */
+	readonly kinks?: boolean;
+	/**
 	 * The leader's relay: an axis whose leader bud dies hands the lead to the lateral bud at its tip,
 	 * turned in toward the axis's line, and a stem's leader below the crown is spared chance loss, so
 	 * no axis ends in a stump. On when absent; false leaves an axis whose leader dies to stop there,
