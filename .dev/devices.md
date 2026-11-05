@@ -5,7 +5,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `clouds`, `probe-cost`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `alpha-mask-cost`, `car-paint-cost`, `car-paint-loop`, `impostor-bake`, `impostor-cost`, `impostor-frame`, `canvas-cost`, `object-growth`, `cluster-cost`, `lod-cost`, `wind-field-cost`, `wind-stress`, `two-step`, `demos`, `skyway`, `skyway-stall`, `skyway-soak`, `vegetation`, `tree-generation`, `vegetation-scatter`, `terrain` and `terrain-shadow`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
+- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `clouds`, `probe-cost`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `alpha-mask-cost`, `car-paint-cost`, `car-paint-loop`, `impostor-bake`, `impostor-cost`, `impostor-frame`, `canvas-cost`, `object-growth`, `cluster-cost`, `lod-cost`, `wind-field-cost`, `wind-stress`, `two-step`, `demos`, `skyway`, `skyway-stall`, `skyway-soak`, `vegetation`, `tree-generation`, `vegetation-scatter`, `terrain`, `terrain-shadow` and `island-phones`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
 - The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is gray while its page waits, yellow while it runs, green when it passes and red when it fails. It is blue-gray when the runner page skips its page, because the device lacks the page's GPU path. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
@@ -526,6 +526,30 @@ The `physical-sky` plan measures what the physical sky costs, for [D-143](decisi
   page reports the draw calls per frame, the GPU time of each pass and the frame interval, so the
   cascades that draw again name themselves in the GPU time. Run it on the Mac in its installed
   Chrome: `bun tests/real-browsers.ts --plan terrain-shadow "Google Chrome"`.
+
+## The Island phones plan
+
+- The `island-phones` plan times the Island's town view on a phone, part by part. Its page is the
+  phones study's page (`bench/research/island-phones`), which holds the camera at the town view and
+  labels each object by the part of the scene that made it. The runner builds the page for
+  production into `target/island-phones` and serves it under the load route.
+- The visits run in this order. The cloud runs' Medium at one pixel per CSS pixel comes first and
+  last, so the run brackets itself against the terrain-batching figures. Then the preset and render
+  scale that a visitor gets, with the governor on. Then Low at the phone's own pixel ratio, with each
+  part hidden in turn and the whole scene between them: the town, the near trees, the far tree cards,
+  the grass, the ground, the water's reflection and the shadows. Then Low with each trial change in
+  turn: cards drawn from one atlas view, no shadow casting cards, a shadow reach of 300 m and of
+  150 m, a reflection every fourth frame, and a level threshold of 4 pixels. Last come Low's
+  start-time choices in turns: as it ships, moment transparency off, the depth prepass on, and as it
+  ships again.
+- Each window lasts five seconds, so a phone at 10 to 20 frames a second still times several frames
+  in each. The page reports the GPU time of each window and of each pass, the frame interval, the
+  triangles and the draws. A visit can take up to 20 minutes, and the plan takes about an hour on a
+  phone of the Galaxy S25's class.
+- Run it on cloud phones with `bun run devices:cloud --only bsgalaxys25-chrome,bsiphone17-safari
+  --plan island-phones`. Apple GPUs time passes that overlap, so on the iPhone read each window's
+  whole GPU time, not its passes. On the Mac, `bench/research/island-phones/scripts/run.ts` runs
+  the same page in Chrome for Testing.
 
 ## The reflection plan
 

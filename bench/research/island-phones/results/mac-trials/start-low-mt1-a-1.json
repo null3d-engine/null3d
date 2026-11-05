@@ -1,0 +1,233 @@
+{
+	"name": "start-low-mt1-a",
+	"round": 1,
+	"query": "preset=low&w=576&h=1248&warm=20&seconds=3&steps=base,base,base,base,base,base",
+	"loadBefore": 5.8291015625,
+	"loadAfter": 7.12158203125,
+	"seconds": 51.199,
+	"displayProblem": null,
+	"errors": [],
+	"result": {
+		"page": "island-phones",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"url": "http://localhost:6571/bench/research/island-phones/pages/island.html?preset=low&w=576&h=1248&warm=20&seconds=3&steps=base%2Cbase%2Cbase%2Cbase%2Cbase%2Cbase&still-camera=off",
+		"calibrationMs": 0.8049999922513962,
+		"ok": true,
+		"tier": "webgpu",
+		"mode": {
+			"build": "threaded",
+			"latency": "pipelined",
+			"sketchThread": "worker",
+			"renderThread": "render-worker",
+			"jobWorkers": 16,
+			"hold": null,
+			"preset": "low",
+			"presetCheck": null,
+			"crashedStarts": 0,
+			"memoryMaximumMiB": 1024,
+			"renderFallback": null,
+			"keepTextureCopies": false
+		},
+		"census": {
+			"viewport": {
+				"width": 576,
+				"height": 1248,
+				"pixelRatio": 1
+			},
+			"preset": "low",
+			"groups": {
+				"ground": {
+					"objects": 556,
+					"rows": 556
+				},
+				"seabed": {
+					"objects": 2,
+					"rows": 2
+				},
+				"foam": {
+					"objects": 2,
+					"rows": 2
+				},
+				"water": {
+					"objects": 1,
+					"rows": 1
+				},
+				"reflection": {
+					"objects": 0,
+					"rows": 0
+				},
+				"town": {
+					"objects": 69,
+					"rows": 9288
+				},
+				"trees": {
+					"objects": 6,
+					"rows": 5374
+				},
+				"shrubs": {
+					"objects": 2,
+					"rows": 6718
+				},
+				"cypress": {
+					"objects": 2,
+					"rows": 2262
+				},
+				"cards": {
+					"objects": 5,
+					"rows": 5847
+				},
+				"casters": {
+					"objects": 3,
+					"rows": 2687
+				},
+				"grass": {
+					"objects": 4,
+					"rows": 6300
+				},
+				"shadows": {
+					"objects": 0,
+					"rows": 0
+				},
+				"other": {
+					"objects": 0,
+					"rows": 0
+				}
+			},
+			"reflections": 1
+		},
+		"windows": [
+			{
+				"step": "base",
+				"frames": 993,
+				"intervalMs": 3.0399999618530273,
+				"gpuMs": 1.990719497203827,
+				"gpuPassMs": {
+					"copies": 0.003083999967202544,
+					"compute": 0.05085350014269352,
+					"shadow cascade 0": 0.0757490023970604,
+					"shadow cascade 1": 0.2509959936141968,
+					"opaque 1": 0.3872860074043274,
+					"view copy 1": 0.09843500144779682,
+					"opaque": 1.2584810256958008,
+					"transmission copy": 1.0815454721450806,
+					"later passes": 1.266875982284546,
+					"between passes": 0,
+					"particle depth copy": 1.0709010362625122
+				},
+				"render": 0.5,
+				"triangles": 1452865,
+				"drawCalls": 2157
+			},
+			{
+				"step": "base",
+				"frames": 1001,
+				"intervalMs": 3.0399999618530273,
+				"gpuMs": 2.0210105180740356,
+				"gpuPassMs": {
+					"copies": 0.002957999939098954,
+					"compute": 0.05043650045990944,
+					"shadow cascade 0": 0.08076949790120125,
+					"shadow cascade 1": 0.2613710016012192,
+					"opaque 1": 0.3890774995088577,
+					"view copy 1": 0.11193549819290638,
+					"opaque": 1.302312970161438,
+					"transmission copy": 1.1067745089530945,
+					"later passes": 1.300022006034851,
+					"between passes": 0,
+					"particle depth copy": 1.0940455198287964
+				},
+				"render": 0.4950000047683716,
+				"triangles": 1887655,
+				"drawCalls": 2553.5
+			},
+			{
+				"step": "base",
+				"frames": 1013,
+				"intervalMs": 2.9749999046325684,
+				"gpuMs": 2.0703845024108887,
+				"gpuPassMs": {
+					"copies": 0.003000000026077032,
+					"compute": 0.05279099941253662,
+					"shadow cascade 0": 0.08097749948501587,
+					"shadow cascade 1": 0.2615174949169159,
+					"view copy 1": 0.11587300337851048,
+					"opaque": 1.3342504501342773,
+					"transmission copy": 1.1604825258255005,
+					"particle depth copy": 1.1520450115203857,
+					"later passes": 1.3655419945716858,
+					"between passes": 0,
+					"opaque 1": 0.4010774940252304
+				},
+				"render": 0.49000000953674316,
+				"triangles": 1887655,
+				"drawCalls": 2553.5
+			},
+			{
+				"step": "base",
+				"frames": 988,
+				"intervalMs": 3.059999942779541,
+				"gpuMs": 2.060115098953247,
+				"gpuPassMs": {
+					"copies": 0.0030400000978261232,
+					"compute": 0.0563535001128912,
+					"shadow cascade 0": 0.07983250170946121,
+					"shadow cascade 1": 0.25878800451755524,
+					"opaque 1": 0.3894520103931427,
+					"view copy 1": 0.1881220042705536,
+					"opaque": 1.3161880373954773,
+					"transmission copy": 1.139545500278473,
+					"later passes": 1.3162294626235962,
+					"between passes": 0,
+					"particle depth copy": 1.1450649499893188
+				},
+				"render": 0.5,
+				"triangles": 1887655,
+				"drawCalls": 2157
+			},
+			{
+				"step": "base",
+				"frames": 1005,
+				"intervalMs": 3.0225000381469727,
+				"gpuMs": 2.0304269790649414,
+				"gpuPassMs": {
+					"copies": 0.003000000026077032,
+					"compute": 0.05216600000858307,
+					"shadow cascade 0": 0.08066599816083908,
+					"shadow cascade 1": 0.2630380094051361,
+					"opaque 1": 0.3958275020122528,
+					"view copy 1": 0.195871502161026,
+					"opaque": 1.3219380378723145,
+					"transmission copy": 1.148149013519287,
+					"later passes": 1.332605004310608,
+					"between passes": 0,
+					"particle depth copy": 1.1369400024414062
+				},
+				"render": 0.4950000047683716,
+				"triangles": 1670260,
+				"drawCalls": 2553.5
+			},
+			{
+				"step": "base",
+				"frames": 909,
+				"intervalMs": 3.2424999475479126,
+				"gpuMs": 2.0044280290603638,
+				"gpuPassMs": {
+					"copies": 0.003083999967202544,
+					"compute": 0.05654100142419338,
+					"shadow cascade 0": 0.08131200075149536,
+					"shadow cascade 1": 0.2562045007944107,
+					"view copy 1": 0.08524849824607372,
+					"opaque": 1.2527520060539246,
+					"transmission copy": 1.077421486377716,
+					"particle depth copy": 1.0757759809494019,
+					"later passes": 1.2608144879341125,
+					"between passes": 0,
+					"opaque 1": 0.391745001077652
+				},
+				"render": 0.550000011920929,
+				"triangles": 1887655,
+				"drawCalls": 2553.5
+			}
+		]
+	}
+}

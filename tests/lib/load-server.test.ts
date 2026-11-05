@@ -76,7 +76,14 @@ describe('buildsForLoads', () => {
 		expect(names([startup, startup])).toEqual(['startup']);
 		expect(names([bench, startup])).toEqual(['benchmark pages', 'startup']);
 		expect(names(['/bench/pages/null3d/s1.html?hold', '/tests/pages/engine.html'])).toEqual([]);
-		expect(LOAD_BUILDS.map(({ prefix }) => prefix)).toEqual(['bench/', '']);
+		const study =
+			'/__null3d/load/warm/{run}.{runner}.island-phones/bench/research/island-phones/pages/island.html?preset=low';
+		expect(names([study, bench])).toEqual(['Island phones study', 'benchmark pages']);
+		expect(LOAD_BUILDS.map(({ prefix }) => prefix)).toEqual([
+			'bench/research/island-phones/',
+			'bench/',
+			'',
+		]);
 	});
 });
 

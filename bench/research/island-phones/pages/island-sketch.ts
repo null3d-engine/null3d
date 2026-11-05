@@ -220,7 +220,8 @@ export default defineSketch(async (ctx: SketchContext) => {
 	/**
 	 * A trial change, applied for one window and undone after it: the far cards drawn from their
 	 * nearest atlas view alone, the sun's shadows over a shorter reach, the grass over a shorter reach
-	 * or casting no shadow, and the water's reflection drawn once in four frames.
+	 * or casting no shadow, a coarser threshold of the levels of detail, and the water's reflection
+	 * drawn once in a given number of frames.
 	 */
 	const trial = (name: string, on: boolean) => {
 		if (name === 'cards1')
@@ -231,6 +232,10 @@ export default defineSketch(async (ctx: SketchContext) => {
 		else if (name.startsWith('grass'))
 			for (const [batch, [start, end]] of grassRanges)
 				batch.setDrawRange(start, on ? Math.min(end, Number(name.slice(5))) : end);
+		else if (name.startsWith('lod'))
+			ctx.quality.set({
+				lodThreshold: on ? Number(name.slice(3)) : ctx.quality.preset === 'low' ? 2 : 1,
+			});
 		else if (name === 'grassdark') for (const batch of grassBatches) batch.setCastShadows(!on);
 		else if (name.startsWith('reflect'))
 			for (const pass of reflections)
