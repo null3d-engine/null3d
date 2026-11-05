@@ -38,6 +38,9 @@ impl Capabilities {
     pub const FLOAT32_BLENDABLE: Self = Self(1 << 13);
     /// Subgroup operations in shaders.
     pub const SUBGROUPS: Self = Self(1 << 14);
+    /// Flat values from a primitive's first vertex on WebGL2 (`WEBGL_provoking_vertex`), which
+    /// the WebGL2 backend selects where the device offers it.
+    pub const FIRST_PROVOKING_VERTEX: Self = Self(1 << 15);
     /// Drawing and blending into color targets of 16-bit floats with one sample: every WebGPU
     /// device, and WebGL2 with `EXT_color_buffer_float` or `EXT_color_buffer_half_float`.
     pub const FLOAT16_TARGETS: Self = Self(1 << 16);

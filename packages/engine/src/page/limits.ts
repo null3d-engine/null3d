@@ -17,12 +17,14 @@ import {
 	PERMUTATION_HALF,
 	PERMUTATION_TONE_MAP,
 } from '../generated/gpu';
+import type { DrawPathProbe, DrawPathReason } from '../gpu/webgpu/draw-path-probe';
 import type { QualitySettings } from '../quality/presets';
 import type { Tier } from '../render/renderer';
 import { softwareRenderer } from '../shared/software';
 import type {
 	CompressionFamily,
 	DepthMode,
+	DirectSwitch,
 	PrepassColor,
 	ShadowDepthBits,
 	SkinningSwitch,
@@ -62,6 +64,7 @@ export interface DeviceReport {
 		features: string[];
 		transientAttachments: boolean;
 		directDraws: boolean;
+		drawPath: DrawPathReason;
 		/** The adapter's reported names, which tell a software renderer (D-174, D-237). */
 		adapterInfo?: {
 			vendor: string;
@@ -112,7 +115,7 @@ export interface CoreDevice {
 	sharedUploads: boolean;
 	/**
 	 * WebGL2: true when the context draws many ranges in one call, so a cluster mesh draws its
-	 * chosen patches; false draws the whole levels that its tree was cut into.
+	 * chosen patches; false draws the mesh's whole levels.
 	 */
 	multiDraw: boolean;
 	/** How the GPU path stores depth: always `reversed` on WebGPU. */
@@ -130,8 +133,9 @@ export interface CoreDevice {
 	 */
 	sceneColor: number;
 	/**
-	 * True when the start-up probe measured the device's direct draws to be clearly faster than
-	 * its indirect draws, so the core culls on the CPU and draws each bucket directly.
+	 * True when the core culls on the CPU and draws each WebGPU bucket directly: where the start-up
+	 * probe measured an Apple GPU in WebKit to draw that way clearly faster, or where `?direct=on`
+	 * forces it.
 	 */
 	directDraws: boolean;
 	/**
@@ -215,6 +219,8 @@ export interface CoreDevice {
 	derivedCache: boolean;
 	/** The pixels that software occlusion culling's buffer holds about, or 0 for the core's default. */
 	occlusionBuffer: number;
+	/** False to hold GPU occlusion culling's passes on in every frame, without its check. */
+	occlusionCheck: boolean;
 }
 
 /**
@@ -271,6 +277,7 @@ export type DeviceOptions = Pick<
 	| 'shadowDepthBits'
 	| 'derivedCache'
 	| 'occlusionBuffer'
+	| 'occlusionCheck'
 > & {
 	/** The anti-aliasing mode. */
 	antialias: AntialiasMode;
@@ -443,6 +450,17 @@ export function halfPrecision(
 }
 
 /**
+ * The draw path of a tier and why: WebGL2 always draws directly, `?direct=on` or `?direct=off`
+ * forces a WebGPU path, and otherwise the start-up probe's answer holds. The probe draws directly
+ * only on an Apple GPU in WebKit that it measured faster that way.
+ */
+export function drawPath(tier: Tier, report: DeviceReport, direct: DirectSwitch): DrawPathProbe {
+	if (tier === 'webgl2') return { directDraws: false, reason: 'webgl2' };
+	if (direct !== 'auto') return { directDraws: direct === 'on', reason: 'forced' };
+	return { directDraws: report.webgpu.directDraws, reason: report.webgpu.drawPath };
+}
+
+/**
  * The device and the canvas as the engine uses them on a tier, from the capability report and the
  * options. The test switches make the WebGL2 path copy uploads out of shared memory even where
  * WebGL reads it, force a WebGL2 depth mode, make WebGL2 wait for each program's compile, or force
@@ -460,9 +478,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		parallelCompile: options.parallelCompile,
 		freshShaders: options.freshShaders,
 		sceneColor,
-		directDraws:
-			tier !== 'webgl2' &&
-			(options.direct === 'on' || (options.direct === 'auto' && report.webgpu.directDraws)),
+		directDraws: drawPath(tier, report, options.direct).directDraws,
 		softwareRenderer: softwareRenderer(report),
 		antialias: ANTIALIAS_CODES[options.antialias],
 		effectsSceneColor: effects.sceneColor,
@@ -481,6 +497,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		gpuOcclusion: options.gpuOcclusion,
 		derivedCache: options.derivedCache,
 		occlusionBuffer: options.occlusionBuffer ?? 0,
+		occlusionCheck: options.occlusionCheck,
 	};
 	if (tier !== 'webgl2') {
 		return {
@@ -507,6 +524,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		storageBindingBytes: C.LIMIT_PORTABLE_STORAGE_BINDING_BYTES,
 		capabilities:
 			(multiDraw ? C.CAPABILITY_MULTI_DRAW : 0) |
+			(gl.extensions.WEBGL_provoking_vertex === true ? C.CAPABILITY_FIRST_PROVOKING_VERTEX : 0) |
 			(gl.floatRenderTargets?.rgba16f.complete === true ? C.CAPABILITY_FLOAT16_TARGETS : 0) |
 			compression((_, extension) => gl.extensions[extension] === true, options.compression),
 		maxTextureSize: Math.max(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE, gl.maxTextureSize ?? 0),

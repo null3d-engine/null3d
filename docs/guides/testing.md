@@ -73,7 +73,9 @@ In hold mode, the engine does this:
 
 `createEngine` resolves once the frame is read back, and `engine.captureFrame()` returns that frame. `engine.mode.hold` gives the held time, and it is `null` for a live engine. After the held frame, the engine draws nothing more: it runs no frame loop, so `engine.measure()` finds no frames. The hold's result gives the held frame's own figures instead. The engine draws no frame before the held one, so the held frame creates every GPU object and uploads the whole scene.
 
-A hold at 1.5 seconds runs 91 frames: frame 1 at time 0, then 90 steps. In the last `onUpdate`, `time.now` is 1.5 and `time.frame` is 91. When a pass reads the frame before it, as screen-space bounce light does, the engine draws one more frame at the same sketch time after the held one, so the picture has the light that the earlier frame showed. That frame runs none of the sketch's code and adds no step, so the sketch still ends at frame 91 and the hold reports that number.
+A hold at 1.5 seconds runs 91 frames: frame 1 at time 0, then 90 steps. In the last `onUpdate`, `time.now` is 1.5 and `time.frame` is 91. When a pass reads the frame before it, as screen-space bounce light does, the engine draws one more frame at the same sketch time after the held one, so the picture has the light that the earlier frame showed. That frame runs none of the sketch's code and adds no step, so the sketch still ends at frame 91 and the hold reports that number. It draws the debug lines of the last `onUpdate` again, so the picture shows the same lines as the held frame.
+
+Before it draws the held frame, hold mode waits for the tasks that the sketch queued on the job workers, then runs one more frame at the held time, which draws what they wrote. It waits up to 10 seconds for a task, then warns and draws anyway. The levels of detail that meshes made in code plan are different: hold mode waits for them until they are in, however long the plans take on a busy machine, and says every 10 seconds which meshes still plan. So the held frame always draws every planned level. A plan that has not answered after five minutes stops the hold with [E1408](../errors/E1408.md), which names the meshes. Give a mesh `levels: false` when a test should draw it without levels.
 
 The switch wins over the option. A bare `?hold` holds at the time of the `hold` option, or at 0 without one. The time must be from 0 to 600 seconds, or the start fails with [E1407](../errors/E1407.md).
 
@@ -193,13 +195,13 @@ The [hold mode demo](https://github.com/null3d-engine/null3d/tree/main/examples/
 
 ## Switches for tests
 
-The engine reads these switches from the page's address in development builds, on the dev server and in the `null3d` command's runs. A production build ignores them, so a link cannot change how a shipped game runs. To use them in a production build of test pages, turn on the Vite plugin's `urlSwitches` option: `null3d({ urlSwitches: true })`.
+The engine reads these switches from the page's address in development builds. These are the dev server, the `null3d` command's runs and the CDN build's development entry, `lib-dev/index.js`. A production build ignores them, so a link cannot change how a shipped game runs. The CDN build's production entry, `lib/index.js`, ignores them too. To use them in a production build of test pages, turn on the Vite plugin's `urlSwitches` option: `null3d({ urlSwitches: true })`. For a benchmark page that loads the CDN build, `bun run build:cdn --url-switches` does the same ([Try null3D from a CDN](../getting-started/cdn.md#production-and-development-entries)).
 
 | Switch | Effect |
 | --- | --- |
 | `?hold=1.5` | Hold mode at 1.5 seconds of sketch time; a bare `?hold` holds at the `hold` option's time, or at 0 |
 | `?gpu=webgpu`, `?gpu=compat`, `?gpu=webgl2` | Force a GPU tier, where the device has it |
-| `?direct=on`, `?direct=off` | On WebGPU, force the direct or the indirect draw path, in place of the start-up probe's measured choice, to compare GPU time. `engine.capabilities.directDraws` says which path the engine took ([Performance guide](performance.md#how-the-engine-batches-builds-pipelines-and-times-frames)) |
+| `?direct=on`, `?direct=off` | On WebGPU, force the direct or the indirect draw path on any device, in place of the start-up probe's choice, to compare GPU time. The probe runs only on an Apple GPU in WebKit. `engine.capabilities.directDraws` says which path the engine took, and `engine.capabilities.drawPath` says why ([Performance guide](performance.md#how-the-engine-batches-builds-pipelines-and-times-frames)) |
 | `?depth=reversed`, `?depth=reversed-gl`, `?depth=standard` | Force a WebGL2 depth mode. `reversed-gl` draws as browsers without the `EXT_clip_control` extension do, such as Firefox |
 | `?uploads=copy` | On WebGL2, upload a copy of the data, as browsers that refuse to read shared memory need |
 | `?multidraw=off` | On WebGL2, draw as a browser without the `WEBGL_multi_draw` extension does: the engine probes none and draws the whole levels of a cluster tree in place of its patches ([Levels of detail](../concepts/lod.md#cluster-levels)) |

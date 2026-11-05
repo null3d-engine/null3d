@@ -190,6 +190,8 @@ export default defineSketch(
 				uvs: mesh.uv,
 				indices: mesh.index,
 				...(mesh.color ? { colors: mesh.color } : {}),
+				// The three.js twin draws every mesh whole, so this one does too.
+				levels: false,
 			});
 		const maps = new Map<SurfaceKind, { color: Texture; orm: Texture; normal: Texture }>();
 		const surface = (kind: SurfaceKind) => {

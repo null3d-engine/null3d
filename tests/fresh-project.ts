@@ -37,7 +37,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
-import { defaultEnvironment, launchBrowser } from '../packages/cli/src/browser.js';
+import { defaultEnvironment } from '../packages/cli/src/browser.js';
 import { ENGINE_SHADERS_ENV } from '../packages/vite-plugin/src/engine-shaders.ts';
 import {
 	FILES_LIST,
@@ -52,6 +52,7 @@ import { PACKAGES, type PackedPackage } from '../tools/lib/packages.ts';
 import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import { MODULE_DIR } from '../tools/lib/shader-modules.ts';
 import { ASSET_SCENE } from './lib/asset-scene.ts';
+import { launchRepoBrowser } from './lib/chrome-for-testing.ts';
 import { STRICT_POLICY } from './lib/content-security-policy.ts';
 
 const ROOT = join(import.meta.dirname, '..');
@@ -214,7 +215,7 @@ function stepInBackground(
 }
 
 /** A browser, as the command-line tool starts it. */
-type Browser = Awaited<ReturnType<typeof launchBrowser>>;
+type Browser = Awaited<ReturnType<typeof launchRepoBrowser>>;
 
 /** A browser page, as the command-line tool's browser opens it. */
 type Page = Awaited<ReturnType<Browser['newPage']>>;
@@ -360,7 +361,7 @@ async function withBrowser(
 	use: (browser: Browser, server: ReturnType<typeof serveBuild>) => Promise<void>,
 ): Promise<void> {
 	const server = serveBuild(dist, strict);
-	const browser = await launchBrowser(defaultEnvironment());
+	const browser = await launchRepoBrowser(defaultEnvironment());
 	try {
 		await use(browser, server);
 	} finally {
@@ -398,10 +399,10 @@ async function startsUnderStrictPolicy(dist: string): Promise<void> {
 /**
  * The features whose shader files the project's service worker caches, as the page uses them: the
  * sprite shaders that the page preloads, and the ambient occlusion and color copy shaders that the
- * preset's screen-space bounce light reads from the first frame. The project's worker holds the
- * same list, `tests/fixtures/fresh-project/public/sw.js`.
+ * preset's screen-space bounce light reads from the first frame, and the preset's GPU occlusion
+ * culling's. The project's worker holds the same list, `tests/fixtures/fresh-project/public/sw.js`.
  */
-const CACHED_FEATURES = ['sprites', 'ao', 'color_copy'];
+const CACHED_FEATURES = ['sprites', 'ao', 'color_copy', 'occlusion'];
 
 /**
  * The project's service worker caches the page and the files of the build's list on the first

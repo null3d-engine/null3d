@@ -66,6 +66,8 @@ Set `NULL3D_ENGINE_SHADERS` to a folder that holds the engine's generated shader
 
 `bunx @null3d/cli` contacts no server of its own. It serves the page from a server on the same machine, and it drives a browser on that machine. When Playwright's browser is missing, the tool prints the command that installs it. You run that command yourself.
 
+To draw on your computer's GPU, the tool uses one pinned version of Chrome for Testing. On first use it downloads that version once, from Google's Chrome for Testing releases on `storage.googleapis.com`. The tool records the SHA-256 hash of each platform's archive, and checks the download against it before it unpacks it. It deletes an archive with another hash, and stops with [E1437](../errors/E1437.md). It keeps the checked build in a cache folder that every project on the computer shares, with the hash that it checked. A copy in that folder without that record downloads again. The [command-line tool's page](../cli/null3d.md#chrome-for-testing) says where the folder is. The tool makes no other request to that host, and a page never makes it. When the `CI` variable is set, the tool draws on the software GPU and downloads nothing. `NULL3D_CHROME=installed` draws with the installed Google Chrome and also downloads nothing.
+
 `check-addon` reads the allocations of an add-on's own code by asking the browser it started for a
 heap profile. That browser listens on a loopback address on this machine, and the tool talks to it
 over that address and its debugging socket. Nothing leaves the machine, and no address is a server

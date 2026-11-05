@@ -59,7 +59,7 @@ export const ERROR_FIXES = {
 	E1220:
 		"Give render.addPass the options of its kind, such as { kind: 'scene', camera, writes: 'minimap', size: [256, 256] }. Give a compute pass a workgroup size that the shader declares and that a device runs, and a fallback for WebGL2. Give each pass a name and a texture name of its own. Remove passes that no longer draw before you add more.",
 	E1221:
-		'List the levels from the most detailed down, each with a larger error or distance than the one before, at most 7 of them. Make each level from the same kind of arrays as the base mesh, with the same attributes, such as the same texture coordinates and tangents.',
+		'List the levels from the most detailed down, each with a larger error or distance than the one before, at most 7 of them. Make each level from the same kind of arrays as the base mesh, with the same attributes, such as the same texture coordinates and tangents. Give a mesh that poses or moves its levels with setLevels, not buildLevels.',
 	E1222:
 		"Make the grid's texture with LightProbeGridData.toTexture(), which a 3D texture alone holds, or with textures.fromVolumeData(). An image texture, or one made with textures.fromData() and a depth, is a texture array, which the probe grid cannot bind.",
 	E1223:
@@ -91,7 +91,7 @@ export const ERROR_FIXES = {
 	E1405:
 		"Read the message: it names the worker that did not start, and why. The sketch worker also reports an error that your sketch's setup function threw, with that error's message: fix the setup function. Otherwise, check that the page is served with the isolation headers and that the engine files load. Allow the workers in the worker-src of a Content-Security-Policy. For the engine's files on another origin, such as a CDN, the hosting page of the docs gives the headers and the policy. Report the error if it repeats.",
 	E1406:
-		"Check that the host serves every file that the build wrote, at the paths that the build gave them. The engine's .wasm files, the KTX2 transcoder's files, the glTF loader's files and the meshopt decoder are among them. If the page loads at other times, the network dropped: reload the page.",
+		"Check that the host serves every file that the build wrote, at the paths that the build gave them. The engine's .wasm files, the KTX2 transcoder's files, the glTF loader's files, the meshopt decoder and the level planner's simplifier are among them. If the page loads at other times, the network dropped: reload the page.",
 	E1407:
 		'Give the sketch time to hold at in seconds, such as ?hold=1.5 or hold: 1.5. A bare ?hold holds at the time of the hold option, or at 0 without one.',
 	E1408:
@@ -144,6 +144,8 @@ export const ERROR_FIXES = {
 		"Record the session again with the engine that recorded it, or update the engine that reads the file. When the message names a sketch, open the page with that sketch: a replay runs the file's frames on the scene that recorded them. When it names a key or a fixed step rate, the recording came from a sketch that this engine cannot run as it ran. A replay starts at the file's first frame, so a file must come from a session that started at the page's first frame.",
 	E1436:
 		'Ask for the pick again: the engine started a new GPU device, which answers a new pick. A pick that waits when the device is lost is rejected rather than repeated, because the frame that recorded it drew on the lost device.',
+	E1437:
+		"Run the command again. A download that broke off, or that something changed on the way, fails the check. If the check fails again, a proxy or a mirror between this computer and Google's storage changes the file, so download without it. On a platform that has no Chrome for Testing build, set CI=1 to draw with Playwright's Chromium on the software GPU, or NULL3D_CHROME=installed to draw with the installed Google Chrome.",
 	E1501:
 		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses. For a large crowd of skinned characters on WebGPU, use models with fewer vertices or fewer copies. Each copy skins its own vertices, even when copies share a mesh. The crowd draws again once it fits.',
 	E1502:

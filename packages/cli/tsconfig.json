@@ -4,6 +4,6 @@
 		"allowJs": true,
 		"checkJs": true
 	},
-	"include": ["bin/**/*.js", "src/**/*.js"],
+	"include": ["bin/**/*.js", "src/**/*.js", "../engine/levels/*.js"],
 	"exclude": []
 }

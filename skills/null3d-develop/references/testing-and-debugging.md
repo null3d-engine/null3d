@@ -102,7 +102,7 @@ Before you believe a picture that judges a change, prove the page read the chang
 
 ## 4. Testing on real devices
 
-URL switches for the dev server (engine docs `guides/testing`):
+URL switches for the dev server and other development builds, such as (0.2) the CDN build's `lib-dev/index.js` (engine docs `guides/testing`). A production build ignores them:
 
 | Switch | Effect |
 | --- | --- |
@@ -124,8 +124,9 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?latency=pipelined`, `?latency=low` | Latency mode |
 | `?prepass=on`, `?prepass=off` | Turn the depth prepass on or off over the `depthPrepass` option, to compare GPU time (`concepts/quality-presets`) |
 | `?occlusion=on`, `?occlusion=off` | Turn GPU occlusion culling on or off over the `gpuOcclusion` option, to compare GPU time (WebGPU only; `concepts/culling`) |
+| `?occlusion-check=off` | On WebGPU, keep GPU occlusion culling's passes on in every frame, without the check that turns them off where they do not pay, so a test that compares the image with culling and without it compares frames that culled (`concepts/culling`) |
 | `?occlusion-buffer=384x216` | On WebGL2, give software occlusion culling's buffer about that many pixels instead of 256 x 144, to compare the CPU time it costs and the objects it hides (`concepts/culling`) |
-| `?direct=on`, `?direct=off` | Force the direct-draw path or the indirect one on WebGPU, over the start-up probe's measured choice, to compare GPU time; `engine.capabilities.directDraws` says which path the engine took (`guides/performance`) |
+| `?direct=on`, `?direct=off` | Force the direct-draw path or the indirect one on WebGPU on any device, over the start-up probe's choice, to compare GPU time. The probe runs only on Apple GPUs in WebKit. `engine.capabilities.directDraws` says which path the engine took, and `engine.capabilities.drawPath` says why (`guides/performance`) |
 | `?cells=off` | Cull every object, with no grid cell out of view skipped first, to measure what skipping cells saves (`concepts/culling`) |
 | `?skinning=compute` | On WebGPU, skin every skinned mesh once per frame in the skinning pass, a compute pass, instead of in the vertex shader of each pass, to compare GPU time (`api/animation`) |
 | `?skinning=full`, `skip`, `narrow` | On WebGPU, skin in the skinning pass with fewer of its savings: `full` skins every drawn character every frame with 32-bit normals, `skip` keeps only the skip of unchanged poses, `narrow` keeps only the 8-bit normals (`guides/testing`) |
@@ -188,7 +189,7 @@ Every engine error is an `EngineError` with a code, the object's name, what fail
 E1203: setPosition() got NaN for x on "Player" (slot 12). Check the value computed before this call.
 ```
 
-Each code has a docs page, such as `errors/E1203`, with the full explanation. Release builds remove most checks, so reproduce problems in a development build.
+Each code has a docs page, such as `errors/E1203`, with the full explanation. Release builds remove most checks, so reproduce problems in a development build. Use the dev server, or (0.2) the CDN build's `lib-dev/index.js` for a page with no bundler.
 
 ## 8. Troubleshooting table
 
@@ -250,7 +251,7 @@ Startup:
 
 - The host sends the isolation headers, and lets browsers keep the hashed files under `assets/` (`getting-started/hosting`).
 - With the build's files on a CDN, the CDN sends `Access-Control-Allow-Origin` on every file, and the page's policy allows `blob:` workers and the CDN (`getting-started/hosting`). The engine needs no `'unsafe-eval'`.
-- A game that plays offline caches the files of `null3d-files.json` in its own service worker: the `start` group and each feature that it uses or lists in `preload`. A preset can draw a feature that the sketch never asks for: High and Ultra, and WebGL2's Medium, draw screen-space bounce light, whose steps read `'ao'`'s and `'color_copy'`'s shaders from the first frame, so cache those two on those presets. A reload with the network off starts with `crossOriginIsolated` true (`getting-started/hosting`, "Offline play").
+- A game that plays offline caches the files of `null3d-files.json` in its own service worker: the `start` group and each feature that it uses or lists in `preload`. A preset can draw a feature that the sketch never asks for: High and Ultra, and WebGL2's Medium, draw screen-space bounce light, whose steps read `'ao'`'s and `'color_copy'`'s shaders from the first frame. WebGPU's High and Ultra also read `'occlusion'`'s for GPU occlusion culling, so cache those on those presets. A reload with the network off starts with `crossOriginIsolated` true (`getting-started/hosting`, "Offline play").
 - A cold load on Chrome's Slow 4G profile, with the cache off, reaches `engine.firstFrame` in a time you accept. The loading screen stays up until then.
 - `engine.measure(5)` reports no long tasks on the page's thread (`mainThread`) while the engine starts. A page control that you click then answers within a few milliseconds.
 - A first visit and a repeat visit are both timed, as `references/performance.md` section 11 says.

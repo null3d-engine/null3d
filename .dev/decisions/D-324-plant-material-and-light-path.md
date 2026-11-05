@@ -1,4 +1,4 @@
-# D-310: one plant shader shows each leaf in its record's colours, and lights bark along its own branch
+# D-324: one plant shader shows each leaf in its record's colours, and lights bark along its own branch
 
 Status: decided. The plant shader, its constants texture, the materials, the page's texture loading
 and the calibration, bark frame and download tests are built. The download test waits for a second
@@ -19,7 +19,7 @@ paths, within the six textures and 26 numbers that a custom material has?
 
 ## Rule
 
-The plant core's acceptance for the material ([D-305](D-305-plant-core-three-scales.md)): leaf
+The plant core's acceptance for the material ([D-323](D-323-plant-core-three-scales.md)): leaf
 calibration within 3 per cent of the record's reflectance, transmittance and sky value on the three
 paths; bark relief lit along a lying limb; six textures and at most 26 numbers; the shader pack
 compiles it; the wind block copy test passes; a page fetches only what it places.

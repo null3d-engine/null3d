@@ -16,6 +16,7 @@ import {
 	DEPTH_WITHOUT_CLIP_CONTROL,
 	type DeviceOptions,
 	type DeviceReport,
+	drawPath,
 	effectsOutput,
 	keepTextureCopiesOption,
 	maxCanvasSize,
@@ -63,6 +64,7 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	gpuOcclusion: false,
 	derivedCache: true,
 	occlusionBuffer: 0,
+	occlusionCheck: true,
 });
 
 /** What the WebGL2 probe finds of a format that the device does not draw into. */
@@ -79,7 +81,13 @@ const F16 = C.CAPABILITY_FLOAT16_TARGETS;
 /** A report whose WebGL2 part has these fields, and whose WebGPU adapter has these features. */
 function report(webgl2: Partial<DeviceReport['webgl2']>, features: string[] = []): DeviceReport {
 	return {
-		webgpu: { limits: {}, features, transientAttachments: false, directDraws: false },
+		webgpu: {
+			limits: {},
+			features,
+			transientAttachments: false,
+			directDraws: false,
+			drawPath: 'not-apple-gpu-in-webkit',
+		},
 		webgl2: {
 			extensions: {},
 			maxTextureSize: 4096,
@@ -117,6 +125,7 @@ const PLAIN: DeviceOptions = {
 	gpuOcclusion: false,
 	derivedCache: true,
 	occlusionBuffer: undefined,
+	occlusionCheck: true,
 };
 
 /** The scene color format on a tier for a page with the plain options and these changes. */
@@ -324,6 +333,16 @@ describe('coreDevice on WebGL2', () => {
 		expect(coreDevice('webgl2', report({}), PLAIN).capabilities).toBe(F16);
 	});
 
+	it('tells the core that flat values take the first vertex only where the extension exists', () => {
+		// Split meshes draw their trees on WebGL2 only with it: under GLSL's last-vertex rule ANGLE
+		// on Metal copies the whole bound index buffer before each draw.
+		const withIt = report({ extensions: { WEBGL_provoking_vertex: true } });
+		expect(coreDevice('webgl2', withIt, PLAIN).capabilities).toBe(
+			C.CAPABILITY_FIRST_PROVOKING_VERTEX | F16,
+		);
+		expect(coreDevice('webgl2', report({}), PLAIN).capabilities).toBe(F16);
+	});
+
 	it('tells the core about 16-bit float targets only where RGBA16F passes the probe', () => {
 		const none = report({ floatRenderTargets: null });
 		expect(coreDevice('webgl2', none, PLAIN).capabilities).toBe(0);
@@ -392,11 +411,33 @@ describe('coreDevice on WebGL2', () => {
 	it('draws directly where the probe measured it faster, as ?direct= forces', () => {
 		const probed = report({});
 		probed.webgpu.directDraws = true;
+		probed.webgpu.drawPath = 'probe-faster';
 		expect(coreDevice('webgpu', probed, PLAIN).directDraws).toBe(true);
 		expect(coreDevice('webgpu', report({}), PLAIN).directDraws).toBe(false);
 		expect(coreDevice('webgpu', report({}), { ...PLAIN, direct: 'on' }).directDraws).toBe(true);
 		expect(coreDevice('webgpu', probed, { ...PLAIN, direct: 'off' }).directDraws).toBe(false);
 		expect(coreDevice('webgl2', probed, { ...PLAIN, direct: 'on' }).directDraws).toBe(false);
+	});
+
+	it("names why the engine takes its draw path, with the switch over the probe's answer", () => {
+		const probed = report({});
+		probed.webgpu.directDraws = true;
+		probed.webgpu.drawPath = 'probe-faster';
+		expect(drawPath('webgpu', probed, 'auto')).toEqual({
+			directDraws: true,
+			reason: 'probe-faster',
+		});
+		// A device that is not an Apple GPU in WebKit keeps the indirect path, unless forced.
+		expect(drawPath('webgpu', report({}), 'auto')).toEqual({
+			directDraws: false,
+			reason: 'not-apple-gpu-in-webkit',
+		});
+		expect(drawPath('webgpu-compat', report({}), 'on')).toEqual({
+			directDraws: true,
+			reason: 'forced',
+		});
+		expect(drawPath('webgpu', probed, 'off')).toEqual({ directDraws: false, reason: 'forced' });
+		expect(drawPath('webgl2', probed, 'on')).toEqual({ directDraws: false, reason: 'webgl2' });
 	});
 
 	it('marks the devices whose reported names say they draw on the CPU', () => {

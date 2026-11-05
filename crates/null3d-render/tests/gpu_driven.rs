@@ -20,9 +20,9 @@ use null3d_render::light_grid::{CLUSTER_PARAMS_BYTES, DEFAULT_GRID};
 use null3d_render::view::ViewId;
 
 const MATRIX_BYTES: u32 = 48;
-/// Where a view's culling parameters hold the runs of the cell order: after the planes and the
-/// level choice's inputs.
-const RANGES: u32 = 144;
+/// Where a view's culling parameters hold the runs of the cell order: after the planes, the level
+/// choice's inputs and where the view measures errors.
+const RANGES: u32 = 160;
 /// The builder's buffers of world matrices, of the bucket of every source, and of the layer
 /// mask of every source.
 const MATRICES: u32 = 2;
@@ -1475,10 +1475,11 @@ fn the_direct_path_sizes_its_instance_buffer_past_the_storage_binding() {
 /// The cluster pass binds the scene's patch table and its indices whole, so the storage binding
 /// bounds them. The direct path records no cluster pass and reads neither table, so it builds
 /// neither and draws the tree's mesh from its whole triangle list. A tree whose index table passes
-/// the binding still records there, while the culled path refuses it at the binding.
+/// the binding records there, and the culled path draws its mesh whole too rather than fail the
+/// frame at the binding.
 #[test]
 fn a_direct_path_frame_builds_no_cluster_table() {
-    use null3d_render::frame::RecordError;
+    use null3d_gpu::drawlist::template;
     use null3d_render::gpu_driven::cluster_table_buffers;
     use null3d_render::materials::Shading;
     use null3d_render::patches::PatchTree;
@@ -1524,10 +1525,15 @@ fn a_direct_path_frame_builds_no_cluster_table() {
     );
 
     let mut culled = world(false);
-    assert_eq!(
-        culled.try_record(true),
-        Err(RecordError::BufferFull { bytes: binding }),
-        "the culled path binds the tables whole, so a table past the binding fails its frame"
+    culled
+        .try_record(true)
+        .expect("the culled path draws a tree past the binding whole rather than fail its frame");
+    assert!(
+        !culled
+            .commands()
+            .iter()
+            .any(|(op, o)| *op == Op::CreateComputePipeline && o[1] == template::CLUSTER),
+        "the culled path draws no patch of a tree past the binding"
     );
 }
 

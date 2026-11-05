@@ -4,9 +4,14 @@ import {
 	benchReport,
 	busiestThread,
 	comparisonLines,
+	desertTable,
+	drawnSizeProblem,
+	drawPathOf,
+	figureProblem,
 	jobsTable,
 	lineChartSvg,
 	loadTable,
+	machineLoadLines,
 	median,
 	niceStep,
 	ownShareOfThree,
@@ -14,6 +19,7 @@ import {
 	type RunSummary,
 	type SummaryRow,
 	shareOfThree,
+	summarizeDesert,
 	summarizeRuns,
 	summaryRow,
 	summaryTable,
@@ -407,5 +413,148 @@ describe('traces', () => {
 		expect(
 			summaryRow({ scene: 's1', kind: 'null3d-webgpu' }, [result(2, true)]).load,
 		).toBeUndefined();
+	});
+});
+
+/** A desert run of one engine that drew `width` by `height`. */
+function desertRun(engine: string, width: number, height: number, intervalMs = 4): BenchResult {
+	return {
+		...result(1),
+		scene: 'desert',
+		desert: {
+			engine,
+			view: 'walk',
+			shadows: null,
+			drawn: { width, height },
+			intervalMs,
+			gpuMs: intervalMs / 2,
+			triangles: 2_000_000,
+			drawCalls: 300,
+			firstFrameMs: 9000,
+			settings: {},
+		},
+	};
+}
+
+describe('the desert', () => {
+	test('compares runs that all drew the same size', () => {
+		const runs = [
+			{ kind: 'threejs-webgpu', result: desertRun('three.js r187 meshlets', 1920, 1080) },
+			{ kind: 'null3d-webgpu', result: desertRun('null3d', 1920, 1080) },
+		];
+		expect(drawnSizeProblem(runs)).toBeNull();
+	});
+
+	test('refuses runs whose engines drew different sizes, naming each', () => {
+		const runs = [
+			{ kind: 'threejs-webgpu', result: desertRun('three.js r187 meshlets', 1920, 1080) },
+			{ kind: 'null3d-webgpu', result: desertRun('null3d', 3840, 2160) },
+			{ kind: 'null3d-webgpu', result: desertRun('null3d', 3840, 2160) },
+		];
+		expect(drawnSizeProblem(runs)).toBe(
+			'the engines drew different sizes: threejs-webgpu drew 1920 x 1080; null3d-webgpu drew 3840 x 2160',
+		);
+	});
+
+	test('refuses a run that passed without a drawn size, and ignores a failed one', () => {
+		const passed = { ...result(1), scene: 'desert' };
+		const failed = { ...result(1), ok: false, error: 'no frame' };
+		expect(drawnSizeProblem([{ kind: 'null3d-webgpu', result: passed }])).toBe(
+			'null3d-webgpu reported no drawn size',
+		);
+		expect(drawnSizeProblem([{ kind: 'null3d-webgpu', result: failed }])).toBeNull();
+	});
+
+	test('takes the medians of the runs, and a table row of them', () => {
+		const summary = summarizeDesert([
+			desertRun('null3d', 1920, 1080, 4),
+			desertRun('null3d', 1920, 1080, 5),
+			desertRun('null3d', 1920, 1080, 8),
+		]);
+		expect(summary).toMatchObject({ runs: 3, intervalMs: 5, gpuMs: 2.5, drawn: { width: 1920 } });
+		expect(summarizeDesert([result(1)])).toBeUndefined();
+		const row = summaryRow({ scene: 'desert', kind: 'null3d-webgpu' }, [
+			desertRun('null3d', 1920, 1080),
+		]);
+		expect(desertTable([row]).split('\n')[2]).toBe(
+			'| desert | null3d-webgpu | null3d | n/a | walk | off | 1 | 1920 x 1080 | 4.00 | 250.0 | 2.00 | 2.00 | 300 | 9.0 |',
+		);
+	});
+
+	test('gives no CPU comparison, and no draw calls where three.js does not count them', () => {
+		const three = desertRun('three.js r187 meshlets', 1920, 1080);
+		if (three.desert) three.desert.drawCalls = null;
+		const rows = [
+			summaryRow({ scene: 'desert', kind: 'threejs-webgpu' }, [three]),
+			summaryRow({ scene: 'desert', kind: 'null3d-webgpu' }, [desertRun('null3d', 1920, 1080)]),
+		];
+		expect(comparisonLines(rows)).toEqual([]);
+		expect(desertTable(rows).split('\n')[2]).toContain('| n/a | 9.0 |');
+	});
+
+	test("names each run's draw path, and every path when the runs differ", () => {
+		const direct = desertRun('null3d', 1920, 1080);
+		const indirect = desertRun('null3d', 1920, 1080);
+		const three = desertRun('three.js r187 meshlets', 1920, 1080);
+		if (!direct.desert || !indirect.desert || !three.desert) throw new Error('no desert figures');
+		direct.desert.settings = { directDraws: true };
+		indirect.desert.settings = { directDraws: false };
+		three.desert.settings = { pipeline: 'meshlets' };
+		expect(drawPathOf(direct.desert)).toBe('direct');
+		expect(drawPathOf(three.desert)).toBe('meshlets');
+		expect(summarizeDesert([indirect, indirect])?.path).toBe('indirect');
+		expect(summarizeDesert([direct, indirect])?.path).toBe('direct, indirect');
+	});
+
+	test('marks a summary whose runs drew different sizes', () => {
+		const summary = summarizeDesert([
+			desertRun('null3d', 1920, 1080),
+			desertRun('null3d', 1280, 720),
+		]);
+		expect(summary?.drawn).toBeNull();
+	});
+});
+
+describe('the computer load', () => {
+	const withLoad = (before: number, after: number): BenchResult => ({
+		...result(1),
+		machineLoad: { before, after },
+	});
+
+	test('gives the range of the load around the pages', () => {
+		const row = summaryRow({ scene: 's1', kind: 'null3d-webgpu' }, [
+			withLoad(3, 4),
+			withLoad(2.5, 5),
+		]);
+		expect(row.machineLoad).toEqual({ lowest: 2.5, highest: 5 });
+		expect(machineLoadLines([row])).toEqual([
+			'The 1-minute load average ran from 2.5 to 5.0 around the pages.',
+		]);
+	});
+
+	test('warns when the load reached the level where timings do not hold', () => {
+		const row = summaryRow({ scene: 's1', kind: 'null3d-webgpu' }, [withLoad(7, 12)]);
+		expect(machineLoadLines([row])[0]).toContain('It reached 8 or more');
+		expect(machineLoadLines([summaryRow({ scene: 's1', kind: 'x' }, [result(1)])])).toEqual([]);
+	});
+
+	test('counts a page as a figure only when it ran clean on a quiet computer', () => {
+		expect(figureProblem(withLoad(7.9, 3))).toBeUndefined();
+		expect(figureProblem(withLoad(3, 10))).toBeUndefined();
+		expect(figureProblem(withLoad(8, 2))).toContain('load was 8.0');
+		const busy = {
+			...withLoad(1, 2),
+			otherWork: { start: [], end: [], during: [{ pid: 7, name: 'indexer', cores: 1.2 }] },
+		};
+		expect(figureProblem(busy)).toContain('indexer (7) 1.20 cores');
+		const rejected = {
+			...withLoad(1, 2),
+			problems: ['console: E1305: the GPU rejected a command'],
+		};
+		expect(figureProblem(rejected)).toContain('E1305');
+		const closing =
+			'failed to load http://localhost:5175/__null3d/report?name=bench: net::ERR_ABORTED';
+		expect(figureProblem({ ...withLoad(1, 2), problems: [closing] })).toBeUndefined();
+		expect(figureProblem({ ...result(1), ok: false, error: 'timed out' })).toBe('timed out');
 	});
 });

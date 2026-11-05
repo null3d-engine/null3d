@@ -3,6 +3,7 @@ import {
 	BUDGET_SHARE,
 	checkOf,
 	DerivedStore,
+	derivedEntries,
 	entryHead,
 	entryName,
 	readEntry,
@@ -242,6 +243,22 @@ describe('the cache of derived data', () => {
 		expect(fileOf(site, 'plants', '3', 'k')?.bytes.length ?? 0).toBe(0);
 		await written;
 		expect(fileOf(site, 'plants', '3', 'k')?.bytes.length).toBeGreaterThan(8);
+	});
+
+	test('counts only whole entries for test pages, not a file whose write never closed', async () => {
+		const site = host();
+		const cache = new DerivedStore(site).namespace('plants', '3');
+		await cache.put('whole', bytes(40));
+		await cache.put('cut', bytes(40));
+		const cut = fileOf(site, 'plants', '3', 'cut') as MemoryFile;
+		cut.bytes = cut.bytes.slice(0, cut.bytes.length - 1);
+		// A write makes its file first, and an engine that stops before the write closes leaves it.
+		const folder = site.folder.at('null3d-derived-1', 'plants', '3') as MemoryFolder;
+		const open = await folder.getFileHandle(entryName('open'), { create: true });
+		await (await open.createWritable()).write(entryHead('open', bytes(40), 0));
+		expect(await derivedEntries('plants', '3', site)).toBe(1);
+		expect(await derivedEntries('terrain', '3', site)).toBe(0);
+		expect(await derivedEntries('plants', '3', undefined)).toBeNull();
 	});
 
 	test('keeps namespaces apart, and gives the same namespace for the same name and version', async () => {

@@ -2,7 +2,7 @@
 
 Status: decided. Built: the level planner and the merging of copies in `assets optimize`. Task: M2-B8.
 
-Summary: `assets optimize --lod` plans levels as Godot does, with normals and colors in the error, and stores each level's error in the mesh's units. 162 of the 213 Kenney models get levels, and 502 of 518 switch cases show no change wider than a pixel's edge. The tool also merges equal meshes, materials, textures and accessors, and takes `--simplify` with an error limit.
+Summary: `assets optimize --lod` plans levels as Godot does, with normals and colors in the error, and stores each level's error in the mesh's units. 162 of the 213 Kenney models get levels, and 502 of 518 switch cases show no change wider than a pixel's edge. Levels halve the mesh down to about 32 triangles, in up to 15 levels. A desert pebble of 20,480 triangles now ends at 40, not 320. The tool also merges equal meshes, materials, textures and accessors, and takes `--simplify` with an error limit.
 
 ## Question
 
@@ -74,6 +74,60 @@ Over the 214 models, merging joined 26 materials. In the Knight, it joined two e
 
 How the data was produced: scripts beside the branch ran the tool's steps on each model (`count.mjs`, `variants.mjs`). A page drew each model at a distance in Chrome (`proto-a3-images.ts`), through the shared run slots. A script that ran the merge, `--simplify` and reorder steps gave the Knight's sizes. S5's images came from `bun run test:images -g " s5 on"`, with the Vite plugin's `assets` option set.
 
+### How far the levels go
+
+The planner first stopped after six levels of halving. A pebble of the desert benchmark, drawn
+60,000 times in instance batches, then ended at 320 triangles, and a boulder at 1,280. From about
+21 m out, every pebble drew those 320 triangles while it covered 1 to 3 pixels. The size rule hid
+it only at about 311 m. That came to about 19 M of null3D's 25.3 M triangles in the aerial view.
+In the walk view it was 5 M to 7 M of 13.5 M.
+
+So the planner now halves down to a floor of 32 triangles. A level of fewer than 64 triangles ends
+the levels, since one more would save too little. The engine takes up to 15 levels below a mesh
+([D-137](D-137-lod-groups.md#how-many-levels-a-mesh-takes)). Halving takes a mesh of about a
+million triangles to the floor in 15 levels. The levels still stop early when a level keeps more
+than three quarters of the level above, as where a locked border stalls the simplifier, or when
+its error reaches the mesh's size.
+
+| Mesh, first of each kind | Base | Six halving levels | Halving to the floor now |
+| --- | --- | --- | --- |
+| Pebble | 20,480 | 10,240 > 5,120 > 2,560 > 1,280 > 640 > 320 | 10,240 > ... > 320 > 160 > 80 > 40 |
+| Boulder | 81,920 | 40,960 > ... > 2,560 > 1,280 | 40,960 > ... > 1,280 > 640 > 320 > 160 > 80 > 40 |
+| Column | 518,688 | 259,344 > ... > 16,208 > 8,104 | 259,344 > ... > 8,104 > 4,052 > 2,026 > 1,012 > 506 > 306 |
+| Arch | 1,023,360 | 511,680 > ... > 31,980 > 15,990 | 511,680 > ... > 15,990 > 7,994 > 3,996 > 1,998 > 998 > 658 |
+
+| Errors in the mesh's integer steps | Halving to the floor now |
+| --- | --- |
+| Pebble | 42.3, 83.1, 172, 339, 635, 953, 1,490, 2,440, 3,660 |
+| Boulder | 31.0, 59.9, 139, 285, 522, 873, 1,470, 2,240, 3,360, 5,040, 7,560 |
+
+The pebble takes 9 levels, and the boulder, the column and the arch take 11 each. The column stops
+at 306 triangles and the arch at 658, whose errors are 93% and 98% of their size. A next level
+would err by more than the mesh's size, which ends the levels.
+
+#### Steeper steps instead of more levels
+
+The engine first took only seven levels below a mesh. So the planner tried halving while the
+levels left could still reach the floor in steps of an eighth, then took steeper steps. That option
+is rejected: the steep steps sat in the middle of the chain, where copies draw at mid distance. A
+boulder went from 5,120 straight to 942, and an arch from 127,920 to 16,086. So the mid level stayed
+in use much farther out. On the desert benchmark's walk view, the pebbles fell from 3.47 M to
+2.19 M triangles, but the boulders rose from 2.57 M to 3.69 M, the arches from 5.15 M to 5.88 M and
+the columns from 0.96 M to 1.07 M, against six halving levels. The coordinator measured those
+figures. A steep step that the simplifier cannot take was also worse than halving. The streamed
+heightfield test model, whose open border stops the simplifier near 516 triangles, stored an
+error of 4,584 steps for those triangles, where halving stores 3,558.
+
+The desert benchmark with the steep chain and with halving to the floor, both on the engine that
+takes 15 levels, gives [D-137](D-137-lod-groups.md#how-many-levels-a-mesh-takes)'s figures.
+
+How the data was produced: `bun packages/cli/bin/null3d.js assets optimize` with `--lod` on the
+desert benchmark's raw props file, through `bench/meshlets/build.ts` of the comparison's checkout,
+on the owner's Mac with no other run beside it. A script read each node's `MSFT_lod` levels and
+`NULL3D_lod_error` from the written file. A unit test in `levels.test.ts` halves a closed sphere of
+32,512 triangles past seven levels down to the floor, with each error at least 1.5 times the one
+above.
+
 ## Decision
 
 The tool plans levels with the settings that the task names, and the data meets the rule:
@@ -85,7 +139,7 @@ The tool plans levels with the settings that the task names, and the data meets 
 Settings:
 
 - Meshes of 64 triangles or more get levels. Below that, a level saves too little vertex work for its extra draw.
-- Each level aims for half the triangles of the level above. The levels stop when one keeps over three quarters, or its error reaches the mesh's size, or after 6 levels.
+- Each level aims for half the triangles of the level above. The levels stop at a floor: a level of fewer than 64 triangles ends them ([How far the levels go](#how-far-the-levels-go)). They also stop after 15 levels, when a level keeps more than three quarters of the level above, or when its error reaches the mesh's size.
 - Welding merges vertices at one place with equal texture coordinates, colors and tangent handedness, and normals within 20 degrees.
 - Texture and color seams hold (lock value 2) when normal seams move.
 - Skinned and morphed meshes add `Regularize`.
@@ -95,7 +149,7 @@ Settings:
 
 ## Consequences
 
-- `packages/cli/src/assets/levels.js` holds the planner, `dedup.js` the merging. The command and the Vite plugin document `--lod`'s rule, and take `--simplify` and `--simplify-error`.
+- The planner lives in `packages/engine/levels/planner.js`, a plain module that the engine exports as `@null3d/engine/levels-planner`. The asset tool runs it from `packages/cli/src/assets/levels.js`, which reads a file's accessors and writes the levels, and the engine runs it on its job workers for meshes made in code ([D-310](D-310-runtime-levels.md)). Both hand it meshoptimizer's simplifier of the pinned version, so one mesh gets one set of levels. `dedup.js` holds the merging. The command and the Vite plugin document `--lod`'s rule, and take `--simplify` and `--simplify-error`.
 - `docs/guides/assets-pipeline.md`, `docs/cli/null3d.md` and `docs/concepts/lod.md` (experimental) describe the levels and the stored error.
 - The engine boxes a loaded skinned model as its joints place it at rest ([D-93](D-93-skinned-meshes-in-batches.md)). A box from the node alone would make the Knight's bounds about 16,000 units wide.
 - M2-I4's screen-error rule reads `NULL3D_lod_error`.

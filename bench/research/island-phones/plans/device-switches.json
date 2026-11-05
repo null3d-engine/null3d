@@ -1,0 +1,6 @@
+[
+	{
+		"name": "device-switches-visitor",
+		"query": "preset=auto&governor=on&fill&dpr=preset&warm=10&seconds=3&steps=base,try:cards1,base,try:lod4,base"
+	}
+]

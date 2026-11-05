@@ -16,7 +16,7 @@ triangles inside its near band at High.
 ## Question
 
 How is the oak's record fitted to its references, and how does a fixed oak draw before the near
-pool exists? The plant core's design (D-305) gives the oak's growth, leaves, wood, material and
+pool exists? The plant core's design (D-323) gives the oak's growth, leaves, wood, material and
 review tool to the packages before it. It leaves this one the oak's own numbers. It also leaves the
 drawing of real shoots near the camera. The owner capped one copy's nearest level at 2.5 M triangles
 at High and a tree kit at 6 MB.
@@ -114,7 +114,7 @@ shoots, pixel by pixel, inside the split. Placements of one species share its 16
 The GPU makes the card atlas's smaller copies by averaging, so a sparse shoot's coverage falls
 under the cutoff a few levels down. The oak's distant crown then let through 42 per cent sky against
 the turning video's 10. The plant shader now adds a quarter of a card texel's coverage back for
-each level of the mip chain it reads. A leaf texture's mips keep their coverage when built (D-310),
+each level of the mip chain it reads. A leaf texture's mips keep their coverage when built (D-324),
 so leaves read theirs plain. Over the turning video the sky fell to 19 per cent.
 The crown's outline overlap rose from 0.56 to 0.70, and its leaf color difference fell from 6.8
 to 3.9.

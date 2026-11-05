@@ -156,6 +156,9 @@ const QUAD: MeshArrays = {
 	normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]),
 	uvs: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]),
 	indices: new Uint16Array([0, 1, 2, 0, 2, 3]),
+	// A card is the far stand-in of a mesh's levels, and the shader turns it to the eye: it takes
+	// no levels of its own.
+	levels: false,
 };
 
 /**

@@ -96,6 +96,9 @@
 //                       off for the offset's own cost, or terrain-shadow, which draws the demo from
 //                       a still camera with the morph on, with it off and with the far cascades kept
 //                       to their turns, for the shadow redraw that a morphing caster causes, or
+//                       island-phones, which times the Island's town view on a phone with each
+//                       part of the scene hidden in turn and with trial changes, from the
+//                       phones study's page (bench/research/island-phones), or
 //                       vegetation-scatter, which places Creek's valley by the vegetation add-on's
 //                       ecological rules and checks the placement against the reference, or
 //                       history-cost, which times a compute pass that keeps its state between frames,
@@ -1149,6 +1152,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'vegetation',
 	'terrain',
 	'terrain-shadow',
+	'island-phones',
 	'vegetation-scatter',
 	'webgpu-stall',
 ]);

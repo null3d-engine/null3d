@@ -156,7 +156,7 @@ pub(super) struct ViewUpload<'a> {
 pub(super) struct PatchView<'a> {
     /// Each cluster bucket's first run, then one past the last.
     starts: &'a [u32],
-    runs: &'a [[u32; 2]],
+    runs: &'a [(u32, u32)],
 }
 
 impl<'a> PatchView<'a> {
@@ -167,16 +167,39 @@ impl<'a> PatchView<'a> {
     };
 
     /// The runs of each cluster bucket, from `starts`.
-    pub(super) const fn new(starts: &'a [u32], runs: &'a [[u32; 2]]) -> Self {
+    pub(super) const fn new(starts: &'a [u32], runs: &'a [(u32, u32)]) -> Self {
         Self { starts, runs }
     }
 
     /// Cluster `cluster`'s chosen runs.
-    fn of(&self, cluster: u32) -> &'a [[u32; 2]] {
+    fn of(&self, cluster: u32) -> &'a [(u32, u32)] {
         let at = cluster as usize;
         let first = self.starts.get(at).copied().unwrap_or(0) as usize;
         let end = self.starts.get(at + 1).copied().unwrap_or(first as u32) as usize;
         self.runs.get(first..end).unwrap_or(&[])
+    }
+}
+
+/// The bytes of one index of a tree's own index list: 32-bit indices reach every vertex of a mesh
+/// that its parts split, which 16-bit ones cannot.
+const TREE_INDEX_BYTES: u32 = 4;
+
+/// The vertex buffer, the index buffer and the index format that a draw binds. A draw of a tree
+/// binds the tree's own index list, over its mesh page's vertices or, for a mesh whose parts lie in
+/// several pages, over the tree's copy of them. Any other draw binds its page's two buffers.
+fn draw_buffers(layout: &Layout, meshes: &MeshBuffers, drawing: &Draw) -> [u32; 3] {
+    let (page_vertices, page_indices) = meshes.ids(drawing.page);
+    match drawing.cluster {
+        Some(cluster) => {
+            let tree = layout.cluster_buckets[cluster as usize];
+            let vertices = if tree.own_vertices {
+                ids::patch_vertices(tree.mesh)
+            } else {
+                page_vertices
+            };
+            [vertices, ids::patch_index(tree.mesh), index_format::UINT32]
+        }
+        None => [page_vertices, page_indices, index_format::UINT16],
     }
 }
 
@@ -295,7 +318,7 @@ fn draw_call(
         if let Some((from, to)) = call.patches {
             let cluster = draws[call.from].cluster.expect("a patch call draws a tree");
             for (k, run) in patches.of(cluster)[from..to].iter().enumerate() {
-                put_u32(counts, k, run[1]);
+                put_u32(counts, k, run.1);
             }
         } else {
             for (k, d) in (call.from..call.to).filter(|&d| visible(d) > 0).enumerate() {
@@ -306,7 +329,7 @@ fn draw_call(
         if let Some((from, to)) = call.patches {
             let cluster = draws[call.from].cluster.expect("a patch call draws a tree");
             for (k, run) in patches.of(cluster)[from..to].iter().enumerate() {
-                put_u32(offsets, k, run[0] * 2);
+                put_u32(offsets, k, run.0 * TREE_INDEX_BYTES);
             }
         } else {
             for (k, d) in (call.from..call.to).filter(|&d| visible(d) > 0).enumerate() {
@@ -334,7 +357,7 @@ fn draw_call(
         let cluster = draws[d].cluster.expect("a patch call draws a tree");
         let instances = visible(d) << shift(d);
         for run in &patches.of(cluster)[from..to] {
-            list.push(Op::DrawIndexed, &[run[1], instances, run[0], 0, 0])?;
+            list.push(Op::DrawIndexed, &[run.1, instances, run.0, 0, 0])?;
         }
     } else {
         for d in (call.from..call.to).filter(|&d| visible(d) > 0) {
@@ -914,15 +937,9 @@ impl Opaque {
                     list.push(Op::SetBindGroup, &[TEXTURES_GROUP, maps, 0])?;
                     textures = maps;
                 }
-                let (vertices, indices) = match drawing.cluster {
-                    Some(cluster) => {
-                        let mesh = layout.cluster_buckets[cluster as usize].mesh;
-                        (meshes.ids(drawing.page).0, ids::patch_index(mesh))
-                    }
-                    None => meshes.ids(drawing.page),
-                };
+                let [vertices, indices, format] = draw_buffers(layout, meshes, &drawing);
                 list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
-                list.push(Op::SetIndexBuffer, &[indices, index_format::UINT16, 0, 0])?;
+                list.push(Op::SetIndexBuffer, &[indices, format, 0, 0])?;
             }
             list.push(
                 Op::SetBindGroup,
@@ -992,15 +1009,9 @@ impl Opaque {
                     )?;
                     textures = drawing.motion_textures;
                 }
-                let (vertices, indices) = match drawing.cluster {
-                    Some(cluster) => {
-                        let mesh = layout.cluster_buckets[cluster as usize].mesh;
-                        (meshes.ids(drawing.page).0, ids::patch_index(mesh))
-                    }
-                    None => meshes.ids(drawing.page),
-                };
+                let [vertices, indices, format] = draw_buffers(layout, meshes, &drawing);
                 list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
-                list.push(Op::SetIndexBuffer, &[indices, index_format::UINT16, 0, 0])?;
+                list.push(Op::SetIndexBuffer, &[indices, format, 0, 0])?;
             }
             list.push(
                 Op::SetBindGroup,
@@ -1106,10 +1117,11 @@ mod tests {
             bucket: 0,
             mesh: 1,
             object: 0,
+            own_vertices: false,
         });
         // Each bucket lists its one source.
         let starts = [0, 1, 2];
-        let runs = [[0, 3]];
+        let runs = [(0, 3)];
         let patch_starts = [0, 1];
         let patches = PatchView::new(&patch_starts, &runs);
         let mut list = DrawList::with_capacity(1024);
@@ -1154,9 +1166,10 @@ mod tests {
             bucket: 0,
             mesh: 1,
             object: 0,
+            own_vertices: false,
         });
         let starts = [0, 1];
-        let runs = [[0, 3]];
+        let runs = [(0, 3)];
         let patch_starts = [0, 1];
         let patches = PatchView::new(&patch_starts, &runs);
         let mut list = DrawList::with_capacity(256);
@@ -1186,7 +1199,7 @@ mod tests {
         let draws = [draw(1, 0), tree];
         // The tree lists one source, as a cluster bucket does.
         let visible = [1, 1];
-        let runs: Vec<[u32; 2]> = (0..300).map(|k| [k * 3, 3]).collect();
+        let runs: Vec<(u32, u32)> = (0..300).map(|k| (k * 3, 3)).collect();
         let starts = [0, 300];
         let patches = PatchView::new(&starts, &runs);
         let mut out = Vec::new();

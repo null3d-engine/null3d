@@ -179,6 +179,6 @@ describe('the stand-ins on the page', () => {
 			});
 		});
 		const floats = new Float32Array(record);
-		expect(hashBytes(new Uint8Array(floats.buffer)) >>> 0).toBe(827153503);
+		expect(hashBytes(new Uint8Array(floats.buffer)) >>> 0).toBe(2053914147);
 	});
 });
