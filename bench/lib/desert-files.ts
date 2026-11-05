@@ -40,14 +40,15 @@ import {
 /**
  * The asset tool's options for each file. The ground, which the scene draws once, gets levels and a
  * tree of cluster patches. The props, which the scene copies many times, get levels, whose large
- * lists the tool also splits into pieces: a mesh with many copies draws whole levels. Both ask for
- * groups, which the props need: a walk's camera stands among thousands of copies, so the nearest
- * few carry most of the frame's triangles and the slots cull them. Neither gets blockers, which
- * only WebGL2's software culling reads, or raycast trees, which nothing here casts.
+ * lists the tool also splits into pieces: a mesh with many copies draws whole levels. Neither asks
+ * for groups: the four nearest copies of a prop carry about 1.8 million triangles, below the 2.4
+ * million that the slot pass must buy back, so its groups would cost bytes and planning for slots
+ * that never open. The cost page's large rock exercises that path instead. Neither gets blockers,
+ * which only WebGL2's software culling reads, or raycast trees, which nothing here casts.
  */
 export const DESERT_ASSET_OPTIONS: Readonly<Record<DesertFile, AssetOptions>> = {
-	ground: { lod: true, clusters: true, blockers: false, bvh: 0, groups: true },
-	props: { lod: true, blockers: false, bvh: 0, groups: true },
+	ground: { lod: true, clusters: true, blockers: false, bvh: 0 },
+	props: { lod: true, blockers: false, bvh: 0 },
 };
 
 /** The folder of the desert's files in a checkout. */
