@@ -3825,7 +3825,21 @@ impl GpuDrivenRenderer {
                     let hidden =
                         |group: u32| textures.group_pass_views(group) & hidden_targets != 0;
                     let counts = direct_draws.then(|| direct.counts(ViewId::CAMERA));
-                    opaque::record_pick(list, ViewId::CAMERA, layout, meshes, counts, &hidden)
+                    // The pick reads the draws that the camera's opaque pass drew.
+                    let first_draw = if camera_two_sets {
+                        layout.draws.len() as u32
+                    } else {
+                        0
+                    };
+                    opaque::record_pick(
+                        list,
+                        ViewId::CAMERA,
+                        layout,
+                        meshes,
+                        counts,
+                        first_draw,
+                        &hidden,
+                    )
                 }
                 Role::PickResolve => {
                     list.push(Op::SetPipeline, &[pick_pipeline])?;

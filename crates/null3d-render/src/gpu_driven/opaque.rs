@@ -420,14 +420,17 @@ pub(super) fn record_direct(
 /// Records a view's pick pass: the draws of every bucket that has a pick build, each with the
 /// pipeline that finds its pixels in the scene's depth, from the view's compacted instances.
 /// `counts` holds each bucket's instance count on the direct-draw path, and `None` reads the
-/// view's indirect draws. A bucket whose pick build binds the material's maps binds them, as a
-/// custom material's pick build does; the pick template reads none.
+/// view's indirect draws from `first_draw` on: the set that the view's opaque pass draws, which
+/// is the second set in a view that culls in two phases. A bucket whose pick build binds the
+/// material's maps binds them, as a custom material's pick build does; the pick template reads
+/// none.
 pub(super) fn record_pick(
     list: &mut DrawList,
     view: ViewId,
     layout: &Layout,
     meshes: &MeshBuffers,
     counts: Option<&[u32]>,
+    first_draw: u32,
     hidden: &dyn Fn(u32) -> bool,
 ) -> Result<(), RecordError> {
     let draws = Draws {
@@ -439,7 +442,7 @@ pub(super) fn record_pick(
         // A pick build draws the frame group alone: its pipelines take no maps' group, so they
         // never take the frame group of parallax either.
         parallax_frame: 0,
-        first_draw: 0,
+        first_draw,
         hidden,
         counts,
         motion: None,
