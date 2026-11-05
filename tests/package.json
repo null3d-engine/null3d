@@ -3,7 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"test": "playwright test"
+		"test": "NODE_OPTIONS=--conditions=null3d-source playwright test"
 	},
 	"devDependencies": {
 		"@needle-tools/three-animation-pointer": "1.1.3",
