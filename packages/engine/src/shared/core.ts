@@ -895,8 +895,6 @@ export interface CoreGlue extends CoreErrors {
 	setScenePassEnabled(place: number, enabled: boolean): number;
 	/** Gives the scene pass of a view place a cadence of one frame in `every`, without a compile. */
 	setScenePassEvery(place: number, every: number): number;
-	/** Gives every view its turn in the next frame, whatever its cadence, without a compile. */
-	turnEveryView(): number;
 	/** Creates a texture that shows the target of a scene pass's view place; 0 on failure. */
 	createPassTexture(place: number, width: number, height: number): number;
 	/** The message of the last render graph error, with the passes and resources by name. */
@@ -1573,7 +1571,6 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'removeScenePass',
 	'setScenePassEnabled',
 	'setScenePassEvery',
-	'turnEveryView',
 	'createPassTexture',
 	'renderGraphMessage',
 	'renderGraphDot',

@@ -225,14 +225,6 @@ impl ViewTarget {
         (self.enabled && self.due) || self.emptied
     }
 
-    /// Gives the view its turn in the next frame, whatever its cadence, so that a frame which must
-    /// hold every pass's current image draws it. The cadence keeps its length: the frames after
-    /// this one wait as they did before.
-    pub(crate) fn turn(&mut self) {
-        self.wait = 0;
-        self.due = true;
-    }
-
     /// Moves the view's turns on to the next frame, in which its texture has the size `made`: a
     /// view that draws once in `every` frames draws in the first, then waits `every - 1` frames
     /// after each frame that it draws. A texture of a new size starts its turns again.
