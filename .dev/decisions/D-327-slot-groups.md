@@ -1,4 +1,4 @@
-# D-324: Slots, one copy's level culled group by group
+# D-327: Slots, one copy's level culled group by group
 
 Status: decided and built on WebGPU's indirect path, for the camera's own view, where the view culls in one phase. The groups of a piece are opted into, a model at a time: the asset tool takes `--groups` and the engine takes `buildLevels({ groups: true })`, and both default off, so a model without the opt-in writes pieces alone and plans no groups ([D-307](D-307-mesh-pieces.md)). A layout takes slots only when the copies that would hold them carry about 2.4 million triangles together, which is what buys the pass's fixed cost back; a scene below that takes no slot buckets at all and draws as it did without them. Group-level occlusion, slots for shadow casters, and a check that adapts the slots as a camera moves are not built.
 
