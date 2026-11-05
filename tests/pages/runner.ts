@@ -35,8 +35,12 @@ import {
 } from '../lib/device-record';
 import {
 	type GpuPath,
+	imageBufferFault,
 	type MissingAllowed,
+	needsImageBuffers,
 	pathsToSkip,
+	skippedForImages,
+	skippedForImagesResult,
 	skippedPath,
 	skippedResult,
 } from '../lib/gpu-paths';
@@ -72,6 +76,8 @@ interface PlanItem {
 	gpu?: GpuPath;
 	/** Seconds to wait before the page, so the device cools down. */
 	restSeconds?: number;
+	/** What the command-line tool checks in the result, whose kind tells whether the page draws. */
+	check: unknown;
 }
 
 type Result = { ok: boolean; error?: string } & Record<string, unknown>;
@@ -195,7 +201,7 @@ class RunReport {
 	finish(index: number, result: Result): void {
 		const page = `${this.ids[index]}${result.error ? `: ${result.error}` : ''}`;
 		this.left--;
-		if (skippedPath(result)) {
+		if (skippedPath(result) || skippedForImages(result)) {
 			this.skipped++;
 			this.errors[index] = result.error;
 			this.mark(index, 'skipped');
@@ -470,7 +476,8 @@ async function stopWithoutFrames(run: string, step: string): Promise<never> {
  * frame on top: a canvas hidden under the report barely changes the screen, and a phone may then
  * lower its refresh rate. In a plan that lets the device lack GPU paths, once the capabilities page has reported
  * the device's paths, the page skips each item that needs a path the device lacks: it posts a skip
- * as the item's result, and does not open the item's page. Where the runner tool opens runner pages,
+ * as the item's result, and does not open the item's page. In a plan that lets the browser's image
+ * buffers fail, it skips each item that draws the same way, once that report lists such faults. Where the runner tool opens runner pages,
  * a page that runs in a runner page of its own gets one: before that page and after it, this page
  * posts a handover and stops, and the tool opens a new runner page there. In a plan that asks for
  * it, this page also hands over after it has run that many pages. Pages that it only skips load
@@ -482,6 +489,7 @@ async function runPlan(run: string, from?: number): Promise<void> {
 		reportOnTop?: boolean;
 		measureRefresh?: boolean;
 		skipMissing?: { report: string; allowed: MissingAllowed };
+		skipImageFaults?: { report: string };
 		tabEvery?: number;
 	};
 	await claim(run);
@@ -493,13 +501,17 @@ async function runPlan(run: string, from?: number): Promise<void> {
 		await post(run, 'device', device);
 		if (device.refreshRateHz === null) await stopWithoutFrames(run, 'device');
 	}
-	const { skipMissing } = plan;
-	const reportAt = plan.items.findIndex((item) => item.id === skipMissing?.report);
-	// A run that goes on after the capabilities page reads the paths from the page's stored result.
-	let skip: readonly GpuPath[] =
-		skipMissing && reportAt >= 0 && reportAt < start
-			? pathsToSkip(await storedResult(run, skipMissing.report), skipMissing.allowed)
-			: [];
+	const { skipMissing, skipImageFaults } = plan;
+	const reportId = skipMissing?.report ?? skipImageFaults?.report;
+	const reportAt = plan.items.findIndex((item) => item.id === reportId);
+	let skip: readonly GpuPath[] = [];
+	let imageFault: string | undefined;
+	const readReport = (result: Result | undefined) => {
+		if (skipMissing) skip = pathsToSkip(result, skipMissing.allowed);
+		if (skipImageFaults) imageFault = imageBufferFault(result);
+	};
+	// A run that goes on after the capabilities page reads its report from the page's stored result.
+	if (reportId && reportAt >= 0 && reportAt < start) readReport(await storedResult(run, reportId));
 	/**
 	 * How many pages this runner page ran, and whether the last page it ran wanted a runner page of
 	 * its own.
@@ -509,10 +521,15 @@ async function runPlan(run: string, from?: number): Promise<void> {
 		if (index < start) continue;
 		report.running(index);
 		show(`${report.counts()}; now ${item.id}`);
-		if (item.gpu && skip.includes(item.gpu)) {
-			const result = skippedResult(item.gpu);
-			await post(run, item.id, result);
-			report.finish(index, result);
+		const skipped =
+			item.gpu && skip.includes(item.gpu)
+				? skippedResult(item.gpu)
+				: imageFault && needsImageBuffers(item)
+					? skippedForImagesResult(imageFault)
+					: undefined;
+		if (skipped) {
+			await post(run, item.id, skipped);
+			report.finish(index, skipped);
 			continue;
 		}
 		if (tabs && handsOver(item, ran, plan.tabEvery)) {
@@ -536,7 +553,7 @@ async function runPlan(run: string, from?: number): Promise<void> {
 		ran.lastOwnTab = item.ownTab === true;
 		await post(run, item.id, runnerRefreshHz ? { ...result, runnerRefreshHz } : result);
 		report.finish(index, result);
-		if (skipMissing && index === reportAt) skip = pathsToSkip(result, skipMissing.allowed);
+		if (index === reportAt) readReport(result);
 		show(report.counts());
 		await sleep(PAUSE_BETWEEN_PAGES_MS);
 	}

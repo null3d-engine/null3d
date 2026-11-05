@@ -41,8 +41,6 @@ import {
 	sizesFor,
 	type Upsample,
 } from './lib/proto-s3-scene';
-import { createWebGL2Renderer } from './lib/proto-s3-webgl2';
-import { createWebGPURenderer } from './lib/proto-s3-webgpu';
 import { progress, run, toBase64 } from './lib/result';
 
 const params = new URLSearchParams(location.search);
@@ -386,10 +384,13 @@ function storagePath(renderer: Renderer): Record<string, unknown> {
 
 run('proto-s3', async () => {
 	show(`starting ${tier}`);
-	const renderer =
+	// Only the tier's own renderer loads: the WebGPU one reads WebGPU's globals as it loads, and a
+	// browser without WebGPU has none, so a static import would stop the WebGL2 page from starting.
+	const create =
 		tier === 'webgl2'
-			? await createWebGL2Renderer(samples, copyFormat, structureFormat, grid)
-			: await createWebGPURenderer(samples, copyFormat, structureFormat, grid);
+			? (await import('./lib/proto-s3-webgl2')).createWebGL2Renderer
+			: (await import('./lib/proto-s3-webgpu')).createWebGPURenderer;
+	const renderer = await create(samples, copyFormat, structureFormat, grid);
 	try {
 		if (pictureName) {
 			const image = await onePicture(renderer, pictureName);
