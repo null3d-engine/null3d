@@ -399,10 +399,10 @@ async function startsUnderStrictPolicy(dist: string): Promise<void> {
 /**
  * The features whose shader files the project's service worker caches, as the page uses them: the
  * sprite shaders that the page preloads, and the ambient occlusion and color copy shaders that the
- * preset's screen-space bounce light reads from the first frame. The project's worker holds the
- * same list, `tests/fixtures/fresh-project/public/sw.js`.
+ * preset's screen-space bounce light reads from the first frame, and the preset's GPU occlusion
+ * culling's. The project's worker holds the same list, `tests/fixtures/fresh-project/public/sw.js`.
  */
-const CACHED_FEATURES = ['sprites', 'ao', 'color_copy'];
+const CACHED_FEATURES = ['sprites', 'ao', 'color_copy', 'occlusion'];
 
 /**
  * The project's service worker caches the page and the files of the build's list on the first
