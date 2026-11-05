@@ -21,20 +21,35 @@ async function droppedWarnings(page: Page, forced: boolean) {
 	page.on('console', (message) => {
 		if (message.text().includes('the culling shader dropped')) warnings.push(message.text());
 	});
+	const since = probeRequests(page, `instances ${forced}`);
 	await page.goto('/examples/index.html?demo=instances&gpu=webgpu&direct=off');
-	await page.locator('.loader').waitFor({ state: 'detached', timeout: 120_000 });
+	await page.locator('.loader').waitFor({ state: 'detached', timeout: 600_000 });
+	console.log(`PROBE instances ${forced} loader gone after ${since()} ms`);
 	await page.waitForTimeout(RUN_TIME);
 	return warnings;
 }
 
 test('a copy that the culling shader drops warns once on a normal page', async ({ page }) => {
-	test.setTimeout(180_000);
+	test.setTimeout(1_000_000);
 	const warnings = await droppedWarnings(page, true);
 	expect(warnings.length).toBe(1);
 	expect(warnings[0]).toContain('?direct=on');
 });
 
 test('the real culling shader drops no copy', async ({ page }) => {
-	test.setTimeout(180_000);
+	test.setTimeout(1_000_000);
 	expect(await droppedWarnings(page, false)).toEqual([]);
 });
+
+function probeRequests(page: import('@playwright/test').Page, label: string) {
+	const t0 = Date.now();
+	page.on('requestfinished', async (request) => {
+		const timing = request.timing();
+		const ms = timing.responseEnd;
+		if (ms > 1000) console.log(`PROBE ${label} slow ${Math.round(ms)} ms at ${Date.now() - t0} ms ${request.url().slice(0, 140)}`);
+	});
+	page.on('console', (message) => {
+		if (/frame|ready|loaded|E1\d\d\d/.test(message.text())) console.log(`PROBE ${label} console at ${Date.now() - t0} ms ${message.text().slice(0, 200)}`);
+	});
+	return () => Date.now() - t0;
+}

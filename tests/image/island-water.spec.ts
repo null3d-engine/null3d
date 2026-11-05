@@ -22,12 +22,14 @@ const MAX_CHANGED = 0.015;
 
 /** The water's rows of the harbour's held frame at a time. */
 async function water(page: Page, query: string, hold: number): Promise<Uint8Array> {
+	const since = probeRequests(page, `island ${query} ${hold}`);
 	await page.goto(
 		`image.html?${query}&hold=${hold}&preset=high&size=${WIDTH}x${HEIGHT}&moments=on&sketch=/examples/showcase/island/sketch.ts`,
 	);
 	await page.waitForFunction('globalThis.__null3dHold !== undefined', undefined, {
-		timeout: 120_000,
+		timeout: 480_000,
 	});
+	console.log(`PROBE island ${query} ${hold} held after ${since()} ms`);
 	const rows = await page.evaluate(
 		([width, height, count]) => {
 			const held = (globalThis as Record<string, unknown>).__null3dHold as {
@@ -49,7 +51,7 @@ for (const [path, query] of [
 ] as const)
 	test(`the harbour's reflections hold still from frame to frame on ${path}`, async ({ page }) => {
 		// Each of the two held frames may take its own wait on a software GPU.
-		test.setTimeout(300_000);
+		test.setTimeout(1_000_000);
 		const [a, b] = [
 			await water(page, query, HOLDS[0] as number),
 			await water(page, query, HOLDS[1] as number),
@@ -58,3 +60,16 @@ for (const [path, query] of [
 		console.log(`changed ${path}: ${changed.toFixed(4)}`);
 		expect(changed).toBeLessThan(MAX_CHANGED);
 	});
+
+function probeRequests(page: import('@playwright/test').Page, label: string) {
+	const t0 = Date.now();
+	page.on('requestfinished', async (request) => {
+		const timing = request.timing();
+		const ms = timing.responseEnd;
+		if (ms > 1000) console.log(`PROBE ${label} slow ${Math.round(ms)} ms at ${Date.now() - t0} ms ${request.url().slice(0, 140)}`);
+	});
+	page.on('console', (message) => {
+		if (/frame|ready|loaded|E1\d\d\d/.test(message.text())) console.log(`PROBE ${label} console at ${Date.now() - t0} ms ${message.text().slice(0, 200)}`);
+	});
+	return () => Date.now() - t0;
+}

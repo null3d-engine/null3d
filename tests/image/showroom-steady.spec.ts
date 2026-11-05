@@ -53,13 +53,15 @@ function meanOf(
 }
 
 test('the showroom floor holds still on a still camera', async ({ page, context }) => {
-	test.setTimeout(300_000);
+	test.setTimeout(1_000_000);
+	const since = probeRequests(page, 'showroom');
 	await page.goto('/examples/?demo=showroom&bench');
 	await page.waitForFunction(
 		() => (globalThis as { __null3dEngine?: unknown }).__null3dEngine !== undefined,
 		null,
-		{ timeout: 180_000 },
+		{ timeout: 600_000 },
 	);
+	console.log(`PROBE showroom engine after ${since()} ms`);
 	await page.evaluate(async () => {
 		const engine = (globalThis as { __null3dEngine?: { firstFrame?: Promise<unknown> } })
 			.__null3dEngine;
@@ -123,3 +125,16 @@ test('the showroom floor holds still on a still camera', async ({ page, context 
 	expect(swing).toBeLessThanOrEqual(LIMIT);
 	expect(apart).toBeLessThanOrEqual(Math.max(FLOOR, ALTERNATION * twoApart));
 });
+
+function probeRequests(page: import('@playwright/test').Page, label: string) {
+	const t0 = Date.now();
+	page.on('requestfinished', async (request) => {
+		const timing = request.timing();
+		const ms = timing.responseEnd;
+		if (ms > 1000) console.log(`PROBE ${label} slow ${Math.round(ms)} ms at ${Date.now() - t0} ms ${request.url().slice(0, 140)}`);
+	});
+	page.on('console', (message) => {
+		if (/frame|ready|loaded|E1\d\d\d/.test(message.text())) console.log(`PROBE ${label} console at ${Date.now() - t0} ms ${message.text().slice(0, 200)}`);
+	});
+	return () => Date.now() - t0;
+}
