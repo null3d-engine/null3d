@@ -143,6 +143,8 @@ function partMesh(
 	const [first, ...rest] = levels;
 	if (!first) return undefined;
 	const base = ctx.geometry.fromArrays(dequantise(first.part.arrays, kit.box, steps));
+	// The part's coarser levels are the plant core's, which grows every level from one skeleton, so
+	// they are set by hand and the engine plans none on top of them.
 	if (rest.length > 0)
 		base.setLevels(
 			rest.map(({ level, part }) => ({
