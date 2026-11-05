@@ -432,7 +432,9 @@ export default defineSketch(async (ctx) => {
 			}
 			case 'bark-base': {
 				const r = stemAt(skeleton, 0.3)?.radius ?? 0.1;
-				return orbit([foot[0], Math.max(0.2, r), foot[2]], 1.5 + r, e, turn, fov);
+				// The foot and its flare, with the ground it stands on: a target low enough that the
+				// roots, the buttresses and the moss of still 14 stay in frame.
+				return orbit([foot[0], 0.35, foot[2]], 2.2 + r, e, turn, fov);
 			}
 			case 'bark-mid': {
 				const y = Math.min(1.5, skeleton.height * 0.3);
