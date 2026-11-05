@@ -5,7 +5,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `clouds`, `probe-cost`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `storage-speed`, `alpha-mask-cost`, `car-paint-cost`, `car-paint-loop`, `impostor-cost`, `impostor-frame`, `canvas-cost`, `object-growth`, `cluster-cost`, `lod-cost`, `wind-field-cost`, `wind-stress`, `two-step`, `demos`, `skyway`, `skyway-stall`, `skyway-soak`, `vegetation`, `vegetation-scatter`, `terrain` and `terrain-shadow`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
+- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `clouds`, `probe-cost`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `storage-speed`, `alpha-mask-cost`, `car-paint-cost`, `car-paint-loop`, `impostor-cost`, `impostor-frame`, `canvas-cost`, `object-growth`, `cluster-cost`, `lod-cost`, `wind-field-cost`, `wind-stress`, `two-step`, `demos`, `skyway`, `skyway-stall`, `skyway-soak`, `vegetation`, `vegetation-scatter`, `terrain`, `terrain-shadow` and `island-phones`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
 - The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is gray while its page waits, yellow while it runs, green when it passes and red when it fails. It is blue-gray when the runner page skips its page, because the device lacks the page's GPU path. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
@@ -302,14 +302,14 @@ The `physical-sky` plan measures what the physical sky costs, for [D-143](decisi
 - The `car-paint-cost` plan measures what the car paint costs at each preset, for [D-255](decisions/D-255-car-paint-glints.md). Its page (`tests/pages/car-paint-cost.html`) fills the view with one panel of the paint add-on. It times that panel against the same clear-coated metal without the flakes, the seams and the weave, in turns. The paint's flakes count their facets for each light, so its cost is per pixel.
 - The page draws none of the preset's own screen-space passes, so a preset changes the pixel count alone. The page holds its render scale with the governor off, and takes the sides in the opposite order on alternate rounds. It measures each side for 1 second, six rounds each, and reports each round's GPU time and each round's difference. Where the browser has a GPU timer, the difference is the paint's cost; without one, the frame interval gives it.
 - The plan runs the page at each preset that a GPU path allows. Core WebGPU runs Low to Ultra. Compatibility mode and WebGL2 cap the preset at Medium. The capabilities page comes first, so a device without WebGPU skips those pages.
-- Run it on a phone with `bun run devices:cloud --only bsgalaxys25-chrome --plan car-paint-cost`. The Mac times the same page in its installed Chrome, in a quiet window: `NULL3D_PAINT_COST=1 bun run test:browser -- car-paint-cost.spec.ts --workers=1`.
+- Run it on a phone with `bun run devices:cloud --only bsgalaxys25-chrome --plan car-paint-cost`. The Mac times the same page in the pinned Chrome for Testing, in a quiet window: `NULL3D_PAINT_COST=1 bun run test:browser -- car-paint-cost.spec.ts --workers=1`.
 - The `car-paint-loop` plan measures the flake count's own steps, apart from the rest of the lobe. Its two pages give the flakes a footprint whose count lands in the exact branch at each buffer the page draws. One catches the light at every flake, so the count takes many steps. The other catches it at none, so the count breaks at its first compare. Each page's difference from its plain side holds what the two share; the difference between those differences is the loop.
 - Run it on a phone with `bun run devices:cloud --only bsgalaxys25-chrome --plan car-paint-loop`, and set `NULL3D_PAINT_VARIANT=loop` or `loop-0` for the Mac.
 
 ## The canvas cost plan
 
 - The `canvas-cost` plan measures what a canvas texture's refresh costs, for [D-204](decisions/D-204-canvas-textures.md). Its page follows a 1024 x 1024 `OffscreenCanvas` from the sketch and refreshes a 256 x 256 rectangle of it at 30 Hz. It times the refresh in the sketch, then reports the frame's GPU and CPU time with refreshes and without them.
-- The plan runs the page on both GPU paths: 2 pages. Run it on an iPad or a phone with `bun run devices:cloud --only bsipadpro13-safari,bsgalaxys24-chrome --plan canvas-cost`. The Mac times the same page in its installed Chrome, in a quiet window: `NULL3D_CANVAS_COST=1 bun run test:browser -- canvas-texture.spec.ts --workers=1`.
+- The plan runs the page on both GPU paths: 2 pages. Run it on an iPad or a phone with `bun run devices:cloud --only bsipadpro13-safari,bsgalaxys24-chrome --plan canvas-cost`. The Mac times the same page in the pinned Chrome for Testing, in a quiet window: `NULL3D_CANVAS_COST=1 bun run test:browser -- canvas-texture.spec.ts --workers=1`.
 
 ## The impostor cost plan
 
@@ -467,7 +467,7 @@ The `physical-sky` plan measures what the physical sky costs, for [D-143](decisi
   it, because such a device takes the analytic tier ([D-265](decisions/D-265-wind-field-first-stage.md)).
 - Run it on the cloud devices with
   `bun run devices:cloud --only bsipadpro13-safari,bsgalaxys25-chrome,bsgalaxytaba9plus-chrome --plan wind-field-cost`.
-  Run it on the Mac in its installed Chrome, in a quiet window, with
+  Run it on the Mac in the pinned Chrome for Testing, in a quiet window, with
   `NULL3D_WIND_FIELD_COST=1 bun run test:browser -- wind-field-cost.spec.ts --workers=1` and
   `NULL3D_WIND_GPU`, `NULL3D_WIND_SHAPES` and `NULL3D_WIND_POINTS` naming its paths, shapes and
   pressure counts.
@@ -509,6 +509,30 @@ The `physical-sky` plan measures what the physical sky costs, for [D-143](decisi
   page reports the draw calls per frame, the GPU time of each pass and the frame interval, so the
   cascades that draw again name themselves in the GPU time. Run it on the Mac in its installed
   Chrome: `bun tests/real-browsers.ts --plan terrain-shadow "Google Chrome"`.
+
+## The Island phones plan
+
+- The `island-phones` plan times the Island's town view on a phone, part by part. Its page is the
+  phones study's page (`bench/research/island-phones`), which holds the camera at the town view and
+  labels each object by the part of the scene that made it. The runner builds the page for
+  production into `target/island-phones` and serves it under the load route.
+- The visits run in this order. The cloud runs' Medium at one pixel per CSS pixel comes first and
+  last, so the run brackets itself against the terrain-batching figures. Then the preset and render
+  scale that a visitor gets, with the governor on. Then Low at the phone's own pixel ratio, with each
+  part hidden in turn and the whole scene between them: the town, the near trees, the far tree cards,
+  the grass, the ground, the water's reflection and the shadows. Then Low with each trial change in
+  turn: cards drawn from one atlas view, no shadow casting cards, a shadow reach of 300 m and of
+  150 m, a reflection every fourth frame, and a level threshold of 4 pixels. Last come Low's
+  start-time choices in turns: as it ships, moment transparency off, the depth prepass on, and as it
+  ships again.
+- Each window lasts five seconds, so a phone at 10 to 20 frames a second still times several frames
+  in each. The page reports the GPU time of each window and of each pass, the frame interval, the
+  triangles and the draws. A visit can take up to 20 minutes, and the plan takes about an hour on a
+  phone of the Galaxy S25's class.
+- Run it on cloud phones with `bun run devices:cloud --only bsgalaxys25-chrome,bsiphone17-safari
+  --plan island-phones`. Apple GPUs time passes that overlap, so on the iPhone read each window's
+  whole GPU time, not its passes. On the Mac, `bench/research/island-phones/scripts/run.ts` runs
+  the same page in Chrome for Testing.
 
 ## The reflection plan
 
@@ -1008,7 +1032,7 @@ Each of these faults stops a device plan or wastes its time. Follow the steps in
 4. **Keep the runner page in front for the whole plan.** A hidden page gets no animation frames. The tablet records "the browser reports the page hidden, so it gets no animation frames" and ends its part early. Do not open Settings to change a setting during a run: change it before, then bring Safari back.
 5. **Turn off the tablet's auto-lock before a plan that lasts hours.** A locked screen stops the frames as surely as a hidden page. The owner's iPad has it off.
 6. **Watch for the runner's "its turn now" line.** The runner does not wait for a device that is not on its page. Bring the page to the front the moment the line appears, or the part ends early.
-7. **A killed build leaves a stale lock, which the next waiter breaks.** The machine-wide locks are `page-build.lock`, `shader-modules.lock` and `typecheck.lock`, under `~/.cache/null3d/`. Each is a folder that holds the process id of its holder (`acquireLock` in `tools/lib/build-cache.ts`). A waiter breaks a lock whose holder has gone at its next look, every 0.2 s, and a lock that names no process after a minute. Its first line names the holder, what it runs and since when. The type check takes its lock around its projects, so commits' hooks at once run one type check at a time. A waiter whose holder is alive waits for it, and its watch reports the holder every two minutes.
+7. **A killed build leaves a stale lock, which the next waiter breaks.** The locks are `page-build.lock` and `typecheck.lock`, one for the whole machine each, and one lock for each set of shader sources in `shader-modules.locks/`, all under `~/.cache/null3d/`. Each is a folder that holds the process id of its holder (`acquireLock` in `tools/lib/build-cache.ts`). A waiter breaks a lock whose holder has gone at its next look, every 0.2 s, and a lock that names no process after a minute. Its first line names the holder, what it runs and since when. The type check takes its lock around its projects, so commits' hooks at once run one type check at a time. A waiter whose holder is alive waits for it, and its watch reports the holder every two minutes.
 8. **The plain server must answer on the IPv4 loopback.** The phone reaches the plain server through a USB forwarding rule, which points at `127.0.0.1`. A server that binds the name `localhost` takes the IPv6 loopback on this Mac, so the forwarded port answers nothing and every phone page fails with `ERR_EMPTY_RESPONSE`. `vite.config.ts` binds every interface for both servers, and such a server also answers the IPv4 loopback. Check the port with `curl http://127.0.0.1:3000/tests/pages/runner.html` before a phone run: a refused connection means the wrong binding, not a dead device.
 9. **Clear the device's tabs before a run.** Close the tablet's runner tabs and force-stop the phone's browser (`adb shell am force-stop com.android.chrome`). An older runner page stays attached to the run it started: it shows that run's count, says "resting", and never takes a page from the new run, which looks exactly like a stalled device. Open the runner page again after the restart, with the runner's exact name.
 10. **Never serve two page-building runs at once from different tools.** The device runner and the bench build their pages into the same output, so a bench run that starts while a device plan is going wipes the pages the plan is serving. The plan's pages then answer with HTTP 404. Run one at a time, or give each its own checkout.

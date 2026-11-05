@@ -3,15 +3,17 @@
 // tools/build-cdn.ts writes: the engine package's built JavaScript, its shader modules, both
 // WebAssembly builds and the vendor files, with the add-ons beside the engine. The page runs in
 // both thread modes that the build supports: single-threaded without the isolation headers, as a
-// page on a site that cannot send them, and threaded with them. A second page draws with the
-// terrain add-on from the same build, on each GPU path that the browser offers.
+// page on a site that cannot send them, and threaded with them. The build has a production entry,
+// which ignores the page's address switches, and a development entry, which reads them. A second
+// page draws with the terrain add-on from the same build, on each GPU path that the browser
+// offers, which the development entry's ?gpu= switch picks.
 
 import { readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { ISOLATION_HEADERS } from '../../packages/vite-plugin/src/index.ts';
-import { buildCdn } from '../../tools/lib/cdn.ts';
+import { buildCdn, filesNamingConstants } from '../../tools/lib/cdn.ts';
 import { GPU_PATH_NAMES, type GpuPath } from '../lib/gpu-paths.ts';
 import { REPO_ROOT } from '../lib/server.ts';
 
@@ -107,13 +109,29 @@ function headersOf(threaded: string | null): Record<string, string> {
 	return threaded === '1' ? { ...ISOLATION_HEADERS } : {};
 }
 
+/** How a run opens the page beyond its thread mode. */
+interface OpenOptions {
+	/** Imports the engine through the page's import map. */
+	readonly mapped?: boolean;
+	/** Imports the development entry in place of the production one. */
+	readonly dev?: boolean;
+	/** Adds the address switch that starts the single-threaded build on an isolated page. */
+	readonly threadsOff?: boolean;
+}
+
 /** Opens the page with the CDN folder as the query names it, and returns what it reports. */
-async function open(page: Page, threaded: boolean, mapped = false): Promise<CdnTryResult> {
+async function open(
+	page: Page,
+	threaded: boolean,
+	options: OpenOptions = {},
+): Promise<CdnTryResult> {
 	const errors: string[] = [];
 	page.on('pageerror', (error) => errors.push(error.message));
 	const query = new URLSearchParams({ cdn: `${cdnOrigin}/` });
 	if (threaded) query.set('threaded', '1');
-	if (mapped) query.set('map', '1');
+	if (options.mapped === true) query.set('map', '1');
+	if (options.dev === true) query.set('dev', '1');
+	if (options.threadsOff === true) query.set('threads', 'off');
 	await page.goto(`${pageOrigin}/?${query}`);
 	await page.waitForFunction(
 		() => 'cdnTry' in globalThis || 'cdnTryError' in globalThis,
@@ -128,26 +146,53 @@ async function open(page: Page, threaded: boolean, mapped = false): Promise<CdnT
 	return failure === undefined ? reported : { ...reported, error: failure };
 }
 
-for (const [name, threaded, mapped, build] of [
-	['single-threaded, with no isolation headers', false, false, 'single'],
-	['threaded, with the isolation headers', true, false, 'threaded'],
-	['single-threaded, through an import map', false, true, 'single'],
+/** The checks that the page's frame answers in every case: the box covers the frame's center. */
+function expectBox(result: CdnTryResult): void {
+	expect(result.width * result.height).toBeGreaterThan(0);
+	// The box's orange, not the dark background.
+	const [red, green, blue, alpha] = result.center;
+	expect(red).toBeGreaterThan(100);
+	expect(red).toBeGreaterThan(blue + 40);
+	expect(green).toBeGreaterThan(blue);
+	expect(alpha).toBeGreaterThan(200);
+}
+
+test('no code of either entry reads a build constant that nothing defined', () => {
+	// An undefined constant makes the engine count as a development build, so a production entry
+	// that kept one would run every development check and read the address switches.
+	expect(filesNamingConstants(BUILD)).toEqual([]);
+});
+
+for (const [name, threaded, options, build] of [
+	['single-threaded, with no isolation headers', false, {}, 'single'],
+	['threaded, with the isolation headers', true, {}, 'threaded'],
+	['single-threaded, through an import map', false, { mapped: true }, 'single'],
+	// The production entry ignores the switch, as a shipped page must: a link cannot change it.
+	['threaded, ignoring the switch that turns threads off', true, { threadsOff: true }, 'threaded'],
+	['from the development entry, threaded', true, { dev: true }, 'threaded'],
+	// The development entry reads the page's address switches.
+	[
+		'from the development entry, which turns threads off for the switch',
+		true,
+		{ dev: true, threadsOff: true },
+		'single',
+	],
+	[
+		'from the development entry, through an import map',
+		false,
+		{ dev: true, mapped: true },
+		'single',
+	],
 ] as const)
 	test(`a single HTML file draws a scene from the CDN, ${name}`, async ({ page }) => {
 		test.setTimeout(3 * 60_000);
-		const result = await open(page, threaded, mapped);
+		const result = await open(page, threaded, options);
 		console.log(`cdn-script-tag ${name}: ${JSON.stringify(result)}`);
 		expect(result.error).toBeUndefined();
 		expect(result.build).toBe(build);
-		expect(result.threaded).toBe(threaded);
-		expect(result.mapped).toBe(mapped);
-		expect(result.width * result.height).toBeGreaterThan(0);
-		// The box covers the center of the frame: its orange, not the dark background.
-		const [red, green, blue, alpha] = result.center;
-		expect(red).toBeGreaterThan(100);
-		expect(red).toBeGreaterThan(blue + 40);
-		expect(green).toBeGreaterThan(blue);
-		expect(alpha).toBeGreaterThan(200);
+		expect(result.threaded).toBe(build === 'threaded');
+		expect(result.mapped).toBe('mapped' in options);
+		expectBox(result);
 	});
 
 /** What the add-on's page reports after it draws. */
@@ -171,11 +216,22 @@ const TIER_OF: Readonly<Record<GpuPath, CdnAddonResult['tier']>> = {
 	webgl2: 'webgl2',
 };
 
-/** Opens the add-on's page on one GPU path, and returns what it reports. */
-async function openAddon(page: Page, tier: GpuPath, threaded: boolean): Promise<CdnAddonResult> {
+/**
+ * Opens the add-on's page on one GPU path, from the development entry, whose code reads the ?gpu=
+ * switch that picks the path. With no path, it opens the production entry, which picks its own.
+ */
+async function openAddon(
+	page: Page,
+	tier: GpuPath | null,
+	threaded: boolean,
+): Promise<CdnAddonResult> {
 	const errors: string[] = [];
 	page.on('pageerror', (error) => errors.push(error.message));
-	const query = new URLSearchParams({ cdn: `${cdnOrigin}/`, gpu: tier });
+	const query = new URLSearchParams({ cdn: `${cdnOrigin}/` });
+	if (tier !== null) {
+		query.set('gpu', tier);
+		query.set('dev', '1');
+	}
 	if (threaded) query.set('threaded', '1');
 	await page.goto(`${pageOrigin}/cdn-addon.html?${query}`);
 	await page.waitForFunction(
@@ -226,5 +282,15 @@ test('a page draws with an add-on from the CDN, single-threaded with no isolatio
 	expect(result.tier).toBe('webgl2');
 	expect(result.build).toBe('single');
 	expect(result.threaded).toBe(false);
+	expectGround(result);
+});
+
+test('a page draws with an add-on from the production entry, threaded', async ({ page }) => {
+	test.setTimeout(6 * 60_000);
+	const result = await openAddon(page, null, true);
+	console.log(`cdn-addon production: ${JSON.stringify(result)}`);
+	expect(result.error).toBeUndefined();
+	expect(result.build).toBe('threaded');
+	expect(result.threaded).toBe(true);
 	expectGround(result);
 });

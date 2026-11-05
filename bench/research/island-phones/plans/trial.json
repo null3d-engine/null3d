@@ -1,0 +1,6 @@
+[
+	{
+		"name": "trial-medium-384x832",
+		"query": "preset=medium&w=384&h=832&warm=20&seconds=3&steps=base,ground,town,trees.shrubs.cypress.cards.grass,water.reflection"
+	}
+]

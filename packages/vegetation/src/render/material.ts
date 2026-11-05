@@ -209,6 +209,9 @@ export function plantGeometry(ctx: SketchContext, arrays: QuantisedArrays): Mesh
 		uvs1: { array: arrays.uvs1, normalized: true },
 		colors: arrays.colors,
 		indices: arrays.indices,
+		// The plant core grows its own levels, tiers and far cards from the skeleton, and the plant
+		// shader sways every vertex, so the engine plans no levels of its own for the mesh.
+		levels: false,
 	});
 }
 
@@ -227,6 +230,9 @@ export function prototypeGeometry(ctx: SketchContext, arrays: PrototypeArrays): 
 		uvs1: arrays.uvs1,
 		colors: arrays.colors,
 		indices: arrays.indices,
+		// A prototype has a mesh for each tier, which the plant core picks, and the plant shader
+		// sways every vertex, so the engine plans no levels of its own for the mesh.
+		levels: false,
 	});
 }
 

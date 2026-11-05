@@ -83,13 +83,15 @@ export interface RunOptions {
 	renderScale: number | null;
 }
 
-/** The value of a switch that must be one of a few words. */
+/** The value of a switch that must be one of a few words, or `fallback` when the address has none. */
 export function readChoice<T extends string>(
 	params: URLSearchParams,
 	name: string,
 	choices: readonly T[],
+	fallback?: T,
 ): T {
 	const value = params.get(name);
+	if (value === null && fallback !== undefined) return fallback;
 	const choice = choices.find((c) => c === value);
 	if (choice === undefined) {
 		const options = choices.map((c) => `?${name}=${c}`).join(' or ');

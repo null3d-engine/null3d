@@ -10,6 +10,13 @@
 // it costs far less than the build. A lock file makes processes that start together, such as
 // Playwright's web servers, run one build between them.
 //
+// The shared cache's folders are told apart by the bytes of the compiled shader build program and
+// the shader sources that the build reads, not by a hash of the compiler's sources. A compiler
+// source change that leaves the program identical, such as a comment, writes the same modules, so
+// the set is reused; a change that alters the program or a shader gives another folder. The
+// program of these sources is kept beside the entries it wrote, so a tree whose sources were built
+// before reads its bytes without a compile.
+//
 // The build itself keeps each entry's compiled output in a per-entry cache, keyed by the entry's
 // source, its manifest table and the library modules it imports. A change to one shader compiles
 // only that shader, and a change to a library module compiles only the entries that import it. The
@@ -26,15 +33,7 @@
 // comments and without the white space between tokens, so an edit that leaves every token in place
 // reuses the entry.
 import { spawnSync } from 'node:child_process';
-import {
-	existsSync,
-	mkdirSync,
-	readdirSync,
-	readFileSync,
-	renameSync,
-	rmSync,
-	statSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { copyInPlace, linkInPlace } from './atomic-files';
 import {
@@ -90,6 +89,8 @@ export const entryCacheDir = (): string => cacheDir('shader-cache');
 interface ModuleRecord {
 	inputs: string;
 	modules: string;
+	/** The folder of the shared cache that this set came from, by its name. */
+	set?: string;
 	/** The module files of the set, so a run that must not build can name the files it lacks. */
 	names?: readonly string[];
 	/** The hash of each module file's name, size and time of change, as `moduleStats` gives it. */
@@ -339,22 +340,15 @@ function permutationListText(): Buffer {
  * shader build's hash, so a changed list builds again. Without a list the hash stays the one that
  * every full build records, so a full set that a build before this one wrote is reused. The list
  * never joins another crate's hash, such as the engine core's source stamp.
+ *
+ * For the shader build this names the source state of a checkout, which its record and CI's cache
+ * keys carry. The shared cache's folders are named by `moduleSetKey`, which reads the compiler's
+ * program bytes in place of its sources.
  */
 export function inputHash(root: string, crate = SHADER_CRATE): string {
 	const files = hashOf(
 		...inputFiles(root, crate).flatMap((file) => [file, inputContent(root, file, crate)]),
 	);
-	const list = crate === SHADER_CRATE ? permutationListText() : Buffer.alloc(0);
-	return list.length === 0 ? files : hashOf(files, list);
-}
-
-/**
- * The input hash that a build computed before the lock was narrowed to the crate's closure. The
- * shared set cache adopts a folder under this key, so the narrowing does not discard the set that
- * the last build wrote.
- */
-function wholeLockInputHash(root: string, crate = SHADER_CRATE): string {
-	const files = hashFiles(root, inputFiles(root, crate));
 	const list = crate === SHADER_CRATE ? permutationListText() : Buffer.alloc(0);
 	return list.length === 0 ? files : hashOf(files, list);
 }
@@ -378,6 +372,13 @@ export function compilerFiles(root: string): string[] {
 	);
 }
 
+/** The files whose contents the build writes into the modules: the manifest and every WGSL source. */
+function shaderSourceFiles(root: string): string[] {
+	return inputFiles(root).filter(
+		(file) => file === MANIFEST || file.startsWith(`${SHADER_FOLDER}/`),
+	);
+}
+
 /**
  * The stamp of the compiler's sources: a hash of every file that may change how it compiles, with
  * the lock narrowed to the entries that the shader crate's dependency closure reaches. It names the
@@ -390,6 +391,43 @@ export function compilerStamp(root: string): string {
 	return hashOf(
 		...compilerFiles(root).flatMap((file) => [file, inputContent(root, file, SHADER_CRATE)]),
 	);
+}
+
+/**
+ * The fingerprint of the program that compiles this tree: a hash of its bytes. A program that this
+ * machine already built from these sources serves, and one that cargo builds is kept under the
+ * stamp, so a later source change that leaves the program identical reads the same fingerprint
+ * without compiling again.
+ */
+function compilerFingerprint(root: string): string {
+	const kept = shaderCacheOff()
+		? shaderProgram(root)
+		: shaderProgram(root, join(entryCacheDir(), compilerStamp(root)));
+	return programFingerprint(kept);
+}
+
+/**
+ * The key of the module set that the build writes: the bytes of the compiler's program, the shader
+ * sources the build reads and the permutation list. A compiler source change that leaves the
+ * program identical, such as a comment, keeps the key and reuses the set; a change that alters the
+ * program, a shader source or the list gives another key, and the build writes a set of its own.
+ */
+export function moduleSetKey(root: string): string {
+	return hashOf(
+		compilerFingerprint(root),
+		...shaderSourceFiles(root).flatMap((file) => [file, readFileSync(join(root, file))]),
+		permutationListText(),
+	);
+}
+
+/**
+ * The shared cache folder that this checkout's module set came from, or that a build now writes:
+ * the folder its record names, so a checkout that already read or wrote a set answers without a
+ * compile, else the folder that this compiler's program chooses.
+ */
+export function moduleSetFolder(root: string): string {
+	const recorded = readRecord(root)?.set;
+	return join(modulesCacheDir(), recorded ?? moduleSetKey(root));
 }
 
 /**
@@ -514,17 +552,23 @@ function staleSetMessage(root: string): string {
 	);
 }
 
-/** The machine-wide lock of shader builds. */
-const shaderLock = () => join(cacheRoot(), 'shader-modules.lock');
+/**
+ * The lock of the shader builds of one set of inputs, in the shared cache so that every checkout
+ * sees it. Two builds of the same inputs would write the same set, so the second waits and then
+ * takes the set that the first stored. Builds of other inputs take other locks and run side by
+ * side: each file that they share in the cache takes its place by a rename from a name of the
+ * writer's own, and each checkout builds the compiler in its own target folder.
+ */
+export function shaderLock(inputs: string): string {
+	return join(cacheRoot(), 'shader-modules.locks', `${inputs}.lock`);
+}
 
 /**
- * Runs the work while this process holds the lock. A process that finds the lock waits for its
- * holder, and takes over a lock whose holder has stopped. The lock lives in the shared cache, not
- * in the checkout, because two shader builds from two checkouts at once leave each of them at about
- * zero processor time and neither finishes.
+ * Runs the work while this process holds the lock of `inputs`. A process that finds the lock waits
+ * for its holder, and takes over a lock whose holder has stopped.
  */
-function withLock(work: () => void): void {
-	const release = acquireLock(shaderLock());
+function withLock(inputs: string, work: () => void): void {
+	const release = acquireLock(shaderLock(inputs));
 	try {
 		work();
 	} finally {
@@ -546,21 +590,24 @@ export function announceColdBuild(entries: string): void {
 
 /**
  * Brings the shader modules up to date as `ensureShaderModules` does, unless that needs a build
- * while another process holds the machine's shader lock and this checkout already holds a whole
- * set. It then keeps that set, which does not match the sources, says so, and returns false; it
- * returns true when the modules match. A commit's type check takes this path, so that it does not
- * wait for another checkout's shader build, which can hold the lock for many minutes: a landing's
- * commit can wait 8 minutes behind a helper's build, at no processor time.
+ * while another process holds the shader lock of these inputs and this checkout already holds a
+ * whole set. It then keeps that set, which does not match the sources, says so, and returns false;
+ * it returns true when the modules match. A commit's type check takes this path, so that it does
+ * not wait for another checkout's build of the same sources, which can hold the lock for many
+ * minutes: a landing's commit can wait 8 minutes behind a helper's build, at no processor time.
  */
 export function shaderModulesUnlessBusy(root: string): boolean {
 	refuseInQuietWindow('The shader build');
 	const inputs = inputHash(root);
-	if (isFresh(root, inputs) || restoreFromCache(root, inputs)) return true;
-	const holder = freshShadersRequired() ? undefined : liveLockHolder(shaderLock());
+	if (isFresh(root, inputs)) return true;
+	// A run that takes the modules from the build job has no toolchain to name the compiler with,
+	// and its set must match its record or stop the run, so it never reads the shared cache.
+	if (!freshShadersRequired() && restoreFromCache(root, inputs)) return true;
+	const holder = freshShadersRequired() ? undefined : liveLockHolder(shaderLock(inputs));
 	if (holder !== undefined && folderIsComplete(join(root, MODULE_DIR))) {
 		const who = holder > 0 ? `process ${holder}` : 'another process';
 		console.error(
-			`The shader modules in ${MODULE_DIR} do not match this checkout's shader sources, and ${who} holds the machine's shader lock for a build of its own, so this check reads the modules in place instead of waiting.`,
+			`The shader modules in ${MODULE_DIR} do not match this checkout's shader sources, and ${who} holds the shader lock of these sources for a build of its own, so this check reads the modules in place instead of waiting.`,
 		);
 		return false;
 	}
@@ -841,40 +888,13 @@ function placeModule(): (source: string, path: string) => void {
 }
 
 /**
- * Adopts the set that the whole-lock key holds when the closure's key holds none, so the narrowing
- * does not discard the set that the last build wrote. The move renames a folder in the shared cache,
- * so it copies no byte, and it runs only while the closure's key holds no set.
- *
- * Two processes of this code that adopt at once are safe: the loser's rename throws, and it then
- * finds the winner's folder at the new path. The sharp case is a build in a checkout that still runs
- * the old code: the rename moves the folder out from under that build, so a later write of it fails
- * with a mount-not-found (ENOENT) error, and that one run fails loudly. The set of the new key stays
- * safe, because the record check makes a partly moved folder a miss.
- *
- * A later change removes this once every checkout and CI cache holds a set under the closure's key;
- * until then it keeps a warm machine from building again at the change.
- */
-function adoptWholeLockSet(root: string, inputs: string): void {
-	const folder = join(modulesCacheDir(), inputs);
-	if (existsSync(folder)) return;
-	const whole = join(modulesCacheDir(), wholeLockInputHash(root));
-	if (!existsSync(whole)) return;
-	try {
-		renameSync(whole, folder);
-	} catch {
-		// Another process adopted the set first, or the move failed: a set under the closure's key
-		// reads as usual, and without one the build runs.
-	}
-}
-
-/**
- * Puts the modules of these inputs in place from the shared cache, when it holds them, so a
+ * Puts the modules of this source state in place from the shared cache, when it holds them, so a
  * checkout with none builds nothing. Returns true when it did.
  */
 function restoreFromCache(root: string, inputs: string): boolean {
 	const dir = modulesCacheDir();
-	adoptWholeLockSet(root, inputs);
-	const cache = join(dir, inputs);
+	const set = moduleSetKey(root);
+	const cache = join(dir, set);
 	// A partial entry is a miss, and so is one whose record does not match its files: an entry that a
 	// stopped or two racing builds left half written must never be handed back as a built set.
 	if (!setIsComplete(cache)) return false;
@@ -894,7 +914,7 @@ function restoreFromCache(root: string, inputs: string): boolean {
 	}
 	const modules = moduleHash(root);
 	if (modules === null) return false;
-	writeRecord(root, { inputs, modules, names: moduleNames(root) });
+	writeRecord(root, { inputs, set, modules, names: moduleNames(root) });
 	touchCacheEntry(cache);
 	console.error(`the shader modules came from the shared cache (${dir})`);
 	return true;
@@ -905,7 +925,7 @@ function restoreFromCache(root: string, inputs: string): boolean {
  * record of each file's bytes. The record is what makes a half-copied set, or one whose files were
  * truncated, a miss for the next checkout instead of a set that looks complete.
  */
-function saveToCache(root: string, inputs: string): void {
+function saveToCache(root: string, set: string): void {
 	const folder = join(root, MODULE_DIR);
 	// Only a complete set is stored: a partial set, from a build that wrote less than it declared,
 	// would otherwise be handed to every checkout.
@@ -917,7 +937,7 @@ function saveToCache(root: string, inputs: string): void {
 		record[name] = hashOf(readFileSync(path));
 		return [name, path] as const;
 	});
-	const cache = join(modulesCacheDir(), inputs);
+	const cache = join(modulesCacheDir(), set);
 	if (!copyFolderAtomic(cache, sources)) return;
 	writeFileAtomic(join(cache, SET_RECORD), `${JSON.stringify(record, null, '\t')}\n`);
 	touchCacheEntry(cache);
@@ -946,22 +966,22 @@ export function ensureShaderModules(root: string): boolean {
 	const inputs = inputHash(root);
 	if (isFresh(root, inputs)) return false;
 	if (freshShadersRequired()) throw new Error(staleSetMessage(root));
-	// A set that the shared cache holds needs no build, so it is taken without the lock, which
-	// keeps two builds from running at once: a checkout whose set is cached never waits for
-	// another checkout's build. Each module takes its place whole, and a set that lacks its record
-	// is a miss, so a restore beside a build that stores the same set reads the whole set or nothing.
+	// A set that the shared cache holds needs no build, so it is taken without the lock: a checkout
+	// whose set is cached never waits for a build. Each module takes its place whole, and a set that
+	// lacks its record is a miss, so a restore beside a build that stores the same set reads the
+	// whole set or nothing.
 	if (restoreFromCache(root, inputs)) return false;
-	// A build holds the machine-wide lock, so a queue job that starts one holds every other build
-	// back for however long the queue runs it at background priority: one such build can wait 71
-	// minutes on three hundredths of a second of processor time, while picture runs behind it cannot
-	// start. A job that reaches this line needs a real build, so it stops here and says how to make
-	// the job fast instead of making every other job slow.
+	// A queue job that starts a build holds its slot for however long the queue runs it, and at
+	// background priority one such build can wait 71 minutes on three hundredths of a second of
+	// processor time, while picture runs behind it cannot start. A job that reaches this line needs
+	// a real build, so it stops here and says how to make the job fast instead of making every other
+	// job slow.
 	if (process.env.NULL3D_HEAVY_SLOT)
 		throw new Error(
-			`the shader modules of ${root} are neither built nor cached, and building them inside the job queue holds the machine-wide shader lock for tens of minutes at background priority while every other build waits. Run \`bun tools/shaders.ts\` in that checkout outside the queue first, which takes under two minutes at normal priority, then run this job again. The queue sets NULL3D_HEAVY_SLOT, which is how this check knows it is inside one.`,
+			`the shader modules of ${root} are neither built nor cached, and building them inside the job queue holds a slot of the queue for tens of minutes, and longer at background priority, while other jobs wait for it. Run \`bun tools/shaders.ts\` in that checkout outside the queue first, which takes under two minutes at normal priority, then run this job again. The queue sets NULL3D_HEAVY_SLOT, which is how this check knows it is inside one.`,
 		);
 	let built = false;
-	withLock(() => {
+	withLock(inputs, () => {
 		// Another process may have built them, or another checkout may hold them, while this one waited.
 		if (isFresh(root, inputs)) return;
 		if (restoreFromCache(root, inputs)) return;
@@ -980,9 +1000,10 @@ export function ensureShaderModules(root: string): boolean {
 			throw new Error(
 				'the shader sources changed while the build ran, so the modules are not the ones this build started from; run the command again',
 			);
-		writeRecord(root, { inputs, modules, names: moduleNames(root) });
+		const set = moduleSetKey(root);
+		writeRecord(root, { inputs, set, modules, names: moduleNames(root) });
 		built = true;
-		saveToCache(root, inputs);
+		saveToCache(root, set);
 		pruneCaches();
 	});
 	return built;

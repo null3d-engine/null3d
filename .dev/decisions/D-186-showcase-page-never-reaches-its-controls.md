@@ -2,7 +2,7 @@
 
 Status: decided: the fault is parked, and no fix is built. Task: the showcase controls test on a software GPU.
 
-Summary: On a software GPU the showcase page sometimes never reaches its controls, most often with several pages drawing at once. The same address and browser reach them in four seconds in one run, and never in five minutes in another. The fault is parked as the engine's start on a software GPU: the drawing thread's WebGPU adapter request does not settle, and no test budget covers it.
+Summary: On a software GPU the showcase page sometimes never reaches its controls, most often with several pages drawing at once. The same address and browser reach them in four seconds in one run, and never in five minutes in another. The fault is parked as the engine's start on a software GPU: on CI the sketch's setup does not run at all, and a page that does start stalls later, in the drawing thread's WebGPU adapter request. No test budget covers it.
 
 ## Question
 
@@ -34,6 +34,10 @@ The same request answers at once everywhere else. The page's capability probe, t
 The commit that shows a showcase's controls before the scene is built stalls in the same way, and so does the branch before it. The stall therefore predates that change. With the controls shown early, the overlay appears at 4 to 10 s; the page's first frame still waits on this stall, so a test then fails at its wait for the first frame rather than at its wait for the controls.
 
 How these figures were produced: `CI=1 bunx playwright test image/showcase-hud.spec.ts --workers=1` on a Mac, and a probe page that logged the sketch's steps, the render worker's steps and the graphics process's CPU.
+
+### The CI failures stall earlier still
+
+The CI failures are a stage before the drawing thread's start. In run 41659084006 three of the four showcase HUD jobs failed with the overlay at "Starting the sketch" and the HUD element hidden while carrying its children. The children are made at the start of `startDemo`, before the engine starts, so the page ran and built the controls' container. The controls' message never arrived. The island posts that message synchronously at the start of its setup, before any environment await or scene build, so the sketch's setup did not run on those pages. The fourth job, the toasts test, passed on the same run, so a page's start does complete on CI. The fault is therefore in the sketch worker's start: whether it receives the page's init, starts its core, or loads the island's module. The page's snapshot cannot separate those three; a capture of the worker's console can.
 
 ## Decision
 

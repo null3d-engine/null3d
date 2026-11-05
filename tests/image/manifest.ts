@@ -1739,9 +1739,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// and scaled arm with keepWorld, which then swings with the arm, and bounds that culling tests:
 	// one box that its bounds hide, and one that is never culled.
 	{ name: 'objects', sketch: 'tests/pages/sketches/objects-sketch.ts', hold: 1 },
-	// The room scene: a room whose walls, its occluders, hide most of a field of detailed spheres,
-	// but for a few seen through a doorway. Drawn without occlusion culling, as the references of
-	// its culled copies, with MSAA and with FXAA, whose depth has one sample.
+	// The room scene: a room whose walls hide most of a field of detailed spheres, but for a few
+	// seen through a doorway. Drawn without occlusion culling, as the references of its culled
+	// copies, with MSAA and with FXAA, whose depth has one sample.
 	{
 		name: 'room',
 		sketch: ROOM_SKETCH,
@@ -2517,13 +2517,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// A spot light that projects a picture over its cone: a gobo with a dark cross and border and
 	// colored squares, over a floor, a wall and a sphere in the beam. The map's colors tint the
 	// light, and its pattern shows the projection on both GPU paths and in compatibility mode. The
-	// scene draws no bounce light, which compatibility mode lacks, so every path can draw one picture.
+	// bounce light adds the beam's reflected light to the wall beside the sphere and to the sphere's
+	// lower edge on WebGPU and WebGL2, but not on compatibility mode's 8-bit path (D-284), so every
+	// tier keeps a picture of its own.
 	{
 		name: 'spot-map',
 		sketch: 'tests/pages/sketches/spot-map-sketch.ts',
 		hold: 0,
 		size: [480, 270],
-		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},
 	// The same light with a larger picture, and a reflection probe made after the picture is in the
@@ -2633,14 +2634,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// coarser. The cluster pass runs on WebGPU's indirect path, so the tests force it: the start-up
 	// probe may pick the direct path, which draws the whole levels, and the picture then depends on
 	// which path the probe measured. WebGL2 picks the patches on the job workers, where the device
-	// has `WEBGL_multi_draw`. The first test and the whole-level fallback below draw no bounce
-	// light, as the parity scenes do (36584326) and as the sky comparisons keep the flat sky
-	// (5afb4780): the fallback draws the finest level, the patches stay within the threshold's
-	// error of it, and the bounce light's gather would show their small difference in depth and
-	// normal as a difference in light.
+	// has `WEBGL_multi_draw`.
 	{
 		name: 'cluster',
-		sketch: 'tests/pages/sketches/cluster-sketch.ts?bounce=off',
+		sketch: 'tests/pages/sketches/cluster-sketch.ts',
 		hold: 0,
 		size: [480, 270] as const,
 		switches: ['direct=off'],
@@ -2661,16 +2658,36 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [480, 270] as const,
 		switches: ['direct=off'],
 	},
+	// The ground casts its hills' shadows onto itself from a low sun, in three cascades. Each
+	// cascade draws the patches that its own texels pick, and the camera draws its own. The second
+	// test draws the finest patches in every cascade, and must match the first: a cascade's
+	// patches never shadow the ground that the camera's patches draw by more than the normal bias
+	// hides.
 	{
-		// The whole-level fallback: the switch hides `WEBGL_multi_draw`, so WebGL2 draws the levels
-		// that the asset tool cut from the tree, as a browser without the extension does. The cut
-		// holds the patches that the walk picks at the same threshold, so the picture stays within
-		// the test's tolerance of the patched path's. The probe's answer alone cannot tell the two
-		// pictures apart, so the page also reports the ranges that the frame builder's walk chose:
-		// the fallback draws none, and a renderer that took the patch path reports a count even
-		// where the probe withheld the extension.
+		name: 'cluster-shadows',
+		sketch: 'tests/pages/sketches/cluster-sketch.ts?shadows',
+		hold: 0,
+		size: [480, 270] as const,
+		switches: ['direct=off'],
+	},
+	{
+		name: 'cluster-shadows-fine',
+		sketch: 'tests/pages/sketches/cluster-sketch.ts?shadows&fine',
+		hold: 0,
+		size: [480, 270] as const,
+		switches: ['direct=off'],
+		reference: 'cluster-shadows',
+	},
+	{
+		// The whole-level fallback: the switch hides `WEBGL_multi_draw`, so WebGL2 draws the mesh's
+		// whole levels, as a browser without the extension does. Each level errs by less than a
+		// pixel where it draws, so the picture stays within the test's tolerance of the patched
+		// path's. The probe's answer alone cannot tell the two pictures apart, so the page also
+		// reports the ranges that the frame builder's walk chose: the fallback draws none, and a
+		// renderer that took the patch path reports a count even where the probe withheld the
+		// extension.
 		name: 'cluster-no-multi-draw',
-		sketch: 'tests/pages/sketches/cluster-sketch.ts?bounce=off',
+		sketch: 'tests/pages/sketches/cluster-sketch.ts',
 		hold: 0,
 		size: [480, 270] as const,
 		switches: ['direct=off', 'multidraw=off'],
@@ -3907,11 +3924,12 @@ const PREPASS_SCENES = [
 
 /**
  * The scenes that GPU occlusion culling draws again on the WebGPU tiers, with ?occlusion=on, which
- * must match their images without it. In the room scene, with MSAA and with FXAA, the walls are
- * occluders: hold mode's frame keeps no occluder from a frame before, but the frame read back
- * draws again, and its first phase draws the walls. The other scenes mark no occluder, so they
- * check that a frame without one culls once and draws as before: shadows, see-through objects, an
- * orthographic camera and S2. Every preset leaves GPU occlusion culling off.
+ * must match their images without it. In the room scene, with MSAA and with FXAA, the walls hide
+ * most of the spheres: hold mode's frame keeps no occluder from a frame before, but the frame read
+ * back draws again, and its first phase draws the walls, which the culling chose itself. The other
+ * scenes check shadows, see-through objects, an orthographic camera and S2. The High and Ultra
+ * presets turn GPU occlusion culling on, so every other test on WebGPU at those presets draws with
+ * it too, against the same references.
  */
 const GPU_OCCLUSION_SCENES = ['room', 'room-fxaa', 'shadows', 'transparency', 'ortho-camera', 's2'];
 

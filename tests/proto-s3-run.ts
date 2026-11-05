@@ -10,9 +10,10 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GPU_TIMING_ARGS, launchBrowser } from '../packages/cli/src/browser.js';
+import { GPU_TIMING_ARGS } from '../packages/cli/src/browser.js';
 import { compareImages, percent } from '../packages/cli/src/compare.js';
 import { readPng } from '../packages/cli/src/png.js';
+import { launchRepoBrowser } from './lib/chrome-for-testing.ts';
 import { pageResult } from './lib/page-result.ts';
 import { startServerAt } from './lib/server.ts';
 
@@ -42,7 +43,7 @@ interface Result {
 }
 
 const server = await startServerAt(ROOT, PORT);
-const browser = await launchBrowser('chrome-real-gpu', GPU_TIMING_ARGS);
+const browser = await launchRepoBrowser('chrome-real-gpu', GPU_TIMING_ARGS);
 const runs: { tier: string; rate: number; file: string }[] = [];
 try {
 	for (const tier of tiers) {

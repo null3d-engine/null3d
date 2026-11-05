@@ -735,6 +735,8 @@ export class Terrain {
 				uvs: shape.uvs,
 				targets: slot.record,
 				indices: shape.indices,
+				// The blocks are the terrain's levels: each morphs toward its parent block.
+				levels: false,
 			});
 			const object = this.context.scene.createMesh({
 				mesh,

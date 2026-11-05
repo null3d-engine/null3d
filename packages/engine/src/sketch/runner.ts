@@ -95,9 +95,17 @@ import {
 } from '../shared/images';
 import { MEMORY_AREA_COUNT } from '../shared/memory-area';
 import { MemoryViews } from '../shared/memory-views';
-import { Counter, FrameRecorder, MemoryFigure, PHASE_NAMES, Phase, Role } from '../shared/metrics';
+import {
+	Counter,
+	FrameRecorder,
+	MemoryFigure,
+	PHASE_NAMES,
+	Phase,
+	RingFrames,
+	Role,
+} from '../shared/metrics';
 import type { Recorder, ReplayProgram, ReplayResult } from '../shared/recording';
-import { tasksPending } from '../shared/task-pending';
+import { plansPending, tasksPending } from '../shared/task-pending';
 import { VIDEO_FRAME, type VideoFrameMessage } from '../shared/videos';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import type { WgslUpdate } from '../shared/wgsl-updates';
@@ -119,6 +127,16 @@ const MAX_BATCHES = 256;
  * stopping the hold.
  */
 const TASK_SETTLE_LIMIT_MS = 10_000;
+/**
+ * How long a held frame waits for the level plans of meshes made in code. A plan of a million
+ * triangles takes about six seconds of one job worker on an idle machine, and far longer on a busy
+ * one or behind other tasks, so the limit is a guard against a plan that never answers. A held
+ * frame never draws without the levels that its meshes plan: past the limit, hold mode fails and
+ * names the meshes.
+ */
+const PLAN_SETTLE_LIMIT_MS = 300_000;
+/** How often a held frame that waits for level plans says which meshes still plan. */
+const PLAN_PROGRESS_MS = 10_000;
 const COMMAND_CAPACITY = 1 << 16;
 /** The id of the pointer that a timed script drives, and the bit of its main button. */
 const MAIN_POINTER = 1;
@@ -352,9 +370,10 @@ export class SketchRunner {
 	/**
 	 * The engine's number of the frame it recorded last. The setup's frames, for warm-ups and the
 	 * preset check, count here but not in `time.frame`. The core, the draw lists and the thread that
-	 * draws use these numbers.
+	 * draws use these numbers. `held` is true while hold mode steps the frames, so a mesh that hands
+	 * over its planned levels one a frame takes them all at once.
 	 */
-	private readonly recorded = { frame: 0 };
+	private readonly recorded = { frame: 0, held: false };
 	/** The sketch's `engine.viewport`, which each frame updates in place when the canvas changed. */
 	private readonly viewport = { width: 0, height: 0, pixelRatio: 1 };
 	/** The page's count of canvas size changes when the viewport last read them. */
@@ -409,6 +428,11 @@ export class SketchRunner {
 	private readonly governor = new Governor();
 	/** The governor's part of the frame loop; none in hold mode. */
 	private readonly governorLoop: GovernorLoop | undefined;
+	/**
+	 * The GPU's time for each frame that it finished, which GPU occlusion culling's check compares
+	 * with its passes on and off; none without GPU occlusion culling.
+	 */
+	private readonly frameTimes: RingFrames | undefined;
 	/** The governor's count of changes when the core last took the settings that its steps move. */
 	private stepChanges = 0;
 	/** The budgets' count of changes when the governor last took the steps that they allow. */
@@ -426,7 +450,7 @@ export class SketchRunner {
 	private cascadeBlend = 0;
 	/** The settings of the levels of detail, which the governor's detail steps keep. */
 	private lodThreshold = 1;
-	private lodShadowFactor = 1;
+	private lodShadowThreshold = 1;
 	private lodFade = true;
 	/** Asks the thread that draws for the shader files that the sketch will use. */
 	private readonly preloads: ShaderPreloads;
@@ -547,6 +571,9 @@ export class SketchRunner {
 		glue.setShadowTiles(shadowTiles, shadowTileSize, pointLightShadows);
 		glue.setMorphTargets(morphTargets);
 		if (device.occlusionBuffer > 0) glue.setOcclusionBuffer(device.occlusionBuffer);
+		if (device.gpuOcclusion) glue.setOcclusionReadSlot(Slot.OcclusionRead);
+		if (device.gpuOcclusion && !device.occlusionCheck) glue.holdOcclusionCheck(true);
+		this.frameTimes = device.gpuOcclusion ? new RingFrames(metrics, Role.Completion) : undefined;
 		// Directional lights that name no cascades, map size or hero tile size take the preset's.
 		const values = this.core.callValues();
 		values[0] = shadowCascades;
@@ -1069,7 +1096,7 @@ export class SketchRunner {
 		this.followMovers = settings.followMovingCasters;
 		this.cascadeBlend = settings.shadowCascadeBlend;
 		this.lodThreshold = settings.lodThreshold;
-		this.lodShadowFactor = settings.lodShadowFactor;
+		this.lodShadowThreshold = settings.lodShadowThreshold;
 		this.lodFade = settings.lodFade;
 		this.preloads.setUsable('lod_fade', settings.lodFade);
 		governor.setShadows(settings.shadowFilter, settings.farCascadeInterval, this.followMovers);
@@ -1137,14 +1164,14 @@ export class SketchRunner {
 	}
 
 	/**
-	 * Gives the core how the levels of detail are picked: the threshold after the governor's detail
-	 * steps, the shadows' factor and the fading bands. Returns the core's result: 0 when it took
-	 * them.
+	 * Gives the core how the levels of detail are picked: the threshold in pixels and the shadow
+	 * maps' threshold in texels, both after the governor's detail steps, and the fading bands.
+	 * Returns the core's result: 0 when it took them.
 	 */
 	private setLevelQuality(): number {
 		const values = this.core.callValues();
 		values[0] = this.lodThreshold * this.governor.detailFactor;
-		values[1] = this.lodShadowFactor;
+		values[1] = this.lodShadowThreshold * this.governor.detailFactor;
 		return this.sketch.glue.setLevelQuality(this.lodFade);
 	}
 
@@ -1346,6 +1373,7 @@ export class SketchRunner {
 		this.holding = true;
 		this.time.held = true;
 		this.render.held = true;
+		this.recorded.held = true;
 		try {
 			for (let step = 0; step <= steps; step++) {
 				this.clock.holdStep(step, steps, seconds);
@@ -1417,6 +1445,7 @@ export class SketchRunner {
 			this.time.held = false;
 			this.time.drawn = true;
 			this.render.held = false;
+			this.recorded.held = false;
 		}
 		if (script !== undefined) this.scriptResult = { dumps, problems };
 		Atomics.store(slots, Slot.HeldFrame, held);
@@ -1429,13 +1458,39 @@ export class SketchRunner {
 	 * Waits for the tasks that the sketch queued, which write their answers between frames, so the
 	 * held frame draws what they wrote. A chain of tasks has each one queued before the promise that
 	 * answered before it runs its next code, so the count reaches zero only when the chain is done.
+	 * The level plans of meshes made in code count as tasks until their levels are in, and the wait
+	 * for them goes on past the other tasks' limit: a held frame draws every planned level, or hold
+	 * mode fails and names the meshes that still plan.
 	 */
 	private async settleTasks(): Promise<void> {
-		const deadline = performance.now() + TASK_SETTLE_LIMIT_MS;
+		const start = performance.now();
+		let warned = false;
+		let progressAt = start + PLAN_PROGRESS_MS;
 		while (tasksPending() > 0) {
-			if (performance.now() >= deadline) {
-				console.warn(`hold mode stopped waiting for ${tasksPending()} task(s) that did not answer`);
-				return;
+			const now = performance.now();
+			const planning = plansPending();
+			const others = tasksPending() - planning.length;
+			if (others > 0 && now - start >= TASK_SETTLE_LIMIT_MS) {
+				if (planning.length === 0) {
+					console.warn(`hold mode stopped waiting for ${others} task(s) that did not answer`);
+					return;
+				}
+				if (!warned)
+					console.warn(
+						`hold mode stopped waiting for ${others} task(s) that did not answer, and waits on for the levels of detail of ${planning.length} mesh(es)`,
+					);
+				warned = true;
+			}
+			if (planning.length > 0 && now - start >= PLAN_SETTLE_LIMIT_MS)
+				throw new EngineError(
+					'E1408',
+					`hold mode waited ${PLAN_SETTLE_LIMIT_MS / 1000} seconds for the levels of detail that meshes made in code plan, and these still plan: ${planning.join(', ')}. Pass levels: false for a mesh that a held frame should draw without them.`,
+				);
+			if (planning.length > 0 && now >= progressAt) {
+				console.info(
+					`hold mode waits for the levels of detail of ${planning.length} mesh(es): ${planning.join(', ')}`,
+				);
+				progressAt = now + PLAN_PROGRESS_MS;
 			}
 			await new Promise((resolve) => setTimeout(resolve, 0));
 		}
@@ -1865,6 +1920,8 @@ export class SketchRunner {
 		const joinFailed = Atomics.exchange(slots, Slot.JoinFailed, 0);
 		if (joinFailed !== 0) this.post.dropJoin(joinFailed);
 		const scale = this.renderScale();
+		const times = this.frameTimes;
+		if (times) while (times.step()) glue.gpuFrameTime(times.frame, times.busyUs);
 		const stillEnabled = Atomics.load(slots, Slot.StillOff) === 0;
 		if (stillEnabled !== this.stillEnabled) {
 			this.stillEnabled = stillEnabled;
@@ -1876,8 +1933,7 @@ export class SketchRunner {
 		if (DEV && this.debugDraw) {
 			this.core.refresh();
 			try {
-				if (play) this.debugDraw.flush(width, height);
-				else this.debugDraw.flushWithoutUpdate(width, height);
+				this.debugDraw.flush(width, height, play);
 			} catch (error) {
 				this.report(error);
 			}

@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin, searchForWorkspaceRoot, type UserConfig } from 'vite';
 import { cityServer } from './bench/lib/city-files.ts';
+import { desertServer } from './bench/lib/desert-files.ts';
 import null3d from './packages/vite-plugin/src/index.ts';
 import { loadServer } from './tests/lib/load-server.ts';
 import { reportCollector } from './tests/lib/report-collector.ts';
@@ -22,8 +23,9 @@ import { watchIgnored } from './tools/lib/watch-ignored.ts';
 // .local name. The dev server and `vite preview` also serve the startup build of the engine test page, one
 // address prefix per load, and the pinned sample content under /samples/ from the shared cache,
 // with the environment maps of its HDR files under /sample-environments/ and the KTX2 files of its
-// images under /sample-textures/, and S6's model files, built from the sample content's city
-// layout, to modules that import them. Requests that come through BrowserStack Local's tunnel get
+// images under /sample-textures/, S6's model files, built from the sample content's city
+// layout, to modules that import them, and the desert benchmark's model files under /bench-desert/
+// once a run has built them. Requests that come through BrowserStack Local's tunnel get
 // cache times and compression. The dev server gives the engine the stamp of the core's Rust
 // sources, so a page whose WebAssembly core is older than the checkout fails with E1402. It also
 // names the checkout it serves, so a test run that finds it on its port refuses another checkout's.
@@ -81,6 +83,7 @@ const config: UserConfig = {
 		sampleTexturesServer(import.meta.dirname),
 		coreSourcesServer(import.meta.dirname),
 		cityServer(import.meta.dirname),
+		desertServer(import.meta.dirname),
 		splatStreamServer(),
 		checkoutServer(import.meta.dirname),
 		indexRedirect,

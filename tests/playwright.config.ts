@@ -1,9 +1,10 @@
 import { join } from 'node:path';
 import { defineConfig } from '@playwright/test';
-import { browserOptions, defaultEnvironment } from '../packages/cli/src/browser.js';
+import { defaultEnvironment } from '../packages/cli/src/browser.js';
 import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import { ensureShaderModules } from '../tools/lib/shader-modules.ts';
 import { ALONE_PROJECT_SUFFIX, RUNS_ALONE } from './lib/alone.ts';
+import { repoBrowserOptions } from './lib/chrome-for-testing.ts';
 import {
 	HTTP_PORT,
 	PREVIEW_PORT,
@@ -27,10 +28,10 @@ const ci = Boolean(process.env.CI);
 const neighbourReporter = join(import.meta.dirname, 'lib/neighbour-reporter.ts');
 /**
  * The main project's environment, which names the references that its image tests compare with:
- * SwiftShader in CI, and the real GPU through the installed Google Chrome elsewhere.
+ * SwiftShader in CI, and the real GPU through the pinned Chrome for Testing elsewhere.
  */
 const environment = defaultEnvironment();
-const launchOptions = browserOptions(environment);
+const launchOptions = repoBrowserOptions(environment);
 /** Device pixels per CSS pixel on the screen of the resize tests, as on most phones and laptops. */
 const HIGH_DENSITY_RATIO = 2;
 /** The main project's tests: every test file but those that only the other projects run. */
@@ -86,7 +87,7 @@ const PRODUCTION_SERVER = {
 	// The port, not a page: a CI part builds only the pages that its tests load.
 	port: PREVIEW_PORT,
 	reuseExistingServer: false,
-	// The chain builds seven pages before the preview serves them, and on a slow runner the default
+	// The chain builds eight pages before the preview serves them, and on a slow runner the default
 	// minute runs out partway through: the run then fails as if the server never started, with every
 	// build it finished in the log. A busy CI machine can take the chain past five minutes while each
 	// build is still finishing.

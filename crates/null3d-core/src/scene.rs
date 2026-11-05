@@ -115,11 +115,12 @@
 //!
 //! # Bounds
 //!
-//! Culling tests each object's world bounding sphere. By default it is the mesh's local sphere,
-//! centred on the object's origin with the radius in the local radius array. An object with
-//! [`flags::CUSTOM_BOUNDS`] has a sphere of its own: the local centre array holds its centre. An
-//! object with [`flags::UNCULLED`] gets a world radius of [`UNBOUNDED_RADIUS`], so culling keeps
-//! it wherever it is.
+//! Culling tests each object's world bounding sphere, which the object's world matrix moves from
+//! its local sphere: a centre in the local centre array and a radius in the local radius array.
+//! By default TypeScript writes the mesh's own sphere there, centred on the box around its
+//! vertices. An object with [`flags::CUSTOM_BOUNDS`] has a sphere of its own, which the page or
+//! the animation step writes. An object with [`flags::UNCULLED`] gets a world radius of
+//! [`UNBOUNDED_RADIUS`], so culling keeps it wherever it is.
 
 use std::collections::TryReserveError;
 use std::ops::Range;
@@ -165,10 +166,15 @@ pub mod flags {
     /// Blocks the view on the WebGL2 path: software occlusion culling draws the object's mesh
     /// into a small depth buffer, and hides what lies wholly behind it.
     pub const OCCLUDER: u32 = 1 << 7;
+    /// Never blocks the view on the WebGPU path, where GPU occlusion culling otherwise chooses its
+    /// occluders among every opaque object by their size on the screen.
+    pub const NOT_OCCLUDER: u32 = 1 << 9;
+    /// The bits that mark an object for occlusion culling, or opt it out.
+    pub const OCCLUSION: u32 = OCCLUDER | NOT_OCCLUDER;
     /// The bits that choose the draw tables an object joins, so a change rebuilds them.
     pub const TABLES: u32 = SHADOWS | OUTLINED;
     /// The bits that [`super::op::SET_FLAGS`] changes. The other bits have operations of their own.
-    pub const SETTABLE: u32 = TABLES | BOUNDS | OCCLUDER;
+    pub const SETTABLE: u32 = TABLES | BOUNDS | OCCLUSION;
     /// Keeps its world transform current while an ancestor hides it, because the frame reads it
     /// even then, as a view reads its camera's. Set at creation only. Its ancestors stay current
     /// too, since its transform needs theirs.
@@ -207,14 +213,13 @@ pub mod op {
     /// Skins an object's mesh with an animated instance's joints, or with `a` = 0, stops. `a`: the
     /// animated instance's id plus one. A skinned object has a bounding sphere of its own
     /// ([`super::flags::CUSTOM_BOUNDS`]), which the animation step writes each frame. Stopping
-    /// gives the object its mesh's bounds again, so write the mesh's local radius and a zero
-    /// local centre first.
+    /// gives the object its mesh's bounds again, so write the mesh's local sphere first.
     pub const SET_SKIN: u32 = 11;
     /// Shapes an object's mesh by its morph targets with a block of morph weights, or with `a` =
     /// 0, stops. `a`: the block's id plus one (see [`crate::morph`]). A morphed object has a
     /// bounding sphere of its own ([`super::flags::CUSTOM_BOUNDS`]), which each frame writes from
     /// its weights. Stopping gives the object its mesh's bounds again, unless it is skinned, so
-    /// write the mesh's local radius and a zero local centre first.
+    /// write the mesh's local sphere first.
     pub const SET_MORPH: u32 = 12;
     /// Sets the threshold bias that picks the object's levels of detail. `a`: the bias's bits as a
     /// 32-bit float, above 0. A bias of 1 picks the levels that the quality settings give, a larger
@@ -566,8 +571,8 @@ pub struct SceneStorage {
     rotations: Vec<f32>,
     scales: Vec<f32>,
     local_radii: Vec<f32>,
-    /// The centre of each object's own bounding sphere, 3 floats per slot, read with
-    /// [`flags::CUSTOM_BOUNDS`].
+    /// The centre of each object's local bounding sphere, 3 floats per slot: its mesh's, or its
+    /// own with [`flags::CUSTOM_BOUNDS`].
     local_centers: Vec<f32>,
     render_orders: Vec<f32>,
     /// The threshold bias that picks each object's levels of detail, 1 for none.
@@ -1011,8 +1016,8 @@ impl SceneStorage {
         &mut self.local_radii
     }
 
-    /// The centres of objects' own bounding spheres, 3 floats per slot, which culling uses for
-    /// objects with [`flags::CUSTOM_BOUNDS`].
+    /// The centres of objects' local bounding spheres, 3 floats per slot, which culling moves by
+    /// each object's world matrix.
     pub fn local_centers(&self) -> &[f32] {
         &self.local_centers
     }
@@ -1526,7 +1531,7 @@ impl SceneStorage {
                 *f = (*f & !mask) | (command.b & mask);
                 // A new world bounding sphere, or a new occluder mark, which the WebGPU builder
                 // keeps in the object's entry of its culling table, rewrites the object's data.
-                if mask & (flags::BOUNDS | flags::OCCLUDER) != 0 {
+                if mask & (flags::BOUNDS | flags::OCCLUSION) != 0 {
                     self.dirty.set(slot);
                 }
             }
@@ -2090,16 +2095,13 @@ impl UpdateContext<'_> {
         };
         let object_flags = self.flags[s];
         let visible = parent_visible && object_flags & flags::VISIBLE != 0;
-        let mut sphere = if object_flags & flags::CUSTOM_BOUNDS == 0 {
-            math::world_sphere(&world, self.local_radii[s])
-        } else {
-            let center = [
-                self.local_centers[s * 3],
-                self.local_centers[s * 3 + 1],
-                self.local_centers[s * 3 + 2],
-            ];
-            math::world_sphere_at(&world, center, self.local_radii[s])
-        };
+        // The local sphere's center is the mesh's own, the page's bounds, or a pose's.
+        let center = [
+            self.local_centers[s * 3],
+            self.local_centers[s * 3 + 1],
+            self.local_centers[s * 3 + 2],
+        ];
+        let mut sphere = math::world_sphere_at(&world, center, self.local_radii[s]);
         if object_flags & flags::UNCULLED != 0 {
             sphere[3] = UNBOUNDED_RADIUS;
         }

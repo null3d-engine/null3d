@@ -184,6 +184,7 @@ import {
 	totalSize,
 } from '../packages/cli/src/heap-profile.js';
 import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
+import { chromeForTesting } from '../tests/lib/chrome-for-testing.ts';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
 import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import { attachWorkers, DevTools, evaluate, pagesAt, sleep, within } from './lib/devtools';
@@ -993,7 +994,7 @@ async function main(): Promise<void> {
 	];
 	const browser = swiftShader
 		? await launchChromium({ headless: true, args: [...SWIFTSHADER_ARGS, ...browserArgs] })
-		: await launchInWindow({ channel: 'chrome', args: browserArgs });
+		: await launchInWindow({ ...chromeForTesting(), args: browserArgs });
 	try {
 		const page = await newParkedPage(browser, { viewport: { width: 1400, height: 800 } });
 		const kind = gpu === 'webgl2' ? 'null3d-webgl2' : 'null3d-webgpu';

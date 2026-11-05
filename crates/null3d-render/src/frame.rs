@@ -18,7 +18,7 @@ use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
 use null3d_core::layers::ALL_LAYERS;
-use null3d_core::levels::{FADE_BAND, LevelRule, Switch};
+use null3d_core::levels::{FADE_BAND, LevelRule, LightLens, Switch};
 use null3d_core::lights::{
     AUTO_FALLBACK, FillLight, LightShadow, LightTable, LightView, MAX_FILL_DIRECTIONAL_LIGHTS,
     SunShadow, VisibleLight, farthest_receiver_distance, ladder_distance,
@@ -398,14 +398,25 @@ pub trait FrameBuilder {
     fn visible_entries(&self, _frame: u32) -> Option<u32> {
         None
     }
-    /// The sources inside the camera's frustum that software occlusion culling hid in a recorded
-    /// frame, where the builder culls on the CPU. `None` where the GPU culls.
+    /// The sources inside the camera's frustum that occlusion culling hid: in a recorded frame,
+    /// where the builder culls on the CPU, or in the newest frame whose counts the GPU sent back,
+    /// where GPU occlusion culling runs. `None` where neither runs.
     fn occluded_entries(&self, _frame: u32) -> Option<u32> {
         None
     }
-    /// The ranges of cluster-tree patches that a recorded frame's camera view draws, where the
-    /// builder walks the trees. Zero where the view draws the trees' whole levels. `None` where the
-    /// GPU path picks the patches itself.
+    /// Notes the GPU's time for frame `frame`, from its submit to its completion, in microseconds,
+    /// which GPU occlusion culling's check compares with its passes on and off. Elsewhere it does
+    /// nothing.
+    fn gpu_frame_time(&mut self, _frame: u32, _micros: u32) {}
+    /// Sets the control slot that GPU occlusion culling's reads of its counts raise. Without one,
+    /// its check judges by the frame times alone. Elsewhere it does nothing.
+    fn set_occlusion_read_slot(&mut self, _slot: u32) {}
+    /// Holds GPU occlusion culling's passes on in every frame, without its check's trials, for a
+    /// test that compares the image with culling and without it. Elsewhere it does nothing.
+    fn hold_occlusion_check(&mut self, _held: bool) {}
+    /// The ranges of cluster-tree patches that a recorded frame's views draw, the shadow views
+    /// included, where the builder walks the trees. Zero where the views draw the trees' whole
+    /// levels. `None` where the GPU path picks the patches itself.
     fn patch_ranges(&self, _frame: u32) -> Option<u32> {
         None
     }
@@ -678,7 +689,7 @@ pub(crate) fn clamp_sampler(
 /// The most bytes that a layout's rebuild asks for with plain pushes, for each source: its rows in
 /// the tables, and the old table that a growth copies from. Its buckets are far fewer than its
 /// sources, and fit in the frame's headroom.
-pub(crate) const REBUILD_BYTES_PER_SOURCE: usize = 64;
+pub(crate) const REBUILD_BYTES_PER_SOURCE: usize = 72;
 
 /// The bytes of an ordinary block of an [`UploadArena`]. A larger copy takes a block of its own size.
 const UPLOAD_BLOCK: usize = 256 << 10;
@@ -1359,9 +1370,10 @@ pub struct LevelQuality {
     /// The error in pixels under which a coarser level draws, in the views of cameras, and the
     /// size below which a bound draws nothing. 0 draws every mesh's base level.
     pub threshold: f32,
-    /// What the threshold is multiplied by in the shadow maps' views, so that casters draw a
-    /// coarser level.
-    pub shadow_factor: f32,
+    /// The error in texels of a shadow map under which a caster's coarser level and coarser
+    /// patches draw in that map's view, and the size below which a caster draws nothing there. 0
+    /// draws every caster's base level and finest patches.
+    pub shadow_threshold: f32,
     /// True when a source's distance band fades at each edge. A level's own hand-over fades
     /// where the level says so, whatever this setting.
     pub distance_bands: bool,
@@ -1371,7 +1383,7 @@ impl Default for LevelQuality {
     fn default() -> Self {
         Self {
             threshold: 1.0,
-            shadow_factor: 2.0,
+            shadow_threshold: 1.0,
             distance_bands: true,
         }
     }
@@ -2621,7 +2633,7 @@ impl SceneSettings {
         values: &[f32],
         switches: &[Switch],
         materials: &[u32],
-        fades: u8,
+        fades: u16,
     ) -> Result<(), LevelError> {
         let format = |mesh: u32| Some(self.meshes.mesh(mesh.checked_sub(1)?)?.format);
         let Some(own) = format(base) else {
@@ -2790,12 +2802,36 @@ impl SceneSettings {
         self.level_view_of(source, canvas, quality.threshold, band)
     }
 
-    /// The level inputs of the shadow maps' views: as the camera's view picks, with the threshold
-    /// times the shadow factor, so casters draw a coarser level, and no fading band.
-    pub(crate) fn shadow_level_view(&self, canvas: (u32, u32)) -> LevelRule {
+    /// The level inputs of a shadow map's view through `lens`: a caster draws the coarsest level, and
+    /// the coarsest patches, whose error covers fewer texels of the map than the shadow threshold,
+    /// whatever the camera's distance. A cached shadow map then stays valid while the camera
+    /// moves. Distance bands, and levels given by a distance or by coverage, keep the camera's
+    /// measures, and the view draws no fading band ([`LevelRule::for_light`]).
+    pub(crate) fn shadow_level_view(&self, canvas: (u32, u32), lens: LightLens) -> LevelRule {
         let quality = self.level_quality;
-        let threshold = quality.threshold * quality.shadow_factor.max(1.0);
-        self.level_view_of(self.views.first(), canvas, threshold, 0.0)
+        let camera = self.level_view_of(self.views.first(), canvas, quality.threshold, 0.0);
+        LevelRule::for_light(&camera, lens, quality.shadow_threshold)
+    }
+
+    /// The rule by which shadow view `view` picks its casters' levels and patches in its own texels:
+    /// a cascade of `shadow`'s, or a tile of `tiles`'. `None` for a view that is neither, or a
+    /// tile that does not draw in the frame.
+    pub(crate) fn shadow_rule(
+        &self,
+        view: ViewId,
+        shadow: Option<&crate::shadows::ShadowFrame>,
+        tiles: &crate::shadow_tiles::ShadowTiles,
+        canvas: (u32, u32),
+    ) -> Option<LevelRule> {
+        let lens = match (view.cascade_index(), view.tile_index()) {
+            (Some(cascade), _) => {
+                let shadow = shadow.filter(|shadow| cascade < shadow.cascades.count)?;
+                shadow.lens(cascade)
+            }
+            (None, Some(tile)) => tiles.lens(tile)?,
+            (None, None) => return None,
+        };
+        Some(self.shadow_level_view(canvas, lens))
     }
 
     /// The level inputs of a view drawn from `view`'s camera with `threshold` and `band`.

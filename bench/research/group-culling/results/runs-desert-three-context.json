@@ -1,0 +1,234 @@
+[
+	{
+		"address": "three.html?view=walk&warmup=8&seconds=40&only=ground,arch",
+		"run": 0,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T06:02:19.543Z",
+		"wallSeconds": 58.698,
+		"load": {
+			"before": 7.48974609375,
+			"after": 8.609375
+		},
+		"engine": "three.js r187",
+		"pipeline": "meshlet",
+		"view": "walk",
+		"switches": "?view=walk&warmup=8&seconds=40&only=ground,arch",
+		"copies": 48,
+		"firstFrameMs": 9787.480000004172,
+		"frames": 24446,
+		"presentedFps": 611.15,
+		"intervalMs": {
+			"median": 1.5599999999976717,
+			"p95": 2.3800000000046566,
+			"samples": 24446
+		},
+		"gpuMs": {
+			"median": 1.852013,
+			"p95": 2.513751,
+			"samples": 24392
+		},
+		"gpuRenderMs": {
+			"median": 0.574534,
+			"p95": 0.867195,
+			"samples": 24392
+		},
+		"gpuComputeMs": {
+			"median": 1.322271,
+			"p95": 1.7029729999999998,
+			"samples": 24345
+		},
+		"cpuMs": {
+			"median": 1.1599999964237213,
+			"p95": 1.9199999943375587,
+			"samples": 24446
+		},
+		"triangles": {
+			"median": 530368,
+			"p95": 651328,
+			"samples": 24446
+		},
+		"clusters": 8223,
+		"drawn": {
+			"width": 1920,
+			"height": 1080
+		},
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"problems": []
+	},
+	{
+		"address": "three.html?view=walk&warmup=8&seconds=40&only=ground,boulder",
+		"run": 0,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T06:03:48.851Z",
+		"wallSeconds": 52.617,
+		"load": {
+			"before": 6.80908203125,
+			"after": 7.068359375
+		},
+		"engine": "three.js r187",
+		"pipeline": "meshlet",
+		"view": "walk",
+		"switches": "?view=walk&warmup=8&seconds=40&only=ground,boulder",
+		"copies": 3000,
+		"firstFrameMs": 3857.2949999943376,
+		"frames": 25012,
+		"presentedFps": 625.3,
+		"intervalMs": {
+			"median": 1.5849999999991269,
+			"p95": 1.9349999999994907,
+			"samples": 25012
+		},
+		"gpuMs": {
+			"median": 1.906971,
+			"p95": 2.320421,
+			"samples": 24965
+		},
+		"gpuRenderMs": {
+			"median": 0.609032,
+			"p95": 0.880736,
+			"samples": 24965
+		},
+		"gpuComputeMs": {
+			"median": 1.252023,
+			"p95": 1.431103,
+			"samples": 24906
+		},
+		"cpuMs": {
+			"median": 1.3049999997019768,
+			"p95": 1.6749999970197678,
+			"samples": 25012
+		},
+		"triangles": {
+			"median": 723584,
+			"p95": 1061376,
+			"samples": 25012
+		},
+		"clusters": 15446,
+		"drawn": {
+			"width": 1920,
+			"height": 1080
+		},
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"problems": []
+	},
+	{
+		"address": "three.html?view=walk&warmup=8&seconds=40&only=ground,pebble",
+		"run": 0,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T06:04:42.362Z",
+		"wallSeconds": 53.031,
+		"load": {
+			"before": 7.068359375,
+			"after": 7.3408203125
+		},
+		"engine": "three.js r187",
+		"pipeline": "meshlet",
+		"view": "walk",
+		"switches": "?view=walk&warmup=8&seconds=40&only=ground,pebble",
+		"copies": 60000,
+		"firstFrameMs": 4092.8549999967217,
+		"frames": 18332,
+		"presentedFps": 458.3,
+		"intervalMs": {
+			"median": 2.1200000000026193,
+			"p95": 2.7550000000010186,
+			"samples": 18332
+		},
+		"gpuMs": {
+			"median": 2.497089,
+			"p95": 3.168494,
+			"samples": 18287
+		},
+		"gpuRenderMs": {
+			"median": 1.130276,
+			"p95": 1.681017,
+			"samples": 18287
+		},
+		"gpuComputeMs": {
+			"median": 1.387603,
+			"p95": 1.5233519999999998,
+			"samples": 18242
+		},
+		"cpuMs": {
+			"median": 1.7699999958276749,
+			"p95": 2.344999998807907,
+			"samples": 18332
+		},
+		"triangles": {
+			"median": 2016064,
+			"p95": 2892096,
+			"samples": 18332
+		},
+		"clusters": 29103,
+		"drawn": {
+			"width": 1920,
+			"height": 1080
+		},
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"problems": []
+	},
+	{
+		"address": "three.html?view=walk&warmup=8&seconds=40&only=ground,column",
+		"run": 0,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T06:05:36.176Z",
+		"wallSeconds": 54.008,
+		"load": {
+			"before": 7.3408203125,
+			"after": 8.9501953125
+		},
+		"engine": "three.js r187",
+		"pipeline": "meshlet",
+		"view": "walk",
+		"switches": "?view=walk&warmup=8&seconds=40&only=ground,column",
+		"copies": 420,
+		"firstFrameMs": 5613.519999995828,
+		"frames": 29657,
+		"presentedFps": 741.425,
+		"intervalMs": {
+			"median": 1.3150000000023283,
+			"p95": 1.8849999999983993,
+			"samples": 29657
+		},
+		"gpuMs": {
+			"median": 1.620393,
+			"p95": 1.828013,
+			"samples": 29455
+		},
+		"gpuRenderMs": {
+			"median": 0.49845100000000003,
+			"p95": 0.626073,
+			"samples": 29455
+		},
+		"gpuComputeMs": {
+			"median": 1.108816,
+			"p95": 1.225815,
+			"samples": 29390
+		},
+		"cpuMs": {
+			"median": 0.9849999994039536,
+			"p95": 1.3299999982118607,
+			"samples": 29657
+		},
+		"triangles": {
+			"median": 769280,
+			"p95": 1055168,
+			"samples": 29657
+		},
+		"clusters": 15134,
+		"drawn": {
+			"width": 1920,
+			"height": 1080
+		},
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"problems": []
+	}
+]

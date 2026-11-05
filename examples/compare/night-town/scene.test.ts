@@ -5,12 +5,14 @@ import { createSpriteRows, glowAtlas, puffAtlas, rainAtlas } from '../../lib/par
 import {
 	BLOCK_PITCH,
 	BLOCK_SIZE,
+	type BuildingDesign,
 	buildingDesigns,
 	buildingHeight,
 	CARS_PER_BLOCK,
 	carPose,
 	createNightTown,
 	EXHAUST_PER_CAR,
+	eachWindow,
 	FLICKER_LOW,
 	FLYER_COUNT,
 	FLYER_LANES,
@@ -36,11 +38,15 @@ import {
 	nightMeshes,
 	nightObjects,
 	nightTriangles,
+	PANE_GLASS,
+	PANE_GLASS_GROUND,
 	PARKED_PER_BLOCK,
+	paneWindows,
 	parkedPose,
 	RAIN_BOX,
 	RAIN_DROPS,
 	SIGNS_PER_BLOCK,
+	SLAB_HEIGHT,
 	STEAM_PER_BLOCK,
 	signFlicker,
 	signLight,
@@ -53,6 +59,8 @@ import {
 	writeGlows,
 	writeRain,
 	writeSteam,
+	writeWindowLight,
+	writeWindowPanes,
 } from './scene';
 
 describe('Night town', () => {
@@ -298,6 +306,113 @@ describe('Night town', () => {
 		expect(triangleCount(merged)).toBe(
 			triangleCount(meshes.carBody) + triangleCount(meshes.carCabin),
 		);
+	});
+
+	test('every window is a pane on its building wall, and its light follows the town hash', () => {
+		const town = createNightTown(9);
+		const at = new Float64Array(3);
+		const seen = { upper: 0, ground: 0 };
+		const lit = { upper: 0, ground: 0 };
+		let total = 0;
+		eachWindow(town, 3, 0, (pane) => {
+			total++;
+			const design = town.designs[
+				town.lotDesign[pane.block * LOTS_PER_BLOCK + pane.lot] as number
+			] as BuildingDesign;
+			lotPlace(town, pane.block, pane.lot, at);
+			const yaw = at[2] as number;
+			const dx = pane.x - (at[0] as number);
+			const dz = pane.z - (at[1] as number);
+			const cos = Math.cos(yaw);
+			const sin = Math.sin(yaw);
+			// The pane's place in its building's own frame, which is a box around the lot's middle.
+			const lx = cos * dx - sin * dz;
+			const lz = sin * dx + cos * dz;
+			const offWall = Math.min(
+				Math.abs(Math.abs(lx) - design.width / 2),
+				Math.abs(Math.abs(lz) - design.depth / 2),
+			);
+			expect(offWall).toBeLessThan(0.02);
+			// The face looks out of the wall, away from the building's middle.
+			expect(Math.sin(pane.yaw) * dx + Math.cos(pane.yaw) * dz).toBeGreaterThan(0);
+			// The glass stands above the sidewalk and below the roof.
+			expect(pane.y).toBeGreaterThan(SLAB_HEIGHT);
+			expect(pane.y).toBeLessThan(SLAB_HEIGHT + buildingHeight(design));
+			// The pane's own light is the shader's hash of its bay, floor and lot: a switch.
+			expect(pane.lit === 0 || pane.lit === 1).toBe(true);
+			expect(pane.warm === 0 || pane.warm === 1).toBe(true);
+			expect(pane.cool === 0 || pane.cool === 1).toBe(true);
+			expect(pane.phase).toBeGreaterThanOrEqual(0);
+			expect(pane.phase).toBeLessThan(1);
+			if (pane.ground) {
+				seen.ground++;
+				lit.ground += pane.lit;
+			} else {
+				seen.upper++;
+				lit.upper += pane.lit;
+			}
+		});
+		expect(total).toBe(paneWindows(town, 3, false) + paneWindows(town, 3, true));
+		// The floors above light at a share of their windows, and the shops at most of theirs.
+		expect(lit.upper / seen.upper).toBeGreaterThan(0.2);
+		expect(lit.upper / seen.upper).toBeLessThan(0.6);
+		expect(lit.ground / seen.ground).toBeGreaterThan(0.7);
+		// A shop window is wider than a window above it.
+		expect(PANE_GLASS_GROUND[0]).toBeGreaterThan(PANE_GLASS[0]);
+	});
+
+	test('the pane rows hold one row for each window, and their light changes with the clock', () => {
+		const town = createNightTown(4);
+		const size = (count: number) => ({
+			positions: new Float32Array(count * 3),
+			rotations: new Float32Array(count * 4),
+			scales: new Float32Array(count * 3),
+			values: new Float32Array(count * 4),
+		});
+		const upperCount = paneWindows(town, 3, false);
+		const groundCount = paneWindows(town, 3, true);
+		const upper = size(upperCount);
+		const ground = size(groundCount);
+		expect(
+			writeWindowPanes(
+				town,
+				3,
+				false,
+				upper.positions,
+				upper.rotations,
+				upper.scales,
+				upper.values,
+			),
+		).toBe(upperCount);
+		expect(
+			writeWindowPanes(
+				town,
+				3,
+				true,
+				ground.positions,
+				ground.rotations,
+				ground.scales,
+				ground.values,
+			),
+		).toBe(groundCount);
+		// Each row is a unit turn about +Y, and a quad with a width and a height.
+		for (let k = 0; k < upperCount; k++) {
+			expect(upper.rotations[k * 4]).toBe(0);
+			expect(upper.rotations[k * 4 + 2]).toBe(0);
+			expect(upper.rotations[k * 4 + 1] ** 2 + upper.rotations[k * 4 + 3] ** 2).toBeCloseTo(1, 6);
+			expect(upper.scales[k * 3] as number).toBeGreaterThan(0.5);
+			expect(upper.scales[k * 3 + 1] as number).toBeGreaterThan(0.5);
+			expect(upper.scales[k * 3 + 2]).toBe(1);
+		}
+		// A later time writes the lit value again and leaves the rest of the row alone.
+		const before = upper.values.slice();
+		expect(writeWindowLight(town, 3, false, upper.values, 23)).toBe(upperCount);
+		for (let k = 0; k < upperCount; k++) {
+			expect(upper.values[k * 4] === 0 || upper.values[k * 4] === 1).toBe(true);
+			expect(upper.values[k * 4 + 1]).toBe(before[k * 4 + 1]);
+			expect(upper.values[k * 4 + 2]).toBe(before[k * 4 + 2]);
+			expect(upper.values[k * 4 + 3]).toBe(before[k * 4 + 3]);
+		}
 	});
 
 	test('the textures are made at their sizes, with windows in the facade map', () => {

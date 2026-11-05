@@ -10,7 +10,9 @@ export interface WarmUpResult {
 	/** Pipelines that the first frame built. */
 	firstFramePipelines: number | null;
 	/** The preset in force when the first frame was drawn, which the check may have lowered since. */
-	firstFramePreset?: string | null;
+	firstFramePreset: string | null;
+	/** The preset in force while the sketch added the object and warmed it up. */
+	playPreset: string | null;
 	/** Time from the first build's start until none was building. */
 	warmUpMs: number | null;
 	/** Pipelines built while the scene played. */
@@ -37,59 +39,80 @@ export interface WarmUpResult {
  * at every preset.
  *
  * WebGL2 also builds each scene pipeline with a prepass pair, so ten materials give twenty; WebGPU
- * builds them once each, with a prepass pipeline for the four lit ones where the screen texture reads
- * depth, and the GPU-driven path's nine compute steps; and every path builds the final pass's two
- * builds, its full-precision one and the 8-bit variant that a dropped render scale adds.
+ * builds them once each, with a depth pipeline for each of the scene's four vertex formats where the
+ * screen texture reads depth, and the GPU-driven path's nine compute steps; and every path builds the
+ * final pass's two builds, its full-precision one and the 8-bit variant that a dropped render scale
+ * adds. GPU occlusion culling, which WebGPU draws from High up, adds seven more there, and one to
+ * each object that warms up later.
  */
 const FIRST_FRAME_PIPELINES: Readonly<Record<string, Readonly<Record<string, number>>>> = {
 	webgl2: { low: 22, medium: 28, high: 28, ultra: 28 },
-	webgpu: { low: 21, medium: 21, high: 31, ultra: 31 },
+	webgpu: { low: 21, medium: 21, high: 38, ultra: 38 },
 	'webgpu-compat': { low: 21, medium: 21, high: 21, ultra: 21 },
 };
-/** The preset a page's result names, or the path's first entry when it names none. */
-const presetOf = (tier: string, preset: string | null | undefined): string =>
-	preset !== null && preset !== undefined && preset in (FIRST_FRAME_PIPELINES[tier] ?? {})
-		? preset
-		: 'low';
-/**
- * True where the screen texture's work draws at this path and preset: the bounce light's own rule,
- * which the pipeline count and the added object's pair both follow.
- */
-const screenWork = (tier: string, preset: string): boolean =>
-	tier === 'webgl2'
-		? preset !== 'low'
-		: tier === 'webgpu' && (preset === 'high' || preset === 'ultra');
 /** Pixels the added quad covers at the least, in the page's 320 x 180 capture. */
 const ADDED_PIXELS = 100;
+/**
+ * True where the depth prepass draws at this path and preset. WebGL2's presets draw it at every
+ * preset. The other paths draw it only where the screen texture reads depth, which the preset table
+ * turns on at High and above. Compatibility mode's 8-bit path leaves the light out at every preset.
+ */
+const prepass = (tier: string, preset: string): boolean =>
+	tier === 'webgl2' || (tier === 'webgpu' && (preset === 'high' || preset === 'ultra'));
 
 /**
  * What is wrong with a warm-up page's result on a GPU path; empty when nothing is. The first frame
  * builds the pipelines that its path's groups name, above, less the culling pipeline that a device
  * drawing directly does not build. Play builds none, and the object that the sketch adds builds its
- * material's pair, which is two wherever the screen texture reads depth and one on the 8-bit path.
+ * own pipelines during its warm-up.
+ *
+ * Each count follows the preset in force when its work drew. The first frame draws before the
+ * engine's own preset check can step down, so its count follows the first frame's preset. The added
+ * object warms up during play, after the check, so its count follows the play preset. A result that
+ * names no preset, or one that the table has no count for, fails by name rather than being judged at
+ * another preset's count.
  */
 export function warmUpProblems(result: WarmUpResult, gpu: 'webgpu' | 'webgl2'): string[] {
 	const problems = result.failures.map((code) => `the engine failed with ${code}`);
 	// A page that names no tier of its own is the one that the run asked for.
 	const tier = result.tier in FIRST_FRAME_PIPELINES ? result.tier : gpu;
-	const preset = presetOf(tier, result.firstFramePreset);
-	// WebGL2 draws the depth prepass at every preset, so a material's pair is two there. On the
-	// other paths it is two only where the screen texture reads depth.
-	const perObject = tier === 'webgl2' || screenWork(tier, preset) ? 2 : 1;
-	// A device that culls on the CPU and draws each bucket directly builds no culling pipeline.
-	const driven = FIRST_FRAME_PIPELINES[tier]?.[preset] ?? Number.NaN;
-	const expected = driven - (result.directDraws ? 1 : 0);
-	// A slow device can drop the render scale before the first frame ends, which builds the final
-	// pass's 8-bit variant beside its full-precision one: the count may hold one more.
-	if (result.firstFramePipelines !== expected && result.firstFramePipelines !== expected + 1)
+	const counts = FIRST_FRAME_PIPELINES[tier] ?? {};
+	const known = (preset: string | null): string | null =>
+		preset !== null && preset in counts ? preset : null;
+	const firstFramePreset = known(result.firstFramePreset);
+	const playPreset = known(result.playPreset);
+	const unknown = (work: string, reported: string | null) => {
+		const named = reported === null ? 'no preset' : `the preset '${reported}'`;
 		problems.push(
-			`the first frame built ${result.firstFramePipelines} pipelines, not ${expected} or ${expected + 1}`,
+			`${work} reported ${named}, which this check has no pipeline count for on ${tier}; it needs one of ${Object.keys(counts).join(', ')}`,
 		);
+	};
+	if (firstFramePreset === null) unknown('the first frame', result.firstFramePreset);
+	else {
+		// A device that culls on the CPU and draws each bucket directly builds no culling pipeline.
+		const expected = (counts[firstFramePreset] as number) - (result.directDraws ? 1 : 0);
+		// A slow device can drop the render scale before the first frame ends, which builds the final
+		// pass's 8-bit variant beside its full-precision one: the count may hold one more.
+		if (result.firstFramePipelines !== expected && result.firstFramePipelines !== expected + 1)
+			problems.push(
+				`the first frame built ${result.firstFramePipelines} pipelines at '${firstFramePreset}', not ${expected} or ${expected + 1}`,
+			);
+	}
+	if (playPreset === null) unknown("the object's warm-up", result.playPreset);
+	else {
+		// The added quad is unlit. WebGL2 pairs an opaque pipeline with the prepass's depth pipeline;
+		// the other paths do that only where the depth prepass draws.
+		const perObject =
+			(prepass(tier, playPreset) ? 2 : 1) +
+			(tier === 'webgpu' && prepass(tier, playPreset) ? 1 : 0);
+		if (result.addedPipelines !== perObject)
+			problems.push(
+				`the added object built ${result.addedPipelines} pipelines at '${playPreset}', not ${perObject}`,
+			);
+	}
 	if (result.warmUpMs === null || result.warmUpMs < 0)
 		problems.push('the engine recorded no warm-up time');
 	if (result.playPipelines !== 0) problems.push(`play built ${result.playPipelines} pipelines`);
-	if (result.addedPipelines !== perObject)
-		problems.push(`the added object built ${result.addedPipelines} pipelines, not ${perObject}`);
 	if (result.afterPipelines !== 0)
 		problems.push(`play after the warm-up built ${result.afterPipelines} pipelines`);
 	if (result.magenta < ADDED_PIXELS)

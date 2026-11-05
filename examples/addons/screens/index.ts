@@ -194,6 +194,7 @@ export function createScreen(ctx: SketchContext, options: ScreenOptions = {}): S
 		: null;
 	const material: Material = lcd ?? ctx.materials.unlit({ map: texture });
 	const mesh = ctx.scene.createMesh({
+		// A flat quad of two triangles, which the automatic levels leave whole.
 		mesh: ctx.geometry.plane({ width: across, height: down }),
 		material,
 	});

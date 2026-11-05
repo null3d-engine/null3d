@@ -346,6 +346,7 @@ When a run fails, `bench` says why after the figures of its path, and exits with
 
 ### Measure fairly
 
+- `bench` times a production build, as your users get it. `shot` and `test` run your project's Vite dev server. That is a development build with the engine's checks, so never read frame times from them.
 - Close other busy programs. Programs that use the CPU change the figures from run to run.
 - Compare runs on one computer, one after another.
 - Vite builds `index.html` alone, unless `build.rolldownOptions.input` in your Vite config lists more pages. For a page outside the build, `bench` says so.
@@ -391,7 +392,9 @@ bunx @null3d/cli assets optimize models/ public/models/ --lod --max-texture-size
 
 | Option | Effect | Without it |
 | --- | --- | --- |
-| `--lod` | Adds levels of detail to each mesh of 64 triangles or more, and stores each level's error | No levels |
+| `--lod` | Adds levels of detail to each mesh of 64 triangles or more, and stores each level's error. Sorts each large level into pieces that copies cull one by one | No levels |
+| `--stages` | With `--lod` or `--clusters`, writes finer levels and cluster bands as separate files beside the model, so the page draws a coarse first picture | Levels and bands in the file |
+| `--clusters` | Adds a tree of cluster patches to each large static mesh of 20,000 triangles or more, and gives that mesh the levels that `--lod` makes | No trees |
 | `--simplify <share>` | Keeps this share of each mesh's triangles, from 0 to 1, as far as `--simplify-error` allows | 1: every triangle |
 | `--simplify-error <share>` | The most that `--simplify` may move a mesh's surface, as a share of the mesh's size | 0.01 |
 | `--max-texture-size <pixels>` | The largest side of a texture: a power of two up to 2048 | 2048 |
@@ -402,6 +405,8 @@ bunx @null3d/cli assets optimize models/ public/models/ --lod --max-texture-size
 | `--bvh <triangles>` | Stores the tree that raycasts walk for each mesh part of at least this many triangles, or for none with 0 | 20000 |
 | `--jobs <count>` | The worker threads that encode textures | One per CPU core |
 | `--report <file.json>` | Also writes the budget report as a JSON file | No file |
+
+`--clusters` gives no tree to a mesh that more than four copies in the file draw. The tool cannot see the copies that page code places in an instance batch, so such a mesh still gets a tree. An instance batch always draws whole levels, so its copies draw the levels that `--clusters` writes beside the tree. [Cluster levels](../guides/assets-pipeline.md#cluster-levels) has the detail.
 
 A mesh's glTF extras change two steps for that mesh alone. `"occluder": false` gives it no blocker. `"occluder": true` makes it block with its own triangles when no blocker fits. `"quantizePositions": false` keeps its positions as 32-bit floats. Use it for a mesh that spreads small parts over a large space, such as a city's buildings merged by material. Integer steps would move their corners by centimeters.
 
@@ -498,11 +503,26 @@ Run it after you upgrade the engine alone, or when a page stops with [E1432](../
 
 ## Where the commands draw
 
-`shot`, `test` and `bench` draw with Google Chrome on your computer's GPU. When the `CI` variable is set, they draw with Playwright's Chromium on SwiftShader, a GPU in software. Most CI machines have no GPU. Set `CI=1` to draw the software GPU's images on your own computer:
+`shot`, `test` and `bench` draw with Chrome for Testing on your computer's GPU. When the `CI` variable is set, they draw with Playwright's Chromium on SwiftShader, a GPU in software. Most CI machines have no GPU. Set `CI=1` to draw the software GPU's images on your own computer:
 
 ```sh
 CI=1 bunx @null3d/cli shot --out ci-shot.png
 CI=1 bunx @null3d/cli test --update-references
 ```
 
-The two draw the edges of objects a little differently, so keep reference images for each. When a browser is missing, the command prints the command that installs it.
+The two draw the edges of objects a little differently, so keep reference images for each. When Playwright's Chromium is missing, the command prints the command that installs it.
+
+### Chrome for Testing
+
+Chrome for Testing is Google's build of Chrome for automated runs. The tool pins one version of it on every platform. So a reference image drawn on one computer matches another's. A release of the tool may move the pin to a newer Chrome, and its notes say so when pages draw differently.
+
+- **First use.** The first command that draws downloads the pinned build for your platform, about 200 MB. It prints what it downloads and how far it has got. Later commands reuse it.
+- **The check.** The tool records the SHA-256 hash of the pinned build's archive on each platform. It checks the download against that hash before it unpacks it. An archive with another hash is deleted, and the command stops with [E1437](../errors/E1437.md). The tool keeps the hash it checked beside the build, and it trusts a cached build only with that record.
+- **Where it lives.** `null3d/chrome-for-testing/<version>` under `$XDG_CACHE_HOME` when that is set, or under `~/.cache`. Every project on the computer shares it. Delete the folder to download it again.
+- **Why not Google Chrome.** On macOS, Google Chrome makes keys in the keychain each time it starts. It keeps them when it closes early, as a headless run often does. Many runs fill the keychain and slow its service down. Chrome for Testing has no access to the keychain.
+- **When the download fails.** This includes a download whose hash does not match. The command draws with your installed Google Chrome instead. It warns that this may leave keys in the keychain on macOS. Its pictures can differ a little from the references when its version differs.
+- **Choosing the browser.** `NULL3D_CHROME=installed` draws with the installed Google Chrome every time. `NULL3D_CHROME=testing` draws with Chrome for Testing alone, and fails instead of falling back:
+
+```sh
+NULL3D_CHROME=installed bunx @null3d/cli shot
+```

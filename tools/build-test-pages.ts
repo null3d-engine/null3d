@@ -4,7 +4,7 @@
 //   bun tools/build-test-pages.ts [page...]
 // Up to four pages build at once, each into a folder of its own, and the folders merge into the
 // output folder when the builds finish. A build reads about a gigabyte and holds one core, so four
-// leave most of the machine's memory and cores free, and the seven pages take two rounds.
+// leave most of the machine's memory and cores free, and the eight pages take two rounds.
 import { spawn } from 'node:child_process';
 import { mkdirSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';

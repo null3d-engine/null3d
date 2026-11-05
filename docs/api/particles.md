@@ -152,6 +152,8 @@ A system is one scene object, with one draw of all its particles. It sorts among
 
 The system keeps its object's culling sphere around its live particles, from where they were born and how far they can move. Particles do not cast shadows, and lights do not light them. Fog fades them as it fades other surfaces. Additive particles fade out in fog, and others take on its color.
 
+A system draws its quads from its own records, not from a mesh, so it has no levels of detail.
+
 `system.set(values)` changes the motion and the look at any time. `system.destroy()` removes the system and its particles.
 
 ## Speed
