@@ -202,11 +202,11 @@ export async function buildClusterFixture(): Promise<Uint8Array> {
  * Builds a model with the tool's options, and checks that the tool gave the terrain a tree. The
  * model's name keys its stage files, so each staged model keeps its own.
  *
- * @param {{ clusters?: boolean, stages?: boolean }} options
+ * @param {{ clusters?: boolean, groups?: boolean, stages?: boolean }} options
  * @param {string} [name]
  */
 async function buildTerrain(
-	options: { clusters?: boolean; stages?: boolean },
+	options: { clusters?: boolean; groups?: boolean; stages?: boolean },
 	name = 'terrain.glb',
 ) {
 	const folder = mkdtempSync(join(tmpdir(), 'null3d-cluster-fixture-'));
@@ -228,9 +228,13 @@ async function buildTerrain(
 	}
 }
 
-/** Builds the cluster model with its report, as the asset tool writes it. */
+/**
+ * Builds the cluster model with its report, as the asset tool writes it. Its lists are large
+ * enough for groups, so the committed model carries them and the group format is covered from the
+ * tool through the engine.
+ */
 export async function buildClusterModel() {
-	return buildTerrain({ clusters: true }, CLUSTER_FILE);
+	return buildTerrain({ clusters: true, groups: true }, CLUSTER_FILE);
 }
 
 /**
@@ -238,7 +242,10 @@ export async function buildClusterModel() {
  * it downloads from a file of its own.
  */
 export async function buildStagedClusterModel() {
-	const model = await buildTerrain({ clusters: true, stages: true }, CLUSTER_STAGED_FILE);
+	const model = await buildTerrain(
+		{ clusters: true, groups: true, stages: true },
+		CLUSTER_STAGED_FILE,
+	);
 	if (model.stages.size === 0) throw new Error('the tool wrote no band file');
 	return model;
 }
