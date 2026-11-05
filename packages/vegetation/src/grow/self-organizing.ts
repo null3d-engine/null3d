@@ -1134,9 +1134,9 @@ function siteLight(plant: Plant, grid: ShadowGrid, b: number): number {
 /**
  * Lets the bare ends of the wood die back: a bud in full shade at its site dies, and each axis's
  * end dies back to its last node that carries a live bud, the wood of a shed branch, or a child
- * that does; a stub goes with the dead wood it stands on. A dead limb that shed its branches keeps
- * its wood, and a stem keeps its whole length, a dead leader standing as a snag. A twig
- * whose buds all died stands bare past the leaves, and a tree sheds such dead twigs.
+ * that does. A dead limb that shed its branches keeps its wood, and a stem keeps its whole length, a
+ * dead leader standing as a snag. Fine twigs keep neither shed-branch wood nor a dead stub, so a
+ * twig whose buds all died does not stand bare past the leaves; a thick stub stays with its wood.
  */
 function trimBare(plant: Plant, grid: ShadowGrid): void {
 	const count = plant.nodes;
@@ -1146,21 +1146,25 @@ function trimBare(plant: Plant, grid: ShadowGrid): void {
 		if (siteLight(plant, grid, b) > 0) keep[plant.budNode[b] as number] = 1;
 		else plant.budState[b] = DEAD;
 	}
-	for (let n = 0; n < count; n++)
-		if (
-			plant.live[n] &&
-			(plant.axisOrder[plant.axisOf[n] as number] === 0 || (plant.memory[n] as number) > 0)
-		)
-			keep[n] = 1;
+	for (let n = 0; n < count; n++) {
+		if (!plant.live[n]) continue;
+		const order = plant.axisOrder[plant.axisOf[n] as number] as number;
+		// A stem keeps its whole length, and a great limb that shed its branches keeps its wood. A
+		// fine twig whose buds all died dies back to its last live bud or kept child, so no dead
+		// spray stands past the leaves.
+		if (order === 0 || (plant.memory[n] as number) > 0) keep[n] = 1;
+	}
 	// Children come after their parents, so one pass from the end carries a kept node to the root.
 	for (let n = count - 1; n >= 0; n--) {
 		const p = plant.parent[n] as number;
 		if (keep[n] && p >= 0) keep[p] = 1;
 	}
-	// A stub stays while the wood it stands on stays.
+	// A stub stays while the wood it stands on stays, unless it is a fine twig's end: a dead stub on
+	// the crown's edge stands bare past the leaves.
 	for (let n = 0; n < count; n++) {
 		const p = plant.parent[n] as number;
-		if (p >= 0 && keep[p] && ((plant.flags[n] as number) & NODE_STUB) !== 0) keep[n] = 1;
+		if (p < 0 || !keep[p] || ((plant.flags[n] as number) & NODE_STUB) === 0) continue;
+		if ((plant.axisOrder[plant.axisOf[n] as number] as number) <= 1) keep[n] = 1;
 	}
 	for (let a = 0; a < plant.axes; a++) {
 		const first = plant.axisFirst[a] as number;

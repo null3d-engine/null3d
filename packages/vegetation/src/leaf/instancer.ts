@@ -201,10 +201,14 @@ export function placeShoots(input: DressInput): ShootRows {
 			(buds.position[b * 3 + 1] as number) < record.growth.shedding.cleanBole * skeleton.height
 		)
 			continue;
-		if ((buds.light[b] as number) < shoots.placement.shadePrune) continue;
+		const node = buds.node[b] as number;
+		const host = skeleton.axisOf[node] as number;
+		// A bud at its axis's tip is the end of a branch, in the open sky the shade-prune line reads as
+		// darkness inside the crown: it keeps its shoot, so no bare tip stands past the leaves.
+		const atTip = host >= 0 && (skeleton.axes.last[host] as number) === node;
+		if (!atTip && (buds.light[b] as number) < shoots.placement.shadePrune) continue;
 		const vigor = buds.vigor[b] as number;
 		// The stretch this bud serves: back to the bud before it on its axis, or to its node's parent.
-		const node = buds.node[b] as number;
 		const parentNode = skeleton.parent[node] as number;
 		let from: Vector3;
 		if (before !== undefined)
@@ -222,8 +226,11 @@ export function placeShoots(input: DressInput): ShootRows {
 		else from = [...at];
 		const stretch = length3(at[0] - from[0], at[1] - from[1], at[2] - from[2]);
 		const expected = curveAt(shoots.placement.perMetre, vigor) * stretch;
+		// The outermost bud of an axis carries a rosette even where its vigor and stretch give none,
+		// whether it is the axis's terminal bud or the live shoot that replaced a lost one: a twig
+		// end bears leaves at the tip, so no bare spray stands past the crown's leaves.
 		const count = Math.max(
-			kind === BUD_TERMINAL ? 1 : 0,
+			kind === BUD_TERMINAL || atTip ? 1 : 0,
 			Math.floor(expected + draw(Purpose.Count, b)),
 		);
 		if (count === 0) continue;
