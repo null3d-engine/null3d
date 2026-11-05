@@ -1,0 +1,453 @@
+{
+	"page": "bench",
+	"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+	"url": "http://localhost:5175/bench/pages/null3d/s2.html?gpu=webgpu&preset=medium&direct=off&occlusion=off&still-camera=off",
+	"calibrationMs": 1.0999999940395355,
+	"ok": true,
+	"scene": "s2",
+	"renderer": "null3d",
+	"tier": "webgpu",
+	"mode": {
+		"build": "threaded",
+		"latency": "pipelined",
+		"sketchThread": "worker",
+		"renderThread": "render-worker",
+		"jobWorkers": 16,
+		"hold": null,
+		"preset": "medium",
+		"presetCheck": null,
+		"crashedStarts": 0,
+		"memoryMaximumMiB": 1024,
+		"renderFallback": null,
+		"keepTextureCopies": false
+	},
+	"drawPath": "forced",
+	"n": 5096,
+	"frames": 67449,
+	"cpuMs": {
+		"count": 67449,
+		"median": 0.09999999403953552,
+		"p95": 0.1550000011920929,
+		"p99": 0.20000000298023224,
+		"max": 0.6499999761581421,
+		"min": 0.06999999284744263,
+		"mean": 0.10483609840560397
+	},
+	"intervalMs": {
+		"count": 67449,
+		"median": 0.3100000023841858,
+		"p95": 1.725000023841858,
+		"p99": 1.8200000524520874,
+		"max": 13.069999694824219,
+		"min": 0.07000000029802322,
+		"mean": 0.4449317261494248
+	},
+	"stats": {
+		"seconds": 30.001105000004173,
+		"frames": 67449,
+		"updatedFps": 2247.5358380358844,
+		"updateErrors": 0,
+		"cpuMs": {
+			"count": 67449,
+			"median": 0.09999999403953552,
+			"p95": 0.1550000011920929,
+			"p99": 0.20000000298023224,
+			"max": 0.6499999761581421,
+			"min": 0.06999999284744263,
+			"mean": 0.10483609840560397
+		},
+		"cpuMsAllThreads": {
+			"count": 67449,
+			"median": 0.1300000101327896,
+			"p95": 0.20999999344348907,
+			"p99": 0.2800000011920929,
+			"max": 0.7550000250339508,
+			"min": 0.08999998867511749,
+			"mean": 0.14006819972839205
+		},
+		"threads": {
+			"sketch-worker": {
+				"busyMs": {
+					"count": 67449,
+					"median": 0.09999999403953552,
+					"p95": 0.15000000596046448,
+					"p99": 0.20000000298023224,
+					"max": 0.6499999761581421,
+					"min": 0.06999999284744263,
+					"mean": 0.10451266884770191
+				},
+				"phases": {
+					"update": {
+						"count": 67449,
+						"median": 0,
+						"p95": 0.005000010132789612,
+						"p99": 0.005000010132789612,
+						"max": 0.2549999952316284,
+						"min": 0,
+						"mean": 0.0012518347251243638
+					},
+					"commands": {
+						"count": 67449,
+						"median": 0,
+						"p95": 0.004999995231628418,
+						"p99": 0.005000010132789612,
+						"max": 0.04999999701976776,
+						"min": 0,
+						"mean": 0.0005599045096360087
+					},
+					"transforms": {
+						"count": 67449,
+						"median": 0.07500000298023224,
+						"p95": 0.10999999940395355,
+						"p99": 0.14499999582767487,
+						"max": 0.5850000381469727,
+						"min": 0.05499999225139618,
+						"mean": 0.07896536641558236
+					},
+					"batches": {
+						"count": 67449,
+						"median": 0,
+						"p95": 0.004999995231628418,
+						"p99": 0.005000010132789612,
+						"max": 0.05499999225139618,
+						"min": 0,
+						"mean": 0.00037354149514109666
+					},
+					"cull": {
+						"count": 67449,
+						"median": 0,
+						"p95": 0.005000010132789612,
+						"p99": 0.01000000536441803,
+						"max": 0.09000000357627869,
+						"min": 0,
+						"mean": 0.0014426455671176556
+					},
+					"record": {
+						"count": 67449,
+						"median": 0.019999995827674866,
+						"p95": 0.03999999165534973,
+						"p99": 0.06000000238418579,
+						"max": 0.1599999964237213,
+						"min": 0.004999995231628418,
+						"mean": 0.02177734290005786
+					}
+				}
+			},
+			"render-worker": {
+				"busyMs": {
+					"count": 67449,
+					"median": 0.030000001192092896,
+					"p95": 0.05500000715255737,
+					"p99": 0.10500000417232513,
+					"max": 0.6150000095367432,
+					"min": 0.014999985694885254,
+					"mean": 0.035555530880690134
+				},
+				"phases": {
+					"replay": {
+						"count": 67449,
+						"median": 0.030000001192092896,
+						"p95": 0.05500000715255737,
+						"p99": 0.10259999871256005,
+						"max": 0.6100000143051147,
+						"min": 0.014999985694885254,
+						"mean": 0.03486360068950351
+					}
+				}
+			}
+		},
+		"gpuMs": {
+			"count": 6132,
+			"median": 0.14928799867630005,
+			"p95": 0.4228098481893539,
+			"p99": 0.49125400573015193,
+			"max": 0.7971130013465881,
+			"min": 0.07841499894857407,
+			"mean": 0.1974661702427476
+		},
+		"gpuPassMs": [
+			{
+				"name": "copies",
+				"ms": {
+					"count": 5873,
+					"median": 0.005750000011175871,
+					"p95": 0.05097479969263075,
+					"p99": 0.11631348133087104,
+					"max": 0.4029940068721771,
+					"min": 0,
+					"mean": 0.015841875025610068
+				}
+			},
+			{
+				"name": "compute",
+				"ms": {
+					"count": 6132,
+					"median": 0.013749999925494194,
+					"p95": 0.050994800776243195,
+					"p99": 0.09629068866372108,
+					"max": 0.11837399750947952,
+					"min": 0.007375000044703484,
+					"mean": 0.020111577457609234
+				}
+			},
+			{
+				"name": "opaque",
+				"ms": {
+					"count": 6132,
+					"median": 0.06895700097084045,
+					"p95": 0.18884889930486679,
+					"p99": 0.2102629621326923,
+					"max": 0.4449099898338318,
+					"min": 0.03383300080895424,
+					"mean": 0.0884699752610189
+				}
+			},
+			{
+				"name": "final",
+				"ms": {
+					"count": 6132,
+					"median": 0.07787399739027023,
+					"p95": 0.21958044394850731,
+					"p99": 0.2391402116417884,
+					"max": 0.4184100031852722,
+					"min": 0.023000000044703484,
+					"mean": 0.10023286056523172
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 6132,
+					"median": 0,
+					"p95": 0.035060902917757625,
+					"p99": 0.14097022584639443,
+					"max": 0.2969109946861863,
+					"min": 0,
+					"mean": 0.006486372010961598
+				}
+			}
+		],
+		"gpuStepMs": null,
+		"intervalMs": {
+			"count": 67449,
+			"median": 0.3100000023841858,
+			"p95": 1.725000023841858,
+			"p99": 1.8200000524520874,
+			"max": 13.069999694824219,
+			"min": 0.07000000029802322,
+			"mean": 0.4449317261494248
+		},
+		"presentedFps": 2247.5358380358844,
+		"completedFps": 2247.5264772393684,
+		"gpuLatencyMs": {
+			"count": 67449,
+			"median": 0.6100000143051147,
+			"p95": 1.815000057220459,
+			"p99": 1.9550000429153442,
+			"max": 13.625,
+			"min": 0.2900000214576721,
+			"mean": 0.8206153529493868
+		},
+		"uploadBytes": {
+			"count": 67449,
+			"median": 248000,
+			"p95": 248000,
+			"p99": 248000,
+			"max": 248000,
+			"min": 248000,
+			"mean": 248000
+		},
+		"drawCalls": {
+			"count": 67449,
+			"median": 101,
+			"p95": 101,
+			"p99": 101,
+			"max": 101,
+			"min": 101,
+			"mean": 101
+		},
+		"triangles": {
+			"count": 67449,
+			"median": 1,
+			"p95": 1,
+			"p99": 1,
+			"max": 1,
+			"min": 1,
+			"mean": 1
+		},
+		"visibleEntries": null,
+		"occludedEntries": null,
+		"rebuilds": 0,
+		"pipelines": 0,
+		"skippedDraws": 0,
+		"gpuObjects": 0,
+		"memory": {
+			"wasmBytes": 11862016,
+			"jsHeap": {
+				"bytes": 71036974,
+				"byScope": {
+					"shared": 513911,
+					"Window http://localhost:5175/bench/pages/null3d/s2.html?gpu=webgpu&preset=medium&direct=off&occlusion=off&still-camera=off": 34609973,
+					"DedicatedWorkerGlobalScope http://localhost:5175/bench/assets/render-worker-C2OAvYjt.js": 17665733,
+					"DedicatedWorkerGlobalScope http://localhost:5175/bench/assets/sketch-worker-LwAQ9kCD.js": 18247357
+				}
+			},
+			"jsHeapSamples": [
+				{
+					"atSeconds": 17.003509999990463,
+					"bytes": 71036974
+				}
+			],
+			"jsHeapNote": null
+		},
+		"load": {
+			"engineStartMs": 323.8649999946356,
+			"probeMs": 82.94499999284744,
+			"coreMs": 7.950000002980232,
+			"firstFrameMs": 660.619873046875,
+			"firstFrameDoneMs": 665.010009765625,
+			"warmUpMs": 20.135009765625,
+			"firstDrawMs": 2.040000006556511,
+			"firstFramePipelines": 11,
+			"firstFramePreset": "medium"
+		},
+		"gpuLosses": 0,
+		"downloadBytes": {
+			"wasm": 1978900
+		},
+		"lostRecords": 0,
+		"completionSignal": "queue",
+		"refreshHz": 48,
+		"mainThread": {
+			"longTasks": 0,
+			"longestTaskMs": 0,
+			"inputDelayMs": null
+		},
+		"perSecond": [
+			{
+				"presentedFps": 1287,
+				"completedFps": 1287
+			},
+			{
+				"presentedFps": 1137,
+				"completedFps": 1137
+			},
+			{
+				"presentedFps": 2146,
+				"completedFps": 2146
+			},
+			{
+				"presentedFps": 1206,
+				"completedFps": 1206
+			},
+			{
+				"presentedFps": 1170,
+				"completedFps": 1170
+			},
+			{
+				"presentedFps": 2580,
+				"completedFps": 2580
+			},
+			{
+				"presentedFps": 2311,
+				"completedFps": 2311
+			},
+			{
+				"presentedFps": 2455,
+				"completedFps": 2455
+			},
+			{
+				"presentedFps": 3741,
+				"completedFps": 3741
+			},
+			{
+				"presentedFps": 1653,
+				"completedFps": 1652
+			},
+			{
+				"presentedFps": 2098,
+				"completedFps": 2099
+			},
+			{
+				"presentedFps": 2964,
+				"completedFps": 2964
+			},
+			{
+				"presentedFps": 1134,
+				"completedFps": 1134
+			},
+			{
+				"presentedFps": 1256,
+				"completedFps": 1256
+			},
+			{
+				"presentedFps": 2143,
+				"completedFps": 2143
+			},
+			{
+				"presentedFps": 1805,
+				"completedFps": 1805
+			},
+			{
+				"presentedFps": 3093,
+				"completedFps": 3092
+			},
+			{
+				"presentedFps": 2873,
+				"completedFps": 2873
+			},
+			{
+				"presentedFps": 2227,
+				"completedFps": 2228
+			},
+			{
+				"presentedFps": 2661,
+				"completedFps": 2661
+			},
+			{
+				"presentedFps": 2737,
+				"completedFps": 2737
+			},
+			{
+				"presentedFps": 2672,
+				"completedFps": 2671
+			},
+			{
+				"presentedFps": 2475,
+				"completedFps": 2475
+			},
+			{
+				"presentedFps": 2585,
+				"completedFps": 2585
+			},
+			{
+				"presentedFps": 2394,
+				"completedFps": 2395
+			},
+			{
+				"presentedFps": 2940,
+				"completedFps": 2940
+			},
+			{
+				"presentedFps": 2205,
+				"completedFps": 2204
+			},
+			{
+				"presentedFps": 2617,
+				"completedFps": 2617
+			},
+			{
+				"presentedFps": 2208,
+				"completedFps": 2209
+			},
+			{
+				"presentedFps": 2652,
+				"completedFps": 2652
+			}
+		]
+	},
+	"machineLoad": {
+		"before": 5.017578125,
+		"after": 5.0263671875
+	}
+}
