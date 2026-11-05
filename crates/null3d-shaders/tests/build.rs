@@ -2071,6 +2071,30 @@ fn the_sun_shadow_loops_run_the_same_passes_at_every_pixel() {
 }
 
 #[test]
+fn the_bounce_light_keeps_within_the_16_bit_target_it_writes() {
+    // The bounce trace stores the mean light times pi in a 16-bit float target. A sample at the
+    // scene color's own limit, 65,472, would store about 205,700, past the largest 16-bit float,
+    // which some GPUs hold as infinity. The denoise would then multiply that infinity by a zero
+    // weight, which is a NaN, and the opaque pass would draw the highlight black. So the trace
+    // limits its light before the write, and the denoise skips a tap with no weight.
+    let inputs = subset::repository_subset(&["bounce"]);
+    let output = build(&inputs).expect("the bounce shader builds");
+    let webgpu = output.shaders["bounce"]["webgpu"]
+        .wgsl
+        .as_ref()
+        .expect("the bounce shader's WebGPU module")
+        .source
+        .clone();
+    let trace = function_text(&webgpu, "trace");
+    assert!(trace.contains("limit_hdr("), "{trace}");
+    // The denoise's guard is read from the source, because naga renames the tap's weight in the
+    // build. The trace's call is read from the build, which proves the import resolves.
+    let source = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/wgsl/bounce.wgsl"))
+        .expect("the bounce shader's source");
+    assert!(source.contains("if (weight <= 0.0)"), "{source}");
+}
+
+#[test]
 fn hdr_color_stops_one_step_below_the_largest_16_bit_float() {
     // Some GPUs store a value past the largest 16-bit float, 65,504, as infinity. The limit keeps
     // one step of margin below it, as Unity's URP limits bloom's input.

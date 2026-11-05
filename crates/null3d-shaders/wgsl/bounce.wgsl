@@ -22,7 +22,7 @@
 // and weights it by the frame's `bounce` values (null3d::gtao).
 
 #import null3d::fullscreen::{triangle}
-#import null3d::color::{luminance}
+#import null3d::color::{limit_hdr, luminance}
 #import null3d::depth::{toward_camera, view_position}
 
 /// The steps' settings, which the frame builder writes once for both of them.
@@ -222,7 +222,13 @@ fn trace(@builtin(position) position: vec4f) -> @location(0) vec4f {
     }
     // The share is the part of the disk that found a surface above the texel's plane. The samples
     // that found none keep the environment's light.
-    return vec4f(PI * sum / weight, found / f32(samples) * inside);
+    //
+    // The target holds 16-bit floats, and the light is written multiplied by pi. A sample at the
+    // scene color's own limit, 65,472, then writes about 205,700, past the largest 16-bit float,
+    // which some GPUs store as infinity. The denoise would carry that infinity, and a tap of weight
+    // zero would turn it into a NaN, which the opaque pass draws black. So the light takes the
+    // limit that the scene color takes before the 16-bit target holds it.
+    return vec4f(limit_hdr(PI * sum / weight), found / f32(samples) * inside);
 }
 
 /// The denoise's taps on a disk of `rings` rings around the center, three.js's Poisson pattern.
@@ -259,6 +265,12 @@ fn denoise(@builtin(position) position: vec4f) -> @location(0) vec4f {
         }
         let normal_weight = pow(max(dot(normal, normal_at(at)), 0.0), settings.shape.w);
         let weight = depth_weight * normal_weight;
+        // A tap with no weight changes neither the light nor its share, so it adds nothing. The
+        // guard also keeps a stored light from meeting a zero weight, which is a NaN if that light
+        // ever became an infinity.
+        if (weight <= 0.0) {
+            continue;
+        }
         let found = textureLoad(source, vec2i(at.x, turned(at.y, settings.extents.w)), 0, 0);
         sum += found.rgb * weight;
         share += found.a * weight;
