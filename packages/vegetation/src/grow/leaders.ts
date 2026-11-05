@@ -18,9 +18,9 @@ const LEADER_SHARE = 0.5;
  * And when its parent's own next node is under this share of the child's girth: the parent's
  * continuation has collapsed to a branch, not merely thinned below a strong limb.
  */
-const COLLAPSE = 0.6;
+const COLLAPSE = 0.7;
 /** The cosine of the most a child may turn from the axis's line where the wood runs on into it. */
-const RUN_ON = Math.cos((40 * Math.PI) / 180);
+const RUN_ON = Math.cos((35 * Math.PI) / 180);
 /**
  * A continuation under this share of the axis's girth has withered to a twig: it gives up the lead
  * however far it runs on.
@@ -110,7 +110,10 @@ export function leadOnThickest(skeleton: MacroSkeleton): MacroSkeleton {
 				const first = childChain[0];
 				if (first === undefined) continue;
 				const r = radius[first] as number;
-				if (r <= next / COLLAPSE || r < LEADER_SHARE * girth) continue;
+				// A continuation that halves its girth at a fork draws as a cone unless the fork is
+				// drawn: any child at least as thick as it makes the node divide.
+				const collapsed = next < 0.5 * girth;
+				if (collapsed ? r <= next : r <= next / COLLAPSE || r < LEADER_SHARE * girth) continue;
 				thick = true;
 				const farther =
 					withered ||

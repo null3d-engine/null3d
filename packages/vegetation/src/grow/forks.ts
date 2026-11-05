@@ -73,14 +73,14 @@ export function narrowToward(line: Readonly<Vector3>, d: Vector3, widest: number
 /** A side shoot is righted once it holds at least this share of its fork's wood. */
 export const RIGHT_SHARE = 0.2;
 /**
- * A side shoot is righted only while its own branch carries at most this many growing tips: a young
- * or small branch, never a grown limb's crown.
+ * A side shoot is righted only while its own branch carries at most this many growing tips. A fork
+ * forms on a branch well under this, so the righting reaches the forks the references judge.
  */
-export const RIGHT_TIPS = 300;
+export const RIGHT_TIPS = 2000;
 /** Forks that carry fewer growing tips than this are twigs, whose shares the rule does not read. */
 export const RIGHT_FORK = 10;
 /** The most degrees a side shoot turns toward its parent's line in a year. */
-export const RIGHT_TURN = 10;
+export const RIGHT_TURN = 12;
 /**
  * A side shoot divides its fork with its parent's own line where that line goes on with at least
  * this share of the fork's wood: the shoot is righted no closer to the line than the split's angle.

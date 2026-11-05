@@ -24,7 +24,7 @@ export const record: Species = {
 	name: 'Pedunculate oak',
 	latin: 'Quercus robur',
 	form: 'broad low dome on a short, low-forking bole',
-	size: { height: { mean: 20, spread: 2 }, dbh: 1.8, aspect },
+	size: { height: { mean: 20, spread: 2 }, dbh: 2.3, aspect },
 	growth: {
 		model: 'self-organizing',
 		years: 36,
@@ -48,18 +48,19 @@ export const record: Species = {
 			dominance: [0.7, 0.6, 0.98],
 			wander: 16,
 		},
+		divide: { at: 0.25, count: 5, angle: 64, lean: 35 },
 		light: { apical: 1, lateral: 1, shadow: [5, 0.15, 2], cells: 96 },
 		tropism: {
 			photo: 0.04,
 			gravi: [
 				[0, 0.3],
-				[0.25, -0.02],
-				[0.5, -0.02],
+				[0.25, 0],
+				[0.5, 0],
 				[0.75, 0],
 				[1, 0.03],
 			],
 		},
-		shedding: { threshold: 0.1, cleanBole: 0.1, stubs: 0.2 },
+		shedding: { threshold: 0.1, cleanBole: 0.2, stubs: 0.2 },
 		bending: { strength: 0.5, upturn: 0.2 },
 		forkRule: true,
 		kinks: true,
@@ -76,7 +77,7 @@ export const record: Species = {
 				vigor: [0, 0.04],
 				share: 0.3,
 				years: 1,
-				length: { mean: 0.12, spread: 0.02 },
+				length: { mean: 0.14, spread: 0.02 },
 				nodes: { mean: 6, spread: 0.5 },
 				internode: ROSETTE,
 				leafScale: [
@@ -97,7 +98,7 @@ export const record: Species = {
 				vigor: [0.04, 0.2],
 				share: 0.35,
 				years: 2,
-				length: { mean: 0.3, spread: 0.05 },
+				length: { mean: 0.4, spread: 0.06 },
 				nodes: { mean: 6, spread: 1 },
 				internode: ROSETTE,
 				leafScale: [
@@ -118,7 +119,7 @@ export const record: Species = {
 				vigor: [0.2, 1],
 				share: 0.35,
 				years: 3,
-				length: { mean: 0.75, spread: 0.12 },
+				length: { mean: 1.0, spread: 0.15 },
 				nodes: { mean: 5, spread: 1 },
 				internode: ROSETTE,
 				leafScale: [
@@ -142,18 +143,18 @@ export const record: Species = {
 		placement: {
 			perMetre: [
 				[0, 1],
-				[0.3, 4],
-				[1, 12],
+				[0.3, 2],
+				[1, 6],
 			],
-			shadePrune: 0.03,
+			shadePrune: 0.15,
 			skyward: 0.35,
-			scale: { mean: 1.1, spread: 0.15 },
+			scale: { mean: 1.4, spread: 0.15 },
 		},
 	},
 	foliage: {
 		kind: 'blade',
 		leaf: {
-			length: { mean: 0.11, spread: 0.02 },
+			length: { mean: 0.12, spread: 0.02 },
 			outline: 'texture',
 			petiole: { length: 0.005, radius: 0.0009, flat: 0, droop: 15 },
 			fold: 16,
@@ -236,7 +237,7 @@ export const record: Species = {
 	},
 	lod: {
 		nearFoliage: 'instanced',
-		switchPixels: [104, 12, 160],
+		switchPixels: [240, 12, 160],
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,

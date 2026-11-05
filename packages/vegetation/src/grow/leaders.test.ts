@@ -2,7 +2,13 @@
 // line, and divides into a fork where the thick child leaves steeply; a grown oak keeps no cone where
 // an axis collapsed, no loop and a straight bole to its fork.
 import { describe, expect, it } from 'bun:test';
-import { AXIS_LIMB, AXIS_STEM, type MacroSkeleton, SkeletonBuilder } from '../core/graph';
+import {
+	AXIS_LIMB,
+	AXIS_STEM,
+	BUD_LATERAL,
+	type MacroSkeleton,
+	SkeletonBuilder,
+} from '../core/graph';
 import { loadPlantCode } from '../generate';
 import { species } from '../species/pedunculate-oak';
 import { leadOnThickest } from './leaders';
@@ -53,6 +59,21 @@ function collapsed(kind: number, order: number, degrees = 60): MacroSkeleton {
 				axis,
 			}),
 		);
+	// The parent carries growing tips, so the fork stands above the rule's ten-pipe floor.
+	for (const node of nodes)
+		for (let k = 0; k < 2; k++)
+			b.addBud({
+				node,
+				x: 0,
+				y: node,
+				z: 0,
+				frame: [0, 0, 0, 1],
+				kind: BUD_LATERAL,
+				vigor: 0.5,
+				light: 1,
+				axis,
+				woodRadius: 0.5,
+			});
 	const fork = nodes[3] as number;
 	const limb = b.addAxis({
 		parent: axis,
@@ -72,6 +93,78 @@ function collapsed(kind: number, order: number, degrees = 60): MacroSkeleton {
 			parent: previous,
 			axis: limb,
 		});
+	return b.finish(0);
+}
+
+/**
+ * A parent axis that runs on past a node, with a child of nearly its girth leaving at an angle: the
+ * shape the mesher draws as a tube pressed on the parent, where a mitre shows.
+ */
+function mitre(degreesLeaving: number): MacroSkeleton {
+	const b = new SkeletonBuilder();
+	const axis = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+	const nodes: number[] = [];
+	for (let k = 0; k < 6; k++)
+		nodes.push(
+			b.addNode({
+				x: 0,
+				y: k,
+				z: 0,
+				// The parent's own line withers past the fork but still runs on.
+				radius: k <= 3 ? 0.5 : 0.02,
+				parent: k === 0 ? -1 : (nodes[k - 1] as number),
+				axis,
+			}),
+		);
+	// The parent carries growing tips, so the fork stands above the rule's ten-pipe floor.
+	for (const node of nodes)
+		for (let k = 0; k < 2; k++)
+			b.addBud({
+				node,
+				x: 0,
+				y: node,
+				z: 0,
+				frame: [0, 0, 0, 1],
+				kind: BUD_LATERAL,
+				vigor: 0.5,
+				light: 1,
+				axis,
+				woodRadius: 0.5,
+			});
+	const fork = nodes[3] as number;
+	const limb = b.addAxis({
+		parent: axis,
+		parentNode: fork,
+		parentT: 0,
+		order: 1,
+		kind: AXIS_LIMB,
+	});
+	const angle = (degreesLeaving * Math.PI) / 180;
+	let previous = fork;
+	for (let k = 1; k <= 5; k++) {
+		previous = b.addNode({
+			x: Math.sin(angle) * k,
+			y: 3 + Math.cos(angle) * k,
+			z: 0,
+			radius: 0.45 - 0.04 * k,
+			parent: previous,
+			axis: limb,
+		});
+		// The limb's own growing tips keep the fork above the rule's ten-pipe floor.
+		for (let j = 0; j < 2; j++)
+			b.addBud({
+				node: previous,
+				x: Math.sin(angle) * k,
+				y: 3 + Math.cos(angle) * k,
+				z: 0,
+				frame: [0, 0, 0, 1],
+				kind: BUD_LATERAL,
+				vigor: 0.5,
+				light: 1,
+				axis: limb,
+				woodRadius: 0.45 - 0.04 * k,
+			});
+	}
 	return b.finish(0);
 }
 
@@ -136,25 +229,67 @@ function continuation(skeleton: MacroSkeleton, from: number, axis: number): numb
 }
 
 /**
- * The forks that break the fork rule of stills 03, 08 and 20, on wood over a tenth of a metre
- * across: a child over 60 per cent of its parent's cross-section that leaves the wood below it at
- * over 35 degrees where the parent's own line has withered to under 30 per cent (a takeover, which
- * draws as a mitred pipe), and one of 20 to 60 per cent that leaves at over 65. A thick limb that
- * divides into two arms, its own line running on beside the wide one, keeps its fork, as in still 08.
+ * The growing tips a node's subtree holds: the pipes the grower's righting counts. Each live bud is
+ * one pipe, and a node carries its children's.
+ */
+function subtreePipes(skeleton: MacroSkeleton): Float64Array {
+	const { buds, nodeCount, parent } = skeleton;
+	const held = new Float64Array(nodeCount);
+	for (let b = 0; b < buds.count; b++) {
+		const n = buds.node[b] as number;
+		held[n] = (held[n] as number) + 1;
+	}
+	for (let n = nodeCount - 1; n >= 0; n--) {
+		const p = parent[n] as number;
+		if (p >= 0) held[p] = (held[p] as number) + (held[n] as number);
+	}
+	return held;
+}
+
+/**
+ * The forks that break the fork rule of stills 03, 08 and 20, above the same floor of ten growing
+ * tips the righting uses: below it the rule does not right twigs, and the references show kinked
+ * twigs (row 3 asks for a kink at every joint, row 1 for angular joints in the fine orders), so a
+ * twig dividing sharply is that, not a takeover. One number governs both, so the two cannot drift.
+ * Round 5 found that the mesher now draws a division the way still 08 shows it: one surface with a
+ * crotch, where the parent axis ends at the fork. A child that leaves a node the parent axis runs
+ * past is drawn as a tube pressed against the parent, and a mitre shows there. The rule fails that
+ * shape only: a child over 60 per cent of its parent's cross-section that leaves the wood below it
+ * at over 35 degrees where the parent's own line withered to under 30 per cent (a takeover), and one
+ * of 20 to 60 per cent that leaves at over 65.
+ *
+ * A line with no sibling beside it is not a fork: the same line continues, bent. Still 20 shows a
+ * thick limb turning about 15 to 30 degrees at a joint, and its short stiff twigs turning more
+ * sharply; the mesher rounds such a kink over six of the wood's radii. A kink of wood 10 cm or more
+ * across may turn up to 35 degrees, the limit the stem's own line above a fork takes. Thinner wood
+ * keeps its sharp crook (D-308): only a line that turns past 120 degrees, a loop, fails here, and
+ * the bole test's loop check covers every axis too.
  */
 function brokenForks(skeleton: MacroSkeleton): string[] {
 	const { axes, radius, position: p } = skeleton;
+	const pipes = subtreePipes(skeleton);
 	const broken: string[] = [];
 	for (let a = 0; a < axes.count; a++) {
 		const from = axes.parentNode[a] as number;
-		if (from < 0 || (axes.parent[a] as number) < 0 || (radius[from] as number) < 0.05) continue;
+		if (from < 0 || (axes.parent[a] as number) < 0) continue;
+		if ((pipes[from] as number) < 10) continue;
 		const share = shareOf(skeleton, a);
 		if (share <= 0.2) continue;
 		const below = skeleton.parent[from] as number;
 		const line =
 			below >= 0 ? direction(p, below, from) : direction(p, from, axes.first[0] as number);
 		const angle = degrees(line, direction(p, from, axes.first[a] as number));
-		const takeover = share > 0.6 && angle > 35 && continuation(skeleton, from, a) < 0.3;
+		const cont = continuation(skeleton, from, a);
+		if (cont < 0.05 && share > 0.9) {
+			const limit = (radius[from] as number) >= 0.1 ? 35 : 120;
+			if (angle > limit)
+				broken.push(`${(share * 100).toFixed(0)} % at ${angle.toFixed(0)} degrees (kink)`);
+			continue;
+		}
+		// A division: the parent axis ends at the node, so the mesher draws one surface with a crotch,
+		// as still 08 shows. The takeovers of stills 03 and 20 are tubes pressed on a line that runs on.
+		if (from === (axes.last[axes.parent[a] as number] as number)) continue;
+		const takeover = share > 0.6 && angle > 35 && cont < 0.3;
 		if (takeover || (share <= 0.6 && angle > 65))
 			broken.push(`${(share * 100).toFixed(0)} % at ${angle.toFixed(0)} degrees`);
 	}
@@ -162,39 +297,59 @@ function brokenForks(skeleton: MacroSkeleton): string[] {
 }
 
 /**
- * The stem's main line, the stem run on into its thickest child wherever it divides: the height it
- * reaches and its great limbs, the children of a tenth of its cross-section or more.
+ * The bole and crown that stills 01, 03, 17 and 18 show: a plumb, straight bole dividing low into
+ * several great limbs, with no single axis carrying more than half of the crown's wood. The old
+ * main-line rule measured a single leader, which those stills do not show.
  */
-function mainLine(skeleton: MacroSkeleton): { top: number; limbs: number } {
+interface BoleAndCrown {
+	/** The first fork's height as a share of the plant's height. */
+	readonly fork: number;
+	/** The sharpest bend of the bole below the fork, in degrees. */
+	readonly sharpest: number;
+	/** The great limbs of a fifth of the stem's cross-section or more, at or below two fifths of the height. */
+	readonly limbs: number;
+	/** The largest share of the crown's wood that one axis above the fork carries. */
+	readonly biggest: number;
+}
+
+/** The bole and crown of a grown oak, from its skeleton. */
+function boleAndCrown(skeleton: MacroSkeleton): BoleAndCrown {
 	const { axes, radius, position: p } = skeleton;
-	const leaving = new Map<number, number[]>();
-	for (let a = 1; a < axes.count; a++) {
-		const from = axes.parentNode[a] as number;
-		const list = leaving.get(from);
-		if (list) list.push(a);
-		else leaving.set(from, [a]);
+	const fork = stemFork(skeleton);
+	const first = axes.first[0] as number;
+	let sharpestBelow = 0;
+	for (let n = first + 1; n < fork; n++)
+		sharpestBelow = Math.max(sharpestBelow, bend(p, n - 1, n, n + 1));
+	// The crown's wood, summed along each axis and then up to the stem, so each top-level limb's
+	// subtree weighs as the wood it carries.
+	const sum = new Float64Array(axes.count);
+	for (let a = axes.count - 1; a >= 0; a--) {
+		for (let n = axes.first[a] as number; n <= (axes.last[a] as number); n++)
+			sum[a] = (sum[a] as number) + (radius[n] as number) ** 2;
+		const parent = axes.parent[a] as number;
+		if (parent >= 0) sum[parent] = (sum[parent] as number) + (sum[a] as number);
 	}
-	let axis = 0;
-	let top = 0;
+	const carriers: number[] = [];
 	let limbs = 0;
-	while (axis >= 0) {
-		const last = axes.last[axis] as number;
-		let next = -1;
-		for (const child of leaving.get(last) ?? [])
-			if (
-				next < 0 ||
-				(radius[axes.first[child] as number] as number) >
-					(radius[axes.first[next] as number] as number)
-			)
-				next = child;
-		for (let n = axes.first[axis] as number; n <= last; n++) {
-			top = Math.max(top, p[n * 3 + 1] as number);
-			for (const child of leaving.get(n) ?? [])
-				if (child !== next && shareOf(skeleton, child) >= 0.1) limbs++;
-		}
-		axis = next;
+	for (let a = 1; a < axes.count; a++) {
+		if ((axes.parent[a] as number) !== 0) continue;
+		const node = axes.parentNode[a] as number;
+		if (node < 0 || (p[node * 3 + 1] as number) > 0.4 * skeleton.height) continue;
+		carriers.push(sum[a] as number);
+		if (shareOf(skeleton, a) >= 0.2) limbs++;
 	}
-	return { top, limbs };
+	// The stem's own wood above the fork, where a leader runs on.
+	let stemAbove = 0;
+	for (let n = fork + 1; n <= (axes.last[0] as number); n++)
+		stemAbove = stemAbove + (radius[n] as number) ** 2;
+	if (stemAbove > 0) carriers.push(stemAbove);
+	const total = carriers.reduce((all, wood) => all + wood, 0);
+	return {
+		fork: (p[fork * 3 + 1] as number) / skeleton.height,
+		sharpest: sharpestBelow,
+		limbs,
+		biggest: total > 0 ? Math.max(...carriers) / total : 1,
+	};
 }
 
 describe('sympodial leaders', () => {
@@ -267,7 +422,14 @@ describe('sympodial leaders', () => {
 		}
 	});
 
-	it('grows an oak whose forks follow stills 03, 08 and 20', async () => {
+	it('fails a fork the mesher draws as a tube pressed on a line that runs on', () => {
+		// The parent axis runs past the node, so the mesher presses the child against it and a mitre
+		// shows. Still 03 and 20: a side branch that leaves wide is thin.
+		expect(brokenForks(mitre(50))).toHaveLength(1);
+		expect(brokenForks(mitre(30))).toEqual([]);
+	});
+
+	it('grows an oak whose bole and crown follow stills 01, 03, 17 and 18', async () => {
 		const record = species.record;
 		await loadPlantCode(record);
 		for (let variant = 0; variant < 6; variant++) {
@@ -275,12 +437,19 @@ describe('sympodial leaders', () => {
 				grower('self-organizing').grow({ record, seed: 11, variant, season: 'summer' }),
 			);
 			// Still 20: where a limb's line runs on into a child, it bends gently; a side branch that
-			// leaves wide is thin. Still 08: a thick limb may divide into two spreading arms. Still 03:
-			// the stem runs up into the crown, carrying its great limbs.
+			// leaves wide is thin. Still 08: a thick limb may divide into two spreading arms.
 			expect(brokenForks(led)).toEqual([]);
-			const line = mainLine(led);
-			expect(line.limbs).toBeGreaterThanOrEqual(4);
-			expect(line.top).toBeGreaterThan(0.5 * led.height);
+			const bole = boleAndCrown(led);
+			// Still 17: the short bole from the root flare to its first fork. Still 01 and 18: the bole
+			// divides low. Still 03: the first limbs run out near level, several of them.
+			expect(bole.sharpest).toBeLessThan(20);
+			expect(bole.fork).toBeGreaterThanOrEqual(0.2);
+			expect(bole.fork).toBeLessThanOrEqual(0.3);
+			expect(bole.limbs).toBeGreaterThanOrEqual(3);
+			// Stills 01, 03 and 18 show no single leader: no axis carries more than half the crown.
+			expect(bole.biggest).toBeLessThanOrEqual(0.5);
 		}
-	});
+		// Six variants grow here; the test took about 5 s under the full suite on this machine, and
+		// the limit leaves room for a machine under load.
+	}, 120_000);
 });

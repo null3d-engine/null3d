@@ -394,6 +394,10 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	const lightLateral = g.light.lateral;
 	const [extinctApical, extinctLateral] = g.buds.extinction;
 	const wander = tan(radians(Math.min(80, Math.max(0, g.apical.wander))));
+	// The height at which the leader divides into its great limbs, if the record gives one.
+	const divideAt = g.divide === undefined ? Number.POSITIVE_INFINITY : height * g.divide.at;
+	/** The nodes where the leader divided: their limbs keep the angle they leave at. */
+	const divideNodes = new Set<number>();
 
 	// The stems: each starts with a base node on the ground and a terminal bud.
 	const starts = stemStarts(g.stems, seed, salt, variant);
@@ -577,6 +581,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 		let axis = terminal ? parentAxis : -1;
 		let previous = fromNode;
 		let added = 0;
+		let divided = false;
 		shade(b, -1);
 		plant.budState[b] = DEAD;
 		for (let k = 0; k < count; k++) {
@@ -656,6 +661,15 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 					}
 				if (step === 0) break;
 			}
+			// The leader divides at the record's height: its last internode reaches that height and
+			// its tip carries the record's number of great limbs, spread around it, no leader among them.
+			const toDivide = divideAt - py;
+			if (order === 0 && toDivide <= step) {
+				if (toDivide <= 0) break;
+				step = toDivide;
+				last = true;
+				divided = true;
+			}
 			const x = px + nx * step;
 			const y = py + ny * step;
 			const z = pz + nz * step;
@@ -666,7 +680,40 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			const node = plant.addNode(x, y, z, internode, previous, axis, year);
 			previous = node;
 			added++;
-			if (volume.room(x, y, z) >= 0) addLaterals(node, axis, order, internode, year);
+			if (divided) {
+				// The great limbs leave the tip together, at the record's angle from its line and
+				// round it in equal steps, so the fork is a crown of its own.
+				const count = Math.max(2, Math.round(g.divide?.count ?? 0));
+				const angle = radians(g.divide?.angle ?? 60);
+				const lean = radians(g.divide?.lean ?? 30);
+				across(internode, scratchU, scratchW);
+				for (let k = 0; k < count; k++) {
+					// The first limb runs on up, the stem's old line among them; the rest spread wide
+					// round it in equal steps, so the fork carries the crown as 3 to 5 great limbs.
+					const a = k === 0 ? lean : angle;
+					const r =
+						k === 0
+							? (plant.axisRoll[axis] as number)
+							: (plant.axisRoll[axis] as number) + ((k - 1) * 2 * Math.PI) / Math.max(1, count - 1);
+					const s2 = sin(a);
+					const c2 = cos(a);
+					const cr = cos(r);
+					const sr = sin(r);
+					const bud: Vector3 = [
+						c2 * internode[0] + s2 * (cr * scratchU[0] + sr * scratchW[0]),
+						c2 * internode[1] + s2 * (cr * scratchU[1] + sr * scratchW[1]),
+						c2 * internode[2] + s2 * (cr * scratchU[2] + sr * scratchW[2]),
+					];
+					// The buds share one point, so none shades its siblings at the fork; each casts its
+					// shadow once it grows away.
+					plant.addBud(node, axis, bud, false);
+				}
+				// The great limbs keep the angle they leave at: this node divides, so no child here
+				// is taking over a withered line.
+				plant.flags[node] = (plant.flags[node] as number) | NODE_FORK;
+				divideNodes.add(node);
+				plant.axisRoll[axis] = (plant.axisRoll[axis] as number) + (Math.PI * 2) / count;
+			} else if (volume.room(x, y, z) >= 0) addLaterals(node, axis, order, internode, year);
 			const next = kinks ? heading : internode;
 			d[0] = next[0];
 			d[1] = next[1];
@@ -674,6 +721,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			if (last) break;
 		}
 		if (added === 0) return;
+		if (divided) return;
 		const tip = plant.addBud(previous, axis, d, true);
 		shade(tip, 1);
 	};
@@ -747,6 +795,39 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	};
 
 	/**
+	 * Whether turning a branch rigidly about a node would carry any of its wood below the ground,
+	 * where no tree grows. The turn is checked before it is made, so a righting that would sink a
+	 * branch waits for a year in which the branch has risen enough.
+	 */
+	const wouldSink = (
+		first: number,
+		from: number,
+		axis: Readonly<Vector3>,
+		angle: number,
+	): boolean => {
+		const [ax, ay, az] = axis;
+		const c = cos(angle);
+		const sn = sin(angle);
+		const px = plant.x[from] as number;
+		const py = plant.y[from] as number;
+		const pz = plant.z[from] as number;
+		let depth = 0;
+		stack[depth++] = first;
+		while (depth > 0) {
+			const n = stack[--depth] as number;
+			const x = (plant.x[n] as number) - px;
+			const y = (plant.y[n] as number) - py;
+			const z = (plant.z[n] as number) - pz;
+			const d = ax * x + ay * y + az * z;
+			const ry = y * c + (az * x - ax * z) * sn + ay * d * (1 - c);
+			if (py + ry < 0) return true;
+			for (let k = childStart[n] as number; k < (childStart[n + 1] as number); k++)
+				stack[depth++] = childList[k] as number;
+		}
+		return false;
+	};
+
+	/**
 	 * Turns a branch rigidly about the node it leaves: every node from its first, the directions of
 	 * their internodes and the directions of their buds, about a unit axis through the angle. Each live
 	 * bud's shadow leaves the light grid before its node moves and falls again after.
@@ -816,12 +897,13 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 		const count = plant.nodes;
 		const most = radians(RIGHT_TURN);
 		const axis: Vector3 = [0, 0, 0];
-		let indexed = false;
+		indexChildren();
 		for (let a = 0; a < plant.axes; a++) {
 			if (plant.axisShed[a] || plant.axisOrder[a] === 0) continue;
 			const first = plant.axisFirst[a] as number;
 			const from = plant.axisParentNode[a] as number;
 			if (first < 0 || from < 0 || first >= count || !plant.live[first]) continue;
+			if (divideNodes.has(from)) continue;
 			const fork = pipes[from] as number;
 			const own = pipes[first] as number;
 			if (fork < RIGHT_FORK || own > RIGHT_TIPS) continue;
@@ -840,21 +922,26 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			const across = Math.sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
 			if (across <= 1e-9) continue;
 			// Where the parent's own line goes on beside the shoot, the two divide as a fork, and the
-			// shoot keeps the fork's angle; where the line withered, the shoot takes it over.
+			// shoot keeps the fork's angle; where the line withered, the shoot takes it over. The line
+			// goes on as the parent's next node, or as the thickest child that carries it on, as
+			// leadOnThickest reads it.
 			const next = plant.next[from] as number;
-			const goesOn =
-				next >= 0 && plant.live[next] ? forkShare(pipes[next] as number, fork, g.pipe.exponent) : 0;
-			const widest =
-				goesOn >= SPLIT_SHARE ? Math.max(forkAngle(share), radians(SPLIT_ANGLE)) : forkAngle(share);
+			let carries = next >= 0 && plant.live[next] ? (pipes[next] as number) : 0;
+			for (let k = childStart[from] as number; k < (childStart[from + 1] as number); k++) {
+				const other = childList[k] as number;
+				if (other === a) continue;
+				const firstOther = plant.axisFirst[other] as number;
+				if (firstOther >= 0 && plant.live[firstOther])
+					carries = Math.max(carries, pipes[firstOther] as number);
+			}
+			const goesOn = forkShare(carries, fork, g.pipe.exponent);
+			const widest = Math.max(forkAngle(share), goesOn >= SPLIT_SHARE ? radians(SPLIT_ANGLE) : 0);
 			const step = Math.min(most, atan2(across, cx * lx + cy * ly + cz * lz) - widest);
 			if (step <= 0) continue;
 			axis[0] /= across;
 			axis[1] /= across;
 			axis[2] /= across;
-			if (!indexed) {
-				indexChildren();
-				indexed = true;
-			}
+			if (wouldSink(first, from, axis, step)) continue;
 			turnBranch(first, from, axis, step);
 		}
 	};
@@ -1155,6 +1242,13 @@ function skeletonOf(
 			if (plant.axisParentNode[a] === -1)
 				thickest = Math.max(thickest, stemRadiusAt(plant, radius, a, BREAST_HEIGHT));
 		fitRadii(radius, count, tip, thickest, dbh / 2);
+	}
+	// A continuation that halves its girth at one internode draws as a cone. The wood keeps at least
+	// half the girth it had below, so a fork's grown taper stays smooth.
+	for (let n = 0; n < count; n++) {
+		const p = plant.parent[n] as number;
+		if (p < 0 || !plant.live[n] || plant.axisOf[p] !== plant.axisOf[n]) continue;
+		radius[n] = Math.max(radius[n] as number, 0.5 * (radius[p] as number));
 	}
 
 	// The wood bends under its load; the directions that hang on each node turn with it. The crown

@@ -145,6 +145,21 @@ export interface SelfOrganizing {
 		/** Degrees the leader wanders from its bud's direction. */
 		readonly wander: number;
 	};
+	/**
+	 * Where the leader divides into its great limbs, as a share of the plant's height: the stem
+	 * stops there and its tip carries the given number of limbs, the first running on up the stem's
+	 * old line and the rest spread wide round it. Absent, the leader runs on to the top.
+	 */
+	readonly divide?: {
+		/** The height the stem reaches before it divides, as a share of the plant's height. */
+		readonly at: number;
+		/** The limbs the division makes, 2 to 6. */
+		readonly count: number;
+		/** Degrees from the stem's line at which the wide limbs leave. */
+		readonly angle: number;
+		/** Degrees from the stem's line at which the first limb runs on. */
+		readonly lean: number;
+	};
 	/** How light drives the buds, and the shadow grid. */
 	readonly light: {
 		/** Exponent on light for apical flushing. */
