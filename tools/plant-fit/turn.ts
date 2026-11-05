@@ -8,6 +8,7 @@ import { VIEW_SPECS } from '../../tests/pages/lib/plant-review/views.ts';
 import {
 	crownBoxSpread,
 	estimateFraming,
+	iou,
 	median,
 	rubricFrames,
 	spread,
@@ -44,6 +45,13 @@ export interface TurnFit {
 	readonly hull: HullFit | null;
 	/** The views the envelope read, and those it left out with the reason. */
 	readonly views: readonly number[];
+	/** Whole-plant stills the envelope read, with the turn each honours and its outline overlap. */
+	readonly stills: readonly {
+		readonly file: string;
+		readonly turn: number;
+		readonly frame: number;
+		readonly overlap: number;
+	}[];
 	/** Every view's plant and outline, read or left out, in turn order. */
 	readonly outlines: readonly ViewOutline[];
 	readonly skipped: readonly { readonly frame: number; readonly problem: string }[];
@@ -92,13 +100,27 @@ function solveCamera(framed: readonly FrameOutline[]): TurnFit['camera'] {
 	};
 }
 
+/** A whole-plant still, whose outline bounds the crown's broad sides. */
+export interface FitStill {
+	readonly file: string;
+	readonly image: Rgba;
+	/** Degrees round the plant that the review draws the still at; 0 looks from +Z. */
+	readonly turn?: number;
+}
+
 /**
  * Measures a turning video of the whole plant.
  *
  * @param video The video, with the arc it turns over.
  * @param frames Its frames, when already read; read through ffmpeg otherwise.
+ * @param stills Whole-plant stills whose outlines bound the crown, each at the turn the review
+ *   draws it at. They come from afar, so no perspective correction applies to them.
  */
-export function fitTurn(video: TurnVideo, frames?: readonly Rgba[]): TurnFit {
+export function fitTurn(
+	video: TurnVideo,
+	frames?: readonly Rgba[],
+	stills?: readonly FitStill[],
+): TurnFit {
 	const images = frames ?? videoFrames(video.path, probeVideo(video.path), WORK_WIDTH);
 	const n = images.length;
 	const cache = new Map<number, FrameOutline>();
@@ -128,6 +150,53 @@ export function fitTurn(video: TurnVideo, frames?: readonly Rgba[]): TurnFit {
 		if (grid) views.push({ frame: k, turn: (((video.arc * k) / span) * Math.PI) / 180, grid });
 		else skipped.push({ frame: k, problem: outline(k).problem ?? 'no outline' });
 	}
+	const videoViewCount = views.length;
+	const enough = videoViewCount >= Math.max(2, Math.ceil(LEAST_VIEWS * count));
+	const framed = read.filter((o) => o.grid);
+	const camera = solveCamera(framed);
+	const distance = camera?.distance ?? Number.POSITIVE_INFINITY;
+	// The way the video turns is a property of its own camera and outline: the stills must not move
+	// it, because they are seen from afar and are not rigid views of the video's tree.
+	const direction = views.length >= 2 ? hullEnvelope(views, video.file, distance).direction : 1;
+	// A still bounds the crown at the turn the review draws it at, so its own widening lands on the
+	// view it is judged against rather than between two views.
+	const pageAngle = (k: number) => direction * ((video.arc * k) / span);
+	const apart = (a: number, b: number) => Math.abs(((((a - b) % 360) + 540) % 360) - 180);
+	const matched: {
+		readonly file: string;
+		readonly turn: number;
+		readonly frame: number;
+		readonly overlap: number;
+	}[] = [];
+	for (const still of stills ?? []) {
+		const turn = still.turn ?? 0;
+		const shot = frameOutline(still.image, -1 - matched.length);
+		const grid = outlineGrid(shot, shot.foot ?? axis);
+		if (!grid || shot.problem) {
+			skipped.push({
+				frame: shot.frame,
+				problem: `${still.file}: ${shot.problem ?? 'no outline'}`,
+			});
+			continue;
+		}
+		let near = frameList[0] as number;
+		for (const k of frameList)
+			if (apart(pageAngle(k), turn) < apart(pageAngle(near), turn)) near = k;
+		const nearGrid = gridOf(near);
+		if (!nearGrid) {
+			skipped.push({ frame: shot.frame, problem: `${still.file}: no frame near its turn` });
+			continue;
+		}
+		matched.push({ file: still.file, turn, frame: near, overlap: iou(grid, nearGrid) });
+		views.push({
+			frame: shot.frame,
+			turn: (direction * turn * Math.PI) / 180,
+			grid,
+			distance: Number.POSITIVE_INFINITY,
+			file: still.file,
+			stillTurn: turn,
+		});
+	}
 	const rubric = rubricFrames(video.arc, n);
 	const measures = rubric.frames.map((k) => outline(k).measures);
 	const crownBox = {
@@ -135,19 +204,13 @@ export function fitTurn(video: TurnVideo, frames?: readonly Rgba[]): TurnFit {
 		boxes: measures.map((m) => (m.box ? m.crownBox : null)),
 		spread: crownBoxSpread(measures),
 	};
-	const enough = views.length >= Math.max(2, Math.ceil(LEAST_VIEWS * count));
-
 	const closing = closingOverlap(gridOf(0), gridOf(span), video.arc);
-	const framed = read.filter((o) => o.grid);
-	const camera = solveCamera(framed);
 	// The camera's distance draws the crown's near side larger, which the hull undoes.
-	const hull = enough
-		? hullEnvelope(views, video.file, camera?.distance ?? Number.POSITIVE_INFINITY)
-		: null;
+	const hull = enough ? hullEnvelope(views, video.file, distance, direction) : null;
 	const problems: string[] = [];
 	if (!enough)
 		problems.push(
-			`only ${views.length} of ${count} views show the whole plant on a plain background`,
+			`only ${videoViewCount} of ${count} views show the whole plant on a plain background`,
 		);
 	if (closing !== null && closing < LEAST_CLOSING)
 		problems.push(
@@ -173,6 +236,7 @@ export function fitTurn(video: TurnVideo, frames?: readonly Rgba[]): TurnFit {
 		closing,
 		hull,
 		views: views.map((v) => v.frame),
+		stills: matched,
 		outlines: read,
 		skipped,
 		crownBox,

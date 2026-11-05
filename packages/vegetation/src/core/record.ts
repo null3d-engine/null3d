@@ -708,6 +708,11 @@ export interface RadialEnvelope {
 		readonly from: string;
 		/** Views the measure read. */
 		readonly views?: number;
+		/**
+		 * Stills that bound the crown's broad sides, with the turn the review draws each at, in
+		 * degrees round the plant. Turn 0 looks from +Z.
+		 */
+		readonly stills?: readonly { readonly file: string; readonly turn: number }[];
 	};
 }
 
