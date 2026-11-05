@@ -19,6 +19,9 @@ export default defineConfig({
 	build: {
 		emptyOutDir: true,
 		outDir: join(root, 'target/island-phones'),
+		// Every file lies under the study's own folder, so the device runner's load route can tell
+		// the build from the benchmark pages' build.
+		assetsDir: 'bench/research/island-phones/assets',
 		sourcemap: 'hidden',
 		rollupOptions: {
 			input: {
