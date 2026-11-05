@@ -131,6 +131,8 @@ Options given to `prepareSpecies` apply to every variant that grows from its kit
 
 A page can also move the level switches of all its species at once. Give `switchBias` in the view that every `placePlants` call takes. It counts in stops: each switch distance is multiplied by two to the power of minus the bias. A bias of 1 switches every level at half its distance, and a bias of -1 at twice its distance. `switchScale(bias)` gives that factor.
 
+The plant core's meshes take `levels: false`, so the engine plans no levels of its own for them. The core grows its own levels, tiers and far cards, and the plant shader sways every vertex.
+
 ## Stand-in species
 
 `standInSpecies(id, options)` makes a species module for an id that has no folder yet. Its record is a small broadleaf of the size and colors that the options give: `height`, `aspect` (crown width over height), `dbh`, `leaf`, `bark` and `variants`. `loadSpeciesOrStandIn(id, options)` loads the real species once its folder exists, and makes the stand-in until then.
