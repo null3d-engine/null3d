@@ -51,6 +51,8 @@ import {
 	RIGHT_SHARE,
 	RIGHT_TIPS,
 	RIGHT_TURN,
+	SPLIT_ANGLE,
+	SPLIT_SHARE,
 } from './forks';
 import type { Grower } from './models';
 import { fitRadii, pipeRadii } from './radii';
@@ -66,6 +68,8 @@ const SHORT_STEPS = [0.75, 0.5, 0.3] as const;
 const BREAST_HEIGHT = 1.3;
 /** The share of a kinked shoot's wander that its heading keeps, so its line drifts slowly. */
 const KINK_DRIFT = 0.5;
+/** Nodes a bud's site looks back along its wood for a cell inside the envelope. */
+const SITE_STEPS = 4;
 /** A child at least this share of its parent's radius makes a fork. */
 const FORK_SHARE = 0.7;
 
@@ -835,7 +839,14 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			axis[2] = cx * ly - cy * lx;
 			const across = Math.sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
 			if (across <= 1e-9) continue;
-			const step = Math.min(most, atan2(across, cx * lx + cy * ly + cz * lz) - forkAngle(share));
+			// Where the parent's own line goes on beside the shoot, the two divide as a fork, and the
+			// shoot keeps the fork's angle; where the line withered, the shoot takes it over.
+			const next = plant.next[from] as number;
+			const goesOn =
+				next >= 0 && plant.live[next] ? forkShare(pipes[next] as number, fork, g.pipe.exponent) : 0;
+			const widest =
+				goesOn >= SPLIT_SHARE ? Math.max(forkAngle(share), radians(SPLIT_ANGLE)) : forkAngle(share);
+			const step = Math.min(most, atan2(across, cx * lx + cy * ly + cz * lz) - widest);
 			if (step <= 0) continue;
 			axis[0] /= across;
 			axis[1] /= across;
@@ -1004,17 +1015,80 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	plant.compact();
 	readLight();
 	if (g.forkRule) {
-		// The next season's start, without its growth: the shedding and the righting of the shoots
-		// whose share the last season's growth raised.
-		shedBranches(years);
+		// The righting of the shoots whose share the last season's growth raised. The plant stands
+		// at the season's end, in leaf, so the branches that light no longer feeds are shed only
+		// with next year's growth.
 		rightShoots();
-		plant.compact();
 		readLight();
 	}
 	if (takes.length < plant.buds) takes = new Uint8Array(plant.buds);
 	takes.fill(1);
 	allocate(curveAt(g.apical.control, 1), takes);
-	return skeletonOf(plant, record, g, grid, years);
+	trimBare(plant, grid);
+	return skeletonOf(plant, record, g, grid, years, volume.base);
+}
+
+/**
+ * A bud's light for its site. A bud at the envelope's surface stands in a cell outside it, which
+ * holds no light: its site takes the light of the nearest node below it that stands inside, or full
+ * light where none does, since the outermost shoots of a crown see the most sky.
+ */
+function siteLight(plant: Plant, grid: ShadowGrid, b: number): number {
+	for (let n = plant.budNode[b] as number, k = 0; n >= 0 && k < SITE_STEPS; k++) {
+		const x = plant.x[n] as number;
+		const y = plant.y[n] as number;
+		const z = plant.z[n] as number;
+		if (grid.inside(x, y, z)) return k === 0 ? (plant.budLight[b] as number) : grid.light(x, y, z);
+		n = plant.parent[n] as number;
+	}
+	return 1;
+}
+
+/**
+ * Lets the bare ends of the wood die back: a bud in full shade at its site dies, and each axis's
+ * end dies back to its last node that carries a live bud, the wood of a shed branch, or a child
+ * that does; a stub goes with the dead wood it stands on. A dead limb that shed its branches keeps
+ * its wood, and a stem keeps its whole length, a dead leader standing as a snag. A twig
+ * whose buds all died stands bare past the leaves, and a tree sheds such dead twigs.
+ */
+function trimBare(plant: Plant, grid: ShadowGrid): void {
+	const count = plant.nodes;
+	const keep = new Uint8Array(count);
+	for (let b = 0; b < plant.buds; b++) {
+		if (plant.budState[b] !== ALIVE) continue;
+		if (siteLight(plant, grid, b) > 0) keep[plant.budNode[b] as number] = 1;
+		else plant.budState[b] = DEAD;
+	}
+	for (let n = 0; n < count; n++)
+		if (
+			plant.live[n] &&
+			(plant.axisOrder[plant.axisOf[n] as number] === 0 || (plant.memory[n] as number) > 0)
+		)
+			keep[n] = 1;
+	// Children come after their parents, so one pass from the end carries a kept node to the root.
+	for (let n = count - 1; n >= 0; n--) {
+		const p = plant.parent[n] as number;
+		if (keep[n] && p >= 0) keep[p] = 1;
+	}
+	// A stub stays while the wood it stands on stays.
+	for (let n = 0; n < count; n++) {
+		const p = plant.parent[n] as number;
+		if (p >= 0 && keep[p] && ((plant.flags[n] as number) & NODE_STUB) !== 0) keep[n] = 1;
+	}
+	for (let a = 0; a < plant.axes; a++) {
+		const first = plant.axisFirst[a] as number;
+		if (first < 0 || !plant.live[first]) continue;
+		let last = -1;
+		for (let n = first; n >= 0; n = plant.next[n] as number) if (keep[n]) last = n;
+		if (last < 0) {
+			for (let n = first; n >= 0; n = plant.next[n] as number) plant.live[n] = 0;
+			continue;
+		}
+		for (let n = plant.next[last] as number; n >= 0; n = plant.next[n] as number) plant.live[n] = 0;
+		plant.next[last] = -1;
+		plant.axisTip[a] = last;
+	}
+	plant.compact();
 }
 
 /** Opens the grid's cells that lie inside the envelope. */
@@ -1060,6 +1134,7 @@ function skeletonOf(
 	g: SelfOrganizing,
 	grid: ShadowGrid,
 	years: number,
+	floor: number,
 ): MacroSkeleton {
 	const count = plant.nodes;
 	// Pipes: one per live bud, so every shoot that attaches feeds the wood below it.
@@ -1082,7 +1157,8 @@ function skeletonOf(
 		fitRadii(radius, count, tip, thickest, dbh / 2);
 	}
 
-	// The wood bends under its load; the directions that hang on each node turn with it.
+	// The wood bends under its load; the directions that hang on each node turn with it. The crown
+	// sags no lower than the envelope's base: wood bent below it rests there.
 	const shoots = new Float64Array(count);
 	for (let b = 0; b < plant.buds; b++)
 		if (plant.budState[b] === ALIVE) {
@@ -1103,6 +1179,7 @@ function skeletonOf(
 		},
 		g.bending.strength,
 		g.bending.upturn,
+		floor,
 	);
 	const v: [number, number, number] = [0, 0, 0];
 	for (let n = 0; n < count; n++) {
@@ -1248,7 +1325,7 @@ function skeletonOf(
 			frame,
 			kind: plant.budTerminal[b] ? BUD_TERMINAL : BUD_LATERAL,
 			vigor: Math.min(1, Math.max(0, (plant.budVigor[b] as number) / ALPHA)),
-			light: plant.budLight[b] as number,
+			light: siteLight(plant, grid, b),
 			axis: axisOut[plant.budAxis[b] as number] as number,
 			woodRadius: r,
 		});
