@@ -60,6 +60,7 @@ export const record: Species = {
 		},
 		shedding: { threshold: 0.1, cleanBole: 0.1, stubs: 0.2 },
 		bending: { strength: 0.5, upturn: 0.2 },
+		relay: false,
 		pipe: { exponent: 2.3, tipRadius: 0.004 },
 	},
 	envelope,

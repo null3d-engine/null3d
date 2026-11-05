@@ -67,6 +67,14 @@ masks of frames 1, 25, 49 and so on of the turntable.
 - **Stopping at the outline, not turning along it.** Shoots that turned along the outline drew the
   same hoops. A shoot stops where its next step leaves the envelope, with a last short internode
   where part of the step fits, so the crown reaches its outline.
+- **A lost leader hands on its role.** When an axis's leader bud died, the axis stopped there, and
+  a stem whose leader died by chance below the crown left a stump with no shoot in the light to take
+  over: 3 of 40 oaks at seed 11 died at 0 to 2.4 m (variants 8, 12 and 23). An oak replaces a lost
+  terminal bud with the subterminal bud beside it. The grower now does the same: the live lateral
+  bud at the axis's tip becomes its leader, turned in to the fork rule's narrowest angle from the
+  axis's line, and a stem's leader below the crown is spared chance loss. No oak of the 40 dies.
+  The relay is on unless a record turns it off; the stand-in species turn it off, so their frozen
+  geometry stays the same.
 - **The finest order branches on.** Side shoots past the deepest macro order keep that order. A
   strict cap made the deepest axes grow on for decades as long whips; with the cap on the order
   number alone, the outer crown branches as a tree does and the order count stays within the record.

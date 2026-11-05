@@ -43,6 +43,7 @@ import { ShadowGrid } from '../crown/light-grid';
 import type { GrowInput } from '../stages';
 import { bendUnderLoad } from './bend';
 import { type EnvelopeVolume, envelopeVolume, insetVolume } from './envelope';
+import { forkAngle, narrowToward } from './forks';
 import type { Grower } from './models';
 import { fitRadii, pipeRadii } from './radii';
 import { stemStarts } from './stems';
@@ -393,6 +394,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	const scratchU: Vector3 = [0, 0, 0];
 	const scratchW: Vector3 = [0, 0, 0];
 	const toward: [number, number, number] = [0, 0, 0];
+	const relay = g.relay !== false;
 	let mainAcc = new Float64Array(0);
 	let latAcc = new Float64Array(0);
 	let vMain = new Float64Array(0);
@@ -491,6 +493,48 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 				: plant.budTerminal[b]
 					? (vMain[n] as number)
 					: (vLateral[n] as number) * (plant.budLight[b] as number);
+		}
+	};
+
+	/** The direction of the internode that ends at a node. */
+	const lineAt = (node: number, out: Vector3): Vector3 => {
+		out[0] = plant.dx[node] as number;
+		out[1] = plant.dy[node] as number;
+		out[2] = plant.dz[node] as number;
+		return out;
+	};
+	const line: Vector3 = [0, 0, 0];
+
+	/**
+	 * Hands a lost leader's role to the live lateral bud at its axis's tip, as an oak's subterminal
+	 * bud replaces a lost terminal bud: the bud becomes the axis's terminal bud, turned in to the
+	 * fork rule's narrowest angle from the axis's line, so the axis runs on. An axis whose tip holds
+	 * no live lateral bud stops.
+	 */
+	const relayLeader = (a: number) => {
+		const tip = plant.axisTip[a] as number;
+		if (tip < 0) return;
+		let before = -1;
+		for (let b = plant.firstBud[tip] as number; b >= 0; b = plant.budNext[b] as number) {
+			if (plant.budState[b] !== ALIVE) {
+				before = b;
+				continue;
+			}
+			if (before < 0) plant.firstBud[tip] = plant.budNext[b] as number;
+			else plant.budNext[before] = plant.budNext[b] as number;
+			plant.budNext[b] = -1;
+			plant.budTerminal[b] = 1;
+			plant.axisBud[a] = b;
+			const d: Vector3 = [
+				plant.budDx[b] as number,
+				plant.budDy[b] as number,
+				plant.budDz[b] as number,
+			];
+			narrowToward(lineAt(tip, line), d, forkAngle(1));
+			plant.budDx[b] = d[0];
+			plant.budDy[b] = d[1];
+			plant.budDz[b] = d[2];
+			return;
 		}
 	};
 
@@ -726,9 +770,16 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			let suppression = 0;
 			const tb = plant.axisBud[a] as number;
 			if (tb >= 0 && plant.budState[tb] === ALIVE) {
-				if (unit(Purpose.Extinct, year, tb) < extinctApical) {
+				// With the relay, a stem's leader below the crown is spared the chance loss that would
+				// leave no shoot in the light to take over.
+				const sheltered =
+					relay &&
+					plant.axisOrder[a] === 0 &&
+					(plant.y[plant.budNode[tb] as number] as number) < volume.base;
+				if (!sheltered && unit(Purpose.Extinct, year, tb) < extinctApical) {
 					shade(tb, -1);
 					plant.budState[tb] = DEAD;
+					if (relay) relayLeader(a);
 				} else if (unit(Purpose.Flush, year, tb) < pow(plant.budLight[tb] as number, lightApical)) {
 					flushing.push(tb);
 					takes[tb] = 1;
