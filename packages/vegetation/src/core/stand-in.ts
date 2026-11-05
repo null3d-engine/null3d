@@ -73,6 +73,7 @@ export function standInRecord(id: string, options: StandInOptions = {}): Species
 			tropism: { photo: 0.2, gravi: 0.2 },
 			shedding: { threshold: 0.15, cleanBole: 0.3, stubs: 0.2 },
 			bending: { strength: 0.3, upturn: 0.2 },
+			relay: false,
 			pipe: { exponent: 2.5, tipRadius: 0.004 },
 		},
 		envelope: {
