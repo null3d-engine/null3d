@@ -1785,6 +1785,14 @@ jobs:
     # it, and Firefox compiles every build (D-147).
     # .dev/devices.md says what to do then. To add a shard, add it to the shard list and raise the
     # count beside it.
+    # Safari runs on the macOS 26 machines. GitHub's macOS images with Safari 27.2, on every macOS 15
+    # machine and on a share of the macOS 26 machines, give Safari image buffers that fail on the
+    # machines' paravirtual GPU: no 2D canvas reads back, and an ImageBitmap uploads to WebGL2
+    # black and reaches a worker as null. Safari 26.6 on the other
+    # macOS 26 machines and Safari 27 on real devices pass the same pages. On a machine with the
+    # fault, --allow-image-faults has Safari skip the pages that draw and say why in the summary
+    # and on the run's page; its shader pages still run. .dev/devices.md, "Safari on CI's machines",
+    # has the evidence.
     # A push to a milestone branch skips them, as every job of the full run.
     # The few pages that load what the load pages job makes, a production build or S6's city
     # files, run in the real-browsers-prebuilt job below, so these shards wait only for the build
@@ -1792,7 +1800,7 @@ jobs:
     name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.shards }})
     needs: build
     if: *full-run
-    runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.browser == 'Safari' && 'macos-26' || 'ubuntu-latest' }}
     # Each shard should take at most about 12 minutes, setup included. In run 39291513923 Safari's
     # runner page went quiet for 90 to 235 s on some shards, and a new runner page then ran the rest,
     # so the limit leaves room for one such stop on top of a slow shard.
@@ -1858,7 +1866,7 @@ jobs:
       # the page's whole time limit, up to 235 s on a shaders page.
       - &real-browser-run
         name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of ${{ matrix.shards }}
-        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu ${{ matrix.browser == 'Safari' && '--shaders sampled' || '' }} --prebuilt ${{ env.PREBUILT }} --quiet-cap 90 --shard ${{ matrix.shard }}/${{ matrix.shards }} ${{ matrix.browser }}
+        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu ${{ matrix.browser == 'Safari' && '--shaders sampled --allow-image-faults' || '' }} --prebuilt ${{ env.PREBUILT }} --quiet-cap 90 --shard ${{ matrix.shard }}/${{ matrix.shards }} ${{ matrix.browser }}
       # Every shard keeps its runs, whose page times set the shards' model of each page's time, and a
       # failed shard's candidates beside them.
       - &real-browser-runs
@@ -1878,7 +1886,7 @@ jobs:
     name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.shards }})
     needs: build
     if: *full-run
-    runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.browser == 'Safari' && 'macos-26' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -1899,7 +1907,7 @@ jobs:
     name: real-browsers (${{ matrix.browser }}, the prebuilt pages)
     needs: [build, load-pages, load-startup-pages]
     if: *full-run
-    runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.browser == 'Safari' && 'macos-26' || 'ubuntu-latest' }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
