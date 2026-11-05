@@ -3,7 +3,8 @@ description: >-
   Installs Playwright's Chromium and the Ubuntu packages that it needs. Ubuntu's package mirror
   sometimes stalls for minutes, so the browser and the downloaded packages stay in the Actions
   cache, and a job downloads them again only after Playwright's version or the runner's image
-  changes. The cache saves only when the workflow's SAVE_CACHES is true.
+  changes. The cache saves only when the workflow's SAVE_CACHES is true. It also installs the
+  pinned Chrome for Testing that the repository's real-GPU runs start, the cost tests among them.
 
 inputs:
   cache-only:
@@ -86,3 +87,21 @@ runs:
           ~/.cache/ms-playwright
           ~/.cache/playwright-debs
         key: ${{ steps.key.outputs.key }}
+    # The repository's own tests start the real-GPU environment with the pinned Chrome for Testing
+    # alone, so the cost tests' timing browser needs it here too. Its version and its archive's
+    # hash live in the launcher, which keys the cache.
+    - uses: actions/cache/restore@v4
+      id: testing-restore
+      with:
+        lookup-only: ${{ inputs.cache-only }}
+        path: ~/.cache/null3d/chrome-for-testing
+        key: chrome-for-testing-${{ runner.os }}-${{ hashFiles('packages/cli/src/browser.js') }}
+    - name: Install the pinned Chrome for Testing
+      if: inputs.cache-only != 'true' || steps.testing-restore.outputs.cache-hit != 'true'
+      shell: bash
+      run: bun run chrome:install
+    - uses: actions/cache/save@v4
+      if: env.SAVE_CACHES == 'true' && steps.testing-restore.outputs.cache-hit != 'true'
+      with:
+        path: ~/.cache/null3d/chrome-for-testing
+        key: ${{ steps.testing-restore.outputs.cache-primary-key }}
