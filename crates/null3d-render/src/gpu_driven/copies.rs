@@ -39,7 +39,7 @@ use null3d_core::scene::SceneStorage;
 use null3d_core::shared::SharedMut;
 use null3d_core::world::UNBOUNDED_RADIUS;
 
-use super::layout::{BUCKET_WORDS, INDEX_ENTRIES_PER_COPY, Layout};
+use super::layout::{BUCKET_WORDS, FIXED, INDEX_ENTRIES_PER_COPY, Layout};
 use crate::frame::{CellOffsets, RecordError};
 use crate::levels::{StageWatches, key_level};
 
@@ -138,7 +138,9 @@ impl Layout {
     /// size in every view's compacted instance buffer, with the buckets of one level set packed
     /// together. Marks the records of the buckets whose slices moved for the frame's one table
     /// upload. A layout whose buckets take no level, and one that no view draws, keeps its slices.
-    /// Counts on `jobs`' threads. Allocates nothing once the working lists have their room.
+    /// The sets whose slices hold every source of the set count only with `count_fixed`, and keep
+    /// their slices' size. Counts on `jobs`' threads. Allocates nothing once the working lists
+    /// have their room.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn fit_copies(
         &mut self,
@@ -148,8 +150,10 @@ impl Layout {
         parity: usize,
         offsets: &mut CellOffsets,
         jobs: &JobSystem,
+        count_fixed: bool,
     ) -> Result<(), RecordError> {
-        if !self.picks_levels() || views.is_empty() {
+        let nothing_counted = self.level_sources.is_empty() && !count_fixed;
+        if !self.picks_levels() || views.is_empty() || (self.slices_placed && nothing_counted) {
             return Ok(());
         }
         let buckets = self.buckets.len();
@@ -166,20 +170,38 @@ impl Layout {
                 .take_while(|view| view.camera == first.camera)
                 .count();
             offsets.update(scene, &first.camera);
-            self.count_views(
-                scene,
-                batches,
-                &views[start..start + shared],
-                parity,
-                offsets.as_slice(),
-                &mut tallies,
-                &mut fits,
-                jobs,
-            );
+            let fixed = if count_fixed {
+                &self.fixed_sources[..]
+            } else {
+                &[]
+            };
+            for sources in [&self.level_sources[..], fixed] {
+                if sources.is_empty() {
+                    continue;
+                }
+                self.count_views(
+                    scene,
+                    batches,
+                    &views[start..start + shared],
+                    sources,
+                    parity,
+                    offsets.as_slice(),
+                    &mut tallies,
+                    &mut fits,
+                    jobs,
+                );
+            }
             start += shared;
         }
         self.copy_counts.clear();
         self.copy_counts.extend_from_slice(&fits);
+        // A set whose slices hold every source of the set keeps them as the build sized them.
+        for &bucket in &self.level_buckets {
+            let b = bucket as usize;
+            if self.marks[b] == FIXED {
+                fits[b] = self.buckets[b].capacity;
+            }
+        }
         // A level that no view places a copy in draws nothing, so its draws and its pieces' wait
         // out of the bundles, which the frame records again when that changes.
         if self.note_idle(&fits) {
@@ -241,7 +263,8 @@ impl Layout {
             .unwrap_or(buckets as u32);
         let mut changed = false;
         for &bucket in &self.level_buckets {
-            if bucket >= first_piece {
+            // A set that no frame counts draws each of its levels.
+            if bucket >= first_piece || self.marks[bucket as usize] == FIXED {
                 continue;
             }
             let b = bucket as usize;
@@ -265,8 +288,9 @@ impl Layout {
         changed
     }
 
-    /// Counts the copies that each of `views`, which share one camera, places in each bucket of
-    /// the layout, and raises each level bucket's count in `fits` to the largest. Each of `jobs`'
+    /// Counts the copies that each of `views`, which share one camera, places of `sources` in each
+    /// bucket of the layout, and raises each level bucket's count in `fits` to the largest. Each
+    /// of `jobs`'
     /// threads that runs a chunk counts into a tally of its own in `tallies`: a count for each
     /// view, then a word that marks the tally as begun, so a thread that runs no chunk costs
     /// neither a clear nor a sum.
@@ -276,6 +300,7 @@ impl Layout {
         scene: &SceneStorage,
         batches: &BatchTable,
         views: &[CopyView],
+        sources: &[u32],
         parity: usize,
         cells: &[[f32; 4]],
         tallies: &mut Vec<u32>,
@@ -291,22 +316,17 @@ impl Layout {
             tallies[thread * width + begun_at] = 0;
         }
         let shared = SharedMut::new(tallies);
-        let level_sources = &self.level_sources;
-        jobs.parallel_for(
-            level_sources.len() as u32,
-            SOURCES_PER_CHUNK,
-            &|chunk, worker| {
-                // SAFETY: each thread writes only the tally of its own worker id, which is below
-                // the thread count that sized the tallies, and a thread runs one chunk at a time.
-                let tally = unsafe { shared.slice(worker.index() * width, width) };
-                if tally[begun_at] == 0 {
-                    tally[..begun_at].fill(0);
-                    tally[begun_at] = 1;
-                }
-                let sources = &level_sources[chunk.start as usize..chunk.end as usize];
-                self.count_sources(scene, batches, views, parity, cells, sources, tally, stride);
-            },
-        );
+        jobs.parallel_for(sources.len() as u32, SOURCES_PER_CHUNK, &|chunk, worker| {
+            // SAFETY: each thread writes only the tally of its own worker id, which is below
+            // the thread count that sized the tallies, and a thread runs one chunk at a time.
+            let tally = unsafe { shared.slice(worker.index() * width, width) };
+            if tally[begun_at] == 0 {
+                tally[..begun_at].fill(0);
+                tally[begun_at] = 1;
+            }
+            let chunk = &sources[chunk.start as usize..chunk.end as usize];
+            self.count_sources(scene, batches, views, parity, cells, chunk, tally, stride);
+        });
         let begun = |thread: &usize| tallies[thread * width + begun_at] != 0;
         let Some(first) = (0..threads).find(begun) else {
             return;

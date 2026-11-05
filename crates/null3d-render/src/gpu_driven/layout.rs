@@ -64,6 +64,16 @@ const BUCKET_BYTES: u32 = BUCKET_WORDS * 4;
 const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 /// The index entries that fit in the bytes of one copied instance.
 pub(super) const INDEX_ENTRIES_PER_COPY: u32 = sizes::INSTANCE_STRIDE / sizes::INDEX_STRIDE;
+/// The mark of a level's bucket whose slice the frames size to the copies that they count.
+pub(super) const COUNTED: u8 = 1;
+/// The mark of a level's bucket whose slice holds every source of its set, which no frame counts.
+pub(super) const FIXED: u8 = 2;
+/// The most slots, over all of a layout's level sets, that the sets whose slices hold every
+/// source of the set in each bucket take, as the builder's configuration gives it by default.
+/// Each slot is one copy in each view's compacted instance buffer, so these take at most 512 KiB a
+/// view. A frame's count of a set's copies costs CPU time for each source in each view, and a
+/// small set saves little memory by it.
+pub const FIXED_LEVEL_SLOTS: u32 = 8192;
 /// Floats of one source's texel in the ranges texture: its start and its end distance, its own
 /// local radius, which 0 leaves to its bucket's sphere, then a word that nothing reads.
 const RANGE_FLOATS: usize = sizes::RANGE_TEXELS as usize * 4;
@@ -542,15 +552,25 @@ pub(super) struct Layout {
     pub(super) cull_buckets: Vec<u32>,
     /// Each bucket's link to its next level of detail, as the CPU culling reads it.
     pub(super) level_links: Vec<LevelLink>,
-    /// True for each bucket that holds a level's copies: the buckets of a level set and their
-    /// fade buckets. Their slices follow the copies that a frame draws
-    /// ([`Layout::fit_copies`](super::copies)).
+    /// For each bucket that holds a level's copies, the buckets of a level set and their fade
+    /// buckets, how its slice is sized: [`COUNTED`] to the copies that a frame draws
+    /// ([`Layout::fit_copies`](super::copies)), or [`FIXED`] to every source of its set. 0 for
+    /// any other bucket.
     pub(super) marks: Vec<u8>,
     /// The buckets that `marks` marks, in bucket order.
     pub(super) level_buckets: Vec<u32>,
-    /// The sources whose home bucket `marks` marks, in source order: the only sources whose
-    /// copies the frame counts to size the levels' slices, shown or hidden.
+    /// The sources whose home bucket `marks` marks [`COUNTED`], in source order, shown or hidden:
+    /// the only sources whose copies the frame counts to size the levels' slices.
     pub(super) level_sources: Vec<u32>,
+    /// The sources whose home bucket `marks` marks [`FIXED`], in source order: the count visits
+    /// them only while a loader watches staged levels.
+    pub(super) fixed_sources: Vec<u32>,
+    /// Working lists of a build's choice of the sets that it fixes: which buckets another bucket
+    /// links to, and the buckets of one set.
+    linked: Vec<bool>,
+    set: Vec<u32>,
+    /// The most slots that the sets whose slices hold every source of the set take in all.
+    fixed_slots: u32,
     /// The cluster meshes that the layout's views draw from their trees. The scene's layout picks
     /// them; the casters' layout holds one for each of the scene's, in the same order.
     pub(super) clusters: Vec<ClusterMesh>,
@@ -637,6 +657,9 @@ impl Layout {
             vec_bytes(&self.marks),
             vec_bytes(&self.level_buckets),
             vec_bytes(&self.level_sources),
+            vec_bytes(&self.fixed_sources),
+            vec_bytes(&self.linked),
+            vec_bytes(&self.set),
             vec_bytes(&self.clusters),
             vec_bytes(&self.scene_trees),
             vec_bytes(&self.cluster_patches),
@@ -781,10 +804,11 @@ impl Layout {
 
     /// An empty layout of buckets that draw `drawn`, whose pipelines read their instances by index
     /// where their templates can, with `index_instances`.
-    pub(super) fn new(drawn: Drawn, index_instances: bool) -> Self {
+    pub(super) fn new(drawn: Drawn, index_instances: bool, fixed_slots: u32) -> Self {
         Self {
             drawn,
             index_instances,
+            fixed_slots,
             ..Self::default()
         }
     }
@@ -890,6 +914,7 @@ impl Layout {
         self.marks.clear();
         self.level_buckets.clear();
         self.level_sources.clear();
+        self.fixed_sources.clear();
         self.idle.clear();
         self.idle_frames.clear();
         (self.copied, self.indexed) = (0, 0);
@@ -905,32 +930,99 @@ impl Layout {
         self.pick_views = 0;
     }
 
-    /// Lists the sources whose home bucket takes a level's copies: the scene slots by their home
-    /// bucket, and every row of a batch whose bucket does. A source keeps its home bucket until
-    /// the layout is built again, so the frames' counts of the levels' copies visit these alone.
+    /// Lists the sources whose home bucket takes a level's copies, by how the bucket's slice is
+    /// sized: the scene slots by their home bucket, and every row of a batch by the batch's
+    /// bucket. A source keeps its home bucket until the layout is built again, so the frames'
+    /// counts of the levels' copies visit these alone.
     pub(super) fn note_level_sources(&mut self) {
         self.level_sources.clear();
+        self.fixed_sources.clear();
         if self.level_buckets.is_empty() {
             return;
         }
         let marks = &self.marks;
-        let marked = |bucket: u32| marks.get(bucket as usize).is_some_and(|&mark| mark != 0);
-        self.level_sources.extend(
-            (0..self.scene_rows).filter(|&source| marked(self.home_buckets[source as usize])),
-        );
-        for (index, &(_, base)) in self.batch_bases.iter().enumerate() {
-            if !self
-                .batch_rows
-                .get(index)
-                .is_some_and(|rows| marked(rows.bucket))
-            {
-                continue;
+        let mark = |bucket: u32| marks.get(bucket as usize).copied().unwrap_or(0);
+        for source in 0..self.scene_rows {
+            match mark(self.home_buckets[source as usize]) {
+                COUNTED => self.level_sources.push(source),
+                FIXED => self.fixed_sources.push(source),
+                _ => {}
             }
+        }
+        for (index, &(_, base)) in self.batch_bases.iter().enumerate() {
+            let list = match self.batch_rows.get(index).map(|rows| mark(rows.bucket)) {
+                Some(COUNTED) => &mut self.level_sources,
+                Some(FIXED) => &mut self.fixed_sources,
+                _ => continue,
+            };
             let end = self
                 .batch_bases
                 .get(index + 1)
                 .map_or(self.sources, |&(_, next)| next);
-            self.level_sources.extend(base..end);
+            list.extend(base..end);
+        }
+    }
+
+    /// Marks [`FIXED`] the level sets whose slices can hold every source of the set in each of
+    /// their buckets within the layout's room for fixed slots in all, in bucket order. The build gives
+    /// each bucket of a set a slot for every source of the set, so such a set never outgrows its
+    /// slices, and the frames count none of its copies. Its levels' draws stay in the bundles
+    /// while they hold no copy. A set with pieces or a tree of cluster patches stays counted:
+    /// its idle levels leave many draws out.
+    fn fix_small_sets(&mut self) {
+        let buckets = self.buckets.len();
+        // A set's base bucket is a level's bucket that no other bucket links to.
+        let mut linked = std::mem::take(&mut self.linked);
+        let mut set = std::mem::take(&mut self.set);
+        linked.clear();
+        linked.resize(buckets, false);
+        for (bucket, link) in self.level_links.iter().enumerate() {
+            for target in [link.next, link.fade] {
+                if target != NO_LINK && target as usize != bucket {
+                    linked[target as usize] = true;
+                }
+            }
+        }
+        let mut left = self.fixed_slots;
+        for base in 0..buckets {
+            if self.marks[base] != COUNTED || linked[base] {
+                continue;
+            }
+            set.clear();
+            self.set_buckets(base as u32, &mut set);
+            let (mut slots, mut counted) = (0u32, false);
+            for &bucket in &set {
+                let bucket = &self.buckets[bucket as usize];
+                slots = slots.saturating_add(bucket.capacity);
+                counted |= bucket.pieces.is_some() || bucket.cluster.is_some();
+            }
+            if counted || slots > left {
+                continue;
+            }
+            left -= slots;
+            for &bucket in &set {
+                self.marks[bucket as usize] = FIXED;
+            }
+        }
+        self.linked = linked;
+        self.set = set;
+    }
+
+    /// Pushes onto `set` each bucket of the level set whose base bucket is `base`: each level's
+    /// bucket and its fade bucket.
+    fn set_buckets(&self, base: u32, set: &mut Vec<u32>) {
+        let mut bucket = base;
+        loop {
+            set.push(bucket);
+            let link = self.level_links[bucket as usize];
+            // A levels debug view's fade link names the level's own bucket.
+            if link.fade != NO_LINK && link.fade != bucket {
+                set.push(link.fade);
+            }
+            if link.next == NO_LINK || set.len() > self.buckets.len() {
+                return;
+            }
+            bucket = link.next;
         }
     }
 
@@ -1842,8 +1934,8 @@ impl Layout {
         for (bucket, link) in self.level_links.iter().enumerate() {
             for target in [link.next, link.fade] {
                 if target != NO_LINK {
-                    self.marks[bucket] = 1;
-                    self.marks[target as usize] = 1;
+                    self.marks[bucket] = COUNTED;
+                    self.marks[target as usize] = COUNTED;
                 }
             }
         }
@@ -1853,9 +1945,10 @@ impl Layout {
             if let (Some((first, count)), true) =
                 (self.buckets[bucket].pieces, self.marks[bucket] != 0)
             {
-                self.marks[first as usize..(first + count) as usize].fill(1);
+                self.marks[first as usize..(first + count) as usize].fill(COUNTED);
             }
         }
+        self.fix_small_sets();
         self.level_buckets.clear();
         self.level_buckets.extend(
             (0..self.buckets.len() as u32).filter(|&bucket| self.marks[bucket as usize] != 0),
@@ -2784,77 +2877,99 @@ mod tests {
     /// The frame's count of each level's copies visits only the sources whose mesh has levels: the
     /// scene's objects of such a mesh, shown or hidden, and every row of a batch that draws one.
     /// Objects and rows of a mesh without levels never enter the count, however many there are.
+    /// A small set keeps a slot for each of its sources in each level, and the frames count none
+    /// of its copies; a set past the fixed sets' room is counted.
     #[test]
     fn a_layout_lists_only_the_sources_of_a_mesh_with_levels_for_the_count() {
         use null3d_core::levels::Switch;
 
-        let mut settings = scene_settings(&RendererConfig {
-            max_materials: 4,
-            ..RendererConfig::default()
-        });
-        let mut add_box = |segments: u32| {
-            let geometry = box_geometry(1.0, 1.0, 1.0, [segments; 3]).unwrap();
-            settings.meshes_mut().add(&geometry).unwrap() + 1
-        };
-        let (leveled, coarse, plain) = (add_box(2), add_box(1), add_box(1));
-        settings
-            .set_mesh_levels(leveled, &[coarse], &[0.01], &[Switch::Error], &[0], 0)
-            .unwrap();
-        let material = settings.materials_mut().create(Shading::Lit, 0, [1.0; 4]);
-        let material = material.unwrap() + 1;
-        let mut scene = SceneStorage::with_capacity(16);
-        let mut commands = Vec::new();
-        let mut leveled_slots = Vec::new();
-        for i in 0..12u32 {
-            let object = scene.reserve().unwrap();
-            let mesh = if i % 3 == 0 { leveled } else { plain };
-            // A hidden object keeps its place in the list, as showing it takes no rebuild.
-            let shown = if i == 6 { 0 } else { flags::VISIBLE };
-            commands.push(Command::create(object, Handle::NONE, mesh, shown));
-            commands.push(Command::set_material(object, material));
-            if mesh == leveled {
-                leveled_slots.push(scene.resolve(object).unwrap());
-            }
-        }
-        scene.apply_commands(&commands, 1).unwrap();
-        scene.update_transforms(&JobSystem::new(0));
-        let mut batches = BatchTable::with_capacity(2);
-        for mesh in [plain, leveled] {
-            let batch = batches
-                .create(8, false, false, mesh, material, 0.5)
+        let layout_with = |leveled_rows: u32| {
+            let mut settings = scene_settings(&RendererConfig {
+                max_materials: 4,
+                ..RendererConfig::default()
+            });
+            let mut add_box = |segments: u32| {
+                let geometry = box_geometry(1.0, 1.0, 1.0, [segments; 3]).unwrap();
+                settings.meshes_mut().add(&geometry).unwrap() + 1
+            };
+            let (leveled, coarse, plain) = (add_box(2), add_box(1), add_box(1));
+            settings
+                .set_mesh_levels(leveled, &[coarse], &[0.01], &[Switch::Error], &[0], 0)
                 .unwrap();
-            batches.get_mut(batch).unwrap().set_active_count(5).unwrap();
-        }
-        let mut layout = Layout::default();
-        let mut pipelines = PipelineCache::default();
-        let targets = PassTargets {
-            color_format: format::CANVAS,
-            depth_format: format::DEPTH32_FLOAT,
-            samples: 4,
-            permutation: 0,
+            let material = settings.materials_mut().create(Shading::Lit, 0, [1.0; 4]);
+            let material = material.unwrap() + 1;
+            let mut scene = SceneStorage::with_capacity(16);
+            let mut commands = Vec::new();
+            let mut leveled_slots = Vec::new();
+            for i in 0..12u32 {
+                let object = scene.reserve().unwrap();
+                let mesh = if i % 3 == 0 { leveled } else { plain };
+                // A hidden object keeps its place in the list, as showing it takes no rebuild.
+                let shown = if i == 6 { 0 } else { flags::VISIBLE };
+                commands.push(Command::create(object, Handle::NONE, mesh, shown));
+                commands.push(Command::set_material(object, material));
+                if mesh == leveled {
+                    leveled_slots.push(scene.resolve(object).unwrap());
+                }
+            }
+            scene.apply_commands(&commands, 1).unwrap();
+            scene.update_transforms(&JobSystem::new(0));
+            let mut batches = BatchTable::with_capacity(2);
+            for (mesh, rows) in [(plain, 8), (leveled, leveled_rows)] {
+                let batch = batches
+                    .create(rows, false, false, mesh, material, 0.5)
+                    .unwrap();
+                batches.get_mut(batch).unwrap().set_active_count(5).unwrap();
+            }
+            let mut layout = Layout::new(Drawn::Scene, false, FIXED_LEVEL_SLOTS);
+            let targets = PassTargets {
+                color_format: format::CANVAS,
+                depth_format: format::DEPTH32_FLOAT,
+                samples: 4,
+                permutation: 0,
+            };
+            layout
+                .rebuild(
+                    &settings,
+                    &mut PipelineCache::default(),
+                    targets,
+                    &scene,
+                    &batches,
+                    scene.parity(),
+                    u32::MAX,
+                    CasterPasses::default(),
+                    Prepass::Off,
+                    &Skinning::default(),
+                    &mut KeyCounts::new(),
+                    targets,
+                    false,
+                    0,
+                )
+                .unwrap();
+            let base = layout.batch_bases[1].1;
+            (layout, leveled_slots, base..base + leveled_rows)
         };
-        layout
-            .rebuild(
-                &settings,
-                &mut pipelines,
-                targets,
-                &scene,
-                &batches,
-                scene.parity(),
-                u32::MAX,
-                CasterPasses::default(),
-                Prepass::Off,
-                &Skinning::default(),
-                &mut KeyCounts::new(),
-                targets,
-                false,
-                0,
-            )
-            .unwrap();
-        let leveled_rows = layout.batch_bases[1].1..layout.batch_bases[1].1 + 8;
-        let expected: Vec<u32> = leveled_slots.into_iter().chain(leveled_rows).collect();
-        assert_eq!(layout.level_sources, expected);
-        assert!(layout.level_sources.len() * 2 < layout.sources as usize);
+        let (small, slots, rows) = layout_with(8);
+        let leveled: Vec<u32> = slots.into_iter().chain(rows).collect();
+        assert_eq!(small.fixed_sources, leveled);
+        assert!(small.level_sources.is_empty());
+        assert!(small.fixed_sources.len() * 2 < small.sources as usize);
+
+        let (large, slots, rows) = layout_with(FIXED_LEVEL_SLOTS);
+        let mut listed: Vec<u32> = large.level_sources.clone();
+        listed.extend(&large.fixed_sources);
+        listed.sort_unstable();
+        let leveled: Vec<u32> = slots.into_iter().chain(rows.clone()).collect();
+        assert_eq!(listed, leveled);
+        assert!(
+            rows.into_iter()
+                .all(|row| large.level_sources.contains(&row))
+        );
+        let fixed_slots: u32 = (0..large.buckets.len())
+            .filter(|&b| large.marks[b] == FIXED)
+            .map(|b| large.buckets[b].capacity)
+            .sum();
+        assert!(fixed_slots <= FIXED_LEVEL_SLOTS);
     }
 
     #[test]

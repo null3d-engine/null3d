@@ -220,7 +220,7 @@ The render scale is part of the render height, so a lower scale picks coarser le
 
 A view's compacted instance buffer holds one copy of each source that draws, in the slice that the bucket's draw reads. Any source of a set may pick any level. A slice for every source of the set in every bucket of the set would take four times the copies that the sources need for four levels, and eight times with fading bands. Each copy takes 64 bytes per source per level per view. The copies of a dense forest would then pass WebGPU's 128 MiB binding limit near 260,000 copies.
 
-So the frame sizes each level's slice to the copies that it draws, and the slices of one set take the room of the set's sources. `Layout::fit_copies` (`crates/null3d-render/src/gpu_driven/copies.rs`) counts the copies that each view places in each bucket. It uses the same stateless rule that the culling shader runs. It takes the largest count over the views that draw the layout. A source near a switch distance counts toward both levels that it may pick. So a slice never falls short of the shader's writes, whatever the last bits of a shared distance come to. The buckets without levels keep the slices of the build. A scene without levels runs no count. A slice keeps its place while its count fits, with spare room of an eighth of its count and 64 rows, because a view's bundle and buffer name the slices. A count that outgrows its slice moves the slices, and the frame records the bundles and sizes the buffers again ([Level slices and moving cameras](../implementation-notes.md#level-slices-and-moving-cameras)).
+So the frame sizes each level's slice to the copies that it draws, and the slices of one set take the room of the set's sources. `Layout::fit_copies` (`crates/null3d-render/src/gpu_driven/copies.rs`) counts the copies that each view places in each bucket. It uses the same stateless rule that the culling shader runs. It takes the largest count over the views that draw the layout. A source near a switch distance counts toward both levels that it may pick. So a slice never falls short of the shader's writes, whatever the last bits of a shared distance come to. Each view counts only the sources inside its frustum, as its culling pass appends no other. The views of a scene whose staged levels a loader watches count every source, because the watches read every level that a source picks. The buckets without levels keep the slices of the build. A scene without levels runs no count. A slice keeps its place while its count fits, with spare room of an eighth of its count and 64 rows, because a view's bundle and buffer name the slices. A count that outgrows its slice moves the slices, and the frame records the bundles and sizes the buffers again ([Level slices and moving cameras](../implementation-notes.md#level-slices-and-moving-cameras)).
 
 | Copies of four levels, with fading bands | A slice per source in every bucket, by arithmetic | Sized to what draws, measured |
 | --- | --- | --- |
@@ -230,7 +230,7 @@ So the frame sizes each level's slice to the copies that it draws, and the slice
 
 `crates/null3d-render/tests/levels.rs` measures the right-hand figures from the frame's own copy lists. `forty_thousand_copies_of_four_levels_take_one_copy_each` reads the main view, and `forty_thousand_casters_of_four_cascades_take_a_copy_for_each_level_that_a_cascade_picks` reads the casters' layout with four cascades. The cascades share one bucket table, so a level's slice holds the most copies that any cascade places in it. Each cascade picks in its own texels, so two cascades can place one caster in two levels. The test's 40,000 trees stand together inside every cascade, and the four cascades pick two levels: 5.1 MB, twice the 2.6 MB of one level. Each shadow view counts only the casters inside its frustum, with its sphere grown by the count's slack, so a caster that no cascade holds takes no copy. The same trees far past the shadow distance take none. The middle column is arithmetic at 64 bytes a copy. The main view would have eight slices, one for each of four levels and its fading band: 20.5 MB. The casters' list would have four, because its shadow pipelines take no fading build, and its fade buckets exist only in the scene layout: 10.2 MB.
 
-Counting every caster in every cascade, as the camera's view counts every source, would put a near cascade's fine levels and a far cascade's coarse levels in every caster's count. The casters' list would then approach a slice for every copy in every level, the cost that this section removes.
+Counting every caster in every cascade would put a near cascade's fine levels and a far cascade's coarse levels in every caster's count. The casters' list would then approach a slice for every copy in every level, the cost that this section removes.
 
 A band adds about a tenth more, for the sources inside it, which take a copy in each of two fade buckets.
 
@@ -241,7 +241,28 @@ The count picks a level for every source in every frame, twice for each source, 
 Each source's two picks share one walk of its levels (`LevelRule::pick_both`). A switch distance that stops the walk at the far edge stops it at the near edge too. So the walk to the far edge passes the place where the walk to the near edge stops. Each switch distance is worked out once. Both edges then settle their bands, ranges and hide distance with the code that `LevelRule::pick` runs. `one_walk_picks_what_two_picks_give_at_both_distances` in `crates/null3d-core/src/levels.rs` compares the two over 20,000 random chains, rules, ranges and distances, fading amounts included. Rejected:
 
 - Skipping the count while the camera moves little. The count's purpose is a slice that never falls short. A bound on how far the camera may move before a source switches would need every input of the rule tracked. These are the rows, the scale, the bias, the field of view and the render scale.
-- One slice per source in every level. It is the memory cost that this section removes.
+- One slice per source in every level, for every set. It is the memory cost that this section removes. Small sets take it, as the next section says.
+
+#### Small sets keep a slot for every source
+
+The count saves memory in proportion to a set's sources, and costs CPU time in proportion to them, in every frame. For a small set it saves little and still costs every frame. S4 shows it. Its 492 balls take planned levels, in five sets, one for each material. Each frame then walked all 5,200 objects to count the balls, once for the camera's view and once for each of the three cascades at Medium. The sketch worker's frame rose from 0.225 ms to 0.373 ms on the MacBook Pro M5 Max, a rise of 0.15 ms. A build that counts only the first frame took 0.225 ms, so the count was the whole rise. The GPU time did not change.
+
+So the count now does three things:
+
+- It visits only the sources whose mesh has levels. The layout lists them when it is built, because a source keeps its home bucket until the next build. The count walked every source before and skipped the others.
+- It counts the views that share a camera in one pass, as the shadow views do, so each source's sphere is read once for all of them. Each view counts only the sources inside its own frustum.
+- It skips small sets. A build keeps a slot for every source of a set in each of its buckets, so such a set can never outgrow its slices. Each layout fixes sets in bucket order while they fit 8,192 slots in all (`FIXED_LEVEL_SLOTS` in `crates/null3d-render/src/gpu_driven/layout.rs`). At 64 bytes a copy, that is at most 512 KiB a view. No frame counts a fixed set's copies, and its slices never move. A set with pieces or a tree of cluster patches is always counted. Its idle levels leave many draws out of the bundles, as the Island's walls do.
+
+A fixed set draws every level, also when no copy picks it, because only a count can find a level idle. S4 then draws 94 indirect draws where the counted sets drew 86. The 8 empty draws add about 0.01 ms to the render worker's replay, which is not S4's busiest thread. The GPU time stays the same.
+
+| S4 at Medium, WebGPU, busiest thread | Median ms a frame |
+| --- | --- |
+| Before the balls had levels | 0.225 |
+| Every source counted in every view | 0.373 |
+| Only the sources with levels, the views of one camera in one pass | 0.28 to 0.30 |
+| Small sets fixed | 0.223, against 0.210 for the base in the same rounds |
+
+`a_small_sets_slices_hold_every_copy_in_every_level_and_never_move` in `crates/null3d-render/tests/levels.rs` moves a fixed set's ball through every level and finds its copy list unchanged, while a counted set's list moves. `a_layout_lists_only_the_sources_of_a_mesh_with_levels_for_the_count` in the layout's unit tests checks the two lists of sources. The tests of the count itself build their worlds with `fixed_level_slots: 0`, which counts every set.
 
 The buffer takes room to grow while that room fits the binding, and only the need when it does not. A frame builder refuses a need past the device's limit with E1501, which names the limit in bytes. Every buffer that a frame sizes against a binding takes the same check. `a_copy_list_past_the_binding_is_refused_rather_than_sized_over_it` in `crates/null3d-render/tests/levels.rs` gives a device whose binding holds the sources, and a batch that reserves room in every bucket of its levels. It reads the refusal.
 
