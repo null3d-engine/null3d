@@ -668,8 +668,14 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		const soft =
 			Boolean(process.env.CI) || test.info().project.name.startsWith('chromium-swiftshader');
 		const seconds = soft ? 30 : 4;
+		// The page's start and its first frame come on top of the measured window, and a software GPU
+		// on a busy runner spends seconds on each. So the wait gives the window a fixed start budget
+		// of its own, and the test's limit leaves the report a little room past the wait.
+		const startBudgetMs = 60_000;
+		const waitMs = seconds * 1000 + startBudgetMs;
+		test.setTimeout(waitMs + 15_000);
 		await page.goto(`engine.html?gpu=${gpu}&seconds=${seconds}&${mode.query}&sketch=busy`);
-		const result = await pageResult<EngineResult & { error?: string }>(page, 60_000);
+		const result = await pageResult<EngineResult & { error?: string }>(page, waitMs);
 		expect(result.error).toBeUndefined();
 		expect(engineProblems(result, mode, gpu, notPacing)).toEqual([]);
 		const jobThreads = Object.keys(result.stats.threads).filter((name) => name.startsWith('job-'));
