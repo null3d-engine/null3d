@@ -42,11 +42,12 @@ export interface WarmUpResult {
  * builds them once each, with a depth pipeline for each of the scene's four vertex formats where the
  * screen texture reads depth, and the GPU-driven path's nine compute steps; and every path builds the
  * final pass's two builds, its full-precision one and the 8-bit variant that a dropped render scale
- * adds.
+ * adds. GPU occlusion culling, which WebGPU draws from High up, adds seven more there, and one to
+ * each object that warms up later.
  */
 const FIRST_FRAME_PIPELINES: Readonly<Record<string, Readonly<Record<string, number>>>> = {
 	webgl2: { low: 22, medium: 28, high: 28, ultra: 28 },
-	webgpu: { low: 21, medium: 21, high: 31, ultra: 31 },
+	webgpu: { low: 21, medium: 21, high: 38, ultra: 38 },
 	'webgpu-compat': { low: 21, medium: 21, high: 21, ultra: 21 },
 };
 /** Pixels the added quad covers at the least, in the page's 320 x 180 capture. */
@@ -101,7 +102,9 @@ export function warmUpProblems(result: WarmUpResult, gpu: 'webgpu' | 'webgl2'): 
 	else {
 		// The added quad is unlit. WebGL2 pairs an opaque pipeline with the prepass's depth pipeline;
 		// the other paths do that only where the depth prepass draws.
-		const perObject = prepass(tier, playPreset) ? 2 : 1;
+		const perObject =
+			(prepass(tier, playPreset) ? 2 : 1) +
+			(tier === 'webgpu' && prepass(tier, playPreset) ? 1 : 0);
 		if (result.addedPipelines !== perObject)
 			problems.push(
 				`the added object built ${result.addedPipelines} pipelines at '${playPreset}', not ${perObject}`,
