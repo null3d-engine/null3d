@@ -21,7 +21,7 @@ of growth. The bytes a variant may hold were one figure, 1.5 MB, for every tier.
 
 ## Rule
 
-The plant core's design (D-305) gives each growth model its own grower, and a plant of tens of
+The plant core's design (D-323) gives each growth model its own grower, and a plant of tens of
 leaves draws them in the variant's own mesh. The owner capped a ground plant's nearest wood at 0
 bytes. The look decides between options that meet the caps. The owner ruled that quality comes
 before size, and that the bytes of a variant are capped per detail tier, as the nearest wood is

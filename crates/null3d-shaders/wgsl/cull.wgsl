@@ -40,8 +40,10 @@
 // level's bucket holds the level's switch measure: its error in the units of the base mesh, a
 // distance in meters at scale 1, or a share of the render's height that the bounds cover. An
 // instance's entry names its base level's bucket. The thread walks the links while the next
-// level's switch distance stays under its distance from the main camera to the nearest point of
-// its bounding sphere, and appends the instance to the last level that passes. Every view places its instances relative to the main camera, shadow views
+// level's switch distance stays under its distance from the main camera: for a level given by its
+// error, to the center of its bounding sphere less half its radius, and for one given by a distance
+// or by coverage, to the sphere's nearest point. It appends the instance to the last level that
+// passes. Every view places its instances relative to the main camera, shadow views
 // too, so they all pick by its distance. Past each switch distance lies a band in which the level
 // before still draws: there, the instance goes to both levels' fade buckets, whose pipelines dither
 // each pixel to one of them, and the copy's fourth id holds the fade value, positive for the new
@@ -73,15 +75,22 @@
 // word per instance after the view's indirect draws, 1 when the instance drew in the view's last
 // frame. It shares their buffer, which frames reset only up to the draws, so that the culling
 // group stays within the eight storage buffers that every device allows a shader stage. `early`
-// keeps the instances in view that the sketch marks as occluders, whose history is 1, and that
-// cover at least the occluders' span of the screen, in the first set of indirect draws, and the view's occluders' pass draws their
-// depth. It counts them in the pyramid's first word. In a frame without occluders, the pyramid
-// skips its work and `late` tests nothing against it, so an open scene of small objects pays for
-// little more than a second culling dispatch. The GPU then builds the depth pyramid from that depth
-// (pyramid.wgsl): each level holds the farthest depth of each square of the level below it. `late`
-// tests every instance in view against the pyramid, writes its history, and keeps the visible
-// ones in the second set of indirect draws, after the first, which the view's opaque pass draws.
-// It writes over the bucket slices that the occluders' pass has finished reading.
+// keeps the instances in view that may hide others, whose history is 1, and that cover at least
+// the occluders' span of the screen, in the first set of indirect draws, and the view's occluders'
+// pass draws their depth. Every opaque instance whose bucket draws depth may hide others, unless
+// the page opts it out, so the entry's occluder bit marks it. `early` counts the occluders in the
+// pyramid's first word. In a frame without occluders, the pyramid skips its work and `late` tests
+// nothing against it, so an open scene of small objects pays for little more than a second
+// culling dispatch. The GPU then builds the depth pyramid from that depth (pyramid.wgsl): each
+// level holds the farthest depth of each square of the level below it. `late` tests every
+// instance in view against the pyramid, writes its history, and keeps the visible ones in the
+// second set of indirect draws, after the first, which the view's opaque pass draws. It writes
+// over the bucket slices that the occluders' pass has finished reading.
+//
+// `late` also counts, for the engine's check of what the culling saves, the instances in view
+// that would draw and those that the pyramid hides. Each workgroup sums its own in workgroup
+// memory and adds them with one atomic each to the two words after the history, which the frame
+// reads back.
 //
 // An instance hides when its bounding sphere lies behind the farthest depth of the pyramid's
 // texels under it. The sphere's bounds on the screen and its nearest depth come from interval
@@ -93,6 +102,22 @@
 // The OCCLUSION build holds the two phases, `early` and `late`, and the build without it holds
 // `main` alone, so a page that never culls against a pyramid downloads none of the phases.
 //
+// A bucket whose mesh has pieces (runs of its triangles that each face about one way and lie close
+// together) draws no copy of its own: each piece has a bucket, with a slice and draws of its own.
+// The thread queues the copy in its workgroup, and once every thread has culled its own copy, the
+// workgroup's threads share the queued (copy, piece) pairs and append each copy to the slice of
+// each piece that shows. A piece shows unless its
+// sphere, moved by the copy's matrix, lies outside the frustum, or, in a view whose positions start
+// at its eye, every triangle of the piece faces away from the eye: the piece's sphere, at `c` from
+// the eye with radius `r`, meets `dot(c, axis) >= cutoff * |c| + r` for the cone of its facings
+// turned by the copy's matrix. The cone test needs a matrix that keeps angles, a perspective lens
+// and a pipeline that drops back faces; the layout gives a piece of a pipeline that draws back
+// faces a cutoff of 1, which never culls. In the late occlusion phase each piece also tests its
+// own sphere against the pyramid. A piece's record holds its sphere where a bucket's holds the
+// local sphere, and its cone where a level's holds its switch and links. The pieced bucket's own
+// draw, which no pass draws, counts the copies that waited for their pieces' tests, so the engine
+// can weigh what the pieces left out.
+//
 // The MOTION build culls the motion view: the camera's view of the motion layout, whose buckets
 // draw each moving object's motion (decision record D-140). It reads the last frame's matrices
 // where the pyramid sits, and keeps an instance in view only when its matrix changed since the
@@ -102,8 +127,8 @@
 // the move of whole cells that brings it nearest to the new matrix puts it right. An instance draws
 // its motion with the level of detail that the camera's view picks, without the fading band.
 
-/// An entry holds its bucket in the bits below OCCLUDER, the occluder mark at OCCLUDER, and the
-/// instance's cell index from CELL_SHIFT up.
+/// An entry holds its bucket in the bits below OCCLUDER, the mark of an instance that may hide
+/// others at OCCLUDER, and the instance's cell index from CELL_SHIFT up.
 const CELL_SHIFT: u32 = 23u;
 const OCCLUDER: u32 = 1u << 22u;
 /// Runs of the cell order that one dispatch covers at most.
@@ -112,9 +137,43 @@ const MAX_RANGES: u32 = 257u;
 const WORKGROUP_SIZE: u32 = 128u;
 /// Levels of the depth pyramid at most.
 const MAX_LEVELS: u32 = 16u;
+/// The words after a two-phase view's history that count, in a frame, the instances in view that
+/// would draw, then those that the pyramid hides.
+const TESTED_WORD: u32 = 0u;
+const HIDDEN_WORD: u32 = 1u;
 /// The smallest distance that the level rule compares, in meters. A camera inside an instance's
 /// bounds measures this distance, so the instance keeps its base level.
 const LEAST_DISTANCE: f32 = 1.0e-3;
+/// The share of a bounding sphere's radius that the camera's level distance takes off the distance
+/// to its center (`LEVEL_RADIUS_SHARE` in `levels.rs`).
+const LEVEL_RADIUS_SHARE: f32 = 0.5;
+/// The bit of a bucket's `indices` word that marks a bucket that draws pieces in its place.
+const PIECED: u32 = 1u << 31u;
+/// Where the count of a bucket's pieces sits in its `indices` word, above its first piece's bucket.
+const PIECE_COUNT_SHIFT: u32 = 24u;
+/// How much wider than its cutoff a piece's cone counts, as a share of the distance to the piece,
+/// so that rounding never culls a triangle that the GPU draws.
+const CONE_MARGIN: f32 = 1.0e-3;
+/// How far a copy's matrix may stretch, or bend its axes from square, as a share of its scale, for
+/// its pieces to take the cone test.
+const SIMILAR_TOLERANCE: f32 = 1.0e-4;
+/// The most copies with pieces that one workgroup queues: a thread queues at most two, one for
+/// each level of a fading band.
+const PIECE_QUEUE: u32 = 256u;
+/// The marks of a queued copy's bucket word: a copy that the levels view marks as hidden, and a
+/// copy that the late occlusion phase queued, whose pieces test the pyramid.
+const QUEUED_HIDDEN: u32 = 1u << 31u;
+const QUEUED_OCCLUSION: u32 = 1u << 30u;
+/// The workgroup's queued copies with pieces: each copy's instance, its bucket with its marks, the
+/// draws before its set of draws, and its fade value's bits.
+var<workgroup> piece_queue: array<vec4u, PIECE_QUEUE>;
+/// Where each queued copy's (copy, piece) pairs start among the workgroup's pairs.
+var<workgroup> piece_starts: array<u32, PIECE_QUEUE>;
+/// The queued copies in the bits from 16 up, and their (copy, piece) pairs below.
+var<workgroup> piece_tally: atomic<u32>;
+/// True while the late occlusion phase appends, so that each piece tests its own sphere against
+/// the depth pyramid too.
+var<private> piece_occlusion: bool = false;
 
 /// What the occlusion phases read: the view-projection matrix for positions relative to the
 /// camera, the render size, and the depth pyramid's levels. The levels' shapes follow from the
@@ -141,10 +200,17 @@ struct CullParams {
     offsets_row: u32,
     /// What the level choice reads: the level factor (0 for none), 1 for an orthographic camera,
     /// whose distance counts as 1, the share of a switch distance that a fading band covers, and
-    /// the projection's P[1][1].
+    /// the camera's projection's P[1][1].
     levels: vec4f,
+    /// Where the view measures errors and the size of a bound that hides: 0 in the last word for
+    /// the camera's distance, 1 for a light's orthographic view, which measures 1 at every
+    /// distance, and 2 for a light's perspective view, which measures from the light at the
+    /// first three words, relative to the camera. Distance ranges, and levels given by a distance
+    /// or by coverage, read the camera's distance in every view.
+    measure: vec4f,
     /// The first word is 1 while the levels debug view draws, whose copies carry each source's
-    /// level code in place of the fade value. The rest are spare.
+    /// level code in place of the fade value. The second is 1 for a view whose positions start at
+    /// its eye, where pieces take the cone test. The rest are spare.
     debug: vec4u,
     /// Each run: its first position in the cell order, its end, and its first workgroup.
     ranges: array<vec4u, MAX_RANGES>,
@@ -159,7 +225,9 @@ struct CullParams {
 /// beside the material, or PER_SOURCE_JOINT, which sends each copy to its own. A bucket with
 /// `indices` 1 writes each survivor's index instead, one entry each, from entry `base` on. In the
 /// motion layout, whose buckets never read by index, `indices` 1 marks a bucket whose instances
-/// move by themselves.
+/// move by themselves. A bucket whose `indices` holds the PIECED bit draws pieces in its place: the
+/// bucket of its first piece sits in the bits below PIECE_COUNT_SHIFT, and the count of its pieces
+/// above them. Such a bucket never reads by index, and the vertex shaders never read its record.
 struct Bucket {
     base: u32,
     material: u32,
@@ -239,11 +307,11 @@ const HIDDEN: u32 = 0xffffffffu;
 /// the level in the lowest bits, a mark for a source that the size rule or a draw range hid, the
 /// share of a fading band that the level keeps, and the sign that names the band's side. The
 /// levels view's shader reads the same bits.
-const LEVEL_CODE_LEVEL_MAX: u32 = 7u;
-const LEVEL_CODE_HIDDEN: u32 = 1u << 3u;
-const LEVEL_CODE_FADE_SHIFT: u32 = 4u;
+const LEVEL_CODE_LEVEL_MAX: u32 = 15u;
+const LEVEL_CODE_HIDDEN: u32 = 1u << 4u;
+const LEVEL_CODE_FADE_SHIFT: u32 = 5u;
 const LEVEL_CODE_FADE_MAX: u32 = 63u;
-const LEVEL_CODE_NEGATIVE: u32 = 1u << 10u;
+const LEVEL_CODE_NEGATIVE: u32 = 1u << 11u;
 
 /// The code of a draw at level `level`, of a source that `hidden` hides, at fade `fade`.
 fn level_code(level: u32, hidden: bool, fade: f32) -> u32 {
@@ -296,8 +364,8 @@ fn ranges_of(index: u32) -> vec4f {
     return textureLoad(instance_ranges, vec2u(index & row, index >> 11u), 0);
 }
 
-/// An instance in the view: its bucket and its own index, whether the sketch marks it as an
-/// occluder, its matrix moved by its cell's offset, its bounding sphere relative to the camera, and
+/// An instance in the view: its bucket and its own index, whether it may hide others in occlusion
+/// culling, its matrix moved by its cell's offset, its bounding sphere relative to the camera, and
 /// the texel that holds its distance range. The bucket is `HIDDEN` for an instance that draws
 /// nowhere in the view: hidden, on none of the view's layers, or outside the frustum.
 struct Survivor {
@@ -387,6 +455,23 @@ struct Level {
     end: f32,
 }
 
+/// The distance at which the view compares errors for a sphere at `center` relative to the camera
+/// of radius `radius`, whose level distance from the camera is `camera`: that distance in the
+/// camera's view, 1 in a light's orthographic view, or the distance from the light to the sphere's
+/// nearest point in a perspective one.
+fn error_distance(center: vec3f, radius: f32, camera: f32) -> f32 {
+    if params.measure.w > 1.5 {
+        return max(length(center - params.measure.xyz) - radius, LEAST_DISTANCE);
+    }
+    return select(camera, 1.0, params.measure.w > 0.5);
+}
+
+/// The distance that a level's switch compares with: the error distance for a level given by its
+/// error, and the camera's distance for one given by a distance or by coverage.
+fn distance_for(bucket: Bucket, camera: f32, error: f32) -> f32 {
+    return select(camera, error, bucket.level_switch == SWITCH_ERROR);
+}
+
 /// The level of detail that an instance in view draws, its base level where the view picks none.
 fn level_of(s: Survivor) -> Level {
     var out = Level(s.bucket, s.bucket, 0.0, 0.0, false, 0.0, s.ranges.x, s.ranges.y);
@@ -395,27 +480,32 @@ fn level_of(s: Survivor) -> Level {
     let factor = whole / bias;
     let nearest = max(length(s.center) - s.radius, LEAST_DISTANCE);
     let distance = select(nearest, 1.0, params.levels.y > 0.5);
+    // A level given by its error, and the rule that hides a small bound, measure the camera's
+    // level distance: to the sphere's center, less a share of its radius (`levels.rs`).
+    let toward = max(length(s.center) - LEVEL_RADIUS_SHARE * s.radius, LEAST_DISTANCE);
+    let error = error_distance(s.center, s.radius, select(toward, 1.0, params.levels.y > 0.5));
     out.distance = distance;
     var next = buckets[s.bucket].next;
     if next != 0u && whole > 0.0 {
-        while next != 0u && switch_distance(buckets[next - 1u], s.scale, s.radius, factor, bias) < distance {
+        while next != 0u && switch_distance(buckets[next - 1u], s.scale, s.radius, factor, bias) < distance_for(buckets[next - 1u], distance, error) {
             out.before = out.bucket;
             out.bucket = next - 1u;
             next = buckets[out.bucket].next;
         }
         if out.bucket != s.bucket {
-            out.past = distance / switch_distance(buckets[out.bucket], s.scale, s.radius, factor, bias) - 1.0;
+            let level = buckets[out.bucket];
+            out.past = distance_for(level, distance, error) / switch_distance(level, s.scale, s.radius, factor, bias) - 1.0;
         }
     }
-    // A bound that covers fewer pixels than the threshold draws nothing: the last level holds no
-    // geometry. Only a mesh with levels has that last level, so a bucket with no coarser level
-    // keeps drawing at every distance. The view's level factor also carries the render height,
-    // the render scale and the threshold, so all of them move the hide distance.
+    // A bound that covers fewer pixels, or texels, than the threshold draws nothing: the last level
+    // holds no geometry. Only a mesh with levels has that last level, so a bucket with no coarser
+    // level keeps drawing at every distance. The view's level factor also carries the render
+    // height, the render scale and the threshold, so all of them move the hide distance.
     let hide = 2.0 * s.radius * factor;
-    let small = buckets[s.bucket].next != 0u && hide > 0.0 && hide < distance;
+    let small = buckets[s.bucket].next != 0u && hide > 0.0 && hide < error;
     out.hidden = small || distance < out.start || distance > out.end;
     if small {
-        out.hide_past = distance / hide - 1.0;
+        out.hide_past = error / hide - 1.0;
     }
     return out;
 }
@@ -473,11 +563,118 @@ fn append(s: Survivor, level: Level, draws_before: u32) {
     append_to(s, level.bucket, draws_before, 0.0, false);
 }
 
+/// Appends an instance in the view to bucket `b`, or to the buckets of its pieces that show, with
+/// the fade value `fade` (see `append_copy`).
+fn append_to(s: Survivor, b: u32, draws_before: u32, fade: f32, hidden: bool) {
+    let pieces = buckets[b].indices;
+    if (pieces & PIECED) == 0u {
+        append_copy(s, b, draws_before, fade, hidden);
+        return;
+    }
+    // The bucket's own draw is a tally that no pass draws: its instance count counts the copies
+    // that wait for their pieces' tests, for the engine's check of what pieces cull.
+    atomicAdd(&indirect[(draws_before + buckets[b].first_draw) * INDIRECT_WORDS + 1u], 1u);
+    // The copy waits in the workgroup's queue, whose (copy, piece) pairs every thread of the
+    // workgroup then shares (see `place_pieces`).
+    let count = (pieces & ~PIECED) >> PIECE_COUNT_SHIFT;
+    let at = atomicAdd(&piece_tally, (1u << 16u) | count);
+    let entry = at >> 16u;
+    if entry < PIECE_QUEUE {
+        let marks = select(0u, QUEUED_HIDDEN, hidden) | select(0u, QUEUED_OCCLUSION, piece_occlusion);
+        piece_queue[entry] = vec4u(s.index, b | marks, draws_before, bitcast<u32>(fade));
+        piece_starts[entry] = at & 0xffffu;
+    }
+}
+
+/// Tests and places the pieces of the copies that the workgroup's threads queued, with every
+/// thread of the workgroup: each takes the next (copy, piece) pairs in turn. A copy's pieces then
+/// spread over many threads, where one thread would take a round trip to memory for each piece
+/// in turn. Every thread of the workgroup calls it, after its own copy.
+fn place_pieces(lane: u32) {
+    workgroupBarrier();
+    let tally = atomicLoad(&piece_tally);
+    let copies = min(tally >> 16u, PIECE_QUEUE);
+    let pairs = tally & 0xffffu;
+    for (var w = lane; w < pairs; w += WORKGROUP_SIZE) {
+        // The queued copy that holds pair w: the last whose first pair is at most w.
+        var low = 0u;
+        var high = copies;
+        while high - low > 1u {
+            let middle = (low + high) / 2u;
+            if piece_starts[middle] <= w {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+        let queued = piece_queue[low];
+        let b = queued.y & (OCCLUDER - 1u);
+        let p = (buckets[b].indices & ((1u << PIECE_COUNT_SHIFT) - 1u)) + w - piece_starts[low];
+        let s = survivor(queued.x);
+        let cone = params.debug.y != 0u && params.levels.y < 0.5 && keeps_angles(s);
+        piece_occlusion = (queued.y & QUEUED_OCCLUSION) != 0u;
+        if piece_shows(s, p, cone) {
+            append_copy(s, p, queued.z, bitcast<f32>(queued.w), (queued.y & QUEUED_HIDDEN) != 0u);
+        }
+    }
+}
+
+/// True when the instance's matrix keeps angles: a turn and the same positive scale on each axis,
+/// within SIMILAR_TOLERANCE, so that it turns its pieces' cones as it turns their facings.
+fn keeps_angles(s: Survivor) -> bool {
+    let c0 = vec3f(s.r0.x, s.r1.x, s.r2.x);
+    let c1 = vec3f(s.r0.y, s.r1.y, s.r2.y);
+    let c2 = vec3f(s.r0.z, s.r1.z, s.r2.z);
+    let lengths = vec3f(length(c0), length(c1), length(c2));
+    let least = min(lengths.x, min(lengths.y, lengths.z));
+    let square = SIMILAR_TOLERANCE * s.scale * s.scale;
+    return least > 0.0
+        && s.scale - least <= SIMILAR_TOLERANCE * s.scale
+        && abs(dot(c0, c1)) <= square
+        && abs(dot(c0, c2)) <= square
+        && abs(dot(c1, c2)) <= square
+        && dot(cross(c0, c1), c2) > 0.0;
+}
+
+/// True when the instance's piece in bucket `p` may draw in the view: its sphere reaches into the
+/// frustum, where `cone` allows the cone test some triangle may face the eye, and in the late
+/// occlusion phase the pyramid does not hide its sphere. It reads only the words of the piece's
+/// record that it needs.
+fn piece_shows(s: Survivor, p: u32, cone: bool) -> bool {
+    let local = vec4f(buckets[p].center_x, buckets[p].center_y, buckets[p].center_z, 1.0);
+    let center = vec3f(dot(s.r0, local), dot(s.r1, local), dot(s.r2, local));
+    let radius = buckets[p].radius * s.scale;
+    for (var k = 0u; k < 6u; k++) {
+        let plane = params.planes[k];
+        if dot(plane.xyz, center) + plane.w < -radius {
+            return false;
+        }
+    }
+    // A piece's record holds its cone's axis and cutoff where a level's holds its switch value,
+    // its links and its bias.
+    let cutoff = buckets[p].bias;
+    if cone && cutoff < 1.0 {
+        let axis = vec3f(buckets[p].value, bitcast<f32>(buckets[p].next), bitcast<f32>(buckets[p].fade));
+        let turned = vec3f(dot(s.r0.xyz, axis), dot(s.r1.xyz, axis), dot(s.r2.xyz, axis));
+        let reach = length(turned);
+        if reach > 0.0
+            && dot(center, turned) / reach >= (cutoff + CONE_MARGIN) * length(center) + radius {
+            return false;
+        }
+    }
+#ifdef OCCLUSION
+    if piece_occlusion && occluded(center, radius) {
+        return false;
+    }
+#endif
+    return true;
+}
+
 /// Appends an instance in the view to bucket `b`'s slice with the fade value `fade`, and counts it
 /// in each of the bucket's draws, which start `draws_before` draws into the indirect draws. A
 /// source that `hidden` marks, and every source while the levels debug view draws, carries the
 /// level code that the view's shader reads in place of the fade value.
-fn append_to(s: Survivor, b: u32, draws_before: u32, fade: f32, hidden: bool) {
+fn append_copy(s: Survivor, b: u32, draws_before: u32, fade: f32, hidden: bool) {
     let bucket = buckets[b];
     let first = (draws_before + bucket.first_draw) * INDIRECT_WORDS + 1u;
     let slot = atomicAdd(&indirect[first], 1u);
@@ -580,32 +777,40 @@ fn main(
 
 #else ifndef OCCLUSION
 /// Culls once, against the frustum alone, into the first set of indirect draws, or for a camera
-/// view that culls in two phases, in a frame without marked occluders, into its second set.
+/// view that culls in two phases, in a frame that runs no occlusion phases, into its second set.
 @compute @workgroup_size(128)
 fn main(
     @builtin(workgroup_id) group: vec3u,
     @builtin(local_invocation_index) lane: u32,
 ) {
     let i = instance_of(group.x, lane);
-    if i == NONE {
-        return;
+    if i != NONE {
+        let s = survivor(i);
+        if s.bucket != HIDDEN {
+            append(s, level_of(s), params.occlusion.info.y);
+        }
     }
-    let s = survivor(i);
-    if s.bucket != HIDDEN {
-        append(s, level_of(s), params.occlusion.info.y);
-    }
+    place_pieces(lane);
 }
 
 #else
-/// The first occlusion phase: the occluders, the instances in view that the sketch marks as
-/// occluders, that drew in the view's last frame, and that look large enough on the screen.
+/// The first occlusion phase: the occluders, the instances in view that may hide others, that drew
+/// in the view's last frame, and that look large enough on the screen.
 @compute @workgroup_size(128)
 fn early(
     @builtin(workgroup_id) group: vec3u,
     @builtin(local_invocation_index) lane: u32,
 ) {
     let i = instance_of(group.x, lane);
-    if i == NONE || atomicLoad(&indirect[params.occlusion.info.z + i]) == 0u {
+    if i != NONE {
+        early_one(i);
+    }
+    place_pieces(lane);
+}
+
+/// The first occlusion phase's test of instance `i`.
+fn early_one(i: u32) {
+    if atomicLoad(&indirect[params.occlusion.info.z + i]) == 0u {
         return;
     }
     let s = survivor(i);
@@ -627,6 +832,11 @@ fn early(
     append(s, level, 0u);
 }
 
+/// The workgroup's counts of the instances in view that would draw and of those that the pyramid
+/// hides, which `late` adds to the counts after the history once per workgroup.
+var<workgroup> tested_here: atomic<u32>;
+var<workgroup> hidden_here: atomic<u32>;
+
 /// The second occlusion phase: tests every instance in view against the depth pyramid, keeps
 /// whether it is visible as its history, and appends the visible ones to the second set of draws.
 @compute @workgroup_size(128)
@@ -635,20 +845,40 @@ fn late(
     @builtin(local_invocation_index) lane: u32,
 ) {
     let i = instance_of(group.x, lane);
-    if i == NONE {
-        return;
+    if i != NONE {
+        let s = survivor(i);
+        if s.bucket == HIDDEN {
+            atomicStore(&indirect[params.occlusion.info.z + i], 0u);
+        } else {
+            let level = level_of(s);
+            // A hidden instance draws nothing, so its history says it did not draw.
+            let shown = !level.hidden;
+            let seen = shown && !occluded(s.center, s.radius);
+            atomicStore(&indirect[params.occlusion.info.z + i], select(0u, 1u, seen));
+            if seen {
+                piece_occlusion = true;
+                append(s, level, params.occlusion.info.y);
+            }
+            if shown {
+                atomicAdd(&tested_here, 1u);
+            }
+            if shown && !seen {
+                atomicAdd(&hidden_here, 1u);
+            }
+        }
     }
-    let s = survivor(i);
-    if s.bucket == HIDDEN {
-        atomicStore(&indirect[params.occlusion.info.z + i], 0u);
-        return;
-    }
-    let level = level_of(s);
-    // A hidden instance draws nothing, so its history says it did not draw.
-    let seen = !level.hidden && !occluded(s.center, s.radius);
-    atomicStore(&indirect[params.occlusion.info.z + i], select(0u, 1u, seen));
-    if seen {
-        append(s, level, params.occlusion.info.y);
+    place_pieces(lane);
+    workgroupBarrier();
+    if lane == 0u {
+        let counts = params.occlusion.info.z + params.instance_count;
+        let tested = atomicLoad(&tested_here);
+        let hidden = atomicLoad(&hidden_here);
+        if tested != 0u {
+            atomicAdd(&indirect[counts + TESTED_WORD], tested);
+        }
+        if hidden != 0u {
+            atomicAdd(&indirect[counts + HIDDEN_WORD], hidden);
+        }
     }
 }
 

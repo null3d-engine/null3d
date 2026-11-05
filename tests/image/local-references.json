@@ -41,14 +41,14 @@
 		"date": "2026-10-28",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
 	},
+	"chromium-swiftshader/compat/cluster-shadows.png": {
+		"test": "cluster-shadows",
+		"tier": "compat",
+		"date": "2026-11-03",
+		"reason": "drawn on the Mac's SwiftShader because the branch is not pushed for a CI run; a CI drawing replaces it"
+	},
 	"chromium-swiftshader/compat/custom-cutout-motion.png": {
 		"test": "custom-cutout-motion",
-		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
-	},
-	"chromium-swiftshader/compat/custom-cutout.png": {
-		"test": "custom-cutout",
 		"tier": "compat",
 		"date": "2026-10-29",
 		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
@@ -185,32 +185,8 @@
 		"date": "2026-10-29",
 		"reason": "the card's stored normal no longer turns with the camera's bearing, so the pictures whose eye lies off the tree's forward moved; drawn on the software renderer"
 	},
-	"chromium-swiftshader/compat/probe-grid-mirror.png": {
-		"test": "probe-grid-mirror",
-		"tier": "compat",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
-	},
-	"chromium-swiftshader/compat/probe-grid-wall-leak.png": {
-		"test": "probe-grid-wall-leak",
-		"tier": "compat",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
-	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
-		"tier": "compat",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
-	},
-	"chromium-swiftshader/compat/probe-grid-wall.png": {
-		"test": "probe-grid-wall",
-		"tier": "compat",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
-	},
-	"chromium-swiftshader/compat/probe-grid.png": {
-		"test": "probe-grid",
 		"tier": "compat",
 		"date": "2026-11-02",
 		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
@@ -263,6 +239,12 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
 	},
+	"chromium-swiftshader/compat/spot-map.png": {
+		"test": "spot-map",
+		"tier": "compat",
+		"date": "2026-11-04",
+		"reason": "the bounce light (49b215a8a) moved the WebGPU and WebGL2 pictures, and each tier now keeps a picture of its own; this Mac's SwiftShader drew the set before the branch's CI run, and CI's own SwiftShader redraws it"
+	},
 	"chromium-swiftshader/compat/terrain-baked-normals.png": {
 		"test": "terrain-baked-normals",
 		"tier": "compat",
@@ -286,12 +268,6 @@
 		"tier": "compat",
 		"date": "2026-11-03",
 		"reason": "the contact pair on the software GPU at the shortened far cover"
-	},
-	"chromium-swiftshader/compat/vegetation-grass-shadow.png": {
-		"test": "vegetation-grass-shadow",
-		"tier": "compat",
-		"date": "2026-11-02",
-		"reason": "a new picture, drawn here until CI's SwiftShader set draws it; the software set takes the Low preset for its shadow cost"
 	},
 	"chromium-swiftshader/compat/weather.png": {
 		"test": "weather",
@@ -341,14 +317,14 @@
 		"date": "2026-10-28",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
 	},
+	"chromium-swiftshader/webgl2/cluster-shadows.png": {
+		"test": "cluster-shadows",
+		"tier": "webgl2",
+		"date": "2026-11-03",
+		"reason": "drawn on the Mac's SwiftShader because the branch is not pushed for a CI run; a CI drawing replaces it"
+	},
 	"chromium-swiftshader/webgl2/custom-cutout-motion.png": {
 		"test": "custom-cutout-motion",
-		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
-	},
-	"chromium-swiftshader/webgl2/custom-cutout.png": {
-		"test": "custom-cutout",
 		"tier": "webgl2",
 		"date": "2026-10-29",
 		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
@@ -382,12 +358,6 @@
 		"tier": "webgl2",
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
-	},
-	"chromium-swiftshader/webgl2/demo-splats.png": {
-		"test": "demo-splats",
-		"tier": "webgl2",
-		"date": "2026-11-02",
-		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
 	},
 	"chromium-swiftshader/webgl2/demo-spot-cookies.png": {
 		"test": "demo-spot-cookies",
@@ -485,32 +455,8 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
-	"chromium-swiftshader/webgl2/probe-grid-mirror.png": {
-		"test": "probe-grid-mirror",
-		"tier": "webgl2",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
-	},
-	"chromium-swiftshader/webgl2/probe-grid-wall-leak.png": {
-		"test": "probe-grid-wall-leak",
-		"tier": "webgl2",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
-	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
-		"tier": "webgl2",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
-	},
-	"chromium-swiftshader/webgl2/probe-grid-wall.png": {
-		"test": "probe-grid-wall",
-		"tier": "webgl2",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
-	},
-	"chromium-swiftshader/webgl2/probe-grid.png": {
-		"test": "probe-grid",
 		"tier": "webgl2",
 		"date": "2026-11-02",
 		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
@@ -587,6 +533,12 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
 	},
+	"chromium-swiftshader/webgl2/spot-map.png": {
+		"test": "spot-map",
+		"tier": "webgl2",
+		"date": "2026-11-04",
+		"reason": "the bounce light (49b215a8a) moved the WebGPU and WebGL2 pictures, and each tier now keeps a picture of its own; this Mac's SwiftShader drew the set before the branch's CI run, and CI's own SwiftShader redraws it"
+	},
 	"chromium-swiftshader/webgl2/terrain-baked-normals.png": {
 		"test": "terrain-baked-normals",
 		"tier": "webgl2",
@@ -610,12 +562,6 @@
 		"tier": "webgl2",
 		"date": "2026-11-03",
 		"reason": "the contact pair on the software GPU at the shortened far cover"
-	},
-	"chromium-swiftshader/webgl2/vegetation-grass-shadow.png": {
-		"test": "vegetation-grass-shadow",
-		"tier": "webgl2",
-		"date": "2026-11-02",
-		"reason": "a new picture, drawn here until CI's SwiftShader set draws it; the software set takes the Low preset for its shadow cost"
 	},
 	"chromium-swiftshader/webgl2/weather.png": {
 		"test": "weather",
@@ -665,14 +611,14 @@
 		"date": "2026-10-28",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
 	},
+	"chromium-swiftshader/webgpu/cluster-shadows.png": {
+		"test": "cluster-shadows",
+		"tier": "webgpu",
+		"date": "2026-11-03",
+		"reason": "drawn on the Mac's SwiftShader because the branch is not pushed for a CI run; a CI drawing replaces it"
+	},
 	"chromium-swiftshader/webgpu/custom-cutout-motion.png": {
 		"test": "custom-cutout-motion",
-		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
-	},
-	"chromium-swiftshader/webgpu/custom-cutout.png": {
-		"test": "custom-cutout",
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
@@ -809,32 +755,8 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
-	"chromium-swiftshader/webgpu/probe-grid-mirror.png": {
-		"test": "probe-grid-mirror",
-		"tier": "webgpu",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
-	},
-	"chromium-swiftshader/webgpu/probe-grid-wall-leak.png": {
-		"test": "probe-grid-wall-leak",
-		"tier": "webgpu",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
-	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
-		"tier": "webgpu",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
-	},
-	"chromium-swiftshader/webgpu/probe-grid-wall.png": {
-		"test": "probe-grid-wall",
-		"tier": "webgpu",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
-	},
-	"chromium-swiftshader/webgpu/probe-grid.png": {
-		"test": "probe-grid",
 		"tier": "webgpu",
 		"date": "2026-11-02",
 		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
@@ -946,18 +868,6 @@
 		"tier": "webgpu",
 		"date": "2026-11-03",
 		"reason": "the contact pair on the software GPU at the shortened far cover"
-	},
-	"chromium-swiftshader/webgpu/vegetation-grass-shadow.png": {
-		"test": "vegetation-grass-shadow",
-		"tier": "webgpu",
-		"date": "2026-11-02",
-		"reason": "a new picture, drawn here until CI's SwiftShader set draws it; the software set takes the Low preset for its shadow cost"
-	},
-	"chromium-swiftshader/webgpu/water-bounds.png": {
-		"test": "water-bounds",
-		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
 	},
 	"chromium-swiftshader/webgpu/weather.png": {
 		"test": "weather",

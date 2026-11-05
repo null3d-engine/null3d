@@ -26,7 +26,7 @@ A frame has three kinds of cost, and each has its own fixes.
 | --- | --- | --- | --- |
 | Sketch code | Sketch worker | Your `onUpdate` loops, allocations, messages | Typed-array loops, no allocation, fewer messages |
 | Engine CPU work | Job workers and the sketch worker | Moving objects, hierarchy depth, animation, culling and light lists on WebGL2 | Static objects, instances, fewer levels, fewer point and spot lights |
-| GPU work | GPU | Pixels, shader cost, overdraw, shadow maps, draw buckets, hidden objects, vertices of far meshes | Pixel-ratio cap, presets, cheaper materials, levels of detail with `mesh.setLevels` (0.2), fewer shadowed lights, `gpuOcclusion` where walls hide many objects, `depthPrepass` for heavy overdraw on WebGPU (section 7) |
+| GPU work | GPU | Pixels, shader cost, overdraw, shadow maps, draw buckets, hidden objects, vertices of far meshes | Pixel-ratio cap, presets, cheaper materials, levels of detail, which meshes made in code plan on their own at their first draw, or `mesh.buildLevels()` and `mesh.setLevels` (0.2), fewer shadowed lights, `gpuOcclusion` where walls hide many objects, `depthPrepass` for heavy overdraw on WebGPU (section 7) |
 
 On WebGPU, compute passes on the GPU cull the objects and list the lights of each cluster. Clusters are the cells of the view that clustered lighting uses. On WebGL2, the job workers do both on the CPU. So many objects and many point or spot lights cost CPU time on WebGL2, and GPU time on WebGPU. On WebGPU at Medium and above, the slices fit the depth that the surfaces in view span, so a cluster lists fewer lights than on WebGL2. A light that a pixel does not reach adds nothing, so both paths light the scene alike (`concepts/lighting`).
 
@@ -50,13 +50,26 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 
 ## 3. How to measure
 
+Time a production build, never a development build. Development builds run checks in every frame. Some read every static object, so a large scene times slower than it ships. Find out which build the page runs before you trust a figure:
+
+| The page comes from | Build |
+| --- | --- |
+| `bunx vite build` with the null3D plugin, served by `bunx vite preview`; `bunx @null3d/cli bench` | Production |
+| (0.2) The CDN build's `lib/index.js` | Production |
+| `bunx vite`, the dev server; `bunx @null3d/cli shot` and `test` | Development |
+| (0.2) The CDN build's `lib-dev/index.js` | Development |
+| Engine code built without the null3D plugin, by another bundler or with no bundler at all | Development |
+
+To check a page you did not build, call a setter on an object after its `destroy()`. Only a development build throws E1101 (`concepts/handles`). The engine docs pages `getting-started/cdn` and `guides/performance` give the detail.
+
 1. Measure the running page with `await engine.measure(5)`. It returns CPU time per thread and phase, GPU time where WebGPU has timestamp queries, the frame rates, draw calls, uploaded bytes, rebuilds and pipelines. The phase `update` is your code, and `commands`, `transforms`, `batches`, `cull`, `record`, `upload` and `replay` are the engine's. The preset is in `engine.mode.preset`. In the sketch, `debug.stats(true)` shows the frame rates and CPU time per thread and phase on the canvas. In 0.2 a click on its frame rate opens a card. It shows each thread's time and the GPU's time against the target frame rate, split into your code and the engine's work. A line names what holds the frame rate back. It also shows memory and the triangles and objects drawn. `?stats` in the page's address shows it too.
 2. Run the repeatable benchmark: `bunx @null3d/cli bench --gpu webgpu,webgl2`. It builds the project for production and runs the page 5 times for 30 seconds, each after a warm-up. It prints the median and the spread of CPU time per frame by thread, GPU time and frame rates, and saves each run's phases in `bench.json`. Use it before and after a change, on the same computer.
 3. Read numbers in the sketch: `debug.frameStats()` returns the overlay's figures, as means over the last half second. It allocates nothing, so a sketch can read it every frame, for example to log slow frames. A day cycle moves the time with `timeOfDay(hour, {}, day)`, which fills the `day` object of the first call instead of making one.
 4. Profile JavaScript in the browser's performance panel. Sketch code runs in the worker named `null3d-sketch`; look there, not on the main thread. With `sketchThread: 'main'` it runs on the main thread.
 5. Check the WebGL2 path: add `?gpu=webgl2` to the URL. Phones without WebGPU use this path, and it does more CPU work (culling on job workers).
-6. The engine never times the GPU on WebGL2, so `gpuMs` is null there, as on WebGPU devices without timestamp queries, such as most phones. Judge the GPU there by the completed rate, `completedFps`, and by `gpuLatencyMs`.
-7. Warm up, keep the page visible and the screen unlocked, and compare runs at the same `refreshHz`. The `guides/performance` page explains each figure and how to measure fairly.
+6. In a production build on WebGPU, `engine.measure()` counts only the triangles of the draws that the CPU issues. The sketch's call of `debug.frameStats()`, or an open stats card, adds the rest. A scene that the GPU culls can then show almost no triangles (`api/debug`).
+7. The engine never times the GPU on WebGL2, so `gpuMs` is null there, as on WebGPU devices without timestamp queries, such as most phones. Judge the GPU there by the completed rate, `completedFps`, and by `gpuLatencyMs`.
+8. Warm up, keep the page visible and the screen unlocked, and compare runs at the same `refreshHz`. The `guides/performance` page explains each figure and how to measure fairly.
 
 Read three frame rates together:
 
@@ -107,6 +120,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 - A player's preset choice goes through `quality.setPreset`. It waits for the new preset's pipelines behind the last frame, so call it from a menu or a loading screen. The `skippedDraws` figure of `engine.measure()` counts draws that a building pipeline kept from drawing. It stays at 0 when warm-ups come first.
 - Shadows: leave `cascades` and `mapSize` out of a light's `shadow` options, so the preset sets them: two cascades of 1,024 texels on Low, for phones. Keep `distance` no longer than the scene needs. Far cascades draw every few frames by preset. On every preset they draw every frame while a dynamic object touches them, so moving shadows never trail. Set `followMovingCasters: false` to keep their turns where moving objects stay far and small; their shadows then trail by up to the interval less one frame. Raise `farCascadeInterval` to draw them less often, and set `shadowFilter: 3` for cheaper edges. A shadowed spot light draws its casters into one tile of the shadow atlas, and a point light into six. Low and Medium turn point light shadows off and give the atlas fewer tiles, so avoid shadowed point lights on phones.
 - Transparent and additive effects covering the screen (smoke, glass) cost the most on phone GPUs.
+- For a large rock, cliff or ruin drawn as many copies, run the asset tool with `--lod`. It sorts each large level into pieces, and each copy skips the pieces that lie outside the view or face away from the camera (`concepts/lod`). A mesh made in code of 32,768 triangles or more gets the same pieces with its planned levels. A smaller mesh that many copies draw, such as a building kit's walls, gets a piece for each way it faces. It gets them even with levels set by hand, or from a file that holds one copy and the page copies many times. Build such a kit square to its own axes, so its sides face the six ways that the pieces start from. Keep the material single-sided where it can be: a double-sided material keeps the pieces that face away.
 - A large model's levels can download apart from it (0.3). The asset tool's `--lod --stages` keeps the coarsest level in the file and writes each finer level beside it. The loader draws the coarse level at once and refines it as the rest arrive.
 - `--clusters --stages` streams a cluster tree the same way. The file holds the tree's first band, and each later band appends patches below it. The tree refines as the bands arrive.
 - The loader also holds back a level that the camera never draws. A phone then saves the downloads that its preset would not show, and fetches the level once the camera comes close.
@@ -128,7 +142,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 | Directional light shadows: one map per cascade, 2048 x 2048 at 4 bytes per texel by default | about 16 MB per cascade, 48 MB for the default 3 cascades | Fewer cascades and a smaller `mapSize` in the light's `shadow` option on phones |
 | Spot and point light shadows: one atlas tile per spot light, six per point light | 1 MB per 512 x 512 tile, 4 MB per 1024 x 1024 tile | The preset sets the tile count and size; fewer shadowed lights |
 
-A scene's engine memory peaks in its first frame, which copies every mesh. E1109 in a first frame means that peak did not fit. Compare `(await engine.measure(5)).memory.wasmBytes` with `engine.mode.memoryMaximumMiB`, once normally and once with `?direct=on` in the address: the direct draw path needs the most, and a timing test at start-up can pick it. Memory does not shrink, so the reading is the peak. The engine keeps the last 8 MiB under the limit for its own small requests. Fix a scene that comes close by sharing meshes and creating fewer, or by lowering a terrain's `maxLevel`, and ask for a larger maximum last.
+A scene's engine memory peaks in its first frame, which copies every mesh. E1109 in a first frame means that peak did not fit. Compare `(await engine.measure(5)).memory.wasmBytes` with `engine.mode.memoryMaximumMiB`, once normally and once with `?direct=on` in the address. The direct draw path needs the most. A timing test at start-up can pick it on Apple GPUs in Safari, and in the browsers of iPhone and iPad. Memory does not shrink, so the reading is the peak. The engine keeps the last 8 MiB under the limit for its own small requests. Fix a scene that comes close by sharing meshes and creating fewer, or by lowering a terrain's `maxLevel`, and ask for a larger maximum last.
 
 `engine.measure()` reports the engine's WebAssembly memory and the JavaScript heaps in `memory`. In the sketch, `textures.memoryBytes` gives the GPU memory that textures hold. In 0.2, `quality.textureMemory` gives it with the budget and the dropped levels, and `debug.frameStats()` reports them as `textureBytes`, `textureBudgetBytes` and `droppedLevels`.
 
@@ -168,9 +182,9 @@ Two opaque surfaces at exactly the same depth show the one drawn last with the p
 
 ### GPU occlusion culling
 
-With `gpuOcclusion` on, each camera draws the depth of the opaque objects that showed in its last frame and builds a depth pyramid from it. Then it draws only the objects that show. The image matches the image without it, and no object shows a frame late. Only objects that `setOccluder(true)` marks hide others. Every preset leaves it off, because on a fast desktop GPU its passes cost more than they saved. It runs only on WebGPU, and not with the depth prepass. Engine docs: `concepts/culling`.
+With `gpuOcclusion` on, each camera draws the depth of the large opaque objects and instance rows that showed in its last frame, and builds a depth pyramid from it. Then it draws only the objects that show. The image matches the image without it, and no object shows a frame late. The GPU picks the objects that hide others, so nothing needs a mark; `setOccluder(false)` keeps one out. High and Ultra turn it on for desktops, and phones and tablets keep it off. It runs only on WebGPU. Engine docs: `concepts/culling`.
 
-It pays where walls and large objects hide many detailed objects, such as the streets of a city. In open scenes it costs a little. Compare the scene's GPU time with `?occlusion=on` and `?occlusion=off` before you change the preset's choice. Shadow passes and see-through objects do not use it.
+A check during play turns its passes off while they hide less than a tenth of the objects in view or make the GPU's frame longer, so open scenes lose almost nothing. It pays where walls, hills and large objects hide many detailed objects, such as the streets of a city. Compare the scene's GPU time with `?occlusion=on` and `?occlusion=off`. Shadow passes and see-through objects do not use it.
 
 ### Half precision
 

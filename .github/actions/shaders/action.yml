@@ -1,10 +1,11 @@
 name: Build with the shader caches
 description: >-
   Runs a command that builds the shader modules, with the two shared shader caches of
-  tools/lib/shader-modules.ts kept in the Actions cache: the built module sets, by the hash of
-  their inputs, and the per-entry cache, under the compiler's stamp. The Actions key holds the same
-  stamp and input hash that the tools read their caches by, from `bun tools/shaders.ts
-  --cache-keys`. A run whose inputs match restores the whole module set and compiles nothing. A run
+  tools/lib/shader-modules.ts kept in the Actions cache: the built module sets, by the compiler
+  program's bytes and the shader sources, and the per-entry cache, under the compiler's stamp. The
+  Actions key holds the same stamp and input hash that the tools read their caches by, from
+  `bun tools/shaders.ts --cache-keys`; the module set's folder comes from `--set-folder`, after the
+  build. A run whose inputs match restores the whole module set and compiles nothing. A run
   with the same compiler restores that stamp's entries, and compiles only the entries whose own
   key no longer matches. A change of the compiler's sources restores the newest entries of any
   stamp, and the build reuses every entry whose compiler program has the same bytes; a program
@@ -58,6 +59,15 @@ runs:
       run: |
         folder=$(bun tools/shaders.ts --entry-folder | sed -n 's/^folder=//p')
         echo "folder=${folder:-${{ steps.keys.outputs.entries-dir }}/${{ steps.keys.outputs.stamp }}}" >> "$GITHUB_OUTPUT"
+    - id: set-folder
+      if: always() && steps.keys.outcome == 'success'
+      shell: bash
+      # The module set that this run reads or writes. Its folder names the compiler program's bytes
+      # and the shader sources, so a source change that leaves the program as it was reads the set
+      # of an earlier run, and this run saves that set rather than one of its own.
+      run: |
+        folder=$(bun tools/shaders.ts --set-folder | sed -n 's/^folder=//p') || true
+        echo "folder=$folder" >> "$GITHUB_OUTPUT"
     - name: Record the shader build
       if: always() && steps.keys.outcome == 'success'
       shell: bash
@@ -66,7 +76,7 @@ runs:
         OUTCOME: ${{ steps.build.outcome }}
         RESTORED: ${{ steps.restore.outputs.cache-matched-key }}
         ENTRIES: ${{ steps.folder.outputs.folder }}
-        MODULES: ${{ steps.keys.outputs.modules-dir }}/${{ steps.keys.outputs.inputs }}
+        MODULES: ${{ steps.set-folder.outputs.folder || steps.keys.outputs.modules-dir }}
       run: |
         count() { find "$1" -maxdepth 1 -type f 2>/dev/null | wc -l; }
         size() { du -sh "$1" 2>/dev/null | cut -f1; }
@@ -92,16 +102,19 @@ runs:
       env:
         MODULES: ${{ steps.keys.outputs.modules-dir }}
         ENTRIES: ${{ steps.keys.outputs.entries-dir }}
-        INPUTS: ${{ steps.keys.outputs.inputs }}
+        SET: ${{ steps.set-folder.outputs.folder }}
         STAMP: ${{ steps.keys.outputs.stamp }}
         FOLDER: ${{ steps.folder.outputs.folder }}
       run: |
-        # Keep the folder that the build used, which is an earlier stamp's when its compiler program
-        # has the same bytes.
-        keep=$(basename "${FOLDER:-$ENTRIES/$STAMP}")
+        # Keep the folder that the build used: its module set, and the entry folder of the same
+        # compiler, which is an earlier stamp's when its program has the same bytes. A run that
+        # named no set keeps every folder, because a build that stopped early may have read one.
+        keep=$(basename "${SET:-/}")
         mkdir -p "$MODULES" "$ENTRIES"
-        find "$MODULES" -mindepth 1 -maxdepth 1 ! -name "$INPUTS" -exec rm -rf {} +
-        find "$ENTRIES" -mindepth 1 -maxdepth 1 ! -name "$keep" -exec rm -rf {} +
+        if [ "$keep" != "/" ]; then
+          find "$MODULES" -mindepth 1 -maxdepth 1 ! -name "$keep" -exec rm -rf {} +
+        fi
+        find "$ENTRIES" -mindepth 1 -maxdepth 1 ! -name "$(basename "${FOLDER:-$ENTRIES/$STAMP}")" -exec rm -rf {} +
         du -sh "$MODULES" "$ENTRIES"
     # A workflow whose SAVE_CACHES is true saves the module set and the entries together. A branch
     # run of a workflow that saves only on main still saves its entries alone: they are the

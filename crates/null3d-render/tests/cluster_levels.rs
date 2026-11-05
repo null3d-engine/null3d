@@ -4,8 +4,13 @@
 
 mod common;
 
-use common::{World, grid};
-use null3d_gpu::drawlist::{Op, template};
+use std::collections::HashSet;
+
+use common::{World, base_sphere, count, grid};
+use null3d_core::handle::Handle;
+use null3d_core::levels::Switch;
+use null3d_core::scene::{Command, flags};
+use null3d_gpu::drawlist::{Op, buffer_usage, index_format, layout, template};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::frame::FrameBuilder;
 use null3d_render::materials::Shading;
@@ -127,36 +132,293 @@ fn a_frame_that_takes_its_tree_away_keeps_the_pipeline_it_made() {
 }
 
 #[test]
-fn the_compute_pass_and_the_walk_share_one_level_rule() {
-    // The two implementations live in two languages. The walk's side is pinned by its own test
-    // below; this holds the shader's operators and least distance to the same convention, so a
-    // change to one that the other misses fails here.
-    let shader = include_str!("../../null3d-shaders/wgsl/cluster_cull.wgsl");
-    assert!(
-        shader.contains("const LEAST_DISTANCE: f32 = 1.0e-3;"),
-        "the shader's least distance moved"
-    );
-    assert!(
-        shader.contains("if record.error * reach >= distance {"),
-        "the shader's own-error test moved"
-    );
-    assert!(
-        shader.contains("patch_of(record.parent - 1u).error * reach < distance"),
-        "the shader's parent test moved"
-    );
-    // The walk draws while the error is under the distance, and not when the two are equal, as
-    // the shader's `>=` refuses. A patch that has a child compares its own error; the child below
-    // it has no child of its own, so it draws at every distance in place of the patches that have
-    // not arrived.
+fn a_mesh_past_one_parts_vertices_draws_its_patches_rather_than_its_whole_triangles() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    // 257 by 257 vertices: more than the 65,535 that one part's 16-bit indices reach.
+    let geometry = grid(256, 256);
+    let mesh = world.add_object(&geometry, Shading::Lit);
+    let meshes = world.renderer.settings().meshes();
+    let slot = *meshes.mesh(mesh - 1).unwrap();
+    let parts = meshes.parts(&slot, false).len();
+    assert!(slot.vertex_count > 65_535 && parts > 1, "{parts} parts");
+    // One patch over the mesh's last triangle, whose vertices only the last part holds, in the
+    // order of the parts' vertices, as the engine stores a model's tree.
+    let mut indices = geometry.indices[geometry.indices.len() - 3..].to_vec();
+    let vertices = meshes.to_part_order(mesh - 1, &mut indices);
+    assert!(indices.iter().all(|&index| index < vertices));
     let tree = PatchTree::new(
-        vec![0, 1, 2, 0, 1, 2],
-        vec![[0.0, 0.0, 0.0, 1.0]; 2],
-        vec![[0, 3, 0, 0.1f32.to_bits()], [3, 3, 1, 0.0f32.to_bits()]],
+        indices,
+        vec![[0.0, 0.0, 0.0, 1.0]],
+        vec![[0, 3, 0, 0]],
         0,
-        3,
+        vertices,
     )
     .unwrap();
-    assert!(!tree.draws(0, 100.0, 1.0, 10.0), "the boundary is open");
-    assert!(tree.draws(0, 100.0, 1.0, 10.001));
-    assert!(tree.draws(1, 100.0, 1.0, 10.0), "the frontier draws");
+
+    world.record(true);
+    mock.replay(world.renderer.list(world.frame).words())
+        .unwrap();
+    let whole = count(&world.commands(), Op::DrawIndexedIndirect);
+
+    world.renderer.set_mesh_patches(mesh, Some(tree)).unwrap();
+    world.frame += 1;
+    world.record(true);
+    mock.replay(world.renderer.list(world.frame).words())
+        .unwrap();
+    let created = compute_pipelines(&world, template::CLUSTER);
+    assert_eq!(created.len(), 1, "the frame creates the cluster pipeline");
+    assert!(dispatched(&world).contains(&created[0]));
+    let commands = world.commands();
+    // The view's list of chosen patch indices is 32-bit, and one draw takes the place of the
+    // draws of every part of the mesh.
+    assert!(
+        commands
+            .iter()
+            .any(|(op, o)| *op == Op::SetIndexBuffer && o[1] == index_format::UINT32)
+    );
+    assert_eq!(
+        count(&commands, Op::DrawIndexedIndirect),
+        whole - (parts - 1),
+        "the parts' {parts} draws become one"
+    );
+}
+
+/// A tree of a root over a grid's six indices, with `error`, and two children below it that each
+/// hold `child_indices` indices, exact: a view that the root's error fails draws the children.
+fn root_and_two_children(error: f32, child_indices: usize) -> PatchTree {
+    let mut indices = vec![0, 1, 2, 0, 2, 3];
+    for _ in 0..2 * child_indices / 3 {
+        indices.extend_from_slice(&[0, 1, 2]);
+    }
+    let child = child_indices as u32;
+    PatchTree::new(
+        indices,
+        vec![
+            [0.0, 0.0, 0.0, 2.0],
+            [-0.5, 0.0, 0.0, 1.0],
+            [0.5, 0.0, 0.0, 1.0],
+        ],
+        vec![
+            [0, 6, 0, error.to_bits()],
+            [6, child, 1, 0],
+            [6 + child, child, 1, 0],
+        ],
+        0,
+        4,
+    )
+    .unwrap()
+}
+
+/// Adds a grid object at the origin that casts and receives shadows, with `tree` as its mesh's tree
+/// of cluster patches.
+fn caster_with_tree(world: &mut World, tree: PatchTree) {
+    let settings = world.renderer.settings_mut();
+    let mesh = settings.meshes_mut().add(&grid(1, 1)).unwrap() + 1;
+    let material = settings
+        .materials_mut()
+        .create(Shading::Lit, 0, [1.0, 1.0, 1.0, 1.0])
+        .unwrap()
+        + 1;
+    let object = world.scene.reserve().unwrap();
+    world.scene.set_local_radius(object, 2.0).unwrap();
+    let both = flags::VISIBLE | flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS;
+    let commands = [
+        Command::create(object, Handle::NONE, mesh, both),
+        Command::set_material(object, material),
+    ];
+    world.scene.apply_commands(&commands, world.frame).unwrap();
+    world.renderer.set_mesh_patches(mesh, Some(tree)).unwrap();
+}
+
+/// Each cluster pass group of a frame, as its list's buffer and the bytes it was made with, and the
+/// buffer of its draws.
+fn cluster_lists(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32, u32)> {
+    commands
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateBindGroup && o[1] == layout::CLUSTER_CULL)
+        .map(|(_, o)| {
+            let entry = |binding: u32| {
+                o[3..]
+                    .chunks(5)
+                    .find(|entry| entry[0] == binding)
+                    .map_or(0, |entry| entry[2])
+            };
+            let list = entry(7);
+            let bytes = commands
+                .iter()
+                .filter(|(op, c)| *op == Op::CreateBuffer && c[0] == list)
+                .map(|(_, c)| c[1])
+                .next_back()
+                .unwrap_or(0);
+            (list, bytes, entry(8))
+        })
+        .collect()
+}
+
+#[test]
+fn each_shadow_view_picks_and_draws_its_own_patches_from_a_list_sized_to_them() {
+    // Two children of 30,000 indices each below an exact root: every view picks the root alone, so
+    // each view's list holds a few patches' worth, not the tree's 60,006 indices.
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    world.cast_sun_shadows(3);
+    caster_with_tree(&mut world, root_and_two_children(0.0, 30_000));
+    world.record(true);
+    mock.replay(world.renderer.list(world.frame).words())
+        .unwrap();
+    let commands = world.commands();
+    let lists = cluster_lists(&commands);
+    // The camera's view and each of the three cascades has a list and draws of its own.
+    assert_eq!(lists.len(), 4, "{lists:?}");
+    let mut ids: Vec<u32> = lists.iter().map(|&(list, _, _)| list).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), 4, "each view has a list of its own: {lists:?}");
+    for &(_, bytes, _) in &lists {
+        assert!(bytes > 0 && bytes < 16 * 1024, "{lists:?}");
+    }
+    // Each view's pass draws its cluster mesh from its own draws.
+    let drawn: HashSet<u32> = commands
+        .iter()
+        .filter(|(op, _)| *op == Op::DrawIndexedIndirect)
+        .map(|(_, o)| o[0])
+        .collect();
+    for &(_, _, draws) in &lists {
+        assert!(
+            drawn.contains(&draws),
+            "no pass draws from {draws}: {lists:?} {drawn:?}"
+        );
+    }
+
+    // A coarse root, which no view's threshold passes near the caster, makes the camera's view
+    // pick the children: its list grows to hold them, and the frame records it again.
+    let mut world = World::new();
+    world.cast_sun_shadows(3);
+    caster_with_tree(&mut world, root_and_two_children(1.0e3, 30_000));
+    world.record(true);
+    let lists = cluster_lists(&world.commands());
+    assert!(
+        lists.iter().any(|&(_, bytes, _)| bytes >= 60_000 * 4),
+        "{lists:?}"
+    );
+}
+
+/// The world's box mesh, by engine id, which its first two objects and its batch draw.
+const BOX: u32 = 1;
+
+/// The world's ball mesh, by engine id, which its third object draws 20 m from the camera.
+const BALL: u32 = 2;
+
+/// Gives the world's ball two lower levels. At the world's threshold the ball 20 m away draws the
+/// coarsest one, and a camera beside it draws the finest.
+fn give_ball_levels(world: &mut World) {
+    let settings = world.renderer.settings_mut();
+    let meshes = [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])]
+        .map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
+    settings
+        .set_mesh_levels(
+            BALL,
+            &meshes,
+            &[0.01, 0.05],
+            &[Switch::Error; 2],
+            &[0, 0],
+            0,
+        )
+        .unwrap();
+}
+
+/// The cluster pass places a tree's patches by its one copy in the view's compacted instances, so
+/// the record that names that copy follows the copy wherever the frame's level slices put it: in
+/// the first frame, whose slices take an order of their own, and after a camera jump whose level
+/// counts outgrow the slices, which places them again.
+#[test]
+fn a_trees_record_names_its_copy_after_the_level_slices_move() {
+    let mut world = World::counting();
+    give_ball_levels(&mut world);
+    let mesh = world.add_object(&grid(1, 1), Shading::Lit);
+    world
+        .renderer
+        .set_mesh_patches(mesh, Some(one_patch()))
+        .unwrap();
+    world.record(true);
+    let slots = world.renderer.cluster_copy_slots();
+    assert_eq!(slots.len(), 1, "the grid draws its tree: {slots:?}");
+    assert_eq!(
+        slots[0].0, slots[0].1,
+        "the first frame's record: {slots:?}"
+    );
+    let before = world.renderer.compacted_bytes()[0];
+
+    // The camera jumps beside the ball, which then draws its finest level, whose slice held no
+    // copy.
+    world.frame += 1;
+    world.aim([1.0, 0.0, 1.0], 0.0, 0.0);
+    world.record(false);
+    assert_ne!(
+        world.renderer.compacted_bytes()[0],
+        before,
+        "the jump places the slices again"
+    );
+    let slots = world.renderer.cluster_copy_slots();
+    assert_eq!(
+        slots[0].0, slots[0].1,
+        "the record after the jump: {slots:?}"
+    );
+}
+
+/// Draws the world's batch of boxes with a coarser level, 20 m from the camera, which sees them at
+/// that level, beside a caster with a tree of cluster patches, with `cascades` sun shadow
+/// cascades. Then the camera jumps beside the boxes, which moves every row into the base level's
+/// slice. Each frame replays on a mock device. Returns how many views' compacted instances the
+/// jump made again.
+fn jump_beside_the_boxes(cascades: u32) -> usize {
+    let mut world = World::counting();
+    let mut mock = MockBackend::default();
+    if cascades > 0 {
+        world.cast_sun_shadows(cascades);
+        let batch = world.batch;
+        let rows = world.batches.get_mut(batch).unwrap();
+        rows.set_shadows(flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS);
+    }
+    let settings = world.renderer.settings_mut();
+    let coarse = settings
+        .meshes_mut()
+        .add(&base_sphere(0.5, [3, 2]))
+        .unwrap()
+        + 1;
+    settings
+        .set_mesh_levels(BOX, &[coarse], &[5.0], &[Switch::Distance], &[0], 0)
+        .unwrap();
+    caster_with_tree(&mut world, one_patch());
+    world.record(true);
+    mock.replay(world.renderer.list(world.frame).words())
+        .unwrap();
+
+    world.frame += 1;
+    world.aim([0.0, 0.0, 1.0], 0.0, 0.0);
+    world.record(false);
+    mock.replay(world.renderer.list(world.frame).words())
+        .unwrap();
+    // A view's compacted instances are the one buffer that culling writes and draws read.
+    let compacted = buffer_usage::VERTEX | buffer_usage::STORAGE;
+    world
+        .commands()
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateBuffer && o[2] == compacted)
+        .count()
+}
+
+/// The cluster pass's group binds the view's compacted instances and indirect draws, which the
+/// view's culling makes again when a camera jump outgrows them: in the camera's view, and in each
+/// shadow cascade. The group then binds the new buffers. A group that kept the destroyed ones
+/// would fail every submit after the jump, which the mock device refuses.
+#[test]
+fn the_cluster_pass_binds_the_buffers_that_a_jump_makes_again() {
+    assert_eq!(jump_beside_the_boxes(0), 1, "the camera's view grows");
+    assert_eq!(
+        jump_beside_the_boxes(1),
+        2,
+        "the camera's view and the cascade grow"
+    );
 }

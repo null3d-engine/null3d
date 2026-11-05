@@ -116,10 +116,18 @@ const QUIET_RUN = 2;
  * display. Measurements of callbacks at the display's rate jitter by a few percent.
  */
 const SLOW_PERCENT = 90;
+/**
+ * A worker's callbacks measured faster than this come from a browser that runs with no frame cap,
+ * such as Chrome started without vsync. No display refreshes this often, and Safari's timer runs a
+ * worker's callbacks well below it. The page's own callbacks there come at a slow rate of their own,
+ * which tells nothing of the screen, so the frames do not hold to it.
+ */
+const UNCAPPED_HZ = 1000;
 
 /**
  * The delay, in whole milliseconds, from the start of a frame callback to the wake-up before the
- * next one, for callbacks `hz` times a second. A whole number reaches the timer without allocating.
+ * next one, for callbacks `hz` times a second, or 0 when they come too often for a wake-up ahead of
+ * them. A whole number reaches the timer without allocating.
  */
 export function wakeDelayMs(hz: number): number {
 	return Math.max(0, Math.round(MS_PER_SECOND / hz - WAKE_AHEAD_MS));
@@ -203,6 +211,11 @@ export class Presenter {
 	 * and their rate never tells the display's again, as it slows when the thread waits for the GPU.
 	 */
 	private timerDriven = false;
+	/**
+	 * True once a measurement of a worker's callbacks came faster than `UNCAPPED_HZ`: the browser
+	 * runs with no frame cap for the engine's life, and the frames never hold to the page's rate.
+	 */
+	private uncapped = false;
 	/** The page's display period in microseconds that the metrics hold as the refresh rate, or -1. */
 	private recordedInterval = -1;
 	/**
@@ -268,8 +281,10 @@ export class Presenter {
 	 * display runs at, a timer runs them, and the frames hold to the display's rate that the page
 	 * measured. From then on, the metrics hold the page's rate as the refresh rate too: the timer's
 	 * callbacks slow down while the worker waits for the GPU, and the quality governor's budget
-	 * would grow with them. On the page's thread, the metrics hold the display rate that the
-	 * intervals after callbacks that drew nothing measure, or a faster rate of all the callbacks.
+	 * would grow with them. A worker's callbacks faster than any display or timer come from a
+	 * browser with no frame cap: the frames then draw at every callback, and the metrics still hold
+	 * the page's rate. On the page's thread, the metrics hold the display rate that the intervals
+	 * after callbacks that drew nothing measure, or a faster rate of all the callbacks.
 	 */
 	tick(timestamp: number): void {
 		const hz = this.refresh.tick(timestamp);
@@ -282,6 +297,7 @@ export class Presenter {
 				if (hz > this.displayHz) this.setDisplayHz(hz);
 			} else {
 				this.timerDriven ||= !onDisplayRate;
+				this.uncapped ||= hz > UNCAPPED_HZ;
 				if (!this.timerDriven) this.record.setRefreshHz(hz);
 			}
 		}
@@ -290,7 +306,7 @@ export class Presenter {
 			this.recordedInterval = display;
 			this.record.setRefreshHz(snapMeanInterval(display, 1));
 		}
-		const interval = onDisplayRate ? 0 : display;
+		const interval = onDisplayRate || this.uncapped ? 0 : display;
 		if (interval === this.displayInterval) return;
 		this.displayInterval = interval;
 		this.pacer.holdToDisplay(interval / MICROSECONDS_PER_MS);
@@ -352,10 +368,12 @@ export class Presenter {
 	/**
 	 * In a worker, sets a timer that wakes the thread shortly before the next frame callback is due.
 	 * Call it as a callback starts. Where a worker's frame callbacks follow the display, the timer
-	 * runs and does nothing else.
+	 * runs and does nothing else. Callbacks too close together for a wake-up ahead of the next one,
+	 * as on a fast display or in a browser with no frame cap, set no timer: one due at once would
+	 * fire before the thread sleeps.
 	 */
 	wakeBeforeNextFrame(): void {
-		if (this.inWorker) setTimeout(wakeUp, this.wakeDelay);
+		if (this.inWorker && this.wakeDelay > 0) setTimeout(wakeUp, this.wakeDelay);
 	}
 
 	/**

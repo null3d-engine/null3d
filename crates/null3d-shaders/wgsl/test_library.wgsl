@@ -373,6 +373,15 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
             return scalar(null3d::temporal::temporal_weight(f[0].x, f[0].y, f[0].z));
         }
 #endif
+#ifdef DEPTH
+        case 120u: {
+            let projection = mat4x4f(f[0], f[1], f[2], f[3]);
+            return scalar(select(0.0, 1.0, null3d::depth::is_orthographic(projection)));
+        }
+        case 121u: {
+            return triple(null3d::depth::toward_camera(f[0].xyz, mat4x4f(f[1], f[2], f[3], f[4])));
+        }
+#endif
         // Any other number gives back its first input texel. The page's probe draws such a row,
         // so whole numbers take the same way to the target as the library's results.
         default: { return whole(u[0]); }

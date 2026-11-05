@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -16,7 +16,9 @@ import {
 	shipBuilder,
 	specularBuilder,
 } from '../../../../tests/pages/lib/gltf-files';
+import { FileBudget } from './file-limits';
 import {
+	CLUSTERS_VERSION,
 	type GltfData,
 	GltfError,
 	MAX_ACCESSOR_BYTES,
@@ -1858,6 +1860,59 @@ describe('stored trees and blockers', () => {
 	});
 });
 
+describe('pieces of a triangle list', () => {
+	/** A box of 12 triangles whose primitive carries the pieces that `extensions` makes. */
+	const boxWith = (extensions: (b: GltfBuilder) => GltfJson) => {
+		const b = new GltfBuilder();
+		b.node({ mesh: b.mesh([{ ...boxPrimitive(b), extensions: extensions(b) }]) });
+		return b;
+	};
+	const BOUNDS = [0, 0, 0, 1, 0, 1, 0, 0.5, 0, 0, 0, 1, 0, -1, 0, 0.5];
+	/** Two pieces of six triangles each, with `groups` triangles in each group, at `version`. */
+	const PIECES = (groups: number[] | undefined, version: number) => (b: GltfBuilder) => ({
+		NULL3D_pieces: {
+			triangles: [6, 6],
+			bounds: BOUNDS,
+			...(groups && {
+				groups: b.accessor(Uint8Array.from(groups), 1),
+				groupBounds: b.accessor(new Float32Array(groups.length * 8).fill(0.5), 4),
+			}),
+			version,
+		},
+	});
+	const piecesOf = (b: GltfBuilder) => parse(b.glb()).meshes[0]?.primitives[0]?.pieces;
+
+	test('a file of the first layout gives its pieces without groups', () => {
+		const pieces = piecesOf(boxWith(PIECES(undefined, 1)));
+		expect(Array.from(pieces?.triangles ?? [])).toEqual([6, 6]);
+		expect(Array.from(pieces?.bounds ?? [])).toEqual(BOUNDS);
+		expect(pieces?.groups).toBeUndefined();
+	});
+
+	test('a file of the second layout gives the groups that split its pieces', () => {
+		const pieces = piecesOf(boxWith(PIECES([4, 2, 3, 3], 2)));
+		expect(Array.from(pieces?.groups ?? [])).toEqual([4, 2, 3, 3]);
+		expect(pieces?.groupBounds?.length).toBe(32);
+		expect(piecesOf(boxWith(PIECES(undefined, 2)))?.groups).toBeUndefined();
+	});
+
+	test('groups that cross a piece or miss a triangle leave the pieces without groups', () => {
+		for (const groups of [
+			[4, 4, 4],
+			[6, 5],
+			[6, 0, 6],
+		]) {
+			const pieces = piecesOf(boxWith(PIECES(groups, 2)));
+			expect(Array.from(pieces?.triangles ?? [])).toEqual([6, 6]);
+			expect(pieces?.groups).toBeUndefined();
+		}
+	});
+
+	test('a layout past the one that the engine reads draws whole', () => {
+		expect(piecesOf(boxWith(PIECES([6, 6], 3)))).toBeUndefined();
+	});
+});
+
 describe('trees of cluster patches', () => {
 	/** A box whose primitive carries the patch tree that `extensions` makes. */
 	const boxWith = (extensions: (b: GltfBuilder) => GltfJson) => {
@@ -1872,19 +1927,48 @@ describe('trees of cluster patches', () => {
 			bounds: b.accessor(new Float32Array([0, 0, 0, 1, 0.5, 0.5, 0.5, 0.5]), 4),
 			patches: b.accessor(new Uint32Array([0, 3, 0, 0x3dcc_cccd, 3, 3, 1, 0]), 4),
 			root: 0,
+			version: CLUSTERS_VERSION,
 		},
 	});
 
 	test('a primitive keeps the tree of patches that the tool built', () => {
 		const [p] = parse(boxWith(TREE).glb()).meshes[0]?.primitives ?? [];
 		expect(p?.patches?.root).toBe(0);
+		expect(p?.patches?.current).toBe(true);
 		expect(Array.from(p?.patches?.indices ?? [])).toEqual([0, 1, 2, 3, 4, 5]);
 		expect(Array.from(p?.patches?.words ?? [])).toEqual([0, 3, 0, 0x3dcc_cccd, 3, 3, 1, 0]);
 		expect(Array.from(p?.patches?.bounds ?? [])).toEqual([0, 0, 0, 1, 0.5, 0.5, 0.5, 0.5]);
 	});
 
+	test('a tree that names no version, or an older one, is not current', () => {
+		for (const version of [undefined, 1]) {
+			const old = boxWith((b) => {
+				const tree = TREE(b);
+				return { NULL3D_clusters: { ...tree.NULL3D_clusters, version } };
+			});
+			const [p] = parse(old.glb()).meshes[0]?.primitives ?? [];
+			expect(p?.patches?.current).toBe(false);
+		}
+	});
+
 	test('a plain primitive has no tree', () => {
 		expect(parse(shipBuilder().glb()).meshes[0]?.primitives[0]?.patches).toBeUndefined();
+	});
+
+	test("the tree's arrays count once against the file's budget", () => {
+		/** The bytes that parsing a file takes from its budget. */
+		const charged = (file: Uint8Array) => {
+			const take = spyOn(FileBudget.prototype, 'takeBlock');
+			try {
+				parse(file);
+				return take.mock.calls.reduce((sum, [bytes]) => sum + bytes, 0);
+			} finally {
+				take.mockRestore();
+			}
+		};
+		// Six 32-bit indices, and two patches of four floats and four integers each.
+		const treeBytes = 6 * 4 + 2 * 16 + 2 * 16;
+		expect(charged(boxWith(TREE).glb()) - charged(boxWith(() => ({})).glb())).toBe(treeBytes);
 	});
 
 	test('a tree that breaks the rules gives E1416', () => {

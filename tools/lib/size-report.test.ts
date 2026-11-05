@@ -195,9 +195,12 @@ describe('REPORTED_FILES', () => {
 		expect(REPORTED_FILES).toContain('js/page.js');
 		expect(REPORTED_FILES).toContain('js/render-worker.js');
 		expect(REPORTED_FILES).toContain('js/shaders-glsl-draw-index.js');
-		expect(REPORTED_FILES.slice(-4)).toEqual([
+		expect(REPORTED_FILES.slice(-7)).toEqual([
 			'first-use/basis_transcoder.wasm',
 			'first-use/meshopt_decoder.wasm',
+			'first-use/meshopt_simplifier.wasm',
+			'first-use/meshopt_encoder.wasm',
+			'first-use/meshopt_clusterizer.wasm',
 			'first-use/draco_decoder_gltf.wasm',
 			'first-use/area-light-tables.bin',
 		]);
@@ -207,6 +210,9 @@ describe('REPORTED_FILES', () => {
 describe('findFirstUseFiles', () => {
 	const names = [
 		'meshopt_decoder-JKal9Vjx.wasm',
+		'meshopt_simplifier-Hn2pQ7aZ.wasm',
+		'meshopt_encoder-Mv5tY1bK.wasm',
+		'meshopt_clusterizer-Ue7wR2pL.wasm',
 		'null3d_bg-58dKJVnh.wasm',
 		'basis_transcoder-DBaCnI5p.wasm',
 		'draco_decoder_gltf-Qw3eRt5Y.wasm',
@@ -218,6 +224,9 @@ describe('findFirstUseFiles', () => {
 		expect([...findFirstUseFiles(names)]).toEqual([
 			['basis_transcoder.wasm', 'basis_transcoder-DBaCnI5p.wasm'],
 			['meshopt_decoder.wasm', 'meshopt_decoder-JKal9Vjx.wasm'],
+			['meshopt_simplifier.wasm', 'meshopt_simplifier-Hn2pQ7aZ.wasm'],
+			['meshopt_encoder.wasm', 'meshopt_encoder-Mv5tY1bK.wasm'],
+			['meshopt_clusterizer.wasm', 'meshopt_clusterizer-Ue7wR2pL.wasm'],
 			['draco_decoder_gltf.wasm', 'draco_decoder_gltf-Qw3eRt5Y.wasm'],
 			['area-light-tables.bin', 'area-light-tables-Zx8c_Vb1.bin'],
 		]);

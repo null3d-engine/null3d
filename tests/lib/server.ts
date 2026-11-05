@@ -38,6 +38,7 @@ export const PRODUCTION_BUILD_PAGES = [
 	'texture-cache',
 	'gltf-files',
 	'stats',
+	'runtime-levels',
 ] as const;
 /** The production build project's test files, which load the pages of the production build. */
 export const PRODUCTION_BUILD_TESTS = [
@@ -49,6 +50,7 @@ export const PRODUCTION_BUILD_TESTS = [
 	'ktx2.spec.ts',
 	'gltf.spec.ts',
 	'stats.spec.ts',
+	'runtime-levels.spec.ts',
 ] as const;
 /**
  * Chrome's debugging port for the benchmark tools that drive Chrome through its debugging protocol:

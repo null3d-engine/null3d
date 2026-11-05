@@ -639,6 +639,33 @@ const transformCase = (random: () => number) =>
 		return i.setF(3, values(r, 3, -3, 3));
 	})(random);
 
+/**
+ * The engine's two kinds of projection with reversed depth, by columns, as `camera.rs` builds them:
+ * a perspective view of 60 degrees from 0.1 to 100 meters, and an orthographic view 16 by 9 meters
+ * from 1 to 30 meters.
+ */
+const PROJECTIONS: readonly (readonly V4[])[] = (() => {
+	const f = 1 / Math.tan(Math.PI / 6);
+	const [aspect, near, far] = [1.5, 0.1, 100];
+	const perspective: V4[] = [
+		[f / aspect, 0, 0, 0],
+		[0, f, 0, 0],
+		[0, 0, near / (far - near), -1],
+		[0, 0, (near * far) / (far - near), 0],
+	];
+	const [width, height, front, back] = [16, 9, 1, 30];
+	const orthographic: V4[] = [
+		[2 / width, 0, 0, 0],
+		[0, 2 / height, 0, 0],
+		[0, 0, 1 / (back - front), 0],
+		[0, 0, back / (back - front), 1],
+	];
+	return [perspective, orthographic];
+})();
+
+/** Whether a projection, given by columns, is orthographic: its last element is 1. */
+const orthographicColumns = (columns: readonly V4[]) => (columns[3]?.[3] ?? 0) > 0.5;
+
 /** Every library function in the test shader's order. */
 export const FUNCTIONS: readonly LibraryFunction[] = [
 	// null3d::math
@@ -1990,6 +2017,39 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 			const [base, reactive, change] = i.f(0);
 			return scalar(saturate(base!) * (1 - saturate(reactive!)) * (1 - smooth(0.5, 2.0, change!)));
 		},
+	},
+	{
+		name: 'depth::is_orthographic',
+		cases: () =>
+			PROJECTIONS.map((columns) => {
+				const i = new Inputs();
+				for (const [k, column] of columns.entries()) i.setF(k, column);
+				return i;
+			}),
+		expected: (i) => scalar(orthographicColumns([0, 1, 2, 3].map((k) => i.f(k))) ? 1 : 0),
+	},
+	{
+		// Positions in front of each kind of camera, across its view. A perspective camera's
+		// direction leans toward the eye, and an orthographic camera's is the view's own +z.
+		name: 'depth::toward_camera',
+		cases: (random) =>
+			PROJECTIONS.flatMap((columns) =>
+				samples((r) => {
+					const i = new Inputs().setF(0, [
+						between(r, -8, 8),
+						between(r, -4.5, 4.5),
+						between(r, -30, -1),
+					]);
+					for (const [k, column] of columns.entries()) i.setF(k + 1, column);
+					return i;
+				})(random),
+			),
+		expected: (i) =>
+			floats(
+				orthographicColumns([1, 2, 3, 4].map((k) => i.f(k)))
+					? [0, 0, 1]
+					: normalize(scale(xyz(i.f(0)), -1)),
+			),
 	},
 ];
 

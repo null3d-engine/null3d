@@ -217,6 +217,79 @@ describe('runTask', () => {
 	});
 });
 
+// A production build can hold two copies of the loader's modules in one thread: the sketch worker
+// runs the engine's worker code, and the sketch's bundle imports the engine again from the page's
+// file. A query string gives a test a second copy of a module, as such a build does.
+describe('two copies of the loader in one thread', () => {
+	const copyOf = <T>(file: string): Promise<T> => import(`./${file}.ts?second-copy`);
+
+	/** A job worker's task port that answers each request with its input, or fails it at run. */
+	function echoPort(): MessagePort {
+		const channel = new MessageChannel();
+		channels.push(channel);
+		channel.port1.onmessage = (event: MessageEvent<TaskRequest>) => {
+			const { id, input } = event.data;
+			channel.port1.postMessage(
+				(input === 'fail'
+					? { id, failed: { stage: 'run', message: 'the task threw' } }
+					: { id, output: input }) satisfies TaskAnswer,
+			);
+		};
+		return channel.port2;
+	}
+
+	/** The task's answer, or `'no answer'` when none comes in a moment. */
+	const settled = (task: Promise<unknown>) =>
+		Promise.race([
+			task.catch((thrown: unknown) => thrown),
+			new Promise((resolve) => setTimeout(() => resolve('no answer'), 200)),
+		]);
+
+	test("answers each copy's tasks on the job workers that both share, and fails each with a failure that both copies know", async () => {
+		const second = await copyOf<typeof import('./tasks')>('tasks');
+		const SecondFailure = (await copyOf<typeof import('./task-failure')>('task-failure'))
+			.TaskFailure;
+		setJobTasks({
+			ports: [echoPort()],
+			running: [0],
+			call: () => {},
+			want: jobAsker(1, () => {}),
+		});
+		const task = { name: 'ktx2' };
+		// Each copy numbers its tasks from the same start, so the answers name the same numbers.
+		const fromFirst = runTaskWithError(task, 'first', [], error);
+		const fromSecond = second.runTaskWithError(task, 'second', [], error);
+		const failed = runTaskWithError(task, 'fail', [], error);
+		expect(await settled(fromFirst)).toBe('first');
+		expect(await settled(fromSecond)).toBe('second');
+		const failure = await settled(failed);
+		expect(failure).toBeInstanceOf(TaskFailure);
+		expect(failure).toBeInstanceOf(SecondFailure);
+		expect((failure as TaskFailure).stage).toBe('run');
+		expect(new SecondFailure('run', 'made by the second copy')).toBeInstanceOf(TaskFailure);
+	});
+
+	test("counts every copy's tasks and level plans, which hold mode waits for", async () => {
+		const second = await copyOf<typeof import('./task-pending')>('task-pending');
+		second.taskStarted();
+		const plan = second.planStarted('a mesh of 2 triangles (createMesh)');
+		expect(tasksPending()).toBe(2);
+		second.planEnded(plan);
+		second.taskEnded();
+		expect(tasksPending()).toBe(0);
+	});
+
+	test('stops the helpers that every copy started when the engine stops', async () => {
+		const second = await copyOf<typeof import('./helper-workers')>('helper-workers');
+		let stopped = false;
+		second.onEngineStop(() => {
+			stopped = true;
+		});
+		stopHelperWorkers();
+		expect(stopped).toBe(true);
+	});
+});
+
 describe('the public task hook', () => {
 	// A job worker that writes `written` into the shared buffer that it gets, and answers `output`.
 	function sharedPort(written: number, output: string): MessagePort {

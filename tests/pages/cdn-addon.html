@@ -26,12 +26,13 @@
 			const given = new URLSearchParams(location.search).get('cdn');
 			if (given) {
 				const url = given.endsWith('/') ? given : `${given}/`;
+				const folder = new URLSearchParams(location.search).get('dev') === '1' ? 'lib-dev' : 'lib';
 				const map = document.createElement('script');
 				map.type = 'importmap';
 				map.textContent = JSON.stringify({
 					imports: {
-						'@null3d/engine': `${url}lib/index.js`,
-						'@null3d/terrain': `${url}addons/terrain/lib/index.js`,
+						'@null3d/engine': `${url}${folder}/index.js`,
+						'@null3d/terrain': `${url}addons/terrain/${folder}/index.js`,
 					},
 				});
 				document.head.append(map);
@@ -42,6 +43,9 @@
 			const base =
 				new URLSearchParams(location.search).get('cdn') ?? 'https://cdn.example.com/null3d/';
 			const CDN = base.endsWith('/') ? base : `${base}/`;
+			// The production entries, or with ?dev=1 the development entries, whose code reads the
+			// page's address switches, such as ?gpu=. The engine and the add-on come from the same one.
+			const FOLDER = new URLSearchParams(location.search).get('dev') === '1' ? 'lib-dev' : 'lib';
 
 			try {
 				// The sketch is a module of its own, which the engine runs in a worker on an isolated
@@ -49,8 +53,8 @@
 				// full addresses, because a worker reads no page's import map. The add-on's own code
 				// imports the engine from the same build by a relative address.
 				const sketch = `
-import { defineSketch } from "${CDN}lib/index.js";
-import { createTerrain, terrainTextures } from "${CDN}addons/terrain/lib/index.js";
+import { defineSketch } from "${CDN}${FOLDER}/index.js";
+import { createTerrain, terrainTextures } from "${CDN}addons/terrain/${FOLDER}/index.js";
 
 export default defineSketch((ctx) => {
 	const { scene, textures, page } = ctx;

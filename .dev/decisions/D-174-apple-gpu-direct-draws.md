@@ -1,16 +1,17 @@
 # D-174: The Apple GPU gap, the measured start-up probe and the direct-draw path
 
-Status: decided by the owner, and built. Built: the start-up probe and the direct-draw path, measured on the Mac, a cloud iPhone 17 and a cloud Galaxy S25. On the iPhone 17 the bar holds on WebGL2 and misses on WebGPU.
+Status: decided by the owner, and built. The engine takes the direct path only where the start-up probe measures it faster and the device is an Apple GPU in WebKit. Built: the probe, that gate and the direct-draw path, measured on the Mac, a cloud iPhone 17 and a cloud Galaxy S25. On the iPhone 17 the bar holds on WebGL2 and misses on WebGPU.
 
-Summary: A WebKit validation pass costs a fixed amount for each indexed indirect draw with vertex buffers in each pass. That is about 8.5 us on the Mac's Safari and 2.5 us on the iPhone 17. A start-up probe that measures a real draw, never a browser or GPU name, picks a direct-draw path with CPU culling. On the Mac in Safari it halves Battle's GPU time, from 15.55 to 7.79 ms. On the cloud iPhone 17 the clamp holds about 1 ms of Battle's frame, and Factory's gap there is pass and pixel work.
+Summary: A WebKit validation pass costs a fixed amount for each indexed indirect draw with vertex buffers in each pass. That is about 8.5 us on the Mac's Safari and 2.5 us on the iPhone 17. On an Apple GPU in WebKit, a start-up probe of a real draw picks a direct-draw path with CPU culling. In the Mac's Safari it halves Battle's GPU time, from 15.55 to 7.79 ms. Every other device keeps the indirect path: a noisy probe in Chrome on the Mac picked the direct path and slowed the desert comparison from 1.24 to 1.67 ms a frame.
 
 ## Question
 
-Battle on the iPhone 17 runs at 13 fps in null3D and 40 fps in three.js, both on WebGPU at High. Factory runs at 26 fps against three.js's 59. null3D draws 115 times there and three.js 1,447 times, for the same 37 k triangles. Does a direct-draw path, chosen by a measurement and not by a browser name, close the gap?
+Battle on the iPhone 17 runs at 13 fps in null3D and 40 fps in three.js, both on WebGPU at High. Factory runs at 26 fps against three.js's 59. null3D draws 115 times there and three.js 1,447 times, for the same 37 k triangles. Does a direct-draw path close the gap, and on which devices may the engine take it?
 
 ## Rule
 
-- Choose the draw path only from a measurement of a real draw, never from a browser or GPU name (hard rule 14). One exception, by the coordinator's ruling: a software renderer identified from the adapter's reported description never takes the direct path. Its slow indirect draws say nothing about the per-draw GPU cost that the path removes, and its held frames must stay the ones the current path draws. The stop is a capability exclusion, not a way to pick between real GPUs; the choice among those stays measured.
+- The measured cause, WebKit's clamp of each indexed indirect draw, belongs to one combination: an Apple GPU in Apple's WebKit. That is Safari on the Mac, and every browser on iPhone and iPad. So the engine takes the direct path only where two things hold. The start-up probe measures it clearly faster on a real draw, and the device is that combination. A probe elsewhere measures only noise, so it never takes the path. This follows hard rule 14 as the owner ruled it, and this record is its first case.
+- A software renderer, named by the adapter's reported description, never takes the direct path either. Its slow indirect draws say nothing about the per-draw GPU cost that the path removes. Its held frames must stay the ones that the indirect path draws.
 - Keep per-instance data in vertex buffers (hard rule 7).
 - Never draw wrongly. The probe picks from a real first-frame draw, and the current path stays the fallback.
 
@@ -46,13 +47,28 @@ Factory draws 115 times and still pays about 25 ms. three.js draws twelve times 
 
 With M2-EX41's draw merging, a run on the same device and settings ([the run](../tested-devices/iphone-17-safari/20261014-083547-r34-battle-factory.md)) draws Battle 261 times instead of 1,230. Battle leads three.js on both backends: 32 fps against 31 on WebGPU, and 50 against 33 on WebGL2. Factory does not move. It pays 25 fps against three.js's 41 on WebGPU, and it draws 115 times, so its cost is not the draw call either. So the bar holds for Battle and misses for Factory, whose 35.3 ms of GPU time over 37 k triangles is pass and pixel work.
 
+### The probe outside WebKit
+
+Chrome has no per-draw clamp, so a probe there can pick the direct path only from noise. In Chrome on the owner's Mac (M5 Max), the probe took the direct path in some starts of the desert comparison. Other work on the machine most likely loaded it. The direct path draws no cluster trees. So the desert's ground drew about 1 million triangles instead of 62 thousand. The frame interval rose from 1.24 ms to 1.67 ms. A measurement alone cannot keep such a pick out, because load can slow one arm's runs and not the other's.
+
 ## The probe
 
 The probe runs on a device of its own, in the probe worker that checks what a worker can draw. The engine picks its GPU tier before its core starts, so the choice must be known then: the answer travels with the capability report into `initEngine`, and the core builds its frame builder for it. The probe worker's device is a dedicated worker's, like the render worker's own, and the per-draw cost it measures is a browser and driver property, so the answer holds for the device that draws.
 
-The probe draws a fixed workload twice: 512 indexed draws of a small mesh with a vertex buffer, once with the engine's indirect draws and once with direct draws, into a 64 pixel target. The indirect arm has the shape the engine records on this browser: an argument buffer for each draw on Apple's WebKit, whose indirect draws from one buffer race ([D-87](D-87-webkit-indirect-arguments.md)), and one buffer for every draw elsewhere. Each arm runs six frames, three times, and its fastest run is its figure; both arms warm up first, so a driver that drops a device's first indirect pass misleads neither. An arm whose warm-up frame takes over 50 ms ends the probe, so a very slow device keeps the current path instead of spending seconds in it. A software renderer, named by the adapter's reported description, never takes the direct path at all. The probe worker requests its adapter without a power preference, as the capability probe does, so a machine with two GPUs measures the browser's own pick.
+The probe draws a fixed workload twice: 512 indexed draws of a small mesh with a vertex buffer, once with the engine's indirect draws and once with direct draws, into a 64 pixel target. The indirect arm has the shape the engine records on this browser: an argument buffer for each draw on Apple's WebKit, whose indirect draws from one buffer race ([D-87](D-87-webkit-indirect-arguments.md)), and one buffer for every draw elsewhere. Each arm runs six frames, three times, and its fastest run is its figure; both arms warm up first, so a driver that drops a device's first indirect pass misleads neither. An arm whose warm-up frame takes over 50 ms ends the probe, so a very slow device keeps the current path instead of spending seconds in it. The probe worker requests its adapter without a power preference, as the capability probe does, so a machine with two GPUs measures the browser's own pick.
 
-The probe picks the direct path only when the direct arm is at least 25 percent faster and at least 0.15 ms a frame faster. Any other answer, a failure or a device lost during the probe keeps the engine's current path. The engine reads no browser or GPU name for the choice, and the answer is kept for the session.
+The probe picks the direct path only when the direct arm is at least 25 percent faster and at least 0.15 ms a frame faster. Any other answer, a failure or a device lost during the probe keeps the engine's current path. The answer is kept for the session.
+
+### The gate
+
+The probe runs only on an Apple GPU in WebKit. Elsewhere the worker skips its draws, which saves that start-up work. `skipDrawPathProbe` in `gpu/webgpu/draw-path-probe.ts` makes the choice, from `appleGpuInWebKit` in `shared/webkit.ts`. That function reads two signals, both in the probe worker:
+
+- The GPU: the adapter's vendor, architecture or description holds the word `apple`. Safari reports `apple` as the vendor and the architecture on the Mac, the iPhone and the iPad. Chrome on the Mac reports the vendor `apple` too. Firefox hides the names, so it reports no Apple GPU.
+- The browser engine: the user agent names Apple's WebKit, `AppleWebKit/` with a number of 600 or more, as `isAppleWebKit` reads it. Chromium freezes its own number at 537, and Gecko gives none. Chrome and Safari on one Mac report the same adapter, and no feature tells their engines apart. So the user agent is the one sound signal for the engine, and it comes last.
+
+A software renderer is checked first and gives its own reason. `engine.capabilities.drawPath` reports why the engine took its path. The probe's own results are `probe-faster`, `probe-not-faster` and `probe-failed`. A device the probe skipped reports `not-apple-gpu-in-webkit` or `software-renderer`. `?direct=on` and `?direct=off` still force a path on any WebGPU device, and report `forced`. The benchmark pages record the reason beside their figures, and the results archive keeps it for each page.
+
+`shared/webkit.test.ts` holds the detection. It covers Safari on the Mac, and Safari, Chrome and Firefox on iPhone and iPad. It also covers Chrome on the Mac, Firefox, Android, Linux and a software renderer. `gpu/webgpu/draw-path-probe.test.ts` holds the skip, which leaves the device untouched. `page/limits.test.ts` holds the reason under each switch.
 
 ## The direct-draw path
 
@@ -116,16 +132,18 @@ Factory's own graph on the same main holds 39 passes with the same shape. Eight 
 3. Reduce the number of draws, as M2-EX41's draw merging does. It is on main, and it takes Battle from 13 fps and 1,230 draws to 32 fps and 261 draws.
 4. Pull instances from storage buffers. The probe's `direct-pull` and `own-pull` arms remove the clamp with no probe at all, and they cost as much as direct draws. Per-instance data would leave the vertex buffers, which hard rule 7 refuses.
 5. Leave the draw path alone and measure the frame's other work. Factory pays 25 fps against three.js's 41 on WebGPU over 115 draws, so its gap is pass and pixel work.
+6. The probe alone, on every device. Rejected: in Chrome on the Mac a noisy probe took the direct path, and the desert comparison's frame slowed by about a third.
+7. Detection alone, with no probe. Rejected: the probe keeps the indirect path on an Apple GPU in WebKit whose draws gain nothing, or whose device is too slow to measure.
 
 ## Decision
 
-The owner chose option 2: the direct-draw path, chosen by a measured start-up probe. This record settles the probe and the path as above. Option 4 breaks hard rule 7. Options 3 and 5 do not exclude the path: draw merging is on main, and Factory's gap is other work. The three-pass run widens the path's ceiling to tens of milliseconds at 1,024 draws. So the passes that the engine's own draws land in decide whether a dedicated session is worth it. The short slices and the iPhone run measure that number.
+The owner chose option 2: the direct-draw path, chosen by a measured start-up probe. By the owner's ruling, the path also needs an Apple GPU in WebKit, which rejects option 6. Hard rule 14 states the ruling in general. A workaround for a cause that belongs to one OS and browser pair needs the measurement and a detection of the pair. This record settles the probe, the gate and the path as above. Option 4 breaks hard rule 7. Options 3 and 5 do not exclude the path: draw merging is on main, and Factory's gap is other work. The three-pass run widens the path's ceiling to tens of milliseconds at 1,024 draws. So the passes that the engine's own draws land in decide whether a dedicated session is worth it. The short slices and the iPhone run measure that number.
 
 ## The measured result
 
 The comparison pages ran on the Mac, in Safari 26.6.2 and Chrome 155, at High with the governor off. Both engines drew into a 1040 by 848 canvas in Safari, so the work was equal. Chrome drew null3D into 2080 by 1600 and three.js into 1040 by 800, so its null3D figures do four times the pixels.
 
-Safari chose the direct path and Chrome kept the indirect one, as their probes measured. Battle and Factory against three.js, in frames a second, at the canvas given beside each figure:
+Safari chose the direct path and Chrome kept the indirect one, as their probes measured. With the gate, Chrome keeps it without a probe. Battle and Factory against three.js, in frames a second, at the canvas given beside each figure:
 
 | Page | Safari, null3D | Safari, three.js | Chrome, null3D | Chrome, three.js |
 | --- | --- | --- | --- | --- |
@@ -187,7 +205,9 @@ So the direct path helps the phone as far as the clamp reaches, and the phone's 
 
 ## What this changes
 
-The engine has the start-up probe and the direct-draw path, and `engine.capabilities.directDraws` reports the choice. `?direct=on|off` forces either path for a test. GPU occlusion culling and `?instances=index` do not run on the direct path, which needs the instance counts that the GPU culls. The probe and the Mac comparisons above ran on the Mac, and the same pages ran on a cloud iPhone 17 and Galaxy S25.
+The engine has the start-up probe, its gate and the direct-draw path. `engine.capabilities.directDraws` reports the choice, and `engine.capabilities.drawPath` the reason. `?direct=on|off` forces either path for a test. GPU occlusion culling and `?instances=index` do not run on the direct path, which needs the instance counts that the GPU culls.
+
+The devices measured: the owner's Mac in Safari and in Chrome, and the micro-probe on a cloud iPhone 17 and iPad 10. The comparison pages also ran on a cloud iPhone 17 and Galaxy S25. The direct path's gains are on the Mac's Safari and the iPhone 17, both inside the gate. The Galaxy S25's rows record no direct path and no gain from it, so the gate gives up nothing measured there.
 
 ## The instance buffer follows the largest buffer
 

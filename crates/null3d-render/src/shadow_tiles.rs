@@ -72,6 +72,7 @@
 use null3d_core::cells::{CELL_SIZE, CellCoords};
 use null3d_core::culling::Frustum;
 use null3d_core::handle::Handle;
+use null3d_core::levels::LightLens;
 use null3d_core::lights::{LightShadow, NOT_VISIBLE, VisibleLight, kind};
 use null3d_core::morph::NOT_LINKED;
 use null3d_core::scene::{SceneStorage, flags};
@@ -408,6 +409,9 @@ pub struct ShadowTiles {
     shapes: [TileShape; MAX_TILES],
     /// Each tile's view in the frame planned last, for the tiles that draw in it.
     frames: [Option<ViewFrame>; MAX_TILES],
+    /// The lens of each tile's view in the frame planned last, by which its casters pick their
+    /// levels and patches, for the tiles that draw in it.
+    lenses: [LightLens; MAX_TILES],
     /// The tiles that the frame planned last left to wait under the redraw cap.
     waiting: usize,
     /// The lights that hold tiles in the frame planned last.
@@ -451,6 +455,7 @@ impl ShadowTiles {
             slots: [Slot::default(); MAX_TILES],
             shapes: [TileShape::default(); MAX_TILES],
             frames: [None; MAX_TILES],
+            lenses: [LightLens::Parallel { texel: 0.0 }; MAX_TILES],
             waiting: 0,
             lit: Vec::new(),
             ranked: Vec::new(),
@@ -477,6 +482,14 @@ impl ShadowTiles {
     /// A tile's view, when the frame planned last draws it.
     pub fn frame(&self, tile: usize) -> Option<&ViewFrame> {
         self.frames.get(tile)?.as_ref()
+    }
+
+    /// The lens of a tile's view, by which its casters pick their levels and patches in its
+    /// texels, when the frame planned last draws it: a spot or point light's view measures from
+    /// the light, and the hero's box is orthographic.
+    pub fn lens(&self, tile: usize) -> Option<LightLens> {
+        self.frames.get(tile)?.as_ref()?;
+        self.lenses.get(tile).copied()
     }
 
     /// The tiles that the frame planned last draws.
@@ -604,6 +617,10 @@ impl ShadowTiles {
                 let mut frame = view.frame(ShadingCamera::of(camera), light.layers);
                 frame.uniform.clock = camera.uniform.clock;
                 self.frames[tile] = Some(frame);
+                self.lenses[tile] = LightLens::Point {
+                    eye: view.position,
+                    texel: view.texel_per_meter,
+                };
             }
         }
         self.cap_redraws(fresh);
@@ -654,6 +671,9 @@ impl ShadowTiles {
         let [x, y, z] = [m[2], m[6], m[10]].map(|v| v * length);
         let side = size.max(1) as f32;
         let shading = ShadingCamera::of(camera);
+        self.lenses[tile as usize] = LightLens::Parallel {
+            texel: hero.bounds.texel(size),
+        };
         self.frames[tile as usize] = Some(ViewFrame {
             uniform: FrameUniform {
                 view_proj,

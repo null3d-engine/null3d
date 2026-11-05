@@ -1,0 +1,3860 @@
+[
+	{
+		"address": "tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&occlusion=off",
+		"run": 0,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T08:51:46.326Z",
+		"wallSeconds": 44.097,
+		"load": {
+			"before": 4.18212890625,
+			"after": 4.96728515625
+		},
+		"page": "island-view",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"url": "http://localhost:6490/tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&occlusion=off",
+		"calibrationMs": 0.7300000041723251,
+		"ok": true,
+		"tier": "webgpu",
+		"drawPath": "forced",
+		"mode": {
+			"build": "threaded",
+			"latency": "pipelined",
+			"sketchThread": "worker",
+			"renderThread": "render-worker",
+			"jobWorkers": 16,
+			"hold": null,
+			"preset": "medium",
+			"presetCheck": null,
+			"crashedStarts": 0,
+			"memoryMaximumMiB": 1024,
+			"renderFallback": null,
+			"keepTextureCopies": false
+		},
+		"frames": 3288,
+		"presentedFps": 219.1935290037171,
+		"intervalMs": {
+			"count": 3289,
+			"median": 4.769999980926514,
+			"p95": 5.332999992370605,
+			"p99": 6.15620018005371,
+			"max": 13.164999961853027,
+			"min": 2.765000104904175,
+			"mean": 4.56217847554725
+		},
+		"gpuMs": {
+			"count": 299,
+			"median": 6.282654762268066,
+			"p95": 7.250093936920165,
+			"p99": 7.768215589523314,
+			"max": 8.001752853393555,
+			"min": 4.177811145782471,
+			"mean": 6.285448128563106
+		},
+		"gpuPassMs": [
+			{
+				"name": "copies",
+				"ms": {
+					"count": 299,
+					"median": 1.533102035522461,
+					"p95": 2.662204146385192,
+					"p99": 3.3253231906890837,
+					"max": 3.6726109981536865,
+					"min": 0.0022499999031424522,
+					"mean": 1.5723052922119216
+				}
+			},
+			{
+				"name": "compute",
+				"ms": {
+					"count": 299,
+					"median": 0.09108100086450577,
+					"p95": 0.16342210322618478,
+					"p99": 0.1838536736369132,
+					"max": 0.20091299712657928,
+					"min": 0.06420700252056122,
+					"mean": 0.09975082967991016
+				}
+			},
+			{
+				"name": "shadow cascade 0",
+				"ms": {
+					"count": 299,
+					"median": 0.11562299728393555,
+					"p95": 0.14203910082578658,
+					"p99": 0.14937317699193947,
+					"max": 0.15783099830150604,
+					"min": 0.10403899848461151,
+					"mean": 0.11850837461127087
+				}
+			},
+			{
+				"name": "shadow cascade 1",
+				"ms": {
+					"count": 299,
+					"median": 0.5107839703559875,
+					"p95": 0.5558624982833862,
+					"p99": 0.5732982730865472,
+					"max": 0.6269069910049438,
+					"min": 0.4586179852485657,
+					"mean": 0.5128171500753
+				}
+			},
+			{
+				"name": "shadow cascade 2",
+				"ms": {
+					"count": 299,
+					"median": 0.8286960124969482,
+					"p95": 0.8965315222740173,
+					"p99": 0.9115878188610076,
+					"max": 1.002150058746338,
+					"min": 0.7267389893531799,
+					"mean": 0.830470166676818
+				}
+			},
+			{
+				"name": "opaque 1",
+				"ms": {
+					"count": 150,
+					"median": 0.9892759919166565,
+					"p95": 1.0648442924022674,
+					"p99": 1.0903180277347564,
+					"max": 1.0983580350875854,
+					"min": 0.8897789716720581,
+					"mean": 0.9890574566523234
+				}
+			},
+			{
+				"name": "view copy 1",
+				"ms": {
+					"count": 299,
+					"median": 0.5817409753799438,
+					"p95": 0.6521479964256285,
+					"p99": 0.677087813615799,
+					"max": 0.7549470067024231,
+					"min": 0.011374999769032001,
+					"mean": 0.5848004688044705
+				}
+			},
+			{
+				"name": "opaque",
+				"ms": {
+					"count": 299,
+					"median": 3.4098639488220215,
+					"p95": 3.9517188549041746,
+					"p99": 4.24196310043335,
+					"max": 4.702846050262451,
+					"min": 2.961414098739624,
+					"mean": 3.454071477105386
+				}
+			},
+			{
+				"name": "later passes",
+				"ms": {
+					"count": 299,
+					"median": 2.9511210918426514,
+					"p95": 3.4595712900161737,
+					"p99": 3.7291482448577877,
+					"max": 4.219060897827148,
+					"min": 2.5194199085235596,
+					"mean": 3.001152499463646
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 299,
+					"median": 0,
+					"p95": 0,
+					"p99": 0,
+					"max": 0,
+					"min": 0,
+					"mean": 0
+				}
+			},
+			{
+				"name": "transmission copy",
+				"ms": {
+					"count": 149,
+					"median": 2.7566230297088623,
+					"p95": 3.326774501800537,
+					"p99": 3.562114534378052,
+					"max": 3.567112922668457,
+					"min": 2.341839075088501,
+					"mean": 2.8063444211178976
+				}
+			}
+		],
+		"triangles": {
+			"count": 3289,
+			"median": 3883380,
+			"p95": 4818535,
+			"p99": 4818535,
+			"max": 4818535,
+			"min": 3883368,
+			"mean": 4350525.006080876
+		},
+		"occludedEntries": null,
+		"visibleEntries": null,
+		"drawCalls": {
+			"count": 3289,
+			"median": 2081,
+			"p95": 2679,
+			"p99": 2679,
+			"max": 2679,
+			"min": 2081,
+			"mean": 2379.909090909091
+		},
+		"problems": []
+	},
+	{
+		"address": "tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&occlusion=on&occlusion-check=off",
+		"run": 0,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T08:52:31.060Z",
+		"wallSeconds": 44.103,
+		"load": {
+			"before": 4.96728515625,
+			"after": 5.10107421875
+		},
+		"page": "island-view",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"url": "http://localhost:6490/tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&occlusion=on&occlusion-check=off",
+		"calibrationMs": 1.0799999982118607,
+		"ok": true,
+		"tier": "webgpu",
+		"drawPath": "forced",
+		"mode": {
+			"build": "threaded",
+			"latency": "pipelined",
+			"sketchThread": "worker",
+			"renderThread": "render-worker",
+			"jobWorkers": 16,
+			"hold": null,
+			"preset": "medium",
+			"presetCheck": null,
+			"crashedStarts": 0,
+			"memoryMaximumMiB": 1024,
+			"renderFallback": null,
+			"keepTextureCopies": false
+		},
+		"frames": 2924,
+		"presentedFps": 194.87833105477947,
+		"intervalMs": {
+			"count": 2925,
+			"median": 5.074999809265137,
+			"p95": 6.699999809265137,
+			"p99": 7.397600040435789,
+			"max": 17.110000610351562,
+			"min": 2.130000114440918,
+			"mean": 5.131406835164779
+		},
+		"gpuMs": {
+			"count": 266,
+			"median": 6.126155853271484,
+			"p95": 7.722268342971802,
+			"p99": 8.52393112182618,
+			"max": 9.72972583770752,
+			"min": 4.553637981414795,
+			"mean": 6.215680518544707
+		},
+		"gpuPassMs": [
+			{
+				"name": "copies",
+				"ms": {
+					"count": 263,
+					"median": 0.9786940217018127,
+					"p95": 2.4047878742218014,
+					"p99": 3.014220685958862,
+					"max": 3.6579859256744385,
+					"min": 0.0009169999975711107,
+					"mean": 1.0414674744862504
+				}
+			},
+			{
+				"name": "compute",
+				"ms": {
+					"count": 532,
+					"median": 0.08118600025773048,
+					"p95": 0.1553978472948074,
+					"p99": 0.2653177666664082,
+					"max": 0.6318650245666504,
+					"min": 0.06124899908900261,
+					"mean": 0.09134777805494859
+				}
+			},
+			{
+				"name": "shadow cascade 0",
+				"ms": {
+					"count": 266,
+					"median": 0.11508200317621231,
+					"p95": 0.14135224372148514,
+					"p99": 0.1526492066681388,
+					"max": 0.25366300344467163,
+					"min": 0.09679000079631805,
+					"mean": 0.11804157139775448
+				}
+			},
+			{
+				"name": "shadow cascade 1",
+				"ms": {
+					"count": 266,
+					"median": 0.4910549968481064,
+					"p95": 0.5345857292413712,
+					"p99": 0.6452190458774573,
+					"max": 0.883778989315033,
+					"min": 0.4348689913749695,
+					"mean": 0.4960203015042427
+				}
+			},
+			{
+				"name": "shadow cascade 2",
+				"ms": {
+					"count": 266,
+					"median": 0.798383504152298,
+					"p95": 0.9614224880933762,
+					"p99": 1.1198053896427176,
+					"max": 1.4756439924240112,
+					"min": 0.7010740041732788,
+					"mean": 0.813682948064087
+				}
+			},
+			{
+				"name": "occluders",
+				"ms": {
+					"count": 266,
+					"median": 0.5439499914646149,
+					"p95": 0.6093039810657501,
+					"p99": 0.7432721078395851,
+					"max": 1.2160650491714478,
+					"min": 0.11970599740743637,
+					"mean": 0.5455767333899674
+				}
+			},
+			{
+				"name": "opaque 1",
+				"ms": {
+					"count": 133,
+					"median": 0.7771549820899963,
+					"p95": 0.8279289960861206,
+					"p99": 0.9604034614562993,
+					"max": 1.069357991218567,
+					"min": 0.6909890174865723,
+					"mean": 0.7775035195780876
+				}
+			},
+			{
+				"name": "later passes",
+				"ms": {
+					"count": 266,
+					"median": 3.500009059906006,
+					"p95": 4.638148069381714,
+					"p99": 5.039175510406498,
+					"max": 5.519791126251221,
+					"min": 2.923163890838623,
+					"mean": 3.6353114189061904
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 266,
+					"median": 0,
+					"p95": 0,
+					"p99": 0,
+					"max": 0,
+					"min": 0,
+					"mean": 0
+				}
+			},
+			{
+				"name": "view copy 1",
+				"ms": {
+					"count": 133,
+					"median": 0.5386999845504761,
+					"p95": 0.6126656055450439,
+					"p99": 0.7766530704498296,
+					"max": 0.8329870104789734,
+					"min": 0.04853999987244606,
+					"mean": 0.5337571876221582
+				}
+			}
+		],
+		"triangles": {
+			"count": 2925,
+			"median": 4326134,
+			"p95": 5261289,
+			"p99": 5261289,
+			"max": 5261289,
+			"min": 4326122,
+			"mean": 4793545.646495727
+		},
+		"occludedEntries": {
+			"count": 2924,
+			"median": 4290,
+			"p95": 4290,
+			"p99": 4290,
+			"max": 4290,
+			"min": 4290,
+			"mean": 4290
+		},
+		"visibleEntries": null,
+		"drawCalls": {
+			"count": 2925,
+			"median": 2885,
+			"p95": 2885,
+			"p99": 2885,
+			"max": 2885,
+			"min": 2287,
+			"mean": 2586.1022222222223
+		},
+		"problems": []
+	},
+	{
+		"address": "tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&occlusion=on",
+		"run": 0,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T08:53:16.002Z",
+		"wallSeconds": 45.118,
+		"load": {
+			"before": 5.10107421875,
+			"after": 5.76171875
+		},
+		"page": "island-view",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"url": "http://localhost:6490/tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&occlusion=on",
+		"calibrationMs": 1.4149999916553497,
+		"ok": true,
+		"tier": "webgpu",
+		"drawPath": "forced",
+		"mode": {
+			"build": "threaded",
+			"latency": "pipelined",
+			"sketchThread": "worker",
+			"renderThread": "render-worker",
+			"jobWorkers": 16,
+			"hold": null,
+			"preset": "medium",
+			"presetCheck": null,
+			"crashedStarts": 0,
+			"memoryMaximumMiB": 1024,
+			"renderFallback": null,
+			"keepTextureCopies": false
+		},
+		"frames": 3060,
+		"presentedFps": 204.05109088050457,
+		"intervalMs": {
+			"count": 3061,
+			"median": 4.840000152587891,
+			"p95": 6.085000038146973,
+			"p99": 6.747999954223634,
+			"max": 28.454999923706055,
+			"min": 1.8849999904632568,
+			"mean": 4.900733417718483
+		},
+		"gpuMs": {
+			"count": 278,
+			"median": 6.289154529571533,
+			"p95": 7.5091752052307115,
+			"p99": 7.932108311653141,
+			"max": 10.199761390686035,
+			"min": 4.34801721572876,
+			"mean": 6.294768151619452
+		},
+		"gpuPassMs": [
+			{
+				"name": "copies",
+				"ms": {
+					"count": 276,
+					"median": 1.2806265354156494,
+					"p95": 2.3681196570396423,
+					"p99": 2.8571028113365173,
+					"max": 4.130311965942383,
+					"min": 0.0010000000474974513,
+					"mean": 1.299961138575294
+				}
+			},
+			{
+				"name": "compute",
+				"ms": {
+					"count": 354,
+					"median": 0.08360299840569496,
+					"p95": 0.16571005135774608,
+					"p99": 0.19588726401329032,
+					"max": 0.20595499873161316,
+					"min": 0.05762400105595589,
+					"mean": 0.09653675717191171
+				}
+			},
+			{
+				"name": "shadow cascade 0",
+				"ms": {
+					"count": 278,
+					"median": 0.11772749945521355,
+					"p95": 0.14738530591130256,
+					"p99": 0.15791648015379905,
+					"max": 0.21003800630569458,
+					"min": 0.10533200204372406,
+					"mean": 0.12100910105936818
+				}
+			},
+			{
+				"name": "shadow cascade 1",
+				"ms": {
+					"count": 278,
+					"median": 0.5238879919052124,
+					"p95": 0.5638321667909623,
+					"p99": 0.5810697221755982,
+					"max": 0.59061598777771,
+					"min": 0.44528499245643616,
+					"mean": 0.5218409544272389
+				}
+			},
+			{
+				"name": "shadow cascade 2",
+				"ms": {
+					"count": 278,
+					"median": 0.8556329905986786,
+					"p95": 0.9130635887384414,
+					"p99": 0.9534521538019181,
+					"max": 1.047234058380127,
+					"min": 0.7314059734344482,
+					"mean": 0.8471711078564897
+				}
+			},
+			{
+				"name": "view copy 1",
+				"ms": {
+					"count": 239,
+					"median": 0.6028239727020264,
+					"p95": 0.6627816915512085,
+					"p99": 0.6925473022460938,
+					"max": 0.7927380204200745,
+					"min": 0.4202840030193329,
+					"mean": 0.5954245185502902
+				}
+			},
+			{
+				"name": "opaque",
+				"ms": {
+					"count": 202,
+					"median": 3.516571521759033,
+					"p95": 4.427021908760071,
+					"p99": 4.860019416809083,
+					"max": 5.009424209594727,
+					"min": 2.993870973587036,
+					"mean": 3.592156994460833
+				}
+			},
+			{
+				"name": "transmission copy",
+				"ms": {
+					"count": 102,
+					"median": 2.842768907546997,
+					"p95": 3.665662658214566,
+					"p99": 3.9027256250381464,
+					"max": 4.192478179931641,
+					"min": 2.4607961177825928,
+					"mean": 2.904065580929027
+				}
+			},
+			{
+				"name": "later passes",
+				"ms": {
+					"count": 278,
+					"median": 3.168200969696045,
+					"p95": 4.196898698806763,
+					"p99": 4.647124838829042,
+					"max": 4.892632961273193,
+					"min": 2.5940439701080322,
+					"mean": 3.295531821765488
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 278,
+					"median": 0,
+					"p95": 0,
+					"p99": 0,
+					"max": 0,
+					"min": 0,
+					"mean": 0
+				}
+			},
+			{
+				"name": "opaque 1",
+				"ms": {
+					"count": 139,
+					"median": 0.9801939725875854,
+					"p95": 1.07848402261734,
+					"p99": 1.1082015800476075,
+					"max": 1.118481993675232,
+					"min": 0.7276560068130493,
+					"mean": 0.953582589574855
+				}
+			},
+			{
+				"name": "occluders",
+				"ms": {
+					"count": 76,
+					"median": 0.5655339956283569,
+					"p95": 0.6351357400417328,
+					"p99": 0.6553862690925598,
+					"max": 0.6698229908943176,
+					"min": 0.35245200991630554,
+					"mean": 0.5657656059453362
+				}
+			}
+		],
+		"triangles": {
+			"count": 3061,
+			"median": 4334606,
+			"p95": 5273997,
+			"p99": 5273997,
+			"max": 5273997,
+			"min": 3883368,
+			"mean": 4475136.129696177
+		},
+		"occludedEntries": {
+			"count": 3061,
+			"median": 0,
+			"p95": 4290,
+			"p99": 4290,
+			"max": 4290,
+			"min": 0,
+			"mean": 937.6053577262333
+		},
+		"visibleEntries": null,
+		"drawCalls": {
+			"count": 3061,
+			"median": 2629,
+			"p95": 3146,
+			"p99": 3221,
+			"max": 3221,
+			"min": 2056,
+			"mean": 2449.307415877164
+		},
+		"problems": []
+	},
+	{
+		"address": "tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&pose=600,280,540,40,80,-40&occlusion=off",
+		"run": 0,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T08:54:01.728Z",
+		"wallSeconds": 44.105,
+		"load": {
+			"before": 5.76171875,
+			"after": 6.208984375
+		},
+		"page": "island-view",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"url": "http://localhost:6490/tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&pose=600,280,540,40,80,-40&occlusion=off",
+		"calibrationMs": 1.0750000029802322,
+		"ok": true,
+		"tier": "webgpu",
+		"drawPath": "forced",
+		"mode": {
+			"build": "threaded",
+			"latency": "pipelined",
+			"sketchThread": "worker",
+			"renderThread": "render-worker",
+			"jobWorkers": 16,
+			"hold": null,
+			"preset": "medium",
+			"presetCheck": null,
+			"crashedStarts": 0,
+			"memoryMaximumMiB": 1024,
+			"renderFallback": null,
+			"keepTextureCopies": false
+		},
+		"frames": 3400,
+		"presentedFps": 226.6702434244143,
+		"intervalMs": {
+			"count": 3401,
+			"median": 4.275000095367432,
+			"p95": 5.635000228881836,
+			"p99": 6.244999885559082,
+			"max": 24.209999084472656,
+			"min": 1.7000000476837158,
+			"mean": 4.411695090156203
+		},
+		"gpuMs": {
+			"count": 309,
+			"median": 4.138978958129883,
+			"p95": 4.791010665893554,
+			"p99": 5.026026973724366,
+			"max": 5.711370944976807,
+			"min": 3.286407947540283,
+			"mean": 4.151452407867778
+		},
+		"gpuPassMs": [
+			{
+				"name": "copies",
+				"ms": {
+					"count": 295,
+					"median": 0.05649900063872337,
+					"p95": 1.0879464745521548,
+					"p99": 1.3346868109703067,
+					"max": 1.6245579719543457,
+					"min": 0.0006249999860301614,
+					"mean": 0.35967204697485383
+				}
+			},
+			{
+				"name": "compute",
+				"ms": {
+					"count": 309,
+					"median": 0.08654099702835083,
+					"p95": 0.1615313947200775,
+					"p99": 0.22590307533741033,
+					"max": 0.3165780007839203,
+					"min": 0.06954000145196915,
+					"mean": 0.09674057933504913
+				}
+			},
+			{
+				"name": "shadow cascade 0",
+				"ms": {
+					"count": 309,
+					"median": 0.06199900060892105,
+					"p95": 0.07324879765510559,
+					"p99": 0.07757036000490192,
+					"max": 0.15212300419807434,
+					"min": 0.05558300018310547,
+					"mean": 0.0633155243971587
+				}
+			},
+			{
+				"name": "shadow cascade 1",
+				"ms": {
+					"count": 309,
+					"median": 0.19287200272083282,
+					"p95": 0.2290551990270614,
+					"p99": 0.2501407110691072,
+					"max": 0.25537100434303284,
+					"min": 0.16441400349140167,
+					"mean": 0.19570664101819776
+				}
+			},
+			{
+				"name": "shadow cascade 2",
+				"ms": {
+					"count": 309,
+					"median": 0.4470770061016083,
+					"p95": 0.48940019607543944,
+					"p99": 0.502598557472229,
+					"max": 0.5576990246772766,
+					"min": 0.3957020044326782,
+					"mean": 0.4506491028182329
+				}
+			},
+			{
+				"name": "view copy 1",
+				"ms": {
+					"count": 308,
+					"median": 0.4831809848546982,
+					"p95": 0.6444572359323502,
+					"p99": 0.7909672057628633,
+					"max": 0.8095700144767761,
+					"min": 0.010083000175654888,
+					"mean": 0.463749836462054
+				}
+			},
+			{
+				"name": "opaque",
+				"ms": {
+					"count": 309,
+					"median": 2.389796018600464,
+					"p95": 3.1218603610992406,
+					"p99": 3.360658721923829,
+					"max": 3.433573007583618,
+					"min": 1.9118050336837769,
+					"mean": 2.4257997320693674
+				}
+			},
+			{
+				"name": "transmission copy",
+				"ms": {
+					"count": 155,
+					"median": 1.9286370277404785,
+					"p95": 2.358389091491699,
+					"p99": 2.721989426612856,
+					"max": 2.8657069206237793,
+					"min": 1.6587239503860474,
+					"mean": 1.9658812399833434
+				}
+			},
+			{
+				"name": "later passes",
+				"ms": {
+					"count": 309,
+					"median": 2.7476251125335693,
+					"p95": 3.4492557525634746,
+					"p99": 3.731019811630249,
+					"max": 3.7980260848999023,
+					"min": 0.6003659963607788,
+					"mean": 2.6672442032681314
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 308,
+					"median": 0,
+					"p95": 0,
+					"p99": 0,
+					"max": 0,
+					"min": 0,
+					"mean": 0
+				}
+			},
+			{
+				"name": "opaque 1",
+				"ms": {
+					"count": 154,
+					"median": 1.0147554874420166,
+					"p95": 1.11439790725708,
+					"p99": 1.1909917378425598,
+					"max": 1.2077319622039795,
+					"min": 0.9138190150260925,
+					"mean": 1.0208702489927217
+				}
+			}
+		],
+		"triangles": {
+			"count": 3401,
+			"median": 2974569,
+			"p95": 2974581,
+			"p99": 2974581,
+			"max": 2974581,
+			"min": 2183876,
+			"mean": 2579577.2308144663
+		},
+		"occludedEntries": null,
+		"visibleEntries": null,
+		"drawCalls": {
+			"count": 3401,
+			"median": 2485,
+			"p95": 3183,
+			"p99": 3183,
+			"max": 3183,
+			"min": 2485,
+			"mean": 2833.897383122611
+		},
+		"problems": []
+	},
+	{
+		"address": "tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&pose=600,280,540,40,80,-40&occlusion=on&occlusion-check=off",
+		"run": 0,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T08:54:46.668Z",
+		"wallSeconds": 45.11,
+		"load": {
+			"before": 6.208984375,
+			"after": 6.87548828125
+		},
+		"page": "island-view",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"url": "http://localhost:6490/tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&pose=600,280,540,40,80,-40&occlusion=on&occlusion-check=off",
+		"calibrationMs": 1.5750000029802322,
+		"ok": true,
+		"tier": "webgpu",
+		"drawPath": "forced",
+		"mode": {
+			"build": "threaded",
+			"latency": "pipelined",
+			"sketchThread": "worker",
+			"renderThread": "render-worker",
+			"jobWorkers": 16,
+			"hold": null,
+			"preset": "medium",
+			"presetCheck": null,
+			"crashedStarts": 0,
+			"memoryMaximumMiB": 1024,
+			"renderFallback": null,
+			"keepTextureCopies": false
+		},
+		"frames": 3261,
+		"presentedFps": 217.38080126122503,
+		"intervalMs": {
+			"count": 3262,
+			"median": 4.367499828338623,
+			"p95": 5.744999885559082,
+			"p99": 6.075850119590758,
+			"max": 17.059999465942383,
+			"min": 2.2699999809265137,
+			"mean": 4.600222256050601
+		},
+		"gpuMs": {
+			"count": 297,
+			"median": 4.429182052612305,
+			"p95": 5.01047306060791,
+			"p99": 5.38711759567261,
+			"max": 5.8037028312683105,
+			"min": 3.4256980419158936,
+			"mean": 4.485535091021245
+		},
+		"gpuPassMs": [
+			{
+				"name": "copies",
+				"ms": {
+					"count": 296,
+					"median": 0.13231099769473076,
+					"p95": 1.1470239758491516,
+					"p99": 1.3986680567264582,
+					"max": 1.6296429634094238,
+					"min": 0.00033400001120753586,
+					"mean": 0.4227928201109682
+				}
+			},
+			{
+				"name": "compute",
+				"ms": {
+					"count": 594,
+					"median": 0.08174899965524673,
+					"p95": 0.14554174467921258,
+					"p99": 0.166446501761675,
+					"max": 0.20387199521064758,
+					"min": 0.060249000787734985,
+					"mean": 0.0858789057806385
+				}
+			},
+			{
+				"name": "shadow cascade 0",
+				"ms": {
+					"count": 297,
+					"median": 0.06145700067281723,
+					"p95": 0.06659880131483079,
+					"p99": 0.07388399690389634,
+					"max": 0.08637300133705139,
+					"min": 0.056331999599933624,
+					"mean": 0.06235934694858914
+				}
+			},
+			{
+				"name": "shadow cascade 1",
+				"ms": {
+					"count": 297,
+					"median": 0.19845600426197052,
+					"p95": 0.23503840267658233,
+					"p99": 0.24855131626129157,
+					"max": 0.25420400500297546,
+					"min": 0.16520600020885468,
+					"mean": 0.2001131243677653
+				}
+			},
+			{
+				"name": "shadow cascade 2",
+				"ms": {
+					"count": 297,
+					"median": 0.4526180028915405,
+					"p95": 0.497283411026001,
+					"p99": 0.5198613786697388,
+					"max": 0.5718669891357422,
+					"min": 0.39991000294685364,
+					"mean": 0.45897968028129554
+				}
+			},
+			{
+				"name": "occluders",
+				"ms": {
+					"count": 297,
+					"median": 0.29382801055908203,
+					"p95": 0.3291784107685089,
+					"p99": 0.3505983698368073,
+					"max": 0.39895200729370117,
+					"min": 0.25066301226615906,
+					"mean": 0.2964622160601696
+				}
+			},
+			{
+				"name": "view copy 1",
+				"ms": {
+					"count": 149,
+					"median": 0.3119109869003296,
+					"p95": 0.3587288081645965,
+					"p99": 0.38482067942619325,
+					"max": 0.41982701420783997,
+					"min": 0.22799700498580933,
+					"mean": 0.30956297332808475
+				}
+			},
+			{
+				"name": "later passes",
+				"ms": {
+					"count": 297,
+					"median": 3.0744950771331787,
+					"p95": 3.4856217861175534,
+					"p99": 3.8346857357025153,
+					"max": 3.9010651111602783,
+					"min": 2.5098369121551514,
+					"mean": 3.0687127177562776
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 297,
+					"median": 0,
+					"p95": 0,
+					"p99": 0,
+					"max": 0,
+					"min": 0,
+					"mean": 0
+				}
+			},
+			{
+				"name": "opaque 1",
+				"ms": {
+					"count": 148,
+					"median": 0.9647774994373322,
+					"p95": 1.035551506280899,
+					"p99": 1.080931512117386,
+					"max": 1.0919829607009888,
+					"min": 0.8409039974212646,
+					"mean": 0.9686181513038842
+				}
+			}
+		],
+		"triangles": {
+			"count": 3262,
+			"median": 2323858,
+			"p95": 3114539,
+			"p99": 3114551,
+			"max": 3114551,
+			"min": 2320720,
+			"mean": 2715919.2841814836
+		},
+		"occludedEntries": {
+			"count": 3261,
+			"median": 4242,
+			"p95": 4242,
+			"p99": 4242,
+			"max": 4242,
+			"min": 4242,
+			"mean": 4242
+		},
+		"visibleEntries": null,
+		"drawCalls": {
+			"count": 3262,
+			"median": 3189,
+			"p95": 3325,
+			"p99": 3325,
+			"max": 3825,
+			"min": 2578,
+			"mean": 2971.122624156959
+		},
+		"problems": []
+	},
+	{
+		"address": "tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&pose=600,280,540,40,80,-40&occlusion=on",
+		"run": 0,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T08:55:32.397Z",
+		"wallSeconds": 44.092,
+		"load": {
+			"before": 6.87548828125,
+			"after": 6.20703125
+		},
+		"page": "island-view",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"url": "http://localhost:6490/tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&pose=600,280,540,40,80,-40&occlusion=on",
+		"calibrationMs": 1.0800000131130219,
+		"ok": true,
+		"tier": "webgpu",
+		"drawPath": "forced",
+		"mode": {
+			"build": "threaded",
+			"latency": "pipelined",
+			"sketchThread": "worker",
+			"renderThread": "render-worker",
+			"jobWorkers": 16,
+			"hold": null,
+			"preset": "medium",
+			"presetCheck": null,
+			"crashedStarts": 0,
+			"memoryMaximumMiB": 1024,
+			"renderFallback": null,
+			"keepTextureCopies": false
+		},
+		"frames": 3238,
+		"presentedFps": 215.7874008438769,
+		"intervalMs": {
+			"count": 3238,
+			"median": 4.602499961853027,
+			"p95": 5.960000038146973,
+			"p99": 6.576300015449525,
+			"max": 35.3849983215332,
+			"min": 2.0199999809265137,
+			"mean": 4.6341908567845636
+		},
+		"gpuMs": {
+			"count": 295,
+			"median": 4.271643161773682,
+			"p95": 4.938332796096802,
+			"p99": 5.322123432159424,
+			"max": 5.633080005645752,
+			"min": 3.133327007293701,
+			"mean": 4.259028908357782
+		},
+		"gpuPassMs": [
+			{
+				"name": "copies",
+				"ms": {
+					"count": 276,
+					"median": 0.021770000457763672,
+					"p95": 1.2193872928619385,
+					"p99": 1.3732182383537292,
+					"max": 1.6887660026550293,
+					"min": 0.000375000003259629,
+					"mean": 0.33586035935645603
+				}
+			},
+			{
+				"name": "compute",
+				"ms": {
+					"count": 366,
+					"median": 0.08483199775218964,
+					"p95": 0.18282999843358994,
+					"p99": 0.2393696971237661,
+					"max": 0.27462100982666016,
+					"min": 0.05774899944663048,
+					"mean": 0.10020089631930726
+				}
+			},
+			{
+				"name": "shadow cascade 0",
+				"ms": {
+					"count": 295,
+					"median": 0.06499899923801422,
+					"p95": 0.0798401027917862,
+					"p99": 0.14880447685718537,
+					"max": 0.1543309986591339,
+					"min": 0.05454099923372269,
+					"mean": 0.06724198964440216
+				}
+			},
+			{
+				"name": "shadow cascade 1",
+				"ms": {
+					"count": 295,
+					"median": 0.20241400599479675,
+					"p95": 0.2361458003520966,
+					"p99": 0.2580630338191986,
+					"max": 0.27716299891471863,
+					"min": 0.1597059965133667,
+					"mean": 0.20377544770806522
+				}
+			},
+			{
+				"name": "shadow cascade 2",
+				"ms": {
+					"count": 295,
+					"median": 0.4673269987106323,
+					"p95": 0.5183806121349335,
+					"p99": 0.5324555671215058,
+					"max": 0.5460759997367859,
+					"min": 0.40195199847221375,
+					"mean": 0.47032645031557246
+				}
+			},
+			{
+				"name": "opaque 1",
+				"ms": {
+					"count": 148,
+					"median": 1.0168175101280212,
+					"p95": 1.117838478088379,
+					"p99": 1.1417482376098633,
+					"max": 1.3089380264282227,
+					"min": 0.8129450082778931,
+					"mean": 1.02125554713043
+				}
+			},
+			{
+				"name": "view copy 1",
+				"ms": {
+					"count": 257,
+					"median": 0.35036998987197876,
+					"p95": 0.6802971959114075,
+					"p99": 0.6943744945526122,
+					"max": 0.8464450240135193,
+					"min": 0.009457999840378761,
+					"mean": 0.45407590588214103
+				}
+			},
+			{
+				"name": "opaque",
+				"ms": {
+					"count": 224,
+					"median": 2.46908700466156,
+					"p95": 2.850105142593384,
+					"p99": 3.4136120104789747,
+					"max": 3.6645689010620117,
+					"min": 1.9498029947280884,
+					"mean": 2.466629887798003
+				}
+			},
+			{
+				"name": "later passes",
+				"ms": {
+					"count": 295,
+					"median": 2.8514559268951416,
+					"p95": 3.294466233253479,
+					"p99": 3.682954254150391,
+					"max": 4.071228981018066,
+					"min": 0.6451150178909302,
+					"mean": 2.6177330366635725
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 294,
+					"median": 0,
+					"p95": 0,
+					"p99": 0,
+					"max": 0,
+					"min": 0,
+					"mean": 0
+				}
+			},
+			{
+				"name": "transmission copy",
+				"ms": {
+					"count": 113,
+					"median": 1.9742610454559326,
+					"p95": 2.4371961593627924,
+					"p99": 2.9612437057495096,
+					"max": 3.1939918994903564,
+					"min": 1.6930160522460938,
+					"mean": 2.0426140686052037
+				}
+			},
+			{
+				"name": "occluders",
+				"ms": {
+					"count": 71,
+					"median": 0.2913700044155121,
+					"p95": 0.33382800221443176,
+					"p99": 0.34945359528064723,
+					"max": 0.36316099762916565,
+					"min": 0.23720499873161316,
+					"mean": 0.2914597748870581
+				}
+			}
+		],
+		"triangles": {
+			"count": 3238,
+			"median": 2876458,
+			"p95": 3114551,
+			"p99": 3114551,
+			"max": 3114551,
+			"min": 2183876,
+			"mean": 2613591.248301421
+		},
+		"occludedEntries": {
+			"count": 3238,
+			"median": 0,
+			"p95": 4242,
+			"p99": 4242,
+			"max": 4242,
+			"min": 0,
+			"mean": 786.0407659048795
+		},
+		"visibleEntries": null,
+		"drawCalls": {
+			"count": 3238,
+			"median": 3130,
+			"p95": 3251,
+			"p99": 3825,
+			"max": 3825,
+			"min": 2460,
+			"mean": 2870.7155651636813
+		},
+		"problems": []
+	},
+	{
+		"address": "tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&occlusion=off",
+		"run": 1,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T08:56:17.340Z",
+		"wallSeconds": 45.114,
+		"load": {
+			"before": 6.20703125,
+			"after": 5.78076171875
+		},
+		"page": "island-view",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"url": "http://localhost:6490/tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&occlusion=off",
+		"calibrationMs": 1.1649999916553497,
+		"ok": true,
+		"tier": "webgpu",
+		"drawPath": "forced",
+		"mode": {
+			"build": "threaded",
+			"latency": "pipelined",
+			"sketchThread": "worker",
+			"renderThread": "render-worker",
+			"jobWorkers": 16,
+			"hold": null,
+			"preset": "medium",
+			"presetCheck": null,
+			"crashedStarts": 0,
+			"memoryMaximumMiB": 1024,
+			"renderFallback": null,
+			"keepTextureCopies": false
+		},
+		"frames": 2912,
+		"presentedFps": 194.1221568101193,
+		"intervalMs": {
+			"count": 2913,
+			"median": 5.139999866485596,
+			"p95": 6.335000038146973,
+			"p99": 6.6944001579284675,
+			"max": 23.260000228881836,
+			"min": 1.0099999904632568,
+			"mean": 5.151395474026959
+		},
+		"gpuMs": {
+			"count": 265,
+			"median": 6.817770957946777,
+			"p95": 7.957294273376464,
+			"p99": 8.258247299194338,
+			"max": 8.666910171508789,
+			"min": 4.839468002319336,
+			"mean": 6.811459697867339
+		},
+		"gpuPassMs": [
+			{
+				"name": "copies",
+				"ms": {
+					"count": 264,
+					"median": 1.5045809745788574,
+					"p95": 2.8530661344528196,
+					"p99": 3.1780652141571046,
+					"max": 3.3011579513549805,
+					"min": 0.012625000439584255,
+					"mean": 1.5275737050229288
+				}
+			},
+			{
+				"name": "compute",
+				"ms": {
+					"count": 265,
+					"median": 0.10099899768829346,
+					"p95": 0.19362180233001705,
+					"p99": 0.21923923611640933,
+					"max": 0.22437100112438202,
+					"min": 0.07337299734354019,
+					"mean": 0.11528175068351458
+				}
+			},
+			{
+				"name": "shadow cascade 0",
+				"ms": {
+					"count": 265,
+					"median": 0.13195699453353882,
+					"p95": 0.16566399335861204,
+					"p99": 0.17284912645816802,
+					"max": 0.19208000600337982,
+					"min": 0.11241400241851807,
+					"mean": 0.13535407531373905
+				}
+			},
+			{
+				"name": "shadow cascade 1",
+				"ms": {
+					"count": 265,
+					"median": 0.5731989741325378,
+					"p95": 0.622789990901947,
+					"p99": 0.6465851044654847,
+					"max": 0.7346979975700378,
+					"min": 0.51357501745224,
+					"mean": 0.5738181174926038
+				}
+			},
+			{
+				"name": "shadow cascade 2",
+				"ms": {
+					"count": 265,
+					"median": 0.9362360239028931,
+					"p95": 1.004676628112793,
+					"p99": 1.0477098083496095,
+					"max": 1.1259829998016357,
+					"min": 0.8428210020065308,
+					"mean": 0.9319588973837079
+				}
+			},
+			{
+				"name": "opaque 1",
+				"ms": {
+					"count": 133,
+					"median": 1.1138160228729248,
+					"p95": 1.1958817958831787,
+					"p99": 1.2187965774536134,
+					"max": 1.2396889925003052,
+					"min": 1.0190260410308838,
+					"mean": 1.1104767609359627
+				}
+			},
+			{
+				"name": "view copy 1",
+				"ms": {
+					"count": 264,
+					"median": 0.6514900028705597,
+					"p95": 0.7163578033447265,
+					"p99": 0.7711628335714341,
+					"max": 0.7952799797058105,
+					"min": 0.4501180052757263,
+					"mean": 0.6542475790236936
+				}
+			},
+			{
+				"name": "opaque",
+				"ms": {
+					"count": 265,
+					"median": 3.856273889541626,
+					"p95": 4.332117748260498,
+					"p99": 4.8444086265563975,
+					"max": 4.990591049194336,
+					"min": 3.326406955718994,
+					"mean": 3.8836383801586223
+				}
+			},
+			{
+				"name": "later passes",
+				"ms": {
+					"count": 265,
+					"median": 3.3473660945892334,
+					"p95": 3.8969318389892575,
+					"p99": 4.289510707855227,
+					"max": 4.489638805389404,
+					"min": 2.866205930709839,
+					"mean": 3.386453942532809
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 264,
+					"median": 0,
+					"p95": 0,
+					"p99": 0,
+					"max": 0,
+					"min": 0,
+					"mean": 0
+				}
+			},
+			{
+				"name": "transmission copy",
+				"ms": {
+					"count": 132,
+					"median": 3.0936814546585083,
+					"p95": 3.633492302894592,
+					"p99": 4.117466926574707,
+					"max": 4.232059955596924,
+					"min": 2.650710105895996,
+					"mean": 3.136176580732519
+				}
+			}
+		],
+		"triangles": {
+			"count": 2913,
+			"median": 3883380,
+			"p95": 4818535,
+			"p99": 4818535,
+			"max": 4818535,
+			"min": 3883368,
+			"mean": 4349827.899416409
+		},
+		"occludedEntries": null,
+		"visibleEntries": null,
+		"drawCalls": {
+			"count": 2913,
+			"median": 2081,
+			"p95": 2679,
+			"p99": 2679,
+			"max": 2679,
+			"min": 2081,
+			"mean": 2379.8973566769655
+		},
+		"problems": []
+	},
+	{
+		"address": "tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&occlusion=on&occlusion-check=off",
+		"run": 1,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T08:57:03.093Z",
+		"wallSeconds": 45.112,
+		"load": {
+			"before": 5.78076171875,
+			"after": 5.62841796875
+		},
+		"page": "island-view",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"url": "http://localhost:6490/tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&occlusion=on&occlusion-check=off",
+		"calibrationMs": 1.1949999928474426,
+		"ok": true,
+		"tier": "webgpu",
+		"drawPath": "forced",
+		"mode": {
+			"build": "threaded",
+			"latency": "pipelined",
+			"sketchThread": "worker",
+			"renderThread": "render-worker",
+			"jobWorkers": 16,
+			"hold": null,
+			"preset": "medium",
+			"presetCheck": null,
+			"crashedStarts": 0,
+			"memoryMaximumMiB": 1024,
+			"renderFallback": null,
+			"keepTextureCopies": false
+		},
+		"frames": 2718,
+		"presentedFps": 181.2138127819544,
+		"intervalMs": {
+			"count": 2719,
+			"median": 5.539999961853027,
+			"p95": 6.700499820709228,
+			"p99": 7.428199872970582,
+			"max": 24.594999313354492,
+			"min": 2.6449999809265137,
+			"mean": 5.518343136476304
+		},
+		"gpuMs": {
+			"count": 248,
+			"median": 7.262597560882568,
+			"p95": 8.389663743972777,
+			"p99": 9.219292449951173,
+			"max": 9.690560340881348,
+			"min": 5.555164813995361,
+			"mean": 7.296336927721577
+		},
+		"gpuPassMs": [
+			{
+				"name": "copies",
+				"ms": {
+					"count": 248,
+					"median": 1.6240580081939697,
+					"p95": 2.8454865574836727,
+					"p99": 3.3304072308540347,
+					"max": 3.4317400455474854,
+					"min": 0.00108299998100847,
+					"mean": 1.6490752436159621
+				}
+			},
+			{
+				"name": "compute",
+				"ms": {
+					"count": 496,
+					"median": 0.09035300090909004,
+					"p95": 0.1629449985921383,
+					"p99": 0.20299250483512887,
+					"max": 0.3141210079193115,
+					"min": 0.06758199632167816,
+					"mean": 0.09949221579177726
+				}
+			},
+			{
+				"name": "shadow cascade 0",
+				"ms": {
+					"count": 248,
+					"median": 0.12545599788427353,
+					"p95": 0.15854724720120428,
+					"p99": 0.17317648679018022,
+					"max": 0.20137199759483337,
+					"min": 0.11224900186061859,
+					"mean": 0.12992725010600784
+				}
+			},
+			{
+				"name": "shadow cascade 1",
+				"ms": {
+					"count": 248,
+					"median": 0.5409500002861023,
+					"p95": 0.6180400103330612,
+					"p99": 0.7242777293920517,
+					"max": 0.8818619847297668,
+					"min": 0.48965901136398315,
+					"mean": 0.5511752951049036
+				}
+			},
+			{
+				"name": "shadow cascade 2",
+				"ms": {
+					"count": 248,
+					"median": 0.8782370090484619,
+					"p95": 0.9918723821640014,
+					"p99": 1.0669572377204894,
+					"max": 1.136983036994934,
+					"min": 0.7759469747543335,
+					"mean": 0.8868912482453931
+				}
+			},
+			{
+				"name": "occluders",
+				"ms": {
+					"count": 248,
+					"median": 0.5990330278873444,
+					"p95": 0.6741747736930847,
+					"p99": 0.7602929717302322,
+					"max": 0.8752359747886658,
+					"min": 0.33886900544166565,
+					"mean": 0.6029876090826527
+				}
+			},
+			{
+				"name": "opaque 1",
+				"ms": {
+					"count": 124,
+					"median": 0.8493829965591431,
+					"p95": 0.9556725591421127,
+					"p99": 0.9735779172182083,
+					"max": 1.0508170127868652,
+					"min": 0.7769050002098083,
+					"mean": 0.8598716297457295
+				}
+			},
+			{
+				"name": "later passes",
+				"ms": {
+					"count": 248,
+					"median": 3.808171510696411,
+					"p95": 4.729962396621704,
+					"p99": 5.149951572418213,
+					"max": 5.242670059204102,
+					"min": 3.37282395362854,
+					"mean": 3.891510852882939
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 248,
+					"median": 0,
+					"p95": 0,
+					"p99": 0,
+					"max": 0,
+					"min": 0,
+					"mean": 0
+				}
+			},
+			{
+				"name": "view copy 1",
+				"ms": {
+					"count": 124,
+					"median": 0.6104489862918854,
+					"p95": 0.7164952993392943,
+					"p99": 0.7675922393798829,
+					"max": 0.8035709857940674,
+					"min": 0.4508270025253296,
+					"mean": 0.6005835400954369
+				}
+			}
+		],
+		"triangles": {
+			"count": 2719,
+			"median": 4326134,
+			"p95": 5261289,
+			"p99": 5261289,
+			"max": 5261289,
+			"min": 4326122,
+			"mean": 4792157.797351968
+		},
+		"occludedEntries": {
+			"count": 2718,
+			"median": 4290,
+			"p95": 4290,
+			"p99": 4290,
+			"max": 4290,
+			"min": 4290,
+			"mean": 4290
+		},
+		"visibleEntries": null,
+		"drawCalls": {
+			"count": 2719,
+			"median": 2287,
+			"p95": 2885,
+			"p99": 2885,
+			"max": 2885,
+			"min": 2287,
+			"mean": 2585.8900331004047
+		},
+		"problems": []
+	},
+	{
+		"address": "tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&occlusion=on",
+		"run": 1,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T08:57:48.909Z",
+		"wallSeconds": 45.108,
+		"load": {
+			"before": 5.97802734375,
+			"after": 8.2548828125
+		},
+		"page": "island-view",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"url": "http://localhost:6490/tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&occlusion=on",
+		"calibrationMs": 1.2250000089406967,
+		"ok": true,
+		"tier": "webgpu",
+		"drawPath": "forced",
+		"mode": {
+			"build": "threaded",
+			"latency": "pipelined",
+			"sketchThread": "worker",
+			"renderThread": "render-worker",
+			"jobWorkers": 16,
+			"hold": null,
+			"preset": "medium",
+			"presetCheck": null,
+			"crashedStarts": 0,
+			"memoryMaximumMiB": 1024,
+			"renderFallback": null,
+			"keepTextureCopies": false
+		},
+		"frames": 2970,
+		"presentedFps": 197.9456559446251,
+		"intervalMs": {
+			"count": 2971,
+			"median": 5,
+			"p95": 6.322499990463257,
+			"p99": 6.866499805450441,
+			"max": 23.540000915527344,
+			"min": 1.4700000286102295,
+			"mean": 5.051891617564712
+		},
+		"gpuMs": {
+			"count": 270,
+			"median": 6.298258543014526,
+			"p95": 7.542336797714232,
+			"p99": 7.794402446746826,
+			"max": 8.59257698059082,
+			"min": 4.627264022827148,
+			"mean": 6.342470668863367
+		},
+		"gpuPassMs": [
+			{
+				"name": "copies",
+				"ms": {
+					"count": 266,
+					"median": 1.2164394855499268,
+					"p95": 2.394578456878662,
+					"p99": 2.6317425608634966,
+					"max": 3.0212459564208984,
+					"min": 0.0009590000263415277,
+					"mean": 1.1901402646066057
+				}
+			},
+			{
+				"name": "compute",
+				"ms": {
+					"count": 303,
+					"median": 0.09104099869728088,
+					"p95": 0.17356750518083572,
+					"p99": 0.1903503450751305,
+					"max": 0.20503899455070496,
+					"min": 0.058166999369859695,
+					"mean": 0.09972850797642575
+				}
+			},
+			{
+				"name": "shadow cascade 0",
+				"ms": {
+					"count": 270,
+					"median": 0.127872496843338,
+					"p95": 0.15971795469522476,
+					"p99": 0.1686255207657814,
+					"max": 0.18345500528812408,
+					"min": 0.10958299785852432,
+					"mean": 0.13256508523115404
+				}
+			},
+			{
+				"name": "shadow cascade 1",
+				"ms": {
+					"count": 270,
+					"median": 0.5488879978656769,
+					"p95": 0.6138526529073716,
+					"p99": 0.6656291800737383,
+					"max": 0.825236976146698,
+					"min": 0.49174201488494873,
+					"mean": 0.5561592318393566
+				}
+			},
+			{
+				"name": "shadow cascade 2",
+				"ms": {
+					"count": 270,
+					"median": 0.888777494430542,
+					"p95": 0.9983371615409851,
+					"p99": 1.066788022518158,
+					"max": 1.116191029548645,
+					"min": 0.8054460287094116,
+					"mean": 0.9043962527204443
+				}
+			},
+			{
+				"name": "opaque 1",
+				"ms": {
+					"count": 135,
+					"median": 1.0560259819030762,
+					"p95": 1.1901739478111266,
+					"p99": 1.271630630493164,
+					"max": 1.3029799461364746,
+					"min": 0.751613974571228,
+					"mean": 1.0526978294054667
+				}
+			},
+			{
+				"name": "view copy 1",
+				"ms": {
+					"count": 253,
+					"median": 0.6264479756355286,
+					"p95": 0.7217558145523071,
+					"p99": 0.7907208824157712,
+					"max": 0.8401950001716614,
+					"min": 0.012334000319242477,
+					"mean": 0.6345369347441102
+				}
+			},
+			{
+				"name": "opaque",
+				"ms": {
+					"count": 237,
+					"median": 3.729401111602783,
+					"p95": 4.376349735260009,
+					"p99": 4.848333225250244,
+					"max": 5.018465042114258,
+					"min": 3.3154070377349854,
+					"mean": 3.7787837428885673
+				}
+			},
+			{
+				"name": "later passes",
+				"ms": {
+					"count": 270,
+					"median": 3.245325446128845,
+					"p95": 4.001805675029755,
+					"p99": 4.382182469367981,
+					"max": 4.535554885864258,
+					"min": 0.23412099480628967,
+					"mean": 2.973752511927375
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 270,
+					"median": 0,
+					"p95": 0,
+					"p99": 0,
+					"max": 0,
+					"min": 0,
+					"mean": 0
+				}
+			},
+			{
+				"name": "transmission copy",
+				"ms": {
+					"count": 119,
+					"median": 3.016953945159912,
+					"p95": 3.529600477218627,
+					"p99": 4.227847681045532,
+					"max": 4.33834981918335,
+					"min": 2.6370019912719727,
+					"mean": 3.0868243730368734
+				}
+			},
+			{
+				"name": "occluders",
+				"ms": {
+					"count": 33,
+					"median": 0.5896160006523132,
+					"p95": 0.6493564128875732,
+					"p99": 0.677981686592102,
+					"max": 0.6867820024490356,
+					"min": 0.5477839708328247,
+					"mean": 0.5959632125767794
+				}
+			}
+		],
+		"triangles": {
+			"count": 2971,
+			"median": 4818523,
+			"p95": 5261289,
+			"p99": 5273997,
+			"max": 5273997,
+			"min": 3883368,
+			"mean": 4407474.650286099
+		},
+		"occludedEntries": {
+			"count": 2971,
+			"median": 0,
+			"p95": 0,
+			"p99": 4290,
+			"max": 4290,
+			"min": 0,
+			"mean": 173.2749915853248
+		},
+		"visibleEntries": null,
+		"drawCalls": {
+			"count": 2971,
+			"median": 2629,
+			"p95": 2811,
+			"p99": 3146,
+			"max": 3221,
+			"min": 2056,
+			"mean": 2386.7206327835747
+		},
+		"problems": []
+	},
+	{
+		"address": "tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&pose=600,280,540,40,80,-40&occlusion=off",
+		"run": 1,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T08:58:49.512Z",
+		"wallSeconds": 44.082,
+		"load": {
+			"before": 6.8623046875,
+			"after": 4.7138671875
+		},
+		"page": "island-view",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"url": "http://localhost:6490/tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&pose=600,280,540,40,80,-40&occlusion=off",
+		"calibrationMs": 0.7650000005960464,
+		"ok": true,
+		"tier": "webgpu",
+		"drawPath": "forced",
+		"mode": {
+			"build": "threaded",
+			"latency": "pipelined",
+			"sketchThread": "worker",
+			"renderThread": "render-worker",
+			"jobWorkers": 16,
+			"hold": null,
+			"preset": "medium",
+			"presetCheck": null,
+			"crashedStarts": 0,
+			"memoryMaximumMiB": 1024,
+			"renderFallback": null,
+			"keepTextureCopies": false
+		},
+		"frames": 3656,
+		"presentedFps": 243.71819182870337,
+		"intervalMs": {
+			"count": 3657,
+			"median": 4.079999923706055,
+			"p95": 5.550000190734863,
+			"p99": 6.068799934387208,
+			"max": 18.524999618530273,
+			"min": 0.9750000238418579,
+			"mean": 4.10309953679144
+		},
+		"gpuMs": {
+			"count": 332,
+			"median": 4.435286521911621,
+			"p95": 5.409565401077271,
+			"p99": 5.987420964241028,
+			"max": 6.494234085083008,
+			"min": 3.3116579055786133,
+			"mean": 4.553741759564503
+		},
+		"gpuPassMs": [
+			{
+				"name": "copies",
+				"ms": {
+					"count": 320,
+					"median": 0.4289100021123886,
+					"p95": 1.6774305522441864,
+					"p99": 2.189253702163697,
+					"max": 2.8971641063690186,
+					"min": 0.0010420000180602074,
+					"mean": 0.6399961684910522
+				}
+			},
+			{
+				"name": "compute",
+				"ms": {
+					"count": 332,
+					"median": 0.08770649880170822,
+					"p95": 0.1642497517168522,
+					"p99": 0.17705670803785323,
+					"max": 0.20737099647521973,
+					"min": 0.0704990029335022,
+					"mean": 0.09635582537087331
+				}
+			},
+			{
+				"name": "shadow cascade 0",
+				"ms": {
+					"count": 332,
+					"median": 0.06174900010228157,
+					"p95": 0.06647645197808742,
+					"p99": 0.06742475241422653,
+					"max": 0.07229000329971313,
+					"min": 0.05554100126028061,
+					"mean": 0.06193567777658442
+				}
+			},
+			{
+				"name": "shadow cascade 1",
+				"ms": {
+					"count": 332,
+					"median": 0.19710149616003036,
+					"p95": 0.23748815283179284,
+					"p99": 0.2628154757618904,
+					"max": 0.2714119851589203,
+					"min": 0.1641640067100525,
+					"mean": 0.20049680742513704
+				}
+			},
+			{
+				"name": "shadow cascade 2",
+				"ms": {
+					"count": 332,
+					"median": 0.4637639969587326,
+					"p95": 0.5152194261550903,
+					"p99": 0.5487097519636154,
+					"max": 0.6969069838523865,
+					"min": 0.42303499579429626,
+					"mean": 0.4672394665967987
+				}
+			},
+			{
+				"name": "view copy 1",
+				"ms": {
+					"count": 332,
+					"median": 0.5539284944534302,
+					"p95": 0.6836064636707305,
+					"p99": 0.6996042358875275,
+					"max": 0.7062810063362122,
+					"min": 0.011792000383138657,
+					"mean": 0.4782980273040124
+				}
+			},
+			{
+				"name": "opaque",
+				"ms": {
+					"count": 332,
+					"median": 2.411337971687317,
+					"p95": 2.827623414993286,
+					"p99": 3.389766912460327,
+					"max": 3.7635679244995117,
+					"min": 2.0087618827819824,
+					"mean": 2.452111206140863
+				}
+			},
+			{
+				"name": "transmission copy",
+				"ms": {
+					"count": 166,
+					"median": 2.007615089416504,
+					"p95": 2.455431044101715,
+					"p99": 2.990962052345276,
+					"max": 3.2316160202026367,
+					"min": 1.7169320583343506,
+					"mean": 2.0401907347771058
+				}
+			},
+			{
+				"name": "later passes",
+				"ms": {
+					"count": 332,
+					"median": 2.7678744792938232,
+					"p95": 3.1839394569396973,
+					"p99": 3.6862224292755124,
+					"max": 4.074272155761719,
+					"min": 0.654865026473999,
+					"mean": 2.6149817274277467
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 332,
+					"median": 0,
+					"p95": 0,
+					"p99": 0,
+					"max": 0,
+					"min": 0,
+					"mean": 0
+				}
+			},
+			{
+				"name": "opaque 1",
+				"ms": {
+					"count": 166,
+					"median": 1.052442491054535,
+					"p95": 1.1227437555789948,
+					"p99": 1.147243469953537,
+					"max": 1.1566070318222046,
+					"min": 0.9496099948883057,
+					"mean": 1.0484129323298672
+				}
+			}
+		],
+		"triangles": {
+			"count": 3657,
+			"median": 2183888,
+			"p95": 2974581,
+			"p99": 2974581,
+			"max": 2974581,
+			"min": 2183876,
+			"mean": 2578687.9644517363
+		},
+		"occludedEntries": null,
+		"visibleEntries": null,
+		"drawCalls": {
+			"count": 3657,
+			"median": 2485,
+			"p95": 3183,
+			"p99": 3183,
+			"max": 3183,
+			"min": 2485,
+			"mean": 2833.904566584632
+		},
+		"problems": []
+	},
+	{
+		"address": "tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&pose=600,280,540,40,80,-40&occlusion=on&occlusion-check=off",
+		"run": 1,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T08:59:34.256Z",
+		"wallSeconds": 44.117,
+		"load": {
+			"before": 4.9765625,
+			"after": 5.6064453125
+		},
+		"page": "island-view",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"url": "http://localhost:6490/tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&pose=600,280,540,40,80,-40&occlusion=on&occlusion-check=off",
+		"calibrationMs": 1.2249999940395355,
+		"ok": true,
+		"tier": "webgpu",
+		"drawPath": "forced",
+		"mode": {
+			"build": "threaded",
+			"latency": "pipelined",
+			"sketchThread": "worker",
+			"renderThread": "render-worker",
+			"jobWorkers": 16,
+			"hold": null,
+			"preset": "medium",
+			"presetCheck": null,
+			"crashedStarts": 0,
+			"memoryMaximumMiB": 1024,
+			"renderFallback": null,
+			"keepTextureCopies": false
+		},
+		"frames": 3396,
+		"presentedFps": 226.39897352180648,
+		"intervalMs": {
+			"count": 3397,
+			"median": 4.175000190734863,
+			"p95": 5.840000152587891,
+			"p99": 6.25,
+			"max": 25.204999923706055,
+			"min": 0.9350000023841858,
+			"mean": 4.416981156956002
+		},
+		"gpuMs": {
+			"count": 309,
+			"median": 4.077688217163086,
+			"p95": 4.713678169250488,
+			"p99": 4.9412526512146,
+			"max": 5.594747066497803,
+			"min": 3.103912115097046,
+			"mean": 4.117520232030874
+		},
+		"gpuPassMs": [
+			{
+				"name": "copies",
+				"ms": {
+					"count": 307,
+					"median": 0.041166000068187714,
+					"p95": 1.2461890816688534,
+					"p99": 1.469260034561157,
+					"max": 1.8217639923095703,
+					"min": 0.0008329999982379377,
+					"mean": 0.36938960116044905
+				}
+			},
+			{
+				"name": "compute",
+				"ms": {
+					"count": 618,
+					"median": 0.0758110024034977,
+					"p95": 0.14666035026311874,
+					"p99": 0.2039757500588894,
+					"max": 0.25320398807525635,
+					"min": 0.05595799908041954,
+					"mean": 0.08329188017759315
+				}
+			},
+			{
+				"name": "shadow cascade 0",
+				"ms": {
+					"count": 309,
+					"median": 0.057665999978780746,
+					"p95": 0.07135699987411498,
+					"p99": 0.1424113613367081,
+					"max": 0.15124699473381042,
+					"min": 0.04920699819922447,
+					"mean": 0.061011566337451195
+				}
+			},
+			{
+				"name": "shadow cascade 1",
+				"ms": {
+					"count": 309,
+					"median": 0.17962299287319183,
+					"p95": 0.21989719867706298,
+					"p99": 0.23555108428001406,
+					"max": 0.24312099814414978,
+					"min": 0.14287300407886505,
+					"mean": 0.18244935287626815
+				}
+			},
+			{
+				"name": "shadow cascade 2",
+				"ms": {
+					"count": 309,
+					"median": 0.42074400186538696,
+					"p95": 0.4722350001335144,
+					"p99": 0.5031669735908509,
+					"max": 0.5915330052375793,
+					"min": 0.36757901310920715,
+					"mean": 0.4271887413506369
+				}
+			},
+			{
+				"name": "occluders",
+				"ms": {
+					"count": 309,
+					"median": 0.2685379981994629,
+					"p95": 0.30555399656295773,
+					"p99": 0.32895498991012573,
+					"max": 0.3548699915409088,
+					"min": 0.1699559986591339,
+					"mean": 0.269865521383517
+				}
+			},
+			{
+				"name": "opaque 1",
+				"ms": {
+					"count": 155,
+					"median": 0.897068977355957,
+					"p95": 0.9655765116214752,
+					"p99": 0.9999585545063019,
+					"max": 1.004485011100769,
+					"min": 0.8237370252609253,
+					"mean": 0.9040149561820492
+				}
+			},
+			{
+				"name": "later passes",
+				"ms": {
+					"count": 309,
+					"median": 2.8172900676727295,
+					"p95": 3.1212432384490962,
+					"p99": 3.4138599014282245,
+					"max": 3.7206509113311768,
+					"min": 2.3531720638275146,
+					"mean": 2.8001682673457373
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 309,
+					"median": 0,
+					"p95": 0,
+					"p99": 0,
+					"max": 0,
+					"min": 0,
+					"mean": 0
+				}
+			},
+			{
+				"name": "view copy 1",
+				"ms": {
+					"count": 154,
+					"median": 0.2939329892396927,
+					"p95": 0.33975969552993773,
+					"p99": 0.35966276586055757,
+					"max": 0.3796190023422241,
+					"min": 0.18587200343608856,
+					"mean": 0.29349253307302275
+				}
+			}
+		],
+		"triangles": {
+			"count": 3397,
+			"median": 3111413,
+			"p95": 3111425,
+			"p99": 3114551,
+			"max": 3114551,
+			"min": 2320720,
+			"mean": 2716924.0326758907
+		},
+		"occludedEntries": {
+			"count": 3396,
+			"median": 4242,
+			"p95": 4242,
+			"p99": 4242,
+			"max": 4242,
+			"min": 4242,
+			"mean": 4242
+		},
+		"visibleEntries": null,
+		"drawCalls": {
+			"count": 3397,
+			"median": 3251,
+			"p95": 3325,
+			"p99": 3325,
+			"max": 3825,
+			"min": 2578,
+			"mean": 2972.5222254930823
+		},
+		"problems": []
+	},
+	{
+		"address": "tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&pose=600,280,540,40,80,-40&occlusion=on",
+		"run": 1,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T09:00:19.072Z",
+		"wallSeconds": 44.117,
+		"load": {
+			"before": 5.4775390625,
+			"after": 5.02685546875
+		},
+		"page": "island-view",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"url": "http://localhost:6490/tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&pose=600,280,540,40,80,-40&occlusion=on",
+		"calibrationMs": 1.2150000035762787,
+		"ok": true,
+		"tier": "webgpu",
+		"drawPath": "forced",
+		"mode": {
+			"build": "threaded",
+			"latency": "pipelined",
+			"sketchThread": "worker",
+			"renderThread": "render-worker",
+			"jobWorkers": 16,
+			"hold": null,
+			"preset": "medium",
+			"presetCheck": null,
+			"crashedStarts": 0,
+			"memoryMaximumMiB": 1024,
+			"renderFallback": null,
+			"keepTextureCopies": false
+		},
+		"frames": 3528,
+		"presentedFps": 235.14000444904917,
+		"intervalMs": {
+			"count": 3529,
+			"median": 4.15500020980835,
+			"p95": 5.664999961853027,
+			"p99": 6.583000125885005,
+			"max": 19.700000762939453,
+			"min": 1.024999976158142,
+			"mean": 4.252785494085005
+		},
+		"gpuMs": {
+			"count": 321,
+			"median": 4.295600891113281,
+			"p95": 5.038005828857422,
+			"p99": 5.459816837310792,
+			"max": 5.916035175323486,
+			"min": 3.227910041809082,
+			"mean": 4.349925678467082
+		},
+		"gpuPassMs": [
+			{
+				"name": "copies",
+				"ms": {
+					"count": 310,
+					"median": 0.33151549100875854,
+					"p95": 1.5272078335285193,
+					"p99": 1.733406516313553,
+					"max": 2.3012990951538086,
+					"min": 0.0005419999943114817,
+					"mean": 0.5286683391903587
+				}
+			},
+			{
+				"name": "compute",
+				"ms": {
+					"count": 432,
+					"median": 0.08112400025129318,
+					"p95": 0.15783969685435295,
+					"p99": 0.18616501569747923,
+					"max": 0.24666300415992737,
+					"min": 0.056457001715898514,
+					"mean": 0.09020585644369324
+				}
+			},
+			{
+				"name": "shadow cascade 0",
+				"ms": {
+					"count": 321,
+					"median": 0.060791000723838806,
+					"p95": 0.07074899971485138,
+					"p99": 0.07534039914608003,
+					"max": 0.09220699965953827,
+					"min": 0.05316700041294098,
+					"mean": 0.061356554475157435
+				}
+			},
+			{
+				"name": "shadow cascade 1",
+				"ms": {
+					"count": 321,
+					"median": 0.19383099675178528,
+					"p95": 0.22753900289535522,
+					"p99": 0.23968760371208192,
+					"max": 0.2681199908256531,
+					"min": 0.15295599400997162,
+					"mean": 0.19613423340045774
+				}
+			},
+			{
+				"name": "shadow cascade 2",
+				"ms": {
+					"count": 321,
+					"median": 0.447952002286911,
+					"p95": 0.49899300932884216,
+					"p99": 0.5216165900230408,
+					"max": 0.5435749888420105,
+					"min": 0.39499399065971375,
+					"mean": 0.4534584365529806
+				}
+			},
+			{
+				"name": "occluders",
+				"ms": {
+					"count": 111,
+					"median": 0.2839530110359192,
+					"p95": 0.3236615061759949,
+					"p99": 0.3414703071117402,
+					"max": 0.3618699908256531,
+					"min": 0.1728309988975525,
+					"mean": 0.28484248618284863
+				}
+			},
+			{
+				"name": "view copy 1",
+				"ms": {
+					"count": 266,
+					"median": 0.3318279981613159,
+					"p95": 0.6469274908304214,
+					"p99": 0.6739808976650239,
+					"max": 0.6828650236129761,
+					"min": 0.011165999807417393,
+					"mean": 0.4266208199805167
+				}
+			},
+			{
+				"name": "later passes",
+				"ms": {
+					"count": 321,
+					"median": 2.7830820083618164,
+					"p95": 3.3228659629821777,
+					"p99": 3.60331997871399,
+					"max": 3.8145670890808105,
+					"min": 0.7226139903068542,
+					"mean": 2.7821157979445292
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 321,
+					"median": 0,
+					"p95": 0,
+					"p99": 0,
+					"max": 0,
+					"min": 0,
+					"mean": 0
+				}
+			},
+			{
+				"name": "opaque 1",
+				"ms": {
+					"count": 160,
+					"median": 0.9789015054702759,
+					"p95": 1.0820336163043975,
+					"p99": 1.1052062010765076,
+					"max": 1.109941005706787,
+					"min": 0.8606539964675903,
+					"mean": 0.9821040261536836
+				}
+			},
+			{
+				"name": "opaque",
+				"ms": {
+					"count": 210,
+					"median": 2.3429020643234253,
+					"p95": 2.7482249379158015,
+					"p99": 3.1533570528030395,
+					"max": 3.2915329933166504,
+					"min": 1.8697630167007446,
+					"mean": 2.3600332316898163
+				}
+			},
+			{
+				"name": "transmission copy",
+				"ms": {
+					"count": 105,
+					"median": 1.9098039865493774,
+					"p95": 2.2088491916656494,
+					"p99": 2.8301809597015355,
+					"max": 2.857914924621582,
+					"min": 1.6076430082321167,
+					"mean": 1.9395902633666993
+				}
+			}
+		],
+		"triangles": {
+			"count": 3529,
+			"median": 2323858,
+			"p95": 3114551,
+			"p99": 3114551,
+			"max": 3114551,
+			"min": 2183876,
+			"mean": 2628876.7594219325
+		},
+		"occludedEntries": {
+			"count": 3528,
+			"median": 0,
+			"p95": 4242,
+			"p99": 4242,
+			"max": 4242,
+			"min": 0,
+			"mean": 1356.2857142857142
+		},
+		"visibleEntries": null,
+		"drawCalls": {
+			"count": 3529,
+			"median": 3133,
+			"p95": 3750,
+			"p99": 3825,
+			"max": 3825,
+			"min": 2460,
+			"mean": 2924.641258146784
+		},
+		"problems": []
+	},
+	{
+		"address": "tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&occlusion=off",
+		"run": 2,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T09:01:03.999Z",
+		"wallSeconds": 44.132,
+		"load": {
+			"before": 6.2255859375,
+			"after": 6.875
+		},
+		"page": "island-view",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"url": "http://localhost:6490/tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&occlusion=off",
+		"calibrationMs": 1.3499999940395355,
+		"ok": true,
+		"tier": "webgpu",
+		"drawPath": "forced",
+		"mode": {
+			"build": "threaded",
+			"latency": "pipelined",
+			"sketchThread": "worker",
+			"renderThread": "render-worker",
+			"jobWorkers": 16,
+			"hold": null,
+			"preset": "medium",
+			"presetCheck": null,
+			"crashedStarts": 0,
+			"memoryMaximumMiB": 1024,
+			"renderFallback": null,
+			"keepTextureCopies": false
+		},
+		"frames": 3005,
+		"presentedFps": 200.35238296716943,
+		"intervalMs": {
+			"count": 3006,
+			"median": 4.764999866485596,
+			"p95": 5.985000133514404,
+			"p99": 6.339500141143797,
+			"max": 22.790000915527344,
+			"min": 2.805000066757202,
+			"mean": 4.99120592024036
+		},
+		"gpuMs": {
+			"count": 274,
+			"median": 6.713106393814087,
+			"p95": 7.740463328361509,
+			"p99": 8.089232444763182,
+			"max": 8.346789360046387,
+			"min": 4.414974212646484,
+			"mean": 6.710337407397528
+		},
+		"gpuPassMs": [
+			{
+				"name": "copies",
+				"ms": {
+					"count": 273,
+					"median": 1.5355180501937866,
+					"p95": 2.7348911762237544,
+					"p99": 2.973666763305663,
+					"max": 3.2528250217437744,
+					"min": 0.002374999923631549,
+					"mean": 1.586028735602834
+				}
+			},
+			{
+				"name": "compute",
+				"ms": {
+					"count": 274,
+					"median": 0.09647800028324127,
+					"p95": 0.19386619925498957,
+					"p99": 0.2141265240311622,
+					"max": 0.22032999992370605,
+					"min": 0.07087299972772598,
+					"mean": 0.11398537601106358
+				}
+			},
+			{
+				"name": "shadow cascade 0",
+				"ms": {
+					"count": 274,
+					"median": 0.12291450053453445,
+					"p95": 0.1551123462617397,
+					"p99": 0.16313408806920046,
+					"max": 0.16649800539016724,
+					"min": 0.10470599681138992,
+					"mean": 0.12653878494335788
+				}
+			},
+			{
+				"name": "shadow cascade 1",
+				"ms": {
+					"count": 274,
+					"median": 0.5490125119686127,
+					"p95": 0.6102029502391815,
+					"p99": 0.6455376666784286,
+					"max": 0.6979479789733887,
+					"min": 0.4679509997367859,
+					"mean": 0.5569472596810682
+				}
+			},
+			{
+				"name": "shadow cascade 2",
+				"ms": {
+					"count": 274,
+					"median": 0.8879439830780029,
+					"p95": 0.9921232461929321,
+					"p99": 1.0316866672039027,
+					"max": 1.1280670166015625,
+					"min": 0.8013210296630859,
+					"mean": 0.9038053774920694
+				}
+			},
+			{
+				"name": "opaque 1",
+				"ms": {
+					"count": 137,
+					"median": 1.0585670471191406,
+					"p95": 1.1680404186248778,
+					"p99": 1.1897002029418944,
+					"max": 1.2051479816436768,
+					"min": 0.9746099710464478,
+					"mean": 1.0718398063722319
+				}
+			},
+			{
+				"name": "view copy 1",
+				"ms": {
+					"count": 274,
+					"median": 0.6261574923992157,
+					"p95": 0.7088599532842635,
+					"p99": 0.7478662621974944,
+					"max": 0.8063219785690308,
+					"min": 0.011958000250160694,
+					"mean": 0.6290413093290896
+				}
+			},
+			{
+				"name": "opaque",
+				"ms": {
+					"count": 274,
+					"median": 3.716360092163086,
+					"p95": 4.262634563446044,
+					"p99": 4.627532229423523,
+					"max": 4.892591953277588,
+					"min": 3.2112839221954346,
+					"mean": 3.757926821708679
+				}
+			},
+			{
+				"name": "later passes",
+				"ms": {
+					"count": 274,
+					"median": 3.21626353263855,
+					"p95": 3.767892837524413,
+					"p99": 4.169963607788086,
+					"max": 4.43234920501709,
+					"min": 2.734998941421509,
+					"mean": 3.2660227213462774
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 274,
+					"median": 0,
+					"p95": 0,
+					"p99": 0,
+					"max": 0,
+					"min": 0,
+					"mean": 0
+				}
+			},
+			{
+				"name": "transmission copy",
+				"ms": {
+					"count": 137,
+					"median": 3.002537965774536,
+					"p95": 3.4555474758148192,
+					"p99": 3.7005369758605946,
+					"max": 3.933690071105957,
+					"min": 2.536628007888794,
+					"mean": 3.029245823839285
+				}
+			}
+		],
+		"triangles": {
+			"count": 3006,
+			"median": 3883380,
+			"p95": 4818535,
+			"p99": 4818535,
+			"max": 4818535,
+			"min": 3883368,
+			"mean": 4349707.115435795
+		},
+		"occludedEntries": null,
+		"visibleEntries": null,
+		"drawCalls": {
+			"count": 3006,
+			"median": 2380,
+			"p95": 2679,
+			"p99": 2679,
+			"max": 2679,
+			"min": 2081,
+			"mean": 2380
+		},
+		"problems": []
+	},
+	{
+		"address": "tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&occlusion=on&occlusion-check=off",
+		"run": 2,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T09:01:48.892Z",
+		"wallSeconds": 45.135,
+		"load": {
+			"before": 6.875,
+			"after": 7.5888671875
+		},
+		"page": "island-view",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"url": "http://localhost:6490/tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&occlusion=on&occlusion-check=off",
+		"calibrationMs": 1.5649999976158142,
+		"ok": true,
+		"tier": "webgpu",
+		"drawPath": "forced",
+		"mode": {
+			"build": "threaded",
+			"latency": "pipelined",
+			"sketchThread": "worker",
+			"renderThread": "render-worker",
+			"jobWorkers": 16,
+			"hold": null,
+			"preset": "medium",
+			"presetCheck": null,
+			"crashedStarts": 0,
+			"memoryMaximumMiB": 1024,
+			"renderFallback": null,
+			"keepTextureCopies": false
+		},
+		"frames": 2867,
+		"presentedFps": 191.11896569050725,
+		"intervalMs": {
+			"count": 2868,
+			"median": 5.425000190734863,
+			"p95": 6.611499857902528,
+			"p99": 7.2466499233245845,
+			"max": 21.360000610351562,
+			"min": 1.7799999713897705,
+			"mean": 5.2323430926231165
+		},
+		"gpuMs": {
+			"count": 260,
+			"median": 5.9855546951293945,
+			"p95": 6.979600024223328,
+			"p99": 7.184052824974062,
+			"max": 7.465094089508057,
+			"min": 5.000882148742676,
+			"mean": 6.019472454144404
+		},
+		"gpuPassMs": [
+			{
+				"name": "copies",
+				"ms": {
+					"count": 257,
+					"median": 0.7016140222549438,
+					"p95": 1.8085556268692016,
+					"p99": 2.1711836528778075,
+					"max": 2.283298969268799,
+					"min": 0.001415999955497682,
+					"mean": 0.7936412113703287
+				}
+			},
+			{
+				"name": "compute",
+				"ms": {
+					"count": 520,
+					"median": 0.0856655016541481,
+					"p95": 0.15383520498871803,
+					"p99": 0.17395093590021118,
+					"max": 0.21974700689315796,
+					"min": 0.06445799767971039,
+					"mean": 0.0920626383418074
+				}
+			},
+			{
+				"name": "shadow cascade 0",
+				"ms": {
+					"count": 260,
+					"median": 0.1221650019288063,
+					"p95": 0.14824974611401556,
+					"p99": 0.1600402770936489,
+					"max": 0.21853800117969513,
+					"min": 0.11024799942970276,
+					"mean": 0.12477928835612077
+				}
+			},
+			{
+				"name": "shadow cascade 1",
+				"ms": {
+					"count": 260,
+					"median": 0.5220339894294739,
+					"p95": 0.5631815791130065,
+					"p99": 0.5863225680589677,
+					"max": 0.7116550207138062,
+					"min": 0.4680339992046356,
+					"mean": 0.5204523342160078
+				}
+			},
+			{
+				"name": "shadow cascade 2",
+				"ms": {
+					"count": 260,
+					"median": 0.8457165062427521,
+					"p95": 0.9044297605752945,
+					"p99": 0.9416480767726899,
+					"max": 1.0475679636001587,
+					"min": 0.7596539855003357,
+					"mean": 0.8431606964423106
+				}
+			},
+			{
+				"name": "occluders",
+				"ms": {
+					"count": 260,
+					"median": 0.5720125138759613,
+					"p95": 0.6280764192342758,
+					"p99": 0.6500204312801361,
+					"max": 0.6640719771385193,
+					"min": 0.12841500341892242,
+					"mean": 0.568330080406024
+				}
+			},
+			{
+				"name": "opaque 1",
+				"ms": {
+					"count": 130,
+					"median": 0.8164039850234985,
+					"p95": 0.862805289030075,
+					"p99": 0.8829841142892837,
+					"max": 1.1560659408569336,
+					"min": 0.7211970090866089,
+					"mean": 0.8164669720026163
+				}
+			},
+			{
+				"name": "later passes",
+				"ms": {
+					"count": 260,
+					"median": 3.612549066543579,
+					"p95": 4.064285111427307,
+					"p99": 4.490802040100099,
+					"max": 4.804634094238281,
+					"min": 3.14070200920105,
+					"mean": 3.6353065866690417
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 259,
+					"median": 0,
+					"p95": 0,
+					"p99": 0,
+					"max": 0,
+					"min": 0,
+					"mean": 0
+				}
+			},
+			{
+				"name": "view copy 1",
+				"ms": {
+					"count": 129,
+					"median": 0.5746999979019165,
+					"p95": 0.6478977799415588,
+					"p99": 0.6835622787475586,
+					"max": 0.818153977394104,
+					"min": 0.4000769853591919,
+					"mean": 0.5695070746795151
+				}
+			}
+		],
+		"triangles": {
+			"count": 2868,
+			"median": 5261277,
+			"p95": 5261289,
+			"p99": 5261289,
+			"max": 5261289,
+			"min": 4326122,
+			"mean": 4795009.760808926
+		},
+		"occludedEntries": {
+			"count": 2868,
+			"median": 4290,
+			"p95": 4290,
+			"p99": 4290,
+			"max": 4290,
+			"min": 4290,
+			"mean": 4290
+		},
+		"visibleEntries": null,
+		"drawCalls": {
+			"count": 2868,
+			"median": 2586,
+			"p95": 2885,
+			"p99": 2885,
+			"max": 2885,
+			"min": 2287,
+			"mean": 2586
+		},
+		"problems": []
+	},
+	{
+		"address": "tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&occlusion=on",
+		"run": 2,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T09:02:34.661Z",
+		"wallSeconds": 44.138,
+		"load": {
+			"before": 7.5888671875,
+			"after": 8.076171875
+		},
+		"page": "island-view",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"url": "http://localhost:6490/tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&occlusion=on",
+		"calibrationMs": 1.1800000071525574,
+		"ok": true,
+		"tier": "webgpu",
+		"drawPath": "forced",
+		"mode": {
+			"build": "threaded",
+			"latency": "pipelined",
+			"sketchThread": "worker",
+			"renderThread": "render-worker",
+			"jobWorkers": 16,
+			"hold": null,
+			"preset": "medium",
+			"presetCheck": null,
+			"crashedStarts": 0,
+			"memoryMaximumMiB": 1024,
+			"renderFallback": null,
+			"keepTextureCopies": false
+		},
+		"frames": 2960,
+		"presentedFps": 197.3720388105856,
+		"intervalMs": {
+			"count": 2961,
+			"median": 4.840000152587891,
+			"p95": 6.085000038146973,
+			"p99": 6.431000137329103,
+			"max": 19.770000457763672,
+			"min": 3.0450000762939453,
+			"mean": 5.066573796502564
+		},
+		"gpuMs": {
+			"count": 270,
+			"median": 6.833333492279053,
+			"p95": 7.806628370285034,
+			"p99": 8.363427324295044,
+			"max": 8.983363151550293,
+			"min": 4.591555118560791,
+			"mean": 6.804833111939607
+		},
+		"gpuPassMs": [
+			{
+				"name": "copies",
+				"ms": {
+					"count": 270,
+					"median": 1.5439550280570984,
+					"p95": 2.6799492478370666,
+					"p99": 3.1321394205093385,
+					"max": 3.62381911277771,
+					"min": 0.013749999925494194,
+					"mean": 1.584731055471908
+				}
+			},
+			{
+				"name": "compute",
+				"ms": {
+					"count": 293,
+					"median": 0.09212300181388855,
+					"p95": 0.19410640597343443,
+					"p99": 0.2092406374216079,
+					"max": 0.2175389975309372,
+					"min": 0.0661659985780716,
+					"mean": 0.10978687730055213
+				}
+			},
+			{
+				"name": "shadow cascade 0",
+				"ms": {
+					"count": 270,
+					"median": 0.12358149886131287,
+					"p95": 0.1582978494465351,
+					"p99": 0.16436356648802758,
+					"max": 0.16858099400997162,
+					"min": 0.11112400144338608,
+					"mean": 0.12735132265973975
+				}
+			},
+			{
+				"name": "shadow cascade 1",
+				"ms": {
+					"count": 270,
+					"median": 0.5512205064296722,
+					"p95": 0.6123885750770569,
+					"p99": 0.6379450303316117,
+					"max": 0.6654899716377258,
+					"min": 0.5061590075492859,
+					"mean": 0.5589437029979847
+				}
+			},
+			{
+				"name": "shadow cascade 2",
+				"ms": {
+					"count": 270,
+					"median": 0.8949040174484253,
+					"p95": 0.996925100684166,
+					"p99": 1.0460651862621309,
+					"max": 1.1289830207824707,
+					"min": 0.8294879794120789,
+					"mean": 0.9104818999767303
+				}
+			},
+			{
+				"name": "opaque 1",
+				"ms": {
+					"count": 135,
+					"median": 1.0487339496612549,
+					"p95": 1.1737196087837218,
+					"p99": 1.2144943165779112,
+					"max": 1.3030649423599243,
+					"min": 0.8032789826393127,
+					"mean": 1.0562553039303533
+				}
+			},
+			{
+				"name": "view copy 1",
+				"ms": {
+					"count": 258,
+					"median": 0.6276155114173889,
+					"p95": 0.7140077233314513,
+					"p99": 0.7484637683629991,
+					"max": 0.7689459919929504,
+					"min": 0.012958000414073467,
+					"mean": 0.6283384621605392
+				}
+			},
+			{
+				"name": "opaque",
+				"ms": {
+					"count": 247,
+					"median": 3.7687768936157227,
+					"p95": 4.288634204864501,
+					"p99": 4.8434325981140125,
+					"max": 5.025965213775635,
+					"min": 3.3484079837799072,
+					"mean": 3.808199832313939
+				}
+			},
+			{
+				"name": "later passes",
+				"ms": {
+					"count": 270,
+					"median": 3.2966995239257812,
+					"p95": 3.9342418193817137,
+					"p99": 4.502133445739746,
+					"max": 4.643511772155762,
+					"min": 2.8730390071868896,
+					"mean": 3.367954138473228
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 270,
+					"median": 0,
+					"p95": 0,
+					"p99": 0,
+					"max": 0,
+					"min": 0,
+					"mean": 0
+				}
+			},
+			{
+				"name": "transmission copy",
+				"ms": {
+					"count": 124,
+					"median": 3.077119469642639,
+					"p95": 3.539018309116363,
+					"p99": 4.0247742509841915,
+					"max": 4.243476867675781,
+					"min": 2.6745009422302246,
+					"mean": 3.1115694718976177
+				}
+			},
+			{
+				"name": "occluders",
+				"ms": {
+					"count": 23,
+					"median": 0.6029080152511597,
+					"p95": 0.6813906013965607,
+					"p99": 0.6865857183933258,
+					"max": 0.6878229975700378,
+					"min": 0.5184500217437744,
+					"mean": 0.6091521796972855
+				}
+			}
+		],
+		"triangles": {
+			"count": 2961,
+			"median": 4334606,
+			"p95": 4827007,
+			"p99": 5273997,
+			"max": 5273997,
+			"min": 3883368,
+			"mean": 4393286.211752786
+		},
+		"occludedEntries": {
+			"count": 2961,
+			"median": 0,
+			"p95": 0,
+			"p99": 0,
+			"max": 0,
+			"min": 0,
+			"mean": 0
+		},
+		"visibleEntries": null,
+		"drawCalls": {
+			"count": 2961,
+			"median": 2629,
+			"p95": 2679,
+			"p99": 3146,
+			"max": 3221,
+			"min": 2056,
+			"mean": 2381.350557244174
+		},
+		"problems": []
+	},
+	{
+		"address": "tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&pose=600,280,540,40,80,-40&occlusion=off",
+		"run": 2,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T09:03:34.309Z",
+		"wallSeconds": 44.098,
+		"load": {
+			"before": 7.5048828125,
+			"after": 5.99267578125
+		},
+		"page": "island-view",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"url": "http://localhost:6490/tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&pose=600,280,540,40,80,-40&occlusion=off",
+		"calibrationMs": 0.7249999940395355,
+		"ok": true,
+		"tier": "webgpu",
+		"drawPath": "forced",
+		"mode": {
+			"build": "threaded",
+			"latency": "pipelined",
+			"sketchThread": "worker",
+			"renderThread": "render-worker",
+			"jobWorkers": 16,
+			"hold": null,
+			"preset": "medium",
+			"presetCheck": null,
+			"crashedStarts": 0,
+			"memoryMaximumMiB": 1024,
+			"renderFallback": null,
+			"keepTextureCopies": false
+		},
+		"frames": 3682,
+		"presentedFps": 245.5267859469112,
+		"intervalMs": {
+			"count": 3683,
+			"median": 4.269999980926514,
+			"p95": 5.697999811172478,
+			"p99": 6.054999828338623,
+			"max": 16.325000762939453,
+			"min": 1.274999976158142,
+			"mean": 4.072875373427582
+		},
+		"gpuMs": {
+			"count": 335,
+			"median": 4.609514236450195,
+			"p95": 5.523507022857666,
+			"p99": 5.889471740722656,
+			"max": 6.353610992431641,
+			"min": 3.3685739040374756,
+			"mean": 4.671491374542464
+		},
+		"gpuPassMs": [
+			{
+				"name": "copies",
+				"ms": {
+					"count": 325,
+					"median": 0.4245760142803192,
+					"p95": 1.8046555995941165,
+					"p99": 1.9712941980361935,
+					"max": 2.5097529888153076,
+					"min": 0.0001250000059371814,
+					"mean": 0.7097444391738211
+				}
+			},
+			{
+				"name": "compute",
+				"ms": {
+					"count": 335,
+					"median": 0.09258200228214264,
+					"p95": 0.16552220433950424,
+					"p99": 0.177190902531147,
+					"max": 0.1860799938440323,
+					"min": 0.06520699709653854,
+					"mean": 0.10196602996160735
+				}
+			},
+			{
+				"name": "shadow cascade 0",
+				"ms": {
+					"count": 335,
+					"median": 0.06120700016617775,
+					"p95": 0.06463280320167542,
+					"p99": 0.06612399965524673,
+					"max": 0.06874900311231613,
+					"min": 0.05541599914431572,
+					"mean": 0.06066152238801344
+				}
+			},
+			{
+				"name": "shadow cascade 1",
+				"ms": {
+					"count": 335,
+					"median": 0.20074699819087982,
+					"p95": 0.23222569823265077,
+					"p99": 0.2520159927010537,
+					"max": 0.26345399022102356,
+					"min": 0.1684979945421219,
+					"mean": 0.20271259679723141
+				}
+			},
+			{
+				"name": "shadow cascade 2",
+				"ms": {
+					"count": 335,
+					"median": 0.47815999388694763,
+					"p95": 0.5108463764190674,
+					"p99": 0.529472713470459,
+					"max": 0.5490750074386597,
+					"min": 0.42774298787117004,
+					"mean": 0.4737876840491793
+				}
+			},
+			{
+				"name": "view copy 1",
+				"ms": {
+					"count": 335,
+					"median": 0.37661999464035034,
+					"p95": 0.6799354910850525,
+					"p99": 0.692535059452057,
+					"max": 0.8406550288200378,
+					"min": 0.011250000447034836,
+					"mean": 0.4778698187015617
+				}
+			},
+			{
+				"name": "opaque",
+				"ms": {
+					"count": 335,
+					"median": 2.3705060482025146,
+					"p95": 2.7725781440734867,
+					"p99": 3.178971519470216,
+					"max": 3.753401041030884,
+					"min": 2.016136884689331,
+					"mean": 2.412804852670698
+				}
+			},
+			{
+				"name": "transmission copy",
+				"ms": {
+					"count": 168,
+					"median": 1.965261995792389,
+					"p95": 2.3678871750831605,
+					"p99": 2.78936611890793,
+					"max": 2.9831199645996094,
+					"min": 1.728139042854309,
+					"mean": 2.005445096464384
+				}
+			},
+			{
+				"name": "later passes",
+				"ms": {
+					"count": 335,
+					"median": 2.776750087738037,
+					"p95": 3.1691689729690555,
+					"p99": 3.5842669725418106,
+					"max": 4.131895065307617,
+					"min": 0.6244069933891296,
+					"mean": 2.7645028107201877
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 335,
+					"median": 0,
+					"p95": 0,
+					"p99": 0,
+					"max": 0,
+					"min": 0,
+					"mean": 0
+				}
+			},
+			{
+				"name": "opaque 1",
+				"ms": {
+					"count": 167,
+					"median": 1.0631910562515259,
+					"p95": 1.1229868173599242,
+					"p99": 1.1870184230804446,
+					"max": 1.276231050491333,
+					"min": 0.934319019317627,
+					"mean": 1.0559374850667165
+				}
+			}
+		],
+		"triangles": {
+			"count": 3683,
+			"median": 2183888,
+			"p95": 2974581,
+			"p99": 2974581,
+			"max": 2974581,
+			"min": 2183876,
+			"mean": 2578906.4708118383
+		},
+		"occludedEntries": null,
+		"visibleEntries": null,
+		"drawCalls": {
+			"count": 3683,
+			"median": 3183,
+			"p95": 3183,
+			"p99": 3183,
+			"max": 3183,
+			"min": 2485,
+			"mean": 2834.0947597067607
+		},
+		"problems": []
+	},
+	{
+		"address": "tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&pose=600,280,540,40,80,-40&occlusion=on&occlusion-check=off",
+		"run": 2,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T09:04:19.052Z",
+		"wallSeconds": 44.113,
+		"load": {
+			"before": 5.8330078125,
+			"after": 6.376953125
+		},
+		"page": "island-view",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"url": "http://localhost:6490/tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&pose=600,280,540,40,80,-40&occlusion=on&occlusion-check=off",
+		"calibrationMs": 1.0750000029802322,
+		"ok": true,
+		"tier": "webgpu",
+		"drawPath": "forced",
+		"mode": {
+			"build": "threaded",
+			"latency": "pipelined",
+			"sketchThread": "worker",
+			"renderThread": "render-worker",
+			"jobWorkers": 16,
+			"hold": null,
+			"preset": "medium",
+			"presetCheck": null,
+			"crashedStarts": 0,
+			"memoryMaximumMiB": 1024,
+			"renderFallback": null,
+			"keepTextureCopies": false
+		},
+		"frames": 3400,
+		"presentedFps": 226.6222128917813,
+		"intervalMs": {
+			"count": 3401,
+			"median": 4.239999771118164,
+			"p95": 5.824999809265137,
+			"p99": 6.360000133514404,
+			"max": 25.59000015258789,
+			"min": 1.0199999809265137,
+			"mean": 4.412630109112602
+		},
+		"gpuMs": {
+			"count": 309,
+			"median": 4.043021202087402,
+			"p95": 4.697921085357666,
+			"p99": 4.998016662597657,
+			"max": 5.444042205810547,
+			"min": 3.2459499835968018,
+			"mean": 4.062578558536023
+		},
+		"gpuPassMs": [
+			{
+				"name": "copies",
+				"ms": {
+					"count": 306,
+					"median": 0.017103499732911587,
+					"p95": 1.181294023990631,
+					"p99": 1.3986473858356474,
+					"max": 2.02484393119812,
+					"min": 0.00120900000911206,
+					"mean": 0.31766289492933614
+				}
+			},
+			{
+				"name": "compute",
+				"ms": {
+					"count": 618,
+					"median": 0.07708249986171722,
+					"p95": 0.15044365376234053,
+					"p99": 0.19741560578346268,
+					"max": 0.3250359892845154,
+					"min": 0.057374000549316406,
+					"mean": 0.08401956637676287
+				}
+			},
+			{
+				"name": "shadow cascade 0",
+				"ms": {
+					"count": 309,
+					"median": 0.05808199942111969,
+					"p95": 0.07265699803829193,
+					"p99": 0.1321102803945547,
+					"max": 0.14341500401496887,
+					"min": 0.05083300173282623,
+					"mean": 0.060766851113548556
+				}
+			},
+			{
+				"name": "shadow cascade 1",
+				"ms": {
+					"count": 309,
+					"median": 0.17995500564575195,
+					"p95": 0.21882140338420863,
+					"p99": 0.23661808371543888,
+					"max": 0.2581630051136017,
+					"min": 0.15153999626636505,
+					"mean": 0.1831393759323941
+				}
+			},
+			{
+				"name": "shadow cascade 2",
+				"ms": {
+					"count": 309,
+					"median": 0.4213680028915405,
+					"p95": 0.46974259614944447,
+					"p99": 0.4992187201976777,
+					"max": 0.5104100108146667,
+					"min": 0.371286004781723,
+					"mean": 0.42583834642731255
+				}
+			},
+			{
+				"name": "occluders",
+				"ms": {
+					"count": 309,
+					"median": 0.26970499753952026,
+					"p95": 0.3081696033477783,
+					"p99": 0.3332866394519806,
+					"max": 0.36007800698280334,
+					"min": 0.15807999670505524,
+					"mean": 0.2719104433233298
+				}
+			},
+			{
+				"name": "view copy 1",
+				"ms": {
+					"count": 155,
+					"median": 0.2905369997024536,
+					"p95": 0.3275325924158096,
+					"p99": 0.34622385501861574,
+					"max": 0.351828008890152,
+					"min": 0.19224700331687927,
+					"mean": 0.2844975168666532
+				}
+			},
+			{
+				"name": "later passes",
+				"ms": {
+					"count": 309,
+					"median": 2.8183319568634033,
+					"p95": 3.132360219955444,
+					"p99": 3.4232736968994146,
+					"max": 3.645153045654297,
+					"min": 2.355797052383423,
+					"mean": 2.797583490513675
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 309,
+					"median": 0,
+					"p95": 0,
+					"p99": 0,
+					"max": 0,
+					"min": 0,
+					"mean": 0
+				}
+			},
+			{
+				"name": "opaque 1",
+				"ms": {
+					"count": 154,
+					"median": 0.8907370269298553,
+					"p95": 0.9744730353355407,
+					"p99": 0.9900857561826706,
+					"max": 0.9909849762916565,
+					"min": 0.8414450287818909,
+					"mean": 0.8990959145806052
+				}
+			}
+		],
+		"triangles": {
+			"count": 3401,
+			"median": 2323858,
+			"p95": 3114539,
+			"p99": 3114551,
+			"max": 3114551,
+			"min": 2320720,
+			"mean": 2715722.9588356367
+		},
+		"occludedEntries": {
+			"count": 3401,
+			"median": 4242,
+			"p95": 4242,
+			"p99": 4242,
+			"max": 4242,
+			"min": 4242,
+			"mean": 4242
+		},
+		"visibleEntries": null,
+		"drawCalls": {
+			"count": 3401,
+			"median": 3251,
+			"p95": 3325,
+			"p99": 3325,
+			"max": 3825,
+			"min": 2578,
+			"mean": 2968.801234930903
+		},
+		"problems": []
+	},
+	{
+		"address": "tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&pose=600,280,540,40,80,-40&occlusion=on",
+		"run": 2,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T09:05:03.894Z",
+		"wallSeconds": 44.058,
+		"load": {
+			"before": 6.376953125,
+			"after": 6.486328125
+		},
+		"page": "island-view",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"url": "http://localhost:6490/tests/pages/island-view.html?preset=medium&warm=25&seconds=15&still-camera=off&direct=off&pose=600,280,540,40,80,-40&occlusion=on",
+		"calibrationMs": 1.199999988079071,
+		"ok": true,
+		"tier": "webgpu",
+		"drawPath": "forced",
+		"mode": {
+			"build": "threaded",
+			"latency": "pipelined",
+			"sketchThread": "worker",
+			"renderThread": "render-worker",
+			"jobWorkers": 16,
+			"hold": null,
+			"preset": "medium",
+			"presetCheck": null,
+			"crashedStarts": 0,
+			"memoryMaximumMiB": 1024,
+			"renderFallback": null,
+			"keepTextureCopies": false
+		},
+		"frames": 3524,
+		"presentedFps": 234.87974163563686,
+		"intervalMs": {
+			"count": 3525,
+			"median": 4.204999923706055,
+			"p95": 5.638999938964842,
+			"p99": 6.3687998580932605,
+			"max": 36.279998779296875,
+			"min": 0.9449999928474426,
+			"mean": 4.257497871192634
+		},
+		"gpuMs": {
+			"count": 321,
+			"median": 4.1766037940979,
+			"p95": 5.011131763458252,
+			"p99": 5.451783370971681,
+			"max": 5.8057861328125,
+			"min": 3.1389520168304443,
+			"mean": 4.220175238041863
+		},
+		"gpuPassMs": [
+			{
+				"name": "copies",
+				"ms": {
+					"count": 309,
+					"median": 0.1843319982290268,
+					"p95": 1.4382531642913814,
+					"p99": 1.7468585634231584,
+					"max": 2.071593999862671,
+					"min": 0.0006670000148005784,
+					"mean": 0.4792432787451022
+				}
+			},
+			{
+				"name": "compute",
+				"ms": {
+					"count": 419,
+					"median": 0.07995700091123581,
+					"p95": 0.16397170275449752,
+					"p99": 0.1901656240224838,
+					"max": 0.24324600398540497,
+					"min": 0.056706998497247696,
+					"mean": 0.09048019118411445
+				}
+			},
+			{
+				"name": "shadow cascade 0",
+				"ms": {
+					"count": 321,
+					"median": 0.0613740012049675,
+					"p95": 0.07008200138807297,
+					"p99": 0.0903809979557992,
+					"max": 0.14287300407886505,
+					"min": 0.05383199825882912,
+					"mean": 0.06226619004599773
+				}
+			},
+			{
+				"name": "shadow cascade 1",
+				"ms": {
+					"count": 321,
+					"median": 0.1967889964580536,
+					"p95": 0.2349960058927536,
+					"p99": 0.25426260828971864,
+					"max": 0.2614539861679077,
+					"min": 0.15904000401496887,
+					"mean": 0.19828215923821815
+				}
+			},
+			{
+				"name": "shadow cascade 2",
+				"ms": {
+					"count": 321,
+					"median": 0.44953399896621704,
+					"p95": 0.5041170120239258,
+					"p99": 0.5298742175102235,
+					"max": 0.5981580018997192,
+					"min": 0.39474400877952576,
+					"mean": 0.4506591273431095
+				}
+			},
+			{
+				"name": "view copy 1",
+				"ms": {
+					"count": 271,
+					"median": 0.33357900381088257,
+					"p95": 0.647260993719101,
+					"p99": 0.672277319431305,
+					"max": 0.6870729923248291,
+					"min": 0.012582999654114246,
+					"mean": 0.42972515104510356
+				}
+			},
+			{
+				"name": "opaque",
+				"ms": {
+					"count": 223,
+					"median": 2.303797960281372,
+					"p95": 2.6496173858642575,
+					"p99": 2.8076167201995847,
+					"max": 2.9689950942993164,
+					"min": 1.8147640228271484,
+					"mean": 2.3190744404300982
+				}
+			},
+			{
+				"name": "transmission copy",
+				"ms": {
+					"count": 113,
+					"median": 1.9034709930419922,
+					"p95": 2.2018006324768065,
+					"p99": 2.2551701164245603,
+					"max": 2.3527140617370605,
+					"min": 1.5565179586410522,
+					"mean": 1.912939458821727
+				}
+			},
+			{
+				"name": "later passes",
+				"ms": {
+					"count": 321,
+					"median": 2.7302920818328857,
+					"p95": 3.1635351181030273,
+					"p99": 3.317525053024292,
+					"max": 3.392240047454834,
+					"min": 0.6105740070343018,
+					"mean": 2.733494497348215
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 321,
+					"median": 0,
+					"p95": 0,
+					"p99": 0,
+					"max": 0,
+					"min": 0,
+					"mean": 0
+				}
+			},
+			{
+				"name": "opaque 1",
+				"ms": {
+					"count": 160,
+					"median": 0.9788600206375122,
+					"p95": 1.0735868632793426,
+					"p99": 1.1147417438030243,
+					"max": 1.3146049976348877,
+					"min": 0.8453199863433838,
+					"mean": 0.9783359173685312
+				}
+			},
+			{
+				"name": "occluders",
+				"ms": {
+					"count": 98,
+					"median": 0.2718705087900162,
+					"p95": 0.31669680029153824,
+					"p99": 0.34547895699739456,
+					"max": 0.3503279983997345,
+					"min": 0.2225790023803711,
+					"mean": 0.27582065320136595
+				}
+			}
+		],
+		"triangles": {
+			"count": 3525,
+			"median": 2323858,
+			"p95": 3114551,
+			"p99": 3114551,
+			"max": 3114551,
+			"min": 2183876,
+			"mean": 2622289.930496454
+		},
+		"occludedEntries": {
+			"count": 3525,
+			"median": 0,
+			"p95": 4242,
+			"p99": 4242,
+			"max": 4242,
+			"min": 0,
+			"mean": 1155.268085106383
+		},
+		"visibleEntries": null,
+		"drawCalls": {
+			"count": 3525,
+			"median": 3133,
+			"p95": 3750,
+			"p99": 3825,
+			"max": 3825,
+			"min": 2460,
+			"mean": 2913.4090780141846
+		},
+		"problems": []
+	}
+]
