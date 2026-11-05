@@ -134,8 +134,12 @@ export default defineSketch(async (ctx) => {
 		scene.createAmbientLight({ color: '#ffffff', intensity: calibrationSky(reflectance) });
 	const kit = await calibrationKit(ctx, record);
 	const plant = plantMaterials(ctx, kit);
-	const mesh = plantGeometry(ctx, placeholderQuantise(leafSquare(), kit.box, TEXTURE_UV_STEPS));
-	const part = scene.createMesh({
+	const mesh = plantGeometry(
+		ctx,
+		placeholderQuantise(leafSquare(), kit.box, TEXTURE_UV_STEPS),
+		plantBounds(kit.box),
+	);
+	scene.createMesh({
 		mesh,
 		material: plant.foliage,
 		position: [LEAF_PLACE[0], LEAF_PLACE[1], 0],
@@ -143,9 +147,6 @@ export default defineSketch(async (ctx) => {
 		castShadows: false,
 		receiveShadows: false,
 	});
-	// The part's mesh holds 16-bit steps, so its own sphere misses the box that the shader draws.
-	const { center, radius } = plantBounds(kit.box);
-	part.setBounds(center, radius);
 	const square = geometry.plane({ width: REFERENCE_SIDE, height: REFERENCE_SIDE });
 	const roughness = optics.roughness[FACE === 'lower' ? 1 : 0];
 	// The face's reflectance, with the leaf's own gloss, and the transmittance, which carries none.

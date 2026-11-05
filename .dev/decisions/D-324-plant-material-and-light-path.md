@@ -92,8 +92,9 @@ colour and 92 to 93 per cent of its contrast.
   id goes as a high byte in the first texel's fourth number and a low byte in the fourth texel's
   fourth, and the species box as a high half and a remainder each for its corner and its size.
 - **Quantised parts.** Wood, cards, merged foliage and extras keep their 16-bit positions; the vertex
-  offset turns them into metres from the header's box, so a copy's transform places them. A batch of
-  them sets `setBoundingRadius(plantBoundingRadius(box))`.
+  offset turns them into metres from the header's box, so a copy's transform places them. Their mesh
+  takes its bounding sphere in metres from `plantGeometry`, since the engine's own would lie around
+  the 16-bit steps.
 - **A matte.** `matte: true` draws the plant black with its cut-outs and sway, for the review's
   silhouettes.
 - **Every role masks.** One WGSL file declares the coverage function, and the engine refuses it on

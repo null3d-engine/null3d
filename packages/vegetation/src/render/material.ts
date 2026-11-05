@@ -196,14 +196,24 @@ export function setWindLayer(materials: readonly PlantMaterial[], field: WindFie
  * A part's quantised arrays as a mesh that the plant materials draw: 16-bit positions inside the
  * species box, which the shader turns into metres, 8-bit normals, the texture coordinates in the
  * part's own steps, the second coordinates as fractions and the vertex bytes as the shader reads
- * them. The mesh keeps every byte the plant core made.
+ * them. The mesh keeps every byte the plant core made. Its bounding sphere is given in metres,
+ * where the shader places the vertices: the engine's own sphere would lie around the 16-bit steps,
+ * thousands of units away, and culling, levels and draw ranges would all read it.
  *
  * @param ctx The sketch's context.
  * @param arrays The part's arrays.
+ * @param bounds The sphere around the part where the shader draws it, in metres about the origin of
+ *   the object or row that draws it, before its scale: `plantBounds` for an object at the copy's
+ *   foot.
  * @returns The mesh.
  */
-export function plantGeometry(ctx: SketchContext, arrays: QuantisedArrays): MeshGeometry {
+export function plantGeometry(
+	ctx: SketchContext,
+	arrays: QuantisedArrays,
+	bounds: { readonly center: readonly [number, number, number]; readonly radius: number },
+): MeshGeometry {
 	return ctx.geometry.fromArrays({
+		bounds,
 		positions: arrays.positions,
 		normals: arrays.normals,
 		uvs: arrays.uvs,
@@ -238,8 +248,8 @@ export function prototypeGeometry(ctx: SketchContext, arrays: PrototypeArrays): 
 }
 
 /**
- * The sphere around the species box, in metres, which an object that draws a quantised part gives
- * `setBounds`: the mesh's own sphere lies around the 16-bit steps, not the box.
+ * The sphere around the species box, in metres about a copy's foot, which `plantGeometry` gives
+ * the mesh of a part that an object draws from the copy's foot.
  *
  * @param box The species box.
  * @returns The sphere's center about the object's origin, and its radius, at scale 1.
@@ -254,19 +264,4 @@ export function plantBounds(box: SpeciesBox): { center: [number, number, number]
 		(box.max[2] as number) - (box.min[2] as number),
 	);
 	return { center, radius: radius / 2 };
-}
-
-/**
- * The radius about a copy's origin that holds the whole species box, which a batch of quantised
- * parts gives `setBoundingRadius`: the mesh's own sphere holds the 16-bit steps, not metres.
- *
- * @param box The species box.
- * @returns The radius in metres at scale 1.
- */
-export function plantBoundingRadius(box: SpeciesBox): number {
-	let widest = 0;
-	for (const x of [box.min[0], box.max[0]])
-		for (const y of [box.min[1], box.max[1]])
-			for (const z of [box.min[2], box.max[2]]) widest = Math.max(widest, Math.hypot(x, y, z));
-	return widest;
 }

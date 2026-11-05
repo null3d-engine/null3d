@@ -163,10 +163,14 @@ export default defineSketch((ctx) => {
 	scene.createAmbientLight({ color: '#ffffff', intensity: 0.3 });
 	const kit = barkKit(ctx);
 	const wood = plantMaterials(ctx, kit).wood;
-	const mesh = plantGeometry(ctx, placeholderQuantise(limb(), kit.box, WOOD_UV_STEPS));
+	const mesh = plantGeometry(
+		ctx,
+		placeholderQuantise(limb(), kit.box, WOOD_UV_STEPS),
+		plantBounds(kit.box),
+	);
 	const half = BARK_FRAME.length / 2;
 	const quarter = Math.SQRT1_2;
-	const part = scene.createMesh({
+	scene.createMesh({
 		mesh,
 		material: wood,
 		position: LYING ? [half, 0, 0] : [0, -half, 0],
@@ -174,7 +178,4 @@ export default defineSketch((ctx) => {
 		castShadows: false,
 		receiveShadows: false,
 	});
-	// The part's mesh holds 16-bit steps, so its own sphere misses the box that the shader draws.
-	const { center, radius } = plantBounds(kit.box);
-	part.setBounds(center, radius);
 });

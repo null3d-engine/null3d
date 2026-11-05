@@ -161,6 +161,7 @@ function partBatches(
 	asset: PlantAsset,
 	name: PlantPart['name'],
 	starts: readonly [number, number, number],
+	bounds: Parameters<typeof plantGeometry>[2],
 	make: (mesh: MeshGeometry) => InstanceBatch,
 ): Ranged[] {
 	const levels = ([0, 1, 2] as const)
@@ -170,7 +171,7 @@ function partBatches(
 		}))
 		.filter((entry) => entry.parts.length > 0);
 	if (levels.length === 0) return [];
-	const geometry = (part: PlantPart) => plantGeometry(ctx, part.arrays);
+	const geometry = (part: PlantPart) => plantGeometry(ctx, part.arrays, bounds);
 	if (levels.every((entry) => entry.parts.length === 1)) {
 		const [first, ...rest] = levels;
 		const mesh = geometry((first as (typeof levels)[number]).parts[0] as PlantPart);
@@ -258,10 +259,10 @@ export function placePlants(
 			cardFirst += rows.length;
 			return;
 		}
-		let largest = 0;
-		for (const copy of rows) largest = Math.max(largest, copies.scale[copy] as number);
+		// Each row stands at its crown's centre, which the shader takes back off every point, so
+		// every part's sphere is the crown's, around the row's origin.
 		const sphere = crownSphere(kit, asset);
-		const radius = sphere.radius * Math.max(largest, 1e-3);
+		const bounds = { center: [0, 0, 0] as const, radius: sphere.radius };
 		const make =
 			(material: PlantMaterials[keyof PlantMaterials]) =>
 			(mesh: MeshGeometry): InstanceBatch => {
@@ -272,17 +273,23 @@ export function placePlants(
 					values: true,
 				});
 				fillCrownRows(batch, copies, rows, sphere.centre);
-				batch.setBoundingRadius(radius);
 				return batch;
 			};
 		const ranged = [
-			...partBatches(ctx, asset, 'wood', distances, make(materials.wood)),
-			...partBatches(ctx, asset, 'foliage', distances, make(materials.foliage)),
-			...partBatches(ctx, asset, 'extras', distances, make(materials.extras)),
+			...partBatches(ctx, asset, 'wood', distances, bounds, make(materials.wood)),
+			...partBatches(ctx, asset, 'foliage', distances, bounds, make(materials.foliage)),
+			...partBatches(ctx, asset, 'extras', distances, bounds, make(materials.extras)),
 		];
 		// The cards draw from the camera out, since a near copy's cards draw beyond its split: their
 		// first level starts at once, and their second at its own switch.
-		const cards = partBatches(ctx, asset, 'cards', [0, 0, distances[1]], make(materials.cards));
+		const cards = partBatches(
+			ctx,
+			asset,
+			'cards',
+			[0, 0, distances[1]],
+			bounds,
+			make(materials.cards),
+		);
 		for (const card of cards) {
 			cardBatches.push({
 				batch: card.batch,
