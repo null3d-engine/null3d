@@ -12,15 +12,15 @@ const EDGE_BAND = 0.08;
 
 /**
  * Where a batch of cards starts so that each stands at full coverage before its mesh's edge begins
- * to thin. A draw range measures to a bound's nearest point, and a card's bound reaches as far as
- * its top corner from where it stands, so a large tree's card takes its distance far nearer than
- * its mesh does. Its start allows for the farthest corner of the largest card.
+ * to thin. A draw range measures to a bound's nearest point, and a card's bound sits at the card's
+ * middle and reaches its corners, so a large tree's card takes its distance nearer than the tree's
+ * foot. Its start allows for the corner of the largest card.
  */
 function cardsStart(cards: InstanceBatch, switchDistance: number): number {
 	let reach = 0;
 	const { scales } = cards;
 	for (let k = 0; k < scales.length; k += 3)
-		reach = Math.max(reach, Math.hypot((scales[k] as number) / 2, scales[k + 1] as number));
+		reach = Math.max(reach, Math.hypot((scales[k] as number) / 2, (scales[k + 1] as number) / 2));
 	return Math.max(0, (switchDistance / (1 + EDGE_BAND) - reach) / (1 + EDGE_BAND));
 }
 
