@@ -3,7 +3,7 @@
 // page for production first, holds the quiet-window marker while it measures, and waits for a
 // 1-minute load under the study's limit before each load.
 // Run from the repository's root:
-//   bun bench/research/island-phones/scripts/run.ts <plan.json> <out folder> [--rounds n] [--no-build]
+//   bun bench/research/island-phones/scripts/run.ts <plan.json> <out folder> [--rounds n] [--no-build] [--uncapped]
 // A plan is a list of { "name", "query" } items; `query` is the page's switches without the `?`.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -23,6 +23,11 @@ const args = process.argv.slice(2);
 const [planFile, outDir] = args as [string, string];
 const rounds = Number(args[args.indexOf('--rounds') + 1] || 1) || 1;
 const build = !args.includes('--no-build');
+// Without the frame cap the page draws as fast as it can, so the GPU never idles and keeps its full
+// clock: a capped light frame lets the Mac's GPU slow down, which hides what a part of the frame costs.
+const UNCAPPED_ARGS = args.includes('--uncapped')
+	? ['--disable-gpu-vsync', '--disable-frame-rate-limit']
+	: [];
 const root = join(import.meta.dirname, '../../../..');
 const port = Number(process.env.IP_PORT ?? 6571);
 const QUIET_LIMIT = 6;
@@ -54,7 +59,7 @@ process.on('SIGINT', () => process.exit(130));
 const server = await startPreview(join(root, 'target/island-phones'), port, `/${PAGE}`, root);
 const browser = await launchInWindow({
 	executablePath: chromeForTesting().executablePath,
-	args: GPU_TIMING_ARGS,
+	args: [...GPU_TIMING_ARGS, ...UNCAPPED_ARGS],
 });
 
 async function quiet(): Promise<number> {
@@ -106,7 +111,7 @@ try {
 			};
 			writeFileSync(
 				join(outDir, `${item.name}-${round}.json`),
-				`${JSON.stringify(record, null, 1)}\n`,
+				`${JSON.stringify(record, null, '\t')}\n`,
 			);
 			console.log(
 				`${item.name} round ${round}: load ${loadBefore.toFixed(1)} -> ${loadAfter.toFixed(1)}, ${errors.length} errors`,

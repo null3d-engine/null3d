@@ -20,6 +20,7 @@ export const GROUPS = [
 	'shrubs',
 	'cypress',
 	'cards',
+	'casters',
 	'grass',
 	'shadows',
 	'other',
@@ -58,11 +59,24 @@ export default defineSketch(async (ctx: SketchContext) => {
 		return made;
 	};
 
-	let sun: { setCastShadows(on: boolean): void } | undefined;
+	let sun:
+		| { setCastShadows(on: boolean): void; setShadow(options: { distance: number }): void }
+		| undefined;
+	let shadowDistance = 0;
+	// The card materials with the atlas values that they started with, so a trial can draw them from one view.
+	const cardCells = new Map<{ setUniform(name: string, value: number[]): void }, number[]>();
+	// The grass batches with the draw range that the Island gave them.
+	const grassRanges = new Map<{ setDrawRange(a: number, b: number): void }, [number, number]>();
+	// biome-ignore lint/suspicious/noExplicitAny: research code reaches past the public types
+	const grassBatches: any[] = [];
 	const directional = scene.createDirectionalLight.bind(scene);
 	scene.createDirectionalLight = (options: unknown) => {
 		const made = directional(options);
-		sun ??= made;
+		if (!sun) {
+			sun = made;
+			// biome-ignore lint/suspicious/noExplicitAny: research code reaches past the public types
+			shadowDistance = (options as any)?.shadow?.distance ?? 0;
+		}
 		return made;
 	};
 
@@ -93,7 +107,9 @@ export default defineSketch(async (ctx: SketchContext) => {
 			const made = bound(options, ...rest);
 			if (!made || typeof made !== 'object' || kinds.has(made)) return made;
 			const kind = label(options);
-			if (made && typeof made === 'object') kinds.set(made, kind);
+			kinds.set(made, kind);
+			if (kind === 'cards' && Array.isArray(options?.uniforms?.cells))
+				cardCells.set(made, [...options.uniforms.cells]);
 			if (kind === 'ground' && phase === 'other') phase = 'seabed';
 			if (kind === 'water') waterMaterial = made;
 			return made;
@@ -142,7 +158,20 @@ export default defineSketch(async (ctx: SketchContext) => {
 	// biome-ignore lint/suspicious/noExplicitAny: research code reaches past the public types
 	scene.createInstances = (mesh: any, count: number, options: any) => {
 		const batch = instances(mesh, count, options);
-		const group = groupOf(options, options?.castShadows);
+		let group = groupOf(options, options?.castShadows);
+		// The cards that only the sun sees cast every tree's shadow.
+		if (group === 'cards' && options?.layers !== undefined && options.layers !== 1)
+			group = 'casters';
+		if (group === 'grass') {
+			grassBatches.push(batch);
+			const range = batch.setDrawRange.bind(batch);
+			grassRanges.set({ setDrawRange: range }, [0, Number.POSITIVE_INFINITY]);
+			batch.setDrawRange = (start: number, end: number) => {
+				for (const key of grassRanges.keys())
+					if (key.setDrawRange === range) grassRanges.set(key, [start, end]);
+				range(start, end);
+			};
+		}
 		const set = batch.setActiveCount.bind(batch);
 		const destroy = batch.destroy.bind(batch);
 		let wants = count;
@@ -188,8 +217,36 @@ export default defineSketch(async (ctx: SketchContext) => {
 		else for (const entry of held.get(group) ?? []) entry.apply();
 	};
 
+	/**
+	 * A trial change, applied for one window and undone after it: the far cards drawn from their
+	 * nearest atlas view alone, the sun's shadows over a shorter reach, the grass over a shorter reach
+	 * or casting no shadow, and the water's reflection drawn once in four frames.
+	 */
+	const trial = (name: string, on: boolean) => {
+		if (name === 'cards1')
+			for (const [material, cells] of cardCells)
+				material.setUniform('cells', on ? [cells[0], cells[1], 1, cells[3]] : cells);
+		else if (name.startsWith('shadow'))
+			sun?.setShadow({ distance: on ? Number(name.slice(6)) : shadowDistance });
+		else if (name.startsWith('grass'))
+			for (const [batch, [start, end]] of grassRanges)
+				batch.setDrawRange(start, on ? Math.min(end, Number(name.slice(5))) : end);
+		else if (name === 'grassdark') for (const batch of grassBatches) batch.setCastShadows(!on);
+		else if (name.startsWith('reflect'))
+			for (const pass of reflections)
+				render.setPassEvery(
+					pass,
+					on ? Number(name.slice(7)) : ['high', 'ultra'].includes(ctx.quality.preset) ? 1 : 2,
+				);
+	};
+
 	let pending: { name: string; frames: number; value: () => unknown } | undefined;
 	ctx.page.onMessage((name, data) => {
+		if (name === 'try') {
+			const { trial: which, on } = data as { trial: string; on: boolean };
+			trial(which, on);
+			pending = { name: 'tried', frames: 4, value: () => which };
+		}
 		if (name === 'hide') {
 			const wanted = new Set(data as Group[]);
 			for (const group of GROUPS) show(group, !wanted.has(group));
@@ -220,8 +277,11 @@ export default defineSketch(async (ctx: SketchContext) => {
 	// A production build counts the triangles of the GPU-culled draws only while the sketch asks for them.
 	ctx.debug.frameStats();
 	const callbacks = await island.setup(ctx);
-	const scale = Number(params.get('scale') ?? 1);
-	ctx.quality.set({ minRenderScale: scale, maxRenderScale: scale, governor: false });
+	// The render scale holds still unless the page asks for the governor, as a visitor's page runs.
+	if (params.get('governor') !== 'on') {
+		const scale = Number(params.get('scale') ?? 1);
+		ctx.quality.set({ minRenderScale: scale, maxRenderScale: scale, governor: false });
+	}
 	return {
 		...callbacks,
 		onUpdate(...args: unknown[]) {
