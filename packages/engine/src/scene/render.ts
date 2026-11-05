@@ -980,10 +980,12 @@ export class Render {
 
 	/**
 	 * Gives a pass a cadence: it draws in one frame of every `every`, from the next frame on, and its
-	 * texture keeps the last image that it drew in between. A cadence of 1 draws every frame. It
-	 * compiles nothing, so a sketch may change it whenever the quality preset or the frame budget
-	 * moves, as often as once a frame. Throws E1101 for a pass that was removed, and E1220 for a
-	 * cadence that is not a whole number from 1. It allocates nothing.
+	 * texture keeps the last image that it drew in between. A cadence of 1 draws every frame. A held
+	 * frame draws every pass, whatever its cadence, so a held picture shows every pass's image at
+	 * the held time; the cadence keeps its length afterwards. It compiles nothing, so a sketch may
+	 * change it whenever the quality preset or the frame budget moves, as often as once a frame.
+	 * Throws E1101 for a pass that was removed, and E1220 for a cadence that is not a whole number
+	 * from 1. It allocates nothing.
 	 */
 	setPassEvery(pass: RenderPass, every: number): void {
 		const call = 'render.setPassEvery';
