@@ -1,8 +1,9 @@
 # D-319: near plants draw real shoots inside one split per copy, by falling leaf tier, within a drawn-triangle budget
 
 Status: decided. The near pool, its WebAssembly task, the placement of real kits, the wind records,
-the level switches and the far bake are built. The per-frame budget holds the owner's near caps;
-its figures on the four test devices are not measured yet. Task: none.
+the level switches and the far bake are built. The per-frame budget holds the owner's near caps. The
+four test devices' figures are measured: at the caps the near pool's own cost stays within D-241's
+5 ms at Low and 12 ms at Medium on the Apple devices. Task: none.
 
 Summary: a tree never draws whole with real leaves. Each copy in the near pool draws its real shoot
 rows nearer than one split distance and its own cards beyond it, with a thin overlap that the
@@ -191,27 +192,72 @@ on the iPhone 17's WebGPU, and from 16.8 to 13.5 ms on the Mac's WebGPU in Chrom
 The `near-shoots` plan (`tests/pages/near-shoots.html`) draws a stand of six oaks from under the
 first crown at each preset, with no near shoots, at the preset's budget and at twice it. GPU time
 per frame in ms, or the frame interval where the device has no GPU timer (WebGL2 in Safari, and
-WebGL2 on the Galaxy S25, at a 60 Hz display), before the wood drew without the mask:
+WebGL2 on the Galaxy S25), with the masked prepass and the wood's own draw path in place. The
+iPhone 17's pages and the iPad's WebGPU Low and Medium pages ran on `834da3b90`; every other page
+ran on `df024bf02`. The records sit in `.dev/tested-devices/`.
 
 | Device, path, preset | No shoots | Budget | Twice the budget |
 | --- | --- | --- | --- |
-| iPhone 17, WebGPU, Low | 11.9 | 13.6 | 15.4 |
-| iPhone 17, WebGPU, Medium | 106.1 | 131.5 | 170.0 |
-| iPhone 17, WebGPU, High | 129.4 | 181.1 | 228.4 |
-| iPhone 17, WebGPU, Ultra | 146.9 | 209.8 | 273.4 |
-| iPhone 17, WebGL2, Medium (interval) | 24.6 | 30.1 | 38.5 |
-| iPad Pro 13, WebGPU, Low | 6.1 | 6.9 | 7.2 |
-| iPad Pro 13, WebGPU, Medium | 52.3 | 65.2 | 86.3 |
-| iPad Pro 13, WebGPU, High | 64.5 | 91.7 | 116.7 |
-| iPad Pro 13, WebGL2, Medium (interval) | 15.7 | 15.7 | 20.2 |
-| Galaxy S25, WebGPU, Low | 23.9 | 26.5 | 24.8 |
-| Galaxy S25, WebGPU, Medium | 67.4 | 81.1 | 101.9 |
-| Galaxy S25, WebGPU, High | 79.9 | 108.3 | 135.7 |
-| Galaxy S25, WebGL2, Medium (interval) | 31.5 | 31.7 | 42.4 |
-| Galaxy Tab A9 Plus, WebGPU, Low | 516.8 | | |
+| iPhone 17, WebGPU, Low | 10.4 | 11.9 | 13.5 |
+| iPhone 17, WebGPU, Medium | 41.6 | 47.4 | 57.0 |
+| iPhone 17, WebGPU, High | 47.9 | 58.2 | 67.6 |
+| iPhone 17, WebGPU, Ultra | 58.9 | 82.4 | 100.4 |
+| iPhone 17, compatibility, Low | 10.4 | 11.8 | 13.3 |
+| iPhone 17, compatibility, Medium | 46.6 | 52.0 | 61.4 |
+| iPhone 17, WebGL2, Low (interval) | 16.1 | 16.3 | 20.0 |
+| iPhone 17, WebGL2, Medium (interval) | 24.0 | 28.9 | 56.2 |
+| iPad Pro 13, WebGPU, Low | 6.0 | 6.2 | 6.5 |
+| iPad Pro 13, WebGPU, Medium | 20.6 | 23.5 | 27.7 |
+| iPad Pro 13, WebGPU, High | 24.5 | 28.9 | 33.0 |
+| iPad Pro 13, WebGPU, Ultra | 29.1 | 38.9 | 47.5 |
+| iPad Pro 13, compatibility, Low | 6.1 | 6.4 | 7.0 |
+| iPad Pro 13, compatibility, Medium | 22.6 | 25.6 | 29.7 |
+| iPad Pro 13, WebGL2, Low (interval) | 14.7 | 16.3 | 16.3 |
+| iPad Pro 13, WebGL2, Medium (interval) | 15.5 | 16.3 | 18.5 |
+| Galaxy S25, WebGPU, Low | 26.6 | 25.7 | 26.6 |
+| Galaxy S25, WebGPU, Medium | 27.4 | 27.7 | 32.4 |
+| Galaxy S25, WebGPU, High | 26.8 | 34.3 | 44.0 |
+| Galaxy S25, WebGPU, Ultra | 34.2 | 109.6 | 76.3 |
+| Galaxy S25, compatibility, Low | 26.5 | 25.7 | 26.7 |
+| Galaxy S25, compatibility, Medium | 27.9 | 27.9 | 53.6 |
+| Galaxy S25, WebGL2, Low (interval) | 108.7 | 32.9 | 25.0 |
+| Galaxy S25, WebGL2, Medium (interval) | 30.1 | 36.0 | 45.5 |
+| Galaxy Tab A9 Plus, compatibility, Low | 533.1 | 543.8 | 597.6 |
+| Galaxy Tab A9 Plus, WebGL2, Low (interval) | 500.0 | 555.6 | 555.6 |
+| Galaxy Tab A9 Plus, WebGL2, Medium (interval) | 1000.0 | 1666.7 | no frame |
 
-The Tab A9 Plus draws 9 frames in 5 seconds at Low on WebGPU, so its Medium and higher pages each
-run to their time limit; the quality chooser gives it Low.
+### The budgets
+
+The near pool's own cost at the preset's budget, over the page with no near shoots, in ms:
+
+| Device | Low | Medium | High | Ultra |
+| --- | --- | --- | --- | --- |
+| iPhone 17, WebGPU | 1.4 | 5.9 | 10.3 | 23.5 |
+| iPhone 17, compatibility | 1.3 | 5.4 | | |
+| iPhone 17, WebGL2 (interval) | 0.2 | 4.9 | | |
+| iPad Pro 13, WebGPU | 0.2 | 2.9 | 4.4 | 9.9 |
+| iPad Pro 13, compatibility | 0.3 | 3.0 | | |
+| iPad Pro 13, WebGL2 (interval) | 1.6 | 0.8 | | |
+
+The capped rows cost 1.4 ms at Low and 5.9 ms at Medium on the iPhone, and 0.2 and 2.9 ms on the
+iPad. Those figures sit inside D-241's 5 ms at Low and 12 ms at Medium for the add-on. Twice the
+Medium budget draws the rows that the budget trims. It costs 15.4 ms on the iPhone and 14.8 in
+compatibility mode, past the 12 ms allowance, so the cap must stop there. High and Ultra take the
+caps themselves: 10.3 and 23.5 ms on the iPhone, and 4.4 and 9.9 on the iPad.
+
+The Galaxy S25's figures are guides. Its GPU clock falls through a long run, and at Ultra the page
+at the budget read 109.6 ms against the page at twice it. A later page can therefore read faster
+than an earlier one. There the near pool adds nothing that the spread can see at Low or Medium, and
+7.5 ms at High.
+
+The Tab A9 Plus's capabilities page reports a WebGPU adapter, with core features and limits and a
+working compatibility adapter. The plan ran compatibility mode at Low and WebGL2 at Low and Medium,
+where the quality chooser gives it Low. In compatibility mode the near rows add about 11 ms to a
+533 ms frame, so its cap needs no change. Its WebGL2 pages draw 9 to 10 frames in 5 seconds at Low,
+and the page at twice Medium's budget drew none, so Medium is past what the device draws.
+
+The caps stand as `NEAR_CAPS` sets them: one, three, six and ten copies with half a million, 1.5, 5
+and 10 million triangles at Low, Medium, High and Ultra.
 
 ### Where a Medium frame goes
 
@@ -219,7 +265,8 @@ The `near-breakdown` plan takes the Medium frame apart, one change at a time. Th
 million triangles on both paths, 7.8 million of them in the three shadow cascades. WebGPU counts 192
 draws to WebGL2's 97: its GPU-driven bundles record one indirect draw per bucket and part in every
 view whether or not a row survives culling, and WebGL2 skips empty buckets. GPU time per frame in
-ms, with the wood unmasked:
+ms, with the wood unmasked and before the masked prepass landed, which is why the unchanged frame
+here reads above the device table's:
 
 | Change | iPhone 17, WebGPU | Mac WebKit, WebGPU | Mac Chrome, WebGPU |
 | --- | --- | --- | --- |
@@ -246,8 +293,3 @@ discarded in the pass), WebGL2's 12. No plant or engine shader of the frame shad
 `alpha-mask-cost` page with `?layers=8` shows it without plants: eight masked curtains under MSAA
 take 6.48 ms against 1.37 ms opaque in WebKit, and 2.57 against 1.67 ms in Chrome; without MSAA
 WebKit takes 1.48 against 0.53 ms.
-
-## Not measured yet
-
-The per-preset budgets wait for the masked leaves' cost under MSAA in WebKit to be settled; the
-owner's near caps stand until then.
