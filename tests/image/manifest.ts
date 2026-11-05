@@ -2634,14 +2634,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// coarser. The cluster pass runs on WebGPU's indirect path, so the tests force it: the start-up
 	// probe may pick the direct path, which draws the whole levels, and the picture then depends on
 	// which path the probe measured. WebGL2 picks the patches on the job workers, where the device
-	// has `WEBGL_multi_draw`. The first test and the whole-level fallback below draw no bounce
-	// light, as the parity scenes do (36584326) and as the sky comparisons keep the flat sky
-	// (5afb4780): the fallback draws the finest level, the patches stay within the threshold's
-	// error of it, and the bounce light's gather would show their small difference in depth and
-	// normal as a difference in light.
+	// has `WEBGL_multi_draw`.
 	{
 		name: 'cluster',
-		sketch: 'tests/pages/sketches/cluster-sketch.ts?bounce=off',
+		sketch: 'tests/pages/sketches/cluster-sketch.ts',
 		hold: 0,
 		size: [480, 270] as const,
 		switches: ['direct=off'],
@@ -2691,7 +2687,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		// renderer that took the patch path reports a count even where the probe withheld the
 		// extension.
 		name: 'cluster-no-multi-draw',
-		sketch: 'tests/pages/sketches/cluster-sketch.ts?bounce=off',
+		sketch: 'tests/pages/sketches/cluster-sketch.ts',
 		hold: 0,
 		size: [480, 270] as const,
 		switches: ['direct=off', 'multidraw=off'],
