@@ -1,6 +1,6 @@
 # D-323: The Island lightens its drawing on a phone
 
-Status: decided by the owner. Built: the Low preset's fixed shadow range, its cards drawn from one atlas view, and its water reflection every fourth frame. Measured: both sides on the M3 Max, two loads each, in [the data](#data). Pending: the pictures and the cloud phones. Task: none.
+Status: decided by the owner. Built: the Low preset's fixed shadow range, its cards drawn from one atlas view, and its water reflection every fourth frame. Measured: both sides on the M3 Max, two loads each, in [the data](#data), and both sides on the two cloud phones, in [the cloud phones](#the-cloud-phones). Pending: the pictures. Task: none.
 
 Summary: A phone draws the Island at Low, where the shadow maps and the far tree cards take most of the frame. On Low the sun's shadows reach 250 m and no longer stretch with the camera. Every card draws from one atlas view, and the water's reflection draws every fourth frame. Two loads each side at 576 x 1248 on the M3 Max put the frame at 2.66 ms before and 2.32 ms after. The after side is faster by 0.34 ms, or 12.7 per cent.
 
@@ -42,7 +42,26 @@ The trials overlap, so their savings do not add. The whole frame's triangles mov
 
 How the data was produced: `bun bench/research/island-phones/scripts/run.ts` ran the page with `preset=low&w=576&h=1248` and the frame cap off. The before steps were `base,try:cards1,base,casters,base,try:shadow300,base,try:shadow150,base,try:reflect4,base`. The after steps were `base,casters,base,cards,base`.
 
-The pictures and the cloud phones are not measured yet.
+The pictures are not measured yet.
+
+## The cloud phones
+
+Both sides ran the `island-phones` plan through BrowserStack Automate, one session at a time. The before run is at `873a5e278` and the after run at `946e84ed7`, and each passed all 10 pages on both phones. The iPhone's run files are [before](../tested-devices/iphone-17-safari/20261105-031435-island-phones.md) and [after](../tested-devices/iphone-17-safari/20261105-034329-island-phones.md). The Galaxy S25's are [before](../tested-devices/galaxy-s25-sm-s931b-chrome/20261105-031435-island-phones.md) and [after](../tested-devices/galaxy-s25-sm-s931b-chrome/20261105-034329-island-phones.md).
+
+The visitor's whole frame, over its three windows with the governor on:
+
+| Side | Galaxy S25, GPU ms | iPhone 17, whole frame ms |
+| --- | --- | --- |
+| Before | 23.49 to 24.77 | 27.44 to 33.94 |
+| After | 22.41 to 22.71 | 21.64 to 27.70 |
+
+The visitor is lower after the change on both phones. The S25's later-window GPU mean falls from 23.53 to 22.46 ms, and the iPhone's from 29.88 to 23.08 ms.
+
+Each run opens and closes with the same Medium visit. The iPhone's bracket agreed within each run, 59.0 against 60.4 ms before and 69.8 against 71.4 ms after. Across the runs it disagreed at 59.7 against 70.4 ms, 18 per cent apart. The after run also drew with Safari 26.5, where the before run had 26.6.
+
+The S25's bracket agreed in neither run. It read 122.6 against 200.3 ms before, 1.63 times, and 111.3 against 128.2 ms after. Its display ran at 30 Hz, so only its per-pass times stand.
+
+The size of the cross-run change is therefore not safe on either phone. The parts and trials alternate with whole-scene windows inside one visit, so those rows stand. Hiding the far cards was the largest iPhone part saving, 12.53 ms before and 7.44 ms after. Hiding the shadows lifted the S25's main view by 1.59 ms before and 3.56 ms after, and removed both cascades. The water reflection's pass cost 4.52 and 5.39 ms, with the main view taking 3.05 and 1.21 ms back.
 
 ## Look
 
@@ -60,4 +79,4 @@ The pictures are not drawn yet. At Low the opening view now ends the shadows nea
 
 - `examples/showcase/island/sketch.ts` holds the range, `trees.ts` the card views, and `sea.ts` the cadence. `.dev/examples.md` gives the Low exception to the shadow-range rule.
 - The SwiftShader `demo-island` pictures draw Low, so they move and need CI's drawing. The Mac's pictures draw the full look and must not move.
-- The cloud phones' rows are owed: the `island-phones` plan, before and after, on the Galaxy S25 and the iPhone 17.
+- The cloud phones ran the `island-phones` plan, before and after, on the Galaxy S25 and the iPhone 17. Both visitors are lower, but the runs' brackets disagree across the sides, so the size of the change is not settled.
