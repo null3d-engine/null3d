@@ -5,13 +5,12 @@
 import json
 from pathlib import Path
 
-ALL = 'ground.seabed.foam.water.reflection.town.trees.shrubs.cypress.cards.grass.shadows.other'
 PARTS = ['town', 'trees.shrubs.cypress', 'cards', 'grass', 'ground', 'water.reflection', 'reflection',
          'shadows']
 SETS = [{'fogSlices': 0}, {'ssrScale': 0}, {'lodFade': False}, {'physicalSky': False},
         {'lodThreshold': 4}]
 
-steps = ['base', ALL, 'base']
+steps = ['base']
 for part in PARTS:
     steps += [part, 'base']
 steps += ['set:' + json.dumps(s, separators=(',', ':')) for s in SETS]
