@@ -284,6 +284,15 @@ pub(super) struct Bucket {
     /// For the bucket of a piece, the piece's cone of facings in its mesh's space: its axis and its
     /// cutoff, 1 or more where the cone test does not apply. `None` for every other bucket.
     pub(super) cone: Option<[f32; 4]>,
+    /// The slot that a bucket draws, as its place in [`Layout::slot_buckets`], or `None` for every
+    /// other bucket. A slot draws one copy's level group by group (see `cluster_cull.wgsl`): its
+    /// record's `next` word holds the assigned copy's source plus one, which the culling pass
+    /// matches, and its own draw is a tally that no pass draws.
+    pub(super) slot: Option<u32>,
+    /// The source plus one that a slot draws, or 0 while the frame assigned it none. The culling
+    /// pass reads it from the slot's `next` word, and the slot pass reads its copy from the
+    /// slot's slice of the view's compacted instances.
+    pub(super) slot_copy: u32,
 }
 
 /// One indexed indirect draw of each view: a part of a bucket's mesh.
@@ -638,6 +647,90 @@ pub(super) struct Layout {
     /// bucket of a rebuilt table, the buckets whose slice moved, and a skinned bucket whose bounds
     /// moved. The frame uploads them in one write, so no two writes to the table share a frame.
     records_dirty: Option<Range<u32>>,
+    /// The level of each of the layout's slots, in slot order: the level bucket whose copies it
+    /// draws, and the groups, pieces and parts that the slot pass reads for it.
+    pub(super) slot_levels: Vec<SlotLevel>,
+    /// The bucket of each slot, in slot order.
+    pub(super) slot_buckets: Vec<u32>,
+    /// The groups of every slot level, in the slot pass's order: a group's first index in the
+    /// page, its triangles, its piece, and its bounds.
+    pub(super) slot_groups: Vec<[u32; 12]>,
+    /// The pieces of every slot level, as the slot pass reads them and as the CPU tests them for a
+    /// slot's copy: the sphere, the cone and the triangles.
+    pub(super) slot_pieces: Vec<crate::pieces::Piece>,
+    /// The parts of every slot level: their first index in the page, their indices and their base
+    /// vertex.
+    pub(super) slot_parts: Vec<[u32; 4]>,
+    /// The page whose indices the slots draw from, or [`NO_SLOT_PAGE`] while the layout holds no
+    /// slot: one page holds every level's indices, since a storage binding reads one of them. The
+    /// bytes of its indices that the binding reads, from the buffer's first byte.
+    pub(super) slot_page: u32,
+    pub(super) slot_page_bytes: u32,
+    /// The word of the runs' buffer at which each slot's groups start, in slot order.
+    pub(super) slot_runs: Vec<u32>,
+    /// The indices that each slot's room in the view's list holds, in slot order, which the frame
+    /// sizes to the pieces that show for the slot's copy.
+    pub(super) slot_room: Vec<u32>,
+    /// The slot level of each level bucket that a slot may draw, as a place in
+    /// [`Layout::slot_levels`], or [`NO_SLOT_LEVEL`] for any other bucket.
+    pub(super) slot_level_of: Vec<u32>,
+    /// The nearest copies of each slot level that a frame's count kept, a candidate's distance's
+    /// bits and its source each, in level order: the copies that the level's slots take.
+    pub(super) slot_candidates: Vec<u32>,
+    /// True while the slots' records changed and the frame has not written them again.
+    pub(super) slot_records_dirty: bool,
+}
+
+/// The bucket of no slot level.
+pub(super) const NO_SLOT_LEVEL: u32 = u32::MAX;
+
+/// The page of a layout without slots.
+pub(super) const NO_SLOT_PAGE: u32 = u32::MAX;
+
+/// The slots that one level of a mesh with pieces and groups may take: one copy each.
+pub(super) const SLOTS_PER_LEVEL: u32 = 4;
+
+/// The most slots of one layout: each takes a draw, a slice of the copies and a run of the slot
+/// pass's groups.
+pub(super) const MAX_SLOTS: u32 = 128;
+
+/// The copies that each slot level keeps as its nearest, one for each of its slots, and the words
+/// that one candidate takes in a frame's count: its distance's bits, which order as the distances
+/// do while they are positive, then its source.
+pub(super) const SLOT_CANDIDATES: usize = SLOTS_PER_LEVEL as usize;
+pub(super) const CANDIDATE_WORDS: usize = 2;
+
+/// The words that the candidates of `levels` slot levels take in a frame's count.
+pub(super) fn slot_candidate_words(levels: usize) -> usize {
+    levels * SLOT_CANDIDATES * CANDIDATE_WORDS
+}
+
+/// The words of one slot's record, one group's, one piece's and one part's in the slot pass's
+/// table.
+pub(super) const SLOT_WORDS: u32 = 12;
+pub(super) const SLOT_GROUP_WORDS: u32 = 12;
+pub(super) const SLOT_PIECE_WORDS: u32 = 8;
+pub(super) const SLOT_PART_WORDS: u32 = 4;
+
+/// One level of the layout's slots: the level bucket that its slots draw, and the groups, pieces and
+/// parts that the slot pass reads for them. The level's slots follow each other in
+/// [`Layout::slot_buckets`] from `first_slot`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct SlotLevel {
+    /// The bucket of the level whose copies the slots draw.
+    pub(super) parent: u32,
+    /// The layout's first group record of the level, and how many follow it.
+    pub(super) first_group: u32,
+    pub(super) group_count: u32,
+    /// The level's first piece record, and how many follow it.
+    pub(super) first_piece: u32,
+    pub(super) piece_count: u32,
+    /// The level's first part record, and how many follow it.
+    pub(super) first_part: u32,
+    pub(super) part_count: u32,
+    /// The layout's first slot of the level, and how many follow it.
+    pub(super) first_slot: u32,
+    pub(super) slots: u32,
 }
 
 impl Layout {
@@ -673,6 +766,15 @@ impl Layout {
             vec_bytes(&self.skin_firsts),
             vec_bytes(&self.waiting),
             vec_bytes(&self.bucket_records),
+            vec_bytes(&self.slot_levels),
+            vec_bytes(&self.slot_buckets),
+            vec_bytes(&self.slot_groups),
+            vec_bytes(&self.slot_pieces),
+            vec_bytes(&self.slot_parts),
+            vec_bytes(&self.slot_runs),
+            vec_bytes(&self.slot_room),
+            vec_bytes(&self.slot_level_of),
+            vec_bytes(&self.slot_candidates),
         ] {
             use_.add(array);
         }
@@ -1543,6 +1645,18 @@ impl Layout {
         self.clusters.clear();
         self.cluster_patches.clear();
         self.cluster_indices.clear();
+        self.slot_levels.clear();
+        self.slot_buckets.clear();
+        self.slot_groups.clear();
+        self.slot_pieces.clear();
+        self.slot_parts.clear();
+        self.slot_runs.clear();
+        self.slot_room.clear();
+        self.slot_level_of.clear();
+        self.slot_candidates.clear();
+        self.slot_records_dirty = false;
+        self.slot_page = NO_SLOT_PAGE;
+        self.slot_page_bytes = 0;
         if shared_trees {
             self.clusters
                 .extend(self.scene_trees.iter().map(|&tree| ClusterMesh {
@@ -1558,6 +1672,13 @@ impl Layout {
         // The buckets whose mesh draws pieces in their place, each with its mesh and whether its
         // pipeline drops back faces.
         let mut pieced_buckets: Vec<(u32, u32, bool)> = Vec::new();
+        // Slots draw in a camera's view from a page's indices, which one storage binding reads.
+        // Another layout, such as the casters', takes none.
+        let slots_binding = if drawn == Drawn::Scene {
+            cluster_binding
+        } else {
+            0
+        };
         for &(key, count) in key_counts.iter() {
             let (pipeline, group, _, mesh, material, bounds) = key;
             let bands = |key: &BucketKey| fades && ranged(key);
@@ -1783,6 +1904,8 @@ impl Layout {
                 feature_slot: object.unwrap_or(u32::MAX),
                 pieces: None,
                 cone: None,
+                slot: None,
+                slot_copy: 0,
             });
             self.bucket_levels.push(key_level(key.3).1 as u32);
             *base += count;
@@ -1805,7 +1928,7 @@ impl Layout {
                 }
             }));
         }
-        copied = self.add_pieces(meshes, &pieced_buckets, copied);
+        copied = self.add_pieces(meshes, &pieced_buckets, copied, slots_binding);
         if self.buckets.len() as u32 >= MAX_BUCKETS {
             return Err(RecordError::TooManySources { limit: MAX_BUCKETS });
         }
@@ -1948,6 +2071,11 @@ impl Layout {
                 self.marks[first as usize..(first + count) as usize].fill(COUNTED);
             }
         }
+        // A slot's slice holds its one copy, which the frame's count places, so it follows the
+        // frame's counts as a level's does.
+        for &bucket in &self.slot_buckets {
+            self.marks[bucket as usize] = COUNTED;
+        }
         self.fix_small_sets();
         self.level_buckets.clear();
         self.level_buckets.extend(
@@ -1979,16 +2107,22 @@ impl Layout {
         }
         self.bucket_records.clear();
         for bucket in &self.buckets {
-            // A piece's bucket holds its cone where a level's holds its switch and links.
-            let (value, next, fade, bias, switch) = match bucket.cone {
-                Some([x, y, z, cutoff]) => (x, y.to_bits(), z.to_bits(), cutoff, 0),
-                None => (
-                    bucket.levels.value,
-                    bucket.levels.next.map_or(0, |bucket| bucket + 1),
-                    bucket.levels.fade.map_or(0, |bucket| bucket + 1),
-                    bucket.bias,
-                    bucket.levels.switch as u32,
-                ),
+            // A piece's bucket holds its cone where a level's holds its switch and links. A slot's
+            // record holds its assigned copy's source plus one in the link's word, which the
+            // culling pass matches to send the copy to the slot.
+            let (value, next, fade, bias, switch) = if bucket.slot.is_some() {
+                (0.0, bucket.slot_copy, 0, 0.0, 0)
+            } else {
+                match bucket.cone {
+                    Some([x, y, z, cutoff]) => (x, y.to_bits(), z.to_bits(), cutoff, 0),
+                    None => (
+                        bucket.levels.value,
+                        bucket.levels.next.map_or(0, |bucket| bucket + 1),
+                        bucket.levels.fade.map_or(0, |bucket| bucket + 1),
+                        bucket.bias,
+                        bucket.levels.switch as u32,
+                    ),
+                }
             };
             self.bucket_records.extend_from_slice(&[
                 bucket.base,
@@ -2020,6 +2154,7 @@ impl Layout {
             ]);
         }
         self.records_dirty = Some(0..self.buckets.len() as u32);
+        self.slot_records_dirty = true;
         self.built = true;
         Ok(())
     }
@@ -2045,6 +2180,7 @@ impl Layout {
         meshes: &MeshStorage,
         pieced: &[(u32, u32, bool)],
         mut copied: u32,
+        slot_binding: u32,
     ) -> u32 {
         self.piece_parents.clear();
         self.first_piece_draw = self.draws.len() as u32;
@@ -2064,6 +2200,7 @@ impl Layout {
                     // A material that draws back faces shows the piece from either side.
                     cone: Some([ax, ay, az, if culls_back { cutoff } else { 1.0 }]),
                     pieces: None,
+                    slot: None,
                     levels: KeyLinks::default(),
                     ..whole
                 });
@@ -2100,6 +2237,7 @@ impl Layout {
             });
             self.piece_parents.push((parent, mesh - 1));
         }
+        self.add_slots(meshes, pieced, slot_binding, &mut copied);
         self.draw_order.clear();
         for (b, bucket) in self.buckets.iter().enumerate() {
             match (bucket.pieces, bucket.cone) {
@@ -2109,6 +2247,183 @@ impl Layout {
             }
         }
         copied
+    }
+
+    /// Adds the slots of the levels in `pieced`, up to [`SLOTS_PER_LEVEL`] a level and
+    /// [`MAX_SLOTS`] in all, finest levels first, each from the one page that every slot's indices
+    /// lie in. A level that a slot draws must split its indices into parts that follow each other in
+    /// that page, so one draw with a base vertex of 0 reaches them all. A level's slots follow
+    /// every piece, with a draw of their own in the view's indirect draws, a copy of the slice and
+    /// a run of the slot pass's group records. A layout whose builder gives no storage binding,
+    /// whose page is past it, or whose levels have no groups takes no slots.
+    fn add_slots(
+        &mut self,
+        meshes: &MeshStorage,
+        pieced: &[(u32, u32, bool)],
+        binding: u32,
+        copied: &mut u32,
+    ) {
+        if binding == 0 || !self.slot_levels.is_empty() {
+            return;
+        }
+        // The candidates: the levels with groups whose parts follow each other in one page that the
+        // binding reaches, by their level's error, so that the finest levels take the slots first.
+        let mut candidates: Vec<(f32, u32, u32, u32)> = Vec::new();
+        for &(parent, mesh, _) in pieced {
+            if meshes.groups(mesh - 1).is_empty() {
+                continue;
+            }
+            let Some(slot_mesh) = meshes.mesh(mesh - 1) else {
+                continue;
+            };
+            let parts = meshes.parts(slot_mesh, false);
+            let Some(&first) = parts.first() else {
+                continue;
+            };
+            let joined = parts
+                .windows(2)
+                .all(|pair| pair[0].first_index + pair[0].index_count == pair[1].first_index);
+            if !joined || parts.iter().any(|part| part.page != first.page) {
+                continue;
+            }
+            let Some(page) = meshes.pages().get(first.page as usize) else {
+                continue;
+            };
+            if page.buffer_bytes().1 > binding as u64 {
+                continue;
+            }
+            let error = self.buckets[parent as usize].levels.value;
+            candidates.push((error, parent, mesh, first.page));
+        }
+        candidates.sort_unstable_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let Some(&(_, _, _, page)) = candidates.first() else {
+            return;
+        };
+        self.slot_page = page;
+        self.slot_page_bytes = meshes
+            .pages()
+            .get(page as usize)
+            .map_or(0, |page| (page.buffer_bytes().1 as u32).next_multiple_of(4));
+        let mut runs = 0;
+        for (_, parent, mesh, level_page) in candidates {
+            if level_page != page || self.slot_buckets.len() as u32 >= MAX_SLOTS {
+                continue;
+            }
+            let slots = SLOTS_PER_LEVEL.min(MAX_SLOTS - self.slot_buckets.len() as u32);
+            let whole = self.buckets[parent as usize];
+            let culls_back = pieced
+                .iter()
+                .find(|entry| entry.0 == parent)
+                .is_none_or(|entry| entry.2);
+            let groups = meshes.groups(mesh - 1);
+            let pieces = meshes.pieces(mesh - 1);
+            let parts = meshes
+                .mesh(mesh - 1)
+                .map_or(&[][..], |slot| meshes.parts(slot, false));
+            let level = SlotLevel {
+                parent,
+                first_group: self.slot_groups.len() as u32,
+                group_count: groups.len() as u32,
+                first_piece: self.slot_pieces.len() as u32,
+                piece_count: pieces.len() as u32,
+                first_part: self.slot_parts.len() as u32,
+                part_count: parts.len() as u32,
+                first_slot: self.slot_buckets.len() as u32,
+                slots,
+            };
+            // A material that draws back faces shows its pieces from either side, so the record
+            // holds a cutoff that never culls.
+            let cutoff = |cone: [f32; 4]| {
+                if culls_back {
+                    cone
+                } else {
+                    [cone[0], cone[1], cone[2], 1.0]
+                }
+            };
+            for piece in pieces {
+                self.slot_pieces.push(crate::pieces::Piece {
+                    triangles: piece.triangles,
+                    sphere: piece.sphere,
+                    cone: cutoff(piece.cone),
+                });
+            }
+            for part in parts {
+                self.slot_parts
+                    .push([part.first_index, part.index_count, part.base_vertex, 0]);
+            }
+            // Each group's first index follows the triangles before it, in one run of the page, and
+            // each group takes the piece that holds it: groups split their pieces in the list's
+            // order, so the pieces and groups advance together.
+            let mut from = parts.first().map_or(0, |part| part.first_index);
+            let mut piece = 0usize;
+            let mut left = pieces.first().map_or(0, |piece| piece.triangles);
+            for group in groups {
+                while left == 0 && piece + 1 < pieces.len() {
+                    piece += 1;
+                    left = pieces[piece].triangles;
+                }
+                left = left.saturating_sub(group.triangles);
+                let cone = cutoff(group.cone);
+                self.slot_groups.push([
+                    from,
+                    group.triangles,
+                    piece as u32,
+                    0,
+                    group.sphere[0].to_bits(),
+                    group.sphere[1].to_bits(),
+                    group.sphere[2].to_bits(),
+                    group.sphere[3].to_bits(),
+                    cone[0].to_bits(),
+                    cone[1].to_bits(),
+                    cone[2].to_bits(),
+                    cone[3].to_bits(),
+                ]);
+                from += group.triangles * 3;
+            }
+            for _ in 0..slots {
+                let slot = self.slot_buckets.len() as u32;
+                let first_draw = self.draws.len() as u32;
+                self.draws.push(Draw {
+                    page,
+                    index_count: 0,
+                    first_index: 0,
+                    base_vertex: 0,
+                    vertices: None,
+                });
+                self.buckets.push(Bucket {
+                    base: *copied,
+                    capacity: 1,
+                    first_draw,
+                    draws: 1,
+                    center: whole.center,
+                    radius: whole.radius,
+                    pieces: None,
+                    cone: None,
+                    levels: KeyLinks::default(),
+                    slot: Some(slot),
+                    slot_copy: 0,
+                    ..whole
+                });
+                self.bucket_levels.push(whole.level);
+                self.slot_buckets.push((self.buckets.len() - 1) as u32);
+                self.slot_runs.push(runs);
+                runs += level.group_count;
+                *copied += 1;
+            }
+            // The culling pass finds the level's slots in the word of its first joint, which a
+            // pieced bucket that skins nothing never reads.
+            let tally = &mut self.buckets[parent as usize];
+            tally.first_joint = level.first_slot | (slots << 16);
+            self.slot_room
+                .resize(self.slot_room.len() + slots as usize, 0);
+            self.slot_levels.push(level);
+        }
+        // The buckets of the slot levels, which the frame's count offers a copy.
+        self.slot_level_of = vec![NO_SLOT_LEVEL; self.buckets.len()];
+        for (index, level) in self.slot_levels.iter().enumerate() {
+            self.slot_level_of[level.parent as usize] = index as u32;
+        }
+        self.slot_candidates = vec![u32::MAX; slot_candidate_words(self.slot_levels.len())];
     }
 
     /// The triangles that each mesh with pieces would draw whole in a view, and those that its
