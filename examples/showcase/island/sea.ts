@@ -297,9 +297,10 @@ export function createSea(ctx: SketchContext): { update(): void } {
 		ripple: 0.45,
 		// The reflection is soft on rippled water, so a coarser one shows no less. It draws every frame at
 		// High and Ultra, since a crisp mast steps visibly at a slower cadence while the camera moves.
+		// A phone draws it every fourth frame: at Low's smoothing the lag reads as softness in the water.
 		reflectionScale: 0.5,
 		layers: 1,
-		reflectionEvery: { high: 1, ultra: 1 },
+		reflectionEvery: { low: 4, medium: 2, high: 1, ultra: 1 },
 		// The route's camera always moves, and an old reflection lags behind the boats that it mirrors.
 		reflectionFollowsBudget: false,
 		softness: 2.5,
