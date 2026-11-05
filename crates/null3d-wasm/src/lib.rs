@@ -2149,17 +2149,17 @@ pub fn create_level_mesh(base: u32, indices: u32) -> u32 {
 /// A level of the live mesh `base`, which is split into parts, that draws the base's own vertices
 /// from triangles in the staging words, which the call frees: each triangle from a part that holds
 /// its three vertices, and the few that span the parts' seams from a copy of their vertices
-/// (`MeshStorage::add_split_level`). The words hold the level's `count` pieces, as
-/// `setMeshPieces` lays them out, then its `indices` indices, which name the base's own vertices.
-/// A level with pieces keeps its triangles' order, which must come part by part; one whose
-/// triangles do not draws them part by part, without pieces. Returns the mesh id.
+/// (`MeshStorage::add_split_level`). The words hold the level's `count` pieces and `groups`
+/// groups, as `setMeshPieces` lays them out, then its `indices` indices, which name the base's own
+/// vertices. A level with pieces keeps its triangles' order, which must come part by part; one
+/// whose triangles do not draws them part by part, without pieces. Returns the mesh id.
 #[wasm_bindgen(js_name = createSplitLevel)]
-pub fn create_split_level(base: u32, count: u32, indices: u32) -> u32 {
+pub fn create_split_level(base: u32, count: u32, groups: u32, indices: u32) -> u32 {
     use null3d_render::pieces::{MAX_PIECES, PIECE_WORDS};
     value_with_engine(|e| {
         let staging = std::mem::take(&mut e.staging);
         let count = count as usize;
-        let first = count * PIECE_WORDS;
+        let first = (count + groups as usize) * PIECE_WORDS;
         if count > MAX_PIECES || staging.len() < first + indices as usize {
             return Err(fail(codes::BAD_ARRAYS, [0, 0]));
         }
@@ -2172,8 +2172,9 @@ pub fn create_split_level(base: u32, count: u32, indices: u32) -> u32 {
         let added = match in_order {
             Some(id) => {
                 let pieces = staged_pieces(&staging, count);
+                let groups = staged_groups(&staging, count, groups as usize);
                 // Pieces that do not fit the level leave it drawing whole.
-                let _ = meshes.set_pieces(id, &pieces[..count]);
+                let _ = meshes.set_pieces(id, &pieces[..count], &groups);
                 Ok(id)
             }
             None => meshes.add_split_level(base, list, false),
@@ -2268,38 +2269,42 @@ pub fn replace_mesh_indices(mesh: u32, indices: u32) -> u32 {
 /// Gives the live mesh `mesh` the `count` pieces of its triangle list that TypeScript wrote into
 /// the staging words, which the call frees: each piece's triangles, then its bounding sphere and
 /// its cone of facings as the bits of 32-bit floats (`null3d_render::pieces::PIECE_WORDS` words a
-/// piece). The pieces follow the list's order, and the copies that draw the mesh cull each one from
-/// the next frame on. A mesh made in code takes them the same way as a file's, at any time after
-/// it is made. Returns 1 when the mesh takes them, and 0 when they do not fit its list, which then
-/// draws whole as before.
+/// piece. The pieces follow the list's order, and the copies that draw the mesh cull each one from
+/// the next frame on. `groups` groups of the pieces follow them in the same layout, in the list's
+/// order, and the groups of each piece hold its triangles and no other; groups that do not split
+/// the pieces leave the pieces without groups. A mesh made in code takes them the same way as a
+/// file's, at any time after it is made. Returns 1 when the mesh takes them, and 0 when they do
+/// not fit its list, which then draws whole as before.
 #[wasm_bindgen(js_name = setMeshPieces)]
-pub fn set_mesh_pieces(mesh: u32, count: u32) -> u32 {
-    give_pieces(mesh, count, 0)
+pub fn set_mesh_pieces(mesh: u32, count: u32, groups: u32) -> u32 {
+    give_pieces(mesh, count, groups, 0)
 }
 
-/// Gives the live mesh `mesh` `count` pieces over a triangle list of their own, which TypeScript
-/// wrote into the staging words after the pieces (as `setMeshPieces` lays them out): `indices`
+/// Gives the live mesh `mesh` `count` pieces and their `groups` groups over a triangle list of
+/// their own, which TypeScript wrote into the staging words after them (as `setMeshPieces` lays
+/// them out): `indices`
 /// indices that hold the mesh's triangles in piece order. The list shares the mesh's vertices, and
 /// the mesh keeps its own list, so a mesh made in code keeps the triangle order that raycasts and
 /// vertex updates read. A mesh split into parts takes a list whose triangles come part by part,
 /// as `createSplitLevel` draws them. A list that the mesh held before goes, with its pieces, as a
 /// destroyed mesh goes. Returns 1 when the mesh takes them, and 0 otherwise.
 #[wasm_bindgen(js_name = setMeshPieceList)]
-pub fn set_mesh_piece_list(mesh: u32, count: u32, indices: u32) -> u32 {
-    give_pieces(mesh, count, indices)
+pub fn set_mesh_piece_list(mesh: u32, count: u32, groups: u32, indices: u32) -> u32 {
+    give_pieces(mesh, count, groups, indices)
 }
 
 /// The pieces of `setMeshPieces`, over a list of `indices` indices of their own when it is not 0.
-fn give_pieces(mesh: u32, count: u32, indices: u32) -> u32 {
+fn give_pieces(mesh: u32, count: u32, groups: u32, indices: u32) -> u32 {
     use null3d_render::pieces::{MAX_PIECES, PIECE_WORDS};
     value_with_engine(|e| {
         let staging = std::mem::take(&mut e.staging);
         let count = count as usize;
-        let words = count * PIECE_WORDS;
+        let words = (count + groups as usize) * PIECE_WORDS;
         if count > MAX_PIECES || staging.len() < words + indices as usize {
             return Ok(0);
         }
         let pieces = staged_pieces(&staging, count);
+        let groups = staged_groups(&staging, count, groups as usize);
         let id = mesh.checked_sub(1).unwrap_or(u32::MAX);
         if indices != 0 {
             let old = e.renderer.settings_mut().meshes_mut().take_piece_list(id);
@@ -2311,10 +2316,10 @@ fn give_pieces(mesh: u32, count: u32, indices: u32) -> u32 {
         }
         let meshes = e.renderer.settings_mut().meshes_mut();
         let taken = if indices == 0 {
-            meshes.set_pieces(id, &pieces[..count])
+            meshes.set_pieces(id, &pieces[..count], &groups)
         } else {
             let list = &staging[words..words + indices as usize];
-            meshes.set_piece_list(id, list, &pieces[..count])
+            meshes.set_piece_list(id, list, &pieces[..count], &groups)
         }
         .is_ok();
         drop(staging);
@@ -2338,6 +2343,23 @@ fn staged_pieces(
         *piece = Piece::from_words(words);
     }
     pieces
+}
+
+/// The `groups` groups that follow `count` pieces in the staging words `staging`, in the pieces'
+/// layout. The caller checked that the words hold them.
+fn staged_groups(
+    staging: &[u32],
+    count: usize,
+    groups: usize,
+) -> Vec<null3d_render::pieces::Piece> {
+    use null3d_render::pieces::{PIECE_WORDS, Piece};
+    let first = count * PIECE_WORDS;
+    staging[first..first + groups * PIECE_WORDS]
+        .as_chunks::<PIECE_WORDS>()
+        .0
+        .iter()
+        .map(Piece::from_words)
+        .collect()
 }
 
 /// The failure of a mesh that the storage refused.

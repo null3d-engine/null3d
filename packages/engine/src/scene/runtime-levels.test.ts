@@ -119,7 +119,7 @@ function engine(options: { split?: boolean; format?: number; parts?: number } = 
 			]);
 			return staging;
 		},
-		setMeshPieceList: (mesh: number, count: number, indices: number) => {
+		setMeshPieceList: (mesh: number, count: number, _groups: number, indices: number) => {
 			record.pieceLists.push({ mesh, count, indices });
 			return 1;
 		},

@@ -10,8 +10,13 @@
 // three, and the triangles that no part holds whole draw last from a copy of their vertices. A
 // list's pieces then plan within each of those groups, so that the sorted list still comes part by
 // part and the core keeps its order. A piece may still cross from one part into the next.
+//
+// The pieces of a list of a few thousand triangles or more split into groups too, with
+// meshoptimizer's clusterizer (`planGroups`), so a near copy can cull its triangles at a finer
+// grain than its pieces.
 
 import {
+	type Clusterize,
 	facingPieces,
 	facingPiecesPay,
 	listBounds,
@@ -20,6 +25,7 @@ import {
 	PIECE_MAX,
 	pieceCount,
 	piecesInOrder,
+	planGroups,
 	planPieces,
 	shareOut,
 } from '../../levels/pieces.js';
@@ -60,13 +66,27 @@ export function triangleGroups(
 }
 
 /**
+ * `pieces` with the groups that `clusterize` splits them into, in their list's order, where the
+ * list is large enough for groups.
+ */
+function withGroups(
+	positions: Float32Array,
+	pieces: ListPieces,
+	clusterize: Clusterize | undefined,
+): ListPieces {
+	const groups = clusterize && planGroups(positions, pieces.indices, pieces.triangles, clusterize);
+	if (!groups) return pieces;
+	return { ...pieces, indices: groups.indices, groups: groups.counts, groupBounds: groups.bounds };
+}
+
+/**
  * The pieces of the triangle list `indices` over `positions`. A list under
  * `PIECE_LIST_MIN_TRIANGLES` triangles gets facing pieces where its `copies` and its facings make
  * them pay, unless it splits by `space` or into parts, and none otherwise. `split` names the parts
  * of a split mesh that hold each vertex, and the part count; the pieces then keep the order in
  * which the parts draw the list. Each group takes one piece at least, so a list of more groups than
  * `PIECE_MAX` takes one piece a group: the parts draw a range each without pieces too, so such
- * pieces add no draw.
+ * pieces add no draw. `clusterize` splits the pieces of a large enough list into groups.
  */
 export function planListPieces(
 	positions: Float32Array,
@@ -75,6 +95,20 @@ export function planListPieces(
 	cacheOrder: (indices: Uint32Array) => Uint32Array,
 	space = false,
 	copies = 1,
+	clusterize?: Clusterize,
+): ListPieces | undefined {
+	const pieces = listPiecesOf(positions, indices, split, cacheOrder, space, copies);
+	return pieces && withGroups(positions, pieces, clusterize);
+}
+
+/** The pieces of `planListPieces`, without their groups. */
+function listPiecesOf(
+	positions: Float32Array,
+	indices: Uint32Array,
+	split: { masks: Uint32Array; parts: number } | undefined,
+	cacheOrder: (indices: Uint32Array) => Uint32Array,
+	space: boolean,
+	copies: number,
 ): ListPieces | undefined {
 	const triangles = indices.length / 3;
 	const wanted = pieceCount(triangles);
