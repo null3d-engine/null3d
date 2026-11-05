@@ -1432,14 +1432,18 @@ class Mesher {
 			Math.max(clear, 0.5 * this.tube.edge, LEADER_BEND * mean * turn),
 		);
 		this.bend(led, parentRings, last, pt, end, sides, rings);
+		// The bend's rings blend from the parent's own circle to the leader's, like a weld's.
+		rings.welded = rings.count;
 		return { context: led, end, sides };
 	}
 
 	/**
-	 * The rings by which a fork's leader bends from its parent's last ring onto its own line: each
-	 * side runs on a curve that leaves the parent's ring along the parent's line and meets the
-	 * leader's first plain ring along the leader's, so the joint is one smooth elbow with no fold.
-	 * As many rings stand on the bend as the wood's turn between rings asks.
+	 * The rings by which a fork's leader bends from its parent's last ring onto its own line. The
+	 * axis runs on a curve that leaves the parent's ring along the parent's line and meets the
+	 * leader's first plain ring along the leader's, and each ring is a circle about it, so the joint
+	 * is one smooth elbow with no fold. Each side's bark `v` runs over the bend in step with the
+	 * length of its own line, so the plates stay square round the ring instead of shearing across
+	 * the long side. As many rings stand on the bend as the wood's turn between rings asks.
 	 */
 	private bend(
 		context: AxisContext,
@@ -1467,25 +1471,27 @@ class Mesher {
 		const radius = this.rho(context, end, 0);
 		const vEnd = this.vAt(context, end);
 		const trig = ringTrig(sides);
-		// Each side's ends: on the parent's ring, and on the leader's first plain ring.
-		const from = new Float64Array(sides * 3);
-		const to = new Float64Array(sides * 3);
-		const out = new Float64Array(sides * 3);
+		const bends = steps - 1;
 		const centreFrom = parentRings.centre.subarray(c3, c3 + 3);
+		// The leader's first plain ring, which the bend's last strip reaches on every side.
+		const tip = new Float64Array(sides * 3);
 		for (let j = 0; j < sides; j++) {
 			const c = trig[j * 2] as number;
 			const n = trig[j * 2 + 1] as number;
-			for (let k = 0; k < 3; k++) {
-				from[j * 3 + k] = parentRings.position[(first + j) * 3 + k] as number;
-				out[j * 3 + k] = c * (f.normal[k] as number) + n * (f.binormal[k] as number);
-				to[j * 3 + k] = (f.position[k] as number) + radius * (out[j * 3 + k] as number);
-			}
+			for (let k = 0; k < 3; k++)
+				tip[j * 3 + k] =
+					(f.position[k] as number) +
+					radius * (c * (f.normal[k] as number) + n * (f.binormal[k] as number));
 		}
 		const centre = new Float64Array(3);
 		const tangent = new Float64Array(3);
 		const normal = new Float64Array(3);
 		const binormal = new Float64Array(3);
-		const point = new Float64Array(3);
+		// The bend's rings laid out first, so each side's bark can follow the length of its own line.
+		const frames = new Float64Array(bends * 13);
+		const rhos = new Float64Array(bends);
+		const cells = new Float64Array(bends * sides * 3);
+		const normals = new Float64Array(bends * sides * 3);
 		const hermite = (
 			a: ArrayLike<number>,
 			ai: number,
@@ -1510,9 +1516,8 @@ class Mesher {
 					h01 * (b[bi + k] as number) +
 					h11 * reach * (lt[k] as number);
 		};
-		const v0 = parentRings.v[last] as number;
-		for (let step = 1; step < steps; step++) {
-			const u = step / steps;
+		for (let b = 0; b < bends; b++) {
+			const u = (b + 1) / steps;
 			hermite(centreFrom, 0, f.position, 0, u, centre);
 			let tl = 0;
 			for (let k = 0; k < 3; k++) {
@@ -1542,23 +1547,107 @@ class Mesher {
 			binormal[2] =
 				(tangent[0] as number) * (normal[1] as number) -
 				(tangent[1] as number) * (normal[0] as number);
-			const v = (1 - u) * (v0 - context.shift) + u * vEnd;
-			rings.begin(sides, u * end, centre, tangent, normal, binormal, v);
+			// The girth eases from the parent's own to the leader's, so the fork's collar swells wide
+			// at its base and the surfaces meet without a step at either end of the bend.
+			const ease = u * u * (3 - 2 * u);
+			const rho = mean + (radius - mean) * ease;
+			rhos[b] = rho;
+			const fr = b * 13;
+			frames[fr] = u * end;
+			frames.set(centre, fr + 1);
+			frames.set(tangent, fr + 4);
+			frames.set(normal, fr + 7);
+			frames.set(binormal, fr + 10);
+			// The surface tilts along the taper, so a ring wider than the next shades as a cone.
+			const slope = ((radius - mean) * 6 * u * (1 - u)) / Math.max(end, 1e-6);
+			for (let j = 0; j < sides; j++) {
+				const c = trig[j * 2] as number;
+				const n = trig[j * 2 + 1] as number;
+				const at = (b * sides + j) * 3;
+				let rx = 0;
+				let ry = 0;
+				let rz = 0;
+				for (let k = 0; k < 3; k++) {
+					const radial = c * (normal[k] as number) + n * (binormal[k] as number);
+					cells[at + k] = (centre[k] as number) + rho * radial;
+					const value = radial - slope * (tangent[k] as number);
+					if (k === 0) rx = value;
+					else if (k === 1) ry = value;
+					else rz = value;
+				}
+				const l = Math.sqrt(rx * rx + ry * ry + rz * rz) || 1;
+				// The normal turns from the parent's own to the cone's over the bend, so the elbow
+				// shades as one surface with the parent below it.
+				const px = parentRings.vertexNormal[(first + j) * 3] as number;
+				const py = parentRings.vertexNormal[(first + j) * 3 + 1] as number;
+				const pz = parentRings.vertexNormal[(first + j) * 3 + 2] as number;
+				normals[at] = (1 - u) * px + (u * rx) / l;
+				normals[at + 1] = (1 - u) * py + (u * ry) / l;
+				normals[at + 2] = (1 - u) * pz + (u * rz) / l;
+			}
+		}
+		// Each side's v runs from the parent's own to the leader's own in step with its line length.
+		const lengths = new Float64Array(bends + 1);
+		const vs = new Float64Array(bends * sides);
+		for (let j = 0; j < sides; j++) {
+			const i = first + j;
+			lengths[0] = 0;
+			for (let b = 0; b < bends; b++) {
+				const at = (b * sides + j) * 3;
+				// The first ring of the bend starts on the parent's own ring.
+				const back = b === 0 ? -1 : at - sides * 3;
+				const px = back < 0 ? (parentRings.position[i * 3] as number) : (cells[back] as number);
+				const py =
+					back < 0 ? (parentRings.position[i * 3 + 1] as number) : (cells[back + 1] as number);
+				const pz =
+					back < 0 ? (parentRings.position[i * 3 + 2] as number) : (cells[back + 2] as number);
+				lengths[b + 1] =
+					(lengths[b] as number) +
+					Math.sqrt(
+						((cells[at] as number) - px) ** 2 +
+							((cells[at + 1] as number) - py) ** 2 +
+							((cells[at + 2] as number) - pz) ** 2,
+					);
+			}
+			// Past the last bend ring the side runs on to its own first plain ring, which holds the
+			// leader's own v, so every side ends at the same v there.
+			const lastAt = ((bends - 1) * sides + j) * 3;
+			const tail = Math.sqrt(
+				((tip[j * 3] as number) - (cells[lastAt] as number)) ** 2 +
+					((tip[j * 3 + 1] as number) - (cells[lastAt + 1] as number)) ** 2 +
+					((tip[j * 3 + 2] as number) - (cells[lastAt + 2] as number)) ** 2,
+			);
+			const total = (lengths[bends] as number) + tail || 1;
+			const v0 = (parentRings.vv[i] as number) - context.shift;
+			for (let b = 0; b < bends; b++)
+				vs[b * sides + j] = v0 + (vEnd - v0) * ((lengths[b + 1] as number) / total);
+		}
+		for (let b = 0; b < bends; b++) {
+			const fr = b * 13;
+			let v = 0;
+			for (let j = 0; j < sides; j++) v += vs[b * sides + j] as number;
+			rings.begin(
+				sides,
+				frames[fr] as number,
+				frames.subarray(fr + 1, fr + 4),
+				frames.subarray(fr + 4, fr + 7),
+				frames.subarray(fr + 7, fr + 10),
+				frames.subarray(fr + 10, fr + 13),
+				v / sides,
+			);
 			for (let j = 0; j < sides; j++) {
 				const i = first + j;
-				hermite(from, j * 3, to, j * 3, u, point);
-				const rho = (1 - u) * (parentRings.rho[i] as number) + u * radius;
+				const at = (b * sides + j) * 3;
+				const u = (b + 1) / steps;
 				rings.vertex(
-					point[0] as number,
-					point[1] as number,
-					point[2] as number,
-					(1 - u) * (parentRings.vertexNormal[i * 3] as number) + u * (out[j * 3] as number),
-					(1 - u) * (parentRings.vertexNormal[i * 3 + 1] as number) +
-						u * (out[j * 3 + 1] as number),
-					(1 - u) * (parentRings.vertexNormal[i * 3 + 2] as number) +
-						u * (out[j * 3 + 2] as number),
-					rho,
-					(1 - u) * ((parentRings.vv[i] as number) - context.shift) + u * vEnd,
+					cells[at] as number,
+					cells[at + 1] as number,
+					cells[at + 2] as number,
+					normals[at] as number,
+					normals[at + 1] as number,
+					normals[at + 2] as number,
+					rhos[b] as number,
+					vs[b * sides + j] as number,
 					0,
 					(1 - u) * (parentRings.pipe[i] as number) + u * f.radius,
 					u * end,

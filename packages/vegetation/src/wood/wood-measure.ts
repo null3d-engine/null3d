@@ -24,6 +24,86 @@ function position(mesh: MeshArrays, i: number): number[] {
 	];
 }
 
+/** How a fork's leader takes its parent's last ring: the worst difference, over the ring. */
+export interface LeaderMeasure {
+	readonly child: number;
+	readonly parent: number;
+	/** The largest distance between matching vertices, in metres. */
+	readonly gap: number;
+	/** The largest angle between matching vertex normals, as a cosine difference. */
+	readonly normal: number;
+	/** The largest difference of the bark's `u`, in metres. */
+	readonly u: number;
+	/** The largest difference of the bark's `v`, in metres, modulo the bark's repeat. */
+	readonly v: number;
+}
+
+/**
+ * Measures each fork leader's first ring against the parent's last ring, which it takes as its
+ * own: the two must agree in position, normal and bark coordinates, so the joint draws as one
+ * surface with no crease or bark seam.
+ *
+ * @param report The mesher's report.
+ * @returns One measure per leader.
+ */
+export function measureLeaders(report: WoodReport): LeaderMeasure[] {
+	const { mesh, welds, parents, axisRings } = report;
+	const measures: LeaderMeasure[] = [];
+	for (const [child, rings] of axisRings) {
+		if (!rings.shared) continue;
+		const parent = parents.get(child) ?? -1;
+		const run = welds.axisFirst.get(child);
+		const parentRun = welds.axisFirst.get(parent);
+		if (parent < 0 || !run || !parentRun) continue;
+		const sides = rings.sides[0] as number;
+		const first = run[0];
+		// The parent's ring that the leader copied: it holds the leader's first vertex.
+		let match = -1;
+		let nearest = Number.POSITIVE_INFINITY;
+		for (let i = parentRun[0]; i < parentRun[0] + parentRun[1]; i++) {
+			const d = Math.hypot(
+				(mesh.positions[i * 3] as number) - (mesh.positions[first * 3] as number),
+				(mesh.positions[i * 3 + 1] as number) - (mesh.positions[first * 3 + 1] as number),
+				(mesh.positions[i * 3 + 2] as number) - (mesh.positions[first * 3 + 2] as number),
+			);
+			if (d < nearest) {
+				nearest = d;
+				match = i;
+			}
+		}
+		if (match < 0) continue;
+		let gap = 0;
+		let normal = 0;
+		let u = 0;
+		let v = 0;
+		for (let j = 0; j <= sides; j++) {
+			const a = first + j;
+			const b = match + j;
+			gap = Math.max(
+				gap,
+				Math.hypot(
+					(mesh.positions[a * 3] as number) - (mesh.positions[b * 3] as number),
+					(mesh.positions[a * 3 + 1] as number) - (mesh.positions[b * 3 + 1] as number),
+					(mesh.positions[a * 3 + 2] as number) - (mesh.positions[b * 3 + 2] as number),
+				),
+			);
+			normal = Math.max(
+				normal,
+				Math.hypot(
+					(mesh.normals[a * 3] as number) - (mesh.normals[b * 3] as number),
+					(mesh.normals[a * 3 + 1] as number) - (mesh.normals[b * 3 + 1] as number),
+					(mesh.normals[a * 3 + 2] as number) - (mesh.normals[b * 3 + 2] as number),
+				),
+			);
+			u = Math.max(u, Math.abs((mesh.uvs[a * 2] as number) - (mesh.uvs[b * 2] as number)));
+			const dv = Math.abs((mesh.uvs[a * 2 + 1] as number) - (mesh.uvs[b * 2 + 1] as number));
+			v = Math.max(v, Math.abs(dv - Math.round(dv / report.vPeriod) * report.vPeriod));
+		}
+		measures.push({ child, parent, gap, normal, u, v });
+	}
+	return measures;
+}
+
 /**
  * Measures every weld: each child's first ring against its parent's triangles.
  *

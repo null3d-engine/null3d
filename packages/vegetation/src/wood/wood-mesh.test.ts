@@ -21,7 +21,7 @@ import { axisPath, KINK_BEND, roundKinks } from './frames';
 import { ParentSurface } from './junction';
 import { ringArcs, ringTurn, tubeDetail } from './tube';
 import { tilesRound } from './uv';
-import { measureDensity, measureWelds } from './wood-measure';
+import { measureDensity, measureLeaders, measureWelds } from './wood-measure';
 import { meshWood, meshWoodReport, WOOD_RADIUS_RANGE } from './wood-mesh';
 import { testMeshInput, testOak, testRecord, testSkeleton } from './wood-test-tree';
 
@@ -75,6 +75,51 @@ describe('the wood mesher', () => {
 					),
 				);
 			expect(deepest).toBeGreaterThan(-0.001);
+		}
+	});
+
+	it('gives every fork leader its parent’s last ring in position, normal and bark', () => {
+		for (const report of reports) {
+			const leaders = measureLeaders(report);
+			expect(leaders.length).toBeGreaterThan(0);
+			for (const leader of leaders) {
+				expect(leader.gap).toBeLessThan(1e-9);
+				expect(leader.normal).toBeLessThan(1e-9);
+				expect(leader.u).toBeLessThan(1e-9);
+				expect(leader.v).toBeLessThan(1e-9);
+			}
+		}
+	});
+
+	it('keeps a fork leader’s bend rings round, so the bark does not shear across the joint', () => {
+		for (const report of reports) {
+			let bends = 0;
+			for (const [, rings] of report.axisRings) {
+				if (!rings.shared) continue;
+				for (let r = 1; r < rings.count; r++) {
+					const sides = rings.sides[r] as number;
+					const first = rings.first[r] as number;
+					const centre = [0, 0, 0];
+					for (let j = 0; j < sides; j++)
+						for (let k = 0; k < 3; k++)
+							centre[k] =
+								(centre[k] as number) + (rings.position[(first + j) * 3 + k] as number) / sides;
+					let least = Number.POSITIVE_INFINITY;
+					let most = 0;
+					for (let j = 0; j < sides; j++) {
+						const d = Math.hypot(
+							(rings.position[(first + j) * 3] as number) - (centre[0] as number),
+							(rings.position[(first + j) * 3 + 1] as number) - (centre[1] as number),
+							(rings.position[(first + j) * 3 + 2] as number) - (centre[2] as number),
+						);
+						least = Math.min(least, d);
+						most = Math.max(most, d);
+					}
+					expect((most - least) / most).toBeLessThan(0.01);
+					bends++;
+				}
+			}
+			expect(bends).toBeGreaterThan(0);
 		}
 	});
 
