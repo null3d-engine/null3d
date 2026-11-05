@@ -2313,6 +2313,77 @@ export function terrainShadowPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * How long one visit of the Island phones study may take: a phone loads the Island's production
+ * build, builds its town, trees and ground, settles, and measures up to nineteen windows.
+ */
+const ISLAND_PHONES_TIMEOUT_SECONDS = 1200;
+
+/** The study page's address in its production build, with the switches of one visit. */
+const islandPhonesPath = (switches: string) =>
+	loadPath(
+		{ kind: 'warm', key: runnerKey('island-phones') },
+		`bench/research/island-phones/pages/island.html?${switches}`,
+	);
+
+/** Each part of the Island hidden in turn, with the whole scene between them. */
+const ISLAND_PARTS = [
+	'town',
+	'trees.shrubs.cypress',
+	'cards.casters',
+	'grass',
+	'ground',
+	'reflection',
+	'shadows',
+];
+
+/** Trial changes, each for one window between whole-scene windows. */
+const ISLAND_TRIALS = [
+	'try:cards1',
+	'casters',
+	'try:shadow300',
+	'try:shadow150',
+	'try:reflect4',
+	'try:lod4',
+];
+
+/** Steps of a visit that measures each of `steps` between whole-scene windows. */
+const between = (steps: readonly string[]) =>
+	['base', ...steps.flatMap((step) => [step, 'base'])].join(',');
+
+/**
+ * The Island's town view on a phone, for the phones study (bench/research/island-phones). The visits
+ * run in this order: the cloud runs' Medium at one pixel per CSS pixel, which brackets the run
+ * against the terrain-batching figures; the preset and scale that a visitor gets, with the governor
+ * on; Low at the phone's own pixel ratio with each part hidden in turn, then with each trial change;
+ * Low's start-time choices in turns (as it ships, moment transparency off, the depth prepass on, as
+ * it ships); and the cloud runs' Medium again. Each visit measures windows of five seconds, so a
+ * phone that draws 10 to 20 frames a second still times several frames in each.
+ */
+export function islandPhonesPlan(): PlanItem<Check>[] {
+	const own = 'fill&dpr=preset&warm=30&seconds=5';
+	const visits: [string, string][] = [
+		['cloud-medium-1', 'preset=medium&fill&dpr=1&warm=30&seconds=5&steps=base,base,base'],
+		['visitor', `preset=auto&governor=on&${own}&steps=base,base,base`],
+		['low-parts', `preset=low&${own}&steps=${between(ISLAND_PARTS)}`],
+		['low-trials', `preset=low&${own}&steps=${between(ISLAND_TRIALS)}`],
+		['low-start-1', `preset=low&${own}&steps=base,base,base`],
+		['low-mt0', `preset=low&mt=0&${own}&steps=base,base,base`],
+		['low-prepass1', `preset=low&prepass=1&${own}&steps=base,base,base`],
+		['low-start-2', `preset=low&${own}&steps=base,base,base`],
+		['cloud-medium-2', 'preset=medium&fill&dpr=1&warm=30&seconds=5&steps=base,base,base'],
+	];
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...visits.map(([id, switches]) => ({
+			id: `island-phones-${id}`,
+			path: islandPhonesPath(switches),
+			timeoutSeconds: ISLAND_PHONES_TIMEOUT_SECONDS,
+			check: { kind: 'probe', tier: 'webgl2' } as Check,
+		})),
+	];
+}
+
+/**
  * One page for the bisect of the Creek stall on Apple WebGPU: Creek at Low on core WebGPU, with the
  * page's own switches naming what to measure and which shared effects to turn off. The time limit is
  * short, so a page that stalls ends its session instead of holding it for the full limit.
@@ -3271,6 +3342,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'vegetation-grass': vegetationGrassPlan,
 	terrain: terrainPlan,
 	'terrain-shadow': terrainShadowPlan,
+	'island-phones': islandPhonesPlan,
 	'tree-generation': treeGenerationPlan,
 	'vegetation-scatter': vegetationScatterPlan,
 	'canvas-cost': canvasCostPlan,
