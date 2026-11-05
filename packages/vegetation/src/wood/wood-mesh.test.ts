@@ -16,7 +16,9 @@ import {
 } from '../lod/quantise';
 import type { MeshLevel } from '../stages';
 import { stemSection } from './flare';
+import { axisPath, KINK_BEND, roundKinks } from './frames';
 import { ParentSurface } from './junction';
+import { ringArcs, ringTurn, tubeDetail } from './tube';
 import { tilesRound } from './uv';
 import { measureDensity, measureWelds } from './wood-measure';
 import { meshWood, meshWoodReport, WOOD_RADIUS_RANGE } from './wood-mesh';
@@ -185,8 +187,10 @@ describe('the wood mesher', () => {
 		for (const [level, report] of reports.entries()) {
 			const keep = level === 0 ? 255 : (record.lod.woodOrders[level - 1] as number);
 			// Surface roots have no skeleton axis: their numbers are below zero.
-			for (const axis of report.axisRings.keys())
+			for (const key of report.axisRings.keys()) {
+				const axis = report.axisOf.get(key) as number;
 				if (axis >= 0) expect(oak.axes.order[axis] as number).toBeLessThanOrEqual(keep);
+			}
 		}
 	});
 
@@ -229,6 +233,66 @@ describe('the wood mesher', () => {
 		};
 		expect(digest(0)).toBe(digest(0));
 		expect(digest(1)).toBe(digest(1));
+	});
+});
+
+/** Three points that kink by an angle in degrees at the middle one, a metre apart, of one radius. */
+function kinked(degrees: number, radius: number) {
+	const a = (degrees * Math.PI) / 180;
+	return {
+		points: new Float64Array([0, 0, 0, 0, 1, 0, Math.sin(a), 1 + Math.cos(a), 0]),
+		radii: new Float64Array([radius, radius, radius]),
+	};
+}
+
+/** The sharpest turn, in radians, between two spans of a list of points. */
+function sharpestTurn(points: Float64Array, count: number): number {
+	let most = 0;
+	for (let i = 1; i < count - 1; i++) {
+		const u = [0, 1, 2].map(
+			(k) => (points[i * 3 + k] as number) - (points[(i - 1) * 3 + k] as number),
+		);
+		const v = [0, 1, 2].map(
+			(k) => (points[(i + 1) * 3 + k] as number) - (points[i * 3 + k] as number),
+		);
+		const dot =
+			(u[0] as number) * (v[0] as number) +
+			(u[1] as number) * (v[1] as number) +
+			(u[2] as number) * (v[2] as number);
+		most = Math.max(most, Math.acos(Math.min(1, dot / (Math.hypot(...u) * Math.hypot(...v)))));
+	}
+	return most;
+}
+
+describe('the joints inside an axis', () => {
+	it('rounds a kink in thick wood into a bend, and keeps the sharp crook of a twig', () => {
+		const thick = kinked(30, 0.1);
+		const round = roundKinks(thick.points, thick.radii, 3, KINK_BEND);
+		expect(round.count).toBeGreaterThan(3);
+		expect(sharpestTurn(round.points, round.count)).toBeLessThan(0.2);
+		// The ends stay where they were.
+		expect(Array.from(round.points.subarray(0, 3))).toEqual([0, 0, 0]);
+		expect(Array.from(round.points.subarray(-3))).toEqual(Array.from(thick.points.subarray(6)));
+		const twig = kinked(30, 0.0002);
+		expect(roundKinks(twig.points, twig.radii, 3, KINK_BEND).count).toBe(3);
+	});
+
+	it('rings thick wood closely round a bend, so it curves with no crease', () => {
+		const tube = tubeDetail(0, 'high');
+		const arcsOf = (radius: number) => {
+			const { points, radii } = kinked(30, radius);
+			const round = roundKinks(points, radii, 3, KINK_BEND);
+			return ringArcs(
+				axisPath(round.points, round.radii, round.count, [1, 0, 0]),
+				0,
+				() => radius,
+				tube,
+				() => false,
+			).length;
+		};
+		expect(ringTurn(0.3, tube)).toBeLessThan(ringTurn(0.02, tube));
+		expect(ringTurn(0.02, tube)).toBe(tube.maxTurn);
+		expect(arcsOf(0.3)).toBeGreaterThan(arcsOf(0.02));
 	});
 });
 
@@ -357,6 +421,21 @@ describe('the wood of the grown oak', () => {
 		},
 		scaledBudget(30_000),
 	);
+
+	it('divides an axis into a fork where a codominant child leaves short of its end', () => {
+		const count = skeleton.axes.count;
+		let runOn = 0;
+		for (const [key, parent] of report.parents)
+			if (key >= count) {
+				runOn++;
+				// The wood that runs on past the fork rises from the end of the axis's own wood below it,
+				// or, where it is the thinner arm, from the thick child that leads the fork.
+				const axis = report.axisOf.get(key) as number;
+				const from = report.axisOf.get(parent) as number;
+				expect(from === axis || skeleton.axes.parent[from] === axis).toBe(true);
+			}
+		expect(runOn).toBeGreaterThan(0);
+	});
 
 	it('keeps v within the 16 bits that hold it', () => {
 		let most = 0;

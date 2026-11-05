@@ -78,10 +78,18 @@ review, so the cap follows the oak's figures.
 - **Forks.** A thick child at its parent's end leads a fork. Thick means half the parent's girth or
   more. It takes the parent's last ring as its own first ring. It eases from the parent's girth to
   its own, and carries on the parent's bark tiles. A thinner child at that end hangs on the thickest
-  leader.
+  leader. A side child of three quarters of the girth or more, short of the parent's end, is
+  codominant: the parent's wood ends there as a fork, and its own wood runs on past it as a second
+  piece. Both arms rise from the fork as leaders, so a dividing limb draws as one fork, not as a
+  limb pushed through the side of another. Each leader bends from its parent's line onto its own
+  over a curve of one and a half girths per radian of turn, with rings on the curve, so its inner
+  side never folds.
 - **Blend rings** run from the seam to the child's own circle, closer together near the seam. Each
   side's fillet and the record's collar ease from that side's own seam. A blend vertex stays at least
-  half a millimeter outside the parent. The normal turns from the parent's to the child's.
+  half a millimeter outside the parent. The normal turns from the parent's to the child's. Each
+  side's `v` runs over the blend in step with that side's own length. A shared run stretched the
+  bark up to 90 times on the long side of a steep child; on the oak, stretched bark near side joints
+  fell from 9.7 to 1.9 square meters.
 - **Bark.** The bark's `v` runs in meters, from the parent's `v` at the weld. A child's `v` may start
   whole repeats lower. A repeat holds a whole number of every layer's tiles, and the lower start keeps
   `v` within its 16 bits. The bark's `u` takes whole tiles where they keep plates within a quarter of their width.
@@ -93,6 +101,13 @@ review, so the cap follows the oak's figures.
 - **Rings** stand where a straight, evenly tapering piece stops fitting the axis. The piece may
   stray by a tenth of the radius or 2 per cent of its length. Rings stand on the axis's nodes where
   they can. Sides follow the girth, up to 96. Thin wood takes three or four sides and a plain point.
+  Thick wood turns by less between two rings, down to about 6 degrees, so its bends draw as curves.
+- **Kinks.** Each kink in an axis is rounded over a bend of six of the wood's radii. On each side,
+  the bend takes at most 45 per cent of the internode. A twig whose rounding would be under 2 mm
+  keeps its sharp crook. Without the rounding, a kink of 30 degrees in a limb 17 cm across drew as
+  a mitred pipe in close-up. The closer rings on thick wood add about 19 per cent to the oak's
+  nearest wood. With the forks and the rounding, that wood still holds 7 per cent fewer triangles
+  than before, 199,000 on variant 0.
 - **Parts.** A mesh of more than 65,536 vertices is split into parts that each hold at most that
   many, so every part's indices are 16-bit. That saves about a third of the wood's bytes.
 - **Surface roots** leave from the buttress lobes, half buried along the ground, then dive. Each is

@@ -108,6 +108,88 @@ function catmullRom(
 	}
 }
 
+/** The radius of the bend that rounds a kink in a wood's axis, in the wood's radii there. */
+export const KINK_BEND = 6;
+/** Radians of a kink below which a point stands as it is. */
+const LEAST_KINK = 0.05;
+/** The share of each internode beside a kink that the kink's rounding may take. */
+const KINK_REACH = 0.45;
+/** Metres of rounding below which a kink stands as it is: a twig keeps its sharp crook. */
+const LEAST_ROUNDING = 0.002;
+/** Radians the rounding of a kink turns between two of its points. */
+const KINK_STEP = 0.2;
+
+/**
+ * The points of an axis with each kink rounded over a bend whose radius is a number of the wood's
+ * radii there, so thick wood bends as an elbow and never folds on its inner side, while a twig
+ * keeps its sharp crook. A kink's bend takes at most a share of the internodes beside it, so the
+ * axis passes near each of its points; the first and last points stay where they are.
+ *
+ * @param points 3 numbers a point, base first.
+ * @param radii The pipe radius at each point.
+ * @param count The points.
+ * @param bend The bend's radius in the wood's radii.
+ * @returns The rounded points, their radii and their count.
+ */
+export function roundKinks(
+	points: Float64Array,
+	radii: Float64Array,
+	count: number,
+	bend: number,
+): { points: Float64Array; radii: Float64Array; count: number } {
+	if (count < 3) return { points, radii, count };
+	const out: number[] = [points[0] as number, points[1] as number, points[2] as number];
+	const outRadii: number[] = [radii[0] as number];
+	const into = [0, 0, 0];
+	const onto = [0, 0, 0];
+	for (let i = 1; i < count - 1; i++) {
+		let before = 0;
+		let after = 0;
+		for (let k = 0; k < 3; k++) {
+			into[k] = (points[i * 3 + k] as number) - (points[(i - 1) * 3 + k] as number);
+			onto[k] = (points[(i + 1) * 3 + k] as number) - (points[i * 3 + k] as number);
+			before += (into[k] as number) ** 2;
+			after += (onto[k] as number) ** 2;
+		}
+		before = Math.sqrt(before);
+		after = Math.sqrt(after);
+		const r = radii[i] as number;
+		let cosine = 0;
+		if (before > 0 && after > 0)
+			for (let k = 0; k < 3; k++)
+				cosine += ((into[k] as number) * (onto[k] as number)) / (before * after);
+		const kink = Math.acos(Math.min(1, Math.max(-1, cosine)));
+		const reach = Math.min(bend * r * Math.tan(kink / 2), KINK_REACH * before, KINK_REACH * after);
+		if (kink < LEAST_KINK || !(reach >= LEAST_ROUNDING)) {
+			for (let k = 0; k < 3; k++) out.push(points[i * 3 + k] as number);
+			outRadii.push(r);
+			continue;
+		}
+		// The bend runs on a quadratic curve from a point on the internode before to one on the
+		// internode after, with the kink's point as its control: tangent to both internodes.
+		const steps = Math.max(2, Math.ceil(kink / KINK_STEP));
+		const rA = r + ((radii[i - 1] as number) - r) * (reach / before);
+		const rB = r + ((radii[i + 1] as number) - r) * (reach / after);
+		for (let j = 0; j <= steps; j++) {
+			const t = j / steps;
+			for (let k = 0; k < 3; k++) {
+				const p = points[i * 3 + k] as number;
+				const a = p - ((into[k] as number) / before) * reach;
+				const b = p + ((onto[k] as number) / after) * reach;
+				out.push((1 - t) * (1 - t) * a + 2 * t * (1 - t) * p + t * t * b);
+			}
+			outRadii.push(rA + (rB - rA) * t);
+		}
+	}
+	for (let k = 0; k < 3; k++) out.push(points[(count - 1) * 3 + k] as number);
+	outRadii.push(radii[count - 1] as number);
+	return {
+		points: new Float64Array(out),
+		radii: new Float64Array(outRadii),
+		count: outRadii.length,
+	};
+}
+
 /**
  * The dense path through an axis's points, with frames by parallel transport.
  *

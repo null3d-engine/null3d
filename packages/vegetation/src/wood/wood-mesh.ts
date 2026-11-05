@@ -23,8 +23,10 @@ import {
 	axisPath,
 	emptyFrame,
 	frameAt,
+	KINK_BEND,
 	type PathFrame,
 	type PathSample,
+	roundKinks,
 	sampleAt,
 } from './frames';
 import {
@@ -36,7 +38,10 @@ import {
 } from './junction';
 import {
 	AxisRings,
+	bendRings,
+	CODOMINANT,
 	heldSides,
+	LEADER_SHARE,
 	ringArcs,
 	ringTrig,
 	sidesFor,
@@ -63,8 +68,11 @@ const FORK_DOME = 0.3;
 /** The most radians a leader's first ring is reckoned to tilt from its parent's last. */
 const LEADER_TILT = 1.2;
 
-/** A child at its parent's end leads a fork when it has at least this share of the parent's girth. */
-const LEADER_SHARE = 0.5;
+/**
+ * The radius of the bend by which a fork's leader turns from its parent's line onto its own, in the
+ * parent's radii, so its inner side never folds.
+ */
+const LEADER_BEND = 1.5;
 
 /** The fillet where a child meets its parent, in child radii. */
 const FILLET_RADII = 0.8;
@@ -91,6 +99,11 @@ const BLEND_RINGS = [5, 3, 2] as const;
 interface WoodAxis {
 	/** The skeleton's axis. */
 	readonly axis: number;
+	/**
+	 * The axis's key in the mesher's reports: the skeleton's axis, or a number past the skeleton's
+	 * axes for the wood that runs on past a fork where the axis divides.
+	 */
+	readonly key: number;
 	/** The index of its parent in the list, or −1 for a stem. */
 	readonly parent: number;
 	/** The global wind record. */
@@ -126,26 +139,19 @@ function keptNodes(skeleton: MacroSkeleton): Int32Array {
 	return kept;
 }
 
-/** Whether an axis leaves its parent at the parent's last kept node. */
-function atEnd(skeleton: MacroSkeleton, axis: number, parentLast: number): boolean {
-	const axes = skeleton.axes;
-	const parentNode = axes.parentNode[axis] as number;
-	return (
-		parentNode === parentLast ||
-		(parentNode === parentLast - 1 && (axes.parentT[axis] as number) >= 1 - 1e-6)
-	);
-}
-
 /**
- * The axes to mesh at a level, parents before children. Where a parent ends and children of nearly
- * its girth go on, those children are the fork's leaders: each takes the parent's last ring as its
- * own first ring, so the parent needs no rounded end. A thinner child at that end hangs on the
- * thickest leader instead.
+ * The axes to mesh at a level, parents before children, as pieces of wood. An axis is one piece,
+ * divided where a codominant side child leaves short of its end: its wood ends there as a fork and
+ * runs on past it as a new piece, so the child and the axis's own wood both rise from the fork as
+ * its leaders. Where a piece ends and children of nearly its girth go on, those children are the
+ * fork's leaders: each takes the piece's last ring as its own first ring, so the piece needs no
+ * rounded end. A thinner child at that end hangs on the thickest leader instead.
  */
 function woodAxes(input: MeshInput, keep: number): WoodAxis[] {
 	const { skeleton } = input;
 	const axes = skeleton.axes;
 	const p = skeleton.position;
+	const radius = skeleton.radius;
 	const base = input.variant * VARIANT_RECORDS;
 	const lastKept = keptNodes(skeleton);
 	// Axes rooted at the ground, stems and a frond colony's stipes, take the stem base's flare,
@@ -157,56 +163,112 @@ function woodAxes(input: MeshInput, keep: number): WoodAxis[] {
 		(axes.order[a] as number) <= keep &&
 		(lastKept[a] as number) >= (axes.first[a] as number) &&
 		((axes.parent[a] as number) >= 0 || rooted(a) || (axes.kind[a] as number) === AXIS_LIMB);
-	// Leaders and the parent each axis hangs on.
-	const hangsOn = new Int32Array(axes.count);
-	const leads = new Uint8Array(axes.count);
-	for (let a = 0; a < axes.count; a++) hangsOn[a] = axes.parent[a] as number;
-	const ends: number[][] = [];
-	for (let a = 0; a < axes.count; a++) ends.push([]);
+	// Where each axis divides: the nodes short of its end where a codominant side child leaves.
+	const divides = new Uint8Array(skeleton.nodeCount);
 	for (let a = 0; a < axes.count; a++) {
 		const parent = axes.parent[a] as number;
-		if (parent >= 0 && meshed(a) && atEnd(skeleton, a, lastKept[parent] as number))
-			ends[parent]?.push(a);
+		const node = axes.parentNode[a] as number;
+		if (parent < 0 || !meshed(a) || (axes.parentT[a] as number) > 1e-6) continue;
+		if (node < (axes.first[parent] as number) || node >= (lastKept[parent] as number)) continue;
+		if ((radius[axes.first[a] as number] as number) >= CODOMINANT * (radius[node] as number))
+			divides[node] = 1;
 	}
+	// The pieces: each axis's runs of nodes between the nodes where it divides.
+	const pieceAxis: number[] = [];
+	const pieceFirst: number[] = [];
+	const pieceLast: number[] = [];
+	const pieceOfNode = new Int32Array(skeleton.nodeCount).fill(-1);
+	const firstPiece = new Int32Array(axes.count).fill(-1);
 	for (let a = 0; a < axes.count; a++) {
-		const atTip = ends[a] as number[];
+		const kept = lastKept[a] as number;
+		let from = axes.first[a] as number;
+		if (kept < from) continue;
+		firstPiece[a] = pieceAxis.length;
+		for (let n = from; n <= kept; n++) {
+			pieceOfNode[n] = pieceAxis.length;
+			if (n === kept || divides[n]) {
+				pieceAxis.push(a);
+				pieceFirst.push(from);
+				pieceLast.push(n);
+				from = n + 1;
+			}
+		}
+	}
+	const pieces = pieceAxis.length;
+	// Each piece's parent piece and the node it leaves: a piece that runs an axis on leaves the end
+	// of the axis's piece before it.
+	const parentOf = new Int32Array(pieces);
+	const fromNode = new Int32Array(pieces);
+	const fromT = new Float64Array(pieces);
+	for (let k = 0; k < pieces; k++) {
+		const a = pieceAxis[k] as number;
+		if (firstPiece[a] !== k) {
+			parentOf[k] = k - 1;
+			fromNode[k] = pieceLast[k - 1] as number;
+			continue;
+		}
+		const parent = axes.parent[a] as number;
+		const node = axes.parentNode[a] as number;
+		parentOf[k] = parent >= 0 && node >= 0 ? (pieceOfNode[node] as number) : -1;
+		fromNode[k] = node;
+		fromT[k] = axes.parentT[a] as number;
+	}
+	/** Whether a piece leaves its parent piece at the parent's last node. */
+	const atPieceEnd = (k: number) => {
+		const last = pieceLast[parentOf[k] as number] as number;
+		const node = fromNode[k] as number;
+		return node === last || (node === last - 1 && (fromT[k] as number) >= 1 - 1e-6);
+	};
+	// Leaders and the parent each piece hangs on.
+	const hangsOn = new Int32Array(pieces);
+	const leads = new Uint8Array(pieces);
+	for (let k = 0; k < pieces; k++) hangsOn[k] = parentOf[k] as number;
+	const ends: number[][] = [];
+	for (let k = 0; k < pieces; k++) ends.push([]);
+	for (let k = 0; k < pieces; k++) {
+		const parent = parentOf[k] as number;
+		if (parent >= 0 && meshed(pieceAxis[k] as number) && atPieceEnd(k)) ends[parent]?.push(k);
+	}
+	for (let k = 0; k < pieces; k++) {
+		const atTip = ends[k] as number[];
 		if (atTip.length === 0) continue;
-		const girth = skeleton.radius[lastKept[a] as number] as number;
+		const girth = radius[pieceLast[k] as number] as number;
 		let thickest = -1;
 		for (const child of atTip) {
-			const r = skeleton.radius[axes.first[child] as number] as number;
+			const r = radius[pieceFirst[child] as number] as number;
 			if (r < LEADER_SHARE * girth) continue;
 			leads[child] = 1;
-			if (thickest < 0 || r > (skeleton.radius[axes.first[thickest] as number] as number))
-				thickest = child;
+			if (thickest < 0 || r > (radius[pieceFirst[thickest] as number] as number)) thickest = child;
 		}
 		if (thickest >= 0) for (const child of atTip) if (!leads[child]) hangsOn[child] = thickest;
 	}
 	const children: number[][] = [];
-	for (let a = 0; a < axes.count; a++) children.push([]);
+	for (let k = 0; k < pieces; k++) children.push([]);
 	const queue: number[] = [];
-	for (let a = 0; a < axes.count; a++) {
-		const parent = hangsOn[a] as number;
-		if (parent < 0) queue.push(a);
-		else if (leads[a]) children[parent]?.unshift(a);
-		else children[parent]?.push(a);
+	for (let k = 0; k < pieces; k++) {
+		const parent = hangsOn[k] as number;
+		if (parent < 0) queue.push(k);
+		else if (leads[k]) children[parent]?.unshift(k);
+		else children[parent]?.push(k);
 	}
 	const list: WoodAxis[] = [];
-	const indexOf = new Int32Array(axes.count).fill(-1);
+	const indexOf = new Int32Array(pieces).fill(-1);
 	let stems = 0;
 	for (let q = 0; q < queue.length; q++) {
-		const a = queue[q] as number;
-		const parent = hangsOn[a] as number;
-		const first = axes.first[a] as number;
-		const kept = lastKept[a] as number;
+		const k = queue[q] as number;
+		const a = pieceAxis[k] as number;
+		const parent = hangsOn[k] as number;
+		const first = pieceFirst[k] as number;
+		const kept = pieceLast[k] as number;
 		if (!meshed(a)) continue;
 		const parentIndex = parent >= 0 ? (indexOf[parent] as number) : -1;
 		if (parent >= 0 && parentIndex < 0) continue;
 		const pts: number[] = [];
 		const radii: number[] = [];
-		if (parent < 0 && rooted(a)) {
+		const stem = parent < 0 && rooted(a);
+		if (stem) {
 			// A stem starts below the ground, along its first internode's line.
-			const r0 = skeleton.radius[first] as number;
+			const r0 = radius[first] as number;
 			const next = Math.min(kept, first + 1);
 			let dx = (p[next * 3] as number) - (p[first * 3] as number);
 			let dy = (p[next * 3 + 1] as number) - (p[first * 3 + 1] as number);
@@ -227,12 +289,12 @@ function woodAxes(input: MeshInput, keep: number): WoodAxis[] {
 		} else if (parent >= 0) {
 			// A child starts at its junction on the skeleton's parent: along the internode after its
 			// parent node.
-			const own = axes.parent[a] as number;
-			const parentNode = axes.parentNode[a] as number;
-			const parentLast = lastKept[own] as number;
+			const own = parentOf[k] as number;
+			const parentNode = fromNode[k] as number;
+			const parentLast = pieceLast[own] as number;
 			if (parentNode < 0 || parentNode > parentLast) continue;
 			const next = parentNode < parentLast ? parentNode + 1 : parentNode;
-			const t = axes.parentT[a] as number;
+			const t = fromT[k] as number;
 			const jx = (p[parentNode * 3] as number) * (1 - t) + (p[next * 3] as number) * t;
 			const jy = (p[parentNode * 3 + 1] as number) * (1 - t) + (p[next * 3 + 1] as number) * t;
 			const jz = (p[parentNode * 3 + 2] as number) * (1 - t) + (p[next * 3 + 2] as number) * t;
@@ -241,36 +303,41 @@ function woodAxes(input: MeshInput, keep: number): WoodAxis[] {
 					(jy - (p[first * 3 + 1] as number)) ** 2 +
 					(jz - (p[first * 3 + 2] as number)) ** 2,
 			);
-			if (leads[a]) {
+			if (leads[k]) {
 				const parentWood = list[parentIndex];
 				if (parentWood) parentWood.fork = true;
 			}
 			if (gap > 1e-6) {
 				pts.push(jx, jy, jz);
-				radii.push(skeleton.radius[first] as number);
+				radii.push(radius[first] as number);
 			}
 		}
 		for (let n = first; n <= kept; n++) {
 			pts.push(p[n * 3] as number, p[n * 3 + 1] as number, p[n * 3 + 2] as number);
-			radii.push(skeleton.radius[n] as number);
+			radii.push(radius[n] as number);
 		}
-		const count = radii.length;
-		if (count < 2) continue;
-		indexOf[a] = list.length;
+		if (radii.length < 2) continue;
+		const path = roundKinks(
+			new Float64Array(pts),
+			new Float64Array(radii),
+			radii.length,
+			KINK_BEND,
+		);
+		indexOf[k] = list.length;
 		list.push({
 			axis: a,
+			key: firstPiece[a] === k ? a : axes.count + k,
 			parent: parentIndex,
 			record: base + (axes.record[a] as number),
-			points: new Float64Array(pts),
-			radii: new Float64Array(radii),
-			count,
-			stem: parent < 0 && rooted(a) ? stems++ : -1,
+			points: path.points,
+			radii: path.radii,
+			count: path.count,
+			stem: stem ? stems++ : -1,
 			fork: false,
-			leader: leads[a] === 1,
+			leader: leads[k] === 1,
 		});
-		if (parent < 0 && rooted(a))
-			addRoots(input, list, list.length - 1, base + (axes.record[a] as number));
-		for (const child of children[a] ?? []) queue.push(child);
+		if (stem) addRoots(input, list, list.length - 1, base + (axes.record[a] as number));
+		for (const child of children[k] ?? []) queue.push(child);
 	}
 	return list;
 }
@@ -322,6 +389,7 @@ function addRoots(input: MeshInput, list: WoodAxis[], stemIndex: number, record:
 	for (const [k, root] of roots.entries())
 		list.push({
 			axis: -1 - (stem.stem * 64 + k),
+			key: -1 - (stem.stem * 64 + k),
 			parent: stemIndex,
 			record,
 			points: root.points,
@@ -540,7 +608,7 @@ export interface WoodWelds {
 	/** The first written vertex of the weld ring, and its count (sides + 1). */
 	readonly first: number[];
 	readonly vertices: number[];
-	/** The first written vertex of each axis and its count, by skeleton axis. */
+	/** The first written vertex of each meshed piece and its count, by the piece's key. */
 	readonly axisFirst: Map<number, [number, number]>;
 }
 
@@ -1052,6 +1120,12 @@ class Mesher {
 		const f = this.frame;
 		const normal = this.normal;
 		const ring = new Float64Array(9);
+		// The blend's rings are laid out first and written after, so each side's bark v can follow
+		// the length of its own line over the fillet, from the parent's v at the seam to the child's
+		// own v at its first plain ring.
+		const frames = new Float64Array(blend * 13);
+		const cells = new Float64Array(blend * sides * 9);
+		const pipes = new Float64Array(blend * sides);
 		for (let b = 0; b < blend; b++) {
 			// Rings crowd toward the weld, where the fillet curves most, and the normal turns from the
 			// parent's to the fillet's own over the first rings.
@@ -1064,15 +1138,11 @@ class Mesher {
 			ring.set(f.position, 0);
 			ring.set(f.normal, 3);
 			ring.set(f.binormal, 6);
-			rings.begin(
-				sides,
-				nominal,
-				f.position,
-				f.tangent,
-				f.normal,
-				f.binormal,
-				this.vAt(context, nominal),
-			);
+			frames[b * 13] = nominal;
+			frames.set(f.position, b * 13 + 1);
+			frames.set(f.tangent, b * 13 + 4);
+			frames.set(f.normal, b * 13 + 7);
+			frames.set(f.binormal, b * 13 + 10);
 			for (let j = 0; j < sides; j++) {
 				const column = columns[j] as AxisContext;
 				const theta = (j / sides) * 2 * PI;
@@ -1144,24 +1214,79 @@ class Mesher {
 				const dz = (point[2] as number) - (ring[2] as number);
 				const rx = dx * (ring[3] as number) + dy * (ring[4] as number) + dz * (ring[5] as number);
 				const ry = dx * (ring[6] as number) + dy * (ring[7] as number) + dz * (ring[8] as number);
+				const at = (b * sides + j) * 9;
+				cells[at] = point[0] as number;
+				cells[at + 1] = point[1] as number;
+				cells[at + 2] = point[2] as number;
+				cells[at + 3] = ox;
+				cells[at + 4] = oy;
+				cells[at + 5] = oz;
+				cells[at + 6] = Math.sqrt(rx * rx + ry * ry);
+				cells[at + 7] = junctionMask(s - sj, collarLength, c);
+				cells[at + 8] = s;
+				pipes[b * sides + j] = f.radius;
+			}
+		}
+		// Past the blend the child is its own: no fillet, no collar, no mask.
+		const welded: AxisContext = { ...context, collarFrom: highest, collarLength, swell, fillet: 0 };
+		// Each side's v runs from the seam to the first plain ring in step with the length of its line.
+		const vEnd = this.vAt(welded, end);
+		const own = this.rho(welded, end, 0);
+		const lengths = new Float64Array(blend + 1);
+		const vs = new Float64Array(blend * sides);
+		for (let j = 0; j < sides; j++) {
+			const c = trig[j * 2] as number;
+			const n = trig[j * 2 + 1] as number;
+			frameAt(path, end, f);
+			for (let k = 0; k < 3; k++)
+				point[k] =
+					(f.position[k] as number) +
+					own * (c * (f.normal[k] as number) + n * (f.binormal[k] as number));
+			for (let b = 1; b <= blend; b++) {
+				const from = ((b - 1) * sides + j) * 9;
+				const to = b < blend ? (b * sides + j) * 9 : -1;
+				let step = 0;
+				for (let k = 0; k < 3; k++)
+					step +=
+						((to >= 0 ? (cells[to + k] as number) : (point[k] as number)) -
+							(cells[from + k] as number)) **
+						2;
+				lengths[b] = (lengths[b - 1] as number) + Math.sqrt(step);
+			}
+			const total = (lengths[blend] as number) || 1;
+			const v0 = seamV[j] as number;
+			for (let b = 0; b < blend; b++)
+				vs[b * sides + j] = v0 + (vEnd - v0) * ((lengths[b] as number) / total);
+		}
+		for (let b = 0; b < blend; b++) {
+			const fr = b * 13;
+			rings.begin(
+				sides,
+				frames[fr] as number,
+				frames.subarray(fr + 1, fr + 4),
+				frames.subarray(fr + 4, fr + 7),
+				frames.subarray(fr + 7, fr + 10),
+				frames.subarray(fr + 10, fr + 13),
+				this.vAt(context, frames[fr] as number),
+			);
+			for (let j = 0; j < sides; j++) {
+				const at = (b * sides + j) * 9;
 				rings.vertex(
-					point[0] as number,
-					point[1] as number,
-					point[2] as number,
-					ox,
-					oy,
-					oz,
-					Math.sqrt(rx * rx + ry * ry),
-					(seamV[j] as number) * (1 - t) + this.vAt(context, s) * t,
-					junctionMask(s - sj, collarLength, c),
-					f.radius,
-					s,
+					cells[at] as number,
+					cells[at + 1] as number,
+					cells[at + 2] as number,
+					cells[at + 3] as number,
+					cells[at + 4] as number,
+					cells[at + 5] as number,
+					cells[at + 6] as number,
+					vs[b * sides + j] as number,
+					cells[at + 7] as number,
+					pipes[b * sides + j] as number,
+					cells[at + 8] as number,
 				);
 			}
 		}
 		rings.welded = blend;
-		// Past the blend the child is its own: no fillet, no collar, no mask.
-		const welded: AxisContext = { ...context, collarFrom: highest, collarLength, swell, fillet: 0 };
 		return { context: welded, end, sides };
 	}
 
@@ -1273,24 +1398,160 @@ class Mesher {
 		rings.shared = true;
 		mean /= sides;
 		const rc = path.radius[0] as number;
-		const pt = frameAt(parentContext.path, parentContext.path.length, this.frame).tangent;
+		const pt = Float64Array.from(
+			frameAt(parentContext.path, parentContext.path.length, this.frame).tangent,
+		);
 		const lt = path.tangent;
 		const cosine =
 			(pt[0] as number) * (lt[0] as number) +
 			(pt[1] as number) * (lt[1] as number) +
 			(pt[2] as number) * (lt[2] as number);
-		const angle = Math.min(LEADER_TILT, acos(Math.min(1, Math.max(-1, cosine))));
+		const turn = acos(Math.min(1, Math.max(-1, cosine)));
+		const angle = Math.min(LEADER_TILT, turn);
 		const clear = mean * tan(angle) + 0.25 * rc;
 		const led: AxisContext = {
 			...context,
 			taper: mean,
 			taperLength: Math.max(BLEND_RADII * rc, mean),
 		};
-		return {
-			context: led,
-			end: Math.min(path.length, Math.max(clear, 0.5 * this.tube.edge)),
-			sides,
+		const end = Math.min(
+			path.length,
+			Math.max(clear, 0.5 * this.tube.edge, LEADER_BEND * mean * turn),
+		);
+		this.bend(led, parentRings, last, pt, end, sides, rings);
+		return { context: led, end, sides };
+	}
+
+	/**
+	 * The rings by which a fork's leader bends from its parent's last ring onto its own line: each
+	 * side runs on a curve that leaves the parent's ring along the parent's line and meets the
+	 * leader's first plain ring along the leader's, so the joint is one smooth elbow with no fold.
+	 * As many rings stand on the bend as the wood's turn between rings asks.
+	 */
+	private bend(
+		context: AxisContext,
+		parentRings: AxisRings,
+		last: number,
+		parentTangent: ArrayLike<number>,
+		end: number,
+		sides: number,
+		rings: AxisRings,
+	): void {
+		const f = frameAt(context.path, end, this.frame);
+		const lt = f.tangent;
+		const cosine =
+			(parentTangent[0] as number) * (lt[0] as number) +
+			(parentTangent[1] as number) * (lt[1] as number) +
+			(parentTangent[2] as number) * (lt[2] as number);
+		const turn = acos(Math.min(1, Math.max(-1, cosine)));
+		const first = parentRings.first[last] as number;
+		let mean = 0;
+		for (let j = 0; j < sides; j++) mean += parentRings.rho[first + j] as number;
+		mean /= sides;
+		const steps = bendRings(turn, mean, this.tube) + 1;
+		if (steps < 2 || end <= 0) return;
+		const c3 = last * 3;
+		const radius = this.rho(context, end, 0);
+		const vEnd = this.vAt(context, end);
+		const trig = ringTrig(sides);
+		// Each side's ends: on the parent's ring, and on the leader's first plain ring.
+		const from = new Float64Array(sides * 3);
+		const to = new Float64Array(sides * 3);
+		const out = new Float64Array(sides * 3);
+		const centreFrom = parentRings.centre.subarray(c3, c3 + 3);
+		for (let j = 0; j < sides; j++) {
+			const c = trig[j * 2] as number;
+			const n = trig[j * 2 + 1] as number;
+			for (let k = 0; k < 3; k++) {
+				from[j * 3 + k] = parentRings.position[(first + j) * 3 + k] as number;
+				out[j * 3 + k] = c * (f.normal[k] as number) + n * (f.binormal[k] as number);
+				to[j * 3 + k] = (f.position[k] as number) + radius * (out[j * 3 + k] as number);
+			}
+		}
+		const centre = new Float64Array(3);
+		const tangent = new Float64Array(3);
+		const normal = new Float64Array(3);
+		const binormal = new Float64Array(3);
+		const point = new Float64Array(3);
+		const hermite = (
+			a: ArrayLike<number>,
+			ai: number,
+			b: ArrayLike<number>,
+			bi: number,
+			u: number,
+			target: Float64Array,
+		) => {
+			let reach = 0;
+			for (let k = 0; k < 3; k++) reach += ((b[bi + k] as number) - (a[ai + k] as number)) ** 2;
+			reach = Math.sqrt(reach);
+			const u2 = u * u;
+			const u3 = u2 * u;
+			const h00 = 2 * u3 - 3 * u2 + 1;
+			const h10 = u3 - 2 * u2 + u;
+			const h01 = -2 * u3 + 3 * u2;
+			const h11 = u3 - u2;
+			for (let k = 0; k < 3; k++)
+				target[k] =
+					h00 * (a[ai + k] as number) +
+					h10 * reach * (parentTangent[k] as number) +
+					h01 * (b[bi + k] as number) +
+					h11 * reach * (lt[k] as number);
 		};
+		const v0 = parentRings.v[last] as number;
+		for (let step = 1; step < steps; step++) {
+			const u = step / steps;
+			hermite(centreFrom, 0, f.position, 0, u, centre);
+			let tl = 0;
+			for (let k = 0; k < 3; k++) {
+				tangent[k] = (1 - u) * (parentTangent[k] as number) + u * (lt[k] as number);
+				tl += (tangent[k] as number) ** 2;
+			}
+			tl = Math.sqrt(tl) || 1;
+			let along = 0;
+			for (let k = 0; k < 3; k++) {
+				tangent[k] = (tangent[k] as number) / tl;
+				normal[k] = (1 - u) * (parentRings.normal[c3 + k] as number) + u * (f.normal[k] as number);
+				along += (normal[k] as number) * (tangent[k] as number);
+			}
+			let nl = 0;
+			for (let k = 0; k < 3; k++) {
+				normal[k] = (normal[k] as number) - along * (tangent[k] as number);
+				nl += (normal[k] as number) ** 2;
+			}
+			nl = Math.sqrt(nl) || 1;
+			for (let k = 0; k < 3; k++) normal[k] = (normal[k] as number) / nl;
+			binormal[0] =
+				(tangent[1] as number) * (normal[2] as number) -
+				(tangent[2] as number) * (normal[1] as number);
+			binormal[1] =
+				(tangent[2] as number) * (normal[0] as number) -
+				(tangent[0] as number) * (normal[2] as number);
+			binormal[2] =
+				(tangent[0] as number) * (normal[1] as number) -
+				(tangent[1] as number) * (normal[0] as number);
+			const v = (1 - u) * (v0 - context.shift) + u * vEnd;
+			rings.begin(sides, u * end, centre, tangent, normal, binormal, v);
+			for (let j = 0; j < sides; j++) {
+				const i = first + j;
+				hermite(from, j * 3, to, j * 3, u, point);
+				const rho = (1 - u) * (parentRings.rho[i] as number) + u * radius;
+				rings.vertex(
+					point[0] as number,
+					point[1] as number,
+					point[2] as number,
+					(1 - u) * (parentRings.vertexNormal[i * 3] as number) + u * (out[j * 3] as number),
+					(1 - u) * (parentRings.vertexNormal[i * 3 + 1] as number) +
+						u * (out[j * 3 + 1] as number),
+					(1 - u) * (parentRings.vertexNormal[i * 3 + 2] as number) +
+						u * (out[j * 3 + 2] as number),
+					rho,
+					(1 - u) * ((parentRings.vv[i] as number) - context.shift) + u * vEnd,
+					0,
+					(1 - u) * (parentRings.pipe[i] as number) + u * f.radius,
+					u * end,
+				);
+			}
+		}
 	}
 
 	/** The rounded end of an axis: a dome of rings and an apex ring of no radius. */
@@ -1476,7 +1737,7 @@ class Mesher {
 			this.seed,
 			this.record.seedSalt,
 			this.variant,
-			wood.axis & 0xffff,
+			wood.key & 0xffff,
 		]);
 		const writer = this.writer;
 		const base = writer.vertices;
@@ -1549,9 +1810,9 @@ class Mesher {
 		}
 		if (this.tube.level === 0) this.fins(rings, bark, context, wood);
 		if (this.welds) {
-			this.welds.axisFirst.set(wood.axis, [firstVertex, writer.vertices - firstVertex]);
+			this.welds.axisFirst.set(wood.key, [firstVertex, writer.vertices - firstVertex]);
 			if (wood.parent >= 0) {
-				this.welds.child.push(wood.axis);
+				this.welds.child.push(wood.key);
 				this.welds.first.push(firstVertex);
 				this.welds.vertices.push((rings.sides[0] as number) + 1);
 			}
@@ -1601,10 +1862,15 @@ export interface WoodReport {
 	readonly mesh: MeshArrays;
 	readonly rings: WoodRings;
 	readonly welds: WoodWelds;
-	/** The skeleton axis of each meshed axis's parent, by skeleton axis. */
+	/**
+	 * The key of each meshed piece's parent, by the piece's key. A piece's key is its skeleton axis,
+	 * or a number past the skeleton's axes for the wood that runs on past a fork where it divides.
+	 */
 	readonly parents: Map<number, number>;
-	/** The rings of each meshed axis, by skeleton axis. */
+	/** The rings of each meshed piece, by its key. */
 	readonly axisRings: Map<number, AxisRings>;
+	/** The skeleton axis of each meshed piece, by its key. */
+	readonly axisOf: Map<number, number>;
 	/** Meters of bark after which the bark repeats: a child's `v` may run whole repeats lower. */
 	readonly vPeriod: number;
 }
@@ -1627,11 +1893,13 @@ export function meshWoodReport(input: MeshInput, level: MeshLevel): WoodReport {
 	const mesh = mesher.run(axes, input.variant);
 	const parents = new Map<number, number>();
 	const axisRings = new Map<number, AxisRings>();
+	const axisOf = new Map<number, number>();
 	for (let i = 0; i < axes.length; i++) {
 		const wood = axes[i] as WoodAxis;
-		parents.set(wood.axis, wood.parent >= 0 ? (axes[wood.parent] as WoodAxis).axis : -1);
+		parents.set(wood.key, wood.parent >= 0 ? (axes[wood.parent] as WoodAxis).key : -1);
+		axisOf.set(wood.key, wood.axis);
 		const rings = mesher.ringsOf(i);
-		if (rings) axisRings.set(wood.axis, rings);
+		if (rings) axisRings.set(wood.key, rings);
 	}
 	return {
 		mesh,
@@ -1639,6 +1907,7 @@ export function meshWoodReport(input: MeshInput, level: MeshLevel): WoodReport {
 		welds: mesher.welds as WoodWelds,
 		parents,
 		axisRings,
+		axisOf,
 		vPeriod: mesher.period,
 	};
 }
