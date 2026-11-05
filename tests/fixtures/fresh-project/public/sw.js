@@ -1,11 +1,13 @@
 // The fresh project's service worker, as the hosting guide shows it: it caches the page and the
 // build's files that the game uses, so the game plays with no network after its first visit.
 //
-// The page preloads the sprite shaders, and the preset draws screen-space bounce light from its
-// first frame. The light reads the depth and the normals of ambient occlusion's steps, and the
-// copy of the scene color, so the cache holds those features' files too. A feature that this list
-// leaves out costs the game nothing, because its files stay out of the cache.
-const FEATURES = ['sprites', 'ao', 'color_copy'];
+// The page preloads the sprite shaders, and the preset draws screen-space bounce light and GPU
+// occlusion culling from its first frame on a desktop. The light reads the depth and the normals
+// of ambient occlusion's steps, and the copy of the scene color; the culling downloads its own
+// shaders at the first object that may hide others. So the cache holds those features' files too.
+// A feature that this list leaves out costs the game nothing, because its files stay out of the
+// cache.
+const FEATURES = ['sprites', 'ao', 'color_copy', 'occlusion'];
 const PREFIX = 'game-';
 
 self.addEventListener('install', (event) => event.waitUntil(update()));
