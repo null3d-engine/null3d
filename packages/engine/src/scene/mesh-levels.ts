@@ -10,10 +10,13 @@
 import { TaskFailure } from '../shared/task-failure';
 import { runTaskWithError, type Task } from '../shared/tasks';
 import type { WasmError } from '../shared/wasm';
-import { ENCODER_MODULE, SIMPLIFIER_MODULE } from './level-words';
+import { CLUSTERIZER_MODULE, ENCODER_MODULE, SIMPLIFIER_MODULE } from './level-words';
 import type { LevelsTaskInput, LevelsTaskOutput } from './levels-task';
 
-/** The planner's task, with meshoptimizer's simplifier and the encoder's vertex cache order. */
+/**
+ * The planner's task, with meshoptimizer's simplifier, the encoder's vertex cache order and the
+ * clusterizer, which splits the pieces of a large list into groups.
+ */
 const PLANNER: Task = {
 	name: 'levels',
 	wasm: [
@@ -26,6 +29,11 @@ const PLANNER: Task = {
 			name: ENCODER_MODULE,
 			url: new URL('../../vendor/meshopt/meshopt_encoder.wasm', import.meta.url),
 			what: "meshoptimizer's vertex cache order",
+		},
+		{
+			name: CLUSTERIZER_MODULE,
+			url: new URL('../../vendor/meshopt/meshopt_clusterizer.wasm', import.meta.url),
+			what: "meshoptimizer's clusterizer",
 		},
 	],
 };

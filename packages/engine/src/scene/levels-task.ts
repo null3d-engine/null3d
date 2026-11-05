@@ -19,6 +19,7 @@ import type { PiecesData } from './gltf-parse';
 import { type LevelMeshopt, levelMeshopt } from './level-meshopt';
 import { type ListPieces, planListPieces } from './level-pieces';
 import {
+	CLUSTERIZER_MODULE,
 	ENCODER_MODULE,
 	holdsAttribute,
 	PLANNED_ATTRIBUTES,
@@ -89,12 +90,14 @@ let started: Promise<LevelMeshopt> | undefined;
 
 /** Starts meshoptimizer's modules. A failed start lets the next mesh try again. */
 function start(wasm: (name: string) => WebAssembly.Module): Promise<LevelMeshopt> {
-	started ??= levelMeshopt(wasm(SIMPLIFIER_MODULE), wasm(ENCODER_MODULE)).catch(
-		(error: unknown): never => {
-			started = undefined;
-			throw new TaskLoadError(error instanceof Error ? error.message : String(error));
-		},
-	);
+	started ??= levelMeshopt(
+		wasm(SIMPLIFIER_MODULE),
+		wasm(ENCODER_MODULE),
+		wasm(CLUSTERIZER_MODULE),
+	).catch((error: unknown): never => {
+		started = undefined;
+		throw new TaskLoadError(error instanceof Error ? error.message : String(error));
+	});
 	return started;
 }
 
@@ -164,18 +167,24 @@ export async function run(
 	const piecesOf = (list: Uint32Array) =>
 		parts > 1 && !split
 			? undefined
-			: planListPieces(positions, list, split, meshopt.cacheOrder, spacePieces, copies);
+			: planListPieces(
+					positions,
+					list,
+					split,
+					meshopt.cacheOrder,
+					spacePieces,
+					copies,
+					meshopt.clusterOrder,
+				);
 	const levels: TaskLevel[] = planned.map((level) => {
 		const indices = level.indices[0] as Uint32Array;
 		const moved = level.positions[0];
 		// A level of cards moves its vertices into a copy of its own, which draws whole.
 		const pieces = moved ? undefined : piecesOf(indices);
-		if (pieces)
-			return {
-				indices: pieces.indices,
-				error: level.error,
-				pieces: { triangles: pieces.triangles, bounds: pieces.bounds },
-			};
+		if (pieces) {
+			const { indices, ...data } = pieces;
+			return { indices, error: level.error, pieces: data };
+		}
 		return { indices, error: level.error, ...(moved && { positions: moved }) };
 	});
 	// A list under the pieces' floor gets facing pieces alone, over a copy of its indices that
@@ -190,11 +199,19 @@ export async function run(
 		...(pieces && { pieces }),
 	};
 	const transfer: ArrayBufferLike[] = [];
+	const transferPieces = (data: PiecesData) => {
+		transfer.push(data.triangles.buffer, data.bounds.buffer);
+		if (data.groups) transfer.push(data.groups.buffer);
+		if (data.groupBounds) transfer.push(data.groupBounds.buffer);
+	};
 	for (const level of levels) {
 		transfer.push(level.indices.buffer);
 		if (level.positions) transfer.push(level.positions.buffer);
-		if (level.pieces) transfer.push(level.pieces.triangles.buffer, level.pieces.bounds.buffer);
+		if (level.pieces) transferPieces(level.pieces);
 	}
-	if (pieces) transfer.push(pieces.indices.buffer, pieces.triangles.buffer, pieces.bounds.buffer);
+	if (pieces) {
+		transfer.push(pieces.indices.buffer);
+		transferPieces(pieces);
+	}
 	return { output, transfer: transfer as ArrayBuffer[] };
 }

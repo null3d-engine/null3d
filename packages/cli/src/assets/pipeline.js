@@ -13,7 +13,7 @@ import {
 	EXTMeshoptCompression,
 	KHRTextureBasisu,
 } from '@gltf-transform/extensions';
-import { MeshoptDecoder, MeshoptEncoder } from 'meshoptimizer';
+import { MeshoptClusterizer, MeshoptDecoder, MeshoptEncoder } from 'meshoptimizer';
 import { VERSION } from '../version.js';
 import { bakeClips, MeshoptWithRotationFilter } from './clips.js';
 import { NULL3D_CLUSTERS, Null3dClusters } from './cluster-extension.js';
@@ -106,7 +106,7 @@ export const GENERATOR = `null3D asset tool ${VERSION}`;
  * the engine's own.
  */
 export async function glTFIO() {
-	await Promise.all([MeshoptDecoder.ready, MeshoptEncoder.ready]);
+	await Promise.all([MeshoptDecoder.ready, MeshoptEncoder.ready, MeshoptClusterizer.ready]);
 	return new NodeIO()
 		.registerExtensions([
 			...ALL_EXTENSIONS,

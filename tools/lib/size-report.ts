@@ -699,7 +699,7 @@ export function isFirstUseShaderPart(name: string): boolean {
  * The files besides code that load on first use: the WebAssembly modules that the on-demand
  * loader compiles, and the area lights' tables. They are the KTX2 transcoder, with a page's first
  * KTX2 file, the meshopt decoder, with its first glTF file that holds meshopt data, meshoptimizer's
- * simplifier and encoder, with the first mesh that plans its levels of detail, Draco's
+ * simplifier, encoder and clusterizer, with the first mesh that plans its levels of detail, Draco's
  * decoder, with its first glTF file that holds Draco data, and the tables, with the first
  * rectangle or tube light. A build copies each as it is, under its name with a hash. Draco's
  * decoder and the tables are recorded exceptions to the limit of files that load on first use
@@ -710,6 +710,7 @@ export const FIRST_USE_FILES = [
 	'meshopt_decoder.wasm',
 	'meshopt_simplifier.wasm',
 	'meshopt_encoder.wasm',
+	'meshopt_clusterizer.wasm',
 	'draco_decoder_gltf.wasm',
 	'area-light-tables.bin',
 ] as const;
