@@ -840,6 +840,72 @@ mod tests {
     use super::*;
     use crate::gpu_driven::layout::Bucket;
 
+    /// The groups of a piece nest in it: a group's sphere and cone lie inside its piece's, so a
+    /// group whose bounds show for a copy lies in a piece that shows too. The slot pass tests the
+    /// piece first and then the group, so the groups that a slot keeps never pass the pieces that
+    /// the CPU sized its room from: no overflow, whatever the copy's place and turn.
+    #[test]
+    fn the_groups_of_a_piece_nest_in_it() {
+        use crate::pieces::{CopyFrame, Piece};
+        use null3d_core::culling::Frustum;
+        let frustum = Frustum::from_planes([
+            [1.0, 0.0, 0.0, 30.0],
+            [-1.0, 0.0, 0.0, 30.0],
+            [0.0, 1.0, 0.0, 20.0],
+            [0.0, -1.0, 0.0, 20.0],
+            [0.0, 0.0, 1.0, 40.0],
+            [0.0, 0.0, -1.0, 40.0],
+        ]);
+        // A piece of radius 2 around its centre, with a cone that drops half its facings, and
+        // groups of radius 1 inside it with the same cutoff.
+        let piece = Piece {
+            triangles: 4_096,
+            sphere: [0.0, 0.0, 0.0, 2.0],
+            cone: [0.0, 0.0, 1.0, 0.5],
+        };
+        let group = |k: usize| Piece {
+            triangles: 64,
+            sphere: [
+                ((k % 5) as f32 - 2.0) * 0.3,
+                ((k / 5 % 5) as f32 - 2.0) * 0.3,
+                ((k / 25) % 5) as f32 * 0.3,
+                0.4,
+            ],
+            cone: [0.0, 0.0, 1.0, 0.5],
+        };
+        let groups: Vec<Piece> = (0..125).map(group).collect();
+        let mut seed = 0x2545_f491u32;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            (seed as f32 / u32::MAX as f32) * 2.0 - 1.0
+        };
+        for _ in 0..2_000 {
+            let angle = next() * std::f32::consts::PI;
+            let (s, c) = angle.sin_cos();
+            let other = next() * std::f32::consts::PI;
+            let (s2, c2) = other.sin_cos();
+            let scale = 0.2 + next().abs() * 2.0;
+            // A turn about z, then about y, and a place within the frustum.
+            let rows = [
+                [c * s2 * scale, -s * scale, c * c2 * scale, next() * 10.0],
+                [s * s2 * scale, c * scale, s * c2 * scale, next() * 10.0],
+                [c2 * scale, 0.0, -s2 * scale, next() * 20.0],
+            ];
+            let frame = CopyFrame::new(rows);
+            let cone = true;
+            let shows_piece = frame.shows(&frustum, &piece, cone);
+            let shows_any = groups
+                .iter()
+                .any(|group| frame.shows(&frustum, group, cone));
+            assert!(
+                !shows_any || shows_piece,
+                "a group showed where its piece did not"
+            );
+        }
+    }
+
     /// Both shaders read the bucket records as an array, so a structure of another length reads
     /// every record after the first at the wrong place.
     #[test]

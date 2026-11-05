@@ -2411,9 +2411,11 @@ impl Layout {
                 *copied += 1;
             }
             // The culling pass finds the level's slots in the word of its first joint, which a
-            // pieced bucket that skins nothing never reads.
+            // pieced bucket that skins nothing never reads: the first slot's bucket, then the
+            // count. The slots' buckets follow each other.
+            let first_bucket = self.slot_buckets[level.first_slot as usize];
             let tally = &mut self.buckets[parent as usize];
-            tally.first_joint = level.first_slot | (slots << 16);
+            tally.first_joint = first_bucket | (slots << 16);
             self.slot_room
                 .resize(self.slot_room.len() + slots as usize, 0);
             self.slot_levels.push(level);
@@ -3872,7 +3874,7 @@ mod tests {
         assert_eq!(level.first_group, 0);
         assert_eq!(
             layout.buckets[whole].first_joint,
-            level.first_slot | SLOTS_PER_LEVEL << 16
+            layout.slot_buckets[level.first_slot as usize] | SLOTS_PER_LEVEL << 16
         );
         // The slots follow the pieces in the draw order, and each copies the level's pipeline and
         // material.

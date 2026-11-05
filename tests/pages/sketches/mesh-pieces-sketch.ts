@@ -7,11 +7,15 @@
 // with pieces too, so far copies cull that level's pieces. On the page's 'view' message, with a
 // view's place in VIEWS, the camera moves there, and a few frames later the sketch posts 'turned'.
 import { defineSketch } from '@null3d/engine';
-import { planPieces } from '../../../packages/engine/levels/pieces.js';
+import { planGroups, planPieces } from '../../../packages/engine/levels/pieces.js';
 import { GltfBuilder, type GltfJson } from '../lib/gltf-files';
 
 const params = new URL(import.meta.url).searchParams;
 const PIECES = params.get('pieces') === '1';
+/** True when the fine pieces split into groups too, which a slot pass culls one by one. */
+const GROUPS = PIECES && params.get('groups') === '1';
+/** The most triangles of one group, which a group's byte of triangles holds. */
+const GROUP_TRIANGLES = 64;
 /** Frames after a move before 'turned': a pipelined engine draws a frame or two behind the sketch. */
 const TURN_FRAMES = 3;
 
@@ -89,28 +93,50 @@ function rock(around: number, rings: number) {
 	return { positions: new Float32Array(positions), normals, indices: sorted, plan };
 }
 
+/**
+ * The groups of a rock's pieces, in runs of {@link GROUP_TRIANGLES} triangles of the list's order,
+ * or undefined for a list too small to split: a plain clusterizer, which keeps each piece's
+ * triangles in their order and cuts them into runs.
+ */
+function rockGroups(shape: ReturnType<typeof rock>) {
+	const clusterize = (indices: Uint32Array) => {
+		const counts: number[] = [];
+		for (let at = 0; at < indices.length / 3; at += GROUP_TRIANGLES)
+			counts.push(Math.min(GROUP_TRIANGLES, indices.length / 3 - at));
+		return { indices, counts: Uint32Array.from(counts) };
+	};
+	return planGroups(shape.positions, shape.indices, shape.plan.counts, clusterize);
+}
+
 /** The file: a rock mesh for each material, each with its coarser level, with or without pieces. */
 function rockFile(): Uint8Array {
 	const b = new GltfBuilder();
 	if (PIECES) b.uses('NULL3D_pieces');
 	b.uses('MSFT_lod');
-	const primitive = (shape: ReturnType<typeof rock>, material: number): GltfJson => ({
-		attributes: {
-			POSITION: b.positions(shape.positions),
-			NORMAL: b.accessor(shape.normals, 3),
-		},
-		indices: b.accessor(shape.indices, 1),
-		material,
-		...(PIECES && {
-			extensions: {
-				NULL3D_pieces: {
-					triangles: Array.from(shape.plan.counts),
-					bounds: Array.from(shape.plan.bounds),
-					version: 1,
-				},
+	const primitive = (shape: ReturnType<typeof rock>, material: number): GltfJson => {
+		const groups = GROUPS ? rockGroups(shape) : undefined;
+		return {
+			attributes: {
+				POSITION: b.positions(shape.positions),
+				NORMAL: b.accessor(shape.normals, 3),
 			},
-		}),
-	});
+			indices: b.accessor(groups?.indices ?? shape.indices, 1),
+			material,
+			...(PIECES && {
+				extensions: {
+					NULL3D_pieces: {
+						triangles: Array.from(shape.plan.counts),
+						bounds: Array.from(shape.plan.bounds),
+						version: groups ? 2 : 1,
+						...(groups && {
+							groups: b.accessor(groups.counts, 1),
+							groupBounds: b.accessor(groups.bounds, 4),
+						}),
+					},
+				},
+			}),
+		};
+	};
 	const fine = rock(128, 64);
 	const coarse = rock(40, 20);
 	const sides = [

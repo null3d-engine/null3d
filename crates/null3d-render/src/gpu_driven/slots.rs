@@ -167,7 +167,9 @@ impl Slots {
             self.table_words = places.words;
             self.built = true;
             let mut table: Vec<u32> = Vec::with_capacity(places.words as usize);
-            table.resize(places.slots as usize * 4, 0);
+            // The slots' records come first and the frame writes them; the groups, pieces and
+            // parts follow them.
+            table.resize(layout.slot_buckets.len() * SLOT_WORDS as usize, 0);
             for group in &layout.slot_groups {
                 table.extend_from_slice(group);
             }
@@ -392,7 +394,7 @@ impl Slots {
             }
             bytes[at + 28] = COPY_GROUPS;
             let records = [places.slots, places.groups, places.pieces, places.parts];
-            bytes[at + 40..at + 44].copy_from_slice(&records);
+            bytes[at + 36..at + 40].copy_from_slice(&records);
         }
         let (at, length) = arena.push(words_as_bytes(&bytes))?;
         list.push(Op::WriteBuffer, &[ids::slot_params(view), 0, at, length])?;
