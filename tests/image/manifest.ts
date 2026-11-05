@@ -3840,7 +3840,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 				...(comparison.swiftShaderHoldCount !== undefined && {
 					swiftShaderSwitches: [`count=${comparison.swiftShaderHoldCount}`],
 				}),
-				...(comparison.imageDevices && { devices: comparison.imageDevices }),
+				...(comparison.imageDevices?.[engine] && { devices: comparison.imageDevices[engine] }),
 			};
 			// A comparison that draws another's scene holds the same frame: its test shares that
 			// comparison's references.
