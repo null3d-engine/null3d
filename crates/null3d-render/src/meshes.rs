@@ -3254,6 +3254,33 @@ mod tests {
         )
     }
 
+    /// A mesh keeps the groups that split its pieces, and new vertices drop them with the pieces.
+    #[test]
+    fn a_mesh_keeps_the_groups_of_its_pieces_until_its_vertices_move() {
+        let mut storage = MeshStorage::new(Packing::SharedBuffers);
+        let id = storage.add(&grid(4, 4, vertex::UV0)).unwrap();
+        let run = |triangles| Piece {
+            triangles,
+            sphere: [0.0, 0.0, 0.0, 10.0],
+            cone: [0.0, 1.0, 0.0, 2.0],
+        };
+        let pieces = [run(16), run(16)];
+        let groups = [run(10), run(6), run(16)];
+        storage.set_pieces(id, &pieces, &groups).unwrap();
+        assert_eq!(storage.pieces(id), &pieces);
+        assert_eq!(storage.groups(id), &groups);
+        storage
+            .set_pieces(id, &pieces, &[run(20), run(12)])
+            .unwrap();
+        assert!(storage.groups(id).is_empty());
+        storage.set_pieces(id, &pieces, &groups).unwrap();
+        storage
+            .update_vertices(id, 0, 3, 3, 4, &moved_positions(3..7))
+            .unwrap();
+        assert!(storage.pieces(id).is_empty());
+        assert!(storage.groups(id).is_empty());
+    }
+
     #[test]
     fn an_update_writes_one_attribute_in_place_and_lists_the_bytes_it_changed() {
         let mesh = grid(4, 4, vertex::UV0);
