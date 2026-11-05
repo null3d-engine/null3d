@@ -2,13 +2,10 @@
 // a red square above and a blue square below, over a floor and a back wall. A sphere stands in the
 // beam, so the picture wraps over it. The light stands above and ahead of the camera's target and
 // points down and away, so the map's top row runs up the wall. A dim ambient light keeps the rest
-// of the scene just visible. Every GPU path must draw one picture, and compatibility mode draws no
-// screen-space bounce light, so the scene draws none on any path: the beam's light off the floor
-// and the wall would otherwise light the sphere and the wall's foot on two paths only.
+// of the scene just visible.
 import { defineSketch } from '@null3d/engine';
 
-export default defineSketch(({ scene, materials, geometry, quality }) => {
-	quality.set({ bounceRays: 0 });
+export default defineSketch(({ scene, materials, geometry }) => {
 	scene.setBackground('#0b0e12');
 	const camera = scene.createPerspectiveCamera({
 		fov: 45,

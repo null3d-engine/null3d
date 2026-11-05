@@ -84,8 +84,9 @@ startWorker('job', step, async (event: MessageEvent<JobWorkerInit>) => {
 
 /**
  * The longest that a job worker that left the job system for the page's measurement waits for the
- * next frame job before it looks again. A frame job wakes it sooner wherever another job worker
- * sleeps, and the sketch thread runs every chunk that no worker takes, so no frame waits for it.
+ * next frame job before it looks again. A frame job wakes it sooner: while the page measures, the
+ * core wakes the wake word's waiters for every frame job. The sketch thread runs every chunk that
+ * no worker takes, so no frame waits for it.
  */
 const YIELD_WAIT_MS = 4;
 

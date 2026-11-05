@@ -23,6 +23,7 @@
 		"gifenc": "1.0.3",
 		"three": "0.186.1",
 		"three-mesh-bvh": "0.9.15",
+		"three-r187": "npm:three@0.187.0",
 		"vite": "8.3.1"
 	}
 }

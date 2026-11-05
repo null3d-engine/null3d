@@ -7,8 +7,9 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { defaultEnvironment, launchBrowser } from '../../../packages/cli/src/browser.js';
+import { defaultEnvironment } from '../../../packages/cli/src/browser.js';
 import { writePng } from '../../../packages/cli/src/png.js';
+import { launchRepoBrowser } from '../../../tests/lib/chrome-for-testing.ts';
 import { startServer } from '../../../tests/lib/server.ts';
 import {
 	type PlantReviewQuery,
@@ -143,7 +144,7 @@ interface PageResult {
 }
 
 /** The browser that the shots are drawn in. */
-type Browser = Awaited<ReturnType<typeof launchBrowser>>;
+type Browser = Awaited<ReturnType<typeof launchRepoBrowser>>;
 
 /** The canvas size of a shot: its cells in its grid. */
 function canvasOf(shot: Shot): [number, number] {
@@ -227,7 +228,7 @@ export async function drawShots(
 ): Promise<RunFrame[]> {
 	const log = options.log ?? console.log;
 	const server = await startServer();
-	const browser = await launchBrowser(defaultEnvironment());
+	const browser = await launchRepoBrowser(defaultEnvironment());
 	const frames: RunFrame[] = [];
 	try {
 		for (const [i, shot] of shots.entries()) {

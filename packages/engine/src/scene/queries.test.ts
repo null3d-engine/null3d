@@ -132,6 +132,7 @@ function fakeCore() {
 		return single ? Math.min(found, 1) : found;
 	};
 	const glue = {
+		meshCenter: () => 0,
 		sceneCapacity: () => CAPACITY,
 		sceneArrays: (field: number) => fields[field],
 		commandRing: (field: number) => ring[field],

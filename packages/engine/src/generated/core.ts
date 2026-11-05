@@ -26,6 +26,7 @@ export const FLAG_UNCULLED = 16;
 export const FLAG_CUSTOM_BOUNDS = 32;
 export const FLAG_OUTLINED = 64;
 export const FLAG_OCCLUDER = 128;
+export const FLAG_NOT_OCCLUDER = 512;
 export const FLAG_TRACKED = 256;
 
 export const LAYERS_DEFAULT = 1;
@@ -161,6 +162,7 @@ export const CAPABILITY_TEXTURE_ETC2 = 32;
 export const CAPABILITY_TEXTURE_ASTC = 64;
 export const CAPABILITY_TRANSIENT_ATTACHMENTS = 1024;
 export const CAPABILITY_FLOAT16_TARGETS = 65536;
+export const CAPABILITY_FIRST_PROVOKING_VERTEX = 32768;
 
 export const ANTIALIAS_NONE = 0;
 export const ANTIALIAS_FXAA = 1;
@@ -710,3 +712,5 @@ export const LEVEL_PROBLEM_TOO_MANY = 1;
 export const LEVEL_PROBLEM_ERRORS = 2;
 export const LEVEL_PROBLEM_MESH = 3;
 export const LEVEL_PROBLEM_FORMAT = 4;
+
+export const LEVELS_MAX = 16;

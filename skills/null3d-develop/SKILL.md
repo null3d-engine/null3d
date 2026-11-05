@@ -85,7 +85,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 2. Read the doc pages for the features involved (section 1).
 3. Make the change in small steps. Scene logic goes in `sketch.ts`; DOM, HTML UI and audio go in `page.ts`.
 4. Look at the result. `bunx vite` serves the project, and the null3D Vite plugin adds the right headers. `bunx @null3d/cli shot --out shot.png` renders one frame headless. Open the image: code that compiles can still draw nothing. Read `references/testing-and-debugging.md` before trusting a picture.
-5. Check the cost with `bunx @null3d/cli bench`, or with `await engine.measure(5)` on the page while it runs. Compare the frame phases with the preset's budget (`references/performance.md`).
+5. Check the cost of a production build with `bunx @null3d/cli bench`, or `await engine.measure(5)` on it. Compare the frame phases with the preset's budget (`references/performance.md`).
 6. Add or update a test. Anything visual gets a hold-mode image test in `null3d.json` (`references/testing-and-debugging.md`). Run `bunx @null3d/cli test`, and open each failed image.
 7. If the change touches rendering, check the WebGL2 path: add `?gpu=webgl2` to the dev URL, or run `bunx @null3d/cli test --gpu webgl2`.
 8. Summarize what changed, how you verified it (images, numbers), and the limits: planned APIs avoided, devices not tested.
@@ -105,7 +105,7 @@ Each rule comes with its reason, because the reason covers cases the rule does n
 9. Respect the quality preset. Do not force a heavier preset on phones. When frames run long, the engine's governor lowers a sketch's budgets and the render scale in turn, a budget's step first, then the shadow settings, by itself. Keep your own values per preset, such as particle counts or AI update rates, in one table keyed by `quality.preset`. Listen to `quality.onChange` to apply the values. (`concepts/quality-presets`)
 10. Ship optimized assets: KTX2 textures, which stay compressed on the GPU, and glTF models with integer vertices (0.2). `bunx @null3d/cli assets optimize <in> <out>` makes both, or a `?optimized` import of a `.glb` through the Vite plugin. It compresses models with meshopt, adds blockers for WebGL2's occlusion culling, stores raycast trees for large mesh parts, and bakes normal map detail into the roughness mips so distant bumpy surfaces do not flicker. It records the shader features each model needs, so the engine builds only the pipelines it draws. The KTX2 and meshopt decoders load with the first file that needs them: set no decoder path and copy no worker file. (`api/textures`, `guides/assets-pipeline`, `concepts/assets`)
 11. Keep custom WGSL portable. Use only the three language features every browser shares, and write flat interpolation as `@interpolate(flat, either)`. The build rejects other features, `enable` lines and `f16`, but it cannot check the portable limits or `textureSample` in branches. Test those on each GPU path. (`shaders/wgsl-rules`)
-12. Never branch on GPU names or user agents; read `engine.capabilities` on the page. A name does not tell you what the engine enabled.
+12. Never branch on GPU names or user agents; read `engine.capabilities` on the page. A name does not tell you what the engine enabled; `engine.capabilities.drawPath` says why the direct draw path is on or off.
 13. Put performance-sensitive work in Rust. The engine's per-frame loops run there, and your TypeScript is an interface to them. Use the engine's bulk calls over many objects. For a loop that grows with the scene, use a Rust WebAssembly module on the job workers through `runTask`. A task answers between frames, so a loop for the current frame belongs in the engine's calls. Keep setup, wiring and page logic in TypeScript. (`guides/performance`, `api/tasks`)
 
 ## 5. When the engine may not have the feature
@@ -152,8 +152,8 @@ Drawing:
 | A loaded model, once or many times | `assets.loadGltf`, then `scene.instantiate` (0.2) | `api/assets` |
 | Hundreds to millions of copies of one mesh | `scene.createInstances` with typed arrays | `concepts/instances` |
 | Objects that move every frame | `dynamic: true`, or a dynamic batch | `concepts/static-dynamic` |
-| Less detail far away | `mesh.setLevels([{ mesh, error }])`, or levels from `bunx @null3d/cli assets optimize --lod`, which `assets.loadGltf` reads (0.2) | `concepts/lod` |
-| A large static mesh, detailed near and coarse far | `bunx @null3d/cli assets optimize --clusters`, which stores a tree of patches that the engine draws on both GPU paths for a mesh that draws once, and whole levels for a browser without `WEBGL_multi_draw` | `concepts/lod` |
+| Less detail far away | Code meshes, an add-on's too, plan levels themselves (`levels: false` opts out); `mesh.setLevels` by hand; `assets optimize --lod` for files (0.2) | `concepts/lod`, `guides/add-ons` |
+| A large static mesh, detailed near and coarse far | `assets optimize --clusters`: a tree of patches for a mesh that draws once, on both GPU paths | `concepts/lod` |
 | Camera-facing quads that the sketch moves itself | `scene.createSprites` (0.2) | `api/sprites` |
 | Point clouds | `scene.createPoints` (0.2) | `api/points` |
 | Lines with pixel or world widths | `scene.createLines` (0.2) | `api/lines` |

@@ -5,10 +5,12 @@ import { join } from 'node:path';
 import {
 	archivedKind,
 	archiveFolder,
+	archiveRun,
 	commitAt,
 	compact,
 	NoResultsError,
 	PLAYWRIGHT,
+	pageDetails,
 	parseResultName,
 	parseRunName,
 	resultRows,
@@ -16,6 +18,7 @@ import {
 	round,
 	slimResult,
 } from './archive';
+import type { BenchResult } from './report';
 
 const host = { name: 'Apple M5 Max, 18 cores, 128 GB' };
 
@@ -250,6 +253,60 @@ describe('slimResult', () => {
 			minutes: [1, 2, 3],
 			cpuMs: { median: 1, p95: 2, p99: 3 },
 			downloads: { requests: 3, bytes: 100 },
+		});
+	});
+});
+
+describe('pageDetails', () => {
+	it("keeps each preset and draw path that a page's runs reported, once", () => {
+		const run = (preset: string, drawPath?: string) =>
+			({ ok: true, n: 5, mode: { jobWorkers: 2, preset }, drawPath }) as BenchResult;
+		expect(
+			pageDetails([
+				run('high', 'not-apple-gpu-in-webkit'),
+				run('high', 'not-apple-gpu-in-webkit'),
+				run('low', 'forced'),
+			]),
+		).toEqual({ n: 5, presets: ['high', 'low'], drawPaths: ['not-apple-gpu-in-webkit', 'forced'] });
+		expect(pageDetails([run('high')])).toEqual({ n: 5, presets: ['high'] });
+	});
+});
+
+describe('archiveRun', () => {
+	it("keeps a run's load, the busiest other processes and a desert page's figures", () => {
+		const desert = {
+			engine: 'null3d',
+			view: 'walk',
+			shadows: 3,
+			drawn: { width: 1920, height: 1080 },
+			intervalMs: 2.72,
+			gpuMs: 1.87,
+			triangles: 7_940_000,
+			drawCalls: 1189,
+			firstFrameMs: 3240,
+			settings: { preset: 'medium', directDraws: false },
+		};
+		const result = {
+			...null3dResult(1, 0.1),
+			machineLoad: { before: 4.5, after: 9.25 },
+			otherWork: {
+				start: [],
+				end: [],
+				during: [1, 2, 3, 4].map((pid) => ({ pid, name: `p${pid}`, cores: 1 / pid })),
+			},
+			desert,
+		};
+		const run = archiveRun(
+			{ id: 'desert-null3d-webgpu-1', scene: 'desert', page: 'null3d-webgpu' },
+			result as never,
+			undefined,
+		);
+		expect(run.machineLoad).toEqual({ before: 4.5, after: 9.25 });
+		expect(run.otherWork?.map((use) => use.pid)).toEqual([1, 2, 3]);
+		expect(run.desert).toMatchObject({
+			path: 'indirect',
+			drawn: { width: 1920, height: 1080 },
+			shadows: 3,
 		});
 	});
 });

@@ -3,7 +3,7 @@ id: getting-started/cdn
 title: Try null3D from a CDN
 status: experimental
 since: "0.2"
-summary: "The CDN build; one HTML file with no bundler; import maps; the policy and CORS headers; both thread modes; what needs a build step."
+summary: "The CDN build; its production and development entries; one HTML file with no bundler; import maps; the policy and CORS headers; both thread modes; what needs a build step."
 ---
 
 # Try null3D from a CDN
@@ -14,8 +14,8 @@ A page can draw a null3D scene with no build step: one HTML file that imports th
 
 ```mermaid
 flowchart LR
-    build["bun run build:cdn<br/>target/cdn"] --> cdn["Your CDN<br/>lib, dist, vendor, addons"]
-    cdn -- "import" --> html["One HTML file<br/>createEngine and the sketch"]
+    build["bun run build:cdn<br/>target/cdn"] --> cdn["Your CDN<br/>lib, lib-dev, dist, vendor, addons"]
+    cdn -- "import lib/index.js<br/>or lib-dev/index.js" --> html["One HTML file<br/>createEngine and the sketch"]
     html -- "single-threaded, or threaded<br/>with the isolation headers" --> frame["The frame"]
 ```
 
@@ -28,7 +28,7 @@ bun run build
 bun run build:cdn
 ```
 
-`bun run build` builds the WebAssembly core. `bun run build:cdn` then writes the folder `target/cdn` in a minute or two. The folder is large: most of it is the shader builds for each kind of device. Upload the folder to your CDN under one prefix, such as `https://cdn.example.com/null3d/`, and keep its layout. `--out <folder>` writes it somewhere else:
+`bun run build` builds the WebAssembly core. `bun run build:cdn` then writes the folder `target/cdn` in a minute or two. The folder is large: most of it is the shader builds for each kind of device. Both [entries](#production-and-development-entries) share those builds, so the development entry adds only a few MB. Upload the folder to your CDN under one prefix, such as `https://cdn.example.com/null3d/`, and keep its layout. `--out <folder>` writes it somewhere else:
 
 ```sh
 bun run build:cdn --out ~/sites/null3d
@@ -39,6 +39,27 @@ Give every file a CORS header, because the engine imports its modules and downlo
 ```http
 Access-Control-Allow-Origin: *
 ```
+
+## Production and development entries
+
+The build holds the engine's entry point twice. Both draw the same scene. They differ in the checks that run and in the switches that the page's address can set.
+
+| Entry | Import | Development checks | Address switches | Use it for |
+| --- | --- | --- | --- | --- |
+| Production | `lib/index.js` | Never run | Ignored | Pages that you ship, and every measure of speed or frame rate |
+| Development | `lib-dev/index.js` | Run | Read | Trying things out and finding faults |
+
+The development entry runs the same checks as the Vite dev server. A bad argument throws an error with its code, such as [E1203](../errors/E1203.md), and a call on a destroyed object throws [E1101](../errors/E1101.md). Debug drawing and debug views draw only in a development build, such as this entry ([Debugging](../guides/debugging.md#development-checks)). The entry also reads the switches in the page's address, such as `?gpu=`, `?hold=` and `?preset=` ([Switches for tests](../guides/testing.md#switches-for-tests)).
+
+In each frame, some of those checks read every static object and a share of the rows of static batches. So a large scene runs slower from the development entry than from the production entry. Time a page, judge its frame rate or compare it with three.js only from the production entry. A demo from the development entry is fine to try, but its frame rate is not what your users get.
+
+The production entry behaves like a production build from Vite and the plugin. The checks never run, and the page ignores address switches, so a link cannot change how it runs. Its files still hold the checks' code, which a Vite build removes from the download.
+
+Use one entry for the whole page: the page's import, the sketch's import, the import map and each add-on. An add-on's development entry is `addons/<name>/lib-dev/index.js`. A page that mixes the two loads two copies of the engine's code.
+
+To see which entry a page runs, read the address that it imports. On a page with the [isolation headers](#both-thread-modes), the `?threads=off` switch also tells them apart. With it, `engine.mode.build` is `'single'` from the development entry and `'threaded'` from the production entry.
+
+A benchmark page may time a production build and still set switches, such as `?gpu=webgl2`. It needs a third form. `bun run build:cdn --url-switches` makes the production entry read the address switches. Use that build for benchmark pages only, and never ship it, because a link can then change how the page runs.
 
 ## One HTML file
 
@@ -87,6 +108,8 @@ export default defineSketch(({ scene, geometry, materials }) => {
 
 The sketch is a module at a `blob:` address, which the page makes from the string. It imports the engine from the CDN by its full address. That works in a worker too, where a page's import map does not reach.
 
+The page imports the production entry. While you work on the page, change both `lib/index.js` addresses to `lib-dev/index.js`, so the development checks run and their errors name your mistakes.
+
 ## Import maps
 
 An import map gives the engine its package name, as a bundled project has it. Then the sketch and the page write `@null3d/engine`:
@@ -105,6 +128,8 @@ An import map gives the engine its package name, as a bundled project has it. Th
   // ...
 </script>
 ```
+
+For the development entry, map the names to `lib-dev/index.js` and `lib-dev/stats.js`.
 
 A worker does not read the page's import map. A sketch that runs in a worker imports the engine by its full address. The page can also make the sketch's module with the address written into it, as the example above does.
 
@@ -143,7 +168,7 @@ A page with no build step draws with the engine's own materials, geometry and sh
 
 ## Add-ons from the CDN
 
-Every foundation add-on sits in the build under `addons/<name>/`, in the layout of its own package. A page imports it by its full address, as it imports the engine, so a sketch in a worker reaches it too. The add-on's built code imports the engine from the same build, so the two never come from different versions.
+Every foundation add-on sits in the build under `addons/<name>/`, in the layout of its own package. A page imports it by its full address, as it imports the engine, so a sketch in a worker reaches it too. The add-on's built code imports the engine from the same build. So the two never come from different versions. `addons/<name>/lib/index.js` imports the production entry. `addons/<name>/lib-dev/index.js` imports the development entry.
 
 ```html
 <script type="module">
@@ -190,4 +215,5 @@ The build also writes `null3d-third-party-notices.txt`, with the license notices
 
 - [Hosting and cross-origin isolation](hosting.md): the headers, the policy, Brotli and the third-party notices.
 - [Install null3D](install.md): the packages and the Vite plugin.
+- [Performance guide](../guides/performance.md#measure-fairly): how to measure a page fairly.
 - [Your first scene](first-scene.md): a project with a build step.

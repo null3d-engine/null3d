@@ -22,6 +22,9 @@ Each add-on is a folder named after it, and it is shaped like a package:
 - It loads on first use in a shipped add-on. An example add-on is imported by its demo, so it costs
   that page alone.
 - It draws on both GPU paths, or its README states its fallback.
+- Its meshes take the engine's automatic levels of detail. It opts a mesh out with `levels: false`
+  only where levels are wrong, with a comment that says why
+  ([Building an add-on](../../docs/guides/add-ons.md#give-every-mesh-levels-of-detail)).
 - Its demo lives in `examples/`, and the demo's image test draws it on every GPU tier.
 - No package imports an example add-on. An example is never published, so a package that took one
   would not pack.

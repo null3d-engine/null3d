@@ -3,6 +3,10 @@ name: CI
 # Work lands on main by direct push (D-157 in .dev/decisions), and each push to main runs every
 # job, as .dev/pull-requests.md lists them. A run started by hand runs every job too:
 # gh workflow run ci.yml --ref main
+# A checkout can stall: four of them ran 86 to 328 seconds where the same jobs normally take 17
+# to 19, and two jobs were cancelled with their work part-run. Every checkout step carries a
+# two-minute limit, so a stall fails under its own name in two minutes rather than spending the
+# job's budget and taking every step after it down.
 # A push to a milestone branch, such as m3-start, runs only the quick checks. Its runs and the full
 # runs started by hand on the branch share the branch's caches, so neither does again the work that
 # the other saved: a pull request's runs kept caches of their own (D-249).
@@ -74,7 +78,19 @@ jobs:
       # Git hooks are for local commits; this job runs the same checks directly.
       HUSKY: "0"
     steps:
+      # A checkout can stall on GitHub's side, and every stall seen on the night of 3 November
+      # landed in one of the four jobs that start first. These four take a second attempt and
+      # fail by name on the second, which keeps a stalled checkout from costing the check the
+      # job exists to run. The other jobs keep the single attempt and its two-minute limit.
       - uses: actions/checkout@v5
+        id: checkout
+        timeout-minutes: 2
+        continue-on-error: true
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v5
+        if: steps.checkout.outcome == 'failure'
+        timeout-minutes: 2
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
@@ -168,6 +184,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         # The image tests' references are most of a checkout, and this job reads none of them. A
         # sparse checkout leaves them out and fetches no file it leaves out.
         with: &without-references
@@ -198,7 +215,19 @@ jobs:
     env:
       HUSKY: "0"
     steps:
+      # A checkout can stall on GitHub's side, and every stall seen on the night of 3 November
+      # landed in one of the four jobs that start first. These four take a second attempt and
+      # fail by name on the second, which keeps a stalled checkout from costing the check the
+      # job exists to run. The other jobs keep the single attempt and its two-minute limit.
       - uses: actions/checkout@v5
+        id: checkout
+        timeout-minutes: 2
+        continue-on-error: true
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v5
+        if: steps.checkout.outcome == 'failure'
+        timeout-minutes: 2
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
@@ -227,6 +256,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
@@ -268,6 +298,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -377,6 +408,7 @@ jobs:
             limit: 25
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - name: Find an earlier pass with the same inputs
         id: passed
@@ -438,6 +470,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -503,6 +536,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -544,6 +578,7 @@ jobs:
       shader-entries-folder: ${{ steps.entry-folder.outputs.folder }}
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
@@ -641,7 +676,19 @@ jobs:
     steps:
       # The size check finds its base in the history. A run on main compares with main's commit
       # before the push, so the growth that landed before never counts against the newest push.
+      # A checkout can stall on GitHub's side, and every stall seen on the night of 3 November
+      # landed in one of the four jobs that start first. These four take a second attempt and
+      # fail by name on the second, which keeps a stalled checkout from costing the check the
+      # job exists to run. The other jobs keep the single attempt and its two-minute limit.
       - uses: actions/checkout@v5
+        id: checkout
+        timeout-minutes: 2
+        continue-on-error: true
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v5
+        if: steps.checkout.outcome == 'failure'
+        timeout-minutes: 2
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
@@ -727,6 +774,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -766,7 +814,19 @@ jobs:
       HUSKY: "0"
     steps:
       # The check reads the trailers of the commits since the base.
+      # A checkout can stall on GitHub's side, and every stall seen on the night of 3 November
+      # landed in one of the four jobs that start first. These four take a second attempt and
+      # fail by name on the second, which keeps a stalled checkout from costing the check the
+      # job exists to run. The other jobs keep the single attempt and its two-minute limit.
       - uses: actions/checkout@v5
+        id: checkout
+        timeout-minutes: 2
+        continue-on-error: true
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v5
+        if: steps.checkout.outcome == 'failure'
+        timeout-minutes: 2
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
@@ -856,6 +916,7 @@ jobs:
       NULL3D_SHADER_SHARD: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - name: Find an earlier pass with the same inputs
         id: passed
@@ -955,6 +1016,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1019,6 +1081,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1091,6 +1154,7 @@ jobs:
       CITY_TESTS: '\bs6 on '
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         # The browser tests compare with the references of CI's software GPU alone, so the
         # checkout leaves out the real GPU's.
         with: &software-gpu-references
@@ -1158,6 +1222,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *software-gpu-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1205,6 +1270,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *software-gpu-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1247,7 +1313,8 @@ jobs:
   browser-production:
     # The production build projects' tests, which serve the production build of the test pages: the
     # engine and its errors after bundling, the start under a strict Content-Security-Policy and from
-    # another origin, and the KTX2, glTF and stats files that the build ships. Each page's build
+    # another origin, the KTX2, glTF and stats files that the build ships, and the level plans that
+    # the engine's copy and the sketch's copy of the engine send to the job workers. Each page's build
     # takes about half a minute and reads about a gigabyte, and up to four build at once. The pages
     # build only in this job: every other browser job leaves them out. The job runs in two parts, each of which
     # builds only the pages that its test files load, so no page builds twice. The first holds the
@@ -1272,15 +1339,16 @@ jobs:
             tests: engine.spec.ts content-security-policy.spec.ts ktx2.spec.ts
             later: cdn.spec.ts
           - id: others
-            part: the errors, sketch shaders, stats and glTF pages
-            pages: errors sketch-shaders stats gltf-files
-            tests: errors.spec.ts sketch-shaders.spec.ts stats.spec.ts gltf.spec.ts
+            part: the errors, sketch shaders, stats, glTF and runtime levels pages
+            pages: errors sketch-shaders stats gltf-files runtime-levels
+            tests: errors.spec.ts sketch-shaders.spec.ts stats.spec.ts gltf.spec.ts runtime-levels.spec.ts
             later: ""
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *software-gpu-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1345,6 +1413,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *software-gpu-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1414,6 +1483,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *software-gpu-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1522,6 +1592,7 @@ jobs:
       PWTEST_SHARD_WEIGHTS: "48:111:90"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1585,6 +1656,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1639,6 +1711,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1679,6 +1752,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1752,6 +1826,7 @@ jobs:
       PREBUILT: none
     steps: &real-browser-steps
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         # Real browsers compare with the real GPU's references and their devices' own, never with
         # the software GPU's, which the checkout leaves out.
         with: &real-browser-checkout
@@ -1840,6 +1915,7 @@ jobs:
       NULL3D_LOAD_PAGES: prebuilt
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
         with: *real-browser-checkout
       - uses: oven-sh/setup-bun@v2
         with:
@@ -1900,6 +1976,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        timeout-minutes: 2
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}

@@ -327,7 +327,7 @@ Requirements:
 - [Bun](https://bun.sh/) 1.4.3 or newer
 - The Rust toolchain through [rustup](https://rustup.rs/). The repository pins a nightly compiler, and rustup installs it on the first build.
 - Node.js 24 or newer, which runs the browser tests
-- Google Chrome, which the browser tests drive on your real GPU
+- Chrome for Testing, which the browser tests drive on your real GPU. `bun run chrome:install` installs the pinned build, which every copy of the repository shares
 - [mkcert](https://github.com/FiloSottile/mkcert), only to test on phones and tablets over HTTPS
 
 ```sh

@@ -10,14 +10,20 @@ interface OcclusionResult {
 	error?: string;
 	tier: string;
 	occlusion: { off: boolean; on: boolean };
+	levels: { off: number; on: number };
+	directDraws: boolean;
 	views: number;
 	differingPixels: number[];
 	failures: string[];
 }
 
+// A view drawn without the culling's passes matches by default, so the page holds them on in every
+// frame: the check of what the culling saves can turn them off. It also keeps the indirect draws,
+// since the direct-draw path, which a start-up probe picks where indirect draws measure slower,
+// culls on the CPU and runs no GPU occlusion culling.
 const TIERS = [
-	{ tier: 'webgpu', query: 'gpu=webgpu' },
-	{ tier: 'webgpu-compat', query: 'gpu=compat' },
+	{ tier: 'webgpu', query: 'gpu=webgpu&occlusion-check=off&direct=off' },
+	{ tier: 'webgpu-compat', query: 'gpu=compat&occlusion-check=off&direct=off' },
 ] as const;
 
 for (const { tier, query } of TIERS)
@@ -33,5 +39,10 @@ for (const { tier, query } of TIERS)
 		expect(result.tier).toBe(tier);
 		expect(result.failures).toEqual([]);
 		expect(result.occlusion).toEqual({ off: false, on: true });
+		expect(result.directDraws).toBe(false);
+		// Both engines draw the spheres at the same planned levels, so a level that the culling
+		// picks wrong shows in the image, and a level that arrives late does not.
+		expect(result.levels.on).toBeGreaterThan(0);
+		expect(result.levels.off).toBe(result.levels.on);
 		expect(result.differingPixels).toEqual(new Array(result.views).fill(0));
 	});
