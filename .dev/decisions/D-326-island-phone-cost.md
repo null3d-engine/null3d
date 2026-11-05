@@ -1,4 +1,4 @@
-# D-323: The Island lightens its drawing on a phone
+# D-326: The Island lightens its drawing on a phone
 
 Status: decided by the owner. Built: the Low preset's fixed shadow range and its cards drawn from one atlas view. The slower water reflection is not applied. Measured: both sides on the M3 Max, two loads each, in [the data](#data), and both sides on the two cloud phones, in [the cloud phones](#the-cloud-phones). Pending: the pictures, the slower reflection cadence, and the software WebGL2 gap. Task: none.
 
