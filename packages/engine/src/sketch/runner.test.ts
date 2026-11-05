@@ -80,6 +80,7 @@ const KEPT_ARGUMENTS = new Set([
 	'setLightDefault',
 	'setCanvasOutput',
 	'drawDebugLines',
+	'turnEveryView',
 ]);
 
 /** How the log shows a change of one of the core's texture settings. */
@@ -1193,6 +1194,20 @@ describe('hold mode with a timed script', () => {
 		expect(updates).toBe(31);
 		expect(Atomics.load(control.slots, Slot.HeldFrame)).toBe(31);
 		expect(Atomics.load(control.slots, Slot.FramesPublished)).toBe(32);
+	});
+
+	it('gives every pass its turn in the frames that the hold keeps', async () => {
+		// A cadenced pass keeps its target between its turns, so the picture would hold an image
+		// of an earlier time. Each frame that the hold keeps gives every pass its turn instead.
+		const plain = await start(() => ({}), undefined, { holdSeconds: 0.5 });
+		expect(plain.calls.filter(([name]) => name === 'turnEveryView')).toHaveLength(1);
+		// A pass that reads the frame before makes the hold record a settle frame after the held
+		// one, and the settle frame draws what the tasks wrote: both give every pass its turn.
+		const settling = await start(() => ({}), undefined, {
+			holdSeconds: 0.5,
+			readsLastFrame: () => 1,
+		});
+		expect(settling.calls.filter(([name]) => name === 'turnEveryView')).toHaveLength(2);
 	});
 
 	it('draws the held frame debug lines in the settle frame too', async () => {
