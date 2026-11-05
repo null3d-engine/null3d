@@ -3429,6 +3429,7 @@ mod tests {
             .set_pieces(
                 mesh - 1,
                 &[piece(10_000, 1.0), piece(10_000, -1.0), piece(10_000, 0.0)],
+                &[],
             )
             .unwrap();
         let material = settings

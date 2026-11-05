@@ -625,11 +625,16 @@ export interface PrimitiveData {
 /**
  * The pieces of a triangle list, as the asset tool sorts them: the triangles of each piece, one
  * piece after another in the list's order, and eight floats of each piece's bounds, its bounding
- * sphere's centre and radius, then its cone's axis and cutoff.
+ * sphere's centre and radius, then its cone's axis and cutoff. A large list's pieces also split
+ * into groups of up to 128 triangles: `groups` holds the triangles of each group, one group after
+ * another in the list's order, and the groups of each piece hold its triangles and no other.
+ * `groupBounds` holds eight floats of each group's bounds, as `bounds` holds a piece's.
  */
 export interface PiecesData {
 	triangles: Uint32Array;
 	bounds: Float32Array;
+	groups?: Uint8Array;
+	groupBounds?: Float32Array;
 }
 
 /**
@@ -673,8 +678,12 @@ export const OCCLUDER = 'NULL3D_occluder';
 export const CLUSTERS = 'NULL3D_clusters';
 /** The extension that holds the pieces of a primitive's triangle list. */
 export const PIECES = 'NULL3D_pieces';
-/** The version of the pieces' layout that the engine reads. A file of another layout draws whole. */
-export const PIECES_VERSION = 1;
+/**
+ * The version of the pieces' layout that the engine reads, which may hold each piece's groups. The
+ * first version holds pieces alone, which the engine reads too. A file of another layout draws
+ * whole.
+ */
+export const PIECES_VERSION = 2;
 /**
  * The version of the tree's layout that the engine draws: each patch's sphere holds its children's
  * and its error is at least theirs. An older tree draws its mesh whole.
@@ -2147,7 +2156,12 @@ function parsePrimitive(
 			vertices,
 		);
 	if (extensions?.[PIECES] !== undefined) {
-		const pieces = piecesOf(entry(extensions[PIECES], `${what}'s ${PIECES}`), corners / 3);
+		const pieces = piecesOf(
+			entry(extensions[PIECES], `${what}'s ${PIECES}`),
+			corners / 3,
+			what,
+			read,
+		);
 		if (pieces) data.pieces = pieces;
 	}
 	return data;
@@ -2155,12 +2169,19 @@ function parsePrimitive(
 
 /**
  * The pieces of a primitive's triangle list, or nothing for pieces of another layout's version, or
- * whose triangles do not add up to the list's, which then draws whole.
+ * whose triangles do not add up to the list's, which then draws whole. Groups that do not split the
+ * pieces leave the pieces without groups.
  */
-function piecesOf(extension: Entry, triangles: number): PiecesData | undefined {
+function piecesOf(
+	extension: Entry,
+	triangles: number,
+	what: string,
+	read: Reader,
+): PiecesData | undefined {
 	const counts = extension.triangles;
 	const bounds = extension.bounds;
-	if (Number(extension.version ?? 0) !== PIECES_VERSION) return undefined;
+	const version = Number(extension.version ?? 0);
+	if (version < 1 || version > PIECES_VERSION) return undefined;
 	if (!Array.isArray(counts) || !Array.isArray(bounds) || bounds.length !== counts.length * 8)
 		return undefined;
 	let sum = 0;
@@ -2170,10 +2191,46 @@ function piecesOf(extension: Entry, triangles: number): PiecesData | undefined {
 	}
 	if (sum !== triangles || !bounds.every((v) => typeof v === 'number' && Number.isFinite(v)))
 		return undefined;
-	return {
+	const pieces: PiecesData = {
 		triangles: Uint32Array.from(counts as number[]),
 		bounds: Float32Array.from(bounds as number[]),
 	};
+	if (extension.groups === undefined || extension.groupBounds === undefined) return pieces;
+	const groups = read(Number(extension.groups), `${what}'s groups`);
+	const groupBounds = read(Number(extension.groupBounds), `${what}'s group bounds`);
+	if (
+		groups.componentType !== UNSIGNED_BYTE ||
+		groups.components !== 1 ||
+		groupBounds.componentType !== FLOAT ||
+		groupBounds.components !== 4 ||
+		groupBounds.count !== groups.count * 2 ||
+		!groupsSplit(groups.array as Uint8Array, pieces.triangles) ||
+		!(groupBounds.array as Float32Array).every(Number.isFinite)
+	)
+		return pieces;
+	return {
+		...pieces,
+		groups: groups.array as Uint8Array,
+		groupBounds: groupBounds.array as Float32Array,
+	};
+}
+
+/**
+ * True when `groups`, the triangles of each group in a list's order, split each of `pieces`, the
+ * triangles of each piece, with no group that crosses from one piece into the next.
+ */
+export function groupsSplit(groups: ArrayLike<number>, pieces: ArrayLike<number>): boolean {
+	let g = 0;
+	for (let k = 0; k < pieces.length; k++) {
+		let left = pieces[k] as number;
+		while (left > 0 && g < groups.length) {
+			const size = groups[g++] as number;
+			if (size === 0 || size > left) return false;
+			left -= size;
+		}
+		if (left > 0) return false;
+	}
+	return g === groups.length;
 }
 
 /** The bytes of a primitive's stored tree: an accessor of unsigned 32-bit integers. */

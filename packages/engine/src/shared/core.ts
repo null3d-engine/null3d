@@ -416,12 +416,13 @@ export interface CoreGlue extends CoreErrors {
 	 * A level of the live mesh `base`, which is split into parts, that draws the base's own
 	 * vertices from triangles at `meshArrays`'s address, which the call frees, and copies only the
 	 * vertices of the triangles that span the parts' seams. The words hold the level's `count`
-	 * pieces, as `setMeshPieces` lays them out, then its `indices` indices. A level with pieces
+	 * pieces and `groups` groups, as `setMeshPieces` lays them out, then its `indices` indices. A
+	 * level with pieces
 	 * keeps its triangles' order, which must come part by part as the parts draw them; one whose
 	 * triangles do not draws them part by part, without pieces. Returns the mesh id, or 0 on
 	 * failure.
 	 */
-	createSplitLevel(base: number, count: number, indices: number): number;
+	createSplitLevel(base: number, count: number, groups: number, indices: number): number;
 	/**
 	 * Writes part `part` of the live mesh `mesh`'s vertices and triangles as the level planner
 	 * reads them, and returns their address, or 0 for a mesh or part that does not exist: the
@@ -461,19 +462,22 @@ export interface CoreGlue extends CoreErrors {
 	/**
 	 * Gives a mesh `count` pieces of its triangle list, at `meshArrays`'s address: nine words each,
 	 * the piece's triangles, then four floats of its bounding sphere and four of its cone of
-	 * facings. The pieces follow the list's order. 1 when the mesh takes them, 0 when they do not
-	 * fit its list, which then draws whole.
+	 * facings. The pieces follow the list's order. `groups` groups of the pieces follow them, nine
+	 * words each in the same layout, in the list's order, and the groups of each piece hold its
+	 * triangles and no other. 1 when the mesh takes them, 0 when they do not fit its list, which
+	 * then draws whole. Groups that do not split the pieces leave the pieces without groups.
 	 */
-	setMeshPieces(mesh: number, count: number): number;
+	setMeshPieces(mesh: number, count: number, groups: number): number;
 	/**
-	 * Gives a mesh `count` pieces over a triangle list of their own: the pieces as `setMeshPieces`
-	 * lays them out, then `indices` indices that hold the mesh's triangles in piece order, at
+	 * Gives a mesh `count` pieces over a triangle list of their own: the pieces and their `groups`
+	 * groups as `setMeshPieces` lays them out, then `indices` indices that hold the mesh's
+	 * triangles in piece order, at
 	 * `meshArrays`'s address. The mesh keeps its own list. A mesh of several parts takes a list
 	 * whose triangles come part by part, as `createSplitLevel` draws them. A list that the mesh held
 	 * before goes, with its pieces. 1 when the mesh takes them, 0 when it cannot: a list in another
 	 * order.
 	 */
-	setMeshPieceList(mesh: number, count: number, indices: number): number;
+	setMeshPieceList(mesh: number, count: number, groups: number, indices: number): number;
 	/**
 	 * Appends one band to a mesh's tree of cluster patches: `patches` records of eight words each,
 	 * four floats of a bounding sphere and four integers of a run of indices, a parent and an

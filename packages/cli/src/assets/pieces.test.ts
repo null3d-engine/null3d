@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { beforeAll, describe, expect, it } from 'bun:test';
 import { Document, NodeIO } from '@gltf-transform/core';
 import {
 	coneShare,
@@ -7,15 +7,21 @@ import {
 	FACING_MIN_SHARE,
 	facingPieces,
 	facingPiecesPay,
+	GROUP_LIST_MIN_TRIANGLES,
+	GROUP_TRIANGLES,
+	type GroupPlan,
 	listPieces,
 	PIECE_BOUNDS,
 	PIECE_LIST_MIN_TRIANGLES,
 	type PiecePlan,
 	pieceCount,
+	piecesInOrder,
+	planGroups,
 	planPieces,
 } from '@null3d/engine/pieces-planner';
-import { MeshoptEncoder } from 'meshoptimizer';
+import { MeshoptClusterizer, MeshoptEncoder } from 'meshoptimizer';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
+import { cacheOrder, clusterOrder } from './geometry.js';
 import { planLevels, storeLevels } from './levels.js';
 import { lodOf, MSFTLod } from './lod-extension.js';
 import { NULL3D_PIECES, Null3dPieces, piecesOf, storePieces } from './pieces-extension.js';
@@ -215,6 +221,42 @@ function expectConeCulls(plan: PiecePlan, positions: Float32Array, indices: Uint
 	return culled;
 }
 
+/** A group plan as a plan of pieces over its own list, whose triangles it takes in order. */
+const asPlan = (groups: GroupPlan): PiecePlan => ({
+	order: Uint32Array.from({ length: groups.indices.length / 3 }, (_, t) => t),
+	counts: Uint32Array.from(groups.counts),
+	bounds: groups.bounds,
+});
+
+/**
+ * True when `groups` split each of the pieces of `counts` in turn, with no group that crosses from
+ * one piece into the next.
+ */
+function groupsSplit(groups: ArrayLike<number>, counts: ArrayLike<number>): boolean {
+	let g = 0;
+	for (let k = 0; k < counts.length; k++) {
+		let left = counts[k] as number;
+		while (left > 0 && g < groups.length) {
+			const size = groups[g++] as number;
+			if (size === 0 || size > left) return false;
+			left -= size;
+		}
+		if (left > 0) return false;
+	}
+	return g === groups.length;
+}
+
+/** Each triangle of a list as text, starting at its least corner, which keeps its turn. */
+function turnedTriangles(list: ArrayLike<number>): string[] {
+	const out: string[] = [];
+	for (let t = 0; t < list.length; t += 3) {
+		const corners = [list[t], list[t + 1], list[t + 2]] as number[];
+		const least = corners.indexOf(Math.min(...corners));
+		out.push([0, 1, 2].map((k) => corners[(least + k) % 3]).join(','));
+	}
+	return out.sort();
+}
+
 /** Checks that a plan takes every triangle of a list of `triangles` once. */
 function expectEveryTriangle(plan: PiecePlan, triangles: number): void {
 	expect(plan.counts.reduce((sum, n) => sum + n, 0)).toBe(triangles);
@@ -263,6 +305,57 @@ describe('pieces of a triangle list', () => {
 		expect(listed?.order).toEqual(planned?.order);
 		expect(listed?.bounds).toEqual(planned?.bounds);
 		expect(facingPieces(positions, indices)).toBeUndefined();
+	});
+});
+
+describe('groups of the pieces of a list', () => {
+	const { positions, indices } = roughSphere(96, 48);
+	const triangles = indices.length / 3;
+	const plan = planPieces(positions, indices, 8) as PiecePlan;
+	let inPieces = new Uint32Array(0);
+	let groups: GroupPlan | undefined;
+	beforeAll(async () => {
+		await Promise.all([MeshoptEncoder.ready, MeshoptClusterizer.ready]);
+		inPieces = piecesInOrder(indices, plan, cacheOrder);
+		groups = planGroups(positions, inPieces, plan.counts, clusterOrder);
+	});
+
+	it('split each piece into groups of up to the most triangles, and keep each turn', () => {
+		expect(triangles).toBeGreaterThanOrEqual(GROUP_LIST_MIN_TRIANGLES);
+		const plan2 = groups as GroupPlan;
+		expect(plan2).toBeDefined();
+		expect(plan2.counts.length).toBeGreaterThanOrEqual(Math.ceil(triangles / GROUP_TRIANGLES));
+		expect(Math.max(...plan2.counts)).toBeLessThanOrEqual(GROUP_TRIANGLES);
+		expect(groupsSplit(plan2.counts, plan.counts)).toBe(true);
+		// Each piece keeps its own triangles, each with the same turn of its corners.
+		let first = 0;
+		for (const count of plan.counts) {
+			const range = [first * 3, (first + count) * 3] as const;
+			expect(turnedTriangles(plan2.indices.subarray(...range))).toEqual(
+				turnedTriangles(inPieces.subarray(...range)),
+			);
+			first += count;
+		}
+	});
+
+	it('give each group a sphere that holds its corners and a cone that holds its facings', () => {
+		const plan2 = asPlan(groups as GroupPlan);
+		expect(expectBounds(plan2, positions, (groups as GroupPlan).indices)).toBeGreaterThan(0);
+		expect(expectConeCulls(plan2, positions, (groups as GroupPlan).indices)).toBeGreaterThan(0);
+	});
+
+	it('come out the same on every run', () => {
+		const again = planGroups(positions, inPieces, plan.counts, clusterOrder);
+		expect(again?.indices).toEqual((groups as GroupPlan).indices);
+		expect(again?.counts).toEqual((groups as GroupPlan).counts);
+		expect(again?.bounds).toEqual((groups as GroupPlan).bounds);
+	});
+
+	it('leave the pieces of a small list without groups', () => {
+		const small = roughSphere(32, 16);
+		expect(small.indices.length / 3).toBeLessThan(GROUP_LIST_MIN_TRIANGLES);
+		const counts = Uint32Array.of(small.indices.length / 3);
+		expect(planGroups(small.positions, small.indices, counts, clusterOrder)).toBeUndefined();
 	});
 });
 
@@ -394,9 +487,9 @@ describe('the pieces step', () => {
 	});
 
 	it(
-		'sorts a large mesh and its levels into pieces, and keeps every triangle',
+		'sorts a large mesh and its levels into pieces and groups, and keeps every triangle',
 		async () => {
-			await MeshoptEncoder.ready;
+			await Promise.all([MeshoptEncoder.ready, MeshoptClusterizer.ready]);
 			// The first level halves the list and still holds enough triangles for pieces.
 			const { positions, indices } = roughSphere(256, 160);
 			expect(indices.length / 3).toBeGreaterThanOrEqual(2 * PIECE_LIST_MIN_TRIANGLES);
@@ -437,19 +530,35 @@ describe('the pieces step', () => {
 				);
 			expect(turned(sorted)).toEqual(turned(indices));
 			expect(pieces?.getTriangles().reduce((sum, n) => sum + n, 0)).toBe(indices.length / 3);
+			// The pieces split into groups, which keep within them.
+			const groups = pieces?.getGroups()?.getArray() as Uint8Array<ArrayBuffer>;
+			expect(summary.groups).toBeGreaterThan(0);
+			expect(groups).toBeInstanceOf(Uint8Array);
+			expect(groupsSplit(groups, pieces?.getTriangles() ?? [])).toBe(true);
+			expect(pieces?.getGroupBounds()?.getCount()).toBe(groups.length * 2);
 			const level = lodOf(node)?.listLevels()[0]?.getMesh()?.listPrimitives()[0];
 			expect(level && piecesOf(level)).not.toBeNull();
 			// The extension survives a write and a read.
 			const io = new NodeIO().registerExtensions([MSFTLod, Null3dPieces]);
 			const json = await io.writeJSON(doc);
 			const written = json.json.meshes?.[0]?.primitives[0]?.extensions?.[NULL3D_PIECES] as
-				| { triangles: number[]; bounds: number[]; version: number }
+				| {
+						triangles: number[];
+						bounds: number[];
+						groups: number;
+						groupBounds: number;
+						version: number;
+				  }
 				| undefined;
-			expect(written?.version).toBe(1);
+			expect(written?.version).toBe(2);
 			expect(written?.bounds.length).toBe((written?.triangles.length ?? 0) * PIECE_BOUNDS);
+			expect(typeof written?.groups).toBe('number');
+			expect(typeof written?.groupBounds).toBe('number');
 			const read = await io.readJSON(json);
 			const readPrim = read.getRoot().listMeshes()[0]?.listPrimitives()[0];
-			expect(readPrim && piecesOf(readPrim)?.getTriangles()).toEqual(pieces?.getTriangles());
+			const readPieces = readPrim && piecesOf(readPrim);
+			expect(readPieces?.getTriangles()).toEqual(pieces?.getTriangles());
+			expect(readPieces?.getGroups()?.getArray()).toEqual(groups);
 		},
 		scaledBudget(60_000),
 	);

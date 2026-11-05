@@ -9,6 +9,8 @@ import { VERTEX_ATTRIBUTES } from '../generated/gpu';
 export const SIMPLIFIER_MODULE = 'meshopt-simplifier';
 /** The encoder's module, whose vertex cache order the planner runs. */
 export const ENCODER_MODULE = 'meshopt-encoder';
+/** The clusterizer's module, which splits the pieces of a large list into groups. */
+export const CLUSTERIZER_MODULE = 'meshopt-clusterizer';
 
 /**
  * The vertex shader location and the floats of each attribute that the planner reads, in the
