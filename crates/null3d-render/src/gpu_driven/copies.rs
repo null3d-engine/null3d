@@ -133,6 +133,10 @@ fn insert_candidate(candidates: &mut [u32], level: usize, distance: f32, source:
 /// The words of a bucket's record that hold its capacity, the last one.
 const BUCKET_CAPACITY_WORD: usize = BUCKET_WORDS as usize - 1;
 
+/// The word of a bucket's record that holds the bucket of its next coarser level plus one, or a
+/// slot's assigned copy's source plus one.
+const BUCKET_NEXT_WORD: usize = 11;
+
 impl Layout {
     /// Returns whether the slots' records changed since the last call.
     pub(super) fn take_slot_records_dirty(&mut self) -> bool {
@@ -758,6 +762,7 @@ impl Layout {
                 let copy = if room > 0 { source + 1 } else { 0 };
                 if self.buckets[bucket].slot_copy != copy {
                     self.buckets[bucket].slot_copy = copy;
+                    self.bucket_records[bucket * BUCKET_WORDS as usize + BUCKET_NEXT_WORD] = copy;
                     self.mark_records(bucket as u32..bucket as u32 + 1);
                     self.slot_records_dirty = true;
                 }

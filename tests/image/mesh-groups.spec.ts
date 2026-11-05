@@ -19,7 +19,7 @@ interface GroupsResult {
 const PATHS = [
 	{ name: 'webgpu', query: 'gpu=webgpu&direct=off', tier: 'webgpu', slots: true },
 	{ name: 'webgpu direct draws', query: 'gpu=webgpu&direct=on', tier: 'webgpu', slots: false },
-	{ name: 'webgpu-compat', query: 'gpu=compat&direct=off', tier: 'webgpu-compat', slots: false },
+	{ name: 'webgpu-compat', query: 'gpu=compat&direct=off', tier: 'webgpu-compat', slots: true },
 	{ name: 'webgl2', query: 'gpu=webgl2', tier: 'webgl2', slots: false },
 ] as const;
 
