@@ -840,10 +840,14 @@ fn surface(input: SurfaceInput) -> Surface {
         let lichen_reach = header(HEADER_LICHEN_REACH);
         let in_zone = smoothstep(lichen_reach.x, lichen_reach.x + 0.6, plant.y)
             * (1.0 - smoothstep(lichen_reach.y - 0.6, lichen_reach.y, plant.y));
-        let grain = value3(plant * 22.0) * 0.6 + value3(plant * 60.0) * 0.4;
+        let grain = value3(plant * 60.0) * 0.6 + value3(plant * 140.0) * 0.4;
         let crest = 0.45 + 0.55 * (1.0 - cavity);
+        // A patch finer than the pixel would shimmer at distance: fade it out when its cell is
+        // under about a pixel and a half.
+        let footprint = max(length(dpx), length(dpy));
+        let resolved = 1.0 - smoothstep(0.004, 0.012, footprint);
         let lichen_mask =
-            smoothstep(0.60, 0.68, grain) * crest * in_zone * lichen.w * (1.0 - youth);
+            smoothstep(0.60, 0.68, grain) * crest * in_zone * lichen.w * (1.0 - youth) * resolved;
         bark = mix(bark, lichen.rgb * (0.88 + 0.24 * grain), lichen_mask);
         // The collar's dark ridge where a branch joins its parent.
         bark *= 1.0 - 0.5 * moss_reach.z * junction;
