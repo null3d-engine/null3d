@@ -26,7 +26,16 @@ import {
 	type PlantView,
 	VIEW_SPECS,
 } from '../../../tests/pages/lib/plant-review/views.ts';
-import { blank, deltaE76, hexOf, labImage, type Rgba, resizeToWidth, srgbOf } from './image.ts';
+import {
+	blank,
+	deltaE76,
+	hexOf,
+	labImage,
+	type Rgba,
+	readImage,
+	resizeToWidth,
+	srgbOf,
+} from './image.ts';
 
 /** What a reference file is. */
 export type ReferenceKind = 'still' | 'texture' | 'turntable' | 'wind';
@@ -221,6 +230,53 @@ function seasonOf(
 	return {};
 }
 
+/** Hues in degrees of green leaves, and of autumn leaves turned yellow, orange or brown. */
+const GREEN_HUES = [70, 170] as const;
+const AUTUMN_HUES = [10, 60] as const;
+/** The least saturation of a pixel that counts toward either. */
+const LEAF_SATURATION = 0.2;
+
+/**
+ * Whether a picture's leaves are still green: more of its coloured pixels take a green hue than an
+ * autumn one. A still of ripe fruit among green leaves shows late summer, though its name names a
+ * fruit of autumn.
+ *
+ * @param image The picture.
+ * @returns True where green outweighs the autumn colours.
+ */
+export function greenLeaves(image: Rgba): boolean {
+	let green = 0;
+	let autumn = 0;
+	const d = image.data;
+	for (let i = 0; i < d.length; i += 4) {
+		const r = (d[i] as number) / 255;
+		const g = (d[i + 1] as number) / 255;
+		const b = (d[i + 2] as number) / 255;
+		const max = Math.max(r, g, b);
+		const range = max - Math.min(r, g, b);
+		if (max === 0 || range / max < LEAF_SATURATION) continue;
+		let hue =
+			max === r ? ((g - b) / range) % 6 : max === g ? (b - r) / range + 2 : (r - g) / range + 4;
+		hue = (hue * 60 + 360) % 360;
+		if (hue >= GREEN_HUES[0] && hue <= GREEN_HUES[1]) green++;
+		else if (hue >= AUTUMN_HUES[0] && hue < AUTUMN_HUES[1]) autumn++;
+	}
+	return green > autumn;
+}
+
+/**
+ * A still's slot with the season its picture shows: one that its words place in autumn is drawn in
+ * summer where its leaves are still green.
+ *
+ * @param slot The slot as its name and index row give it.
+ * @param image The still's picture.
+ * @returns The slot.
+ */
+export function seasonFromPicture(slot: Slot, image: Rgba): Slot {
+	if (slot.query?.season !== 'autumn' || !greenLeaves(image)) return slot;
+	return { ...slot, query: { ...slot.query, season: 'summer' } };
+}
+
 /** The texture rule of a texture source that its number does not name. */
 function textureRule(number: number, name: string): SlotRule {
 	const known = TEXTURE_BY_NUMBER[number];
@@ -373,7 +429,11 @@ export function readReferenceSet(folder: string): ReferenceSet {
 		if (!isReference(file)) continue;
 		const row = byFile.get(file);
 		const inUse = row?.supersededBy === undefined;
-		const slot = classifySlot(file, row?.shows);
+		const named = classifySlot(file, row?.shows);
+		const slot =
+			named?.query?.season === 'autumn'
+				? seasonFromPicture(named, readImage(join(folder, file)))
+				: named;
 		const turn = classifyTurn(file);
 		const wind = /wind/i.test(file) && file.toLowerCase().endsWith('.mp4');
 		const kind: ReferenceKind = slot ? slot.kind : turn ? 'turntable' : wind ? 'wind' : 'still';

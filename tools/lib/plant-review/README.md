@@ -55,6 +55,7 @@ The command ends with status 1 when a frame failed or when the coverage is not c
 `references.ts` reads the folder's `INDEX.md`. A row whose "what it shows" cell says the file is superseded takes the file out of use, and so does a row whose later cell says "Superseded by" a file. Every other picture and video is in use, listed or not, apart from videos' contact sheets.
 
 - Numbered stills go to the review view that shows the same thing, by the words in their names first and their numbers second. A still of another habit or a young form goes to the nearest view, with a note.
+- A still is drawn in the season its name gives: flowers in blossom, fruit in autumn, a bare plant in winter. A still of fruit whose picture shows more green than autumn colours is drawn in summer, since its leaves have not turned.
 - Texture sources (24 to 28) go beside the render's own surface: the leaf faces, the bark at mid-trunk, and young bark far out on a limb. The bark views frame the metres that the species' texture manifest gives.
 - `*-turntable*.mp4` is a turning video of the whole plant, or of the branch, sub-branch or leaf cluster that its name gives; `-halfturn` covers 180 degrees.
 - `*wind*.mp4` is a wind video.
