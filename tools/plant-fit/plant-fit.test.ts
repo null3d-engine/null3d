@@ -120,6 +120,29 @@ describe('the envelope', () => {
 		expect(fit.aspect).toBeLessThanOrEqual(1.02);
 	});
 
+	test('places a still at the turn the review draws it at', () => {
+		// The still is wider than the video from its side; it is drawn at the review's turn of 90
+		// degrees, so its right half-width bounds the envelope's right side at that turn.
+		const stillGrid = new Uint8Array(CELLS * COLUMNS);
+		for (let row = 0; row < CELLS; row++)
+			for (let col = 0; col < COLUMNS; col++)
+				if (Math.abs(columnX(col)) <= 0.45) stillGrid[row * COLUMNS + col] = 1;
+		const still: HullView = {
+			frame: -1,
+			// The hull mirrors every turn when the video turns backwards, so the input is the
+			// review's turn negated; after mirroring it bounds the side the review draws.
+			turn: -Math.PI / 2,
+			grid: stillGrid,
+			file: '02-whole-profile.png',
+			stillTurn: 90,
+		};
+		const withStill = hullEnvelope([...views(32), still], 'test-turntable.mp4', 2, -1);
+		expect(withStill.envelope.source.stills).toEqual([{ file: '02-whole-profile.png', turn: 90 }]);
+		const volume = envelopeVolume(withStill.envelope, 1, 0);
+		// A camera at turn 90 sees the still's right half-width at azimuth 270 degrees.
+		expect(volume.radius(0.65, -Math.PI / 2)).toBeGreaterThan(0.37);
+	});
+
 	test('fits a crown heavier on one side, seen by a near camera', () => {
 		// Two plant heights out, the camera draws the near side larger, so the crown looks wider when
 		// its heavy side faces the camera than when it faces away.

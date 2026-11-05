@@ -15,7 +15,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { REPO_ROOT } from '../../tests/lib/server.ts';
 import { flag, option, positionals } from '../lib/plant-review/cli.ts';
 import { rubricBand } from '../lib/plant-review/compare.ts';
-import { probeVideo, videoFrames } from '../lib/plant-review/image.ts';
+import { probeVideo, readImage, videoFrames } from '../lib/plant-review/image.ts';
 import {
 	classifyTurn,
 	readReferenceSet,
@@ -96,7 +96,21 @@ for (const id of species) {
 	let fit: TurnFit | undefined;
 	if (video) {
 		const frames = videoFrames(video.path, probeVideo(video.path), WORK_WIDTH);
-		fit = fitTurn(video, frames);
+		// The whole-plant stills bound the crown's broad sides: a mean over the turn alone hides
+		// the difference they exist to record.
+		const stills = set.stills
+			.filter(
+				(still) =>
+					still.framed &&
+					still.number <= 18 &&
+					(still.view === 'whole' || still.view === 'silhouette'),
+			)
+			.map((still) => ({
+				file: still.file,
+				image: readImage(join(folder, still.file)),
+				turn: still.turn ?? 0,
+			}));
+		fit = fitTurn(video, frames, stills);
 		const hull = fit.hull;
 		console.log(
 			`  ${video.file}: ${fit.views.length} views over ${video.arc} degrees` +
@@ -105,6 +119,16 @@ for (const id of species) {
 		if (hull)
 			console.log(
 				`  envelope: crown base ${hull.crownBase}, aspect ${hull.aspect}; its outlines overlap the views by ${hull.consistency.lowest} to ${hull.consistency.highest}, mean ${hull.consistency.mean}`,
+			);
+		const span = Math.max(1, fit.frames - 1);
+		if (fit.stills.length > 0)
+			console.log(
+				`  stills: ${fit.stills
+					.map(
+						(s) =>
+							`${s.file} at ${s.turn} degrees (nearest frame ${((360 * s.frame) / span).toFixed(1)}, overlap ${s.overlap.toFixed(3)})`,
+					)
+					.join(', ')}`,
 			);
 		const band = rubricBand(id, set.slug);
 		console.log(

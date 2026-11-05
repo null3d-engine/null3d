@@ -40,12 +40,18 @@ const LEAST_COSINE = 0.05;
 
 /** One view of the plant: the camera's turn from the video's first frame and its outline. */
 export interface HullView {
-	/** The video frame. */
+	/** The video frame, or the still's own negative number. */
 	readonly frame: number;
 	/** Radians the camera has turned round the plant since the first frame. */
 	readonly turn: number;
 	/** The outline on the grid, rows from the ground up. */
 	readonly grid: Uint8Array;
+	/** The camera's distance from the plant's axis in plant heights, when it is not the video's. */
+	readonly distance?: number;
+	/** The still's reference file, when the view is a still. */
+	readonly file?: string;
+	/** Degrees round the plant that the review draws a still at, when the view is a still. */
+	readonly stillTurn?: number;
 }
 
 /** A view's reach to the right and to the left of the trunk at each row, in plant heights. */
@@ -115,19 +121,52 @@ function hullRows(
 			const phi = (2 * Math.PI * a) / AZIMUTHS;
 			const bounds: number[] = [];
 			views.forEach((view, k) => {
-				const e = extents[k] as Extents;
-				const c = Math.cos(phi + view.turn);
-				const toward = Math.sin(phi + view.turn);
-				if (c > LEAST_COSINE) bounds.push(nearBound(e.right[row] as number, c, toward, distance));
-				else if (c < -LEAST_COSINE)
-					bounds.push(nearBound(e.left[row] as number, -c, toward, distance));
+				// The video's views set the hull through a low bound; the stills are overlaid whole.
+				if (view.file !== undefined) return;
+				const bound = viewBound(extents[k] as Extents, view, row, phi, distance);
+				if (bound > 0) bounds.push(bound);
 			});
 			bounds.sort((p, q) => p - q);
 			radii[a] = bounds[Math.min(Math.floor(share * bounds.length), bounds.length - 1)] ?? 0;
 		}
+		// A still bounds the crown's broad side at the direction it faces, with the extent its own
+		// photograph showed there, and does not narrow the video's hull anywhere: the shape is broad
+		// where the stills are broad and narrow where the video is narrow.
+		views.forEach((view, k) => {
+			if (view.file === undefined) return;
+			const e = extents[k] as Extents;
+			const right = azIndex(-view.turn);
+			const left = (right + AZIMUTHS / 2) % AZIMUTHS;
+			const broad = e.right[row] as number;
+			const other = e.left[row] as number;
+			if (broad > (radii[right] as number)) radii[right] = broad;
+			if (other > (radii[left] as number)) radii[left] = other;
+		});
 		rows.push(radii);
 	}
 	return rows;
+}
+
+/** The envelope's azimuth index nearest a direction, in radians. */
+function azIndex(direction: number): number {
+	const turns = direction / (2 * Math.PI);
+	return Math.round((((turns % 1) + 1) % 1) * AZIMUTHS) % AZIMUTHS;
+}
+
+/** The radius a view's outline allows in one direction at one row, or 0 where it does not face it. */
+function viewBound(
+	extent: Extents,
+	view: HullView,
+	row: number,
+	phi: number,
+	distance: number,
+): number {
+	const c = Math.cos(phi + view.turn);
+	const toward = Math.sin(phi + view.turn);
+	const at = view.distance ?? distance;
+	if (c > LEAST_COSINE) return nearBound(extent.right[row] as number, c, toward, at);
+	if (c < -LEAST_COSINE) return nearBound(extent.left[row] as number, -c, toward, at);
+	return 0;
 }
 
 /**
@@ -258,6 +297,12 @@ function envelopeAt(
 		);
 	}
 	if (baseShare > STEM_SHARE) radii[0] = (radii[1] as number[]).map((r) => BASE_SHARE * r);
+	const stills = views
+		.filter((view) => view.file !== undefined && view.frame < 0)
+		.map((view) => ({
+			file: view.file as string,
+			turn: round(view.stillTurn as number, 2),
+		}));
 	const envelope: RadialEnvelope = {
 		kind: 'radial',
 		heights,
@@ -266,7 +311,12 @@ function envelopeAt(
 			const rounded = level.map((r) => round(r));
 			return rounded.every((r) => r === rounded[0]) ? (rounded[0] as number) : rounded;
 		}),
-		source: { method: 'turntable-hull', from, views: views.length },
+		source: {
+			method: 'turntable-hull',
+			from,
+			views: views.length,
+			...(stills.length > 0 && { stills }),
+		},
 	};
 	return envelope;
 }
@@ -294,13 +344,23 @@ function spanOf(grid: Uint8Array): number {
  * @param from The reference file, which the envelope's source names.
  * @param distance The video camera's distance from the plant's axis, in plant heights; infinite
  *   for views from afar.
+ * @param direction The way the video turns, when already known; fitted from the views otherwise.
  */
 export function hullEnvelope(
 	views: readonly HullView[],
 	from: string,
 	distance = Number.POSITIVE_INFINITY,
+	direction?: 1 | -1,
 ): HullFit {
 	if (views.length < 2) throw new Error('an envelope needs at least two views of the plant');
+	if (direction === 1) return hullOnce(views, from, distance, 1);
+	if (direction === -1)
+		return hullOnce(
+			views.map((view) => ({ ...view, turn: -view.turn })),
+			from,
+			distance,
+			-1,
+		);
 	const forward = hullOnce(views, from, distance, 1);
 	if (!Number.isFinite(distance)) return forward;
 	// Seen from afar a plant and its mirror image show the same outlines from opposite turns, but a
@@ -329,11 +389,18 @@ function hullOnce(
 	// in some frames than in others leaves it narrower than the views on average. The hull widens
 	// by the least factor that draws the crown, through the video's camera, as wide on average as
 	// its views; a plant that holds its shape needs none.
-	const viewWidth = mean(views.map((view) => spanOf(crownOnly(view.grid, base))));
+	// The video alone sets the drift widening; the stills are overlaid after it, so they widen the
+	// broad sides without moving the video's own fit.
+	const videoIndices = views.flatMap((view, k) => (view.file === undefined ? [k] : []));
+	const videoViews = videoIndices.map((k) => views[k] as HullView);
+	const videoExtents = videoIndices.map((k) => extents[k] as Extents);
+	const viewWidth = mean(videoViews.map((view) => spanOf(crownOnly(view.grid, base))));
 	const drawnWidth = (widening: number) => {
-		const shape = envelopeAt(views, extents, base, distance, widening, from);
+		const shape = envelopeAt(videoViews, videoExtents, base, distance, widening, from);
 		const volume = envelopeVolume(shape, 1, 0);
-		return mean(views.map((view) => spanOf(nearSilhouette(volume, view.turn, frame, distance))));
+		return mean(
+			videoViews.map((view) => spanOf(nearSilhouette(volume, view.turn, frame, distance))),
+		);
 	};
 	let widening = 1;
 	if (drawnWidth(1) < viewWidth) {
@@ -351,7 +418,10 @@ function hullOnce(
 	const scores = views.map((view) => ({
 		frame: view.frame,
 		iou: round(
-			iou(nearSilhouette(volume, view.turn, frame, distance), crownOnly(view.grid, base)),
+			iou(
+				nearSilhouette(volume, view.turn, frame, view.distance ?? distance),
+				crownOnly(view.grid, base),
+			),
 			4,
 		),
 	}));
