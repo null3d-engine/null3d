@@ -112,6 +112,41 @@ leaf below the references. The pedunculate oak's own record, with its fitted sho
 million triangles from the trunk and 0.50 million from the edge, and 5.03 million from the crown's
 middle, where the pool's budget cuts its split by about one per cent.
 
+### Each copy is measured by its crown
+
+The engine measures a row's levels and draw ranges to the nearest point of the row's sphere, which
+stays centred on the row. Rows at a copy's foot needed a sphere that held the whole crown from
+there, so a broad crown read far nearer than it stood and kept its nearest wood well past the split.
+A copy's rows now stand at its crown's centre. Their values carry that centre in the plant's own
+meters, and the plant shader takes it back off every point, so the copy draws where it stood. The
+sphere holds the farthest wood and the farthest shoot from the centre, so it matches the sphere by
+which the near pool picks near copies. From an eye one split beyond the oak's crown, the copy
+measures 0.8 to 1.1 splits away; the sphere round the foot read under three quarters of one. Each
+of the centre's numbers is a half float, so a device that keeps row values at half precision reads
+it exactly, and the near task writes only a card row's first value, its split.
+
+### Near cards cast no shadow inside the split
+
+A near copy's real shoots cast its shadow inside its split. Its cards' coverage in the shadow
+caster gives way there as their pixels do, measured from the scene camera, whose inputs a caster
+takes, so the leaves' shadow is cast once. The near band test's shadow view holds it: the ground
+under one oak must take the shoots' shadow alone.
+
+### Far cards keep their leaves
+
+A card atlas's mip levels average the leaves' coverage with the gaps between them. Far away a
+card's alpha falls under the cutoff, and its leaves vanish: the oak's first card level at 64 m
+showed bare wood beside a far card of a whole crown. A card's alpha rises by a quarter for each mip
+level that its sample reads, which keeps the share of the card that leaves cover near the full-size
+texture's. The engine makes a texture's mip levels itself, so a coverage-keeping atlas of levels made
+on the CPU was not open to the add-on.
+
+### Fixed placements and the pool share each near table
+
+A species' near table holds the places of the copies that draw real shoots. Fixed placements take
+slots from its bottom with `reserveNearSlots`; the pool takes the slots above them and clears only
+its own. Both write one CPU copy of the table and send it whole, so neither loses the other's slots.
+
 ### The near task in WebAssembly
 
 Placing up to 16 copies' rows in the world, finding each row's tier bands and writing the batch rows
@@ -137,7 +172,82 @@ leaves goes on to the cards behind it, as on the GPU. Drawn at the far atlas's o
 texel sampled one point of each card and the crown drew as a scatter of dots; filtering each card
 before its cutoff thinned it further, since a filtered card never lets the cards behind it through.
 
+Placement scales the asset's own switch distances, measured at the reference view, to the page's
+view and bias, so an asset whose impostor starts at once, as a review forces it, draws its far card
+alone. A far card row keeps the card's size times its copy's scale. The stand-ins' far cards take
+the copy's scale alone and draw about a meter across; their pictures stay frozen until the demos
+move to real species.
+
+### The wood draws without the mask
+
+The wood's alpha is always 1, yet it drew through the masked build, which discards after the
+lighting and stays out of the depth prepass. It now draws in the opaque mode from the plant shader
+without the casters' coverage function (`render/wood.wgsl`, written from `plant.wgsl` and held to it
+by a test). On the near shoots page at Medium it took the frame from 132.1 to 108.4 ms of GPU time
+on the iPhone 17's WebGPU, and from 16.8 to 13.5 ms on the Mac's WebGPU in Chrome.
+
+## Device figures
+
+The `near-shoots` plan (`tests/pages/near-shoots.html`) draws a stand of six oaks from under the
+first crown at each preset, with no near shoots, at the preset's budget and at twice it. GPU time
+per frame in ms, or the frame interval where the device has no GPU timer (WebGL2 in Safari, and
+WebGL2 on the Galaxy S25, at a 60 Hz display), before the wood drew without the mask:
+
+| Device, path, preset | No shoots | Budget | Twice the budget |
+| --- | --- | --- | --- |
+| iPhone 17, WebGPU, Low | 11.9 | 13.6 | 15.4 |
+| iPhone 17, WebGPU, Medium | 106.1 | 131.5 | 170.0 |
+| iPhone 17, WebGPU, High | 129.4 | 181.1 | 228.4 |
+| iPhone 17, WebGPU, Ultra | 146.9 | 209.8 | 273.4 |
+| iPhone 17, WebGL2, Medium (interval) | 24.6 | 30.1 | 38.5 |
+| iPad Pro 13, WebGPU, Low | 6.1 | 6.9 | 7.2 |
+| iPad Pro 13, WebGPU, Medium | 52.3 | 65.2 | 86.3 |
+| iPad Pro 13, WebGPU, High | 64.5 | 91.7 | 116.7 |
+| iPad Pro 13, WebGL2, Medium (interval) | 15.7 | 15.7 | 20.2 |
+| Galaxy S25, WebGPU, Low | 23.9 | 26.5 | 24.8 |
+| Galaxy S25, WebGPU, Medium | 67.4 | 81.1 | 101.9 |
+| Galaxy S25, WebGPU, High | 79.9 | 108.3 | 135.7 |
+| Galaxy S25, WebGL2, Medium (interval) | 31.5 | 31.7 | 42.4 |
+| Galaxy Tab A9 Plus, WebGPU, Low | 516.8 | | |
+
+The Tab A9 Plus draws 9 frames in 5 seconds at Low on WebGPU, so its Medium and higher pages each
+run to their time limit; the quality chooser gives it Low.
+
+### Where a Medium frame goes
+
+The `near-breakdown` plan takes the Medium frame apart, one change at a time. The frame draws 9.25
+million triangles on both paths, 7.8 million of them in the three shadow cascades. WebGPU counts 192
+draws to WebGL2's 97: its GPU-driven bundles record one indirect draw per bucket and part in every
+view whether or not a row survives culling, and WebGL2 skips empty buckets. GPU time per frame in
+ms, with the wood unmasked:
+
+| Change | iPhone 17, WebGPU | Mac WebKit, WebGPU | Mac Chrome, WebGPU |
+| --- | --- | --- | --- |
+| None | 108.6 | 36.3 | 13.5 |
+| No MSAA | 16.7 | 5.7 | 13.2 |
+| Leaves alone | 109.0 | 33.0 | 8.4 |
+| Leaves alone, drawn whole without the mask | | 8.5 | |
+| Every leaf drawn whole without the mask | | 16.7 | |
+| Wood alone | 25.7 | 8.7 | 4.6 |
+| Far cards alone | 9.1 | | 3.5 |
+| Leaves' masks without alpha to coverage | 106.9 | | 17.5 |
+| 16-bit scene color | 108.3 | | |
+| No HDR | 121.6 | | |
+| Full-precision shading | 109.0 | | |
+| No light through the leaves, no shine | 87.3 | | 16.6 |
+| No sun shadow | 49.2 | | 6.0 |
+| Depth prepass on | 110.4 | | 17.6 |
+
+The Mac's WebKit and Chrome figures come from different hours of a loaded machine, so only each
+column's ratios compare. The cost is the masked leaves under MSAA in WebKit's WebGPU, layer upon
+layer: Chrome draws the same frame on the same GPU at a sixth of the time. The main pass is not the
+cause: WebGPU's holds 8 bytes a sample (rg11b10ufloat color and depth32float, both resolved or
+discarded in the pass), WebGL2's 12. No plant or engine shader of the frame shades per sample. The
+`alpha-mask-cost` page with `?layers=8` shows it without plants: eight masked curtains under MSAA
+take 6.48 ms against 1.37 ms opaque in WebKit, and 2.57 against 1.67 ms in Chrome; without MSAA
+WebKit takes 1.48 against 0.53 ms.
+
 ## Not measured yet
 
-The budget's figures on the iPhone 17, the iPad Pro 13, the Galaxy S25 and the Tab A9 Plus. The
-owner's near caps stand until those runs.
+The per-preset budgets wait for the masked leaves' cost under MSAA in WebKit to be settled; the
+owner's near caps stand until then.

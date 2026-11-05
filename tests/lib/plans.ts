@@ -1562,32 +1562,36 @@ const ALPHA_MASK_LAYERS = [1, 8] as const;
 /**
  * What an alpha-masked lit fragment costs under MSAA: the curtain of masked lit quads of the
  * alpha-mask-cost page, timed with every quad opaque and masked in turns, with MSAA and with no
- * antialiasing, on each GPU path, as one curtain and as eight stacked one behind another. D-226
- * records the one curtain's results, and D-319 the eight curtains', where WebKit's WebGPU pays for
- * each masked layer under MSAA.
+ * antialiasing, on each GPU path, as one curtain and as eight stacked one behind another. On the
+ * WebGPU paths each MSAA page runs again with `masked-prepass=off`, where the masked quads cut
+ * their masks as they shade rather than in the prepass of masked surfaces, which only MSAA draws.
+ * D-226 records the one curtain's results, D-319 the eight curtains', where WebKit's WebGPU pays
+ * for each masked layer under MSAA, and D-325 what the masked prepass saves.
  */
 export function alphaMaskPlan(): PlanItem<Check>[] {
 	const items: PlanItem<Check>[] = [];
 	for (const [path, tier] of ALPHA_MASK_PATHS)
 		for (const antialias of ['msaa', 'none'] as const)
 			for (const layers of ALPHA_MASK_LAYERS)
-				items.push(
-					pageItem(
-						`alpha-mask-${antialias}-${path}${layers === 1 ? '' : `-layers${layers}`}`,
-						'alpha-mask-cost',
-						{ kind: 'alpha-mask', tier, antialias },
-						{
-							switches: [
-								`gpu=${path}`,
-								`aa=${antialias}`,
-								'preset=high',
-								'prepass=off',
-								`layers=${layers}`,
-							],
-							timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
-						},
-					),
-				);
+				for (const cut of path === 'webgl2' || antialias === 'none' ? [true] : [true, false])
+					items.push(
+						pageItem(
+							`alpha-mask-${antialias}-${path}${layers === 1 ? '' : `-layers${layers}`}${cut ? '' : '-no-masked-prepass'}`,
+							'alpha-mask-cost',
+							{ kind: 'alpha-mask', tier, antialias },
+							{
+								switches: [
+									`gpu=${path}`,
+									`aa=${antialias}`,
+									'preset=high',
+									'prepass=off',
+									...(cut ? [] : ['masked-prepass=off']),
+									`layers=${layers}`,
+								],
+								timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+							},
+						),
+					);
 	return items;
 }
 
@@ -2077,14 +2081,29 @@ export function nearShootsPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * A case of the near breakdown plan, with the same switches on both paths or each path's own. A
+ * case that names no switches for a path skips that path.
+ */
+type NearBreakdownCase =
+	| { readonly name: string; readonly switches: readonly string[] }
+	| {
+			readonly name: string;
+			readonly webgpu?: readonly string[];
+			readonly webgl2?: readonly string[];
+	  };
+
+/**
  * The cases of the near breakdown plan: the probe page's frame as it ships, then one change at a
  * time. The depth prepass case turns the prepass on where the preset leaves it off, and off where
- * the preset draws it. The prepass leaves out every build that discards by its alpha or a fading
- * level's dither, so the wood, which draws without the mask, enters it only without the fade, as in
- * its own case. The last three cases change what the main pass stores for each sample: the scene
- * color at 16 bits a channel, 8-bit color with no HDR, and full-precision shading.
+ * the preset draws it. On WebGPU with MSAA the leaves cut their masks in a prepass of masked
+ * surfaces as the page ships, and in the depth prepass with it; the masked prepass case leaves them
+ * to cut their masks as they shade, and runs on WebGPU alone, which has that prepass. The
+ * depth template's prepass leaves out every build that fades between levels by a dither, so the
+ * wood, which draws without the mask, enters it only without the fade, as in its own case. The last
+ * three cases change what the main pass stores for each sample: the scene color at 16 bits a
+ * channel, 8-bit color with no HDR, and full-precision shading.
  */
-const NEAR_BREAKDOWN_CASES = [
+const NEAR_BREAKDOWN_CASES: readonly NearBreakdownCase[] = [
 	{ name: 'base', switches: [] },
 	{ name: 'wood-only', switches: ['only=wood'] },
 	{ name: 'leaves-only', switches: ['only=leaves'] },
@@ -2093,20 +2112,15 @@ const NEAR_BREAKDOWN_CASES = [
 	{ name: 'no-shadows', switches: ['shadows=off'] },
 	{ name: 'no-fade', switches: ['fade=off'] },
 	{ name: 'coarse-levels', switches: ['levels=coarse'] },
-	{ name: 'prepass', switches: { webgpu: ['prepass=on'], webgl2: ['prepass=off'] } },
-	{
-		name: 'wood-prepass',
-		switches: {
-			webgpu: ['fade=off', 'prepass=on'],
-			webgl2: ['fade=off'],
-		},
-	},
+	{ name: 'prepass', webgpu: ['prepass=on'], webgl2: ['prepass=off'] },
+	{ name: 'no-masked-prepass', webgpu: ['masked-prepass=off'] },
+	{ name: 'wood-prepass', webgpu: ['fade=off', 'prepass=on'], webgl2: ['fade=off'] },
 	{ name: 'no-msaa', switches: ['aa=none'] },
 	{ name: 'no-coverage', switches: ['coverage=off'] },
 	{ name: 'rgba16f-scene', switches: ['scene-format=rgba16f'] },
 	{ name: 'no-hdr', switches: ['hdr=off'] },
 	{ name: 'full-precision', switches: ['half=off'] },
-] as const;
+];
 
 /**
  * Where a frame of the near shoots page spends its GPU time, on WebGPU and on WebGL2: the stand of
@@ -2121,10 +2135,12 @@ export function nearBreakdownPlan(): PlanItem<Check>[] {
 		{ path: 'webgpu', tier: 'webgpu' },
 		{ path: 'webgl2', tier: 'webgl2' },
 	] as const)
-		for (const { name, switches } of NEAR_BREAKDOWN_CASES)
+		for (const breakdown of NEAR_BREAKDOWN_CASES) {
+			const switches = 'switches' in breakdown ? breakdown.switches : breakdown[path];
+			if (!switches) continue;
 			items.push(
 				pageItem(
-					`near-breakdown-${name}-${path}`,
+					`near-breakdown-${breakdown.name}-${path}`,
 					'near-shoots',
 					{ kind: 'probe', tier },
 					{
@@ -2133,12 +2149,13 @@ export function nearBreakdownPlan(): PlanItem<Check>[] {
 							'preset=medium',
 							`triangles=${NEAR_SHOOTS_BUDGETS.medium}`,
 							'seconds=5',
-							...('webgpu' in switches ? switches[path] : switches),
+							...switches,
 						],
 						timeoutSeconds: 900,
 					},
 				),
 			);
+		}
 	return items;
 }
 

@@ -295,7 +295,8 @@ The `physical-sky` plan measures what the physical sky costs, for [D-143](decisi
 
 - The `alpha-mask-cost` plan measures what an alpha-masked lit fragment costs under MSAA, for [D-226](decisions/D-226-alpha-masked-lit-fragments-under-msaa.md). Its page (`tests/pages/alpha-mask-cost.html`) draws a grid of lit quads that fills the view once. One side draws the masked build of the standard material, and the other the opaque build of the same map.
 - The page measures each side for 2 seconds, three times each. Where the browser has a GPU timer, it reports the GPU time per frame. `?aa=msaa` or `?aa=none` sets the antialiasing at the engine's start, because the mode stays fixed while an engine runs.
-- The plan runs the page with each antialiasing mode on each GPU path: 6 pages. Run it on the Mac while it is quiet: `bun tests/real-browsers.ts --plan alpha-mask-cost Safari`.
+- `?layers=` stacks that many curtains, each a little behind the last with its bands moved one cell, so each pixel shades through several masked layers, as in a crown of leaves. With 8, WebKit's WebGPU pays for each masked layer under MSAA and Chrome's does not ([D-319](decisions/D-319-near-plants-split-by-distance.md#where-a-medium-frame-goes)).
+- The plan runs the page with each antialiasing mode on each GPU path, with one curtain and with 8. On WebGPU's two paths each MSAA page runs again with `?masked-prepass=off`, where the masked quads cut their masks as they shade rather than in the prepass that MSAA gives them ([D-325](decisions/D-325-masked-surfaces-cut-in-a-prepass.md)): 16 pages. Run it on the Mac while it is quiet: `bun tests/real-browsers.ts --plan alpha-mask-cost Safari`.
 
 ## The car-paint cost plan
 

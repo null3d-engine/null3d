@@ -9,7 +9,8 @@
 // shoots, cards and merged foliage) or `?only=far` (every copy on its far card) draws one part
 // alone; `?light=plain` drops the leaves' light through them and their shine, so their build takes
 // no translucency; `?shadows=off` casts no sun shadow; `?coverage=off` cuts the leaves' masks
-// without alpha to coverage; `?fade=off` turns off the dithered fade between levels;
+// without alpha to coverage; `?leaves=opaque` draws the leaves' whole quads with no mask, the cost
+// of shading each of their pixels once; `?fade=off` turns off the dithered fade between levels;
 // `?levels=coarse` switches levels at Low's distances. The sketch makes these changes in the
 // context it hands the add-on, so the add-on's own code runs as it ships.
 import {
@@ -31,6 +32,7 @@ import {
 	prepareSpecies,
 } from '@null3d/vegetation';
 import { nearOak } from '../../../packages/vegetation/src/render/near-oak.fixture';
+import woodShader from '../../../packages/vegetation/src/render/wood.wgsl';
 
 const params = new URL(import.meta.url).searchParams;
 /** The triangle budget the page asks for, or none for the preset's. */
@@ -39,6 +41,8 @@ const TRIANGLES = params.has('triangles') ? Number(params.get('triangles')) : un
 const ONLY = params.get('only') ?? 'all';
 const PLAIN_LIGHT = params.get('light') === 'plain';
 const COVERAGE = params.get('coverage') !== 'off';
+/** `?leaves=opaque` draws the leaves' whole quads with no mask: the cost of shading each pixel once. */
+const OPAQUE_LEAVES = params.get('leaves') === 'opaque';
 const SHADOWS = params.get('shadows') !== 'off';
 const FADE = params.get('fade') !== 'off';
 const COARSE = params.get('levels') === 'coarse';
@@ -81,6 +85,11 @@ function probeContext(ctx: SketchContext, roles: Map<InstanceBatch, number>): Sk
 			...(PLAIN_LIGHT && { specularIntensity: 0, diffuseTransmission: undefined }),
 			...(!COVERAGE && mode !== WOOD && { alphaToCoverage: false }),
 		};
+		if (OPAQUE_LEAVES && LEAVES.has(mode)) {
+			changed.wgsl = woodShader;
+			changed.alphaMode = 'opaque';
+			delete changed.alphaCutoff;
+		}
 		const material = ctx.materials.shader(changed);
 		modes.set(material, mode);
 		return material;
@@ -178,6 +187,7 @@ export default defineSketch(async (base) => {
 			only: ONLY,
 			plainLight: PLAIN_LIGHT,
 			coverage: COVERAGE,
+			opaqueLeaves: OPAQUE_LEAVES,
 			shadows: SHADOWS,
 			fade: FADE,
 			coarse: COARSE,
