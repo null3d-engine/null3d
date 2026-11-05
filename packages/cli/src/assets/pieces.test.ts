@@ -486,6 +486,36 @@ describe('the pieces step', () => {
 		expect(piecesOf(both.prim)).toBeNull();
 	});
 
+	it('writes pieces alone unless the model asks for groups', async () => {
+		await Promise.all([MeshoptEncoder.ready, MeshoptClusterizer.ready]);
+		const { positions, indices } = roughSphere(256, 160);
+		const build = () => {
+			const doc = new Document();
+			const buffer = doc.createBuffer();
+			const prim = doc
+				.createPrimitive()
+				.setAttribute(
+					'POSITION',
+					doc.createAccessor().setType('VEC3').setArray(positions).setBuffer(buffer),
+				)
+				.setIndices(doc.createAccessor().setType('SCALAR').setArray(indices).setBuffer(buffer));
+			const mesh = doc.createMesh('rock').addPrimitive(prim);
+			const node = doc.createNode('rock').setMesh(mesh);
+			doc.createScene().addChild(node);
+			return { doc, prim };
+		};
+		const plain = build();
+		storeLevels(plain.doc, await planLevels(plain.doc));
+		expect(storePieces(plain.doc).groups).toBe(0);
+		expect(piecesOf(plain.prim)?.getGroups() ?? null).toBeNull();
+		expect(piecesOf(plain.prim)?.getGroupBounds() ?? null).toBeNull();
+		const grouped = build();
+		storeLevels(grouped.doc, await planLevels(grouped.doc));
+		const summary = storePieces(grouped.doc, { groups: true });
+		expect(summary.groups).toBeGreaterThan(0);
+		expect(piecesOf(grouped.prim)?.getGroups()).not.toBeNull();
+	});
+
 	it(
 		'sorts a large mesh and its levels into pieces and groups, and keeps every triangle',
 		async () => {
@@ -506,7 +536,9 @@ describe('the pieces step', () => {
 			const node = doc.createNode('rock').setMesh(mesh);
 			doc.createScene().addChild(node);
 			storeLevels(doc, await planLevels(doc));
-			const summary = storePieces(doc);
+			// Groups are opt-in: a model that does not ask writes pieces alone.
+			const summary = storePieces(doc, { groups: true });
+			expect(summary.groups).toBeGreaterThan(0);
 			expect(summary.lists).toBeGreaterThanOrEqual(2);
 			const pieces = piecesOf(prim);
 			expect(pieces).not.toBeNull();

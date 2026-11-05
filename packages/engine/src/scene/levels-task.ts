@@ -39,6 +39,12 @@ export interface LevelsTaskInput {
 	/** True to sort the mesh's lists into pieces by space alone, whatever way they face. */
 	spacePieces?: boolean;
 	/**
+	 * True to split the pieces of a large list into groups, which the copies that carry the most
+	 * triangles of a level cull through slots. The plan splits them only when asked, because each
+	 * group costs its bounds and its share of the sorted list.
+	 */
+	groups?: boolean;
+	/**
 	 * The copies that the scene draws of the mesh, which decide whether a list smaller than the
 	 * pieces' floor gets facing pieces.
 	 */
@@ -119,8 +125,18 @@ export async function run(
 	input: unknown,
 	wasm: (name: string) => WebAssembly.Module,
 ): Promise<TaskResult> {
-	const { words, cards, maxLevels, skipFlat, parts, masks, basePieces, spacePieces, copies } =
-		input as LevelsTaskInput;
+	const {
+		words,
+		cards,
+		maxLevels,
+		skipFlat,
+		parts,
+		masks,
+		basePieces,
+		spacePieces,
+		copies,
+		groups,
+	} = input as LevelsTaskInput;
 	const meshopt = await start(wasm);
 	const began = performance.now();
 	const header = new Uint32Array(words, 0, 3);
@@ -174,7 +190,7 @@ export async function run(
 					meshopt.cacheOrder,
 					spacePieces,
 					copies,
-					meshopt.clusterOrder,
+					groups ? meshopt.clusterOrder : undefined,
 				);
 	const levels: TaskLevel[] = planned.map((level) => {
 		const indices = level.indices[0] as Uint32Array;

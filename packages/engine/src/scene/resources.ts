@@ -325,6 +325,13 @@ export interface BuildLevelsOptions {
 	 * whole small pieces. A mesh whose positions are integers plans no card levels.
 	 */
 	cards?: boolean;
+	/**
+	 * True to split the pieces of a large list into groups of 64 to 128 triangles, which the copies
+	 * that carry the most triangles of a level cull through slots. The default is false: groups cost
+	 * their planning and their bytes, and only a mesh whose copies carry much of a level pays. A
+	 * mesh whose plan makes no pieces, or no list large enough, gets none either way.
+	 */
+	groups?: boolean;
 }
 
 /**
@@ -632,7 +639,14 @@ export class MeshGeometry {
 	 * Throws E1101 for a destroyed mesh.
 	 */
 	buildLevels(options: BuildLevelsOptions = {}): Promise<readonly MeshLevel[]> {
-		return this.plan(options.cards ?? false, false, 'mesh.buildLevels');
+		return this.plan(
+			options.cards ?? false,
+			false,
+			'mesh.buildLevels',
+			false,
+			false,
+			options.groups === true,
+		);
 	}
 
 	/**
@@ -646,12 +660,13 @@ export class MeshGeometry {
 		if (option === false || option === 'pieces') this.automaticOff = true;
 		this.piecesOnly = option === 'pieces' && triangles >= PIECES_MIN_TRIANGLES;
 		if (option === undefined || option === false || option === 'pieces') return;
-		this.planQuietly(typeof option === 'object' && option.cards === true, false, call);
+		const options = typeof option === 'object' ? option : {};
+		this.planQuietly(options.cards === true, false, call, options.groups === true);
 	}
 
 	/** Starts a plan whose failure keeps the full mesh, with a warning in development. */
-	private planQuietly(cards: boolean, automatic: boolean, call: string): void {
-		this.plan(cards, automatic, call).catch((error: unknown) => {
+	private planQuietly(cards: boolean, automatic: boolean, call: string, groups = false): void {
+		this.plan(cards, automatic, call, false, false, groups).catch((error: unknown) => {
 			if (DEV)
 				console.warn(
 					`${call}() left a mesh that draws its full shape at every distance: its levels of detail did not plan. ${error instanceof Error ? error.message : String(error)}`,
@@ -662,7 +677,7 @@ export class MeshGeometry {
 	/**
 	 * Starts a plan of the mesh's levels, or returns the one that runs with the same options. With
 	 * `piecesOnly`, the plan makes no lower levels and sorts the mesh into pieces alone, by space
-	 * alone with `spacePieces`.
+	 * alone with `spacePieces`, and with `groups` its large lists' pieces split into groups.
 	 */
 	private plan(
 		cards: boolean,
@@ -670,6 +685,7 @@ export class MeshGeometry {
 		call: string,
 		piecesOnly = false,
 		spacePieces = piecesOnly,
+		groups = false,
 	): Promise<readonly MeshLevel[]> {
 		const id = this.id;
 		const { core } = this;
@@ -718,6 +734,7 @@ export class MeshGeometry {
 						maxLevels: piecesOnly ? 0 : MAX_LOWER_LEVELS,
 						skipFlat: automatic,
 						spacePieces,
+						groups,
 						parts,
 						copies: this.copies,
 						// The mesh's own pieces draw a sorted copy of its indices. A mesh that one
