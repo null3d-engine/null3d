@@ -1,8 +1,8 @@
 # D-323: The Island lightens its drawing on a phone
 
-Status: decided by the owner. Built: the Low preset's fixed shadow range, its cards drawn from one atlas view, and its water reflection every fourth frame. Measured: the before side on the M3 Max, in [the data](#data). Pending: the after side, the pictures and the cloud phones, because the work is paused. Task: none.
+Status: decided by the owner. Built: the Low preset's fixed shadow range, its cards drawn from one atlas view, and its water reflection every fourth frame. Measured: both sides on the M3 Max, two loads each, in [the data](#data). Pending: the pictures and the cloud phones. Task: none.
 
-Summary: A phone draws the Island at Low, where the shadow maps and the far tree cards take most of the frame. On Low the sun's shadows reach 250 m and no longer stretch with the camera. Every card draws from one atlas view, and the water's reflection draws every fourth frame. In one load at 576 x 1248 on the M3 Max the frame takes 2.60 to 2.76 ms of GPU time. The trial changes that these replace saved 14 per cent for a 150 m shadow reach, and 8 per cent for the slower reflection.
+Summary: A phone draws the Island at Low, where the shadow maps and the far tree cards take most of the frame. On Low the sun's shadows reach 250 m and no longer stretch with the camera. Every card draws from one atlas view, and the water's reflection draws every fourth frame. Two loads each side at 576 x 1248 on the M3 Max put the frame at 2.66 ms before and 2.32 ms after. The after side is faster by 0.34 ms, or 12.7 per cent.
 
 ## Question
 
@@ -16,13 +16,22 @@ The owner approved four changes for the Island's Low preset. They are a shorter 
 
 ## Data
 
-One load of the study's page on an Apple M3 Max, in Chrome for Testing 156.0.8078.80 with the frame cap off. The page holds the camera at the cloud runs' town view and draws Low at 576 x 1248, one device pixel per CSS pixel. The 1-minute load was 5.9 as the load opened and 5.1 as it closed.
+Two loads of each side, on an Apple M3 Max, in Chrome for Testing 156.0.8078.80 with the frame cap off. The page holds the camera at the cloud runs' town view and draws Low at 576 x 1248, one device pixel per CSS pixel. Each load ran alone, with the quiet-window marker held. The loads opened at a 1-minute load of 4.6 to 5.9 and closed at 4.1 to 5.1.
 
-The run gives a whole-scene window before and after each trial change. A trial's saving is its step against the mean of those two windows:
+The whole-scene windows give the comparison:
+
+| Side | Loads | Base windows | GPU mean | Range |
+| --- | --- | --- | --- | --- |
+| Before | 2 | 12 | 2.659 ms | 2.579 to 2.772 ms |
+| After | 2 | 6 | 2.322 ms | 2.273 to 2.366 ms |
+
+The after side is faster by 0.337 ms, or 12.7 per cent. Median triangles fall from 1,887,655 to 1,431,774, and median draw calls from 2553.5 to 2157.
+
+The first before load also gives the saving of each change on its own. A trial's saving is its step against the mean of the whole-scene windows around it:
 
 | Change | GPU time | Saving against the windows around it |
 | --- | --- | --- |
-| Whole scene, six windows | 2.60 to 2.76 ms | mean 2.67 ms |
+| Whole scene, six windows | 2.58 to 2.76 ms | mean 2.67 ms |
 | Far cards from one atlas view | 2.64 ms | 1.5 per cent, inside the load's spread |
 | Shadow-casting cards hidden | 2.71 ms | none, inside the load's spread |
 | Shadow reach of 300 m | 2.50 ms | 4.0 per cent |
@@ -31,9 +40,9 @@ The run gives a whole-scene window before and after each trial change. A trial's
 
 The trials overlap, so their savings do not add. The whole frame's triangles move between windows because the shadow cascades draw in turns. The study's own figures from its earlier Mac are in `bench/research/island-phones/findings.md`, and none of them compares with these.
 
-How the data was produced: `bun bench/research/island-phones/scripts/run.ts` ran the page with `preset=low&w=576&h=1248` and the steps `base,try:cards1,base,casters,base,try:shadow300,base,try:shadow150,base,try:reflect4,base`, without the frame cap.
+How the data was produced: `bun bench/research/island-phones/scripts/run.ts` ran the page with `preset=low&w=576&h=1248` and the frame cap off. The before steps were `base,try:cards1,base,casters,base,try:shadow300,base,try:shadow150,base,try:reflect4,base`. The after steps were `base,casters,base,cards,base`.
 
-The after side, the pictures and the cloud phones are not measured yet. The work paused after this load.
+The pictures and the cloud phones are not measured yet.
 
 ## Look
 
