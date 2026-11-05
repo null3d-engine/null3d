@@ -78,17 +78,16 @@ review, so the cap follows the oak's figures.
 - **Forks.** A thick child at its parent's end leads a fork. Thick means half the parent's girth or
   more. It takes the parent's last ring as its own first ring. It eases from the parent's girth to
   its own, and carries on the parent's bark tiles. A thinner child at that end hangs on the thickest
-  leader. A side child of three quarters of the girth or more, short of the parent's end, is
-  codominant: the parent's wood ends there as a fork, and its own wood runs on past it as a second
-  piece. Both arms rise from the fork as leaders, so a dividing limb draws as one fork, not as a
-  limb pushed through the side of another. Each leader bends from its parent's line onto its own
-  over a curve of one and a half girths per radian of turn, with rings on the curve, so its inner
-  side never folds.
+  leader. A side child can leave short of the parent's end with three quarters of the girth or
+  more. It is then codominant: the parent's wood ends there as a fork and runs on as a second piece.
+  Both arms rise from the fork as leaders. A dividing limb then draws as one fork, not as a limb
+  pushed through the side of another. Each leader bends onto its own line over a curve with rings
+  on it. The curve is one and a half girths long per radian of turn, so its inner side never folds.
 - **Blend rings** run from the seam to the child's own circle, closer together near the seam. Each
   side's fillet and the record's collar ease from that side's own seam. A blend vertex stays at least
   half a millimeter outside the parent. The normal turns from the parent's to the child's. Each
   side's `v` runs over the blend in step with that side's own length. A shared run stretched the
-  bark up to 90 times on the long side of a steep child; on the oak, stretched bark near side joints
+  bark up to 90 times on the long side of a steep child. On the oak, stretched bark near side joints
   fell from 9.7 to 1.9 square meters.
 - **Bark.** The bark's `v` runs in meters, from the parent's `v` at the weld. A child's `v` may start
   whole repeats lower. A repeat holds a whole number of every layer's tiles, and the lower start keeps
