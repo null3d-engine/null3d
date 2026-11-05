@@ -547,6 +547,14 @@ const DOCS = {
 		example: 'E1436: pick() was waiting for its read when the GPU was lost.',
 		since: '0.3',
 	},
+	E1437: {
+		title: 'Chrome for Testing refused',
+		cause:
+			"The null3D command-line tool did not install Chrome for Testing, the browser that draws on the computer's GPU. The archive it downloaded does not have the SHA-256 hash that the tool records for the pinned version on this platform. Or the tool has no build, and so no hash, for this platform. The tool deletes a refused archive before it unpacks it, and never runs it.",
+		example:
+			'E1437: the Chrome for Testing 156.0.8078.80 archive for mac-arm64 has the SHA-256 hash 5d41402abc4b2a76b9719d911017c592ae2f4d3c1a0d9b7e6c9a3f5b8e7d2c10, not 8bc590d1b1acac042a000234c768f31830f25a3983a83ed5e067114c87c4cad1, so the tool deleted it.',
+		since: '0.3',
+	},
 	E1501: {
 		title: 'Render space full',
 		cause:

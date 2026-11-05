@@ -4,6 +4,7 @@
 // Chrome for Testing downloads into a cache folder on first use, and the installed Google Chrome
 // stands in when that fails or when `NULL3D_CHROME=installed` asks for it.
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
 	createWriteStream,
 	existsSync,
@@ -12,6 +13,7 @@ import {
 	readFileSync,
 	renameSync,
 	rmSync,
+	writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -74,6 +76,42 @@ const CHROME_FOR_TESTING_PLATFORMS = /** @type {const} */ ({
 });
 
 /**
+ * The SHA-256 hash of the pinned build's archive on each platform, in lowercase hexadecimal. The
+ * tool refuses a download with any other hash before it unpacks it. A change of the pinned version
+ * records each platform's hash again, as the image tests guide in `.dev/` says.
+ *
+ * @type {Readonly<Record<string, string>>}
+ */
+export const CHROME_FOR_TESTING_SHA256 = {
+	'mac-arm64': '8bc590d1b1acac042a000234c768f31830f25a3983a83ed5e067114c87c4cad1',
+	'mac-x64': '672b79dc79fdf28bb2ec9787b7fa33810c2b3cfd946a0fb4d3b72775f4e6fd9a',
+	linux64: 'b711c720f774be355197f32edf37e0651418ba036d92446ee2da19ac017540a7',
+	win64: '16edb57d6107bf1c48a7c149b8d78b155fe614410093796dd72441fd6640540f',
+};
+
+/** The engine's error code for a Chrome for Testing build that the tool refuses to install. */
+export const CHROME_REFUSED = 'E1437';
+
+/** The fix that ends the refusal's message, which a unit test keeps equal to the engine's table. */
+export const CHROME_REFUSED_FIX =
+	"Run the command again. A download that broke off, or that something changed on the way, fails the check. If the check fails again, a proxy or a mirror between this computer and Google's storage changes the file, so download without it. On a platform that has no Chrome for Testing build, set CI=1 to draw with Playwright's Chromium on the software GPU, or NULL3D_CHROME=installed to draw with the installed Google Chrome.";
+
+/**
+ * A refusal to install Chrome for Testing, worded as the engine words its errors: the code, what
+ * failed, the fix and the code's docs page.
+ *
+ * @param {string} detail
+ */
+function chromeRefused(detail) {
+	return Object.assign(
+		new Error(
+			`${CHROME_REFUSED}: ${detail} ${CHROME_REFUSED_FIX} See https://github.com/null3d-engine/null3d/blob/generated/docs/errors/${CHROME_REFUSED}.md`,
+		),
+		{ code: CHROME_REFUSED },
+	);
+}
+
+/**
  * Chrome for Testing's name for this computer's platform, such as `mac-arm64`.
  *
  * @param {string} platform
@@ -83,8 +121,43 @@ const CHROME_FOR_TESTING_PLATFORMS = /** @type {const} */ ({
 export function chromeForTestingPlatform(platform = process.platform, arch = process.arch) {
 	const key = /** @type {keyof typeof CHROME_FOR_TESTING_PLATFORMS} */ (`${platform}-${arch}`);
 	const name = CHROME_FOR_TESTING_PLATFORMS[key];
-	if (!name) throw new Error(`Chrome for Testing has no build for ${platform} on ${arch}.`);
+	if (!name) throw chromeRefused(`Chrome for Testing has no build for ${platform} on ${arch}.`);
 	return name;
+}
+
+/**
+ * The SHA-256 hash that the pinned build's archive must have on `platform`. A platform without a
+ * recorded hash is refused, so no download goes unchecked.
+ *
+ * @param {string} platform
+ * @returns {string}
+ */
+export function chromeForTestingSha256(platform = chromeForTestingPlatform()) {
+	const hash = Object.hasOwn(CHROME_FOR_TESTING_SHA256, platform)
+		? CHROME_FOR_TESTING_SHA256[platform]
+		: undefined;
+	if (!hash)
+		throw chromeRefused(
+			`the tool records no SHA-256 hash for Chrome for Testing ${CHROME_FOR_TESTING_VERSION} on ${platform}, so it cannot check a download.`,
+		);
+	return hash;
+}
+
+/**
+ * Refuses a downloaded `archive` whose SHA-256 hash, `digest`, is not the `expected` one. It deletes
+ * the file first, so nothing can unpack it later.
+ *
+ * @param {string} archive
+ * @param {string} digest
+ * @param {string} expected
+ * @param {string} platform
+ */
+export function checkChromeArchive(archive, digest, expected, platform) {
+	if (digest === expected) return;
+	rmSync(archive, { force: true });
+	throw chromeRefused(
+		`the Chrome for Testing ${CHROME_FOR_TESTING_VERSION} archive for ${platform} has the SHA-256 hash ${digest}, not ${expected}, so the tool deleted it.`,
+	);
 }
 
 /**
@@ -126,6 +199,32 @@ export function chromeForTestingPath(
 	if (platform.startsWith('mac'))
 		return join(folder, 'Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing');
 	return join(folder, platform === 'win64' ? 'chrome.exe' : 'chrome');
+}
+
+/** The file in the cache folder that holds the archive's hash, which the install checked. */
+const VERIFIED_FILE = 'verified.sha256';
+
+/**
+ * Whether the pinned build under `dir` is installed and was checked when it was installed: its
+ * executable is there, and the hash that the install recorded beside it is the expected one. A copy
+ * without that record, such as one unzipped by hand, is not trusted.
+ *
+ * @param {string} dir
+ * @param {string} platform
+ */
+export function chromeForTestingInstalled(
+	dir = chromeForTestingDir(),
+	platform = chromeForTestingPlatform(),
+) {
+	if (!existsSync(chromeForTestingPath(dir, platform))) return false;
+	try {
+		return (
+			readFileSync(join(dir, VERIFIED_FILE), 'utf8').trim() === chromeForTestingSha256(platform)
+		);
+	} catch {
+		// No record, or a platform without a hash: the copy is not trusted.
+		return false;
+	}
 }
 
 /**
@@ -177,22 +276,44 @@ function downloadProgress(total, log) {
 }
 
 /**
- * Downloads the pinned Chrome for Testing into its cache folder, unless it is there already, and
- * returns its executable. The archive unpacks into a folder of its own beside the target and moves
- * into place whole, so a run never sees half a browser, and two downloads at once leave one copy.
+ * Passes bytes through, and adds each to `hash`.
  *
- * @param {{ log?: (line: string) => void }} [options]
+ * @param {import('node:crypto').Hash} hash
+ */
+function hashing(hash) {
+	return new Transform({
+		transform(chunk, _encoding, done) {
+			hash.update(chunk);
+			done(null, chunk);
+		},
+	});
+}
+
+/**
+ * Downloads the pinned Chrome for Testing into its cache folder, unless a checked copy is there
+ * already, and returns its executable. The archive's SHA-256 hash must be the one recorded for the
+ * platform, or the install deletes the archive before it unpacks it, and fails with E1437. The archive
+ * unpacks into a folder of its own beside the target, with the checked hash recorded in it, and
+ * moves into place whole. So a run never sees half a browser, and two downloads at once leave one
+ * copy. A copy that holds no record of its check is replaced.
+ *
+ * @param {{ log?: (line: string) => void, dir?: string, platform?: string, download?: (url: string) => Promise<Response> }} [options]
  * @returns {Promise<string>}
  */
-export async function installChromeForTesting({ log = console.log } = {}) {
-	const dir = chromeForTestingDir();
-	const executable = chromeForTestingPath(dir);
-	if (existsSync(executable)) return executable;
+export async function installChromeForTesting({
+	log = console.log,
+	dir = chromeForTestingDir(),
+	platform = chromeForTestingPlatform(),
+	download = (url) => fetch(url),
+} = {}) {
+	const executable = chromeForTestingPath(dir, platform);
+	if (chromeForTestingInstalled(dir, platform)) return executable;
+	const expected = chromeForTestingSha256(platform);
 	mkdirSync(dirname(dir), { recursive: true });
 	const staging = mkdtempSync(`${dir}.download-`);
 	try {
-		const url = chromeForTestingUrl();
-		const response = await fetch(url);
+		const url = chromeForTestingUrl(platform);
+		const response = await download(url);
 		if (!response.ok || !response.body)
 			throw new Error(`${url} answered ${response.status} ${response.statusText}`);
 		const total = Number(response.headers.get('content-length') ?? 0);
@@ -200,22 +321,30 @@ export async function installChromeForTesting({ log = console.log } = {}) {
 			`Downloading Chrome for Testing ${CHROME_FOR_TESTING_VERSION}${total ? ` (${Math.round(total / 1e6)} MB)` : ''} into ${dir}, once. null3d draws with it on this computer's GPU: Google Chrome on macOS leaves keys in the keychain.`,
 		);
 		const archive = join(staging, 'chrome.zip');
+		const hash = createHash('sha256');
 		await pipeline(
 			Readable.fromWeb(/** @type {import('node:stream/web').ReadableStream} */ (response.body)),
+			hashing(hash),
 			downloadProgress(total, log),
 			createWriteStream(archive),
 		);
+		const digest = hash.digest('hex');
+		checkChromeArchive(archive, digest, expected, platform);
 		const unpacked = join(staging, 'browser');
 		mkdirSync(unpacked);
 		if (process.platform === 'win32') execFileSync('tar', ['-xf', archive, '-C', unpacked]);
 		else execFileSync('unzip', ['-q', archive, '-d', unpacked]);
-		if (!existsSync(chromeForTestingPath(unpacked)))
-			throw new Error(`${url} holds no browser at ${chromeForTestingPath(unpacked)}`);
+		if (!existsSync(chromeForTestingPath(unpacked, platform)))
+			throw new Error(`${url} holds no browser at ${chromeForTestingPath(unpacked, platform)}`);
+		writeFileSync(join(unpacked, VERIFIED_FILE), `${digest}\n`);
+		// A copy that holds no record of a checked hash goes first: nothing vouches for its files.
+		if (existsSync(dir) && !chromeForTestingInstalled(dir, platform))
+			rmSync(dir, { recursive: true, force: true });
 		try {
 			renameSync(unpacked, dir);
 		} catch (error) {
-			// Another download that ran at the same time put its copy in place first.
-			if (!existsSync(executable)) throw error;
+			// Another download that ran at the same time put its checked copy in place first.
+			if (!chromeForTestingInstalled(dir, platform)) throw error;
 		}
 		log(`  installed at ${executable}`);
 		return executable;
@@ -226,20 +355,21 @@ export async function installChromeForTesting({ log = console.log } = {}) {
 
 /**
  * Gets the pinned Chrome for Testing ready, downloading it on first use, and returns the build that
- * draws on the real GPU. When it cannot be installed, the installed Google Chrome draws instead,
- * with a warning, if `fallback` allows it; otherwise the failure stands.
+ * draws on the real GPU. A copy whose install did not check its hash downloads again. When it
+ * cannot be installed, the installed Google Chrome draws instead, with a warning, if `fallback`
+ * allows it; otherwise the failure stands.
  *
- * @param {{ fallback: boolean, exists?: (path: string) => boolean, install?: () => Promise<unknown>, warn?: (line: string) => void }} options
+ * @param {{ fallback: boolean, installed?: () => boolean, install?: () => Promise<unknown>, warn?: (line: string) => void }} options
  * @returns {Promise<ChromeBuild>}
  */
 export async function readyChromeForTesting({
 	fallback,
-	exists = existsSync,
+	installed = chromeForTestingInstalled,
 	install = installChromeForTesting,
 	warn = console.warn,
 }) {
 	try {
-		if (!exists(chromeForTestingPath())) await install();
+		if (!installed()) await install();
 		return 'testing';
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error);
@@ -293,7 +423,7 @@ export function missingBrowserFix(environment, chrome = chromeBuild()) {
 	if (environment !== 'chrome-real-gpu')
 		return `Playwright's Chromium is not installed. Install it with ${chromium}.`;
 	return chrome === 'testing'
-		? `Chrome for Testing ${CHROME_FOR_TESTING_VERSION} is not installed at ${chromeForTestingPath()}. Download ${chromeForTestingUrl()} and unzip it into ${chromeForTestingDir()}.`
+		? `Chrome for Testing ${CHROME_FOR_TESTING_VERSION} is not installed at ${chromeForTestingPath()}. The tool downloads it from ${chromeForTestingUrl()} into ${chromeForTestingDir()} on first use, and checks its SHA-256 hash. Run the command again with a network connection.`
 		: `Google Chrome is not installed. Install it from https://www.google.com/chrome/, or set CI=1 to draw on the software GPU of Playwright's Chromium, which ${chromium} installs.`;
 }
 
