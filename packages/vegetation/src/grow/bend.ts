@@ -4,7 +4,8 @@
 // against the stiffness of the wood there, which grows with the fourth power of its radius. The
 // joint gives by an angle in proportion; reaction wood then turns the outer part of each axis back
 // up by a share of the sag its axis took below it, which gives old limbs their S curve. The bends
-// are composed from the base out, so a joint carries every bend below it.
+// are composed from the base out, so a joint carries every bend below it. Wood that the bends would
+// carry below a floor rests on it instead, with all the wood beyond it lifted alike.
 import { cos, quatRotate, sin } from '../core/math';
 
 /** Cubic metres of wood a live shoot weighs like, with its leaves: about 30 grams. */
@@ -61,10 +62,17 @@ function multiply(
  * @param nodes The nodes.
  * @param strength The record's bending strength, 0 for none.
  * @param upturn The share of an axis's sag its tip turns back up.
+ * @param floor The height in metres that bent wood rests on rather than sinking below; wood grown
+ *   lower stays where it grew. None by default.
  * @returns Each node's rotation from its grown pose to its bent one, four numbers a node, so the
  *   caller can turn the directions that hang on the node.
  */
-export function bendUnderLoad(nodes: BendNodes, strength: number, upturn: number): Float64Array {
+export function bendUnderLoad(
+	nodes: BendNodes,
+	strength: number,
+	upturn: number,
+	floor = Number.NEGATIVE_INFINITY,
+): Float64Array {
 	const { count, parent, live, axisOf, x, y, z, radius, shoots } = nodes;
 	const turn = new Float64Array(count * 4);
 	for (let n = 0; n < count; n++) turn[n * 4 + 3] = 1;
@@ -171,6 +179,18 @@ export function bendUnderLoad(nodes: BendNodes, strength: number, upturn: number
 			turn[n * 4 + 2] = az * s;
 			turn[n * 4 + 3] = cos(half);
 		} else multiply(turn, parentTurn, ax * s, 0, az * s, cos(half), turn, n * 4);
+	}
+	// Wood the bends carried below the floor, or below where it grew if it grew lower, rests there,
+	// and the wood beyond it rises with it.
+	if (Number.isFinite(floor)) {
+		const lift = new Float64Array(count);
+		for (let n = 0; n < count; n++) {
+			if (!live[n]) continue;
+			const p = parent[n] as number;
+			const under = Math.min(floor, py[n] as number) - (y[n] as number);
+			lift[n] = Math.max(p >= 0 ? (lift[p] as number) : 0, under);
+			y[n] = (y[n] as number) + (lift[n] as number);
+		}
 	}
 	return turn;
 }

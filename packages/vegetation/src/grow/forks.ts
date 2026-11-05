@@ -81,3 +81,10 @@ export const RIGHT_TIPS = 300;
 export const RIGHT_FORK = 10;
 /** The most degrees a side shoot turns toward its parent's line in a year. */
 export const RIGHT_TURN = 10;
+/**
+ * A side shoot divides its fork with its parent's own line where that line goes on with at least
+ * this share of the fork's wood: the shoot is righted no closer to the line than the split's angle.
+ */
+export const SPLIT_SHARE = 0.3;
+/** Degrees from its parent's line that a shoot dividing a fork with that line keeps at least. */
+export const SPLIT_ANGLE = 30;

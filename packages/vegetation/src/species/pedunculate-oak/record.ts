@@ -24,7 +24,7 @@ export const record: Species = {
 	name: 'Pedunculate oak',
 	latin: 'Quercus robur',
 	form: 'broad low dome on a short, low-forking bole',
-	size: { height: { mean: 20, spread: 2 }, dbh: 1.4, aspect },
+	size: { height: { mean: 20, spread: 2 }, dbh: 1.8, aspect },
 	growth: {
 		model: 'self-organizing',
 		years: 36,
@@ -141,8 +141,9 @@ export const record: Species = {
 		bud: { length: 0.009, width: 0.006, tipCluster: 7, colour: [0.2, 0.09, 0.04] },
 		placement: {
 			perMetre: [
-				[0, 3.2],
-				[1, 4.6],
+				[0, 1],
+				[0.3, 4],
+				[1, 12],
 			],
 			shadePrune: 0.03,
 			skyward: 0.35,

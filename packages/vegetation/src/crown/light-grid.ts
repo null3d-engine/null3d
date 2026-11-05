@@ -144,6 +144,22 @@ export class ShadowGrid {
 	}
 
 	/**
+	 * Whether a point's cell lies inside the envelope, where the grid holds light.
+	 *
+	 * @param x The point's position.
+	 * @param y The point's height.
+	 * @param z The point's position.
+	 * @returns True inside the envelope.
+	 */
+	inside(x: number, y: number, z: number): boolean {
+		const i = this.coord(x, this.min[0]);
+		const j = this.coord(y, this.min[1]);
+		const l = this.coord(z, this.min[2]);
+		if (i < 0 || j < 0 || l < 0 || i >= this.nx || j >= this.ny || l >= this.nz) return false;
+		return this.open[(j * this.nz + l) * this.nx + i] === 1;
+	}
+
+	/**
 	 * The light at a bud, 0 to 1: full light less the shadow of the other buds in its cell.
 	 *
 	 * @param x The bud's position.
