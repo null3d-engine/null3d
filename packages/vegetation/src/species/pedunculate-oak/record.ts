@@ -244,7 +244,9 @@ export const record: Species = {
 		shadowLevel: 1,
 		budget: {
 			kitBytes: { low: 2_000_000, medium: 2_900_000, high: 5_300_000, ultra: 9_500_000 },
-			variantBytes: { low: 7_000_000, medium: 7_000_000, high: 7_100_000, ultra: 7_100_000 },
+			// The fitted envelope widens the crown, and the wider crown grows about a seventh more
+			// leaf card; each cap sits just above the first variant's measured figure at its tier.
+			variantBytes: { low: 7_800_000, medium: 8_000_000, high: 8_200_000, ultra: 8_400_000 },
 			lod0Triangles: 2_500_000,
 			lod1Triangles: 150_000,
 			lod2Triangles: 30_000,
