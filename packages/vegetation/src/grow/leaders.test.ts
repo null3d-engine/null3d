@@ -86,6 +86,22 @@ function cones(skeleton: MacroSkeleton): number {
 	return found;
 }
 
+/** The unit direction from one node to another. */
+function direction(p: Float32Array, a: number, b: number): number[] {
+	const v = [0, 1, 2].map((k) => (p[b * 3 + k] as number) - (p[a * 3 + k] as number));
+	const length = Math.hypot(...v) || 1;
+	return v.map((x) => x / length);
+}
+
+/** Degrees between two unit directions. */
+function degrees(u: readonly number[], v: readonly number[]): number {
+	const dot =
+		(u[0] as number) * (v[0] as number) +
+		(u[1] as number) * (v[1] as number) +
+		(u[2] as number) * (v[2] as number);
+	return (Math.acos(Math.max(-1, Math.min(1, dot))) * 180) / Math.PI;
+}
+
 /** A child axis's share of its parent's cross-section where it leaves. */
 function shareOf(skeleton: MacroSkeleton, axis: number): number {
 	const { axes, radius } = skeleton;
@@ -102,6 +118,83 @@ function stemFork(skeleton: MacroSkeleton): number {
 		for (let a = 1; a < axes.count; a++)
 			if (axes.parentNode[a] === n && axes.parent[a] === 0 && shareOf(skeleton, a) >= 0.2) return n;
 	return axes.last[0] as number;
+}
+
+/**
+ * The share of a fork's cross-section that the parent's own line carries on with past it: the
+ * parent's next node, or its thickest other child there.
+ */
+function continuation(skeleton: MacroSkeleton, from: number, axis: number): number {
+	const { axes, radius } = skeleton;
+	const parent = axes.parent[axis] as number;
+	const at = radius[from] as number;
+	let most = from < (axes.last[parent] as number) ? ((radius[from + 1] as number) / at) ** 2 : 0;
+	for (let c = 0; c < axes.count; c++)
+		if (c !== axis && axes.parentNode[c] === from && (axes.parent[c] as number) >= 0)
+			most = Math.max(most, ((radius[axes.first[c] as number] as number) / at) ** 2);
+	return most;
+}
+
+/**
+ * The forks that break the fork rule of stills 03, 08 and 20, on wood over a tenth of a metre
+ * across: a child over 60 per cent of its parent's cross-section that leaves the wood below it at
+ * over 35 degrees where the parent's own line has withered to under 30 per cent (a takeover, which
+ * draws as a mitred pipe), and one of 20 to 60 per cent that leaves at over 65. A thick limb that
+ * divides into two arms, its own line running on beside the wide one, keeps its fork, as in still 08.
+ */
+function brokenForks(skeleton: MacroSkeleton): string[] {
+	const { axes, radius, position: p } = skeleton;
+	const broken: string[] = [];
+	for (let a = 0; a < axes.count; a++) {
+		const from = axes.parentNode[a] as number;
+		if (from < 0 || (axes.parent[a] as number) < 0 || (radius[from] as number) < 0.05) continue;
+		const share = shareOf(skeleton, a);
+		if (share <= 0.2) continue;
+		const below = skeleton.parent[from] as number;
+		const line =
+			below >= 0 ? direction(p, below, from) : direction(p, from, axes.first[0] as number);
+		const angle = degrees(line, direction(p, from, axes.first[a] as number));
+		const takeover = share > 0.6 && angle > 35 && continuation(skeleton, from, a) < 0.3;
+		if (takeover || (share <= 0.6 && angle > 65))
+			broken.push(`${(share * 100).toFixed(0)} % at ${angle.toFixed(0)} degrees`);
+	}
+	return broken;
+}
+
+/**
+ * The stem's main line, the stem run on into its thickest child wherever it divides: the height it
+ * reaches and its great limbs, the children of a tenth of its cross-section or more.
+ */
+function mainLine(skeleton: MacroSkeleton): { top: number; limbs: number } {
+	const { axes, radius, position: p } = skeleton;
+	const leaving = new Map<number, number[]>();
+	for (let a = 1; a < axes.count; a++) {
+		const from = axes.parentNode[a] as number;
+		const list = leaving.get(from);
+		if (list) list.push(a);
+		else leaving.set(from, [a]);
+	}
+	let axis = 0;
+	let top = 0;
+	let limbs = 0;
+	while (axis >= 0) {
+		const last = axes.last[axis] as number;
+		let next = -1;
+		for (const child of leaving.get(last) ?? [])
+			if (
+				next < 0 ||
+				(radius[axes.first[child] as number] as number) >
+					(radius[axes.first[next] as number] as number)
+			)
+				next = child;
+		for (let n = axes.first[axis] as number; n <= last; n++) {
+			top = Math.max(top, p[n * 3 + 1] as number);
+			for (const child of leaving.get(n) ?? [])
+				if (child !== next && shareOf(skeleton, child) >= 0.1) limbs++;
+		}
+		axis = next;
+	}
+	return { top, limbs };
 }
 
 describe('sympodial leaders', () => {
@@ -171,6 +264,23 @@ describe('sympodial leaders', () => {
 				}
 			}
 			expect(looped).toBe(0);
+		}
+	});
+
+	it('grows an oak whose forks follow stills 03, 08 and 20', async () => {
+		const record = species.record;
+		await loadPlantCode(record);
+		for (let variant = 0; variant < 6; variant++) {
+			const led = leadOnThickest(
+				grower('self-organizing').grow({ record, seed: 11, variant, season: 'summer' }),
+			);
+			// Still 20: where a limb's line runs on into a child, it bends gently; a side branch that
+			// leaves wide is thin. Still 08: a thick limb may divide into two spreading arms. Still 03:
+			// the stem runs up into the crown, carrying its great limbs.
+			expect(brokenForks(led)).toEqual([]);
+			const line = mainLine(led);
+			expect(line.limbs).toBeGreaterThanOrEqual(4);
+			expect(line.top).toBeGreaterThan(0.5 * led.height);
 		}
 	});
 });
