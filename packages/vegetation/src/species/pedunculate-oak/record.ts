@@ -81,13 +81,13 @@ export const record: Species = {
 				nodes: { mean: 6, spread: 0.5 },
 				internode: ROSETTE,
 				leafScale: [
-					[0, 0.8],
-					[1, 0.9],
+					[0, 0.85],
+					[1, 1.05],
 				],
 				leafAngle: [
 					[0, 120],
-					[0.5, 90],
-					[1, 60],
+					[0.5, 105],
+					[1, 100],
 				],
 				droop: 3,
 			},
@@ -119,7 +119,7 @@ export const record: Species = {
 				vigor: [0.2, 1],
 				share: 0.35,
 				years: 3,
-				length: { mean: 1.0, spread: 0.15 },
+				length: { mean: 1.15, spread: 0.15 },
 				nodes: { mean: 5, spread: 1 },
 				internode: ROSETTE,
 				leafScale: [
@@ -139,7 +139,7 @@ export const record: Species = {
 		years: 3,
 		leafYears: 1,
 		stem: { radius: [0.0035, 0.0025], zigzag: 12 },
-		bud: { length: 0.009, width: 0.006, tipCluster: 7, colour: [0.2, 0.09, 0.04] },
+		bud: { length: 0.012, width: 0.008, tipCluster: 7, colour: [0.26, 0.14, 0.06] },
 		placement: {
 			perMetre: [
 				[0, 1],
