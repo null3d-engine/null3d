@@ -3587,15 +3587,17 @@ mod tests {
         let mut indices = vec![last, last + 1, last + 2];
         let part_vertices = settings.meshes().to_part_order(index, &mut indices);
         let patches = patches as usize;
-        let tree = crate::patches::PatchTree::new(
-            indices.repeat(patches),
-            vec![[0.0, 0.0, 0.0, 1.0]; patches],
-            (0..patches as u32).map(|k| [k * 3, 3, 0, 0]).collect(),
-            0,
-            part_vertices,
-        )
-        .unwrap();
-        settings.patches_mut().set(mesh, Some(tree));
+        if patches > 0 {
+            let tree = crate::patches::PatchTree::new(
+                indices.repeat(patches),
+                vec![[0.0, 0.0, 0.0, 1.0]; patches],
+                (0..patches as u32).map(|k| [k * 3, 3, 0, 0]).collect(),
+                0,
+                part_vertices,
+            )
+            .unwrap();
+            settings.patches_mut().set(mesh, Some(tree));
+        }
         let material = settings
             .materials_mut()
             .create(Shading::Lit, 0, [1.0; 4])
@@ -3789,6 +3791,135 @@ mod tests {
             )
             .unwrap();
         (layout, settings, mesh, targets)
+    }
+
+    /// The layout of a mesh in pieces of 30,000 triangles that also splits its pieces into groups,
+    /// built with a storage binding that lets it take slots.
+    fn slot_layout() -> (Layout, SceneSettings, u32) {
+        let (mut layout, mut settings, mesh) = split_tree_layout(1 << 20, 0);
+        let piece = |triangles: u32, axis: f32| crate::pieces::Piece {
+            triangles,
+            sphere: [axis, 0.0, 0.0, 2.0],
+            cone: [axis, 0.0, 0.0, 0.5],
+        };
+        let pieces = [piece(15_000, 1.0), piece(15_000, -1.0)];
+        let groups: Vec<crate::pieces::Piece> = (0..300)
+            .map(|k| piece(100, if k < 150 { 1.0 } else { -1.0 }))
+            .collect();
+        settings
+            .meshes_mut()
+            .set_pieces(mesh - 1, &pieces, &groups)
+            .unwrap();
+        let material = settings
+            .materials_mut()
+            .create(Shading::Lit, 0, [1.0; 4])
+            .unwrap()
+            + 1;
+        let mut scene = SceneStorage::with_capacity(8);
+        let object = scene.reserve().unwrap();
+        scene
+            .apply_commands(
+                &[
+                    Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+                    Command::set_material(object, material),
+                ],
+                1,
+            )
+            .unwrap();
+        scene.update_transforms(&JobSystem::new(0));
+        let targets = PassTargets {
+            color_format: format::CANVAS,
+            depth_format: format::DEPTH32_FLOAT,
+            samples: 4,
+            permutation: 0,
+        };
+        layout
+            .rebuild(
+                &settings,
+                &mut PipelineCache::default(),
+                targets,
+                &scene,
+                &BatchTable::with_capacity(1),
+                scene.parity(),
+                u32::MAX,
+                CasterPasses::default(),
+                Prepass::Off,
+                &Skinning::default(),
+                &mut KeyCounts::new(),
+                targets,
+                false,
+                1 << 20,
+            )
+            .unwrap();
+        (layout, settings, mesh)
+    }
+
+    /// A level whose pieces have groups takes four slots, which draw at the level's material and
+    /// pipeline after its pieces, and the culling pass finds them in the level's first-joint word.
+    #[test]
+    fn a_level_with_groups_takes_slots_that_name_it_in_the_first_joint_word() {
+        let (layout, _settings, _mesh) = slot_layout();
+        let whole = layout
+            .buckets
+            .iter()
+            .position(|bucket| bucket.pieces.is_some())
+            .expect("a bucket with pieces");
+        assert_eq!(layout.slot_levels.len(), 1);
+        let level = layout.slot_levels[0];
+        assert_eq!(level.parent, whole as u32);
+        assert_eq!(level.slots, SLOTS_PER_LEVEL);
+        assert_eq!(level.group_count, 300);
+        assert_eq!(level.first_group, 0);
+        assert_eq!(
+            layout.buckets[whole].first_joint,
+            level.first_slot | SLOTS_PER_LEVEL << 16
+        );
+        // The slots follow the pieces in the draw order, and each copies the level's pipeline and
+        // material.
+        let order: Vec<usize> = layout.drawn_buckets().collect();
+        let (first_piece, count) = layout.buckets[whole].pieces.unwrap();
+        let last_piece = order
+            .iter()
+            .position(|&b| b == (first_piece + count - 1) as usize)
+            .unwrap();
+        let first_slot_bucket = layout.slot_buckets[level.first_slot as usize] as usize;
+        let first_slot = order.iter().position(|&b| b == first_slot_bucket).unwrap();
+        assert!(last_piece < first_slot, "the slots draw after the pieces");
+        for k in 0..level.slots {
+            let slot = layout.slot_buckets[(level.first_slot + k) as usize] as usize;
+            let bucket = &layout.buckets[slot];
+            assert_eq!(bucket.slot, Some(level.first_slot + k));
+            assert_eq!(bucket.material, layout.buckets[whole].material);
+            assert_eq!(bucket.pipeline, layout.buckets[whole].pipeline);
+            assert_eq!(bucket.pick, layout.buckets[whole].pick);
+            assert_eq!(bucket.capacity, 1);
+            assert_eq!(bucket.draws, 1);
+            assert!(bucket.pieces.is_none() && bucket.cone.is_none());
+            // The record's link's word names the copy, and its first joint's word the slot.
+            assert_eq!(layout.bucket_records[slot * BUCKET_WORDS as usize + 11], 0);
+        }
+        // Each group's first index follows the triangles before it, and its piece holds it.
+        let mut from = layout.slot_parts[level.first_part as usize][0];
+        for (k, group) in layout.slot_groups.iter().enumerate() {
+            assert_eq!(group[0], from, "group {k}'s first index");
+            assert_eq!(group[1], 100, "a group's triangles");
+            assert_eq!(group[2], (k / 150) as u32, "the piece that holds it");
+            from += group[1] * 3;
+        }
+        // The slots' rooms start empty, and the level's slots hold one run of groups each.
+        assert_eq!(layout.slot_runs, [0, 300, 600, 900]);
+        assert_eq!(layout.slot_room.len(), SLOTS_PER_LEVEL as usize);
+    }
+
+    /// A layout whose builder gives no storage binding takes no slots, so a page that draws the
+    /// same scene on the direct path draws its pieces alone.
+    #[test]
+    fn a_layout_without_a_storage_binding_takes_no_slots() {
+        let (layout, _settings, _mesh, _) = pieced_layout();
+        assert!(layout.slot_levels.is_empty());
+        assert!(layout.slot_buckets.is_empty());
+        assert_eq!(layout.slot_page, NO_SLOT_PAGE);
+        assert!(layout.buckets.iter().all(|bucket| bucket.slot.is_none()));
     }
 
     #[test]
