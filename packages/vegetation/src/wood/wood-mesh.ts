@@ -10,7 +10,7 @@
 // displacement on thin wood; `uv1.y` the junction mask; colour bytes R and G the wind record, B the
 // bend weight along the axis and A the crown's sky visibility.
 import type { MeshArrays } from '../asset';
-import { AXIS_LIMB, AXIS_STEM, AXIS_STIPE, type MacroSkeleton } from '../core/graph';
+import { AXIS_LIMB, AXIS_STEM, AXIS_STIPE, type MacroSkeleton, NODE_STUB } from '../core/graph';
 import { acos, cos, PI, sin, tan } from '../core/math';
 import type { Species } from '../core/record';
 import { crownSkyAt } from '../crown/visibility';
@@ -74,6 +74,9 @@ const LEADER_TILT = 1.2;
  */
 const LEADER_BEND = 1.5;
 
+/** A stub's pipe radius, at least, in the young bark's radii, so its bark is grown bark. */
+const STUB_BARK = 1.25;
+
 /** The fillet where a child meets its parent, in child radii. */
 const FILLET_RADII = 0.8;
 
@@ -118,6 +121,8 @@ interface WoodAxis {
 	fork: boolean;
 	/** Whether it is a leader of a fork, rising from its parent's end. */
 	readonly leader: boolean;
+	/** Whether it is a dead stub left where a branch was shed. */
+	readonly stub: boolean;
 }
 
 /** The skeleton's largest pipe radius. */
@@ -335,6 +340,7 @@ function woodAxes(input: MeshInput, keep: number): WoodAxis[] {
 			stem: stem ? stems++ : -1,
 			fork: false,
 			leader: leads[k] === 1,
+			stub: ((skeleton.flags[first] as number) & NODE_STUB) !== 0,
 		});
 		if (stem) addRoots(input, list, list.length - 1, base + (axes.record[a] as number));
 		for (const child of children[k] ?? []) queue.push(child);
@@ -398,6 +404,7 @@ function addRoots(input: MeshInput, list: WoodAxis[], stemIndex: number, record:
 			stem: -1,
 			fork: false,
 			leader: false,
+			stub: false,
 		});
 }
 
@@ -914,6 +921,12 @@ class Mesher {
 		// A fork's leaders take its last ring; its low rounded end floors the crotch between them and
 		// takes the welds of thinner children near the end.
 		this.tip(context, rings, wood.fork);
+		// A dead stub weathers with the wood it stands on: its bark is grown bark, never the smooth
+		// young bark of a live shoot of its girth.
+		const young = this.record.bark?.youngRadius ?? 0;
+		if (wood.stub)
+			for (let i = 0; i < rings.vertices; i++)
+				rings.pipe[i] = Math.max(rings.pipe[i] as number, STUB_BARK * young);
 		const bark = this.barkOf(rings, context, inherit);
 		this.built[index] = rings;
 		this.contexts[index] = context;
