@@ -24,6 +24,7 @@ export const MESHOPT_MODULES = [
 	{ file: MESHOPT_WASM, script: 'meshopt_decoder.mjs', packed: 'wasm_simd' },
 	{ file: 'meshopt_simplifier.wasm', script: 'meshopt_simplifier.js', packed: 'wasm' },
 	{ file: 'meshopt_encoder.wasm', script: 'meshopt_encoder.js', packed: 'wasm' },
+	{ file: 'meshopt_clusterizer.wasm', script: 'meshopt_clusterizer.js', packed: 'wasm' },
 ] as const;
 
 /** The text of a string literal or an array literal that a module's script assigns to `name`. */

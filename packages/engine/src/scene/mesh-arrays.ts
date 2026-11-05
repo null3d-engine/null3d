@@ -574,16 +574,41 @@ export function meshFromSplitLevel(
 ): number {
 	const address = stagePieces(core, pieces, indices.length, call);
 	core.u32(address, indices.length).set(indices);
-	const count = pieces?.triangles.length ?? 0;
-	return core.checkGrowth(core.glue.createSplitLevel(base, count, indices.length), call);
+	const [count, groups] = pieceCounts(pieces);
+	return core.checkGrowth(core.glue.createSplitLevel(base, count, groups, indices.length), call);
 }
 
-/** The words of one piece in the staging words: its triangles, then its eight floats of bounds. */
+/**
+ * The words of one piece, and of one group, in the staging words: its triangles, then its eight
+ * floats of bounds.
+ */
 const PIECE_WORDS = 9;
 
+/** The pieces and the groups that `pieces` hold. */
+const pieceCounts = (pieces: PiecesData | undefined): [pieces: number, groups: number] => [
+	pieces?.triangles.length ?? 0,
+	pieces?.groups?.length ?? 0,
+];
+
 /**
- * Writes `pieces` into the staging words, nine words a piece, with room for `more` words after
- * them, and returns the address of those words.
+ * Writes the `triangles` and `bounds` of `count` pieces or groups into `words`, nine words each.
+ */
+function stageRuns(
+	words: Uint32Array,
+	triangles: ArrayLike<number>,
+	bounds: Float32Array,
+	count: number,
+): void {
+	const floats = new Float32Array(words.buffer, words.byteOffset, count * PIECE_WORDS);
+	for (let k = 0; k < count; k++) {
+		words[k * PIECE_WORDS] = triangles[k] as number;
+		floats.set(bounds.subarray(k * 8, k * 8 + 8), k * PIECE_WORDS + 1);
+	}
+}
+
+/**
+ * Writes `pieces` into the staging words, nine words a piece, then their groups, nine words a
+ * group, with room for `more` words after them, and returns the address of those words.
  */
 function stagePieces(
 	core: CoreMemory,
@@ -591,16 +616,19 @@ function stagePieces(
 	more: number,
 	call: string,
 ): number {
-	const count = pieces?.triangles.length ?? 0;
-	const at = core.checkGrowth(core.glue.meshArrays(count * PIECE_WORDS + more), call);
+	const [count, groups] = pieceCounts(pieces);
+	const runs = (count + groups) * PIECE_WORDS;
+	const at = core.checkGrowth(core.glue.meshArrays(runs + more), call);
 	if (!pieces) return at;
-	const words = core.u32(at, count * PIECE_WORDS);
-	const floats = new Float32Array(words.buffer, words.byteOffset, count * PIECE_WORDS);
-	for (let k = 0; k < count; k++) {
-		words[k * PIECE_WORDS] = pieces.triangles[k] as number;
-		floats.set(pieces.bounds.subarray(k * 8, k * 8 + 8), k * PIECE_WORDS + 1);
-	}
-	return at + count * PIECE_WORDS * 4;
+	stageRuns(core.u32(at, count * PIECE_WORDS), pieces.triangles, pieces.bounds, count);
+	if (pieces.groups && pieces.groupBounds)
+		stageRuns(
+			core.u32(at + count * PIECE_WORDS * 4, groups * PIECE_WORDS),
+			pieces.groups,
+			pieces.groupBounds,
+			groups,
+		);
+	return at + runs * 4;
 }
 
 /**
@@ -614,7 +642,7 @@ export function setMeshPieces(
 	call: string,
 ): boolean {
 	stagePieces(core, pieces, 0, call);
-	const taken = core.glue.setMeshPieces(mesh, pieces.triangles.length);
+	const taken = core.glue.setMeshPieces(mesh, ...pieceCounts(pieces));
 	// The pieces' table may have grown the memory, whether the mesh took them or not.
 	core.refresh();
 	return taken === 1;
@@ -633,7 +661,7 @@ export function setMeshPieceList(
 ): boolean {
 	const { indices } = pieces;
 	core.u32(stagePieces(core, pieces, indices.length, call), indices.length).set(indices);
-	const taken = core.glue.setMeshPieceList(mesh, pieces.triangles.length, indices.length);
+	const taken = core.glue.setMeshPieceList(mesh, ...pieceCounts(pieces), indices.length);
 	// The list's indices may have grown the memory, whether the mesh took them or not.
 	core.refresh();
 	return taken === 1;

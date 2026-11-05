@@ -28,6 +28,12 @@
 // face between the groups, such as a pot's or a sloped cap's, draw in one more piece that never
 // culls. The asset tool stores such pieces whatever copies the file places, since a page may place
 // many copies of a file's mesh; the engine draws them only once the scene's copies pay for them.
+//
+// The pieces of a list of a few thousand triangles or more split into groups of up to 128
+// triangles each (`planGroups`), which meshoptimizer's clusterizer makes and which the caller
+// hands in, since the planner imports nothing. A group lies inside one piece and takes the same
+// kind of bounds. A viewer that draws a few near copies of a list at a fine level culls those
+// copies group by group, while every other copy culls piece by piece.
 
 /**
  * The fewest triangles of one list for it to get pieces whatever draws it. The view cuts such a
@@ -86,6 +92,23 @@ export const PIECE_FACINGS = 14;
 /** The numbers of each piece's bounds: its sphere's centre and radius, its cone's axis and cutoff. */
 export const PIECE_BOUNDS = 8;
 
+/**
+ * The most triangles of one group. Each piece of a list of {@link GROUP_LIST_MIN_TRIANGLES}
+ * triangles or more splits into groups of up to this many triangles that lie close together, each
+ * with bounds of its own, so a viewer can cull a near copy's triangles at a finer grain than its
+ * pieces.
+ */
+export const GROUP_TRIANGLES = 128;
+
+/** The most vertices that one group uses: the most that meshoptimizer's clusterizer takes. */
+export const GROUP_VERTICES = 256;
+
+/** The fewest triangles of a list with pieces for its pieces to split into groups. */
+export const GROUP_LIST_MIN_TRIANGLES = 4096;
+
+/** How much the clusterizer weighs a group's spread of facings against its size in space. */
+export const GROUP_CONE_WEIGHT = 0.25;
+
 /** The rounds of spherical k-means on the facings. */
 const FACING_ROUNDS = 8;
 
@@ -104,6 +127,123 @@ const LEAST_CONE_DOT = 0.1;
  * @property {Uint32Array} counts The triangles of each piece, one piece after another.
  * @property {Float32Array} bounds {@link PIECE_BOUNDS} numbers for each piece.
  */
+
+/**
+ * The groups of a list's pieces: the list's triangles in group order, which keeps each piece's
+ * triangles in the piece, and each group's triangles and bounds.
+ *
+ * @typedef {object} GroupPlan
+ * @property {Uint32Array} indices The list's triangles, each piece's in the order of its groups.
+ * @property {Uint8Array} counts The triangles of each group, one group after another, piece by
+ *   piece: the groups of each piece hold its triangles and no other.
+ * @property {Float32Array} bounds {@link PIECE_BOUNDS} numbers for each group, as a piece's.
+ */
+
+/**
+ * Splits a list of triangles into groups of up to {@link GROUP_TRIANGLES} triangles that lie close
+ * together, as meshoptimizer's clusterizer makes them: the same triangles in group order, and the
+ * triangles of each group.
+ *
+ * @callback Clusterize
+ * @param {Uint32Array} indices Three vertex numbers for each triangle.
+ * @param {Float32Array} positions Three numbers for each vertex that the triangles use.
+ * @returns {{ indices: Uint32Array, counts: Uint32Array }}
+ */
+
+/**
+ * The groups of the pieces of a list of {@link GROUP_LIST_MIN_TRIANGLES} triangles or more, or
+ * `undefined` for a smaller list. `indices` holds the list in piece order, and `pieces` the
+ * triangles of each piece. Each piece splits into groups of its own, so a group never crosses
+ * from one piece into the next, and each group's bounds are those that `planPieces` gives a piece.
+ *
+ * @param {ArrayLike<number>} positions Three numbers for each vertex, as the GPU reads them.
+ * @param {Uint32Array} indices Three vertex numbers for each triangle, in piece order.
+ * @param {ArrayLike<number>} pieces The triangles of each piece.
+ * @param {Clusterize} clusterize
+ * @returns {GroupPlan | undefined}
+ */
+export function planGroups(positions, indices, pieces, clusterize) {
+	const triangles = Math.floor(indices.length / 3);
+	if (triangles < GROUP_LIST_MIN_TRIANGLES) return undefined;
+	const sorted = new Uint32Array(triangles * 3);
+	/** @type {number[]} */
+	const counts = [];
+	// Each piece hands the clusterizer only the vertices that it uses, numbered from 0, so a call
+	// copies a piece's share of a large mesh's positions rather than all of them.
+	const local = new Int32Array(Math.floor(positions.length / 3)).fill(-1);
+	const used = new Uint32Array(indices.length);
+	let first = 0;
+	for (let k = 0; k < pieces.length; k++) {
+		const size = at(pieces, k);
+		const piece = new Uint32Array(size * 3);
+		let vertices = 0;
+		for (let i = 0; i < size * 3; i++) {
+			const v = at(indices, first * 3 + i);
+			if (at(local, v) < 0) {
+				local[v] = vertices;
+				used[vertices++] = v;
+			}
+			piece[i] = at(local, v);
+		}
+		const corners = new Float32Array(vertices * 3);
+		for (let v = 0; v < vertices; v++)
+			for (let c = 0; c < 3; c++) corners[v * 3 + c] = at(positions, at(used, v) * 3 + c);
+		for (let v = 0; v < vertices; v++) local[at(used, v)] = -1;
+		const grouped = clusterize(piece, corners);
+		let sum = 0;
+		for (const count of grouped.counts) {
+			if (count < 1 || count > GROUP_TRIANGLES) return undefined;
+			sum += count;
+			counts.push(count);
+		}
+		if (sum !== size || grouped.indices.length !== size * 3) return undefined;
+		for (let i = 0; i < size * 3; i++) {
+			const v = at(grouped.indices, i);
+			if (v >= vertices) return undefined;
+			sorted[first * 3 + i] = at(used, v);
+		}
+		first += size;
+	}
+	if (first !== triangles) return undefined;
+	const { facing, area } = triangleFacings(positions, sorted);
+	const bounds = new Float32Array(counts.length * PIECE_BOUNDS);
+	let start = 0;
+	counts.forEach((count, g) => {
+		const group = new Uint32Array(count);
+		for (let t = 0; t < count; t++) group[t] = start + t;
+		bounds.set(pieceBounds(group, positions, sorted, facing, area), g * PIECE_BOUNDS);
+		start += count;
+	});
+	return { indices: sorted, counts: Uint8Array.from(counts), bounds };
+}
+
+/**
+ * The groups that meshoptimizer's clusterizer made, from its buffers, as {@link Clusterize} gives
+ * them: the triangles in group order, and the triangles of each group.
+ *
+ * @param {ArrayLike<number>} meshlets Four numbers for each group: where its vertices start in
+ *   `vertices`, where its triangles start in `triangles`, its vertices and its triangles.
+ * @param {ArrayLike<number>} vertices The vertices that the groups use, group by group.
+ * @param {ArrayLike<number>} triangles Three places in its group's vertices for each triangle.
+ * @param {number} count The groups.
+ * @returns {{ indices: Uint32Array, counts: Uint32Array }}
+ */
+export function meshletGroups(meshlets, vertices, triangles, count) {
+	let total = 0;
+	for (let k = 0; k < count; k++) total += at(meshlets, k * 4 + 3);
+	const indices = new Uint32Array(total * 3);
+	const counts = new Uint32Array(count);
+	let out = 0;
+	for (let k = 0; k < count; k++) {
+		const first = at(meshlets, k * 4);
+		const from = at(meshlets, k * 4 + 1);
+		const size = at(meshlets, k * 4 + 3);
+		counts[k] = size;
+		for (let i = 0; i < size * 3; i++)
+			indices[out++] = at(vertices, first + at(triangles, from + i));
+	}
+	return { indices, counts };
+}
 
 /**
  * The pieces that a triangle list of `triangles` triangles should have: none below
