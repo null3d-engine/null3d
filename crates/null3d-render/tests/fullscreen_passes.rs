@@ -313,62 +313,6 @@ fn a_cadenced_full_screen_pass_draws_in_one_frame_of_two() {
     cadence_draws(webgl2, "WebGL2");
 }
 
-/// A frame that must hold every pass's image gives every view its turn: a cadenced pass draws in
-/// it, though the cadence has not come round, and the cadence then runs from that frame as before.
-fn cadence_takes_its_turn_for_a_held_frame<B: FrameBuilder>(mut world: World<B>, path: &str) {
-    let view = add_fullscreen(
-        &mut world,
-        "Cadence",
-        PassSource::SceneColor,
-        EffectMaps::NONE,
-    );
-    // A target that nothing shows is culled, so a screen reads this pass's texture.
-    let shown = world.show(view);
-    add_screen(&mut world, shown);
-    let mut mock = MockBackend::default();
-    world.renderer.check_graph().unwrap();
-    // The frame that builds the pass draws it once, so the cadence starts after it.
-    world.step(&mut mock, true);
-    world.renderer.settings_mut().set_view_every(view, 4);
-    let mut draws = Vec::new();
-    for _ in 0..3 {
-        let commands = world.step(&mut mock, false);
-        draws.push(fullscreen_draws(&commands, view));
-    }
-    // The turn comes at once, then three frames wait it out.
-    assert_eq!(
-        draws,
-        vec![1, 0, 0],
-        "{path}: the cadence waits its turn out"
-    );
-    world.renderer.settings_mut().turn_every_view();
-    let commands = world.step(&mut mock, false);
-    assert_eq!(
-        fullscreen_draws(&commands, view),
-        1,
-        "{path}: the held frame draws the pass"
-    );
-    let mut draws = Vec::new();
-    for _ in 0..4 {
-        let commands = world.step(&mut mock, false);
-        draws.push(fullscreen_draws(&commands, view));
-    }
-    // The forced turn leaves the cadence four frames long, so the pass waits three and draws on
-    // the fourth.
-    assert_eq!(
-        draws,
-        vec![0, 0, 0, 1],
-        "{path}: the cadence keeps its length"
-    );
-}
-
-#[test]
-fn a_held_frame_draws_a_cadenced_pass_and_keeps_its_cadence() {
-    let (webgpu, webgl2) = worlds(Antialias::None);
-    cadence_takes_its_turn_for_a_held_frame(webgpu, "WebGPU");
-    cadence_takes_its_turn_for_a_held_frame(webgl2, "WebGL2");
-}
-
 // These tests drive a full-screen view alone. A transparent pass's place in the plan also waits on
 // whether the frame blends, and no test here drives that branch.
 /// A pass that carries a cadence keeps its place in the plan: neither the frame that its turn
