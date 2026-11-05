@@ -3548,15 +3548,6 @@ impl SceneSettings {
         }
     }
 
-    /// Gives every view its turn in the next frame, whatever its cadence, so that a frame which
-    /// must hold every pass's current image draws them all. Each view keeps its cadence, and the
-    /// frames after this one wait as they did before.
-    pub fn turn_every_view(&mut self) {
-        for view in self.views.iter_mut().skip(1) {
-            view.target_mut().turn();
-        }
-    }
-
     /// Marks each view's target shown while a live texture shows it, so the camera's passes read
     /// it. A full-screen pass that reads what the camera's view draws runs after the camera's
     /// passes, so they show its image of the frame before. A builder calls it before it syncs its
