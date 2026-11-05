@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -16,7 +16,9 @@ import {
 	shipBuilder,
 	specularBuilder,
 } from '../../../../tests/pages/lib/gltf-files';
+import { FileBudget } from './file-limits';
 import {
+	CLUSTERS_VERSION,
 	type GltfData,
 	GltfError,
 	MAX_ACCESSOR_BYTES,
@@ -1872,19 +1874,48 @@ describe('trees of cluster patches', () => {
 			bounds: b.accessor(new Float32Array([0, 0, 0, 1, 0.5, 0.5, 0.5, 0.5]), 4),
 			patches: b.accessor(new Uint32Array([0, 3, 0, 0x3dcc_cccd, 3, 3, 1, 0]), 4),
 			root: 0,
+			version: CLUSTERS_VERSION,
 		},
 	});
 
 	test('a primitive keeps the tree of patches that the tool built', () => {
 		const [p] = parse(boxWith(TREE).glb()).meshes[0]?.primitives ?? [];
 		expect(p?.patches?.root).toBe(0);
+		expect(p?.patches?.current).toBe(true);
 		expect(Array.from(p?.patches?.indices ?? [])).toEqual([0, 1, 2, 3, 4, 5]);
 		expect(Array.from(p?.patches?.words ?? [])).toEqual([0, 3, 0, 0x3dcc_cccd, 3, 3, 1, 0]);
 		expect(Array.from(p?.patches?.bounds ?? [])).toEqual([0, 0, 0, 1, 0.5, 0.5, 0.5, 0.5]);
 	});
 
+	test('a tree that names no version, or an older one, is not current', () => {
+		for (const version of [undefined, 1]) {
+			const old = boxWith((b) => {
+				const tree = TREE(b);
+				return { NULL3D_clusters: { ...tree.NULL3D_clusters, version } };
+			});
+			const [p] = parse(old.glb()).meshes[0]?.primitives ?? [];
+			expect(p?.patches?.current).toBe(false);
+		}
+	});
+
 	test('a plain primitive has no tree', () => {
 		expect(parse(shipBuilder().glb()).meshes[0]?.primitives[0]?.patches).toBeUndefined();
+	});
+
+	test("the tree's arrays count once against the file's budget", () => {
+		/** The bytes that parsing a file takes from its budget. */
+		const charged = (file: Uint8Array) => {
+			const take = spyOn(FileBudget.prototype, 'takeBlock');
+			try {
+				parse(file);
+				return take.mock.calls.reduce((sum, [bytes]) => sum + bytes, 0);
+			} finally {
+				take.mockRestore();
+			}
+		};
+		// Six 32-bit indices, and two patches of four floats and four integers each.
+		const treeBytes = 6 * 4 + 2 * 16 + 2 * 16;
+		expect(charged(boxWith(TREE).glb()) - charged(boxWith(() => ({})).glb())).toBe(treeBytes);
 	});
 
 	test('a tree that breaks the rules gives E1416', () => {

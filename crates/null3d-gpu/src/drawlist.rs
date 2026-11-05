@@ -1763,6 +1763,47 @@ pub mod vertex {
     }
 }
 
+/// The header of the culling parameters, the uniform block of the culling shader: the fields of
+/// `CullParams` in `cull.wgsl` before its runs of the cell order, in the same order. The runs and
+/// the occlusion phases' values follow it ([`sizes::CULL_PARAMS_BYTES`]). The shaders crate's
+/// layout test reads the shader's block and checks every field's offset and the block's size.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct CullHeader {
+    /// The view's six frustum planes, relative to its camera.
+    pub planes: [[f32; 4]; 6],
+    /// The sources that the view culls.
+    pub instance_count: u32,
+    /// The view's layer mask.
+    pub layers: u32,
+    /// The runs of the cell order to cull, or 0 to cull every source in place.
+    pub range_count: u32,
+    /// The view's row of the cell offsets texture.
+    pub offsets_row: u32,
+    /// What the level choice reads: the level factor, the orthographic flag, the share of a
+    /// switch distance that a fading band covers, and the projection's P[1][1].
+    pub levels: [f32; 4],
+    /// Where the view measures errors and the size of a bound that hides.
+    pub measure: [f32; 4],
+    /// 1 in the first word while the levels debug view draws, and 1 in the second for a view
+    /// whose pieces take the cone test. The rest are spare.
+    pub debug: [u32; 4],
+}
+
+impl CullHeader {
+    /// The header as 32-bit words, for an upload.
+    pub fn as_words(&self) -> &[u32] {
+        // SAFETY: the header is `repr(C)` and made of 32-bit values only, so it has no padding and
+        // every word of it is initialized.
+        unsafe {
+            std::slice::from_raw_parts(
+                (self as *const Self).cast::<u32>(),
+                sizes::CULL_HEADER_BYTES as usize / 4,
+            )
+        }
+    }
+}
+
 /// Sizes of the data that the render pipelines read. The shaders in `crates/null3d-shaders/wgsl/`
 /// declare the same sizes, and a test checks that they agree.
 pub mod sizes {
@@ -1882,6 +1923,18 @@ pub mod sizes {
     /// phase's draws and the history start, and an occluder's least span. Views that cull in one
     /// phase leave them unset, but the parameters have room for them.
     pub const CULL_OCCLUSION_BYTES: u32 = 96;
+    /// Bytes of the culling parameters' header, [`super::CullHeader`], where the runs of the cell
+    /// order start.
+    pub const CULL_HEADER_BYTES: u32 = size_of::<super::CullHeader>() as u32;
+    /// Bytes of one run of the cell order in the culling parameters: its first position, its end,
+    /// its first workgroup, and padding.
+    pub const CULL_RANGE_BYTES: u32 = 16;
+    /// Where the occlusion phases' values start in the culling parameters: after the runs.
+    pub const CULL_OCCLUSION_OFFSET: u32 = CULL_HEADER_BYTES + MAX_CULL_RANGES * CULL_RANGE_BYTES;
+    /// Bytes of the culling parameters, the culling shader's uniform block: the header, the runs
+    /// of the cell order, then the occlusion phases' values. Every buffer that the culling group
+    /// binds as its parameters has this size.
+    pub const CULL_PARAMS_BYTES: u32 = CULL_OCCLUSION_OFFSET + CULL_OCCLUSION_BYTES;
     /// Bytes of one vertex of the debug lines: its position relative to the camera, three 32-bit
     /// floats, then its sRGB color, four bytes from red to alpha.
     pub const LINE_VERTEX_BYTES: u32 = 16;
@@ -3158,6 +3211,7 @@ pub fn typescript_constants() -> String {
                 ("CELL_SHIFT", sizes::CELL_SHIFT),
                 ("MAX_CULL_RANGES", sizes::MAX_CULL_RANGES),
                 ("CULL_OCCLUSION_BYTES", sizes::CULL_OCCLUSION_BYTES),
+                ("CULL_PARAMS_BYTES", sizes::CULL_PARAMS_BYTES),
                 ("LINE_VERTEX_BYTES", sizes::LINE_VERTEX_BYTES),
                 ("SHADOW_UNIFORM_BYTES", sizes::SHADOW_UNIFORM_BYTES),
                 (

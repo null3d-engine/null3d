@@ -179,10 +179,11 @@ An add-on's built code imports the engine by its package name, `@null3d/engine`.
 - both WebAssembly builds
 - the vendor files: the KTX2 transcoder, the meshopt and Draco decoders, and the area lights' table
 - each foundation add-on in `addons/<name>/`, in the layout of the add-on's package
+- the development entry's copies, in `lib-dev/` and in each add-on's `lib-dev/` ([D-305](D-305-cdn-build-entries.md))
 
-A page imports `lib/index.js` from that folder with a plain `<script type="module">`, or through an import map that gives `@null3d/engine` that address. `docs/getting-started/cdn.md` gives the page and the policy. The folder keeps the package's layout, so every relative address in the engine's files resolves on the CDN.
+A page imports `lib/index.js`, the production entry, from that folder. It uses a plain `<script type="module">`, or an import map that gives `@null3d/engine` that address. `lib-dev/index.js` is the development entry ([D-305](D-305-cdn-build-entries.md)). `docs/getting-started/cdn.md` gives the page and the policy. The folder keeps the package's layout, so every relative address in the engine's files resolves on the CDN.
 
-The build compiles each add-on with the same pack-time compile that the npm packages take, so its WGSL is compiled and no `.wgsl` file ships. It rewrites each JavaScript file's engine imports to a relative address that reaches the engine in the same build, such as `../../../lib/index.js`. Both the page and every worker then resolve the same engine module from the same version of the build.
+The build compiles each add-on with the same pack-time compile that the npm packages take, so its WGSL is compiled and no `.wgsl` file ships. It rewrites each JavaScript file's imports of the engine and of other add-ons to a relative address in the same build, such as `../../../lib/index.js`. Both the page and every worker then resolve the same engine module from the same version of the build.
 
 The build writes `null3d-third-party-notices.txt` at its root, with the engine's notices first and each add-on's after it. A host publishes the folder, which is a redistribution, so the notices travel with it.
 

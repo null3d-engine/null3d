@@ -1327,6 +1327,8 @@ function makeMeshes(
 			weights: p.weights,
 			indices: p.indices,
 			computeNormals: !p.normals,
+			// A file's levels come from the file, which the asset tool plans.
+			levels: false,
 			...(p.morph && {
 				morphTargets: {
 					...p.morph,
@@ -1353,7 +1355,13 @@ function makeMeshes(
 				`${call}() found a stored tree in ${address} that does not fit primitive ${k} of mesh "${mesh.name}", so raycasts build their own. Optimize the file again.`,
 			);
 		if (typeof p.occluder === 'object') storeBlocker(context.core, made.id, p.occluder, call);
-		if (p.patches && storePatches(context.core, made.id, p.patches, call) !== 1 && DEV)
+		made.fromFileWith(p.pieces, call);
+		// A tree from an older asset tool would leave holes in the picture, so its mesh draws whole.
+		if (
+			p.patches &&
+			(!p.patches.current || storePatches(context.core, made.id, p.patches, call) !== 1) &&
+			DEV
+		)
 			console.warn(
 				`${call}() found a tree of patches in ${address} that does not fit primitive ${k} of mesh "${mesh.name}", so the mesh draws whole. Optimize the file again.`,
 			);
@@ -1899,10 +1907,11 @@ function partsOf(
 		const p = primitives.get(mesh);
 		if (p) growBox(m, p.min, p.max, min, max);
 		else {
-			// A mesh that an extension handler made gives no box of its own, so its radius around
-			// the node's origin holds it.
+			// A mesh that an extension handler made gives no box of its own, so its bounding sphere
+			// holds it.
 			const r = mesh.radius;
-			growBox(m, [-r, -r, -r], [r, r, r], min, max);
+			const [x, y, z] = mesh.center;
+			growBox(m, [x - r, y - r, z - r], [x + r, y + r, z + r], min, max);
 		}
 	};
 	const parts: PartTemplate[] = [];

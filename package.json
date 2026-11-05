@@ -33,6 +33,7 @@
 		"limits": "bun tools/limits.ts",
 		"pr-status": "bun tools/pr-status.ts",
 		"check:fix": "biome check --write .",
+		"chrome:install": "bun tools/install-chrome.ts",
 		"typecheck": "bun tools/typecheck.ts --shaders",
 		"test": "bun tools/shaders.ts && bun tests/unit.ts",
 		"test:heavy": "bun tools/shaders.ts && bun tests/heavy-checks.ts",

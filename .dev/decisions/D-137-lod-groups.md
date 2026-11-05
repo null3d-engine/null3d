@@ -1,8 +1,8 @@
 # D-137: Levels of detail picked by screen error
 
-Status: accepted. The owner approved the design, and chose to merge it with the forest demo as it is; a later task improves the demo's look. The owner also ruled that M3-L1 to M3-L4 build every proposal of a review of this system, cluster levels included. Built: the design below with M3-L1's and M3-L2's changes, the fade rule and distance bands of [D-211](D-211-lod-fade-and-distance-bands.md), the WebGPU path of [D-213](D-213-cluster-levels.md)'s cluster levels, and M3-L4's impostor cards that relight. Open: the two follow-ups at the end. Task: M2-I4, then M3-L1, M3-L2 and M3-L4.
+Status: accepted. The owner approved the design, and chose to merge it with the forest demo as it is; a later task improves the demo's look. The owner also ruled that M3-L1 to M3-L4 build every proposal of a review of this system, cluster levels included. Built: the design below with M3-L1's and M3-L2's changes, the fade rule and distance bands of [D-211](D-211-lod-fade-and-distance-bands.md), shadow views that pick in their own texels, the WebGPU path of [D-213](D-213-cluster-levels.md)'s cluster levels, and M3-L4's impostor cards that relight. Open: the two follow-ups at the end. Task: M2-I4, then M3-L1, M3-L2 and M3-L4.
 
-Summary: `mesh.setLevels` gives a mesh simpler levels; each object and batch row draws the coarsest level whose screen error stays under a pixel threshold. WebGPU's culling shader and WebGL2's job workers pick with one stateless rule, so both switch at the same distances, and hand-set levels cross-fade with a dither. Shadows pick coarser levels, bounds under the threshold draw nothing, and the copy lists hold one copy per source that draws.
+Summary: `mesh.setLevels` gives a mesh up to 15 simpler levels; each object and batch row draws the coarsest level whose screen error stays under a pixel threshold. WebGPU's culling shader and WebGL2's job workers pick with one stateless rule, so both switch at the same distances, and hand-set levels cross-fade with a dither. Each shadow view picks its casters' levels by their error in its own texels, bounds under the threshold draw nothing, and the copy lists hold one copy per source that draws in each level.
 
 ## Question
 
@@ -15,7 +15,7 @@ A review compares this system with other work: Hyper3D's article "[Level of deta
 - Levels switch where the screen-error rule says, at the same distances on WebGPU, compatibility mode and WebGL2 (the task's done-when).
 - The rule is Godot's: the coarsest level whose error, projected on the screen, is under the threshold of 1 pixel. The screen's height includes the render scale ([D-53](D-53-technique-defaults.md)).
 - A switch does not pop: the levels hand over smoothly, or the record states the alternative.
-- Shadows use a coarser level. A shadow never shows another level's silhouette on its own caster's surface by more than the normal bias hides.
+- A shadow view picks a caster's level by the caster's error in the view's own texels, whatever the camera's distance, so a shadow map that keeps its depth between draws stays right. A shadow never shows another level's silhouette on its own caster's surface by more than the normal bias hides.
 - No cost for scenes without levels: no new upload, no shader download, no bucket and no branch that costs measurable time (design principle 8).
 - No allocation per frame (hard rule 1). No new storage buffer in the culling shader, which already binds the eight that every device allows.
 - A dense scene measured with and without levels on the Mac's GPU, per path.
@@ -51,7 +51,19 @@ level j draws when  error[j] × scale × k < threshold × d,  with k = render he
 
 `scale` is the largest axis scale of the source's world matrix. Both paths compute it from the same matrix. The error grows from level to level, so the walk stops at the first level that fails. An orthographic camera uses `d = 1`, since its pixels do not shrink with distance.
 
-`d` is the straight-line distance to the nearest point of the sphere, `max(center distance - radius, 1 mm)`, as meshoptimizer's README, Godot and `clusterlod.h` measure it. Turning the camera therefore never changes a level. The minimum keeps the distance positive when the camera lies inside the bounds. Such an object keeps its base level, and the fade ratio stays defined. Measured to the center, an object whose radius is half its distance would show twice the allowed error on its near side. So large meshes and merged far cells keep finer levels at the same camera distance.
+`d` is the level distance: the straight-line distance to the sphere's center less half its radius, `max(center distance - radius / 2, 1 mm)` (`LEVEL_RADIUS_SHARE`). Turning the camera therefore never changes a level. The minimum keeps the distance positive when the camera lies inside the middle of the bounds. Such an object keeps its base level, and the fade ratio stays defined. A level given by its error measures this distance, and so does the rule that hides a small bound. A level given by a distance or by coverage, and a distance band, measure to the sphere's nearest point, `max(center distance - radius, 1 mm)`, because their authors set them in meters for the near side of the object.
+
+A level's error is its largest anywhere on the mesh, so the measure decides how a large copy trades its near side against the rest of it. The desert benchmark's walk view shows the trade, in held frames at 1920 x 1080 compared with the same frames drawn from base levels alone, by FLIP (a perceptual image difference, 0 for the same image), at 1 pixel:
+
+| Level distance | Triangles a frame | FLIP, whole frame | FLIP, bottom third, worst frame | Pixels over 0.1 |
+| --- | --- | --- | --- | --- |
+| Nearest point, as meshoptimizer's README, Godot and `clusterlod.h` measure | 4.98 M | 0.0119 | 0.007 | 2.4% |
+| Center less half the radius (chosen) | 4.27 M | 0.0137 | 0.009 | 3.0% |
+| Center, as three.js r187's meshlet pipeline measures | 3.32 M | 0.0171 | 0.017 | 4.0% |
+
+The nearest point keeps an arch of 20 m radius, whose center lies 32 m away, at its base level of a million triangles, because its near side lies 8 m away. Its far side, 50 m away, then draws detail that no pixel shows. The center shows the error on the near side of large copies: the bottom third of the worst frame, where the near arches stand, errs by 2.4 times as much. Half the radius keeps the near side within the nearest point's error and draws 14% fewer triangles. Copies small against their distance, such as the desert's pebbles, pick the same level under all three measures. A tree of cluster patches keeps the nearest point (`LevelRule::patch_distance`, `cluster_cull.wgsl`): a patch's sphere encloses its children's, so the nearest point never measures a child farther than its parent, and a cut leaves no hole. A perspective light's tile keeps the nearest point too, because a caster's level must stay within a texel of its surface everywhere for the normal bias to hide it.
+
+`bench/research/triangle-budget/` holds the scripts, the held frames' figures and the comparison (`results/compare.json`), and the experiment's change (`distance-share.patch`).
 
 `LevelRule::distance` in `crates/null3d-core/src/levels.rs` picks for the job workers, and `level_of` in `crates/null3d-shaders/wgsl/cull.wgsl` picks for the GPU cull. Both use the same expression, so a switch happens at the same camera distance on every GPU path.
 
@@ -119,15 +131,47 @@ The masks that test their alpha by the hash switch at once, so that the fading s
 
 ### Shadows
 
-Shadow cascades, shadow tiles, mirrors and the outline view already place every source relative to the main camera. So `d` is the main camera's distance in every view, and each shadow view picks with the main camera's `k`, not its own orthographic projection. A shadow view multiplies the threshold by the preset's shadow factor, so its casters draw a coarser level. Shadow views do not fade: they draw the level that the rule picks.
+Each shadow view picks its casters' levels by their error in its own texels, as three.js r187's meshlet pipeline does (its `shadowLodThreshold`). The rule keeps its form, with the view's own measure:
+
+```text
+level j draws in a cascade when  error[j] × scale < threshold × texel
+level j draws in a tile when     error[j] × scale < threshold × texel_per_meter × d_light
+```
+
+A cascade is an orthographic view whose texels have one size, `texel`, at every distance, so its distance counts as 1 and its factor is `1 / (texel × threshold)`. A spot or point light's tile is a perspective view from the light, so `d_light` is the distance from the light to the nearest point of the sphere, and its texels grow by `texel_per_meter` with each meter. The sun's hero tile is orthographic, as a cascade is. The threshold is the `lodShadowThreshold` quality setting, in texels: 1 on every preset, as three.js's default. `LevelRule::for_light` in `crates/null3d-core/src/levels.rs` builds the rule, and `cull.wgsl` reads where the view measures from (`measure`, beside the rule's factor).
+
+A cascade's box keeps its size while the camera moves and turns ([D-15](D-15-cascade-split.md)), so its texel keeps its size too. A caster's level in a cascade therefore never changes while the camera moves, and a tile's changes only when its light or the caster moves. Far cascades and tiles keep their depth between redraws ([D-16](D-16-moving-casters-and-bias.md), [D-61](D-61-shadow-tile-redraws.md)), and that depth stays right. A rule by the camera's distance would change a level as the camera moves, and a kept layer would show the change at its next redraw. A light whose shadow distance follows the farthest receiver resizes its boxes when that distance steps, by 1.25 times a step ([D-168](D-168-auto-shadow-distance.md)), and its casters' levels follow the new texels.
+
+The look rule sets the threshold. The normal bias moves each receiver by up to one texel of its cascade along its normal ([D-16](D-16-moving-casters-and-bias.md)). A shadow level that errs by under a texel lies within that offset of the base surface, so it does not shadow the base surface. The camera's own level errs by under a pixel. The filter's square of 3 or 5 texels and the comparison with the receiver's plane absorb the rest. The image test `cluster-shadows-fine` draws a ground that shadows its own hills with the finest patches in every cascade, and must match `cluster-shadows`, which draws each cascade's own cut. A larger threshold would let a level's silhouette pass the bias, so no preset raises it.
+
+The desert benchmark with shadows gave 2.4 times fewer cascade triangles in the walk view and 1.8
+times fewer in the aerial view. The frame's triangles were a third lower, mostly from the ground's
+patches ([D-213](D-213-cluster-levels.md#shadow-views)). Those figures are void. Their build drew
+null3D at 3840 x 2160 for a page of 1920 x 1080, with culling spheres off center. The GPU also
+refused its frames at Medium with E1305 ([D-322](D-322-benchmark-against-threejs-meshlets.md#the-canvas-size-fault),
+[D-307](D-307-mesh-pieces.md#the-check-during-play)). On a build with both fixes, the walk view's three cascades
+add 4.30 M triangles to the camera's 3.64 M (run 20261104-153548-bench, [D-322](D-322-benchmark-against-threejs-meshlets.md#results-of-the-fair-rematch)).
+A comparison of the two rules on that build remains to be taken.
+
+The Island showcase, at High on WebGPU with the governor off, draws the same frame with either
+rule on the commit that this change starts from: 6.50 M triangles against 6.49 M, 3,727 draw calls
+in both, and its three cascades in 3.79 ms against 3.76 ms (medians of three runs on the dev
+server, at loads of 30 to 80). Its casters there carry no levels and no tree, so the rule has
+nothing to pick. The run-time levels that a mesh made in code plans ([D-310](D-310-runtime-levels.md))
+give them levels, and then each cascade picks them in its texels too.
+
+Three properties of a source keep the camera's measures in a shadow view:
+
+- A distance band reads the camera's distance in every view, so a source outside its band casts no shadow, as before.
+- A level given by a distance or by screen coverage switches at the camera's distance, as its author set it for the camera. Such a level has no error to measure in texels.
+- Shadow views do not fade: they draw the level that the rule picks.
 
 | Option | Verdict |
 | --- | --- |
-| Shadows pick by the main camera's distance, with a larger threshold | Chosen |
-| Shadows pick by the light's view | Rejected. A cascade's orthographic view would pick by the cascade's texel size, and a caster could shadow its own surface with a level far from the one the camera sees |
+| Each shadow view picks by its own texels, at a threshold of one texel | Chosen. The level holds while the camera moves, so cached cascades and tiles stay right. A far cascade, whose texels are large, draws coarse levels, and a near one fine levels |
+| Shadows pick by the main camera's distance, with the camera's threshold times a shadow factor of 2, or 4 on Low | Rejected. A far cascade drew a near caster at the near caster's fine level, many times its texels' detail. A kept layer showed the level of the camera's place at its last redraw. Two cascades could not pick two levels |
+| One level for every cascade, from the finest cascade that holds the caster | Rejected. The level would follow the camera's place, as before, and a far cascade would draw the near cascade's detail |
 | Shadows always draw the base level | Rejected. The shadow passes would keep the full vertex cost of a dense forest |
-
-Far cascades and shadow tiles keep their drawn depth between redraws. A level change then shows in them at their next redraw. That comes within the far cascades' interval, or when the tile's light or a caster moves.
 
 ### A bound under a pixel draws nothing
 
@@ -141,29 +185,84 @@ This is the factor that picks every level, so the render height, the render scal
 
 Past the hide distance lies the same 8% band as a level switch. There the level that the object would draw goes into its fade bucket with a negative fade value, so the dither drops a growing share of its pixels until none remain. Without a band, or without a fading build, the object hides at the hide distance. A mesh without levels never hides, so a scene without levels still pays nothing. Both paths compare the same values: the job workers and the direct-draw culling read `levels.rs`, and the GPU's culling shader reads `cull.wgsl`.
 
-The shadow views use their own threshold, times `lodShadowFactor`, as their level choice does. A caster's shadow therefore goes at a nearer distance than the object itself. It draws no band, as the shadow maps already pick without one.
+A shadow view hides a caster whose diameter covers fewer of its texels than `lodShadowThreshold`, as its level choice measures. A pebble 1 cm across draws nothing in a cascade of 2 cm texels, wherever the camera stands. It draws no band, as the shadow maps already pick without one.
+
+### The threshold per preset
+
+The threshold is 1 pixel from Medium up and 2 on Low. The desert benchmark's walk view measures what a coarser threshold would save and cost, at Medium, against the frames drawn from base levels alone. The figures are the mean of 8 held frames at 1920 x 1080, with the level distance measured to the nearest point. FLIP is a perceptual image difference, 0 for the same image, and its share over 0.1 counts the pixels that most viewers notice. Triangles and held-frame GPU times come from the development build, ground included:
+
+| Camera threshold | Triangles | GPU, held frame | FLIP | Pixels over 0.1 |
+| --- | --- | --- | --- | --- |
+| 0.5 px | 8.14 M | 2.32 ms | 0.0126 | 2.5% |
+| 1 px | 4.98 M | 1.72 ms | 0.0119 | 2.4% |
+| 1.5 px | 3.71 M | 1.40 ms | 0.0179 | 5.1% |
+| 2 px | 2.98 M | 1.37 ms | 0.0196 | 6.1% |
+| 3 px | 2.39 M | 1.32 ms | 0.0215 | 6.7% |
+| 4 px | 2.04 M | 1.32 ms | 0.0272 | 8.9% |
+| three.js r187 meshlets, its 1 px | 1.73 M | 2.77 ms | 0.0208 | 7.1% |
+
+Below 1 pixel nothing improves: about 0.012 is the frame's error from the parts that levels do not touch. Each engine is compared with its own base-level frames, so lighting and shadow methods do not count.
+
+| Option | Verdict |
+| --- | --- |
+| 1 pixel from Medium up (chosen) | It keeps about half three.js's image error with 3.8 M triangles a frame on the desert's lap, at 1.48 ms of GPU time against three.js's 2.19 ms |
+| 2 pixels on Medium | Rejected by the owner. It matches three.js's image error with 53% fewer triangles, 1.81 M a frame on the lap, and saves about 0.3 ms of GPU time (1.48 to 1.16 ms without shadows, 2.69 to 2.10 ms with three cascades). On the Mac the lap's frame is bound by the CPU, at 1.72 against 1.76 ms between frames, so the saving does not reach the screen, while the image loses its lead over three.js |
+| A shadow threshold of 2 or 4 texels | Rejected. At 1 pixel, 2 texels draw 9.33 M triangles in place of 14.05 M with three cascades, for 0.47 ms. The error of the frame's bottom third, where the near casters' shadows fall, doubles from 0.0075 to 0.0146, and at 4 texels it triples |
+| Lower the planner's normal weight from 1 to 0.25 | Rejected. At 1 pixel it draws 2.69 M triangles at an error of 0.0192: the same trade as a threshold of 2 pixels. It would also write every model file again |
+
+The lap timings are three runs of 10 seconds each, through `bun run bench:run --scenes desert --switches lod=2` (`bench/research/triangle-budget/results/timings.log`). The runs with shadows reached a 1-minute load of 8 to 10, so their figures are rough. The held frames come from `bench/research/triangle-budget/scripts/shots.ts`, their comparison from `compare.py`.
 
 ### The governor
 
-The render scale is part of the render height, so a lower scale picks coarser levels with no new step. A governor step, after the render scale's steps, doubles the threshold, up to four times the preset's. It runs only while the scene draws a level set.
+The render scale is part of the render height, so a lower scale picks coarser levels with no new step. A governor step, after the render scale's steps, doubles the threshold, up to four times the preset's. The same step doubles the shadow maps' threshold in texels. It runs only while the scene draws a level set.
 
 ### Copy lists that follow what draws
 
 A view's compacted instance buffer holds one copy of each source that draws, in the slice that the bucket's draw reads. Any source of a set may pick any level. A slice for every source of the set in every bucket of the set would take four times the copies that the sources need for four levels, and eight times with fading bands. Each copy takes 64 bytes per source per level per view. The copies of a dense forest would then pass WebGPU's 128 MiB binding limit near 260,000 copies.
 
-So the frame sizes each level's slice to the copies that it draws, and the slices of one set take the room of the set's sources. `Layout::fit_copies` (`crates/null3d-render/src/gpu_driven/copies.rs`) counts the copies that each view places in each bucket. It uses the same stateless rule that the culling shader runs. It takes the largest count over the views that draw the layout. A source near a switch distance counts toward both levels that it may pick. So a slice never falls short of the shader's writes, whatever the last bits of a shared distance come to. The buckets without levels keep the slices of the build. A scene without levels runs no count. A slice keeps its place while its count fits, with spare room of an eighth of its count and 64 rows, because a view's bundle and buffer name the slices. A count that outgrows its slice moves the slices, and the frame records the bundles and sizes the buffers again ([Level slices and moving cameras](../implementation-notes.md#level-slices-and-moving-cameras)).
+So the frame sizes each level's slice to the copies that it draws, and the slices of one set take the room of the set's sources. `Layout::fit_copies` (`crates/null3d-render/src/gpu_driven/copies.rs`) counts the copies that each view places in each bucket. It uses the same stateless rule that the culling shader runs. It takes the largest count over the views that draw the layout. A source near a switch distance counts toward both levels that it may pick. So a slice never falls short of the shader's writes, whatever the last bits of a shared distance come to. Each view counts only the sources inside its frustum, as its culling pass appends no other. The views of a scene whose staged levels a loader watches count every source, because the watches read every level that a source picks. The buckets without levels keep the slices of the build. A scene without levels runs no count. A slice keeps its place while its count fits, with spare room of an eighth of its count and 64 rows, because a view's bundle and buffer name the slices. A count that outgrows its slice moves the slices, and the frame records the bundles and sizes the buffers again ([Level slices and moving cameras](../implementation-notes.md#level-slices-and-moving-cameras)).
 
 | Copies of four levels, with fading bands | A slice per source in every bucket, by arithmetic | Sized to what draws, measured |
 | --- | --- | --- |
 | 40,000 copies, the main view | 20.5 MB | 2.6 MB |
-| 40,000 copies, the four cascades' casters list | 10.2 MB | 2.6 MB |
-| Both lists together | 30.7 MB | 5.1 MB |
+| 40,000 copies, the four cascades' casters list | 10.2 MB | 5.1 MB |
+| Both lists together | 30.7 MB | 7.7 MB |
 
-`crates/null3d-render/tests/levels.rs` measures the right-hand figures from the frame's own copy lists. `forty_thousand_copies_of_four_levels_take_one_copy_each` reads the main view, and `forty_thousand_casters_of_four_cascades_take_one_copy_each` reads the casters' layout with four cascades. The four cascades draw one copy list, so the list takes one copy for each of the 40,000 trees, and neither the levels nor the cascade count multiply it. The middle column is arithmetic at 64 bytes a copy. The main view would have eight slices, one for each of four levels and its fading band: 20.5 MB. The casters' list would have four, because its shadow pipelines take no fading build, and its fade buckets exist only in the scene layout: 10.2 MB.
+`crates/null3d-render/tests/levels.rs` measures the right-hand figures from the frame's own copy lists. `forty_thousand_copies_of_four_levels_take_one_copy_each` reads the main view, and `forty_thousand_casters_of_four_cascades_take_a_copy_for_each_level_that_a_cascade_picks` reads the casters' layout with four cascades. The cascades share one bucket table, so a level's slice holds the most copies that any cascade places in it. Each cascade picks in its own texels, so two cascades can place one caster in two levels. The test's 40,000 trees stand together inside every cascade, and the four cascades pick two levels: 5.1 MB, twice the 2.6 MB of one level. Each shadow view counts only the casters inside its frustum, with its sphere grown by the count's slack, so a caster that no cascade holds takes no copy. The same trees far past the shadow distance take none. The middle column is arithmetic at 64 bytes a copy. The main view would have eight slices, one for each of four levels and its fading band: 20.5 MB. The casters' list would have four, because its shadow pipelines take no fading build, and its fade buckets exist only in the scene layout: 10.2 MB.
+
+Counting every caster in every cascade would put a near cascade's fine levels and a far cascade's coarse levels in every caster's count. The casters' list would then approach a slice for every copy in every level, the cost that this section removes.
 
 A band adds about a tenth more, for the sources inside it, which take a copy in each of two fade buckets.
 
-The culling shader cannot size these slices itself. A draw reads its bucket's copies from a vertex buffer offset that the frame records on the CPU. An indirect draw keeps its first instance at 0 (hard rule 8). A count on the GPU would need a readback, or a second pass that costs every frame. The CPU count runs only for the sources of a mesh with levels. A list of chosen patches per view has the same sizing problem (M3-L3). Its count can read this one.
+The culling shader cannot size these slices itself. A draw reads its bucket's copies from a vertex buffer offset that the frame records on the CPU. An indirect draw keeps its first instance at 0 (hard rule 8). A count on the GPU would need a readback, or a second pass that costs every frame. The CPU count runs only for the sources of a mesh with levels. A view's list of chosen patches has the same sizing problem, and the frame counts it on the CPU too ([D-213](D-213-cluster-levels.md#what-it-costs)).
+
+The count picks a level for every source in every frame, twice for each source, at each edge of the slack. So its cost grows with the sources, even when only the camera moves. The desert comparison draws 16 batches with 63,000 rows in all. There, a CPU profile in Chrome on the MacBook Pro M5 Max put 3.5 ms of the sketch worker's 4.6 ms frame in the count. That build drew null3D at 3840 x 2160 ([D-322](D-322-benchmark-against-threejs-meshlets.md#the-canvas-size-fault)). The count's cost follows the sources, not the pixels, so the fault leaves these CPU figures as they are. The engine had started no job worker, as no other loop of the scene asked for one. So the count runs on the job workers, in chunks of 1,024 sources. Each thread counts into a tally of its own, and the tallies are summed. The sum is the same whatever thread counts which source, so the slices are unchanged. The tallies take a cache line's multiple of words per thread, in the layout's working list. `job_workers_count_the_same_copies_of_each_level_as_one_thread` in `crates/null3d-render/tests/levels.rs` compares four job workers with one thread. Its forest spreads over every level, band and the hide distance, in the camera's list and the casters'. On the job workers, the comparison's recording step fell to 1.1 to 1.7 ms. The sketch worker's frame fell to 1.2 to 2.0 ms ([Benchmarks](../benchmarks.md#the-desert-comparisons-sketch-worker)).
+
+Each source's two picks share one walk of its levels (`LevelRule::pick_both`). A switch distance that stops the walk at the far edge stops it at the near edge too. So the walk to the far edge passes the place where the walk to the near edge stops. Each switch distance is worked out once. Both edges then settle their bands, ranges and hide distance with the code that `LevelRule::pick` runs. `one_walk_picks_what_two_picks_give_at_both_distances` in `crates/null3d-core/src/levels.rs` compares the two over 20,000 random chains, rules, ranges and distances, fading amounts included. Rejected:
+
+- Skipping the count while the camera moves little. The count's purpose is a slice that never falls short. A bound on how far the camera may move before a source switches would need every input of the rule tracked. These are the rows, the scale, the bias, the field of view and the render scale.
+- One slice per source in every level, for every set. It is the memory cost that this section removes. Small sets take it, as the next section says.
+
+#### Small sets keep a slot for every source
+
+The count saves memory in proportion to a set's sources, and costs CPU time in proportion to them, in every frame. For a small set it saves little and still costs every frame. S4 shows it. Its 492 balls take planned levels, in five sets, one for each material. Each frame then walked all 5,200 objects to count the balls, once for the camera's view and once for each of the three cascades at Medium. The sketch worker's frame rose from 0.225 ms to 0.373 ms on the MacBook Pro M5 Max, a rise of 0.15 ms. A build that counts only the first frame took 0.225 ms, so the count was the whole rise. The GPU time did not change.
+
+So the count now does three things:
+
+- It visits only the sources whose mesh has levels. The layout lists them when it is built, because a source keeps its home bucket until the next build. The count walked every source before and skipped the others.
+- It counts the views that share a camera in one pass, as the shadow views do, so each source's sphere is read once for all of them. Each view counts only the sources inside its own frustum.
+- It skips small sets. A build keeps a slot for every source of a set in each of its buckets, so such a set can never outgrow its slices. Each layout fixes sets in bucket order while they fit 8,192 slots in all (`FIXED_LEVEL_SLOTS` in `crates/null3d-render/src/gpu_driven/layout.rs`). At 64 bytes a copy, that is at most 512 KiB a view. No frame counts a fixed set's copies, and its slices never move. A set with pieces or a tree of cluster patches is always counted. Its idle levels leave many draws out of the bundles, as the Island's walls do.
+
+A fixed set draws every level, also when no copy picks it, because only a count can find a level idle. S4 then draws 94 indirect draws where the counted sets drew 86. The 8 empty draws add about 0.01 ms to the render worker's replay, which is not S4's busiest thread. The GPU time stays the same.
+
+| S4 at Medium, WebGPU, busiest thread | Median ms a frame |
+| --- | --- |
+| Before the balls had levels | 0.225 |
+| Every source counted in every view | 0.373 |
+| Only the sources with levels, the views of one camera in one pass | 0.28 to 0.30 |
+| Small sets fixed | 0.223, against 0.210 for the base in the same rounds |
+
+`a_small_sets_slices_hold_every_copy_in_every_level_and_never_move` in `crates/null3d-render/tests/levels.rs` moves a fixed set's ball through every level and finds its copy list unchanged, while a counted set's list moves. `a_layout_lists_only_the_sources_of_a_mesh_with_levels_for_the_count` in the layout's unit tests checks the two lists of sources. The tests of the count itself build their worlds with `fixed_level_slots: 0`, which counts every set.
 
 The buffer takes room to grow while that room fits the binding, and only the need when it does not. A frame builder refuses a need past the device's limit with E1501, which names the limit in bytes. Every buffer that a frame sizes against a binding takes the same check. `a_copy_list_past_the_binding_is_refused_rather_than_sized_over_it` in `crates/null3d-render/tests/levels.rs` gives a device whose binding holds the sources, and a batch that reserves room in every bucket of its levels. It reads the refusal.
 
@@ -197,6 +296,67 @@ The gain is the share of the buffer that a coarse level does not need resident. 
 
 `packages/cli/src/assets/levels.test.ts` holds two facts. Each level and every coarser level share one prefix of the new numbering. Every triangle keeps the positions it drew before the reorder. Unordered, the coarsest level's 515 vertices reach index 12,245, and the levels together reach the base mesh's last index, 16,640. So the prefix check fails without the order.
 
+### How many levels a mesh takes
+
+A mesh takes up to 15 lower levels, 16 with the base mesh. The asset tool halves each level down
+to about 32 triangles ([D-91](D-91-level-planning.md#how-far-the-levels-go)). So a mesh of `n`
+triangles needs about log2(n / 32) levels. A desert pebble of 20,480 needs 9, and a mesh of a
+million needs 15. The engine first took 7. The tool then took steep steps in the middle of the chain, and a
+boulder's or an arch's mid level drew far past its distance, as D-91 records.
+
+The limit lives in these places, and each one changed with it:
+
+- `MAX_LEVELS` in `crates/null3d-render/src/levels.rs`, which sizes each mesh's level set.
+- The level field of a bucket key's mesh word, 4 bits. A level key keeps its own top bit, so the
+  base mesh's id must stay under 2^27. A unit test round-trips every level of such an id.
+- The mask of the levels that fade, 16 bits through the renderer. The page passes a 32-bit word
+  already, and the WebAssembly entry point cuts it to 16.
+- The level code that the levels debug view reads: the level in 4 bits, the hidden mark at bit 4,
+  the fade's share at bits 5 to 10, and the band's side at bit 11. The core writes it on WebGL2, and
+  the culling shader on WebGPU. The debug view's shader reads it. A core unit test reads both
+  shaders' text and fails when their bits differ from the core's. From the seventh lower level on,
+  the view draws gray, its last color.
+- `setLevels` in `packages/engine/src/scene/resources.ts`, which refuses a sixteenth lower level
+  with E1221.
+
+Each mesh slot of the level table grows from 108 to 212 bytes. The table holds a slot for every
+mesh id up to the largest one with levels, so ten thousand meshes take about 2 MB. Nothing in a
+frame grows with the limit itself. A mesh with more levels adds what each level adds: a draw
+bucket for each pipeline key, and a fade bucket where a level fades. A level of the asset tool has
+a measured error, so it switches at once and takes no fade bucket. Each source's level walk also
+takes one more step for each level that it passes, on the GPU and on the job workers.
+
+The desert benchmark measured the deeper chain against the tool's seven-level chain, on this
+engine and the same ground. These figures are void. The comparison's runner drew null3D at Medium,
+where the GPU refused that build's frames with E1305, and at 3840 x 2160 for a page of
+1920 x 1080, with culling spheres off center ([D-322](D-322-benchmark-against-threejs-meshlets.md#the-canvas-size-fault)).
+They stay as the only comparison of the two chains, and a run on a build with both fixes remains
+to be taken. The deeper chain's own figures on such a build are in [D-322](D-322-benchmark-against-threejs-meshlets.md#results-of-the-fair-rematch):
+3.64 M triangles and 1.17 ms of GPU time walking, 3.33 M and 1.15 ms from above. Each figure is the median of three uncapped runs of 10 seconds, with
+the views' pages in turns, in Chrome on the MacBook Pro M5 Max:
+
+| Page | Triangles | Draw calls | Frame interval | GPU time |
+| --- | --- | --- | --- | --- |
+| Walk, the whole scene | 15.35 M to 11.80 M | 206 to 264 | 6.84 to 6.45 ms | 3.91 to 3.61 ms |
+| Aerial, the whole scene | 15.16 M to 9.23 M | 169 to 264 | 6.76 to 6.89 ms | 3.94 to 3.89 ms |
+| Walk, pebbles alone | 2.14 M to 1.45 M | 49 to 61 | 4.81 to 4.88 ms | 1.19 to 1.26 ms |
+| Walk, boulders alone | 3.70 M to 2.49 M | 33 to 49 | 4.68 to 3.84 ms | 1.00 to 1.03 ms |
+| Walk, columns alone | 1.02 M to 0.44 M | 34 to 49 | 3.28 to 4.18 ms | 0.93 to 1.04 ms |
+| Walk, arches alone | 5.88 M to 5.12 M | 55 to 70 | 5.34 to 4.45 ms | 2.35 to 2.52 ms |
+
+Every kind draws fewer triangles, the boulders, columns and arches too, which the steep chain had
+raised. The draw calls rise by a quarter to a half, by one per level that some copy picks. The
+sketch worker's busy time fell into two modes on both chains: about 1.6 to 2.1 ms or 3.1 to 4.8 ms
+for the same page. The render worker's moved with it, so the processor's speed sets the mode.
+Within one mode, the deeper chain took 5% to 15% more of the sketch worker, for the extra draws
+and the longer walks. The frame interval and the GPU time moved within the runs' spread, apart
+from the walk view's GPU time, which fell by 8%.
+
+How the data was produced: `bench/meshlets/build.ts` of the comparison's checkout with this
+branch's asset tool, then its `run.ts --uncapped --runs 3` with `pump=1`, `warmup=3` and
+`seconds=10`, over the engine's CDN build from this branch. Both model sets held the ground that
+this branch's tool wrote, so only the props' levels differ. No other run used the machine.
+
 ### Trees with leaf cards
 
 Creek's trees come from glTF files whose leaves are cards: quads with an alpha-masked leaf texture. The level planner ([D-91](D-91-level-planning.md)) locks each list's border, so the lists of a mesh still meet. Every vertex of a card lies on the card's border, so no card can lose a triangle. A test tree with a trunk of 384 triangles and 600 cards of 2 triangles each, 1,584 triangles in all, shows it. The trunk halves to 192 triangles, but the step keeps 1,392 of 1,584, more than three quarters, and the planner stops before the first level. Without the lock, meshopt's simplifier folds each card into one triangle. That cuts away half of each card's leaf texture.
@@ -209,7 +369,7 @@ So the asset tool thins card lists in a step of its own, and a tree that leaves 
 - The level's error is the size of the largest card that it drops. Creek's cards are 0.8 m wide. On a 1,080-pixel screen, a level switches at about a kilometer. That is conservative: it thins a crown only long after the geometry detail has gone. A hand-authored level, as Creek's Blender script makes, switches nearer. The tool's rule stays geometric and predictable. An author who wants earlier thinning gives the level its own error.
 - The card step runs only for a mesh that a skin does not pose, because a posed list's positions are in the scene's units and the level's stored positions are in the mesh's.
 
-The picture `asset-card-level` shows this step. The tool builds a tree of 40 cards of 0.3 m and a trunk. The picture loads the tool's file and draws its first lower level. That level keeps 20 cards and grows each about its middle by the square root of two. A card's size is the level's error, so the switch lies far out. The picture sets the threshold to 16 pixels, the most that the setting takes, and gives the tree a bias of 4. At a 640 by 360 picture and a 40-degree lens, the rule's factor is 30.9. The level's error of 0.424 m then switches it 13 m out. The bias divides that to 3.3 m, and the camera's nearest point lies at 3.8 m. The crown spans about 100 of the picture's 640 pixels. The fixture has a second card level, which keeps 10 cards at an error of 0.636 m. With the bias of 4 it switches at 4.9 m, past the camera, so the picture draws the first one.
+The picture `asset-card-level` shows this step. The tool builds a tree of 40 cards of 0.3 m and a trunk. The picture loads the tool's file and draws its first lower level. That level keeps 20 cards and grows each about its middle by the square root of two. A card's size is the level's error, so the switch lies far out. The picture sets the threshold to 16 pixels, the most that the setting takes, and gives the tree a bias of 4. At a 640 by 360 picture and a 40-degree lens, the rule's factor is 30.9. The level's error of 0.424 m then switches it 13 m out. The bias divides that to 3.3 m. The camera's nearest point lies at 3.8 m, and its level distance, to the crown's sphere's center less half its radius, lies farther out, short of the second level's switch. The crown spans about 100 of the picture's 640 pixels. The fixture has a second card level, which keeps 10 cards at an error of 0.636 m. With the bias of 4 it switches at 4.9 m, past the camera's level distance, so the picture draws the first one.
 
 Without the step the tool plans no level for the crown at all. Every edge of a card is an open border, which the simplifier keeps, so the crown's triangles never fall. The picture would then draw all 40 cards at their own size, and 0.9 percent of its pixels differ from the reference, against the picture tests' limit of 0.1 percent. The unit tests hold the step's own rules: `keeps a share of the cards at each level, grown about their middles`, `writes each card level its own positions, and shares the wood stream`, and `treats a card folded along its middle as a card, as Creek makes its leaves`.
 
@@ -219,15 +379,17 @@ An author can also make the levels in Blender and export them with `MSFT_lod`, w
 
 The simplifier weighs normals and vertex colors in its error. Without texture coordinates there, a texture could slide between two vertices of a level with no error shown. So the planner adds each texture coordinate set to the attributes that the simplifier keeps, with a weight of a sixty-fourth of the mesh's longest side. A texture coordinate's unit covers the texture across the mesh. A slide of a large share of a texture therefore counts like a small distance, while a slide of a few texels stays under the geometry's own error. Texture seams still lock, and welding still keeps two copies of a vertex apart where their coordinates differ.
 
-The weight is modest on purpose. The error that the simplifier reports includes the attributes, and the engine reads a level's error as a distance. A heavy weight would make every textured mesh switch levels much farther out. At a sixty-fourth, the test scene's ball keeps four levels, where the same scene without texture coordinates in the error has six.
+The weight is modest on purpose. The error that the simplifier reports includes the attributes, and the engine reads a level's error as a distance. A heavy weight would make every textured mesh switch levels much farther out. At a sixty-fourth of the mesh's side, the test scene's ball plans six levels, and its first lower level errs by 0.0105 m.
 
-The picture `asset-bent-grid` shows this weight. The tool builds a flat grid of one meter across and 32 by 32 cells, whose texture repeats twice across it, and the picture looks at it from about a meter. It sets the threshold to 16 pixels, the most that the setting takes. At a 640 by 360 picture and a 60-degree lens, the rule's factor is 19.5. The four lower levels report errors of 0.0055 m, 0.011 m, 0.070 m and 0.25 m, which switch them 0.11 m, 0.22 m, 1.4 m and 4.8 m out. The camera's nearest point lies at 0.87 m, so the second lower level draws, and its texture moves under a pixel. Without the weight the four errors fall to 0.00001 m through 0.00017 m, and the coarsest level switches at 3 mm. It draws against the camera, and its texture scrambles: 10.0 percent of the pixels differ, against the picture tests' limit of 0.1 percent. So `asset-bent-grid` is the weight's proof, and it passes on all three tiers and in Firefox and Safari (run 40248658928). On that picture the owner ruled the weight question moot: no exemption remains.
+The picture `asset-bent-grid` shows this weight. The tool builds a flat grid of one meter across and 32 by 32 cells, whose texture repeats twice across it, and the picture looks at it from about a meter. It sets the threshold to 12 pixels. At a 640 by 360 picture and a 60-degree lens, the rule's factor is then 26.0. The first three lower levels report errors under 0.1 mm: on a flat surface whose texture coordinates run linearly between their seams, dropping inner vertices moves neither the surface nor the texture. The coarsest reports 0.055 m, the slide of its texture, and switches in 1.42 m out. The camera's level distance, to the grid's sphere's center less half its radius, is 1.23 m, so the third lower level draws, and its texture stays where the base mesh puts it. Without the weight the errors fall to 0.00001 m through 0.00017 m, and the coarsest level switches in 4 mm out. It draws against the camera, and its texture scrambles: 10.0 percent of the pixels differ, against the picture tests' limit of 0.1 percent. So `asset-bent-grid` is the weight's proof. At 16 pixels the coarsest level would switch in at 1.07 m, inside the camera's level distance, and the picture would show the slide that the weight measures: 10% of its pixels. On that picture the owner ruled the weight question moot: no exemption remains.
+
+meshoptimizer weighs each attribute after it scales the list's points into a box of side 1, so an attribute's weight is a share of the list's own size, not a distance in the units of the positions. The planner therefore passes the mesh's longest side over 64 times the list's longest side, which is a sixty-fourth of the mesh's side in every unit. The planner reads a quantized file's positions in integer steps, so a weight of a sixty-fourth of the side in those units would weigh the texture coordinates 16,383 times more than meant in a mesh of 16,383 steps, and a mesh in meters by its size in meters. Too large an error keeps a textured mesh's fine levels far past where they stop showing, and stops its levels early: a textured sphere then reports an error of 4.3% of its size in steps and 1.5% in meters (`bench/research/triangle-budget/scripts/weight-units.ts`). `plans the same levels from a mesh in meters and from its quantized steps` in `packages/cli/src/assets/levels.test.ts` plans one bent grid in meters and in 16,383 steps, and requires the same triangles and the same errors as a share of the side; a weight in position units gives the quantized grid fewer levels.
 
 The unit test's own bent grid measures the weight. It is a flat grid of one meter across, 32 by 32 cells, whose texture coordinates repeat the texture eight times across it. With the shipped weight, one sixty-fourth of the longest side, its coarsest level reports an error of 0.116 units. The same grid with one texture coordinate everywhere reports 0.00016, so the reported error is the weight's. A slide of the whole texture over a one-meter mesh counts as one sixty-fourth of a unit, a small fraction of the mesh's size. The unit test reads the error itself, which is the quantity the weight adds: `counts a texture that would slide, where a flat surface otherwise simplifies free` holds the bent grid's coarsest error above 0.11 units.
 
 ### The level image tests
 
-The level image tests place their spheres by their nearest points. Each copy stands along its own ray at the exact distance the rule measures. A copy placed at a depth and then moved off the camera's axis would lie 2 to 4 percent farther than that depth, so nearer its next switch than the test means. The five percent either side of a switch hides that where the levels switch at once. A bias of 2 does not hide it: it halves the switch and the copies' distance, while the sideways offset keeps its size. The nearest copy, at 95 percent of its switch, would then cross that switch and draw level one.
+The level image tests place their spheres by their nearest points. Each copy stands along its own ray at the exact distance that a level given by a distance or by coverage measures. A level given by its error measures half a radius farther, to the center less half the radius. So the test page sets each error half a radius over 1.03 farther out than the hand-set switch, and the hide test's threshold by the same shift: the copy at 103 percent then lies at exactly 103 percent of its switch whatever the measure, keeps the same share of the band's dither, and every measure draws the same picture (`lod-sketch.ts`, `ERROR_SHIFT`). A copy placed at a depth and then moved off the camera's axis would lie 2 to 4 percent farther than that depth, so nearer its next switch than the test means. The five percent either side of a switch hides that where the levels switch at once. A bias of 2 does not hide it: it halves the switch and the copies' distance, while the sideways offset keeps its size. The nearest copy, at 95 percent of its switch, would then cross that switch and draw level one.
 
 The measured figures, from a native test on the job workers and from the picture on all three paths:
 
@@ -366,4 +528,4 @@ Ship the design as above. The data shows a clear saving on every path and preset
 1. Levels for blended and transmissive sources, in the transparent pass's own buckets.
 2. Fading builds for custom materials, which double their builds, and for the alpha hash.
 
-Live simplification of meshes while the program runs is not planned: it costs CPU time and uploads every frame, and cluster levels give its result.
+Simplification in every frame is not planned: it costs CPU time and uploads every frame, and cluster levels give its result. A mesh made in code plans its levels once, on the job workers, with the asset tool's planner, and keeps them ([D-310](D-310-runtime-levels.md)). Those levels switch at once, as a file's measured levels do.

@@ -73,6 +73,8 @@ In the Vite dev server, the engine checks the arguments of each call. A value th
 
 A production build from `bunx vite build` leaves the checks out, so it runs faster. Find problems in the dev server first. A bad value that reaches a production build draws a wrong frame, or no frame, and throws nothing.
 
+A page that loads the engine from the [CDN build](../getting-started/cdn.md#production-and-development-entries) picks its build by the address it imports. `lib-dev/index.js` runs the checks, and `lib/index.js` leaves them out. Engine code built without the null3D plugin, or with no bundler at all, runs the checks too. Never time a page that runs them.
+
 ## Logs and breakpoints in the sketch
 
 The sketch runs in a worker. The browser shows a worker's console messages in the page's console, so `console.log` in the sketch works as usual. In the browser's developer tools, the sketch worker is a thread of its own. Set breakpoints in the sketch's file there, or put a `debugger` statement in the sketch's code.

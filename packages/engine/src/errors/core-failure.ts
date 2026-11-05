@@ -77,7 +77,7 @@ const NOT_A_VOLUME = 17;
 
 /** What is wrong with levels of detail that a mesh refused, by the core's problem. */
 const LEVEL_PROBLEMS: Record<number, string> = {
-	[LEVEL_PROBLEM_TOO_MANY]: 'a mesh takes at most 7 lower levels',
+	[LEVEL_PROBLEM_TOO_MANY]: 'a mesh takes at most 15 lower levels',
 	[LEVEL_PROBLEM_ERRORS]: 'each error must be finite, above 0 and above the error before it',
 	[LEVEL_PROBLEM_MESH]: 'a level is not a live mesh of this engine, or is the base mesh itself',
 	[LEVEL_PROBLEM_FORMAT]:

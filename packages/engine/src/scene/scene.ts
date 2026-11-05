@@ -231,8 +231,9 @@ export interface MeshOptions extends NodeOptions {
 	 */
 	receiveShadows?: boolean;
 	/**
-	 * True makes the mesh block the view for occlusion culling, on WebGL2 and on WebGPU, like
-	 * `setOccluder(true)`. The default is false.
+	 * Whether the mesh blocks the view for occlusion culling, like `setOccluder`. True makes it a
+	 * blocker on WebGL2 too. False keeps it from hiding anything on WebGPU. Left out, the mesh blocks
+	 * nothing on WebGL2, and on WebGPU it hides what lies behind it whenever it looks large enough.
 	 */
 	occluder?: boolean;
 }
@@ -422,6 +423,15 @@ export class SceneView {
 }
 
 /** Throws E1203 or E1213 for a camera or a rectangle that `scene.createView` does not take. */
+/**
+ * The flags of an object's `occluder` option: a blocker on both paths for true, no occluder on
+ * WebGPU for false, and none for an option left out, which lets WebGPU choose.
+ */
+function occluderFlags(occluder: boolean | undefined): number {
+	if (occluder === undefined) return 0;
+	return occluder ? C.FLAG_OCCLUDER : C.FLAG_NOT_OCCLUDER;
+}
+
 function checkViewOptions(options: SceneViewOptions, call: string): void {
 	if (typeof options !== 'object' || options === null)
 		throw new EngineError('E1213', `${call}() got ${String(options)}, which is not options.`);
@@ -516,6 +526,12 @@ export interface InstanceOptions {
 	castShadows?: boolean;
 	/** True makes shadows fall on every row, as `receiveShadows` does for a mesh. The default is false. */
 	receiveShadows?: boolean;
+	/**
+	 * False keeps every row from hiding what lies behind it in GPU occlusion culling on WebGPU, like
+	 * `setOccluder(false)`. Left out, or true, a row of an opaque mesh hides what lies behind it
+	 * whenever it looks large enough. Rows never block on WebGL2.
+	 */
+	occluder?: boolean;
 }
 
 /**
@@ -535,9 +551,10 @@ export interface InstantiateOptions extends NodeOptions {
 	 */
 	receiveShadows?: boolean;
 	/**
-	 * True makes every mesh of the copy block the view for occlusion culling, on WebGL2 and on
-	 * WebGPU, like `setOccluder(true)`, and false makes none block. Left out, the meshes that the
-	 * asset tool gave blockers block, and the others do not.
+	 * True makes every mesh of the copy block the view for occlusion culling, like
+	 * `setOccluder(true)`, and false makes none block, on WebGL2 or WebGPU, nor any row of its
+	 * instance batches on WebGPU. Left out, the meshes that the asset tool gave blockers block on
+	 * WebGL2, and on WebGPU every opaque mesh and row may hide what lies behind it.
 	 */
 	occluder?: boolean;
 	/**
@@ -1644,11 +1661,15 @@ export class Mesh extends Object3D {
 		const { mesh } = this;
 		const own = this.flags & C.FLAG_CUSTOM_BOUNDS;
 		if (mesh && !own && margin !== (this.material?.boundsMargin ?? 0)) {
-			this.scene.writeBounds(this.row, 0, 0, 0, mesh.radius + margin);
+			const [x, y, z] = mesh.center;
+			this.scene.writeBounds(this.row, x, y, z, mesh.radius + margin);
 			if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
 		}
 		this.scene.command(C.COMMAND_SET_MATERIAL, this.handle, material.id, 0, 'setMaterial');
+		// A copy that drew with a material that draws the base level alone was not counted.
+		const counted = this.material !== undefined && !this.material.wholeOnly;
 		this.material = material;
+		mesh?.drawnWith(material, counted ? 0 : 1, 'setMaterial');
 	}
 
 	/**
@@ -1660,10 +1681,12 @@ export class Mesh extends Object3D {
 			checkLive('setMesh', this);
 			checkSameEngine('setMesh', 'mesh', mesh.core, this.scene);
 		}
-		this.scene.writeBounds(this.row, 0, 0, 0, mesh.radius + (this.material?.boundsMargin ?? 0));
+		const [x, y, z] = mesh.center;
+		this.scene.writeBounds(this.row, x, y, z, mesh.radius + (this.material?.boundsMargin ?? 0));
 		if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
 		this.scene.command(C.COMMAND_SET_MESH, this.handle, mesh.id, 0, 'setMesh');
 		this.mesh = mesh;
+		if (this.material) mesh.drawnWith(this.material, 1, 'setMesh');
 		this.keepFlag(C.FLAG_CUSTOM_BOUNDS, false);
 		// A mesh of as many morph targets keeps its weights; another gets weights of its own.
 		if (mesh.morphTargets !== this.morphCount) {
@@ -1700,21 +1723,28 @@ export class Mesh extends Object3D {
 	}
 
 	/**
-	 * Makes the mesh block the view, or stop. The default is false, except for the meshes of a
-	 * model file that the asset tool gave blockers. On WebGL2, while the `softwareOcclusion`
-	 * quality setting is on, the job workers draw each blocker into a small depth buffer every
-	 * frame, and the engine skips every object that lies wholly behind the blockers. On WebGPU,
-	 * while the `gpuOcclusion` setting is on, the GPU draws the depth of the blockers that showed
-	 * in the last frame and skips every object wholly behind them. Mark large, solid meshes that
-	 * hide much of the scene, such as buildings and walls, whose mesh has at most 4,096 triangles.
-	 * On WebGL2, a mesh that the asset tool gave a blocker draws that blocker instead, a few boxes
-	 * inside the mesh, whatever the mesh's own size. A blocker's mesh must lie inside what the
-	 * object draws, as the object's own mesh does. Objects that blend, cut holes with an alpha
-	 * mask or use a custom material never block, whatever this says, nor do skinned ones on
-	 * WebGL2. A change needs no rebuild of the engine's tables.
+	 * Makes the mesh block the view, or keeps it from blocking. On WebGL2, while the
+	 * `softwareOcclusion` quality setting is on, the job workers draw each blocker into a small
+	 * depth buffer every frame, and the engine skips every object that lies wholly behind the
+	 * blockers. Only meshes marked true block there, and the meshes of a model file that the asset
+	 * tool gave blockers. Mark large, solid meshes that hide much of the scene, such as buildings
+	 * and walls, whose mesh has at most 4,096 triangles. A mesh that the asset tool gave a blocker
+	 * draws that blocker instead, a few boxes inside the mesh, whatever the mesh's own size. A
+	 * blocker's mesh must lie inside what the object draws, as the object's own mesh does. On WebGPU,
+	 * while the `gpuOcclusion` setting is on, every opaque mesh may block without a mark: the GPU
+	 * draws the depth of those that showed in the last frame and look large on the screen, and
+	 * skips every object wholly behind them. False keeps the mesh from blocking there too. Objects
+	 * that blend, cut holes with an alpha mask or use a custom material never block, whatever this
+	 * says, nor do skinned ones on WebGL2. A change needs no rebuild of the engine's tables.
 	 */
 	setOccluder(occluder: boolean): void {
-		this.setFlag('setOccluder', C.FLAG_OCCLUDER, occluder);
+		const call = 'setOccluder';
+		if (DEV) checkLive(call, this);
+		const mask = C.FLAG_OCCLUDER | C.FLAG_NOT_OCCLUDER;
+		const value = occluder ? C.FLAG_OCCLUDER : C.FLAG_NOT_OCCLUDER;
+		this.scene.command(C.COMMAND_SET_FLAGS, this.handle, mask, value, call);
+		this.keepFlag(C.FLAG_OCCLUDER, occluder);
+		this.keepFlag(C.FLAG_NOT_OCCLUDER, !occluder);
 	}
 
 	/**
@@ -2858,13 +2888,14 @@ export class InstanceBatch implements ViewHolder {
 	}
 
 	/**
-	 * Gives every row's bounding sphere the radius `radius`, in meters, in place of the mesh's own
-	 * radius, which culling tests. The spheres stay centered on their rows. A vertex shader that
-	 * carries rows away from their origins, such as traffic along a lane, needs this: the engine
-	 * culls a row moved beyond the mesh's own radius while it is still on the screen. A later change
-	 * of the mesh's radius, which a displaced material makes, replaces it. Every row is marked for
-	 * update, and the call builds the engine's draw tables again, so make it at setup. Throws E1203
-	 * for a value that is not a finite number, and E1108 for 0 or below.
+	 * Makes every row's bounding sphere, which culling tests, hold the sphere of `radius` meters
+	 * around the row's origin, in place of the mesh's own sphere. Each sphere keeps the mesh's
+	 * center (`mesh.center`), so its radius grows by that center's distance from the origin. A
+	 * vertex shader that carries rows away from their origins, such as traffic along a lane, needs
+	 * this: the engine culls a row moved beyond the mesh's own sphere while it is still on the
+	 * screen. A later change of the mesh's radius, which a displaced material makes, replaces it.
+	 * Every row is marked for update, and the call builds the engine's draw tables again, so make it
+	 * at setup. Throws E1203 for a value that is not a finite number, and E1108 for 0 or below.
 	 */
 	setBoundingRadius(radius: number): void {
 		if (DEV) {
@@ -2907,6 +2938,15 @@ export class InstanceBatch implements ViewHolder {
 	 */
 	setReceiveShadows(receive: boolean): void {
 		this.setShadowBit('setReceiveShadows', C.FLAG_RECEIVE_SHADOWS, receive);
+	}
+
+	/**
+	 * Lets every row hide what lies behind it in GPU occlusion culling on WebGPU, or keeps every row
+	 * from it. Rows of an opaque mesh may hide others by default, when they look large enough on the
+	 * screen. Rows never block on WebGL2. A change rebuilds the engine's tables of what it draws.
+	 */
+	setOccluder(occluder: boolean): void {
+		this.setShadowBit('setOccluder', C.FLAG_NOT_OCCLUDER, !occluder);
 	}
 
 	private shadowBits = 0;
@@ -3664,7 +3704,7 @@ export class Scene implements ViewHolder {
 	/** @internal */
 	constructor(
 		/** @internal */ readonly core: CoreMemory,
-		private readonly time: { readonly frame: number },
+		private readonly time: { readonly frame: number; readonly held?: boolean },
 		/** True when the engine draws with WebGL2, whose devices draw fewer rows than WebGPU's. */
 		private readonly webgl2: boolean,
 		private readonly warmUpScene: () => Promise<void> = () => Promise.resolve(),
@@ -4104,6 +4144,14 @@ export class Scene implements ViewHolder {
 	}
 
 	/**
+	 * @internal The frame that the sketch ran last, and whether hold mode steps the frames, which a
+	 * mesh reads to hand over its planned levels one a frame.
+	 */
+	get pace(): { readonly frame: number; readonly held?: boolean } {
+		return this.time;
+	}
+
+	/**
 	 * @internal The first live object or instance batch that uses one of `meshes` or `materials`,
 	 * or whose animator plays `rig`, as error messages describe it, or undefined when none does.
 	 * It looks at every object and batch, so destroys call it, never the frame loop.
@@ -4219,6 +4267,7 @@ export class Scene implements ViewHolder {
 		flags: number,
 		material: number,
 		call: string,
+		center: readonly number[],
 		...extra: A
 	): T {
 		const { layers } = options;
@@ -4235,7 +4284,7 @@ export class Scene implements ViewHolder {
 		this.writePosition(slot, x, y, z);
 		v.rotations.set(options.rotation ?? [0, 0, 0, 1], slot * 4);
 		v.scales.set(options.scale ?? [1, 1, 1], slot * 3);
-		v.radii[slot] = radius;
+		this.writeBounds(slot, center[0] as number, center[1] as number, center[2] as number, radius);
 		const all = flags | C.FLAG_VISIBLE | (options.dynamic ? C.FLAG_DYNAMIC : 0);
 		const parent = options.parent?.handle ?? 0;
 		this.writeCommand(write++, C.COMMAND_CREATE | (all << 8), handle, parent, mesh);
@@ -4253,7 +4302,7 @@ export class Scene implements ViewHolder {
 
 	/** An empty node, for hierarchy. */
 	createGroup(options: NodeOptions = {}): Group {
-		return this.create(Group, options, C.CORE_NO_MESH, 0, 0, 0, 'createGroup');
+		return this.create(Group, options, C.CORE_NO_MESH, 0, 0, 0, 'createGroup', ORIGIN);
 	}
 
 	/** A drawn object. It is static unless `dynamic: true`. */
@@ -4266,7 +4315,7 @@ export class Scene implements ViewHolder {
 		const flags =
 			(options.castShadows ? C.FLAG_CAST_SHADOWS : 0) |
 			(options.receiveShadows ? C.FLAG_RECEIVE_SHADOWS : 0) |
-			(options.occluder ? C.FLAG_OCCLUDER : 0);
+			occluderFlags(options.occluder);
 		const object = this.create(
 			Mesh,
 			options,
@@ -4275,9 +4324,11 @@ export class Scene implements ViewHolder {
 			flags,
 			material.id,
 			'createMesh',
+			mesh.center,
 		);
 		object.mesh = mesh;
 		object.material = material;
+		mesh.drawnWith(material, 1, 'createMesh');
 		const block = this.makeMorph(object, mesh, undefined, 'createMesh');
 		if (block !== 0) this.command(C.COMMAND_SET_MORPH, object.handle, block, 0, 'createMesh');
 		return object;
@@ -4304,7 +4355,7 @@ export class Scene implements ViewHolder {
 		const extra =
 			(options.castShadows ? C.FLAG_CAST_SHADOWS : 0) |
 			(options.receiveShadows ? C.FLAG_RECEIVE_SHADOWS : 0) |
-			(options.occluder ? C.FLAG_OCCLUDER : 0);
+			occluderFlags(options.occluder);
 		const root: TemplateNode = {
 			...(template[0] as TemplateNode),
 			name: options.name ?? template[0]?.name ?? '',
@@ -4540,7 +4591,11 @@ export class Scene implements ViewHolder {
 			if (bounds && flags & C.FLAG_CUSTOM_BOUNDS) {
 				for (let i = 0; i < 3; i++) v.centers[slot * 3 + i] = bounds[i] as number;
 				v.radii[slot] = bounds[3] as number;
-			} else v.radii[slot] = (n.mesh?.radius ?? 0) + (n.material?.boundsMargin ?? 0);
+			} else {
+				const center = n.mesh?.center ?? ORIGIN;
+				for (let i = 0; i < 3; i++) v.centers[slot * 3 + i] = center[i] as number;
+				v.radii[slot] = (n.mesh?.radius ?? 0) + (n.material?.boundsMargin ?? 0);
+			}
 			const up = n.parent < 0 ? (parent?.handle ?? 0) : (handles[n.parent] as number);
 			const mesh = n.mesh?.id ?? C.CORE_NO_MESH;
 			this.writeCommand(write++, C.COMMAND_CREATE | (flags << 8), handle, up, mesh);
@@ -4616,7 +4671,7 @@ export class Scene implements ViewHolder {
 		instance: PrefabInstance,
 		spec: InstancingTemplate,
 		call: string,
-		{ layers, castShadows, receiveShadows }: InstantiateOptions,
+		{ layers, castShadows, receiveShadows, occluder }: InstantiateOptions,
 	): InstanceBatch {
 		const v = this.views;
 		const world = identityMatrix(new Float64Array(16));
@@ -4636,7 +4691,7 @@ export class Scene implements ViewHolder {
 		const batch = this.createParts(
 			spec.parts,
 			spec.count,
-			{ origin, layers, castShadows, receiveShadows },
+			{ origin, layers, castShadows, receiveShadows, occluder },
 			call,
 		);
 		const { positions, rotations, scales } = batch;
@@ -4693,6 +4748,7 @@ export class Scene implements ViewHolder {
 		if (options.layers !== undefined) batch.setLayers(options.layers);
 		if (options.castShadows) batch.setCastShadows(true);
 		if (options.receiveShadows) batch.setReceiveShadows(true);
+		if (options.occluder === false) batch.setOccluder(false);
 		if (options.origin) batch.setOrigin(options.origin, call);
 		return batch;
 	}
@@ -4752,12 +4808,14 @@ export class Scene implements ViewHolder {
 			meshes: [mesh],
 			materials: [material],
 		});
+		mesh.drawnWith(material, count, call);
 		this.rememberBatch(batch);
 		if (DEV && !options.dynamic) this.unmarkedRows?.watch(batch, meshRowFields(own));
 		batch.setActiveCount(count);
 		if (layers !== undefined) batch.setLayers(layers);
 		if (options.castShadows) batch.setCastShadows(true);
 		if (options.receiveShadows) batch.setReceiveShadows(true);
+		if (options.occluder === false) batch.setOccluder(false);
 		if (options.origin) batch.setOrigin(options.origin, call);
 		return batch;
 	}
@@ -5270,7 +5328,17 @@ export class Scene implements ViewHolder {
 	): T {
 		const node = { dynamic: true, ...options };
 		// A view reads its camera's world transform even below a hidden object.
-		const camera = this.create(kind, node, C.CORE_NO_MESH, 0, C.FLAG_TRACKED, 0, call, ...lens);
+		const camera = this.create(
+			kind,
+			node,
+			C.CORE_NO_MESH,
+			0,
+			C.FLAG_TRACKED,
+			0,
+			call,
+			ORIGIN,
+			...lens,
+		);
 		camera.layers = (options.layers ?? C.LAYERS_DEFAULT) >>> 0;
 		if (options.target) camera.lookAt(...options.target);
 		return camera;
@@ -5331,7 +5399,7 @@ export class Scene implements ViewHolder {
 				`${call}() got the intensity unit ${JSON.stringify(intensityUnit)}, and this light takes only '${LIGHT_UNITS[type]}'.`,
 			);
 		const flags = options.castShadows ? C.FLAG_CAST_SHADOWS : 0;
-		const light = this.create(kind, options, C.CORE_NO_MESH, 0, flags, 0, call);
+		const light = this.create(kind, options, C.CORE_NO_MESH, 0, flags, 0, call, ORIGIN);
 		const { core } = this;
 		try {
 			light.id = core.checkGrowth(core.glue.createLight(light.handle, type), call, options.name);

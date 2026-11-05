@@ -48,6 +48,30 @@ Use the engine's own calls first. The engine's per-frame loops already run in Ru
 
 Keep setup, options, the public API and event handling in TypeScript. They run once or rarely, and TypeScript is the flexible place for them.
 
+## Give every mesh levels of detail
+
+An add-on's meshes get levels of detail as a page's meshes do, with no call of the add-on's own. A far copy then draws a few dozen triangles instead of its full mesh. The engine hides a copy that covers less than a pixel.
+
+A mesh from `geometry.fromArrays` or a generator plans its levels at its first draw. It plans when it holds 4,096 triangles or more, or when it holds at least 256 and its copies hold 65,536 together. The plan runs on the job workers with the asset tool's planner. The levels keep their measured errors, so they switch in at once ([Levels of detail](../concepts/lod.md#levels-of-meshes-made-in-code)). They name the mesh's own vertices, so the mesh keeps its vertex and triangle order, which raycasts and `updateVertices` read.
+
+So make every mesh through `fromArrays` or a generator, and leave its `levels` option out. Arrays that a task of the add-on builds on a job worker go to `fromArrays` too, and the mesh then plans as any other. An add-on that returns arrays, such as a shape generator, leaves the mesh, and its levels, to the page.
+
+Do not ask for levels mesh by mesh. The default picks the meshes whose levels save GPU time. A small mesh drawn a few times gains little, and each level adds draw work. `levels: true` and `await mesh.buildLevels()` plan at any size. Use `buildLevels()` to plan again after `updateVertices` gives a mesh a new shape, or to await the levels in a test. The one exception is a mesh of separate leaf cards. It asks for `levels: { cards: true }`, so each level thins its cards rather than dropping whole small pieces.
+
+Opt a mesh out with `levels: false` only where levels are wrong for it, and say why in a comment beside the mesh:
+
+| The mesh | Why it takes no levels | In the engine's add-ons |
+| --- | --- | --- |
+| A shader gives it its shape or its place | The levels would simplify a shape that never draws | Water surfaces, grass tufts, splat parts, floating leaves |
+| It has a level system of its own | The two systems would switch apart | Terrain blocks, which are the ground's quadtree and morph toward their parent block |
+| It is the far stand-in of other meshes | It is already the coarsest level | Impostor cards, merged far cells |
+| It keeps one size on the screen | Its levels would never switch | Gizmo handles |
+| Its vertices change in every frame | The levels would measure a shape that the next frame replaces | None |
+
+The engine refuses planned levels by itself in a few cases. A mesh with joints, morph targets or a vertex record (`targets`) plans none, and so does a mesh that lies flat. A mesh that a material with a displacement map or a custom `vertexOffset` draws drops its planned levels. The first `updateVertices` drops them too. Levels that `mesh.setLevels` gives win over the plan, so a mesh with hand-made levels, such as a generated plant's, gets no planned levels on top. Still pass `levels: false` for a mesh of the table, so the code states the decision where the mesh is made.
+
+The asset tool also sorts a large level into pieces ([Pieces of a large level](../concepts/lod.md#pieces-of-a-large-level)). Each copy skips the pieces that the view leaves out or that face away. A mesh made in code gets pieces with its planned levels, so an add-on that takes the default gets them with no change. A smaller mesh that many copies draw, such as a building kit's walls, gets a piece for each way it faces. It gets them even when its levels are set by hand or come from a file that holds it once. A mesh with `levels: false` gets none. Some large meshes take no levels but span the view, such as a merged far cell. Such a mesh asks for `levels: 'pieces'`, which sorts it into pieces by space alone.
+
 ## Follow the preset and show the cost
 
 A feature declares the value that each quality preset gives it, and the engine resolves the value for the preset in use. The frame-budget governor's steps reach it too, so an add-on that costs too much lightens its own work. `FeatureHost` carries these values from the sketch's quality, and reports the feature's figures to the stats overlay. A page that imports no add-on feature downloads none of that code.

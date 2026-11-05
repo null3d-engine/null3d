@@ -7,6 +7,8 @@ import { MeshoptDecoder } from 'meshoptimizer';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { MODELS_DIR, terrainDocument } from './cluster-fixture.js';
 import {
+	LOD_FLOOR_TRIANGLES,
+	LOD_MAX_LEVELS,
 	orderLevels,
 	planLevels,
 	STAGE_HEADER_SIZE,
@@ -247,7 +249,11 @@ describe('levels of detail for leaf cards', () => {
  * A flat grid of `n` by `n` quads across one metre, with each vertex's texture coordinate from
  * `uv`, or no texture coordinates when `uv` is null.
  */
-function gridDocument(n: number, uv: ((x: number, z: number) => [number, number]) | null) {
+function gridDocument(
+	n: number,
+	uv: ((x: number, z: number) => [number, number]) | null,
+	size = 1,
+) {
 	const doc = new Document();
 	const buffer = doc.createBuffer();
 	const mesh = doc.createMesh('grid');
@@ -257,7 +263,7 @@ function gridDocument(n: number, uv: ((x: number, z: number) => [number, number]
 	for (let r = 0; r <= n; r++)
 		for (let c = 0; c <= n; c++) {
 			const [x, z] = [c / n, r / n];
-			positions.push(x, 0, z);
+			positions.push(x * size, 0, z * size);
 			if (uv) uvs.push(...uv(x, z));
 		}
 	for (let r = 0; r < n; r++)
@@ -286,6 +292,76 @@ function gridDocument(n: number, uv: ((x: number, z: number) => [number, number]
 	doc.createScene().addChild(doc.createNode('grid').setMesh(mesh));
 	return { doc, mesh };
 }
+
+/** A closed sphere of `rings` bands of `segments` quads each, as one mesh of one triangle list. */
+function sphereDocument(rings: number, segments: number) {
+	const doc = new Document();
+	const buffer = doc.createBuffer();
+	const positions: number[] = [];
+	const indices: number[] = [];
+	for (let r = 0; r <= rings; r++)
+		for (let s = 0; s < segments; s++) {
+			// Each pole's vertices sit at exactly one place, so welding closes the sphere there.
+			const ring = r === 0 || r === rings ? 0 : Math.sin((r / rings) * Math.PI);
+			const theta = (s / segments) * Math.PI * 2;
+			positions.push(
+				ring * Math.cos(theta),
+				Math.cos((r / rings) * Math.PI),
+				ring * Math.sin(theta),
+			);
+		}
+	for (let r = 0; r < rings; r++)
+		for (let s = 0; s < segments; s++) {
+			const a = r * segments + s;
+			const b = r * segments + ((s + 1) % segments);
+			// The rows at the poles leave out the triangles whose two corners meet at the pole.
+			if (r > 0) indices.push(a, a + segments, b);
+			if (r < rings - 1) indices.push(b, a + segments, b + segments);
+		}
+	const mesh = doc.createMesh('sphere').addPrimitive(
+		doc
+			.createPrimitive()
+			.setAttribute(
+				'POSITION',
+				doc
+					.createAccessor()
+					.setType('VEC3')
+					.setArray(new Float32Array(positions))
+					.setBuffer(buffer),
+			)
+			.setIndices(
+				doc.createAccessor().setType('SCALAR').setArray(new Uint32Array(indices)).setBuffer(buffer),
+			),
+	);
+	doc.createScene().addChild(doc.createNode('sphere').setMesh(mesh));
+	return { doc, mesh, triangles: indices.length / 3 };
+}
+
+describe('how far the levels go', () => {
+	it('halves a closed mesh down to a few dozen triangles, with errors that keep rising', async () => {
+		const { doc, mesh, triangles } = sphereDocument(128, 128);
+		const plan = (await planLevels(doc)).get(mesh);
+		const levels = plan?.levels ?? [];
+		// Halving takes the sphere past the seven levels that the engine once took.
+		expect(levels.length).toBeGreaterThan(7);
+		expect(levels.length).toBeLessThanOrEqual(LOD_MAX_LEVELS);
+		let previous = triangles;
+		for (const [k, level] of levels.entries()) {
+			// Every level halves the level above, the coarse ones too.
+			expect(level.triangles).toBeLessThanOrEqual(previous * 0.55);
+			expect(level.triangles).toBeGreaterThanOrEqual(previous * 0.4);
+			previous = level.triangles;
+			if (k > 0)
+				expect(level.error).toBeGreaterThanOrEqual(
+					(levels[k - 1]?.error as number) * 1.5 * (1 - 1e-6),
+				);
+		}
+		// The levels stop at the floor: one more halving would save too little.
+		expect(previous).toBeLessThan(2 * LOD_FLOOR_TRIANGLES);
+		// The coarsest level still errs by less than the sphere's size, so it draws only far away.
+		expect(levels[levels.length - 1]?.error).toBeLessThan(plan?.side ?? 0);
+	});
+});
 
 describe('the coarsest-first vertex order', () => {
 	it('puts each level’s vertices in a prefix of its base and keeps every triangle', async () => {
@@ -368,6 +444,30 @@ describe('texture coordinates in the levels error', () => {
 		expect(bentError).toBeGreaterThan(0.11);
 		expect(bentError).toBeLessThan(0.12);
 		expect(bentError).toBeGreaterThan(flatError * 2);
+	});
+
+	// A quantized file stores positions in integer steps, and the planner reads them as stored.
+	// The simplifier weighs each attribute after it scales the list into a box of side 1, so a
+	// texture coordinate's weight must not grow with the units of the positions. The same bent
+	// grid, in meters and in the 16,383 steps of a quantized file, must plan the same levels: the
+	// same triangles, and errors that are the same share of the grid's side, so each level switches
+	// at the same distance once the node's scale turns steps into meters.
+	it('plans the same levels from a mesh in meters and from its quantized steps', async () => {
+		const steps = 16383;
+		const plan = async (size: number) => {
+			const { doc, mesh } = gridDocument(32, (x, z) => [(x * 8) % 1, (z * 8) % 1], size);
+			return (await planLevels(doc)).get(mesh)?.levels ?? [];
+		};
+		const meters = await plan(1);
+		const quantized = await plan(steps);
+		expect(meters.length).toBeGreaterThan(1);
+		expect(quantized.map((level) => level.triangles)).toEqual(
+			meters.map((level) => level.triangles),
+		);
+		meters.forEach((level, k) => {
+			const share = (quantized[k]?.error ?? 0) / steps;
+			expect(Math.abs(share - level.error) / level.error).toBeLessThan(0.02);
+		});
 	});
 });
 

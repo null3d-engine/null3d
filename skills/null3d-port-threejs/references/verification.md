@@ -118,7 +118,7 @@ null3D checks its own parity with three.js r186 on scenes of each feature, on co
 
 ## 5. Compare performance
 
-Measure both apps on the same device, browser, window size and pixel ratio, with the refresh rate fixed at 60 Hz:
+Measure both apps on the same device, browser, window size and pixel ratio, with the refresh rate fixed at 60 Hz. Time a production build of each app: `bunx vite build`, then `bunx vite preview`. `bunx @null3d/cli bench` builds one for the null3D app. Never time null3D on the dev server, from (0.2) the CDN build's `lib-dev/index.js`, or from engine code built without the null3D plugin. Those run the development checks in every frame, so the port looks slower than it ships. For a null3D page with no bundler, time the CDN build's `lib/index.js` (engine docs `getting-started/cdn`).
 
 1. Warm up for at least 5 seconds; this excludes shader compilation. `bunx @null3d/cli bench` warms up for 5 seconds by default.
 2. Run 5 times for 30 seconds each. Report the median and the spread.

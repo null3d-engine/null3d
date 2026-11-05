@@ -222,7 +222,7 @@ const DOCS = {
 	E1221: {
 		title: 'Invalid levels of detail',
 		cause:
-			"mesh.setLevels() received levels that the mesh cannot take, or a glTF file's MSFT_lod levels could not become them. Each level's error, or its distance, must be a finite number above 0, and larger than the level's before it. A mesh takes at most 7 lower levels. Each level must be another live mesh of the same engine, with the same vertex attributes as the base mesh. A level's material, where it gives one, must be a live material of the same engine.",
+			"mesh.setLevels() received levels that the mesh cannot take, or a glTF file's MSFT_lod levels could not become them. Each level's error, or its distance, must be a finite number above 0, and larger than the level's before it. A mesh takes at most 15 lower levels. Each level must be another live mesh of the same engine, with the same vertex attributes as the base mesh. A level's material, where it gives one, must be a live material of the same engine. mesh.buildLevels() refuses a mesh with joints, morph targets or a vertex record, whose shape poses or moves.",
 		example:
 			'E1221: mesh.setLevels() got an error of 0.02 for level 2, not above the 0.05 of level 1. Errors grow from level to level.',
 		since: '0.2',
@@ -339,7 +339,7 @@ const DOCS = {
 	E1406: {
 		title: 'Engine file not downloaded',
 		cause:
-			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder, and the first with Draco compression the Draco decoder. The first color grading table loads its readers, and the first environment its reader. The first sprite or point batch loads the sprite code, and the first line batch the line code. The first feature draw, instance draw or full-screen effect loads that adapter. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off.',
+			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first mesh that plans its levels of detail loads the level planner and its simplifier. The first glTF file with meshopt compression loads the meshopt decoder, and the first with Draco compression the Draco decoder. The first color grading table loads its readers, and the first environment its reader. The first sprite or point batch loads the sprite code, and the first line batch the line code. The first feature draw, instance draw or full-screen effect loads that adapter. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off.',
 		example:
 			'E1406: the threaded engine core did not download from /assets/null3d_bg-3f9c1a2b.wasm: HTTP 404.',
 		since: '0.1',
@@ -417,7 +417,7 @@ const DOCS = {
 	E1416: {
 		title: 'glTF file not read',
 		cause:
-			"assets.loadGltf() downloaded a file that is not a glTF 2.0 model it can read. Its JSON or binary chunk may be broken, or an offset or a count may point past the data. A buffer or an image may be missing, or its nodes may form a loop. A skin or a clip may break glTF's rules, such as key times that fall back. Draco data may not decode, or decode to other counts than its accessors give. Or its skins and clips may move more than 1,024 nodes, which is more than one skeleton holds. Or the file would decode to more than the engine allows one file. That is 64 MiB, plus 32 bytes for each byte of the file and its buffers, up to 1 GiB. One array may hold at most 256 MiB. Or a clip would hold more than 4,194,304 keys, its frames times its tracks. A PNG or JPEG image inside the file may claim sides past 4,096, or its images may decode to more than 1 GiB. Or the rewriteUrl option refused an address that the file names.",
+			"assets.loadGltf() downloaded a file that is not a glTF 2.0 model it can read. Its JSON or binary chunk may be broken, or an offset or a count may point past the data. A buffer or an image may be missing, or its nodes may form a loop. A skin or a clip may break glTF's rules, such as key times that fall back. Draco data may not decode, or decode to other counts than its accessors give. Or its skins and clips may move more than 1,024 nodes, which is more than one skeleton holds. Or the file would decode to more than the engine allows one file. That is 64 MiB, plus 32 bytes for each byte of the file and its buffers, up to 1 GiB. A block of meshopt data counts against that total. One array may hold at most 256 MiB. Or a clip would hold more than 4,194,304 keys, its frames times its tracks. A PNG or JPEG image inside the file may claim sides past 4,096, or its images may decode to more than 1 GiB. Or the rewriteUrl option refused an address that the file names.",
 		example:
 			'E1416: assets.loadGltf() could not read https://example.com/ship.glb: accessor 3 reads 4800 bytes from bufferView 1, which holds 2400.',
 		since: '0.2',
@@ -545,6 +545,14 @@ const DOCS = {
 		cause:
 			'A pick waited for the GPU to copy its pixel back when the browser took the GPU away. The engine started a new device, but the frame that recorded the pick drew on the lost device, so its read never lands. The pick is rejected rather than repeated on the new device.',
 		example: 'E1436: pick() was waiting for its read when the GPU was lost.',
+		since: '0.3',
+	},
+	E1437: {
+		title: 'Chrome for Testing refused',
+		cause:
+			"The null3D command-line tool did not install Chrome for Testing, the browser that draws on the computer's GPU. The archive it downloaded does not have the SHA-256 hash that the tool records for the pinned version on this platform. Or the tool has no build, and so no hash, for this platform. The tool deletes a refused archive before it unpacks it, and never runs it.",
+		example:
+			'E1437: the Chrome for Testing 156.0.8078.80 archive for mac-arm64 has the SHA-256 hash 5d41402abc4b2a76b9719d911017c592ae2f4d3c1a0d9b7e6c9a3f5b8e7d2c10, not 8bc590d1b1acac042a000234c768f31830f25a3983a83ed5e067114c87c4cad1, so the tool deleted it.',
 		since: '0.3',
 	},
 	E1501: {

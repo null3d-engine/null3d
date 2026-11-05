@@ -22,11 +22,15 @@ import {
 	startupSummary,
 } from '../../tests/lib/plans.ts';
 import type { ItemResult, Plan, PlanItem } from '../../tests/lib/runs.ts';
+import type { DesertFigures, PixelSize } from '../pages/lib/desert.ts';
 import { summarizeTrace, type TraceSummary } from '../pages/lib/trace.ts';
 import type { ComparisonRecord } from './compare.ts';
+import type { ProcessUse } from './other-work.ts';
 import {
 	type BenchResult,
 	busiestThread,
+	drawPathOf,
+	type MachineLoad,
 	ownWorkMs,
 	type RunSummary,
 	type SummaryRow,
@@ -230,6 +234,8 @@ export interface ArchivedPage extends PageFigures {
 	n?: number;
 	/** The quality presets that the null3D page's runs drew with. */
 	presets?: string[];
+	/** Why the null3D page's runs took their WebGPU draw path, as the engine reported it. */
+	drawPaths?: string[];
 	/** What the page's `?memory-figures` mode read, where a run asked for it. */
 	memory?: ArchivedMemory;
 	trace?: TraceSummary;
@@ -266,6 +272,43 @@ export interface ArchivedRun {
 	memory?: ArchivedMemory;
 	trace?: TraceSummary;
 	heat?: HeatSummary;
+	/** The computer's 1-minute load as the page opened and after it closed. */
+	machineLoad?: MachineLoad;
+	/** The other processes that used the most cores on average while the page ran. */
+	otherWork?: ProcessUse[];
+	/** The desert's figures: the size and path that the engine drew with, and how fast. */
+	desert?: ArchivedDesert;
+}
+
+/** A desert page's figures, in one shape for both engines. */
+export interface ArchivedDesert {
+	view: string;
+	shadows: number | null;
+	drawn: PixelSize;
+	path: string;
+	intervalMs: number;
+	gpuMs: number | null;
+	triangles: number | null;
+	drawCalls: number | null;
+	firstFrameMs: number;
+}
+
+/** How many of the busiest other processes a run keeps. */
+const OTHER_PROCESSES = 3;
+
+/** A desert page's figures as the archive keeps them. */
+function archivedDesert(desert: DesertFigures): ArchivedDesert {
+	return {
+		view: desert.view,
+		shadows: desert.shadows,
+		drawn: desert.drawn,
+		path: drawPathOf(desert),
+		intervalMs: desert.intervalMs,
+		gpuMs: desert.gpuMs,
+		triangles: desert.triangles,
+		drawCalls: desert.drawCalls,
+		firstFrameMs: desert.firstFrameMs,
+	};
 }
 
 /** A page's figures from the summary of its runs. `sceneCodeMs` gives three.js's own work. */
@@ -308,10 +351,14 @@ function againstLowest(
 	return { ...best, share: null3dMs / best.threeMs };
 }
 
-/** Facts of a page that the runs' summary leaves out: its object count, presets and memory. */
+/**
+ * Facts of a page that the runs' summary leaves out: its object count, presets, draw paths and
+ * memory.
+ */
 interface PageDetails {
 	n?: number;
 	presets?: string[];
+	drawPaths?: string[];
 	memory?: ArchivedMemory;
 }
 
@@ -320,6 +367,9 @@ export function pageDetails(results: readonly BenchResult[]): PageDetails {
 	const presets = [
 		...new Set(results.flatMap((result) => (result.mode?.preset ? [result.mode.preset] : []))),
 	];
+	const drawPaths = [
+		...new Set(results.flatMap((result) => (result.drawPath ? [result.drawPath] : []))),
+	];
 	const withMemory = results.find(
 		(result) => (result as BenchResult & { memory?: ArchivedMemory }).memory !== undefined,
 	) as (BenchResult & { memory?: ArchivedMemory }) | undefined;
@@ -327,6 +377,7 @@ export function pageDetails(results: readonly BenchResult[]): PageDetails {
 	return {
 		n: results[0]?.n,
 		...(presets.length > 0 && { presets }),
+		...(drawPaths.length > 0 && { drawPaths }),
 		...(memory !== undefined && { memory }),
 	};
 }
@@ -423,6 +474,9 @@ export function archiveRun(
 		...(bench.memory && { memory: bench.memory }),
 		...(bench.trace && { trace: summarizeTrace(bench.trace, refreshHz) }),
 		heat: bench.heat,
+		...(bench.machineLoad && { machineLoad: bench.machineLoad }),
+		...(bench.otherWork && { otherWork: bench.otherWork.during.slice(0, OTHER_PROCESSES) }),
+		...(bench.desert && { desert: archivedDesert(bench.desert) }),
 	};
 }
 

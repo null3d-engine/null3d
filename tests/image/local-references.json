@@ -41,6 +41,12 @@
 		"date": "2026-10-28",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
 	},
+	"chromium-swiftshader/compat/cluster-shadows.png": {
+		"test": "cluster-shadows",
+		"tier": "compat",
+		"date": "2026-11-03",
+		"reason": "drawn on the Mac's SwiftShader because the branch is not pushed for a CI run; a CI drawing replaces it"
+	},
 	"chromium-swiftshader/compat/custom-cutout-motion.png": {
 		"test": "custom-cutout-motion",
 		"tier": "compat",
@@ -233,6 +239,12 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
 	},
+	"chromium-swiftshader/compat/spot-map.png": {
+		"test": "spot-map",
+		"tier": "compat",
+		"date": "2026-11-04",
+		"reason": "the bounce light (49b215a8a) moved the WebGPU and WebGL2 pictures, and each tier now keeps a picture of its own; this Mac's SwiftShader drew the set before the branch's CI run, and CI's own SwiftShader redraws it"
+	},
 	"chromium-swiftshader/compat/terrain-baked-normals.png": {
 		"test": "terrain-baked-normals",
 		"tier": "compat",
@@ -304,6 +316,12 @@
 		"tier": "webgl2",
 		"date": "2026-10-28",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/webgl2/cluster-shadows.png": {
+		"test": "cluster-shadows",
+		"tier": "webgl2",
+		"date": "2026-11-03",
+		"reason": "drawn on the Mac's SwiftShader because the branch is not pushed for a CI run; a CI drawing replaces it"
 	},
 	"chromium-swiftshader/webgl2/custom-cutout-motion.png": {
 		"test": "custom-cutout-motion",
@@ -515,6 +533,12 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
 	},
+	"chromium-swiftshader/webgl2/spot-map.png": {
+		"test": "spot-map",
+		"tier": "webgl2",
+		"date": "2026-11-04",
+		"reason": "the bounce light (49b215a8a) moved the WebGPU and WebGL2 pictures, and each tier now keeps a picture of its own; this Mac's SwiftShader drew the set before the branch's CI run, and CI's own SwiftShader redraws it"
+	},
 	"chromium-swiftshader/webgl2/terrain-baked-normals.png": {
 		"test": "terrain-baked-normals",
 		"tier": "webgl2",
@@ -586,6 +610,12 @@
 		"tier": "webgpu",
 		"date": "2026-10-28",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
+	},
+	"chromium-swiftshader/webgpu/cluster-shadows.png": {
+		"test": "cluster-shadows",
+		"tier": "webgpu",
+		"date": "2026-11-03",
+		"reason": "drawn on the Mac's SwiftShader because the branch is not pushed for a CI run; a CI drawing replaces it"
 	},
 	"chromium-swiftshader/webgpu/custom-cutout-motion.png": {
 		"test": "custom-cutout-motion",

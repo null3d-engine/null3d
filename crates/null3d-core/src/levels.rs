@@ -13,9 +13,12 @@
 //! coverage: radius × P[1][1] / (coverage × bias) < distance
 //! ```
 //!
-//! `scale` is the largest axis scale of the source's world matrix, and `distance` the distance from
-//! the view's camera to the nearest point of the source's bounding sphere, at least
-//! [`LEAST_DISTANCE`], or 1 for an orthographic camera, whose pixels do not shrink with distance.
+//! `scale` is the largest axis scale of the source's world matrix. For a level given by its error,
+//! and for the rule that hides a small bound, `distance` is the level distance: the distance from
+//! the view's camera to the center of the source's bounding sphere, less half its radius
+//! ([`LEVEL_RADIUS_SHARE`]). For a level given by a distance or by coverage, and for a distance band,
+//! it is the distance to the sphere's nearest point. Both are at least [`LEAST_DISTANCE`], and 1 for
+//! an orthographic camera, whose pixels do not shrink with distance.
 //! `factor` is the render height in pixels times the projection's `P[1][1]`, over twice the
 //! threshold in pixels. `bias` raises or lowers the source's own threshold, as Godot's `lod_bias`
 //! raises or lowers an object's: a bias above 1 makes every switch happen nearer, so the source
@@ -50,15 +53,15 @@
 pub const NO_LINK: u32 = u32::MAX;
 
 /// The highest level that a level code names, in its lowest bits.
-pub const LEVEL_CODE_LEVEL_MAX: u32 = 7;
+pub const LEVEL_CODE_LEVEL_MAX: u32 = 15;
 /// The bit of a level code that marks a source that the size rule or a draw range hid.
-pub const LEVEL_CODE_HIDDEN: u32 = 1 << 3;
+pub const LEVEL_CODE_HIDDEN: u32 = 1 << 4;
 /// The place of the fade magnitude in a level code.
-pub const LEVEL_CODE_FADE_SHIFT: u32 = 4;
+pub const LEVEL_CODE_FADE_SHIFT: u32 = 5;
 /// The largest fade magnitude of a level code, in its own bits.
 pub const LEVEL_CODE_FADE_MAX: u32 = 0x3f;
 /// The bit of a level code that marks the side of a fading band that keeps the other level.
-pub const LEVEL_CODE_NEGATIVE: u32 = 1 << 10;
+pub const LEVEL_CODE_NEGATIVE: u32 = 1 << 11;
 
 /// The word that a debug view of levels reads beside an entry: the level of the draw, whether the
 /// size rule or a draw range hid the source, and the share of a fading band that its level keeps,
@@ -83,6 +86,14 @@ const LEAST_FADE: f32 = 1.0e-6;
 /// The smallest distance that the rule compares, in meters. A camera inside a source's bounds
 /// measures this distance, so the source keeps its base level.
 pub const LEAST_DISTANCE: f32 = 1.0e-3;
+
+/// The share of a bounding sphere's radius that the camera's level distance takes off the distance
+/// to the sphere's center. A level's error is its largest anywhere on the mesh, so measuring to the
+/// nearest point of the bounds keeps a large mesh's fine levels far out, where its near side shows
+/// them and the rest of the mesh does not. Half the radius keeps the near side within the threshold
+/// in the desert's held frames, at about 14% fewer triangles than the nearest point; the center
+/// itself lets the near side of a large copy show its level (D-137).
+pub const LEVEL_RADIUS_SHARE: f32 = 0.5;
 
 /// What a level's switch distance is measured by.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -184,20 +195,103 @@ impl Default for LevelLink {
     }
 }
 
+/// Where a view measures the errors of levels and patches, and the size of a bound that hides.
+///
+/// A camera's view measures them on its own screen, at the camera's distance. A light's shadow view
+/// measures them in the texels of its own map, so the level that a caster draws in it does not
+/// follow the camera: a cached shadow map stays valid while the camera moves. Distance bands, and
+/// levels given by a distance or by screen coverage, keep the camera's distance in every view, as
+/// their authors set them for the camera.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Measure {
+    /// The camera's own distance.
+    #[default]
+    Camera,
+    /// An orthographic light view: the same size of texel at every distance, so the distance is 1.
+    Parallel,
+    /// A perspective light view from a point relative to the camera: the distance from that point
+    /// to the nearest point of the bounds.
+    From([f32; 3]),
+}
+
+/// The lens of a light's shadow view, by which its rule measures errors in its own texels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LightLens {
+    /// An orthographic view whose texels are `texel` meters wide.
+    Parallel {
+        /// The width of one texel, in meters.
+        texel: f32,
+    },
+    /// A perspective view from `eye`, relative to the camera, whose texels are `texel` meters wide
+    /// at one meter from it.
+    Point {
+        /// The light's place relative to the camera.
+        eye: [f32; 3],
+        /// The width of one texel at a meter from the light, in meters.
+        texel: f32,
+    },
+}
+
+/// The two distances that a view's rule compares for one bounding sphere: the camera's, which
+/// distance bands and levels given by a distance or by coverage read, and the one that errors and
+/// the hiding of small bounds read ([`Measure`]). In a camera's view the two are the same.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Distances {
+    /// The distance from the camera to the nearest point of the bounds, or 1 for an orthographic
+    /// camera.
+    pub camera: f32,
+    /// The distance at which errors are compared.
+    pub error: f32,
+}
+
+impl Distances {
+    /// Both distances times `k`.
+    #[inline(always)]
+    pub fn scaled(self, k: f32) -> Self {
+        Self {
+            camera: self.camera * k,
+            error: self.error * k,
+        }
+    }
+
+    /// The distance that a level's switch measured by `switch` compares with.
+    #[inline(always)]
+    pub fn of(&self, switch: Switch) -> f32 {
+        match switch {
+            Switch::Error => self.error,
+            Switch::Distance | Switch::Coverage => self.camera,
+        }
+    }
+}
+
+impl From<f32> for Distances {
+    /// One distance for both measures, as a camera's view compares them.
+    #[inline(always)]
+    fn from(distance: f32) -> Self {
+        Self {
+            camera: distance,
+            error: distance,
+        }
+    }
+}
+
 /// What a view's choice of levels reads: the factor of the rule, the projection's `P[1][1]`, true
-/// for an orthographic camera, and the share of the switch distance that a fading band covers, 0
-/// where levels switch at once. A factor of 0 turns the choice off: every source draws its base
-/// level.
+/// for an orthographic camera, the share of the switch distance that a fading band covers, 0
+/// where levels switch at once, and where the view measures errors. A factor of 0 turns the
+/// choice off: every source draws its base level.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct LevelRule {
-    /// The render height times `P[1][1]`, over twice the threshold in pixels.
+    /// The render height times `P[1][1]`, over twice the threshold in pixels. In a light's view, one
+    /// over the texel's width times the threshold in texels.
     pub factor: f32,
-    /// The projection's `P[1][1]`, which a level given by screen coverage reads.
+    /// The camera's projection's `P[1][1]`, which a level given by screen coverage reads.
     pub p11: f32,
     /// True for an orthographic camera.
     pub orthographic: bool,
     /// The share of a switch distance that a fading band covers.
     pub band: f32,
+    /// Where the view measures errors.
+    pub measure: Measure,
 }
 
 /// The buckets that a source draws in a view: one level's bucket, or inside a fading band the fade
@@ -258,6 +352,31 @@ impl LevelRule {
             p11: p11.abs(),
             orthographic,
             band,
+            measure: Measure::Camera,
+        }
+    }
+
+    /// The rule of a light's shadow view through `lens`, beside the camera's rule `camera`: a level
+    /// draws while its error covers fewer than `threshold` texels of the view's map, and a bound
+    /// whose diameter covers fewer hides. Distance bands, and levels given by a distance or by
+    /// coverage, keep the camera's measures. Shadow views draw no fading band. Off when the
+    /// camera's rule is off or the threshold is 0.
+    pub fn for_light(camera: &LevelRule, lens: LightLens, threshold: f32) -> Self {
+        let (texel, measure) = match lens {
+            LightLens::Parallel { texel } => (texel, Measure::Parallel),
+            LightLens::Point { eye, texel } => (texel, Measure::From(eye)),
+        };
+        let factor = if camera.on() && threshold > 0.0 && texel > 0.0 {
+            1.0 / (texel * threshold)
+        } else {
+            0.0
+        };
+        Self {
+            factor,
+            p11: camera.p11,
+            orthographic: camera.orthographic,
+            band: 0.0,
+            measure,
         }
     }
 
@@ -273,6 +392,17 @@ impl LevelRule {
         [self.factor, orthographic, self.band, self.p11]
     }
 
+    /// Where the view measures errors, as the shaders read it: the point that a perspective light
+    /// view measures from, then 0 for the camera's distance, 1 for an orthographic light view and
+    /// 2 for a perspective one.
+    pub fn measure_uniform(&self) -> [f32; 4] {
+        match self.measure {
+            Measure::Camera => [0.0; 4],
+            Measure::Parallel => [0.0, 0.0, 0.0, 1.0],
+            Measure::From([x, y, z]) => [x, y, z, 2.0],
+        }
+    }
+
     /// The distance that the rule compares for a bounding sphere whose center lies at `center`
     /// relative to the camera and whose radius is `radius`: the distance to its nearest point, at
     /// least [`LEAST_DISTANCE`], or 1 for an orthographic camera.
@@ -281,9 +411,47 @@ impl LevelRule {
         if self.orthographic {
             1.0
         } else {
-            let length =
-                (center[0] * center[0] + center[1] * center[1] + center[2] * center[2]).sqrt();
-            (length - radius).max(LEAST_DISTANCE)
+            nearest(center, radius)
+        }
+    }
+
+    /// The distance at which the view compares errors for a bounding sphere whose center lies at
+    /// `center` relative to the camera and whose radius is `radius` ([`Measure`]): the camera's
+    /// level distance, at [`LEVEL_RADIUS_SHARE`] of the radius inside the bounds, or a perspective
+    /// light's distance to the nearest point. A light keeps the nearest point because a caster's
+    /// level must stay within a texel of its surface everywhere, which the normal bias hides.
+    #[inline(always)]
+    pub fn error_distance(&self, center: [f32; 3], radius: f32) -> f32 {
+        match self.measure {
+            Measure::Camera if self.orthographic => 1.0,
+            Measure::Camera => nearest(center, LEVEL_RADIUS_SHARE * radius),
+            Measure::Parallel => 1.0,
+            Measure::From(eye) => nearest(
+                [center[0] - eye[0], center[1] - eye[1], center[2] - eye[2]],
+                radius,
+            ),
+        }
+    }
+
+    /// The distance at which a tree of cluster patches compares errors: the nearest point of the
+    /// patch's bounds in every view. A patch's sphere encloses its children's, so a nearer measure
+    /// never puts a child farther than its parent, and a cut leaves no hole and draws nothing
+    /// twice.
+    #[inline(always)]
+    pub fn patch_distance(&self, center: [f32; 3], radius: f32) -> f32 {
+        match self.measure {
+            Measure::Camera => self.distance(center, radius),
+            _ => self.error_distance(center, radius),
+        }
+    }
+
+    /// Both distances that the rule compares for a bounding sphere at `center` relative to the
+    /// camera, of radius `radius`.
+    #[inline(always)]
+    pub fn distances(&self, center: [f32; 3], radius: f32) -> Distances {
+        Distances {
+            camera: self.distance(center, radius),
+            error: self.error_distance(center, radius),
         }
     }
 
@@ -305,10 +473,11 @@ impl LevelRule {
         }
     }
 
-    /// The buckets that a source of base bucket `home` draws, at `distance` with a world matrix of
-    /// largest axis scale `scale` and a bounding sphere of world radius `radius`, given each
-    /// bucket's link in `links`, inside the distance range `range`. `bias` raises the source's
-    /// threshold above 1, for coarser levels, or lowers it below 1, for finer ones.
+    /// The buckets that a source of base bucket `home` draws, at `distance` ([`Distances`], or one
+    /// distance for both) with a world matrix of largest axis scale `scale` and a bounding sphere of
+    /// world radius `radius`, given each bucket's link in `links`, inside the distance range
+    /// `range`. `bias` raises the source's threshold above 1, for coarser levels, or lowers it
+    /// below 1, for finer ones.
     #[inline]
     #[allow(clippy::too_many_arguments)]
     pub fn pick(
@@ -317,29 +486,120 @@ impl LevelRule {
         home: u32,
         scale: f32,
         radius: f32,
-        distance: f32,
+        distance: impl Into<Distances>,
         bias: f32,
         range: DrawRange,
     ) -> Picked {
+        let distance = distance.into();
         let mut before = home;
         let mut level = home;
-        // A rule without a factor keeps every source at its base level.
-        let mut next = if self.on() {
-            links[home as usize].next
-        } else {
-            NO_LINK
-        };
-        while next != NO_LINK
-            && self.switch_distance(&links[next as usize], scale, radius, bias) < distance
-        {
+        let mut next = self.first_link(links, home);
+        while next != NO_LINK && {
+            let link = &links[next as usize];
+            self.switch_distance(link, scale, radius, bias) < distance.of(link.switch)
+        } {
             before = level;
             level = next;
             next = links[level as usize].next;
         }
+        self.settle(
+            links, home, level, before, scale, radius, distance, bias, range,
+        )
+    }
+
+    /// The buckets that [`LevelRule::pick`] gives at `near` and at `far`, from one walk of the
+    /// source's levels: the same two answers as two calls, for `near` no greater than `far`. A
+    /// level's switch distance stops the walk at `near` whenever it stops it at `far`, so the walk
+    /// to `far` passes the place where the walk to `near` stops.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn pick_both(
+        &self,
+        links: &[LevelLink],
+        home: u32,
+        scale: f32,
+        radius: f32,
+        near: impl Into<Distances>,
+        far: impl Into<Distances>,
+        bias: f32,
+        range: DrawRange,
+    ) -> [Picked; 2] {
+        let (near, far) = (near.into(), far.into());
+        debug_assert!(
+            !(near.camera > far.camera || near.error > far.error),
+            "the near distance lies past the far one"
+        );
+        let mut before = home;
+        let mut level = home;
+        let mut stop_near = None;
+        let mut next = self.first_link(links, home);
+        while next != NO_LINK {
+            let link = &links[next as usize];
+            let switch = self.switch_distance(link, scale, radius, bias);
+            // The same comparisons as the single walk's, so a switch distance that is not a number
+            // stops both walks there.
+            let (passes_near, passes_far) =
+                (switch < near.of(link.switch), switch < far.of(link.switch));
+            if stop_near.is_none() && !passes_near {
+                stop_near = Some((level, before));
+            }
+            if !passes_far {
+                break;
+            }
+            before = level;
+            level = next;
+            next = links[level as usize].next;
+        }
+        let (near_level, near_before) = stop_near.unwrap_or((level, before));
+        [
+            self.settle(
+                links,
+                home,
+                near_level,
+                near_before,
+                scale,
+                radius,
+                near,
+                bias,
+                range,
+            ),
+            self.settle(links, home, level, before, scale, radius, far, bias, range),
+        ]
+    }
+
+    /// The first link that a source of base bucket `home` walks: none for a rule without a
+    /// factor, which keeps every source at its base level.
+    #[inline(always)]
+    fn first_link(&self, links: &[LevelLink], home: u32) -> u32 {
+        if self.on() {
+            links[home as usize].next
+        } else {
+            NO_LINK
+        }
+    }
+
+    /// The buckets that a source draws at `distance` once the walk of its levels stopped at
+    /// `level`, with `before` the level ahead of it: the level's bucket, its fading bands, its
+    /// distance range and its hide distance.
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    fn settle(
+        &self,
+        links: &[LevelLink],
+        home: u32,
+        level: u32,
+        before: u32,
+        scale: f32,
+        radius: f32,
+        distances: Distances,
+        bias: f32,
+        range: DrawRange,
+    ) -> Picked {
         let new_fade = links[level as usize].fade;
         // A source outside its distance range draws nothing. Inside each edge of it, the share of
         // the pixels that the dither keeps grows to one, or falls to none, over the same band that
-        // a level switch fades over.
+        // a level switch fades over. The range measures the camera's distance in every view.
+        let distance = distances.camera;
         if distance < range.start || distance > range.end {
             return Picked::Hidden;
         }
@@ -362,8 +622,9 @@ impl LevelRule {
         }
         let (new, old) = (new_fade, links[before as usize].fade);
         if level != home && self.band > 0.0 && new != NO_LINK && old != NO_LINK {
-            let switch = self.switch_distance(&links[level as usize], scale, radius, bias);
-            let t = (distance / switch - 1.0) / self.band;
+            let link = &links[level as usize];
+            let switch = self.switch_distance(link, scale, radius, bias);
+            let t = (distances.of(link.switch) / switch - 1.0) / self.band;
             if t < 1.0 {
                 return Picked::Fade {
                     new,
@@ -376,6 +637,7 @@ impl LevelRule {
         // no geometry. A mesh without levels has no such level. The band past the hide distance
         // thins the level out with the same dither, where the pipeline has a fading build.
         let hide = 2.0 * radius * self.factor / if bias > 0.0 { bias } else { 1.0 };
+        let distance = distances.error;
         if self.on() && links[home as usize].has_next() && radius > 0.0 && hide < distance {
             if self.band > 0.0 && new != NO_LINK {
                 let t = (distance / hide - 1.0) / self.band;
@@ -392,6 +654,14 @@ impl LevelRule {
     }
 }
 
+/// The distance to the nearest point of a sphere at `center` of radius `radius`, at least
+/// [`LEAST_DISTANCE`].
+#[inline(always)]
+fn nearest(center: [f32; 3], radius: f32) -> f32 {
+    let length = (center[0] * center[0] + center[1] * center[1] + center[2] * center[2]).sqrt();
+    (length - radius).max(LEAST_DISTANCE)
+}
+
 /// The fade values that the new level and the old level of a band draw with: the new level keeps
 /// the pixels whose dither value lies under `t`, and the old level the others. The sign tells the
 /// shader which side it draws.
@@ -403,6 +673,40 @@ pub fn fade_values(t: f32) -> (f32, f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The culling shader writes the code with the same bits, and the levels debug view's shader
+    /// reads them, so a change to the layout here must change both.
+    #[test]
+    fn the_shaders_write_and_read_the_level_code_with_these_bits() {
+        let cull = include_str!("../../null3d-shaders/wgsl/cull.wgsl");
+        for line in [
+            format!("const LEVEL_CODE_LEVEL_MAX: u32 = {LEVEL_CODE_LEVEL_MAX}u;"),
+            format!(
+                "const LEVEL_CODE_HIDDEN: u32 = 1u << {}u;",
+                LEVEL_CODE_HIDDEN.trailing_zeros()
+            ),
+            format!("const LEVEL_CODE_FADE_SHIFT: u32 = {LEVEL_CODE_FADE_SHIFT}u;"),
+            format!("const LEVEL_CODE_FADE_MAX: u32 = {LEVEL_CODE_FADE_MAX}u;"),
+            format!(
+                "const LEVEL_CODE_NEGATIVE: u32 = 1u << {}u;",
+                LEVEL_CODE_NEGATIVE.trailing_zeros()
+            ),
+        ] {
+            assert!(cull.contains(&line), "cull.wgsl lacks `{line}`");
+        }
+        let view = include_str!("../../null3d-shaders/wgsl/debug_view.wgsl");
+        for line in [
+            format!("let level = in.level_code & {LEVEL_CODE_LEVEL_MAX}u;"),
+            format!("(in.level_code & {LEVEL_CODE_HIDDEN}u) != 0u"),
+            format!("(in.level_code >> {LEVEL_CODE_FADE_SHIFT}u) & {LEVEL_CODE_FADE_MAX}u"),
+            format!(
+                "(in.level_code & (1u << {}u)) == 0u",
+                LEVEL_CODE_NEGATIVE.trailing_zeros()
+            ),
+        ] {
+            assert!(view.contains(&line), "debug_view.wgsl lacks `{line}`");
+        }
+    }
 
     /// The levels debug view's shader reads the same bits, so a code round-trips through them.
     #[test]
@@ -422,6 +726,10 @@ mod tests {
         let old = level_code(1, false, -1.0);
         assert_eq!((old >> LEVEL_CODE_FADE_SHIFT) & LEVEL_CODE_FADE_MAX, 63);
         assert_ne!(old & LEVEL_CODE_NEGATIVE, 0);
+        // The deepest level keeps its own bits, clear of the hidden mark.
+        let deepest = level_code(LEVEL_CODE_LEVEL_MAX, false, 0.0);
+        assert_eq!(deepest & LEVEL_CODE_LEVEL_MAX, LEVEL_CODE_LEVEL_MAX);
+        assert_eq!(deepest & LEVEL_CODE_HIDDEN, 0);
         // A fade past either end clamps to the code's own bits.
         assert_eq!(
             (level_code(0, false, 9.0) >> LEVEL_CODE_FADE_SHIFT) & LEVEL_CODE_FADE_MAX,
@@ -593,21 +901,43 @@ mod tests {
     }
 
     #[test]
-    fn a_large_object_switches_by_its_near_side() {
+    fn a_large_object_switches_by_a_point_halfway_into_its_bounds() {
         let rule = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
         let links = links([0.0, 0.01, 0.04, 0.2], false);
-        // Level 1 switches in at a nearest point of 5 m. A sphere of radius 4 m centered at 9 m
-        // reaches 4 m, and one centered at 9.1 m reaches 5.1 m.
-        let near = rule.distance([0.0, 0.0, -9.0], 4.0);
+        // Level 1 switches in at a level distance of 5 m. A sphere of radius 4 m measures to its
+        // center less 2 m: centered at 7 m it measures 5 m, and at 7.1 m it measures 5.1 m.
+        let near = rule.distances([0.0, 0.0, -7.0], 4.0);
         assert_eq!(
             rule.pick(&links, 0, 1.0, 4.0, near, 1.0, DrawRange::NONE),
             Picked::One(0)
         );
-        let far = rule.distance([0.0, 0.0, -9.1], 4.0);
+        let far = rule.distances([0.0, 0.0, -7.1], 4.0);
         assert_eq!(
             rule.pick(&links, 0, 1.0, 4.0, far, 1.0, DrawRange::NONE),
             Picked::One(1)
         );
+    }
+
+    #[test]
+    fn errors_measure_halfway_into_the_bounds_and_hand_set_distances_to_the_nearest_point() {
+        let rule = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
+        // A sphere of radius 2 m centered 5 m away: its nearest point lies 3 m away, and its level
+        // distance, to the center less half the radius, 4 m.
+        let at = rule.distances([3.0, 4.0, 0.0], 2.0);
+        assert_eq!((at.camera, at.error), (3.0, 4.0));
+        assert_eq!(at.of(Switch::Error), 4.0);
+        assert_eq!(at.of(Switch::Distance), 3.0);
+        assert_eq!(at.of(Switch::Coverage), 3.0);
+        // A camera near the sphere's middle measures the least distance, so the source keeps its
+        // base level.
+        assert_eq!(rule.error_distance([0.5, 0.0, 0.0], 2.0), LEAST_DISTANCE);
+        // A tree of patches keeps the nearest point, so a child is never measured farther than
+        // its parent.
+        assert_eq!(rule.patch_distance([3.0, 4.0, 0.0], 2.0), 3.0);
+        // An orthographic camera measures 1 for both.
+        let flat = LevelRule::new(1000.0, 0.2, true, 1.0, 0.0);
+        let far = flat.distances([1e5, 0.0, 0.0], 1e4);
+        assert_eq!((far.camera, far.error), (1.0, 1.0));
     }
 
     #[test]
@@ -675,6 +1005,132 @@ mod tests {
             rule.pick(&links, 0, 1.0, 1.0, 1_500.0, 0.5, DrawRange::NONE),
             Picked::One(3)
         );
+    }
+
+    /// A camera's rule with a factor, 1,000 pixels high and 90 degrees high: factor 500.
+    fn camera_rule() -> LevelRule {
+        LevelRule::new(1000.0, 1.0, false, 1.0, FADE_BAND)
+    }
+
+    #[test]
+    fn an_orthographic_light_picks_by_its_texels_wherever_the_camera_is() {
+        let links = links([0.0, 0.01, 0.04, 0.2], true);
+        // Texels of 2 cm at a threshold of one texel: an error under 2 cm passes.
+        let light = LevelRule::for_light(&camera_rule(), LightLens::Parallel { texel: 0.02 }, 1.0);
+        assert_eq!(light.factor, 50.0);
+        assert_eq!(light.band, 0.0, "a shadow view draws no fading band");
+        for camera in [0.5, 5.0, 50.0, 500.0] {
+            let at = light.distances([0.0, 0.0, -camera - 0.5], 0.5);
+            assert_eq!(at.error, 1.0);
+            // Level 1's 1 cm passes and level 2's 4 cm does not, at every camera distance.
+            assert_eq!(
+                light.pick(&links, 0, 1.0, 0.5, at, 1.0, DrawRange::NONE),
+                Picked::One(1),
+                "{camera}"
+            );
+        }
+        // Texels of 5 cm, or a threshold of 2.5 texels of 2 cm, pass level 2's 4 cm, and not level
+        // 3's 20 cm.
+        let coarse = LevelRule::for_light(&camera_rule(), LightLens::Parallel { texel: 0.05 }, 1.0);
+        let double = LevelRule::for_light(&camera_rule(), LightLens::Parallel { texel: 0.02 }, 2.5);
+        for rule in [coarse, double] {
+            let at = rule.distances([0.0, 0.0, -10.0], 0.5);
+            assert_eq!(
+                rule.pick(&links, 0, 1.0, 0.5, at, 1.0, DrawRange::NONE),
+                Picked::One(2)
+            );
+        }
+    }
+
+    #[test]
+    fn a_light_hides_a_caster_that_covers_fewer_texels_than_the_threshold() {
+        let links = links([0.0, 0.01, 0.04, 0.2], false);
+        let light = LevelRule::for_light(&camera_rule(), LightLens::Parallel { texel: 0.02 }, 1.0);
+        // A diameter of 2 cm covers one texel; 1.8 cm covers fewer, whatever the camera's distance.
+        for camera in [1.0, 1000.0] {
+            let at = |radius: f32| light.distances([0.0, 0.0, -camera], radius);
+            assert_ne!(
+                light.pick(&links, 0, 1.0, 0.01, at(0.01), 1.0, DrawRange::NONE),
+                Picked::Hidden
+            );
+            assert_eq!(
+                light.pick(&links, 0, 1.0, 0.009, at(0.009), 1.0, DrawRange::NONE),
+                Picked::Hidden
+            );
+        }
+    }
+
+    #[test]
+    fn a_lights_ranges_and_hand_set_distances_follow_the_camera() {
+        let light = LevelRule::for_light(&camera_rule(), LightLens::Parallel { texel: 0.02 }, 1.0);
+        // A distance range measures the camera's distance in a light's view too.
+        let links = links([0.0, 0.01, 0.04, 0.2], false);
+        let range = DrawRange::new(10.0, 20.0);
+        let at = |camera: f32| light.distances([0.0, 0.0, -camera - 0.5], 0.5);
+        assert_eq!(
+            light.pick(&links, 0, 1.0, 0.5, at(5.0), 1.0, range),
+            Picked::Hidden
+        );
+        assert_eq!(
+            light.pick(&links, 0, 1.0, 0.5, at(15.0), 1.0, range),
+            Picked::One(1)
+        );
+        assert_eq!(
+            light.pick(&links, 0, 1.0, 0.5, at(25.0), 1.0, range),
+            Picked::Hidden
+        );
+        // A level given by a distance switches at the camera's distance, as its author set it.
+        let by_distance = links_by([20.0, 40.0, 80.0], Switch::Distance, false);
+        assert_eq!(
+            light.pick(&by_distance, 0, 1.0, 0.5, at(19.0), 1.0, DrawRange::NONE),
+            Picked::One(0)
+        );
+        assert_eq!(
+            light.pick(&by_distance, 0, 1.0, 0.5, at(45.0), 1.0, DrawRange::NONE),
+            Picked::One(2)
+        );
+    }
+
+    #[test]
+    fn a_perspective_light_measures_from_the_light() {
+        let links = links([0.0, 0.01, 0.04, 0.2], false);
+        // A light 100 m from the camera, with texels 1 mm wide a meter from it: an error passes
+        // while it covers less than a millimeter for each meter from the light.
+        let eye = [100.0, 0.0, 0.0];
+        let lens = LightLens::Point { eye, texel: 0.001 };
+        let light = LevelRule::for_light(&camera_rule(), lens, 1.0);
+        // A source next to the camera, 100 m from the light, passes level 2's 4 cm, and the same
+        // source 15 m from the light passes level 1's 1 cm alone.
+        let far = light.distances([0.0, 0.0, 0.0], 0.5);
+        assert!((far.error - 99.5).abs() < 1e-3, "{far:?}");
+        assert_eq!(
+            light.pick(&links, 0, 1.0, 0.5, far, 1.0, DrawRange::NONE),
+            Picked::One(2)
+        );
+        let near = light.distances([85.0, 0.0, 0.0], 0.5);
+        assert_eq!(
+            light.pick(&links, 0, 1.0, 0.5, near, 1.0, DrawRange::NONE),
+            Picked::One(1)
+        );
+        assert_eq!(light.measure_uniform(), [100.0, 0.0, 0.0, 2.0]);
+    }
+
+    #[test]
+    fn a_light_draws_the_base_level_where_the_camera_or_the_threshold_turns_levels_off() {
+        let links = links([0.0, 0.01, 0.04, 0.2], false);
+        let lens = LightLens::Parallel { texel: 0.02 };
+        let off = LevelRule::new(1000.0, 1.0, false, 0.0, 0.0);
+        for rule in [
+            LevelRule::for_light(&off, lens, 1.0),
+            LevelRule::for_light(&camera_rule(), lens, 0.0),
+        ] {
+            assert!(!rule.on());
+            let at = rule.distances([0.0, 0.0, -500.0], 0.5);
+            assert_eq!(
+                rule.pick(&links, 0, 1.0, 0.5, at, 1.0, DrawRange::NONE),
+                Picked::One(0)
+            );
+        }
     }
 
     #[test]
@@ -869,5 +1325,84 @@ mod tests {
             panic!("no fade in at 101 m");
         };
         assert_eq!(bucket, 7);
+    }
+
+    /// The count of a level's copies picks at both edges of its slack in one walk. Over random
+    /// chains of levels, rules, ranges and distances, the walk must give exactly what two picks
+    /// give, fading amounts included.
+    #[test]
+    fn one_walk_picks_what_two_picks_give_at_both_distances() {
+        let mut state = 0x9e37_79b9_u32;
+        let mut random = move || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            f32::from(u16::try_from(state >> 16).unwrap()) / f32::from(u16::MAX)
+        };
+        let switches = [Switch::Error, Switch::Distance, Switch::Coverage];
+        for _ in 0..20_000 {
+            let levels = 1 + (random() * 4.0) as u32;
+            let fades = random() < 0.6;
+            let mut links: Vec<LevelLink> = (0..levels * 2)
+                .map(|bucket| LevelLink {
+                    value: if bucket == 0 || bucket >= levels {
+                        0.0
+                    } else {
+                        random() * 0.5
+                    },
+                    switch: switches[(random() * 2.99) as usize],
+                    next: if bucket + 1 < levels {
+                        bucket + 1
+                    } else {
+                        NO_LINK
+                    },
+                    fade: if fades && bucket < levels {
+                        levels + bucket
+                    } else {
+                        NO_LINK
+                    },
+                })
+                .collect();
+            for link in &mut links[levels as usize..] {
+                link.next = NO_LINK;
+            }
+            let rule = LevelRule::new(
+                if random() < 0.1 {
+                    0.0
+                } else {
+                    400.0 + random() * 2000.0
+                },
+                0.5 + random() * 2.0,
+                false,
+                1.0 + random() * 4.0,
+                if random() < 0.3 { 0.0 } else { random() * 0.3 },
+            );
+            let range = match (random() * 3.0) as u32 {
+                0 => DrawRange::NONE,
+                1 => DrawRange::new(random() * 50.0, f32::INFINITY),
+                _ => DrawRange::new(random() * 20.0, 20.0 + random() * 400.0),
+            };
+            let scale = 0.1 + random() * 4.0;
+            let radius = random() * 5.0;
+            let bias = if random() < 0.2 {
+                0.0
+            } else {
+                0.25 + random() * 3.0
+            };
+            let distance = 0.01 + random() * random() * 2000.0;
+            let slack = if random() < 0.5 {
+                1.0e-3
+            } else {
+                random() * 0.5
+            };
+            let (near, far) = (distance * (1.0 - slack), distance * (1.0 + slack));
+            let both = rule.pick_both(&links, 0, scale, radius, near, far, bias, range);
+            let one = [near, far].map(|at| rule.pick(&links, 0, scale, radius, at, bias, range));
+            assert_eq!(
+                format!("{both:?}"),
+                format!("{one:?}"),
+                "{links:?} {rule:?} {range:?} {scale} {radius} {bias} {near} {far}"
+            );
+        }
     }
 }
