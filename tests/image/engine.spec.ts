@@ -510,14 +510,17 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			// The preset draws screen-space bounce light, whose steps read ambient occlusion's grid
 			// and the frame's color copy, so a page that draws it downloads those two features' files
 			// as well. The switch leaves the light out, so the page downloads its own feature's file
-			// alone. Every sketch the table names reads it.
+			// alone. Every sketch the table names reads it. High also culls hidden objects on the GPU,
+			// which loads GPU occlusion culling's file, so the page turns that off too, unless that
+			// culling is the feature.
 			const sketchModule =
 				FIRST_USE_SKETCHES[feature] ??
 				`tests/pages/sketches/first-use-sketch.ts?feature=${feature}`;
 			const sketch = `${sketchModule}${sketchModule.includes('?') ? '&' : '?'}bounce=off`;
+			const cull = feature === 'occlusion' ? '' : '&occlusion=off';
 			const address = FIRST_USE_LIVE.has(feature)
-				? `first-use-live.html?gpu=${gpu}&sketch=${encodeURIComponent(`/${sketch}`)}`
-				: `image.html?gpu=${gpu}&hold=0&preset=high&size=320x180${FIRST_USE_SWITCHES[feature] ?? ''}&sketch=${encodeURIComponent(`/${sketch}`)}`;
+				? `first-use-live.html?gpu=${gpu}${cull}&sketch=${encodeURIComponent(`/${sketch}`)}`
+				: `image.html?gpu=${gpu}&hold=0&preset=high&size=320x180${cull}${FIRST_USE_SWITCHES[feature] ?? ''}&sketch=${encodeURIComponent(`/${sketch}`)}`;
 			await page.goto(address);
 			// A page that failed gives the steps it got through, which say where it spent the time.
 			const result = await pageResult<ItemResult>(page, FIRST_USE_WAIT_MS);
