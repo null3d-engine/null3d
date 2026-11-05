@@ -192,20 +192,19 @@ on the iPhone 17's WebGPU, and from 16.8 to 13.5 ms on the Mac's WebGPU in Chrom
 The `near-shoots` plan (`tests/pages/near-shoots.html`) draws a stand of six oaks from under the
 first crown at each preset, with no near shoots, at the preset's budget and at twice it. GPU time
 per frame in ms, or the frame interval where the device has no GPU timer (WebGL2 in Safari, and
-WebGL2 on the Galaxy S25), with the masked prepass and the wood's own draw path in place. The
-iPhone 17's pages and the iPad's WebGPU Low and Medium pages ran on `834da3b90`; every other page
-ran on `df024bf02`. The records sit in `.dev/tested-devices/`.
+WebGL2 on the Galaxy S25), with the masked prepass and the wood's own draw path in place, on
+`df024bf02`. The records sit in `.dev/tested-devices/`.
 
 | Device, path, preset | No shoots | Budget | Twice the budget |
 | --- | --- | --- | --- |
-| iPhone 17, WebGPU, Low | 10.4 | 11.9 | 13.5 |
-| iPhone 17, WebGPU, Medium | 41.6 | 47.4 | 57.0 |
-| iPhone 17, WebGPU, High | 47.9 | 58.2 | 67.6 |
-| iPhone 17, WebGPU, Ultra | 58.9 | 82.4 | 100.4 |
-| iPhone 17, compatibility, Low | 10.4 | 11.8 | 13.3 |
-| iPhone 17, compatibility, Medium | 46.6 | 52.0 | 61.4 |
-| iPhone 17, WebGL2, Low (interval) | 16.1 | 16.3 | 20.0 |
-| iPhone 17, WebGL2, Medium (interval) | 24.0 | 28.9 | 56.2 |
+| iPhone 17, WebGPU, Low | 10.2 | 11.8 | 13.2 |
+| iPhone 17, WebGPU, Medium | 41.2 | 47.3 | 56.7 |
+| iPhone 17, WebGPU, High | 47.3 | 57.3 | 66.0 |
+| iPhone 17, WebGPU, Ultra | 57.9 | 81.5 | 99.8 |
+| iPhone 17, compatibility, Low | 10.2 | 11.7 | 13.4 |
+| iPhone 17, compatibility, Medium | 45.6 | 51.6 | 60.8 |
+| iPhone 17, WebGL2, Low (interval) | 13.2 | 16.3 | 16.3 |
+| iPhone 17, WebGL2, Medium (interval) | 17.6 | 28.2 | 37.0 |
 | iPad Pro 13, WebGPU, Low | 6.0 | 6.2 | 6.5 |
 | iPad Pro 13, WebGPU, Medium | 20.6 | 23.5 | 27.7 |
 | iPad Pro 13, WebGPU, High | 24.5 | 28.9 | 33.0 |
@@ -222,6 +221,7 @@ ran on `df024bf02`. The records sit in `.dev/tested-devices/`.
 | Galaxy S25, compatibility, Medium | 27.9 | 27.9 | 53.6 |
 | Galaxy S25, WebGL2, Low (interval) | 108.7 | 32.9 | 25.0 |
 | Galaxy S25, WebGL2, Medium (interval) | 30.1 | 36.0 | 45.5 |
+| Galaxy Tab A9 Plus, WebGPU, Low | 523.1 | 554.1 | 605.1 |
 | Galaxy Tab A9 Plus, compatibility, Low | 533.1 | 543.8 | 597.6 |
 | Galaxy Tab A9 Plus, WebGL2, Low (interval) | 500.0 | 555.6 | 555.6 |
 | Galaxy Tab A9 Plus, WebGL2, Medium (interval) | 1000.0 | 1666.7 | no frame |
@@ -232,18 +232,18 @@ The near pool's own cost at the preset's budget, over the page with no near shoo
 
 | Device | Low | Medium | High | Ultra |
 | --- | --- | --- | --- | --- |
-| iPhone 17, WebGPU | 1.4 | 5.9 | 10.3 | 23.5 |
-| iPhone 17, compatibility | 1.3 | 5.4 | | |
-| iPhone 17, WebGL2 (interval) | 0.2 | 4.9 | | |
+| iPhone 17, WebGPU | 1.6 | 6.1 | 10.0 | 23.6 |
+| iPhone 17, compatibility | 1.5 | 6.0 | | |
+| iPhone 17, WebGL2 (interval) | 3.1 | 10.6 | | |
 | iPad Pro 13, WebGPU | 0.2 | 2.9 | 4.4 | 9.9 |
 | iPad Pro 13, compatibility | 0.3 | 3.0 | | |
 | iPad Pro 13, WebGL2 (interval) | 1.6 | 0.8 | | |
 
-The capped rows cost 1.4 ms at Low and 5.9 ms at Medium on the iPhone, and 0.2 and 2.9 ms on the
+The capped rows cost 1.6 ms at Low and 6.1 ms at Medium on the iPhone, and 0.2 and 2.9 ms on the
 iPad. Those figures sit inside D-241's 5 ms at Low and 12 ms at Medium for the add-on. Twice the
-Medium budget draws the rows that the budget trims. It costs 15.4 ms on the iPhone and 14.8 in
+Medium budget draws the rows that the budget trims. It costs 15.5 ms on the iPhone and 15.2 in
 compatibility mode, past the 12 ms allowance, so the cap must stop there. High and Ultra take the
-caps themselves: 10.3 and 23.5 ms on the iPhone, and 4.4 and 9.9 on the iPad.
+caps themselves: 10.0 and 23.6 ms on the iPhone, and 4.4 and 9.9 on the iPad.
 
 The Galaxy S25's figures are guides. Its GPU clock falls through a long run, and at Ultra the page
 at the budget read 109.6 ms against the page at twice it. A later page can therefore read faster
@@ -251,10 +251,16 @@ than an earlier one. There the near pool adds nothing that the spread can see at
 7.5 ms at High.
 
 The Tab A9 Plus's capabilities page reports a WebGPU adapter, with core features and limits and a
-working compatibility adapter. The plan ran compatibility mode at Low and WebGL2 at Low and Medium,
-where the quality chooser gives it Low. In compatibility mode the near rows add about 11 ms to a
-533 ms frame, so its cap needs no change. Its WebGL2 pages draw 9 to 10 frames in 5 seconds at Low,
-and the page at twice Medium's budget drew none, so Medium is past what the device draws.
+working compatibility adapter. That page is
+`target/runs/20261105-115833-near-shoots/bsgalaxytaba9plus-chrome/capabilities.json`, from the run
+of 5 November 2026 on Chrome 152; D-241's note that the device has no compatibility mode dates from
+24 October 2026 on the same Chrome version, and it stays there as that run's record. The plan ran
+compatibility mode at Low and WebGL2 at Low and Medium, and core WebGPU at Low in a run of its own.
+In compatibility mode the near rows add about 11 ms to a 533 ms frame; on core WebGPU they add
+31 ms to a 523 ms frame, and the device draws 8 frames in 5 seconds on both. Its WebGL2 pages draw
+9 to 10 frames in 5 seconds at Low, and the page at twice Medium's budget drew none, so Medium is
+past what the device draws. The near rows are a small part of a frame that already runs far from
+real time, so its cap needs no change and the quality chooser keeps it at Low. <!-- outside date -->
 
 The caps stand as `NEAR_CAPS` sets them: one, three, six and ten copies with half a million, 1.5, 5
 and 10 million triangles at Low, Medium, High and Ultra.

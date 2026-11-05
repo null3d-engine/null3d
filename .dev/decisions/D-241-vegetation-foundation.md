@@ -289,7 +289,12 @@ Three rules shape them.
   ([Driver bug reports](../driver-bugs.md)). Creek therefore has WebGL2 figures on the iPhone and
   the iPad, and no WebGPU figure there. The Galaxy S25 draws Creek on core WebGPU at every preset,
   and the owner ruled that this phone stands in for the S24 class.
-- The Galaxy Tab A9 Plus reports no compatibility mode. Its compatibility pages were skipped.
+- The Galaxy Tab A9 Plus reported no compatibility mode at the M3-V1 run of 24 October 2026, on
+  Chrome 152. Its compatibility pages were skipped there. That run's figures stand below as the
+  ceiling they set. A later run of 5 November 2026, on the same Chrome version, reports a WebGPU
+  adapter with core features and limits and a working compatibility adapter
+  ([tested devices](../tested-devices.md#vegetation-on-the-five-cloud-devices)),
+  so the older note describes that run, not the device. <!-- outside date -->
 
 **Frame time.** The figures below are the frame interval in milliseconds. They are the ceiling that
 every vegetation task must keep the demo within, at the same device, path and preset.
