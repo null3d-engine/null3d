@@ -117,7 +117,13 @@ import {
 } from './engine-checks.ts';
 import { type GeneratorResult, generatorReport } from './environment-generator-checks.ts';
 import { type FirstDrawResult, firstDrawNote, firstDrawProblems } from './first-draw-checks.ts';
-import { type GpuPath, type MissingAllowed, NONE_MISSING, skippedPath } from './gpu-paths.ts';
+import {
+	type GpuPath,
+	type MissingAllowed,
+	NONE_MISSING,
+	skippedForImages,
+	skippedPath,
+} from './gpu-paths.ts';
 import { borrowedRun, type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
 import { JITTER_TABLE_HEAD, jitterRows, saveJitterResult } from './jitter-checks.ts';
 import { type Ktx2Result, ktx2FormatsNote, ktx2Problems } from './ktx2-checks.ts';
@@ -3743,13 +3749,15 @@ export function gpuPathOf({ path, check }: PlanItem<Check>): GpuPath | undefined
 }
 
 /**
- * A plan's items with the GPU path that each page needs, and the flag that lets the runner page
- * skip the pages for the paths that the device lacks, by the report of the plan's capabilities
- * page. A plan without that page, or a run that lets no path be missing, runs every page.
+ * A plan's items with the GPU path that each page needs, and the flags that let the runner page
+ * skip the pages for the paths that the device lacks, and with `imageFaults`, the pages that draw
+ * where the browser's image buffers fail, by the report of the plan's capabilities page. A plan
+ * without that page, or a run that lets nothing be missing, runs every page.
  */
 export function withGpuPaths(
 	items: readonly PlanItem<Check>[],
 	allowed: MissingAllowed,
+	imageFaults = false,
 ): { items: PlanItem<Check>[]; flags: PlanFlags } {
 	const report = items.find((item) => item.check.kind === 'capabilities')?.id;
 	return {
@@ -3757,7 +3765,12 @@ export function withGpuPaths(
 			const gpu = gpuPathOf(item);
 			return gpu ? { ...item, gpu } : item;
 		}),
-		flags: report && (allowed.webgpu || allowed.webgl2) ? { skipMissing: { report, allowed } } : {},
+		flags: report
+			? {
+					...((allowed.webgpu || allowed.webgl2) && { skipMissing: { report, allowed } }),
+					...(imageFaults && { skipImageFaults: { report } }),
+				}
+			: {},
 	};
 }
 
@@ -4074,7 +4087,7 @@ export function judge(
 	missing: MissingAllowed,
 	context?: JudgeContext,
 ): string[] | 'skip' {
-	if (skippedPath(result)) return 'skip';
+	if (skippedPath(result) || skippedForImages(result)) return 'skip';
 	if (!result.ok) {
 		const path = neededPath(check);
 		if (path && missing[path] && missingPath(path, result.error)) return 'skip';
