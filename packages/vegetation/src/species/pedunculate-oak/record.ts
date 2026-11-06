@@ -169,7 +169,7 @@ export const record: Species = {
 			optics: {
 				reflectance: [0.0429, 0.0864, 0.0194],
 				reflectanceBack: [0.2344, 0.2975, 0.232],
-				transmittance: [0.07, 0.15, 0.015],
+				transmittance: [0.091, 0.195, 0.0195],
 				roughness: [0.45, 0.6],
 			},
 		},
@@ -205,7 +205,8 @@ export const record: Species = {
 			// top third, ending in a small point.
 			kind: 'fruit',
 			at: 'shoot-tip',
-			share: 0.24,
+			share: 0.12,
+			count: { mean: 2, spread: 1 },
 			seasons: ['summer', 'autumn'],
 			shape: {
 				lathe: [

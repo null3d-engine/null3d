@@ -52,7 +52,20 @@ The acorn's nut is 2.5 cm across and hangs 7 cm below its tip. At the review's `
 per cent of the frame. The reference is a close-up of three acorns, while the review's fruit camera
 stands 0.55 m from one.
 
-The acorn's variant bytes are 8,129,698 of the 8,600,000 limit, at a share of 0.24.
+The acorns take one to three at a site, at a share of 0.12. The variant reads 8,021,428 bytes of
+the 8,600,000 limit, less than the single acorn at the higher share.
+
+The radiating rosette darkens the crown by one colour step, from 8.7 to 9.7 at still 01. A leaf
+transmittance of 1.3 times the recorded value carries it without moving the leaf-texture rows:
+
+| Measure | Recorded | Rosette | Rosette and transmittance |
+| --- | --- | --- | --- |
+| Crown 01 | 7.9 | 9.7 | 8.3 |
+| Crown 02 | 5.9 | 7.8 | 6.5 |
+| Cluster still 11 | 2.5 | 3.0 | 2.5 |
+| Leaf texture 24 | 2.3 | 2.3 | 2.3 |
+| Leaf texture 25 | 2.4 | 2.4 | 2.4 |
+| Oak turn | 3.2 | 3.2 | 3.3 |
 
 ## Look
 
@@ -84,9 +97,19 @@ uniform resample skipped a shallow cup's shape, which left the acorn a flat pod.
 keeps ten profile points and gains three scale rings, and its cup and nut grow to the fact sheet's
 2.5 cm.
 
+`ExtraSpec.count` gives how many stand at one site. The oak's acorns take one to three on a stalk
+and their share falls from 0.24 to 0.12, so the variant reads 8,021,428 bytes against the 8,600,000
+limit, less than the single acorn at the higher share.
+
 Rejected: cutting the branch from the grown plant. Its thick wood is right, but its shoots are each a
 metre long and the piece reads wrong: branch shape IoU 0.12 against 0.24 and sky gap 0.69. Its old
 wood with grown shoots is a different structure from the reference's branch.
+
+Rejected: widening the spray's laterals. Every lever that widens its foliage box also thins it,
+because a longer lateral carries the same leaves. A lateral angle of 75 degrees takes the box from
+0.79 to 0.83 wide over tall and the still's shape IoU from 0.24 to 0.21. A lateral unit of 1.0 takes
+the box to 1.07 and the overlap to 0.21. The wide and dense branch needs six leaves a shoot, which
+reads 5.32 MB against the kit's 5.3 MB cap.
 
 Rejected: a uniform resample of the whole acorn profile at twice the rings. It restores the shape but
 adds about 45 vertices to each of the variant's acorns, which costs 2.28 MB and passes the byte
@@ -102,7 +125,8 @@ reviewer uses.
 ## Consequences
 
 `ShootClass` gains optional `stem` and `lateral` values. `ExtraShape`'s lathe gains an optional
-`scaled` range. The API reference carries their doc comments. A crowded tip's leaves now spread round
-the stem for every species with a rosette. The fan test is scoped to a shoot whose leaves stand at
-the shoot's own spacing. The rosette test checks the leaves' turn round the stem rather than the
-oak's numbers. The oak's stills and its three Mac plant pictures move.
+`scaled` range, and `ExtraSpec` gains an optional `count`. The API reference carries their doc
+comments. A crowded tip's leaves now spread round the stem for every species with a rosette. The fan
+test is scoped to a shoot whose leaves stand at the shoot's own spacing. The rosette test checks the
+leaves' turn round the stem rather than the oak's numbers. The oak's stills and its three Mac plant
+pictures move.
