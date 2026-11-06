@@ -429,12 +429,13 @@ export default defineSketch(async (ctx) => {
 				return orbit(at.at, reach, e, back, fov);
 			}
 			case 'twigs': {
-				// A view of the fruit goes to the highest acorn the plant carries rather than to a tip
-				// that may stand bare; without fruit, or with none this season, it goes to a sunlit tip.
+				// A view of the fruit goes to a fruit the plant carries rather than to a tip that
+				// may stand bare; without fruit, or with none this season, it goes to a sunlit tip.
 				if (QUERY.fruit) {
 					// A fruit must hang where the picture shows what holds it, so the view takes the
-					// acorn with the most foliage around it rather than the highest one, which may
-					// stand at a bare crown edge against open sky.
+					// fruit that faces the camera: the outermost one on the crown, where the stalk
+					// and its twig stand clear of the leaves. A fruit inside the crown has leaves
+					// between the lens and its join, whatever its height.
 					const fruits: V3[] = [];
 					const leaves: V3[] = [];
 					for (const part of main.levels[0]?.parts ?? []) {
@@ -452,7 +453,8 @@ export default defineSketch(async (ctx) => {
 						for (const leaf of leaves)
 							if (Math.hypot(leaf[0] - at[0], leaf[1] - at[1], leaf[2] - at[2]) < FRUIT_ENCLOSED)
 								near++;
-						const score = near * 1000 + at[1];
+						const outward = Math.hypot(at[0] - foot[0], at[2] - foot[2]);
+						const score = near * 1_000_000 + outward * 100 + at[1];
 						if (score > best) {
 							best = score;
 							acorn = at;
