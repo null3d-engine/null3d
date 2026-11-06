@@ -76,7 +76,7 @@ export const record: Species = {
 				// the lowest, the newest stands most upright, so the cluster is round from every side.
 				name: 'short',
 				vigor: [0, 0.04],
-				share: 0.3,
+				share: 0.18,
 				years: 1,
 				length: { mean: 0.14, spread: 0.02 },
 				nodes: { mean: 10, spread: 0.5 },
@@ -100,7 +100,7 @@ export const record: Species = {
 				// year's rosettes.
 				name: 'long',
 				vigor: [0.04, 0.2],
-				share: 0.35,
+				share: 0.34,
 				years: 2,
 				length: { mean: 0.4, spread: 0.06 },
 				nodes: { mean: 6, spread: 1 },
@@ -122,7 +122,7 @@ export const record: Species = {
 				// rosettes at each end.
 				name: 'spray',
 				vigor: [0.2, 1],
-				share: 0.35,
+				share: 0.48,
 				years: 3,
 				length: { mean: 1.15, spread: 0.15 },
 				nodes: { mean: 5, spread: 1 },
