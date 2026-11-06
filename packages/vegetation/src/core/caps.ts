@@ -58,8 +58,10 @@ const MB = 1_000_000;
  */
 export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 	tree: {
-		// The oak's kit, with about 15 per cent to spare: 1.74, 2.54, 4.60 and 8.25 MB.
-		kitBytes: { low: 2 * MB, medium: 2.9 * MB, high: 5.3 * MB, ultra: 9.5 * MB },
+		// The oak's kit, with about 15 per cent to spare: 1.74, 2.54, 4.60 and 8.25 MB before its
+		// leaves stood on two years of a shoot's run, which put a second year's cards into every
+		// prototype and took the kit to 5.61 and 10.65 MB. The caps sit just above those figures.
+		kitBytes: { low: 2 * MB, medium: 3.1 * MB, high: 5.7 * MB, ultra: 10.8 * MB },
 		// The grown oak's largest variant, with about a tenth to spare: 9.34, 9.53, 9.76 and 10.03 MB.
 		variantBytes: { low: 10.5 * MB, medium: 11 * MB, high: 11.2 * MB, ultra: 11.5 * MB },
 		// The pedunculate oak's largest of three variants, with about 15 per cent to spare: 7.72, 9.85,
