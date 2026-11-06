@@ -9,7 +9,7 @@
 // table), its entry in the record's extras, which picks its colour from the plant material's header,
 // and the crown's sky visibility at its site. Only the first four entries draw. The second texture
 // coordinate runs along the extra.
-import type { MeshArrays } from '../asset';
+import type { MeshArrays, ShootPrototype } from '../asset';
 import {
 	AXIS_CULM,
 	BUD_AREOLE,
@@ -66,6 +66,31 @@ interface Site {
 	sky: number;
 }
 
+/** A prototype's farthest point in its own space, which is where its drawn tip ends. */
+const tips = new WeakMap<object, Vector3>();
+
+function tipOf(prototype: ShootPrototype): Vector3 {
+	const known = tips.get(prototype.tiers[0]);
+	if (known) return known;
+	const points = prototype.tiers[0].positions;
+	const out: Vector3 = [0, 0, 0];
+	let best = -1;
+	for (let i = 0; i < points.length; i += 3) {
+		const x = points[i] as number;
+		const y = points[i + 1] as number;
+		const z = points[i + 2] as number;
+		const away = x * x + y * y + z * z;
+		if (away > best) {
+			best = away;
+			out[0] = x;
+			out[1] = y;
+			out[2] = z;
+		}
+	}
+	tips.set(prototype.tiers[0], out);
+	return out;
+}
+
 /** The sites of one extra in a dressed variant. */
 function sitesOf(input: MeshInput, extra: ExtraSpec): Site[] {
 	const { rows, kit, skeleton } = input;
@@ -78,12 +103,19 @@ function sitesOf(input: MeshInput, extra: ExtraSpec): Site[] {
 			if (!prototype) continue;
 			if (extra.at === 'spur' && prototype.class !== 'spur') continue;
 			const direction = quatRotate(rows.rotation, r * 4, up, [0, 0, 0]);
-			const reach = extra.at === 'shoot-tip' ? prototype.length * (rows.scale[r] as number) : 0;
+			const scale = rows.scale[r] as number;
+			// A shoot bends, so its drawn tip is not on the straight line its base points along.
+			// Take the prototype's own tip, turned into the row's frame, so a part that hangs
+			// from the shoot meets the wood by the picture's own geometry.
+			const tip =
+				extra.at === 'shoot-tip'
+					? quatRotate(rows.rotation, r * 4, tipOf(prototype), [0, 0, 0])
+					: ([0, 0, 0] as Vector3);
 			out.push({
 				at: [
-					(rows.position[r * 3] as number) + direction[0] * reach,
-					(rows.position[r * 3 + 1] as number) + direction[1] * reach,
-					(rows.position[r * 3 + 2] as number) + direction[2] * reach,
+					(rows.position[r * 3] as number) + tip[0] * scale,
+					(rows.position[r * 3 + 1] as number) + tip[1] * scale,
+					(rows.position[r * 3 + 2] as number) + tip[2] * scale,
 				],
 				direction,
 				record: base + (rows.record[r] as number),
