@@ -129,6 +129,7 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		background: 'sky-meadow',
 		sun: 'default',
 		elevation: 0,
+		woodOnly: true,
 		size: [960, 720],
 	},
 	fork: {
