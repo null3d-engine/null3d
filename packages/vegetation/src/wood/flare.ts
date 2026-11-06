@@ -207,12 +207,14 @@ export function surfaceRoots(
 			foot.radius + 0.7 * length,
 			foot.radius + length,
 		];
-		// Half buried along the ground, then a slow dive.
+		// Half buried along the ground, then a dive deep enough to bury the whole girth. A shallower
+		// one leaves the tube's upper surface lying in the ground, and the ground cuts it to a fin.
+		const plunge = Math.max(roots.dive, 2 * r);
 		const rise = [r, 0.55 * r, 0.3 * r, 0.15 * r, 0];
-		const girth = [1, 1, 0.8, 0.6, 0.45];
-		along.push(foot.radius + length + roots.dive * 1.5, foot.radius + length + roots.dive * 3);
-		rise.push(-0.45 * roots.dive, -roots.dive);
-		girth.push(0.35, 0.25);
+		const girth = [1, 1, 0.85, 0.7, 0.55];
+		along.push(foot.radius + length + plunge * 1.5, foot.radius + length + plunge * 3);
+		rise.push(-plunge, -plunge * 1.6);
+		girth.push(0.5, 0.4);
 		const points = new Float64Array(along.length * 3);
 		const radii = new Float64Array(along.length);
 		for (let i = 0; i < along.length; i++) {
