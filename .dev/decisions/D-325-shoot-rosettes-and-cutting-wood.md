@@ -102,6 +102,14 @@ as a cap at the review's framing. The wider cup crosses the card level's speck t
 draws as a 4 px speck on the whole tree. The speck threshold rises from 3 to 5 px, which keeps the
 acorns off the far levels and the variant at 8,021,428 bytes.
 
+The raise was checked across every extras entry in the repository. One species ships extras: the
+oak. Its acorn is the only extra on a plant with shoots, and at the first card level it spans 3.0 to
+4.2 px with its cup, the band the raise drops. The other entries are test fixtures and the ground
+plants. The ground plants carry no shoots, so their card levels use the extra's own size rather than
+its pixel span, which the raise does not touch. The test fixtures span 0.7 to 3.0 px at the first
+card level on the test oak's short shoots, below both thresholds; the coned fixture's 4 cm cone
+spans 10.3 px, above both. So no other species loses an extra.
+
 `ExtraSpec.count` gives how many stand at one site. The oak's acorns take one to three on a stalk
 and their share falls from 0.24 to 0.12, so the variant reads 8,021,428 bytes against the 8,600,000
 limit, less than the single acorn at the higher share.
