@@ -50,13 +50,16 @@ function stillLine(file: string, kind: string, result: StillResult | undefined):
 			render: '-',
 			result: `the render failed: ${result.error}`,
 		};
+	// A picture with no usable outline still has edges: its directions are the figure it gets.
+	const edges =
+		result.edgeDifference === null ? '' : `; edge directions ${fixed(result.edgeDifference, 3)}`;
 	const figures = result.masked
 		? `shape IoU ${fixed(result.shapeIou)}, width error ${fixed(result.profileError, 3)}, leaf ΔE ${fixed(result.foliageDeltaE, 1)}`
 		: result.surfaceDeltaE !== null
 			? `surface ΔE ${fixed(result.surfaceDeltaE, 1)}`
 			: result.foliageDeltaE !== null
-				? `leaf ΔE ${fixed(result.foliageDeltaE, 1)}; no outline`
-				: 'by eye: no plain outline';
+				? `leaf ΔE ${fixed(result.foliageDeltaE, 1)}; no outline${edges}`
+				: `by eye: no plain outline${edges}`;
 	return {
 		file,
 		kind,
