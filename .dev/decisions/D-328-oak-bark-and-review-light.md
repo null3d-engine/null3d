@@ -106,6 +106,23 @@ crown shades the trunk in those views. The reference trees stand in open sun, so
 pale. A tint that lifts the shaded trunk back to the reference's tone is the same tint that whitens
 the sunlit limbs, which is the fault this record removes. This stays a stated limit.
 
+The shared daylight was tested rather than assumed. Runs `sun19`, `sun26`, `sun34`, `sky15` and
+`sky20` at the merged base measured the same four figures together on the Mac's GPU:
+
+| Light | `01` bark | `01` foliage | `26` surface | `20` bark |
+| --- | --- | --- | --- | --- |
+| Sun 1.9, the current light | 7.46 | 10.79 | 7.29 | 4.68 |
+| Sun 2.6 | 7.44 | 10.23 | 7.29 | 5.17 |
+| Sun 3.4 | 7.40 | 9.64 | 7.29 | 6.42 |
+| Sky ×1.5, sun 1.9 | 5.82 | 8.49 | 7.29 | 8.14 |
+| Sky ×2, sun 1.9 | 4.73 | 6.48 | 7.29 | 12.45 |
+
+The sun cannot reach the shaded trunk, so `01`'s bark barely moves as the sun rises. The sky term
+reaches it: doubling the sky takes `01`'s bark to 4.73, still far from 1.25, while the winter wood
+falls from 4.68 to 12.45. No shared light level both closes `01` and holds `20`. The bark close-up
+is independent of the shared daylight, since its view uses the copy-stand light, so it stays at
+7.29 in every run.
+
 **The close-up figures at a new base.** The close-ups read 7.29 and 7.10 at the merged base, against
 4.78 and 3.44 at the previous one, while their albedos match their sources. The measure takes the
 middle third of the picture, and the render re-lights the photograph's baked shading with the
