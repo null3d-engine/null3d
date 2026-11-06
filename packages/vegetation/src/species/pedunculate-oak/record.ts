@@ -264,9 +264,11 @@ export const record: Species = {
 	lod: {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
-		// The cards stand a quarter larger than the shoots they picture, so a gap between one
-		// shoot's leaves falls on a neighbour's leaves rather than on sky.
-		cardGrow: 1.25,
+		// The cards stand a little larger than the shoots they picture, so a gap between one shoot's
+		// leaves falls on a neighbour's leaves rather than on sky. They were a quarter larger, which
+		// closed the far crown: the reference shows more background through the crown than a quarter
+		// leaves, so the growth is held to what joins the islands.
+		cardGrow: 1.12,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
