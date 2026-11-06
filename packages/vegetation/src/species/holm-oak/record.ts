@@ -175,7 +175,7 @@ export const record: Species = {
 				reflectance: [0.0326, 0.0587, 0.0132],
 				reflectanceBack: [0.3138, 0.3166, 0.259],
 				transmittance: [0.04, 0.08, 0.012],
-				roughness: [0.32, 0.72],
+				roughness: [0.42, 0.72],
 				sheen: 0.6,
 			},
 		},
@@ -191,7 +191,7 @@ export const record: Species = {
 		displacement: 0.012,
 		collar: { swell: 0.4, length: 1.8, ridge: 0.5 },
 		moss: { amount: 0.75, up: 1.2, north: 0.3, colour: [0.24, 0.3, 0.16] },
-		lichen: { amount: 0.7, from: 0.25, colour: [0.42, 0.46, 0.38] },
+		lichen: { amount: 0.7, from: 0.4, colour: [0.42, 0.46, 0.38] },
 	},
 	base: {
 		flare: { amount: 0.9, height: 0.5 },
