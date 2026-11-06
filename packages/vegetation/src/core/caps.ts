@@ -62,10 +62,11 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		kitBytes: { low: 2 * MB, medium: 2.9 * MB, high: 5.3 * MB, ultra: 9.5 * MB },
 		// The grown oak's largest variant, with about a tenth to spare: 9.34, 9.53, 9.76 and 10.03 MB.
 		variantBytes: { low: 10.5 * MB, medium: 11 * MB, high: 11.2 * MB, ultra: 11.5 * MB },
-		// The pedunculate oak's largest of three variants, with about 15 per cent to spare: 7.03, 7.78,
-		// 9.13 and 11.67 MB. Close-up review needs every finest macro axis as real wood, and a page
-		// that needs fewer triangles grows a coarser plant.
-		lod0WoodBytes: { low: 8.1 * MB, medium: 9 * MB, high: 10.5 * MB, ultra: 13.4 * MB },
+		// The pedunculate oak's largest of three variants, with about 15 per cent to spare: 7.72, 9.85,
+		// 13.05 and 17.80 MB. Close-up review needs every finest macro axis as real wood, and a page
+		// that needs fewer triangles grows a coarser plant. A thicker bole costs radial segments on
+		// every axis, so the figures rise with the trunk's girth.
+		lod0WoodBytes: { low: 8.9 * MB, medium: 11.3 * MB, high: 15 * MB, ultra: 20.5 * MB },
 		lod0Triangles: 2_500_000,
 		lod1Triangles: 150_000,
 		lod2Triangles: 30_000,

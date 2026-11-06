@@ -24,7 +24,7 @@ export const record: Species = {
 	name: 'Pedunculate oak',
 	latin: 'Quercus robur',
 	form: 'broad low dome on a short, low-forking bole',
-	size: { height: { mean: 20, spread: 2 }, dbh: 2.3, aspect },
+	size: { height: { mean: 20, spread: 2 }, dbh: 3.5, aspect },
 	growth: {
 		model: 'self-organizing',
 		years: 36,
@@ -183,7 +183,7 @@ export const record: Species = {
 			[1, 1],
 		],
 		displacement: 0.04,
-		collar: { swell: 0.2, length: 1.5, ridge: 0.6 },
+		collar: { swell: 0.45, length: 1.8, ridge: 0.6 },
 		moss: { amount: 0.7, up: 4, north: 0.3, colour: [0.3, 0.36, 0.24] },
 		lichen: { amount: 0.45, from: 0.6, colour: [0.86, 0.9, 0.8] },
 	},
@@ -251,8 +251,9 @@ export const record: Species = {
 		budget: {
 			kitBytes: { low: 2_000_000, medium: 2_900_000, high: 5_300_000, ultra: 9_500_000 },
 			// The fitted envelope widens the crown, and the wider crown grows about a seventh more
-			// leaf card; each cap sits just above the first variant's measured figure at its tier.
-			variantBytes: { low: 7_800_000, medium: 8_000_000, high: 8_200_000, ultra: 8_400_000 },
+			// leaf card; the thicker bole adds a little more. Each cap sits just above the first
+			// variant's measured figure at its tier: 7.94, 8.13, 8.34 and 8.56 MB.
+			variantBytes: { low: 8_200_000, medium: 8_400_000, high: 8_600_000, ultra: 8_800_000 },
 			lod0Triangles: 2_500_000,
 			lod1Triangles: 150_000,
 			lod2Triangles: 30_000,
