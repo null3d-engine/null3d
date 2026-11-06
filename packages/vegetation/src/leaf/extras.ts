@@ -405,6 +405,87 @@ function writeStalk(
 	return fork;
 }
 
+/** Lobes round a scaled lathe's band, so a cup's rim reads as scallops. */
+const SCALLOP_LOBES = 10;
+/** The share of the radius the lobes rise and fall by. */
+const SCALLOP_DEPTH = 0.08;
+
+/**
+ * A lathe whose radius ripples round the turn over a band of heights. A cup's rim then stands in
+ * lobes below its scale rows rather than as a smooth ring.
+ */
+function scallopedLathe(
+	mesh: MeshWriter,
+	profile: readonly [number, number][],
+	base: Readonly<Vector3>,
+	direction: Vector3,
+	sides: number,
+	colour: number[],
+	from: number,
+	to: number,
+): void {
+	const [x, y] = sideAxes(direction, [0, 0, 1]);
+	const height = (profile[profile.length - 1] as [number, number])[1] || 1;
+	const span = Math.max(1e-6, to - from);
+	const ramp = span * 0.5;
+	let previous = -1;
+	for (let k = 0; k < profile.length; k++) {
+		const [radius, h] = profile[k] as [number, number];
+		const prev = profile[Math.max(0, k - 1)] as [number, number];
+		const next = profile[Math.min(profile.length - 1, k + 1)] as [number, number];
+		const run = (next[1] as number) - (prev[1] as number);
+		const rise = run > 1e-9 ? ((next[0] as number) - (prev[0] as number)) / run : 0;
+		// The lobes grow from the band's foot to their full depth at its middle, and hold to the rim.
+		const band = h < from || h > to ? 0 : Math.min(1, Math.max(0, (h - from) / ramp));
+		const climb = h > from && h < from + ramp ? 1 / ramp : 0;
+		const first = mesh.vertices;
+		for (let j = 0; j <= sides; j++) {
+			const angle = (2 * Math.PI * j) / sides;
+			const c = cos(angle);
+			const s = sin(angle);
+			const radial: Vector3 = [c * x[0] + s * y[0], c * x[1] + s * y[1], c * x[2] + s * y[2]];
+			const tangent: Vector3 = [-s * x[0] + c * y[0], -s * x[1] + c * y[1], -s * x[2] + c * y[2]];
+			const wave = 1 + SCALLOP_DEPTH * band * cos(SCALLOP_LOBES * angle);
+			const ripple = -SCALLOP_DEPTH * band * SCALLOP_LOBES * sin(SCALLOP_LOBES * angle);
+			const lean = SCALLOP_DEPTH * cos(SCALLOP_LOBES * angle) * climb;
+			const r = radius * wave;
+			const p: Vector3 = [
+				base[0] + direction[0] * h + radial[0] * r,
+				base[1] + direction[1] * h + radial[1] * r,
+				base[2] + direction[2] * h + radial[2] * r,
+			];
+			// The surface's tangents: up the profile, and round the turn. Their cross is the normal.
+			const along: Vector3 = [
+				direction[0] + radial[0] * radius * (rise * wave + lean),
+				direction[1] + radial[1] * radius * (rise * wave + lean),
+				direction[2] + radial[2] * radius * (rise * wave + lean),
+			];
+			const around: Vector3 = [
+				tangent[0] * r + radial[0] * radius * ripple,
+				tangent[1] * r + radial[1] * radius * ripple,
+				tangent[2] * r + radial[2] * radius * ripple,
+			];
+			const raw = cross3(along, around, [0, 0, 0]);
+			// Where the profile closes to a point the ring has no width; the normal there lies in
+			// the profile's own plane, as the plain lathe gives it.
+			const n =
+				raw[0] * raw[0] + raw[1] * raw[1] + raw[2] * raw[2] > 1e-18
+					? normalize3(raw)
+					: normalize3([
+							radial[0] - direction[0] * rise,
+							radial[1] - direction[1] * rise,
+							radial[2] - direction[2] * rise,
+						]);
+			const out = n[0] * radial[0] + n[1] * radial[1] + n[2] * radial[2] < 0 ? -1 : 1;
+			mesh.vertex(p, [n[0] * out, n[1] * out, n[2] * out], [j / sides, h / height], [0, 0], colour);
+		}
+		if (previous >= 0)
+			for (let j = 0; j < sides; j++)
+				mesh.quad(previous + j, previous + j + 1, first + j + 1, first + j);
+		previous = first;
+	}
+}
+
 /** Writes one extra at a site. */
 function writeExtra(
 	mesh: MeshWriter,
@@ -419,6 +500,8 @@ function writeExtra(
 	const shape = extra.shape;
 	if ('lathe' in shape || 'catkin' in shape) {
 		let profile: [number, number][];
+		let scaledFrom = 0;
+		let scaledTo = 0;
 		if ('lathe' in shape) {
 			profile = shape.lathe.map(([radius, height]) => [radius, height]);
 			// Scales: rings of bumps over a cone's or a cup's own part of the profile, one ring a
@@ -428,9 +511,11 @@ function writeExtra(
 				const height = (profile[profile.length - 1] as [number, number])[1];
 				const from = shape.scaled?.[0] ?? 0;
 				const to = Math.min(height, shape.scaled?.[1] ?? height);
+				scaledFrom = from;
+				scaledTo = to;
 				const span = Math.max(1e-6, to - from);
 				const bump = (h: number): number =>
-					h >= from && h <= to ? 1 + 0.12 * Math.abs(sin((Math.PI * rows * (h - from)) / span)) : 1;
+					h >= from && h <= to ? 1 + 0.18 * Math.abs(sin((Math.PI * rows * (h - from)) / span)) : 1;
 				const across = (a: [number, number], b: [number, number], h: number): number =>
 					b[1] > a[1] ? a[0] + ((h - a[1]) / (b[1] - a[1])) * (b[0] - a[0]) : b[0];
 				const fine: [number, number][] = [];
@@ -443,7 +528,7 @@ function writeExtra(
 						const h = from + (span * (row + 0.5)) / rows;
 						if (h >= point[1]) break;
 						const prev = (profile[Math.max(0, k - 1)] as [number, number]) ?? point;
-						fine.push([across(prev, point, h) * 1.12, h]);
+						fine.push([across(prev, point, h) * 1.18, h]);
 					}
 					fine.push([point[0] * bump(point[1]), point[1]]);
 				}
@@ -459,7 +544,9 @@ function writeExtra(
 			];
 		}
 		const first = mesh.vertices;
-		lathe(mesh, profile, site.at, direction, sides, colour);
+		if (scaledTo > scaledFrom)
+			scallopedLathe(mesh, profile, site.at, direction, sides, colour, scaledFrom, scaledTo);
+		else lathe(mesh, profile, site.at, direction, sides, colour);
 		for (let i = first; i < mesh.vertices; i++) mesh.uvs[i * 2] = 0;
 		return;
 	}
