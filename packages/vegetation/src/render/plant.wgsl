@@ -101,6 +101,7 @@ const BARK_ZONE_TEXELS: i32 = 4;
 const MAX_BARK_ZONES: i32 = 4;
 const HEADER_LICHEN: i32 = 40;
 const HEADER_LICHEN_REACH: i32 = 41;
+const HEADER_SWAY: i32 = 42;
 // Rows before the wind records, and wind records in a row.
 const HEADER_ROWS: i32 = 2;
 const RECORDS_PER_ROW: i32 = 256;
@@ -116,8 +117,9 @@ const CUTOFF: f32 = 0.5;
 const CARD_MIP_LIFT: f32 = 0.25;
 // One turn, for the phases that the records and the vertex colours carry.
 const TURN: f32 = 6.283185307179586;
-// How far the stem's top moves for each metre a second of wind, as a share of its length.
-const STEM_BEND: f32 = 0.02;
+// The wind speed at which a species' sway is measured: its record gives the metres at the top for
+// this speed, and the offset grows with the air's speed from there.
+const WIND_SWAY_SPEED: f32 = 4.0;
 // How far a branch turns about its pivot, in radians, for each metre a second of wind.
 const BRANCH_BEND: f32 = 0.02;
 // How far a shoot's tip bends, as a share of its length, for each metre a second of wind.
@@ -469,6 +471,10 @@ fn sway_fade() -> f32 {
 fn sway_point(p: vec3f, own: i32, downwind: vec3f, speed: f32) -> vec3f {
     var point = p;
     var id = own;
+    // The whole plant sways as its species' record says: metres at its top at the field's base
+    // speed, in cycles a second, and more as the air is faster.
+    let plant = header(HEADER_SWAY);
+    let sway = plant.x * speed / WIND_SWAY_SPEED;
     for (var level = 0; level < MAX_BRANCH_DEPTH; level += 1) {
         if (id < 0) {
             break;
@@ -483,7 +489,8 @@ fn sway_point(p: vec3f, own: i32, downwind: vec3f, speed: f32) -> vec3f {
         let parent = record_parent(id, first);
         let along = clamp(dot(point - pivot, axis) / length_m, 0.0, 1.0);
         if (parent < 0) {
-            point += downwind * (along * along * speed * STEM_BEND * length_m);
+            let wave = 0.5 + 0.5 * sin(TURN * (frame.time * plant.y + fourth_texel.x));
+            point += downwind * (along * along * sway * wave);
         } else {
             let across = cross(axis, downwind);
             let reach = length(across);

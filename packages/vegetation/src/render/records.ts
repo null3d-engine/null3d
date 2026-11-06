@@ -97,6 +97,8 @@ export const HEADER = {
 	lichen: 40,
 	/** Lichen: its lowest and highest height in metres. */
 	lichenReach: 41,
+	/** The whole plant's sway: metres at its top at the field's base speed, then cycles a second. */
+	sway: 42,
 } as const;
 
 /**
@@ -106,7 +108,7 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.barkZones + MAX_BARK_ZONES * BARK_ZONE_TEXELS;
+export const HEADER_TEXELS = HEADER.sway + 1;
 
 /**
  * A number rounded to the nearest half float, ties to even, as the GPU's upload rounds it. The
@@ -307,6 +309,8 @@ export function speciesHeader(
 	});
 	const bud = record.shoots?.bud.colour;
 	if (bud) texel(header, HEADER.bud, [...bud, 1]);
+	const sway = record.wind.sway;
+	texel(header, HEADER.sway, [sway.amplitude, sway.frequency, 0, 0]);
 	return header;
 }
 
