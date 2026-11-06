@@ -26,6 +26,10 @@ The outline is the strongest measure, and the shape rows rest on it. It needs a 
 the reference. The tool separates the plant by color against a backdrop fitted to the picture's
 border. 15 of the 28 stills of the oak give one.
 
+A fruit view is drawn with an outline whatever its photograph does, because a part that hangs from
+nothing has a sound outline and shows only as a separate piece. Its outline gives the piece count;
+the photograph's own share of the figure follows the rules above.
+
 The surface color answers the material rows: bark, leaf faces, and the texture sources that the
 atlas is built from. About 2 steps is a visible difference.
 
@@ -70,6 +74,11 @@ before you change a figure.
 A turn gives the crown's spread, the alignment of the render's turn to the video's, and a width
 profile at each angle. The alignment assumes that the video turns at a steady rate over its arc.
 A video that speeds up or stops short then aligns poorly, and no engine change can mend that.
+
+The shape IoU printed for a turn is the mean over the matched frames. Matching a render frame to a
+video frame compares outlines shrunk four times each way, and that score picks the pairing only: it
+reads well above the frame-to-frame figure on a speckled crown, so it is not quoted as a plant
+figure and is not reported.
 
 ## What the tool cannot see
 

@@ -328,8 +328,12 @@ export interface Alignment {
 	readonly start: number;
 	/** 1 when the render turns the same way as the reference, -1 when the other way. */
 	readonly direction: 1 | -1;
-	/** The mean overlap of the matched pairs. */
-	readonly meanIou: number;
+	/**
+	 * The mean overlap of the matched pairs on outlines shrunk four times each way. It picks the
+	 * pairing, and standing alone it says nothing about the plant: on a speckled crown it reads
+	 * well above the frame-to-frame shape IoU.
+	 */
+	readonly coarseIou: number;
 	/** For each reference frame, the render frame it is matched to. */
 	readonly pairs: readonly number[];
 }
@@ -347,15 +351,15 @@ export function alignTurn(
 ): Alignment {
 	const k = scores.length;
 	const n = scores[0]?.length ?? 0;
-	let best: Alignment = { start: 0, direction: 1, meanIou: -1, pairs: [] };
+	let best: Alignment = { start: 0, direction: 1, coarseIou: -1, pairs: [] };
 	for (const direction of [1, -1] as const)
 		for (let start = 0; start < n; start++) {
 			const pairs = Array.from({ length: k }, (_, i) => {
 				const step = Math.round(i * ratio);
 				return (((start + direction * step) % n) + n) % n;
 			});
-			const meanIou = mean(pairs.map((j, i) => (scores[i] as readonly number[])[j] as number));
-			if (meanIou > best.meanIou + 1e-9) best = { start, direction, meanIou, pairs };
+			const coarseIou = mean(pairs.map((j, i) => (scores[i] as readonly number[])[j] as number));
+			if (coarseIou > best.coarseIou + 1e-9) best = { start, direction, coarseIou, pairs };
 		}
 	return best;
 }
@@ -775,6 +779,8 @@ export interface TurnResult {
 	readonly frameStep: number;
 	readonly renderStep: number;
 	readonly alignment: Omit<Alignment, 'pairs'>;
+	/** The mean of the matched frames' shape IoU, over the frames that carry one. */
+	readonly meanShapeIou: number | null;
 	/** The video frames whose render lies within half a frame's turn of the frame's own angle. */
 	readonly covered: number;
 	readonly pairs: readonly TurnPair[];
@@ -840,7 +846,8 @@ export function compareTurn(
 		renders: m,
 		frameStep,
 		renderStep,
-		alignment: { start: 0, direction: 1 as const, meanIou: 0 },
+		alignment: { start: 0, direction: 1 as const, coarseIou: 0 },
+		meanShapeIou: null,
 		covered: 0,
 		pairs: [],
 		spread: {
@@ -888,6 +895,8 @@ export function compareTurn(
 		};
 	});
 	const covered = pairs.filter((pair) => pair.offBy <= frameStep / 2 + 1e-6).length;
+	const ious = pairs.flatMap((pair) => (pair.shapeIou === null ? [] : [pair.shapeIou]));
+	const meanShapeIou = ious.length === 0 ? null : Number(mean(ious).toFixed(4));
 	const { angles, frames: atAngle } = rubricFrames(video.arc, n);
 	const refAt = atAngle.map((k) => refSides[k] as Side);
 	const renderAt = atAngle.map((k) => renderSides[alignment.pairs[k] as number] as Side);
@@ -907,7 +916,7 @@ export function compareTurn(
 	});
 	const first = references[0] as Rgba;
 	const pages = gridSheets(
-		`${title}  ${n} FRAMES OVER ${video.arc} DEG  MEAN SHAPE IOU ${alignment.meanIou.toFixed(3)}`,
+		`${title}  ${n} FRAMES OVER ${video.arc} DEG  MEAN SHAPE IOU ${meanShapeIou === null ? '-' : meanShapeIou.toFixed(3)}`,
 		tiles,
 		first.width / first.height,
 	);
@@ -921,8 +930,9 @@ export function compareTurn(
 		alignment: {
 			start: alignment.start,
 			direction: alignment.direction,
-			meanIou: Number(alignment.meanIou.toFixed(4)),
+			coarseIou: Number(alignment.coarseIou.toFixed(4)),
 		},
+		meanShapeIou,
 		covered,
 		pairs,
 		spread: {

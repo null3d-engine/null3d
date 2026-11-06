@@ -156,10 +156,13 @@ function stillShot(
 	}
 	// A still whose own picture separates the plant from a plain background can be compared by
 	// outline, whatever part of the plant it frames: the render draws the same mask. A texture source
-	// is a flat swatch rather than a picture of the plant, so it is not given one.
+	// is a flat swatch rather than a picture of the plant, so it is not given one. A fruit view keeps
+	// its outline whether or not the photograph separates, because a part that hangs from nothing
+	// shows only as a piece, and a piece needs the matte.
 	const outline =
 		(slot.kind !== 'texture' && plant.background.plain && slot.view !== 'silhouette') ||
 		slot.framed ||
+		slot.query?.fruit === true ||
 		CUTTING_VIEWS.includes(slot.view);
 	return singleShot(
 		'stills',
@@ -309,7 +312,7 @@ function turnSummary(result: TurnResult, limit: number): string[] {
 		'',
 		...(result.error ? [`- ${result.error}.`, ''] : []),
 		`- ${result.frames} frames over ${result.arc}°, one every ${result.frameStep.toFixed(2)}°, against ${result.renders} renders every ${result.renderStep.toFixed(2)}°. ${result.covered} of ${result.frames} frames have a render at their own angle.`,
-		`- Alignment: the render at turn ${(result.alignment.start * result.renderStep).toFixed(1)}° matches the video's first frame, turning ${result.alignment.direction === 1 ? 'the same way' : 'the other way'}; mean shape IoU ${result.alignment.meanIou.toFixed(3)} (lowest ${iou.length ? Math.min(...iou).toFixed(3) : '-'}).`,
+		`- Alignment: the render at turn ${(result.alignment.start * result.renderStep).toFixed(1)}° matches the video's first frame, turning ${result.alignment.direction === 1 ? 'the same way' : 'the other way'}. Shape IoU over the matched frames, mean: ${result.meanShapeIou === null ? '-' : result.meanShapeIou.toFixed(3)} (lowest ${iou.length ? Math.min(...iou).toFixed(3) : '-'}).`,
 		`- Width-profile error, mean: ${meanOf(
 			result.pairs.flatMap((p) => (p.profileError === null ? [] : [p.profileError])),
 			3,

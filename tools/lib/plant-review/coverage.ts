@@ -82,7 +82,7 @@ function turnLine(file: string, result: TurnResult | undefined): CoverageLine {
 		kind,
 		status,
 		render: `${result.renders} renders every ${result.renderStep.toFixed(2)}°`,
-		result: `${result.covered} of ${result.frames} frames matched at their angle over ${result.arc}°; mean shape IoU ${result.alignment.meanIou.toFixed(3)}${status === 'compared' ? '' : `; draw renders at least every ${result.frameStep.toFixed(2)}° to cover every frame`}`,
+		result: `${result.covered} of ${result.frames} frames matched at their angle over ${result.arc}°; shape IoU mean ${result.meanShapeIou === null ? '-' : result.meanShapeIou.toFixed(3)}${status === 'compared' ? '' : `; draw renders at least every ${result.frameStep.toFixed(2)}° to cover every frame`}`,
 	};
 }
 
