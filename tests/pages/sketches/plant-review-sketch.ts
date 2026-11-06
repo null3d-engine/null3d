@@ -77,6 +77,8 @@ const FRUIT_REACH = 0.2;
 const FRUIT_SHARE = 0.73;
 /** Metres around a fruit within which foliage counts as holding it. */
 const FRUIT_ENCLOSED = 0.7;
+/** Degrees the fruit camera stands below its cluster, looking up at the join with the twig. */
+const FRUIT_ELEVATION = -12;
 /** Stops of switch bias that carry a forced nearest level's shoots past every far plane. */
 const FORCED_NEAR_STOPS = 20;
 /** The most cells a sheet draws: the scene's views less the camera's own. */
@@ -498,7 +500,10 @@ export default defineSketch(async (ctx) => {
 						};
 						const outward = normalize([acorn[0] - foot[0], 0, acorn[2] - foot[2]]);
 						const back = Math.atan2(outward[0], outward[2]);
-						return { ...fit(box, back, e, aspect, fov), near: 0.01 };
+						// The camera looks up a little, as the reference's close-up does, so the
+						// underside of the twig shows where the stalk joins it.
+						const low = QUERY.elevation ?? FRUIT_ELEVATION;
+						return { ...fit(box, back, low, aspect, fov), near: 0.01 };
 					}
 				}
 				const tip = sunlitTip(skeleton, out, BUD_TERMINAL);
