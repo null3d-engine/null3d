@@ -53,7 +53,7 @@ Row 6 is read from the sky gap: the share of the crown's own box that shows back
 both pictures at each whole view. The reviewer writes the render's figure beside the reference's for
 every whole view. The row passes when the render's sky gap is no more than five hundredths above its
 reference's and no more than two hundredths below it. The small allowance below covers the measure:
-a reference outline comes from colour against a plain background and can lose its thinnest foliage.
+a reference outline comes from color against a plain background and can lose its thinnest foliage.
 Anything more closed than that fails, and so does anything more open than the species. A crown
 denser than its reference is as much a fail as a thin one. The eye is the judge and the figure is
 the check: when the two disagree the reviewer says so and names which it followed.
