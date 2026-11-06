@@ -34,8 +34,8 @@ export const record: Species = {
 		stems: {
 			count: { mean: 8, spread: 2 },
 			lean: { mean: 40, spread: 6 },
-			stool: 0.5,
-			fused: 0.8,
+			stool: 0.6,
+			fused: 0.95,
 		},
 		buds: {
 			arrangement: { kind: 'spiral', divergence: 137.5 },
@@ -151,9 +151,9 @@ export const record: Species = {
 		bud: { length: 0.01, width: 0.007, tipCluster: 7, colour: [0.28, 0.2, 0.12] },
 		placement: {
 			perMetre: [
-				[0, 5],
-				[0.55, 10],
-				[1, 85],
+				[0, 4],
+				[0.55, 8],
+				[1, 64],
 			],
 			shadePrune: 0.1,
 			skyward: 0.3,
