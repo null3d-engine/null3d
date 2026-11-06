@@ -201,8 +201,8 @@ export const record: Species = {
 	extras: [
 		{
 			// The acorn on its long stalk, the peduncle that tells this oak from the sessile oak: three
-			// plump nuts on one stalk that forks, each in a deep cup of scale rows that holds its top
-			// third, the nut swelling smooth and round below the cup to a small point.
+			// plump nuts on one stalk that forks into short footstalks, each nut in a deep cup of scale
+			// rows that holds its top third, the nut swelling smooth below the cup to a small point.
 			kind: 'fruit',
 			at: 'shoot-tip',
 			share: 0.0475,
@@ -231,6 +231,7 @@ export const record: Species = {
 				scales: 3,
 				scaled: [0, 0.0068],
 				stalk: 0.032,
+				pedicel: 0.01,
 			},
 			colour: [0.24, 0.1, 0.03],
 			hang: 180,
