@@ -107,7 +107,7 @@ export const record: Species = {
 				length: { mean: 0.38, spread: 0.06 },
 				nodes: { mean: 7, spread: 1 },
 				internode: SHOOT,
-				stem: { radius: [0.006, 0.0035] },
+				stem: { radius: [0.014, 0.008] },
 				leafScale: [
 					[0, 0.8],
 					[1, 1],
@@ -129,7 +129,7 @@ export const record: Species = {
 				length: { mean: 1, spread: 0.15 },
 				nodes: { mean: 7, spread: 1 },
 				internode: SHOOT,
-				stem: { radius: [0.013, 0.005] },
+				stem: { radius: [0.026, 0.012] },
 				lateral: 72,
 				leafScale: [
 					[0, 0.8],
@@ -147,7 +147,7 @@ export const record: Species = {
 		orders: 3,
 		years: 3,
 		leafYears: 1,
-		stem: { radius: [0.0035, 0.0025], zigzag: 14 },
+		stem: { radius: [0.01, 0.006], zigzag: 14 },
 		bud: { length: 0.01, width: 0.007, tipCluster: 7, colour: [0.28, 0.2, 0.12] },
 		placement: {
 			perMetre: [
