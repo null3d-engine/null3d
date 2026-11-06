@@ -265,4 +265,43 @@ self.onmessage = () => {
 		expect(decurrent.reach).toBeLessThan(0.6);
 		expect(decurrent.dominance).toBeLessThan(0.2);
 	});
+
+	it('keeps a stool of stems in the light up to their fork', () => {
+		/** The oak's numbers as a stool of four stems, forked or not. */
+		const stool = (divide: boolean): Species => ({
+			...oakRecord,
+			id: 'stool-test',
+			size: { ...oakRecord.size, height: { mean: 8, spread: 0 }, dbh: 0.24 },
+			growth: {
+				...(oakRecord.growth as Extract<Species['growth'], { model: 'self-organizing' }>),
+				years: 24,
+				stems: {
+					count: { mean: 8, spread: 0 },
+					lean: { mean: 28, spread: 0 },
+					stool: 0.35,
+					fused: 0.1,
+				},
+				...(divide ? { divide: { at: 0.22, count: 2, angle: 52, lean: 6 } } : {}),
+			},
+		});
+		/** Stems whose trunk still carries a radius over a centimetre at breast height. */
+		const thick = (record: Species): number => {
+			const skeleton = grow(0, record);
+			const { axes } = skeleton;
+			let count = 0;
+			for (let a = 0; a < axes.count; a++) {
+				if (axes.parent[a] !== -1) continue;
+				for (let n = axes.first[a] as number; n <= (axes.last[a] as number); n++)
+					if ((skeleton.position[n * 3 + 1] as number) >= 1.3) {
+						if ((skeleton.radius[n] as number) > 0.01) count++;
+						break;
+					}
+			}
+			return count;
+		};
+		// The crown base is low, so without a fork only the stems in full light keep their girth;
+		// the fork's height shelters every stem below it, and nearly all then carry a trunk.
+		expect(thick(stool(true))).toBeGreaterThan(thick(stool(false)));
+		expect(thick(stool(true))).toBeGreaterThanOrEqual(7);
+	});
 });

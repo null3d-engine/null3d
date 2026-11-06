@@ -130,3 +130,32 @@ Rejected:
   reads the same grid through `crownSkyAt`.
 - A species' envelope comes from its turntable by the method above until the fitting tools
   measure it.
+
+## A stool of stems in the open
+
+A record may grow several stems from one stool. `StemSpec` gives `count`, `lean`, `stool` and
+`fused`. Each stem stands on the plant's ring and takes its own flare, buttress and roots. The
+stems share one light grid and one resource.
+
+The rule that a stem's leader sees full light below the envelope's base is written for one stem.
+It is a bole under its own crown. A stool's stems are separate trunks in the open below the
+plant's first fork. The holm oak's reference has its lowest leaf at 0.09 of the height. So the
+stems lost their light shelter there and competed from the bottom. Two of eight stems kept a girth
+over 1 cm at 1.3 m.
+
+The grower now shelters a stem's leader below the first fork when the plant has several stems.
+That case needs `starts.length > 1` and a `divide`. Without them, the shelter ends at the
+envelope's base as before. A single stem takes the second branch of the condition, so its growth
+is byte for byte the old growth. The oak's records and tests do not change. The test
+`grow/self-organizing.test.ts` grows a stool of eight stems with and without a fork. It requires
+more stems with a trunk at 1.3 m when the fork is present.
+
+At seed 11 on the holm oak's record, variant 0, the stems over 1 cm at 1.3 m went from 2 of 9 to
+6 of 9. Variant 1 went from 4 to 7 of 8.
+
+Rejected:
+
+- **A larger `stems.count`.** Twelve stems did not raise the share of thick stems.
+- **A wider shadow.** It made the crown run away and was stopped before a render.
+
+
