@@ -142,7 +142,7 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 	twigs: {
 		slots: [10],
 		fov: 45,
-		background: 'sky-meadow',
+		background: 'studio-grey',
 		sun: 'default',
 		elevation: 0,
 		size: [960, 720],

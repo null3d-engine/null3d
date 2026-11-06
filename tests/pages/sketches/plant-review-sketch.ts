@@ -446,7 +446,9 @@ export default defineSketch(async (ctx) => {
 				const target = add(tip.at, scale(tip.direction, shoot / 2));
 				const outward = normalize([tip.at[0] - foot[0], 0, tip.at[2] - foot[2]]);
 				const back = Math.atan2(outward[0], outward[2]);
-				return { ...orbit(target, 0.5 + shoot / 2, e, back, fov), near: 0.02 };
+				// The twig and its rosettes fill the frame: the reference stands a single twig against a
+				// plain backdrop, so the camera sits close and the shoot's own length is not the subject.
+				return { ...orbit(target, 0.28 + shoot / 4, e, back, fov), near: 0.02 };
 			}
 			case 'bark-base': {
 				const r = stemAt(skeleton, 0.3)?.radius ?? 0.1;
