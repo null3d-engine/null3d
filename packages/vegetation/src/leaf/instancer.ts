@@ -173,6 +173,34 @@ function latticeNoise(
 	return value;
 }
 
+/** Every limb's nodes, as 3 per node in plant space: the wood a shoot's foliage must stay near. */
+function majorLimbNodes(skeleton: MacroSkeleton): Float64Array {
+	const { axes, position, axisOf } = skeleton;
+	const keep: number[] = [];
+	for (let n = 0; n < skeleton.nodeCount; n++) {
+		const axis = axisOf[n] as number;
+		if (axis < 0 || (axes.order[axis] as number) > 1) continue;
+		keep.push(
+			position[n * 3] as number,
+			position[n * 3 + 1] as number,
+			position[n * 3 + 2] as number,
+		);
+	}
+	return Float64Array.from(keep);
+}
+
+/** Whether a point stands within `reach` of any limb node. */
+function nearLimb(point: Vector3, limbs: Float64Array, reach: number): boolean {
+	const limit = reach * reach;
+	for (let i = 0; i < limbs.length; i += 3) {
+		const dx = (limbs[i] as number) - point[0];
+		const dy = (limbs[i + 1] as number) - point[1];
+		const dz = (limbs[i + 2] as number) - point[2];
+		if (dx * dx + dy * dy + dz * dz <= limit) return true;
+	}
+	return false;
+}
+
 /**
  * Metres along its axis to each node, and each axis's own length: how far a shoot stands from the
  * end of the axis that carries it, which is what the tip bias weights by.
@@ -253,6 +281,8 @@ export function placeShoots(input: DressInput): ShootRows {
 	const tropism = radians(tropismTurn(record));
 	const skyward = Math.min(1, Math.max(0, shoots.placement.skyward));
 	const prune = Math.min(1, Math.max(0, shoots.placement.shadePrune));
+	const sheath = Math.max(0, shoots.placement.sheath ?? 0);
+	const limbNodes = sheath > 0 ? majorLimbNodes(skeleton) : undefined;
 	const coarse = (input.coarseness ?? 0) > 0;
 	const thinning = rowThinning(input.coarseness ?? 0);
 	const bare =
@@ -373,6 +403,9 @@ export function placeShoots(input: DressInput): ShootRows {
 		const keep = (kind === BUD_TERMINAL || atTip) && lit && patch > BARE_PATCH;
 		const count = Math.max(keep ? 1 : 0, Math.floor(expected + draw(Purpose.Count, b)));
 		if (count === 0) continue;
+		// A shoot far from any limb is foliage the tree could not hold up: it is pruned, so the
+		// leaves of one limb make one mass and the sky stands between the masses.
+		if (limbNodes && !nearLimb(at, limbNodes, sheath)) continue;
 		// The axis's direction at the bud.
 		const tangent: Vector3 =
 			stretch > 1e-6
