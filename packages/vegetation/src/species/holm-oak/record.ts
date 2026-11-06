@@ -255,14 +255,19 @@ export const record: Species = {
 	},
 	lod: {
 		nearFoliage: 'instanced',
+		// The cards stand a quarter larger than the shoots they picture, so a gap between one
+		// shoot's leaves falls on a neighbour's leaves rather than on sky.
+		cardGrow: 1.25,
 		switchPixels: [500, 12, 160],
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
 			kitBytes: { low: 2_000_000, medium: 2_900_000, high: 5_300_000, ultra: 9_500_000 },
-			// The densest of the six variants sets each cap: variant 4 measures 16.32, 16.43, 16.65
-			// and 17.02 MB at the four tiers. Each cap sits just above its figure.
+			// The densest variant sets each cap: variant 4 measures 16.32, 16.43, 16.65 and 17.02 MB
+			// at the four tiers. Each cap sits just above its figure. The stool's clean bole re-homes
+			// the cleared growth into the crown, and variant 0 rises from 12.56 to 14.51 MB at high
+			// because of it.
 			variantBytes: { low: 16_400_000, medium: 16_500_000, high: 16_800_000, ultra: 17_100_000 },
 			lod0Triangles: 2_500_000,
 			lod1Triangles: 150_000,
