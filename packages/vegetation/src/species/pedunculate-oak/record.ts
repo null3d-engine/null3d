@@ -164,7 +164,7 @@ export const record: Species = {
 			clump: { spacing: 3.4, depth: 0.8 },
 			shadePrune: 0.15,
 			skyward: 0.35,
-			scale: { mean: 1.7, spread: 0.15 },
+			scale: { mean: 1.4, spread: 0.15 },
 		},
 	},
 	foliage: {
