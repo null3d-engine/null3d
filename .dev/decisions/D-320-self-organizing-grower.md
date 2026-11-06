@@ -159,3 +159,8 @@ Rejected:
 - **A wider shadow.** It made the crown run away and was stopped before a render.
 
 
+
+The fused run grows straight up from the stool and the bud keeps that line, so a stem's lean was
+lost above the fused length. The grower now gives a stem its lean back once it clears the fused
+run; a single stem keeps `fused` 0 and takes no new path. The holm oak's stems then stand together
+at the stool and splay above it into the wider envelope.

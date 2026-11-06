@@ -408,11 +408,14 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	const openHeight =
 		starts.length > 1 && g.divide !== undefined ? Math.max(volume.base, divideAt) : volume.base;
 	const fusedHeight: number[] = [];
+	const stemDirection: Vector3[] = [];
+	const leaned = new Uint8Array(starts.length);
 	starts.forEach((start, s) => {
 		const axis = plant.addAxis(-1, 0, s);
 		const node = plant.addNode(start.x, 0, start.z, start.direction, -1, axis, 0);
 		plant.addBud(node, axis, start.direction, true);
 		fusedHeight.push(start.fused);
+		stemDirection.push([...start.direction]);
 	});
 
 	const scratchU: Vector3 = [0, 0, 0];
@@ -590,6 +593,20 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			const px = plant.x[previous] as number;
 			const py = plant.y[previous] as number;
 			const pz = plant.z[previous] as number;
+			// A stem that ran fused with its neighbours takes its lean back once it clears the fused
+			// length: the fused run grows straight up, and the bud would otherwise keep that line.
+			if (
+				order === 0 &&
+				(fusedHeight[stem] as number) > 0 &&
+				py >= (fusedHeight[stem] as number) &&
+				leaned[stem] === 0
+			) {
+				const dir = stemDirection[stem] as Vector3;
+				d[0] = dir[0];
+				d[1] = dir[1];
+				d[2] = dir[2];
+				leaned[stem] = 1;
+			}
 			const corridor = order === 0 && py < volume.base;
 			if (corridor) {
 				toward[0] = 0;
