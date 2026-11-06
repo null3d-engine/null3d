@@ -402,6 +402,11 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 
 	// The stems: each starts with a base node on the ground and a terminal bud.
 	const starts = stemStarts(g.stems, seed, salt, variant);
+	// A stool of several stems stands in the open below the plant's first fork: each stem is its
+	// own trunk there, so the plant's lowest leaf does not mark where light reaches a stem's
+	// leader. One stem keeps the crown's base as its open height.
+	const openHeight =
+		starts.length > 1 && g.divide !== undefined ? Math.max(volume.base, divideAt) : volume.base;
 	const fusedHeight: number[] = [];
 	starts.forEach((start, s) => {
 		const axis = plant.addAxis(-1, 0, s);
@@ -423,17 +428,13 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	let vLateral = new Float64Array(0);
 	const stemLight = new Float64Array(starts.length);
 
-	/** A bud's light: the grid's, but full light for a stem's leader below the envelope. */
+	/** A bud's light: the grid's, but full light for a stem's leader below the open height. */
 	const budLight = (b: number): number => {
 		const n = plant.budNode[b] as number;
 		const x = plant.x[n] as number;
 		const y = plant.y[n] as number;
 		const z = plant.z[n] as number;
-		if (
-			plant.budTerminal[b] &&
-			plant.axisOrder[plant.budAxis[b] as number] === 0 &&
-			y < volume.base
-		)
+		if (plant.budTerminal[b] && plant.axisOrder[plant.budAxis[b] as number] === 0 && y < openHeight)
 			return 1;
 		return grid.light(x, y, z);
 	};
@@ -1052,12 +1053,12 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			let suppression = 0;
 			const tb = plant.axisBud[a] as number;
 			if (tb >= 0 && plant.budState[tb] === ALIVE) {
-				// With the relay, a stem's leader below the crown is spared the chance loss that would
-				// leave no shoot in the light to take over.
+				// With the relay, a stem's leader below the open height is spared the chance loss that
+				// would leave no shoot in the light to take over.
 				const sheltered =
 					relay &&
 					plant.axisOrder[a] === 0 &&
-					(plant.y[plant.budNode[tb] as number] as number) < volume.base;
+					(plant.y[plant.budNode[tb] as number] as number) < openHeight;
 				if (!sheltered && unit(Purpose.Extinct, year, tb) < extinctApical) {
 					shade(tb, -1);
 					plant.budState[tb] = DEAD;
