@@ -60,7 +60,9 @@ export const record: Species = {
 				[1, 0.03],
 			],
 		},
-		shedding: { threshold: 0.1, cleanBole: 0.2, stubs: 0.2 },
+		// The reference's bole is clean to about a twelfth of the height before the first limbs; a
+		// fifth cleared the low limbs' shoots and left them standing bare past the crown.
+		shedding: { threshold: 0.1, cleanBole: 0.09, stubs: 0.2 },
 		bending: { strength: 0.5, upturn: 0.2 },
 		forkRule: true,
 		kinks: true,
