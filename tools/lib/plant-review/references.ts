@@ -1099,6 +1099,12 @@ export interface PlantMeasures {
 	/** The colours of the background, as sRGB hex: the sky at mid-height and the ground. */
 	readonly sky: string;
 	readonly ground: string | null;
+	/**
+	 * Where the picture's light comes from, in degrees: how far the crown's brighter side stands to
+	 * the camera's right, and how high the light is above the horizon, read from the crown's own
+	 * shading. Null when the plant has no crown to read it from.
+	 */
+	readonly light: { readonly azimuth: number; readonly rise: number } | null;
 }
 
 /** The number of height bands of a width profile. */
@@ -1245,6 +1251,7 @@ export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
 			solidity: 0,
 			foliage: null,
 			bark: null,
+			light: null,
 		};
 	const spans = rowSpans(mask, width, height);
 	const start = crownStartRow(spans, box);
@@ -1290,7 +1297,60 @@ export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
 						return y > start && mask[at] === 1;
 					})
 				: null,
+		light: crownLight(lab, inCrown, width, box, start),
 	};
+}
+
+/**
+ * Where a picture's light comes from, read off the crown's own shading. The brighter half of the
+ * crown stands towards the sun, and a crown whose top is much brighter than its foot is lit from
+ * higher. The figure is coarse by nature: one flat picture cannot say more than which side is lit.
+ */
+function crownLight(
+	lab: Float32Array,
+	crown: Uint8Array,
+	width: number,
+	box: Box,
+	start: number,
+): { readonly azimuth: number; readonly rise: number } | null {
+	const column = (box.left + box.right) / 2;
+	let left = 0;
+	let leftCount = 0;
+	let right = 0;
+	let rightCount = 0;
+	let top = 0;
+	let topCount = 0;
+	let foot = 0;
+	let footCount = 0;
+	const band = Math.max(1, Math.round((start - box.top + 1) / 3));
+	for (let y = box.top; y <= start; y++)
+		for (let x = box.left; x <= box.right; x++) {
+			const at = y * width + x;
+			if (crown[at] !== 1) continue;
+			const shade = lab[at * 3] as number;
+			if (x < column) {
+				left += shade;
+				leftCount++;
+			} else {
+				right += shade;
+				rightCount++;
+			}
+			if (y < box.top + band) {
+				top += shade;
+				topCount++;
+			} else if (y > start - band) {
+				foot += shade;
+				footCount++;
+			}
+		}
+	if (leftCount === 0 || rightCount === 0) return null;
+	// How much brighter one side is, against the difference a full turn of the light would give.
+	const side = right / rightCount - left / leftCount;
+	const azimuth = Number((60 * Math.max(-1, Math.min(1, side / 18))).toFixed(1));
+	const high = topCount > 0 && footCount > 0 ? top / topCount - foot / footCount : 0;
+	// A crown lit from overhead shows a bright top over a dark foot; one lit from the side shows less.
+	const rise = Number((35 + 20 * Math.max(-1, Math.min(1, high / 18))).toFixed(1));
+	return { azimuth, rise };
 }
 
 /** A picture of a mask beside its picture: the picture with the background dimmed to grey. */

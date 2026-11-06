@@ -54,6 +54,11 @@ const SIZE = QUERY.size ?? SPEC.size;
 const FOV = QUERY.fov ?? SPEC.fov;
 const BACKGROUND = QUERY.background ?? SPEC.background;
 const SUN = QUERY.sun ?? SPEC.sun;
+/** The reference's own light as [radians to the camera's right, degrees above the horizon], or null. */
+const REFERENCE_LIGHT: [number, number] | null =
+	QUERY.sunAzimuth !== undefined && QUERY.sunRise !== undefined
+		? [(QUERY.sunAzimuth * Math.PI) / 180, QUERY.sunRise]
+		: null;
 const MATTE = VIEW === 'silhouette' || QUERY.matte === true;
 /**
  * The level forced at every distance: the query's, or the nearest for a view of the wood alone,
@@ -712,14 +717,18 @@ export default defineSketch(async (ctx) => {
 			// depth, and a little light from below for the undersides.
 			scene.createAmbientLight({ intensity: 0.6 });
 			scene.createHemisphereLight({ skyColor: '#dfe8f0', groundColor: '#7f8166', intensity: 1.7 });
+			// The reference's own light when it gave one: the sun stands that far to the camera's
+			// right and that high, so the crown is lit and shadowed as its reference's is.
 			const direction: V3 =
-				SUN === 'low'
-					? sunFrom(turn0 + 0.7, 12)
-					: SUN === 'back'
-						? sunFrom(turn0 + Math.PI, 35)
-						: SUN === 'overhead'
-							? [0.02, -1, 0.01]
-							: [-0.45, -1, -0.35];
+				REFERENCE_LIGHT !== null
+					? sunFrom(turn0 + REFERENCE_LIGHT[0], REFERENCE_LIGHT[1])
+					: SUN === 'low'
+						? sunFrom(turn0 + 0.7, 12)
+						: SUN === 'back'
+							? sunFrom(turn0 + Math.PI, 35)
+							: SUN === 'overhead'
+								? [0.02, -1, 0.01]
+								: [-0.45, -1, -0.35];
 			scene.createDirectionalLight({ direction, intensity: 1.9, castShadows: true, shadow });
 			scene.createDirectionalLight({ direction: [0.35, 1, 0.3], intensity: 0.45 });
 		}

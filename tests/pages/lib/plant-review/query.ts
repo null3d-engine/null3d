@@ -46,6 +46,12 @@ export interface PlantReviewQuery {
 	readonly sky?: string;
 	/** The meadow's colour, as sRGB hex, in place of the background's own. */
 	readonly ground?: string;
+	/**
+	 * Where the light stands, in degrees: how far to the camera's right, and how high above the
+	 * horizon. A reference picture's own light, so a render is lit as its reference is.
+	 */
+	readonly sunAzimuth?: number;
+	readonly sunRise?: number;
 	/** The wind's strength: 0 still, 1 the default field, up to 3. */
 	readonly wind?: number;
 	/** Seconds on the wind clock. The runner holds the frame at this sketch time. */
@@ -124,6 +130,8 @@ const NUMBER_FIELDS = [
 	'turns',
 	'step',
 	'columns',
+	'sunAzimuth',
+	'sunRise',
 ] as const;
 
 /** The fields that are shares of the frame, which must lie from 0 to 1. */
