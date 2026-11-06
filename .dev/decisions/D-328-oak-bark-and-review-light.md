@@ -6,11 +6,11 @@ oak's Mac picture references carry it. The round-7 review is pending. Task: none
 
 Summary: the oak's bark carried a 4.5 brightness multiplier that offset the review's dim daylight.
 It drove every sunlit limb to near-white. Removing it and lighting the two bark close-ups from the
-camera takes the bark texture pair from 11.7 to 6.0 color steps and the winter wood from 20.7 to 3.8,
-at base `99b001ae8`. The bark tile's middle matches its source to 0.3 of a step. The close-ups now
-average nine patches, and the fixed trunk view reads 5.96 at the old base and 5.93 at the merged
-base, so the figure follows the material rather than the framed window. Lichen now sits in separate
-sage patches, and the young-bark tile covers thin wood at its own scale.
+camera takes the bark texture pair from 11.7 to 4.8 color steps by the middle-third measure, and the
+winter wood from 20.7 to 3.8. The bark tile's middle matches its source to 0.3 of a step. The
+close-ups now average nine patches, and the fixed trunk view reads 5.96 at the old base and 5.93 at
+the merged base, so the figure follows the material rather than the framed window. Lichen now sits
+in separate sage patches, and the young-bark tile covers thin wood at its own scale.
 
 ## Question
 
@@ -141,9 +141,10 @@ the merged base for the fixed trunk view. The young view's sample changed with t
 limb against another background), so its two figures do not compare one sample. The materials are
 unchanged, and their albedos match their sources.
 
-The row 8 evidence is the close-ups and the winter skeleton. At the merged base they read 5.93, 1.06
-and 4.68. The winter skeleton's wood had a median lightness of 45.9 against the reference's 43.3 at
-the previous base. Its blue-yellow axis read 7.0 against 14.2, so the wood is a little cool.
+The row 8 evidence is the close-ups and the winter skeleton. At the merged base the close-ups read
+5.93 and 1.06 by the patch measure, and the winter wood reads 4.68 by the bark measure. The winter
+skeleton's wood had a median lightness of 45.9 against the reference's 43.3 at the previous base.
+Its blue-yellow axis read 7.0 against 14.2, so the wood is a little cool.
 
 ## Decision
 
