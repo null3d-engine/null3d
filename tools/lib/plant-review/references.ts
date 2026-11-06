@@ -165,7 +165,8 @@ const SLOT_BY_NUMBER: Readonly<Record<number, SlotRule>> = {
 	6: { view: 'inside', framed: false },
 	7: { view: 'junction', framed: false },
 	8: { view: 'fork', framed: false },
-	9: { view: 'fork', query: { distance: 2.5 }, framed: false },
+	// Secondary branching: the outer twig system of a limb, not the bole's own fork beside it.
+	9: { view: 'twigs', query: { distance: 1.3 }, framed: false },
 	10: { view: 'twigs', framed: false },
 	11: { view: 'cluster', background: 'white', framed: false },
 	12: { view: 'leaf-upper', framed: false },

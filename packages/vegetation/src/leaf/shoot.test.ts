@@ -261,7 +261,8 @@ describe('the shoot prototypes', () => {
 		const tipAlong = Math.max(...plan.leaves.map((leaf) => leaf.along));
 		const tip = plan.leaves.filter((leaf) => leaf.along > tipAlong * 0.75);
 		expect(tip.length).toBeGreaterThanOrEqual(5);
-		// Every tip leaf's turn round the first one's stem axis: a rosette fills the whole turn.
+		// Every tip leaf's turn round one stem axis. A rosette fills the turn: no two leaves share an
+		// angle, and no gap stands half a turn empty as a fan's does.
 		const frame = tip[0] as PlannedLeaf;
 		const side = normalize3(cross3(frame.stem, frame.sky, [0, 0, 0]));
 		const angles = tip
@@ -272,10 +273,15 @@ describe('the shoot prototypes', () => {
 				return (Math.atan2(y, x) * 180) / Math.PI;
 			})
 			.sort((a, b) => a - b);
-		let widest = (angles[0] as number) + 360 - (angles[angles.length - 1] as number);
-		for (let k = 1; k < angles.length; k++)
-			widest = Math.max(widest, (angles[k] as number) - (angles[k - 1] as number));
-		expect(widest).toBeLessThan(120);
+		const even = 360 / tip.length;
+		for (let k = 0; k < angles.length; k++) {
+			const gap =
+				k === 0
+					? (angles[0] as number) + 360 - (angles[angles.length - 1] as number)
+					: (angles[k] as number) - (angles[k - 1] as number);
+			expect(gap).toBeGreaterThan(even * 0.5);
+			expect(gap).toBeLessThan(even * 1.5);
+		}
 	});
 
 	it('turns leaves to face the sky side', () => {

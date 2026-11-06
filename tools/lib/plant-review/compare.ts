@@ -1056,16 +1056,29 @@ export interface StillResult extends PairMetrics {
 	readonly error?: string;
 }
 
-/** The mean CIELAB colour of a picture's middle third each way. */
-function middleLab(image: Rgba): number[] {
+/**
+ * The mean CIELAB colour of nine patches spread across a picture. Each patch is a fifth of the
+ * picture a side, centred at a fifth, a half and four fifths each way, so the patches do not overlap
+ * and together they cover different phases of a bark tile. Averaging them measures the material
+ * rather than the one window the camera happens to frame.
+ */
+export function patchLab(image: Rgba): number[] {
 	const lab = labImage(image);
 	const sum = [0, 0, 0];
 	let n = 0;
-	for (let y = Math.floor(image.height / 3); y < Math.floor((image.height * 2) / 3); y++)
-		for (let x = Math.floor(image.width / 3); x < Math.floor((image.width * 2) / 3); x++) {
-			const at = (y * image.width + x) * 3;
-			for (let c = 0; c < 3; c++) sum[c] = (sum[c] as number) + (lab[at + c] as number);
-			n++;
+	const share = 0.2;
+	for (const fy of [0.2, 0.5, 0.8])
+		for (const fx of [0.2, 0.5, 0.8]) {
+			const x0 = Math.round((fx - share / 2) * image.width);
+			const x1 = Math.round((fx + share / 2) * image.width);
+			const y0 = Math.round((fy - share / 2) * image.height);
+			const y1 = Math.round((fy + share / 2) * image.height);
+			for (let y = y0; y < y1; y++)
+				for (let x = x0; x < x1; x++) {
+					const at = (y * image.width + x) * 3;
+					for (let c = 0; c < 3; c++) sum[c] = (sum[c] as number) + (lab[at + c] as number);
+					n++;
+				}
 		}
 	return sum.map((v) => v / Math.max(1, n));
 }
@@ -1125,7 +1138,7 @@ export function compareStills(
 		const pair = pairMetrics(masked ? refSide : { ...refSide, normal: undefined }, render);
 		const bark = slot.kind === 'texture' && !slot.view.startsWith('leaf');
 		const surfaceDeltaE = bark
-			? Number(deltaE2000(middleLab(refImage), middleLab(render.image)).toFixed(2))
+			? Number(deltaE2000(patchLab(refImage), patchLab(render.image)).toFixed(2))
 			: null;
 		const edges = Number(
 			edgeDifference(edgeProfile(refImage), edgeProfile(render.image)).toFixed(3),

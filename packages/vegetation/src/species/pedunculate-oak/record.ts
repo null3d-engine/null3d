@@ -79,7 +79,7 @@ export const record: Species = {
 				share: 0.3,
 				years: 1,
 				length: { mean: 0.14, spread: 0.02 },
-				nodes: { mean: 6, spread: 0.5 },
+				nodes: { mean: 8, spread: 0.5 },
 				internode: ROSETTE,
 				leafScale: [
 					[0, 0.85],
@@ -169,7 +169,7 @@ export const record: Species = {
 			optics: {
 				reflectance: [0.0429, 0.0864, 0.0194],
 				reflectanceBack: [0.2344, 0.2975, 0.232],
-				transmittance: [0.07, 0.15, 0.015],
+				transmittance: [0.091, 0.195, 0.0195],
 				roughness: [0.45, 0.6],
 			},
 		},
@@ -189,14 +189,14 @@ export const record: Species = {
 	},
 	base: {
 		flare: { amount: 0.7, height: 0.6 },
-		buttress: { lobes: { mean: 6, spread: 1 }, amount: 0.55, sharpness: 3, height: 0.8 },
+		buttress: { lobes: { mean: 6, spread: 1 }, amount: 0.85, sharpness: 3, height: 1.6 },
 		roots: {
 			count: { mean: 6, spread: 1 },
-			length: { mean: 0.8, spread: 0.3 },
+			length: { mean: 1.2, spread: 0.3 },
 			radius: 0.22,
 			dive: 0.25,
 		},
-		flutes: { count: { mean: 9, spread: 2 }, depth: 0.04, height: 1.6 },
+		flutes: { count: { mean: 7, spread: 1 }, depth: 0.28, height: 2.2 },
 	},
 	extras: [
 		{
@@ -205,19 +205,20 @@ export const record: Species = {
 			// top third, ending in a small point.
 			kind: 'fruit',
 			at: 'shoot-tip',
-			share: 0.24,
+			share: 0.12,
+			count: { mean: 2, spread: 1 },
 			seasons: ['summer', 'autumn'],
 			shape: {
 				lathe: [
 					[0.0015, 0],
 					[0.0015, 0.07],
-					[0.0048, 0.078],
-					[0.01, 0.084],
-					[0.0106, 0.087],
-					[0.0086, 0.089],
-					[0.0098, 0.096],
-					[0.0078, 0.104],
-					[0.0034, 0.1095],
+					[0.0052, 0.078],
+					[0.0109, 0.084],
+					[0.0116, 0.087],
+					[0.0094, 0.089],
+					[0.0107, 0.096],
+					[0.0085, 0.104],
+					[0.0037, 0.1095],
 					[0, 0.1115],
 				],
 				scales: 3,
