@@ -559,7 +559,9 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 						direction: lateral,
 						sky,
 						order: start.order + 1,
-						units: start.units - unit - 1,
+						// A lateral puts out at least one unit, so it ends in a bud cluster as the
+						// reference's do: an older unit's laterals would otherwise draw nothing at all.
+						units: Math.max(1, start.units - unit - 1),
 						unitLength: start.unitLength * (0.6 + 0.25 * draw(Purpose.Laterals, axis, k + 16)),
 						radius: Math.max(tipRadius, (points[points.length - 1] as AxisPoint).radius * 0.75),
 						along,
