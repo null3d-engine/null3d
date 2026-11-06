@@ -141,7 +141,7 @@ export const record: Species = {
 		years: 3,
 		leafYears: 1,
 		stem: { radius: [0.0035, 0.0025], zigzag: 20 },
-		bud: { length: 0.016, width: 0.006, tipCluster: 1, colour: [0.3, 0.17, 0.08] },
+		bud: { length: 0.022, width: 0.007, tipCluster: 1, colour: [0.32, 0.18, 0.08] },
 		placement: {
 			perMetre: [
 				[0, 2],
@@ -187,7 +187,7 @@ export const record: Species = {
 		],
 		displacement: 0.006,
 		// Still 7: the wrinkles gather in the armpit of a limb's joint.
-		collar: { swell: 0.35, length: 1.6, ridge: 0.6 },
+		collar: { swell: 0.45, length: 1.8, ridge: 0.7 },
 		moss: { amount: 0.8, up: 2.5, north: 0.25, colour: [0.18, 0.3, 0.12] },
 		lichen: { amount: 0.4, from: 0, colour: [0.32, 0.42, 0.28] },
 		// The pale eyes along the bole where shed branches were, as stills 7 and 17 show.
