@@ -38,6 +38,8 @@ const TROPISM_LIMIT = 30;
 const ORDER_BITS = 10;
 /** The clump field's value below which a patch stands bare, so even a twig's tip there keeps no rosette. */
 const BARE_PATCH = 0.5;
+/** The share of the shade line below which even a twig's tip is a starved twig and bears nothing. */
+const SHADE_TIP = 0.5;
 
 /** Purposes of the instancer's hash keys, so no two draws share one. */
 const Purpose = {
@@ -250,6 +252,7 @@ export function placeShoots(input: DressInput): ShootRows {
 	const angle = radians(lateralAngle(record));
 	const tropism = radians(tropismTurn(record));
 	const skyward = Math.min(1, Math.max(0, shoots.placement.skyward));
+	const prune = Math.min(1, Math.max(0, shoots.placement.shadePrune));
 	const coarse = (input.coarseness ?? 0) > 0;
 	const thinning = rowThinning(input.coarseness ?? 0);
 	const bare =
@@ -294,7 +297,7 @@ export function placeShoots(input: DressInput): ShootRows {
 		// A bud at its axis's tip is the end of a branch, in the open sky the shade-prune line reads as
 		// darkness inside the crown: it keeps its shoot, so no bare tip stands past the leaves.
 		const atTip = host >= 0 && (skeleton.axes.last[host] as number) === node;
-		if (!atTip && (buds.light[b] as number) < shoots.placement.shadePrune) continue;
+		if (!atTip && (buds.light[b] as number) < prune) continue;
 		const vigor = buds.vigor[b] as number;
 		// The stretch this bud serves: back to the bud before it on its axis, or to its node's parent.
 		const parentNode = skeleton.parent[node] as number;
@@ -364,7 +367,10 @@ export function placeShoots(input: DressInput): ShootRows {
 		// end bears leaves at the tip, so no bare spray stands past the crown's leaves. A patch the
 		// clump field leaves bare keeps no rosette either, so a gap stands open between the masses
 		// rather than closing on a rosette at every twig in it.
-		const keep = (kind === BUD_TERMINAL || atTip) && patch > BARE_PATCH;
+		// A tip buried in the crown is a twig that starved: it bears nothing, so the limbs between
+		// the foliage show instead of a rosette standing on every twig in the crown's whole volume.
+		const lit = (buds.light[b] as number) >= prune * SHADE_TIP;
+		const keep = (kind === BUD_TERMINAL || atTip) && lit && patch > BARE_PATCH;
 		const count = Math.max(keep ? 1 : 0, Math.floor(expected + draw(Purpose.Count, b)));
 		if (count === 0) continue;
 		// The axis's direction at the bud.
