@@ -6,6 +6,7 @@
 import { runTask, type Task } from '@null3d/engine';
 import type { PlantAsset, PlantPart, SpeciesKitData } from './asset';
 import { cachedResult, memoryCache, type PlantByteCache } from './core/cache';
+import { formRecord } from './core/forms';
 import { type GrowOptions, type KitOptions, type KitSource, kitKey, variantKey } from './generate';
 import type { PlantTaskInput } from './generate-task';
 import type { FarPlant } from './lod/impostor';
@@ -50,10 +51,10 @@ function runStage<T>(input: PlantTaskInput): Promise<T> {
 
 /**
  * Builds a species' kit in a job worker: its leaf meshes, shoot prototypes, card atlas and records
- * header.
+ * header, from the record of the form the options name, or from the record as it stands.
  *
  * @param source The species' record and texture manifest, such as its module.
- * @param options The tier, whether every stage grows its stand-in, and the store of
+ * @param options The tier, whether every stage grows its stand-in, the form, and the store of
  *   bytes that keeps the kit across visits.
  * @returns The kit.
  * @category api/vegetation
@@ -61,7 +62,9 @@ function runStage<T>(input: PlantTaskInput): Promise<T> {
 export function buildKit(source: KitSource, options: PageKitOptions = {}): Promise<SpeciesKitData> {
 	const { cache, ...kitOptions } = options;
 	const manifest = source.textures.manifest;
-	const key = `kit:${kitKey(source.record, manifest, kitOptions.detail ?? 'high')}${standIns(kitOptions)}`;
+	// The key holds the record the kit grows from, so each form keeps a kit of its own.
+	const record = formRecord(source.record, kitOptions.form);
+	const key = `kit:${kitKey(record, manifest, kitOptions.detail ?? 'high')}${standIns(kitOptions)}`;
 	return cachedResult(key, visit, cache, () =>
 		runStage({
 			stage: 'kit',

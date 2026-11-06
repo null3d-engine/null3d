@@ -24,6 +24,16 @@ export const TEXTURE_UV_STEPS = 65535;
 const TOP = 65535;
 
 /**
+ * Steps of a position's rest below one step of the species box, on each axis, which a part of
+ * small shapes keeps in its texture coordinates. A tree's box steps are near a millimetre, a tenth
+ * of a fruit's radius, so a fruit drawn on them alone crumples up close; the rest holds each point
+ * to a 255th of a step.
+ *
+ * @category api/vegetation
+ */
+export const REST_STEPS = 255;
+
+/**
  * The most vertices of one part, so its indices fit 16 bits.
  *
  * @category api/vegetation
@@ -84,14 +94,17 @@ export function splitMesh(arrays: MeshArrays): MeshArrays[] {
  * @param arrays The mesh's floats.
  * @param box The species box.
  * @param uvSteps Steps per unit of the mesh's UVs: `WOOD_UV_STEPS` or `TEXTURE_UV_STEPS`.
+ * @param rest Whether the texture coordinates hold each position's rest below one box step, as
+ *   `quantise` writes it, in place of the mesh's own.
  * @returns The quantised pieces, in order.
  */
 export function quantiseParts(
 	arrays: MeshArrays,
 	box: SpeciesBox,
 	uvSteps: number,
+	rest = false,
 ): QuantisedArrays[] {
-	return splitMesh(arrays).map((piece) => quantise(piece, box, uvSteps));
+	return splitMesh(arrays).map((piece) => quantise(piece, box, uvSteps, rest));
 }
 
 /**
@@ -99,12 +112,23 @@ export function quantiseParts(
  * each axis; normals take 127 steps a side; `uvs` take `uvSteps` steps a unit and `uvs1` 65,535,
  * each held within 16 bits; colours and indices are copied.
  *
+ * A part that draws no texture may keep each position's rest instead of its texture coordinates:
+ * the rest below one step on each axis, from half a step under to half a step over, in
+ * `REST_STEPS` steps, with x in the first number's high byte, y in its low byte and z in the second
+ * number's high byte.
+ *
  * @param arrays The part's floats.
  * @param box The species box.
  * @param uvSteps Steps per unit of the part's UVs: `WOOD_UV_STEPS` or `TEXTURE_UV_STEPS`.
+ * @param rest Whether the texture coordinates hold each position's rest.
  * @returns The quantised arrays.
  */
-export function quantise(arrays: MeshArrays, box: SpeciesBox, uvSteps: number): QuantisedArrays {
+export function quantise(
+	arrays: MeshArrays,
+	box: SpeciesBox,
+	uvSteps: number,
+	rest = false,
+): QuantisedArrays {
 	const count = arrays.positions.length / 3;
 	const positions = new Uint16Array(count * 3);
 	const normals = new Int8Array(count * 3);
@@ -120,17 +144,25 @@ export function quantise(arrays: MeshArrays, box: SpeciesBox, uvSteps: number): 
 	const normal = arrays.normals;
 	for (let i = 0; i < count; i++) {
 		const at = i * 3;
-		positions[at] = clampStep(((source[at] as number) - low0) * scale0, TOP);
-		positions[at + 1] = clampStep(((source[at + 1] as number) - low1) * scale1, TOP);
-		positions[at + 2] = clampStep(((source[at + 2] as number) - low2) * scale2, TOP);
+		const x = ((source[at] as number) - low0) * scale0;
+		const y = ((source[at + 1] as number) - low1) * scale1;
+		const z = ((source[at + 2] as number) - low2) * scale2;
+		positions[at] = clampStep(x, TOP);
+		positions[at + 1] = clampStep(y, TOP);
+		positions[at + 2] = clampStep(z, TOP);
 		normals[at] = clampSigned((normal[at] as number) * 127);
 		normals[at + 1] = clampSigned((normal[at + 1] as number) * 127);
 		normals[at + 2] = clampSigned((normal[at + 2] as number) * 127);
+		if (rest) {
+			uvs[i * 2] =
+				restStep(x, positions[at] as number) * 256 + restStep(y, positions[at + 1] as number);
+			uvs[i * 2 + 1] = restStep(z, positions[at + 2] as number) * 256;
+		}
 	}
 	const uv = arrays.uvs;
 	const uv1 = arrays.uvs1;
 	for (let i = 0; i < count * 2; i++) {
-		uvs[i] = clampStep((uv[i] as number) * uvSteps, TOP);
+		if (!rest) uvs[i] = clampStep((uv[i] as number) * uvSteps, TOP);
 		uvs1[i] = clampStep((uv1[i] as number) * TEXTURE_UV_STEPS, TOP);
 	}
 	return {
@@ -149,6 +181,11 @@ function clampStep(value: number, top: number): number {
 	return step < 0 ? 0 : step > top ? top : step;
 }
 
+/** The rest of a position in steps past the step it was rounded to, in `REST_STEPS` steps. */
+function restStep(exact: number, step: number): number {
+	return clampStep((exact - step + 0.5) * REST_STEPS, REST_STEPS);
+}
+
 /** A value rounded to a whole step from −127 to 127. */
 function clampSigned(value: number): number {
 	const step = Math.round(value);
@@ -162,6 +199,7 @@ function clampSigned(value: number): number {
  * @param index The vertex.
  * @param box The species box.
  * @param out The point to write.
+ * @param uvs The part's texture coordinates, when they hold each position's rest.
  * @returns `out`.
  */
 export function dequantisePosition(
@@ -169,10 +207,16 @@ export function dequantisePosition(
 	index: number,
 	box: SpeciesBox,
 	out: [number, number, number],
+	uvs?: Uint16Array,
 ): [number, number, number] {
+	const first = uvs ? (uvs[index * 2] as number) : 0;
+	const second = uvs ? (uvs[index * 2 + 1] as number) : 0;
+	const rests = [first >> 8, first & 255, second >> 8];
 	for (let k = 0; k < 3; k++) {
 		const low = box.min[k] as number;
-		out[k] = low + ((positions[index * 3 + k] as number) / TOP) * ((box.max[k] as number) - low);
+		const rest = uvs ? (rests[k] as number) / REST_STEPS - 0.5 : 0;
+		out[k] =
+			low + (((positions[index * 3 + k] as number) + rest) / TOP) * ((box.max[k] as number) - low);
 	}
 	return out;
 }

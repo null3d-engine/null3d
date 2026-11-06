@@ -11,6 +11,7 @@ import type { Rgb } from '../core/types';
 import { DEFAULT_WIND_SWAY, VARIANT_RECORDS, WIND_RECORD_FLOATS } from '../wind/records';
 import {
 	BARK_ZONE_TEXELS,
+	EXTRA_ROUGHNESS,
 	faceTerms,
 	HEADER,
 	HEADER_ROWS,
@@ -130,6 +131,40 @@ describe('the species header', () => {
 		expect(written[1]).toBeCloseTo(sway?.frequency as number, 6);
 	});
 
+	test("writes each extra's body and band colour with their roughness", () => {
+		const lathe: [number, number][] = [
+			[0.005, 0],
+			[0.007, 0.007],
+			[0, 0.02],
+		];
+		const acorn = {
+			kind: 'fruit' as const,
+			at: 'shoot-tip' as const,
+			share: 0.05,
+			seasons: ['summer' as const],
+			shape: { lathe, scaled: [0, 0.007] as [number, number] },
+			colour: [0.24, 0.1, 0.03] as Rgb,
+			hang: 180,
+		};
+		const fruiting: Species = {
+			...record,
+			extras: [
+				{ ...acorn, bandColour: [0.3, 0.23, 0.15], roughness: [0.35, 0.85] },
+				{ ...acorn, colour: [0.5, 0.4, 0.1] },
+			],
+		};
+		const written = speciesHeader(fruiting, manifest, speciesBox(fruiting));
+		const near = (a: readonly number[], b: readonly number[]) => {
+			for (const [k, v] of a.entries()) expect(v).toBeCloseTo(b[k] as number, 6);
+		};
+		near(texel(written, HEADER.extras), [0.24, 0.1, 0.03, 0.35]);
+		near(texel(written, HEADER.extraBands), [0.3, 0.23, 0.15, 0.85]);
+		// An extra without a band takes its own colour there, and the default roughness on both.
+		near(texel(written, HEADER.extras + 1), [0.5, 0.4, 0.1, EXTRA_ROUGHNESS]);
+		near(texel(written, HEADER.extraBands + 1), [0.5, 0.4, 0.1, EXTRA_ROUGHNESS]);
+		expect(HEADER.extraBands + MAX_EXTRAS).toBeLessThanOrEqual(RECORDS_WIDTH);
+	});
+
 	test('gives a species that names no sway the stated default', () => {
 		// A missing sway must never leave the plant still.
 		const bare: Species = { ...record, wind: { ...record.wind, sway: undefined } };
@@ -213,6 +248,7 @@ describe('the plant shader', () => {
 			HEADER_LICHEN: HEADER.lichen,
 			HEADER_LICHEN_REACH: HEADER.lichenReach,
 			HEADER_SWAY: HEADER.sway,
+			HEADER_EXTRA_BANDS: HEADER.extraBands,
 			BARK_ZONE_TEXELS,
 			MAX_BARK_ZONES,
 			MAX_EXTRAS,
@@ -221,6 +257,29 @@ describe('the plant shader', () => {
 		};
 		for (const [name, value] of Object.entries(names))
 			expect([name, constant(name)]).toEqual([name, value]);
+	});
+
+	test("reads an extra's positions as fractions of the box, as the plant geometry gives them", () => {
+		// The engine adds the shader's offset to the position it reads, in 32-bit floats. A whole
+		// step count runs to 65,535, where a float's steps are millimetres; a fraction of the box
+		// keeps the sum to micrometres, which a fruit a centimetre across needs.
+		const material = readFileSync(new URL('./material.ts', import.meta.url), 'utf8');
+		expect(material).toContain(
+			'positions: fraction ? { array: arrays.positions, normalized: true } : arrays.positions,',
+		);
+		const placed = readFileSync(new URL('./static-shoots.ts', import.meta.url), 'utf8');
+		expect(placed).toContain("plantGeometry(ctx, part.arrays, part.name === 'extras')");
+		expect(wgsl).toContain('return low + p * span;');
+		expect(wgsl).toContain(
+			'plant = box_fraction(input.position + position_rest(input.uv) / POSITION_STEPS);',
+		);
+		const steps = Math.fround(39800);
+		const metres = Math.fround(6.1 + 0.0071);
+		const asSteps = Math.fround(steps + Math.fround(metres - steps));
+		const fraction = Math.fround(39800 / 65535);
+		const asFraction = Math.fround(fraction + Math.fround(metres - fraction));
+		expect(Math.abs(asSteps - metres)).toBeGreaterThan(0.0005);
+		expect(Math.abs(asFraction - metres)).toBeLessThan(0.000005);
 	});
 
 	test('declares six textures and fits its uniforms beside them', () => {

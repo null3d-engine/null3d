@@ -5,10 +5,13 @@ import { describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { SpeciesKitData } from '../asset';
 import { placeholderSkeleton } from '../core/placeholder';
-import type { TextureManifest } from '../core/textures';
+import { standInSpecies } from '../core/stand-in';
+import { STAND_IN_BARK, type TextureManifest } from '../core/textures';
+import type { Rgb } from '../core/types';
 import { placeShoots } from '../leaf/instancer';
 import { OAK_MANIFEST, oakRecord, testKit } from '../leaf/oak.test-support';
-import { bakeCards } from './card-bake';
+import { record as oak } from '../species/pedunculate-oak/record';
+import { bakeCards, paletteOf } from './card-bake';
 import { cardKeep, cardMesh } from './cards';
 
 /** sRGB byte to linear. */
@@ -143,6 +146,31 @@ describe('the card bake', () => {
 					Math.abs((here.colour[c] as number) - (top.colour[c] as number)) / bright,
 				).toBeLessThan(0.03);
 		}
+	});
+
+	it("bakes stems in the young bark's mean, else in a stand-in's own colour", () => {
+		const tint = oak.bark?.zones[0]?.tint as readonly [number, number, number];
+		expect(tint).toBeDefined();
+		const young = { tile: [0.2, 0.2] as const, mean: [0.3, 0.25, 0.2] as const };
+		const layer = { name: 'trunk', tile: [0.5, 0.5] as const, mean: [0.25, 0.22, 0.18] as const };
+		const barked = {
+			...OAK_MANIFEST,
+			bark: { size: 1024, layers: [{ ...layer, height: { offset: 0, depth: 0 } }], young },
+		} as TextureManifest;
+		expect(paletteOf(oak, barked).stem).toEqual([0.3, 0.25, 0.2]);
+		// A stand-in species measures no bark and gives its colour in its tint, which its far cards
+		// keep; with neither a measured bark nor a tint, the stand-in colour stands.
+		const bare = { ...OAK_MANIFEST, bark: undefined } as TextureManifest;
+		const standIn = standInSpecies('bark-colour-test').record;
+		expect(paletteOf(standIn, bare).stem).toEqual(standIn.bark?.zones[0]?.tint as Rgb);
+		const plain = {
+			...oak,
+			bark: {
+				...(oak.bark as NonNullable<typeof oak.bark>),
+				zones: [{ layer: 0, by: 'height' as const, from: 0, to: 40, blend: 0 }],
+			},
+		};
+		expect(paletteOf(plain, bare).stem).toEqual([...STAND_IN_BARK]);
 	});
 });
 

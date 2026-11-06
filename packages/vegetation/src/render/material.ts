@@ -229,11 +229,21 @@ export function setPlacedUniforms(
  *
  * @param ctx The sketch's context.
  * @param arrays The part's arrays.
+ * @param fraction Whether the shader reads the positions as fractions of the box rather than as
+ *   whole steps, as it reads the extras'.
  * @returns The mesh.
  */
-export function plantGeometry(ctx: SketchContext, arrays: QuantisedArrays): MeshGeometry {
+export function plantGeometry(
+	ctx: SketchContext,
+	arrays: QuantisedArrays,
+	fraction = false,
+): MeshGeometry {
 	return ctx.geometry.fromArrays({
-		positions: arrays.positions,
+		// The engine adds the shader's offset to the position it reads, in 32-bit floats. Read as
+		// fractions of the box, that position stays near 1 and the sum keeps a few micrometres;
+		// read as whole steps, it runs to 65,535 and the sum loses up to a few millimetres, which a
+		// fruit a centimetre across shows.
+		positions: fraction ? { array: arrays.positions, normalized: true } : arrays.positions,
 		normals: arrays.normals,
 		uvs: arrays.uvs,
 		uvs1: { array: arrays.uvs1, normalized: true },
@@ -268,7 +278,8 @@ export function prototypeGeometry(ctx: SketchContext, arrays: PrototypeArrays): 
 
 /**
  * The sphere around the species box, in metres, which an object that draws a quantised part gives
- * `setBounds`: the mesh's own sphere lies around the 16-bit steps, not the box.
+ * `setBounds`: the mesh's own sphere lies around the positions as the shader reads them, whole
+ * 16-bit steps or an extra's fractions of the box, not around the box in metres.
  *
  * @param box The species box.
  * @returns The sphere's center about the object's origin, and its radius, at scale 1.
@@ -287,7 +298,8 @@ export function plantBounds(box: SpeciesBox): { center: [number, number, number]
 
 /**
  * The radius about a copy's origin that holds the whole species box, which a batch of quantised
- * parts gives `setBoundingRadius`: the mesh's own sphere holds the 16-bit steps, not metres.
+ * parts gives `setBoundingRadius`: the mesh's own sphere holds the positions as the shader reads
+ * them, whole 16-bit steps or an extra's fractions of the box, not metres.
  *
  * @param box The species box.
  * @returns The radius in metres at scale 1.

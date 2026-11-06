@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
+import { speciesProblems } from '../core/check';
 import {
 	AXIS_STEM,
 	BUD_TERMINAL,
@@ -17,9 +18,12 @@ import {
 import { hashAt, hashBytes, unitAt } from '../core/hash';
 import type { Species } from '../core/record';
 import { curveAt, spreadAt } from '../core/types';
+import { species } from '../species/pedunculate-oak';
 import {
 	envelopeSilhouette,
 	envelopeVolume,
+	flooredVolume,
+	insetVolume,
 	silhouetteFrame,
 	silhouetteIoU,
 	skeletonSilhouette,
@@ -229,6 +233,224 @@ self.onmessage = () => {
 		}
 	});
 
+	it("gives the real oak's surface buds a share of the last resource by their site's light", () => {
+		const record = species.record;
+		const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
+		const dark: Species = {
+			...record,
+			growth: { ...growth, light: { ...growth.light, surface: undefined } },
+		};
+		const lit: Species = {
+			...record,
+			growth: { ...growth, light: { ...growth.light, surface: true } },
+		};
+		for (const variant of [0, 3]) {
+			const a = grow(variant, dark);
+			const b = grow(variant, lit);
+			// The wood grows the same: the share is given only once the last season has grown.
+			expect(Array.from(b.position)).toEqual(Array.from(a.position));
+			// The terminal buds the envelope stopped took no share before; they take one now.
+			const starved = (oak: MacroSkeleton) => {
+				let count = 0;
+				for (let k = 0; k < oak.buds.count; k++)
+					if (oak.buds.kind[k] === BUD_TERMINAL && (oak.buds.vigor[k] as number) === 0) count++;
+				return count;
+			};
+			expect(starved(a)).toBeGreaterThan(50);
+			expect(starved(b)).toBeLessThan(starved(a) * 0.2);
+		}
+	});
+
+	it("weighs the real oak's wood at its record's girth, so the drawn trunk width leaves the crown", () => {
+		const record = species.record;
+		const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
+		const drawn = (dbh: number, girth: number | undefined): Species => ({
+			...record,
+			size: { ...record.size, dbh },
+			growth: { ...growth, bending: { ...growth.bending, girth } },
+		});
+		const trunk = (oak: MacroSkeleton) => oak.radius[oak.axes.first[0] as number] as number;
+		for (const variant of [0, 1]) {
+			const slim = grow(variant, drawn(2, 3.5));
+			const stout = grow(variant, drawn(3, 3.5));
+			// The same wood, in the same place, drawn at two widths.
+			expect(slim.nodeCount).toBe(stout.nodeCount);
+			expect(slim.position).toEqual(stout.position);
+			expect(trunk(stout) / trunk(slim)).toBeGreaterThan(1.4);
+			// Weighed as drawn, the slimmer wood sags and the crown moves.
+			const loose = grow(variant, drawn(2, undefined));
+			let moved = 0;
+			for (let k = 0; k < slim.position.length; k++)
+				moved = Math.max(
+					moved,
+					Math.abs((loose.position[k] as number) - (slim.position[k] as number)),
+				);
+			expect(moved).toBeGreaterThan(0.1);
+		}
+	});
+
+	it("lets the real oak's shoots under its crown's base die back, and only those", () => {
+		const record = species.record;
+		const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
+		const lit: Species = {
+			...record,
+			growth: { ...growth, shedding: { ...growth.shedding, underCrown: undefined } },
+		};
+		const salt = record.seedSalt >>> 0;
+		for (const variant of [0, 2]) {
+			const height = spreadAt(record.size.height, unitAt(11, salt, variant, 1));
+			const turn = unitAt(11, salt, variant, 2) * 2 * Math.PI;
+			// The grower's own room: the envelope cut at the record's floor, then inset.
+			const base = insetVolume(
+				flooredVolume(
+					envelopeVolume(record.envelope as NonNullable<Species['envelope']>, height, turn),
+					(growth.floor ?? 0) * height,
+				),
+				shootReach(record),
+			).base;
+			// A bud site sits on its node's bark; the rule reads the node's own height.
+			const under = (oak: MacroSkeleton) => {
+				let count = 0;
+				for (let b = 0; b < oak.buds.count; b++)
+					if ((oak.position[(oak.buds.node[b] as number) * 3 + 1] as number) < base - 1e-6) count++;
+				return count;
+			};
+			const open = grow(variant, lit);
+			const shaded = grow(variant, record);
+			expect(under(open)).toBeGreaterThan(0);
+			expect(under(shaded)).toBe(0);
+			expect(shaded.buds.count).toBeLessThan(open.buds.count);
+			// The rule reads each bud's height as it grew, before the wood bends, and a bend can lift a
+			// bud that grew under the base above it but never lowers one under it: with the bend, the
+			// shaded crown loses at least the buds counted under the base.
+			expect(shaded.buds.count).toBeLessThanOrEqual(open.buds.count - under(open));
+			// Without the bend the heights do not move, so the shaded crown keeps exactly the buds that
+			// stood above the base.
+			const flat = (r: Species): Species => ({
+				...r,
+				growth: {
+					...(r.growth as typeof growth),
+					bending: { ...(r.growth as typeof growth).bending, strength: 0 },
+				},
+			});
+			const openFlat = grow(variant, flat(lit));
+			const shadedFlat = grow(variant, flat(record));
+			expect(shadedFlat.buds.count).toBe(openFlat.buds.count - under(openFlat));
+			// The stem keeps its whole length; the lighter load bends its top by under a millimetre.
+			const top = (oak: MacroSkeleton) =>
+				oak.position[(oak.axes.last[0] as number) * 3 + 1] as number;
+			expect(top(shaded)).toBeCloseTo(top(open), 3);
+		}
+	});
+
+	it("lays the real oak's bole straight from its foot to its division, and leaves the crown", () => {
+		const record = species.record;
+		const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
+		const divide = growth.divide as NonNullable<typeof growth.divide>;
+		const crooked: Species = {
+			...record,
+			growth: { ...growth, divide: { ...divide, plumb: undefined } },
+		};
+		for (const variant of [0, 1]) {
+			const grown = grow(variant, crooked);
+			const plumb = grow(variant, record);
+			// How far each node of a bole stands off the line from its foot to its division.
+			const offLine = (oak: MacroSkeleton) => {
+				const q = oak.position;
+				const a0 = oak.axes.first[0] as number;
+				const a1 = oak.axes.last[0] as number;
+				const f = [q[a0 * 3] as number, q[a0 * 3 + 1] as number, q[a0 * 3 + 2] as number];
+				const d = [0, 1, 2].map((k) => (q[a1 * 3 + k] as number) - (f[k] as number));
+				const length = Math.hypot(...d);
+				let most = 0;
+				for (let n = a0; n <= a1; n++) {
+					const v = [0, 1, 2].map((k) => (q[n * 3 + k] as number) - (f[k] as number));
+					const t = (v[0]! * d[0]! + v[1]! * d[1]! + v[2]! * d[2]!) / length;
+					most = Math.max(
+						most,
+						Math.hypot(...v.map((x, k) => x - ((d[k] as number) * t) / length)),
+					);
+				}
+				return most;
+			};
+			// The grown bole kinks off its line; the plumb one lies on it, leaning no more than the
+			// record allows.
+			expect(offLine(grown)).toBeGreaterThan(0.01);
+			expect(offLine(plumb)).toBeLessThan(1e-3);
+			const most = divide.plumb as number;
+			const lean = (oak: MacroSkeleton) => {
+				const q = oak.position;
+				const a0 = oak.axes.first[0] as number;
+				const a1 = oak.axes.last[0] as number;
+				const across = Math.hypot(
+					(q[a1 * 3] as number) - (q[a0 * 3] as number),
+					(q[a1 * 3 + 2] as number) - (q[a0 * 3 + 2] as number),
+				);
+				const rise = (q[a1 * 3 + 1] as number) - (q[a0 * 3 + 1] as number);
+				return (Math.atan2(across, rise) * 180) / Math.PI;
+			};
+			expect(lean(plumb)).toBeLessThan(most + 0.01);
+			// The crown is the division's own subtree, read from the division: it keeps its shape
+			// wherever the division stands. Where the division moves, the bare ends die back by their
+			// new light and the twigs bend a little differently under their new load, so each node is
+			// matched to the nearest of the other growth's and nearly all must lie within a centimetre:
+			// a limb that moved 5 cm, holding a quarter of the crown or more, would fail.
+			const crown = (oak: MacroSkeleton) => {
+				const top = oak.axes.last[0] as number;
+				const ox = oak.position[top * 3] as number;
+				const oy = oak.position[top * 3 + 1] as number;
+				const oz = oak.position[top * 3 + 2] as number;
+				const inside = new Uint8Array(oak.nodeCount);
+				inside[top] = 1;
+				const points: number[] = [];
+				for (let n = top; n < oak.nodeCount; n++) {
+					const q = oak.parent[n] as number;
+					if (n !== top && (q < top || !inside[q])) continue;
+					inside[n] = 1;
+					points.push(
+						(oak.position[n * 3] as number) - ox,
+						(oak.position[n * 3 + 1] as number) - oy,
+						(oak.position[n * 3 + 2] as number) - oz,
+					);
+				}
+				return points;
+			};
+			const a = crown(grown);
+			const b = crown(plumb);
+			expect(Math.abs(b.length - a.length)).toBeLessThan(a.length * 0.01);
+			const cell = (x: number, y: number, z: number) =>
+				`${Math.floor(x * 100)},${Math.floor(y * 100)},${Math.floor(z * 100)}`;
+			const cells = new Map<string, number[]>();
+			for (let i = 0; i < a.length; i += 3) {
+				const key = cell(a[i] as number, a[i + 1] as number, a[i + 2] as number);
+				const list = cells.get(key) ?? [];
+				list.push(i);
+				cells.set(key, list);
+			}
+			let matched = 0;
+			for (let i = 0; i < b.length; i += 3) {
+				const x = b[i] as number;
+				const y = b[i + 1] as number;
+				const z = b[i + 2] as number;
+				let found = false;
+				for (let dx = -1; dx <= 1 && !found; dx++)
+					for (let dy = -1; dy <= 1 && !found; dy++)
+						for (let dz = -1; dz <= 1 && !found; dz++)
+							for (const j of cells.get(cell(x + dx / 100, y + dy / 100, z + dz / 100)) ?? [])
+								if (
+									Math.hypot(
+										x - (a[j] as number),
+										y - (a[j + 1] as number),
+										z - (a[j + 2] as number),
+									) < 0.01
+								)
+									found = true;
+				if (found) matched++;
+			}
+			expect(matched).toBeGreaterThanOrEqual(0.95 * (b.length / 3));
+		}
+	});
+
 	it('grows one leader when λ is high and a spreading crown when it is low', () => {
 		const round = (lambda: number): Species => ({
 			...oakRecord,
@@ -264,5 +486,77 @@ self.onmessage = () => {
 		expect(excurrent.dominance).toBeGreaterThan(0.5);
 		expect(decurrent.reach).toBeLessThan(0.6);
 		expect(decurrent.dominance).toBeLessThan(0.2);
+	});
+
+	it("grows side axes only on the record's side orders, and on every order without them", () => {
+		const growth = oakRecord.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
+		const siding = (sideOrders?: number): Species => ({
+			...oakRecord,
+			growth: {
+				...growth,
+				buds: { ...growth.buds, ...(sideOrders !== undefined && { sideOrders }) },
+			},
+		});
+		// The orders of the axes that side axes leave.
+		const parents = (oak: MacroSkeleton) => {
+			const orders = new Set<number>();
+			for (let a = 0; a < oak.axes.count; a++) {
+				const parent = oak.axes.parent[a] as number;
+				if (parent >= 0) orders.add(oak.axes.order[parent] as number);
+			}
+			return orders;
+		};
+		const plain = grow(0, siding());
+		expect(digest(plain)).toBe(digest(grow(0)));
+		expect(parents(plain).has(1)).toBe(true);
+		// With one side order, only the stem puts out side axes: every limb runs out unbranched.
+		const stemOnly = grow(0, siding(1));
+		expect([...parents(stemOnly)]).toEqual([0]);
+		expect(stemOnly.axes.count).toBeGreaterThan(1);
+		// The record check holds the side orders from 1 to the macro orders, whole.
+		expect(speciesProblems(siding(1))).toEqual([]);
+		expect(speciesProblems(siding(growth.macroOrders))).toEqual([]);
+		for (const sideOrders of [0, 1.5, growth.macroOrders + 1])
+			expect(
+				speciesProblems(siding(sideOrders)).some((p) => p.startsWith('growth.buds.sideOrders')),
+			).toBe(true);
+	});
+
+	it("keeps the record's share of a stem's girth from node to node, and half without one", () => {
+		const growth = oakRecord.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
+		const keeping = (leader?: number): Species => ({
+			...oakRecord,
+			growth: {
+				...growth,
+				pipe: { ...growth.pipe, ...(leader !== undefined && { leader }) },
+			},
+		});
+		// The least share of its girth that the stem keeps from one node to the next, and the least
+		// that any other axis keeps.
+		const least = (oak: MacroSkeleton) => {
+			let stem = 1;
+			let other = 1;
+			for (let a = 0; a < oak.axes.count; a++)
+				for (let n = (oak.axes.first[a] as number) + 1; n <= (oak.axes.last[a] as number); n++) {
+					const share = (oak.radius[n] as number) / (oak.radius[n - 1] as number);
+					if (oak.axes.kind[a] === AXIS_STEM) stem = Math.min(stem, share);
+					else other = Math.min(other, share);
+				}
+			return { stem, other };
+		};
+		const plain = grow(0, keeping());
+		expect(digest(plain)).toBe(digest(grow(0)));
+		expect(least(plain).stem).toBeGreaterThanOrEqual(0.5 - 1e-6);
+		const leading = grow(0, keeping(0.85));
+		expect(least(leading).stem).toBeGreaterThanOrEqual(0.85 - 1e-6);
+		// Only the stem keeps the larger share; every other axis keeps half, as it grew.
+		expect(least(leading).other).toBeCloseTo(least(plain).other, 6);
+		// The record check holds the share from a half to the whole girth.
+		expect(speciesProblems(keeping(0.85))).toEqual([]);
+		expect(speciesProblems(keeping(1))).toEqual([]);
+		for (const leader of [0.4, 1.2, Number.NaN])
+			expect(speciesProblems(keeping(leader)).some((p) => p.startsWith('growth.pipe.leader'))).toBe(
+				true,
+			);
 	});
 });

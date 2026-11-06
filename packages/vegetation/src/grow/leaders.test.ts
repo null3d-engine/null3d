@@ -8,6 +8,7 @@ import {
 	AXIS_STEM,
 	BUD_LATERAL,
 	type MacroSkeleton,
+	NODE_FORK,
 	SkeletonBuilder,
 } from '../core/graph';
 import { loadPlantCode } from '../generate';
@@ -215,6 +216,33 @@ function stemFork(skeleton: MacroSkeleton): number {
 }
 
 /**
+ * Still 17's plumb bole: the steepest lean, in degrees, of any stem internode from the foot up to
+ * the bole's top, whatever height the crown's lowest shoot stands at. The bole ends at the stem's
+ * first fork, or where the leader divided into its great limbs if that is lower.
+ */
+function boleLean(skeleton: MacroSkeleton): number {
+	const { axes, position: p, flags } = skeleton;
+	const first = axes.first[0] as number;
+	const last = axes.last[0] as number;
+	let top = stemFork(skeleton);
+	for (let n = first + 1; n < top; n++)
+		if (((flags[n] as number) & NODE_FORK) !== 0) {
+			top = n;
+			break;
+		}
+	let most = 0;
+	for (let n = first; n < Math.min(top, last); n++) {
+		const rise = (p[(n + 1) * 3 + 1] as number) - (p[n * 3 + 1] as number);
+		const across = Math.hypot(
+			(p[(n + 1) * 3] as number) - (p[n * 3] as number),
+			(p[(n + 1) * 3 + 2] as number) - (p[n * 3 + 2] as number),
+		);
+		most = Math.max(most, (Math.atan2(across, rise) * 180) / Math.PI);
+	}
+	return most;
+}
+
+/**
  * The share of a fork's cross-section that the parent's own line carries on with past it: the
  * parent's next node, or its thickest other child there.
  */
@@ -389,17 +417,7 @@ describe('sympodial leaders', () => {
 			// crown's upper limbs zigzagging by as much while the thick wood below sweeps round in
 			// long, smooth curves. A joint past that limit is an elbow, which draws as a mitred pipe.
 			expect(sharpest(led, 0, fork + 1)).toBeLessThan(35);
-			// The bole stands plumb below the crown: no internode leans more than a few degrees.
-			const bole = led.position;
-			for (let n = led.axes.first[0] as number; n < (led.axes.last[0] as number); n++) {
-				if ((bole[n * 3 + 1] as number) >= led.crownBase) break;
-				const rise = (bole[(n + 1) * 3 + 1] as number) - (bole[n * 3 + 1] as number);
-				const across = Math.hypot(
-					(bole[(n + 1) * 3] as number) - (bole[n * 3] as number),
-					(bole[(n + 1) * 3 + 2] as number) - (bole[n * 3 + 2] as number),
-				);
-				expect((Math.atan2(across, rise) * 180) / Math.PI).toBeLessThan(5);
-			}
+			expect(boleLean(led)).toBeLessThan(5);
 			expect(cones(led)).toBe(0);
 			// Each axis's internodes against the way it set out: a level limb may dip a little past a
 			// right angle, but one that turns past 120 degrees has looped back on itself.
@@ -422,6 +440,35 @@ describe('sympodial leaders', () => {
 				}
 			}
 			expect(looped).toBe(0);
+		}
+	});
+
+	it('grows an oak whose every node and bud stands at a place, where the last season outgrows the counts', async () => {
+		// At this seed and variant the last season grows past the pipe counts the last shedding made,
+		// so the final righting reads no count for the newest wood; a wood mesh stores positions as
+		// 16-bit integers and would hide a position that is not a number, so the raw growth is read.
+		const record = species.record;
+		await loadPlantCode(record);
+		const grown = grower('self-organizing').grow({ record, seed: 7, variant: 4, season: 'summer' });
+		expect(grown.position.every(Number.isFinite)).toBe(true);
+		expect(grown.buds.position.every(Number.isFinite)).toBe(true);
+	});
+
+	it('grows a plumb bole at other seeds too', async () => {
+		const record = species.record;
+		await loadPlantCode(record);
+		// Seeds whose bole grew leaning 5 to 7.5 degrees from its foot to where it divided.
+		for (const [seed, variant] of [
+			[5, 0],
+			[22, 0],
+			[37, 1],
+			[13, 2],
+			[17, 5],
+		] as const) {
+			const led = leadOnThickest(
+				grower('self-organizing').grow({ record, seed, variant, season: 'summer' }),
+			);
+			expect(boleLean(led)).toBeLessThan(5);
 		}
 	});
 
