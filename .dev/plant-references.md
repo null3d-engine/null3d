@@ -9,6 +9,11 @@ the order to work in, so a species converges without repeating a failure.
 `bun run plants:review <species>` draws the run and prints its summary. `bun run plants:fit <species>`
 measures the envelope and the proportions from the turning videos.
 
+The tool looks for the reference folders in a folder that git ignores, so give it the store:
+`NULL3D_PLANT_REFERENCES=<store>/generated bun run plants:review <species>`. Without that, a run that
+asks only for stills draws nothing and says so, and a run that names its own views draws those views
+with no comparison.
+
 ## Three measures, and what each is for
 
 | Measure | What it compares | When it is available |
