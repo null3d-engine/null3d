@@ -187,6 +187,19 @@ describe('the width profile', () => {
 		expect(profile).toEqual([19 / 40, 39 / 40, 59 / 40, 79 / 40]);
 	});
 
+	test('finds the crown above a buttressed foot', () => {
+		const width = 100;
+		const height = 100;
+		const mask = new Uint8Array(width * height);
+		// A crown of 80 px over a trunk of 20, with a foot 50 px wide across the lowest rows.
+		for (let y = 0; y < 50; y++) for (let x = 10; x < 90; x++) mask[y * width + x] = 1;
+		for (let y = 50; y < 92; y++) for (let x = 40; x < 60; x++) mask[y * width + x] = 1;
+		for (let y = 92; y < 100; y++) for (let x = 25; x < 75; x++) mask[y * width + x] = 1;
+		const box = boxOf(mask, width, height) as NonNullable<ReturnType<typeof boxOf>>;
+		// The foot's own width must not set the trunk's, or the clear margin never clears the crown.
+		expect(crownStartRow(rowSpans(mask, width, height), box)).toBe(49);
+	});
+
 	test('finds where a crown starts over a narrow trunk', () => {
 		const width = 60;
 		const height = 60;

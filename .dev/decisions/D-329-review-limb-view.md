@@ -82,3 +82,11 @@ purpose, a whole winter plant drawn as wood alone, but no slot uses it. The span
 fields now serve a bark view and a limb view. Every species with a secondary-branching picture is
 now judged on the limb view, so their row 3 figures change. The oak's is the only one measured so
 far.
+
+## Note on picture 16
+
+Picture 16 (`bark on limb`) is judged by edge directions, 0.225. Its reference shows a limb in
+context, with twigs and sky round it, while the bark-limb view frames a wall of bark at 0.8 m. The
+figure therefore measures the framing, not the bark: a bark wall's edge directions are its ridges,
+and a limb in context's are its twigs and sky. The pair needs a view at the reference's framing
+before its figure says anything about the surface.
