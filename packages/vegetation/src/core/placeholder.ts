@@ -20,7 +20,7 @@ import type {
 import type { UncardedPrototype } from '../leaf/shoot';
 import { REFERENCE_VIEW } from '../lod/levels';
 import { TEXTURE_UV_STEPS } from '../lod/quantise';
-import { HEADER_ROWS, RECORDS_WIDTH } from '../render/records';
+import { HEADER, HEADER_ROWS, RECORDS_WIDTH } from '../render/records';
 import type { CardAtlas, CrownLight, DressInput, FarBake, GrowInput, MeshInput } from '../stages';
 import { VARIANT_RECORDS, WIND_RECORD_FLOATS } from '../wind/records';
 import type { SpeciesBox } from './box';
@@ -438,6 +438,8 @@ export function placeholderHeader(record: Species, box: SpeciesBox): Float32Arra
 	header.set([colour[0] as number, colour[1] as number, colour[2] as number, 0.6], 0);
 	header.set([...box.min, 0], 4);
 	header.set([box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2], 0], 8);
+	const sway = record.wind.sway;
+	header.set([sway.amplitude, sway.frequency, 0, 0], HEADER.sway * 4);
 	return header;
 }
 
