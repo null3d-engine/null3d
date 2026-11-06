@@ -53,7 +53,7 @@ export const record: Species = {
 		tropism: {
 			photo: 0.04,
 			gravi: [
-				[0, 0.3],
+				[0, 0.08],
 				[0.25, 0],
 				[0.5, 0],
 				[0.75, 0],
