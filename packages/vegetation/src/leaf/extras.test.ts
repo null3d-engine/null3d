@@ -140,6 +140,31 @@ describe('the extras', () => {
 		expect(acorns / input.rows.count).toBeLessThan(0.65);
 	});
 
+	it('sets a site back along the shoot when the record asks', () => {
+		type Mesh = NonNullable<ReturnType<typeof extrasMesh>>;
+		const reach = (mesh: Mesh): number => {
+			let sum = 0;
+			const n = mesh.positions.length / 3;
+			for (let i = 0; i < mesh.positions.length; i += 3)
+				sum += Math.hypot(
+					mesh.positions[i] as number,
+					mesh.positions[i + 1] as number,
+					mesh.positions[i + 2] as number,
+				);
+			return sum / n;
+		};
+		const tip = extrasMesh(
+			dressed(oakRecord({ extras: [{ ...ACORN, share: 1 }] }), 'summer'),
+			0,
+		) as Mesh;
+		const back = extrasMesh(
+			dressed(oakRecord({ extras: [{ ...ACORN, share: 1, tipShare: 0.5 }] }), 'summer'),
+			0,
+		) as Mesh;
+		// The same shoots carry both, so a share back from the tip moves the fruit in from the tip.
+		expect(reach(back)).toBeLessThan(reach(tip));
+	});
+
 	it('hangs an acorn straight down from its shoot tip', () => {
 		const mesh = extrasMesh(dressed(oakRecord({ extras: [{ ...ACORN, share: 1 }] }), 'summer'), 0);
 		if (!mesh) throw new Error('no acorns');
