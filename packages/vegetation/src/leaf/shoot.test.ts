@@ -352,6 +352,53 @@ describe('the shoot rows', () => {
 		expect(rows.count).toBeLessThan(length * 11 + buds.count);
 	});
 
+	it("gathers the shoots into masses and keeps the crown's share of them", () => {
+		const clumped = (spacing: number, depth: number) =>
+			placeShoots({
+				...input,
+				record: {
+					...record,
+					shoots: {
+						...OAK_SHOOTS,
+						placement: { ...OAK_SHOOTS.placement, clump: { spacing, depth } },
+					},
+				},
+			});
+		// How unevenly the rows crowd each other: the spread of each row's neighbours over the mean.
+		const crowding = (rows: ReturnType<typeof placeShoots>) => {
+			const n = rows.count;
+			const samples = 200;
+			const counts: number[] = [];
+			for (let s = 0; s < samples; s++) {
+				const r = Math.floor((s * n) / samples);
+				const x = rows.position[r * 3] as number;
+				const y = rows.position[r * 3 + 1] as number;
+				const z = rows.position[r * 3 + 2] as number;
+				let near = 0;
+				for (let q = 0; q < n; q++) {
+					if (q === r) continue;
+					const dx = (rows.position[q * 3] as number) - x;
+					const dy = (rows.position[q * 3 + 1] as number) - y;
+					const dz = (rows.position[q * 3 + 2] as number) - z;
+					if (dx * dx + dy * dy + dz * dz <= 0.36) near++;
+				}
+				counts.push(near);
+			}
+			const mean = counts.reduce((a, b) => a + b, 0) / counts.length;
+			const variance = counts.reduce((a, b) => a + (b - mean) * (b - mean), 0) / counts.length;
+			return Math.sqrt(variance) / Math.max(1e-6, mean);
+		};
+		const even = placeShoots(input);
+		const gathered = clumped(2.5, 0.8);
+		expect(crowding(gathered)).toBeGreaterThan(crowding(even) * 1.15);
+		// The masses take more shoots than the bare runs lose, but not the crown's cover with them.
+		expect(gathered.count).toBeGreaterThan(even.count * 0.6);
+		expect(gathered.count).toBeLessThan(even.count * 1.4);
+		// A clump at no depth is the even placement again.
+		const flat = clumped(2.5, 0);
+		expect(Math.abs(flat.count - even.count)).toBeLessThan(even.count * 0.05);
+	});
+
 	it('turns rows toward the sky by the skyward share', () => {
 		const lean = (skyward: number) => {
 			const rows = placeShoots({

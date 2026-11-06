@@ -221,6 +221,10 @@ function colourOf(site: Site, index: number): number[] {
  * The depth a shared stalk reaches back past the site into the wood it grows from. Two parts built
  * separately meet at a point, and a point is no join at all under a close view: the stalk starts
  * inside the parent's own wood so the two read as one piece.
+ *
+ * It reaches back along the parent's axis, not along the direction the part hangs: a shoot runs
+ * sideways as often as not, and reaching back against the hang leaves the stalk's end in open air
+ * beside its twig.
  */
 const STALK_OVERLAP = 0.02;
 
@@ -233,28 +237,34 @@ function writeStalk(
 	colour: number[],
 ): Vector3 {
 	const first = mesh.vertices;
+	const wood = site.direction;
 	const top: Vector3 = [
-		site.at[0] - down[0] * STALK_OVERLAP,
-		site.at[1] - down[1] * STALK_OVERLAP,
-		site.at[2] - down[2] * STALK_OVERLAP,
+		site.at[0] - wood[0] * STALK_OVERLAP,
+		site.at[1] - wood[1] * STALK_OVERLAP,
+		site.at[2] - wood[2] * STALK_OVERLAP,
 	];
-	lathe(
-		mesh,
-		[
-			[0.0017, 0],
-			[0.0013, length + STALK_OVERLAP],
-		],
-		top,
-		down,
-		STALK_SIDES,
-		colour,
-	);
-	for (let i = first; i < mesh.vertices; i++) mesh.uvs[i * 2] = 0;
-	return [
+	const fork: Vector3 = [
 		site.at[0] + down[0] * length,
 		site.at[1] + down[1] * length,
 		site.at[2] + down[2] * length,
 	];
+	// The stalk runs from inside the wood to the point the rest of the cluster forks from, so both
+	// of its ends meet something.
+	const axis = normalize3([fork[0] - top[0], fork[1] - top[1], fork[2] - top[2]]);
+	const reach = length3(fork[0] - top[0], fork[1] - top[1], fork[2] - top[2]);
+	lathe(
+		mesh,
+		[
+			[0.0017, 0],
+			[0.0013, reach],
+		],
+		top,
+		axis,
+		STALK_SIDES,
+		colour,
+	);
+	for (let i = first; i < mesh.vertices; i++) mesh.uvs[i * 2] = 0;
+	return fork;
 }
 
 /** Writes one extra at a site. */
