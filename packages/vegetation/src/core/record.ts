@@ -839,6 +839,17 @@ export interface ShootSpec {
 			readonly spacing: number;
 			/** How far the shoots thin between masses, 0 even and 1 bare. */
 			readonly depth: number;
+			/**
+			 * A second, finer scale over the same crown: masses within a mass, so the foliage of one
+			 * plate reads as tufts with wood between them. The coarse scale sets the plates' gaps and
+			 * the fine scale sets the crown's grain; one scale cannot do both.
+			 */
+			readonly fine?: {
+				/** Metres from one tuft to the next. */
+				readonly spacing: number;
+				/** How far the shoots thin between tufts, 0 even and 1 bare. */
+				readonly depth: number;
+			};
 		};
 	};
 }
