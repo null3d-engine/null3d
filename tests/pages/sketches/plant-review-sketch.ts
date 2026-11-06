@@ -77,6 +77,8 @@ const FRUIT_REACH = 0.2;
 const FRUIT_SHARE = 0.73;
 /** Metres around a fruit within which foliage counts as holding it. */
 const FRUIT_ENCLOSED = 0.7;
+/** Degrees the fruit camera stands below its cluster, looking up at the join with the twig. */
+const FRUIT_ELEVATION = -12;
 /** Stops of switch bias that carry a forced nearest level's shoots past every far plane. */
 const FORCED_NEAR_STOPS = 20;
 /** The most cells a sheet draws: the scene's views less the camera's own. */
@@ -429,12 +431,13 @@ export default defineSketch(async (ctx) => {
 				return orbit(at.at, reach, e, back, fov);
 			}
 			case 'twigs': {
-				// A view of the fruit goes to the highest acorn the plant carries rather than to a tip
-				// that may stand bare; without fruit, or with none this season, it goes to a sunlit tip.
+				// A view of the fruit goes to a fruit the plant carries rather than to a tip that
+				// may stand bare; without fruit, or with none this season, it goes to a sunlit tip.
 				if (QUERY.fruit) {
 					// A fruit must hang where the picture shows what holds it, so the view takes the
-					// acorn with the most foliage around it rather than the highest one, which may
-					// stand at a bare crown edge against open sky.
+					// fruit that faces the camera: the outermost one on the crown, where the stalk
+					// and its twig stand clear of the leaves. A fruit inside the crown has leaves
+					// between the lens and its join, whatever its height.
 					const fruits: V3[] = [];
 					const leaves: V3[] = [];
 					for (const part of main.levels[0]?.parts ?? []) {
@@ -452,7 +455,8 @@ export default defineSketch(async (ctx) => {
 						for (const leaf of leaves)
 							if (Math.hypot(leaf[0] - at[0], leaf[1] - at[1], leaf[2] - at[2]) < FRUIT_ENCLOSED)
 								near++;
-						const score = near * 1000 + at[1];
+						const outward = Math.hypot(at[0] - foot[0], at[2] - foot[2]);
+						const score = near * 1_000_000 + outward * 100 + at[1];
 						if (score > best) {
 							best = score;
 							acorn = at;
@@ -496,7 +500,10 @@ export default defineSketch(async (ctx) => {
 						};
 						const outward = normalize([acorn[0] - foot[0], 0, acorn[2] - foot[2]]);
 						const back = Math.atan2(outward[0], outward[2]);
-						return { ...fit(box, back, e, aspect, fov), near: 0.01 };
+						// The camera looks up a little, as the reference's close-up does, so the
+						// underside of the twig shows where the stalk joins it.
+						const low = QUERY.elevation ?? FRUIT_ELEVATION;
+						return { ...fit(box, back, low, aspect, fov), near: 0.01 };
 					}
 				}
 				const tip = sunlitTip(skeleton, out, BUD_TERMINAL);
