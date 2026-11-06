@@ -300,6 +300,6 @@ export const record: Species = {
 	cuttings: {
 		branch: { shoot: 'long' },
 		subbranch: { shoot: 'long' },
-		cluster: { shoot: 'short' },
+		cluster: { shoot: 'long' },
 	},
 };
