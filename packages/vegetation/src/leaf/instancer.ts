@@ -277,14 +277,18 @@ export function placeShoots(input: DressInput): ShootRows {
 		const before = previous.get(axis);
 		previous.set(axis, b);
 		if (kind === BUD_DORMANT) continue;
-		// The clean bole carries no shoot: the trunk below the crown is bare, as the record says.
+		const node = buds.node[b] as number;
+		const host = skeleton.axisOf[node] as number;
+		// The clean bole carries no shoot: the trunk below the crown is bare, as the record says. The
+		// rule is about the stem it names, so a limb that leaves the trunk above the line keeps the
+		// foliage it carries below it.
 		if (
 			record.growth.model === 'self-organizing' &&
+			host >= 0 &&
+			(skeleton.axes.order[host] as number) === 0 &&
 			(buds.position[b * 3 + 1] as number) < record.growth.shedding.cleanBole * skeleton.height
 		)
 			continue;
-		const node = buds.node[b] as number;
-		const host = skeleton.axisOf[node] as number;
 		// A bud at its axis's tip is the end of a branch, in the open sky the shade-prune line reads as
 		// darkness inside the crown: it keeps its shoot, so no bare tip stands past the leaves.
 		const atTip = host >= 0 && (skeleton.axes.last[host] as number) === node;
