@@ -142,7 +142,9 @@ rules that set them.
 - The slot file holds each picture's own page fields, keyed by the reference file's name. They are
   its light, and any framing or backdrop that its photograph needs. Pass it with
   `--slot-query <file>`, and draw both sides of a comparison with the same file. The oak's is
-  [`slots/pedunculate-oak.json`](../tools/lib/plant-review/slots/pedunculate-oak.json).
+  [`slots/pedunculate-oak.json`](../tools/lib/plant-review/slots/pedunculate-oak.json), so its
+  review runs as
+  `bun run plants:review pedunculate-oak --refs <the oak's reference folder> --slot-query tools/lib/plant-review/slots/pedunculate-oak.json`.
 
 The light moves the color figures, not the outlines, which come from a matte. Under the page's soft
 daylight the oak's distant leaves read 8.9 color steps from their photograph. Under the photograph's

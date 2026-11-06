@@ -3,7 +3,8 @@
 Status: decided and built in the oak's record and the optional record fields behind its values. The
 plant review's light and framing, the engine's box-fraction positions and level hand-over, and the
 exact plant maths are built too. Seven of the owner's rulings are pending work, listed under
-[Consequences](#consequences). Task: none.
+[Consequences](#consequences). Four options wait for the owner's choice, listed under
+[Options the owner may still take](#options-the-owner-may-still-take). Task: none.
 
 Summary: the head's far crown reads as an even dome, since its grower's light is nearly even and its
 outline has no underside. The oak now drops the shoots that its own finished crown shades most, layer
@@ -129,22 +130,23 @@ variants measures 7.19, 7.44, 7.75 and 8.17 MB, against budgets of 9.4, 10.2, 11
 seeds 1 to 11, none of the 66 plants goes over its budget at any tier. A variant grows in 344 to 445 ms,
 against the head's 408 to 531 ms.
 
-How the data was produced: the reference rows are runs `claude-oak-final-0509` (this record's oak)
-and `claude-oak-base6-0456` (the head's oak). Each is `bun run plants:review pedunculate-oak --refs
-<the oak's folder> --views whole,skeleton --slot-query
-tools/lib/plant-review/slots/pedunculate-oak.json --run <name>`, 629 frames in 119 pages. Both ran
-headless in Chrome for Testing on the Mac's GPU, at seed 11, variant 0 and preset high. They ran at
-`96583613c`, with the oak's and the review tool's changes in the working tree. They hold neither the
-engine change, the exact maths nor the leaf-cluster ruling. The references are the reference
-repository's at `835524369`. Other review runs and tests shared the machine.
+How the data was produced: the reference rows come from `bun run plants:review pedunculate-oak
+--refs <the oak's folder> --views whole,skeleton --slot-query
+tools/lib/plant-review/slots/pedunculate-oak.json`, 629 frames in 119 pages. One run drew this
+record's oak on the code of `162839fa`, which holds the oak and the review tool. That code comes
+before the engine change, the exact maths and the leaf-cluster ruling. The other drew the head's oak, `96583613c` with the same
+review tool. Both ran headless in Chrome for Testing on the Mac's GPU, at seed 11, variant 0 and
+preset high, against the reference repository at `835524369`. Other review runs and tests shared the
+machine.
 
 The bytes are the generator's own sizes of the same tree, over all six variants, and over seeds 1 to
 11 for the sweep. The grow time is the fastest of five growths a variant, in three rounds that
 alternate with the head. The machine's load read 2.6 to 3.2. Each choice's figure is a trial against
-the same crown without that change, under the same tool. The leaf-cluster figures come from runs
-`ship-cluster-long-0712` and `ship-cluster-short-0710` at `27b63cd0b`, without and with the ruling.
-They drew stills 11 and 23 and the leaf-cluster turntable alone, by the same command, slot file and
-machine.
+the same crown without that change, under the same tool. The leaf-cluster figures compare the code of
+`27b63cd0b` with that of `b166787de`, which adds the ruling. Each option's figures compare
+`b166787de` with and without the option. Those runs drew only the stills and videos that the change
+moves, by the same command, slot file and machine. The bole widths come from the foot test's own
+width measure, over the six variants.
 
 ## Look
 
@@ -179,8 +181,6 @@ Rejected:
 - **Near-level limbs.** A division angle of 78 degrees breaks the bole-and-crown test: variant 5 keeps
   2 great limbs and grows a broken fork. The angle stays at 64 degrees until that test changes.
 - **Leaves on this year's spray only.** 02's top-third share rises from 0.209 to 0.247, past its band.
-- **Buds at the twig kinks for still 20.** At half the kinks the ultra kit reaches 10.865 MB, 0.065
-  MB over its cap. The field ships with no oak value.
 
 ### The owner's rulings
 
@@ -203,6 +203,31 @@ Rejected:
   variant. So the crown's swing over the variants is a stated fault.
 - The clump field stays off the oak.
 - The judging rules in [plant review](../plant-review.md) hold where the standard is silent.
+
+### Options the owner may still take
+
+Four changes wait for the owner's choice. Each stands alone, so any one can be taken.
+
+- **The bole's taper.** `base.taper` of 0.25 over 4.5 m widens the bole all the way down from the
+  fork into its foot, as still 17 shows. The woodland and young forms keep their own boles. Still
+  17's edge-direction misfit falls from 0.078 to 0.073, the whole views move by 0.003 at most, and
+  still 31 draws the same picture. The bole stands 3.00 to 3.06 m across at breast height, against
+  2.56 to 2.61 m. That is 0.138 to 0.166 of the height, inside the photographs' 0.116 to 0.178. At
+  0.3, variant 5 reaches 0.1704 of its height and fails the foot test's bound of 0.17.
+- **A limit on the spray's side twigs.** `lateralMost` 65 on the spray turns back the twig that hangs
+  down still 21's branch with a pale, edge-on rosette. Still 21's sky gap falls from 0.313 to 0.285,
+  against the photograph's 0.326, and leaves its band. The branch's turning video keeps 35 of its 145
+  frames inside the gap band, against 10, and its height spread comes inside its band. The whole
+  views move by 0.002 at most.
+- **Dormant buds at the twig kinks.** A `bend.buds` share puts a small bud at that share of a twig's
+  kinks, as still 20's winter twigs show. At half the kinks the ultra kit reaches 10.865 MB, 0.065
+  MB over the cap that the owner keeps. So the field would ship with no oak value.
+- **The cameras of stills 11 and 04.** Still 11's cut piece may come as near the frame's sides as its
+  photograph's piece comes. It then fills 0.945 of the width and 0.773 of the height, against 0.833
+  and 0.691, where the photograph's fills 0.952 and 0.953. Its framed overlap rises from 0.398 to
+  0.499. Still 04's rim view asks for a frame 0.85 full, not 0.55, and its sky share falls from 0.684
+  to 0.311, against the photograph's 0.407. The 04 part is tuned on one tree, seed 11's variant 0:
+  fill targets of 0.75 and 0.8 pick another limb, low on the rim.
 
 ## Consequences
 
