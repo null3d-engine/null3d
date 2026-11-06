@@ -357,6 +357,12 @@ function colourOf(site: Site, index: number): number[] {
  * beside its twig.
  */
 const STALK_OVERLAP = 0.02;
+/** Degrees a copy's own footstalk splays from the shared stalk at its fork. */
+const PEDICEL_SPLAY = 55;
+/** Metres a footstalk reaches back into the shared stalk's end, so the two join. */
+const PEDICEL_ROOT = 0.003;
+/** Metres each footstalk stands above the last along the shared stalk, so the bodies stagger. */
+const PEDICEL_STAGGER = 0.007;
 
 /** Writes a thin shared stalk from a site along `down`, and gives back the point it reaches. */
 function writeStalk(
@@ -556,6 +562,10 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 				? Math.max(1, Math.round(spreadAt(extra.count, unitAt(input.seed, salt, purpose, s, 2))))
 				: 1;
 			const [side, other] = sideAxes(down, [0, 1, 0]);
+			// A copy with a footstalk of its own stands on it, clear of the others; copies without
+			// one lean apart from the fork itself.
+			const pedicel = 'lathe' in shape ? (shape.pedicel ?? 0) : 0;
+			const splay = radians(PEDICEL_SPLAY);
 			// Copies from a shared stalk lean apart enough that their bodies clear one another below
 			// the fork; one that has no stalk carries them as close as a budding cluster.
 			const lean = radians(stalk > 0 ? 36 : 16);
@@ -566,6 +576,49 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 					side[1] * cos(azimuth) + other[1] * sin(azimuth),
 					side[2] * cos(azimuth) + other[2] * sin(azimuth),
 				];
+				if (pedicel > 0 && count > 1) {
+					const arm = normalize3([
+						down[0] * cos(splay) + outward[0] * sin(splay),
+						down[1] * cos(splay) + outward[1] * sin(splay),
+						down[2] * cos(splay) + outward[2] * sin(splay),
+					]);
+					// A thin footstalk roots in the shared stalk's end and reaches out to the body,
+					// which follows the footstalk's own line. Each copy roots a little further up
+					// the shared stalk, so two that share a line of sight still stand apart.
+					const rise = Math.min(k * PEDICEL_STAGGER, stalk * 0.5);
+					const root: Vector3 = [
+						from.at[0] - down[0] * rise,
+						from.at[1] - down[1] * rise,
+						from.at[2] - down[2] * rise,
+					];
+					const top: Vector3 = [
+						root[0] - arm[0] * PEDICEL_ROOT,
+						root[1] - arm[1] * PEDICEL_ROOT,
+						root[2] - arm[2] * PEDICEL_ROOT,
+					];
+					const end: Vector3 = [
+						root[0] + arm[0] * pedicel,
+						root[1] + arm[1] * pedicel,
+						root[2] + arm[2] * pedicel,
+					];
+					const axis = normalize3([end[0] - top[0], end[1] - top[1], end[2] - top[2]]);
+					const reach = length3(end[0] - top[0], end[1] - top[1], end[2] - top[2]);
+					const first = mesh.vertices;
+					lathe(
+						mesh,
+						[
+							[0.0011, 0],
+							[0.0008, reach],
+						],
+						top,
+						axis,
+						STALK_SIDES,
+						colourOf(from, index),
+					);
+					for (let i = first; i < mesh.vertices; i++) mesh.uvs[i * 2] = 0;
+					writeExtra(mesh, extra, index, { ...from, at: end }, arm, faces, azimuth);
+					continue;
+				}
 				const direction: Vector3 =
 					count > 1
 						? normalize3([
