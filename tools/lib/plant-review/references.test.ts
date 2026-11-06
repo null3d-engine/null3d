@@ -283,7 +283,7 @@ describe('the slots', () => {
 		expect(classifySlot('28-young-bark.png')).toMatchObject({
 			kind: 'texture',
 			view: 'bark-limb',
-			query: { along: 0.85 },
+			query: { along: 0.85, thin: 0.05, span: 0.07 },
 		});
 	});
 

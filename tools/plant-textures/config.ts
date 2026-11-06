@@ -54,6 +54,11 @@ export interface BarkLayerConfig {
 	readonly depth: number;
 	/** A factor on the normal map's slopes. */
 	readonly normal: number;
+	/**
+	 * Texels of blur on the picture's luminance before the height field reads it, at a tile of
+	 * 1024: it keeps the broad plates and drops the photograph's fine cracks.
+	 */
+	readonly smooth: number;
 	readonly delight: DelightConfig;
 }
 
@@ -101,7 +106,7 @@ export const LEAF_DEFAULTS: LeafConfig = {
 	relief: { veins: 1, pucker: 0.5, depth: 0.002 },
 };
 
-const ZONE_DEFAULTS = { normal: 1, delight: { radius: 0.2, strength: 1 } };
+const ZONE_DEFAULTS = { normal: 1, smooth: 0, delight: { radius: 0.2, strength: 1 } };
 
 /** Reads a species' `source.json`, with the defaults filled in. */
 export function readConfig(file: string): SourceConfig {

@@ -10,7 +10,8 @@
 				"name": "trunk",
 				"slot": 26,
 				"tile": [0.5, 0.5],
-				"depth": 0.04
+				"depth": 0.04,
+				"smooth": 8
 			}
 		],
 		"young": {
