@@ -146,6 +146,14 @@ function stillShot(
 			sky: measures.sky,
 			...(measures.ground && slot.background === 'sky-meadow' && { ground: measures.ground }),
 		};
+		// The picture's own light, so a close view is lit as its reference is: a flat light reads a
+		// grey-brown branch as pale, where the reference's studio light gives it its modelling.
+		if (measures.light)
+			query = {
+				...query,
+				sunAzimuth: measures.light.azimuth,
+				sunRise: measures.light.rise,
+			};
 		if (slot.framed && measures.box) {
 			const {
 				sky: _sky,
