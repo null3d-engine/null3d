@@ -8,7 +8,7 @@ import type { Species } from '../core/record';
 import { standInRecord } from '../core/stand-in';
 import { noTextureFiles, type TextureManifest } from '../core/textures';
 import type { Rgb } from '../core/types';
-import { VARIANT_RECORDS, WIND_RECORD_FLOATS } from '../wind/records';
+import { DEFAULT_WIND_SWAY, VARIANT_RECORDS, WIND_RECORD_FLOATS } from '../wind/records';
 import {
 	BARK_ZONE_TEXELS,
 	faceTerms,
@@ -126,8 +126,16 @@ describe('the species header', () => {
 	test('gives the whole plant its species sway, in metres at its top and cycles a second', () => {
 		const sway = record.wind.sway;
 		const written = texel(header, HEADER.sway);
-		expect(written[0]).toBeCloseTo(sway.amplitude, 6);
-		expect(written[1]).toBeCloseTo(sway.frequency, 6);
+		expect(written[0]).toBeCloseTo(sway?.amplitude as number, 6);
+		expect(written[1]).toBeCloseTo(sway?.frequency as number, 6);
+	});
+
+	test('gives a species that names no sway the stated default', () => {
+		// A missing sway must never leave the plant still.
+		const bare: Species = { ...record, wind: { ...record.wind, sway: undefined } };
+		const written = texel(speciesHeader(bare, manifest, speciesBox(bare)), HEADER.sway);
+		expect(written[0]).toBeCloseTo(DEFAULT_WIND_SWAY.amplitude, 6);
+		expect(written[1]).toBeCloseTo(DEFAULT_WIND_SWAY.frequency, 6);
 	});
 
 	test('keeps the species box to a hundredth of a millimetre through half floats', () => {
