@@ -146,9 +146,9 @@ export const record: Species = {
 		bud: { length: 0.016, width: 0.011, tipCluster: 7, colour: [0.34, 0.2, 0.09] },
 		placement: {
 			perMetre: [
-				[0, 0.6],
-				[0.55, 1],
-				[1, 9],
+				[0, 0.25],
+				[0.55, 0.4],
+				[1, 3.5],
 			],
 			shadePrune: 0.15,
 			skyward: 0.35,
@@ -158,7 +158,7 @@ export const record: Species = {
 	foliage: {
 		kind: 'blade',
 		leaf: {
-			length: { mean: 0.12, spread: 0.02 },
+			length: { mean: 0.17, spread: 0.03 },
 			outline: 'texture',
 			petiole: { length: 0.005, radius: 0.0009, flat: 0, droop: 15 },
 			fold: 16,
