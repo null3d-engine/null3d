@@ -307,8 +307,12 @@ export function placeShoots(input: DressInput): ShootRows {
 				direction = quatRotate(buds.frame, b * 4, [0, 1, 0], [0, 0, 0]);
 				place = [...at];
 			} else {
-				// Spread back along the stretch, each a step of the phyllotaxis round the axis.
-				const share = (k + 0.5 * draw(Purpose.Spacing, b, k)) / count;
+				// Spread back along the stretch, each a step of the phyllotaxis round the axis, as
+				// far back as the record's gather allows: a small share keeps the shoots of one bud
+				// together as a tuft at the node, and leaves the internode between nodes bare.
+				const share =
+					((k + 0.5 * draw(Purpose.Spacing, b, k)) / count) *
+					Math.min(1, Math.max(0, shoots.placement.gather ?? 1));
 				const centre: Vector3 = [
 					at[0] + (from[0] - at[0]) * share,
 					at[1] + (from[1] - at[1]) * share,

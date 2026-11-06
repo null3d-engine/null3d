@@ -810,6 +810,12 @@ export interface ShootSpec {
 		/** A shoot's scale. */
 		readonly scale: Spread;
 		/**
+		 * The share of the internode back from a bud that its shoots may stand in, 0 to 1. Small,
+		 * they gather into a tuft at the node and the internode between nodes stands bare; 1, they
+		 * spread over the whole internode and the axes carry leaves the length of their run.
+		 */
+		readonly gather?: number;
+		/**
 		 * Gathers the shoots into masses along each axis, with a thinner run between them, so the
 		 * crown is built of clumps with sky and wood between rather than an even mesh of leaves.
 		 * Absent, the shoots stand evenly spaced. The masses of neighbouring axes do not line up,

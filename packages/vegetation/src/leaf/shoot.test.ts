@@ -399,6 +399,34 @@ describe('the shoot rows', () => {
 		expect(Math.abs(flat.count - even.count)).toBeLessThan(even.count * 0.05);
 	});
 
+	it('gathers the shoots of one bud into a tuft at its node when the record asks', () => {
+		// The mean distance from a row to the nearest bud site: a gather holds the rows at the sites
+		// and leaves the internode between them bare.
+		const reach = (gather: number) => {
+			const rows = placeShoots({
+				...input,
+				record: {
+					...record,
+					shoots: { ...OAK_SHOOTS, placement: { ...OAK_SHOOTS.placement, gather } },
+				},
+			});
+			const buds = skeleton.buds;
+			let sum = 0;
+			for (let r = 0; r < rows.count; r++) {
+				let nearest = Number.POSITIVE_INFINITY;
+				for (let b = 0; b < buds.count; b++) {
+					const dx = (rows.position[r * 3] as number) - (buds.position[b * 3] as number);
+					const dy = (rows.position[r * 3 + 1] as number) - (buds.position[b * 3 + 1] as number);
+					const dz = (rows.position[r * 3 + 2] as number) - (buds.position[b * 3 + 2] as number);
+					nearest = Math.min(nearest, Math.sqrt(dx * dx + dy * dy + dz * dz));
+				}
+				sum += nearest;
+			}
+			return sum / rows.count;
+		};
+		expect(reach(0.2)).toBeLessThan(reach(1) * 0.7);
+	});
+
 	it('turns rows toward the sky by the skyward share', () => {
 		const lean = (skyward: number) => {
 			const rows = placeShoots({
