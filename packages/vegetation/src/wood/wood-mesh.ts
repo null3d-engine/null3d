@@ -922,9 +922,11 @@ class Mesher {
 		// takes the welds of thinner children near the end.
 		this.tip(context, rings, wood.fork);
 		// A dead stub weathers with the wood it stands on: its bark is grown bark, never the smooth
-		// young bark of a live shoot of its girth.
+		// young bark of a live shoot of its girth. A cut limb is severed wood too, and its sawn end
+		// shows grown bark rather than the young layer a twig of the same girth would carry.
 		const young = this.record.bark?.youngRadius ?? 0;
-		if (wood.stub)
+		const cut = wood.parent < 0 && wood.stem < 0;
+		if (wood.stub || cut)
 			for (let i = 0; i < rings.vertices; i++)
 				rings.pipe[i] = Math.max(rings.pipe[i] as number, STUB_BARK * young);
 		const bark = this.barkOf(rings, context, inherit);
