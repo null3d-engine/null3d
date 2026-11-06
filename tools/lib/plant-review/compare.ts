@@ -68,6 +68,8 @@ export interface ReferenceFraming {
 	/** The plain sky's and the meadow's colours, as sRGB hex. */
 	readonly sky: string;
 	readonly ground?: string;
+	/** Where the frames' light comes from, read off their crowns, when they say. */
+	readonly light?: { readonly azimuth: number; readonly rise: number };
 	/** How many of the frames gave a plant to measure. */
 	readonly frames: number;
 	/** What the estimate had to assume. */
@@ -234,9 +236,31 @@ export function estimateFraming(
 		...(usable.some(({ m }) => m.ground)
 			? { ground: meanHex(usable.flatMap(({ m }) => (m.ground ? [m.ground] : []))) }
 			: {}),
+		...lightOf(
+			usable.map(({ m }) => m.light),
+			notes,
+		),
 		frames: usable.length,
 		notes,
 	};
+}
+
+/** The frames' common light: the median of what each frame's crown said, when any of them said. */
+function lightOf(
+	lights: readonly ({ readonly azimuth: number; readonly rise: number } | null)[],
+	notes: string[],
+): { light?: { azimuth: number; rise: number } } {
+	const seen = lights.filter(
+		(l): l is { readonly azimuth: number; readonly rise: number } => l !== null,
+	);
+	if (seen.length === 0) return {};
+	if (seen.length < lights.length)
+		notes.push(
+			`the light is read from ${seen.length} of ${lights.length} frames that show a crown`,
+		);
+	const azimuth = median(seen.map((l) => l.azimuth)) as number;
+	const rise = median(seen.map((l) => l.rise)) as number;
+	return { light: { azimuth: Number(azimuth.toFixed(1)), rise: Number(rise.toFixed(1)) } };
 }
 
 /** The page query fields that frame a render as a reference camera framed its plant. */
@@ -250,6 +274,7 @@ export function framingQuery(framing: ReferenceFraming): Partial<PlantReviewQuer
 		targetX: framing.targetX,
 		sky: framing.sky,
 		...(framing.ground ? { ground: framing.ground } : {}),
+		...(framing.light ? { sunAzimuth: framing.light.azimuth, sunRise: framing.light.rise } : {}),
 		...placed,
 	};
 }
