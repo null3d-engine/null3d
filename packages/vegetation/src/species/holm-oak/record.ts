@@ -33,8 +33,8 @@ export const record: Species = {
 		internode: { length: 0.25, ageFactor: 0.99 },
 		stems: {
 			count: { mean: 8, spread: 2 },
-			lean: { mean: 40, spread: 6 },
-			stool: 0.6,
+			lean: { mean: 22, spread: 6 },
+			stool: 0.45,
 			fused: 0.95,
 		},
 		buds: {
@@ -54,7 +54,7 @@ export const record: Species = {
 			dominance: [0.4, 0.5, 0.95],
 			wander: 16,
 		},
-		divide: { at: 0.4, count: 2, angle: 45, lean: 6 },
+		divide: { at: 0.46, count: 2, angle: 45, lean: 6 },
 		light: { apical: 1, lateral: 1.5, shadow: [5, 0.15, 2], cells: 96 },
 		tropism: {
 			photo: 0.08,
@@ -66,7 +66,7 @@ export const record: Species = {
 				[1, 0.02],
 			],
 		},
-		shedding: { threshold: 0.06, cleanBole: 0.38, stubs: 0.12 },
+		shedding: { threshold: 0.06, cleanBole: 0.3, stubs: 0.12 },
 		bending: { strength: 0.05, upturn: 0.2 },
 		forkRule: true,
 		kinks: true,
@@ -155,6 +155,7 @@ export const record: Species = {
 				[0.55, 8],
 				[1, 64],
 			],
+			density: 1.3,
 			shadePrune: 0.1,
 			skyward: 0.3,
 			scale: { mean: 1.3, spread: 0.15 },
