@@ -48,9 +48,9 @@ figure came from a run on the old base, and the rosette's from a run whose align
 another angle. On one base the round rosette is better on both figures.
 
 The acorn's nut is 2.5 cm across and hangs 7 cm below its tip. At the review's `19` framing it draws
-42 px wide in a 768 px picture. The reference's nut draws 170 px in 1024. That is 5.5 against 16.6
-per cent of the frame. The reference is a close-up of three acorns, while the review's fruit camera
-stands 0.55 m from one.
+90 px wide in a 768 px picture. The reference's nut draws 170 px in 1024. That is 11.7 against 16.6
+per cent of the frame. The acorn cluster draws 39 per cent of the frame width against the
+reference's 45. The earlier 5.5 per cent came from a camera that stood 0.55 m from one nut.
 
 The acorns take one to three at a site, at a share of 0.12. The variant reads 8,021,428 bytes of
 the 8,600,000 limit, less than the single acorn at the higher share.
@@ -115,12 +115,13 @@ Rejected: a uniform resample of the whole acorn profile at twice the rings. It r
 adds about 45 vertices to each of the variant's acorns, which costs 2.28 MB and passes the byte
 budget.
 
+The review's fruit view now frames the stalk and the acorns it carries, at the share of the frame
+that the reference's own close-up gives the cluster. The cluster's drawn width goes from 16 to 39
+per cent of the frame against the reference's 45, and a nut from 42 to 90 px in 768 against the
+reference's 170 px in 1024. Most of the earlier 5.5 per cent was the framing, not the record's size.
+
 Rejected: six leaves a spray. The kit's byte cap is 5.3 MB and six leaves a shoot reach it at 5.32
 MB, while the branch's width moves under 2 per cent.
-
-Rejected: a closer fruit camera at `19`. The frames say the reference is a macro of three acorns.
-Moving the review's camera would flatter the render. It would also hide the size at the framing the
-reviewer uses.
 
 ## Consequences
 
