@@ -1,15 +1,16 @@
 # D-328: the oak's bark carries its photograph's color, and the review lights a bark close-up from the camera
 
 Status: decided and built. The oak record, the plant shader's lichen mask, the young-bark radius,
-the texture tool's bark smoothing, the plant review's bark views and the oak's Mac picture
-references carry it. The round-7 review is pending. Task: none.
+the texture tool's bark smoothing, the plant review's bark views and its patch measure, and the
+oak's Mac picture references carry it. The round-7 review is pending. Task: none.
 
 Summary: the oak's bark carried a 4.5 brightness multiplier that offset the review's dim daylight.
 It drove every sunlit limb to near-white. Removing it and lighting the two bark close-ups from the
-camera takes the bark texture pair from 11.7 to 4.8 color steps and the winter wood from 20.7 to 3.8,
-at base `99b001ae8`. On the merged base the close-ups read 7.3 and 7.1 while their albedos match
-their sources; the measure moves with the framed patch, not the material. Lichen now sits in separate
-sage patches, and the young-bark tile covers thin wood at its own scale.
+camera takes the bark texture pair from 11.7 to 4.8 color steps by the middle-third measure, and the
+winter wood from 20.7 to 3.8. The bark tile's middle matches its source to 0.3 of a step. The
+close-ups now average nine patches, and the fixed trunk view reads 5.96 at the old base and 5.93 at
+the merged base, so the figure follows the material rather than the framed window. Lichen now sits
+in separate sage patches, and the young-bark tile covers thin wood at its own scale.
 
 ## Question
 
@@ -25,8 +26,9 @@ views already do this. The better look wins where two options differ ([hard rule
 
 ## Data
 
-Color steps are CIEDE2000 between the middle third of each picture, as the review measures it. The
-plant is seed 11, variant 0, preset high, and the pictures are the oak's reference set.
+Color steps are CIEDE2000 between the middle third of each picture, as the review measured it before
+this record's last commit. The plant is seed 11, variant 0, preset high, and the pictures are the
+oak's reference set.
 
 | Measure | Base | Final |
 | --- | --- | --- |
@@ -49,12 +51,23 @@ preset. The reviewer's own winter-wood figure at the first base was 15.9, from t
 | `28` surface | 9.22 | 3.44 | 7.10 |
 | `20` bark | 20.74 | 3.84 | 4.68 |
 
-The close-up figures moved with the base while the bark material did not. The thicker bole frames
-another phase of the tiled bark, and the young view picks another thin limb. The close-up measure is
-the middle third of the picture, so a window that catches more furrows reads darker and a limb that
-faces the stand light reads brighter. The material's own color matches its source at both bases:
-the bark tile's middle third is CIELAB 46.4, 1.5, 3.3 against reference `26`'s 46.1, 1.5, 3.8. The
-young tile's mean is 51.1, −2.0, 8.8 against reference `28`'s 50.1, −1.7, 9.9.
+The middle-third figures moved with the base while the bark material did not. The thicker bole frames
+another phase of the tiled bark, and the young view picks another thin limb. A window that catches
+more furrows reads darker, and a limb that faces the stand light reads brighter. So the close-up
+measure takes nine patches now: each is a fifth of the picture a side, centred at a fifth, a half and
+four fifths each way. The patches do not overlap, they cover different phases of the tile, and their
+mean is one number per texture source. Re-compared from the saved pictures, with the new measure:
+
+| Measure | Old base `47c0f417c` | Merged base `c6710d413` |
+| --- | --- | --- |
+| `26` surface | 5.96 | 5.93 |
+| `28` surface | 5.71 | 1.06 |
+
+The fixed trunk view moves by 0.03 between the bases, which is the stability the patch average
+buys. The young view moved more because its sample changed: the new tree's thin-limb request picks
+another limb, against another background. The material did not change. The bark tile's middle third
+is CIELAB 46.4, 1.5, 3.3 against reference `26`'s 46.1, 1.5, 3.8. The young tile's mean is 51.1,
+−2.0, 8.8 against reference `28`'s 50.1, −1.7, 9.9.
 
 | Step | 26 | 28 | 20 bark |
 | --- | --- | --- | --- |
@@ -106,17 +119,32 @@ crown shades the trunk in those views. The reference trees stand in open sun, so
 pale. A tint that lifts the shaded trunk back to the reference's tone is the same tint that whitens
 the sunlit limbs, which is the fault this record removes. This stays a stated limit.
 
-**The close-up figures at a new base.** The close-ups read 7.29 and 7.10 at the merged base, against
-4.78 and 3.44 at the previous one, while their albedos match their sources. The measure takes the
-middle third of the picture, and the render re-lights the photograph's baked shading with the
-stand's own light. A different framed patch or a differently turned limb moves the figure by several
-steps without a change to the material. The materials are right; the figures are not stable across a
-tree change. A fair close-up measure would average several patches of the tile, which this record
-does not add.
+The shared daylight was tested rather than assumed. Runs `sun19`, `sun26`, `sun34`, `sky15` and
+`sky20` at the merged base measured the same four figures together on the Mac's GPU:
 
-The row 8 evidence is the close-ups and the winter skeleton. At the merged base they read 7.29, 7.10
-and 4.68. The winter skeleton's wood had a median lightness of 45.9 against the reference's 43.3 at
-the previous base. Its blue-yellow axis read 7.0 against 14.2, so the wood is a little cool.
+| Light | `01` bark | `01` foliage | `26` surface | `20` bark |
+| --- | --- | --- | --- | --- |
+| Sun 1.9, the current light | 7.46 | 10.79 | 5.93 | 4.68 |
+| Sun 2.6 | 7.44 | 10.23 | 5.93 | 5.17 |
+| Sun 3.4 | 7.40 | 9.64 | 5.93 | 6.42 |
+| Sky ×1.5, sun 1.9 | 5.82 | 8.49 | 5.93 | 8.14 |
+| Sky ×2, sun 1.9 | 4.73 | 6.48 | 5.93 | 12.45 |
+
+The sun cannot reach the shaded trunk, so `01`'s bark barely moves as the sun rises. The sky term
+reaches it: doubling the sky takes `01`'s bark to 4.73, still far from 1.25, while the winter wood
+falls from 4.68 to 12.45. No shared light level both closes `01` and holds `20`. The bark close-up
+is independent of the shared daylight, since its view uses the copy-stand light, so it stays at
+5.93 in every run.
+
+**The close-up measure is stable.** The nine-patch average reads 5.96 on the old base and 5.93 on
+the merged base for the fixed trunk view. The young view's sample changed with the tree (another
+limb against another background), so its two figures do not compare one sample. The materials are
+unchanged, and their albedos match their sources.
+
+The row 8 evidence is the close-ups and the winter skeleton. At the merged base the close-ups read
+5.93 and 1.06 by the patch measure, and the winter wood reads 4.68 by the bark measure. The winter
+skeleton's wood had a median lightness of 45.9 against the reference's 43.3 at the previous base.
+Its blue-yellow axis read 7.0 against 14.2, so the wood is a little cool.
 
 ## Decision
 
@@ -137,6 +165,10 @@ bands, which turn a photograph's cracks into ridges over the plates.
   833.9 KB. No measured file grows.
 - The plant review's bark close-ups use the copy-stand light, and that light follows the camera. The
   limb view gains a `thin` request, the meters of radius it frames, and picks the limb by thickness.
+- The plant review's bark texture sources compare nine non-overlapping patches spread over the
+  picture's central eighty per cent, not its middle third. `patchLab` in
+  `tools/lib/plant-review/compare.ts` makes the measure, and its test holds a tiled picture's figure
+  still under a phase shift where one window moves by nine steps.
 - The oak's three Mac picture references are redrawn at the previous base. The merged base moves the
   plant picture again, so the plant picture set needs one central redraw. The SwiftShader set is owed
   from CI's drawing.

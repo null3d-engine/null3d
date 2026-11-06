@@ -209,6 +209,19 @@ describe('the extras', () => {
 		expect(bumped).toBe(4);
 	});
 
+	it('draws one to three at a site where the record gives a count', () => {
+		const clustered: ExtraSpec = { ...ACORN, share: 1, count: { mean: 2, spread: 1 } };
+		const input = dressed(oakRecord({ extras: [clustered] }), 'summer');
+		const mesh = extrasMesh(input, 0);
+		const perAcorn = (ACORN.shape as { lathe: unknown[] }).lathe.length * 9;
+		const acorns = (mesh?.positions.length ?? 0) / 3 / perAcorn;
+		// Every site carries one or more, none more than three, and the count's mean is two.
+		expect(acorns).toBeGreaterThanOrEqual(input.rows.count);
+		expect(acorns).toBeLessThanOrEqual(input.rows.count * 3);
+		expect(acorns / input.rows.count).toBeGreaterThan(1.7);
+		expect(acorns / input.rows.count).toBeLessThan(2.3);
+	});
+
 	it('grows the same extras from the same seed', () => {
 		const a = extrasMesh(dressed(record, 'summer'), 0);
 		const b = extrasMesh(dressed(record, 'summer'), 0);
