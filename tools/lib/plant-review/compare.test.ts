@@ -19,7 +19,7 @@ import {
 	spread,
 } from './compare.ts';
 import { blank, deltaE2000, labImage } from './image.ts';
-import { boxOf, type PlantMask, type PlantMeasures } from './references.ts';
+import { boxOf, type PlantMask, type PlantMeasures, pieceCount } from './references.ts';
 
 /** A plant mask of a rectangle crown on a one-pixel trunk, with the background fields filled in. */
 function rectangle(
@@ -345,5 +345,47 @@ describe('the patch colour of a texture source', () => {
 				for (let c = 0; c < 3; c++) image.data[at + c] = 50;
 			}
 		expect(patchLab(image)[0] as number).toBeCloseTo(80.6, 0);
+	});
+});
+
+describe('the pieces a plant is drawn as', () => {
+	/** A mask with the given squares filled in. */
+	function maskOf(width: number, height: number, squares: readonly number[][]): Uint8Array {
+		const mask = new Uint8Array(width * height);
+		for (const [x0, y0, x1, y1] of squares as readonly [number, number, number, number][])
+			for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) mask[y * width + x] = 1;
+		return mask;
+	}
+
+	test('counts a plant that hangs together as one piece', () => {
+		expect(pieceCount(maskOf(20, 20, [[2, 2, 18, 18]]), 20, 20, 24)).toBe(1);
+	});
+
+	test('counts a part that meets nothing as its own piece', () => {
+		expect(
+			pieceCount(
+				maskOf(20, 20, [
+					[8, 8, 18, 18],
+					[0, 0, 5, 5],
+				]),
+				20,
+				20,
+				24,
+			),
+		).toBe(2);
+	});
+
+	test('ignores a speck too small to be a part of the plant', () => {
+		expect(
+			pieceCount(
+				maskOf(20, 20, [
+					[2, 2, 18, 18],
+					[0, 0, 1, 1],
+				]),
+				20,
+				20,
+				24,
+			),
+		).toBe(1);
 	});
 });

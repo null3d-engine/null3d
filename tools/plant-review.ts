@@ -410,6 +410,7 @@ function compareRun(
 			// A picture whose backdrop the tool cannot separate still has edges, and its edges say
 			// where its parts run. It gets that figure instead of an outline it cannot trust.
 			...edgeLines(result.pairs),
+			...pieceLines(result.pairs),
 			...result.pairs.flatMap((pair) => (pair.note ? [`- ${pair.file}: ${pair.note}.`] : [])),
 			`- Sheets: ${result.sheets.join(', ')}.`,
 			'',
@@ -478,6 +479,27 @@ function edgeLines(pairs: readonly StillResult[]): string[] {
 			lines.push(
 				`- ${pair.file}: edge directions ${fixed(pair.edgeDifference, 3)}; 0 is the same mixture of directions in both pictures and 1 is none shared.`,
 			);
+	return lines;
+}
+
+/** Where the render is drawn as more or fewer separate pieces than its reference. */
+function pieceLines(pairs: readonly StillResult[]): string[] {
+	const lines: string[] = [];
+	for (const pair of pairs) {
+		if (!pair.pieces) continue;
+		const { reference, render } = pair.pieces;
+		const hanging =
+			'a plant hangs together, so a piece the render has and the reference does not is worth looking at';
+		if (reference === null) {
+			if (render > 1)
+				lines.push(`- ${pair.file}: the render is drawn as ${render} separate pieces; ${hanging}.`);
+			continue;
+		}
+		if (reference === render) continue;
+		lines.push(
+			`- ${pair.file}: ${reference} piece${reference === 1 ? '' : 's'} in the reference and ${render} in the render; ${hanging}.`,
+		);
+	}
 	return lines;
 }
 
