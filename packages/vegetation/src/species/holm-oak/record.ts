@@ -52,7 +52,7 @@ export const record: Species = {
 				[1, 0.42],
 			],
 			dominance: [0.4, 0.5, 0.95],
-			wander: 16,
+			wander: 24,
 		},
 		divide: { at: 0.32, count: 2, angle: 45, lean: 6 },
 		light: { apical: 1, lateral: 1.5, shadow: [5, 0.15, 2], cells: 96 },
@@ -190,7 +190,7 @@ export const record: Species = {
 		],
 		displacement: 0.012,
 		collar: { swell: 0.4, length: 1.8, ridge: 0.5 },
-		moss: { amount: 0.75, up: 1.2, north: 0.3, colour: [0.24, 0.3, 0.16] },
+		moss: { amount: 0.9, up: 1, north: 0.3, colour: [0.16, 0.26, 0.1] },
 		lichen: { amount: 0.5, from: 4, colour: [0.42, 0.46, 0.38] },
 	},
 	base: {
@@ -249,7 +249,7 @@ export const record: Species = {
 	},
 	lod: {
 		nearFoliage: 'instanced',
-		switchPixels: [440, 12, 160],
+		switchPixels: [500, 12, 160],
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
