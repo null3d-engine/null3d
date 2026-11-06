@@ -49,7 +49,7 @@ const BUD_LEAN = 28;
 /** Degrees the buds of a tip cluster lean from the terminal bud. */
 const CLUSTER_LEAN = 32;
 /** How far inside a twig's surface a crowded node's leaves root, so their blades meet the wood. */
-const CROWDED_ROOT = 0.95;
+const CROWDED_ROOT = 0.6;
 
 /** Purposes of the prototypes' hash keys, so no two draws share one. */
 const Purpose = {
