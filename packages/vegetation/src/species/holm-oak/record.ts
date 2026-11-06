@@ -54,7 +54,7 @@ export const record: Species = {
 			dominance: [0.4, 0.5, 0.95],
 			wander: 16,
 		},
-		divide: { at: 0.22, count: 2, angle: 52, lean: 6 },
+		divide: { at: 0.32, count: 2, angle: 45, lean: 6 },
 		light: { apical: 1, lateral: 1.5, shadow: [5, 0.15, 2], cells: 96 },
 		tropism: {
 			photo: 0.08,
@@ -66,8 +66,8 @@ export const record: Species = {
 				[1, 0.02],
 			],
 		},
-		shedding: { threshold: 0.06, cleanBole: 0.06, stubs: 0.12 },
-		bending: { strength: 0.4, upturn: 0.2 },
+		shedding: { threshold: 0.06, cleanBole: 0.3, stubs: 0.12 },
+		bending: { strength: 0.05, upturn: 0.2 },
 		forkRule: true,
 		kinks: true,
 		pipe: { exponent: 2.3, tipRadius: 0.004 },
@@ -191,7 +191,7 @@ export const record: Species = {
 		displacement: 0.012,
 		collar: { swell: 0.4, length: 1.8, ridge: 0.5 },
 		moss: { amount: 0.75, up: 1.2, north: 0.3, colour: [0.24, 0.3, 0.16] },
-		lichen: { amount: 0.5, from: 0.55, colour: [0.42, 0.46, 0.38] },
+		lichen: { amount: 0.5, from: 4, colour: [0.42, 0.46, 0.38] },
 	},
 	base: {
 		flare: { amount: 0.9, height: 0.5 },
