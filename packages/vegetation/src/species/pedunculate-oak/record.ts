@@ -189,14 +189,14 @@ export const record: Species = {
 	},
 	base: {
 		flare: { amount: 0.7, height: 0.6 },
-		buttress: { lobes: { mean: 6, spread: 1 }, amount: 0.55, sharpness: 3, height: 0.8 },
+		buttress: { lobes: { mean: 6, spread: 1 }, amount: 0.85, sharpness: 3, height: 1.6 },
 		roots: {
 			count: { mean: 6, spread: 1 },
-			length: { mean: 0.8, spread: 0.3 },
+			length: { mean: 1.2, spread: 0.3 },
 			radius: 0.22,
 			dive: 0.25,
 		},
-		flutes: { count: { mean: 9, spread: 2 }, depth: 0.04, height: 1.6 },
+		flutes: { count: { mean: 7, spread: 1 }, depth: 0.28, height: 2.2 },
 	},
 	extras: [
 		{
