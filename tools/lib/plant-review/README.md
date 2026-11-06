@@ -56,7 +56,7 @@ The command ends with status 1 when a frame failed or when the coverage is not c
 
 - Numbered stills go to the review view that shows the same thing, by the words in their names first and their numbers second. A still of another habit or a young form goes to the nearest view, with a note.
 - A still is drawn in the season its name gives: flowers in blossom, fruit in autumn, a bare plant in winter. A still of fruit whose picture shows more green than autumn colours is drawn in summer, since its leaves have not turned.
-- Texture sources (24 to 28) go beside the render's own surface: the leaf faces, the bark at mid-trunk, and young bark far out on a limb. The bark views frame the metres that the species' texture manifest gives.
+- Texture sources (24 to 28) go beside the render's own surface: the leaf faces, the bark at mid-trunk, and young bark far out on a limb. The bark close-ups stand in the copy-stand light, which follows the camera, so a turned view still shows the surface as its albedo. The bark views frame the metres that the species' texture manifest gives, or the metres that the slot's own query names.
 - `*-turntable*.mp4` is a turning video of the whole plant, or of the branch, sub-branch or leaf cluster that its name gives; `-halfturn` covers 180 degrees.
 - `*wind*.mp4` is a wind video.
 
@@ -73,7 +73,7 @@ The command ends with status 1 when a frame failed or when the coverage is not c
 | `distance` | Metres from the camera to the view's target, in place of the fitted distance. |
 | `fov`, `size` | The vertical field of view, and the frame's size, which gives its aspect. |
 | `background`, `sky`, `ground` | `sky-meadow`, `studio-grey` or `white`, and sRGB colours in place of its own. |
-| `sun` | `default`, `low`, `back`, `overhead` or `flat`. |
+| `sun` | `default`, `low`, `back`, `overhead`, `flat` or `albedo`. |
 | `wind`, `time` | The wind's strength from 0 to 3, and the wind clock's time, at which the tool holds the frame. |
 | `season`, `lod`, `preset` | The season, a level forced at every distance (0 to 3), and the mesh tier. |
 | `pick`, `cut` | The cutting candidate and its length in metres. |
@@ -81,6 +81,7 @@ The command ends with status 1 when a frame failed or when the coverage is not c
 | `placeholders` | Grow stand-ins; on by default for an id that is not registered. |
 | `horizon`, `fill`, `targetY`, `targetX`, `top`, `eye` | A whole-plant framing in screen shares, which stands the camera on the ground as a reference's camera stood. |
 | `along`, `span` | How far along a limb a limb view looks, and the metres of bark a bark view frames. |
+| `thin` | Metres of radius that a limb view frames: it picks the exposed limb that carries that thickness, so young bark shows. |
 | `turns`, `step`, `columns` | A sheet of turns, each in a cell of its own camera. |
 
 The page posts a `plant-review` message with the plant's height, width, crown base, trunk radius and triangles, each cell's camera, the cutting's size, and, with `measure`, each cell's measures: the crown box in metres, the foliage share, the silhouette, the trunk diameter at 1.3 m, the crown base and the first fork's height.

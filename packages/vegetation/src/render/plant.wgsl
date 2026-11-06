@@ -847,16 +847,21 @@ fn surface(input: SurfaceInput) -> Surface {
         let lichen_reach = header(HEADER_LICHEN_REACH);
         let in_zone = smoothstep(lichen_reach.x, lichen_reach.x + 0.6, plant.y)
             * (1.0 - smoothstep(lichen_reach.y - 0.6, lichen_reach.y, plant.y));
-        let grain = value3(plant * 60.0) * 0.6 + value3(plant * 140.0) * 0.4;
+        // A rosette is a few centimetres across, with a finer grain inside it, so it reads as one
+        // pale clump rather than a wash over the bark.
+        let grain = value3(plant * 24.0) * 0.65 + value3(plant * 64.0) * 0.35;
         // Only a crest holds a rosette: the furrows between the plates stay bare.
-        let crest = saturate(1.0 - cavity * 1.4);
+        let crest = sqrt(saturate(1.0 - cavity * 1.4));
+        // Lichen settles more on a face that looks at the sky.
+        let upward = 0.55 + 0.45 * saturate(n.y);
         // A patch finer than the pixel would shimmer at distance: fade it out when its cell is
         // under about a pixel and a half.
         let footprint = max(length(dpx), length(dpy));
         let resolved = 1.0 - smoothstep(0.004, 0.012, footprint);
+        let rosette = min(1.0, smoothstep(0.7, 0.73, grain) * 4.0);
         let lichen_mask =
-            smoothstep(0.64, 0.72, grain) * crest * in_zone * lichen.w * (1.0 - youth) * resolved;
-        bark = mix(bark, lichen.rgb * (0.9 + 0.2 * grain), lichen_mask);
+            rosette * crest * upward * in_zone * lichen.w * (1.0 - youth) * resolved;
+        bark = mix(bark, lichen.rgb * (0.92 + 0.16 * grain), lichen_mask);
         // The collar's dark ridge where a branch joins its parent.
         bark *= 1.0 - 0.5 * moss_reach.z * junction;
         base = bark * (1.0 - CAVITY_DARK * cavity);

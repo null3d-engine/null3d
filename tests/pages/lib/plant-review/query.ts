@@ -88,6 +88,8 @@ export interface PlantReviewQuery {
 	readonly eye?: number;
 	/** How far along a limb the limb view looks, as a share of the limb's length. */
 	readonly along?: number;
+	/** Metres of radius that a limb view frames: it picks the limb that carries that thickness. */
+	readonly thin?: number;
 	/** Metres of bark that a bark view's frame height covers. */
 	readonly span?: number;
 	/** Turns drawn as a sheet of cells, one camera each: the turntable's 8 by default. */
@@ -117,6 +119,7 @@ const NUMBER_FIELDS = [
 	'top',
 	'eye',
 	'along',
+	'thin',
 	'span',
 	'turns',
 	'step',

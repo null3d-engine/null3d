@@ -4,6 +4,8 @@ import {
 	alignTurn,
 	anchorColumn,
 	crownBoxSpread,
+	edgeDifference,
+	edgeProfile,
 	framingQuery,
 	iou,
 	motionProfile,
@@ -15,7 +17,7 @@ import {
 	rubricFrames,
 	spread,
 } from './compare.ts';
-import { deltaE2000 } from './image.ts';
+import { blank, deltaE2000 } from './image.ts';
 import { boxOf, type PlantMask, type PlantMeasures } from './references.ts';
 
 /** A plant mask of a rectangle crown on a one-pixel trunk, with the background fields filled in. */
@@ -66,6 +68,40 @@ describe('the outline overlap', () => {
 		const b = normalOf(large);
 		expect(a.length).toBe(NORMAL_WIDTH * NORMAL_HEIGHT);
 		expect(iou(a, b)).toBeGreaterThan(0.97);
+	});
+});
+
+describe('the edge directions', () => {
+	/** A picture of equal dark and light bands, running one way. */
+	function bands(horizontal: boolean) {
+		const width = 64;
+		const height = 64;
+		const image = blank(width, height, [0, 0, 0]);
+		for (let y = 0; y < height; y++)
+			for (let x = 0; x < width; x++) {
+				const dark = (horizontal ? Math.floor(y / 4) : Math.floor(x / 4)) % 2 === 0;
+				const value = dark ? 255 : 0;
+				const at = (y * width + x) * 4;
+				image.data[at] = value;
+				image.data[at + 1] = value;
+				image.data[at + 2] = value;
+				image.data[at + 3] = 255;
+			}
+		return image;
+	}
+
+	test('separate bands that run one way from bands that run the other', () => {
+		const across = edgeProfile(bands(true));
+		const down = edgeProfile(bands(false));
+		expect(edgeDifference(across, across)).toBe(0);
+		expect(edgeDifference(across, down)).toBeGreaterThan(0.9);
+	});
+
+	test('share the strength between directions as a picture mixes them', () => {
+		const across = edgeProfile(bands(true));
+		let total = 0;
+		for (const share of across) total += share;
+		expect(total).toBeCloseTo(1, 5);
 	});
 });
 
