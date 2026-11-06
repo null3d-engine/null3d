@@ -195,7 +195,7 @@ const TEXTURE_BY_NUMBER: Readonly<Record<number, SlotRule>> = {
 	27: { view: 'bark-mid', framed: false, note: "the second bark zone, at the zone's own height" },
 	28: {
 		view: 'bark-limb',
-		query: { along: 0.85 },
+		query: { along: 0.85, thin: 0.05, span: 0.07 },
 		framed: false,
 		note: 'young bark: thin wood far out on a limb',
 	},

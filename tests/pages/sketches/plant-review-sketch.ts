@@ -33,6 +33,7 @@ import {
 	firstForkHeight,
 	firstForkOf,
 	largestLimb,
+	limbNear,
 	normalize,
 	pointAlong,
 	stemAt,
@@ -464,8 +465,18 @@ export default defineSketch(async (ctx) => {
 			}
 			case 'bark-limb': {
 				if (limb < 0) break;
-				const at = pointAlong(skeleton, limb, QUERY.along ?? 0.2);
-				const across = yaw(normalize(cross([0, 1, 0], at.direction)), turn);
+				const share = QUERY.along ?? 0.2;
+				// Thin wood lies far out on a small limb, not on the thickest one: a view that asks
+				// for a radius frames the limb that carries it, seen from outside the plant so that
+				// no thicker limb stands between the camera and it.
+				const thin = QUERY.thin;
+				const axis = thin === undefined ? limb : limbNear(skeleton, share, thin);
+				if (axis < 0) break;
+				const at = pointAlong(skeleton, axis, share);
+				const across =
+					thin === undefined
+						? yaw(normalize(cross([0, 1, 0], at.direction)), turn)
+						: normalize([at.at[0] - foot[0], 0, at.at[2] - foot[2]]);
 				const reach = QUERY.span !== undefined ? QUERY.span / 2 / Math.tan((fov * DEG) / 2) : 0.8;
 				return orbit(at.at, reach + at.radius, e, Math.atan2(across[0], across[2]), fov);
 			}
@@ -601,9 +612,11 @@ export default defineSketch(async (ctx) => {
 		if (SUN === 'albedo') {
 			// A copy stand's light, straight from the camera at the strength that a diffuse surface
 			// shows its own reflectance: a face turned to the camera reads as its albedo, and no light
-			// reaches its back to pass through.
+			// reaches its back to pass through. The light follows the view, so a turned view stays lit.
+			const shot = cells[0]?.view;
+			const direction = shot ? normalize(sub(shot.target, shot.position)) : ([0, 0, -1] as V3);
 			scene.createDirectionalLight({
-				direction: [0, 0, -1],
+				direction,
 				color: '#ffffff',
 				intensity: Math.PI * 1.05,
 			});

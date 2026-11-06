@@ -238,7 +238,7 @@
 				],
 				"height": {
 					"offset": 0.19483,
-					"depth": 0.068459
+					"depth": 0.050469
 				}
 			}
 		],
@@ -282,8 +282,8 @@
 		},
 		{
 			"file": "bark-normal.ktx2",
-			"sha256": "c0c5f95ad299c9c5c7070b54b17281481df50a8ff8ca9c244a90d8572d9eeebb",
-			"bytes": 256863
+			"sha256": "f3900da118b862657a4cf00236d5b24fa74dba2a2ce59739b68d79d38ef503f9",
+			"bytes": 234800
 		},
 		{
 			"file": "young-color.ktx2",
@@ -302,8 +302,8 @@
 		},
 		{
 			"file": "bark-normal-half.ktx2",
-			"sha256": "45ad1be8751d3e413df412a9c60875359528c62f1ac2fb7938c46cae9b083365",
-			"bytes": 73622
+			"sha256": "3504baccb58864d41daf8be24f3ba979b3920d0755e775535f28597e206f5af3",
+			"bytes": 70931
 		},
 		{
 			"file": "young-color-half.ktx2",
