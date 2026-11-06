@@ -200,29 +200,31 @@ export const record: Species = {
 	},
 	extras: [
 		{
-			// The acorn on its long stalk, the peduncle that tells this oak from the sessile oak: a
-			// plump nut two and a bit centimetres long in a shallow scalloped cup that holds about its
-			// top third, ending in a small point.
+			// The acorn on its long stalk, the peduncle that tells this oak from the sessile oak: three
+			// plump nuts on one stalk that forks, each in a deep cup of scale rows that holds its top
+			// third, the nut swelling smooth and round below the cup to a small point.
 			kind: 'fruit',
 			at: 'shoot-tip',
-			share: 0.12,
-			count: { mean: 2, spread: 1 },
+			share: 0.0475,
+			count: { mean: 3, spread: 0 },
 			seasons: ['summer', 'autumn'],
 			shape: {
 				lathe: [
-					[0.0015, 0],
-					[0.0015, 0.07],
-					[0.0068, 0.077],
-					[0.0132, 0.085],
-					[0.0126, 0.089],
-					[0.0094, 0.0905],
-					[0.0112, 0.097],
-					[0.0088, 0.105],
-					[0.0038, 0.1105],
-					[0, 0.1125],
+					[0.0013, 0],
+					[0.0013, 0.02],
+					[0.0038, 0.0216],
+					[0.0072, 0.0246],
+					[0.0094, 0.0296],
+					[0.0086, 0.0316],
+					[0.008, 0.0348],
+					[0.0068, 0.0396],
+					[0.0038, 0.0444],
+					[0, 0.0464],
 				],
-				scales: 3,
-				scaled: [0.076, 0.091],
+				sides: 14,
+				scales: 2,
+				scaled: [0.02, 0.0292],
+				stalk: 0.032,
 			},
 			colour: [0.24, 0.1, 0.03],
 			hang: 180,

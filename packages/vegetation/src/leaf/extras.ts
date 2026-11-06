@@ -54,6 +54,8 @@ const FEWEST_PIXELS = 5;
 const PURPOSE = 40;
 /** Extras a record can draw: the first four, whose colours the plant material's header holds. */
 const MOST = 4;
+/** Faces round a shared stalk: a thin stem a few pixels wide reads round at four. */
+const STALK_SIDES = 4;
 
 /** One place an extra may hang from: its point, its outward direction and its wind record. */
 interface Site {
@@ -176,6 +178,39 @@ function pixelsAt(input: MeshInput, extra: ExtraSpec, level: 1 | 2): number | un
 	return (breadthOf(extra) / longest) * (input.record.lod.switchPixels[level - 1] as number);
 }
 
+/** The colour bytes of one extra: its axis's wind record, its entry in the record and its sky. */
+function colourOf(site: Site, index: number): number[] {
+	return [(site.record >>> 8) & 255, site.record & 255, index, site.sky];
+}
+
+/** Writes a thin shared stalk from a site along `down`, and gives back the point it reaches. */
+function writeStalk(
+	mesh: MeshWriter,
+	site: Site,
+	down: Vector3,
+	length: number,
+	colour: number[],
+): Vector3 {
+	const first = mesh.vertices;
+	lathe(
+		mesh,
+		[
+			[0.0017, 0],
+			[0.0013, length],
+		],
+		site.at,
+		down,
+		STALK_SIDES,
+		colour,
+	);
+	for (let i = first; i < mesh.vertices; i++) mesh.uvs[i * 2] = 0;
+	return [
+		site.at[0] + down[0] * length,
+		site.at[1] + down[1] * length,
+		site.at[2] + down[2] * length,
+	];
+}
+
 /** Writes one extra at a site. */
 function writeExtra(
 	mesh: MeshWriter,
@@ -186,7 +221,7 @@ function writeExtra(
 	sides: number,
 	turn: number,
 ): void {
-	const colour = [(site.record >>> 8) & 255, site.record & 255, index, site.sky];
+	const colour = colourOf(site, index);
 	const shape = extra.shape;
 	if ('lathe' in shape || 'catkin' in shape) {
 		let profile: [number, number][];
@@ -313,6 +348,9 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 			)
 				return;
 		}
+		const shape = extra.shape;
+		const faces = level === 0 && 'lathe' in shape && shape.sides ? shape.sides : SIDES[level];
+		const stalk = 'lathe' in shape ? (shape.stalk ?? 0) : 0;
 		sitesOf(input, extra).forEach((site, s) => {
 			const purpose = input.variant * 64 + PURPOSE + index;
 			if (unitAt(input.seed, salt, purpose, s) >= extra.share) return;
@@ -321,13 +359,20 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 				255 * Math.min(1, Math.max(0, crownSkyAt(input.crown, site.at[0], site.at[1], site.at[2]))),
 			);
 			const down = hung(site.direction, extra.hang);
+			// A shared stalk carries every copy from the site, so the cluster forks from one stem.
+			const from: Site =
+				stalk > 0
+					? { ...site, at: writeStalk(mesh, site, down, stalk, colourOf(site, index)) }
+					: site;
 			// A site carries a cluster where the record gives a count: the copies hang from the one
 			// point, leaning apart round it, as an oak's acorns share a stalk.
 			const count = extra.count
 				? Math.max(1, Math.round(spreadAt(extra.count, unitAt(input.seed, salt, purpose, s, 2))))
 				: 1;
 			const [side, other] = sideAxes(down, [0, 1, 0]);
-			const lean = radians(16);
+			// Copies from a shared stalk lean apart enough that their bodies clear one another below
+			// the fork; one that has no stalk carries them as close as a budding cluster.
+			const lean = radians(stalk > 0 ? 36 : 16);
 			for (let k = 0; k < count; k++) {
 				const azimuth = turn + (2 * Math.PI * k) / count;
 				const outward: Vector3 = [
@@ -343,7 +388,7 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 								down[2] * cos(lean) + outward[2] * sin(lean),
 							])
 						: down;
-				writeExtra(mesh, extra, index, site, direction, SIDES[level], azimuth);
+				writeExtra(mesh, extra, index, from, direction, faces, azimuth);
 			}
 		});
 	});
