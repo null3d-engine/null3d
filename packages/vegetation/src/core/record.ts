@@ -816,12 +816,6 @@ export interface ShootSpec {
 		 * each limb's tip, where a bare run otherwise stands past the leaves.
 		 */
 		readonly tipBias?: number;
-		/**
-		 * The most a shoot may stand from a major limb, in metres. The foliage rides the limbs in a
-		 * sheath, so the leaves of one limb make one mass and the sky shows between the masses.
-		 * Absent, a shoot stands wherever its light and vigor put it.
-		 */
-		readonly sheath?: number;
 		/** No shoot where sky visibility is below this: shade pruning. */
 		readonly shadePrune: number;
 		/** How far a shoot turns its leaves toward the sky, 0 to 1 (flat beech sprays). */
