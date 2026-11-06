@@ -103,7 +103,7 @@ export const record: Species = {
 				share: 0.35,
 				years: 2,
 				length: { mean: 0.4, spread: 0.06 },
-				nodes: { mean: 6, spread: 1 },
+				nodes: { mean: 5, spread: 0.5 },
 				internode: ROSETTE,
 				stem: { radius: [0.006, 0.0035] },
 				leafScale: [
@@ -111,9 +111,9 @@ export const record: Species = {
 					[1, 1],
 				],
 				leafAngle: [
-					[0, 150],
-					[0.5, 95],
-					[1, 45],
+					[0, 120],
+					[0.5, 90],
+					[1, 60],
 				],
 				droop: 5,
 			},
