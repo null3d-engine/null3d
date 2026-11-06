@@ -183,6 +183,13 @@ function colourOf(site: Site, index: number): number[] {
 	return [(site.record >>> 8) & 255, site.record & 255, index, site.sky];
 }
 
+/**
+ * The depth a shared stalk reaches back past the site into the wood it grows from. Two parts built
+ * separately meet at a point, and a point is no join at all under a close view: the stalk starts
+ * inside the parent's own wood so the two read as one piece.
+ */
+const STALK_OVERLAP = 0.02;
+
 /** Writes a thin shared stalk from a site along `down`, and gives back the point it reaches. */
 function writeStalk(
 	mesh: MeshWriter,
@@ -192,13 +199,18 @@ function writeStalk(
 	colour: number[],
 ): Vector3 {
 	const first = mesh.vertices;
+	const top: Vector3 = [
+		site.at[0] - down[0] * STALK_OVERLAP,
+		site.at[1] - down[1] * STALK_OVERLAP,
+		site.at[2] - down[2] * STALK_OVERLAP,
+	];
 	lathe(
 		mesh,
 		[
 			[0.0017, 0],
-			[0.0013, length],
+			[0.0013, length + STALK_OVERLAP],
 		],
-		site.at,
+		top,
 		down,
 		STALK_SIDES,
 		colour,
