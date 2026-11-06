@@ -148,7 +148,7 @@ export const record: Species = {
 		stem: { radius: [0.0035, 0.0025], zigzag: 12 },
 		// The reference's own guide puts the cone near a fifteenth of a leaf; the species' buds run 3
 		// to 6 mm, so the record takes the top of that range rather than the bottom.
-		bud: { length: 0.006, width: 0.0035, tipCluster: 7, colour: [0.34, 0.2, 0.09] },
+		bud: { length: 0.0085, width: 0.006, tipCluster: 7, colour: [0.34, 0.2, 0.09] },
 		placement: {
 			perMetre: [
 				[0, 0.5],
@@ -156,8 +156,9 @@ export const record: Species = {
 				[1, 7],
 			],
 			// The reference's crown is denser than the curve alone gives: this is the dial, not a
-			// change of reach or part size.
-			density: 1.25,
+			// change of reach or part size. The low limbs now keep the foliage they carry below the
+			// bole's line, so the dial sits lower than it did when that foliage was missing.
+			density: 1.05,
 			shadePrune: 0.15,
 			skyward: 0.35,
 			scale: { mean: 1.4, spread: 0.15 },
