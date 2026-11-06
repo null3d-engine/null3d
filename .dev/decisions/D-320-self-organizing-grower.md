@@ -172,3 +172,10 @@ its fork. At seed 11 on the holm oak's record, variant 5 stood 3.10 m tall again
 variant 0. With the stair it stands 7.4 m, and thirty plants over five seeds and six variants all
 pass 6.5 m. One stem forks at the record's height, so a single-stem plant takes no new path: the
 oak's eighteen skeletons at three seeds and six variants keep their digests.
+
+A stool's clean bole clears every branch that starts below the bole height, and every branch whose
+tip hangs below it. One stem keeps the older rule, which clears only the branches that leave the
+stem itself. A chain of fine twigs can otherwise dive from the crown and hang in the open beneath
+it: on the holm oak, one variant's lowest foliage stood at 0.47 m where its siblings stood at 2.6 to
+2.9 m, and it carried more shoots than any other. With the stool's rule the six crown bases sit at
+0.24 to 0.32 of their heights, and the oak's eighteen skeleton digests stay as they were.

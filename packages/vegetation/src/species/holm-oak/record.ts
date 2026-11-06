@@ -261,7 +261,9 @@ export const record: Species = {
 		shadowLevel: 1,
 		budget: {
 			kitBytes: { low: 2_000_000, medium: 2_900_000, high: 5_300_000, ultra: 9_500_000 },
-			variantBytes: { low: 10_500_000, medium: 11_000_000, high: 11_200_000, ultra: 11_500_000 },
+			// The densest of the six variants sets each cap: variant 4 measures 16.32, 16.43, 16.65
+			// and 17.02 MB at the four tiers. Each cap sits just above its figure.
+			variantBytes: { low: 16_400_000, medium: 16_500_000, high: 16_800_000, ultra: 17_100_000 },
 			lod0Triangles: 2_500_000,
 			lod1Triangles: 150_000,
 			lod2Triangles: 30_000,

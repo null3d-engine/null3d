@@ -1036,8 +1036,13 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			const first = plant.axisFirst[a] as number;
 			const from = plant.axisParentNode[a] as number;
 			if (first < 0 || from < 0 || plant.axisShed[a] || !live[first]) continue;
-			const onStem = plant.axisOrder[plant.axisOf[from] as number] === 0;
-			const low = onStem && (plant.y[from] as number) < bole;
+			// One stem clears the branches that leave it below its bole. A stool clears every branch
+			// that starts or hangs below the bole, so no twig chain dangles under the crown.
+			const low =
+				starts.length > 1
+					? (plant.y[from] as number) < bole ||
+						(plant.y[plant.axisTip[a] as number] as number) < bole
+					: plant.axisOrder[plant.axisOf[from] as number] === 0 && (plant.y[from] as number) < bole;
 			const held = nodes[first] as number;
 			const dim = held >= SHED_AFTER && (light[first] as number) / held < threshold;
 			if (!low && !dim) continue;
