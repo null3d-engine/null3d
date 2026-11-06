@@ -107,8 +107,8 @@ export const record: Species = {
 				internode: ROSETTE,
 				stem: { radius: [0.006, 0.0035] },
 				leafScale: [
-					[0, 0.95],
-					[1, 1.2],
+					[0, 1],
+					[1, 1],
 				],
 				leafAngle: [
 					[0, 120],
