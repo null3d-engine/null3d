@@ -145,7 +145,9 @@ export const record: Species = {
 		stem: { radius: [0.0035, 0.0025], zigzag: 12 },
 		// The reference's own guide puts the cone near a fifteenth of a leaf; the species' buds run 3
 		// to 6 mm, so the record takes the top of that range rather than the bottom.
-		bud: { length: 0.006, width: 0.0035, tipCluster: 7, colour: [0.34, 0.2, 0.09] },
+		// The cone reads by its count, not its length: the bud is at the species' ceiling, so the
+		// cluster carries more buds rather than longer ones.
+		bud: { length: 0.006, width: 0.0035, tipCluster: 11, colour: [0.34, 0.2, 0.09] },
 		placement: {
 			perMetre: [
 				[0, 0.5],
@@ -229,7 +231,7 @@ export const record: Species = {
 					[0.001, 0.0215],
 					[0, 0.022],
 				],
-				sides: 14,
+				sides: 24,
 				scales: 3,
 				scaled: [0, 0.0068],
 				stalk: 0.032,
