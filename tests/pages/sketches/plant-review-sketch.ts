@@ -416,7 +416,7 @@ export default defineSketch(async (ctx) => {
 				const across = yaw(normalize(cross([0, 1, 0], at.direction)), turn);
 				// The view frames the junction's own size: the trunk and limb a few radii across, so a
 				// thick bole's crotch is not a wall of bark at a fixed distance.
-				const reach = 1 + (view === 'fork' ? 4 : 6) * at.radius;
+				const reach = 1.5 + (view === 'fork' ? 2.5 : 2) * at.radius;
 				const back = Math.atan2(across[0], across[2]);
 				return orbit(at.at, reach, e, back, fov);
 			}
