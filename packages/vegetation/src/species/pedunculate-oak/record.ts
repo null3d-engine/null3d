@@ -161,7 +161,7 @@ export const record: Species = {
 			density: 1.05,
 			// The reference's crown is built of separate foliage plates with sky between them, and the
 			// gap between the plates stays open to the crown's surface. The spacing is the plate size.
-			clump: { spacing: 3.4, depth: 0.8 },
+			clump: { spacing: 3.4, depth: 0.8, fine: { spacing: 1.1, depth: 0.6 } },
 			shadePrune: 0.15,
 			skyward: 0.35,
 			scale: { mean: 1.4, spread: 0.15 },

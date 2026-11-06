@@ -341,6 +341,23 @@ export function placeShoots(input: DressInput): ShootRows {
 				at[2] / spacing,
 			);
 			expected *= Math.max(0, 1 + depth * (2 * patch - 1));
+			// A second scale below the first: the plates keep their own gaps, and within a plate the
+			// foliage gathers into tufts with wood and sky between them, so the twig order shows.
+			const fine = clump.fine;
+			if (fine) {
+				const step = Math.max(1e-3, fine.spacing);
+				const tuft = latticeNoise(
+					seed,
+					salt,
+					variant * 64 + Purpose.Clump + 1,
+					at[0] / step,
+					at[1] / step,
+					at[2] / step,
+				);
+				expected *= Math.max(0, 1 + Math.min(1, Math.max(0, fine.depth)) * (2 * tuft - 1));
+				// A tuft's own gaps stand as bare as a plate's, or a tuft's edge closes on a rosette.
+				patch = Math.min(patch, tuft);
+			}
 		}
 		// The outermost bud of an axis carries a rosette even where its vigor and stretch give none,
 		// whether it is the axis's terminal bud or the live shoot that replaced a lost one: a twig

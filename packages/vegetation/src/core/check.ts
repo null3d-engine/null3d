@@ -115,6 +115,18 @@ function shootProblems(shoots: ShootSpec, out: string[]): void {
 	shareProblem(shoots.placement.shadePrune, 'shoots.placement.shadePrune', out);
 	shareProblem(shoots.placement.skyward, 'shoots.placement.skyward', out);
 	spreadProblems(shoots.placement.scale, 'shoots.placement.scale', true, out);
+	const clump = shoots.placement.clump;
+	for (const [name, scale] of [
+		['clump', clump],
+		['clump.fine', clump?.fine],
+	] as const) {
+		if (!scale) continue;
+		if (!(scale.spacing > 0))
+			out.push(
+				`shoots.placement.${name}.spacing is ${scale.spacing}; it is metres and must be above 0`,
+			);
+		shareProblem(scale.depth, `shoots.placement.${name}.depth`, out);
+	}
 }
 
 function growthProblems(record: Species, out: string[]): void {
