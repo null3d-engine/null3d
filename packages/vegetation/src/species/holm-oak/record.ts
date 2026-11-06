@@ -157,7 +157,7 @@ export const record: Species = {
 			],
 			density: 1.3,
 			shadePrune: 0.1,
-			skyward: 0.3,
+			skyward: 0.0,
 			scale: { mean: 1.3, spread: 0.15 },
 		},
 	},
