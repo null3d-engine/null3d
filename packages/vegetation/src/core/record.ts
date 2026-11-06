@@ -802,6 +802,11 @@ export interface ShootSpec {
 		readonly width: number;
 		/** Buds crowded at the shoot tip (oak). */
 		readonly tipCluster: number;
+		/**
+		 * How much of its usual run the tip cluster keeps, 0 to 1: at 1 the buds spiral down the
+		 * shoot's last centimetres, and smaller they pile into one cone at the very tip.
+		 */
+		readonly clusterSpan?: number;
 		/** The buds' linear colour, which takes the young bark's pattern; the young bark's own when not given. */
 		readonly colour?: Rgb;
 	};

@@ -480,6 +480,7 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 	const buds: PlannedBud[] = [];
 	const budLength = shoots.bud.length;
 	const budWidth = shoots.bud.width;
+	const clusterSpan = Math.min(1, Math.max(0, shoots.bud.clusterSpan ?? 1));
 	let span = 0;
 
 	const grow = (start: AxisStart): void => {
@@ -675,9 +676,10 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 			const outward = turn(sky, direction, k * GOLDEN);
 			const lean = radians(CLUSTER_LEAN);
 			// The cluster stacks down the twig's last centimetres, each bud a little below the last on a
-			// spiral, standing on the bark.
-			const back = budLength * (0.35 + 0.4 * k);
-			const out = tipRadius + budWidth * 0.2;
+			// spiral, standing on the bark. A species whose cluster is one cone at the tip keeps only
+			// the first of that run, so the buds stand round the terminal bud rather than behind it.
+			const back = budLength * (0.35 + 0.4 * k) * clusterSpan;
+			const out = tipRadius + budWidth * (0.2 + 0.5 * (1 - clusterSpan));
 			buds.push({
 				at: [
 					at[0] - direction[0] * back + outward[0] * out,
