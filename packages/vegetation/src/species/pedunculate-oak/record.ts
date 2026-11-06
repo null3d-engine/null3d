@@ -72,7 +72,8 @@ export const record: Species = {
 		classes: [
 			{
 				// This year's shoot of still 23: a straight twig ending in one rosette of about six
-				// leaves round its bud cluster.
+				// leaves round its bud cluster. The oldest leaf of the rosette opens widest and hangs
+				// the lowest, the newest stands most upright, so the cluster is round from every side.
 				name: 'short',
 				vigor: [0, 0.04],
 				share: 0.3,
@@ -85,9 +86,9 @@ export const record: Species = {
 					[1, 1.05],
 				],
 				leafAngle: [
-					[0, 120],
-					[0.5, 105],
-					[1, 100],
+					[0, 150],
+					[0.5, 95],
+					[1, 40],
 				],
 				droop: 3,
 			},
@@ -101,6 +102,7 @@ export const record: Species = {
 				length: { mean: 0.4, spread: 0.06 },
 				nodes: { mean: 6, spread: 1 },
 				internode: ROSETTE,
+				stem: { radius: [0.006, 0.0035] },
 				leafScale: [
 					[0, 0.8],
 					[1, 1],
@@ -122,6 +124,8 @@ export const record: Species = {
 				length: { mean: 1.15, spread: 0.15 },
 				nodes: { mean: 5, spread: 1 },
 				internode: ROSETTE,
+				stem: { radius: [0.013, 0.005] },
+				lateral: 60,
 				leafScale: [
 					[0, 0.8],
 					[1, 1],
@@ -139,7 +143,7 @@ export const record: Species = {
 		years: 3,
 		leafYears: 1,
 		stem: { radius: [0.0035, 0.0025], zigzag: 12 },
-		bud: { length: 0.012, width: 0.008, tipCluster: 7, colour: [0.26, 0.14, 0.06] },
+		bud: { length: 0.016, width: 0.011, tipCluster: 7, colour: [0.26, 0.14, 0.06] },
 		placement: {
 			perMetre: [
 				[0, 1],
@@ -179,7 +183,7 @@ export const record: Species = {
 			[1, 1],
 		],
 		displacement: 0.04,
-		collar: { swell: 0.2, length: 1.5, ridge: 0.6 },
+		collar: { swell: 0.45, length: 1.8, ridge: 0.6 },
 		moss: { amount: 0.7, up: 4, north: 0.3, colour: [0.3, 0.36, 0.24] },
 		lichen: { amount: 0.45, from: 0.6, colour: [0.86, 0.9, 0.8] },
 	},
@@ -197,28 +201,30 @@ export const record: Species = {
 	extras: [
 		{
 			// The acorn on its long stalk, the peduncle that tells this oak from the sessile oak: a
-			// shallow scaly cup holding about a third of the nut.
+			// plump nut two and a bit centimetres long in a shallow scalloped cup that holds about its
+			// top third, ending in a small point.
 			kind: 'fruit',
 			at: 'shoot-tip',
-			share: 0.3,
+			share: 0.24,
 			seasons: ['summer', 'autumn'],
 			shape: {
 				lathe: [
-					[0.0016, 0],
-					[0.0016, 0.065],
-					[0.006, 0.067],
-					[0.0095, 0.072],
-					[0.0098, 0.076],
-					[0.0085, 0.077],
-					[0.0088, 0.084],
-					[0.0078, 0.094],
-					[0.0045, 0.101],
-					[0, 0.103],
+					[0.0015, 0],
+					[0.0015, 0.07],
+					[0.0048, 0.078],
+					[0.01, 0.084],
+					[0.0106, 0.087],
+					[0.0086, 0.089],
+					[0.0098, 0.096],
+					[0.0078, 0.104],
+					[0.0034, 0.1095],
+					[0, 0.1115],
 				],
 				scales: 3,
+				scaled: [0.077, 0.09],
 			},
-			colour: [0.16, 0.12, 0.05],
-			hang: 150,
+			colour: [0.24, 0.1, 0.03],
+			hang: 180,
 		},
 	],
 	seasons: {
