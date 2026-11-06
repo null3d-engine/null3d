@@ -1209,6 +1209,12 @@ export interface ExtraSpec {
 	readonly share: number;
 	/** How many stand at one site, 1 by default: an oak's acorns share a stalk in ones to threes. */
 	readonly count?: Spread;
+	/**
+	 * How far out along a shoot a `shoot-tip` site stands, as a share of the way to the tip: 1, the
+	 * tip itself, by default. A fruit that hangs from the last joint instead of the tip leaves the
+	 * twig standing past it, so its stalk meets wood rather than open air.
+	 */
+	readonly tipShare?: number;
 	/** The seasons it shows in. */
 	readonly seasons: readonly Season[];
 	/** Its shape. */
