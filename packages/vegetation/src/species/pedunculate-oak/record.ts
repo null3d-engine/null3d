@@ -155,6 +155,9 @@ export const record: Species = {
 				[0.55, 0.9],
 				[1, 7],
 			],
+			// The reference's crown is denser than the curve alone gives: this is the dial, not a
+			// change of reach or part size.
+			density: 1.25,
 			shadePrune: 0.15,
 			skyward: 0.35,
 			scale: { mean: 1.4, spread: 0.15 },
@@ -273,7 +276,7 @@ export const record: Species = {
 			// variant's measured figure at its tier: 7.94, 8.13, 8.34 and 8.56 MB.
 			// The two-year foliage also adds a second year's leaf card to each variant, which takes the
 			// largest of the first three to 9.73 MB at ultra; each cap sits just above its figure.
-			variantBytes: { low: 8_200_000, medium: 8_400_000, high: 9_800_000, ultra: 10_000_000 },
+			variantBytes: { low: 8_200_000, medium: 9_000_000, high: 10_600_000, ultra: 10_900_000 },
 			lod0Triangles: 2_500_000,
 			lod1Triangles: 150_000,
 			lod2Triangles: 30_000,
