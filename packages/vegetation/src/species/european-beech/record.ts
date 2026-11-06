@@ -78,7 +78,7 @@ export const record: Species = {
 				share: 0.3,
 				years: 1,
 				length: { mean: 0.4, spread: 0.06 },
-				nodes: { mean: 6, spread: 0.5 },
+				nodes: { mean: 9, spread: 0.5 },
 				internode: ALTERNATE,
 				leafScale: [
 					[0, 0.85],
@@ -158,7 +158,7 @@ export const record: Species = {
 		leaf: {
 			// The single leaf of stills 12 and 13 and the texture sources 24 and 25: an oval blade,
 			// seven pairs of straight parallel veins, a wavy untoothed margin and a very short stalk.
-			length: { mean: 0.24, spread: 0.035 },
+			length: { mean: 0.13, spread: 0.02 },
 			outline: 'texture',
 			petiole: { length: 0.004, radius: 0.0008, flat: 0, droop: 12 },
 			fold: 12,
