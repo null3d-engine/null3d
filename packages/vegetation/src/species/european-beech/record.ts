@@ -12,11 +12,10 @@
 import type { Species } from '../../core/record';
 import { aspect, envelope, roundBand } from './fit';
 
-/** Internodes along a growth unit: one long first internode, then the leaves crowd at its tip. */
-const ROSETTE: readonly (readonly [number, number])[] = [
-	[0, 20],
-	[0.15, 0.6],
-	[1, 0.3],
+/** Internodes along a growth unit: an even spacing, as the beech's leaves alternate along the shoot. */
+const ALTERNATE: readonly (readonly [number, number])[] = [
+	[0, 1],
+	[1, 1],
 ];
 
 /** The European beech's record. */
@@ -78,17 +77,17 @@ export const record: Species = {
 				vigor: [0, 0.05],
 				share: 0.3,
 				years: 1,
-				length: { mean: 0.12, spread: 0.02 },
+				length: { mean: 0.4, spread: 0.06 },
 				nodes: { mean: 6, spread: 0.5 },
-				internode: ROSETTE,
+				internode: ALTERNATE,
 				leafScale: [
 					[0, 0.85],
 					[1, 1.05],
 				],
 				leafAngle: [
-					[0, 145],
-					[0.5, 95],
-					[1, 45],
+					[0, 110],
+					[0.5, 85],
+					[1, 55],
 				],
 				droop: 4,
 			},
@@ -98,10 +97,10 @@ export const record: Species = {
 				name: 'long',
 				vigor: [0.05, 0.25],
 				share: 0.35,
-				years: 2,
-				length: { mean: 0.35, spread: 0.05 },
+				years: 3,
+				length: { mean: 0.7, spread: 0.1 },
 				nodes: { mean: 6, spread: 1 },
-				internode: ROSETTE,
+				internode: ALTERNATE,
 				stem: { radius: [0.005, 0.003] },
 				leafScale: [
 					[0, 0.8],
@@ -120,9 +119,9 @@ export const record: Species = {
 				vigor: [0.25, 1],
 				share: 0.35,
 				years: 3,
-				length: { mean: 0.9, spread: 0.15 },
+				length: { mean: 1.15, spread: 0.15 },
 				nodes: { mean: 5, spread: 1 },
-				internode: ROSETTE,
+				internode: ALTERNATE,
 				stem: { radius: [0.011, 0.004] },
 				lateral: 55,
 				leafScale: [
@@ -197,33 +196,38 @@ export const record: Species = {
 	base: {
 		// Still 17: broad smooth buttress roots like an elephant's toes.
 		flare: { amount: 0.8, height: 0.5 },
-		buttress: { lobes: { mean: 6, spread: 1 }, amount: 0.6, sharpness: 2.5, height: 0.6 },
+		buttress: { lobes: { mean: 7, spread: 1 }, amount: 0.8, sharpness: 2.5, height: 1.0 },
 		roots: {
 			count: { mean: 6, spread: 1 },
-			length: { mean: 1.0, spread: 0.3 },
+			length: { mean: 1.1, spread: 0.3 },
 			radius: 0.3,
 			dive: 0.3,
 		},
+		// Still 14: deep clefts between the buttress toes run up the foot.
+		flutes: { count: { mean: 8, spread: 1 }, depth: 0.18, height: 1.8 },
 	},
 	extras: [
 		{
-			// Still 19: a small bristly cupule hanging singly on a short stalk in early autumn, split
-			// to show the two three-sided nuts.
+			// Still 19: two small bristly cupules on short stalks in early autumn, each holding two
+			// three-sided nuts.
 			kind: 'fruit',
 			at: 'shoot-tip',
-			share: 0.05,
+			share: 0.06,
+			count: { mean: 2, spread: 0.5 },
 			seasons: ['autumn'],
 			shape: {
 				lathe: [
-					[0.001, 0],
-					[0.007, 0.006],
-					[0.011, 0.013],
-					[0.009, 0.02],
-					[0.003, 0.024],
-					[0, 0.025],
+					[0.0015, 0],
+					[0.0015, 0.012],
+					[0.004, 0.015],
+					[0.009, 0.019],
+					[0.011, 0.025],
+					[0.008, 0.031],
+					[0.003, 0.034],
+					[0, 0.035],
 				],
-				scales: 4,
-				scaled: [0.004, 0.02],
+				scales: 5,
+				scaled: [0.016, 0.032],
 			},
 			colour: [0.3, 0.19, 0.08],
 			hang: 180,
@@ -237,12 +241,12 @@ export const record: Species = {
 	},
 	wind: {
 		stiffness: [
-			[0, 0.98],
-			[0.5, 0.95],
-			[1, 0.75],
+			[0, 1],
+			[0.5, 0.98],
+			[1, 0.9],
 		],
-		sway: { frequency: 0.28, amplitude: 0.025 },
-		flutter: { kind: 'blade', amplitude: 0.28, frequency: 2.6 },
+		sway: { frequency: 0.3, amplitude: 0.012 },
+		flutter: { kind: 'blade', amplitude: 0.1, frequency: 3 },
 	},
 	lod: {
 		nearFoliage: 'instanced',
