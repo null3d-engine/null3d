@@ -222,6 +222,70 @@ describe('the extras', () => {
 		expect(acorns / input.rows.count).toBeLessThan(2.3);
 	});
 
+	it('forks every copy of a cluster from the end of one shared stalk', () => {
+		const shared: ExtraSpec = {
+			...ACORN,
+			share: 1,
+			count: { mean: 3, spread: 0 },
+			shape: { lathe: (ACORN.shape as { lathe: readonly [number, number][] }).lathe, stalk: 0.05 },
+		};
+		const input = dressed(oakRecord({ extras: [shared] }), 'summer');
+		const mesh = extrasMesh(input, 0);
+		if (!mesh) throw new Error('no acorns');
+		// A four-sided stalk's ring holds a vertex a side plus the seam; a copy's ring holds nine.
+		const stalkRing = 5;
+		const perAcorn = (ACORN.shape as { lathe: unknown[] }).lathe.length * 9;
+		const perSite = stalkRing * 2 + perAcorn * 3;
+		expect(mesh.positions.length / 3).toBe(input.rows.count * perSite);
+		// The middle of a ring, which a shared stalk's last ring and every copy's first ring share.
+		const centre = (first: number, ring: number): number[] => {
+			const out = [0, 0, 0];
+			for (let j = 0; j < ring - 1; j++)
+				for (let axis = 0; axis < 3; axis++)
+					out[axis] =
+						(out[axis] as number) + (mesh.positions[(first + j) * 3 + axis] as number) / (ring - 1);
+			return out;
+		};
+		const top = centre(0, stalkRing);
+		const fork = centre(stalkRing, stalkRing);
+		expect(fork[1] as number).toBeLessThan((top[1] as number) - 0.03);
+		for (let k = 0; k < 3; k++) {
+			const at = centre(stalkRing * 2 + k * perAcorn, 9);
+			expect(at[0]).toBeCloseTo(fork[0] as number, 5);
+			expect(at[1]).toBeCloseTo(fork[1] as number, 5);
+			expect(at[2]).toBeCloseTo(fork[2] as number, 5);
+		}
+	});
+
+	it('lets a lathe name the face count of its nearest level', () => {
+		const lathe = (ACORN.shape as { lathe: readonly [number, number][] }).lathe;
+		const plain = extrasMesh(dressed(oakRecord({ extras: [{ ...ACORN, share: 1 }] }), 'summer'), 0);
+		const round = extrasMesh(
+			dressed(
+				oakRecord({ extras: [{ ...ACORN, share: 1, shape: { lathe, sides: 12 } }] }),
+				'summer',
+			),
+			0,
+		);
+		if (!plain || !round) throw new Error('no acorns');
+		// The same sites carry the same profile, so the faces alone change the count: thirteen
+		// vertices round a ring in place of nine. A card level keeps its own thinned count.
+		expect(round.positions.length / plain.positions.length).toBeCloseTo(13 / 9, 6);
+		const cone = (OTHERS[3] as ExtraSpec).shape;
+		const thinned: ExtraSpec = {
+			...(OTHERS[3] as ExtraSpec),
+			shape: { ...(cone as { lathe: readonly [number, number][] }), sides: 12 },
+		};
+		const roundCone = oakRecord({
+			extras: [thinned],
+			lod: { ...oakRecord().lod, switchPixels: [104, 12, 160] },
+		});
+		const drawn = extrasMesh(dressed(coned, 'summer'), 1);
+		const thinnedDrawn = extrasMesh(dressed(roundCone, 'summer'), 1);
+		if (!drawn || !thinnedDrawn) throw new Error('no cones');
+		expect(thinnedDrawn.positions.length).toBe(drawn.positions.length);
+	});
+
 	it('grows the same extras from the same seed', () => {
 		const a = extrasMesh(dressed(record, 'summer'), 0);
 		const b = extrasMesh(dressed(record, 'summer'), 0);
