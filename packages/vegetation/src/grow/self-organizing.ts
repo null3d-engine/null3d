@@ -393,6 +393,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	const lightApical = g.light.apical;
 	const lightLateral = g.light.lateral;
 	const [extinctApical, extinctLateral] = g.buds.extinction;
+	const branching = Math.max(0, g.branching ?? 1);
 	const wander = tan(radians(Math.min(80, Math.max(0, g.apical.wander))));
 	// The height at which the leader divides into its great limbs, if the record gives one.
 	const divideAt = g.divide === undefined ? Number.POSITIVE_INFINITY : height * g.divide.at;
@@ -1081,7 +1082,12 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 						continue;
 					}
 					const q = plant.budLight[b] as number;
-					const chance = pow(q, lightLateral) * exp(-ageDominance * suppression);
+					// The record's branching sets how readily a lateral puts out a branch: this is the
+					// wood's density, which the crown's foliage thins or fills.
+					const chance = Math.min(
+						1,
+						pow(q, lightLateral) * exp(-ageDominance * suppression) * branching,
+					);
 					if (unit(Purpose.Flush, year, b) < chance) {
 						flushing.push(b);
 						takes[b] = 1;
