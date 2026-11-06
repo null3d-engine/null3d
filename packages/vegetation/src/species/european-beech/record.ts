@@ -179,9 +179,9 @@ export const record: Species = {
 	bark: {
 		// Still 26: thin, smooth, mottled silver-grey bark with no fissures. The shallow figure comes
 		// from the texture's own measured depth.
-		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [3.4, 3.4, 3.4] }],
+		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0 }],
 		young: 0,
-		youngRadius: 0.03,
+		youngRadius: 0.08,
 		girthScale: [
 			[0, 0.7],
 			[1, 1],
@@ -189,8 +189,8 @@ export const record: Species = {
 		displacement: 0.006,
 		// Still 7: the wrinkles gather in the armpit of a limb's joint.
 		collar: { swell: 0.35, length: 1.6, ridge: 0.6 },
-		moss: { amount: 0.5, up: 2, north: 0.2, colour: [0.18, 0.28, 0.12] },
-		lichen: { amount: 0.25, from: 0, to: 0.6, colour: [0.55, 0.62, 0.5] },
+		moss: { amount: 0.8, up: 2.5, north: 0.25, colour: [0.18, 0.3, 0.12] },
+		lichen: { amount: 0.4, from: 0, colour: [0.32, 0.42, 0.28] },
 		// The pale eyes along the bole where shed branches were, as stills 7 and 17 show.
 		scars: 1.5,
 	},
