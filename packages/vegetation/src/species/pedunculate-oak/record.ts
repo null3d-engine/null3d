@@ -18,15 +18,6 @@ const ROSETTE: readonly (readonly [number, number])[] = [
 	[1, 0.3],
 ];
 
-/**
- * Internodes along a growth unit at one length: the twigs of a branch leave it at even steps down its
- * run, as the reference branch's do, rather than gathering at its tip.
- */
-const EVEN: readonly (readonly [number, number])[] = [
-	[0, 1],
-	[1, 1],
-];
-
 /** The pedunculate oak's record. */
 export const record: Species = {
 	id: 'pedunculate-oak',
@@ -135,7 +126,7 @@ export const record: Species = {
 				years: 3,
 				length: { mean: 1.15, spread: 0.15 },
 				nodes: { mean: 5, spread: 1 },
-				internode: EVEN,
+				internode: ROSETTE,
 				stem: { radius: [0.018, 0.007] },
 				lateral: 60,
 				leafScale: [
