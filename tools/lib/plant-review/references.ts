@@ -110,7 +110,12 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			slot: { view: 'below', elevation: 80, framed: false },
 		},
 		{ test: (n) => n.includes('inside'), slot: { view: 'inside', framed: false } },
-		{ test: (n) => /(crown|clump)-(outside|edge)/.test(n), slot: { view: 'crown', framed: false } },
+		{
+			// The crown's outer surface: a limb running across the frame with its rosettes against the
+			// sky, at the span a photograph of that surface covers.
+			test: (n) => /(crown|clump)-(outside|edge)/.test(n),
+			slot: { view: 'limb', query: { span: 1.5, thin: 0.06 }, framed: false },
+		},
 		{
 			test: (n) => n.includes('limb-leaving') || n.includes('culm-base'),
 			slot: { view: 'junction', framed: false },
