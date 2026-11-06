@@ -16,6 +16,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { REPO_ROOT } from '../tests/lib/server.ts';
 import type { PlantReviewQuery } from '../tests/pages/lib/plant-review/query.ts';
 import {
+	CUTTING_VIEWS,
 	PLANT_VIEWS,
 	type PlantView,
 	VIEW_SPECS,
@@ -154,8 +155,12 @@ function stillShot(
 		}
 	}
 	// A still whose own picture separates the plant from a plain background can be compared by
-	// outline, whatever part of the plant it frames: the render draws the same mask.
-	const outline = plant.background.plain && slot.view !== 'silhouette';
+	// outline, whatever part of the plant it frames: the render draws the same mask. A texture source
+	// is a flat swatch rather than a picture of the plant, so it is not given one.
+	const outline =
+		(slot.kind !== 'texture' && plant.background.plain && slot.view !== 'silhouette') ||
+		slot.framed ||
+		CUTTING_VIEWS.includes(slot.view);
 	return singleShot(
 		'stills',
 		`${slot.file.replace(/\.\w+$/, '')}.png`,
