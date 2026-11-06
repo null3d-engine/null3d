@@ -124,7 +124,7 @@ export const record: Species = {
 				vigor: [0.2, 1],
 				share: 0.35,
 				years: 3,
-				length: { mean: 0.78, spread: 0.12 },
+				length: { mean: 0.95, spread: 0.12 },
 				nodes: { mean: 7, spread: 1 },
 				internode: ROSETTE,
 				stem: { radius: [0.018, 0.007] },
@@ -145,7 +145,7 @@ export const record: Species = {
 		orders: 3,
 		years: 3,
 		leafYears: 2,
-		stem: { radius: [0.0035, 0.0025], zigzag: 22 },
+		stem: { radius: [0.0035, 0.0025], zigzag: 17 },
 		// The reference's own guide puts the cone near a fifteenth of a leaf; the species' buds run 3
 		// to 6 mm, so the record takes the top of that range rather than the bottom.
 		bud: { length: 0.0085, width: 0.006, tipCluster: 7, colour: [0.34, 0.2, 0.09] },
