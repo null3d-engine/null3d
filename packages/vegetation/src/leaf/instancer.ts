@@ -8,6 +8,7 @@
 // keeps every second of. A coarser plant keeps a share of the rows, spread evenly along that order,
 // and grows each kept row so that the leaf area holds.
 import type { ShootPrototype, ShootRows } from '../asset';
+import type { MacroSkeleton } from '../core/graph';
 import { BUD_DORMANT, BUD_TERMINAL } from '../core/graph';
 import { hashAt, unitAt } from '../core/hash';
 import {
@@ -168,6 +169,52 @@ function latticeNoise(
 	return value;
 }
 
+/**
+ * Metres along its axis to each node, and each axis's own length: how far a shoot stands from the
+ * end of the axis that carries it, which is what the tip bias weights by.
+ */
+function axisReach(skeleton: MacroSkeleton): {
+	readonly along: Float64Array;
+	readonly ends: Float64Array;
+} {
+	const { nodeCount, parent, position, axisOf, axes } = skeleton;
+	const along = new Float64Array(nodeCount);
+	const known = new Uint8Array(nodeCount);
+	const path: number[] = [];
+	for (let start = 0; start < nodeCount; start++) {
+		if (known[start]) continue;
+		path.length = 0;
+		let at = start;
+		while (at >= 0 && !known[at]) {
+			known[at] = 1;
+			path.push(at);
+			at = parent[at] as number;
+		}
+		let base = at >= 0 ? (along[at] as number) : 0;
+		for (let i = path.length - 1; i >= 0; i--) {
+			const node = path[i] as number;
+			const up = parent[node] as number;
+			if (up < 0) {
+				along[node] = 0;
+				base = 0;
+				continue;
+			}
+			const dx = (position[node * 3] as number) - (position[up * 3] as number);
+			const dy = (position[node * 3 + 1] as number) - (position[up * 3 + 1] as number);
+			const dz = (position[node * 3 + 2] as number) - (position[up * 3 + 2] as number);
+			const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+			base = (axisOf[node] as number) === (axisOf[up] as number) ? base + length : length;
+			along[node] = base;
+		}
+	}
+	const ends = new Float64Array(axes.count);
+	for (let n = 0; n < nodeCount; n++) {
+		const axis = axisOf[n] as number;
+		if ((along[n] as number) > (ends[axis] as number)) ends[axis] = along[n] as number;
+	}
+	return { along, ends };
+}
+
 /** The space-filling key of a point inside a box: its axes' bits interleaved, high bits first. */
 function spaceKey(p: Readonly<Vector3>, min: readonly number[], side: number): number {
 	const max = 2 ** ORDER_BITS - 1;
@@ -217,6 +264,8 @@ export function placeShoots(input: DressInput): ShootRows {
 	const frame = [0, 0, 0, 1];
 	const roll = [0, 0, 0, 1];
 	const clump = shoots.placement.clump;
+	const bias = Math.min(1, Math.max(0, shoots.placement.tipBias ?? 0));
+	const reach = bias > 0 ? axisReach(skeleton) : undefined;
 	for (const b of order) {
 		const axis = buds.axis[b] as number;
 		const kind = buds.kind[b] as number;
@@ -262,6 +311,13 @@ export function placeShoots(input: DressInput): ShootRows {
 			curveAt(shoots.placement.perMetre, vigor) *
 			stretch *
 			Math.max(0, shoots.placement.density ?? 1);
+		// The shoots gather towards the end of their axis: the stretch behind it thins, so the
+		// foliage stands in masses at the axes' ends with wood showing between them.
+		if (reach) {
+			const total = reach.ends[axis] as number;
+			const at = total > 1e-6 ? Math.min(1, (reach.along[node] as number) / total) : 1;
+			expected *= 1 - bias + bias * at ** 1.5;
+		}
 		// The shoots gather into masses about a patch of the crown, with a thinner run round each
 		// mass, so the crown reads as rosettes with sky and wood between rather than an even mesh of
 		// leaves. The patches are spaced in space, not along the axes, so a mass is the same size
