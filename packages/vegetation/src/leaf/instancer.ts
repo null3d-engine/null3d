@@ -36,6 +36,8 @@ const BENT_UP = 0x88;
 const TROPISM_LIMIT = 30;
 /** Bits per axis of the space-filling key. */
 const ORDER_BITS = 10;
+/** The clump field's value below which a patch stands bare, so even a twig's tip there keeps no rosette. */
+const BARE_PATCH = 0.5;
 
 /** Purposes of the instancer's hash keys, so no two draws share one. */
 const Purpose = {
@@ -326,10 +328,11 @@ export function placeShoots(input: DressInput): ShootRows {
 		// mass, so the crown reads as rosettes with sky and wood between rather than an even mesh of
 		// leaves. The patches are spaced in space, not along the axes, so a mass is the same size
 		// whatever the axis it sits on.
+		let patch = 1;
 		if (clump) {
 			const depth = Math.min(1, Math.max(0, clump.depth));
 			const spacing = Math.max(1e-3, clump.spacing);
-			const noise = latticeNoise(
+			patch = latticeNoise(
 				seed,
 				salt,
 				variant * 64 + Purpose.Clump,
@@ -337,15 +340,15 @@ export function placeShoots(input: DressInput): ShootRows {
 				at[1] / spacing,
 				at[2] / spacing,
 			);
-			expected *= Math.max(0, 1 + depth * (2 * noise - 1));
+			expected *= Math.max(0, 1 + depth * (2 * patch - 1));
 		}
 		// The outermost bud of an axis carries a rosette even where its vigor and stretch give none,
 		// whether it is the axis's terminal bud or the live shoot that replaced a lost one: a twig
-		// end bears leaves at the tip, so no bare spray stands past the crown's leaves.
-		const count = Math.max(
-			kind === BUD_TERMINAL || atTip ? 1 : 0,
-			Math.floor(expected + draw(Purpose.Count, b)),
-		);
+		// end bears leaves at the tip, so no bare spray stands past the crown's leaves. A patch the
+		// clump field leaves bare keeps no rosette either, so a gap stands open between the masses
+		// rather than closing on a rosette at every twig in it.
+		const keep = (kind === BUD_TERMINAL || atTip) && patch > BARE_PATCH;
+		const count = Math.max(keep ? 1 : 0, Math.floor(expected + draw(Purpose.Count, b)));
 		if (count === 0) continue;
 		// The axis's direction at the bud.
 		const tangent: Vector3 =
