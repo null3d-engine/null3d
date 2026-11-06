@@ -78,7 +78,8 @@ mock.module('@null3d/impostors', () => ({
 	},
 }));
 
-const { standInPlace } = await import('./stand-in');
+const { standInMaterials, standInPlace } = await import('./stand-in');
+const { record: oak } = await import('../species/pedunculate-oak/record');
 const { standInSpecies } = await import('../core/stand-in');
 const { bakeFarNow, buildKitNow, growPlantNow, loadPlantCode } = await import('../generate');
 
@@ -180,5 +181,41 @@ describe('the stand-ins on the page', () => {
 		});
 		const floats = new Float32Array(record);
 		expect(hashBytes(new Uint8Array(floats.buffer)) >>> 0).toBe(2053914147);
+	});
+});
+
+describe('the stand-in materials', () => {
+	it('draw the measured bark times its tint, and a stand-in species in its own colour', () => {
+		const page = {
+			materials: { standard: (options: Record<string, unknown>) => options },
+		} as unknown as Parameters<typeof standInMaterials>[0];
+		const colourOf = (record: typeof oak, bark?: unknown) =>
+			(
+				standInMaterials(page, {
+					record,
+					manifest: { bark },
+					textures: { cardColor: undefined },
+				} as unknown as Parameters<typeof standInMaterials>[1]).wood as unknown as {
+					color: readonly number[];
+				}
+			).color;
+		const tint = oak.bark?.zones[0]?.tint as readonly [number, number, number];
+		expect(tint).toBeDefined();
+		const mean = [0.25, 0.22, 0.18] as const;
+		const wood = colourOf(oak, { layers: [{ mean }] });
+		mean.forEach((c, k) => {
+			expect(wood[k]).toBeCloseTo(c * (tint[k] as number), 12);
+		});
+		// A stand-in species measures no bark and gives its colour in the tint.
+		const standIn = standInSpecies('bark-colour-test').record;
+		expect(colourOf(standIn)).toEqual([...(standIn.bark?.zones[0]?.tint ?? [])]);
+		const plain = {
+			...oak,
+			bark: {
+				...(oak.bark as NonNullable<typeof oak.bark>),
+				zones: [{ layer: 0, by: 'height' as const, from: 0, to: 40, blend: 0 }],
+			},
+		};
+		expect(colourOf(plain)).toEqual([0.2, 0.16, 0.12]);
 	});
 });

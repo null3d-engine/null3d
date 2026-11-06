@@ -131,6 +131,17 @@ Options given to `prepareSpecies` apply to every variant that grows from its kit
 
 A page can also move the level switches of all its species at once. Give `switchBias` in the view that every `placePlants` call takes. It counts in stops: each switch distance is multiplied by two to the power of minus the bias. A bias of 1 switches every level at half its distance, and a bias of -1 at twice its distance. `switchScale(bias)` gives that factor.
 
+### Other forms
+
+A species can grow in other forms, such as young or grown in a wood. Its record names each form in `forms`. A form gives its words, and only the fields that differ from the record: `size`, `growth`, `envelope`, `shoots`, `foliage`, `bark`, `base`, `extras`, `wind`, `roundBand`, `lopsided` and `cuttings`. An object in a form changes the record's object field by field. A number, a word, a curve or a list replaces the record's value whole, and `null` removes an optional field. A form keeps the species' growth model, kind of foliage, budget and textures.
+
+```ts
+const sapling = await prepareSpecies(ctx, oak, { form: 'young' });
+const young = await growPlant(sapling, { seed: 7, variant: 0 });
+```
+
+`prepareSpecies` and `buildKit` take `form`, and every variant of that kit grows in the form. Each form has a kit of its own, under a key of its own, so a change to one form leaves the kits of the others as they are. Without `form`, the kit grows from the record as it stands. `formRecord(record, form)` gives the record that a form grows from. `checkSpecies` checks each form as that record, and names the form in each problem. The pedunculate oak has two forms: `woodland`, a tall oak with a long clean bole under a small high crown, and `young`, a sapling of about four meters with one slim stem and thin limbs.
+
 The plant core's meshes take `levels: false`, so the engine plans no levels of its own for them. The core grows its own levels, tiers and far cards, and the plant shader sways every vertex.
 
 ## Stand-in species

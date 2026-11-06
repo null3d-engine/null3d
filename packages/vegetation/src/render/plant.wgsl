@@ -19,9 +19,11 @@
 // Edges. A leaf's coverage is sharpened to a one-pixel edge at the cutoff, so the blade draws solid
 // to its cut edge and alpha to coverage only smooths that last pixel.
 //
-// Space. Wood, cards and merged foliage hold 16-bit positions inside the species box, which the
-// vertex offset turns into the plant's metres, so the copy's transform places them. Shoot rows hold
-// their prototype's metres, and each row is one shoot placed in the world.
+// Space. Wood, cards, merged foliage and extras hold 16-bit positions inside the species box, which
+// the vertex offset turns into the plant's metres, so the copy's transform places them. An extra's
+// are read as fractions of the box, and it adds the rest below one step that its texture
+// coordinates hold. Shoot rows hold their prototype's metres, and each row is one shoot placed in
+// the world.
 //
 // Wind. One field of air moves every plant. The stem bends as a cantilever, each branch turns about
 // its pivot carrying the branches above it, shoots bend along their length and leaves flutter. The
@@ -89,6 +91,8 @@ const HEADER_BOX_SPAN: i32 = 13;
 const HEADER_BOX_SPAN_REST: i32 = 14;
 // The steps of a quantised position along each axis of the box.
 const POSITION_STEPS: f32 = 65535.0;
+// The steps of an extra's position rest below one step of the box, on each axis.
+const REST_STEPS: f32 = 255.0;
 const HEADER_YOUNG: i32 = 15;
 const HEADER_YOUNG_TILE: i32 = 16;
 const HEADER_MOSS: i32 = 17;
@@ -102,6 +106,7 @@ const MAX_BARK_ZONES: i32 = 4;
 const HEADER_LICHEN: i32 = 40;
 const HEADER_LICHEN_REACH: i32 = 41;
 const HEADER_SWAY: i32 = 42;
+const HEADER_EXTRA_BANDS: i32 = 43;
 // Rows before the wind records, and wind records in a row.
 const HEADER_ROWS: i32 = 2;
 const RECORDS_PER_ROW: i32 = 256;
@@ -171,6 +176,23 @@ fn box_point(p: vec3f) -> vec3f {
     let low = header(HEADER_BOX_MIN).xyz + header(HEADER_BOX_MIN_REST).xyz;
     let span = header(HEADER_BOX_SPAN).xyz + header(HEADER_BOX_SPAN_REST).xyz;
     return low + p * (span / POSITION_STEPS);
+}
+
+/// A position inside the species box read as a fraction of the box, in the plant's metres.
+fn box_fraction(p: vec3f) -> vec3f {
+    let low = header(HEADER_BOX_MIN).xyz + header(HEADER_BOX_MIN_REST).xyz;
+    let span = header(HEADER_BOX_SPAN).xyz + header(HEADER_BOX_SPAN_REST).xyz;
+    return low + p * span;
+}
+
+/// An extra's position rest below one step of the box, in steps, from the two numbers that its
+/// texture coordinates hold: x in the first number's high byte, y in its low byte, z in the
+/// second number's high byte.
+fn position_rest(uv: vec2f) -> vec3f {
+    let xy = u32(uv.x + 0.5);
+    let z = u32(uv.y + 0.5);
+    let codes = vec3f(f32(xy >> 8u), f32(xy & 255u), f32(z >> 8u));
+    return codes / REST_STEPS - vec3f(0.5);
 }
 
 /// The wind record that a vertex's colour bytes name in their first two bytes.
@@ -522,10 +544,17 @@ fn bark_lift(input: VertexInput) -> f32 {
     return (luminance - tiling.z) * tiling.w * weight;
 }
 
-/// Wood, cards and merged foliage: the 16-bit position into the plant's metres, lifted by the
-/// bark's height on the nearest wood, and moved by the wind in the plant's own space.
+/// Wood, cards, merged foliage and extras: the 16-bit position into the plant's metres, lifted by
+/// the bark's height on the nearest wood, and moved by the wind in the plant's own space.
 fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
     var plant = box_point(input.position);
+    if (mode == MODE_EXTRAS) {
+        // Fruit and cones are a few centimetres across, where the box's steps are near a
+        // millimetre, so an extra keeps the rest of its position in its texture coordinates. Its
+        // position comes as a fraction of the box, so the offset back from it keeps micrometres:
+        // whole steps near 65,535 would lose millimetres in that 32-bit sum.
+        plant = box_fraction(input.position + position_rest(input.uv) / POSITION_STEPS);
+    }
     if (mode == MODE_WOOD && material.displacement > 0.0) {
         plant += normalize(input.normal) * bark_lift(input);
     }
@@ -903,10 +932,15 @@ fn surface(input: SurfaceInput) -> Surface {
         mapped = card_normal;
         occlusion = input.vertexColor.a * saturate(self_shade);
     } else if (mode == MODE_EXTRAS) {
-        // An extra takes its kind's colour from the header, by the index in its third byte.
+        // An extra takes its kind's colour and roughness from the header, by the index in its
+        // third byte, and its band's by the share in its second coordinates' x: an acorn's cup and
+        // stalk stand apart from its nut.
         let kind = clamp(i32(input.vertexColor.b * 255.0 + 0.5), 0, MAX_EXTRAS - 1);
-        base = header(HEADER_EXTRAS + kind).rgb;
-        roughness = 0.6;
+        let body = header(HEADER_EXTRAS + kind);
+        let band = header(HEADER_EXTRA_BANDS + kind);
+        let share_of_band = saturate(input.uv1.x);
+        base = mix(body.rgb, band.rgb, share_of_band);
+        roughness = mix(body.w, band.w, share_of_band);
         occlusion = input.vertexColor.a;
     } else {
         // Shoot rows and merged foliage: leaves, and the shoots' stems and buds.

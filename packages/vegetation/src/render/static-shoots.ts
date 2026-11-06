@@ -151,7 +151,8 @@ export function placeStaticPlants(
 			if (!(band.to > band.from)) continue;
 			for (const part of band.parts) {
 				const material = materialOf(materials, part.name);
-				const mesh = plantGeometry(ctx, part.arrays);
+				// The shader reads an extra's positions as fractions of the box, which keeps a fruit's shape.
+				const mesh = plantGeometry(ctx, part.arrays, part.name === 'extras');
 				meshes.push(mesh);
 				// The first card level of a copy with real shoots draws from the copy out: its shader
 				// leaves the pixels inside the switch distance to the shoots.

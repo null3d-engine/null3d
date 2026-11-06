@@ -5,6 +5,7 @@ import type { RadialEnvelope } from '../core/record';
 import {
 	envelopeSilhouette,
 	envelopeVolume,
+	flooredVolume,
 	insetVolume,
 	silhouetteFrame,
 	silhouetteIoU,
@@ -48,6 +49,28 @@ describe('the envelope', () => {
 		expect(inset.room(1, 5, 0)).toBeCloseTo(3, 6);
 		expect(inset.room(0, 9.5, 0)).toBeLessThan(0);
 		expect(inset.radius(5, 0)).toBeCloseTo(4, 6);
+	});
+
+	it('holds no room under a floor and its own room above it', () => {
+		const envelope: RadialEnvelope = {
+			kind: 'radial',
+			heights: [0.1, 0.3, 1],
+			radii: [0.4, 0.5, 0.2],
+			source,
+		};
+		const volume = envelopeVolume(envelope, 10, 0);
+		const floored = flooredVolume(volume, 2.5);
+		expect(floored.base).toBeCloseTo(2.5, 9);
+		expect(floored.top).toBe(volume.top);
+		expect(floored.radius(2, 0)).toBe(0);
+		expect(floored.radius(2.5, 0)).toBeCloseTo(volume.radius(2.5, 0), 9);
+		expect(floored.radius(6, 1)).toBeCloseTo(volume.radius(6, 1), 9);
+		// Below the floor a point is outside by its height under it, at least.
+		expect(floored.room(0, 1.5, 0)).toBeLessThanOrEqual(-1);
+		expect(floored.room(1, 6, 0)).toBeCloseTo(volume.room(1, 6, 0), 9);
+		// A floor at or under the base leaves the volume as it is.
+		expect(flooredVolume(volume, 1)).toBe(volume);
+		expect(flooredVolume(volume, 0)).toBe(volume);
 	});
 
 	it('measures solids standing on the ground', () => {

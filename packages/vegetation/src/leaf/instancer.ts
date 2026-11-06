@@ -3,10 +3,14 @@
 // its vigor give that stretch: the first at the bud, the rest spread back along the stretch, rolled
 // about the axis by the phyllotaxis. A row picks the shoot class whose vigor range holds its bud's
 // vigor and a prototype of that class by hash, turns its leaves toward the sky by the record's
-// skyward share, bends by the plant's tropism and takes its scale. A bud in less light than the
-// shade-prune line carries none. Rows then take a space-filling order, which the thinned card level
-// keeps every second of. A coarser plant keeps a share of the rows, spread evenly along that order,
-// and grows each kept row so that the leaf area holds.
+// skyward share, bends by the record's lift or the plant's tropism and takes its scale. A bud in
+// less light than the shade-prune line carries none, but an axis's end bud is spared: it keeps at
+// least one row unless it stands in less light than the record's tip line. Where the record gives a
+// sky-prune line, the finished crown is lit once and every row its leaves leave in less sky than
+// that goes. Where the record trims bare wood, the twigs that then bear no row go from the
+// skeleton. Rows then take a space-filling order, which the thinned card level keeps every second
+// of. A coarser plant keeps a share of the rows, spread evenly along that order, and grows each
+// kept row so that the leaf area holds.
 import type { ShootPrototype, ShootRows } from '../asset';
 import type { MacroSkeleton } from '../core/graph';
 import { BUD_DORMANT, BUD_TERMINAL } from '../core/graph';
@@ -26,7 +30,10 @@ import {
 } from '../core/math';
 import type { Species } from '../core/record';
 import { curveAt, spreadAt } from '../core/types';
-import type { DressInput } from '../stages';
+import { rowCentre } from '../crown/density';
+import { crownSkyAt, lightCrown } from '../crown/visibility';
+import { bareTrimmed } from '../grow/coarsen';
+import type { CrownLight, DressInput } from '../stages';
 import { inLeaf } from './season';
 
 /** Sky visibility and bent normal of a row before the crown's light gives it its own. */
@@ -38,8 +45,10 @@ const TROPISM_LIMIT = 30;
 const ORDER_BITS = 10;
 /** The clump field's value below which a patch stands bare, so even a twig's tip there keeps no rosette. */
 const BARE_PATCH = 0.5;
-/** The share of the shade line below which even a twig's tip is a starved twig and bears nothing. */
-const SHADE_TIP = 0.5;
+/** The thickest wood, as a radius in metres, that a bare trim takes. */
+const MOST_TRIM = 0.1;
+/** The share of a height layer's shoots, the best lit, whose sky a layered sky-prune line reads. */
+const LAYER_LIT = 0.1;
 
 /** Purposes of the instancer's hash keys, so no two draws share one. */
 const Purpose = {
@@ -125,8 +134,13 @@ function lateralAngle(record: Species): number {
 	return record.growth.model === 'self-organizing' ? curveAt(record.growth.buds.angle, 1) : 45;
 }
 
-/** Degrees a row turns toward the sky (positive) or the ground, from the finest order's tropism. */
+/**
+ * Degrees a row turns toward the sky (positive) or the ground: the record's lift, or else the
+ * finest order's tropism.
+ */
 function tropismTurn(record: Species): number {
+	const lift = record.shoots?.placement.lift;
+	if (lift !== undefined) return Math.max(-TROPISM_LIMIT, Math.min(TROPISM_LIMIT, lift));
 	if (record.growth.model !== 'self-organizing') return 0;
 	const bend = curveAt(record.growth.tropism.photo, 1) + curveAt(record.growth.tropism.gravi, 1);
 	return Math.max(-TROPISM_LIMIT, Math.min(TROPISM_LIMIT, bend * TROPISM_LIMIT));
@@ -140,6 +154,15 @@ interface Row {
 	scale: number;
 	record: number;
 	phase: number;
+	/** The node of the bud the row stands on, and the bud's axis. */
+	node: number;
+	axis: number;
+}
+
+/** A variant's shoot rows and the skeleton they stand on, its bare wood trimmed where the record asks. */
+export interface DressedShoots {
+	readonly rows: ShootRows;
+	readonly skeleton: MacroSkeleton;
 }
 
 /**
@@ -233,16 +256,138 @@ function spaceKey(p: Readonly<Vector3>, min: readonly number[], side: number): n
 }
 
 /**
- * The shoot rows of one variant, before the crown's light gives each its sky visibility.
+ * The shoot rows of one variant, before the crown's light gives each its sky visibility: the rows
+ * `dressShoots` places, bare trim included, without the skeleton they stand on.
  *
  * @param input The grown skeleton, the kit, the record, the seed and the variant.
  * @returns The rows.
  */
 export function placeShoots(input: DressInput): ShootRows {
+	return dressShoots(input).rows;
+}
+
+/**
+ * The shoot rows of one variant and the skeleton they stand on. Where the record gives a bare trim,
+ * the twigs that bear no row go from the skeleton, and each row's wind record follows its axis to
+ * its place in the trimmed skeleton. Where the record prunes or trims, the skeleton's crown base is
+ * the lowest row's height; otherwise the skeleton is the one given.
+ *
+ * @param input The grown skeleton, the kit, the record, the seed and the variant.
+ * @returns The rows and their skeleton.
+ */
+export function dressShoots(input: DressInput): DressedShoots {
+	const rows = placedRows(input);
+	const limit = Math.min(MOST_TRIM, Math.max(0, input.record.shoots?.placement.bareTrim ?? 0));
+	let lowest = Number.POSITIVE_INFINITY;
+	for (const row of rows) lowest = Math.min(lowest, row.position[1]);
+	const trimmed =
+		limit > 0 && rows.length > 0
+			? bareTrimmed(
+					input.skeleton,
+					rows.map((row) => row.node),
+					rows.map((row) => row.axis),
+					limit,
+					lowest,
+				)
+			: undefined;
+	if (!trimmed) {
+		// A pruned crown stands on what it kept.
+		const pruned = (input.record.shoots?.placement.skyPrune ?? 0) > 0 && rows.length > 0;
+		const skeleton =
+			pruned && lowest !== input.skeleton.crownBase
+				? { ...input.skeleton, crownBase: lowest }
+				: input.skeleton;
+		return { rows: finishedRows(input, rows, skeleton), skeleton };
+	}
+	const { skeleton, axisOut } = trimmed;
+	for (const row of rows) {
+		const axis = axisOut[row.axis] as number;
+		row.axis = axis;
+		row.record = skeleton.axes.record[axis] as number;
+	}
+	return { rows: finishedRows(input, rows, skeleton), skeleton };
+}
+
+/** The rows as the table, thinned for a coarser plant, in the space-filling order of a skeleton's bounds. */
+function finishedRows(input: DressInput, rows: Row[], skeleton: MacroSkeleton): ShootRows {
+	const coarse = (input.coarseness ?? 0) > 0;
+	const kept = coarse ? thinned(rows, skeleton.bounds, rowThinning(input.coarseness ?? 0)) : rows;
+	return packRows(kept, skeleton.bounds);
+}
+
+/**
+ * The light of a variant's crown as its rows stand before any sky prune, which the prune reads, or
+ * undefined when the record gives no sky-prune line. Found once, it serves the plant at every
+ * coarseness.
+ *
+ * @param input The grown skeleton, the kit, the record, the seed and the variant.
+ * @returns The crown's light.
+ */
+export function pruneLight(input: DressInput): CrownLight | undefined {
+	if (!((input.record.shoots?.placement.skyPrune ?? 0) > 0)) return undefined;
+	const rows = placedRows(input, false);
+	if (rows.length === 0) return undefined;
+	return lightCrown(input, packRows(rows, input.skeleton.bounds));
+}
+
+/**
+ * The rows that see at least a share of the sky through the crown's own leaves, a tip's rosette
+ * among them: a row whose leaves stand deep in the leaf mass goes. The light is the input's crown
+ * light where it gives one, or else the crown is lit once from every row.
+ */
+function skyPruned(input: DressInput, rows: Row[], line: number): Row[] {
+	if (!(line > 0) || rows.length === 0) return rows;
+	const packed = packRows(rows, input.skeleton.bounds);
+	const light = input.pruneLight;
+	if (!light) lightCrown(input, packed);
+	const prototypes = input.kit.prototypes;
+	const centre: Vector3 = [0, 0, 0];
+	const sky = new Float64Array(rows.length);
+	const height = new Float64Array(rows.length);
+	rows.forEach((row, r) => {
+		rowCentre(packed, r, prototypes[row.prototype]?.length ?? 0, centre);
+		height[r] = centre[1];
+		sky[r] = light
+			? Math.round(
+					OPEN_SKY * Math.min(1, Math.max(0, crownSkyAt(light, centre[0], centre[1], centre[2]))),
+				)
+			: (packed.sky[r] as number);
+	});
+	const share = Math.min(1, line);
+	const layer = input.record.shoots?.placement.skyPruneLayer;
+	if (!(layer !== undefined && layer > 0)) {
+		const cut = Math.round(OPEN_SKY * share);
+		return rows.filter((_, r) => (sky[r] as number) >= cut);
+	}
+	// Each height layer reads the sky of its own best-lit shoots, so its lit rim stays and its
+	// shaded middle goes, at the crown's foot as at its top.
+	const bands = new Map<number, number[]>();
+	for (let r = 0; r < rows.length; r++) {
+		const band = Math.floor((height[r] as number) / layer);
+		const list = bands.get(band) ?? [];
+		list.push(sky[r] as number);
+		bands.set(band, list);
+	}
+	const lit = new Map<number, number>();
+	for (const [band, list] of bands) {
+		list.sort((a, b) => b - a);
+		lit.set(band, list[Math.min(list.length - 1, Math.floor(list.length * LAYER_LIT))] as number);
+	}
+	return rows.filter((_, r) => {
+		const best = lit.get(Math.floor((height[r] as number) / layer)) as number;
+		return (sky[r] as number) >= share * best;
+	});
+}
+
+/**
+ * The rows of one variant on its bud sites, before the coarse thinning, with the crown-light prune
+ * taken unless asked not to.
+ */
+function placedRows(input: DressInput, bySky = true): Row[] {
 	const { record, seed, variant, skeleton, kit } = input;
 	const shoots = record.shoots;
 	const rows: Row[] = [];
-	if (!shoots || kit.prototypes.length === 0) return packRows(rows, skeleton.bounds);
+	if (!shoots || kit.prototypes.length === 0) return rows;
 	const salt = record.seedSalt;
 	const draw = (purpose: number, a = 0, b = 0) => unitAt(seed, salt, variant * 64 + purpose, a, b);
 	const pick = (purpose: number, a = 0, b = 0) => hashAt(seed, salt, variant * 64 + purpose, a, b);
@@ -253,8 +398,7 @@ export function placeShoots(input: DressInput): ShootRows {
 	const tropism = radians(tropismTurn(record));
 	const skyward = Math.min(1, Math.max(0, shoots.placement.skyward));
 	const prune = Math.min(1, Math.max(0, shoots.placement.shadePrune));
-	const coarse = (input.coarseness ?? 0) > 0;
-	const thinning = rowThinning(input.coarseness ?? 0);
+	const tipPrune = shoots.placement.tipPrune;
 	const bare =
 		kit.prototypes.some((p) => p.leaves === 0) && kit.prototypes.some((p) => p.leaves > 0);
 	// The previous bud on each axis, so each bud serves the stretch back to it.
@@ -367,9 +511,10 @@ export function placeShoots(input: DressInput): ShootRows {
 		// end bears leaves at the tip, so no bare spray stands past the crown's leaves. A patch the
 		// clump field leaves bare keeps no rosette either, so a gap stands open between the masses
 		// rather than closing on a rosette at every twig in it.
-		// A tip buried in the crown is a twig that starved: it bears nothing, so the limbs between
-		// the foliage show instead of a rosette standing on every twig in the crown's whole volume.
-		const lit = (buds.light[b] as number) >= prune * SHADE_TIP;
+		// Where the record gives a tip line, a tip darker than it is a twig that starved: it bears
+		// nothing, so the limbs between the foliage show instead of a rosette standing on every twig
+		// in the crown's whole volume.
+		const lit = tipPrune === undefined || (buds.light[b] as number) >= tipPrune;
 		const keep = (kind === BUD_TERMINAL || atTip) && lit && patch > BARE_PATCH;
 		const count = Math.max(keep ? 1 : 0, Math.floor(expected + draw(Purpose.Count, b)));
 		if (count === 0) continue;
@@ -447,10 +592,12 @@ export function placeShoots(input: DressInput): ShootRows {
 				scale: spreadAt(shoots.placement.scale, draw(Purpose.Scale, b, k)),
 				record: record16,
 				phase: pick(Purpose.Phase, b, k) & 255,
+				node,
+				axis,
 			});
 		}
 	}
-	return packRows(coarse ? thinned(rows, skeleton.bounds, thinning) : rows, skeleton.bounds);
+	return bySky ? skyPruned(input, rows, shoots.placement.skyPrune ?? 0) : rows;
 }
 
 /**

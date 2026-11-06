@@ -40,6 +40,29 @@ describe('the plant core with stand-ins', () => {
 		expect(kit.key).toBe(kitKey(stub.record, stub.textures.manifest, 'high'));
 	});
 
+	it('builds the kit of a form under a key of its own, and the record as it stands without one', () => {
+		const formed = {
+			...stub,
+			record: {
+				...stub.record,
+				forms: { young: { form: 'a young stand-in', size: { height: { mean: 2, spread: 0.2 } } } },
+			},
+		};
+		// The forms leave the record as it stands, and its kit, unchanged.
+		const own = buildKitNow(formed, { placeholders: true });
+		expect(own.key).toBe(kit.key);
+		expect('forms' in own.record).toBe(false);
+		const youngKit = buildKitNow(formed, { placeholders: true, form: 'young' });
+		expect(youngKit.record.size.height).toEqual({ mean: 2, spread: 0.2 });
+		expect(youngKit.key).not.toBe(kit.key);
+		const asset = growPlantNow(youngKit, { seed: 11, variant: 0 });
+		expect(asset.skeleton.height).toBeLessThan(2.5);
+		expect(variantKey(youngKit, { seed: 11, variant: 0 })).not.toBe(
+			variantKey(kit, { seed: 11, variant: 0 }),
+		);
+		expect(() => buildKitNow(formed, { placeholders: true, form: 'old' })).toThrow(/no form 'old'/);
+	});
+
 	it('grows a variant through every stage', () => {
 		const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
 		expect(asset.skeleton.axes.count).toBeGreaterThan(1);

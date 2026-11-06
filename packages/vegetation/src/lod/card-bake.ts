@@ -16,7 +16,7 @@
 // levels the GPU averages never darken a card's edge.
 import type { CardCell, PrototypeArrays } from '../asset';
 import type { Species } from '../core/record';
-import type { TextureManifest } from '../core/textures';
+import { barkColourOf, type TextureManifest } from '../core/textures';
 import type { Rgb } from '../core/types';
 import { DETAILS, type Detail } from '../core/types';
 import { outlineMask, textureOutline } from '../leaf/outline';
@@ -50,7 +50,6 @@ const MASK_SIZE = 512;
 /** The tier whose meshes the bake draws. */
 const BAKE_TIER = DETAILS.indexOf('high');
 /** Bark when the manifest holds none. */
-const BARK: Rgb = [0.2, 0.16, 0.12];
 
 /** Linear to sRGB, as a byte. */
 function srgbByte(linear: number): number {
@@ -133,7 +132,7 @@ function layout(
 }
 
 /** The colour sources of a species' surfaces. */
-interface Palette {
+export interface Palette {
 	readonly upper: Rgb;
 	readonly lower: Rgb;
 	readonly stem: Rgb;
@@ -175,7 +174,7 @@ function bandAreas(mask: Uint8Array, base: number, tip: number, bands: number): 
 }
 
 /** The colours a bake reads: the manifest's means and profiles, else the record's optics. */
-function paletteOf(record: Species, manifest: TextureManifest): Palette {
+export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 	const leaf = manifest.leaf;
 	const optics =
 		record.foliage.kind === 'blade' || record.foliage.kind === 'thick'
@@ -183,7 +182,7 @@ function paletteOf(record: Species, manifest: TextureManifest): Palette {
 			: record.foliage.kind === 'needle' || record.foliage.kind === 'fascicle'
 				? record.foliage.needle.optics
 				: undefined;
-	const stem = manifest.bark?.young.mean ?? record.bark?.zones[0]?.tint ?? BARK;
+	const stem = manifest.bark?.young.mean ?? barkColourOf(record, manifest);
 	const extras = (record.extras ?? []).map((extra) => extra.colour);
 	if (leaf) {
 		const outline = textureOutline(leaf);

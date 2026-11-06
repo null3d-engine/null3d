@@ -74,6 +74,11 @@ export interface PrepareOptions extends CoarsenessOptions {
 	 */
 	readonly placeholders?: boolean | 'missing';
 	/**
+	 * One of the species' other forms by name, such as `young` or `woodland`, which every variant of
+	 * the kit grows in. The species' record as it stands when not given.
+	 */
+	readonly form?: string;
+	/**
 	 * A store of bytes that keeps the kit, its variants and its far bakes across visits, such as the
 	 * engine's cache of derived data. Without one, they are kept in memory for the visit alone.
 	 */
@@ -270,8 +275,8 @@ export function kitTextures(
  *
  * @param ctx The sketch's context.
  * @param module The species module, from `loadSpecies`.
- * @param options The mesh tier, the variants' coarseness, the stand-ins and the store of bytes
- *   across visits.
+ * @param options The mesh tier, the variants' coarseness, the stand-ins, the form and the store of
+ *   bytes across visits.
  * @returns The kit.
  * @category api/vegetation
  */
@@ -288,6 +293,7 @@ export async function prepareSpecies(
 		buildKit(module, {
 			detail: options?.detail ?? ctx.quality.preset,
 			...(options?.placeholders === 'missing' && { placeholders: 'missing' as const }),
+			...(options?.form !== undefined && { form: options.form }),
 			...(options?.cache && { cache: options.cache }),
 		}),
 	]);

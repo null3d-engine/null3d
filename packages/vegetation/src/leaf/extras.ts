@@ -7,8 +7,10 @@
 //
 // An extra's colour bytes hold its axis's wind record (high and low byte, global in the species'
 // table), its entry in the record's extras, which picks its colour from the plant material's header,
-// and the crown's sky visibility at its site. Only the first four entries draw. The second texture
-// coordinate runs along the extra.
+// and the crown's sky visibility at its site. Only the first four entries draw. Its second texture
+// coordinates' x is its share of the entry's band colour: 1 on a lathe's scaled band and on the
+// stalks where the record gives a band colour, 0 elsewhere. Its texture coordinates hold no texture:
+// the quantiser writes the rest of each position below the species box's step there.
 import type { MeshArrays, ShootPrototype } from '../asset';
 import {
 	AXIS_CULM,
@@ -54,7 +56,10 @@ const FEWEST_PIXELS = 5;
 const PURPOSE = 40;
 /** Extras a record can draw: the first four, whose colours the plant material's header holds. */
 const MOST = 4;
-/** Faces round a shared stalk: a thin stem a few pixels wide reads round at four. */
+/**
+ * Faces round a stalk at the farther levels, and at the nearest where the shape names none: a thin
+ * stem a few pixels wide reads round at four.
+ */
 const STALK_SIDES = 4;
 
 /** One place an extra may hang from: its point, its outward direction and its wind record. */
@@ -366,6 +371,11 @@ const PEDICEL_ROOT = 0.003;
 /** Metres each footstalk stands above the last along the shared stalk, so the bodies stagger. */
 const PEDICEL_STAGGER = 0.01;
 
+/** Sets the band share of the vertices from `first` on. */
+function markBand(mesh: MeshWriter, first: number, share: number): void {
+	for (let i = first; i < mesh.vertices; i++) mesh.uvs1[i * 2] = share;
+}
+
 /** Writes a thin shared stalk from a site along `down`, and gives back the point it reaches. */
 function writeStalk(
 	mesh: MeshWriter,
@@ -373,6 +383,8 @@ function writeStalk(
 	down: Vector3,
 	length: number,
 	colour: number[],
+	sides: number,
+	band: number,
 ): Vector3 {
 	const first = mesh.vertices;
 	const wood = site.direction;
@@ -398,10 +410,10 @@ function writeStalk(
 		],
 		top,
 		axis,
-		STALK_SIDES,
+		sides,
 		colour,
 	);
-	for (let i = first; i < mesh.vertices; i++) mesh.uvs[i * 2] = 0;
+	markBand(mesh, first, band);
 	return fork;
 }
 
@@ -412,7 +424,9 @@ const SCALLOP_DEPTH = 0.06;
 
 /**
  * A lathe whose radius ripples round the turn over a band of heights. A cup's rim then stands in
- * lobes below its scale rows rather than as a smooth ring.
+ * lobes below its scale rows rather than as a smooth ring. Two profile points that stand at the
+ * same place give two rings there with no faces between them, so a colour can change at a sharp
+ * edge.
  */
 function scallopedLathe(
 	mesh: MeshWriter,
@@ -455,10 +469,13 @@ function scallopedLathe(
 				base[2] + direction[2] * h + radial[2] * r,
 			];
 			// The surface's tangents: up the profile, and round the turn. Their cross is the normal.
+			// The radius's rate up the profile: the profile's own slope through the ripple, and the
+			// ripple's growth over the band's foot.
+			const climbRate = rise * wave + radius * lean;
 			const along: Vector3 = [
-				direction[0] + radial[0] * radius * (rise * wave + lean),
-				direction[1] + radial[1] * radius * (rise * wave + lean),
-				direction[2] + radial[2] * radius * (rise * wave + lean),
+				direction[0] + radial[0] * climbRate,
+				direction[1] + radial[1] * climbRate,
+				direction[2] + radial[2] * climbRate,
 			];
 			const around: Vector3 = [
 				tangent[0] * r + radial[0] * radius * ripple,
@@ -479,11 +496,48 @@ function scallopedLathe(
 			const out = n[0] * radial[0] + n[1] * radial[1] + n[2] * radial[2] < 0 ? -1 : 1;
 			mesh.vertex(p, [n[0] * out, n[1] * out, n[2] * out], [j / sides, h / height], [0, 0], colour);
 		}
-		if (previous >= 0)
+		const repeat = prev !== profile[k] && prev[0] === radius && prev[1] === h;
+		if (previous >= 0 && !repeat)
 			for (let j = 0; j < sides; j++)
 				mesh.quad(previous + j, previous + j + 1, first + j + 1, first + j);
 		previous = first;
 	}
+}
+
+/**
+ * A lathe profile with each end of a band that falls inside it standing twice, and each ring's
+ * share of the band: 1 from the band's start to its end, 0 elsewhere. At an end, the ring on the
+ * band's side takes 1 and the other 0, so the colour changes at a sharp edge. An end that falls
+ * between two profile points stands between them.
+ */
+function bandEdges(
+	profile: readonly [number, number][],
+	from: number,
+	to: number,
+): { readonly profile: [number, number][]; readonly shares: number[] } {
+	const start = (profile[0] as [number, number])[1];
+	const end = (profile[profile.length - 1] as [number, number])[1];
+	const out: [number, number][] = [];
+	const shares: number[] = [];
+	const edge = (radius: number, h: number): void => {
+		out.push([radius, h], [radius, h]);
+		shares.push(h === from ? 0 : 1, h === from ? 1 : 0);
+	};
+	const inner = (h: number) => from < to && (h === from || h === to) && h > start && h < end;
+	for (let k = 0; k < profile.length; k++) {
+		const [radius, h] = profile[k] as [number, number];
+		const prev = profile[k - 1];
+		if (prev)
+			for (const at of [from, to])
+				if (at > prev[1] && at < h && inner(at))
+					edge(prev[0] + ((at - prev[1]) / (h - prev[1])) * (radius - prev[0]), at);
+		if (inner(h)) edge(radius, h);
+		else {
+			out.push([radius, h]);
+			shares.push(h >= from && h <= to ? 1 : 0);
+		}
+	}
+	return { profile: out, shares };
 }
 
 /** Writes one extra at a site. */
@@ -543,11 +597,25 @@ function writeExtra(
 				[0, length],
 			];
 		}
+		// A band colour meets the body at a sharp edge, so each end of the band stands twice.
+		const banded =
+			'lathe' in shape && extra.bandColour && shape.scaled
+				? bandEdges(profile, shape.scaled[0], shape.scaled[1])
+				: undefined;
+		if (banded) profile = banded.profile;
 		const first = mesh.vertices;
 		if (scaledTo > scaledFrom)
 			scallopedLathe(mesh, profile, site.at, direction, sides, colour, scaledFrom, scaledTo);
 		else lathe(mesh, profile, site.at, direction, sides, colour);
-		for (let i = first; i < mesh.vertices; i++) mesh.uvs[i * 2] = 0;
+		// The band's crevices take part of the body's colour on every other vertex round each ring,
+		// offset from ring to ring, so a cup reads as rows of overlapping scales.
+		const crevice = 'lathe' in shape ? (shape.scaleShade ?? 0) : 0;
+		if (banded)
+			banded.shares.forEach((share, ring) => {
+				const from = first + ring * (sides + 1);
+				for (let j = 0; j <= sides; j++)
+					mesh.uvs1[(from + j) * 2] = share > 0 && (j + ring) % 2 === 1 ? share - crevice : share;
+			});
 		return;
 	}
 	const [x, y] = sideAxes(direction, [0, 1, 0]);
@@ -593,7 +661,6 @@ function writeExtra(
 			direction[1] * cos(tilt) + (x[1] * cos(a) + y[1] * sin(a)) * sin(tilt),
 			direction[2] * cos(tilt) + (x[2] * cos(a) + y[2] * sin(a)) * sin(tilt),
 		]);
-		const first = mesh.vertices;
 		lathe(
 			mesh,
 			[
@@ -605,7 +672,6 @@ function writeExtra(
 			3,
 			colour,
 		);
-		for (let i = first; i < mesh.vertices; i++) mesh.uvs[i * 2] = 0;
 	}
 }
 
@@ -632,6 +698,12 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 		const shape = extra.shape;
 		const faces = level === 0 && 'lathe' in shape && shape.sides ? shape.sides : SIDES[level];
 		const stalk = 'lathe' in shape ? (shape.stalk ?? 0) : 0;
+		// The nearest level's stalks take the faces the shape names, where a close view reads a thin
+		// stem's facets.
+		const stalkFaces =
+			level === 0 && 'lathe' in shape && shape.stalkSides ? shape.stalkSides : STALK_SIDES;
+		// The stalks take the band colour where the record gives one, as an acorn's peduncle does.
+		const stalkBand = extra.bandColour ? 1 : 0;
 		sitesOf(input, extra).forEach((site, s) => {
 			const purpose = input.variant * 64 + PURPOSE + index;
 			if (unitAt(input.seed, salt, purpose, s) >= extra.share) return;
@@ -643,7 +715,10 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 			// A shared stalk carries every copy from the site, so the cluster forks from one stem.
 			const from: Site =
 				stalk > 0
-					? { ...site, at: writeStalk(mesh, site, down, stalk, colourOf(site, index)) }
+					? {
+							...site,
+							at: writeStalk(mesh, site, down, stalk, colourOf(site, index), stalkFaces, stalkBand),
+						}
 					: site;
 			// A site carries a cluster where the record gives a count: the copies hang from the one
 			// point, leaning apart round it, as an oak's acorns share a stalk.
@@ -707,10 +782,10 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 						],
 						top,
 						axis,
-						STALK_SIDES,
+						stalkFaces,
 						colourOf(from, index),
 					);
-					for (let i = first; i < mesh.vertices; i++) mesh.uvs[i * 2] = 0;
+					markBand(mesh, first, stalkBand);
 					writeExtra(mesh, extra, index, { ...from, at: end }, body, faces, azimuth);
 					continue;
 				}

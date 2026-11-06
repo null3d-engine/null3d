@@ -146,7 +146,10 @@ export interface QuantisedArrays {
 	readonly positions: Uint16Array;
 	/** 3 per vertex: 8-bit normals that read from -1 to 1. */
 	readonly normals: Int8Array;
-	/** 2 per vertex, plain 16-bit: wood in 1/1024 m of bark; leaves and cards in 1/65535 of the texture. */
+	/**
+	 * 2 per vertex, plain 16-bit: wood in 1/1024 m of bark; leaves and cards in 1/65535 of the
+	 * texture; extras, which draw no texture, each position's rest below one step of the box.
+	 */
 	readonly uvs: Uint16Array;
 	/** 2 per vertex, plain 16-bit, in the part's own units. */
 	readonly uvs1: Uint16Array;
@@ -262,7 +265,10 @@ export interface PlantAsset {
  * @category api/vegetation
  */
 export interface SpeciesKitData {
-	/** The species record. */
+	/**
+	 * The record the kit grows from: the species' own, or the record of the form it was built for,
+	 * without the forms themselves.
+	 */
 	readonly record: Species;
 	/** The texture manifest. */
 	readonly manifest: TextureManifest;
