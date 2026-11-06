@@ -358,11 +358,13 @@ function colourOf(site: Site, index: number): number[] {
  */
 const STALK_OVERLAP = 0.02;
 /** Degrees a copy's own footstalk splays from the shared stalk at its fork. */
-const PEDICEL_SPLAY = 55;
+const PEDICEL_SPLAY = 60;
+/** Degrees a body leans from straight down below its footstalk. */
+const NUT_LEAN = 25;
 /** Metres a footstalk reaches back into the shared stalk's end, so the two join. */
 const PEDICEL_ROOT = 0.003;
 /** Metres each footstalk stands above the last along the shared stalk, so the bodies stagger. */
-const PEDICEL_STAGGER = 0.007;
+const PEDICEL_STAGGER = 0.01;
 
 /** Writes a thin shared stalk from a site along `down`, and gives back the point it reaches. */
 function writeStalk(
@@ -566,6 +568,7 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 			// one lean apart from the fork itself.
 			const pedicel = 'lathe' in shape ? (shape.pedicel ?? 0) : 0;
 			const splay = radians(PEDICEL_SPLAY);
+			const nutLean = radians(NUT_LEAN);
 			// Copies from a shared stalk lean apart enough that their bodies clear one another below
 			// the fork; one that has no stalk carries them as close as a budding cluster.
 			const lean = radians(stalk > 0 ? 36 : 16);
@@ -603,6 +606,11 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 					];
 					const axis = normalize3([end[0] - top[0], end[1] - top[1], end[2] - top[2]]);
 					const reach = length3(end[0] - top[0], end[1] - top[1], end[2] - top[2]);
+					const body = normalize3([
+						down[0] * cos(nutLean) + outward[0] * sin(nutLean),
+						down[1] * cos(nutLean) + outward[1] * sin(nutLean),
+						down[2] * cos(nutLean) + outward[2] * sin(nutLean),
+					]);
 					const first = mesh.vertices;
 					lathe(
 						mesh,
@@ -616,7 +624,7 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 						colourOf(from, index),
 					);
 					for (let i = first; i < mesh.vertices; i++) mesh.uvs[i * 2] = 0;
-					writeExtra(mesh, extra, index, { ...from, at: end }, arm, faces, azimuth);
+					writeExtra(mesh, extra, index, { ...from, at: end }, body, faces, azimuth);
 					continue;
 				}
 				const direction: Vector3 =
