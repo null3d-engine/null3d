@@ -121,6 +121,12 @@ export interface SelfOrganizing {
 	readonly years: number;
 	/** Botanical orders grown per plant, 2 to 4. Finer orders come from the shoot prototypes. */
 	readonly macroOrders: number;
+	/**
+	 * How readily a lateral bud puts out a branch, as a multiplier on its chance: 1 as the light,
+	 * the species' angles and the apical dominance give it, above 1 a denser branching, below 1 a
+	 * sparser one. This is the wood's density, which with the shoots' own count makes a crown.
+	 */
+	readonly branching?: number;
 	/** Metres of one macro internode in year one, and its shrink per year (0 to 1). */
 	readonly internode: { readonly length: number; readonly ageFactor: number };
 	/** One stem, or a stool of several that share one light grid. */

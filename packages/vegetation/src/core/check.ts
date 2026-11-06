@@ -139,6 +139,10 @@ function growthProblems(record: Species, out: string[]): void {
 		if (!record.envelope) out.push('a self-organizing species needs an envelope');
 		if (growth.years < 1) out.push(`growth.years is ${growth.years}; grow at least one cycle`);
 		wholeProblem(growth.macroOrders, 'growth.macroOrders', 2, 4, out);
+		if (growth.branching !== undefined && !(growth.branching >= 0))
+			out.push(
+				`growth.branching is ${growth.branching}; it multiplies a chance and cannot be below 0`,
+			);
 		wholeProblem(growth.light.cells, 'growth.light.cells', 8, 96, out);
 		if (growth.internode.length <= 0)
 			out.push(`growth.internode.length is ${growth.internode.length}; it must be above 0`);
