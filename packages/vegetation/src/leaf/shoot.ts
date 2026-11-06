@@ -127,6 +127,8 @@ export interface PlannedLeaf {
 	readonly radial: Vector3;
 	/** The direction the leaf leaves in. */
 	readonly direction: Vector3;
+	/** How much its internode shrinks below the shoot's own spacing, 0 at an even spacing and 1 in a tip rosette. */
+	readonly crowded: number;
 }
 
 /** One bud of the plan. */
@@ -258,8 +260,9 @@ function unitNodes(
 /**
  * Opens a lit shoot's leaves into a mosaic, by the skyward share: each leaf swings out of the sky
  * side into the plane of its stem and the stem's side, so the sky looks down on a fan. Leaves that
- * crowd on one axis (a tip rosette) also spread evenly round that fan in the order the spiral gave
- * them, so their blades fill the gaps rather than lie on each other; a lone leaf keeps its own angle.
+ * crowd on one axis at a tip form a rosette instead: each keeps its own opening angle and the
+ * leaves stand evenly round the stem, so the cluster reads the same from every side and its blades
+ * fill the gaps rather than lie on each other.
  *
  * @param leaves The plan's leaves, rewritten in place.
  * @param share The skyward share, 0 to 1.
@@ -283,6 +286,14 @@ function openMosaic(
 		else groups.push([i]);
 	}
 	for (const group of groups) {
+		// A rosette: the leaves of a shoot's crowded tip keep their opening angles and divide the
+		// turn round the stem evenly. A group of one, or of leaves at the shoot's own spacing,
+		// takes the fan instead.
+		const crowded = group.filter((i) => (leaves[i] as PlannedLeaf).crowded > 0.4).length;
+		if (group.length > 1 && crowded * 2 > group.length) {
+			spreadRound(leaves, group, rotate);
+			continue;
+		}
 		// Each leaf's angle in its fan plane, from the stem toward the stem's side.
 		const angles = group.map((i) => {
 			const leaf = leaves[i] as PlannedLeaf;
@@ -341,6 +352,66 @@ function openMosaic(
 	}
 }
 
+/** A leaf's frame in a rosette: where it turns round the stem and how far it opens from it. */
+interface LeafRound {
+	readonly side: Vector3;
+	readonly opening: number;
+	readonly azimuth: number;
+}
+
+/**
+ * Spreads the leaves of a crowded tip evenly round the stem, in the order the spiral gave them: each
+ * keeps the angle it opens from the stem and gains an equal share of the turn. A real tip rosette is
+ * round, so a camera at any side sees the same cluster rather than a fan seen edge-on.
+ */
+function spreadRound(
+	leaves: PlannedLeaf[],
+	group: readonly number[],
+	rotate: (direction: Vector3, stem: Vector3, sky: Vector3, radial: Vector3) => number[],
+): void {
+	const frames: LeafRound[] = group.map((i) => {
+		const leaf = leaves[i] as PlannedLeaf;
+		const side = normalize3(cross3(leaf.stem, leaf.sky, [0, 0, 0]));
+		const d = leaf.direction;
+		return {
+			side,
+			opening: Math.acos(
+				Math.max(-1, Math.min(1, d[0] * leaf.stem[0] + d[1] * leaf.stem[1] + d[2] * leaf.stem[2])),
+			),
+			azimuth: Math.atan2(
+				d[0] * leaf.sky[0] + d[1] * leaf.sky[1] + d[2] * leaf.sky[2],
+				d[0] * side[0] + d[1] * side[1] + d[2] * side[2],
+			),
+		};
+	});
+	// The spiral's own sequence, spaced to fill the whole turn: the first leaf sets where it starts.
+	const order = group
+		.map((_, k) => k)
+		.sort((a, b) => (frames[a] as LeafRound).azimuth - (frames[b] as LeafRound).azimuth || a - b);
+	const start = (frames[order[0] as number] as LeafRound).azimuth;
+	const turn = (2 * Math.PI) / group.length;
+	order.forEach((k, rank) => {
+		const leaf = leaves[group[k] as number] as PlannedLeaf;
+		const frame = frames[k] as LeafRound;
+		const azimuth = start + turn * rank;
+		const radial = normalize3([
+			frame.side[0] * cos(azimuth) + leaf.sky[0] * sin(azimuth),
+			frame.side[1] * cos(azimuth) + leaf.sky[1] * sin(azimuth),
+			frame.side[2] * cos(azimuth) + leaf.sky[2] * sin(azimuth),
+		]);
+		const direction = normalize3([
+			leaf.stem[0] * cos(frame.opening) + radial[0] * sin(frame.opening),
+			leaf.stem[1] * cos(frame.opening) + radial[1] * sin(frame.opening),
+			leaf.stem[2] * cos(frame.opening) + radial[2] * sin(frame.opening),
+		]);
+		leaves[group[k] as number] = {
+			...leaf,
+			direction,
+			rotation: rotate(direction, leaf.stem, leaf.sky, radial),
+		};
+	});
+}
+
 /**
  * Plans one prototype from the record: its axes, its leaves and its buds.
  *
@@ -395,7 +466,9 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 		quatFromFrame(direction, face, rotation);
 		return rotation;
 	};
-	const [baseRadius, tipRadius] = shoots.stem.radius;
+	const [baseRadius, tipRadius] = shootClass.stem?.radius ?? shoots.stem.radius;
+	// Degrees a lateral of this class leans from its parent.
+	const leanAngle = shootClass.lateral ?? LATERAL_ANGLE;
 	const axes: AxisPoint[][] = [];
 	const leaves: PlannedLeaf[] = [];
 	const buds: PlannedBud[] = [];
@@ -472,7 +545,7 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 				for (let k = 0; k < count; k++) {
 					const azimuth = azimuthStart + k * GOLDEN + draw(Purpose.LateralTurn, axis, k) * 40;
 					const outward = turn(sky, direction, azimuth);
-					const lean = LATERAL_ANGLE * (0.75 + 0.5 * draw(Purpose.LateralTurn, axis, k + 8));
+					const lean = leanAngle * (0.75 + 0.5 * draw(Purpose.LateralTurn, axis, k + 8));
 					const lateral = normalize3([
 						direction[0] * cos(radians(lean)) + outward[0] * sin(radians(lean)),
 						direction[1] * cos(radians(lean)) + outward[1] * sin(radians(lean)),
@@ -551,6 +624,7 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 				sky: [...sky],
 				radial,
 				direction,
+				crowded,
 			});
 			if (leafLength > 0 && budLength > 0) {
 				const lean = radians(BUD_LEAN);
@@ -621,8 +695,7 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 		radius: baseRadius,
 		along: 0,
 	});
-	if (skyTurn > 0 && foliage.kind === 'blade')
-		openMosaic(leaves, skyTurn, leafLength, leafRotation);
+	if (foliage.kind === 'blade') openMosaic(leaves, skyTurn, leafLength, leafRotation);
 	let reach = 0;
 	for (const points of axes)
 		for (const point of points)

@@ -57,6 +57,27 @@ How the data was produced: `tests/image/plant-calibration.spec.ts` and
 `tests/image/plant-bark-frame.spec.ts`, which print these figures, and a decode of
 `leaf-color.ktx2` with the asset tool's Basis Universal build.
 
+**Wind motion.** The review measures how much of a plant's outline changes between the frames of the
+oak's wind clip. It does so in six bands from the base. The reference reads 0.039, 0.040, 0.021,
+0.029, 0.036 and 0.072. The stand-in's records read 0.130, 0.057, 0.023, 0.024, 0.040 and 0.151. The
+built records alone read 0.129, 0.056, 0.022, 0.024, 0.040 and 0.155, so where each branch turns
+changes the motion little. The species' trunk sway moves the oak's top from 40 cm to 3 cm. It moves
+the base band by 0.001, because the trunk leans with the gusts and does not swing between frames. A
+render with the leaf flutter off reads 0.128, 0.056, 0.020, 0.022, 0.035 and 0.137. The leaves add at
+most 0.019, in the top band.
+
+The base band is the low crown's foliage on the branch chain. The render's foliage outside the trunk
+changes 36 per cent of its pixels between frames. The reference's changes 13 per cent, and it covers
+twice the reference's area. A branch's sway angle is the same at every length. So a long drooping
+limb of the finest order swings as far as a short twig. The stiffness curve is by order, so it cannot
+tell them apart, because both are the finest order here.
+
+The oak's curve holds the great limbs and stiffens the twigs: 0.99 at the stem, 0.95 at the middle
+order and 0.8 at the finest. The reference's own record describes the same: clumped foliage rocking
+on stiff twigs, with heavy limbs still. It reads 0.065, 0.031, 0.015, 0.017, 0.028 and 0.105. The
+base falls to 1.7 times the reference and the top to 1.5 times. Every band sits within about 1.7
+times either way, and the middle is a little stiller than the reference.
+
 ## Look
 
 Two faults the owner saw in the leaves package's first oak leaf came from its preview, which drew
@@ -120,6 +141,12 @@ up to 19.4 and the turn 8.7, which is refused. This is a stated limit, not open 
   them sets `setBoundingRadius(plantBoundingRadius(box))`.
 - **A matte.** `matte: true` draws the plant black with its cut-outs and sway, for the review's
   silhouettes.
+- **The whole plant's sway.** The trunk bends at its species' own size and rate. The records
+  texture's header carries the sway that the species record names: the metres its top moves in the
+  field's base wind speed, and the cycles a second. The offset grows with the air's speed, so a
+  species that names a small sway holds its trunk nearly still while its branches carry the motion.
+  A stem that leaned a fixed share of its length moved the oak's top 40 cm at 4 m/s, where its
+  record names 3 cm.
 - **Every role masks.** One WGSL file declares the coverage function, and the engine refuses it on
   an unmasked material, so wood is masked too, with an alpha that is always whole.
 

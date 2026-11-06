@@ -841,6 +841,16 @@ export interface ShootClass {
 	 * terminal rosette), more for one with older years below it. The species' `years` by default.
 	 */
 	readonly years?: number;
+	/**
+	 * The class's own stem radius in metres at the shoot's base and tip, where it differs from the
+	 * species': an old twig is thicker than this year's shoot, and a cutting of it shows that.
+	 */
+	readonly stem?: { readonly radius: readonly [base: number, tip: number] };
+	/**
+	 * Degrees a lateral of this class leans from its parent, where the species' own value does not
+	 * fit: a spray's side twigs spread wider than a whip's.
+	 */
+	readonly lateral?: number;
 }
 
 /**
@@ -1210,7 +1220,13 @@ export interface ExtraSpec {
  * @category api/vegetation
  */
 export type ExtraShape =
-	| { readonly lathe: readonly Vec2[]; readonly scales?: number }
+	| {
+			readonly lathe: readonly Vec2[];
+			/** Rows of scale bumps, one ring a row. */
+			readonly scales?: number;
+			/** The profile heights, in metres, that carry the scale bumps: a cup or a cone's fertile part. */
+			readonly scaled?: readonly [from: number, to: number];
+	  }
 	| { readonly petals: number; readonly radius: number; readonly cup: number }
 	| { readonly spines: number; readonly length: number; readonly spread: number }
 	| { readonly catkin: { readonly length: number; readonly radius: number } };
@@ -1241,8 +1257,12 @@ export interface SeasonSpec {
 export interface WindSpec {
 	/** Stiffness by order (t = order / deepest order), 0 free to 1 rigid. */
 	readonly stiffness: Curve;
-	/** The whole plant's sway: cycles a second and metres at the top. */
-	readonly sway: { readonly frequency: number; readonly amplitude: number };
+	/**
+	 * The whole plant's sway: cycles a second, and metres at the top in the field's base wind
+	 * speed. A species that names none takes the stated default, so a missing sway never leaves
+	 * the plant still.
+	 */
+	readonly sway?: { readonly frequency: number; readonly amplitude: number };
 	/** Orders from which shoots swing as hanging chains (willow, birch). */
 	readonly whips?: { readonly fromOrder: number; readonly pendulum: number };
 	/** How leaves flutter. */
