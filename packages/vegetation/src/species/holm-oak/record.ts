@@ -52,7 +52,7 @@ export const record: Species = {
 				[1, 0.42],
 			],
 			dominance: [0.4, 0.5, 0.95],
-			wander: 24,
+			wander: 16,
 		},
 		divide: { at: 0.32, count: 2, angle: 45, lean: 6 },
 		light: { apical: 1, lateral: 1.5, shadow: [5, 0.15, 2], cells: 96 },
@@ -240,11 +240,11 @@ export const record: Species = {
 	},
 	wind: {
 		stiffness: [
-			[0, 0.98],
-			[0.5, 0.9],
-			[1, 0.65],
+			[0, 0.995],
+			[0.5, 0.96],
+			[1, 0.88],
 		],
-		sway: { frequency: 0.32, amplitude: 0.035 },
+		sway: { frequency: 0.32, amplitude: 0.015 },
 		flutter: { kind: 'blade', amplitude: 0.22, frequency: 3 },
 	},
 	lod: {
