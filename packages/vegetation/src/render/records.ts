@@ -13,7 +13,7 @@ import type { SpeciesBox } from '../core/box';
 import type { BarkZone, LeafOptics, Species } from '../core/record';
 import type { TextureManifest } from '../core/textures';
 import { type Rgb, spreadMean } from '../core/types';
-import { WIND_RECORD_FLOATS } from '../wind/records';
+import { WIND_RECORD_FLOATS, windSway } from '../wind/records';
 
 /**
  * Texels across the records texture.
@@ -309,7 +309,7 @@ export function speciesHeader(
 	});
 	const bud = record.shoots?.bud.colour;
 	if (bud) texel(header, HEADER.bud, [...bud, 1]);
-	const sway = record.wind.sway;
+	const sway = windSway(record);
 	texel(header, HEADER.sway, [sway.amplitude, sway.frequency, 0, 0]);
 	return header;
 }
