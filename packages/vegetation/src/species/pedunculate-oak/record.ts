@@ -207,7 +207,9 @@ export const record: Species = {
 			at: 'shoot-tip',
 			share: 0.0475,
 			count: { mean: 3, spread: 0 },
-			tipShare: 0.95,
+			// The acorns stand on the internode below the leaves' rosette, where the twig shows, as
+			// the reference's peduncle does, not at the leafy tip.
+			tipShare: 0.8,
 			seasons: ['summer', 'autumn'],
 			shape: {
 				lathe: [
