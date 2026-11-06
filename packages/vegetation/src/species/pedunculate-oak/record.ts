@@ -278,7 +278,7 @@ export const record: Species = {
 			// variant's measured figure at its tier: 7.94, 8.13, 8.34 and 8.56 MB.
 			// The two-year foliage also adds a second year's leaf card to each variant, which takes the
 			// largest of the first three to 9.73 MB at ultra; each cap sits just above its figure.
-			variantBytes: { low: 9_000_000, medium: 9_800_000, high: 11_600_000, ultra: 11_900_000 },
+			variantBytes: { low: 9_400_000, medium: 10_200_000, high: 11_300_000, ultra: 11_600_000 },
 			lod0Triangles: 2_500_000,
 			lod1Triangles: 150_000,
 			lod2Triangles: 30_000,
