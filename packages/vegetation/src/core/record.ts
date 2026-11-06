@@ -803,6 +803,12 @@ export interface ShootSpec {
 	readonly placement: {
 		/** Shoots per metre of the finest macro axes, by bud vigor (t = vigor). */
 		readonly perMetre: Curve;
+		/**
+		 * How dense the foliage sits against the curve above, 1 by the curve's own figure. This is
+		 * the dial for a crown too thin for its reference: raising it puts more shoots along the
+		 * finest axes without changing their reach or the species' part sizes.
+		 */
+		readonly density?: number;
 		/** No shoot where sky visibility is below this: shade pruning. */
 		readonly shadePrune: number;
 		/** How far a shoot turns its leaves toward the sky, 0 to 1 (flat beech sprays). */

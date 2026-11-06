@@ -258,7 +258,10 @@ export function placeShoots(input: DressInput): ShootRows {
 			];
 		else from = [...at];
 		const stretch = length3(at[0] - from[0], at[1] - from[1], at[2] - from[2]);
-		let expected = curveAt(shoots.placement.perMetre, vigor) * stretch;
+		let expected =
+			curveAt(shoots.placement.perMetre, vigor) *
+			stretch *
+			Math.max(0, shoots.placement.density ?? 1);
 		// The shoots gather into masses about a patch of the crown, with a thinner run round each
 		// mass, so the crown reads as rosettes with sky and wood between rather than an even mesh of
 		// leaves. The patches are spaced in space, not along the axes, so a mass is the same size
