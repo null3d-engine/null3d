@@ -209,9 +209,10 @@ describe('the slots', () => {
 		});
 		expect(classifySlot('07-limb-leaving-trunk.png')?.view).toBe('junction');
 		expect(classifySlot('08-limb-fork.png')?.view).toBe('fork');
+		expect(classifySlot('09-secondary-branching.png')?.view).toBe('limb');
 		expect(classifySlot('10-fine-twigs-b.png')?.view).toBe('twigs');
 		expect(classifySlot('20-winter-branch-architecture.png')).toMatchObject({
-			view: 'skeleton',
+			view: 'limb',
 			query: { season: 'winter' },
 		});
 		expect(classifySlot('21-branch-studio.png')?.view).toBe('branch');
