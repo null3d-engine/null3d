@@ -64,7 +64,7 @@ export const forms: Readonly<Record<string, SpeciesForm>> = {
 		shoots: { placement: { density: 0.8, shadePrune: 0.1, tipPrune: 0.05 } },
 		// Still 31: the shaded bole flares smoothly into the moss at its foot, with no buttress lobes or
 		// surface roots, so it runs up nearly parallel-sided from the ground.
-		base: { flare: { amount: 0.3, height: 0.5 }, buttress: null, roots: null },
+		base: { flare: { amount: 0.3, height: 0.5 }, taper: null, buttress: null, roots: null },
 		// No turning video shows this form, so the all-round check takes the form's own band.
 		roundBand: null,
 	},
@@ -196,7 +196,13 @@ export const forms: Readonly<Record<string, SpeciesForm>> = {
 		// Still 32: smooth young bark, with no moss or lichen yet.
 		bark: { moss: null, lichen: null },
 		// Still 32: a plain foot, with no buttresses, surface roots or flutes.
-		base: { flare: { amount: 0.3, height: 0.15 }, buttress: null, roots: null, flutes: null },
+		base: {
+			flare: { amount: 0.3, height: 0.15 },
+			taper: null,
+			buttress: null,
+			roots: null,
+			flutes: null,
+		},
 		// A young oak bears no acorns.
 		extras: null,
 		// No turning video shows this form, so the all-round check takes the form's own band.

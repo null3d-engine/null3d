@@ -276,6 +276,8 @@ export const record: Species = {
 		// deep furrows between them, each running out over the leaf litter as a root, so the lobes
 		// and the roots take it between them and the round flare stays small.
 		flare: { amount: 0.3, height: 0.5 },
+		// Still 17's bole widens all the way down from its fork into the flared foot.
+		taper: { amount: 0.25, height: 4.5 },
 		buttress: { lobes: { mean: 5, spread: 1 }, amount: 0.6, sharpness: 3, height: 0.6, round: 0.3 },
 		// Still 14's roots stand out of the litter as round-topped ridges that sink as they run out.
 		roots: {
