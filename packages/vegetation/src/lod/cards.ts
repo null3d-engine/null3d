@@ -31,7 +31,7 @@ const CORNERS = [
  * @category api/vegetation
  */
 export function cardKeep(order: number, level: 1 | 2): number {
-	const every = 2 ** (level - 1);
+	const every = 1 << (level - 1);
 	if (order % every !== 0) return 0;
 	const grow = Math.sqrt(every);
 	return grow;

@@ -3,7 +3,7 @@
 // where a shoot comes to lead its fork, the widest angle closes fast, to 15 degrees by three fifths.
 // The self-organizing grower rights a young shoot whose share of the wood grows past what its angle
 // allows, as reaction wood turns a vigorous shoot toward its parent's line.
-import { atan2, cos, radians, sin, type Vector3 } from '../core/math';
+import { atan2, cos, pow, radians, sin, type Vector3 } from '../core/math';
 
 /** The widest a fork may be, in degrees, for the thinnest child. */
 const WIDEST = 80;
@@ -42,7 +42,7 @@ export function forkAngle(share: number): number {
  */
 export function forkShare(child: number, parent: number, exponent: number): number {
 	if (!(parent > 0)) return 0;
-	return Math.min(1, (child / parent) ** (2 / exponent));
+	return Math.min(1, pow(child / parent, 2 / exponent));
 }
 
 /**

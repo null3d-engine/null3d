@@ -3,6 +3,7 @@
 // and Liu 2008), so a tube never twists about its own axis. The curve is a centripetal Catmull-Rom
 // spline through the skeleton's nodes: it rounds each node's kink a little without overshooting,
 // so an oak's crooked limb keeps its crooks and loses only the facets of a polyline.
+import { acos, tan } from '../core/math';
 
 /** Samples of the curve between two of the axis's points. */
 const SAMPLES_PER_SPAN = 6;
@@ -158,8 +159,8 @@ export function roundKinks(
 		if (before > 0 && after > 0)
 			for (let k = 0; k < 3; k++)
 				cosine += ((into[k] as number) * (onto[k] as number)) / (before * after);
-		const kink = Math.acos(Math.min(1, Math.max(-1, cosine)));
-		const reach = Math.min(bend * r * Math.tan(kink / 2), KINK_REACH * before, KINK_REACH * after);
+		const kink = acos(Math.min(1, Math.max(-1, cosine)));
+		const reach = Math.min(bend * r * tan(kink / 2), KINK_REACH * before, KINK_REACH * after);
 		if (kink < LEAST_KINK || !(reach >= LEAST_ROUNDING)) {
 			for (let k = 0; k < 3; k++) out.push(points[i * 3 + k] as number);
 			outRadii.push(r);

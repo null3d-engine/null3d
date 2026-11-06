@@ -6,6 +6,8 @@
 // and the midrib lies on u = 0.5. Outlines run counter-clockwise, as flat [u, v, u, v, ...] lists.
 // Every figure uses the four operations and the core's own trigonometry, so a leaf's bytes are the
 // same on every script engine.
+
+import { PI, sin } from '../core/math';
 import type { ParametricOutline } from '../core/record';
 import type { TextureManifestLeaf } from '../core/textures';
 import type { Vec2 } from '../core/types';
@@ -111,7 +113,7 @@ export function parametricOutline(shape: ParametricOutline): LeafOutline {
 			if (shape.base === 'oblique' && sign < 0 && t < 0.08) half = 0;
 			let v = PARAMETRIC_BASE + t * span;
 			// A cordate base hangs two rounded lobes below the blade's base beside the stalk.
-			if (shape.base === 'cordate' && t < 0.22) v -= 0.06 * span * Math.sin((t / 0.22) * Math.PI);
+			if (shape.base === 'cordate' && t < 0.22) v -= 0.06 * span * sin((t / 0.22) * PI);
 			out.push(0.5 + sign * Math.min(0.48, half * span), v);
 		}
 		return out;

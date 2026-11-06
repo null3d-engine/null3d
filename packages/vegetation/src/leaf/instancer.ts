@@ -244,7 +244,7 @@ function axisReach(skeleton: MacroSkeleton): {
 
 /** The space-filling key of a point inside a box: its axes' bits interleaved, high bits first. */
 function spaceKey(p: Readonly<Vector3>, min: readonly number[], side: number): number {
-	const max = 2 ** ORDER_BITS - 1;
+	const max = (1 << ORDER_BITS) - 1;
 	const scale = side > 0 ? max / side : 0;
 	const at = [0, 1, 2].map((c) =>
 		Math.min(max, Math.max(0, Math.round(((p[c] as number) - (min[c] as number)) * scale))),
@@ -469,7 +469,7 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 		if (reach) {
 			const total = reach.ends[axis] as number;
 			const at = total > 1e-6 ? Math.min(1, (reach.along[node] as number) / total) : 1;
-			expected *= 1 - bias + bias * at ** 1.5;
+			expected *= 1 - bias + bias * at * Math.sqrt(at);
 		}
 		// The shoots gather into masses about a patch of the crown, with a thinner run round each
 		// mass, so the crown reads as rosettes with sky and wood between rather than an even mesh of

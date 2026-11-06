@@ -29,6 +29,7 @@ import {
 	atan2,
 	cos,
 	exp,
+	length3,
 	pow,
 	quatFromFrame,
 	quatRotate,
@@ -637,7 +638,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 					heading[0] += KINK_DRIFT * crook * wr * cos(wa);
 					heading[1] += KINK_DRIFT * crook * wz;
 					heading[2] += KINK_DRIFT * crook * wr * sin(wa);
-					const hl = Math.hypot(heading[0], heading[1], heading[2]);
+					const hl = length3(heading[0], heading[1], heading[2]);
 					heading[0] /= hl;
 					heading[1] /= hl;
 					heading[2] /= hl;
