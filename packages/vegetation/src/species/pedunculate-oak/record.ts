@@ -162,7 +162,7 @@ export const record: Species = {
 			// The plates open the crown to the background. A shallow field is enough now: the foliage
 			// stands on the upper side of the wood, which opens the crown's underside along the limbs,
 			// and a deeper field only scatters it.
-			clump: { spacing: 3.4, depth: 0.45 },
+			clump: { spacing: 3.4, depth: 0.32 },
 			shadePrune: 0.2,
 			skyward: 0.65,
 			scale: { mean: 1.4, spread: 0.15 },
