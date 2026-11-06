@@ -192,7 +192,7 @@ export const record: Species = {
 		young: 0,
 		youngRadius: 0.08,
 		girthScale: [
-			[0, 0.6],
+			[0, 1.6],
 			[1, 1],
 		],
 		displacement: 0.04,
