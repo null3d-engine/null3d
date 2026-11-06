@@ -67,7 +67,10 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		// that needs fewer triangles grows a coarser plant. A thicker bole costs radial segments on
 		// every axis, so the figures rise with the trunk's girth.
 		lod0WoodBytes: { low: 8.9 * MB, medium: 11.3 * MB, high: 15 * MB, ultra: 20.5 * MB },
-		lod0Triangles: 2_500_000,
+		// The beech's densest cutting, with about a twentieth to spare. A dense cutting is many rows of
+		// leaves on one shoot, and the near band is the only place those rows are real geometry, so the
+		// cap follows the densest species' measured figure rather than the oak's.
+		lod0Triangles: 2_900_000,
 		lod1Triangles: 150_000,
 		lod2Triangles: 30_000,
 		downloadBytes: 1 * MB,
