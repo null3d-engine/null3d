@@ -838,10 +838,11 @@ fn surface(input: SurfaceInput) -> Surface {
         let low_enough = 1.0 - smoothstep(moss_reach.x * 0.7, max(moss_reach.x, 0.001), plant.y);
         let north = saturate(-n.z) * moss_reach.y;
         // The foot keeps some moss on every side, and the furrows and the crowns of the buttresses
-        // gather more than the plates do. It stands in patches, not as a wash: a coarse noise decides
-        // where a patch holds, so the bark keeps its own colour between them.
+        // gather more than the plates do. It stands in mats of a few decimetres, not as a wash: a
+        // coarse noise decides where a mat holds, and a finer one frays its edge, so the bark keeps
+        // its own colour between them.
         let moss_patch =
-            smoothstep(0.34, 0.62, value3(plant * 9.0) * 0.65 + value3(plant * 31.0) * 0.35);
+            smoothstep(0.34, 0.62, value3(plant * 3.0) * 0.65 + value3(plant * 11.0) * 0.35);
         let mossy = saturate(
             moss.w * low_enough * (0.45 + saturate(n.y) + north) * (0.5 + cavity) * moss_patch,
         );
