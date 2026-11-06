@@ -299,7 +299,7 @@ export const record: Species = {
 	roundBand,
 	cuttings: {
 		branch: { shoot: 'spray' },
-		subbranch: { shoot: 'long' },
+		subbranch: { shoot: 'long', pick: 1 },
 		cluster: { shoot: 'long' },
 	},
 };

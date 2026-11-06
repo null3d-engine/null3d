@@ -1448,6 +1448,11 @@ export interface CutFromPlant {
 export interface CutFromShoots {
 	/** The shoot class to take. */
 	readonly shoot: ShootClass['name'];
+	/**
+	 * Which of that class's prototypes to take, 0 for the first: two pieces may want shoots of one
+	 * class and still be different pieces, as a sub-branch and a leaf cluster are.
+	 */
+	readonly pick?: number;
 }
 
 /**
