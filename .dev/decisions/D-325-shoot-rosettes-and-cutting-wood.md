@@ -97,6 +97,11 @@ uniform resample skipped a shallow cup's shape, which left the acorn a flat pod.
 keeps ten profile points and gains three scale rings, and its cup and nut grow to the fact sheet's
 2.5 cm.
 
+The acorn's cup now stands 2.6 cm across against its nut's 2.2, with a sharp shoulder, so it reads
+as a cap at the review's framing. The wider cup crosses the card level's speck test: a 3.2 cm acorn
+draws as a 4 px speck on the whole tree. The speck threshold rises from 3 to 5 px, which keeps the
+acorns off the far levels and the variant at 8,021,428 bytes.
+
 `ExtraSpec.count` gives how many stand at one site. The oak's acorns take one to three on a stalk
 and their share falls from 0.24 to 0.12, so the variant reads 8,021,428 bytes against the 8,600,000
 limit, less than the single acorn at the higher share.
