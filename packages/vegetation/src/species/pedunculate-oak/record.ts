@@ -158,14 +158,14 @@ export const record: Species = {
 			// The reference's crown is denser than the curve alone gives: this is the dial, not a
 			// change of reach or part size. The low limbs now keep the foliage they carry below the
 			// bole's line, so the dial sits lower than it did when that foliage was missing.
-			density: 0.75,
+			density: 0.82,
 			// The plates open the crown to the background. A shallow field is enough now: the foliage
 			// stands on the upper side of the wood, which opens the crown's underside along the limbs,
 			// and a deeper field only scatters it.
 			clump: { spacing: 3.4, depth: 0.45 },
 			shadePrune: 0.2,
 			skyward: 0.65,
-			scale: { mean: 1.6, spread: 0.15 },
+			scale: { mean: 1.5, spread: 0.15 },
 		},
 	},
 	foliage: {
