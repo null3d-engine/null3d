@@ -50,8 +50,6 @@ const BUD_LEAN = 28;
 const CLUSTER_LEAN = 32;
 /** How far inside a twig's surface a crowded node's leaves root, so their blades meet the wood. */
 const CROWDED_ROOT = 0.6;
-/** Metres a crowded node's leaves stand apart along the twig, so a rosette opens into a cup. */
-const CROWDED_RISE = 0.004;
 
 /** Purposes of the prototypes' hash keys, so no two draws share one. */
 const Purpose = {
@@ -621,17 +619,10 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 				curveAt(shootClass.leafScale, t) *
 				(leafMean > 0 ? spreadAt(leafSpread, draw(Purpose.LeafSize, axis, key)) / leafMean : 1);
 			// A crowded node's leaves root inside the twig's own surface, so a rosette's inner blades
-			// meet the wood they stand on instead of stopping a hairline short of it. They also stand
-			// a little apart along the twig: at one height a rosette lies flat, and stacked it opens
-			// into the cup its reference shows.
+			// meet the wood they stand on instead of stopping a hairline short of it.
 			const out = radius * (1 - CROWDED_ROOT * crowded);
-			const rise = CROWDED_RISE * crowded * (k - (azimuths.length - 1) / 2);
 			leaves.push({
-				at: [
-					at[0] + radial[0] * out + stem[0] * rise,
-					at[1] + radial[1] * out + stem[1] * rise,
-					at[2] + radial[2] * out + stem[2] * rise,
-				],
+				at: [at[0] + radial[0] * out, at[1] + radial[1] * out, at[2] + radial[2] * out],
 				rotation,
 				scale: Math.max(0.05, size),
 				mesh: hashAt(salt, 0x5400 + index, Purpose.LeafMesh, axis, key) % leafMeshes,
