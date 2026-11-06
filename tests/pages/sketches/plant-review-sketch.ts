@@ -453,9 +453,10 @@ export default defineSketch(async (ctx) => {
 			}
 			case 'bark-base': {
 				const r = stemAt(skeleton, 0.3)?.radius ?? 0.1;
-				// The foot and its flare, with the ground it stands on: a target low enough that the
-				// roots, the buttresses and the moss of still 14 stay in frame.
-				return orbit([foot[0], 0.35, foot[2]], 2.2 + r, e, turn, fov);
+				// The foot and its flare, with the ground it stands on. The stand-off is measured from
+				// the buttressed surface, not the plain radius: on a thick bole the lobes reach nearly
+				// twice the radius, and a camera inside them draws a wall of bark.
+				return orbit([foot[0], 0.9, foot[2]], 1.5 + 3.5 * r, e, turn, fov);
 			}
 			case 'bark-mid': {
 				const y = Math.min(1.5, skeleton.height * 0.3);
