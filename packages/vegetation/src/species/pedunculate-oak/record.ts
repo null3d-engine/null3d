@@ -124,7 +124,7 @@ export const record: Species = {
 				length: { mean: 1.15, spread: 0.15 },
 				nodes: { mean: 5, spread: 1 },
 				internode: ROSETTE,
-				stem: { radius: [0.013, 0.005] },
+				stem: { radius: [0.018, 0.007] },
 				lateral: 60,
 				leafScale: [
 					[0, 0.8],
