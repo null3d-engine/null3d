@@ -191,7 +191,7 @@ export const record: Species = {
 		displacement: 0.012,
 		collar: { swell: 0.4, length: 1.8, ridge: 0.5 },
 		moss: { amount: 0.9, up: 1, north: 0.3, colour: [0.16, 0.26, 0.1] },
-		lichen: { amount: 0.5, from: 4, colour: [0.42, 0.46, 0.38] },
+		lichen: { amount: 0.8, from: 3, colour: [0.42, 0.46, 0.38] },
 	},
 	base: {
 		flare: { amount: 0.6, height: 0.4 },
