@@ -38,7 +38,7 @@ export const record: Species = {
 				[1, 55],
 			],
 			angleSpread: 8,
-			extinction: [0.02, 0.09],
+			extinction: [0.02, 0.03],
 		},
 		apical: {
 			control: [
