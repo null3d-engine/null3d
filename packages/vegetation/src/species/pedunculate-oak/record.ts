@@ -13,9 +13,9 @@ import { aspect, envelope, roundBand } from './fit';
 
 /** Internodes along a growth unit: one long first internode, then the leaves crowd at its tip. */
 const ROSETTE: readonly (readonly [number, number])[] = [
-	[0, 12],
-	[0.2, 1],
-	[1, 0.5],
+	[0, 20],
+	[0.15, 0.6],
+	[1, 0.3],
 ];
 
 /** The pedunculate oak's record. */
