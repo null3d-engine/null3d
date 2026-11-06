@@ -511,6 +511,45 @@ describe('the side shoots at a joint', () => {
 	});
 });
 
+describe('dormant buds at the kinks of a bent twig', () => {
+	it('puts a bud at the share of the kinks the bend names, and none where it names none', () => {
+		const base = oakRecord();
+		const record = (buds?: number): Species => ({
+			...base,
+			shoots: {
+				...OAK_SHOOTS,
+				years: 3,
+				classes: OAK_SHOOTS.classes.map((c) => ({
+					...c,
+					years: 3,
+					bend: { length: 0.01, angle: 30, ...(buds !== undefined && { buds }) },
+				})),
+			},
+		});
+		for (let i = 0; i < OAK_SHOOTS.prototypes; i++) {
+			const bare = planShoot(record(), i, 1);
+			const some = planShoot(record(0.5), i, 1);
+			const all = planShoot(record(1), i, 1);
+			// The kinks are the stem's points that end a piece without ending a node.
+			expect(planShoot(record(0), i, 1).buds).toHaveLength(bare.buds.length);
+			expect(some.buds.length).toBeGreaterThan(bare.buds.length);
+			expect(all.buds.length).toBeGreaterThan(some.buds.length);
+			// Every kink bud stands on the stem's surface beside a stem point, leaning out from it.
+			const stem = all.axes.flat();
+			for (const bud of all.buds.slice(bare.buds.length)) {
+				const near = Math.min(
+					...stem.map((p) =>
+						Math.hypot(p.at[0] - bud.at[0], p.at[1] - bud.at[1], p.at[2] - bud.at[2]),
+					),
+				);
+				expect(near).toBeLessThan(0.02);
+			}
+			// The stem itself does not move.
+			expect(all.axes.flat().map((p) => p.along)).toEqual(bare.axes.flat().map((p) => p.along));
+		}
+	});
+});
+
 describe("a class's own leaf years", () => {
 	it("leaves a class's older years bare where it names fewer leaf years than the species", () => {
 		const base = oakRecord();

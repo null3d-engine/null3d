@@ -1118,9 +1118,11 @@ export interface ShootClass {
 	 * internode's line, so a twig runs stiff and angular between its nodes, as the winter cut branch
 	 * shows. The internode ends on its own line, and its reach falls by the cosine of half the angle,
 	 * about 4 % at 34 degrees. An internode shorter than two pieces stays one. `length` is at least
-	 * 5 mm and `angle` from 0 to 60 degrees. Absent, every internode is one straight piece.
+	 * 5 mm and `angle` from 0 to 60 degrees. `buds`, a share from 0 to 1, is how many of the kinks
+	 * carry a small dormant bud, as a winter twig shows buds along its length and not only at its
+	 * nodes' rosettes; absent or 0, the kinks are bare. Absent, every internode is one straight piece.
 	 */
-	readonly bend?: { readonly length: number; readonly angle: number };
+	readonly bend?: { readonly length: number; readonly angle: number; readonly buds?: number };
 	/**
 	 * Years of the class's run that carry leaves, counted back from the newest, where the class
 	 * differs from the species' own `leafYears`: at 1 only this year's shoots are in leaf, so a

@@ -60,6 +60,11 @@ const SHOOT_LINE: Readonly<Vector3> = [0, 1, 0];
 const LATERAL_ANGLE = 42;
 /** Degrees an axillary bud leans from its stem. */
 const BUD_LEAN = 28;
+/**
+ * The smallest share of the species' bud size that a side bud takes: an axil's bud where its node
+ * stands apart from the next, and a dormant bud at a twig's kink.
+ */
+const SIDE_BUD_LEAST = 0.55;
 /** Degrees the buds of a tip cluster lean from the terminal bud, where the record names none. */
 const CLUSTER_LEAN = 32;
 /**
@@ -85,6 +90,7 @@ const Purpose = {
 	Spur: 11,
 	LeafAngle: 12,
 	Joint: 13,
+	Kink: 14,
 } as const;
 
 /** Sides of stem tubes and buds by tier. */
@@ -250,6 +256,15 @@ function square(
 	const out: Vector3 = [v[0] - d * axis[0], v[1] - d * axis[1], v[2] - d * axis[2]];
 	if (length3(out[0], out[1], out[2]) < 1e-6) return square(fallback, axis, [1, 0, 0]);
 	return normalize3(out);
+}
+
+/** The unit direction `angle` radians round a stem from its `side` toward its `sky`. */
+function roundStem(side: Readonly<Vector3>, sky: Readonly<Vector3>, angle: number): Vector3 {
+	return normalize3([
+		side[0] * cos(angle) + sky[0] * sin(angle),
+		side[1] * cos(angle) + sky[1] * sin(angle),
+		side[2] * cos(angle) + sky[2] * sin(angle),
+	]);
 }
 
 /** Turns `v` about the unit `axis` by `degrees`. */
@@ -564,12 +579,43 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 	// The straight pieces a long internode breaks into, where the class names them.
 	const bend = shootClass.bend;
 	const bendPiece = Math.max(BEND_PIECE_LEAST, bend?.length ?? 0);
+	// The share of a bent internode's kinks that carry a dormant bud.
+	const kinkBuds = Math.min(1, Math.max(0, bend?.buds ?? 0));
 	const axes: AxisPoint[][] = [];
 	const leaves: PlannedLeaf[] = [];
 	const buds: PlannedBud[] = [];
 	const budLength = shoots.bud.length;
 	const budWidth = shoots.bud.width;
 	let span = 0;
+
+	/**
+	 * A side bud on the bark of a stem of `radius` at `at`, on the side `radial` points to, leaning out
+	 * from the stem's direction `stem`; `larger` adds to the smallest side bud's share of the species'
+	 * bud size.
+	 */
+	const addSideBud = (
+		at: Vector3,
+		stem: Vector3,
+		radial: Vector3,
+		radius: number,
+		along: number,
+		larger: number,
+	): void => {
+		const lean = radians(BUD_LEAN);
+		const share = SIDE_BUD_LEAST + larger;
+		buds.push({
+			at: [at[0] + radial[0] * radius, at[1] + radial[1] * radius, at[2] + radial[2] * radius],
+			direction: normalize3([
+				stem[0] * cos(lean) + radial[0] * sin(lean),
+				stem[1] * cos(lean) + radial[1] * sin(lean),
+				stem[2] * cos(lean) + radial[2] * sin(lean),
+			]),
+			cluster: false,
+			length: budLength * share,
+			width: budWidth * share,
+			along,
+		});
+	};
 
 	const grow = (start: AxisStart): void => {
 		const axis = axes.length;
@@ -640,6 +686,19 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 					radius = start.radius + (tipRadius - start.radius) * share;
 					points.push({ at: [...at], radius, along });
 					frames.push({ at: [...at], direction: [...run], sky: [...sky], along, radius });
+					// A kink of a bent internode, in leaf or bare, may carry a dormant bud of the smallest
+					// side bud's size, as a winter twig shows buds along its length; the buds turn round the
+					// stem by the golden angle from one to the next.
+					if (
+						p < pieces - 1 &&
+						kinkBuds > 0 &&
+						budLength > 0 &&
+						draw(Purpose.Kink, axis, node * 128 + p) < kinkBuds
+					) {
+						const side = normalize3(cross3(run, sky, [0, 0, 0]));
+						const azimuth = radians(azimuthStart + (node * 128 + p) * GOLDEN);
+						addSideBud(at, run, roundStem(side, sky, azimuth), radius, along, 0);
+					}
 				}
 				span = Math.max(span, along);
 				const t = nodes === 1 ? 1 : k / (nodes - 1);
@@ -741,11 +800,7 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 				gap -= 2 * Math.PI * Math.round(gap / (2 * Math.PI));
 				azimuth += gap * ranks;
 			}
-			const radial = normalize3([
-				side[0] * cos(azimuth) + sky[0] * sin(azimuth),
-				side[1] * cos(azimuth) + sky[1] * sin(azimuth),
-				side[2] * cos(azimuth) + sky[2] * sin(azimuth),
-			]);
+			const radial = roundStem(side, sky, azimuth);
 			const a = radians(leafAngle);
 			const direction = normalize3([
 				stem[0] * cos(a) + radial[0] * sin(a),
@@ -775,22 +830,9 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 				direction,
 				crowded,
 			});
-			if (leafLength > 0 && budLength > 0) {
-				const lean = radians(BUD_LEAN);
-				buds.push({
-					at: [at[0] + radial[0] * radius, at[1] + radial[1] * radius, at[2] + radial[2] * radius],
-					direction: normalize3([
-						stem[0] * cos(lean) + radial[0] * sin(lean),
-						stem[1] * cos(lean) + radial[1] * sin(lean),
-						stem[2] * cos(lean) + radial[2] * sin(lean),
-					]),
-					cluster: false,
-					// Axil buds grow toward the tip cluster's size where the nodes crowd into a rosette.
-					length: budLength * (0.55 + 0.35 * crowded),
-					width: budWidth * (0.55 + 0.35 * crowded),
-					along,
-				});
-			}
+			// Axil buds grow toward the tip cluster's size where the nodes crowd into a rosette.
+			if (leafLength > 0 && budLength > 0)
+				addSideBud(at, stem, radial, radius, along, 0.35 * crowded);
 		}
 	};
 

@@ -192,6 +192,8 @@ function shootProblems(shoots: ShootSpec, out: string[]): void {
 				);
 			if (!(shoot.bend.angle >= 0 && shoot.bend.angle <= 60))
 				out.push(`${path}.bend.angle is ${shoot.bend.angle}; it is degrees from 0 to 60`);
+			if (shoot.bend.buds !== undefined && !(shoot.bend.buds >= 0 && shoot.bend.buds <= 1))
+				out.push(`${path}.bend.buds is ${shoot.bend.buds}; it is a share from 0 to 1`);
 		}
 	});
 	if (shoots.classes.length > 0 && Math.abs(share - 1) > 0.01)

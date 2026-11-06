@@ -289,13 +289,15 @@ describe('the record check', () => {
 		expect(problems(jointed(-1))).toContain('.laterals draws -1 to -1');
 		expect(problems(jointed({ mean: 1, spread: -0.2 }))).toContain('.laterals.spread is -0.2');
 		expect(problems(jointed(1, 0.6))).toContain('.lateralGap is 0.6');
-		const bent = (bend: { length: number; angle: number }): Species => ({
+		const bent = (bend: { length: number; angle: number; buds?: number }): Species => ({
 			...template,
 			shoots: { ...shoots, classes: shoots.classes.map((c) => ({ ...c, bend })) },
 		});
 		expect(speciesProblems(bent({ length: 0.05, angle: 34 }))).toEqual([]);
 		expect(problems(bent({ length: 0.001, angle: 20 }))).toContain('.bend.length is 0.001');
 		expect(problems(bent({ length: 0.05, angle: 90 }))).toContain('.bend.angle is 90');
+		expect(speciesProblems(bent({ length: 0.05, angle: 34, buds: 0.5 }))).toEqual([]);
+		expect(problems(bent({ length: 0.05, angle: 34, buds: 2 }))).toContain('.bend.buds is 2');
 		const leafy = (leafYears: number): Species => ({
 			...template,
 			shoots: { ...shoots, classes: shoots.classes.map((c) => ({ ...c, years: 2, leafYears })) },
