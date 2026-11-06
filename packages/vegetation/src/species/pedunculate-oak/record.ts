@@ -64,7 +64,7 @@ export const record: Species = {
 		bending: { strength: 0.5, upturn: 0.2 },
 		forkRule: true,
 		kinks: true,
-		pipe: { exponent: 2.3, tipRadius: 0.004 },
+		pipe: { exponent: 2.3, tipRadius: 0.012 },
 	},
 	envelope,
 	shoots: {
