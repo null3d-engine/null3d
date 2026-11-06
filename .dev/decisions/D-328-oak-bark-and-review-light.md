@@ -76,6 +76,20 @@ lichen. The white silhouette lost the species' character and hid the furrows. Th
 shows the picture's long plates, and the young stem shows its pale lenticels. The reference pictures
 agree: they show a warm grey-brown bark, not a white one.
 
+## Stated limit: the shaded trunk under the review's light
+
+The bark measure of a whole summer view is the mean color of the plant below the crown. It moved
+from 1.25 to 9.22 on `01` and from 17.07 to 27.1 on `02`. The cause is the light, not the bark
+color: the review's daylight is dim, and the dense crown shades the trunk in those views. The
+reference `01` and `02` trees stand in open sun, so their trunks read pale. A tint that lifts the
+shaded trunk back to the reference's tone is the same tint that whitens the sunlit limbs, which is
+the fault this record removes.
+
+The row 8 evidence is the close-ups and the winter skeleton. They read 4.78, 3.44 and 3.84. The
+winter skeleton's wood has a median lightness of 45.9 against the reference's 43.3. Its blue-yellow
+axis reads 7.0 against 14.2, so the wood is a little cool. The whole-view trunk tone stays a stated
+limit until the review's scene light or the crown's density changes.
+
 ## Decision
 
 Take the physical bark color and light the two bark close-ups from the camera.
