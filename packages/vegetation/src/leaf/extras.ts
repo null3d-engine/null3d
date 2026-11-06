@@ -107,10 +107,12 @@ function sitesOf(input: MeshInput, extra: ExtraSpec): Site[] {
 			// A shoot bends, so its drawn tip is not on the straight line its base points along.
 			// Take the prototype's own tip, turned into the row's frame, so a part that hangs
 			// from the shoot meets the wood by the picture's own geometry.
-			const tip =
+			const along = Math.max(0, Math.min(1, extra.tipShare ?? 1));
+			const reach = quatRotate(rows.rotation, r * 4, tipOf(prototype), [0, 0, 0]);
+			const tip: Vector3 =
 				extra.at === 'shoot-tip'
-					? quatRotate(rows.rotation, r * 4, tipOf(prototype), [0, 0, 0])
-					: ([0, 0, 0] as Vector3);
+					? [reach[0] * along, reach[1] * along, reach[2] * along]
+					: [0, 0, 0];
 			out.push({
 				at: [
 					(rows.position[r * 3] as number) + tip[0] * scale,
