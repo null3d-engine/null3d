@@ -170,6 +170,9 @@ export const record: Species = {
 				internode: TIGHT_ROSETTE,
 				stem: { radius: [0.018, 0.007] },
 				lateral: 60,
+				// Still 21's branch: every twig reaches out from it, so a twig that leaves a leaning side twig
+				// on its far side turns toward the shoot's line rather than hang back down with its rosette.
+				lateralMost: 65,
 				// Still 21's branch and the winter cut branch: side twigs leave the stem one at a time,
 				// alternating along it, where the bud cluster alone gave a fan of two or three at a point.
 				laterals: { mean: 1.6, spread: 0.4 },
