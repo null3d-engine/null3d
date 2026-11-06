@@ -37,7 +37,6 @@ import {
 	type PlantMeasures,
 	plantMask,
 	type ReferenceSet,
-	rowSpans,
 	type TurnVideo,
 	WORK_WIDTH,
 } from './references.ts';
@@ -76,15 +75,31 @@ export function mean(values: readonly number[]): number {
 	return values.length === 0 ? 0 : values.reduce((a, b) => a + b, 0) / values.length;
 }
 
-/** The column of the plant's trunk at its base, or the box's middle when the base is cut off. */
+/**
+ * The column of the plant's trunk at its base, or the box's middle when the base is cut off.
+ *
+ * A low limb that sweeps out near the foot merges with the trunk in a row's outer extent, so each
+ * row of the base band gives the run nearest the plant's middle column, and the median of those
+ * centres stands for the trunk. The lowest few rows of a broad crown are then outvoted.
+ */
 export function anchorColumn(mask: Uint8Array, width: number, height: number, box: Box): number {
 	if (box.bottom >= height - 1) return (box.left + box.right) / 2;
-	const spans = rowSpans(mask, width, height);
-	const rows = Math.max(2, Math.round((box.bottom - box.top + 1) * 0.04));
+	const middle = (box.left + box.right) / 2;
+	const band = Math.max(2, Math.round((box.bottom - box.top + 1) * 0.15));
 	const centres: number[] = [];
-	for (let y = box.bottom; y > box.bottom - rows; y--) {
-		const left = spans[y * 2] as number;
-		if (left >= 0) centres.push((left + (spans[y * 2 + 1] as number)) / 2);
+	for (let y = box.bottom; y > box.bottom - band; y--) {
+		let best: number | null = null;
+		let runStart = -1;
+		for (let x = 0; x <= width; x++) {
+			const on = x < width && mask[y * width + x] === 1;
+			if (on && runStart < 0) runStart = x;
+			if (!on && runStart >= 0) {
+				const centre = (runStart + x - 1) / 2;
+				if (best === null || Math.abs(centre - middle) < Math.abs(best - middle)) best = centre;
+				runStart = -1;
+			}
+		}
+		if (best !== null) centres.push(best);
 	}
 	return median(centres) ?? (box.left + box.right) / 2;
 }
