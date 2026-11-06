@@ -773,7 +773,10 @@ export interface ShootSpec {
 	readonly prototypes: number;
 	/** The kinds of shoot, each serving a range of bud vigor. */
 	readonly classes: readonly ShootClass[];
-	/** Leaf or needle arrangement along a shoot. */
+	/**
+	 * Leaf or needle arrangement along a shoot. A two-ranked shoot keeps its laterals in the plane of
+	 * its leaf ranks; a spiral shoot turns them by the golden angle.
+	 */
 	readonly phyllotaxis: Phyllotaxis;
 	/** Orders inside one prototype, 1 to 3. */
 	readonly orders: number;

@@ -215,6 +215,49 @@ describe('the shoot prototypes', () => {
 		}
 	});
 
+	it("keeps a two-ranked shoot's laterals in the plane of its leaf ranks", () => {
+		const base = oakRecord();
+		const shoots = base.shoots as NonNullable<typeof base.shoots>;
+		const twoRanked: Species = {
+			...base,
+			shoots: {
+				...shoots,
+				phyllotaxis: { kind: 'distichous', flatten: 1 },
+				orders: 3,
+				years: 3,
+				stem: { ...shoots.stem, zigzag: 0 },
+				classes: shoots.classes.map((c) => ({ ...c, years: 3, droop: 0, internode: 1 })),
+			},
+		};
+		const plan = planShoot(twoRanked, shoots.prototypes - 1, 1);
+		expect(plan.axes.length).toBeGreaterThan(1);
+		const direction = (axis: (typeof plan.axes)[number]): number[] => {
+			const first = axis[0] as { at: readonly number[] };
+			const last = axis[axis.length - 1] as { at: readonly number[] };
+			return normalize3([
+				(last.at[0] as number) - (first.at[0] as number),
+				(last.at[1] as number) - (first.at[1] as number),
+				(last.at[2] as number) - (first.at[2] as number),
+			]) as number[];
+		};
+		const main = direction(plan.axes[0] as (typeof plan.axes)[number]);
+		// Each lateral's direction, square to the main axis: a flat shoot keeps them on one line.
+		const flat = plan.axes.slice(1).map((axis) => {
+			const d = direction(axis);
+			const along = d[0]! * main[0]! + d[1]! * main[1]! + d[2]! * main[2]!;
+			return normalize3([
+				d[0]! - along * main[0]!,
+				d[1]! - along * main[1]!,
+				d[2]! - along * main[2]!,
+			]) as number[];
+		});
+		const first = flat[0] as number[];
+		for (const p of flat)
+			expect(Math.abs(p[0]! * first[0]! + p[1]! * first[1]! + p[2]! * first[2]!)).toBeGreaterThan(
+				0.95,
+			);
+	});
+
 	it('crowds the leaves at the shoot tip round its bud cluster', () => {
 		const plan = planShoot(record, 0, 1);
 		const tipAlong = Math.max(...plan.leaves.map((leaf) => leaf.along));
