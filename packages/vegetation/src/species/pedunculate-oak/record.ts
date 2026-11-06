@@ -29,9 +29,6 @@ export const record: Species = {
 		model: 'self-organizing',
 		years: 36,
 		macroOrders: 4,
-		// The wood's own thin: fewer branches, each longer, so the crown's branch pattern reads
-		// instead of a fine mesh of near-equal twigs.
-		branching: 0.7,
 		internode: { length: 0.6, ageFactor: 0.99 },
 		stems: { count: 1, lean: { mean: 2, spread: 2 }, stool: 0, fused: 0 },
 		buds: {
