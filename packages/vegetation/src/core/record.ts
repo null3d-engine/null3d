@@ -1257,8 +1257,12 @@ export interface SeasonSpec {
 export interface WindSpec {
 	/** Stiffness by order (t = order / deepest order), 0 free to 1 rigid. */
 	readonly stiffness: Curve;
-	/** The whole plant's sway: cycles a second, and metres at the top in the field's base wind speed. */
-	readonly sway: { readonly frequency: number; readonly amplitude: number };
+	/**
+	 * The whole plant's sway: cycles a second, and metres at the top in the field's base wind
+	 * speed. A species that names none takes the stated default, so a missing sway never leaves
+	 * the plant still.
+	 */
+	readonly sway?: { readonly frequency: number; readonly amplitude: number };
 	/** Orders from which shoots swing as hanging chains (willow, birch). */
 	readonly whips?: { readonly fromOrder: number; readonly pendulum: number };
 	/** How leaves flutter. */
