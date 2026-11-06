@@ -48,6 +48,8 @@ const LATERAL_ANGLE = 42;
 const BUD_LEAN = 28;
 /** Degrees the buds of a tip cluster lean from the terminal bud. */
 const CLUSTER_LEAN = 32;
+/** How far inside a twig's surface a crowded node's leaves root, so their blades meet the wood. */
+const CROWDED_ROOT = 0.6;
 
 /** Purposes of the prototypes' hash keys, so no two draws share one. */
 const Purpose = {
@@ -616,8 +618,11 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 			const size =
 				curveAt(shootClass.leafScale, t) *
 				(leafMean > 0 ? spreadAt(leafSpread, draw(Purpose.LeafSize, axis, key)) / leafMean : 1);
+			// A crowded node's leaves root inside the twig's own surface, so a rosette's inner blades
+			// meet the wood they stand on instead of stopping a hairline short of it.
+			const out = radius * (1 - CROWDED_ROOT * crowded);
 			leaves.push({
-				at: [at[0] + radial[0] * radius, at[1] + radial[1] * radius, at[2] + radial[2] * radius],
+				at: [at[0] + radial[0] * out, at[1] + radial[1] * out, at[2] + radial[2] * out],
 				rotation,
 				scale: Math.max(0.05, size),
 				mesh: hashAt(salt, 0x5400 + index, Purpose.LeafMesh, axis, key) % leafMeshes,
