@@ -149,7 +149,9 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 		},
 		{
 			test: (n) => n.includes('winter') || n.includes('architecture') || n.includes('bare'),
-			slot: { view: 'limb', query: { season: 'winter', span: 0.35, thin: 0.05 }, framed: false },
+			// A winter picture is a twig system, so it frames the twigs: the bud clusters at the nodes
+			// then stand at the size the reference shows them.
+			slot: { view: 'twigs', query: { season: 'winter' }, framed: false },
 		},
 		{
 			test: (n) => n.includes('taper') || n.includes('bole') || n.includes('lower-branches'),
@@ -192,7 +194,9 @@ const SLOT_BY_NUMBER: Readonly<Record<number, SlotRule>> = {
 		framed: false,
 		note: 'flowers, fruit or cones: judged on the shoot tip, in the season the name gives',
 	},
-	20: { view: 'limb', query: { season: 'winter', span: 0.35, thin: 0.05 }, framed: false },
+	// The winter picture frames a twig system, as its reference does, so the bud clusters at the
+	// nodes stand at the size the reference shows them.
+	20: { view: 'twigs', query: { season: 'winter' }, framed: false },
 	21: { view: 'branch', framed: false },
 	22: { view: 'subbranch', framed: false },
 	23: { view: 'cluster', framed: false },
