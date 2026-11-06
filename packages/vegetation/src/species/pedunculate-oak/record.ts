@@ -159,9 +159,6 @@ export const record: Species = {
 			// change of reach or part size. The low limbs now keep the foliage they carry below the
 			// bole's line, so the dial sits lower than it did when that foliage was missing.
 			density: 1.05,
-			// The reference's crown is built of separate foliage plates with sky between them, and the
-			// gap between the plates stays open to the crown's surface. The spacing is the plate size.
-			clump: { spacing: 3.4, depth: 0.45 },
 			shadePrune: 0.15,
 			skyward: 0.65,
 			scale: { mean: 1.4, spread: 0.15 },
