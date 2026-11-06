@@ -206,31 +206,33 @@ export const record: Species = {
 	},
 	extras: [
 		{
-			// The acorn of still 19: the pedunculate oak's nut, about two centimetres long, in a
-			// shallow scalloped cup at its base, one to three on a short forking stalk.
+			// The acorn of still 19: the pedunculate oak's nut, about two centimetres long, in a deep
+			// cup of scale rows over its top third, one to three on a short forking stalk.
 			kind: 'fruit',
 			at: 'shoot-tip',
 			share: 0.06,
 			count: { mean: 3, spread: 0 },
-			tipShare: 0.95,
+			tipShare: 0.8,
 			seasons: ['summer', 'autumn'],
 			shape: {
 				lathe: [
-					[0.001, 0],
-					[0.001, 0.0095],
-					[0.0031, 0.0102],
-					[0.0058, 0.0117],
-					[0.0077, 0.014],
-					[0.007, 0.015],
-					[0.0065, 0.0165],
-					[0.0054, 0.0188],
-					[0.0031, 0.021],
+					[0.0012, 0],
+					[0.0034, 0.0016],
+					[0.0064, 0.0042],
+					[0.0075, 0.0068],
+					[0.0064, 0.0078],
+					[0.0072, 0.0108],
+					[0.0066, 0.014],
+					[0.005, 0.018],
+					[0.0024, 0.0205],
+					[0.001, 0.0215],
 					[0, 0.022],
 				],
-				sides: 14,
-				scales: 2,
-				scaled: [0.0095, 0.0138],
+				sides: 24,
+				scales: 3,
+				scaled: [0, 0.0068],
 				stalk: 0.032,
+				pedicel: 0.012,
 			},
 			colour: [0.24, 0.1, 0.03],
 			hang: 180,
