@@ -81,7 +81,7 @@ import { meshWood } from './wood/wood-mesh';
  *
  * @category api/vegetation
  */
-export const GENERATOR_VERSION = '1';
+export const GENERATOR_VERSION = '2';
 
 /**
  * What a species' kit is built from: its record and its texture manifest. A species module is one.
