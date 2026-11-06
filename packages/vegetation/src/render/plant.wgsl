@@ -838,8 +838,13 @@ fn surface(input: SurfaceInput) -> Surface {
         let low_enough = 1.0 - smoothstep(moss_reach.x * 0.7, max(moss_reach.x, 0.001), plant.y);
         let north = saturate(-n.z) * moss_reach.y;
         // The foot keeps some moss on every side, and the furrows and the crowns of the buttresses
-        // gather more than the plates do.
-        let mossy = saturate(moss.w * low_enough * (0.12 + saturate(n.y) + north) * (0.5 + cavity));
+        // gather more than the plates do. It stands in patches, not as a wash: a coarse noise decides
+        // where a patch holds, so the bark keeps its own colour between them.
+        let moss_patch =
+            smoothstep(0.34, 0.62, value3(plant * 9.0) * 0.65 + value3(plant * 31.0) * 0.35);
+        let mossy = saturate(
+            moss.w * low_enough * (0.45 + saturate(n.y) + north) * (0.5 + cavity) * moss_patch,
+        );
         bark = mix(bark, moss.rgb, mossy);
         // Lichen grows in pale rosettes on the crests, where the bark stands proud of its furrows,
         // above the mossy foot and along the limbs.
