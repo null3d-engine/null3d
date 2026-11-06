@@ -631,7 +631,8 @@ export default defineSketch(async (ctx) => {
 			case 'cluster':
 			case 'leaf-upper':
 			case 'leaf-under':
-				return fit(boundsOf(piece as PlantAsset, kit), turn, e, aspect, fov);
+				// A cutting fills the frame with its own points, as its reference's piece does.
+				return fitPoints(piece as PlantAsset, kit, turn, e, aspect, fov);
 			case 'panels':
 				break;
 		}
