@@ -163,7 +163,7 @@ describe('the turn alignment', () => {
 		expect(alignTurn(scores(8, 8, 5, -1))).toMatchObject({ start: 5, direction: -1 });
 		const result = alignTurn(scores(8, 16, 6, -1));
 		expect(result).toMatchObject({ start: 6, direction: -1 });
-		expect(result.meanIou).toBeCloseTo(0.8);
+		expect(result.coarseIou).toBeCloseTo(0.8);
 		expect(result.pairs.slice(0, 3)).toEqual([6, 4, 2]);
 	});
 
