@@ -32,6 +32,7 @@ const still = (file: string): StillResult => ({
 	shapeIou: 0.8,
 	frameIou: 0.7,
 	edgeDifference: 0.2,
+	pieces: null,
 	profileError: 0.05,
 	gap: null,
 	foliageDeltaE: 3,

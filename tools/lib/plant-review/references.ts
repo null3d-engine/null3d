@@ -747,8 +747,27 @@ export function components(
 	return { labels, sizes };
 }
 
-/** The CIELAB distance from a colour to the nearest blend of two others. */
-export function distanceToSegment(
+/**
+ * The number of separate pieces a plant is drawn as, where a piece is a connected run of at least
+ * `minArea` pixels.
+ *
+ * A plant hangs together: every fruit meets its twig, every twig meets its limb. A part that meets
+ * nothing is drawn as an island, and this counts it. Pieces smaller than `minArea` are ignored so
+ * that a speck of background left by the outline's threshold is not read as a floating part.
+ */
+export function pieceCount(
+	mask: Uint8Array,
+	width: number,
+	height: number,
+	minArea: number,
+): number {
+	const { sizes } = components(mask, width, height);
+	let count = 0;
+	for (const size of sizes) if (size >= minArea) count++;
+	return count;
+}
+
+/** The CIELAB distance from a colour to the nearest blend of two others. */ export function distanceToSegment(
 	point: readonly number[],
 	from: readonly number[],
 	to: readonly number[],

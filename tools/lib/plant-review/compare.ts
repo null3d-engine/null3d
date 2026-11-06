@@ -36,6 +36,7 @@ import {
 	measurePlant,
 	type PlantMask,
 	type PlantMeasures,
+	pieceCount,
 	plantMask,
 	type ReferenceSet,
 	type TurnVideo,
@@ -48,6 +49,12 @@ const EDGE_BINS = 12;
 
 /** Edges weaker than this, in CIELAB lightness per pixel, are paper, not structure. */
 const EDGE_FLOOR = 6;
+
+/**
+ * The smallest run of pixels that counts as a piece of the plant. A smaller run is the outline's
+ * own speckle rather than a part of the plant.
+ */
+const PIECE_AREA = 24;
 
 /** The camera's framing of a reference, in screen shares, as the review page takes it. */
 export interface ReferenceFraming {
@@ -1052,6 +1059,11 @@ export interface StillResult extends PairMetrics {
 	readonly surfaceDeltaE: number | null;
 	/** How differently the two pictures' edges run, 0 when they run the same way. */
 	readonly edgeDifference: number | null;
+	/**
+	 * The separate pieces each plant is drawn as, when both outlines come from a plain background.
+	 * A plant hangs together, so a part that meets nothing shows here as an extra piece.
+	 */
+	readonly pieces: { readonly reference: number | null; readonly render: number } | null;
 	readonly note?: string;
 	readonly error?: string;
 }
@@ -1126,6 +1138,7 @@ export function compareStills(
 				masked: false,
 				surfaceDeltaE: null,
 				edgeDifference: null,
+				pieces: null,
 				error,
 			});
 			rows.push({ reference: refImage, lines: [...head, 'NO RENDER', error.slice(0, 18)] });
@@ -1143,6 +1156,24 @@ export function compareStills(
 		const edges = Number(
 			edgeDifference(edgeProfile(refImage), edgeProfile(render.image)).toFixed(3),
 		);
+		// A plant hangs together, so the number of pieces it is drawn as should match its
+		// reference's. A part that meets nothing, such as a fruit on a stalk, adds a piece here
+		// while every other figure stays sound. The render's own outline is exact wherever the run
+		// drew a matte, so the render's count stands on its own when the reference does not separate.
+		const pieces =
+			frame.matte !== undefined
+				? {
+						reference: refPlant.background.plain
+							? pieceCount(refPlant.mask, refPlant.width, refPlant.height, PIECE_AREA)
+							: null,
+						render: pieceCount(
+							render.plant.mask,
+							render.plant.width,
+							render.plant.height,
+							PIECE_AREA,
+						),
+					}
+				: null;
 		const shown: PairMetrics = masked
 			? pair
 			: {
@@ -1164,6 +1195,7 @@ export function compareStills(
 			masked,
 			surfaceDeltaE,
 			edgeDifference: edges,
+			pieces,
 			...(slot.note ? { note: slot.note } : {}),
 		});
 		rows.push({
