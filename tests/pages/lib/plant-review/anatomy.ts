@@ -224,7 +224,8 @@ export interface ShootTip {
 
 /**
  * The sunlit shoot tip that faces a side of the plant best: a terminal bud on the crown's surface
- * toward `side`, ranked by its light and by how far out toward that side it stands.
+ * toward `side`, ranked by its light, by how far out toward that side it stands, and by its height,
+ * so a low limb that reaches far out does not stand for the crown.
  */
 export function sunlitTip(
 	skeleton: MacroSkeleton,
@@ -250,7 +251,8 @@ export function sunlitTip(
 			(((buds.position[b * 3] as number) - foot[0]) * side[0] +
 				((buds.position[b * 3 + 2] as number) - foot[2]) * side[2]) /
 			reach;
-		const s = (buds.light[b] as number) + out;
+		const up = (buds.position[b * 3 + 1] as number) / Math.max(skeleton.height, 0.001);
+		const s = (buds.light[b] as number) + out + 0.6 * up;
 		if (s > score) {
 			score = s;
 			best = b;
