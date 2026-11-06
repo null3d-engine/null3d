@@ -164,3 +164,11 @@ The fused run grows straight up from the stool and the bud keeps that line, so a
 lost above the fused length. The grower now gives a stem its lean back once it clears the fused
 run; a single stem keeps `fused` 0 and takes no new path. The holm oak's stems then stand together
 at the stool and splay above it into the wider envelope.
+
+The stems of a stool fork at heights in an even stair round the record's divide height, each within
+a fifth of it. A ring that forks on one plane heaps its limbs into one band of the shadow grid: the
+first year's limbs shade each other to nothing, the shed rule removes them, and the plant stops at
+its fork. At seed 11 on the holm oak's record, variant 5 stood 3.10 m tall against 8.36 m for
+variant 0. With the stair it stands 7.4 m, and thirty plants over five seeds and six variants all
+pass 6.5 m. One stem forks at the record's height, so a single-stem plant takes no new path: the
+oak's eighteen skeletons at three seeds and six variants keep their digests.
