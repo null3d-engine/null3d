@@ -606,7 +606,10 @@ export function clusterRow(
 	const wanted = leafy === undefined ? all : all.filter((p) => p.leaves > 0 === leafy);
 	const ranked = wanted.length > 0 ? wanted : all;
 	if (ranked.length === 0) return undefined;
-	const prototype = ranked[(cutting.pick ?? 0) % ranked.length] as ShootPrototype;
+	// The piece's own choice, else its record hint's, so two pieces of one class draw different shoots.
+	const hint = cutting.part === 'leaf' ? undefined : kit.record.cuttings?.[cutting.part];
+	const pick = cutting.pick ?? (hint && 'shoot' in hint ? (hint.pick ?? 0) : 0);
+	const prototype = ranked[pick % ranked.length] as ShootPrototype;
 	const tier = prototype.tiers[heldTier(kit, detail)] as PrototypeArrays;
 	const p = tier.positions;
 	const min = [0, 0, 0];
