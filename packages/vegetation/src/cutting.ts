@@ -596,10 +596,15 @@ export function clusterRow(
 	kit: SpeciesKitData,
 	cutting: CuttingOptions,
 	detail: Detail,
+	leafy?: boolean,
 ):
 	| { readonly rows: ShootRows; readonly bounds: { readonly min: Vec3; readonly max: Vec3 } }
 	| undefined {
-	const ranked = clusterRank(kit, cutting.part);
+	const all = clusterRank(kit, cutting.part);
+	// A piece is drawn in the season it is asked for: in a leafless season it takes the shoot's
+	// leafless twin where the kit holds one, as the whole plant's rows do.
+	const wanted = leafy === undefined ? all : all.filter((p) => p.leaves > 0 === leafy);
+	const ranked = wanted.length > 0 ? wanted : all;
 	if (ranked.length === 0) return undefined;
 	const prototype = ranked[(cutting.pick ?? 0) % ranked.length] as ShootPrototype;
 	const tier = prototype.tiers[heldTier(kit, detail)] as PrototypeArrays;
