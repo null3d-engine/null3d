@@ -200,10 +200,18 @@ function wholeVideoQuery(path: string, base: PlantReviewQuery): PlantReviewQuery
 		masks.map((mask, k) => measurePlant(frames[k] as Rgba, mask)),
 		masks,
 	);
-	return { ...base, view: 'whole', background: 'sky-meadow', ...framingQuery(estimate) };
+	// A turn keeps one sun, so its framing gives no measured light: see `turnVideoShots`.
+	const { sunAzimuth: _azimuth, sunRise: _rise, ...framing } = framingQuery(estimate);
+	return { ...base, view: 'whole', background: 'sky-meadow', ...framing };
 }
 
-/** The shots of a turning video: renders round a full circle at the video's own frame step. */
+/**
+ * The shots of a turning video: renders round a full circle at the video's own frame step.
+ *
+ * A turn keeps one sun for every frame. The measured light is relative to the camera that measured
+ * it, so following it frame by frame would carry the sun round the plant with the camera and the
+ * plant's colour would change as it turns. The turn therefore draws without a measured light.
+ */
 function turnVideoShots(
 	video: TurnVideo,
 	base: PlantReviewQuery,
@@ -216,12 +224,13 @@ function turnVideoShots(
 	const want = step ?? video.arc / frames;
 	const count = Math.max(1, Math.round(360 / want));
 	const view: PlantView = TURN_VIEW[video.piece];
+	const { sunAzimuth: _azimuth, sunRise: _rise, ...fixed } = base;
 	let query: PlantReviewQuery;
-	if (video.piece === 'whole') query = { ...wholeVideoQuery(video.path, base), measure: true };
+	if (video.piece === 'whole') query = { ...wholeVideoQuery(video.path, fixed), measure: true };
 	else {
 		const first = videoFrame(video.path, facts, 0);
 		query = {
-			...base,
+			...fixed,
 			view,
 			background: 'studio-grey',
 			sky: measurePlant(first, plantMask(first)).sky,
