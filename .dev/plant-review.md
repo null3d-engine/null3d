@@ -1,8 +1,10 @@
 # Plant review
 
 A species is judged by a reviewer who wrote none of its work, against the reference set for that
-species, row by row. This page states the standard, the eleven rows, the coverage rules and the
-process. `.dev/plant-references.md` says how each measure works and what it cannot see.
+species, row by row. This page states the standard, the twelve rows, the coverage rules and the
+process. It also says how the review lights and frames each picture, the judging rules where the
+standard is silent, and how to tune a crown. The plant references guide, `.dev/plant-references.md`,
+says how each measure works and what it cannot see.
 
 ## The rule
 
@@ -113,6 +115,57 @@ The same species is drawn at eight equal angles, and two figures are measured at
 Every reference file must be compared, at its own angle for a video. A run that leaves a file
 undrawn fails the species for coverage, whatever the rows say.
 
+## Light and framing
+
+A comparison is fair only when the render stands in its photograph's light and framing. The
+[review tool's guide](../tools/lib/plant-review/README.md) lists the page's fields. These are the
+rules that set them.
+
+- Each daylit picture is lit as its photograph is lit. The sun stands where the photograph's shadows
+  put it (`sunAzimuth` and `sunRise`).
+- The sky's strength comes from the photograph's own sky: pi times the luminance of the sky pixels in
+  its upper half. This calibrates the light to the picture, since a photograph's tone curve squeezes
+  a bright sky more than the plant.
+- The sun's strength is a chosen prior from the photograph's shadows, as a multiple of the sky's
+  light on a level face. Hard sun takes 5, haze 1.8, and shade or overcast 0.5. The photographs'
+  trunks stand in crown or wood shade, so their lit and shaded bark cannot measure the sun. A prior
+  stands in for that measurement.
+- A picture whose upper half shows under 5 % sky and no clear shadows keeps the page's own light.
+  Studio, copy-stand and silhouette pictures keep their own lights.
+- The turning videos and the wind clip keep the light beside the camera, as the reference videos
+  keep it. The oak's turntable holds its light about 9 degrees right of the camera and 41 degrees up
+  in every frame. A sun fixed in the world would light half of each turn from behind.
+- A video's frames are drawn at a still's size, with the sun's shadows, and measured at a still's
+  work width. A turn frame and a still from the same camera then agree within 0.0014 in sky gap.
+  Frames 480 pixels wide draw a farther detail level, and read the oak's crown about 0.025 more
+  open.
+- The slot file holds each picture's own page fields, keyed by the reference file's name. They are
+  its light, and any framing or backdrop that its photograph needs. Pass it with
+  `--slot-query <file>`, and draw both sides of a comparison with the same file. The oak's is
+  [`slots/pedunculate-oak.json`](../tools/lib/plant-review/slots/pedunculate-oak.json).
+
+The light moves the color figures, not the outlines, which come from a matte. Under the page's soft
+daylight the oak's distant leaves read 8.9 color steps from their photograph. Under the photograph's
+own light they read 1.9, and the head's oak reads 2.2, so the light makes most of that gain.
+
+## Judging rules where the standard is silent
+
+- A cut branch's density is judged against a picture of the same piece at the same scale, by four
+  figures. The wood per tip and the tips per area must fall within a quarter of the reference's. The
+  share of fan joints, where four or more twigs leave one point, may stand at most a tenth above it.
+  The kinks must reach at least half of the reference's.
+- The oak's winter branch is judged on the cut branch of the winter oak's own set. Still 20's outline
+  is void. It shows a limb end about 35 cm across, and a limb that enters the frame's side reads as a
+  horizon.
+- The trunk's width is judged on the reference pictures, not on a fact sheet that disagrees with
+  them. The oak's photographs stand its bole 0.116 to 0.178 of the height across at breast height.
+  The fact sheet's 1.5 to 2 m is the width at the flare.
+- Where the standard gives no band, the judge takes working bands. A color difference passes at 3
+  or less, where about 2 is one visible step. A view with no outline passes when its sky share lies
+  within 0.05 of the reference's.
+- A video is judged on frames drawn at a still's size, lit beside the camera, as the light rules
+  above say.
+
 ## What a fail looks like
 
 Each of these is a fail on its own, and each is a fault an earlier standard let through.
@@ -183,3 +236,27 @@ limit is never a reason to stop work on the pictures it names.
 
 The reviewer is independent: it wrote none of the species' work. The figures it quotes name the commit
 they were measured at, and a figure from another base is a note, not evidence.
+
+## Tune a crown against its pictures
+
+Move one record field at a time. After each move, draw stills 01, 02 and 18 and the whole-plant
+turning video, and read the sky gap and the crown measures. Then run the vegetation tests and the
+byte budgets on all six variants at every tier, not only on the drawn plant. The figures are the
+pedunculate oak's ([D-330](decisions/D-330-oak-crown-by-its-own-light.md)).
+
+| Fault | Move first | What it does on the oak |
+| --- | --- | --- |
+| Crown too open | `shoots.placement.density` up 0.05 to 0.1, or `skyPrune` down 0.02 | Each 0.1 of density closes the sky gap by 0.004 to 0.007, and each 0.01 of sky prune by about 0.002 |
+| Crown too closed, with still 18 first to go | `skyPrune` up 0.02 to 0.04 | 0.34 to 0.42 opens 18 by 0.019 |
+| An even shell round a closed core | `skyPrune` up, with `skyPruneLayer` kept | 0.34 to 0.42 raises the inner sky share by 0.06 to 0.08 |
+| Loose specks at the edge | The spray's tight rosette, then longer `bend` pieces | Together they take 01's specks from 32 to 15 |
+| Too much sky in the top third | `growth.light.surface` on | 01's top-third share falls from 0.233 to 0.188 |
+| Trunk hidden under the crown | `growth.floor` up 0.005 | 0.165 loses the clear trunk, and 0.175 keeps it |
+| Leaves hanging under the limbs | `shoots.placement.lift` up | At 30 degrees the hanging leaf area falls from 0.156 to 0.055, but 02's gap leaves its band |
+| Limbs too steep | `growth.divide.angle` up 4 degrees at a time | 78 degrees breaks the bole-and-crown test |
+| Twigs fan from one point | `laterals` with a `lateralGap` of 0.3 | The winter branch's fan share falls from 0.42 to 0.09 |
+| Twigs read as straight rods | `bend` at 34 degrees | 26 degrees fails the kink band |
+| Kit over its cap | Longer `bend` pieces, `leafYears` 1, or fewer rosette leaves | Fuller rosettes cost 18 to 33 % of the kit |
+
+Each floor value grows a different tree, so read all six variants after a floor change. Do not bring
+back the clump field for the specks: its holes fall at random through the wood.

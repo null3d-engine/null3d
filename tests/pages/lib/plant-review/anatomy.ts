@@ -1,11 +1,41 @@
 // The parts of a grown plant that the review views frame, read from its macro skeleton: the main
-// stem and its radius at a height, the largest first-order limb, where that limb first forks, where
-// the stem first forks, and a sunlit shoot tip. They read only the skeleton's arrays, so they hold
-// for every growth model.
-import type { MacroSkeleton } from '@null3d/vegetation';
+// stem and its radius at a height, the largest first-order limb, the limb that carries a thickness,
+// where the stem first forks, and a sunlit shoot tip. They read only the skeleton's arrays, so they
+// hold for every growth model.
+import type { MacroSkeleton, ShootRows } from './plant-types';
 
 /** A point or direction in plant space. */
 export type V3 = [number, number, number];
+
+/**
+ * Writes into `out` at `at` a point of a shoot row's prototype, given in the prototype's own space,
+ * as row `r` places it in plant space: scaled, turned by the row's rotation and moved to its place.
+ */
+export function placeOnRow(
+	rows: ShootRows,
+	r: number,
+	x: number,
+	y: number,
+	z: number,
+	out: { [index: number]: number },
+	at: number,
+): void {
+	const s = rows.scale[r] as number;
+	const qx = rows.rotation[r * 4] as number;
+	const qy = rows.rotation[r * 4 + 1] as number;
+	const qz = rows.rotation[r * 4 + 2] as number;
+	const qw = rows.rotation[r * 4 + 3] as number;
+	const vx = x * s;
+	const vy = y * s;
+	const vz = z * s;
+	// The vector turned by the row's quaternion: v + w t + q × t, with t = 2 q × v.
+	const tx = 2 * (qy * vz - qz * vy);
+	const ty = 2 * (qz * vx - qx * vz);
+	const tz = 2 * (qx * vy - qy * vx);
+	out[at] = (rows.position[r * 3] as number) + vx + qw * tx + (qy * tz - qz * ty);
+	out[at + 1] = (rows.position[r * 3 + 1] as number) + vy + qw * ty + (qz * tx - qx * tz);
+	out[at + 2] = (rows.position[r * 3 + 2] as number) + vz + qw * tz + (qx * ty - qy * tx);
+}
 
 /** A node's position. */
 export function nodeAt(skeleton: MacroSkeleton, node: number): V3 {
@@ -16,6 +46,35 @@ export function nodeAt(skeleton: MacroSkeleton, node: number): V3 {
 /** The horizontal direction that a turn in radians faces: turn 0 looks from the +Z side. */
 export function facing(turn: number): V3 {
 	return [Math.sin(turn), 0, Math.cos(turn)];
+}
+
+/** The cross product of two vectors. */
+export function cross(a: readonly number[], b: readonly number[]): V3 {
+	const [ax, ay, az] = a as V3;
+	const [bx, by, bz] = b as V3;
+	return [ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx];
+}
+
+/** The dot product of two vectors. */
+export function dot(a: readonly number[], b: readonly number[]): number {
+	return (
+		(a[0] as number) * (b[0] as number) +
+		(a[1] as number) * (b[1] as number) +
+		(a[2] as number) * (b[2] as number)
+	);
+}
+
+/** A vector turned about a unit axis by an angle in radians. */
+export function turnedAbout(v: readonly number[], axis: V3, angle: number): V3 {
+	const c = Math.cos(angle);
+	const s = Math.sin(angle);
+	const [x, y, z] = v as V3;
+	const along = axis[0] * x + axis[1] * y + axis[2] * z;
+	return [
+		x * c + (axis[1] * z - axis[2] * y) * s + axis[0] * along * (1 - c),
+		y * c + (axis[2] * x - axis[0] * z) * s + axis[1] * along * (1 - c),
+		z * c + (axis[0] * y - axis[1] * x) * s + axis[2] * along * (1 - c),
+	];
 }
 
 /** The unit vector along `a`, or +Y for a zero vector. */
@@ -181,36 +240,26 @@ export function limbNear(skeleton: MacroSkeleton, share: number, radius: number)
 	return best >= 0 ? best : nearest >= 0 ? nearest : largestLimb(skeleton);
 }
 
-/** Where an axis first forks: the first of its nodes that a child axis leaves from. */
-export function firstForkOf(skeleton: MacroSkeleton, axis: number): AxisPoint | undefined {
-	const { axes } = skeleton;
-	let first = Number.POSITIVE_INFINITY;
-	for (let a = 0; a < axes.count; a++)
-		if ((axes.parent[a] as number) === axis) first = Math.min(first, axes.parentNode[a] as number);
-	if (!Number.isFinite(first)) return undefined;
-	const chain = chainOf(skeleton, axis);
-	const k = Math.max(1, chain.indexOf(first));
-	const node = chain[k] as number;
-	const before = chain[k - 1] as number;
-	const a = nodeAt(skeleton, before);
-	const b = nodeAt(skeleton, node);
-	return {
-		at: b,
-		direction: normalize([b[0] - a[0], b[1] - a[1], b[2] - a[2]]),
-		radius: skeleton.radius[node] as number,
-	};
-}
+/** The share of the stem's cross-section that a child takes where it leaves, to divide the stem. */
+const DIVIDES = 0.2;
 
-/** The height at which the main stem first divides: where its lowest limb leaves. */
+/**
+ * The height at which the main stem first divides: its lowest node that a limb taking a set share
+ * of the stem's cross-section or more leaves, as the grower's tests count the first fork, so a thin
+ * shoot low on the bole does not count.
+ */
 export function firstForkHeight(skeleton: MacroSkeleton): number | undefined {
 	const stem = mainStem(skeleton);
 	if (stem < 0) return undefined;
-	const { axes } = skeleton;
+	const { axes, radius } = skeleton;
 	let lowest = Number.POSITIVE_INFINITY;
 	for (let a = 0; a < axes.count; a++) {
 		if ((axes.parent[a] as number) !== stem) continue;
 		const node = axes.parentNode[a] as number;
-		if (node >= 0) lowest = Math.min(lowest, skeleton.position[node * 3 + 1] as number);
+		if (node < 0) continue;
+		const across = (radius[axes.first[a] as number] as number) / (radius[node] as number);
+		if (across * across >= DIVIDES)
+			lowest = Math.min(lowest, skeleton.position[node * 3 + 1] as number);
 	}
 	return Number.isFinite(lowest) ? lowest : undefined;
 }

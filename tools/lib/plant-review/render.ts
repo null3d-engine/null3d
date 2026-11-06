@@ -27,6 +27,11 @@ const PAGE_TIMEOUT = 600_000;
 export const SHEET_CELLS = 24;
 /** The most columns a sheet has. */
 const SHEET_COLUMNS = 6;
+/**
+ * The most pixels one sheet's canvas holds, so a sheet of cells at a video's own frame size stays
+ * inside the GPU's memory: fewer cells to a sheet as each grows.
+ */
+const SHEET_PIXELS = 8_000_000;
 
 /** One picture a shot gives: its file in the run folder and the turn it shows. */
 export interface ShotCell {
@@ -69,7 +74,19 @@ export interface RunFrame {
 	readonly ms: number;
 }
 
-/** The shots of a full or partial turn: `count` turns from `first` degrees at `step` degrees. */
+/**
+ * The grid of a sheet of `n` cells: as few rows as the columns allow, each as full as the cells
+ * allow, so the canvas holds few empty cells.
+ */
+export function sheetGrid(n: number): { readonly columns: number; readonly rows: number } {
+	const rows = Math.ceil(n / SHEET_COLUMNS);
+	return { columns: Math.ceil(n / rows), rows };
+}
+
+/**
+ * The shots of a full or partial turn: `count` turns from `first` degrees at `step` degrees, in
+ * sheets of at most `most` cells, each sheet's canvas within the pixels a sheet holds.
+ */
 export function turnShots(
 	group: string,
 	query: PlantReviewQuery,
@@ -79,10 +96,18 @@ export function turnShots(
 	count: number,
 	matte: boolean,
 	hold = 1,
+	most = SHEET_CELLS,
 ): Shot[] {
 	const shots: Shot[] = [];
-	for (let start = 0; start < count; start += SHEET_CELLS) {
-		const n = Math.min(SHEET_CELLS, count - start);
+	// The most cells a sheet takes whose canvas, empty cells and all, stays within its pixels.
+	let perSheet = Math.max(1, Math.min(SHEET_CELLS, most));
+	const canvas = (n: number) => {
+		const { columns, rows } = sheetGrid(n);
+		return columns * rows * cell[0] * cell[1];
+	};
+	while (perSheet > 1 && canvas(perSheet) > SHEET_PIXELS) perSheet--;
+	for (let start = 0; start < count; start += perSheet) {
+		const n = Math.min(perSheet, count - start);
 		const cells = Array.from({ length: n }, (_, k) => {
 			const index = start + k;
 			const turn = first + index * step;
@@ -101,7 +126,7 @@ export function turnShots(
 				turn: first + start * step,
 				turns: n,
 				step,
-				columns: Math.min(SHEET_COLUMNS, n),
+				columns: sheetGrid(n).columns,
 			},
 			hold,
 			cell,
