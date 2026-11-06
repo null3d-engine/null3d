@@ -57,7 +57,11 @@ class TriangleGrid {
 			1e-4,
 		);
 		const triangles = indices.length / 3;
-		const across = Math.max(4, Math.min(48, Math.round(Math.cbrt(triangles) * 3)));
+		// Cells across the box: three per cube root of the triangle count, rounded, from 4 to 48. Whole
+		// cubes of half steps find it exactly, so the count is the same on every engine.
+		const target = 27 * triangles;
+		let across = 4;
+		while (across < 48 && (across + 0.5) * (across + 0.5) * (across + 0.5) <= target) across++;
 		this.cell = (size / across) * 1.0001;
 		for (let c = 0; c < 3; c++) {
 			this.min[c] = (lo[c] as number) - 1e-6;

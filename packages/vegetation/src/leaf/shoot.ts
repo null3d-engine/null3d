@@ -16,6 +16,7 @@ import type { PrototypeArrays, ShootPrototype } from '../asset';
 import { hashAt, unitAt } from '../core/hash';
 import {
 	acos,
+	atan2,
 	cos,
 	cross3,
 	length3,
@@ -382,7 +383,7 @@ function openMosaic(
 			const leaf = leaves[i] as PlannedLeaf;
 			const side = normalize3(cross3(leaf.stem, leaf.sky, [0, 0, 0]));
 			const d = leaf.direction;
-			return Math.atan2(
+			return atan2(
 				d[0] * side[0] + d[1] * side[1] + d[2] * side[2],
 				d[0] * leaf.stem[0] + d[1] * leaf.stem[1] + d[2] * leaf.stem[2],
 			);
@@ -394,7 +395,7 @@ function openMosaic(
 			const d = leaf.direction;
 			widest = Math.max(
 				widest,
-				Math.acos(
+				acos(
 					Math.max(
 						-1,
 						Math.min(1, d[0] * leaf.stem[0] + d[1] * leaf.stem[1] + d[2] * leaf.stem[2]),
@@ -458,10 +459,10 @@ function spreadRound(
 		const d = leaf.direction;
 		return {
 			side,
-			opening: Math.acos(
+			opening: acos(
 				Math.max(-1, Math.min(1, d[0] * leaf.stem[0] + d[1] * leaf.stem[1] + d[2] * leaf.stem[2])),
 			),
-			azimuth: Math.atan2(
+			azimuth: atan2(
 				d[0] * leaf.sky[0] + d[1] * leaf.sky[1] + d[2] * leaf.sky[2],
 				d[0] * side[0] + d[1] * side[1] + d[2] * side[2],
 			),

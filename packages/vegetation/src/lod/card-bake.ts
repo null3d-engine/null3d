@@ -15,6 +15,7 @@
 // shoot in its low seven bits. Colour then spreads into the empty texels of each cell, so the mip
 // levels the GPU averages never darken a card's edge.
 import type { CardCell, PrototypeArrays } from '../asset';
+import { length3, pow } from '../core/math';
 import type { Species } from '../core/record';
 import { barkColourOf, type TextureManifest } from '../core/textures';
 import type { Rgb } from '../core/types';
@@ -54,7 +55,7 @@ const BAKE_TIER = DETAILS.indexOf('high');
 /** Linear to sRGB, as a byte. */
 function srgbByte(linear: number): number {
 	const x = Math.min(1, Math.max(0, linear));
-	const s = x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055;
+	const s = x <= 0.0031308 ? 12.92 * x : 1.055 * pow(x, 1 / 2.4) - 0.055;
 	return Math.round(s * 255);
 }
 
@@ -286,8 +287,8 @@ function drawPlane(
 	const target = rasterTarget(inner[0] as number, inner[1] as number);
 	const count = mesh.positions.length / 3;
 	const points = new Float64Array(count * 3);
-	const rightLength = Math.hypot(...(plane.right as [number, number, number]));
-	const upLength = Math.hypot(...(plane.up as [number, number, number]));
+	const rightLength = length3(...(plane.right as [number, number, number]));
+	const upLength = length3(...(plane.up as [number, number, number]));
 	const [rx0, rx1, rx2] = plane.right as [number, number, number];
 	const [ux0, ux1, ux2] = plane.up as [number, number, number];
 	const normal = plane.normal as [number, number, number];
@@ -382,7 +383,7 @@ function drawPlane(
 		const tx = (nx * rx0 + ny * rx1 + nz * rx2) / rightLength;
 		const ty = (nx * ux0 + ny * ux1 + nz * ux2) / upLength;
 		const tz = (nx * normal[0] + ny * normal[1] + nz * normal[2]) * toward;
-		const length = Math.hypot(tx, ty, tz) || 1;
+		const length = length3(tx, ty, tz) || 1;
 		const [ox, oy] = octahedral(tx / length, ty / length, tz / length);
 		const shade = Math.round(Math.min(255, Math.max(0, lerp(mesh.colors, 4, 3))) / 2);
 		const depth = Math.round(

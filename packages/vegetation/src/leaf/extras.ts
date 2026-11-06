@@ -23,6 +23,7 @@ import {
 } from '../core/graph';
 import { unitAt } from '../core/hash';
 import {
+	atan2,
 	cos,
 	cross3,
 	length3,
@@ -303,7 +304,7 @@ function hung(direction: Readonly<Vector3>, degrees: number): Vector3 {
 	if (sine < 1e-6) return out;
 	normalize3(axis);
 	// The angle to straight down, so the hang stops there.
-	const toDown = Math.atan2(sine, -direction[1]);
+	const toDown = atan2(sine, -direction[1]);
 	const q = [0, 0, 0, 1];
 	quatAxisAngle(axis, Math.min(radians(degrees), toDown), q);
 	return normalize3(quatRotate(q, 0, out, out));

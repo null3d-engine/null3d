@@ -1,6 +1,7 @@
 // The ground maps: the height and the normal of the ground read once into flat grids, so every
 // placement rule reads the same slope, water, flow and mask numbers. A scatter costs one pass over
 // the ground, never one terrain query for each plant it places.
+import { atan2, PI } from '../core/math';
 import { Grid } from '../grid/grid';
 
 /**
@@ -312,7 +313,7 @@ export class GroundMaps extends Grid {
 			const north = -nz / reach;
 			this.eastness[sample] = east;
 			this.northness[sample] = north;
-			const degrees = (Math.atan2(east, north) * 180) / Math.PI;
+			const degrees = (atan2(east, north) * 180) / PI;
 			this.aspect[sample] = degrees < 0 ? degrees + 360 : degrees;
 		}
 	}
