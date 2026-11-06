@@ -146,9 +146,9 @@ export const record: Species = {
 		bud: { length: 0.016, width: 0.011, tipCluster: 7, colour: [0.34, 0.2, 0.09] },
 		placement: {
 			perMetre: [
-				[0, 0.25],
-				[0.55, 0.4],
-				[1, 3.5],
+				[0, 0.5],
+				[0.55, 0.9],
+				[1, 7],
 			],
 			shadePrune: 0.15,
 			skyward: 0.35,
