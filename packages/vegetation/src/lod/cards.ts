@@ -48,6 +48,7 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 	const { rows, kit } = input;
 	const mesh = new MeshWriter();
 	const size = kit.cards.size || 1;
+	const widen = Math.max(0, input.record.lod.cardGrow ?? 1);
 	const base = input.variant * VARIANT_RECORDS;
 	const local: Vector3 = [0, 0, 0];
 	const world: Vector3 = [0, 0, 0];
@@ -80,7 +81,7 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 				for (let c = 0; c < 3; c++)
 					local[c] =
 						((plane.centre[c] as number) +
-							grow * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
+							grow * widen * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
 						scale;
 				quatRotate(rows.rotation, r * 4, local, world);
 				mesh.vertex(
