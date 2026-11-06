@@ -159,7 +159,7 @@ export const record: Species = {
 			// change of reach or part size. The low limbs now keep the foliage they carry below the
 			// bole's line, so the dial sits lower than it did when that foliage was missing.
 			density: 1.05,
-			shadePrune: 0.15,
+			shadePrune: 0.3,
 			skyward: 0.35,
 			scale: { mean: 1.4, spread: 0.15 },
 		},
