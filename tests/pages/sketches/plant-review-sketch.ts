@@ -709,7 +709,7 @@ export default defineSketch(async (ctx) => {
 				color: '#ffffff',
 				intensity: Math.PI * 1.05,
 			});
-		} else if (SUN === 'flat') {
+		} else if (SUN === 'flat' && REFERENCE_LIGHT === null) {
 			scene.createAmbientLight({ intensity: 1 });
 			scene.createHemisphereLight({ skyColor: '#eef1f4', groundColor: '#b9b9b4', intensity: 1.5 });
 		} else {
