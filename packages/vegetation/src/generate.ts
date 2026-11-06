@@ -63,6 +63,7 @@ import { grower, loadGrower } from './grow/models';
 import { extrasMesh } from './leaf/extras';
 import { placeShoots } from './leaf/instancer';
 import { foliage, loadFoliage } from './leaf/kinds';
+import { inLeaf } from './leaf/season';
 import { shootPrototypes } from './leaf/shoot';
 import { bakeCards } from './lod/card-bake';
 import { cardMesh } from './lod/cards';
@@ -427,7 +428,10 @@ function growCutting(
 		else rows = mesh.rows;
 		skeleton = mesh.skeleton;
 	} else {
-		single = cutting.part !== 'leaf' && !merge ? clusterRow(kit, cutting, detail) : undefined;
+		single =
+			cutting.part !== 'leaf' && !merge
+				? clusterRow(kit, cutting, detail, inLeaf(record, season, 1, 1))
+				: undefined;
 		const foliage = single ? undefined : cutFoliage(kit, cutting, detail);
 		parts = foliage ? partOf(kit, 'foliage', foliage, TEXTURE_UV_STEPS) : [];
 		const builder = new SkeletonBuilder().finish(0);
