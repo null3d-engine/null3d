@@ -608,6 +608,10 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 				leaned[stem] = 1;
 			}
 			const corridor = order === 0 && py < volume.base;
+			// A stem's leader grows in the open to its fork, as the light rule already lets it. The
+			// crown hull's lowest rows describe the canopy above the stool, not the stool itself, so
+			// they do not stop a stem from leaving the stool at its own angle.
+			const openGrowth = order === 0 && py < openHeight;
 			if (corridor) {
 				toward[0] = 0;
 				toward[1] = 1;
@@ -664,7 +668,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			// part of a step still fits, so the crown reaches its outline.
 			let step = length;
 			let last = false;
-			if (!corridor && volume.room(px + nx * step, py + ny * step, pz + nz * step) < 0) {
+			if (!openGrowth && volume.room(px + nx * step, py + ny * step, pz + nz * step) < 0) {
 				last = true;
 				step = 0;
 				for (const share of SHORT_STEPS)
