@@ -5,7 +5,8 @@
 //
 //   bun run plants:review <species> [--refs <folder or slug>] [--out <folder>] [--run <name>]
 //     [--views a,b | all] [--step <degrees>] [--wind-fps 8] [--cell 480] [--only stills,turns,wind]
-//     [--seed 11] [--variant 0] [--preset high] [--gpu webgpu] [--no-matte] [--compare <run folder>]
+//     [--seed 11] [--variant 0] [--preset high] [--lod 0|1|2] [--gpu webgpu] [--no-matte]
+//     [--compare <run folder>]
 //
 // The species is any registered species id, or any other id, which draws as a stand-in. The dev
 // server must serve this copy of the repository on the port that NULL3D_PORT names; one is started
@@ -530,6 +531,7 @@ async function main(): Promise<void> {
 		seed: Number(option('seed', '11')),
 		variant: Number(option('variant', '0')),
 		preset: option('preset', 'high') as PlantReviewQuery['preset'],
+		...(flag('lod') && { lod: Number(option('lod')) as PlantReviewQuery['lod'] }),
 	};
 	const matte = !flag('no-matte');
 	const cell = Number(option('cell', '480'));
