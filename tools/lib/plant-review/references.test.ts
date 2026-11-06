@@ -1,4 +1,8 @@
 import { describe, expect, test } from 'bun:test';
+import {
+	plantReviewQuery,
+	readPlantReviewQuery,
+} from '../../../tests/pages/lib/plant-review/query.ts';
 import { blank, labImage, labOf, type Rgba } from './image.ts';
 import {
 	boxOf,
@@ -14,6 +18,7 @@ import {
 	seasonFromPicture,
 	shadowLike,
 	widthProfile,
+	withSlot,
 } from './references.ts';
 
 /** Paints a pixel of an image. */
@@ -223,8 +228,15 @@ describe('the slots', () => {
 		expect(classifySlot('07-limb-leaving-trunk.png')?.view).toBe('junction');
 		expect(classifySlot('08-limb-fork.png')?.view).toBe('fork');
 		expect(classifySlot('04-crown-outside.png')?.view).toBe('limb');
-		expect(classifySlot('09-secondary-branching.png')?.view).toBe('limb');
-		expect(classifySlot('10-fine-twigs-b.png')?.view).toBe('twigs');
+		// A branch and a twig on a plain ground, as their photographs show them: cut pieces.
+		expect(classifySlot('09-secondary-branching.png')).toMatchObject({
+			view: 'branch',
+			query: { leaves: 7.4, roll: -90 },
+		});
+		expect(classifySlot('10-fine-twigs-b.png')).toMatchObject({
+			view: 'subbranch',
+			query: { leaves: 4.5 },
+		});
 		// One branch on its own against the sky, as the reference shows it, not a crop into the plant.
 		expect(classifySlot('20-winter-branch-architecture.png')).toMatchObject({
 			view: 'branch',
@@ -234,6 +246,11 @@ describe('the slots', () => {
 		expect(classifySlot('22-subbranch-studio.png')?.view).toBe('subbranch');
 		expect(classifySlot('23-leaf-cluster-studio.png')?.background).toBe('studio-grey');
 		expect(classifySlot('22-forest-bole-dead-stubs.png')?.view).toBe('trunk');
+		// A tall clean bole in leaf, looked up from a few steps back with a wide lens.
+		expect(classifySlot('31-woodland-clean-bole.png')).toMatchObject({
+			view: 'below',
+			query: { fov: 75, footRow: 0.96, crownRow: 0.09 },
+		});
 		expect(classifySlot('19-acorns-on-stalk.png')?.note).toContain('fruit');
 		expect(classifySlot('22-forest-bole-dead-stubs.png')?.query?.season).toBeUndefined();
 		expect(classifySlot('32-young-oak-whole.png')).toMatchObject({
@@ -241,6 +258,121 @@ describe('the slots', () => {
 			note: expect.stringContaining('young'),
 		});
 		expect(classifySlot('30-sucker-clump.png')?.view).toBe('whole');
+	});
+
+	test('ask the page only for what it reads back', () => {
+		for (const name of [
+			'03-whole-from-below.png',
+			'04-crown-outside.png',
+			'05-crown-underneath.png',
+			'09-secondary-branching.png',
+			'10-fine-twigs.png',
+			'16-bark-on-limb.png',
+			'31-woodland-clean-bole.png',
+		]) {
+			const slot = classifySlot(name) as NonNullable<ReturnType<typeof classifySlot>>;
+			const query = { species: 'pedunculate-oak', view: slot.view, ...slot.query };
+			expect(readPlantReviewQuery(new URLSearchParams(plantReviewQuery(query)))).toMatchObject(
+				query,
+			);
+		}
+		// A single-leaf still's pressed choice reads back either way, and is absent when not named.
+		const pressed = (value?: boolean) =>
+			readPlantReviewQuery(
+				new URLSearchParams(
+					plantReviewQuery({
+						species: 'stub',
+						view: 'leaf-under',
+						...(value !== undefined && { pressed: value }),
+					}),
+				),
+			).pressed;
+		expect([pressed(true), pressed(false), pressed()]).toEqual([true, false, undefined]);
+		const read = (text: string) => () =>
+			readPlantReviewQuery(new URLSearchParams(`species=stub&view=bark-limb&${text}`));
+		// A limb that fills none of the frame gives no distance to see it from.
+		expect(read('girth=0')).toThrow('above 0');
+		expect(read('girth=1.2')).toThrow('up to 1');
+		expect(read('forkRow=1.5')).toThrow('from 0 to 1');
+		expect(read('footRow=-0.1')).toThrow('from 0 to 1');
+		// The crown's base stands over the foot, so its row is the higher one in the frame.
+		expect(read('crownRow=0.96&footRow=0.09')).toThrow('not well above');
+		// Rows nearly level would stand the camera kilometres back to fit the bole between them.
+		expect(read('crownRow=0.49&footRow=0.5')).toThrow('not well above');
+		expect(() =>
+			readPlantReviewQuery(new URLSearchParams('species=stub&crownRow=0.4&footRow=0.5')),
+		).not.toThrow();
+		expect(read('leaves=0')).toThrow('above 0');
+		expect(read('stand=1')).toThrow('above 1');
+		// The daylight's strength is a multiple of the soft daylight: above none, and not past eight.
+		expect(read('daylight=2.5')().daylight).toBe(2.5);
+		expect(read('daylight=0')).toThrow('above 0');
+		expect(read('daylight=9')).toThrow('up to 8');
+		const lit = {
+			species: 'pedunculate-oak',
+			view: 'whole' as const,
+			skyShare: 0.2,
+			daylight: 2.7,
+		};
+		expect(readPlantReviewQuery(new URLSearchParams(plantReviewQuery(lit)))).toMatchObject(lit);
+	});
+
+	test("draw a still that names one of the record's forms in that form", () => {
+		const forms = ['woodland', 'young'];
+		expect(
+			classifySlot('30-woodland-form-whole.png', 'A woodland oak, whole tree', forms),
+		).toMatchObject({
+			view: 'whole',
+			framed: true,
+			query: { form: 'woodland' },
+			note: expect.stringContaining("record's woodland form"),
+		});
+		// The view rules choose 31's view; the form is this rule's.
+		expect(
+			classifySlot(
+				'31-woodland-clean-bole.png',
+				'The long branch-free bole of a woodland oak',
+				forms,
+			)?.query?.form,
+		).toBe('woodland');
+		expect(classifySlot('32-young-oak-whole.png', 'A young oak, whole tree', forms)?.query).toEqual(
+			{
+				form: 'young',
+			},
+		);
+		// A texture source of young wood is the grown plant's own bark, and a standard still's row
+		// that speaks of young shoots on the grown plant names no form.
+		expect(
+			classifySlot('28-young-bark.png', 'Young-branch bark', forms)?.query?.form,
+		).toBeUndefined();
+		expect(
+			classifySlot('10-fine-twigs.png', 'The young shoots at the twig tips', forms)?.query?.form,
+		).toBeUndefined();
+		// A row's words do not pick a form, though they name one in passing: a still whose name names
+		// none is judged beside the grown variant.
+		const sapling = classifySlot('33-sapling.png', 'A sapling, unlike the young oak of 32', forms);
+		expect(sapling?.query?.form).toBeUndefined();
+		expect(sapling?.note).toContain('grows the mature plant');
+		const stand = classifySlot(
+			'34-stand-whole.png',
+			'An oak in a stand, like the woodland oak',
+			forms,
+		);
+		expect(stand?.query?.form).toBeUndefined();
+		expect(stand?.note).toContain('another habit');
+		// Without the record's forms, the still is judged beside the grown variant, with a note.
+		expect(classifySlot('32-young-oak-whole.png')?.query?.form).toBeUndefined();
+		expect(classifySlot('32-young-oak-whole.png')?.note).toContain('grows the mature plant');
+	});
+
+	test("carry the form in the review page's query, and refuse a name that is not a form's", () => {
+		const text = plantReviewQuery({ species: 'pedunculate-oak', form: 'young', view: 'whole' });
+		expect(new URLSearchParams(text).get('form')).toBe('young');
+		expect(readPlantReviewQuery(new URLSearchParams(text)).form).toBe('young');
+		expect(readPlantReviewQuery(new URLSearchParams('species=stub')).form).toBeUndefined();
+		expect(() => readPlantReviewQuery(new URLSearchParams('species=stub&form=Old Tree'))).toThrow(
+			/kebab-case/,
+		);
 	});
 
 	test('draw a still of fruit among green leaves in summer, and one among autumn leaves in autumn', () => {
@@ -279,7 +411,7 @@ describe('the slots', () => {
 		expect(classifySlot('20-fire-scar.png')?.query?.season).toBe('winter');
 		expect(
 			classifySlot('05-crown-underneath.png', 'Bright under the leaves, bare limbs in winter')
-				?.query,
+				?.query?.season,
 		).toBeUndefined();
 		expect(
 			classifySlot('24-leaf-texture-upper.png', 'One leaf, autumn colours')?.query,
@@ -306,6 +438,30 @@ describe('the slots', () => {
 	test('leave out files that are not numbered pictures', () => {
 		expect(classifySlot('INDEX.md')).toBeUndefined();
 		expect(classifySlot('branch-turntable-sheet.png')).toBeUndefined();
+	});
+});
+
+describe("a reference file's own fields from the slot file", () => {
+	test('go over its query, a field given as null dropping it, for a still or a video', () => {
+		const measured = {
+			species: 'pedunculate-oak',
+			view: 'whole',
+			fill: 0.69,
+			targetY: 0.52,
+			sunAzimuth: 9.3,
+			sunRise: 41.5,
+		} as const;
+		expect(withSlot(measured, undefined)).toBe(measured);
+		expect(withSlot(measured, { skyShare: 0.135, fov: 30, sunRise: 30 })).toEqual({
+			...measured,
+			skyShare: 0.135,
+			fov: 30,
+			sunRise: 30,
+		});
+		const traded = withSlot(measured, { fill: null, targetY: null, top: 0.05, eye: 1.6 });
+		expect(traded).not.toHaveProperty('fill');
+		expect(traded).not.toHaveProperty('targetY');
+		expect(traded).toMatchObject({ top: 0.05, eye: 1.6, sunAzimuth: 9.3 });
 	});
 });
 

@@ -142,7 +142,7 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		size: [960, 720],
 	},
 	twigs: {
-		slots: [10],
+		slots: [19],
 		fov: 45,
 		background: 'studio-grey',
 		sun: 'default',
@@ -150,7 +150,7 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		size: [960, 720],
 	},
 	limb: {
-		slots: [9, 20],
+		slots: [4],
 		fov: 45,
 		background: 'sky-meadow',
 		sun: 'default',
@@ -158,7 +158,7 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		size: [960, 720],
 	},
 	branch: {
-		slots: [21],
+		slots: [9, 20, 21],
 		fov: 40,
 		background: 'studio-grey',
 		sun: 'flat',
@@ -167,7 +167,7 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		size: [960, 720],
 	},
 	subbranch: {
-		slots: [22],
+		slots: [10, 22],
 		fov: 40,
 		background: 'studio-grey',
 		sun: 'flat',
@@ -235,7 +235,6 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		background: 'sky-meadow',
 		sun: 'default',
 		elevation: 0,
-		woodOnly: true,
 		size: [720, 960],
 	},
 	skeleton: {

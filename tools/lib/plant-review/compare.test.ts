@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { projectRow, standCamera } from '../../../tests/pages/lib/plant-review/framing.ts';
+import {
+	type CutCamera,
+	cutCamera,
+	projectRow,
+	standCamera,
+} from '../../../tests/pages/lib/plant-review/framing.ts';
 import {
 	alignTurn,
 	anchorColumn,
@@ -293,6 +298,59 @@ describe("the page's stand camera", () => {
 		);
 		expect(camera.warning).toBeDefined();
 		expect(camera.height).toBeGreaterThan(0);
+	});
+});
+
+describe("the page's camera for a cut piece", () => {
+	// A stalk from its cut up into a spray that reaches nearer the camera on one side than the other,
+	// seen level from +Z, so the frame's up is +Y and its right is +X.
+	const piece = [
+		0, 0, 0, 0, 0.3, 0, -0.2, 0.5, 0.15, 0.25, 0.6, -0.2, 0.05, 0.8, 0.05, -0.1, 0.7, -0.3,
+	];
+	const centre = [0.025, 0.4, -0.075];
+	const fov = 40;
+	const aspect = 1.8;
+	const half = Math.tan((fov * Math.PI) / 360);
+	/** The highest and lowest rows the points land on, and the column share nearest a side. */
+	const framed = (points: readonly number[], camera: CutCamera) => {
+		let top = Number.POSITIVE_INFINITY;
+		let base = Number.NEGATIVE_INFINITY;
+		let side = Number.POSITIVE_INFINITY;
+		for (let i = 0; i < points.length; i += 3) {
+			const depth = (centre[2] as number) + camera.distance - (points[i + 2] as number);
+			const v = ((points[i + 1] as number) - (centre[1] as number) - camera.lift) / (depth * half);
+			const u = ((points[i] as number) - (centre[0] as number)) / (depth * half * aspect);
+			top = Math.min(top, (1 - v) / 2);
+			base = Math.max(base, (1 - v) / 2);
+			side = Math.min(side, (1 - Math.abs(u)) / 2);
+		}
+		return { top, base, side };
+	};
+	const look = [
+		[0, 0, -1],
+		[1, 0, 0],
+		[0, 1, 0],
+	] as const;
+
+	test('puts the highest point on the top row and the lowest on the base row', () => {
+		const rows = { top: 0.03, base: 1 };
+		const camera = cutCamera(piece, centre, ...look, fov, aspect, rows, 0.08);
+		const seen = framed(piece, camera);
+		expect(seen.top).toBeCloseTo(0.03, 6);
+		expect(seen.base).toBeCloseTo(1, 6);
+		expect(seen.side).toBeGreaterThan(0.08);
+		const inside = cutCamera(piece, centre, ...look, fov, aspect, { top: 0.05, base: 0.95 }, 0.08);
+		expect(framed(piece, inside).top).toBeCloseTo(0.05, 6);
+		expect(framed(piece, inside).base).toBeCloseTo(0.95, 6);
+	});
+
+	test('steps back for a piece too wide for its rows, its foot still on the base row', () => {
+		const wide = [...piece, 1.5, 0.4, 0];
+		const camera = cutCamera(wide, centre, ...look, fov, aspect, { top: 0.03, base: 1 }, 0.08);
+		const seen = framed(wide, camera);
+		expect(seen.base).toBeCloseTo(1, 6);
+		expect(seen.top).toBeGreaterThan(0.03);
+		expect(seen.side).toBeCloseTo(0.08, 6);
 	});
 });
 

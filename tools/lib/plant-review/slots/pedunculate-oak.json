@@ -1,0 +1,88 @@
+{
+	"01-whole-distant.png": {
+		"sunAzimuth": 60,
+		"sunRise": 40,
+		"skyShare": 0.19,
+		"fov": 30,
+		"daylight": 2.428
+	},
+	"02-whole-profile.png": {
+		"sunAzimuth": 30,
+		"sunRise": 45,
+		"skyShare": 0.395,
+		"fov": 30,
+		"fill": null,
+		"targetY": null,
+		"top": 0.0558,
+		"eye": 0.3,
+		"daylight": 1.735
+	},
+	"03-whole-from-below.png": {
+		"sunAzimuth": 45,
+		"sunRise": 70,
+		"skyShare": 0.395,
+		"sky": "#d7e6f1",
+		"daylight": 1.739
+	},
+	"05-crown-underneath.png": {
+		"sunAzimuth": 45,
+		"sunRise": 65,
+		"skyShare": 0.19,
+		"sky": "#98bcec",
+		"daylight": 2.334
+	},
+	"18-silhouette.png": {
+		"fov": 30,
+		"fill": null,
+		"targetY": null,
+		"top": 0.17,
+		"eye": 0.3
+	},
+	"31-woodland-clean-bole.png": {
+		"skyShare": 0.702,
+		"daylight": 0.958
+	},
+	"32-young-oak-whole.png": {
+		"fill": null,
+		"targetY": null,
+		"top": 0.09,
+		"eye": 0.4,
+		"skyShare": 0.395,
+		"daylight": 1.053
+	},
+	"04-crown-outside.png": {
+		"skyShare": 0.19,
+		"daylight": 2.761
+	},
+	"06-inside-crown.png": {
+		"skyShare": 0.395,
+		"daylight": 1.508
+	},
+	"17-trunk-taper.png": {
+		"skyShare": 0.702,
+		"daylight": 0.891
+	},
+	"30-woodland-form-whole.png": {
+		"skyShare": 0.702,
+		"daylight": 0.891,
+		"fill": null,
+		"targetY": null,
+		"top": 0.1,
+		"eye": 0.3
+	},
+	"oak-turntable.mp4": {
+		"skyShare": 0.19,
+		"daylight": 2.408
+	},
+	"oak-wind-motion.mp4": {
+		"skyShare": 0.19,
+		"daylight": 2.408
+	},
+	"13-single-leaf-underside.png": {
+		"pressed": false
+	},
+	"08-limb-fork.png": {
+		"background": "studio-grey",
+		"sky": "#c6c2bd"
+	}
+}
