@@ -195,14 +195,16 @@ const HEIGHT_BANDS: readonly (readonly [number, number, number])[] = [
 
 /**
  * The tile's height in metres: luminance at several scales, furrows dark, spread so that the
- * 2nd to the 98th percentile spans `depth`, with its mean at zero.
+ * 2nd to the 98th percentile spans `depth`, with its mean at zero. A blur of `smooth` texels at a
+ * tile of 1024 first drops the photographs' fine cracks while the plates stay.
  */
-function heightField(tile: Picture, depth: number): Plane {
-	const y = luminance(tile);
+function heightField(tile: Picture, depth: number, smooth: number): Plane {
+	const scale = tile.width / 1024;
+	const raw = luminance(tile);
+	const y = smooth > 0 ? blur(raw, smooth * scale, true) : raw;
 	let mean = 0;
 	for (const v of y.data) mean += v;
 	mean /= y.data.length;
-	const scale = tile.width / 1024;
 	const blurred = new Map<number, Plane>();
 	const at = (radius: number) => {
 		let p = blurred.get(radius);
@@ -277,7 +279,7 @@ export function barkLayer(source: Picture, config: BarkLayerConfig, size: number
 	delight(square, config.delight.radius * size, config.delight.strength, false);
 	const tile = makeTile(square, size);
 	tile.a.fill(1);
-	const height = heightField(tile, config.depth);
+	const height = heightField(tile, config.depth, config.smooth);
 	const mapping = heightMapping(tile, height);
 	const texel = [config.tile[0] / size, config.tile[1] / size];
 	const strength = config.normal;

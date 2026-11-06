@@ -146,6 +146,41 @@ export function largestLimb(skeleton: MacroSkeleton): number {
 	return best;
 }
 
+/**
+ * The axis whose radius at a share of its length stands nearest `radius`: a limb view that shows
+ * thin wood picks the piece it frames by thickness, not by the size of its limb. Among pieces of
+ * that thickness it takes the one that reaches furthest out from the stem, so nothing thicker
+ * stands between the camera and the bark. The main stem is left out, and so is an axis too short
+ * to fill a frame.
+ */
+export function limbNear(skeleton: MacroSkeleton, share: number, radius: number): number {
+	const { axes } = skeleton;
+	const foot = stemFoot(skeleton);
+	const tolerance = Math.max(0.005, radius * 0.2);
+	let best = -1;
+	let widest = -1;
+	let nearest = -1;
+	let nearestError = Number.POSITIVE_INFINITY;
+	for (let a = 0; a < axes.count; a++) {
+		if ((axes.parent[a] as number) < 0) continue;
+		if (lengthOf(skeleton, a) < 0.4) continue;
+		const at = pointAlong(skeleton, a, share);
+		if (at.at[1] < 0.5) continue;
+		const error = Math.abs(at.radius - radius);
+		if (error < nearestError) {
+			nearestError = error;
+			nearest = a;
+		}
+		if (error > tolerance) continue;
+		const reach = Math.hypot(at.at[0] - foot[0], at.at[2] - foot[2]);
+		if (reach > widest) {
+			widest = reach;
+			best = a;
+		}
+	}
+	return best >= 0 ? best : nearest >= 0 ? nearest : largestLimb(skeleton);
+}
+
 /** Where an axis first forks: the first of its nodes that a child axis leaves from. */
 export function firstForkOf(skeleton: MacroSkeleton, axis: number): AxisPoint | undefined {
 	const { axes } = skeleton;
