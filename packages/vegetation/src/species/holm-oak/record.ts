@@ -35,7 +35,7 @@ export const record: Species = {
 			count: { mean: 8, spread: 2 },
 			lean: { mean: 40, spread: 6 },
 			stool: 0.5,
-			fused: 1.8,
+			fused: 1.78,
 		},
 		buds: {
 			arrangement: { kind: 'spiral', divergence: 137.5 },
