@@ -90,6 +90,9 @@ export const record: Species = {
 					[0.5, 95],
 					[1, 40],
 				],
+				// The rosette crowds its leaves at one point, so the curve alone gives them all one
+				// angle and the cluster stands flat. A spread opens them over a range instead.
+				leafAngleSpread: 30,
 				droop: 3,
 			},
 			{

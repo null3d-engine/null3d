@@ -852,6 +852,13 @@ export interface ShootClass {
 	readonly leafScale: Curve;
 	/** Degrees between leaf and shoot, by position. */
 	readonly leafAngle: Curve;
+	/**
+	 * Degrees a leaf's angle varies from the curve, one leaf to the next. A rosette crowds its
+	 * leaves at the shoot's tip, so without this they all take the curve's last angle and the
+	 * cluster stands as one flat cone; with it the leaves open over a range and the cluster reads
+	 * round from every side.
+	 */
+	readonly leafAngleSpread?: number;
 	/** Degrees the shoot hangs over its length (willow whips, birch). */
 	readonly droop: number;
 	/**

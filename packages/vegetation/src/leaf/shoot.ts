@@ -62,6 +62,7 @@ const Purpose = {
 	LeafMesh: 9,
 	Phase: 10,
 	Spur: 11,
+	LeafAngle: 12,
 } as const;
 
 /** Sides of stem tubes and buds by tier. */
@@ -585,7 +586,11 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 				? spreadAt(phyllotaxis.leaves, draw(Purpose.Spur, axis, key))
 				: 1,
 		);
-		const leafAngle = needleAngle ?? curveAt(shootClass.leafAngle, t);
+		const spread = shootClass.leafAngleSpread ?? 0;
+		const leafAngle =
+			needleAngle ??
+			curveAt(shootClass.leafAngle, t) +
+				(spread > 0 ? (draw(Purpose.LeafAngle, axis, node) * 2 - 1) * spread : 0);
 		for (let k = 0; k < azimuths.length; k++) {
 			let azimuth = radians(azimuths[k] as number);
 			// Two-ranked needles turn toward the shoot's two sides.
