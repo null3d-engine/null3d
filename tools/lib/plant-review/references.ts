@@ -118,7 +118,12 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 		{ test: (n) => n.includes('fork'), slot: { view: 'fork', framed: false } },
 		{
 			test: (n) => n.includes('secondary-branching') || n.includes('culm-branching'),
-			slot: { view: 'fork', query: { distance: 2.5 }, framed: false },
+			slot: {
+				view: 'limb',
+				background: 'studio-grey',
+				query: { span: 0.6, thin: 0.025 },
+				framed: false,
+			},
 		},
 		{
 			test: (n) => n.includes('twig') || n.includes('branchlet'),
@@ -139,7 +144,7 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 		},
 		{
 			test: (n) => n.includes('winter') || n.includes('architecture') || n.includes('bare'),
-			slot: { view: 'skeleton', query: { season: 'winter' }, framed: true },
+			slot: { view: 'limb', query: { season: 'winter', span: 0.35, thin: 0.05 }, framed: false },
 		},
 		{
 			test: (n) => n.includes('taper') || n.includes('bole') || n.includes('lower-branches'),
@@ -166,7 +171,7 @@ const SLOT_BY_NUMBER: Readonly<Record<number, SlotRule>> = {
 	7: { view: 'junction', framed: false },
 	8: { view: 'fork', framed: false },
 	// Secondary branching: the outer twig system of a limb, not the bole's own fork beside it.
-	9: { view: 'twigs', query: { distance: 1.3 }, framed: false },
+	9: { view: 'limb', background: 'studio-grey', query: { span: 0.6, thin: 0.025 }, framed: false },
 	10: { view: 'twigs', framed: false },
 	11: { view: 'cluster', background: 'white', framed: false },
 	12: { view: 'leaf-upper', framed: false },
@@ -182,7 +187,7 @@ const SLOT_BY_NUMBER: Readonly<Record<number, SlotRule>> = {
 		framed: false,
 		note: 'flowers, fruit or cones: judged on the shoot tip, in the season the name gives',
 	},
-	20: { view: 'skeleton', query: { season: 'winter' }, framed: true },
+	20: { view: 'limb', query: { season: 'winter', span: 0.35, thin: 0.05 }, framed: false },
 	21: { view: 'branch', framed: false },
 	22: { view: 'subbranch', framed: false },
 	23: { view: 'cluster', framed: false },
