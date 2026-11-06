@@ -6,8 +6,10 @@ references carry it. The round-7 review is pending. Task: none.
 
 Summary: the oak's bark carried a 4.5 brightness multiplier that offset the review's dim daylight.
 It drove every sunlit limb to near-white. Removing it and lighting the two bark close-ups from the
-camera takes the bark texture pair from 11.7 to 4.8 color steps and the winter wood from 20.7 to 3.8.
-Lichen now sits in separate sage patches, and the young-bark tile covers thin wood at its own scale.
+camera takes the bark texture pair from 11.7 to 4.8 color steps and the winter wood from 20.7 to 3.8,
+at base `99b001ae8`. On the merged base the close-ups read 7.3 and 7.1 while their albedos match
+their sources; the measure moves with the framed patch, not the material. Lichen now sits in separate
+sage patches, and the young-bark tile covers thin wood at its own scale.
 
 ## Question
 
@@ -32,9 +34,27 @@ plant is seed 11, variant 0, preset high, and the pictures are the oak's referen
 | `28-young-bark` surface | 9.22 | 3.44 |
 | `20-winter-branch-architecture` bark | 20.74 | 3.84 |
 
-The base is run `refit-full` at `99b001ae8`. The final figures are run `bark-final2`, drawn on the
-Mac's GPU at the head that holds this record. The reviewer's own winter-wood figure at the base was
-15.9, from the same wood region.
+The base is run `refit-full` at `99b001ae8`. The middle column is run `bark-final2` at
+`47c0f417c`, which is that base plus this record's commits. The right column is run `bark-merged1`
+at `c6710d413`, which merges `pkg/s0`'s thicker bole, camera anchor fix, twig camera, heavier
+collar and outline masks. Every figure was drawn on the Mac's GPU with the same seed, variant and
+preset. The reviewer's own winter-wood figure at the first base was 15.9, from the same wood region.
+
+| Measure | Base `99b001ae8` | At `47c0f417c` | Merged base `c6710d413` |
+| --- | --- | --- | --- |
+| `01` bark | 1.25 | 9.22 | 7.46 |
+| `02` bark | 17.07 | 27.1 | 27.76 |
+| `18` bark | 1.13 | 1.13 | 1.48 |
+| `26` surface | 11.67 | 4.78 | 7.29 |
+| `28` surface | 9.22 | 3.44 | 7.10 |
+| `20` bark | 20.74 | 3.84 | 4.68 |
+
+The close-up figures moved with the base while the bark material did not. The thicker bole frames
+another phase of the tiled bark, and the young view picks another thin limb. The close-up measure is
+the middle third of the picture, so a window that catches more furrows reads darker and a limb that
+faces the stand light reads brighter. The material's own color matches its source at both bases:
+the bark tile's middle third is CIELAB 46.4, 1.5, 3.3 against reference `26`'s 46.1, 1.5, 3.8. The
+young tile's mean is 51.1, −2.0, 8.8 against reference `28`'s 50.1, −1.7, 9.9.
 
 | Step | 26 | 28 | 20 bark |
 | --- | --- | --- | --- |
@@ -63,7 +83,8 @@ skeleton's twigs.
 
 The copy-stand light was fixed to one world direction, so a view turned away from it drew almost
 black. It now points along the camera's own view, as its comment said. A view at turn 0 is
-unchanged, so no close-up figure moved for that reason alone.
+unchanged, so no close-up figure moved for that reason alone. The light itself was never the
+problem: the earlier trial that rejected it put it on bark whose albedo was 4.5 times the texture.
 
 Lichen was near-white at 0.9 amount, in 2 cm grains: a wash. It is now a sage green of 0.38, 0.45,
 0.34 in linear light. It sits in 4 cm grains on the plate crests and the upward faces, with a sharp
@@ -76,19 +97,26 @@ lichen. The white silhouette lost the species' character and hid the furrows. Th
 shows the picture's long plates, and the young stem shows its pale lenticels. The reference pictures
 agree: they show a warm grey-brown bark, not a white one.
 
-## Stated limit: the shaded trunk under the review's light
+## Stated limits
 
-The bark measure of a whole summer view is the mean color of the plant below the crown. It moved
-from 1.25 to 9.22 on `01` and from 17.07 to 27.1 on `02`. The cause is the light, not the bark
-color: the review's daylight is dim, and the dense crown shades the trunk in those views. The
-reference `01` and `02` trees stand in open sun, so their trunks read pale. A tint that lifts the
-shaded trunk back to the reference's tone is the same tint that whitens the sunlit limbs, which is
-the fault this record removes.
+**The whole-view trunk tone.** The bark measure of a whole summer view is the mean color of the
+plant below the crown. It moved from 1.25 to 7.46 on `01`, and from 17.07 to 27.76 on `02`, at the
+merged base. The cause is the light, not the bark color: the review's daylight is dim, and the dense
+crown shades the trunk in those views. The reference trees stand in open sun, so their trunks read
+pale. A tint that lifts the shaded trunk back to the reference's tone is the same tint that whitens
+the sunlit limbs, which is the fault this record removes. This stays a stated limit.
 
-The row 8 evidence is the close-ups and the winter skeleton. They read 4.78, 3.44 and 3.84. The
-winter skeleton's wood has a median lightness of 45.9 against the reference's 43.3. Its blue-yellow
-axis reads 7.0 against 14.2, so the wood is a little cool. The whole-view trunk tone stays a stated
-limit until the review's scene light or the crown's density changes.
+**The close-up figures at a new base.** The close-ups read 7.29 and 7.10 at the merged base, against
+4.78 and 3.44 at the previous one, while their albedos match their sources. The measure takes the
+middle third of the picture, and the render re-lights the photograph's baked shading with the
+stand's own light. A different framed patch or a differently turned limb moves the figure by several
+steps without a change to the material. The materials are right; the figures are not stable across a
+tree change. A fair close-up measure would average several patches of the tile, which this record
+does not add.
+
+The row 8 evidence is the close-ups and the winter skeleton. At the merged base they read 7.29, 7.10
+and 4.68. The winter skeleton's wood had a median lightness of 45.9 against the reference's 43.3 at
+the previous base. Its blue-yellow axis read 7.0 against 14.2, so the wood is a little cool.
 
 ## Decision
 
@@ -105,7 +133,10 @@ bands, which turn a photograph's cracks into ridges over the plates.
 - The oak's bark zone carries no tint, its young-bark radius is 8 cm, and its lichen is a sage green
   at full amount.
 - `BarkLayerConfig` gains `smooth`, the texels of blur before the height field. The oak's trunk
-  layer sets 8. The oak's bark relief file shrinks by 22 KB.
+  layer sets 8. The oak's bark relief file shrinks by 22 KB, and the shipped full set from 850.3 to
+  833.9 KB. No measured file grows.
 - The plant review's bark close-ups use the copy-stand light, and that light follows the camera. The
   limb view gains a `thin` request, the meters of radius it frames, and picks the limb by thickness.
-- The oak's three Mac picture references are redrawn. The SwiftShader set is owed from CI's drawing.
+- The oak's three Mac picture references are redrawn at the previous base. The merged base moves the
+  plant picture again, so the plant picture set needs one central redraw. The SwiftShader set is owed
+  from CI's drawing.
