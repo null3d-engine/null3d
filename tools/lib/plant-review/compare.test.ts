@@ -12,12 +12,13 @@ import {
 	NORMAL_HEIGHT,
 	NORMAL_WIDTH,
 	normalise,
+	patchLab,
 	profileError,
 	rubricBand,
 	rubricFrames,
 	spread,
 } from './compare.ts';
-import { blank, deltaE2000 } from './image.ts';
+import { blank, deltaE2000, labImage } from './image.ts';
 import { boxOf, type PlantMask, type PlantMeasures } from './references.ts';
 
 /** A plant mask of a rectangle crown on a one-pixel trunk, with the background fields filled in. */
@@ -292,5 +293,57 @@ describe("the page's stand camera", () => {
 		);
 		expect(camera.warning).toBeDefined();
 		expect(camera.height).toBeGreaterThan(0);
+	});
+});
+
+describe('the patch colour of a texture source', () => {
+	/** A square of vertical bars: `light` pixels of 200, then `dark` of 50, every `period`. */
+	function bars(size: number, period: number, light: number, phase: number) {
+		const data = new Uint8Array(size * size * 4);
+		for (let y = 0; y < size; y++)
+			for (let x = 0; x < size; x++) {
+				const value = (x + phase) % period < light ? 200 : 50;
+				const at = (y * size + x) * 4;
+				data[at] = value;
+				data[at + 1] = value;
+				data[at + 2] = value;
+				data[at + 3] = 255;
+			}
+		return { width: size, height: size, data };
+	}
+
+	/** The old single window: the middle third of the picture each way. */
+	function middleThird(image: ReturnType<typeof bars>): number {
+		const lab = labImage(image);
+		let sum = 0;
+		let n = 0;
+		for (let y = Math.floor(image.height / 3); y < Math.floor((image.height * 2) / 3); y++)
+			for (let x = Math.floor(image.width / 3); x < Math.floor((image.width * 2) / 3); x++) {
+				sum += lab[(y * image.width + x) * 3] as number;
+				n++;
+			}
+		return sum / Math.max(1, n);
+	}
+
+	test('moves little when a tiled picture shifts phase, where one window moves much', () => {
+		// Each patch spans exactly one period, so the patches sample three phases and their mean
+		// does not move, while one middle-third window does.
+		const first = bars(400, 80, 48, 0);
+		const shifted = bars(400, 80, 48, 20);
+		const a = patchLab(first)[0] as number;
+		const b = patchLab(shifted)[0] as number;
+		expect(Math.abs(a - b)).toBeLessThan(0.1);
+		expect(Math.abs(middleThird(first) - middleThird(shifted))).toBeGreaterThan(5);
+	});
+
+	test('leaves the outer tenth of the picture out of the sample', () => {
+		const image = bars(400, 1000, 1000, 0);
+		for (let y = 0; y < image.height; y++)
+			for (let x = 0; x < image.width; x++) {
+				if (x >= 40 && x < 360 && y >= 40 && y < 360) continue;
+				const at = (y * image.width + x) * 4;
+				for (let c = 0; c < 3; c++) image.data[at + c] = 50;
+			}
+		expect(patchLab(image)[0] as number).toBeCloseTo(80.6, 0);
 	});
 });
