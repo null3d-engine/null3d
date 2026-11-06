@@ -5,8 +5,9 @@ values, the oak's record and their tests are built. Task: none.
 
 Summary: a shoot's crowded tip now spreads its leaves evenly round the stem instead of into one fan,
 so a leaf cluster reads the same from every side. A shoot class may name its own wood girth and
-lateral angle, so a three year spray is thicker and wider than this year's shoot. The cluster carries
-six radiating leaves and a plump bud, and its turn's height spread falls from 61 to 48 per cent.
+lateral angle, so a three year spray is thicker and wider than this year's shoot. The oak's cluster
+carries eight leaves round one plump bud, which closes its sky gap to the reference's and recovers
+the shape overlap the first rosette lost.
 
 ## Question
 
@@ -21,43 +22,57 @@ thicker brown kinked wood.
 
 ## Data
 
-Measured on the oak, seed 11, variant 0, preset high, against the species' reference folder. The run
-`cuttings-base` holds the fan and the runs `quick4` and `turns1` hold the round rosette.
+Measured on the oak, seed 11, variant 0, preset high, against the species' reference folder. The fan
+runs are `fan-merged` and `fan-branch-merged`; the round rosettes are `short8`, `short8-turn` and
+`turns-rosette-merged`. All were taken after the merge of `origin/pkg/s0` at `2be80e4e1`, so one
+measure judges both sides. The cut-piece pictures are byte-identical across that merge.
 
-| Measure | Fan (before) | Round rosette (after) | Reference |
-| --- | --- | --- | --- |
-| Cluster still 11, shape IoU | 0.44 | 0.28 | - |
-| Cluster still 11, crown box | 362 x 329 | 368 x 334 | 600 x 558 |
-| Cluster still 11, sky gap | 0.13 | 0.22 | 0.14 |
-| Cluster turn, height spread | 61% | 48% | 17% |
-| Branch still 21, shape IoU | 0.21 | 0.24 | - |
-| Branch still 21, width error | 0.166 | 0.131 | - |
-| Branch turn, height spread | 26% | 37% | 4% |
-| Sub-branch still 22, shape IoU | 0.31 | 0.36 | - |
-| Leaf cluster, leaves carried | 3 or 4 | 6 | 5 or 6 |
-| Cluster bud, length x width | 12 x 8 mm | 16 x 11 mm | 3 to 6 mm in `FACTS` |
+| Measure | Fan | Round rosette, 6 leaves | Round rosette, 8 leaves | Reference |
+| --- | --- | --- | --- | --- |
+| Cluster still 11, shape IoU | 0.42 | 0.30 | 0.44 | - |
+| Cluster still 11, width error | 0.248 | 0.287 | 0.203 | - |
+| Cluster still 11, sky gap | 0.20 | 0.22 | 0.13 | 0.14 |
+| Cluster still 23, shape IoU | 0.41 | 0.29 | 0.46 | - |
+| Cluster turn, height spread | 27% | 69% | 34% | 17% |
+| Cluster turn, width spread | 45% | 50% | 22% | 57% |
+| Branch still 21, shape IoU | 0.23 | 0.24 | 0.24 | - |
+| Branch still 21, width error | 0.167 | 0.131 | 0.131 | - |
+| Branch turn, height spread | 26% | 23% | 23% | 4% |
+| Branch turn, width spread | 31% | 22% | 22% | 98% |
+| Sub-branch still 22, shape IoU | 0.33 | 0.38 | 0.38 | - |
+| Cluster bud, length x width | 12 x 8 mm | 16 x 11 mm | 16 x 11 mm | 3 to 6 mm in `FACTS` |
 
-The acorn's variant bytes are 7,879,590 of the 8,200,000 limit, at a share of 0.24.
+The branch turn on this base passes both band figures at 22 and 23 per cent. An earlier comparison
+put the fan's height spread at 26 and the rosette's at 37. That comparison was not clean: the fan
+figure came from a run on the old base, and the rosette's from a run whose alignment started at
+another angle. On one base the round rosette is better on both figures.
+
+The acorn's nut is 2.5 cm across and hangs 7 cm below its tip. At the review's `19` framing it draws
+42 px wide in a 768 px picture. The reference's nut draws 170 px in 1024. That is 5.5 against 16.6
+per cent of the frame. The reference is a close-up of three acorns, while the review's fruit camera
+stands 0.55 m from one.
+
+The acorn's variant bytes are 8,129,698 of the 8,600,000 limit, at a share of 0.24.
 
 ## Look
 
-A fan of six leaves collapses to a line when the camera turns across its plane. The round rosette
-keeps its leaves visible all round the turn, and the cluster still carries six leaves round the tip
-with the lowest down and out. The still's shape overlap falls because the reference's leaves overlap
-in one dense plane, which a round rosette spreads apart. The turn's height spread falls, which is
-the rubric's hard band.
+A fan of six leaves collapses to a line when the camera turns across its plane. A round rosette of
+six leaves keeps its leaves visible, but it leaves gaps. Its still's shape overlap falls to 0.30.
+Eight leaves fill those gaps. The still returns to 0.44 and 0.46, and its sky gap meets the
+reference's 0.14 at 0.13. The turn's height spread falls from the six-leaf rosette's 69 per cent to
+34. Six or seven of the eight stand visible, which is the reference's own count.
 
-The cluster's still loses 0.16 of shape IoU while its turn gains 13 points. The rosette is the
-structure the reference's turning video shows, so it is the better look. The branch's turn loses 11
-points of height spread, which its still's width error gains 0.035 on. The oak's branch turn already
-failed the band before this change.
+The cluster still's outline overlap is recovered and its sky gap is right, so the round rosette is
+the better look. The branch's still keeps the spray's overlap and gains 0.036 of width error. Its
+turn passes both band figures on this base.
 
 ## Decision
 
 A group of crowded tip leaves keeps each leaf's opening angle and divides the turn evenly round the
 stem. A group of leaves at the shoot's own spacing keeps the skyward fan. The rule lives in the
 shared shoot builder because every species' terminal rosette radiates round its tip. The oak's own
-record sets the shoot classes' values.
+record sets eight leaves for its crowded tip, because its reference cluster's blades overlap into a
+dense plate.
 
 A shoot class may name its own stem girth because an old twig is thicker than this year's shoot. This
 holds for every species, so the field is shared and the oak sets a three year spray at 13 mm and a
@@ -66,11 +81,11 @@ degrees.
 
 The extras' scale ring now stands at each row's crest between the profile's own points. The old
 uniform resample skipped a shallow cup's shape, which left the acorn a flat pod. The oak's acorn
-keeps ten profile points and gains three scale rings. Its share falls from 0.30 to 0.24 to stay
-inside the variant byte budget.
+keeps ten profile points and gains three scale rings, and its cup and nut grow to the fact sheet's
+2.5 cm.
 
 Rejected: cutting the branch from the grown plant. Its thick wood is right, but its shoots are each a
-metre long and the piece reads wrong: branch shape IoU 0.12 against 0.23 and sky gap 0.69. Its old
+metre long and the piece reads wrong: branch shape IoU 0.12 against 0.24 and sky gap 0.69. Its old
 wood with grown shoots is a different structure from the reference's branch.
 
 Rejected: a uniform resample of the whole acorn profile at twice the rings. It restores the shape but
@@ -80,9 +95,14 @@ budget.
 Rejected: six leaves a spray. The kit's byte cap is 5.3 MB and six leaves a shoot reach it at 5.32
 MB, while the branch's width moves under 2 per cent.
 
+Rejected: a closer fruit camera at `19`. The frames say the reference is a macro of three acorns.
+Moving the review's camera would flatter the render. It would also hide the size at the framing the
+reviewer uses.
+
 ## Consequences
 
 `ShootClass` gains optional `stem` and `lateral` values. `ExtraShape`'s lathe gains an optional
 `scaled` range. The API reference carries their doc comments. A crowded tip's leaves now spread round
 the stem for every species with a rosette. The fan test is scoped to a shoot whose leaves stand at
-the shoot's own spacing. The oak's stills and its three Mac plant pictures move.
+the shoot's own spacing. The rosette test checks the leaves' turn round the stem rather than the
+oak's numbers. The oak's stills and its three Mac plant pictures move.
