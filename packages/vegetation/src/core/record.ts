@@ -826,6 +826,12 @@ export interface ShootSpec {
 		readonly shadePrune: number;
 		/** How far a shoot turns its leaves toward the sky, 0 to 1 (flat beech sprays). */
 		readonly skyward: number;
+		/**
+		 * How a crowded tip stands its leaves. Round, the default, divides the turn evenly so the
+		 * cluster reads the same from every side; fan spreads them in the stem's own plane, so the
+		 * rosette is one flat face of blades, as an oak's is when its leaves are looked at front on.
+		 */
+		readonly rosette?: 'round' | 'fan';
 		/** A shoot's scale. */
 		readonly scale: Spread;
 		/**

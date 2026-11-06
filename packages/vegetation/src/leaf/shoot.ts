@@ -265,17 +265,20 @@ function unitNodes(
  * side into the plane of its stem and the stem's side, so the sky looks down on a fan. Leaves that
  * crowd on one axis at a tip form a rosette instead: each keeps its own opening angle and the
  * leaves stand evenly round the stem, so the cluster reads the same from every side and its blades
- * fill the gaps rather than lie on each other.
+ * fill the gaps rather than lie on each other. A species whose rosettes are one flat fan of blades
+ * asks for the fan here, and then a crowded tip spreads in the stem's plane like any other group.
  *
  * @param leaves The plan's leaves, rewritten in place.
  * @param share The skyward share, 0 to 1.
  * @param leafLength The species' leaf length, which sets how close leaves must stand to crowd.
+ * @param round Whether a crowded tip stands its leaves evenly round the stem.
  * @param rotate A leaf's turn from its direction and its node's frame.
  */
 function openMosaic(
 	leaves: PlannedLeaf[],
 	share: number,
 	leafLength: number,
+	round: boolean,
 	rotate: (direction: Vector3, stem: Vector3, sky: Vector3, radial: Vector3) => number[],
 ): void {
 	// Groups of leaves on one axis that stand within a third of a leaf's length of the next.
@@ -290,10 +293,10 @@ function openMosaic(
 	}
 	for (const group of groups) {
 		// A rosette: the leaves of a shoot's crowded tip keep their opening angles and divide the
-		// turn round the stem evenly. A group of one, or of leaves at the shoot's own spacing,
-		// takes the fan instead.
+		// turn round the stem evenly. A group of one, of leaves at the shoot's own spacing, or of a
+		// species whose rosette is one flat fan, takes the fan instead.
 		const crowded = group.filter((i) => (leaves[i] as PlannedLeaf).crowded > 0.4).length;
-		if (group.length > 1 && crowded * 2 > group.length) {
+		if (round && group.length > 1 && crowded * 2 > group.length) {
 			spreadRound(leaves, group, rotate);
 			continue;
 		}
@@ -705,7 +708,8 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 		radius: baseRadius,
 		along: 0,
 	});
-	if (foliage.kind === 'blade') openMosaic(leaves, skyTurn, leafLength, leafRotation);
+	if (foliage.kind === 'blade')
+		openMosaic(leaves, skyTurn, leafLength, shoots.placement.rosette !== 'fan', leafRotation);
 	let reach = 0;
 	for (const points of axes)
 		for (const point of points)
