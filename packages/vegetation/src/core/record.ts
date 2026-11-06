@@ -841,6 +841,16 @@ export interface ShootClass {
 	 * terminal rosette), more for one with older years below it. The species' `years` by default.
 	 */
 	readonly years?: number;
+	/**
+	 * The class's own stem radius in metres at the shoot's base and tip, where it differs from the
+	 * species': an old twig is thicker than this year's shoot, and a cutting of it shows that.
+	 */
+	readonly stem?: { readonly radius: readonly [base: number, tip: number] };
+	/**
+	 * Degrees a lateral of this class leans from its parent, where the species' own value does not
+	 * fit: a spray's side twigs spread wider than a whip's.
+	 */
+	readonly lateral?: number;
 }
 
 /**
@@ -1210,7 +1220,13 @@ export interface ExtraSpec {
  * @category api/vegetation
  */
 export type ExtraShape =
-	| { readonly lathe: readonly Vec2[]; readonly scales?: number }
+	| {
+			readonly lathe: readonly Vec2[];
+			/** Rows of scale bumps, one ring a row. */
+			readonly scales?: number;
+			/** The profile heights, in metres, that carry the scale bumps: a cup or a cone's fertile part. */
+			readonly scaled?: readonly [from: number, to: number];
+	  }
 	| { readonly petals: number; readonly radius: number; readonly cup: number }
 	| { readonly spines: number; readonly length: number; readonly spread: number }
 	| { readonly catkin: { readonly length: number; readonly radius: number } };
