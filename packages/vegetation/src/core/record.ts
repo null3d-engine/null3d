@@ -1224,10 +1224,17 @@ export interface ExtraSpec {
 export type ExtraShape =
 	| {
 			readonly lathe: readonly Vec2[];
+			/** Faces round the nearest level's lathe, where the level's own count reads as facets. */
+			readonly sides?: number;
 			/** Rows of scale bumps, one ring a row. */
 			readonly scales?: number;
 			/** The profile heights, in metres, that carry the scale bumps: a cup or a cone's fertile part. */
 			readonly scaled?: readonly [from: number, to: number];
+			/**
+			 * Metres of one stalk from the site, shared by every copy the site carries: the copies
+			 * hang from its end, as an oak's acorns fork from one peduncle.
+			 */
+			readonly stalk?: number;
 	  }
 	| { readonly petals: number; readonly radius: number; readonly cup: number }
 	| { readonly spines: number; readonly length: number; readonly spread: number }
