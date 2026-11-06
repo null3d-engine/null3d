@@ -207,6 +207,7 @@ export const record: Species = {
 			at: 'shoot-tip',
 			share: 0.0475,
 			count: { mean: 3, spread: 0 },
+			tipShare: 0.95,
 			seasons: ['summer', 'autumn'],
 			shape: {
 				lathe: [
