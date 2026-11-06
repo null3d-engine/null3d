@@ -49,7 +49,7 @@ const SMALLEST_FAR = 0.025;
  * An extra that spans fewer pixels than this where a card level starts is left out of it: a speck
  * there, which the shoots' cards already colour.
  */
-const FEWEST_PIXELS = 3;
+const FEWEST_PIXELS = 5;
 /** The first hash purpose of the extras, past every purpose the instancer uses. */
 const PURPOSE = 40;
 /** Extras a record can draw: the first four, whose colours the plant material's header holds. */
