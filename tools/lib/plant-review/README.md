@@ -99,4 +99,7 @@ The page posts a `plant-review` message with the plant's height, width, crown ba
 - A picture with no plain border, such as bark or the inside of a crown, has no outline; its row shows the pictures and the colour figures alone.
 - A turning video is taken to turn at a steady rate over its arc.
 - A turn's renders are drawn as sheets of cells, which draw without the sun's shadows.
+- A sheet draws a cut piece at the nearest level. A cut piece has no card levels, so a sheet's
+  smaller cells would otherwise switch its foliage to cards that hold nothing, and the piece would
+  vanish from the sheet.
 - A stand-in's nearest level has no shoots: it shows its wood and its cards up close.
