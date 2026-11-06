@@ -153,7 +153,9 @@ const WEIGHINGS = {
 	bark: { behind: 0.25, fill: 0.3, short: 1 },
 	bole: { behind: 0.1, fill: 0.3, short: 1 },
 	fork: { behind: 0.5, fill: 0.3, short: 1 },
-	surface: { behind: 0, fill: 0.55, short: 1, behindFills: true },
+	// The crown's outside fills most of its photograph with leaf clusters, and the coarse grid reads
+	// a thin rim's scattered tufts as fuller than they draw, so the view asks a frame filled near full.
+	surface: { behind: 0, fill: 0.85, short: 1, behindFills: true },
 	branch: { behind: 1, fill: 0.3, short: 1 },
 	twig: { behind: 1, fill: 0.45, short: 1 },
 } as const satisfies Record<string, Weighing>;

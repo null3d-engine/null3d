@@ -304,6 +304,7 @@ describe('the slots', () => {
 		).not.toThrow();
 		expect(read('leaves=0')).toThrow('above 0');
 		expect(read('stand=1')).toThrow('above 1');
+		expect(read('sides=0.5')).toThrow('under 0.5');
 		// The daylight's strength is a multiple of the soft daylight: above none, and not past eight.
 		expect(read('daylight=2.5')().daylight).toBe(2.5);
 		expect(read('daylight=0')).toThrow('above 0');

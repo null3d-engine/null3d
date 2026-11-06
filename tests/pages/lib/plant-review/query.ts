@@ -140,6 +140,12 @@ export interface PlantReviewQuery {
 	 */
 	readonly footRow?: number;
 	readonly crownRow?: number;
+	/**
+	 * The share of the frame's width that a cut piece's photograph leaves clear at its nearer side: a
+	 * cut piece framed by its photograph's rows may come as near the frame's edges as that, though
+	 * never held further off than the page's own margin.
+	 */
+	readonly sides?: number;
 	/** Degrees a view up the stem turns its look to the right of the stem, so the stem enters low left. */
 	readonly aside?: number;
 	/** Stem radii from the stem's axis at which a view up the stem stands, in place of a step back. */
@@ -188,6 +194,7 @@ const NUMBER_FIELDS = [
 	'forkRow',
 	'footRow',
 	'crownRow',
+	'sides',
 	'aside',
 	'stand',
 	'leaves',
@@ -274,6 +281,10 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	if (numbers.daylight !== undefined && (numbers.daylight <= 0 || numbers.daylight > 8))
 		throw new Error(
 			`daylight=${numbers.daylight} is a multiple of the soft daylight: give a number above 0, up to 8.`,
+		);
+	if (numbers.sides !== undefined && (numbers.sides < 0 || numbers.sides >= 0.5))
+		throw new Error(
+			`sides=${numbers.sides} is a share of the frame's width at each side: give a number from 0 to under 0.5.`,
 		);
 	for (const name of ['forkRow', 'footRow', 'crownRow'] as const) {
 		const value = numbers[name];

@@ -220,7 +220,9 @@ function boundsOf(asset: PlantAsset, kit: SpeciesKit): Bounds {
  * box leaves the piece small; fitting its points puts it in the frame as the reference does, which
  * also keeps the thin wood that joins its parts from falling below a pixel. The points are its
  * parts' and those of its shoot rows, which draw the leaves of a piece cut from an instanced plant.
- * With `rows`, the piece's highest and lowest points land on the rows its photograph shows them on.
+ * With `rows`, the piece's highest and lowest points land on the rows its photograph shows them on,
+ * and its sides may come as near the frame's edges as the photograph's piece comes, when the query
+ * gives that share, though never held further off than the page's own margin.
  */
 function fitPoints(
 	asset: PlantAsset,
@@ -263,7 +265,7 @@ function fitPoints(
 			fov,
 			aspect,
 			rows,
-			MARGIN,
+			Math.min(MARGIN, QUERY.sides ?? MARGIN),
 		);
 		return orbit(add(centre, scale(up, lift)), distance, elevation, turn, fov);
 	}

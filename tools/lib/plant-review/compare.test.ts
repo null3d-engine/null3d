@@ -252,6 +252,7 @@ describe('the framing a render takes from a reference', () => {
 			horizon: 0.76,
 			top: 0.18,
 			targetX: 0.49,
+			sides: 0.023,
 			aspect: 16 / 9,
 			sky: '#d9dad5',
 			frames: 8,
@@ -261,6 +262,7 @@ describe('the framing a render takes from a reference', () => {
 			fill: 0.79 - 0.18,
 			targetY: (0.79 + 0.18) / 2,
 			horizon: 0.76,
+			sides: 0.023,
 		});
 		expect(framingQuery(shared)).toMatchObject({ top: 0.18, eye: 1.6 });
 	});

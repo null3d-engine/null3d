@@ -63,6 +63,8 @@ export interface ReferenceFraming {
 	/** The plant base's row share, or undefined when the base is out of the frame. */
 	readonly base?: number;
 	readonly targetX: number;
+	/** The share of the frame's width the plant leaves clear at its nearer side. */
+	readonly sides: number;
 	/** The frame's width over its height. */
 	readonly aspect: number;
 	/** The plain sky's and the meadow's colours, as sRGB hex. */
@@ -226,11 +228,16 @@ export function estimateFraming(
 	const columns = usable.map(
 		({ m, mask }) => anchorColumn(mask.mask, mask.width, mask.height, m.box as Box) / m.width,
 	);
+	const sides = usable.map(({ m }) => {
+		const box = m.box as Box;
+		return Math.min(box.left, m.width - 1 - box.right) / m.width;
+	});
 	return {
 		horizon: Number(horizon.toFixed(4)),
 		top: Number((median(tops) as number).toFixed(4)),
 		...(clipped ? {} : { base: Number((median(bases) as number).toFixed(4)) }),
 		targetX: Number((median(columns) as number).toFixed(4)),
+		sides: Number((median(sides) as number).toFixed(4)),
 		aspect: Number((first.width / first.height).toFixed(5)),
 		sky: meanHex(usable.map(({ m }) => m.sky)),
 		...(usable.some(({ m }) => m.ground)
@@ -272,6 +279,7 @@ export function framingQuery(framing: ReferenceFraming): Partial<PlantReviewQuer
 	return {
 		horizon: Math.min(1, framing.horizon),
 		targetX: framing.targetX,
+		sides: framing.sides,
 		sky: framing.sky,
 		...(framing.ground ? { ground: framing.ground } : {}),
 		...(framing.light ? { sunAzimuth: framing.light.azimuth, sunRise: framing.light.rise } : {}),
