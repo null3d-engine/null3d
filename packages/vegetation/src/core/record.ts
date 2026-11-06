@@ -1204,6 +1204,8 @@ export interface ExtraSpec {
 		| 'stem-tip';
 	/** Share of matching bud sites that carry one. */
 	readonly share: number;
+	/** How many stand at one site, 1 by default: an oak's acorns share a stalk in ones to threes. */
+	readonly count?: Spread;
 	/** The seasons it shows in. */
 	readonly seasons: readonly Season[];
 	/** Its shape. */
