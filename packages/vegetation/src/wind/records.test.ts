@@ -161,61 +161,68 @@ describe('the wind records', () => {
 
 describe('the records that a crowded variant shares', () => {
 	// One stem, two coarse limbs and 4,000 twigs on each: more axes than a variant may hold.
-	const builder = new SkeletonBuilder();
-	const stem = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
-	const base = builder.addNode({ x: 0, y: 0, z: 0, radius: 0.4, parent: -1, axis: stem });
-	const top = builder.addNode({ x: 0, y: 3, z: 0, radius: 0.3, parent: base, axis: stem });
-	const limbs: number[] = [];
-	const twigs: number[][] = [];
-	for (let l = 0; l < 2; l++) {
-		const limb = builder.addAxis({
-			parent: stem,
-			parentNode: top,
-			parentT: 0.5,
-			order: 1,
-			kind: AXIS_LIMB,
-		});
-		const at = builder.addNode({
-			x: 1 + l,
-			y: 3,
-			z: 0,
-			radius: 0.2,
-			parent: top,
-			axis: limb,
-		});
-		limbs.push(limb);
-		// The twig table of each limb, in the order the records reach them.
-		const own: number[] = [];
-		for (let t = 0; t < 4000; t++) {
-			const twig = builder.addAxis({
-				parent: limb,
-				parentNode: at,
-				parentT: 1,
-				order: 2,
+	function crowded(): { skeleton: MeshInput['skeleton']; limbs: number[]; twigs: number[][] } {
+		const builder = new SkeletonBuilder();
+		const stem = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		const base = builder.addNode({ x: 0, y: 0, z: 0, radius: 0.4, parent: -1, axis: stem });
+		const top = builder.addNode({ x: 0, y: 3, z: 0, radius: 0.3, parent: base, axis: stem });
+		const limbs: number[] = [];
+		const twigs: number[][] = [];
+		for (let l = 0; l < 2; l++) {
+			const limb = builder.addAxis({
+				parent: stem,
+				parentNode: top,
+				parentT: 0.5,
+				order: 1,
 				kind: AXIS_LIMB,
 			});
-			builder.addNode({
-				x: 1 + l + 0.01 * t,
-				y: 4,
+			const at = builder.addNode({
+				x: 1 + l,
+				y: 3,
 				z: 0,
-				radius: 0.02,
-				parent: at,
-				axis: twig,
+				radius: 0.2,
+				parent: top,
+				axis: limb,
 			});
-			own.push(twig);
+			limbs.push(limb);
+			// The twig table of each limb, in the order the records reach them.
+			const own: number[] = [];
+			for (let t = 0; t < 4000; t++) {
+				const twig = builder.addAxis({
+					parent: limb,
+					parentNode: at,
+					parentT: 1,
+					order: 2,
+					kind: AXIS_LIMB,
+				});
+				builder.addNode({
+					x: 1 + l + 0.01 * t,
+					y: 4,
+					z: 0,
+					radius: 0.02,
+					parent: at,
+					axis: twig,
+				});
+				own.push(twig);
+			}
+			twigs.push(own);
 		}
-		twigs.push(own);
+		return { skeleton: builder.finish(), limbs, twigs };
 	}
-	const skeleton = builder.finish();
 
-	it('makes one record per coarse axis and one per twig system under each limb', () => {
-		expect(skeleton.axes.count).toBeGreaterThan(VARIANT_RECORDS);
-		const rows: ShootRows = {
+	/** Two rows that name one twig of each limb, as grown. */
+	function rowsFor(twigs: number[][]): ShootRows {
+		return {
 			...noRows(),
 			count: 2,
-			// Each row names the axis's record as grown, which is its index.
 			record: new Uint16Array([twigs[0]?.[0] as number, twigs[1]?.[3999] as number]),
 		};
+	}
+
+	it('makes one record per coarse axis and one per twig system under each limb', () => {
+		const { skeleton, limbs, twigs } = crowded();
+		expect(skeleton.axes.count).toBeGreaterThan(VARIANT_RECORDS);
+		const rows = rowsFor(twigs);
 		const table = windRecords(input(skeleton, rows));
 		expect(table.count).toBe(5);
 		// Every twig of one limb takes the record of the first twig of that limb.
@@ -230,5 +237,20 @@ describe('the records that a crowded variant shares', () => {
 		// A shared twig record keeps its limb as its parent.
 		const limbRecord = table.base + (skeleton.axes.record[limbs[0] as number] as number);
 		expect(recordAt(table, lead0)[3]).toBe(limbRecord);
+	});
+
+	it('gives one seed and variant the same table and the same shared ids twice', () => {
+		const first = crowded();
+		const second = crowded();
+		const firstRows = rowsFor(first.twigs);
+		const secondRows = rowsFor(second.twigs);
+		const a = windRecords(input(first.skeleton, firstRows));
+		const b = windRecords(input(second.skeleton, secondRows));
+		expect(a.base).toBe(b.base);
+		expect(a.count).toBe(b.count);
+		expect([...a.records]).toEqual([...b.records]);
+		// The skeleton and the rows are renumbered to the same shared ids.
+		expect([...first.skeleton.axes.record]).toEqual([...second.skeleton.axes.record]);
+		expect([...firstRows.record]).toEqual([...secondRows.record]);
 	});
 });
