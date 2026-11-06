@@ -175,9 +175,9 @@ export const record: Species = {
 		},
 	},
 	bark: {
-		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [4.5, 4.35, 4.34] }],
+		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0 }],
 		young: 0,
-		youngRadius: 0.04,
+		youngRadius: 0.08,
 		girthScale: [
 			[0, 0.6],
 			[1, 1],
@@ -185,7 +185,7 @@ export const record: Species = {
 		displacement: 0.04,
 		collar: { swell: 0.45, length: 1.8, ridge: 0.6 },
 		moss: { amount: 0.7, up: 4, north: 0.3, colour: [0.3, 0.36, 0.24] },
-		lichen: { amount: 0.45, from: 0.6, colour: [0.86, 0.9, 0.8] },
+		lichen: { amount: 1, from: 0.6, colour: [0.38, 0.45, 0.34] },
 	},
 	base: {
 		flare: { amount: 0.7, height: 0.6 },

@@ -16,6 +16,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { REPO_ROOT } from '../tests/lib/server.ts';
 import type { PlantReviewQuery } from '../tests/pages/lib/plant-review/query.ts';
 import {
+	CUTTING_VIEWS,
 	PLANT_VIEWS,
 	type PlantView,
 	VIEW_SPECS,
@@ -154,8 +155,12 @@ function stillShot(
 		}
 	}
 	// A still whose own picture separates the plant from a plain background can be compared by
-	// outline, whatever part of the plant it frames: the render draws the same mask.
-	const outline = plant.background.plain && slot.view !== 'silhouette';
+	// outline, whatever part of the plant it frames: the render draws the same mask. A texture source
+	// is a flat swatch rather than a picture of the plant, so it is not given one.
+	const outline =
+		(slot.kind !== 'texture' && plant.background.plain && slot.view !== 'silhouette') ||
+		slot.framed ||
+		CUTTING_VIEWS.includes(slot.view);
 	return singleShot(
 		'stills',
 		`${slot.file.replace(/\.\w+$/, '')}.png`,
@@ -402,6 +407,9 @@ function compareRun(
 					? [`- ${pair.file}: surface colour difference ${fixed(pair.surfaceDeltaE, 1)}.`]
 					: [],
 			),
+			// A picture whose backdrop the tool cannot separate still has edges, and its edges say
+			// where its parts run. It gets that figure instead of an outline it cannot trust.
+			...edgeLines(result.pairs),
 			...result.pairs.flatMap((pair) => (pair.note ? [`- ${pair.file}: ${pair.note}.`] : [])),
 			`- Sheets: ${result.sheets.join(', ')}.`,
 			'',
@@ -460,6 +468,17 @@ function compareRun(
 	writeFileSync(join(dir, 'coverage.md'), coverageMarkdown(manifest.species, set.slug, coverage));
 	writeFileSync(join(dir, 'summary.md'), `${summary.join('\n')}\n`);
 	return coverage.complete;
+}
+
+/** The edge-direction lines for the stills that give no outline, so a close-up still has a figure. */
+function edgeLines(pairs: readonly StillResult[]): string[] {
+	const lines: string[] = [];
+	for (const pair of pairs)
+		if (!pair.masked && pair.edgeDifference !== null)
+			lines.push(
+				`- ${pair.file}: edge directions ${fixed(pair.edgeDifference, 3)}; 0 is the same mixture of directions in both pictures and 1 is none shared.`,
+			);
+	return lines;
 }
 
 async function main(): Promise<void> {

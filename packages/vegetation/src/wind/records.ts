@@ -13,6 +13,7 @@
 import type { WindTable } from '../asset';
 import { unitAt } from '../core/hash';
 import { length3 } from '../core/math';
+import type { Species } from '../core/record';
 import { curveAt } from '../core/types';
 import type { MeshInput } from '../stages';
 
@@ -33,6 +34,28 @@ export const VARIANT_RECORDS = 8000;
 
 /** The hash key of a record's sway phase, apart from every other draw of the plant's hashes. */
 const PHASE_KEY = 0x57494e44;
+
+/**
+ * The whole plant's sway that a species takes when its record names none: cycles a second, and
+ * metres at the top in the field's base wind speed. A missing sway never leaves the plant still.
+ *
+ * @category api/vegetation
+ */
+export const DEFAULT_WIND_SWAY = { frequency: 0.4, amplitude: 0.05 } as const;
+
+/**
+ * The whole plant's sway of a species: its own, or the stated default when its record names none.
+ *
+ * @param record The species record.
+ * @returns Its sway, in cycles a second and metres at the top in the field's base wind speed.
+ * @category api/vegetation
+ */
+export function windSway(record: Species): {
+	readonly frequency: number;
+	readonly amplitude: number;
+} {
+	return record.wind.sway ?? DEFAULT_WIND_SWAY;
+}
 
 /**
  * Which axis each record is made from, after the finest axes share records by parent when the

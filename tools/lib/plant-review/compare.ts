@@ -24,6 +24,7 @@ import {
 	type Rgba,
 	readImage,
 	resize,
+	resizeToWidth,
 	srgbOf,
 	textWidth,
 	videoFrames,
@@ -41,6 +42,12 @@ import {
 	WORK_WIDTH,
 } from './references.ts';
 import type { RunFrame } from './render.ts';
+
+/** The bins of an edge-direction profile: twelve of fifteen degrees across half a turn. */
+const EDGE_BINS = 12;
+
+/** Edges weaker than this, in CIELAB lightness per pixel, are paper, not structure. */
+const EDGE_FLOOR = 6;
 
 /** The camera's framing of a reference, in screen shares, as the review page takes it. */
 export interface ReferenceFraming {
@@ -102,6 +109,67 @@ export function anchorColumn(mask: Uint8Array, width: number, height: number, bo
 		if (best !== null) centres.push(best);
 	}
 	return median(centres) ?? (box.left + box.right) / 2;
+}
+
+/**
+ * The directions a frame's edges run in: the share of edge strength in each of twelve bins of
+ * fifteen degrees, over the whole frame.
+ *
+ * A picture whose backdrop cannot be separated from the plant still has edges, and those edges carry
+ * its structure: where a limb leaves a trunk, how a bough forks, whether twigs run out or up. Two
+ * frames that put their weight in different bins are built differently, whatever their colours.
+ *
+ * @param image The picture.
+ * @returns Twelve shares that sum to one, from level through to upright.
+ */
+export function edgeProfile(image: Rgba): Float32Array {
+	const work = image.width > WORK_WIDTH ? resizeToWidth(image, WORK_WIDTH) : image;
+	const { width, height } = work;
+	const lab = labImage(work);
+	const bins = new Float32Array(EDGE_BINS);
+	// Sobel over the lightness channel, one bin per pixel weighted by how strong its edge is.
+	for (let y = 1; y < height - 1; y++)
+		for (let x = 1; x < width - 1; x++) {
+			const at = (px: number, py: number) => lab[(py * width + px) * 3] as number;
+			const gx =
+				at(x + 1, y - 1) +
+				2 * at(x + 1, y) +
+				at(x + 1, y + 1) -
+				at(x - 1, y - 1) -
+				2 * at(x - 1, y) -
+				at(x - 1, y + 1);
+			const gy =
+				at(x - 1, y + 1) +
+				2 * at(x, y + 1) +
+				at(x + 1, y + 1) -
+				at(x - 1, y - 1) -
+				2 * at(x, y - 1) -
+				at(x + 1, y - 1);
+			const strength = Math.hypot(gx, gy);
+			if (strength < EDGE_FLOOR) continue;
+			// A direction and its opposite are one direction: a ridge has two sides.
+			let angle = Math.atan2(gy, gx);
+			if (angle < 0) angle += Math.PI;
+			if (angle >= Math.PI) angle -= Math.PI;
+			const bin = Math.min(EDGE_BINS - 1, Math.floor((angle / Math.PI) * EDGE_BINS));
+			bins[bin] = (bins[bin] as number) + strength;
+		}
+	let total = 0;
+	for (const value of bins) total += value;
+	if (total <= 0) return bins;
+	for (let b = 0; b < EDGE_BINS; b++) bins[b] = (bins[b] as number) / total;
+	return bins;
+}
+
+/**
+ * How differently two frames' edges run: the share of edge strength that points elsewhere, 0 when
+ * every direction carries the same weight in both and 1 when they share none.
+ */
+export function edgeDifference(a: Float32Array, b: Float32Array): number {
+	let shared = 0;
+	for (let i = 0; i < Math.min(a.length, b.length); i++)
+		shared += Math.min(a[i] as number, b[i] as number);
+	return Number((1 - shared).toFixed(4));
 }
 
 /** The mean of hex colours, taken in CIELAB. */
@@ -982,6 +1050,8 @@ export interface StillResult extends PairMetrics {
 	readonly masked: boolean;
 	/** For a bark texture: the CIEDE2000 difference of the middle of each picture. */
 	readonly surfaceDeltaE: number | null;
+	/** How differently the two pictures' edges run, 0 when they run the same way. */
+	readonly edgeDifference: number | null;
 	readonly note?: string;
 	readonly error?: string;
 }
@@ -1042,6 +1112,7 @@ export function compareStills(
 				view: slot.view,
 				masked: false,
 				surfaceDeltaE: null,
+				edgeDifference: null,
 				error,
 			});
 			rows.push({ reference: refImage, lines: [...head, 'NO RENDER', error.slice(0, 18)] });
@@ -1056,6 +1127,9 @@ export function compareStills(
 		const surfaceDeltaE = bark
 			? Number(deltaE2000(middleLab(refImage), middleLab(render.image)).toFixed(2))
 			: null;
+		const edges = Number(
+			edgeDifference(edgeProfile(refImage), edgeProfile(render.image)).toFixed(3),
+		);
 		const shown: PairMetrics = masked
 			? pair
 			: {
@@ -1076,6 +1150,7 @@ export function compareStills(
 			renderFile: frame.file,
 			masked,
 			surfaceDeltaE,
+			edgeDifference: edges,
 			...(slot.note ? { note: slot.note } : {}),
 		});
 		rows.push({
