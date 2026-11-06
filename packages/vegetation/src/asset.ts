@@ -142,7 +142,10 @@ export type PartName = 'wood' | 'foliage' | 'cards' | 'extras';
  * @category api/vegetation
  */
 export interface QuantisedArrays {
-	/** 3 per vertex: 16-bit positions inside the species box, which the copy's transform scales. */
+	/**
+	 * 3 per vertex: 16-bit positions inside the species box, which the plant shader reads as
+	 * fractions of the box and turns into metres, and the copy's transform scales.
+	 */
 	readonly positions: Uint16Array;
 	/** 3 per vertex: 8-bit normals that read from -1 to 1. */
 	readonly normals: Int8Array;

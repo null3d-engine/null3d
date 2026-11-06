@@ -259,20 +259,13 @@ describe('the plant shader', () => {
 			expect([name, constant(name)]).toEqual([name, value]);
 	});
 
-	test("reads an extra's positions as fractions of the box, as the plant geometry gives them", () => {
+	test("reads a part's positions as fractions of the box, as the plant geometry gives them", () => {
 		// The engine adds the shader's offset to the position it reads, in 32-bit floats. A whole
 		// step count runs to 65,535, where a float's steps are millimetres; a fraction of the box
-		// keeps the sum to micrometres, which a fruit a centimetre across needs.
+		// keeps the sum to micrometres.
 		const material = readFileSync(new URL('./material.ts', import.meta.url), 'utf8');
-		expect(material).toContain(
-			'positions: fraction ? { array: arrays.positions, normalized: true } : arrays.positions,',
-		);
-		const placed = readFileSync(new URL('./static-shoots.ts', import.meta.url), 'utf8');
-		expect(placed).toContain("plantGeometry(ctx, part.arrays, part.name === 'extras')");
+		expect(material).toContain('positions: { array: arrays.positions, normalized: true },');
 		expect(wgsl).toContain('return low + p * span;');
-		expect(wgsl).toContain(
-			'plant = box_fraction(input.position + position_rest(input.uv) / POSITION_STEPS);',
-		);
 		const steps = Math.fround(39800);
 		const metres = Math.fround(6.1 + 0.0071);
 		const asSteps = Math.fround(steps + Math.fround(metres - steps));
