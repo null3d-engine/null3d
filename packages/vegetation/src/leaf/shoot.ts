@@ -447,6 +447,8 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 		foliage.kind === 'needle' || foliage.kind === 'fascicle' ? foliage.needle.angle : undefined;
 	const ranks = foliage.kind === 'needle' ? foliage.needle.ranks : 0;
 	const flatten = phyllotaxis.kind === 'distichous' ? phyllotaxis.flatten : 0;
+	/** A two-ranked shoot keeps its laterals in the plane of its leaf ranks. */
+	const twoRanked = phyllotaxis.kind === 'distichous';
 	/** A leaf's turn from leaf space: the upper face looks toward the shoot's tip, turned toward the sky side. */
 	const leafRotation = (
 		direction: Vector3,
@@ -543,7 +545,11 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 					),
 				);
 				for (let k = 0; k < count; k++) {
-					const azimuth = azimuthStart + k * GOLDEN + draw(Purpose.LateralTurn, axis, k) * 40;
+					// A two-ranked shoot keeps its laterals in the plane of its two leaf ranks, as a
+					// flat-sprayed species grows; a spiral shoot turns them by the golden angle.
+					const azimuth = twoRanked
+						? azimuthStart + 90 + k * 180 + (draw(Purpose.LateralTurn, axis, k) - 0.5) * 6
+						: azimuthStart + k * GOLDEN + draw(Purpose.LateralTurn, axis, k) * 40;
 					const outward = turn(sky, direction, azimuth);
 					const lean = leanAngle * (0.75 + 0.5 * draw(Purpose.LateralTurn, axis, k + 8));
 					const lateral = normalize3([
@@ -556,8 +562,14 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 						direction: lateral,
 						sky,
 						order: start.order + 1,
-						units: start.units - unit - 1,
-						unitLength: start.unitLength * (0.6 + 0.25 * draw(Purpose.Laterals, axis, k + 16)),
+						// A two-ranked shoot's lateral is one long side shoot in the axis's own plane; a
+						// spiral shoot's is a shorter side twig that may branch again.
+						units: twoRanked ? 1 : start.units - unit - 1,
+						unitLength:
+							start.unitLength *
+							(twoRanked
+								? 2 + 0.4 * draw(Purpose.Laterals, axis, k + 16)
+								: 0.6 + 0.25 * draw(Purpose.Laterals, axis, k + 16)),
 						radius: Math.max(tipRadius, (points[points.length - 1] as AxisPoint).radius * 0.75),
 						along,
 					});
