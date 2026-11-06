@@ -1,6 +1,7 @@
 // One species in one review view, drawn to be laid beside its reference pictures: the whole plant
 // and its turntable, the crown from outside, below and inside, a limb's junction and first fork, a
-// sunlit shoot tip, a cut branch, sub-branch, leaf cluster or leaf, the bark at the base, mid-trunk
+// secondary branch across its own length, a sunlit shoot tip, a cut branch, sub-branch, leaf cluster
+// or leaf, the bark at the base, mid-trunk
 // and on a limb, the trunk, the wood alone, the silhouette, and the four panels of the per-species
 // picture test. It grows the species through the plant core's public functions (any registered
 // species, or any other id as a stand-in), so the page draws what a scene would draw. The query
@@ -489,6 +490,21 @@ export default defineSketch(async (ctx) => {
 				// The twig and its rosettes fill the frame: the reference stands a single twig against a
 				// plain backdrop, so the camera sits close and the shoot's own length is not the subject.
 				return { ...orbit(target, 0.28 + shoot / 4, e, back, fov), near: 0.02 };
+			}
+			case 'limb': {
+				// A limb of the outer crown seen across its own run. The view takes the wood that
+				// reaches furthest from the stem, where the crown meets the sky, and stands beside it,
+				// so the limb runs across the frame against the sky and no thicker limb hides it.
+				const along = QUERY.along ?? 0.6;
+				const thin = QUERY.thin ?? Math.max(0.005, height * 0.002);
+				const axis = limbNear(skeleton, along, thin);
+				if (axis < 0) break;
+				const at = pointAlong(skeleton, axis, along);
+				const span = QUERY.span ?? Math.max(0.2, height * 0.02);
+				const distance = span / 2 / Math.tan((fov * DEG) / 2) / (1 - 2 * MARGIN) + at.radius;
+				const outward = normalize([at.at[0] - foot[0], 0, at.at[2] - foot[2]]);
+				const beside = yaw(cross([0, 1, 0], outward), turn);
+				return { ...orbit(at.at, distance, e, Math.atan2(beside[0], beside[2]), fov), near: 0.02 };
 			}
 			case 'bark-base': {
 				const r = stemAt(skeleton, 0.3)?.radius ?? 0.1;
