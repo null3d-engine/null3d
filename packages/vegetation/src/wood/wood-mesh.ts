@@ -123,6 +123,8 @@ interface WoodAxis {
 	readonly leader: boolean;
 	/** Whether it is a dead stub left where a branch was shed. */
 	readonly stub: boolean;
+	/** Whether it is the cut end of a piece: a limb with no parent, such as a cut branch. */
+	readonly cut: boolean;
 }
 
 /** The skeleton's largest pipe radius. */
@@ -341,6 +343,7 @@ function woodAxes(input: MeshInput, keep: number): WoodAxis[] {
 			fork: false,
 			leader: leads[k] === 1,
 			stub: ((skeleton.flags[first] as number) & NODE_STUB) !== 0,
+			cut: parent < 0 && (axes.kind[a] as number) === AXIS_LIMB,
 		});
 		if (stem) addRoots(input, list, list.length - 1, base + (axes.record[a] as number));
 		for (const child of children[k] ?? []) queue.push(child);
@@ -405,6 +408,7 @@ function addRoots(input: MeshInput, list: WoodAxis[], stemIndex: number, record:
 			fork: false,
 			leader: false,
 			stub: false,
+			cut: false,
 		});
 }
 
@@ -925,8 +929,7 @@ class Mesher {
 		// young bark of a live shoot of its girth. A cut limb is severed wood too, and its sawn end
 		// shows grown bark rather than the young layer a twig of the same girth would carry.
 		const young = this.record.bark?.youngRadius ?? 0;
-		const cut = wood.parent < 0 && wood.stem < 0;
-		if (wood.stub || cut)
+		if (wood.stub || wood.cut)
 			for (let i = 0; i < rings.vertices; i++)
 				rings.pipe[i] = Math.max(rings.pipe[i] as number, STUB_BARK * young);
 		const bark = this.barkOf(rings, context, inherit);
