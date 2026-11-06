@@ -233,8 +233,8 @@ export const files = {
 				{
 					"name": "trunk",
 					"tile": [
-						0.45,
-						0.45
+						0.2,
+						0.2
 					],
 					"mean": [
 						0.06298,
@@ -287,8 +287,8 @@ export const files = {
 			},
 			{
 				"file": "bark-normal.ktx2",
-				"sha256": "28a4a31ba240f157603088ab8161b63630df66fe9beaf0eb38b7c5fd0f3214fc",
-				"bytes": 254025
+				"sha256": "231762bc18c58fc95df98b55aca7296429569f84406365a4f4631151b673b91d",
+				"bytes": 254768
 			},
 			{
 				"file": "young-color.ktx2",
@@ -307,8 +307,8 @@ export const files = {
 			},
 			{
 				"file": "bark-normal-half.ktx2",
-				"sha256": "58132cb17e81ac6bd2c3c61583fd5a2dbde40ea3c45ca916aa352e99d2f23d90",
-				"bytes": 73107
+				"sha256": "58144e8393275dff029a2cb3c1b27d99834c4be58b02df83e1b4e2525927ec62",
+				"bytes": 73556
 			},
 			{
 				"file": "young-color-half.ktx2",

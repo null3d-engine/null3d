@@ -9,7 +9,7 @@
 			{
 				"name": "trunk",
 				"slot": 26,
-				"tile": [0.45, 0.45],
+				"tile": [0.2, 0.2],
 				"depth": 0.015,
 				"smooth": 2,
 				"delight": { "radius": 0.2 }
