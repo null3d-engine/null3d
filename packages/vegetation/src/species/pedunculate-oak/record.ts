@@ -396,7 +396,9 @@ export const record: Species = {
 	cuttings: {
 		branch: { shoot: 'spray' },
 		subbranch: { shoot: 'long', pick: 1 },
-		cluster: { shoot: 'long' },
+		// Stills 11 and 23 hold one rosette round its buds at the end of this year's shoot, as the
+		// short shoot draws it; the long shoot draws a sprig of two or three rosettes.
+		cluster: { shoot: 'short' },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
 		leaf: { pressed: true },
 	},

@@ -126,20 +126,25 @@ show its sprig. [The owner's rulings](#the-owners-rulings) give the short shoot'
 At the low, medium, high and ultra tiers, the kit measures 1.753, 2.941, 5.585 and 10.699 MB. Its
 caps are 2.0, 3.1, 5.7 and 10.8 MB. The ultra kit is at 99 % of its cap. The largest of seed 11's six
 variants measures 7.19, 7.44, 7.75 and 8.17 MB, against budgets of 9.4, 10.2, 11.3 and 11.6 MB. Over
-seeds 1 to 11, none of the 66 plants passes its budget at any tier. A variant grows in 344 to 445 ms,
+seeds 1 to 11, none of the 66 plants goes over its budget at any tier. A variant grows in 344 to 445 ms,
 against the head's 408 to 531 ms.
 
-How the data was produced: the reference rows are runs `claude-oak-final-0509` (this record's oak) and
-`claude-oak-base6-0456` (the head's oak). Each is `bun run plants:review pedunculate-oak --refs <the
-oak's folder> --views whole,skeleton --slot-query <the slot file> --run <name>`, 629 frames in 119
-pages. Both ran headless in Chrome for Testing on the Mac's GPU, at seed 11, variant 0 and preset
-high. They ran at `96583613c`, with the oak's and the review tool's changes in the working tree. They hold
-neither the engine change, the exact maths nor the leaf-cluster ruling. The references are the reference
-repository's at `835524369`. Other review runs and tests shared the machine. The bytes are the
-generator's own sizes of the same tree, over all six variants, and over seeds 1 to 11 for the sweep.
-The grow time is the fastest of five growths a variant, in three rounds that alternate with the head.
-The machine's load read 2.6 to 3.2. Each choice's figure is a trial against the same crown without that change,
-under the same tool.
+How the data was produced: the reference rows are runs `claude-oak-final-0509` (this record's oak)
+and `claude-oak-base6-0456` (the head's oak). Each is `bun run plants:review pedunculate-oak --refs
+<the oak's folder> --views whole,skeleton --slot-query
+tools/lib/plant-review/slots/pedunculate-oak.json --run <name>`, 629 frames in 119 pages. Both ran
+headless in Chrome for Testing on the Mac's GPU, at seed 11, variant 0 and preset high. They ran at
+`96583613c`, with the oak's and the review tool's changes in the working tree. They hold neither the
+engine change, the exact maths nor the leaf-cluster ruling. The references are the reference
+repository's at `835524369`. Other review runs and tests shared the machine.
+
+The bytes are the generator's own sizes of the same tree, over all six variants, and over seeds 1 to
+11 for the sweep. The grow time is the fastest of five growths a variant, in three rounds that
+alternate with the head. The machine's load read 2.6 to 3.2. Each choice's figure is a trial against
+the same crown without that change, under the same tool. The leaf-cluster figures come from runs
+`ship-cluster-long-0712` and `ship-cluster-short-0710` at `27b63cd0b`, without and with the ruling.
+They drew stills 11 and 23 and the leaf-cluster turntable alone, by the same command, slot file and
+machine.
 
 ## Look
 
@@ -188,8 +193,12 @@ Rejected:
 - The plant code grows with the core's exact maths in every browser, and the generator's version is
   '2'.
 - The leaf-cluster cutting takes this year's short shoot, one rosette round its bud cluster, as 11 and
-  23 show. The long shoot draws a sprig of two or three rosettes. On a near copy of this crown, the
-  short shoot takes 11's outline overlap from 0.495 to 0.559, and 23's from 0.483 to 0.512.
+  23 show. The long shoot draws a sprig of two or three rosettes. By eye, 11 and 23 now show the
+  photographs' subject. The short shoot takes 11's outline overlap from 0.499 to 0.566 and 23's from
+  0.472 to 0.496, and 23's leaf color from 8.7 to 5.0. But the rosette is denser than the
+  photographs': both sky gaps fall to 0.048 under their references, past the band. 11's leaf color
+  rises from 2.4 to 6.1, and the leaf-cluster turntable's mean outline falls from 0.460 to 0.394. The
+  view looks down on the rosette, so its stalk hardly shows, where the photographs show it below.
 - The floor stays at 0.175. Most of the review judges seed 11's variant 0, while a game shows every
   variant. So the crown's swing over the variants is a stated fault.
 - The clump field stays off the oak.
@@ -229,5 +238,5 @@ Rejected:
   5. Adopt the judging rules into the reference repository's rubric.
   6. Drop the shade prune and the tip line from the oak, with the sky prune near 0.43, once a review
      run confirms the crown.
-  7. Fix the views into and under the crown, the cut pieces' rosettes, the roots and the silhouette,
-     largest first.
+  7. Fix the views into and under the crown, the cut pieces' rosettes, the leaf cluster's density,
+     the roots and the silhouette, largest first.
