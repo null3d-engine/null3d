@@ -809,6 +809,13 @@ export interface ShootSpec {
 		 * finest axes without changing their reach or the species' part sizes.
 		 */
 		readonly density?: number;
+		/**
+		 * How far the shoots gather towards the end of the axis that carries them, 0 to 1. At 0 they
+		 * stand evenly along it; at 1 they crowd at its end and the stretch behind thins. A crown
+		 * that answers its reference's masses puts its foliage at the axes' ends, which also dresses
+		 * each limb's tip, where a bare run otherwise stands past the leaves.
+		 */
+		readonly tipBias?: number;
 		/** No shoot where sky visibility is below this: shade pruning. */
 		readonly shadePrune: number;
 		/** How far a shoot turns its leaves toward the sky, 0 to 1 (flat beech sprays). */

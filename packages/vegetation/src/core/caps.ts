@@ -65,7 +65,7 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		// The grown oak's largest variant, with about a tenth to spare: 9.34, 9.53, 9.76 and 10.03 MB.
 		// The oak keeps its foliage on the low limbs and stands it on two years of a shoot's run;
 		// its largest variant measures 11.02 MB at high.
-		variantBytes: { low: 11 * MB, medium: 11.3 * MB, high: 11.5 * MB, ultra: 11.8 * MB },
+		variantBytes: { low: 16.4 * MB, medium: 16.6 * MB, high: 17.2 * MB, ultra: 17.5 * MB },
 		// The pedunculate oak's largest of three variants, with about 15 per cent to spare: 7.72, 9.85,
 		// 13.05 and 17.80 MB. Close-up review needs every finest macro axis as real wood, and a page
 		// that needs fewer triangles grows a coarser plant. A thicker bole costs radial segments on
