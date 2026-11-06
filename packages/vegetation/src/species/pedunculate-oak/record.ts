@@ -148,7 +148,13 @@ export const record: Species = {
 		stem: { radius: [0.0035, 0.0025], zigzag: 22 },
 		// The reference's own guide puts the cone near a fifteenth of a leaf; the species' buds run 3
 		// to 6 mm, so the record takes the top of that range rather than the bottom.
-		bud: { length: 0.0085, width: 0.006, tipCluster: 7, colour: [0.34, 0.2, 0.09] },
+		bud: {
+			length: 0.0115,
+			width: 0.008,
+			tipCluster: 7,
+			clusterSpan: 0.3,
+			colour: [0.37, 0.26, 0.15],
+		},
 		placement: {
 			perMetre: [
 				[0, 0.5],
