@@ -19,11 +19,10 @@
 // Edges. A leaf's coverage is sharpened to a one-pixel edge at the cutoff, so the blade draws solid
 // to its cut edge and alpha to coverage only smooths that last pixel.
 //
-// Space. Wood, cards, merged foliage and extras hold 16-bit positions inside the species box, which
-// the vertex offset turns into the plant's metres, so the copy's transform places them. An extra's
-// are read as fractions of the box, and it adds the rest below one step that its texture
-// coordinates hold. Shoot rows hold their prototype's metres, and each row is one shoot placed in
-// the world.
+// Space. Wood, cards, merged foliage and extras hold 16-bit positions inside the species box, read
+// as fractions of it, which the vertex offset turns into the plant's metres, so the copy's
+// transform places them; an extra adds the rest below one step that its texture coordinates hold.
+// Shoot rows hold their prototype's metres, and each row is one shoot placed in the world.
 //
 // Wind. One field of air moves every plant. The stem bends as a cantilever, each branch turns about
 // its pivot carrying the branches above it, shoots bend along their length and leaves flutter. The
@@ -171,15 +170,8 @@ fn plant_mode() -> i32 {
     return i32(material.mode + 0.5);
 }
 
-/// A 16-bit position inside the species box, in the plant's metres.
+/// A 16-bit position inside the species box, read as a fraction of the box, in the plant's metres.
 fn box_point(p: vec3f) -> vec3f {
-    let low = header(HEADER_BOX_MIN).xyz + header(HEADER_BOX_MIN_REST).xyz;
-    let span = header(HEADER_BOX_SPAN).xyz + header(HEADER_BOX_SPAN_REST).xyz;
-    return low + p * (span / POSITION_STEPS);
-}
-
-/// A position inside the species box read as a fraction of the box, in the plant's metres.
-fn box_fraction(p: vec3f) -> vec3f {
     let low = header(HEADER_BOX_MIN).xyz + header(HEADER_BOX_MIN_REST).xyz;
     let span = header(HEADER_BOX_SPAN).xyz + header(HEADER_BOX_SPAN_REST).xyz;
     return low + p * span;
@@ -545,15 +537,15 @@ fn bark_lift(input: VertexInput) -> f32 {
 }
 
 /// Wood, cards, merged foliage and extras: the 16-bit position into the plant's metres, lifted by
-/// the bark's height on the nearest wood, and moved by the wind in the plant's own space.
+/// the bark's height on the nearest wood, and moved by the wind in the plant's own space. The
+/// position comes as a fraction of the box, so the offset back from it keeps the plant's own
+/// precision.
 fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
     var plant = box_point(input.position);
     if (mode == MODE_EXTRAS) {
         // Fruit and cones are a few centimetres across, where the box's steps are near a
-        // millimetre, so an extra keeps the rest of its position in its texture coordinates. Its
-        // position comes as a fraction of the box, so the offset back from it keeps micrometres:
-        // whole steps near 65,535 would lose millimetres in that 32-bit sum.
-        plant = box_fraction(input.position + position_rest(input.uv) / POSITION_STEPS);
+        // millimetre, so an extra keeps the rest of its position in its texture coordinates.
+        plant = box_point(input.position + position_rest(input.uv) / POSITION_STEPS);
     }
     if (mode == MODE_WOOD && material.displacement > 0.0) {
         plant += normalize(input.normal) * bark_lift(input);
