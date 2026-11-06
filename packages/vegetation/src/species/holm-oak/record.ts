@@ -33,9 +33,9 @@ export const record: Species = {
 		internode: { length: 0.25, ageFactor: 0.99 },
 		stems: {
 			count: { mean: 8, spread: 2 },
-			lean: { mean: 28, spread: 6 },
-			stool: 0.35,
-			fused: 0.1,
+			lean: { mean: 40, spread: 6 },
+			stool: 0.5,
+			fused: 1.8,
 		},
 		buds: {
 			arrangement: { kind: 'spiral', divergence: 137.5 },
@@ -151,9 +151,9 @@ export const record: Species = {
 		bud: { length: 0.01, width: 0.007, tipCluster: 7, colour: [0.28, 0.2, 0.12] },
 		placement: {
 			perMetre: [
-				[0, 1.5],
-				[0.55, 3],
-				[1, 20],
+				[0, 3],
+				[0.55, 6],
+				[1, 45],
 			],
 			shadePrune: 0.1,
 			skyward: 0.3,
@@ -206,29 +206,31 @@ export const record: Species = {
 	},
 	extras: [
 		{
-			// The acorn of still 19: a plump nut about two centimetres long in a shallow scalloped
-			// cup that holds its lower third, one to three on a short forking stalk.
+			// The acorn of still 19: the pedunculate oak's nut, about two centimetres long, in a
+			// shallow scalloped cup at its base, one to three on a short forking stalk.
 			kind: 'fruit',
 			at: 'shoot-tip',
 			share: 0.06,
 			count: { mean: 3, spread: 0 },
+			tipShare: 0.95,
 			seasons: ['summer', 'autumn'],
 			shape: {
 				lathe: [
 					[0.001, 0],
-					[0.001, 0.03],
-					[0.001, 0.0395],
-					[0.0031, 0.0402],
-					[0.0058, 0.0417],
-					[0.0077, 0.044],
-					[0.007, 0.045],
-					[0.0065, 0.0465],
-					[0.0054, 0.0488],
-					[0.0031, 0.051],
-					[0, 0.052],
+					[0.001, 0.0095],
+					[0.0031, 0.0102],
+					[0.0058, 0.0117],
+					[0.0077, 0.014],
+					[0.007, 0.015],
+					[0.0065, 0.0165],
+					[0.0054, 0.0188],
+					[0.0031, 0.021],
+					[0, 0.022],
 				],
+				sides: 14,
 				scales: 2,
-				scaled: [0.0395, 0.0438],
+				scaled: [0.0095, 0.0138],
+				stalk: 0.032,
 			},
 			colour: [0.24, 0.1, 0.03],
 			hang: 180,
