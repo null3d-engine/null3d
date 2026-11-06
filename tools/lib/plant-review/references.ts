@@ -148,6 +148,18 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			slot: { view: 'bark-limb', framed: false },
 		},
 		{
+			// A winter picture of a branch shows one branch on its own against the sky, as its
+			// reference does: the summer branch cutting, drawn in the season the name gives. A crop
+			// into the whole plant puts other limbs behind it and cannot be read the same way.
+			test: (n) => /(winter|bare)/.test(n) && /(branch|architecture)/.test(n),
+			slot: {
+				view: 'branch',
+				background: 'sky-meadow',
+				query: { season: 'winter' },
+				framed: false,
+			},
+		},
+		{
 			test: (n) => n.includes('winter') || n.includes('architecture') || n.includes('bare'),
 			// A winter picture is a limb close-up, as its reference is, framed close enough that the
 			// twigs and the bud clusters at their nodes stand at the size the reference shows.

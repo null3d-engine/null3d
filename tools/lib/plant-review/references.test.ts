@@ -225,8 +225,9 @@ describe('the slots', () => {
 		expect(classifySlot('04-crown-outside.png')?.view).toBe('limb');
 		expect(classifySlot('09-secondary-branching.png')?.view).toBe('limb');
 		expect(classifySlot('10-fine-twigs-b.png')?.view).toBe('twigs');
+		// One branch on its own against the sky, as the reference shows it, not a crop into the plant.
 		expect(classifySlot('20-winter-branch-architecture.png')).toMatchObject({
-			view: 'limb',
+			view: 'branch',
 			query: { season: 'winter' },
 		});
 		expect(classifySlot('21-branch-studio.png')?.view).toBe('branch');
