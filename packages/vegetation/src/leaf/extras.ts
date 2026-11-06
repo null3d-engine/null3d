@@ -406,9 +406,9 @@ function writeStalk(
 }
 
 /** Lobes round a scaled lathe's band, so a cup's rim reads as scallops. */
-const SCALLOP_LOBES = 10;
+const SCALLOP_LOBES = 18;
 /** The share of the radius the lobes rise and fall by. */
-const SCALLOP_DEPTH = 0.08;
+const SCALLOP_DEPTH = 0.05;
 
 /**
  * A lathe whose radius ripples round the turn over a band of heights. A cup's rim then stands in
@@ -515,7 +515,7 @@ function writeExtra(
 				scaledTo = to;
 				const span = Math.max(1e-6, to - from);
 				const bump = (h: number): number =>
-					h >= from && h <= to ? 1 + 0.18 * Math.abs(sin((Math.PI * rows * (h - from)) / span)) : 1;
+					h >= from && h <= to ? 1 + 0.1 * Math.abs(sin((Math.PI * rows * (h - from)) / span)) : 1;
 				const across = (a: [number, number], b: [number, number], h: number): number =>
 					b[1] > a[1] ? a[0] + ((h - a[1]) / (b[1] - a[1])) * (b[0] - a[0]) : b[0];
 				const fine: [number, number][] = [];
@@ -528,7 +528,7 @@ function writeExtra(
 						const h = from + (span * (row + 0.5)) / rows;
 						if (h >= point[1]) break;
 						const prev = (profile[Math.max(0, k - 1)] as [number, number]) ?? point;
-						fine.push([across(prev, point, h) * 1.18, h]);
+						fine.push([across(prev, point, h) * 1.1, h]);
 					}
 					fine.push([point[0] * bump(point[1]), point[1]]);
 				}
