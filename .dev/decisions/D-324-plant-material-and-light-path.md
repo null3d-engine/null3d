@@ -100,7 +100,7 @@ Measured on the oak, seed 11, variant 0, stills and turn (colour steps, CIEDE200
 
 | Leaf transmittance (red channel) | Crown 01 | Crown 02 | Cluster still 11 | Oak turn |
 | --- | --- | --- | --- | --- |
-| 0.091 (kept, `873f6f393`) | 8.5 | 6.8 | 2.4 | 3.4 |
+| 0.091 (kept, `4cb4659f6`) | 9.3 | 7.8 | 2.5 | 3.4 |
 | about 0.15 | 2.6 | 1.6 | 9.4 | not measured |
 | 0.238 (reverted) | 1.9 | 3.3 | 16.0 to 19.4 | 8.7 |
 
@@ -108,12 +108,12 @@ The kept record value is `[0.091, 0.195, 0.0195]`, which is 1.3 times the earlie
 `[0.07, 0.15, 0.015]`; the table gives its red channel. The raise answers the crown's grain, which
 crowds the sprays at the limb ends and so darkens the crown. Measured on its own, before the bark
 work, the raise took the two crowns from 9.7 and 7.8 to 8.3 and 6.5. On the current base the raise
-and the crowded sprays act together, so the two views read 8.5 and 6.8 there. The leaf-face stills
+and the crowd act together, and the larger leaf since then adds about a step. The leaf-face stills
 use the copy-stand light, which has no light behind the leaf, so they read 2.3 and 2.4 on both faces
 (`24` and `25`) at every setting.
 
-**Limit.** The record keeps its transmittance. The crown reads about 8 steps at `01` and 7 at `02`;
-the leaf faces read 2.3, the cluster 2.4 and the turn 3.4. Closing the crown to 3 costs the cluster
+**Limit.** The record keeps its transmittance. The crown reads about 9 steps at `01` and 8 at `02`;
+the leaf faces read 2.3, the cluster 2.5 and the turn 3.4. Closing the crown to 3 costs the cluster
 up to 19.4 and the turn 8.7, which is refused. This is a stated limit, not open work.
 
 ## Decision
