@@ -46,6 +46,7 @@ const Purpose = {
 	Azimuth: 6,
 	Spacing: 7,
 	Season: 8,
+	Clump: 9,
 } as const;
 
 /** The share of shoot rows that the coarsest plant drops. */
@@ -136,6 +137,37 @@ interface Row {
 	phase: number;
 }
 
+/**
+ * A smooth value noise at a point, 0 to 1: hashed at the corners of a unit cell and eased between
+ * them, so it makes patches of one cell across rather than the speckle of a per-point hash.
+ */
+function latticeNoise(
+	seed: number,
+	salt: number,
+	purpose: number,
+	x: number,
+	y: number,
+	z: number,
+): number {
+	const ix = Math.floor(x);
+	const iy = Math.floor(y);
+	const iz = Math.floor(z);
+	const ease = (t: number) => t * t * (3 - 2 * t);
+	const fx = ease(x - ix);
+	const fy = ease(y - iy);
+	const fz = ease(z - iz);
+	let value = 0;
+	for (let dz = 0; dz < 2; dz++)
+		for (let dy = 0; dy < 2; dy++)
+			for (let dx = 0; dx < 2; dx++) {
+				const weight = (dx ? fx : 1 - fx) * (dy ? fy : 1 - fy) * (dz ? fz : 1 - fz);
+				if (weight === 0) continue;
+				const corner = ((ix + dx) * 7919 + (iy + dy)) * 7919 + (iz + dz);
+				value += weight * unitAt(seed, salt, purpose, corner);
+			}
+	return value;
+}
+
 /** The space-filling key of a point inside a box: its axes' bits interleaved, high bits first. */
 function spaceKey(p: Readonly<Vector3>, min: readonly number[], side: number): number {
 	const max = 2 ** ORDER_BITS - 1;
@@ -184,6 +216,7 @@ export function placeShoots(input: DressInput): ShootRows {
 	const up: Vector3 = [0, 1, 0];
 	const frame = [0, 0, 0, 1];
 	const roll = [0, 0, 0, 1];
+	const clump = shoots.placement.clump;
 	for (const b of order) {
 		const axis = buds.axis[b] as number;
 		const kind = buds.kind[b] as number;
@@ -225,7 +258,24 @@ export function placeShoots(input: DressInput): ShootRows {
 			];
 		else from = [...at];
 		const stretch = length3(at[0] - from[0], at[1] - from[1], at[2] - from[2]);
-		const expected = curveAt(shoots.placement.perMetre, vigor) * stretch;
+		let expected = curveAt(shoots.placement.perMetre, vigor) * stretch;
+		// The shoots gather into masses about a patch of the crown, with a thinner run round each
+		// mass, so the crown reads as rosettes with sky and wood between rather than an even mesh of
+		// leaves. The patches are spaced in space, not along the axes, so a mass is the same size
+		// whatever the axis it sits on.
+		if (clump) {
+			const depth = Math.min(1, Math.max(0, clump.depth));
+			const spacing = Math.max(1e-3, clump.spacing);
+			const noise = latticeNoise(
+				seed,
+				salt,
+				variant * 64 + Purpose.Clump,
+				at[0] / spacing,
+				at[1] / spacing,
+				at[2] / spacing,
+			);
+			expected *= Math.max(0, 1 + depth * (2 * noise - 1));
+		}
 		// The outermost bud of an axis carries a rosette even where its vigor and stretch give none,
 		// whether it is the axis's terminal bud or the live shoot that replaced a lost one: a twig
 		// end bears leaves at the tip, so no bare spray stands past the crown's leaves.

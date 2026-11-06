@@ -809,6 +809,18 @@ export interface ShootSpec {
 		readonly skyward: number;
 		/** A shoot's scale. */
 		readonly scale: Spread;
+		/**
+		 * Gathers the shoots into masses along each axis, with a thinner run between them, so the
+		 * crown is built of clumps with sky and wood between rather than an even mesh of leaves.
+		 * Absent, the shoots stand evenly spaced. The masses of neighbouring axes do not line up,
+		 * so the crown's clumps are not rows.
+		 */
+		readonly clump?: {
+			/** Metres from one mass of shoots to the next along an axis. */
+			readonly spacing: number;
+			/** How far the shoots thin between masses, 0 even and 1 bare. */
+			readonly depth: number;
+		};
 	};
 }
 
