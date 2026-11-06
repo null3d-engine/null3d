@@ -69,6 +69,10 @@ const AWAY: V3 = [20000, 0, 0];
 const FAR = 9000;
 /** The share of the frame left clear round a fitted plant. */
 const MARGIN = 0.08;
+/** Metres from an acorn to the fruit of its own stalk, so a view of the fruit frames that cluster. */
+const FRUIT_REACH = 0.2;
+/** The share of the frame that the reference's close-up gives its acorn cluster. */
+const FRUIT_SHARE = 0.73;
 /** Stops of switch bias that carry a forced nearest level's shoots past every far plane. */
 const FORCED_NEAR_STOPS = 20;
 /** The most cells a sheet draws: the scene's views less the camera's own. */
@@ -434,9 +438,44 @@ export default defineSketch(async (ctx) => {
 						}
 					}
 					if (acorn) {
+						// The stalk and every acorn it carries set the frame, at the share of it the
+						// reference's own close-up gives the cluster.
+						const min: V3 = [...acorn];
+						const max: V3 = [...acorn];
+						for (const part of main.levels[0]?.parts ?? []) {
+							if (part.name !== 'extras') continue;
+							const p = partPositions(part, kit.box);
+							for (let i = 0; i < p.length; i += 3) {
+								const at: V3 = [p[i] as number, p[i + 1] as number, p[i + 2] as number];
+								const apart = Math.hypot(at[0] - acorn[0], at[1] - acorn[1], at[2] - acorn[2]);
+								if (apart > FRUIT_REACH) continue;
+								for (let k = 0; k < 3; k++) {
+									min[k] = Math.min(min[k] as number, at[k] as number);
+									max[k] = Math.max(max[k] as number, at[k] as number);
+								}
+							}
+						}
+						const centre: V3 = [
+							((min[0] as number) + (max[0] as number)) / 2,
+							((min[1] as number) + (max[1] as number)) / 2,
+							((min[2] as number) + (max[2] as number)) / 2,
+						];
+						const zoom = (1 - 2 * MARGIN) / FRUIT_SHARE;
+						const box = {
+							min: [
+								centre[0] + ((min[0] as number) - centre[0]) * zoom,
+								centre[1] + ((min[1] as number) - centre[1]) * zoom,
+								centre[2] + ((min[2] as number) - centre[2]) * zoom,
+							] as V3,
+							max: [
+								centre[0] + ((max[0] as number) - centre[0]) * zoom,
+								centre[1] + ((max[1] as number) - centre[1]) * zoom,
+								centre[2] + ((max[2] as number) - centre[2]) * zoom,
+							] as V3,
+						};
 						const outward = normalize([acorn[0] - foot[0], 0, acorn[2] - foot[2]]);
 						const back = Math.atan2(outward[0], outward[2]);
-						return { ...orbit(acorn, 0.55, e, back, fov), near: 0.02 };
+						return { ...fit(box, back, e, aspect, fov), near: 0.01 };
 					}
 				}
 				const tip = sunlitTip(skeleton, out, BUD_TERMINAL);
