@@ -84,6 +84,9 @@ Each of these is a fail on its own, and each is a fault an earlier standard let 
 - Limbs that bend or fork differently from the reference's.
 - Cards visible as cards at close range, or a branch that reads as a bundle rather than a limb.
 - A trunk of the wrong proportion or taper, or a bark figure that is a pattern rather than bark.
+- A leaf, a bud or a shoot twice the size the species has. A record value moved to win an outline
+  or color figure can leave a plant that scores well and is not the plant. Check the value against
+  the species' own size in the reference's leaf picture, not against the figure it improved.
 - A part that hangs from nothing. A fruit, a flower or a catkin must meet the wood it grows from, in
   the record and in the picture. A part that floats has a sound outline, color and edge mixture, so
   no single figure catches it: the reviewer looks at what it is attached to and says so.
