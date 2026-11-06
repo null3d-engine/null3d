@@ -79,7 +79,7 @@ export const record: Species = {
 				share: 0.3,
 				years: 1,
 				length: { mean: 0.14, spread: 0.02 },
-				nodes: { mean: 8, spread: 0.5 },
+				nodes: { mean: 10, spread: 0.5 },
 				internode: ROSETTE,
 				leafScale: [
 					[0, 0.85],
