@@ -124,7 +124,7 @@ export const record: Species = {
 				length: { mean: 1.15, spread: 0.15 },
 				nodes: { mean: 5, spread: 1 },
 				internode: ROSETTE,
-				stem: { radius: [0.013, 0.005] },
+				stem: { radius: [0.018, 0.007] },
 				lateral: 60,
 				leafScale: [
 					[0, 0.8],
@@ -207,6 +207,7 @@ export const record: Species = {
 			at: 'shoot-tip',
 			share: 0.0475,
 			count: { mean: 3, spread: 0 },
+			tipShare: 0.95,
 			seasons: ['summer', 'autumn'],
 			shape: {
 				lathe: [

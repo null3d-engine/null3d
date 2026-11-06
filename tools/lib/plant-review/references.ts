@@ -110,7 +110,12 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			slot: { view: 'below', elevation: 80, framed: false },
 		},
 		{ test: (n) => n.includes('inside'), slot: { view: 'inside', framed: false } },
-		{ test: (n) => /(crown|clump)-(outside|edge)/.test(n), slot: { view: 'crown', framed: false } },
+		{
+			// The crown's outer surface: a limb running across the frame with its rosettes against the
+			// sky, at the span a photograph of that surface covers.
+			test: (n) => /(crown|clump)-(outside|edge)/.test(n),
+			slot: { view: 'limb', query: { span: 1.5, thin: 0.06 }, framed: false },
+		},
 		{
 			test: (n) => n.includes('limb-leaving') || n.includes('culm-base'),
 			slot: { view: 'junction', framed: false },
@@ -1147,11 +1152,24 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 		const left = spans[y * 2] as number;
 		return left < 0 ? 0 : (spans[y * 2 + 1] as number) - left + 1;
 	};
-	const low: number[] = [];
-	for (let y = box.bottom; y > box.bottom - Math.max(2, Math.round(tall * 0.06)); y--)
-		low.push(width(y));
-	low.sort((a, b) => a - b);
-	const trunk = low[low.length >> 1] ?? 0;
+	// The trunk's width is the narrowest median of the lowest bands: a buttressed foot widens the
+	// rows at the ground, and a low crown widens the rows above it, so the stem's own width lies in
+	// the band between the two.
+	let trunk = Number.POSITIVE_INFINITY;
+	for (const [from, to] of [
+		[0, 0.06],
+		[0.06, 0.12],
+		[0.12, 0.18],
+	] as const) {
+		const low: number[] = [];
+		const first = box.bottom - Math.round(tall * from);
+		const last = box.bottom - Math.max(2, Math.round(tall * to));
+		for (let y = first; y > last; y--) low.push(width(y));
+		low.sort((a, b) => a - b);
+		const median = low[low.length >> 1];
+		if (median !== undefined) trunk = Math.min(trunk, median);
+	}
+	if (!Number.isFinite(trunk)) trunk = 0;
 	let widest = 0;
 	for (let y = box.top; y <= box.bottom; y++) widest = Math.max(widest, width(y));
 	const limit = Math.max(trunk * 2.5, widest * 0.12);
