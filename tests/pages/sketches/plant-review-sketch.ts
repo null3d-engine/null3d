@@ -75,6 +75,8 @@ const MARGIN = 0.08;
 const FRUIT_REACH = 0.2;
 /** The share of the frame that the reference's close-up gives its acorn cluster. */
 const FRUIT_SHARE = 0.73;
+/** Metres around a fruit within which foliage counts as holding it. */
+const FRUIT_ENCLOSED = 0.7;
 /** Stops of switch bias that carry a forced nearest level's shoots past every far plane. */
 const FORCED_NEAR_STOPS = 20;
 /** The most cells a sheet draws: the scene's views less the camera's own. */
@@ -430,13 +432,30 @@ export default defineSketch(async (ctx) => {
 				// A view of the fruit goes to the highest acorn the plant carries rather than to a tip
 				// that may stand bare; without fruit, or with none this season, it goes to a sunlit tip.
 				if (QUERY.fruit) {
-					let acorn: V3 | undefined;
+					// A fruit must hang where the picture shows what holds it, so the view takes the
+					// acorn with the most foliage around it rather than the highest one, which may
+					// stand at a bare crown edge against open sky.
+					const fruits: V3[] = [];
+					const leaves: V3[] = [];
 					for (const part of main.levels[0]?.parts ?? []) {
-						if (part.name !== 'extras') continue;
+						if (part.name !== 'extras' && part.name !== 'foliage') continue;
 						const p = partPositions(part, kit.box);
-						for (let i = 0; i < p.length; i += 3) {
-							const at: V3 = [p[i] as number, p[i + 1] as number, p[i + 2] as number];
-							if (!acorn || at[1] > acorn[1]) acorn = at;
+						const stride = part.name === 'extras' ? 24 : 16;
+						const into = part.name === 'extras' ? fruits : leaves;
+						for (let i = 0; i < p.length; i += 3 * stride)
+							into.push([p[i] as number, p[i + 1] as number, p[i + 2] as number]);
+					}
+					let acorn: V3 | undefined;
+					let best = Number.NEGATIVE_INFINITY;
+					for (const at of fruits) {
+						let near = 0;
+						for (const leaf of leaves)
+							if (Math.hypot(leaf[0] - at[0], leaf[1] - at[1], leaf[2] - at[2]) < FRUIT_ENCLOSED)
+								near++;
+						const score = near * 1000 + at[1];
+						if (score > best) {
+							best = score;
+							acorn = at;
 						}
 					}
 					if (acorn) {
