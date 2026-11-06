@@ -298,8 +298,8 @@ export const record: Species = {
 	seedSalt: 1121298234,
 	roundBand,
 	cuttings: {
-		branch: { shoot: 'long', pick: 1 },
-		subbranch: { shoot: 'long' },
-		cluster: { shoot: 'short' },
+		branch: { shoot: 'spray' },
+		subbranch: { shoot: 'long', pick: 1 },
+		cluster: { shoot: 'long' },
 	},
 };
