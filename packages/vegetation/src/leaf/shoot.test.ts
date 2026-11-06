@@ -3,7 +3,7 @@
 // shoot, shade inside the shoot, and rows on the bud sites that turn toward the sky, keep the
 // record's density and grow the same bytes from the same seed.
 import { describe, expect, it } from 'bun:test';
-import { quatRotate } from '../core/math';
+import { cross3, normalize3, quatRotate } from '../core/math';
 import { placeholderSkeleton } from '../core/placeholder';
 import type { Phyllotaxis, Species } from '../core/record';
 import { DETAILS } from '../core/types';
@@ -225,15 +225,57 @@ describe('the shoot prototypes', () => {
 
 	it("opens a lit shoot's leaves into a fan by the skyward share", () => {
 		// How far the leaves point toward the sky side or away from it, on average: a fan lies across.
+		// Leaves along a shoot take the fan; a crowded tip takes a rosette instead, so this record
+		// spaces its leaves at the shoot's own internodes.
+		const shoots = record.shoots as NonNullable<typeof record.shoots>;
+		const even = { ...shoots, classes: shoots.classes.map((c) => ({ ...c, internode: 1 })) };
 		const lift = (skyward: number) => {
-			const shoots = record.shoots as NonNullable<typeof record.shoots>;
-			const lit = { ...record, shoots: { ...shoots, placement: { ...shoots.placement, skyward } } };
+			const lit = { ...record, shoots: { ...even, placement: { ...shoots.placement, skyward } } };
 			const plan = planShoot(lit, 0, 1);
 			let sum = 0;
 			for (const leaf of plan.leaves) sum += Math.abs(leaf.direction[2]);
 			return sum / plan.leaves.length;
 		};
 		expect(lift(0.9)).toBeLessThan(lift(0) * 0.5);
+	});
+
+	it('gives a class its own stem girth where the record names one', () => {
+		const shoots = record.shoots as NonNullable<typeof record.shoots>;
+		const thick = {
+			...record,
+			shoots: {
+				...shoots,
+				classes: shoots.classes.map((c, k) =>
+					k === 0 ? { ...c, stem: { radius: [0.02, 0.01] as const } } : c,
+				),
+			},
+		};
+		const own = planShoot(thick, 0, 0);
+		expect(own.axes[0]?.[0]?.radius).toBeCloseTo(0.02, 6);
+		const plain = planShoot(record, 0, 0);
+		expect(plain.axes[0]?.[0]?.radius).toBeCloseTo(shoots.stem.radius[0], 6);
+	});
+
+	it('spreads a crowded tip round its stem rather than into one plane', () => {
+		const plan = planShoot(record, 0, 1);
+		const tipAlong = Math.max(...plan.leaves.map((leaf) => leaf.along));
+		const tip = plan.leaves.filter((leaf) => leaf.along > tipAlong * 0.75);
+		expect(tip.length).toBeGreaterThanOrEqual(5);
+		// Every tip leaf's turn round the first one's stem axis: a rosette fills the whole turn.
+		const frame = tip[0] as PlannedLeaf;
+		const side = normalize3(cross3(frame.stem, frame.sky, [0, 0, 0]));
+		const angles = tip
+			.map((leaf) => {
+				const d = leaf.direction;
+				const x = d[0] * side[0] + d[1] * side[1] + d[2] * side[2];
+				const y = d[0] * frame.sky[0] + d[1] * frame.sky[1] + d[2] * frame.sky[2];
+				return (Math.atan2(y, x) * 180) / Math.PI;
+			})
+			.sort((a, b) => a - b);
+		let widest = (angles[0] as number) + 360 - (angles[angles.length - 1] as number);
+		for (let k = 1; k < angles.length; k++)
+			widest = Math.max(widest, (angles[k] as number) - (angles[k - 1] as number));
+		expect(widest).toBeLessThan(120);
 	});
 
 	it('turns leaves to face the sky side', () => {

@@ -164,6 +164,51 @@ describe('the extras', () => {
 		expect(extrasMesh(dressed(acorned, 'summer'), 0)).toBeDefined();
 	});
 
+	it('keeps the scale bumps inside the range the shape names', () => {
+		// A plain column with four scale rows over its first fifth: below that the profile is smooth.
+		const ringed: ExtraSpec = {
+			...ACORN,
+			share: 1,
+			shape: {
+				lathe: [
+					[0.01, 0],
+					[0.01, 0.05],
+					[0.01, 0.1],
+				],
+				scales: 4,
+				scaled: [0, 0.02],
+			},
+		};
+		const mesh = extrasMesh(dressed(oakRecord({ extras: [ringed] }), 'summer'), 0);
+		if (!mesh) throw new Error('no extras');
+		// Each profile row turns into one ring of nine vertices, and the four scale rows add one
+		// ring each: seven rings for the first extra.
+		const perRing = 9;
+		const rings = 3 + 4;
+		let bumped = 0;
+		let base: number | undefined;
+		for (let ring = 0; ring < rings; ring++) {
+			const first = ring * perRing;
+			const centre = [0, 0, 0];
+			for (let j = 0; j < perRing - 1; j++)
+				for (let axis = 0; axis < 3; axis++)
+					centre[axis] =
+						(centre[axis] as number) +
+						(mesh.positions[(first + j) * 3 + axis] as number) / (perRing - 1);
+			const radius = Math.hypot(
+				(mesh.positions[first * 3] as number) - (centre[0] as number),
+				(mesh.positions[first * 3 + 1] as number) - (centre[1] as number),
+				(mesh.positions[first * 3 + 2] as number) - (centre[2] as number),
+			);
+			base ??= centre[1] as number;
+			const height = Math.abs((centre[1] as number) - base);
+			// The acorn hangs straight down, so height along the lathe is the drop from its first ring.
+			if (height > 0.03) expect(radius).toBeCloseTo(0.01, 4);
+			else if (radius > 0.0105) bumped++;
+		}
+		expect(bumped).toBe(4);
+	});
+
 	it('grows the same extras from the same seed', () => {
 		const a = extrasMesh(dressed(record, 'summer'), 0);
 		const b = extrasMesh(dressed(record, 'summer'), 0);

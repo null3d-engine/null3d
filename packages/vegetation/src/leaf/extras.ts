@@ -191,27 +191,31 @@ function writeExtra(
 		let profile: [number, number][];
 		if ('lathe' in shape) {
 			profile = shape.lathe.map(([radius, height]) => [radius, height]);
-			// Scales: rings of bumps up a cone, one ring per scale row.
+			// Scales: rings of bumps over a cone's or a cup's own part of the profile, one ring a
+			// scale row. The profile's own points keep the shape; the rows add rings between them.
 			const rows = shape.scales ?? 0;
 			if (rows > 0 && profile.length > 1) {
 				const height = (profile[profile.length - 1] as [number, number])[1];
+				const from = shape.scaled?.[0] ?? 0;
+				const to = Math.min(height, shape.scaled?.[1] ?? height);
+				const span = Math.max(1e-6, to - from);
+				const bump = (h: number): number =>
+					h >= from && h <= to ? 1 + 0.12 * Math.abs(sin((Math.PI * rows * (h - from)) / span)) : 1;
+				const across = (a: [number, number], b: [number, number], h: number): number =>
+					b[1] > a[1] ? a[0] + ((h - a[1]) / (b[1] - a[1])) * (b[0] - a[0]) : b[0];
 				const fine: [number, number][] = [];
-				const steps = Math.max(profile.length, Math.min(24, rows * 2));
-				for (let s = 0; s <= steps; s++) {
-					const h = (height * s) / steps;
-					let radius = 0;
-					for (let k = 1; k < profile.length; k++) {
-						const [r0, h0] = profile[k - 1] as [number, number];
-						const [r1, h1] = profile[k] as [number, number];
-						if (h <= h1 || k === profile.length - 1) {
-							radius = h1 > h0 ? r0 + ((h - h0) / (h1 - h0)) * (r1 - r0) : r1;
-							break;
-						}
+				let row = 0;
+				for (let k = 0; k < profile.length; k++) {
+					const point = profile[k] as [number, number];
+					// One ring at the crest of each scale row, between the profile's own points so
+					// that its shape stays as drawn.
+					for (; row < rows; row++) {
+						const h = from + (span * (row + 0.5)) / rows;
+						if (h >= point[1]) break;
+						const prev = (profile[Math.max(0, k - 1)] as [number, number]) ?? point;
+						fine.push([across(prev, point, h) * 1.12, h]);
 					}
-					fine.push([
-						radius * (1 + 0.12 * Math.abs(sin((Math.PI * rows * h) / Math.max(height, 1e-6)))),
-						h,
-					]);
+					fine.push([point[0] * bump(point[1]), point[1]]);
 				}
 				profile = fine;
 			}
