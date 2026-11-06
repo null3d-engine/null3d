@@ -36,6 +36,8 @@ const BENT_UP = 0x88;
 const TROPISM_LIMIT = 30;
 /** Bits per axis of the space-filling key. */
 const ORDER_BITS = 10;
+/** The share of an axis's length at whose start the shade-prune line begins to loosen toward its tip. */
+const TIP_OPEN = 0.25;
 
 /** Purposes of the instancer's hash keys, so no two draws share one. */
 const Purpose = {
@@ -169,6 +171,11 @@ function latticeNoise(
 	return value;
 }
 
+/** How far the shade-prune line has loosened at a share of an axis's length: none before the last stretch, all of it at the tip. */
+function tipOpenness(share: number): number {
+	return Math.min(1, Math.max(0, (share - (1 - TIP_OPEN)) / TIP_OPEN));
+}
+
 /**
  * Metres along its axis to each node, and each axis's own length: how far a shoot stands from the
  * end of the axis that carries it, which is what the tip bias weights by.
@@ -265,7 +272,8 @@ export function placeShoots(input: DressInput): ShootRows {
 	const roll = [0, 0, 0, 1];
 	const clump = shoots.placement.clump;
 	const bias = Math.min(1, Math.max(0, shoots.placement.tipBias ?? 0));
-	const reach = bias > 0 ? axisReach(skeleton) : undefined;
+	const prune = Math.min(1, Math.max(0, shoots.placement.shadePrune));
+	const reach = bias > 0 || prune > 0 ? axisReach(skeleton) : undefined;
 	for (const b of order) {
 		const axis = buds.axis[b] as number;
 		const kind = buds.kind[b] as number;
@@ -292,7 +300,11 @@ export function placeShoots(input: DressInput): ShootRows {
 		// A bud at its axis's tip is the end of a branch, in the open sky the shade-prune line reads as
 		// darkness inside the crown: it keeps its shoot, so no bare tip stands past the leaves.
 		const atTip = host >= 0 && (skeleton.axes.last[host] as number) === node;
-		if (!atTip && (buds.light[b] as number) < shoots.placement.shadePrune) continue;
+		// The line loosens along the last stretch of an axis, where the shoot stands in the open. The
+		// tip's rosette then joins the shoots behind it, instead of hanging alone past a pruned run.
+		const end = reach ? (reach.ends[axis] as number) : 0;
+		const near = reach && end > 1e-6 ? tipOpenness((reach.along[node] as number) / end) : 0;
+		if (!atTip && (buds.light[b] as number) < prune * (1 - near)) continue;
 		const vigor = buds.vigor[b] as number;
 		// The stretch this bud serves: back to the bud before it on its axis, or to its node's parent.
 		const parentNode = skeleton.parent[node] as number;
