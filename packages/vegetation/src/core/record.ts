@@ -1259,6 +1259,12 @@ export type ExtraShape =
 			 * hang from its end, as an oak's acorns fork from one peduncle.
 			 */
 			readonly stalk?: number;
+			/**
+			 * Metres of each copy's own footstalk from the shared stalk's end. A site that gives
+			 * one splays its copies on them, so their bodies clear one another: an oak's acorns
+			 * stand on short pedicels below the fork.
+			 */
+			readonly pedicel?: number;
 	  }
 	| { readonly petals: number; readonly radius: number; readonly cup: number }
 	| { readonly spines: number; readonly length: number; readonly spread: number }

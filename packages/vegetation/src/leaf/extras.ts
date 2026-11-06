@@ -36,7 +36,7 @@ import { spreadAt, spreadMax } from '../core/types';
 import { crownSkyAt } from '../crown/visibility';
 import type { MeshInput, MeshLevel } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
-import { lathe, MeshWriter, sideAxes } from './writer';
+import { lathe, MeshWriter, SURFACE_STEM, sideAxes } from './writer';
 
 /** Faces round an extra by level; the thinned level draws the fewest. */
 const SIDES: Readonly<Record<MeshLevel, number>> = { 0: 8, 1: 5, 2: 4 };
@@ -66,29 +66,161 @@ interface Site {
 	sky: number;
 }
 
-/** A prototype's farthest point in its own space, which is where its drawn tip ends. */
-const tips = new WeakMap<object, Vector3>();
+/** A shoot's wood tip: a point on its stem, and the way the stem runs there. */
+interface WoodTip {
+	/** The point on the stem's axis, in prototype space. */
+	readonly at: Vector3;
+	/** The stem's outward direction at that point. */
+	readonly out: Vector3;
+}
 
-function tipOf(prototype: ShootPrototype): Vector3 {
-	const known = tips.get(prototype.tiers[0]);
-	if (known) return known;
-	const points = prototype.tiers[0].positions;
-	const out: Vector3 = [0, 0, 0];
+/** One ring of a stem: its centre on the axis, and its point along the shoot. */
+interface StemRing {
+	readonly at: Vector3;
+	/** The bend byte, which orders the rings along the shoot. */
+	readonly bend: number;
+}
+
+/** Each prototype's wood tip, by the share of the way in from it. */
+const tips = new WeakMap<object, { share: number; tip: WoodTip }>();
+
+/** Metres within which the vertices of one stem ring stand of each other: widest at a thick base. */
+const RING_SPAN = 0.05;
+
+/** The centre of a stem ring: the vertices that share `bend` and stand near a vertex of it. */
+function ringCentre(
+	points: ArrayLike<number>,
+	bytes: ArrayLike<number>,
+	from: number,
+	bend: number,
+): Vector3 {
+	const ring: Vector3[] = [];
+	for (let i = 0; i < points.length; i += 3) {
+		if ((bytes[(i / 3) * 4 + 2] as number) !== SURFACE_STEM) continue;
+		if ((bytes[(i / 3) * 4] as number) !== bend) continue;
+		const x = points[i] as number;
+		const y = points[i + 1] as number;
+		const z = points[i + 2] as number;
+		const dx = x - (points[from] as number);
+		const dy = y - (points[from + 1] as number);
+		const dz = z - (points[from + 2] as number);
+		if (dx * dx + dy * dy + dz * dz > RING_SPAN * RING_SPAN) continue;
+		// The tube's seam repeats its first vertex at the end of each ring.
+		if (
+			ring.some(
+				(p) => Math.abs(p[0] - x) < 1e-6 && Math.abs(p[1] - y) < 1e-6 && Math.abs(p[2] - z) < 1e-6,
+			)
+		)
+			continue;
+		ring.push([x, y, z]);
+	}
+	const centre: Vector3 = [0, 0, 0];
+	for (const p of ring) {
+		centre[0] += p[0] / ring.length;
+		centre[1] += p[1] / ring.length;
+		centre[2] += p[2] / ring.length;
+	}
+	return centre;
+}
+
+/** The stem ring behind a point on the stem: the nearest wood on a smaller bend. */
+function ringBehind(
+	points: ArrayLike<number>,
+	bytes: ArrayLike<number>,
+	at: Readonly<Vector3>,
+	bend: number,
+): StemRing | undefined {
+	let near = Number.POSITIVE_INFINITY;
+	let found = -1;
+	let foundBend = -1;
+	for (let i = 0; i < points.length; i += 3) {
+		if ((bytes[(i / 3) * 4 + 2] as number) !== SURFACE_STEM) continue;
+		const b = bytes[(i / 3) * 4] as number;
+		if (b >= bend) continue;
+		const dx = (points[i] as number) - at[0];
+		const dy = (points[i + 1] as number) - at[1];
+		const dz = (points[i + 2] as number) - at[2];
+		const away = dx * dx + dy * dy + dz * dz;
+		if (away < near) {
+			near = away;
+			found = i;
+			foundBend = b;
+		}
+	}
+	if (found < 0) return undefined;
+	return { at: ringCentre(points, bytes, found, foundBend), bend: foundBend };
+}
+
+/** A direction from a point on the stem, away from the ring behind it. */
+function stemWay(from: Readonly<Vector3>, behind: Readonly<Vector3> | undefined): Vector3 {
+	// A stem too short to hold a second ring keeps the line from its base to its tip.
+	return behind
+		? normalize3([from[0] - behind[0], from[1] - behind[1], from[2] - behind[2]])
+		: normalize3([from[0], from[1], from[2]]);
+}
+
+/**
+ * Finds a point on a prototype's own stem near its tip, not on its leaves. A leaf reaches well
+ * past the twig it stands on, so a tip taken over the whole mesh hangs a fruit from a leaf, out of
+ * reach of any wood. The point is the centre of the stem's last ring and the `share` of the way
+ * back along the stem from it, and its direction follows the stem's own bend, so a stalk that
+ * reaches into the wood stays on the twig.
+ */
+function tipOf(prototype: ShootPrototype, share: number): WoodTip {
+	// The finest tier draws the same stem with the most rings, so a point a little way in from
+	// the tip follows every bend the drawn wood has.
+	const tier = prototype.tiers[3];
+	const known = tips.get(tier);
+	if (known && known.share === share) return known.tip;
+	const points = tier.positions;
+	const bytes = tier.colors;
+	const fallback: WoodTip = { at: [0, prototype.length * share, 0], out: [0, 1, 0] };
+	let far = -1;
 	let best = -1;
 	for (let i = 0; i < points.length; i += 3) {
+		if ((bytes[(i / 3) * 4 + 2] as number) !== SURFACE_STEM) continue;
 		const x = points[i] as number;
 		const y = points[i + 1] as number;
 		const z = points[i + 2] as number;
 		const away = x * x + y * y + z * z;
 		if (away > best) {
 			best = away;
-			out[0] = x;
-			out[1] = y;
-			out[2] = z;
+			far = i;
 		}
 	}
-	tips.set(prototype.tiers[0], out);
-	return out;
+	if (far < 0) {
+		tips.set(tier, { share, tip: fallback });
+		return fallback;
+	}
+	const top = ringCentre(points, bytes, far, bytes[(far / 3) * 4] as number);
+	let outer = top;
+	let behind = ringBehind(points, bytes, outer, bytes[(far / 3) * 4] as number);
+	let out = stemWay(outer, behind?.at);
+	let at = outer;
+	// The record's share is along the stem, so a point a little way in from the tip stays on the
+	// twig however the twig bends.
+	const target = Math.max(0, 1 - share) * prototype.length;
+	let walked = 0;
+	while (behind && walked < target) {
+		const step = length3(outer[0] - behind.at[0], outer[1] - behind.at[1], outer[2] - behind.at[2]);
+		if (walked + step >= target || step < 1e-9) {
+			const t = step > 1e-9 ? (target - walked) / step : 0;
+			at = [
+				outer[0] + (behind.at[0] - outer[0]) * t,
+				outer[1] + (behind.at[1] - outer[1]) * t,
+				outer[2] + (behind.at[2] - outer[2]) * t,
+			];
+			break;
+		}
+		walked += step;
+		outer = behind.at;
+		behind = ringBehind(points, bytes, outer, (behind as StemRing).bend);
+		out = stemWay(outer, behind?.at);
+		at = outer;
+	}
+	const tip: WoodTip = { at, out };
+	tips.set(tier, { share, tip });
+	return tip;
 }
 
 /** The sites of one extra in a dressed variant. */
@@ -102,17 +234,15 @@ function sitesOf(input: MeshInput, extra: ExtraSpec): Site[] {
 			const prototype = kit.prototypes[rows.prototype[r] as number];
 			if (!prototype) continue;
 			if (extra.at === 'spur' && prototype.class !== 'spur') continue;
-			const direction = quatRotate(rows.rotation, r * 4, up, [0, 0, 0]);
 			const scale = rows.scale[r] as number;
 			// A shoot bends, so its drawn tip is not on the straight line its base points along.
-			// Take the prototype's own tip, turned into the row's frame, so a part that hangs
-			// from the shoot meets the wood by the picture's own geometry.
+			// Take the prototype's own wood tip, turned into the row's frame, so a part that
+			// hangs from the shoot meets the wood by the picture's own geometry.
 			const along = Math.max(0, Math.min(1, extra.tipShare ?? 1));
-			const reach = quatRotate(rows.rotation, r * 4, tipOf(prototype), [0, 0, 0]);
-			const tip: Vector3 =
-				extra.at === 'shoot-tip'
-					? [reach[0] * along, reach[1] * along, reach[2] * along]
-					: [0, 0, 0];
+			const wood = extra.at === 'shoot-tip' ? tipOf(prototype, along) : undefined;
+			const direction = quatRotate(rows.rotation, r * 4, wood?.out ?? up, [0, 0, 0]);
+			const reach = quatRotate(rows.rotation, r * 4, wood?.at ?? ([0, 0, 0] as Vector3), [0, 0, 0]);
+			const tip: Vector3 = extra.at === 'shoot-tip' ? reach : [0, 0, 0];
 			out.push({
 				at: [
 					(rows.position[r * 3] as number) + tip[0] * scale,
@@ -227,6 +357,14 @@ function colourOf(site: Site, index: number): number[] {
  * beside its twig.
  */
 const STALK_OVERLAP = 0.02;
+/** Degrees a copy's own footstalk splays from the shared stalk at its fork. */
+const PEDICEL_SPLAY = 60;
+/** Degrees a body leans from straight down below its footstalk. */
+const NUT_LEAN = 25;
+/** Metres a footstalk reaches back into the shared stalk's end, so the two join. */
+const PEDICEL_ROOT = 0.003;
+/** Metres each footstalk stands above the last along the shared stalk, so the bodies stagger. */
+const PEDICEL_STAGGER = 0.01;
 
 /** Writes a thin shared stalk from a site along `down`, and gives back the point it reaches. */
 function writeStalk(
@@ -426,6 +564,11 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 				? Math.max(1, Math.round(spreadAt(extra.count, unitAt(input.seed, salt, purpose, s, 2))))
 				: 1;
 			const [side, other] = sideAxes(down, [0, 1, 0]);
+			// A copy with a footstalk of its own stands on it, clear of the others; copies without
+			// one lean apart from the fork itself.
+			const pedicel = 'lathe' in shape ? (shape.pedicel ?? 0) : 0;
+			const splay = radians(PEDICEL_SPLAY);
+			const nutLean = radians(NUT_LEAN);
 			// Copies from a shared stalk lean apart enough that their bodies clear one another below
 			// the fork; one that has no stalk carries them as close as a budding cluster.
 			const lean = radians(stalk > 0 ? 36 : 16);
@@ -436,6 +579,54 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 					side[1] * cos(azimuth) + other[1] * sin(azimuth),
 					side[2] * cos(azimuth) + other[2] * sin(azimuth),
 				];
+				if (pedicel > 0 && count > 1) {
+					const arm = normalize3([
+						down[0] * cos(splay) + outward[0] * sin(splay),
+						down[1] * cos(splay) + outward[1] * sin(splay),
+						down[2] * cos(splay) + outward[2] * sin(splay),
+					]);
+					// A thin footstalk roots in the shared stalk's end and reaches out to the body,
+					// which follows the footstalk's own line. Each copy roots a little further up
+					// the shared stalk, so two that share a line of sight still stand apart.
+					const rise = Math.min(k * PEDICEL_STAGGER, stalk * 0.5);
+					const root: Vector3 = [
+						from.at[0] - down[0] * rise,
+						from.at[1] - down[1] * rise,
+						from.at[2] - down[2] * rise,
+					];
+					const top: Vector3 = [
+						root[0] - arm[0] * PEDICEL_ROOT,
+						root[1] - arm[1] * PEDICEL_ROOT,
+						root[2] - arm[2] * PEDICEL_ROOT,
+					];
+					const end: Vector3 = [
+						root[0] + arm[0] * pedicel,
+						root[1] + arm[1] * pedicel,
+						root[2] + arm[2] * pedicel,
+					];
+					const axis = normalize3([end[0] - top[0], end[1] - top[1], end[2] - top[2]]);
+					const reach = length3(end[0] - top[0], end[1] - top[1], end[2] - top[2]);
+					const body = normalize3([
+						down[0] * cos(nutLean) + outward[0] * sin(nutLean),
+						down[1] * cos(nutLean) + outward[1] * sin(nutLean),
+						down[2] * cos(nutLean) + outward[2] * sin(nutLean),
+					]);
+					const first = mesh.vertices;
+					lathe(
+						mesh,
+						[
+							[0.0011, 0],
+							[0.0008, reach],
+						],
+						top,
+						axis,
+						STALK_SIDES,
+						colourOf(from, index),
+					);
+					for (let i = first; i < mesh.vertices; i++) mesh.uvs[i * 2] = 0;
+					writeExtra(mesh, extra, index, { ...from, at: end }, body, faces, azimuth);
+					continue;
+				}
 				const direction: Vector3 =
 					count > 1
 						? normalize3([

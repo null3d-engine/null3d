@@ -203,31 +203,37 @@ export const record: Species = {
 	extras: [
 		{
 			// The acorn on its long stalk, the peduncle that tells this oak from the sessile oak: three
-			// plump nuts on one stalk that forks, each in a deep cup of scale rows that holds its top
-			// third, the nut swelling smooth and round below the cup to a small point.
+			// plump nuts on one stalk that forks into short footstalks, each nut in a deep cup of scale
+			// rows that holds its top third, the nut swelling smooth below the cup to a small point.
 			kind: 'fruit',
 			at: 'shoot-tip',
 			share: 0.0475,
 			count: { mean: 3, spread: 0 },
-			tipShare: 0.95,
+			// The acorns stand on the internode below the leaves' rosette, where the twig shows, as
+			// the reference's peduncle does, not at the leafy tip.
+			tipShare: 0.8,
 			seasons: ['summer', 'autumn'],
 			shape: {
+				// The cup's scale rows cover the top third, its rim is the widest point, and the nut
+				// swells smooth below the rim to a small point.
 				lathe: [
-					[0.001, 0],
-					[0.001, 0.0095],
-					[0.0031, 0.0102],
-					[0.0058, 0.0117],
-					[0.0077, 0.014],
-					[0.007, 0.015],
-					[0.0065, 0.0165],
-					[0.0054, 0.0188],
-					[0.0031, 0.021],
+					[0.0012, 0],
+					[0.0034, 0.0016],
+					[0.0064, 0.0042],
+					[0.0075, 0.0068],
+					[0.0064, 0.0078],
+					[0.0072, 0.0108],
+					[0.0066, 0.014],
+					[0.005, 0.018],
+					[0.0024, 0.0205],
+					[0.001, 0.0215],
 					[0, 0.022],
 				],
 				sides: 14,
-				scales: 2,
-				scaled: [0.0095, 0.0138],
+				scales: 3,
+				scaled: [0, 0.0068],
 				stalk: 0.032,
+				pedicel: 0.012,
 			},
 			colour: [0.24, 0.1, 0.03],
 			hang: 180,
