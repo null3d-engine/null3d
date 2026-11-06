@@ -178,6 +178,56 @@ function boundsOf(asset: PlantAsset, kit: SpeciesKit): Bounds {
 }
 
 /**
+ * The camera that fills the frame with the points a piece actually draws, rather than with the
+ * corners of its box. A deep piece's corners stand well outside its own silhouette, so fitting the
+ * box leaves the piece small; fitting its points puts it in the frame as the reference does, which
+ * also keeps the thin wood that joins its parts from falling below a pixel.
+ */
+function fitPoints(
+	asset: PlantAsset,
+	kit: SpeciesKit,
+	turn: number,
+	elevation: number,
+	aspect: number,
+	fov: number,
+): View {
+	const points: number[] = [];
+	const min: V3 = [...asset.skeleton.bounds.min] as V3;
+	const max: V3 = [...asset.skeleton.bounds.max] as V3;
+	for (const level of asset.levels)
+		for (const part of level.parts) {
+			const p = partPositions(part, kit.box);
+			for (let i = 0; i < p.length; i++) points.push(p[i] as number);
+		}
+	if (points.length === 0)
+		return fit({ min: [...min] as V3, max: [...max] as V3 }, turn, elevation, aspect, fov);
+	for (let i = 0; i < points.length; i += 3)
+		for (let k = 0; k < 3; k++) {
+			min[k] = Math.min(min[k] as number, points[i + k] as number);
+			max[k] = Math.max(max[k] as number, points[i + k] as number);
+		}
+	const centre = scale(add(min, max), 0.5);
+	const back = orbit([0, 0, 0], 1, elevation, turn);
+	const forward = normalize(scale(back.position, -1));
+	const right = normalize(cross(forward, [0, 1, 0]));
+	const up = cross(right, forward);
+	const half = Math.tan((fov * DEG) / 2) * (1 - 2 * MARGIN);
+	let distance = 0.05;
+	for (let i = 0; i < points.length; i += 3) {
+		const d: V3 = [
+			(points[i] as number) - centre[0],
+			(points[i + 1] as number) - centre[1],
+			(points[i + 2] as number) - centre[2],
+		];
+		const across = Math.abs(d[0] * right[0] + d[1] * right[1] + d[2] * right[2]);
+		const tall = Math.abs(d[0] * up[0] + d[1] * up[1] + d[2] * up[2]);
+		const toward = -(d[0] * forward[0] + d[1] * forward[1] + d[2] * forward[2]);
+		distance = Math.max(distance, across / (half * aspect) + toward, tall / half + toward);
+	}
+	return orbit(centre, distance, elevation, turn, fov);
+}
+
+/**
  * The orbit that fits a box in the frame with a margin all round, at a turn and an elevation: the
  * box's corners seen across the view's right and up axes set the distance.
  */
