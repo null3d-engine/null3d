@@ -206,30 +206,31 @@ export const record: Species = {
 	},
 	extras: [
 		{
-			// The acorn of still 19: a small plump nut in a scaly cup that holds about its lower
-			// third, one to three on a short stalk.
+			// The acorn of still 19: a plump nut about two centimetres long in a shallow scalloped
+			// cup that holds its lower third, one to three on a short forking stalk.
 			kind: 'fruit',
 			at: 'shoot-tip',
-			share: 0.1,
-			count: { mean: 2, spread: 1 },
+			share: 0.06,
+			count: { mean: 3, spread: 0 },
 			seasons: ['summer', 'autumn'],
 			shape: {
 				lathe: [
 					[0.001, 0],
-					[0.001, 0.05],
-					[0.005, 0.055],
-					[0.01, 0.062],
-					[0.0095, 0.066],
-					[0.0072, 0.0675],
-					[0.0086, 0.073],
-					[0.0066, 0.079],
-					[0.0028, 0.083],
-					[0, 0.0845],
+					[0.001, 0.03],
+					[0.001, 0.0395],
+					[0.0031, 0.0402],
+					[0.0058, 0.0417],
+					[0.0077, 0.044],
+					[0.007, 0.045],
+					[0.0065, 0.0465],
+					[0.0054, 0.0488],
+					[0.0031, 0.051],
+					[0, 0.052],
 				],
-				scales: 3,
-				scaled: [0.055, 0.067],
+				scales: 2,
+				scaled: [0.0395, 0.0438],
 			},
-			colour: [0.2, 0.09, 0.03],
+			colour: [0.24, 0.1, 0.03],
 			hang: 180,
 		},
 	],
