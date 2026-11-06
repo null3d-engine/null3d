@@ -158,7 +158,7 @@ export const record: Species = {
 			// The reference's crown is denser than the curve alone gives: this is the dial, not a
 			// change of reach or part size. The low limbs now keep the foliage they carry below the
 			// bole's line, so the dial sits lower than it did when that foliage was missing.
-			density: 0.9,
+			density: 0.6,
 			shadePrune: 0.2,
 			skyward: 0.65,
 			scale: { mean: 1.4, spread: 0.15 },
