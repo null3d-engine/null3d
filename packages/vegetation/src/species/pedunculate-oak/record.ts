@@ -145,9 +145,7 @@ export const record: Species = {
 		stem: { radius: [0.0035, 0.0025], zigzag: 12 },
 		// The reference's own guide puts the cone near a fifteenth of a leaf; the species' buds run 3
 		// to 6 mm, so the record takes the top of that range rather than the bottom.
-		// The cone reads by its count, not its length: the bud is at the species' ceiling, so the
-		// cluster carries more buds rather than longer ones.
-		bud: { length: 0.006, width: 0.0035, tipCluster: 11, colour: [0.34, 0.2, 0.09] },
+		bud: { length: 0.006, width: 0.0035, tipCluster: 7, colour: [0.34, 0.2, 0.09] },
 		placement: {
 			perMetre: [
 				[0, 0.5],
@@ -268,11 +266,16 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			kitBytes: { low: 2_000_000, medium: 2_900_000, high: 5_300_000, ultra: 9_500_000 },
+			// Leaves stand on two years of a shoot's run, which puts a second year's cards into every
+			// prototype: the kit measures 5.61 MB at high and 10.65 MB at ultra. Each cap sits just
+			// above the measured figure.
+			kitBytes: { low: 2_000_000, medium: 3_100_000, high: 5_700_000, ultra: 10_800_000 },
 			// The fitted envelope widens the crown, and the wider crown grows about a seventh more
 			// leaf card; the thicker bole adds a little more. Each cap sits just above the first
 			// variant's measured figure at its tier: 7.94, 8.13, 8.34 and 8.56 MB.
-			variantBytes: { low: 8_200_000, medium: 8_400_000, high: 8_600_000, ultra: 8_800_000 },
+			// The two-year foliage also adds a second year's leaf card to each variant, which takes the
+			// largest of the first three to 9.73 MB at ultra; each cap sits just above its figure.
+			variantBytes: { low: 8_200_000, medium: 8_400_000, high: 9_800_000, ultra: 10_000_000 },
 			lod0Triangles: 2_500_000,
 			lod1Triangles: 150_000,
 			lod2Triangles: 30_000,

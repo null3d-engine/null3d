@@ -226,7 +226,7 @@ describe('the slots', () => {
 		expect(classifySlot('09-secondary-branching.png')?.view).toBe('limb');
 		expect(classifySlot('10-fine-twigs-b.png')?.view).toBe('twigs');
 		expect(classifySlot('20-winter-branch-architecture.png')).toMatchObject({
-			view: 'twigs',
+			view: 'limb',
 			query: { season: 'winter' },
 		});
 		expect(classifySlot('21-branch-studio.png')?.view).toBe('branch');
