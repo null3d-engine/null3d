@@ -13,6 +13,7 @@ export const PLANT_VIEWS = [
 	'junction',
 	'fork',
 	'twigs',
+	'limb',
 	'branch',
 	'subbranch',
 	'cluster',
@@ -148,6 +149,14 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		elevation: 0,
 		size: [960, 720],
 	},
+	limb: {
+		slots: [9, 20],
+		fov: 45,
+		background: 'sky-meadow',
+		sun: 'default',
+		elevation: -30,
+		size: [960, 720],
+	},
 	branch: {
 		slots: [21],
 		fov: 40,
@@ -230,7 +239,7 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		size: [720, 960],
 	},
 	skeleton: {
-		slots: [8, 9, 20],
+		slots: [],
 		fov: 38,
 		background: 'sky-meadow',
 		sun: 'default',
