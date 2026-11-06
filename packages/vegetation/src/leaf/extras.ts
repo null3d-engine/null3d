@@ -1,8 +1,9 @@
 // The extras: cones and fruit as lathe shapes, flowers as petal cups, thorns and cactus spines as
 // spine fans, and catkins, on the sites their record names, in the seasons it names. A share of the
-// matching sites carries one, chosen by hash; each hangs from its site's direction toward the ground
-// by the record's degrees. Shoot tips and nodes come from the shoot rows; old wood, areoles, the
-// crown's top, flower sites and the tips of flowering stems come from the skeleton's bud sites.
+// matching sites carries one or more, chosen by hash, and a record may give the count at a site;
+// each hangs from its site's direction toward the ground by the record's degrees. Shoot tips and
+// nodes come from the shoot rows; old wood, areoles, the crown's top, flower sites and the tips of
+// flowering stems come from the skeleton's bud sites.
 //
 // An extra's colour bytes hold its axis's wind record (high and low byte, global in the species'
 // table), its entry in the record's extras, which picks its colour from the plant material's header,
@@ -31,7 +32,7 @@ import {
 	type Vector3,
 } from '../core/math';
 import type { ExtraSpec } from '../core/record';
-import { spreadMax } from '../core/types';
+import { spreadAt, spreadMax } from '../core/types';
 import { crownSkyAt } from '../crown/visibility';
 import type { MeshInput, MeshLevel } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
@@ -319,7 +320,31 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 			site.sky = Math.round(
 				255 * Math.min(1, Math.max(0, crownSkyAt(input.crown, site.at[0], site.at[1], site.at[2]))),
 			);
-			writeExtra(mesh, extra, index, site, hung(site.direction, extra.hang), SIDES[level], turn);
+			const down = hung(site.direction, extra.hang);
+			// A site carries a cluster where the record gives a count: the copies hang from the one
+			// point, leaning apart round it, as an oak's acorns share a stalk.
+			const count = extra.count
+				? Math.max(1, Math.round(spreadAt(extra.count, unitAt(input.seed, salt, purpose, s, 2))))
+				: 1;
+			const [side, other] = sideAxes(down, [0, 1, 0]);
+			const lean = radians(16);
+			for (let k = 0; k < count; k++) {
+				const azimuth = turn + (2 * Math.PI * k) / count;
+				const outward: Vector3 = [
+					side[0] * cos(azimuth) + other[0] * sin(azimuth),
+					side[1] * cos(azimuth) + other[1] * sin(azimuth),
+					side[2] * cos(azimuth) + other[2] * sin(azimuth),
+				];
+				const direction: Vector3 =
+					count > 1
+						? normalize3([
+								down[0] * cos(lean) + outward[0] * sin(lean),
+								down[1] * cos(lean) + outward[1] * sin(lean),
+								down[2] * cos(lean) + outward[2] * sin(lean),
+							])
+						: down;
+				writeExtra(mesh, extra, index, site, direction, SIDES[level], azimuth);
+			}
 		});
 	});
 	return mesh.vertices > 0 ? mesh.finishMesh() : undefined;
