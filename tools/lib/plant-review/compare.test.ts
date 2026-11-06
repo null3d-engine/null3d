@@ -69,6 +69,45 @@ describe('the outline overlap', () => {
 	});
 });
 
+describe('the trunk column', () => {
+	/** A trunk with a crown, and a low limb that sweeps out and touches the trunk near the foot. */
+	function limbNearTheFoot(): PlantMask {
+		const width = 200;
+		const height = 200;
+		const mask = new Uint8Array(width * height);
+		const set = (x: number, y: number) => {
+			mask[y * width + x] = 1;
+		};
+		for (let y = 120; y < 196; y++) for (let x = 95; x <= 105; x++) set(x, y);
+		for (let y = 20; y < 120; y++) for (let x = 20; x <= 180; x++) set(x, y);
+		for (let y = 190; y < 196; y++) for (let x = 20; x < 95; x++) set(x, y);
+		const flat = {
+			coefficients: [
+				[0, 0, 0, 0, 0, 0],
+				[0, 0, 0, 0, 0, 0],
+				[0, 0, 0, 0, 0, 0],
+			],
+			noise: 1,
+			fit: 1,
+		};
+		return { width, height, mask, background: { horizon: null, sky: flat, plain: true } };
+	}
+
+	test('is the trunk even where a low limb touches it near the foot', () => {
+		const plant = limbNearTheFoot();
+		const box = boxOf(plant.mask, plant.width, plant.height);
+		expect(box).toBeDefined();
+		const anchor = anchorColumn(
+			plant.mask,
+			plant.width,
+			plant.height,
+			box as NonNullable<typeof box>,
+		);
+		expect(anchor).toBeGreaterThan(94);
+		expect(anchor).toBeLessThan(106);
+	});
+});
+
 describe('the turn alignment', () => {
 	/** The overlaps of a reference turn with a render turn that starts `start` frames on. */
 	function scores(k: number, n: number, start: number, direction: 1 | -1): number[][] {

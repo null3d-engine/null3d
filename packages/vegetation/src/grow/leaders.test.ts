@@ -2,6 +2,7 @@
 // line, and divides into a fork where the thick child leaves steeply; a grown oak keeps no cone where
 // an axis collapsed, no loop and a straight bole to its fork.
 import { describe, expect, it } from 'bun:test';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import {
 	AXIS_LIMB,
 	AXIS_STEM,
@@ -431,27 +432,31 @@ describe('sympodial leaders', () => {
 		expect(brokenForks(mitre(30))).toEqual([]);
 	});
 
-	it('grows an oak whose bole and crown follow stills 01, 03, 17 and 18', async () => {
-		const record = species.record;
-		await loadPlantCode(record);
-		for (let variant = 0; variant < 6; variant++) {
-			const led = leadOnThickest(
-				grower('self-organizing').grow({ record, seed: 11, variant, season: 'summer' }),
-			);
-			// Still 20: where a limb's line runs on into a child, it bends gently; a side branch that
-			// leaves wide is thin. Still 08: a thick limb may divide into two spreading arms.
-			expect(brokenForks(led)).toEqual([]);
-			const bole = boleAndCrown(led);
-			// Still 17: the short bole from the root flare to its first fork. Still 01 and 18: the bole
-			// divides low. Still 03: the first limbs run out near level, several of them.
-			expect(bole.sharpest).toBeLessThan(20);
-			expect(bole.fork).toBeGreaterThanOrEqual(0.2);
-			expect(bole.fork).toBeLessThanOrEqual(0.3);
-			expect(bole.limbs).toBeGreaterThanOrEqual(3);
-			// Stills 01, 03 and 18 show no single leader: no axis carries more than half the crown.
-			expect(bole.biggest).toBeLessThanOrEqual(0.5);
-		}
-		// Six variants grow here; the test took about 5 s under the full suite on this machine, and
-		// the limit leaves room for a machine under load.
-	}, 120_000);
+	it(
+		'grows an oak whose bole and crown follow stills 01, 03, 17 and 18',
+		async () => {
+			const record = species.record;
+			await loadPlantCode(record);
+			for (let variant = 0; variant < 6; variant++) {
+				const led = leadOnThickest(
+					grower('self-organizing').grow({ record, seed: 11, variant, season: 'summer' }),
+				);
+				// Still 20: where a limb's line runs on into a child, it bends gently; a side branch that
+				// leaves wide is thin. Still 08: a thick limb may divide into two spreading arms.
+				expect(brokenForks(led)).toEqual([]);
+				const bole = boleAndCrown(led);
+				// Still 17: the short bole from the root flare to its first fork. Still 01 and 18: the bole
+				// divides low. Still 03: the first limbs run out near level, several of them.
+				expect(bole.sharpest).toBeLessThan(20);
+				expect(bole.fork).toBeGreaterThanOrEqual(0.2);
+				expect(bole.fork).toBeLessThanOrEqual(0.3);
+				expect(bole.limbs).toBeGreaterThanOrEqual(3);
+				// Stills 01, 03 and 18 show no single leader: no axis carries more than half the crown.
+				expect(bole.biggest).toBeLessThanOrEqual(0.5);
+			}
+			// Six variants grow here; the test took about 5 s under the full suite on this machine, and
+			// the limit leaves room for a machine under load.
+		},
+		scaledBudget(120_000),
+	);
 });
