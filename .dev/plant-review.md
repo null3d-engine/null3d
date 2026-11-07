@@ -252,13 +252,16 @@ pedunculate oak's ([D-330](decisions/D-330-oak-crown-by-its-own-light.md)).
 | Crown too closed, with still 18 first to go | `skyPrune` up 0.02 to 0.04 | 0.34 to 0.42 opens 18 by 0.019 |
 | An even shell round a closed core | `skyPrune` up, with `skyPruneLayer` kept | 0.34 to 0.42 raises the inner sky share by 0.06 to 0.08 |
 | Loose specks at the edge | The spray's tight rosette, then longer `bend` pieces | Together they take 01's specks from 32 to 15 |
+| Loose leaf groups hanging off the crown's edge | `growth.pipe.tipRadius` up | The groups were foliage on twigs too thin to draw. 02's loose pieces fall from 11 to 7, at a small cost in the young bark's color |
 | Too much sky in the top third | `growth.light.surface` on | 01's top-third share falls from 0.233 to 0.188 |
 | Trunk hidden under the crown | `growth.floor` up 0.005 | 0.165 loses the clear trunk, and 0.175 keeps it |
 | Leaves hanging under the limbs | `shoots.placement.lift` up | At 30 degrees the hanging leaf area falls from 0.156 to 0.055, but 02's gap leaves its band |
-| Limbs too steep | `growth.divide.angle` up 4 degrees at a time | 78 degrees breaks the bole-and-crown test |
+| Limbs too steep | `growth.divide.angle` up 4 degrees at a time | The bole-and-crown test counts the great limbs over the variants. 68 degrees costs 02's outline 0.08, and 72 costs every whole view |
 | Twigs fan from one point | `laterals` with a `lateralGap` of 0.3 | The winter branch's fan share falls from 0.42 to 0.09 |
 | Twigs read as straight rods | `bend` at 34 degrees | 26 degrees fails the kink band |
 | Kit over its cap | Longer `bend` pieces, `leafYears` 1, or fewer rosette leaves | Fuller rosettes cost 18 to 33 % of the kit |
+| A rosette that reads as a heap of blades | `shoots.placement.rosette` 'fan' | The tip stops spreading its leaves round the stem and stands them in one face, as the close photographs show. Outlines rise 0.02 to 0.05 at the cut views: 10 to 0.39, 22 to 0.39, 23 to 0.55 |
+| Blades drawn smaller than the record's leaf | The shoot class's `leafScale` to 1.0 | Every blade at the record's own length. Raise the scale, never the leaf: a longer leaf takes row 4 past the species' own size |
 
 Each floor value grows a different tree, so read all six variants after a floor change. Do not bring
 back the clump field for the specks: its holes fall at random through the wood.
