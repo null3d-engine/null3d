@@ -260,7 +260,7 @@ export const record: Species = {
 		stiffness: [
 			[0, 0.995],
 			[0.5, 0.96],
-			[1, 0.88],
+			[1, 0.94],
 		],
 		sway: { frequency: 0.32, amplitude: 0.015 },
 		flutter: { kind: 'blade', amplitude: 0.14, frequency: 3 },
