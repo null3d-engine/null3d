@@ -52,6 +52,7 @@
 			"!**/dist",
 			"!**/target",
 			"!bench/results",
+			"!bench/research/**/results",
 			"!bench/probes",
 			"!skills/*/evals",
 			"!docs/data",

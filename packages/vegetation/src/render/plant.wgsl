@@ -106,6 +106,9 @@ const HEADER_LICHEN: i32 = 40;
 const HEADER_LICHEN_REACH: i32 = 41;
 const HEADER_SWAY: i32 = 42;
 const HEADER_EXTRA_BANDS: i32 = 43;
+// An extra's scale pattern: its scale rows, the cells round its turn, and its band's share of the
+// profile's height at each end, per extra in record order.
+const HEADER_EXTRA_SCALES: i32 = 47;
 // Rows before the wind records, and wind records in a row.
 const HEADER_ROWS: i32 = 2;
 const RECORDS_PER_ROW: i32 = 256;
@@ -144,6 +147,11 @@ const CAVITY_DARK: f32 = 0.45;
 const CAVITY_ROUGH: f32 = 0.2;
 
 /// One texel of the header row.
+/// A fixed value from two whole numbers, from 0 to 1: a scale's own shade, the same every frame.
+fn cell_noise(a: f32, b: f32) -> f32 {
+    return fract(sin(dot(vec2f(a, b), vec2f(12.9898, 78.233))) * 43758.5453);
+}
+
 fn header(texel: i32) -> vec4f {
     return textureLoad(records, vec2i(texel, 0), 0);
 }
@@ -933,6 +941,42 @@ fn surface(input: SurfaceInput) -> Surface {
         let share_of_band = saturate(input.uv1.x);
         base = mix(body.rgb, band.rgb, share_of_band);
         roughness = mix(body.w, band.w, share_of_band);
+        // A cup's scales: one rounded cell per scale, its shade fixed for that cell, over the band
+        // alone. The pattern fades where a cell falls below a pixel or two, so a distant acorn keeps
+        // its own colour instead of shimmering.
+        let pattern = header(HEADER_EXTRA_SCALES + kind);
+        if (pattern.x > 0.5 && pattern.y > 0.5 && share_of_band > 0.5) {
+            // Two scale rows stand across each drawn face, and the rows alternate their offset so a
+            // scale sits over the crevice between the two below it, as an imbricated cup does.
+            let cells = vec2f(pattern.x, max(4.0, floor(pattern.y * 0.5)));
+            let ends = pattern.zw;
+            let along = (input.uv.y - ends.x) / max(ends.y - ends.x, 1e-4);
+            let row = floor(along * cells.x);
+            let stagger = 0.5 * (row - 2.0 * floor(row * 0.5));
+            // Each scale sits a little off its cell, so a row reads as a bed of scales rather than
+            // as a grid.
+            let wobble = cell_noise(row, 0.0) - 0.5;
+            let p = vec2f(input.uv.x * cells.y + stagger + wobble * 0.3, along * cells.x);
+            let f = fract(p) - vec2f(0.5);
+            let d = length(f * vec2f(1.0, 1.15));
+            let dome = 1.0 - smoothstep(0.16, 0.5, d);
+            let cell = floor(p);
+            let grain = cell_noise(cell.x, cell.y);
+            let footprint = length(gx * cells) + length(gy * cells);
+            let fade = saturate(1.5 - footprint);
+            // A scale stands proud and pale in its middle and dark in the crevice round it.
+            let shade = mix(0.52, 1.22, dome) * (0.93 + 0.14 * grain);
+            // A cell too small to draw leaves the bed's own tone, so a distant acorn keeps its
+            // scales' shade and never shimmers.
+            base = mix(base * 0.88, base * shade, fade);
+            roughness = mix(roughness * 1.15, mix(roughness, roughness * 0.45, dome), fade);
+        } else if (pattern.x > 0.5 && pattern.y > 0.5) {
+            // The nut: faint striations down its length and a gloss where its body meets the light.
+            let across = input.uv.x * pattern.y * 3.0;
+            let stripe = 0.5 + 0.5 * cos(across * 6.2831853);
+            base = base * (0.95 + 0.05 * stripe);
+            roughness = roughness * 0.9;
+        }
         occlusion = input.vertexColor.a;
     } else {
         // Shoot rows and merged foliage: leaves, and the shoots' stems and buds.

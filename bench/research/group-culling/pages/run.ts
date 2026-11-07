@@ -129,7 +129,7 @@ try {
 				};
 				results.push(record);
 				writeFileSync(out, JSON.stringify(results, null, '\t'));
-				const r = record as Record<string, any>;
+				const r = record as Record<string, unknown>;
 				console.log(
 					`${address} run ${run}${invalid ? ` INVALID (attempt ${attempt + 1}): ${errors[0]?.slice(0, 160) ?? r.error}` : ''}: ${r.error ? `ERROR ${r.error}` : `gpu ${r.gpuMs?.median?.toFixed(2)} ms, interval ${r.intervalMs?.median?.toFixed(2)} ms, fps ${r.presentedFps?.toFixed(1)}, triangles ${Math.round(r.triangles?.median ?? 0)}, draws ${Math.round(r.drawCalls?.median ?? 0)}, path ${r.directDraws === undefined ? 'n/a' : r.directDraws ? 'direct' : 'indirect'}, drawn ${r.drawn?.width}x${r.drawn?.height}, first frame ${(r.firstFrameMs / 1000).toFixed(1)} s`}, started ${new Date(started).toTimeString().slice(0, 8)}, load ${loadBefore.toFixed(1)} to ${loadavg()[0].toFixed(1)}`,
 				);
