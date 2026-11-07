@@ -149,6 +149,31 @@ wide as its photograph's. The crown moved because five great limbs at 62 degrees
 four at 55 left it bare. The cut pieces moved because the class's twig is the photographs' 42 cm of
 two nodes rather than a metre of wire.
 
+### The third pass: joins, filigree and a taller dome
+
+The review's second pass fails eight rows. Three of them share a cause, and the branch now answers all
+three from the record.
+
+- **The plant broke into pieces** (row 12: 5, 2 and 5 islands at the whole views against one each, and
+  12, 12 and 6 at the cut views). The great limbs now keep `clearance` 0.3 m of air from one another
+  and turn up to 30 degrees in an internode to keep it, with only wood above 0.35 of the trunk's
+  girth holding the rule, so the crown's fine wood keeps its own layout. Each card draws its
+  supporting twig as a line at least 1.5 pixels wide (`cardStalk`), so a card's leaves no longer read
+  as a piece in air at a whole view, and the leaf's own stalk stands 2.6 millimetres across.
+- **The crown read as tufts on bare axes** (row 2, and row 12's pattern). The shoots per metre rise
+  from 0.8 to 2.4 along the least vigorous wood, so every limb carries leafy twigs along its run, and
+  `branching` 1.15 lets more lateral buds put out a branch. The opposite arrangement was already
+  there; what was missing was the wood fine enough to see it.
+- **The crown was a broad dome, not a tall one** (row 1: a crown box 1.20 wide to high against the
+  photograph's 0.90 at the silhouette). The leader's control rises to 0.62, so one leader carries the
+  crown to its single apex.
+- **The cut stem was a wire** (row 3: about 0.014 of the piece's height against the photographs'
+  0.032). Its radius doubles to 11 millimetres at its foot.
+- **The leaf carried eleven leaflets where its photographs show nine** (row 4). It carries nine.
+
+The shoots that the filigree adds close the crown, so the placement dial falls from 1.5 to 1 to keep
+still 01's sky gap, which the second pass drew 0.043 too closed.
+
 ### The crown seen from under it
 
 Stills 03 and 08 look up the bole, and there the drawn crown is far denser than its photographs: 03
