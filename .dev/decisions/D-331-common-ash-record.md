@@ -358,6 +358,14 @@ short shoot is half again the crown's foliage. The third pair on the crown's own
 the whole views holding, which is why the crown's cost belongs to the shoot's length and not to the
 leaves' count.
 
+The class's own leaf angle and droop, steeper and arched at fifty to thirty-eight degrees with a
+droop of five, are the fourth measurement and the closest turn of all: run `ash-56` reads 56 wide and
+10 tall on the eight angles against the class's 60 and 15, and 60 and 15 on every frame against 74 and
+16. It buys four points of width on the eight angles and thirteen on every frame, and the turn's mean
+shape overlap falls from 0.239 to 0.223. It closes the cluster stills to 0.315 and 0.322 against their
+photographs' 0.392 and 0.388, about seven hundredths under and outside the band, so it costs a
+passing row and comes back out.
+
 The class's leaf spread is not the width's lever either. Narrowed from fifteen degrees either side
 to five, run `ash-54` reads 65 wide and 15 tall on the eight angles against the class's 60 and 15,
 and 78 and 17 on every frame against 74 and 16, so the width goes the wrong way while the overlap
