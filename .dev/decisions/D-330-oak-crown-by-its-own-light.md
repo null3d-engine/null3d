@@ -25,7 +25,7 @@ random.
   crown whose holes fall at random, as the clump field's do.
 - Each new behavior sits behind an optional record field with a doc comment, a unit, a range check
   and a test. With the field absent, a plant grows as it did, so no other species changes.
-- Every budget holds at every tier. The kit caps are 2.0, 3.1, 5.7 and 10.8 MB, and the variant
+- Every budget holds at every tier. The kit caps are 2.7, 4, 6.9 and 12.5 MB, and the variant
   budgets 9.4, 10.2, 11.3 and 11.6 MB. A variant grows in under 600 ms. The bole-and-crown,
   sharp-bend and shedding tests pass.
 - The better look wins ([hard rule 40](../../AGENTS.md#hard-rules)).
@@ -70,6 +70,7 @@ engine's own stages, and its rows match `growPlantNow` byte for byte on all six 
 | The photographs' girth | `size.dbh` 2.9 m, `growth.bending.girth` 3.5 m | 17: the bole across its height | The drawn bole stands 0.173 of the height across at breast height, inside the photographs' 0.116 to 0.178, and the first view's outline rises with it. A 2.45 m bole stood a third too thin at 0.133, and 3.6 m overshot at 0.196 | The sharp-bend test |
 | Named forms | `forms`: woodland and young | 30, 31, 32 | All three pass | Each form's kit within the species' budget, and finite positions in every variant |
 | Density | `shoots.placement.density` 1.25, from 0.9 | The reference's cover without the clump field | Each 0.1 more closes the sky gap by 0.004 to 0.007 | Variant bytes |
+| A shoot of its own for the cut pieces | `shoots.cuttingClasses`, the oak's `cut` | 22: the sub-branch's twigs | The crown's classes carry shoots long enough for its foliage, and a cut twig wants the photographs' shorter, denser twigs. A class the crown never draws settles the two: the sub-branch's outline rises 0.30 to 0.36. The kit grows to 2.47, 3.66, 6.32 and 11.45 MB, so the owner raised its caps to 2.7, 4, 6.9 and 12.5 MB | Variant bytes |
 | A rosette's blades facing along the shoot | `ROSETTE_SKY_SHARE`, a share of the species' skyward turn that a rosette keeps | 11, 23: the blades' laminae | Turned fully across the shoot the laminae square to a camera looking down the twig and the cluster opens past its photograph (11 to 0.16 against 0.14, 23 to 0.21 against 0.14). Keeping half the turn takes 23 to 0.12 and the sub-branch to 0.23 against 0.26 | Nothing measured |
 | A rosette that stands as one fan | `shoots.placement.rosette`, which the oak leaves at its round default | 11, 21, 22, 23: the close views' rosettes | A fan gathers every crowded blade into one plane, so at matched height the blades overlap into a solid face and the gaps read 0.05 against 0.14 at 11 and 0.06 against 0.14 at 23. Standing them round the shoot instead lifts the gaps to 0.09 and 0.10 and the branch's to 0.31 against 0.33. The fan's outlines are 0.02 to 0.05 higher, and it is the outline that has to give | Nothing measured |
 | Twigs thick enough to draw the foliage they carry | `growth.pipe.tipRadius` 0.012 m | 02, 18: foliage that meets its wood at the whole views | 02's loose pieces fall 11 to 7. The young bark's surface color rises 1.9 to 2.8 | Wood bytes |
@@ -195,7 +196,7 @@ Rejected:
 
 ### The owner's rulings
 
-- The kit caps stay as they are.
+- The kit caps sit at 2.7, 4, 6.9 and 12.5 MB, raised to hold the cutting class.
 - The engine reads a plant part's positions as fractions of the species box. A detail level stays
   whole until the next has faded in
   ([implementation notes](../implementation-notes.md#the-vegetation-add-ons-plants)). With both, 01's

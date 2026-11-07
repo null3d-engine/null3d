@@ -58,10 +58,11 @@ const MB = 1_000_000;
  */
 export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 	tree: {
-		// The oak's kit, with about 15 per cent to spare: 1.74, 2.54, 4.60 and 8.25 MB before its
-		// leaves stood on two years of a shoot's run, which put a second year's cards into every
-		// prototype and took the kit to 5.61 and 10.65 MB. The caps sit just above those figures.
-		kitBytes: { low: 2 * MB, medium: 3.1 * MB, high: 5.7 * MB, ultra: 10.8 * MB },
+		// The oak's kit, with room above it. Its leaves stand on two years of a shoot's run, and its
+		// cuttings draw a short dense shoot of their own that the crown never does: the two together
+		// measure 2.47, 3.66, 6.32 and 11.45 MB. The owner raised the caps to hold that class at every
+		// tier rather than make the crown give up a prototype for it.
+		kitBytes: { low: 2.7 * MB, medium: 4 * MB, high: 6.9 * MB, ultra: 12.5 * MB },
 		// The grown oak's largest variant, with about a tenth to spare: 9.34, 9.53, 9.76 and 10.03 MB.
 		// The oak keeps its foliage on the low limbs and stands it on two years of a shoot's run;
 		// its largest variant measures 11.02 MB at high.

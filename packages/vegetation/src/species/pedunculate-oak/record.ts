@@ -194,6 +194,36 @@ export const record: Species = {
 				droop: 6,
 			},
 		],
+		// Stills 10, 20, 21 and 22: a cut twig is short and dense, its twigs stiff and kinked, and it
+		// carries a rosette at every tip. The crown cannot carry shoots this short, so the cuttings draw
+		// this class and the crown never does. Its two prototypes differ in length, so the branch takes
+		// the long one and the sub-branch the short.
+		cuttingClasses: [
+			{
+				name: 'cut',
+				vigor: [0, 1],
+				share: 0,
+				years: 2,
+				length: { mean: 0.7, spread: 0.35 },
+				nodes: { mean: 6, spread: 0.5 },
+				internode: TIGHT_ROSETTE,
+				stem: { radius: [0.007, 0.003] },
+				lateral: 60,
+				laterals: 1,
+				lateralGap: 0.4,
+				bend: { length: 0.05, angle: 34 },
+				leafScale: [
+					[0, 0.9],
+					[1, 1.1],
+				],
+				leafAngle: [
+					[0, 120],
+					[0.5, 90],
+					[1, 60],
+				],
+				droop: 5,
+			},
+		],
 		phyllotaxis: { kind: 'spiral', divergence: 144 },
 		orders: 3,
 		years: 3,
@@ -375,9 +405,10 @@ export const record: Species = {
 		shadowLevel: 1,
 		budget: {
 			// Leaves stand on two years of a shoot's run, which puts a second year's cards into every
-			// prototype: the kit measures 5.61 MB at high and 10.65 MB at ultra. Each cap sits just
-			// above the measured figure.
-			kitBytes: { low: 2_000_000, medium: 3_100_000, high: 5_700_000, ultra: 10_800_000 },
+			// prototype, and the cuttings draw a short dense shoot the crown never does. The two
+			// together measure 2.47, 3.66, 6.32 and 11.45 MB; each cap sits above its figure, at the
+			// raised ceiling the owner set to hold the cutting class at every tier.
+			kitBytes: { low: 2_700_000, medium: 4_000_000, high: 6_900_000, ultra: 12_500_000 },
 			// The fitted envelope widens the crown, and the wider crown grows about a seventh more
 			// leaf card; the thicker bole adds a little more. Each cap sits just above the first
 			// variant's measured figure at its tier: 7.94, 8.13, 8.34 and 8.56 MB.
@@ -399,8 +430,10 @@ export const record: Species = {
 	// The woodland oak of stills 30 and 31 and the young oak of still 32.
 	forms,
 	cuttings: {
+		// Stills 20, 21 and 22: the branch keeps the spray, whose length stills 20 and 21 ask for. The
+		// sub-branch takes the short dense class, which draws the photographs' tighter twigs.
 		branch: { shoot: 'spray' },
-		subbranch: { shoot: 'long', pick: 1 },
+		subbranch: { shoot: 'cut' },
 		// Stills 11 and 23 hold one rosette round its buds at the end of this year's shoot, as the
 		// short shoot draws it; the long shoot draws a sprig of two or three rosettes.
 		cluster: { shoot: 'short' },
