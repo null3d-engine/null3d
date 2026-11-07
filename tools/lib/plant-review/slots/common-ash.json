@@ -2,39 +2,39 @@
 	"01-whole-distant.png": {
 		"sunAzimuth": 40,
 		"sunRise": 48,
-		"skyShare": 0.3,
-		"daylight": 2.0,
+		"skyShare": 0.62,
+		"daylight": 2.2,
 		"fov": 30
 	},
 	"02-whole-profile.png": {
 		"sunAzimuth": 20,
 		"sunRise": 52,
-		"skyShare": 0.36,
-		"daylight": 1.9,
+		"skyShare": 0.62,
+		"daylight": 2.2,
 		"fov": 30
 	},
 	"03-whole-from-below.png": {
 		"sunAzimuth": 30,
 		"sunRise": 68,
-		"skyShare": 0.4,
-		"daylight": 1.8
+		"skyShare": 0.68,
+		"daylight": 2.1
 	},
 	"04-crown-outside.png": {
-		"skyShare": 0.3,
-		"daylight": 2.0,
+		"skyShare": 0.55,
+		"daylight": 2.2,
 		"distance": 4
 	},
 	"05-crown-underside.png": {
-		"skyShare": 0.25,
-		"daylight": 1.9
+		"skyShare": 0.68,
+		"daylight": 2.1
 	},
 	"06-inside-crown.png": {
-		"skyShare": 0.4,
-		"daylight": 1.5
+		"skyShare": 0.6,
+		"daylight": 1.9
 	},
 	"17-trunk-taper.png": {
-		"skyShare": 0.66,
-		"daylight": 1.4
+		"skyShare": 0.62,
+		"daylight": 1.9
 	},
 	"18-silhouette.png": {
 		"fov": 30,
@@ -48,12 +48,12 @@
 		"sky": "#c8c4be"
 	},
 	"common-ash-turntable.mp4": {
-		"skyShare": 0.3,
-		"daylight": 2.0
+		"skyShare": 0.62,
+		"daylight": 2.2
 	},
 	"common-ash-wind-motion.mp4": {
-		"skyShare": 0.3,
-		"daylight": 2.0
+		"skyShare": 0.62,
+		"daylight": 2.2
 	},
 	"09-secondary-branching.png": {
 		"leaves": 3.4,
