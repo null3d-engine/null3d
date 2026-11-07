@@ -76,6 +76,15 @@ describe('the record check', () => {
 			},
 		} as Species;
 		expect(speciesProblems(within)).toEqual([]);
+		const withStalk = (cardStalk: number): Species => ({
+			...template,
+			lod: { ...template.lod, cardStalk },
+		});
+		for (const cardStalk of [0, 1, 8]) expect(speciesProblems(withStalk(cardStalk))).toEqual([]);
+		for (const cardStalk of [-1, 8.1, Number.NaN])
+			expect(speciesProblems(withStalk(cardStalk)).some((p) => p.startsWith('lod.cardStalk'))).toBe(
+				true,
+			);
 		const withTurning = (turning: number): Species => ({
 			...within,
 			growth: { ...growth, floor: 0.15, turning },
