@@ -401,6 +401,10 @@ function extraProblems(record: Species, out: string[]): void {
 		const jitter = 'lathe' in extra.shape ? extra.shape.scaleJitter : undefined;
 		if (jitter !== undefined && !(jitter >= 0 && jitter <= 1))
 			out.push(`${path}.shape.scaleJitter is ${jitter}; a share lies from 0 to 1`);
+		extra.offset?.forEach((value, k) => {
+			if (!(value >= -0.5 && value <= 0.5))
+				out.push(`${path}.offset[${k}] is ${value}; it is metres from -0.5 to 0.5`);
+		});
 		const bristles = 'lathe' in extra.shape ? extra.shape.bristles : undefined;
 		if (bristles !== undefined) {
 			if (!(bristles.rows >= 1 && bristles.rows <= 16))
