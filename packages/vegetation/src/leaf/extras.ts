@@ -810,6 +810,8 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 						colourOf(from, index),
 					);
 					markBand(mesh, first, stalkBand);
+					// The footstalk is wood too: its vertices say so, as the shared stalk's do.
+					for (let v = first; v < mesh.vertices; v++) mesh.uvs1[v * 2 + 1] = 1;
 					writeExtra(mesh, extra, index, { ...from, at: end }, body, faces, azimuth);
 					continue;
 				}

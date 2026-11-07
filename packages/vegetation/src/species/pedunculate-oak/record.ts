@@ -374,9 +374,8 @@ export const record: Species = {
 				// Still 19's peduncles fill a few pixels across, where four faces read as a square rod.
 				stalkSides: 5,
 				// Still 19's cups are rows of small grey-brown scales with darker crevices between
-				// them, no two scales quite the same shade.
-				scaleShade: 0.75,
-				scaleJitter: 0.35,
+				// them. The shader draws the bed from the cup's own coordinates, so the band keeps a
+				// single shade here and no second treatment turns the scales into speckle.
 			},
 			colour: [0.24, 0.1, 0.03],
 			// Still 19's cups are a pale grey-brown against the chestnut nut.
