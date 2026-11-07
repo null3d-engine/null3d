@@ -102,16 +102,38 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 			const bx = rows.back[r * 3] as number;
 			const by = rows.back[r * 3 + 1] as number;
 			const bz = rows.back[r * 3 + 2] as number;
-			const length = Math.sqrt(bx * bx + by * by + bz * bz);
+			// The line's two ends: the stretch's far end, and either the row's own origin or, where
+			// the record asks, the centre of the foliage the card carries. That centre stands ahead
+			// of the row by the shoot's own length, so the stretch alone can end short of it.
+			let from: Vector3 = [px, py, pz];
+			let to: Vector3 = [px + bx, py + by, pz + bz];
+			const centre = input.record.lod.cardStalkToFoliage
+				? prototype.card.planes[0]?.centre
+				: undefined;
+			if (centre) {
+				quatRotate(
+					rows.rotation,
+					r * 4,
+					[centre[0] * scale, centre[1] * scale, centre[2] * scale],
+					world,
+				);
+				from = [px + bx, py + by, pz + bz];
+				to = [px + world[0], py + world[1], pz + world[2]];
+			}
+			const dx = to[0] - from[0];
+			const dy = to[1] - from[1];
+			const dz = to[2] - from[2];
+			const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
 			if (length > 1e-6) {
-				// The supporting twig as a line to the stretch's far end: two coincident vertices at
-				// each end, which the vertex stage widens to the record's least width on screen.
-				const normal: Vector3 = [bx / length, by / length, bz / length];
+				// The supporting twig as a line from the parent's end to the leaves' centre: two
+				// coincident vertices at each end, which the vertex stage widens to the record's least
+				// width on screen.
+				const normal: Vector3 = [dx / length, dy / length, dz / length];
 				const first = mesh.vertices;
-				mesh.vertex([px, py, pz], normal, [0, 0], [0, STALK_PLANE], colour);
-				mesh.vertex([px, py, pz], normal, [1, 0], [0, STALK_PLANE], colour);
-				mesh.vertex([px + bx, py + by, pz + bz], normal, [1, 0], [1, STALK_PLANE], colour);
-				mesh.vertex([px + bx, py + by, pz + bz], normal, [0, 0], [1, STALK_PLANE], colour);
+				mesh.vertex(from, normal, [0, 0], [0, STALK_PLANE], colour);
+				mesh.vertex(from, normal, [1, 0], [0, STALK_PLANE], colour);
+				mesh.vertex(to, normal, [1, 0], [1, STALK_PLANE], colour);
+				mesh.vertex(to, normal, [0, 0], [1, STALK_PLANE], colour);
 				mesh.quad(first, first + 1, first + 2, first + 3);
 				// The line shows from either side of the plant: the vertex stage widens it, so its
 				// winding turns with the view, and a back face is not culled.
