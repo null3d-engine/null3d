@@ -490,6 +490,8 @@ export function speciesProblems(record: Species): string[] {
 	});
 	if (lod.woodOrders[1] > lod.woodOrders[0])
 		out.push('lod.woodOrders keeps more orders at the second card level than at the first');
+	if (lod.cardStalk !== undefined && !(lod.cardStalk >= 0 && lod.cardStalk <= 8))
+		out.push(`lod.cardStalk is ${lod.cardStalk}; it is pixels from 0 to 8`);
 	if (lod.impostor.views < 2 || lod.impostor.texels < 8)
 		out.push('lod.impostor needs at least 2 views across and 8 texels a view');
 	for (const [key, value] of Object.entries(lod.budget))
