@@ -18,19 +18,6 @@ const ALTERNATE: readonly (readonly [number, number])[] = [
 	[1, 1],
 ];
 
-/**
- * Internodes of a plate: short runs where two or three leaves crowd together, with a longer stretch
- * of bare stem between the runs, so the blades overlap in one plane as the photographs' sprays do.
- */
-const PLATE: readonly (readonly [number, number])[] = [
-	[0, 1.5],
-	[0.15, 0.3],
-	[0.45, 0.3],
-	[0.6, 1.5],
-	[0.8, 0.3],
-	[1, 0.3],
-];
-
 /** The European beech's record. */
 export const record: Species = {
 	id: 'european-beech',
@@ -99,7 +86,7 @@ export const record: Species = {
 				years: 1,
 				length: { mean: 0.6, spread: 0.06 },
 				nodes: { mean: 9, spread: 0.5 },
-				internode: PLATE,
+				internode: ALTERNATE,
 				leafScale: [
 					[0, 0.85],
 					[1, 1.05],
@@ -143,7 +130,7 @@ export const record: Species = {
 				years: 3,
 				length: { mean: 1.15, spread: 0.15 },
 				nodes: { mean: 6, spread: 1 },
-				internode: PLATE,
+				internode: ALTERNATE,
 				stem: { radius: [0.011, 0.004] },
 				lateral: 55,
 				leafScale: [
@@ -230,9 +217,6 @@ export const record: Species = {
 			// out, keeps its low foliage.
 			bareBole: { radius: 4, height: 0.17 },
 			skyward: 0.4,
-			// Stills 04 and 06: a spray's crowded leaves stand as one flat plate of overlapping blades,
-			// about three blades across as the photographs show, not as tufts turning with the twig.
-			plate: true,
 			scale: { mean: 1.95, spread: 0.15 },
 		},
 	},
