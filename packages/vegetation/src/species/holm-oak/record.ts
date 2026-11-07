@@ -124,8 +124,11 @@ export const record: Species = {
 				leafAngle: [
 					[0, 120],
 					[0.5, 90],
-					[1, 60],
+					[1, 45],
 				],
+				// The outer leaves stand closer to their shoot's line and open over a range, so no
+				// leaf spine reaches past the crown's mass.
+				leafAngleSpread: 20,
 				droop: 6,
 			},
 			{
@@ -147,8 +150,9 @@ export const record: Species = {
 				leafAngle: [
 					[0, 120],
 					[0.5, 90],
-					[1, 60],
+					[1, 45],
 				],
+				leafAngleSpread: 20,
 				droop: 7,
 			},
 		],
