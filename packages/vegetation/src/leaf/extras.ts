@@ -418,8 +418,8 @@ function writeStalk(
 	return fork;
 }
 
-/** Lobes round a scaled lathe's band, so a cup's rim reads as scallops. */
-const SCALLOP_LOBES = 12;
+/** Lobes round a scaled lathe's band, so a cup's rim reads as fine scallops rather than a star. */
+const SCALLOP_LOBES = 24;
 /** The share of the radius the lobes rise and fall by. */
 const SCALLOP_DEPTH = 0.06;
 

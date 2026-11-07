@@ -316,10 +316,10 @@ export const record: Species = {
 				// small point, as still 19's nuts do, with its rings closer where the taper turns fastest.
 				lathe: [
 					[0.0012, 0],
-					[0.0034, 0.0016],
-					[0.0064, 0.0042],
-					[0.0075, 0.0068],
-					[0.0064, 0.0078],
+					[0.0036, 0.0014],
+					[0.0062, 0.0038],
+					[0.007, 0.0062],
+					[0.0068, 0.0076],
 					[0.0072, 0.0106],
 					[0.0071, 0.0134],
 					[0.0066, 0.0159],
@@ -333,7 +333,7 @@ export const record: Species = {
 				// Sixteen faces read round on a nut that fills a close view, now that its normals follow
 				// the profile; the rings the taper gains are paid for by the faces it loses.
 				sides: 16,
-				scales: 3,
+				scales: 5,
 				scaled: [0, 0.0068],
 				// Still 19's peduncle hangs the acorns about twice their own length below the twig, within
 				// the fact sheet's 3 to 8 cm.
