@@ -93,8 +93,8 @@ export const record: Species = {
 				nodes: { mean: 8, spread: 0.5 },
 				internode: SHOOT,
 				leafScale: [
-					[0, 1.45],
-					[1, 1.79],
+					[0, 1.28],
+					[1, 1.58],
 				],
 				leafAngle: [
 					[0, 150],
@@ -115,8 +115,8 @@ export const record: Species = {
 				internode: SHOOT,
 				stem: { radius: [0.014, 0.008] },
 				leafScale: [
-					[0, 1.36],
-					[1, 1.7],
+					[0, 1.2],
+					[1, 1.5],
 				],
 				leafAngle: [
 					[0, 120],
@@ -138,8 +138,8 @@ export const record: Species = {
 				stem: { radius: [0.026, 0.012] },
 				lateral: 72,
 				leafScale: [
-					[0, 1.36],
-					[1, 1.7],
+					[0, 1.2],
+					[1, 1.5],
 				],
 				leafAngle: [
 					[0, 120],
