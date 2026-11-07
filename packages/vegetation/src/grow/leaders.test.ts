@@ -197,6 +197,9 @@ function degrees(u: readonly number[], v: readonly number[]): number {
 	return (Math.acos(Math.max(-1, Math.min(1, dot))) * 180) / Math.PI;
 }
 
+/** A limb of this share of the trunk's radius or more is thick wood, which bends gently. */
+const THICK_SHARE = 0.05;
+
 /** A child axis's share of its parent's cross-section where it leaves. */
 function shareOf(skeleton: MacroSkeleton, axis: number): number {
 	const { axes, radius } = skeleton;
@@ -289,17 +292,21 @@ function subtreePipes(skeleton: MacroSkeleton): Float64Array {
  *
  * A line with no sibling beside it is not a fork: the same line continues, bent. Still 20 shows a
  * thick limb turning about 15 to 30 degrees at a joint, and its short stiff twigs turning more
- * sharply; the mesher rounds such a kink over six of the wood's radii. A kink of wood 10 cm or more
- * across may turn up to 35 degrees, the limit the stem's own line above a fork takes, where the stem
- * and the great limbs live and a bend reads as a fault. Thinner wood keeps its sharp crook, as
- * still 20 shows and rows 1 and 3 ask for ("angular joints in the fine orders", "a kink at every
- * joint"): nine twigs of this plant bend 60 to 62 degrees at 3 to 4 cm, so only a line that turns
- * past 120 degrees, a loop, fails here, and the bole test's loop check covers every axis too.
+ * sharply; the mesher rounds such a kink over six of the wood's radii. A kink of thick wood may turn
+ * up to 35 degrees, the limit the stem's own line above a fork takes, where the stem and the great
+ * limbs live and a bend reads as a fault. Thick wood is a share of the trunk's own radius rather than
+ * a fixed width, so the same limb is judged the same however wide the trunk is drawn. Thinner wood
+ * keeps its sharp crook, as still 20 shows and rows 1 and 3 ask for ("angular joints in the fine
+ * orders", "a kink at every joint"): so only a line that turns past 120 degrees, a loop, fails here,
+ * and the bole test's loop check covers every axis too.
  */
 function brokenForks(skeleton: MacroSkeleton): string[] {
 	const { axes, radius, position: p } = skeleton;
 	const pipes = subtreePipes(skeleton);
 	const broken: string[] = [];
+	// Thick wood is a share of the trunk's own girth, not an absolute radius: the trunk is drawn at the
+	// photographs' width, and a fixed radius would hold a different amount of wood at every width.
+	const thick = THICK_SHARE * (radius[axes.first[0] as number] as number);
 	for (let a = 0; a < axes.count; a++) {
 		const from = axes.parentNode[a] as number;
 		if (from < 0 || (axes.parent[a] as number) < 0) continue;
@@ -312,7 +319,7 @@ function brokenForks(skeleton: MacroSkeleton): string[] {
 		const angle = degrees(line, direction(p, from, axes.first[a] as number));
 		const cont = continuation(skeleton, from, a);
 		if (cont < 0.05 && share > 0.9) {
-			const limit = (radius[from] as number) >= 0.1 ? 35 : 120;
+			const limit = (radius[from] as number) >= thick ? 35 : 120;
 			if (angle > limit)
 				broken.push(`${(share * 100).toFixed(0)} % at ${angle.toFixed(0)} degrees (kink)`);
 			continue;
