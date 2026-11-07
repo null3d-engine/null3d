@@ -186,6 +186,13 @@ pieces against the photograph's one each, where the second pass drew 12, 12 and 
   species, and a leaf that does not compound builds no rachis at all, so its mesh is unchanged byte
   for byte. `leaf/leaf-mesh.test.ts` holds both: the tip ring measures the share of the first, and a
   simple leaf's mesh equals the blade's at every tier.
+- **The shoots gather in the internode's first third.** `shoots.placement.gather` 0.33 holds each
+  bud's shoots in the third of the internode nearest it, so the run between nodes stands bare. Run
+  `ash-25` measured it: 01's sky gap rises from 0.201 to 0.213 against the reference's 0.261, 02
+  from 0.177 to 0.192 against 0.187 and 18 from 0.203 to 0.213 against 0.215, so 02 and 18 sit on
+  their photographs and 01 is 0.047 short. The whole views read 2, 2 and 2 pieces: 02 gains a bare
+  twig with a small tuft standing off the crown's edge. The crown outside rises from 65 pieces to
+  87 against the photograph's 3, and every cut view holds at 2, 1 and 1.
 - **The placement dial stays at the curve's own count.** The review prints a sky gap as the
   reference's against the render's, so the whole views' 0.26 against 0.19 at 01 reads as the
   reference's 0.26 and the render's 0.19: the crown shows less sky than its photograph and an
