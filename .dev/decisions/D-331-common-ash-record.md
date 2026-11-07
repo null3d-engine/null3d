@@ -346,12 +346,32 @@ reference's band:
 | As the record stands | 95 | 30 | 0.227 |
 | A third leaf pair on the short shoot | 58 | 63 | 0.261 |
 | The leaves laid flat at eighty degrees | 96 | 81 | 0.218 |
-| A third pair on a shoot half as long again | not drawn | not drawn | none |
+| A third pair on a shoot half as long again | 52 | 16 | 0.233 |
+| A cutting class of its own, half as long again | 60 | 15 | 0.239 |
 
-The last setting never reached its turn. Run `ash-51` drew it and the crown closed: 01's sky fell
-from 0.207 to 0.126 against its photograph's 0.261, 02 from 0.182 to 0.112 and 18 from 0.209 to
-0.124, and the cluster stills fell with them to 0.353 and 0.362. Six leaves on every short shoot is
-half again the crown's foliage, so the route costs row 6 outright and came straight back out.
+The last row's spread is the eight-angle measure. Run `ash-51` drew it: the turn comes inside the
+band at 52 wide and 16 tall against the allowed 47 and 25, its width five points over, and the crown
+closes with the same change. The crown's cost is the longer shoot's rather than the six leaves':
+01's sky fell from 0.207 to 0.126 against its photograph's 0.261, 02 from 0.182 to 0.112 and 18 from
+0.209 to 0.124, and the cluster stills with them to 0.353 and 0.362, because six leaves on every
+short shoot is half again the crown's foliage. The third pair on the crown's own 0.18 m shoot leaves
+the whole views holding, which is why the crown's cost belongs to the shoot's length and not to the
+leaves' count.
+
+The class's leaf spread is not the width's lever either. Narrowed from fifteen degrees either side
+to five, run `ash-54` reads 65 wide and 15 tall on the eight angles against the class's 60 and 15,
+and 78 and 17 on every frame against 74 and 16, so the width goes the wrong way while the overlap
+rises from 0.239 to 0.247 and the stills hold at 0.371 and 0.382. The spread is back at fifteen.
+
+Three levers have now been measured against the turn's width and none brings it down: the third
+pair on the crown's own shoot, the flat angle on the crown's class, and the class's own spread. The
+trade stands on the dedicated class's figures.
+
+The last row is run `ash-53`. A class of its own costs the crown nothing: the whole views hold at
+0.207, 0.181 and 0.209 and the cluster stills sit inside at 0.364 and 0.378. Its turn brings the
+height inside at 15 against the allowed 25, better than the crown's longer shoot managed, and leaves
+the width at 60 against the allowed 47, thirteen points over where the longer shoot read five. The
+class's own leaf spread is the figure still to take, and now it can move without touching the crown.
 
 The spread is the review's own crown-box measure over the turn's frames: the largest box less the
 smallest, over the mean. The third pair brings the width into the reference's band and doubles the
