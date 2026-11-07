@@ -124,11 +124,8 @@ export const record: Species = {
 				leafAngle: [
 					[0, 120],
 					[0.5, 90],
-					[1, 45],
+					[1, 60],
 				],
-				// The outer leaves stand closer to their shoot's line and open over a range, so no
-				// leaf spine reaches past the crown's mass.
-				leafAngleSpread: 20,
 				droop: 6,
 			},
 			{
@@ -150,9 +147,8 @@ export const record: Species = {
 				leafAngle: [
 					[0, 120],
 					[0.5, 90],
-					[1, 45],
+					[1, 60],
 				],
-				leafAngleSpread: 20,
 				droop: 7,
 			},
 		],
@@ -267,7 +263,7 @@ export const record: Species = {
 			[1, 0.88],
 		],
 		sway: { frequency: 0.32, amplitude: 0.015 },
-		flutter: { kind: 'blade', amplitude: 0.22, frequency: 3 },
+		flutter: { kind: 'blade', amplitude: 0.14, frequency: 3 },
 	},
 	lod: {
 		nearFoliage: 'instanced',
