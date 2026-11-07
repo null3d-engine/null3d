@@ -385,19 +385,16 @@ function markBand(mesh: MeshWriter, first: number, share: number): void {
  */
 const SAMARA_BODY_PROFILE: readonly (readonly [number, number])[] = [
 	[0, 0],
-	[0.12, 0.55],
-	[0.35, 0.9],
-	[0.6, 0.78],
-	[1, 0.42],
+	[0.3, 0.52],
+	[0.7, 0.46],
+	[1, 0.34],
 ];
 /** The half-width of a key's wing, by position along the wing: it opens out of the body, reaches its
  * widest past the middle and closes to a point. */
 const SAMARA_WING_PROFILE: readonly (readonly [number, number])[] = [
-	[0, 0.42],
-	[0.18, 0.68],
-	[0.42, 0.92],
+	[0, 0.34],
+	[0.22, 0.72],
 	[0.62, 1],
-	[0.85, 0.62],
 	[1, 0],
 ];
 /** The key's half-thickness over its half-width: a wing, thin enough to read as a flat blade. */
@@ -443,17 +440,42 @@ export function samaraMesh(
 	const body = Math.min(0.6, Math.max(0.1, shape.body));
 	// The record gives the wing's full width; a station stands half of it from the key's line.
 	const wing = shape.width * 0.5;
-	const stations: { readonly along: number; readonly half: number }[] = [];
+	const bodyStations: { readonly along: number; readonly half: number }[] = [];
 	// The seed body's foot stands inside the stalk it hangs from, so the two read as one part rather
 	// than meeting at a point.
-	stations.push({ along: -Math.min(0.004, shape.length * 0.15), half: 0 });
+	bodyStations.push({ along: -Math.min(0.004, shape.length * 0.15), half: 0 });
 	for (const [t, share] of SAMARA_BODY_PROFILE)
-		stations.push({ along: t * body * shape.length, half: share * wing });
+		bodyStations.push({ along: t * body * shape.length, half: share * wing });
+	const wingStations: { readonly along: number; readonly half: number }[] = [];
+	// The body's last ring stands again as the wing's first, so the seed body's colour changes at a
+	// sharp edge and not along the wing.
+	wingStations.push({
+		along: body * shape.length,
+		half: (SAMARA_WING_PROFILE[0]?.[1] ?? 0) * wing,
+	});
 	for (const [t, share] of SAMARA_WING_PROFILE.slice(1))
-		stations.push({
+		wingStations.push({
 			along: (body + t * (1 - body)) * shape.length,
 			half: share * wing,
 		});
+	const first = mesh.vertices;
+	writeRings(mesh, bodyStations, at, direction, across, through, shape.length, colour);
+	// The seed body takes the extra's band colour, so a key reads as a brown body on a green wing.
+	markBand(mesh, first, 1);
+	writeRings(mesh, wingStations, at, direction, across, through, shape.length, colour);
+}
+
+/** Writes a key's rings, four vertices each, and the faces between them. */
+function writeRings(
+	mesh: MeshWriter,
+	stations: readonly { readonly along: number; readonly half: number }[],
+	at: Readonly<Vector3>,
+	direction: Readonly<Vector3>,
+	across: Readonly<Vector3>,
+	through: Readonly<Vector3>,
+	length: number,
+	colour: ArrayLike<number>,
+): void {
 	const first = mesh.vertices;
 	for (const station of stations) {
 		const { along, half } = station;
@@ -464,7 +486,7 @@ export function samaraMesh(
 			at[1] + direction[1] * along,
 			at[2] + direction[2] * along,
 		];
-		const v = along / Math.max(shape.length, 1e-6);
+		const v = along / Math.max(length, 1e-6);
 		for (let j = 0; j < 4; j++) {
 			const side = j === 0 ? 1 : j === 2 ? -1 : 0;
 			const face = j === 1 ? 1 : j === 3 ? -1 : 0;
