@@ -116,9 +116,7 @@ export const record: Species = {
 				share: 0.3,
 				years: 1,
 				length: { mean: 0.18, spread: 0.03 },
-				// Still 23 and the cluster's turn: six leaves in three opposite pairs, where the
-				// class drew four in two.
-				nodes: { mean: 3, spread: 0 },
+				nodes: { mean: 2.4, spread: 0.4 },
 				internode: PAIR,
 				leafScale: [
 					[0, 0.8],
