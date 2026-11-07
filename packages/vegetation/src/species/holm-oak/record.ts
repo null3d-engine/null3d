@@ -164,7 +164,7 @@ export const record: Species = {
 				[0.55, 8],
 				[1, 64],
 			],
-			density: 1.3,
+			density: 1.2,
 			// A twig that carries no shoot is trimmed past its last one, so no bare tip stands
 			// outside the foliage at a whole view.
 			bareTrim: 0.03,
