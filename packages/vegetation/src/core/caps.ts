@@ -63,10 +63,11 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		// measure 2.49, 3.87, 6.95 and 12.86 MB. The owner raised the caps to hold that class at every
 		// tier rather than make the crown give up a prototype for it.
 		kitBytes: { low: 2.7 * MB, medium: 4 * MB, high: 7.1 * MB, ultra: 13 * MB },
-		// The grown oak's largest variant, with about a tenth to spare: 9.34, 9.53, 9.76 and 10.03 MB.
-		// The oak keeps its foliage on the low limbs and stands it on two years of a shoot's run;
-		// its largest variant measures 11.02 MB at high.
-		variantBytes: { low: 16.4 * MB, medium: 16.6 * MB, high: 17.2 * MB, ultra: 17.5 * MB },
+		// The holm oak's densest variant, with a little room above it: 16.94, 17.05, 17.26 and
+		// 17.61 MB. An evergreen carries many small leaves on dense shoots, and the clearance packs
+		// the limbs into fuller crowns, so the evergreen rather than the oak now sets this cap. The
+		// oak's own largest variant measures 11.02 MB at high.
+		variantBytes: { low: 17 * MB, medium: 17.1 * MB, high: 17.3 * MB, ultra: 17.7 * MB },
 		// The pedunculate oak's largest of three variants, with about 15 per cent to spare: 7.72, 9.85,
 		// 13.05 and 17.80 MB. Close-up review needs every finest macro axis as real wood, and a page
 		// that needs fewer triangles grows a coarser plant. A thicker bole costs radial segments on
