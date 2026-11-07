@@ -182,6 +182,10 @@ Rejected:
 - **Fuller rosettes, eight nodes on the long shoot and the spray.** They give the cleanest far masses,
   13 specks against 33. But the kit grows 18 to 33 %: 7.07 MB against the 5.7 MB cap at the high
   tier.
+- **Short winter twigs.** The spray's twigs read long and straight where still 20's are short and kinked.
+  Shortening them does not pay. At 0.95 m the winter branch's outline rises 0.09 to 0.10 and its sky
+  0.69 to 0.65 only. The first view's outline falls 0.73 to 0.67 and the profile's 0.82 to 0.74, and
+  both leave their sky bands. The spray carries a third of the crown, so its length is the crown's.
 - **Near-level limbs.** The bole-and-crown test now counts the great limbs over the six variants the
   game may show. It lets one variant fork into two, so a side shoot that moves no longer fails the
   set. Raising the division angle still does not pay. At 68 degrees the profile's outline falls from
