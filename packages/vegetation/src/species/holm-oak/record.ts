@@ -162,9 +162,6 @@ export const record: Species = {
 				[1, 64],
 			],
 			density: 0.7,
-			// The foliage gathers towards the ends of the axes it stands on, so the outer sprays
-			// meet the wood that reaches them.
-			tipBias: 0.5,
 			shadePrune: 0.1,
 			skyward: 0.0,
 			scale: { mean: 1.3, spread: 0.15 },
