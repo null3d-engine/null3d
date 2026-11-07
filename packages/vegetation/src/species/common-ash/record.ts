@@ -201,14 +201,12 @@ export const record: Species = {
 					[0, 0.8],
 					[1, 1],
 				],
-				// Still 23: the leaves hang steeply from the shoot and arch under their own weight,
-				// as the video's piece does.
 				leafAngle: [
-					[0, 50],
-					[1, 38],
+					[0, 70],
+					[1, 55],
 				],
 				leafAngleSpread: 15,
-				droop: 5,
+				droop: 2,
 			},
 			{
 				name: 'cut',
