@@ -378,7 +378,7 @@ function openMosaic(
 		// species whose rosette is one flat fan, takes the fan instead.
 		const crowded = group.filter((i) => (leaves[i] as PlannedLeaf).crowded > 0.4).length;
 		if (round && group.length > 1 && crowded * 2 > group.length) {
-			spreadRound(leaves, group, rotate);
+			spreadRound(leaves, group, share * ROSETTE_SKY_SHARE, rotate);
 			continue;
 		}
 		// Each leaf's angle in its fan plane, from the stem toward the stem's side.
@@ -439,6 +439,13 @@ function openMosaic(
 	}
 }
 
+/**
+ * The share of the species' skyward turn a rosette's blades keep. Squared right across the shoot, every
+ * lamina faces a camera looking down the twig, and the cluster then shows more sky than the photographs
+ * do; keeping half of the turn squares them without opening the blades past their neighbours.
+ */
+const ROSETTE_SKY_SHARE = 0.5;
+
 /** A leaf's frame in a rosette: where it turns round the stem and how far it opens from it. */
 interface LeafRound {
 	readonly side: Vector3;
@@ -454,7 +461,14 @@ interface LeafRound {
 function spreadRound(
 	leaves: PlannedLeaf[],
 	group: readonly number[],
-	rotate: (direction: Vector3, stem: Vector3, sky: Vector3, radial: Vector3) => number[],
+	skyShare: number,
+	rotate: (
+		direction: Vector3,
+		stem: Vector3,
+		sky: Vector3,
+		radial: Vector3,
+		skyShare?: number,
+	) => number[],
 ): void {
 	const frames: LeafRound[] = group.map((i) => {
 		const leaf = leaves[i] as PlannedLeaf;
@@ -494,7 +508,7 @@ function spreadRound(
 		leaves[group[k] as number] = {
 			...leaf,
 			direction,
-			rotation: rotate(direction, leaf.stem, leaf.sky, radial),
+			rotation: rotate(direction, leaf.stem, leaf.sky, radial, skyShare),
 		};
 	});
 }
@@ -537,16 +551,21 @@ export function planShoot(record: Species, index: number, leafMeshes: number): S
 		foliage.kind === 'needle' || foliage.kind === 'fascicle' ? foliage.needle.angle : undefined;
 	const ranks = foliage.kind === 'needle' ? foliage.needle.ranks : 0;
 	const flatten = phyllotaxis.kind === 'distichous' ? phyllotaxis.flatten : 0;
-	/** A leaf's turn from leaf space: the upper face looks toward the shoot's tip, turned toward the sky side. */
+	/**
+	 * A leaf's turn from leaf space: the upper face looks toward the shoot's tip, turned toward the sky
+	 * side. `flatToAxis` sets the share that instead squares the lamina across the shoot, which is how a
+	 * rosette's blades stand: a camera looking down the twig sees every one of them face on.
+	 */
 	const leafRotation = (
 		direction: Vector3,
 		stem: Vector3,
 		sky: Vector3,
 		radial: Vector3,
+		skyShare?: number,
 	): number[] => {
 		const adaxial = square(stem, direction, radial);
 		const skyward = square(sky, direction, adaxial);
-		const w = Math.min(1, skyTurn + flatten * (1 - skyTurn));
+		const w = skyShare ?? Math.min(1, skyTurn + flatten * (1 - skyTurn));
 		const face = normalize3([
 			adaxial[0] * (1 - w) + skyward[0] * w,
 			adaxial[1] * (1 - w) + skyward[1] * w,
