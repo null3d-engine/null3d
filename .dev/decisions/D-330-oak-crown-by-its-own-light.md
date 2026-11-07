@@ -181,8 +181,11 @@ Rejected:
 - **Fuller rosettes, eight nodes on the long shoot and the spray.** They give the cleanest far masses,
   13 specks against 33. But the kit grows 18 to 33 %: 7.07 MB against the 5.7 MB cap at the high
   tier.
-- **Near-level limbs.** A division angle of 78 degrees breaks the bole-and-crown test: variant 5 keeps
-  2 great limbs and grows a broken fork. The angle stays at 64 degrees until that test changes.
+- **Near-level limbs.** The bole-and-crown test now counts the great limbs over the six variants the
+  game may show. It lets one variant fork into two, so a side shoot that moves no longer fails the
+  set. Raising the division angle still does not pay. At 68 degrees the profile's outline falls from
+  0.82 to 0.74. At 72 every whole view worsens, and the shoulder's edge directions rise from 0.17 to
+  0.34. The angle stays at 64.
 - **Leaves on this year's spray only.** 02's top-third share rises from 0.209 to 0.247, past its band.
 
 ### The owner's rulings
