@@ -1688,6 +1688,13 @@ export interface WindSpec {
 		readonly kind: 'blade' | 'flat-petiole' | 'needle' | 'leaflet' | 'grass';
 		readonly amplitude: number;
 		readonly frequency: number;
+		/**
+		 * The share of `amplitude` at a height up the plant, from 0 at the ground to 1 at the top. A
+		 * beech's open low skirt swings in the wind while its dense crown's top stays still, which one
+		 * amplitude cannot say; a curve lets the low sprays move more than the top. Absent, every
+		 * height takes the whole amplitude, so a species that names no curve moves as it did.
+		 */
+		readonly byHeight?: Curve;
 	};
 }
 

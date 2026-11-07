@@ -324,7 +324,20 @@ export const record: Species = {
 			[1, 0.98],
 		],
 		sway: { frequency: 0.3, amplitude: 0.018 },
-		flutter: { kind: 'blade', amplitude: 0.025, frequency: 2.6 },
+		// The reference's wind clip moves its low skirt most and its crown's top least. The foliage on
+		// both ends is the same branch order, so the stiffness cannot tell them apart; the flutter
+		// falls with height instead.
+		flutter: {
+			kind: 'blade',
+			amplitude: 0.025,
+			frequency: 2.6,
+			byHeight: [
+				[0, 4],
+				[0.25, 3],
+				[0.5, 1],
+				[1, 0.45],
+			],
+		},
 	},
 	lod: {
 		nearFoliage: 'instanced',
