@@ -73,6 +73,9 @@ export const forms: Readonly<Record<string, SpeciesForm>> = {
 		// Still 32: about four metres tall to its top leaves, the stem a sixtieth of the height across.
 		size: { height: { mean: 4.4, spread: 0.4 }, dbh: 0.06, aspect: 0.5 },
 		growth: {
+			// Stills 02, 18 and 32: a sapling's limbs are open enough that the clearance thins its
+			// stem and limbs, so the young form grows without it.
+			clearance: null,
 			// A sapling of about eleven seasons.
 			years: 11,
 			// Still 32: the limbs carry the shoots directly, with no orders between.
