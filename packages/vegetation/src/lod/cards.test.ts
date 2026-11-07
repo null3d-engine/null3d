@@ -139,12 +139,14 @@ describe('the card bake', () => {
 			({ pixels, size } = mip(pixels, size));
 			const here = measure(pixels);
 			expect(Math.abs(here.coverage - top.coverage)).toBeLessThan(0.01);
-			// Each channel within 3 per cent of the colour's brightest channel, which is what the eye reads.
+			// Each channel within 3 per cent of the colour's brightest channel, which is what the eye
+			// reads, and one more step of the byte the atlas stores it in: a level cannot hold a colour
+			// finer than that, so a bound of three alone fails on quantisation rather than on a mip.
 			const bright = Math.max(...top.colour);
 			for (let c = 0; c < 3; c++)
 				expect(
 					Math.abs((here.colour[c] as number) - (top.colour[c] as number)) / bright,
-				).toBeLessThan(0.03);
+				).toBeLessThan(0.03 + 1 / 255);
 		}
 	});
 
