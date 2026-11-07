@@ -272,7 +272,7 @@ export const record: Species = {
 		cardGrow: 1.25,
 		// A card draws its twig at least three pixels across, from the parent's end to the leaves'
 		// centre, so a spray over a fine twig does not read as a piece in air.
-		cardStalk: 3,
+		cardStalk: 8,
 		cardStalkToFoliage: true,
 		switchPixels: [500, 12, 160],
 		woodOrders: [2, 1],
