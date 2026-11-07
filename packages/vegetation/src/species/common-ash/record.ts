@@ -205,7 +205,7 @@ export const record: Species = {
 					[0, 70],
 					[1, 55],
 				],
-				leafAngleSpread: 15,
+				leafAngleSpread: 5,
 				droop: 2,
 			},
 			{
