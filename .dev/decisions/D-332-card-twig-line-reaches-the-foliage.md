@@ -76,3 +76,8 @@ and every judged picture.
 - `packages/vegetation/src/lod/cards.test.ts` holds the absent case end for end. It also holds the
   present case's reach and that both draw the same triangles.
 - The beech's record sets the field beside its two-pixel width. The oak and the ash do not.
+- A stated fault remains at the whole view's scale. The line joined the first wave: the beech's whole
+  views fell from 8, 5 and 10 pieces to 2, 3 and 3. Edge density then took the silhouette from 9 to 7
+  and the default view to 1. The rest are the card tips' own outer leaves, standing 2 to 8 pixels
+  beyond the point the line reaches. That is a fault of the card level at that scale, not of the
+  crown, and it is recorded beside the look-up views' limit.
