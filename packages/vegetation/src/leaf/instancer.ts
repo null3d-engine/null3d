@@ -432,7 +432,13 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 		return false;
 	};
 	const step = divergence(record);
-	const angle = radians(lateralAngle(record));
+	// A record may turn each shoot further out from its wood, so the crown's foliage reaches away
+	// from the twigs that carry it; the shoot's foot stays on the wood either way.
+	const degree = Math.min(
+		90,
+		Math.max(0, lateralAngle(record) + Math.max(0, shoots.placement.reach ?? 0)),
+	);
+	const angle = radians(degree);
 	const tropism = radians(tropismTurn(record));
 	const skyward = Math.min(1, Math.max(0, shoots.placement.skyward));
 	const prune = Math.min(1, Math.max(0, shoots.placement.shadePrune));

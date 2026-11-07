@@ -162,3 +162,52 @@ Rejected:
   reads the same grid through `crownSkyAt`.
 - A species' envelope comes from its turntable by the method above until the fitting tools
   measure it.
+
+## A stool of stems in the open
+
+A record may grow several stems from one stool. `StemSpec` gives `count`, `lean`, `stool` and
+`fused`. Each stem stands on the plant's ring and takes its own flare, buttress and roots. The
+stems share one light grid and one resource.
+
+The rule that a stem's leader sees full light below the envelope's base is written for one stem.
+It is a bole under its own crown. A stool's stems are separate trunks in the open below the
+plant's first fork. The holm oak's reference has its lowest leaf at 0.09 of the height. So the
+stems lost their light shelter there and competed from the bottom. Two of eight stems kept a girth
+over 1 cm at 1.3 m.
+
+The grower now shelters a stem's leader below the first fork when the plant has several stems.
+That case needs `starts.length > 1` and a `divide`. Without them, the shelter ends at the
+envelope's base as before. A single stem takes the second branch of the condition, so its growth
+is byte for byte the old growth. The oak's records and tests do not change. The test
+`grow/self-organizing.test.ts` grows a stool of eight stems with and without a fork. It requires
+more stems with a trunk at 1.3 m when the fork is present.
+
+At seed 11 on the holm oak's record, variant 0, the stems over 1 cm at 1.3 m went from 2 of 9 to
+6 of 9. Variant 1 went from 4 to 7 of 8.
+
+Rejected:
+
+- **A larger `stems.count`.** Twelve stems did not raise the share of thick stems.
+- **A wider shadow.** It made the crown run away and was stopped before a render.
+
+
+
+The fused run grows straight up from the stool and the bud keeps that line, so a stem's lean was
+lost above the fused length. The grower now gives a stem its lean back once it clears the fused
+run; a single stem keeps `fused` 0 and takes no new path. The holm oak's stems then stand together
+at the stool and splay above it into the wider envelope.
+
+The stems of a stool fork at heights in an even stair round the record's divide height, each within
+a fifth of it. A ring that forks on one plane heaps its limbs into one band of the shadow grid: the
+first year's limbs shade each other to nothing, the shed rule removes them, and the plant stops at
+its fork. At seed 11 on the holm oak's record, variant 5 stood 3.10 m tall against 8.36 m for
+variant 0. With the stair it stands 7.4 m, and thirty plants over five seeds and six variants all
+pass 6.5 m. One stem forks at the record's height, so a single-stem plant takes no new path: the
+oak's eighteen skeletons at three seeds and six variants keep their digests.
+
+A stool's clean bole clears every branch that starts below the bole height, and every branch whose
+tip hangs below it. One stem keeps the older rule, which clears only the branches that leave the
+stem itself. A chain of fine twigs can otherwise dive from the crown and hang in the open beneath
+it: on the holm oak, one variant's lowest foliage stood at 0.47 m where its siblings stood at 2.6 to
+2.9 m, and it carried more shoots than any other. With the stool's rule the six crown bases sit at
+0.24 to 0.32 of their heights, and the oak's eighteen skeleton digests stay as they were.

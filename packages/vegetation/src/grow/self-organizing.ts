@@ -83,6 +83,12 @@ export function girthOf(order: number): number {
 
 /** A child at least this share of its parent's radius makes a fork. */
 const FORK_SHARE = 0.7;
+/**
+ * How far below and above the record's height a stool's stems fork, as a share of it: they fork in
+ * an even stair. Stems that fork on one plane heap their limbs into one band of the shadow grid,
+ * where each limb shades the next and the crown's start is shed.
+ */
+const DIVIDE_SPREAD = 0.2;
 
 /** The hash purposes of the grower's choices, so no two draws share a key. */
 const Purpose = {
@@ -490,13 +496,30 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 
 	// The stems: each starts with a base node on the ground and a terminal bud.
 	const starts = stemStarts(g.stems, seed, salt, variant);
+	// Each stem of a stool forks at its own height, in an even stair round the record's height; one
+	// stem forks at the record's height.
+	const divideHeights = starts.map((_, s) =>
+		starts.length > 1 && g.divide !== undefined
+			? divideAt * (1 + DIVIDE_SPREAD * ((s / (starts.length - 1)) * 2 - 1))
+			: divideAt,
+	);
+	// A stool of several stems stands in the open below its fork: each stem is its own trunk there,
+	// so the plant's lowest leaf does not mark where light reaches a stem's leader. One stem keeps
+	// the crown's base as its open height.
+	const openHeight = (stem: number): number =>
+		starts.length > 1 && g.divide !== undefined
+			? Math.max(volume.base, divideHeights[stem] as number)
+			: volume.base;
 	const fusedHeight: number[] = [];
+	const stemDirection: Vector3[] = [];
+	const leaned = new Uint8Array(starts.length);
 	starts.forEach((start, s) => {
 		const axis = plant.addAxis(-1, 0, s);
 		const node = plant.addNode(start.x, 0, start.z, start.direction, -1, axis, 0);
 		registerWood(node);
 		plant.addBud(node, axis, start.direction, true);
 		fusedHeight.push(start.fused);
+		stemDirection.push([...start.direction]);
 	});
 
 	const scratchU: Vector3 = [0, 0, 0];
@@ -596,7 +619,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 		}
 	};
 
-	/** A bud's light: the grid's, but full light for a stem's leader below the envelope. */
+	/** A bud's light: the grid's, but full light for a stem's leader below its open height. */
 	const budLight = (b: number): number => {
 		const n = plant.budNode[b] as number;
 		const x = plant.x[n] as number;
@@ -605,7 +628,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 		if (
 			plant.budTerminal[b] &&
 			plant.axisOrder[plant.budAxis[b] as number] === 0 &&
-			y < volume.base
+			y < openHeight(plant.axisStem[plant.budAxis[b] as number] as number)
 		)
 			return 1;
 		return grid.light(x, y, z);
@@ -764,7 +787,25 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			const px = plant.x[previous] as number;
 			const py = plant.y[previous] as number;
 			const pz = plant.z[previous] as number;
+			// A stem that ran fused with its neighbours takes its lean back once it clears the fused
+			// length: the fused run grows straight up, and the bud would otherwise keep that line.
+			if (
+				order === 0 &&
+				(fusedHeight[stem] as number) > 0 &&
+				py >= (fusedHeight[stem] as number) &&
+				leaned[stem] === 0
+			) {
+				const dir = stemDirection[stem] as Vector3;
+				d[0] = dir[0];
+				d[1] = dir[1];
+				d[2] = dir[2];
+				leaned[stem] = 1;
+			}
 			const corridor = order === 0 && py < volume.base;
+			// A stem's leader grows in the open to its fork, as the light rule already lets it. The
+			// crown hull's lowest rows describe the canopy above the stool, not the stool itself, so
+			// they do not stop a stem from leaving the stool at its own angle.
+			const openGrowth = order === 0 && py < openHeight(stem);
 			if (corridor) {
 				toward[0] = 0;
 				toward[1] = 1;
@@ -821,7 +862,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			// part of a step still fits, so the crown reaches its outline.
 			let step = length;
 			let last = false;
-			if (!corridor && volume.room(px + nx * step, py + ny * step, pz + nz * step) < 0) {
+			if (!openGrowth && volume.room(px + nx * step, py + ny * step, pz + nz * step) < 0) {
 				last = true;
 				step = 0;
 				for (const share of SHORT_STEPS)
@@ -837,9 +878,9 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 					}
 				if (step === 0) break;
 			}
-			// The leader divides at the record's height: its last internode reaches that height and
+			// The leader divides at the stem's fork height: its last internode reaches that height and
 			// its tip carries the record's number of great limbs, spread around it, no leader among them.
-			const toDivide = divideAt - py;
+			const toDivide = (divideHeights[stem] as number) - py;
 			if (order === 0 && toDivide <= step) {
 				if (toDivide <= 0) break;
 				step = toDivide;
@@ -1307,8 +1348,13 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			const first = plant.axisFirst[a] as number;
 			const from = plant.axisParentNode[a] as number;
 			if (first < 0 || from < 0 || plant.axisShed[a] || !live[first]) continue;
-			const onStem = plant.axisOrder[plant.axisOf[from] as number] === 0;
-			const low = onStem && (plant.y[from] as number) < bole;
+			// One stem clears the branches that leave it below its bole. A stool clears every branch
+			// that starts or hangs below the bole, so no twig chain dangles under the crown.
+			const low =
+				starts.length > 1
+					? (plant.y[from] as number) < bole ||
+						(plant.y[plant.axisTip[a] as number] as number) < bole
+					: plant.axisOrder[plant.axisOf[from] as number] === 0 && (plant.y[from] as number) < bole;
 			const held = nodes[first] as number;
 			const dim = held >= SHED_AFTER && (light[first] as number) / held < threshold;
 			if (!low && !dim) continue;
@@ -1366,12 +1412,13 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			const sides = (plant.axisOrder[a] as number) < sideOrders;
 			const tb = plant.axisBud[a] as number;
 			if (tb >= 0 && plant.budState[tb] === ALIVE) {
-				// With the relay, a stem's leader below the crown is spared the chance loss that would
-				// leave no shoot in the light to take over.
+				// With the relay, a stem's leader below the open height is spared the chance loss that
+				// would leave no shoot in the light to take over.
 				const sheltered =
 					relay &&
 					plant.axisOrder[a] === 0 &&
-					(plant.y[plant.budNode[tb] as number] as number) < volume.base;
+					(plant.y[plant.budNode[tb] as number] as number) <
+						openHeight(plant.axisStem[a] as number);
 				if (!sheltered && unit(Purpose.Extinct, year, tb) < extinctApical) {
 					shade(tb, -1);
 					plant.budState[tb] = DEAD;
