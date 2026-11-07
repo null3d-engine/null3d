@@ -1088,11 +1088,13 @@ export default defineSketch(async (ctx) => {
 				...(near && { near }),
 				...(far && { far }),
 				// A forced nearest level draws its real shoots at every distance: the bias moves the
-				// shoots' switch past every camera's far plane.
+				// shoots' switch past every camera's far plane. A cut piece takes the nearest level
+				// too: it has no card levels, so a sheet's smaller cells would switch its foliage to
+				// cards that hold nothing, and the piece would vanish.
 				view: {
 					height: SIZE[1] / rows,
 					fov: FOV,
-					...(LOD === 0 && { switchBias: -FORCED_NEAR_STOPS }),
+					...((LOD === 0 || SPEC.cutting !== undefined) && { switchBias: -FORCED_NEAR_STOPS }),
 				},
 				castShadows: !MATTE,
 			},
