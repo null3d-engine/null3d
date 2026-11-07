@@ -929,10 +929,18 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 				: STALK_SIDES;
 		// The stalks take the band colour where the record gives one, as an acorn's peduncle does.
 		const stalkBand = extra.bandColour ? 1 : 0;
-		sitesOf(input, extra).forEach((site, s) => {
+		sitesOf(input, extra).forEach((given: Site, s) => {
 			const purpose = input.variant * 64 + PURPOSE + index;
 			if (unitAt(input.seed, salt, purpose, s) >= extra.share) return;
 			const turn = unitAt(input.seed, salt, purpose, s, 1) * 2 * Math.PI;
+			// A fruit that stands beside its site moves with its whole body, stalks included.
+			const offset = extra.offset;
+			const site: Site = offset
+				? {
+						...given,
+						at: [given.at[0] + offset[0], given.at[1] + offset[1], given.at[2] + offset[2]],
+					}
+				: given;
 			site.sky = Math.round(
 				255 * Math.min(1, Math.max(0, crownSkyAt(input.crown, site.at[0], site.at[1], site.at[2]))),
 			);

@@ -339,6 +339,8 @@ export const record: Species = {
 			// the split cupule lower, each where the twig shows.
 			tipShare: 0.86,
 			seasons: ['autumn'],
+			// Still 19: the burr hangs to one side of the split cupule.
+			offset: [0.045, 0, 0],
 			shape: {
 				// A closed husk: a plump body that swells from the stalk and closes again over its top,
 				// so no opening faces the light.
@@ -380,6 +382,8 @@ export const record: Species = {
 			count: { mean: 1, spread: 0 },
 			tipShare: 0.78,
 			seasons: ['autumn'],
+			// Still 19: the split cupule's valves stand to the other side of the twig.
+			offset: [-0.045, 0, 0],
 			shape: { petals: 4, radius: 0.012, cup: 0.35 },
 			colour: [0.38, 0.31, 0.16],
 			roughness: [0.85, 0.85],
@@ -393,6 +397,8 @@ export const record: Species = {
 			count: { mean: 2, spread: 0 },
 			tipShare: 0.78,
 			seasons: ['autumn'],
+			// Still 19: the nuts sit inside the valves and a little below their rims.
+			offset: [-0.045, -0.006, 0],
 			shape: {
 				lathe: [
 					[0, 0],

@@ -283,6 +283,24 @@ describe('the extras', () => {
 		}
 	});
 
+	it('stands an extra beside its site where the record gives an offset', () => {
+		const plain = extrasMesh(dressed(oakRecord({ extras: [{ ...ACORN, share: 1 }] }), 'summer'), 0);
+		const moved = extrasMesh(
+			dressed(oakRecord({ extras: [{ ...ACORN, share: 1, offset: [0.2, 0, 0] }] }), 'summer'),
+			0,
+		);
+		if (!plain || !moved) throw new Error('no acorns');
+		expect(plain.positions.length).toBe(moved.positions.length);
+		// Every body stands the offset from where it stood, so the mesh's bounds move with it.
+		let plainMin = Number.POSITIVE_INFINITY;
+		let movedMin = Number.POSITIVE_INFINITY;
+		for (let i = 0; i < plain.positions.length; i += 3) {
+			plainMin = Math.min(plainMin, plain.positions[i] as number);
+			movedMin = Math.min(movedMin, moved.positions[i] as number);
+		}
+		expect(movedMin - plainMin).toBeCloseTo(0.2, 5);
+	});
+
 	it('stands a bed of bristles off the lathe it lies on', () => {
 		const lathe = (ACORN.shape as { lathe: readonly [number, number][] }).lathe;
 		const plain = extrasMesh(dressed(oakRecord({ extras: [{ ...ACORN, share: 1 }] }), 'summer'), 0);

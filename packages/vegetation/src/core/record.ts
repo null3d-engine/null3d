@@ -1646,6 +1646,13 @@ export interface ExtraSpec {
 	readonly stalkColour?: Rgb;
 	/** Degrees it hangs from its site. */
 	readonly hang: number;
+	/**
+	 * Metres this extra stands from its site, in the plant's own axes: a group of fruits hangs from
+	 * one twig, and one of them may stand beside the other rather than on top of it. Every part of the
+	 * extra moves with it, its stalks included. Absent, it hangs from the site itself, as it always
+	 * has.
+	 */
+	readonly offset?: Vec3;
 }
 
 /**
