@@ -207,6 +207,14 @@ keeps. At nothing the blade begins where the leaflet meets the rachis and the st
 not built at all. A record that names no share keeps the whole stalk, so every other species draws
 as it did.
 
+Run `ash-24` measured it. The cut views fall from 33, 36 and 16 pieces to 2, 1 and 1, and the single
+leaf from 2 and 10 to 1 and 1, with each leaflet meeting the rachis in a solid wedge in the matte.
+The cluster view falls from 13 pieces to 1, the secondary branching from 28 to 1 and the fine twigs
+from 5 to 1. Two views rise: the crown outside from 47 to 65, and the limb fork falls from 68 to 34.
+The whole views' pieces stay at 2, 1 and 2, and their sky gap rises by 0.008 to 0.013, which puts 02
+and 18 inside their bands and leaves 01 0.06 short. The kit falls to 4.91 and 9.07 MB at the high
+and ultra tiers.
+
 ### The crown seen from under it
 
 Stills 03 and 08 look up the bole, and there the drawn crown is far denser than its photographs: 03
