@@ -279,7 +279,9 @@ export const record: Species = {
 			variantBytes: { low: 17_000_000, medium: 17_100_000, high: 17_300_000, ultra: 17_700_000 },
 			lod0Triangles: 2_500_000,
 			lod1Triangles: 150_000,
-			lod2Triangles: 30_000,
+			// The second card level measures 33,854 triangles with the clearance; the cap sits just
+			// above it.
+			lod2Triangles: 34_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
 			growMilliseconds: 600,
