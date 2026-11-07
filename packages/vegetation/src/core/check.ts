@@ -330,6 +330,7 @@ function growthProblems(record: Species, out: string[]): void {
 			out.push(`foliage.compound.rachis is ${compound.rachis}; it must be above 0`);
 		const step = compound.leafletStep;
 		if (step !== undefined) wholeProblem(step, 'foliage.compound.leafletStep', 0, 2, out);
+		shareProblem(compound.leafletStalk, 'foliage.compound.leafletStalk', out);
 	}
 	if (record.foliage.kind === 'grass-blade') {
 		const blade = record.foliage.blade;

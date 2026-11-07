@@ -193,6 +193,20 @@ pieces against the photograph's one each, where the second pass drew 12, 12 and 
   per-metre curve places, so raising it closes the crown further. A threefold rise moved this figure
   by 0.08, so no dial carries row 6; the crown's shape does.
 
+### The fifth pass: the leaflets meet the rachis
+
+The fourth pass's cut views drew 33, 36 and 16 pieces against the photograph's one each, and the
+rachis rule moved them by a piece or three. The review's mattes name the cause: a single leaf draws
+as two pieces from above and ten from below, and it is one mesh either way. The leaflet's own stalk
+is drawn from a band of the leaf texture that carries no leaf on the underside, so that band draws
+nothing and every leaflet stands clear of the rachis on that face. The photographs show sessile
+leaflets, their blades meeting the rachis directly.
+
+`CompoundLeaf.leafletStalk`, optional and 0 to 1, is the share of its drawn stalk that a leaflet
+keeps. At nothing the blade begins where the leaflet meets the rachis and the stalk's geometry is
+not built at all. A record that names no share keeps the whole stalk, so every other species draws
+as it did.
+
 ### The crown seen from under it
 
 Stills 03 and 08 look up the bole, and there the drawn crown is far denser than its photographs: 03

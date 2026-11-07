@@ -282,6 +282,8 @@ export const record: Species = {
 			leaflets: { mean: 9, spread: 0.5 },
 			rachis: 1.68,
 			terminal: true,
+			// Stills 12 and 13: each leaflet's blade meets the rachis with no stalk of its own.
+			leafletStalk: 0,
 		},
 	},
 	bark: {
