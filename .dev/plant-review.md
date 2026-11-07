@@ -262,6 +262,9 @@ pedunculate oak's ([D-330](decisions/D-330-oak-crown-by-its-own-light.md)).
 | Kit over its cap | Longer `bend` pieces, `leafYears` 1, or fewer rosette leaves | Fuller rosettes cost 18 to 33 % of the kit |
 | A rosette that reads as a heap of blades | `shoots.placement.rosette` 'fan' | The tip stops spreading its leaves round the stem and stands them in one face, as the close photographs show. Outlines rise 0.02 to 0.05 at the cut views: 10 to 0.39, 22 to 0.39, 23 to 0.55 |
 | Blades drawn smaller than the record's leaf | The shoot class's `leafScale` to 1.0 | Every blade at the record's own length. Raise the scale, never the leaf: a longer leaf takes row 4 past the species' own size |
+| A cut piece that reads as one bare stem | The cutting class's `laterals`, with `lateralGap` at its most | The sub-branch forks into shoots with a rosette at each end, as its photograph shows. Its sky gap opens from 0.14 to 0.21 against the photograph's 0.26 |
+| A fruit's cup that reads as a smooth cone | The cup's lathe profile, its `scales`, then `scaleShade` and `scaleJitter` | The cup stands wider and deeper than the nut, its rows read as scales, and no two scales take the same shade. A flat cup still fails row 12: a viewer close enough to see it sees its surface before its outline |
+| A leaf group or a limb standing in the air | The join it should make, then the pruning that left it | A piece the reference does not have fails row 12 whatever its size. The piece counts in the review name it, and the builders' test walks every axis back to a stem |
 
 Each floor value grows a different tree, so read all six variants after a floor change. Do not bring
 back the clump field for the specks: its holes fall at random through the wood.

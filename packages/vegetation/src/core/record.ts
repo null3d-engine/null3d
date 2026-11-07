@@ -1605,6 +1605,13 @@ export type ExtraShape =
 			 * overlapping scales. 0 by default, an even band.
 			 */
 			readonly scaleShade?: number;
+			/**
+			 * How much each scale's shade departs from its neighbours', 0 to 1, as a share of the
+			 * band's colour: a real cup's scales differ one from the next, where an even band reads as
+			 * one flat cone. The departure is fixed for each scale, so the picture repeats. 0 by
+			 * default, every scale the same shade.
+			 */
+			readonly scaleJitter?: number;
 	  }
 	| { readonly petals: number; readonly radius: number; readonly cup: number }
 	| { readonly spines: number; readonly length: number; readonly spread: number }
