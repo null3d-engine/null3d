@@ -106,7 +106,7 @@ export const record: Species = {
 				share: 0.3,
 				years: 1,
 				length: { mean: 0.14, spread: 0.02 },
-				nodes: { mean: 10, spread: 0.5 },
+				nodes: { mean: 7, spread: 0.5 },
 				internode: ROSETTE,
 				leafScale: [
 					[0, 0.85],
@@ -142,7 +142,7 @@ export const record: Species = {
 				// Still 22's sub-branch: its side shoots leave the stem one at a time, a few centimetres
 				// apart, not as a fan from one point.
 				laterals: 3,
-				lateralGap: 0.45,
+				lateralGap: 0.35,
 				// The winter cut branch's twigs run stiff and angular between their nodes, not as one rod,
 				// kinking every 6 cm or so as its reference's twigs do.
 				bend: { length: 0.06, angle: 34 },
