@@ -186,6 +186,28 @@ export const record: Species = {
 		// shoot this open, so the cuttings draw this class and the crown never does.
 		cuttingClasses: [
 			{
+				// Still 23 and the cluster's turn: the video's piece carries six leaves in three
+				// opposite pairs, where the crown's short shoots carry two. Its own class keeps the
+				// crown's shoots as they are.
+				name: 'spur',
+				vigor: [0, 1],
+				share: 0,
+				years: 1,
+				length: { mean: 0.19, spread: 0.03 },
+				nodes: { mean: 3, spread: 0 },
+				internode: PAIR,
+				leafScale: [
+					[0, 0.8],
+					[1, 1],
+				],
+				leafAngle: [
+					[0, 70],
+					[1, 55],
+				],
+				leafAngleSpread: 15,
+				droop: 2,
+			},
+			{
 				name: 'cut',
 				vigor: [0, 1],
 				share: 0,
@@ -429,7 +451,7 @@ export const record: Species = {
 		subbranch: { shoot: 'cut', pick: 1 },
 		// Still 23: one opposite pair of leaves under a small black terminal bud, as this year's shoot
 		// draws it.
-		cluster: { shoot: 'short' },
+		cluster: { shoot: 'spur' },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
 		leaf: { pressed: true },
 	},
