@@ -71,6 +71,14 @@ const BREAST_HEIGHT = 1.3;
 const KINK_DRIFT = 0.5;
 /** Nodes a bud's site looks back along its wood for a cell inside the envelope. */
 const SITE_STEPS = 4;
+/** A limb's girth beside another's, as a share of the clearance, by botanical order. */
+const GIRTH = [1, 0.6, 0.35, 0.2, 0.1] as const;
+
+/** One axis's girth beside another's, as a share of the record's clearance. */
+function girthOf(order: number): number {
+	return GIRTH[Math.min(GIRTH.length - 1, Math.max(0, order))] as number;
+}
+
 /** A child at least this share of its parent's radius makes a fork. */
 const FORK_SHARE = 0.7;
 
@@ -422,7 +430,8 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 		const cx = Math.floor(x / clearCell);
 		const cy = Math.floor(y / clearCell);
 		const cz = Math.floor(z / clearCell);
-		const near = clearance * clearance;
+		// A limb's girth falls with its order, so a twig may pass near a twig but not through a limb.
+		const mine = girthOf(plant.axisOrder[axis] as number);
 		for (let ux = -1; ux <= 1; ux++)
 			for (let uy = -1; uy <= 1; uy++)
 				for (let uz = -1; uz <= 1; uz++) {
@@ -436,7 +445,8 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 						const dx = (plant.x[node] as number) - x;
 						const dy = (plant.y[node] as number) - y;
 						const dz = (plant.z[node] as number) - z;
-						if (dx * dx + dy * dy + dz * dz < near) return true;
+						const apart = clearance * (mine + girthOf(plant.axisOrder[other] as number));
+						if (dx * dx + dy * dy + dz * dz < apart * apart) return true;
 					}
 				}
 		return false;
