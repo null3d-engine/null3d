@@ -21,6 +21,8 @@ interface Lobe {
 	readonly angle: number;
 	readonly amount: number;
 	readonly height: number;
+	/** How narrow this lobe's crest is: higher is narrower, and the record's own × a share. */
+	readonly sharpness: number;
 }
 
 /** Heights of fade over which a rounded lobe eases from its full swell to none. */
@@ -76,11 +78,15 @@ function lobesOf(
 	const lobes: Lobe[] = [];
 	for (let k = 0; k < count; k++) {
 		const key = stem * 64 + k + 1;
-		const jitter = (unitAt(seed, salt, variant, Purpose.Lobe, key) - 0.5) * 0.5;
+		// A real foot's lobes are not one shape repeated: each stands where its own draw puts it, a
+		// little larger or smaller, taller or shorter, and narrower or broader than its neighbours.
+		const jitter = (unitAt(seed, salt, variant, Purpose.Lobe, key) - 0.5) * 1.1;
 		lobes.push({
 			angle: turn + ((k + jitter) / count) * 2 * PI,
-			amount: buttress.amount * (0.6 + 0.6 * unitAt(seed, salt, variant, Purpose.Lobe, key + 1000)),
-			height: buttress.height * (0.7 + 0.6 * unitAt(seed, salt, variant, Purpose.Lobe, key + 2000)),
+			amount: buttress.amount * (0.4 + 1.0 * unitAt(seed, salt, variant, Purpose.Lobe, key + 1000)),
+			height:
+				buttress.height * (0.45 + 1.1 * unitAt(seed, salt, variant, Purpose.Lobe, key + 2000)),
+			sharpness: 0.55 + 0.9 * unitAt(seed, salt, variant, Purpose.Lobe, key + 3000),
 		});
 	}
 	return lobes;
@@ -143,7 +149,10 @@ export function stemSection(
 			for (const lobe of lobes) {
 				const d = angleBetween(theta, lobe.angle) * (width / 2);
 				if (d <= -PI / 2 || d >= PI / 2) continue;
-				swell += lobe.amount * pow(cos(d), sharpness) * lobeFade(height, lobe.height, round);
+				swell +=
+					lobe.amount *
+					pow(cos(d), sharpness * lobe.sharpness) *
+					lobeFade(height, lobe.height, round);
 			}
 			factor *= 1 + swell;
 			let radius = r * factor;
