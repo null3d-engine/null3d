@@ -70,6 +70,9 @@ engine's own stages, and its rows match `growPlantNow` byte for byte on all six 
 | The photographs' girth | `size.dbh` 2.45 m, `growth.bending.girth` 3.5 m | 02, 18: the bole about an eighth of the height across | The trunk at 1.3 m falls from 4.81 m to about 2.5 m, and the wood bytes by 20 to 27 %. The crown sags as it did | The sharp-bend test |
 | Named forms | `forms`: woodland and young | 30, 31, 32 | All three pass | Each form's kit within the species' budget, and finite positions in every variant |
 | Density | `shoots.placement.density` 1.25, from 0.9 | The reference's cover without the clump field | Each 0.1 more closes the sky gap by 0.004 to 0.007 | Variant bytes |
+| A rosette that stands as one fan | `shoots.placement.rosette` 'fan' | 10, 11, 21, 22, 23: the close views' rosettes | Outline overlap rises at 10 0.33 to 0.39, 11 0.57 to 0.59, 21 0.32 to 0.34, 22 0.34 to 0.39 and 23 0.50 to 0.55, and 21 draws the reference's single piece. 02's loose pieces rise 7 to 10 and 18's 3 to 5 | Nothing measured |
+| Twigs thick enough to draw the foliage they carry | `growth.pipe.tipRadius` 0.012 m | 02, 18: foliage that meets its wood at the whole views | 02's loose pieces fall 11 to 7. The young bark's surface color rises 1.9 to 2.8 | Wood bytes |
+| Every blade at the record's leaf | The long shoot's `leafScale` 1.0 | 10, 22, 30 | Outline overlap rises 0.02 at 10 and 22 | Kit bytes |
 
 The record also sets the tip buds, the acorns, the bark tint, the roots, the fork's elbow and the
 lichen to their pictures. Each value's comment names the still it matches.
