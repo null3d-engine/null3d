@@ -54,10 +54,12 @@ export default defineSketch(async (ctx) => {
 	// The season: every record declares what its own does, so the same meadow grows bare in winter,
 	// turns in autumn and flowers in blossom. Summer is the record's default.
 	let season: 'summer' | 'autumn' | 'winter' | 'blossom' = 'summer';
-	// The foliage's density: the record's own crown sits at the slider's middle. The lever is the
-	// record's sky prune, which drops the shoots a crown's shaded wood carries: raised, the crown
-	// thins toward its bare wood; lowered, it keeps the shoots that would have gone.
+	// The foliage's density, against each record's own crown. The slider's middle is the record's own
+	// so its track runs 0 at the sparsest, 0.5 at the record's, 1 at the fullest, and the share the
+	// add-on takes runs from 0.4 through 1 to 2.
 	let foliage = 0.5;
+	const shareOf = (value: number) =>
+		value <= 0.5 ? 0.4 + (value / 0.5) * 0.6 : 1 + ((value - 0.5) / 0.5) * 1;
 	// The level of detail's coarseness: 0 draws the plant as grown, 1 the coarsest, where the
 	// finest twigs are gone and the shoots that remain are larger.
 	let detail = 0;
@@ -84,17 +86,17 @@ export default defineSketch(async (ctx) => {
 					radio: false,
 					buttons: [],
 					slider: {
-						min: 0.4,
-						max: 2,
+						min: 0,
+						max: 1,
 						step: 0.05,
 						value: foliage,
 						live: false,
 						marks: [
-							{ at: 0.4, label: 'sparse' },
-							{ at: 1, label: 'default' },
-							{ at: 2, label: 'dense' },
+							{ at: 0, label: 'sparse' },
+							{ at: 0.5, label: 'default' },
+							{ at: 1, label: 'dense' },
 						],
-						tip: "Drag left to thin each crown toward its bare wood, or right to keep the shoots its own density drops. 1 is every record's own crown.",
+						tip: "Drag left to thin each crown toward its bare wood, or right to keep the shoots its own density drops. The middle is every record's own crown.",
 					},
 				},
 				{
@@ -156,7 +158,7 @@ export default defineSketch(async (ctx) => {
 				near: true,
 				season,
 				coarseness: detail,
-				foliage,
+				foliage: shareOf(foliage),
 			});
 			const x = ((index % across) - (across - 1) / 2) * step;
 			const z = (Math.floor(index / across) - (ids.length / across - 1) / 2) * step;

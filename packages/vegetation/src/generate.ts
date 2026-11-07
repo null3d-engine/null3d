@@ -250,7 +250,10 @@ export function kitKey(record: Species, manifest: TextureManifest, detail: Detai
 export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
 	const season = options.season ?? kit.record.seasons.default;
 	const cutting = options.cutting ? JSON.stringify(options.cutting) : '';
-	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}`;
+	// The foliage share grows a different crown, so it keys a different asset.
+	const foliage =
+		options.foliage === undefined || options.foliage === 1 ? '' : `:foliage=${options.foliage}`;
+	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${foliage}`;
 }
 
 /**
