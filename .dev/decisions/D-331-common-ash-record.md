@@ -318,6 +318,23 @@ height against the photographs' 0.038 to 0.051. Run `ash-46` draws the whole vie
 from 0.474 to 0.479 at 01 and the trunk taper from 0.417 to 0.422, and takes the limb's bark view
 from 0.407 to 0.356 as the camera finds a different limb. The largest variant rises to 6.13 MB.
 
+### The cluster's third pair costs a row and does not open the turn
+
+The reviewer named the piece itself as the lever for the cluster's turn: the reference carries six
+leaves in three opposite pairs where the ash's short shoot carries four in two, so the ash's two
+planes flatten more as the piece turns. The third pair was drawn on the crown's own short shoot, so
+the close view and the tree stayed one plant, and run `ash-48` measured it.
+
+It trades one axis of the turn for the other. The crown box's spread over the turn's frames, largest
+less smallest over the mean, goes from 95 per cent wide and 30 tall to 58 and 63, where the reference
+reads 54 and 14: the width, which was the fault, comes into line and the height doubles away from it.
+The turn's mean shape overlap rises from 0.227 to 0.261. The stills go the other way: the clusters
+read 0.3086 and 0.3058 against the photographs' 0.3918 and 0.3882, about 0.083 under and outside the
+band on the closed side, where they passed before.
+
+So the pair costs a passing pair of stills and brings no row, and it is back off: the short shoot
+draws four leaves in two pairs again and the kit returns to 9.07 MB at the ultra tier.
+
 ### The envelope is not a knob
 
 The crown's box reads 1.155, 1.089 and 1.139 wide to high at the whole views against the
