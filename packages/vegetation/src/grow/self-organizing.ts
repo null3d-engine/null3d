@@ -391,6 +391,57 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	const grid = new ShadowGrid([-half, 0, -half], [nxz, ny, nxz], cell, g.light.shadow);
 	openGrid(grid, volume, radial);
 
+	// A grid of the wood already grown, so a shoot can stop rather than pass through another. Its
+	// cell holds the clearance, so a node need only look at the cells round it.
+	const clearance = Math.max(0, g.clearance ?? 0);
+	const clearCell = Math.max(0.25, clearance);
+	const clearGrid = new Map<number, number[]>();
+	const clearKey = (x: number, y: number, z: number): number =>
+		((Math.floor(x / clearCell) + 512) * 1024 + (Math.floor(y / clearCell) + 512)) * 1024 +
+		(Math.floor(z / clearCell) + 512);
+	/** Adds a node to the grid the clearance reads. */
+	const registerWood = (node: number): void => {
+		if (clearance <= 0) return;
+		const key = clearKey(plant.x[node] as number, plant.y[node] as number, plant.z[node] as number);
+		const cell = clearGrid.get(key);
+		if (cell) cell.push(node);
+		else clearGrid.set(key, [node]);
+	};
+	/**
+	 * Whether a point stands within the clearance of another axis's wood.
+	 *
+	 * @param x The point's x.
+	 * @param y The point's y.
+	 * @param z The point's z.
+	 * @param axis The axis that would grow there, whose own wood is not counted.
+	 * @param parent The axis it leaves, whose wood it must touch at its joint.
+	 * @returns True where another axis's wood stands too near.
+	 */
+	const crowded = (x: number, y: number, z: number, axis: number, parent: number): boolean => {
+		if (clearance <= 0) return false;
+		const cx = Math.floor(x / clearCell);
+		const cy = Math.floor(y / clearCell);
+		const cz = Math.floor(z / clearCell);
+		const near = clearance * clearance;
+		for (let ux = -1; ux <= 1; ux++)
+			for (let uy = -1; uy <= 1; uy++)
+				for (let uz = -1; uz <= 1; uz++) {
+					const cell = clearGrid.get(
+						((cx + ux + 512) * 1024 + (cy + uy + 512)) * 1024 + (cz + uz + 512),
+					);
+					if (!cell) continue;
+					for (const node of cell) {
+						const other = plant.axisOf[node] as number;
+						if (other === axis || other === parent) continue;
+						const dx = (plant.x[node] as number) - x;
+						const dy = (plant.y[node] as number) - y;
+						const dz = (plant.z[node] as number) - z;
+						if (dx * dx + dy * dy + dz * dz < near) return true;
+					}
+				}
+		return false;
+	};
+
 	const plant = new Plant();
 	const arrangement = arrangementOf(g.buds.arrangement);
 	const deepest = Math.max(1, g.macroOrders - 1);
@@ -412,6 +463,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	starts.forEach((start, s) => {
 		const axis = plant.addAxis(-1, 0, s);
 		const node = plant.addNode(start.x, 0, start.z, start.direction, -1, axis, 0);
+		registerWood(node);
 		plant.addBud(node, axis, start.direction, true);
 		fusedHeight.push(start.fused);
 	});
@@ -680,11 +732,22 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			const x = px + nx * step;
 			const y = py + ny * step;
 			const z = pz + nz * step;
+			// A real tree's limbs do not pass through one another: a shoot that would come within the
+			// clearance of another axis's wood stops as it is, short of the step.
+			{
+				// A new limb's axis does not exist yet, so it stands for the axis the builder will
+				// give it, and leaves the wood at the node it is starting from.
+				const grown = axis >= 0 ? axis : plant.axes;
+				const joint = axis >= 0 ? (plant.axisParentNode[axis] as number) : fromNode;
+				const parentAxis = joint >= 0 ? (plant.axisOf[joint] as number) : -1;
+				if (grown >= 0 && crowded(x, y, z, grown, parentAxis)) break;
+			}
 			if (axis < 0) axis = plant.addAxis(fromNode, order, stem);
 			internode[0] = nx;
 			internode[1] = ny;
 			internode[2] = nz;
 			const node = plant.addNode(x, y, z, internode, previous, axis, year);
+			registerWood(node);
 			previous = node;
 			added++;
 			if (divided) {

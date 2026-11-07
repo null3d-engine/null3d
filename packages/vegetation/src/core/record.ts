@@ -202,6 +202,12 @@ export interface SelfOrganizing {
 	 * sparser one. This is the wood's density, which with the shoots' own count makes a crown.
 	 */
 	readonly branching?: number;
+	/**
+	 * Metres of clear air a shoot keeps from another axis's wood: a shoot that would come nearer
+	 * stops there, so two limbs do not pass through one another as a real tree's do not. 0 by
+	 * default, which lets shoots meet as they may.
+	 */
+	readonly clearance?: number;
 	/** Metres of one macro internode in year one, and its shrink per year (0 to 1). */
 	readonly internode: { readonly length: number; readonly ageFactor: number };
 	/** One stem, or a stool of several that share one light grid. */
