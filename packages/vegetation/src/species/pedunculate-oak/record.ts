@@ -38,7 +38,7 @@ export const record: Species = {
 	// The whole-tree stills stand the bole about an eighth of the tree's height across at breast
 	// height (0.115 in 02, 0.126 in 18, 0.168 in 01). The fact sheet's 1.5 to 2 m is its width at the
 	// flare, which these stills draw about 1.8 times the breast-height width a quarter metre up.
-	size: { height: { mean: 20, spread: 2 }, dbh: 2.45, aspect },
+	size: { height: { mean: 20, spread: 2 }, dbh: 3.6, aspect },
 	growth: {
 		model: 'self-organizing',
 		years: 36,
@@ -234,9 +234,6 @@ export const record: Species = {
 			// rather than hanging under them.
 			lift: 15,
 			skyward: 0.65,
-			// Stills 11, 21 and 23: a rosette stands as one flat face of blades, as the photographs show
-			// it, rather than evenly round its twig. The close views' outlines rise by 0.02 to 0.05.
-			rosette: 'fan',
 			scale: { mean: 1.4, spread: 0.15 },
 		},
 	},
