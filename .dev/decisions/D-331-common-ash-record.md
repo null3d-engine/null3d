@@ -127,6 +127,34 @@ The species fails its review. Nine of its twelve rows fail on at least one pictu
 
 Every one of the 32 reference files in use was drawn and compared, so coverage passes.
 
+### The second pass
+
+Run `ash-8` at the branch's next head draws the same stills after the leaf, the crown and the cut
+class changed to the photographs' own proportions. These are the figures that moved:
+
+| Reference | Before | After |
+| --- | --- | --- |
+| 01 whole distant: sky gap, render against reference | 0.37 against 0.26 | 0.23 against 0.26, inside the band |
+| 02 whole profile: sky gap | 0.31 against 0.19 | 0.18 against 0.19, inside the band |
+| 18 silhouette: sky gap | 0.37 against 0.21 | 0.24 against 0.21, inside the band |
+| 01, 02, 18 outline | 0.45, 0.48, 0.47 | 0.54, 0.56, 0.51 |
+| 12, 13 single leaf outline | 0.31, 0.24 | 0.44, 0.58 |
+| 21, 22, 23 cut piece outline | 0.06, 0.06, 0.13 | 0.18, 0.17, 0.27 |
+| 11 leaf cluster outline | 0.16 | 0.31 |
+| 09, 10 cut piece outline | 0.06, 0.03 | 0.16, 0.15 |
+
+The leaf moved because a leaflet runs 0.37 of its leaf and the rachis 0.63, so the record's
+five-and-a-half centimetre leaflets on a rachis four times their length drew a leaf under half as
+wide as its photograph's. The crown moved because five great limbs at 62 degrees reach its rim where
+four at 55 left it bare. The cut pieces moved because the class's twig is the photographs' 42 cm of
+two nodes rather than a metre of wire.
+
+Two levers the review's light owns do not move the crown's colour. Its foliage reads #4b6131 at 01
+where its photograph reads #798b74, and it stayed within one step of that when the light went from
+2.8 of daylight at a sky share of 0.24 to 2.2 at 0.62. The near leaves do take the light: 03, drawn
+inside the crown, moved from 11.7 to 8.3 colour steps over the same change. So the crown's darkness
+lies in the far cards' material, not in a light or a colour that the record or the slot file sets.
+
 ### Budgets and grow time
 
 At the low, medium, high and ultra tiers, the kit measures 2.63, 3.03, 5.64 and 11.21 MB, and the

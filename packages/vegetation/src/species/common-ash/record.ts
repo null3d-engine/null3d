@@ -265,7 +265,7 @@ export const record: Species = {
 			kind: 'pinnate',
 			leaflets: { mean: 11, spread: 0.5 },
 			rachis: 1.68,
-				terminal: true,
+			terminal: true,
 		},
 	},
 	bark: {
