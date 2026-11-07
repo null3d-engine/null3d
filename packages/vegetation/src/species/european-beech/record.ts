@@ -191,7 +191,7 @@ export const record: Species = {
 			perMetre: [
 				[0, 1.8],
 				[0.3, 3],
-				[1, 9.5],
+				[1, 11],
 			],
 			// The growth's own light drops the shaded shoots: the inner skirt under the crown goes, so
 			// the bole to the fork reads, while the lit outer skirt and rim keep their foliage.
