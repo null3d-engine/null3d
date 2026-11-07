@@ -89,7 +89,7 @@ export const record: Species = {
 				vigor: [0, 0.04],
 				share: 0.3,
 				years: 1,
-				length: { mean: 0.09, spread: 0.02 },
+				length: { mean: 0.13, spread: 0.02 },
 				nodes: { mean: 8, spread: 0.5 },
 				internode: SHOOT,
 				leafScale: [
