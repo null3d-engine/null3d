@@ -115,11 +115,8 @@ export const record: Species = {
 				vigor: [0, 0.05],
 				share: 0.3,
 				years: 1,
-				// Still 23 and the cluster's turn: six leaves in three opposite pairs, and the shoot
-				// stands half as long again so the pairs stand along it rather than packing at its
-				// tip.
-				length: { mean: 0.27, spread: 0.04 },
-				nodes: { mean: 3, spread: 0 },
+				length: { mean: 0.18, spread: 0.03 },
+				nodes: { mean: 2.4, spread: 0.4 },
 				internode: PAIR,
 				leafScale: [
 					[0, 0.8],
@@ -407,14 +404,14 @@ export const record: Species = {
 			// cutting class among them; each cap sits above its figure, and the low tier's just under
 			// the owner's cap for a tree.
 			kitBytes: { low: 2_680_000, medium: 3_150_000, high: 5_900_000, ultra: 11_600_000 },
-			// The largest of seed 11's six variants measures 7.56, 7.64, 7.72 and 7.83 MB, the keys'
-			// bunches and the short shoots' third pair among them.
-			variantBytes: { low: 7_660_000, medium: 7_740_000, high: 7_820_000, ultra: 7_930_000 },
+			// The largest of seed 11's six variants measures 5.87, 5.94, 6.02 and 6.11 MB, the keys'
+			// bunches of 34 taking close to half of it.
+			variantBytes: { low: 5_970_000, medium: 6_040_000, high: 6_120_000, ultra: 6_210_000 },
 			lod0Triangles: 2_500_000,
-			// The heaviest variant's first card level draws 25,267, 28,292, 31,385 and 35,589
-			// triangles from the coarsest tier up, and its second 10,825, 11,746, 12,826 and 14,034.
+			// The heaviest variant's first card level draws 25,728, 28,645, 32,025 and 36,735
+			// triangles from the coarsest tier up, and its second 10,920, 11,797, 12,659 and 13,492.
 			lod1Triangles: 38_000,
-			lod2Triangles: 14_500,
+			lod2Triangles: 14_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
 			// A variant grows in 156 to 260 ms.
