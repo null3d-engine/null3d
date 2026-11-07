@@ -105,6 +105,10 @@ const FRUIT_REACH = 0.2;
 const FRUIT_SHARE = 0.73;
 /** Metres around a fruit within which foliage counts as holding it. */
 const FRUIT_ENCLOSED = 0.7;
+/** Metres beyond a fruit along the lens's line in which foliage still fills the background. */
+const FRUIT_CLEAR = 3;
+/** Metres either side of that line within which foliage counts as standing in the frame. */
+const FRUIT_TUBE = 0.6;
 /** Degrees the fruit camera stands below its cluster, looking up at the join with the twig. */
 const FRUIT_ELEVATION = -12;
 /** Stops of switch bias that carry a forced nearest level's shoots past every far plane. */
@@ -652,19 +656,45 @@ export default defineSketch(async (ctx) => {
 					}
 					let acorn: V3 | undefined;
 					let best = Number.NEGATIVE_INFINITY;
+					let behindCount = 0;
 					for (const at of fruits) {
 						let near = 0;
 						for (const leaf of leaves)
 							if (Math.hypot(leaf[0] - at[0], leaf[1] - at[1], leaf[2] - at[2]) < FRUIT_ENCLOSED)
 								near++;
+						const out: V3 = normalize([at[0] - foot[0], 0, at[2] - foot[2]]);
+						// Foliage standing between the lens and the fruit fills the background however
+						// clear the fruit's own corner is, and a picture of a fruit against leaves
+						// cannot be cut out or counted as pieces. So a fruit is also measured by what
+						// lies along the line the lens looks down: leaves past it, within the tube the
+						// frame covers, count against it.
+						let behind = 0;
+						for (const leaf of leaves) {
+							const dx = leaf[0] - at[0];
+							const dz = leaf[2] - at[2];
+							const along = dx * out[0] + dz * out[2];
+							if (along < 0 || along > FRUIT_CLEAR) continue;
+							const side = Math.abs(dx * out[2] - dz * out[0]);
+							if (side > FRUIT_TUBE) continue;
+							behind++;
+						}
 						const outward = Math.hypot(at[0] - foot[0], at[2] - foot[2]);
-						const score = near * 1_000_000 + outward * 100 + at[1];
+						const score = behind * 1_000_000_000 + near * 1_000_000 + outward * 100 + at[1];
 						if (score > best) {
 							best = score;
 							acorn = at;
+							behindCount = behind;
 						}
 					}
 					if (acorn) {
+						// A fruit that stands against its own foliage cannot be cut out, and its pieces
+						// then count as one mass. The view says so rather than letting the figure read
+						// as the plant's own.
+						if (behindCount > 0)
+							plainSubjects.set(view, {
+								kind: 'a fruit with foliage behind it',
+								warning: 'every fruit hangs against the crown, so this view cannot be cut out',
+							});
 						// The stalk and every acorn it carries set the frame, at the share of it the
 						// reference's own close-up gives the cluster.
 						const min: V3 = [...acorn];
