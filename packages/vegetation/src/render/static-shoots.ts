@@ -18,7 +18,7 @@ import type { ImpostorBatch } from '@null3d/impostors';
 import type { PlantAsset, PlantPart } from '../asset';
 import { DETAILS, spreadMax } from '../core/types';
 import { REFERENCE_VIEW } from '../lod/levels';
-import { handOverToCards } from './hand-over';
+import { EDGE_BAND, handOverToCards } from './hand-over';
 import {
 	type PlantMaterials,
 	plantBoundingRadius,
@@ -92,6 +92,42 @@ interface Band {
 }
 
 /**
+ * The bands of distance in which a variant's levels draw. Each level draws from its own start to
+ * the start of the next level that has parts, so a cutting, which has the nearest level alone,
+ * draws at every distance; the last draws to the impostor's distance. Where a level hands over to
+ * the next, it draws on past the next one's start until the next stands at full coverage and only
+ * then thins out: the two are different sources, whose dithered edges do not interlock, so a pixel
+ * would drop out of both if they faded over the same distances.
+ *
+ * @param asset The grown variant.
+ * @param near The distance at which its shoots hand over to its first card level, in metres.
+ * @param scale The factor from the reference view's distances to the page's.
+ * @param impostor The distance at which the far cards take over, in metres.
+ * @returns One band per level, in level order.
+ */
+export function levelBands(
+	asset: PlantAsset,
+	near: number,
+	scale: number,
+	impostor: number,
+): Band[] {
+	const starts = asset.levels.map((level, index) =>
+		index === 0 ? 0 : index === 1 && asset.shoots.count > 0 ? near : level.from * scale,
+	);
+	return asset.levels.map((level, index) => {
+		let to = impostor;
+		for (let next = index + 1; next < asset.levels.length; next++)
+			if ((asset.levels[next]?.parts.length ?? 0) > 0) {
+				// The next level's edge fades in over one edge band from its start; this one keeps
+				// full coverage through that band and fades over the band after it.
+				to = Math.min(to, (starts[next] as number) * (1 + EDGE_BAND) ** 2);
+				break;
+			}
+		return { parts: level.parts, from: starts[index] as number, to };
+	});
+}
+
+/**
  * Places a species' copies at fixed places: their levels in bands of distance, the far cards past
  * the impostor's distance when the page gives the far bakes, and real shoot rows near the camera
  * for the first copies, up to the near table's slots.
@@ -132,21 +168,10 @@ export function placeStaticPlants(
 		const rows = copiesOf(copies, variant);
 		if (rows.length === 0) return;
 		const impostor = options.far ? asset.impostor.from * scale : FAR;
-		// Each level draws from its own start to the start of the next level that has parts, so a
-		// cutting, which has the nearest level alone, draws at every distance.
-		const starts = asset.levels.map((level, index) =>
-			index === 0 ? 0 : index === 1 && asset.shoots.count > 0 ? near : level.from * scale,
-		);
-		const bands: Band[] = asset.levels.map((level, index) => {
-			let to = impostor;
-			for (let next = index + 1; next < asset.levels.length; next++)
-				if ((asset.levels[next]?.parts.length ?? 0) > 0) {
-					to = Math.min(to, starts[next] as number);
-					break;
-				}
-			return { parts: level.parts, from: starts[index] as number, to };
-		});
+		const bands = levelBands(asset, near, scale, impostor);
 		const placed: InstanceBatch[] = [];
+		// The batches of the band that reaches the impostor's distance, with the distance they start at.
+		const last: { readonly batch: InstanceBatch; readonly from: number }[] = [];
 		for (const band of bands) {
 			if (!(band.to > band.from)) continue;
 			for (const part of band.parts) {
@@ -174,6 +199,7 @@ export function placeStaticPlants(
 					batch.setDrawRange(0, band.to);
 				} else batch.setDrawRange(band.from, band.to);
 				placed.push(batch);
+				if (band.to >= impostor) last.push({ batch, from: nearCards ? 0 : band.from });
 			}
 		}
 		batches.push(...placed);
@@ -181,7 +207,9 @@ export function placeStaticPlants(
 		const far = options.far?.find((plant) => plant.variant === asset.variant);
 		if (far) {
 			const batch = farCards(ctx, asset, far.bake, copies, rows);
-			for (const mesh of placed) handOverToCards(mesh, batch.batch, impostor);
+			// Only the last band hands over to the cards, from where it starts: a nearer band keeps
+			// the range that ends at its own hand-over.
+			for (const { batch: mesh, from } of last) handOverToCards(mesh, batch.batch, impostor, from);
 			cards.push(batch);
 		}
 	});

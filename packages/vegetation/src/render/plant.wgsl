@@ -19,9 +19,10 @@
 // Edges. A leaf's coverage is sharpened to a one-pixel edge at the cutoff, so the blade draws solid
 // to its cut edge and alpha to coverage only smooths that last pixel.
 //
-// Space. Wood, cards and merged foliage hold 16-bit positions inside the species box, which the
-// vertex offset turns into the plant's metres, so the copy's transform places them. Shoot rows hold
-// their prototype's metres, and each row is one shoot placed in the world.
+// Space. Wood, cards, merged foliage and extras hold 16-bit positions inside the species box, read
+// as fractions of it, which the vertex offset turns into the plant's metres, so the copy's
+// transform places them; an extra adds the rest below one step that its texture coordinates hold.
+// Shoot rows hold their prototype's metres, and each row is one shoot placed in the world.
 //
 // Wind. One field of air moves every plant. The stem bends as a cantilever, each branch turns about
 // its pivot carrying the branches above it, shoots bend along their length and leaves flutter. The
@@ -89,6 +90,8 @@ const HEADER_BOX_SPAN: i32 = 13;
 const HEADER_BOX_SPAN_REST: i32 = 14;
 // The steps of a quantised position along each axis of the box.
 const POSITION_STEPS: f32 = 65535.0;
+// The steps of an extra's position rest below one step of the box, on each axis.
+const REST_STEPS: f32 = 255.0;
 const HEADER_YOUNG: i32 = 15;
 const HEADER_YOUNG_TILE: i32 = 16;
 const HEADER_MOSS: i32 = 17;
@@ -102,6 +105,16 @@ const MAX_BARK_ZONES: i32 = 4;
 const HEADER_LICHEN: i32 = 40;
 const HEADER_LICHEN_REACH: i32 = 41;
 const HEADER_SWAY: i32 = 42;
+const HEADER_EXTRA_BANDS: i32 = 43;
+// An extra's scale pattern: its scale rows, the cells round its turn, and its band's share of the
+// profile's height at each end, per extra in record order.
+const HEADER_EXTRA_SCALES: i32 = 47;
+// An extra's stalk colour and its band's roughness, per extra in record order.
+const HEADER_EXTRA_STALKS: i32 = 51;
+// The least width in pixels that a card's stalk draws, or 0 where the record gives none.
+const HEADER_CARD_STALK: i32 = 55;
+// The second coordinate that marks a card's stalk, in a place that the card planes leave free.
+const STALK_PLANE: f32 = 0.75;
 // Rows before the wind records, and wind records in a row.
 const HEADER_ROWS: i32 = 2;
 const RECORDS_PER_ROW: i32 = 256;
@@ -140,6 +153,11 @@ const CAVITY_DARK: f32 = 0.45;
 const CAVITY_ROUGH: f32 = 0.2;
 
 /// One texel of the header row.
+/// A fixed value from two whole numbers, from 0 to 1: a scale's own shade, the same every frame.
+fn cell_noise(a: f32, b: f32) -> f32 {
+    return fract(sin(dot(vec2f(a, b), vec2f(12.9898, 78.233))) * 43758.5453);
+}
+
 fn header(texel: i32) -> vec4f {
     return textureLoad(records, vec2i(texel, 0), 0);
 }
@@ -166,11 +184,21 @@ fn plant_mode() -> i32 {
     return i32(material.mode + 0.5);
 }
 
-/// A 16-bit position inside the species box, in the plant's metres.
+/// A 16-bit position inside the species box, read as a fraction of the box, in the plant's metres.
 fn box_point(p: vec3f) -> vec3f {
     let low = header(HEADER_BOX_MIN).xyz + header(HEADER_BOX_MIN_REST).xyz;
     let span = header(HEADER_BOX_SPAN).xyz + header(HEADER_BOX_SPAN_REST).xyz;
-    return low + p * (span / POSITION_STEPS);
+    return low + p * span;
+}
+
+/// An extra's position rest below one step of the box, in steps, from the two numbers that its
+/// texture coordinates hold: x in the first number's high byte, y in its low byte, z in the
+/// second number's high byte.
+fn position_rest(uv: vec2f) -> vec3f {
+    let xy = u32(uv.x + 0.5);
+    let z = u32(uv.y + 0.5);
+    let codes = vec3f(f32(xy >> 8u), f32(xy & 255u), f32(z >> 8u));
+    return codes / REST_STEPS - vec3f(0.5);
 }
 
 /// The wind record that a vertex's colour bytes name in their first two bytes.
@@ -522,10 +550,55 @@ fn bark_lift(input: VertexInput) -> f32 {
     return (luminance - tiling.z) * tiling.w * weight;
 }
 
-/// Wood, cards and merged foliage: the 16-bit position into the plant's metres, lifted by the
-/// bark's height on the nearest wood, and moved by the wind in the plant's own space.
+/// The plant-space offset that widens a card's stalk to the record's least width on screen. The two
+/// vertices at each end of the stalk start at one point, so the vertex stage gives the line its
+/// width: it turns the width across the stalk's own direction on screen, and brings it back into
+/// the plant's space through the frame's projection and the object's transform.
+fn stalk_widen(input: VertexInput, plant: vec3f) -> vec3f {
+    let least = header(HEADER_CARD_STALK).x;
+    if (least <= 0.0 || frame.resolution.x <= 0.0 || frame.resolution.y <= 0.0) {
+        return vec3f(0.0);
+    }
+    let model = object.worldMatrix;
+    let clip = camera.viewProjection * (model * vec4f(plant, 1.0));
+    if (clip.w <= 0.0001) {
+        return vec3f(0.0);
+    }
+    // The stalk's direction, which the mesh writes as the vertex's normal, on the screen.
+    let axis = normalize(input.normal);
+    let clip_ahead = camera.viewProjection * (model * vec4f(plant + axis * 0.05, 1.0));
+    var along = vec2f(0.0, 1.0);
+    if (clip_ahead.w > 0.0001) {
+        let step = clip_ahead.xy / clip_ahead.w - clip.xy / clip.w;
+        if (length(step) > 0.000001) {
+            along = normalize(step);
+        }
+    }
+    let side = select(-1.0, 1.0, input.uv.x > 0.5 * TEXTURE_UV_STEPS);
+    let across = vec2f(-along.y, along.x) * side;
+    // Half the least width, in normalized device coordinates.
+    let ndc = across * (least * 0.5) / frame.resolution * 2.0;
+    let projection = camera.projection;
+    let view = vec3f(ndc.x * clip.w / projection[0][0], ndc.y * clip.w / projection[1][1], 0.0);
+    let world_offset = (transpose(camera.view) * vec4f(view, 0.0)).xyz;
+    // The object's linear part is a uniform scale and a turn, so its inverse is the transpose over
+    // the square of the scale.
+    let linear = mat3x3f(model[0].xyz, model[1].xyz, model[2].xyz);
+    let squared = max(dot(linear[0], linear[0]), 0.000001);
+    return transpose(linear) * world_offset / squared;
+}
+
+/// Wood, cards, merged foliage and extras: the 16-bit position into the plant's metres, lifted by
+/// the bark's height on the nearest wood, and moved by the wind in the plant's own space. The
+/// position comes as a fraction of the box, so the offset back from it keeps the plant's own
+/// precision.
 fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
     var plant = box_point(input.position);
+    if (mode == MODE_EXTRAS) {
+        // Fruit and cones are a few centimetres across, where the box's steps are near a
+        // millimetre, so an extra keeps the rest of its position in its texture coordinates.
+        plant = box_point(input.position + position_rest(input.uv) / POSITION_STEPS);
+    }
     if (mode == MODE_WOOD && material.displacement > 0.0) {
         plant += normalize(input.normal) * bark_lift(input);
     }
@@ -554,6 +627,9 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
             }
             moved = plant + (swayed - plant) * fade;
         }
+    }
+    if (mode == MODE_CARDS && abs(input.uv1.y - STALK_PLANE) < 0.1) {
+        moved += stalk_widen(input, plant);
     }
     return moved - input.position;
 }
@@ -724,8 +800,11 @@ fn coverage(input: SurfaceInput) -> f32 {
     let gy = dpdy(input.uv) * scale;
     var alpha = 1.0;
     if (mode == MODE_CARDS) {
-        let layer = select(1, 0, input.frontFacing);
-        alpha = card_alpha(textureSampleGrad(colour, colourSampler, uv, layer, gx, gy).a, gx, gy);
+        // A card's stalk is a solid line that the vertex stage widens, so it casts its whole width.
+        if (abs(input.uv1.y - STALK_PLANE) >= 0.1) {
+            let layer = select(1, 0, input.frontFacing);
+            alpha = card_alpha(textureSampleGrad(colour, colourSampler, uv, layer, gx, gy).a, gx, gy);
+        }
     } else if (mode == MODE_FOLIAGE
         || (mode == MODE_SHOOTS && input.vertexColor.b * 255.0 < KIND_STEM * 0.5)) {
         let layer = select(1, 0, input.frontFacing);
@@ -876,37 +955,99 @@ fn surface(input: SurfaceInput) -> Surface {
         mapped = normalize(mix(bark_normal, vec3f(0.0, 0.0, 1.0), lichen_mask * 0.35));
         occlusion = input.vertexColor.a;
     } else if (mode == MODE_CARDS) {
-        let layer = select(1, 0, upper);
-        let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
-        let surface_texel = textureSampleGrad(relief, reliefSampler, uv, layer, gx, gy);
-        let kind = surface_texel.a * 255.0;
-        let leaf = kind >= 127.5;
-        let self_shade = (kind - select(0.0, 128.0, leaf)) * 2.0 / 255.0;
-        if (leaf) {
-            let light = leaf_light(texel.rgb, upper, 0.0);
-            base = light.base;
-            share = light.share;
-            through = light.through;
-            roughness = light.roughness;
-        } else {
-            base = texel.rgb;
-        }
-        alpha = card_alpha(texel.a, gx, gy);
         // In the shell where a near copy draws its real shoots, its cards give way.
         let near_copy = object.values.x > 0.5;
-        if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
-            alpha = 0.0;
+        if (abs(input.uv1.y - STALK_PLANE) < 0.1) {
+            // A card's stalk: the young bark's tone, so the join the card's leaves stand on shows.
+            base = header(HEADER_YOUNG).rgb;
+            roughness = 0.85;
+            occlusion = 1.0;
+            if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
+                alpha = 0.0;
+            }
+        } else {
+            let layer = select(1, 0, upper);
+            let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
+            let surface_texel = textureSampleGrad(relief, reliefSampler, uv, layer, gx, gy);
+            let kind = surface_texel.a * 255.0;
+            let leaf = kind >= 127.5;
+            let self_shade = (kind - select(0.0, 128.0, leaf)) * 2.0 / 255.0;
+            if (leaf) {
+                let light = leaf_light(texel.rgb, upper, 0.0);
+                base = light.base;
+                share = light.share;
+                through = light.through;
+                roughness = light.roughness;
+            } else {
+                base = texel.rgb;
+            }
+            alpha = card_alpha(texel.a, gx, gy);
+            if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
+                alpha = 0.0;
+            }
+            let e = (surface_texel.xy * 255.0 - vec2f(128.0)) / 127.0;
+            let card_normal = octahedral(clamp(e, vec2f(-1.0), vec2f(1.0)));
+            // The card's normal is toward the viewer of the face it shows; the frame's normal is too.
+            mapped = card_normal;
+            occlusion = input.vertexColor.a * saturate(self_shade);
         }
-        let e = (surface_texel.xy * 255.0 - vec2f(128.0)) / 127.0;
-        let card_normal = octahedral(clamp(e, vec2f(-1.0), vec2f(1.0)));
-        // The card's normal is toward the viewer of the face it shows; the frame's normal is too.
-        mapped = card_normal;
-        occlusion = input.vertexColor.a * saturate(self_shade);
     } else if (mode == MODE_EXTRAS) {
-        // An extra takes its kind's colour from the header, by the index in its third byte.
+        // An extra takes its kind's colour and roughness from the header, by the index in its
+        // third byte, and its band's by the share in its second coordinates' x: an acorn's cup and
+        // stalk stand apart from its nut.
         let kind = clamp(i32(input.vertexColor.b * 255.0 + 0.5), 0, MAX_EXTRAS - 1);
-        base = header(HEADER_EXTRAS + kind).rgb;
-        roughness = 0.6;
+        let body = header(HEADER_EXTRAS + kind);
+        let band = header(HEADER_EXTRA_BANDS + kind);
+        let share_of_band = saturate(input.uv1.x);
+        base = mix(body.rgb, band.rgb, share_of_band);
+        roughness = mix(body.w, band.w, share_of_band);
+        // A stalk is young wood, not cup: it takes the colour its own record gives it.
+        if (input.uv1.y > 0.5) {
+            let stalk = header(HEADER_EXTRA_STALKS + kind);
+            base = stalk.rgb;
+            roughness = stalk.w;
+        }
+        // A cup's scales: one rounded cell per scale, its shade fixed for that cell, over the band
+        // alone. The pattern fades where a cell falls below a pixel or two, so a distant acorn keeps
+        // its own colour instead of shimmering.
+        let pattern = header(HEADER_EXTRA_SCALES + kind);
+        if (pattern.x > 0.5 && pattern.y > 0.5 && share_of_band > 0.5 && input.uv1.y < 0.5) {
+            // Two scale rows stand across each drawn face, and the rows alternate their offset so a
+            // scale sits over the crevice between the two below it, as an imbricated cup does.
+            // The geometry's own scale rows carry the bumps, so the shader closes one cell over each
+            // of them; the turn takes more cells than the lathe has faces, as the photograph shows.
+            let cells = vec2f(max(3.0, pattern.x), max(8.0, floor(pattern.y * 0.8)));
+            let ends = pattern.zw;
+            let along = (uv.y - ends.x) / max(ends.y - ends.x, 1e-4);
+            let row = floor(along * cells.x);
+            let stagger = 0.5 * (row - 2.0 * floor(row * 0.5));
+            // Each scale sits a little off its cell, so a row reads as a bed of scales rather than
+            // as a grid.
+            let wobble = cell_noise(row, 0.0) - 0.5;
+            let p = vec2f(uv.x * cells.y + stagger + wobble * 0.3, along * cells.x);
+            let f = fract(p) - vec2f(0.5);
+            let d = length(f * vec2f(1.0, 1.15));
+            let dome = 1.0 - smoothstep(0.4, 0.5, d);
+            let cell = floor(p);
+            let grain = cell_noise(cell.x, cell.y);
+            let footprint = length(gx * cells) + length(gy * cells);
+            let fade = saturate(1.5 - footprint);
+            // A scale stands proud and pale in its middle and dark in the crevice round it.
+            let shade = mix(0.55, 1.28, dome) * (0.93 + 0.14 * grain);
+            // A cell too small to draw leaves the bed's own tone, so a distant acorn keeps its
+            // scales' shade and never shimmers.
+            base = mix(base * 0.88, base * shade, fade);
+            roughness = mix(roughness * 1.15, mix(roughness, roughness * 0.45, dome), fade);
+        } else if (pattern.x > 0.5 && pattern.y > 0.5 && input.uv1.y < 0.5) {
+            // The nut: faint striations down its length and a gloss where its body meets the light.
+            // A stripe count that does not divide the lathe's faces, so no stripe lands on a facet edge.
+            let across = uv.x * 13.0;
+            let stripe = 0.5 + 0.5 * cos(across * 6.2831853);
+            base = base * (0.86 + 0.18 * stripe);
+            // A gloss that runs with the striations, so the sheen spreads over the body rather
+            // than gathering in one spot.
+            roughness = roughness * (0.72 + 0.5 * stripe);
+        }
         occlusion = input.vertexColor.a;
     } else {
         // Shoot rows and merged foliage: leaves, and the shoots' stems and buds.

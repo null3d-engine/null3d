@@ -8,12 +8,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type PlantAsset, plantAssetDigest } from './asset';
 import { AXIS_LIMB, AXIS_STEM, SkeletonBuilder } from './core/graph';
+import { quatRotate } from './core/math';
 import { standInSpecies } from './core/stand-in';
 import { CUTTING_LENGTH, clusterRank, cutBranch, cutFoliage, cutsShoot } from './cutting';
 import { buildKitNow, growPlantNow, loadPlantCode } from './generate';
 import type { PlantTaskInput } from './generate-task';
 import { oakRecord } from './grow/oak.fixture';
 import { growSelfOrganizing } from './grow/self-organizing';
+import { SURFACE_STEM } from './leaf/writer';
 
 const stub = standInSpecies('stub', { height: 12, aspect: 0.8 });
 await loadPlantCode(stub.record);
@@ -205,6 +207,64 @@ describe('cuttings', () => {
 		}
 		expect(cutsShoot(stub.record, 'branch')).toBe(false);
 		expect(cutsShoot(stub.record, 'leaf')).toBe(false);
+	});
+
+	it('stands a shoot cutting upright on its attach point, or as grown when asked', async () => {
+		const { species: oak } = await import('./species/pedunculate-oak');
+		await loadPlantCode(oak.record);
+		const oakKit = buildKitNow(oak, { placeholders: 'missing', detail: 'low' });
+		for (const part of ['branch', 'subbranch', 'cluster'] as const) {
+			const piece = growPlantNow(oakKit, { seed: 11, variant: 0, cutting: { part } });
+			const prototype = oakKit.prototypes[piece.shoots.prototype[0] as number];
+			if (!prototype) throw new Error(`the oak's ${part} drew no prototype`);
+			// The mean of the low tier's stem vertices, turned as the row stands, lies straight above the cut.
+			const { positions: p, colors } = prototype.tiers[0];
+			const mean: [number, number, number] = [0, 0, 0];
+			for (let i = 0; i < p.length; i += 3)
+				if (colors[(i / 3) * 4 + 2] === SURFACE_STEM)
+					for (let k = 0; k < 3; k++) mean[k] = (mean[k] as number) + (p[i + k] as number);
+			const [x, y, z] = quatRotate(piece.shoots.rotation, 0, mean, [0, 0, 0]);
+			expect(Math.hypot(x, z)).toBeLessThan(1e-4 * y);
+			const grown = growPlantNow(oakKit, {
+				seed: 11,
+				variant: 0,
+				cutting: { part, orient: 'as-grown' },
+			});
+			expect(Array.from(grown.shoots.rotation)).toEqual([0, 0, 0, 1]);
+		}
+	});
+
+	it('presses a cut leaf flat where the record says, and leaves it as on the plant otherwise', async () => {
+		const { species: oak } = await import('./species/pedunculate-oak');
+		await loadPlantCode(oak.record);
+		const shaped = {
+			...oak,
+			record: { ...oak.record, cuttings: { ...oak.record.cuttings, leaf: undefined } },
+		};
+		const pressedKit = buildKitNow(oak, { placeholders: 'missing', detail: 'low' });
+		const shapedKit = buildKitNow(shaped, { placeholders: 'missing', detail: 'low' });
+		const pressed = cutFoliage(pressedKit, { part: 'leaf' }, 'low');
+		const plain = cutFoliage(shapedKit, { part: 'leaf' }, 'low');
+		if (!pressed || !plain) throw new Error('the oak has no leaf');
+		// The pressed blade lies in the plane of its frame; the plant's own blade folds and curls out
+		// of it, and the kit's leaves are the plant's.
+		let flat = 0;
+		let shapedDepth = 0;
+		for (let i = 2; i < pressed.positions.length; i += 3)
+			flat = Math.max(flat, Math.abs(pressed.positions[i] as number));
+		for (let i = 2; i < plain.positions.length; i += 3)
+			shapedDepth = Math.max(shapedDepth, Math.abs(plain.positions[i] as number));
+		expect(flat).toBeLessThan(1e-6);
+		expect(shapedDepth).toBeGreaterThan(0.005);
+		expect(Array.from(plain.positions)).toEqual(Array.from(shapedKit.leaves[0]?.positions ?? []));
+		expect(Array.from(pressedKit.leaves[0]?.positions ?? [])).toEqual(
+			Array.from(shapedKit.leaves[0]?.positions ?? []),
+		);
+		// A piece may ask for itself: as grown where the record presses, pressed where it does not.
+		const grown = cutFoliage(pressedKit, { part: 'leaf', pressed: false }, 'low');
+		const flattened = cutFoliage(shapedKit, { part: 'leaf', pressed: true }, 'low');
+		expect(Array.from(grown?.positions ?? [])).toEqual(Array.from(plain.positions));
+		expect(Array.from(flattened?.positions ?? [])).toEqual(Array.from(pressed.positions));
 	});
 
 	it('cuts a leaf with either face toward +Z, and a cluster in rank order', () => {

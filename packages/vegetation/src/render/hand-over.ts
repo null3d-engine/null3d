@@ -8,7 +8,7 @@ import type { InstanceBatch } from '@null3d/engine';
  * phases differ: a card that faded in while the mesh faded out would drop the pixels that both left
  * out, and the background would show through the crown.
  */
-const EDGE_BAND = 0.08;
+export const EDGE_BAND = 0.08;
 
 /**
  * Where a batch of cards starts so that each stands at full coverage before its mesh's edge begins
@@ -38,17 +38,24 @@ const FAR = 1e9;
  * @param meshes The batch of near meshes, whose rows stand at the same trees.
  * @param cards The card batch, such as `ImpostorBatch.batch`.
  * @param switchDistance The distance from the camera at which a tree hands over, in meters.
+ * @param start The distance from which the meshes draw, in meters: 0 for a batch that draws from
+ *   the tree out, or the start of a coarser level's own band.
  * @category api/vegetation
  */
 export function handOverToCards(
 	meshes: InstanceBatch,
 	cards: InstanceBatch,
 	switchDistance: number,
+	start = 0,
 ): void {
 	if (!(switchDistance > 0))
 		throw new RangeError(
 			`handOverToCards() got ${switchDistance} as the switch distance, not a number above 0.`,
 		);
-	meshes.setDrawRange(0, switchDistance);
+	if (!(start >= 0 && start < switchDistance))
+		throw new RangeError(
+			`handOverToCards() got ${start} as the start, not a number from 0 below the switch distance.`,
+		);
+	meshes.setDrawRange(start, switchDistance);
 	cards.setDrawRange(cardsStart(cards, switchDistance), FAR);
 }

@@ -21,6 +21,7 @@ import type {
 } from './asset';
 import { type CoarsenessOptions, coarsenessFor, coarsenessKey } from './coarseness';
 import { speciesBox } from './core/box';
+import { formRecord } from './core/forms';
 import { type MacroSkeleton, SkeletonBuilder } from './core/graph';
 import { hashText } from './core/hash';
 import { quatRotate } from './core/math';
@@ -61,7 +62,7 @@ import { coarsenSkeleton } from './grow/coarsen';
 import { leadOnThickest } from './grow/leaders';
 import { grower, loadGrower } from './grow/models';
 import { extrasMesh } from './leaf/extras';
-import { placeShoots } from './leaf/instancer';
+import { dressShoots, pruneLight } from './leaf/instancer';
 import { foliage, loadFoliage } from './leaf/kinds';
 import { inLeaf } from './leaf/season';
 import { shootPrototypes } from './leaf/shoot';
@@ -81,7 +82,7 @@ import { meshWood } from './wood/wood-mesh';
  *
  * @category api/vegetation
  */
-export const GENERATOR_VERSION = '1';
+export const GENERATOR_VERSION = '2';
 
 /**
  * What a species' kit is built from: its record and its texture manifest. A species module is one.
@@ -108,6 +109,12 @@ export interface KitOptions {
 	 * `'missing'`, grow each built stage and a stand-in only for a stage that is not built yet.
 	 */
 	readonly placeholders?: boolean | 'missing';
+	/**
+	 * One of the record's other forms by name, such as `young` or `woodland`: the kit and every
+	 * variant grown from it take the record that the form grows from. The record as it stands when
+	 * not given.
+	 */
+	readonly form?: string;
 }
 
 /**
@@ -129,6 +136,38 @@ export interface GrowOptions extends CoarsenessOptions {
 	readonly near?: boolean;
 	/** Grow or cut one piece for close review instead of the whole plant. */
 	readonly cutting?: CuttingOptions;
+	/**
+	 * The crown's foliage against the record's own, from 0.4 to 2: 1 grows the plant as its record
+	 * says, below 1 thins its shoots, above 1 keeps the ones its own density drops. Every species
+	 * takes it the same way, by moving the sky prune that its crown's shaded wood answers to.
+	 */
+	readonly foliage?: number;
+}
+
+/** The least and the most foliage share a growth may ask for. */
+export const FOLIAGE_LEAST = 0.4;
+export const FOLIAGE_MOST = 2;
+
+/**
+ * The record a plant grows by when its foliage is set against the record's own: the crown's sky
+ * prune divides by the share, since a higher prune drops more of the shoots a crown's shaded wood
+ * carries. Every species moves the same way, so one option sets the foliage of any of them.
+ *
+ * @param record The species record.
+ * @param foliage The foliage share, 1 for the record's own; undefined or 1 leaves the record alone.
+ * @returns The record to grow by.
+ */
+export function withFoliage(record: Species, foliage: number | undefined): Species {
+	if (foliage === undefined || foliage === 1) return record;
+	if (!(foliage >= FOLIAGE_LEAST && foliage <= FOLIAGE_MOST))
+		throw new Error(
+			`@null3d/vegetation: foliage ${foliage} is outside ${FOLIAGE_LEAST} to ${FOLIAGE_MOST}; 1 grows the record's own crown.`,
+		);
+	const shoots = record.shoots;
+	if (!shoots) return record;
+	const own = shoots.placement.skyPrune ?? 0.5;
+	const prune = Math.min(0.95, Math.max(0, own / foliage));
+	return { ...record, shoots: { ...shoots, placement: { ...shoots.placement, skyPrune: prune } } };
 }
 
 /**
@@ -211,20 +250,24 @@ export function kitKey(record: Species, manifest: TextureManifest, detail: Detai
 export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
 	const season = options.season ?? kit.record.seasons.default;
 	const cutting = options.cutting ? JSON.stringify(options.cutting) : '';
-	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}`;
+	// The foliage share grows a different crown, so it keys a different asset.
+	const foliage =
+		options.foliage === undefined || options.foliage === 1 ? '' : `:foliage=${options.foliage}`;
+	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${foliage}`;
 }
 
 /**
  * Builds a species' kit on this thread: its leaf meshes at every tier, its shoot prototypes, its
- * card atlas and its records header. Call `loadPlantCode` first.
+ * card atlas and its records header, from the record of the form the options name, or from the
+ * record as it stands. Call `loadPlantCode` first.
  *
  * @param source The species' record and texture manifest, such as its module.
- * @param options The tier, and whether every stage grows its stand-in.
+ * @param options The tier, whether every stage grows its stand-in, and the form.
  * @returns The kit.
  * @category api/vegetation
  */
 export function buildKitNow(source: KitSource, options: KitOptions = {}): SpeciesKitData {
-	const { record } = source;
+	const record = formRecord(source.record, options.form);
 	const manifest = source.textures.manifest;
 	const detail = options.detail ?? 'high';
 	const placeholders = options.placeholders ?? false;
@@ -291,18 +334,20 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 
 /**
  * The parts of a mesh, quantised: one per piece of at most `PART_VERTICES` vertices, so each has
- * 16-bit indices; none when the mesh is empty.
+ * 16-bit indices; none when the mesh is empty. A part of small shapes that draws no texture keeps
+ * each position's rest below the box's step in its texture coordinates.
  */
 function partOf(
 	kit: SpeciesKitData,
 	name: PlantPart['name'],
 	mesh: MeshArrays | undefined,
 	uvSteps: number,
+	rest = false,
 ): PlantPart[] {
 	if (!mesh || mesh.indices.length === 0) return [];
 	const pieces = stage(
 		kit.placeholders,
-		() => quantiseParts(mesh, kit.box, uvSteps),
+		() => quantiseParts(mesh, kit.box, uvSteps, rest),
 		() => [placeholderQuantise(mesh, kit.box, uvSteps)],
 	);
 	return pieces.map((arrays) => ({ name, arrays }));
@@ -310,7 +355,7 @@ function partOf(
 
 /** The grown skeleton and its dressing: the stages before the meshes. */
 function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
-	const record = kit.record;
+	const record = withFoliage(kit.record, options.foliage);
 	const placeholders = kit.placeholders;
 	const growInput: GrowInput = {
 		record,
@@ -329,30 +374,46 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 		() => placeholderSkeleton(growInput),
 	);
 	speciesHooks(record.id)?.afterGrow?.(grown, record, growInput.seed);
-	// A stand-in grows as it is at any coarseness.
-	const coarseness = placeholders
-		? 0
-		: coarsenessFor(kit, { ...growInput, skeleton: grown }, detail, options);
+	// The crown's light as grown, which a sky prune reads at every coarseness the search tries and
+	// at the one it settles on, so it is found once. A cut piece lights its own rows.
+	const light =
+		placeholders ||
+		cutsSkeleton(kit, options.cutting) ||
+		record.lod.nearFoliage !== 'instanced' ||
+		kit.prototypes.length === 0
+			? undefined
+			: pruneLight({ ...growInput, kit, skeleton: grown });
+	const lit = light ? { pruneLight: light } : {};
+	// A stand-in grows as it is at any coarseness. A real species that falls back to a stand-in for a
+	// stage it does not build is still a real plant, so it takes the coarseness it is asked for.
+	const coarseness =
+		placeholders === true
+			? 0
+			: coarsenessFor(kit, { ...growInput, skeleton: grown, ...lit }, detail, options);
 	const dressInput: DressInput = {
 		...growInput,
 		kit,
 		skeleton: cutSkeleton(kit, coarsenSkeleton(grown, coarseness), options.cutting),
 		coarseness,
+		...lit,
 	};
-	const rows =
+	// The shoots stand on the skeleton, which loses the bare twigs the record trims once they stand.
+	const dressed =
 		record.lod.nearFoliage === 'instanced' && kit.prototypes.length > 0
 			? stage(
 					placeholders,
-					() => placeShoots(dressInput),
-					() => placeholderRows(dressInput),
+					() => dressShoots(dressInput),
+					() => ({ rows: placeholderRows(dressInput), skeleton: dressInput.skeleton }),
 				)
-			: emptyRows();
+			: { rows: emptyRows(), skeleton: dressInput.skeleton };
+	const { rows } = dressed;
+	const input: DressInput = { ...dressInput, skeleton: dressed.skeleton };
 	const crown = stage(
 		placeholders,
-		() => lightCrown(dressInput, rows),
-		() => placeholderCrown(dressInput),
+		() => lightCrown(input, rows),
+		() => placeholderCrown(input),
 	);
-	return { ...dressInput, rows, crown, detail };
+	return { ...input, rows, crown, detail };
 }
 
 /** Whether a cutting is cut from the grown skeleton rather than built from the kit alone. */
@@ -557,7 +618,8 @@ function levelParts(mesh: MeshInput, level: MeshLevel): PlantPart[] {
 		() => extrasMesh(mesh, level),
 		() => undefined,
 	);
-	parts.push(...partOf(kit, 'extras', extras, TEXTURE_UV_STEPS));
+	// Fruit and cones are a few centimetres across, where the box's steps are near a millimetre.
+	parts.push(...partOf(kit, 'extras', extras, TEXTURE_UV_STEPS, true));
 	return parts;
 }
 

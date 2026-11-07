@@ -81,6 +81,7 @@ export const OAK_SHOOTS: ShootSpec = {
 			[1, 10],
 		],
 		shadePrune: 0.1,
+		tipPrune: 0.05,
 		skyward: 0.75,
 		scale: { mean: 1, spread: 0.15 },
 	},

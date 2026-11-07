@@ -1,14 +1,13 @@
 // One species in one review view, drawn to be laid beside its reference pictures: the whole plant
-// and its turntable, the crown from outside, below and inside, a limb's junction and first fork, a
-// secondary branch across its own length, a sunlit shoot tip, a cut branch, sub-branch, leaf cluster
-// or leaf, the bark at the base, mid-trunk
-// and on a limb, the trunk, the wood alone, the silhouette, and the four panels of the per-species
-// picture test. It grows the species through the plant core's public functions (any registered
+// and its turntable, the crown from outside, below and inside, a limb leaving the stem and a limb's
+// fork, a branch across its own run or the crown's rim, a twig or a fruit, a cut branch, sub-branch,
+// leaf cluster or leaf, the bark at the base, mid-trunk and on a limb, the trunk, the wood alone,
+// the silhouette, and the four panels of the per-species picture test. It grows the species through the plant core's public functions (any registered
 // species, or any other id as a stand-in), so the page draws what a scene would draw. The query
 // contract lives in `../lib/plant-review/`, which the review tools share. The page posts what it
 // measured and where its cameras stood as the `plant-review` message, so a tool records the facts
 // beside the pixels.
-import { type Camera, defineSketch, type SketchContext } from '@null3d/engine';
+import { type Camera, defineSketch, quat, type SketchContext } from '@null3d/engine';
 import {
 	BUD_TERMINAL,
 	bakeFarPlant,
@@ -31,8 +30,6 @@ import { createWind, type Wind } from '@null3d/wind';
 import {
 	chainOf,
 	facing,
-	firstForkHeight,
-	firstForkOf,
 	largestLimb,
 	limbNear,
 	normalize,
@@ -40,11 +37,32 @@ import {
 	stemAt,
 	stemFoot,
 	sunlitTip,
+	turnedAbout,
 	type V3,
 } from '../lib/plant-review/anatomy';
-import { type ScreenFraming, standCamera } from '../lib/plant-review/framing';
-import { measurePlant, partPositions } from '../lib/plant-review/measure';
+import {
+	barkLimbView,
+	belowView,
+	type ClosePlant,
+	type CloseView,
+	forkView,
+	insideView,
+	junctionView,
+	limbView,
+	surfaceView,
+	trunkView,
+	twigView,
+	walkedRound,
+} from '../lib/plant-review/close';
+import {
+	type CutRows,
+	cutCamera,
+	type ScreenFraming,
+	standCamera,
+} from '../lib/plant-review/framing';
+import { measurePlant, partPositions, shootPositions } from '../lib/plant-review/measure';
 import { readPlantReviewQuery } from '../lib/plant-review/query';
+import { sharedRecords } from '../lib/plant-review/sight';
 import { BACKGROUND_COLOURS, type PlantView, VIEW_SPECS } from '../lib/plant-review/views';
 
 const QUERY = readPlantReviewQuery(new URL(import.meta.url).searchParams);
@@ -74,6 +92,11 @@ const EYE = 1.6;
 const AWAY: V3 = [20000, 0, 0];
 /** A camera's far plane, in metres. */
 const FAR = 9000;
+/**
+ * Degrees a copy stand's lamps stand either side of its camera: far enough round that a glossy leaf
+ * pressed square to the lens throws their glare clear of it.
+ */
+const COPY_STAND_LAMP = 60;
 /** The share of the frame left clear round a fitted plant. */
 const MARGIN = 0.08;
 /** Metres from an acorn to the fruit of its own stalk, so a view of the fruit frames that cluster. */
@@ -96,6 +119,8 @@ interface View {
 	readonly fov: number;
 	/** The near plane, when the view clears what stands close to the camera. */
 	readonly near?: number;
+	/** Radians the camera turns about its line of sight, the picture turning counterclockwise. */
+	readonly roll?: number;
 }
 
 /** One cell of the canvas and the view drawn into it. */
@@ -148,6 +173,18 @@ function orbit(target: V3, distance: number, elevation: number, turn: number, fo
 	return { position: add(target, scale(direction, distance)), target, fov };
 }
 
+/**
+ * The rotation of a camera at `position` that looks at `target`, turned about its line of sight by
+ * `roll` radians: its up starts toward the sky and turns with the roll.
+ */
+function rolledLook(position: V3, target: V3, roll: number): [number, number, number, number] {
+	const forward = normalize(sub(target, position));
+	const right = normalize(cross(forward, Math.abs(forward[1]) > 0.999 ? [1, 0, 0] : [0, 1, 0]));
+	const up = turnedAbout(cross(right, forward), forward, roll);
+	// A camera points its -Z at what it looks at.
+	return quat.lookAt([0, 0, 0, 1], target, position, up) as [number, number, number, number];
+}
+
 /** A view with its camera moved to the query's distance from its target, when it names one. */
 function atDistance(view: View): View {
 	if (QUERY.distance === undefined) return view;
@@ -181,7 +218,9 @@ function boundsOf(asset: PlantAsset, kit: SpeciesKit): Bounds {
  * The camera that fills the frame with the points a piece actually draws, rather than with the
  * corners of its box. A deep piece's corners stand well outside its own silhouette, so fitting the
  * box leaves the piece small; fitting its points puts it in the frame as the reference does, which
- * also keeps the thin wood that joins its parts from falling below a pixel.
+ * also keeps the thin wood that joins its parts from falling below a pixel. The points are its
+ * parts' and those of its shoot rows, which draw the leaves of a piece cut from an instanced plant.
+ * With `rows`, the piece's highest and lowest points land on the rows its photograph shows them on.
  */
 function fitPoints(
 	asset: PlantAsset,
@@ -190,6 +229,7 @@ function fitPoints(
 	elevation: number,
 	aspect: number,
 	fov: number,
+	rows?: CutRows,
 ): View {
 	const points: number[] = [];
 	const min: V3 = [...asset.skeleton.bounds.min] as V3;
@@ -199,6 +239,8 @@ function fitPoints(
 			const p = partPositions(part, kit.box);
 			for (let i = 0; i < p.length; i++) points.push(p[i] as number);
 		}
+	const shoots = shootPositions(asset, kit);
+	for (let i = 0; i < shoots.length; i++) points.push(shoots[i] as number);
 	if (points.length === 0)
 		return fit({ min: [...min] as V3, max: [...max] as V3 }, turn, elevation, aspect, fov);
 	for (let i = 0; i < points.length; i += 3)
@@ -211,6 +253,20 @@ function fitPoints(
 	const forward = normalize(scale(back.position, -1));
 	const right = normalize(cross(forward, [0, 1, 0]));
 	const up = cross(right, forward);
+	if (rows) {
+		const { distance, lift } = cutCamera(
+			points,
+			centre,
+			forward,
+			right,
+			up,
+			fov,
+			aspect,
+			rows,
+			MARGIN,
+		);
+		return orbit(add(centre, scale(up, lift)), distance, elevation, turn, fov);
+	}
 	const half = Math.tan((fov * DEG) / 2) * (1 - 2 * MARGIN);
 	let distance = 0.05;
 	for (let i = 0; i < points.length; i += 3) {
@@ -289,6 +345,20 @@ const FRAMED =
 	QUERY.targetX !== undefined ||
 	QUERY.top !== undefined;
 
+/**
+ * The rows a cut piece's top and foot land on, from the query's framing in screen shares: its top
+ * row and its base row, or the frame's foot where the photograph's piece runs off it.
+ */
+const CUT_ROWS: CutRows | undefined =
+	QUERY.fill !== undefined
+		? {
+				top: (QUERY.targetY ?? 0.5) - QUERY.fill / 2,
+				base: (QUERY.targetY ?? 0.5) + QUERY.fill / 2,
+			}
+		: QUERY.top !== undefined
+			? { top: QUERY.top, base: 1 }
+			: undefined;
+
 /** The asset as a view draws it: the wood alone, or one level at every distance. */
 function shaped(asset: PlantAsset, woodOnly: boolean): PlantAsset {
 	const keep = (parts: readonly PlantPart[]) =>
@@ -364,7 +434,7 @@ function grid(count: number): readonly [number, number] {
 }
 
 export default defineSketch(async (ctx) => {
-	const { scene, geometry, materials, post, page } = ctx;
+	const { scene, geometry, materials, post, page, debug } = ctx;
 	// A review picture is laid beside a reference that carries no display curve; a tone curve
 	// would crush and saturate the sky and the foliage that the reference shows as they are.
 	post.set({ toneMapping: 'none' });
@@ -375,9 +445,18 @@ export default defineSketch(async (ctx) => {
 		QUERY.placeholders ?? (isSpeciesId(QUERY.species) ? 'missing' : true);
 	const module = await loadSpeciesOrStandIn(QUERY.species);
 	const record = module.record;
+	// The query's form, another habit or the young plant, grows when the record has it. A record
+	// without that form grows as it stands, with a note, so a still of another habit is still drawn.
+	const form =
+		QUERY.form !== undefined && record.forms && Object.hasOwn(record.forms, QUERY.form)
+			? QUERY.form
+			: undefined;
+	if (QUERY.form !== undefined && form === undefined)
+		notes.push(`the record has no ${QUERY.form} form, so the plant grows as its record stands`);
 	const kit = await prepareSpecies(ctx, module, {
 		detail: QUERY.preset ?? 'high',
 		placeholders,
+		...(form !== undefined && { form }),
 	});
 	const grow = {
 		seed: QUERY.seed ?? 11,
@@ -393,6 +472,7 @@ export default defineSketch(async (ctx) => {
 		...(QUERY.pick !== undefined && { pick: QUERY.pick }),
 		orient: 'upright' as const,
 		...(VIEW === 'leaf-under' ? { face: 'lower' as const } : {}),
+		...(QUERY.pressed !== undefined && { pressed: QUERY.pressed }),
 	};
 	const needsWhole = !SPEC.cutting;
 	const [whole, piece] = await Promise.all([
@@ -422,6 +502,43 @@ export default defineSketch(async (ctx) => {
 	const limb = largestLimb(skeleton);
 	const elevation = QUERY.elevation ?? SPEC.elevation;
 	let facts: Record<string, unknown> = {};
+	const foliage = record.foliage;
+	const leaf = foliage.kind === 'blade' ? foliage.leaf.length : undefined;
+	/** A leaf's length in metres, for a species whose leaves are blades. */
+	const leafLength = leaf === undefined ? undefined : typeof leaf === 'number' ? leaf : leaf.mean;
+	/** What the close views read of the plant: its wood alone for a view that draws the wood alone. */
+	const closePlant = (woodOnly: boolean): ClosePlant => ({
+		skeleton,
+		shoots: woodOnly ? { ...main.shoots, count: 0 } : main.shoots,
+		prototypes: kit.prototypes,
+		...(leafLength !== undefined && { leafLength }),
+	});
+	/** Each close view's camera, found once and walked round its subject for a sheet's turns. */
+	const closeViews = new Map<string, CloseView | undefined>();
+	/**
+	 * What a view that found no subject of its own drew instead, and why, so the figures of its
+	 * picture say which camera drew them.
+	 */
+	const plainSubjects = new Map<PlantView, { readonly kind: string; readonly warning: string }>();
+	const closeAt = (
+		key: string,
+		find: () => CloseView | undefined,
+		turn: number,
+		fov: number,
+		near: number,
+	): View | undefined => {
+		if (!closeViews.has(key)) closeViews.set(key, find());
+		const found = closeViews.get(key);
+		if (!found) return undefined;
+		const walked = walkedRound(found, turn);
+		return {
+			position: walked.position,
+			target: walked.target,
+			fov,
+			near,
+			...(walked.roll && { roll: walked.roll }),
+		};
+	};
 
 	/** The camera of the view at one turn, for the plant or the cut piece. */
 	const viewAt = (view: PlantView, turn: number, aspect: number): View => {
@@ -429,6 +546,7 @@ export default defineSketch(async (ctx) => {
 		const e = QUERY.elevation ?? spec.elevation;
 		const fov = QUERY.fov ?? spec.fov;
 		const out = facing(turn);
+		const lens = { fov, aspect };
 		switch (view) {
 			case 'turntable':
 			case 'whole':
@@ -456,14 +574,26 @@ export default defineSketch(async (ctx) => {
 				return orbit(surface, Math.max(0.5, 0.6 * main.crown.radius), e, turn, fov);
 			}
 			case 'below': {
-				const r = stemAt(skeleton, 1)?.radius ?? 0.1;
-				const eye = Math.max(0.3, Math.min(EYE, main.crown.base * 0.8 || EYE));
-				const position = add(add(foot, scale(out, r + 0.8)), [0, eye, 0]);
-				const look = add(scale(out, -Math.cos(e * DEG)), [0, Math.sin(e * DEG), 0]);
-				return { position, target: add(position, look), fov, near: 0.1 };
+				const below = belowView(closePlant(false), turn, lens, {
+					elevation: e,
+					...(QUERY.forkRow !== undefined && { forkRow: QUERY.forkRow }),
+					...(QUERY.footRow !== undefined && { footRow: QUERY.footRow }),
+					...(QUERY.crownRow !== undefined && { crownRow: QUERY.crownRow }),
+					...(QUERY.aside !== undefined && { aside: QUERY.aside }),
+					...(QUERY.stand !== undefined && { stand: QUERY.stand }),
+				});
+				closeViews.set(view, below);
+				return { position: below.position, target: below.target, fov, near: 0.1 };
 			}
 			case 'inside': {
+				// Beside the most level great limb, under it, looking up along it into the crown.
+				const found = closeAt(view, () => insideView(closePlant(false), lens), turn, fov, 0.05);
+				if (found) return found;
 				if (limb < 0) break;
+				plainSubjects.set(view, {
+					kind: 'the largest limb, looking along it',
+					warning: 'no great limb crosses the frame clear from inside the crown',
+				});
 				const at = pointAlong(skeleton, limb, 0.4);
 				const side = normalize(cross(at.direction, [0, 1, 0]));
 				const position = add(at.at, scale(side, at.radius * 2 + 0.3));
@@ -471,19 +601,29 @@ export default defineSketch(async (ctx) => {
 				const look = add(scale(level, Math.cos(e * DEG)), [0, Math.sin(e * DEG), 0]);
 				return { position, target: add(position, look), fov, near: 0.05 };
 			}
-			case 'junction':
+			case 'junction': {
+				// A great limb leaving the stem, seen side on from where no other limb hides it.
+				const found = closeAt(
+					view,
+					() => junctionView(closePlant(spec.woodOnly === true), lens),
+					turn,
+					fov,
+					0.05,
+				);
+				if (found) return found;
+				break;
+			}
 			case 'fork': {
-				if (limb < 0) break;
-				const at =
-					view === 'fork'
-						? (firstForkOf(skeleton, limb) ?? pointAlong(skeleton, limb, 0.5))
-						: pointAlong(skeleton, limb, 0);
-				const across = yaw(normalize(cross([0, 1, 0], at.direction)), turn);
-				// The view frames the junction's own size: the trunk and limb a few radii across, so a
-				// thick bole's crotch is not a wall of bark at a fixed distance.
-				const reach = 1.5 + (view === 'fork' ? 2.5 : 2) * at.radius;
-				const back = Math.atan2(across[0], across[2]);
-				return orbit(at.at, reach, e, back, fov);
+				// A limb dividing into two, seen square to its arms against the least of the crown.
+				const found = closeAt(
+					view,
+					() => forkView(closePlant(spec.woodOnly === true), lens, QUERY.thin),
+					turn,
+					fov,
+					0.05,
+				);
+				if (found) return found;
+				break;
 			}
 			case 'twigs': {
 				// A view of the fruit goes to a fruit the plant carries rather than to a tip that
@@ -561,8 +701,16 @@ export default defineSketch(async (ctx) => {
 						return { ...fit(box, back, low, aspect, fov), near: 0.01 };
 					}
 				}
+				// A twig with its end clusters against a plain ground; a plant with no shoot rows takes
+				// its sunlit tip on the turn's side.
+				const twig = closeAt(view, () => twigView(closePlant(false), lens), turn, fov, 0.02);
+				if (twig) return twig;
 				const tip = sunlitTip(skeleton, out, BUD_TERMINAL);
 				if (!tip) break;
+				plainSubjects.set(view, {
+					kind: 'a sunlit shoot tip',
+					warning: 'the plant has no twig with end clusters that shows clear',
+				});
 				let shoot = 0.2;
 				for (const prototype of kit.prototypes) shoot = Math.max(shoot, prototype.length);
 				const target = add(tip.at, scale(tip.direction, shoot / 2));
@@ -573,19 +721,27 @@ export default defineSketch(async (ctx) => {
 				return { ...orbit(target, 0.28 + shoot / 4, e, back, fov), near: 0.02 };
 			}
 			case 'limb': {
-				// A limb of the outer crown seen across its own run. The view takes the wood that
-				// reaches furthest from the stem, where the crown meets the sky, and stands beside it,
-				// so the limb runs across the frame against the sky and no thicker limb hides it.
-				const along = QUERY.along ?? 0.6;
-				const thin = QUERY.thin ?? Math.max(0.005, height * 0.002);
-				const axis = limbNear(skeleton, along, thin);
-				if (axis < 0) break;
-				const at = pointAlong(skeleton, axis, along);
-				const span = QUERY.span ?? Math.max(0.2, height * 0.02);
-				const distance = span / 2 / Math.tan((fov * DEG) / 2) / (1 - 2 * MARGIN) + at.radius;
-				const outward = normalize([at.at[0] - foot[0], 0, at.at[2] - foot[2]]);
-				const beside = yaw(cross([0, 1, 0], outward), turn);
-				return { ...orbit(at.at, distance, e, Math.atan2(beside[0], beside[2]), fov), near: 0.02 };
+				// One branch with its side branches seen across its run, from the side where the least of
+				// the plant stands in front of it; or, for the crown's outside, its lower rim seen from
+				// under it, looking up past its edge.
+				const framing = {
+					share: QUERY.along ?? 0.6,
+					thin: QUERY.thin ?? Math.max(0.005, height * 0.002),
+					span: QUERY.span ?? Math.max(0.2, height * 0.02),
+					lookUp: Math.max(0, -e),
+				};
+				const found = closeAt(
+					view,
+					() =>
+						QUERY.surface
+							? surfaceView(closePlant(false), lens, framing)
+							: limbView(closePlant(false), lens, framing),
+					turn,
+					fov,
+					0.02,
+				);
+				if (found) return found;
+				break;
 			}
 			case 'bark-base': {
 				const r = stemAt(skeleton, 0.3)?.radius ?? 0.1;
@@ -603,6 +759,23 @@ export default defineSketch(async (ctx) => {
 				return orbit(surface, span / 2 / Math.tan((fov * DEG) / 2), e, turn, fov);
 			}
 			case 'bark-limb': {
+				// The bark on a great limb shown with the limb itself, when the view asks for its girth.
+				if (QUERY.girth !== undefined) {
+					const girth = QUERY.girth;
+					const share = QUERY.along ?? 0.3;
+					const found = closeAt(
+						view,
+						() => barkLimbView(closePlant(spec.woodOnly === true), lens, girth, share),
+						turn,
+						fov,
+						0.02,
+					);
+					if (found) return found;
+					plainSubjects.set(view, {
+						kind: 'a point along the largest limb',
+						warning: 'no great limb crosses the frame clear at the asked girth',
+					});
+				}
 				if (limb < 0) break;
 				const share = QUERY.along ?? 0.2;
 				// Thin wood lies far out on a small limb, not on the thickest one: a view that asks
@@ -620,23 +793,46 @@ export default defineSketch(async (ctx) => {
 				return orbit(at.at, reach + at.radius, e, Math.atan2(across[0], across[2]), fov);
 			}
 			case 'trunk': {
-				const fork = firstForkHeight(skeleton) ?? Math.max(main.crown.base, height * 0.3);
-				const span = Math.max(1, fork * 1.1);
-				const r = stemAt(skeleton, 0.3)?.radius ?? 0.1;
-				const distance = span / 2 / Math.tan((fov * DEG) / 2) / (1 - 2 * MARGIN) + r;
-				return orbit([foot[0], fork / 2, foot[2]], distance, e, turn, fov);
+				// The bole from its foot to where it first divides, seen from a person's eye height on
+				// the side where the fewest branches and leaves cross it near the asked turn; a sheet's
+				// further turns walk round it from there.
+				const bole = closeAt(
+					view,
+					() => trunkView(closePlant(spec.woodOnly === true), lens, turn0),
+					turn - turn0,
+					fov,
+					0.05,
+				);
+				if (bole) return bole;
+				break;
 			}
 			case 'branch':
 			case 'subbranch':
 			case 'cluster':
 			case 'leaf-upper':
-			case 'leaf-under':
-				// A cutting fills the frame with its own points, as its reference's piece does.
-				return fitPoints(piece as PlantAsset, kit, turn, e, aspect, fov);
+			case 'leaf-under': {
+				// A piece framed at the scale its photograph shows, in leaf lengths, stands on its cut:
+				// the cut on the frame's lower edge, the piece running up across it and off its far edge
+				// where it is longer, as a cut branch runs off its photograph. A roll lays it across.
+				if (QUERY.leaves !== undefined && leafLength !== undefined) {
+					const roll = (QUERY.roll ?? 0) * DEG;
+					const tall = QUERY.leaves * leafLength;
+					const run = Math.abs(Math.sin(roll)) > Math.SQRT1_2 ? tall * aspect : tall;
+					const distance = tall / 2 / Math.tan((fov * DEG) / 2);
+					return { ...orbit([0, run / 2, 0], distance, e, turn, fov), roll, near: 0.01 };
+				}
+				// A cutting fills the frame with its own points, as its reference's piece does, on the
+				// rows its reference shows it on when the query measured them.
+				return fitPoints(piece as PlantAsset, kit, turn, e, aspect, fov, CUT_ROWS);
+			}
 			case 'panels':
 				break;
 		}
 		notes.push(`the plant has no part for the ${view} view, so it shows the whole plant`);
+		plainSubjects.set(view, {
+			kind: 'the whole plant',
+			warning: `the plant has no part for the ${view} view`,
+		});
 		return fit(bounds, turn, e, aspect, fov);
 	};
 
@@ -693,20 +889,24 @@ export default defineSketch(async (ctx) => {
 	}
 
 	const cameras: Camera[] = cells.map((cell) => {
-		const span = Math.hypot(...sub(cell.view.target, cell.view.position));
+		const { position, target, roll } = cell.view;
+		const span = Math.hypot(...sub(target, position));
 		return scene.createPerspectiveCamera({
 			fov: cell.view.fov,
 			near: cell.view.near ?? Math.max(0.005, Math.min(0.5, span * 0.02)),
 			far: FAR,
-			position: cell.view.position,
-			target: cell.view.target,
+			position,
+			...(roll ? { rotation: rolledLook(position, target, roll) } : { target }),
 		});
 	});
 	if (cells.length === 1) scene.setActiveCamera(cameras[0] as Camera);
 	else {
 		// A sheet draws every cell as a view of its own. The cells draw no background, so the page's
 		// own camera, whose picture lies under them, stands far from the plant and looks straight up
-		// at the sky alone. The sun's shadows follow that camera, so a sheet's cells have none.
+		// at the sky alone. The sun's shadow cascades stand where the middle cell's camera stands
+		// instead, so the shadows fall on the plant that every cell sees, as each turn of a reference
+		// video shows them; a release build leaves the cascades with the page's camera, and the cells
+		// without shadows.
 		scene.setActiveCamera(
 			scene.createPerspectiveCamera({
 				fov: 30,
@@ -715,9 +915,28 @@ export default defineSketch(async (ctx) => {
 				target: [AWAY[0] * 2, 100, 0.01],
 			}),
 		);
+		// The per-species picture keeps its four panels as its own references draw them.
+		if (VIEW !== 'panels')
+			debug.shadowCamera(cameras[Math.floor((cells.length - 1) / 2)] as Camera);
 		for (const [k, cell] of cells.entries())
 			scene.createView({ camera: cameras[k] as Camera, rect: [...cell.rect] });
 	}
+	// The turn a reference's light is measured from. A whole plant's camera faces its turn; a close
+	// view's camera stands wherever its subject shows, so its sun follows that camera and lights the
+	// side its reference lights. A sheet of turns has one sun for all its cells, so it stands as the
+	// reference's light stands to the sheet's middle turn: a turning reference keeps its light where
+	// its camera is, and the sheet's cells stand within half the sheet's span of that.
+	const first = cells[0]?.view;
+	const sunTurn =
+		(SPEC.whole === true || !first
+			? turn0
+			: Math.atan2(first.position[0] - first.target[0], first.position[2] - first.target[2])) +
+		((turns - 1) / 2) * step;
+	/** A sun placed for a rolled camera turns with it, so it lights the side of the picture it should. */
+	const sunRolled = (direction: V3): V3 =>
+		first?.roll
+			? turnedAbout(direction, normalize(sub(first.target, first.position)), first.roll)
+			: direction;
 
 	// The background, the meadow and the light.
 	const colours = BACKGROUND_COLOURS[BACKGROUND];
@@ -729,6 +948,15 @@ export default defineSketch(async (ctx) => {
 		scene.createMesh({
 			mesh: geometry.plane({ width: 8000, height: 8000 }),
 			material: materials.unlit({ color: groundColour }),
+			rotation: FLAT,
+		});
+	}
+	if (MATTE && SPEC.whole && !SPEC.cutting) {
+		// A whole plant's matte stands on a white ground, so what grows below the ground, such as the
+		// buried part of a root flare, stays hidden as the meadow hides it in the picture.
+		scene.createMesh({
+			mesh: geometry.plane({ width: 8000, height: 8000 }),
+			material: materials.unlit({ color: '#ffffff' }),
 			rotation: FLAT,
 		});
 	}
@@ -750,29 +978,53 @@ export default defineSketch(async (ctx) => {
 			return scale(add(scale(facing(azimuth), Math.cos(e)), [0, Math.sin(e), 0]), -1);
 		};
 		if (SUN === 'albedo') {
-			// A copy stand's light, straight from the camera at the strength that a diffuse surface
-			// shows its own reflectance: a face turned to the camera reads as its albedo, and no light
-			// reaches its back to pass through. The light follows the view, so a turned view stays lit.
+			// A copy stand's light: two lamps either side of the camera at the stand's angle, at the
+			// strength that a diffuse surface turned to the camera shows its own reflectance. A glossy
+			// face square to the lens then throws each lamp's glare away from it, as a copy stand's
+			// lamps are set to do, and no light reaches its back to pass through. The lamps follow the
+			// view, so a turned view stays lit.
 			const shot = cells[0]?.view;
-			const direction = shot ? normalize(sub(shot.target, shot.position)) : ([0, 0, -1] as V3);
-			scene.createDirectionalLight({
-				direction,
-				color: '#ffffff',
-				intensity: Math.PI * 1.05,
-			});
+			const ahead = shot ? normalize(sub(shot.target, shot.position)) : ([0, 0, -1] as V3);
+			// The lamps stand either side of the lens across the frame, or across x for a view straight
+			// up or down.
+			const level = cross(ahead, [0, 1, 0]);
+			const across: V3 =
+				Math.hypot(level[0], level[1], level[2]) > 1e-6 ? normalize(level) : [1, 0, 0];
+			const lean = COPY_STAND_LAMP * DEG;
+			for (const side of [-1, 1])
+				scene.createDirectionalLight({
+					direction: normalize(
+						add(scale(ahead, Math.cos(lean)), scale(across, side * Math.sin(lean))),
+					),
+					color: '#ffffff',
+					intensity: Math.PI / (2 * Math.cos(lean)),
+				});
 		} else if (SUN === 'flat' && REFERENCE_LIGHT === null) {
 			scene.createAmbientLight({ intensity: 1 });
 			scene.createHemisphereLight({ skyColor: '#eef1f4', groundColor: '#b9b9b4', intensity: 1.5 });
 		} else {
 			// Soft daylight: most of the light from the whole sky, with a sun that gives the crown its
-			// depth, and a little light from below for the undersides.
-			scene.createAmbientLight({ intensity: 0.6 });
-			scene.createHemisphereLight({ skyColor: '#dfe8f0', groundColor: '#7f8166', intensity: 1.7 });
+			// depth, and a little light from below for the undersides. A query's daylight scales the sum
+			// of the sky and the sun, and its sky share splits that sum between them. The light from
+			// below is what the ground throws back, so it grows with the daylight too.
+			const skyLight = 0.6 + 1.7;
+			const sunLight = 1.9;
+			const strength = QUERY.daylight ?? 1;
+			const share = QUERY.skyShare;
+			const total = (skyLight + sunLight) * strength;
+			const skyScale = share === undefined ? strength : (share * total) / skyLight;
+			const sunScale = share === undefined ? strength : ((1 - share) * total) / sunLight;
+			scene.createAmbientLight({ intensity: 0.6 * skyScale });
+			scene.createHemisphereLight({
+				skyColor: '#dfe8f0',
+				groundColor: '#7f8166',
+				intensity: 1.7 * skyScale,
+			});
 			// The reference's own light when it gave one: the sun stands that far to the camera's
 			// right and that high, so the crown is lit and shadowed as its reference's is.
 			const direction: V3 =
 				REFERENCE_LIGHT !== null
-					? sunFrom(turn0 + REFERENCE_LIGHT[0], REFERENCE_LIGHT[1])
+					? sunRolled(sunFrom(sunTurn + REFERENCE_LIGHT[0], REFERENCE_LIGHT[1]))
 					: SUN === 'low'
 						? sunFrom(turn0 + 0.7, 12)
 						: SUN === 'back'
@@ -780,8 +1032,13 @@ export default defineSketch(async (ctx) => {
 							: SUN === 'overhead'
 								? [0.02, -1, 0.01]
 								: [-0.45, -1, -0.35];
-			scene.createDirectionalLight({ direction, intensity: 1.9, castShadows: true, shadow });
-			scene.createDirectionalLight({ direction: [0.35, 1, 0.3], intensity: 0.45 });
+			scene.createDirectionalLight({
+				direction,
+				intensity: sunLight * sunScale,
+				castShadows: true,
+				shadow,
+			});
+			scene.createDirectionalLight({ direction: [0.35, 1, 0.3], intensity: 0.45 * strength });
 		}
 	}
 
@@ -867,10 +1124,21 @@ export default defineSketch(async (ctx) => {
 			});
 	}
 
+	// A close view tells its subject's shoots by the wind record they share with their axis.
+	const shared = closeViews.size > 0 ? sharedRecords(skeleton) : 0;
+	if (shared > 0)
+		notes.push(
+			`${shared} wind records are shared by several axes, so the close view counts the shoots on them as no subject's own`,
+		);
 	const trunk = stemAt(skeleton, 1.3);
+	const close = closeViews.get(VIEW);
+	const subject = close
+		? { ...close.subject, ...(close.clutter && { clutter: close.clutter }) }
+		: plainSubjects.get(VIEW);
 	facts = {
 		species: record.id,
 		name: record.name,
+		form: form ?? null,
 		standIn: !isSpeciesId(QUERY.species),
 		placeholders,
 		view: VIEW,
@@ -902,12 +1170,18 @@ export default defineSketch(async (ctx) => {
 		cells: cells.map((cell) => ({
 			turn: cell.turn / DEG,
 			rect: cell.rect,
-			camera: { position: cell.view.position, target: cell.view.target, fov: cell.view.fov },
+			camera: {
+				position: cell.view.position,
+				target: cell.view.target,
+				fov: cell.view.fov,
+				...(cell.view.roll && { roll: cell.view.roll / DEG }),
+			},
 			...(QUERY.measure && {
 				measure: measurePlant(cell.piece === 'away' && piece ? piece : main, kit.box, cell.turn),
 			}),
 		})),
 		...(QUERY.time !== undefined && { time: QUERY.time }),
+		...(subject && { subject }),
 		notes,
 	};
 	page.post('plant-review', facts);

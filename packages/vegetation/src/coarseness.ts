@@ -10,8 +10,8 @@ import type { MacroSkeleton } from './core/graph';
 import { log } from './core/math';
 import { DETAILS, type Detail } from './core/types';
 import { coarsenSkeleton } from './grow/coarsen';
-import { placeShoots } from './leaf/instancer';
-import type { DressInput, GrowInput } from './stages';
+import { dressShoots } from './leaf/instancer';
+import type { CrownLight, DressInput, GrowInput } from './stages';
 import { woodTriangles } from './wood/estimate';
 
 /**
@@ -136,7 +136,7 @@ export function nearTriangles(
  */
 export function coarsenessFor(
 	kit: SpeciesKitData,
-	grown: GrowInput & { readonly skeleton: MacroSkeleton },
+	grown: GrowInput & { readonly skeleton: MacroSkeleton; readonly pruneLight?: CrownLight },
 	detail: Detail,
 	options: CoarsenessOptions,
 ): number {
@@ -149,11 +149,14 @@ export function coarsenessFor(
 			skeleton: coarsenSkeleton(grown.skeleton, c),
 			coarseness: c,
 		};
-		const rows =
-			kit.record.lod.nearFoliage === 'instanced' && kit.prototypes.length > 0
-				? shootTriangles(kit, placeShoots(dress), detail)
-				: 0;
-		return rows + woodTriangles({ ...dress, detail }, 0);
+		// The rows and the wood the dressing keeps, its bare twigs trimmed as the record asks.
+		if (kit.record.lod.nearFoliage !== 'instanced' || kit.prototypes.length === 0)
+			return woodTriangles({ ...dress, detail }, 0);
+		const dressed = dressShoots(dress);
+		return (
+			shootTriangles(kit, dressed.rows, detail) +
+			woodTriangles({ ...dress, skeleton: dressed.skeleton, detail }, 0)
+		);
 	};
 	// The count falls as the coarseness rises; search between the ends on its logarithm, by false
 	// position with the Illinois step, so a few tries come within the target's few per cent.

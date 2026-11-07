@@ -18,6 +18,7 @@ import {
 	kitKey,
 	loadPlantCode,
 	variantKey,
+	withFoliage,
 } from './generate';
 import type { PlantTaskInput } from './generate-task';
 
@@ -38,6 +39,29 @@ describe('the plant core with stand-ins', () => {
 		expect(kit.cards.color.length).toBe(kit.cards.size * kit.cards.size * 4 * 2);
 		expect(kit.header.length).toBeGreaterThan(0);
 		expect(kit.key).toBe(kitKey(stub.record, stub.textures.manifest, 'high'));
+	});
+
+	it('builds the kit of a form under a key of its own, and the record as it stands without one', () => {
+		const formed = {
+			...stub,
+			record: {
+				...stub.record,
+				forms: { young: { form: 'a young stand-in', size: { height: { mean: 2, spread: 0.2 } } } },
+			},
+		};
+		// The forms leave the record as it stands, and its kit, unchanged.
+		const own = buildKitNow(formed, { placeholders: true });
+		expect(own.key).toBe(kit.key);
+		expect('forms' in own.record).toBe(false);
+		const youngKit = buildKitNow(formed, { placeholders: true, form: 'young' });
+		expect(youngKit.record.size.height).toEqual({ mean: 2, spread: 0.2 });
+		expect(youngKit.key).not.toBe(kit.key);
+		const asset = growPlantNow(youngKit, { seed: 11, variant: 0 });
+		expect(asset.skeleton.height).toBeLessThan(2.5);
+		expect(variantKey(youngKit, { seed: 11, variant: 0 })).not.toBe(
+			variantKey(kit, { seed: 11, variant: 0 }),
+		);
+		expect(() => buildKitNow(formed, { placeholders: true, form: 'old' })).toThrow(/no form 'old'/);
 	});
 
 	it('grows a variant through every stage', () => {
@@ -167,5 +191,32 @@ self.onmessage = async (event) => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+
+	it('thins or fills a crown from one foliage share, every species the same way', async () => {
+		const oak = (await import('./species/pedunculate-oak/index')).species;
+		await loadPlantCode(oak.record);
+		const grown = buildKitNow(oak, { placeholders: 'missing', detail: 'high' });
+		const rows = (foliage?: number) =>
+			growPlantNow(grown, { seed: 11, variant: 0, near: true, foliage }).shoots.count;
+		// A share below one drops the shoots a crown's shaded wood carries; above it, keeps them.
+		expect(rows(0.5)).toBeLessThan(rows(1));
+		expect(rows(1.6)).toBeGreaterThan(rows(1));
+		// Absent or one grows the record's own crown, to the shoot.
+		expect(rows()).toBe(rows(1));
+		// The share moves the record's own sky prune and nothing else.
+		const shoots = oak.record.shoots as NonNullable<typeof oak.record.shoots>;
+		const own = withFoliage(oak.record, 1);
+		expect(own).toBe(oak.record);
+		const thinner = withFoliage(oak.record, 1.5) as typeof oak.record;
+		expect(thinner.shoots?.placement.skyPrune).toBeLessThan(shoots.placement.skyPrune ?? 0.5);
+		expect(() => withFoliage(oak.record, 3)).toThrow();
+		// A different share is a different asset, so the cache never hands back the record's own.
+		expect(variantKey(grown, { seed: 11, variant: 0, foliage: 0.5 })).not.toBe(
+			variantKey(grown, { seed: 11, variant: 0 }),
+		);
+		expect(variantKey(grown, { seed: 11, variant: 0, foliage: 1 })).toBe(
+			variantKey(grown, { seed: 11, variant: 0 }),
+		);
 	});
 });

@@ -24,7 +24,7 @@ The species is any registered species id, or any other id, which draws as a stan
 The run folder holds:
 
 - `stills/`: one render of each still and texture source in use, with its camera, framing and background matched to the picture, and a matte for those whose outline is compared.
-- `turn-<video>/`: one render for every frame angle of each turning video, round a full circle, with a matte each. The renders are drawn as sheets of up to 24 cells in one page and cut apart.
+- `turn-<video>/`: one render for every frame angle of each turning video, round a full circle, with a matte each. The renders are drawn as sheets of cells in one page and cut apart.
 - `wind-<video>/`: the whole plant in the default wind, framed as the wind video frames it, eight frames a second by default.
 - `views/`: the views that `--views` asked for.
 - `manifest.json`: the commit, the species, the references, and each frame's query, hash, time and the facts the page posted, its measures among them.
@@ -42,9 +42,10 @@ Look at the sheets first. In an outline overlay, the reference is magenta and th
 | `--only stills,turns,wind` | Draw only some kinds of reference. The coverage list then names the rest as not drawn. |
 | `--step <degrees>` | Draw a turn's renders this far apart rather than at every frame's angle. A quick look; the frames between renders do not count as covered. |
 | `--wind-fps <n>` | Frames a second of the wind clip; 8 by default. A clip counts as covered when it spans the video at this rate. |
-| `--cell <pixels>` | The width of a turn's or a wind clip's frame; 480 by default. |
+| `--cell <pixels>` | The width of a turn's or a wind clip's frame; a still's width by default, so a video's frame is drawn and measured as a still is and takes the same detail level. |
 | `--views a,b` or `--views all` | Pictures of views with no reference. |
 | `--seed`, `--variant`, `--preset`, `--gpu` | The plant, the mesh tier, and the GPU path of the image page. |
+| `--slot-query <file>` | Page query fields per reference file, from a JSON object keyed by the file's name, laid over each still's or video's own query: for example a camera its picture needs, or the light it was taken in (`sunAzimuth`, `sunRise`, `skyShare`, the sky's share of a sunlit view's light, and `daylight`, that light's strength). A field given as `null` is dropped, so a still can trade the framing's `fill` for a `top` row and an `eye`. A video's entry goes over the framing and the light measured from its frames, so it can replace either. A species' own file is `slots/<species>.json` beside this guide, such as `slots/pedunculate-oak.json`; draw both sides of a comparison with it. |
 | `--no-matte` | Skip the mattes; outlines then come from colour. |
 | `--compare <run folder>` | Compare an existing run again, without drawing. |
 
@@ -54,11 +55,13 @@ The command ends with status 1 when a frame failed or when the coverage is not c
 
 `references.ts` reads the folder's `INDEX.md`. A row whose "what it shows" cell says the file is superseded takes the file out of use, and so does a row whose later cell says "Superseded by" a file. Every other picture and video is in use, listed or not, apart from videos' contact sheets.
 
-- Numbered stills go to the review view that shows the same thing, by the words in their names first and their numbers second. A still of another habit or a young form goes to the nearest view, with a note.
+- Numbered stills go to the review view that shows the same thing, by the words in their names first and their numbers second. A still of another habit or a young form goes to the nearest view.
+- A still whose name names one of the species' other forms, such as `young` or `woodland`, is drawn in that form: the tool reads the forms from the species' record and gives the still's query the `form` field. An index row's words never pick a form, since a row can name another form in passing, and a texture source never takes one. Where the record has no such form, the still is drawn beside the grown plant, with a note.
 - A still is drawn in the season its name gives: flowers in blossom, fruit in autumn, a bare plant in winter. A still of fruit whose picture shows more green than autumn colours is drawn in summer, since its leaves have not turned.
 - Texture sources (24 to 28) go beside the render's own surface: the leaf faces, the bark at mid-trunk, and young bark far out on a limb. The bark close-ups stand in the copy-stand light, which follows the camera, so a turned view still shows the surface as its albedo. The bark views frame the metres that the species' texture manifest gives, or the metres that the slot's own query names.
 - `*-turntable*.mp4` is a turning video of the whole plant, or of the branch, sub-branch or leaf cluster that its name gives; `-halfturn` covers 180 degrees.
 - `*wind*.mp4` is a wind video.
+- A video's renders are framed and lit as its frames are: the framing, the colours and the light are measured from eight of its frames. The light is read against each frame's camera, and the median is kept. The reference videos keep their light where their camera is while the piece turns, so each sheet of a turn stands its one sun as that light stands to the sheet's middle turn. A sheet with a measured light spans at most 30 degrees of the turn, so every cell's camera stands within 15 degrees of where the light was read from.
 
 ## The page's query
 
@@ -67,6 +70,7 @@ The command ends with status 1 when a frame failed or when the coverage is not c
 | Field | Meaning |
 | --- | --- |
 | `species` | A species id. |
+| `form` | One of the species' other forms, such as `young`; the record as it stands by default. A record without that form grows as it stands, and the page notes it. |
 | `variant`, `seed` | The plant's variant and seed; 0 and 11 by default. |
 | `view` | The view; `whole` by default. `views.ts` lists them with their reference slots and defaults. |
 | `turn`, `elevation` | Degrees round the plant (0 looks from +Z) and above the view's target. |
@@ -74,6 +78,7 @@ The command ends with status 1 when a frame failed or when the coverage is not c
 | `fov`, `size` | The vertical field of view, and the frame's size, which gives its aspect. |
 | `background`, `sky`, `ground` | `sky-meadow`, `studio-grey` or `white`, and sRGB colours in place of its own. |
 | `sun` | `default`, `low`, `back`, `overhead`, `flat` or `albedo`. |
+| `sunAzimuth`, `sunRise`, `skyShare`, `daylight` | A sunlit view's light as its reference was lit: the sun's degrees to the camera's right and above the horizon, the sky's share of the light, and the light's strength, sky, sun and ground bounce together, as a multiple of the page's soft daylight (1 by default, up to 8). A clear sky lights a plant more brightly than the soft daylight does against the same sky colour. A review measures the strength from each photograph's own sky: a calibration to the picture, not a derivation from physics, since a photograph's tone curve squeezes a bright sky more than the plant. |
 | `wind`, `time` | The wind's strength from 0 to 3, and the wind clock's time, at which the tool holds the frame. |
 | `season`, `lod`, `preset` | The season, a level forced at every distance (0 to 3), and the mesh tier. |
 | `pick`, `cut` | The cutting candidate and its length in metres. |
@@ -81,10 +86,15 @@ The command ends with status 1 when a frame failed or when the coverage is not c
 | `placeholders` | Grow stand-ins; on by default for an id that is not registered. |
 | `horizon`, `fill`, `targetY`, `targetX`, `top`, `eye` | A whole-plant framing in screen shares, which stands the camera on the ground as a reference's camera stood. |
 | `along`, `span` | How far along a limb a limb view looks, and the metres of bark a bark view frames. |
-| `thin` | Metres of radius that a limb view frames: it picks the exposed limb that carries that thickness, so young bark shows. |
+| `thin` | Metres of radius that a limb view frames: it picks the exposed limb that carries that thickness, so young bark shows. A fork view takes the fork whose limb is nearest that radius. |
+| `surface` | A limb view of the crown's outer rim, seen from under it looking up past its edge, rather than of one branch against a plain ground. |
+| `forkRow`, `aside` | A view up the stem: the row on which the bark where the stem divides lands, and the degrees the look turns to the right of the stem. |
+| `footRow`, `crownRow` | A view up the stem from a few steps back: the rows on which the ground at the bark and the crown's base land, the crown's at least a tenth of the frame above the foot's. A crown's base under twice a person's eye height takes the plain view up the stem, with a warning. |
+| `girth` | A bark view of a great limb that shows the limb itself: the share of the frame's height that the limb's thickness fills, above 0 and up to 1. |
+| `leaves`, `roll` | A cut piece framed at its photograph's scale: the leaf lengths that the frame's height covers, with the piece standing on its cut at the lower edge. Then the degrees the camera turns about its line of sight: a quarter turn lays the piece across the frame. |
 | `turns`, `step`, `columns` | A sheet of turns, each in a cell of its own camera. |
 
-The page posts a `plant-review` message with the plant's height, width, crown base, trunk radius and triangles, each cell's camera, the cutting's size, and, with `measure`, each cell's measures: the crown box in metres, the foliage share, the silhouette, the trunk diameter at 1.3 m, the crown base and the first fork's height.
+The page posts a `plant-review` message with the form it grew, the plant's height, width, crown base, trunk radius and triangles, each cell's camera, the cutting's size, and, with `measure`, each cell's measures: the crown box in metres, the foliage share, the silhouette, the trunk diameter at 1.3 m, the crown base and the first fork's height.
 
 ## How the measures work
 
@@ -92,13 +102,16 @@ The page posts a `plant-review` message with the plant's height, width, crown ba
 - **The turn's pairing.** Each outline is scaled so the plant's height fills a fixed canvas, with the trunk on its middle column. The overlap of every reference frame with every render fills a table, and the pairing tries every start and both directions, at the video's own step against the renders' step, and keeps the best mean overlap. A frame is covered when its render lies within half a frame's turn of the frame's own angle.
 - **The measures of a pair.** Shape and frame overlap, the width profile's error, the gap fraction, the crown box, and the CIEDE2000 colour difference of foliage and bark (about 2 is a visible step). A bark texture gives the colour difference of the middle of each picture.
 - **The crown box's spread** at the rubric's eight angles that the video covers, for the reference and the render, against the rubric's band, which the reference's own spread widens.
+- **The close views' cameras.** Each close view first finds its subject in the plant. The subjects are the stem from its foot, the most level thick limb leaving the stem, and a limb dividing into two even arms. The others are the crown's lower rim and a branch with its side branches. From inside the crown, the subject is the most level stretch of the most level great limb. A bark view of a limb takes a great limb. The trunk view draws the plant in leaf, as its photograph shows the crown above the bole, and takes the bole from the side that the fewest branches and leaves cross. It stands at a person's eye height and looks up, so the bole's foot stands on the frame's lower margin and its first fork a fifth of the frame below the top, with the limbs leaving the fork above it. The first fork is where a limb of a fifth of the stem's cross-section or more leaves, as the grower's tests count it. A camera at a person's eye height walks round the stem to a stand clear of low branches. A view frames its subject at the share of the picture that its photograph gives it. Then it weighs cameras round the subject on a coarse grid, as spheres for the wood and the shoots. It keeps the camera with the least of the rest of the plant in front of the subject. Where the photograph shows a plain ground, it also wants the least behind it. A fork view turns its picture until the limb comes up to the fork from the lower edge. The page posts the subject and that clutter with its facts. A view that finds no subject of its own draws a plain camera instead, and its facts then name what it drew and carry a warning that says why. A view up the stem whose walk finds no clear stand warns the same way. The summary lists each still's subject, its clutter and any warning.
+- **The cut pieces of close stills.** A still of one branch or one twig on a plain ground is drawn as a cut piece, as the studio stills are. It is framed at the photograph's own scale in leaf lengths and stands on its cut at the frame's lower edge. A branch lies across the frame, as its photograph lays it.
+- **The studio pieces.** A cut piece is fitted to the points it draws: its parts', and the vertices of its shoot rows, which draw the leaves of a piece cut from an instanced plant. A studio still or a cut piece's turning video also gives the rows its piece's top and foot stand on, measured from the picture. The page then puts the piece's highest point on the top row and its lowest on the base row, or on the frame's foot where the picture's piece runs off it.
 - **The wind's motion.** In six height bands of the plant, base first, the share of the outline that changes from frame to frame, averaged over each clip.
 
 ## Limits
 
 - A picture with no plain border, such as bark or the inside of a crown, has no outline; its row shows the pictures and the colour figures alone.
 - A turning video is taken to turn at a steady rate over its arc.
-- A turn's renders are drawn as sheets of cells, which draw without the sun's shadows.
+- A turn's renders are drawn as sheets of cells. Each cell draws at a still's size, and its outline is measured at the same work width as a still's and the video's frames, so a turn's frame and a still from the same camera give the same figures. Each cell draws the sun's shadows, which a development build places from the sheet's middle cell; a release build draws the cells without them. A sheet holds at most eight million pixels.
 - A sheet draws a cut piece at the nearest level. A cut piece has no card levels, so a sheet's
   smaller cells would otherwise switch its foliage to cards that hold nothing, and the piece would
   vanish from the sheet.

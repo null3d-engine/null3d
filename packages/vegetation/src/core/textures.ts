@@ -3,7 +3,28 @@
 // ETC1S KTX2 in a full set and a half set. A page loads them the first time it prepares the species.
 // The CPU never reads KTX2 texels: the kit, the card bake and the far bake read the manifest's
 // contour, means and profiles.
+import type { Species } from './record';
 import type { Rgb, Vec2 } from './types';
+
+/** The bark colour of a species that neither measures its bark nor gives it a colour. */
+export const STAND_IN_BARK: Rgb = [0.2, 0.16, 0.12];
+
+/**
+ * The colour a species' grown bark draws in where no bark texture draws: its first zone's measured
+ * mean times that zone's tint. A species with no measured bark, such as a stand-in, gives its
+ * colour in the tint itself; one with neither takes the stand-in colour.
+ *
+ * @param record The species record.
+ * @param manifest The species' texture manifest.
+ * @returns The colour.
+ */
+export function barkColourOf(record: Species, manifest: TextureManifest): Rgb {
+	const zone = record.bark?.zones[0];
+	const measured = zone ? manifest.bark?.layers[zone.layer]?.mean : undefined;
+	const tint = zone?.tint;
+	if (!measured) return tint ?? STAND_IN_BARK;
+	return tint ? [measured[0] * tint[0], measured[1] * tint[1], measured[2] * tint[2]] : measured;
+}
 
 /**
  * A species' texture files: the manifest, and the URLs of both sets.

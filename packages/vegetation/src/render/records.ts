@@ -11,7 +11,7 @@
 import type { WindTable } from '../asset';
 import type { SpeciesBox } from '../core/box';
 import type { BarkZone, LeafOptics, Species } from '../core/record';
-import type { TextureManifest } from '../core/textures';
+import { STAND_IN_BARK, type TextureManifest } from '../core/textures';
 import { type Rgb, spreadMean } from '../core/types';
 import { WIND_RECORD_FLOATS, windSway } from '../wind/records';
 
@@ -87,7 +87,10 @@ export const HEADER = {
 	moss: 17,
 	/** Moss: how far up in metres, how much more on the north side, the collar ridge, the scars per metre. */
 	mossReach: 18,
-	/** The first extra's colour; the next `MAX_EXTRAS - 1` texels hold the others' in record order. */
+	/**
+	 * The first extra's colour, then its roughness; the next `MAX_EXTRAS - 1` texels hold the
+	 * others' in record order.
+	 */
 	extras: 19,
 	/** The shoots' buds: their colour, then 1 when the record gives one. */
 	bud: 23,
@@ -99,6 +102,24 @@ export const HEADER = {
 	lichenReach: 41,
 	/** The whole plant's sway: metres at its top at the field's base speed, then cycles a second. */
 	sway: 42,
+	/**
+	 * The first extra's band colour, then the band's roughness, as `extras` holds its body's; the
+	 * next `MAX_EXTRAS - 1` texels hold the others' in record order.
+	 */
+	extraBands: 43,
+	/**
+	 * The first extra's scale pattern: its scale rows, the cells round its turn, and its band's
+	 * share of the profile's height at each end; the next `MAX_EXTRAS - 1` texels hold the others'
+	 * in record order. Rows of zero leave the body plain.
+	 */
+	extraScales: 47,
+	/**
+	 * The first extra's stalk colour, and its band's roughness; the next `MAX_EXTRAS - 1` texels
+	 * hold the others' in record order.
+	 */
+	extraStalks: 51,
+	/** The least width in pixels that a card's stalk draws, or 0 where the record gives none. */
+	cardStalk: 55,
 } as const;
 
 /**
@@ -108,7 +129,13 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.sway + 1;
+export const HEADER_TEXELS = HEADER.cardStalk + 1;
+
+/** An extra's roughness where its record names none. */
+export const EXTRA_ROUGHNESS = 0.6;
+
+/** Faces round an extra's lathe at the nearest level where its record names none. */
+const EXTRA_SIDES = 8;
 
 /**
  * A number rounded to the nearest half float, ties to even, as the GPU's upload rounds it. The
@@ -271,7 +298,7 @@ export function speciesHeader(
 	const barkManifest = manifest.bark;
 	if (bark) {
 		const young = barkManifest?.young;
-		texel(header, HEADER.young, [...(young?.mean ?? [0.2, 0.16, 0.12]), bark.youngRadius]);
+		texel(header, HEADER.young, [...(young?.mean ?? STAND_IN_BARK), bark.youngRadius]);
 		const zones = bark.zones.slice(0, MAX_BARK_ZONES);
 		texel(header, HEADER.youngTile, [
 			young?.tile[0] ?? 0.12,
@@ -301,16 +328,31 @@ export function speciesHeader(
 				layer?.height.offset ?? 0,
 				layer?.height.depth ?? 0,
 			]);
-			texel(header, at + 3, [...(layer?.mean ?? [0.2, 0.16, 0.12]), 0]);
+			texel(header, at + 3, [...(layer?.mean ?? STAND_IN_BARK), 0]);
 		});
 	}
 	(record.extras ?? []).slice(0, MAX_EXTRAS).forEach((extra, index) => {
-		texel(header, HEADER.extras + index, [...extra.colour, 1]);
+		const [body, band] = extra.roughness ?? [EXTRA_ROUGHNESS, EXTRA_ROUGHNESS];
+		texel(header, HEADER.extras + index, [...extra.colour, body]);
+		texel(header, HEADER.extraBands + index, [...(extra.bandColour ?? extra.colour), band]);
+		const lathe = 'lathe' in extra.shape ? extra.shape : undefined;
+		const rows = lathe?.scales ?? 0;
+		const profile = lathe?.lathe ?? [];
+		const height = profile.at(-1)?.[1] ?? 1;
+		const around = rows > 0 ? (lathe?.sides ?? EXTRA_SIDES) : 0;
+		const from = rows > 0 ? (lathe?.scaled?.[0] ?? 0) : 0;
+		const to = rows > 0 ? Math.min(height, lathe?.scaled?.[1] ?? height) : 0;
+		texel(header, HEADER.extraScales + index, [rows, around, from / height, to / height]);
+		texel(header, HEADER.extraStalks + index, [
+			...(extra.stalkColour ?? extra.bandColour ?? extra.colour),
+			band,
+		]);
 	});
 	const bud = record.shoots?.bud.colour;
 	if (bud) texel(header, HEADER.bud, [...bud, 1]);
 	const sway = windSway(record);
 	texel(header, HEADER.sway, [sway.amplitude, sway.frequency, 0, 0]);
+	texel(header, HEADER.cardStalk, [record.lod.cardStalk ?? 0, 0, 0, 0]);
 	return header;
 }
 
