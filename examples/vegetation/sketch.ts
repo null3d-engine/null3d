@@ -58,6 +58,9 @@ export default defineSketch(async (ctx) => {
 	// record's sky prune, which drops the shoots a crown's shaded wood carries: raised, the crown
 	// thins toward its bare wood; lowered, it keeps the shoots that would have gone.
 	let foliage = 0.5;
+	// The level of detail's coarseness: 0 draws the plant as grown, 1 the coarsest, where the
+	// finest twigs are gone and the shoots that remain are larger.
+	let detail = 0;
 	const pruneOf = (value: number, own: number) =>
 		Math.min(0.9, Math.max(0, own * (1.6 - 1.2 * Math.min(1, Math.max(0, value)))));
 	let planted: { destroy(): void }[] = [];
@@ -81,17 +84,36 @@ export default defineSketch(async (ctx) => {
 					radio: false,
 					buttons: [],
 					slider: {
-						min: 0,
-						max: 1,
+						min: 0.4,
+						max: 2,
 						step: 0.05,
 						value: foliage,
 						live: false,
 						marks: [
-							{ at: 0, label: 'sparse' },
-							{ at: 0.5, label: 'default' },
-							{ at: 1, label: 'dense' },
+							{ at: 0.4, label: 'sparse' },
+							{ at: 1, label: 'default' },
+							{ at: 2, label: 'dense' },
 						],
-						tip: 'Drag left to thin the crowns toward their bare wood, or right to keep the shoots their own density drops.',
+						tip: "Drag left to thin each crown toward its bare wood, or right to keep the shoots its own density drops. 1 is every record's own crown.",
+					},
+				},
+				{
+					name: 'detail',
+					title: 'Detail',
+					radio: false,
+					buttons: [],
+					slider: {
+						min: 0,
+						max: 1,
+						step: 0.05,
+						value: detail,
+						live: false,
+						marks: [
+							{ at: 0, label: 'as grown' },
+							{ at: 0.5, label: 'coarser' },
+							{ at: 1, label: 'coarsest' },
+						],
+						tip: 'Coarseness answers how much of a plant must draw at a distance. Near the camera every plant draws whole; farther away the add-on may draw fewer of its finest twigs and fewer, larger shoots, which keeps the leaf area but costs the finest detail. 0 is each plant as it grows and 1 the coarsest it may become, and a game sets it from the plant\u2019s size on the screen.',
 					},
 				},
 			],
@@ -106,6 +128,11 @@ export default defineSketch(async (ctx) => {
 			const next = Number(value);
 			if (!Number.isFinite(next)) return;
 			foliage = next;
+		} else if (name === 'detail') {
+			const next = Number(value);
+			// The explainer button shares the group's name, so only a number turns the slider.
+			if (!Number.isFinite(next)) return;
+			detail = next;
 		} else return;
 		postHud();
 		void growMeadow(seed);
@@ -119,26 +146,7 @@ export default defineSketch(async (ctx) => {
 		const step = 34;
 		let index = 0;
 		for (const id of ids) {
-			const loaded = await loadSpecies(id);
-			// The slider moves each record's own sky prune, so a species keeps its character thinner
-			// or fuller rather than all of them taking one number.
-			const shoots = loaded.record.shoots;
-			const module =
-				foliage === 0.5 || !shoots
-					? loaded
-					: {
-							...loaded,
-							record: {
-								...loaded.record,
-								shoots: {
-									...shoots,
-									placement: {
-										...shoots.placement,
-										skyPrune: pruneOf(foliage, shoots.placement.skyPrune ?? 0.5),
-									},
-								},
-							},
-						};
+			const module = await loadSpecies(id);
 			const kit = await prepareSpecies(ctx, module, { detail: 'high', placeholders: 'missing' });
 			const materials = plantMaterials(ctx, kit, {});
 			const variant = index % Math.max(1, kit.record.variants);
@@ -147,6 +155,8 @@ export default defineSketch(async (ctx) => {
 				variant,
 				near: true,
 				season,
+				coarseness: detail,
+				foliage,
 			});
 			const x = ((index % across) - (across - 1) / 2) * step;
 			const z = (Math.floor(index / across) - (ids.length / across - 1) / 2) * step;

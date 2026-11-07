@@ -18,6 +18,7 @@ import {
 	kitKey,
 	loadPlantCode,
 	variantKey,
+	withFoliage,
 } from './generate';
 import type { PlantTaskInput } from './generate-task';
 
@@ -190,5 +191,25 @@ self.onmessage = async (event) => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+
+	it('thins or fills a crown from one foliage share, every species the same way', async () => {
+		const oak = (await import('./species/pedunculate-oak/index')).species;
+		await loadPlantCode(oak.record);
+		const grown = buildKitNow(oak, { placeholders: 'missing', detail: 'high' });
+		const rows = (foliage?: number) =>
+			growPlantNow(grown, { seed: 11, variant: 0, near: true, foliage }).shoots.count;
+		// A share below one drops the shoots a crown's shaded wood carries; above it, keeps them.
+		expect(rows(0.5)).toBeLessThan(rows(1));
+		expect(rows(1.6)).toBeGreaterThan(rows(1));
+		// Absent or one grows the record's own crown, to the shoot.
+		expect(rows()).toBe(rows(1));
+		// The share moves the record's own sky prune and nothing else.
+		const shoots = oak.record.shoots as NonNullable<typeof oak.record.shoots>;
+		const own = withFoliage(oak.record, 1);
+		expect(own).toBe(oak.record);
+		const thinner = withFoliage(oak.record, 1.5) as typeof oak.record;
+		expect(thinner.shoots?.placement.skyPrune).toBeLessThan(shoots.placement.skyPrune ?? 0.5);
+		expect(() => withFoliage(oak.record, 3)).toThrow();
 	});
 });

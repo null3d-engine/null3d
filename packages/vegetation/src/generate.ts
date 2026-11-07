@@ -136,6 +136,38 @@ export interface GrowOptions extends CoarsenessOptions {
 	readonly near?: boolean;
 	/** Grow or cut one piece for close review instead of the whole plant. */
 	readonly cutting?: CuttingOptions;
+	/**
+	 * The crown's foliage against the record's own, from 0.4 to 2: 1 grows the plant as its record
+	 * says, below 1 thins its shoots, above 1 keeps the ones its own density drops. Every species
+	 * takes it the same way, by moving the sky prune that its crown's shaded wood answers to.
+	 */
+	readonly foliage?: number;
+}
+
+/** The least and the most foliage share a growth may ask for. */
+export const FOLIAGE_LEAST = 0.4;
+export const FOLIAGE_MOST = 2;
+
+/**
+ * The record a plant grows by when its foliage is set against the record's own: the crown's sky
+ * prune divides by the share, since a higher prune drops more of the shoots a crown's shaded wood
+ * carries. Every species moves the same way, so one option sets the foliage of any of them.
+ *
+ * @param record The species record.
+ * @param foliage The foliage share, 1 for the record's own; undefined or 1 leaves the record alone.
+ * @returns The record to grow by.
+ */
+export function withFoliage(record: Species, foliage: number | undefined): Species {
+	if (foliage === undefined || foliage === 1) return record;
+	if (!(foliage >= FOLIAGE_LEAST && foliage <= FOLIAGE_MOST))
+		throw new Error(
+			`@null3d/vegetation: foliage ${foliage} is outside ${FOLIAGE_LEAST} to ${FOLIAGE_MOST}; 1 grows the record's own crown.`,
+		);
+	const shoots = record.shoots;
+	if (!shoots) return record;
+	const own = shoots.placement.skyPrune ?? 0.5;
+	const prune = Math.min(0.95, Math.max(0, own / foliage));
+	return { ...record, shoots: { ...shoots, placement: { ...shoots.placement, skyPrune: prune } } };
 }
 
 /**
@@ -320,7 +352,7 @@ function partOf(
 
 /** The grown skeleton and its dressing: the stages before the meshes. */
 function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
-	const record = kit.record;
+	const record = withFoliage(kit.record, options.foliage);
 	const placeholders = kit.placeholders;
 	const growInput: GrowInput = {
 		record,
