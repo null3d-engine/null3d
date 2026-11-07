@@ -1770,6 +1770,14 @@ export interface LodSpec {
 	 * join shows. 0 or absent, a card draws no stalk.
 	 */
 	readonly cardStalk?: number;
+	/**
+	 * Whether a card's stalk runs on past the row to the centre of the foliage the card carries. A
+	 * card's plane stands ahead of the row that draws it by the shoot's own length, so the stretch
+	 * behind the row may end half a metre short of the leaves it is meant to carry. With this, the
+	 * line starts at the parent node's end and ends at the card plane's centre, so the card meets the
+	 * wood it grows from. Absent, the line spans only the stretch behind the row, as it always has.
+	 */
+	readonly cardStalkToFoliage?: boolean;
 	/** The impostor's views across and texels per view. */
 	readonly impostor: { readonly views: number; readonly texels: number };
 	/** The level that casts shadows. */

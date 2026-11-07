@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { SpeciesKitData } from '../asset';
+import { quatRotate, type Vector3 } from '../core/math';
 import { placeholderSkeleton } from '../core/placeholder';
 import { standInSpecies } from '../core/stand-in';
 import { STAND_IN_BARK, type TextureManifest } from '../core/textures';
@@ -234,6 +235,67 @@ describe('the card levels', () => {
 			).toBeCloseTo(1, 5);
 		}
 		expect(stalks).toBe(stretched * 4);
+	});
+
+	it('reaches the carried foliage only where the record asks', () => {
+		const stalked = { ...record, lod: { ...record.lod, cardStalk: 1 } };
+		const reaching = { ...stalked, lod: { ...stalked.lod, cardStalkToFoliage: true } };
+		const off = cardMesh({ ...mesh, record: stalked }, 1);
+		const on = cardMesh({ ...mesh, record: reaching }, 1);
+		// Reaching the foliage replaces the same one quad, so it costs no triangles.
+		expect(on.indices.length).toBe(off.indices.length);
+		let reached = 0;
+		let vertex = 0;
+		const turn: Vector3 = [0, 0, 0];
+		const near = (actual: readonly number[], expected: readonly number[]) => {
+			for (let c = 0; c < 3; c++) expect(actual[c] as number).toBeCloseTo(expected[c] as number, 5);
+		};
+		for (let r = 0; r < rows.count; r++) {
+			if (cardKeep(rows.order[r] as number, 1) === 0) continue;
+			const prototype = kit.prototypes[rows.prototype[r] as number];
+			if (!prototype) continue;
+			const planes = prototype.card.planes.length;
+			const at = vertex + planes * 4;
+			vertex = at + 4;
+			const px = rows.position[r * 3] as number;
+			const py = rows.position[r * 3 + 1] as number;
+			const pz = rows.position[r * 3 + 2] as number;
+			const bx = rows.back?.[r * 3] as number;
+			const by = rows.back?.[r * 3 + 1] as number;
+			const bz = rows.back?.[r * 3 + 2] as number;
+			if (Math.hypot(bx, by, bz) <= 1e-6) continue;
+			// A stalk's two ends hold two coincident vertices each, in order.
+			const offFrom = [...off.positions.subarray(at * 3, at * 3 + 3)];
+			const offTo = [...off.positions.subarray((at + 2) * 3, (at + 2) * 3 + 3)];
+			const onFrom = [...on.positions.subarray(at * 3, at * 3 + 3)];
+			const onTo = [...on.positions.subarray((at + 2) * 3, (at + 2) * 3 + 3)];
+			// Without the option the line is today's: the row's origin to the stretch behind it.
+			near(offFrom, [px, py, pz]);
+			near(offTo, [px + bx, py + by, pz + bz]);
+			// With it, the line starts at the parent's end and ends at the card's plane centre.
+			near(onFrom, [px + bx, py + by, pz + bz]);
+			const centre = prototype.card.planes[0]?.centre;
+			if (!centre) continue;
+			quatRotate(
+				rows.rotation,
+				r * 4,
+				[
+					centre[0] * (rows.scale[r] as number),
+					centre[1] * (rows.scale[r] as number),
+					centre[2] * (rows.scale[r] as number),
+				],
+				turn,
+			);
+			near(onTo, [px + turn[0], py + turn[1], pz + turn[2]]);
+			if (
+				Math.hypot(centre[0], centre[1], centre[2]) * (rows.scale[r] as number) >
+				Math.hypot(bx, by, bz) + 1e-3
+			)
+				reached++;
+		}
+		// The fixture has rows whose foliage stands farther out than the stretch behind them, so the
+		// option is doing the work it was added for.
+		expect(reached).toBeGreaterThan(0);
 	});
 
 	it('keeps every second card in the thinned level, each grown by the square root of two', () => {
