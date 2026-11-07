@@ -235,10 +235,9 @@ export const record: Species = {
 				[0.55, 3],
 				[1, 8],
 			],
-			// A quarter of the crown's own box shows sky, as stills 01 and 02 do. The curve above now
-			// carries leafy twigs along every limb, so the dial sits below what it was: still 01 draws
-			// 0.043 too closed with the sparser curve and the higher dial.
-			density: 1,
+			// Stills 01 and 02: about a quarter of the crown's own box shows sky, so the dial stands a
+			// fifth above the curve's own count, which carries leafy twigs along every limb.
+			density: 1.2,
 			shadePrune: 0,
 			// Stills 01, 03 and 05: sky shows through the crown's middle and under it, where its own
 			// leaves leave a shoot under this share of the sky, and the lit outer masses stay.
@@ -387,17 +386,18 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit measures 2.63, 3.03, 5.64 and 11.21 MB, the leaf's eleven leaflets and the
-			// cutting class among them; each cap sits above its figure, and the low tier's just under
-			// the owner's cap for a tree.
+			// The kit measures 2.60, 2.96, 5.14 and 9.78 MB, the leaf's nine leaflets and the cutting
+			// class among them; each cap sits above its figure, and the low tier's just under the
+			// owner's cap for a tree.
 			kitBytes: { low: 2_680_000, medium: 3_150_000, high: 5_900_000, ultra: 11_600_000 },
-			// The largest of seed 11's six variants measures 3.18, 3.25, 3.33 and 3.43 MB with the
-			// twigs the crown now carries along every limb.
-			variantBytes: { low: 3_400_000, medium: 3_450_000, high: 3_500_000, ultra: 3_600_000 },
+			// The largest of seed 11's six variants measures 3.55, 3.62, 3.70 and 3.80 MB with the
+			// twigs the crown carries along every limb and the foliage dial's extra fifth.
+			variantBytes: { low: 3_650_000, medium: 3_720_000, high: 3_800_000, ultra: 3_900_000 },
 			lod0Triangles: 2_500_000,
-			// The first card level's heaviest variant draws 31,301 triangles and the second's 9,000.
-			lod1Triangles: 34_000,
-			lod2Triangles: 14_000,
+			// The heaviest variant's first card level draws 27,105, 30,236, 33,186 and 37,632
+			// triangles from the coarsest tier up, and its second 11,714, 12,714, 13,607 and 14,445.
+			lod1Triangles: 38_500,
+			lod2Triangles: 15_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
 			// A variant grows in 156 to 260 ms.

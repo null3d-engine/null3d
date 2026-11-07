@@ -171,8 +171,24 @@ three from the record.
   0.032). Its radius doubles to 11 millimetres at its foot.
 - **The leaf carried eleven leaflets where its photographs show nine** (row 4). It carries nine.
 
-The shoots that the filigree adds close the crown, so the placement dial falls from 1.5 to 1 to keep
-still 01's sky gap, which the second pass drew 0.043 too closed.
+The shoots that the filigree adds close the crown, so the placement dial falls from 1.5 to 1.
+
+### The fourth pass: the rachis holds its width, and the dial's fifth
+
+The third pass's filigree cost the cut views. The sixty most crowded leaves of the crown now break
+into pieces of their own wherever the mask loses the wood, and the cut views drew 34, 36 and 19
+pieces against the photograph's one each, where the second pass drew 12, 12 and 6.
+
+- **The last leaflets hung on a thread.** A rachis thinned to 40 per cent of its base width by its
+  last pair, so at the distance of a cut view the drawn tube fell under a pixel and the coverage
+  mask cut each distal leaflet free. A rachis now keeps `RACHIS_TIP_SHARE`, three quarters of its
+  base width, at its tip. That is a rule of the compound leaf's builder, not a figure for this
+  species, and a leaf that does not compound builds no rachis at all, so its mesh is unchanged byte
+  for byte. `leaf/leaf-mesh.test.ts` holds both: the tip ring measures the share of the first, and a
+  simple leaf's mesh equals the blade's at every tier.
+- **The placement dial stands a fifth higher.** The dial multiplies the shoots that the per-metre
+  curve places. A threefold rise in it moved the whole views' sky gap by 0.08, so a fifth moves it by
+  about a hundredth, and the dial cannot carry row 6 alone in either direction.
 
 ### The crown seen from under it
 
@@ -214,10 +230,11 @@ with a sky that carries more of the pictures' light.
 
 ### Budgets and grow time
 
-At the low, medium, high and ultra tiers, the kit measures 2.63, 3.03, 5.64 and 11.21 MB, and the
-largest of seed 11's six variants 2.24, 2.31, 2.39 and 2.50 MB. The owner's caps for a tree are 2.7,
-4, 7.1 and 13 MB for a kit; the low tier sits within three per cent of its cap. A variant grows in
-270 to 331 ms.
+At the low, medium, high and ultra tiers, the kit measures 2.60, 2.96, 5.14 and 9.78 MB, and the
+largest of seed 11's six variants 3.55, 3.62, 3.70 and 3.80 MB. The owner's caps for a tree are 2.7,
+4, 7.1 and 13 MB for a kit; the low tier sits within three per cent of its cap. The first card level
+of the same variants draws 27,105 to 37,632 triangles and the second 11,714 to 14,445. A variant
+grows in about 300 to 350 ms with the machine in other hands.
 
 ## Look
 
@@ -256,12 +273,12 @@ Rejected:
 - The low tier's kit sits within three per cent of the owner's cap for a tree. A change that adds a
   prototype needs a cut elsewhere.
 - Stated faults, largest first, each with its figure:
-  1. The crown's density is wrong in both directions. It shows more sky than its photographs at 01,
-     where the render's gap is 0.37 against the reference's 0.26, at 02 at 0.31 against 0.19 and at
-     18 at 0.37 against 0.21. It shows less looking up the bole from the foot, where 03 stands at
-     0.35 against 0.50. The shoots sit in tufts near the axes, leaving the rim between the tufts
-     bare and the middle over the trunk full. The dial moved this figure by 0.08 over a threefold
-     rise, so a change of density alone will not close it.
+  1. The crown now shows less sky than its photographs at every whole view close to the height it
+     was judged on: the render's gap is 0.19 against the reference's 0.26 at 01, 0.17 against 0.19
+     at 02 and 0.20 against 0.21 at 18. Looking up the bole it is far denser still, 0.14 against
+     0.50 at 03, which is the core's limit above. A threefold rise in the placement dial moved this
+     figure by 0.08, so the dial alone does not carry the row either way. The crown's shape is the
+     lever: the shoots gather near the axes and leave the rim between them bare.
   2. The crown is drawn three times as loose as its photograph in the wind. The top band's motion is
      0.141 against 0.041, and every band but the third moves further than its reference's.
   3. The cut pieces do not read as the photographs' pieces. Outlines are 0.06 at 21 and 22 and 0.13
