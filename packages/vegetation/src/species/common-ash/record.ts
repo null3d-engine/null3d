@@ -388,9 +388,9 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit measures 2.60, 2.96, 5.14 and 9.78 MB, the leaf's nine leaflets and the cutting
-			// class among them; each cap sits above its figure, and the low tier's just under the
-			// owner's cap for a tree.
+			// The kit measures 2.60, 2.96, 4.91 and 9.07 MB, the leaf's nine sessile leaflets and the
+			// cutting class among them; each cap sits above its figure, and the low tier's just under
+			// the owner's cap for a tree.
 			kitBytes: { low: 2_680_000, medium: 3_150_000, high: 5_900_000, ultra: 11_600_000 },
 			// The largest of seed 11's six variants measures 3.18, 3.25, 3.33 and 3.43 MB with the
 			// twigs the crown carries along every limb.
