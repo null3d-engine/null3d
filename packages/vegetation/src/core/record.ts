@@ -1672,6 +1672,19 @@ export type ExtraShape =
 			 * default, every scale the same shade.
 			 */
 			readonly scaleJitter?: number;
+			/**
+			 * A bed of thin bristles over the lathe's scaled band: rows along it and spikes round each
+			 * row, each a short three-sided cone standing along the surface's own normal. A beech's
+			 * cupule is a burr of soft spines, where a scale shade alone engraves the husk.
+			 */
+			readonly bristles?: {
+				/** Rows of bristles along the scaled band, 1 to 16. */
+				readonly rows: number;
+				/** Bristles round each row, 3 to 32. */
+				readonly sides: number;
+				/** The longest bristle in metres, 0.001 to 0.03. */
+				readonly length: number;
+			};
 	  }
 	| {
 			/**

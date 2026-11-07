@@ -760,6 +760,63 @@ function writeExtra(
 					mesh.uvs1[(from + j) * 2] = Math.min(1, Math.max(0, shaded * (1 + scale)));
 				}
 			});
+		// A bed of bristles over the scaled band: short cones standing along the surface's own
+		// normal, so the husk reads as a burr rather than a shaded cone. They take the band's colour.
+		if ('lathe' in shape && shape.bristles) {
+			const { rows: beds, sides: around, length: longest } = shape.bristles;
+			const outline = shape.lathe;
+			const top = (outline[outline.length - 1] as readonly [number, number])[1] || 1;
+			const from = shape.scaled?.[0] ?? 0;
+			const to = Math.min(top, shape.scaled?.[1] ?? top);
+			const radiusAt = (h: number): number => {
+				for (let k = 1; k < outline.length; k++) {
+					const a = outline[k - 1] as readonly [number, number];
+					const b = outline[k] as readonly [number, number];
+					if (h <= b[1])
+						return b[1] > a[1] ? a[0] + ((h - a[1]) / (b[1] - a[1])) * (b[0] - a[0]) : b[0];
+				}
+				return 0;
+			};
+			const [bx, by] = sideAxes(direction, [0, 1, 0]);
+			for (let bed = 0; bed < beds; bed++) {
+				const h = from + ((bed + 0.5) / beds) * Math.max(1e-6, to - from);
+				const radius = radiusAt(h);
+				if (radius <= 0) continue;
+				for (let j = 0; j < around; j++) {
+					// Each row stands its bristles half a step round from the last, so the bed staggers.
+					const angle = turn + (2 * Math.PI * (j + (bed % 2) * 0.5)) / around;
+					const radial: Vector3 = [
+						cos(angle) * bx[0] + sin(angle) * by[0],
+						cos(angle) * bx[1] + sin(angle) * by[1],
+						cos(angle) * bx[2] + sin(angle) * by[2],
+					];
+					const point: Vector3 = [
+						site.at[0] + direction[0] * h + radial[0] * radius,
+						site.at[1] + direction[1] * h + radial[1] * radius,
+						site.at[2] + direction[2] * h + radial[2] * radius,
+					];
+					const lean = normalize3([
+						radial[0] + direction[0] * 0.25,
+						radial[1] + direction[1] * 0.25,
+						radial[2] + direction[2] * 0.25,
+					]);
+					const spike = longest * (0.65 + 0.7 * (((bed * 7 + j * 3) % 5) / 5));
+					const start = mesh.vertices;
+					lathe(
+						mesh,
+						[
+							[0.0004, 0],
+							[0.00004, spike],
+						],
+						point,
+						lean,
+						3,
+						colour,
+					);
+					for (let v = start; v < mesh.vertices; v++) mesh.uvs1[v * 2] = 1;
+				}
+			}
+		}
 		return;
 	}
 	const [x, y] = sideAxes(direction, [0, 1, 0]);
