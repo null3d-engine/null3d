@@ -199,6 +199,29 @@ describe('the compound leaf', () => {
 		expect(vertices()).toBe(one);
 	});
 
+	it('meets the rachis with its leaflet blade when the record asks for no stalk', () => {
+		const leaf = (leafletStalk?: number) => ({
+			kind: 'blade' as const,
+			leaf: { ...FLAT, length: { mean: 0.05, spread: 0 } },
+			compound: {
+				kind: 'pinnate' as const,
+				leaflets: { mean: 9, spread: 0 },
+				rachis: 3,
+				terminal: true,
+				...(leafletStalk === undefined ? {} : { leafletStalk }),
+			},
+		});
+		const vertices = (leafletStalk?: number): number =>
+			builder.leaves(oakRecord({ foliage: leaf(leafletStalk) }), OAK_MANIFEST, 'ultra')[0]
+				?.positions.length ?? 0;
+		// A leaflet's stalk is drawn from the texture's own stalk band, so a sessile leaflet draws
+		// none and its blade begins where it meets the rachis.
+		expect(vertices(0)).toBeLessThan(vertices());
+		// A shortened stalk still draws, and a record that names no share keeps the whole of it.
+		expect(vertices(0.5)).toBe(vertices());
+		expect(vertices(1)).toBe(vertices());
+	});
+
 	it('holds its rachis to a named share of its base width at the tip', () => {
 		// A leaf's outline runs to nothing at its tip, but the rachis carries the last pair, so a
 		// rachis that tapered with the outline would leave those leaflets on a thread the coverage
