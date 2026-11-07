@@ -346,11 +346,11 @@ export const record: Species = {
 			seasons: ['summer', 'autumn'],
 			shape: {
 				samara: {
-					// Still 19: a key about three centimetres long and a quarter as wide, its seed
-					// body a quarter of that length.
+					// Still 19: a key about three centimetres long and a fifth as wide, on a small
+					// round seed body less than a fifth of that length.
 					length: 0.032,
-					width: 0.0078,
-					body: 0.25,
+					width: 0.0068,
+					body: 0.18,
 				},
 				// Still 19: the bunch hangs from a stalk several centimetres long below the twig, so
 				// its keys stand clear of the leaves above them, on footstalks of their own.
