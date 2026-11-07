@@ -216,6 +216,14 @@ export interface SelfOrganizing {
 	 * angle is clear. 0 or absent, a shoot that would come within the clearance stops there.
 	 */
 	readonly turning?: number;
+	/**
+	 * The least share of the trunk's radius that another axis's wood must have to keep clear of a
+	 * shoot, from 0 to 1. Each order's share is its girth beside the trunk's. 0 or absent, wood of
+	 * every order keeps the clearance, so thin twigs turn each other and move the crown's layout.
+	 * At 0.5 only the trunk and the great limbs keep it: branches and twigs keep their layout, and
+	 * a great limb does not turn for a twig.
+	 */
+	readonly clearanceThickness?: number;
 	/** Metres of one macro internode in year one, and its shrink per year (0 to 1). */
 	readonly internode: { readonly length: number; readonly ageFactor: number };
 	/** One stem, or a stool of several that share one light grid. */

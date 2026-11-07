@@ -408,6 +408,9 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	// the headings it tries.
 	const mostTurn = radians(Math.max(0, Math.min(180, g.turning ?? 0)));
 	const turnStep = radians(TURN_STEP);
+	// Only wood this thick, as a share of the trunk's radius, keeps the clearance: below it, thin
+	// wood keeps its own layout.
+	const thick = Math.max(0, Math.min(1, g.clearanceThickness ?? 0));
 	// The widest clearance two axes can demand, so the cells round a point hold every neighbour.
 	const clearCell = Math.max(0.25, clearance * 2);
 	const clearGrid = new Map<number, number[]>();
@@ -423,7 +426,8 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 		else clearGrid.set(key, [node]);
 	};
 	/**
-	 * Whether a point stands within the clearance of another axis's wood.
+	 * Whether a point stands within the clearance of another axis's wood. Wood thinner than the
+	 * record's clearance thickness does not keep the clearance, so thin twigs keep their layout.
 	 *
 	 * @param x The point's x.
 	 * @param y The point's y.
@@ -457,10 +461,12 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 					for (const node of cell) {
 						const other = plant.axisOf[node] as number;
 						if (other === axis || other === parent) continue;
+						const otherGirth = girthOf(plant.axisOrder[other] as number);
+						if (otherGirth < thick) continue;
 						const dx = (plant.x[node] as number) - x;
 						const dy = (plant.y[node] as number) - y;
 						const dz = (plant.z[node] as number) - z;
-						const apart = clearance * (mine + girthOf(plant.axisOrder[other] as number));
+						const apart = clearance * (mine + otherGirth);
 						if (dx * dx + dy * dy + dz * dz < apart * apart) return true;
 					}
 				}

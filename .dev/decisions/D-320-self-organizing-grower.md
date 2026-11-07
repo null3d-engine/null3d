@@ -87,6 +87,16 @@ masks of frames 1, 25, 49 and so on of the turntable.
   without the stalk. Its sky gap closes from 0.1402 to 0.1354, against the reference's 0.1145.
   One pixel draws a broken line at that distance, so the piece stays. The other whole views close
   by 0.001 to 0.009, and no view gains a piece.
+- **The clearance bites only where the wood is thick.** A record may give `clearanceThickness`,
+  a share of the trunk's radius from 0 to 1. Wood below it does not keep the clearance, so thin
+  twigs keep their own layout. With no floor, at a clearance of 0.3 m and a turn of 30 degrees,
+  the whole view draws four pieces. Its outline is 0.7324 and its gap 0.1461. A floor of 0.35
+  keeps the trunk, limbs and branches, and frees the twigs. It draws one piece, with an outline
+  of 0.7344 and a gap of 0.1097 against the reference's 0.1145. The bole-and-crown test passes
+  there. A floor of 0.5, the trunk and great limbs alone, draws seven pieces, 0.7072 and 0.1917.
+  At 0.3 m the close pairs are nine fine and seven thick with no floor. They are fifteen and
+  seven at 0.35, and sixteen and four at 0.5. Growth without the clearance has sixteen and four.
+  The oak's record sets none of the three.
 - **A lost leader hands on its role.** When an axis's leader bud died, the axis stopped there, and
   a stem whose leader died by chance below the crown left a stump with no shoot in the light to take
   over: 3 of 40 oaks at seed 11 died at 0 to 2.4 m (variants 8, 12 and 23). An oak replaces a lost
