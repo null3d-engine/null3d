@@ -264,9 +264,10 @@ export const record: Species = {
 		// The cards stand a quarter larger than the shoots they picture, so a gap between one
 		// shoot's leaves falls on a neighbour's leaves rather than on sky.
 		cardGrow: 1.25,
-		// A card draws its twig at least two pixels across, so a spray over a fine twig does not
-		// read as a piece in air.
+		// A card draws its twig at least three pixels across, from the parent's end to the leaves'
+		// centre, so a spray over a fine twig does not read as a piece in air.
 		cardStalk: 3,
+		cardStalkToFoliage: true,
 		switchPixels: [500, 12, 160],
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
