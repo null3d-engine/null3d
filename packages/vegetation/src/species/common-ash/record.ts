@@ -244,9 +244,10 @@ export const record: Species = {
 			// on the photographs' 26 cm leaf each is about ten centimetres.
 			length: { mean: 0.098, spread: 0.012 },
 			outline: 'texture',
-			// Still 12: a short stalk below the lowest pair, then pairs of leaflets to a single one at
-			// the tip.
-			petiole: { length: 0.012, radius: 0.0008, flat: 0, droop: 8 },
+			// Still 12: a bare stalk runs below the lowest pair for about an eighth of the leaf, then
+			// the pairs of leaflets to a single one at the tip. The stalk stands about 1.6 millimetres
+			// across on the photograph, thick enough to read as the wood the leaf hangs from.
+			petiole: { length: 0.03, radius: 0.0018, flat: 0, droop: 8 },
 			fold: 6,
 			curl: 8,
 			crossCurl: 0,
@@ -328,9 +329,10 @@ export const record: Species = {
 					width: 0.011,
 					body: 0.3,
 				},
-				// Still 19: each key hangs from a short footstalk off the bunch's own stalk.
-				stalk: 0.02,
-				pedicel: 0.012,
+				// Still 19: the bunch hangs from a stalk several centimetres long below the twig, so
+				// its keys stand clear of the leaves above them, on footstalks of their own.
+				stalk: 0.05,
+				pedicel: 0.014,
 			},
 			// Still 19: the keys are a pale yellow-green, turning brown at their tips.
 			colour: [0.3, 0.3, 0.09],
