@@ -38,8 +38,8 @@ confounded trial.
 ## Look
 
 A flat plate projects as a blade cluster. Within a run the blades overlap as a shingle. But the run's
-own edge stands clear of the next plate, so the crown's rim breaks into pieces at the scale the
-plates were meant to fill. The photograph's plates overlap their neighbours, which this rule does
+own edge stands clear of the next plate. The crown's rim therefore breaks into pieces at the scale
+the plates were meant to fill. The photograph's plates overlap their neighbours, which this rule does
 not do.
 
 ## Decision
@@ -47,8 +47,8 @@ not do.
 Chosen: keep the field and its test in the builder, off by default, for a species whose plates can
 shingle over one another. The beech leaves it unset. Rejected: the beech's use, which fragments its
 crown in both the confounded and the clean measurement. The grain stays a stated fault of the leaves'
-size: one blade spans 0.38 per cent of the crown against the photograph's 1.2, and a larger leaf
-fails row 4.
+size. One blade spans 0.38 per cent of the crown against the photograph's 1.2. A larger leaf fails
+row 4.
 
 ## Consequences
 
