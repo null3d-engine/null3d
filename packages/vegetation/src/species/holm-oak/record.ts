@@ -162,6 +162,9 @@ export const record: Species = {
 				[1, 64],
 			],
 			density: 0.7,
+			// A twig that carries no shoot is trimmed past its last one, so no bare tip stands
+			// outside the foliage at a whole view.
+			bareTrim: 0.03,
 			shadePrune: 0.1,
 			skyward: 0.0,
 			scale: { mean: 1.3, spread: 0.15 },
@@ -263,7 +266,7 @@ export const record: Species = {
 		nearFoliage: 'instanced',
 		// The cards stand a quarter larger than the shoots they picture, so a gap between one
 		// shoot's leaves falls on a neighbour's leaves rather than on sky.
-		cardGrow: 1.35,
+		cardGrow: 1.25,
 		// A card draws its twig at least three pixels across, from the parent's end to the leaves'
 		// centre, so a spray over a fine twig does not read as a piece in air.
 		cardStalk: 3,
