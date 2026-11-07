@@ -398,8 +398,14 @@ function extraProblems(record: Species, out: string[]): void {
 		extra.stalkColour?.forEach((channel, k) => {
 			shareProblem(channel, `${path}.stalkColour[${k}]`, out);
 		});
-		if (extra.bandColour && !('lathe' in extra.shape && extra.shape.scaled))
-			out.push(`${path}.bandColour needs a lathe whose 'scaled' names the band it colours`);
+		if (
+			extra.bandColour &&
+			!('lathe' in extra.shape && extra.shape.scaled) &&
+			!('samara' in extra.shape)
+		)
+			out.push(
+				`${path}.bandColour needs a lathe whose 'scaled' names the band it colours, or a samara whose seed body carries it`,
+			);
 	});
 }
 

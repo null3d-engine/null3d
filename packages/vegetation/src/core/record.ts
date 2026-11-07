@@ -1590,8 +1590,9 @@ export interface ExtraSpec {
 	readonly colour: Rgb;
 	/**
 	 * The linear colour, each channel 0 to 1, of a lathe's scaled band and of the stalks that carry
-	 * it, such as an acorn's cup and peduncle, where the rest of the shape takes `colour`. The band
-	 * meets the body at a sharp edge. Without one, the whole extra takes `colour`.
+	 * it, such as an acorn's cup and peduncle, where the rest of the shape takes `colour`. A key
+	 * takes it for its seed body, so a bunch reads as brown bodies on green wings. The band meets
+	 * the body at a sharp edge. Without one, the whole extra takes `colour`.
 	 */
 	readonly bandColour?: Rgb;
 	/**
