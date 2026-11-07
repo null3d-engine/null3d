@@ -346,12 +346,16 @@ reference's band:
 | As the record stands | 95 | 30 | 0.227 |
 | A third leaf pair on the short shoot | 58 | 63 | 0.261 |
 | The leaves laid flat at eighty degrees | 96 | 81 | 0.218 |
-| A third pair on a shoot half as long again | not drawn | not drawn | none |
+| A third pair on a shoot half as long again | 52 | 16 | 0.233 |
 
-The last setting never reached its turn. Run `ash-51` drew it and the crown closed: 01's sky fell
-from 0.207 to 0.126 against its photograph's 0.261, 02 from 0.182 to 0.112 and 18 from 0.209 to
-0.124, and the cluster stills fell with them to 0.353 and 0.362. Six leaves on every short shoot is
-half again the crown's foliage, so the route costs row 6 outright and came straight back out.
+The last row's spread is the eight-angle measure. Run `ash-51` drew it: the turn comes inside the
+band at 52 wide and 16 tall against the allowed 47 and 25, its width five points over, and the crown
+closes with the same change. The crown's cost is the longer shoot's rather than the six leaves':
+01's sky fell from 0.207 to 0.126 against its photograph's 0.261, 02 from 0.182 to 0.112 and 18 from
+0.209 to 0.124, and the cluster stills with them to 0.353 and 0.362, because six leaves on every
+short shoot is half again the crown's foliage. The third pair on the crown's own 0.18 m shoot leaves
+the whole views holding, which is why the crown's cost belongs to the shoot's length and not to the
+leaves' count.
 
 The spread is the review's own crown-box measure over the turn's frames: the largest box less the
 smallest, over the mean. The third pair brings the width into the reference's band and doubles the
