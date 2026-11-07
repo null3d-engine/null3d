@@ -32,6 +32,37 @@ describe('the record check', () => {
 		expect(() => checkSpecies(broken)).toThrow(/cannot grow/);
 	});
 
+	it('holds the flutter by height to a non-negative share', () => {
+		const withCurve = (byHeight: readonly (readonly [number, number])[]): Species => ({
+			...template,
+			wind: { ...template.wind, flutter: { ...template.wind.flutter, byHeight } },
+		});
+		expect(
+			speciesProblems(
+				withCurve([
+					[0, 2],
+					[1, 0.5],
+				]),
+			),
+		).toEqual([]);
+		expect(
+			speciesProblems(
+				withCurve([
+					[0, 2],
+					[1, -0.5],
+				]),
+			).some((p) => p.startsWith('wind.flutter.byHeight')),
+		).toBe(true);
+		expect(
+			speciesProblems(
+				withCurve([
+					[0.5, 1],
+					[0.2, 2],
+				]),
+			).some((p) => p.startsWith('wind.flutter.byHeight')),
+		).toBe(true);
+	});
+
 	it('holds the crown fields to their ranges', () => {
 		if (template.growth.model !== 'self-organizing' || !template.shoots)
 			throw new Error('the template grows by the self-organizing model, with shoots');

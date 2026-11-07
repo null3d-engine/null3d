@@ -487,6 +487,18 @@ export function speciesProblems(record: Species): string[] {
 	if (fork?.knot !== undefined && !(fork.knot >= 0 && fork.knot <= 1))
 		out.push(`bark.fork.knot is ${fork.knot}; it is a share from 0 to 1`);
 	curveProblems(record.wind.stiffness, 'wind.stiffness', out);
+	const flutter = record.wind.flutter.byHeight;
+	if (flutter !== undefined) {
+		curveProblems(flutter, 'wind.flutter.byHeight', out);
+		if (typeof flutter !== 'number')
+			for (let i = 0; i < flutter.length; i++) {
+				const value = (flutter[i] as readonly [number, number])[1];
+				if (!(value >= 0))
+					out.push(`wind.flutter.byHeight's pair ${i} is ${value}; a share is not negative`);
+			}
+		else if (!(flutter >= 0))
+			out.push(`wind.flutter.byHeight is ${flutter}; a share is not negative`);
+	}
 	const lod = record.lod;
 	lod.switchPixels.forEach((pixels, i) => {
 		if (pixels <= 0) out.push(`lod.switchPixels[${i}] is ${pixels}; it must be above 0`);
