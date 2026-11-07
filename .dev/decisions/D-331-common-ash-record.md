@@ -149,6 +149,24 @@ wide as its photograph's. The crown moved because five great limbs at 62 degrees
 four at 55 left it bare. The cut pieces moved because the class's twig is the photographs' 42 cm of
 two nodes rather than a metre of wire.
 
+### The crown seen from under it
+
+Stills 03 and 08 look up the bole, and there the drawn crown is far denser than its photographs: 03
+shows 0.12 to 0.15 of its own box as sky against the photograph's 0.50, and 08 0.19 to 0.23 against
+0.56. Three settings were tried against them, each drawn and measured:
+
+| Setting | 03's sky gap | 08's | 01, 02, 18's | Verdict |
+| --- | --- | --- | --- | --- |
+| `lift` 10, `skyward` 0.5, `skyPrune` 0.15 | 0.12 | 0.19 | 0.23, 0.18, 0.24, all in band | The state the record keeps |
+| `lift` 26, `skyward` 0.85 | 0.13 | 0.22 | 0.27, 0.21, 0.28 | 18 leaves its band; the look-up views barely move |
+| `skyPrune` 0.45, `lift` 14, `skyward` 0.6 | 0.15 | 0.23 | 0.28, 0.22, 0.28 | 18 leaves its band; 04's colour falls to 2.5 and the cut pieces improve |
+| `floor` 0.32 | 0.27 | 0.56 | the crown breaks up | The whole view's outline falls to 0.04 |
+
+The look-up view sees the *outer* shell of the crown as cards, not its interior, so an interior
+prune moves it a hundredth or two. Opening it needs a crown built as two shells with air between, or
+a card level that thins as the eye passes below it. Neither is a record value, and both are work in
+the plant core. The record keeps the diagonal that holds every whole view inside its band.
+
 ### The crown's colour is the light's, and its blue is the leaf's
 
 The crown's foliage read #4b6131 at 01 where its photograph reads #798b74. A first reading of two
@@ -224,9 +242,13 @@ Rejected:
      at 23, and each draws as thirty to forty separate pieces against the photograph's one. The
      class the cuttings take carries too few leaves on too long a stem, and its leaves stand apart
      from the wood in the picture.
-  4. The crown's foliage is too dark at the whole views: leaf colour difference 16.4, 17.0 and 23.3
-     at 01, 02 and 18, against 1.0 to 1.7 on the leaf textures themselves. The record's own leaf
-     colour is right; the crown's cards and their light are not.
+  4. The crown's foliage stays 11.6 and 11.8 colour steps from its photographs at 01 and 02, after
+     the light reaches the most it can give. The residue is hue, not brightness: the leaf's
+     reflectance carries 0.014 in blue, and the photographs' crowns are nearly grey. This is a stated
+     limit of the species, not a fault to repaint. A record that lifted the leaf's blue to reach a
+     distant crown's colour would fight the texture that measures the leaf, and the leaf's own
+     views, which stand at 2.2 and 1.5 steps, would be wrong. A future species with the same leaf
+     meets the same limit, and should state it the same way.
   5. The bark's colour at mid-trunk reads 9.9 through the bark-mid view where the texture itself
      measures 1.9, and the young bark reads 8.3. The view's light stands at the copy stand's angle
      and the bark's figure moves with it.
