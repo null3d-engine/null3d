@@ -186,9 +186,12 @@ pieces against the photograph's one each, where the second pass drew 12, 12 and 
   species, and a leaf that does not compound builds no rachis at all, so its mesh is unchanged byte
   for byte. `leaf/leaf-mesh.test.ts` holds both: the tip ring measures the share of the first, and a
   simple leaf's mesh equals the blade's at every tier.
-- **The placement dial stands a fifth higher.** The dial multiplies the shoots that the per-metre
-  curve places. A threefold rise in it moved the whole views' sky gap by 0.08, so a fifth moves it by
-  about a hundredth, and the dial cannot carry row 6 alone in either direction.
+- **The placement dial stays at the curve's own count.** The review prints a sky gap as the
+  reference's against the render's, so the whole views' 0.26 against 0.19 at 01 reads as the
+  reference's 0.26 and the render's 0.19: the crown shows less sky than its photograph and an
+  earlier report of it had the two sides reversed. The dial multiplies the shoots that the
+  per-metre curve places, so raising it closes the crown further. A threefold rise moved this figure
+  by 0.08, so no dial carries row 6; the crown's shape does.
 
 ### The crown seen from under it
 
@@ -231,10 +234,10 @@ with a sky that carries more of the pictures' light.
 ### Budgets and grow time
 
 At the low, medium, high and ultra tiers, the kit measures 2.60, 2.96, 5.14 and 9.78 MB, and the
-largest of seed 11's six variants 3.55, 3.62, 3.70 and 3.80 MB. The owner's caps for a tree are 2.7,
+largest of seed 11's six variants 3.18, 3.25, 3.33 and 3.43 MB. The owner's caps for a tree are 2.7,
 4, 7.1 and 13 MB for a kit; the low tier sits within three per cent of its cap. The first card level
-of the same variants draws 27,105 to 37,632 triangles and the second 11,714 to 14,445. A variant
-grows in about 300 to 350 ms with the machine in other hands.
+of the same variants draws 24,855 to 35,382 triangles and the second 10,594 to 13,325. A variant
+grows in about 290 to 300 ms with the machine in other hands.
 
 ## Look
 
