@@ -343,8 +343,11 @@ export const record: Species = {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
 		// The crown's leaves are small against the whole view, so their twigs fall below a pixel there
-		// and a card reads as a leaf group in air. A two-pixel line draws the twig that carries it.
+		// and a card reads as a leaf group in air. A two-pixel line draws the twig that carries it,
+		// and it runs on to the foliage's own centre: this tree's long shoots put that centre 0.6 to
+		// 1.4 m ahead of the row, where the stretch behind the row cannot reach it.
 		cardStalk: 2,
+		cardStalkToFoliage: true,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
