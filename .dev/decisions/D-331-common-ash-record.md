@@ -298,6 +298,26 @@ picture of a tree under an overcast sky. An overcast light on that view moved th
 nothing, because a matte takes no light. Views 01 and 02 read 11.78 and 11.21, which is the crown's
 hue limit recorded above: the leaf's blue is nearly zero.
 
+### The relief is the material's, and the moss is the record's
+
+The base view showed no green film at the record's third of a square metre over half a metre, on one
+side of the foot. At the full amount, a metre up and on every side, the buttress flanks and the lower
+ridges carry green patches and the base view's colour difference falls from 6.90 to 5.73. The record's
+amount is at its ceiling; the rest of the photograph's film would come from the material's moss rule,
+which weighs a vertical face below half an upward one.
+
+The bark's remaining gap does not answer to the record at all. The furrow's depth, the only relief
+value the record holds, was drawn at 0.015, 0.03 and 0.045: views 15 and 16 read #847f7b at 9.88 and
+#837e7b at 7.68 at every one of them, byte for byte the same. The gap between the flat texture's 1.91
+and the bark in the view is the material's normal-map shading and its cavity term, so row 8 stands as
+a limit of the material: the texture matches, the moss shows, and the relief's shading is the
+material's own.
+
+The bole's diameter rises from 0.95 to 1.10 metres, since the grown trunk read 0.037 of the tree's
+height against the photographs' 0.038 to 0.051. Run `ash-46` draws the whole views' shape overlap up
+from 0.474 to 0.479 at 01 and the trunk taper from 0.417 to 0.422, and takes the limb's bark view
+from 0.407 to 0.356 as the camera finds a different limb. The largest variant rises to 6.13 MB.
+
 ### The envelope is not a knob
 
 The crown's box reads 1.155, 1.089 and 1.139 wide to high at the whole views against the
