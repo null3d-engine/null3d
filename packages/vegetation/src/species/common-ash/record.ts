@@ -235,9 +235,9 @@ export const record: Species = {
 				[0.55, 3],
 				[1, 8],
 			],
-			// Stills 01 and 02: about a quarter of the crown's own box shows sky, so the dial stands a
-			// fifth above the curve's own count, which carries leafy twigs along every limb.
-			density: 1.2,
+			// Stills 01 and 02: about a quarter of the crown's own box shows sky, and the curve above
+			// carries leafy twigs along every limb, so the dial keeps the curve's own count.
+			density: 1,
 			shadePrune: 0,
 			// Stills 01, 03 and 05: sky shows through the crown's middle and under it, where its own
 			// leaves leave a shoot under this share of the sky, and the lit outer masses stay.
@@ -390,14 +390,14 @@ export const record: Species = {
 			// class among them; each cap sits above its figure, and the low tier's just under the
 			// owner's cap for a tree.
 			kitBytes: { low: 2_680_000, medium: 3_150_000, high: 5_900_000, ultra: 11_600_000 },
-			// The largest of seed 11's six variants measures 3.55, 3.62, 3.70 and 3.80 MB with the
-			// twigs the crown carries along every limb and the foliage dial's extra fifth.
-			variantBytes: { low: 3_650_000, medium: 3_720_000, high: 3_800_000, ultra: 3_900_000 },
+			// The largest of seed 11's six variants measures 3.18, 3.25, 3.33 and 3.43 MB with the
+			// twigs the crown carries along every limb.
+			variantBytes: { low: 3_400_000, medium: 3_450_000, high: 3_500_000, ultra: 3_600_000 },
 			lod0Triangles: 2_500_000,
-			// The heaviest variant's first card level draws 27,105, 30,236, 33,186 and 37,632
-			// triangles from the coarsest tier up, and its second 11,714, 12,714, 13,607 and 14,445.
-			lod1Triangles: 38_500,
-			lod2Triangles: 15_000,
+			// The heaviest variant's first card level draws 24,855, 27,986, 30,936 and 35,382
+			// triangles from the coarsest tier up, and its second 10,594, 11,594, 12,487 and 13,325.
+			lod1Triangles: 38_000,
+			lod2Triangles: 14_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
 			// A variant grows in 156 to 260 ms.
