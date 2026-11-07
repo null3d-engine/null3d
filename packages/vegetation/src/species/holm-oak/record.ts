@@ -162,17 +162,13 @@ export const record: Species = {
 			perMetre: [
 				[0, 4],
 				[0.55, 8],
-				[1, 64],
+				[1, 90],
 			],
 			density: 0.7,
 			// A twig that carries no shoot is trimmed past its last one, so no bare tip stands
 			// outside the foliage at a whole view.
 			bareTrim: 0.03,
 			shadePrune: 0.1,
-			// The crown's own leaves shade its middle, so the shoots there thin and the lit rim
-			// keeps its foliage, where the outer sprays overlap and their leaf spines close.
-			skyPrune: 0.3,
-			skyPruneLayer: 1,
 			skyward: 0.0,
 			scale: { mean: 1.3, spread: 0.15 },
 		},
