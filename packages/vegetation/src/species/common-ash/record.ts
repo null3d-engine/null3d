@@ -271,7 +271,8 @@ export const record: Species = {
 	},
 	bark: {
 		// Stills 26 and 15 under the copy-stand lamps: a pale, cool grey, so the measured colour stands
-		// as it is.
+		// as it is. A lighter layer over a drawn trunk reads three steps further from its photograph,
+		// so the tint stays at one.
 		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [1, 1, 1] }],
 		young: 0,
 		// Still 16: the diamond net fades to smooth pale grey on wood thinner than about six
@@ -347,14 +348,15 @@ export const record: Species = {
 		autumn: { reflectance: [0.18, 0.14, 0.03], transmittance: [0.3, 0.2, 0.03] },
 	},
 	wind: {
-		// Stills 05 and 06: the bole stands still and the fine twigs move most.
+		// The wind clip's bands, base first: the trunk moves least and the crown most, but by about a
+		// quarter less at the top than the record drew before.
 		stiffness: [
-			[0, 0.92],
-			[0.5, 0.85],
-			[1, 0.7],
+			[0, 0.8],
+			[0.5, 0.88],
+			[1, 0.95],
 		],
-		sway: { frequency: 0.3, amplitude: 0.03 },
-		flutter: { kind: 'blade', amplitude: 0.4, frequency: 3 },
+		sway: { frequency: 0.3, amplitude: 0.05 },
+		flutter: { kind: 'blade', amplitude: 0.25, frequency: 3 },
 	},
 	lod: {
 		nearFoliage: 'instanced',
