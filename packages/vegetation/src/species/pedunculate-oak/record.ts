@@ -194,24 +194,24 @@ export const record: Species = {
 				droop: 6,
 			},
 		],
-		// Stills 10, 20, 21 and 22: a cut twig is a bare stem with a rosette at the end of each of its
-		// two growth units, the leaves gathered at those tips and the stem between them bare. Its twigs
-		// stay stiff and kinked. The crown cannot carry shoots this bare, so the cuttings draw this
-		// class and the crown never does. Its two prototypes differ in length, so the branch takes the
-		// long one and the sub-branch the short.
+		// Stills 10, 20, 21 and 22: a cut twig forks at last year's joint into two shoots, each ending
+		// in a rosette with the stem between the joints bare, and its twigs stay stiff and kinked. The
+		// crown cannot carry shoots this bare, so the cuttings draw this class and the crown never
+		// does. Its two prototypes differ in length, so the branch takes the long one and the
+		// sub-branch the short.
 		cuttingClasses: [
 			{
 				name: 'cut',
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
-				length: { mean: 0.8, spread: 0.3 },
+				length: { mean: 0.88, spread: 0.3 },
 				nodes: { mean: 6, spread: 0.5 },
 				internode: ROSETTE,
 				stem: { radius: [0.007, 0.003] },
 				lateral: 60,
-				laterals: 1,
-				lateralGap: 0.4,
+				laterals: 2,
+				lateralGap: 0.45,
 				bend: { length: 0.05, angle: 34 },
 				leafScale: [
 					[0, 0.9],
@@ -409,7 +409,7 @@ export const record: Species = {
 			// prototype, and the cuttings draw a short dense shoot the crown never does. The two
 			// together measure 2.47, 3.66, 6.32 and 11.45 MB; each cap sits above its figure, at the
 			// raised ceiling the owner set to hold the cutting class at every tier.
-			kitBytes: { low: 2_700_000, medium: 4_000_000, high: 6_900_000, ultra: 12_500_000 },
+			kitBytes: { low: 2_700_000, medium: 4_000_000, high: 7_100_000, ultra: 13_000_000 },
 			// The fitted envelope widens the crown, and the wider crown grows about a seventh more
 			// leaf card; the thicker bole adds a little more. Each cap sits just above the first
 			// variant's measured figure at its tier: 7.94, 8.13, 8.34 and 8.56 MB.
