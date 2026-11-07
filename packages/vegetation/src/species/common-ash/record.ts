@@ -35,9 +35,8 @@ export const record: Species = {
 		years: 36,
 		macroOrders: 4,
 		// Stills 09 and 21: the pairs divide again and again into fine twigs, so more lateral buds
-		// put out a branch than the light alone gives. Stills 01 and 02: the crown fills its
-		// outline, so the count stands above the light's own.
-		branching: 1.18,
+		// put out a branch than the light alone gives.
+		branching: 1.15,
 		// The fitted outline holds no room below the crown's base, and stills 01, 02 and 18 show the
 		// bole bare to about a quarter of the height, so the crown's underside stands there.
 		floor: 0.25,
