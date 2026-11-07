@@ -185,7 +185,7 @@ export const record: Species = {
 			twist: 6,
 			wave: [0, 0],
 			optics: {
-				reflectance: [0.036, 0.064, 0.0145],
+				reflectance: [0.0326, 0.0587, 0.0132],
 				reflectanceBack: [0.365, 0.368, 0.3],
 				transmittance: [0.04, 0.08, 0.012],
 				roughness: [0.32, 0.72],
