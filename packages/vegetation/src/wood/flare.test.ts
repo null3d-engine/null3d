@@ -116,7 +116,9 @@ describe('the stem base', () => {
 		expect(lost(sharp)).toBeGreaterThan(0.1);
 		expect(lost(rounded)).toBeLessThan(0.03);
 		// Past two and a half fades the rounded crest is plain stem.
-		expect(crest(rounded, spec.height * 1.3 * 2.5 + 0.01)).toBeCloseTo(1, 6);
+		// The tallest lobe a draw can give stands 1.55 times the record's height, so past two and a
+		// half of that the foot is plain stem again.
+		expect(crest(rounded, spec.height * 1.55 * 2.5 + 0.01)).toBeCloseTo(1, 6);
 	});
 
 	it(
