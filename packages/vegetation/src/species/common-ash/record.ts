@@ -398,9 +398,9 @@ export const record: Species = {
 			// cutting class among them; each cap sits above its figure, and the low tier's just under
 			// the owner's cap for a tree.
 			kitBytes: { low: 2_680_000, medium: 3_150_000, high: 5_900_000, ultra: 11_600_000 },
-			// The largest of seed 11's six variants measures 6.18, 6.25, 6.33 and 6.43 MB, the keys'
-			// bunches of 28 taking close to half of it.
-			variantBytes: { low: 6_350_000, medium: 6_400_000, high: 6_500_000, ultra: 6_600_000 },
+			// The largest of seed 11's six variants measures 5.03, 5.10, 5.18 and 5.28 MB, the keys'
+			// bunches of 28 taking close to a third of it.
+			variantBytes: { low: 5_150_000, medium: 5_220_000, high: 5_300_000, ultra: 5_400_000 },
 			lod0Triangles: 2_500_000,
 			// The heaviest variant's first card level draws 24,855, 27,986, 30,936 and 35,382
 			// triangles from the coarsest tier up, and its second 10,594, 11,594, 12,487 and 13,325.
