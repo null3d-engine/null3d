@@ -25,8 +25,9 @@ describe('the leaf-card level rule, which the vegetation add-on and the asset to
 	});
 
 	test('both keep every second card of the level above', () => {
-		// The add-on's first card level holds every row; its second keeps every second.
-		expect(CARDS).toContain('const every = 2 ** (level - 1);');
+		// The add-on's first card level holds every row; its second keeps every second. The step is
+		// written as a shift so the count is exact in every engine.
+		expect(CARDS).toContain('const every = 1 << (level - 1);');
 		// The planner's step names the base mesh's cards for each kept card: 2 ** level.
 		expect(TOOL).toContain('const every = 2 ** (levels.length + 1);');
 		expect(TOOL).toContain('thinCards(list, Math.min(every, Math.max(1, list.cards.length)))');
@@ -38,10 +39,11 @@ describe('the leaf-card level rule, which the vegetation add-on and the asset to
 		expect(CARDS).toContain('const grow = Math.sqrt(every);');
 		expect(TOOL).toContain('const grow = Math.sqrt(every);');
 		expect(cardKeep(2, 2)).toBeCloseTo(Math.SQRT2, 12);
-		// The add-on scales each plane's half-extents about the plane's centre; the tool rewrites the
-		// vertices around the card's middle by the same factor.
+		// The add-on scales each plane's half-extents about the plane's centre, and the record's own
+		// card growth multiplies that; the tool rewrites the vertices around the card's middle by
+		// the same factor.
 		expect(CARDS).toContain(
-			'grow * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))',
+			'grow * widen * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))',
 		);
 		expect(TOOL).toContain('centre + (value - centre) * grow');
 	});
