@@ -1034,6 +1034,13 @@ export interface ShootSpec {
 		 * negative toward the ground. Absent, the turn comes from the finest order's tropism.
 		 */
 		readonly lift?: number;
+		/**
+		 * Degrees each shoot turns away from the wood that carries it, on top of the angle the
+		 * record's buds give, from 0 to 60. A crown whose foliage stands against its twigs opens as
+		 * its shoots reach further out, and the shoots keep their feet on the wood: 0 by default,
+		 * the angle the buds' own curve sets.
+		 */
+		readonly reach?: number;
 		/** How far a shoot turns its leaves toward the sky, 0 to 1 (flat beech sprays). */
 		readonly skyward: number;
 		/**

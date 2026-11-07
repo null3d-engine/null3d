@@ -797,6 +797,55 @@ describe('the shoot rows', () => {
 		expect(lean(0)).toBeLessThan(0.2);
 	});
 
+	it('turns the shoots further out from their wood when the record reaches', () => {
+		const lean = (reach?: number) => {
+			const rows = placeShoots({
+				...input,
+				record: {
+					...record,
+					shoots: {
+						...OAK_SHOOTS,
+						placement: {
+							...OAK_SHOOTS.placement,
+							...(reach === undefined ? {} : { reach }),
+						},
+					},
+				},
+			});
+			const buds = skeleton.buds;
+			let sum = 0;
+			let count = 0;
+			for (let r = 0; r < rows.count; r++) {
+				// The row's own site: the nearest bud, whose frame gives the twig's line there.
+				let nearest = 0;
+				let least = Number.POSITIVE_INFINITY;
+				for (let b = 0; b < buds.count; b++) {
+					const dx = (rows.position[r * 3] as number) - (buds.position[b * 3] as number);
+					const dy = (rows.position[r * 3 + 1] as number) - (buds.position[b * 3 + 1] as number);
+					const dz = (rows.position[r * 3 + 2] as number) - (buds.position[b * 3 + 2] as number);
+					const away = dx * dx + dy * dy + dz * dz;
+					if (away < least) {
+						least = away;
+						nearest = b;
+					}
+				}
+				const wood = quatRotate(buds.frame, nearest * 4, [0, 1, 0], [0, 0, 0]);
+				const shoot = quatRotate(rows.rotation, r * 4, [0, 1, 0], [0, 0, 0]);
+				const dot =
+					(shoot[0] as number) * (wood[0] as number) +
+					(shoot[1] as number) * (wood[1] as number) +
+					(shoot[2] as number) * (wood[2] as number);
+				sum += Math.acos(Math.min(1, Math.max(-1, dot)));
+				count++;
+			}
+			return sum / count;
+		};
+		// A record that names no reach places its shoots as the buds' own angle does.
+		expect(lean()).toBe(lean(0));
+		expect(lean(20)).toBeGreaterThan(lean());
+		expect(lean(40)).toBeGreaterThan(lean(20));
+	});
+
 	it('drops the rows of buds below the shade-prune line', () => {
 		const all = placeShoots(input).count;
 		const pruned = placeShoots({
