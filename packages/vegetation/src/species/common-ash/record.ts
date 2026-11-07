@@ -336,27 +336,30 @@ export const record: Species = {
 	},
 	extras: [
 		{
-			// Still 19: dense bunches of single-winged keys hang from the last joint of the shoot, each
-			// a narrow seed body at the top and a long paddle-shaped wing below it.
+			// Still 19: dense bunches of several dozen single-winged keys hang from the last joint of
+			// the shoot, each a small seed body at the top and a long narrow wing below it.
 			kind: 'fruit',
 			at: 'shoot-tip',
 			share: 0.06,
-			count: { mean: 12, spread: 3 },
+			count: { mean: 28, spread: 7 },
 			tipShare: 0.85,
 			seasons: ['summer', 'autumn'],
 			shape: {
 				samara: {
+					// Still 19: a key about three centimetres long and a quarter as wide, its seed
+					// body a quarter of that length.
 					length: 0.032,
-					width: 0.011,
-					body: 0.3,
+					width: 0.0078,
+					body: 0.25,
 				},
 				// Still 19: the bunch hangs from a stalk several centimetres long below the twig, so
 				// its keys stand clear of the leaves above them, on footstalks of their own.
 				stalk: 0.05,
 				pedicel: 0.014,
 			},
-			// Still 19: the keys are a pale yellow-green, turning brown at their tips.
-			colour: [0.3, 0.3, 0.09],
+			// Still 19: a yellow-green wing on a red-brown seed body, the body darker than the wing.
+			colour: [0.22, 0.28, 0.08],
+			bandColour: [0.16, 0.08, 0.04],
 			roughness: [0.6, 0.6],
 			hang: 180,
 		},
@@ -395,9 +398,9 @@ export const record: Species = {
 			// cutting class among them; each cap sits above its figure, and the low tier's just under
 			// the owner's cap for a tree.
 			kitBytes: { low: 2_680_000, medium: 3_150_000, high: 5_900_000, ultra: 11_600_000 },
-			// The largest of seed 11's six variants measures 3.18, 3.25, 3.33 and 3.43 MB with the
-			// twigs the crown carries along every limb.
-			variantBytes: { low: 3_400_000, medium: 3_450_000, high: 3_500_000, ultra: 3_600_000 },
+			// The largest of seed 11's six variants measures 6.18, 6.25, 6.33 and 6.43 MB, the keys'
+			// bunches of 28 taking close to half of it.
+			variantBytes: { low: 6_350_000, medium: 6_400_000, high: 6_500_000, ultra: 6_600_000 },
 			lod0Triangles: 2_500_000,
 			// The heaviest variant's first card level draws 24,855, 27,986, 30,936 and 35,382
 			// triangles from the coarsest tier up, and its second 10,594, 11,594, 12,487 and 13,325.
