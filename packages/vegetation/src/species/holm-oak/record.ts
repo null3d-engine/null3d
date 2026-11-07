@@ -13,11 +13,6 @@ import type { Species } from '../../core/record';
 import { aspect, envelope, roundBand } from './fit';
 
 /** Internodes along a growth unit: the leaves crowd toward the tip round the bud cluster. */
-/** A shoot whose leaves stand at an even spacing along it, one internode after another. */
-const EVEN: readonly (readonly [number, number])[] = [
-	[0, 1],
-	[1, 1],
-];
 const SHOOT: readonly (readonly [number, number])[] = [
 	[0, 20],
 	[0.4, 0.6],
@@ -95,8 +90,8 @@ export const record: Species = {
 				share: 0.3,
 				years: 1,
 				length: { mean: 0.13, spread: 0.02 },
-				nodes: { mean: 18, spread: 0.5 },
-				internode: EVEN,
+				nodes: { mean: 8, spread: 0.5 },
+				internode: SHOOT,
 				leafScale: [
 					[0, 1.28],
 					[1, 1.58],
