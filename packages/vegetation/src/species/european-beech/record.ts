@@ -208,8 +208,11 @@ export const record: Species = {
 			// the last shoot-bearing node is dead and goes.
 			bareTrim: 0.03,
 			// Stills 01, 02, 03 and 05: the grey bole stands clear to the fork, about a sixth of the
-			// height, with the great limbs' bases bare around it, while the skirt hangs low at the rim.
-			bareBole: { radius: 1.2, height: 0.17 },
+			// height. The column reaches past the inner skirt because a side view sees the foliage
+			// beside the trunk as well as on it: at 1.2 m the trunk's own stretch was clear and the
+			// near-side skirt still covered the bole. The skirt at the rim, eight to sixteen metres
+			// out, keeps its low foliage.
+			bareBole: { radius: 4, height: 0.17 },
 			skyward: 0.4,
 			scale: { mean: 1.95, spread: 0.15 },
 		},
