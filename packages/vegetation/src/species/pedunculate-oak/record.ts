@@ -339,38 +339,44 @@ export const record: Species = {
 			tipShare: 0.8,
 			seasons: ['summer', 'autumn'],
 			shape: {
-				// The cup's scale rows cover the top third and its rim is the widest point. Below the rim
-				// the nut swells to its widest a fifth of the way down and closes in an egg's taper to a
-				// small point, as still 19's nuts do, with its rings closer where the taper turns fastest.
+				// The cup's scale rows cover two fifths, its rim stands proud of the nut and is the
+				// widest point. Below the rim the nut swells to its widest a fifth of the way down and
+				// closes in an egg's taper past a shoulder to a fine point, as still 19's nuts do, with
+				// its rings closer where the taper turns fastest.
 				lathe: [
-					[0.0012, 0],
-					[0.0036, 0.0014],
-					[0.0062, 0.0038],
-					[0.007, 0.0062],
-					[0.0068, 0.0076],
+					[0.0014, 0],
+					[0.0044, 0.0016],
+					[0.0072, 0.0034],
+					[0.0084, 0.0052],
+					[0.0088, 0.0068],
+					[0.0086, 0.008],
+					[0.0074, 0.0086],
 					[0.0072, 0.0106],
 					[0.0071, 0.0134],
 					[0.0066, 0.0159],
 					[0.0058, 0.0179],
 					[0.0048, 0.0194],
 					[0.0036, 0.0205],
-					[0.0025, 0.0212],
-					[0.0012, 0.0217],
-					[0, 0.0222],
+					[0.0022, 0.0214],
+					[0.0009, 0.0224],
+					[0.0004, 0.0234],
+					[0, 0.0242],
 				],
 				// Sixteen faces read round on a nut that fills a close view, now that its normals follow
 				// the profile; the rings the taper gains are paid for by the faces it loses.
 				sides: 16,
-				scales: 5,
-				scaled: [0, 0.0068],
+				scales: 6,
+				scaled: [0, 0.008],
 				// Still 19's peduncle hangs the acorns about twice their own length below the twig, within
 				// the fact sheet's 3 to 8 cm.
 				stalk: 0.05,
 				pedicel: 0.012,
 				// Still 19's peduncles fill a few pixels across, where four faces read as a square rod.
 				stalkSides: 5,
-				// Still 19's cups are rows of small grey-brown scales with darker crevices between them.
-				scaleShade: 0.6,
+				// Still 19's cups are rows of small grey-brown scales with darker crevices between
+				// them, no two scales quite the same shade.
+				scaleShade: 0.75,
+				scaleJitter: 0.35,
 			},
 			colour: [0.24, 0.1, 0.03],
 			// Still 19's cups and peduncle are a pale grey-brown against the chestnut nut.

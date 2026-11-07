@@ -353,6 +353,9 @@ function extraProblems(record: Species, out: string[]): void {
 		const crevice = 'lathe' in extra.shape ? extra.shape.scaleShade : undefined;
 		if (crevice !== undefined && !(crevice >= 0 && crevice <= 1))
 			out.push(`${path}.shape.scaleShade is ${crevice}; a share lies from 0 to 1`);
+		const jitter = 'lathe' in extra.shape ? extra.shape.scaleJitter : undefined;
+		if (jitter !== undefined && !(jitter >= 0 && jitter <= 1))
+			out.push(`${path}.shape.scaleJitter is ${jitter}; a share lies from 0 to 1`);
 		extra.bandColour?.forEach((channel, k) => {
 			shareProblem(channel, `${path}.bandColour[${k}]`, out);
 		});

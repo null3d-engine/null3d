@@ -367,6 +367,29 @@ describe('the extras', () => {
 			}
 	});
 
+	it("varies each scale's shade by the shape's jitter, the same way every time", () => {
+		const lathe = (ACORN.shape as { lathe: readonly [number, number][] }).lathe;
+		const scaled: [number, number] = [0, 0.033];
+		const at = (jitter: number) => {
+			const shape = { lathe, scales: 2, scaled, stalk: 0.05, scaleJitter: jitter };
+			const banded: ExtraSpec = { ...ACORN, share: 1, shape, bandColour: [0.3, 0.23, 0.15] };
+			const mesh = extrasMesh(dressed(oakRecord({ extras: [banded] }), 'summer'), 0);
+			if (!mesh) throw new Error('no acorns');
+			return Array.from({ length: 45 }, (_, k) => mesh.uvs1[(10 + k) * 2] as number);
+		};
+		// Without the field the band's shares are the even ones, and the jitter changes nothing else.
+		const even = at(0);
+		for (const share of even) expect(share === 0 || share === 1).toBe(true);
+		const varied = at(0.4);
+		expect(varied).not.toEqual(even);
+		expect(at(0.4)).toEqual(varied);
+		for (const [k, share] of varied.entries())
+			if ((even[k] as number) > 0) {
+				expect(share).toBeGreaterThan(0);
+				expect(share).toBeLessThanOrEqual(1);
+			}
+	});
+
 	it("turns a scaled lathe's normals with its profile", () => {
 		// The nut closes from 7.5 mm to a point over its last 5 mm: there its surface faces down the
 		// hang, whatever the scale rows above do.

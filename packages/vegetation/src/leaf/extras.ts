@@ -418,6 +418,21 @@ function writeStalk(
 	return fork;
 }
 
+/**
+ * One scale's departure from its neighbours' shade: a fixed share of the band's colour from
+ * -jitter to +jitter, the same for the same scale whichever picture draws it.
+ *
+ * @param ring The scale row, from the band's foot.
+ * @param column The scale's place round the ring.
+ * @param jitter The most a scale's share departs by, 0 to 1.
+ * @returns The share to add to the scale's own.
+ */
+function scaleShadeAt(ring: number, column: number, jitter: number): number {
+	let x = (ring * 374761393 + column * 668265263) >>> 0;
+	x = ((x ^ (x >>> 13)) * 1274126177) >>> 0;
+	return jitter * ((((x ^ (x >>> 16)) >>> 0) / 4294967295) * 2 - 1);
+}
+
 /** Lobes round a scaled lathe's band, so a cup's rim reads as fine scallops rather than a star. */
 const SCALLOP_LOBES = 24;
 /** The share of the radius the lobes rise and fall by. */
@@ -609,13 +624,18 @@ function writeExtra(
 			scallopedLathe(mesh, profile, site.at, direction, sides, colour, scaledFrom, scaledTo);
 		else lathe(mesh, profile, site.at, direction, sides, colour);
 		// The band's crevices take part of the body's colour on every other vertex round each ring,
-		// offset from ring to ring, so a cup reads as rows of overlapping scales.
+		// offset from ring to ring, so a cup reads as rows of overlapping scales. Each scale's own
+		// shade then departs from its neighbours' by a fixed share, so no two read alike.
 		const crevice = 'lathe' in shape ? (shape.scaleShade ?? 0) : 0;
+		const jitter = 'lathe' in shape ? (shape.scaleJitter ?? 0) : 0;
 		if (banded)
 			banded.shares.forEach((share, ring) => {
 				const from = first + ring * (sides + 1);
-				for (let j = 0; j <= sides; j++)
-					mesh.uvs1[(from + j) * 2] = share > 0 && (j + ring) % 2 === 1 ? share - crevice : share;
+				for (let j = 0; j <= sides; j++) {
+					const shaded = share > 0 && (j + ring) % 2 === 1 ? share - crevice : share;
+					const scale = jitter > 0 && share > 0 ? scaleShadeAt(ring, j, jitter) : 0;
+					mesh.uvs1[(from + j) * 2] = Math.min(1, Math.max(0, shaded * (1 + scale)));
+				}
 			});
 		return;
 	}

@@ -351,6 +351,37 @@ interface BoleAndCrown {
 }
 
 /** The bole and crown of a grown oak, from its skeleton. */
+/**
+ * The axes and nodes that never reach a stem: a chain whose parents end everywhere but at a foot, or
+ * that loops, is a part of the plant hanging in the air.
+ *
+ * @param skeleton The grown skeleton.
+ * @returns One name per part that does not reach the ground, empty for a whole plant.
+ */
+function orphans(skeleton: MacroSkeleton): string[] {
+	const { axes, parent, nodeCount } = skeleton;
+	const found: string[] = [];
+	for (let a = 0; a < axes.count; a++) {
+		let at = a;
+		let steps = 0;
+		while ((axes.parent[at] as number) >= 0) {
+			at = axes.parent[at] as number;
+			if (++steps > axes.count) break;
+		}
+		if (steps > axes.count || (axes.kind[at] as number) !== AXIS_STEM) found.push(`axis ${a}`);
+	}
+	for (let n = 0; n < nodeCount; n++) {
+		let at = n;
+		let steps = 0;
+		while ((parent[at] as number) >= 0) {
+			at = parent[at] as number;
+			if (++steps > nodeCount) break;
+		}
+		if (steps > nodeCount) found.push(`node ${n}`);
+	}
+	return found;
+}
+
 function boleAndCrown(skeleton: MacroSkeleton): BoleAndCrown {
 	const { axes, radius, position: p } = skeleton;
 	const fork = stemFork(skeleton);
@@ -496,6 +527,9 @@ describe('sympodial leaders', () => {
 				const led = leadOnThickest(
 					grower('self-organizing').grow({ record, seed: 11, variant, season: 'summer' }),
 				);
+				// Nothing stands in the air: every axis runs back through its parents to a stem, and
+				// every node to a foot, so a limb or a shoot is never born without wood under it.
+				expect(orphans(led)).toEqual([]);
 				// Still 20: where a limb's line runs on into a child, it bends gently; a side branch that
 				// leaves wide is thin. Still 08: a thick limb may divide into two spreading arms.
 				expect(brokenForks(led)).toEqual([]);
