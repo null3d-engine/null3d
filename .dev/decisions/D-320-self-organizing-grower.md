@@ -67,6 +67,17 @@ masks of frames 1, 25, 49 and so on of the turntable.
 - **Stopping at the outline, not turning along it.** Shoots that turned along the outline drew the
   same hoops. A shoot stops where its next step leaves the envelope, with a last short internode
   where part of the step fits, so the crown reaches its outline.
+- **A shoot turns aside from another axis's wood.** A record may give a `clearance` in metres and a
+  `turning` in degrees. Where the next step would come within the clearance, the shoot tries
+  headings at rising angles either side of its own. It takes the first that is clear and inside the
+  envelope. It keeps to the side it turned to last, so it curves round the obstacle. It stops only
+  where no heading within its most is clear. A new limb is weighed by its own order's girth, not
+  the stem's. At seed 11, variant 0, a clearance of 0.3 m with a 30 degree turn cuts the node pairs
+  inside the demanded distance. They fall from 30 to 16. The same setting holds the whole view's
+  outline at 0.731, against 0.732 without the field. The review counts four pieces there, against
+  one without the field: three leaf groups of 33 to 123 pixels stand under the crown. A clearance
+  of 0.28 m with a 40 degree turn draws two pieces. The second is a leaf group of 41 pixels, and
+  the outline holds at 0.745. No setting tried draws one piece. The oak's record sets neither field.
 - **A lost leader hands on its role.** When an axis's leader bud died, the axis stopped there, and
   a stem whose leader died by chance below the crown left a stump with no shoot in the light to take
   over: 3 of 40 oaks at seed 11 died at 0 to 2.4 m (variants 8, 12 and 23). An oak replaces a lost

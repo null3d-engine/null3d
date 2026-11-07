@@ -203,11 +203,19 @@ export interface SelfOrganizing {
 	 */
 	readonly branching?: number;
 	/**
-	 * Metres of clear air a shoot keeps from another axis's wood: a shoot that would come nearer
-	 * stops there, so two limbs do not pass through one another as a real tree's do not. 0 by
-	 * default, which lets shoots meet as they may.
+	 * Metres of clear air a shoot keeps from another axis's wood, so two limbs do not pass through
+	 * one another as a real tree's do not. 0 by default, which lets shoots meet as they may. Without
+	 * `turning`, a shoot that would come nearer stops there.
 	 */
 	readonly clearance?: number;
+	/**
+	 * Degrees a shoot may turn aside in one internode to keep its clearance from another axis's
+	 * wood: it tries headings at rising angles either side of the one it chose, and takes the first
+	 * that is clear and inside the envelope, the side it turned to before first, so a shoot passing
+	 * an obstacle curves round it rather than zigzagging. It stops only where no heading within the
+	 * angle is clear. 0 or absent, a shoot that would come within the clearance stops there.
+	 */
+	readonly turning?: number;
 	/** Metres of one macro internode in year one, and its shrink per year (0 to 1). */
 	readonly internode: { readonly length: number; readonly ageFactor: number };
 	/** One stem, or a stool of several that share one light grid. */

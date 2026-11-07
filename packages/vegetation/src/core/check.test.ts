@@ -39,7 +39,7 @@ describe('the record check', () => {
 		const shoots = template.shoots;
 		const out = {
 			...template,
-			growth: { ...growth, floor: 0.6 },
+			growth: { ...growth, floor: 0.6, turning: 120 },
 			shoots: {
 				...shoots,
 				placement: {
@@ -54,6 +54,7 @@ describe('the record check', () => {
 		} as Species;
 		const problems = speciesProblems(out);
 		expect(problems.some((p) => p.startsWith('growth.floor is 0.6'))).toBe(true);
+		expect(problems.some((p) => p.startsWith('growth.turning is 120'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.skyPrune is 1.5'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.skyPruneLayer is 10'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.bareTrim is 0.5'))).toBe(true);
@@ -61,7 +62,7 @@ describe('the record check', () => {
 		expect(problems.some((p) => p.startsWith('shoots.placement.tipPrune is 1.5'))).toBe(true);
 		const within = {
 			...template,
-			growth: { ...growth, floor: 0.15 },
+			growth: { ...growth, floor: 0.15, turning: 30 },
 			shoots: {
 				...shoots,
 				placement: {
@@ -75,6 +76,15 @@ describe('the record check', () => {
 			},
 		} as Species;
 		expect(speciesProblems(within)).toEqual([]);
+		const withTurning = (turning: number): Species => ({
+			...within,
+			growth: { ...growth, floor: 0.15, turning },
+		});
+		for (const turning of [0, 90]) expect(speciesProblems(withTurning(turning))).toEqual([]);
+		for (const turning of [-1, 90.1, Number.NaN])
+			expect(
+				speciesProblems(withTurning(turning)).some((p) => p.startsWith('growth.turning')),
+			).toBe(true);
 		for (const tipPrune of [-0.1, Number.NaN]) {
 			const tip = {
 				...template,

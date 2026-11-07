@@ -73,6 +73,8 @@ const KINK_DRIFT = 0.5;
 const SITE_STEPS = 4;
 /** A limb's girth beside another's, as a share of the clearance, by botanical order. */
 const GIRTH = [1, 0.6, 0.35, 0.2, 0.1] as const;
+/** Degrees between the headings a shoot tries when it turns aside from another axis's wood. */
+const TURN_STEP = 10;
 
 /** One axis's girth beside another's, as a share of the record's clearance. */
 export function girthOf(order: number): number {
@@ -399,9 +401,13 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	const grid = new ShadowGrid([-half, 0, -half], [nxz, ny, nxz], cell, g.light.shadow);
 	openGrid(grid, volume, radial);
 
-	// A grid of the wood already grown, so a shoot can stop rather than pass through another. Its
-	// cell holds the clearance, so a node need only look at the cells round it.
+	// A grid of the wood already grown, so a shoot can turn aside or stop rather than pass through
+	// another. Its cell holds the clearance, so a node need only look at the cells round it.
 	const clearance = Math.max(0, g.clearance ?? 0);
+	// The most a shoot may turn aside in one internode to keep that clearance, and the angle between
+	// the headings it tries.
+	const mostTurn = radians(Math.max(0, Math.min(180, g.turning ?? 0)));
+	const turnStep = radians(TURN_STEP);
 	// The widest clearance two axes can demand, so the cells round a point hold every neighbour.
 	const clearCell = Math.max(0.25, clearance * 2);
 	const clearGrid = new Map<number, number[]>();
@@ -424,15 +430,23 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	 * @param z The point's z.
 	 * @param axis The axis that would grow there, whose own wood is not counted.
 	 * @param parent The axis it leaves, whose wood it must touch at its joint.
+	 * @param order The botanical order the axis has, or will have where it does not exist yet.
 	 * @returns True where another axis's wood stands too near.
 	 */
-	const crowded = (x: number, y: number, z: number, axis: number, parent: number): boolean => {
+	const crowded = (
+		x: number,
+		y: number,
+		z: number,
+		axis: number,
+		parent: number,
+		order: number,
+	): boolean => {
 		if (clearance <= 0) return false;
 		const cx = Math.floor(x / clearCell);
 		const cy = Math.floor(y / clearCell);
 		const cz = Math.floor(z / clearCell);
 		// A limb's girth falls with its order, so a twig may pass near a twig but not through a limb.
-		const mine = girthOf(plant.axisOrder[axis] as number);
+		const mine = girthOf(order);
 		for (let ux = -1; ux <= 1; ux++)
 			for (let uy = -1; uy <= 1; uy++)
 				for (let uz = -1; uz <= 1; uz++) {
@@ -484,6 +498,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	const toward: [number, number, number] = [0, 0, 0];
 	const heading: Vector3 = [0, 0, 0];
 	const internode: Vector3 = [0, 0, 0];
+	const turnedDirection: Vector3 = [0, 0, 0];
 	const kinks = g.kinks === true;
 	const relay = g.relay !== false;
 	let mainAcc = new Float64Array(0);
@@ -491,6 +506,89 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	let vMain = new Float64Array(0);
 	let vLateral = new Float64Array(0);
 	const stemLight = new Float64Array(starts.length);
+
+	/** Turns a unit direction about a unit axis through an angle, in place, and normalizes it. */
+	const turnAbout = (d: Vector3, axis: Readonly<Vector3>, angle: number): void => {
+		const x = d[0] as number;
+		const y = d[1] as number;
+		const z = d[2] as number;
+		const ax = axis[0] as number;
+		const ay = axis[1] as number;
+		const az = axis[2] as number;
+		const c = cos(angle);
+		const s = sin(angle);
+		const dot = ax * x + ay * y + az * z;
+		const crossX = ay * z - az * y;
+		const crossY = az * x - ax * z;
+		const crossZ = ax * y - ay * x;
+		d[0] = x * c + crossX * s + ax * dot * (1 - c);
+		d[1] = y * c + crossY * s + ay * dot * (1 - c);
+		d[2] = z * c + crossZ * s + az * dot * (1 - c);
+		const l = length3(d[0] as number, d[1] as number, d[2] as number);
+		if (l > 1e-9) {
+			d[0] = (d[0] as number) / l;
+			d[1] = (d[1] as number) / l;
+			d[2] = (d[2] as number) / l;
+		}
+	};
+
+	/**
+	 * The heading a shoot takes where its chosen step would come within the clearance of another
+	 * axis's wood: the smallest turn either side of the heading, up to the record's most, that keeps
+	 * the step both clear and inside the envelope. The side it turned to before is tried first, so a
+	 * shoot passing an obstacle curves round it instead of zigzagging. The choice reads no random
+	 * draw, so a seed grows the same bytes.
+	 *
+	 * @param d The direction the shoot had chosen; it takes the turned one on success.
+	 * @param heading The shoot's heading when its internodes kink about it, turned with it.
+	 * @param kinked Whether the shoot's internodes kink about the heading.
+	 * @param px The shoot tip's x.
+	 * @param py The shoot tip's y.
+	 * @param pz The shoot tip's z.
+	 * @param step The internode's length, shortened where the envelope keeps only part of it.
+	 * @param axis The axis that would grow there, whose own wood is not counted.
+	 * @param parentAxis The axis it leaves, whose wood it must touch at its joint.
+	 * @param order The botanical order the axis has, or will have where it does not exist yet.
+	 * @param side The side it turned to last, tried first.
+	 * @returns The side it turned to, or 0 where no tried heading is clear.
+	 */
+	const turnAside = (
+		d: Vector3,
+		heading: Vector3,
+		kinked: boolean,
+		px: number,
+		py: number,
+		pz: number,
+		step: number,
+		axis: number,
+		parentAxis: number,
+		order: number,
+		side: number,
+	): number => {
+		if (!(mostTurn > 0) || !(turnStep > 0)) return 0;
+		across(d, scratchU, scratchW);
+		for (let k = 1; ; k++) {
+			const angle = Math.min(mostTurn, k * turnStep);
+			for (let m = 0; m < 2; m++) {
+				const turn = m === 0 ? side : -side;
+				turnedDirection[0] = d[0] as number;
+				turnedDirection[1] = d[1] as number;
+				turnedDirection[2] = d[2] as number;
+				turnAbout(turnedDirection, scratchU, turn * angle);
+				const x = px + (turnedDirection[0] as number) * step;
+				const y = py + (turnedDirection[1] as number) * step;
+				const z = pz + (turnedDirection[2] as number) * step;
+				if (volume.room(x, y, z) < 0) continue;
+				if (crowded(x, y, z, axis, parentAxis, order)) continue;
+				d[0] = turnedDirection[0] as number;
+				d[1] = turnedDirection[1] as number;
+				d[2] = turnedDirection[2] as number;
+				if (kinked) turnAbout(heading, scratchU, turn * angle);
+				return turn;
+			}
+			if (angle >= mostTurn - 1e-9) return 0;
+		}
+	};
 
 	/** A bud's light: the grid's, but full light for a stem's leader below the envelope. */
 	const budLight = (b: number): number => {
@@ -652,6 +750,8 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 		let previous = fromNode;
 		let added = 0;
 		let divided = false;
+		// The side the shoot last turned to, so it keeps curving the same way round an obstacle.
+		let turnSide = 1;
 		shade(b, -1);
 		plant.budState[b] = DEAD;
 		for (let k = 0; k < count; k++) {
@@ -740,18 +840,47 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 				last = true;
 				divided = true;
 			}
-			const x = px + nx * step;
-			const y = py + ny * step;
-			const z = pz + nz * step;
+			let x = px + nx * step;
+			let y = py + ny * step;
+			let z = pz + nz * step;
 			// A real tree's limbs do not pass through one another: a shoot that would come within the
-			// clearance of another axis's wood stops as it is, short of the step.
+			// clearance of another axis's wood turns aside, and stops only where no heading is clear.
 			{
 				// A new limb's axis does not exist yet, so it stands for the axis the builder will
 				// give it, and leaves the wood at the node it is starting from.
 				const grown = axis >= 0 ? axis : plant.axes;
 				const joint = axis >= 0 ? (plant.axisParentNode[axis] as number) : fromNode;
-				const parentAxis = joint >= 0 ? (plant.axisOf[joint] as number) : -1;
-				if (grown >= 0 && crowded(x, y, z, grown, parentAxis)) break;
+				const fromAxis = joint >= 0 ? (plant.axisOf[joint] as number) : -1;
+				const mineOrder = axis >= 0 ? (plant.axisOrder[axis] as number) : order;
+				if (grown >= 0 && crowded(x, y, z, grown, fromAxis, mineOrder)) {
+					internode[0] = nx;
+					internode[1] = ny;
+					internode[2] = nz;
+					const turn =
+						corridor || divided
+							? 0
+							: turnAside(
+									internode,
+									heading,
+									kinks,
+									px,
+									py,
+									pz,
+									step,
+									grown,
+									fromAxis,
+									mineOrder,
+									turnSide,
+								);
+					if (turn === 0) break;
+					turnSide = turn;
+					nx = internode[0] as number;
+					ny = internode[1] as number;
+					nz = internode[2] as number;
+					x = px + nx * step;
+					y = py + ny * step;
+					z = pz + nz * step;
+				}
 			}
 			if (axis < 0) axis = plant.addAxis(fromNode, order, stem);
 			internode[0] = nx;
