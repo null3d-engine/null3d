@@ -123,6 +123,8 @@ interface WoodAxis {
 	readonly leader: boolean;
 	/** Whether it is a dead stub left where a branch was shed. */
 	readonly stub: boolean;
+	/** Whether it is the cut end of a piece: a limb with no parent, such as a cut branch. */
+	readonly cut: boolean;
 }
 
 /** The skeleton's largest pipe radius. */
@@ -341,6 +343,7 @@ function woodAxes(input: MeshInput, keep: number): WoodAxis[] {
 			fork: false,
 			leader: leads[k] === 1,
 			stub: ((skeleton.flags[first] as number) & NODE_STUB) !== 0,
+			cut: parent < 0 && (axes.kind[a] as number) === AXIS_LIMB,
 		});
 		if (stem) addRoots(input, list, list.length - 1, base + (axes.record[a] as number));
 		for (const child of children[k] ?? []) queue.push(child);
@@ -405,6 +408,7 @@ function addRoots(input: MeshInput, list: WoodAxis[], stemIndex: number, record:
 			fork: false,
 			leader: false,
 			stub: false,
+			cut: false,
 		});
 }
 
@@ -922,9 +926,10 @@ class Mesher {
 		// takes the welds of thinner children near the end.
 		this.tip(context, rings, wood.fork);
 		// A dead stub weathers with the wood it stands on: its bark is grown bark, never the smooth
-		// young bark of a live shoot of its girth.
+		// young bark of a live shoot of its girth. A cut limb is severed wood too, and its sawn end
+		// shows grown bark rather than the young layer a twig of the same girth would carry.
 		const young = this.record.bark?.youngRadius ?? 0;
-		if (wood.stub)
+		if (wood.stub || wood.cut)
 			for (let i = 0; i < rings.vertices; i++)
 				rings.pipe[i] = Math.max(rings.pipe[i] as number, STUB_BARK * young);
 		const bark = this.barkOf(rings, context, inherit);
@@ -1429,7 +1434,11 @@ class Mesher {
 		};
 		const end = Math.min(
 			path.length,
-			Math.max(clear, 0.5 * this.tube.edge, LEADER_BEND * mean * turn),
+			Math.max(
+				clear,
+				0.5 * this.tube.edge,
+				(this.record.bark?.fork?.bend ?? LEADER_BEND) * mean * turn,
+			),
 		);
 		this.bend(led, parentRings, last, pt, end, sides, rings);
 		// The bend's rings blend from the parent's own circle to the leader's, like a weld's.
@@ -1466,6 +1475,7 @@ class Mesher {
 		for (let j = 0; j < sides; j++) mean += parentRings.rho[first + j] as number;
 		mean /= sides;
 		const steps = bendRings(turn, mean, this.tube) + 1;
+		const knot = Math.max(0, this.record.bark?.fork?.knot ?? 0);
 		if (steps < 2 || end <= 0) return;
 		const c3 = last * 3;
 		const radius = this.rho(context, end, 0);
@@ -1548,9 +1558,12 @@ class Mesher {
 				(tangent[0] as number) * (normal[1] as number) -
 				(tangent[1] as number) * (normal[0] as number);
 			// The girth eases from the parent's own to the leader's, so the fork's collar swells wide
-			// at its base and the surfaces meet without a step at either end of the bend.
+			// at its base and the surfaces meet without a step at either end of the bend; a knot
+			// swells the middle of the bend and is gone at both ends.
 			const ease = u * u * (3 - 2 * u);
-			const rho = mean + (radius - mean) * ease;
+			const eased = mean + (radius - mean) * ease;
+			const swell = 1 + knot * 4 * u * (1 - u);
+			const rho = eased * swell;
 			rhos[b] = rho;
 			const fr = b * 13;
 			frames[fr] = u * end;
@@ -1559,7 +1572,9 @@ class Mesher {
 			frames.set(normal, fr + 7);
 			frames.set(binormal, fr + 10);
 			// The surface tilts along the taper, so a ring wider than the next shades as a cone.
-			const slope = ((radius - mean) * 6 * u * (1 - u)) / Math.max(end, 1e-6);
+			const slope =
+				((radius - mean) * 6 * u * (1 - u) * swell + eased * knot * 4 * (1 - 2 * u)) /
+				Math.max(end, 1e-6);
 			for (let j = 0; j < sides; j++) {
 				const c = trig[j * 2] as number;
 				const n = trig[j * 2 + 1] as number;

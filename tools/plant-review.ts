@@ -4,8 +4,9 @@
 // coverage list that names each reference file in use and the render it was compared with.
 //
 //   bun run plants:review <species> [--refs <folder or slug>] [--out <folder>] [--run <name>]
-//     [--views a,b | all] [--step <degrees>] [--wind-fps 8] [--cell 480] [--only stills,turns,wind]
-//     [--seed 11] [--variant 0] [--preset high] [--gpu webgpu] [--no-matte] [--compare <run folder>]
+//     [--views a,b | all] [--step <degrees>] [--wind-fps 8] [--cell <pixels>] [--only stills,turns,wind]
+//     [--seed 11] [--variant 0] [--preset high] [--lod 0|1|2] [--gpu webgpu] [--no-matte]
+//     [--compare <run folder>]
 //
 // The species is any registered species id, or any other id, which draws as a stand-in. The dev
 // server must serve this copy of the repository on the port that NULL3D_PORT names; one is started
@@ -13,11 +14,13 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
+import { isSpeciesId, loadSpecies } from '../packages/vegetation/src/core/registry.ts';
 import { REPO_ROOT } from '../tests/lib/server.ts';
 import type { PlantReviewQuery } from '../tests/pages/lib/plant-review/query.ts';
 import {
 	CUTTING_VIEWS,
 	PLANT_VIEWS,
+	type PlantBackground,
 	type PlantView,
 	VIEW_SPECS,
 	WHOLE_VIEWS,
@@ -52,6 +55,7 @@ import {
 	type Slot,
 	TURN_VIEW,
 	type TurnVideo,
+	withSlot,
 } from './lib/plant-review/references.ts';
 import {
 	drawShots,
@@ -74,6 +78,12 @@ const WIND_START = 1;
 const STILL_WIDTH = 768;
 /** How many frames of a video the framing is measured from. */
 const FRAMING_FRAMES = 8;
+/**
+ * The most degrees one sheet of a turn spans. A turning reference keeps its light where its camera
+ * is, while a sheet has one sun for all its cells, set by its middle turn; within this span every
+ * cell's camera stands within half of it of where the reference's light was measured from.
+ */
+const LIT_SHEET_SPAN = 30;
 
 /** A run's manifest: what was drawn, from which commit, against which references. */
 interface Manifest {
@@ -107,6 +117,12 @@ function sizeAt(aspect: number, width: number): [number, number] {
 	return [width, Math.max(16, Math.round(width / aspect))];
 }
 
+/** The names of a registered species' other forms, which the stills that name one are drawn in. */
+async function formsOf(species: string): Promise<readonly string[]> {
+	if (!isSpeciesId(species)) return [];
+	return Object.keys((await loadSpecies(species)).record.forms ?? {});
+}
+
 /** The metres a bark view frames, from the species' texture manifest when it has one. */
 function barkSpan(species: string): number | undefined {
 	const path = join(REPO_ROOT, 'packages/vegetation-textures/textures', species, 'manifest.json');
@@ -124,6 +140,7 @@ function stillShot(
 	base: PlantReviewQuery,
 	matte: boolean,
 	span?: number,
+	extra?: Readonly<Record<string, unknown>>,
 ): Shot {
 	const image = onColour(readImage(join(set.folder, slot.file)), [255, 255, 255]);
 	const aspect = image.width / image.height;
@@ -137,14 +154,25 @@ function stillShot(
 		...slot.query,
 	};
 	const plant = plantMask(image);
-	if (plant.background.plain && slot.view !== 'silhouette') {
+	if (plant.background.plain) {
 		const measures = measurePlant(image, plant);
-		// A plain background gives its own colour, which the render stands against.
-		query = {
-			...query,
-			sky: measures.sky,
-			...(measures.ground && slot.background === 'sky-meadow' && { ground: measures.ground }),
-		};
+		// A plain background gives its own colour, which the render stands against. A silhouette
+		// draws black on white whatever its picture's colours and light, so it takes the framing alone.
+		if (slot.view !== 'silhouette') {
+			query = {
+				...query,
+				sky: measures.sky,
+				...(measures.ground && slot.background === 'sky-meadow' && { ground: measures.ground }),
+			};
+			// The picture's own light, so a close view is lit as its reference is: a flat light reads a
+			// grey-brown branch as pale, where the reference's studio light gives it its modelling.
+			if (measures.light)
+				query = {
+					...query,
+					sunAzimuth: measures.light.azimuth,
+					sunRise: measures.light.rise,
+				};
+		}
 		if (slot.framed && measures.box) {
 			const {
 				sky: _sky,
@@ -154,12 +182,18 @@ function stillShot(
 			query = { ...query, ...framing };
 		}
 	}
+	// A still's own query fields, such as a camera its picture needs, go over the rest, and a field
+	// given as null is dropped, so a still can trade the framing's fill for a top row and an eye.
+	query = withSlot(query, extra);
 	// A still whose own picture separates the plant from a plain background can be compared by
 	// outline, whatever part of the plant it frames: the render draws the same mask. A texture source
-	// is a flat swatch rather than a picture of the plant, so it is not given one.
+	// is a flat swatch rather than a picture of the plant, so it is not given one. A fruit view keeps
+	// its outline whether or not the photograph separates, because a part that hangs from nothing
+	// shows only as a piece, and a piece needs the matte.
 	const outline =
 		(slot.kind !== 'texture' && plant.background.plain && slot.view !== 'silhouette') ||
 		slot.framed ||
+		slot.query?.fruit === true ||
 		CUTTING_VIEWS.includes(slot.view);
 	return singleShot(
 		'stills',
@@ -180,50 +214,64 @@ function sampleFrames(path: string, count: number): Rgba[] {
 	);
 }
 
-/** The base query of a whole-plant video's render: its framing and colours, measured from its frames. */
-function wholeVideoQuery(path: string, base: PlantReviewQuery): PlantReviewQuery {
+/**
+ * The query of a video's render: its view and background, with the framing, the colours and the
+ * light measured from its frames. The light is read against each frame's camera and its median
+ * kept, as the reference videos keep their light where their camera is.
+ */
+function videoQuery(
+	path: string,
+	base: PlantReviewQuery,
+	view: PlantView,
+	background: PlantBackground,
+): PlantReviewQuery {
 	const frames = sampleFrames(path, FRAMING_FRAMES);
 	const masks = frames.map((frame) => plantMask(frame));
 	const estimate = estimateFraming(
 		masks.map((mask, k) => measurePlant(frames[k] as Rgba, mask)),
 		masks,
 	);
-	return { ...base, view: 'whole', background: 'sky-meadow', ...framingQuery(estimate) };
+	return { ...base, view, background, ...framingQuery(estimate) };
 }
 
-/** The shots of a turning video: renders round a full circle at the video's own frame step. */
+/**
+ * The shots of a turning video: renders round a full circle at the video's own frame step, framed
+ * and lit as its frames are. The reference videos keep their light where their camera is as the
+ * piece turns, so a sheet stands its one sun as the light stood to its middle turn, and spans few
+ * enough turns that every cell stays near that.
+ */
 function turnVideoShots(
 	video: TurnVideo,
 	base: PlantReviewQuery,
-	cellWidth: number,
+	cellWidth: number | undefined,
 	matte: boolean,
 	step?: number,
+	extra?: Readonly<Record<string, unknown>>,
 ): Shot[] {
 	const facts = probeVideo(video.path);
 	const frames = Math.max(1, Math.round(facts.duration * facts.fps));
 	const want = step ?? video.arc / frames;
 	const count = Math.max(1, Math.round(360 / want));
 	const view: PlantView = TURN_VIEW[video.piece];
-	let query: PlantReviewQuery;
-	if (video.piece === 'whole') query = { ...wholeVideoQuery(video.path, base), measure: true };
-	else {
-		const first = videoFrame(video.path, facts, 0);
-		query = {
-			...base,
-			view,
-			background: 'studio-grey',
-			sky: measurePlant(first, plantMask(first)).sky,
-		};
-	}
+	const query: PlantReviewQuery = withSlot(
+		video.piece === 'whole'
+			? { ...videoQuery(video.path, base, view, 'sky-meadow'), measure: true }
+			: videoQuery(video.path, base, view, 'studio-grey'),
+		extra,
+	);
 	const group = `turn-${video.file.replace(/\.mp4$/, '')}`;
+	const turn = 360 / count;
+	const lit = query.sunAzimuth !== undefined;
 	return turnShots(
 		group,
 		query,
-		sizeAt(facts.width / facts.height, cellWidth),
+		sizeAt(facts.width / facts.height, cellWidth ?? STILL_WIDTH),
 		0,
-		360 / count,
+		turn,
 		count,
 		matte,
+		1,
+		lit ? Math.floor(LIT_SHEET_SPAN / turn) + 1 : undefined,
 	);
 }
 
@@ -235,11 +283,15 @@ function windShots(
 	path: string,
 	file: string,
 	base: PlantReviewQuery,
-	cellWidth: number,
+	cellWidth: number | undefined,
 	fps: number,
+	extra?: Readonly<Record<string, unknown>>,
 ): Shot[] {
 	const facts = probeVideo(path);
-	const query: PlantReviewQuery = { ...wholeVideoQuery(path, base), wind: 1 };
+	const query: PlantReviewQuery = withSlot(
+		{ ...videoQuery(path, base, 'whole', 'sky-meadow'), wind: 1 },
+		extra,
+	);
 	const count = Math.floor((facts.duration - 1e-6) * fps) + 1;
 	const group = `wind-${file.replace(/\.mp4$/, '')}`;
 	return Array.from({ length: count }, (_, k) => {
@@ -248,7 +300,7 @@ function windShots(
 			group,
 			`${group}-${String(k).padStart(3, '0')}.png`,
 			{ ...query, time },
-			sizeAt(facts.width / facts.height, cellWidth),
+			sizeAt(facts.width / facts.height, cellWidth ?? STILL_WIDTH),
 			false,
 			undefined,
 			time,
@@ -309,7 +361,7 @@ function turnSummary(result: TurnResult, limit: number): string[] {
 		'',
 		...(result.error ? [`- ${result.error}.`, ''] : []),
 		`- ${result.frames} frames over ${result.arc}°, one every ${result.frameStep.toFixed(2)}°, against ${result.renders} renders every ${result.renderStep.toFixed(2)}°. ${result.covered} of ${result.frames} frames have a render at their own angle.`,
-		`- Alignment: the render at turn ${(result.alignment.start * result.renderStep).toFixed(1)}° matches the video's first frame, turning ${result.alignment.direction === 1 ? 'the same way' : 'the other way'}; mean shape IoU ${result.alignment.meanIou.toFixed(3)} (lowest ${iou.length ? Math.min(...iou).toFixed(3) : '-'}).`,
+		`- Alignment: the render at turn ${(result.alignment.start * result.renderStep).toFixed(1)}° matches the video's first frame, turning ${result.alignment.direction === 1 ? 'the same way' : 'the other way'}. Shape IoU over the matched frames, mean: ${result.meanShapeIou === null ? '-' : result.meanShapeIou.toFixed(3)} (lowest ${iou.length ? Math.min(...iou).toFixed(3) : '-'}).`,
 		`- Width-profile error, mean: ${meanOf(
 			result.pairs.flatMap((p) => (p.profileError === null ? [] : [p.profileError])),
 			3,
@@ -410,6 +462,7 @@ function compareRun(
 			// A picture whose backdrop the tool cannot separate still has edges, and its edges say
 			// where its parts run. It gets that figure instead of an outline it cannot trust.
 			...edgeLines(result.pairs),
+			...framingLines(result.pairs),
 			...pieceLines(result.pairs),
 			...result.pairs.flatMap((pair) => (pair.note ? [`- ${pair.file}: ${pair.note}.`] : [])),
 			`- Sheets: ${result.sheets.join(', ')}.`,
@@ -461,7 +514,7 @@ function compareRun(
 		"- The reference outline comes from colour against a plain background. Below the horizon it keeps only the plant that hangs down from above and is not a darker copy of the meadow, so foliage that sweeps the ground can be lost and a trunk's foot can be cut short.",
 		"- The render outline comes from the run's matte where the run drew one, so it is exact.",
 		'- A turning video is taken to turn at a steady rate over its arc; the alignment cannot repair a video that speeds up or stops short.',
-		"- A turn's renders are drawn as sheets of cells, which draw without the sun's shadows.",
+		"- A turn's renders are drawn as sheets of cells at a still's size, with the sun's shadows; a release build of the page draws the cells without them.",
 		'',
 	);
 	writeFileSync(join(dir, 'metrics.json'), `${JSON.stringify(metrics, null, '\t')}\n`);
@@ -480,6 +533,21 @@ function edgeLines(pairs: readonly StillResult[]): string[] {
 				`- ${pair.file}: edge directions ${fixed(pair.edgeDifference, 3)}; 0 is the same mixture of directions in both pictures and 1 is none shared.`,
 			);
 	return lines;
+}
+
+/** What each close view's camera framed, and how much of the plant stood in its way. */
+function framingLines(pairs: readonly StillResult[]): string[] {
+	return pairs.flatMap((pair) => {
+		const framing = pair.framing;
+		if (!framing) return [];
+		const { front, behind, fill } = framing;
+		const clutter =
+			front !== null && behind !== null && fill !== null
+				? `; the rest of the plant covers ${front.toFixed(2)} of the frame in front of it and ${behind.toFixed(2)} behind it, and the subject fills ${fill.toFixed(2)}`
+				: '';
+		const warning = framing.warning ? `, as ${framing.warning}` : '';
+		return [`- ${pair.file}: the camera framed ${framing.subject}${clutter}${warning}.`];
+	});
 }
 
 /** Where the render is drawn as more or fewer separate pieces than its reference. */
@@ -508,7 +576,9 @@ async function main(): Promise<void> {
 	if (flag('compare')) {
 		const dir = resolve(option('compare'));
 		const manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')) as Manifest;
-		const set = manifest.references ? readReferenceSet(manifest.references) : undefined;
+		const set = manifest.references
+			? readReferenceSet(manifest.references, await formsOf(manifest.species))
+			: undefined;
 		const complete = compareRun(dir, manifest, set, manifest.windFps ?? windFps);
 		console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
 		if (!complete) process.exitCode = 1;
@@ -516,7 +586,7 @@ async function main(): Promise<void> {
 	}
 	const species = positional(0) ?? option('species');
 	const folder = referenceFolder(species);
-	const set = folder ? readReferenceSet(folder) : undefined;
+	const set = folder ? readReferenceSet(folder, await formsOf(species)) : undefined;
 	const { commit, dirty } = commitOf();
 	const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 13);
 	const run = option('run', `${species}-${stamp}`);
@@ -527,9 +597,13 @@ async function main(): Promise<void> {
 		seed: Number(option('seed', '11')),
 		variant: Number(option('variant', '0')),
 		preset: option('preset', 'high') as PlantReviewQuery['preset'],
+		...(flag('lod') && { lod: Number(option('lod')) as PlantReviewQuery['lod'] }),
 	};
 	const matte = !flag('no-matte');
-	const cell = Number(option('cell', '480'));
+	// A video's renders are drawn at a still's size unless asked otherwise, and measured as a still
+	// is, so a turn's frame and a still from the same camera take the same detail level and give
+	// the same figures.
+	const cell = flag('cell') ? Number(option('cell')) : undefined;
 	const step = flag('step') ? Number(option('step')) : undefined;
 	const wanted = parts();
 	const shots: Shot[] = [];
@@ -547,13 +621,24 @@ async function main(): Promise<void> {
 	}
 	if (set) {
 		const span = barkSpan(species);
+		// Query fields per reference file, from a JSON object keyed by the file's name.
+		const slotQueries = flag('slot-query')
+			? (JSON.parse(readFileSync(resolve(option('slot-query')), 'utf8')) as Record<
+					string,
+					Record<string, unknown>
+				>)
+			: {};
 		if (wanted.has('stills'))
-			for (const slot of set.stills) shots.push(stillShot(set, slot, base, matte, span));
+			for (const slot of set.stills)
+				shots.push(stillShot(set, slot, base, matte, span, slotQueries[slot.file]));
 		if (wanted.has('turns'))
-			for (const video of set.turns) shots.push(...turnVideoShots(video, base, cell, matte, step));
+			for (const video of set.turns)
+				shots.push(...turnVideoShots(video, base, cell, matte, step, slotQueries[video.file]));
 		if (wanted.has('wind'))
-			for (const path of set.winds)
-				shots.push(...windShots(path, path.split('/').pop() as string, base, cell, windFps));
+			for (const path of set.winds) {
+				const file = path.split('/').pop() as string;
+				shots.push(...windShots(path, file, base, cell, windFps, slotQueries[file]));
+			}
 	}
 	if (shots.length === 0)
 		throw new Error('nothing to draw: name a species with a reference folder, or --views');

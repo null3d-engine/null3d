@@ -98,3 +98,87 @@ export function projectRow(camera: StandCamera, y: number, fov: number): number 
 	const half = Math.tan((fov * Math.PI) / 360);
 	return 0.5 - Math.tan(elevation - camera.pitch) / (2 * half);
 }
+
+/**
+ * The least share of the frame's height between the row that a bole's top lands on and the row its
+ * foot lands on: nearer rows would ask the camera to stand so far back that the bole spans them.
+ */
+export const LEAST_ROW_GAP = 0.1;
+
+/** The rows on which a cut piece's highest and lowest points land, as shares of the frame. */
+export interface CutRows {
+	readonly top: number;
+	readonly base: number;
+}
+
+/** A cut piece's camera: metres back from its target, and metres its target stands above the centre. */
+export interface CutCamera {
+	readonly distance: number;
+	readonly lift: number;
+}
+
+/**
+ * The camera that puts a cut piece's points on the rows its photograph puts them on: its highest
+ * point on the top row and its lowest on the base row, the frame centred across the piece. The camera
+ * looks along `forward`, with `right` and `up` as its frame's axes, at a target straight above or
+ * below `centre`. A piece too wide for the frame at that size is framed from further back, so it
+ * fits between the side margins, with its lowest point still on the base row.
+ */
+export function cutCamera(
+	points: ArrayLike<number>,
+	centre: readonly number[],
+	forward: readonly number[],
+	right: readonly number[],
+	up: readonly number[],
+	fov: number,
+	aspect: number,
+	rows: CutRows,
+	margin: number,
+): CutCamera {
+	const half = Math.tan((fov * Math.PI) / 360);
+	const topSlope = (1 - 2 * rows.top) * half;
+	const baseSlope = (1 - 2 * rows.base) * half;
+	const n = Math.floor(points.length / 3);
+	if (n === 0) return { distance: 1, lift: 0 };
+	const a = new Float64Array(n);
+	const w = new Float64Array(n);
+	let nearest = 0;
+	let wide = 0;
+	for (let i = 0; i < n; i++) {
+		const dx = (points[i * 3] as number) - (centre[0] as number);
+		const dy = (points[i * 3 + 1] as number) - (centre[1] as number);
+		const dz = (points[i * 3 + 2] as number) - (centre[2] as number);
+		a[i] = dx * (up[0] as number) + dy * (up[1] as number) + dz * (up[2] as number);
+		w[i] = dx * (forward[0] as number) + dy * (forward[1] as number) + dz * (forward[2] as number);
+		const across = Math.abs(
+			dx * (right[0] as number) + dy * (right[1] as number) + dz * (right[2] as number),
+		);
+		nearest = Math.max(nearest, -(w[i] as number));
+		wide = Math.max(wide, across / (half * aspect * (1 - 2 * margin)) - (w[i] as number));
+	}
+	// For a camera `distance` back, the least lift that keeps every point under the top row, and the
+	// most that keeps every point over the base row. The first falls and the second rises as the
+	// camera steps back, and they meet where the piece spans the two rows exactly.
+	const lowest = (distance: number) => {
+		let most = Number.NEGATIVE_INFINITY;
+		for (let i = 0; i < n; i++)
+			most = Math.max(most, (a[i] as number) - topSlope * ((w[i] as number) + distance));
+		return most;
+	};
+	const highest = (distance: number) => {
+		let least = Number.POSITIVE_INFINITY;
+		for (let i = 0; i < n; i++)
+			least = Math.min(least, (a[i] as number) - baseSlope * ((w[i] as number) + distance));
+		return least;
+	};
+	let near = nearest + 1e-3;
+	let far = Math.max(near * 2, 1);
+	while (lowest(far) > highest(far) && far < 1e6) far *= 2;
+	for (let k = 0; k < 60; k++) {
+		const middle = (near + far) / 2;
+		if (lowest(middle) > highest(middle)) near = middle;
+		else far = middle;
+	}
+	const distance = Math.max(far, wide);
+	return { distance, lift: highest(distance) };
+}

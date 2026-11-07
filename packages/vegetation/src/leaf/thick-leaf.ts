@@ -397,7 +397,7 @@ export function writeStalk(
 			// Wider than deep, with a groove along the top (angle 0) and a rounded keel below.
 			shape: (angle) => {
 				const up = cos(angle);
-				const groove = up > 0 ? channel * up ** 4 : 0;
+				const groove = up > 0 ? channel * (up * up) * (up * up) : 0;
 				return (1 + 0.25 * sin(angle) ** 2) * (1 - groove);
 			},
 		},

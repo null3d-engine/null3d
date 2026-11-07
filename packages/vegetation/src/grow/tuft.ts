@@ -26,6 +26,7 @@ import {
 	cross3,
 	normalize3,
 	PI,
+	pow,
 	quatFromFrame,
 	radians,
 	sin,
@@ -131,10 +132,13 @@ function arching(
 	const step = length / (nodes - 1);
 	for (let i = 0; i < nodes; i++) {
 		const share = i / (nodes - 1);
-		const e = Math.max(radians(-LOWEST), elevation - bend * share ** power);
+		const e = Math.max(radians(-LOWEST), elevation - bend * pow(share, power));
 		directions.push(inPlane(heading, e));
 		if (i > 0) {
-			const mid = Math.max(radians(-LOWEST), elevation - bend * ((i - 0.5) / (nodes - 1)) ** power);
+			const mid = Math.max(
+				radians(-LOWEST),
+				elevation - bend * pow((i - 0.5) / (nodes - 1), power),
+			);
 			const d = inPlane(heading, mid);
 			p[0] += d[0] * step;
 			p[1] = Math.max(GROUND, p[1] + d[1] * step);
@@ -459,7 +463,7 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 			const arch = radians(
 				spreadAt(blade.arch, draws(3)) *
 					(0.6 + 0.8 * age) *
-					(length / Math.max(1e-6, meanLength)) ** 0.5,
+					Math.sqrt(length / Math.max(1e-6, meanLength)),
 			);
 			const shootDir = inPlane(heading, PI / 2 - lean);
 			const from: Vector3 = [

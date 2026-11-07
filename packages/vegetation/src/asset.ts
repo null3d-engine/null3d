@@ -66,6 +66,11 @@ export interface ShootPrototype {
 	readonly index: number;
 	/** The shoot class it belongs to. */
 	readonly class: ShootClass['name'];
+	/**
+	 * Set on a shoot that only a cutting draws. The crown never offers one, whatever vigor its buds
+	 * carry, so adding a cutting class leaves the crown's shoots as they were.
+	 */
+	readonly cutting?: true;
 	/** The bud vigor it serves. */
 	readonly vigor: readonly [number, number];
 	/** Metres from the attach point to the farthest tip, at scale 1. */
@@ -127,6 +132,11 @@ export interface ShootRows {
 	readonly bent: Uint8Array;
 	/** Space-filling order, which the second card level thins by. */
 	readonly order: Uint32Array;
+	/**
+	 * 3 per row: the vector from the row's place back along its axis to the stretch's far end, the
+	 * previous bud or the parent node. Absent, a card draws no stalk.
+	 */
+	readonly back?: Float32Array;
 }
 
 /**
@@ -142,11 +152,17 @@ export type PartName = 'wood' | 'foliage' | 'cards' | 'extras';
  * @category api/vegetation
  */
 export interface QuantisedArrays {
-	/** 3 per vertex: 16-bit positions inside the species box, which the copy's transform scales. */
+	/**
+	 * 3 per vertex: 16-bit positions inside the species box, which the plant shader reads as
+	 * fractions of the box and turns into metres, and the copy's transform scales.
+	 */
 	readonly positions: Uint16Array;
 	/** 3 per vertex: 8-bit normals that read from -1 to 1. */
 	readonly normals: Int8Array;
-	/** 2 per vertex, plain 16-bit: wood in 1/1024 m of bark; leaves and cards in 1/65535 of the texture. */
+	/**
+	 * 2 per vertex, plain 16-bit: wood in 1/1024 m of bark; leaves and cards in 1/65535 of the
+	 * texture; extras, which draw no texture, each position's rest below one step of the box.
+	 */
 	readonly uvs: Uint16Array;
 	/** 2 per vertex, plain 16-bit, in the part's own units. */
 	readonly uvs1: Uint16Array;
@@ -262,7 +278,10 @@ export interface PlantAsset {
  * @category api/vegetation
  */
 export interface SpeciesKitData {
-	/** The species record. */
+	/**
+	 * The record the kit grows from: the species' own, or the record of the form it was built for,
+	 * without the forms themselves.
+	 */
 	readonly record: Species;
 	/** The texture manifest. */
 	readonly manifest: TextureManifest;
@@ -299,6 +318,20 @@ export interface SpeciesKitData {
 /** The typed arrays of a part, in a fixed order. */
 function quantisedViews(arrays: QuantisedArrays): ArrayBufferView[] {
 	return [arrays.positions, arrays.normals, arrays.uvs, arrays.uvs1, arrays.colors, arrays.indices];
+}
+
+/**
+ * The kit's prototypes a crown may draw: all of them but those a class grows only for cuttings, so
+ * a species that grows cuttings from shoots of their own dresses its crown as it did without them.
+ *
+ * @param prototypes The kit's prototypes.
+ * @returns The crown's, in kit order.
+ * @category api/vegetation
+ */
+export function crownPrototypes<T extends { readonly cutting?: true }>(
+	prototypes: readonly T[],
+): T[] {
+	return prototypes.filter((prototype) => !prototype.cutting);
 }
 
 /**

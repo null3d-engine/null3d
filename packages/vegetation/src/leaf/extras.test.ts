@@ -311,6 +311,128 @@ describe('the extras', () => {
 		expect(thinnedDrawn.positions.length).toBe(drawn.positions.length);
 	});
 
+	it('colours a band and the stalks apart from the body, meeting it at a sharp edge', () => {
+		// One acorn on a shared stalk, its band the cup over the profile's first 33 mm.
+		const lathe = (ACORN.shape as { lathe: readonly [number, number][] }).lathe;
+		const shape = { lathe, scales: 2, scaled: [0, 0.033] as [number, number], stalk: 0.05 };
+		const banded: ExtraSpec = { ...ACORN, share: 1, shape, bandColour: [0.3, 0.23, 0.15] };
+		const input = dressed(oakRecord({ extras: [banded] }), 'summer');
+		const mesh = extrasMesh(input, 0);
+		const plain = extrasMesh(
+			dressed(oakRecord({ extras: [{ ...banded, bandColour: undefined }] }), 'summer'),
+			0,
+		);
+		if (!mesh || !plain) throw new Error('no acorns');
+		// The stalk's two rings of five, then the body: its six profile rings, two scale rows and
+		// a second ring at the band's end, nine vertices each.
+		const stalk = 10;
+		const perAcorn = stalk + (6 + 2 + 1) * 9;
+		expect(mesh.positions.length / 3).toBe(input.rows.count * perAcorn);
+		expect(plain.positions.length / 3).toBe(input.rows.count * (perAcorn - 9));
+		const share = (vertex: number) => mesh.uvs1[vertex * 2] as number;
+		for (let v = 0; v < stalk; v++) expect(share(v)).toBe(1);
+		// Rings from the cup's foot to its rim take the band; the ring that repeats the rim, and
+		// every ring past it, take the body.
+		const rings = (mesh.positions.length / 3 / input.rows.count - stalk) / 9;
+		const shares = Array.from({ length: rings }, (_, ring) => share(stalk + ring * 9));
+		expect(shares).toEqual([1, 1, 1, 1, 1, 0, 0, 0, 0]);
+		const at = (vertex: number) => [0, 1, 2].map((k) => mesh.positions[vertex * 3 + k] as number);
+		expect(at(stalk + 4 * 9)).toEqual(at(stalk + 5 * 9));
+		// No faces join the two rings at the edge, so none is drawn flat across it.
+		const edge = new Set(
+			[stalk + 4 * 9, stalk + 5 * 9].flatMap((r) => Array.from({ length: 9 }, (_, j) => r + j)),
+		);
+		for (let t = 0; t < mesh.indices.length; t += 3) {
+			const corners = [0, 1, 2].map((k) => mesh.indices[t + k] as number);
+			if (corners.every((c) => c < perAcorn))
+				expect(corners.filter((c) => edge.has(c)).length).toBeLessThan(3);
+		}
+		for (let v = 0; v < plain.uvs1.length; v += 2) expect(plain.uvs1[v]).toBe(0);
+	});
+
+	it("shades a band's crevices toward the body by the shape's scale shade", () => {
+		const lathe = (ACORN.shape as { lathe: readonly [number, number][] }).lathe;
+		const scaled: [number, number] = [0, 0.033];
+		const shape = { lathe, scales: 2, scaled, stalk: 0.05, scaleShade: 0.5 };
+		const banded: ExtraSpec = { ...ACORN, share: 1, shape, bandColour: [0.3, 0.23, 0.15] };
+		const mesh = extrasMesh(dressed(oakRecord({ extras: [banded] }), 'summer'), 0);
+		if (!mesh) throw new Error('no acorns');
+		// After the stalk's ten vertices, nine rings of nine: the band's five rings alternate a full
+		// and a shaded share round the turn, offset from ring to ring, and the body's stay at none.
+		const stalk = 10;
+		for (let ring = 0; ring < 9; ring++)
+			for (let j = 0; j < 9; j++) {
+				const expected = ring < 5 ? ((j + ring) % 2 === 1 ? 0.5 : 1) : 0;
+				expect(mesh.uvs1[(stalk + ring * 9 + j) * 2] as number).toBeCloseTo(expected, 9);
+			}
+	});
+
+	it("varies each scale's shade by the shape's jitter, the same way every time", () => {
+		const lathe = (ACORN.shape as { lathe: readonly [number, number][] }).lathe;
+		const scaled: [number, number] = [0, 0.033];
+		const at = (jitter: number) => {
+			const shape = { lathe, scales: 2, scaled, stalk: 0.05, scaleJitter: jitter };
+			const banded: ExtraSpec = { ...ACORN, share: 1, shape, bandColour: [0.3, 0.23, 0.15] };
+			const mesh = extrasMesh(dressed(oakRecord({ extras: [banded] }), 'summer'), 0);
+			if (!mesh) throw new Error('no acorns');
+			return Array.from({ length: 45 }, (_, k) => mesh.uvs1[(10 + k) * 2] as number);
+		};
+		// Without the field the band's shares are the even ones, and the jitter changes nothing else.
+		const even = at(0);
+		for (const share of even) expect(share === 0 || share === 1).toBe(true);
+		const varied = at(0.4);
+		expect(varied).not.toEqual(even);
+		expect(at(0.4)).toEqual(varied);
+		for (const [k, share] of varied.entries())
+			if ((even[k] as number) > 0) {
+				expect(share).toBeGreaterThan(0);
+				expect(share).toBeLessThanOrEqual(1);
+			}
+	});
+
+	it("turns a scaled lathe's normals with its profile", () => {
+		// The nut closes from 7.5 mm to a point over its last 5 mm: there its surface faces down the
+		// hang, whatever the scale rows above do.
+		const lathe = (ACORN.shape as { lathe: readonly [number, number][] }).lathe;
+		const scaled: ExtraSpec = {
+			...ACORN,
+			share: 1,
+			shape: { lathe, scales: 2, scaled: [0, 0.03] },
+		};
+		const mesh = extrasMesh(dressed(oakRecord({ extras: [scaled] }), 'summer'), 0);
+		if (!mesh) throw new Error('no acorns');
+		// The ring at 55 mm, the profile's fifth point after two scale rows: the seventh ring. The
+		// profile falls 8 mm over the 18 mm round it, so the normal leans down by that slope.
+		const ring = 6 * 9;
+		const rise = (0 - 0.008) / (0.06 - 0.042);
+		for (let j = 0; j < 8; j++) {
+			const down = -(mesh.normals[(ring + j) * 3 + 1] as number);
+			expect(down).toBeCloseTo(-rise / Math.hypot(1, rise), 3);
+		}
+	});
+
+	it("gives the nearest level's stalks the faces the shape names, and the farther levels four", () => {
+		const lathe = (ACORN.shape as { lathe: readonly [number, number][] }).lathe;
+		const shape = { lathe, sides: 24, stalk: 0.05 };
+		const named: ExtraSpec = { ...ACORN, share: 1, shape: { ...shape, stalkSides: 8 } };
+		const input = dressed(oakRecord({ extras: [named] }), 'summer');
+		const vertices = (extra: ExtraSpec, level: 0 | 1) => {
+			const mesh = extrasMesh(dressed(oakRecord({ extras: [extra] }), 'summer'), level);
+			if (!mesh) throw new Error('no acorns');
+			return mesh.positions.length / 3;
+		};
+		// The sides and the seam round each of the stalk's two rings, then the body's 25 a ring.
+		expect(vertices(named, 0)).toBe(input.rows.count * (2 * 9 + lathe.length * 25));
+		expect(vertices({ ...named, shape }, 0)).toBe(input.rows.count * (2 * 5 + lathe.length * 25));
+		// The farther level draws its stalks with four faces whatever the shape names. A fruit ten
+		// times the size stands out far enough for that level to keep it.
+		const big = lathe.map(([r, h]) => [r * 10, h * 10] as [number, number]);
+		const far = { ...shape, lathe: big };
+		expect(vertices({ ...named, shape: { ...far, stalkSides: 8 } }, 1)).toBe(
+			vertices({ ...named, shape: far }, 1),
+		);
+	});
+
 	it('grows the same extras from the same seed', () => {
 		const a = extrasMesh(dressed(record, 'summer'), 0);
 		const b = extrasMesh(dressed(record, 'summer'), 0);

@@ -85,6 +85,31 @@ function nearBandTriangles(kit: SpeciesKitData, asset: PlantAsset): number {
 	return worst;
 }
 
+/**
+ * Grows a kit's first variant twice and checks that both give the same bytes, and that the kit, the
+ * variant, its near band and its card levels in every season stay within the record's own budget.
+ */
+function growsWithinBudget(kit: SpeciesKitData): void {
+	const options = { seed: 11, variant: 0, near: true };
+	const asset = growPlantNow(kit, options);
+	expect(plantAssetDigest(growPlantNow(kit, options))).toBe(plantAssetDigest(asset));
+	const record = kit.record;
+	const budget = record.lod.budget;
+	expect(kitBytesOf(kit)).toBeLessThanOrEqual(budget.kitBytes[kit.detail]);
+	expect(variantBytesOf(asset)).toBeLessThanOrEqual(budget.variantBytes[kit.detail]);
+	const near = nearBandTriangles(kit, asset);
+	expect(near).toBeLessThanOrEqual(budget.lod0Triangles);
+	expect(near).toBeLessThanOrEqual(NEAR_CAPS.high.triangles);
+	expect(asset.levels[1].triangles).toBeLessThanOrEqual(budget.lod1Triangles);
+	expect(asset.levels[2].triangles).toBeLessThanOrEqual(budget.lod2Triangles);
+	// Every season's extras, such as autumn's fruit, stay within the card levels' caps too.
+	for (const season of record.seasons.deciduous ? (['autumn', 'blossom'] as const) : []) {
+		const seasonal = growPlantNow(kit, { ...options, season });
+		expect(seasonal.levels[1].triangles).toBeLessThanOrEqual(budget.lod1Triangles);
+		expect(seasonal.levels[2].triangles).toBeLessThanOrEqual(budget.lod2Triangles);
+	}
+}
+
 for (const walked of WALKED) {
 	describe(`the species ${walked.folder}`, async () => {
 		const module = await walked.load();
@@ -133,23 +158,8 @@ for (const walked of WALKED) {
 			'grows the same bytes twice, and stays within its own budget',
 			() => {
 				const kit = buildKitNow(module, { placeholders: walked.placeholders });
-				const options = { seed: 11, variant: 0, near: true };
-				const asset = growPlantNow(kit, options);
-				expect(plantAssetDigest(growPlantNow(kit, options))).toBe(plantAssetDigest(asset));
+				growsWithinBudget(kit);
 				const budget = record.lod.budget;
-				expect(kitBytesOf(kit)).toBeLessThanOrEqual(budget.kitBytes[kit.detail]);
-				expect(variantBytesOf(asset)).toBeLessThanOrEqual(budget.variantBytes[kit.detail]);
-				const near = nearBandTriangles(kit, asset);
-				expect(near).toBeLessThanOrEqual(budget.lod0Triangles);
-				expect(near).toBeLessThanOrEqual(NEAR_CAPS.high.triangles);
-				expect(asset.levels[1].triangles).toBeLessThanOrEqual(budget.lod1Triangles);
-				expect(asset.levels[2].triangles).toBeLessThanOrEqual(budget.lod2Triangles);
-				// Every season's extras, such as autumn's fruit, stay within the card levels' caps too.
-				for (const season of record.seasons.deciduous ? (['autumn', 'blossom'] as const) : []) {
-					const seasonal = growPlantNow(kit, { ...options, season });
-					expect(seasonal.levels[1].triangles).toBeLessThanOrEqual(budget.lod1Triangles);
-					expect(seasonal.levels[2].triangles).toBeLessThanOrEqual(budget.lod2Triangles);
-				}
 				const outputs = module.textures.manifest.outputs;
 				const half = outputs
 					.filter((o) => o.file.includes('-half'))
@@ -162,5 +172,15 @@ for (const walked of WALKED) {
 			},
 			scaledBudget(60_000),
 		);
+
+		// Each of the species' other forms grows from its own kit within the species' own budget.
+		for (const form of Object.keys(record.forms ?? {}))
+			it(
+				`grows its ${form} form the same twice, within the species' own budget`,
+				() => {
+					growsWithinBudget(buildKitNow(module, { placeholders: walked.placeholders, form }));
+				},
+				scaledBudget(60_000),
+			);
 	});
 }

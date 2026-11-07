@@ -50,7 +50,7 @@ export function hashAt(seed: number, a = 0, b = 0, c = 0, d = 0): number {
  * @category api/vegetation
  */
 export function unitAt(seed: number, a = 0, b = 0, c = 0, d = 0): number {
-	return (hashAt(seed, a, b, c, d) >>> 8) * 2 ** -24;
+	return (hashAt(seed, a, b, c, d) >>> 8) / 16777216;
 }
 
 /**

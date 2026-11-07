@@ -3,8 +3,16 @@
 // the envelope a self-organizing plant needs, shoot classes whose shares add up, the detail levels
 // and the budget under the owner's caps). Each grower may hold its model's finer rules beside it.
 import { capProblems } from './caps';
-import type { Envelope, GrowthModel, ShootSpec, Species } from './record';
-import type { Curve, Spread } from './types';
+import { FORM_FIELDS, formRecord } from './forms';
+import type { BaseSpec, Envelope, GrowthModel, ShootSpec, Species } from './record';
+import {
+	BEND_PIECE_LEAST,
+	type Curve,
+	LATERAL_GAP_MOST,
+	SIDE_SHOOTS_MOST,
+	type Spread,
+	spreadMean,
+} from './types';
 
 const MODELS: readonly GrowthModel[] = [
 	'self-organizing',
@@ -89,9 +97,58 @@ function envelopeProblems(envelope: Envelope, out: string[]): void {
 	});
 }
 
+/** A non-negative number's problem: metres, shares and amounts that cannot fall below zero. */
+function notNegative(value: number, path: string, out: string[]): void {
+	if (!(value >= 0)) out.push(`${path} is ${value}; it cannot be below 0`);
+}
+
+/** The stem base's problems: amounts and depths from 0, heights of fade above 0. */
+function baseProblems(base: BaseSpec, out: string[]): void {
+	notNegative(base.flare.amount, 'base.flare.amount', out);
+	notNegative(base.flare.height, 'base.flare.height', out);
+	if (base.taper) {
+		notNegative(base.taper.amount, 'base.taper.amount', out);
+		if (!(base.taper.height > 0))
+			out.push(`base.taper.height is ${base.taper.height}; it must be above 0`);
+	}
+	const buttress = base.buttress;
+	if (buttress) {
+		spreadProblems(buttress.lobes, 'base.buttress.lobes', false, out);
+		notNegative(buttress.amount, 'base.buttress.amount', out);
+		if (!(buttress.sharpness > 0))
+			out.push(`base.buttress.sharpness is ${buttress.sharpness}; it must be above 0`);
+		if (!(buttress.height > 0))
+			out.push(`base.buttress.height is ${buttress.height}; it is metres and must be above 0`);
+		shareProblem(buttress.round, 'base.buttress.round', out);
+	}
+	const roots = base.roots;
+	if (roots) {
+		spreadProblems(roots.count, 'base.roots.count', false, out);
+		spreadProblems(roots.length, 'base.roots.length', true, out);
+		notNegative(roots.radius, 'base.roots.radius', out);
+		notNegative(roots.dive, 'base.roots.dive', out);
+		if (roots.ridge !== undefined && !(roots.ridge >= 0 && roots.ridge <= 1))
+			out.push(`base.roots.ridge is ${roots.ridge}; it is a share from 0 to 1`);
+	}
+	const flutes = base.flutes;
+	if (flutes) {
+		spreadProblems(flutes.count, 'base.flutes.count', false, out);
+		notNegative(flutes.depth, 'base.flutes.depth', out);
+		if (!(flutes.height > 0))
+			out.push(`base.flutes.height is ${flutes.height}; it is metres and must be above 0`);
+	}
+}
+
 function shootProblems(shoots: ShootSpec, out: string[]): void {
 	wholeProblem(shoots.prototypes, 'shoots.prototypes', 4, 12, out);
 	wholeProblem(shoots.orders, 'shoots.orders', 1, 3, out);
+	const cluster = shoots.bud.cluster;
+	if (cluster && !(cluster.step >= 0 && cluster.step <= 1))
+		out.push(
+			`shoots.bud.cluster.step is ${cluster.step}; it is a share of a bud's length from 0 to 1`,
+		);
+	if (cluster && !(cluster.lean >= 0 && cluster.lean <= 80))
+		out.push(`shoots.bud.cluster.lean is ${cluster.lean}; it is degrees from 0 to 80`);
 	if (shoots.leafYears > shoots.years)
 		out.push(`shoots.leafYears is ${shoots.leafYears}, more than shoots.years (${shoots.years})`);
 	if (shoots.classes.length === 0) out.push('shoots.classes is empty; give at least one class');
@@ -108,13 +165,72 @@ function shootProblems(shoots: ShootSpec, out: string[]): void {
 		curveProblems(shoot.leafScale, `${path}.leafScale`, out);
 		curveProblems(shoot.leafAngle, `${path}.leafAngle`, out);
 		if (shoot.years !== undefined) wholeProblem(shoot.years, `${path}.years`, 1, 3, out);
+		if (shoot.laterals !== undefined) {
+			spreadProblems(shoot.laterals, `${path}.laterals`, false, out);
+			const mean = spreadMean(shoot.laterals);
+			const half = typeof shoot.laterals === 'number' ? 0 : shoot.laterals.spread;
+			if (mean - half < 0 || mean + half > SIDE_SHOOTS_MOST)
+				out.push(
+					`${path}.laterals draws ${mean - half} to ${mean + half}; a joint carries 0 to ${SIDE_SHOOTS_MOST} side shoots`,
+				);
+		}
+		if (
+			shoot.lateralGap !== undefined &&
+			!(shoot.lateralGap >= 0 && shoot.lateralGap <= LATERAL_GAP_MOST)
+		)
+			out.push(
+				`${path}.lateralGap is ${shoot.lateralGap}; it is a share of a unit from 0 to ${LATERAL_GAP_MOST}`,
+			);
+		if (shoot.lateralMost !== undefined && !(shoot.lateralMost >= 0 && shoot.lateralMost <= 180))
+			out.push(`${path}.lateralMost is ${shoot.lateralMost}; it is degrees from 0 to 180`);
+		if (shoot.leafYears !== undefined)
+			wholeProblem(shoot.leafYears, `${path}.leafYears`, 0, shoot.years ?? shoots.years, out);
+		if (shoot.bend !== undefined) {
+			if (!(shoot.bend.length >= BEND_PIECE_LEAST))
+				out.push(
+					`${path}.bend.length is ${shoot.bend.length}; a piece is at least ${BEND_PIECE_LEAST} m`,
+				);
+			if (!(shoot.bend.angle >= 0 && shoot.bend.angle <= 60))
+				out.push(`${path}.bend.angle is ${shoot.bend.angle}; it is degrees from 0 to 60`);
+		}
 	});
 	if (shoots.classes.length > 0 && Math.abs(share - 1) > 0.01)
 		out.push(`shoots.classes' shares add up to ${share}; they must add up to 1`);
+	const crowns = new Set(shoots.classes.map((shoot) => shoot.name));
+	for (const cutting of shoots.cuttingClasses ?? [])
+		if (crowns.has(cutting.name))
+			out.push(`shoots.cuttingClasses names '${cutting.name}', which is also a crown class`);
 	curveProblems(shoots.placement.perMetre, 'shoots.placement.perMetre', out);
 	shareProblem(shoots.placement.shadePrune, 'shoots.placement.shadePrune', out);
+	const tip = shoots.placement.tipPrune;
+	if (tip !== undefined && !(tip >= 0 && tip <= 1))
+		out.push(`shoots.placement.tipPrune is ${tip}; a share lies from 0 to 1`);
+	shareProblem(shoots.placement.skyPrune, 'shoots.placement.skyPrune', out);
+	const layer = shoots.placement.skyPruneLayer;
+	if (layer !== undefined && !(layer >= 0.25 && layer <= 5))
+		out.push(`shoots.placement.skyPruneLayer is ${layer}; it is metres from 0.25 to 5`);
+	const trim = shoots.placement.bareTrim;
+	if (trim !== undefined && !(trim >= 0 && trim <= 0.1))
+		out.push(
+			`shoots.placement.bareTrim is ${trim}; it is a radius in metres from 0 to 0.1, a twig's wood`,
+		);
+	const lift = shoots.placement.lift;
+	if (lift !== undefined && !(lift >= -30 && lift <= 30))
+		out.push(`shoots.placement.lift is ${lift}; it is degrees from -30 to 30`);
 	shareProblem(shoots.placement.skyward, 'shoots.placement.skyward', out);
 	spreadProblems(shoots.placement.scale, 'shoots.placement.scale', true, out);
+	const clump = shoots.placement.clump;
+	for (const [name, scale] of [
+		['clump', clump],
+		['clump.fine', clump?.fine],
+	] as const) {
+		if (!scale) continue;
+		if (!(scale.spacing > 0))
+			out.push(
+				`shoots.placement.${name}.spacing is ${scale.spacing}; it is metres and must be above 0`,
+			);
+		shareProblem(scale.depth, `shoots.placement.${name}.depth`, out);
+	}
 }
 
 function growthProblems(record: Species, out: string[]): void {
@@ -127,6 +243,21 @@ function growthProblems(record: Species, out: string[]): void {
 		if (!record.envelope) out.push('a self-organizing species needs an envelope');
 		if (growth.years < 1) out.push(`growth.years is ${growth.years}; grow at least one cycle`);
 		wholeProblem(growth.macroOrders, 'growth.macroOrders', 2, 4, out);
+		if (growth.branching !== undefined && !(growth.branching >= 0))
+			out.push(
+				`growth.branching is ${growth.branching}; it multiplies a chance and cannot be below 0`,
+			);
+		if (growth.clearance !== undefined && !(growth.clearance >= 0 && growth.clearance <= 2))
+			out.push(`growth.clearance is ${growth.clearance}; it is metres of clear air from 0 to 2`);
+		if (growth.turning !== undefined && !(growth.turning >= 0 && growth.turning <= 90))
+			out.push(`growth.turning is ${growth.turning}; it is degrees from 0 to 90`);
+		const thickness = growth.clearanceThickness;
+		if (thickness !== undefined && !(thickness >= 0 && thickness <= 1))
+			out.push(`growth.clearanceThickness is ${thickness}; it is a share from 0 to 1`);
+		if (growth.floor !== undefined && !(growth.floor >= 0 && growth.floor <= 0.5))
+			out.push(
+				`growth.floor is ${growth.floor}; it is a share of the height from 0 to 0.5, a crown's underside`,
+			);
 		wholeProblem(growth.light.cells, 'growth.light.cells', 8, 96, out);
 		if (growth.internode.length <= 0)
 			out.push(`growth.internode.length is ${growth.internode.length}; it must be above 0`);
@@ -134,14 +265,30 @@ function growthProblems(record: Species, out: string[]): void {
 		shareProblem(growth.buds.extinction[0], 'growth.buds.extinction[0]', out);
 		shareProblem(growth.buds.extinction[1], 'growth.buds.extinction[1]', out);
 		curveProblems(growth.buds.angle, 'growth.buds.angle', out);
+		if (growth.buds.sideOrders !== undefined)
+			wholeProblem(growth.buds.sideOrders, 'growth.buds.sideOrders', 1, growth.macroOrders, out);
 		curveProblems(growth.apical.control, 'growth.apical.control', out);
 		curveProblems(growth.tropism.photo, 'growth.tropism.photo', out);
 		curveProblems(growth.tropism.gravi, 'growth.tropism.gravi', out);
 		shareProblem(growth.shedding.cleanBole, 'growth.shedding.cleanBole', out);
 		shareProblem(growth.shedding.stubs, 'growth.shedding.stubs', out);
+		shareProblem(growth.shedding.underCrown, 'growth.shedding.underCrown', out);
 		spreadProblems(growth.stems.count, 'growth.stems.count', true, out);
+		notNegative(growth.bending.strength, 'growth.bending.strength', out);
+		shareProblem(growth.bending.upturn, 'growth.bending.upturn', out);
+		const plumb = growth.divide?.plumb;
+		if (plumb !== undefined && !(plumb >= 0 && plumb <= 90))
+			out.push(`growth.divide.plumb is ${plumb}; it is degrees from 0 to 90`);
+		const girth = growth.bending.girth;
+		if (girth !== undefined && !(girth > 0))
+			out.push(`growth.bending.girth is ${girth}; it is metres and must be above 0`);
 		if (growth.pipe.exponent <= 0 || growth.pipe.tipRadius <= 0)
 			out.push('growth.pipe needs an exponent and a tip radius above 0');
+		const leader = growth.pipe.leader;
+		if (leader !== undefined && !(leader >= 0.5 && leader <= 1))
+			out.push(
+				`growth.pipe.leader is ${leader}; a stem keeps a share of its girth from 0.5 to 1 from node to node`,
+			);
 	}
 	if (growth.model === 'rosette') {
 		if (record.foliage.kind !== 'thick') out.push("a rosette's foliage is 'thick'");
@@ -204,9 +351,45 @@ function growthProblems(record: Species, out: string[]): void {
 	}
 }
 
-/** Cutting hints that name a shoot class the record does not grow, or cut a length of no wood. */
+/** An extra's band colour and roughness, which lie from 0 to 1, and its stalks' faces. */
+function extraProblems(record: Species, out: string[]): void {
+	record.extras?.forEach((extra, i) => {
+		const path = `extras[${i}]`;
+		if ('lathe' in extra.shape && extra.shape.stalkSides !== undefined)
+			wholeProblem(extra.shape.stalkSides, `${path}.shape.stalkSides`, 4, 16, out);
+		const crevice = 'lathe' in extra.shape ? extra.shape.scaleShade : undefined;
+		if (crevice !== undefined && !(crevice >= 0 && crevice <= 1))
+			out.push(`${path}.shape.scaleShade is ${crevice}; a share lies from 0 to 1`);
+		const jitter = 'lathe' in extra.shape ? extra.shape.scaleJitter : undefined;
+		if (jitter !== undefined && !(jitter >= 0 && jitter <= 1))
+			out.push(`${path}.shape.scaleJitter is ${jitter}; a share lies from 0 to 1`);
+		extra.bandColour?.forEach((channel, k) => {
+			shareProblem(channel, `${path}.bandColour[${k}]`, out);
+		});
+		extra.roughness?.forEach((value, k) => {
+			shareProblem(value, `${path}.roughness[${k}]`, out);
+		});
+		extra.stalkColour?.forEach((channel, k) => {
+			shareProblem(channel, `${path}.stalkColour[${k}]`, out);
+		});
+		if (extra.bandColour && !('lathe' in extra.shape && extra.shape.scaled))
+			out.push(`${path}.bandColour needs a lathe whose 'scaled' names the band it colours`);
+	});
+}
+
+/**
+ * Cutting hints that name a shoot class the record does not grow, cut a length of no wood, or press
+ * a leaf that is not a blade.
+ */
 function cuttingProblems(record: Species, out: string[]): void {
-	const names = new Set(record.shoots?.classes.map((shoot) => shoot.name));
+	if (record.cuttings?.leaf?.pressed && record.foliage.kind !== 'blade')
+		out.push(
+			`cuttings.leaf.pressed lays a blade leaf flat, and the foliage is '${record.foliage.kind}'`,
+		);
+	const names = new Set([
+		...(record.shoots?.classes ?? []).map((shoot) => shoot.name),
+		...(record.shoots?.cuttingClasses ?? []).map((shoot) => shoot.name),
+	]);
 	for (const part of ['branch', 'subbranch', 'cluster'] as const) {
 		const hint = record.cuttings?.[part];
 		if (!hint) continue;
@@ -219,10 +402,45 @@ function cuttingProblems(record: Species, out: string[]): void {
 }
 
 /**
- * Every problem with a species record, one line each, with what to change.
+ * The problems of each of a record's other forms: a name that is not a kebab-case word, a field that
+ * a form may not change, a change of the growth model or of the kind of foliage, and every problem of
+ * the record that the form grows from.
+ */
+function formProblems(record: Species, out: string[]): void {
+	for (const [name, form] of Object.entries(record.forms ?? {})) {
+		const path = `forms.${name}`;
+		if (!KEBAB.test(name))
+			out.push(`${path}: a form's name is a kebab-case word, such as young or woodland`);
+		for (const key of Object.keys(form))
+			if (!Object.hasOwn(FORM_FIELDS, key))
+				out.push(`${path}.${key} is not a field a form changes; a form keeps the species' own`);
+		const grown = formRecord(record, name);
+		if (grown.growth?.model !== record.growth.model)
+			out.push(
+				`${path}.growth.model is '${grown.growth?.model}'; a form grows by its species' model, '${record.growth.model}'`,
+			);
+		if (grown.foliage?.kind !== record.foliage.kind)
+			out.push(
+				`${path}.foliage.kind is '${grown.foliage?.kind}'; a form keeps its species' kind of foliage, '${record.foliage.kind}'`,
+			);
+		try {
+			for (const problem of speciesProblems(grown)) out.push(`${path}: ${problem}`);
+		} catch (error) {
+			// A form given as plain data can drop a field that every record needs, which the type of a
+			// form refuses; the check names the form rather than failing on the record it makes.
+			out.push(
+				`${path} makes a record that cannot be checked (${(error as Error).message}); a form drops only the fields a record may leave out`,
+			);
+		}
+	}
+}
+
+/**
+ * Every problem with a species record, one line each, with what to change. Each of the record's
+ * other forms is checked as the record it grows from, and its problems name the form.
  *
  * @param record The species record.
- * @returns The problems, empty when the record can grow.
+ * @returns The problems, empty when the record and each of its forms can grow.
  * @category api/vegetation
  */
 export function speciesProblems(record: Species): string[] {
@@ -240,8 +458,10 @@ export function speciesProblems(record: Species): string[] {
 	wholeProblem(record.seedSalt, 'seedSalt', 0, 0xffffffff, out);
 	growthProblems(record, out);
 	if (record.envelope) envelopeProblems(record.envelope, out);
+	if (record.base) baseProblems(record.base, out);
 	if (record.shoots) shootProblems(record.shoots, out);
 	cuttingProblems(record, out);
+	extraProblems(record, out);
 	if (record.lod.nearFoliage === 'instanced' && !record.shoots)
 		out.push("lod.nearFoliage is 'instanced', which needs shoots; give shoots or use 'merged'");
 	if (typeof record.textures !== 'string') {
@@ -256,8 +476,16 @@ export function speciesProblems(record: Species): string[] {
 		if (zone.from >= zone.to) out.push(`bark.zones[${i}] runs from ${zone.from} to ${zone.to}`);
 		if (!Number.isInteger(zone.layer) || zone.layer < 0)
 			out.push(`bark.zones[${i}].layer is ${zone.layer}; a layer is a whole number from 0`);
+		zone.tint?.forEach((channel, c) => {
+			notNegative(channel, `bark.zones[${i}].tint[${c}]`, out);
+		});
 	});
 	if (record.bark) curveProblems(record.bark.girthScale, 'bark.girthScale', out);
+	const fork = record.bark?.fork;
+	if (fork?.bend !== undefined && !(fork.bend > 0))
+		out.push(`bark.fork.bend is ${fork.bend}; it must be above 0`);
+	if (fork?.knot !== undefined && !(fork.knot >= 0 && fork.knot <= 1))
+		out.push(`bark.fork.knot is ${fork.knot}; it is a share from 0 to 1`);
 	curveProblems(record.wind.stiffness, 'wind.stiffness', out);
 	const lod = record.lod;
 	lod.switchPixels.forEach((pixels, i) => {
@@ -265,12 +493,15 @@ export function speciesProblems(record: Species): string[] {
 	});
 	if (lod.woodOrders[1] > lod.woodOrders[0])
 		out.push('lod.woodOrders keeps more orders at the second card level than at the first');
+	if (lod.cardStalk !== undefined && !(lod.cardStalk >= 0 && lod.cardStalk <= 8))
+		out.push(`lod.cardStalk is ${lod.cardStalk}; it is pixels from 0 to 8`);
 	if (lod.impostor.views < 2 || lod.impostor.texels < 8)
 		out.push('lod.impostor needs at least 2 views across and 8 texels a view');
 	for (const [key, value] of Object.entries(lod.budget))
 		if (value < 0) out.push(`lod.budget.${key} is ${value}; a budget is not negative`);
 	shareProblem(record.roundBand, 'roundBand', out);
 	out.push(...capProblems(record));
+	formProblems(record, out);
 	return out;
 }
 

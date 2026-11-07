@@ -54,7 +54,8 @@ const turn = (covered: number): TurnResult => ({
 	renders: 193,
 	frameStep: 360 / 193,
 	renderStep: 360 / 193,
-	alignment: { start: 0, direction: 1, meanIou: 0.7 },
+	alignment: { start: 0, direction: 1, coarseIou: 0.7 },
+	meanShapeIou: 0.6,
 	covered,
 	pairs: [],
 	spread: {

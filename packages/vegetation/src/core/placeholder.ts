@@ -5,6 +5,7 @@
 // impostor of flat cells. They read only the record's numbers and the integer hash, and use only the
 // core's own trigonometry, so their bytes are the same on every engine. No shipped species draws
 // them: a run without `placeholders` throws where a stage is missing.
+
 import type {
 	CardCell,
 	MeshArrays,
@@ -13,10 +14,12 @@ import type {
 	PlantPart,
 	PrototypeArrays,
 	QuantisedArrays,
+	ShootPrototype,
 	ShootRows,
 	SpeciesKitData,
 	WindTable,
 } from '../asset';
+import { crownPrototypes } from '../asset';
 import type { UncardedPrototype } from '../leaf/shoot';
 import { REFERENCE_VIEW } from '../lod/levels';
 import { TEXTURE_UV_STEPS } from '../lod/quantise';
@@ -610,7 +613,8 @@ export function emptyRows(): ShootRows {
 export function placeholderRows(input: DressInput): ShootRows {
 	const { record, seed, variant, skeleton, kit } = input;
 	const buds = skeleton.buds;
-	const count = kit.prototypes.length > 0 ? buds.count : 0;
+	const crowns = crownPrototypes(kit.prototypes);
+	const count = crowns.length > 0 ? buds.count : 0;
 	const rows = {
 		count,
 		prototype: new Uint8Array(count),
@@ -625,8 +629,8 @@ export function placeholderRows(input: DressInput): ShootRows {
 	};
 	const scale = record.shoots?.placement.scale ?? 1;
 	for (let b = 0; b < count; b++) {
-		rows.prototype[b] =
-			hashAt(seed, record.seedSalt, variant, Purpose.Prototype, b) % kit.prototypes.length;
+		const draw = hashAt(seed, record.seedSalt, variant, Purpose.Prototype, b) % crowns.length;
+		rows.prototype[b] = (crowns[draw] as ShootPrototype).index;
 		rows.position.set(buds.position.subarray(b * 3, b * 3 + 3), b * 3);
 		rows.rotation.set(buds.frame.subarray(b * 4, b * 4 + 4), b * 4);
 		rows.scale[b] = spreadAt(scale, unitAt(seed, record.seedSalt, variant, Purpose.Scale, b));

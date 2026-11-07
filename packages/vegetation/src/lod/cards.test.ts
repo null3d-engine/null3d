@@ -5,10 +5,13 @@ import { describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { SpeciesKitData } from '../asset';
 import { placeholderSkeleton } from '../core/placeholder';
-import type { TextureManifest } from '../core/textures';
+import { standInSpecies } from '../core/stand-in';
+import { STAND_IN_BARK, type TextureManifest } from '../core/textures';
+import type { Rgb } from '../core/types';
 import { placeShoots } from '../leaf/instancer';
 import { OAK_MANIFEST, oakRecord, testKit } from '../leaf/oak.test-support';
-import { bakeCards } from './card-bake';
+import { record as oak } from '../species/pedunculate-oak/record';
+import { bakeCards, paletteOf } from './card-bake';
 import { cardKeep, cardMesh } from './cards';
 
 /** sRGB byte to linear. */
@@ -136,13 +139,40 @@ describe('the card bake', () => {
 			({ pixels, size } = mip(pixels, size));
 			const here = measure(pixels);
 			expect(Math.abs(here.coverage - top.coverage)).toBeLessThan(0.01);
-			// Each channel within 3 per cent of the colour's brightest channel, which is what the eye reads.
+			// Each channel within 3 per cent of the colour's brightest channel, which is what the eye
+			// reads, and one more step of the byte the atlas stores it in: a level cannot hold a colour
+			// finer than that, so a bound of three alone fails on quantisation rather than on a mip.
 			const bright = Math.max(...top.colour);
 			for (let c = 0; c < 3; c++)
 				expect(
 					Math.abs((here.colour[c] as number) - (top.colour[c] as number)) / bright,
-				).toBeLessThan(0.03);
+				).toBeLessThan(0.03 + 1 / 255);
 		}
+	});
+
+	it("bakes stems in the young bark's mean, else in a stand-in's own colour", () => {
+		const tint = oak.bark?.zones[0]?.tint as readonly [number, number, number];
+		expect(tint).toBeDefined();
+		const young = { tile: [0.2, 0.2] as const, mean: [0.3, 0.25, 0.2] as const };
+		const layer = { name: 'trunk', tile: [0.5, 0.5] as const, mean: [0.25, 0.22, 0.18] as const };
+		const barked = {
+			...OAK_MANIFEST,
+			bark: { size: 1024, layers: [{ ...layer, height: { offset: 0, depth: 0 } }], young },
+		} as TextureManifest;
+		expect(paletteOf(oak, barked).stem).toEqual([0.3, 0.25, 0.2]);
+		// A stand-in species measures no bark and gives its colour in its tint, which its far cards
+		// keep; with neither a measured bark nor a tint, the stand-in colour stands.
+		const bare = { ...OAK_MANIFEST, bark: undefined } as TextureManifest;
+		const standIn = standInSpecies('bark-colour-test').record;
+		expect(paletteOf(standIn, bare).stem).toEqual(standIn.bark?.zones[0]?.tint as Rgb);
+		const plain = {
+			...oak,
+			bark: {
+				...(oak.bark as NonNullable<typeof oak.bark>),
+				zones: [{ layer: 0, by: 'height' as const, from: 0, to: 40, blend: 0 }],
+			},
+		};
+		expect(paletteOf(plain, bare).stem).toEqual([...STAND_IN_BARK]);
 	});
 });
 
@@ -171,6 +201,39 @@ describe('the card levels', () => {
 			expect(first.uvs[i]).toBeGreaterThanOrEqual(0);
 			expect(first.uvs[i]).toBeLessThanOrEqual(1);
 		}
+	});
+
+	it("draws each card's stalk only where the record gives a least width", () => {
+		const plain = cardMesh(mesh, 1);
+		expect(plain.indices.length / 3).toBe(rows.count * 6);
+		const stalked = cardMesh(
+			{ ...mesh, record: { ...record, lod: { ...record.lod, cardStalk: 1 } } },
+			1,
+		);
+		let stretched = 0;
+		for (let r = 0; r < rows.count; r++) {
+			const bx = (rows.back?.[r * 3] as number) ?? 0;
+			const by = (rows.back?.[r * 3 + 1] as number) ?? 0;
+			const bz = (rows.back?.[r * 3 + 2] as number) ?? 0;
+			if (Math.hypot(bx, by, bz) > 1e-6) stretched++;
+		}
+		expect(stretched).toBeGreaterThan(0);
+		// Each stalk is one quad from either side, so it shows whichever way the view turns it.
+		expect(stalked.indices.length / 3).toBe(rows.count * 6 + stretched * 4);
+		let stalks = 0;
+		for (let v = 0; v < stalked.uvs1.length / 2; v++) {
+			if (Math.abs((stalked.uvs1[v * 2 + 1] as number) - 0.75) >= 1e-6) continue;
+			stalks++;
+			expect([0, 1]).toContain(stalked.uvs[v * 2] as number);
+			expect(
+				Math.hypot(
+					stalked.normals[v * 3] as number,
+					stalked.normals[v * 3 + 1] as number,
+					stalked.normals[v * 3 + 2] as number,
+				),
+			).toBeCloseTo(1, 5);
+		}
+		expect(stalks).toBe(stretched * 4);
 	});
 
 	it('keeps every second card in the thinned level, each grown by the square root of two', () => {

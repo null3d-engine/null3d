@@ -23,8 +23,10 @@ import {
 	quatRotate,
 	type Vector3,
 } from './core/math';
-import type { CutFromPlant, ShootClass, Species } from './core/record';
+import type { CutFromPlant, LeafShape, ShootClass, Species } from './core/record';
 import { DETAILS, type Detail, type Vec3 } from './core/types';
+import { foliage } from './leaf/kinds';
+import { SURFACE_STEM } from './leaf/writer';
 
 /**
  * The piece a cutting takes.
@@ -59,6 +61,11 @@ export interface CuttingOptions {
 	readonly orient?: 'upright' | 'as-grown';
 	/** For 'leaf': the face toward +Z. */
 	readonly face?: 'upper' | 'lower';
+	/**
+	 * For 'leaf': whether the leaf lies pressed flat, as a scan lays it, or keeps the shape it has on
+	 * the plant, as a leaf held in the hand does. The record's cutting hint by default.
+	 */
+	readonly pressed?: boolean;
 }
 
 /**
@@ -120,6 +127,41 @@ export function cuttingLength(record: Species, cutting: CuttingOptions): number 
 	if (cutting.length !== undefined) return cutting.length;
 	const hint = plantHint(record, cutting.part);
 	return hint?.length ?? CUTTING_LENGTH[cutting.part];
+}
+
+/**
+ * The turn that stands a piece upright on its cut at the origin: the line from the cut to `mean`
+ * onto +Y.
+ */
+function uprightTurn(mean: Readonly<Vector3>): number[] {
+	const q = [0, 0, 0, 1];
+	const along = normalize3([mean[0], mean[1], mean[2]]);
+	const axis = cross3(along, [0, 1, 0], [0, 0, 0]);
+	const sine = length3(axis[0], axis[1], axis[2]);
+	if (sine > 1e-6) quatAxisAngle(normalize3(axis), acos(Math.max(-1, Math.min(1, along[1]))), q);
+	else if (along[1] < 0) quatAxisAngle([1, 0, 0], Math.PI, q);
+	return q;
+}
+
+/**
+ * The turn a shoot cutting stands in: upright on its attach point, the line to the mean of its
+ * stems' vertices onto +Y, as a cut branch stands on the line to its wood's mean; none when the
+ * cutting keeps its pose. The low tier, which every kit holds, gives one turn whatever tier draws
+ * the piece.
+ */
+function shootTurn(prototype: ShootPrototype, cutting: CuttingOptions): number[] {
+	if (cutting.orient === 'as-grown') return [0, 0, 0, 1];
+	const { positions: p, colors } = prototype.tiers[0] as PrototypeArrays;
+	const mean: Vector3 = [0, 0, 0];
+	let count = 0;
+	for (let i = 0; i < p.length; i += 3) {
+		if ((colors[(i / 3) * 4 + 2] as number) !== SURFACE_STEM) continue;
+		mean[0] += p[i] as number;
+		mean[1] += p[i + 1] as number;
+		mean[2] += p[i + 2] as number;
+		count++;
+	}
+	return count > 0 ? uprightTurn(mean) : [0, 0, 0, 1];
 }
 
 /** A node's position as a vector. */
@@ -322,7 +364,7 @@ export function cutBranch(
 	}
 	const cut = junctionOf(skeleton, root);
 	// The turn that stands the piece upright: the cut-to-mean line onto +Y.
-	const q = [0, 0, 0, 1];
+	let q = [0, 0, 0, 1];
 	if (cutting.orient !== 'as-grown') {
 		const mean: Vector3 = [0, 0, 0];
 		let count = 0;
@@ -336,11 +378,7 @@ export function cutBranch(
 				count++;
 			}
 		}
-		const along = normalize3([mean[0] / count, mean[1] / count, mean[2] / count]);
-		const axis = cross3(along, [0, 1, 0], [0, 0, 0]);
-		const sine = length3(axis[0], axis[1], axis[2]);
-		if (sine > 1e-6) quatAxisAngle(normalize3(axis), acos(Math.max(-1, Math.min(1, along[1]))), q);
-		else if (along[1] < 0) quatAxisAngle([1, 0, 0], Math.PI, q);
+		q = uprightTurn([mean[0] / count, mean[1] / count, mean[2] / count]);
 	}
 	const moved: Vector3 = [0, 0, 0];
 	const place = (p: Readonly<Vector3>): Vector3 =>
@@ -584,7 +622,8 @@ export function clusterRank(
 
 /**
  * A 'cluster' cutting from the kit alone: one shoot row of the prototype that `pick` names, standing
- * on its attach point at the origin, and the bounds of its mesh at the tier.
+ * upright on its attach point at the origin unless the cutting keeps its pose, and the bounds of its
+ * mesh at the tier.
  *
  * @param kit The species' kit.
  * @param cutting The piece.
@@ -596,27 +635,39 @@ export function clusterRow(
 	kit: SpeciesKitData,
 	cutting: CuttingOptions,
 	detail: Detail,
+	leafy?: boolean,
 ):
 	| { readonly rows: ShootRows; readonly bounds: { readonly min: Vec3; readonly max: Vec3 } }
 	| undefined {
-	const ranked = clusterRank(kit, cutting.part);
+	const all = clusterRank(kit, cutting.part);
+	// A piece is drawn in the season it is asked for: in a leafless season it takes the shoot's
+	// leafless twin where the kit holds one, as the whole plant's rows do.
+	const wanted = leafy === undefined ? all : all.filter((p) => p.leaves > 0 === leafy);
+	const ranked = wanted.length > 0 ? wanted : all;
 	if (ranked.length === 0) return undefined;
-	const prototype = ranked[(cutting.pick ?? 0) % ranked.length] as ShootPrototype;
+	// The piece's own choice, else its record hint's, so two pieces of one class draw different shoots.
+	const hint = cutting.part === 'leaf' ? undefined : kit.record.cuttings?.[cutting.part];
+	const pick = cutting.pick ?? (hint && 'shoot' in hint ? (hint.pick ?? 0) : 0);
+	const prototype = ranked[pick % ranked.length] as ShootPrototype;
 	const tier = prototype.tiers[heldTier(kit, detail)] as PrototypeArrays;
+	const turn = shootTurn(prototype, cutting);
 	const p = tier.positions;
 	const min = [0, 0, 0];
 	const max = [0, 0, 0];
-	for (let i = 0; i < p.length; i += 3)
+	const turned: Vector3 = [0, 0, 0];
+	for (let i = 0; i < p.length; i += 3) {
+		quatRotate(turn, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], turned);
 		for (let k = 0; k < 3; k++) {
-			min[k] = Math.min(min[k] as number, p[i + k] as number);
-			max[k] = Math.max(max[k] as number, p[i + k] as number);
+			min[k] = Math.min(min[k] as number, turned[k] as number);
+			max[k] = Math.max(max[k] as number, turned[k] as number);
 		}
+	}
 	return {
 		rows: {
 			count: 1,
 			prototype: new Uint8Array([prototype.index]),
 			position: new Float32Array(3),
-			rotation: new Float32Array([0, 0, 0, 1]),
+			rotation: new Float32Array(turn),
 			scale: new Float32Array([1]),
 			record: new Uint16Array(1),
 			phase: new Uint8Array(1),
@@ -631,11 +682,37 @@ export function clusterRow(
 	};
 }
 
+/** A blade leaf's shape pressed flat: no fold, curl, twist or wave, and its stalk straight. */
+function pressedShape(shape: LeafShape): LeafShape {
+	return {
+		...shape,
+		fold: 0,
+		curl: 0,
+		crossCurl: 0,
+		twist: 0,
+		wave: [0, shape.wave[1]],
+		petiole: { ...shape.petiole, droop: 0 },
+	};
+}
+
+/**
+ * The species' leaf meshes for a leaf cutting: the kit's own, or, where the piece or else the
+ * record presses its leaf, the blade built again pressed flat at the kit's tier.
+ */
+function cutLeaves(kit: SpeciesKitData, press?: boolean): readonly PrototypeArrays[] {
+	const record = kit.record;
+	const leaf = record.foliage;
+	if (!(press ?? record.cuttings?.leaf?.pressed) || leaf.kind !== 'blade') return kit.leaves;
+	const pressed: Species = { ...record, foliage: { ...leaf, leaf: pressedShape(leaf.leaf) } };
+	return foliage('blade').leaves(pressed, kit.manifest, kit.detail);
+}
+
 /**
  * The mesh of a 'leaf' or 'cluster' cutting from the kit alone: one leaf in its leaf frame (petiole
- * tip on the origin, midrib up +Y, upper face toward +Z, or the lower face when asked), or one
- * shoot prototype standing on its attach point. Undefined for a cluster of a species without
- * prototypes, which cuts its finest shoots from the plant instead.
+ * tip on the origin, midrib up +Y, upper face toward +Z, or the lower face when asked), pressed
+ * flat where the record says, or one shoot prototype standing upright on its attach point unless
+ * the cutting keeps its pose. Undefined for a cluster of a species without prototypes, which cuts
+ * its finest shoots from the plant instead.
  *
  * @param kit The species' kit.
  * @param cutting The piece.
@@ -651,7 +728,8 @@ export function cutFoliage(
 	const mesh = writer();
 	const origin: Vector3 = [0, 0, 0];
 	if (cutting.part === 'leaf') {
-		const leaf = kit.leaves[(cutting.pick ?? 0) % Math.max(1, kit.leaves.length)];
+		const leaves = cutLeaves(kit, cutting.pressed);
+		const leaf = leaves[(cutting.pick ?? 0) % Math.max(1, leaves.length)];
 		if (!leaf) return finish(mesh);
 		const turn = cutting.face === 'lower' ? [0, 1, 0, 0] : [0, 0, 0, 1];
 		append(mesh, leaf, turn, 0, 1, origin, 0);
@@ -661,6 +739,6 @@ export function cutFoliage(
 	if (ranked.length === 0) return undefined;
 	const prototype = ranked[(cutting.pick ?? 0) % ranked.length] as ShootPrototype;
 	const tier = prototype.tiers[heldTier(kit, detail)] as PrototypeArrays;
-	append(mesh, tier, [0, 0, 0, 1], 0, 1, origin, 0);
+	append(mesh, tier, shootTurn(prototype, cutting), 0, 1, origin, 0);
 	return finish(mesh);
 }

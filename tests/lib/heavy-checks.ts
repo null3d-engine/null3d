@@ -82,6 +82,10 @@ export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	// predates that range and is owed a study; the ceiling is raised to hold the measured figure with
 	// room rather than to let a re-run pass. It is now a bound on unexplained growth: a build that climbs towards it without a named cause is the fault the study exists to find, not a ceiling to move again. The server's own pair of runs is still owed.
 	{ file: 'packages/cli/src/add-on-page-build.test.ts', ceilingMiB: 1280 },
+	// The owner's byte caps over eleven seeds: every variant of each, at every tier, which builds a kit
+	// for each tier and grows a tree for each variant. The unit run sweeps one seed and this one the
+	// rest, and the whole measures 247 MiB and 55 s.
+	{ file: 'packages/vegetation/src/core/caps-heavy.test.ts', ceilingMiB: 512 },
 ];
 
 /**

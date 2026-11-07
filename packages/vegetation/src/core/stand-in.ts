@@ -6,7 +6,7 @@
 import { hashText } from './hash';
 import type { Species, SpeciesEcology, SpeciesModule } from './record';
 import { isSpeciesId, loadSpecies } from './registry';
-import { noTextureFiles } from './textures';
+import { noTextureFiles, STAND_IN_BARK } from './textures';
 import type { Rgb, Spread } from './types';
 
 /**
@@ -35,7 +35,6 @@ export interface StandInOptions {
 
 /** The stand-in's leaf and bark colours when a scene gives none. */
 const LEAF: Rgb = [0.08, 0.16, 0.04];
-const BARK: Rgb = [0.2, 0.16, 0.12];
 
 /**
  * The record of a stand-in species: a small self-organizing broadleaf at the size and in the
@@ -103,7 +102,13 @@ export function standInRecord(id: string, options: StandInOptions = {}): Species
 			leafYears: 1,
 			stem: { radius: [0.003, 0.0015], zigzag: 0 },
 			bud: { length: 0.006, width: 0.003, tipCluster: 1 },
-			placement: { perMetre: 6, shadePrune: 0.1, skyward: 0.3, scale: { mean: 1, spread: 0.15 } },
+			placement: {
+				perMetre: 6,
+				shadePrune: 0.1,
+				tipPrune: 0.05,
+				skyward: 0.3,
+				scale: { mean: 1, spread: 0.15 },
+			},
 		},
 		foliage: {
 			kind: 'blade',
@@ -125,7 +130,9 @@ export function standInRecord(id: string, options: StandInOptions = {}): Species
 			},
 		},
 		bark: {
-			zones: [{ layer: 0, by: 'height', from: 0, to: 100, blend: 0, tint: options.bark ?? BARK }],
+			zones: [
+				{ layer: 0, by: 'height', from: 0, to: 100, blend: 0, tint: options.bark ?? STAND_IN_BARK },
+			],
 			young: 0,
 			youngRadius: 0.02,
 			girthScale: 1,
