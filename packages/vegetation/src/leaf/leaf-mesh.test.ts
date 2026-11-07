@@ -15,8 +15,8 @@ import {
 	maskFromRuns,
 	rasteriseTriangles,
 } from './coverage.test-support';
-import { bladeMesh, leafTriangles } from './leaf-mesh';
-import { OAK_MANIFEST } from './oak.test-support';
+import { bladeMesh, builder, leafTriangles } from './leaf-mesh';
+import { OAK_MANIFEST, oakRecord } from './oak.test-support';
 import { parametricOutline, signedArea, textureOutline } from './outline';
 
 /** The oak leaf's coverage beside its manifest in the textures package. */
@@ -172,6 +172,31 @@ describe('the compound leaf', () => {
 		);
 		expect(new Set(places.map((p) => p.at)).size).toBe(1);
 		expect(places[3]?.scale).toBe(Math.max(...places.map((p) => p.scale)));
+	});
+
+	it('cuts its leaflets coarser than the leaf, one tier a step unless the record asks otherwise', () => {
+		const leaf = (leafletStep?: number) => ({
+			kind: 'blade' as const,
+			leaf: { ...FLAT, length: { mean: 0.05, spread: 0 } },
+			compound: {
+				kind: 'pinnate' as const,
+				leaflets: { mean: 9, spread: 0 },
+				rachis: 3,
+				terminal: true,
+				...(leafletStep === undefined ? {} : { leafletStep }),
+			},
+		});
+		const vertices = (leafletStep?: number): number => {
+			const record = oakRecord({ foliage: leaf(leafletStep) });
+			return builder.leaves(record, OAK_MANIFEST, 'ultra')[0]?.positions.length ?? 0;
+		};
+		const finest = vertices(0);
+		const one = vertices(1);
+		const two = vertices(2);
+		expect(one).toBeLessThan(finest);
+		expect(two).toBeLessThan(one);
+		// A record that names no step cuts its leaflets one tier below its own leaf.
+		expect(vertices()).toBe(one);
 	});
 
 	it('builds one mesh with every leaflet', () => {
