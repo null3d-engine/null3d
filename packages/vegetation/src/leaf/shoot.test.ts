@@ -1,8 +1,8 @@
 // The shoot prototypes and their rows: each phyllotaxis kind measured by the angles between its
-// leaves, leaves at the record's angle from the stem and turned toward the sky, every tier the same
-// shoot, shade inside the shoot, and rows on the bud sites that turn toward the sky, keep the
-// record's density and grow the same bytes from the same seed; the crown-light prune, the lift and
-// the bare trim.
+// leaves, a crowded tip standing round its stem or as one fan, leaves at the record's angle from the
+// stem and turned toward the sky, every tier the same shoot, shade inside the shoot, and rows on the
+// bud sites that turn toward the sky, keep the record's density and grow the same bytes from the same
+// seed; the crown-light prune, the lift and the bare trim.
 import { describe, expect, it } from 'bun:test';
 import {
 	AXIS_LIMB,
@@ -155,6 +155,49 @@ describe('the phyllotaxis of a shoot, measured by angle', () => {
 		const nodes = azimuthsByNode(straight({ kind: 'fascicle', needles: 2 }));
 		for (let k = 1; k < nodes.length; k++)
 			expect(near(step(nodes[k - 1]?.[0] as number, nodes[k]?.[0] as number), 137.5)).toBe(true);
+	});
+
+	it('stands a crowded tip round its stem, or as one fan when the record asks', () => {
+		// A tip rosette, so the leaves crowd: an even spacing would not.
+		const rosette = [
+			[0, 20],
+			[0.15, 0.6],
+			[1, 0.3],
+		] as const;
+		const tip = (arrangement?: 'round' | 'fan'): Species => {
+			const record = straight({ kind: 'spiral', divergence: 144 });
+			const shoots = record.shoots as ShootSpec;
+			return {
+				...record,
+				shoots: {
+					...shoots,
+					placement: {
+						...shoots.placement,
+						skyward: 0.65,
+						...(arrangement ? { rosette: arrangement } : {}),
+					},
+					classes: shoots.classes.map((c) => ({ ...c, internode: rosette as never })),
+				},
+			};
+		};
+		// How far the crowded leaves lean out of the plane of their stem and its side: a leaf that
+		// lies in that plane reads 0, and one standing over it reads 1.
+		const lean = (record: Species): number => {
+			const crowded = planShoot(record, 0, 1).leaves.filter((leaf) => leaf.crowded > 0.4);
+			expect(crowded.length).toBeGreaterThan(2);
+			const sum = crowded.reduce(
+				(total, leaf) =>
+					total +
+					Math.abs(
+						leaf.direction[0] * leaf.sky[0] +
+							leaf.direction[1] * leaf.sky[1] +
+							leaf.direction[2] * leaf.sky[2],
+					),
+				0,
+			);
+			return sum / crowded.length;
+		};
+		expect(lean(tip('fan'))).toBeLessThan(lean(tip()) * 0.6);
 	});
 
 	it('angles each leaf from its stem by the class curve', () => {

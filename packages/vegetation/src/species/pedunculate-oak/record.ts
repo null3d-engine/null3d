@@ -88,6 +88,9 @@ export const record: Species = {
 		bending: { strength: 0.5, upturn: 0.2, girth: 3.5 },
 		forkRule: true,
 		kinks: true,
+		// Stills 02 and 18: the foliage meets the wood at every twig. A finer tip leaves leaf groups
+		// hanging off the crown as pieces of their own, since a twig under the far view's pixel draws
+		// nothing for them to stand on.
 		pipe: { exponent: 2.3, tipRadius: 0.012 },
 	},
 	envelope,
@@ -143,6 +146,8 @@ export const record: Species = {
 				// The winter cut branch's twigs run stiff and angular between their nodes, not as one rod,
 				// kinking every 6 cm or so as its reference's twigs do.
 				bend: { length: 0.06, angle: 34 },
+				// Stills 21 and 22: every blade at the record's own leaf, none shrunk, so the close views'
+				// rosettes read as the photographs' few large blades.
 				leafScale: [
 					[0, 1],
 					[1, 1],
@@ -229,6 +234,8 @@ export const record: Species = {
 			// rather than hanging under them.
 			lift: 15,
 			skyward: 0.65,
+			// Stills 11, 21 and 23: a rosette stands as one flat face of blades, as the photographs show
+			// it, rather than evenly round its twig. The close views' outlines rise by 0.02 to 0.05.
 			rosette: 'fan',
 			scale: { mean: 1.4, spread: 0.15 },
 		},
