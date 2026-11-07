@@ -93,8 +93,8 @@ export const record: Species = {
 				nodes: { mean: 8, spread: 0.5 },
 				internode: SHOOT,
 				leafScale: [
-					[0, 0.85],
-					[1, 1.05],
+					[0, 1.28],
+					[1, 1.58],
 				],
 				leafAngle: [
 					[0, 150],
@@ -115,8 +115,8 @@ export const record: Species = {
 				internode: SHOOT,
 				stem: { radius: [0.014, 0.008] },
 				leafScale: [
-					[0, 0.8],
-					[1, 1],
+					[0, 1.2],
+					[1, 1.5],
 				],
 				leafAngle: [
 					[0, 120],
@@ -138,8 +138,8 @@ export const record: Species = {
 				stem: { radius: [0.026, 0.012] },
 				lateral: 72,
 				leafScale: [
-					[0, 0.8],
-					[1, 1],
+					[0, 1.2],
+					[1, 1.5],
 				],
 				leafAngle: [
 					[0, 120],
@@ -161,7 +161,7 @@ export const record: Species = {
 				[0.55, 8],
 				[1, 64],
 			],
-			density: 1.3,
+			density: 0.7,
 			shadePrune: 0.1,
 			skyward: 0.0,
 			scale: { mean: 1.3, spread: 0.15 },
@@ -266,17 +266,17 @@ export const record: Species = {
 		cardGrow: 1.25,
 		// A card draws its twig at least two pixels across, so a spray over a fine twig does not
 		// read as a piece in air.
-		cardStalk: 2,
+		cardStalk: 3,
 		switchPixels: [500, 12, 160],
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
 			kitBytes: { low: 2_000_000, medium: 2_900_000, high: 5_300_000, ultra: 9_500_000 },
-			// The densest variant sets each cap: variant 4 measures 16.94, 17.05, 17.26 and 17.61 MB
-			// at the four tiers. Each cap sits just above its figure. The clearance moves the limbs
-			// into fuller crowns, and variant 4 carries the extra foliage.
-			variantBytes: { low: 17_000_000, medium: 17_100_000, high: 17_300_000, ultra: 17_700_000 },
+			// The densest variant sets each cap: variant 4 measures 10.18, 10.29, 10.50 and 10.85 MB
+			// at the four tiers. Each cap sits just above its figure. The crown's foliage stands in
+			// fewer, larger leaves, which carries the cover at fewer triangles.
+			variantBytes: { low: 10_300_000, medium: 10_400_000, high: 10_600_000, ultra: 10_900_000 },
 			lod0Triangles: 2_500_000,
 			lod1Triangles: 150_000,
 			// The second card level measures 33,854 triangles with the clearance; the cap sits just
