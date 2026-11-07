@@ -63,6 +63,28 @@ export type Detail = 'low' | 'medium' | 'high' | 'ultra';
 export const DETAILS: readonly Detail[] = ['low', 'medium', 'high', 'ultra'];
 
 /**
+ * The most side shoots that one joint of a shoot prototype puts out.
+ *
+ * @category api/vegetation
+ */
+export const SIDE_SHOOTS_MOST = 3;
+
+/**
+ * The largest share of a growth unit between one side shoot of a joint and the next, so that the
+ * most side shoots a joint puts out all leave within their own unit.
+ *
+ * @category api/vegetation
+ */
+export const LATERAL_GAP_MOST = 0.45;
+
+/**
+ * The shortest straight piece, in metres, that a bent internode breaks into.
+ *
+ * @category api/vegetation
+ */
+export const BEND_PIECE_LEAST = 0.005;
+
+/**
  * The value of a curve at `t`: linear between its pairs and constant past its ends.
  *
  * @param curve The curve.

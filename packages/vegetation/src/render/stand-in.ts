@@ -15,6 +15,7 @@ import { createImpostors, type ImpostorBatch } from '@null3d/impostors';
 import type { PlantAsset, PlantPart, QuantisedArrays, SpeciesKitData } from '../asset';
 import type { SpeciesBox } from '../core/box';
 import type { Species, SpeciesModule } from '../core/record';
+import { barkColourOf } from '../core/textures';
 import type { Rgb } from '../core/types';
 import { TEXTURE_UV_STEPS, WOOD_UV_STEPS } from '../lod/quantise';
 import { buildKit } from '../tasks';
@@ -48,6 +49,7 @@ export async function standInPrepare(
 	const kit = await buildKit(module, {
 		detail: options.detail ?? ctx.quality.preset,
 		placeholders: true,
+		...(options.form !== undefined && { form: options.form }),
 		...(options.cache && { cache: options.cache }),
 	});
 	const white = texture(ctx, 1, 1, new Uint8Array([255, 255, 255, 255]), 'linear');
@@ -87,7 +89,7 @@ function leafColour(record: Species): Rgb {
 /** The stand-in materials: the standard material in the record's bark and leaf colours. */
 export function standInMaterials(ctx: SketchContext, kit: SpeciesKit): PlantMaterials {
 	const leaf = leafColour(kit.record);
-	const bark = kit.record.bark?.zones[0]?.tint ?? [0.2, 0.16, 0.12];
+	const bark = barkColourOf(kit.record, kit.manifest);
 	const made = {
 		wood: ctx.materials.standard({ color: bark, roughness: 0.9 }),
 		shoots: ctx.materials.standard({ color: leaf, roughness: 0.6, doubleSided: true }),

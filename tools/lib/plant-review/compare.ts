@@ -1099,8 +1099,43 @@ export interface StillResult extends PairMetrics {
 	 * A plant hangs together, so a part that meets nothing shows here as an extra piece.
 	 */
 	readonly pieces: { readonly reference: number | null; readonly render: number } | null;
+	/** What a close view's camera framed, and how clear it found its subject, as the page posted it. */
+	readonly framing?: CloseFraming;
 	readonly note?: string;
 	readonly error?: string;
+}
+
+/**
+ * What a close view's camera framed: its subject, and the shares of the frame that the rest of the
+ * plant covers in front of the subject and behind it, and that the subject itself fills. The camera
+ * stands where the plant shows its subject clearest, so these are the plant's best, and a crown too
+ * dense for a clear view shows here as a number. A warning says what the camera had to give up,
+ * such as the subject it looks for, which a plain camera then stands in for.
+ */
+export interface CloseFraming {
+	readonly subject: string;
+	readonly front: number | null;
+	readonly behind: number | null;
+	readonly fill: number | null;
+	readonly warning?: string;
+}
+
+/** The framing a page posted for a close view, if it posted one. */
+export function closeFraming(facts: unknown): CloseFraming | undefined {
+	const subject = (
+		facts as {
+			subject?: { kind?: unknown; clutter?: Record<string, unknown>; warning?: unknown };
+		}
+	)?.subject;
+	if (!subject || typeof subject.kind !== 'string') return undefined;
+	const share = (value: unknown) => (typeof value === 'number' ? Number(value.toFixed(3)) : null);
+	return {
+		subject: subject.kind,
+		front: share(subject.clutter?.front),
+		behind: share(subject.clutter?.behind),
+		fill: share(subject.clutter?.subject),
+		...(typeof subject.warning === 'string' && { warning: subject.warning }),
+	};
 }
 
 /**
@@ -1221,6 +1256,7 @@ export function compareStills(
 					crownBox: null,
 					foliageDeltaE: refPlant.background.plain ? pair.foliageDeltaE : null,
 				};
+		const framing = closeFraming(frame.facts);
 		results.push({
 			...shown,
 			file: slot.file,
@@ -1231,6 +1267,7 @@ export function compareStills(
 			surfaceDeltaE,
 			edgeDifference: edges,
 			pieces,
+			...(framing ? { framing } : {}),
 			...(slot.note ? { note: slot.note } : {}),
 		});
 		rows.push({

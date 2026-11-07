@@ -4,8 +4,10 @@
 // behind the outer shell, so the plant keeps its silhouette while they go. Among twigs equally deep,
 // the dimmest go first, by the light each holds per node, as a self-organizing plant sheds its
 // branches. An axis takes its own side axes with it. The pruning runs on the finished skeleton, so
-// the wood that stays keeps its place, its pose under the full load and its pipe radii.
-import { type MacroSkeleton, SkeletonBuilder } from '../core/graph';
+// the wood that stays keeps its place, its pose under the full load and its pipe radii. A dressed
+// plant's bare wood can be trimmed the same way once its shoots stand: the thin branches that bear
+// no shoot, and the thin bare ends past a branch's last shoot.
+import { type MacroSkeleton, NODE_STUB, SkeletonBuilder } from '../core/graph';
 import { asin, atan2, PI } from '../core/math';
 
 /** Bins of the crown's hull: steps of elevation from straight down to straight up, and of azimuth. */
@@ -79,7 +81,64 @@ export function coarsenSkeleton(skeleton: MacroSkeleton, coarseness: number): Ma
 		}
 	}
 	if (removed === 0) return skeleton;
-	return keptSkeleton(skeleton, pruned);
+	const keepTo = new Int32Array(axes.count);
+	for (let a = 0; a < axes.count; a++) keepTo[a] = pruned[a] ? -1 : (axes.last[a] as number);
+	return keptSkeleton(skeleton, keepTo, skeleton.crownBase).skeleton;
+}
+
+/**
+ * The skeleton with the thin wood that bears no shoot trimmed away: each branch keeps its wood
+ * thicker than the limit and its wood up to the last node that bears a row or carries a branch that
+ * stays, and loses the rest; a branch left with nothing goes. A stem and a dead stub stay whole, and
+ * the wood that stays keeps its place and its radii.
+ *
+ * @param skeleton The skeleton the rows stand on.
+ * @param nodes The node of each row's bud.
+ * @param axes The axis of each row's bud, which keeps the row's wind record.
+ * @param limit The thickest radius trimmed, in metres.
+ * @param crownBase The height the trimmed skeleton's crown stands on, in metres.
+ * @returns The trimmed skeleton and each axis's index in it, -1 for an axis that went; undefined
+ *   when no wood goes.
+ */
+export function bareTrimmed(
+	skeleton: MacroSkeleton,
+	nodes: readonly number[],
+	axes: readonly number[],
+	limit: number,
+	crownBase: number,
+): { skeleton: MacroSkeleton; axisOut: Int32Array } | undefined {
+	const { axisOf, radius, flags } = skeleton;
+	const table = skeleton.axes;
+	// The farthest node of each axis that a row stands on.
+	const keepTo = new Int32Array(table.count).fill(-1);
+	for (const node of nodes) {
+		const a = axisOf[node] as number;
+		if (node > (keepTo[a] as number)) keepTo[a] = node;
+	}
+	for (const a of axes) keepTo[a] = Math.max(keepTo[a] as number, table.first[a] as number);
+	// A child follows its parent, so a backward pass settles each branch before the axis it leaves.
+	let trimmed = false;
+	for (let a = table.count - 1; a >= 0; a--) {
+		const first = table.first[a] as number;
+		const last = table.last[a] as number;
+		const parent = table.parent[a] as number;
+		let keep = keepTo[a] as number;
+		if (parent < 0 || ((flags[first] as number) & NODE_STUB) !== 0) keep = last;
+		else {
+			// The radius falls along an axis, so its thick wood is a run from its base.
+			let thick = first - 1;
+			while (thick < last && (radius[thick + 1] as number) > limit) thick++;
+			keep = Math.max(keep, thick);
+			if (keep < first) keep = -1;
+		}
+		if (keep !== last) trimmed = true;
+		keepTo[a] = keep;
+		if (keep >= 0 && parent >= 0) {
+			const from = table.parentNode[a] as number;
+			if (from > (keepTo[parent] as number)) keepTo[parent] = from;
+		}
+	}
+	return trimmed ? keptSkeleton(skeleton, keepTo, crownBase) : undefined;
 }
 
 /**
@@ -128,14 +187,23 @@ function hullDepth(skeleton: MacroSkeleton): Float64Array {
 	return depth;
 }
 
-/** The skeleton without the pruned axes, their nodes and their bud sites, in the same order. */
-function keptSkeleton(skeleton: MacroSkeleton, pruned: Uint8Array): MacroSkeleton {
+/**
+ * The skeleton with each axis kept from its base to a node, or not at all where that node is -1,
+ * with the bud sites on the kept nodes, in the same order, standing on a crown base; and each
+ * axis's index in it.
+ */
+function keptSkeleton(
+	skeleton: MacroSkeleton,
+	keepTo: Int32Array,
+	crownBase: number,
+): { skeleton: MacroSkeleton; axisOut: Int32Array } {
 	const { axes, buds } = skeleton;
 	const builder = new SkeletonBuilder();
 	const axisOut = new Int32Array(axes.count).fill(-1);
 	const nodeOut = new Int32Array(skeleton.nodeCount).fill(-1);
 	for (let a = 0; a < axes.count; a++) {
-		if (pruned[a]) continue;
+		const end = keepTo[a] as number;
+		if (end < 0) continue;
 		const parent = axes.parent[a] as number;
 		const parentNode = axes.parentNode[a] as number;
 		axisOut[a] = builder.addAxis({
@@ -147,7 +215,7 @@ function keptSkeleton(skeleton: MacroSkeleton, pruned: Uint8Array): MacroSkeleto
 			barkV: axes.barkV[a] as number,
 			barkU: axes.barkU[a] as number,
 		});
-		for (let n = axes.first[a] as number; n <= (axes.last[a] as number); n++) {
+		for (let n = axes.first[a] as number; n <= end; n++) {
 			const p = skeleton.parent[n] as number;
 			nodeOut[n] = builder.addNode({
 				x: skeleton.position[n * 3] as number,
@@ -164,7 +232,7 @@ function keptSkeleton(skeleton: MacroSkeleton, pruned: Uint8Array): MacroSkeleto
 	}
 	for (let b = 0; b < buds.count; b++) {
 		const axis = buds.axis[b] as number;
-		if (pruned[axis]) continue;
+		if ((axisOut[axis] as number) < 0 || (nodeOut[buds.node[b] as number] as number) < 0) continue;
 		builder.addBud({
 			node: nodeOut[buds.node[b] as number] as number,
 			x: buds.position[b * 3] as number,
@@ -178,5 +246,5 @@ function keptSkeleton(skeleton: MacroSkeleton, pruned: Uint8Array): MacroSkeleto
 			woodRadius: buds.woodRadius[b] as number,
 		});
 	}
-	return builder.finish(skeleton.crownBase);
+	return { skeleton: builder.finish(crownBase), axisOut };
 }

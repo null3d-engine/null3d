@@ -85,12 +85,65 @@ type SlotRule = Omit<Slot, 'file' | 'number' | 'name' | 'kind' | 'background'> &
 	readonly background?: PlantBackground;
 };
 
+/**
+ * The stem radii from the stem's axis at which the photograph that looks up the whole height stands:
+ * the distance at which a stem fills its share of the lower edge, at the photograph's pitch.
+ */
+const STAND = 3.3;
+
+/** Looking up the whole height of the stem from its foot. */
+const FROM_BELOW: SlotRule = {
+	view: 'below',
+	elevation: 70,
+	query: { forkRow: 0.4, stand: STAND },
+	framed: false,
+};
+
+/** Looking up into the crown's underside from beside the stem. */
+const UNDERNEATH: SlotRule = {
+	view: 'below',
+	elevation: 80,
+	query: { aside: 40, stand: STAND },
+	framed: false,
+};
+
+/**
+ * Looking up a tall clean bole in leaf from a few steps back with a wide lens: the foot at the
+ * frame's foot and the crown's base, where the first limbs leave, at its top, on the rows the
+ * photograph shows them on.
+ */
+const CLEAN_BOLE: SlotRule = {
+	view: 'below',
+	query: { fov: 75, footRow: 0.96, crownRow: 0.09 },
+	framed: false,
+};
+
+/** A branch with its side branches: the branch cutting laid across a frame of the photograph's scale. */
+const SECONDARY_BRANCHING: SlotRule = {
+	view: 'branch',
+	background: 'studio-grey',
+	elevation: 0,
+	query: { leaves: 7.4, roll: -90 },
+	framed: false,
+};
+
+/** The finest twigs with their end clusters: the sub-branch cutting at the photograph's scale. */
+const FINE_TWIGS: SlotRule = {
+	view: 'subbranch',
+	background: 'studio-grey',
+	elevation: 0,
+	query: { leaves: 4.5 },
+	framed: false,
+};
+
 /** The slot rules, first match wins: words in the still's name, and the slot they name. */
 const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly slot: SlotRule }[] =
 	[
-		{ test: (n) => n.includes('subbranch-studio'), slot: { view: 'subbranch', framed: false } },
-		{ test: (n) => n.includes('leaf-cluster-studio'), slot: { view: 'cluster', framed: false } },
-		{ test: (n) => n.includes('branch-studio'), slot: { view: 'branch', framed: false } },
+		// A cut piece on a plain ground, framed as its photograph frames it: the photograph's piece
+		// sets the rows its top and its foot land on.
+		{ test: (n) => n.includes('subbranch-studio'), slot: { view: 'subbranch', framed: true } },
+		{ test: (n) => n.includes('leaf-cluster-studio'), slot: { view: 'cluster', framed: true } },
+		{ test: (n) => n.includes('branch-studio'), slot: { view: 'branch', framed: true } },
 		{ test: (n) => n.includes('silhouette'), slot: { view: 'silhouette', framed: true } },
 		{ test: (n) => n.includes('profile'), slot: { view: 'whole', turn: 90, framed: true } },
 		{
@@ -102,19 +155,25 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			slot: { view: 'leaf-upper', framed: false },
 		},
 		{
+			// Looking up the whole height from the foot: the stem's first fork stands a little above the
+			// middle of the frame, with the first limbs running out from it, and the camera stands as
+			// far from the stem as the photograph's, measured in stem radii from its share of the frame.
 			test: (n) => n.includes('from-below'),
-			slot: { view: 'below', elevation: 70, framed: false },
+			slot: FROM_BELOW,
 		},
 		{
+			// Looking up into the crown from beside the stem, which enters the frame from its lower left,
+			// from where the photograph that looks up the whole height stands.
 			test: (n) => /(crown|canopy).*(underside|underneath)/.test(n),
-			slot: { view: 'below', elevation: 80, framed: false },
+			slot: UNDERNEATH,
 		},
 		{ test: (n) => n.includes('inside'), slot: { view: 'inside', framed: false } },
 		{
-			// The crown's outer surface: a limb running across the frame with its rosettes against the
-			// sky, at the span a photograph of that surface covers.
+			// The crown's outer surface seen from outside it: a limb running low across the frame with
+			// its shoots rising against the sky, at the span a photograph of that surface covers, some
+			// thirty leaf lengths.
 			test: (n) => /(crown|clump)-(outside|edge)/.test(n),
-			slot: { view: 'limb', query: { span: 1.5, thin: 0.06 }, framed: false },
+			slot: { view: 'limb', query: { span: 2.8, thin: 0.06, surface: true }, framed: false },
 		},
 		{
 			test: (n) => n.includes('limb-leaving') || n.includes('culm-base'),
@@ -122,7 +181,14 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 		},
 		{ test: (n) => n.includes('fork'), slot: { view: 'fork', framed: false } },
 		{
-			test: (n) => n.includes('secondary-branching') || n.includes('culm-branching'),
+			// A branch with its side branches, cut and laid across the frame on a plain ground as its
+			// photograph lays it, at the photograph's own scale of some seven leaf lengths, so the
+			// branch runs off both edges.
+			test: (n) => n.includes('secondary-branching'),
+			slot: SECONDARY_BRANCHING,
+		},
+		{
+			test: (n) => n.includes('culm-branching'),
 			slot: {
 				view: 'limb',
 				background: 'studio-grey',
@@ -131,12 +197,14 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			},
 		},
 		{
+			// One fine twig with its end clusters, cut and standing on a plain ground as its photograph
+			// shows it, entering from the lower edge, at the photograph's scale of some four leaf lengths.
 			test: (n) => n.includes('twig') || n.includes('branchlet'),
-			slot: { view: 'twigs', framed: false },
+			slot: FINE_TWIGS,
 		},
 		{
 			test: (n) => /cluster|spray|shoot-leaves|needles/.test(n),
-			slot: { view: 'cluster', background: 'white', framed: false },
+			slot: { view: 'cluster', background: 'white', framed: true },
 		},
 		{
 			test: (n) => n.includes('bark-base') || n.includes('root'),
@@ -144,8 +212,10 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 		},
 		{ test: (n) => n.includes('bark-mid'), slot: { view: 'bark-mid', framed: false } },
 		{
+			// The bark on a large limb with the limb itself in view, its thickness filling the share of
+			// the frame that the photograph gives it.
 			test: (n) => /bark.*limb|limb.*bark/.test(n),
-			slot: { view: 'bark-limb', framed: false },
+			slot: { view: 'bark-limb', query: { girth: 0.38, along: 0.3 }, framed: false },
 		},
 		{
 			// A winter picture of a branch shows one branch on its own against the sky, as its
@@ -165,6 +235,7 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			// twigs and the bud clusters at their nodes stand at the size the reference shows.
 			slot: { view: 'limb', query: { season: 'winter', span: 0.2, thin: 0.03 }, framed: false },
 		},
+		{ test: (n) => n.includes('clean-bole'), slot: CLEAN_BOLE },
 		{
 			test: (n) => n.includes('taper') || n.includes('bole') || n.includes('lower-branches'),
 			slot: { view: 'trunk', framed: false },
@@ -183,21 +254,20 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 const SLOT_BY_NUMBER: Readonly<Record<number, SlotRule>> = {
 	1: { view: 'whole', framed: true },
 	2: { view: 'whole', turn: 90, framed: true },
-	3: { view: 'below', framed: false },
+	3: FROM_BELOW,
 	4: { view: 'crown', framed: false },
-	5: { view: 'below', elevation: 80, framed: false },
+	5: UNDERNEATH,
 	6: { view: 'inside', framed: false },
 	7: { view: 'junction', framed: false },
 	8: { view: 'fork', framed: false },
-	// Secondary branching: the outer twig system of a limb, not the bole's own fork beside it.
-	9: { view: 'limb', background: 'studio-grey', query: { span: 0.6, thin: 0.025 }, framed: false },
-	10: { view: 'twigs', framed: false },
-	11: { view: 'cluster', background: 'white', framed: false },
+	9: SECONDARY_BRANCHING,
+	10: FINE_TWIGS,
+	11: { view: 'cluster', background: 'white', framed: true },
 	12: { view: 'leaf-upper', framed: false },
 	13: { view: 'leaf-under', framed: false },
 	14: { view: 'bark-base', framed: false },
 	15: { view: 'bark-mid', framed: false },
-	16: { view: 'bark-limb', framed: false },
+	16: { view: 'bark-limb', query: { girth: 0.38, along: 0.3 }, framed: false },
 	17: { view: 'trunk', framed: false },
 	18: { view: 'silhouette', framed: true },
 	19: {
@@ -207,9 +277,9 @@ const SLOT_BY_NUMBER: Readonly<Record<number, SlotRule>> = {
 		note: 'flowers, fruit or cones: judged on the shoot tip, in the season the name gives',
 	},
 	20: { view: 'limb', query: { season: 'winter', span: 0.2, thin: 0.03 }, framed: false },
-	21: { view: 'branch', framed: false },
-	22: { view: 'subbranch', framed: false },
-	23: { view: 'cluster', framed: false },
+	21: { view: 'branch', framed: true },
+	22: { view: 'subbranch', framed: true },
+	23: { view: 'cluster', framed: true },
 };
 
 /** The texture sources by number: the render's own surface that each is laid beside, at scale. */
@@ -303,6 +373,22 @@ export function seasonFromPicture(slot: Slot, image: Rgba): Slot {
 	return { ...slot, query: { ...slot.query, season: 'summer' } };
 }
 
+/** The first number past the standard views, studio stills and texture sources: other forms. */
+const OTHER_FORMS = 29;
+
+/**
+ * The species form a still shows, of the record's other forms: the first whose name its file name
+ * gives as a word. An index row's words are not read for it: a row may name another form in passing,
+ * as "unlike the young oak" does, and the standard stills' rows speak of young wood on the grown
+ * plant.
+ */
+function formOf(name: string, forms: readonly string[]): string | undefined {
+	const words = name.replace(/-/g, ' ');
+	for (const form of forms)
+		if (new RegExp(`\\b${form.replace(/-/g, ' ')}\\b`).test(words)) return form;
+	return undefined;
+}
+
 /** The texture rule of a texture source that its number does not name. */
 function textureRule(number: number, name: string): SlotRule {
 	const known = TEXTURE_BY_NUMBER[number];
@@ -317,8 +403,14 @@ function textureRule(number: number, name: string): SlotRule {
  *
  * @param file The file's name.
  * @param shows The "what it shows" cell of its index row, which may give its season.
+ * @param forms The names of the species' other forms, such as `young`: a still whose name names one
+ *   is drawn in that form.
  */
-export function classifySlot(file: string, shows?: string): Slot | undefined {
+export function classifySlot(
+	file: string,
+	shows?: string,
+	forms: readonly string[] = [],
+): Slot | undefined {
 	const match = /^(\d\d)-(.+)\.(png|jpe?g|webp)$/i.exec(file);
 	if (!match) return undefined;
 	const number = Number(match[1]);
@@ -330,16 +422,23 @@ export function classifySlot(file: string, shows?: string): Slot | undefined {
 		: (SLOT_RULES.find((r) => r.test(name))?.slot ??
 			SLOT_BY_NUMBER[number] ??
 			// A still of another form that names no part of the plant shows the whole of it.
-			(number >= 29 ? { view: 'whole', framed: true } : undefined));
+			(number >= OTHER_FORMS ? { view: 'whole', framed: true } : undefined));
 	if (!rule) return undefined;
 	const notes = [rule.note];
-	// A young or other-habit form is a different plant from the mature one that a variant grows.
-	if (/young|juvenile|sapling/.test(name) && !texture)
+	// A young or other-habit form is a different plant from the mature one that a variant grows: the
+	// record's own form of it when the record has one, else the grown variant with a note.
+	const form = texture ? undefined : formOf(name, forms);
+	if (form) notes.push(`drawn in the record's ${form} form`);
+	else if (/young|juvenile|sapling/.test(name) && !texture)
 		notes.push('a young form: the variant grows the mature plant');
-	else if (number >= 29)
+	else if (number >= OTHER_FORMS)
 		notes.push('another habit of the species: judged beside the grown variant');
 	// The season the still shows wins over its slot's default.
-	const query = { ...rule.query, ...(texture ? {} : seasonOf(number, name, shows)) };
+	const query = {
+		...rule.query,
+		...(texture ? {} : seasonOf(number, name, shows)),
+		...(form && { form }),
+	};
 	const note = notes.filter(Boolean).join('; ');
 	return {
 		file,
@@ -351,6 +450,22 @@ export function classifySlot(file: string, shows?: string): Slot | undefined {
 		...(Object.keys(query).length > 0 ? { query } : {}),
 		...(note ? { note } : {}),
 	};
+}
+
+/**
+ * A query with a reference file's own fields laid over it, from the slot file: each field replaces
+ * the query's, and a field given as null drops it.
+ */
+export function withSlot(
+	query: PlantReviewQuery,
+	extra: Readonly<Record<string, unknown>> | undefined,
+): PlantReviewQuery {
+	if (!extra) return query;
+	const merged: Record<string, unknown> = { ...query };
+	for (const [name, value] of Object.entries(extra))
+		if (value === null) delete merged[name];
+		else merged[name] = value;
+	return merged as unknown as PlantReviewQuery;
 }
 
 /** The pieces a turning video turns round. */
@@ -441,8 +556,11 @@ function isReference(file: string): boolean {
 	return /\.(png|jpe?g|webp|mp4)$/i.test(file) && !/-sheet\.png$/i.test(file);
 }
 
-/** Reads a reference folder: its index's rows, and every reference file sorted by kind. */
-export function readReferenceSet(folder: string): ReferenceSet {
+/**
+ * Reads a reference folder: its index's rows, and every reference file sorted by kind. A still whose
+ * name names one of the species' other forms is drawn in that form.
+ */
+export function readReferenceSet(folder: string, forms: readonly string[] = []): ReferenceSet {
 	const indexPath = join(folder, 'INDEX.md');
 	const rows = existsSync(indexPath) ? readIndex(readFileSync(indexPath, 'utf8')) : [];
 	const byFile = new Map(rows.map((row) => [row.file, row]));
@@ -455,7 +573,7 @@ export function readReferenceSet(folder: string): ReferenceSet {
 		if (!isReference(file)) continue;
 		const row = byFile.get(file);
 		const inUse = row?.supersededBy === undefined;
-		const named = classifySlot(file, row?.shows);
+		const named = classifySlot(file, row?.shows, forms);
 		const slot =
 			named?.query?.season === 'autumn'
 				? seasonFromPicture(named, readImage(join(folder, file)))

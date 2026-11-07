@@ -1,7 +1,8 @@
 // The stem base: a stem's cross-section near the ground, after methods §4.6. The radius swells by
-// the root flare, 1 + A·exp(−h / h0), and by buttress lobes, each a bump of its own size, angle and
-// height of fade; flutes cut grooves up the stem. Lobes stand at uneven angles with uneven sizes,
-// as an old oak's foot does, so no two variants share a ground line.
+// the root flare, 1 + A·exp(−h / h0), with a bole taper that widens it evenly toward the ground, and
+// by buttress lobes, each a bump of its own size, angle and height of fade; flutes cut grooves up
+// the stem. Lobes stand at uneven angles with uneven sizes, as an old oak's foot does, so no two
+// variants share a ground line.
 import { hashAt, unitAt } from '../core/hash';
 import { cos, exp, PI, pow, sin } from '../core/math';
 import type { BaseSpec } from '../core/record';
@@ -20,6 +21,24 @@ interface Lobe {
 	readonly angle: number;
 	readonly amount: number;
 	readonly height: number;
+	/** How narrow this lobe's crest is: higher is narrower, and the record's own × a share. */
+	readonly sharpness: number;
+}
+
+/** Heights of fade over which a rounded lobe eases from its full swell to none. */
+const ROUND_SPAN = 2.5;
+
+/**
+ * A lobe's swell at a height, as a share of its amount: a fall from the ground over its height of
+ * fade, blended with a rounded crest that keeps its full swell at the ground and eases out over a
+ * few heights of fade, so the crest stands from the meadow as a root's flank does.
+ */
+function lobeFade(height: number, fade: number, round: number): number {
+	const fall = exp(-height / fade);
+	if (round <= 0) return fall;
+	const u = height / (fade * ROUND_SPAN);
+	const crest = u >= 1 ? 0 : 0.5 + 0.5 * cos(PI * u);
+	return (1 - round) * fall + round * crest;
 }
 
 /**
@@ -59,11 +78,15 @@ function lobesOf(
 	const lobes: Lobe[] = [];
 	for (let k = 0; k < count; k++) {
 		const key = stem * 64 + k + 1;
-		const jitter = (unitAt(seed, salt, variant, Purpose.Lobe, key) - 0.5) * 0.5;
+		// A real foot's lobes are not one shape repeated: each stands where its own draw puts it, a
+		// little larger or smaller, taller or shorter, and narrower or broader than its neighbours.
+		const jitter = (unitAt(seed, salt, variant, Purpose.Lobe, key) - 0.5) * 1.1;
 		lobes.push({
 			angle: turn + ((k + jitter) / count) * 2 * PI,
-			amount: buttress.amount * (0.6 + 0.6 * unitAt(seed, salt, variant, Purpose.Lobe, key + 1000)),
-			height: buttress.height * (0.7 + 0.6 * unitAt(seed, salt, variant, Purpose.Lobe, key + 2000)),
+			amount: buttress.amount * (0.4 + 1.0 * unitAt(seed, salt, variant, Purpose.Lobe, key + 1000)),
+			height:
+				buttress.height * (0.45 + 1.1 * unitAt(seed, salt, variant, Purpose.Lobe, key + 2000)),
+			sharpness: 0.55 + 0.9 * unitAt(seed, salt, variant, Purpose.Lobe, key + 3000),
 		});
 	}
 	return lobes;
@@ -98,6 +121,7 @@ export function stemSection(
 	const flare = base.flare;
 	const lobes = lobesOf(base, seed, salt, variant, stem);
 	const sharpness = base.buttress?.sharpness ?? 2;
+	const round = Math.max(0, Math.min(1, base.buttress?.round ?? 0));
 	// A lobe's bump reaches zero half a lobe's spacing from its crest.
 	const width = lobes.length > 0 ? lobes.length : 1;
 	const flutes = base.flutes;
@@ -108,7 +132,10 @@ export function stemSection(
 			)
 		: 0;
 	const flutePhase = (hashAt(seed, salt, variant, Purpose.Flutes, stem + 1) / 0x100000000) * 2 * PI;
+	const taper =
+		base.taper && base.taper.amount > 0 && base.taper.height > 0 ? base.taper : undefined;
 	let reach = flare.amount > 0 ? flare.height * 7 : 0;
+	if (taper) reach = Math.max(reach, taper.height);
 	for (const lobe of lobes) reach = Math.max(reach, lobe.height * 7);
 	if (flutes && fluteCount > 0) reach = Math.max(reach, flutes.height);
 	return {
@@ -117,11 +144,15 @@ export function stemSection(
 		radius(h: number, theta: number, r: number): number {
 			const height = Math.max(0, h);
 			let factor = 1 + (flare.height > 0 ? flare.amount * exp(-height / flare.height) : 0);
+			if (taper && height < taper.height) factor += taper.amount * (1 - height / taper.height);
 			let swell = 0;
 			for (const lobe of lobes) {
 				const d = angleBetween(theta, lobe.angle) * (width / 2);
 				if (d <= -PI / 2 || d >= PI / 2) continue;
-				swell += lobe.amount * pow(cos(d), sharpness) * exp(-height / lobe.height);
+				swell +=
+					lobe.amount *
+					pow(cos(d), sharpness * lobe.sharpness) *
+					lobeFade(height, lobe.height, round);
 			}
 			factor *= 1 + swell;
 			let radius = r * factor;
@@ -145,9 +176,48 @@ export interface SurfaceRoot {
 }
 
 /**
+ * A root's run along the ground: at each point, metres out from the stem's axis, the height of the
+ * root's centre over the foot, and the share of the root's radius.
+ */
+interface RootRun {
+	readonly along: number[];
+	readonly rise: number[];
+	readonly girth: number[];
+}
+
+/** A run half buried along the ground, from just above it at the stem. */
+function halfBuriedRun(foot: number, length: number, r: number): RootRun {
+	return {
+		along: [0, foot * 0.9, foot + 0.35 * length, foot + 0.7 * length, foot + length],
+		rise: [r, 0.55 * r, 0.3 * r, 0.15 * r, 0],
+		girth: [1, 1, 0.85, 0.7, 0.55],
+	};
+}
+
+/**
+ * A ridge's run: at the stem it stands its share of the girth out of the ground, and it sinks as it
+ * tapers to half its radius, slowly at first and faster toward its end, where its top meets the
+ * ground.
+ */
+function ridgeRun(foot: number, length: number, r: number, ridge: number): RootRun {
+	const stand = Math.max(0, Math.min(1, ridge));
+	const along = [0, foot * 0.9, ...[0, 0.25, 0.5, 0.75, 1].map((u) => foot + u * length)];
+	const rise: number[] = [];
+	const girth: number[] = [];
+	for (const out of along) {
+		const u = Math.max(0, (out - foot) / length);
+		const share = 1 - 0.5 * u;
+		girth.push(share);
+		rise.push(r * share * (2 * stand * (1 - u * u) - 1));
+	}
+	return { along, rise, girth };
+}
+
+/**
  * The surface roots of one stem, after methods §4.6: each leaves from a buttress lobe (or, with no
- * lobes, at an even angle), runs along the ground for the record's length, tapering, and dives. A
- * root starts on the stem's axis just above the ground, so the mesher welds it onto the stem's foot.
+ * lobes, at an even angle), runs along the ground for the record's length, tapering, half buried or
+ * as a ridge that sinks into it, and dives. A root starts on the stem's axis at or above the ground,
+ * so the mesher welds it onto the stem's foot.
  *
  * @param base The record's stem base.
  * @param section The stem's section, whose lobes the roots leave from.
@@ -199,19 +269,13 @@ export function surfaceRoots(
 			spreadAt(roots.length, unitAt(seed, salt, variant, Purpose.Roots, key + 8192)),
 		);
 		const wander = (unitAt(seed, salt, variant, Purpose.Roots, key + 16384) - 0.5) * 0.3 * length;
-		// Out from the axis, height over the foot, and the share of the root's radius, at each point.
-		const along = [
-			0,
-			foot.radius * 0.9,
-			foot.radius + 0.35 * length,
-			foot.radius + 0.7 * length,
-			foot.radius + length,
-		];
-		// Half buried along the ground, then a dive deep enough to bury the whole girth. A shallower
-		// one leaves the tube's upper surface lying in the ground, and the ground cuts it to a fin.
+		const { along, rise, girth } =
+			roots.ridge === undefined
+				? halfBuriedRun(foot.radius, length, r)
+				: ridgeRun(foot.radius, length, r, roots.ridge);
+		// Then a dive deep enough to bury the whole girth. A shallower one leaves the tube's upper
+		// surface lying in the ground, and the ground cuts it to a fin.
 		const plunge = Math.max(roots.dive, 2 * r);
-		const rise = [r, 0.55 * r, 0.3 * r, 0.15 * r, 0];
-		const girth = [1, 1, 0.85, 0.7, 0.55];
 		along.push(foot.radius + length + plunge * 1.5, foot.radius + length + plunge * 3);
 		rise.push(-plunge, -plunge * 1.6);
 		girth.push(0.5, 0.4);

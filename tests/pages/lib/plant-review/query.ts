@@ -1,6 +1,7 @@
 // The query contract of the plant review page: the names it reads and the values each takes. The
 // page and the review tools share this file, so a tool that builds a query and the page that reads
 // it agree on every name. Nothing here knows how a plant grows.
+import { LEAST_ROW_GAP } from './framing';
 import {
 	PLANT_BACKGROUNDS,
 	PLANT_SUNS,
@@ -26,6 +27,11 @@ export type ForcedLevel = 0 | 1 | 2 | 3;
 export interface PlantReviewQuery {
 	/** A species id: a registered species, or any other id, which draws as a stand-in. */
 	readonly species: string;
+	/**
+	 * One of the species' other forms by name, such as `young` or `woodland`, which the plant grows
+	 * in when its record has that form. The record as it stands by default.
+	 */
+	readonly form?: string;
 	/** The variant's index, from 0. */
 	readonly variant?: number;
 	/** The scene's seed; 11 by default. */
@@ -52,6 +58,21 @@ export interface PlantReviewQuery {
 	 */
 	readonly sunAzimuth?: number;
 	readonly sunRise?: number;
+	/**
+	 * The share of a sunlit view's light that comes from the whole sky rather than from the sun, from
+	 * 0 to 1: low for clear sun with hard shadows, high for haze or a bright overcast. The light keeps
+	 * its total strength.
+	 */
+	readonly skyShare?: number;
+	/**
+	 * The strength of a sunlit view's light, the sky, the sun and the light the ground throws back
+	 * together, as a multiple of the page's soft daylight, above 0 and up to 8; 1 by default. A
+	 * picture under a clear sky lights its plant more brightly than that soft daylight, against the
+	 * same sky colour behind it. A review measures each view's value from its photograph's own sky,
+	 * which calibrates the light to the picture rather than deriving it from physics: a photograph's
+	 * tone curve squeezes a bright sky more than the plant under it.
+	 */
+	readonly daylight?: number;
 	/** The wind's strength: 0 still, 1 the default field, up to 3. */
 	readonly wind?: number;
 	/** Seconds on the wind clock. The runner holds the frame at this sketch time. */
@@ -76,6 +97,16 @@ export interface PlantReviewQuery {
 	readonly scale?: boolean;
 	/** Whether the twigs view looks for the plant's fruit rather than for a sunlit tip. */
 	readonly fruit?: boolean;
+	/**
+	 * For a single-leaf still: whether the leaf lies pressed flat or as it grew, as the still's
+	 * picture shows it. The record's cutting hint by default.
+	 */
+	readonly pressed?: boolean;
+	/**
+	 * Whether a limb view frames the crown's outer surface, whose depth into the crown is part of its
+	 * subject, rather than one branch that its picture shows against a plain ground.
+	 */
+	readonly surface?: boolean;
 	/** Whether to draw the plant black on white with no light, for its exact outline. */
 	readonly matte?: boolean;
 	/** Whether stages not built yet grow stand-ins; true for a species that is not registered. */
@@ -98,6 +129,33 @@ export interface PlantReviewQuery {
 	readonly thin?: number;
 	/** Metres of bark or limb that a bark or limb view's frame height covers. */
 	readonly span?: number;
+	/**
+	 * The row share on which a view up the stem puts the stem's first fork: the camera pitches up
+	 * until the fork lands there, no steeper than the view's elevation.
+	 */
+	readonly forkRow?: number;
+	/**
+	 * The row shares on which a view up the stem puts the ground at the stem's bark and the crown's
+	 * base: with both, the camera stands back until each lands where it is asked.
+	 */
+	readonly footRow?: number;
+	readonly crownRow?: number;
+	/** Degrees a view up the stem turns its look to the right of the stem, so the stem enters low left. */
+	readonly aside?: number;
+	/** Stem radii from the stem's axis at which a view up the stem stands, in place of a step back. */
+	readonly stand?: number;
+	/**
+	 * Leaf lengths that a cut piece's frame height covers, in place of fitting the whole piece: the
+	 * scale its photograph shows it at. The piece then stands on its cut at the frame's lower edge.
+	 */
+	readonly leaves?: number;
+	/** Degrees the camera turns about its line of sight, the picture turning counterclockwise. */
+	readonly roll?: number;
+	/**
+	 * The share of the frame's height that a limb's thickness fills, for a view of the bark on a
+	 * great limb that shows the limb itself, as a photograph of it does.
+	 */
+	readonly girth?: number;
 	/** Turns drawn as a sheet of cells, one camera each: the turntable's 8 by default. */
 	readonly turns?: number;
 	/** Degrees between a sheet's turns; a full circle over `turns` by default. */
@@ -127,21 +185,31 @@ const NUMBER_FIELDS = [
 	'along',
 	'thin',
 	'span',
+	'forkRow',
+	'footRow',
+	'crownRow',
+	'aside',
+	'stand',
+	'leaves',
+	'roll',
+	'girth',
 	'turns',
 	'step',
 	'columns',
 	'sunAzimuth',
 	'sunRise',
+	'skyShare',
+	'daylight',
 ] as const;
 
-/** The fields that are shares of the frame, which must lie from 0 to 1. */
-const SHARE_FIELDS = new Set(['horizon', 'fill', 'targetY', 'targetX', 'top', 'along']);
+/** The fields that are shares, of the frame or of the light, which must lie from 0 to 1. */
+const SHARE_FIELDS = new Set(['horizon', 'fill', 'targetY', 'targetX', 'top', 'along', 'skyShare']);
 
 /** The fields that are whole numbers of at least one. */
 const COUNT_FIELDS = new Set(['turns', 'columns']);
 
 /** The switches, written as 1 when on. */
-const SWITCHES = ['measure', 'scale', 'matte', 'fruit'] as const;
+const SWITCHES = ['measure', 'scale', 'matte', 'fruit', 'surface'] as const;
 
 /** A short form of a number for a query, so a query reads well and keeps its precision. */
 function short(value: number): string {
@@ -151,6 +219,7 @@ function short(value: number): string {
 /** The query string that asks the page for a picture. */
 export function plantReviewQuery(query: PlantReviewQuery): string {
 	const params = new URLSearchParams({ species: query.species });
+	if (query.form) params.set('form', query.form);
 	if (query.view) params.set('view', query.view);
 	for (const name of NUMBER_FIELDS) {
 		const value = query[name];
@@ -164,6 +233,7 @@ export function plantReviewQuery(query: PlantReviewQuery): string {
 	if (query.size) params.set('size', `${query.size[0]}x${query.size[1]}`);
 	for (const name of SWITCHES) if (query[name]) params.set(name, '1');
 	if (query.placeholders !== undefined) params.set('placeholders', query.placeholders ? '1' : '0');
+	if (query.pressed !== undefined) params.set('pressed', query.pressed ? '1' : '0');
 	return params.toString();
 }
 
@@ -183,6 +253,9 @@ function oneOf<T extends string>(
 export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery {
 	const species = params.get('species');
 	if (!species) throw new Error('species= is missing: name a species id, such as stub.');
+	const form = params.get('form');
+	if (form !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(form))
+		throw new Error(`form=${form} is not a form's name: give a kebab-case word, such as young.`);
 	const view = oneOf('view', params.get('view'), PLANT_VIEWS) ?? 'whole';
 	const numbers: Partial<Record<(typeof NUMBER_FIELDS)[number], number>> = {};
 	for (const name of NUMBER_FIELDS) {
@@ -198,6 +271,33 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	}
 	if (numbers.wind !== undefined && (numbers.wind < 0 || numbers.wind > 3))
 		throw new Error(`wind=${numbers.wind} is a strength: give a number from 0 to 3.`);
+	if (numbers.daylight !== undefined && (numbers.daylight <= 0 || numbers.daylight > 8))
+		throw new Error(
+			`daylight=${numbers.daylight} is a multiple of the soft daylight: give a number above 0, up to 8.`,
+		);
+	for (const name of ['forkRow', 'footRow', 'crownRow'] as const) {
+		const value = numbers[name];
+		if (value !== undefined && (value < 0 || value > 1))
+			throw new Error(`${name}=${value} is a share of the frame: give a number from 0 to 1.`);
+	}
+	if (
+		numbers.crownRow !== undefined &&
+		numbers.footRow !== undefined &&
+		numbers.footRow - numbers.crownRow < LEAST_ROW_GAP - 1e-9
+	)
+		throw new Error(
+			`crownRow=${numbers.crownRow} is not well above footRow=${numbers.footRow}: the crown's base stands over the foot, so give it a share at least ${LEAST_ROW_GAP} smaller.`,
+		);
+	if (numbers.girth !== undefined && (numbers.girth <= 0 || numbers.girth > 1))
+		throw new Error(
+			`girth=${numbers.girth} is a share of the frame that a limb fills: give a number above 0, up to 1.`,
+		);
+	if (numbers.leaves !== undefined && numbers.leaves <= 0)
+		throw new Error(`leaves=${numbers.leaves} is a frame in leaf lengths: give a number above 0.`);
+	if (numbers.stand !== undefined && numbers.stand <= 1)
+		throw new Error(
+			`stand=${numbers.stand} is in stem radii from its axis: give a number above 1.`,
+		);
 	for (const name of ['sky', 'ground'] as const) {
 		const text = params.get(name);
 		if (text !== null && !/^#[0-9a-f]{6}$/i.test(text))
@@ -224,8 +324,10 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	const preset = oneOf('preset', params.get('preset'), PLANT_PRESETS);
 	const sun = oneOf('sun', params.get('sun'), PLANT_SUNS);
 	const placeholders = params.get('placeholders');
+	const pressed = params.get('pressed');
 	return {
 		species,
+		...(form !== null && { form }),
 		view,
 		...numbers,
 		...(background && { background }),
@@ -237,9 +339,11 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		...(lod !== undefined && { lod }),
 		...(size && { size }),
 		...(placeholders !== null && { placeholders: placeholders === '1' }),
+		...(pressed !== null && { pressed: pressed === '1' }),
 		measure: params.get('measure') === '1',
 		scale: params.get('scale') === '1',
 		matte: params.get('matte') === '1',
 		fruit: params.get('fruit') === '1',
+		surface: params.get('surface') === '1',
 	};
 }

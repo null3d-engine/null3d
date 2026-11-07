@@ -18,6 +18,7 @@ const base = standInRecord('pedunculate-oak', {
 /** The pedunculate oak, open-grown: a broad low dome on a short bole that forks low. */
 export const oakRecord: Species = {
 	...base,
+	variants: 6,
 	latin: 'Quercus robur',
 	form: 'broad low dome on a short, low-forking bole',
 	growth: {

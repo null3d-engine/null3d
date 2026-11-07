@@ -11,6 +11,7 @@
 // limbs. Wood never runs on so that an axis turns back on the way it set out, so hand-ons cannot
 // chain into a loop.
 import { AXIS_LIMB, type MacroSkeleton, SkeletonBuilder } from '../core/graph';
+import { cos, length3, radians } from '../core/math';
 
 /** A child takes the lead when it is at least this share of its parent's girth at the junction. */
 const LEADER_SHARE = 0.5;
@@ -20,7 +21,7 @@ const LEADER_SHARE = 0.5;
  */
 const COLLAPSE = 0.7;
 /** The cosine of the most a child may turn from the axis's line where the wood runs on into it. */
-const RUN_ON = Math.cos((35 * Math.PI) / 180);
+const RUN_ON = cos(radians(35));
 /**
  * A continuation under this share of the axis's girth has withered to a twig: it gives up the lead
  * however far it runs on.
@@ -179,7 +180,7 @@ function direction(skeleton: MacroSkeleton, from: number, to: number): [number, 
 	const x = (p[to * 3] as number) - (p[from * 3] as number);
 	const y = (p[to * 3 + 1] as number) - (p[from * 3 + 1] as number);
 	const z = (p[to * 3 + 2] as number) - (p[from * 3 + 2] as number);
-	const length = Math.hypot(x, y, z);
+	const length = length3(x, y, z);
 	return length > 0 ? [x / length, y / length, z / length] : [0, 1, 0];
 }
 
@@ -195,7 +196,7 @@ function dot(a: readonly number[], b: readonly number[]): number {
 /** Metres from one node to another. */
 function reach(skeleton: MacroSkeleton, from: number, to: number): number {
 	const p = skeleton.position;
-	return Math.hypot(
+	return length3(
 		(p[to * 3] as number) - (p[from * 3] as number),
 		(p[to * 3 + 1] as number) - (p[from * 3 + 1] as number),
 		(p[to * 3 + 2] as number) - (p[from * 3 + 2] as number),

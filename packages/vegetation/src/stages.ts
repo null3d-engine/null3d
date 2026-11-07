@@ -55,6 +55,12 @@ export interface DressInput extends GrowInput {
 	 * of fewer rings and sides. 0 when not given. The skeleton is already pruned for it.
 	 */
 	readonly coarseness?: number;
+	/**
+	 * The light of the crown as grown, which a sky-prune line reads at every coarseness, so a
+	 * coarser plant prunes the shoots its full crown leaves in the dark and the light is found once.
+	 * Absent, the prune lights the crown of the rows it is given.
+	 */
+	readonly pruneLight?: CrownLight;
 }
 
 /**

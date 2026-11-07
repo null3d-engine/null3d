@@ -3,8 +3,8 @@
 // orthographic projection, its crown box in metres, the share of the silhouette that foliage
 // covers, the trunk's diameter at 1.3 m, the crown base and the first fork's height. Every figure
 // is in metres or a share, so it compares across renders of any size.
-import type { PlantAsset, PlantPart, SpeciesBox } from '@null3d/vegetation';
-import { firstForkHeight, stemAt, type V3 } from './anatomy';
+import type { Detail, PlantAsset, PlantPart, SpeciesBox, SpeciesKitData } from '@null3d/vegetation';
+import { firstForkHeight, placeOnRow, stemAt, type V3 } from './anatomy';
 
 /** Rows of the silhouette raster. */
 const ROWS = 128;
@@ -17,6 +17,42 @@ export function partPositions(part: PlantPart, box: SpeciesBox): Float32Array {
 		const k = i % 3;
 		const low = box.min[k] as number;
 		out[i] = low + ((quantised[i] as number) / 65535) * ((box.max[k] as number) - low);
+	}
+	return out;
+}
+
+/** The tiers a shoot prototype holds its meshes in, in order. */
+const TIERS: readonly Detail[] = ['low', 'medium', 'high', 'ultra'];
+
+/**
+ * The positions an instanced plant's shoot rows draw, in plant-space metres: every vertex of each
+ * row's prototype at the kit's tier, turned, scaled and placed as the row places it. Such a plant
+ * draws its nearest foliage as these rows, so its parts alone leave its leaves out.
+ */
+export function shootPositions(
+	asset: PlantAsset,
+	kit: Pick<SpeciesKitData, 'detail' | 'prototypes'>,
+): Float32Array {
+	const rows = asset.shoots;
+	const tier = TIERS.indexOf(kit.detail);
+	let count = 0;
+	for (let r = 0; r < rows.count; r++)
+		count += kit.prototypes[rows.prototype[r] as number]?.tiers[tier]?.positions.length ?? 0;
+	const out = new Float32Array(count);
+	let at = 0;
+	for (let r = 0; r < rows.count; r++) {
+		const positions = kit.prototypes[rows.prototype[r] as number]?.tiers[tier]?.positions;
+		if (!positions) continue;
+		for (let i = 0; i < positions.length; i += 3, at += 3)
+			placeOnRow(
+				rows,
+				r,
+				positions[i] as number,
+				positions[i + 1] as number,
+				positions[i + 2] as number,
+				out,
+				at,
+			);
 	}
 	return out;
 }

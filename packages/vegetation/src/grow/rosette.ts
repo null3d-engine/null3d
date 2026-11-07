@@ -22,7 +22,7 @@ import {
 	SkeletonBuilder,
 } from '../core/graph';
 import { unitAt } from '../core/hash';
-import { cos, normalize3, PI, quatFromFrame, radians, sin, type Vector3 } from '../core/math';
+import { cos, normalize3, PI, pow, quatFromFrame, radians, sin, type Vector3 } from '../core/math';
 import type { Rosette, Species, ThickLeaf } from '../core/record';
 import { curveAt, spreadAt } from '../core/types';
 import {
@@ -214,13 +214,13 @@ export function growRosette(input: GrowInput): MacroSkeleton {
 			const step = stalk / (STALK_NODES - 1);
 			for (let n = 0; n < STALK_NODES; n++) {
 				if (n > 0) {
-					const mid = elevation0 - arch * ((n - 0.5) / (STALK_NODES - 1)) ** 1.5;
+					const mid = elevation0 - arch * pow((n - 0.5) / (STALK_NODES - 1), 1.5);
 					const d = inPlane(heading, mid);
 					p[0] += d[0] * step;
 					p[1] = Math.max(0.005, p[1] + d[1] * step);
 					p[2] += d[2] * step;
 				}
-				elevation = elevation0 - arch * (n / (STALK_NODES - 1)) ** 1.5;
+				elevation = elevation0 - arch * pow(n / (STALK_NODES - 1), 1.5);
 				previous = builder.addNode({
 					x: p[0],
 					y: p[1],
@@ -304,7 +304,7 @@ export function growRosette(input: GrowInput): MacroSkeleton {
 			for (let n = 0; n < SCAPE_NODES; n++) {
 				if (n > 0) {
 					// Straight from the crown, then leaning more toward the top.
-					const d = inPlane(heading, PI / 2 - lean * ((n - 0.5) / (SCAPE_NODES - 1)) ** 1.5);
+					const d = inPlane(heading, PI / 2 - lean * pow((n - 0.5) / (SCAPE_NODES - 1), 1.5));
 					p[0] += d[0] * step;
 					p[1] += d[1] * step;
 					p[2] += d[2] * step;
