@@ -66,6 +66,11 @@ export interface ShootPrototype {
 	readonly index: number;
 	/** The shoot class it belongs to. */
 	readonly class: ShootClass['name'];
+	/**
+	 * Set on a shoot that only a cutting draws. The crown never offers one, whatever vigor its buds
+	 * carry, so adding a cutting class leaves the crown's shoots as they were.
+	 */
+	readonly cutting?: true;
 	/** The bud vigor it serves. */
 	readonly vigor: readonly [number, number];
 	/** Metres from the attach point to the farthest tip, at scale 1. */
@@ -308,6 +313,20 @@ export interface SpeciesKitData {
 /** The typed arrays of a part, in a fixed order. */
 function quantisedViews(arrays: QuantisedArrays): ArrayBufferView[] {
 	return [arrays.positions, arrays.normals, arrays.uvs, arrays.uvs1, arrays.colors, arrays.indices];
+}
+
+/**
+ * The kit's prototypes a crown may draw: all of them but those a class grows only for cuttings, so
+ * a species that grows cuttings from shoots of their own dresses its crown as it did without them.
+ *
+ * @param prototypes The kit's prototypes.
+ * @returns The crown's, in kit order.
+ * @category api/vegetation
+ */
+export function crownPrototypes<T extends { readonly cutting?: true }>(
+	prototypes: readonly T[],
+): T[] {
+	return prototypes.filter((prototype) => !prototype.cutting);
 }
 
 /**

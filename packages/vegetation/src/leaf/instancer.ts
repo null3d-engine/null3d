@@ -83,7 +83,8 @@ export function rowThinning(coarseness: number): { keep: number; grow: number } 
 
 /**
  * The prototypes a bud of this vigor may draw: those whose class's range holds it, or those of the
- * nearest range when none does.
+ * nearest range when none does. A cutting's prototype is never among them, so a species that grows
+ * cuttings from shoots of their own keeps them off its crown.
  *
  * @param prototypes The kit's prototypes.
  * @param vigor The bud's vigor.
@@ -91,13 +92,14 @@ export function rowThinning(coarseness: number): { keep: number; grow: number } 
  * @category api/vegetation
  */
 export function prototypesFor(
-	prototypes: readonly Pick<ShootPrototype, 'vigor'>[],
+	prototypes: readonly Pick<ShootPrototype, 'vigor' | 'cutting'>[],
 	vigor: number,
 ): number[] {
 	const holding: number[] = [];
 	let nearest: number[] = [];
 	let gap = Infinity;
 	prototypes.forEach((prototype, index) => {
+		if (prototype.cutting) return;
 		const [lo, hi] = prototype.vigor;
 		const away = vigor < lo ? lo - vigor : vigor > hi ? vigor - hi : 0;
 		if (away === 0) holding.push(index);

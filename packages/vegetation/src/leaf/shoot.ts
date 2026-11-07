@@ -1010,6 +1010,7 @@ function prototypeOf(
 	leaves: readonly (readonly PrototypeArrays[])[],
 	index: number,
 	shootClass: ShootClass,
+	cutting = false,
 ): UncardedPrototype {
 	const writers = DETAILS.map((detail, tier) => meshShoot(plan, leaves[tier] ?? [], detail));
 	shootOcclusion(writers, SHADE_TIER);
@@ -1026,6 +1027,7 @@ function prototypeOf(
 	return {
 		index,
 		class: shootClass.name,
+		...(cutting ? { cutting: true as const } : {}),
 		vigor: shootClass.vigor,
 		length: plan.reach,
 		radius,
@@ -1070,9 +1072,9 @@ export function shootPrototypes(
 			out.push(
 				prototypeOf({ ...plan, leaves: [] }, leaves, out.length, classes[index] as ShootClass),
 			);
-	// A cutting class is planned last and never comes from the crown's share, so the crown cannot draw
-	// one however its variants fall. It keeps a leafless twin beside it where the species has them, so a
-	// winter cutting of it still finds a piece.
+	// A cutting class is planned last and marked as a cutting's, so the crown never offers one however
+	// its variants fall. It keeps a leafless twin beside it where the species has them, so a winter
+	// cutting of it still finds a piece.
 	for (const shootClass of shoots.cuttingClasses ?? [])
 		for (let k = 0; k < CUTTING_PROTOTYPES; k++) {
 			const plan = planShoot(record, out.length, leafMeshes, shootClass);
@@ -1082,10 +1084,11 @@ export function shootPrototypes(
 					leaves,
 					out.length,
 					shootClass,
+					true,
 				),
 			);
 			if (leafMeshes > 0 && hasBareTwins(record))
-				out.push(prototypeOf({ ...plan, leaves: [] }, leaves, out.length, shootClass));
+				out.push(prototypeOf({ ...plan, leaves: [] }, leaves, out.length, shootClass, true));
 		}
 	return out;
 }
