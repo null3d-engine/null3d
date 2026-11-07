@@ -162,7 +162,7 @@ export const record: Species = {
 			perMetre: [
 				[0, 4],
 				[0.55, 8],
-				[1, 90],
+				[1, 64],
 			],
 			density: 0.7,
 			// A twig that carries no shoot is trimmed past its last one, so no bare tip stands
