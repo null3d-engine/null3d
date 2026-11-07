@@ -276,6 +276,33 @@ Two things follow. The fitted radii are not a knob, in either direction. And a f
 hull does not widen the crown: the measurement to fit against is the rendered crown box at the whole
 views, not the hull's radii.
 
+### The reference disagrees with itself about the crown's width
+
+The fit's own report says the envelope matches the views it came from at a mean overlap of 0.689, its
+worst frame at 0.570, and its last frame against its first at 0.783: the turning footage's tree
+changes shape across the turn. A hull keeps only what every view allows, so it comes out narrower
+than the photographs, and the stills that are overlaid to widen its broad sides reach one azimuth
+each side of a row, where a view's width is a projection over many.
+
+Widening a still across the arc it faces was measured three ways, and none can be shipped:
+
+| Still overlay | Hull's box at 01 and 18 | at 02 | Overlap with the video's views |
+| --- | --- | --- | --- |
+| One azimuth each side, the shipped fit | 1.31 | 1.15 | 0.689 |
+| The arc within 60 degrees | 1.59 | 1.48 | 0.506 |
+| The arc within 23 degrees | 1.56 | 1.43 | 0.610 |
+
+The photographs themselves read 1.25, 1.227 and 0.90. The stills are about a third wider than the
+video's hull at every row, so a hull cannot be both: the shipped fit stands with the video and is a
+sixth narrow at 02 against its photograph, and honouring the stills overshoots the photographs and
+loses the video's fit. The fit stays as it is, and the disagreement is recorded here rather than
+pushed into the radii.
+
+What the growth makes of the shipped hull is the second figure: at 01 it draws a crown box 88 per
+cent of the hull's 1.31, at 18 87 per cent, and at 02 95 per cent of 1.15. Row 1 passes on the
+band, so the box's shortfall against its photographs is the fill's, and filling to 1.25 at 01 means
+drawing about 95 per cent of that hull.
+
 ### The crown seen from under it
 
 Stills 03 and 08 look up the bole, and there the drawn crown is far denser than its photographs: 03
