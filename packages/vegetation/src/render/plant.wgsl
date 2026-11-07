@@ -109,6 +109,8 @@ const HEADER_EXTRA_BANDS: i32 = 43;
 // An extra's scale pattern: its scale rows, the cells round its turn, and its band's share of the
 // profile's height at each end, per extra in record order.
 const HEADER_EXTRA_SCALES: i32 = 47;
+// An extra's stalk colour and its band's roughness, per extra in record order.
+const HEADER_EXTRA_STALKS: i32 = 51;
 // Rows before the wind records, and wind records in a row.
 const HEADER_ROWS: i32 = 2;
 const RECORDS_PER_ROW: i32 = 256;
@@ -941,6 +943,12 @@ fn surface(input: SurfaceInput) -> Surface {
         let share_of_band = saturate(input.uv1.x);
         base = mix(body.rgb, band.rgb, share_of_band);
         roughness = mix(body.w, band.w, share_of_band);
+        // A stalk is young wood, not cup: it takes the colour its own record gives it.
+        if (input.uv1.y > 0.5) {
+            let stalk = header(HEADER_EXTRA_STALKS + kind);
+            base = stalk.rgb;
+            roughness = stalk.w;
+        }
         // A cup's scales: one rounded cell per scale, its shade fixed for that cell, over the band
         // alone. The pattern fades where a cell falls below a pixel or two, so a distant acorn keeps
         // its own colour instead of shimmering.
@@ -948,7 +956,7 @@ fn surface(input: SurfaceInput) -> Surface {
         if (pattern.x > 0.5 && pattern.y > 0.5 && share_of_band > 0.5) {
             // Two scale rows stand across each drawn face, and the rows alternate their offset so a
             // scale sits over the crevice between the two below it, as an imbricated cup does.
-            let cells = vec2f(pattern.x, max(4.0, floor(pattern.y * 0.5)));
+            let cells = vec2f(max(2.0, floor(pattern.x * 0.5)), max(3.0, floor(pattern.y * 0.35)));
             let ends = pattern.zw;
             let along = (input.uv.y - ends.x) / max(ends.y - ends.x, 1e-4);
             let row = floor(along * cells.x);
@@ -959,23 +967,25 @@ fn surface(input: SurfaceInput) -> Surface {
             let p = vec2f(input.uv.x * cells.y + stagger + wobble * 0.3, along * cells.x);
             let f = fract(p) - vec2f(0.5);
             let d = length(f * vec2f(1.0, 1.15));
-            let dome = 1.0 - smoothstep(0.16, 0.5, d);
+            let dome = 1.0 - smoothstep(0.33, 0.5, d);
             let cell = floor(p);
             let grain = cell_noise(cell.x, cell.y);
             let footprint = length(gx * cells) + length(gy * cells);
             let fade = saturate(1.5 - footprint);
             // A scale stands proud and pale in its middle and dark in the crevice round it.
-            let shade = mix(0.52, 1.22, dome) * (0.93 + 0.14 * grain);
+            let shade = mix(0.45, 1.18, dome) * (0.93 + 0.14 * grain);
             // A cell too small to draw leaves the bed's own tone, so a distant acorn keeps its
             // scales' shade and never shimmers.
             base = mix(base * 0.88, base * shade, fade);
             roughness = mix(roughness * 1.15, mix(roughness, roughness * 0.45, dome), fade);
         } else if (pattern.x > 0.5 && pattern.y > 0.5) {
             // The nut: faint striations down its length and a gloss where its body meets the light.
-            let across = input.uv.x * pattern.y * 3.0;
+            let across = input.uv.x * 14.0;
             let stripe = 0.5 + 0.5 * cos(across * 6.2831853);
-            base = base * (0.95 + 0.05 * stripe);
-            roughness = roughness * 0.9;
+            base = base * (0.9 + 0.1 * stripe);
+            // A gloss that runs with the striations, so the sheen spreads over the body rather
+            // than gathering in one spot.
+            roughness = roughness * (0.8 + 0.35 * stripe);
         }
         occlusion = input.vertexColor.a;
     } else {

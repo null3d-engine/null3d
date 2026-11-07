@@ -113,6 +113,11 @@ export const HEADER = {
 	 * in record order. Rows of zero leave the body plain.
 	 */
 	extraScales: 47,
+	/**
+	 * The first extra's stalk colour, and its band's roughness; the next `MAX_EXTRAS - 1` texels
+	 * hold the others' in record order.
+	 */
+	extraStalks: 51,
 } as const;
 
 /**
@@ -122,7 +127,7 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.extraScales + MAX_EXTRAS;
+export const HEADER_TEXELS = HEADER.extraStalks + MAX_EXTRAS;
 
 /** An extra's roughness where its record names none. */
 export const EXTRA_ROUGHNESS = 0.6;
@@ -336,6 +341,10 @@ export function speciesHeader(
 		const from = rows > 0 ? (lathe?.scaled?.[0] ?? 0) : 0;
 		const to = rows > 0 ? Math.min(height, lathe?.scaled?.[1] ?? height) : 0;
 		texel(header, HEADER.extraScales + index, [rows, around, from / height, to / height]);
+		texel(header, HEADER.extraStalks + index, [
+			...(extra.stalkColour ?? extra.bandColour ?? extra.colour),
+			band,
+		]);
 	});
 	const bud = record.shoots?.bud.colour;
 	if (bud) texel(header, HEADER.bud, [...bud, 1]);

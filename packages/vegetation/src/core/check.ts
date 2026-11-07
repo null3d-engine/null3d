@@ -362,6 +362,9 @@ function extraProblems(record: Species, out: string[]): void {
 		extra.roughness?.forEach((value, k) => {
 			shareProblem(value, `${path}.roughness[${k}]`, out);
 		});
+		extra.stalkColour?.forEach((channel, k) => {
+			shareProblem(channel, `${path}.stalkColour[${k}]`, out);
+		});
 		if (extra.bandColour && !('lathe' in extra.shape && extra.shape.scaled))
 			out.push(`${path}.bandColour needs a lathe whose 'scaled' names the band it colours`);
 	});
