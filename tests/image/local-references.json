@@ -164,8 +164,8 @@
 	"chromium-swiftshader/compat/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
 		"tier": "compat",
-		"date": "2026-11-06",
-		"reason": "the oak's record changed tonight (leaf rooting, each cutting on its own shoot, the root leaf roll); the picture is the first with the reference's own light, and a CI drawing replaces it"
+		"date": "2026-11-07",
+		"reason": "the oak's record changed: rosettes stand as flat fans, blades at the record's length, and thicker twig tips, so SwiftShader's oak picture is redrawn here while CI redraws the set"
 	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -416,8 +416,8 @@
 	"chromium-swiftshader/webgl2/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
 		"tier": "webgl2",
-		"date": "2026-11-06",
-		"reason": "the oak's record changed tonight (leaf rooting, each cutting on its own shoot, the root leaf roll); the picture is the first with the reference's own light, and a CI drawing replaces it"
+		"date": "2026-11-07",
+		"reason": "the oak's record changed: rosettes stand as flat fans, blades at the record's length, and thicker twig tips, so SwiftShader's oak picture is redrawn here while CI redraws the set"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -698,8 +698,8 @@
 	"chromium-swiftshader/webgpu/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
 		"tier": "webgpu",
-		"date": "2026-11-06",
-		"reason": "the oak's record changed tonight (leaf rooting, each cutting on its own shoot, the root leaf roll); the picture is the first with the reference's own light, and a CI drawing replaces it"
+		"date": "2026-11-07",
+		"reason": "the oak's record changed: rosettes stand as flat fans, blades at the record's length, and thicker twig tips, so SwiftShader's oak picture is redrawn here while CI redraws the set"
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
