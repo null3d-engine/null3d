@@ -251,6 +251,9 @@ function growthProblems(record: Species, out: string[]): void {
 			out.push(`growth.clearance is ${growth.clearance}; it is metres of clear air from 0 to 2`);
 		if (growth.turning !== undefined && !(growth.turning >= 0 && growth.turning <= 90))
 			out.push(`growth.turning is ${growth.turning}; it is degrees from 0 to 90`);
+		const thickness = growth.clearanceThickness;
+		if (thickness !== undefined && !(thickness >= 0 && thickness <= 1))
+			out.push(`growth.clearanceThickness is ${thickness}; it is a share from 0 to 1`);
 		if (growth.floor !== undefined && !(growth.floor >= 0 && growth.floor <= 0.5))
 			out.push(
 				`growth.floor is ${growth.floor}; it is a share of the height from 0 to 0.5, a crown's underside`,
