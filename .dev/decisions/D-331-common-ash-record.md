@@ -247,8 +247,9 @@ stand as one piece.
 ## Decision
 
 Grow the ash with the record above. Add `CompoundLeaf.leafletStep` and `ExtraShape.samara`, both
-optional, so every other species grows as it did. The species does not pass its review, and the
-faults under [Consequences](#consequences) stay open.
+optional, so every other species grows as it did, and hold the compound leaf's rachis to
+`RACHIS_TIP_SHARE` at its tip. The species does not pass its review, and the faults under
+[Consequences](#consequences) stay open.
 
 Rejected:
 
@@ -266,7 +267,8 @@ Rejected:
 
 - `core/record.ts` gains the two optional fields, `core/check.ts` checks them, and
   `leaf/extras.ts` and `leaf/leaf-mesh.ts` read them. Their tests are in `leaf/extras.test.ts` and
-  `leaf/leaf-mesh.test.ts`.
+  `leaf/leaf-mesh.test.ts`. `leaf/compound.ts` holds the rachis rule, and
+  `leaf/leaf-mesh.test.ts` measures the rachis's tip and a simple leaf's unchanged mesh.
 - The review page measures a cut piece's frame in whole-leaf lengths: a compound leaf's leaf is its
   stalk, rachis and terminal leaflet, not one leaflet. Without that, every cut piece of a compound
   species was framed five times too close.
