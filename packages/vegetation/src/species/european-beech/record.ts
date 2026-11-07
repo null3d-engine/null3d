@@ -121,13 +121,15 @@ export const record: Species = {
 				droop: 8,
 			},
 			{
-				// The branch of still 21: three years of zigzag wood fanning into flat sprays.
+				// The branch of still 21 and the crown's limb ends: three years of zigzag wood fanning
+				// into flat sprays. The strongest shoots carry the most leaves, so the crown's masses
+				// gather at the limbs' ends as stills 01 and 02 show them.
 				name: 'spray',
 				vigor: [0.25, 1],
 				share: 0.35,
 				years: 3,
 				length: { mean: 1.15, spread: 0.15 },
-				nodes: { mean: 5, spread: 1 },
+				nodes: { mean: 6, spread: 1 },
 				internode: ALTERNATE,
 				stem: { radius: [0.011, 0.004] },
 				lateral: 55,
@@ -352,18 +354,18 @@ export const record: Species = {
 		// 1.4 m ahead of the row, where the stretch behind the row cannot reach it.
 		cardStalk: 2,
 		cardStalkToFoliage: true,
-		// Stills 01, 02 and 18: the reference's crown reads as plates about half a metre across, where
-		// a scaled shoot's leaves alone read finer. The cards stand a little larger than their shoots.
-		cardGrow: 1.4,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The crown's prototypes, with the cut twig's own class beside them: 2.44, 3.03, 4.09 and
-			// 6.19 MB at the four tiers, and the owner's tree caps are 2.7, 4, 7.1 and 13 MB.
-			kitBytes: { low: 2_500_000, medium: 3_100_000, high: 4_200_000, ultra: 6_300_000 },
+			// The crown's prototypes, whose strongest shoots carry the crown's masses, with the cut
+			// twig's own class beside them: 2.45, 3.25, 4.68 and 7.51 MB at the four tiers, and the
+			// owner's tree caps are 2.7, 4, 7.1 and 13 MB.
+			kitBytes: { low: 2_550_000, medium: 3_350_000, high: 4_850_000, ultra: 7_700_000 },
 			variantBytes: { low: 10_500_000, medium: 11_000_000, high: 11_200_000, ultra: 11_500_000 },
-			lod0Triangles: 2_700_000,
+			// The crown's strongest shoot carries six leaves a year, which puts the densest near band at
+			// 2,702,377 triangles; the owner's cap for a tree is 2,900,000.
+			lod0Triangles: 2_750_000,
 			lod1Triangles: 150_000,
 			// The crown's cards, each with the twig line that ties its leaves to the wood: the densest
 			// variant measures 42,687, and the owner's cap for a tree is 43,000.
