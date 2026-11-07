@@ -46,6 +46,12 @@ export const record: Species = {
 		// Stills 01, 02 and 18 show sky under the crown down to the fork: the outline's lowest
 		// fitted row, the drooping limb ends at the rim, stays out of the room the crown fills.
 		floor: 0.175,
+		// Stills 06, 07 and 08: great limbs pass round one another rather than through. The clearance
+		// falls with each limb's order and applies only above a share of the trunk's girth, so the
+		// crown's fine wood keeps its own layout while its great limbs keep apart.
+		clearance: 0.3,
+		clearanceThickness: 0.35,
+		turning: 30,
 		internode: { length: 0.6, ageFactor: 0.99 },
 		stems: { count: 1, lean: { mean: 2, spread: 2 }, stool: 0, fused: 0 },
 		buds: {

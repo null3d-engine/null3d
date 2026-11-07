@@ -242,9 +242,10 @@ describe('the self-organizing oak', () => {
 		() => {
 			const record = species.record;
 			const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
+			// The turning rule alone: the species' own thickness floor would keep some clearances.
 			const shaped = (turning?: number): Species => ({
 				...record,
-				growth: { ...growth, clearance: 0.5, turning: turning ?? 0 },
+				growth: { ...growth, clearance: 0.5, turning: turning ?? 0, clearanceThickness: 0 },
 			});
 			const stopped = grow(0, shaped());
 			const turned = grow(0, shaped(30));
@@ -253,7 +254,7 @@ describe('the self-organizing oak', () => {
 			// A turning with no clearance to keep changes nothing.
 			const open = (turning: number): Species => ({
 				...record,
-				growth: { ...growth, clearance: 0, turning },
+				growth: { ...growth, clearance: 0, turning, clearanceThickness: 0 },
 			});
 			expect(digest(grow(0, open(30)))).toBe(digest(grow(0, open(0))));
 			// A shoot that stops leaves a bare tip the crown cannot close, so the silhouette breaks into
@@ -277,8 +278,17 @@ describe('the self-organizing oak', () => {
 				growth: { ...growth, clearance: 0.3, turning: 30, clearanceThickness },
 			});
 			// A floor above the great limbs' share leaves no other wood thick enough to block, so the
-			// plant grows exactly as it does without a clearance.
-			expect(digest(grow(0, shaped(0.7)))).toBe(digest(grow(0, record)));
+			// plant grows exactly as a record without the rule does.
+			const plain: Species = {
+				...record,
+				growth: {
+					...growth,
+					clearance: undefined,
+					turning: undefined,
+					clearanceThickness: undefined,
+				},
+			};
+			expect(digest(grow(0, shaped(0.7)))).toBe(digest(grow(0, plain)));
 			const all = grow(0, shaped(0));
 			const thick = grow(0, shaped(0.5));
 			// Fine twigs keep their own layout: more fine pairs stand inside the distance.
