@@ -529,9 +529,30 @@ describe('the one-winged key', () => {
 
 	it('closes a ring of four at every station, so it reads from both faces', () => {
 		const mesh = key();
-		expect(mesh.positions.length / 3).toBeGreaterThanOrEqual(RING * 4);
+		const rings = mesh.positions.length / 3 / RING;
+		expect(rings).toBeGreaterThanOrEqual(4);
 		expect((mesh.positions.length / 3) % RING).toBe(0);
-		expect(mesh.indices.length / 3).toBe((mesh.positions.length / 3 - RING) * 2);
+		// Four faces close each pair of rings, but the body's last ring stands again as the wing's
+		// first, so that pair carries the colour change and no faces.
+		expect(mesh.indices.length / 3).toBe(8 * (rings - 2));
+	});
+
+	it("marks the seed body as the extra's band, so its colour stands apart from the wing", () => {
+		const mesh = key();
+		const rings = mesh.positions.length / 3 / RING;
+		const banded: number[] = [];
+		for (let r = 0; r < rings; r++) if ((mesh.uvs1[r * RING * 2] as number) === 1) banded.push(r);
+		expect((banded[0] as number) ?? -1).toBe(0);
+		expect(banded.length).toBeGreaterThan(1);
+		expect(banded.length).toBeLessThan(rings);
+		// The wing's first ring stands where the body's last does, so the colour changes at a sharp
+		// edge rather than along the wing.
+		const last = banded[banded.length - 1] as number;
+		expect(mesh.uvs1[(last + 1) * RING * 2] as number).toBe(0);
+		expect(mesh.positions[(last + 1) * RING * 3 + 1] as number).toBeCloseTo(
+			mesh.positions[last * RING * 3 + 1] as number,
+			6,
+		);
 	});
 
 	it('draws a bunch of keys on the sites its record names, in its season', () => {

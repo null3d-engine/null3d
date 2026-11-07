@@ -1051,6 +1051,13 @@ export interface ShootSpec {
 		 * negative toward the ground. Absent, the turn comes from the finest order's tropism.
 		 */
 		readonly lift?: number;
+		/**
+		 * Degrees each shoot turns away from the wood that carries it, on top of the angle the
+		 * record's buds give, from 0 to 60. A crown whose foliage stands against its twigs opens as
+		 * its shoots reach further out, and the shoots keep their feet on the wood: 0 by default,
+		 * the angle the buds' own curve sets.
+		 */
+		readonly reach?: number;
 		/** How far a shoot turns its leaves toward the sky, 0 to 1 (flat beech sprays). */
 		readonly skyward: number;
 		/**
@@ -1307,6 +1314,19 @@ export interface CompoundLeaf {
 	 * finely as a whole leaf.
 	 */
 	readonly leafletStep?: number;
+	/**
+	 * The share of its drawn stalk that a leaflet keeps, 0 to 1; 1 by default, the stalk the texture
+	 * measured. At 0 the leaflet is sessile: its blade begins at the point where it meets the rachis,
+	 * so no stalk stands between the two. A texture's stalk band may carry no leaf on one face, and a
+	 * leaflet that draws a stalk from it then stands clear of the rachis on that face.
+	 */
+	readonly leafletStalk?: number;
+	/**
+	 * Degrees between each leaflet and the rachis, from 30 to 90; the builder's own angle by default.
+	 * A wider angle spreads the leaflets, so the leaf's plan reads wider against its length, as a
+	 * leaf that has lost its leaflets' stalks reads narrower.
+	 */
+	readonly angle?: number;
 }
 
 /**
@@ -1608,8 +1628,9 @@ export interface ExtraSpec {
 	readonly colour: Rgb;
 	/**
 	 * The linear colour, each channel 0 to 1, of a lathe's scaled band and of the stalks that carry
-	 * it, such as an acorn's cup and peduncle, where the rest of the shape takes `colour`. The band
-	 * meets the body at a sharp edge. Without one, the whole extra takes `colour`.
+	 * it, such as an acorn's cup and peduncle, where the rest of the shape takes `colour`. A key
+	 * takes it for its seed body, so a bunch reads as brown bodies on green wings. The band meets
+	 * the body at a sharp edge. Without one, the whole extra takes `colour`.
 	 */
 	readonly bandColour?: Rgb;
 	/**

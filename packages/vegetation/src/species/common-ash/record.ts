@@ -29,14 +29,25 @@ export const record: Species = {
 	form: 'tall open dome on a long clean bole',
 	// Stills 01, 02 and 18 stand the bole 0.038 to 0.051 of the tree's height across at breast
 	// height, and the fit's crown is 0.9 of the height wide, so the tree is taller than it is broad.
-	size: { height: { mean: 22, spread: 2 }, dbh: 0.95, aspect },
+	// Still 17 and the whole views: the bole's diameter is about four hundredths of the tree's height,
+	// where the fitted 0.95 metre drew a hair thin at three and a half.
+	size: { height: { mean: 22, spread: 2 }, dbh: 1.1, aspect },
 	growth: {
 		model: 'self-organizing',
 		years: 36,
 		macroOrders: 4,
+		// Stills 09 and 21: the pairs divide again and again into fine twigs, so more lateral buds
+		// put out a branch than the light alone gives.
+		branching: 1.15,
 		// The fitted outline holds no room below the crown's base, and stills 01, 02 and 18 show the
 		// bole bare to about a quarter of the height, so the crown's underside stands there.
 		floor: 0.25,
+		// Stills 01, 02 and 18: the great limbs pass round one another rather than through, and each
+		// shoot turns aside to keep its air. Only wood above a third of the trunk's girth keeps the
+		// clearance, so the crown's fine wood keeps its own layout.
+		clearance: 0.3,
+		clearanceThickness: 0.35,
+		turning: 30,
 		internode: { length: 0.55, ageFactor: 0.99 },
 		stems: { count: 1, lean: { mean: 2, spread: 2 }, stool: 0, fused: 0 },
 		buds: {
@@ -55,10 +66,12 @@ export const record: Species = {
 		},
 		// Stills 01, 02 and 18: one leader carries the crown to its top and outgrows every limb, so the
 		// tree is longer than it is broad.
+		// Stills 01, 02 and 18: one leader carries the crown to a single apex, so the crown stands
+		// taller than it is wide where a broad dome would not.
 		apical: {
 			control: [
-				[0, 0.54],
-				[1, 0.57],
+				[0, 0.62],
+				[1, 0.64],
 			],
 			dominance: [0.78, 0.6, 0.98],
 			wander: 8,
@@ -180,7 +193,9 @@ export const record: Species = {
 				length: { mean: 0.42, spread: 0.06 },
 				nodes: { mean: 2, spread: 0.4 },
 				internode: PAIR,
-				stem: { radius: [0.005, 0.0035] },
+				// Stills 21 and 22: the cut twig stands about a thirtieth of the piece's height across
+				// at its foot, twice the width the class drew before.
+				stem: { radius: [0.011, 0.007] },
 				laterals: 2,
 				lateralGap: 0,
 				bend: { length: 0.05, angle: 26 },
@@ -215,14 +230,16 @@ export const record: Species = {
 		placement: {
 			// Stills 01 and 02: the limbs carry foliage along their length, so a limb a third of the
 			// way out is leafy rather than bare.
+			// Stills 01, 02 and 05: every limb carries leafy twigs along its run, not only at its end,
+			// so the crown reads as a filigree of opposite branches rather than tufts on bare axes.
 			perMetre: [
-				[0, 0.8],
-				[0.55, 1.6],
+				[0, 2.4],
+				[0.55, 3],
 				[1, 8],
 			],
-			// A quarter of the crown's own box shows sky, as stills 01 and 02 do. The wider crown the
-			// fit gives spreads the same curve over more air, so the dial sits above the oak's.
-			density: 1.5,
+			// Stills 01 and 02: about a quarter of the crown's own box shows sky, and the curve above
+			// carries leafy twigs along every limb, so the dial keeps the curve's own count.
+			density: 1,
 			shadePrune: 0,
 			// Stills 01, 03 and 05: sky shows through the crown's middle and under it, where its own
 			// leaves leave a shoot under this share of the sky, and the lit outer masses stay.
@@ -247,7 +264,7 @@ export const record: Species = {
 			// Still 12: a bare stalk runs below the lowest pair for about an eighth of the leaf, then
 			// the pairs of leaflets to a single one at the tip. The stalk stands about 1.6 millimetres
 			// across on the photograph, thick enough to read as the wood the leaf hangs from.
-			petiole: { length: 0.03, radius: 0.0018, flat: 0, droop: 8 },
+			petiole: { length: 0.03, radius: 0.0026, flat: 0, droop: 8 },
 			fold: 6,
 			curl: 8,
 			crossCurl: 0,
@@ -264,9 +281,14 @@ export const record: Species = {
 		// runs 0.63 of the whole leaf against a leaflet's 0.37, so it measures 1.68 leaflet lengths.
 		compound: {
 			kind: 'pinnate',
-			leaflets: { mean: 11, spread: 0.5 },
-			rachis: 1.68,
+			leaflets: { mean: 9, spread: 0.5 },
+			// Stills 12 and 13: the leaflets take about two fifths of the leaf's length, and they
+			// stand well out from the rachis, so the leaf's plan is broad for its length.
+			rachis: 1.5,
 			terminal: true,
+			angle: 74,
+			// Stills 12 and 13: each leaflet's blade meets the rachis with no stalk of its own.
+			leafletStalk: 0,
 		},
 	},
 	bark: {
@@ -289,8 +311,9 @@ export const record: Species = {
 		collar: { swell: 0.35, length: 1.5, ridge: 0.4 },
 		// Still 08: the fork closes in a small knot, its arms part in a narrow V.
 		fork: { bend: 2.5, knot: 0.25 },
-		// Still 14: a thin film of moss on the foot's north side only.
-		moss: { amount: 0.15, up: 0.6, north: 0.2, colour: [0.18, 0.22, 0.06] },
+		// Still 14: a green film of moss over the buttresses' flanks, reaching about a metre up, on
+		// every side of the foot rather than one.
+		moss: { amount: 1, up: 1.2, north: 0, colour: [0.14, 0.2, 0.05] },
 		// Still 15: pale grey-green lichen flecks the crests of the net on the lower bole.
 		lichen: { amount: 0.3, from: 0.1, to: 0.6, colour: [0.4, 0.42, 0.36] },
 	},
@@ -316,27 +339,33 @@ export const record: Species = {
 	},
 	extras: [
 		{
-			// Still 19: dense bunches of single-winged keys hang from the last joint of the shoot, each
-			// a narrow seed body at the top and a long paddle-shaped wing below it.
+			// Still 19: dense bunches of several dozen single-winged keys hang from the last joint of
+			// the shoot, each a small seed body at the top and a long narrow wing below it.
 			kind: 'fruit',
 			at: 'shoot-tip',
 			share: 0.06,
-			count: { mean: 12, spread: 3 },
+			count: { mean: 34, spread: 8 },
 			tipShare: 0.85,
 			seasons: ['summer', 'autumn'],
 			shape: {
 				samara: {
+					// Still 19: a key about three centimetres long and a fifth as wide, on a small
+					// round seed body less than a fifth of that length.
 					length: 0.032,
-					width: 0.011,
-					body: 0.3,
+					width: 0.0068,
+					body: 0.18,
 				},
 				// Still 19: the bunch hangs from a stalk several centimetres long below the twig, so
 				// its keys stand clear of the leaves above them, on footstalks of their own.
 				stalk: 0.05,
 				pedicel: 0.014,
 			},
-			// Still 19: the keys are a pale yellow-green, turning brown at their tips.
-			colour: [0.3, 0.3, 0.09],
+			// Still 19: a yellow-green wing on a red-brown seed body, the body darker than the wing.
+			colour: [0.22, 0.28, 0.08],
+			bandColour: [0.16, 0.08, 0.04],
+			// Still 19: the pedicels and their shared stalk are green, so each brown body stands
+			// separate on its own footstalk instead of running into its neighbours' as one collar.
+			stalkColour: [0.2, 0.26, 0.07],
 			roughness: [0.6, 0.6],
 			hang: 180,
 		},
@@ -364,20 +393,25 @@ export const record: Species = {
 		// The cards stand half again larger than the shoots they picture, so a gap between one shoot's
 		// leaves falls on a neighbour's leaves rather than on sky, and the far crown's rim reads solid.
 		cardGrow: 1.4,
+		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so a card's leaves
+		// read as a piece in air. Each draws its twig as a line, and the join shows.
+		cardStalk: 1.5,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit measures 2.63, 3.03, 5.64 and 11.21 MB, the leaf's eleven leaflets and the
+			// The kit measures 2.60, 2.96, 4.91 and 9.07 MB, the leaf's nine sessile leaflets and the
 			// cutting class among them; each cap sits above its figure, and the low tier's just under
 			// the owner's cap for a tree.
 			kitBytes: { low: 2_680_000, medium: 3_150_000, high: 5_900_000, ultra: 11_600_000 },
-			// The largest of seed 11's six variants measures 3.70, 3.76, 3.84 and 3.95 MB.
-			variantBytes: { low: 4_000_000, medium: 4_100_000, high: 4_200_000, ultra: 4_300_000 },
+			// The largest of seed 11's six variants measures 5.87, 5.94, 6.02 and 6.11 MB, the keys'
+			// bunches of 34 taking close to half of it.
+			variantBytes: { low: 5_970_000, medium: 6_040_000, high: 6_120_000, ultra: 6_210_000 },
 			lod0Triangles: 2_500_000,
-			// The first card level's heaviest variant draws 20,301 triangles and the second's 7,017.
-			lod1Triangles: 24_000,
-			lod2Triangles: 9_000,
+			// The heaviest variant's first card level draws 25,728, 28,645, 32,025 and 36,735
+			// triangles from the coarsest tier up, and its second 10,920, 11,797, 12,659 and 13,492.
+			lod1Triangles: 38_000,
+			lod2Triangles: 14_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
 			// A variant grows in 156 to 260 ms.
