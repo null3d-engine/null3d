@@ -16,6 +16,12 @@ export interface LeafConfig {
 	/** The slots of the upper and lower faces: 24 and 25 by the reference brief. */
 	readonly upper: number;
 	readonly lower: number;
+	/**
+	 * The rectangle each face is cut from, as left, top, width and height in source texels: a
+	 * compound leaf's picture holds its whole blade, and the leaflet that the mesh draws takes its
+	 * own part of it. The whole picture where none is given.
+	 */
+	readonly crop?: readonly [number, number, number, number];
 	/** Alpha bytes below `floor` are cleared; at or above `solid` the leaf is fully covered. */
 	readonly alpha: { readonly floor: number; readonly solid: number };
 	/**

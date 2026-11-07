@@ -13,7 +13,7 @@ import type { PrototypeArrays } from '../asset';
 import { cos, sin } from '../core/math';
 import type { LeafShape, Species } from '../core/record';
 import type { TextureManifest } from '../core/textures';
-import { type Detail, spreadMean } from '../core/types';
+import { DETAILS, type Detail, spreadMean } from '../core/types';
 import { compoundLeaf } from './compound';
 import type { FoliageBuilder } from './kinds';
 import {
@@ -355,6 +355,10 @@ export const builder: FoliageBuilder = {
 			throw new Error(`@null3d/vegetation: the blade builder got '${foliage.kind}' foliage`);
 		const outline = outlineOf(foliage.leaf, manifest);
 		if (!foliage.compound) return [bladeMesh(foliage.leaf, outline, detail)];
+		// A leaflet is a fraction of the leaf's size, so it takes a coarser cut unless the record asks
+		// for the leaf's own.
+		const step = Math.max(0, Math.min(2, Math.round(foliage.compound.leafletStep ?? 1)));
+		const leafletDetail = DETAILS[Math.max(0, DETAILS.indexOf(detail) - step)] ?? detail;
 		// Each leaflet keeps a short stalk of its own and no droop: the rachis carries the droop.
 		const leaflet = bladeMesh(
 			{
@@ -366,7 +370,7 @@ export const builder: FoliageBuilder = {
 				},
 			},
 			outline,
-			detail,
+			leafletDetail,
 		);
 		return [compoundLeaf(foliage.leaf, foliage.compound, outline, leaflet, detail)];
 	},
