@@ -503,9 +503,16 @@ export default defineSketch(async (ctx) => {
 	const elevation = QUERY.elevation ?? SPEC.elevation;
 	let facts: Record<string, unknown> = {};
 	const foliage = record.foliage;
-	const leaf = foliage.kind === 'blade' ? foliage.leaf.length : undefined;
-	/** A leaf's length in metres, for a species whose leaves are blades. */
-	const leafLength = leaf === undefined ? undefined : typeof leaf === 'number' ? leaf : leaf.mean;
+	/**
+	 * A leaf's length in metres: one blade, or a compound leaf's stalk, rachis and terminal leaflet,
+	 * which is the piece a cutting's frame and the close views measure in.
+	 */
+	const leafLength =
+		foliage.kind !== 'blade'
+			? undefined
+			: (typeof foliage.leaf.length === 'number' ? foliage.leaf.length : foliage.leaf.length.mean) *
+					(foliage.compound ? foliage.compound.rachis + 1 : 1) +
+				(foliage.compound ? foliage.leaf.petiole.length : 0);
 	/** What the close views read of the plant: its wood alone for a view that draws the wood alone. */
 	const closePlant = (woodOnly: boolean): ClosePlant => ({
 		skeleton,
