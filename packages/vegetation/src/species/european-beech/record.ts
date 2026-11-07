@@ -270,8 +270,8 @@ export const record: Species = {
 	},
 	extras: [
 		{
-			// Still 19: two small bristly cupules on slender stalks below the leaves, one closed and one
-			// split to show its nuts.
+			// Still 19: two small bristly cupules hanging on slender stalks below the leaves. The
+			// drawings show the closed husk; the split one that shows its nuts is not built.
 			kind: 'fruit',
 			at: 'shoot-tip',
 			share: 0.06,
