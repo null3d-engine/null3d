@@ -92,9 +92,9 @@ The species fails its review. Nine of its twelve rows fail on at least one pictu
 
 | Reference | Judged | Deciding figures |
 | --- | --- | --- |
-| `01-whole-distant.png` | Fail | Sky gap 0.37 against 0.26, 0.11 above the band; outline 0.45; leaf colour 16.4 |
-| `02-whole-profile.png` | Fail | Sky gap 0.31 against 0.19, 0.12 above the band; outline 0.48; leaf colour 17.0 |
-| `03-whole-from-below.png` | Fail | Sky gap 0.35 against 0.50, 0.15 below the band: the crown is denser than the photograph's |
+| `01-whole-distant.png` | Fail | The render's sky gap 0.37 against the reference's 0.26, 0.11 above the band; outline 0.45; leaf colour 16.4 |
+| `02-whole-profile.png` | Fail | The render's sky gap 0.31 against the reference's 0.19, 0.12 above the band; outline 0.48; leaf colour 17.0 |
+| `03-whole-from-below.png` | Fail | The render's sky gap 0.35 against the reference's 0.50, 0.15 below the band: the crown is denser than the photograph's |
 | `04-crown-outside.png` | Fail | Outline 0.18; sky gap 0.59 against 0.43 |
 | `05-crown-underside.png` | Unjudged | No plain outline; edge directions 0.035 |
 | `06-inside-crown.png` | Unjudged | No plain outline; edge directions 0.097 |
@@ -109,7 +109,7 @@ The species fails its review. Nine of its twelve rows fail on at least one pictu
 | `15-bark-mid-trunk.png` | Partial | Shape 0.62; the trunk's surface colour on the render against the photograph 9.9 |
 | `16-bark-on-limb.png` | Fail | Outline 0.36 |
 | `17-trunk-taper.png` | Partial | Outline 0.39; sky gap 0.04 against 0.29 |
-| `18-silhouette.png` | Fail | Outline 0.47; sky gap 0.37 against 0.21; leaf colour 23.3 |
+| `18-silhouette.png` | Fail | Outline 0.47; the render's sky gap 0.37 against the reference's 0.21; leaf colour 23.3 |
 | `19-keys.png` | Fail | Edge directions 0.298; the render's bunch is 6 separate pieces |
 | `20-winter-black-buds.png` | Fail | Outline 0.15; colour 11.1 |
 | `21-branch-studio.png` | Fail | Outline 0.06; 35 pieces in the render against 1 |
@@ -171,10 +171,12 @@ Rejected:
 - The low tier's kit sits within three per cent of the owner's cap for a tree. A change that adds a
   prototype needs a cut elsewhere.
 - Stated faults, largest first, each with its figure:
-  1. The crown shows more sky than its photographs. At 01 the render's gap is 0.37 against the
-     reference's 0.26, at 02 0.31 against 0.19 and at 18 0.37 against 0.21. The shoots sit in tufts
-     near the axes and the rim between the tufts stays bare. The dial moved this figure by 0.08 over
-     a threefold rise, so a change of density alone will not close it.
+  1. The crown's density is wrong in both directions. It shows more sky than its photographs at 01,
+     where the render's gap is 0.37 against the reference's 0.26, at 02 at 0.31 against 0.19 and at
+     18 at 0.37 against 0.21. It shows less looking up the bole from the foot, where 03 stands at
+     0.35 against 0.50. The shoots sit in tufts near the axes, leaving the rim between the tufts
+     bare and the middle over the trunk full. The dial moved this figure by 0.08 over a threefold
+     rise, so a change of density alone will not close it.
   2. The crown is drawn three times as loose as its photograph in the wind. The top band's motion is
      0.141 against 0.041, and every band but the third moves further than its reference's.
   3. The cut pieces do not read as the photographs' pieces. Outlines are 0.06 at 21 and 22 and 0.13
