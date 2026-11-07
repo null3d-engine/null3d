@@ -199,6 +199,26 @@ describe('the compound leaf', () => {
 		expect(vertices()).toBe(one);
 	});
 
+	it('spreads its leaflets by the record angle, and by the builder own when it names none', () => {
+		const spread = (angle?: number): number => {
+			const places = leafletPlaces(
+				{
+					kind: 'pinnate',
+					leaflets: 9,
+					rachis: 2.5,
+					terminal: true,
+					...(angle === undefined ? {} : { angle }),
+				},
+				0.05,
+				0.2,
+			);
+			return Math.max(...places.map((p) => Math.abs(p.angle)));
+		};
+		expect(spread()).toBe(spread(62));
+		expect(spread(74)).toBeGreaterThan(spread());
+		expect(spread(30)).toBeLessThan(spread());
+	});
+
 	it('meets the rachis with its leaflet blade when the record asks for no stalk', () => {
 		const leaf = (leafletStalk?: number) => ({
 			kind: 'blade' as const,

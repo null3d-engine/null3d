@@ -1296,6 +1296,12 @@ export interface CompoundLeaf {
 	 * leaflet that draws a stalk from it then stands clear of the rachis on that face.
 	 */
 	readonly leafletStalk?: number;
+	/**
+	 * Degrees between each leaflet and the rachis, from 30 to 90; the builder's own angle by default.
+	 * A wider angle spreads the leaflets, so the leaf's plan reads wider against its length, as a
+	 * leaf that has lost its leaflets' stalks reads narrower.
+	 */
+	readonly angle?: number;
 }
 
 /**

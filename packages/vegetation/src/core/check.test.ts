@@ -237,6 +237,29 @@ describe('the record check', () => {
 		).toBe(true);
 	});
 
+	it("holds a compound leaf's leaflet angle and stalk to their ranges", () => {
+		const foliage = template.foliage;
+		if (foliage.kind !== 'blade') return;
+		const compound = foliage.compound;
+		if (!compound) return;
+		const out = (angle: number, leafletStalk: number): Species => ({
+			...template,
+			foliage: {
+				...foliage,
+				compound: { ...compound, angle, leafletStalk },
+			},
+		});
+		expect(
+			speciesProblems(out(100, 1.5)).some((p) => p.startsWith('foliage.compound.angle is 100')),
+		).toBe(true);
+		expect(
+			speciesProblems(out(100, 1.5)).some((p) =>
+				p.startsWith('foliage.compound.leafletStalk is 1.5'),
+			),
+		).toBe(true);
+		expect(speciesProblems(out(62, 0))).toEqual(speciesProblems(template));
+	});
+
 	it("holds a bark zone's tint to factors from 0", () => {
 		const bark = template.bark as NonNullable<Species['bark']>;
 		const tinted = (tint: [number, number, number]): Species => ({
