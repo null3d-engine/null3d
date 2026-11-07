@@ -147,10 +147,12 @@ describe('the stem base', () => {
 					0,
 				);
 				const width = (y: number) => drawnWidth(section, roots, y, stemPipeAt(led, y));
-				// The whole-tree stills: 0.115 (02), 0.126 (18) and 0.168 (01) of the height at breast height.
+				// The whole-tree stills: 0.115 (02), 0.126 (18) and 0.168 (01) of the height at breast
+				// height, and the photographs of the species span 0.116 to 0.178. The pictures set the band,
+				// not a narrower figure from one still.
 				const breast = width(1.3) / led.height;
-				expect(breast).toBeGreaterThan(0.1);
-				expect(breast).toBeLessThan(0.17);
+				expect(breast).toBeGreaterThan(0.116);
+				expect(breast).toBeLessThan(0.178);
 				// Their foot, as a multiple of the narrowest bole above it: about 1.8 a quarter metre up,
 				// 1.2 at 0.85 m, and nearly plain by 1.25 m.
 				let waist = Number.POSITIVE_INFINITY;
