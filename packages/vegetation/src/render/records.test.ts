@@ -124,6 +124,12 @@ describe('the species header', () => {
 		expect(texel(header, HEADER.upperReflectance)[3]).toBeCloseTo(0.3, 6);
 	});
 
+	test("writes the least width a card's stalk draws, or nothing where the record gives none", () => {
+		expect(texel(header, HEADER.cardStalk)[0]).toBe(0);
+		const stalked: Species = { ...record, lod: { ...record.lod, cardStalk: 1.5 } };
+		expect(texel(speciesHeader(stalked, manifest, box), HEADER.cardStalk)[0]).toBeCloseTo(1.5, 6);
+	});
+
 	test('gives the whole plant its species sway, in metres at its top and cycles a second', () => {
 		const sway = record.wind.sway;
 		const written = texel(header, HEADER.sway);
@@ -263,6 +269,7 @@ describe('the plant shader', () => {
 			HEADER_LICHEN_REACH: HEADER.lichenReach,
 			HEADER_SWAY: HEADER.sway,
 			HEADER_EXTRA_BANDS: HEADER.extraBands,
+			HEADER_CARD_STALK: HEADER.cardStalk,
 			BARK_ZONE_TEXELS,
 			MAX_BARK_ZONES,
 			MAX_EXTRAS,

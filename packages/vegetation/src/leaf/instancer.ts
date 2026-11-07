@@ -159,6 +159,8 @@ interface Row {
 	/** The node of the bud the row stands on, and the bud's axis. */
 	node: number;
 	axis: number;
+	/** From the row's place back to the far end of the stretch it serves. */
+	back: Vector3;
 }
 
 /** A variant's shoot rows and the skeleton they stand on, its bare wood trimmed where the record asks. */
@@ -596,6 +598,7 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 				phase: pick(Purpose.Phase, b, k) & 255,
 				node,
 				axis,
+				back: [from[0] - place[0], from[1] - place[1], from[2] - place[2]],
 			});
 		}
 	}
@@ -649,6 +652,7 @@ function packRows(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']
 		sky: new Uint8Array(count).fill(OPEN_SKY),
 		bent: new Uint8Array(count).fill(BENT_UP),
 		order: new Uint32Array(count),
+		back: new Float32Array(count * 3),
 	};
 	rows.forEach((row, r) => {
 		out.prototype[r] = row.prototype;
@@ -657,6 +661,7 @@ function packRows(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']
 		out.scale[r] = row.scale;
 		out.record[r] = row.record;
 		out.phase[r] = row.phase;
+		out.back.set(row.back, r * 3);
 	});
 	const ranked = spaceRanks(rows, bounds);
 	ranked.forEach((row, rank) => {

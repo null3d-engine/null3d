@@ -111,6 +111,10 @@ const HEADER_EXTRA_BANDS: i32 = 43;
 const HEADER_EXTRA_SCALES: i32 = 47;
 // An extra's stalk colour and its band's roughness, per extra in record order.
 const HEADER_EXTRA_STALKS: i32 = 51;
+// The least width in pixels that a card's stalk draws, or 0 where the record gives none.
+const HEADER_CARD_STALK: i32 = 55;
+// The second coordinate that marks a card's stalk, in a place that the card planes leave free.
+const STALK_PLANE: f32 = 0.75;
 // Rows before the wind records, and wind records in a row.
 const HEADER_ROWS: i32 = 2;
 const RECORDS_PER_ROW: i32 = 256;
@@ -546,6 +550,44 @@ fn bark_lift(input: VertexInput) -> f32 {
     return (luminance - tiling.z) * tiling.w * weight;
 }
 
+/// The plant-space offset that widens a card's stalk to the record's least width on screen. The two
+/// vertices at each end of the stalk start at one point, so the vertex stage gives the line its
+/// width: it turns the width across the stalk's own direction on screen, and brings it back into
+/// the plant's space through the frame's projection and the object's transform.
+fn stalk_widen(input: VertexInput, plant: vec3f) -> vec3f {
+    let least = header(HEADER_CARD_STALK).x;
+    if (least <= 0.0 || frame.resolution.x <= 0.0 || frame.resolution.y <= 0.0) {
+        return vec3f(0.0);
+    }
+    let model = object.worldMatrix;
+    let clip = camera.viewProjection * (model * vec4f(plant, 1.0));
+    if (clip.w <= 0.0001) {
+        return vec3f(0.0);
+    }
+    // The stalk's direction, which the mesh writes as the vertex's normal, on the screen.
+    let axis = normalize(input.normal);
+    let clip_ahead = camera.viewProjection * (model * vec4f(plant + axis * 0.05, 1.0));
+    var along = vec2f(0.0, 1.0);
+    if (clip_ahead.w > 0.0001) {
+        let step = clip_ahead.xy / clip_ahead.w - clip.xy / clip.w;
+        if (length(step) > 0.000001) {
+            along = normalize(step);
+        }
+    }
+    let side = select(-1.0, 1.0, input.uv.x > 0.5 * TEXTURE_UV_STEPS);
+    let across = vec2f(-along.y, along.x) * side;
+    // Half the least width, in normalized device coordinates.
+    let ndc = across * (least * 0.5) / frame.resolution * 2.0;
+    let projection = camera.projection;
+    let view = vec3f(ndc.x * clip.w / projection[0][0], ndc.y * clip.w / projection[1][1], 0.0);
+    let world_offset = (transpose(camera.view) * vec4f(view, 0.0)).xyz;
+    // The object's linear part is a uniform scale and a turn, so its inverse is the transpose over
+    // the square of the scale.
+    let linear = mat3x3f(model[0].xyz, model[1].xyz, model[2].xyz);
+    let squared = max(dot(linear[0], linear[0]), 0.000001);
+    return transpose(linear) * world_offset / squared;
+}
+
 /// Wood, cards, merged foliage and extras: the 16-bit position into the plant's metres, lifted by
 /// the bark's height on the nearest wood, and moved by the wind in the plant's own space. The
 /// position comes as a fraction of the box, so the offset back from it keeps the plant's own
@@ -585,6 +627,9 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
             }
             moved = plant + (swayed - plant) * fade;
         }
+    }
+    if (mode == MODE_CARDS && abs(input.uv1.y - STALK_PLANE) < 0.1) {
+        moved += stalk_widen(input, plant);
     }
     return moved - input.position;
 }
@@ -755,8 +800,11 @@ fn coverage(input: SurfaceInput) -> f32 {
     let gy = dpdy(input.uv) * scale;
     var alpha = 1.0;
     if (mode == MODE_CARDS) {
-        let layer = select(1, 0, input.frontFacing);
-        alpha = card_alpha(textureSampleGrad(colour, colourSampler, uv, layer, gx, gy).a, gx, gy);
+        // A card's stalk is a solid line that the vertex stage widens, so it casts its whole width.
+        if (abs(input.uv1.y - STALK_PLANE) >= 0.1) {
+            let layer = select(1, 0, input.frontFacing);
+            alpha = card_alpha(textureSampleGrad(colour, colourSampler, uv, layer, gx, gy).a, gx, gy);
+        }
     } else if (mode == MODE_FOLIAGE
         || (mode == MODE_SHOOTS && input.vertexColor.b * 255.0 < KIND_STEM * 0.5)) {
         let layer = select(1, 0, input.frontFacing);
@@ -907,32 +955,42 @@ fn surface(input: SurfaceInput) -> Surface {
         mapped = normalize(mix(bark_normal, vec3f(0.0, 0.0, 1.0), lichen_mask * 0.35));
         occlusion = input.vertexColor.a;
     } else if (mode == MODE_CARDS) {
-        let layer = select(1, 0, upper);
-        let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
-        let surface_texel = textureSampleGrad(relief, reliefSampler, uv, layer, gx, gy);
-        let kind = surface_texel.a * 255.0;
-        let leaf = kind >= 127.5;
-        let self_shade = (kind - select(0.0, 128.0, leaf)) * 2.0 / 255.0;
-        if (leaf) {
-            let light = leaf_light(texel.rgb, upper, 0.0);
-            base = light.base;
-            share = light.share;
-            through = light.through;
-            roughness = light.roughness;
-        } else {
-            base = texel.rgb;
-        }
-        alpha = card_alpha(texel.a, gx, gy);
         // In the shell where a near copy draws its real shoots, its cards give way.
         let near_copy = object.values.x > 0.5;
-        if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
-            alpha = 0.0;
+        if (abs(input.uv1.y - STALK_PLANE) < 0.1) {
+            // A card's stalk: the young bark's tone, so the join the card's leaves stand on shows.
+            base = header(HEADER_YOUNG).rgb;
+            roughness = 0.85;
+            occlusion = 1.0;
+            if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
+                alpha = 0.0;
+            }
+        } else {
+            let layer = select(1, 0, upper);
+            let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
+            let surface_texel = textureSampleGrad(relief, reliefSampler, uv, layer, gx, gy);
+            let kind = surface_texel.a * 255.0;
+            let leaf = kind >= 127.5;
+            let self_shade = (kind - select(0.0, 128.0, leaf)) * 2.0 / 255.0;
+            if (leaf) {
+                let light = leaf_light(texel.rgb, upper, 0.0);
+                base = light.base;
+                share = light.share;
+                through = light.through;
+                roughness = light.roughness;
+            } else {
+                base = texel.rgb;
+            }
+            alpha = card_alpha(texel.a, gx, gy);
+            if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
+                alpha = 0.0;
+            }
+            let e = (surface_texel.xy * 255.0 - vec2f(128.0)) / 127.0;
+            let card_normal = octahedral(clamp(e, vec2f(-1.0), vec2f(1.0)));
+            // The card's normal is toward the viewer of the face it shows; the frame's normal is too.
+            mapped = card_normal;
+            occlusion = input.vertexColor.a * saturate(self_shade);
         }
-        let e = (surface_texel.xy * 255.0 - vec2f(128.0)) / 127.0;
-        let card_normal = octahedral(clamp(e, vec2f(-1.0), vec2f(1.0)));
-        // The card's normal is toward the viewer of the face it shows; the frame's normal is too.
-        mapped = card_normal;
-        occlusion = input.vertexColor.a * saturate(self_shade);
     } else if (mode == MODE_EXTRAS) {
         // An extra takes its kind's colour and roughness from the header, by the index in its
         // third byte, and its band's by the share in its second coordinates' x: an acorn's cup and
