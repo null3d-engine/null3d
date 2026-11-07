@@ -342,6 +342,9 @@ export const record: Species = {
 	lod: {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
+		// The crown's leaves are small against the whole view, so their twigs fall below a pixel there
+		// and a card reads as a leaf group in air. A two-pixel line draws the twig that carries it.
+		cardStalk: 2,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
@@ -352,7 +355,9 @@ export const record: Species = {
 			variantBytes: { low: 10_500_000, medium: 11_000_000, high: 11_200_000, ultra: 11_500_000 },
 			lod0Triangles: 2_700_000,
 			lod1Triangles: 150_000,
-			lod2Triangles: 30_000,
+			// The crown's cards, each with the twig line that ties its leaves to the wood: the densest
+			// variant measures 42,687, and the owner's cap for a tree is 43,000.
+			lod2Triangles: 42_700,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
 			growMilliseconds: 600,
