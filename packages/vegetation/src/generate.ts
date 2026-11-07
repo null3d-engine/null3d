@@ -349,10 +349,12 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 			? undefined
 			: pruneLight({ ...growInput, kit, skeleton: grown });
 	const lit = light ? { pruneLight: light } : {};
-	// A stand-in grows as it is at any coarseness.
-	const coarseness = placeholders
-		? 0
-		: coarsenessFor(kit, { ...growInput, skeleton: grown, ...lit }, detail, options);
+	// A stand-in grows as it is at any coarseness. A real species that falls back to a stand-in for a
+	// stage it does not build is still a real plant, so it takes the coarseness it is asked for.
+	const coarseness =
+		placeholders === true
+			? 0
+			: coarsenessFor(kit, { ...growInput, skeleton: grown, ...lit }, detail, options);
 	const dressInput: DressInput = {
 		...growInput,
 		kit,
