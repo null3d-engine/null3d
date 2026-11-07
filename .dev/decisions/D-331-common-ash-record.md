@@ -251,6 +251,31 @@ a record may now add `shoots.placement.reach` in degrees, 0 to 60, held at 90 in
 stays on the wood, so a spray never stands in air, and the foliage reaches out while the run along
 the twig stays open.
 
+### The envelope is not a knob
+
+The crown's box reads 1.155, 1.089 and 1.139 wide to high at the whole views against the
+photographs' 1.25, 1.23 and 0.90, so the visible next lever was the hull the grower fills. It is not
+a lever that can be turned by hand.
+
+Widening every radius of the fitted envelope and growing the first variant measures a growth that
+neither follows the change smoothly nor in the direction asked:
+
+| Radii | Crown's radius, variant 0 | 01's box | 01's sky gap |
+| --- | --- | --- | --- |
+| As fitted | 9.02 m | 1.155 | 0.201 |
+| 2 per cent wider | 0.53 m, a stalled plant | not drawn | not drawn |
+| 3 per cent wider | 10.54 m | 1.069 | 0.167 |
+
+Run `ash-31` drew the 3 per cent hull. The crown's box falls at all three whole views, its sky gap
+with it, the crown draws lopsided with a hole on one side, and the look-up view breaks from 5
+pieces to 10 while the crown outside rises from 65 to 97. The 2 per cent hull stalls the first
+variant outright and grows the second normally, so the stall belongs to a variant and not to the
+envelope.
+
+Two things follow. The fitted radii are not a knob, in either direction. And a fit that widens the
+hull does not widen the crown: the measurement to fit against is the rendered crown box at the whole
+views, not the hull's radii.
+
 ### The crown seen from under it
 
 Stills 03 and 08 look up the bole, and there the drawn crown is far denser than its photographs: 03
