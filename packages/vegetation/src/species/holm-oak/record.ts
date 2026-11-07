@@ -169,6 +169,10 @@ export const record: Species = {
 			// outside the foliage at a whole view.
 			bareTrim: 0.03,
 			shadePrune: 0.1,
+			// The crown's own leaves shade its middle, so the shoots there thin and the lit rim
+			// keeps its foliage, where the outer sprays overlap and their leaf spines close.
+			skyPrune: 0.3,
+			skyPruneLayer: 1,
 			skyward: 0.0,
 			scale: { mean: 1.3, spread: 0.15 },
 		},
