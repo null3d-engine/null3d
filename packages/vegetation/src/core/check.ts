@@ -218,6 +218,8 @@ function shootProblems(shoots: ShootSpec, out: string[]): void {
 	if (lift !== undefined && !(lift >= -30 && lift <= 30))
 		out.push(`shoots.placement.lift is ${lift}; it is degrees from -30 to 30`);
 	shareProblem(shoots.placement.skyward, 'shoots.placement.skyward', out);
+	if (shoots.placement.reach !== undefined)
+		wholeProblem(shoots.placement.reach, 'shoots.placement.reach', 0, 60, out);
 	shareProblem(shoots.placement.gather, 'shoots.placement.gather', out);
 	spreadProblems(shoots.placement.scale, 'shoots.placement.scale', true, out);
 	const clump = shoots.placement.clump;
