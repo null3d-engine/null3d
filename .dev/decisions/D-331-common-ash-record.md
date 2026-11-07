@@ -149,11 +149,24 @@ wide as its photograph's. The crown moved because five great limbs at 62 degrees
 four at 55 left it bare. The cut pieces moved because the class's twig is the photographs' 42 cm of
 two nodes rather than a metre of wire.
 
-Two levers the review's light owns do not move the crown's colour. Its foliage reads #4b6131 at 01
-where its photograph reads #798b74, and it stayed within one step of that when the light went from
-2.8 of daylight at a sky share of 0.24 to 2.2 at 0.62. The near leaves do take the light: 03, drawn
-inside the crown, moved from 11.7 to 8.3 colour steps over the same change. So the crown's darkness
-lies in the far cards' material, not in a light or a colour that the record or the slot file sets.
+### The crown's colour is the light's, and its blue is the leaf's
+
+The crown's foliage read #4b6131 at 01 where its photograph reads #798b74. A first reading of two
+runs said the light did not move it, and that was wrong: between those runs the sky's share rose
+from 0.24 to 0.62 while the daylight fell from 2.8 to 2.2, and more skylight with less sun came out
+even. A single test settles it. At eight times daylight the same view's crown reads #87ab58, where
+2.2 reads #4b6131 and 02, left at 2.2 in the same run, stays #4d6133. So the far cards take the
+scene's light as the near leaves do, and no builder or material change is needed.
+
+The light's own share of the fix is large. Raising the whole views to 5.5 and 5.2 of daylight at a
+sky share of 0.5 takes the colour difference from 20.1 and 20.6 steps to 11.8 and 11.6, and 03's
+from 7.1 to 1.5, with every sky gap still inside its band.
+
+What the light cannot do is the blue. The leaf's reflectance is 0.065, 0.130, 0.014: almost none in
+blue. At eight times daylight the crown reaches #87ab58 against the photograph's #798b74, which is
+nearly grey, and the extra light overshoots red and green long before the blue arrives. The crown's
+remaining 11.6 to 11.8 steps are that hue, and they move only with the leaf's blue in its texture or
+with a sky that carries more of the pictures' light.
 
 ### Budgets and grow time
 
