@@ -207,6 +207,9 @@ export const record: Species = {
 			// Stills 01 and 02: no bare twig stands past the leaves at a whole view, so the wood past
 			// the last shoot-bearing node is dead and goes.
 			bareTrim: 0.03,
+			// Stills 01, 02, 03 and 05: the grey bole stands clear to the fork, about a sixth of the
+			// height, with the great limbs' bases bare around it, while the skirt hangs low at the rim.
+			bareBole: { radius: 1.2, height: 0.17 },
 			skyward: 0.4,
 			scale: { mean: 1.95, spread: 0.15 },
 		},
