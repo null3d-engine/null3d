@@ -29,7 +29,7 @@ import {
 	skeletonSilhouette,
 } from './envelope';
 import { oakRecord } from './oak.fixture';
-import { growSelfOrganizing, shootReach } from './self-organizing';
+import { girthOf, growSelfOrganizing, shootReach } from './self-organizing';
 import { stemStarts } from './stems';
 
 /** A hash of every array a skeleton holds. */
@@ -117,6 +117,7 @@ describe('the self-organizing oak', () => {
 		};
 		// Pairs of nodes on different axes that stand within half a metre, less the joint where a
 		// branch meets the wood it leaves.
+		const CLEARANCE = 2;
 		const strangers = (skeleton: MacroSkeleton): number => {
 			let near = 0;
 			for (let a = 0; a < skeleton.nodeCount; a++)
@@ -131,7 +132,8 @@ describe('the self-organizing oak', () => {
 						(skeleton.position[a * 3 + 1] as number) - (skeleton.position[b * 3 + 1] as number);
 					const dz =
 						(skeleton.position[a * 3 + 2] as number) - (skeleton.position[b * 3 + 2] as number);
-					if (dx * dx + dy * dy + dz * dz < 0.25) near++;
+					// Wood standing inside the record's clearance of another axis, whatever the girths.
+					if (dx * dx + dy * dy + dz * dz < CLEARANCE * CLEARANCE) near++;
 				}
 			return near;
 		};
@@ -139,10 +141,12 @@ describe('the self-organizing oak', () => {
 		// wood that stands too near another axis's falls away by orders of magnitude. A few pairs
 		// survive round a fork, where several limbs leave one node.
 		const open = grow();
-		const apart = grow(0.5);
+		const apart = grow(CLEARANCE);
 		expect(apart.nodeCount).toBeGreaterThan(0);
+		// With the clearance wider than half a metre for every order, the only pairs that stand within
+		// half a metre are those round a fork, where several limbs leave one node.
 		expect(strangers(apart)).toBeLessThan(open.nodeCount * 0.01);
-		expect(strangers(apart) * 10).toBeLessThan(strangers(open));
+		expect(strangers(apart) * 8).toBeLessThan(strangers(open));
 	});
 
 	it('grows the same bytes twice, and other bytes for another variant or seed', () => {

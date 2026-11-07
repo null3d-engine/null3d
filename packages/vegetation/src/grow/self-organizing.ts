@@ -75,7 +75,7 @@ const SITE_STEPS = 4;
 const GIRTH = [1, 0.6, 0.35, 0.2, 0.1] as const;
 
 /** One axis's girth beside another's, as a share of the record's clearance. */
-function girthOf(order: number): number {
+export function girthOf(order: number): number {
 	return GIRTH[Math.min(GIRTH.length - 1, Math.max(0, order))] as number;
 }
 
@@ -402,7 +402,8 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	// A grid of the wood already grown, so a shoot can stop rather than pass through another. Its
 	// cell holds the clearance, so a node need only look at the cells round it.
 	const clearance = Math.max(0, g.clearance ?? 0);
-	const clearCell = Math.max(0.25, clearance);
+	// The widest clearance two axes can demand, so the cells round a point hold every neighbour.
+	const clearCell = Math.max(0.25, clearance * 2);
 	const clearGrid = new Map<number, number[]>();
 	const clearKey = (x: number, y: number, z: number): number =>
 		((Math.floor(x / clearCell) + 512) * 1024 + (Math.floor(y / clearCell) + 512)) * 1024 +
