@@ -29,7 +29,9 @@ export const record: Species = {
 	form: 'tall open dome on a long clean bole',
 	// Stills 01, 02 and 18 stand the bole 0.038 to 0.051 of the tree's height across at breast
 	// height, and the fit's crown is 0.9 of the height wide, so the tree is taller than it is broad.
-	size: { height: { mean: 22, spread: 2 }, dbh: 0.95, aspect },
+	// Still 17 and the whole views: the bole's diameter is about four hundredths of the tree's height,
+	// where the fitted 0.95 metre drew a hair thin at three and a half.
+	size: { height: { mean: 22, spread: 2 }, dbh: 1.1, aspect },
 	growth: {
 		model: 'self-organizing',
 		years: 36,
