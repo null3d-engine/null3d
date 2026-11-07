@@ -22,6 +22,21 @@ const PALMATE_FAN = 210;
 const RACHIS_SIDES: Readonly<Record<Detail, number>> = { low: 0, medium: 0, high: 3, ultra: 4 };
 
 /**
+ * The share of its base width that a rachis keeps at its tip. A leaf's outline runs to nothing at its
+ * tip, but the rachis still carries the last pair of leaflets, so a rachis that tapered like the
+ * outline would leave them on a thread the coverage mask cannot follow, and the mask cuts each
+ * leaflet free as a piece of its own. At three quarters the last ring stands wide enough for the
+ * mask to hold it to the wood.
+ */
+export const RACHIS_TIP_SHARE = 0.75;
+
+/** The drawn width of a rachis at a share of its run from its base, 0 to 1, where the base takes the full radius. */
+export function rachisWidth(radius: number, share: number): number {
+	const held = Math.min(1, Math.max(0, share));
+	return radius * (1 - (1 - RACHIS_TIP_SHARE) * held);
+}
+
+/**
  * One leaflet's place on a compound leaf.
  *
  * @category api/vegetation
@@ -156,8 +171,7 @@ function addRachis(
 	const v = (outline.petiole[1] + outline.base[1]) / 2;
 	for (let r = 0; r < rings; r++) {
 		const t = (total * r) / (rings - 1);
-		// The rachis thins toward its tip.
-		const width = radius * (1 - 0.6 * (r / (rings - 1)));
+		const width = rachisWidth(radius, r / (rings - 1));
 		spine.place(0, t, centre);
 		spine.tangent(t, tangent);
 		const ny = -(tangent[2] as number);
