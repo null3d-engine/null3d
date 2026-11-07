@@ -385,14 +385,14 @@ function markBand(mesh: MeshWriter, first: number, share: number): void {
  */
 const SAMARA_BODY_PROFILE: readonly (readonly [number, number])[] = [
 	[0, 0],
-	[0.22, 0.8],
-	[0.6, 0.78],
-	[1, 0.42],
+	[0.3, 0.52],
+	[0.7, 0.46],
+	[1, 0.34],
 ];
 /** The half-width of a key's wing, by position along the wing: it opens out of the body, reaches its
  * widest past the middle and closes to a point. */
 const SAMARA_WING_PROFILE: readonly (readonly [number, number])[] = [
-	[0, 0.42],
+	[0, 0.34],
 	[0.22, 0.72],
 	[0.62, 1],
 	[1, 0],
