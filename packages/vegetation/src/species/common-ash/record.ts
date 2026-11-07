@@ -50,21 +50,22 @@ export const record: Species = {
 				[1, 55],
 			],
 			angleSpread: 5,
-			extinction: [0.02, 0.03],
+			// Stills 01 and 18: the crown is a filigree of fine opposite branches, so few buds die.
+			extinction: [0.01, 0.015],
 		},
 		// Stills 01, 02 and 18: one leader carries the crown to its top and outgrows every limb, so the
 		// tree is longer than it is broad.
 		apical: {
 			control: [
-				[0, 0.58],
-				[1, 0.62],
+				[0, 0.54],
+				[1, 0.57],
 			],
 			dominance: [0.78, 0.6, 0.98],
 			wander: 8,
 		},
-		// Still 18: the bole runs straight to the crown's base, then divides into four or five limbs
-		// that leave at about 55 degrees and spread round it.
-		divide: { at: 0.3, count: 4, angle: 55, lean: 22, plumb: 4 },
+		// Still 18: the bole runs straight to the crown's base, then divides into five limbs that leave
+		// at about 62 degrees and spread round it, the first running on at 28.
+		divide: { at: 0.3, count: 5, angle: 62, lean: 28, plumb: 4 },
 		// Stills 01 and 02: the crown's lit top and rim carry its fullest shoots.
 		light: { apical: 1, lateral: 1, shadow: [5, 0.15, 2], cells: 96, surface: true },
 		// Stills 05 and 06: the limbs run out and their ends turn up, so the shoots bend against
@@ -72,15 +73,15 @@ export const record: Species = {
 		tropism: {
 			photo: 0.04,
 			gravi: [
-				[0, 0.12],
-				[0.4, 0.04],
+				[0, 0.2],
+				[0.4, 0.05],
 				[0.75, 0.08],
 				[1, 0.24],
 			],
 		},
 		// Stills 01, 02 and 18: a bud that the righting carried under the crown stands in its shade,
 		// and the bole is bare to the crown's base.
-		shedding: { threshold: 0.1, cleanBole: 0.26, stubs: 0.2, underCrown: 1 },
+		shedding: { threshold: 0.1, cleanBole: 0.26, stubs: 0.2, underCrown: 0.5 },
 		// The crown's sag was fitted with the wood weighed at a 3 m bole; the bend keeps weighing it so,
 		// whatever width the trunk is drawn at.
 		bending: { strength: 0.5, upturn: 0.4, girth: 3 },
@@ -176,10 +177,10 @@ export const record: Species = {
 				vigor: [0, 1],
 				share: 0,
 				years: 1,
-				length: { mean: 0.9, spread: 0.2 },
+				length: { mean: 0.42, spread: 0.06 },
 				nodes: { mean: 2, spread: 0.4 },
 				internode: PAIR,
-				stem: { radius: [0.006, 0.003] },
+				stem: { radius: [0.005, 0.0035] },
 				laterals: 2,
 				lateralGap: 0,
 				bend: { length: 0.05, angle: 26 },
@@ -215,13 +216,13 @@ export const record: Species = {
 			// Stills 01 and 02: the limbs carry foliage along their length, so a limb a third of the
 			// way out is leafy rather than bare.
 			perMetre: [
-				[0, 0.4],
-				[0.55, 1.2],
-				[1, 9],
+				[0, 0.8],
+				[0.55, 1.6],
+				[1, 8],
 			],
 			// A quarter of the crown's own box shows sky, as stills 01 and 02 do. The wider crown the
 			// fit gives spreads the same curve over more air, so the dial sits above the oak's.
-			density: 2,
+			density: 1.5,
 			shadePrune: 0,
 			// Stills 01, 03 and 05: sky shows through the crown's middle and under it, where its own
 			// leaves leave a shoot under this share of the sky, and the lit outer masses stay.
@@ -238,14 +239,14 @@ export const record: Species = {
 	foliage: {
 		kind: 'blade',
 		leaf: {
-			// Still 12: one leaflet of the eleven that fill the pinnate leaf. The texture source's
-			// leaflet is three and a third times as long as it is wide, and five and a half centimetres
-			// at the near view's scale of a twenty-two metre tree.
-			length: { mean: 0.055, spread: 0.008 },
+			// Stills 12 and 24: one leaflet of the eleven that fill the pinnate leaf. In the texture
+			// source the terminal leaflet runs 0.37 of the whole leaf and a side leaflet as much, so
+			// on the photographs' 26 cm leaf each is about ten centimetres.
+			length: { mean: 0.098, spread: 0.012 },
 			outline: 'texture',
 			// Still 12: a short stalk below the lowest pair, then pairs of leaflets to a single one at
 			// the tip.
-			petiole: { length: 0.02, radius: 0.0008, flat: 0, droop: 8 },
+			petiole: { length: 0.012, radius: 0.0008, flat: 0, droop: 8 },
 			fold: 6,
 			curl: 8,
 			crossCurl: 0,
@@ -258,9 +259,14 @@ export const record: Species = {
 				roughness: [0.5, 0.65],
 			},
 		},
-		// Stills 12, 13 and 24: five opposite pairs of stalkless leaflets and one at the tip, the whole
-		// leaf about five times as long as one leaflet.
-		compound: { kind: 'pinnate', leaflets: { mean: 11, spread: 0.5 }, rachis: 4.2, terminal: true },
+		// Stills 12 and 24: five opposite pairs of stalkless leaflets and one at the tip. The rachis
+		// runs 0.63 of the whole leaf against a leaflet's 0.37, so it measures 1.68 leaflet lengths.
+		compound: {
+			kind: 'pinnate',
+			leaflets: { mean: 11, spread: 0.5 },
+			rachis: 1.68,
+				terminal: true,
+		},
 	},
 	bark: {
 		// Stills 26 and 15 under the copy-stand lamps: a pale, cool grey, so the measured colour stands
