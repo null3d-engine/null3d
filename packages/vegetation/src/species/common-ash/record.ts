@@ -197,6 +197,9 @@ export const record: Species = {
 				length: { mean: 0.27, spread: 0.04 },
 				nodes: { mean: 3, spread: 0 },
 				internode: PAIR,
+				// Still 23: the piece's pairs do not lie in one plane, so the shoot runs in short
+				// stiff pieces that turn from one another, as the held piece does.
+				bend: { length: 0.06, angle: 40 },
 				leafScale: [
 					[0, 0.8],
 					[1, 1],
