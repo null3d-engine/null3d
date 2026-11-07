@@ -199,7 +199,7 @@ export const record: Species = {
 			// Stills 01, 02, 03 and 05: the crown's own leaves shade its middle, so the shoots there
 			// thin and the grey bole and the great limbs read between the foliage masses, while the
 			// lit rim keeps its shoots.
-			skyPrune: 0.38,
+			skyPrune: 0.34,
 			skyPruneLayer: 1,
 			// Stills 01 and 02: the foliage stands in layered masses at the limbs' ends, with the bole
 			// and the great limbs reading between them, rather than spread along every axis.
