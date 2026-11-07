@@ -52,7 +52,8 @@
 	},
 	"04-crown-outside.png": {
 		"skyShare": 0.19,
-		"daylight": 2.761
+		"daylight": 2.761,
+		"distance": 4
 	},
 	"06-inside-crown.png": {
 		"skyShare": 0.395,
