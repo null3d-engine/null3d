@@ -164,7 +164,7 @@ export const record: Species = {
 				[0.55, 8],
 				[1, 64],
 			],
-			density: 0.7,
+			density: 1.3,
 			// A twig that carries no shoot is trimmed past its last one, so no bare tip stands
 			// outside the foliage at a whole view.
 			bareTrim: 0.03,
@@ -280,13 +280,13 @@ export const record: Species = {
 		shadowLevel: 1,
 		budget: {
 			kitBytes: { low: 2_000_000, medium: 2_900_000, high: 5_300_000, ultra: 9_500_000 },
-			// The densest variant sets each cap: variant 4 measures 10.18, 10.29, 10.50 and 10.85 MB
-			// at the four tiers. Each cap sits just above its figure. The crown's foliage stands in
-			// fewer, larger leaves, which carries the cover at fewer triangles.
-			variantBytes: { low: 10_300_000, medium: 10_400_000, high: 10_600_000, ultra: 10_900_000 },
+			// The densest variant sets each cap: variant 4 measures 14.68, 14.78, 14.97 and 15.28 MB
+			// at the four tiers. Each cap sits just above its figure. The crown's denser shoots carry
+			// the cover that closes the whole views' sky.
+			variantBytes: { low: 14_800_000, medium: 14_900_000, high: 15_100_000, ultra: 15_400_000 },
 			// The near band measures 2,728,516 triangles; the cap sits just above it, under the
 			// owner's 2.9 million.
-			lod0Triangles: 2_750_000,
+			lod0Triangles: 1_400_000,
 			lod1Triangles: 150_000,
 			// The second card level measures 33,854 triangles with the clearance; the cap sits just
 			// above it.
