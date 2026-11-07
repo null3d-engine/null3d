@@ -204,6 +204,9 @@ export const record: Species = {
 			// Stills 01 and 02: the foliage stands in layered masses at the limbs' ends, with the bole
 			// and the great limbs reading between them, rather than spread along every axis.
 			tipBias: 0.7,
+			// Stills 01 and 02: the low shoots ride up off the limbs, so the sightline to the bole
+			// clears while the skirt stays low and full at the rim.
+			lift: 15,
 			// Stills 01 and 02: no bare twig stands past the leaves at a whole view, so the wood past
 			// the last shoot-bearing node is dead and goes.
 			bareTrim: 0.03,
