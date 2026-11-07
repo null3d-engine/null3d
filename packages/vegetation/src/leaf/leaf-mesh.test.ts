@@ -8,7 +8,7 @@ import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import type { LeafShape } from '../core/record';
 import { DETAILS, type Detail } from '../core/types';
-import { compoundLeaf, leafletPlaces } from './compound';
+import { compoundLeaf, leafletPlaces, RACHIS_TIP_SHARE, rachisWidth } from './compound';
 import {
 	type CoverageRuns,
 	intersectionOverUnion,
@@ -197,6 +197,85 @@ describe('the compound leaf', () => {
 		expect(two).toBeLessThan(one);
 		// A record that names no step cuts its leaflets one tier below its own leaf.
 		expect(vertices()).toBe(one);
+	});
+
+	it('meets the rachis with its leaflet blade when the record asks for no stalk', () => {
+		const leaf = (leafletStalk?: number) => ({
+			kind: 'blade' as const,
+			leaf: { ...FLAT, length: { mean: 0.05, spread: 0 } },
+			compound: {
+				kind: 'pinnate' as const,
+				leaflets: { mean: 9, spread: 0 },
+				rachis: 3,
+				terminal: true,
+				...(leafletStalk === undefined ? {} : { leafletStalk }),
+			},
+		});
+		const vertices = (leafletStalk?: number): number =>
+			builder.leaves(oakRecord({ foliage: leaf(leafletStalk) }), OAK_MANIFEST, 'ultra')[0]
+				?.positions.length ?? 0;
+		// A leaflet's stalk is drawn from the texture's own stalk band, so a sessile leaflet draws
+		// none and its blade begins where it meets the rachis.
+		expect(vertices(0)).toBeLessThan(vertices());
+		// A shortened stalk still draws, and a record that names no share keeps the whole of it.
+		expect(vertices(0.5)).toBe(vertices());
+		expect(vertices(1)).toBe(vertices());
+	});
+
+	it('holds its rachis to a named share of its base width at the tip', () => {
+		// A leaf's outline runs to nothing at its tip, but the rachis carries the last pair, so a
+		// rachis that tapered with the outline would leave those leaflets on a thread the coverage
+		// mask cannot follow. The tip therefore keeps a share of the base width.
+		const base = 0.002;
+		expect(rachisWidth(base, 0)).toBeCloseTo(base, 12);
+		expect(rachisWidth(base, 1)).toBeCloseTo(base * RACHIS_TIP_SHARE, 12);
+		expect(rachisWidth(base, 0.5)).toBeGreaterThan(rachisWidth(base, 1));
+		// Under a half the rachis reads as a thread rather than a line, so the share stays above it.
+		expect(RACHIS_TIP_SHARE).toBeGreaterThanOrEqual(0.5);
+	});
+
+	it('draws its last rachis ring at that share of the first', () => {
+		const leaf = compoundLeaf(
+			FLAT,
+			{ kind: 'pinnate', leaflets: 9, rachis: 2, terminal: true },
+			oak,
+			bladeMesh(FLAT, oak, 'high'),
+			'high',
+		);
+		// The rachis comes first, five rings of a triangle plus its centre, so four vertices a ring.
+		const ring = 4;
+		const radius = (r: number): number => {
+			let cx = 0;
+			let cy = 0;
+			let cz = 0;
+			for (let k = 0; k < ring; k++) {
+				cx += leaf.positions[(r * ring + k) * 3] as number;
+				cy += leaf.positions[(r * ring + k) * 3 + 1] as number;
+				cz += leaf.positions[(r * ring + k) * 3 + 2] as number;
+			}
+			cx /= ring;
+			cy /= ring;
+			cz /= ring;
+			let total = 0;
+			for (let k = 0; k < ring; k++) {
+				const dx = (leaf.positions[(r * ring + k) * 3] as number) - cx;
+				const dy = (leaf.positions[(r * ring + k) * 3 + 1] as number) - cy;
+				const dz = (leaf.positions[(r * ring + k) * 3 + 2] as number) - cz;
+				total += Math.sqrt(dx * dx + dy * dy + dz * dz);
+			}
+			return total / ring;
+		};
+		expect(radius(4) / radius(0)).toBeCloseTo(RACHIS_TIP_SHARE, 3);
+	});
+
+	it('leaves a simple leaf unchanged, because only a compound leaf draws a rachis', () => {
+		const simple = oakRecord({ foliage: { kind: 'blade', leaf: FLAT } });
+		for (const detail of DETAILS) {
+			const built = builder.leaves(simple, OAK_MANIFEST, detail)[0];
+			const blade = bladeMesh(FLAT, oak, detail);
+			expect(built?.positions.length).toBe(blade.positions.length);
+			expect(built?.indices.length).toBe(blade.indices.length);
+		}
 	});
 
 	it('builds one mesh with every leaflet', () => {

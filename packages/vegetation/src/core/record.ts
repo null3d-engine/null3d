@@ -1282,6 +1282,13 @@ export interface CompoundLeaf {
 	 * finely as a whole leaf.
 	 */
 	readonly leafletStep?: number;
+	/**
+	 * The share of its drawn stalk that a leaflet keeps, 0 to 1; 1 by default, the stalk the texture
+	 * measured. At 0 the leaflet is sessile: its blade begins at the point where it meets the rachis,
+	 * so no stalk stands between the two. A texture's stalk band may carry no leaf on one face, and a
+	 * leaflet that draws a stalk from it then stands clear of the rachis on that face.
+	 */
+	readonly leafletStalk?: number;
 }
 
 /**
