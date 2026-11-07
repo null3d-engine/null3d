@@ -1092,6 +1092,13 @@ export interface StillResult extends PairMetrics {
 	readonly masked: boolean;
 	/** For a bark texture: the CIEDE2000 difference of the middle of each picture. */
 	readonly surfaceDeltaE: number | null;
+	/**
+	 * For a bark close view: the CIEDE2000 difference of the two pictures' bark, measured as the
+	 * mean of nine patches spread across each. A close bark photograph does not separate from the
+	 * bark that is its own background, so it draws no matte and has no outline to measure inside;
+	 * the patches compare the material, which is what the row asks.
+	 */
+	readonly barkColourDeltaE: number | null;
 	/** How differently the two pictures' edges run, 0 when they run the same way. */
 	readonly edgeDifference: number | null;
 	/**
@@ -1207,6 +1214,7 @@ export function compareStills(
 				view: slot.view,
 				masked: false,
 				surfaceDeltaE: null,
+				barkColourDeltaE: null,
 				edgeDifference: null,
 				pieces: null,
 				error,
@@ -1221,6 +1229,12 @@ export function compareStills(
 		const pair = pairMetrics(masked ? refSide : { ...refSide, normal: undefined }, render);
 		const bark = slot.kind === 'texture' && !slot.view.startsWith('leaf');
 		const surfaceDeltaE = bark
+			? Number(deltaE2000(patchLab(refImage), patchLab(render.image)).toFixed(2))
+			: null;
+		// A bark close view photographs the bark against the bark, so neither picture separates
+		// from its own background and neither draws a matte. The patches compare the material.
+		const barkClose = slot.kind !== 'texture' && /bark/i.test(slot.file);
+		const barkColourDeltaE = barkClose
 			? Number(deltaE2000(patchLab(refImage), patchLab(render.image)).toFixed(2))
 			: null;
 		const edges = Number(
@@ -1265,6 +1279,7 @@ export function compareStills(
 			renderFile: frame.file,
 			masked,
 			surfaceDeltaE,
+			barkColourDeltaE,
 			edgeDifference: edges,
 			pieces,
 			...(framing ? { framing } : {}),
@@ -1282,6 +1297,7 @@ export function compareStills(
 						...head,
 						...(shown.foliageDeltaE !== null ? [`LEAF DE ${fixed(shown.foliageDeltaE, 1)}`] : []),
 						...(surfaceDeltaE !== null ? [`SURFACE DE ${fixed(surfaceDeltaE, 1)}`] : []),
+						...(barkColourDeltaE !== null ? [`BARK DE ${fixed(barkColourDeltaE, 1)}`] : []),
 						'NO PLAIN OUTLINE',
 					],
 		});
