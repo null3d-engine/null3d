@@ -71,6 +71,80 @@ function envelopeFit(skeleton: MacroSkeleton, variant: number, seed = 11): numbe
 }
 
 /**
+ * The number of separate pieces a grown plant's silhouette makes at one turn, each piece a run of
+ * touching cells: one for a crown that hangs together.
+ */
+function silhouettePieces(skeleton: MacroSkeleton, variant = 0): number {
+	const record = species.record;
+	const height = spreadAt(record.size.height, unitAt(11, record.seedSalt >>> 0, variant, 1));
+	const turn = unitAt(11, record.seedSalt >>> 0, variant, 2) * 2 * Math.PI;
+	const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
+	const volume = insetVolume(
+		flooredVolume(
+			envelopeVolume(record.envelope as NonNullable<Species['envelope']>, height, turn),
+			(growth.floor ?? 0) * height,
+		),
+		shootReach(record),
+	);
+	const frame = silhouetteFrame(volume, height);
+	const mask = skeletonSilhouette(
+		skeleton,
+		0,
+		frame,
+		shootReach(record),
+		curveAt(record.shoots?.placement.perMetre ?? 0, 0.5),
+	);
+	const seen = new Uint8Array(mask.length);
+	const stack: number[] = [];
+	let pieces = 0;
+	for (let k = 0; k < mask.length; k++) {
+		if (!mask[k] || seen[k]) continue;
+		pieces++;
+		seen[k] = 1;
+		stack.push(k);
+		while (stack.length > 0) {
+			const cell = stack.pop() as number;
+			const col = cell % frame.cols;
+			const row = (cell / frame.cols) | 0;
+			for (const next of [
+				col > 0 ? cell - 1 : -1,
+				col + 1 < frame.cols ? cell + 1 : -1,
+				row > 0 ? cell - frame.cols : -1,
+				row + 1 < frame.rows ? cell + frame.cols : -1,
+			])
+				if (next >= 0 && mask[next] && !seen[next]) {
+					seen[next] = 1;
+					stack.push(next);
+				}
+		}
+	}
+	return pieces;
+}
+
+/** Node pairs on different axes that stand within the distance the clearance demands. */
+function nearPairs(skeleton: MacroSkeleton, clearance: number): number {
+	let near = 0;
+	for (let a = 0; a < skeleton.nodeCount; a++)
+		for (let b = a + 1; b < skeleton.nodeCount; b++) {
+			const ax = skeleton.axisOf[a] as number;
+			const bx = skeleton.axisOf[b] as number;
+			if (ax === bx) continue;
+			if ((skeleton.axes.parent[bx] as number) === ax) continue;
+			if ((skeleton.axes.parent[ax] as number) === bx) continue;
+			const apart =
+				clearance *
+				(girthOf(skeleton.axes.order[ax] as number) + girthOf(skeleton.axes.order[bx] as number));
+			const dx = (skeleton.position[a * 3] as number) - (skeleton.position[b * 3] as number);
+			const dy =
+				(skeleton.position[a * 3 + 1] as number) - (skeleton.position[b * 3 + 1] as number);
+			const dz =
+				(skeleton.position[a * 3 + 2] as number) - (skeleton.position[b * 3 + 2] as number);
+			if (dx * dx + dy * dy + dz * dz < apart * apart) near++;
+		}
+	return near;
+}
+
+/**
  * Checks that the only axes without a parent are the plant's stems, each standing on the ground,
  * and that every other axis leaves a node of its parent and has a chain of parents to a stem.
  */
@@ -115,8 +189,8 @@ describe('the self-organizing oak', () => {
 						};
 			return growSelfOrganizing({ record, seed: 11, variant: 0, season: 'summer' });
 		};
-		// Pairs of nodes on different axes that stand within half a metre, less the joint where a
-		// branch meets the wood it leaves.
+		// Pairs of nodes on different axes that stand within the distance the clearance demands of
+		// them, less the joint where a branch meets the wood it leaves.
 		const CLEARANCE = 2;
 		const strangers = (skeleton: MacroSkeleton): number => {
 			let near = 0;
@@ -127,13 +201,17 @@ describe('the self-organizing oak', () => {
 					if (ax === bx) continue;
 					if ((skeleton.axes.parent[bx] as number) === ax) continue;
 					if ((skeleton.axes.parent[ax] as number) === bx) continue;
+					const apart =
+						CLEARANCE *
+						(girthOf(skeleton.axes.order[ax] as number) +
+							girthOf(skeleton.axes.order[bx] as number));
 					const dx = (skeleton.position[a * 3] as number) - (skeleton.position[b * 3] as number);
 					const dy =
 						(skeleton.position[a * 3 + 1] as number) - (skeleton.position[b * 3 + 1] as number);
 					const dz =
 						(skeleton.position[a * 3 + 2] as number) - (skeleton.position[b * 3 + 2] as number);
-					// Wood standing inside the record's clearance of another axis, whatever the girths.
-					if (dx * dx + dy * dy + dz * dz < CLEARANCE * CLEARANCE) near++;
+					// Wood standing inside the clearance its own girth and the other's demand.
+					if (dx * dx + dy * dy + dz * dz < apart * apart) near++;
 				}
 			return near;
 		};
@@ -148,6 +226,36 @@ describe('the self-organizing oak', () => {
 		expect(strangers(apart)).toBeLessThan(open.nodeCount * 0.01);
 		expect(strangers(apart) * 8).toBeLessThan(strangers(open));
 	});
+
+	it(
+		'turns a shoot aside to keep its clearance, so the crown stays whole',
+		() => {
+			const record = species.record;
+			const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
+			const shaped = (turning?: number): Species => ({
+				...record,
+				growth: { ...growth, clearance: 0.5, turning: turning ?? 0 },
+			});
+			const stopped = grow(0, shaped());
+			const turned = grow(0, shaped(30));
+			// The heading is chosen by a fixed fan, not a random draw: the same seed grows the same bytes.
+			expect(digest(grow(0, shaped(30)))).toBe(digest(turned));
+			// A turning with no clearance to keep changes nothing.
+			const open = (turning: number): Species => ({
+				...record,
+				growth: { ...growth, clearance: 0, turning },
+			});
+			expect(digest(grow(0, open(30)))).toBe(digest(grow(0, open(0))));
+			// A shoot that stops leaves a bare tip the crown cannot close, so the silhouette breaks into
+			// pieces. A shoot that turns aside runs on, and the crown stays one piece.
+			expect(silhouettePieces(stopped)).toBeGreaterThan(1);
+			expect(silhouettePieces(turned)).toBe(1);
+			// The turned wood keeps the clearance too: no more than a fiftieth of its nodes stand within
+			// the distance another axis's wood demands.
+			expect(nearPairs(turned, 0.5)).toBeLessThan(turned.nodeCount * 0.02);
+		},
+		scaledBudget(90_000),
+	);
 
 	it('grows the same bytes twice, and other bytes for another variant or seed', () => {
 		const first = oaks[0] as MacroSkeleton;
