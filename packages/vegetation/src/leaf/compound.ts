@@ -77,12 +77,14 @@ export function leafletPlaces(
 		return out;
 	}
 	const terminal = compound.terminal ? 1 : 0;
+	const spread =
+		compound.angle === undefined ? PINNATE_ANGLE : Math.min(90, Math.max(30, compound.angle));
 	const pairs = Math.max(1, Math.floor((count - terminal) / 2));
 	for (let k = 0; k < pairs; k++) {
 		const t = pairs === 1 ? 1 : k / (pairs - 1);
 		const at = stalk + rachis * (0.12 + 0.82 * t);
 		const scale = 0.7 + 0.3 * sin(Math.PI * (0.25 + 0.6 * t));
-		out.push({ at, angle: -PINNATE_ANGLE, scale }, { at, angle: PINNATE_ANGLE, scale });
+		out.push({ at, angle: -spread, scale }, { at, angle: spread, scale });
 	}
 	if (terminal) out.push({ at: stalk + rachis, angle: 0, scale: 1 });
 	return out;

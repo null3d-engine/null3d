@@ -47,6 +47,7 @@ describe('the record check', () => {
 					skyPrune: 1.5,
 					skyPruneLayer: 10,
 					gather: 1.5,
+					reach: 90,
 					bareTrim: 0.5,
 					lift: 45,
 					tipPrune: 1.5,
@@ -59,6 +60,7 @@ describe('the record check', () => {
 		expect(problems.some((p) => p.startsWith('shoots.placement.skyPrune is 1.5'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.skyPruneLayer is 10'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.gather is 1.5'))).toBe(true);
+		expect(problems.some((p) => p.startsWith('shoots.placement.reach is 90'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.bareTrim is 0.5'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.lift is 45'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.tipPrune is 1.5'))).toBe(true);
@@ -233,6 +235,29 @@ describe('the record check', () => {
 		expect(
 			speciesProblems(needled).some((p) => p.startsWith('cuttings.leaf.pressed lays a blade')),
 		).toBe(true);
+	});
+
+	it("holds a compound leaf's leaflet angle and stalk to their ranges", () => {
+		const foliage = template.foliage;
+		if (foliage.kind !== 'blade') return;
+		const compound = foliage.compound;
+		if (!compound) return;
+		const out = (angle: number, leafletStalk: number): Species => ({
+			...template,
+			foliage: {
+				...foliage,
+				compound: { ...compound, angle, leafletStalk },
+			},
+		});
+		expect(
+			speciesProblems(out(100, 1.5)).some((p) => p.startsWith('foliage.compound.angle is 100')),
+		).toBe(true);
+		expect(
+			speciesProblems(out(100, 1.5)).some((p) =>
+				p.startsWith('foliage.compound.leafletStalk is 1.5'),
+			),
+		).toBe(true);
+		expect(speciesProblems(out(62, 0))).toEqual(speciesProblems(template));
 	});
 
 	it("holds a bark zone's tint to factors from 0", () => {
