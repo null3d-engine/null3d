@@ -1,13 +1,14 @@
 # D-331: the common ash, its opposite branching and its pinned, winged keys
 
 Status: decided and built in the ash's record, the two record fields it needed and its textures. The
-review measures the species against its reference set; the figures and the faults that remain are
-under [Consequences](#consequences). Task: none.
+review measures the species against its reference set and fails it; the figures and the faults that
+remain are under [Consequences](#consequences). Task: none.
 
 Summary: the plant core grows the common ash, a tall open dome on a long clean bole, with every axis
 carrying opposite decussate pairs of shoots, a pinnate leaf of eleven leaflets, and bunches of
 one-winged keys. Two optional record fields carry what no species needed before: the tier a
-compound leaf's leaflets mesh at, and a key's one-winged shape.
+compound leaf's leaflets mesh at, and a key's one-winged shape. The review fails the species: nine of
+its twelve rows fail on at least one picture, the crown's sky gap worst.
 
 ## Question
 
@@ -81,11 +82,50 @@ number in that folder.
 ### The reference files
 
 The review draws every still beside its photograph with the same slot file, in the photograph's own
-light and framing. The figures are those of run `ash-4`. The outline figure compares the two
-outlines scaled to the same height, with a guide of 0.75. The colour figure is CIEDE2000, where about
-2 is one visible step.
+light and framing. The figures are those of run `ash-final` at `988f4676`, seed 11, variant 0,
+preset high, drawn headless in Chrome on the Mac's GPU. The outline figure compares the two outlines
+scaled to the same height, with a guide of 0.75. The sky gap is the share of the crown's own box that
+shows background, and the band is five hundredths above the reference's and two below it. The colour
+figure is CIEDE2000, where about 2 is one visible step.
 
-<!-- The table is filled from the final run. -->
+The species fails its review. Nine of its twelve rows fail on at least one picture.
+
+| Reference | Judged | Deciding figures |
+| --- | --- | --- |
+| `01-whole-distant.png` | Fail | Sky gap 0.37 against 0.26, 0.11 above the band; outline 0.45; leaf colour 16.4 |
+| `02-whole-profile.png` | Fail | Sky gap 0.31 against 0.19, 0.12 above the band; outline 0.48; leaf colour 17.0 |
+| `03-whole-from-below.png` | Fail | Sky gap 0.35 against 0.50, 0.15 below the band: the crown is denser than the photograph's |
+| `04-crown-outside.png` | Fail | Outline 0.18; sky gap 0.59 against 0.43 |
+| `05-crown-underside.png` | Unjudged | No plain outline; edge directions 0.035 |
+| `06-inside-crown.png` | Unjudged | No plain outline; edge directions 0.097 |
+| `07-limb-leaving-trunk.png` | Unjudged | No plain outline; edge directions 0.194 |
+| `08-limb-fork.png` | Fail | Outline 0.30; sky gap 0.24 against 0.56 |
+| `09-secondary-branching.png` | Fail | Outline 0.06; sky gap 0.83 against 0.57 |
+| `10-fine-twigs.png` | Fail | Outline 0.03; sky gap 0.00 against 0.24 |
+| `11-leaf-cluster.png` | Fail | Outline 0.16; sky gap 0.74 against 0.39 |
+| `12-single-leaf-upper.png` | Fail | Outline 0.31; leaf colour 5.5 |
+| `13-single-leaf-underside.png` | Fail | Outline 0.24; leaf colour 3.3 |
+| `14-bark-base.png` | Fail | Outline 0.47 |
+| `15-bark-mid-trunk.png` | Partial | Shape 0.62; the trunk's surface colour on the render against the photograph 9.9 |
+| `16-bark-on-limb.png` | Fail | Outline 0.36 |
+| `17-trunk-taper.png` | Partial | Outline 0.39; sky gap 0.04 against 0.29 |
+| `18-silhouette.png` | Fail | Outline 0.47; sky gap 0.37 against 0.21; leaf colour 23.3 |
+| `19-keys.png` | Fail | Edge directions 0.298; the render's bunch is 6 separate pieces |
+| `20-winter-black-buds.png` | Fail | Outline 0.15; colour 11.1 |
+| `21-branch-studio.png` | Fail | Outline 0.06; 35 pieces in the render against 1 |
+| `22-subbranch-studio.png` | Fail | Outline 0.06; 43 pieces in the render against 1 |
+| `23-leaf-cluster-studio.png` | Fail | Outline 0.13; 44 pieces in the render against 1 |
+| `24-leaf-texture-upper.png` | Partial | Outline 0.18; leaf colour 1.7 |
+| `25-leaf-texture-underside.png` | Partial | Outline 0.11; leaf colour 1.0 |
+| `26-bark-texture.png` | Pass | Surface colour 1.9 |
+| `28-young-bark.png` | Fail | Surface colour 8.3; edge directions 0.201 |
+| `branch-turntable.mp4` | Fail | Mean outline 0.065, lowest 0.032 |
+| `common-ash-turntable.mp4` | Partial | Mean outline 0.507, lowest 0.456; the crown box's spread inside both bands at the eight angles; leaf colour 13.8 |
+| `leaf-cluster-turntable.mp4` | Fail | Mean outline 0.093; the crown box's width spread 85 per cent against the reference's 47 |
+| `subbranch-turntable-halfturn.mp4` | Fail | Mean outline 0.063 |
+| `common-ash-wind-motion.mp4` | Fail | Top band motion 0.141 against the reference's 0.041: the drawn crown moves three times as far |
+
+Every one of the 32 reference files in use was drawn and compared, so coverage passes.
 
 ### Budgets and grow time
 
@@ -96,14 +136,17 @@ largest of seed 11's six variants 2.24, 2.31, 2.39 and 2.50 MB. The owner's caps
 
 ## Look
 
-The ash reads as its photographs from the whole view: a long clean bole, a crown taller than it is
+From the whole view the ash reads as its photographs: a long clean bole, a crown taller than it is
 broad, limbs that sweep out and climb at their ends, and buds in opposite pairs along every twig. The
-keys hang in bunches of flat wings rather than as beads, which no lathe would draw.
+leaf, its leaflets and the bark's diamond net read as the texture sources. The crown stays more open
+than the photographs show, and its foliage darker, and the close views of a cut piece do not yet
+stand as one piece.
 
 ## Decision
 
 Grow the ash with the record above. Add `CompoundLeaf.leafletStep` and `ExtraShape.samara`, both
-optional, so every other species grows as it did.
+optional, so every other species grows as it did. The species does not pass its review, and the
+faults under [Consequences](#consequences) stay open.
 
 Rejected:
 
@@ -127,4 +170,26 @@ Rejected:
   species was framed five times too close.
 - The low tier's kit sits within three per cent of the owner's cap for a tree. A change that adds a
   prototype needs a cut elsewhere.
-- Stated faults: <!-- the final run's faults. -->
+- Stated faults, largest first, each with its figure:
+  1. The crown shows more sky than its photographs. At 01 the render's gap is 0.37 against the
+     reference's 0.26, at 02 0.31 against 0.19 and at 18 0.37 against 0.21. The shoots sit in tufts
+     near the axes and the rim between the tufts stays bare. The dial moved this figure by 0.08 over
+     a threefold rise, so a change of density alone will not close it.
+  2. The crown is drawn three times as loose as its photograph in the wind. The top band's motion is
+     0.141 against 0.041, and every band but the third moves further than its reference's.
+  3. The cut pieces do not read as the photographs' pieces. Outlines are 0.06 at 21 and 22 and 0.13
+     at 23, and each draws as thirty to forty separate pieces against the photograph's one. The
+     class the cuttings take carries too few leaves on too long a stem, and its leaves stand apart
+     from the wood in the picture.
+  4. The crown's foliage is too dark at the whole views: leaf colour difference 16.4, 17.0 and 23.3
+     at 01, 02 and 18, against 1.0 to 1.7 on the leaf textures themselves. The record's own leaf
+     colour is right; the crown's cards and their light are not.
+  5. The bark's colour at mid-trunk reads 9.9 through the bark-mid view where the texture itself
+     measures 1.9, and the young bark reads 8.3. The view's light stands at the copy stand's angle
+     and the bark's figure moves with it.
+  6. The whole plant's outline matches its turning video at 0.507 on average. The reference's own
+     hull overlaps its views by only 0.57 to 0.80, so the fitted envelope cannot be closer than the
+     reference's own drift allows.
+  7. Row 11 is judged against the pedunculate oak, the catalogue's other built species. The two are
+     told apart by silhouette: the ash is 0.9 of its height across with a cleaner, taller bole and
+     opposite branching, where the oak is 1.53 across on a short low-forking bole. The row passes.
