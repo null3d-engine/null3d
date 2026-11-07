@@ -94,9 +94,11 @@ masks of frames 1, 25, 49 and so on of the turntable.
   keeps the trunk, limbs and branches, and frees the twigs. It draws one piece, with an outline
   of 0.7344 and a gap of 0.1097 against the reference's 0.1145. The bole-and-crown test passes
   there. A floor of 0.5, the trunk and great limbs alone, draws seven pieces, 0.7072 and 0.1917.
-  At 0.3 m the close pairs are nine fine and seven thick with no floor. They are fifteen and
-  seven at 0.35, and sixteen and four at 0.5. Growth without the clearance has sixteen and four.
-  The oak's record sets none of the three.
+  At 0.3 m the close pairs are nine fine and seven thick with no floor; fifteen and seven at
+  0.35; sixteen and four at 0.5. Two axes that leave one node cannot be kept apart at any angle,
+  so with fork siblings left out the tree without the clearance has twenty fine close pairs and
+  ten thick: the rule's cut is thick wood's ten to seven, and the fine wood keeps its own layout.
+  The oak's record takes a clearance of 0.3 m, a turn of 30 degrees and a floor of 0.35.
 - **A lost leader hands on its role.** When an axis's leader bud died, the axis stopped there, and
   a stem whose leader died by chance below the crown left a stump with no shoot in the light to take
   over: 3 of 40 oaks at seed 11 died at 0 to 2.4 m (variants 8, 12 and 23). An oak replaces a lost
