@@ -23,11 +23,11 @@ const ALTERNATE: readonly (readonly [number, number])[] = [
  * of bare stem between the runs, so the blades overlap in one plane as the photographs' sprays do.
  */
 const PLATE: readonly (readonly [number, number])[] = [
-	[0, 1.35],
-	[0.25, 0.3],
-	[0.5, 1.35],
-	[0.75, 0.3],
-	[1, 1.35],
+	[0, 1.15],
+	[0.25, 0.6],
+	[0.5, 1.15],
+	[0.75, 0.6],
+	[1, 1.15],
 ];
 
 /** The European beech's record. */
