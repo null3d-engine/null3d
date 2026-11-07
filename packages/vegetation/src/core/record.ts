@@ -1275,6 +1275,20 @@ export interface CompoundLeaf {
 	readonly rachis: number;
 	/** Whether a pinnate leaf ends in one leaflet. */
 	readonly terminal: boolean;
+	/**
+	 * How many tiers below the leaf's own a leaflet meshes, a whole number from 0 to 2; 1 by
+	 * default. A leaflet is a fraction of its leaf's size, so a leaf of a dozen leaflets costs
+	 * about as much as a dozen whole leaves at the leaf's own cut. At 0 each leaflet is cut as
+	 * finely as a whole leaf.
+	 */
+	readonly leafletStep?: number;
+	/**
+	 * The share of its drawn stalk that a leaflet keeps, 0 to 1; 1 by default, the stalk the texture
+	 * measured. At 0 the leaflet is sessile: its blade begins at the point where it meets the rachis,
+	 * so no stalk stands between the two. A texture's stalk band may carry no leaf on one face, and a
+	 * leaflet that draws a stalk from it then stands clear of the rachis on that face.
+	 */
+	readonly leafletStalk?: number;
 }
 
 /**
@@ -1641,6 +1655,41 @@ export type ExtraShape =
 			 */
 			readonly scaleJitter?: number;
 	  }
+	| {
+			/**
+			 * A one-winged key (ash, sycamore, elm): a seed body at the site with a flat wing
+			 * running from it, drawn as a closed lens so it reads from both faces. A bunch of
+			 * them hangs from one stalk.
+			 */
+			readonly samara: {
+				/** Metres from the seed body's top to the wing's tip. */
+				readonly length: number;
+				/** Metres across the wing at its widest. */
+				readonly width: number;
+				/** Share of the length that the seed body takes, from 0.1 to 0.6. */
+				readonly body: number;
+				/**
+				 * Degrees the wing's face turns about the key's own length, 0 to 180. 0 by
+				 * default, every key in a bunch showing the same face.
+				 */
+				readonly twist?: number;
+			};
+			/**
+			 * Metres of one stalk from the site, shared by every copy the site carries: the
+			 * copies hang from its end, as an oak's acorns fork from one peduncle.
+			 */
+			readonly stalk?: number;
+			/**
+			 * Metres of each copy's own footstalk from the shared stalk's end. A site that gives
+			 * one splays its copies on them, so their bodies clear one another.
+			 */
+			readonly pedicel?: number;
+			/**
+			 * Faces round the stalk and the footstalks at the nearest level, where a close view
+			 * reads a thin stem's facets: a whole number from 4 to 16.
+			 */
+			readonly stalkSides?: number;
+	  }
 	| { readonly petals: number; readonly radius: number; readonly cup: number }
 	| { readonly spines: number; readonly length: number; readonly spread: number }
 	| { readonly catkin: { readonly length: number; readonly radius: number } };
@@ -1717,6 +1766,14 @@ export interface LodSpec {
 	 * join shows. 0 or absent, a card draws no stalk.
 	 */
 	readonly cardStalk?: number;
+	/**
+	 * Whether a card's stalk runs on past the row to the centre of the foliage the card carries. A
+	 * card's plane stands ahead of the row that draws it by the shoot's own length, so the stretch
+	 * behind the row may end half a metre short of the leaves it is meant to carry. With this, the
+	 * line starts at the parent node's end and ends at the card plane's centre, so the card meets the
+	 * wood it grows from. Absent, the line spans only the stretch behind the row, as it always has.
+	 */
+	readonly cardStalkToFoliage?: boolean;
 	/** The impostor's views across and texels per view. */
 	readonly impostor: { readonly views: number; readonly texels: number };
 	/** The level that casts shadows. */

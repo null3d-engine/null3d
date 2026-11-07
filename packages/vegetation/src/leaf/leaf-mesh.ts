@@ -13,7 +13,7 @@ import type { PrototypeArrays } from '../asset';
 import { cos, sin } from '../core/math';
 import type { LeafShape, Species } from '../core/record';
 import type { TextureManifest } from '../core/textures';
-import { type Detail, spreadMean } from '../core/types';
+import { DETAILS, type Detail, spreadMean } from '../core/types';
 import { compoundLeaf } from './compound';
 import type { FoliageBuilder } from './kinds';
 import {
@@ -348,6 +348,12 @@ function addStalk(
 }
 
 /** The blade foliage kind's leaf builder: one leaf, or one compound leaf, per tier. */
+/** An outline whose drawn stalk takes a share of its own run, the blade's base moved up to meet it. */
+function shortenedStalk(outline: LeafOutline, share: number): LeafOutline {
+	const drawn = outline.base[1] - outline.petiole[1];
+	return { ...outline, petiole: [outline.petiole[0], outline.base[1] - drawn * share] };
+}
+
 export const builder: FoliageBuilder = {
 	leaves(record: Species, manifest: TextureManifest, detail: Detail): readonly PrototypeArrays[] {
 		const foliage = record.foliage;
@@ -355,18 +361,25 @@ export const builder: FoliageBuilder = {
 			throw new Error(`@null3d/vegetation: the blade builder got '${foliage.kind}' foliage`);
 		const outline = outlineOf(foliage.leaf, manifest);
 		if (!foliage.compound) return [bladeMesh(foliage.leaf, outline, detail)];
-		// Each leaflet keeps a short stalk of its own and no droop: the rachis carries the droop.
+		// A leaflet is a fraction of the leaf's size, so it takes a coarser cut unless the record asks
+		// for the leaf's own.
+		const step = Math.max(0, Math.min(2, Math.round(foliage.compound.leafletStep ?? 1)));
+		const leafletDetail = DETAILS[Math.max(0, DETAILS.indexOf(detail) - step)] ?? detail;
+		// Each leaflet keeps a short stalk of its own and no droop: the rachis carries the droop. A
+		// record may shorten that stalk, and at nothing the blade begins where the leaflet meets the
+		// rachis, so no stalk texels stand between the two.
+		const stalk = Math.min(1, Math.max(0, foliage.compound.leafletStalk ?? 1));
 		const leaflet = bladeMesh(
 			{
 				...foliage.leaf,
 				petiole: {
 					...foliage.leaf.petiole,
-					length: foliage.leaf.petiole.length * 0.12,
+					length: foliage.leaf.petiole.length * 0.12 * stalk,
 					droop: 0,
 				},
 			},
-			outline,
-			detail,
+			stalk === 1 ? outline : shortenedStalk(outline, stalk),
+			leafletDetail,
 		);
 		return [compoundLeaf(foliage.leaf, foliage.compound, outline, leaflet, detail)];
 	},

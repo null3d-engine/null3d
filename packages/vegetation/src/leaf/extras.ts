@@ -316,6 +316,7 @@ function hung(direction: Readonly<Vector3>, degrees: number): Vector3 {
  */
 function breadthOf(extra: ExtraSpec): number {
 	const shape = extra.shape;
+	if ('samara' in shape) return shape.samara.width;
 	if (!('lathe' in shape)) return sizeOf(extra);
 	let breadth = 0;
 	for (const [radius] of shape.lathe) breadth = Math.max(breadth, radius * 2);
@@ -325,6 +326,7 @@ function breadthOf(extra: ExtraSpec): number {
 /** The largest size of an extra's shape, in metres. */
 function sizeOf(extra: ExtraSpec): number {
 	const shape = extra.shape;
+	if ('samara' in shape) return shape.samara.length;
 	if ('lathe' in shape) {
 		let size = 0;
 		for (const [radius, height] of shape.lathe) size = Math.max(size, radius * 2, height);
@@ -375,6 +377,120 @@ const PEDICEL_STAGGER = 0.01;
 /** Sets the band share of the vertices from `first` on. */
 function markBand(mesh: MeshWriter, first: number, share: number): void {
 	for (let i = first; i < mesh.vertices; i++) mesh.uvs1[i * 2] = share;
+}
+
+/**
+ * The half-width of a key's seed body, by position along the body: a spindle that swells quickly and
+ * narrows again into the wing.
+ */
+const SAMARA_BODY_PROFILE: readonly (readonly [number, number])[] = [
+	[0, 0],
+	[0.12, 0.55],
+	[0.35, 0.9],
+	[0.6, 0.78],
+	[1, 0.42],
+];
+/** The half-width of a key's wing, by position along the wing: it opens out of the body, reaches its
+ * widest past the middle and closes to a point. */
+const SAMARA_WING_PROFILE: readonly (readonly [number, number])[] = [
+	[0, 0.42],
+	[0.18, 0.68],
+	[0.42, 0.92],
+	[0.62, 1],
+	[0.85, 0.62],
+	[1, 0],
+];
+/** The key's half-thickness over its half-width: a wing, thin enough to read as a flat blade. */
+const SAMARA_THIN = 0.12;
+
+/**
+ * A key: a seed body at the site and a flat wing running from it, closed as a lens of four faces, so
+ * it reads from both sides. `turn` spins it about its own length.
+ *
+ * @param mesh The mesh to write into.
+ * @param shape The record's key: its length, its wing's width and the share the seed body takes.
+ * @param at The point it hangs from.
+ * @param direction The way it hangs, from the site.
+ * @param turn Radians the lens turns about its own length.
+ * @param colour The vertex colour bytes.
+ * @category api/vegetation
+ */
+export function samaraMesh(
+	mesh: MeshWriter,
+	shape: {
+		readonly length: number;
+		readonly width: number;
+		readonly body: number;
+		readonly twist?: number;
+	},
+	at: Readonly<Vector3>,
+	direction: Readonly<Vector3>,
+	turn: number,
+	colour: ArrayLike<number>,
+): void {
+	const [x, y] = sideAxes(direction, [0, 1, 0]);
+	const spin = turn + radians(shape.twist ?? 0);
+	const across: Vector3 = [
+		x[0] * cos(spin) + y[0] * sin(spin),
+		x[1] * cos(spin) + y[1] * sin(spin),
+		x[2] * cos(spin) + y[2] * sin(spin),
+	];
+	const through: Vector3 = [
+		x[0] * -sin(spin) + y[0] * cos(spin),
+		x[1] * -sin(spin) + y[1] * cos(spin),
+		x[2] * -sin(spin) + y[2] * cos(spin),
+	];
+	const body = Math.min(0.6, Math.max(0.1, shape.body));
+	// The record gives the wing's full width; a station stands half of it from the key's line.
+	const wing = shape.width * 0.5;
+	const stations: { readonly along: number; readonly half: number }[] = [];
+	// The seed body's foot stands inside the stalk it hangs from, so the two read as one part rather
+	// than meeting at a point.
+	stations.push({ along: -Math.min(0.004, shape.length * 0.15), half: 0 });
+	for (const [t, share] of SAMARA_BODY_PROFILE)
+		stations.push({ along: t * body * shape.length, half: share * wing });
+	for (const [t, share] of SAMARA_WING_PROFILE.slice(1))
+		stations.push({
+			along: (body + t * (1 - body)) * shape.length,
+			half: share * wing,
+		});
+	const first = mesh.vertices;
+	for (const station of stations) {
+		const { along, half } = station;
+		const thin = half * SAMARA_THIN;
+		const height = Math.max(thin, 0.0004);
+		const centre: Vector3 = [
+			at[0] + direction[0] * along,
+			at[1] + direction[1] * along,
+			at[2] + direction[2] * along,
+		];
+		const v = along / Math.max(shape.length, 1e-6);
+		for (let j = 0; j < 4; j++) {
+			const side = j === 0 ? 1 : j === 2 ? -1 : 0;
+			const face = j === 1 ? 1 : j === 3 ? -1 : 0;
+			mesh.vertex(
+				[
+					centre[0] + across[0] * half * side + through[0] * height * face,
+					centre[1] + across[1] * half * side + through[1] * height * face,
+					centre[2] + across[2] * half * side + through[2] * height * face,
+				],
+				normalize3([
+					across[0] * side + through[0] * face,
+					across[1] * side + through[1] * face,
+					across[2] * side + through[2] * face,
+				]),
+				[j / 4, v],
+				[0, 0],
+				colour,
+			);
+		}
+	}
+	for (let r = 0; r < stations.length - 1; r++)
+		for (let j = 0; j < 4; j++) {
+			const a = first + r * 4 + j;
+			const b = first + r * 4 + ((j + 1) % 4);
+			mesh.quad(a, b, b + 4, a + 4);
+		}
 }
 
 /** Writes a thin shared stalk from a site along `down`, and gives back the point it reaches. */
@@ -571,6 +687,10 @@ function writeExtra(
 ): void {
 	const colour = colourOf(site, index);
 	const shape = extra.shape;
+	if ('samara' in shape) {
+		samaraMesh(mesh, shape.samara, site.at, direction, turn, colour);
+		return;
+	}
 	if ('lathe' in shape || 'catkin' in shape) {
 		let profile: [number, number][];
 		let scaledFrom = 0;
@@ -721,11 +841,13 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 		}
 		const shape = extra.shape;
 		const faces = level === 0 && 'lathe' in shape && shape.sides ? shape.sides : SIDES[level];
-		const stalk = 'lathe' in shape ? (shape.stalk ?? 0) : 0;
+		const stalk = 'lathe' in shape || 'samara' in shape ? (shape.stalk ?? 0) : 0;
 		// The nearest level's stalks take the faces the shape names, where a close view reads a thin
 		// stem's facets.
 		const stalkFaces =
-			level === 0 && 'lathe' in shape && shape.stalkSides ? shape.stalkSides : STALK_SIDES;
+			level === 0 && ('lathe' in shape || 'samara' in shape) && shape.stalkSides
+				? shape.stalkSides
+				: STALK_SIDES;
 		// The stalks take the band colour where the record gives one, as an acorn's peduncle does.
 		const stalkBand = extra.bandColour ? 1 : 0;
 		sitesOf(input, extra).forEach((site, s) => {
@@ -752,7 +874,7 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 			const [side, other] = sideAxes(down, [0, 1, 0]);
 			// A copy with a footstalk of its own stands on it, clear of the others; copies without
 			// one lean apart from the fork itself.
-			const pedicel = 'lathe' in shape ? (shape.pedicel ?? 0) : 0;
+			const pedicel = 'lathe' in shape || 'samara' in shape ? (shape.pedicel ?? 0) : 0;
 			const splay = radians(PEDICEL_SPLAY);
 			const nutLean = radians(NUT_LEAN);
 			// Copies from a shared stalk lean apart enough that their bodies clear one another below

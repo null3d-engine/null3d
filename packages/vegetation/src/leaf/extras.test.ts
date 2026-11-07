@@ -8,9 +8,10 @@ import { placeholderSkeleton } from '../core/placeholder';
 import type { ExtraSpec, Species } from '../core/record';
 import type { Season } from '../core/types';
 import type { MeshInput } from '../stages';
-import { extrasMesh } from './extras';
+import { extrasMesh, samaraMesh } from './extras';
 import { placeShoots } from './instancer';
 import { oakRecord, testKit } from './oak.test-support';
+import { MeshWriter } from './writer';
 
 /** An acorn on a long stalk at shoot tips, hanging straight down in summer and autumn. */
 const ACORN: ExtraSpec = {
@@ -441,5 +442,93 @@ describe('the extras', () => {
 
 	it('draws nothing for a record without extras in the season', () => {
 		expect(extrasMesh(dressed(oakRecord(), 'summer'), 0)).toBeUndefined();
+	});
+});
+
+describe('the one-winged key', () => {
+	/** Four vertices round each station of a key's lens. */
+	const RING = 4;
+	/** A key's shape: a seed body of about a third, and a wing three times as long as it is wide. */
+	const KEY = { length: 0.032, width: 0.01, body: 0.32 } as const;
+
+	/** A key's mesh alone, hanging straight down from the origin. */
+	function key(shape: { length: number; width: number; body: number; twist?: number } = KEY) {
+		const mesh = new MeshWriter();
+		samaraMesh(mesh, shape, [0, 0, 0], [0, -1, 0], 0, [0, 0, 0, 255]);
+		return mesh;
+	}
+
+	/** The bounds of a mesh's positions, axis by axis. */
+	function bounds(mesh: MeshWriter) {
+		const low = [Infinity, Infinity, Infinity];
+		const high = [-Infinity, -Infinity, -Infinity];
+		for (let i = 0; i < mesh.positions.length; i += 3)
+			for (let axis = 0; axis < 3; axis++) {
+				const value = mesh.positions[i + axis] as number;
+				low[axis] = Math.min(low[axis] as number, value);
+				high[axis] = Math.max(high[axis] as number, value);
+			}
+		return { low, high };
+	}
+
+	it('hangs its length below the site, and its wing as wide as the record says', () => {
+		const { low, high } = bounds(key());
+		// The wing's tip stands the record's length below the site, and the body's foot reaches a
+		// little way above it, inside the stalk it hangs from.
+		expect(low[1] as number).toBeCloseTo(-KEY.length, 6);
+		expect(high[1] as number).toBeGreaterThanOrEqual(0);
+		expect(high[1] as number).toBeLessThanOrEqual(0.005);
+		expect((high[2] as number) - (low[2] as number)).toBeCloseTo(KEY.width, 4);
+	});
+
+	it('draws a flat lens, thin through the wing and broad across it', () => {
+		const { low, high } = bounds(key());
+		const across = (high[2] as number) - (low[2] as number);
+		const through = (high[0] as number) - (low[0] as number);
+		expect(through).toBeLessThan(across * 0.3);
+	});
+
+	it('turns the lens about its own length without moving it', () => {
+		const flat = bounds(key());
+		const turned = bounds(key({ ...KEY, twist: 90 }));
+		expect(turned.low[1]).toBeCloseTo(flat.low[1] as number, 6);
+		// A quarter turn puts the wing's width where its thickness stood.
+		expect((turned.high[0] as number) - (turned.low[0] as number)).toBeCloseTo(KEY.width, 4);
+		expect((turned.high[2] as number) - (turned.low[2] as number)).toBeCloseTo(
+			(flat.high[0] as number) - (flat.low[0] as number),
+			6,
+		);
+	});
+
+	it('closes a ring of four at every station, so it reads from both faces', () => {
+		const mesh = key();
+		expect(mesh.positions.length / 3).toBeGreaterThanOrEqual(RING * 4);
+		expect((mesh.positions.length / 3) % RING).toBe(0);
+		expect(mesh.indices.length / 3).toBe((mesh.positions.length / 3 - RING) * 2);
+	});
+
+	it('draws a bunch of keys on the sites its record names, in its season', () => {
+		const keyed: ExtraSpec = {
+			kind: 'fruit',
+			at: 'shoot-tip',
+			share: 1,
+			count: { mean: 3, spread: 0 },
+			seasons: ['summer', 'autumn'],
+			shape: { samara: KEY, stalk: 0.02, pedicel: 0.01 },
+			colour: [0.3, 0.3, 0.09],
+			hang: 180,
+		};
+		const record = oakRecord({ extras: [keyed] });
+		const summer = extrasMesh(dressed(record, 'summer'), 0);
+		if (!summer) throw new Error('no keys');
+		expect(extrasMesh(dressed(record, 'winter'), 0)).toBeUndefined();
+		// Every key hangs its own length and more below the highest point of its bunch.
+		let lowest = Infinity;
+		let highest = -Infinity;
+		for (let i = 1; i < summer.positions.length; i += 3) {
+			lowest = Math.min(lowest, summer.positions[i] as number);
+			highest = Math.max(highest, summer.positions[i] as number);
+		}
+		expect(highest - lowest).toBeGreaterThan(KEY.length);
 	});
 });
