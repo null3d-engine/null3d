@@ -338,7 +338,7 @@ export const record: Species = {
 			kind: 'fruit',
 			at: 'shoot-tip',
 			share: 0.06,
-			count: { mean: 28, spread: 7 },
+			count: { mean: 34, spread: 8 },
 			tipShare: 0.85,
 			seasons: ['summer', 'autumn'],
 			shape: {
@@ -357,6 +357,9 @@ export const record: Species = {
 			// Still 19: a yellow-green wing on a red-brown seed body, the body darker than the wing.
 			colour: [0.22, 0.28, 0.08],
 			bandColour: [0.16, 0.08, 0.04],
+			// Still 19: the pedicels and their shared stalk are green, so each brown body stands
+			// separate on its own footstalk instead of running into its neighbours' as one collar.
+			stalkColour: [0.2, 0.26, 0.07],
 			roughness: [0.6, 0.6],
 			hang: 180,
 		},
@@ -395,9 +398,9 @@ export const record: Species = {
 			// cutting class among them; each cap sits above its figure, and the low tier's just under
 			// the owner's cap for a tree.
 			kitBytes: { low: 2_680_000, medium: 3_150_000, high: 5_900_000, ultra: 11_600_000 },
-			// The largest of seed 11's six variants measures 5.03, 5.10, 5.18 and 5.28 MB, the keys'
-			// bunches of 28 taking close to a third of it.
-			variantBytes: { low: 5_150_000, medium: 5_220_000, high: 5_300_000, ultra: 5_400_000 },
+			// The largest of seed 11's six variants measures 5.87, 5.94, 6.02 and 6.11 MB, the keys'
+			// bunches of 34 taking close to half of it.
+			variantBytes: { low: 5_970_000, medium: 6_040_000, high: 6_120_000, ultra: 6_210_000 },
 			lod0Triangles: 2_500_000,
 			// The heaviest variant's first card level draws 24,855, 27,986, 30,936 and 35,382
 			// triangles from the coarsest tier up, and its second 10,594, 11,594, 12,487 and 13,325.
