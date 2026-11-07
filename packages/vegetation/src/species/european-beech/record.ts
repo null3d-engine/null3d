@@ -18,6 +18,20 @@ const ALTERNATE: readonly (readonly [number, number])[] = [
 	[1, 1],
 ];
 
+/**
+ * Internodes of a spray's plate run: two crowded leaves with a short bare stretch between the runs,
+ * mild enough that the crown keeps its mass. The cluster's own class carries it, so the plate face
+ * fires only on the cutting.
+ */
+const PLATE_RUN: readonly (readonly [number, number])[] = [
+	[0, 1.2],
+	[0.2, 0.5],
+	[0.45, 0.5],
+	[0.6, 1.2],
+	[0.85, 0.5],
+	[1, 0.5],
+];
+
 /** The European beech's record. */
 export const record: Species = {
 	id: 'european-beech',
@@ -178,6 +192,27 @@ export const record: Species = {
 				],
 				droop: 3,
 			},
+			{
+				// Stills 11 and 23: the cluster's own one-year spray, drawn only by the cluster cutting,
+				// with the crowding that stands its runs as plates. The crown never draws this class.
+				name: 'spur',
+				vigor: [0, 1],
+				share: 0,
+				years: 1,
+				length: { mean: 0.6, spread: 0.06 },
+				nodes: { mean: 9, spread: 0.5 },
+				internode: PLATE_RUN,
+				leafScale: [
+					[0, 0.85],
+					[1, 1.05],
+				],
+				leafAngle: [
+					[0, 94],
+					[0.5, 88],
+					[1, 76],
+				],
+				droop: 1.5,
+			},
 		],
 		phyllotaxis: { kind: 'distichous', flatten: 1 },
 		orders: 3,
@@ -217,6 +252,8 @@ export const record: Species = {
 			// out, keeps its low foliage.
 			bareBole: { radius: 4, height: 0.17 },
 			skyward: 0.4,
+			// A spray's crowded runs stand in one face; only the cluster's own class crowds.
+			plate: true,
 			scale: { mean: 1.95, spread: 0.15 },
 		},
 	},
@@ -376,10 +413,10 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The crown's prototypes, whose strongest shoots carry the crown's masses, with the cut
-			// twig's own class beside them: 2.45, 3.25, 4.68 and 7.51 MB at the four tiers, and the
-			// owner's tree caps are 2.7, 4, 7.1 and 13 MB.
-			kitBytes: { low: 2_550_000, medium: 3_350_000, high: 4_850_000, ultra: 7_700_000 },
+			// The crown's prototypes, whose strongest shoots carry the crown's masses, with two cutting
+			// classes beside them: the branched cut twig and the cluster's own spray. 3.30, 3.99, 5.24
+			// and 7.70 MB at the four tiers; the owner's tree caps are 3.4, 4, 7.1 and 13 MB.
+			kitBytes: { low: 3_350_000, medium: 4_000_000, high: 5_300_000, ultra: 7_800_000 },
 			variantBytes: { low: 10_500_000, medium: 11_000_000, high: 11_200_000, ultra: 11_500_000 },
 			// The crown's strongest shoot carries six leaves a year, which puts the densest near band at
 			// 2,702,377 triangles; the owner's cap for a tree is 2,900,000.
@@ -403,6 +440,6 @@ export const record: Species = {
 		subbranch: { shoot: 'cut', pick: 0 },
 		// The shots of the cluster are face-on to the spray's plane, where the first prototype's
 		// draw turns it half away.
-		cluster: { shoot: 'short', pick: 1 },
+		cluster: { shoot: 'spur', pick: 0 },
 	},
 };
