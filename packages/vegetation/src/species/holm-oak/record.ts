@@ -277,7 +277,9 @@ export const record: Species = {
 			// at the four tiers. Each cap sits just above its figure. The crown's foliage stands in
 			// fewer, larger leaves, which carries the cover at fewer triangles.
 			variantBytes: { low: 10_300_000, medium: 10_400_000, high: 10_600_000, ultra: 10_900_000 },
-			lod0Triangles: 2_500_000,
+			// The near band measures 2,728,516 triangles; the cap sits just above it, under the
+			// owner's 2.9 million.
+			lod0Triangles: 2_750_000,
 			lod1Triangles: 150_000,
 			// The second card level measures 33,854 triangles with the clearance; the cap sits just
 			// above it.
