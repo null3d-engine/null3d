@@ -853,6 +853,19 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 180,
 	},
 	{
+		name: 'oak',
+		group: 'Building scenes',
+		sketch: new URL('./oak/sketch.ts', import.meta.url),
+		code: 'oak/',
+		title: 'The pedunculate oak',
+		scene: 'One oak in a meadow',
+		summary:
+			"The engine's own pedunculate oak, grown from its species record through the vegetation package and stood alone in a meadow: the crown's dome, its low fork, the flushes of foliage on fine twigs, and the acorns on their stalks. Drag to turn the tree and use the wheel to step nearer; press R to grow it again from another seed.",
+		controls: [{ keys: ['R'], does: 'Grow the tree again from another seed' }],
+		hold: 2,
+		timeoutSeconds: 180,
+	},
+	{
 		name: 'forest',
 		group: 'Scale',
 		sketch: new URL('./forest/sketch.ts', import.meta.url),
