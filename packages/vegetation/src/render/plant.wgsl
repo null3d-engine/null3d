@@ -956,7 +956,9 @@ fn surface(input: SurfaceInput) -> Surface {
         if (pattern.x > 0.5 && pattern.y > 0.5 && share_of_band > 0.5 && input.uv1.y < 0.5) {
             // Two scale rows stand across each drawn face, and the rows alternate their offset so a
             // scale sits over the crevice between the two below it, as an imbricated cup does.
-            let cells = vec2f(max(3.0, floor(pattern.x * 0.7)), max(4.0, floor(pattern.y * 0.4)));
+            // The geometry's own scale rows carry the bumps, so the shader closes one cell over each
+            // of them; the turn takes more cells than the lathe has faces, as the photograph shows.
+            let cells = vec2f(max(3.0, pattern.x), max(8.0, floor(pattern.y * 0.8)));
             let ends = pattern.zw;
             let along = (uv.y - ends.x) / max(ends.y - ends.x, 1e-4);
             let row = floor(along * cells.x);
@@ -980,7 +982,8 @@ fn surface(input: SurfaceInput) -> Surface {
             roughness = mix(roughness * 1.15, mix(roughness, roughness * 0.45, dome), fade);
         } else if (pattern.x > 0.5 && pattern.y > 0.5 && input.uv1.y < 0.5) {
             // The nut: faint striations down its length and a gloss where its body meets the light.
-            let across = uv.x * 16.0;
+            // A stripe count that does not divide the lathe's faces, so no stripe lands on a facet edge.
+            let across = uv.x * 13.0;
             let stripe = 0.5 + 0.5 * cos(across * 6.2831853);
             base = base * (0.86 + 0.18 * stripe);
             // A gloss that runs with the striations, so the sheen spreads over the body rather
