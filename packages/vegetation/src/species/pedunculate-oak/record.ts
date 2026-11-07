@@ -379,8 +379,11 @@ export const record: Species = {
 				scaleJitter: 0.35,
 			},
 			colour: [0.24, 0.1, 0.03],
-			// Still 19's cups and peduncle are a pale grey-brown against the chestnut nut.
+			// Still 19's cups are a pale grey-brown against the chestnut nut.
 			bandColour: [0.3, 0.23, 0.15],
+			// Still 19's peduncle is young wood, a yellow-brown close to the twig it hangs from, not
+			// the cup's grey.
+			stalkColour: [0.26, 0.2, 0.1],
 			// Still 19's nuts are polished, with a highlight on each; their cups are matte.
 			roughness: [0.35, 0.85],
 			hang: 180,

@@ -1563,6 +1563,12 @@ export interface ExtraSpec {
 	 * acorn's nut is glossy and its cup is not. 0.6 for both by default.
 	 */
 	readonly roughness?: readonly [body: number, band: number];
+	/**
+	 * The linear colour, each channel 0 to 1, of the stalk that carries a lathe's copies, such as an
+	 * acorn's peduncle. A stalk is young wood, so it takes the branch's tone rather than the cup's;
+	 * without one it takes `bandColour`, or `colour` where the record names no band.
+	 */
+	readonly stalkColour?: Rgb;
 	/** Degrees it hangs from its site. */
 	readonly hang: number;
 }

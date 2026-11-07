@@ -415,6 +415,9 @@ function writeStalk(
 		colour,
 	);
 	markBand(mesh, first, band);
+	// The stalk's vertices say so in their second coordinate, so it may take the wood's own colour
+	// rather than the cup's.
+	for (let i = first; i < mesh.vertices; i++) mesh.uvs1[i * 2 + 1] = 1;
 	return fork;
 }
 
