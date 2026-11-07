@@ -88,7 +88,7 @@ export const record: Species = {
 		bending: { strength: 0.5, upturn: 0.2, girth: 3.5 },
 		forkRule: true,
 		kinks: true,
-		pipe: { exponent: 2.3, tipRadius: 0.004 },
+		pipe: { exponent: 2.3, tipRadius: 0.012 },
 	},
 	envelope,
 	shoots: {
@@ -144,7 +144,7 @@ export const record: Species = {
 				// kinking every 6 cm or so as its reference's twigs do.
 				bend: { length: 0.06, angle: 34 },
 				leafScale: [
-					[0, 0.8],
+					[0, 1],
 					[1, 1],
 				],
 				leafAngle: [
@@ -229,6 +229,7 @@ export const record: Species = {
 			// rather than hanging under them.
 			lift: 15,
 			skyward: 0.65,
+			rosette: 'fan',
 			scale: { mean: 1.4, spread: 0.15 },
 		},
 	},
