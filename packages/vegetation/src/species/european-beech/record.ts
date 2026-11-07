@@ -18,6 +18,18 @@ const ALTERNATE: readonly (readonly [number, number])[] = [
 	[1, 1],
 ];
 
+/**
+ * Internodes of a plate: short runs where two or three leaves crowd together, with a longer stretch
+ * of bare stem between the runs, so the blades overlap in one plane as the photographs' sprays do.
+ */
+const PLATE: readonly (readonly [number, number])[] = [
+	[0, 1.35],
+	[0.25, 0.3],
+	[0.5, 1.35],
+	[0.75, 0.3],
+	[1, 1.35],
+];
+
 /** The European beech's record. */
 export const record: Species = {
 	id: 'european-beech',
@@ -86,7 +98,7 @@ export const record: Species = {
 				years: 1,
 				length: { mean: 0.6, spread: 0.06 },
 				nodes: { mean: 9, spread: 0.5 },
-				internode: ALTERNATE,
+				internode: PLATE,
 				leafScale: [
 					[0, 0.85],
 					[1, 1.05],
@@ -130,7 +142,7 @@ export const record: Species = {
 				years: 3,
 				length: { mean: 1.15, spread: 0.15 },
 				nodes: { mean: 6, spread: 1 },
-				internode: ALTERNATE,
+				internode: PLATE,
 				stem: { radius: [0.011, 0.004] },
 				lateral: 55,
 				leafScale: [
