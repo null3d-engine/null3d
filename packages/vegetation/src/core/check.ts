@@ -218,6 +218,7 @@ function shootProblems(shoots: ShootSpec, out: string[]): void {
 	if (lift !== undefined && !(lift >= -30 && lift <= 30))
 		out.push(`shoots.placement.lift is ${lift}; it is degrees from -30 to 30`);
 	shareProblem(shoots.placement.skyward, 'shoots.placement.skyward', out);
+	shareProblem(shoots.placement.gather, 'shoots.placement.gather', out);
 	spreadProblems(shoots.placement.scale, 'shoots.placement.scale', true, out);
 	const clump = shoots.placement.clump;
 	for (const [name, scale] of [
@@ -330,6 +331,7 @@ function growthProblems(record: Species, out: string[]): void {
 			out.push(`foliage.compound.rachis is ${compound.rachis}; it must be above 0`);
 		const step = compound.leafletStep;
 		if (step !== undefined) wholeProblem(step, 'foliage.compound.leafletStep', 0, 2, out);
+		shareProblem(compound.leafletStalk, 'foliage.compound.leafletStalk', out);
 	}
 	if (record.foliage.kind === 'grass-blade') {
 		const blade = record.foliage.blade;

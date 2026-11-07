@@ -149,6 +149,79 @@ wide as its photograph's. The crown moved because five great limbs at 62 degrees
 four at 55 left it bare. The cut pieces moved because the class's twig is the photographs' 42 cm of
 two nodes rather than a metre of wire.
 
+### The third pass: joins, filigree and a taller dome
+
+The review's second pass fails eight rows. Three of them share a cause, and the branch now answers all
+three from the record.
+
+- **The plant broke into pieces** (row 12: 5, 2 and 5 islands at the whole views against one each, and
+  12, 12 and 6 at the cut views). The great limbs now keep `clearance` 0.3 m of air from one another
+  and turn up to 30 degrees in an internode to keep it, with only wood above 0.35 of the trunk's
+  girth holding the rule, so the crown's fine wood keeps its own layout. Each card draws its
+  supporting twig as a line at least 1.5 pixels wide (`cardStalk`), so a card's leaves no longer read
+  as a piece in air at a whole view, and the leaf's own stalk stands 2.6 millimetres across.
+- **The crown read as tufts on bare axes** (row 2, and row 12's pattern). The shoots per metre rise
+  from 0.8 to 2.4 along the least vigorous wood, so every limb carries leafy twigs along its run, and
+  `branching` 1.15 lets more lateral buds put out a branch. The opposite arrangement was already
+  there; what was missing was the wood fine enough to see it.
+- **The crown was a broad dome, not a tall one** (row 1: a crown box 1.20 wide to high against the
+  photograph's 0.90 at the silhouette). The leader's control rises to 0.62, so one leader carries the
+  crown to its single apex.
+- **The cut stem was a wire** (row 3: about 0.014 of the piece's height against the photographs'
+  0.032). Its radius doubles to 11 millimetres at its foot.
+- **The leaf carried eleven leaflets where its photographs show nine** (row 4). It carries nine.
+
+The shoots that the filigree adds close the crown, so the placement dial falls from 1.5 to 1.
+
+### The fourth pass: the rachis holds its width, and the dial's fifth
+
+The third pass's filigree cost the cut views. The sixty most crowded leaves of the crown now break
+into pieces of their own wherever the mask loses the wood, and the cut views drew 34, 36 and 19
+pieces against the photograph's one each, where the second pass drew 12, 12 and 6.
+
+- **The last leaflets hung on a thread.** A rachis thinned to 40 per cent of its base width by its
+  last pair, so at the distance of a cut view the drawn tube fell under a pixel and the coverage
+  mask cut each distal leaflet free. A rachis now keeps `RACHIS_TIP_SHARE`, three quarters of its
+  base width, at its tip. That is a rule of the compound leaf's builder, not a figure for this
+  species, and a leaf that does not compound builds no rachis at all, so its mesh is unchanged byte
+  for byte. `leaf/leaf-mesh.test.ts` holds both: the tip ring measures the share of the first, and a
+  simple leaf's mesh equals the blade's at every tier.
+- **The shoots gather in the internode's first third.** `shoots.placement.gather` 0.33 holds each
+  bud's shoots in the third of the internode nearest it, so the run between nodes stands bare. Run
+  `ash-25` measured it: 01's sky gap rises from 0.201 to 0.213 against the reference's 0.261, 02
+  from 0.177 to 0.192 against 0.187 and 18 from 0.203 to 0.213 against 0.215, so 02 and 18 sit on
+  their photographs and 01 is 0.047 short. The whole views read 2, 2 and 2 pieces: 02 gains a bare
+  twig with a small tuft standing off the crown's edge. The crown outside rises from 65 pieces to
+  87 against the photograph's 3, and every cut view holds at 2, 1 and 1.
+- **The placement dial stays at the curve's own count.** The review prints a sky gap as the
+  reference's against the render's, so the whole views' 0.26 against 0.19 at 01 reads as the
+  reference's 0.26 and the render's 0.19: the crown shows less sky than its photograph and an
+  earlier report of it had the two sides reversed. The dial multiplies the shoots that the
+  per-metre curve places, so raising it closes the crown further. A threefold rise moved this figure
+  by 0.08, so no dial carries row 6; the crown's shape does.
+
+### The fifth pass: the leaflets meet the rachis
+
+The fourth pass's cut views drew 33, 36 and 16 pieces against the photograph's one each, and the
+rachis rule moved them by a piece or three. The review's mattes name the cause: a single leaf draws
+as two pieces from above and ten from below, and it is one mesh either way. The leaflet's own stalk
+is drawn from a band of the leaf texture that carries no leaf on the underside, so that band draws
+nothing and every leaflet stands clear of the rachis on that face. The photographs show sessile
+leaflets, their blades meeting the rachis directly.
+
+`CompoundLeaf.leafletStalk`, optional and 0 to 1, is the share of its drawn stalk that a leaflet
+keeps. At nothing the blade begins where the leaflet meets the rachis and the stalk's geometry is
+not built at all. A record that names no share keeps the whole stalk, so every other species draws
+as it did.
+
+Run `ash-24` measured it. The cut views fall from 33, 36 and 16 pieces to 2, 1 and 1, and the single
+leaf from 2 and 10 to 1 and 1, with each leaflet meeting the rachis in a solid wedge in the matte.
+The cluster view falls from 13 pieces to 1, the secondary branching from 28 to 1 and the fine twigs
+from 5 to 1. Two views rise: the crown outside from 47 to 65, and the limb fork falls from 68 to 34.
+The whole views' pieces stay at 2, 1 and 2, and their sky gap rises by 0.008 to 0.013, which puts 02
+and 18 inside their bands and leaves 01 0.06 short. The kit falls to 4.91 and 9.07 MB at the high
+and ultra tiers.
+
 ### The crown seen from under it
 
 Stills 03 and 08 look up the bole, and there the drawn crown is far denser than its photographs: 03
@@ -189,10 +262,11 @@ with a sky that carries more of the pictures' light.
 
 ### Budgets and grow time
 
-At the low, medium, high and ultra tiers, the kit measures 2.63, 3.03, 5.64 and 11.21 MB, and the
-largest of seed 11's six variants 2.24, 2.31, 2.39 and 2.50 MB. The owner's caps for a tree are 2.7,
-4, 7.1 and 13 MB for a kit; the low tier sits within three per cent of its cap. A variant grows in
-270 to 331 ms.
+At the low, medium, high and ultra tiers, the kit measures 2.60, 2.96, 4.91 and 9.07 MB with the
+leaflets sessile, and the largest of seed 11's six variants 3.18, 3.25, 3.33 and 3.43 MB. The owner's caps for a tree are 2.7,
+4, 7.1 and 13 MB for a kit; the low tier sits within three per cent of its cap. The first card level
+of the same variants draws 24,855 to 35,382 triangles and the second 10,594 to 13,325. A variant
+grows in about 290 to 300 ms with the machine in other hands.
 
 ## Look
 
@@ -205,8 +279,9 @@ stand as one piece.
 ## Decision
 
 Grow the ash with the record above. Add `CompoundLeaf.leafletStep` and `ExtraShape.samara`, both
-optional, so every other species grows as it did. The species does not pass its review, and the
-faults under [Consequences](#consequences) stay open.
+optional, so every other species grows as it did, and hold the compound leaf's rachis to
+`RACHIS_TIP_SHARE` at its tip. The species does not pass its review, and the faults under
+[Consequences](#consequences) stay open.
 
 Rejected:
 
@@ -224,19 +299,20 @@ Rejected:
 
 - `core/record.ts` gains the two optional fields, `core/check.ts` checks them, and
   `leaf/extras.ts` and `leaf/leaf-mesh.ts` read them. Their tests are in `leaf/extras.test.ts` and
-  `leaf/leaf-mesh.test.ts`.
+  `leaf/leaf-mesh.test.ts`. `leaf/compound.ts` holds the rachis rule, and
+  `leaf/leaf-mesh.test.ts` measures the rachis's tip and a simple leaf's unchanged mesh.
 - The review page measures a cut piece's frame in whole-leaf lengths: a compound leaf's leaf is its
   stalk, rachis and terminal leaflet, not one leaflet. Without that, every cut piece of a compound
   species was framed five times too close.
 - The low tier's kit sits within three per cent of the owner's cap for a tree. A change that adds a
   prototype needs a cut elsewhere.
 - Stated faults, largest first, each with its figure:
-  1. The crown's density is wrong in both directions. It shows more sky than its photographs at 01,
-     where the render's gap is 0.37 against the reference's 0.26, at 02 at 0.31 against 0.19 and at
-     18 at 0.37 against 0.21. It shows less looking up the bole from the foot, where 03 stands at
-     0.35 against 0.50. The shoots sit in tufts near the axes, leaving the rim between the tufts
-     bare and the middle over the trunk full. The dial moved this figure by 0.08 over a threefold
-     rise, so a change of density alone will not close it.
+  1. The crown now shows less sky than its photographs at every whole view close to the height it
+     was judged on: the render's gap is 0.19 against the reference's 0.26 at 01, 0.17 against 0.19
+     at 02 and 0.20 against 0.21 at 18. Looking up the bole it is far denser still, 0.14 against
+     0.50 at 03, which is the core's limit above. A threefold rise in the placement dial moved this
+     figure by 0.08, so the dial alone does not carry the row either way. The crown's shape is the
+     lever: the shoots gather near the axes and leave the rim between them bare.
   2. The crown is drawn three times as loose as its photograph in the wind. The top band's motion is
      0.141 against 0.041, and every band but the third moves further than its reference's.
   3. The cut pieces do not read as the photographs' pieces. Outlines are 0.06 at 21 and 22 and 0.13
