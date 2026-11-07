@@ -69,6 +69,8 @@ const CLUSTER_LEAN = 32;
 const CLUSTER_STEP = 0.4;
 /** How far inside a twig's surface a crowded node's leaves root, so their blades meet the wood. */
 const CROWDED_ROOT = 1;
+/** The crowding at which a node joins a plate run, from 0 at an even spacing to 1 at a point. */
+const PLATE_CROWDED = 0.4;
 
 /** Purposes of the prototypes' hash keys, so no two draws share one. */
 const Purpose = {
@@ -615,6 +617,10 @@ export function planShoot(
 		let node = 0;
 		const azimuthStart = draw(Purpose.Start, axis) * 360;
 		const axisLength = start.unitLength * start.units;
+		// A plate run holds one face; it starts at the run's first crowded node and ends when the
+		// internodes open out again. A new growth unit starts a new run.
+		const plated = shoots.placement.plate === true;
+		let plateFace: Vector3 | undefined;
 		let zig = 1;
 		// Side shoots this axis has put out so far.
 		let placed = 0;
@@ -622,6 +628,7 @@ export function planShoot(
 			const length = start.unitLength * (0.85 + 0.3 * draw(Purpose.Unit, axis, unit));
 			const newest = unit === start.units - 1;
 			const leafy = unit >= start.units - leafYears;
+			plateFace = undefined;
 			const nodes = unitNodes(record, shootClass, length, draw(Purpose.Nodes, axis, unit));
 			// The unit's start and each of its nodes, along which its joint's side shoots may leave.
 			const unitStart: StemFrame = {
@@ -652,6 +659,10 @@ export function planShoot(
 				direction = turn(direction, sky, (draw(Purpose.Wander, axis, node) - 0.5) * 6);
 				normalize3(direction);
 				sky = square(sky, direction, [0, 0, 1]);
+				if (plated) {
+					if (crowded >= PLATE_CROWDED) plateFace ??= [...sky];
+					else plateFace = undefined;
+				}
 				// A long internode breaks into an even number of straight pieces that turn back and forth
 				// about its line, by half the bend each way, so it ends on its line and the next node keeps
 				// its frame.
@@ -677,7 +688,19 @@ export function planShoot(
 				span = Math.max(span, along);
 				const t = nodes === 1 ? 1 : k / (nodes - 1);
 				if (leafy && leafMeshes > 0)
-					placeLeaves(axis, node, at, direction, sky, radius, along, t, azimuthStart, crowded);
+					placeLeaves(
+						axis,
+						node,
+						at,
+						direction,
+						sky,
+						radius,
+						along,
+						t,
+						azimuthStart,
+						crowded,
+						plateFace,
+					);
 				node++;
 			}
 			points[points.length - 1] = { ...(points[points.length - 1] as AxisPoint), unitEnd: true };
@@ -760,8 +783,12 @@ export function planShoot(
 		t: number,
 		azimuthStart: number,
 		crowded: number,
+		plateFace?: Vector3,
 	): void => {
-		const side = normalize3(cross3(stem, sky, [0, 0, 0]));
+		// A plate run holds every blade to its own face, so the run reads as one shingle rather than
+		// a tuft that turns with the stem.
+		const face = plateFace ?? sky;
+		const side = normalize3(cross3(stem, face, [0, 0, 0]));
 		const azimuths = nodeAzimuths(phyllotaxis, node, azimuthStart, (key) =>
 			phyllotaxis.kind === 'rosette-spur'
 				? spreadAt(phyllotaxis.leaves, draw(Purpose.Spur, axis, key))
@@ -782,9 +809,9 @@ export function planShoot(
 				azimuth += gap * ranks;
 			}
 			const radial = normalize3([
-				side[0] * cos(azimuth) + sky[0] * sin(azimuth),
-				side[1] * cos(azimuth) + sky[1] * sin(azimuth),
-				side[2] * cos(azimuth) + sky[2] * sin(azimuth),
+				side[0] * cos(azimuth) + face[0] * sin(azimuth),
+				side[1] * cos(azimuth) + face[1] * sin(azimuth),
+				side[2] * cos(azimuth) + face[2] * sin(azimuth),
 			]);
 			const a = radians(leafAngle);
 			const direction = normalize3([
@@ -792,7 +819,7 @@ export function planShoot(
 				stem[1] * cos(a) + radial[1] * sin(a),
 				stem[2] * cos(a) + radial[2] * sin(a),
 			]);
-			const rotation = leafRotation(direction, stem, sky, radial);
+			const rotation = leafRotation(direction, stem, face, radial);
 			const key = node * 8 + k;
 			const size =
 				curveAt(shootClass.leafScale, t) *
@@ -810,7 +837,7 @@ export function planShoot(
 				axis,
 				node,
 				stem: [...stem],
-				sky: [...sky],
+				sky: [...face],
 				radial,
 				direction,
 				crowded,
