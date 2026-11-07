@@ -251,6 +251,35 @@ a record may now add `shoots.placement.reach` in degrees, 0 to 60, held at 90 in
 stays on the wood, so a spray never stands in air, and the foliage reaches out while the run along
 the twig stays open.
 
+### The keys on their own footstalks
+
+Still 19 shows green pedicels under separate brown bodies. The bunch's stalks and pedicels took the
+seed body's band colour, so the heads ran together as one red-brown collar. The extra now names its
+own `stalkColour`, the wing's green, and the bunch carries 34 keys where it carried 28, since it read
+sparser than the photograph's. Run `ash-34` drew it. The largest variant rises from 5.28 to 6.11 MB.
+
+The view's edge difference stays at 0.261, unmoved: the review frames this view inside a shaded
+crown, so its tone cannot be judged there, and the picture is the measure that changed.
+
+### The leaf's plan
+
+Row 4's box read 0.691 and 0.690 at the leaf's views against the photographs' 0.762 to 0.917, and
+the sessile join took a tenth of it. `CompoundLeaf.angle`, optional and 30 to 90 degrees, spreads
+the leaflets from the builder's own 62, and the rachis sets how much of the leaf they take.
+
+Three settings were drawn at 74 degrees:
+
+| Rachis | Leaf's boxes, upper and underside | Cluster's sky at 11 | Row 4 |
+| --- | --- | --- | --- |
+| 1.68, the fitted share | 0.691, 0.690 | 0.407 against 0.392 | Outside |
+| 1.55 | 0.788, 0.760 | 0.394 against 0.392 | Underside on the floor |
+| 1.50, the setting kept | 0.801, 0.779 | 0.380 against 0.392 | Inside with room |
+| 1.45 | 0.818, 0.789 | 0.366 against 0.392 | Inside, the cluster 0.026 under |
+
+Run `ash-37` drew the setting kept. All four leaf views sit inside the photographs' band, the
+cluster keeps its own, and the whole views gain with them: `01`'s sky rises from 0.201 to 0.208,
+`02` reads 0.184 against 0.187 and `18` 0.211 against 0.215.
+
 ### The envelope is not a knob
 
 The crown's box reads 1.155, 1.089 and 1.139 wide to high at the whole views against the
