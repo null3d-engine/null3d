@@ -1034,6 +1034,19 @@ export interface ShootSpec {
 		 */
 		readonly bareTrim?: number;
 		/**
+		 * A bare column round each stem below a share of the plant's height: no shoot stands on wood
+		 * within `radius` metres of a stem's own axis below `height` times the plant's height. An
+		 * open-grown tree leaves its lower trunk and the bases of its great limbs clear, so the bole
+		 * reads through the crown while the skirt's outer foliage still hangs low. Absent, shoots
+		 * stand on every axis.
+		 */
+		readonly bareBole?: {
+			/** Metres from the stem's axis within which no shoot stands. */
+			readonly radius: number;
+			/** The share of the plant's height below which the column holds. */
+			readonly height: number;
+		};
+		/**
 		 * Degrees each shoot turns toward the sky from the way it leaves its wood, from -30 to 30,
 		 * negative toward the ground. Absent, the turn comes from the finest order's tropism.
 		 */

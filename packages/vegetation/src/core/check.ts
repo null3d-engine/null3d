@@ -214,6 +214,14 @@ function shootProblems(shoots: ShootSpec, out: string[]): void {
 		out.push(
 			`shoots.placement.bareTrim is ${trim}; it is a radius in metres from 0 to 0.1, a twig's wood`,
 		);
+	const bole = shoots.placement.bareBole;
+	if (bole !== undefined) {
+		if (!(bole.radius > 0))
+			out.push(
+				`shoots.placement.bareBole.radius is ${bole.radius}; it is a radius in metres above 0`,
+			);
+		shareProblem(bole.height, 'shoots.placement.bareBole.height', out);
+	}
 	const lift = shoots.placement.lift;
 	if (lift !== undefined && !(lift >= -30 && lift <= 30))
 		out.push(`shoots.placement.lift is ${lift}; it is degrees from -30 to 30`);
