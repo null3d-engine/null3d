@@ -1091,3 +1091,53 @@ describe('the bare trim', () => {
 		expect(bareTrimmed(skeleton, ends, [1, 2, 3, 5, 6], 0.05, 1)).toBeUndefined();
 	});
 });
+
+describe('the plate run', () => {
+	/** Internodes that crowd three leaves, open out, then crowd three more. */
+	const BUNCHED: readonly (readonly [number, number])[] = [
+		[0, 1.5],
+		[0.15, 0.3],
+		[0.45, 0.3],
+		[0.6, 1.5],
+		[0.8, 0.3],
+		[1, 0.3],
+	];
+	const withCurve = (plate: boolean): Species => {
+		const base = oakRecord();
+		return {
+			...base,
+			shoots: {
+				...base.shoots!,
+				// A strong zigzag, so a blade that keeps its own node's frame visibly turns away.
+				stem: { ...base.shoots!.stem, zigzag: 40 },
+				placement: { ...base.shoots!.placement, plate },
+				classes: base.shoots!.classes.map((c) => ({ ...c, internode: BUNCHED })),
+			},
+		};
+	};
+	/** The runs of consecutive crowded nodes, each with its blades. */
+	const runs = (plan: ShootPlan): PlannedLeaf[][] => {
+		const crowded = plan.leaves
+			.filter((leaf) => leaf.crowded >= 0.4)
+			.sort((a, b) => a.node - b.node);
+		const groups: PlannedLeaf[][] = [];
+		for (const leaf of crowded) {
+			const last = groups[groups.length - 1] as PlannedLeaf[] | undefined;
+			if (last && leaf.node === (last[last.length - 1] as PlannedLeaf).node + 1) last.push(leaf);
+			else groups.push([leaf]);
+		}
+		return groups.filter((group) => group.length > 1);
+	};
+	const shared = (group: PlannedLeaf[]) =>
+		group.every((leaf) => leaf.sky.every((v, k) => v === (group[0] as PlannedLeaf).sky[k]));
+
+	it('holds a run of crowded nodes to one face where the record asks', () => {
+		const on = runs(planShoot(withCurve(true), 0, 1));
+		const off = runs(planShoot(withCurve(false), 0, 1));
+		expect(on.length).toBeGreaterThan(0);
+		expect(off.length).toBe(on.length);
+		// With the field every blade of a run keeps the run's first face; without it they turn apart.
+		for (const group of on) expect(shared(group)).toBe(true);
+		expect(off.some((group) => !shared(group))).toBe(true);
+	});
+});

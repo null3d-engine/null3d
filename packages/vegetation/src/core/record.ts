@@ -1059,6 +1059,14 @@ export interface ShootSpec {
 		 * rosette is one flat face of blades, as an oak's is when its leaves are looked at front on.
 		 */
 		readonly rosette?: 'round' | 'fan';
+		/**
+		 * Whether a run of crowded nodes stands its blades in one plane and overlaps them in order,
+		 * as a shingle. The internode curve marks a run by crowding its nodes; without this, each
+		 * blade of the run still turns with the stem's own zigzag and the run reads as a tuft. Set,
+		 * the run's face is the first crowded node's and every blade of the run keeps it. Off, a
+		 * shoot draws exactly as it did.
+		 */
+		readonly plate?: boolean;
 		/** A shoot's scale. */
 		readonly scale: Spread;
 		/**
