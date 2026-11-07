@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { type BarkLayer, barkLayer } from './bark.ts';
 import { readConfig, type SourceConfig } from './config.ts';
 import { ENCODER, encodeKtx2, type KtxJob } from './encode.ts';
-import { decodePicture } from './image.ts';
+import { crop as cropFrom, decodePicture, type Picture } from './image.ts';
 import { type LeafTextures, leafTextures } from './leaf.ts';
 import { type SourceFile, type SourceFolder, Sources, sha256 } from './sources.ts';
 
@@ -79,8 +79,11 @@ export async function buildSpecies(
 
 	let leaf: LeafTextures | undefined;
 	if (config.leaf) {
-		const upper = read(config.leaf.upper);
-		const lower = read(config.leaf.lower);
+		// A compound leaf's picture holds its whole blade; the leaflet the mesh draws takes its own
+		// part of it.
+		const cut = (p: Picture) => (config.leaf?.crop ? cropFrom(p, ...config.leaf.crop) : p);
+		const upper = cut(read(config.leaf.upper));
+		const lower = cut(read(config.leaf.lower));
 		leaf = leafTextures(upper, lower, config.leaf);
 		for (const [set, half] of [
 			[leaf.full, false],
