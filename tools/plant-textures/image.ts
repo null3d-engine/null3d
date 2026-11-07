@@ -214,6 +214,28 @@ function areaWeights(start: number, length: number, count: number) {
 }
 
 /**
+ * A rectangle of the picture, `width` by `height` source texels from (`x`, `y`), without scaling.
+ * Texels outside the picture read as transparent.
+ */
+export function crop(p: Picture, x: number, y: number, width: number, height: number): Picture {
+	const result = picture(width, height);
+	const from = channels(p);
+	const to = channels(result);
+	for (let row = 0; row < height; row++) {
+		const source = y + row;
+		if (source < 0 || source >= p.height) continue;
+		for (let column = 0; column < width; column++) {
+			const at = x + column;
+			if (at < 0 || at >= p.width) continue;
+			const index = row * width + column;
+			for (let c = 0; c < 4; c++)
+				(to[c] as Float32Array)[index] = (from[c] as Float32Array)[source * p.width + at] as number;
+		}
+	}
+	return result;
+}
+
+/**
  * A square of the picture, `size` source texels a side from (`x`, `y`), resampled to `out` texels a
  * side by the area each output texel covers.
  */
