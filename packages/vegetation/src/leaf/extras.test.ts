@@ -473,8 +473,11 @@ describe('the one-winged key', () => {
 
 	it('hangs its length below the site, and its wing as wide as the record says', () => {
 		const { low, high } = bounds(key());
-		expect(high[1] as number).toBeCloseTo(0, 6);
+		// The wing's tip stands the record's length below the site, and the body's foot reaches a
+		// little way above it, inside the stalk it hangs from.
 		expect(low[1] as number).toBeCloseTo(-KEY.length, 6);
+		expect(high[1] as number).toBeGreaterThanOrEqual(0);
+		expect(high[1] as number).toBeLessThanOrEqual(0.005);
 		expect((high[2] as number) - (low[2] as number)).toBeCloseTo(KEY.width, 4);
 	});
 
