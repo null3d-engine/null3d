@@ -152,6 +152,35 @@ export const record: Species = {
 				droop: 7,
 			},
 		],
+		// Still 21: the cut twig forks at last year's joint into two shoots, each ending in a leaf
+		// cluster, the stem bare between the joints. The crown cannot carry a shoot this bare, so the
+		// cuttings draw this class and the crown never does.
+		cuttingClasses: [
+			{
+				name: 'cut',
+				vigor: [0, 1],
+				share: 0,
+				years: 2,
+				length: { mean: 0.88, spread: 0.3 },
+				nodes: { mean: 6, spread: 0.5 },
+				internode: SHOOT,
+				stem: { radius: [0.007, 0.003] },
+				lateral: 60,
+				laterals: 2,
+				lateralGap: 0.45,
+				bend: { length: 0.05, angle: 34 },
+				leafScale: [
+					[0, 1.2],
+					[1, 1.5],
+				],
+				leafAngle: [
+					[0, 120],
+					[0.5, 90],
+					[1, 60],
+				],
+				droop: 6,
+			},
+		],
 		phyllotaxis: { kind: 'spiral', divergence: 144 },
 		orders: 3,
 		years: 3,
@@ -185,8 +214,8 @@ export const record: Species = {
 			twist: 6,
 			wave: [0, 0],
 			optics: {
-				reflectance: [0.0326, 0.0587, 0.0132],
-				reflectanceBack: [0.3138, 0.3166, 0.259],
+				reflectance: [0.0295, 0.0535, 0.012],
+				reflectanceBack: [0.345, 0.348, 0.285],
 				transmittance: [0.04, 0.08, 0.012],
 				roughness: [0.32, 0.72],
 				sheen: 0.6,
@@ -279,7 +308,7 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			kitBytes: { low: 2_000_000, medium: 2_900_000, high: 5_300_000, ultra: 9_500_000 },
+			kitBytes: { low: 2_000_000, medium: 2_900_000, high: 5_300_000, ultra: 9_800_000 },
 			// The densest variant sets each cap: variant 4 measures 10.18, 10.29, 10.50 and 10.85 MB
 			// at the four tiers. Each cap sits just above its figure. The crown's foliage stands in
 			// fewer, larger leaves, which carries the cover at fewer triangles.
@@ -301,7 +330,7 @@ export const record: Species = {
 	seedSalt: 1477281293,
 	roundBand,
 	cuttings: {
-		branch: { shoot: 'spray' },
+		branch: { shoot: 'cut' },
 		subbranch: { shoot: 'long' },
 		cluster: { shoot: 'short' },
 	},
