@@ -953,7 +953,7 @@ fn surface(input: SurfaceInput) -> Surface {
         // alone. The pattern fades where a cell falls below a pixel or two, so a distant acorn keeps
         // its own colour instead of shimmering.
         let pattern = header(HEADER_EXTRA_SCALES + kind);
-        if (pattern.x > 0.5 && pattern.y > 0.5 && share_of_band > 0.5) {
+        if (pattern.x > 0.5 && pattern.y > 0.5 && share_of_band > 0.5 && input.uv1.y < 0.5) {
             // Two scale rows stand across each drawn face, and the rows alternate their offset so a
             // scale sits over the crevice between the two below it, as an imbricated cup does.
             let cells = vec2f(max(2.0, floor(pattern.x * 0.5)), max(3.0, floor(pattern.y * 0.35)));
@@ -967,13 +967,13 @@ fn surface(input: SurfaceInput) -> Surface {
             let p = vec2f(input.uv.x * cells.y + stagger + wobble * 0.3, along * cells.x);
             let f = fract(p) - vec2f(0.5);
             let d = length(f * vec2f(1.0, 1.15));
-            let dome = 1.0 - smoothstep(0.33, 0.5, d);
+            let dome = 1.0 - smoothstep(0.4, 0.5, d);
             let cell = floor(p);
             let grain = cell_noise(cell.x, cell.y);
             let footprint = length(gx * cells) + length(gy * cells);
             let fade = saturate(1.5 - footprint);
             // A scale stands proud and pale in its middle and dark in the crevice round it.
-            let shade = mix(0.45, 1.18, dome) * (0.93 + 0.14 * grain);
+            let shade = mix(0.6, 1.24, dome) * (0.94 + 0.12 * grain);
             // A cell too small to draw leaves the bed's own tone, so a distant acorn keeps its
             // scales' shade and never shimmers.
             base = mix(base * 0.88, base * shade, fade);
@@ -982,10 +982,10 @@ fn surface(input: SurfaceInput) -> Surface {
             // The nut: faint striations down its length and a gloss where its body meets the light.
             let across = input.uv.x * 14.0;
             let stripe = 0.5 + 0.5 * cos(across * 6.2831853);
-            base = base * (0.9 + 0.1 * stripe);
+            base = base * (0.86 + 0.18 * stripe);
             // A gloss that runs with the striations, so the sheen spreads over the body rather
             // than gathering in one spot.
-            roughness = roughness * (0.8 + 0.35 * stripe);
+            roughness = roughness * (0.72 + 0.5 * stripe);
         }
         occlusion = input.vertexColor.a;
     } else {
