@@ -68,7 +68,7 @@ const CLUSTER_LEAN = 32;
  */
 const CLUSTER_STEP = 0.4;
 /** How far inside a twig's surface a crowded node's leaves root, so their blades meet the wood. */
-const CROWDED_ROOT = 0.6;
+const CROWDED_ROOT = 1;
 
 /** Purposes of the prototypes' hash keys, so no two draws share one. */
 const Purpose = {
