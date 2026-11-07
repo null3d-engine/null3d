@@ -70,7 +70,7 @@ const CLUSTER_STEP = 0.4;
 /** How far inside a twig's surface a crowded node's leaves root, so their blades meet the wood. */
 const CROWDED_ROOT = 1;
 /** The crowding at which a node joins a plate run, from 0 at an even spacing to 1 at a point. */
-const PLATE_CROWDED = 0.4;
+const PLATE_CROWDED = 0.25;
 
 /** Purposes of the prototypes' hash keys, so no two draws share one. */
 const Purpose = {
