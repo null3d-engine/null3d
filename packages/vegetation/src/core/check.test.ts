@@ -46,6 +46,7 @@ describe('the record check', () => {
 					...shoots.placement,
 					skyPrune: 1.5,
 					skyPruneLayer: 10,
+					gather: 1.5,
 					bareTrim: 0.5,
 					lift: 45,
 					tipPrune: 1.5,
@@ -57,6 +58,7 @@ describe('the record check', () => {
 		expect(problems.some((p) => p.startsWith('growth.turning is 120'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.skyPrune is 1.5'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.skyPruneLayer is 10'))).toBe(true);
+		expect(problems.some((p) => p.startsWith('shoots.placement.gather is 1.5'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.bareTrim is 0.5'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.lift is 45'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.tipPrune is 1.5'))).toBe(true);
