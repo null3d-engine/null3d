@@ -238,9 +238,6 @@ export const record: Species = {
 			// Stills 01 and 02: about a quarter of the crown's own box shows sky, and the curve above
 			// carries leafy twigs along every limb, so the dial keeps the curve's own count.
 			density: 1,
-			// Stills 01, 02 and 05: the sprays stand out from the twigs that carry them, so the crown
-			// keeps air between its limbs and its foliage rather than packing the two together.
-			reach: 20,
 			shadePrune: 0,
 			// Stills 01, 03 and 05: sky shows through the crown's middle and under it, where its own
 			// leaves leave a shoot under this share of the sky, and the lit outer masses stay.
