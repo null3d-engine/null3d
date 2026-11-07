@@ -5,11 +5,11 @@ sets it. The European beech tried it in two measured runs and left it unset, so 
 stays a stated fault. Task: none.
 
 Summary: A blade spans 0.38 per cent of the beech's crown width, where the photograph's plates hold
-about 1.2, so the photograph's crown reads as plates about three blades across. The shoot builder can
-hold a run of crowded nodes to one face, as the rosette's fan face does for a tip. Two measurements,
-one confounded and one clean, both broke the beech's crown: its whole views drew 2, 8 and 11 pieces
-against the same record's 1, 4 and 7. The rule shingles within a run and not between neighbouring
-plates, so the field stays for a species whose plates can overlap one another.
+about 1.2. The photograph's crown therefore reads as plates about three blades across. The shoot
+builder can hold a run of crowded nodes to one face. The rosette's fan face does the same for a tip.
+Two measurements broke the beech's crown, one confounded and one clean. Its whole views drew 2, 8 and
+11 pieces against the same record's 1, 4 and 7. The rule shingles within a run and not between
+neighbouring plates, so the field stays for a species whose plates can overlap one another.
 
 ## Question
 
@@ -32,14 +32,14 @@ Can the shoot builder make the photograph's overlapping plates, where no thinnin
 | The same record without the field | none | 1 / 4 / 7 |
 
 The joins held in both trials. Measured against each blade's own stem, the radial's along-stem share
-is at most 0.002, so a plate sits flat on its twig. Row 1's box held at 1.478 through the confounded
-trial.
+is at most 0.002. A plate therefore sits flat on its twig. Row 1's box held at 1.478 through the
+confounded trial.
 
 ## Look
 
-A flat plate projects as a blade cluster. Within a run the blades overlap as a shingle, but the run's
-own edge stands clear of the next plate, so the crown's rim breaks into pieces at exactly the scale
-the plates were meant to fill. The photograph's plates overlap their neighbours, which this rule does
+A flat plate projects as a blade cluster. Within a run the blades overlap as a shingle. But the run's
+own edge stands clear of the next plate, so the crown's rim breaks into pieces at the scale the
+plates were meant to fill. The photograph's plates overlap their neighbours, which this rule does
 not do.
 
 ## Decision
