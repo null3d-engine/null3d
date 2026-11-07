@@ -94,6 +94,18 @@ describe('the record check', () => {
 			expect(
 				speciesProblems(withTurning(turning)).some((p) => p.startsWith('growth.turning')),
 			).toBe(true);
+		const withThickness = (clearanceThickness: number): Species => ({
+			...within,
+			growth: { ...growth, floor: 0.15, clearanceThickness },
+		});
+		for (const clearanceThickness of [0, 0.35, 1])
+			expect(speciesProblems(withThickness(clearanceThickness))).toEqual([]);
+		for (const clearanceThickness of [-0.1, 1.1, Number.NaN])
+			expect(
+				speciesProblems(withThickness(clearanceThickness)).some((p) =>
+					p.startsWith('growth.clearanceThickness'),
+				),
+			).toBe(true);
 		for (const tipPrune of [-0.1, Number.NaN]) {
 			const tip = {
 				...template,

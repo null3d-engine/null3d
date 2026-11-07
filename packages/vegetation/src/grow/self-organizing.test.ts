@@ -122,8 +122,8 @@ function silhouettePieces(skeleton: MacroSkeleton, variant = 0): number {
 }
 
 /** Node pairs on different axes that stand within the distance the clearance demands. */
-function nearPairs(skeleton: MacroSkeleton, clearance: number): number {
-	let near = 0;
+function nearByKind(skeleton: MacroSkeleton, clearance: number): { fine: number; thick: number } {
+	const near = { fine: 0, thick: 0 };
 	for (let a = 0; a < skeleton.nodeCount; a++)
 		for (let b = a + 1; b < skeleton.nodeCount; b++) {
 			const ax = skeleton.axisOf[a] as number;
@@ -131,17 +131,27 @@ function nearPairs(skeleton: MacroSkeleton, clearance: number): number {
 			if (ax === bx) continue;
 			if ((skeleton.axes.parent[bx] as number) === ax) continue;
 			if ((skeleton.axes.parent[ax] as number) === bx) continue;
-			const apart =
-				clearance *
-				(girthOf(skeleton.axes.order[ax] as number) + girthOf(skeleton.axes.order[bx] as number));
+			const oa = skeleton.axes.order[ax] as number;
+			const ob = skeleton.axes.order[bx] as number;
+			const apart = clearance * (girthOf(oa) + girthOf(ob));
 			const dx = (skeleton.position[a * 3] as number) - (skeleton.position[b * 3] as number);
 			const dy =
 				(skeleton.position[a * 3 + 1] as number) - (skeleton.position[b * 3 + 1] as number);
 			const dz =
 				(skeleton.position[a * 3 + 2] as number) - (skeleton.position[b * 3 + 2] as number);
-			if (dx * dx + dy * dy + dz * dz < apart * apart) near++;
+			if (dx * dx + dy * dy + dz * dz < apart * apart) {
+				// Both axes a branch or finer, or one of them the trunk or a great limb.
+				if (oa >= 2 && ob >= 2) near.fine++;
+				else near.thick++;
+			}
 		}
 	return near;
+}
+
+/** Node pairs on different axes that stand within the distance the clearance demands. */
+function nearPairs(skeleton: MacroSkeleton, clearance: number): number {
+	const near = nearByKind(skeleton, clearance);
+	return near.fine + near.thick;
 }
 
 /**
@@ -253,6 +263,30 @@ describe('the self-organizing oak', () => {
 			// The turned wood keeps the clearance too: no more than a fiftieth of its nodes stand within
 			// the distance another axis's wood demands.
 			expect(nearPairs(turned, 0.5)).toBeLessThan(turned.nodeCount * 0.02);
+		},
+		scaledBudget(90_000),
+	);
+
+	it(
+		'keeps the clearance only for wood above the record thickness',
+		() => {
+			const record = species.record;
+			const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
+			const shaped = (clearanceThickness: number): Species => ({
+				...record,
+				growth: { ...growth, clearance: 0.3, turning: 30, clearanceThickness },
+			});
+			// A floor above the great limbs' share leaves no other wood thick enough to block, so the
+			// plant grows exactly as it does without a clearance.
+			expect(digest(grow(0, shaped(0.7)))).toBe(digest(grow(0, record)));
+			const all = grow(0, shaped(0));
+			const thick = grow(0, shaped(0.5));
+			// Fine twigs keep their own layout: more fine pairs stand inside the distance.
+			expect(nearByKind(thick, 0.3).fine).toBeGreaterThan(nearByKind(all, 0.3).fine);
+			// A great limb still keeps clear of another.
+			expect(nearByKind(thick, 0.3).thick).toBeLessThan(nearByKind(all, 0.3).thick);
+			// The same seed grows the same bytes with the field set.
+			expect(digest(grow(0, shaped(0.5)))).toBe(digest(thick));
 		},
 		scaledBudget(90_000),
 	);
