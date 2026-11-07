@@ -247,8 +247,8 @@ with a sky that carries more of the pictures' light.
 
 ### Budgets and grow time
 
-At the low, medium, high and ultra tiers, the kit measures 2.60, 2.96, 5.14 and 9.78 MB, and the
-largest of seed 11's six variants 3.18, 3.25, 3.33 and 3.43 MB. The owner's caps for a tree are 2.7,
+At the low, medium, high and ultra tiers, the kit measures 2.60, 2.96, 4.91 and 9.07 MB with the
+leaflets sessile, and the largest of seed 11's six variants 3.18, 3.25, 3.33 and 3.43 MB. The owner's caps for a tree are 2.7,
 4, 7.1 and 13 MB for a kit; the low tier sits within three per cent of its cap. The first card level
 of the same variants draws 24,855 to 35,382 triangles and the second 10,594 to 13,325. A variant
 grows in about 290 to 300 ms with the machine in other hands.
