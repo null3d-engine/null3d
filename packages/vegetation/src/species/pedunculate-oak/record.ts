@@ -219,13 +219,13 @@ export const record: Species = {
 			// change of reach or part size. The low limbs now keep the foliage they carry below the
 			// bole's line, so the dial sits lower than it did when that foliage was missing.
 			density: 1.25,
-			shadePrune: 0.2,
-			// Stills 01 and 04: a twig tip buried in the crown's shade bears no rosette, so the limbs
-			// show through the foliage, with bare bark and sky between its clumps.
-			tipPrune: 0.1,
+			// No shade line and no starved-tip line: the sky prune below takes the same wood, so one rule
+			// that can be read stands where three stood. A shade line is still there for a species that
+			// cannot prune by the sky its own leaves block.
+			shadePrune: 0,
 			// Stills 01, 03 and 05: sky through the crown's middle and under it, where its own leaves
 			// leave a shoot under this share of the sky; the lit outer masses stay.
-			skyPrune: 0.42,
+			skyPrune: 0.43,
 			skyPruneLayer: 1,
 			// Stills 01 and 18: no bare twigs hang under the crown; a thin branch left with no shoot
 			// has died and goes.

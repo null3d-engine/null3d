@@ -255,21 +255,21 @@ Four changes wait for the owner's choice. Each stands alone, so any one can be t
   240, seed 10's variant 4, leans 6.04 degrees, where its bole runs on along a side shoot. One
   woodland plant in 240, seed 5's variant 5, grows 0.884 of its height across, against the forms
   test's 0.8. A fine twig runs far outside its outline.
-- The shade prune and the tip line remove almost nothing that the sky prune does not remove too. With
-  both off, a sky prune of 0.43 grows the same crown: rows within 1.8 %, leaves within 1.2 % and wood
-  within 0.2 %.
+- The oak thins by one rule. The shade prune and the tip line removed almost nothing that the sky prune
+  did not remove too. The record sets both off and the sky prune at 0.43. A review run confirms the
+  crown: 01's outline rises 0.72 to 0.74 and its color falls 2.8 to 2.6. Every other still moves by a
+  hundredth at most. A species that cannot prune by the sky its own leaves block still sets a
+  shade line.
+- The picture references are redrawn for every test the record moves, on every tier of both sets. The
+  creek pictures and the two plant sources that name the oak do not move.
+- The bole-and-crown test counts the great limbs over the six variants. Each variant keeps a low fork,
+  a plumb bole and no axis over half the crown. The division angle stays at 64, because no higher value
+  pays.
+- The sharp-bend test holds thick wood to a share of the trunk's own radius, so the same limb is judged
+  the same at any width.
+- The byte tests sweep every variant each preset grows at every tier, and a heavy check sweeps eleven
+  seeds over the same.
+- The reference repository's rubric states the light, framing and band rules that the review applies.
 - Pending work, by the owner's rulings, in order:
-  1. Redraw the picture references that this record's changes move, on every tier of both sets. The
-     oak's `plant-pedunculate-oak` comes first: it differs from the head's own drawing in 36.4 to
-     36.7 % of its pixels. Then come the other plant pictures that the box-fraction positions move.
-  2. Judge the bole-and-crown test's limb count over the variants, and keep "no limb carries over
-     half the wood". Then raise the division angle 4 degrees at a time from 64, and read the crown
-     top's swing over all six variants after each step.
-  3. Make the sharp-bend test's cutoff relative to the trunk.
-  4. Sweep the byte budgets over every variant at every tier in a test, and over several seeds in the
-     heavy checks.
-  5. Adopt the judging rules into the reference repository's rubric.
-  6. Drop the shade prune and the tip line from the oak, with the sky prune near 0.43, once a review
-     run confirms the crown.
-  7. Fix the views into and under the crown, the cut pieces' rosettes, the leaf cluster's density,
-     the roots and the silhouette, largest first.
+  1. Fix the views into and under the crown, the cut pieces' rosettes, the leaf cluster's density, the
+     roots and the silhouette, largest first.
