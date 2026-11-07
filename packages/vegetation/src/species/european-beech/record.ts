@@ -18,19 +18,6 @@ const ALTERNATE: readonly (readonly [number, number])[] = [
 	[1, 1],
 ];
 
-/**
- * Internodes of a gentle plate: runs of two crowded leaves with a short bare stretch between them,
- * mild enough that the crown keeps its mass.
- */
-const PLATE_SPRAY: readonly (readonly [number, number])[] = [
-	[0, 1.2],
-	[0.2, 0.5],
-	[0.45, 0.5],
-	[0.6, 1.2],
-	[0.85, 0.5],
-	[1, 0.5],
-];
-
 /** The European beech's record. */
 export const record: Species = {
 	id: 'european-beech',
@@ -143,7 +130,7 @@ export const record: Species = {
 				years: 3,
 				length: { mean: 1.15, spread: 0.15 },
 				nodes: { mean: 6, spread: 1 },
-				internode: PLATE_SPRAY,
+				internode: ALTERNATE,
 				stem: { radius: [0.011, 0.004] },
 				lateral: 55,
 				leafScale: [
@@ -230,9 +217,6 @@ export const record: Species = {
 			// out, keeps its low foliage.
 			bareBole: { radius: 4, height: 0.17 },
 			skyward: 0.4,
-			// The assay: the spray class's gentle runs stand in one face; the short class, which the
-			// cluster still draws through, keeps its even spacing so the two are told apart.
-			plate: true,
 			scale: { mean: 1.95, spread: 0.15 },
 		},
 	},
