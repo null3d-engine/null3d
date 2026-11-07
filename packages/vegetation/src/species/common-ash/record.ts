@@ -282,7 +282,7 @@ export const record: Species = {
 			leaflets: { mean: 9, spread: 0.5 },
 			// Stills 12 and 13: the leaflets take about two fifths of the leaf's length, and they
 			// stand well out from the rachis, so the leaf's plan is broad for its length.
-			rachis: 1.45,
+			rachis: 1.5,
 			terminal: true,
 			angle: 74,
 			// Stills 12 and 13: each leaflet's blade meets the rachis with no stalk of its own.
