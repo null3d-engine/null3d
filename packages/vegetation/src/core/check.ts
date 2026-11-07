@@ -334,6 +334,8 @@ function growthProblems(record: Species, out: string[]): void {
 		const step = compound.leafletStep;
 		if (step !== undefined) wholeProblem(step, 'foliage.compound.leafletStep', 0, 2, out);
 		shareProblem(compound.leafletStalk, 'foliage.compound.leafletStalk', out);
+		if (compound.angle !== undefined)
+			wholeProblem(compound.angle, 'foliage.compound.angle', 30, 90, out);
 	}
 	if (record.foliage.kind === 'grass-blade') {
 		const blade = record.foliage.blade;
