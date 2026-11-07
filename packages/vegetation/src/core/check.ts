@@ -318,6 +318,14 @@ function growthProblems(record: Species, out: string[]): void {
 			if (heads.panicle) curveProblems(heads.panicle.angle, 'growth.heads.panicle.angle', out);
 		}
 	}
+	if (record.foliage.kind === 'blade' && record.foliage.compound) {
+		const compound = record.foliage.compound;
+		spreadProblems(compound.leaflets, 'foliage.compound.leaflets', true, out);
+		if (!(compound.rachis > 0))
+			out.push(`foliage.compound.rachis is ${compound.rachis}; it must be above 0`);
+		const step = compound.leafletStep;
+		if (step !== undefined) wholeProblem(step, 'foliage.compound.leafletStep', 0, 2, out);
+	}
 	if (record.foliage.kind === 'grass-blade') {
 		const blade = record.foliage.blade;
 		curveProblems(blade.profile, 'foliage.blade.profile', out);
@@ -350,8 +358,24 @@ function growthProblems(record: Species, out: string[]): void {
 function extraProblems(record: Species, out: string[]): void {
 	record.extras?.forEach((extra, i) => {
 		const path = `extras[${i}]`;
-		if ('lathe' in extra.shape && extra.shape.stalkSides !== undefined)
+		const stalked = 'lathe' in extra.shape || 'samara' in extra.shape;
+		if (stalked && extra.shape.stalkSides !== undefined)
 			wholeProblem(extra.shape.stalkSides, `${path}.shape.stalkSides`, 4, 16, out);
+		if ('samara' in extra.shape) {
+			const samara = extra.shape.samara;
+			if (!(samara.length > 0))
+				out.push(
+					`${path}.shape.samara.length is ${samara.length}; it is metres and must be above 0`,
+				);
+			if (!(samara.width > 0))
+				out.push(`${path}.shape.samara.width is ${samara.width}; it is metres and must be above 0`);
+			if (!(samara.body >= 0.1 && samara.body <= 0.6))
+				out.push(
+					`${path}.shape.samara.body is ${samara.body}; it is the seed body's share of the key's length, from 0.1 to 0.6`,
+				);
+			if (samara.twist !== undefined && !(samara.twist >= 0 && samara.twist <= 180))
+				out.push(`${path}.shape.samara.twist is ${samara.twist}; it is degrees from 0 to 180`);
+		}
 		const crevice = 'lathe' in extra.shape ? extra.shape.scaleShade : undefined;
 		if (crevice !== undefined && !(crevice >= 0 && crevice <= 1))
 			out.push(`${path}.shape.scaleShade is ${crevice}; a share lies from 0 to 1`);
