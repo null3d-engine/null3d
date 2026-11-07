@@ -78,7 +78,10 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		// cap follows the densest species' measured figure rather than the oak's.
 		lod0Triangles: 2_900_000,
 		lod1Triangles: 150_000,
-		lod2Triangles: 30_000,
+		// The holm oak's second card level, with the denser reading of its two: 37,723 triangles
+		// without the crossing rule and 33,854 with it at 0.1 m, so the species rather than the
+		// tree's default sets this cap.
+		lod2Triangles: 38_000,
 		downloadBytes: 1 * MB,
 		downloadHalfBytes: 0.35 * MB,
 		growMilliseconds: 600,
