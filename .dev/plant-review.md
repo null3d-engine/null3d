@@ -268,3 +268,12 @@ pedunculate oak's ([D-330](decisions/D-330-oak-crown-by-its-own-light.md)).
 
 Each floor value grows a different tree, so read all six variants after a floor change. Do not bring
 back the clump field for the specks: its holes fall at random through the wood.
+
+## A shader's cell counts are computed, not written
+
+The plant shader draws a fruit's scales from its own coordinates. A cell count written as a literal
+(`vec2f(1, 2)`) has failed to compile in the browser while the same count computed
+(`vec2f(max(2.0, floor(rows * 0.5)), ...)`) compiles. The local shader check compares the modules
+with their sources rather than compiling them, so it passes either way and the page fails instead.
+Until the compiler is pinned down, keep the cell counts computed and read the page after any shader
+change, not only the check.
