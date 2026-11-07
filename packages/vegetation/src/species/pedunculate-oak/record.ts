@@ -194,19 +194,20 @@ export const record: Species = {
 				droop: 6,
 			},
 		],
-		// Stills 10, 20, 21 and 22: a cut twig is short and dense, its twigs stiff and kinked, and it
-		// carries a rosette at every tip. The crown cannot carry shoots this short, so the cuttings draw
-		// this class and the crown never does. Its two prototypes differ in length, so the branch takes
-		// the long one and the sub-branch the short.
+		// Stills 10, 20, 21 and 22: a cut twig is a bare stem with a rosette at the end of each of its
+		// two growth units, the leaves gathered at those tips and the stem between them bare. Its twigs
+		// stay stiff and kinked. The crown cannot carry shoots this bare, so the cuttings draw this
+		// class and the crown never does. Its two prototypes differ in length, so the branch takes the
+		// long one and the sub-branch the short.
 		cuttingClasses: [
 			{
 				name: 'cut',
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
-				length: { mean: 0.7, spread: 0.35 },
+				length: { mean: 0.8, spread: 0.3 },
 				nodes: { mean: 6, spread: 0.5 },
-				internode: TIGHT_ROSETTE,
+				internode: ROSETTE,
 				stem: { radius: [0.007, 0.003] },
 				lateral: 60,
 				laterals: 1,

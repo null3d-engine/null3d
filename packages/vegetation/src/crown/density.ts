@@ -1,6 +1,6 @@
 // The crown's leaf area density: each shoot row's leaf area splatted into a grid over the plant, so
 // the crown's light can count how much leaf lies between any point and the sky.
-import type { ShootRows } from '../asset';
+import { crownPrototypes, type ShootRows } from '../asset';
 import { BUD_TERMINAL } from '../core/graph';
 import { quatRotate, type Vector3 } from '../core/math';
 import type { Foliage } from '../core/record';
@@ -139,7 +139,8 @@ function splat(
 export function leafDensity(input: DressInput, rows: ShootRows): LeafDensity {
 	const { skeleton, kit, record } = input;
 	let reach = 0;
-	for (const prototype of kit.prototypes) reach = Math.max(reach, prototype.length);
+	for (const prototype of crownPrototypes(kit.prototypes))
+		reach = Math.max(reach, prototype.length);
 	let largest = 0;
 	for (let r = 0; r < rows.count; r++) largest = Math.max(largest, rows.scale[r] as number);
 	if (record.lod.nearFoliage === 'merged') reach = Math.max(reach, leafLength(record.foliage));

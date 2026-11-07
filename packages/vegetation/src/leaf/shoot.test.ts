@@ -18,7 +18,7 @@ import type { Phyllotaxis, ShootSpec, Species } from '../core/record';
 import { DETAILS, type Spread } from '../core/types';
 import { lightCrown } from '../crown/visibility';
 import { bareTrimmed } from '../grow/coarsen';
-import { dressShoots, placeShoots, pruneLight } from './instancer';
+import { dressShoots, placeShoots, prototypesFor, pruneLight } from './instancer';
 import { builder } from './leaf-mesh';
 import { OAK_MANIFEST, OAK_SHOOTS, oakRecord, testKit } from './oak.test-support';
 import { type PlannedLeaf, planShoot, type ShootPlan, shootPrototypes } from './shoot';
@@ -243,6 +243,22 @@ describe('the shoot prototypes', () => {
 			expect(prototype.leaves).toBeGreaterThanOrEqual(4);
 		}
 		expect(milliseconds).toBeLessThan(1500);
+	});
+
+	it("sets a cutting class's prototypes apart, so the crown never draws one", () => {
+		const shoots = record.shoots as NonNullable<typeof record.shoots>;
+		const cut = { ...(shoots.classes[0] as (typeof shoots.classes)[number]), name: 'cut' as const };
+		const planned = shootPrototypes(
+			{ ...record, shoots: { ...shoots, cuttingClasses: [cut] } },
+			OAK_MANIFEST,
+			leaves,
+		);
+		// Each cutting class adds its prototypes, and their leafless twins beside them.
+		expect(planned).toHaveLength(prototypes.length + 4);
+		expect(planned.filter((prototype) => prototype.cutting)).toHaveLength(4);
+		// Every bud vigor draws the same shapes it drew before the class existed.
+		for (let vigor = 0; vigor <= 1; vigor += 0.05)
+			expect(prototypesFor(planned, vigor)).toEqual(prototypesFor(prototypes, vigor));
 	});
 
 	it('keeps one shape at every tier', () => {
