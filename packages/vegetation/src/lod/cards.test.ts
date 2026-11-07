@@ -203,6 +203,39 @@ describe('the card levels', () => {
 		}
 	});
 
+	it("draws each card's stalk only where the record gives a least width", () => {
+		const plain = cardMesh(mesh, 1);
+		expect(plain.indices.length / 3).toBe(rows.count * 6);
+		const stalked = cardMesh(
+			{ ...mesh, record: { ...record, lod: { ...record.lod, cardStalk: 1 } } },
+			1,
+		);
+		let stretched = 0;
+		for (let r = 0; r < rows.count; r++) {
+			const bx = (rows.back?.[r * 3] as number) ?? 0;
+			const by = (rows.back?.[r * 3 + 1] as number) ?? 0;
+			const bz = (rows.back?.[r * 3 + 2] as number) ?? 0;
+			if (Math.hypot(bx, by, bz) > 1e-6) stretched++;
+		}
+		expect(stretched).toBeGreaterThan(0);
+		// Each stalk is one quad from either side, so it shows whichever way the view turns it.
+		expect(stalked.indices.length / 3).toBe(rows.count * 6 + stretched * 4);
+		let stalks = 0;
+		for (let v = 0; v < stalked.uvs1.length / 2; v++) {
+			if (Math.abs((stalked.uvs1[v * 2 + 1] as number) - 0.75) >= 1e-6) continue;
+			stalks++;
+			expect([0, 1]).toContain(stalked.uvs[v * 2] as number);
+			expect(
+				Math.hypot(
+					stalked.normals[v * 3] as number,
+					stalked.normals[v * 3 + 1] as number,
+					stalked.normals[v * 3 + 2] as number,
+				),
+			).toBeCloseTo(1, 5);
+		}
+		expect(stalks).toBe(stretched * 4);
+	});
+
 	it('keeps every second card in the thinned level, each grown by the square root of two', () => {
 		const second = cardMesh(mesh, 2);
 		const kept = Array.from(rows.order).filter((order) => order % 2 === 0).length;

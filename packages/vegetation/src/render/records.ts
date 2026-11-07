@@ -118,6 +118,8 @@ export const HEADER = {
 	 * hold the others' in record order.
 	 */
 	extraStalks: 51,
+	/** The least width in pixels that a card's stalk draws, or 0 where the record gives none. */
+	cardStalk: 55,
 } as const;
 
 /**
@@ -127,7 +129,7 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.extraStalks + MAX_EXTRAS;
+export const HEADER_TEXELS = HEADER.cardStalk + 1;
 
 /** An extra's roughness where its record names none. */
 export const EXTRA_ROUGHNESS = 0.6;
@@ -350,6 +352,7 @@ export function speciesHeader(
 	if (bud) texel(header, HEADER.bud, [...bud, 1]);
 	const sway = windSway(record);
 	texel(header, HEADER.sway, [sway.amplitude, sway.frequency, 0, 0]);
+	texel(header, HEADER.cardStalk, [record.lod.cardStalk ?? 0, 0, 0, 0]);
 	return header;
 }
 

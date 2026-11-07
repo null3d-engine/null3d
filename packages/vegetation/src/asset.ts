@@ -132,6 +132,11 @@ export interface ShootRows {
 	readonly bent: Uint8Array;
 	/** Space-filling order, which the second card level thins by. */
 	readonly order: Uint32Array;
+	/**
+	 * 3 per row: the vector from the row's place back along its axis to the stretch's far end, the
+	 * previous bud or the parent node. Absent, a card draws no stalk.
+	 */
+	readonly back?: Float32Array;
 }
 
 /**
