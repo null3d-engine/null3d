@@ -222,6 +222,154 @@ The whole views' pieces stay at 2, 1 and 2, and their sky gap rises by 0.008 to 
 and 18 inside their bands and leaves 01 0.06 short. The kit falls to 4.91 and 9.07 MB at the high
 and ultra tiers.
 
+### The sixth pass: keys on their wings
+
+Still 19 shows several dozen narrow keys in a bunch, each a small red-brown seed body on a
+yellow-green wing, where the record drew twelve broad pale blades. The bunch now carries 28, a key
+is a fifth as wide as it is long, and its body less than a fifth of that length.
+
+A key takes its seed body in the extra's band colour, so a bunch reads as brown bodies on green
+wings. The samara marks the body's rings as the band and stands the body's last ring again as the
+wing's first, so the colour changes at a sharp edge; a record without a band colour draws every key
+in one colour as before. Run `ash-28` measured the view's edge difference falling from 0.263 to
+0.22.
+
+The keys cost what a part costs: one key drew 80 triangles and the first variant carries about
+3,300 of them, near 3 MB. A key now draws nine rings from twelve, at 56 triangles, and the largest
+variant measures 5.28 MB under a cap of 5.3.
+
+### The seventh pass: the crown's reach, in place of the internode share
+
+The internode share (`shoots.placement.gather` 0.33) gathered each bud's shoots near the bud and
+left the internodes bare. Run `ash-29` measured it against run `ash-28` with nothing else changed:
+it bought 0.010 to 0.016 of sky at the whole views, and cost a piece at 02, 22 at 04, and the rim
+pattern the reviewer named. With it off, 02 and 18 still sit inside their bands, and 01 stays 0.06
+short either way, so the share went and the record runs its foliage along its limbs again.
+
+The crown's reach replaces it. A shoot row stands on the wood's own surface at the buds' angle, and
+a record may now add `shoots.placement.reach` in degrees, 0 to 60, held at 90 in total. The foot
+stays on the wood, so a spray never stands in air, and the foliage reaches out while the run along
+the twig stays open.
+
+### The keys on their own footstalks
+
+Still 19 shows green pedicels under separate brown bodies. The bunch's stalks and pedicels took the
+seed body's band colour, so the heads ran together as one red-brown collar. The extra now names its
+own `stalkColour`, the wing's green, and the bunch carries 34 keys where it carried 28, since it read
+sparser than the photograph's. Run `ash-34` drew it. The largest variant rises from 5.28 to 6.11 MB.
+
+The view's edge difference stays at 0.261, unmoved: the review frames this view inside a shaded
+crown, so its tone cannot be judged there, and the picture is the measure that changed.
+
+### The leaf's plan
+
+Row 4's box read 0.691 and 0.690 at the leaf's views against the photographs' 0.762 to 0.917, and
+the sessile join took a tenth of it. `CompoundLeaf.angle`, optional and 30 to 90 degrees, spreads
+the leaflets from the builder's own 62, and the rachis sets how much of the leaf they take.
+
+Three settings were drawn at 74 degrees:
+
+| Rachis | Leaf's boxes, upper and underside | Cluster's sky at 11 | Row 4 |
+| --- | --- | --- | --- |
+| 1.68, the fitted share | 0.691, 0.690 | 0.407 against 0.392 | Outside |
+| 1.55 | 0.788, 0.760 | 0.394 against 0.392 | Underside on the floor |
+| 1.50, the setting kept | 0.801, 0.779 | 0.380 against 0.392 | Inside with room |
+| 1.45 | 0.818, 0.789 | 0.366 against 0.392 | Inside, the cluster 0.026 under |
+
+Run `ash-37` drew the setting kept. All four leaf views sit inside the photographs' band, the
+cluster keeps its own, and the whole views gain with them: `01`'s sky rises from 0.201 to 0.208,
+`02` reads 0.184 against 0.187 and `18` 0.211 against 0.215.
+
+### Rows 8 and 10 are measures, not the plant
+
+Still 14 shows moss over the buttresses' flanks, and the record carried a fifteenth of a square
+metre at the foot. A third of a square metre over half a metre, heavier on the shaded side, takes
+the base view's colour difference from 7.11 to 6.90 steps.
+
+Neither row answers to the scene's light. The three bark stills were drawn at an even light, a sky
+share of 0.85 and a daylight of 1.2, as close to the copy stand as the review's light goes: views 15
+and 16 read 9.88 and 7.68 before and after, unmoved. The reason is in the measure. The review's
+bark colour is the mean below the crown's start, and a bark close-up has no crown, so that figure is
+empty on all three views and the number the row prints is the plant's own mean colour.
+
+View 18 is a matte. The review page draws the silhouette view as a mask, so the plant is black by
+construction, #0a0a0a against the photograph's #5e5e5d, and its 25.9 steps are the mask against a
+picture of a tree under an overcast sky. An overcast light on that view moved the figure by
+nothing, because a matte takes no light. Views 01 and 02 read 11.78 and 11.21, which is the crown's
+hue limit recorded above: the leaf's blue is nearly zero.
+
+### The relief is the material's, and the moss is the record's
+
+The base view showed no green film at the record's third of a square metre over half a metre, on one
+side of the foot. At the full amount, a metre up and on every side, the buttress flanks and the lower
+ridges carry green patches and the base view's colour difference falls from 6.90 to 5.73. The record's
+amount is at its ceiling; the rest of the photograph's film would come from the material's moss rule,
+which weighs a vertical face below half an upward one.
+
+The bark's remaining gap does not answer to the record at all. The furrow's depth, the only relief
+value the record holds, was drawn at 0.015, 0.03 and 0.045: views 15 and 16 read #847f7b at 9.88 and
+#837e7b at 7.68 at every one of them, byte for byte the same. The gap between the flat texture's 1.91
+and the bark in the view is the material's normal-map shading and its cavity term, so row 8 stands as
+a limit of the material: the texture matches, the moss shows, and the relief's shading is the
+material's own.
+
+The bole's diameter rises from 0.95 to 1.10 metres, since the grown trunk read 0.037 of the tree's
+height against the photographs' 0.038 to 0.051. Run `ash-46` draws the whole views' shape overlap up
+from 0.474 to 0.479 at 01 and the trunk taper from 0.417 to 0.422, and takes the limb's bark view
+from 0.407 to 0.356 as the camera finds a different limb. The largest variant rises to 6.13 MB.
+
+### The envelope is not a knob
+
+The crown's box reads 1.155, 1.089 and 1.139 wide to high at the whole views against the
+photographs' 1.25, 1.23 and 0.90, so the visible next lever was the hull the grower fills. It is not
+a lever that can be turned by hand.
+
+Widening every radius of the fitted envelope and growing the first variant measures a growth that
+neither follows the change smoothly nor in the direction asked:
+
+| Radii | Crown's radius, variant 0 | 01's box | 01's sky gap |
+| --- | --- | --- | --- |
+| As fitted | 9.02 m | 1.155 | 0.201 |
+| 2 per cent wider | 0.53 m, a stalled plant | not drawn | not drawn |
+| 3 per cent wider | 10.54 m | 1.069 | 0.167 |
+
+Run `ash-31` drew the 3 per cent hull. The crown's box falls at all three whole views, its sky gap
+with it, the crown draws lopsided with a hole on one side, and the look-up view breaks from 5
+pieces to 10 while the crown outside rises from 65 to 97. The 2 per cent hull stalls the first
+variant outright and grows the second normally, so the stall belongs to a variant and not to the
+envelope.
+
+Two things follow. The fitted radii are not a knob, in either direction. And a fit that widens the
+hull does not widen the crown: the measurement to fit against is the rendered crown box at the whole
+views, not the hull's radii.
+
+### The reference disagrees with itself about the crown's width
+
+The fit's own report says the envelope matches the views it came from at a mean overlap of 0.689, its
+worst frame at 0.570, and its last frame against its first at 0.783: the turning footage's tree
+changes shape across the turn. A hull keeps only what every view allows, so it comes out narrower
+than the photographs, and the stills that are overlaid to widen its broad sides reach one azimuth
+each side of a row, where a view's width is a projection over many.
+
+Widening a still across the arc it faces was measured three ways, and none can be shipped:
+
+| Still overlay | Hull's box at 01 and 18 | at 02 | Overlap with the video's views |
+| --- | --- | --- | --- |
+| One azimuth each side, the shipped fit | 1.31 | 1.15 | 0.689 |
+| The arc within 60 degrees | 1.59 | 1.48 | 0.506 |
+| The arc within 23 degrees | 1.56 | 1.43 | 0.610 |
+
+The photographs themselves read 1.25, 1.227 and 0.90. The stills are about a third wider than the
+video's hull at every row, so a hull cannot be both: the shipped fit stands with the video and is a
+sixth narrow at 02 against its photograph, and honouring the stills overshoots the photographs and
+loses the video's fit. The fit stays as it is, and the disagreement is recorded here rather than
+pushed into the radii.
+
+What the growth makes of the shipped hull is the second figure: at 01 it draws a crown box 88 per
+cent of the hull's 1.31, at 18 87 per cent, and at 02 95 per cent of 1.15. Row 1 passes on the
+band, so the box's shortfall against its photographs is the fill's, and filling to 1.25 at 01 means
+drawing about 95 per cent of that hull.
+
 ### The crown seen from under it
 
 Stills 03 and 08 look up the bole, and there the drawn crown is far denser than its photographs: 03
