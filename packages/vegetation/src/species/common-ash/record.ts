@@ -122,11 +122,13 @@ export const record: Species = {
 					[0, 0.8],
 					[1, 1],
 				],
+				// Stills 10 and 23: the leaves lie out flat from the stem, and the cluster's turn
+				// barely changes height where the class stood them upright.
 				leafAngle: [
-					[0, 70],
-					[1, 55],
+					[0, 85],
+					[1, 80],
 				],
-				leafAngleSpread: 15,
+				leafAngleSpread: 10,
 				droop: 2,
 			},
 			{
