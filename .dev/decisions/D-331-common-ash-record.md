@@ -222,6 +222,35 @@ The whole views' pieces stay at 2, 1 and 2, and their sky gap rises by 0.008 to 
 and 18 inside their bands and leaves 01 0.06 short. The kit falls to 4.91 and 9.07 MB at the high
 and ultra tiers.
 
+### The sixth pass: keys on their wings
+
+Still 19 shows several dozen narrow keys in a bunch, each a small red-brown seed body on a
+yellow-green wing, where the record drew twelve broad pale blades. The bunch now carries 28, a key
+is a fifth as wide as it is long, and its body less than a fifth of that length.
+
+A key takes its seed body in the extra's band colour, so a bunch reads as brown bodies on green
+wings. The samara marks the body's rings as the band and stands the body's last ring again as the
+wing's first, so the colour changes at a sharp edge; a record without a band colour draws every key
+in one colour as before. Run `ash-28` measured the view's edge difference falling from 0.263 to
+0.22.
+
+The keys cost what a part costs: one key drew 80 triangles and the first variant carries about
+3,300 of them, near 3 MB. A key now draws nine rings from twelve, at 56 triangles, and the largest
+variant measures 5.28 MB under a cap of 5.3.
+
+### The seventh pass: the crown's reach, in place of the internode share
+
+The internode share (`shoots.placement.gather` 0.33) gathered each bud's shoots near the bud and
+left the internodes bare. Run `ash-29` measured it against run `ash-28` with nothing else changed:
+it bought 0.010 to 0.016 of sky at the whole views, and cost a piece at 02, 22 at 04, and the rim
+pattern the reviewer named. With it off, 02 and 18 still sit inside their bands, and 01 stays 0.06
+short either way, so the share went and the record runs its foliage along its limbs again.
+
+The crown's reach replaces it. A shoot row stands on the wood's own surface at the buds' angle, and
+a record may now add `shoots.placement.reach` in degrees, 0 to 60, held at 90 in total. The foot
+stays on the wood, so a spray never stands in air, and the foliage reaches out while the run along
+the twig stays open.
+
 ### The crown seen from under it
 
 Stills 03 and 08 look up the bole, and there the drawn crown is far denser than its photographs: 03
