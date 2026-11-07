@@ -283,6 +283,33 @@ describe('the extras', () => {
 		}
 	});
 
+	it('stands a bed of bristles off the lathe it lies on', () => {
+		const lathe = (ACORN.shape as { lathe: readonly [number, number][] }).lathe;
+		const plain = extrasMesh(dressed(oakRecord({ extras: [{ ...ACORN, share: 1 }] }), 'summer'), 0);
+		const rows = 3;
+		const around = 6;
+		const bristled = extrasMesh(
+			dressed(
+				oakRecord({
+					extras: [
+						{
+							...ACORN,
+							share: 1,
+							shape: { lathe, bristles: { rows, sides: around, length: 0.006 } },
+						},
+					],
+				}),
+				'summer',
+			),
+			0,
+		);
+		if (!plain || !bristled) throw new Error('no acorns');
+		// Each bristle is a three-sided cone of two rings, so eight vertices a bristle.
+		const added = bristled.positions.length - plain.positions.length;
+		expect(added).toBeGreaterThan(0);
+		expect(added % (rows * around * 8)).toBe(0);
+	});
+
 	it('lets a lathe name the face count of its nearest level', () => {
 		const lathe = (ACORN.shape as { lathe: readonly [number, number][] }).lathe;
 		const plain = extrasMesh(dressed(oakRecord({ extras: [{ ...ACORN, share: 1 }] }), 'summer'), 0);

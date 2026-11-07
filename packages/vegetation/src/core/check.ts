@@ -395,6 +395,21 @@ function extraProblems(record: Species, out: string[]): void {
 		const jitter = 'lathe' in extra.shape ? extra.shape.scaleJitter : undefined;
 		if (jitter !== undefined && !(jitter >= 0 && jitter <= 1))
 			out.push(`${path}.shape.scaleJitter is ${jitter}; a share lies from 0 to 1`);
+		const bristles = 'lathe' in extra.shape ? extra.shape.bristles : undefined;
+		if (bristles !== undefined) {
+			if (!(bristles.rows >= 1 && bristles.rows <= 16))
+				out.push(
+					`${path}.shape.bristles.rows is ${bristles.rows}; it is a whole number from 1 to 16`,
+				);
+			if (!(bristles.sides >= 3 && bristles.sides <= 32))
+				out.push(
+					`${path}.shape.bristles.sides is ${bristles.sides}; it is a whole number from 3 to 32`,
+				);
+			if (!(bristles.length >= 0.001 && bristles.length <= 0.03))
+				out.push(
+					`${path}.shape.bristles.length is ${bristles.length}; it is metres from 0.001 to 0.03`,
+				);
+		}
 		extra.bandColour?.forEach((channel, k) => {
 			shareProblem(channel, `${path}.bandColour[${k}]`, out);
 		});

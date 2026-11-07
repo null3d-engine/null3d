@@ -321,6 +321,8 @@ export const record: Species = {
 				scaled: [0.002, 0.029],
 				scaleShade: 0.45,
 				scaleJitter: 0.35,
+				// Still 19: a burr of soft spines over the whole husk, not a shaded cone.
+				bristles: { rows: 6, sides: 16, length: 0.006 },
 				stalk: 0.025,
 				pedicel: 0.005,
 				stalkSides: 5,
