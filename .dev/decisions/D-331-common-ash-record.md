@@ -335,6 +335,27 @@ band on the closed side, where they passed before.
 So the pair costs a passing pair of stills and brings no row, and it is back off: the short shoot
 draws four leaves in two pairs again and the kit returns to 9.07 MB at the ultra tier.
 
+### The cluster's turn is a trade the species cannot have both ways
+
+Two changes were drawn against the cluster's turn, and neither brings its height inside the
+reference's band:
+
+| Setting | The turn's spread wide | tall | Mean shape overlap |
+| --- | --- | --- | --- |
+| The reference | 54 per cent | 14 per cent | none |
+| As the record stands | 95 | 30 | 0.227 |
+| A third leaf pair on the short shoot | 58 | 63 | 0.261 |
+| The leaves laid flat at eighty degrees | 96 | 81 | 0.218 |
+
+The spread is the review's own crown-box measure over the turn's frames: the largest box less the
+smallest, over the mean. The third pair brings the width into the reference's band and doubles the
+height away from it; laying the leaves flat nearly triples the height and leaves the width where it
+was. Both are reverted.
+
+What the two say together is that the piece's width follows how many leaves stand in how many planes,
+and its height follows something the leaf's angle does not reach. The cluster's turn therefore stands
+as a trade this species cannot have both ways, and its two stills keep the figures they had.
+
 ### The envelope is not a knob
 
 The crown's box reads 1.155, 1.089 and 1.139 wide to high at the whole views against the
