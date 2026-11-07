@@ -107,6 +107,12 @@ export const HEADER = {
 	 * next `MAX_EXTRAS - 1` texels hold the others' in record order.
 	 */
 	extraBands: 43,
+	/**
+	 * The first extra's scale pattern: its scale rows, the cells round its turn, and its band's
+	 * share of the profile's height at each end; the next `MAX_EXTRAS - 1` texels hold the others'
+	 * in record order. Rows of zero leave the body plain.
+	 */
+	extraScales: 47,
 } as const;
 
 /**
@@ -116,10 +122,13 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.extraBands + MAX_EXTRAS;
+export const HEADER_TEXELS = HEADER.extraScales + MAX_EXTRAS;
 
 /** An extra's roughness where its record names none. */
 export const EXTRA_ROUGHNESS = 0.6;
+
+/** Faces round an extra's lathe at the nearest level where its record names none. */
+const EXTRA_SIDES = 8;
 
 /**
  * A number rounded to the nearest half float, ties to even, as the GPU's upload rounds it. The
@@ -319,6 +328,14 @@ export function speciesHeader(
 		const [body, band] = extra.roughness ?? [EXTRA_ROUGHNESS, EXTRA_ROUGHNESS];
 		texel(header, HEADER.extras + index, [...extra.colour, body]);
 		texel(header, HEADER.extraBands + index, [...(extra.bandColour ?? extra.colour), band]);
+		const lathe = 'lathe' in extra.shape ? extra.shape : undefined;
+		const rows = lathe?.scales ?? 0;
+		const profile = lathe?.lathe ?? [];
+		const height = profile.at(-1)?.[1] ?? 1;
+		const around = rows > 0 ? (lathe?.sides ?? EXTRA_SIDES) : 0;
+		const from = rows > 0 ? (lathe?.scaled?.[0] ?? 0) : 0;
+		const to = rows > 0 ? Math.min(height, lathe?.scaled?.[1] ?? height) : 0;
+		texel(header, HEADER.extraScales + index, [rows, around, from / height, to / height]);
 	});
 	const bud = record.shoots?.bud.colour;
 	if (bud) texel(header, HEADER.bud, [...bud, 1]);

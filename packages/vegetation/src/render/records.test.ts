@@ -163,6 +163,20 @@ describe('the species header', () => {
 		near(texel(written, HEADER.extras + 1), [0.5, 0.4, 0.1, EXTRA_ROUGHNESS]);
 		near(texel(written, HEADER.extraBands + 1), [0.5, 0.4, 0.1, EXTRA_ROUGHNESS]);
 		expect(HEADER.extraBands + MAX_EXTRAS).toBeLessThanOrEqual(RECORDS_WIDTH);
+		// The cup's scale rows, the cells round its turn, and its band's share of the profile's
+		// height at each end, which the shader needs to draw the scales within the band alone.
+		const scaled = speciesHeader(
+			{
+				...record,
+				extras: [{ ...acorn, shape: { lathe, sides: 12, scales: 4, scaled: [0, 0.007] } }],
+			},
+			manifest,
+			speciesBox(record),
+		);
+		near(texel(scaled, HEADER.extraScales), [4, 12, 0, 0.35]);
+		// A body without scales stays plain.
+		near(texel(written, HEADER.extraScales), [0, 0, 0, 0]);
+		expect(HEADER.extraScales + MAX_EXTRAS).toBeLessThanOrEqual(RECORDS_WIDTH);
 	});
 
 	test('gives a species that names no sway the stated default', () => {
