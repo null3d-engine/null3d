@@ -73,7 +73,7 @@ export const record: Species = {
 		clearanceThickness: 0.35,
 		turning: 30,
 		shedding: { threshold: 0.06, cleanBole: 0.35, stubs: 0.12 },
-		bending: { strength: 0.3, upturn: 0.2 },
+		bending: { strength: 0.05, upturn: 0.2 },
 		forkRule: true,
 		kinks: true,
 		pipe: { exponent: 2.3, tipRadius: 0.004 },
@@ -208,11 +208,11 @@ export const record: Species = {
 	},
 	base: {
 		flare: { amount: 0.6, height: 0.4 },
-		buttress: { lobes: { mean: 5, spread: 1 }, amount: 0.6, sharpness: 2, height: 0.6 },
+		buttress: { lobes: { mean: 5, spread: 1 }, amount: 0.6, sharpness: 3, height: 0.6 },
 		roots: {
 			count: { mean: 5, spread: 1 },
 			length: { mean: 0.9, spread: 0.25 },
-			radius: 0.2,
+			radius: 0.14,
 			dive: 0.2,
 		},
 		flutes: { count: { mean: 5, spread: 1 }, depth: 0.1, height: 1.5 },
