@@ -104,6 +104,47 @@ describe('the self-organizing oak', () => {
 		});
 	});
 
+	it('stops a shoot that would pass within the clearance of another axis', () => {
+		const grow = (clearance?: number): MacroSkeleton => {
+			const record: Species =
+				clearance === undefined
+					? oakRecord
+					: {
+							...oakRecord,
+							growth: { ...oakRecord.growth, clearance } as typeof oakRecord.growth,
+						};
+			return growSelfOrganizing({ record, seed: 11, variant: 0, season: 'summer' });
+		};
+		// Pairs of nodes on different axes that stand within half a metre, less the joint where a
+		// branch meets the wood it leaves.
+		const strangers = (skeleton: MacroSkeleton): number => {
+			let near = 0;
+			for (let a = 0; a < skeleton.nodeCount; a++)
+				for (let b = a + 1; b < skeleton.nodeCount; b++) {
+					const ax = skeleton.axisOf[a] as number;
+					const bx = skeleton.axisOf[b] as number;
+					if (ax === bx) continue;
+					if ((skeleton.axes.parent[bx] as number) === ax) continue;
+					if ((skeleton.axes.parent[ax] as number) === bx) continue;
+					const dx = (skeleton.position[a * 3] as number) - (skeleton.position[b * 3] as number);
+					const dy =
+						(skeleton.position[a * 3 + 1] as number) - (skeleton.position[b * 3 + 1] as number);
+					const dz =
+						(skeleton.position[a * 3 + 2] as number) - (skeleton.position[b * 3 + 2] as number);
+					if (dx * dx + dy * dy + dz * dz < 0.25) near++;
+				}
+			return near;
+		};
+		// Without the field the plant grows as before; with it, shoots stop at the clearance, so the
+		// wood that stands too near another axis's falls away by orders of magnitude. A few pairs
+		// survive round a fork, where several limbs leave one node.
+		const open = grow();
+		const apart = grow(0.5);
+		expect(apart.nodeCount).toBeGreaterThan(0);
+		expect(strangers(apart)).toBeLessThan(open.nodeCount * 0.01);
+		expect(strangers(apart) * 10).toBeLessThan(strangers(open));
+	});
+
 	it('grows the same bytes twice, and other bytes for another variant or seed', () => {
 		const first = oaks[0] as MacroSkeleton;
 		expect(digest(grow(0))).toBe(digest(first));

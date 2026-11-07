@@ -247,6 +247,8 @@ function growthProblems(record: Species, out: string[]): void {
 			out.push(
 				`growth.branching is ${growth.branching}; it multiplies a chance and cannot be below 0`,
 			);
+		if (growth.clearance !== undefined && !(growth.clearance >= 0 && growth.clearance <= 2))
+			out.push(`growth.clearance is ${growth.clearance}; it is metres of clear air from 0 to 2`);
 		if (growth.floor !== undefined && !(growth.floor >= 0 && growth.floor <= 0.5))
 			out.push(
 				`growth.floor is ${growth.floor}; it is a share of the height from 0 to 0.5, a crown's underside`,
