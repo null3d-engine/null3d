@@ -245,7 +245,8 @@ Four changes wait for the owner's choice. Each stands alone, so any one can be t
   at its minimum of 3 great limbs, so a change that moves side shoots can break one.
 - The ultra kit is at 99 % of its cap. A change that adds leaves or rings to a shoot model needs a cut
   elsewhere.
-- Only variant 0 at the high tier has a byte test. The sharp-bend test holds thick wood to a share of
+- The byte tests sweep every variant each preset grows at every tier, and `caps-heavy.test.ts` sweeps
+  eleven seeds over the same as a heavy check. The sharp-bend test holds thick wood to a share of
   the trunk's own radius. It held that wood to a fixed width before the trunk was drawn thinner, and
   the share keeps the same limbs covered at any width.
 - Grow time reads over 600 ms on a loaded machine, the head's too. Judge it on a quiet one.
