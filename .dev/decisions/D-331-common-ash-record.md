@@ -162,10 +162,11 @@ shows 0.12 to 0.15 of its own box as sky against the photograph's 0.50, and 08 0
 | `skyPrune` 0.45, `lift` 14, `skyward` 0.6 | 0.15 | 0.23 | 0.28, 0.22, 0.28 | 18 leaves its band; 04's colour falls to 2.5 and the cut pieces improve |
 | `floor` 0.32 | 0.27 | 0.56 | the crown breaks up | The whole view's outline falls to 0.04 |
 
-The look-up view sees the *outer* shell of the crown as cards, not its interior, so an interior
-prune moves it a hundredth or two. Opening it needs a crown built as two shells with air between, or
-a card level that thins as the eye passes below it. Neither is a record value, and both are work in
-the plant core. The record keeps the diagonal that holds every whole view inside its band.
+This is a limit of the plant core, not a fault of the species. A look up the bole sees the crown's
+*outer* shell drawn as cards, not its interior, so an interior prune moves it a hundredth or two.
+Opening it needs a crown built as two shells with air between, or a card level that thins as the eye
+passes below it. Neither is a record value. Every species whose photographs look up its bole meets
+the same limit. The record keeps the setting that holds every whole view inside its band.
 
 ### The crown's colour is the light's, and its blue is the leaf's
 
@@ -255,6 +256,16 @@ Rejected:
   6. The whole plant's outline matches its turning video at 0.507 on average. The reference's own
      hull overlaps its views by only 0.57 to 0.80, so the fitted envelope cannot be closer than the
      reference's own drift allows.
-  7. Row 11 is judged against the pedunculate oak, the catalogue's other built species. The two are
+  7. The keys hang in the pictures' bunches, on a stalk several centimetres below the twig, but the
+     review's fruit camera cannot reach one: it stands twelve degrees under the cluster looking up at
+     its join, and a crown this dense puts a leaf at the lens. Its view reads 0.30 in edge directions
+     and shows foliage. The bunch is drawn; the camera is not made for it.
+  8. The wind moves the top band 0.052 where the photograph's moves 0.041, its fourth and fifth bands
+     0.048 and 0.048 against 0.039 and 0.038, and its base 0.001 against 0.014: the crown's top is
+     now near its photograph's, and the trunk's base still does not move at all.
+  9. The bark's colour through its own close view reads 9.9 steps where the texture source measures
+     1.9. Lifting the layer to meet it made the figure worse, 12.0, so the difference is the relief's
+     own shading and not the record's tint.
+  10. Row 11 is judged against the pedunculate oak, the catalogue's other built species. The two are
      told apart by silhouette: the ash is 0.9 of its height across with a cleaner, taller bole and
      opposite branching, where the oak is 1.53 across on a short low-forking bole. The row passes.
