@@ -49,6 +49,12 @@ export const record: Species = {
 			wander: 12,
 		},
 		divide: { at: 0.16, count: 4, angle: 70, lean: 28 },
+		// Stills 06, 07 and 08: the great limbs pass round one another rather than through, so the
+		// grey bole and the low fork show between them as 01 and 02 show it. Only the thick wood keeps
+		// the clearance, so the crown's fine twigs keep their own layout.
+		clearance: 0.3,
+		clearanceThickness: 0.35,
+		turning: 30,
 		light: { apical: 1, lateral: 1.1, shadow: [5, 0.15, 2], cells: 96 },
 		tropism: {
 			photo: 0.04,
@@ -71,13 +77,14 @@ export const record: Species = {
 		prototypes: 6,
 		classes: [
 			{
-				// This year's shoot of stills 10 and 11: a short zigzag twig in one plane, its leaves in
-				// two ranks and a long copper bud at the tip.
+				// The shoot of stills 10, 11 and 23: a long zigzag twig in one plane, its leaves in
+				// two ranks held nearly level and spaced along it, so the blade stands about a fifth
+				// of the shoot's length, and a long copper bud at the tip.
 				name: 'short',
 				vigor: [0, 0.05],
 				share: 0.3,
 				years: 1,
-				length: { mean: 0.4, spread: 0.06 },
+				length: { mean: 0.6, spread: 0.06 },
 				nodes: { mean: 9, spread: 0.5 },
 				internode: ALTERNATE,
 				leafScale: [
@@ -85,11 +92,11 @@ export const record: Species = {
 					[1, 1.05],
 				],
 				leafAngle: [
-					[0, 95],
-					[0.5, 75],
-					[1, 50],
+					[0, 94],
+					[0.5, 88],
+					[1, 76],
 				],
-				droop: 4,
+				droop: 1.5,
 			},
 			{
 				// The two-year twig of still 10: the copper buds of last year's tip below this year's
@@ -136,12 +143,46 @@ export const record: Species = {
 				droop: 10,
 			},
 		],
+		// Stills 21 and 22: a cut twig forks at last year's joint into two long laterals, so the piece
+		// ends in three leafy sprays on a bare lower stem. The crown cannot carry twigs this bare, so
+		// the cuttings draw a class the crown never does. Its two prototypes differ in how widely they
+		// spread, so the branch takes the wide piece and the sub-branch the tall one.
+		cuttingClasses: [
+			{
+				// Stills 21 and 22: a two-year spray, its lower stem bare, forking into two long leafy
+				// laterals that reach nearly the axis's own length.
+				name: 'cut',
+				vigor: [0, 1],
+				share: 0,
+				years: 2,
+				leafYears: 1,
+				length: { mean: 0.95, spread: 0.08 },
+				nodes: { mean: 6, spread: 0.5 },
+				internode: ALTERNATE,
+				stem: { radius: [0.006, 0.003] },
+				lateral: 55,
+				laterals: 2,
+				lateralGap: 0.3,
+				leafScale: [
+					[0, 0.85],
+					[1, 1.05],
+				],
+				leafAngle: [
+					[0, 96],
+					[0.5, 86],
+					[1, 70],
+				],
+				droop: 3,
+			},
+		],
 		phyllotaxis: { kind: 'distichous', flatten: 1 },
 		orders: 3,
 		years: 3,
 		leafYears: 1,
 		stem: { radius: [0.0035, 0.0025], zigzag: 20 },
-		bud: { length: 0.022, width: 0.007, tipCluster: 1, colour: [0.32, 0.18, 0.08] },
+		// Stills 11 and 23: a long copper bud at each twig's tip, about half a leaf's length, with
+		// smaller axillary buds at the nodes below it.
+		bud: { length: 0.055, width: 0.012, tipCluster: 1, colour: [0.32, 0.18, 0.08] },
 		placement: {
 			perMetre: [
 				[0, 1.8],
@@ -149,6 +190,12 @@ export const record: Species = {
 				[1, 10],
 			],
 			shadePrune: 0.06,
+			// Stills 01, 02 and 04: the foliage stands in flat sprays at the limbs' ends, with the
+			// limbs and sky showing between them, rather than spread evenly along every axis.
+			tipBias: 0.45,
+			// Stills 01 and 02: no bare twig stands past the leaves at a whole view, so the wood past
+			// the last shoot-bearing node is dead and goes.
+			bareTrim: 0.03,
 			skyward: 0.4,
 			scale: { mean: 1.95, spread: 0.15 },
 		},
@@ -180,7 +227,9 @@ export const record: Species = {
 		// from the texture's own measured depth.
 		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0 }],
 		young: 0,
-		youngRadius: 0.08,
+		// Stills 16 and 28: the young olive bark runs up the limbs and thin wood, so a limb in a close
+		// view still shows its lenticels and ring scars.
+		youngRadius: 0.15,
 		girthScale: [
 			[0, 0.7],
 			[1, 1],
@@ -188,48 +237,77 @@ export const record: Species = {
 		displacement: 0.006,
 		// Still 7: the wrinkles gather in the armpit of a limb's joint.
 		collar: { swell: 0.45, length: 1.8, ridge: 0.7 },
-		moss: { amount: 0.8, up: 2.5, north: 0.25, colour: [0.18, 0.3, 0.12] },
-		lichen: { amount: 0.4, from: 0, colour: [0.32, 0.42, 0.28] },
+		// Still 16: the green sits on the limb's upper side, while the bole stays silver-grey; a thin
+		// film over the whole plant gives that, with the upper faces taking most of it. Still 14 keeps
+		// a little more on the buttress toes.
+		moss: { amount: 0.3, up: 24, north: 0.1, colour: [0.2, 0.3, 0.13] },
+		lichen: { amount: 0.12, from: 0, colour: [0.32, 0.42, 0.28] },
 		// The pale eyes along the bole where shed branches were, as stills 7 and 17 show.
 		scars: 1.5,
 	},
 	base: {
 		// Still 17: broad smooth buttress roots like an elephant's toes.
 		flare: { amount: 0.8, height: 0.5 },
-		buttress: { lobes: { mean: 7, spread: 1 }, amount: 0.8, sharpness: 2.5, height: 1.0 },
+		// Still 14: the toes rise from the meadow as rounded flanks with smooth creases between them,
+		// not as angular slabs.
+		buttress: {
+			lobes: { mean: 7, spread: 1 },
+			amount: 0.8,
+			sharpness: 1.6,
+			height: 1.0,
+			round: 1,
+		},
 		roots: {
 			count: { mean: 6, spread: 1 },
 			length: { mean: 1.1, spread: 0.3 },
 			radius: 0.3,
 			dive: 0.3,
+			// The roots run out as ridges that sink into the leaf litter, as the photograph's do.
+			ridge: 0.6,
 		},
 		// Still 14: deep clefts between the buttress toes run up the foot.
 		flutes: { count: { mean: 8, spread: 1 }, depth: 0.18, height: 1.8 },
 	},
 	extras: [
 		{
-			// Still 19: two small bristly cupules on short stalks in early autumn, each holding two
-			// three-sided nuts.
+			// Still 19: two small bristly cupules on slender stalks below the leaves, one closed and one
+			// split to show its nuts.
 			kind: 'fruit',
 			at: 'shoot-tip',
 			share: 0.06,
 			count: { mean: 2, spread: 0.5 },
+			// The cupules hang on the stretch below the leaves' cluster, where the twig shows.
+			tipShare: 0.82,
 			seasons: ['autumn'],
 			shape: {
+				// A closed husk: a plump body that swells from the stalk and closes again over its top,
+				// so no opening faces the light.
 				lathe: [
-					[0.0015, 0],
-					[0.0015, 0.012],
-					[0.004, 0.015],
-					[0.009, 0.019],
-					[0.011, 0.025],
-					[0.008, 0.031],
-					[0.003, 0.034],
-					[0, 0.035],
+					[0, 0],
+					[0.004, 0.003],
+					[0.008, 0.007],
+					[0.011, 0.012],
+					[0.012, 0.017],
+					[0.011, 0.022],
+					[0.008, 0.026],
+					[0.004, 0.029],
+					[0, 0.03],
 				],
-				scales: 5,
-				scaled: [0.016, 0.032],
+				sides: 12,
+				// Still 19's husk is a bed of fine bristles over its whole face, not a smooth urn.
+				scales: 9,
+				scaled: [0.002, 0.029],
+				scaleShade: 0.45,
+				scaleJitter: 0.35,
+				stalk: 0.025,
+				pedicel: 0.005,
+				stalkSides: 5,
 			},
-			colour: [0.3, 0.19, 0.08],
+			colour: [0.3, 0.2, 0.08],
+			// The bristle bed stands paler than the husk beneath it, as the photograph's dried spines do.
+			bandColour: [0.38, 0.31, 0.16],
+			stalkColour: [0.26, 0.2, 0.1],
+			roughness: [0.85, 0.95],
 			hang: 180,
 		},
 	],
@@ -255,9 +333,11 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			kitBytes: { low: 2_000_000, medium: 2_900_000, high: 5_300_000, ultra: 9_500_000 },
+			// The crown's prototypes, with the cut twig's own class beside them: 2.44, 2.98, 3.95 and
+			// 5.86 MB at the four tiers, and the owner's tree caps are 2.7, 4, 7.1 and 13 MB.
+			kitBytes: { low: 2_500_000, medium: 3_100_000, high: 4_100_000, ultra: 6_100_000 },
 			variantBytes: { low: 10_500_000, medium: 11_000_000, high: 11_200_000, ultra: 11_500_000 },
-			lod0Triangles: 2_500_000,
+			lod0Triangles: 2_700_000,
 			lod1Triangles: 150_000,
 			lod2Triangles: 30_000,
 			downloadBytes: 1_000_000,
@@ -270,8 +350,8 @@ export const record: Species = {
 	seedSalt: 2357111317,
 	roundBand,
 	cuttings: {
-		branch: { shoot: 'spray' },
-		subbranch: { shoot: 'long' },
+		branch: { shoot: 'cut', pick: 0 },
+		subbranch: { shoot: 'cut', pick: 1 },
 		cluster: { shoot: 'short' },
 	},
 };
