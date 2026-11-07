@@ -199,7 +199,7 @@ export const record: Species = {
 			// Stills 01, 02, 03 and 05: the crown's own leaves shade its middle, so the shoots there
 			// thin and the grey bole and the great limbs read between the foliage masses, while the
 			// lit rim keeps its shoots.
-			skyPrune: 0.38,
+			skyPrune: 0.45,
 			skyPruneLayer: 1,
 			// Stills 01 and 02: the foliage stands in layered masses at the limbs' ends, with the bole
 			// and the great limbs reading between them, rather than spread along every axis.
@@ -262,7 +262,7 @@ export const record: Species = {
 		// Still 16: the green sits on the limb's upper side, while the bole stays silver-grey; a film
 		// over the whole plant gives that, with the upper faces taking most of it. Still 14 keeps a
 		// little more on the buttress toes.
-		moss: { amount: 0.5, up: 30, north: 0.1, colour: [0.2, 0.3, 0.13] },
+		moss: { amount: 0.3, up: 24, north: 0.1, colour: [0.2, 0.3, 0.13] },
 		lichen: { amount: 0.12, from: 0, colour: [0.32, 0.42, 0.28] },
 		// The pale eyes along the bole where shed branches were, as stills 7 and 17 show.
 		scars: 1.5,
