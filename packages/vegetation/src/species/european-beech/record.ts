@@ -157,7 +157,9 @@ export const record: Species = {
 				years: 2,
 				leafYears: 1,
 				length: { mean: 0.95, spread: 0.08 },
-				nodes: { mean: 6, spread: 0.5 },
+				// Stills 21 and 22 hold about forty leaves over their three sprays, so a spray carries
+				// more leaves than the crown's own shoots do.
+				nodes: { mean: 8, spread: 0.5 },
 				internode: ALTERNATE,
 				stem: { radius: [0.006, 0.003] },
 				lateral: 55,
@@ -180,19 +182,19 @@ export const record: Species = {
 		years: 3,
 		leafYears: 1,
 		stem: { radius: [0.0035, 0.0025], zigzag: 20 },
-		// Stills 11 and 23: a long copper bud at each twig's tip, about half a leaf's length, with
-		// smaller axillary buds at the nodes below it.
-		bud: { length: 0.055, width: 0.012, tipCluster: 1, colour: [0.32, 0.18, 0.08] },
+		// Stills 11 and 23: a long copper bud at each twig's tip, about half a leaf's length and
+		// plump, with smaller axillary buds at the nodes below it.
+		bud: { length: 0.055, width: 0.018, tipCluster: 1, colour: [0.32, 0.18, 0.08] },
 		placement: {
 			perMetre: [
 				[0, 1.8],
 				[0.3, 3],
-				[1, 10],
+				[1, 9.5],
 			],
 			shadePrune: 0.06,
-			// Stills 01, 02 and 04: the foliage stands in flat sprays at the limbs' ends, with the
-			// limbs and sky showing between them, rather than spread evenly along every axis.
-			tipBias: 0.45,
+			// Stills 01 and 02: the foliage stands in layered masses at the limbs' ends, with the bole
+			// and the great limbs reading between them, rather than spread along every axis.
+			tipBias: 0.7,
 			// Stills 01 and 02: no bare twig stands past the leaves at a whole view, so the wood past
 			// the last shoot-bearing node is dead and goes.
 			bareTrim: 0.03,
@@ -205,9 +207,11 @@ export const record: Species = {
 		leaf: {
 			// The single leaf of stills 12 and 13 and the texture sources 24 and 25: an oval blade,
 			// seven pairs of straight parallel veins, a wavy untoothed margin and a very short stalk.
+			// The stalk is a stub rather than the photograph's four millimetres, so a blade drawn on a
+			// twig at a cut view meets the wood instead of standing a pixel or two clear of it.
 			length: { mean: 0.13, spread: 0.02 },
 			outline: 'texture',
-			petiole: { length: 0.004, radius: 0.0008, flat: 0, droop: 12 },
+			petiole: { length: 0.0015, radius: 0.0012, flat: 0, droop: 12 },
 			fold: 12,
 			curl: 12,
 			crossCurl: -4,
@@ -237,10 +241,10 @@ export const record: Species = {
 		displacement: 0.006,
 		// Still 7: the wrinkles gather in the armpit of a limb's joint.
 		collar: { swell: 0.45, length: 1.8, ridge: 0.7 },
-		// Still 16: the green sits on the limb's upper side, while the bole stays silver-grey; a thin
-		// film over the whole plant gives that, with the upper faces taking most of it. Still 14 keeps
-		// a little more on the buttress toes.
-		moss: { amount: 0.3, up: 24, north: 0.1, colour: [0.2, 0.3, 0.13] },
+		// Still 16: the green sits on the limb's upper side, while the bole stays silver-grey; a film
+		// over the whole plant gives that, with the upper faces taking most of it. Still 14 keeps a
+		// little more on the buttress toes.
+		moss: { amount: 0.5, up: 30, north: 0.1, colour: [0.2, 0.3, 0.13] },
 		lichen: { amount: 0.12, from: 0, colour: [0.32, 0.42, 0.28] },
 		// The pale eyes along the bole where shed branches were, as stills 7 and 17 show.
 		scars: 1.5,
@@ -332,10 +336,10 @@ export const record: Species = {
 			amplitude: 0.025,
 			frequency: 2.6,
 			byHeight: [
-				[0, 4],
-				[0.25, 3],
+				[0, 6],
+				[0.25, 4.5],
 				[0.5, 1],
-				[1, 0.45],
+				[1, 0.3],
 			],
 		},
 	},
@@ -348,13 +352,16 @@ export const record: Species = {
 		// 1.4 m ahead of the row, where the stretch behind the row cannot reach it.
 		cardStalk: 2,
 		cardStalkToFoliage: true,
+		// Stills 01, 02 and 18: the reference's crown reads as plates about half a metre across, where
+		// a scaled shoot's leaves alone read finer. The cards stand a little larger than their shoots.
+		cardGrow: 1.4,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The crown's prototypes, with the cut twig's own class beside them: 2.44, 2.98, 3.95 and
-			// 5.86 MB at the four tiers, and the owner's tree caps are 2.7, 4, 7.1 and 13 MB.
-			kitBytes: { low: 2_500_000, medium: 3_100_000, high: 4_100_000, ultra: 6_100_000 },
+			// The crown's prototypes, with the cut twig's own class beside them: 2.44, 3.03, 4.09 and
+			// 6.19 MB at the four tiers, and the owner's tree caps are 2.7, 4, 7.1 and 13 MB.
+			kitBytes: { low: 2_500_000, medium: 3_100_000, high: 4_200_000, ultra: 6_300_000 },
 			variantBytes: { low: 10_500_000, medium: 11_000_000, high: 11_200_000, ultra: 11_500_000 },
 			lod0Triangles: 2_700_000,
 			lod1Triangles: 150_000,
@@ -371,8 +378,11 @@ export const record: Species = {
 	seedSalt: 2357111317,
 	roundBand,
 	cuttings: {
-		branch: { shoot: 'cut', pick: 0 },
-		subbranch: { shoot: 'cut', pick: 1 },
-		cluster: { shoot: 'short' },
+		// The wide prototype suits the branch's three sprays; the tall one suits the sub-branch.
+		branch: { shoot: 'cut', pick: 1 },
+		subbranch: { shoot: 'cut', pick: 0 },
+		// The shots of the cluster are face-on to the spray's plane, where the first prototype's
+		// draw turns it half away.
+		cluster: { shoot: 'short', pick: 1 },
 	},
 };

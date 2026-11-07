@@ -115,6 +115,9 @@ const HEADER_EXTRA_STALKS: i32 = 51;
 const HEADER_CARD_STALK: i32 = 55;
 // The second coordinate that marks a card's stalk, in a place that the card planes leave free.
 const STALK_PLANE: f32 = 0.75;
+// How much of the young bark's tone a card's stalk keeps: it stands inside the crown, where the
+// leaves shade it, so it draws as shaded wood rather than at the young bark's full light.
+const CARD_STALK_SHADE: f32 = 0.35;
 // Rows before the wind records, and wind records in a row.
 const HEADER_ROWS: i32 = 2;
 const RECORDS_PER_ROW: i32 = 256;
@@ -958,8 +961,9 @@ fn surface(input: SurfaceInput) -> Surface {
         // In the shell where a near copy draws its real shoots, its cards give way.
         let near_copy = object.values.x > 0.5;
         if (abs(input.uv1.y - STALK_PLANE) < 0.1) {
-            // A card's stalk: the young bark's tone, so the join the card's leaves stand on shows.
-            base = header(HEADER_YOUNG).rgb;
+            // A card's stalk: a shade of the young bark's tone, so the join the card's leaves stand
+            // on shows without the line standing out pale against the leaves.
+            base = header(HEADER_YOUNG).rgb * CARD_STALK_SHADE;
             roughness = 0.85;
             occlusion = 1.0;
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
