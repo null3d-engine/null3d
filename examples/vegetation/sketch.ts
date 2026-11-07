@@ -54,10 +54,12 @@ export default defineSketch(async (ctx) => {
 	// The season: every record declares what its own does, so the same meadow grows bare in winter,
 	// turns in autumn and flowers in blossom. Summer is the record's default.
 	let season: 'summer' | 'autumn' | 'winter' | 'blossom' = 'summer';
-	// The foliage's density, from 0 at each record's own crown to 1 at its thinnest: the add-on's
-	// coarseness, which drops the finest shoots and grows the kept ones larger, so the leaves thin
-	// while the crown keeps its leaf area.
-	const thinning = 0;
+	// The foliage's density: the record's own crown sits at the slider's middle. The lever is the
+	// record's sky prune, which drops the shoots a crown's shaded wood carries: raised, the crown
+	// thins toward its bare wood; lowered, it keeps the shoots that would have gone.
+	let foliage = 0.5;
+	const pruneOf = (value: number, own: number) =>
+		Math.min(0.9, Math.max(0, own * (1.6 - 1.2 * Math.min(1, Math.max(0, value)))));
 	let planted: { destroy(): void }[] = [];
 	const postHud = () =>
 		page.post('hud', {
@@ -82,24 +84,29 @@ export default defineSketch(async (ctx) => {
 						min: 0,
 						max: 1,
 						step: 0.05,
-						value: thinning,
+						value: foliage,
 						live: false,
 						marks: [
-							{ at: 0, label: 'record' },
-							{ at: 0.5, label: 'thinner' },
-							{ at: 1, label: 'sparse' },
+							{ at: 0, label: 'sparse' },
+							{ at: 0.5, label: 'default' },
+							{ at: 1, label: 'dense' },
 						],
-						tip: 'Drag to thin the crowns: the finest shoots drop away and the kept ones grow larger, so the leaves thin without the plant shrinking.',
+						tip: 'Drag left to thin the crowns toward their bare wood, or right to keep the shoots their own density drops.',
 					},
 				},
 			],
 			visible: true,
 		});
 	page.onMessage((name, value) => {
-		if (name !== 'season') return;
-		if (value !== 'summer' && value !== 'autumn' && value !== 'winter' && value !== 'blossom')
-			return;
-		season = value;
+		if (name === 'season') {
+			if (value !== 'summer' && value !== 'autumn' && value !== 'winter' && value !== 'blossom')
+				return;
+			season = value;
+		} else if (name === 'foliage') {
+			const next = Number(value);
+			if (!Number.isFinite(next)) return;
+			foliage = next;
+		} else return;
 		postHud();
 		void growMeadow(seed);
 	});
@@ -112,7 +119,26 @@ export default defineSketch(async (ctx) => {
 		const step = 34;
 		let index = 0;
 		for (const id of ids) {
-			const module = await loadSpecies(id);
+			const loaded = await loadSpecies(id);
+			// The slider moves each record's own sky prune, so a species keeps its character thinner
+			// or fuller rather than all of them taking one number.
+			const shoots = loaded.record.shoots;
+			const module =
+				foliage === 0.5 || !shoots
+					? loaded
+					: {
+							...loaded,
+							record: {
+								...loaded.record,
+								shoots: {
+									...shoots,
+									placement: {
+										...shoots.placement,
+										skyPrune: pruneOf(foliage, shoots.placement.skyPrune ?? 0.5),
+									},
+								},
+							},
+						};
 			const kit = await prepareSpecies(ctx, module, { detail: 'high', placeholders: 'missing' });
 			const materials = plantMaterials(ctx, kit, {});
 			const variant = index % Math.max(1, kit.record.variants);
@@ -121,7 +147,6 @@ export default defineSketch(async (ctx) => {
 				variant,
 				near: true,
 				season,
-				coarseness: thinning,
 			});
 			const x = ((index % across) - (across - 1) / 2) * step;
 			const z = (Math.floor(index / across) - (ids.length / across - 1) / 2) * step;
