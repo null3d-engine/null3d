@@ -280,6 +280,24 @@ Run `ash-37` drew the setting kept. All four leaf views sit inside the photograp
 cluster keeps its own, and the whole views gain with them: `01`'s sky rises from 0.201 to 0.208,
 `02` reads 0.184 against 0.187 and `18` 0.211 against 0.215.
 
+### Rows 8 and 10 are measures, not the plant
+
+Still 14 shows moss over the buttresses' flanks, and the record carried a fifteenth of a square
+metre at the foot. A third of a square metre over half a metre, heavier on the shaded side, takes
+the base view's colour difference from 7.11 to 6.90 steps.
+
+Neither row answers to the scene's light. The three bark stills were drawn at an even light, a sky
+share of 0.85 and a daylight of 1.2, as close to the copy stand as the review's light goes: views 15
+and 16 read 9.88 and 7.68 before and after, unmoved. The reason is in the measure. The review's
+bark colour is the mean below the crown's start, and a bark close-up has no crown, so that figure is
+empty on all three views and the number the row prints is the plant's own mean colour.
+
+View 18 is a matte. The review page draws the silhouette view as a mask, so the plant is black by
+construction, #0a0a0a against the photograph's #5e5e5d, and its 25.9 steps are the mask against a
+picture of a tree under an overcast sky. An overcast light on that view moved the figure by
+nothing, because a matte takes no light. Views 01 and 02 read 11.78 and 11.21, which is the crown's
+hue limit recorded above: the leaf's blue is nearly zero.
+
 ### The envelope is not a knob
 
 The crown's box reads 1.155, 1.089 and 1.139 wide to high at the whole views against the
