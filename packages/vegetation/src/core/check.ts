@@ -196,6 +196,10 @@ function shootProblems(shoots: ShootSpec, out: string[]): void {
 	});
 	if (shoots.classes.length > 0 && Math.abs(share - 1) > 0.01)
 		out.push(`shoots.classes' shares add up to ${share}; they must add up to 1`);
+	const crowns = new Set(shoots.classes.map((shoot) => shoot.name));
+	for (const cutting of shoots.cuttingClasses ?? [])
+		if (crowns.has(cutting.name))
+			out.push(`shoots.cuttingClasses names '${cutting.name}', which is also a crown class`);
 	curveProblems(shoots.placement.perMetre, 'shoots.placement.perMetre', out);
 	shareProblem(shoots.placement.shadePrune, 'shoots.placement.shadePrune', out);
 	const tip = shoots.placement.tipPrune;
@@ -369,7 +373,10 @@ function cuttingProblems(record: Species, out: string[]): void {
 		out.push(
 			`cuttings.leaf.pressed lays a blade leaf flat, and the foliage is '${record.foliage.kind}'`,
 		);
-	const names = new Set(record.shoots?.classes.map((shoot) => shoot.name));
+	const names = new Set([
+		...(record.shoots?.classes ?? []).map((shoot) => shoot.name),
+		...(record.shoots?.cuttingClasses ?? []).map((shoot) => shoot.name),
+	]);
 	for (const part of ['branch', 'subbranch', 'cluster'] as const) {
 		const hint = record.cuttings?.[part];
 		if (!hint) continue;

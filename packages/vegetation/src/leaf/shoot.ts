@@ -446,6 +446,9 @@ function openMosaic(
  */
 const ROSETTE_SKY_SHARE = 0.5;
 
+/** How many prototypes a cutting class gives, so its pieces still draw different shoots. */
+const CUTTING_PROTOTYPES = 2;
+
 /** A leaf's frame in a rosette: where it turns round the stem and how far it opens from it. */
 interface LeafRound {
 	readonly side: Vector3;
@@ -519,15 +522,21 @@ function spreadRound(
  * @param record The species record.
  * @param index The prototype's index.
  * @param leafMeshes The leaf meshes it may place.
+ * @param only The class to plan, where a prototype belongs to a cutting class rather than the crown's.
  * @returns The plan.
  * @category api/vegetation
  */
-export function planShoot(record: Species, index: number, leafMeshes: number): ShootPlan {
+export function planShoot(
+	record: Species,
+	index: number,
+	leafMeshes: number,
+	only?: ShootClass,
+): ShootPlan {
 	const shoots = record.shoots;
 	if (!shoots) throw new Error(`@null3d/vegetation: '${record.id}' has no shoots to plan`);
 	const salt = record.seedSalt;
 	const draw = (purpose: number, a = 0, b = 0) => unitAt(salt, 0x5400 + index, purpose, a, b);
-	const shootClass = classOf(shoots.classes, index, shoots.prototypes);
+	const shootClass = only ?? classOf(shoots.classes, index, shoots.prototypes);
 	const total = Math.max(0.005, spreadAt(shootClass.length, draw(Purpose.Length)));
 	const years = Math.max(1, Math.round(shootClass.years ?? shoots.years));
 	const leafYears = Math.max(
@@ -1061,5 +1070,22 @@ export function shootPrototypes(
 			out.push(
 				prototypeOf({ ...plan, leaves: [] }, leaves, out.length, classes[index] as ShootClass),
 			);
+	// A cutting class is planned last and never comes from the crown's share, so the crown cannot draw
+	// one however its variants fall. It keeps a leafless twin beside it where the species has them, so a
+	// winter cutting of it still finds a piece.
+	for (const shootClass of shoots.cuttingClasses ?? [])
+		for (let k = 0; k < CUTTING_PROTOTYPES; k++) {
+			const plan = planShoot(record, out.length, leafMeshes, shootClass);
+			out.push(
+				prototypeOf(
+					leafMeshes > 0 ? plan : { ...plan, leaves: [] },
+					leaves,
+					out.length,
+					shootClass,
+				),
+			);
+			if (leafMeshes > 0 && hasBareTwins(record))
+				out.push(prototypeOf({ ...plan, leaves: [] }, leaves, out.length, shootClass));
+		}
 	return out;
 }

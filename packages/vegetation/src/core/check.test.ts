@@ -232,6 +232,24 @@ describe('the record check', () => {
 		).toBe(true);
 	});
 
+	it('keeps a cutting class off the crown classes', () => {
+		const shoots = template.shoots;
+		if (!shoots) throw new Error('the template has no shoots');
+		const crown = shoots.classes[0];
+		if (!crown) throw new Error('the template has no crown class');
+		const withCutting = (name: (typeof crown)['name']): Species => ({
+			...template,
+			shoots: { ...shoots, cuttingClasses: [{ ...crown, name }] },
+		});
+		// A separate name is the point of the field, so it passes; naming a crown class is refused.
+		expect(speciesProblems(withCutting('cut'))).toEqual([]);
+		expect(
+			speciesProblems(withCutting(crown.name)).some((problem) =>
+				problem.startsWith(`shoots.cuttingClasses names '${crown.name}'`),
+			),
+		).toBe(true);
+	});
+
 	it("holds a cup's scale shade from 0 to 1", () => {
 		const lathe: [number, number][] = [
 			[0.005, 0],

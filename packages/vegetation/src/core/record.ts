@@ -913,6 +913,13 @@ export interface ShootSpec {
 	readonly prototypes: number;
 	/** The kinds of shoot, each serving a range of bud vigor. */
 	readonly classes: readonly ShootClass[];
+	/**
+	 * Shoots the cuttings draw and the crown never does, each with one prototype of its own. A close
+	 * picture of a cut twig wants shorter, denser twigs than the crown can carry on the same class, and
+	 * a class of its own settles the two without either paying for the other. A name here must not also
+	 * be one of `classes`.
+	 */
+	readonly cuttingClasses?: readonly ShootClass[];
 	/** Leaf or needle arrangement along a shoot. */
 	readonly phyllotaxis: Phyllotaxis;
 	/** Orders inside one prototype, 1 to 3. */
@@ -1054,7 +1061,7 @@ export interface ShootSpec {
  */
 export interface ShootClass {
 	/** The class's name. */
-	readonly name: 'long' | 'short' | 'spur' | 'whip' | 'spray';
+	readonly name: 'long' | 'short' | 'spur' | 'whip' | 'spray' | 'cut';
 	/** Bud vigor this class serves, 0 weak to 1 strong. */
 	readonly vigor: readonly [number, number];
 	/** Share of the species' prototypes in this class. */
