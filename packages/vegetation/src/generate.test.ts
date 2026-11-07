@@ -211,5 +211,12 @@ self.onmessage = async (event) => {
 		const thinner = withFoliage(oak.record, 1.5) as typeof oak.record;
 		expect(thinner.shoots?.placement.skyPrune).toBeLessThan(shoots.placement.skyPrune ?? 0.5);
 		expect(() => withFoliage(oak.record, 3)).toThrow();
+		// A different share is a different asset, so the cache never hands back the record's own.
+		expect(variantKey(grown, { seed: 11, variant: 0, foliage: 0.5 })).not.toBe(
+			variantKey(grown, { seed: 11, variant: 0 }),
+		);
+		expect(variantKey(grown, { seed: 11, variant: 0, foliage: 1 })).toBe(
+			variantKey(grown, { seed: 11, variant: 0 }),
+		);
 	});
 });
