@@ -68,6 +68,8 @@ export interface ReferenceFraming {
 	/** The plain sky's and the meadow's colours, as sRGB hex. */
 	readonly sky: string;
 	readonly ground?: string;
+	/** Where the frames' light comes from, read off their crowns, when they say. */
+	readonly light?: { readonly azimuth: number; readonly rise: number };
 	/** How many of the frames gave a plant to measure. */
 	readonly frames: number;
 	/** What the estimate had to assume. */
@@ -234,9 +236,31 @@ export function estimateFraming(
 		...(usable.some(({ m }) => m.ground)
 			? { ground: meanHex(usable.flatMap(({ m }) => (m.ground ? [m.ground] : []))) }
 			: {}),
+		...lightOf(
+			usable.map(({ m }) => m.light),
+			notes,
+		),
 		frames: usable.length,
 		notes,
 	};
+}
+
+/** The frames' common light: the median of what each frame's crown said, when any of them said. */
+function lightOf(
+	lights: readonly ({ readonly azimuth: number; readonly rise: number } | null)[],
+	notes: string[],
+): { light?: { azimuth: number; rise: number } } {
+	const seen = lights.filter(
+		(l): l is { readonly azimuth: number; readonly rise: number } => l !== null,
+	);
+	if (seen.length === 0) return {};
+	if (seen.length < lights.length)
+		notes.push(
+			`the light is read from ${seen.length} of ${lights.length} frames that show a crown`,
+		);
+	const azimuth = median(seen.map((l) => l.azimuth)) as number;
+	const rise = median(seen.map((l) => l.rise)) as number;
+	return { light: { azimuth: Number(azimuth.toFixed(1)), rise: Number(rise.toFixed(1)) } };
 }
 
 /** The page query fields that frame a render as a reference camera framed its plant. */
@@ -250,6 +274,7 @@ export function framingQuery(framing: ReferenceFraming): Partial<PlantReviewQuer
 		targetX: framing.targetX,
 		sky: framing.sky,
 		...(framing.ground ? { ground: framing.ground } : {}),
+		...(framing.light ? { sunAzimuth: framing.light.azimuth, sunRise: framing.light.rise } : {}),
 		...placed,
 	};
 }
@@ -328,8 +353,12 @@ export interface Alignment {
 	readonly start: number;
 	/** 1 when the render turns the same way as the reference, -1 when the other way. */
 	readonly direction: 1 | -1;
-	/** The mean overlap of the matched pairs. */
-	readonly meanIou: number;
+	/**
+	 * The mean overlap of the matched pairs on outlines shrunk four times each way. It picks the
+	 * pairing, and standing alone it says nothing about the plant: on a speckled crown it reads
+	 * well above the frame-to-frame shape IoU.
+	 */
+	readonly coarseIou: number;
 	/** For each reference frame, the render frame it is matched to. */
 	readonly pairs: readonly number[];
 }
@@ -347,15 +376,15 @@ export function alignTurn(
 ): Alignment {
 	const k = scores.length;
 	const n = scores[0]?.length ?? 0;
-	let best: Alignment = { start: 0, direction: 1, meanIou: -1, pairs: [] };
+	let best: Alignment = { start: 0, direction: 1, coarseIou: -1, pairs: [] };
 	for (const direction of [1, -1] as const)
 		for (let start = 0; start < n; start++) {
 			const pairs = Array.from({ length: k }, (_, i) => {
 				const step = Math.round(i * ratio);
 				return (((start + direction * step) % n) + n) % n;
 			});
-			const meanIou = mean(pairs.map((j, i) => (scores[i] as readonly number[])[j] as number));
-			if (meanIou > best.meanIou + 1e-9) best = { start, direction, meanIou, pairs };
+			const coarseIou = mean(pairs.map((j, i) => (scores[i] as readonly number[])[j] as number));
+			if (coarseIou > best.coarseIou + 1e-9) best = { start, direction, coarseIou, pairs };
 		}
 	return best;
 }
@@ -775,6 +804,8 @@ export interface TurnResult {
 	readonly frameStep: number;
 	readonly renderStep: number;
 	readonly alignment: Omit<Alignment, 'pairs'>;
+	/** The mean of the matched frames' shape IoU, over the frames that carry one. */
+	readonly meanShapeIou: number | null;
 	/** The video frames whose render lies within half a frame's turn of the frame's own angle. */
 	readonly covered: number;
 	readonly pairs: readonly TurnPair[];
@@ -840,7 +871,8 @@ export function compareTurn(
 		renders: m,
 		frameStep,
 		renderStep,
-		alignment: { start: 0, direction: 1 as const, meanIou: 0 },
+		alignment: { start: 0, direction: 1 as const, coarseIou: 0 },
+		meanShapeIou: null,
 		covered: 0,
 		pairs: [],
 		spread: {
@@ -888,6 +920,8 @@ export function compareTurn(
 		};
 	});
 	const covered = pairs.filter((pair) => pair.offBy <= frameStep / 2 + 1e-6).length;
+	const ious = pairs.flatMap((pair) => (pair.shapeIou === null ? [] : [pair.shapeIou]));
+	const meanShapeIou = ious.length === 0 ? null : Number(mean(ious).toFixed(4));
 	const { angles, frames: atAngle } = rubricFrames(video.arc, n);
 	const refAt = atAngle.map((k) => refSides[k] as Side);
 	const renderAt = atAngle.map((k) => renderSides[alignment.pairs[k] as number] as Side);
@@ -907,7 +941,7 @@ export function compareTurn(
 	});
 	const first = references[0] as Rgba;
 	const pages = gridSheets(
-		`${title}  ${n} FRAMES OVER ${video.arc} DEG  MEAN SHAPE IOU ${alignment.meanIou.toFixed(3)}`,
+		`${title}  ${n} FRAMES OVER ${video.arc} DEG  MEAN SHAPE IOU ${meanShapeIou === null ? '-' : meanShapeIou.toFixed(3)}`,
 		tiles,
 		first.width / first.height,
 	);
@@ -921,8 +955,9 @@ export function compareTurn(
 		alignment: {
 			start: alignment.start,
 			direction: alignment.direction,
-			meanIou: Number(alignment.meanIou.toFixed(4)),
+			coarseIou: Number(alignment.coarseIou.toFixed(4)),
 		},
+		meanShapeIou,
 		covered,
 		pairs,
 		spread: {
@@ -1064,8 +1099,43 @@ export interface StillResult extends PairMetrics {
 	 * A plant hangs together, so a part that meets nothing shows here as an extra piece.
 	 */
 	readonly pieces: { readonly reference: number | null; readonly render: number } | null;
+	/** What a close view's camera framed, and how clear it found its subject, as the page posted it. */
+	readonly framing?: CloseFraming;
 	readonly note?: string;
 	readonly error?: string;
+}
+
+/**
+ * What a close view's camera framed: its subject, and the shares of the frame that the rest of the
+ * plant covers in front of the subject and behind it, and that the subject itself fills. The camera
+ * stands where the plant shows its subject clearest, so these are the plant's best, and a crown too
+ * dense for a clear view shows here as a number. A warning says what the camera had to give up,
+ * such as the subject it looks for, which a plain camera then stands in for.
+ */
+export interface CloseFraming {
+	readonly subject: string;
+	readonly front: number | null;
+	readonly behind: number | null;
+	readonly fill: number | null;
+	readonly warning?: string;
+}
+
+/** The framing a page posted for a close view, if it posted one. */
+export function closeFraming(facts: unknown): CloseFraming | undefined {
+	const subject = (
+		facts as {
+			subject?: { kind?: unknown; clutter?: Record<string, unknown>; warning?: unknown };
+		}
+	)?.subject;
+	if (!subject || typeof subject.kind !== 'string') return undefined;
+	const share = (value: unknown) => (typeof value === 'number' ? Number(value.toFixed(3)) : null);
+	return {
+		subject: subject.kind,
+		front: share(subject.clutter?.front),
+		behind: share(subject.clutter?.behind),
+		fill: share(subject.clutter?.subject),
+		...(typeof subject.warning === 'string' && { warning: subject.warning }),
+	};
 }
 
 /**
@@ -1186,6 +1256,7 @@ export function compareStills(
 					crownBox: null,
 					foliageDeltaE: refPlant.background.plain ? pair.foliageDeltaE : null,
 				};
+		const framing = closeFraming(frame.facts);
 		results.push({
 			...shown,
 			file: slot.file,
@@ -1196,6 +1267,7 @@ export function compareStills(
 			surfaceDeltaE,
 			edgeDifference: edges,
 			pieces,
+			...(framing ? { framing } : {}),
 			...(slot.note ? { note: slot.note } : {}),
 		});
 		rows.push({

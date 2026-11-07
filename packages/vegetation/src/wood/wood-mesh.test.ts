@@ -4,6 +4,7 @@ import { speciesBox } from '../core/box';
 import { capsFor } from '../core/caps';
 import { NODE_STUB } from '../core/graph';
 import { hashBytes } from '../core/hash';
+import type { Species } from '../core/record';
 import { DETAILS } from '../core/types';
 import { oakRecord } from '../grow/oak.fixture';
 import { growSelfOrganizing } from '../grow/self-organizing';
@@ -121,6 +122,66 @@ describe('the wood mesher', () => {
 			}
 			expect(bends).toBeGreaterThan(0);
 		}
+	});
+
+	it('runs a fork joint over a longer elbow at a larger bend, and swells its middle at a knot', () => {
+		const plain = testMeshInput('high', oak);
+		const bark = plain.record.bark as NonNullable<Species['bark']>;
+		const joint = (fork: NonNullable<Species['bark']>['fork']) =>
+			meshWoodReport({ ...plain, record: { ...plain.record, bark: { ...bark, fork } } }, 0);
+		// Each leader's elbow: its rings from the parent's last ring to its own first plain one,
+		// as the length its centre runs and each ring's mean radius.
+		const elbows = (report: ReturnType<typeof meshWoodReport>) => {
+			const out = new Map<number, { length: number; radii: number[] }>();
+			for (const [key, rings] of report.axisRings) {
+				if (!rings.shared) continue;
+				let length = 0;
+				const radii: number[] = [];
+				for (let r = 0; r < rings.welded; r++) {
+					if (r > 0)
+						length += Math.hypot(
+							(rings.centre[r * 3] as number) - (rings.centre[(r - 1) * 3] as number),
+							(rings.centre[r * 3 + 1] as number) - (rings.centre[(r - 1) * 3 + 1] as number),
+							(rings.centre[r * 3 + 2] as number) - (rings.centre[(r - 1) * 3 + 2] as number),
+						);
+					const first = rings.first[r] as number;
+					const sides = rings.sides[r] as number;
+					let sum = 0;
+					for (let j = 0; j < sides; j++) sum += rings.rho[first + j] as number;
+					radii.push(sum / sides);
+				}
+				out.set(key, { length, radii });
+			}
+			return out;
+		};
+		const base = elbows(joint(undefined));
+		expect(base.size).toBeGreaterThan(0);
+		// The default joint is today's.
+		const same = elbows(joint({ bend: 1.5, knot: 0 }));
+		for (const [key, elbow] of base) expect(same.get(key)?.length).toBeCloseTo(elbow.length, 9);
+		// A larger bend runs every elbow out at least as far, and some further.
+		let longer = 0;
+		for (const [key, elbow] of elbows(joint({ bend: 3 }))) {
+			const was = base.get(key)?.length ?? 0;
+			expect(elbow.length).toBeGreaterThanOrEqual(was - 1e-9);
+			if (elbow.length > was * 1.2) longer++;
+		}
+		expect(longer).toBeGreaterThan(0);
+		// A knot leaves both ends of an elbow as they were and swells its middle, by no more than
+		// its share.
+		let swollen = 0;
+		for (const [key, elbow] of elbows(joint({ knot: 0.25 }))) {
+			const was = base.get(key)?.radii ?? [];
+			expect(elbow.radii.length).toBe(was.length);
+			expect(elbow.radii[0]).toBeCloseTo(was[0] as number, 9);
+			for (let r = 1; r < was.length; r++) {
+				const share = (elbow.radii[r] as number) / (was[r] as number);
+				expect(share).toBeGreaterThanOrEqual(1 - 1e-9);
+				expect(share).toBeLessThanOrEqual(1.25 + 1e-9);
+				if (share > 1.05) swollen++;
+			}
+		}
+		expect(swollen).toBeGreaterThan(0);
 	});
 
 	it('keeps the bark texel density within 30 per cent of the target on every ring, at every tier', () => {

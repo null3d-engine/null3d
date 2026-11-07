@@ -223,9 +223,9 @@ export function setPlacedUniforms(
 
 /**
  * A part's quantised arrays as a mesh that the plant materials draw: 16-bit positions inside the
- * species box, which the shader turns into metres, 8-bit normals, the texture coordinates in the
- * part's own steps, the second coordinates as fractions and the vertex bytes as the shader reads
- * them. The mesh keeps every byte the plant core made.
+ * species box, which the shader reads as fractions of the box and turns into metres, 8-bit normals,
+ * the texture coordinates in the part's own steps, the second coordinates as fractions and the
+ * vertex bytes as the shader reads them. The mesh keeps every byte the plant core made.
  *
  * @param ctx The sketch's context.
  * @param arrays The part's arrays.
@@ -233,7 +233,10 @@ export function setPlacedUniforms(
  */
 export function plantGeometry(ctx: SketchContext, arrays: QuantisedArrays): MeshGeometry {
 	return ctx.geometry.fromArrays({
-		positions: arrays.positions,
+		// The engine adds the shader's offset to the position it reads, in 32-bit floats. Read as
+		// fractions of the box, that position stays near 1 and the sum keeps a few micrometres;
+		// read as whole steps, it runs to 65,535 and the sum loses millimetres.
+		positions: { array: arrays.positions, normalized: true },
 		normals: arrays.normals,
 		uvs: arrays.uvs,
 		uvs1: { array: arrays.uvs1, normalized: true },
@@ -268,7 +271,8 @@ export function prototypeGeometry(ctx: SketchContext, arrays: PrototypeArrays): 
 
 /**
  * The sphere around the species box, in metres, which an object that draws a quantised part gives
- * `setBounds`: the mesh's own sphere lies around the 16-bit steps, not the box.
+ * `setBounds`: the mesh's own sphere lies around the positions as the shader reads them, fractions
+ * of the box, not around the box in metres.
  *
  * @param box The species box.
  * @returns The sphere's center about the object's origin, and its radius, at scale 1.
@@ -287,7 +291,9 @@ export function plantBounds(box: SpeciesBox): { center: [number, number, number]
 
 /**
  * The radius about a copy's origin that holds the whole species box, which a batch of quantised
- * parts gives `setBoundingRadius`: the mesh's own sphere holds the 16-bit steps, not metres.
+ * parts gives `setBoundingRadius`: the mesh's own sphere holds the positions as the shader reads
+ * them, fractions of the box, not metres. The engine keeps that sphere's center, under a metre from
+ * the origin, and grows the radius by its distance, so each copy's sphere holds its box.
  *
  * @param box The species box.
  * @returns The radius in metres at scale 1.

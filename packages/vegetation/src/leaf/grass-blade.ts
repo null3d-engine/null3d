@@ -7,7 +7,7 @@
 // face toward +Z, its colour bytes those a cutting copies (flutter phase first, full sky last) and its
 // second coordinate the share along it and its browning, as the plant's own blades carry them.
 import type { PrototypeArrays } from '../asset';
-import { cos, radians, sin } from '../core/math';
+import { cos, pow, radians, sin } from '../core/math';
 import type { GrassBlade, Species } from '../core/record';
 import type { TextureManifest } from '../core/textures';
 import { curveAt, type Detail, spreadMean } from '../core/types';
@@ -56,7 +56,7 @@ export function bladeHalf(form: BladeForm, t: number): number {
 	if (t <= start) return half;
 	const u = Math.min(1, (t - start) / Math.max(1e-6, blade.tipLength));
 	// A hood closes round, as a quarter ellipse; a point narrows nearly straight to nothing.
-	const close = blade.tip === 'hooded' ? Math.sqrt(Math.max(0, 1 - u * u)) : (1 - u) ** 0.85;
+	const close = blade.tip === 'hooded' ? Math.sqrt(Math.max(0, 1 - u * u)) : pow(1 - u, 0.85);
 	return half * close;
 }
 
@@ -127,7 +127,7 @@ export function writeBlade(
 	const dryStart = 1 - form.blade.dryTip;
 	for (let r = 0; r <= rows; r++) {
 		// Rows crowd toward the tip, where the blade closes and arches most.
-		const t = 1 - (1 - r / rows) ** 1.35;
+		const t = 1 - pow(1 - r / rows, 1.35);
 		frameAt(path, t * path.length, frame);
 		const half = bladeHalf(form, t);
 		const fold = radians(foldAt(form, t));

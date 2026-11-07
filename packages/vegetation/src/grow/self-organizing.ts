@@ -29,6 +29,7 @@ import {
 	atan2,
 	cos,
 	exp,
+	length3,
 	pow,
 	quatFromFrame,
 	quatRotate,
@@ -42,7 +43,7 @@ import { curveAt, spreadAt, spreadMean } from '../core/types';
 import { ShadowGrid } from '../crown/light-grid';
 import type { GrowInput } from '../stages';
 import { bendUnderLoad } from './bend';
-import { type EnvelopeVolume, envelopeVolume, insetVolume } from './envelope';
+import { type EnvelopeVolume, envelopeVolume, flooredVolume, insetVolume } from './envelope';
 import {
 	forkAngle,
 	forkShare,
@@ -70,6 +71,16 @@ const BREAST_HEIGHT = 1.3;
 const KINK_DRIFT = 0.5;
 /** Nodes a bud's site looks back along its wood for a cell inside the envelope. */
 const SITE_STEPS = 4;
+/** A limb's girth beside another's, as a share of the clearance, by botanical order. */
+const GIRTH = [1, 0.6, 0.35, 0.2, 0.1] as const;
+/** Degrees between the headings a shoot tries when it turns aside from another axis's wood. */
+const TURN_STEP = 10;
+
+/** One axis's girth beside another's, as a share of the record's clearance. */
+export function girthOf(order: number): number {
+	return GIRTH[Math.min(GIRTH.length - 1, Math.max(0, order))] as number;
+}
+
 /** A child at least this share of its parent's radius makes a fork. */
 const FORK_SHARE = 0.7;
 
@@ -369,7 +380,11 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 
 	const height = spreadAt(record.size.height, unitAt(seed, salt, variant, Purpose.Height));
 	const turn = unitAt(seed, salt, variant, Purpose.Turn) * 2 * Math.PI;
-	const outline = envelopeVolume(record.envelope, height, turn);
+	// The record's floor cuts the envelope flat, so the crown's underside stands at that height.
+	const outline = flooredVolume(
+		envelopeVolume(record.envelope, height, turn),
+		Math.max(0, g.floor ?? 0) * height,
+	);
 	const volume: EnvelopeVolume = insetVolume(outline, shootReach(record));
 	const radial = record.envelope.kind === 'radial';
 
@@ -386,6 +401,78 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	const grid = new ShadowGrid([-half, 0, -half], [nxz, ny, nxz], cell, g.light.shadow);
 	openGrid(grid, volume, radial);
 
+	// A grid of the wood already grown, so a shoot can turn aside or stop rather than pass through
+	// another. Its cell holds the clearance, so a node need only look at the cells round it.
+	const clearance = Math.max(0, g.clearance ?? 0);
+	// The most a shoot may turn aside in one internode to keep that clearance, and the angle between
+	// the headings it tries.
+	const mostTurn = radians(Math.max(0, Math.min(180, g.turning ?? 0)));
+	const turnStep = radians(TURN_STEP);
+	// Only wood this thick, as a share of the trunk's radius, keeps the clearance: below it, thin
+	// wood keeps its own layout.
+	const thick = Math.max(0, Math.min(1, g.clearanceThickness ?? 0));
+	// The widest clearance two axes can demand, so the cells round a point hold every neighbour.
+	const clearCell = Math.max(0.25, clearance * 2);
+	const clearGrid = new Map<number, number[]>();
+	const clearKey = (x: number, y: number, z: number): number =>
+		((Math.floor(x / clearCell) + 512) * 1024 + (Math.floor(y / clearCell) + 512)) * 1024 +
+		(Math.floor(z / clearCell) + 512);
+	/** Adds a node to the grid the clearance reads. */
+	const registerWood = (node: number): void => {
+		if (clearance <= 0) return;
+		const key = clearKey(plant.x[node] as number, plant.y[node] as number, plant.z[node] as number);
+		const cell = clearGrid.get(key);
+		if (cell) cell.push(node);
+		else clearGrid.set(key, [node]);
+	};
+	/**
+	 * Whether a point stands within the clearance of another axis's wood. Wood thinner than the
+	 * record's clearance thickness does not keep the clearance, so thin twigs keep their layout.
+	 *
+	 * @param x The point's x.
+	 * @param y The point's y.
+	 * @param z The point's z.
+	 * @param axis The axis that would grow there, whose own wood is not counted.
+	 * @param parent The axis it leaves, whose wood it must touch at its joint.
+	 * @param order The botanical order the axis has, or will have where it does not exist yet.
+	 * @returns True where another axis's wood stands too near.
+	 */
+	const crowded = (
+		x: number,
+		y: number,
+		z: number,
+		axis: number,
+		parent: number,
+		order: number,
+	): boolean => {
+		if (clearance <= 0) return false;
+		const cx = Math.floor(x / clearCell);
+		const cy = Math.floor(y / clearCell);
+		const cz = Math.floor(z / clearCell);
+		// A limb's girth falls with its order, so a twig may pass near a twig but not through a limb.
+		const mine = girthOf(order);
+		for (let ux = -1; ux <= 1; ux++)
+			for (let uy = -1; uy <= 1; uy++)
+				for (let uz = -1; uz <= 1; uz++) {
+					const cell = clearGrid.get(
+						((cx + ux + 512) * 1024 + (cy + uy + 512)) * 1024 + (cz + uz + 512),
+					);
+					if (!cell) continue;
+					for (const node of cell) {
+						const other = plant.axisOf[node] as number;
+						if (other === axis || other === parent) continue;
+						const otherGirth = girthOf(plant.axisOrder[other] as number);
+						if (otherGirth < thick) continue;
+						const dx = (plant.x[node] as number) - x;
+						const dy = (plant.y[node] as number) - y;
+						const dz = (plant.z[node] as number) - z;
+						const apart = clearance * (mine + otherGirth);
+						if (dx * dx + dy * dy + dz * dz < apart * apart) return true;
+					}
+				}
+		return false;
+	};
+
 	const plant = new Plant();
 	const arrangement = arrangementOf(g.buds.arrangement);
 	const deepest = Math.max(1, g.macroOrders - 1);
@@ -393,6 +480,8 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	const lightApical = g.light.apical;
 	const lightLateral = g.light.lateral;
 	const [extinctApical, extinctLateral] = g.buds.extinction;
+	const branching = Math.max(0, g.branching ?? 1);
+	const sideOrders = g.buds.sideOrders ?? Number.POSITIVE_INFINITY;
 	const wander = tan(radians(Math.min(80, Math.max(0, g.apical.wander))));
 	// The height at which the leader divides into its great limbs, if the record gives one.
 	const divideAt = g.divide === undefined ? Number.POSITIVE_INFINITY : height * g.divide.at;
@@ -405,6 +494,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	starts.forEach((start, s) => {
 		const axis = plant.addAxis(-1, 0, s);
 		const node = plant.addNode(start.x, 0, start.z, start.direction, -1, axis, 0);
+		registerWood(node);
 		plant.addBud(node, axis, start.direction, true);
 		fusedHeight.push(start.fused);
 	});
@@ -414,6 +504,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	const toward: [number, number, number] = [0, 0, 0];
 	const heading: Vector3 = [0, 0, 0];
 	const internode: Vector3 = [0, 0, 0];
+	const turnedDirection: Vector3 = [0, 0, 0];
 	const kinks = g.kinks === true;
 	const relay = g.relay !== false;
 	let mainAcc = new Float64Array(0);
@@ -421,6 +512,89 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	let vMain = new Float64Array(0);
 	let vLateral = new Float64Array(0);
 	const stemLight = new Float64Array(starts.length);
+
+	/** Turns a unit direction about a unit axis through an angle, in place, and normalizes it. */
+	const turnAbout = (d: Vector3, axis: Readonly<Vector3>, angle: number): void => {
+		const x = d[0] as number;
+		const y = d[1] as number;
+		const z = d[2] as number;
+		const ax = axis[0] as number;
+		const ay = axis[1] as number;
+		const az = axis[2] as number;
+		const c = cos(angle);
+		const s = sin(angle);
+		const dot = ax * x + ay * y + az * z;
+		const crossX = ay * z - az * y;
+		const crossY = az * x - ax * z;
+		const crossZ = ax * y - ay * x;
+		d[0] = x * c + crossX * s + ax * dot * (1 - c);
+		d[1] = y * c + crossY * s + ay * dot * (1 - c);
+		d[2] = z * c + crossZ * s + az * dot * (1 - c);
+		const l = length3(d[0] as number, d[1] as number, d[2] as number);
+		if (l > 1e-9) {
+			d[0] = (d[0] as number) / l;
+			d[1] = (d[1] as number) / l;
+			d[2] = (d[2] as number) / l;
+		}
+	};
+
+	/**
+	 * The heading a shoot takes where its chosen step would come within the clearance of another
+	 * axis's wood: the smallest turn either side of the heading, up to the record's most, that keeps
+	 * the step both clear and inside the envelope. The side it turned to before is tried first, so a
+	 * shoot passing an obstacle curves round it instead of zigzagging. The choice reads no random
+	 * draw, so a seed grows the same bytes.
+	 *
+	 * @param d The direction the shoot had chosen; it takes the turned one on success.
+	 * @param heading The shoot's heading when its internodes kink about it, turned with it.
+	 * @param kinked Whether the shoot's internodes kink about the heading.
+	 * @param px The shoot tip's x.
+	 * @param py The shoot tip's y.
+	 * @param pz The shoot tip's z.
+	 * @param step The internode's length, shortened where the envelope keeps only part of it.
+	 * @param axis The axis that would grow there, whose own wood is not counted.
+	 * @param parentAxis The axis it leaves, whose wood it must touch at its joint.
+	 * @param order The botanical order the axis has, or will have where it does not exist yet.
+	 * @param side The side it turned to last, tried first.
+	 * @returns The side it turned to, or 0 where no tried heading is clear.
+	 */
+	const turnAside = (
+		d: Vector3,
+		heading: Vector3,
+		kinked: boolean,
+		px: number,
+		py: number,
+		pz: number,
+		step: number,
+		axis: number,
+		parentAxis: number,
+		order: number,
+		side: number,
+	): number => {
+		if (!(mostTurn > 0) || !(turnStep > 0)) return 0;
+		across(d, scratchU, scratchW);
+		for (let k = 1; ; k++) {
+			const angle = Math.min(mostTurn, k * turnStep);
+			for (let m = 0; m < 2; m++) {
+				const turn = m === 0 ? side : -side;
+				turnedDirection[0] = d[0] as number;
+				turnedDirection[1] = d[1] as number;
+				turnedDirection[2] = d[2] as number;
+				turnAbout(turnedDirection, scratchU, turn * angle);
+				const x = px + (turnedDirection[0] as number) * step;
+				const y = py + (turnedDirection[1] as number) * step;
+				const z = pz + (turnedDirection[2] as number) * step;
+				if (volume.room(x, y, z) < 0) continue;
+				if (crowded(x, y, z, axis, parentAxis, order)) continue;
+				d[0] = turnedDirection[0] as number;
+				d[1] = turnedDirection[1] as number;
+				d[2] = turnedDirection[2] as number;
+				if (kinked) turnAbout(heading, scratchU, turn * angle);
+				return turn;
+			}
+			if (angle >= mostTurn - 1e-9) return 0;
+		}
+	};
 
 	/** A bud's light: the grid's, but full light for a stem's leader below the envelope. */
 	const budLight = (b: number): number => {
@@ -582,6 +756,8 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 		let previous = fromNode;
 		let added = 0;
 		let divided = false;
+		// The side the shoot last turned to, so it keeps curving the same way round an obstacle.
+		let turnSide = 1;
 		shade(b, -1);
 		plant.budState[b] = DEAD;
 		for (let k = 0; k < count; k++) {
@@ -631,7 +807,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 					heading[0] += KINK_DRIFT * crook * wr * cos(wa);
 					heading[1] += KINK_DRIFT * crook * wz;
 					heading[2] += KINK_DRIFT * crook * wr * sin(wa);
-					const hl = Math.hypot(heading[0], heading[1], heading[2]);
+					const hl = length3(heading[0], heading[1], heading[2]);
 					heading[0] /= hl;
 					heading[1] /= hl;
 					heading[2] /= hl;
@@ -670,14 +846,54 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 				last = true;
 				divided = true;
 			}
-			const x = px + nx * step;
-			const y = py + ny * step;
-			const z = pz + nz * step;
+			let x = px + nx * step;
+			let y = py + ny * step;
+			let z = pz + nz * step;
+			// A real tree's limbs do not pass through one another: a shoot that would come within the
+			// clearance of another axis's wood turns aside, and stops only where no heading is clear.
+			{
+				// A new limb's axis does not exist yet, so it stands for the axis the builder will
+				// give it, and leaves the wood at the node it is starting from.
+				const grown = axis >= 0 ? axis : plant.axes;
+				const joint = axis >= 0 ? (plant.axisParentNode[axis] as number) : fromNode;
+				const fromAxis = joint >= 0 ? (plant.axisOf[joint] as number) : -1;
+				const mineOrder = axis >= 0 ? (plant.axisOrder[axis] as number) : order;
+				if (grown >= 0 && crowded(x, y, z, grown, fromAxis, mineOrder)) {
+					internode[0] = nx;
+					internode[1] = ny;
+					internode[2] = nz;
+					const turn =
+						corridor || divided
+							? 0
+							: turnAside(
+									internode,
+									heading,
+									kinks,
+									px,
+									py,
+									pz,
+									step,
+									grown,
+									fromAxis,
+									mineOrder,
+									turnSide,
+								);
+					if (turn === 0) break;
+					turnSide = turn;
+					nx = internode[0] as number;
+					ny = internode[1] as number;
+					nz = internode[2] as number;
+					x = px + nx * step;
+					y = py + ny * step;
+					z = pz + nz * step;
+				}
+			}
 			if (axis < 0) axis = plant.addAxis(fromNode, order, stem);
 			internode[0] = nx;
 			internode[1] = ny;
 			internode[2] = nz;
 			const node = plant.addNode(x, y, z, internode, previous, axis, year);
+			registerWood(node);
 			previous = node;
 			added++;
 			if (divided) {
@@ -884,6 +1100,101 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	};
 
 	/**
+	 * Lays a stem's nodes below its top on a line from its foot, each at its share of the stem's
+	 * length there, and moves the wood each one carries with it. The line runs to the top where that
+	 * leans no more than the most degrees given; otherwise it leans that far, and the top with
+	 * everything it carries moves to the line's end. Each live bud's shadow leaves the light grid
+	 * before its node moves and falls again after.
+	 */
+	const straightenBole = (division: number, most: number) => {
+		const chain: number[] = [];
+		for (let n = division; n >= 0; n = plant.parent[n] as number) {
+			chain.push(n);
+			if (plant.axisOf[n] !== plant.axisOf[division]) break;
+		}
+		chain.reverse();
+		const foot = chain[0] as number;
+		if (plant.axisOf[foot] !== plant.axisOf[division] || chain.length < 3) return;
+		const along = new Float64Array(chain.length);
+		for (let k = 1; k < chain.length; k++) {
+			const a = chain[k - 1] as number;
+			const b = chain[k] as number;
+			along[k] =
+				(along[k - 1] as number) +
+				Math.sqrt(
+					square((plant.x[b] as number) - (plant.x[a] as number)) +
+						square((plant.y[b] as number) - (plant.y[a] as number)) +
+						square((plant.z[b] as number) - (plant.z[a] as number)),
+				);
+		}
+		const total = along[chain.length - 1] as number;
+		if (!(total > 0)) return;
+		const count = plant.nodes;
+		const shift = new Float64Array(count * 3);
+		const moved = new Uint8Array(count);
+		const fx = plant.x[foot] as number;
+		const fy = plant.y[foot] as number;
+		const fz = plant.z[foot] as number;
+		let lx = (plant.x[division] as number) - fx;
+		let ly = (plant.y[division] as number) - fy;
+		let lz = (plant.z[division] as number) - fz;
+		// A line that leans past the most turns upright to it about the foot, keeping its length, and
+		// the division with the crown it carries moves to the line's end.
+		const chord = Math.sqrt(lx * lx + ly * ly + lz * lz);
+		const level = Math.sqrt(lx * lx + lz * lz);
+		const limit = radians(Math.max(0, Math.min(90, most)));
+		if (chord > 0 && atan2(level, ly) > limit) {
+			const out = level > 1e-9 ? sin(limit) / level : 0;
+			const nx = lx * out * chord;
+			const nz = lz * out * chord;
+			const ny = cos(limit) * chord;
+			shift[division * 3] = fx + nx - (plant.x[division] as number);
+			shift[division * 3 + 1] = fy + ny - (plant.y[division] as number);
+			shift[division * 3 + 2] = fz + nz - (plant.z[division] as number);
+			moved[division] = 1;
+			lx = nx;
+			ly = ny;
+			lz = nz;
+		}
+		for (let k = 1; k < chain.length - 1; k++) {
+			const n = chain[k] as number;
+			const t = (along[k] as number) / total;
+			shift[n * 3] = fx + lx * t - (plant.x[n] as number);
+			shift[n * 3 + 1] = fy + ly * t - (plant.y[n] as number);
+			shift[n * 3 + 2] = fz + lz * t - (plant.z[n] as number);
+			moved[n] = 1;
+		}
+		// A node off the bole moves as the node it hangs from, and the crown as the division, which
+		// keeps its own place unless the line moved it; parents come before children.
+		for (let n = 0; n < count; n++) {
+			const p = plant.parent[n] as number;
+			if (moved[n] || p < 0 || !moved[p] || n === division) continue;
+			shift[n * 3] = shift[p * 3] as number;
+			shift[n * 3 + 1] = shift[p * 3 + 1] as number;
+			shift[n * 3 + 2] = shift[p * 3 + 2] as number;
+			moved[n] = 1;
+		}
+		for (let b = 0; b < plant.buds; b++)
+			if (plant.budState[b] === ALIVE && moved[plant.budNode[b] as number]) shade(b, -1);
+		for (let n = 0; n < count; n++) {
+			if (!moved[n]) continue;
+			plant.x[n] = (plant.x[n] as number) + (shift[n * 3] as number);
+			plant.y[n] = (plant.y[n] as number) + (shift[n * 3 + 1] as number);
+			plant.z[n] = (plant.z[n] as number) + (shift[n * 3 + 2] as number);
+		}
+		for (let b = 0; b < plant.buds; b++)
+			if (plant.budState[b] === ALIVE && moved[plant.budNode[b] as number]) shade(b, 1);
+		// The bole's internodes, and the division's, run along the line.
+		const length = Math.sqrt(lx * lx + ly * ly + lz * lz);
+		for (let k = 1; k < chain.length; k++) {
+			const n = chain[k] as number;
+			plant.dx[n] = lx / length;
+			plant.dy[n] = ly / length;
+			plant.dz[n] = lz / length;
+		}
+	};
+
+	/**
 	 * Rights the side shoots whose share of the wood has grown past what their angle allows, as
 	 * reaction wood turns a vigorous shoot toward its parent's line. Each year a side shoot that holds
 	 * at least a fifth of its fork's wood, on a fork past a twig's size, while its own branch is still
@@ -937,7 +1248,9 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			const goesOn = forkShare(carries, fork, g.pipe.exponent);
 			const widest = Math.max(forkAngle(share), goesOn >= SPLIT_SHARE ? radians(SPLIT_ANGLE) : 0);
 			const step = Math.min(most, atan2(across, cx * lx + cy * ly + cz * lz) - widest);
-			if (step <= 0) continue;
+			// No turn where the counts give none, such as for wood the last season grew past the
+			// counts the last shedding made: a turn that is not a number would spoil the branch.
+			if (!(step > 0)) continue;
 			axis[0] /= across;
 			axis[1] /= across;
 			axis[2] /= across;
@@ -1049,6 +1362,8 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 		const axisCount = plant.axes;
 		for (let a = 0; a < axisCount; a++) {
 			let suppression = 0;
+			// An axis past the record's side orders keeps its lateral buds as buds for its shoots.
+			const sides = (plant.axisOrder[a] as number) < sideOrders;
 			const tb = plant.axisBud[a] as number;
 			if (tb >= 0 && plant.budState[tb] === ALIVE) {
 				// With the relay, a stem's leader below the crown is spared the chance loss that would
@@ -1081,8 +1396,13 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 						continue;
 					}
 					const q = plant.budLight[b] as number;
-					const chance = pow(q, lightLateral) * exp(-ageDominance * suppression);
-					if (unit(Purpose.Flush, year, b) < chance) {
+					// The record's branching sets how readily a lateral puts out a branch: this is the
+					// wood's density, which the crown's foliage thins or fills.
+					const chance = Math.min(
+						1,
+						pow(q, lightLateral) * exp(-ageDominance * suppression) * branching,
+					);
+					if (sides && unit(Purpose.Flush, year, b) < chance) {
 						flushing.push(b);
 						takes[b] = 1;
 						flushed++;
@@ -1108,19 +1428,40 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 		rightShoots();
 		readLight();
 	}
+	// Each stem's bole runs from its foot to its own top: the division, or where its leader stopped
+	// short of it.
+	const plumb = g.divide?.plumb;
+	if (plumb !== undefined) {
+		for (let a = 0; a < plant.axes; a++)
+			if (plant.axisParentNode[a] === -1) straightenBole(plant.axisTip[a] as number, plumb);
+		readLight();
+	}
+	const dark =
+		g.shedding.underCrown === undefined
+			? Number.NEGATIVE_INFINITY
+			: Math.max(0, Math.min(1, g.shedding.underCrown)) * volume.base;
+	// A bud the envelope stopped stands at the crown's surface, in the sky: it takes its share of
+	// the last resource by its site's light rather than by its closed cell's dark.
+	if (g.light.surface === true)
+		for (let k = 0; k < plant.aliveCount; k++) {
+			const b = plant.alive[k] as number;
+			if (plant.budState[b] === ALIVE) plant.budLight[b] = siteLight(plant, grid, b, dark);
+		}
 	if (takes.length < plant.buds) takes = new Uint8Array(plant.buds);
 	takes.fill(1);
 	allocate(curveAt(g.apical.control, 1), takes);
-	trimBare(plant, grid);
-	return skeletonOf(plant, record, g, grid, years, volume.base);
+	trimBare(plant, grid, dark);
+	return skeletonOf(plant, record, g, grid, years, volume.base, dark);
 }
 
 /**
  * A bud's light for its site. A bud at the envelope's surface stands in a cell outside it, which
  * holds no light: its site takes the light of the nearest node below it that stands inside, or full
- * light where none does, since the outermost shoots of a crown see the most sky.
+ * light where none does, since the outermost shoots of a crown see the most sky. A bud whose node
+ * stands under the crown, below the dark height given, sees none.
  */
-function siteLight(plant: Plant, grid: ShadowGrid, b: number): number {
+function siteLight(plant: Plant, grid: ShadowGrid, b: number, dark: number): number {
+	if ((plant.y[plant.budNode[b] as number] as number) < dark) return 0;
 	for (let n = plant.budNode[b] as number, k = 0; n >= 0 && k < SITE_STEPS; k++) {
 		const x = plant.x[n] as number;
 		const y = plant.y[n] as number;
@@ -1132,18 +1473,18 @@ function siteLight(plant: Plant, grid: ShadowGrid, b: number): number {
 }
 
 /**
- * Lets the bare ends of the wood die back: a bud in full shade at its site dies, and each axis's
- * end dies back to its last node that carries a live bud, the wood of a shed branch, or a child
- * that does. A dead limb that shed its branches keeps its wood, and a stem keeps its whole length, a
+ * Lets the bare ends of the wood die back: a bud in full shade at its site dies, as does one whose
+ * node stands under the crown below the dark height given, and each axis's end dies back to its
+ * last node that carries a live bud, the wood of a shed branch, or a child that does. A dead limb that shed its branches keeps its wood, and a stem keeps its whole length, a
  * dead leader standing as a snag. Fine twigs keep neither shed-branch wood nor a dead stub, so a
  * twig whose buds all died does not stand bare past the leaves; a thick stub stays with its wood.
  */
-function trimBare(plant: Plant, grid: ShadowGrid): void {
+function trimBare(plant: Plant, grid: ShadowGrid, dark: number): void {
 	const count = plant.nodes;
 	const keep = new Uint8Array(count);
 	for (let b = 0; b < plant.buds; b++) {
 		if (plant.budState[b] !== ALIVE) continue;
-		if (siteLight(plant, grid, b) > 0) keep[plant.budNode[b] as number] = 1;
+		if (siteLight(plant, grid, b, dark) > 0) keep[plant.budNode[b] as number] = 1;
 		else plant.budState[b] = DEAD;
 	}
 	for (let n = 0; n < count; n++) {
@@ -1226,6 +1567,7 @@ function skeletonOf(
 	grid: ShadowGrid,
 	years: number,
 	floor: number,
+	dark: number,
 ): MacroSkeleton {
 	const count = plant.nodes;
 	// Pipes: one per live bud, so every shoot that attaches feeds the wood below it.
@@ -1236,24 +1578,35 @@ function skeletonOf(
 			const n = plant.budNode[b] as number;
 			pipes[n] = (pipes[n] as number) + 1;
 		}
-	const radius = new Float64Array(count);
+	const grown = new Float64Array(count);
 	const tip = g.pipe.tipRadius;
-	pipeRadii(count, plant.parent, plant.live, pipes, g.pipe.exponent, tip, radius);
-	const dbh = record.size.dbh;
-	if (dbh !== undefined) {
-		let thickest = 0;
-		for (let a = 0; a < plant.axes; a++)
-			if (plant.axisParentNode[a] === -1)
-				thickest = Math.max(thickest, stemRadiusAt(plant, radius, a, BREAST_HEIGHT));
-		fitRadii(radius, count, tip, thickest, dbh / 2);
-	}
-	// A continuation that halves its girth at one internode draws as a cone. The wood keeps at least
-	// half the girth it had below, so a fork's grown taper stays smooth.
-	for (let n = 0; n < count; n++) {
-		const p = plant.parent[n] as number;
-		if (p < 0 || !plant.live[n] || plant.axisOf[p] !== plant.axisOf[n]) continue;
-		radius[n] = Math.max(radius[n] as number, 0.5 * (radius[p] as number));
-	}
+	pipeRadii(count, plant.parent, plant.live, pipes, g.pipe.exponent, tip, grown);
+	let thickest = 0;
+	for (let a = 0; a < plant.axes; a++)
+		if (plant.axisParentNode[a] === -1)
+			thickest = Math.max(thickest, stemRadiusAt(plant, grown, a, BREAST_HEIGHT));
+	const stemKeeps = Math.min(1, Math.max(0.5, g.pipe.leader ?? 0.5));
+	/** The wood's radii with the stem fitted to a diameter at breast height, or as grown. */
+	const girthOf = (diameter: number | undefined): Float64Array => {
+		const out = Float64Array.from(grown);
+		if (diameter !== undefined) fitRadii(out, count, tip, thickest, diameter / 2);
+		// A continuation that halves its girth at one internode draws as a cone. The wood keeps at
+		// least half the girth it had below, so a fork's grown taper stays smooth; a stem keeps the
+		// record's own share, so a leader that carries its crown to the top is not outgrown by a limb.
+		// A parent node comes before its children, so one pass carries the floor up each axis.
+		for (let n = 0; n < count; n++) {
+			const p = plant.parent[n] as number;
+			if (p < 0 || !plant.live[n] || plant.axisOf[p] !== plant.axisOf[n]) continue;
+			const keeps = plant.axisOrder[plant.axisOf[n] as number] === 0 ? stemKeeps : 0.5;
+			out[n] = Math.max(out[n] as number, keeps * (out[p] as number));
+		}
+		return out;
+	};
+	const radius = girthOf(record.size.dbh);
+	// The bend weighs the wood at the girth the record fits its strength to, when it gives one, so
+	// the drawn diameter can change without moving the crown.
+	const girth = g.bending.girth;
+	const stiff = girth === undefined || girth === record.size.dbh ? radius : girthOf(girth);
 
 	// The wood bends under its load; the directions that hang on each node turn with it. The crown
 	// sags no lower than the envelope's base: wood bent below it rests there.
@@ -1272,7 +1625,7 @@ function skeletonOf(
 			x: plant.x,
 			y: plant.y,
 			z: plant.z,
-			radius,
+			radius: stiff,
 			shoots,
 		},
 		g.bending.strength,
@@ -1423,7 +1776,7 @@ function skeletonOf(
 			frame,
 			kind: plant.budTerminal[b] ? BUD_TERMINAL : BUD_LATERAL,
 			vigor: Math.min(1, Math.max(0, (plant.budVigor[b] as number) / ALPHA)),
-			light: siteLight(plant, grid, b),
+			light: siteLight(plant, grid, b, dark),
 			axis: axisOut[plant.budAxis[b] as number] as number,
 			woodRadius: r,
 		});

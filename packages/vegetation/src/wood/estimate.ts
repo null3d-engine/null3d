@@ -5,7 +5,7 @@
 // foot, so it runs in a small share of the mesher's time and comes within a few per cent of its
 // count.
 import { AXIS_STEM, type MacroSkeleton } from '../core/graph';
-import { PI } from '../core/math';
+import { acos, PI } from '../core/math';
 import type { MeshInput, MeshLevel } from '../stages';
 import { axisPath, KINK_BEND, type PathSample, roundKinks, sampleAt } from './frames';
 import {
@@ -118,7 +118,7 @@ function turnAt(skeleton: MacroSkeleton, from: number, node: number, to: number)
 		b += v * v;
 	}
 	const length = Math.sqrt(a * b);
-	return length > 0 ? Math.acos(Math.max(-1, Math.min(1, dot / length))) : 0;
+	return length > 0 ? acos(Math.max(-1, Math.min(1, dot / length))) : 0;
 }
 
 /** The curve through an axis's nodes, from its junction on its parent; none for a lone node. */

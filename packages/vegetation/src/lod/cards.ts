@@ -21,6 +21,9 @@ const CORNERS = [
 	[-1, 1],
 ] as const;
 
+/** The second coordinate that marks a card's stalk, in a place that the three card planes leave free. */
+const STALK_PLANE = 0.75;
+
 /**
  * Whether a card level keeps a row, and how much it grows the row's cards: every second row of the
  * level above in the space-filling order, grown by the square root of the step.
@@ -31,7 +34,7 @@ const CORNERS = [
  * @category api/vegetation
  */
 export function cardKeep(order: number, level: 1 | 2): number {
-	const every = 2 ** (level - 1);
+	const every = 1 << (level - 1);
 	if (order % every !== 0) return 0;
 	const grow = Math.sqrt(every);
 	return grow;
@@ -48,6 +51,7 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 	const { rows, kit } = input;
 	const mesh = new MeshWriter();
 	const size = kit.cards.size || 1;
+	const widen = Math.max(0, input.record.lod.cardGrow ?? 1);
 	const base = input.variant * VARIANT_RECORDS;
 	const local: Vector3 = [0, 0, 0];
 	const world: Vector3 = [0, 0, 0];
@@ -80,7 +84,7 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 				for (let c = 0; c < 3; c++)
 					local[c] =
 						((plane.centre[c] as number) +
-							grow * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
+							grow * widen * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
 						scale;
 				quatRotate(rows.rotation, r * 4, local, world);
 				mesh.vertex(
@@ -93,6 +97,27 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 			}
 			mesh.quad(first, first + 1, first + 2, first + 3);
 		});
+		const stalk = Math.max(0, input.record.lod.cardStalk ?? 0);
+		if (stalk > 0 && rows.back) {
+			const bx = rows.back[r * 3] as number;
+			const by = rows.back[r * 3 + 1] as number;
+			const bz = rows.back[r * 3 + 2] as number;
+			const length = Math.sqrt(bx * bx + by * by + bz * bz);
+			if (length > 1e-6) {
+				// The supporting twig as a line to the stretch's far end: two coincident vertices at
+				// each end, which the vertex stage widens to the record's least width on screen.
+				const normal: Vector3 = [bx / length, by / length, bz / length];
+				const first = mesh.vertices;
+				mesh.vertex([px, py, pz], normal, [0, 0], [0, STALK_PLANE], colour);
+				mesh.vertex([px, py, pz], normal, [1, 0], [0, STALK_PLANE], colour);
+				mesh.vertex([px + bx, py + by, pz + bz], normal, [1, 0], [1, STALK_PLANE], colour);
+				mesh.vertex([px + bx, py + by, pz + bz], normal, [0, 0], [1, STALK_PLANE], colour);
+				mesh.quad(first, first + 1, first + 2, first + 3);
+				// The line shows from either side of the plant: the vertex stage widens it, so its
+				// winding turns with the view, and a back face is not culled.
+				mesh.quad(first + 3, first + 2, first + 1, first);
+			}
+		}
 	}
 	return mesh.finishMesh();
 }

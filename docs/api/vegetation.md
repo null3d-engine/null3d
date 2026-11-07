@@ -131,6 +131,17 @@ Options given to `prepareSpecies` apply to every variant that grows from its kit
 
 A page can also move the level switches of all its species at once. Give `switchBias` in the view that every `placePlants` call takes. It counts in stops: each switch distance is multiplied by two to the power of minus the bias. A bias of 1 switches every level at half its distance, and a bias of -1 at twice its distance. `switchScale(bias)` gives that factor.
 
+### Other forms
+
+A species can grow in other forms, such as young or grown in a wood. Its record names each form in `forms`. A form gives its words, and only the fields that differ from the record: `size`, `growth`, `envelope`, `shoots`, `foliage`, `bark`, `base`, `extras`, `wind`, `roundBand`, `lopsided` and `cuttings`. An object in a form changes the record's object field by field. A number, a word, a curve or a list replaces the record's value whole, and `null` removes an optional field. A form keeps the species' growth model, kind of foliage, budget and textures.
+
+```ts
+const sapling = await prepareSpecies(ctx, oak, { form: 'young' });
+const young = await growPlant(sapling, { seed: 7, variant: 0 });
+```
+
+`prepareSpecies` and `buildKit` take `form`, and every variant of that kit grows in the form. Each form has a kit of its own, under a key of its own, so a change to one form leaves the kits of the others as they are. Without `form`, the kit grows from the record as it stands. `formRecord(record, form)` gives the record that a form grows from. `checkSpecies` checks each form as that record, and names the form in each problem. The pedunculate oak has two forms: `woodland`, a tall oak with a long clean bole under a small high crown, and `young`, a sapling of about four meters with one slim stem and thin limbs.
+
 The plant core's meshes take `levels: false`, so the engine plans no levels of its own for them. The core grows its own levels, tiers and far cards, and the plant shader sways every vertex.
 
 ## Stand-in species
@@ -264,7 +275,7 @@ Reading Creek's 160 m valley into the ground maps and placing its species takes 
 
 `placePlants` draws a species' far cards past the distance where a plant spans a few pixels, when the page passes the variants' far bakes as its `far` option. `bakeFarPlant(kit, asset)` bakes a variant's two impostor atlases in a job worker, for the cards of the [impostors add-on](impostors.md).
 
-`handOverToCards(meshes, cards, switchDistance)` sets the distance bands of a batch of near meshes and the batch of their cards. The meshes draw up to the switch. Over the last 8 per cent of that range the engine dithers their pixels out. The cards start earlier, by as much as the largest card's size and both edges need, so write the cards' sizes first. Their own dithered edge then finishes before the mesh's edge begins to thin. Each pixel that a mesh's dither drops shows its card, and no pixel ever drops out of both. The mesh and the card are different sources, so their dither phases differ, and the two edges must not fall on the same pixels.
+`handOverToCards(meshes, cards, switchDistance, start)` sets the distance bands of a batch of near meshes and the batch of their cards. The meshes draw from `start`, 0 by default, up to the switch: a coarser level's batch starts where its own band starts. Over the last 8 per cent of that range the engine dithers their pixels out. The cards start earlier, by as much as the largest card's size and both edges need, so write the cards' sizes first. Their own dithered edge then finishes before the mesh's edge begins to thin. Each pixel that a mesh's dither drops shows its card, and no pixel ever drops out of both. The mesh and the card are different sources, so their dither phases differ, and the two edges must not fall on the same pixels. Within one plant, `placePlants` hands the levels over in the same way. Each level draws on past the next level's start until the next stands at full coverage, and only then thins out.
 
 ## Compared with three.js
 

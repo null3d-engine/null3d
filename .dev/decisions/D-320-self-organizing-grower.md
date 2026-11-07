@@ -67,6 +67,38 @@ masks of frames 1, 25, 49 and so on of the turntable.
 - **Stopping at the outline, not turning along it.** Shoots that turned along the outline drew the
   same hoops. A shoot stops where its next step leaves the envelope, with a last short internode
   where part of the step fits, so the crown reaches its outline.
+- **A shoot turns aside from another axis's wood.** A record may give a `clearance` in metres and a
+  `turning` in degrees. Where the next step would come within the clearance, the shoot tries
+  headings at rising angles either side of its own. It takes the first that is clear and inside the
+  envelope. It keeps to the side it turned to last, so it curves round the obstacle. It stops only
+  where no heading within its most is clear. A new limb is weighed by its own order's girth, not
+  the stem's. At seed 11, variant 0, a clearance of 0.3 m with a 30 degree turn cuts the node pairs
+  inside the demanded distance. They fall from 30 to 16. The same setting holds the whole view's
+  outline at 0.731, against 0.732 without the field. The review counts four pieces there, against
+  one without the field: three leaf groups of 33 to 123 pixels stand under the crown. A clearance
+  of 0.28 m with a 40 degree turn draws two pieces. The second is a leaf group of 41 pixels, and
+  the outline holds at 0.745. No setting tried draws one piece. The oak's record sets neither field.
+- **A card draws the twig it stands on.** A card's leaves may read as a piece in air where the
+  twig under them is thinner than a pixel. A record may give `lod.cardStalk` in pixels. The card
+  then draws a line from its bud site back along the stretch to the previous bud or the parent
+  node. The vertex stage widens it to at least that many pixels across the twig's direction on
+  screen. 0 or absent, a card draws no stalk. With a clearance of 0.28 m and a turn of 40 degrees,
+  a stalk of 2 pixels brings the whole view to one piece. Its outline is 0.7469, against 0.7448
+  without the stalk. Its sky gap closes from 0.1402 to 0.1354, against the reference's 0.1145.
+  One pixel draws a broken line at that distance, so the piece stays. The other whole views close
+  by 0.001 to 0.009, and no view gains a piece.
+- **The clearance bites only where the wood is thick.** A record may give `clearanceThickness`,
+  a share of the trunk's radius from 0 to 1. Wood below it does not keep the clearance, so thin
+  twigs keep their own layout. With no floor, at a clearance of 0.3 m and a turn of 30 degrees,
+  the whole view draws four pieces. Its outline is 0.7324 and its gap 0.1461. A floor of 0.35
+  keeps the trunk, limbs and branches, and frees the twigs. It draws one piece, with an outline
+  of 0.7344 and a gap of 0.1097 against the reference's 0.1145. The bole-and-crown test passes
+  there. A floor of 0.5, the trunk and great limbs alone, draws seven pieces, 0.7072 and 0.1917.
+  At 0.3 m the close pairs are nine fine and seven thick with no floor; fifteen and seven at
+  0.35; sixteen and four at 0.5. Two axes that leave one node cannot be kept apart at any angle,
+  so with fork siblings left out the tree without the clearance has twenty fine close pairs and
+  ten thick: the rule's cut is thick wood's ten to seven, and the fine wood keeps its own layout.
+  The oak's record takes a clearance of 0.3 m, a turn of 30 degrees and a floor of 0.35.
 - **A lost leader hands on its role.** When an axis's leader bud died, the axis stopped there, and
   a stem whose leader died by chance below the crown left a stump with no shoot in the light to take
   over: 3 of 40 oaks at seed 11 died at 0 to 2.4 m (variants 8, 12 and 23). An oak replaces a lost

@@ -89,6 +89,18 @@
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
 	},
+	"chromium-swiftshader/compat/demo-vegetation-wind.png": {
+		"test": "demo-vegetation-wind",
+		"tier": "compat",
+		"date": "2026-11-07",
+		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
+	},
+	"chromium-swiftshader/compat/demo-vegetation.png": {
+		"test": "demo-vegetation",
+		"tier": "compat",
+		"date": "2026-11-07",
+		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
+	},
 	"chromium-swiftshader/compat/feature-instances-shadow.png": {
 		"test": "feature-instances-shadow",
 		"tier": "compat",
@@ -160,6 +172,12 @@
 		"tier": "compat",
 		"date": "2026-10-29",
 		"reason": "the card's stored normal no longer turns with the camera's bearing, so the pictures whose eye lies off the tree's forward moved; drawn on the software renderer"
+	},
+	"chromium-swiftshader/compat/plant-pedunculate-oak.png": {
+		"test": "plant-pedunculate-oak",
+		"tier": "compat",
+		"date": "2026-11-07",
+		"reason": "the oak's kit took the cut class's forked shapes, so its card atlas grew from five cells a side to six and each card's texel position moved; the crown draws as the review measures it, so the software set is redrawn here while CI redraws it"
 	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -329,6 +347,18 @@
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
 	},
+	"chromium-swiftshader/webgl2/demo-vegetation-wind.png": {
+		"test": "demo-vegetation-wind",
+		"tier": "webgl2",
+		"date": "2026-11-07",
+		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
+	},
+	"chromium-swiftshader/webgl2/demo-vegetation.png": {
+		"test": "demo-vegetation",
+		"tier": "webgl2",
+		"date": "2026-11-07",
+		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
+	},
 	"chromium-swiftshader/webgl2/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
 		"tier": "webgl2",
@@ -406,6 +436,12 @@
 		"tier": "webgl2",
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
+	},
+	"chromium-swiftshader/webgl2/plant-pedunculate-oak.png": {
+		"test": "plant-pedunculate-oak",
+		"tier": "webgl2",
+		"date": "2026-11-07",
+		"reason": "the oak's kit took the cut class's forked shapes, so its card atlas grew from five cells a side to six and each card's texel position moved; the crown draws as the review measures it, so the software set is redrawn here while CI redraws it"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -611,6 +647,18 @@
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
 	},
+	"chromium-swiftshader/webgpu/demo-vegetation-wind.png": {
+		"test": "demo-vegetation-wind",
+		"tier": "webgpu",
+		"date": "2026-11-07",
+		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
+	},
+	"chromium-swiftshader/webgpu/demo-vegetation.png": {
+		"test": "demo-vegetation",
+		"tier": "webgpu",
+		"date": "2026-11-07",
+		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
+	},
 	"chromium-swiftshader/webgpu/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
 		"tier": "webgpu",
@@ -682,6 +730,12 @@
 		"tier": "webgpu",
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
+	},
+	"chromium-swiftshader/webgpu/plant-pedunculate-oak.png": {
+		"test": "plant-pedunculate-oak",
+		"tier": "webgpu",
+		"date": "2026-11-07",
+		"reason": "the oak's kit took the cut class's forked shapes, so its card atlas grew from five cells a side to six and each card's texel position moved; the crown draws as the review measures it, so the software set is redrawn here while CI redraws it"
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",

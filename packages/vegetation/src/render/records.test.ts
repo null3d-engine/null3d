@@ -11,6 +11,7 @@ import type { Rgb } from '../core/types';
 import { DEFAULT_WIND_SWAY, VARIANT_RECORDS, WIND_RECORD_FLOATS } from '../wind/records';
 import {
 	BARK_ZONE_TEXELS,
+	EXTRA_ROUGHNESS,
 	faceTerms,
 	HEADER,
 	HEADER_ROWS,
@@ -123,11 +124,65 @@ describe('the species header', () => {
 		expect(texel(header, HEADER.upperReflectance)[3]).toBeCloseTo(0.3, 6);
 	});
 
+	test("writes the least width a card's stalk draws, or nothing where the record gives none", () => {
+		expect(texel(header, HEADER.cardStalk)[0]).toBe(0);
+		const stalked: Species = { ...record, lod: { ...record.lod, cardStalk: 1.5 } };
+		expect(texel(speciesHeader(stalked, manifest, box), HEADER.cardStalk)[0]).toBeCloseTo(1.5, 6);
+	});
+
 	test('gives the whole plant its species sway, in metres at its top and cycles a second', () => {
 		const sway = record.wind.sway;
 		const written = texel(header, HEADER.sway);
 		expect(written[0]).toBeCloseTo(sway?.amplitude as number, 6);
 		expect(written[1]).toBeCloseTo(sway?.frequency as number, 6);
+	});
+
+	test("writes each extra's body and band colour with their roughness", () => {
+		const lathe: [number, number][] = [
+			[0.005, 0],
+			[0.007, 0.007],
+			[0, 0.02],
+		];
+		const acorn = {
+			kind: 'fruit' as const,
+			at: 'shoot-tip' as const,
+			share: 0.05,
+			seasons: ['summer' as const],
+			shape: { lathe, scaled: [0, 0.007] as [number, number] },
+			colour: [0.24, 0.1, 0.03] as Rgb,
+			hang: 180,
+		};
+		const fruiting: Species = {
+			...record,
+			extras: [
+				{ ...acorn, bandColour: [0.3, 0.23, 0.15], roughness: [0.35, 0.85] },
+				{ ...acorn, colour: [0.5, 0.4, 0.1] },
+			],
+		};
+		const written = speciesHeader(fruiting, manifest, speciesBox(fruiting));
+		const near = (a: readonly number[], b: readonly number[]) => {
+			for (const [k, v] of a.entries()) expect(v).toBeCloseTo(b[k] as number, 6);
+		};
+		near(texel(written, HEADER.extras), [0.24, 0.1, 0.03, 0.35]);
+		near(texel(written, HEADER.extraBands), [0.3, 0.23, 0.15, 0.85]);
+		// An extra without a band takes its own colour there, and the default roughness on both.
+		near(texel(written, HEADER.extras + 1), [0.5, 0.4, 0.1, EXTRA_ROUGHNESS]);
+		near(texel(written, HEADER.extraBands + 1), [0.5, 0.4, 0.1, EXTRA_ROUGHNESS]);
+		expect(HEADER.extraBands + MAX_EXTRAS).toBeLessThanOrEqual(RECORDS_WIDTH);
+		// The cup's scale rows, the cells round its turn, and its band's share of the profile's
+		// height at each end, which the shader needs to draw the scales within the band alone.
+		const scaled = speciesHeader(
+			{
+				...record,
+				extras: [{ ...acorn, shape: { lathe, sides: 12, scales: 4, scaled: [0, 0.007] } }],
+			},
+			manifest,
+			speciesBox(record),
+		);
+		near(texel(scaled, HEADER.extraScales), [4, 12, 0, 0.35]);
+		// A body without scales stays plain.
+		near(texel(written, HEADER.extraScales), [0, 0, 0, 0]);
+		expect(HEADER.extraScales + MAX_EXTRAS).toBeLessThanOrEqual(RECORDS_WIDTH);
 	});
 
 	test('gives a species that names no sway the stated default', () => {
@@ -213,6 +268,8 @@ describe('the plant shader', () => {
 			HEADER_LICHEN: HEADER.lichen,
 			HEADER_LICHEN_REACH: HEADER.lichenReach,
 			HEADER_SWAY: HEADER.sway,
+			HEADER_EXTRA_BANDS: HEADER.extraBands,
+			HEADER_CARD_STALK: HEADER.cardStalk,
 			BARK_ZONE_TEXELS,
 			MAX_BARK_ZONES,
 			MAX_EXTRAS,
@@ -221,6 +278,22 @@ describe('the plant shader', () => {
 		};
 		for (const [name, value] of Object.entries(names))
 			expect([name, constant(name)]).toEqual([name, value]);
+	});
+
+	test("reads a part's positions as fractions of the box, as the plant geometry gives them", () => {
+		// The engine adds the shader's offset to the position it reads, in 32-bit floats. A whole
+		// step count runs to 65,535, where a float's steps are millimetres; a fraction of the box
+		// keeps the sum to micrometres.
+		const material = readFileSync(new URL('./material.ts', import.meta.url), 'utf8');
+		expect(material).toContain('positions: { array: arrays.positions, normalized: true },');
+		expect(wgsl).toContain('return low + p * span;');
+		const steps = Math.fround(39800);
+		const metres = Math.fround(6.1 + 0.0071);
+		const asSteps = Math.fround(steps + Math.fround(metres - steps));
+		const fraction = Math.fround(39800 / 65535);
+		const asFraction = Math.fround(fraction + Math.fround(metres - fraction));
+		expect(Math.abs(asSteps - metres)).toBeGreaterThan(0.0005);
+		expect(Math.abs(asFraction - metres)).toBeLessThan(0.000005);
 	});
 
 	test('declares six textures and fits its uniforms beside them', () => {

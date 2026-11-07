@@ -270,6 +270,31 @@ export function envelopeVolume(envelope: Envelope, height: number, turn: number)
 }
 
 /**
+ * A volume cut flat at a height: no room below it, and the volume's own room above it. A height at
+ * or below the volume's base leaves the volume as it is.
+ *
+ * @param volume The volume.
+ * @param floor The height in metres below which the volume holds no room.
+ * @returns The cut volume.
+ */
+export function flooredVolume(volume: EnvelopeVolume, floor: number): EnvelopeVolume {
+	if (!(floor > volume.base)) return volume;
+	const base = Math.min(floor, volume.top);
+	return {
+		base,
+		top: volume.top,
+		reach: volume.reach,
+		radius(y, azimuth) {
+			return y < base ? 0 : volume.radius(y, azimuth);
+		},
+		room(x, y, z) {
+			const room = volume.room(x, y, z);
+			return y < base ? Math.min(room, -(base - y)) : room;
+		},
+	};
+}
+
+/**
  * A volume shrunk by a margin all round, so a skeleton grown in it leaves room for the shoots that
  * attach to it later.
  *
