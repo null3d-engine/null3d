@@ -172,7 +172,7 @@ export const record: Species = {
 		orders: 3,
 		years: 3,
 		leafYears: 3,
-		stem: { radius: [0.004, 0.002], zigzag: 0 },
+		stem: { radius: [0.0028, 0.0015], zigzag: 0 },
 		// Stills 10 and 12: naked buds hidden among the scales, too small to read as buds.
 		bud: { length: 0.002, width: 0.0015, tipCluster: 1 },
 		placement: {
@@ -202,17 +202,17 @@ export const record: Species = {
 			// Stills 10, 12 and 13: awl-shaped scales 3 to 6 mm long, pressed to the shoot so only
 			// their sharp tips flare, set about twelve to the centimetre.
 			length: { mean: 0.005, spread: 0.001 },
-			width: 0.0022,
+			width: 0.003,
 			section: 'awl',
-			density: 12,
-			angle: 28,
+			density: 18,
+			angle: 20,
 			ranks: 0,
 			optics: {
 				// The photographs' shaded leaves read about a third brighter than the first record's:
 				// a grey-green, with the blue channel a little under the green's rise.
-				reflectance: [0.089, 0.177, 0.084],
-				reflectanceBack: [0.23, 0.33, 0.23],
-				transmittance: [0.14, 0.25, 0.115],
+				reflectance: [0.1, 0.198, 0.094],
+				reflectanceBack: [0.26, 0.37, 0.26],
+				transmittance: [0.16, 0.28, 0.13],
 				roughness: [0.5, 0.7],
 			},
 		},
@@ -327,7 +327,7 @@ export const record: Species = {
 		cardStalkToFoliage: true,
 		// A scale is a millimetre and a half across, under one texel of the default card cell, so the
 		// high tiers bake a finer cell and the crown keeps its blue-green at distance.
-		cardCell: { low: 64, medium: 64, high: 128, ultra: 256 },
+		cardCell: { low: 64, medium: 64, high: 128, ultra: 128 },
 		woodOrders: [1, 0],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
