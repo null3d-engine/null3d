@@ -559,6 +559,13 @@ export interface CrownRosette {
 			readonly count: Spread;
 			readonly length: Spread;
 			readonly coil?: number;
+			/**
+			 * What a crozier's skin draws: `young`, the smooth young bark a thin shoot takes, or
+			 * `grown`, the species' grown bark layer with its zones, tint and hollows. A rolled
+			 * young frond is fleshy and hairy rather than smooth, so `grown` is what a fern's
+			 * fiddlehead takes. Absent, `young`, which changes no record that names no croziers.
+			 */
+			readonly bark?: 'young' | 'grown';
 		};
 		/**
 		 * Dead fronds: count, how far they hang, and a skirt that hides the stem top (fan palm).

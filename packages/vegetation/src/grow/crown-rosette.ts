@@ -446,6 +446,7 @@ function layCrozier(
 		parentT: 0,
 		order: 1,
 		kind: AXIS_RACHIS,
+		grownBark: croziers.bark === 'grown',
 	});
 	const stalkLength = length * CROZIER_STALK;
 	const headRadius = length * CROZIER_HEAD;
