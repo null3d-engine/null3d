@@ -1,0 +1,7 @@
+{
+	"08-frond-division.png": { "view": "branch" },
+	"09-pinna.png": { "view": "leaf-upper", "background": "studio-grey" },
+	"16-trunk-under-crown.png": { "view": "bark-mid", "along": 0.9, "span": 0.5 },
+	"19-sori.png": { "view": "leaf-under" },
+	"20-dead-frond-skirt.png": { "view": "whole" }
+}

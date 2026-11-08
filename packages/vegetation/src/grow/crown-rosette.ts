@@ -193,6 +193,7 @@ function layFrond(
 	const stipeAxis = builder.addAxis({
 		parent: stemAxis,
 		parentNode: crownNode,
+		parentT: 0,
 		order: 1,
 		kind: AXIS_STIPE,
 	});
@@ -320,6 +321,7 @@ function layPinnae(
 			const pinnaAxis = builder.addAxis({
 				parent: rachisAxis,
 				parentNode,
+				parentT: 0,
 				order: 3,
 				kind: AXIS_LIMB,
 			});
