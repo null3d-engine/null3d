@@ -218,6 +218,43 @@ describe('the phyllotaxis of a shoot, measured by angle', () => {
 	});
 });
 
+describe('the leaf arrangement and facing a shoot class names', () => {
+	/** A record whose classes all carry the class-level fields given, over a species-level spiral. */
+	const withClass = (fields: Partial<ShootSpec['classes'][number]>): Species => {
+		const base = straight({ kind: 'spiral', divergence: 144 });
+		const shoots = base.shoots as ShootSpec;
+		return {
+			...base,
+			shoots: { ...shoots, classes: shoots.classes.map((c) => ({ ...c, ...fields })) },
+		};
+	};
+
+	it('draws as the species does when the class names neither field', () => {
+		const plain = straight({ kind: 'spiral', divergence: 144 });
+		const shoots = plain.shoots as ShootSpec;
+		const named = withClass({ phyllotaxis: shoots.phyllotaxis, skyward: shoots.placement.skyward });
+		expect(planShoot(named, 0, 1)).toEqual(planShoot(plain, 0, 1));
+	});
+
+	it("stands the leaves by the class's own arrangement", () => {
+		// The species spirals by 144 degrees; the class asks for a half-turn spiral, which alternates
+		// its leaves on opposite sides.
+		const nodes = azimuthsByNode(withClass({ phyllotaxis: { kind: 'spiral', divergence: 180 } }));
+		expect(nodes.length).toBeGreaterThanOrEqual(6);
+		for (let k = 1; k < nodes.length; k++)
+			expect(near(step(nodes[k - 1]?.[0] as number, nodes[k]?.[0] as number), 180)).toBe(true);
+	});
+
+	it("turns the leaves to the face the class's own share names", () => {
+		// A blade whose face is turned up to the sky stands at a different rotation from one held
+		// face on to a camera level with the shoot.
+		const up = planShoot(withClass({ skyward: 1 }), 0, 1).leaves.map((leaf) => leaf.rotation);
+		const flat = planShoot(withClass({ skyward: 0 }), 0, 1).leaves.map((leaf) => leaf.rotation);
+		expect(up).toHaveLength(flat.length);
+		expect(up).not.toEqual(flat);
+	});
+});
+
 describe('the shoot prototypes', () => {
 	const record = oakRecord();
 	const leaves = DETAILS.map((tier) => builder.leaves(record, OAK_MANIFEST, tier));
