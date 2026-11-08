@@ -543,6 +543,23 @@ export function leafOutline(coverage: Float32Array, size: number): Point[] {
 	return outline;
 }
 
+/**
+ * The frame of a lower face: the frame the record gives, mapped onto the lower picture and turned
+ * left for right where the picture was, since a palmate leaf's widest axis leaves the moment
+ * detector with no reliable stalk end.
+ */
+function lowerFrame(face: Picture, mirrored: boolean, config: LeafConfig, upper: Picture): Frame {
+	const given = config.frame;
+	if (!given) return findFrame(face);
+	const sx = face.width / upper.width;
+	const sy = face.height / upper.height;
+	const map = (v: Vec): Vec => {
+		const x = v[0] * sx;
+		return mirrored ? [face.width - 1 - x, v[1] * sy] : [x, v[1] * sy];
+	};
+	return { petiole: map(given.petiole), tip: map(given.tip) };
+}
+
 /** Makes the leaf textures from the upper and lower faces' source pictures. */
 export function leafTextures(
 	upperSource: Picture,
@@ -564,7 +581,7 @@ export function leafTextures(
 		.filter((mirrored) => config.mirrorLower === undefined || config.mirrorLower === mirrored)
 		.map((mirrored) => {
 			const face = mirrored ? mirror(lowerClean) : lowerClean;
-			const at = place(face, findFrame(face), size, config.margin);
+			const at = place(face, lowerFrame(face, mirrored, config, upperSource), size, config.margin);
 			return { face, at, mirrored, ...fitLower(face, at, target) };
 		});
 	const fit = fits.reduce((best, next) => (next.overlap > best.overlap ? next : best));

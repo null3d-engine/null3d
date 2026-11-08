@@ -1,0 +1,30 @@
+{
+	"caps": "tree",
+	"leaf": {
+		"upper": 24,
+		"lower": 25,
+		"frame": {
+			"petiole": [510, 1008],
+			"tip": [515, 10]
+		},
+		"mirrorLower": false
+	},
+	"bark": {
+		"zones": [
+			{
+				"name": "trunk",
+				"slot": 26,
+				"tile": [0.5, 0.5],
+				"depth": 0.022,
+				"smooth": 6
+			}
+		],
+		"young": {
+			"name": "young",
+			"slot": 28,
+			"tile": [0.2, 0.2],
+			"depth": 0.0006,
+			"delight": { "radius": 0.12 }
+		}
+	}
+}

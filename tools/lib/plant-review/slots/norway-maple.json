@@ -1,0 +1,78 @@
+{
+	"01-whole-distant.png": {
+		"sunAzimuth": 0,
+		"sunRise": 52,
+		"skyShare": 0.5,
+		"daylight": 4.5,
+		"fov": 30
+	},
+	"02-whole-profile.png": {
+		"sunAzimuth": 2,
+		"sunRise": 51,
+		"skyShare": 0.5,
+		"daylight": 4.2,
+		"fov": 30
+	},
+	"03-whole-from-below.png": {
+		"sunAzimuth": 0,
+		"sunRise": 60,
+		"skyShare": 0.55,
+		"daylight": 3.5
+	},
+	"04-crown-outside.png": {
+		"sunAzimuth": 0,
+		"sunRise": 55,
+		"skyShare": 0.5,
+		"daylight": 3.5,
+		"distance": 4
+	},
+	"05-crown-underside.png": {
+		"sunAzimuth": 0,
+		"sunRise": 60,
+		"skyShare": 0.55,
+		"daylight": 3.5
+	},
+	"06-inside-crown.png": {
+		"sunAzimuth": 0,
+		"sunRise": 50,
+		"skyShare": 0.5,
+		"daylight": 2.5
+	},
+	"07-limb-leaving-trunk.png": {
+		"skyShare": 0.6,
+		"daylight": 2.5
+	},
+	"08-limb-fork.png": {
+		"background": "studio-grey",
+		"sky": "#c7c5c2",
+		"sunAzimuth": -4,
+		"sunRise": 34,
+		"skyShare": 0.6,
+		"daylight": 2.5
+	},
+	"17-trunk-taper.png": {
+		"skyShare": 0.6,
+		"daylight": 2.2
+	},
+	"18-silhouette.png": {
+		"fov": 30,
+		"fill": null,
+		"targetY": null,
+		"top": 0.17,
+		"eye": 0.3
+	},
+	"19-samaras.png": {
+		"season": "summer"
+	},
+	"20-spring-flowers.png": {
+		"season": "blossom"
+	},
+	"norway-maple-turntable.mp4": {
+		"skyShare": 0.5,
+		"daylight": 4.2
+	},
+	"norway-maple-wind-motion.mp4": {
+		"skyShare": 0.5,
+		"daylight": 4.2
+	}
+}
