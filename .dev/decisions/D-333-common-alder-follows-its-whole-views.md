@@ -93,3 +93,7 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
 - `tools/lib/plant-review/slots/common-alder.json` holds each photograph's own light and framing.
 - The species' densest variant measures 18.5, 18.6, 18.7 and 18.8 MB from the low tier up, under the
 owner's twenty; its kit 2.44, 3.11, 4.33 and 6.80 MB under 3.4, 5, 7.1 and 13.
+- The young bark's tiling spans six centimetres round the stem against twelve, which takes its
+  edge-direction mix from 0.401 to 0.309 and its surface colour difference from 3.08 to 3.40, both
+  over the three-step mark. The grain's own elongation is a texture-build fault, with the two ratios
+  recorded in [D-309](D-309-plant-textures-from-references.md).
