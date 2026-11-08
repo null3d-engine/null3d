@@ -242,9 +242,9 @@ export const files = {
 						0.9
 					],
 					"mean": [
-						0.18927,
-						0.18505,
-						0.1843
+						0.16223,
+						0.1583,
+						0.157
 					],
 					"height": {
 						"offset": 0.22379,
@@ -258,9 +258,9 @@ export const files = {
 						0.45
 					],
 					"mean": [
-						0.44975,
-						0.41647,
-						0.36066
+						0.23749,
+						0.2185,
+						0.18818
 					],
 					"height": {
 						"offset": 0.34331,
@@ -303,8 +303,8 @@ export const files = {
 			},
 			{
 				"file": "bark-color.ktx2",
-				"sha256": "b1d1858be2bef8b2050633c50b74040b24b6776e3c8944dcdba681560d42f604",
-				"bytes": 300256
+				"sha256": "9ad6d407b8d9adf3106c6db96ef47502ad1e395142d55acb80b744dde6e802ca",
+				"bytes": 292371
 			},
 			{
 				"file": "bark-normal.ktx2",
@@ -323,8 +323,8 @@ export const files = {
 			},
 			{
 				"file": "bark-color-half.ktx2",
-				"sha256": "0d75c4d3226df919267c60a91fa174abd16c2ffb0df13e71aa52b8dd8e0e3d41",
-				"bytes": 77589
+				"sha256": "065743787c0d01f09379a02e5a0f407b3a0bb084d11a187fb065d3e7083dcafc",
+				"bytes": 75752
 			},
 			{
 				"file": "bark-normal-half.ktx2",
