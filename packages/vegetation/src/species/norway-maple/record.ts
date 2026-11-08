@@ -222,11 +222,11 @@ export const record: Species = {
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
-				length: { mean: 0.75, spread: 0.2 },
-				nodes: { mean: 3, spread: 0.4 },
+				length: { mean: 0.8, spread: 0.2 },
+				nodes: { mean: 2, spread: 0.4 },
 				internode: PAIR,
 				stem: { radius: [0.012, 0.006] },
-				laterals: 2,
+				laterals: 1.6,
 				lateralGap: 0.3,
 				bend: { length: 0.06, angle: 16 },
 				leafScale: [
@@ -237,6 +237,7 @@ export const record: Species = {
 					[0, 80],
 					[1, 60],
 				],
+				leafAngleSpread: 25,
 				leafYears: 1,
 				droop: 3,
 			},
@@ -398,14 +399,15 @@ export const record: Species = {
 		blossom: { extra: 1, leaves: 0 },
 	},
 	wind: {
-		// The wind clip's bands, base first: the trunk moves least and the crown most.
+		// The wind clip's bands, base first: the reference's tree barely moves in its light wind, so
+		// the wood is stiff and the leaves keep a small flutter.
 		stiffness: [
-			[0, 0.9],
-			[0.5, 0.92],
-			[1, 0.85],
+			[0, 0.99],
+			[0.5, 0.99],
+			[1, 0.98],
 		],
-		sway: { frequency: 0.28, amplitude: 0.05 },
-		flutter: { kind: 'blade', amplitude: 0.2, frequency: 2.8 },
+		sway: { frequency: 0.3, amplitude: 0.004 },
+		flutter: { kind: 'blade', amplitude: 0.006, frequency: 3 },
 	},
 	lod: {
 		nearFoliage: 'instanced',
@@ -415,19 +417,19 @@ export const record: Species = {
 		// whole views, 2.4 brings their sky gaps inside their bands.
 		cardGrow: 2.5,
 		// Still 01: a card's twig is thinner than a pixel at a whole view, so a card draws its
-		// supporting twig as a two-pixel line and the join shows.
-		cardStalk: 2,
+		// supporting twig as a line and the join shows.
+		cardStalk: 1.5,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit measures 3.29, 3.98, 5.41 and 8.17 MB at the four tiers, the three cutting
+			// The kit measures 3.29, 3.93, 5.27 and 7.84 MB at the four tiers, the two cutting
 			// classes and the leaf's palmate blade among them; each cap sits above its figure and the
 			// medium one stays under the owner's four-megabyte ceiling.
 			kitBytes: { low: 3_300_000, medium: 3_980_000, high: 5_450_000, ultra: 8_250_000 },
 			// The crown's dense shoot dial puts 7,182 rosettes on the first variant, which measures
 			// 16.42, 16.48, 16.55 and 16.65 MB; each cap sits above it, under the owner's ceiling.
-			variantBytes: { low: 16_430_000, medium: 16_490_000, high: 16_560_000, ultra: 16_660_000 },
+			variantBytes: { low: 16_450_000, medium: 16_500_000, high: 16_570_000, ultra: 16_680_000 },
 			lod0Triangles: 2_800_000,
 			lod1Triangles: 150_000,
 			lod2Triangles: 42_000,
