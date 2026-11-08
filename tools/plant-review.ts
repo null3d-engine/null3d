@@ -342,11 +342,13 @@ function stillList<T extends { readonly file: string }>(stills: readonly T[]): r
 }
 
 /**
- * The slots a machine draws in: three, so three runs share one GPU's worth of work. A run takes one
- * before it starts drawing and gives it back when it is done, so no script has to know the rule.
+ * The slots a machine draws in: one. At two and three, rounds shared seven dev servers on a
+ * fourteen-core Mac, the load ran to twenty and thirty, and runs sat on their first page for
+ * minutes. One run at a time finishes its pages in the usual time. A run takes one before
+ * it starts drawing and gives it back when it is done, so no script has to know the rule.
  * `--no-slot` skips the wait for a run that is known to be alone.
  */
-const DRAW_SLOTS = 3;
+const DRAW_SLOTS = 1;
 
 /** Takes the first free draw slot, waiting until one frees, and returns the way to give it back. */
 async function takeDrawSlot(): Promise<() => void> {
