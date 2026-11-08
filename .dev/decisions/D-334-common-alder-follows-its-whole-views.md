@@ -1,4 +1,4 @@
-# D-333: the common alder follows its three whole views, not its widest one, and its cut pieces are proportions
+# D-334: the common alder follows its three whole views, not its widest one, and its cut pieces are proportions
 
 Status: decided and built in the species record. Task: none.
 
@@ -72,7 +72,7 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   stand square to one another, so each gives the reach along one horizontal axis at every height.
   `fit.ts` keeps the fitting tool's own hull beside it, and the record says why it is not used.
   Rejected: growing to the tool's hull, which draws a crown 1.015 of the plant's height wide, wider
-  than any whole view.")
+  than any whole view.
 - The piece count at a whole view is two to three against the photograph's one, at `lod.cardGrow`
   1.7. Neither a wider card stalk nor a denser crown moved them; the card's size did, halving them
   from five, four, three and three to two, three, three and two. The record does not claim one.
@@ -98,7 +98,9 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   the budget, each figure beside the still it comes from.
 - `tools/lib/plant-review/slots/common-alder.json` holds each photograph's own light and framing.
 - The species' densest variant measures 18.5, 18.6, 18.7 and 18.8 MB from the low tier up, under the
-owner's twenty; its kit 2.44, 3.11, 4.33 and 6.80 MB under 3.4, 5, 7.1 and 13.
+owner's twenty; its kit 3.35, 4.71, 7.17 and 12.16 MB under the owner's 3.5, 6.3, 11.8 and 22.6. The
+third cutting class carries most of that rise: a kit costs by the shoots it holds, and a class is
+two prototypes at every tier.
 - The young bark's tiling spans six centimetres round the stem against twelve, which takes its
   edge-direction mix from 0.401 to 0.309 and its surface colour difference from 3.08 to 3.40, both
   over the three-step mark. The grain's own elongation is a texture-build fault, with the two ratios
