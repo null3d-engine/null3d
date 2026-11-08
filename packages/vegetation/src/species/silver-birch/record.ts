@@ -401,7 +401,7 @@ export const record: Species = {
 		cardGrow: 1.4,
 		// Stills 01 and 19: a card's twig is thinner than a pixel at a whole view, so its leaves read
 		// as a piece in air; each card draws its twig as a line and the join shows.
-		cardStalk: 1.5,
+		cardStalk: 5,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
