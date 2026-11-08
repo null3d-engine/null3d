@@ -6,9 +6,10 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type PlantAsset, plantAssetDigest } from './asset';
+import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from './asset';
 import { AXIS_LIMB, AXIS_STEM, BUD_TERMINAL, SkeletonBuilder } from './core/graph';
 import { quatRotate } from './core/math';
+import type { Species } from './core/record';
 import { standInSpecies } from './core/stand-in';
 import { CUTTING_LENGTH, clusterRank, cutBranch, cutFoliage, cutsShoot } from './cutting';
 import { buildKitNow, growPlantNow, loadPlantCode } from './generate';
@@ -385,6 +386,39 @@ describe('cuttings', () => {
 			}).skeleton.height;
 		};
 		expect(heightOfPiece(0.5)).toBeLessThan(heightOfPiece(1));
+	});
+
+	it('gives a woodless plant a piece with no wood, and a woody plant its cut face', async () => {
+		const { hostaRecord } = await import('./grow/ground.fixture');
+		const { noTextureFiles } = await import('./core/textures');
+		const { species: oak } = await import('./species/pedunculate-oak');
+		await loadPlantCode(hostaRecord);
+		await loadPlantCode(oak.record);
+		const partsOf = (kit: SpeciesKitData, part: 'branch' | 'subbranch'): string[] =>
+			growPlantNow(kit, {
+				seed: 11,
+				variant: 0,
+				near: true,
+				cutting: { part },
+			}).levels[0].parts.map((p) => p.name);
+		const hostaKit = buildKitNow(
+			{ record: hostaRecord, textures: noTextureFiles(hostaRecord.id) },
+			{ placeholders: 'missing', detail: 'low' },
+		);
+		for (const part of ['branch', 'subbranch'] as const)
+			expect(partsOf(hostaKit, part)).not.toContain('wood');
+		// A woody plant's piece keeps its cut face: its root hangs on a stem, so the cut end draws.
+		const cutOak: Species = {
+			...oakRecord,
+			id: 'cut-oak',
+			cuttings: { ...oakRecord.cuttings, branch: { order: 1, length: 1 } },
+		};
+		await loadPlantCode(cutOak);
+		const oakKit = buildKitNow(
+			{ record: cutOak, textures: noTextureFiles(cutOak.id) },
+			{ placeholders: 'missing', detail: 'low' },
+		);
+		expect(partsOf(oakKit, 'branch')).toContain('wood');
 	});
 
 	it('cuts a leaf with either face toward +Z, and a cluster in rank order', () => {

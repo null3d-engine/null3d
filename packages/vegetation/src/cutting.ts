@@ -11,7 +11,13 @@ import type {
 	ShootRows,
 	SpeciesKitData,
 } from './asset';
-import { type MacroSkeleton, SkeletonBuilder } from './core/graph';
+import {
+	AXIS_ROOT,
+	AXIS_STEM,
+	AXIS_STIPE,
+	type MacroSkeleton,
+	SkeletonBuilder,
+} from './core/graph';
 import {
 	acos,
 	cross3,
@@ -338,6 +344,21 @@ export interface CutBranch {
 }
 
 /**
+ * Whether an axis hangs on wood the whole plant draws: a stem's axis or a frond colony's stipe at the
+ * foot of its chain. A rosette's eye and a tuft's shoot hang on a crown that carries no wood, so a
+ * piece cut from them is all foliage.
+ */
+function onWood(skeleton: MacroSkeleton, axis: number): boolean {
+	let at = axis;
+	while (at >= 0) {
+		const kind = skeleton.axes.kind[at] as number;
+		if (kind === AXIS_STEM || kind === AXIS_STIPE) return true;
+		at = skeleton.axes.parent[at] as number;
+	}
+	return false;
+}
+
+/**
  * Cuts the subtree of one macro axis from a grown skeleton as a skeleton of its own: the axis whose
  * subtree's extent from its junction is nearest the asked length, among the axes of the record's
  * hinted order (or any order past the stems when the record hints none, or no axis has that order),
@@ -409,7 +430,11 @@ export function cutBranch(
 			parentNode: isRoot || parentNode < 0 ? -1 : (nodeMap[parentNode] as number),
 			parentT: axes.parentT[a] as number,
 			order: axes.order[a] as number,
-			kind: axes.kind[a] as number,
+			// A piece's root stands in for the wood it was cut from. An axis that hangs on a stem or a
+			// stipe is wood and keeps its kind, so the cut face is drawn; an axis that hangs on nothing
+			// woody, such as a rosette's eye, carries no wood in the whole plant either, and its cut
+			// root stays a root the wood mesher skips.
+			kind: isRoot && !onWood(skeleton, a) ? AXIS_ROOT : (axes.kind[a] as number),
 			barkV: axes.barkV[a] as number,
 			barkU: axes.barkU[a] as number,
 		});
