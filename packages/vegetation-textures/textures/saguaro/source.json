@@ -3,11 +3,21 @@
 	"leaf": {
 		"upper": 24,
 		"lower": 25,
-		"alpha": { "floor": 24, "solid": 200 },
+		"alpha": {
+			"floor": 24,
+			"solid": 200
+		},
 		"erode": 2,
 		"margin": 0.04,
-		"delight": { "radius": 0.12, "strength": 0.6 },
-		"relief": { "veins": 0, "pucker": 0.2, "depth": 0.01 }
+		"delight": {
+			"radius": 0.12,
+			"strength": 0.6
+		},
+		"relief": {
+			"veins": 0,
+			"pucker": 0.2,
+			"depth": 0.01
+		}
 	},
 	"bark": {
 		"zones": [
@@ -18,7 +28,10 @@
 				"depth": 0.002,
 				"normal": 0.6,
 				"smooth": 2,
-				"delight": { "radius": 0.15, "strength": 0.5 }
+				"delight": {
+					"radius": 0.15,
+					"strength": 0.5
+				}
 			},
 			{
 				"name": "base",
@@ -28,17 +41,28 @@
 				"depth": 0.006,
 				"normal": 0.8,
 				"smooth": 2,
-				"delight": { "radius": 0.15, "strength": 0.6 }
+				"delight": {
+					"radius": 0.15,
+					"strength": 0.6
+				}
 			}
 		],
 		"young": {
 			"name": "arm",
 			"slot": 16,
+			"crop": [170, 20, 690],
 			"tile": [0.75, 0.5],
 			"depth": 0.002,
 			"normal": 0.6,
 			"smooth": 2,
-			"delight": { "radius": 0.15, "strength": 0.5 }
+			"delight": {
+				"radius": 0.15,
+				"strength": 0.1
+			}
 		}
+	},
+	"quality": {
+		"young-color": 96,
+		"young-normal": 96
 	}
 }
