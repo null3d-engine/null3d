@@ -297,7 +297,7 @@ export const record: Species = {
 			outline: 'texture',
 			// Still 12: a long slender stalk runs below the blade for about a fifth of the leaf's
 			// extent, and the blade hangs slightly from it.
-			petiole: { length: 0.05, radius: 0.0013, flat: 0, droop: 10 },
+			petiole: { length: 0.05, radius: 0.0028, flat: 0, droop: 10 },
 			fold: 8,
 			curl: 10,
 			crossCurl: -3,
@@ -315,8 +315,13 @@ export const record: Species = {
 	},
 	bark: {
 		// Stills 15 and 26 under the copy-stand lamps: a mid grey with a warm brown cast, so the
-		// measured colour stands as it is.
-		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [1, 1, 1] }],
+		// measured colour stands as it is. Still 14 shows the foot paler and less yellow than the
+		// bole, so the lowest metre lifts the same tile and pulls it off the yellow. The mid-trunk
+		// still photographs its bark from just above that metre, so the foot's zone stops below it.
+		zones: [
+			{ layer: 0, by: 'height', from: 0, to: 1, blend: 0.2, tint: [1.27, 1.33, 1.53] },
+			{ layer: 0, by: 'height', from: 1, to: 40, blend: 0.2, tint: [1, 1, 1] },
+		],
 		young: 0,
 		// Still 16: the fine net fades to smooth olive-grey on wood thinner than about four
 		// centimetres across.
@@ -416,8 +421,7 @@ export const record: Species = {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
 		// The cards stand well over twice the shoots they picture: the mip lift keeps a far card's
-		// coverage, so the whole view's mass comes from the card's own size. Measured on the three
-		// whole views, 2.4 brings their sky gaps inside their bands.
+		// coverage, so the whole view's mass comes from the card's own size.
 		cardGrow: 2.5,
 		// Still 01: a card's twig is thinner than a pixel at a whole view, so a card draws its
 		// supporting twig as a line and the join shows.
@@ -430,12 +434,13 @@ export const record: Species = {
 			// classes and the leaf's palmate blade among them; each cap sits above its figure and the
 			// medium one stays under the owner's four-megabyte ceiling.
 			kitBytes: { low: 3_300_000, medium: 3_980_000, high: 5_450_000, ultra: 8_250_000 },
-			// The crown's dense shoot dial puts 7,182 rosettes on the first variant, which measures
-			// 16.42, 16.48, 16.55 and 16.65 MB; each cap sits above it, under the owner's ceiling.
+			// The crown's shoot dial at 3.8 puts the first variant at 16.42, 16.48, 16.55 and 16.65
+			// MB; each cap sits above it, under the owner's ceiling.
 			variantBytes: { low: 16_450_000, medium: 16_500_000, high: 16_570_000, ultra: 16_680_000 },
 			lod0Triangles: 2_800_000,
 			lod1Triangles: 150_000,
-			lod2Triangles: 42_000,
+			// The second card level measures 37,238, 37,963, 38,666 and 39,576 triangles.
+			lod2Triangles: 40_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
 			growMilliseconds: 600,
