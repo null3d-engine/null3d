@@ -112,7 +112,7 @@ function armPlans(input: GrowInput, growth: Column, height: number): ArmPlan[] {
 		const jitter = draw(input, Purpose.ArmHeight, k) * 2 - 1;
 		plans.push({
 			// Arms stand across the middle of the stem, give or take a tenth of its height.
-			height: height * Math.min(0.66, Math.max(0.3, growth.arms.from + jitter * 0.12)),
+			height: height * Math.min(0.66, Math.max(0.3, growth.arms.from + jitter * 0.1)),
 			heading:
 				turn + (2 * PI * k) / Math.max(1, count) + (draw(input, Purpose.ArmAzimuth, k) - 0.5) * 0.7,
 			// Each arm runs out its own distance before it turns up, so the elbows stand at different

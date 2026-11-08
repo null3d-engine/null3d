@@ -1,8 +1,8 @@
 # D-334: the saguaro grows as a ribbed column, with one spine-cluster card at every areole
 
 Status: decided and built in the column growth model, the saguaro's record and texture folder, and
-the plant review's skin close-ups. The tree class's second-card-level triangle cap rises for the
-species, and the owner's confirmation of that raise is pending. Task: M3-V4.
+the plant review's skin close-ups. The owner approved the raise of the tree class's second-card-level
+triangle cap to 52,000. Task: M3-V4.
 
 Summary: a saguaro's whole height is one ribbed stem that carries no crown, so no broadleaf model
 draws it. The `column` growth model grows the stem and its arms as tubes, and the wood mesher draws
@@ -74,7 +74,13 @@ add nothing at the review's scale.
 - The plant review draws the species' rib, areole and spine stills as skin close-ups, since there is
   no leaf or twig to cut.
 - The tree class's second-card-level cap rises from 43,000 to 52,000 triangles, with room above the
-  saguaro's 36,486. That raise waits for the owner's confirmation.
+  saguaro's measured figure. The owner approved the raise: the column keeps its areole cards at the
+  farthest level, and the kit sits inside its own cap at 1.21 MB.
+- The review tool frames one limb for pictures 04, 05, 06 and 08, where the photographs show two
+  arms and the stem's top at arm height. Picture 04 misses the second arm and the stem's top,
+  picture 05 misses the trunk beside the arm, picture 06 misses the trunk the arm leaves, and
+  picture 08 misses the arm's rise above the elbow. This is a tool limit, stated here with those
+  four names rather than fitted by a record value.
 
 ## Consequences
 

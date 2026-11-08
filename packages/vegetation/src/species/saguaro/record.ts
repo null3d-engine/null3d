@@ -44,9 +44,9 @@ export const record: Species = {
 		arms: {
 			count: { mean: 4, spread: 0.7 },
 			from: 0.55,
-			elbow: 1.0,
+			elbow: 0.75,
 			radius: 0.19,
-			rise: { mean: 2.4, spread: 0.6 },
+			rise: { mean: 3.2, spread: 0.6 },
 		},
 		// Stills 09, 10 and 15: areoles one to three centimetres apart along every crest, each an
 		// oval pad about a centimetre long.
