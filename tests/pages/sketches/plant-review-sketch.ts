@@ -679,7 +679,9 @@ export default defineSketch(async (ctx) => {
 							behind++;
 						}
 						const outward = Math.hypot(at[0] - foot[0], at[2] - foot[2]);
-						const score = behind * 1_000_000_000 + near * 1_000_000 + outward * 100 + at[1];
+						// The fewest leaves behind the fruit wins, so the term is subtracted: the
+						// highest score is the clearest way out.
+						const score = -behind * 1_000_000_000 + near * 1_000_000 + outward * 100 + at[1];
 						if (score > best) {
 							best = score;
 							acorn = at;
