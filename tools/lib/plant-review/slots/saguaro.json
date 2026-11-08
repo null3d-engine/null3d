@@ -48,22 +48,22 @@
 		"barkHeight": 4
 	},
 	"16-skin-on-arm.png": {
-		"girth": 0.85,
-		"along": 0.3
+		"view": "bark-limb",
+		"thin": 0.19,
+		"along": 0.35,
+		"girth": null
 	},
 	"20-nest-holes.png": {
-		"span": 0.72,
-		"barkHeight": 7.5,
-		"sunAzimuth": -15,
-		"sunRise": 55,
-		"skyShare": 0.3,
-		"daylight": 2.3
+		"view": "limb",
+		"thin": 0.4,
+		"along": 0.7,
+		"span": 0.9
 	},
 	"22-subbranch-studio.png": {
 		"view": "bark-limb",
-		"thin": 0.22,
-		"girth": 0.8,
+		"thin": 0.19,
 		"along": 0.4,
+		"girth": null,
 		"leaves": null
 	},
 	"23-leaf-cluster-studio.png": {
