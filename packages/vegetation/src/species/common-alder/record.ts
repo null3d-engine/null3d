@@ -264,7 +264,8 @@ export const record: Species = {
 				nodes: { mean: 10, spread: 0.5 },
 				internode: RUN,
 				stem: { radius: [0.014, 0.006] },
-				laterals: { mean: 2, spread: 0.4 },
+				lateral: 70,
+				laterals: { mean: 2.5, spread: 0.4 },
 				lateralGap: 0.3,
 				bend: { length: 0.06, angle: 30 },
 				leafScale: [
@@ -292,6 +293,7 @@ export const record: Species = {
 				nodes: { mean: 4, spread: 0.5 },
 				internode: RUN,
 				stem: { radius: [0.008, 0.003] },
+				lateral: 70,
 				laterals: 1.4,
 				lateralGap: 0.4,
 				leafYears: 1,
@@ -315,19 +317,21 @@ export const record: Species = {
 				vigor: [0, 1],
 				share: 0,
 				years: 1,
-				length: { mean: 0.13, spread: 0.02 },
+				length: { mean: 0.2, spread: 0.02 },
 				nodes: { mean: 6, spread: 0.4 },
-				internode: SPUR,
+				// Still 23: the six leaves stand along a stem with its internodes showing, so the piece is
+				// taller than it is wide, as the photograph lays it out.
+				internode: RUN,
 				leafScale: [
 					[0, 0.85],
 					[1, 1],
 				],
 				leafAngle: [
-					[0, 125],
-					[0.5, 85],
-					[1, 55],
+					[0, 95],
+					[0.5, 70],
+					[1, 45],
 				],
-				leafAngleSpread: 25,
+				leafAngleSpread: 15,
 				droop: 3,
 			},
 		],
@@ -356,11 +360,11 @@ export const record: Species = {
 			],
 			// Stills 01 and 18: the crown holds about a tenth of its own box as sky, and the curve above
 			// carries the shoots that fill what the photographs show.
-			density: 2.8,
+			density: 3.4,
 			shadePrune: 0,
 			// Stills 01, 03 and 05: sky shows between the branch tiers and through the crown's middle,
 			// while the crown's own interior keeps the shade leaves that make its mass.
-			skyPrune: 0.1,
+			skyPrune: 0.02,
 			skyPruneLayer: 1,
 			// Stills 01 and 18: no bare twigs stand outside the foliage, so a twig left with nothing goes.
 			bareTrim: 0.03,
@@ -516,19 +520,21 @@ export const record: Species = {
 		switchPixels: [240, 12, 160],
 		// The cards stand two fifths larger than the shoots they picture, so a gap between one shoot's
 		// leaves falls on a neighbour's leaves rather than on sky, and the crown's rim reads solid.
-		cardGrow: 1.4,
+		cardGrow: 1.5,
 		// Still 18: a card's twig is thinner than a pixel at a whole view, so its leaves would read as a
 		// piece in air. Each card draws its supporting twig as a line from the parent node, so the join
 		// shows.
-		cardStalk: 1.5,
+		cardStalk: 2.5,
 		cardStalkToFoliage: true,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// Each cap sits above the figure its tier measures, with room for the cut pieces.
+			// Each cap sits above the figure its tier measures, with room for the cut pieces. The
+			// crown's densest variant measures 18.2 to 19.4 MB, the rim's cards and the cutting
+			// classes among them, under the owner's twenty.
 			kitBytes: { low: 3_200_000, medium: 3_700_000, high: 5_400_000, ultra: 8_200_000 },
-			variantBytes: { low: 16_200_000, medium: 16_300_000, high: 16_400_000, ultra: 16_500_000 },
+			variantBytes: { low: 19_500_000, medium: 19_600_000, high: 19_700_000, ultra: 19_800_000 },
 			lod0Triangles: 2_800_000,
 			lod1Triangles: 150_000,
 			lod2Triangles: 42_000,
