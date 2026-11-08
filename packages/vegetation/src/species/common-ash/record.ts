@@ -186,6 +186,29 @@ export const record: Species = {
 		// shoot this open, so the cuttings draw this class and the crown never does.
 		cuttingClasses: [
 			{
+				// Still 23 and the cluster's turn: the video's piece carries six leaves in three
+				// opposite pairs on a shoot of its own, where the crown's short shoots carry two
+				// pairs. A cutting class never offers itself to the crown, so the tree keeps its own
+				// shoots, as the branch's cut class does.
+				name: 'spur',
+				vigor: [0, 1],
+				share: 0,
+				years: 1,
+				length: { mean: 0.27, spread: 0.04 },
+				nodes: { mean: 3, spread: 0 },
+				internode: PAIR,
+				leafScale: [
+					[0, 0.8],
+					[1, 1],
+				],
+				leafAngle: [
+					[0, 70],
+					[1, 55],
+				],
+				leafAngleSpread: 15,
+				droop: 2,
+			},
+			{
 				name: 'cut',
 				vigor: [0, 1],
 				share: 0,
@@ -408,8 +431,8 @@ export const record: Species = {
 			// bunches of 34 taking close to half of it.
 			variantBytes: { low: 5_970_000, medium: 6_040_000, high: 6_120_000, ultra: 6_210_000 },
 			lod0Triangles: 2_500_000,
-			// The heaviest variant's first card level draws 24,855, 27,986, 30,936 and 35,382
-			// triangles from the coarsest tier up, and its second 10,594, 11,594, 12,487 and 13,325.
+			// The heaviest variant's first card level draws 25,728, 28,645, 32,025 and 36,735
+			// triangles from the coarsest tier up, and its second 10,920, 11,797, 12,659 and 13,492.
 			lod1Triangles: 38_000,
 			lod2Triangles: 14_000,
 			downloadBytes: 1_000_000,
@@ -429,7 +452,7 @@ export const record: Species = {
 		subbranch: { shoot: 'cut', pick: 1 },
 		// Still 23: one opposite pair of leaves under a small black terminal bud, as this year's shoot
 		// draws it.
-		cluster: { shoot: 'short' },
+		cluster: { shoot: 'spur' },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
 		leaf: { pressed: true },
 	},
