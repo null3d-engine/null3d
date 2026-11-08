@@ -308,22 +308,22 @@ export const record: Species = {
 				droop: 4,
 			},
 			{
-				// Stills 11 and 23: this year's shoot of eight alternate leaves gathered at its end
-				// round one purple bud, as the studio still lays it out. The leaves stand a seventh
-				// smaller than the record's blade so eight of them cover what the photograph's do. A
-				// cutting class never offers itself to the crown, so the tree keeps its own spurs.
+				// Stills 11 and 23: this year's shoot of seven alternate leaves gathered at its end round
+				// one purple bud, the leaves standing a fourteenth under the record's blade so they cover
+				// what the photographs do. A cutting class never offers itself to the crown, so the tree
+				// keeps its own spurs.
 				name: 'spur',
 				vigor: [0, 1],
 				share: 0,
 				years: 1,
 				length: { mean: 0.24, spread: 0.02 },
-				nodes: { mean: 8, spread: 0.4 },
+				nodes: { mean: 7, spread: 1.2 },
 				// Still 23: the leaves stand along a stem with its internodes showing, so the piece is
 				// taller than it is wide, as the photograph lays it out.
 				internode: RUN,
 				leafScale: [
-					[0, 0.73],
-					[1, 0.86],
+					[0, 0.79],
+					[1, 0.93],
 				],
 				leafAngle: [
 					[0, 95],
