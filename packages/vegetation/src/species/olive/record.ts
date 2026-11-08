@@ -299,7 +299,7 @@ export const record: Species = {
 			// Stills 01 and 02: the crown's box shows less sky than the photographs, and the curve
 			// above carries leafy twigs along every limb, so the dial sits well above the curve's own
 			// count.
-			density: 2.3,
+			density: 2.36,
 			shadePrune: 0.1,
 			// Stills 01, 03 and 05: sky shows through the crown's middle and under it, where its own
 			// leaves leave a shoot under this share of the sky; the lit outer masses stay.
@@ -463,7 +463,7 @@ export const record: Species = {
 			// above its figure. The three studio classes are the last prototypes it carries.
 			kitBytes: { low: 2_520_000, medium: 3_900_000, high: 6_650_000, ultra: 12_550_000 },
 			// The largest of seed 11's six variants measures 6.83, 6.86, 6.87 and 6.93 MB.
-			variantBytes: { low: 6_850_000, medium: 6_880_000, high: 6_900_000, ultra: 6_950_000 },
+			variantBytes: { low: 6_900_000, medium: 6_930_000, high: 6_960_000, ultra: 7_020_000 },
 			lod0Triangles: 2_900_000,
 			lod1Triangles: 145_000,
 			lod2Triangles: 9_000,
