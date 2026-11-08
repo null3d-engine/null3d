@@ -266,7 +266,7 @@ export const record: Species = {
 			],
 			// Stills 01 and 02: the crown's own box shows about five hundredths of sky, denser than
 			// the oak's crown, so the dial sits above the curve's count.
-			density: 1.35,
+			density: 1.6,
 			shadePrune: 0,
 			// Stills 01, 03 and 05: sky shows through the crown's middle and under it, where its own
 			// leaves leave a shoot under this share of the sky, and the lit outer masses stay.
@@ -412,7 +412,7 @@ export const record: Species = {
 		// The cards stand seven tenths larger than the shoots they picture, so a gap between one
 		// shoot's leaves falls on a neighbour's leaves rather than on sky, and the far crown closes
 		// as stills 01 and 18 show it.
-		cardGrow: 2.55,
+		cardGrow: 2.8,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
@@ -420,15 +420,15 @@ export const record: Species = {
 			// The kit measures 3.35, 4.92, 7.95 and 13.96 MB at the four tiers, the cut shoot's own two
 			// prototypes among them; each cap sits just above its figure.
 			// its figure.
-			// The largest of three variants measures 13.16, 13.28, 13.46 and 13.67 MB, the two years
+			// The largest of three variants measures 13.68, 13.80, 13.98 and 14.19 MB, the two years
 			// of alternate leaves taking most of it; each cap sits just above.
-			// The heaviest variant's first card level draws 56,549, 61,739, 69,438 and 79,245
-			// triangles up the tiers, and its second 23,604, 24,222, 25,238 and 26,047.
+			// The heaviest variant's first card level draws 58,843, 64,037, 71,732 and 81,547
+			// triangles up the tiers, and its second 24,756, 25,374, 26,390 and 27,199.
 			kitBytes: { low: 3_400_000, medium: 4_950_000, high: 8_000_000, ultra: 14_000_000 },
-			variantBytes: { low: 13_200_000, medium: 13_300_000, high: 13_500_000, ultra: 13_700_000 },
+			variantBytes: { low: 13_700_000, medium: 13_850_000, high: 14_000_000, ultra: 14_200_000 },
 			lod0Triangles: 2_500_000,
-			lod1Triangles: 80_000,
-			lod2Triangles: 27_000,
+			lod1Triangles: 85_000,
+			lod2Triangles: 28_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
 			growMilliseconds: 600,
