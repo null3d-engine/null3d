@@ -88,5 +88,9 @@ add nothing at the review's scale.
 - `packages/vegetation/src/species/saguaro/` holds the record, its fitted figures, and its entries.
 - `packages/vegetation-textures/textures/saguaro/` holds the leaf and bark sets, built from slots 24,
   25, 26, 14 and 16.
+- The review tool's reference rules send a cactus's single spine cluster and single areole to the leaf
+  card, its ribs and areole rows to the skin, and its "arm" names to limb views. Its query takes a
+  `barkHeight`, so a mid-trunk bark view stands in the trunk zone of a tall stem.
+- A cut arm is wood: the wood mesher accepts a cut axis of the arm kind, as it accepts a cut limb.
 - The review tool reads a cactus's rib, areole and spine stills as skin close-ups, and its "arm"
   names as limb views.
