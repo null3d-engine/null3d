@@ -107,18 +107,45 @@ the leaf area to 1,328 square meters. Raising `shoots.prototypes` moves it a lit
   inside the young bark's radius. It carries each daylit picture's light too.
 - The fork view draws a cut branch on the studio's own ground, as its photographs do, rather than a
   fork inside a leafy crown. Still 08's sky gap moves from 0.145 to 0.690 against its photograph's
-  0.720, and its leaf colour from 27.0 to 7.5 steps. Its shape match is 0.011, because the cut
-  branch stands smaller in the frame than the photograph's limb; filling the frame from the piece
+  0.720. Its leaf color moves from 27.0 to 7.5 steps. Its shape match is 0.011, because the cut
+  branch stands smaller in the frame than the photograph's limb. Filling the frame from the piece
   is the next thing to measure.
 - The oak is the guard a shared view's change is measured against, and here it cannot give a figure.
   Its own fork photograph yields no outline in the tool, before the change or after. The picture is
   the guard: it shows both arms inside the frame where the old frame cut them off.
 
+### The daylight a slot asks for
+
+The query's `daylight` is the strength of a view's light, and the review derives it from the
+photograph's own sky. The query's note says that value
+
+> a photograph's tone curve squeezes a bright sky more than the plant under it.
+
+The birch's whole views show that squeeze. At the sky-derived value every crown stands 20 to 28
+levels low in red and green. The slot's `daylight` is raised to the value that lands the tone:
+stills 01, 02 and 18 to 4.5, and still 03 to 5.5. Red and green then land within five levels of
+the photographs':
+
+| still | photograph | at the sky-derived light | at the corrected light | steps |
+| --- | --- | --- | --- | --- |
+| 01 | #7f8e7e | #69725a | #7f896b | 11.5 to 5.5 |
+| 02 | #828e7a | #6a735a | #808a6c | 10.6 to 3.9 |
+| 03 | #889381 | #787960 | #89896d | 10.3 to 6.2 |
+
+Nothing else moves. Every sky gap and outline overlap is identical to four decimals between the two
+runs, since both come from the matte. The leaf swatches 24 and 25 read exactly 5.08 and 8.73 steps
+in both, since their slots light them by albedo. Still 03 takes 5.5 and not a higher value: its
+green overshoots its photograph's above it. The blue stays 14 to 19 levels short at every value.
+That is the leaf's own blue, a separate fault not masked by over-lighting.
+
+This corrects how the view lights a plant against a fixed sky. It does not fit the color band: the
+tone lands on the photograph's, and the residual is one channel short.
+
 ### A shoot class's own leaf arrangement and facing
 
 The three studio cuttings show leaves two-ranked along the twig and held face on to the camera. The
 crown's shoots spiral and turn their faces to the sky, and both settings belong to the species. A
-class may now name its own `phyllotaxis` and `skyward`, each defaulting to the species' value, so a
+class may now name its own `phyllotaxis` and `skyward`, each defaulting to the species' value. A
 class that names neither draws byte for byte as it did.
 
 Measured on the birch's cutting classes, with the whole views drawn beside them at every value:
@@ -131,14 +158,14 @@ Measured on the birch's cutting classes, with the whole views drawn beside them 
 
 Stills 01, 02 and 18 read 0.199, 0.168 and 0.188 at both settings, since no crown class names
 either field. The record sets the fields on the branch's class and on a class of its own for still
-22, which is where they gain. The leaf cluster keeps a class without them and holds 163 by 304
-pixels against its photograph's 164 by 283, with a shape match of 0.237, where the two ranks take
-its box to 139 by 283 and its shape match to 0.156.
+22. Those are the two where they gain. The leaf cluster keeps a class without them. It holds 163 by 304
+pixels against its photograph's 164 by 283, with a shape match of 0.237. The two ranks take its box
+to 139 by 283 and its shape match to 0.156.
 
-The slot file stands still 22 on the side its photograph took. Two ranks of leaves lie in one plane,
-so a frame that looks across that plane sees them face on and one that looks along it sees them
-edge on. At a turn of 45 degrees the view reads 0.534 open against its photograph's 0.614, up from
-0.483; its box grows from 143 to 171 pixels across against the photograph's 207, and its shape match
+The slot file stands still 22 on the side its photograph took. Two ranks of leaves lie in one plane.
+A frame that looks across that plane sees them face on. One that looks along it sees them edge on.
+At a turn of 45 degrees the view reads 0.534 open against its photograph's 0.614, up from 0.483.
+Its box grows from 143 to 171 pixels across against the photograph's 207, and its shape match
 rises from 0.093 to 0.101.
 
 ## Consequences
@@ -164,6 +191,11 @@ that drew it.
 
 Limits this record states:
 
+- The cut branch's arms run straight where its photograph's arch and fall away. Its outline match
+  stays at 0.054 however its openness or extent is set. A droop of 70 degrees closes the piece to
+  0.616 open against the photograph's 0.631. More subdivision is barred twice over. A third year of
+  growth passes the shoot mesh's 65,535 vertices. The same class with fewer nodes takes the kit past
+  the medium and ultra caps. Three side shoots at the one joint is the engine's own limit.
 - The mature crown of still 33 cannot reach that picture's sky gap of 0.057 inside the tree caps. The
   card levels draw a row for each shoot, and the caps hold about eight thousand rows. A crown
   seventeen meters across then carries about a quarter of its photograph's leaf area.
@@ -176,8 +208,8 @@ Limits this record states:
   summer whole views.
 - Still 03's from-below view lets 0.343 of its frame show background where the record draws 0.190.
   The sky it shows lies between limbs that leave the bole and hang. The record's crown carries its
-  foliage lower and deeper on the same limbs. Opening it needs a sky prune strong enough to take
-  still 01 past its own band's ceiling, so the record keeps the summer side views and states this
+  foliage lower and deeper on those same limbs. Opening it needs a sky prune strong enough to take
+  still 01 past its own band's ceiling. The record keeps the summer side views and states this
   one.
 - The crown's color still reads 11 to 15 steps from the photographs where the working band is 3. Its
   leaves are small, so a whole view's crown is mostly leaf edges and shade. The light that each
@@ -188,16 +220,16 @@ Limits this record states:
   a trade and not a fix. The remaining gap belongs to the leaf's size and the crown's mixture of
   shades rather than to one color value.
 - The lifting strips do not read as ribbons. `bark.peel` draws them as broad flat sheets that carry
-  the bark's texture stretched across them, so they read as square patches pasted on the trunk rather
-  than as narrow strips curling away from the wood. At the record's curl they stay flat against the
+  the bark's texture stretched across them. They read as square patches pasted on the trunk, not as
+  narrow strips curling away from the wood. At the record's curl they stay flat against the
   bark, and the review counts one piece where the photograph's strips separate seventy-five. Raising
   the curl to 8 degrees turns them into wide translucent sheets that smear the texture and show black
   from behind. The record keeps the setting the engine draws least wrongly until the feature is
   settled.
 - At a whole view each leaf of the crown reads as its own piece. The twigs and the leaf stalks fall
-  under a pixel wide at that range. The review counts 37 pieces in the young form against its
+  under one pixel wide at that range. The review counts 37 pieces in the young form against its
   photograph's 9, and four in still 01 against 1. A thicker stalk and a thicker twig tip move neither
-  count, and the render's own matte is one piece, so the plant is joined and the measure reads the
+  count. The render's own matte is one piece, so the plant is joined and the measure reads the
   leaves apart. At close range the same split appears. Still 21's matte holds its stem with the side
-  shoot and thirty-eight leaf-sized groups beside it, where the leaves touch the stem in the render,
-  since the review works at 480 pixels across and the stalk is two pixels at the render's own size.
+  shoot and thirty-eight leaf-sized groups beside it, where the leaves touch the stem in the render.
+  The review works at 480 pixels across, so the stalk is two pixels at the render's own size.
