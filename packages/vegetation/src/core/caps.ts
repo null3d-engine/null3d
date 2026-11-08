@@ -64,6 +64,14 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		// tier rather than make the crown give up a prototype for it. The beech's own cluster cutting
 		// then added a second class, which takes the low tier to 3.29: the cap rises to 3.4 so the
 		// species can keep the crown it won rather than give up a prototype for the cutting.
+		// The English elm's branch piece reaches its photograph's width only with a second cutting
+		// class, which measures 3.45, 6.25, 11.76 and 22.51 MB; its first class turns cleanly and is
+		// kept either way. The owner raised the tiers so a species is not held to a narrower piece
+		// than its picture shows.
+		// The elm's cut branch widens and its turn steadies only with arms of three units rather
+		// than two, which measures 3.39, 5.32, 9.13 and 16.57 MB — the piece's turning crown-box
+		// spread falls from 52 to 12 per cent. The owner raised the tiers rather than keep a piece
+		// that fits its picture and cannot turn.
 		// The English elm's crown needs six prototypes and a cut shoot of nine leaves along a metre
 		// with two side shoots, which measures 3.35, 4.99, 8.13 and 14.37 MB: a lighter cut shoot
 		// fits the old caps and is sparser than its photograph. The owner raised the upper tiers
@@ -71,7 +79,7 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		// The silver birch's crown needs six shoot prototypes and a cutting class of its own, and
 		// its medium kit sits on the old four-megabyte ceiling: the owner raised it so the species
 		// keeps the crown it won rather than give up a prototype for it.
-		kitBytes: { low: 3.4 * MB, medium: 5 * MB, high: 8.2 * MB, ultra: 14.5 * MB },
+		kitBytes: { low: 3.5 * MB, medium: 6.3 * MB, high: 11.8 * MB, ultra: 22.6 * MB },
 		// The holm oak's densest variant, with a little room above it: 16.94, 17.05, 17.26 and
 		// 17.61 MB. An evergreen carries many small leaves on dense shoots, and the clearance packs
 		// the limbs into fuller crowns, so the evergreen rather than the oak now sets this cap. The
@@ -90,7 +98,10 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		// leaves on one shoot, and the near band is the only place those rows are real geometry, so the
 		// cap follows the densest species' measured figure rather than the oak's.
 		lod0Triangles: 2_900_000,
-		lod1Triangles: 150_000,
+		// The common alder's crown at density 3.5 measures 150,133 triangles at this level, and the
+		// cap, not the growth, was choosing its density: the owner raised it so a species' crown can
+		// be as solid as its photographs.
+		lod1Triangles: 155_000,
 		// The beech's second card level once each card draws its supporting twig: 27,666 triangles
 		// without the twig line and about 42,700 with one, which is above the holm oak's 37,723. A
 		// card that draws no twig floats free of the wood, so this cap follows the reading with it.

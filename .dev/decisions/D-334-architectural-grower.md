@@ -1,4 +1,4 @@
-# D-333: the architectural grower builds a conifer from one leader and whorls of boughs
+# D-334: the architectural grower builds a conifer from one leader and whorls of boughs
 
 Status: decided and built as `grow/architectural.ts`, with the Scots pine as its first species. The
 grower, its envelope cap, its pipe radii and its bud sites are in place, and the pine's twelve rows

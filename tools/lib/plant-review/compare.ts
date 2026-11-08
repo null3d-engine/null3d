@@ -668,6 +668,11 @@ export function fixed(value: number | null | undefined, digits = 2): string {
 	return value === null || value === undefined ? '-' : value.toFixed(digits);
 }
 
+/** A CIELAB triple as three rounded figures, in the order light, red to green, blue to yellow. */
+function labTriple(lab: readonly number[]): string {
+	return lab.map((v) => v.toFixed(1)).join(' ');
+}
+
 /** The labels of a compared pair. */
 function pairLines(head: readonly string[], pair: PairMetrics): string[] {
 	return [
@@ -1093,12 +1098,16 @@ export interface StillResult extends PairMetrics {
 	/** For a bark texture: the CIEDE2000 difference of the middle of each picture. */
 	readonly surfaceDeltaE: number | null;
 	/**
-	 * For a bark close view: the CIEDE2000 difference of the two pictures' bark, measured as the
-	 * mean of nine patches spread across each. A close bark photograph does not separate from the
-	 * bark that is its own background, so it draws no matte and has no outline to measure inside;
-	 * the patches compare the material, which is what the row asks.
+	 * For a bark close view: the two pictures' bark colours in CIELAB, each the mean of nine patches
+	 * spread across the picture. A close bark photograph does not separate from the bark that is its
+	 * own background, so it draws no matte and has no outline to measure inside; the patches compare
+	 * the material, which is what the row asks. The pair keeps the direction of the difference, so a
+	 * reader can tell which way the drawn bark is off and which way to move a tint.
 	 */
-	readonly barkColourDeltaE: number | null;
+	readonly barkColour: {
+		readonly reference: readonly number[];
+		readonly render: readonly number[];
+	} | null;
 	/** How differently the two pictures' edges run, 0 when they run the same way. */
 	readonly edgeDifference: number | null;
 	/**
@@ -1214,7 +1223,7 @@ export function compareStills(
 				view: slot.view,
 				masked: false,
 				surfaceDeltaE: null,
-				barkColourDeltaE: null,
+				barkColour: null,
 				edgeDifference: null,
 				pieces: null,
 				error,
@@ -1234,8 +1243,8 @@ export function compareStills(
 		// A bark close view photographs the bark against the bark, so neither picture separates
 		// from its own background and neither draws a matte. The patches compare the material.
 		const barkClose = slot.kind !== 'texture' && /bark/i.test(slot.file);
-		const barkColourDeltaE = barkClose
-			? Number(deltaE2000(patchLab(refImage), patchLab(render.image)).toFixed(2))
+		const barkColour = barkClose
+			? { reference: patchLab(refImage), render: patchLab(render.image) }
 			: null;
 		const edges = Number(
 			edgeDifference(edgeProfile(refImage), edgeProfile(render.image)).toFixed(3),
@@ -1279,7 +1288,7 @@ export function compareStills(
 			renderFile: frame.file,
 			masked,
 			surfaceDeltaE,
-			barkColourDeltaE,
+			barkColour,
 			edgeDifference: edges,
 			pieces,
 			...(framing ? { framing } : {}),
@@ -1297,7 +1306,13 @@ export function compareStills(
 						...head,
 						...(shown.foliageDeltaE !== null ? [`LEAF DE ${fixed(shown.foliageDeltaE, 1)}`] : []),
 						...(surfaceDeltaE !== null ? [`SURFACE DE ${fixed(surfaceDeltaE, 1)}`] : []),
-						...(barkColourDeltaE !== null ? [`BARK DE ${fixed(barkColourDeltaE, 1)}`] : []),
+						...(barkColour !== null
+							? [
+									`BARK DE ${fixed(deltaE2000(barkColour.reference, barkColour.render), 1)}`,
+									`BARK REF ${labTriple(barkColour.reference)}`,
+									`BARK REN ${labTriple(barkColour.render)}`,
+								]
+							: []),
 						'NO PLAIN OUTLINE',
 					],
 		});
