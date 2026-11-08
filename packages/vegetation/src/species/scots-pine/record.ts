@@ -89,7 +89,8 @@ export const record: Species = {
 			},
 			{
 				// Stills 10 and 21: the last twigs are short, stiff and open, and carry the needle
-				// brushes at their ends.
+				// brushes at their ends. The boughs and branches carry their own shoots along their
+				// length, so these twigs stand wider apart than they would on a bare limb.
 				length: [
 					[0, 0.5],
 					[1, 1],
@@ -98,7 +99,7 @@ export const record: Species = {
 					[0, 62],
 					[1, 45],
 				],
-				density: 4.5,
+				density: 3.4,
 				arrangement: { kind: 'spiral', divergence: 137.5 },
 				flatten: 0.5,
 				sag: 2,
