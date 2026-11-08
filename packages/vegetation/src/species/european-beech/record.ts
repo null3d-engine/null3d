@@ -471,7 +471,7 @@ export const record: Species = {
 		// Each far card grows about its middle, so the rim's gaps close without the shoots changing:
 		// the whole views read 0.1304 and 0.1105 of sky against bands that top out at 0.1186 and
 		// 0.0942.
-		cardGrow: 1.1,
+		cardGrow: 1.05,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
