@@ -628,7 +628,7 @@ export default defineSketch(async (ctx) => {
 				// A limb dividing into two, seen square to its arms against the least of the crown.
 				const found = closeAt(
 					view,
-					() => forkView(closePlant(spec.woodOnly === true), lens, QUERY.thin),
+					() => forkView(closePlant(spec.woodOnly === true), lens, QUERY.thin, QUERY.span),
 					turn,
 					fov,
 					0.05,
