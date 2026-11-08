@@ -349,11 +349,14 @@ export const record: Species = {
 		// photograph, so the lowest half metre takes a darkening tint. It stays below the mid-trunk
 		// and texture cameras' frames, so neither of their figures moves.
 		zones: [
+			// Still 14: the foot keeps the measured colour, and stands first so the limb's tint below
+			// does not reach its buttresses, whose lobes stand in the limb's own radius range.
+			{ layer: 0, by: 'height', from: 0, to: 0.5, blend: 0.3, tint: [1, 1, 1] },
 			// Still 16: a great limb carries the bole's net but reads grey where its photograph is
-			// olive-brown, so wood thinner than seven tenths of a meter loses blue and keeps its
-			// lightness. The key is the radius, so a limb leaving the trunk low takes it too.
-			{ layer: 0, by: 'radius', from: 0.2, to: 0.7, blend: 0.08, tint: [0.58, 0.8, 0.24] },
-			{ layer: 0, by: 'height', from: 0, to: 0.5, blend: 0.3, tint: [0.62, 0.66, 0.72] },
+			// olive-brown, so wood thinner than seven tenths of a meter loses red and blue and keeps
+			// its lightness. The key is the radius, so a limb leaving the trunk low takes it too; the
+			// flare above it keeps the measured colour, since its lobes stand in the limb's own range.
+			{ layer: 0, by: 'radius', from: 0.2, to: 0.7, blend: 0.08, tint: [0.45, 0.78, 0.2] },
 			{ layer: 0, by: 'height', from: 0.5, to: 40, blend: 0, tint: [1, 1, 1] },
 		],
 		young: 0,
