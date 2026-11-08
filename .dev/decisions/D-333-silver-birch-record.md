@@ -163,4 +163,6 @@ Limits this record states:
   under a pixel wide at that range. The review counts 37 pieces in the young form against its
   photograph's 9, and four in still 01 against 1. A thicker stalk and a thicker twig tip move neither
   count, and the render's own matte is one piece, so the plant is joined and the measure reads the
-  leaves apart.
+  leaves apart. At close range the same split appears. Still 21's matte holds its stem with the side
+  shoot and thirty-eight leaf-sized groups beside it, where the leaves touch the stem in the render,
+  since the review works at 480 pixels across and the stalk is two pixels at the render's own size.
