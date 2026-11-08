@@ -1,0 +1,40 @@
+{
+	"caps": "palm",
+	"leaf": {
+		"upper": 24,
+		"lower": 25,
+		"alpha": { "floor": 16, "solid": 240 },
+		"erode": 1,
+		"margin": 0.02,
+		"delight": { "radius": 0.06, "strength": 1 },
+		"relief": { "veins": 1, "pucker": 0.5, "depth": 0.0016 }
+	},
+	"bark": {
+		"zones": [
+			{
+				"name": "trunk",
+				"slot": 26,
+				"tile": [0.5, 0.5],
+				"depth": 0.035,
+				"smooth": 6,
+				"delight": { "radius": 0.2, "strength": 1 }
+			}
+		],
+		"young": {
+			"name": "young",
+			"slot": 26,
+			"tile": [0.16, 0.16],
+			"depth": 0.012,
+			"smooth": 4,
+			"delight": { "radius": 0.18, "strength": 1 }
+		}
+	},
+	"quality": {
+		"leaf-color": 128,
+		"leaf-normal": 128,
+		"bark-color": 128,
+		"bark-normal": 128,
+		"young-color": 128,
+		"young-normal": 128
+	}
+}

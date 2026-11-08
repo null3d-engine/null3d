@@ -2,8 +2,9 @@
 
 Status: decided. The frond builder (`packages/vegetation/src/leaf/frond.ts`) is built for pinnate and
 bipinnate fronds, with frond ages from crozier to brown. The frond-colony grower
-(`grow/frond-colony.ts`) is built. Pending: palm fronds (fan and costapalmate), tripinnate fronds,
-the crown-rosette grower and stem surfaces. Ruling 11 parks them with the palms and the tree fern.
+(`grow/frond-colony.ts`) is built. The crown-rosette grower (`grow/crown-rosette.ts`) is built for a
+frond whose pinnae are the species' own leaves. Pending: palm fronds (fan and costapalmate),
+tripinnate fronds and palm stem surfaces.
 Task: none.
 
 Summary: a frond draws as one sheet cut by its texture's alpha. The sheet bends so that each pinna
