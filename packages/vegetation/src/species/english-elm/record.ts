@@ -66,8 +66,8 @@ export const record: Species = {
 		// wider than tall rather than a broad dome.
 		apical: {
 			control: [
-				[0, 0.42],
-				[1, 0.46],
+				[0, 0.52],
+				[1, 0.56],
 			],
 			dominance: [0.75, 0.6, 0.98],
 			wander: 8,
@@ -375,15 +375,15 @@ export const record: Species = {
 		budget: {
 			// The crowns measure 2.48, 3.71, 6.10 and 10.83 MB at the four tiers; each cap sits just
 			// above its figure.
-			// The largest of three variants measures 16.66, 16.73, 16.81 and 16.92 MB, the two years
+			// The largest of three variants measures 16.16, 16.29, 16.46 and 16.66 MB, the two years
 			// of alternate leaves and the dense crown taking most of it; each cap sits just above.
-			// The heaviest variant's first card level draws 62,443, 65,506, 69,085 and 73,859
-			// triangles up the tiers, and its second 29,061, 29,446, 29,964 and 30,539.
+			// The heaviest variant's first card level draws 67,717, 73,474, 80,588 and 89,376
+			// triangles up the tiers, and its second 29,585, 30,295, 31,321 and 32,419.
 			kitBytes: { low: 2_550_000, medium: 3_800_000, high: 6_200_000, ultra: 11_000_000 },
 			variantBytes: { low: 16_700_000, medium: 16_750_000, high: 16_850_000, ultra: 16_950_000 },
 			lod0Triangles: 2_500_000,
-			lod1Triangles: 80_000,
-			lod2Triangles: 32_000,
+			lod1Triangles: 95_000,
+			lod2Triangles: 33_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
 			growMilliseconds: 600,
