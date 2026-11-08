@@ -46,6 +46,19 @@ main mass came from them. A Bun script over `prototype.card.planes` gave the pla
 pixel spans about 7 cm at the beech's whole view. Its crown box is 476 pixels for a crown about 34 m
 across.
 
+### The English elm's row 12 is the cards and the twig, not the fruit
+
+The elm's row 12 fails on the loose cards and the twig line. Two of its extras were rebuilt at the
+same tree and neither moved the row: its keys now stand their seed body in the middle of the wing,
+and its sucker form grows 0.626 m of whip where it grew 0.300, and the row's fault is unchanged.
+
+The record field `lod.cardStalkToFoliage` is what a card needs when its plane stands far enough
+ahead of its row to float. Set on the elm it moves nothing: its three crown close views read the
+same edge directions to three decimals (0.060, 0.034 and 0.202), and its whole views are unchanged.
+So the elm's loose pieces are drawn at a level and a view the field does not reach. The elm leaves it unset, and its planes stand far enough out that its
+rim reads as pieces. Measured at the merged tree, its whole views draw one piece each, so the
+looseness is at the crown's close views, not the whole view.
+
 ## Look
 
 The line under the card reads as the spray's own twig. The reference photographs show that twig
