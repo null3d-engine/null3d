@@ -26,6 +26,11 @@ export const files = {
 					"job": "103af5cd-111f-472e-9a7f-b26f6c98a67b"
 				},
 				{
+					"name": "16-bark-on-limb.png",
+					"sha256": "f7911a37de1538c763d0fde6039fcaf0d6d30263dc0e86b9b3a7a32c7294722c",
+					"job": "39d0a824-b20a-43fa-8ad7-4a79aa97194b"
+				},
+				{
 					"name": "28-young-bark.png",
 					"sha256": "9b80b37c38579aa8e8907e73bdcc3422d3b2c704a27282838e5cf1e51e4101cd",
 					"job": "c3e16409-9daa-4a43-be8d-83390967e4f9"
@@ -237,13 +242,29 @@ export const files = {
 						0.9
 					],
 					"mean": [
-						0.22532,
-						0.22296,
-						0.22753
+						0.18927,
+						0.18505,
+						0.1843
 					],
 					"height": {
 						"offset": 0.22379,
 						"depth": 0.05224
+					}
+				},
+				{
+					"name": "limb",
+					"tile": [
+						0.45,
+						0.45
+					],
+					"mean": [
+						0.44975,
+						0.41647,
+						0.36066
+					],
+					"height": {
+						"offset": 0.34331,
+						"depth": 0.021617
 					}
 				}
 			],
@@ -282,13 +303,13 @@ export const files = {
 			},
 			{
 				"file": "bark-color.ktx2",
-				"sha256": "4282480df8f9c0c3e7614ae390a5fd731492c59ef09c8d9ef326af65319598f2",
-				"bytes": 195120
+				"sha256": "b1d1858be2bef8b2050633c50b74040b24b6776e3c8944dcdba681560d42f604",
+				"bytes": 300256
 			},
 			{
 				"file": "bark-normal.ktx2",
-				"sha256": "7e24e934f83f171f4e3564ce462c453565573302c297b571e2ee2370fc834ae6",
-				"bytes": 235163
+				"sha256": "6e3c0d972cd282015e3df78752e7d03d018ab80cd7397e32638094a573c4edd7",
+				"bytes": 369847
 			},
 			{
 				"file": "young-color.ktx2",
@@ -302,13 +323,13 @@ export const files = {
 			},
 			{
 				"file": "bark-color-half.ktx2",
-				"sha256": "3b1230d979023c2ae9403331110b0f960a9e48d99a397ca815ca8a689ac13608",
-				"bytes": 54003
+				"sha256": "0d75c4d3226df919267c60a91fa174abd16c2ffb0df13e71aa52b8dd8e0e3d41",
+				"bytes": 77589
 			},
 			{
 				"file": "bark-normal-half.ktx2",
-				"sha256": "95face7fa9ec8e04594ffe06b484b83b3a74469c56a37d0a2217cf966fc077aa",
-				"bytes": 70611
+				"sha256": "9330f5b4a856050847e2da350453ba25d3ac7fbf74fabbc29222bc1e5dcb6bdd",
+				"bytes": 104995
 			},
 			{
 				"file": "young-color-half.ktx2",
