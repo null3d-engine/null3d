@@ -73,10 +73,10 @@ export const record: Species = {
 				// Pinna length over the frond's length, by position along the rachis.
 				length: [
 					[0, 0.05],
-					[0.15, 0.15],
-					[0.4, 0.22],
-					[0.8, 0.15],
-					[1, 0.05],
+					[0.15, 0.11],
+					[0.4, 0.16],
+					[0.8, 0.11],
+					[1, 0.04],
 				],
 				angle: [
 					[0, 80],
@@ -176,7 +176,7 @@ export const record: Species = {
 		// Still 22: a length of rachis from the middle of the frond, with its pinnae.
 		subbranch: { order: 1, length: 0.6, from: 0.7, span: 0.6 },
 		// Still 23: the frond's tip, where its pinnae shorten.
-		cluster: { order: 1, length: 0.3, from: 1.6, span: 0.3 },
+		cluster: { order: 1, length: 0.3, from: 1.1, span: 0.3 },
 		// Stills 12, 13 and 24: the pinna laid flat on its own.
 		leaf: { pressed: true },
 	},
