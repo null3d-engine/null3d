@@ -544,6 +544,12 @@ which is where the photographs themselves stand from it.
 A lower young radius, 0.015 in place of 0.03, moves the limb by three hundredths. The limb draws the
 mature bark either way, so that lever is not this row's.
 
+Still 28 now frames the thin wood it is a photograph of. Its slot asks for the thinnest five per cent
+of the wood rather than the view's default. The picture shows a smooth olive shoot with lenticels,
+where it showed a furrowed limb. Its figure falls from 9.53 to 6.53, and that figure is
+now a young bark measure. The draw stands 5.8 lighter, 2.1 greener and 3.8 yellower than the
+photograph, which is the green shift the crown's own shoots asked for.
+
 Three zones have one side effect worth naming. The silhouette view's bark measure rose from 6.50 to
 6.69 steps. That measure is the bark's tone seen beside the whole plant. It belongs to row 8's bark,
 not to the crown's colour. It is the bole's tone as the whole view shows it. It rose because the bole zone
@@ -569,10 +575,11 @@ The helper's model of about 1.33 held for the older base, where 1.38 read 0.2458
 
 The card size has been measured a third time. The landing branch's leaf back-face change grows the
 ash's crown denser: 472 limbs over 296,452 triangles, where it carried 458 over 284,391. The whole
-views closed by about two hundredths. At that base the cards stand
-at 1.46: 01 reads 0.2512, 02 0.2244 and 18 0.2442 against the photographs' 0.2608, 0.1869 and
-0.2147. 1.48 leaves 01 four and a half thousandths from its closed side, and 1.50 puts it a
-thousandth past it.
+views closed by about two hundredths. Row 6 was read again on that base. The cards stand at 1.46,
+where 01 reads 0.2512, 02 0.2244 and 18 0.2442 against the photographs' 0.2608, 0.1869 and 0.2147.
+1.48 leaves 01 four and a half thousandths from its closed side, and 1.50 puts it a thousandth past
+it. The value belongs to this base. A shading change that alters the shoot count moves the whole
+views, so the cards are read again on any base that changes the plant.
 
 The young bark takes a colour from the texture build. The young tile is made from still 28, the
 older green-grey bark of a young branch. The crown's shoots in still 10 are greener. The two
