@@ -66,7 +66,7 @@ a few large ones, and the leaves per shoot rise while the card rows fall.
   1.2, which draws a five centimeter leaf at six, inside the species' three to seven.
 - Three `cuttingClasses` of its own, `whip` and `cut`, draw the cut pieces with their leaves spaced,
   as stills 21, 22 and 23 show.
-- `bark.peel` lifts strips of five centimeters at 300 a square meter on the lower trunk, which still
+- `bark.peel` lifts strips of nine centimeters at 220 a square meter on the lower trunk, which still
   34 shows close up.
 
 ### The review tool
@@ -80,14 +80,18 @@ a few large ones, and the leaves per shoot rise while the card rows fall.
 
 ## Consequences
 
-The species' budgets at every tier, measured on this record and its three forms:
+The species' budgets, measured across the species and its three forms:
 
 | Tier | Kit | Variant | LOD0 | LOD1 | LOD2 |
 | --- | --- | --- | --- | --- | --- |
-| low | 2.46 MB | 5.67 MB | 1,199,189 | 77,306 | 35,537 |
-| medium | 3.81 MB | 5.76 MB | 1,223,952 | 81,428 | 36,110 |
-| high | 6.11 MB | 5.89 MB | 1,276,973 | 87,000 | 37,036 |
-| ultra | 10.48 MB | 6.08 MB | 1,401,183 | 95,174 | 38,667 |
+| low | 2.47 MB | 6.94 MB | 1,648,898 | 120,650 | 41,076 |
+| medium | 3.79 MB | 7.00 MB | | | |
+| high | 6.05 MB | 7.05 MB | 1,726,976 | 125,117 | 42,241 |
+| ultra | 10.33 MB | 7.10 MB | | | |
+
+The record's budget stands above each figure and inside the tree caps: 150,000 card triangles and
+43,000 at the second card level. The woodland form sets the card levels and the variant bytes. The
+mature form sets the nearest level's triangles.
 
 Limits this record states:
 

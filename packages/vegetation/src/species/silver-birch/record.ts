@@ -184,12 +184,13 @@ export const record: Species = {
 				name: 'whip',
 				vigor: [0, 1],
 				share: 0,
-				years: 1,
-				length: { mean: 1, spread: 0.15 },
-				nodes: { mean: 16, spread: 1 },
+				years: 2,
+				length: { mean: 0.5, spread: 0.08 },
+				nodes: { mean: 7, spread: 0.6 },
+				leafYears: 1,
 				internode: ALTERNATE,
 				stem: { radius: [0.007, 0.003] },
-				laterals: 3,
+				laterals: 2,
 				lateralGap: 0.35,
 				bend: { length: 0.06, angle: 22 },
 				leafScale: [
@@ -208,12 +209,13 @@ export const record: Species = {
 				name: 'cut',
 				vigor: [0, 1],
 				share: 0,
-				years: 1,
-				length: { mean: 0.35, spread: 0.05 },
-				nodes: { mean: 8, spread: 0.6 },
+				years: 2,
+				length: { mean: 0.18, spread: 0.03 },
+				nodes: { mean: 5, spread: 0.5 },
+				leafYears: 1,
 				internode: ALTERNATE,
 				stem: { radius: [0.004, 0.0018] },
-				laterals: 2,
+				laterals: 1,
 				lateralGap: 0.4,
 				bend: { length: 0.05, angle: 20 },
 				leafScale: [
@@ -318,7 +320,7 @@ export const record: Species = {
 		scars: 4,
 		// Stills 15 and 34: the chalky white bark lifts in thin horizontal strips that curl away from
 		// the wood, over the dark fissures beneath.
-		peel: { zone: 1, perSquareMetre: 300, width: { mean: 0.05, spread: 0.015 }, curl: 0.8 },
+		peel: { zone: 1, perSquareMetre: 220, width: { mean: 0.09, spread: 0.02 }, curl: 1.6 },
 	},
 	base: {
 		// Still 14: the foot swells into the root crown, with roots running out over the litter.
@@ -389,17 +391,18 @@ export const record: Species = {
 		budget: {
 			// The largest of the species and its three forms, with about a twentieth to spare: 2.46,
 			// 3.81, 6.11 and 10.48 MB. The kit holds the long leafy shoots the fine leaf needs.
-			kitBytes: { low: 2_600_000, medium: 4_000_000, high: 6_300_000, ultra: 10_800_000 },
-			// The largest variant of the species and its forms: 5.67, 5.76, 5.89 and 6.08 MB.
-			variantBytes: { low: 5_800_000, medium: 5_900_000, high: 6_000_000, ultra: 6_200_000 },
-			// The mature form's broad crown, with about a seventh to spare: 1.20, 1.22, 1.28 and
-			// 1.40 million triangles.
-			lod0Triangles: 1_450_000,
-			// The same crown's card levels: 77,306, 81,428, 87,000 and 95,174 of the tree cap's
-			// 150,000.
-			lod1Triangles: 98_000,
-			// 35,537, 36,110, 37,036 and 38,667 of the tree cap's 43,000.
-			lod2Triangles: 39_500,
+			kitBytes: { low: 2_600_000, medium: 4_000_000, high: 6_500_000, ultra: 10_800_000 },
+			// The largest variant of the species and its forms, the woodland's: 6.94, 7.00, 7.05 and
+			// 7.10 MB.
+			variantBytes: { low: 7_200_000, medium: 7_200_000, high: 7_300_000, ultra: 7_300_000 },
+			// The young form's dense crown, with about a twentieth to spare: 1.20, 1.22, 1.28 and
+			// 1.40 million triangles for the species and 1.90 million for the young form.
+			lod0Triangles: 2_000_000,
+			// The woodland form's card levels, the largest of the species and its forms: 120,650,
+			// 121,000, 125,117 and 128,000 of the tree cap's 150,000.
+			lod1Triangles: 135_000,
+			// 41,076, 41,200, 42,241 and 42,500 of the tree cap's 43,000.
+			lod2Triangles: 42_800,
 			// The birch's two bark zones buy the larger download the owner allows it.
 			downloadBytes: 1_300_000,
 			downloadHalfBytes: 400_000,

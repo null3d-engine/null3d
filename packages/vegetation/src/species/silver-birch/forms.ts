@@ -58,8 +58,9 @@ export const forms: Readonly<Record<string, SpeciesForm>> = {
 			},
 			bending: { strength: 0.2 },
 			pipe: { tipRadius: 0.006 },
-			// Still 31: the stem is bare to a tenth of the height.
-			shedding: { cleanBole: 0.12, underCrown: 0 },
+			// Still 31: the stem is bare to a quarter of the height, and few limbs leave it low.
+			branching: 0.9,
+			shedding: { cleanBole: 0.25, underCrown: 0 },
 		},
 		envelope: {
 			// Still 31's width profile: an oval crown from a tenth of the height, widest a little above
@@ -204,7 +205,7 @@ export const forms: Readonly<Record<string, SpeciesForm>> = {
 					droop: 8,
 				},
 			],
-			placement: { density: 0.25, skyPrune: 0.2 },
+			placement: { density: 0.2, skyPrune: 0.2 },
 		},
 		roundBand: null,
 	},
@@ -245,7 +246,7 @@ export const forms: Readonly<Record<string, SpeciesForm>> = {
 			},
 		},
 		// Still 30: the crown's foliage fills its small volume, with the sky its photograph shows through.
-		shoots: { placement: { density: 4.5 } },
+		shoots: { placement: { density: 3.6 } },
 		// Still 30: no surface roots, on the forest floor's litter.
 		base: { flare: { amount: 0.2, height: 0.3 }, buttress: null, roots: null },
 		roundBand: null,
