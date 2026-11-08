@@ -1249,6 +1249,12 @@ export interface ShootClass {
 	 * round from every side.
 	 */
 	readonly leafAngleSpread?: number;
+	/**
+	 * Degrees about the shoot where its first leaf stands, where every shoot of the class must show
+	 * its leaf the same way up: a cactus areole's spine cluster lies with its longest spine pointing
+	 * down the stem. Absent, each shoot takes a turn of its own from the hash.
+	 */
+	readonly azimuth?: number;
 	/** Degrees the shoot hangs over its length (willow whips, birch). */
 	readonly droop: number;
 	/**

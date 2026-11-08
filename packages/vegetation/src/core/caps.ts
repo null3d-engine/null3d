@@ -105,7 +105,9 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		// The beech's second card level once each card draws its supporting twig: 27,666 triangles
 		// without the twig line and about 42,700 with one, which is above the holm oak's 37,723. A
 		// card that draws no twig floats free of the wood, so this cap follows the reading with it.
-		lod2Triangles: 43_000,
+		// The saguaro's areole cards, one at every rib crest, measure 50,452 triangles at the ultra
+		// tier, so the cap rises above them rather than leave the column thin of its spine clusters.
+		lod2Triangles: 52_000,
 		downloadBytes: 1 * MB,
 		downloadHalfBytes: 0.35 * MB,
 		growMilliseconds: 600,
@@ -153,7 +155,7 @@ export const MODEL_CLASS: Readonly<Record<GrowthModel, CapClass>> = {
 	rosette: 'ground',
 	'frond-colony': 'ground',
 	tuft: 'ground',
-	column: 'ground',
+	column: 'tree',
 };
 
 /**

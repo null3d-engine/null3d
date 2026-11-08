@@ -393,6 +393,26 @@ function growthProblems(record: Species, out: string[]): void {
 			}
 		}
 	}
+	if (growth.model === 'column') {
+		if (record.foliage.kind !== 'blade' && record.foliage.kind !== 'none')
+			out.push("a column's foliage is 'blade', for its areole cards, or 'none'");
+		spreadProblems(growth.height, 'growth.height', true, out);
+		curveProblems(growth.radius, 'growth.radius', out);
+		spreadProblems(growth.ribs, 'growth.ribs', true, out);
+		wholeProblem(Math.round(spreadMean(growth.ribs)), 'growth.ribs', 3, 40, out);
+		if (!(growth.ribDepth >= 0))
+			out.push(`growth.ribDepth is ${growth.ribDepth}; a depth is not negative`);
+		spreadProblems(growth.arms.count, 'growth.arms.count', false, out);
+		wholeProblem(Math.round(spreadMean(growth.arms.count)), 'growth.arms.count', 0, 12, out);
+		shareProblem(growth.arms.from, 'growth.arms.from', out);
+		if (!(growth.arms.elbow > 0))
+			out.push(`growth.arms.elbow is ${growth.arms.elbow}; it is metres and must be above 0`);
+		if (!(growth.arms.radius > 0))
+			out.push(`growth.arms.radius is ${growth.arms.radius}; it is metres and must be above 0`);
+		spreadProblems(growth.arms.rise, 'growth.arms.rise', true, out);
+		if (!(growth.areoles > 0))
+			out.push(`growth.areoles is ${growth.areoles}; it is metres and must be above 0`);
+	}
 	if (record.foliage.kind === 'blade' && record.foliage.compound) {
 		const compound = record.foliage.compound;
 		spreadProblems(compound.leaflets, 'foliage.compound.leaflets', true, out);
