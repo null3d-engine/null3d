@@ -53,7 +53,7 @@ export const record: Species = {
 		clearance: 0.3,
 		clearanceThickness: 0.35,
 		turning: 30,
-		internode: { length: 0.55, ageFactor: 0.99 },
+		internode: { length: 0.6, ageFactor: 0.99 },
 		stems: { count: 1, lean: { mean: 2, spread: 2 }, stool: 0, fused: 0 },
 		buds: {
 			// Stills 09, 10, 11 and 21: every axis carries opposite pairs of buds, each pair turned a
@@ -337,17 +337,17 @@ export const record: Species = {
 		flare: { amount: 0.3, height: 0.5 },
 		buttress: {
 			lobes: { mean: 5, spread: 1 },
-			amount: 0.45,
-			sharpness: 3,
-			height: 0.6,
-			round: 0.4,
+			amount: 0.25,
+			sharpness: 2.2,
+			height: 0.5,
+			round: 0.6,
 		},
 		roots: {
 			count: { mean: 5, spread: 1 },
-			length: { mean: 1.2, spread: 0.2 },
-			radius: 0.4,
+			length: { mean: 1, spread: 0.2 },
+			radius: 0.2,
 			dive: 0.3,
-			ridge: 0.9,
+			ridge: 0.6,
 		},
 	},
 	extras: [
@@ -382,11 +382,11 @@ export const record: Species = {
 			kind: 'flower',
 			at: 'shoot-tip',
 			share: 0.7,
-			count: { mean: 8, spread: 2 },
+			count: { mean: 16, spread: 3 },
 			tipShare: 0.9,
 			seasons: ['blossom'],
-			shape: { petals: 5, radius: 0.005, cup: 0.003 },
-			colour: [0.5, 0.55, 0.06],
+			shape: { petals: 5, radius: 0.006, cup: 0.003 },
+			colour: [0.6, 0.6, 0.08],
 			hang: 0,
 		},
 	],
@@ -412,7 +412,7 @@ export const record: Species = {
 		switchPixels: [240, 12, 160],
 		// The cards stand a third larger than the shoots they picture, so a gap between one
 		// shoot's leaves falls on a neighbour's leaves rather than on sky.
-		cardGrow: 1.5,
+		cardGrow: 1.55,
 		// Still 01: a card's twig is thinner than a pixel at a whole view, so a card draws its
 		// supporting twig as a line and the join shows.
 		cardStalk: 1.5,
@@ -424,9 +424,9 @@ export const record: Species = {
 			// classes and the leaf's palmate blade among them; each cap sits above its figure and the
 			// medium one stays under the owner's four-megabyte ceiling.
 			kitBytes: { low: 3_300_000, medium: 3_980_000, high: 5_450_000, ultra: 8_250_000 },
-			// The crown's dense shoot dial puts 4,896 rosettes on the first variant, which measures
-			// 11.25, 11.32, 11.43 and 11.54 MB; each cap sits above it.
-			variantBytes: { low: 11_300_000, medium: 11_400_000, high: 11_500_000, ultra: 11_600_000 },
+			// The crown's dense shoot dial puts 5,437 rosettes on the first variant, which measures
+			// 12.43, 12.50, 12.58 and 12.67 MB; each cap sits above it.
+			variantBytes: { low: 12_450_000, medium: 12_550_000, high: 12_650_000, ultra: 12_750_000 },
 			lod0Triangles: 2_800_000,
 			lod1Triangles: 150_000,
 			lod2Triangles: 42_000,

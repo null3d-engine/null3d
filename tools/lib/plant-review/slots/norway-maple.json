@@ -24,7 +24,7 @@
 		"sunRise": 55,
 		"skyShare": 0.5,
 		"daylight": 1.5,
-		"distance": 2.5
+		"distance": 1.7
 	},
 	"05-crown-underside.png": {
 		"sunAzimuth": 0,
@@ -48,7 +48,8 @@
 		"sunAzimuth": -4,
 		"sunRise": 34,
 		"skyShare": 0.6,
-		"daylight": 1.2
+		"daylight": 1.2,
+		"distance": 2
 	},
 	"14-bark-base.png": {
 		"daylight": 1.6
