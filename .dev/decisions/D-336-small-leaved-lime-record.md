@@ -130,46 +130,48 @@ Rejected:
   aim with. The width was kept because it gates rows 1, 6 and 9 together.
 - The review draws every one of the 32 reference files. The whole views, the render against its
   reference: still 01 has a sky gap of 0.095 against 0.049, a leaf colour of 3.6 and one piece. Still
-  02 has 0.085 against 0.062, a colour of 3.5 and four pieces. Still 18 has 0.090 against 0.107 and
-  two pieces. So the three sky gaps sit inside their two-sided band, at margins of 0.004, 0.027 and
-  0.003. The window is narrow because the reference set disagrees with itself: the silhouette's own
-  0.107 sky sets a floor of 0.0866 while the distant view's 0.049 sets a ceiling of 0.099.
+  02 has 0.085 against 0.062, a colour of 3.5 and one piece. Still 18 has 0.090 against 0.107 and one
+  piece. So the three sky gaps sit inside their two-sided band, at margins of 0.004, 0.027 and 0.003,
+  and the whole views draw one piece each. The window is narrow because the reference set disagrees
+  with itself: the silhouette's own 0.107 sky sets a floor of 0.0866 while the distant view's 0.049
+  sets a ceiling of 0.099.
 - The leaf close-ups match with an overlap of 0.78 and 0.64 and a colour of 3.0 and 2.0. The bark
-  texture matches at 6.2 steps. The basal bark reads 16.3 steps and the young bark 6.2 once its view
-  framed bark rather than a limb; the owner ruled the base's figure a matter for the bark tint or the
-  scene's light rather than a growth change.
+  texture's surface matches at 1.38 steps, while the young bark's colour reads 15.95 against its
+  photograph. The base and mid close views are not paired in this run. A per-zone linear tint in the
+  texture source moves the young layer's colour without touching the relief.
 - The whole-plant turn matches its video with a mean shape overlap of 0.701. Its crown box spreads 23
   per cent wide and 17 per cent tall over the eight angles against the reference's 58 and 15, so
-  both sit inside the all-round band. The whole views now draw one piece each, which the shared
-  branch's crown-foot rule gave back.
+  both sit inside the all-round band.
 - The branch turn spreads 61 per cent wide and 25 per cent tall against 107 and 17, so both sit
-  inside. The sub-branch spreads 68 per cent wide against 119, inside, but 29 per cent tall against
-  6, outside. The leaf-cluster turn spreads 137 per cent wide and 75 per cent tall against 102 and
-  13, so both sit outside; a 35-degree leaf spread over the flat shoot made this worse, 142 and 83,
-  and was reverted.
-- The wind moves its bands 0.001, 0.021, 0.022, 0.025, 0.024 and 0.048 against the clip's 0.045,
-  0.064, 0.020, 0.024, 0.029 and 0.047. The four middle and top bands sit inside or at their
-  photograph's figure. The foot's band does not move: a sway record bends the crown where a real
-  tree moves at its foot, the model-shape limit the maple and the ash state in the same words.
+  inside. The sub-branch spreads 68 per cent wide and 28 per cent tall against 119 and 6, inside both.
+  The leaf-cluster turn spreads 142 per cent wide and 66 per cent tall against 85 and 6, so both sit
+  outside. A 35-degree leaf spread over the flat shoot made it worse, 129 and 41 to 142 and 83, and
+  was reverted.
 - The cut pieces draw their proportions: the branch at 0.91 as wide as it is tall against 1.05, the
   sub-branch at 0.60 against 0.59, and the leaf cluster at 0.71 against 0.50 and 0.68 against 0.70.
-  A leaf stalk twice as thick and nearly straight brings the piece counts down from 18 and 17 to 10
-  and 10 against one each. The elm's cure for a collapsing flat shoot, a 35-degree leaf spread with a
-  small droop, made this species worse, 129 and 41 to 142 and 83: a lime leaf already hangs from a
-  2.8 cm stalk, so the spread turns the blades edge on as the piece comes round. It was reverted.
+  The branch's still draws ten separate leaf groups and the sub-branch's ten, against fifteen and ten
+  in the round before the shared branch merged. The lime's record is unchanged between those runs, so
+  the fall is the shared tool's one-pixel join, not the leaf stalks: the doubled stalk is a second,
+  separate lever that took the counts to fifteen and ten from eighteen and seventeen.
+- The elm's cure for a collapsing flat shoot, a 35-degree leaf spread with a small droop, made this
+  species worse: a lime leaf already hangs from a 2.8 cm stalk, so the spread turns the blades edge
+  on as the piece comes round.
+
 ### The verdict's named faults
 
-The third verdict passed rows 3, 4, 6, 7 and 11 and named six faults. They stand in its order of
-value, with the figure each carries, so the next pass starts from this list.
+The third verdict passed rows 3, 4, 6, 7 and 11. It named the faults below, corrected against the
+run's own figures, in the order of value the lead set.
 
 | Fault | Row | Figure | What it is |
 | --- | --- | --- | --- |
-| The profile's crown is broader than its photograph's | 1 | 1.08 as wide as tall against 0.755 | A whole-view shape fault, the largest left: the crown's own box in the framed picture, not the plant's 0.752 |
-| The close cluster carries too few leaves | 5 | five leaves against about thirteen | A leaf count, not a shape: the spur class carries five alternate leaves where the photograph's tip shows about thirteen |
-| The young bark's colour | 8 | 15.95 | A colour fault on the young layer, which a per-zone linear tint in the texture source can move without touching the relief |
+| The upper crown is short of its photograph | 1 | crown boxes 240, 306 and 343 pixels tall against 295, 387 and 391 | The largest fault left: the crown's box is a fifth to a quarter short in height at every whole view, and its width is 0.93, 1.08 and 0.97 against 0.80, 0.755 and 0.734 |
+| The close cluster carries too few leaves | 5 | five leaves against the reference's eight | A leaf count, not a shape: a blob count of the reference cluster gives eight, so the deficit is three. Its turn is 142 wide against 85 |
+| The young bark's colour | 8 | 15.95 | A colour fault on the young layer, which a per-zone linear tint in the texture source can move without touching the relief. The bark texture's surface is 1.38 and passes |
 | The flower and sprout views frame the wrong subject | 12 | 19 and 20 frame a twig and a branch | Framing, not growth: their slots aim at wood where the photographs show a flower cluster and a stool's sprouts |
 | No skeleton view was drawn | 2 | none in the reference set | The cheapest row on the board: the tool draws a wood-only view, so the record needs a slot entry for it rather than a photograph |
-| The profile and silhouette pieces | 1 | four and two against one | A measure limit, not the plant: the matte drops the sub-pixel twigs that the colour picture joins, so the groups it counts are its own |
+
+The piece counts are not a fault: the whole views draw one piece each, which the shared branch's
+crown-foot rule gave back, so the matte's earlier groups are withdrawn as a measure limit.
 
 Two more are recorded as agreed limits with the lead: the drawn height at 0.84 m above the record's
 band, which is row 9's limit, and the basal sprouts, which the record cannot draw.
