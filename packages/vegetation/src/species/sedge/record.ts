@@ -23,7 +23,7 @@ export const record: Species = {
 	growth: {
 		model: 'tuft',
 		// Still 04's overhead view and still 07's crown show a dense tussock of many shoots.
-		shoots: { mean: 80, spread: 8 },
+		shoots: { mean: 105, spread: 10 },
 		// Still 07 and 09: the shoots rise from one short thick crown, a little over 20 cm across.
 		base: 0.11,
 		// Still 02: the outer shoots lean away from the crown while the middle ones stand upright.
@@ -96,7 +96,7 @@ export const record: Species = {
 			// Still 16: the blade is a keeled V across its width.
 			fold: 24,
 			// Still 12: the upper face twists part way along the blade.
-			twist: 35,
+			twist: 60,
 			// Still 02: each blade arches from upright to hanging at its tip.
 			arch: { mean: 90, spread: 15 },
 			// Still 10: a few tips brown at the edge of the tuft.
@@ -107,7 +107,7 @@ export const record: Species = {
 				// Still 13's matt glaucous blue-green underside.
 				reflectanceBack: [0.1, 0.14, 0.11],
 				transmittance: [0.07, 0.15, 0.03],
-				roughness: [0.3, 0.7],
+				roughness: [0.45, 0.7],
 			},
 		},
 	},
@@ -169,8 +169,8 @@ export const record: Species = {
 			// Measured at seed 11 over the first four variants: the kit holds 33 to 37 KB, and a
 			// variant 0.93, 1.05, 1.19 and 1.78 MB from Low to Ultra.
 			kitBytes: { low: 100_000, medium: 100_000, high: 100_000, ultra: 100_000 },
-			variantBytes: { low: 1_000_000, medium: 1_200_000, high: 1_400_000, ultra: 2_000_000 },
-			lod0Triangles: 70_000,
+			variantBytes: { low: 1_300_000, medium: 1_500_000, high: 1_700_000, ultra: 2_500_000 },
+			lod0Triangles: 90_000,
 			lod1Triangles: 20_000,
 			lod2Triangles: 8_000,
 			downloadBytes: 350_000,
