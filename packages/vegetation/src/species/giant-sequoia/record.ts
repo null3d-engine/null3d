@@ -29,59 +29,94 @@ export const record: Species = {
 	// The whole-tree stills stand the bole a fifth of the tree's height across at breast height
 	// (0.21 in 01, 0.19 in 18), where the buttressed taper still widens it. The pipe radius is the
 	// column's own width there, and the base taper adds the flare the photographs show.
-	size: { height: { mean: 58, spread: 4 }, dbh: 7.2, aspect },
+	size: { height: { mean: 58, spread: 4 }, dbh: 11, aspect },
 	growth: {
-		model: 'self-organizing',
-		years: 45,
-		macroOrders: 4,
-		// The leader runs on to the tip: stills 01, 02 and 18 show one continuous spire, with no fork
-		// below it. Strong apical control keeps a single axis, and the boughs stay short.
-		internode: { length: 0.55, ageFactor: 0.985 },
-		stems: { count: 1, lean: { mean: 0.6, spread: 0.8 }, stool: 0, fused: 0 },
-		buds: {
-			arrangement: { kind: 'spiral', divergence: 137.5 },
-			// Stills 05 and 07: boughs leave the stem almost level, and each order above them stands
-			// steeper, so the spire closes as it rises.
-			angle: [
-				[0.25, 88],
-				[0.5, 74],
-				[0.75, 58],
-				[1, 44],
+		model: 'architectural',
+		// Stills 01, 02 and 18: one straight spire from the buttressed foot to its rounded top, with
+		// no fork and only the smallest drift off the vertical.
+		leader: { curve: 0.6, wander: 1.2, count: 1 },
+		tiers: {
+			// Stills 01, 02 and 05: boughs leave the trunk one at a time in a spiral, a tier about
+			// every metre and a half, thinning and shortening toward the top.
+			kind: 'spiral',
+			spacing: [
+				[0, 2.2],
+				[0.5, 1.8],
+				[1, 1.1],
 			],
-			angleSpread: 6,
-			extinction: [0.01, 0.04],
-			sideOrders: 4,
+			perWhorl: { mean: 1, spread: 0.2 },
+			// Stills 05 and 06: a few small boughs fill the gaps between the tiers, so the crown does
+			// not read as a regular candelabra.
+			between: 0.3,
+			// Stills 01, 02 and 18: the lowest live bough stands about a third of the height up.
+			start: 0.33,
+			// The photographs show no dead brush on the bole: its bark sheds clean.
+			deadBelow: { height: 0.33, stubs: 0 },
 		},
-		apical: {
-			control: [
-				[0, 0.63],
-				[1, 0.63],
-			],
-			dominance: [0.8, 0.3, 0.9],
-			wander: 3,
-		},
-		// Stills 01 and 18: the crown's outer shell carries its fullest clumps, not a starved rim.
-		light: { apical: 1, lateral: 0.5, shadow: [6, 0.18, 2], cells: 96, surface: true },
-		tropism: {
-			photo: 0.03,
-			// Stills 05 and 07: a bough runs out level and its end lifts, so the low orders take a
-			// gentle lift and the fine shoots stand up off the wood.
-			gravi: [
-				[0, 0.32],
-				[0.35, 0],
-				[0.8, 0],
-				[1, 0.06],
-			],
-		},
-		// Stills 01, 02 and 18: the bole is bare to the crown's base and carries no dead brush below
-		// it. Inside the clumps the wood stays: a sequoia's dead inner sprays are part of the crown.
-		shedding: { threshold: 0.1, cleanBole: 0.33, stubs: 0.05, underCrown: 1 },
-		bending: { strength: 0.5, upturn: 0.35, girth: 8.4 },
-		forkRule: true,
-		kinks: false,
-		// Stills 04, 10 and 11: a clump's shoots are fine wood under dense scales, and the far view
-		// must still draw wood under every clump.
-		pipe: { exponent: 2.4, tipRadius: 0.02 },
+		orders: [
+			{
+				// Stills 01, 02 and 17: a bough runs out almost level from a swollen base, longest
+				// just above the crown's middle, and turns its tip up under its own weight.
+				length: [
+					[0, 5.5],
+					[0.35, 8.5],
+					[0.7, 5.5],
+					[1, 2.5],
+				],
+				angle: [
+					[0, 92],
+					[0.5, 88],
+					[0.85, 80],
+					[1, 68],
+				],
+				density: 1.4,
+				arrangement: { kind: 'spiral', divergence: 137.5 },
+				flatten: 0,
+				sag: 7,
+				upturn: 14,
+				curve: 2,
+			},
+			{
+				// Stills 05, 08 and 09: the bough carries short branches, widest toward its end, each
+				// one dipping and turning up.
+				length: [
+					[0, 1.1],
+					[0.5, 2.2],
+					[1, 2.8],
+				],
+				angle: [
+					[0, 66],
+					[1, 52],
+				],
+				density: 1,
+				arrangement: { kind: 'spiral', divergence: 137.5 },
+				flatten: 0.45,
+				sag: 5,
+				upturn: 12,
+				curve: 2,
+			},
+			{
+				// Stills 09, 10 and 11: the last twigs are short ropes of scale shoots, gathered into
+				// the clumps that close each bough's end.
+				length: [
+					[0, 0.45],
+					[1, 0.8],
+				],
+				angle: [
+					[0, 58],
+					[1, 42],
+				],
+				density: 3,
+				arrangement: { kind: 'spiral', divergence: 137.5 },
+				flatten: 0.4,
+				sag: 3,
+				upturn: 8,
+				curve: 0,
+			},
+		],
+		// The pipe model fits the column to the record's diameter, and the leader keeps most of its
+		// girth at every node, so the trunk runs as the near-parallel column of still 17.
+		pipe: { exponent: 2.4, tipRadius: 0.02, leader: 0.8 },
 	},
 	envelope,
 	shoots: {
@@ -193,9 +228,9 @@ export const record: Species = {
 		bud: { length: 0.002, width: 0.0015, tipCluster: 1 },
 		placement: {
 			perMetre: [
-				[0, 6],
-				[0.5, 12],
-				[1, 26],
+				[0, 3],
+				[0.5, 6],
+				[1, 12],
 			],
 			density: 1,
 			// Stills 04 and 05: sky and wood show between the clumps, so the crown's inside thins
@@ -258,7 +293,7 @@ export const record: Species = {
 		flare: { amount: 0.25, height: 1.5 },
 		// The column itself widens strongly through its lowest tenth, as still 17 shows, and is
 		// nearly parallel above that.
-		taper: { amount: 0.8, height: 13 },
+		taper: { amount: 0.12, height: 3 },
 		buttress: {
 			lobes: { mean: 6, spread: 1 },
 			amount: 0.55,
@@ -331,7 +366,7 @@ export const record: Species = {
 		// The clumps stand about a fifth larger than their shoots, so the gaps between one clump's
 		// shoots fall on a neighbour's scales rather than on sky.
 		cardGrow: 1.2,
-		woodOrders: [2, 1],
+		woodOrders: [1, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
