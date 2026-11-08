@@ -54,7 +54,8 @@
 	},
 	"14-bark-base.png": {
 		"skyShare": 0.7,
-		"daylight": 1.3
+		"daylight": 1.3,
+		"barkMask": true
 	},
 	"15-bark-mid-trunk.png": {
 		"skyShare": 0.82,
@@ -62,7 +63,8 @@
 	},
 	"16-bark-on-limb.png": {
 		"skyShare": 0.8,
-		"daylight": 1.1
+		"daylight": 1.1,
+		"barkMask": true
 	},
 	"17-trunk-taper.png": {
 		"skyShare": 0.72,
@@ -110,7 +112,8 @@
 	"28-young-bark.png": {
 		"thin": 0.006,
 		"along": 0.75,
-		"span": 0.012
+		"span": 0.012,
+		"barkMask": true
 	},
 	"11-leaf-cluster.png": {
 		"daylight": 0.758,
