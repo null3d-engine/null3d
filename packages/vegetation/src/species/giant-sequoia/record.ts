@@ -88,7 +88,7 @@ export const record: Species = {
 					[0, 66],
 					[1, 52],
 				],
-				density: 1.2,
+				density: 1.05,
 				arrangement: { kind: 'spiral', divergence: 137.5 },
 				flatten: 0.45,
 				sag: 5,
@@ -181,7 +181,7 @@ export const record: Species = {
 				[0.5, 7],
 				[1, 14],
 			],
-			density: 1.2,
+			density: 1.05,
 			// Stills 04 and 05: sky and wood show between the clumps, so the crown's inside thins
 			// while its lit outer masses stay.
 			shadePrune: 0,
@@ -315,7 +315,7 @@ export const record: Species = {
 		switchPixels: [240, 12, 160],
 		// The clumps stand about a fifth larger than their shoots, so the gaps between one clump's
 		// shoots fall on a neighbour's scales rather than on sky.
-		cardGrow: 10,
+		cardGrow: 12,
 		// A shoot's own twig is under a pixel at a whole view, so each card draws a short stalk
 		// down to the wood it grows from and joins the clump to its branch.
 		cardStalk: 3,
@@ -330,8 +330,8 @@ export const record: Species = {
 			kitBytes: { low: 3_400_000, medium: 6_200_000, high: 11_500_000, ultra: 22_000_000 },
 			variantBytes: { low: 10_000_000, medium: 11_000_000, high: 12_500_000, ultra: 13_000_000 },
 			lod0Triangles: 2_500_000,
-			lod1Triangles: 140_000,
-			lod2Triangles: 34_000,
+			lod1Triangles: 152_000,
+			lod2Triangles: 42_800,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 340_000,
 			growMilliseconds: 600,
