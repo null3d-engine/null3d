@@ -1375,8 +1375,9 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 }
 
 /**
- * Where the crown starts, found from its own rows: the first narrow run below the crown's wide top.
- * The lower edge of the foliage, whatever the ground below it reads as.
+ * Where the crown starts, found from its own rows: the first narrow stretch below the crown's wide
+ * top that the stem continues below. The lower edge of the foliage, whatever the ground below it
+ * reads as.
  */
 function crownStartFromTop(spans: Int32Array, box: Box, widest: number): number {
 	const tall = box.bottom - box.top + 1;
@@ -1386,13 +1387,25 @@ function crownStartFromTop(spans: Int32Array, box: Box, widest: number): number 
 	};
 	const limit = widest * 0.12;
 	const run = Math.max(2, Math.round(tall * 0.03));
+	// An airy crown is full of narrow rows of its own, so a narrow stretch alone does not make a
+	// crown's foot. Only the stem runs on below the lowest foliage, so a candidate is the foot
+	// when the rows beneath it stay narrow.
+	const check = Math.max(3, Math.round(tall * 0.12));
+	const stemShare = (y: number): number => {
+		const to = Math.min(box.bottom, y + check);
+		if (to <= y) return 1;
+		let narrow = 0;
+		for (let k = y + 1; k <= to; k++) if (width(k) <= limit) narrow++;
+		return narrow / (to - y);
+	};
 	let y = box.top;
 	while (y <= box.bottom && width(y) <= limit) y++;
 	for (; y <= box.bottom; y++) {
 		for (let k = 0; k < run && y + k <= box.bottom; k++) {
 			if (width(y + k) > limit) continue;
-			// The crown's last wide row before the narrow stretch that ends it.
-			return Math.max(box.top, y + k - 1);
+			const foot = Math.max(box.top, y + k - 1);
+			if (stemShare(foot) >= 0.7) return foot;
+			break;
 		}
 	}
 	return box.bottom;
