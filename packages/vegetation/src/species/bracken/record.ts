@@ -22,17 +22,18 @@ export const record: Species = {
 	roundBand,
 	growth: {
 		model: 'frond-colony',
-		// Still 01 and the turntable: about fifteen fronds stand in one loose patch.
-		fronds: { mean: 15, spread: 4 },
+		// Still 01 and the turntable: about twenty fronds stand in one patch, their blades
+		// overlapping into a level roof.
+		fronds: { mean: 20, spread: 4 },
 		// Still 01: the patch spreads about a metre and a quarter each way from its middle, the
 		// fronds a stipe apart along lines that wander out from it, so the plan reads round.
 		rhizome: {
 			length: 0.95,
 			branches: { mean: 5, spread: 1 },
-			spacing: { mean: 0.32, spread: 0.06 },
+			spacing: { mean: 0.26, spread: 0.05 },
 		},
 		// Still 02: the bare stipe is about as long as the blade it carries, and leans a little.
-		stipe: { length: { mean: 0.8, spread: 0.22 }, lean: { mean: 6, spread: 5 } },
+		stipe: { length: { mean: 0.8, spread: 0.1 }, lean: { mean: 6, spread: 5 } },
 		frond: {
 			// Stills 12 and 21: the blade is bipinnate and broadly triangular, about as long as
 			// its stipe, and the blades of a stand overlap into a continuous roof.
@@ -44,10 +45,10 @@ export const record: Species = {
 			// first third to near level, and lets the tip fall a little below it.
 			droop: [
 				[0, 0],
-				[0.1, 45],
-				[0.35, 78],
-				[0.7, 94],
-				[1, 100],
+				[0.12, 42],
+				[0.4, 76],
+				[0.75, 88],
+				[1, 92],
 			],
 			// Still 12: the blade turns a little about its rachis, so one side stands higher.
 			twist: 8,
@@ -71,7 +72,7 @@ export const record: Species = {
 				planes: 1,
 				// Still 09: each pinna folds a little about its costa, so the blade is not flat.
 				fold: 14,
-				droop: 24,
+				droop: 16,
 				spines: 0,
 				// Stills 09 and 10: every pinna carries about eighteen pinnules cut into blunt
 				// joined lobes.
@@ -133,7 +134,9 @@ export const record: Species = {
 			[0, 0.85],
 			[1, 0.5],
 		],
-		sway: { frequency: 0.35, amplitude: 0.02 },
+		// A bracken stipe is a stiff rod: the breeze moves its top while the length near the
+		// ground stays put, so the sway falls away faster than the cantilever's square.
+		sway: { frequency: 0.35, amplitude: 0.02, power: 3 },
 		flutter: { kind: 'leaflet', amplitude: 0.04, frequency: 1.2 },
 	},
 	lod: {
