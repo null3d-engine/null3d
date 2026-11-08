@@ -1,8 +1,18 @@
 {
-	"23-leaf-cluster-studio.png": {
-		"view": "limb",
-		"span": 0.35,
-		"thin": 0.24,
+	"09-rib-pattern.png": { "span": 0.24, "barkHeight": 4 },
+	"10-areoles-and-spines.png": { "span": 0.16, "barkHeight": 4 },
+	"13-rib-cross-section.png": { "span": 0.5, "barkHeight": 4 },
+	"15-skin-mid-trunk.png": { "span": 0.72, "barkHeight": 4 },
+	"16-skin-on-arm.png": { "girth": 0.85, "along": 0.3 },
+	"20-nest-holes.png": { "span": 0.72, "barkHeight": 7.5 },
+	"22-subbranch-studio.png": {
+		"view": "bark-limb",
+		"thin": 0.22,
+		"girth": 0.8,
+		"along": 0.4,
 		"leaves": null
-	}
+	},
+	"23-leaf-cluster-studio.png": { "view": "limb", "span": 0.35, "thin": 0.22, "leaves": null },
+	"26-bark-texture.png": { "span": 0.72, "barkHeight": 4 },
+	"leaf-cluster-turntable.mp4": { "view": "limb", "span": 0.35, "thin": 0.22 }
 }

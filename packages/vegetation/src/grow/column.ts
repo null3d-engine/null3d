@@ -27,6 +27,7 @@ const Purpose = {
 	ArmHeight: 3,
 	ArmAzimuth: 4,
 	ArmRise: 5,
+	ArmElbow: 9,
 	Lean: 6,
 	LeanTurn: 7,
 	Flowers: 8,
@@ -104,7 +105,9 @@ function armPlans(input: GrowInput, growth: Column, height: number): ArmPlan[] {
 			height: height * Math.min(0.66, Math.max(0.3, growth.arms.from + jitter * 0.08)),
 			heading:
 				turn + (2 * PI * k) / Math.max(1, count) + (draw(input, Purpose.ArmAzimuth, k) - 0.5) * 0.7,
-			elbow: Math.max(0.1, growth.arms.elbow),
+			// Each arm runs out its own distance before it turns up, so the elbows stand at different
+			// heights and the arms do not read as fingers from one point.
+			elbow: Math.max(0.1, growth.arms.elbow * (0.65 + 0.7 * draw(input, Purpose.ArmElbow, k))),
 			rise: Math.max(0.2, spreadAt(growth.arms.rise, draw(input, Purpose.ArmRise, k))),
 		});
 	}
