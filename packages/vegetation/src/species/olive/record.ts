@@ -388,8 +388,8 @@ export const record: Species = {
 		// Stills 21 and 22: a branch about a metre long and a sub-branch about a third of that, each
 		// cut from the grown plant. The pieces carry the crown's own shoots, so their drooping twigs
 		// and opposite pairs are the photographs' without a class of their own.
-		branch: { order: 2, length: 1 },
-		subbranch: { order: 3, length: 0.35 },
+		branch: { order: 3, length: 0.9 },
+		subbranch: { order: 4, length: 0.35 },
 		// Still 23: one upright shoot, its pairs of leaves along the run and buds at its tip.
 		cluster: { shoot: 'short' },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
