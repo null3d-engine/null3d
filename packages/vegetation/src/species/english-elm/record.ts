@@ -210,8 +210,10 @@ export const record: Species = {
 					[0, 75],
 					[1, 55],
 				],
-				leafAngleSpread: 12,
-				droop: 3,
+				// The cluster's leaves stand out of its plane, so the piece keeps a silhouette when the
+				// camera turns edge-on to it, as the reference twig's leaves do.
+				leafAngleSpread: 35,
+				droop: 6,
 			},
 			{
 				// Stills 21 and 22: the cut piece is a bare stem that divides two or three times into
