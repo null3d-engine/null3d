@@ -67,8 +67,8 @@ export const record: Species = {
 			spikes: {
 				// Still 19: four or five female spikes hang one below another.
 				count: { mean: 4, spread: 0.8 },
-				// Still 19: 7 to 16 cm between spikes along the bowed upper stem.
-				spacing: { mean: 0.11, spread: 0.02 },
+				// Still 19: the spikes hang in a drooping cluster near the stem's tip.
+				spacing: { mean: 0.045, spread: 0.01 },
 				// Still 19: the spikes hang on short stalks of 2 to 5 cm.
 				stalk: { mean: 0.035, spread: 0.01 },
 			},
@@ -84,17 +84,16 @@ export const record: Species = {
 			width: 0.02,
 			// Still 12: the blade is widest in its lower third and narrows toward the long tip.
 			profile: [
-				[0, 0.5],
-				[0.1, 0.95],
-				[0.5, 1],
-				[0.85, 0.75],
-				[1, 0.45],
+				[0, 0.7],
+				[0.1, 1],
+				[0.7, 0.95],
+				[1, 0.5],
 			],
 			// Still 12: the blade ends in a long fine point.
 			tip: 'pointed',
 			tipLength: 0.28,
-			// Still 16: the blade is a keeled V across its width.
-			fold: 24,
+			// Stills 08 and 12: the blade is a deep keeled V across its width.
+			fold: 40,
 			// Still 12: the upper face twists part way along the blade.
 			twist: 60,
 			// Still 02: each blade arches from upright to hanging at its tip.
@@ -118,7 +117,7 @@ export const record: Species = {
 			at: 'flower',
 			share: 1,
 			seasons: ['blossom', 'summer'],
-			shape: { catkin: { length: 0.13, radius: 0.0026 } },
+			shape: { catkin: { length: 0.12, radius: 0.0026 } },
 			colour: [0.13, 0.2, 0.06],
 			hang: 180,
 		},
@@ -128,7 +127,7 @@ export const record: Species = {
 			at: 'flower',
 			share: 1,
 			seasons: ['autumn', 'winter'],
-			shape: { catkin: { length: 0.13, radius: 0.0026 } },
+			shape: { catkin: { length: 0.12, radius: 0.0026 } },
 			colour: [0.17, 0.11, 0.05],
 			hang: 180,
 		},
@@ -153,11 +152,11 @@ export const record: Species = {
 	wind: {
 		// The wind clip: the leaves and bowed stems sway while the crown stays still.
 		stiffness: [
-			[0, 0.85],
-			[1, 0.15],
+			[0, 0.9],
+			[1, 0.35],
 		],
-		sway: { frequency: 0.5, amplitude: 0.06 },
-		flutter: { kind: 'grass', amplitude: 0.22, frequency: 2 },
+		sway: { frequency: 0.5, amplitude: 0.03 },
+		flutter: { kind: 'grass', amplitude: 0.12, frequency: 2 },
 	},
 	lod: {
 		nearFoliage: 'merged',
