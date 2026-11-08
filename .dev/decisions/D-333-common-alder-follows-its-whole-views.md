@@ -83,8 +83,14 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   from the stem (`lateral`), and the cluster's six leaves stand along a stem with its internodes
   showing rather than crowded at one point. Rejected: thinning leaves, which a studio still scales
   back up, and a real branch cut from the grown plant, which draws one bare pole with a tuft.
-- The rim's pieces fell from 5, 3, 1 and 3 at the four whole views to one at each, from the engine's
-  card-coverage fix and `lod.cardStalk` at 2.5 pixels. No extra shoots were spent on them.
+- The rim's pieces are stated limits. Under the corrected piece count, which closes a one-pixel
+  hairline, the four whole views stand at two, one, two and two against the photographs' one, the
+  trunk view at four against two, and the branch studio at one. Seven record levers were measured one
+  at a time and none moved the trunk view: the first level switch, the leaf stalk's radius, the
+  shoots' scale, the card's size, the side shoots' count, the card stalk's width and the crown's
+  density. A matte cutoff would join them and was refused, because it fills the crown's fine gaps on
+  the same mask and would take the oak's two passing whole views into failure. What remains is an
+  engine fault, not a species one.
 
 ## Consequences
 
