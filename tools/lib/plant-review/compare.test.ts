@@ -291,6 +291,18 @@ describe("the page's stand camera", () => {
 		expect(camera.yaw).toBeLessThan(0);
 	});
 
+	test('stands a low camera for a short plant photographed from near the ground', () => {
+		const fov = 38;
+		const camera = standCamera(
+			{ fov, aspect: 1024 / 688, horizon: 0.8116, top: 0.193, base: 0.8814, targetX: 0.48 },
+			1.52,
+		);
+		expect(camera.warning).toBeUndefined();
+		expect(camera.height).toBeGreaterThan(0);
+		expect(projectRow(camera, 1.52, fov)).toBeCloseTo(0.193, 3);
+		expect(projectRow(camera, 0, fov)).toBeCloseTo(0.8814, 3);
+	});
+
 	test('says what it gave up when the base would put the camera under the ground', () => {
 		const camera = standCamera(
 			{ fov: 30, aspect: 1, horizon: 0.9, top: 0.1, base: 0.5, targetX: 0.5 },
