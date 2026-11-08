@@ -544,6 +544,12 @@ which is where the photographs themselves stand from it.
 A lower young radius, 0.015 in place of 0.03, moves the limb by three hundredths. The limb draws the
 mature bark either way, so that lever is not this row's.
 
+Three zones have one side effect worth naming. The silhouette view's bark measure rose from 6.50 to
+6.69 steps. That measure is the bark's tone seen beside the whole plant. It belongs to row 8's bark,
+not to the crown's colour. It is the bole's tone as the whole view shows it. It rose because the bole zone
+darkens the trunk the whole view mostly shows. Row 8's verdict rests on the three close views,
+where the same tint reads 5.98, 0.58 and 2.33. The whole view's small rise therefore changes no row.
+
 ### The row 6 band through the cards, and the young bark's tint
 
 The crown's lower third carries less sky than view 01's photograph at every density and shape the
@@ -553,13 +559,20 @@ record offers. Two changes to the cards bring the three whole views inside their
 and 0.240 against the photographs' 0.261, 0.187 and 0.215. The cut views hold at 0.52, 0.39 and
 0.39.
 
-The card size was then measured twice, because the landing branch's card coverage fix draws each
-card at its mip level's true coverage and opens the far crown. At the fitted 1.38 the views read
+The card size was then measured twice. The landing branch's card coverage fix draws each card at its
+mip level's true coverage, which opens the far crown. At the fitted 1.38 the views read
 0.2998, 0.2708 and 0.2887 against 0.2608, 0.1869 and 0.2147. So 02 and 18 fall outside. The cards
 stand at 1.55 at that base: 01 reads 0.2509, 02 0.2225 and 18 0.2437, all inside. 1.50 leaves 02
 two thousandths from its open side, and 1.60 puts 01 twenty-four thousandths under its closed one.
 The helper's model of about 1.33 held for the older base, where 1.38 read 0.2458, 0.2309 and
 0.2449. At that base 1.33 read 0.2401 at 02, three thousandths past its open side.
+
+The card size has been measured a third time. The landing branch's leaf back-face change grows the
+ash's crown denser: 472 limbs over 296,452 triangles, where it carried 458 over 284,391. The whole
+views closed by about two hundredths. At that base the cards stand
+at 1.46: 01 reads 0.2512, 02 0.2244 and 18 0.2442 against the photographs' 0.2608, 0.1869 and
+0.2147. 1.48 leaves 01 four and a half thousandths from its closed side, and 1.50 puts it a
+thousandth past it.
 
 The young bark takes a colour from the texture build. The young tile is made from still 28, the
 older green-grey bark of a young branch. The crown's shoots in still 10 are greener. The two
