@@ -205,6 +205,21 @@ describe('the width profile', () => {
 		expect(crownStartRow(rowSpans(mask, width, height), box)).toBe(49);
 	});
 
+	test('finds the crown when a ground line runs below the foot', () => {
+		const width = 100;
+		const height = 100;
+		const mask = new Uint8Array(width * height);
+		// A crown of 80 px over a trunk of 4, over a grassy ground line that spans the frame.
+		// The ground is wider than the crown, so the lowest bands make the trunk estimate the
+		// ground's width and the upward scan finds no wide run.
+		for (let y = 0; y < 50; y++) for (let x = 10; x < 90; x++) mask[y * width + x] = 1;
+		for (let y = 50; y < 80; y++) for (let x = 48; x < 52; x++) mask[y * width + x] = 1;
+		for (let y = 80; y < 100; y++) for (let x = 0; x < 100; x++) mask[y * width + x] = 1;
+		const box = boxOf(mask, width, height) as NonNullable<ReturnType<typeof boxOf>>;
+		// The crown's lower edge, not the frame's foot and not the ground line's top.
+		expect(crownStartRow(rowSpans(mask, width, height), box)).toBe(49);
+	});
+
 	test('finds where a crown starts over a narrow trunk', () => {
 		const width = 60;
 		const height = 60;
