@@ -288,9 +288,14 @@ the base view's colour difference from 7.11 to 6.90 steps.
 
 Neither row answers to the scene's light. The three bark stills were drawn at an even light, a sky
 share of 0.85 and a daylight of 1.2, as close to the copy stand as the review's light goes: views 15
-and 16 read 9.88 and 7.68 before and after, unmoved. The reason is in the measure. The review's
-bark colour is the mean below the crown's start, and a bark close-up has no crown, so that figure is
-empty on all three views and the number the row prints is the plant's own mean colour.
+and 16 read 9.88 and 7.68 before and after, unmoved.
+
+The reason is in the measure. The review compares the middle of the picture with the middle of the
+photograph, and a bark close-up is all bark, so that patch is the bark's own colour. The patch does
+not follow the light either: on 8 November the base still read 6.22 under an even light where it
+read 6.38 as framed, and the mid-trunk read 5.38 to the hundredth under both a sky share of 0.85
+and a bright sky share of 0.9 with a daylight of 2.2. A colour measured this way is the material's,
+so the close views' daylight cannot close row 8.
 
 View 18 is a matte. The review page draws the silhouette view as a mask, so the plant is black by
 construction, #0a0a0a against the photograph's #5e5e5d, and its 25.9 steps are the mask against a
@@ -488,6 +493,33 @@ leaflets sessile, and the largest of seed 11's six variants 3.18, 3.25, 3.33 and
 of the same variants draws 24,855 to 35,382 triangles and the second 10,594 to 13,325. A variant
 grows in about 290 to 300 ms with the machine in other hands.
 
+### The row 6 band through the cards, and the young bark's tint
+
+The crown's lower third carries less sky than view 01's photograph at every density and shape the
+record offers. Two changes to the cards bring the three whole views inside their bands, measured on
+8 November. The shade prune drops a shoot whose own leaves leave it under a share of the sky, at
+0.45 where it stood at 0.15. At the tip it was measured on, views 01, 02 and 18 read 0.242, 0.224
+and 0.240 against the photographs' 0.261, 0.187 and 0.215. The cut views hold at 0.52, 0.39 and
+0.39.
+
+The card size was then measured twice, because the landing branch's card coverage fix draws each
+card at its mip level's true coverage and opens the far crown. At the fitted 1.38 the views read
+0.2998, 0.2708 and 0.2887 against 0.2608, 0.1869 and 0.2147. So 02 and 18 fall outside. The cards
+stand at 1.55 at that base: 01 reads 0.2509, 02 0.2225 and 18 0.2437, all inside. 1.50 leaves 02
+two thousandths from its open side, and 1.60 puts 01 twenty-four thousandths under its closed one.
+The helper's model of about 1.33 held for the older base, where 1.38 read 0.2458, 0.2309 and
+0.2449. At that base 1.33 read 0.2401 at 02, three thousandths past its open side.
+
+The young bark takes a colour from the texture build. The young tile is made from still 28, the
+older green-grey bark of a young branch. The crown's shoots in still 10 are greener. The two
+photographs' linear means differ by [1.11, 1.24, 1.01]. The young layer takes the tint
+[0.99, 1.11, 0.9], which keeps its brightness. The tool's `tint` field multiplies a layer's baked
+colour. It leaves the relief and the height field alone
+([D-309](D-309-plant-textures-from-references.md)). The limb's bark figure moves from 3.79 to 3.72
+and stays inside its band. The young bark's own still holds at 9.53 because that view draws the
+mature bark. A red marker tint on the young layer left the picture's surface unchanged and reddened
+only a few stalks at its edge, while the same marker reddened every stem of still 10.
+
 ## Look
 
 From the whole view the ash reads as its photographs: a long clean bole, a crown taller than it is
@@ -546,9 +578,9 @@ Rejected:
      distant crown's colour would fight the texture that measures the leaf, and the leaf's own
      views, which stand at 2.2 and 1.5 steps, would be wrong. A future species with the same leaf
      meets the same limit, and should state it the same way.
-  5. The bark's colour at mid-trunk reads 9.9 through the bark-mid view where the texture itself
-     measures 1.9, and the young bark reads 8.3. The view's light stands at the copy stand's angle
-     and the bark's figure moves with it.
+  5. The bark's colour at mid-trunk reads 5.38 steps through the bark-mid view where the texture
+     itself measures under 2, and the young bark reads 9.53. The close views' light does not move
+     either figure, so the residue is the material's own shading and the view's own scene.
   6. The whole plant's outline matches its turning video at 0.507 on average. The reference's own
      hull overlaps its views by only 0.57 to 0.80, so the fitted envelope cannot be closer than the
      reference's own drift allows.
