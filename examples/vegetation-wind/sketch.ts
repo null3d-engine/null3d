@@ -126,8 +126,10 @@ export default defineSketch(async (ctx) => {
 	const plant = async () => {
 		for (const piece of planted) piece.destroy();
 		planted = [];
-		const ids = speciesIds();
-		const across = Math.max(1, Math.ceil(Math.sqrt(ids.length)));
+		// Three species stand in a ring, each turned to face the middle, so the wind's sweep is read
+		// across different crowns rather than across one grid.
+		const ids = speciesIds().slice(0, 3);
+		const ring = 13;
 		let index = 0;
 		for (const id of ids) {
 			const module = await loadSpecies(id);
@@ -135,8 +137,9 @@ export default defineSketch(async (ctx) => {
 			const materials = plantMaterials(ctx, kit, { wind: wind.field });
 			const variant = index % Math.max(1, kit.record.variants);
 			const asset = await growPlant(kit, { seed, variant, near: true });
-			const x = ((index % across) - (across - 1) / 2) * 20;
-			const z = (Math.floor(index / across) - (ids.length / across - 1) / 2) * 20;
+			const angle = (index / Math.max(1, ids.length)) * Math.PI * 2;
+			const x = Math.sin(angle) * ring;
+			const z = Math.cos(angle) * ring;
 			planted.push(
 				placePlants(
 					ctx,
@@ -145,7 +148,7 @@ export default defineSketch(async (ctx) => {
 					{
 						count: 1,
 						position: new Float32Array([x, 0, z]),
-						turn: new Float32Array([index * 0.6]),
+						turn: new Float32Array([angle + Math.PI]),
 						scale: new Float32Array([1]),
 						variant: new Uint8Array([0]),
 					},

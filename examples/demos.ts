@@ -871,9 +871,9 @@ export const DEMOS: readonly Demo[] = [
 		sketch: new URL('./vegetation-wind/sketch.ts', import.meta.url),
 		code: 'vegetation-wind/',
 		title: 'Plants in wind',
-		scene: 'A meadow in a breeze',
+		scene: 'Three trees in a breeze',
 		summary:
-			"The same plants under the wind add-on's field: set the wind's strength and its bearing on the sliders, and the crowns lift and settle as it passes. The Hold button stops the air, so a still frame can be compared with a moving one.",
+			"Three species stand in a ring under the wind add-on's field: set the wind's strength and its bearing on the sliders, and the crowns lift and settle as it passes. The Hold button stops the air, so a still frame can be compared with a moving one.",
 		controls: [],
 		hold: 2,
 		timeoutSeconds: 240,
