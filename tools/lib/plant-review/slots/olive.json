@@ -3,12 +3,12 @@
 		"skyShare": 0.5,
 		"daylight": 2.2,
 		"top": 0.15,
-		"turn": 30
+		"turn": 180
 	},
 	"02-whole-profile.png": {
 		"skyShare": 0.5,
 		"daylight": 2.2,
-		"turn": 75
+		"turn": 30
 	},
 	"03-whole-from-below.png": {
 		"skyShare": 0.25,
@@ -34,7 +34,7 @@
 	"18-silhouette.png": {
 		"fov": 30,
 		"top": 0.15,
-		"turn": 30
+		"turn": 180
 	},
 	"20-hollow-trunk.png": {
 		"view": "trunk",
