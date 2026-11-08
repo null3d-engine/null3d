@@ -295,9 +295,10 @@ export const record: Species = {
 		// is and the tint stays at one.
 		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [1, 1, 1] }],
 		young: 0,
-		// Still 28: the smooth green and red-brown bark, with pale lenticels, holds on wood thinner than
-		// about six centimetres across.
-		youngRadius: 0.03,
+		// Still 28: the smooth green and red-brown bark, with pale lenticels, holds on the young wood,
+		// which the close view reads out to about ten centimetres across; thicker wood shows the
+		// fissures of the bole below it.
+		youngRadius: 0.05,
 		// The shallow fissures stand wider apart on the thick bole than on the limbs, as stills 15 and
 		// 16 show.
 		girthScale: [
