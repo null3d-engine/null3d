@@ -189,7 +189,7 @@
 		"test": "plant-olive",
 		"tier": "compat",
 		"date": "2026-11-08",
-		"reason": "the olive's studio cluster gained its own five-pair class, so this Mac redrew the software set with CI=1"
+		"reason": "the olive's studio pieces took classes of their own, so this Mac redrew the software set with CI=1"
 	},
 	"chromium-swiftshader/compat/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -471,7 +471,7 @@
 		"test": "plant-olive",
 		"tier": "webgl2",
 		"date": "2026-11-08",
-		"reason": "the olive's studio cluster gained its own five-pair class, so this Mac redrew the software set with CI=1"
+		"reason": "the olive's studio pieces took classes of their own, so this Mac redrew the software set with CI=1"
 	},
 	"chromium-swiftshader/webgl2/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -783,7 +783,7 @@
 		"test": "plant-olive",
 		"tier": "webgpu",
 		"date": "2026-11-08",
-		"reason": "the olive's studio cluster gained its own five-pair class, so this Mac redrew the software set with CI=1"
+		"reason": "the olive's studio pieces took classes of their own, so this Mac redrew the software set with CI=1"
 	},
 	"chromium-swiftshader/webgpu/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
