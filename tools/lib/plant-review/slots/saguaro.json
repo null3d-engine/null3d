@@ -50,7 +50,8 @@
 	"16-skin-on-arm.png": {
 		"view": "bark-limb",
 		"thin": 0.19,
-		"along": 0.35,
+		"along": 0.75,
+		"span": 0.45,
 		"girth": null
 	},
 	"20-nest-holes.png": {
