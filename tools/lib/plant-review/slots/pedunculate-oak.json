@@ -100,10 +100,6 @@
 	"branch-turntable.mp4": {
 		"daylight": 1.7
 	},
-	"leaf-cluster-turntable.mp4": {
-		"daylight": 1.27,
-		"lamp": "#ebf9ff"
-	},
 	"subbranch-turntable.mp4": {
 		"daylight": 0.88,
 		"lamp": "#ebf9ff"
