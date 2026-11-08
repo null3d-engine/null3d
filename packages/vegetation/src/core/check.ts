@@ -405,6 +405,7 @@ function extraProblems(record: Species, out: string[]): void {
 			if (!(value >= -0.5 && value <= 0.5))
 				out.push(`${path}.offset[${k}] is ${value}; it is metres from -0.5 to 0.5`);
 		});
+		if (extra.group !== undefined) wholeProblem(extra.group, `${path}.group`, 0, 15, out);
 		const bristles = 'lathe' in extra.shape ? extra.shape.bristles : undefined;
 		if (bristles !== undefined) {
 			if (!(bristles.rows >= 1 && bristles.rows <= 16))

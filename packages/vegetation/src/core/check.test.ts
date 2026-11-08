@@ -251,6 +251,12 @@ describe('the record check', () => {
 		expect(
 			problems.some((p) => p.startsWith('extras[2].shape.stalkSides is 2.5; it must be a whole')),
 		).toBe(true);
+		expect(speciesProblems({ ...template, extras: [{ ...acorn, group: 3 }] })).toEqual([]);
+		expect(
+			speciesProblems({ ...template, extras: [{ ...acorn, group: 2.5 }] }).some((p) =>
+				p.startsWith('extras[0].group is 2.5; it must be a whole number from 0 to 15'),
+			),
+		).toBe(true);
 	});
 
 	it('presses only a blade leaf flat', () => {

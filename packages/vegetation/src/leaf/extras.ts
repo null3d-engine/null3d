@@ -55,6 +55,11 @@ const SMALLEST_FAR = 0.025;
 const FEWEST_PIXELS = 5;
 /** The first hash purpose of the extras, past every purpose the instancer uses. */
 const PURPOSE = 40;
+/**
+ * The first hash purpose of an extra group, past the entries' own purposes, so a group and an entry
+ * number never draw the same sites.
+ */
+const GROUP = 44;
 /** Extras a record can draw: the first four, whose colours the plant material's header holds. */
 const MOST = 4;
 /**
@@ -930,7 +935,10 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 		// The stalks take the band colour where the record gives one, as an acorn's peduncle does.
 		const stalkBand = extra.bandColour ? 1 : 0;
 		sitesOf(input, extra).forEach((given: Site, s) => {
-			const purpose = input.variant * 64 + PURPOSE + index;
+			// Extras that name one group pick the same sites, so the parts of one fruit hang on one
+			// twig; each part keeps its own place on the shoot through its tip share and offset.
+			const purpose =
+				input.variant * 64 + (extra.group === undefined ? PURPOSE + index : GROUP + extra.group);
 			if (unitAt(input.seed, salt, purpose, s) >= extra.share) return;
 			const turn = unitAt(input.seed, salt, purpose, s, 1) * 2 * Math.PI;
 			// A fruit that stands beside its site moves with its whole body, stalks included.

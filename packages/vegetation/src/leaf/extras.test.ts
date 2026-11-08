@@ -4,6 +4,7 @@
 // level, and the same bytes from the same seed.
 import { describe, expect, it } from 'bun:test';
 import type { SpeciesKitData } from '../asset';
+import { length3 } from '../core/math';
 import { placeholderSkeleton } from '../core/placeholder';
 import type { ExtraSpec, Species } from '../core/record';
 import type { Season } from '../core/types';
@@ -115,6 +116,19 @@ function byEntry(mesh: ReturnType<typeof extrasMesh>): number[] {
 		counts[entry] = (counts[entry] as number) + 1;
 	}
 	return counts;
+}
+
+/** The positions of one entry's vertices, in the order the mesh writes them. */
+function positionsOf(mesh: NonNullable<ReturnType<typeof extrasMesh>>, entry: number): number[] {
+	const out: number[] = [];
+	for (let v = 0; v < mesh.positions.length / 3; v++)
+		if (mesh.colors[v * 4 + 2] === entry)
+			out.push(
+				mesh.positions[v * 3] as number,
+				mesh.positions[v * 3 + 1] as number,
+				mesh.positions[v * 3 + 2] as number,
+			);
+	return out;
 }
 
 describe('the extras', () => {
@@ -299,6 +313,62 @@ describe('the extras', () => {
 			movedMin = Math.min(movedMin, moved.positions[i] as number);
 		}
 		expect(movedMin - plainMin).toBeCloseTo(0.2, 5);
+	});
+
+	it('draws the extras that name one group at the same sites, and those alone at their own', () => {
+		const twin: ExtraSpec = { ...ACORN, share: 0.4, count: undefined, tipShare: 0.5 };
+		const grouped = extrasMesh(
+			dressed(
+				oakRecord({
+					extras: [
+						{ ...twin, group: 0 },
+						{ ...twin, group: 0 },
+					],
+				}),
+				'summer',
+			),
+			0,
+		);
+		if (!grouped) throw new Error('no acorns');
+		const first = positionsOf(grouped, 0);
+		const second = positionsOf(grouped, 1);
+		expect(first.length).toBeGreaterThan(0);
+		expect(second).toEqual(first);
+		// The same two extras with no group pick their own sites, so their bodies stand apart.
+		const apart = extrasMesh(dressed(oakRecord({ extras: [twin, { ...twin }] }), 'summer'), 0);
+		if (!apart) throw new Error('no acorns');
+		expect(positionsOf(apart, 1)).not.toEqual(positionsOf(apart, 0));
+	});
+
+	it('sets the parts of one group in an order along the shoot rather than on one point', () => {
+		const twin: ExtraSpec = { ...ACORN, share: 0.4, count: undefined, group: 0 };
+		const mesh = extrasMesh(
+			dressed(
+				oakRecord({
+					extras: [
+						{ ...twin, tipShare: 0.5 },
+						{ ...twin, tipShare: 1 },
+					],
+				}),
+				'summer',
+			),
+			0,
+		);
+		if (!mesh) throw new Error('no acorns');
+		const low = positionsOf(mesh, 0);
+		const high = positionsOf(mesh, 1);
+		expect(high.length).toBe(low.length);
+		let least = Number.POSITIVE_INFINITY;
+		for (let i = 0; i < low.length; i += 3)
+			least = Math.min(
+				least,
+				length3(
+					(high[i] as number) - (low[i] as number),
+					(high[i + 1] as number) - (low[i + 1] as number),
+					(high[i + 2] as number) - (low[i + 2] as number),
+				),
+			);
+		expect(least).toBeGreaterThan(0.01);
 	});
 
 	it('stands a bed of bristles off the lathe it lies on', () => {
