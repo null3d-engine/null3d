@@ -2,12 +2,16 @@
 	"01-whole-vase-distant.png": {
 		"skyShare": 0.167,
 		"fov": 30,
-		"daylight": 2.168
+		"daylight": 2.168,
+		"sunAzimuth": -40,
+		"sunRise": 45
 	},
 	"02-whole-vase-profile.png": {
 		"skyShare": 0.357,
 		"fov": 30,
-		"daylight": 1.419
+		"daylight": 1.419,
+		"sunAzimuth": 30,
+		"sunRise": 45
 	},
 	"03-whole-from-below.png": {
 		"skyShare": 0.357,
