@@ -123,7 +123,9 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
 - The leaf cluster carries eight leaves, not six, each a seventh smaller. Six large blades covered
   what eight should, which put still `11`'s background share 0.012 below its floor. With eight, its
   share rises to 0.161 against a photograph's 0.166 and its outline overlap from 0.336 to 0.415;
-  still `23` reads 0.165 against 0.152, with overlap 0.312 to 0.373.
+  still `23` reads 0.165 against 0.152, with overlap 0.312 to 0.373. The cluster's turning video
+  moves with them: background 0.116 to 0.162 against its reference's 0.146, and overlap 0.266 to
+  0.307.
 - **The winter keys are a budget limit.** Still `19` draws one catkin where its photograph shows six
   cones and three catkin strings on one twig end, and the keys are not missing: the winter plant
   holds the same 438,057 extras vertices as summer and autumn. A cone stands on 16 per cent of shoot
