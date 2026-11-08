@@ -97,6 +97,13 @@ add nothing at the review's scale.
   card, its ribs and areole rows to the skin, and its "arm" names to limb views. Its query takes a
   `barkHeight`, so a mid-trunk bark view stands in the trunk zone of a tall stem.
 - A cut arm is wood: the wood mesher accepts a cut axis of the arm kind, as it accepts a cut limb.
+- The arm-skin close-up's colour figure (32.5) measures the plant's whole upper region, not the skin,
+  so it cannot judge the material. The rendered skin carries the photograph's own hue after the layer
+  crops the arm from its grey backdrop.
+- The reference photographs' arms lie in one plane and close up edge-on as they turn, where the
+  rubric's coverage rule asks for appendages spread round the plant in equal proportion. The render
+  spreads its arms, so its first whole view overlaps its planar reference at 0.30 while the profile
+  passes at 0.50. The coverage rule is the owner's, and the tension is stated rather than fitted.
 - A bark close-up draws the wood alone, so no bark picture can show an extra. The nest-hole picture
   takes the crown view, which frames the upper stem and draws the extras where the holes stand.
 - The review tool reads a cactus's rib, areole and spine stills as skin close-ups, and its "arm"
