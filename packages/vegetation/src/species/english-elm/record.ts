@@ -353,14 +353,18 @@ export const record: Species = {
 		autumn: { reflectance: [0.2, 0.16, 0.03], transmittance: [0.3, 0.2, 0.03] },
 	},
 	wind: {
-		// The wind clip's bands, base first: the trunk holds and the crown rocks by about a tenth.
+		// The wind clip shows dense leaf clumps rocking on great still limbs: the trunk holds, and the
+		// crown's top moves about as little as its base, so the stiffness rises with height rather
+		// than falling.
 		stiffness: [
 			[0, 0.99],
-			[0.5, 0.95],
-			[1, 0.85],
+			[0.5, 0.97],
+			[1, 0.95],
 		],
-		sway: { frequency: 0.28, amplitude: 0.04 },
-		flutter: { kind: 'blade', amplitude: 0.25, frequency: 3 },
+		// The clip's bands move by five to fifteen thousandths of the outline's height, so the sway
+		// and the flutter stand below the record's first figures.
+		sway: { frequency: 0.28, amplitude: 0.02 },
+		flutter: { kind: 'blade', amplitude: 0.12, frequency: 2.5 },
 	},
 	lod: {
 		nearFoliage: 'instanced',
