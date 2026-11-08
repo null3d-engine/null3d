@@ -14,7 +14,7 @@
 		"sunAzimuth": -13.3,
 		"sunRise": 43.3,
 		"skyShare": 0.6,
-		"daylight": 2.05,
+		"daylight": 2.2,
 		"sky": "#dae6f5",
 		"ground": "#72763b",
 		"fov": 30,
@@ -75,7 +75,8 @@
 		"sky": "#c6c2bd"
 	},
 	"19-cones-and-catkins.png": {
-		"season": "winter"
+		"season": "winter",
+		"distance": 0.45
 	},
 	"common-alder-turntable.mp4": {
 		"skyShare": 0.6,

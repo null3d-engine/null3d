@@ -167,7 +167,7 @@ export const record: Species = {
 				[0, 0.7],
 				[1, 0.62],
 			],
-			dominance: [0.9, 0.6, 0.98],
+			dominance: [0.75, 0.6, 0.98],
 			wander: 8,
 		},
 		// Stills 01 and 02: the crown's lit top and rim carry its fullest shoots.
@@ -279,10 +279,9 @@ export const record: Species = {
 				droop: 4,
 			},
 		],
-		// Stills 21 and 22: a cut piece is a stem that forks once into two leafy shoots with bare wood
-		// between the joints, far sparser than the crown's own twigs. The crown cannot carry a shoot
-		// this open, so the cuttings draw this class and the crown never does. Its two prototypes differ
-		// in length, so the branch takes the long one and the sub-branch the short.
+		// Stills 10 and 22: a bare twig that forks once into two leafy shoots with the stem showing
+		// between the joints, sparser than the crown's own twigs. The crown cannot carry a shoot this
+		// open, so the cuttings draw this class and the crown never does.
 		cuttingClasses: [
 			{
 				name: 'cut',
@@ -487,7 +486,7 @@ export const record: Species = {
 			count: { mean: 3, spread: 0 },
 			tipShare: 0.9,
 			seasons: ['summer', 'autumn', 'winter'],
-			shape: { catkin: { length: 0.055, radius: 0.0035 } },
+			shape: { catkin: { length: 0.055, radius: 0.0028 } },
 			// Still 19: a yellow-green string of pollen sacs, lighter than the cones beside it.
 			colour: [0.14, 0.13, 0.045],
 			roughness: [0.75, 0.8],
@@ -545,7 +544,7 @@ export const record: Species = {
 	// so the reference sets it.
 	roundBand,
 	cuttings: {
-		// Still 21: a metre branch of alternate leafy side shoots, which is what the crown's spray is.
+		// Still 21: a metre branch of alternate leafy side shoots, which the crown's spray draws.
 		branch: { shoot: 'spray' },
 		// Still 22: a shorter twig whose shoots leave sparse and bare between, as the cut class draws it.
 		subbranch: { shoot: 'cut' },
