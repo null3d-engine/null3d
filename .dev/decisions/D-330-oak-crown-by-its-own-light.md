@@ -244,6 +244,27 @@ light. The crown is too dark in both hue and light, the extinction term is the l
 residue at zero extinction is what remains after it. The daylight is not tuned to recover the older,
 lower figures.
 
+### The elm's profile crown, open by its own leaf area
+
+The elm's profile still reads a sky gap of 0.0870 against its photograph's 0.0294, seven thousandths
+over the ceiling. Four levers were measured at the merged tree, each on stills 01, 02 and 18:
+
+| Lever | Profile gap | Profile crown box | Other views |
+| --- | --- | --- | --- |
+| The record | 0.0870 | 396 by 281 | 01 0.0880, 18 0.0840 |
+| The slot's 30 degree field of view removed | 0.0900 | 415 by 296 | - |
+| Card growth 2.8 to 3.1 | 0.0930 | - | 01 0.0890 |
+| Sky prune 0.33 to 0.30 | 0.0870 | 396 by 281 | nothing moves |
+| Density 1.6 to 1.75 | 0.0890 | 409 by 289 | 01 0.0860, 18 0.0840 |
+
+The frame is right, since removing the photograph's own field of view draws the plant bigger and
+opens the gap. The sky prune moves nothing because the layered rule drops 238 of the elm's 8,650
+rows. Density and card growth both add leaf area at the outline rather than inside it, so the crown
+grows while its gap widens. Closing it needs more leaf area in the crown's shell, and the density
+that would do it measures 15.87 MB against the species' 15.4 MB variant cap.
+
+The row stays failed and the cap is not raised for it.
+
 ## Look
 
 The crown thinned by its own light looks better than the clump field. Its sky falls between the limb
