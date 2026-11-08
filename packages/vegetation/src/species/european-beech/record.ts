@@ -202,7 +202,8 @@ export const record: Species = {
 				// A young shoot of the year: short enough that its leaves overlap their neighbours,
 				// as the photograph's sprig does.
 				length: { mean: 0.35, spread: 0.05 },
-				nodes: { mean: 9, spread: 0.5 },
+				// Six leaves and the bud, as the photograph's sprig holds them.
+				nodes: { mean: 7, spread: 0.5 },
 				internode: PLATE_RUN,
 				// A young shoot's leaves are larger than the crown's, and the photograph's sprig
 				// spans its own breadth with six of them.
