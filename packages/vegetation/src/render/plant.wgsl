@@ -109,6 +109,8 @@ const HEADER_LICHEN_REACH: i32 = 41;
 const HEADER_SWAY: i32 = 42;
 const HEADER_AUTUMN_BARK: i32 = 56;
 const HEADER_WINTER_BARK: i32 = 57;
+const HEADER_WINTER_REFLECTANCE: i32 = 58;
+const HEADER_WINTER_TRANSMITTANCE: i32 = 59;
 const HEADER_EXTRA_BANDS: i32 = 43;
 // An extra's scale pattern: its scale rows, the cells round its turn, and its band's share of the
 // profile's height at each end, per extra in record order.
@@ -750,10 +752,17 @@ fn leaf_light(texel: vec3f, upper: bool, browning: f32) -> LeafLight {
     let mean = header(select(HEADER_LOWER_MEAN, HEADER_UPPER_MEAN, upper)).rgb;
     let autumn_r = header(HEADER_AUTUMN_REFLECTANCE);
     let autumn_t = header(HEADER_AUTUMN_TRANSMITTANCE).rgb;
+    // Dead leaves that stand through the winter take the colours the record gives for that season,
+    // or the autumn ones it gives for the rest of the year.
+    let winter_r = header(HEADER_WINTER_REFLECTANCE);
+    let winter_t = header(HEADER_WINTER_TRANSMITTANCE).rgb;
+    let wintering = winter_r.w > 0.5 && material.seasonKind == 2.0;
+    let season_r = select(autumn_r, winter_r, wintering);
+    let season_t = select(autumn_t, winter_t, wintering);
     let transmittance = header(HEADER_TRANSMITTANCE).rgb;
-    let turned = select(0.0, saturate(max(material.season, browning)), autumn_r.w > 0.5);
-    let reflect_shift = mix(vec3f(1.0), autumn_r.rgb / max(reflectance, vec3f(0.0001)), turned);
-    let through_shift = mix(vec3f(1.0), autumn_t / max(transmittance, vec3f(0.0001)), turned);
+    let turned = select(0.0, saturate(max(material.season, browning)), season_r.w > 0.5);
+    let reflect_shift = mix(vec3f(1.0), season_r.rgb / max(reflectance, vec3f(0.0001)), turned);
+    let through_shift = mix(vec3f(1.0), season_t / max(transmittance, vec3f(0.0001)), turned);
     var light: LeafLight;
     light.base = min(texel * face.rgb * reflect_shift, vec3f(1.0));
     light.share = through.w;

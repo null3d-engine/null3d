@@ -43,6 +43,25 @@ describe('the record check', () => {
 		expect(speciesProblems(out).some((p) => p.startsWith('seasons.bark.autumn[1]'))).toBe(true);
 	});
 
+	it('draws a winter stand its own leaf colours, and names any other season a problem', () => {
+		const colours = {
+			reflectance: [0.2, 0.1, 0.05] as [number, number, number],
+			transmittance: [0.2, 0.1, 0.05] as [number, number, number],
+		};
+		const winter = {
+			...template,
+			seasons: { ...template.seasons, leaves: { winter: colours } },
+		} as Species;
+		expect(speciesProblems(winter).some((p) => p.startsWith('seasons.leaves'))).toBe(false);
+		const summer = {
+			...template,
+			seasons: { ...template.seasons, leaves: { summer: colours } },
+		} as Species;
+		expect(speciesProblems(summer).some((p) => p.startsWith('seasons.leaves names summer'))).toBe(
+			true,
+		);
+	});
+
 	it('holds the sway power to its range', () => {
 		const out = {
 			...template,
