@@ -441,10 +441,10 @@ export const record: Species = {
 			// The heaviest variant's first card level draws 58,843, 64,037, 71,732 and 81,547
 			// triangles up the tiers, and its second 24,756, 25,374, 26,390 and 27,199.
 			kitBytes: { low: 3_400_000, medium: 5_350_000, high: 9_150_000, ultra: 16_600_000 },
-			variantBytes: { low: 13_700_000, medium: 13_850_000, high: 14_000_000, ultra: 14_200_000 },
+			variantBytes: { low: 15_100_000, medium: 15_200_000, high: 15_400_000, ultra: 15_600_000 },
 			lod0Triangles: 2_500_000,
 			lod1Triangles: 85_000,
-			lod2Triangles: 28_000,
+			lod2Triangles: 30_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
 			growMilliseconds: 600,
