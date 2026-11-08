@@ -493,6 +493,37 @@ leaflets sessile, and the largest of seed 11's six variants 3.18, 3.25, 3.33 and
 of the same variants draws 24,855 to 35,382 triangles and the second 10,594 to 13,325. A variant
 grows in about 290 to 300 ms with the machine in other hands.
 
+### Row 8's bark colour takes three zones of its own
+
+The bark's colour was read as a limit at the ninth review, at 6.38, 5.38 and 3.72 steps against a
+band of 3. It is a record value after all. The three close views do not fail alike. A marker tint on
+each range showed where each view draws. The base and the mid-trunk take the foot range, below about
+a metre. The limb, at a radius of about a quarter of a metre, takes both the upper height range and
+the thin-wood radius range.
+
+Three zones carry the three tones, measured on 9 November at run `ash-104`:
+
+| Zone | Range | Tint | Base | Mid-trunk | Limb |
+| --- | --- | --- | --- | --- | --- |
+| Foot | height 0 to 1.2 m | [1.15, 1.1, 1.12] | 6.26 | | |
+| Bole | height 1.2 to 40 m | [0.83, 0.83, 0.74] | | 0.58 | |
+| Limb | radius 0 to 0.3 m | [1.3, 1.32, 1.25] | | | 2.33 |
+
+The mid-trunk and the limb stand inside the band. The base stands at 6.26, a step better than it
+was, because its hue cannot be reached by a factor on the colour. The render's foot reads greener
+and yellower than its photograph by 4.4 and 5.0. The factors that answer the figure, blue at 1.3
+and more, draw the foot a pale lavender. The options that keep the bark's own hue leave the figure
+where it is.
+
+The reference set disagrees about the bark's colour as much as the render did. The flat texture
+source, still 26, stands 5.9, 6.8 and 7.8 steps from the photographs of the base, the mid-trunk and
+the limb. It stands 11.9 from the young bark. So the swatch's old figure of 1.7 measured the render
+against a patch its own close views do not agree with. With the zones in place still 26 reads 6.31,
+which is where the photographs themselves stand from it.
+
+A lower young radius, 0.015 in place of 0.03, moves the limb by three hundredths: the limb draws
+the mature bark either way, so that lever is not this row's.
+
 ### The row 6 band through the cards, and the young bark's tint
 
 The crown's lower third carries less sky than view 01's photograph at every density and shape the

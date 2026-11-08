@@ -321,7 +321,15 @@ export const record: Species = {
 		// Stills 26 and 15 under the copy-stand lamps: a pale, cool grey, so the measured colour stands
 		// as it is. A lighter layer over a drawn trunk reads three steps further from its photograph,
 		// so the tint stays at one.
-		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [1, 1, 1] }],
+		zones: [
+			// Stills 14 and 15: the foot stands a shade lighter than the bole above it, and the bole
+			// reads lighter and yellower than its photograph, so each takes its own measured tone.
+			{ layer: 0, by: 'height', from: 0, to: 1.2, blend: 0.3, tint: [1.15, 1.1, 1.12] },
+			{ layer: 0, by: 'height', from: 1.2, to: 40, blend: 0.3, tint: [0.83, 0.83, 0.74] },
+			// Still 16: a great limb's bark reads darker than the limb in its photograph, so wood
+			// thinner than the bole takes a lighter tone of its own.
+			{ layer: 0, by: 'radius', from: 0, to: 0.3, blend: 0.05, tint: [1.3, 1.32, 1.25] },
+		],
 		young: 0,
 		// Still 16: the diamond net fades to smooth pale grey on wood thinner than about six
 		// centimetres across.
