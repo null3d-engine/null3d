@@ -167,11 +167,15 @@
 		"daylight": 2.4
 	},
 	"26-bark-texture.png": {
-		"height": 8,
+		"barkZone": 1,
 		"span": 0.8
 	},
 	"16-bark-upper-trunk.png": {
-		"height": 12,
+		"barkZone": 1,
+		"span": 0.8
+	},
+	"27-bark-texture-zone2.png": {
+		"barkZone": 0,
 		"span": 0.8
 	}
 }
