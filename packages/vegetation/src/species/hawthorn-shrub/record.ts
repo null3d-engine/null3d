@@ -96,8 +96,8 @@ export const record: Species = {
 			dominance: [0.7, 0.6, 0.98],
 			wander: 16,
 		},
-		// Still 07 and 17: the stems run up bare for about a third of the height and then divide into
-		// a few limbs that fan out round them; the stool's stems take the stair above.
+		// Still 07 and 17: the stems run up bare for about two fifths of the height and then divide
+		// into a few limbs that fan out round them; the stool's stems take the stair above.
 		divide: { at: 0.4, count: 4, angle: 62, lean: 28, plumb: 4 },
 		// Stills 01 and 02: the crown's lit surface carries its fullest shoots.
 		light: { apical: 1, lateral: 1.2, shadow: [5, 0.15, 2], cells: 96, surface: true },
@@ -261,7 +261,7 @@ export const record: Species = {
 		kind: 'blade',
 		leaf: {
 			// Stills 12 and 24: a small broad blade cut into three to five forward-pointing lobes on a
-			// wedge base, about four centimetres from base to tip, on a stalk about a quarter of that.
+			// wedge base, three to four centimetres from base to tip, on a stalk about a quarter of that.
 			length: { mean: 0.035, spread: 0.006 },
 			outline: 'texture',
 			petiole: { length: 0.009, radius: 0.0005, flat: 0, droop: 10 },
