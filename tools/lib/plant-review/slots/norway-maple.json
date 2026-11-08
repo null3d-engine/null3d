@@ -3,44 +3,44 @@
 		"sunAzimuth": 0,
 		"sunRise": 52,
 		"skyShare": 0.5,
-		"daylight": 4.5,
+		"daylight": 1.3,
 		"fov": 30
 	},
 	"02-whole-profile.png": {
 		"sunAzimuth": 2,
 		"sunRise": 51,
 		"skyShare": 0.5,
-		"daylight": 4.2,
+		"daylight": 1.3,
 		"fov": 30
 	},
 	"03-whole-from-below.png": {
 		"sunAzimuth": 0,
 		"sunRise": 60,
 		"skyShare": 0.55,
-		"daylight": 3.5
+		"daylight": 1.5
 	},
 	"04-crown-outside.png": {
 		"sunAzimuth": 0,
 		"sunRise": 55,
 		"skyShare": 0.5,
-		"daylight": 3.5,
+		"daylight": 1.5,
 		"distance": 4
 	},
 	"05-crown-underside.png": {
 		"sunAzimuth": 0,
 		"sunRise": 60,
 		"skyShare": 0.55,
-		"daylight": 3.5
+		"daylight": 1.5
 	},
 	"06-inside-crown.png": {
 		"sunAzimuth": 0,
 		"sunRise": 50,
 		"skyShare": 0.5,
-		"daylight": 2.5
+		"daylight": 1.2
 	},
 	"07-limb-leaving-trunk.png": {
 		"skyShare": 0.6,
-		"daylight": 2.5
+		"daylight": 1.2
 	},
 	"08-limb-fork.png": {
 		"background": "studio-grey",
@@ -48,11 +48,11 @@
 		"sunAzimuth": -4,
 		"sunRise": 34,
 		"skyShare": 0.6,
-		"daylight": 2.5
+		"daylight": 1.2
 	},
 	"17-trunk-taper.png": {
 		"skyShare": 0.6,
-		"daylight": 2.2
+		"daylight": 1.2
 	},
 	"18-silhouette.png": {
 		"fov": 30,
@@ -69,10 +69,10 @@
 	},
 	"norway-maple-turntable.mp4": {
 		"skyShare": 0.5,
-		"daylight": 4.2
+		"daylight": 1.3
 	},
 	"norway-maple-wind-motion.mp4": {
 		"skyShare": 0.5,
-		"daylight": 4.2
+		"daylight": 1.3
 	}
 }

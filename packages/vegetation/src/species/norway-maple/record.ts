@@ -41,6 +41,9 @@ export const record: Species = {
 		model: 'self-organizing',
 		years: 36,
 		macroOrders: 4,
+		// Stills 01 and 02: the crown is a dense net of fine opposite branches, so more lateral buds
+		// put out a branch than the light alone gives.
+		branching: 1.1,
 		// Stills 01, 02 and 18: the foliage's lowest run stands 0.128 to 0.191 of the height, so the
 		// bole is clean to about a fifth of the tree, and the crown's underside stands there.
 		floor: 0.18,
@@ -211,19 +214,20 @@ export const record: Species = {
 				droop: 2,
 			},
 			{
-				// Stills 21 and 22: the cut twig stands about a thirtieth of the piece's height across
-				// at its foot, and its leaves stand at the ends of its shoots.
+				// Stills 21 and 22: this year's leader, its three opposite leaf pairs along it and one
+				// opposite pair of side shoots, each ending in a bud above its leaves. The piece's stem
+				// stands about a thirtieth of its height across at its foot.
 				name: 'cut',
 				vigor: [0, 1],
 				share: 0,
-				years: 2,
-				length: { mean: 0.9, spread: 0.2 },
-				nodes: { mean: 3, spread: 0.4 },
+				years: 1,
+				length: { mean: 0.5, spread: 0.1 },
+				nodes: { mean: 3, spread: 0.3 },
 				internode: PAIR,
-				stem: { radius: [0.011, 0.006] },
+				stem: { radius: [0.008, 0.004] },
 				laterals: 2,
-				lateralGap: 0,
-				bend: { length: 0.07, angle: 16 },
+				lateralGap: 0.3,
+				bend: { length: 0.06, angle: 16 },
 				leafScale: [
 					[0, 0.85],
 					[1, 1],
@@ -256,17 +260,17 @@ export const record: Species = {
 			// Stills 01 and 02: the limbs carry foliage along their length, so a limb a third of the
 			// way out is leafy rather than bare.
 			perMetre: [
-				[0, 1.2],
-				[0.55, 2.2],
-				[1, 8],
+				[0, 3],
+				[0.55, 6],
+				[1, 13],
 			],
-			// Stills 01 and 02: the crown is dense, and the leaves are large, so the curve's own count
-			// stands with only a little added.
-			density: 1.1,
+			// Stills 01 and 02: the crown is a dense mass, and the first round's curve alone left it
+			// open, so the dial adds shoots along the finest axes without changing their reach.
+			density: 3.5,
 			shadePrune: 0,
 			// Stills 01, 02 and 18: sky shows through the crown's middle and under it only where its
 			// own leaves leave a shoot under this share of the sky, and the lit outer masses stay.
-			skyPrune: 0.3,
+			skyPrune: 0.05,
 			skyPruneLayer: 1,
 			// Stills 01 and 18: no bare twigs hang outside the foliage.
 			bareTrim: 0.03,
@@ -403,9 +407,9 @@ export const record: Species = {
 	lod: {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
-		// The cards stand a quarter larger than the shoots they picture, so a gap between one
+		// The cards stand a third larger than the shoots they picture, so a gap between one
 		// shoot's leaves falls on a neighbour's leaves rather than on sky.
-		cardGrow: 1.25,
+		cardGrow: 1.5,
 		// Still 01: a card's twig is thinner than a pixel at a whole view, so a card draws its
 		// supporting twig as a line and the join shows.
 		cardStalk: 1.5,
@@ -413,9 +417,12 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// Each cap sits above the measured figure once the kit is built.
-			kitBytes: { low: 3_300_000, medium: 3_990_000, high: 6_800_000, ultra: 12_500_000 },
-			variantBytes: { low: 16_000_000, medium: 16_100_000, high: 16_200_000, ultra: 16_400_000 },
+			// The kit measures 3.28, 3.85, 5.05 and 7.37 MB at the four tiers, the cutting classes and
+			// the leaf's palmate blade among them; each cap sits above its figure.
+			kitBytes: { low: 3_300_000, medium: 3_900_000, high: 5_100_000, ultra: 7_500_000 },
+			// The crown's dense shoot dial puts 5,314 rosettes on the first variant, which measures
+			// 12.20, 12.28, 12.38 and 12.49 MB; each cap sits above it.
+			variantBytes: { low: 12_300_000, medium: 12_400_000, high: 12_500_000, ultra: 12_600_000 },
 			lod0Triangles: 2_800_000,
 			lod1Triangles: 150_000,
 			lod2Triangles: 42_000,
