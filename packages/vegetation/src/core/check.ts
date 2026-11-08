@@ -4,7 +4,7 @@
 // and the budget under the owner's caps). Each grower may hold its model's finer rules beside it.
 import { capProblems } from './caps';
 import { FORM_FIELDS, formRecord } from './forms';
-import type { BaseSpec, Envelope, GrowthModel, ShootSpec, Species } from './record';
+import type { BaseSpec, Envelope, GrowthModel, ShootClass, ShootSpec, Species } from './record';
 import {
 	BEND_PIECE_LEAST,
 	type Curve,
@@ -139,6 +139,60 @@ function baseProblems(base: BaseSpec, out: string[]): void {
 	}
 }
 
+/**
+ * The checks one shoot class takes, whether it draws the crown or a cutting: its ranges, its
+ * years, its joints and its own leaf arrangement and facing.
+ */
+function shootClassProblems(
+	shoot: ShootClass,
+	path: string,
+	speciesYears: number,
+	out: string[],
+): void {
+	const [low, high] = shoot.vigor;
+	if (low < 0 || high > 1 || low > high)
+		out.push(`${path}.vigor is [${low}, ${high}]; give a rising range within 0 to 1`);
+	spreadProblems(shoot.length, `${path}.length`, true, out);
+	spreadProblems(shoot.nodes, `${path}.nodes`, true, out);
+	curveProblems(shoot.internode, `${path}.internode`, out);
+	curveProblems(shoot.leafScale, `${path}.leafScale`, out);
+	curveProblems(shoot.leafAngle, `${path}.leafAngle`, out);
+	if (shoot.years !== undefined) wholeProblem(shoot.years, `${path}.years`, 1, 3, out);
+	if (shoot.laterals !== undefined) {
+		spreadProblems(shoot.laterals, `${path}.laterals`, false, out);
+		const mean = spreadMean(shoot.laterals);
+		const half = typeof shoot.laterals === 'number' ? 0 : shoot.laterals.spread;
+		if (mean - half < 0 || mean + half > SIDE_SHOOTS_MOST)
+			out.push(
+				`${path}.laterals draws ${mean - half} to ${mean + half}; a joint carries 0 to ${SIDE_SHOOTS_MOST} side shoots`,
+			);
+	}
+	if (
+		shoot.lateralGap !== undefined &&
+		!(shoot.lateralGap >= 0 && shoot.lateralGap <= LATERAL_GAP_MOST)
+	)
+		out.push(
+			`${path}.lateralGap is ${shoot.lateralGap}; it is a share of a unit from 0 to ${LATERAL_GAP_MOST}`,
+		);
+	if (shoot.lateralMost !== undefined && !(shoot.lateralMost >= 0 && shoot.lateralMost <= 180))
+		out.push(`${path}.lateralMost is ${shoot.lateralMost}; it is degrees from 0 to 180`);
+	if (shoot.leafYears !== undefined)
+		wholeProblem(shoot.leafYears, `${path}.leafYears`, 0, shoot.years ?? speciesYears, out);
+	if (shoot.bend !== undefined) {
+		if (!(shoot.bend.length >= BEND_PIECE_LEAST))
+			out.push(
+				`${path}.bend.length is ${shoot.bend.length}; a piece is at least ${BEND_PIECE_LEAST} m`,
+			);
+		if (!(shoot.bend.angle >= 0 && shoot.bend.angle <= 60))
+			out.push(`${path}.bend.angle is ${shoot.bend.angle}; it is degrees from 0 to 60`);
+	}
+	if (shoot.skyward !== undefined) shareProblem(shoot.skyward, `${path}.skyward`, out);
+	if (shoot.phyllotaxis?.kind === 'spiral')
+		wholeProblem(shoot.phyllotaxis.divergence, `${path}.phyllotaxis.divergence`, 0, 360, out);
+	else if (shoot.phyllotaxis?.kind === 'distichous')
+		shareProblem(shoot.phyllotaxis.flatten, `${path}.phyllotaxis.flatten`, out);
+}
+
 function shootProblems(shoots: ShootSpec, out: string[]): void {
 	wholeProblem(shoots.prototypes, 'shoots.prototypes', 4, 12, out);
 	wholeProblem(shoots.orders, 'shoots.orders', 1, 3, out);
@@ -156,43 +210,10 @@ function shootProblems(shoots: ShootSpec, out: string[]): void {
 	shoots.classes.forEach((shoot, i) => {
 		const path = `shoots.classes[${i}]`;
 		share += shoot.share;
-		const [low, high] = shoot.vigor;
-		if (low < 0 || high > 1 || low > high)
-			out.push(`${path}.vigor is [${low}, ${high}]; give a rising range within 0 to 1`);
-		spreadProblems(shoot.length, `${path}.length`, true, out);
-		spreadProblems(shoot.nodes, `${path}.nodes`, true, out);
-		curveProblems(shoot.internode, `${path}.internode`, out);
-		curveProblems(shoot.leafScale, `${path}.leafScale`, out);
-		curveProblems(shoot.leafAngle, `${path}.leafAngle`, out);
-		if (shoot.years !== undefined) wholeProblem(shoot.years, `${path}.years`, 1, 3, out);
-		if (shoot.laterals !== undefined) {
-			spreadProblems(shoot.laterals, `${path}.laterals`, false, out);
-			const mean = spreadMean(shoot.laterals);
-			const half = typeof shoot.laterals === 'number' ? 0 : shoot.laterals.spread;
-			if (mean - half < 0 || mean + half > SIDE_SHOOTS_MOST)
-				out.push(
-					`${path}.laterals draws ${mean - half} to ${mean + half}; a joint carries 0 to ${SIDE_SHOOTS_MOST} side shoots`,
-				);
-		}
-		if (
-			shoot.lateralGap !== undefined &&
-			!(shoot.lateralGap >= 0 && shoot.lateralGap <= LATERAL_GAP_MOST)
-		)
-			out.push(
-				`${path}.lateralGap is ${shoot.lateralGap}; it is a share of a unit from 0 to ${LATERAL_GAP_MOST}`,
-			);
-		if (shoot.lateralMost !== undefined && !(shoot.lateralMost >= 0 && shoot.lateralMost <= 180))
-			out.push(`${path}.lateralMost is ${shoot.lateralMost}; it is degrees from 0 to 180`);
-		if (shoot.leafYears !== undefined)
-			wholeProblem(shoot.leafYears, `${path}.leafYears`, 0, shoot.years ?? shoots.years, out);
-		if (shoot.bend !== undefined) {
-			if (!(shoot.bend.length >= BEND_PIECE_LEAST))
-				out.push(
-					`${path}.bend.length is ${shoot.bend.length}; a piece is at least ${BEND_PIECE_LEAST} m`,
-				);
-			if (!(shoot.bend.angle >= 0 && shoot.bend.angle <= 60))
-				out.push(`${path}.bend.angle is ${shoot.bend.angle}; it is degrees from 0 to 60`);
-		}
+		shootClassProblems(shoot, path, shoots.years, out);
+	});
+	(shoots.cuttingClasses ?? []).forEach((shoot, i) => {
+		shootClassProblems(shoot, `shoots.cuttingClasses[${i}]`, shoots.years, out);
 	});
 	if (shoots.classes.length > 0 && Math.abs(share - 1) > 0.01)
 		out.push(`shoots.classes' shares add up to ${share}; they must add up to 1`);
