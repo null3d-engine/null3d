@@ -51,7 +51,8 @@
 	"20-suckers.png": {
 		"form": "suckers",
 		"view": "whole",
-		"season": "summer"
+		"season": "summer",
+		"distance": 3.5
 	},
 	"28-young-bark.png": {
 		"thin": 0.015
