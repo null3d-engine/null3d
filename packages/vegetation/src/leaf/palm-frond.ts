@@ -23,13 +23,13 @@ import { MeshWriter } from './writer';
 
 /** Leaflet rows along its length, and columns across it, at each level. */
 const GRID: Readonly<Record<MeshLevel, { readonly rows: number; readonly columns: number }>> = {
-	0: { rows: 2, columns: 3 },
+	0: { rows: 1, columns: 3 },
 	1: { rows: 1, columns: 2 },
 	2: { rows: 1, columns: 2 },
 };
 
 /** The share of a frond's pinna places that a level draws. */
-const PINNA_SHARE: Readonly<Record<MeshLevel, number>> = { 0: 1, 1: 0.34, 2: 0.14 };
+const PINNA_SHARE: Readonly<Record<MeshLevel, number>> = { 0: 1, 1: 0.3, 2: 0.1 };
 
 /** The most leaflets that stand in one group at a rachis place. */
 const GROUP = 2;
@@ -38,7 +38,7 @@ const GROUP_ANGLE = 16;
 /** The share of a frond's length that a group member stands along from its place's. */
 const GROUP_STEP = 0.012;
 /** The narrowest a leaflet ribbon is drawn, as a share of the texture's own leaflet width. */
-const WIDTH_SHARE = 0.62;
+const WIDTH_SHARE = 1;
 /** Degrees the planes of a V-section frond fan to either side of the rachis's own upper face. */
 const PLANE_FAN = 62;
 /**
@@ -46,7 +46,7 @@ const PLANE_FAN = 62;
  * stand on the leaflet's silhouette, where the picture's alpha runs out; a sample there reads as
  * nothing after a mip, so the colour comes from inside the blade and the geometry gives the shape.
  */
-const INNER_SAMPLE = 0.8;
+const INNER_SAMPLE = 0.5;
 /** The share of a leaflet's length and width that a spine keeps. */
 const SPINE_LENGTH = 0.42;
 const SPINE_WIDTH = 0.16;

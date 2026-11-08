@@ -52,7 +52,7 @@ export const record: Species = {
 				[1, 118],
 			],
 			// Still 20: a skirt of dead fronds hangs below the crown, over the top of the trunk.
-			dead: { count: { mean: 18, spread: 2 }, hang: 126, skirt: 0.35 },
+			dead: { count: { mean: 18, spread: 2 }, hang: 142, skirt: 0.35 },
 		},
 		frond: {
 			kind: 'pinnate',
@@ -72,7 +72,7 @@ export const record: Species = {
 				// Still 09: a hundred leaflets a side, in groups, the longest near the middle of the
 				// rachis and shortest at the tip. The count gives the places; each place carries a
 				// group, so the frond holds twice this many.
-				count: { mean: 50, spread: 4 },
+				count: { mean: 80, spread: 6 },
 				length: [
 					[0, 0.05],
 					[0.3, 0.052],
@@ -80,9 +80,9 @@ export const record: Species = {
 					[1, 0.022],
 				],
 				angle: [
-					[0, 50],
-					[0.5, 58],
-					[1, 52],
+					[0, 42],
+					[0.5, 46],
+					[1, 40],
 				],
 				// Still 09: the leaflets leave the rachis in several planes, not one flat comb.
 				planes: 3,
