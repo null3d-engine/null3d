@@ -1,8 +1,9 @@
 # D-331: the common ash, its opposite branching and its pinned, winged keys
 
 Status: decided and built in the ash's record, the two record fields it needed and its textures. The
-review measures the species against its reference set and fails it; the figures and the faults that
-remain are under [Consequences](#consequences). Task: none.
+review measures the species against its reference set. It stood at three of twelve rows when this
+record was written. It stands at eleven at run `ash-123`: row 10's crown colour is the one open
+limit. The figures and the faults that remain are under [Consequences](#consequences). Task: none.
 
 Summary: the plant core grows the common ash, a tall open dome on a long clean bole, with every axis
 carrying opposite decussate pairs of shoots, a pinnate leaf of eleven leaflets, and bunches of
