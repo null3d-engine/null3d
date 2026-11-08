@@ -200,12 +200,12 @@ export const record: Species = {
 				vigor: [0, 1],
 				share: 0,
 				years: 1,
-				length: { mean: 0.14, spread: 0.02 },
-				nodes: { mean: 2, spread: 0 },
+				length: { mean: 0.18, spread: 0.02 },
+				nodes: { mean: 4, spread: 0 },
 				internode: ROSETTE,
 				leafScale: [
-					[0, 0.9],
-					[1, 1],
+					[0, 0.55],
+					[1, 0.9],
 				],
 				leafAngle: [
 					[0, 85],
@@ -222,7 +222,7 @@ export const record: Species = {
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
-				length: { mean: 0.8, spread: 0.2 },
+				length: { mean: 0.9, spread: 0.2 },
 				nodes: { mean: 2, spread: 0.4 },
 				internode: PAIR,
 				stem: { radius: [0.012, 0.006] },
@@ -237,8 +237,8 @@ export const record: Species = {
 					[1, 1],
 				],
 				leafAngle: [
-					[0, 90],
-					[1, 75],
+					[0, 92],
+					[1, 80],
 				],
 				leafAngleSpread: 25,
 				leafYears: 1,
@@ -252,11 +252,12 @@ export const record: Species = {
 		leafYears: 2,
 		// Still 10: the twigs are stout and nearly straight between their nodes.
 		stem: { radius: [0.004, 0.002], zigzag: 8 },
-		// Stills 10 and 23: a plump red-brown bud with a green base, a centimetre or so long, stands
-		// at every twig's end with a smaller pair below it.
+		// Stills 10 and 23: a plump red-brown bud with a green base, about a centimetre and a half
+		// long and two thirds as wide, stands at every twig's end with a smaller pair below it and
+		// four young leaves round its base.
 		bud: {
-			length: 0.011,
-			width: 0.007,
+			length: 0.016,
+			width: 0.011,
 			tipCluster: 3,
 			cluster: { step: 0.25, lean: 45 },
 			colour: [0.14, 0.055, 0.035],
