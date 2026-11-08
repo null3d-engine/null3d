@@ -106,6 +106,26 @@ the leaf area to 1,328 square meters. Raising `shoots.prototypes` moves it a lit
   drawn it as a limb in winter. The file also frames still 35 on a catkin twig and still 28 on wood
   inside the young bark's radius. It carries each daylit picture's light too.
 
+### A shoot class's own leaf arrangement and facing
+
+The three studio cuttings show leaves two-ranked along the twig and held face on to the camera. The
+crown's shoots spiral and turn their faces to the sky, and both settings belong to the species. A
+class may now name its own `phyllotaxis` and `skyward`, each defaulting to the species' value, so a
+class that names neither draws byte for byte as it did.
+
+Measured on the birch's cutting classes, with the whole views drawn beside them at every value:
+
+| still | species' own | two-ranked, faces level | box, photograph |
+| --- | --- | --- | --- |
+| 21 branch | 0.629 open, 26 pieces, box 156x243 | 0.657 open, 6 pieces, box 172x189 | 246x317 |
+| 22 sub-branch | 0.337 open, box 137x311 | 0.431 open, box 168x289 | 207x283 |
+| 23 leaf cluster | 0.379 open, box 163x304 | 0.278 open, box 139x283 | 164x283 |
+
+Stills 01, 02 and 18 read 0.199, 0.168 and 0.188 at both settings, since no crown class names
+either field. The two-ranked arrangement helps still 22 gain the nearest it has come to its
+photograph's openness and costs still 23 its extent, so the record keeps neither field on its
+cutting classes. The fields stand for the species whose pictures demand them.
+
 ## Consequences
 
 The species' budgets, measured across the species and its three forms:
