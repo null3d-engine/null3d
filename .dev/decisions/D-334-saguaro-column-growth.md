@@ -78,6 +78,9 @@ add nothing at the review's scale.
 - The tree class's second-card-level cap rises from 43,000 to 52,000 triangles, with room above the
   saguaro's measured figure. The owner approved the raise: the column keeps its areole cards at the
   farthest level, and the kit sits inside its own cap at 1.21 MB.
+- The wind clip's motion is right in the plant: a saguaro is rigid, and the reference's only motion
+  is the dust and grass at its foot, which the render's scene does not draw. Bands two to six agree
+  within 0.009 of the reference and the base band differs for that reason.
 - The review tool frames one limb for pictures 04, 05, 06 and 08, where the photographs show two
   arms and the stem's top at arm height. Picture 04 misses the second arm and the stem's top,
   picture 05 misses the trunk beside the arm, picture 06 misses the trunk the arm leaves, and
