@@ -458,18 +458,14 @@ export const record: Species = {
 	seedSalt: 4150070,
 	roundBand,
 	cuttings: {
-		// Still 21: the branch is a great limb cut from the grown plant, about a metre of wood out
-		// from the bole, so it carries the crown's own shoots along its run and reads as a branch
-		// rather than a wand.
-		branch: { order: 2, length: 0.9 },
+		// Still 21: the branch is cut from a fine order of the grown plant, where the crown's leaves
+		// run along the wood, so the piece carries leaves over its whole run rather than at one end.
+		branch: { order: 3, length: 0.9 },
 		// Still 22: the sub-branch, a twig about a third of a metre long whose side shoots leave one at
 		// a time and droop at their ends.
 		subbranch: { shoot: 'cut' },
 		// Still 23: one upright shoot, its pairs of leaves along the run and buds at its tip.
 		cluster: { shoot: 'spur' },
-		// Stills 21 and 23: the photographed twigs carry more leaf along the same wood than the
-		// crown's own covering does, and a studio piece pays for that from its own kit.
-		density: 1,
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
 		leaf: { pressed: true },
 	},
