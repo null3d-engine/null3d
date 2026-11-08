@@ -1,9 +1,10 @@
 # D-334: the hosta, a ribbed herbaceous rosette, and what a herb asked of the plant core
 
 Status: decided and built: the hosta's record, its leaf textures, the pressed thick leaf, the stalk's
-sky floor and the review camera's floor. The review fails the species on its openness and on the two
-pictures whose subject the model cannot draw; the figures are under [Consequences](#consequences).
-Task: none.
+sky floor and the review camera's floor. The review passes seven of its twenty-six stills outright
+and fails the species: the whole views are a tenth of sky too open, the pieces a twentieth too
+dense, and four pictures show a subject the model does not draw. The figures are under
+[Consequences](#consequences). Task: none.
 
 Summary: the plant core grows the hosta, the catalogue's first broad-leaved herbaceous rosette: a
 clump of broad, deeply ribbed leaves on long channelled stalks from one crown at the soil, pale
@@ -71,12 +72,50 @@ surface, and the crown at the soil replaces the root flare.
 
 ### The reference files
 
-The figures are those of run `RUNDOC` at `COMMITDOC`, seed 11, variant 0, preset high. The sky gap
+The figures are those of run `final-3` at `1d3fe976`, seed 11, variant 0, preset high. The sky gap
 is the share of the crown's own box that shows background; the band is five hundredths above and two
 below the reference's. The outline compares the two silhouettes scaled to the same height, with a
 guide of 0.75. Colour is CIEDE2000, where about 2 is one visible step.
 
-TABLE
+| Reference | Judged | Deciding figures |
+| --- | --- | --- |
+| `01-whole-plant-distant.png` | Fail | Sky gap 0.21 against the photograph's 0.11, 0.10 above the band; outline 0.69; width error 0.124; leaf colour 3.7; 2 pieces where the photograph shows 1 |
+| `02-whole-plant-profile.png` | Fail | Sky gap 0.19 against 0.13, 0.06 above the band; outline 0.56; leaf colour 4.9 |
+| `03-whole-from-below.png` | Unjudged | Framed inside the crown, as a rosette has no stem to look up; edge directions 0.170 |
+| `04-rosette-from-above.png` | Pass | Sky gap 0.08 against 0.10, inside the band; outline 0.39; leaf colour 7.6 |
+| `05-underside-of-leaves.png` | Unjudged | Framed inside the crown; edge directions 0.173 |
+| `06-inside-rosette.png` | Unjudged | Framed inside the crown, the petioles' own view; edge directions 0.166 |
+| `07-leaf-base-and-petiole.png` | Fail | The view frames a corner of the crown, not the blade's base: the render's box is 0.70 sky against 0.05 |
+| `08-leaf-surface-ribs.png` | Unjudged | Framed as the whole plant, as the model has no fork view; edge directions 0.209 |
+| `09-vein-network.png` | Unjudged | As 08; edge directions 0.225 |
+| `10-leaf-margin-detail.png` | Fail | The photograph is a magnified margin and the view draws a leaf piece: width error 3.32 |
+| `11-single-leaf-upper.png` | Pass | Outline 0.85; width error 0.064; leaf colour 6.7 |
+| `12-single-leaf-underside.png` | Pass | Outline 0.78; leaf colour 6.3 |
+| `13-crown-and-roots.png` | Fail | 9 pieces in the photograph and 0 drawn: the model has no root system and no above-ground crown |
+| `14-petiole-section.png` | Fail | 1 piece in the photograph and 0 drawn: a section of a stalk is a drawing convention, not a surface |
+| `15-petiole-base.png` | Unjudged | Framed inside the crown; edge directions 0.179 |
+| `16-young-hosta-plant.png` | Unjudged | Drawn in the record's young form; edge directions 0.123 |
+| `17-silhouette.png` | Fail | Sky gap 0.19 against 0.13, 0.06 below the band: the render is denser than the photograph |
+| `18-flower-scape.png` | Fail | The photograph is one bare scape against sky and the view draws the whole plant in flower: gap 0.17 against 0.53; outline 0.26 |
+| `19-flower-detail.png` | Fail | Outline 0.12; leaf colour 6.8; 3 pieces where the photograph shows 1 |
+| `20-autumn-collapse.png` | Pass | Sky gap 0.21 against 0.19, inside the band; outline 0.24; leaf colour 12.1 |
+| `21-branch-studio.png` | Pass | Sky gap 0.22 against 0.25, inside the band; outline 0.33; leaf colour 7.4 |
+| `22-subbranch-studio.png` | Fail | Sky gap 0.23 against 0.20, 0.03 below the band; outline 0.26 |
+| `23-leaf-cluster-studio.png` | Fail | Sky gap 0.23 against 0.22, 0.01 below the band; outline 0.42 |
+| `24-leaf-texture-upper.png` | Pass | Outline 0.81; leaf colour 2.1 |
+| `25-leaf-texture-underside.png` | Pass | Outline 0.80; leaf colour 1.2 |
+| `30-whole-with-landmark.png` | Fail | Sky gap 0.20 against 0.12, 0.08 above the band; outline 0.67 |
+| `branch-turntable.mp4` | Fail | Mean outline 0.224, lowest 0.073 |
+| `hosta-turntable-halfturn.mp4` | Fail | Mean outline 0.640, lowest 0.501; the crown box's spread 32 per cent wide and 133 per cent tall against the reference's 6 and 4 |
+| `leaf-cluster-turntable.mp4` | Fail | Mean outline 0.266, lowest 0.107 |
+| `subbranch-turntable-halfturn.mp4` | Fail | Mean outline 0.258, lowest 0.079 |
+| `hosta-wind-motion.mp4` | Fail | The render's frames do not differ, so the motion reads 0.000 in every band against the reference's 0.03 to 0.15 |
+
+Every one of the 31 reference files in use was drawn and compared, so coverage passes.
+
+The species fails its review. It passes nine pictures outright and the from-above and autumn views
+inside their bands, and it fails the two whole views by a tenth of sky, the pieces by a twentieth,
+and the four pictures whose subject the model does not draw.
 
 ## Look
 
@@ -98,4 +137,23 @@ forty leaves against the reference's fifty.
   appears in the species page and in the picture tests.
 - A thick leaf can be pressed for its single-leaf picture, and its stalks keep a fifth of the sky.
 - The review's camera floor lets a herb stand in its photograph's framing.
-- The limits the review still finds are listed above with their figures. Each needs its own round.
+- The rows still failing, each with the round its figure names:
+  - **Row 6, openness.** The whole views draw 0.21 and 0.19 of sky against 0.11 and 0.13, a tenth
+    and a sixteenth too open, while the from-above view draws 0.08 against 0.10 and the silhouette
+    0.13 against 0.19. The two sides of this row want opposite changes of one figure: more leaves
+    close the sides and over-close the top. The owner's cap for a ground plant holds the variant at
+    1.62 MB of 1.70, so the forty-nine leaves it carries cannot grow into the reference's fifty-odd.
+  - **Rows 3 and 5, the pieces.** The three lifted pieces draw 0.22, 0.23 and 0.23 of sky against
+    0.25, 0.20 and 0.22: the sub-branch and the cluster are a twentieth too dense.
+  - **Rows 7 and 8, the petiole's surface.** Stills 13 and 14 show the lifted crown with its fleshy
+    roots and one stalk cut across. The model draws no root system and no above-ground crown, and a
+    section of a stalk is a drawing convention rather than a surface: both render nothing.
+  - **Row 4, the leaf surface.** Still 10 magnifies the margin. The review has no view that frames a
+    part of a leaf, so its figure compares a whole leaf against a magnified edge and cannot be read.
+  - **Row 10, the wind.** The wind clip's frames do not differ on some runs and move three to ten
+    times the reference on others, with no setting between: the measure is not yet repeatable on
+    this machine, so the motion test cannot judge the species. The figures are 0.000 and 0.39 to
+    0.69 against the reference's 0.03 to 0.15.
+
+Every limit above is a round of its own, not a reason to stop. The next round takes the whole views'
+openness, which is the row the owner would notice first.
