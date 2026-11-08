@@ -530,16 +530,21 @@ colour. Measured on 9 November, one value each:
 | `#ffb0ff` at a `daylight` of 1.3 | 2.95 |
 | `#ffb0ff`'s exposure alone, no lamp | 5.98 |
 
-The measure itself was tested too. The review page now takes a slot's `barkMask`, which drops every
-patch pixel as close to the picture's corners as the backdrop is. A stem on sky is then measured on
-the stem alone. On the ash's three close views it moves nothing. The base reads 5.98 with and
-without it, and its reference patch moves by two tenths of a lightness step. The patches already
-sit on bark, so the base's residue is not a diluted backdrop.
+The measure itself is the fault, and it took the last test to see it. A slot's `barkMask` drops
+every patch pixel as close to the picture's corners as the backdrop is. It reads the backdrop as one
+colour, the mean of all four corners. On a view with sky above the horizon and ground below, that
+mean matches neither, so the mask drops nothing. The base reads 5.98 with and without it, and its
+reference patch moves by two tenths of a lightness step.
 
-The last two lamps stand inside the band, and both draw the foot a pale lavender. The photograph's
-bark is grey-brown, so the figure is met by a colour the species does not have. The exposure alone
-keeps the bark's colour and takes the figure to 5.98, so the base slot carries `daylight` 1.3 and no
-lamp.
+Read with the corners split into their two families, the same draw stands at Lab 44.9, 0.0, 4.3.
+Its photograph stands at 44.9, -1.6, 10.8. Both are at a `daylight` of 0.85. The green is the meadow in
+the lower patches. The draw's own bark is neutral: its red-green axis is within 1.6 of the
+photograph's, and it is 6.5 steps less yellow rather than more. So the base's figure is not yet a
+bark measure, and the lamp sweep above moved a diluted number. The tool's corner model needs the two
+backdrops separated before this row's base can be judged.
+
+The lamps still draw the foot a pale lavender at the strengths that move the figure. The exposure
+alone keeps the bark's colour, so the base slot carries `daylight` 1.3 and no lamp.
 
 The reference set disagrees about the bark's colour as much as the render did. The flat texture
 source, still 26, stands 5.9, 6.8 and 7.8 steps from the photographs of the base, the mid-trunk and
