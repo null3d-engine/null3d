@@ -1877,10 +1877,17 @@ export interface CuttingHints {
 export interface CutLeaf {
 	/**
 	 * Whether the leaf lies pressed flat, as a species' single-leaf pictures lay it on a copy stand:
-	 * a blade leaf's fold, curls, twist, wave and stalk droop at nothing, its outline and textures
-	 * as they are. Without it the leaf keeps the shape it has on the plant.
+	 * a blade leaf's fold, curls, twist, wave and stalk droop at nothing, a thick leaf's cup, curl
+	 * and margin wave at nothing, its outline and textures as they are. Without it the leaf keeps
+	 * the shape it has on the plant.
 	 */
 	readonly pressed?: boolean;
+	/**
+	 * Metres of stalk a pressed leaf keeps under its blade, for a species whose leaves rise on long
+	 * stalks: the piece shows the short piece of stalk a picked leaf does. A share of the blade's
+	 * length by default.
+	 */
+	readonly petiole?: number;
 }
 
 /**

@@ -439,10 +439,11 @@ function extraProblems(record: Species, out: string[]): void {
  * a leaf that is not a blade.
  */
 function cuttingProblems(record: Species, out: string[]): void {
-	if (record.cuttings?.leaf?.pressed && record.foliage.kind !== 'blade')
-		out.push(
-			`cuttings.leaf.pressed lays a blade leaf flat, and the foliage is '${record.foliage.kind}'`,
-		);
+	const leaf = record.cuttings?.leaf;
+	if (leaf?.pressed && record.foliage.kind !== 'blade' && record.foliage.kind !== 'thick')
+		out.push(`cuttings.leaf.pressed lays a leaf flat, and the foliage is '${record.foliage.kind}'`);
+	if (leaf?.petiole !== undefined && !(leaf.petiole > 0))
+		out.push(`cuttings.leaf.petiole is ${leaf.petiole}; it is metres and must be above 0`);
 	const density = record.cuttings?.density;
 	if (density !== undefined && !(density >= 0.25 && density <= 8))
 		out.push(`cuttings.density is ${density}; it is a share from 0.25 to 8`);

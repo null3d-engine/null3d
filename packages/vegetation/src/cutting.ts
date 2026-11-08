@@ -23,8 +23,8 @@ import {
 	quatRotate,
 	type Vector3,
 } from './core/math';
-import type { CutFromPlant, LeafShape, ShootClass, Species } from './core/record';
-import { DETAILS, type Detail, type Vec3 } from './core/types';
+import type { CutFromPlant, LeafShape, ShootClass, Species, ThickLeaf } from './core/record';
+import { DETAILS, type Detail, spreadMean, type Vec3 } from './core/types';
 import { foliage } from './leaf/kinds';
 import { SURFACE_STEM } from './leaf/writer';
 
@@ -79,6 +79,12 @@ export const CUTTING_LENGTH: Readonly<Record<CuttingPart, number>> = {
 	cluster: 0.15,
 	leaf: 0.15,
 };
+
+/**
+ * The share of the blade's length that a pressed leaf keeps as its stalk where the record names
+ * none: a leaf picked from the crown shows a short piece of it under the blade.
+ */
+export const LEAF_CUT_PETIOLE = 0.12;
 
 /**
  * Steps of length match within which a piece counts as near the asked length, about a third either
@@ -701,14 +707,44 @@ function pressedShape(shape: LeafShape): LeafShape {
 	};
 }
 
+/** A thick leaf's shape pressed flat: no cup, no curl and a flat margin. */
+function pressedThickShape(shape: ThickLeaf): ThickLeaf {
+	return { ...shape, cup: 0, curl: 0, wave: [0, shape.wave[1]] };
+}
+
 /**
  * The species' leaf meshes for a leaf cutting: the kit's own, or, where the piece or else the
- * record presses its leaf, the blade built again pressed flat at the kit's tier.
+ * record presses its leaf, the blade built again pressed flat at the kit's tier. A pressed thick
+ * leaf keeps a short piece of its stalk, as a leaf picked from the crown shows, and a species that
+ * grows its leaves on long stalks names the metres its pictures show.
  */
 function cutLeaves(kit: SpeciesKitData, press?: boolean): readonly PrototypeArrays[] {
 	const record = kit.record;
 	const leaf = record.foliage;
-	if (!(press ?? record.cuttings?.leaf?.pressed) || leaf.kind !== 'blade') return kit.leaves;
+	const flat = press ?? record.cuttings?.leaf?.pressed;
+	if (!flat) return kit.leaves;
+	if (leaf.kind === 'thick') {
+		const growth = record.growth;
+		const stalk = record.cuttings?.leaf?.petiole ?? LEAF_CUT_PETIOLE * spreadMean(leaf.leaf.length);
+		const pressed: Species = {
+			...record,
+			// The kit's leaf takes the stalk's length from the growth model, so a flat piece gives
+			// it the short stalk its picture shows in place of the crown's long one.
+			growth:
+				growth.model === 'rosette'
+					? {
+							...growth,
+							stalk: [
+								[0, stalk],
+								[1, stalk],
+							],
+						}
+					: growth,
+			foliage: { kind: 'thick', leaf: pressedThickShape(leaf.leaf) },
+		};
+		return foliage('thick').leaves(pressed, kit.manifest, kit.detail);
+	}
+	if (leaf.kind !== 'blade') return kit.leaves;
 	const pressed: Species = { ...record, foliage: { ...leaf, leaf: pressedShape(leaf.leaf) } };
 	return foliage('blade').leaves(pressed, kit.manifest, kit.detail);
 }
