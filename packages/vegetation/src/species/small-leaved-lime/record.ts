@@ -359,15 +359,16 @@ export const record: Species = {
 		autumn: { reflectance: [0.24, 0.17, 0.03], transmittance: [0.3, 0.2, 0.03] },
 	},
 	wind: {
-		// The wind clip's bands: the trunk's foot moves, and the crown's top moves less than the
-		// blades alone gave. A softer base and a shorter blade flutter carry the two together.
+		// The wind clip's bands: the reference clip sways most in its low and middle bands, so the
+		// trunk stays soft up to the crown's base while the blades flutter less than a breeze alone
+		// gives, which keeps the top band near its photograph's.
 		stiffness: [
-			[0, 0.8],
-			[0.5, 0.85],
-			[1, 0.9],
+			[0, 0.5],
+			[0.5, 0.55],
+			[1, 0.88],
 		],
 		sway: { frequency: 0.3, amplitude: 0.06 },
-		flutter: { kind: 'blade', amplitude: 0.14, frequency: 3 },
+		flutter: { kind: 'blade', amplitude: 0.1, frequency: 3 },
 	},
 	lod: {
 		nearFoliage: 'instanced',
