@@ -381,7 +381,10 @@ export const record: Species = {
 			// short stalk, which the texture contour carries with its notched tip and wavy double teeth.
 			length: { mean: 0.07, spread: 0.008 },
 			outline: 'texture',
-			petiole: { length: 0.012, radius: 0.0011, flat: 0, droop: 20 },
+			// Stills 21 and 22: the stalk stands a little over a millimetre across, and at a cut piece's
+			// scale that draws as a broken line. A little thicker closes one of the sub-branch's four
+			// groups.
+			petiole: { length: 0.012, radius: 0.0016, flat: 0, droop: 20 },
 			fold: 12,
 			curl: 10,
 			crossCurl: 4,
@@ -517,7 +520,10 @@ export const record: Species = {
 	},
 	lod: {
 		nearFoliage: 'instanced',
-		switchPixels: [240, 12, 160],
+		// Still 02: the crown's rim broke into three leaf groups where the photograph has one, and the
+		// first switch coming nearer joins it to one. Rejected for still 17: it leaves that view's
+		// thirteen pieces unchanged, so they are not cards standing apart.
+		switchPixels: [160, 12, 160],
 		// The cards stand two fifths larger than the shoots they picture, so a gap between one shoot's
 		// leaves falls on a neighbour's leaves rather than on sky, and the crown's rim reads solid.
 		cardGrow: 1.7,
