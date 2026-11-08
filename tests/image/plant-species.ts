@@ -17,5 +17,8 @@ export function plantSpeciesTests(root = ROOT): ImageTest[] {
 		sketch: `tests/pages/sketches/plant-review-sketch.ts?species=${id}&view=panels`,
 		hold: 1,
 		size: [1024, 1024],
+		// Four panels of one plant, the crown's near foliage among them, take the software GPU far
+		// longer than a single sketch: the olive gives no result within the usual minute.
+		timeoutSeconds: 300,
 	}));
 }

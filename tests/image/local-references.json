@@ -185,6 +185,12 @@
 		"date": "2026-11-07",
 		"reason": "plant-holm-oak's first software-set reference: CI run 42417946731 failed its browser shards because the reference was the missing file, and its artifact fetch stalled for half an hour without delivering them; the picture was drawn on this Mac with the SwiftShader rasteriser, which the repository's notes record as agreeing with CI's byte for byte."
 	},
+	"chromium-swiftshader/compat/plant-olive.png": {
+		"test": "plant-olive",
+		"tier": "compat",
+		"date": "2026-11-08",
+		"reason": "the branch has no CI run to take the software set from yet; this Mac drew it with CI=1"
+	},
 	"chromium-swiftshader/compat/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
 		"tier": "compat",
@@ -460,6 +466,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-07",
 		"reason": "plant-holm-oak's first software-set reference: CI run 42417946731 failed its browser shards because the reference was the missing file, and its artifact fetch stalled for half an hour without delivering them; the picture was drawn on this Mac with the SwiftShader rasteriser, which the repository's notes record as agreeing with CI's byte for byte."
+	},
+	"chromium-swiftshader/webgl2/plant-olive.png": {
+		"test": "plant-olive",
+		"tier": "webgl2",
+		"date": "2026-11-08",
+		"reason": "the branch has no CI run to take the software set from yet; this Mac drew it with CI=1"
 	},
 	"chromium-swiftshader/webgl2/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -766,6 +778,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-07",
 		"reason": "plant-holm-oak's first software-set reference: CI run 42417946731 failed its browser shards because the reference was the missing file, and its artifact fetch stalled for half an hour without delivering them; the picture was drawn on this Mac with the SwiftShader rasteriser, which the repository's notes record as agreeing with CI's byte for byte."
+	},
+	"chromium-swiftshader/webgpu/plant-olive.png": {
+		"test": "plant-olive",
+		"tier": "webgpu",
+		"date": "2026-11-08",
+		"reason": "the branch has no CI run to take the software set from yet; this Mac drew it with CI=1"
 	},
 	"chromium-swiftshader/webgpu/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",

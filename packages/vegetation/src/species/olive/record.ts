@@ -187,7 +187,8 @@ export const record: Species = {
 		],
 		// Stills 21 and 22: a cut twig forks at a joint into two leafy shoots, with bare wood between
 		// the joints and its twigs drooping at their ends. The crown cannot carry a shoot this bare,
-		// so the cuttings draw this class and the crown never does.
+		// so the cuttings draw these classes and the crown never does. One class serves each studio
+		// still: the shorter twig of still 22 and the metre-long branch of still 21.
 		cuttingClasses: [
 			{
 				// Still 22: a twig about a third of a metre long, with its side shoots and their
@@ -265,17 +266,14 @@ export const record: Species = {
 				[0.55, 4],
 				[1, 24],
 			],
-			// Stills 01 and 02: the crown's box shows little sky through its middle, and the curve
+			// Stills 01 and 02: the crown's box shows less sky than the photographs, and the curve
 			// above carries leafy twigs along every limb, so the dial sits well above the curve's own
 			// count.
-			density: 2.75,
-			// Stills 01, 02 and 04: the foliage gathers at the axes' ends, which dresses every limb's
-			// tip and leaves the stretches behind it thinner.
-			tipBias: 0,
+			density: 2.5,
 			shadePrune: 0.1,
 			// Stills 01, 03 and 05: sky shows through the crown's middle and under it, where its own
 			// leaves leave a shoot under this share of the sky; the lit outer masses stay.
-			skyPrune: 0.32,
+			skyPrune: 0.36,
 			skyPruneLayer: 1,
 			// Stills 01 and 18: no bare twigs hang outside the foliage.
 			bareTrim: 0.05,
@@ -304,9 +302,9 @@ export const record: Species = {
 			wave: [0, 0],
 			optics: {
 				// Stills 12 and 24: a dull grey-green upper face in flat light.
-				reflectance: [0.2, 0.21, 0.13],
+				reflectance: [0.064, 0.084, 0.051],
 				// Stills 13 and 25: the silvery lower face, a dense felt that catches the light.
-				reflectanceBack: [0.42, 0.44, 0.38],
+				reflectanceBack: [0.41, 0.43, 0.38],
 				transmittance: [0.05, 0.09, 0.016],
 				roughness: [0.42, 0.7],
 				sheen: 0.55,
@@ -408,15 +406,15 @@ export const record: Species = {
 			[0.5, 0.95],
 			[1, 0.92],
 		],
-		sway: { frequency: 0.22, amplitude: 0.02 },
-		flutter: { kind: 'blade', amplitude: 0.16, frequency: 2.4 },
+		sway: { frequency: 0.22, amplitude: 0.012 },
+		flutter: { kind: 'blade', amplitude: 0.1, frequency: 2.4 },
 	},
 	lod: {
 		nearFoliage: 'instanced',
 		switchPixels: [500, 12, 160],
 		// The cards stand half again larger than the shoots they picture, so a gap between one shoot's
 		// leaves falls on a neighbour's leaves rather than on sky.
-		cardGrow: 2.3,
+		cardGrow: 2,
 		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so its leaves read
 		// as a piece in air. Each draws its twig as a line, and the join shows.
 		cardStalk: 1.2,
