@@ -76,7 +76,8 @@
 	},
 	"19-cones-and-catkins.png": {
 		"season": "winter",
-		"distance": 0.3
+		"distance": 0.3,
+		"daylight": 2.0
 	},
 	"common-alder-turntable.mp4": {
 		"skyShare": 0.6,
@@ -101,5 +102,9 @@
 	},
 	"23-leaf-cluster-studio.png": {
 		"pick": 1
+	},
+	"13-single-leaf-underside.png": {
+		"daylight": 1.09,
+		"lamp": "#fffff0"
 	}
 }
