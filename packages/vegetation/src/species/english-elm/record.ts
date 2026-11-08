@@ -489,7 +489,7 @@ export const record: Species = {
 		// Stills 21 and 22: the branch and the sub-branch are cut pieces of a bare stem forking into
 		// leafy shoots, so the close views draw the class the photographs do.
 		branch: { shoot: 'cut' },
-		subbranch: { shoot: 'long' },
+		subbranch: { shoot: 'long', pick: 1 },
 		// Still 23: one young shoot with eight alternate leaves and a terminal bud, as the spur
 		// draws it.
 		cluster: { shoot: 'spur' },
