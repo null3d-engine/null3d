@@ -45,7 +45,7 @@ import {
 	placeholderWind,
 	placeholderWood,
 } from './core/placeholder';
-import type { Species, SpeciesModule } from './core/record';
+import type { Growth, Species, SpeciesModule } from './core/record';
 import { loadSpeciesHooks, speciesHooks } from './core/registry';
 import type { TextureManifest } from './core/textures';
 import {
@@ -122,6 +122,12 @@ export interface KitOptions {
 	 * not given.
 	 */
 	readonly form?: string;
+	/**
+	 * Build a cutting kit: the classes its cut pieces draw and no card levels or crown classes. A
+	 * cut piece is drawn only at the nearest level, so its kit never pays for the cards or for the
+	 * classes the crown alone uses.
+	 */
+	readonly cutting?: boolean;
 }
 
 /**
@@ -304,6 +310,43 @@ function scaledCurve(curve: Curve, factor: number): Curve {
 }
 
 /**
+ * The record a cutting kit grows by: the species' own, with the shoots a close piece carries over
+ * the crown's. A piece is drawn at the nearest level alone, so its kit pays for no cards, and a
+ * covering denser than the crown can afford costs the piece's own kit rather than the crown's.
+ */
+function cuttingRecord(record: Species): Species {
+	const share = record.cuttings?.density;
+	const shoots = record.shoots;
+	if (share === undefined || !shoots) return record;
+	const factor = Math.min(8, Math.max(0.25, share));
+	const growth = record.growth;
+	// A piece's bough carries the branchlets its photograph shows: the finest order divides by the
+	// same share, so the covering has wood to stand on.
+	const cutGrowth: Growth =
+		growth.model === 'architectural' && growth.orders.length > 0
+			? {
+					...growth,
+					orders: growth.orders.map((order, index) =>
+						index === growth.orders.length - 1
+							? { ...order, density: scaledCurve(order.density, factor) }
+							: order,
+					),
+				}
+			: growth;
+	return {
+		...record,
+		growth: cutGrowth,
+		shoots: {
+			...shoots,
+			placement: {
+				...shoots.placement,
+				perMetre: scaledCurve(shoots.placement.perMetre, factor),
+			},
+		},
+	};
+}
+
+/**
  * Loads a species' code on this thread: its growth model's grower, its foliage kind's leaf builder
  * and its own shape code, each once. Every synchronous stage call needs it first.
  *
@@ -365,9 +408,14 @@ function stage<T>(
  * @returns The key.
  * @category api/vegetation
  */
-export function kitKey(record: Species, manifest: TextureManifest, detail: Detail): string {
+export function kitKey(
+	record: Species,
+	manifest: TextureManifest,
+	detail: Detail,
+	cutting = false,
+): string {
 	return hashText(
-		`${GENERATOR_VERSION}|${JSON.stringify(record)}|${JSON.stringify(manifest)}|${detail}`,
+		`${GENERATOR_VERSION}|${JSON.stringify(record)}|${JSON.stringify(manifest)}|${detail}${cutting ? ':cutting' : ''}`,
 	);
 }
 
@@ -401,10 +449,12 @@ export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
  * @category api/vegetation
  */
 export function buildKitNow(source: KitSource, options: KitOptions = {}): SpeciesKitData {
-	const record = formRecord(source.record, options.form);
+	const base = formRecord(source.record, options.form);
 	const manifest = source.textures.manifest;
 	const detail = options.detail ?? 'high';
 	const placeholders = options.placeholders ?? false;
+	const cutting = options.cutting === true;
+	const record = cutting ? cuttingRecord(base) : base;
 	const box = speciesBox(record);
 	const builder = foliage(record.foliage.kind);
 	const leavesByTier = DETAILS.map((tier) =>
@@ -423,14 +473,17 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 	if (record.shoots) {
 		const uncarded = stage(
 			placeholders,
-			() => shootPrototypes(record, manifest, leavesByTier),
+			() => shootPrototypes(record, manifest, leavesByTier, cutting),
 			() => placeholderPrototypes(record, leavesByTier),
 		);
-		const baked = stage(
-			placeholders,
-			() => bakeCards(record, manifest, detail, uncarded),
-			() => placeholderCardBake(record, uncarded),
-		);
+		// A cutting kit holds no card levels: its pieces are drawn at the nearest level alone.
+		const baked = cutting
+			? { atlas: cards, cells: uncarded.map(() => ({ planes: [] })) }
+			: stage(
+					placeholders,
+					() => bakeCards(record, manifest, detail, uncarded),
+					() => placeholderCardBake(record, uncarded),
+				);
 		// The kit keeps its own tier's meshes and the tiers below it, which the near band draws
 		// farther out; a page draws at one preset, so the tiers above it are left empty. The card
 		// bake, the lengths and the radii read the full build first.
@@ -455,7 +508,7 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 	return {
 		record,
 		manifest,
-		key: kitKey(record, manifest, detail),
+		key: kitKey(record, manifest, detail, cutting),
 		detail,
 		box,
 		prototypes,
