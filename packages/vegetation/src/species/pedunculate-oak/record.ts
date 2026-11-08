@@ -304,7 +304,7 @@ export const record: Species = {
 		],
 		// Still 14: the foot stands under the crown's skirt with the ground beside it, and draws
 		// lighter than its photograph, so its lowest wood takes half the sky the crown leaves it.
-		footShade: 0.5,
+		footShade: 0.75,
 		young: 0,
 		youngRadius: 0.08,
 		girthScale: [

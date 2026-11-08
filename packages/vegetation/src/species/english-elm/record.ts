@@ -354,7 +354,7 @@ export const record: Species = {
 		],
 		// Still 14: the foot stands under the crown's skirt with the ground beside it, so its lowest
 		// wood takes half the sky the crown leaves it. The mid trunk and the limb are untouched.
-		footShade: 0.5,
+		footShade: 0.75,
 		young: 0,
 		// Still 16: the net fades to smooth grey-brown wood on branches thinner than about three
 		// centimetres' radius, where still 28 shows the lenticels.
