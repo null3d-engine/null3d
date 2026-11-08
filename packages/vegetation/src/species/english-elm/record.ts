@@ -216,13 +216,15 @@ export const record: Species = {
 			{
 				// Stills 21 and 22: the cut piece is a bare stem that divides two or three times into
 				// slender shoots, each carrying alternate leaves in two rows and a terminal bud, with
-				// the leaves crowded along the last year's growth.
+				// the leaves crowded along the last year's growth. Three units of four nodes let a side
+				// arm leaving the first unit carry two units of its own, where a shorter piece's arm
+				// carries one; that is what widens the piece and steadies its turn.
 				name: 'cut',
 				vigor: [0, 1],
 				share: 0,
-				years: 2,
+				years: 3,
 				length: { mean: 0.9, spread: 0.12 },
-				nodes: { mean: 8, spread: 0.5 },
+				nodes: { mean: 4, spread: 0.5 },
 				internode: CROWDED,
 				// Still 21: the piece's foot stands about a twenty-fifth of its height across.
 				stem: { radius: [0.009, 0.005] },
@@ -417,14 +419,14 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit measures 3.35, 4.92, 7.95 and 13.96 MB at the four tiers, the cut shoot's own two
+			// The kit measures 3.39, 5.32, 9.13 and 16.57 MB at the four tiers, the cut shoot's own two
 			// prototypes among them; each cap sits just above its figure.
 			// its figure.
 			// The largest of three variants measures 13.68, 13.80, 13.98 and 14.19 MB, the two years
 			// of alternate leaves taking most of it; each cap sits just above.
 			// The heaviest variant's first card level draws 58,843, 64,037, 71,732 and 81,547
 			// triangles up the tiers, and its second 24,756, 25,374, 26,390 and 27,199.
-			kitBytes: { low: 3_400_000, medium: 4_950_000, high: 8_000_000, ultra: 14_000_000 },
+			kitBytes: { low: 3_400_000, medium: 5_350_000, high: 9_150_000, ultra: 16_600_000 },
 			variantBytes: { low: 13_700_000, medium: 13_850_000, high: 14_000_000, ultra: 14_200_000 },
 			lod0Triangles: 2_500_000,
 			lod1Triangles: 85_000,
