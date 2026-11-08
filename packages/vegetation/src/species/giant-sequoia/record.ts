@@ -149,13 +149,13 @@ export const record: Species = {
 				vigor: [0.62, 1],
 				share: 0.38,
 				years: 3,
-				length: { mean: 0.28, spread: 0.04 },
-				nodes: { mean: 46, spread: 5 },
+				length: { mean: 0.32, spread: 0.04 },
+				nodes: { mean: 58, spread: 6 },
 				internode: EVEN,
 				stem: { radius: [0.006, 0.002] },
 				lateral: 70,
 				laterals: { mean: 3, spread: 0 },
-				lateralGap: 0.25,
+				lateralGap: 0.2,
 				bend: { length: 0.04, angle: 15 },
 				leafScale: [
 					[0, 0.9],
@@ -210,9 +210,9 @@ export const record: Species = {
 			optics: {
 				// The photographs' shaded leaves read about a third brighter than the first record's:
 				// a grey-green, with the blue channel a little under the green's rise.
-				reflectance: [0.11, 0.218, 0.103],
-				reflectanceBack: [0.28, 0.4, 0.28],
-				transmittance: [0.17, 0.3, 0.14],
+				reflectance: [0.132, 0.262, 0.124],
+				reflectanceBack: [0.34, 0.48, 0.34],
+				transmittance: [0.2, 0.36, 0.17],
 				roughness: [0.5, 0.7],
 			},
 		},
@@ -248,8 +248,8 @@ export const record: Species = {
 		taper: { amount: 0.8, height: 9 },
 		buttress: {
 			lobes: { mean: 6, spread: 1 },
-			amount: 0.55,
-			sharpness: 2,
+			amount: 0.7,
+			sharpness: 3,
 			height: 3.5,
 			round: 0.6,
 		},
@@ -262,7 +262,7 @@ export const record: Species = {
 		},
 		// Stills 03, 15 and 17: long vertical fibrous ridges run up the column, so the flutes fade
 		// slowly and high.
-		flutes: { count: { mean: 10, spread: 2 }, depth: 0.25, height: 25 },
+		flutes: { count: { mean: 10, spread: 2 }, depth: 0.35, height: 25 },
 	},
 	extras: [
 		{
@@ -287,15 +287,15 @@ export const record: Species = {
 					[0, 0.068],
 				],
 				sides: 10,
-				scales: 7,
+				scales: 10,
 				scaled: [0.008, 0.062],
-				scaleShade: 0.45,
-				scaleJitter: 0.25,
+				scaleShade: 0.5,
+				scaleJitter: 0.3,
 				stalk: 0.004,
 				stalkSides: 5,
 			},
-			colour: [0.11, 0.16, 0.06],
-			bandColour: [0.09, 0.12, 0.05],
+			colour: [0.09, 0.095, 0.045],
+			bandColour: [0.13, 0.11, 0.065],
 			roughness: [0.85, 0.9],
 			stalkColour: [0.16, 0.09, 0.05],
 			hang: 20,
