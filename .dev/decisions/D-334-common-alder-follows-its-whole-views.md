@@ -159,7 +159,10 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
 - Still `13` is the picture row 10 keeps. Its photograph is 145, 155, 105 and still `25`'s is
   118, 138, 79 — some twelve steps apart — and still `13` reads between 6.0 and 6.8 at every
   setting of the back face. One leaf cannot be two undersides, so the row is stated with both
-  triples rather than claimed.
+  triples rather than claimed. **No slot field reaches either view**: the leaf-underside view draws
+  under `sun: 'albedo'`, which the page builds as two fixed white copy-stand lamps at a set
+  intensity, so `daylight`, `skyShare` and the sky's colour are all unread there. The only lever is
+  the leaf's back face, and still `25` pins it.
 - The young bark carries a tint of 0.963, 0.907 and 0.848 in its texture source, half the measured
   linear ratio 0.927, 0.823 and 0.719, which darkens and warms it. Its surface colour difference
   falls from 3.35 to 2.14, inside the mark. **This species' young-bark view does draw that layer**,
