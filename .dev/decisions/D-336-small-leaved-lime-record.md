@@ -79,14 +79,9 @@ tall, so the all-round band is 0.32. The leaf contour matches the slot 24 pictur
 
 The record's seed salt was chosen by a fill sweep. Twelve salts were grown as variant 0 and measured
 against the fitted envelope with the grower's own silhouette, as the growth test measures the oak.
-Salt 11 draws one piece at every angle, the highest overlap and a crown base at 0.188 of the height.
-One salt drew a detached clump above the crown, so a salt is never chosen by its bounding box alone.
-
-### The near foliage
-
-The near foliage switch stands at 160 pixels, where the oak and the ash keep 240. A shoot at that
-screen size draws as real leaves rather than as a card, so the close crown view keeps the leaf
-shapes. The near band's triangles stay under the owner's cap at every tier.
+Salt 18 draws one piece at every angle, a crown base at 0.178 of the height and the sky its
+photographs show through the crown. Salt 11 fills fuller but closes the silhouette's sky. One salt
+drew a detached clump above the crown, so a salt is never chosen by its bounding box alone.
 
 ## Look
 
@@ -118,10 +113,20 @@ Rejected:
 - `packages/vegetation/src/species/small-leaved-lime/` holds the record, the entry and the fitted
   figures. The textures package holds the leaf, bark and young-bark files, 795 KB for the full set and
   237 KB for the half set. The review slot file holds each picture's light.
-- The kit measures 2.47, 3.73, 5.95 and 10.17 MB at the low, medium, high and ultra tiers. The first
-  variant measures 4.88 to 5.15 MB. Every figure sits under the owner's cap for a tree.
-- The review draws every still and compares it. The figures for the whole views and the faults that
-  remain are listed with the run. The species review is the acceptance test, and its figures are the
-  evidence.
+- The kit measures 2.46, 3.70, 5.93 and 10.13 MB at the low, medium, high and ultra tiers. The first
+  variant measures 3.76 to 3.98 MB. Every figure sits under the owner's cap for a tree.
+- The review draws every still. The whole views, the render against its reference: still 01 has a sky
+  gap of 0.091 against 0.049 and a leaf colour of 3.0, still 02 a gap of 0.103 against 0.062 and a
+  colour of 2.9, and still 18 a gap of 0.078 against 0.107. The leaf close-ups match with an overlap
+  of 0.76 to 0.82 and a colour of 0.5 to 3.0. The bark texture matches at 1.5 steps.
+- The silhouette's reference shows twice the sky of the distant photograph: 0.107 against 0.049. The
+  two-sided bands need a crown whose 01 gap is at most 0.099 and whose 18 gap is at least 0.087. The
+  drawn crown's two figures differ by 0.013, a thousandth more than the window allows, so no single
+  crown passes both. The record keeps the two daylit views inside and misses the silhouette's floor
+  by 0.009. A crown that meets the silhouette fails both daylit views by 0.004 and 0.007.
+- The cut pieces keep more separate leaves than their photographs: the matte draws a leaf group apart
+  wherever its stalk falls under a pixel. The sub-branch's sky gap matches its photograph at 0.51.
+- The young bark's close view reads 18 colour steps from its photograph. The view frames a great limb
+  where the thin wood stands out of reach of the camera.
 - The basal sprouts of stills 14 and 20 are not drawn. The record has no field for a sprout at the
   foot, and the species does not claim one.

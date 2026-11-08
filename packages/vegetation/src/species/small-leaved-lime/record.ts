@@ -184,6 +184,7 @@ export const record: Species = {
 				internode: TWO_RANKED,
 				stem: { radius: [0.007, 0.003] },
 				laterals: 3,
+				lateral: 62,
 				lateralGap: 0.45,
 				bend: { length: 0.05, angle: 28 },
 				leafScale: [
@@ -232,7 +233,7 @@ export const record: Species = {
 			length: 0.009,
 			width: 0.0055,
 			tipCluster: 1,
-			colour: [0.3, 0.05, 0.025],
+			colour: [0.18, 0.03, 0.015],
 		},
 		placement: {
 			// Stills 01, 02 and 05: the crown is a dense web of small leaves on fine twigs, so every
@@ -248,7 +249,7 @@ export const record: Species = {
 			shadePrune: 0,
 			// Stills 01, 03 and 05: a little sky shows through the crown's middle and under it, where
 			// its own leaves leave a shoot under this share of the sky; the lit outer masses stay.
-			skyPrune: 0.12,
+			skyPrune: 0.25,
 			skyPruneLayer: 1,
 			// Stills 01 and 18: no bare twigs hang outside the foliage.
 			bareTrim: 0.03,
@@ -365,10 +366,10 @@ export const record: Species = {
 	},
 	lod: {
 		nearFoliage: 'instanced',
-		switchPixels: [160, 12, 160],
+		switchPixels: [240, 12, 160],
 		// The cards stand half again larger than the shoots they picture, so a gap between one shoot's
 		// leaves falls on a neighbour's leaves rather than on sky, and the far crown reads solid.
-		cardGrow: 1.5,
+		cardGrow: 1.15,
 		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so a card's leaves
 		// read as a piece in air unless its twig is drawn as a line.
 		cardStalk: 1.5,
@@ -380,8 +381,8 @@ export const record: Species = {
 			// above the measured figure at its tier, at 2.47, 3.73, 5.95 and 10.17 MB, and under the
 			// owner's cap for a tree.
 			kitBytes: { low: 2_600_000, medium: 3_850_000, high: 6_100_000, ultra: 10_400_000 },
-			// The first variant measures 4.88, 4.98, 5.11 and 5.15 MB from the coarsest tier up.
-			variantBytes: { low: 5_000_000, medium: 5_100_000, high: 5_200_000, ultra: 5_300_000 },
+			// The first variant measures 3.76, 3.85, 3.93 and 3.98 MB from the coarsest tier up.
+			variantBytes: { low: 4_000_000, medium: 4_100_000, high: 4_200_000, ultra: 4_300_000 },
 			lod0Triangles: 2_900_000,
 			// The heaviest variant's first card level draws about 96,800 triangles, and its second
 			// 42,800, under the owner's 43,000 cap at the finest tier.
