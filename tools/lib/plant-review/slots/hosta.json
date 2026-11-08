@@ -9,7 +9,8 @@
 		"fov": 24
 	},
 	"04-rosette-from-above.png": {
-		"elevation": 88
+		"elevation": 88,
+		"distance": 1.3
 	},
 	"20-autumn-collapse.png": {
 		"fov": 24
@@ -42,5 +43,8 @@
 	},
 	"23-leaf-cluster-studio.png": {
 		"pick": 1
+	},
+	"06-inside-rosette.png": {
+		"distance": 0.75
 	}
 }
