@@ -67,6 +67,14 @@ transmittance of 1.3 times the recorded value carries it without moving the leaf
 | Leaf texture 25 | 2.4 | 2.4 | 2.4 |
 | Oak turn | 3.2 | 3.2 | 3.3 |
 
+### A cut piece's leaves break off when their stalks are hairlines
+
+The elm's cut sub-branch drew fourteen separate groups in the review's outline, where its photograph
+draws one. Its leaf stalks stood 1.6 millimeters across and drooped ten degrees. At 2.2 millimeters
+and four degrees the groups fell to three. The leaf's own outline stayed at 0.81 overlap, and the
+single-leaf still's shape did not move. The lime and the alder show the same break-up in their cut
+pieces for the same reason.
+
 ## Look
 
 A fan of six leaves collapses to a line when the camera turns across its plane. A round rosette of

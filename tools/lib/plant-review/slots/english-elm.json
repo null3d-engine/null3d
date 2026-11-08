@@ -1,0 +1,60 @@
+{
+	"01-whole-vase-distant.png": {
+		"skyShare": 0.167,
+		"fov": 30,
+		"daylight": 2.168
+	},
+	"02-whole-vase-profile.png": {
+		"skyShare": 0.357,
+		"fov": 30,
+		"daylight": 1.419
+	},
+	"03-whole-from-below.png": {
+		"skyShare": 0.357,
+		"daylight": 1.597
+	},
+	"04-crown-outside.png": {
+		"skyShare": 0.357,
+		"daylight": 1.542,
+		"distance": 4
+	},
+	"05-crown-underside.png": {
+		"skyShare": 0.357,
+		"daylight": 1.477
+	},
+	"06-inside-crown.png": {
+		"skyShare": 0.357,
+		"daylight": 1.716
+	},
+	"17-trunk-taper.png": {
+		"skyShare": 0.667,
+		"daylight": 0.904
+	},
+	"18-silhouette.png": {
+		"fov": 30,
+		"fill": null,
+		"targetY": null,
+		"top": 0.045,
+		"eye": 0.3
+	},
+	"08-limb-fork.png": {
+		"background": "studio-grey",
+		"sky": "#cfc8c3"
+	},
+	"19-samaras.png": {
+		"season": "blossom"
+	},
+	"elm-wind-motion.mp4": {
+		"skyShare": 0.167,
+		"daylight": 2.168
+	},
+	"20-suckers.png": {
+		"form": "suckers",
+		"view": "whole",
+		"season": "summer",
+		"distance": 3.5
+	},
+	"28-young-bark.png": {
+		"thin": 0.015
+	}
+}

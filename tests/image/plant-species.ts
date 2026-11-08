@@ -17,9 +17,8 @@ export function plantSpeciesTests(root = ROOT): ImageTest[] {
 		sketch: `tests/pages/sketches/plant-review-sketch.ts?species=${id}&view=panels`,
 		hold: 1,
 		size: [1024, 1024],
-		// The four panels stand at a few metres, so a dense crown draws as real geometry, and a
-		// fourth of a million vertices can take longer than a minute to reach the capture under a
-		// loaded machine. A longer wait cannot pass an image that failed at sixty.
+		// A dense crown's four panels take about a minute and a half on a software renderer,
+		// where a bare demo's frame takes seconds.
 		timeoutSeconds: 240,
 	}));
 }
