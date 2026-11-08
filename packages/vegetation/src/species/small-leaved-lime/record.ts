@@ -218,8 +218,8 @@ export const record: Species = {
 					[0, 78],
 					[1, 64],
 				],
-				leafAngleSpread: 12,
-				droop: 4,
+				leafAngleSpread: 35,
+				droop: 2,
 			},
 		],
 		// Stills 09, 10 and 11: one leaf at each node, the next turned half a turn from the last, so
@@ -273,7 +273,7 @@ export const record: Species = {
 			outline: 'texture',
 			// Stills 11, 12 and 24: a long slender stalk runs below the blade for about two fifths of
 			// its length, and hangs the blade away from the twig.
-			petiole: { length: 0.028, radius: 0.0017, flat: 0, droop: 14 },
+			petiole: { length: 0.028, radius: 0.003, flat: 0, droop: 5 },
 			fold: 8,
 			curl: 10,
 			crossCurl: -4,
@@ -361,7 +361,9 @@ export const record: Species = {
 	wind: {
 		// The wind clip's bands: the reference clip sways most in its low and middle bands, so the
 		// trunk stays soft up to the crown's base while the blades flutter less than a breeze alone
-		// gives, which keeps the top band near its photograph's.
+		// gives, which keeps the top band near its photograph's. The foot's band does not move: a sway
+		// record bends the crown where a real tree moves at its foot, a model-shape limit the maple
+		// and the ash state in the same words.
 		stiffness: [
 			[0, 0.5],
 			[0.5, 0.55],
