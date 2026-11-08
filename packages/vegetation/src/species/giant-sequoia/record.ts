@@ -149,13 +149,13 @@ export const record: Species = {
 				vigor: [0.62, 1],
 				share: 0.38,
 				years: 3,
-				length: { mean: 0.24, spread: 0.04 },
+				length: { mean: 0.28, spread: 0.04 },
 				nodes: { mean: 46, spread: 5 },
 				internode: EVEN,
 				stem: { radius: [0.006, 0.002] },
 				lateral: 70,
 				laterals: { mean: 3, spread: 0 },
-				lateralGap: 0.32,
+				lateralGap: 0.25,
 				bend: { length: 0.04, angle: 15 },
 				leafScale: [
 					[0, 0.9],
@@ -210,9 +210,9 @@ export const record: Species = {
 			optics: {
 				// The photographs' shaded leaves read about a third brighter than the first record's:
 				// a grey-green, with the blue channel a little under the green's rise.
-				reflectance: [0.1, 0.198, 0.094],
-				reflectanceBack: [0.26, 0.37, 0.26],
-				transmittance: [0.16, 0.28, 0.13],
+				reflectance: [0.11, 0.218, 0.103],
+				reflectanceBack: [0.28, 0.4, 0.28],
+				transmittance: [0.17, 0.3, 0.14],
 				roughness: [0.5, 0.7],
 			},
 		},
