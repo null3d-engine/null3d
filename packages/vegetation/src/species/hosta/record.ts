@@ -25,7 +25,7 @@ export const record: Species = {
 		// of leaves, the outermost of each eye its oldest and lowest.
 		shoots: { mean: 6, spread: 1 },
 		crown: 0.04,
-		leaves: { mean: 8.5, spread: 1 },
+		leaves: { mean: 9, spread: 1 },
 		divergence: 137.5,
 		// Still 21: the youngest leaves stand nearly upright at the shoot's heart, the oldest lean
 		// out over the mound.
@@ -139,14 +139,14 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			kitBytes: { low: 40_000, medium: 65_000, high: 70_000, ultra: 125_000 },
-			// The densest variant's season sets each tier: 0.60, 1.42, 1.62 and 3.45 MB with its
+			kitBytes: { low: 40_000, medium: 65_000, high: 65_000, ultra: 100_000 },
+			// The densest variant's season sets each tier: 0.60, 1.46, 1.41 and 2.77 MB with its
 			// flower scapes standing. Each cap sits just above its figure, under the owner's.
-			variantBytes: { low: 600_000, medium: 1_430_000, high: 1_640_000, ultra: 3_460_000 },
-			// The densest variant's nearest level measures 70,380 triangles.
-			lod0Triangles: 75_000,
-			// The first card level measures 9,540 triangles and the second 3,060.
-			lod1Triangles: 9_600,
+			variantBytes: { low: 600_000, medium: 1_470_000, high: 1_420_000, ultra: 2_780_000 },
+			// The densest variant's nearest level measures 57,456 triangles.
+			lod0Triangles: 60_000,
+			// The first card level measures 9,810 triangles and the second 3,060.
+			lod1Triangles: 9_900,
 			lod2Triangles: 3_100,
 			downloadBytes: 350_000,
 			downloadHalfBytes: 120_000,
