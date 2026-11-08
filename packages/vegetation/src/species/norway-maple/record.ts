@@ -214,17 +214,17 @@ export const record: Species = {
 				droop: 2,
 			},
 			{
-				// Stills 21 and 22: this year's leader, its three opposite leaf pairs along it and one
-				// opposite pair of side shoots, each ending in a bud above its leaves. The piece's stem
-				// stands about a thirtieth of its height across at its foot.
+				// Stills 21 and 22: last year's wood stands bare below this year's leader, whose opposite
+				// leaf pairs run along it, with one opposite pair of side shoots at the joint. The piece's
+				// stem stands about a thirtieth of its height across at its foot.
 				name: 'cut',
 				vigor: [0, 1],
 				share: 0,
-				years: 1,
-				length: { mean: 0.5, spread: 0.1 },
-				nodes: { mean: 3, spread: 0.3 },
+				years: 2,
+				length: { mean: 0.75, spread: 0.2 },
+				nodes: { mean: 3, spread: 0.4 },
 				internode: PAIR,
-				stem: { radius: [0.008, 0.004] },
+				stem: { radius: [0.012, 0.006] },
 				laterals: 2,
 				lateralGap: 0.3,
 				bend: { length: 0.06, angle: 16 },
@@ -266,7 +266,7 @@ export const record: Species = {
 			],
 			// Stills 01 and 02: the crown is a dense mass, and the first round's curve alone left it
 			// open, so the dial adds shoots along the finest axes without changing their reach.
-			density: 3.5,
+			density: 3.2,
 			shadePrune: 0,
 			// Stills 01, 02 and 18: sky shows through the crown's middle and under it only where its
 			// own leaves leave a shoot under this share of the sky, and the lit outer masses stay.
@@ -276,6 +276,9 @@ export const record: Species = {
 			bareTrim: 0.03,
 			// Stills 02 and 05: the shoots stand up off their wood, so the foliage rides on the limbs.
 			lift: 12,
+			// Stills 01 and 02: the crown is wider than tall, and the foliage stands out from the fine
+			// wood on long petioles, so each shoot row reaches this far past its bud.
+			reach: 20,
 			skyward: 0.55,
 			scale: { mean: 1.3, spread: 0.15 },
 		},
@@ -290,7 +293,7 @@ export const record: Species = {
 			outline: 'texture',
 			// Still 12: a long slender stalk runs below the blade for about a fifth of the leaf's
 			// extent, and the blade hangs slightly from it.
-			petiole: { length: 0.05, radius: 0.0012, flat: 0, droop: 10 },
+			petiole: { length: 0.05, radius: 0.0018, flat: 0, droop: 10 },
 			fold: 8,
 			curl: 10,
 			crossCurl: -3,
@@ -368,7 +371,7 @@ export const record: Species = {
 				pedicel: 0.012,
 			},
 			colour: [0.26, 0.34, 0.08],
-			bandColour: [0.16, 0.09, 0.04],
+			bandColour: [0.12, 0.1, 0.03],
 			stalkColour: [0.2, 0.26, 0.07],
 			roughness: [0.6, 0.6],
 			hang: 180,
@@ -378,8 +381,8 @@ export const record: Species = {
 			// before the leaves are out.
 			kind: 'flower',
 			at: 'shoot-tip',
-			share: 0.5,
-			count: { mean: 5, spread: 1 },
+			share: 0.7,
+			count: { mean: 8, spread: 2 },
 			tipShare: 0.9,
 			seasons: ['blossom'],
 			shape: { petals: 5, radius: 0.005, cup: 0.003 },
@@ -417,12 +420,13 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit measures 3.28, 3.85, 5.05 and 7.37 MB at the four tiers, the cutting classes and
-			// the leaf's palmate blade among them; each cap sits above its figure.
-			kitBytes: { low: 3_300_000, medium: 3_900_000, high: 5_100_000, ultra: 7_500_000 },
-			// The crown's dense shoot dial puts 5,314 rosettes on the first variant, which measures
-			// 12.20, 12.28, 12.38 and 12.49 MB; each cap sits above it.
-			variantBytes: { low: 12_300_000, medium: 12_400_000, high: 12_500_000, ultra: 12_600_000 },
+			// The kit measures 3.29, 3.98, 5.41 and 8.17 MB at the four tiers, the three cutting
+			// classes and the leaf's palmate blade among them; each cap sits above its figure and the
+			// medium one stays under the owner's four-megabyte ceiling.
+			kitBytes: { low: 3_300_000, medium: 3_980_000, high: 5_450_000, ultra: 8_250_000 },
+			// The crown's dense shoot dial puts 4,896 rosettes on the first variant, which measures
+			// 11.25, 11.32, 11.43 and 11.54 MB; each cap sits above it.
+			variantBytes: { low: 11_300_000, medium: 11_400_000, high: 11_500_000, ultra: 11_600_000 },
 			lod0Triangles: 2_800_000,
 			lod1Triangles: 150_000,
 			lod2Triangles: 42_000,
