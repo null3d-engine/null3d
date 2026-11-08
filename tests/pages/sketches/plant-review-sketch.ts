@@ -867,8 +867,10 @@ export default defineSketch(async (ctx) => {
 					return { ...orbit([0, run / 2, 0], distance, e, turn, fov), roll, near: 0.01 };
 				}
 				// A cutting fills the frame with its own points, as its reference's piece does, on the
-				// rows its reference shows it on when the query measured them.
-				return fitPoints(piece as PlantAsset, kit, turn, e, aspect, fov, CUT_ROWS);
+				// rows its reference shows it on when the query measured them. A roll lays the piece as
+				// its photograph does, such as a pinna that runs diagonally across its picture.
+				const fitted = fitPoints(piece as PlantAsset, kit, turn, e, aspect, fov, CUT_ROWS);
+				return QUERY.roll !== undefined ? { ...fitted, roll: QUERY.roll * DEG } : fitted;
 			}
 			case 'panels':
 				break;

@@ -36,14 +36,14 @@ export const record: Species = {
 		},
 		crown: {
 			// Still 01 and the crown views: a dense living crown of about two dozen fronds.
-			fronds: { mean: 24, spread: 2 },
+			fronds: { mean: 25, spread: 2 },
 			divergence: 137.5,
 			// Still 01: the youngest fronds stand up in the centre and the oldest arch out and down.
 			tilt: [
-				[0, 15],
-				[0.35, 48],
-				[0.7, 76],
-				[1, 90],
+				[0, 14],
+				[0.35, 46],
+				[0.7, 80],
+				[1, 98],
 			],
 			// Still 16, 17 and 20: the dead fronds hang against the trunk as a brown skirt.
 			dead: { count: { mean: 12, spread: 2 }, hang: 80, skirt: 0.75 },
@@ -53,15 +53,15 @@ export const record: Species = {
 		frond: {
 			// Stills 21 and 22: the frond is twice divided, the pinnae in near-opposite pairs.
 			kind: 'bipinnate',
-			length: { mean: 2, spread: 0.2 },
+			length: { mean: 2.1, spread: 0.2 },
 			// Still 07: a short red-brown stipe, densely hairy, no wider than the rachis.
 			petiole: { length: 0.28, width: 0.055, teeth: 0 },
 			// Still 21: the blade rises from the stipe and arches over, its tip drooping.
 			droop: [
 				[0, 3],
-				[0.3, 20],
-				[0.7, 36],
-				[1, 48],
+				[0.3, 24],
+				[0.7, 40],
+				[1, 54],
 			],
 			twist: 4,
 			pinnae: {
@@ -70,10 +70,10 @@ export const record: Species = {
 				// Pinna length over the frond's length, by position along the rachis.
 				length: [
 					[0, 0.09],
-					[0.15, 0.15],
-					[0.4, 0.175],
-					[0.8, 0.13],
-					[1, 0.04],
+					[0.15, 0.16],
+					[0.4, 0.21],
+					[0.8, 0.15],
+					[1, 0.05],
 				],
 				angle: [
 					[0, 80],
@@ -92,7 +92,7 @@ export const record: Species = {
 		// pinnules and lobes painted in.
 		kind: 'blade',
 		leaf: {
-			length: { mean: 0.34, spread: 0.03 },
+			length: { mean: 0.36, spread: 0.03 },
 			outline: 'texture',
 			petiole: { length: 0.012, radius: 0.0012, flat: 0, droop: 4 },
 			fold: 8,
@@ -153,7 +153,7 @@ export const record: Species = {
 		budget: {
 			// The kit holds one pinna at each tier; the crown's thousand pinnae are the variant's.
 			kitBytes: { low: 40_000, medium: 50_000, high: 60_000, ultra: 70_000 },
-			variantBytes: { low: 900_000, medium: 3_100_000, high: 3_100_000, ultra: 3_150_000 },
+			variantBytes: { low: 900_000, medium: 3_120_000, high: 3_120_000, ultra: 3_180_000 },
 			lod0Triangles: 220_000,
 			lod1Triangles: 12_000,
 			lod2Triangles: 6_000,
