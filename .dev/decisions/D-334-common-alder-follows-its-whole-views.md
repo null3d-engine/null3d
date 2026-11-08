@@ -100,7 +100,7 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   or less and still `18` needs 0.16 or more, an empty band. The crown sits where three of the four
   views pass and `02` misses by 0.02.
 - The cut pieces are fixed by their proportions. The stem pieces splay side shoots at 70 degrees
-  from the stem (`lateral`), and the cluster's six leaves stand along a stem with its internodes
+  from the stem (`lateral`), and the cluster's leaves stand along a stem with its internodes
   showing rather than crowded at one point. Rejected: thinning leaves, which a studio still scales
   back up, and a real branch cut from the grown plant, which draws one bare pole with a tuft.
 - The branch piece draws a cutting class of its own rather than the crown's spray. Three years put
