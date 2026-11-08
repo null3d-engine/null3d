@@ -48,11 +48,12 @@ export const record: Species = {
 			// Stills 06 and 07: the fronds spring from one growing point at the trunk's top, where
 			// the old bases cluster, rather than clasping a length of stem as a palm's do.
 			depth: 0.2,
+			// Still 06: the crown's centre holds the young fronds, still rolled, coiled through a
+			// turn and a half above a hairy stalk.
+			croziers: { count: { mean: 5, spread: 1 }, length: { mean: 0.7, spread: 0.05 }, coil: 540 },
 			// Still 16, 17 and 20: the dead fronds hang against the trunk as a brown skirt, and
 			// still 20 shows their pinnae, so a dead frond keeps the detail of a living one.
 			dead: { count: { mean: 20, spread: 2 }, hang: 160, skirt: 0.1, blades: true },
-			// The shared crown-rosette model carries no croziers yet; still 06's coiled centre is a
-			// stated limit of the model, not of this record.
 		},
 		frond: {
 			// Stills 21 and 22: the frond is twice divided, its pinnae in near-opposite pairs; the
