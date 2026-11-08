@@ -439,7 +439,7 @@ function layCrozier(
 		crownPoint[1],
 		crownPoint[2] + horizontal[2] * CROZIER_STAND,
 	];
-	const radius = Math.max(growth.frond.petiole.width / 2, 0.008);
+	const radius = Math.max(croziers.radius ?? growth.frond.petiole.width / 2, 0.008);
 	const axis = builder.addAxis({
 		parent: stem.axis,
 		parentNode: stem.top,
