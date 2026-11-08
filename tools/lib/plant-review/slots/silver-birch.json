@@ -79,5 +79,8 @@
 	"18-silhouette.png": {
 		"daylight": 2.95,
 		"skyShare": 0.65
+	},
+	"22-subbranch-studio.png": {
+		"turn": 45
 	}
 }
