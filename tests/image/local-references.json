@@ -191,6 +191,12 @@
 		"date": "2026-11-07",
 		"reason": "the oak's kit took the cut class's forked shapes, so its card atlas grew from five cells a side to six and each card's texel position moved; the crown draws as the review measures it, so the software set is redrawn here while CI redraws it"
 	},
+	"chromium-swiftshader/compat/plant-scots-pine.png": {
+		"test": "plant-scots-pine",
+		"tier": "compat",
+		"date": "2026-11-08",
+		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
+	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
 		"tier": "compat",
@@ -466,6 +472,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-07",
 		"reason": "the oak's kit took the cut class's forked shapes, so its card atlas grew from five cells a side to six and each card's texel position moved; the crown draws as the review measures it, so the software set is redrawn here while CI redraws it"
+	},
+	"chromium-swiftshader/webgl2/plant-scots-pine.png": {
+		"test": "plant-scots-pine",
+		"tier": "webgl2",
+		"date": "2026-11-08",
+		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -772,6 +784,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-07",
 		"reason": "the oak's kit took the cut class's forked shapes, so its card atlas grew from five cells a side to six and each card's texel position moved; the crown draws as the review measures it, so the software set is redrawn here while CI redraws it"
+	},
+	"chromium-swiftshader/webgpu/plant-scots-pine.png": {
+		"test": "plant-scots-pine",
+		"tier": "webgpu",
+		"date": "2026-11-08",
+		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
