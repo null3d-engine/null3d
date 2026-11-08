@@ -81,7 +81,7 @@ export const forms: Readonly<Record<string, SpeciesForm>> = {
 			},
 		},
 		// Still 31: a light crown for a sapling, with sky through it everywhere.
-		shoots: { placement: { density: 4 } },
+		shoots: { placement: { density: 2.6 } },
 		// Still 31: the stem is red-brown over its whole run, with the white bark only at the very foot.
 		bark: { youngRadius: 0.05 },
 		// Still 32: a plain foot, with no buttress lobes or surface roots.
