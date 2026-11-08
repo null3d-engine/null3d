@@ -1,0 +1,25 @@
+{
+	"04-tuft-from-above.png": {
+		"view": "crown",
+		"elevation": 88
+	},
+	"08-leaf-leaving-sheath.png": {
+		"view": "junction",
+		"elevation": 0
+	},
+	"09-new-shoots.png": {
+		"view": "cluster",
+		"background": "studio-grey"
+	},
+	"15-sheath-and-ligule.png": {
+		"view": "junction",
+		"elevation": 0
+	},
+	"20-hanging-spikes-habit.png": {
+		"view": "whole",
+		"fill": null,
+		"targetY": null,
+		"top": null,
+		"eye": null
+	}
+}
