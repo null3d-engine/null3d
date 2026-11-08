@@ -124,13 +124,14 @@ export const record: Species = {
 		autumn: { reflectance: [0.3, 0.14, 0.04], transmittance: [0.35, 0.15, 0.03] },
 	},
 	wind: {
-		// The wind clip: the level blades rock on their stipes while the wood stays stiff.
+		// The wind clip is a light breeze: the level blades rock a little on their stipes while
+		// the wood stays stiff.
 		stiffness: [
-			[0, 0.6],
-			[1, 0.2],
+			[0, 0.85],
+			[1, 0.5],
 		],
-		sway: { frequency: 0.6, amplitude: 0.08 },
-		flutter: { kind: 'leaflet', amplitude: 0.2, frequency: 4 },
+		sway: { frequency: 0.35, amplitude: 0.02 },
+		flutter: { kind: 'leaflet', amplitude: 0.04, frequency: 1.2 },
 	},
 	lod: {
 		nearFoliage: 'merged',
