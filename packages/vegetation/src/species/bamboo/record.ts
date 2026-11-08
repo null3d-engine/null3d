@@ -34,7 +34,7 @@ export const record: Species = {
 		// out, the whole clump about as wide as a third of its height at the foot.
 		culms: { mean: 16, spread: 3 },
 		layout: 'clump',
-		spacing: 0.6,
+		spacing: 0.9,
 		height: { mean: 8, spread: 1 },
 		// Still 17: a culm's width over its height is about a fortieth, far thicker in proportion than
 		// a tree's bole.
@@ -55,16 +55,16 @@ export const record: Species = {
 		// branches leave on opposite sides, steeply upward, and one takes the node's lead. Stills 01 and
 		// 02 show lower branches shorter and the longest near the top of the branching zone.
 		branches: {
-			from: 0.46,
+			from: 0.5,
 			perNode: { mean: 2, spread: 0.4 },
 			dominant: true,
 			length: [
-				[0, 0.5],
-				[0.5, 1.2],
-				[0.85, 1.7],
-				[1, 1.2],
+				[0, 0.7],
+				[0.5, 1.5],
+				[0.85, 2.1],
+				[1, 1.4],
 			],
-			angle: 38,
+			angle: 42,
 			orders: 1,
 		},
 		// Still 09: the flattened groove up the internode above a branch.
@@ -95,11 +95,11 @@ export const record: Species = {
 					[1, 0.95],
 				],
 				leafAngle: [
-					[0, 72],
-					[0.6, 55],
-					[1, 32],
+					[0, 78],
+					[0.6, 62],
+					[1, 42],
 				],
-				leafAngleSpread: 12,
+				leafAngleSpread: 16,
 				droop: 6,
 				phyllotaxis: { kind: 'distichous', flatten: 0.65 },
 			},
@@ -120,17 +120,47 @@ export const record: Species = {
 					[1, 0.9],
 				],
 				leafAngle: [
-					[0, 76],
-					[0.5, 62],
-					[1, 36],
+					[0, 80],
+					[0.5, 66],
+					[1, 44],
 				],
-				leafAngleSpread: 16,
-				droop: 8,
+				leafAngleSpread: 18,
+				droop: 9,
+				phyllotaxis: { kind: 'distichous', flatten: 0.65 },
+			},
+		],
+		cuttingClasses: [
+			{
+				// Still 22: a cut branchlet of about 35 cm, its leaves after a bare run and two side
+				// branchlets each ending in a fan. The crown cannot carry shoots this bare, so the
+				// sub-branch draws this class and the crown never does.
+				name: 'cut',
+				vigor: [0, 1],
+				share: 0,
+				years: 2,
+				length: { mean: 0.34, spread: 0.04 },
+				nodes: { mean: 6, spread: 1 },
+				internode: BRANCHLET,
+				stem: { radius: [0.005, 0.002] },
+				lateral: 58,
+				laterals: 2,
+				lateralGap: 0.4,
+				leafScale: [
+					[0, 0.95],
+					[1, 1],
+				],
+				leafAngle: [
+					[0, 80],
+					[0.6, 62],
+					[1, 42],
+				],
+				leafAngleSpread: 18,
+				droop: 9,
 				phyllotaxis: { kind: 'distichous', flatten: 0.65 },
 			},
 		],
 		phyllotaxis: { kind: 'distichous', flatten: 0.6 },
-		orders: 1,
+		orders: 2,
 		years: 1,
 		leafYears: 1,
 		stem: { radius: [0.004, 0.002], zigzag: 4 },
@@ -138,14 +168,14 @@ export const record: Species = {
 		bud: { length: 0.004, width: 0.003, tipCluster: 1, colour: [0.16, 0.12, 0.05] },
 		placement: {
 			perMetre: [
-				[0, 1.1],
-				[1, 2.2],
+				[0, 3],
+				[1, 5.5],
 			],
 			density: 1,
 			shadePrune: 0,
 			// Stills 01, 05 and 18: the plume is open, with sky between the fans and the branches
 			// showing through it, so only the innermost shoots go.
-			skyPrune: 0.12,
+			skyPrune: 0.05,
 			tipBias: 0.35,
 			lift: 8,
 			skyward: 0.5,
@@ -168,10 +198,11 @@ export const record: Species = {
 			twist: 5,
 			wave: [0.0015, 3],
 			optics: {
-				// Still 12's upper face is a bright mid green; still 13's lower face is a pale blue-green.
-				reflectance: [0.05, 0.12, 0.025],
-				reflectanceBack: [0.2, 0.26, 0.2],
-				transmittance: [0.1, 0.2, 0.03],
+				// The texture manifest's measured means of both faces: still 12's upper face is a bright
+				// mid green, and still 13's lower face a pale blue-green.
+				reflectance: [0.0808, 0.2188, 0.0047],
+				reflectanceBack: [0.1699, 0.257, 0.1894],
+				transmittance: [0.11, 0.26, 0.02],
 				roughness: [0.42, 0.58],
 			},
 		},
@@ -231,8 +262,8 @@ export const record: Species = {
 	cuttings: {
 		// Still 21: a metre of a branch, from its node to its leafy branchlets.
 		branch: { order: 1, length: 0.95 },
-		// Still 22: the longer branchlet class, with its leaves after a bare run.
-		subbranch: { shoot: 'long' },
+		// Still 22: a cut branchlet with side fans, drawn by the class of its own.
+		subbranch: { shoot: 'cut' },
 		// Still 23: the shorter branchlet's fan.
 		cluster: { shoot: 'short' },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
