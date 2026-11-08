@@ -295,9 +295,9 @@ export const record: Species = {
 	},
 	bark: {
 		zones: [
-			// The bole: stills 26 and 15 show one bark under a flat light and under daylight, so one
-			// tint keeps the flat-lit grey and the mid-trunk grey-brown close to both.
-			{ layer: 0, by: 'height', from: 0, to: 3.6, blend: 0.4, tint: [1.04, 1.02, 0.94] },
+			// The bole: stills 26 and 15 show one bark under a flat light and under daylight. Measured on
+			// the plant alone it draws lighter and greyer than both, so one tint darkens it and warms it.
+			{ layer: 0, by: 'height', from: 0, to: 3.6, blend: 0.4, tint: [0.75, 0.72, 0.5] },
 			// The great limbs stand in brighter light than the bole and read lighter and cooler than
 			// still 16, so they take a warmer, darker tint of their own above it.
 			{ layer: 0, by: 'height', from: 3.6, to: 40, blend: 0.6, tint: [0.45, 0.42, 0.28] },
