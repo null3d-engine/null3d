@@ -158,6 +158,26 @@ export const record: Species = {
 	},
 	extras: [
 		{
+			// Still 20: a woodpecker's nest hole is a round dark socket with a callused rim. The site
+			// stands a little inside the skin, so the socket sits flush and reads as a hole.
+			kind: 'berry',
+			at: 'old-wood',
+			share: 1,
+			seasons: ['summer', 'autumn', 'winter', 'blossom'],
+			shape: {
+				lathe: [
+					[0.001, 0],
+					[0.028, 0],
+					[0.031, 0.006],
+					[0.024, 0.012],
+					[0.001, 0.014],
+				],
+			},
+			colour: [0.045, 0.03, 0.02],
+			roughness: [0.95, 0.95],
+			hang: 0,
+		},
+		{
 			// Still 19: a ring of waxy white funnel flowers, yellow at the centre, stands round the
 			// stem's crown in late spring.
 			kind: 'flower',
