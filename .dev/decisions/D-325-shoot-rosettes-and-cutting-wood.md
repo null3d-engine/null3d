@@ -87,6 +87,31 @@ cell then drew 73 by 265. The turn's height spread fell to 11.6 per cent and its
 inside their bands. The cluster stills held at 0.415 and 0.450 overlap. A bigger card cannot do
 this. The missing dimension is the leaf's own depth.
 
+### The elm's two cluster photographs disagree about the shoot's form
+
+The elm's still 11 shows a short twig, bare over its lower run, with six leaves gathered into a tuft
+at the tip. Its still 23 shows an extended shoot with alternate leaves the length of its run and buds
+in the axils. Both stills are cut from the one `cluster` hint, and the species carries the one
+cutting class, so both are judged on one piece. The two pictures ask it for different forms: a tufted
+short shoot and an even ladder.
+
+Measured on the elm at seed 11, variant 0, preset high, band tops from each photograph's own gap:
+
+| Class's internodes | Still 11 gap | Still 11 overlap | Still 23 gap | Still 23 overlap |
+| --- | --- | --- | --- | --- |
+| Even (a ladder) | 0.160 (band 0.120) | 0.445 | 0.161 (band 0.145 to 0.215) | 0.511 |
+| Long foot, tufted tip | 0.148 (band 0.120) | 0.393 | 0.145 (on its floor) | 0.435 |
+| Tufted, seven nodes at 28 to 45 degrees | 0.117 (inside) | 0.369 | 0.111 (0.034 below) | 0.435 |
+
+The tuft closes still 11 by twelve thousandths and the turn holds inside its bands at 0.401 mean
+overlap and 94 per cent width spread. Paying for it costs five hundredths of outline overlap on the
+open still and eight on the studio still. The tighter variant inverts the pair: it takes 11 inside
+its band and 23 below its own.
+
+No single cutting class satisfies both photographs. The row stays failing on that evidence, and the
+shape match already bought is not traded for a gap that cannot close. The fix is a second cutting
+form, so each photograph is judged on a piece of its own kind.
+
 ## Look
 
 A fan of six leaves collapses to a line when the camera turns across its plane. A round rosette of
