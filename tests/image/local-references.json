@@ -189,7 +189,7 @@
 		"test": "plant-italian-cypress",
 		"tier": "compat",
 		"date": "2026-11-08",
-		"reason": "the scale shoot's rebuild moves every plant picture; the Mac's SwiftShader agrees with CI's byte for byte, and CI redraws its own set from this branch"
+		"reason": "the card growth changed every plant picture; the Mac's SwiftShader agrees with CI's byte for byte, and CI redraws its own set from this branch"
 	},
 	"chromium-swiftshader/compat/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -477,7 +477,7 @@
 		"test": "plant-italian-cypress",
 		"tier": "webgl2",
 		"date": "2026-11-08",
-		"reason": "the scale shoot's rebuild moves every plant picture; the Mac's SwiftShader agrees with CI's byte for byte, and CI redraws its own set from this branch"
+		"reason": "the card growth changed every plant picture; the Mac's SwiftShader agrees with CI's byte for byte, and CI redraws its own set from this branch"
 	},
 	"chromium-swiftshader/webgl2/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -795,7 +795,7 @@
 		"test": "plant-italian-cypress",
 		"tier": "webgpu",
 		"date": "2026-11-08",
-		"reason": "the scale shoot's rebuild moves every plant picture; the Mac's SwiftShader agrees with CI's byte for byte, and CI redraws its own set from this branch"
+		"reason": "the card growth changed every plant picture; the Mac's SwiftShader agrees with CI's byte for byte, and CI redraws its own set from this branch"
 	},
 	"chromium-swiftshader/webgpu/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",

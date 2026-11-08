@@ -1920,7 +1920,7 @@ export interface CutFromPlant {
 	/**
 	 * The shoots this piece places over the crown's own, from 0.25 to 8: a density of its own, where
 	 * the piece covers more or less than the species' `cuttings.density`, which applies where it
-	 * names none.
+	 * names none. A piece cut from the grown plant takes the kit this reshapes.
 	 */
 	readonly density?: number;
 }
@@ -1940,9 +1940,9 @@ export interface CutFromShoots {
 	 */
 	readonly pick?: number;
 	/**
-	 * The shoots this piece places over the crown's own, from 0.25 to 8: a density of its own, where
-	 * the piece covers more or less than the species' `cuttings.density`, which applies where it
-	 * names none.
+	 * A density here does nothing: a piece taken from a shoot prototype carries the prototype's own
+	 * covering, and only a piece cut from the grown plant has placement to reshape. Thin a shoot-cut
+	 * piece with a class of its own instead, or leave the field out.
 	 */
 	readonly density?: number;
 }
