@@ -440,6 +440,7 @@ function extraProblems(record: Species, out: string[]): void {
  */
 function cuttingProblems(record: Species, out: string[]): void {
 	const leaf = record.cuttings?.leaf;
+	if (record.cuttings?.leaves) spreadProblems(record.cuttings.leaves, 'cuttings.leaves', true, out);
 	if (leaf?.pressed && record.foliage.kind !== 'blade' && record.foliage.kind !== 'thick')
 		out.push(`cuttings.leaf.pressed lays a leaf flat, and the foliage is '${record.foliage.kind}'`);
 	if (leaf?.petiole !== undefined && !(leaf.petiole > 0))

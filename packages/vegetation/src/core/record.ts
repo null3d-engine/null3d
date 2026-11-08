@@ -1845,6 +1845,14 @@ export interface SpeciesBudget {
  */
 export interface CuttingHints {
 	/**
+	 * The leaves that one shoot of a piece carries, where a plant's pieces are shoots of its crown
+	 * rather than shoot prototypes: a rosette cuts an eye of the grown plant, so the crown's own
+	 * leaf count would give the piece the whole crown's density. A class of its own cannot serve
+	 * these plants, whose leaves carry no prototypes to place. Absent, a piece takes the crown's
+	 * leaf count, as it did before this field.
+	 */
+	readonly leaves?: Spread;
+	/**
 	 * A branch about 1 m long: the macro order to cut from the grown plant and the length of its
 	 * wood, or the shoot class whose prototype stands for it.
 	 */
