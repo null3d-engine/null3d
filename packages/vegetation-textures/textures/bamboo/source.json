@@ -4,6 +4,7 @@
 		"upper": 24,
 		"lower": 25,
 		"alpha": { "floor": 16, "solid": 240 },
+		"frame": { "petiole": [30, 988], "tip": [1000, 26] },
 		"relief": { "veins": 1, "pucker": 0.25, "depth": 0.0015 }
 	},
 	"bark": {
