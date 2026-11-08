@@ -51,11 +51,12 @@ export const record: Species = {
 			// Still 06: the crown's centre holds the young fronds, still rolled, coiled through a
 			// turn and a half above a hairy stalk.
 			croziers: {
-				count: { mean: 5, spread: 1 },
-				length: { mean: 0.7, spread: 0.05 },
+				count: { mean: 6, spread: 1 },
+				length: { mean: 0.55, spread: 0.05 },
 				coil: 540,
-				// Still 01 and 06: a fiddlehead is a thick fleshy roll, nearly three times the stipe.
-				radius: 0.045,
+				// Stills 01 and 06: a fiddlehead is a thick fleshy roll, more than twice the stipe's
+				// width, and the crown's centre carries a cluster of them.
+				radius: 0.06,
 				// Still 01 and 06: the fiddleheads are hairy red-brown, the same mat as the trunk.
 				bark: 'grown',
 			},
