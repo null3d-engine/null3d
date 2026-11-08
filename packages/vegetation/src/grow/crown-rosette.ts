@@ -78,7 +78,7 @@ const YOUNGEST_TILT = 8;
 /** Degrees that dead fronds hang below the horizontal. */
 const DEAD_TILT = 128;
 /** The share of a living frond's length that a dead frond keeps. */
-const DEAD_SHARE = 0.62;
+const DEAD_SHARE = 0.72;
 /** The least height of a sucker's stem, and the most, in metres. */
 const SUCKER_HEIGHT = [0.6, 2.6] as const;
 /** The share of the crown's living fronds a sucker carries. */
@@ -89,8 +89,8 @@ const SUCKER_RING = [0.45, 0.9] as const;
 const BUNCH_TURNS = [0, 90, 180, 270] as const;
 /** How far below the crown's origin the date bunches hang from, in metres. */
 const BUNCH_DROP = 0.5;
-/** How far out from the stem the date bunch stalks stand, in metres. */
-const BUNCH_OUT = 0.55;
+/** Metres the date bunch stalks stand out from the stem's surface. */
+const BUNCH_OUT = 0.05;
 
 /** The record's crown-rosette growth, or a fault for another model. */
 function rosetteOf(record: Species): CrownRosette {
@@ -395,14 +395,16 @@ function layFrond(
  */
 function addBunches(builder: SkeletonBuilder, growth: CrownRosette, stem: LaidStem): void {
 	const frame = new Float32Array([0, 0, 0, 1]);
+	// The bunches hang from the stem's own crown, so their stalks meet the wood.
+	const surface = stemRadius(growth, stem.plan, 1) + BUNCH_OUT;
 	for (const turn of BUNCH_TURNS) {
 		const azimuth = radians(turn) + stem.plan.turn;
 		const y = stem.plan.height - BUNCH_DROP;
 		builder.addBud({
 			node: stem.top,
-			x: (stem.topPoint[0] as number) + cos(azimuth) * BUNCH_OUT,
+			x: (stem.topPoint[0] as number) + cos(azimuth) * surface,
 			y,
-			z: (stem.topPoint[2] as number) + sin(azimuth) * BUNCH_OUT,
+			z: (stem.topPoint[2] as number) + sin(azimuth) * surface,
 			frame,
 			kind: BUD_FLOWER,
 			vigor: 0.5,
