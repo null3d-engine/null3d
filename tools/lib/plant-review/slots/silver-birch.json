@@ -1,19 +1,19 @@
 {
 	"01-whole-distant.png": {
-		"daylight": 2.27,
-		"skyShare": 0.395
+		"daylight": 2.95,
+		"skyShare": 0.65
 	},
 	"02-whole-profile.png": {
-		"daylight": 2.27,
-		"skyShare": 0.395
+		"daylight": 2.95,
+		"skyShare": 0.65
 	},
 	"03-whole-from-below.png": {
-		"daylight": 3.19,
-		"skyShare": 0.395
+		"daylight": 4.1,
+		"skyShare": 0.65
 	},
 	"19-drooping-twig-ends.png": {
-		"daylight": 2.88,
-		"skyShare": 0.395
+		"daylight": 3.7,
+		"skyShare": 0.65
 	},
 	"20-autumn-yellow.png": {
 		"view": "whole",
@@ -27,32 +27,41 @@
 		"sunRise": 37.1,
 		"top": 0.007,
 		"eye": 1.6,
-		"daylight": 2.96,
+		"daylight": 3.7,
 		"skyShare": 0.7
 	},
 	"27-bark-texture-zone2.png": {
 		"barkZone": 0
 	},
 	"28-young-bark.png": {
-		"thin": 0.015
+		"thin": 0.01
 	},
 	"30-woodland-form-whole.png": {
-		"daylight": 3.6,
+		"daylight": 4.4,
 		"skyShare": 0.7
 	},
 	"31-young-birch-whole.png": {
-		"daylight": 2.98,
-		"skyShare": 0.395
+		"daylight": 3.85,
+		"skyShare": 0.65
 	},
 	"32-juvenile-bark.png": {
 		"form": "young"
 	},
 	"33-mature-dense-crown-whole.png": {
-		"daylight": 2.22,
-		"skyShare": 0.19
+		"view": "whole",
+		"horizon": 0.9512,
+		"targetX": 0.4891,
+		"sky": "#95c5f8",
+		"ground": "#8b8756",
+		"sunAzimuth": 20.5,
+		"sunRise": 39.8,
+		"fill": 0.9674,
+		"targetY": 0.4837,
+		"daylight": 2.85,
+		"skyShare": 0.4
 	},
 	"34-peeling-bark-macro.png": {
-		"span": 0.1
+		"span": 0.12
 	},
 	"35-catkins.png": {
 		"view": "twigs",
@@ -60,11 +69,15 @@
 		"season": "summer"
 	},
 	"birch-turntable.mp4": {
-		"daylight": 2.27,
-		"skyShare": 0.395
+		"daylight": 2.95,
+		"skyShare": 0.65
 	},
 	"birch-wind-motion.mp4": {
-		"daylight": 2.27,
-		"skyShare": 0.395
+		"daylight": 2.95,
+		"skyShare": 0.65
+	},
+	"18-silhouette.png": {
+		"daylight": 2.95,
+		"skyShare": 0.65
 	}
 }
