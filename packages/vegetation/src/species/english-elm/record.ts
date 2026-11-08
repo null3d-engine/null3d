@@ -34,6 +34,13 @@ const RANK: readonly (readonly [number, number])[] = [
 	[1, 0.8],
 ];
 
+/** Internodes along a short shoot: a bare lower run, then the leaves gather into a tuft at the end. */
+const TUFT: readonly (readonly [number, number])[] = [
+	[0, 1.8],
+	[0.5, 1],
+	[1, 0.3],
+];
+
 /** The English elm's record. */
 export const record: Species = {
 	id: 'english-elm',
@@ -190,9 +197,10 @@ export const record: Species = {
 				droop: 4,
 			},
 		],
-		// Still 23 and the cluster's turn: the piece is a shoot about fifteen centimetres long with six
-		// to eight alternate leaves in two rows. The crown cannot carry a shoot this crowded at its
-		// strongest class, so the cutting draws this class and the crown never does.
+		// Still 11 and still 23: the piece is a short shoot about fifteen centimetres long, bare over
+		// its lower run, with six to eight alternate leaves in two rows gathered into a tuft at its
+		// end. The crown cannot carry a shoot this crowded at its strongest class, so the cutting
+		// draws this class and the crown never does.
 		cuttingClasses: [
 			{
 				name: 'spur',
@@ -201,7 +209,7 @@ export const record: Species = {
 				years: 1,
 				length: { mean: 0.15, spread: 0.02 },
 				nodes: { mean: 6.5, spread: 0.5 },
-				internode: RANK,
+				internode: TUFT,
 				// Still 23: every blade stands at the record's own leaf, as the photograph's few large
 				// blades do, rather than shrunk.
 				leafScale: [
