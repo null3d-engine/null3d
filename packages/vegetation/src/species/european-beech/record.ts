@@ -204,9 +204,11 @@ export const record: Species = {
 				length: { mean: 0.35, spread: 0.05 },
 				nodes: { mean: 9, spread: 0.5 },
 				internode: PLATE_RUN,
+				// A young shoot's leaves are larger than the crown's, and the photograph's sprig
+				// spans its own breadth with six of them.
 				leafScale: [
-					[0, 0.85],
-					[1, 1.05],
+					[0, 1.2],
+					[1, 1.45],
 				],
 				leafAngle: [
 					[0, 94],
