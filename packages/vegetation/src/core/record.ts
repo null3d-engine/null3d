@@ -1358,7 +1358,7 @@ export interface NeedleShape {
  * @category api/vegetation
  */
 export interface ScaleSpray {
-	/** Orders of branchlets in one spray, 2 to 4. */
+	/** Orders of branchlets in one spray, 1 to 4: 1 for a single cord, as a cypress's shoot carries. */
 	readonly orders: number;
 	/** Segment length in metres. */
 	readonly segment: number;
