@@ -150,8 +150,12 @@ export const record: Species = {
 			[0.5, 0.85],
 			[1, 0.6],
 		],
-		sway: { frequency: 0.3, amplitude: 0.04 },
-		flutter: { kind: 'leaflet', amplitude: 0.08, frequency: 1.5 },
+		// The clip is a light breeze: its own top band moves four hundredths of its outline. Cutting
+		// both amplitudes to zero still measures the top at 0.23, so the measure's page-to-page wind
+		// phase sets a floor far above the clip for a crown of this size; these values are the
+		// lightest breeze that still reads as moving foliage.
+		sway: { frequency: 0.3, amplitude: 0.02 },
+		flutter: { kind: 'leaflet', amplitude: 0.02, frequency: 1.2 },
 	},
 	lod: {
 		nearFoliage: 'merged',
