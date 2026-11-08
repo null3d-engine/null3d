@@ -9,7 +9,6 @@ import { join } from 'node:path';
 import { type PlantAsset, plantAssetDigest } from './asset';
 import { hashBytes } from './core/hash';
 import { NotBuiltError } from './core/not-built';
-import type { Species } from './core/record';
 import { standInSpecies } from './core/stand-in';
 import {
 	bakeFarNow,
@@ -214,9 +213,15 @@ self.onmessage = async (event) => {
 				return typeof scale === 'number' ? scale : scale.mean;
 			};
 			expect(scaleOf(smaller)).toBeCloseTo(scaleOf(oak.record) * 0.8, 6);
-			// The wood does not move: the same growth and the same shoot placement.
+			// The wood does not move: the same growth, and a shoot count that keeps its own by
+			// taking back the room a smaller shoot frees along the axis.
 			expect(smaller.growth).toBe(oak.record.growth);
-			expect(smaller.shoots?.placement.perMetre).toBe(shoots.placement.perMetre);
+			const perMetre = (curve: typeof shoots.placement.perMetre) =>
+				typeof curve === 'number' ? curve : (curve[0]?.[1] ?? 0);
+			expect(perMetre(smaller.shoots?.placement.perMetre ?? 0)).toBeCloseTo(
+				perMetre(shoots.placement.perMetre) * 0.8,
+				6,
+			);
 			expect(() => withLeaves(oak.record, 3)).toThrow();
 			expect(variantKey(grown, { seed: 11, variant: 0, leaves: 0.5 })).not.toBe(
 				variantKey(grown, { seed: 11, variant: 0 }),
@@ -245,17 +250,13 @@ self.onmessage = async (event) => {
 			// The share moves the record's own sky prune, so a sparse crown keeps its lit rim.
 			const thinner = withLimbs(oak.record, 1.5) as typeof oak.record;
 			expect(thinner.shoots?.placement.skyPrune).toBeLessThan(shoots.placement.skyPrune ?? 0.5);
-			// A share above the record's own adds wood the plant never had only where the record
-			// declares a count; the growth spec itself is the record's own.
-			expect(thinner.growth).toBe(oak.record.growth);
 			const sparse = withLimbs(oak.record, 0.5) as typeof oak.record;
-			if (oak.record.growth.model === 'architectural') {
-				const finest = (spec: Species['growth']): number => {
-					if (spec.model !== 'architectural') return 0;
-					const density = spec.orders.at(-1)?.density;
-					return typeof density === 'number' ? density : (density?.[0]?.[1] ?? 0);
-				};
-				expect(finest(sparse.growth)).toBeCloseTo(finest(oak.record.growth) * 0.5, 6);
+			// The growth's own count of limbs moves with the share, whatever model the record names.
+			if (oak.record.growth.model === 'self-organizing') {
+				const own = oak.record.growth.branching ?? 1;
+				expect(sparse.growth.model).toBe('self-organizing');
+				if (sparse.growth.model === 'self-organizing')
+					expect(sparse.growth.branching).toBeCloseTo(own * 0.5, 6);
 			}
 			if (shoots.placement.density !== undefined)
 				expect(sparse.shoots?.placement.density).toBeCloseTo(shoots.placement.density * 0.5, 6);

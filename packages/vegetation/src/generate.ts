@@ -187,9 +187,22 @@ export function withLeaves(record: Species, leaves: number | undefined): Species
 		typeof scale === 'number'
 			? scale * grow
 			: { mean: scale.mean * grow, spread: scale.spread * grow };
+	const placement = shoots.placement;
+	const density = placement.density;
+	// A smaller shoot fits more often along the wood, so the shoot count would rise as the leaves
+	// shrink. The count moves with the scale the other way, so it is taken back out and the plant
+	// keeps the same wood, the same number of shoots and leaves of a new size.
 	return {
 		...record,
-		shoots: { ...shoots, placement: { ...shoots.placement, scale: scaled } },
+		shoots: {
+			...shoots,
+			placement: {
+				...placement,
+				scale: scaled,
+				perMetre: scaledCurve(placement.perMetre, grow),
+				...(density !== undefined ? { density: density * grow } : {}),
+			},
+		},
 	};
 }
 
@@ -244,12 +257,21 @@ function checkShare(name: string, share: number, least: number, most: number): v
 /** A growth spec with a share of its model's own limbs removed: the wood a sparse plant keeps. */
 function thinnedGrowth(growth: Species['growth'], thin: number): Species['growth'] {
 	switch (growth.model) {
+		// The branching multiplier is 1 where a record does not give one, so a share moves it
+		// whatever the record says: this is the dial that decides how many limbs a crown puts out.
 		case 'self-organizing':
-			return growth.branching === undefined
-				? growth
-				: { ...growth, branching: growth.branching * thin };
+			return { ...growth, branching: (growth.branching ?? 1) * thin };
+		// A conifer's limbs are its boughs, so the share moves the boughs at the leader and leaves
+		// the orders below them their own division.
 		case 'architectural':
-			return thinnedOrders(growth, thin);
+			return {
+				...growth,
+				tiers: {
+					...growth.tiers,
+					perWhorl: scaledSpread(growth.tiers.perWhorl, thin),
+					between: growth.tiers.between * thin,
+				},
+			};
 		case 'crown-rosette':
 			return {
 				...growth,
@@ -279,22 +301,6 @@ function scaledCurve(curve: Curve, factor: number): Curve {
 	return typeof curve === 'number'
 		? curve * factor
 		: curve.map(([at, value]) => [at, value * factor] as [number, number]);
-}
-
-/** A growth spec whose finest order divides less often by a share: the twigs a sparse crown omits. */
-function thinnedOrders(growth: Species['growth'], thin: number): Species['growth'] {
-	// Only a model that names its orders has one to thin; a self-organizing crown divides by its
-	// pipes, so its shape follows the shoots' placement alone.
-	if (growth.model !== 'architectural') return growth;
-	const orders = growth.orders;
-	if (orders.length === 0) return growth;
-	const finest = orders[orders.length - 1] as (typeof orders)[number];
-	const own = finest.density;
-	const divided: typeof own =
-		typeof own === 'number'
-			? own * thin
-			: own.map(([at, value]) => [at, value * thin] as [number, number]);
-	return { ...growth, orders: [...orders.slice(0, -1), { ...finest, density: divided }] };
 }
 
 /**
