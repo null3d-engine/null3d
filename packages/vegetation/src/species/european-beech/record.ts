@@ -241,7 +241,7 @@ export const record: Species = {
 			// Stills 01, 02, 03 and 05: the crown's own leaves shade its middle, so the shoots there
 			// thin and the grey bole and the great limbs read between the foliage masses, while the
 			// lit rim keeps its shoots.
-			skyPrune: 0.34,
+			skyPrune: 0.24,
 			skyPruneLayer: 1,
 			// Stills 01 and 02: the foliage stands in layered masses at the limbs' ends, with the bole
 			// and the great limbs reading between them, rather than spread along every axis.
@@ -468,10 +468,6 @@ export const record: Species = {
 		// 1.4 m ahead of the row, where the stretch behind the row cannot reach it.
 		cardStalk: 2,
 		cardStalkToFoliage: true,
-		// Each far card grows about its middle, so the rim's gaps close without the shoots changing:
-		// the whole views read 0.1304 and 0.1105 of sky against bands that top out at 0.1186 and
-		// 0.0942.
-		cardGrow: 1.05,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
