@@ -113,9 +113,9 @@ The species' budgets, measured across the species and its three forms:
 | Tier | Kit | Variant | LOD0 | LOD1 | LOD2 |
 | --- | --- | --- | --- | --- | --- |
 | low | 2.49 MB | 5.72 MB | 1,651,374 | 98,741 | 31,891 |
-| medium | 4.27 MB | 5.76 MB | 1,671,693 | 100,122 | 32,180 |
-| high | 7.33 MB | 5.81 MB | 1,725,532 | 102,316 | 32,596 |
-| ultra | 13.15 MB | 5.89 MB | 1,849,438 | 108,818 | 33,567 |
+| medium | 4.37 MB | 5.76 MB | 1,671,693 | 100,122 | 32,180 |
+| high | 7.60 MB | 5.81 MB | 1,725,532 | 102,316 | 32,596 |
+| ultra | 13.74 MB | 5.89 MB | 1,849,438 | 108,818 | 33,567 |
 
 The record's budget stands above each figure and inside the tree caps: 150,000 card triangles and
 43,000 at the second card level. The kit's ultra figure sits inside the tree cap's 14.5 MB, since the
