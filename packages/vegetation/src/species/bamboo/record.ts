@@ -57,16 +57,16 @@ export const record: Species = {
 		// branches leave on opposite sides, steeply upward, and one takes the node's lead. Stills 01 and
 		// 02 show lower branches shorter and the longest near the top of the branching zone.
 		branches: {
-			from: 0.58,
+			from: 0.62,
 			perNode: { mean: 2, spread: 0.4 },
 			dominant: true,
 			length: [
-				[0, 1],
-				[0.45, 1.7],
-				[0.8, 2.2],
-				[1, 1.4],
+				[0, 0.9],
+				[0.45, 1.85],
+				[0.8, 2.45],
+				[1, 1.55],
 			],
-			angle: 47,
+			angle: 52,
 			orders: 1,
 		},
 		// Still 09: the flattened groove up the internode above a branch.
@@ -74,7 +74,7 @@ export const record: Species = {
 		// Stills 07 and 19: young culms carry papery sheaths low down, which shed as the culm hardens.
 		sheaths: { upTo: 0.12, length: 0.28 },
 		// Still 17: the culm stands nearly plumb, leaning out only slightly toward its tip.
-		arch: { mean: 6, spread: 2 },
+		arch: { mean: 8, spread: 2 },
 	},
 	envelope,
 	shoots: {
@@ -87,7 +87,7 @@ export const record: Species = {
 				vigor: [0, 0.5],
 				share: 0.45,
 				years: 1,
-				length: { mean: 0.24, spread: 0.04 },
+				length: { mean: 0.18, spread: 0.03 },
 				nodes: { mean: 6, spread: 1 },
 				internode: BRANCHLET,
 				stem: { radius: [0.004, 0.002] },
@@ -97,12 +97,12 @@ export const record: Species = {
 					[1, 0.95],
 				],
 				leafAngle: [
-					[0, 85],
-					[0.6, 70],
-					[1, 52],
+					[0, 88],
+					[0.6, 76],
+					[1, 60],
 				],
 				leafAngleSpread: 18,
-				leafAzimuthSpread: 40,
+				leafAzimuthSpread: 55,
 				droop: 6,
 				phyllotaxis: { kind: 'distichous', flatten: 0.45 },
 			},
@@ -128,7 +128,7 @@ export const record: Species = {
 					[1, 56],
 				],
 				leafAngleSpread: 20,
-				leafAzimuthSpread: 40,
+				leafAzimuthSpread: 55,
 				droop: 9,
 				phyllotaxis: { kind: 'distichous', flatten: 0.45 },
 			},
@@ -159,7 +159,7 @@ export const record: Species = {
 					[1, 54],
 				],
 				leafAngleSpread: 20,
-				leafAzimuthSpread: 40,
+				leafAzimuthSpread: 55,
 				droop: 9,
 				phyllotaxis: { kind: 'distichous', flatten: 0.45 },
 			},
@@ -271,7 +271,7 @@ export const record: Species = {
 	lod: {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
-		cardGrow: 1.2,
+		cardGrow: 1.3,
 		// A card draws a short stalk so a leaf mass ties to its shoot, not floats free.
 		cardStalk: 2,
 		// The farthest card level keeps the culms alone: a branch a few centimetres thick is under a

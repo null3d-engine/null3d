@@ -150,8 +150,9 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			slot: { view: 'bark-mid', query: { span: 0.22 }, framed: false },
 		},
 		{
+			// A sheath sits at a young culm's lower nodes, so the view frames the foot, not a limb.
 			test: (n) => n.includes('culm-sheath'),
-			slot: { view: 'bark-limb', query: { span: 0.2, thin: 0.02 }, framed: false },
+			slot: { view: 'bark-base', background: 'studio-grey', query: { span: 0.35 }, framed: false },
 		},
 		{
 			test: (n) => n.includes('cut-culm'),
