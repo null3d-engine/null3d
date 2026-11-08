@@ -5,7 +5,8 @@
 	},
 	"08-leaf-leaving-sheath.png": {
 		"view": "junction",
-		"elevation": 0
+		"elevation": 0,
+		"distance": 0.25
 	},
 	"09-new-shoots.png": {
 		"view": "cluster",
@@ -13,7 +14,8 @@
 	},
 	"15-sheath-and-ligule.png": {
 		"view": "junction",
-		"elevation": 0
+		"elevation": 0,
+		"distance": 0.25
 	},
 	"20-hanging-spikes-habit.png": {
 		"view": "whole",
