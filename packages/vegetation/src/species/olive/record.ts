@@ -185,62 +185,6 @@ export const record: Species = {
 				droop: 6,
 			},
 		],
-		// Stills 21 and 22: a cut twig forks at a joint into two leafy shoots, with bare wood between
-		// the joints and its twigs drooping at their ends. The crown cannot carry a shoot this bare,
-		// so the cuttings draw these classes and the crown never does. One class serves each studio
-		// still: the shorter twig of still 22 and the metre-long branch of still 21.
-		cuttingClasses: [
-			{
-				// Still 22: a twig about a third of a metre long, with its side shoots and their
-				// opposite pairs, which the sub-branch view cuts.
-				name: 'spur',
-				vigor: [0, 1],
-				share: 0,
-				years: 2,
-				length: { mean: 0.4, spread: 0.08 },
-				nodes: { mean: 6, spread: 0.5 },
-				internode: PAIR,
-				stem: { radius: [0.004, 0.002] },
-				lateral: 70,
-				laterals: { mean: 1.8, spread: 0.4 },
-				lateralGap: 0.3,
-				bend: { length: 0.05, angle: 26 },
-				leafScale: [
-					[0, 1],
-					[1, 1.2],
-				],
-				leafAngle: [
-					[0, 110],
-					[0.5, 95],
-					[1, 80],
-				],
-				droop: 5,
-			},
-			{
-				name: 'cut',
-				vigor: [0, 1],
-				share: 0,
-				years: 2,
-				length: { mean: 0.8, spread: 0.2 },
-				nodes: { mean: 7, spread: 0.5 },
-				internode: PAIR,
-				stem: { radius: [0.006, 0.0025] },
-				lateral: 70,
-				laterals: { mean: 2.2, spread: 0.5 },
-				lateralGap: 0.3,
-				bend: { length: 0.05, angle: 28 },
-				leafScale: [
-					[0, 0.9],
-					[1, 1.1],
-				],
-				leafAngle: [
-					[0, 110],
-					[0.5, 95],
-					[1, 80],
-				],
-				droop: 6,
-			},
-		],
 		// Stills 10, 11 and 23: every pair of leaves stands at right angles to the pair below it.
 		phyllotaxis: { kind: 'opposite', decussate: true },
 		orders: 3,
@@ -423,11 +367,11 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit measures 1.77, 3.15, 5.95 and 11.97 MB at the four tiers; each cap sits just
+			// The kit measures 1.13, 1.84, 3.26 and 6.33 MB at the four tiers; each cap sits just
 			// above its figure.
-			kitBytes: { low: 1_800_000, medium: 3_200_000, high: 6_000_000, ultra: 12_100_000 },
-			// The largest of seed 11's six variants measures 7.17, 7.21, 7.27 and 7.35 MB.
-			variantBytes: { low: 7_250_000, medium: 7_300_000, high: 7_350_000, ultra: 7_450_000 },
+			kitBytes: { low: 1_150_000, medium: 1_900_000, high: 3_300_000, ultra: 6_400_000 },
+			// The largest of seed 11's six variants measures 6.19, 6.23, 6.29 and 6.37 MB.
+			variantBytes: { low: 6_250_000, medium: 6_300_000, high: 6_350_000, ultra: 6_450_000 },
 			lod0Triangles: 2_900_000,
 			lod1Triangles: 130_000,
 			lod2Triangles: 15_000,
@@ -441,8 +385,9 @@ export const record: Species = {
 	seedSalt: 4150070,
 	roundBand,
 	cuttings: {
-		// Stills 21 and 22: a cut piece is a bare stem that forks once into two leafy shoots, far
-		// sparser than the crown's own twigs, so the close views draw the class the photographs do.
+		// Stills 21 and 22: a branch about a metre long and a sub-branch about a third of that, each
+		// cut from the grown plant. The pieces carry the crown's own shoots, so their drooping twigs
+		// and opposite pairs are the photographs' without a class of their own.
 		branch: { order: 2, length: 1 },
 		subbranch: { order: 3, length: 0.35 },
 		// Still 23: one upright shoot, its pairs of leaves along the run and buds at its tip.
