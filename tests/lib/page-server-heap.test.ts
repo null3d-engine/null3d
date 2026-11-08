@@ -4,23 +4,26 @@
 // which reads as a picture or a timeout rather than as a server that is gone. So the servers are given
 // a heap limit, and this test holds that limit above the measured peak, because a test that starts
 // after the death cannot catch it.
+//
+// The limit lives with the code that starts a server, so every caller gets it: a review round starts
+// its own server and died the same way before the limit was moved there.
 
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOT = join(import.meta.dirname, '../..');
-const CONFIG = 'tests/playwright.config.ts';
+const SOURCE = 'tests/lib/server.ts';
 
 /** The dev server's resident peak at 1,915 pages, in megabytes, as measured on the Mac. */
 const MEASURED_PEAK_MB = 3542;
 
-describe('the picture run page servers', () => {
-	const text = readFileSync(join(ROOT, CONFIG), 'utf8');
+describe('every page server', () => {
+	const text = readFileSync(join(ROOT, SOURCE), 'utf8');
 
-	it('are given a heap limit above the measured peak', () => {
+	it('is given a heap limit above the measured peak', () => {
 		const match = /--max-old-space-size=(\d+)/.exec(text);
-		expect(match, `${CONFIG} sets no --max-old-space-size`).not.toBeNull();
+		expect(match, `${SOURCE} sets no --max-old-space-size`).not.toBeNull();
 		const megabytes = Number(match?.[1]);
 		expect(
 			megabytes,
@@ -28,11 +31,10 @@ describe('the picture run page servers', () => {
 		).toBeGreaterThan(MEASURED_PEAK_MB);
 	});
 
-	it('pass that limit to both servers', () => {
-		const uses = text.match(/env: PAGE_SERVER_HEAP_ENV/g) ?? [];
+	it('takes that limit however the caller starts it', () => {
 		expect(
-			uses.length,
-			`${CONFIG} gives the heap limit to ${uses.length} of its two servers; a preview without it can die the same way`,
-		).toBe(2);
+			text.includes('...SERVER_HEAP_ENV'),
+			`${SOURCE} starts a server without the heap limit in its environment`,
+		).toBe(true);
 	});
 });

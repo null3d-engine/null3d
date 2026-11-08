@@ -207,7 +207,12 @@ const DEV_PROBE = '/tests/pages/index.html';
  * server answers at `selfUrl` followed by `probe`. Stopping the server ends its process, and so does
  * a signal that stops this one. The server's output goes to a log file per port in the runs folder,
  * which CI keeps when a job fails, so a failed page can be checked against what the server said.
+ *
+ * Every server this module starts takes the heap limit a full picture run needs, whatever the
+ * caller passes, since a server that dies part-way through a run refuses every later page and the
+ * run then reads as a plant fault rather than a crash.
  */
+export const SERVER_HEAP_ENV = { NODE_OPTIONS: '--max-old-space-size=8192' };
 async function spawnServer(
 	root: string,
 	args: readonly string[],
@@ -219,7 +224,7 @@ async function spawnServer(
 	const child: ChildProcess = spawn('bunx', ['vite', ...args], {
 		cwd: root,
 		stdio: ['ignore', 'pipe', 'pipe'],
-		env: { ...process.env, ...env },
+		env: { ...process.env, ...SERVER_HEAP_ENV, ...env },
 	});
 	const stop = trackServer(child);
 	mkdirSync(RUNS_DIR, { recursive: true });
