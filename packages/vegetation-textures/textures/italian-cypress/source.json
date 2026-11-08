@@ -1,0 +1,32 @@
+{
+	"caps": "tree",
+	"leaf": {
+		"upper": 24,
+		"lower": 25,
+		"crop": [610, 615, 95, 42],
+		"alpha": { "floor": 16, "solid": 240 },
+		"erode": 1,
+		"margin": 0.04,
+		"delight": { "radius": 0.06, "strength": 1 },
+		"relief": { "veins": 0.4, "pucker": 0.25, "depth": 0.0008 }
+	},
+	"bark": {
+		"zones": [
+			{
+				"name": "trunk",
+				"slot": 26,
+				"tile": [0.55, 0.55],
+				"depth": 0.05,
+				"smooth": 6,
+				"delight": { "radius": 0.2, "strength": 1 }
+			}
+		],
+		"young": {
+			"name": "young",
+			"slot": 28,
+			"tile": [0.14, 0.14],
+			"depth": 0.0015,
+			"delight": { "radius": 0.12 }
+		}
+	}
+}
