@@ -308,21 +308,22 @@ export const record: Species = {
 				droop: 4,
 			},
 			{
-				// Still 23 and the cluster's turn: this year's shoot of five or six alternate leaves
-				// gathered at its end round one purple bud, as the studio still lays it out. A cutting
-				// class never offers itself to the crown, so the tree keeps its own spurs.
+				// Stills 11 and 23: this year's shoot of eight alternate leaves gathered at its end
+				// round one purple bud, as the studio still lays it out. The leaves stand a seventh
+				// smaller than the record's blade so eight of them cover what the photograph's do. A
+				// cutting class never offers itself to the crown, so the tree keeps its own spurs.
 				name: 'spur',
 				vigor: [0, 1],
 				share: 0,
 				years: 1,
 				length: { mean: 0.24, spread: 0.02 },
-				nodes: { mean: 6, spread: 0.4 },
-				// Still 23: the six leaves stand along a stem with its internodes showing, so the piece is
+				nodes: { mean: 8, spread: 0.4 },
+				// Still 23: the leaves stand along a stem with its internodes showing, so the piece is
 				// taller than it is wide, as the photograph lays it out.
 				internode: RUN,
 				leafScale: [
-					[0, 0.85],
-					[1, 1],
+					[0, 0.73],
+					[1, 0.86],
 				],
 				leafAngle: [
 					[0, 95],
@@ -568,7 +569,7 @@ export const record: Species = {
 			// Each cap sits above the figure its tier measures, with room for the cut pieces. The
 			// crown's densest variant measures 18.2 to 19.4 MB, the rim's cards and the cutting
 			// classes among them, under the owner's twenty. The kit's three cutting classes measure
-			// 3.35, 4.71, 7.17 and 12.16 MB, inside the owner's 3.5, 6.3, 11.8 and 22.6.
+			// 3.35, 4.72, 7.22 and 12.27 MB, inside the owner's 3.5, 6.3, 11.8 and 22.6.
 			kitBytes: { low: 3_450_000, medium: 4_900_000, high: 7_600_000, ultra: 12_900_000 },
 			variantBytes: { low: 19_500_000, medium: 19_600_000, high: 19_700_000, ultra: 19_800_000 },
 			lod0Triangles: 2_800_000,
