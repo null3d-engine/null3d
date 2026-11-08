@@ -73,7 +73,7 @@ export const record: Species = {
 		clearanceThickness: 0.35,
 		turning: 30,
 		shedding: { threshold: 0.06, cleanBole: 0.35, stubs: 0.12 },
-		bending: { strength: 0.15, upturn: 0.25 },
+		bending: { strength: 0.05, upturn: 0.25 },
 		forkRule: true,
 		kinks: true,
 		pipe: { exponent: 2.3, tipRadius: 0.004 },
