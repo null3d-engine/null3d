@@ -145,6 +145,14 @@ Rejected:
   while the leaf's own albedo, measured on the pressed leaves, still reads 3.0 and 2.0. Lowering the
   albedo a twentieth moved the whole views a tenth of a step and worsened the pressed leaf, so the
   albedo stays as the photographs measure it.
+- The material's own blue was tried as the cure for the violet case and rejected. Raising the leaf
+  front and back faces' blue, 0.011 to 0.018 and 0.2011 to 0.26, improved the two branch studio
+  stills from 5.35 to 4.76 and 3.7 to 3.29 and the leaf-cluster studio from 2.9 to 2.74, but took
+  the two whole views out of their band, 2.31 to 3.64 and 1.81 to 3.64, and worsened the close
+  cluster from 0.76 to 1.65. The reason is that `lamp` is a copy-stand control and never reaches an
+  outdoor whole view: those have only `daylight`, so the material's blue is the one lever that moves
+  them, and it moves them the wrong way. The optics stay as the photographs measure them. A per
+  picture sun colour for outdoor views would be the lever, and the page does not carry one.
 - Row 10's colour is now lit per picture. Each still's slot takes a daylight scaled and a lamp set
   from its photograph's mean foliage colour against the render's in linear light. The distant view
   falls from 4.88 to 2.4 steps, the profile from 5.07 to 2.0, the close cluster from 5.67 to 0.8, the
