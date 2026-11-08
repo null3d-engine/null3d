@@ -390,7 +390,8 @@ export const record: Species = {
 		},
 		{
 			// Still 20: upright corymbs of small lime-yellow flowers turn the bare crown acid green
-			// before the leaves are out.
+			// before the leaves are out. A piece cut from the grown plant carries these where its own
+			// shoots stand; a piece cut from the kit carries none, having no grown plant.
 			// The extra model stands every copy of a cluster on the one point, so a corymb's head
 			// cannot widen past a single bloom; the four copies read as one flower with several
 			// faces. A head per shoot tip already spends the variant's remaining bytes.

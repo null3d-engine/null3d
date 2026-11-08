@@ -118,6 +118,16 @@ Rejected: cutting the branch from the grown plant. Its thick wood is right, but 
 metre long and the piece reads wrong: branch shape IoU 0.12 against 0.24 and sky gap 0.69. Its old
 wood with grown shoots is a different structure from the reference's branch.
 
+A piece cut from the grown plant carries the extras that its own shoot rows place; a piece cut from
+the kit carries none, because a shoot prototype has no grown plant. The Norway maple measures the
+first half: a 1.17 m plant-cut branch holds 1,980 extra vertices reaching 2.0 m with its shoots and
+990 triangles of flowers in blossom, drawn yellow at the twig tips beside the buds, where its
+kit-cut pieces draw a bare twig. The same still measures the route's limit: a plant-cut limb is
+2.3 m of macro wood whose 12 mm flowers read as specks, 0.5466 of the frame against the
+photograph's 0.1931 at 33.05 colour steps, where the photograph has corymbs on a slender young
+branch. So a cut piece can carry a plant's flowers; whether they read is each photograph's scale
+question, not an engine gap.
+
 Rejected: widening the spray's laterals. Every lever that widens its foliage box also thins it,
 because a longer lateral carries the same leaves. A lateral angle of 75 degrees takes the box from
 0.79 to 0.83 wide over tall and the still's shape IoU from 0.24 to 0.21. A lateral unit of 1.0 takes
