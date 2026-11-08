@@ -129,8 +129,8 @@ export const record: Species = {
 				vigor: [0, 0.62],
 				share: 0.62,
 				years: 1,
-				length: { mean: 0.15, spread: 0.03 },
-				nodes: { mean: 34, spread: 4 },
+				length: { mean: 0.11, spread: 0.02 },
+				nodes: { mean: 24, spread: 3 },
 				internode: EVEN,
 				leafScale: [
 					[0, 1],
@@ -149,8 +149,8 @@ export const record: Species = {
 				vigor: [0.62, 1],
 				share: 0.38,
 				years: 3,
-				length: { mean: 0.42, spread: 0.06 },
-				nodes: { mean: 76, spread: 8 },
+				length: { mean: 0.24, spread: 0.04 },
+				nodes: { mean: 46, spread: 5 },
 				internode: EVEN,
 				stem: { radius: [0.006, 0.002] },
 				lateral: 70,
@@ -202,7 +202,7 @@ export const record: Species = {
 			// Stills 10, 12 and 13: awl-shaped scales 3 to 6 mm long, pressed to the shoot so only
 			// their sharp tips flare, set about twelve to the centimetre.
 			length: { mean: 0.005, spread: 0.001 },
-			width: 0.0016,
+			width: 0.0022,
 			section: 'awl',
 			density: 12,
 			angle: 28,
@@ -315,19 +315,19 @@ export const record: Species = {
 		switchPixels: [240, 12, 160],
 		// The clumps stand about a fifth larger than their shoots, so the gaps between one clump's
 		// shoots fall on a neighbour's scales rather than on sky.
-		cardGrow: 6.5,
+		cardGrow: 5,
 		// A shoot's own twig is under a pixel at a whole view, so each card draws a short stalk
 		// down to the wood it grows from and joins the clump to its branch.
 		cardStalk: 3,
 		cardStalkToFoliage: true,
 		// A scale is a millimetre and a half across, under one texel of the default card cell, so the
 		// high tiers bake a finer cell and the crown keeps its blue-green at distance.
-		cardCell: { low: 64, medium: 64, high: 128, ultra: 128 },
+		cardCell: { low: 64, medium: 64, high: 128, ultra: 256 },
 		woodOrders: [1, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			kitBytes: { low: 3_400_000, medium: 6_000_000, high: 10_000_000, ultra: 18_000_000 },
+			kitBytes: { low: 3_400_000, medium: 6_200_000, high: 11_500_000, ultra: 22_000_000 },
 			variantBytes: { low: 10_000_000, medium: 11_000_000, high: 12_500_000, ultra: 13_000_000 },
 			lod0Triangles: 2_500_000,
 			lod1Triangles: 154_000,
