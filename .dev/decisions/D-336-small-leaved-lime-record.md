@@ -135,6 +135,12 @@ Rejected:
   and the whole views draw one piece each. The window is narrow because the reference set disagrees
   with itself: the silhouette's own 0.107 sky sets a floor of 0.0866 while the distant view's 0.049
   sets a ceiling of 0.099.
+- The whole views' leaf colour reads 4.7, 5.05 and 6.3 under the crown shading term landed at
+  `90247be6d`, which cuts a far crown's shade from a half to three tenths. The figures taken before
+  that term were 3.6 and 3.5, so the term lifted this species' whole-view colour by about a step
+  while the leaf's own albedo, measured on the pressed leaves, still reads 3.0 and 2.0. Lowering the
+  albedo a twentieth moved the whole views a tenth of a step and worsened the pressed leaf, so the
+  albedo stays as the photographs measure it.
 - The leaf close-ups match with an overlap of 0.78 and 0.64 and a colour of 3.0 and 2.0. The bark
   texture's surface matches at 1.38 steps, while the young bark's colour reads 15.95 against its
   photograph. The base and mid close views are not paired in this run. A per-zone linear tint in the
