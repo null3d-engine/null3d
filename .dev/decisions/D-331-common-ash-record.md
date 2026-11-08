@@ -513,9 +513,9 @@ the tool's measure was fixed. The final settings, measured at run `ash-121-retun
 All three stand inside the band of 3. The base slot also carries a `daylight` of 1.0, which brings
 the foot's lightness onto its photograph's.
 
-The standing count is ten of twelve. Row 8's three pictures are measured inside on a retune run.
-They wait for a reviewer's count on one clean round. Row 10's crown colour stays open, because a
-stated limit still fails its row.
+The count is eleven of twelve. The reviewer confirmed row 8 on run `ash-123` at `dbe7eebda`, 769 of
+769 frames and all 32 reference files. Row 10's crown colour stays open at 12.9, 11.9 and 4.4
+against the band of 3, because a stated limit still fails its row.
 
 The measure came first, because it was wrong. A slot's `barkMask` drops every patch pixel as close
 to the picture's corners as the backdrop is. Its first version read the backdrop as one colour: the
