@@ -29,22 +29,23 @@ reference shows them, and its budget must hold at every tier.
 
 ## Data
 
-The species grows 12.0 m tall and 3.8 m across, which is the fitted aspect of 0.32. Its six variants
-carry 4 to 6 arms at 5.3 to 6.3 m, each on an elbow of 1.3 m and a rise of 3.2 m. The stem is 0.8 m
-across at the foot and carries 14 ribs; an arm carries 12.
+The species grows 12.0 m tall and 4.1 m across, which is the fitted aspect of 0.34. Its six variants
+carry 4 to 6 arms at 5.7 to 7.3 m, each running out 1 m, turning up over a quarter circle of 0.5 m
+and rising 2.1 to 3.5 m. The stem is 0.8 m across at the foot and carries 14 ribs; an arm carries 12.
+Nine woodpecker holes stand on the upper stem.
 
 | Measure | Value | Tier |
 | --- | --- | --- |
-| Areoles on the largest variant | 13,013 bud sites, one shoot each | high |
-| Nearest wood | 52,207 triangles | high |
-| First card level | 112,381 triangles | ultra |
-| Second card level | 50,452 triangles | ultra |
-| Variant bytes | 6,860,113 | ultra |
+| Areoles on the largest variant | 12,063 bud sites, one shoot each | high |
+| Nearest wood | 48,708 triangles | high |
+| First card level | 96,530 triangles | ultra |
+| Second card level | 42,502 triangles | ultra |
+| Variant bytes | 5,788,992 | ultra |
 | Kit bytes | 1,214,476 | ultra |
 | Grow | 750 ms cold in Bun on a Mac, where the oak records 600 ms and grows in 2.5 to 4.7 s | high |
 
-A geometry spine fan at every areole was measured at about 120 triangles a cluster. With 13,000
-areoles it passes 1.5 million triangles at the nearest level alone, which no byte cap holds.
+A geometry spine fan at every areole was measured at about 120 triangles a cluster. With 12,000
+areoles it passes 1.4 million triangles at the nearest level alone, which no byte cap holds.
 
 ## Look
 
@@ -57,7 +58,11 @@ add nothing at the review's scale.
 ## Decision
 
 - The `column` growth model grows the stem as one axis and each arm as another. An arm leaves from a
-  node, runs out level, turns through a quarter circle at the elbow and rises parallel to the stem.
+  node and runs out level, turns up over a quarter circle a few arm girths across, and rises parallel
+  to the stem. It starts most of its own radius clear of the stem, so its weld meets a ring outside
+  the parent.
+- A few dormant sites on the upper stem carry a dark socket flush with the skin, for the
+  woodpecker holes nearly every old saguaro's trunk shows.
 - The wood mesher draws the ribs through the stem section it already supports: the pipe radius is
   each crest, and a groove cuts inward by the record's depth, scaled by the wood's girth. The same
   section shapes the arms.
@@ -68,8 +73,8 @@ add nothing at the review's scale.
   areole rather than turning a random face to the viewer.
 - The plant review draws the species' rib, areole and spine stills as skin close-ups, since there is
   no leaf or twig to cut.
-- The tree class's second-card-level cap rises from 43,000 to 52,000 triangles, which holds the
-  saguaro's 50,452. That raise waits for the owner's confirmation.
+- The tree class's second-card-level cap rises from 43,000 to 52,000 triangles, with room above the
+  saguaro's 42,502. That raise waits for the owner's confirmation.
 
 ## Consequences
 
