@@ -237,6 +237,18 @@ describe('the width profile', () => {
 		expect(crownStartRow(rowSpans(mask, width, height), box)).toBe(49);
 	});
 
+	test('finds the crown above a bole too thick for the margin alone', () => {
+		const width = 100;
+		const height = 100;
+		const mask = new Uint8Array(width * height);
+		// A crown of 90 px over a bole of 30: the stem is a third of the plant's height across, so a
+		// margin of two and a half stems would swallow the crown and the foot would land at the base.
+		for (let y = 0; y < 45; y++) for (let x = 5; x < 95; x++) mask[y * width + x] = 1;
+		for (let y = 45; y < 100; y++) for (let x = 35; x < 65; x++) mask[y * width + x] = 1;
+		const box = boxOf(mask, width, height) as NonNullable<ReturnType<typeof boxOf>>;
+		expect(crownStartRow(rowSpans(mask, width, height), box)).toBe(44);
+	});
+
 	test('finds where a crown starts over a narrow trunk', () => {
 		const width = 60;
 		const height = 60;
