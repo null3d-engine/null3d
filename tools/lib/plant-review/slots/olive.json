@@ -8,7 +8,6 @@
 	"02-whole-profile.png": {
 		"skyShare": 0.5,
 		"daylight": 2.2,
-		"top": 0.15,
 		"turn": 120
 	},
 	"03-whole-from-below.png": {
@@ -52,7 +51,8 @@
 	},
 	"08-limb-fork.png": {
 		"background": "studio-grey",
-		"sky": "#c8c4be"
+		"sky": "#c8c4be",
+		"distance": 3
 	},
 	"14-bark-base.png": {
 		"span": 2.5,
@@ -80,5 +80,8 @@
 		"girth": 0.25,
 		"along": 0.45,
 		"daylight": 1.25
+	},
+	"07-limb-leaving-trunk.png": {
+		"distance": 3.5
 	}
 }
