@@ -92,5 +92,9 @@
 	},
 	"23-leaf-cluster-studio.png": {
 		"daylight": 1.17
+	},
+	"09-secondary-branching.png": {
+		"cut": 0.45,
+		"leaves": 10
 	}
 }
