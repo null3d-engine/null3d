@@ -208,6 +208,10 @@ export const record: Species = {
 				laterals: 2,
 				lateralGap: 0.35,
 				bend: { length: 0.06, angle: 22 },
+				// Still 21: the photograph's leaves stand in two ranks along the twig and face the camera,
+				// where the crown's own shoots spiral and turn their faces up to the sky.
+				phyllotaxis: { kind: 'spiral', divergence: 180 },
+				skyward: 0.2,
 				leafScale: [
 					[0, 0.8],
 					[1, 1],
@@ -233,6 +237,33 @@ export const record: Species = {
 				laterals: 1,
 				lateralGap: 0.4,
 				bend: { length: 0.05, angle: 20 },
+				leafScale: [
+					[0, 0.85],
+					[1, 1],
+				],
+				leafAngle: [
+					[0, 70],
+					[1, 52],
+				],
+				droop: 45,
+			},
+			{
+				// Still 22: the same twig, its leaves two-ranked and held face on to the camera as its
+				// photograph shows them, which the cluster's own class does not take.
+				name: 'spur',
+				vigor: [0, 1],
+				share: 0,
+				years: 2,
+				length: { mean: 0.24, spread: 0.03 },
+				nodes: { mean: 8, spread: 0.6 },
+				leafYears: 2,
+				internode: ALTERNATE,
+				stem: { radius: [0.004, 0.0018] },
+				laterals: 1,
+				lateralGap: 0.4,
+				bend: { length: 0.05, angle: 20 },
+				phyllotaxis: { kind: 'spiral', divergence: 180 },
+				skyward: 0.2,
 				leafScale: [
 					[0, 0.85],
 					[1, 1],
@@ -406,10 +437,10 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The largest of the species and its three forms: 2.49, 4.37, 7.60 and 13.74 MB. The kit holds
-			// the long leafy shoots the fine leaf needs and the two leafy years of the cutting classes, so
-			// it sits close to the tree cap's 14.5 MB.
-			kitBytes: { low: 2_600_000, medium: 4_600_000, high: 8_000_000, ultra: 14_200_000 },
+			// The largest of the species and its three forms: 3.36, 5.46, 9.05 and 15.89 MB. The kit holds
+			// the long leafy shoots the fine leaf needs and three cutting classes, each with two leafy
+			// years, so it sits close to the tree caps' low and high tiers.
+			kitBytes: { low: 3_450_000, medium: 5_700_000, high: 9_300_000, ultra: 16_300_000 },
 			// The largest variant of the species and its forms, the woodland's: 6.94, 6.97, 7.02 and
 			// 7.12 MB.
 			variantBytes: { low: 7_100_000, medium: 7_100_000, high: 7_200_000, ultra: 7_300_000 },
@@ -436,7 +467,7 @@ export const record: Species = {
 		// Still 21: a cut branch of about a metre, its twigs arching out and drooping.
 		branch: { shoot: 'whip', pick: 1 },
 		// Still 22: the short leafy twig that arches over, which the cutting class draws.
-		subbranch: { shoot: 'cut', pick: 0 },
+		subbranch: { shoot: 'spur', pick: 0 },
 		// Still 23: a twig tip with its alternate leaves and its small bud, spaced along the run.
 		cluster: { shoot: 'cut', pick: 1 },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
