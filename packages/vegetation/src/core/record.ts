@@ -516,6 +516,20 @@ export interface Architectural {
 	readonly orders: readonly ArchitecturalOrder[];
 	/** Hanging second-order curtains (Norway spruce comb, larch). */
 	readonly pendulous?: { readonly order: number; readonly length: Curve; readonly share: number };
+	/**
+	 * The pipe model that gives the wood its thickness: a parent's diameter to the exponent is the
+	 * sum of its children's, and a terminal twig's radius in metres. The wood is then fitted to the
+	 * species' diameter at 1.3 m. Absent, an exponent of 2.3 and a 5 mm twig are used.
+	 */
+	readonly pipe?: {
+		readonly exponent: number;
+		readonly tipRadius: number;
+		/**
+		 * The least share of its girth a stem keeps from one node to the next, from 0.5 to 1.
+		 * Absent, 0.7, so a leader that carries the crown to the top is not outgrown by a whorl.
+		 */
+		readonly leader?: number;
+	};
 }
 
 /**
@@ -1978,6 +1992,14 @@ export interface LodSpec {
 	 * neighbour's leaves instead of on sky.
 	 */
 	readonly cardGrow?: number;
+	/**
+	 * Texels a side of one cell of the card atlas, at each tier, where the species' leaves are
+	 * thinner than the default cell can hold: each entry is a power of two from 64 to 256, and 64
+	 * by default. A needle a millimetre and a half across is under one texel of a 64 cell, so its
+	 * card would draw only the bare twig; a cell of 128 holds it while the crown still reads green.
+	 * Each doubling costs four times the atlas memory.
+	 */
+	readonly cardCell?: Readonly<Record<Detail, number>>;
 	/**
 	 * The least width, in pixels, that a card's own stalk draws at any distance, from 0 to 8. A card
 	 * stands on its axis's twig, whose wood may be thinner than a pixel at a whole view, so the
