@@ -96,9 +96,9 @@ export const record: Species = {
 			dominance: [0.7, 0.6, 0.98],
 			wander: 16,
 		},
-		// Still 07 and 18: each stem runs up bare for about a third of the height and then divides
-		// into a few limbs that fan out round it; the stool's stems take the stair above.
-		divide: { at: 0.3, count: 4, angle: 62, lean: 28, plumb: 4 },
+		// Still 07 and 17: the stems run up bare for about a third of the height and then divide into
+		// a few limbs that fan out round them; the stool's stems take the stair above.
+		divide: { at: 0.4, count: 4, angle: 62, lean: 28, plumb: 4 },
 		// Stills 01 and 02: the crown's lit surface carries its fullest shoots.
 		light: { apical: 1, lateral: 1.2, shadow: [5, 0.15, 2], cells: 96, surface: true },
 		// Stills 01 and 02: the limbs run out level to build the dome's skirt, and only the outermost
@@ -223,11 +223,11 @@ export const record: Species = {
 		years: 3,
 		leafYears: 2,
 		stem: { radius: [0.003, 0.002], zigzag: 20 },
-		// Stills 10, 11 and 23: a small chestnut bud stands in the tuft's centre, with a few below it
-		// at the spur's end.
+		// Stills 10, 11 and 23: a small chestnut bud, two or three millimetres long, stands in the
+		// tuft's centre, with a few below it at the spur's end.
 		bud: {
-			length: 0.006,
-			width: 0.004,
+			length: 0.004,
+			width: 0.003,
 			tipCluster: 5,
 			cluster: { step: 0.3, lean: 45 },
 			colour: [0.22, 0.1, 0.05],
@@ -347,17 +347,17 @@ export const record: Species = {
 				pedicel: 0.004,
 				stalkSides: 5,
 			},
-			colour: [0.16, 0.015, 0.02],
+			colour: [0.26, 0.02, 0.03],
 			stalkColour: [0.2, 0.14, 0.06],
 			roughness: [0.4, 0.7],
 			hang: 160,
 		},
 		{
 			// Still 20: flat corymbs of five-petalled cream flowers at the ends of the spring shoots,
-			// the leaves out among them.
+			// where a spur's nodes crowd, with the leaves out among them.
 			kind: 'flower',
-			at: 'shoot-tip',
-			share: 0.25,
+			at: 'node',
+			share: 0.3,
 			count: { mean: 5, spread: 1.5 },
 			tipShare: 0.95,
 			seasons: ['blossom'],
@@ -416,8 +416,8 @@ export const record: Species = {
 	seedSalt: 1870652341,
 	roundBand,
 	cuttings: {
-		// Still 21: the branch keeps the spray's years of twigs and tufts. The sub-branch takes the
-		// short cut class, which draws the photographs' tighter, thornier twigs.
+		// Still 21: the branch keeps the spray's years of stiff twigs, bare between the leaf tufts.
+		// The sub-branch takes the short cut class, which draws the photographs' tighter twigs.
 		branch: { shoot: 'spray' },
 		subbranch: { shoot: 'cut' },
 		// Stills 11 and 23 hold one rosette of five or six leaves round its buds at the end of a spur.
