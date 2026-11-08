@@ -47,8 +47,9 @@ and the rows that fail are listed in the species' review record.
   narrow sides lift, the widest stays within the reference's own spread, and no view draws a crown
   half the width of its neighbor.
 - **The envelope caps the wood, not the leaves.** Each axis marches out until its next step would
-  leave the outline, and stops on the boundary. The shoot reach is kept clear first, so the needles
-  fill the last hands of the outline.
+  leave the outline, and stops on the boundary. An axis whose parent already stands on the outline
+  takes no step beyond it, so a rim twig never stands outside the crown. The shoot reach is kept
+  clear first, so the needles fill the last hands of the outline.
 - **The pipe model sets the girth.** Every terminal axis carries one pipe. The loads sum down the
   tree, and the radii are fitted to the species' diameter at breast height. Each axis keeps a share
   of its own girth from node to node, so a fork never draws as a cone.
