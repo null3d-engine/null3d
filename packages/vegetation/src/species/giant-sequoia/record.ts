@@ -249,10 +249,10 @@ export const record: Species = {
 		taper: { amount: 0.8, height: 9 },
 		buttress: {
 			lobes: { mean: 6, spread: 1 },
-			amount: 0.7,
-			sharpness: 3,
-			height: 3.5,
-			round: 0.6,
+			amount: 1,
+			sharpness: 4,
+			height: 4.5,
+			round: 0.35,
 		},
 		roots: {
 			count: { mean: 7, spread: 1 },
@@ -263,7 +263,7 @@ export const record: Species = {
 		},
 		// Stills 03, 15 and 17: long vertical fibrous ridges run up the column, so the flutes fade
 		// slowly and high.
-		flutes: { count: { mean: 10, spread: 2 }, depth: 0.35, height: 25 },
+		flutes: { count: { mean: 12, spread: 2 }, depth: 0.5, height: 25 },
 	},
 	extras: [
 		{
