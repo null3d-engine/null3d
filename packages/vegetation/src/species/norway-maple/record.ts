@@ -293,7 +293,7 @@ export const record: Species = {
 			outline: 'texture',
 			// Still 12: a long slender stalk runs below the blade for about a fifth of the leaf's
 			// extent, and the blade hangs slightly from it.
-			petiole: { length: 0.05, radius: 0.0018, flat: 0, droop: 10 },
+			petiole: { length: 0.05, radius: 0.0013, flat: 0, droop: 10 },
 			fold: 8,
 			curl: 10,
 			crossCurl: -3,
