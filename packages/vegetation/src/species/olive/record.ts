@@ -185,6 +185,34 @@ export const record: Species = {
 				droop: 6,
 			},
 		],
+		// Still 23: the studio's shoot tip carries five opposite pairs in one year's growth and a
+		// small cluster of pointed buds at its end. The crown's own shoots carry fewer, so the cluster
+		// view cuts this class and the crown never does. It stands its blades face on, as a twig held
+		// up to the camera shows them, where the crown's leaves turn their faces to the light.
+		cuttingClasses: [
+			{
+				name: 'spur',
+				vigor: [0, 1],
+				share: 0,
+				years: 1,
+				length: { mean: 0.28, spread: 0.03 },
+				nodes: { mean: 5.5, spread: 0.4 },
+				internode: PAIR,
+				phyllotaxis: { kind: 'opposite', decussate: true },
+				skyward: 0.5,
+				leafScale: [
+					[0, 0.9],
+					[1, 1.05],
+				],
+				leafAngle: [
+					[0, 110],
+					[0.5, 95],
+					[1, 80],
+				],
+				leafAngleSpread: 20,
+				droop: 4,
+			},
+		],
 		// Stills 10, 11 and 23: every pair of leaves stands at right angles to the pair below it.
 		phyllotaxis: { kind: 'opposite', decussate: true },
 		orders: 3,
@@ -371,9 +399,9 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit measures 1.13, 1.84, 3.26 and 6.33 MB at the four tiers; each cap sits just
-			// above its figure.
-			kitBytes: { low: 1_150_000, medium: 1_900_000, high: 3_300_000, ultra: 6_400_000 },
+			// The kit measures 1.73, 2.49, 4.05 and 7.39 MB at the four tiers; each cap sits just
+			// above its figure. The studio cluster's class is the last prototype it carries.
+			kitBytes: { low: 1_750_000, medium: 2_550_000, high: 4_100_000, ultra: 7_450_000 },
 			// The largest of seed 11's six variants measures 8.01, 8.07, 8.11 and 8.17 MB.
 			variantBytes: { low: 8_100_000, medium: 8_150_000, high: 8_200_000, ultra: 8_250_000 },
 			lod0Triangles: 2_900_000,
@@ -395,7 +423,7 @@ export const record: Species = {
 		branch: { order: 3, length: 0.9 },
 		subbranch: { order: 4, length: 0.35 },
 		// Still 23: one upright shoot, its pairs of leaves along the run and buds at its tip.
-		cluster: { shoot: 'short' },
+		cluster: { shoot: 'spur' },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
 		leaf: { pressed: true },
 	},
