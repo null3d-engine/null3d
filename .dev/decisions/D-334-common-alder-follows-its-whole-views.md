@@ -68,6 +68,11 @@ Covered area moves with the square of a piece's length, so the branch's 0.65 at 
 0.45 at 0.78 m. Its width does not follow: the piece draws one prototype, so which way its side
 shoots point is the seed's choice, and only their number answers it from the record.
 
+The committed record draws `21` at seven groups and 0.446 background against 0.412, and `22` at one
+group and 0.479 against 0.428; its outline overlap against the two photographs is 0.164 and 0.252.
+The sub-branch's half turn rises from 0.180 to 0.270 in outline overlap, and its background share
+from 0.468 to 0.394 against the photograph's 0.425.
+
 How the data was produced: `bun run plants:review common-alder --slot-query
 tools/lib/plant-review/slots/common-alder.json --out /tmp/alder-renders --run alder-r12`, and the
 same command's later runs; the crown boxes and gaps come from `metrics.json`, and the cut pieces'
