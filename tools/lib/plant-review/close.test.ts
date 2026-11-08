@@ -337,6 +337,27 @@ describe('a limb dividing into two', () => {
 		expect(view.target[1]).toBeGreaterThan(upright?.at[1] ?? 0);
 	});
 
+	/** The height in metres that a view's frame covers at its target. */
+	const frameHeight = (view: { position: number[]; target: number[] }): number =>
+		2 *
+		Math.hypot(...[0, 1, 2].map((k) => (view.position[k] as number) - (view.target[k] as number))) *
+		Math.tan((50 * Math.PI) / 360);
+
+	test("frames the arms' run, and takes the span a picture asks for", () => {
+		const plant = { skeleton, shoots: NO_ROWS, prototypes: [] };
+		const plain = forkView(plant, { fov: 50, aspect: 1 });
+		if (!plain) throw new Error('the fork view found no fork');
+		const fork = forks(skeleton).find((f) => f.node === plain.subject.node);
+		if (!fork) throw new Error('the framed fork is not a fork');
+		// The photograph frames both arms and their twigs, so the frame runs well past the limb's own
+		// thickness.
+		expect(frameHeight(plain)).toBeGreaterThan(4 * 2 * fork.radius);
+		// A picture that asks for a span gets it, as the limb view does.
+		const asked = forkView(plant, { fov: 50, aspect: 1 }, undefined, 3);
+		if (!asked) throw new Error('the fork view found no fork');
+		expect(frameHeight(asked)).toBeCloseTo(3, 5);
+	});
+
 	test("takes a great limb's fork over a branch's fork nearer the sought size", () => {
 		const b = new SkeletonBuilder();
 		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
