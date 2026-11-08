@@ -470,6 +470,10 @@ export const record: Species = {
 		// 1.4 m ahead of the row, where the stretch behind the row cannot reach it.
 		cardStalk: 2,
 		cardStalkToFoliage: true,
+		// A tenth past the shoots brings the two open whole views inside their sky bands: 0.1155 and
+		// 0.0937 against 0.1186 and 0.0942. The cost is stated in the round's verdict: the distant
+		// view's outline falls from 0.8113 to 0.7882, and the silhouette draws eight pieces for six.
+		cardGrow: 1.1,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
