@@ -9,5 +9,9 @@
 	},
 	"12-shoot-upper.png": {
 		"view": "cluster"
+	},
+	"21-branch-studio.png": {
+		"daylight": 3,
+		"lamp": "#ffe9c0"
 	}
 }
