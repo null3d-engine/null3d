@@ -41,7 +41,7 @@ const PHASE_KEY = 0x57494e44;
  *
  * @category api/vegetation
  */
-export const DEFAULT_WIND_SWAY = { frequency: 0.4, amplitude: 0.05 } as const;
+export const DEFAULT_WIND_SWAY = { frequency: 0.4, amplitude: 0.05, power: 2 } as const;
 
 /**
  * The whole plant's sway of a species: its own, or the stated default when its record names none.
@@ -53,8 +53,11 @@ export const DEFAULT_WIND_SWAY = { frequency: 0.4, amplitude: 0.05 } as const;
 export function windSway(record: Species): {
 	readonly frequency: number;
 	readonly amplitude: number;
+	readonly power: number;
 } {
-	return record.wind.sway ?? DEFAULT_WIND_SWAY;
+	const sway = record.wind.sway;
+	if (!sway) return DEFAULT_WIND_SWAY;
+	return { frequency: sway.frequency, amplitude: sway.amplitude, power: sway.power ?? 2 };
 }
 
 /**

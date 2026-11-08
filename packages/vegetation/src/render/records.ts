@@ -100,7 +100,10 @@ export const HEADER = {
 	lichen: 40,
 	/** Lichen: its lowest and highest height in metres. */
 	lichenReach: 41,
-	/** The whole plant's sway: metres at its top at the field's base speed, then cycles a second. */
+	/**
+	 * The whole plant's sway: metres at its top at the field's base speed, cycles a second, then
+	 * the power its share of that motion rises with along a stem.
+	 */
 	sway: 42,
 	/**
 	 * The first extra's band colour, then the band's roughness, as `extras` holds its body's; the
@@ -351,7 +354,7 @@ export function speciesHeader(
 	const bud = record.shoots?.bud.colour;
 	if (bud) texel(header, HEADER.bud, [...bud, 1]);
 	const sway = windSway(record);
-	texel(header, HEADER.sway, [sway.amplitude, sway.frequency, 0, 0]);
+	texel(header, HEADER.sway, [sway.amplitude, sway.frequency, sway.power, 0]);
 	texel(header, HEADER.cardStalk, [record.lod.cardStalk ?? 0, 0, 0, 0]);
 	return header;
 }

@@ -502,9 +502,11 @@ fn sway_point(p: vec3f, own: i32, downwind: vec3f, speed: f32) -> vec3f {
     var point = p;
     var id = own;
     // The whole plant sways as its species' record says: metres at its top at the field's base
-    // speed, in cycles a second, and more as the air is faster.
+    // speed, in cycles a second, and more as the air is faster. The record's power says how
+    // sharply that motion falls away down a stem.
     let plant = header(HEADER_SWAY);
     let sway = plant.x * speed / WIND_SWAY_SPEED;
+    let power = plant.z;
     for (var level = 0; level < MAX_BRANCH_DEPTH; level += 1) {
         if (id < 0) {
             break;
@@ -520,7 +522,10 @@ fn sway_point(p: vec3f, own: i32, downwind: vec3f, speed: f32) -> vec3f {
         let along = clamp(dot(point - pivot, axis) / length_m, 0.0, 1.0);
         if (parent < 0) {
             let wave = 0.5 + 0.5 * sin(TURN * (frame.time * plant.y + fourth_texel.x));
-            point += downwind * (along * along * sway * wave);
+            // A stem's share of its top's motion: the distance along the stem raised to the
+            // record's power. The cantilever's square is the default, taken as it always was.
+            let carried = select(along * along, pow(along, power), abs(power - 2.0) > 0.001);
+            point += downwind * (carried * sway * wave);
         } else {
             let across = cross(axis, downwind);
             let reach = length(across);

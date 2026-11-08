@@ -1751,7 +1751,16 @@ export interface WindSpec {
 	 * speed. A species that names none takes the stated default, so a missing sway never leaves
 	 * the plant still.
 	 */
-	readonly sway?: { readonly frequency: number; readonly amplitude: number };
+	readonly sway?: {
+		readonly frequency: number;
+		readonly amplitude: number;
+		/**
+		 * How sharply the sway grows up a stem: its share of the top's motion is the distance along
+		 * the stem raised to this power. The cantilever's square, 2, is the default; a stiffer stem
+		 * takes a higher power, so its lower length stays put while its top moves. From 1 to 6.
+		 */
+		readonly power?: number;
+	};
 	/** Orders from which shoots swing as hanging chains (willow, birch). */
 	readonly whips?: { readonly fromOrder: number; readonly pendulum: number };
 	/** How leaves flutter. */
