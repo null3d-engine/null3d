@@ -52,7 +52,7 @@ in that folder.
 
 | Choice | Field and the lime's value | Pictures | Presses on |
 | --- | --- | --- | --- |
-| A tall tree | `size.height` 22 m ± 2 | 01, 02, 18: a mature open-grown lime | The leaf's share of the view |
+| A tall tree | `size.height` 21.55 m ± 2 | 01, 02, 18: a mature open-grown lime | The leaf's share of the view |
 | The photographs' girth | `size.dbh` 0.72 m | 01, 02, 18: the trunk stands 0.030 to 0.034 of the height across at breast height | The sharp-bend test |
 | An egg-shaped dome, taller than wide | `size.aspect` 0.74, from the fitted hull | 01, 02, 18: the widest foliage is 0.70 to 0.80 of the height across | The all-round band |
 | A crown base a sixth up | `growth.floor` 0.156 | 01, 02, 18 and the fitted hull's base | Variant bytes |
@@ -60,7 +60,7 @@ in that folder.
 | A leader that outgrows the limbs | `growth.apical.control` 0.64 to 0.67 | 01, 02, 18: one leader carries the crown to its single apex | The crown's width |
 | Wide, arching branches that droop | `growth.buds.angle` 52 to 62, `growth.tropism.gravi` below zero at the finest order | 02, 07, 09: branches leave at wide angles and their ends hang | Nothing measured |
 | Alternate leaves in two ranks | `growth.buds.arrangement` and `shoots.phyllotaxis`, `distichous` | 09, 10, 11, 22 | Shoot mesh |
-| A dense crown of fine twigs | `shoots.placement.perMetre` 4.2 to 12 and `density` 1.38 | 01, 02, 18: the crown's box shows about a twentieth of sky | Variant bytes and the card level |
+| A dense crown of fine twigs | `shoots.placement.perMetre` 4.2 to 12, `density` 1.55 and `cardGrow` 1.45 | 01, 02, 18: the crown's box shows about a twentieth of sky | Variant bytes and the card level |
 | Heart-shaped blades on long stalks | `foliage.leaf.length` 8 cm, `petiole.length` 2.8 cm | 12, 13, 24: a 3 to 9 cm blade on a stalk about two fifths of it | Kit bytes |
 | Leaf colour | `foliage.leaf.optics`, sampled in linear light | 24, 25: the upper face 0.039, 0.093, 0.011 and the lower 0.267, 0.323, 0.201 | The leaf colour figures |
 | A lopsided red bud at each node | `shoots.bud` 9 mm by 5.5 mm, a single terminal bud | 10, 22 | Kit bytes |
@@ -113,28 +113,30 @@ Rejected:
 - `packages/vegetation/src/species/small-leaved-lime/` holds the record, the entry and the fitted
   figures. The textures package holds the leaf, bark and young-bark files, 795 KB for the full set and
   237 KB for the half set. The review slot file holds each picture's light.
-- The kit measures 2.46, 3.70, 5.93 and 10.13 MB at the low, medium, high and ultra tiers. The first
-  variant measures 3.76 to 3.98 MB. Every figure sits under the owner's cap for a tree.
-- The review draws every still. The whole views, the render against its reference: still 01 has a sky
-  gap of 0.091 against 0.049 and a leaf colour of 3.0. Still 02 has a gap of 0.103 against 0.062 and
-  a colour of 2.9. Still 18 has a gap of 0.078 against 0.107. The leaf close-ups match with an
-  overlap of 0.76 to 0.82 and a colour of 0.5 to 3.0. The bark texture matches at 1.5 steps.
-- The silhouette's reference shows twice the sky of the distant photograph: 0.107 against 0.049. The
-  two-sided bands need a crown whose 01 gap is at most 0.099 and whose 18 gap is at least 0.087. The
-  drawn crown's two figures differ by 0.013, a thousandth more than the window allows, so no single
-  crown passes both. The record keeps the two daylit views inside and misses the silhouette's floor
-  by 0.009. A crown that meets the silhouette fails both daylit views by 0.004 and 0.007.
-- The cut pieces keep more separate leaves than their photographs: the matte draws a leaf group apart
-  wherever its stalk falls under a pixel. The sub-branch's sky gap matches its photograph at 0.51.
-- The young bark's close view reads 18 colour steps from its photograph. The view frames a great limb
-  where the thin wood stands out of reach of the camera.
-- The whole-plant turn matches its video with a mean shape overlap of 0.668. Its crown box spreads
-  9 per cent wide and 19 per cent tall over the eight angles, against the reference's 32 and 14. Both
-  sit inside the band, the width's own being the reference's 32 per cent and the height's 25.
-- The cut pieces' turns are irregular. The leaf cluster's crown box spreads 132 per cent wide
-  against its video's 85. The sub-branch's crown box spreads 57 per cent tall against 25. Those two turns fail
-  the all-round band. The branch turn sits inside both.
-- The wind moves the crown's top band 0.061 against the reference's 0.047, and its base 0.002 against
-  0.044: the trunk's foot does not move. The middle bands move less than their reference's.
+- The kit measures 2.46, 3.72, 5.93 and 10.13 MB at the low, medium, high and ultra tiers. The first
+  variant measures 4.11 to 4.23 MB. Every figure sits under the owner's cap for a tree.
+- The grown plant stands 23.87 m tall and 20.22 m across, so its height sits inside the record's
+  21.55 m mean plus two.
+- The review draws every one of the 32 reference files. The whole views, the render against its
+  reference: still 01 has a sky gap of 0.078 against 0.049 and a leaf colour of 2.8. Still 02 has a
+  gap of 0.090 against 0.062 and a colour of 2.3. Still 18 has a gap of 0.093 against 0.107. So the
+  three sky gaps and the two daylit colours all sit inside their bands.
+- The leaf close-ups match with an overlap of 0.64 to 0.84 and a colour of 0.5 to 3.0. The bark
+  texture matches at 1.4 steps.
+- The whole-plant turn matches its video with a mean shape overlap of 0.709. Its crown box spreads
+  16 per cent wide and 6 per cent tall over the eight angles. The reference spreads 32 and 14, so
+  both sit inside the all-round band.
+- The branch turn spreads 53 per cent wide and 13 per cent tall, against the reference's 104 and 5.
+  The sub-branch turn spreads 69 and 22, against 108 and 2. Every turn but the cluster's sits inside
+  both bands.
+- The leaf-cluster turn spreads 132 per cent wide against its video's 85, so its piece still changes
+  width too much as it turns. Its height, 16 per cent, sits inside.
+- The wind moves the crown's top band 0.034 against the reference's 0.047, and its base 0.000
+  against 0.044: the trunk's foot does not move. The middle bands move less than their reference's.
+- The cut stills keep more separate leaves than their photographs: the matte draws a leaf group
+  apart wherever its stalk falls under a pixel. The three pieces draw 22, 17 and 9 separate pieces
+  against one each. Their sky gaps read 0.44, 0.44 and 0.39 against 0.63, 0.51 and 0.35.
+- The young bark's close view reads 13 colour steps from its photograph. The camera frames a great
+  limb where the thin wood stands out of reach.
 - The basal sprouts of stills 14 and 20 are not drawn. The record has no field for a sprout at the
   foot, and the species does not claim one.
