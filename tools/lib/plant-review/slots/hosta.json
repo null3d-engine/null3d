@@ -1,0 +1,40 @@
+{
+	"01-whole-plant-distant.png": {
+		"fov": 24
+	},
+	"02-whole-plant-profile.png": {
+		"fov": 24
+	},
+	"17-silhouette.png": {
+		"fov": 24
+	},
+	"04-rosette-from-above.png": {
+		"elevation": 88
+	},
+	"20-autumn-collapse.png": {
+		"fov": 24
+	},
+	"30-whole-with-landmark.png": {
+		"fov": 24
+	},
+	"03-whole-from-below.png": {
+		"view": "inside"
+	},
+	"05-underside-of-leaves.png": {
+		"view": "inside"
+	},
+	"07-leaf-base-and-petiole.png": {
+		"view": "inside"
+	},
+	"15-petiole-base.png": {
+		"view": "inside"
+	},
+	"16-young-hosta-plant.png": {
+		"view": "whole",
+		"fov": 24
+	},
+	"18-flower-scape.png": {
+		"view": "whole",
+		"fov": 24
+	}
+}
