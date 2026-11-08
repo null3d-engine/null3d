@@ -126,6 +126,29 @@ kind. It was declined: it buys one figure and costs two, and it needs kit headro
 have at any tier. The row stays failing on this evidence, and no further round should spend itself on
 blade angles or node spacing.
 
+### The elm's branch studio is a stated limit, 31 per cent narrow
+
+The branch studio draws 198 by 265 pixels against its photograph's 287 by 258, so 31 per cent narrow,
+while its sky gap is right at 0.430 against 0.425 and it draws one piece. Five levers were measured
+at the merged tree, each reverted:
+
+| Lever | Piece box | Pieces | Gap | Shape overlap |
+| --- | --- | --- | --- | --- |
+| The record | 198 by 265 | 1 | 0.430 | 0.219 |
+| A fourth lateral | 198 by 265 | 1 | 0.430 | 0.219 |
+| Laterals at 70 degrees, most 80 | 204 by 276 | 2 | 0.504 | 0.106 |
+| The other prototype of the class | 180 by 263 | 4 | 0.379 | 0.250 |
+| A longer arm, 0.9 to 1.25 m | 207 by 246 | 5 | 0.577 | 0.164 |
+
+So the class's own length, its lateral count and its lateral angle all fail, and the other prototype
+is narrower still. What the box is short of is width no setting on this class gives it.
+
+A cutting class of its own would be the fix, and it does not fit the budget: a class costs about a
+megabyte at the low tier and 1.2 at medium, taking the elm's kit from 3.39 to 4.39 and from 5.40 to
+6.61 against the owner's tree caps of 3.5 and 6.3. That is a whole class's budget for one row of one
+species, so the row stays a stated limit with these figures beside it, and no owner's cap is raised
+for it.
+
 ## Look
 
 A fan of six leaves collapses to a line when the camera turns across its plane. A round rosette of
