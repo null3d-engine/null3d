@@ -74,8 +74,7 @@
 		"sunRise": 55,
 		"skyShare": 0.5,
 		"daylight": 2.6,
-		"season": "blossom",
-		"background": "studio-grey"
+		"season": "blossom"
 	},
 	"20-basal-sprouts.png": {
 		"skyShare": 0.68,
@@ -93,11 +92,6 @@
 		"skyShare": 0.6,
 		"daylight": 1.0
 	},
-	"28-young-bark.png": {
-		"thin": 0.006,
-		"along": 0.75,
-		"span": 0.012
-	},
 	"small-leaved-lime-turntable.mp4": {
 		"skyShare": 0.35,
 		"daylight": 3.0
@@ -105,5 +99,10 @@
 	"small-leaved-lime-wind-motion.mp4": {
 		"skyShare": 0.35,
 		"daylight": 3.0
+	},
+	"28-young-bark.png": {
+		"thin": 0.006,
+		"along": 0.75,
+		"span": 0.012
 	}
 }
