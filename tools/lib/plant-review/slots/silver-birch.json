@@ -1,14 +1,14 @@
 {
 	"01-whole-distant.png": {
-		"daylight": 4.5,
+		"daylight": 2.95,
 		"skyShare": 0.65
 	},
 	"02-whole-profile.png": {
-		"daylight": 4.5,
+		"daylight": 2.95,
 		"skyShare": 0.65
 	},
 	"03-whole-from-below.png": {
-		"daylight": 5.5,
+		"daylight": 4.1,
 		"skyShare": 0.65
 	},
 	"19-drooping-twig-ends.png": {
@@ -77,7 +77,7 @@
 		"skyShare": 0.65
 	},
 	"18-silhouette.png": {
-		"daylight": 4.5,
+		"daylight": 2.95,
 		"skyShare": 0.65
 	},
 	"22-subbranch-studio.png": {
