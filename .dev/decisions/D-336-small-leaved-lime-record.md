@@ -145,6 +145,15 @@ Rejected:
   while the leaf's own albedo, measured on the pressed leaves, still reads 3.0 and 2.0. Lowering the
   albedo a twentieth moved the whole views a tenth of a step and worsened the pressed leaf, so the
   albedo stays as the photographs measure it.
+- Row 10's colour is now lit per picture. Each still's slot takes a daylight scaled and a lamp set
+  from its photograph's mean foliage colour against the render's in linear light. The distant view
+  falls from 4.88 to 2.4 steps, the profile from 5.07 to 2.0, the close cluster from 5.67 to 0.8, the
+  flower spray from 5.75 to 0.6 and the leaf-cluster studio from 9.8 to 2.9. The whole-plant turn
+  falls from 8.84 to 4.73 and the leaf cluster's from 8.73 to 6.96. The views that want a strong
+  violet lamp, the branch turn and the two branch studio stills, overshoot at the full ratio and at
+  half of it, so they keep no lamp: 7.28 to 18.91 and 15.10, 5.3 to 8.9, 3.7 to 4.8. The sky gaps do
+  not move under the light (0.0949, 0.0853, 0.0898 before and after), which shows the light moves
+  colour and not geometry.
 - The leaf close-ups match with an overlap of 0.78 and 0.64 and a colour of 3.0 and 2.0. The bark
   texture's surface matches at 1.38 steps, while the young bark's colour reads 15.95 against its
   photograph. The base and mid close views are not paired in this run. A per-zone linear tint in the
