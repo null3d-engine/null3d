@@ -105,6 +105,11 @@ the leaf area to 1,328 square meters. Raising `shoots.prototypes` moves it a lit
 - `slots/silver-birch.json` frames still 20 as the whole autumn tree. The tool's number rule had
   drawn it as a limb in winter. The file also frames still 35 on a catkin twig and still 28 on wood
   inside the young bark's radius. It carries each daylit picture's light too.
+- The fork view now frames a fork over both arms and the twigs they carry, never out into the crown
+  above them, and a slot's `span` asks for a frame height in metres as it does for the limb view.
+  Still 08's sky gap moves from 0.137 to 0.145 against its photograph's 0.720, and its shape match
+  from 0.138 to 0.148. The gap cannot approach that picture's, since it isolates a cut limb on a
+  plain ground where the view draws a fork inside a leafy crown.
 
 ### A shoot class's own leaf arrangement and facing
 
@@ -118,13 +123,14 @@ Measured on the birch's cutting classes, with the whole views drawn beside them 
 | still | species' own | two-ranked, faces level | box, photograph |
 | --- | --- | --- | --- |
 | 21 branch | 0.629 open, 26 pieces, box 156x243 | 0.657 open, 6 pieces, box 172x189 | 246x317 |
-| 22 sub-branch | 0.337 open, box 137x311 | 0.431 open, box 168x289 | 207x283 |
+| 22 sub-branch | 0.337 open, box 137x311 | 0.483 open, box 143x315 | 207x283 |
 | 23 leaf cluster | 0.379 open, box 163x304 | 0.278 open, box 139x283 | 164x283 |
 
 Stills 01, 02 and 18 read 0.199, 0.168 and 0.188 at both settings, since no crown class names
-either field. The two-ranked arrangement helps still 22 gain the nearest it has come to its
-photograph's openness and costs still 23 its extent, so the record keeps neither field on its
-cutting classes. The fields stand for the species whose pictures demand them.
+either field. The record sets the fields on the branch's class and on a class of its own for still
+22, which is where they gain. The leaf cluster keeps a class without them and holds 163 by 304
+pixels against its photograph's 164 by 283, with a shape match of 0.237, where the two ranks take
+its box to 139 by 283 and its shape match to 0.156.
 
 ## Consequences
 
