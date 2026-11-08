@@ -39,6 +39,8 @@ const STEM_NODE = 0.2;
 const ARM_NODE = 0.12;
 /** Degrees the stem may lean from upright, least and most. */
 const LEAN = [0, 1.5] as const;
+/** Metres an arm's elbow lifts over its turn, so its first stretch climbs a little. */
+const ARM_LIFT_RISE = 0.18;
 /** The share of the stem's height where its flower ring stands. */
 const FLOWER_RING = 0.97;
 
@@ -287,30 +289,40 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 			kind: AXIS_ARM,
 		});
 		const arm: Laid[] = [];
-		// The arm starts just clear of the stem's skin, so the weld has a ring to meet.
-		const start = radiusAt(at[1]) + ARM_NODE * 0.5;
-		const firstX = at[0] + heading[0] * start;
-		const firstZ = at[2] + heading[2] * start;
+		// The arm starts clear of the stem's skin, by most of its own radius, so the weld meets a
+		// ring that stands outside the parent rather than buried in it.
+		const start = radiusAt(at[1]) + armBase * 0.6;
+		let px = at[0] + heading[0] * start;
+		let py = at[1];
+		let pz = at[2] + heading[2] * start;
 		let previous = builder.addNode({
-			x: firstX,
-			y: at[1],
-			z: firstZ,
+			x: px,
+			y: py,
+			z: pz,
 			radius: armBase,
 			parent: (trunk[fromNode] as Laid).node,
 			axis: armAxis,
 			light: 1,
 		});
-		arm.push({ at: [firstX, at[1], firstZ], node: previous, radius: armBase });
+		arm.push({ at: [px, py, pz], node: previous, radius: armBase });
 		// A quarter turn from level to upright: the arm runs out and rises together.
 		const elbowNodes = Math.max(2, Math.ceil((plan.elbow * (PI / 2)) / ARM_NODE));
 		for (let n = 1; n <= elbowNodes; n++) {
 			const t = (n / elbowNodes) * (PI / 2);
-			const x = at[0] + heading[0] * (start + plan.elbow * sin(t));
-			const y = at[1] + plan.elbow * (1 - cos(t));
-			const z = at[2] + heading[2] * (start + plan.elbow * sin(t));
+			px = at[0] + heading[0] * (start + plan.elbow * sin(t));
+			py = at[1] + ARM_LIFT_RISE * Math.sin(t) + plan.elbow * (1 - cos(t)) * 0.4;
+			pz = at[2] + heading[2] * (start + plan.elbow * sin(t));
 			const radius = armBase + (armTip - armBase) * 0.4 * (n / elbowNodes);
-			previous = builder.addNode({ x, y, z, radius, parent: previous, axis: armAxis, light: 1 });
-			arm.push({ at: [x, y, z], node: previous, radius });
+			previous = builder.addNode({
+				x: px,
+				y: py,
+				z: pz,
+				radius,
+				parent: previous,
+				axis: armAxis,
+				light: 1,
+			});
+			arm.push({ at: [px, py, pz], node: previous, radius });
 		}
 		const base = arm[arm.length - 1] as Laid;
 		// The rise stands the arm parallel to the stem, to a rounded tip below its top.
