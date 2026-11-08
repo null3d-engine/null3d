@@ -153,7 +153,7 @@ export const record: Species = {
 		// themselves, which are the stem's own shape.
 		displacement: 0.006,
 		// Still 07: the arm leaves the stem on a short pinched junction, with little collar.
-		collar: { swell: 0.12, length: 1.4, ridge: 0.1 },
+		collar: { swell: 0, length: 1.4, ridge: 0.1 },
 		fork: { bend: 3 },
 	},
 	extras: [

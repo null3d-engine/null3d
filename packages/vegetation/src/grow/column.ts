@@ -49,6 +49,8 @@ const NEST_HOLES = 9;
 const NEST_BAND = [0.55, 0.95] as const;
 /** Metres a nest hole's site is set inside the skin, so its socket sits flush. */
 const NEST_INSET = 0.012;
+/** Metres an arm climbs over its run out, so its crotch leaves the stem on a curve. */
+const ARM_CROTCH = 0.14;
 
 /** A unit draw for one purpose of one variant. */
 function draw(input: GrowInput, purpose: number, a = 0, b = 0): number {
@@ -301,22 +303,29 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 		let px = at[0] + heading[0] * start;
 		let py = at[1];
 		let pz = at[2] + heading[2] * start;
+		// The arm is pinched where it leaves the stem, as the junction photograph shows, so its first
+		// ring is a share of its own girth and it swells back over its run.
+		const pinch = armBase * 0.55;
 		let previous = builder.addNode({
 			x: px,
 			y: py,
 			z: pz,
-			radius: armBase,
+			radius: pinch,
 			parent: (trunk[fromNode] as Laid).node,
 			axis: armAxis,
 			light: 1,
 		});
-		arm.push({ at: [px, py, pz], node: previous, radius: armBase });
-		// The arm runs out nearly level to its elbow, as the studio photograph shows.
-		const runNodes = Math.max(1, Math.ceil(plan.elbow / ARM_NODE));
+		arm.push({ at: [px, py, pz], node: previous, radius: pinch });
+		// The arm runs out to its elbow, climbing a little at first so the crotch is not a right angle,
+		// as the junction photograph's own underside curve shows.
+		const runNodes = Math.max(2, Math.ceil(plan.elbow / ARM_NODE));
 		for (let n = 1; n <= runNodes; n++) {
-			px = at[0] + heading[0] * (start + (plan.elbow * n) / runNodes);
-			pz = at[2] + heading[2] * (start + (plan.elbow * n) / runNodes);
-			const radius = armBase + (armTip - armBase) * 0.2 * (n / runNodes);
+			const share = n / runNodes;
+			px = at[0] + heading[0] * (start + plan.elbow * share);
+			pz = at[2] + heading[2] * (start + plan.elbow * share);
+			py = at[1] + ARM_CROTCH * (1 - (share - 1) * (share - 1));
+			const radius =
+				pinch + (armBase - pinch) * Math.min(1, share * 2) + (armTip - armBase) * 0.2 * share;
 			previous = builder.addNode({
 				x: px,
 				y: py,
