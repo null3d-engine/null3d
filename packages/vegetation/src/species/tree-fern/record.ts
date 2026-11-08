@@ -117,7 +117,7 @@ export const record: Species = {
 	},
 	bark: {
 		// Stills 15 and 26: the whole trunk is packed roots and cut frond bases, one surface.
-		zones: [{ layer: 0, by: 'height', from: -1, to: 4, blend: 0.2, tint: [0.85, 0.82, 0.78] }],
+		zones: [{ layer: 0, by: 'height', from: -1, to: 4, blend: 0.2, tint: [1.08, 1.07, 1.05] }],
 		young: 0,
 		// The stipes, rachises and pinna midribs take the fine tile, so they read as hairy brown
 		// stalks rather than as the trunk's coarse mat.
