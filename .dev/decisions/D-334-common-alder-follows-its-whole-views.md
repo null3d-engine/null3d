@@ -181,12 +181,14 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   photograph's 0.152 with outline overlap 0.421, and `11` keeps the first at 0.166 against 0.173 and
   0.415. A second cutting class would have given the same choice for two more prototypes at every
   tier.
-- The leaf cluster carries eight leaves, not six, each a seventh smaller. Six large blades covered
-  what eight should, which put still `11`'s background share 0.012 below its floor. With eight, its
-  share rises to 0.161 against a photograph's 0.166 and its outline overlap from 0.336 to 0.415;
-  still `23` reads 0.165 against 0.152, with overlap 0.312 to 0.373. The cluster's turning video
-  moves with them: background 0.116 to 0.162 against its reference's 0.146, and overlap 0.266 to
-  0.307.
+- **The cluster's count and its silhouette pull opposite.** The studio photograph carries six leaves
+  and the field photograph seven; the class drew eight for both. Six was drawn. It matches the count
+  and loses the shape: with the leaves grown to hold the density, backgrounds stay inside their
+  bands (still `11` at 0.17 against a photograph's 0.18, still `23` at 0.15 against 0.16) while
+  outline overlap falls from 0.415 to 0.31 and from 0.421 to 0.23. Eight smaller blades covered what
+  the photograph covers and matched its outline; six larger ones cover the same and do not.
+  The class now carries **seven** at a middle size, which suits the field still exactly — its
+  photograph carries seven — and leaves the studio one leaf over rather than two.
 - **The winter keys are a budget limit.** Still `19` draws one catkin where its photograph shows six
   cones and three catkin strings on one twig end, and the keys are not missing: the winter plant
   holds the same 438,057 extras vertices as summer and autumn. A cone stands on 16 per cent of shoot
