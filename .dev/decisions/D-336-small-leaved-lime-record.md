@@ -128,6 +128,10 @@ Rejected:
   drew a 20.04 m plant at 0.922 as wide as tall, and a spread of 2.7 drew 24.43 m at 0.807 with the
   silhouette's sky below its floor, so the height does not move with the mean in steps a record can
   aim with. The width was kept because it gates rows 1, 6 and 9 together.
+- The whole views were re-read after the land branch's leaves-and-limbs split and its stool rule
+  (`b277994b6`) merged: the plant stands 23.74 m by 17.85 m with 487 limbs and the gaps are 0.0949,
+  0.0853 and 0.0898, unchanged to the figure, so neither change reaches a full-size single-stemmed
+  plant.
 - The review draws every one of the 32 reference files. The whole views, the render against its
   reference: still 01 has a sky gap of 0.095 against 0.049, a leaf colour of 3.6 and one piece. Still
   02 has 0.085 against 0.062, a colour of 3.5 and one piece. Still 18 has 0.090 against 0.107 and one
