@@ -37,6 +37,12 @@ import { MeshWriter } from './writer';
 
 /** Degrees each half of a rolled young leaf wraps round its midrib. */
 const ROLLED_WRAP = 290;
+
+/**
+ * The least sky a leaf's stalk takes, from 0 to 1. A stalk stands under its own shoot's blades, so
+ * the crown's sky there is low, and without a floor it draws as black wood among green leaves.
+ */
+export const STALK_LEAST_SKY = 0.22;
 /** How far a lobe's veins run back into it, as a share of the way they run up the blade. */
 const LOBE_VEINS = 0.6;
 
@@ -407,6 +413,7 @@ export function writeStalk(
 		crown,
 		along: [0, stalk.bladeStart],
 		browning: stalk.browning,
+		leastSky: STALK_LEAST_SKY,
 	});
 }
 
