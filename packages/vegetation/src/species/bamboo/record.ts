@@ -36,7 +36,7 @@ export const record: Species = {
 		layout: 'clump',
 		// The culms stand packed, their swollen feet meeting, so the clump reads as one plant's
 		// silhouette at a distance, as stills 01 and 18 show.
-		spacing: 0.45,
+		spacing: 0.8,
 		height: { mean: 8, spread: 1 },
 		// Still 17: a culm's width over its height is about a fortieth, far thicker in proportion than
 		// a tree's bole.
@@ -52,21 +52,21 @@ export const record: Species = {
 		],
 		// Still 15: the node is a raised ring of about a third of a centimetre over the culm's surface,
 		// with a wax band above it and the sheath's scar below.
-		node: { ridge: 0.003, waxBand: 0.02, sheathScar: 0.005 },
+		node: { ridge: 0.007, waxBand: 0.02, sheathScar: 0.005 },
 		// Stills 08 and 09: the branch complement leaves above the lower two fifths; the two or three
 		// branches leave on opposite sides, steeply upward, and one takes the node's lead. Stills 01 and
 		// 02 show lower branches shorter and the longest near the top of the branching zone.
 		branches: {
-			from: 0.5,
+			from: 0.58,
 			perNode: { mean: 2, spread: 0.4 },
 			dominant: true,
 			length: [
-				[0, 0.7],
-				[0.5, 1.5],
-				[0.85, 2.1],
-				[1, 1.4],
+				[0, 0.8],
+				[0.5, 1.65],
+				[0.85, 2.3],
+				[1, 1.5],
 			],
-			angle: 42,
+			angle: 44,
 			orders: 1,
 		},
 		// Still 09: the flattened groove up the internode above a branch.
@@ -101,9 +101,9 @@ export const record: Species = {
 					[0.6, 62],
 					[1, 42],
 				],
-				leafAngleSpread: 16,
+				leafAngleSpread: 25,
 				droop: 6,
-				phyllotaxis: { kind: 'distichous', flatten: 0.65 },
+				phyllotaxis: { kind: 'distichous', flatten: 0.35 },
 			},
 			{
 				// Still 22: the longer branchlet of an older branch, its leaves after a longer bare
@@ -126,9 +126,9 @@ export const record: Species = {
 					[0.5, 66],
 					[1, 44],
 				],
-				leafAngleSpread: 18,
+				leafAngleSpread: 26,
 				droop: 9,
-				phyllotaxis: { kind: 'distichous', flatten: 0.65 },
+				phyllotaxis: { kind: 'distichous', flatten: 0.35 },
 			},
 		],
 		cuttingClasses: [
@@ -156,12 +156,12 @@ export const record: Species = {
 					[0.6, 62],
 					[1, 42],
 				],
-				leafAngleSpread: 18,
+				leafAngleSpread: 26,
 				droop: 9,
-				phyllotaxis: { kind: 'distichous', flatten: 0.65 },
+				phyllotaxis: { kind: 'distichous', flatten: 0.35 },
 			},
 		],
-		phyllotaxis: { kind: 'distichous', flatten: 0.6 },
+		phyllotaxis: { kind: 'distichous', flatten: 0.35 },
 		orders: 2,
 		years: 1,
 		leafYears: 1,
@@ -173,14 +173,16 @@ export const record: Species = {
 				[0, 3],
 				[1, 5.5],
 			],
-			density: 1,
+			// The reference's dense view closes its leaf masses into one canopy; the crowns of the shoots
+			// must overlap for the silhouette to hang together.
+			density: 1.3,
 			shadePrune: 0,
 			// Stills 01, 05 and 18: the plume is open, with sky between the fans and the branches
 			// showing through it, so only the innermost shoots go.
 			skyPrune: 0.05,
 			tipBias: 0.35,
 			lift: 8,
-			skyward: 0.5,
+			skyward: 0.75,
 			rosette: 'fan',
 			scale: { mean: 1, spread: 0.12 },
 			gather: 1,
@@ -222,7 +224,7 @@ export const record: Species = {
 			[1, 1.15],
 		],
 		// Still 15: the surface is smooth between the rings, so the texture's figure barely moves it.
-		displacement: 0.003,
+		displacement: 0.005,
 		// Stills 08 and 09: a branch meets the culm in a short, smooth swelling, not a deep crotch.
 		collar: { swell: 0.18, length: 1.2, ridge: 0.25 },
 	},
@@ -230,17 +232,19 @@ export const record: Species = {
 	wind: {
 		// The reference's breeze bends the culms together and sets the fans swinging.
 		stiffness: [
-			[0, 0.95],
+			[0, 0.9],
 			[0.5, 0.8],
-			[1, 0.5],
+			[1, 0.55],
 		],
-		sway: { frequency: 0.22, amplitude: 0.06 },
+		sway: { frequency: 0.24, amplitude: 0.045 },
 		flutter: { kind: 'blade', amplitude: 0.22, frequency: 3 },
 	},
 	lod: {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
 		cardGrow: 1.2,
+		// A card draws a short stalk so a leaf mass ties to its shoot, not floats free.
+		cardStalk: 2,
 		// The farthest card level keeps the culms alone: a branch a few centimetres thick is under a
 		// pixel there, while the cards carry the plume's shape.
 		woodOrders: [1, 0],
