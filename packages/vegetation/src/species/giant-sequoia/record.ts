@@ -177,9 +177,9 @@ export const record: Species = {
 		bud: { length: 0.002, width: 0.0015, tipCluster: 1 },
 		placement: {
 			perMetre: [
-				[0, 3],
-				[0.5, 6],
-				[1, 12],
+				[0, 3.5],
+				[0.5, 7],
+				[1, 14],
 			],
 			density: 1,
 			// Stills 04 and 05: sky and wood show between the clumps, so the crown's inside thins
@@ -268,7 +268,7 @@ export const record: Species = {
 			// diamond scales, green on the tree and browning with age.
 			kind: 'cone',
 			at: 'shoot-tip',
-			share: 0.06,
+			share: 0.025,
 			count: { mean: 1, spread: 0 },
 			seasons: ['summer', 'autumn'],
 			shape: {
@@ -284,8 +284,8 @@ export const record: Species = {
 					[0.003, 0.067],
 					[0, 0.068],
 				],
-				sides: 14,
-				scales: 9,
+				sides: 10,
+				scales: 7,
 				scaled: [0.008, 0.062],
 				scaleShade: 0.45,
 				scaleJitter: 0.25,
@@ -315,7 +315,7 @@ export const record: Species = {
 		switchPixels: [240, 12, 160],
 		// The clumps stand about a fifth larger than their shoots, so the gaps between one clump's
 		// shoots fall on a neighbour's scales rather than on sky.
-		cardGrow: 5,
+		cardGrow: 8,
 		// A shoot's own twig is under a pixel at a whole view, so each card draws a short stalk
 		// down to the wood it grows from and joins the clump to its branch.
 		cardStalk: 3,
@@ -323,15 +323,15 @@ export const record: Species = {
 		// A scale is a millimetre and a half across, under one texel of the default card cell, so the
 		// high tiers bake a finer cell and the crown keeps its blue-green at distance.
 		cardCell: { low: 64, medium: 64, high: 128, ultra: 256 },
-		woodOrders: [1, 1],
+		woodOrders: [1, 0],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
 			kitBytes: { low: 3_400_000, medium: 6_200_000, high: 11_500_000, ultra: 22_000_000 },
 			variantBytes: { low: 10_000_000, medium: 11_000_000, high: 12_500_000, ultra: 13_000_000 },
 			lod0Triangles: 2_500_000,
-			lod1Triangles: 154_000,
-			lod2Triangles: 42_000,
+			lod1Triangles: 140_000,
+			lod2Triangles: 34_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 340_000,
 			growMilliseconds: 600,
