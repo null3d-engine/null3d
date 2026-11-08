@@ -70,9 +70,9 @@ transmittance of 1.3 times the recorded value carries it without moving the leaf
 ### A cut piece's leaves break off when their stalks are hairlines
 
 The elm's cut sub-branch drew fourteen separate groups in the review's outline, where its photograph
-draws one. Its leaf stalks stood 1.6 millimetres across and drooped ten degrees. At 2.2 millimetres
-and four degrees the groups fell to three, with the leaf's own outline unmoved at 0.81 overlap and
-the single-leaf still's shape unchanged. The lime and the alder show the same break-up in their cut
+draws one. Its leaf stalks stood 1.6 millimeters across and drooped ten degrees. At 2.2 millimeters
+and four degrees the groups fell to three. The leaf's own outline stayed at 0.81 overlap, and the
+single-leaf still's shape did not move. The lime and the alder show the same break-up in their cut
 pieces for the same reason.
 
 ## Look
