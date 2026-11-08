@@ -67,16 +67,10 @@ const RACHIS_TIP = 0.003;
 const RACHIS_NODE = 0.4;
 /** The most a rachis turns over one node, in radians, so a curve keeps its samples. */
 const RACHIS_TURN = 0.25;
-/** The share of the stem's height over which the frond bases clasp it. */
+/** Metres of stem over which the frond bases clasp it, where the record names none. */
 const CROWN_DEPTH = 0.7;
 /** Metres that a frond's base stands out from the stem's surface. */
 const FROND_STAND = 0.08;
-/** The largest a frond's angle from vertical reaches, in degrees: the oldest living fronds droop. */
-const OLDEST_TILT = 118;
-/** The tilt of the upright youngest frond, in degrees. */
-const YOUNGEST_TILT = 8;
-/** Degrees that dead fronds hang below the horizontal. */
-const DEAD_TILT = 128;
 /** The share of a living frond's length that a dead frond keeps. */
 const DEAD_SHARE = 0.72;
 /** The least height of a sucker's stem, and the most, in metres. */
@@ -249,21 +243,18 @@ function frondPlans(
 		const living = deadFrond ? 0 : i;
 		const share = count > 0 ? living / Math.max(1, count - 1) : 0;
 		// The frond bases stand in a spiral down the crown's depth, newest lowest.
-		const depth = CROWN_DEPTH * (1 - (deadFrond ? 1 : share));
+		const depth = stem.plan.crownDepth * (1 - (deadFrond ? 1 : share));
 		const want = stem.plan.height - depth;
 		const node = nodeNear(builder, stem, want);
 		const p = builder.position;
 		const azimuth = deadFrond
 			? start + spiral * (first + i) + radians(draw(DRAW.deadTurn, first + i) * 12 - 6)
 			: start + spiral * (first + i) + radians(draw(DRAW.frondAzimuth, first + i) * 16 - 8);
+		// The record gives the tilt by frond age; the draw spreads fronds of one age so a crown
+		// reads round rather than as rings.
 		const tilt = deadFrond
-			? radians(DEAD_TILT + draw(DRAW.deadHang, first + i) * 20 - 10)
-			: radians(
-					YOUNGEST_TILT +
-						(OLDEST_TILT - YOUNGEST_TILT) * share +
-						draw(DRAW.frondTilt, first + i) * 10 -
-						5,
-				);
+			? radians(crown.dead.hang + draw(DRAW.deadHang, first + i) * 20 - 10)
+			: radians(curveAt(crown.tilt, share) + draw(DRAW.frondTilt, first + i) * 10 - 5);
 		const horizontal: Vector3 = [cos(azimuth), 0, sin(azimuth)];
 		const direction = normalize3([horizontal[0] * sin(tilt), cos(tilt), horizontal[2] * sin(tilt)]);
 		const side = normalize3([-horizontal[2], 0, horizontal[0]]);
@@ -351,8 +342,10 @@ function layFrond(
 	const first = node;
 	for (let i = 1; i <= points; i++) {
 		const share = i / points;
+		// A positive droop bends the rachis toward its lower face, so the frond's tip falls below
+		// its middle; the cap keeps a steep droop sampled rather than turned in one step.
 		const turn = radians(curveAt(shape.droop, share));
-		quatAxisAngle(plan.side, Math.min(RACHIS_TURN, turn / points), q);
+		quatAxisAngle(plan.side, -Math.max(-RACHIS_TURN, Math.min(RACHIS_TURN, turn / points)), q);
 		direction = normalize3(quatRotate(q, 0, direction, [0, 0, 0]));
 		point = [
 			(point[0] as number) + direction[0] * step,
@@ -436,6 +429,7 @@ export function growCrownRosette(input: GrowInput): MacroSkeleton {
 	const fronds = Math.max(3, Math.round(spreadAt(growth.crown.fronds, draw(DRAW.fronds))));
 	const dead = Math.max(0, Math.round(spreadAt(growth.crown.dead.count, draw(DRAW.dead))));
 	const radius = Math.max(curveAt(growth.stem.radius, 0), 1e-3);
+	const crownDepth = Math.max(0, growth.crown.depth ?? CROWN_DEPTH);
 	const main: StemPlan = {
 		x: 0,
 		z: 0,
@@ -446,7 +440,7 @@ export function growCrownRosette(input: GrowInput): MacroSkeleton {
 		radius,
 		fronds,
 		dead,
-		crownDepth: CROWN_DEPTH,
+		crownDepth,
 		scale: 1,
 	};
 	const stem = layStem(builder, growth, main);
@@ -490,7 +484,7 @@ export function growCrownRosette(input: GrowInput): MacroSkeleton {
 				Math.round(fronds * SUCKER_FRONDS * (0.5 + suckerHeight / SUCKER_HEIGHT[1] / 2)),
 			),
 			dead: 0,
-			crownDepth: CROWN_DEPTH * 0.5,
+			crownDepth: crownDepth * 0.5,
 			scale: 0.35 + 0.4 * (suckerHeight / SUCKER_HEIGHT[1]),
 		};
 		const laid = layStem(builder, growth, sucker);

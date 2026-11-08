@@ -41,10 +41,13 @@ export const record: Species = {
 			// Still 01: the youngest fronds stand up in the centre and the oldest arch out and down.
 			tilt: [
 				[0, 14],
-				[0.35, 46],
-				[0.7, 80],
-				[1, 98],
+				[0.35, 48],
+				[0.7, 84],
+				[1, 110],
 			],
+			// Stills 06 and 07: the fronds spring from one growing point at the trunk's top, where
+			// the old bases cluster, rather than clasping a length of stem as a palm's do.
+			depth: 0.2,
 			// Still 16, 17 and 20: the dead fronds hang against the trunk as a brown skirt.
 			dead: { count: { mean: 12, spread: 2 }, hang: 128, skirt: 0.4 },
 			// The shared crown-rosette model carries no croziers yet; still 06's coiled centre is a
@@ -60,10 +63,9 @@ export const record: Species = {
 			// Still 21: the blade rises from the stipe and arches over, its tip drooping.
 			droop: [
 				[0, 0],
-				[0.15, 10],
-				[0.45, 26],
-				[0.75, 40],
-				[1, 52],
+				[0.3, 12],
+				[0.6, 26],
+				[1, 40],
 			],
 			twist: 4,
 			pinnae: {

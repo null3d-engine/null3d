@@ -544,6 +544,12 @@ export interface CrownRosette {
 		readonly divergence: number;
 		/** Degrees from vertical by frond age (t = 0 youngest, 1 oldest living). */
 		readonly tilt: Curve;
+		/**
+		 * Metres of the stem over which the frond bases clasp it, newest lowest: a crown springing
+		 * from a band of the stem, or from a single growing point at 0. Absent, the model's own
+		 * depth, which suits a tall palm's crown.
+		 */
+		readonly depth?: number;
 		/** Dead fronds: count, how far they hang, and a skirt that hides the stem top (fan palm). */
 		readonly dead: { readonly count: Spread; readonly hang: number; readonly skirt: number };
 		/** Young fronds rolled in the centre (tree fern croziers). */
