@@ -13,10 +13,14 @@ const ROOT = join(import.meta.dirname, '../..');
 /**
  * How long a species' four panels may take, in seconds, where the shared limit is not enough. A
  * species earns a figure of its own by its measured page time, so a slow plant names itself instead
- * of raising the limit under every other plant. The giant sequoia, the tallest plant of the batch,
- * draws its four panels in 78 seconds on the software rasteriser, so it needs none.
+ * of raising the limit under every other plant.
  */
-const PANEL_TIMEOUT_SECONDS: Readonly<Record<string, number>> = {};
+const PANEL_TIMEOUT_SECONDS: Readonly<Record<string, number>> = {
+	// The tallest plant of the batch: its four panels of a 60 m crown, with the near shoots in real
+	// geometry, take 78 seconds on the software rasteriser at this machine's load. The figure keeps
+	// headroom above that for a busy CI runner.
+	'giant-sequoia': 150,
+};
 
 /** Four panels of a whole plant, built and drawn from scratch, on the software GPU's slower path. */
 const SHARED_PANEL_TIMEOUT_SECONDS = 120;
