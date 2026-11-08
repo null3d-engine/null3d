@@ -34,7 +34,7 @@ import {
 import type { Architectural, ArchitecturalOrder, Phyllotaxis, Species } from '../core/record';
 import { curveAt, spreadAt, spreadMean } from '../core/types';
 import type { GrowInput } from '../stages';
-import { type EnvelopeVolume, envelopeVolume, insetVolume } from './envelope';
+import { type EnvelopeVolume, envelopeVolume, insetVolume, smoothedVolume } from './envelope';
 import type { Grower } from './models';
 
 /** The golden angle in degrees, which spreads successive children round their parent. */
@@ -265,10 +265,15 @@ export function growArchitectural(input: GrowInput): MacroSkeleton {
 	const crownSpan = Math.max(0.001, height - crownBase);
 
 	// The outline caps the wood, with room left for the shoots that attach beyond it.
+	// The measured hull is as irregular as its views. Rounding each height toward its mean for half
+	// the way keeps the widest side and lifts the narrow ones, so no single view draws a thin crown.
 	const volume: EnvelopeVolume | undefined = record.envelope
-		? insetVolume(
-				envelopeVolume(record.envelope, height, turn),
-				Math.max(0, shootReach(record) * 0.6),
+		? smoothedVolume(
+				insetVolume(
+					envelopeVolume(record.envelope, height, turn),
+					Math.max(0, shootReach(record) * 0.6),
+				),
+				0.5,
 			)
 		: undefined;
 
