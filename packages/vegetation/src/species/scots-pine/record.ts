@@ -61,7 +61,7 @@ export const record: Species = {
 					[0.85, 82],
 					[1, 68],
 				],
-				density: 0.8,
+				density: 0.5,
 				arrangement: { kind: 'spiral', divergence: 137.5 },
 				flatten: 0,
 				sag: 0,
@@ -72,15 +72,15 @@ export const record: Species = {
 				// Still 09: the side branches leave the bough irregularly and widely, not in a comb,
 				// and run out longest towards the bough's tip. A bough carries only a few of them.
 				length: [
-					[0, 1.2],
-					[0.5, 2.8],
-					[1, 3.6],
+					[0, 2],
+					[0.5, 3.5],
+					[1, 4.5],
 				],
 				angle: [
 					[0, 72],
 					[1, 58],
 				],
-				density: 0.8,
+				density: 0.5,
 				arrangement: { kind: 'spiral', divergence: 137.5 },
 				flatten: 0.55,
 				sag: 3,
@@ -91,14 +91,14 @@ export const record: Species = {
 				// Stills 10 and 21: the last twigs are short, stiff and open, and carry the needle
 				// brushes at their ends.
 				length: [
-					[0, 0.4],
-					[1, 0.8],
+					[0, 0.5],
+					[1, 1],
 				],
 				angle: [
 					[0, 62],
 					[1, 45],
 				],
-				density: 4,
+				density: 5.5,
 				arrangement: { kind: 'spiral', divergence: 137.5 },
 				flatten: 0.5,
 				sag: 2,
@@ -188,9 +188,9 @@ export const record: Species = {
 			// Stills 01, 04 and 20: the needle brushes stand at the ends of the finest twigs, with
 			// bare orange twig between them, and gather into dense plates at the crown's rim.
 			perMetre: [
-				[0, 8],
-				[0.5, 30],
-				[1, 55],
+				[0, 12],
+				[0.5, 40],
+				[1, 75],
 			],
 			density: 1.1,
 			tipBias: 0.88,
@@ -208,7 +208,7 @@ export const record: Species = {
 			skyward: 0.35,
 			// The brushes gather at the nodes, so the internode between them shows bare.
 			gather: 0.15,
-			scale: { mean: 1.45, spread: 0.12 },
+			scale: { mean: 1.55, spread: 0.12 },
 			// Still 20: the crown's top is built of separate plates at different heights, so the
 			// foliage gathers into tufts with wood and sky between them.
 			clump: { spacing: 1.2, depth: 0.15, fine: { spacing: 0.4, depth: 0.2 } },
@@ -228,9 +228,9 @@ export const record: Species = {
 			optics: {
 				// The blue-green cast of stills 12, 13 and 24: less yellow than the broadleaves, with
 				// the blue channel close to the green.
-				reflectance: [0.055, 0.1, 0.062],
-				reflectanceBack: [0.16, 0.2, 0.175],
-				transmittance: [0.08, 0.15, 0.075],
+				reflectance: [0.075, 0.13, 0.08],
+				reflectanceBack: [0.19, 0.23, 0.2],
+				transmittance: [0.09, 0.16, 0.08],
 				roughness: [0.5, 0.6],
 			},
 		},
