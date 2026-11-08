@@ -274,9 +274,9 @@ export const files = {
 					0.5
 				],
 				"mean": [
-					0.28334,
-					0.30786,
-					0.20951
+					0.18442,
+					0.22976,
+					0.09852
 				]
 			}
 		},
@@ -313,13 +313,13 @@ export const files = {
 			},
 			{
 				"file": "young-color.ktx2",
-				"sha256": "279649ec116e8a1983ff839e12774b3ab633412a4bb70a1bdf60cd47cda56f49",
-				"bytes": 50181
+				"sha256": "a8262f05c8772a3f18d719a2cb89c5ef6514935f1dbcaeede7eb180639e09b43",
+				"bytes": 47455
 			},
 			{
 				"file": "young-normal.ktx2",
-				"sha256": "d89f9d4f0dca84af49d0521228e404fab63f41f994beb2117a18199b249bbdeb",
-				"bytes": 22476
+				"sha256": "4fe7213f079d60417ccbad8874ce8c4f21ec99eb0b6a9471f732712c1af162b4",
+				"bytes": 20973
 			},
 			{
 				"file": "bark-color-half.ktx2",
@@ -333,13 +333,13 @@ export const files = {
 			},
 			{
 				"file": "young-color-half.ktx2",
-				"sha256": "ab05a3fa24a7913a1ceadfea887eb171ce3c2ff6589073e29cf08effc4fc34e4",
-				"bytes": 14874
+				"sha256": "fb5e1722cd6a9baab103f480be9aa473f51ee9cb2ce46601245824966505fb96",
+				"bytes": 13380
 			},
 			{
 				"file": "young-normal-half.ktx2",
-				"sha256": "b6d6d2cb3f9e4689b19cda9ab62836c7c01a3b16ab69476357bc0a76a08da031",
-				"bytes": 7199
+				"sha256": "2aefe013baf9b14271ca5c681a9c9c0aef27192948281c212cd5671df72d4738",
+				"bytes": 6361
 			}
 		]
 	},
