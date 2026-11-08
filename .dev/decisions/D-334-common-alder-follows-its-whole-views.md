@@ -120,24 +120,40 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   join them and was refused, because it fills the crown's fine gaps on the same mask and would take
   the oak's two passing whole views into failure. What remains is an engine fault, not a species
   one.
-- The leaf's light through and its underside carry a sixth more red and two thirds more blue than
-  the texture's means gave. All three whole views drew their foliage too green and too yellow by the
-  same amounts, so the fault was the material rather than any photograph's light, and the front face
-  was already right: the single-leaf stills measure it at 3.1 and 3.0 and did not move. With the two
-  back faces raised, the whole views' leaf colour reads 2.0, 1.9 and 2.1, inside the three-step
-  mark; before the change they read 5.16, 5.73 and 2.58.
+- The leaf's light through and its underside carry more red and much more blue than the texture's
+  means gave. All three whole views drew their foliage too green and too yellow by the same amounts,
+  so the fault was the material rather than any photograph's light, and the front face was already
+  right: the single-leaf stills measure it at 3.1 and 3.0 and did not move.
 
-  The method, so another species can repeat it. Read each whole view's foliage hexagon beside the
+  The method, so another species can repeat it. Read each whole view's foliage colour beside the
   render's, convert both to linear light, and take the ratio of the photograph to the render per
   channel. Here the three views gave 1.130/1.000/1.720, 1.199/1.000/1.720 and 1.147/1.063/1.413,
   whose mean is **1.158, 1.021, 1.618**. Multiply `transmittance` and `reflectanceBack` by it and
   leave `reflectance` alone, because a copy-stand view shows the front face and a crown shows a
-  mixture of the three; draw the single-leaf stills in the same run and check they have not moved.
-  The response is not linear, so a second damped step is worth taking: the leftover ratios read
-  1.188/1.044/1.448, 1.144/0.960/1.372 and 1.046/1.020/1.163, and applying 1.126, 1.008 and 1.20 —
-  blue taken at about half its measured ratio — finished the job. Values went from
-  `[0.065, 0.14, 0.016]` and `[0.1818, 0.2535, 0.0781]` to `[0.0848, 0.144, 0.0311]` and
-  `[0.237, 0.2609, 0.1517]`.
+  mixture of the three.
+
+  **Then draw the close undersides in the same run**, because they measure the back face alone and
+  they disagree with the crown. A full step took the whole views to 2.01, 1.93 and 2.08 and the
+  texture underside from 1.20 to 8.06. Four settings were measured; the balance is a back face
+  raised by a little under half the step, which puts stills 01, 02, 30 and 25 all inside the
+  three-step mark:
+
+  | Back face raised by | 01 | 02 | 30 | 25 underside | 13 underside |
+  | --- | --- | --- | --- | --- | --- |
+  | none | 3.18 | 3.45 | 1.46 | 1.20 | 6.80 |
+  | three tenths | 3.0 | 3.2 | 1.6 | 2.2 | 6.2 |
+  | **a little under half** | **2.8** | **3.0** | **1.7** | **2.8** | 6.0 |
+  | all | 2.01 | 1.93 | 2.08 | 8.06 | 6.33 |
+
+  Values went from `[0.065, 0.14, 0.016]` and `[0.1818, 0.2535, 0.0781]` to
+  `[0.0895, 0.1401, 0.0343]` and `[0.194, 0.2558, 0.0965]`.
+- Still `13` is the picture row 10 keeps. Its photograph is 145, 155, 105 and still `25`'s is
+  118, 138, 79 — some twelve steps apart — and still `13` reads between 6.0 and 6.8 at every
+  setting of the back face. One leaf cannot be two undersides, so the row is stated with both
+  triples rather than claimed.
+- The young bark carries a tint of 0.963, 0.907 and 0.848 in its texture source, half the measured
+  linear ratio 0.927, 0.823 and 0.719, which darkens and warms it. Its surface colour difference
+  falls from 3.35 to 2.14, inside the mark. That layer serves thin wood only.
 - The two cluster photographs draw different shoots of the one class. The slot file names the second
   prototype for the studio still, which costs no kit byte: `23` reads 0.150 background against its
   photograph's 0.152 with outline overlap 0.421, and `11` keeps the first at 0.166 against 0.173 and
