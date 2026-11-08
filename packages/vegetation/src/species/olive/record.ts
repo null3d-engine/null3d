@@ -30,7 +30,9 @@ export const record: Species = {
 	// their height anchors it at the top of that range: the crown's measured aspect is about 1.4 and
 	// the fitted outline's widest row stands at a height that puts the drawn plant near 8 m. The
 	// band carries that, so a reader meets a plant that the species' own pictures allow.
-	size: { height: { mean: 7, spread: 1.3 }, dbh: 2.6, aspect },
+	// The trunk's diameter is one stem's: the stool's columns stand within a bole about two and a half
+	// metres across, and the silhouette's width at breast height is the stool's, not one stem's.
+	size: { height: { mean: 7, spread: 1.3 }, dbh: 1.2, aspect },
 	growth: {
 		model: 'self-organizing',
 		years: 40,
@@ -48,7 +50,9 @@ export const record: Species = {
 		clearanceThickness: 0.35,
 		turning: 30,
 		internode: { length: 0.42, ageFactor: 0.99 },
-		stems: { count: 1, lean: { mean: 3, spread: 2 }, stool: 0, fused: 0 },
+		// Stills 01 and 02: an old stool of three to five twisted columns that stand fused within one
+		// bole and lean apart as they rise, each dividing into its own limbs.
+		stems: { count: { mean: 4, spread: 1 }, lean: { mean: 8, spread: 3 }, stool: 0.5, fused: 1.2 },
 		buds: {
 			// Stills 03, 05 and 06: the old wood's limbs leave at uneven spacing round the bole, so
 			// their buds stand in the spiral an irregular crown needs, not in pairs.
@@ -195,6 +199,7 @@ export const record: Species = {
 				name: 'spur',
 				vigor: [0, 1],
 				share: 0,
+				cutOnly: true,
 				years: 1,
 				length: { mean: 0.28, spread: 0.03 },
 				nodes: { mean: 5.5, spread: 0.4 },
@@ -219,6 +224,7 @@ export const record: Species = {
 				name: 'cut',
 				vigor: [0, 1],
 				share: 0,
+				cutOnly: true,
 				years: 2,
 				length: { mean: 0.35, spread: 0.05 },
 				nodes: { mean: 5, spread: 0.5 },
@@ -248,6 +254,7 @@ export const record: Species = {
 				name: 'whip',
 				vigor: [0, 1],
 				share: 0,
+				cutOnly: true,
 				years: 2,
 				length: { mean: 0.7, spread: 0.1 },
 				nodes: { mean: 7, spread: 0.5 },
@@ -459,14 +466,18 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit measures 2.49, 3.82, 6.53 and 12.36 MB at the four tiers; each cap sits just
-			// above its figure. The three studio classes are the last prototypes it carries.
-			kitBytes: { low: 2_520_000, medium: 3_900_000, high: 6_650_000, ultra: 12_550_000 },
-			// The largest of seed 11's six variants measures 6.83, 6.86, 6.87 and 6.93 MB.
-			variantBytes: { low: 6_900_000, medium: 6_930_000, high: 6_960_000, ultra: 7_020_000 },
+			// The plant's kit measures 1.13, 1.84, 3.26 and 6.33 MB and the cutting kit 0.13, 1.48, 4.22
+			// and 10.12 MB at the four tiers; each cap sits just above the larger of the two. The three
+			// studio classes stand in the cutting kit alone, so the plant's kit carries the crown's
+			// classes only, while a studio piece pays for its own leaves and no card levels.
+			kitBytes: { low: 1_310_000, medium: 1_880_000, high: 4_250_000, ultra: 10_200_000 },
+			// The largest of seed 11's six variants measures 5.24, 5.36, 5.52 and 5.69 MB.
+			variantBytes: { low: 5_280_000, medium: 5_400_000, high: 5_560_000, ultra: 5_730_000 },
 			lod0Triangles: 2_900_000,
-			lod1Triangles: 145_000,
-			lod2Triangles: 9_000,
+			// The largest variant draws 110,503 triangles at the middle card level and 10,633 at the
+			// farthest, so each cap sits just above its own figure.
+			lod1Triangles: 115_000,
+			lod2Triangles: 11_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
 			growMilliseconds: 600,
@@ -479,11 +490,15 @@ export const record: Species = {
 	cuttings: {
 		// Stills 21 and 22: a branch about a metre long and a sub-branch about a third of that, each
 		// cut from the grown plant. The pieces carry the crown's own shoots, so their drooping twigs
-		// and opposite pairs are the photographs' without a class of their own.
+		// and opposite pairs are the photographs' without a class of their own. A studio piece is
+		// drawn close and alone, so its kit is the cutting kit, which pays for no card levels.
 		branch: { shoot: 'whip' },
 		subbranch: { shoot: 'cut' },
 		// Still 23: one upright shoot, its pairs of leaves along the run and buds at its tip.
 		cluster: { shoot: 'spur' },
+		// Stills 21 and 23: the photographed twigs carry more leaf along the same wood than the
+		// crown's own covering does, and a studio piece pays for that from its own kit.
+		density: 1.6,
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
 		leaf: { pressed: true },
 	},
