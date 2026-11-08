@@ -74,7 +74,7 @@ export const record: Species = {
 		},
 		// Stills 01, 02, 07 and 17: the bole forks at about a quarter of the height into five great
 		// limbs that leave at about 45 degrees and run on near-parallel, the first at about 20.
-		divide: { at: 0.21, count: 5, angle: 45, lean: 20, plumb: 4 },
+		divide: { at: 0.19, count: 5, angle: 45, lean: 20, plumb: 4 },
 		// Stills 01, 02 and 04: the crown's lit top and rim carry its fullest shoots.
 		light: { apical: 1, lateral: 1, shadow: [5, 0.15, 2], cells: 96, surface: true },
 		// Stills 05 and 06: the limbs run out and their ends flare back up, so the shoots bend
@@ -231,7 +231,7 @@ export const record: Species = {
 			shadePrune: 0,
 			// Stills 01, 03 and 05: sky shows through the crown's middle and under it, where its own
 			// leaves leave a shoot under this share of the sky, and the lit outer masses stay.
-			skyPrune: 0.45,
+			skyPrune: 0.33,
 			skyPruneLayer: 1,
 			// Stills 01 and 18: no bare twigs hang outside the foliage.
 			bareTrim: 0.03,
@@ -373,22 +373,22 @@ export const record: Species = {
 		// The cards stand seven tenths larger than the shoots they picture, so a gap between one
 		// shoot's leaves falls on a neighbour's leaves rather than on sky, and the far crown closes
 		// as stills 01 and 18 show it.
-		cardGrow: 2.3,
+		cardGrow: 2.55,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
 			// The kit measures 2.48, 3.82, 6.39 and 11.50 MB at the four tiers; each cap sits just above
 			// its figure.
-			// The largest of three variants measures 10.74, 10.87, 11.04 and 11.24 MB, the two years
+			// The largest of three variants measures 12.39, 12.51, 12.69 and 12.90 MB, the two years
 			// of alternate leaves taking most of it; each cap sits just above.
-			// The heaviest variant's first card level draws 48,488, 54,251, 61,363 and 70,169
-			// triangles up the tiers, and its second 20,015, 20,725, 21,751 and 22,849.
+			// The heaviest variant's first card level draws 54,079, 59,273, 66,968 and 76,783
+			// triangles up the tiers, and its second 22,374, 22,992, 24,008 and 24,817.
 			kitBytes: { low: 2_550_000, medium: 3_850_000, high: 6_450_000, ultra: 11_550_000 },
-			variantBytes: { low: 10_750_000, medium: 10_900_000, high: 11_050_000, ultra: 11_250_000 },
+			variantBytes: { low: 12_450_000, medium: 12_600_000, high: 12_750_000, ultra: 12_950_000 },
 			lod0Triangles: 2_500_000,
 			lod1Triangles: 80_000,
-			lod2Triangles: 25_000,
+			lod2Triangles: 25_500,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
 			growMilliseconds: 600,
