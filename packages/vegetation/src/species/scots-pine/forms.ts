@@ -87,8 +87,8 @@ export const young: SpeciesForm = {
 	// gaps, the opposite of the mature crown's openness.
 	shoots: {
 		placement: {
-			density: 1.25,
-			skyPrune: 0.12,
+			density: 0.72,
+			skyPrune: 0.22,
 			tipPrune: 0.05,
 			clump: { spacing: 0.6, depth: 0.35, fine: { spacing: 0.22, depth: 0.25 } },
 		},

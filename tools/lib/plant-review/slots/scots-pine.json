@@ -4,7 +4,7 @@
 		"sunRise": 42,
 		"skyShare": 0.4,
 		"fov": 30,
-		"daylight": 2.4
+		"daylight": 3.0
 	},
 	"02-whole-profile.png": {
 		"sunAzimuth": -60,
@@ -15,7 +15,7 @@
 		"targetY": null,
 		"top": 0.06,
 		"eye": 0.3,
-		"daylight": 2.2
+		"daylight": 2.9
 	},
 	"03-whole-from-below.png": {
 		"sunAzimuth": -30,
