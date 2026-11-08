@@ -52,15 +52,15 @@ in that folder.
 
 | Choice | Field and the lime's value | Pictures | Presses on |
 | --- | --- | --- | --- |
-| A tall tree | `size.height` 20.7 m ± 2 | 01, 02, 18: a mature open-grown lime | The leaf's share of the view |
+| A tall tree | `size.height` 20.9 m ± 2 | 01, 02, 18: a mature open-grown lime | The leaf's share of the view |
 | The photographs' girth | `size.dbh` 0.72 m | 01, 02, 18: the trunk stands 0.030 to 0.034 of the height across at breast height | The sharp-bend test |
-| An egg-shaped dome, taller than wide | `size.aspect` 0.74, from the fitted hull | 01, 02, 18: the widest foliage is 0.70 to 0.80 of the height across | The all-round band |
+| An egg-shaped dome, taller than wide | `size.aspect` 0.74, and the hull's radii taken at 0.80 of the fit | 01, 02, 18: the widest foliage is 0.70 to 0.80 of the height across | The all-round band, rows 1 and 9 |
 | A crown base a sixth up | `growth.floor` 0.156 | 01, 02, 18 and the fitted hull's base | Variant bytes |
 | One straight central stem | no `growth.divide` | 17: the bole runs on as one stem and branches leave it all the way up | The crown's shape |
 | A leader that outgrows the limbs | `growth.apical.control` 0.68 to 0.70 | 01, 02, 18: one leader carries the crown to its single apex | The crown's width |
 | Wide, arching branches that droop | `growth.buds.angle` 52 to 62, `growth.tropism.gravi` below zero at the finest order | 02, 07, 09: branches leave at wide angles and their ends hang | Nothing measured |
 | Alternate leaves in two ranks | `growth.buds.arrangement` and `shoots.phyllotaxis`, `distichous` | 09, 10, 11, 22 | Shoot mesh |
-| A dense crown of fine twigs | `growth.branching` 1.4, `shoots.placement.perMetre` 4.2 to 12, `density` 2.1, `skyPrune` 0.06 and `cardGrow` 1.65 | 01, 02, 18: the crown's box shows about a twentieth of sky | Variant bytes and the card level |
+| A dense crown of fine twigs | `growth.branching` 1.4, `shoots.placement.perMetre` 4.2 to 12, `density` 2.1, `skyPrune` 0 and `cardGrow` 1.87 | 01, 02, 18: the crown's box shows about a twentieth of sky | Variant bytes and the card level |
 | Heart-shaped blades on long stalks | `foliage.leaf.length` 7 cm, `petiole.length` 2.8 cm | 12, 13, 24: a 3 to 9 cm blade on a stalk about two fifths of it | Kit bytes |
 | Leaf colour | `foliage.leaf.optics`, sampled in linear light | 24, 25: the upper face 0.039, 0.093, 0.011 and the lower 0.267, 0.323, 0.201 | The leaf colour figures |
 | A lopsided red bud at each node | `shoots.bud` 9 mm by 5.5 mm, a single terminal bud | 10, 22 | Kit bytes |
@@ -113,34 +113,42 @@ Rejected:
 - `packages/vegetation/src/species/small-leaved-lime/` holds the record, the entry and the fitted
   figures. The textures package holds the leaf, bark and young-bark files, 795 KB for the full set and
   237 KB for the half set. The review slot file holds each picture's light.
-- The kit measures 2.48, 3.79, 6.10 and 10.46 MB at the low, medium, high and ultra tiers. The first
-  variant measures 4.05 to 4.33 MB, and the two card levels draw 83,300 and 36,500 triangles. Every
+- The fitted hull's radii are used at 0.80 of their measured value. The hull is the foliage the
+  photographs show, and the grower adds each shoot's own reach past the bud it sits on, so a plant
+  grown to the bare hull draws about a quarter wider than its photographs: the crown measured 1.05
+  as wide as its own height where the photographs read 0.73 to 0.80. The factor is written in
+  `fit.ts`, and a re-run of the fitting tool writes the raw hull again and must have it applied.
+- The kit measures 2.48, 3.85, 6.26 and 10.82 MB at the low, medium, high and ultra tiers. The first
+  variant measures 3.21 to 3.47 MB, and the two card levels draw 62,500 and 28,300 triangles. Every
   figure sits under the owner's cap for a tree.
-- The grown plant stands 22.07 m tall and 19.62 m across, with its crown base at 3.94 m, a sixth of
-  the height. Its record's mean height is 20.7 m, and the pictures measure a mature open-grown tree.
+- The grown plant stands 23.74 m tall and 17.85 m across, so it is 0.752 as wide as tall. Its crown
+  base is 3.91 m up, a sixth of the height. The record's mean height is 20.9 m with a spread of 2,
+  and the drawn plant stands above that band: a narrower hull lifts the growth, which is the cost of
+  bringing the width inside the photographs' 0.70 to 0.80.
 - The review draws every one of the 32 reference files. The whole views, the render against its
-  reference: still 01 has a sky gap of 0.090 against 0.049, a leaf colour of 4.0 and one piece. Still
-  02 has 0.081 against 0.062, a colour of 2.3 and one piece. Still 18 has 0.088 against 0.107 and two
-  pieces. So the three sky gaps sit inside their two-sided band. The window is narrow: the
-  silhouette's own 0.107 sky sets a floor of 0.0866 while the distant view's 0.049 sets a ceiling of
-  0.099, so the three views agree only within a 0.012 band.
-- The crown's own box is 1.05 to 1.07 as wide as it is tall against the photographs' 0.80, 0.75 and
-  0.73, so the drawn dome still stands broader than its photographs'.
-- The leaf close-ups match with an overlap of 0.64 to 0.82 and a colour of 0.5 to 3.0. The bark
-  texture matches at 6.4 steps, and the young bark at 6.2 once its view frames the bark's own surface
-  rather than a limb across the sky.
-- The whole-plant turn matches its video with a mean shape overlap of 0.681. Its crown box spreads
-  19 per cent wide and 19 per cent tall over the eight angles, against the reference's 62 and 15, so
+  reference: still 01 has a sky gap of 0.095 against 0.049, a leaf colour of 3.6 and one piece. Still
+  02 has 0.085 against 0.062, a colour of 3.5 and four pieces. Still 18 has 0.090 against 0.107 and
+  two pieces. So the three sky gaps sit inside their two-sided band, at margins of 0.004, 0.027 and
+  0.003. The window is narrow because the reference set disagrees with itself: the silhouette's own
+  0.107 sky sets a floor of 0.0866 while the distant view's 0.049 sets a ceiling of 0.099.
+- The leaf close-ups match with an overlap of 0.78 and 0.64 and a colour of 3.0 and 2.0. The bark
+  texture matches at 6.3 steps.
+- The whole-plant turn matches its video with a mean shape overlap of 0.701. Its crown box spreads 23
+  per cent wide and 17 per cent tall over the eight angles against the reference's 62 and 15, so
   both sit inside the all-round band.
-- The branch turn spreads 65 per cent wide and 25 per cent tall against the reference's 107 and 17,
-  so both sit inside their bands at the tallest. The sub-branch spreads 74 per cent wide against 119,
-  inside, but 32 per cent tall against 6, outside. The leaf-cluster turn spreads 129 per cent wide and
-  41 per cent tall against 102 and 13, so both sit outside.
-- The wind moves its bands 0.000, 0.018, 0.027, 0.025, 0.025 and 0.053 against the clip's 0.044,
-  0.064, 0.020, 0.024, 0.029 and 0.047. The middle three bands sit inside; the foot does not move at
-  all, and the top band overshoots by seven thousandths.
+- The branch turn spreads 61 per cent wide and 25 per cent tall against 107 and 17, so both sit
+  inside. The sub-branch spreads 68 per cent wide against 119, inside, but 29 per cent tall against
+  6, outside. The leaf-cluster turn spreads 137 per cent wide and 75 per cent tall against 102 and
+  13, so both sit outside; a 35-degree leaf spread over the flat shoot made this worse, 142 and 83,
+  and was reverted.
+- The wind moves its bands 0.001, 0.021, 0.022, 0.025, 0.024 and 0.048 against the clip's 0.045,
+  0.064, 0.020, 0.024, 0.029 and 0.047. The four middle and top bands sit inside or at their
+  photograph's figure. The foot's band does not move: a sway record bends the crown where a real
+  tree moves at its foot, the model-shape limit the maple and the ash state in the same words.
 - The cut pieces draw their proportions: the branch at 0.91 as wide as it is tall against 1.05, the
-  sub-branch at 0.61 against 0.59, and the leaf cluster at 0.67 and 0.69 against 0.70 and 0.50.
+  sub-branch at 0.60 against 0.59, and the leaf cluster at 0.71 against 0.50 and 0.68 against 0.70.
+  A leaf stalk twice as thick and nearly straight brings the piece counts down from 18 and 17 to 15
+  and 10 against one each.
 - The basal sprouts of stills 14 and 20 are not drawn. The record has no field for a sprout at the
   foot. A stool of three stems was grown as a test: it draws a 5 cm plant with three limbs and no
   crown, so the stool does not give the sprouts either. The still is of a coppiced stool, not of the
