@@ -25,7 +25,7 @@ export default defineSketch(async (ctx) => {
 	scene.setEnvironment(await assets.skyEnvironment(), { intensity: day.skyIntensity * 0.8 });
 	scene.setFog({ ...day.fog, density: 0.0004 });
 	post.set({ exposure: day.exposure });
-	scene.createDirectionalLight({ ...day.light, castShadows: true, shadow: { distance: 120 } });
+	scene.createDirectionalLight({ ...day.light, castShadows: true, shadow: { distance: 60 } });
 	scene.createAmbientLight(day.ambient);
 
 	// The meadow's grass, grown by the add-on over the same field, so the ground reads as pasture.
@@ -49,7 +49,9 @@ export default defineSketch(async (ctx) => {
 	const camera = scene.createPerspectiveCamera({ fov: 45, near: 0.1, far: 600 });
 	camera.setPosition(0, 20, 66);
 	scene.setActiveCamera(camera);
-	const view = interact(ctx, camera, { target: [0, 11, 0], groundY: 1.7 });
+	// The wheel steps a little further than the default, since a close approach makes each notch a
+	// small change in metres, and the shadows reach only as far as the meadow the camera can see.
+	const view = interact(ctx, camera, { target: [0, 11, 0], groundY: 1.7, zoomSpeed: 1.5 });
 
 	// The season: every record declares what its own does, so the same meadow grows bare in winter,
 	// turns in autumn and flowers in blossom. Summer is the record's default.
@@ -121,11 +123,23 @@ export default defineSketch(async (ctx) => {
 			],
 			visible: true,
 		});
+	/**
+	 * A slider posts on every step of a drag, so the meadow waits for the hand to settle before it
+	 * grows again: the last change starts a short timer, and only its expiry regrows.
+	 */
+	let settling = 0;
+	const settleThenGrow = (): void => {
+		clearTimeout(settling);
+		settling = setTimeout(() => void growMeadow(seed), 350) as unknown as number;
+	};
 	page.onMessage((name, value) => {
 		if (name === 'season') {
 			if (value !== 'summer' && value !== 'autumn' && value !== 'winter' && value !== 'blossom')
 				return;
 			season = value;
+			postHud();
+			void growMeadow(seed);
+			return;
 		} else if (name === 'foliage') {
 			const next = Number(value);
 			if (!Number.isFinite(next)) return;
@@ -137,19 +151,71 @@ export default defineSketch(async (ctx) => {
 			detail = next;
 		} else return;
 		postHud();
-		void growMeadow(seed);
+		settleThenGrow();
 	});
+	/** The note that shows while the meadow grows, counting the species it has finished. */
+	const growing = (() => {
+		let box: HTMLElement | undefined;
+		let said: HTMLElement | undefined;
+		return {
+			begin(): void {
+				if (box) return;
+				box = document.createElement('div');
+				box.style.cssText = [
+					'position:fixed',
+					'left:50%',
+					'top:18px',
+					'transform:translateX(-50%)',
+					'padding:10px 16px',
+					'border-radius:10px',
+					'background:rgba(16,18,20,0.86)',
+					'color:#e8eaec',
+					'font:13px/1.4 system-ui,sans-serif',
+					'letter-spacing:0.02em',
+					'z-index:20',
+					'pointer-events:none',
+				].join(';');
+				said = document.createElement('span');
+				box.append(said);
+				document.body.append(box);
+			},
+			set(done: number, total: number): void {
+				if (said)
+					said.textContent = `Growing the meadow, ${Math.round((done / Math.max(1, total)) * 100)}%`;
+			},
+			end(): void {
+				box?.remove();
+				box = undefined;
+				said = undefined;
+			},
+		};
+	})();
+
 	let seed = 11;
+	/** Whether the meadow has been built once: its first build belongs to the sketch's own start. */
+	let grown = false;
 	const growMeadow = async (at: number) => {
 		for (const piece of planted) piece.destroy();
 		planted = [];
 		const ids = speciesIds();
 		const across = Math.max(1, Math.ceil(Math.sqrt(ids.length)));
 		const step = 34;
+		// A meadow's first build is work that starting the sketch does, so it counts on the sketch's
+		// own loading bar and the page shows one start. Every later build is a change the reader
+		// asked for, and shows in a note of its own.
+		const first = !grown;
+		if (first) page.post('starting', { done: 0, total: ids.length });
+		else {
+			growing.begin();
+			growing.set(0, ids.length);
+		}
 		let index = 0;
 		for (const id of ids) {
 			const module = await loadSpecies(id);
-			const kit = await prepareSpecies(ctx, module, { detail: 'high', placeholders: 'missing' });
+			// The meadow carries eleven species at once, and at close range every copy near the camera
+			// draws its real shoots: the medium tier keeps each plant's shape while halving the nearest
+			// level's triangles, which is what made a pan after a zoom crawl.
+			const kit = await prepareSpecies(ctx, module, { detail: 'medium', placeholders: 'missing' });
 			const materials = plantMaterials(ctx, kit, {});
 			const variant = index % Math.max(1, kit.record.variants);
 			const asset = await growPlant(kit, {
@@ -180,7 +246,11 @@ export default defineSketch(async (ctx) => {
 				),
 			);
 			index++;
+			if (first) page.post('starting', { done: index, total: ids.length });
+			else growing.set(index, ids.length);
 		}
+		growing.end();
+		grown = true;
 		void at;
 	};
 	await growMeadow(seed);
