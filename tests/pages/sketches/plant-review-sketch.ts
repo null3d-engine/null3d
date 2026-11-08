@@ -509,7 +509,9 @@ export default defineSketch(async (ctx) => {
 	const plantCut = cutHint !== undefined && 'order' in cutHint;
 	const needsCutKit = cutsClass || (plantCut && record.cuttings?.density !== undefined);
 	const pieceKit =
-		cutting && needsCutKit ? await prepareSpecies(ctx, module, { ...prepare, cutting: true }) : kit;
+		cutting && needsCutKit
+			? await prepareSpecies(ctx, module, { ...prepare, cutting: cutting.part })
+			: kit;
 	const [whole, piece] = await Promise.all([
 		needsWhole ? growPlant(kit, grow) : undefined,
 		cutting ? growPlant(pieceKit, { ...grow, cutting }) : undefined,

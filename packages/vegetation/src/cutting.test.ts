@@ -10,6 +10,7 @@ import { type PlantAsset, plantAssetDigest } from './asset';
 import { AXIS_LIMB, AXIS_STEM, SkeletonBuilder } from './core/graph';
 import { quatRotate } from './core/math';
 import { standInSpecies } from './core/stand-in';
+import { curveAt } from './core/types';
 import { CUTTING_LENGTH, clusterRank, cutBranch, cutFoliage, cutsShoot } from './cutting';
 import { buildKitNow, growPlantNow, loadPlantCode } from './generate';
 import type { PlantTaskInput } from './generate-task';
@@ -207,6 +208,28 @@ describe('cuttings', () => {
 		}
 		expect(cutsShoot(stub.record, 'branch')).toBe(false);
 		expect(cutsShoot(stub.record, 'leaf')).toBe(false);
+	});
+
+	it('gives a cutting hint its own shoot density over the record’s', () => {
+		const record = {
+			...stub.record,
+			cuttings: {
+				density: 2,
+				branch: { order: 1, length: 1, density: 6 },
+				subbranch: { order: 1, length: 0.35, density: 0.5 },
+			},
+		};
+		const densityOf = (part: 'branch' | 'subbranch' | 'cluster' | 'leaf') => {
+			const built = buildKitNow({ ...stub, record }, { cutting: part }).record;
+			return curveAt(built.shoots?.placement.perMetre ?? 0, 0);
+		};
+		const whole = curveAt(stub.record.shoots?.placement.perMetre ?? 0, 0);
+		// Each hint scales the crown's own placement by its density; one that names none takes the
+		// record's.
+		expect(densityOf('branch')).toBeCloseTo(whole * 6, 6);
+		expect(densityOf('subbranch')).toBeCloseTo(whole * 0.5, 6);
+		expect(densityOf('cluster')).toBeCloseTo(whole * 2, 6);
+		expect(densityOf('leaf')).toBeCloseTo(whole * 2, 6);
 	});
 
 	it('stands a shoot cutting upright on its attach point, or as grown when asked', async () => {
