@@ -116,6 +116,19 @@ use the copy-stand light, which has no light behind the leaf, so they read 2.3 a
 the leaf faces read 2.3, the cluster 2.5 and the turn 3.4. Closing the crown to 3 costs the cluster
 up to 19.4 and the turn 8.7, which is refused. This is a stated limit, not open work.
 
+A fine-leaved crown reads further from its photograph than the oak's, for a second reason that no
+record answers. A drawn card texel covers about four fifths of its footprint with leaf at the whole
+view, and the cutoff draws all of that footprint as leaf. So the crown's mean colour is its leaf's
+own colour, where the photograph mixes leaf and sky inside a pixel: a third of the ash's crown
+pixels are pale blends. The ash reads about 11 steps at its two whole views against the oak's 8.9.
+A ray through our crown crosses about two and a half times the leaf area that the photograph
+implies, so the crown's colour and its sky gap cannot both match the same picture. A crown as thin
+as the photograph's is the grown shoots' count, which is the record's work.
+
+The gaps cannot simply show the sky's light instead. The sky's radiance is about three times a
+sunlit leaf's, so a fifth of a texel taken from the sky adds more light than the leaf it replaces,
+and the crown washes out pale.
+
 ## Decision
 
 - **One file, five roles.** A `mode` uniform picks wood, shoot rows, cards, merged foliage or
@@ -136,6 +149,11 @@ up to 19.4 and the turn 8.7, which is refused. This is a stated limit, not open 
   roughness. Bark relief therefore runs along each limb.
 - **Sky light and occlusion.** Shoot rows take their sky visibility and bent normal from their row,
   through `s.ambientNormal` and `s.occlusionByMinimum` ([D-304](D-304-sky-normal-and-occlusion-once.md)).
+- **A card's alpha is its coverage.** A card texel's alpha is the share of the texel that its leaves
+  cover, and a mip level's alpha is that share over the level's footprints. The material raises the
+  alpha with the mip level, so a far card's thinnest leaves stay over the cutoff instead of falling
+  under it. The rise is small, because a large one draws leaves that the level does not hold. At the
+  whole view the ash's cards read mip 0.7 to 2.4, weighted to 1.5.
 - **Records texture in half floats.** A data texture is `rgba8unorm` or `rgba16float`, not the
   design's 32-bit floats. A half float keeps whole numbers only to 2,048, so a wind record's parent
   id goes as a high byte in the first texel's fourth number and a low byte in the fourth texel's
