@@ -103,5 +103,11 @@
 	"subbranch-turntable.mp4": {
 		"daylight": 0.88,
 		"lamp": "#ebf9ff"
+	},
+	"14-bark-base.png": {
+		"barkMask": true
+	},
+	"16-bark-on-limb.png": {
+		"barkMask": true
 	}
 }
