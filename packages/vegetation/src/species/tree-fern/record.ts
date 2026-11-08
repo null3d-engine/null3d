@@ -24,10 +24,10 @@ export const record: Species = {
 			height: { mean: 2.35, spread: 0.25 },
 			// Still 17: the column runs nearly parallel-sided, a little narrower at the top.
 			radius: [
-				[0, 0.3],
-				[0.08, 0.27],
-				[0.6, 0.255],
-				[1, 0.235],
+				[0, 0.29],
+				[0.1, 0.27],
+				[0.6, 0.26],
+				[1, 0.25],
 			],
 			// Still 01: the trunk stands upright, within a few degrees.
 			lean: { mean: 2, spread: 2 },
@@ -36,49 +36,49 @@ export const record: Species = {
 		},
 		crown: {
 			// Still 01 and the crown views: a dense living crown of about two dozen fronds.
-			fronds: { mean: 22, spread: 3 },
+			fronds: { mean: 24, spread: 2 },
 			divergence: 137.5,
 			// Still 01: the youngest fronds stand up in the centre and the oldest arch out and down.
 			tilt: [
-				[0, 18],
-				[0.35, 52],
-				[0.7, 78],
-				[1, 92],
+				[0, 15],
+				[0.35, 48],
+				[0.7, 76],
+				[1, 90],
 			],
-			// Still 16 and 17: the dead fronds hang against the trunk as a brown skirt.
-			dead: { count: { mean: 10, spread: 2 }, hang: 78, skirt: 0.7 },
+			// Still 16, 17 and 20: the dead fronds hang against the trunk as a brown skirt.
+			dead: { count: { mean: 12, spread: 2 }, hang: 80, skirt: 0.75 },
 			// Still 06: coiled croziers fill the crown's centre.
-			croziers: { mean: 6, spread: 2 },
+			croziers: { mean: 7, spread: 2 },
 		},
 		frond: {
 			// Stills 21 and 22: the frond is twice divided, the pinnae in near-opposite pairs.
 			kind: 'bipinnate',
-			length: { mean: 2.1, spread: 0.2 },
+			length: { mean: 2, spread: 0.2 },
 			// Still 07: a short red-brown stipe, densely hairy, no wider than the rachis.
 			petiole: { length: 0.28, width: 0.055, teeth: 0 },
 			// Still 21: the blade rises from the stipe and arches over, its tip drooping.
 			droop: [
-				[0, 4],
-				[0.25, 26],
-				[0.6, 50],
-				[1, 66],
+				[0, 3],
+				[0.3, 20],
+				[0.7, 36],
+				[1, 48],
 			],
 			twist: 4,
 			pinnae: {
-				// Stills 08 to 11: about twenty pairs a side, longest near the middle of the blade.
-				count: { mean: 20, spread: 2 },
+				// Stills 08 to 11: about twenty-five pairs a side, longest near the middle of the blade.
+				count: { mean: 26, spread: 2 },
 				// Pinna length over the frond's length, by position along the rachis.
 				length: [
-					[0, 0.1],
-					[0.15, 0.145],
-					[0.4, 0.155],
-					[0.75, 0.12],
-					[1, 0.03],
+					[0, 0.09],
+					[0.15, 0.15],
+					[0.4, 0.175],
+					[0.8, 0.13],
+					[1, 0.04],
 				],
 				angle: [
-					[0, 78],
-					[0.5, 70],
-					[1, 48],
+					[0, 80],
+					[0.5, 72],
+					[1, 50],
 				],
 				planes: 1,
 				fold: 10,
@@ -92,7 +92,7 @@ export const record: Species = {
 		// pinnules and lobes painted in.
 		kind: 'blade',
 		leaf: {
-			length: { mean: 0.32, spread: 0.03 },
+			length: { mean: 0.34, spread: 0.03 },
 			outline: 'texture',
 			petiole: { length: 0.012, radius: 0.0012, flat: 0, droop: 4 },
 			fold: 8,
@@ -110,7 +110,7 @@ export const record: Species = {
 	},
 	bark: {
 		// Stills 15 and 26: the whole trunk is packed roots and cut frond bases, one surface.
-		zones: [{ layer: 0, by: 'height', from: -1, to: 4, blend: 0.2 }],
+		zones: [{ layer: 0, by: 'height', from: -1, to: 4, blend: 0.2, tint: [1.45, 1.35, 1.3] }],
 		young: 0,
 		// The stipes, rachises and pinna midribs take the fine tile, so they read as hairy brown
 		// stalks rather than as the trunk's coarse mat.
@@ -125,7 +125,7 @@ export const record: Species = {
 	},
 	base: {
 		// Stills 14 and 17: the foot flares into a low mound of roots over the litter.
-		flare: { amount: 0.55, height: 0.55 },
+		flare: { amount: 0.45, height: 0.35 },
 	},
 	seasons: {
 		default: 'summer',
@@ -153,7 +153,7 @@ export const record: Species = {
 		budget: {
 			// The kit holds one pinna at each tier; the crown's thousand pinnae are the variant's.
 			kitBytes: { low: 40_000, medium: 50_000, high: 60_000, ultra: 70_000 },
-			variantBytes: { low: 700_000, medium: 2_100_000, high: 2_150_000, ultra: 2_200_000 },
+			variantBytes: { low: 900_000, medium: 3_100_000, high: 3_100_000, ultra: 3_150_000 },
 			lod0Triangles: 220_000,
 			lod1Triangles: 12_000,
 			lod2Triangles: 6_000,

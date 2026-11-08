@@ -68,7 +68,9 @@ const STIPE_NODE = 0.06;
 /** The thinnest wood gets, in metres of radius. */
 const THINNEST = 0.0004;
 /** The size a crozier rises at, as a share of its mature size. */
-const YOUNG_SIZE = 0.32;
+const YOUNG_SIZE = 0.45;
+/** A dead frond's length over a living one's, as it hangs in the skirt. */
+const SKIRT_SIZE = 0.65;
 /** The rachis's radius at its top, as a share of its radius at its base. */
 const RACHIS_TAPER = 0.25;
 /** A pinna's radius at its tip, as a share of its radius at its base. */
@@ -121,14 +123,14 @@ function frondPlans(input: GrowInput, growth: CrownRosette): FrondPlan[] {
 	const plans: FrondPlan[] = [];
 	const put = (tilt: number, age: number, isDead: boolean) => {
 		turn += radians(crown.divergence);
-		const size = YOUNG_SIZE + (1 - YOUNG_SIZE) * frondAge(age).unrolled;
-		plans.push({ azimuth: turn, tilt, age, dead: isDead, size });
+		const open = YOUNG_SIZE + (1 - YOUNG_SIZE) * frondAge(age).unrolled;
+		plans.push({ azimuth: turn, tilt, age, dead: isDead, size: open * (isDead ? SKIRT_SIZE : 1) });
 	};
 	for (let c = 0; c < croziers; c++)
 		put(6 + 12 * draw(DRAW.tilt, c), 0.03 + 0.13 * draw(DRAW.age, c), false);
 	for (let j = 0; j < live; j++) {
 		const share = live === 1 ? 0.5 : j / (live - 1);
-		put(curveAt(crown.tilt, share), MATURE_AGE * (0.62 + 0.38 * share), false);
+		put(curveAt(crown.tilt, share), MATURE_AGE * (0.8 + 0.2 * share), false);
 	}
 	for (let d = 0; d < dead; d++) {
 		const share = 0.35 + 0.65 * draw(DRAW.age, d + 64);
