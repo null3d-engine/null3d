@@ -204,6 +204,46 @@ without adding leaf. Until that term moves, row 10 stands as a stated limit with
 measured against it: the thinning and wider cards, a review light brighter than the photographs, the
 leaf's skyward turn, the leaf's albedo, and now the growth light's shadow levels.
 
+### The sky extinction, measured with the crown's shape held
+
+The extinction is the term the levels were standing in for. It was lowered from 0.5 to 0.3, 0.15 and
+0, four runs at one seed, each drawing the three whole views. The growth numbers were untouched, so
+every run grows the same plant.
+
+| Extinction | View 01 color, gap | View 02 color, gap | View 18 color, gap |
+| --- | --- | --- | --- |
+| 0.5 (the record) | 11.56, 0.088 | 12.96, 0.088 | 8.58, 0.084 |
+| 0.3 | 10.61, 0.087 | 11.52, 0.087 | 8.59, 0.084 |
+| 0.15 | 9.02, 0.087 | 9.20, 0.087 | 8.59, 0.084 |
+| 0 | 5.90, 0.087 | 4.70, 0.087 | 8.59, 0.084 |
+
+The gaps move by a thousandth. The outline overlaps (0.774, 0.767, 0.755) and the crown boxes in
+pixels are identical at every value. This term shades the crown and does not reshape it, which is
+what no record lever could do.
+
+It is not a cure on its own. The curve steepens as it nears zero, and at zero, with no crown
+self-shade at all, the elm still reads 5.9 and 4.7 steps. A value of 0.3 buys about a step and a
+half for nothing in shape or gaps; 0.15 buys two and a half to three and a half at the cost of a
+flatter-looking crown.
+
+### The whole views' light, and the pair of errors that cancelled
+
+The two whole-view slots carried daylights of 2.17 on the first view and 1.42 on the profile. Those
+are the two values swapped: measured from each photograph's own upper-half sky, the mean linear
+luminance is 0.509 at still 01 and 0.695 at 02, so pi times each is 1.60 and 2.18. The first view
+was 36 per cent too bright and the profile 35 per cent too dim, and the two errors were cancelling
+in the figure a reader would quote.
+
+At the corrected light the elm reads 15.07, 7.25 and 8.58 steps. The profile improves by 5.7 steps
+at its own light; the first view gets 3.5 steps worse. That is the signature of a crown short of
+light rather than a mislit one, and it agrees with the extinction test: the drawn crown wants more
+light than its photograph at both views, and the shading term is where that light is missing.
+
+Row 10 is therefore recorded at 15.07, 7.25 and 8.58: the honest figures at the photographs' own
+light. The crown is too dark in both hue and light, the extinction term is the lever, and the
+residue at zero extinction is what remains after it. The daylight is not tuned to recover the older,
+lower figures.
+
 ## Look
 
 The crown thinned by its own light looks better than the clump field. Its sky falls between the limb

@@ -146,6 +146,23 @@ The row 8 evidence is the close-ups and the winter skeleton. At the merged base 
 skeleton's wood had a median lightness of 45.9 against the reference's 43.3 at the previous base.
 Its blue-yellow axis read 7.0 against 14.2, so the wood is a little cool.
 
+**The English elm's foot takes the same light as the rest of its wood.** Its foot pair reads 6.12
+color steps at its own photograph's light, with the drawn bark at L 47.7 against the photograph's
+41.4, and the mid trunk beside it reads 1.11 at L 40.4. Four settings leave that: the flare's shape,
+the record's foot tint, the slot light, and the bark material. Flattening the flare from the
+record's own value to near zero moves the foot from 47.7 to 49.2, so the shape does not carry it.
+
+The slot light was the one suspect left, since the base and mid trunks are two cameras and the
+review lights each still from its own photograph. Both stills were drawn under one shared light,
+sun 30 degrees to the right and 45 above the horizon, sky share 0.5 and daylight 1. The foot then
+reads 50.8 and the bole 40.4, so the gap widens from 7.3 to 10.4 units. The 7.3 is not the real
+figure, and the base and mid are not being compared unlike to like.
+
+What the render does not do is shade a foot by the crown above it and the ground beside it. The foot
+is the one part of the trunk the render lights like the rest of the wood, while its photograph shows
+it shaded. That is a core term of the same class as the crown's sky extinction, and it stays a
+stated limit here until the core shades a foot by what stands over and beside it.
+
 ## Decision
 
 Take the physical bark color and light the two bark close-ups from the camera.

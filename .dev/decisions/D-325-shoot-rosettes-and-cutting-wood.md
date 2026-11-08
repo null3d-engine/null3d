@@ -95,22 +95,36 @@ in the axils. Both stills are cut from the one `cluster` hint, and the species c
 cutting class, so both are judged on one piece. The two pictures ask it for different forms: a tufted
 short shoot and an even ladder.
 
-Measured on the elm at seed 11, variant 0, preset high, band tops from each photograph's own gap:
+Measured on the elm at seed 11, variant 0, preset high, band tops from each photograph's own gap.
+Every row is one run of the same stills and the cluster turn:
 
-| Class's internodes | Still 11 gap | Still 11 overlap | Still 23 gap | Still 23 overlap |
-| --- | --- | --- | --- | --- |
-| Even (a ladder) | 0.160 (band 0.120) | 0.445 | 0.161 (band 0.145 to 0.215) | 0.511 |
-| Long foot, tufted tip | 0.148 (band 0.120) | 0.393 | 0.145 (on its floor) | 0.435 |
-| Tufted, seven nodes at 28 to 45 degrees | 0.117 (inside) | 0.369 | 0.111 (0.034 below) | 0.435 |
+| Class's form | Still 11 overlap / width error / gap | Still 23 overlap / width error / gap | Turn overlap / width error |
+| --- | --- | --- | --- |
+| Even internodes, blades at 35 to 55 degrees | 0.445 / 0.397 / 0.160 (band 0.120) | 0.511 / 0.127 / 0.161 (band 0.145 to 0.215) | 0.436 / 0.097 |
+| Internodes long at the foot, tufted tip | 0.393 / 0.416 / 0.148 | 0.435 / 0.120 / 0.145 | 0.401 / 0.103 |
+| Tufted, seven nodes at 28 to 45 degrees | 0.369 / 0.464 / 0.117 | 0.435 / 0.141 / 0.111 (0.034 below its floor) | 0.418 / 0.106 |
+| Wide fan, blades at 65 to 78 degrees | 0.452 / 0.341 / 0.216 | 0.346 / 0.208 / 0.214 | 0.310 / 0.141 |
+| Wide fan gathered within three centimeters | 0.271 / 0.434 / 0.236 | 0.234 / 0.136 / 0.244 | 0.219 / 0.169 |
 
-The tuft closes still 11 by twelve thousandths and the turn holds inside its bands at 0.401 mean
-overlap and 94 per cent width spread. Paying for it costs five hundredths of outline overlap on the
-open still and eight on the studio still. The tighter variant inverts the pair: it takes 11 inside
-its band and 23 below its own.
+Every attempt at reconciling the two pictures fails. The tuft was reverted: it closes the open
+still's gap by twelve thousandths, but it takes five hundredths of that still's outline overlap, eight
+from the studio still, and 0.035 from the turn. The even ladder with the close two-row blades is the
+better piece on all three, and the tuft hypothesis is dead rather than untried.
 
-No single cutting class satisfies both photographs. The row stays failing on that evidence, and the
-shape match already bought is not traded for a gap that cannot close. The fix is a second cutting
-form, so each photograph is judged on a piece of its own kind.
+The fan is the only form that improves the open still's outline, at 0.452 against 0.393 and a width
+error of 0.341 against 0.416. It pays twice: the open still's gap rises to 0.216, the studio still
+falls to 0.346 with a 0.214 gap, and the turn falls to 0.310. Gathering the fan tighter is worse on
+every figure.
+
+The reason is in how a shoot carries its leaves, not in how wide they open. The elm's blades stand at
+separate nodes, with sky and stem between them. Photograph 11's six blades all spring from one point
+at the tip and overlap into one face. No angle or spacing makes a ladder carry its leaves from one
+point, and every lever tried here changes one or the other.
+
+A second cutting class could draw that fan form, so each photograph is judged on a piece of its own
+kind. It was declined: it buys one figure and costs two, and it needs kit headroom the elm does not
+have at any tier. The row stays failing on this evidence, and no further round should spend itself on
+blade angles or node spacing.
 
 ## Look
 
