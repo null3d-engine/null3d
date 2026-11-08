@@ -1,14 +1,64 @@
 {
-	"04-arms-outside.png": { "span": 1.6, "thin": 0.22, "along": 0.35 },
-	"05-arm-underside.png": { "span": 1.2, "thin": 0.22, "along": 0.25 },
-	"06-between-arms.png": { "span": 1.4, "thin": 0.22, "along": 0.2 },
-	"08-arm-elbow.png": { "span": 1.0, "thin": 0.22, "along": 0.3 },
-	"09-rib-pattern.png": { "span": 0.24, "barkHeight": 4 },
-	"10-areoles-and-spines.png": { "span": 0.16, "barkHeight": 4 },
-	"13-rib-cross-section.png": { "span": 0.5, "barkHeight": 4 },
-	"15-skin-mid-trunk.png": { "span": 0.72, "barkHeight": 4 },
-	"16-skin-on-arm.png": { "girth": 0.85, "along": 0.3 },
-	"20-nest-holes.png": { "span": 0.72, "barkHeight": 7.5 },
+	"04-arms-outside.png": {
+		"span": 1.6,
+		"thin": 0.22,
+		"along": 0.35,
+		"sunAzimuth": -20,
+		"sunRise": 55,
+		"skyShare": 0.3,
+		"daylight": 2.3
+	},
+	"05-arm-underside.png": {
+		"span": 1.2,
+		"thin": 0.22,
+		"along": 0.25,
+		"sunAzimuth": 10,
+		"sunRise": 50,
+		"skyShare": 0.3,
+		"daylight": 2.2
+	},
+	"06-between-arms.png": {
+		"span": 1.4,
+		"thin": 0.22,
+		"along": 0.2,
+		"sunAzimuth": -15,
+		"sunRise": 55,
+		"skyShare": 0.3,
+		"daylight": 2.3
+	},
+	"08-arm-elbow.png": {
+		"span": 1.0,
+		"thin": 0.22,
+		"along": 0.3
+	},
+	"09-rib-pattern.png": {
+		"span": 0.24,
+		"barkHeight": 4
+	},
+	"10-areoles-and-spines.png": {
+		"span": 0.16,
+		"barkHeight": 4
+	},
+	"13-rib-cross-section.png": {
+		"span": 0.5,
+		"barkHeight": 4
+	},
+	"15-skin-mid-trunk.png": {
+		"span": 0.72,
+		"barkHeight": 4
+	},
+	"16-skin-on-arm.png": {
+		"girth": 0.85,
+		"along": 0.3
+	},
+	"20-nest-holes.png": {
+		"span": 0.72,
+		"barkHeight": 7.5,
+		"sunAzimuth": -15,
+		"sunRise": 55,
+		"skyShare": 0.3,
+		"daylight": 2.3
+	},
 	"22-subbranch-studio.png": {
 		"view": "bark-limb",
 		"thin": 0.22,
@@ -16,7 +66,67 @@
 		"along": 0.4,
 		"leaves": null
 	},
-	"23-leaf-cluster-studio.png": { "view": "limb", "span": 0.35, "thin": 0.22, "leaves": null },
-	"26-bark-texture.png": { "span": 0.72, "barkHeight": 4 },
-	"leaf-cluster-turntable.mp4": { "view": "limb", "span": 0.35, "thin": 0.22 }
+	"23-leaf-cluster-studio.png": {
+		"view": "limb",
+		"span": 0.35,
+		"thin": 0.22,
+		"leaves": null
+	},
+	"26-bark-texture.png": {
+		"span": 0.72,
+		"barkHeight": 4
+	},
+	"leaf-cluster-turntable.mp4": {
+		"view": "limb",
+		"span": 0.35,
+		"thin": 0.22
+	},
+	"01-whole-distant.png": {
+		"sunAzimuth": -24,
+		"sunRise": 56,
+		"skyShare": 0.3,
+		"daylight": 2.4
+	},
+	"02-whole-profile.png": {
+		"sunAzimuth": -18,
+		"sunRise": 52,
+		"skyShare": 0.3,
+		"daylight": 2.2
+	},
+	"17-trunk-taper.png": {
+		"sunAzimuth": -24,
+		"sunRise": 56,
+		"skyShare": 0.3,
+		"daylight": 2.3
+	},
+	"03-whole-from-below.png": {
+		"sunAzimuth": 5,
+		"sunRise": 62,
+		"skyShare": 0.34,
+		"daylight": 2.1
+	},
+	"07-arm-junction.png": {
+		"sunAzimuth": -15,
+		"sunRise": 55,
+		"skyShare": 0.3,
+		"daylight": 2.3
+	},
+	"14-base.png": {
+		"sunAzimuth": -24,
+		"sunRise": 56,
+		"skyShare": 0.3,
+		"daylight": 2.3
+	},
+	"19-flowers-on-crown.png": {
+		"sunAzimuth": -15,
+		"sunRise": 60,
+		"skyShare": 0.34,
+		"daylight": 2.2
+	},
+	"subbranch-turntable.mp4": {
+		"view": "bark-limb",
+		"thin": 0.19,
+		"girth": 0.8,
+		"along": 0.4
+	}
 }

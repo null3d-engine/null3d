@@ -304,8 +304,7 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 			light: 1,
 		});
 		arm.push({ at: [px, py, pz], node: previous, radius: armBase });
-		// The arm runs out nearly level to its elbow, then turns up over a short arc, as the studio
-		// photograph shows: a tight U rather than a wide sweep.
+		// The arm runs out nearly level to its elbow, as the studio photograph shows.
 		const runNodes = Math.max(1, Math.ceil(plan.elbow / ARM_NODE));
 		for (let n = 1; n <= runNodes; n++) {
 			px = at[0] + heading[0] * (start + (plan.elbow * n) / runNodes);
@@ -322,15 +321,16 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 			});
 			arm.push({ at: [px, py, pz], node: previous, radius });
 		}
-		// The turn: a quarter circle of the arm's own girth across, from level to upright.
-		const turnRadius = Math.max(0.12, armBase * 1.5);
-		const turnNodes = Math.max(2, Math.ceil((turnRadius * (PI / 2)) / ARM_NODE));
+		// The turn: a quarter circle of a few arm girths across, from level to upright, so the elbow
+		// reads as the photograph's rounded U rather than a corner.
+		const turnRadius = Math.max(0.3, armBase * 2.6);
+		const turnNodes = Math.max(3, Math.ceil((turnRadius * (PI / 2)) / ARM_NODE));
 		const runOut = start + plan.elbow;
 		for (let n = 1; n <= turnNodes; n++) {
 			const t = (n / turnNodes) * (PI / 2);
-			px = at[0] + heading[0] * (runOut + turnRadius * (1 - cos(t)));
-			py = at[1] + turnRadius * (1 - sin(t)) * -1 + turnRadius;
-			pz = at[2] + heading[2] * (runOut + turnRadius * (1 - cos(t)));
+			px = at[0] + heading[0] * (runOut + turnRadius * sin(t));
+			py = at[1] + turnRadius * (1 - cos(t));
+			pz = at[2] + heading[2] * (runOut + turnRadius * sin(t));
 			const radius = armBase + (armTip - armBase) * (0.2 + 0.2 * (n / turnNodes));
 			previous = builder.addNode({
 				x: px,
