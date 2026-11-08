@@ -80,9 +80,11 @@ const REFERENCE_LIGHT: [number, number] | null =
 const MATTE = VIEW === 'silhouette' || QUERY.matte === true;
 /**
  * The level forced at every distance: the query's, or the nearest for a view of the wood alone,
- * which judges the whole branching rather than what a level keeps at its distance.
+ * which judges the whole branching rather than what a level keeps at its distance. A view of the
+ * fruit takes the nearest too: a plant's cones, keys and flowers stand on the grown plant's extras,
+ * and only the nearest level carries them, so a farther level frames leaves where the fruit is.
  */
-const LOD = QUERY.lod ?? (SPEC.woodOnly ? 0 : undefined);
+const LOD = QUERY.lod ?? (SPEC.woodOnly || QUERY.fruit ? 0 : undefined);
 const DEG = Math.PI / 180;
 /** The quaternion that lays a plane, which faces +Z, flat on the ground. */
 const FLAT: [number, number, number, number] = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];

@@ -188,6 +188,18 @@ export async function startDemo({
 			hideWhenQuiet();
 			return;
 		}
+		if (type === 'starting') {
+			// A scene's own start-up work, counted against the stage it runs in. The message keeps the
+			// card quiet until the work ends, so a scene that grows its first plants does not lose the
+			// overlay to the quiet timer while they are still building.
+			const at = data as { done?: unknown; total?: unknown } | undefined;
+			if (typeof at?.done === 'number' && typeof at?.total === 'number') {
+				lastLoadingAt = performance.now();
+				loader.work(at.done, at.total);
+				hideWhenQuiet();
+			}
+			return;
+		}
 		for (const reader of pageReaders) reader(type, data);
 		if (!engine) {
 			if (early.push([type, data]) > MAX_EARLY_MESSAGES) early.shift();
@@ -261,6 +273,12 @@ export interface Loader {
 	stage(stage: StartupStage, progress?: StartupProgress): void;
 	/** Shows the progress that a scene posts while it loads its files. */
 	note(data: unknown): void;
+	/**
+	 * Shows work that a scene does as part of starting itself, such as growing its first plants. The
+	 * card keeps the starting stage's own words and counts this work on the same bar, so a scene's
+	 * first build reads as one start rather than as a second one appearing under it.
+	 */
+	work(done: number, total: number): void;
 	/** Fades the overlay out; the first frame is drawn. */
 	hide(): void;
 	/** Shows the error text in place of the progress; the start failed. */
@@ -311,10 +329,29 @@ export function createLoader(canvas: HTMLCanvasElement): Loader {
 	host.append(overlay);
 	const meter = new LoadMeter();
 	let shown: LoadPhase | undefined;
+	/**
+	 * The share an estimate without a total eases toward. It stops short of a whole bar, which only
+	 * the first frame can earn.
+	 */
+	const ESTIMATE_CEILING = 0.97;
+
 	/** The phase that the engine's start named last, which a finished scene phase falls back to. */
 	let enginePhase: LoadPhase = { key: 'loading', text: 'Loading the engine' };
 	let painted = 0;
 	let hidden = false;
+	/**
+	 * A stage that reports no total, and the share it eases from toward a ceiling it never quite
+	 * reaches, over a time constant. It approaches the ceiling rather than stopping at it, so a
+	 * slow start keeps moving instead of sitting on one number until the frame arrives.
+	 */
+	let estimate: { readonly from: number; readonly tau: number } | undefined;
+	let estimateAt = 0;
+	/** How far a stage without a total has got, from the time it has taken. */
+	const estimatedShare = (): number | undefined => {
+		if (!estimate) return undefined;
+		const eased = 1 - Math.exp(-(performance.now() - estimateAt) / estimate.tau);
+		return estimate.from + (ESTIMATE_CEILING - estimate.from) * eased;
+	};
 	/** The last text that the live region holds, and the tenth of the percentage it names. */
 	let said = 'Loading the engine';
 	let saidTenth = -1;
@@ -324,7 +361,17 @@ export function createLoader(canvas: HTMLCanvasElement): Loader {
 		if (!phase || hidden) return;
 		label.textContent = phase.text;
 		detail.textContent = phase.detail ?? '';
-		const value = phase.value;
+		// The core and the sketch report no total of their own, so their share is estimated from the
+		// time they have taken, against a typical start on the reference machine. It stops short of
+		// its stage's end, which only the engine's next stage can name.
+		const value = phase.value ?? estimatedShare();
+		// A moving estimate needs a frame of its own until it is within a point of its ceiling.
+		if (
+			phase.value === undefined &&
+			estimate !== undefined &&
+			(value ?? 0) < ESTIMATE_CEILING - 0.01
+		)
+			painted = requestAnimationFrame(paint);
 		const whole = value === undefined ? undefined : Math.round(value * 100);
 		percent.textContent = whole === undefined ? '' : `${whole}%`;
 		percent.hidden = whole === undefined;
@@ -356,6 +403,17 @@ export function createLoader(canvas: HTMLCanvasElement): Loader {
 		else setTimeout(remove, 320);
 	};
 	return {
+		work(done, total) {
+			if (hidden || !(total > 0) || done < 0) return;
+			// The scene's own start-up work sits inside the stage that is already running, so the
+			// card keeps its words and its bar counts this work instead of moving on its own. It
+			// stops short of a whole bar, which only the first frame earns.
+			show({
+				key: 'core',
+				text: 'Starting the sketch',
+				value: Math.min(0.99, done / total),
+			});
+		},
 		stage(stage, progress) {
 			if (stage === 'first-frame') {
 				hide();
@@ -363,9 +421,17 @@ export function createLoader(canvas: HTMLCanvasElement): Loader {
 			}
 			let phase: LoadPhase;
 			if (stage === 'memory-wait') phase = { key: stage, text: 'Waiting for the engine memory' };
-			else if (stage === 'core') phase = { key: stage, text: 'Starting the sketch' };
-			else if (stage === 'sketch') phase = { key: stage, text: 'Drawing the first frame' };
-			else {
+			else if (stage === 'core') {
+				phase = { key: stage, text: 'Starting the sketch' };
+				estimate = { from: 0, tau: 2600 };
+				estimateAt = performance.now();
+			} else if (stage === 'sketch') {
+				// The sketch's first frame is the end of starting it, not a stage of its own: the same
+				// line and the same estimate carry through, so the loader does not change its words
+				// while it is still working.
+				phase = { key: 'core', text: 'Starting the sketch' };
+			} else {
+				estimate = undefined;
 				const done = progress?.done ?? 0;
 				const total = progress?.total ?? 0;
 				// A body that arrives larger than its announced length, as a compressed response can,
