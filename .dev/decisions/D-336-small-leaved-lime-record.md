@@ -142,5 +142,7 @@ Rejected:
 - The cut pieces draw their proportions: the branch at 0.91 as wide as it is tall against 1.05, the
   sub-branch at 0.61 against 0.59, and the leaf cluster at 0.67 and 0.69 against 0.70 and 0.50.
 - The basal sprouts of stills 14 and 20 are not drawn. The record has no field for a sprout at the
-  foot, and a stool of stems would draw a multi-stemmed tree where the whole views show one stem.
+  foot. A stool of three stems was grown as a test: it draws a 5 cm plant with three limbs and no
+  crown, so the stool does not give the sprouts either. The still is of a coppiced stool, not of the
+  single-stemmed tree the whole views show.
 
