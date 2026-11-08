@@ -120,13 +120,27 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   join them and was refused, because it fills the crown's fine gaps on the same mask and would take
   the oak's two passing whole views into failure. What remains is an engine fault, not a species
   one.
-- The branch piece's loose groups are the same fault at a cut piece's scale, and the record states
-  them rather than paying for them. At the photograph's own density seven groups stand against one.
-  Each small group is a leaf at a shoot's tip whose nearest wood is 3 to 8.5 pixels away: a
-  millimetre and a half of stalk never reaches the leaf's alpha cutoff, so nothing is drawn between
-  blade and twig. A two-and-a-half millimetre stalk draws two of them joined and is not this
-  species' own size, so the record keeps the thin stalk. The sub-branch draws one group, because its
-  leaves sit close enough to overlap.
+- **The base bark view is a limit of what its figure measures, not of the foot's colour.** The base
+  view's colour is the mean of nine patches of a fifth of the frame each. Counted on the drawing,
+  **half of those patch pixels are sky and ground**, against 39 per cent of the photograph's,
+  because the base camera's stand-off grows with the trunk's radius and this bole is thick. Two
+  zones over the one trunk layer, with the foot tinted 0.78, 0.78 and 0.88, moved the figure's
+  red-green by 3.2 steps while moving its light by 0.6 — the signature of a measure that is mostly
+  not the material. On the patches' darkest pixels, which are the bark, the foot reads 18.2, 3.0 and
+  4.0 against a photograph's 18.2, 2.6 and 6.8: the bark agrees in light and red-green and stands
+  2.8 too blue. A tint that corrects that blue moves the figure the wrong way, so the record keeps
+  one zone and states both sets of figures. The fix belongs where the base camera is framed, not in
+  a species' bark.
+- **A limit of how a shoot's leaf stalk draws, not of this species.** At the photograph's own
+  density the branch piece reads seven groups against one. Labelled by connected area, each small
+  group is one leaf at a shoot's tip, and its nearest plant pixel stands **3 to 8.5 pixels** away.
+  The stalk is not drawn: a millimetre and a half of it falls under one pixel at a cut piece's
+  scale, and the leaf's alpha cutoff drops it whole rather than keeping part of it. A card's stalk
+  avoids this because the shader widens it to the record's least screen width; nothing gives a
+  shoot's leaf stalk the same treatment. The counter-example is in the record: a two-and-a-half
+  millimetre stalk joins two of the seven and is not this species' own size, so the thin stalk
+  stays. The sub-branch draws one group because its leaves sit close enough to overlap. Any species
+  whose cut piece is drawn at photograph scale meets the same limit.
 
 ## Consequences
 

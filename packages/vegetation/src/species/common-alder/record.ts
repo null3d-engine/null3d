@@ -423,8 +423,9 @@ export const record: Species = {
 		},
 	},
 	bark: {
-		// Stills 26 and 15 under the copy-stand lamps: a dark grey-brown, so the measured colour stands
-		// as it is and the tint stays at one.
+		// Stills 26 and 15 under the copy-stand lamps: a dark grey-brown. The trunk's tint lives in the
+		// texture set; the record adds none. A foot zone was tried and reverted: the base view's
+		// figure is measured over patches that are half sky and ground, so no bark tint moves it.
 		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [1, 1, 1] }],
 		young: 0,
 		// Stills 16 and 28: the plates give way to smooth purplish bark with pale orange lenticels on
@@ -441,8 +442,9 @@ export const record: Species = {
 		collar: { swell: 0.42, length: 1.6, ridge: 0.5 },
 		// Still 08: the fork closes on a smooth curve, its arms parting in a wide Y.
 		fork: { bend: 2.6 },
-		// Still 14's foot: a thin green film in the furrows, not a coat over the plates. The close view
-		// reads the base 5 units too green against the photograph at a third more moss than this.
+		// Still 14's foot: a thin green film in the furrows, not a coat over the plates. Measured on the
+		// bark alone, the foot's red-green is within half a step of its photograph's, so the green the
+		// base view reads is the meadow behind the flare rather than this film.
 		moss: { amount: 0.3, up: 1, north: 0, colour: [0.16, 0.2, 0.06] },
 		// Still 15: pale grey-green lichen flecks the crests of the plates on the lower bole.
 		lichen: { amount: 0.15, from: 0.4, to: 0.7, colour: [0.36, 0.38, 0.34] },
