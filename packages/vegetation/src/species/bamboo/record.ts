@@ -61,12 +61,12 @@ export const record: Species = {
 			perNode: { mean: 2, spread: 0.4 },
 			dominant: true,
 			length: [
-				[0, 0.8],
-				[0.5, 1.65],
-				[0.85, 2.3],
-				[1, 1.5],
+				[0, 1],
+				[0.45, 1.7],
+				[0.8, 2.2],
+				[1, 1.4],
 			],
-			angle: 44,
+			angle: 47,
 			orders: 1,
 		},
 		// Still 09: the flattened groove up the internode above a branch.
@@ -103,7 +103,7 @@ export const record: Species = {
 				],
 				leafAngleSpread: 25,
 				droop: 6,
-				phyllotaxis: { kind: 'distichous', flatten: 0.35 },
+				phyllotaxis: { kind: 'distichous', flatten: 0.45 },
 			},
 			{
 				// Still 22: the longer branchlet of an older branch, its leaves after a longer bare
@@ -128,7 +128,7 @@ export const record: Species = {
 				],
 				leafAngleSpread: 26,
 				droop: 9,
-				phyllotaxis: { kind: 'distichous', flatten: 0.35 },
+				phyllotaxis: { kind: 'distichous', flatten: 0.45 },
 			},
 		],
 		cuttingClasses: [
@@ -158,10 +158,10 @@ export const record: Species = {
 				],
 				leafAngleSpread: 26,
 				droop: 9,
-				phyllotaxis: { kind: 'distichous', flatten: 0.35 },
+				phyllotaxis: { kind: 'distichous', flatten: 0.45 },
 			},
 		],
-		phyllotaxis: { kind: 'distichous', flatten: 0.35 },
+		phyllotaxis: { kind: 'distichous', flatten: 0.45 },
 		orders: 2,
 		years: 1,
 		leafYears: 1,
@@ -180,9 +180,11 @@ export const record: Species = {
 			// Stills 01, 05 and 18: the plume is open, with sky between the fans and the branches
 			// showing through it, so only the innermost shoots go.
 			skyPrune: 0.05,
-			tipBias: 0.35,
+			// The reference spreads its sprays along the upper culms, so the shoots stand along each
+			// branch rather than gathering into a tuft at its tip.
+			tipBias: 0.1,
 			lift: 8,
-			skyward: 0.75,
+			skyward: 0.5,
 			rosette: 'fan',
 			scale: { mean: 1, spread: 0.12 },
 			gather: 1,
@@ -228,6 +230,30 @@ export const record: Species = {
 		// Stills 08 and 09: a branch meets the culm in a short, smooth swelling, not a deep crotch.
 		collar: { swell: 0.18, length: 1.2, ridge: 0.25 },
 	},
+	extras: [
+		{
+			// Stills 07, 16 and 19: a young culm's lower nodes carry papery sheaths, which shed as the
+			// culm hardens. The lathe stands round the node as the sheath's flared skirt.
+			kind: 'sheath',
+			at: 'culm-node',
+			share: 0.7,
+			count: 1,
+			seasons: ['summer', 'autumn', 'winter', 'blossom'],
+			shape: {
+				lathe: [
+					[0.1, 0],
+					[0.13, 0.02],
+					[0.15, 0.05],
+					[0.13, 0.1],
+					[0.1, 0.16],
+				],
+				sides: 10,
+			},
+			colour: [0.34, 0.27, 0.16],
+			roughness: [0.85, 0.85],
+			hang: 0,
+		},
+	],
 	seasons: { default: 'summer', deciduous: false, winter: 'evergreen' },
 	wind: {
 		// The reference's breeze bends the culms together and sets the fans swinging.
@@ -252,7 +278,7 @@ export const record: Species = {
 		shadowLevel: 1,
 		budget: {
 			kitBytes: { low: 2_500_000, medium: 2_500_000, high: 3_500_000, ultra: 3_800_000 },
-			variantBytes: { low: 2_000_000, medium: 2_000_000, high: 2_500_000, ultra: 2_800_000 },
+			variantBytes: { low: 2_200_000, medium: 2_200_000, high: 2_700_000, ultra: 2_900_000 },
 			lod0Triangles: 580_000,
 			lod1Triangles: 75_000,
 			lod2Triangles: 19_000,
@@ -265,6 +291,100 @@ export const record: Species = {
 	variants: 6,
 	seedSalt: 1447370378,
 	roundBand,
+	forms: {
+		// Still 19: the spring spear, one thick sheathed culm pushing up through the soil, its sheaths
+		// overlapping up the body and only the newest leaf tips showing at its point. It is the same
+		// culm model grown short and broad, with no branch complement.
+		shoot: {
+			form: 'a spring spear: one thick sheathed culm rising from the soil',
+			size: { height: { mean: 0.5, spread: 0.02 }, dbh: 0.14, aspect: 0.6 },
+			growth: {
+				culms: 1,
+				layout: 'clump',
+				spacing: 0.02,
+				height: { mean: 0.5, spread: 0.02 },
+				diameter: { mean: 0.14, spread: 0.01 },
+				internode: [
+					[0, 0.07],
+					[0.6, 0.05],
+					[1, 0.03],
+				],
+				node: { ridge: 0.004, waxBand: 0.01, sheathScar: 0.003 },
+				branches: { from: 1, perNode: 1, dominant: false, length: 0.05, angle: 45, orders: 1 },
+				sulcus: 0,
+				sheaths: { upTo: 1, length: 0.02 },
+				arch: 0,
+			},
+			envelope: null,
+			shoots: {
+				prototypes: 4,
+				classes: [
+					{
+						name: 'short',
+						vigor: [0, 1],
+						share: 1,
+						years: 1,
+						length: { mean: 0.03, spread: 0.005 },
+						nodes: { mean: 2, spread: 0 },
+						internode: 1,
+						stem: { radius: [0.002, 0.001] },
+						leafScale: 0.4,
+						leafAngle: 40,
+						droop: 0,
+					},
+				],
+				placement: {
+					perMetre: 0,
+					density: 0,
+					shadePrune: 0,
+					skyPrune: 0,
+					tipBias: 0,
+					lift: 0,
+					skyward: 0.5,
+					scale: { mean: 0.5, spread: 0 },
+					gather: 1,
+				},
+			},
+			bark: {
+				zones: [{ layer: 0, by: 'height', from: 0, to: 2, blend: 0, tint: [0.5, 0.42, 0.3] }],
+				young: 0,
+				youngRadius: 0.01,
+				girthScale: 1,
+				displacement: 0.002,
+				collar: { swell: 0.1, length: 1, ridge: 0 },
+			},
+			extras: [
+				{
+					kind: 'sheath',
+					at: 'culm-node',
+					share: 1,
+					count: 1,
+					seasons: ['summer', 'autumn', 'winter', 'blossom'],
+					shape: {
+						lathe: [
+							[0.05, 0],
+							[0.075, 0.02],
+							[0.09, 0.05],
+							[0.075, 0.09],
+							[0.05, 0.13],
+						],
+						sides: 10,
+					},
+					colour: [0.3, 0.23, 0.13],
+					roughness: [0.9, 0.9],
+					hang: 0,
+				},
+			],
+			wind: {
+				stiffness: [
+					[0, 0.98],
+					[1, 0.9],
+				],
+				sway: { frequency: 0.2, amplitude: 0.005 },
+				flutter: { kind: 'blade', amplitude: 0.05, frequency: 2 },
+			},
+		},
+	},
 	cuttings: {
 		// Still 21: a metre of a branch, from its node to its leafy branchlets.
 		branch: { order: 1, length: 0.95 },
