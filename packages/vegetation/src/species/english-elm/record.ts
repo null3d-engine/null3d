@@ -160,7 +160,7 @@ export const record: Species = {
 				share: 0.35,
 				years: 3,
 				length: { mean: 1.15, spread: 0.15 },
-				nodes: { mean: 8, spread: 0.5 },
+				nodes: { mean: 9, spread: 0.5 },
 				internode: RANK,
 				stem: { radius: [0.014, 0.006] },
 				laterals: { mean: 2.4, spread: 0.4 },
@@ -231,7 +231,7 @@ export const record: Species = {
 			shadePrune: 0,
 			// Stills 01, 03 and 05: sky shows through the crown's middle and under it, where its own
 			// leaves leave a shoot under this share of the sky, and the lit outer masses stay.
-			skyPrune: 0.1,
+			skyPrune: 0.45,
 			skyPruneLayer: 1,
 			// Stills 01 and 18: no bare twigs hang outside the foliage.
 			bareTrim: 0.03,
@@ -373,22 +373,22 @@ export const record: Species = {
 		// The cards stand seven tenths larger than the shoots they picture, so a gap between one
 		// shoot's leaves falls on a neighbour's leaves rather than on sky, and the far crown closes
 		// as stills 01 and 18 show it.
-		cardGrow: 1.7,
+		cardGrow: 2.3,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The crowns measure 2.48, 3.71, 6.10 and 10.83 MB at the four tiers; each cap sits just
-			// above its figure.
-			// The largest of three variants measures 16.16, 16.29, 16.46 and 16.66 MB, the two years
-			// of alternate leaves and the dense crown taking most of it; each cap sits just above.
-			// The heaviest variant's first card level draws 67,717, 73,474, 80,588 and 89,376
-			// triangles up the tiers, and its second 29,585, 30,295, 31,321 and 32,419.
-			kitBytes: { low: 2_550_000, medium: 3_800_000, high: 6_200_000, ultra: 11_000_000 },
-			variantBytes: { low: 16_700_000, medium: 16_750_000, high: 16_850_000, ultra: 16_950_000 },
+			// The kit measures 2.48, 3.82, 6.39 and 11.50 MB at the four tiers; each cap sits just above
+			// its figure.
+			// The largest of three variants measures 10.74, 10.87, 11.04 and 11.24 MB, the two years
+			// of alternate leaves taking most of it; each cap sits just above.
+			// The heaviest variant's first card level draws 48,488, 54,251, 61,363 and 70,169
+			// triangles up the tiers, and its second 20,015, 20,725, 21,751 and 22,849.
+			kitBytes: { low: 2_550_000, medium: 3_850_000, high: 6_450_000, ultra: 11_550_000 },
+			variantBytes: { low: 10_750_000, medium: 10_900_000, high: 11_050_000, ultra: 11_250_000 },
 			lod0Triangles: 2_500_000,
-			lod1Triangles: 95_000,
-			lod2Triangles: 33_000,
+			lod1Triangles: 80_000,
+			lod2Triangles: 25_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
 			growMilliseconds: 600,
