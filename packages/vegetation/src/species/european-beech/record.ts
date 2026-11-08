@@ -210,8 +210,9 @@ export const record: Species = {
 				nodes: { mean: 5, spread: 0.5 },
 				internode: PLATE_RUN,
 				// A young shoot's leaves are larger than the crown's, and the photograph's sprig
-				// spans its own breadth with six of them. The ranks turn a little round the stem, so
-				// the spray has depth: a flat one swings its turn's height and width too far.
+				// spans its own breadth with six of them. The ranks turn a little round the stem; the
+				// piece gains 5 mm of depth, not the depth its turn needs, so the spray still reads
+				// flat and the turn's height stays the fault.
 				phyllotaxis: { kind: 'distichous', flatten: 0.7 },
 				leafScale: [
 					[0, 1.35],
