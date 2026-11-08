@@ -52,6 +52,11 @@ import {
 } from './tube';
 import { type BarkScale, barkScale, tilesRound, uSpan } from './uv';
 
+/** The most the ground's own shade takes off a wood vertex's sky, at the plant's foot. */
+const FOOT_SHADE = 0.5;
+/** Metres above the foot over which the ground's shade gives way to the open sky. */
+const FOOT_SHADE_HEIGHT = 2;
+
 /**
  * Metres of pipe radius that `uv1.x` spans from 0 to 1 on wood.
  *
@@ -1875,10 +1880,20 @@ class Mesher {
 				fins.pipe[i] as number,
 				wood.record,
 				(fins.along[i] as number) / length,
-				crownSkyAt(this.crown, x, y, z),
+				this.woodSky(x, y, z),
 			);
 		}
 		for (const index of fins.indices) writer.indices.push(base + index);
+	}
+
+	/**
+	 * A wood vertex's occlusion: the sky share the crown's own leaves leave it, less the shade of the
+	 * ground it stands on. Light reaches the foot of a plant from a smaller part of the sky than the
+	 * crown above, since the ground beside it throws back far less than the open sky does.
+	 */
+	private woodSky(x: number, y: number, z: number): number {
+		const open = Math.min(1, Math.max(0, y / FOOT_SHADE_HEIGHT));
+		return crownSkyAt(this.crown, x, y, z) * (1 - FOOT_SHADE * (1 - open));
 	}
 
 	/** Writes an axis's rings and the strips between them. */
@@ -1903,8 +1918,7 @@ class Mesher {
 					top + (j / sides - 0.5) * span,
 					wood.record,
 					(rings.along[i] as number) / length,
-					crownSkyAt(
-						this.crown,
+					this.woodSky(
 						rings.position[i * 3] as number,
 						rings.position[i * 3 + 1] as number,
 						rings.position[i * 3 + 2] as number,
