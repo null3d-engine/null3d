@@ -28,9 +28,9 @@ The Scots pine at seed 11, variant 0, grows 1 leader, 540 axes and about 6,400 b
 stands 19.14 m tall, and its crown base is at 0.52 of the height. The fitted envelope comes from 32 views of `pine-turntable.mp4`. Its own outlines overlap those
 views by 0.70 at their mean, so it stands as a cap rather than a target.
 
-The reference's twelve rows are measured in `pine-r29`. The whole views give a shape IoU of 0.43
-and 0.43. Their crown-box gap is 0.31 and 0.41 against the photographs' 0.19 and 0.26. Their leaf
-color difference is 6.4 and 11.1. The young form gives a shape IoU of 0.60. The close and bark views
+The reference's twelve rows are measured in `pine-r31`. The whole views give a shape IoU of 0.45
+and 0.47. Their crown-box gap is 0.29 and 0.39 against the photographs' 0.19 and 0.26. Their leaf
+color difference is 6.4 and 11.1. The plant stands 20.5 m tall and 20.1 m wide. The young form gives a shape IoU of 0.60. The close and bark views
 and the rows that fail are listed in the species' review record.
 
 ## Look
@@ -41,6 +41,10 @@ and the rows that fail are listed in the species' review record.
 - **Position in the crown sets each axis.** A bough's length and angle come from its height in the
   crown, and its branches and twigs from their position along it. The lowest boughs run out longest
   and the upper ones shorten, which gives the flat-topped umbrella.
+- **A measured outline is rounded toward its mean.** The hull is as irregular as the views it came
+  from. The grower blends each height's radius half the way to the mean of its azimuths. The
+  narrow sides lift, the widest stays within the reference's own spread, and no view draws a crown
+  half the width of its neighbor.
 - **The envelope caps the wood, not the leaves.** Each axis marches out until its next step would
   leave the outline, and stops on the boundary. The shoot reach is kept clear first, so the needles
   fill the last hands of the outline.
@@ -59,15 +63,17 @@ and the rows that fail are listed in the species' review record.
 
 Grow conifers by the architectural model. One leader carries whorls of boughs at the record's
 spacing. Positional curves give each axis its length and angle, and sag and upturn bend it. The
-envelope caps it, and the pipe model gives it its girth. Bud sites stand on the finest axes. A record
+envelope caps it, the outline is rounded toward its mean, and the pipe model gives it its girth.
+Bud sites stand on the finest axes. A record
 may name the card cell at each tier, from 64 to 256 texels. The Scots pine settles the numbers.
 Rejected: the self-organizing grower for a pine, whose competition fills a dome. It cannot leave the
 long bare bole and the flat separate plates.
 
 ## Consequences
 
-- `grow/architectural.ts` holds the grower. `grow/architectural.test.ts` holds one leader, the
-  chain of every axis to a stem, the same bytes twice, the bud sites and the envelope cap.
+- `grow/architectural.ts` holds the grower. `grow/envelope.ts` holds `smoothedVolume`, and
+  `grow/envelope.test.ts` checks it. `grow/architectural.test.ts` holds one leader and the bud
+  sites. It also checks the chain of every axis to a stem, the same bytes twice and the envelope cap.
 - `lod/card-bake.ts` reads `lod.cardCell`, and `lod/cards.test.ts` checks the finer atlas.
 - The Scots pine's record, envelope, textures and review slot live under its species folder, the
   textures package and `tools/lib/plant-review/slots/`.
