@@ -10,6 +10,16 @@ import type { ImageTest } from '../lib/images.ts';
 /** The repository's root. */
 const ROOT = join(import.meta.dirname, '../..');
 
+/**
+ * The seconds a species' picture takes, over the default: a crown of many fine parts builds its
+ * four panels one after another, and the software GPU needs longer than the default limit for it.
+ */
+const TIMEOUT: Readonly<Record<string, number>> = {
+	// About two thousand pinnae, each a leaf of its own: the software GPU drew three of the four
+	// panels within the default limit and stopped before the last.
+	'tree-fern': 180,
+};
+
 /** The picture test of each species folder. */
 export function plantSpeciesTests(root = ROOT): ImageTest[] {
 	return speciesFolders(root).map(({ id }) => ({
@@ -17,5 +27,6 @@ export function plantSpeciesTests(root = ROOT): ImageTest[] {
 		sketch: `tests/pages/sketches/plant-review-sketch.ts?species=${id}&view=panels`,
 		hold: 1,
 		size: [1024, 1024],
+		...(TIMEOUT[id] !== undefined && { timeoutSeconds: TIMEOUT[id] }),
 	}));
 }
