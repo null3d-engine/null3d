@@ -235,9 +235,9 @@ export const forms: Readonly<Record<string, SpeciesForm>> = {
 		},
 		envelope: {
 			// Still 30's crown, read from its picture: from two thirds of the height, widest about four
-			// fifths of the way up at a third of the height across, and closing at the leader's tip.
+			// fifths of the way up at a quarter of the height across, and closing at the leader's tip.
 			heights: [0.62, 0.68, 0.74, 0.8, 0.86, 0.92, 0.96, 1],
-			radii: [0.07, 0.13, 0.165, 0.17, 0.15, 0.11, 0.06, 0],
+			radii: [0.05, 0.095, 0.12, 0.125, 0.11, 0.08, 0.045, 0],
 			source: {
 				method: 'hand',
 				from: '30-woodland-form-whole.png',
@@ -246,7 +246,7 @@ export const forms: Readonly<Record<string, SpeciesForm>> = {
 			},
 		},
 		// Still 30: the crown's foliage fills its small volume, with the sky its photograph shows through.
-		shoots: { placement: { density: 3.6 } },
+		shoots: { placement: { density: 4.5, shadePrune: 0.05, skyPrune: 0.15 } },
 		// Still 30: no surface roots, on the forest floor's litter.
 		base: { flare: { amount: 0.2, height: 0.3 }, buttress: null, roots: null },
 		roundBand: null,
