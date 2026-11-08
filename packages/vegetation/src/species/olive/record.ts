@@ -39,7 +39,7 @@ export const record: Species = {
 		branching: 1.25,
 		// Stills 01, 02 and 18: the bole stands bare to the crown's underside, which hangs to about a
 		// sixth of the height where the outer limbs droop lowest.
-		floor: 0.16,
+		floor: 0.36,
 		// Stills 05, 07 and 08: the great limbs pass round one another rather than through, and each
 		// turns aside to keep its air. Only wood above a third of the trunk's girth keeps the
 		// clearance, so the crown's fine wood keeps its own layout.
@@ -213,7 +213,7 @@ export const record: Species = {
 			// Stills 01 and 02: the crown's box shows less sky than the photographs, and the curve
 			// above carries leafy twigs along every limb, so the dial sits well above the curve's own
 			// count.
-			density: 2.5,
+			density: 2.3,
 			shadePrune: 0.1,
 			// Stills 01, 03 and 05: sky shows through the crown's middle and under it, where its own
 			// leaves leave a shoot under this share of the sky; the lit outer masses stay.
@@ -370,11 +370,11 @@ export const record: Species = {
 			// The kit measures 1.13, 1.84, 3.26 and 6.33 MB at the four tiers; each cap sits just
 			// above its figure.
 			kitBytes: { low: 1_150_000, medium: 1_900_000, high: 3_300_000, ultra: 6_400_000 },
-			// The largest of seed 11's six variants measures 6.19, 6.23, 6.29 and 6.37 MB.
-			variantBytes: { low: 6_250_000, medium: 6_300_000, high: 6_350_000, ultra: 6_450_000 },
+			// The largest of seed 11's six variants measures 8.01, 8.07, 8.11 and 8.17 MB.
+			variantBytes: { low: 8_100_000, medium: 8_150_000, high: 8_200_000, ultra: 8_250_000 },
 			lod0Triangles: 2_900_000,
-			lod1Triangles: 130_000,
-			lod2Triangles: 15_000,
+			lod1Triangles: 140_000,
+			lod2Triangles: 12_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
 			growMilliseconds: 600,
