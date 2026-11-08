@@ -365,10 +365,18 @@ const CUT_ROWS: CutRows | undefined =
 			? { top: QUERY.top, base: 1 }
 			: undefined;
 
+/** Whether an asset draws any wood at all: a ground plant draws its whole body as merged foliage. */
+function hasWood(asset: PlantAsset): boolean {
+	return asset.levels.some((level) => level.parts.some((part) => part.name === 'wood'));
+}
+
 /** The asset as a view draws it: the wood alone, or one level at every distance. */
 function shaped(asset: PlantAsset, woodOnly: boolean): PlantAsset {
+	// A view of the wood alone has no wood to draw on a ground plant. Its crown, sheaths and blades
+	// are that plant's body, so the view keeps them rather than drawing an empty picture.
+	const bare = woodOnly && hasWood(asset);
 	const keep = (parts: readonly PlantPart[]) =>
-		woodOnly ? parts.filter((part) => part.name === 'wood') : parts;
+		bare ? parts.filter((part) => part.name === 'wood') : parts;
 	const levelAt = (index: 0 | 1 | 2, from: number, source = asset.levels[index]) => ({
 		...source,
 		level: index,
@@ -378,7 +386,7 @@ function shaped(asset: PlantAsset, woodOnly: boolean): PlantAsset {
 	const empty = { parts: [], triangles: 0, bytes: 0 };
 	const lod = LOD;
 	const rows =
-		woodOnly || (lod !== undefined && lod !== 0) ? { ...asset.shoots, count: 0 } : asset.shoots;
+		bare || (lod !== undefined && lod !== 0) ? { ...asset.shoots, count: 0 } : asset.shoots;
 	if (lod === undefined || lod === 3)
 		return {
 			...asset,
