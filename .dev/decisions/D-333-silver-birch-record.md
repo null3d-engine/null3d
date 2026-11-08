@@ -139,6 +139,11 @@ Limits this record states:
 - Still 20's autumn photograph lets 0.098 of its crown box show background. Stills 01 and 02 let
   0.177 and 0.167 show. One grown plant cannot sit inside all three bands, so the record follows the
   summer whole views.
+- Still 03's from-below view lets 0.343 of its frame show background where the record draws 0.190.
+  The sky it shows lies between limbs that leave the bole and hang. The record's crown carries its
+  foliage lower and deeper on the same limbs. Opening it needs a sky prune strong enough to take
+  still 01 past its own band's ceiling, so the record keeps the summer side views and states this
+  one.
 - The crown's color still reads 11 to 15 steps from the photographs where the working band is 3. Its
   leaves are small, so a whole view's crown is mostly leaf edges and shade. The light that each
   photograph's own sky gives does not close the gap. The leaf's optics carry little blue, which the
@@ -147,5 +152,12 @@ Limits this record states:
   light gains a little more at the crown. It also costs the upper swatch 3.8 steps, so that lever is
   a trade and not a fix. The remaining gap belongs to the leaf's size and the crown's mixture of
   shades rather than to one color value.
-- Still 34's lifting strips stand on the bole, but the camera looks straight at them. They read
-  almost flat, where the photograph shows them curling away from the wood.
+- Still 34's lifting strips do not draw at all. `bark.peel` is this record's setting and the engine's
+  first use of it. No strip reaches the render at the record's own rate, nor at fifteen times that
+  rate with wider strips, nor at a curl of 8 degrees. Still 15 draws one piece where its photograph
+  shows nineteen. Still 34 fills its frame with bark cards, one piece of seventy-five.
+- At a whole view each leaf of the crown reads as its own piece. The twigs and the leaf stalks fall
+  under a pixel wide at that range. The review counts 37 pieces in the young form against its
+  photograph's 9, and four in still 01 against 1. A thicker stalk and a thicker twig tip move neither
+  count, and the render's own matte is one piece, so the plant is joined and the measure reads the
+  leaves apart.
