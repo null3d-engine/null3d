@@ -195,7 +195,7 @@
 		"test": "plant-small-leaved-lime",
 		"tier": "compat",
 		"date": "2026-11-08",
-		"reason": "plant-small-leaved-lime's first software-set references: drawn on this Mac with the SwiftShader rasteriser, which the repository's notes record as agreeing with CI's byte for byte."
+		"reason": "plant-small-leaved-lime's software-set references: drawn on this Mac with the SwiftShader rasteriser after the record's last change, which the repository's notes record as agreeing with CI's byte for byte."
 	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -477,7 +477,7 @@
 		"test": "plant-small-leaved-lime",
 		"tier": "webgl2",
 		"date": "2026-11-08",
-		"reason": "plant-small-leaved-lime's first software-set references: drawn on this Mac with the SwiftShader rasteriser, which the repository's notes record as agreeing with CI's byte for byte."
+		"reason": "plant-small-leaved-lime's software-set references: drawn on this Mac with the SwiftShader rasteriser after the record's last change, which the repository's notes record as agreeing with CI's byte for byte."
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -789,7 +789,7 @@
 		"test": "plant-small-leaved-lime",
 		"tier": "webgpu",
 		"date": "2026-11-08",
-		"reason": "plant-small-leaved-lime's first software-set references: drawn on this Mac with the SwiftShader rasteriser, which the repository's notes record as agreeing with CI's byte for byte."
+		"reason": "plant-small-leaved-lime's software-set references: drawn on this Mac with the SwiftShader rasteriser after the record's last change, which the repository's notes record as agreeing with CI's byte for byte."
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
