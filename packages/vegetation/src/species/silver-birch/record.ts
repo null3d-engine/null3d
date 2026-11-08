@@ -202,7 +202,7 @@ export const record: Species = {
 				years: 2,
 				length: { mean: 0.62, spread: 0.08 },
 				nodes: { mean: 12, spread: 0.8 },
-				leafYears: 1,
+				leafYears: 2,
 				internode: ALTERNATE,
 				stem: { radius: [0.007, 0.003] },
 				laterals: 2,
@@ -406,9 +406,10 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The largest of the species and its three forms: 2.49, 4.27, 7.33 and 13.15 MB. The kit holds
-			// the long leafy shoots the fine leaf needs, so it sits close to the tree cap's 14.5 MB.
-			kitBytes: { low: 2_600_000, medium: 4_600_000, high: 7_800_000, ultra: 13_800_000 },
+			// The largest of the species and its three forms: 2.49, 4.37, 7.60 and 13.74 MB. The kit holds
+			// the long leafy shoots the fine leaf needs and the two leafy years of the cutting classes, so
+			// it sits close to the tree cap's 14.5 MB.
+			kitBytes: { low: 2_600_000, medium: 4_600_000, high: 8_000_000, ultra: 14_200_000 },
 			// The largest variant of the species and its forms, the woodland's: 6.94, 6.97, 7.02 and
 			// 7.12 MB.
 			variantBytes: { low: 7_100_000, medium: 7_100_000, high: 7_200_000, ultra: 7_300_000 },
