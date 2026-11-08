@@ -35,15 +35,15 @@ export const record: Species = {
 		blades: { mean: 6, spread: 1 },
 		// Stills 08 and 23: a sedge's leaves leave their shoot in three ranks.
 		ranks: 3,
-		// Still 07: the brown sheaths stand 8 to 12 cm under the lowest blades.
+		// Still 07: the brown sheaths stand about 10 to 13 cm under the lowest blades.
 		sheath: { mean: 0.06, spread: 0.012 },
 		// Still 07: each shoot's sheath bundle is about 1.5 cm across.
 		sheathRadius: 0.008,
 		// Still 02: the youngest blades stand nearly upright and the oldest arch out and over.
 		spread: [
-			[0, 3],
-			[0.5, 18],
-			[1, 32],
+			[0, 2],
+			[0.5, 14],
+			[1, 26],
 		],
 		// Still 11: the innermost young blade is shorter than the outer ones.
 		size: [
@@ -167,7 +167,7 @@ export const record: Species = {
 		shadowLevel: 1,
 		budget: {
 			// Measured at seed 11 over the first four variants: the kit holds 33 to 37 KB, and a
-			// variant 0.93, 1.05, 1.19 and 1.78 MB from Low to Ultra.
+			// variant 1.10, 1.26, 1.44 and 2.21 MB from Low to Ultra.
 			kitBytes: { low: 100_000, medium: 100_000, high: 100_000, ultra: 100_000 },
 			variantBytes: { low: 1_300_000, medium: 1_500_000, high: 1_700_000, ultra: 2_500_000 },
 			lod0Triangles: 90_000,
