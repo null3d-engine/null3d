@@ -10,6 +10,7 @@
 // numbers from the frond and leaf-cluster stills.
 import type { Species } from '../../core/record';
 import { roundBand } from './fit';
+import { forms } from './forms';
 
 /** The date palm's record. */
 export const record: Species = {
@@ -201,6 +202,7 @@ export const record: Species = {
 	variants: 3,
 	seedSalt: 0x0da7e5a1,
 	roundBand,
+	forms,
 	cuttings: {
 		// Still 21: the whole cut frond, spines at its base and leaflets along the rachis.
 		branch: { order: 1, length: 6 },
