@@ -1129,8 +1129,11 @@ export default defineSketch(async (ctx) => {
 							: SUN === 'overhead'
 								? [0.02, -1, 0.01]
 								: [-0.45, -1, -0.35];
+			// The sun takes the photograph's own white balance too, so a picture lit by a warm or a
+			// cool sun can be matched where its fill alone cannot reach.
 			scene.createDirectionalLight({
 				direction,
+				color: tinted('#ffffff', lamp),
 				intensity: sunLight * sunScale,
 				castShadows: true,
 				shadow,
