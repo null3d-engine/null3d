@@ -501,50 +501,35 @@ each range showed where each view draws. The base and the mid-trunk take the foo
 a metre. The limb, at a radius of about a quarter of a metre, takes both the upper height range and
 the thin-wood radius range.
 
-Three zones carry the three tones, measured on 9 November at run `ash-104`:
+Three zones carry the three tones. They were first measured on a diluted figure, then re-tuned once
+the tool's measure was fixed. The final settings, measured at run `ash-121-retune`:
 
 | Zone | Range | Tint | Base | Mid-trunk | Limb |
 | --- | --- | --- | --- | --- | --- |
-| Foot | height 0 to 1.2 m | [1.15, 1.1, 1.12] | 6.26 | | |
-| Bole | height 1.2 to 40 m | [0.83, 0.83, 0.74] | | 0.58 | |
-| Limb | radius 0 to 0.3 m | [1.3, 1.32, 1.25] | | | 2.33 |
+| Foot | height 0 to 1.2 m | [1.2, 1.15, 1] | 2.77 | | |
+| Bole | height 1.2 to 40 m | [0.79, 0.79, 0.66] | | 1.47 | |
+| Limb | radius 0 to 0.3 m | [1.38, 1.4, 1.22] | | | 2.08 |
 
-The mid-trunk and the limb stand inside the band. The base stands at 6.26, a step better than it
-was, because its hue cannot be reached by a factor on the colour. The render's foot reads greener
-and yellower than its photograph by 4.4 and 5.0. The factors that answer the figure, blue at 1.3
-and more, draw the foot a pale lavender. The options that keep the bark's own hue leave the figure
-where it is.
+All three stand inside the band of 3. The base slot also carries a `daylight` of 1.0, which brings
+the foot's lightness onto its photograph's.
 
-The base's tone is also settable from the slot file, which now takes a picture's own white balance as a
-`lamp` and its exposure as `daylight`. The lamp moves the base's figure and cannot keep the bark's
-colour. Measured on 9 November, one value each:
+The measure came first, because it was wrong. A slot's `barkMask` drops every patch pixel as close
+to the picture's corners as the backdrop is. Its first version read the backdrop as one colour: the
+mean of all four corners. A base view lays a stem on sky above the horizon and meadow below, so that
+mean matches neither and the mask dropped nothing. Masked and unmasked both read 5.98.
 
-| Lamp, at the slot's own exposure | Base view |
-| --- | --- |
-| none | 6.26 |
-| `#ffe2ff` | 5.35 |
-| `#ffb0ff` | 4.42 |
-| `#e0b0ff` | 4.89 |
-| `#d0a8ff` | 5.05 |
-| `#ffb0ff` at a `daylight` of 1.2 | 3.25 |
-| `#ffb0ff` at a `daylight` of 1.3 | 2.95 |
-| `#ffb0ff`'s exposure alone, no lamp | 5.98 |
+The shared head now reads each corner on its own and drops a pixel that matches any of them. With
+that the foot's draw stands at Lab 46.9, 0.0, 4.5 against the photograph's 46.0, -1.6, 10.4 at a
+`daylight` of 1.0. The green was the meadow, and the drawn bark is neutral and six steps less yellow
+than its photograph.
 
-The measure itself is the fault, and it took the last test to see it. A slot's `barkMask` drops
-every patch pixel as close to the picture's corners as the backdrop is. It reads the backdrop as one
-colour, the mean of all four corners. On a view with sky above the horizon and ground below, that
-mean matches neither, so the mask drops nothing. The base reads 5.98 with and without it, and its
-reference patch moves by two tenths of a lightness step.
+The tint tuning before the fix moved a diluted number. A lamp sweep on the same view read 5.35,
+4.42, 4.89 and 5.05 against 6.26 for no lamp. The exposures that reached the band drew the foot pale
+lavender. Those figures belong to the old measure and are kept as a record of the search.
 
-Read with the corners split into their two families, the same draw stands at Lab 44.9, 0.0, 4.3.
-Its photograph stands at 44.9, -1.6, 10.8. Both are at a `daylight` of 0.85. The green is the meadow in
-the lower patches. The draw's own bark is neutral: its red-green axis is within 1.6 of the
-photograph's, and it is 6.5 steps less yellow rather than more. So the base's figure is not yet a
-bark measure, and the lamp sweep above moved a diluted number. The tool's corner model needs the two
-backdrops separated before this row's base can be judged.
-
-The lamps still draw the foot a pale lavender at the strengths that move the figure. The exposure
-alone keeps the bark's colour, so the base slot carries `daylight` 1.3 and no lamp.
+Nothing in the shading was the cause. Moss set to zero moved the albedo draw from 5.82 to 5.41, and
+young bark and lichen changed nothing. The base drawn as albedo read 5.82 against the lit 5.98, so
+the light path contributes 0.16 and the moss 0.41. Neither is the yellow the old figure showed.
 
 The reference set disagrees about the bark's colour as much as the render did. The flat texture
 source, still 26, stands 5.9, 6.8 and 7.8 steps from the photographs of the base, the mid-trunk and
