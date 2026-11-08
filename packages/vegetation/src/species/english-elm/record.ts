@@ -20,6 +20,13 @@ import type { Species } from '../../core/record';
 import { aspect, envelope, roundBand } from './fit';
 import { forms } from './forms';
 
+/** Internodes along a cut piece's shoot: a bare foot, then the leaves crowd toward its end. */
+const CROWDED: readonly (readonly [number, number])[] = [
+	[0, 0.55],
+	[0.72, 1],
+	[1, 0.45],
+];
+
 /** Internodes along a shoot: even along its run, the leaves in two rows to a terminal bud. */
 const RANK: readonly (readonly [number, number])[] = [
 	[0, 0.9],
@@ -166,7 +173,7 @@ export const record: Species = {
 				share: 0.35,
 				years: 3,
 				length: { mean: 1.15, spread: 0.15 },
-				nodes: { mean: 9, spread: 0.5 },
+				nodes: { mean: 8, spread: 0.5 },
 				internode: RANK,
 				stem: { radius: [0.014, 0.006] },
 				laterals: { mean: 2.4, spread: 0.4 },
@@ -215,12 +222,12 @@ export const record: Species = {
 				share: 0,
 				years: 2,
 				length: { mean: 0.9, spread: 0.12 },
-				nodes: { mean: 9, spread: 0.5 },
-				internode: RANK,
+				nodes: { mean: 8, spread: 0.5 },
+				internode: CROWDED,
 				// Still 21: the piece's foot stands about a twenty-fifth of its height across.
 				stem: { radius: [0.009, 0.005] },
-				laterals: 2,
-				lateralGap: 0.35,
+				laterals: 3,
+				lateralGap: 0.1,
 				bend: { length: 0.05, angle: 26 },
 				leafScale: [
 					[0, 0.85],
@@ -410,18 +417,18 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit measures 3.35, 4.99, 8.13 and 14.37 MB at the four tiers, the cut shoot's own two
+			// The kit measures 3.35, 4.92, 7.95 and 13.96 MB at the four tiers, the cut shoot's own two
 			// prototypes among them; each cap sits just above its figure.
 			// its figure.
-			// The largest of three variants measures 12.39, 12.51, 12.69 and 12.90 MB, the two years
+			// The largest of three variants measures 13.16, 13.28, 13.46 and 13.67 MB, the two years
 			// of alternate leaves taking most of it; each cap sits just above.
-			// The heaviest variant's first card level draws 54,079, 59,273, 66,968 and 76,783
-			// triangles up the tiers, and its second 22,374, 22,992, 24,008 and 24,817.
-			kitBytes: { low: 3_400_000, medium: 5_000_000, high: 8_150_000, ultra: 14_400_000 },
-			variantBytes: { low: 12_450_000, medium: 12_600_000, high: 12_750_000, ultra: 12_950_000 },
+			// The heaviest variant's first card level draws 56,549, 61,739, 69,438 and 79,245
+			// triangles up the tiers, and its second 23,604, 24,222, 25,238 and 26,047.
+			kitBytes: { low: 3_400_000, medium: 4_950_000, high: 8_000_000, ultra: 14_000_000 },
+			variantBytes: { low: 13_200_000, medium: 13_300_000, high: 13_500_000, ultra: 13_700_000 },
 			lod0Triangles: 2_500_000,
 			lod1Triangles: 80_000,
-			lod2Triangles: 25_500,
+			lod2Triangles: 27_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
 			growMilliseconds: 600,
