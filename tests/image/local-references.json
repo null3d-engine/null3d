@@ -194,8 +194,8 @@
 	"chromium-swiftshader/compat/plant-tree-fern.png": {
 		"test": "plant-tree-fern",
 		"tier": "compat",
-		"date": "2026-11-08",
-		"reason": "CI's artifact download reset on this network; the software rasterisers agree, and a CI drawing replaces this when it can be fetched"
+		"date": "2026-11-09",
+		"reason": "the ported tree fern redrew this set on this Mac's SwiftShader from the branch; CI's own SwiftShader run judges it"
 	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -476,8 +476,8 @@
 	"chromium-swiftshader/webgl2/plant-tree-fern.png": {
 		"test": "plant-tree-fern",
 		"tier": "webgl2",
-		"date": "2026-11-08",
-		"reason": "CI's artifact download reset on this network; the software rasterisers agree, and a CI drawing replaces this when it can be fetched"
+		"date": "2026-11-09",
+		"reason": "the ported tree fern redrew this set on this Mac's SwiftShader from the branch; CI's own SwiftShader run judges it"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -788,8 +788,8 @@
 	"chromium-swiftshader/webgpu/plant-tree-fern.png": {
 		"test": "plant-tree-fern",
 		"tier": "webgpu",
-		"date": "2026-11-08",
-		"reason": "CI's artifact download reset on this network; the software rasterisers agree, and a CI drawing replaces this when it can be fetched"
+		"date": "2026-11-09",
+		"reason": "the ported tree fern redrew this set on this Mac's SwiftShader from the branch; CI's own SwiftShader run judges it"
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
