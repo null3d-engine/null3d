@@ -234,7 +234,9 @@ export const record: Species = {
 				[1, 11],
 			],
 			// The growth's own light drops the shaded shoots: the inner skirt under the crown goes, so
-			// the bole to the fork reads, while the lit outer skirt and rim keep their foliage.
+			// the bole to the fork reads, while the lit outer skirt and rim keep their foliage. The
+			// shoots this line spares stand behind the cards that a far view draws, so it cannot move
+			// a whole view's sky gap: at 0.15 against 0.25, the three gaps moved by two thousandths.
 			shadePrune: 0.25,
 			// Stills 01, 02, 03 and 05: the crown's own leaves shade its middle, so the shoots there
 			// thin and the grey bole and the great limbs read between the foliage masses, while the
