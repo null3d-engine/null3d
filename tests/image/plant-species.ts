@@ -10,6 +10,13 @@ import type { ImageTest } from '../lib/images.ts';
 /** The repository's root. */
 const ROOT = join(import.meta.dirname, '../..');
 
+/**
+ * Seconds a page may take to publish a species' picture where it needs more than the default. The
+ * maple's four panels carry a crown of six variants, which the software rasteriser draws past a
+ * minute.
+ */
+const TIMEOUT_SECONDS: Readonly<Record<string, number>> = { 'norway-maple': 180 };
+
 /** The picture test of each species folder. */
 export function plantSpeciesTests(root = ROOT): ImageTest[] {
 	return speciesFolders(root).map(({ id }) => ({
@@ -17,5 +24,6 @@ export function plantSpeciesTests(root = ROOT): ImageTest[] {
 		sketch: `tests/pages/sketches/plant-review-sketch.ts?species=${id}&view=panels`,
 		hold: 1,
 		size: [1024, 1024],
+		...(TIMEOUT_SECONDS[id] !== undefined && { timeoutSeconds: TIMEOUT_SECONDS[id] }),
 	}));
 }
