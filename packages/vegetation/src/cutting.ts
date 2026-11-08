@@ -352,8 +352,11 @@ export function cutBranch(
 	const chosen = ranked[(cutting.pick ?? 0) % ranked.length] as Candidate;
 	const { axes, buds } = skeleton;
 	const root = chosen.axis;
-	// A piece that keeps a span of one long axis ends there, as a palm's frond piece does.
-	const span = plantHint(record, cutting.part)?.span;
+	// A piece that keeps a span of one long axis starts and ends there, as a palm's frond piece
+	// does: the cut face stands where the span begins.
+	const hint = plantHint(record, cutting.part);
+	const span = hint?.span;
+	const begin = hint?.from ?? 0;
 	const inside = new Uint8Array(axes.count);
 	const depth = depths(skeleton);
 	const order = Array.from({ length: axes.count }, (_, a) => a).sort(
@@ -404,28 +407,39 @@ export function cutBranch(
 		});
 		axisMap[a] = mapped;
 		const first = axes.first[a] as number;
-		if (isRoot) {
-			// The cut face: a node at the junction, as thick as the piece's first node.
-			cutNode = builder.addNode({
-				x: 0,
-				y: 0,
-				z: 0,
-				radius: skeleton.radius[first] as number,
-				parent: -1,
-				axis: mapped,
-				light: skeleton.light[first] as number,
-				age: skeleton.age[first] as number,
-			});
-		}
+		const last = axes.last[a] as number;
 		let travelled = 0;
-		for (let n = first; n <= (axes.last[a] as number); n++) {
-			if (isRoot && span !== undefined) {
-				const here = nodeAt(skeleton, n);
-				const previous = n > first ? nodeAt(skeleton, n - 1) : here;
-				travelled += length3(here[0] - previous[0], here[1] - previous[1], here[2] - previous[2]);
-				if (n > first && travelled > span) break;
+		let opened = false;
+		let previousPoint = nodeAt(skeleton, first);
+		for (let n = first; n <= last; n++) {
+			const here = nodeAt(skeleton, n);
+			if (isRoot) {
+				travelled += length3(
+					here[0] - previousPoint[0],
+					here[1] - previousPoint[1],
+					here[2] - previousPoint[2],
+				);
+				previousPoint = here;
+				if (travelled < begin && n < last) continue;
+				if (span !== undefined && travelled > begin + span && opened) break;
 			}
-			const p = place(nodeAt(skeleton, n));
+			if (isRoot && !opened) {
+				// The cut face: a node where the piece begins, as thick as its first kept node. A
+				// piece cut at its junction keeps that junction at the origin.
+				const face = begin > 0 ? place(here) : ([0, 0, 0] as Vector3);
+				cutNode = builder.addNode({
+					x: face[0],
+					y: face[1],
+					z: face[2],
+					radius: skeleton.radius[n] as number,
+					parent: -1,
+					axis: mapped,
+					light: skeleton.light[n] as number,
+					age: skeleton.age[n] as number,
+				});
+				opened = true;
+			}
+			const p = place(here);
 			const from = skeleton.parent[n] as number;
 			const parentOf = from >= 0 ? (nodeMap[from] as number) : -1;
 			nodeMap[n] = builder.addNode({
@@ -445,7 +459,15 @@ export function cutBranch(
 	for (let b = 0; b < buds.count; b++) {
 		const axis = buds.axis[b] as number;
 		if (inside[axis] !== 1) continue;
-		if ((nodeMap[buds.node[b] as number] as number) < 0) continue;
+		// A piece that starts partway along its axis keeps the axis's own buds, so a palm's frond
+		// piece still draws its leaflets: a bud whose node fell before the cut stands on the cut face.
+		const mappedNode =
+			(nodeMap[buds.node[b] as number] as number) >= 0
+				? (nodeMap[buds.node[b] as number] as number)
+				: axis === root
+					? cutNode
+					: -1;
+		if (mappedNode < 0) continue;
 		const p = place([
 			buds.position[b * 3] as number,
 			buds.position[b * 3 + 1] as number,
@@ -453,7 +475,7 @@ export function cutBranch(
 		]);
 		quatMultiply(q, 0, buds.frame, b * 4, frame);
 		builder.addBud({
-			node: nodeMap[buds.node[b] as number] as number,
+			node: mappedNode,
 			x: p[0],
 			y: p[1],
 			z: p[2],

@@ -1887,6 +1887,11 @@ export interface CutFromPlant {
 	 * a single long axis, such as a palm's frond. Without it the piece keeps the whole axis.
 	 */
 	readonly span?: number;
+	/**
+	 * Metres along the axis where the piece starts, for a piece cut from the middle of one long
+	 * axis rather than its base. The cut face stands there. 0 by default.
+	 */
+	readonly from?: number;
 }
 
 /**
