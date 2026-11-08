@@ -190,9 +190,10 @@ export const record: Species = {
 			bareTrim: 0.02,
 			// Stills 04, 05 and 11: the crown is built of separate rounded clumps, each of them
 			// several shoots gathered on the axis, with a finer tufting within each mass.
-			clump: { spacing: 0.7, depth: 0.5, fine: { spacing: 0.28, depth: 0.35 } },
+			tipBias: 0.55,
+			clump: { spacing: 1.6, depth: 0.55, fine: { spacing: 0.6, depth: 0.35 } },
 			skyward: 0.25,
-			scale: { mean: 1, spread: 0.12 },
+			scale: { mean: 1.15, spread: 0.12 },
 		},
 	},
 	foliage: {
@@ -314,7 +315,7 @@ export const record: Species = {
 		switchPixels: [240, 12, 160],
 		// The clumps stand about a fifth larger than their shoots, so the gaps between one clump's
 		// shoots fall on a neighbour's scales rather than on sky.
-		cardGrow: 2.2,
+		cardGrow: 3.6,
 		// A shoot's own twig is under a pixel at a whole view, so each card draws a short stalk
 		// down to the wood it grows from and joins the clump to its branch.
 		cardStalk: 3,

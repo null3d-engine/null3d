@@ -9,7 +9,9 @@
 	},
 	"03-whole-from-below.png": {
 		"skyShare": 0.2,
-		"daylight": 2.17
+		"daylight": 2.17,
+		"footRow": 0.98,
+		"crownRow": 0.4
 	},
 	"04-crown-outside.png": {
 		"skyShare": 0.22,
@@ -17,7 +19,9 @@
 	},
 	"05-crown-underside.png": {
 		"skyShare": 0.22,
-		"daylight": 2.36
+		"daylight": 2.36,
+		"footRow": 0.99,
+		"crownRow": 0.5
 	},
 	"06-inside-crown.png": {
 		"skyShare": 0.22,
@@ -25,7 +29,9 @@
 	},
 	"17-trunk-taper.png": {
 		"skyShare": 0.19,
-		"daylight": 2.49
+		"daylight": 2.49,
+		"footRow": 0.98,
+		"crownRow": 0.12
 	},
 	"14-bark-base.png": {
 		"distance": 24
