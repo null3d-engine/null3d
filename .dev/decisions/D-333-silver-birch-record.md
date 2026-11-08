@@ -136,6 +136,12 @@ either field. The record sets the fields on the branch's class and on a class of
 pixels against its photograph's 164 by 283, with a shape match of 0.237, where the two ranks take
 its box to 139 by 283 and its shape match to 0.156.
 
+The slot file stands still 22 on the side its photograph took. Two ranks of leaves lie in one plane,
+so a frame that looks across that plane sees them face on and one that looks along it sees them
+edge on. At a turn of 45 degrees the view reads 0.534 open against its photograph's 0.614, up from
+0.483; its box grows from 143 to 171 pixels across against the photograph's 207, and its shape match
+rises from 0.093 to 0.101.
+
 ## Consequences
 
 The species' budgets, measured across the species and its three forms:
