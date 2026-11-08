@@ -197,11 +197,19 @@
 		"date": "2026-11-07",
 		"reason": "the oak's kit took the cut class's forked shapes, so its card atlas grew from five cells a side to six and each card's texel position moved; the crown draws as the review measures it, so the software set is redrawn here while CI redraws it"
 	},
+<<<<<<< HEAD
 	"chromium-swiftshader/compat/plant-small-leaved-lime.png": {
 		"test": "plant-small-leaved-lime",
 		"tier": "compat",
 		"date": "2026-11-08",
 		"reason": "plant-small-leaved-lime's software-set references: drawn on this Mac with the SwiftShader rasteriser after the record's last change, which the repository's notes record as agreeing with CI's byte for byte."
+=======
+	"chromium-swiftshader/compat/plant-scots-pine.png": {
+		"test": "plant-scots-pine",
+		"tier": "compat",
+		"date": "2026-11-08",
+		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
+>>>>>>> origin/pkg/scots-pine
 	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -485,11 +493,19 @@
 		"date": "2026-11-07",
 		"reason": "the oak's kit took the cut class's forked shapes, so its card atlas grew from five cells a side to six and each card's texel position moved; the crown draws as the review measures it, so the software set is redrawn here while CI redraws it"
 	},
+<<<<<<< HEAD
 	"chromium-swiftshader/webgl2/plant-small-leaved-lime.png": {
 		"test": "plant-small-leaved-lime",
 		"tier": "webgl2",
 		"date": "2026-11-08",
 		"reason": "plant-small-leaved-lime's software-set references: drawn on this Mac with the SwiftShader rasteriser after the record's last change, which the repository's notes record as agreeing with CI's byte for byte."
+=======
+	"chromium-swiftshader/webgl2/plant-scots-pine.png": {
+		"test": "plant-scots-pine",
+		"tier": "webgl2",
+		"date": "2026-11-08",
+		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
+>>>>>>> origin/pkg/scots-pine
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -803,11 +819,19 @@
 		"date": "2026-11-07",
 		"reason": "the oak's kit took the cut class's forked shapes, so its card atlas grew from five cells a side to six and each card's texel position moved; the crown draws as the review measures it, so the software set is redrawn here while CI redraws it"
 	},
+<<<<<<< HEAD
 	"chromium-swiftshader/webgpu/plant-small-leaved-lime.png": {
 		"test": "plant-small-leaved-lime",
 		"tier": "webgpu",
 		"date": "2026-11-08",
 		"reason": "plant-small-leaved-lime's software-set references: drawn on this Mac with the SwiftShader rasteriser after the record's last change, which the repository's notes record as agreeing with CI's byte for byte."
+=======
+	"chromium-swiftshader/webgpu/plant-scots-pine.png": {
+		"test": "plant-scots-pine",
+		"tier": "webgpu",
+		"date": "2026-11-08",
+		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
+>>>>>>> origin/pkg/scots-pine
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",

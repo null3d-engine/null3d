@@ -130,6 +130,11 @@ export interface PlantReviewQuery {
 	/** Metres of bark or limb that a bark or limb view's frame height covers. */
 	readonly span?: number;
 	/**
+	 * Metres up the stem at which a bark view stands, where the species' bark changes with height.
+	 * The view's own low stand by default.
+	 */
+	readonly height?: number;
+	/**
 	 * The row share on which a view up the stem puts the stem's first fork: the camera pitches up
 	 * until the fork lands there, no steeper than the view's elevation.
 	 */
@@ -185,6 +190,7 @@ const NUMBER_FIELDS = [
 	'along',
 	'thin',
 	'span',
+	'height',
 	'forkRow',
 	'footRow',
 	'crownRow',
