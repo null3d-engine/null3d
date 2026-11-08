@@ -163,6 +163,20 @@ is the one part of the trunk the render lights like the rest of the wood, while 
 it shaded. That is a core term of the same class as the crown's sky extinction, and it stays a
 stated limit here until the core shades a foot by what stands over and beside it.
 
+### Every bark figure recorded before the mask was measured with the backdrop in it
+
+The nine patches of a close bark view reach past the stem, so on a foot or a limb they count sky and
+ground. The elm's base view held 50.9 per cent backdrop against its photograph's 21.8, and its limb
+36.3 against 34.0. Every bark figure in this record and in the species' rounds before `0cc4c588f`
+therefore carries the backdrop and is superseded: read those pictures again with the slot's
+`barkMask` before quoting any of them.
+
+Masked, the sign of the error reverses. The elm's foot reads 32.3 against its photograph's 40.0,
+where the unmasked mean said 45.0 against 41.4; the oak's base reads 41.5 against 35.2 and its limb
+47.8 against 38.8, where the unmasked means said both were near. The mid trunks, full frames of
+trunk, read the same either way (1.11 and 7.52) and are the control that shows where each bark's own
+colour is read truly.
+
 ### A foot shade and a limb tint, both per record
 
 Two levers were built after ruling the foot a fault rather than a limit.
