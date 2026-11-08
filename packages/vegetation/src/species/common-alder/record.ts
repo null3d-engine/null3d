@@ -449,9 +449,12 @@ export const record: Species = {
 			// Still 19: small woody cones, each about twice as long as wide, hanging in twos to fours
 			// from one short stalk at the twig's end. Their scales stand in rows that open as the seed
 			// leaves.
+			// Still 19 wants more cones on more tips, but they are the costliest part the species carries:
+			// at three tenths of the tips the densest variant measures 28.2 MB against the owner's twenty.
+			// A sixth stands, as the budget allows no more.
 			kind: 'cone',
 			at: 'shoot-tip',
-			share: 0.3,
+			share: 0.16,
 			count: { mean: 3, spread: 1 },
 			tipShare: 0.8,
 			seasons: ['summer', 'autumn', 'winter'],
@@ -489,7 +492,7 @@ export const record: Species = {
 			// fours from the same twig ends, and sway clear of the leaves above them.
 			kind: 'catkin',
 			at: 'shoot-tip',
-			share: 0.25,
+			share: 0.18,
 			count: { mean: 3, spread: 0 },
 			tipShare: 0.9,
 			seasons: ['summer', 'autumn', 'winter'],
