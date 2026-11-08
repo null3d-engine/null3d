@@ -245,7 +245,7 @@ export const files = {
 			],
 			"young": {
 				"tile": [
-					0.12,
+					0.06,
 					0.12
 				],
 				"mean": [
@@ -293,8 +293,8 @@ export const files = {
 			},
 			{
 				"file": "young-normal.ktx2",
-				"sha256": "9e3f22b6ac79b6527751958a96ad46427249f11c4065b04c507720d9c5ec4930",
-				"bytes": 52163
+				"sha256": "d3cde56307a2ef9fe7a9e95ab924d42e8b12a0bca6228f3533c9e0bd2c2cf84a",
+				"bytes": 57129
 			},
 			{
 				"file": "bark-color-half.ktx2",
@@ -313,8 +313,8 @@ export const files = {
 			},
 			{
 				"file": "young-normal-half.ktx2",
-				"sha256": "7e6384aae2b5d249329e45e78b4527efd25f272fcba7beec6e6f990d9ea837c0",
-				"bytes": 12016
+				"sha256": "7145be8832805b1496cda5b28c2dff898c3213cd285aa771ca8773f997f988b0",
+				"bytes": 13288
 			}
 		]
 	},
