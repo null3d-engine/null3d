@@ -71,12 +71,27 @@ same measurement to one radius at each height, 15 numbers. `RadialEnvelope` allo
 state that round form. The three whole views then read 0.225, 0.196 and 0.203
 against 0.177, 0.167 and 0.199, all inside the band.
 
+### What moves a crown's figures, and what does not
+
+A crown picks the shoot prototype each bud draws by the prototype's index in the kit. An edit that
+moves an index therefore moves the whole crown. The cutting classes are safe, because
+`shootPrototypes` plans them after the crown's prototypes and marks them, and `prototypesFor` skips
+a marked one. On this species, variant 0 grew the same rows with no cutting classes, with two and
+with three. Every one gave 6,189 shoots, 1,387.2 square meters of leaf and one first point. The test
+`leaves the crown as it was when a cutting class joins the kit` holds that.
+
+A class's `share` is not safe. `classOf` gives each prototype index a class by the shares, so editing
+them re-plans which class every crown prototype serves. The same measurement moved the long shoot's
+and the spray's shares from 0.35 and 0.35 to 0.40 and 0.30. That moved the first crown shoot and took
+the leaf area to 1,328 square meters. Raising `shoots.prototypes` moves it a little too.
+
 ### The figures the record keeps
 
-- `shoots.classes` carry 7, 16 and 24 nodes at 0.2, 0.4 and 0.6 meters. A leaf stands every two to
-  two and a half centimeters along a strand, as stills 09, 10 and 23 show.
-- `shoots.placement.perMetre` runs 4.2 to 9 shoots a meter of the finest wood. `scale` stands at
-  1.2. A five centimeter leaf then draws at six, inside the species' three to seven.
+- `shoots.classes` carry 7, 20 and 29 nodes at 0.2, 0.4 and 0.6 meters, so a leaf stands every two
+  to three centimeters along a strand. Stills 09, 10 and 23 show it.
+- `shoots.placement.perMetre` runs 4.2 to 9 shoots a meter of the finest wood. `density` stands at
+  3. `scale` is 1.3, so a five centimeter leaf draws at six and a half, inside the species' three to
+  seven.
 - Three `cuttingClasses` of its own, `whip` and `cut`, draw the cut pieces with their leaves spaced,
   as stills 21, 22 and 23 show.
 - `bark.peel` lifts strips of nine centimeters at 220 a square meter on the lower trunk, which still
