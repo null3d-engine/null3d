@@ -69,7 +69,8 @@
 		"eye": 0.3
 	},
 	"19-samaras.png": {
-		"season": "summer"
+		"season": "summer",
+		"distance": 0.09
 	},
 	"20-spring-flowers.png": {
 		"season": "blossom",
