@@ -82,14 +82,14 @@
 	"01-whole-distant.png": {
 		"sunAzimuth": -24,
 		"sunRise": 56,
-		"skyShare": 0.5,
-		"daylight": 1.4
+		"skyShare": 0.32,
+		"daylight": 1.5
 	},
 	"02-whole-profile.png": {
 		"sunAzimuth": -18,
 		"sunRise": 52,
-		"skyShare": 0.5,
-		"daylight": 1.4
+		"skyShare": 0.32,
+		"daylight": 1.5
 	},
 	"17-trunk-taper.png": {
 		"sunAzimuth": -24,
