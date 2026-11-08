@@ -29,7 +29,7 @@ export const record: Species = {
 	// The whole-tree stills stand the bole a fifth of the tree's height across at breast height
 	// (0.21 in 01, 0.19 in 18), where the buttressed taper still widens it. The pipe radius is the
 	// column's own width there, and the base taper adds the flare the photographs show.
-	size: { height: { mean: 58, spread: 4 }, dbh: 8.4, aspect },
+	size: { height: { mean: 58, spread: 4 }, dbh: 7.2, aspect },
 	growth: {
 		model: 'self-organizing',
 		years: 45,
@@ -57,11 +57,11 @@ export const record: Species = {
 				[0, 0.63],
 				[1, 0.63],
 			],
-			dominance: [0.8, 0.5, 0.9],
+			dominance: [0.8, 0.3, 0.9],
 			wander: 3,
 		},
 		// Stills 01 and 18: the crown's outer shell carries its fullest clumps, not a starved rim.
-		light: { apical: 1, lateral: 1, shadow: [6, 0.18, 2], cells: 96, surface: true },
+		light: { apical: 1, lateral: 0.5, shadow: [6, 0.18, 2], cells: 96, surface: true },
 		tropism: {
 			photo: 0.03,
 			// Stills 05 and 07: a bough runs out level and its end lifts, so the low orders take a
@@ -258,7 +258,7 @@ export const record: Species = {
 		flare: { amount: 0.25, height: 1.5 },
 		// The column itself widens strongly through its lowest tenth, as still 17 shows, and is
 		// nearly parallel above that.
-		taper: { amount: 0.5, height: 13 },
+		taper: { amount: 0.8, height: 13 },
 		buttress: {
 			lobes: { mean: 6, spread: 1 },
 			amount: 0.55,
