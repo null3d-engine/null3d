@@ -44,7 +44,7 @@ export const record: Species = {
 		arms: {
 			count: { mean: 4.5, spread: 1 },
 			from: 0.5,
-			elbow: 1.3,
+			elbow: 1.0,
 			radius: 0.19,
 			rise: { mean: 2.8, spread: 0.7 },
 		},
