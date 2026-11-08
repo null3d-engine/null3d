@@ -251,9 +251,9 @@ export const files = {
 					0.3
 				],
 				"mean": [
-					0.20684,
-					0.13069,
-					0.08644
+					0.23118,
+					0.11561,
+					0.06971
 				]
 			}
 		},
@@ -290,8 +290,8 @@ export const files = {
 			},
 			{
 				"file": "young-color.ktx2",
-				"sha256": "f5fb5257b829becae9499e6d260534d59fe5a4da09535535323fef11b85566e1",
-				"bytes": 58496
+				"sha256": "3999a90634624f1aecf1b20ad24b1bbdd26f2379eae2f252f0a6f6aeccc561fb",
+				"bytes": 58404
 			},
 			{
 				"file": "young-normal.ktx2",
@@ -310,8 +310,8 @@ export const files = {
 			},
 			{
 				"file": "young-color-half.ktx2",
-				"sha256": "50de2a51cbe6a4582f5d7a177d4bf2dd2246d97bb02cdf56387fadabdf21f9ec",
-				"bytes": 15593
+				"sha256": "d0f0f9efbdb920617eac8b2b4d500d72d598b219b6b26cdac58015c9535c042b",
+				"bytes": 15485
 			},
 			{
 				"file": "young-normal-half.ktx2",

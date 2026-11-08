@@ -3,11 +3,21 @@
 	"leaf": {
 		"upper": 24,
 		"lower": 25,
-		"alpha": { "floor": 16, "solid": 240 },
+		"alpha": {
+			"floor": 16,
+			"solid": 240
+		},
 		"erode": 1,
 		"margin": 0.02,
-		"delight": { "radius": 0.06, "strength": 1 },
-		"relief": { "veins": 1, "pucker": 0.35, "depth": 0.0008 }
+		"delight": {
+			"radius": 0.06,
+			"strength": 1
+		},
+		"relief": {
+			"veins": 1,
+			"pucker": 0.35,
+			"depth": 0.0008
+		}
 	},
 	"bark": {
 		"zones": [
@@ -25,7 +35,7 @@
 			"tile": [0.3, 0.3],
 			"depth": 0.004,
 			"smooth": 5,
-			"tint": [0.85, 1.3, 1.55]
+			"tint": [0.95, 1.15, 1.25]
 		}
 	}
 }
