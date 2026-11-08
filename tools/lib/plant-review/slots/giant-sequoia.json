@@ -47,14 +47,5 @@
 	"28-young-bark.png": {
 		"thin": 0.03,
 		"along": 0.7
-	},
-	"21-branch-studio.png": {
-		"lamp": "#c7c7cc"
-	},
-	"22-subbranch-studio.png": {
-		"lamp": "#caccd0"
-	},
-	"23-leaf-cluster-studio.png": {
-		"lamp": "#cdd0d4"
 	}
 }
