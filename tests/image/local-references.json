@@ -179,6 +179,12 @@
 		"date": "2026-11-07",
 		"reason": "the branch that adds the species is not pushed yet, so no CI run could draw the software set; it is drawn here on this Mac's SwiftShader with CI=1"
 	},
+	"chromium-swiftshader/compat/plant-english-elm.png": {
+		"test": "plant-english-elm",
+		"tier": "compat",
+		"date": "2026-11-08",
+		"reason": "the branch has not had a CI run yet; the Mac's SwiftShader draws CI's images almost byte for byte, as the image-tests guide records"
+	},
 	"chromium-swiftshader/compat/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
 		"tier": "compat",
@@ -454,6 +460,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-07",
 		"reason": "the branch that adds the species is not pushed yet, so no CI run could draw the software set; it is drawn here on this Mac's SwiftShader with CI=1"
+	},
+	"chromium-swiftshader/webgl2/plant-english-elm.png": {
+		"test": "plant-english-elm",
+		"tier": "webgl2",
+		"date": "2026-11-08",
+		"reason": "the branch has not had a CI run yet; the Mac's SwiftShader draws CI's images almost byte for byte, as the image-tests guide records"
 	},
 	"chromium-swiftshader/webgl2/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
@@ -760,6 +772,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-07",
 		"reason": "the branch that adds the species is not pushed yet, so no CI run could draw the software set; it is drawn here on this Mac's SwiftShader with CI=1"
+	},
+	"chromium-swiftshader/webgpu/plant-english-elm.png": {
+		"test": "plant-english-elm",
+		"tier": "webgpu",
+		"date": "2026-11-08",
+		"reason": "the branch has not had a CI run yet; the Mac's SwiftShader draws CI's images almost byte for byte, as the image-tests guide records"
 	},
 	"chromium-swiftshader/webgpu/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
