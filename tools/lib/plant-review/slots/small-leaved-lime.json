@@ -85,11 +85,13 @@
 	},
 	"21-branch-studio.png": {
 		"skyShare": 0.6,
-		"daylight": 1.0
+		"daylight": 2.17,
+		"lamp": "#b793ff"
 	},
 	"22-subbranch-studio.png": {
 		"skyShare": 0.6,
-		"daylight": 1.0
+		"daylight": 1.52,
+		"lamp": "#dfc2ff"
 	},
 	"23-leaf-cluster-studio.png": {
 		"skyShare": 0.6,
@@ -117,5 +119,9 @@
 	"leaf-cluster-turntable.mp4": {
 		"daylight": 0.87,
 		"lamp": "#ffe3f3"
+	},
+	"branch-turntable.mp4": {
+		"daylight": 1.06,
+		"lamp": "#f3e4ff"
 	}
 }
