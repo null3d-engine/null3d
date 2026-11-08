@@ -172,7 +172,15 @@ run's own figures, in the order of value the lead set.
 | --- | --- | --- | --- |
 | The upper crown is short of its photograph | 1 | crown boxes 240, 306 and 343 pixels tall against 295, 387 and 391 | The largest fault left: the crown's box is a fifth to a quarter short in height at every whole view, and its width is 0.93, 1.08 and 0.97 against 0.80, 0.755 and 0.734 |
 
-The crown's shape was attacked with four levers, and none wins the row without losing another. Steeper branches, 42 to 52 degrees, bring the boxes to 0.85, 0.88 and 0.88 but open the distant view's sky to 0.097 and the profile's to 0.115, past the profile's 0.112 ceiling, while the silhouette's floor of 0.0866 needs the crown denser than the profile's ceiling allows. Tapering the hull's top rows widens the plant to 0.974 of its height and fails all three gaps. A lower crown floor changes nothing, because the fitted envelope's own base is the floor. The crown's roundness sweeps the boxes' spread to 0.93, 1.08 and 0.97, so the row is left to the reviewer with these figures rather than a fourth guess.
+The crown's shape was attacked with six levers, and none wins the row without losing another. Steeper branches, 42 to 52 degrees, bring the boxes to 0.85, 0.88 and 0.88 but open the distant view's sky to 0.097 and the profile's to 0.115, past the profile's 0.112 ceiling, while the silhouette's floor of 0.0866 needs the crown denser than the profile's ceiling allows. Tapering the hull's top rows widens the plant to 0.974 of its height and fails all three gaps. A lower crown floor changes nothing, because the fitted envelope's own base is the floor. A firmer leader, dominance 0.85 and 0.75 with a wander of 4 degrees, is the closest: the boxes fall
+to **0.78, 0.82 and 0.81** against the photographs' 0.80, 0.755 and 0.734, and the plant to 0.793 of
+its height. But that crown's distant view shows 0.107 of sky against a ceiling of 0.099 while its
+silhouette shows 0.084 against a floor of 0.0866: the distant photograph needs a crown denser than
+the rising tree while the silhouette's needs one more open, by twenty-three thousandths in the wrong
+direction, which no single crown can be. A middle leader, dominance 0.80 and 0.68 with a wander of
+6, gives boxes of 0.78, 0.92 and 0.85 and fails two gaps by more. So the record keeps the crown whose
+three gaps are inside and states the box fault: the crown's roundness sweeps the boxes' spread to
+0.93, 1.08 and 0.97.
 | The close cluster carries too few leaves | 5 | five leaves against the reference's eight | A leaf count, not a shape: a blob count of the reference cluster gives eight, so the deficit is three. Its turn is 142 wide against 85 |
 | The young bark's colour | 8 | 15.95 | A colour fault on the young layer, which a per-zone linear tint in the texture source can move without touching the relief. The bark texture's surface is 1.38 and passes |
 | The flower and sprout views frame the wrong subject | 12 | 19 and 20 frame a twig and a branch | Framing, not growth: their slots aim at wood where the photographs show a flower cluster and a stool's sprouts |
