@@ -194,14 +194,14 @@ export const record: Species = {
 		// never draws.
 		cuttingClasses: [
 			{
-				// Still 21: a branch of about a metre divides into thin twigs that arch out and droop,
-				// the leaves alternate along their run and spaced apart.
+				// Still 21: a cut branch divides into thin twigs that arch out and droop, the leaves
+				// alternating along their run and spaced apart.
 				name: 'whip',
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
-				length: { mean: 0.5, spread: 0.08 },
-				nodes: { mean: 6, spread: 0.6 },
+				length: { mean: 0.62, spread: 0.08 },
+				nodes: { mean: 12, spread: 0.8 },
 				leafYears: 1,
 				internode: ALTERNATE,
 				stem: { radius: [0.007, 0.003] },
@@ -216,17 +216,17 @@ export const record: Species = {
 					[0, 72],
 					[1, 54],
 				],
-				droop: 45,
+				droop: 55,
 			},
 			{
-				// Still 22: a sub-branch is about thirty-five centimetres of thin arching twig, its
-				// alternate leaves along it and two-leaved side shoots at its joints.
+				// Still 22: a short thin twig arching over, its alternate leaves along the run and spaced
+				// apart, its leaves on the newest year's wood only.
 				name: 'cut',
 				vigor: [0, 1],
 				share: 0,
-				years: 2,
-				length: { mean: 0.18, spread: 0.03 },
-				nodes: { mean: 4, spread: 0.5 },
+				years: 1,
+				length: { mean: 0.24, spread: 0.03 },
+				nodes: { mean: 8, spread: 0.6 },
 				leafYears: 1,
 				internode: ALTERNATE,
 				stem: { radius: [0.004, 0.0018] },
@@ -247,7 +247,7 @@ export const record: Species = {
 		// Still 19: the weeping twig ends draw as their own piece, with a bud at the tip and leaves
 		// along the strand. The crown carries strands this long, so the class is the crown's own.
 		// Stills 09, 10 and 19: one bud at each node, a fifth of a turn from the last.
-		phyllotaxis: { kind: 'spiral', divergence: 137.5 },
+		phyllotaxis: { kind: 'spiral', divergence: 160 },
 		orders: 3,
 		years: 2,
 		leafYears: 2,
@@ -406,9 +406,9 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The largest of the species and its three forms: 2.48, 4.13, 6.95 and 12.32 MB. The kit holds
-			// the long leafy shoots the fine leaf needs, so it sits close to the tree cap's 7.1 MB.
-			kitBytes: { low: 2_600_000, medium: 4_000_000, high: 6_700_000, ultra: 11_600_000 },
+			// The largest of the species and its three forms: 2.48, 4.13, 6.94 and 12.30 MB. The kit holds
+			// the long leafy shoots the fine leaf needs, so it sits close to the tree cap's 8.2 MB.
+			kitBytes: { low: 2_600_000, medium: 4_600_000, high: 7_400_000, ultra: 12_900_000 },
 			// The largest variant of the species and its forms, the woodland's: 6.94, 6.97, 7.02 and
 			// 7.12 MB.
 			variantBytes: { low: 7_100_000, medium: 7_100_000, high: 7_200_000, ultra: 7_300_000 },
@@ -433,11 +433,11 @@ export const record: Species = {
 	seedSalt: 20221108,
 	cuttings: {
 		// Still 21: a cut branch of about a metre, its twigs arching out and drooping.
-		branch: { shoot: 'whip' },
+		branch: { shoot: 'whip', pick: 1 },
 		// Still 22: the short leafy twig that arches over, which the cutting class draws.
-		subbranch: { shoot: 'cut' },
+		subbranch: { shoot: 'cut', pick: 0 },
 		// Still 23: a twig tip with its alternate leaves and its small bud, spaced along the run.
-		cluster: { shoot: 'cut' },
+		cluster: { shoot: 'cut', pick: 1 },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
 		leaf: { pressed: true },
 	},

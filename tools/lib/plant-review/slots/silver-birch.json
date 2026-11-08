@@ -79,13 +79,5 @@
 	"18-silhouette.png": {
 		"daylight": 2.95,
 		"skyShare": 0.65
-	},
-	"21-branch-studio.png": {
-		"leaves": 7.4,
-		"roll": 90
-	},
-	"22-subbranch-studio.png": {
-		"leaves": 4.5,
-		"roll": 90
 	}
 }
