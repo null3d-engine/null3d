@@ -159,6 +159,15 @@ Rejected:
   4.73 to 4.22. The turns converge in steps because their colour is a mean over 121 frames, so the
   branch needed 16.26, then 8.49, then 6.98; row 10 stays a stated limit on the turns, with the
   light tuned as far as the page allows.
+- The bark close views are read masked, which drops every patch pixel close to the picture's own
+  background before the nine-patch mean. The base keeps its sign: our bark 2.2 dark, 3.6 short of
+  green and 6.1 short of yellow against its photograph. The mid-trunk fills its frame and is the
+  control, matching its photograph at 48.7 light either way. The limb's sign flips: unmasked it read
+  lighter than its photograph, masked it reads 8.8 dark, so the trimmed backdrop was carrying that
+  figure. The young bark stays 9.8.
+- The clean run `lime-full-11` at `70181eaba` has every still inside the three-step colour mark:
+  distant 1.8, profile 1.6, leaf cluster 0.2, flower spray 0.5, branch studio 2.9, sub-branch studio
+  2.4 and leaf-cluster studio 1.6, with the turns at 4.22, 6.82, 6.98 and 7.46.
 - Row 10's colour is now lit per picture. Each still's slot takes a daylight scaled and a lamp set
   from its photograph's mean foliage colour against the render's in linear light. The distant view
   falls from 4.88 to 2.4 steps, the profile from 5.07 to 2.0, the close cluster from 5.67 to 0.8, the
