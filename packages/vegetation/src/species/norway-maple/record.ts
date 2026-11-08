@@ -191,7 +191,10 @@ export const record: Species = {
 		],
 		// Stills 21, 22 and 23: a cut piece is a bare stem that forks once into two leafy shoots, far
 		// sparser than the crown's own twigs. The crown cannot carry shoots this open, so the cuttings
-		// draw this class and the crown never does.
+		// draw these classes and the crown never does. A fifth class of its own for the branch piece
+		// was built and withdrawn: at five classes the kit's low tier measured 4,292,476 bytes against
+		// the owner's 3.5 MB ceiling, so the branch piece keeps this class. Its eight pieces are the
+		// matte's cutoff on sub-pixel leaf stalks, not a class shape.
 		cuttingClasses: [
 			{
 				// Still 22 and the cluster's turn: a current-year shoot of two opposite pairs of leaves
