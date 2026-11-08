@@ -105,11 +105,15 @@ the leaf area to 1,328 square meters. Raising `shoots.prototypes` moves it a lit
 - `slots/silver-birch.json` frames still 20 as the whole autumn tree. The tool's number rule had
   drawn it as a limb in winter. The file also frames still 35 on a catkin twig and still 28 on wood
   inside the young bark's radius. It carries each daylit picture's light too.
-- The fork view now frames a fork over both arms and the twigs they carry, never out into the crown
-  above them, and a slot's `span` asks for a frame height in metres as it does for the limb view.
-  Still 08's sky gap moves from 0.137 to 0.145 against its photograph's 0.720, and its shape match
-  from 0.138 to 0.148. The gap cannot approach that picture's, since it isolates a cut limb on a
-  plain ground where the view draws a fork inside a leafy crown.
+- The fork view frames a fork over both arms and the twigs they carry, and never out into the crown
+  above them. A slot's `span` asks for a frame height in metres, as it does for the limb view. Still
+  08's sky gap moves from 0.137 to 0.145 against its photograph's 0.720, and its shape match from
+  0.138 to 0.148. That gap is the view's subject limit, not a fault of the frame. The photograph is
+  a cut limb on a plain studio ground. The view draws a fork inside a leafy crown, so no camera gives
+  the two the same background share.
+- The oak is the guard a shared view's change is measured against, and here it cannot give a figure.
+  Its own fork photograph yields no outline in the tool, before the change or after. The picture is
+  the guard: it shows both arms inside the frame where the old frame cut them off.
 
 ### A shoot class's own leaf arrangement and facing
 
