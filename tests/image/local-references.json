@@ -179,6 +179,12 @@
 		"date": "2026-11-07",
 		"reason": "the branch that adds the species is not pushed yet, so no CI run could draw the software set; it is drawn here on this Mac's SwiftShader with CI=1"
 	},
+	"chromium-swiftshader/compat/plant-holm-oak.png": {
+		"test": "plant-holm-oak",
+		"tier": "compat",
+		"date": "2026-11-07",
+		"reason": "plant-holm-oak's first software-set reference: CI run 42417946731 failed its browser shards because the reference was the missing file, and its artifact fetch stalled for half an hour without delivering them; the picture was drawn on this Mac with the SwiftShader rasteriser, which the repository's notes record as agreeing with CI's byte for byte."
+	},
 	"chromium-swiftshader/compat/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
 		"tier": "compat",
@@ -448,6 +454,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-07",
 		"reason": "the branch that adds the species is not pushed yet, so no CI run could draw the software set; it is drawn here on this Mac's SwiftShader with CI=1"
+	},
+	"chromium-swiftshader/webgl2/plant-holm-oak.png": {
+		"test": "plant-holm-oak",
+		"tier": "webgl2",
+		"date": "2026-11-07",
+		"reason": "plant-holm-oak's first software-set reference: CI run 42417946731 failed its browser shards because the reference was the missing file, and its artifact fetch stalled for half an hour without delivering them; the picture was drawn on this Mac with the SwiftShader rasteriser, which the repository's notes record as agreeing with CI's byte for byte."
 	},
 	"chromium-swiftshader/webgl2/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -748,6 +760,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-07",
 		"reason": "the branch that adds the species is not pushed yet, so no CI run could draw the software set; it is drawn here on this Mac's SwiftShader with CI=1"
+	},
+	"chromium-swiftshader/webgpu/plant-holm-oak.png": {
+		"test": "plant-holm-oak",
+		"tier": "webgpu",
+		"date": "2026-11-07",
+		"reason": "plant-holm-oak's first software-set reference: CI run 42417946731 failed its browser shards because the reference was the missing file, and its artifact fetch stalled for half an hour without delivering them; the picture was drawn on this Mac with the SwiftShader rasteriser, which the repository's notes record as agreeing with CI's byte for byte."
 	},
 	"chromium-swiftshader/webgpu/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
