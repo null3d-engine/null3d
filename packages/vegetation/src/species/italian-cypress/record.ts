@@ -303,7 +303,10 @@ export const record: Species = {
 	roundBand,
 	// Stills 21 to 23: the studio pieces cut from the plant and the kit.
 	cuttings: {
-		// Still 21: a metre bough with its sprays and cones.
+		// Stills 09 and 21: a metre bough clothed along its whole length. A cutting kit places three
+		// times the crown's shoots on the piece, so it carries the density its studio photograph
+		// shows without spending the crown's card-level room.
+		density: 3,
 		branch: { order: 1, length: 1 },
 		// Still 22: the 35 cm spray, drawn by the kit's longer shoot.
 		subbranch: { shoot: 'spray', pick: 0 },
