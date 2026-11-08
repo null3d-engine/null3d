@@ -293,7 +293,13 @@ export const record: Species = {
 	bark: {
 		// Stills 15 and 26 under the copy-stand lamps: a warm grey, so the measured colour stands as it
 		// is and the tint stays at one.
-		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [1, 1, 1] }],
+		zones: [
+			// The bole, measured under the copy-stand lamps with the tint at one.
+			{ layer: 0, by: 'height', from: 0, to: 3.9, blend: 0.6, tint: [1, 1, 1] },
+			// Still 16: a limb's bark reads far lighter and greener than the bole's, and one tint
+			// cannot serve both, so the limbs above the crown's base take their own.
+			{ layer: 0, by: 'height', from: 3.9, to: 40, blend: 1.2, tint: [1.45, 1.35, 1.25] },
+		],
 		young: 0,
 		// Still 28: the smooth green and red-brown bark, with pale lenticels, holds on the young wood,
 		// which the close view reads out to about ten centimetres across; thicker wood shows the
@@ -306,15 +312,15 @@ export const record: Species = {
 			[1, 1],
 		],
 		// Still 15: the fissures are shallow, long and irregular, between flat ridges.
-		displacement: 0.03,
+		displacement: 0.022,
 		// Still 07: a limb meets the bole in a short, tight collar.
 		collar: { swell: 0.35, length: 1.5, ridge: 0.4 },
 		// Still 08: the fork closes in a slight swelling, its arms parting smoothly.
 		fork: { bend: 2.5, knot: 0.25 },
 		// Still 14: a thin green film of moss over the lower buttresses, reaching about a metre up.
-		moss: { amount: 0.6, up: 1, north: 0, colour: [0.14, 0.2, 0.05] },
+		moss: { amount: 0.8, up: 1.2, north: 0, colour: [0.14, 0.2, 0.05] },
 		// Still 15: pale grey-green lichen flecks the ridges of the lower bole.
-		lichen: { amount: 0.25, from: 0.1, to: 0.6, colour: [0.4, 0.42, 0.36] },
+		lichen: { amount: 0.35, from: 0.02, to: 0.15, colour: [0.4, 0.42, 0.36] },
 	},
 	base: {
 		// Still 14: the foot flares to about 1.25 times the bole half a metre up, on a few soft

@@ -113,7 +113,8 @@
 		"thin": 0.006,
 		"along": 0.75,
 		"span": 0.012,
-		"barkMask": true
+		"barkMask": true,
+		"daylight": 0.7
 	},
 	"11-leaf-cluster.png": {
 		"daylight": 0.758,
