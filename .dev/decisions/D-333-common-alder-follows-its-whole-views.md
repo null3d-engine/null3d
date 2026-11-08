@@ -79,4 +79,5 @@ who knows the species would take `18`, `02` and `30` for one tree and `01` for a
 - `packages/vegetation/src/species/common-alder/record.ts` holds the envelope, the shoot classes and
   the budget, each figure beside the still it comes from.
 - `tools/lib/plant-review/slots/common-alder.json` holds each photograph's own light and framing.
-- The species' densest variant measures 19.4 MB at the top tier, under the owner's twenty.
+- The species' densest variant measures 18.5, 18.6, 18.7 and 18.8 MB from the low tier up, under the
+owner's twenty; its kit 2.44, 3.11, 4.33 and 6.80 MB under 3.4, 5, 7.1 and 13.
