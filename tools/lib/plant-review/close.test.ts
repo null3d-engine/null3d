@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import type { ShootRows } from '../../../packages/vegetation/src/asset.ts';
 import {
 	AXIS_LIMB,
+	AXIS_ROOT,
 	AXIS_STEM,
 	type MacroSkeleton,
 	SkeletonBuilder,
@@ -187,6 +188,23 @@ describe('the view up the stem', () => {
 		);
 		expect(near.subject.warning).toContain("crown's row");
 		expect(Math.hypot(near.position[0], near.position[2])).toBeLessThan(5);
+	});
+
+	test("stands low at a stemless plant's rim and looks up through its leaves", () => {
+		const b = new SkeletonBuilder();
+		const crown = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_ROOT });
+		const foot = b.addNode({ x: 0, y: 0, z: 0, radius: 0.11, parent: -1, axis: crown });
+		const top = b.addNode({ x: 0, y: 0.03, z: 0, radius: 0.11, parent: foot, axis: crown });
+		const shoot = b.addAxis({ parent: crown, parentNode: top, order: 1, kind: AXIS_LIMB });
+		run(b, shoot, top, [0.2, 0, 0], [0.2, 0.28, 0], 6, 0.02, 0.5);
+		const skeleton = b.finish(1);
+		const view = belowView({ skeleton, shoots: NO_ROWS, prototypes: [] }, 0, lens, {
+			elevation: 70,
+		});
+		expect(view.position[1]).toBeLessThan(0.6);
+		expect(Math.hypot(view.position[0], view.position[2])).toBeGreaterThan(0.5);
+		expect(view.subject.kind).toBe('the plant from its foot');
+		expect(view.subject.pitch).toBe(70);
 	});
 
 	test("stands as far from the stem's axis as the photograph, in stem radii", () => {
