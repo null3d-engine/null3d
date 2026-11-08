@@ -138,12 +138,12 @@ export const record: Species = {
 	wind: {
 		// The trunk stands rigid; the fronds swing from their stipes.
 		stiffness: [
-			[0, 1],
-			[0.45, 0.5],
-			[1, 0.18],
+			[0, 0.95],
+			[0.4, 0.4],
+			[1, 0.1],
 		],
-		sway: { frequency: 0.35, amplitude: 0.05 },
-		flutter: { kind: 'leaflet', amplitude: 0.25, frequency: 2.5 },
+		sway: { frequency: 0.45, amplitude: 0.12 },
+		flutter: { kind: 'leaflet', amplitude: 0.45, frequency: 2.2 },
 	},
 	lod: {
 		nearFoliage: 'merged',
