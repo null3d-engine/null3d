@@ -1875,7 +1875,8 @@ export interface CuttingHints {
 	/**
 	 * The shoots a cutting kit places over the crown's own, from 0.25 to 8, where a piece cut for
 	 * close review carries a denser covering than the crown can afford. The crown's kit is unchanged:
-	 * the piece is drawn at the nearest level alone, so its kit pays for no card levels.
+	 * the piece is drawn at the nearest level alone, so its kit pays for no card levels. A piece's
+	 * own hint may give a density of its own in place of this one.
 	 */
 	readonly density?: number;
 	/**
@@ -1916,6 +1917,12 @@ export interface CutFromPlant {
 	readonly order: number;
 	/** Metres of wood from the cut to the farthest tip. */
 	readonly length: number;
+	/**
+	 * The shoots this piece places over the crown's own, from 0.25 to 8: a density of its own, where
+	 * the piece covers more or less than the species' `cuttings.density`, which applies where it
+	 * names none.
+	 */
+	readonly density?: number;
 }
 
 /**
@@ -1932,6 +1939,12 @@ export interface CutFromShoots {
 	 * class and still be different pieces, as a sub-branch and a leaf cluster are.
 	 */
 	readonly pick?: number;
+	/**
+	 * The shoots this piece places over the crown's own, from 0.25 to 8: a density of its own, where
+	 * the piece covers more or less than the species' `cuttings.density`, which applies where it
+	 * names none.
+	 */
+	readonly density?: number;
 }
 
 /**

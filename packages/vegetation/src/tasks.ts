@@ -64,7 +64,7 @@ export function buildKit(source: KitSource, options: PageKitOptions = {}): Promi
 	const manifest = source.textures.manifest;
 	// The key holds the record the kit grows from, so each form keeps a kit of its own.
 	const record = formRecord(source.record, kitOptions.form);
-	const key = `kit:${kitKey(record, manifest, kitOptions.detail ?? 'high', kitOptions.cutting === true)}${standIns(kitOptions)}`;
+	const key = `kit:${kitKey(record, manifest, kitOptions.detail ?? 'high', kitOptions.cutting ?? false)}${standIns(kitOptions)}`;
 	return cachedResult(key, visit, cache, () =>
 		runStage({
 			stage: 'kit',

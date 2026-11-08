@@ -306,14 +306,15 @@ export const record: Species = {
 	roundBand,
 	// Stills 21 to 23: the studio pieces cut from the plant and the kit.
 	cuttings: {
-		// Stills 09 and 21: a metre bough clothed along its whole length. A cutting kit places six
-		// times the crown's shoots on the piece, so it carries the density its studio photograph
-		// shows without spending the crown's card-level room.
-		density: 6,
-		branch: { order: 1, length: 1 },
-		// Still 22: the 35 cm spray, drawn by the kit's longer shoot.
+		// Still 22: the 35 cm spray, drawn by the kit's longer shoot and at the record's own
+		// threefold covering.
+		density: 3,
+		// Stills 09 and 21: a metre bough clothed along its whole length, at twice the record's
+		// covering, because its photograph fills the frame where the spray's leaves it airy.
+		branch: { order: 1, length: 1, density: 6 },
 		subbranch: { shoot: 'spray', pick: 0 },
-		// Still 23: the tip of one shoot with its cords.
+		// Still 23 and the close spray stills: one shoot tip with its cords. A piece taken from a
+		// shoot prototype carries the prototype's own covering, so no placement density can thin it.
 		cluster: { shoot: 'spray', pick: 1 },
 	},
 	forms,

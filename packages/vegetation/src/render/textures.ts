@@ -10,6 +10,7 @@ import type { PlantByteCache } from '../core/cache';
 import type { SpeciesModule } from '../core/record';
 import type { SpeciesTextureFiles, TextureSet } from '../core/textures';
 import type { Detail } from '../core/types';
+import type { CuttingPart } from '../cutting';
 import { buildKit } from '../tasks';
 import { VARIANT_RECORDS } from '../wind/records';
 import { RECORDS_WIDTH, recordsRows, writeSteadyWind, writeWindRecords } from './records';
@@ -87,7 +88,7 @@ export interface PrepareOptions extends CoarsenessOptions {
 	 * Build a cutting kit: the classes its cut pieces draw and no card levels, so a piece that is
 	 * only ever drawn close up does not pay for the crown's cards or for the classes it never uses.
 	 */
-	readonly cutting?: boolean;
+	readonly cutting?: boolean | CuttingPart;
 }
 
 /** Slots in a species' near table: the copies that may draw real shoots at once. */
@@ -300,7 +301,7 @@ export async function prepareSpecies(
 			...(options?.placeholders === 'missing' && { placeholders: 'missing' as const }),
 			...(options?.form !== undefined && { form: options.form }),
 			...(options?.cache && { cache: options.cache }),
-			...(options?.cutting && { cutting: true }),
+			...(options?.cutting && { cutting: options.cutting }),
 		}),
 	]);
 	const textures = kitTextures(ctx, kit, set, loaded);

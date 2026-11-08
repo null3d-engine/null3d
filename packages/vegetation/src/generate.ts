@@ -50,6 +50,7 @@ import { loadSpeciesHooks, speciesHooks } from './core/registry';
 import type { TextureManifest } from './core/textures';
 import { type Curve, DETAILS, type Detail, type Season, type Vec3 } from './core/types';
 import { lightCrown } from './crown/visibility';
+import type { CuttingPart } from './cutting';
 import {
 	type CuttingOptions,
 	clusterRow,
@@ -118,9 +119,10 @@ export interface KitOptions {
 	/**
 	 * Build a cutting kit: the classes its cut pieces draw and no card levels or crown classes. A
 	 * cut piece is drawn only at the nearest level, so its kit never pays for the cards or for the
-	 * classes the crown alone uses.
+	 * classes the crown alone uses. The part names the piece the kit is built for, so a hint's own
+	 * shoot density applies to it; a bare `true` takes the species' own.
 	 */
-	readonly cutting?: boolean;
+	readonly cutting?: boolean | CuttingPart;
 }
 
 /**
@@ -213,8 +215,10 @@ function scaledCurve(curve: Curve, factor: number): Curve {
  * the crown's. A piece is drawn at the nearest level alone, so its kit pays for no cards, and a
  * covering denser than the crown can afford costs the piece's own kit rather than the crown's.
  */
-function cuttingRecord(record: Species): Species {
-	const share = record.cuttings?.density;
+function cuttingRecord(record: Species, part?: CuttingPart): Species {
+	const hints = record.cuttings;
+	const hinted = part !== undefined && part !== 'leaf' ? hints?.[part]?.density : undefined;
+	const share = hinted ?? hints?.density;
 	const shoots = record.shoots;
 	if (share === undefined || !shoots) return record;
 	const factor = Math.min(8, Math.max(0.25, share));
@@ -327,10 +331,10 @@ export function kitKey(
 	record: Species,
 	manifest: TextureManifest,
 	detail: Detail,
-	cutting = false,
+	cutting: boolean | CuttingPart = false,
 ): string {
 	return hashText(
-		`${GENERATOR_VERSION}|${JSON.stringify(record)}|${JSON.stringify(manifest)}|${detail}${cutting ? ':cutting' : ''}`,
+		`${GENERATOR_VERSION}|${JSON.stringify(record)}|${JSON.stringify(manifest)}|${detail}${cutting ? `:cutting${typeof cutting === 'string' ? `:${cutting}` : ''}` : ''}`,
 	);
 }
 
@@ -367,8 +371,10 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 	const manifest = source.textures.manifest;
 	const detail = options.detail ?? 'high';
 	const placeholders = options.placeholders ?? false;
-	const cutting = options.cutting === true;
-	const record = cutting ? cuttingRecord(base) : base;
+	const cutting = options.cutting ?? false;
+	const record = cutting
+		? cuttingRecord(base, typeof cutting === 'string' ? cutting : undefined)
+		: base;
 	const box = speciesBox(record);
 	const builder = foliage(record.foliage.kind);
 	const leavesByTier = DETAILS.map((tier) =>
@@ -387,7 +393,7 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 	if (record.shoots) {
 		const uncarded = stage(
 			placeholders,
-			() => shootPrototypes(record, manifest, leavesByTier, cutting),
+			() => shootPrototypes(record, manifest, leavesByTier, cutting !== false),
 			() => placeholderPrototypes(record, leavesByTier),
 		);
 		// A cutting kit holds no card levels: its pieces are drawn at the nearest level alone.
