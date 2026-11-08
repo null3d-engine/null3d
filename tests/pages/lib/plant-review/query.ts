@@ -91,6 +91,8 @@ export interface PlantReviewQuery {
 	readonly pick?: number;
 	/** The cutting's length in metres. */
 	readonly cut?: number;
+	/** Metres above the ground where a mid-trunk bark view stands, where the species' trunk is tall. */
+	readonly barkHeight?: number;
 	/** Whether the page posts its measures of the plant beside the frame. */
 	readonly measure?: boolean;
 	/** Whether the page draws a 1 m scale bar beside the view's target. */
@@ -176,6 +178,7 @@ const NUMBER_FIELDS = [
 	'time',
 	'pick',
 	'cut',
+	'barkHeight',
 	'horizon',
 	'fill',
 	'targetY',

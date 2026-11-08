@@ -42,8 +42,8 @@ export const record: Species = {
 		// pinched junction; each runs out nearly level, bends at an elbow and rises parallel to the
 		// stem to a tip below its top.
 		arms: {
-			count: { mean: 5, spread: 1 },
-			from: 0.45,
+			count: { mean: 4.5, spread: 1 },
+			from: 0.44,
 			elbow: 1.3,
 			radius: 0.22,
 			rise: { mean: 3.2, spread: 0.4 },
@@ -220,7 +220,7 @@ export const record: Species = {
 	roundBand,
 	cuttings: {
 		// Still 21: the whole arm, from the pinched junction through its run and elbow to upright.
-		branch: { order: 1, length: 3.4 },
+		branch: { order: 1, length: 4.8 },
 		// Still 22: a short section of stem, showing the ribs and the areole rows.
 		subbranch: { order: 1, length: 0.35 },
 	},
