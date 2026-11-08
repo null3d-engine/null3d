@@ -72,6 +72,17 @@ export function standCamera(framing: ScreenFraming, height: number): StandCamera
 			const forward = height / spread;
 			const eye = -forward * Math.tan(baseRay);
 			if (eye >= LOWEST_EYE) return { distance: forward / along, height: eye, pitch, yaw };
+			// A plant whose foot runs off the frame's bottom asks for a camera under the ground. It
+			// stands at its least height instead, and the top row then sets the distance.
+			const rise = Math.tan(topRay);
+			if (rise > 1e-6 && height > LOWEST_EYE)
+				return {
+					distance: (height - LOWEST_EYE) / rise / along,
+					height: LOWEST_EYE,
+					pitch,
+					yaw,
+					warning: 'the base row sits below the frame, so the camera stands at its least height',
+				};
 		}
 	}
 	const eye = Math.max(LOWEST_EYE, framing.eye ?? 1.6);
