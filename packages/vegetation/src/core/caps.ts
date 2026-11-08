@@ -64,7 +64,10 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		// tier rather than make the crown give up a prototype for it. The beech's own cluster cutting
 		// then added a second class, which takes the low tier to 3.29: the cap rises to 3.4 so the
 		// species can keep the crown it won rather than give up a prototype for the cutting.
-		kitBytes: { low: 3.4 * MB, medium: 4 * MB, high: 7.1 * MB, ultra: 13 * MB },
+		// The silver birch's crown needs six shoot prototypes and a cutting class of its own, and
+		// its medium kit sits on the old four-megabyte ceiling: the owner raised it so the species
+		// keeps the crown it won rather than give up a prototype for it.
+		kitBytes: { low: 3.4 * MB, medium: 5 * MB, high: 7.1 * MB, ultra: 13 * MB },
 		// The holm oak's densest variant, with a little room above it: 16.94, 17.05, 17.26 and
 		// 17.61 MB. An evergreen carries many small leaves on dense shoots, and the clearance packs
 		// the limbs into fuller crowns, so the evergreen rather than the oak now sets this cap. The

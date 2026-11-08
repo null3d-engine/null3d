@@ -3,7 +3,8 @@
 // species' outputs need the private references; the textures package's own test holds each
 // committed folder to its manifest.
 import { describe, expect, it } from 'bun:test';
-import { makeTile, seamRatio } from './bark.ts';
+import { barkLayer, makeTile, seamRatio } from './bark.ts';
+import type { BarkLayerConfig } from './config.ts';
 import { signedArea, simplifyTo, traceLoops } from './contour.ts';
 import { encodeKtx2 } from './encode.ts';
 import { type Picture, picture } from './image.ts';
@@ -148,6 +149,59 @@ describe('the bark tile', () => {
 		const seams = seamRatio(tile);
 		expect(seams.across).toBeLessThan(1.5);
 		expect(seams.down).toBeLessThan(1.5);
+	});
+});
+
+describe('the tint of a bark layer', () => {
+	const config: BarkLayerConfig = {
+		name: 'young',
+		slot: 28,
+		tile: [0.2, 0.2],
+		depth: 0.002,
+		normal: 1,
+		smooth: 0,
+		delight: { radius: 0.2, strength: 1 },
+	};
+	/** A picture with grain in both directions and a little colour in it. */
+	const source = (() => {
+		const p = picture(48, 48);
+		for (let y = 0; y < 48; y++)
+			for (let x = 0; x < 48; x++) {
+				const i = y * 48 + x;
+				p.r[i] = 0.2 + 0.3 * (((x * 7 + y * 3) % 19) / 19);
+				p.g[i] = 0.25 + 0.25 * (((x * 5 + y * 11) % 17) / 17);
+				p.b[i] = 0.1 + 0.2 * (((x * 13 + y * 2) % 23) / 23);
+				p.a[i] = 1;
+			}
+		return p;
+	})();
+
+	it('scales the colour alone: the relief, its mapping and the seams do not move', () => {
+		const plain = barkLayer(source, config, 32);
+		const tinted = barkLayer(source, { ...config, tint: [0.5, 1, 2] }, 32);
+		expect(tinted.full.normal).toEqual(plain.full.normal);
+		expect(tinted.half.normal).toEqual(plain.half.normal);
+		expect(tinted.height).toEqual(plain.height);
+		expect(tinted.seams).toEqual(plain.seams);
+		// The green channel keeps its scale of one, so its colour bytes are the plain layer's.
+		const green = (bytes: Uint8Array) =>
+			Array.from({ length: bytes.length / 4 }, (_, i) => bytes[i * 4 + 1] as number);
+		expect(green(tinted.full.colour)).toEqual(green(plain.full.colour));
+		// The red is halved in linear colour, so it never rises above the plain layer's red.
+		const red = (bytes: Uint8Array) =>
+			Array.from({ length: bytes.length / 4 }, (_, i) => bytes[i * 4] as number);
+		expect(Math.max(...red(tinted.full.colour))).toBeLessThanOrEqual(
+			Math.max(...red(plain.full.colour)),
+		);
+		// The manifest records the tinted tile's mean.
+		expect(tinted.mean[0]).toBeCloseTo((plain.mean[0] as number) * 0.5, 4);
+		expect(tinted.mean[2]).toBeCloseTo(Math.min(1, (plain.mean[2] as number) * 2), 4);
+	});
+
+	it('bakes as the layer always has when it gives no tint', () => {
+		expect(barkLayer(source, { ...config, tint: [1, 1, 1] }, 32)).toEqual(
+			barkLayer(source, config, 32),
+		);
 	});
 });
 

@@ -8,7 +8,7 @@ export const files = {
 		"species": "common-ash",
 		"source": {
 			"repository": "null3d-engine/plant-references",
-			"commit": "local",
+			"commit": "8355243695f3bae7eec19015855ea7459d019f0b",
 			"files": [
 				{
 					"name": "24-leaf-texture-upper.png",
@@ -253,9 +253,9 @@ export const files = {
 					0.2
 				],
 				"mean": [
-					0.18654,
-					0.1811,
-					0.12524
+					0.18467,
+					0.20102,
+					0.11272
 				]
 			}
 		},
@@ -292,8 +292,8 @@ export const files = {
 			},
 			{
 				"file": "young-color.ktx2",
-				"sha256": "1f1310d4cac92050bf93b22b2ebad8e96a384d825f028e1558064430c4590d68",
-				"bytes": 53560
+				"sha256": "ca7601224e778eeca2b8f7342629311743f78a6001c85ecbf68697fc39b4d6fc",
+				"bytes": 53779
 			},
 			{
 				"file": "young-normal.ktx2",
@@ -312,8 +312,8 @@ export const files = {
 			},
 			{
 				"file": "young-color-half.ktx2",
-				"sha256": "35f90266c151e93aa27fb54b29d576965b7a13fce40e1454e32fb20d8809e33a",
-				"bytes": 13984
+				"sha256": "f494d8ccf2db10cda8a9aa4fd0bb9af2d80b6a83ffd54afcce0197aaf4c441fa",
+				"bytes": 14018
 			},
 			{
 				"file": "young-normal-half.ktx2",

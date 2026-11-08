@@ -102,9 +102,10 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 			const bx = rows.back[r * 3] as number;
 			const by = rows.back[r * 3 + 1] as number;
 			const bz = rows.back[r * 3 + 2] as number;
-			// The line's two ends: the stretch's far end, and either the row's own origin or, where
+			// The line's two ends: the row's own origin, and either the stretch's far end or, where
 			// the record asks, the centre of the foliage the card carries. That centre stands ahead
-			// of the row by the shoot's own length, so the stretch alone can end short of it.
+			// of the row by the shoot's own length, so the stretch alone can end short of it and
+			// leave the leaves joined to nothing; the line then runs the whole way from the wood.
 			let from: Vector3 = [px, py, pz];
 			let to: Vector3 = [px + bx, py + by, pz + bz];
 			const centre = input.record.lod.cardStalkToFoliage
@@ -117,7 +118,6 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 					[centre[0] * scale, centre[1] * scale, centre[2] * scale],
 					world,
 				);
-				from = [px + bx, py + by, pz + bz];
 				to = [px + world[0], py + world[1], pz + world[2]];
 			}
 			const dx = to[0] - from[0];
