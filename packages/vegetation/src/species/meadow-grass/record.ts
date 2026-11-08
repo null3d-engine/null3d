@@ -32,8 +32,9 @@ export const record: Species = {
 			[0, 2],
 			[1, 5],
 		],
-		// Still 22 and the fact sheet: two to four blades on each tiller, set in two ranks.
-		blades: { mean: 3.5, spread: 0.5 },
+		// Still 22 and the fact sheet: two to four blades on each tiller, set in two ranks. The
+		// whole-plant pictures carry four or five, so the crown takes the fuller end.
+		blades: { mean: 4, spread: 0.4 },
 		ranks: 2,
 		sheath: { mean: 0.035, spread: 0.01 },
 		sheathRadius: 0.0018,
@@ -76,10 +77,12 @@ export const record: Species = {
 	foliage: {
 		kind: 'grass-blade',
 		blade: {
-			// The fact sheet and still 12: blades 10 to 30 cm long and 2 to 4 mm wide, even in
-			// width almost to the end, then closing in a short blunt hood.
+			// Stills 01, 02 and 12: blades of even width that close in a short blunt hood. The
+			// pictures' blades measure about 8 mm at the plant's scale, and the leaf picture's own
+			// width over length is 6.5 per cent, so the record follows the pictures rather than the
+			// fact sheet's narrower figure.
 			length: { mean: 0.28, spread: 0.03 },
-			width: 0.004,
+			width: 0.0075,
 			profile: [
 				[0, 0.85],
 				[0.1, 1],
@@ -89,7 +92,7 @@ export const record: Species = {
 			tipLength: 0.04,
 			fold: 18,
 			twist: 30,
-			arch: { mean: 60, spread: 15 },
+			arch: { mean: 65, spread: 15 },
 			// Stills 02 and 06: the old outer blades carry dry brown tips.
 			dryTip: 0.03,
 			// The texture source's two faces under flat light: the shader scales each face's picture
@@ -131,14 +134,16 @@ export const record: Species = {
 		autumn: { reflectance: [0.2, 0.17, 0.06], transmittance: [0.22, 0.18, 0.05] },
 	},
 	wind: {
-		// The wind clip: the blades and panicles sway while the crown stays put, the stems more
-		// freely than the sheathed bases.
+		// The wind clip: the sheathed base stays put while the blades and panicles sway, the stems
+		// most freely. Each order's share of the deepest order's stiffness keeps the base rigid.
 		stiffness: [
-			[0, 0.7],
+			[0, 0.95],
+			[0.35, 0.8],
+			[0.7, 0.45],
 			[1, 0.15],
 		],
-		sway: { frequency: 0.7, amplitude: 0.06 },
-		flutter: { kind: 'grass', amplitude: 0.25, frequency: 2.5 },
+		sway: { frequency: 0.7, amplitude: 0.02 },
+		flutter: { kind: 'grass', amplitude: 0.2, frequency: 2.5 },
 	},
 	lod: {
 		// The tuft draws as one merged foliage mesh: blades, sheaths, stems and panicle branches,
