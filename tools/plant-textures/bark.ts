@@ -3,6 +3,9 @@
 // and blending across it, then a height field from its luminance at several scales and a normal
 // map from that height. Only the height's mapping from luminance is stored: the shader reads height
 // from the colour.
+//
+// A layer may give a tint, which scales its baked colour channel by channel. The height field,
+// the relief and the seams read the picture before the tint, so a tint moves the colour alone.
 import type { BarkLayerConfig } from './config.ts';
 import {
 	blur,
@@ -254,6 +257,18 @@ function heightMapping(tile: Picture, height: Plane): { offset: number; depth: n
 	return { offset: round(my - (depth !== 0 ? mh / depth : 0)), depth: round(depth, 6) };
 }
 
+/**
+ * Multiplies a picture's colour by a tint, channel by channel, in linear colour. Coverage is left
+ * as it is: a bark tile is opaque.
+ */
+function tintPicture(p: Picture, tint: readonly [number, number, number]): void {
+	for (let i = 0; i < p.r.length; i++) {
+		p.r[i] = unit((p.r[i] as number) * tint[0]);
+		p.g[i] = unit((p.g[i] as number) * tint[1]);
+		p.b[i] = unit((p.b[i] as number) * tint[2]);
+	}
+}
+
 /** One bark layer's textures at both sizes, and what the manifest records of it. */
 export interface BarkLayer {
 	readonly full: { readonly colour: Uint8Array; readonly normal: Uint8Array };
@@ -279,8 +294,12 @@ export function barkLayer(source: Picture, config: BarkLayerConfig, size: number
 	delight(square, config.delight.radius * size, config.delight.strength, false);
 	const tile = makeTile(square, size);
 	tile.a.fill(1);
+	// Everything but the colour reads the picture before the tint, so a tint cannot move the
+	// relief, the seams or the height's mapping from luminance.
 	const height = heightField(tile, config.depth, config.smooth);
 	const mapping = heightMapping(tile, height);
+	const seams = seamRatio(tile);
+	if (config.tint) tintPicture(tile, config.tint);
 	const texel = [config.tile[0] / size, config.tile[1] / size];
 	const strength = config.normal;
 	const half = halve(tile);
@@ -315,7 +334,7 @@ export function barkLayer(source: Picture, config: BarkLayerConfig, size: number
 		},
 		mean: [round(r / n), round(g / n), round(b / n)],
 		height: mapping,
-		seams: seamRatio(tile),
+		seams,
 		tile,
 	};
 }
