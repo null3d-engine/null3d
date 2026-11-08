@@ -36,7 +36,7 @@ export const record: Species = {
 		macroOrders: 4,
 		// The leader runs on to the tip: stills 01, 02 and 18 show one continuous spire, with no fork
 		// below it. Strong apical control keeps a single axis, and the boughs stay short.
-		internode: { length: 1.1, ageFactor: 0.97 },
+		internode: { length: 0.55, ageFactor: 0.985 },
 		stems: { count: 1, lean: { mean: 0.6, spread: 0.8 }, stool: 0, fused: 0 },
 		buds: {
 			arrangement: { kind: 'spiral', divergence: 137.5 },
@@ -54,10 +54,10 @@ export const record: Species = {
 		},
 		apical: {
 			control: [
-				[0, 0.78],
-				[1, 0.64],
+				[0, 0.63],
+				[1, 0.63],
 			],
-			dominance: [0.9, 0.6, 0.95],
+			dominance: [0.8, 0.5, 0.9],
 			wander: 3,
 		},
 		// Stills 01 and 18: the crown's outer shell carries its fullest clumps, not a starved rim.
