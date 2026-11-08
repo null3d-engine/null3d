@@ -165,5 +165,13 @@
 	"pine-wind-motion.mp4": {
 		"skyShare": 0.4,
 		"daylight": 2.4
+	},
+	"26-bark-texture.png": {
+		"barkZone": 1,
+		"span": 0.8
+	},
+	"16-bark-upper-trunk.png": {
+		"barkZone": 1,
+		"span": 0.8
 	}
 }
