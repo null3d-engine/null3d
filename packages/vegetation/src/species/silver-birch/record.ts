@@ -301,7 +301,7 @@ export const record: Species = {
 			optics: {
 				reflectance: [0.09, 0.16, 0.03],
 				reflectanceBack: [0.14, 0.2, 0.06],
-				transmittance: [0.12, 0.22, 0.03],
+				transmittance: [0.12, 0.22, 0.08],
 				roughness: [0.5, 0.65],
 			},
 		},
