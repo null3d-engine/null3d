@@ -199,7 +199,9 @@ export const record: Species = {
 				vigor: [0, 1],
 				share: 0,
 				years: 1,
-				length: { mean: 0.6, spread: 0.06 },
+				// A young shoot of the year: short enough that its leaves overlap their neighbours,
+				// as the photograph's sprig does.
+				length: { mean: 0.35, spread: 0.05 },
 				nodes: { mean: 9, spread: 0.5 },
 				internode: PLATE_RUN,
 				leafScale: [
