@@ -23,6 +23,14 @@ const IMAGE_PAGE = '/tests/pages/image.html';
 const SKETCH = '/tests/pages/sketches/plant-review-sketch.ts';
 /** How long one page may take, in milliseconds: the first page builds its shaders. */
 const PAGE_TIMEOUT = 600_000;
+/**
+ * How many times the tool asks a page for the result it published. A browser that cannot return a
+ * large result by value answers with nothing rather than an error, and the page keeps its result, so
+ * a later ask reads it.
+ */
+const RESULT_READS = 4;
+/** How long the tool waits before asking a page again for the result it published, in milliseconds. */
+const RESULT_RETRY_MS = 750;
 /** The most cells one sheet holds, which keeps a sheet's canvas inside the GPU's limits. */
 export const SHEET_CELLS = 24;
 /** The most columns a sheet has. */
@@ -159,7 +167,7 @@ export function singleShot(
 }
 
 /** What the image page published for one page. */
-interface PageResult {
+export interface PageResult {
 	ok?: boolean;
 	error?: string;
 	width?: number;
@@ -170,6 +178,27 @@ interface PageResult {
 
 /** The browser that the shots are drawn in. */
 type Browser = Awaited<ReturnType<typeof launchRepoBrowser>>;
+
+/** One page of the browser. */
+type Page = Awaited<ReturnType<Browser['newPage']>>;
+
+/**
+ * Reads the result a page published, asking again while the browser hands back nothing. The page
+ * keeps its result after it publishes, so a result that a loaded browser could not pass back whole
+ * is read by a later ask.
+ */
+export async function readPublished(page: Page): Promise<PageResult> {
+	for (let read = 1; read <= RESULT_READS; read++) {
+		const result = (await page.evaluate(
+			() => (globalThis as { __null3dResult?: unknown }).__null3dResult,
+		)) as PageResult | undefined;
+		if (result !== undefined) return result;
+		if (read < RESULT_READS) await new Promise((settle) => setTimeout(settle, RESULT_RETRY_MS));
+	}
+	throw new Error(
+		`the page published a result, and the browser returned none of it in ${RESULT_READS} reads`,
+	);
+}
 
 /** The canvas size of a shot: its cells in its grid. */
 function canvasOf(shot: Shot): [number, number] {
@@ -202,9 +231,7 @@ async function drawPage(
 			undefined,
 			{ timeout: PAGE_TIMEOUT },
 		);
-		const result = (await page.evaluate(
-			() => (globalThis as { __null3dResult?: unknown }).__null3dResult,
-		)) as PageResult;
+		const result = await readPublished(page);
 		if (result.ok !== true) throw new Error(result.error ?? 'the page published no result');
 		return {
 			image: {
