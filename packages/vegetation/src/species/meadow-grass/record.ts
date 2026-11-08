@@ -24,23 +24,24 @@ export const record: Species = {
 	growth: {
 		model: 'tuft',
 		// Stills 01, 04 and 21: many tillers rise from one crown, spreading over a disc a few
-		// centimetres across, the outer ones leaning out.
-		shoots: { mean: 34, spread: 5 },
+		// centimetres across. The tillers themselves stay near upright; the fountain comes from the
+		// blades arching out of them, not from the shoots leaning away.
+		shoots: { mean: 38, spread: 5 },
 		base: 0.045,
 		lean: [
-			[0, 3],
-			[1, 14],
+			[0, 2],
+			[1, 5],
 		],
 		// Still 22 and the fact sheet: two to four blades on each tiller, set in two ranks.
-		blades: { mean: 3, spread: 1 },
+		blades: { mean: 3.5, spread: 0.5 },
 		ranks: 2,
 		sheath: { mean: 0.035, spread: 0.01 },
 		sheathRadius: 0.0018,
 		// Still 21: the youngest inner blades stand upright, the oldest outer ones leave their
 		// collars at a widening angle and arch over toward the ground.
 		spread: [
-			[0, 4],
-			[1, 26],
+			[0, 6],
+			[1, 34],
 		],
 		size: [
 			[0, 0.6],
@@ -49,25 +50,25 @@ export const record: Species = {
 		],
 		heads: {
 			// Still 01: a dozen slender stems spread over the crown, the panicles held near the
-			// tuft's top.
+			// tuft's top. The stems rise almost straight and the panicle branches make the spray.
 			count: { mean: 12, spread: 3 },
 			kind: 'panicle',
-			height: { mean: 0.48, spread: 0.08 },
-			radius: 0.0011,
+			height: { mean: 0.46, spread: 0.07 },
+			radius: 0.0014,
 			sides: 5,
-			bow: { mean: 12, spread: 8 },
+			bow: { mean: 6, spread: 4 },
 			seasons: ['blossom', 'summer'],
 			// Stills 19 and 21: an open pyramid panicle of a few whorls, its branches leaving at a
 			// falling angle up the stem and drooping, with the spikelets along their outer parts.
 			panicle: {
-				length: { mean: 0.14, spread: 0.03 },
-				whorls: 6,
+				length: { mean: 0.18, spread: 0.03 },
+				whorls: 5,
 				branches: { mean: 3, spread: 1 },
 				angle: [
-					[0, 42],
-					[1, 26],
+					[0, 46],
+					[1, 28],
 				],
-				droop: 10,
+				droop: 12,
 				flowers: { mean: 4, spread: 1 },
 			},
 		},
@@ -77,8 +78,8 @@ export const record: Species = {
 		blade: {
 			// The fact sheet and still 12: blades 10 to 30 cm long and 2 to 4 mm wide, even in
 			// width almost to the end, then closing in a short blunt hood.
-			length: { mean: 0.26, spread: 0.05 },
-			width: 0.0035,
+			length: { mean: 0.28, spread: 0.03 },
+			width: 0.004,
 			profile: [
 				[0, 0.85],
 				[0.1, 1],
@@ -88,14 +89,16 @@ export const record: Species = {
 			tipLength: 0.04,
 			fold: 18,
 			twist: 30,
-			arch: { mean: 50, spread: 20 },
+			arch: { mean: 60, spread: 15 },
 			// Stills 02 and 06: the old outer blades carry dry brown tips.
 			dryTip: 0.03,
+			// The texture source's two faces under flat light: the shader scales each face's picture
+			// by that face's mean, so these figures are the pictures' own means.
 			optics: {
-				reflectance: [0.08, 0.19, 0.035],
-				reflectanceBack: [0.09, 0.18, 0.05],
-				transmittance: [0.07, 0.17, 0.02],
-				roughness: [0.45, 0.4],
+				reflectance: [0.1284, 0.272, 0.0218],
+				reflectanceBack: [0.0654, 0.158, 0.0104],
+				transmittance: [0.16, 0.33, 0.03],
+				roughness: [0.55, 0.35],
 			},
 		},
 	},
@@ -112,8 +115,11 @@ export const record: Species = {
 					[0.0018, 0.002],
 					[0, 0.005],
 				],
+				// A spikelet is a grain a few millimetres across: five faces read round at the
+				// seed head's scale and keep the kernel's cost small.
+				sides: 5,
 			},
-			colour: [0.15, 0.15, 0.1],
+			colour: [0.18, 0.19, 0.13],
 			hang: 0,
 		},
 	],
@@ -158,6 +164,58 @@ export const record: Species = {
 	variants: 4,
 	seedSalt: 0x9ea55,
 	roundBand,
+	// Still 20: a newly germinated plant is a few short blades from one point, before any tuft
+	// forms. The reference's index gives it as the species' young form.
+	forms: {
+		seedling: {
+			form: 'a few short blades from one point, before the tuft forms',
+			size: { height: { mean: 0.07, spread: 0.01 }, aspect: 0.9 },
+			growth: {
+				shoots: { mean: 3, spread: 1 },
+				base: 0.006,
+				lean: [
+					[0, 2],
+					[1, 6],
+				],
+				blades: { mean: 3, spread: 0.5 },
+				sheath: { mean: 0.01, spread: 0.003 },
+				sheathRadius: 0.0008,
+				spread: [
+					[0, 4],
+					[1, 20],
+				],
+				size: [
+					[0, 0.7],
+					[1, 1],
+				],
+				heads: null,
+			},
+			foliage: {
+				kind: 'grass-blade',
+				blade: {
+					length: { mean: 0.09, spread: 0.01 },
+					width: 0.0028,
+					profile: [
+						[0, 0.85],
+						[0.1, 1],
+						[1, 1],
+					],
+					tip: 'hooded',
+					tipLength: 0.05,
+					fold: 18,
+					twist: 30,
+					arch: { mean: 30, spread: 10 },
+					dryTip: 0,
+					optics: {
+						reflectance: [0.1284, 0.272, 0.0218],
+						reflectanceBack: [0.0654, 0.158, 0.0104],
+						transmittance: [0.16, 0.33, 0.03],
+						roughness: [0.55, 0.35],
+					},
+				},
+			},
+		},
+	},
 	cuttings: {
 		// Stills 21, 22 and 23: a piece of a tiller keeps its sheaths and blades, and a blade lies
 		// on its own against the copy stand.
