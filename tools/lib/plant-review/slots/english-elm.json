@@ -61,5 +61,11 @@
 	},
 	"11-leaf-cluster.png": {
 		"pick": 4
+	},
+	"14-bark-base.png": {
+		"barkMask": true
+	},
+	"16-bark-on-limb.png": {
+		"barkMask": true
 	}
 }

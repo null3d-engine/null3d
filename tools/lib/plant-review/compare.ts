@@ -1287,10 +1287,13 @@ export function compareStills(
 		// A bark close view photographs the bark against the bark, so neither picture separates
 		// from its own background and neither draws a matte. The patches compare the material.
 		const barkClose = slot.kind !== 'texture' && /bark/i.test(slot.file);
+		// The mask is the shot's own field: a species names it in its slot file, which reaches the
+		// page's query rather than the reference slot's.
+		const barkMask = frame.query?.barkMask === true || slot.query?.barkMask === true;
 		const barkColour = barkClose
 			? {
-					reference: patchLab(refImage, slot.query?.barkMask === true),
-					render: patchLab(render.image, slot.query?.barkMask === true),
+					reference: patchLab(refImage, barkMask),
+					render: patchLab(render.image, barkMask),
 				}
 			: null;
 		const edges = Number(
