@@ -339,7 +339,7 @@ export const record: Species = {
 		fork: { bend: 2.5, knot: 0.25 },
 		// Still 14: a green film of moss over the buttresses' flanks, reaching about a metre up, on
 		// every side of the foot rather than one.
-		moss: { amount: 1, up: 1.2, north: 0, colour: [0.14, 0.2, 0.05] },
+		moss: { amount: 0.55, up: 1, north: 0, colour: [0.09, 0.15, 0.05] },
 		// Still 15: pale grey-green lichen flecks the crests of the net on the lower bole.
 		lichen: { amount: 0.3, from: 0.1, to: 0.6, colour: [0.4, 0.42, 0.36] },
 	},
