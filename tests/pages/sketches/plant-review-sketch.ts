@@ -86,6 +86,19 @@ const MATTE = VIEW === 'silhouette' || QUERY.matte === true;
  */
 const LOD = QUERY.lod ?? (SPEC.woodOnly || QUERY.fruit ? 0 : undefined);
 const DEG = Math.PI / 180;
+/**
+ * A colour scaled by another colour's channels, which is how a picture's own white balance tints a
+ * light: white keeps every light as it is, and a warmer lamp takes blue out of all of them.
+ */
+function tinted(colour: string, by: string): string {
+	const channel = (hex: string, at: number) => Number.parseInt(hex.slice(at, at + 2), 16) / 255;
+	const parts = [0, 2, 4].map((at) =>
+		Math.round(Math.min(1, channel(colour, at + 1) * channel(by, at + 1)) * 255)
+			.toString(16)
+			.padStart(2, '0'),
+	);
+	return `#${parts.join('')}`;
+}
 /** The quaternion that lays a plane, which faces +Z, flat on the ground. */
 const FLAT: [number, number, number, number] = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];
 /** The height of a standing person's eye, in metres. */
@@ -1048,18 +1061,32 @@ export default defineSketch(async (ctx) => {
 			const level = cross(ahead, [0, 1, 0]);
 			const across: V3 =
 				Math.hypot(level[0], level[1], level[2]) > 1e-6 ? normalize(level) : [1, 0, 0];
+			// A copy stand's lamps, coloured as their photograph's own white balance has them.
+			const lamp = QUERY.lamp ?? '#ffffff';
 			const lean = COPY_STAND_LAMP * DEG;
+			// The stand's exposure, which a photograph's own sets: one lamp pair shows a diffuse face at
+			// its reflectance, and a query's daylight copies a picture taken brighter or dimmer.
+			const exposure = QUERY.daylight ?? 1;
 			for (const side of [-1, 1])
 				scene.createDirectionalLight({
 					direction: normalize(
 						add(scale(ahead, Math.cos(lean)), scale(across, side * Math.sin(lean))),
 					),
-					color: '#ffffff',
-					intensity: Math.PI / (2 * Math.cos(lean)),
+					color: lamp,
+					intensity: (Math.PI / (2 * Math.cos(lean))) * exposure,
 				});
 		} else if (SUN === 'flat' && REFERENCE_LIGHT === null) {
-			scene.createAmbientLight({ intensity: 1 });
-			scene.createHemisphereLight({ skyColor: '#eef1f4', groundColor: '#b9b9b4', intensity: 1.5 });
+			// A studio's fill: an even light from every side rather than a sun, at the strength and the
+			// colour its reference measures, so a studio picture is matched as a daylight one is.
+			const fill = QUERY.daylight ?? 1;
+			const studio = BACKGROUND === 'studio-grey';
+			const lamp = QUERY.lamp ?? '#ffffff';
+			scene.createAmbientLight({ intensity: fill });
+			scene.createHemisphereLight({
+				skyColor: tinted(studio ? '#f1ede6' : '#eef1f4', lamp),
+				groundColor: tinted(studio ? '#c8c2b6' : '#b9b9b4', lamp),
+				intensity: 1.5 * fill,
+			});
 		} else {
 			// Soft daylight: most of the light from the whole sky, with a sun that gives the crown its
 			// depth, and a little light from below for the undersides. A query's daylight scales the sum
@@ -1072,10 +1099,14 @@ export default defineSketch(async (ctx) => {
 			const total = (skyLight + sunLight) * strength;
 			const skyScale = share === undefined ? strength : (share * total) / skyLight;
 			const sunScale = share === undefined ? strength : ((1 - share) * total) / sunLight;
+			// The fill's colour is the photograph's own white balance, which tints the sky it saw. A
+			// studio's own walls and paper are the base under it, warmer than an open sky's blue.
+			const studio = BACKGROUND === 'studio-grey';
+			const lamp = QUERY.lamp ?? '#ffffff';
 			scene.createAmbientLight({ intensity: 0.6 * skyScale });
 			scene.createHemisphereLight({
-				skyColor: '#dfe8f0',
-				groundColor: '#7f8166',
+				skyColor: tinted(studio ? '#f2eee7' : '#dfe8f0', lamp),
+				groundColor: tinted(studio ? '#c9c3b7' : '#7f8166', lamp),
 				intensity: 1.7 * skyScale,
 			});
 			// The reference's own light when it gave one: the sun stands that far to the camera's
