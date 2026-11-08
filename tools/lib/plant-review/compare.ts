@@ -1184,13 +1184,16 @@ export function patchLab(image: Rgba, onPlant = false): number[] {
 	const lab = labImage(image);
 	// A picture's own background, read from its four corners: a close view lays a stem on sky or
 	// on a plain studio ground, so the corners are the backdrop wherever the stem does not reach.
-	const corner = [0, 1, 2].map((c) => {
-		const xs = [0, image.width - 1];
-		const ys = [0, image.height - 1];
-		let total = 0;
-		for (const y of ys) for (const x of xs) total += lab[(y * image.width + x) * 3 + c] as number;
-		return total / 4;
-	});
+	// Each corner is read on its own, since a view can stand a stem against sky above and meadow
+	// below: a single mean of the four would match neither, and the sky would be counted as bark.
+	const corners = [
+		[0, 0],
+		[image.width - 1, 0],
+		[0, image.height - 1],
+		[image.width - 1, image.height - 1],
+	].map(([x, y]) =>
+		[0, 1, 2].map((c) => lab[((y as number) * image.width + (x as number)) * 3 + c] as number),
+	);
 	const sum = [0, 0, 0];
 	let n = 0;
 	const share = 0.2;
@@ -1204,13 +1207,16 @@ export function patchLab(image: Rgba, onPlant = false): number[] {
 				for (let x = x0; x < x1; x++) {
 					const at = (y * image.width + x) * 3;
 					if (onPlant) {
-						// A patch pixel as close to the backdrop as the paint itself is not the paint.
-						const apart = Math.hypot(
-							(lab[at] as number) - (corner[0] as number),
-							(lab[at + 1] as number) - (corner[1] as number),
-							(lab[at + 2] as number) - (corner[2] as number),
+						// A patch pixel as close to any corner as the paint itself is not the paint.
+						const backdrop = corners.some(
+							(corner) =>
+								Math.hypot(
+									(lab[at] as number) - (corner[0] as number),
+									(lab[at + 1] as number) - (corner[1] as number),
+									(lab[at + 2] as number) - (corner[2] as number),
+								) < 8,
 						);
-						if (apart < 8) continue;
+						if (backdrop) continue;
 					}
 					for (let c = 0; c < 3; c++) sum[c] = (sum[c] as number) + (lab[at + c] as number);
 					n++;
@@ -1281,11 +1287,11 @@ export function compareStills(
 		// A bark close view photographs the bark against the bark, so neither picture separates
 		// from its own background and neither draws a matte. The patches compare the material.
 		const barkClose = slot.kind !== 'texture' && /bark/i.test(slot.file);
+		// The shot carries the query the page was asked for, which is where a species' slot file
+		// reaches; the reference rule's own query is a different thing and is often empty.
+		const barkMaskOn = frame.query?.barkMask === true;
 		const barkColour = barkClose
-			? {
-					reference: patchLab(refImage, slot.query?.barkMask === true),
-					render: patchLab(render.image, slot.query?.barkMask === true),
-				}
+			? { reference: patchLab(refImage, barkMaskOn), render: patchLab(render.image, barkMaskOn) }
 			: null;
 		const edges = Number(
 			edgeDifference(edgeProfile(refImage), edgeProfile(render.image)).toFixed(3),
@@ -1331,6 +1337,12 @@ export function compareStills(
 			masked,
 			surfaceDeltaE,
 			barkColour,
+			// A masked close view reads its bark difference off the same patches, since the page's own
+			// figure averages a plant mask that on a thin stem is mostly the backdrop.
+			barkDeltaE:
+				barkMaskOn && barkColour
+					? Number(deltaE2000(barkColour.reference, barkColour.render).toFixed(2))
+					: shown.barkDeltaE,
 			edgeDifference: edges,
 			pieces,
 			...(framing ? { framing } : {}),
