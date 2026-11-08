@@ -132,7 +132,7 @@ Rejected:
   9 per cent wide and 19 per cent tall over the eight angles, against the reference's 32 and 14. Both
   sit inside the band, the width's own being the reference's 32 per cent and the height's 25.
 - The cut pieces' turns are irregular. The leaf cluster's crown box spreads 132 per cent wide
-  against its video's 85. The sub-branch's spreads 57 per cent tall against 25. Those two turns fail
+  against its video's 85. The sub-branch's crown box spreads 57 per cent tall against 25. Those two turns fail
   the all-round band. The branch turn sits inside both.
 - The wind moves the crown's top band 0.061 against the reference's 0.047, and its base 0.002 against
   0.044: the trunk's foot does not move. The middle bands move less than their reference's.
