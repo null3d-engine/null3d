@@ -1,0 +1,145 @@
+{
+	"01-whole-colony-distant.png": {
+		"skyShare": 0.357,
+		"daylight": 1.459,
+		"fov": 24,
+		"fill": 0.55,
+		"targetY": 0.45
+	},
+	"02-whole-plant-profile.png": {
+		"skyShare": 0.357,
+		"daylight": 1.524,
+		"fill": 0.79,
+		"targetY": 0.5
+	},
+	"03-whole-from-below.png": {
+		"skyShare": 0.357,
+		"daylight": 1.519
+	},
+	"04-canopy-from-above.png": {
+		"skyShare": 0.357,
+		"daylight": 1.459,
+		"elevation": 85,
+		"distance": 2.6
+	},
+	"05-canopy-underside.png": {
+		"skyShare": 0.357,
+		"daylight": 1.445
+	},
+	"06-inside-stand.png": {
+		"skyShare": 0.357,
+		"daylight": 1.477
+	},
+	"07-frond-base-and-stipe.png": {
+		"skyShare": 0.357,
+		"daylight": 1.459
+	},
+	"08-stipe-forks-into-pinnae.png": {
+		"skyShare": 0.357,
+		"daylight": 1.459
+	},
+	"09-pinna-subdivision.png": {
+		"skyShare": 0.357,
+		"daylight": 1.459
+	},
+	"11-crozier-unfurling.png": {
+		"skyShare": 0.357,
+		"daylight": 1.459
+	},
+	"12-single-frond-whole.png": {
+		"view": "leaf-upper",
+		"background": "white"
+	},
+	"13-single-pinna-upper.png": {
+		"view": "leaf-upper",
+		"background": "white"
+	},
+	"14-pinna-underside-sori.png": {
+		"view": "leaf-under",
+		"background": "white"
+	},
+	"15-stipe-lower-black.png": {
+		"view": "bark-base",
+		"skyShare": 0.357,
+		"daylight": 1.459
+	},
+	"16-stipe-mid.png": {
+		"view": "bark-mid",
+		"skyShare": 0.357,
+		"daylight": 1.459
+	},
+	"17-rhizome.png": {
+		"skyShare": 0.357,
+		"daylight": 1.459
+	},
+	"18-silhouette.png": {
+		"skyShare": 0.357,
+		"daylight": 1.959
+	},
+	"19-autumn-colour.png": {
+		"view": "whole",
+		"background": "sky-meadow",
+		"skyShare": 0.357,
+		"daylight": 1.612,
+		"fill": 0.78,
+		"targetY": 0.49
+	},
+	"20-winter-dead-fronds.png": {
+		"view": "whole",
+		"background": "sky-meadow",
+		"skyShare": 0.357,
+		"daylight": 1.459,
+		"fill": 0.95,
+		"targetY": 0.52
+	},
+	"21-branch-studio.png": {
+		"view": "leaf-upper",
+		"background": "studio-grey",
+		"sunAzimuth": null,
+		"sunRise": null
+	},
+	"22-subbranch-studio.png": {
+		"view": "leaf-upper",
+		"background": "studio-grey",
+		"sunAzimuth": null,
+		"sunRise": null
+	},
+	"23-leaf-cluster-studio.png": {
+		"view": "leaf-upper",
+		"background": "studio-grey",
+		"sunAzimuth": null,
+		"sunRise": null
+	},
+	"bracken-turntable-halfturn.mp4": {
+		"skyShare": 0.357,
+		"daylight": 1.459,
+		"fov": 24,
+		"fill": 0.55,
+		"targetY": 0.45
+	},
+	"bracken-wind-motion.mp4": {
+		"skyShare": 0.357,
+		"daylight": 1.459,
+		"fov": 24,
+		"fill": 0.55,
+		"targetY": 0.45
+	},
+	"branch-turntable-halfturn.mp4": {
+		"view": "leaf-upper",
+		"background": "studio-grey",
+		"sunAzimuth": null,
+		"sunRise": null
+	},
+	"subbranch-turntable-halfturn.mp4": {
+		"view": "leaf-upper",
+		"background": "studio-grey",
+		"sunAzimuth": null,
+		"sunRise": null
+	},
+	"leaf-cluster-turntable-halfturn.mp4": {
+		"view": "leaf-upper",
+		"background": "studio-grey",
+		"sunAzimuth": null,
+		"sunRise": null
+	}
+}

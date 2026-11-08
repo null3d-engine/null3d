@@ -129,6 +129,18 @@ describe('the view up the stem', () => {
 		expect(view.subject.pitch).toBe(70);
 	});
 
+	test('drops its lens into a plant shorter than a person, so the crown stands above it', () => {
+		const b = new SkeletonBuilder();
+		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		run(b, stem, -1, [0, 0, 0], [0, 0.1, 0], 11, 0.02, 0.3);
+		const short = { skeleton: b.finish(1), shoots: NO_ROWS, prototypes: [] };
+		expect(short.skeleton.height).toBeCloseTo(1, 6);
+		const view = belowView(short, 0, lens, { elevation: 70 });
+		// A third of the way up the plant, and still above the ground.
+		expect(view.position[1]).toBeCloseTo(0.35, 6);
+		expect(view.subject.pitch).toBe(70);
+	});
+
 	test('pitches up until the bark where the stem divides lands on the asked row', () => {
 		const forkRow = 0.4;
 		const view = belowView(plant, 0, lens, { elevation: 85, forkRow });

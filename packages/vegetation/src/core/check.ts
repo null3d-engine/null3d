@@ -436,13 +436,13 @@ function extraProblems(record: Species, out: string[]): void {
 
 /**
  * Cutting hints that name a shoot class the record does not grow, cut a length of no wood, or press
- * a leaf that is not a blade.
+ * foliage that cannot lie flat.
  */
 function cuttingProblems(record: Species, out: string[]): void {
-	if (record.cuttings?.leaf?.pressed && record.foliage.kind !== 'blade')
-		out.push(
-			`cuttings.leaf.pressed lays a blade leaf flat, and the foliage is '${record.foliage.kind}'`,
-		);
+	// A blade or a whole frond can lie pressed flat in its frame's plane.
+	const pressedLeaf = record.cuttings?.leaf?.pressed === true;
+	if (pressedLeaf && record.foliage.kind !== 'blade' && record.foliage.kind !== 'frond')
+		out.push(`cuttings.leaf.pressed lays a leaf flat, and the foliage is '${record.foliage.kind}'`);
 	const names = new Set([
 		...(record.shoots?.classes ?? []).map((shoot) => shoot.name),
 		...(record.shoots?.cuttingClasses ?? []).map((shoot) => shoot.name),

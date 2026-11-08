@@ -1,0 +1,8 @@
+{
+	"caps": "ground",
+	"leaf": {
+		"upper": 24,
+		"lower": 25,
+		"relief": { "veins": 1, "pucker": 0.8, "depth": 0.0015 }
+	}
+}

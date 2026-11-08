@@ -1865,8 +1865,9 @@ export interface CuttingHints {
 export interface CutLeaf {
 	/**
 	 * Whether the leaf lies pressed flat, as a species' single-leaf pictures lay it on a copy stand:
-	 * a blade leaf's fold, curls, twist, wave and stalk droop at nothing, its outline and textures
-	 * as they are. Without it the leaf keeps the shape it has on the plant.
+	 * a blade leaf's fold, curls, twist, wave and stalk droop at nothing, and a frond's droop,
+	 * twist and pinnae fold at nothing too, so its rachis runs straight on from the stipe. Its
+	 * outline and textures are as they are. Without it the leaf keeps the shape it has on the plant.
 	 */
 	readonly pressed?: boolean;
 }
