@@ -142,8 +142,10 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   not the material. On the patches' darkest pixels, which are the bark, the foot reads 18.2, 3.0 and
   4.0 against a photograph's 18.2, 2.6 and 6.8: the bark agrees in light and red-green and stands
   2.8 too blue. A tint that corrects that blue moves the figure the wrong way, so the record keeps
-  one zone and states both sets of figures. The fix belongs where the base camera is framed, not in
-  a species' bark.
+  one zone and states both sets of figures. The darkest reading is an argument and not a proposal:
+  used as the measure it over-corrects, because a picture's darkest pixels are its deep shade, and
+  on this species' mid-trunk it would move a correct 1.8 to about 8. The fix belongs where a close
+  bark view is framed or masked, so its measure reads bark alone.
 - **A limit of how a shoot's leaf stalk draws, not of this species.** At the photograph's own
   density the branch piece reads seven groups against one. Labelled by connected area, each small
   group is one leaf at a shoot's tip, and its nearest plant pixel stands **3 to 8.5 pixels** away.
