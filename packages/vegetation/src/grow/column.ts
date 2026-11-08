@@ -39,8 +39,7 @@ const STEM_NODE = 0.2;
 const ARM_NODE = 0.12;
 /** Degrees the stem may lean from upright, least and most. */
 const LEAN = [0, 1.5] as const;
-/** Metres an arm's elbow lifts over its turn, so its first stretch climbs a little. */
-const ARM_LIFT_RISE = 0.18;
+
 /** The share of the stem's height where its flower ring stands. */
 const FLOWER_RING = 0.97;
 
@@ -104,7 +103,7 @@ function armPlans(input: GrowInput, growth: Column, height: number): ArmPlan[] {
 		const jitter = draw(input, Purpose.ArmHeight, k) * 2 - 1;
 		plans.push({
 			// Arms stand across the middle of the stem, give or take a tenth of its height.
-			height: height * Math.min(0.66, Math.max(0.3, growth.arms.from + jitter * 0.08)),
+			height: height * Math.min(0.66, Math.max(0.3, growth.arms.from + jitter * 0.12)),
 			heading:
 				turn + (2 * PI * k) / Math.max(1, count) + (draw(input, Purpose.ArmAzimuth, k) - 0.5) * 0.7,
 			// Each arm runs out its own distance before it turns up, so the elbows stand at different
@@ -305,14 +304,34 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 			light: 1,
 		});
 		arm.push({ at: [px, py, pz], node: previous, radius: armBase });
-		// A quarter turn from level to upright: the arm runs out and rises together.
-		const elbowNodes = Math.max(2, Math.ceil((plan.elbow * (PI / 2)) / ARM_NODE));
-		for (let n = 1; n <= elbowNodes; n++) {
-			const t = (n / elbowNodes) * (PI / 2);
-			px = at[0] + heading[0] * (start + plan.elbow * sin(t));
-			py = at[1] + ARM_LIFT_RISE * Math.sin(t) + plan.elbow * (1 - cos(t)) * 0.4;
-			pz = at[2] + heading[2] * (start + plan.elbow * sin(t));
-			const radius = armBase + (armTip - armBase) * 0.4 * (n / elbowNodes);
+		// The arm runs out nearly level to its elbow, then turns up over a short arc, as the studio
+		// photograph shows: a tight U rather than a wide sweep.
+		const runNodes = Math.max(1, Math.ceil(plan.elbow / ARM_NODE));
+		for (let n = 1; n <= runNodes; n++) {
+			px = at[0] + heading[0] * (start + (plan.elbow * n) / runNodes);
+			pz = at[2] + heading[2] * (start + (plan.elbow * n) / runNodes);
+			const radius = armBase + (armTip - armBase) * 0.2 * (n / runNodes);
+			previous = builder.addNode({
+				x: px,
+				y: py,
+				z: pz,
+				radius,
+				parent: previous,
+				axis: armAxis,
+				light: 1,
+			});
+			arm.push({ at: [px, py, pz], node: previous, radius });
+		}
+		// The turn: a quarter circle of the arm's own girth across, from level to upright.
+		const turnRadius = Math.max(0.12, armBase * 1.5);
+		const turnNodes = Math.max(2, Math.ceil((turnRadius * (PI / 2)) / ARM_NODE));
+		const runOut = start + plan.elbow;
+		for (let n = 1; n <= turnNodes; n++) {
+			const t = (n / turnNodes) * (PI / 2);
+			px = at[0] + heading[0] * (runOut + turnRadius * (1 - cos(t)));
+			py = at[1] + turnRadius * (1 - sin(t)) * -1 + turnRadius;
+			pz = at[2] + heading[2] * (runOut + turnRadius * (1 - cos(t)));
+			const radius = armBase + (armTip - armBase) * (0.2 + 0.2 * (n / turnNodes));
 			previous = builder.addNode({
 				x: px,
 				y: py,
