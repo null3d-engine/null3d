@@ -6,12 +6,12 @@ and it fails the species. The whole views are a tenth of sky too open. The piece
 too dense. Four pictures show a subject the model does not draw. The figures are under
 [Consequences](#consequences). Task: none.
 
-Summary: the plant core grows the hosta, the catalogue's first broad-leaved herbaceous rosette. It is
-a clump of broad, deeply ribbed leaves on long channelled stalks from one crown at the soil. Pale
-lilac flowers stand on bare scapes, and the leaves collapse flat and yellow in autumn. The rosette
-growth model and the thick leaf already named the species. Three things were still missing. A leaf
-its single-leaf photograph could lay flat, a stalk the crown did not draw black, and a review camera
-that could stand lower than a person's knee.
+Summary: the plant core grows the hosta. It is the catalogue's first broad-leaved herbaceous rosette.
+The plant is a clump of broad, ribbed leaves on long stalks from one crown at the soil. Pale lilac
+flowers stand on bare scapes. The leaves collapse flat and yellow in autumn. The rosette growth model
+and the thick leaf already named the species. Three things were still missing. A leaf that its single-leaf
+photograph could lay flat. A stalk the crown did not draw black. A review camera that could stand
+lower than a person's knee.
 
 ## Question
 
