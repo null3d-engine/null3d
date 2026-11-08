@@ -202,8 +202,10 @@ export const record: Species = {
 				length: { mean: 0.15, spread: 0.02 },
 				nodes: { mean: 6.5, spread: 0.5 },
 				internode: RANK,
+				// Still 23: every blade stands at the record's own leaf, as the photograph's few large
+				// blades do, rather than shrunk.
 				leafScale: [
-					[0, 0.8],
+					[0, 1],
 					[1, 1],
 				],
 				leafAngle: [
