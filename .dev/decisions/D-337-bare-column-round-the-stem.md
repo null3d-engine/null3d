@@ -1,4 +1,4 @@
-# D-333: a bare column round a stem below the record's line
+# D-337: a bare column round a stem below the record's line
 
 Status: decided and built as the optional record field `shoots.placement.bareBole`. The European
 beech sets a 4 m radius below 0.17 of its height, with a 15 degree lift of its shoots. The
