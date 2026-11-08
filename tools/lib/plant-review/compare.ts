@@ -668,6 +668,26 @@ export function fixed(value: number | null | undefined, digits = 2): string {
 	return value === null || value === undefined ? '-' : value.toFixed(digits);
 }
 
+/**
+ * A note when a crown's box holds only a small share of its plant's own, which is the sign that the
+ * crown's foot was found inside the foliage: a kit-cut piece has no bare stem below its leaves, and a
+ * thick bole can fill the whole margin the finder looks for. The gap and crown figures then measure a
+ * slice of the plant rather than its crown, so the run says so instead of letting a reader trust them.
+ */
+function crownNote(reference: PlantMeasures, render: PlantMeasures): string | undefined {
+	const share = (measure: PlantMeasures): number => {
+		const box = measure.box;
+		if (!box) return 1;
+		const tall = box.bottom - box.top + 1;
+		return tall > 0 ? measure.crownBox.height / tall : 1;
+	};
+	const least = Math.min(share(reference), share(render));
+	// A view of the wood alone has no crown to measure, so nothing is being read from it.
+	if (least >= 0.4 || least <= 0.05) return undefined;
+	const percent = (least * 100).toFixed(0);
+	return `the crown's box holds ${percent} per cent of the plant's height, so its foot sits inside the foliage and its gap and crown figures measure a slice`;
+}
+
 /** A CIELAB triple as three rounded figures, in the order light, red to green, blue to yellow. */
 function labTriple(lab: readonly number[]): string {
 	return lab.map((v) => v.toFixed(1)).join(' ');
@@ -1280,6 +1300,7 @@ export function compareStills(
 					foliageDeltaE: refPlant.background.plain ? pair.foliageDeltaE : null,
 				};
 		const framing = closeFraming(frame.facts);
+		const note = crownNote(refSide.measures, render.measures) ?? slot.note;
 		results.push({
 			...shown,
 			file: slot.file,
@@ -1292,7 +1313,7 @@ export function compareStills(
 			edgeDifference: edges,
 			pieces,
 			...(framing ? { framing } : {}),
-			...(slot.note ? { note: slot.note } : {}),
+			...(note ? { note } : {}),
 		});
 		rows.push({
 			reference: refImage,
