@@ -428,6 +428,9 @@ export const record: Species = {
 		branch: { shoot: 'spray' },
 		subbranch: { shoot: 'cut' },
 		// Stills 11 and 23 hold one rosette of five or six leaves round its buds at the end of a spur.
+		// This piece is drawn from the shoot kit alone, so it carries no old-wood extras: the thorns
+		// stand on buds of the grown plant, and the kit-cut close views show none, though the branch
+		// and sub-branch pieces, cut from the grown plant, keep theirs.
 		cluster: { shoot: 'short' },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
 		leaf: { pressed: true },
