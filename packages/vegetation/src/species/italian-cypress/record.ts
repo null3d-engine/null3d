@@ -102,7 +102,7 @@ export const record: Species = {
 				share: 1,
 				years: 2,
 				length: { mean: 0.06, spread: 0.01 },
-				nodes: { mean: 9, spread: 1 },
+				nodes: { mean: 6, spread: 1 },
 				internode: [
 					[0, 1],
 					[1, 0.85],
@@ -121,9 +121,9 @@ export const record: Species = {
 				droop: 2,
 			},
 		],
-		// Stills 12 and 13: the scale leaves stand in opposite pairs, each pair at right angles to the
-		// last, in four rows along the cord.
-		phyllotaxis: { kind: 'whorled', count: 4 },
+		// Stills 12 and 13: the scale-leaf sprays stand in whorls of three round the stem, each
+		// whorl turned on from the last, so the shoot clothes every side.
+		phyllotaxis: { kind: 'whorled', count: 3 },
 		orders: 2,
 		years: 2,
 		leafYears: 2,
@@ -160,20 +160,23 @@ export const record: Species = {
 			clump: { spacing: 0.3, depth: 0.2, fine: { spacing: 0.1, depth: 0.15 } },
 		},
 	},
-	// Stills 11 to 13, 24 and 25: the leaf is a tiny pointed scale, pressed to the cord in four rows.
-	// The foliage kind builds the cord itself, since one scale is far below the size a card can hold.
+	// Stills 11 to 13, 24 and 25: a leaf is a flattened spray of short cords, each clothed in two
+	// ranks of tiny pointed scales. The foliage kind builds the scales itself, since one scale is far
+	// below the size a card can hold.
 	foliage: {
 		kind: 'scale-spray',
 		spray: {
-			// Stills 12 and 23: the finest unit is one short cord, about a centimetre and a half,
-			// clothed along its whole length in shingled scale leaves.
-			orders: 1,
-			segment: 0.02,
+			// Stills 11 and 12: the leaf a shoot carries is a flattened spray of two or three short
+			// cords, each clothed along its whole length in shingled scale leaves.
+			orders: 2,
+			segment: 0.022,
 			radius: 0.0014,
-			// Still 22: the spray divides in every direction, not in one flat fan.
-			flatten: 0.3,
-			// Still 04: a few sprays inside the column are brown and dead.
-			dead: 0.05,
+			// Stills 11, 12 and 22: the side cords stand in the spray's own flat plane, as a cypress
+			// frond does.
+			flatten: 1,
+			// Every shoot draws these same meshes, so one dead cord in a mesh would brown a third of
+			// the crown: the column's inner sprays keep their shade instead.
+			dead: 0,
 			// Stills 12, 13 and 24: a dark green face, a paler grey-green back with the stomatal band,
 			// and little light through the thick scale.
 			optics: {
@@ -281,9 +284,9 @@ export const record: Species = {
 		// to the wood it grows from and runs it on to the foliage's centre.
 		cardStalk: 3,
 		cardStalkToFoliage: true,
-		// A scale is under one texel of the default cell, so the high tiers bake a cell twice as fine
-		// and the column keeps its scaly grain at distance.
-		cardCell: { low: 64, medium: 64, high: 128, ultra: 128 },
+		// A card holds a whole spray rather than one scale, so the default cell keeps the column's
+		// scaly grain at distance.
+		cardCell: { low: 64, medium: 64, high: 64, ultra: 64 },
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {

@@ -1,10 +1,13 @@
 {
 	"06-inside-column.png": {
 		"view": "inside",
-		"distance": 1.2,
-		"elevation": 55
+		"distance": 2,
+		"elevation": 30
 	},
 	"20-young-cypress.png": {
 		"view": "whole"
+	},
+	"12-shoot-upper.png": {
+		"view": "cluster"
 	}
 }
