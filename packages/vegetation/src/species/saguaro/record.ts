@@ -43,9 +43,9 @@ export const record: Species = {
 		// stem to a tip below its top.
 		arms: {
 			count: { mean: 4, spread: 0.7 },
-			from: 0.58,
-			elbow: 0.9,
-			radius: 0.22,
+			from: 0.55,
+			elbow: 0.75,
+			radius: 0.19,
 			rise: { mean: 3.2, spread: 0.6 },
 		},
 		// Stills 09, 10 and 15: areoles one to three centimetres apart along every crest, each an
