@@ -308,6 +308,36 @@ describe('the record check', () => {
 		).toBe(true);
 	});
 
+	it("holds a class's own arrangement and facing inside their ranges", () => {
+		const shoots = template.shoots;
+		if (!shoots) throw new Error('the template has no shoots');
+		const crown = shoots.classes[0];
+		if (!crown) throw new Error('the template has no crown class');
+		const withClass = (fields: Partial<typeof crown>): Species => ({
+			...template,
+			shoots: { ...shoots, classes: [{ ...crown, ...fields }, ...shoots.classes.slice(1)] },
+		});
+		// A cutting class takes the same checks, so a bad value is refused there too.
+		const withCutting = (fields: Partial<typeof crown>): Species => ({
+			...template,
+			shoots: { ...shoots, cuttingClasses: [{ ...crown, name: 'cut', ...fields }] },
+		});
+		expect(speciesProblems(withClass({ skyward: 0.4 }))).toEqual([]);
+		expect(
+			speciesProblems(withClass({ skyward: 1.4 })).some((problem) => problem.includes('skyward')),
+		).toBe(true);
+		expect(
+			speciesProblems(withClass({ phyllotaxis: { kind: 'spiral', divergence: 400 } })).some(
+				(problem) => problem.includes('phyllotaxis.divergence'),
+			),
+		).toBe(true);
+		expect(
+			speciesProblems(withCutting({ skyward: -0.2 })).some((problem) =>
+				problem.startsWith('shoots.cuttingClasses[0].skyward'),
+			),
+		).toBe(true);
+	});
+
 	it("holds a cup's scale shade from 0 to 1", () => {
 		const lathe: [number, number][] = [
 			[0.005, 0],
