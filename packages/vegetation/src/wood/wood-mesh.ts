@@ -52,8 +52,6 @@ import {
 } from './tube';
 import { type BarkScale, barkScale, tilesRound, uSpan } from './uv';
 
-/** The most the ground's own shade takes off a wood vertex's sky, at the plant's foot. */
-const FOOT_SHADE = 0.5;
 /** Metres above the foot over which the ground's shade gives way to the open sky. */
 const FOOT_SHADE_HEIGHT = 2;
 
@@ -1892,8 +1890,10 @@ class Mesher {
 	 * crown above, since the ground beside it throws back far less than the open sky does.
 	 */
 	private woodSky(x: number, y: number, z: number): number {
+		const shade = this.record.bark?.footShade ?? 0;
+		if (!(shade > 0)) return crownSkyAt(this.crown, x, y, z);
 		const open = Math.min(1, Math.max(0, y / FOOT_SHADE_HEIGHT));
-		return crownSkyAt(this.crown, x, y, z) * (1 - FOOT_SHADE * (1 - open));
+		return crownSkyAt(this.crown, x, y, z) * (1 - Math.min(1, shade) * (1 - open));
 	}
 
 	/** Writes an axis's rings and the strips between them. */

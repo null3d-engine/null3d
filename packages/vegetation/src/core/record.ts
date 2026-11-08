@@ -1438,6 +1438,12 @@ export interface BarkSpec {
 	readonly youngRadius: number;
 	/** Scale of the figure over the texture's own metres, by radius (t = radius / largest radius). */
 	readonly girthScale: Curve;
+	/**
+	 * The most a plant's lowest wood is shaded by the ground it stands on, 0 to 1: that share of the
+	 * sky at the foot that the ground does not throw back. Absent or 0, the foot takes the crown's
+	 * sky share alone. A species whose foot already draws darker than its photograph leaves it unset.
+	 */
+	readonly footShade?: number;
 	/** Metres of the deepest furrow, which the nearest level displaces on the trunk and largest limbs. */
 	readonly displacement: number;
 	/** The collar where a branch joins its parent. */

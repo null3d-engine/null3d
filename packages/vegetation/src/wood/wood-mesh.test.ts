@@ -475,25 +475,32 @@ describe('the wood of the grown oak', () => {
 		}
 	});
 
-	it('shades the wood at its foot below the wood higher up', () => {
+	it('shades the wood at a foot its record gives a shade, and only there', () => {
 		// The ground throws back less than the open sky, and a crown's open sides let a ray past
-		// beside the bole, so the sky share alone would light the foot more than the wood above it.
-		const mesh = report.mesh;
-		const mean = (low: number, high: number): number => {
-			let sum = 0;
-			let n = 0;
-			for (let v = 0; v < mesh.positions.length / 3; v++) {
-				const y = mesh.positions[v * 3 + 1] as number;
-				if (y < low || y >= high) continue;
-				sum += mesh.colors[v * 4 + 3] as number;
-				n++;
-			}
-			return n > 0 ? sum / n : 0;
+		// beside the bole, so the sky share alone lights the foot more than the wood above it. A
+		// record that asks for the shade gets it; one that does not draws exactly as it did.
+		const bands = (bark: unknown): { foot: number; higher: number } => {
+			const shaded = { ...record, bark } as typeof record;
+			const mesh = meshWoodReport({ ...testMeshInput('high', skeleton), record: shaded }, 0).mesh;
+			const mean = (low: number, high: number): number => {
+				let sum = 0;
+				let n = 0;
+				for (let v = 0; v < mesh.positions.length / 3; v++) {
+					const y = mesh.positions[v * 3 + 1] as number;
+					if (y < low || y >= high) continue;
+					sum += mesh.colors[v * 4 + 3] as number;
+					n++;
+				}
+				return n > 0 ? sum / n : 0;
+			};
+			return { foot: mean(0, 1), higher: mean(6, 10) };
 		};
-		const foot = mean(0, 1);
-		const higher = mean(6, 10);
-		expect(foot).toBeGreaterThan(0);
-		expect(foot).toBeLessThan(higher * 0.9);
+		const shaded = bands({ ...testRecord().bark, footShade: 0.5 });
+		expect(shaded.foot).toBeGreaterThan(0);
+		expect(shaded.foot).toBeLessThan(shaded.higher * 0.9);
+		// A record that leaves the field unset pays nothing and draws as it always has.
+		const plain = bands(testRecord().bark);
+		expect(plain.foot).toBe(plain.higher);
 	});
 
 	it('keeps the bark texel density within 30 per cent of the target on every ring', () => {

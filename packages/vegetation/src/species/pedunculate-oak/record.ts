@@ -302,6 +302,9 @@ export const record: Species = {
 			// still 16, so they take a warmer, darker tint of their own above it.
 			{ layer: 0, by: 'height', from: 3.6, to: 40, blend: 0.6, tint: [0.45, 0.42, 0.28] },
 		],
+		// Still 14: the foot stands under the crown's skirt with the ground beside it, and draws
+		// lighter than its photograph, so its lowest wood takes half the sky the crown leaves it.
+		footShade: 0.5,
 		young: 0,
 		youngRadius: 0.08,
 		girthScale: [
