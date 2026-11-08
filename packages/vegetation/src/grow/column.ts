@@ -8,6 +8,7 @@ import {
 	AXIS_ARM,
 	AXIS_STEM,
 	BUD_AREOLE,
+	BUD_DORMANT,
 	BUD_TERMINAL,
 	type MacroSkeleton,
 	SkeletonBuilder,
@@ -31,6 +32,7 @@ const Purpose = {
 	Lean: 6,
 	LeanTurn: 7,
 	Flowers: 8,
+	Nest: 10,
 } as const;
 
 /** Metres between the stem's nodes. */
@@ -42,6 +44,11 @@ const LEAN = [0, 1.5] as const;
 
 /** The share of the stem's height where its flower ring stands. */
 const FLOWER_RING = 0.97;
+/** Nest holes on the upper stem, and the band of the height they stand in. */
+const NEST_HOLES = 9;
+const NEST_BAND = [0.55, 0.95] as const;
+/** Metres a nest hole's site is set inside the skin, so its socket sits flush. */
+const NEST_INSET = 0.012;
 
 /** A unit draw for one purpose of one variant. */
 function draw(input: GrowInput, purpose: number, a = 0, b = 0): number {
@@ -376,6 +383,31 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 			woodRadius: armTip,
 		});
 		placeAreoles(input, builder, growth, armAxis, { points: arm }, armBase, frame, Math.PI);
+	}
+	// Woodpecker holes on the upper stem, as nearly every old saguaro carries. Each is a dormant
+	// site set a little inside the skin, so the extra's dark socket sits flush with it.
+	for (let h = 0; h < NEST_HOLES; h++) {
+		const y =
+			height * (NEST_BAND[0] + (NEST_BAND[1] - NEST_BAND[0]) * draw(input, Purpose.Nest, h));
+		let near = trunk[0] as Laid;
+		for (const point of trunk)
+			if (Math.abs(point.at[1] - y) < Math.abs(near.at[1] - y)) near = point;
+		const theta = draw(input, Purpose.Nest, h, 1) * 2 * Math.PI;
+		const radial: Vector3 = [cos(theta), 0, sin(theta)];
+		const stand = near.radius - NEST_INSET;
+		quatFromFrame(radial, normalize3([0, 1, 0]), frame);
+		builder.addBud({
+			node: near.node,
+			x: near.at[0] + radial[0] * stand,
+			y: near.at[1],
+			z: near.at[2] + radial[2] * stand,
+			frame,
+			kind: BUD_DORMANT,
+			vigor: 0.5,
+			light: 1,
+			axis: stemAxis,
+			woodRadius: near.radius,
+		});
 	}
 	placeAreoles(input, builder, growth, stemAxis, stem, radiusAt(0), frame);
 	return builder.finish(0);
