@@ -269,7 +269,7 @@ export const record: Species = {
 			shadePrune: 0,
 			// Stills 01, 03 and 05: sky shows through the crown's middle and under it, where its own
 			// leaves leave a shoot under this share of the sky, and the lit outer masses stay.
-			skyPrune: 0.15,
+			skyPrune: 0.45,
 			skyPruneLayer: 1,
 			// Stills 01 and 18: no bare twigs hang outside the foliage.
 			bareTrim: 0.03,
