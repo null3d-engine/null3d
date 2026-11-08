@@ -28,7 +28,7 @@ export const record: Species = {
 	// Stills 01, 02 and 18: the bole stands about a thirtieth of the tree's height across at breast
 	// height, 0.030 to 0.034 on the silhouette, so a 22 m tree's bole is about three quarters of a
 	// metre thick.
-	size: { height: { mean: 22, spread: 2 }, dbh: 0.72, aspect },
+	size: { height: { mean: 21.55, spread: 2 }, dbh: 0.72, aspect },
 	growth: {
 		model: 'self-organizing',
 		years: 36,
@@ -179,14 +179,14 @@ export const record: Species = {
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
-				length: { mean: 0.95, spread: 0.2 },
+				length: { mean: 0.75, spread: 0.15 },
 				nodes: { mean: 6, spread: 0.5 },
 				internode: TWO_RANKED,
 				stem: { radius: [0.007, 0.003] },
-				laterals: 3,
-				lateral: 62,
+				laterals: 4,
+				lateral: 70,
 				lateralGap: 0.45,
-				bend: { length: 0.05, angle: 28 },
+				bend: { length: 0.08, angle: 32 },
 				leafScale: [
 					[0, 0.85],
 					[1, 1],
@@ -245,11 +245,11 @@ export const record: Species = {
 			],
 			// Stills 01, 02 and 18: the crown's own box shows about a twentieth of sky, so the shoots
 			// stand much denser than the curve alone gives.
-			density: 1.38,
+			density: 1.55,
 			shadePrune: 0,
 			// Stills 01, 03 and 05: a little sky shows through the crown's middle and under it, where
 			// its own leaves leave a shoot under this share of the sky; the lit outer masses stay.
-			skyPrune: 0.25,
+			skyPrune: 0.14,
 			skyPruneLayer: 1,
 			// Stills 01 and 18: no bare twigs hang outside the foliage.
 			bareTrim: 0.03,
@@ -356,20 +356,22 @@ export const record: Species = {
 		autumn: { reflectance: [0.24, 0.17, 0.03], transmittance: [0.3, 0.2, 0.03] },
 	},
 	wind: {
+		// The wind clip's bands: the trunk's foot moves, and the crown's top moves less than the
+		// blades alone gave. A softer base and a shorter blade flutter carry the two together.
 		stiffness: [
-			[0, 0.95],
-			[0.5, 0.9],
-			[1, 0.75],
+			[0, 0.8],
+			[0.5, 0.85],
+			[1, 0.9],
 		],
-		sway: { frequency: 0.3, amplitude: 0.05 },
-		flutter: { kind: 'blade', amplitude: 0.25, frequency: 3 },
+		sway: { frequency: 0.3, amplitude: 0.06 },
+		flutter: { kind: 'blade', amplitude: 0.14, frequency: 3 },
 	},
 	lod: {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
 		// The cards stand half again larger than the shoots they picture, so a gap between one shoot's
 		// leaves falls on a neighbour's leaves rather than on sky, and the far crown reads solid.
-		cardGrow: 1.15,
+		cardGrow: 1.45,
 		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so a card's leaves
 		// read as a piece in air unless its twig is drawn as a line.
 		cardStalk: 1.5,
@@ -381,8 +383,8 @@ export const record: Species = {
 			// above the measured figure at its tier, at 2.47, 3.73, 5.95 and 10.17 MB, and under the
 			// owner's cap for a tree.
 			kitBytes: { low: 2_600_000, medium: 3_850_000, high: 6_100_000, ultra: 10_400_000 },
-			// The first variant measures 3.76, 3.85, 3.93 and 3.98 MB from the coarsest tier up.
-			variantBytes: { low: 4_000_000, medium: 4_100_000, high: 4_200_000, ultra: 4_300_000 },
+			// The first variant measures 4.19, 4.28, 4.40 and 4.41 MB from the coarsest tier up.
+			variantBytes: { low: 4_300_000, medium: 4_450_000, high: 4_550_000, ultra: 4_650_000 },
 			lod0Triangles: 2_900_000,
 			// The heaviest variant's first card level draws about 96,800 triangles, and its second
 			// 42,800, under the owner's 43,000 cap at the finest tier.
