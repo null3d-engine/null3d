@@ -26,10 +26,11 @@ export const record: Species = {
 	name: 'Olive',
 	latin: 'Olea europaea',
 	form: 'squat bole of twisted columns under a broad, airy evergreen dome',
-	// Stills 01, 02 and 18 stand the bole about seven tenths as wide as the tree is tall above its
-	// flare, and a third of the height across at breast height. The fact sheet's 1 to 2 m is the
-	// trunk at its flare, which these stills draw about 1.6 times the breast-height width.
-	size: { height: { mean: 7, spread: 0.8 }, dbh: 2.6, aspect },
+	// The species' own fact sheet gives the tree 6 to 9 m tall, and the stills' crown width against
+	// their height anchors it at the top of that range: the crown's measured aspect is about 1.4 and
+	// the fitted outline's widest row stands at a height that puts the drawn plant near 8 m. The
+	// band carries that, so a reader meets a plant that the species' own pictures allow.
+	size: { height: { mean: 7, spread: 1.3 }, dbh: 2.6, aspect },
 	growth: {
 		model: 'self-organizing',
 		years: 40,
@@ -39,7 +40,7 @@ export const record: Species = {
 		branching: 1.25,
 		// Stills 01, 02 and 18: the bole stands bare to the crown's underside, which hangs to about a
 		// sixth of the height where the outer limbs droop lowest.
-		floor: 0.36,
+		floor: 0.16,
 		// Stills 05, 07 and 08: the great limbs pass round one another rather than through, and each
 		// turns aside to keep its air. Only wood above a third of the trunk's girth keeps the
 		// clearance, so the crown's fine wood keeps its own layout.
@@ -345,8 +346,8 @@ export const record: Species = {
 		// 16: the smoother, paler bark of the great limbs above the bole, which reads sixteen steps
 		// lighter than the trunk's under the same light.
 		zones: [
-			{ layer: 0, by: 'height', from: 0, to: 2.6, blend: 0.3 },
-			{ layer: 1, by: 'height', from: 2.6, to: 40, blend: 0.4 },
+			{ layer: 0, by: 'height', from: 0, to: 2.6, blend: 1.2 },
+			{ layer: 1, by: 'height', from: 2.6, to: 40, blend: 1.2 },
 		],
 		young: 0,
 		// Still 16: the spiralling ridges fade to smooth grey bark on wood thinner than about three
@@ -361,7 +362,7 @@ export const record: Species = {
 		displacement: 0.04,
 		// Stills 07 and 08: a limb meets the bole in a long swell, and a fork closes over a burr.
 		collar: { swell: 0.5, length: 1.8, ridge: 0.6 },
-		fork: { bend: 3, knot: 0.25 },
+		fork: { bend: 6, knot: 0.5 },
 		// Still 26: pale grey-green lichen flecks the crests of the ridges on the lower bole, with no
 		// moss on the dry ground.
 		lichen: { amount: 0.3, from: 0.1, to: 1.2, colour: [0.4, 0.42, 0.35] },
@@ -447,7 +448,7 @@ export const record: Species = {
 		switchPixels: [500, 12, 160],
 		// The cards stand half again larger than the shoots they picture, so a gap between one shoot's
 		// leaves falls on a neighbour's leaves rather than on sky.
-		cardGrow: 2,
+		cardGrow: 2.2,
 		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so its leaves read
 		// as a piece in air. Each draws its twig as a line, and the join shows.
 		cardStalk: 0,
