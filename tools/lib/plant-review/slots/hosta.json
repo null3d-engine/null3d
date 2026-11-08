@@ -36,5 +36,11 @@
 	"18-flower-scape.png": {
 		"view": "whole",
 		"fov": 24
+	},
+	"22-subbranch-studio.png": {
+		"pick": 0
+	},
+	"23-leaf-cluster-studio.png": {
+		"pick": 3
 	}
 }
