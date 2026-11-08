@@ -66,27 +66,41 @@ describe('the architectural grower', () => {
 		expect(digest(grown())).toBe(digest(grown()));
 	});
 
-	it('stands its buds on the finest axes and at every tip', () => {
+	it('stands a lateral site short of its tip and a terminal site on it', () => {
 		const { axes, buds } = skeleton;
 		expect(buds.count).toBeGreaterThan(0);
 		for (let b = 0; b < buds.count; b++) {
 			const axis = buds.axis[b] as number;
+			const node = buds.node[b] as number;
+			const last = axes.last[axis] as number;
+			// A shoot leaves the side of an axis short of its end; the end itself carries the terminal
+			// bud that closes it, whatever the axis's order.
+			if ((buds.kind[b] as number) === BUD_LATERAL) expect(node).toBeLessThan(last);
+			else expect(node).toBe(last);
 			expect(axes.order[axis] as number).toBeLessThanOrEqual(3);
-			// A lateral bud stands on the finest axes, and on the leader's own top; a tip carries its
-			// terminal bud on any order.
-			if ((buds.kind[b] as number) === BUD_LATERAL) {
-				const order = axes.order[axis] as number;
-				expect(order === 0 || order === 3).toBe(true);
-			}
 		}
-		// Every finest axis ends in a terminal bud at its last node.
+	});
+
+	it('carries shoot sites along a bough, not only at its tip', () => {
+		const { axes, buds } = skeleton;
+		let live = 0;
 		for (let a = 0; a < axes.count; a++) {
-			if ((axes.order[a] as number) !== 3) continue;
+			if ((axes.order[a] as number) !== 1) continue;
+			const first = axes.first[a] as number;
 			const last = axes.last[a] as number;
-			let found = false;
-			for (let b = 0; b < buds.count && !found; b++) found = (buds.node[b] as number) === last;
-			expect(found).toBe(true);
+			// A dead stub on the bole is a couple of nodes; a live bough runs out many.
+			if (last - first < 6) continue;
+			const nodes: number[] = [];
+			for (let b = 0; b < buds.count; b++) {
+				if ((buds.axis[b] as number) === a && (buds.kind[b] as number) === BUD_LATERAL)
+					nodes.push(buds.node[b] as number);
+			}
+			expect(nodes.length).toBeGreaterThan(1);
+			// The sites begin past the limb's bare inner run, so the wood shows near the trunk.
+			expect(Math.min(...nodes)).toBeGreaterThan(first + (last - first) * 0.2);
+			live++;
 		}
+		expect(live).toBeGreaterThan(0);
 	});
 
 	it('caps the wood inside the envelope', () => {
