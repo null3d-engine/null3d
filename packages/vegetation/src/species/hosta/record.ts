@@ -80,7 +80,7 @@ export const record: Species = {
 		kind: 'thick',
 		leaf: {
 			// Still 11: a blade near its largest size, widest below its middle.
-			length: { mean: 0.3, spread: 0.03 },
+			length: { mean: 0.32, spread: 0.03 },
 			outline: 'texture',
 			// Stills 08 and 09: eight to ten pairs of veins, sunk into the blade, between them the
 			// blade puffs up, the innermost pair leaving the midrib past its middle.
