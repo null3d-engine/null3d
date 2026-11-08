@@ -134,8 +134,9 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
 - **A limit of how a shoot's leaf stalk draws, not of this species.** At the photograph's own
   density the branch piece reads seven groups against one. Labelled by connected area, each small
   group is one leaf at a shoot's tip, and its nearest plant pixel stands **3 to 8.5 pixels** away.
-  The stalk is not drawn: a millimetre and a half of it falls under one pixel at a cut piece's
-  scale, and the leaf's alpha cutoff drops it whole rather than keeping part of it. A card's stalk
+  The stalk is not drawn: a stalk a little over three millimetres across falls to about one pixel at
+  a cut piece's scale, and the leaf's alpha cutoff drops it whole rather than keeping part of it.
+  The colour render at its own width is one plant; the matte is what splits. A card's stalk
   avoids this because the shader widens it to the record's least screen width; nothing gives a
   shoot's leaf stalk the same treatment. The counter-example is in the record: a two-and-a-half
   millimetre stalk joins two of the seven and is not this species' own size, so the thin stalk
