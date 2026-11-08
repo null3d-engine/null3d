@@ -194,9 +194,12 @@ export const record: Species = {
 				vigor: [0, 1],
 				share: 0,
 				years: 1,
-				length: { mean: 0.27, spread: 0.04 },
+				length: { mean: 0.34, spread: 0.04 },
 				nodes: { mean: 3, spread: 0 },
 				internode: PAIR,
+				// Still 23: the piece's pairs do not lie in one plane, so the shoot runs in short
+				// stiff pieces that turn from one another, as the held piece does.
+				bend: { length: 0.06, angle: 40 },
 				leafScale: [
 					[0, 0.8],
 					[1, 1],
@@ -266,7 +269,7 @@ export const record: Species = {
 			shadePrune: 0,
 			// Stills 01, 03 and 05: sky shows through the crown's middle and under it, where its own
 			// leaves leave a shoot under this share of the sky, and the lit outer masses stay.
-			skyPrune: 0.15,
+			skyPrune: 0.45,
 			skyPruneLayer: 1,
 			// Stills 01 and 18: no bare twigs hang outside the foliage.
 			bareTrim: 0.03,
@@ -336,7 +339,7 @@ export const record: Species = {
 		fork: { bend: 2.5, knot: 0.25 },
 		// Still 14: a green film of moss over the buttresses' flanks, reaching about a metre up, on
 		// every side of the foot rather than one.
-		moss: { amount: 1, up: 1.2, north: 0, colour: [0.14, 0.2, 0.05] },
+		moss: { amount: 0.55, up: 1, north: 0, colour: [0.09, 0.15, 0.05] },
 		// Still 15: pale grey-green lichen flecks the crests of the net on the lower bole.
 		lichen: { amount: 0.3, from: 0.1, to: 0.6, colour: [0.4, 0.42, 0.36] },
 	},
@@ -415,7 +418,7 @@ export const record: Species = {
 		switchPixels: [240, 12, 160],
 		// The cards stand half again larger than the shoots they picture, so a gap between one shoot's
 		// leaves falls on a neighbour's leaves rather than on sky, and the far crown's rim reads solid.
-		cardGrow: 1.4,
+		cardGrow: 1.55,
 		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so a card's leaves
 		// read as a piece in air. Each draws its twig as a line, and the join shows.
 		cardStalk: 1.5,
