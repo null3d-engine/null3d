@@ -250,8 +250,9 @@ export const record: Species = {
 			length: { mean: 0.085, spread: 0.01 },
 			outline: 'texture',
 			// Stills 12 and 23: the blade meets its stalk on a very short petiole, about six
-			// millimetres, the base's lower half running a little down it.
-			petiole: { length: 0.006, radius: 0.001, flat: 0, droop: 10 },
+			// millimetres, the base's lower half running a little down it. The stalk stands thick
+			// enough to draw at the close views' scale, so each blade meets its shoot.
+			petiole: { length: 0.006, radius: 0.0016, flat: 0, droop: 10 },
 			fold: 8,
 			curl: 12,
 			crossCurl: -4,
