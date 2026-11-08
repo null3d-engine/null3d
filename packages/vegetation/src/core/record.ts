@@ -1897,6 +1897,13 @@ export interface CutFromPlant {
 	readonly order: number;
 	/** Metres of wood from the cut to the farthest tip. */
 	readonly length: number;
+	/**
+	 * The piece's leaf size over the crown's, where a piece cut from the plant wants leaves of its
+	 * own. A rosette's piece carries the crown's leaves at the crown's size, so a piece that stands
+	 * a little too dense for its photograph is opened by shrinking its leaves rather than by taking
+	 * a whole leaf from it. 1 by default.
+	 */
+	readonly scale?: number;
 }
 
 /**

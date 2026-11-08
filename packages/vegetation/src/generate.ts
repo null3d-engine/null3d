@@ -48,7 +48,14 @@ import {
 import type { Species, SpeciesModule } from './core/record';
 import { loadSpeciesHooks, speciesHooks } from './core/registry';
 import type { TextureManifest } from './core/textures';
-import { type Curve, DETAILS, type Detail, type Season, type Vec3 } from './core/types';
+import {
+	type Curve,
+	DETAILS,
+	type Detail,
+	type Season,
+	type Spread,
+	type Vec3,
+} from './core/types';
 import { lightCrown } from './crown/visibility';
 import {
 	type CuttingOptions,
@@ -403,15 +410,27 @@ function partOf(
 
 /**
  * The record a cut piece grows by, where the species cuts its crown's own shoots: a plant with no
- * shoot prototypes has no class to place a piece's leaves, so the piece's leaf count comes from its
- * cutting hint. A species with prototypes, or a plant with no hint, grows as it always did.
+ * shoot prototypes has no class to place a piece's leaves, so the piece's leaf count and its leaf
+ * size come from its cutting hint. A species with prototypes, or a plant with no hint, grows as it
+ * always did.
  */
 function cuttingLeaves(record: Species, cutting: CuttingOptions | undefined): Species {
-	const leaves = record.cuttings?.leaves;
 	const growth = record.growth;
-	if (!cutting || leaves === undefined || record.shoots || growth.model !== 'rosette')
-		return record;
-	return { ...record, growth: { ...growth, leaves } };
+	if (!cutting || record.shoots || growth.model !== 'rosette') return record;
+	const leaves = record.cuttings?.leaves;
+	const hint = record.cuttings?.[cutting.part as 'branch' | 'subbranch'];
+	const scale = hint && 'order' in hint ? hint.scale : undefined;
+	const leaf = record.foliage.kind === 'thick' ? record.foliage.leaf : undefined;
+	let out = record;
+	if (scale !== undefined && leaf) {
+		const sized: Spread =
+			typeof leaf.length === 'number'
+				? leaf.length * scale
+				: { mean: leaf.length.mean * scale, spread: leaf.length.spread * scale };
+		out = { ...record, foliage: { kind: 'thick', leaf: { ...leaf, length: sized } } };
+	}
+	if (leaves === undefined) return out;
+	return { ...out, growth: { ...growth, leaves } };
 }
 
 /** The grown skeleton and its dressing: the stages before the meshes. */

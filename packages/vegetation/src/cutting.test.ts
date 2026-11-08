@@ -302,6 +302,30 @@ describe('cuttings', () => {
 		expect(sparse).toBeLessThanOrEqual(4);
 	});
 
+	it('scales the leaf of a rosette piece from its cutting hint', async () => {
+		const { hostaRecord } = await import('./grow/ground.fixture');
+		const { noTextureFiles } = await import('./core/textures');
+		await loadPlantCode(hostaRecord);
+		const heightOfPiece = (scale?: number): number => {
+			const cuttings = {
+				...hostaRecord.cuttings,
+				...(scale === undefined ? {} : { subbranch: { order: 1, length: 0.4, scale } }),
+			};
+			const record = { ...hostaRecord, cuttings };
+			const kit = buildKitNow(
+				{ record, textures: noTextureFiles(record.id) },
+				{ placeholders: 'missing', detail: 'low' },
+			);
+			return growPlantNow(kit, {
+				seed: 11,
+				variant: 0,
+				near: true,
+				cutting: { part: 'subbranch' },
+			}).skeleton.height;
+		};
+		expect(heightOfPiece(0.5)).toBeLessThan(heightOfPiece(1));
+	});
+
 	it('cuts a leaf with either face toward +Z, and a cluster in rank order', () => {
 		const upper = cutFoliage(kit, { part: 'leaf' }, kit.detail);
 		const lower = cutFoliage(kit, { part: 'leaf', face: 'lower' }, kit.detail);

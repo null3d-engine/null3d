@@ -161,8 +161,9 @@ export const record: Species = {
 		// Stills 21 to 23: a lifted piece is one eye of the crown, and the photographs show six or
 		// seven leaves on it, against the nine each eye of the crown carries.
 		leaves: { mean: 8, spread: 1 },
-		// Still 21: one eye lifted from the crown, its leaves on their long stalks.
-		branch: { order: 1, length: 0.62 },
+		// Still 21: one eye lifted from the crown, its leaves on their long stalks, its blades a
+		// seventh smaller than the crown's so the piece's gaps match the photograph's.
+		branch: { order: 1, length: 0.62, scale: 0.85 },
 		// Still 22: a shorter shoot on a piece of crown, a few leaves on it.
 		subbranch: { order: 1, length: 0.4 },
 		// Stills 11 and 12: one leaf laid flat as its picture lays it, on a short piece of stalk.
