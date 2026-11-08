@@ -208,9 +208,11 @@ export const record: Species = {
 					[0, 1],
 					[1, 1],
 				],
+				// Still 23: the leaves lie in two rows close to the shoot, overlapping like shingles,
+				// rather than opening out from it.
 				leafAngle: [
-					[0, 75],
-					[1, 55],
+					[0, 55],
+					[1, 35],
 				],
 				// The cluster's leaves stand out of its plane, so the piece keeps a silhouette when the
 				// camera turns edge-on to it, as the reference twig's leaves do.
