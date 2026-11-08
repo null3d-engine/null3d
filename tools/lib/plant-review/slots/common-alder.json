@@ -3,7 +3,7 @@
 		"sunAzimuth": 5.2,
 		"sunRise": 42.9,
 		"skyShare": 0.6,
-		"daylight": 2.26,
+		"daylight": 2.0,
 		"sky": "#d0dff1",
 		"ground": "#707a47",
 		"fov": 30,
@@ -14,7 +14,7 @@
 		"sunAzimuth": -13.3,
 		"sunRise": 43.3,
 		"skyShare": 0.6,
-		"daylight": 2.42,
+		"daylight": 2.05,
 		"sky": "#dae6f5",
 		"ground": "#72763b",
 		"fov": 30,
@@ -40,7 +40,7 @@
 		"sunAzimuth": 2.4,
 		"sunRise": 38.4,
 		"skyShare": 0.65,
-		"daylight": 2.3,
+		"daylight": 2.0,
 		"sky": "#cfe0f8",
 		"ground": "#75796f"
 	},
@@ -52,22 +52,22 @@
 	},
 	"04-crown-outside.png": {
 		"skyShare": 0.65,
-		"daylight": 2.2,
+		"daylight": 1.6,
 		"distance": 4
 	},
 	"05-crown-underside.png": {
 		"sunAzimuth": 30,
 		"sunRise": 70,
 		"skyShare": 0.75,
-		"daylight": 2.5
+		"daylight": 1.8
 	},
 	"06-inside-crown.png": {
 		"skyShare": 0.6,
-		"daylight": 1.6
+		"daylight": 1.2
 	},
 	"07-limb-leaving-trunk.png": {
 		"skyShare": 0.55,
-		"daylight": 1.4
+		"daylight": 1.2
 	},
 	"08-limb-fork.png": {
 		"thin": 0.015,
@@ -75,7 +75,7 @@
 		"sky": "#c6c2bd"
 	},
 	"19-cones-and-catkins.png": {
-		"season": "summer"
+		"season": "winter"
 	},
 	"common-alder-turntable.mp4": {
 		"skyShare": 0.6,
@@ -84,5 +84,10 @@
 	"common-alder-wind-motion.mp4": {
 		"skyShare": 0.6,
 		"daylight": 2.2
+	},
+	"16-bark-on-limb.png": {
+		"thin": 0.025,
+		"skyShare": 0.6,
+		"daylight": 1.5
 	}
 }

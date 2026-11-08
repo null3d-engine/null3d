@@ -167,7 +167,7 @@ export const record: Species = {
 				[0, 0.7],
 				[1, 0.62],
 			],
-			dominance: [0.75, 0.6, 0.98],
+			dominance: [0.9, 0.6, 0.98],
 			wander: 8,
 		},
 		// Stills 01 and 02: the crown's lit top and rim carry its fullest shoots.
@@ -199,7 +199,7 @@ export const record: Species = {
 	},
 	envelope,
 	shoots: {
-		prototypes: 6,
+		prototypes: 5,
 		classes: [
 			{
 				// Still 23: this year's spur, a short shoot whose four to six leaves gather at its end
@@ -264,7 +264,7 @@ export const record: Species = {
 				nodes: { mean: 10, spread: 0.5 },
 				internode: RUN,
 				stem: { radius: [0.014, 0.006] },
-				laterals: { mean: 1.6, spread: 0.4 },
+				laterals: { mean: 2, spread: 0.4 },
 				lateralGap: 0.3,
 				bend: { length: 0.06, angle: 30 },
 				leafScale: [
@@ -357,12 +357,13 @@ export const record: Species = {
 			],
 			// Stills 01 and 18: the crown holds about a tenth of its own box as sky, and the curve above
 			// carries the shoots that fill what the photographs show.
-			density: 2,
+			density: 2.8,
 			shadePrune: 0,
-			// Stills 01, 03 and 05: sky shows between the branch tiers and through the crown's middle.
-			skyPrune: 0.2,
+			// Stills 01, 03 and 05: sky shows between the branch tiers and through the crown's middle,
+			// while the crown's own interior keeps the shade leaves that make its mass.
+			skyPrune: 0.1,
 			skyPruneLayer: 1,
-			// Stills 01 and 18: no bare twigs stand outside the foliage.
+			// Stills 01 and 18: no bare twigs stand outside the foliage, so a twig left with nothing goes.
 			bareTrim: 0.03,
 			// Stills 02 and 05: the shoots stand up off their wood, so the foliage rides on the limbs.
 			lift: 10,
@@ -399,7 +400,7 @@ export const record: Species = {
 		young: 0,
 		// Stills 16 and 28: the plates give way to smooth purplish bark with pale orange lenticels on
 		// wood thinner than about four centimetres across.
-		youngRadius: 0.04,
+		youngRadius: 0.05,
 		// Still 15: the plates stand wider on the thick bole than on the limbs below it.
 		girthScale: [
 			[0, 0.55],
@@ -527,8 +528,8 @@ export const record: Species = {
 		shadowLevel: 1,
 		budget: {
 			// Each cap sits above the figure its tier measures, with room for the cut pieces.
-			kitBytes: { low: 3_400_000, medium: 4_000_000, high: 7_000_000, ultra: 12_800_000 },
-			variantBytes: { low: 12_500_000, medium: 12_500_000, high: 12_600_000, ultra: 13_000_000 },
+			kitBytes: { low: 3_200_000, medium: 3_700_000, high: 5_400_000, ultra: 8_200_000 },
+			variantBytes: { low: 16_200_000, medium: 16_300_000, high: 16_400_000, ultra: 16_500_000 },
 			lod0Triangles: 2_800_000,
 			lod1Triangles: 150_000,
 			lod2Triangles: 42_000,
