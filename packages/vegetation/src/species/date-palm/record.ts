@@ -59,7 +59,7 @@ export const record: Species = {
 		},
 		frond: {
 			kind: 'pinnate',
-			length: { mean: 6, spread: 0.6 },
+			length: { mean: 7.5, spread: 0.7 },
 			petiole: { length: 0.4, width: 0.1, teeth: 0 },
 			// Stills 02, 09 and 21: the rachis leaves the crown near level and arches over, its tip
 			// hanging below the middle of the frond.
