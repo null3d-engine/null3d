@@ -122,9 +122,9 @@ export const record: Species = {
 				transmittance: [0.09, 0.15, 0.04],
 				roughness: [0.55, 0.65],
 			},
-			// Still 19: round brown spore cases stand under the lobes; the discs take their colour
-			// from the underside texture's own spore-case band.
-			sori: { count: 8, size: 0.0045, at: [0.39, 0.54] },
+			// Stills 19 and 25: the spore cases are painted in the underside texture itself, at the
+			// photograph's own size and spacing (3.9 mm across, 1.7 mm apart along a lobe, 223 to a
+			// pinna), so this record draws no discs: the leaf shows the photograph's one set.
 		},
 	},
 	bark: {
