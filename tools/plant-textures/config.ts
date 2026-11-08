@@ -67,10 +67,10 @@ export interface BarkLayerConfig {
 	readonly smooth: number;
 	readonly delight: DelightConfig;
 	/**
-	 * A linear colour, multiplied channel by channel into the layer's baked colour: it steers the
-	 * wood toward its own tone where the picture's crop carries another season, light or age. It
-	 * reaches the colour alone, so the relief keeps the picture's shapes, and the manifest's mean
-	 * records the tinted tile. Absent, the layer bakes as it always has.
+	 * A linear colour, multiplied channel by channel into the layer's baked colour, which steers
+	 * the layer toward the species' own tone. It reaches the colour alone, so the relief keeps the
+	 * picture's shapes, and the manifest's mean records the tinted tile. Absent, the layer bakes as
+	 * it always has.
 	 */
 	readonly tint?: readonly [number, number, number];
 }
