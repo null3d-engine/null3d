@@ -29,8 +29,8 @@ export const record: Species = {
 	latin: 'Betula pendula',
 	form: 'slender open flame on a white bole',
 	// Stills 01, 02 and 18: the tree stands about two and a half times its crown's width, on a bole
-	// about four hundredths of the height across at breast height, so the fit's 0.48 crown over the
-	// height holds.
+	// about two hundredths of the height across at breast height, as the drawings measure it, so the
+	// fit's 0.48 crown over the height holds.
 	size: { height: { mean: 21, spread: 2 }, dbh: 0.42, aspect },
 	growth: {
 		model: 'self-organizing',
@@ -200,12 +200,12 @@ export const record: Species = {
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
-				length: { mean: 0.62, spread: 0.08 },
-				nodes: { mean: 12, spread: 0.8 },
+				length: { mean: 0.95, spread: 0.1 },
+				nodes: { mean: 16, spread: 0.8 },
 				leafYears: 2,
 				internode: ALTERNATE,
-				stem: { radius: [0.007, 0.003] },
-				laterals: 2,
+				stem: { radius: [0.008, 0.003] },
+				laterals: 3,
 				lateralGap: 0.35,
 				bend: { length: 0.06, angle: 22 },
 				// Still 21: the photograph's leaves stand in two ranks along the twig and face the camera,
@@ -229,12 +229,12 @@ export const record: Species = {
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
-				length: { mean: 0.24, spread: 0.03 },
-				nodes: { mean: 8, spread: 0.6 },
+				length: { mean: 0.35, spread: 0.04 },
+				nodes: { mean: 10, spread: 0.6 },
 				leafYears: 2,
 				internode: ALTERNATE,
 				stem: { radius: [0.004, 0.0018] },
-				laterals: 1,
+				laterals: 2,
 				lateralGap: 0.4,
 				bend: { length: 0.05, angle: 20 },
 				leafScale: [
@@ -254,12 +254,12 @@ export const record: Species = {
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
-				length: { mean: 0.24, spread: 0.03 },
-				nodes: { mean: 8, spread: 0.6 },
+				length: { mean: 0.35, spread: 0.04 },
+				nodes: { mean: 10, spread: 0.6 },
 				leafYears: 2,
 				internode: ALTERNATE,
 				stem: { radius: [0.004, 0.0018] },
-				laterals: 1,
+				laterals: 2,
 				lateralGap: 0.4,
 				bend: { length: 0.05, angle: 20 },
 				phyllotaxis: { kind: 'spiral', divergence: 180 },
@@ -414,14 +414,14 @@ export const record: Species = {
 		autumn: { reflectance: [0.22, 0.16, 0.02], transmittance: [0.34, 0.26, 0.02] },
 	},
 	wind: {
-		// The wind clip's bands, base first: the white bole stands stiff, the crown's lowest fringe of
-		// hanging twigs swings most, and the top only flickers.
+		// The wind clip's bands, by branching order: the white bole stands stiff, a great limb holds
+		// most of its own line, and the finest twigs of the crown's fringe swing freest.
 		stiffness: [
 			[0, 0.95],
-			[0.2, 0.4],
-			[0.45, 0.55],
-			[0.8, 0.85],
-			[1, 1],
+			[0.2, 0.7],
+			[0.45, 0.45],
+			[0.8, 0.3],
+			[1, 0.2],
 		],
 		sway: { frequency: 0.32, amplitude: 0.05 },
 		flutter: { kind: 'blade', amplitude: 0.25, frequency: 3.2 },
@@ -437,10 +437,10 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The largest of the species and its three forms: 3.36, 5.46, 9.05 and 15.89 MB. The kit holds
-			// the long leafy shoots the fine leaf needs and three cutting classes, each with two leafy
-			// years, so it sits close to the tree caps' low and high tiers.
-			kitBytes: { low: 3_450_000, medium: 5_700_000, high: 9_300_000, ultra: 16_300_000 },
+			// The largest of the species and its three forms: 3.39, 6.04, 10.59 and 19.25 MB. The kit
+			// holds the long leafy shoots the fine leaf needs and three cutting classes sized to their
+			// photographs, so it sits close to the tree caps' low and medium tiers.
+			kitBytes: { low: 3_450_000, medium: 6_100_000, high: 10_700_000, ultra: 19_400_000 },
 			// The largest variant of the species and its forms, the woodland's: 6.94, 6.97, 7.02 and
 			// 7.12 MB.
 			variantBytes: { low: 7_100_000, medium: 7_100_000, high: 7_200_000, ultra: 7_300_000 },
@@ -464,11 +464,11 @@ export const record: Species = {
 	variants: 6,
 	seedSalt: 20221108,
 	cuttings: {
-		// Still 21: a cut branch of about a metre, its twigs arching out and drooping.
+		// Still 21: a cut branch of about a metre, its twigs arching out and drooping; it draws 0.92 m.
 		branch: { shoot: 'whip', pick: 1 },
-		// Still 22: the short leafy twig that arches over, which the cutting class draws.
+		// Still 22: the short leafy twig that arches over, which the cutting class draws; 0.41 m.
 		subbranch: { shoot: 'spur', pick: 0 },
-		// Still 23: a twig tip with its alternate leaves and its small bud, spaced along the run.
+		// Still 23: a twig tip with its alternate leaves and its small bud, spaced along the run; 0.37 m.
 		cluster: { shoot: 'cut', pick: 1 },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
 		leaf: { pressed: true },

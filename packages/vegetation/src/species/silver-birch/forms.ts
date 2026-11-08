@@ -133,11 +133,10 @@ export const forms: Readonly<Record<string, SpeciesForm>> = {
 			},
 		},
 		// Still 33: a grown birch packs its drooping twigs into a dense continuous veil. The fine
-		// birch leaf costs many leaves per square metre of crown, so the densest variant that stays
-		// inside the tree caps' variant bytes at every tier draws this crown.
-		// The fine birch leaf costs many leaves for each square metre of crown, so this form carries its
-		// foliage on long shoots: the card levels draw a row for each shoot, and the tree caps hold
-		// about eight thousand of them however long a shoot grows.
+		// birch leaf costs many leaves for each square metre of crown, so this form carries its foliage
+		// on long shoots: the card levels draw a row for each shoot, and the tree caps hold about eight
+		// thousand of them however long a shoot grows. The crown then reads 0.194 open where its
+		// photograph reads 0.057, a gap it cannot close inside those caps; the record states it.
 		shoots: {
 			leafYears: 1,
 			classes: [
