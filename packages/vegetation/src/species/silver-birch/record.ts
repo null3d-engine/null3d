@@ -195,15 +195,13 @@ export const record: Species = {
 		cuttingClasses: [
 			{
 				// Still 21: a cut branch divides into thin twigs that arch out and droop, the leaves
-				// alternating along their run and spaced apart. Its third year gives the second joint the
-				// photograph's subdivision needs, at a node count the shoot mesh and the kit caps allow,
-				// and its leaves run larger than the species' so the piece fills its picture's outline.
+				// alternating along their run and spaced apart.
 				name: 'whip',
 				vigor: [0, 1],
 				share: 0,
-				years: 3,
+				years: 2,
 				length: { mean: 0.95, spread: 0.1 },
-				nodes: { mean: 5, spread: 0.4 },
+				nodes: { mean: 16, spread: 0.8 },
 				leafYears: 2,
 				internode: ALTERNATE,
 				stem: { radius: [0.008, 0.003] },
@@ -216,8 +214,8 @@ export const record: Species = {
 				phyllotaxis: { kind: 'spiral', divergence: 180 },
 				skyward: 0.2,
 				leafScale: [
-					[0, 1.3],
-					[1, 1.5],
+					[0, 0.8],
+					[1, 1],
 				],
 				leafAngle: [
 					[0, 72],
@@ -440,10 +438,10 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The largest of the species and its three forms: 3.41, 6.16, 10.87 and 19.77 MB. The kit
+			// The largest of the species and its three forms: 3.39, 6.04, 10.59 and 19.25 MB. The kit
 			// holds the long leafy shoots the fine leaf needs and three cutting classes sized to their
-			// photographs, so the medium tier sits within a sixth of a megabyte of the tree cap's 6.3.
-			kitBytes: { low: 3_450_000, medium: 6_250_000, high: 11_000_000, ultra: 19_900_000 },
+			// photographs, so it sits close to the tree caps' low and medium tiers.
+			kitBytes: { low: 3_450_000, medium: 6_100_000, high: 10_700_000, ultra: 19_400_000 },
 			// The largest variant of the species and its forms, the woodland's: 6.94, 6.97, 7.02 and
 			// 7.12 MB.
 			variantBytes: { low: 7_100_000, medium: 7_100_000, high: 7_200_000, ultra: 7_300_000 },
