@@ -157,6 +157,23 @@ Rejected:
   and 10 against one each. The elm's cure for a collapsing flat shoot, a 35-degree leaf spread with a
   small droop, made this species worse, 129 and 41 to 142 and 83: a lime leaf already hangs from a
   2.8 cm stalk, so the spread turns the blades edge on as the piece comes round. It was reverted.
+### The verdict's named faults
+
+The third verdict passed rows 3, 4, 6, 7 and 11 and named six faults. They stand in its order of
+value, with the figure each carries, so the next pass starts from this list.
+
+| Fault | Row | Figure | What it is |
+| --- | --- | --- | --- |
+| The profile's crown is broader than its photograph's | 1 | 1.08 as wide as tall against 0.755 | A whole-view shape fault, the largest left: the crown's own box in the framed picture, not the plant's 0.752 |
+| The close cluster carries too few leaves | 5 | five leaves against about thirteen | A leaf count, not a shape: the spur class carries five alternate leaves where the photograph's tip shows about thirteen |
+| The young bark's colour | 8 | 15.95 | A colour fault on the young layer, which a per-zone linear tint in the texture source can move without touching the relief |
+| The flower and sprout views frame the wrong subject | 12 | 19 and 20 frame a twig and a branch | Framing, not growth: their slots aim at wood where the photographs show a flower cluster and a stool's sprouts |
+| No skeleton view was drawn | 2 | none in the reference set | The cheapest row on the board: the tool draws a wood-only view, so the record needs a slot entry for it rather than a photograph |
+| The profile and silhouette pieces | 1 | four and two against one | A measure limit, not the plant: the matte drops the sub-pixel twigs that the colour picture joins, so the groups it counts are its own |
+
+Two more are recorded as agreed limits with the lead: the drawn height at 0.84 m above the record's
+band, which is row 9's limit, and the basal sprouts, which the record cannot draw.
+
 - The basal sprouts of stills 14 and 20 are not drawn, and the reference set holds no skeleton view
   for row 2: both stay as stated limits. The record has no field for a sprout at the foot. A stool of
   three stems was grown as a test: it draws a 5 cm plant with three limbs and no crown, so the stool
