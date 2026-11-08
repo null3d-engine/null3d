@@ -397,6 +397,20 @@ const SAMARA_WING_PROFILE: readonly (readonly [number, number])[] = [
 	[0.62, 1],
 	[1, 0],
 ];
+/** The half-width of a key's wing before its body, by position along that run: the foot opening out. */
+const SAMARA_LEADING_PROFILE: readonly (readonly [number, number])[] = [
+	[0, 0.25],
+	[1, 0.95],
+];
+/** The half-width of a key's wing past its body: the longest run, closing to the tip. */
+const SAMARA_TRAILING_PROFILE: readonly (readonly [number, number])[] = [
+	[0, 0.95],
+	[0.45, 0.65],
+	[1, 0],
+];
+/** A station on a key's ring chain: metres along the key from the site, and the half-width there. */
+type Station = { readonly along: number; readonly half: number };
+
 /** The key's half-thickness over its half-width: a wing, thin enough to read as a flat blade. */
 const SAMARA_THIN = 0.12;
 
@@ -418,6 +432,7 @@ export function samaraMesh(
 		readonly length: number;
 		readonly width: number;
 		readonly body: number;
+		readonly bodyAt?: number;
 		readonly twist?: number;
 	},
 	at: Readonly<Vector3>,
@@ -440,6 +455,36 @@ export function samaraMesh(
 	const body = Math.min(0.6, Math.max(0.1, shape.body));
 	// The record gives the wing's full width; a station stands half of it from the key's line.
 	const wing = shape.width * 0.5;
+	const first = mesh.vertices;
+	if (shape.bodyAt !== undefined) {
+		const bodyStations: Station[] = [];
+		const wingStations: Station[] = [];
+		// The share along the key where the body's middle stands, and the run of length it takes.
+		const centre = Math.min(1, Math.max(0, shape.bodyAt)) * shape.length;
+		const half = (body * shape.length) / 2;
+		const start = Math.max(0, centre - half);
+		const end = Math.min(shape.length, start + body * shape.length);
+		// The wing runs in from the key's foot to the body, opening as it comes. Its first ring stands
+		// inside the stalk it hangs from, so the two read as one part rather than meeting at a point.
+		for (const [t, share] of SAMARA_LEADING_PROFILE)
+			wingStations.push({
+				along: t === 0 ? -Math.min(0.004, shape.length * 0.15) : t * start,
+				half: t === 0 ? 0 : share * wing,
+			});
+		writeRings(mesh, wingStations, at, direction, across, through, shape.length, colour);
+		const banded = mesh.vertices;
+		// The body stands where the record puts it, narrower than the wing round it.
+		for (const [t, share] of SAMARA_BODY_PROFILE)
+			bodyStations.push({ along: start + t * (end - start), half: share * wing });
+		writeRings(mesh, bodyStations, at, direction, across, through, shape.length, colour);
+		markBand(mesh, banded, 1);
+		// The wing closes from the body's far end to the tip.
+		wingStations.length = 0;
+		for (const [t, share] of SAMARA_TRAILING_PROFILE)
+			wingStations.push({ along: end + t * (shape.length - end), half: share * wing });
+		writeRings(mesh, wingStations, at, direction, across, through, shape.length, colour);
+		return;
+	}
 	const bodyStations: { readonly along: number; readonly half: number }[] = [];
 	// The seed body's foot stands inside the stalk it hangs from, so the two read as one part rather
 	// than meeting at a point.
@@ -458,7 +503,6 @@ export function samaraMesh(
 			along: (body + t * (1 - body)) * shape.length,
 			half: share * wing,
 		});
-	const first = mesh.vertices;
 	writeRings(mesh, bodyStations, at, direction, across, through, shape.length, colour);
 	// The seed body takes the extra's band colour, so a key reads as a brown body on a green wing.
 	markBand(mesh, first, 1);

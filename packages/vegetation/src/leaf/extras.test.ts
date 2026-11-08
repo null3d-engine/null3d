@@ -3,6 +3,7 @@
 // each naming its record entry in its first texture coordinate, small ones left off the thinned
 // level, and the same bytes from the same seed.
 import { describe, expect, it } from 'bun:test';
+import { createHash } from 'node:crypto';
 import type { SpeciesKitData } from '../asset';
 import { placeholderSkeleton } from '../core/placeholder';
 import type { ExtraSpec, Species } from '../core/record';
@@ -452,7 +453,9 @@ describe('the one-winged key', () => {
 	const KEY = { length: 0.032, width: 0.01, body: 0.32 } as const;
 
 	/** A key's mesh alone, hanging straight down from the origin. */
-	function key(shape: { length: number; width: number; body: number; twist?: number } = KEY) {
+	function key(
+		shape: { length: number; width: number; body: number; bodyAt?: number; twist?: number } = KEY,
+	) {
 		const mesh = new MeshWriter();
 		samaraMesh(mesh, shape, [0, 0, 0], [0, -1, 0], 0, [0, 0, 0, 255]);
 		return mesh;
@@ -486,6 +489,40 @@ describe('the one-winged key', () => {
 		const across = (high[2] as number) - (low[2] as number);
 		const through = (high[0] as number) - (low[0] as number);
 		expect(through).toBeLessThan(across * 0.3);
+	});
+
+	it('keeps a key whose record names no body position at the stalk end, byte for byte', () => {
+		// The ash's key, drawn as every key was before the record could place the body: the digest is
+		// that drawing, so a change to the default shape shows up here.
+		const ash = { length: 0.032, width: 0.0068, body: 0.18 };
+		const hash = createHash('sha256');
+		hash.update(
+			Array.from(key(ash).positions)
+				.map((v) => v.toFixed(6))
+				.join(','),
+		);
+		hash.update('|');
+		hash.update(Array.from(key(ash).indices).join(','));
+		expect(hash.digest('hex').slice(0, 16)).toBe('3d20e29e067dcc28');
+	});
+
+	it('stands the seed body where the record puts it along the key', () => {
+		const middle = { length: 0.012, width: 0.01, body: 0.3, bodyAt: 0.42 };
+		const mesh = key(middle);
+		const rings = mesh.positions.length / 3 / RING;
+		const banded: number[] = [];
+		for (let r = 0; r < rings; r++) if ((mesh.uvs1[r * RING * 2] as number) === 1) banded.push(r);
+		// The body's rings stand round the share the record asks for, not at the site.
+		const along = banded.map((r) => -(mesh.positions[r * RING * 3 + 1] as number));
+		const first = along[0] as number;
+		const last = along[along.length - 1] as number;
+		expect(first).toBeGreaterThan(middle.length * 0.2);
+		expect(last).toBeLessThan(middle.length * 0.65);
+		// And its widest ring is well inside the key, so the wing runs out on both sides of it.
+		expect(along[Math.floor(along.length / 2)] as number).toBeCloseTo(
+			middle.length * middle.bodyAt,
+			2,
+		);
 	});
 
 	it('turns the lens about its own length without moving it', () => {

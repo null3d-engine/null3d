@@ -383,6 +383,8 @@ export const record: Species = {
 					length: 0.012,
 					width: 0.01,
 					body: 0.3,
+					// Still 19: the seed body stands in the middle of the round wing, not at the stalk.
+					bodyAt: 0.42,
 					twist: 20,
 				},
 				// Still 19: the bunch hangs from a short stalk below the twig, so its keys stand

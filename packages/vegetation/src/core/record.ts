@@ -1695,6 +1695,12 @@ export type ExtraShape =
 				/** Share of the length that the seed body takes, from 0.1 to 0.6. */
 				readonly body: number;
 				/**
+				 * Share of the length along the key where the seed body's middle stands, 0 at the stalk
+				 * end and 0.5 in the middle. Absent, the body stands at the stalk end, as an ash's key
+				 * carries its seed.
+				 */
+				readonly bodyAt?: number;
+				/**
 				 * Degrees the wing's face turns about the key's own length, 0 to 180. 0 by
 				 * default, every key in a bunch showing the same face.
 				 */
