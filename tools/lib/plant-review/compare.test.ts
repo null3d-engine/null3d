@@ -291,6 +291,18 @@ describe("the page's stand camera", () => {
 		expect(camera.yaw).toBeLessThan(0);
 	});
 
+	test('stands a low camera for a short plant photographed from near the ground', () => {
+		const fov = 38;
+		const camera = standCamera(
+			{ fov, aspect: 1024 / 688, horizon: 0.8116, top: 0.193, base: 0.8814, targetX: 0.48 },
+			1.52,
+		);
+		expect(camera.warning).toBeUndefined();
+		expect(camera.height).toBeGreaterThan(0);
+		expect(projectRow(camera, 1.52, fov)).toBeCloseTo(0.193, 3);
+		expect(projectRow(camera, 0, fov)).toBeCloseTo(0.8814, 3);
+	});
+
 	test('says what it gave up when the base would put the camera under the ground', () => {
 		const camera = standCamera(
 			{ fov: 30, aspect: 1, horizon: 0.9, top: 0.1, base: 0.5, targetX: 0.5 },
@@ -403,6 +415,30 @@ describe('the patch colour of a texture source', () => {
 				for (let c = 0; c < 3; c++) image.data[at + c] = 50;
 			}
 		expect(patchLab(image)[0] as number).toBeCloseTo(80.6, 0);
+	});
+
+	test('drops the backdrop from the sample when a slot asks for the plant alone', () => {
+		// A pale stem down the picture's middle on a dark backdrop, so the plain average sits
+		// between the two and the masked one reads the stem.
+		const size = 1000;
+		const data = new Uint8Array(size * size * 4);
+		for (let y = 0; y < size; y++)
+			for (let x = 0; x < size; x++) {
+				const stem = x >= 300 && x < 700;
+				const value = stem ? 200 : 50;
+				const at = (y * size + x) * 4;
+				data[at] = value;
+				data[at + 1] = value;
+				data[at + 2] = value;
+				data[at + 3] = 255;
+			}
+		const image = { width: size, height: size, data };
+		const plain = patchLab(image)[0] as number;
+		const onPlant = patchLab(image, true)[0] as number;
+		// The stem's own lightness is about 80 in CIELAB and the backdrop's about 20, so a plain
+		// average of nine patches lands near 40 and a masked one on the stem's own figure.
+		expect(plain).toBeLessThan(50);
+		expect(onPlant).toBeGreaterThan(75);
 	});
 });
 
