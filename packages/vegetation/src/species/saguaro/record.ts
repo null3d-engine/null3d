@@ -43,9 +43,9 @@ export const record: Species = {
 		// stem to a tip below its top.
 		arms: {
 			count: { mean: 4, spread: 0.7 },
-			from: 0.55,
-			elbow: 0.75,
-			radius: 0.19,
+			from: 0.58,
+			elbow: 0.9,
+			radius: 0.22,
 			rise: { mean: 3.2, spread: 0.6 },
 		},
 		// Stills 09, 10 and 15: areoles one to three centimetres apart along every crest, each an
@@ -216,20 +216,20 @@ export const record: Species = {
 			// Four areole prototypes of one small card each, and the card atlas: the largest kit, at
 			// the finest tier, measures 1.21 MB.
 			kitBytes: { low: 1_250_000, medium: 1_250_000, high: 1_250_000, ultra: 1_250_000 },
-			// Every areole stands as a shoot row; the largest variant measures 4.93 MB at the finest
+			// Every areole stands as a shoot row; the largest variant measures 5.40 MB at the finest
 			// tier, which the two card levels take.
 			variantBytes: {
-				low: 5_000_000,
-				medium: 5_000_000,
-				high: 5_000_000,
-				ultra: 5_000_000,
+				low: 5_500_000,
+				medium: 5_500_000,
+				high: 5_500_000,
+				ultra: 5_500_000,
 			},
 			// The nearest level draws the stem's and arms' wood; the areole cards are instanced rows.
 			lod0Triangles: 60_000,
-			// The first card level's areole cards measure 84,806 triangles at the finest tier; the
-			// second, every other card of the first, 36,486.
-			lod1Triangles: 86_000,
-			lod2Triangles: 37_000,
+			// The first card level's areole cards measure 92,764 triangles at the finest tier; the
+			// second, every other card of the first, 40,127.
+			lod1Triangles: 95_000,
+			lod2Triangles: 41_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 320_000,
 			growMilliseconds: 550,
