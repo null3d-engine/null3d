@@ -1139,6 +1139,18 @@ export interface ShootClass {
 	 */
 	readonly stem?: { readonly radius: readonly [base: number, tip: number] };
 	/**
+	 * How this class's leaves or buds stand along its shoots, where the species' arrangement does not
+	 * fit: a studio cutting's photograph shows leaves two-ranked along the twig, while the crown's
+	 * shoots spiral so they fill from every side. The species' `phyllotaxis` by default.
+	 */
+	readonly phyllotaxis?: Phyllotaxis;
+	/**
+	 * The share of a leaf's turn toward the sky this class takes, from 0 to 1, where the species' own
+	 * value does not fit: a cut twig held up to the camera shows its blades face on, while a crown's
+	 * leaves turn their faces up to the light. The species' `placement.skyward` by default.
+	 */
+	readonly skyward?: number;
+	/**
 	 * Degrees a lateral of this class leans from its parent, where the species' own value does not
 	 * fit: a spray's side twigs spread wider than a whip's.
 	 */
