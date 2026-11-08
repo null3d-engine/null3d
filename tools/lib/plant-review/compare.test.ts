@@ -416,6 +416,30 @@ describe('the patch colour of a texture source', () => {
 			}
 		expect(patchLab(image)[0] as number).toBeCloseTo(80.6, 0);
 	});
+
+	test('drops the backdrop from the sample when a slot asks for the plant alone', () => {
+		// A pale stem down the picture's middle on a dark backdrop, so the plain average sits
+		// between the two and the masked one reads the stem.
+		const size = 1000;
+		const data = new Uint8Array(size * size * 4);
+		for (let y = 0; y < size; y++)
+			for (let x = 0; x < size; x++) {
+				const stem = x >= 300 && x < 700;
+				const value = stem ? 200 : 50;
+				const at = (y * size + x) * 4;
+				data[at] = value;
+				data[at + 1] = value;
+				data[at + 2] = value;
+				data[at + 3] = 255;
+			}
+		const image = { width: size, height: size, data };
+		const plain = patchLab(image)[0] as number;
+		const onPlant = patchLab(image, true)[0] as number;
+		// The stem's own lightness is about 80 in CIELAB and the backdrop's about 20, so a plain
+		// average of nine patches lands near 40 and a masked one on the stem's own figure.
+		expect(plain).toBeLessThan(50);
+		expect(onPlant).toBeGreaterThan(75);
+	});
 });
 
 describe('the pieces a plant is drawn as', () => {
