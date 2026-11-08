@@ -150,7 +150,7 @@ export const record: Species = {
 				share: 0.38,
 				years: 3,
 				length: { mean: 0.32, spread: 0.04 },
-				nodes: { mean: 88, spread: 8 },
+				nodes: { mean: 56, spread: 6 },
 				internode: EVEN,
 				stem: { radius: [0.006, 0.002] },
 				lateral: 70,
@@ -204,7 +204,7 @@ export const record: Species = {
 			length: { mean: 0.005, spread: 0.001 },
 			width: 0.003,
 			section: 'awl',
-			density: 22,
+			density: 18,
 			angle: 20,
 			ranks: 0,
 			optics: {

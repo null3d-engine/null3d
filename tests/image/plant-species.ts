@@ -17,5 +17,9 @@ export function plantSpeciesTests(root = ROOT): ImageTest[] {
 		sketch: `tests/pages/sketches/plant-review-sketch.ts?species=${id}&view=panels`,
 		hold: 1,
 		size: [1024, 1024],
+		// Four 1024-texel panels of a whole plant take longer than a single view of a scene. The
+		// tallest species, a giant sequoia of 60 m with its crown's shoots in real geometry, needs
+		// more than the default 60 seconds on the software rasteriser.
+		timeoutSeconds: 150,
 	}));
 }
