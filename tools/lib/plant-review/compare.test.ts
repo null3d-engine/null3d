@@ -433,6 +433,37 @@ describe('the pieces a plant is drawn as', () => {
 		).toBe(2);
 	});
 
+	test('counts two runs one background pixel apart as one piece', () => {
+		// The hairline case: a leaf group whose supporting twig is thinner than a pixel, so the one
+		// pixel that would join it fell to the outline's cutoff.
+		expect(
+			pieceCount(
+				maskOf(20, 20, [
+					[0, 0, 8, 8],
+					[9, 0, 18, 8],
+				]),
+				20,
+				20,
+				24,
+			),
+		).toBe(1);
+	});
+
+	test('counts two runs two background pixels apart as two pieces', () => {
+		// A genuine separation: the same two runs with an empty column between them.
+		expect(
+			pieceCount(
+				maskOf(20, 20, [
+					[0, 0, 8, 8],
+					[10, 0, 18, 8],
+				]),
+				20,
+				20,
+				24,
+			),
+		).toBe(2);
+	});
+
 	test('ignores a speck too small to be a part of the plant', () => {
 		expect(
 			pieceCount(
