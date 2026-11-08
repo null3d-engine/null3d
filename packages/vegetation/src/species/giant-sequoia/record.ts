@@ -251,7 +251,8 @@ export const record: Species = {
 		// third and each lobe swells the rest.
 		taper: { amount: 0.3, height: 9 },
 		buttress: {
-			lobes: { mean: 6, spread: 1 },
+			// Evenly round the column, as the photographs show a sequoia's foot from any side.
+			lobes: { mean: 8, spread: 0 },
 			amount: 1,
 			sharpness: 4,
 			height: 4.5,
