@@ -3,8 +3,9 @@
 // crown sets, sags under its own weight and turns its tip up, and divides into the orders below it
 // by the same positional numbers. The boughs and their branches stop at the envelope, so the plant
 // fills the outline its reference measured. Every axis draws its thickness from the pipe model,
-// fitted to the species' diameter at breast height. Bud sites stand on the finest axes and at every
-// axis's tip, where the shoot prototypes attach.
+// fitted to the species' diameter at breast height. Bud sites stand along the finest axes, along the
+// limbs below them from a bare inner run outward, and at every axis's tip, where the shoot
+// prototypes attach.
 import {
 	AXIS_LIMB,
 	AXIS_STEM,
@@ -60,6 +61,11 @@ const UPTURN_FROM = 0.55;
 const TOP_WHORL = 0.97;
 /** The most children one parent node puts out from a whorled arrangement. */
 const MOST_WHORL = 8;
+/** The share of a limb's inner length that carries no shoot site, so the limb shows its wood. */
+const LIMB_BARE = 0.3;
+/** The vigour a limb's first shoot site carries, and the rise from it to the limb's last. */
+const LIMB_VIGOUR = 0.06;
+const LIMB_VIGOUR_RISE = 0.2;
 
 /** The choices an axis makes, each its own hash purpose. */
 const Purpose = {
@@ -539,28 +545,37 @@ export function growArchitectural(input: GrowInput): MacroSkeleton {
 					);
 					continue;
 				}
-				const lateral = lateralAt(node.direction, radians(i * GOLDEN));
-				const outward = normalize3([
-					lateral[0] - node.direction[0] * dot(lateral, node.direction),
-					lateral[1] - node.direction[1] * dot(lateral, node.direction),
-					lateral[2] - node.direction[2] * dot(lateral, node.direction),
-				]);
-				const shootDirection = normalize3([
-					node.direction[0] * 0.6 + outward[0] * 0.8,
-					node.direction[1] * 0.6 + outward[1] * 0.8,
-					node.direction[2] * 0.6 + outward[2] * 0.8,
-				]);
+				const { direction, outward } = lateralShoot(node, i);
 				addBud(
 					axis,
 					i,
-					shootDirection,
-					skyOf(shootDirection, outward),
+					direction,
+					skyOf(direction, outward),
 					BUD_LATERAL,
 					(0.2 + 0.55 * at) * (0.5 + 0.5 * crownT),
 					node.radius,
 				);
 			}
 		} else {
+			// A bough or a branch is not bare under its foliage: shoots stand along it from a bare
+			// inner run outward, so the limb carries needles rather than a tuft at its tip alone. A
+			// low vigour keeps a thin run of them, and the shoot placement thins it further.
+			const first = Math.max(1, Math.ceil(nodes.length * LIMB_BARE));
+			for (let i = first; i < nodes.length - 1; i++) {
+				const node = nodes[i] as GrownNode;
+				const at = share(grown, i);
+				const through = (at - LIMB_BARE) / Math.max(1e-6, 1 - LIMB_BARE);
+				const { direction, outward } = lateralShoot(node, i);
+				addBud(
+					axis,
+					i,
+					direction,
+					skyOf(direction, outward),
+					BUD_LATERAL,
+					LIMB_VIGOUR + LIMB_VIGOUR_RISE * clamp(through, 0, 1),
+					node.radius,
+				);
+			}
 			const tip = nodes[nodes.length - 1] as GrownNode;
 			addBud(
 				axis,
@@ -596,6 +611,22 @@ export function growArchitectural(input: GrowInput): MacroSkeleton {
 			vigor: clamp(vigor, 0, 1),
 			light: data.light,
 		});
+	};
+
+	/** The direction a lateral shoot leaves a node in, and the side of the axis it stands off. */
+	const lateralShoot = (node: GrownNode, i: number): { direction: Vector3; outward: Vector3 } => {
+		const lateral = lateralAt(node.direction, radians(i * GOLDEN));
+		const outward = normalize3([
+			lateral[0] - node.direction[0] * dot(lateral, node.direction),
+			lateral[1] - node.direction[1] * dot(lateral, node.direction),
+			lateral[2] - node.direction[2] * dot(lateral, node.direction),
+		]);
+		const direction = normalize3([
+			node.direction[0] * 0.6 + outward[0] * 0.8,
+			node.direction[1] * 0.6 + outward[1] * 0.8,
+			node.direction[2] * 0.6 + outward[2] * 0.8,
+		]);
+		return { direction, outward };
 	};
 
 	// The whorls of boughs: one whorl every spacing metres of the crown, each a ring of boughs.
