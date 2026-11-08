@@ -1316,6 +1316,12 @@ export function compareStills(
 			masked,
 			surfaceDeltaE,
 			barkColour,
+			// A masked close view reads its bark difference off the same patches, since the page's own
+			// figure averages a plant mask that on a thin stem is mostly the backdrop.
+			barkDeltaE:
+				barkMaskOn && barkColour
+					? Number(deltaE2000(barkColour.reference, barkColour.render).toFixed(2))
+					: shown.barkDeltaE,
 			edgeDifference: edges,
 			pieces,
 			...(framing ? { framing } : {}),
