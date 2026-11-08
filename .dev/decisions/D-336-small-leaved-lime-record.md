@@ -181,9 +181,9 @@ direction, which no single crown can be. A middle leader, dominance 0.80 and 0.6
 6, gives boxes of 0.78, 0.92 and 0.85 and fails two gaps by more. So the record keeps the crown whose
 three gaps are inside and states the box fault: the crown's roundness sweeps the boxes' spread to
 0.93, 1.08 and 0.97.
-| The close cluster carries too few leaves | 5 | five leaves against the reference's eight | A leaf count, not a shape: a blob count of the reference cluster gives eight, so the deficit is three. Its turn is 142 wide against 85 |
+| The close cluster carries too few leaves | 5 | eight leaves now, gaps 0.368 against 0.379 and 0.357 against 0.354 | The count is met and the clusters' openness follows: the leaves stand over 100 to 86 degrees, which raises their gaps from 0.295 and 0.284. Its turn is still outside |
 | The young bark's colour | 8 | 15.95 | A colour fault on the young layer, which a per-zone linear tint in the texture source can move without touching the relief. The bark texture's surface is 1.38 and passes |
-| The flower and sprout views frame the wrong subject | 12 | 19 and 20 frame a twig and a branch | Framing, not growth: their slots aim at wood where the photographs show a flower cluster and a stool's sprouts |
+| The flower and sprout views frame the wrong subject | 12 | 19 now shows a cream flower cluster, overlap 0.62; its gap is 0.020 against 0.227 | The flowers are drawn and framed; the gap stays closed because the view's frame is set by the extras around the chosen cluster, with leaves between them, and a flower carries no stalk of its own to stand clear. That is the tool's framing, not the spray. View 20 frames a branch because the record cannot draw a stool's sprouts |
 | No skeleton view was drawn | 2 | none in the reference set | The cheapest row on the board: the tool draws a wood-only view, so the record needs a slot entry for it rather than a photograph |
 
 The piece counts are not a fault: the whole views draw one piece each, which the shared branch's

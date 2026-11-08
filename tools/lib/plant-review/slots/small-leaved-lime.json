@@ -74,7 +74,8 @@
 		"sunRise": 55,
 		"skyShare": 0.5,
 		"daylight": 2.6,
-		"season": "blossom"
+		"season": "blossom",
+		"background": "studio-grey"
 	},
 	"20-basal-sprouts.png": {
 		"skyShare": 0.68,

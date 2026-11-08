@@ -215,8 +215,8 @@ export const record: Species = {
 					[1, 1],
 				],
 				leafAngle: [
-					[0, 78],
-					[1, 64],
+					[0, 100],
+					[1, 86],
 				],
 				leafAngleSpread: 12,
 				droop: 4,
