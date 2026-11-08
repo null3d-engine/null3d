@@ -429,6 +429,15 @@ function growthProblems(record: Species, out: string[]): void {
 			curveProblems(order.density, `growth.orders[${i}].density`, out);
 			shareProblem(order.flatten, `growth.orders[${i}].flatten`, out);
 		});
+		if (growth.pipe) {
+			if (!(growth.pipe.exponent > 0) || !(growth.pipe.tipRadius > 0))
+				out.push('growth.pipe needs an exponent and a tip radius above 0');
+			const leader = growth.pipe.leader;
+			if (leader !== undefined && !(leader >= 0.5 && leader <= 1))
+				out.push(
+					`growth.pipe.leader is ${leader}; a stem keeps a share of its girth from 0.5 to 1 from node to node`,
+				);
+		}
 	}
 }
 
@@ -673,6 +682,15 @@ export function speciesProblems(record: Species): string[] {
 		out.push('lod.woodOrders keeps more orders at the second card level than at the first');
 	if (lod.cardStalk !== undefined && !(lod.cardStalk >= 0 && lod.cardStalk <= 8))
 		out.push(`lod.cardStalk is ${lod.cardStalk}; it is pixels from 0 to 8`);
+	const cardCell = lod.cardCell;
+	if (cardCell)
+		for (const detail of ['low', 'medium', 'high', 'ultra'] as const) {
+			const side = cardCell[detail];
+			if (!Number.isInteger(side) || side < 64 || side > 256 || (side & (side - 1)) !== 0)
+				out.push(
+					`lod.cardCell.${detail} is ${side}; a card cell is a power of two from 64 to 256 texels`,
+				);
+		}
 	if (lod.impostor.views < 2 || lod.impostor.texels < 8)
 		out.push('lod.impostor needs at least 2 views across and 8 texels a view');
 	for (const [key, value] of Object.entries(lod.budget))
