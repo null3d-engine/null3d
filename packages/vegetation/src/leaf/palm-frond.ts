@@ -83,14 +83,16 @@ function leafOf(record: Species): LeafShape {
 
 /**
  * Where each leaflet pair leaves the rachis, as shares of its length: spaced in step with the
- * leaflets' own length, close at the tip where they are short.
+ * leaflets' own length, close at the tip where they are short. The spacing reads the curve where
+ * the rachis stands on its original axis, so a span cut near a frond's tip carries the tip's
+ * spacing rather than the whole frond's.
  */
-function pinnaPlaces(pinnae: PinnaSpec, share: number): number[] {
+function pinnaPlaces(pinnae: PinnaSpec, share: number, shareAt: (at: number) => number): number[] {
 	const count = Math.max(1, Math.round(spreadMean(pinnae.count) * share));
 	const weight: number[] = [0];
 	for (let i = 0; i < PLACE_SAMPLES; i++) {
 		const t = (i + 0.5) / PLACE_SAMPLES;
-		weight.push((weight[i] as number) + 1 / (0.1 + curveAt(pinnae.length, t)));
+		weight.push((weight[i] as number) + 1 / (0.1 + curveAt(pinnae.length, shareAt(t))));
 	}
 	const total = weight[PLACE_SAMPLES] as number;
 	const places: number[] = [];
@@ -155,6 +157,7 @@ function leafletsOf(
 	length: number,
 	level: MeshLevel,
 	places: readonly number[],
+	shareAt: (at: number) => number,
 ): Leaflet[] {
 	const out: Leaflet[] = [];
 	const planes = Math.max(1, pinnae.planes);
@@ -165,7 +168,7 @@ function leafletsOf(
 		if (p % stride !== 0) return;
 		if (place < petioleShare) return;
 		const spine = p < Math.round((pinnae.spines ?? 0) / 2);
-		const blade = curveAt(pinnae.length, place) * origin;
+		const blade = curveAt(pinnae.length, shareAt(place)) * origin;
 		for (let g = 0; g < GROUP; g++) {
 			const at = place + (g - (GROUP - 1) / 2) * GROUP_STEP;
 			if (at < 0 || at > 1) continue;
@@ -280,6 +283,9 @@ interface PalmFrond {
 	 * blade's base; the leaflets start past this lead.
 	 */
 	readonly lead: number;
+	/** The share of the axis this piece was cut from where its first and last nodes stand. */
+	readonly cutFrom: number;
+	readonly cutTo: number;
 	readonly age: number;
 	readonly record: number;
 	readonly phase: number;
@@ -329,6 +335,8 @@ function palmFronds(input: MeshInput): PalmFrond[] {
 		fronds.push({
 			path,
 			lead,
+			cutFrom: axes.cutFrom[axis] as number,
+			cutTo: axes.cutTo[axis] as number,
 			age: buds.vigor[b] as number,
 			record: input.variant * VARIANT_RECORDS + (axes.record[axis] as number),
 			phase: (axis * 97) & 255,
@@ -390,8 +398,13 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 		const drawn = mass ? 2 : level;
 		const origin = hasStem ? length : Math.max(length, recordFrond);
 		const count = Math.max(1, Math.round(spreadMean(pinnae.count) * (length / origin)));
-		const places = pinnaPlaces({ ...pinnae, count }, 1);
-		const list = leafletsOf(shape, pinnae, origin, length, drawn, places);
+		// Where along the original axis this run stands: a whole frond covers the axis from 0 to 1,
+		// and a cut piece covers the shares it was taken from. The record's curves are read there,
+		// so a piece carries the pinnae of the place it came from.
+		const shareAt = (at: number): number =>
+			Math.max(0, Math.min(1, frond.cutFrom + at * (frond.cutTo - frond.cutFrom)));
+		const places = pinnaPlaces({ ...pinnae, count }, 1, shareAt);
+		const list = leafletsOf(shape, pinnae, origin, length, drawn, places, shareAt);
 		const frondRibbon = mass ? deadRibbon : ribbon;
 		const bytes: number[] = [0, 0, 0, 0];
 		const record = base + frond.record;
@@ -404,7 +417,7 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 			point[1] = frame.position[1] as number;
 			point[2] = frame.position[2] as number;
 			// The leaflet leaves the rachis at its place's angle, on its own side.
-			const angle = radians(curveAt(pinnae.angle, leaflet.at));
+			const angle = radians(curveAt(pinnae.angle, shareAt(leaflet.at)));
 			const side = leaflet.side;
 			const outward: Vector3 = [
 				(frame.tangent[0] as number) * cos(angle) +
@@ -434,7 +447,7 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 				outward,
 				across,
 				normal,
-				curveAt(pinnae.droop, leaflet.at),
+				curveAt(pinnae.droop, shareAt(leaflet.at)),
 				(at) => {
 					bytes[0] = record >> 8;
 					bytes[1] = record & 255;
