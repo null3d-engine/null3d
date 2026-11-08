@@ -317,7 +317,7 @@ export const record: Species = {
 				vigor: [0, 1],
 				share: 0,
 				years: 1,
-				length: { mean: 0.2, spread: 0.02 },
+				length: { mean: 0.24, spread: 0.02 },
 				nodes: { mean: 6, spread: 0.4 },
 				// Still 23: the six leaves stand along a stem with its internodes showing, so the piece is
 				// taller than it is wide, as the photograph lays it out.
