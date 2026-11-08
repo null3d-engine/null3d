@@ -72,7 +72,7 @@ const CROWN_DEPTH = 0.7;
 /** Metres that a frond's base stands out from the stem's surface. */
 const FROND_STAND = 0.08;
 /** The share of a living frond's length that a dead frond keeps. */
-const DEAD_SHARE = 0.72;
+const DEAD_SHARE = 0.95;
 /** The least height of a sucker's stem, and the most, in metres. */
 const SUCKER_HEIGHT = [0.6, 2.6] as const;
 /** The share of the crown's living fronds a sucker carries. */
