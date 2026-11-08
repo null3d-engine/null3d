@@ -66,6 +66,13 @@ export interface BarkLayerConfig {
 	 */
 	readonly smooth: number;
 	readonly delight: DelightConfig;
+	/**
+	 * A linear colour, multiplied channel by channel into the layer's baked colour, which steers
+	 * the layer toward the species' own tone. It reaches the colour alone, so the relief keeps the
+	 * picture's shapes, and the manifest's mean records the tinted tile. Absent, the layer bakes as
+	 * it always has.
+	 */
+	readonly tint?: readonly [number, number, number];
 }
 
 /** The bark textures' inputs. */
@@ -124,12 +131,21 @@ export function readConfig(file: string): SourceConfig {
 	const quality = Object.fromEntries(
 		FILES.map((name) => [name, raw.quality?.[name] ?? DEFAULT_QUALITY]),
 	) as Record<FileName, number>;
-	const zone = (z: Record<string, unknown>) =>
-		({
+	const zone = (z: Record<string, unknown>) => {
+		const tint = z.tint as readonly unknown[] | undefined;
+		if (
+			tint !== undefined &&
+			(!Array.isArray(tint) ||
+				tint.length !== 3 ||
+				tint.some((v) => typeof v !== 'number' || !(v >= 0)))
+		)
+			throw new Error(`a bark tint is three linear numbers from 0 up, not ${JSON.stringify(tint)}`);
+		return {
 			...ZONE_DEFAULTS,
 			...z,
 			delight: { ...ZONE_DEFAULTS.delight, ...(z.delight as object) },
-		}) as BarkLayerConfig;
+		} as BarkLayerConfig;
+	};
 	return {
 		caps: raw.caps ?? 'tree',
 		...(raw.leaf

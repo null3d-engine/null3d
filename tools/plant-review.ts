@@ -12,7 +12,7 @@
 // server must serve this copy of the repository on the port that NULL3D_PORT names; one is started
 // when none answers there. tools/lib/plant-review/README.md describes every part.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import { isSpeciesId, loadSpecies } from '../packages/vegetation/src/core/registry.ts';
 import { REPO_ROOT } from '../tests/lib/server.ts';
@@ -342,28 +342,71 @@ function stillList<T extends { readonly file: string }>(stills: readonly T[]): r
 }
 
 /**
- * The slots a machine draws in: three, so three runs share one GPU's worth of work. A run takes one
- * before it starts drawing and gives it back when it is done, so no script has to know the rule.
+ * The slots a machine draws in: two. Three shared seven dev servers on a fourteen-core Mac and
+ * pushed the load past thirty, so runs sat on their first page for minutes; one is safe but leaves
+ * short tests waiting behind a full turn round. Two keeps the machine's load under ten and its
+ * short rounds moving. A run takes one before
+ * it starts drawing and gives it back when it is done, so no script has to know the rule.
  * `--no-slot` skips the wait for a run that is known to be alone.
  */
-const DRAW_SLOTS = 3;
+const DRAW_SLOTS = 2;
+const DRAW_SLOT = '/tmp/null3d-plant-draw.slot-';
+/**
+ * How long a slot that records no holder counts as taken: long enough for the oldest running
+ * review that keeps no record, and far longer than any round's start, since a working run gives its
+ * directory back the moment it finishes.
+ */
+const SLOT_CLAIM_MS = 15 * 60_000;
+
+/** Whether the run that took a slot is still alive, judged by the process it recorded. */
+function slotHeld(path: string): boolean {
+	let pid: number;
+	try {
+		pid = Number.parseInt(readFileSync(join(path, 'pid'), 'utf8').trim(), 10);
+	} catch {
+		// A run writes its record a moment after taking the slot, so a slot without one is taken
+		// by a live run at first, and abandoned once that moment has passed.
+		try {
+			return Date.now() - statSync(path).mtimeMs < SLOT_CLAIM_MS;
+		} catch {
+			return false;
+		}
+	}
+	if (!Number.isFinite(pid) || pid <= 0) return false;
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		// A process this user may not signal still exists; one that does not exist raises ESRCH.
+		return (error as NodeJS.ErrnoException).code === 'EPERM';
+	}
+}
 
 /** Takes the first free draw slot, waiting until one frees, and returns the way to give it back. */
 async function takeDrawSlot(): Promise<() => void> {
 	if (flag('no-slot')) return () => {};
 	for (let attempt = 0; attempt < 720; attempt++) {
 		for (let slot = 1; slot <= DRAW_SLOTS; slot++) {
-			const path = `/tmp/null3d-plant-draw.slot-${slot}`;
+			const path = `${DRAW_SLOT}${slot}`;
 			try {
 				mkdirSync(path);
 			} catch {
-				continue;
+				if (slotHeld(path)) continue;
+				// A run that was killed leaves its directory behind. Without this the machine would
+				// wait on a slot that nothing will ever give back.
+				try {
+					rmSync(path, { recursive: true, force: true });
+					mkdirSync(path);
+				} catch {
+					continue;
+				}
 			}
+			writeFileSync(join(path, 'pid'), `${process.pid}\n`);
 			return () => {
 				try {
-					rmdirSync(path);
+					rmSync(path, { recursive: true, force: true });
 				} catch {
-					// Another process cleared it; the slot is free either way.
+					// Another process reclaimed it; the slot is free either way.
 				}
 			};
 		}
@@ -502,7 +545,7 @@ function compareRun(
 			`- ${result.pairs.length} files beside a render of their view; ${masked.length} give an outline on a plain background in both pictures.`,
 			...masked.map(
 				(pair) =>
-					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, gap ${fixed(pair.gap?.reference)} against ${fixed(pair.gap?.render)}, leaf colour difference ${fixed(pair.foliageDeltaE, 1)}.`,
+					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, gap ${fixed(pair.gap?.reference)} against ${fixed(pair.gap?.render)}, leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${pieceClause(pair)}.`,
 			),
 			...result.pairs.flatMap((pair) =>
 				pair.surfaceDeltaE !== null
@@ -598,6 +641,16 @@ function framingLines(pairs: readonly StillResult[]): string[] {
 		const warning = framing.warning ? `, as ${framing.warning}` : '';
 		return [`- ${pair.file}: the camera framed ${framing.subject}${clutter}${warning}.`];
 	});
+}
+
+/**
+ * The piece count of one still, for the line that carries its other figures: every outlmed view
+ * states how many pieces it is drawn as, so a reader never has to infer it from the mismatch lines.
+ */
+function pieceClause(pair: StillResult): string {
+	if (!pair.pieces) return '';
+	const { render } = pair.pieces;
+	return `, drawn as ${render} piece${render === 1 ? '' : 's'}`;
 }
 
 /** Where the render is drawn as more or fewer separate pieces than its reference. */
