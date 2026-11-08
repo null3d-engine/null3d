@@ -116,9 +116,9 @@ Rejected:
 - The kit measures 2.46, 3.70, 5.93 and 10.13 MB at the low, medium, high and ultra tiers. The first
   variant measures 3.76 to 3.98 MB. Every figure sits under the owner's cap for a tree.
 - The review draws every still. The whole views, the render against its reference: still 01 has a sky
-  gap of 0.091 against 0.049 and a leaf colour of 3.0, still 02 a gap of 0.103 against 0.062 and a
-  colour of 2.9, and still 18 a gap of 0.078 against 0.107. The leaf close-ups match with an overlap
-  of 0.76 to 0.82 and a colour of 0.5 to 3.0. The bark texture matches at 1.5 steps.
+  gap of 0.091 against 0.049 and a leaf colour of 3.0. Still 02 has a gap of 0.103 against 0.062 and
+  a colour of 2.9. Still 18 has a gap of 0.078 against 0.107. The leaf close-ups match with an
+  overlap of 0.76 to 0.82 and a colour of 0.5 to 3.0. The bark texture matches at 1.5 steps.
 - The silhouette's reference shows twice the sky of the distant photograph: 0.107 against 0.049. The
   two-sided bands need a crown whose 01 gap is at most 0.099 and whose 18 gap is at least 0.087. The
   drawn crown's two figures differ by 0.013, a thousandth more than the window allows, so no single
@@ -128,5 +128,13 @@ Rejected:
   wherever its stalk falls under a pixel. The sub-branch's sky gap matches its photograph at 0.51.
 - The young bark's close view reads 18 colour steps from its photograph. The view frames a great limb
   where the thin wood stands out of reach of the camera.
+- The whole-plant turn matches its video with a mean shape overlap of 0.668. Its crown box spreads
+  9 per cent wide and 19 per cent tall over the eight angles, against the reference's 32 and 14. Both
+  sit inside the band, the width's own being the reference's 32 per cent and the height's 25.
+- The cut pieces' turns are irregular. The leaf cluster's crown box spreads 132 per cent wide
+  against its video's 85. The sub-branch's spreads 57 per cent tall against 25. Those two turns fail
+  the all-round band. The branch turn sits inside both.
+- The wind moves the crown's top band 0.061 against the reference's 0.047, and its base 0.002 against
+  0.044: the trunk's foot does not move. The middle bands move less than their reference's.
 - The basal sprouts of stills 14 and 20 are not drawn. The record has no field for a sprout at the
   foot, and the species does not claim one.
