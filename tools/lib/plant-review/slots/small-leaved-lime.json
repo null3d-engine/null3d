@@ -3,14 +3,16 @@
 		"sunAzimuth": -40,
 		"sunRise": 48,
 		"skyShare": 0.25,
-		"daylight": 2.8,
+		"daylight": 2.21,
+		"lamp": "#ebffea",
 		"fov": 30
 	},
 	"02-whole-profile.png": {
 		"sunAzimuth": -25,
 		"sunRise": 50,
 		"skyShare": 0.3,
-		"daylight": 2.9,
+		"daylight": 2.23,
+		"lamp": "#f6ffe4",
 		"fov": 30
 	},
 	"03-whole-from-below.png": {
