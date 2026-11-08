@@ -315,12 +315,13 @@ export const record: Species = {
 	},
 	bark: {
 		// Stills 15 and 26 under the copy-stand lamps: a mid grey with a warm brown cast, so the
-		// measured colour stands as it is. Still 14 shows the foot paler and less yellow than the
-		// bole, so the lowest metre lifts the same tile and pulls it off the yellow. The mid-trunk
-		// still photographs its bark from just above that metre, so the foot's zone stops below it.
+		// measured colour stands as it is. Still 14's bark, measured alone where no backdrop dilutes
+		// it, stands about six steps lighter than its photograph, so the lowest metre darkens the
+		// same tile. The mid-trunk still photographs its bark from just above that metre, so the
+		// foot's zone stops below it.
 		zones: [
-			{ layer: 0, by: 'height', from: 0, to: 1, blend: 0.2, tint: [1.27, 1.33, 1.53] },
-			{ layer: 0, by: 'height', from: 1, to: 40, blend: 0.2, tint: [1, 1, 1] },
+			{ layer: 0, by: 'height', from: 0, to: 1.2, blend: 0.05, tint: [0.84, 0.86, 0.83] },
+			{ layer: 0, by: 'height', from: 1.2, to: 40, blend: 0.05, tint: [1, 1, 1] },
 		],
 		young: 0,
 		// Still 16: the fine net fades to smooth olive-grey on wood thinner than about four
@@ -388,10 +389,13 @@ export const record: Species = {
 		{
 			// Still 20: upright corymbs of small lime-yellow flowers turn the bare crown acid green
 			// before the leaves are out.
+			// The extra model stands every copy of a cluster on the one point, so a corymb's head
+			// cannot widen past a single bloom; the four copies read as one flower with several
+			// faces. A head per shoot tip already spends the variant's remaining bytes.
 			kind: 'flower',
 			at: 'shoot-tip',
 			share: 0.7,
-			count: { mean: 16, spread: 3 },
+			count: { mean: 4, spread: 1 },
 			tipShare: 0.9,
 			seasons: ['blossom'],
 			shape: { petals: 5, radius: 0.006, cup: 0.003 },
