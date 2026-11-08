@@ -45,8 +45,8 @@ const LEAN = [0, 1.5] as const;
 /** The share of the stem's height where its flower ring stands. */
 const FLOWER_RING = 0.97;
 /** Nest holes on the upper stem, and the band of the height they stand in. */
-const NEST_HOLES = 9;
-const NEST_BAND = [0.55, 0.95] as const;
+const NEST_HOLES = 18;
+const NEST_BAND = [0.5, 0.85] as const;
 /** Metres a nest hole's site is set inside the skin, so its socket sits flush. */
 const NEST_INSET = 0.012;
 /** Metres an arm climbs over its run out, so its crotch leaves the stem on a curve. */

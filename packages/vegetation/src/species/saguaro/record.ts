@@ -136,7 +136,7 @@ export const record: Species = {
 		zones: [
 			// Still 14: the foot is grey-brown, corky and scarred, its ribs worn, for the lowest metre
 			// and a half of the stem.
-			{ layer: 1, by: 'height', from: 0, to: 1.6, blend: 0.3, tint: [1, 1, 1] },
+			{ layer: 1, by: 'height', from: 0, to: 1.6, blend: 0.8, tint: [1, 1, 1] },
 			// Stills 09 and 15: waxy grey-green skin on rounded ribs and deep pleated grooves up the
 			// whole stem.
 			{ layer: 0, by: 'height', from: 1.6, to: 40, blend: 0.5, tint: [1, 1, 1] },
