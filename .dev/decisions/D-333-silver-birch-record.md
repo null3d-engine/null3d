@@ -152,10 +152,13 @@ Limits this record states:
   light gains a little more at the crown. It also costs the upper swatch 3.8 steps, so that lever is
   a trade and not a fix. The remaining gap belongs to the leaf's size and the crown's mixture of
   shades rather than to one color value.
-- Still 34's lifting strips do not draw at all. `bark.peel` is this record's setting and the engine's
-  first use of it. No strip reaches the render at the record's own rate, nor at fifteen times that
-  rate with wider strips, nor at a curl of 8 degrees. Still 15 draws one piece where its photograph
-  shows nineteen. Still 34 fills its frame with bark cards, one piece of seventy-five.
+- The lifting strips do not read as ribbons. `bark.peel` draws them as broad flat sheets that carry
+  the bark's texture stretched across them, so they read as square patches pasted on the trunk rather
+  than as narrow strips curling away from the wood. At the record's curl they stay flat against the
+  bark, and the review counts one piece where the photograph's strips separate seventy-five. Raising
+  the curl to 8 degrees turns them into wide translucent sheets that smear the texture and show black
+  from behind. The record keeps the setting the engine draws least wrongly until the feature is
+  settled.
 - At a whole view each leaf of the crown reads as its own piece. The twigs and the leaf stalks fall
   under a pixel wide at that range. The review counts 37 pieces in the young form against its
   photograph's 9, and four in still 01 against 1. A thicker stalk and a thicker twig tip move neither
