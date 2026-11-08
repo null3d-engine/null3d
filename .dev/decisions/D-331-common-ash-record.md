@@ -513,6 +513,10 @@ the tool's measure was fixed. The final settings, measured at run `ash-121-retun
 All three stand inside the band of 3. The base slot also carries a `daylight` of 1.0, which brings
 the foot's lightness onto its photograph's.
 
+The standing count is ten of twelve. Row 8's three pictures are measured inside on a retune run.
+They wait for a reviewer's count on one clean round. Row 10's crown colour stays open, because a
+stated limit still fails its row.
+
 The measure came first, because it was wrong. A slot's `barkMask` drops every patch pixel as close
 to the picture's corners as the backdrop is. Its first version read the backdrop as one colour: the
 mean of all four corners. A base view lays a stem on sky above the horizon and meadow below, so that
