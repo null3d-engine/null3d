@@ -299,8 +299,13 @@ export const record: Species = {
 	},
 	bark: {
 		// Still 26: thin, smooth, mottled silver-grey bark with no fissures. The shallow figure comes
-		// from the texture's own measured depth.
-		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0 }],
+		// from the texture's own measured depth. Still 15 photographs the trunk 7.4 light units above
+		// the measured colour, while still 16's thin wood already reads light: the trunk takes the
+		// lift by its own radius and the young wood keeps the colour it has.
+		zones: [
+			{ layer: 0, by: 'radius', from: 0.15, to: 5, blend: 0.03, tint: [1.45, 1.42, 1.47] },
+			{ layer: 0, by: 'radius', from: 0, to: 0.15, blend: 0.03 },
+		],
 		young: 0,
 		// Stills 16 and 28: the young olive bark runs up the limbs and thin wood, so a limb in a close
 		// view still shows its lenticels and ring scars.
