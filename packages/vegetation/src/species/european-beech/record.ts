@@ -203,7 +203,10 @@ export const record: Species = {
 				// A young shoot of the year: short enough that its leaves overlap their neighbours,
 				// as the photograph's sprig does.
 				length: { mean: 0.35, spread: 0.05 },
-				// Five leaves and the bud, where the photograph's sprig holds six large ones.
+				// Five leaves and the bud, where the photograph's sprig holds six large ones. At this
+				// size the cluster turn's width spread is won: 120 against the photograph's 101 and a
+				// 126 band top. Its height spread is the remaining fault, 57 against 43, which needs a
+				// spray deeper than this one's 8 cm.
 				nodes: { mean: 5, spread: 0.5 },
 				internode: PLATE_RUN,
 				// A young shoot's leaves are larger than the crown's, and the photograph's sprig
