@@ -174,16 +174,17 @@ export const record: Species = {
 				leafYears: 1,
 				length: { mean: 0.95, spread: 0.08 },
 				// Stills 21 and 22 hold about forty leaves over their three sprays, so a spray carries
-				// more leaves than the crown's own shoots do: about a dozen and a half along each.
-				nodes: { mean: 11, spread: 0.5 },
+				// more leaves than the crown's own shoots do. A dozen along each made the piece denser
+				// and narrower, so the sprays reach outward instead: the laterals leave wider.
+				nodes: { mean: 8, spread: 0.5 },
 				internode: ALTERNATE,
 				stem: { radius: [0.006, 0.003] },
-				lateral: 55,
+				lateral: 65,
 				laterals: 2,
 				lateralGap: 0.3,
 				leafScale: [
-					[0, 0.95],
-					[1, 1.25],
+					[0, 0.85],
+					[1, 1.05],
 				],
 				leafAngle: [
 					[0, 96],
