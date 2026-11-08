@@ -56,15 +56,17 @@ export default defineSketch(async (ctx) => {
 	// The season: every record declares what its own does, so the same meadow grows bare in winter,
 	// turns in autumn and flowers in blossom. Summer is the record's default.
 	let season: 'summer' | 'autumn' | 'winter' | 'blossom' = 'summer';
-	// The foliage's density, against each record's own crown. The slider's middle is the record's own
-	// so its track runs 0 at the sparsest, 0.5 at the record's, 1 at the fullest, and the share the
-	// add-on takes runs from 0.4 through 1 to 2.
-	let foliage = 0.5;
+	// Two shares, each against the record's own, with the slider's middle the record's own: the track
+	// runs 0 at the sparsest, 0.5 at the record's, 1 at the fullest, and the share the add-on takes
+	// runs from 0.4 through 1 to 2. Leaves size what hangs on the wood; limbs decide how much wood
+	// there is, which every growth model answers with its own count of branches, fronds or tillers.
+	let leaves = 0.5;
+	let limbs = 0.5;
 	const shareOf = (value: number) =>
 		value <= 0.5 ? 0.4 + (value / 0.5) * 0.6 : 1 + ((value - 0.5) / 0.5) * 1;
-	// The level of detail's coarseness: 0 draws the plant as grown, 1 the coarsest, where the
-	// finest twigs are gone and the shoots that remain are larger.
-	let detail = 0;
+	// The coarseness: 0 draws the plant as grown, 1 the coarsest, where the finest twigs are gone
+	// and the shoots that remain are larger.
+	let coarseness = 0;
 	const pruneOf = (value: number, own: number) =>
 		Math.min(0.9, Math.max(0, own * (1.6 - 1.2 * Math.min(1, Math.max(0, value)))));
 	let planted: { destroy(): void }[] = [];
@@ -83,34 +85,53 @@ export default defineSketch(async (ctx) => {
 					})),
 				},
 				{
-					name: 'foliage',
-					title: 'Foliage',
+					name: 'leaves',
+					title: 'Leaves',
 					radio: false,
 					buttons: [],
 					slider: {
 						min: 0,
 						max: 1,
 						step: 0.05,
-						value: foliage,
+						value: leaves,
+						live: false,
+						marks: [
+							{ at: 0, label: 'small' },
+							{ at: 0.5, label: 'default' },
+							{ at: 1, label: 'large' },
+						],
+						tip: "Drag left to draw smaller leaves on the same wood, or right to draw larger ones. The middle is every record's own leaf, and the wood does not move.",
+					},
+				},
+				{
+					name: 'limbs',
+					title: 'Limbs',
+					radio: false,
+					buttons: [],
+					slider: {
+						min: 0,
+						max: 1,
+						step: 0.05,
+						value: limbs,
 						live: false,
 						marks: [
 							{ at: 0, label: 'sparse' },
 							{ at: 0.5, label: 'default' },
 							{ at: 1, label: 'dense' },
 						],
-						tip: "Drag left to thin each crown toward its bare wood, or right to keep the shoots its own density drops. The middle is every record's own crown.",
+						tip: "Drag left to keep fewer limbs toward the bare wood, or right to keep the shoots the record's own density drops. The middle is every record's own crown, and every species answers with its own count of branches, fronds or tillers.",
 					},
 				},
 				{
-					name: 'detail',
-					title: 'Detail',
+					name: 'coarseness',
+					title: 'Coarseness',
 					radio: false,
 					buttons: [],
 					slider: {
 						min: 0,
 						max: 1,
 						step: 0.05,
-						value: detail,
+						value: coarseness,
 						live: false,
 						marks: [
 							{ at: 0, label: 'as grown' },
@@ -140,15 +161,19 @@ export default defineSketch(async (ctx) => {
 			postHud();
 			void growMeadow(seed);
 			return;
-		} else if (name === 'foliage') {
+		} else if (name === 'leaves') {
 			const next = Number(value);
 			if (!Number.isFinite(next)) return;
-			foliage = next;
-		} else if (name === 'detail') {
+			leaves = next;
+		} else if (name === 'limbs') {
+			const next = Number(value);
+			if (!Number.isFinite(next)) return;
+			limbs = next;
+		} else if (name === 'coarseness') {
 			const next = Number(value);
 			// The explainer button shares the group's name, so only a number turns the slider.
 			if (!Number.isFinite(next)) return;
-			detail = next;
+			coarseness = next;
 		} else return;
 		postHud();
 		settleThenGrow();
@@ -223,8 +248,9 @@ export default defineSketch(async (ctx) => {
 				variant,
 				near: true,
 				season,
-				coarseness: detail,
-				foliage: shareOf(foliage),
+				coarseness,
+				leaves: shareOf(leaves),
+				limbs: shareOf(limbs),
 			});
 			const x = ((index % across) - (across - 1) / 2) * step;
 			const z = (Math.floor(index / across) - (ids.length / across - 1) / 2) * step;

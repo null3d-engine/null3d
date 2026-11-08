@@ -24,6 +24,9 @@ export function plantSpeciesTests(root = ROOT): ImageTest[] {
 		sketch: `tests/pages/sketches/plant-review-sketch.ts?species=${id}&view=panels`,
 		hold: 1,
 		size: [1024, 1024],
-		...(TIMEOUT_SECONDS[id] !== undefined && { timeoutSeconds: TIMEOUT_SECONDS[id] }),
+		// Four panels of a whole plant, built and drawn from scratch: the merged foliage of a ground
+		// plant takes longer than the default limit on the software GPU's slower path. A species
+		// whose crown is heavier still names its own.
+		timeoutSeconds: TIMEOUT_SECONDS[id] ?? 120,
 	}));
 }
