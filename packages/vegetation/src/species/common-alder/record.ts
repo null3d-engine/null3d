@@ -504,12 +504,12 @@ export const record: Species = {
 		// The wind clip: the trunk barely moves and the crown's shoots swing a little, the leaves
 		// fluttering on their short stalks.
 		stiffness: [
-			[0, 0.97],
+			[0, 0.62],
 			[0.5, 0.93],
-			[1, 0.85],
+			[1, 0.98],
 		],
-		sway: { frequency: 0.3, amplitude: 0.035 },
-		flutter: { kind: 'blade', amplitude: 0.22, frequency: 3 },
+		sway: { frequency: 0.28, amplitude: 0.09 },
+		flutter: { kind: 'blade', amplitude: 0.12, frequency: 2.2 },
 	},
 	lod: {
 		nearFoliage: 'instanced',
