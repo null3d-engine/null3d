@@ -176,7 +176,7 @@ export const record: Species = {
 	foliage: {
 		kind: 'blade',
 		leaf: {
-			length: { mean: 0.07, spread: 0.012 },
+			length: { mean: 0.08, spread: 0.012 },
 			outline: 'texture',
 			petiole: { length: 0.004, radius: 0.0008, flat: 0, droop: 12 },
 			fold: 16,
