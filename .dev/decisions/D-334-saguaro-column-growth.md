@@ -97,6 +97,9 @@ add nothing at the review's scale.
   card, its ribs and areole rows to the skin, and its "arm" names to limb views. Its query takes a
   `barkHeight`, so a mid-trunk bark view stands in the trunk zone of a tall stem.
 - A cut arm is wood: the wood mesher accepts a cut axis of the arm kind, as it accepts a cut limb.
+- The whole views take the photographs' own ground light: a sky share of about a third and a sun
+  strength of one and a half times the page's daylight. The profile view's colour difference sits at
+  7.8, still past the visible-step band, so the remaining difference is the species' own tone.
 - The arm-skin close-up's colour figure (32.5) measures the plant's whole upper region, not the skin,
   so it cannot judge the material. The rendered skin carries the photograph's own hue after the layer
   crops the arm from its grey backdrop.
