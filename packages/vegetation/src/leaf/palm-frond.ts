@@ -1,5 +1,5 @@
-// The palm frond's foliage: a pinnate frond drawn as separate leaflets along its rachis, rather
-// than one sheet cut from a picture of a whole blade. Each leaflet is a folded ribbon whose
+// The pinnate frond's foliage, for a palm or a tree fern: a frond drawn as separate leaflets along
+// its rachis, rather than one sheet cut from a picture of a whole blade. Each leaflet is a folded ribbon whose
 // silhouette comes from the species' own leaf texture, so it reads as the picture shows it: long,
 // narrow, V-folded, with a fine point. The leaflets leave the rachis in small groups at several
 // angles out of the frond's plane, so the frond reads bristly.
@@ -11,7 +11,7 @@
 import type { MeshArrays } from '../asset';
 import { AXIS_RACHIS, AXIS_STEM } from '../core/graph';
 import { cos, quatAxisAngle, quatRotate, radians, sin, tan, type Vector3 } from '../core/math';
-import type { FrondShape, LeafShape, PinnaSpec, Species } from '../core/record';
+import type { CrownRosette, FrondShape, LeafShape, PinnaSpec, Species } from '../core/record';
 import { curveAt, spreadMean } from '../core/types';
 import { crownSkyAt } from '../crown/visibility';
 import type { MeshInput, MeshLevel } from '../stages';
@@ -53,13 +53,18 @@ const SPINE_WIDTH = 0.16;
 /** Steps along a place's spacing, for the pinnae's own spacing curve. */
 const PLACE_SAMPLES = 64;
 
-/** The record's crown-rosette frond, or a fault for another model. */
-function frondOf(record: Species): FrondShape {
+/** The record's crown-rosette growth, or a fault for another model. */
+function crownOf(record: Species): CrownRosette {
 	const growth = record.growth;
 	if (growth.model !== 'crown-rosette')
 		throw new Error(
 			`@null3d/vegetation: the palm foliage got a '${growth.model}' record, not a crown rosette`,
 		);
+	return growth;
+}
+
+/** The crown-rosette frond's pinnate shape, or a fault for another model. */
+function frondOf(growth: CrownRosette): FrondShape {
 	if (growth.frond.kind !== 'pinnate' || !growth.frond.pinnae)
 		throw new Error(
 			`@null3d/vegetation: a palm frond is drawn from pinnate pinnae, not a '${growth.frond.kind}' frond`,
@@ -341,7 +346,8 @@ function palmFronds(input: MeshInput): PalmFrond[] {
  * @category api/vegetation
  */
 export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
-	const shape = frondOf(input.record);
+	const growth = crownOf(input.record);
+	const shape = frondOf(growth);
 	const leaf = leafOf(input.record);
 	const pinnae = shape.pinnae as PinnaSpec;
 	if (!input.kit.manifest.leaf)
@@ -376,15 +382,17 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 		// The frond's own run, past the lead that reaches out from the stem's axis to its base.
 		const length = frond.path.length - frond.lead;
 		if (length < 0.05) continue;
-		// A dead frond hangs as a brown mass in the skirt, where its leaflets read as the mass rather
-		// than as blades: it takes the coarsest grid and the fewest places at every level.
+		// A dead frond usually hangs as a brown mass in the skirt, where its leaflets read as the
+		// mass rather than as blades, so it takes the coarsest grid and the fewest places. A species
+		// whose dead skirt still shows its pinnae keeps the level's detail.
 		const dead = frond.age > 0.99;
-		const drawn = dead ? 2 : level;
+		const mass = dead && growth.crown.dead.blades !== true;
+		const drawn = mass ? 2 : level;
 		const origin = hasStem ? length : Math.max(length, recordFrond);
 		const count = Math.max(1, Math.round(spreadMean(pinnae.count) * (length / origin)));
 		const places = pinnaPlaces({ ...pinnae, count }, 1);
 		const list = leafletsOf(shape, pinnae, origin, length, drawn, places);
-		const frondRibbon = dead ? deadRibbon : ribbon;
+		const frondRibbon = mass ? deadRibbon : ribbon;
 		const bytes: number[] = [0, 0, 0, 0];
 		const record = base + frond.record;
 		const brown = Math.max(0, Math.min(1, (frond.age - 0.5) * 2));

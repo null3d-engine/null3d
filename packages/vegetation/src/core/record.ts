@@ -550,8 +550,18 @@ export interface CrownRosette {
 		 * depth, which suits a tall palm's crown.
 		 */
 		readonly depth?: number;
-		/** Dead fronds: count, how far they hang, and a skirt that hides the stem top (fan palm). */
-		readonly dead: { readonly count: Spread; readonly hang: number; readonly skirt: number };
+		/**
+		 * Dead fronds: count, how far they hang, and a skirt that hides the stem top (fan palm).
+		 * `blades` keeps a dead frond's leaflets at the level's detail, as a tree fern's dead skirt
+		 * shows its pinnae; absent, a dead frond reads as a brown mass at the coarsest detail, as a
+		 * palm's skirt does.
+		 */
+		readonly dead: {
+			readonly count: Spread;
+			readonly hang: number;
+			readonly skirt: number;
+			readonly blades?: boolean;
+		};
 		/** Young fronds rolled in the centre (tree fern croziers). */
 		readonly croziers?: Spread;
 	};
