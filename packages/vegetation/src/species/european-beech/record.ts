@@ -204,9 +204,9 @@ export const record: Species = {
 				// as the photograph's sprig does.
 				length: { mean: 0.35, spread: 0.05 },
 				// Five leaves and the bud, where the photograph's sprig holds six large ones. At this
-				// size the cluster turn's width spread is won: 120 against the photograph's 101 and a
-				// 126 band top. Its height spread is the remaining fault, 57 against 43, which needs a
-				// spray deeper than this one's 8 cm.
+				// size the cluster turn reads 119.5 wide against a band of 101 and 56.5 tall against
+				// 25, so both spreads remain: the width improved from 134.6, and both want the spray
+				// deeper or narrower than this one's 8 cm.
 				nodes: { mean: 5, spread: 0.5 },
 				internode: PLATE_RUN,
 				// A young shoot's leaves are larger than the crown's, and the photograph's sprig
