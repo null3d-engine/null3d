@@ -252,7 +252,7 @@ export const record: Species = {
 		taper: { amount: 0.3, height: 9 },
 		buttress: {
 			// Evenly round the column, as the photographs show a sequoia's foot from any side.
-			lobes: { mean: 8, spread: 0 },
+			lobes: { mean: 10, spread: 0 },
 			amount: 1,
 			sharpness: 4,
 			height: 4.5,
