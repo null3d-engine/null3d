@@ -163,6 +163,28 @@ is the one part of the trunk the render lights like the rest of the wood, while 
 it shaded. That is a core term of the same class as the crown's sky extinction, and it stays a
 stated limit here until the core shades a foot by what stands over and beside it.
 
+### The oak's bark on the masked measure
+
+Its four close pictures, drawn with the mask on its committed record:
+
+| Picture | Reference | Render | Error |
+| --- | --- | --- | --- |
+| Base | L 35.2, b* 11.7 | L 41.5, b* 1.0 | 10.03 |
+| Mid trunk | L 37.4 | L 45.6 | 7.52 |
+| Limb | L 38.8, b* 16.1 | L 47.8, b* -0.7 | 16.16 |
+| Young bark | - | - | 12.42 |
+
+Every one fails, and each reads gray where its photographs are olive-brown. Darkening and warming
+the bole's own zone takes the base to 35.6 at 6.06 steps and the mid trunk to 40.0 at 3.97, with the
+limb and the young bark reading exactly as they did (`2ae559f50`).
+
+The limb resists a zone: every radius range that reaches its branch also changes the tiling the bark
+is sampled in, so the picture changes what it draws rather than only its color. Ranges 0.03 to 0.12,
+0.15 to 0.5 and 0.03 to 0.6 gave 16.12, 16.27 and 17.64 against 16.16 committed.
+
+The young bark is unmoved by the bole's tint, so its 12.42 is its own material rather than the light
+it is drawn under, and its tint is the next lever for whoever takes the oak.
+
 ### Every bark figure recorded before the mask was measured with the backdrop in it
 
 The nine patches of a close bark view reach past the stem, so on a foot or a limb they count sky and
