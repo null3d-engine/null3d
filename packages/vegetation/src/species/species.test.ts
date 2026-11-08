@@ -131,6 +131,26 @@ for (const walked of WALKED) {
 
 		for (const detail of DETAILS)
 			it(
+				`keeps its cutting kit within its cap at the ${detail} tier`,
+				() => {
+					const cutOnly = (record.shoots?.cuttingClasses ?? []).some(
+						(shoot) => shoot.cutOnly === true,
+					);
+					if (!cutOnly && record.cuttings?.density === undefined) return;
+					const kit = buildKitNow(module, {
+						placeholders: walked.placeholders,
+						detail,
+						cutting: true,
+					});
+					expect(kit.prototypes.length).toBeGreaterThan(0);
+					expect(kit.cards.size).toBe(0);
+					expect(kitBytesOf(kit)).toBeLessThanOrEqual(record.lod.budget.kitBytes[detail]);
+				},
+				scaledBudget(120_000),
+			);
+
+		for (const detail of DETAILS)
+			it(
 				`keeps its kit and its nearest wood within their caps at the ${detail} tier`,
 				() => {
 					const kit = buildKitNow(module, { placeholders: walked.placeholders, detail });

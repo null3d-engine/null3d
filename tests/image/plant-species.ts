@@ -10,6 +10,20 @@ import type { ImageTest } from '../lib/images.ts';
 /** The repository's root. */
 const ROOT = join(import.meta.dirname, '../..');
 
+/**
+ * How long a species' four panels may take, in seconds, where the shared limit is not enough. A
+ * species earns a figure of its own by its measured page time, so a slow plant names itself instead
+ * of raising the limit under every other plant.
+ */
+const PANEL_TIMEOUT_SECONDS: Readonly<Record<string, number>> = {
+	// A 60 m crown with its near shoots in real geometry reads 5,196 ms to grow and 2,536 ms to build
+	// its pipelines, and draws its four panels in about 100 seconds on the software rasteriser.
+	'giant-sequoia': 150,
+};
+
+/** The page limit of a species' four panels. */
+const SHARED_PANEL_TIMEOUT_SECONDS = 120;
+
 /** The picture test of each species folder. */
 export function plantSpeciesTests(root = ROOT): ImageTest[] {
 	return speciesFolders(root).map(({ id }) => ({
@@ -17,9 +31,8 @@ export function plantSpeciesTests(root = ROOT): ImageTest[] {
 		sketch: `tests/pages/sketches/plant-review-sketch.ts?species=${id}&view=panels`,
 		hold: 1,
 		size: [1024, 1024],
-		// Four 1024-texel panels of a whole plant take longer than a single view of a scene. The
-		// tallest species, a giant sequoia of 60 m with its crown's shoots in real geometry, needs
-		// more than the default 60 seconds on the software rasteriser.
-		timeoutSeconds: 150,
+		// Four panels of a whole plant, built and drawn from scratch: the merged foliage of a ground
+		// plant takes longer than the default limit on the software GPU's slower path.
+		timeoutSeconds: PANEL_TIMEOUT_SECONDS[id] ?? SHARED_PANEL_TIMEOUT_SECONDS,
 	}));
 }
