@@ -227,6 +227,13 @@ self.onmessage = async (event) => {
 		}
 		if (shoots.placement.density !== undefined)
 			expect(sparse.shoots?.placement.density).toBeCloseTo(shoots.placement.density * 0.5, 6);
+		// The shoots along the finest axes thin too, which is the dial every growth model answers.
+		const perMetre = (curve: typeof shoots.placement.perMetre) =>
+			typeof curve === 'number' ? curve : (curve[0]?.[1] ?? 0);
+		expect(perMetre(sparse.shoots?.placement.perMetre ?? 0)).toBeCloseTo(
+			perMetre(shoots.placement.perMetre) * 0.5,
+			6,
+		);
 		expect(() => withFoliage(oak.record, 3)).toThrow();
 		// A different share is a different asset, so the cache never hands back the record's own.
 		expect(variantKey(grown, { seed: 11, variant: 0, foliage: 0.5 })).not.toBe(
