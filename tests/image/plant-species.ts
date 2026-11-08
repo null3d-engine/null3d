@@ -17,8 +17,9 @@ export function plantSpeciesTests(root = ROOT): ImageTest[] {
 		sketch: `tests/pages/sketches/plant-review-sketch.ts?species=${id}&view=panels`,
 		hold: 1,
 		size: [1024, 1024],
-		// A dense crown's four panels take about a minute and a half on a software renderer,
-		// where a bare demo's frame takes seconds.
+		// Four panels of a whole plant, built and drawn from scratch: the merged foliage of a ground
+		// plant takes longer than the default limit on the software GPU's slower path, and a dense
+		// crown's four panels take about a minute and a half there.
 		timeoutSeconds: 240,
 	}));
 }
