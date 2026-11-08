@@ -154,7 +154,7 @@ export const record: Species = {
 				internode: EVEN,
 				stem: { radius: [0.006, 0.002] },
 				lateral: 70,
-				laterals: { mean: 4, spread: 0 },
+				laterals: { mean: 3, spread: 0 },
 				lateralGap: 0.32,
 				bend: { length: 0.04, angle: 15 },
 				leafScale: [
