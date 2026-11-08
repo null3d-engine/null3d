@@ -116,3 +116,7 @@ The page posts a `plant-review` message with the form it grew, the plant's heigh
   smaller cells would otherwise switch its foliage to cards that hold nothing, and the piece would
   vanish from the sheet.
 - A stand-in's nearest level has no shoots: it shows its wood and its cards up close.
+- A ground plant such as a sedge or a hosta draws its whole body as merged foliage, with no wood. A
+  view that asks for the wood alone keeps that foliage, since the plant has nothing else to show,
+  and a view up the stem stands low at the rim of the plant's spread instead of at a person's eye
+  height, since the plant has no stem to look up.
