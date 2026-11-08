@@ -1312,10 +1312,42 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 	for (let y = box.top; y <= box.bottom; y++) widest = Math.max(widest, width(y));
 	const limit = Math.max(trunk * 2.5, widest * 0.12);
 	const run = Math.max(2, Math.round(tall * 0.03));
-	for (let y = box.bottom; y >= box.top; y--) {
+	// A ground line in frame runs wider than the plant's stem, so skip those rows first: they are
+	// not the crown, and their width would let the scan below find the ground as a crown.
+	let floor = box.bottom;
+	while (floor > box.top && width(floor) > limit) floor--;
+	for (let y = floor; y >= box.top; y--) {
 		let wide = true;
 		for (let k = 0; k < run && y - k >= box.top; k++) if (width(y - k) <= limit) wide = false;
 		if (wide) return y;
+	}
+	// No wide run from the bottom means the lowest bands hold a ground line: a lake or a grassy
+	// slope wider than the crown makes the trunk estimate the ground's width, and its limit clears
+	// nothing. The crown's own rows still say where it starts, so find the first narrow run below
+	// its wide top. A photograph whose start the scan above finds never reaches this.
+	return crownStartFromTop(spans, box, widest);
+}
+
+/**
+ * Where the crown starts, found from its own rows: the first narrow run below the crown's wide top.
+ * The lower edge of the foliage, whatever the ground below it reads as.
+ */
+function crownStartFromTop(spans: Int32Array, box: Box, widest: number): number {
+	const tall = box.bottom - box.top + 1;
+	const width = (y: number) => {
+		const left = spans[y * 2] as number;
+		return left < 0 ? 0 : (spans[y * 2 + 1] as number) - left + 1;
+	};
+	const limit = widest * 0.12;
+	const run = Math.max(2, Math.round(tall * 0.03));
+	let y = box.top;
+	while (y <= box.bottom && width(y) <= limit) y++;
+	for (; y <= box.bottom; y++) {
+		for (let k = 0; k < run && y + k <= box.bottom; k++) {
+			if (width(y + k) > limit) continue;
+			// The crown's last wide row before the narrow stretch that ends it.
+			return Math.max(box.top, y + k - 1);
+		}
 	}
 	return box.bottom;
 }
