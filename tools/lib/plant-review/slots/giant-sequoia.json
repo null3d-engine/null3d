@@ -43,5 +43,9 @@
 	"26-bark-texture.png": {
 		"span": 3,
 		"distance": 5.5
+	},
+	"28-young-bark.png": {
+		"thin": 0.03,
+		"along": 0.7
 	}
 }
