@@ -464,10 +464,11 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit measures 3.30, 4.03, 5.59 and 8.55 MB at the four tiers, the three cutting
-			// classes and the leaf's palmate blade among them; each cap sits above its figure under
-			// the owner's ceilings.
-			kitBytes: { low: 3_320_000, medium: 4_060_000, high: 5_610_000, ultra: 8_580_000 },
+			// The kit measures 3,299,420, 4,033,592, 5,588,008 and 8,554,676 bytes at the four tiers,
+			// the three cutting classes and the leaf's palmate blade among them. The low cap leaves a
+			// hundred thousand bytes of room, since one leaf more would break a cap set a leaf's width
+			// above its figure; every cap sits under the owner's ceilings.
+			kitBytes: { low: 3_400_000, medium: 4_060_000, high: 5_610_000, ultra: 8_580_000 },
 			// The crown's shoot dial at 3.8 and ten keys a bunch put the first variant at 19.35, 19.41,
 			// 19.48 and 19.58 MB; each cap sits above it, under the owner's ceiling. A key more would
 			// pass the low ceiling, which is what bounds the bunch's size.

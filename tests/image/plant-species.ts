@@ -12,8 +12,8 @@ const ROOT = join(import.meta.dirname, '../..');
 
 /**
  * Seconds a page may take to publish a species' picture where it needs more than the default. The
- * maple's four panels carry a crown of six variants, which the software rasteriser draws past a
- * minute.
+ * maple's four panels carry a crown of six variants, which this Mac's software rasteriser drew in
+ * 156 seconds, past the default limit, so the entry names three minutes.
  */
 const TIMEOUT_SECONDS: Readonly<Record<string, number>> = { 'norway-maple': 180 };
 
