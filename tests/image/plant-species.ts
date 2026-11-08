@@ -10,6 +10,13 @@ import type { ImageTest } from '../lib/images.ts';
 /** The repository's root. */
 const ROOT = join(import.meta.dirname, '../..');
 
+/**
+ * Seconds a species' four-panel picture may take. The panels stand three metres from the crown, so
+ * every shoot row inside that band is real geometry; a dense crown draws about six million triangles
+ * a frame, which a software rasteriser needs far longer for than the default sixty seconds.
+ */
+const PANELS_SECONDS = 240;
+
 /** The picture test of each species folder. */
 export function plantSpeciesTests(root = ROOT): ImageTest[] {
 	return speciesFolders(root).map(({ id }) => ({
@@ -17,5 +24,6 @@ export function plantSpeciesTests(root = ROOT): ImageTest[] {
 		sketch: `tests/pages/sketches/plant-review-sketch.ts?species=${id}&view=panels`,
 		hold: 1,
 		size: [1024, 1024],
+		timeoutSeconds: PANELS_SECONDS,
 	}));
 }
