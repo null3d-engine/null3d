@@ -188,6 +188,18 @@ export async function startDemo({
 			hideWhenQuiet();
 			return;
 		}
+		if (type === 'starting') {
+			// A scene's own start-up work, counted against the stage it runs in. The message keeps the
+			// card quiet until the work ends, so a scene that grows its first plants does not lose the
+			// overlay to the quiet timer while they are still building.
+			const at = data as { done?: unknown; total?: unknown } | undefined;
+			if (typeof at?.done === 'number' && typeof at?.total === 'number') {
+				lastLoadingAt = performance.now();
+				loader.work(at.done, at.total);
+				hideWhenQuiet();
+			}
+			return;
+		}
 		for (const reader of pageReaders) reader(type, data);
 		if (!engine) {
 			if (early.push([type, data]) > MAX_EARLY_MESSAGES) early.shift();
@@ -261,6 +273,12 @@ export interface Loader {
 	stage(stage: StartupStage, progress?: StartupProgress): void;
 	/** Shows the progress that a scene posts while it loads its files. */
 	note(data: unknown): void;
+	/**
+	 * Shows work that a scene does as part of starting itself, such as growing its first plants. The
+	 * card keeps the starting stage's own words and counts this work on the same bar, so a scene's
+	 * first build reads as one start rather than as a second one appearing under it.
+	 */
+	work(done: number, total: number): void;
 	/** Fades the overlay out; the first frame is drawn. */
 	hide(): void;
 	/** Shows the error text in place of the progress; the start failed. */
@@ -385,6 +403,17 @@ export function createLoader(canvas: HTMLCanvasElement): Loader {
 		else setTimeout(remove, 320);
 	};
 	return {
+		work(done, total) {
+			if (hidden || !(total > 0) || done < 0) return;
+			// The scene's own start-up work sits inside the stage that is already running, so the
+			// card keeps its words and its bar counts this work instead of moving on its own. It
+			// stops short of a whole bar, which only the first frame earns.
+			show({
+				key: 'core',
+				text: 'Starting the sketch',
+				value: Math.min(0.99, done / total),
+			});
+		},
 		stage(stage, progress) {
 			if (stage === 'first-frame') {
 				hide();
