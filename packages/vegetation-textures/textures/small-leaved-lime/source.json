@@ -11,7 +11,8 @@
 				"slot": 26,
 				"tile": [0.5, 0.5],
 				"depth": 0.03,
-				"smooth": 6
+				"smooth": 6,
+				"tint": [1.04, 1.05, 0.97]
 			}
 		],
 		"young": {
@@ -19,7 +20,9 @@
 			"slot": 28,
 			"tile": [0.2, 0.2],
 			"depth": 0.0006,
-			"delight": { "radius": 0.12 }
+			"delight": {
+				"radius": 0.12
+			}
 		}
 	}
 }
