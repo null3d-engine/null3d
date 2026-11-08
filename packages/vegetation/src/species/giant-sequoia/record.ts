@@ -29,7 +29,7 @@ export const record: Species = {
 	// The whole-tree stills stand the bole a fifth of the tree's height across at breast height
 	// (0.21 in 01, 0.19 in 18), where the buttressed taper still widens it. The pipe radius is the
 	// column's own width there, and the base taper adds the flare the photographs show.
-	size: { height: { mean: 58, spread: 4 }, dbh: 11, aspect },
+	size: { height: { mean: 58, spread: 4 }, dbh: 6.6, aspect },
 	growth: {
 		model: 'architectural',
 		// Stills 01, 02 and 18: one straight spire from the buttressed foot to its rounded top, with
@@ -58,10 +58,10 @@ export const record: Species = {
 				// Stills 01, 02 and 17: a bough runs out almost level from a swollen base, longest
 				// just above the crown's middle, and turns its tip up under its own weight.
 				length: [
-					[0, 5.5],
-					[0.35, 8.5],
-					[0.7, 5.5],
-					[1, 2.5],
+					[0, 6.5],
+					[0.35, 10],
+					[0.7, 6.5],
+					[1, 3],
 				],
 				angle: [
 					[0, 92],
@@ -120,14 +120,14 @@ export const record: Species = {
 	},
 	envelope,
 	shoots: {
-		prototypes: 6,
+		prototypes: 4,
 		classes: [
 			{
 				// Stills 10, 11 and 23: this year's shoot, a short even rope of pressed scales with a
 				// tuft of free tips at its end.
 				name: 'short',
-				vigor: [0, 0.35],
-				share: 0.4,
+				vigor: [0, 0.62],
+				share: 0.62,
 				years: 1,
 				length: { mean: 0.07, spread: 0.015 },
 				nodes: { mean: 18, spread: 3 },
@@ -140,38 +140,14 @@ export const record: Species = {
 					[0, 36],
 					[1, 26],
 				],
-				droop: 0,
-			},
-			{
-				// Stills 09 and 11: last year's shoot, with a few short side shoots at its end where the
-				// clump thickens.
-				name: 'long',
-				vigor: [0.35, 0.7],
-				share: 0.35,
-				years: 2,
-				length: { mean: 0.14, spread: 0.03 },
-				nodes: { mean: 34, spread: 4 },
-				internode: EVEN,
-				stem: { radius: [0.0035, 0.0015] },
-				laterals: 2,
-				lateralGap: 0.45,
-				bend: { length: 0.03, angle: 12 },
-				leafScale: [
-					[0, 0.95],
-					[1, 1],
-				],
-				leafAngle: [
-					[0, 34],
-					[1, 24],
-				],
-				droop: 2,
+				droop: 8,
 			},
 			{
 				// Still 21's branch: a spray of this year's and last year's rope shoots in two or three
 				// orders, each short sub-shoot carrying its own tip.
 				name: 'spray',
-				vigor: [0.7, 1],
-				share: 0.25,
+				vigor: [0.62, 1],
+				share: 0.38,
 				years: 3,
 				length: { mean: 0.3, spread: 0.05 },
 				nodes: { mean: 58, spread: 6 },
@@ -189,34 +165,7 @@ export const record: Species = {
 					[0, 34],
 					[1, 24],
 				],
-				droop: 4,
-			},
-		],
-		// Stills 10 and 11: the cut spray forks into shorter rope shoots at last year's joint, which
-		// the crown's own clumps already carry; the cutting class keeps the photograph's looser spray.
-		cuttingClasses: [
-			{
-				name: 'cut',
-				vigor: [0, 1],
-				share: 0,
-				years: 3,
-				length: { mean: 0.26, spread: 0.05 },
-				nodes: { mean: 38, spread: 5 },
-				internode: EVEN,
-				stem: { radius: [0.005, 0.002] },
-				lateral: 65,
-				laterals: 3,
-				lateralGap: 0.3,
-				bend: { length: 0.04, angle: 14 },
-				leafScale: [
-					[0, 0.9],
-					[1, 1],
-				],
-				leafAngle: [
-					[0, 34],
-					[1, 24],
-				],
-				droop: 3,
+				droop: 22,
 			},
 		],
 		phyllotaxis: { kind: 'spiral', divergence: 137.5 },
@@ -293,7 +242,7 @@ export const record: Species = {
 		flare: { amount: 0.25, height: 1.5 },
 		// The column itself widens strongly through its lowest tenth, as still 17 shows, and is
 		// nearly parallel above that.
-		taper: { amount: 0.12, height: 3 },
+		taper: { amount: 0.8, height: 9 },
 		buttress: {
 			lobes: { mean: 6, spread: 1 },
 			amount: 0.55,
@@ -365,7 +314,14 @@ export const record: Species = {
 		switchPixels: [240, 12, 160],
 		// The clumps stand about a fifth larger than their shoots, so the gaps between one clump's
 		// shoots fall on a neighbour's scales rather than on sky.
-		cardGrow: 1.2,
+		cardGrow: 2.2,
+		// A shoot's own twig is under a pixel at a whole view, so each card draws a short stalk
+		// down to the wood it grows from and joins the clump to its branch.
+		cardStalk: 3,
+		cardStalkToFoliage: true,
+		// A scale is a millimetre and a half across, under one texel of the default card cell, so the
+		// high tiers bake a finer cell and the crown keeps its blue-green at distance.
+		cardCell: { low: 64, medium: 64, high: 128, ultra: 128 },
 		woodOrders: [1, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
@@ -373,8 +329,8 @@ export const record: Species = {
 			kitBytes: { low: 3_400_000, medium: 6_000_000, high: 10_000_000, ultra: 18_000_000 },
 			variantBytes: { low: 10_000_000, medium: 11_000_000, high: 12_500_000, ultra: 13_000_000 },
 			lod0Triangles: 2_500_000,
-			lod1Triangles: 150_000,
-			lod2Triangles: 30_000,
+			lod1Triangles: 154_000,
+			lod2Triangles: 42_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 340_000,
 			growMilliseconds: 600,
@@ -387,7 +343,7 @@ export const record: Species = {
 	cuttings: {
 		// Still 21's branch is the spray, and still 22's branchlet the cutting class's looser spray.
 		branch: { order: 1, length: 1 },
-		subbranch: { shoot: 'cut' },
+		subbranch: { shoot: 'spray' },
 		// Still 23's shoot tip is the short even rope of this year's shoot.
 		cluster: { shoot: 'short' },
 	},
