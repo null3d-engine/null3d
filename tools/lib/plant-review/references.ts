@@ -1355,9 +1355,16 @@ export function widthProfile(spans: Int32Array, box: Box, bands = PROFILE_BANDS)
 }
 
 /**
+ * The least width of a plant's lowest tenth, against its widest row, at which the plant has no bare
+ * stem: a tuft, a rosette or a mound runs nearly as wide at its foot as through its crown.
+ */
+const CROWN_AT_FOOT = 0.8;
+
+/**
  * The row where the crown starts: going up from the plant's base, the first row from which the
  * plant stays wider than its trunk by a clear margin. The trunk's width is the median width of the
- * lowest rows.
+ * lowest rows. A plant with no bare stem runs as wide at its foot as at its widest, and its crown
+ * starts at its foot; its whole box is its crown, which is what its openness is measured over.
  */
 export function crownStartRow(spans: Int32Array, box: Box): number {
 	const tall = box.bottom - box.top + 1;
@@ -1385,6 +1392,24 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 	if (!Number.isFinite(trunk)) trunk = 0;
 	let widest = 0;
 	for (let y = box.top; y <= box.bottom; y++) widest = Math.max(widest, width(y));
+	// A plant that runs nearly as wide at its foot as at its widest has no bare stem below its
+	// crown: a tuft, a rosette or a mound. Its crown starts at its foot, so its whole box is the
+	// crown's and its openness is measured over the plant rather than a slice above the mound. A
+	// ground line that reaches both frame edges below the plant is not the plant's foot.
+	let frame = 0;
+	for (let y = box.top; y <= box.bottom; y++)
+		frame = Math.max(frame, (spans[y * 2 + 1] as number) + 1);
+	let foot = box.bottom;
+	while (
+		foot > box.top &&
+		(spans[foot * 2] as number) <= 0 &&
+		(spans[foot * 2 + 1] as number) >= frame - 1
+	)
+		foot--;
+	const low: number[] = [];
+	for (let y = foot; y > foot - Math.max(2, Math.round(tall * 0.1)); y--) low.push(width(y));
+	low.sort((a, b) => a - b);
+	if (widest > 0 && (low[low.length >> 1] as number) > CROWN_AT_FOOT * widest) return box.bottom;
 	// A stem's own width plus a clear margin, but never so much of the plant's width that a thick
 	// bole reads as foliage: on a low-crowned tree whose trunk is a third of its height across, an
 	// uncapped margin swallows the crown and the foot lands wherever the first wide run begins.
