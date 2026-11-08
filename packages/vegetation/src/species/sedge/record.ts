@@ -62,6 +62,9 @@ export const record: Species = {
 			sides: 3,
 			// Still 02: each stem bows over through a quarter turn at the top.
 			bow: { mean: 100, spread: 15 },
+			// Still 19: the photographs' spike stalks read a few millimetres; at a pixel's width they
+			// drop from the silhouette's matte, so the spikes stand apart from their stems.
+			stalkShare: 0.5,
 			// Stills 19 and 20: the spikes stand in flower through summer and stay brown into winter.
 			seasons: ['blossom', 'summer', 'autumn', 'winter'],
 			spikes: {
