@@ -262,8 +262,10 @@ export const record: Species = {
 			count: { mean: 7, spread: 1 },
 			length: { mean: 3, spread: 0.6 },
 			radius: 0.7,
-			dive: 0.3,
-			ridge: 0.9,
+			// The photographs' roots run out over the litter as rounded ridges, not half buried, so
+			// they dive late and stand proud of it.
+			dive: 0.12,
+			ridge: 1,
 		},
 		// Stills 03, 15 and 17: long vertical fibrous ridges run up the column, so the flutes fade
 		// slowly and high.
