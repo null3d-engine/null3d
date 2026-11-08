@@ -23,7 +23,7 @@ export const record: Species = {
 	growth: {
 		model: 'tuft',
 		// Still 04's overhead view and still 07's crown show a dense tussock of many shoots.
-		shoots: { mean: 140, spread: 12 },
+		shoots: { mean: 170, spread: 14 },
 		// Still 07 and 09: the shoots rise from one short thick crown, a little over 20 cm across.
 		base: 0.11,
 		// Still 02: the outer shoots lean away from the crown while the middle ones stand upright.
@@ -166,11 +166,11 @@ export const record: Species = {
 		shadowLevel: 1,
 		budget: {
 			// Measured at seed 11 over the first four variants: the kit holds 33 to 37 KB, and a
-			// variant 1.33, 1.55, 1.78 and 2.80 MB from Low to Ultra.
+			// variant 1.54, 1.79, 2.08 and 3.32 MB from Low to Ultra.
 			kitBytes: { low: 100_000, medium: 100_000, high: 100_000, ultra: 100_000 },
-			variantBytes: { low: 1_500_000, medium: 1_600_000, high: 1_900_000, ultra: 3_000_000 },
-			lod0Triangles: 110_000,
-			lod1Triangles: 22_000,
+			variantBytes: { low: 1_600_000, medium: 1_900_000, high: 2_200_000, ultra: 3_500_000 },
+			lod0Triangles: 140_000,
+			lod1Triangles: 25_000,
 			lod2Triangles: 8_000,
 			downloadBytes: 350_000,
 			downloadHalfBytes: 120_000,
