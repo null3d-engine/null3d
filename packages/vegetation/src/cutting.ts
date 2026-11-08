@@ -88,9 +88,8 @@ const NEAR_STEPS = 2;
 /** Candidates whose length match falls in the same step of this many natural-log units rank as near. */
 const MATCH_STEP = 0.15;
 
-/** A branch or sub-branch hint that cuts from the grown plant, if the record gives one. */
+/** A cutting hint that cuts from the grown plant, if the record gives one. */
 function plantHint(record: Species, part: CuttingPart): CutFromPlant | undefined {
-	if (part !== 'branch' && part !== 'subbranch') return undefined;
 	const hint = record.cuttings?.[part];
 	return hint && 'order' in hint ? hint : undefined;
 }
@@ -353,6 +352,8 @@ export function cutBranch(
 	const chosen = ranked[(cutting.pick ?? 0) % ranked.length] as Candidate;
 	const { axes, buds } = skeleton;
 	const root = chosen.axis;
+	// A piece that keeps a span of one long axis ends there, as a palm's frond piece does.
+	const span = plantHint(record, cutting.part)?.span;
 	const inside = new Uint8Array(axes.count);
 	const depth = depths(skeleton);
 	const order = Array.from({ length: axes.count }, (_, a) => a).sort(
@@ -416,7 +417,14 @@ export function cutBranch(
 				age: skeleton.age[first] as number,
 			});
 		}
+		let travelled = 0;
 		for (let n = first; n <= (axes.last[a] as number); n++) {
+			if (isRoot && span !== undefined) {
+				const here = nodeAt(skeleton, n);
+				const previous = n > first ? nodeAt(skeleton, n - 1) : here;
+				travelled += length3(here[0] - previous[0], here[1] - previous[1], here[2] - previous[2]);
+				if (n > first && travelled > span) break;
+			}
 			const p = place(nodeAt(skeleton, n));
 			const from = skeleton.parent[n] as number;
 			const parentOf = from >= 0 ? (nodeMap[from] as number) : -1;
@@ -437,6 +445,7 @@ export function cutBranch(
 	for (let b = 0; b < buds.count; b++) {
 		const axis = buds.axis[b] as number;
 		if (inside[axis] !== 1) continue;
+		if ((nodeMap[buds.node[b] as number] as number) < 0) continue;
 		const p = place([
 			buds.position[b * 3] as number,
 			buds.position[b * 3 + 1] as number,
