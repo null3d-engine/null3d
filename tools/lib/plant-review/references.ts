@@ -1356,7 +1356,10 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 	if (!Number.isFinite(trunk)) trunk = 0;
 	let widest = 0;
 	for (let y = box.top; y <= box.bottom; y++) widest = Math.max(widest, width(y));
-	const limit = Math.max(trunk * 2.5, widest * 0.12);
+	// A stem's own width plus a clear margin, but never so much of the plant's width that a thick
+	// bole reads as foliage: on a low-crowned tree whose trunk is a third of its height across, an
+	// uncapped margin swallows the crown and the foot lands wherever the first wide run begins.
+	const limit = Math.min(Math.max(trunk * 2.5, widest * 0.12), widest * 0.55);
 	const run = Math.max(2, Math.round(tall * 0.03));
 	// A ground line in frame runs wider than the plant's stem, so skip those rows first: they are
 	// not the crown, and their width would let the scan below find the ground as a crown.
@@ -1371,7 +1374,7 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 	// slope wider than the crown makes the trunk estimate the ground's width, and its limit clears
 	// nothing. The crown's own rows still say where it starts, so find the first narrow run below
 	// its wide top. A photograph whose start the scan above finds never reaches this.
-	return crownStartFromTop(spans, box, widest);
+	return crownStartFromTop(spans, box, limit);
 }
 
 /**
@@ -1379,13 +1382,12 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
  * top that the stem continues below. The lower edge of the foliage, whatever the ground below it
  * reads as.
  */
-function crownStartFromTop(spans: Int32Array, box: Box, widest: number): number {
+function crownStartFromTop(spans: Int32Array, box: Box, limit: number): number {
 	const tall = box.bottom - box.top + 1;
 	const width = (y: number) => {
 		const left = spans[y * 2] as number;
 		return left < 0 ? 0 : (spans[y * 2 + 1] as number) - left + 1;
 	};
-	const limit = widest * 0.12;
 	const run = Math.max(2, Math.round(tall * 0.03));
 	// An airy crown is full of narrow rows of its own, so a narrow stretch alone does not make a
 	// crown's foot. Only the stem runs on below the lowest foliage, so a candidate is the foot
