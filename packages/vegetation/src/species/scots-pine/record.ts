@@ -31,12 +31,12 @@ export const record: Species = {
 			// where the crown's plates lie closest.
 			kind: 'whorl',
 			spacing: [
-				[0, 1.1],
-				[0.5, 0.95],
-				[1, 0.7],
+				[0, 1.7],
+				[0.5, 1.4],
+				[1, 0.95],
 			],
 			perWhorl: { mean: 3, spread: 1 },
-			between: 0.1,
+			between: 0,
 			// Stills 01 and 18: the lowest live limbs stand just under half the height, and the
 			// needle plates begin a little above them, so the crown's foliage fills the upper half.
 			start: 0.52,
@@ -50,9 +50,9 @@ export const record: Species = {
 				// little, and turns its tufted tip back up. The widest boughs stand just above the
 				// crown's middle.
 				length: [
-					[0, 14],
-					[0.3, 13],
-					[0.65, 10],
+					[0, 13],
+					[0.3, 12],
+					[0.65, 9],
 					[1, 5],
 				],
 				angle: [
@@ -98,7 +98,7 @@ export const record: Species = {
 					[0, 62],
 					[1, 45],
 				],
-				density: 3.5,
+				density: 4.5,
 				arrangement: { kind: 'spiral', divergence: 137.5 },
 				flatten: 0.5,
 				sag: 2,
@@ -188,12 +188,12 @@ export const record: Species = {
 			// Stills 01, 04 and 20: the needle brushes stand at the ends of the finest twigs, with
 			// bare orange twig between them, and gather into dense plates at the crown's rim.
 			perMetre: [
-				[0, 12],
-				[0.5, 42],
-				[1, 80],
+				[0, 18],
+				[0.5, 68],
+				[1, 125],
 			],
 			density: 1.1,
-			tipBias: 0.88,
+			tipBias: 0.75,
 			shadePrune: 0.08,
 			tipPrune: 0.18,
 			// Stills 03 and 05: sky and bare limb show through the crown's middle and under it,
@@ -207,13 +207,16 @@ export const record: Species = {
 			reach: 12,
 			skyward: 0.35,
 			// The brushes gather at the nodes, so the internode between them shows bare.
-			gather: 0.15,
+			gather: 0.2,
 			scale: { mean: 1.55, spread: 0.12 },
 			// Still 20: the crown's top is built of separate plates at different heights, so the
 			// foliage gathers into tufts with wood and sky between them.
 			clump: { spacing: 1.2, depth: 0.15, fine: { spacing: 0.4, depth: 0.2 } },
 		},
 	},
+	// Stills 11 and 12: a pine has no single leaf. The leaf is the fascicle, two needles in one
+	// sheath, and still 12 shows one needle of that pair. Row 4 reads the bundle's outline against
+	// the single needle as a width and shape statement, not as an overlap figure.
 	foliage: {
 		kind: 'fascicle',
 		needle: {
@@ -330,7 +333,7 @@ export const record: Species = {
 	},
 	lod: {
 		nearFoliage: 'instanced',
-		switchPixels: [240, 12, 160],
+		switchPixels: [320, 12, 160],
 		woodOrders: [2, 1],
 		// A brush's card stands a little larger than the shoots it pictures, so gaps between
 		// neighbouring brushes fall on needles rather than on sky.
