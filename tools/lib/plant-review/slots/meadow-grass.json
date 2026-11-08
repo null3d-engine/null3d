@@ -1,6 +1,10 @@
 {
+	"04-tuft-from-above.png": { "elevation": 82, "distance": 0.9, "fov": 40 },
+	"11-blade-cluster.png": { "cut": 0.28 },
 	"12-single-blade-upper.png": { "leaves": 1.1, "roll": -45 },
 	"13-single-blade-underside.png": { "leaves": 1.1, "roll": -45 },
+	"19-seed-head.png": { "distance": 0.32, "fov": 30 },
+	"23-leaf-cluster-studio.png": { "cut": 0.28 },
 	"24-leaf-texture-upper.png": { "leaves": 1.1, "roll": -45 },
 	"25-leaf-texture-underside.png": { "leaves": 1.1, "roll": -45 }
 }
