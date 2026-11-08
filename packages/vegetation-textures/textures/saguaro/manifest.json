@@ -253,13 +253,13 @@
 					0.9
 				],
 				"mean": [
-					0.29974,
-					0.26716,
-					0.23243
+					0.17806,
+					0.14813,
+					0.12591
 				],
 				"height": {
-					"offset": 0.27158,
-					"depth": 0.007222
+					"offset": 0.15289,
+					"depth": 0.012384
 				}
 			}
 		],
@@ -298,13 +298,13 @@
 		},
 		{
 			"file": "bark-color.ktx2",
-			"sha256": "679bf9b76528348ab758846d37f0c5d7de181fe55e5e07c47efaeb9759ce0cfa",
-			"bytes": 342866
+			"sha256": "33d3b050413c28e4328e3ee51deaf2c1544a57fa3b3d4c21cc2e390b1350bf34",
+			"bytes": 372162
 		},
 		{
 			"file": "bark-normal.ktx2",
-			"sha256": "0815575c1e18e60c6416333a4d8d74c8f21351611f4b24473688aa6632013a32",
-			"bytes": 259131
+			"sha256": "a24cbbb07a24b75bc5dbdc6b739d408b52eefe2df82aeb55a331f8fdc9de82ab",
+			"bytes": 310365
 		},
 		{
 			"file": "young-color.ktx2",
@@ -318,13 +318,13 @@
 		},
 		{
 			"file": "bark-color-half.ktx2",
-			"sha256": "596a4d3eefa133cdce1845fc940f55cd3e17633ed455040aea50ed77ddd71b46",
-			"bytes": 95950
+			"sha256": "55c571c401719336d05926f867db53b76393c40c152c6f3a9a941b18019c16d6",
+			"bytes": 101094
 		},
 		{
 			"file": "bark-normal-half.ktx2",
-			"sha256": "3ae28a2260b34348217db58466e15b2f957e29fba45ca0d54fecef3f885fe8a4",
-			"bytes": 71947
+			"sha256": "4e24188756d3b8ffc32d5de4eb69c7d836e9926e053e04b7cf9ae70c7e607af1",
+			"bytes": 83584
 		},
 		{
 			"file": "young-color-half.ktx2",
