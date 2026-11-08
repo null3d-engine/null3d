@@ -468,6 +468,10 @@ export const record: Species = {
 		// 1.4 m ahead of the row, where the stretch behind the row cannot reach it.
 		cardStalk: 2,
 		cardStalkToFoliage: true,
+		// Each far card grows about its middle, so the rim's gaps close without the shoots changing:
+		// the whole views read 0.1304 and 0.1105 of sky against bands that top out at 0.1186 and
+		// 0.0942.
+		cardGrow: 1.1,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
