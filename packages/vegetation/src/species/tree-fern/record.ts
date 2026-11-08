@@ -50,7 +50,13 @@ export const record: Species = {
 			depth: 0.2,
 			// Still 06: the crown's centre holds the young fronds, still rolled, coiled through a
 			// turn and a half above a hairy stalk.
-			croziers: { count: { mean: 5, spread: 1 }, length: { mean: 0.7, spread: 0.05 }, coil: 540 },
+			croziers: {
+				count: { mean: 5, spread: 1 },
+				length: { mean: 0.7, spread: 0.05 },
+				coil: 540,
+				// Still 01 and 06: the fiddleheads are hairy red-brown, the same mat as the trunk.
+				bark: 'grown',
+			},
 			// Still 16, 17 and 20: the dead fronds hang against the trunk as a brown skirt, and
 			// still 20 shows their pinnae, so a dead frond keeps the detail of a living one.
 			dead: { count: { mean: 20, spread: 2 }, hang: 160, skirt: 0.1, blades: true },
