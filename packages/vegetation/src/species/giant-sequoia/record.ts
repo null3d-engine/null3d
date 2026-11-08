@@ -150,7 +150,7 @@ export const record: Species = {
 				share: 0.38,
 				years: 3,
 				length: { mean: 0.32, spread: 0.04 },
-				nodes: { mean: 58, spread: 6 },
+				nodes: { mean: 88, spread: 8 },
 				internode: EVEN,
 				stem: { radius: [0.006, 0.002] },
 				lateral: 70,
@@ -177,9 +177,9 @@ export const record: Species = {
 		bud: { length: 0.002, width: 0.0015, tipCluster: 1 },
 		placement: {
 			perMetre: [
-				[0, 3.5],
-				[0.5, 7],
-				[1, 14],
+				[0, 4.2],
+				[0.5, 8.4],
+				[1, 16.8],
 			],
 			density: 1.05,
 			// Stills 04 and 05: sky and wood show between the clumps, so the crown's inside thins
@@ -204,7 +204,7 @@ export const record: Species = {
 			length: { mean: 0.005, spread: 0.001 },
 			width: 0.003,
 			section: 'awl',
-			density: 18,
+			density: 22,
 			angle: 20,
 			ranks: 0,
 			optics: {
@@ -295,8 +295,8 @@ export const record: Species = {
 				stalk: 0.004,
 				stalkSides: 5,
 			},
-			colour: [0.09, 0.095, 0.045],
-			bandColour: [0.13, 0.11, 0.065],
+			colour: [0.1, 0.125, 0.05],
+			bandColour: [0.14, 0.125, 0.075],
 			roughness: [0.85, 0.9],
 			stalkColour: [0.16, 0.09, 0.05],
 			hang: 20,
