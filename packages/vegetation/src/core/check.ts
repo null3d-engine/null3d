@@ -544,6 +544,9 @@ export function speciesProblems(record: Species): string[] {
 	if (fork?.knot !== undefined && !(fork.knot >= 0 && fork.knot <= 1))
 		out.push(`bark.fork.knot is ${fork.knot}; it is a share from 0 to 1`);
 	curveProblems(record.wind.stiffness, 'wind.stiffness', out);
+	const power = record.wind.sway?.power;
+	if (power !== undefined && !(power >= 1 && power <= 6))
+		out.push(`wind.sway.power is ${power}; it is a number from 1 to 6`);
 	const lod = record.lod;
 	lod.switchPixels.forEach((pixels, i) => {
 		if (pixels <= 0) out.push(`lod.switchPixels[${i}] is ${pixels}; it must be above 0`);

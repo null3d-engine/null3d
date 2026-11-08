@@ -135,6 +135,21 @@ describe('the species header', () => {
 		const written = texel(header, HEADER.sway);
 		expect(written[0]).toBeCloseTo(sway?.amplitude as number, 6);
 		expect(written[1]).toBeCloseTo(sway?.frequency as number, 6);
+		// The power its share of the top's motion rises with, the cantilever's square by default.
+		expect(written[2]).toBeCloseTo(sway?.power ?? 2, 6);
+	});
+
+	test('gives a stiffer stem its own power on the sway', () => {
+		const still = texel(header, HEADER.sway);
+		expect(still[2]).toBeCloseTo(2, 6);
+		const stiff: Species = {
+			...record,
+			wind: { ...record.wind, sway: { ...record.wind.sway, power: 3 } as never },
+		};
+		expect(texel(speciesHeader(stiff, manifest, speciesBox(stiff)), HEADER.sway)[2]).toBeCloseTo(
+			3,
+			6,
+		);
 	});
 
 	test("writes each extra's body and band colour with their roughness", () => {
@@ -191,6 +206,7 @@ describe('the species header', () => {
 		const written = texel(speciesHeader(bare, manifest, speciesBox(bare)), HEADER.sway);
 		expect(written[0]).toBeCloseTo(DEFAULT_WIND_SWAY.amplitude, 6);
 		expect(written[1]).toBeCloseTo(DEFAULT_WIND_SWAY.frequency, 6);
+		expect(written[2]).toBeCloseTo(DEFAULT_WIND_SWAY.power, 6);
 	});
 
 	test('keeps the species box to a hundredth of a millimetre through half floats', () => {

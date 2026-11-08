@@ -32,6 +32,19 @@ describe('the record check', () => {
 		expect(() => checkSpecies(broken)).toThrow(/cannot grow/);
 	});
 
+	it('holds the sway power to its range', () => {
+		const out = {
+			...template,
+			wind: { ...template.wind, sway: { frequency: 0.4, amplitude: 0.05, power: 9 } },
+		} as Species;
+		expect(speciesProblems(out).some((p) => p.startsWith('wind.sway.power is 9'))).toBe(true);
+		const fine = {
+			...template,
+			wind: { ...template.wind, sway: { frequency: 0.4, amplitude: 0.05, power: 3 } },
+		} as Species;
+		expect(speciesProblems(fine)).toEqual([]);
+	});
+
 	it('holds the crown fields to their ranges', () => {
 		if (template.growth.model !== 'self-organizing' || !template.shoots)
 			throw new Error('the template grows by the self-organizing model, with shoots');
