@@ -57,14 +57,15 @@ export const record: Species = {
 			kind: 'spike',
 			// Still 17: the stems stand about 30 cm above the leaf mound at their highest point.
 			height: { mean: 1.6, spread: 0.18 },
-			// Still 16: the solid three-angled stem; the photographs' stems read about a centimetre across.
-			radius: 0.005,
+			// Still 16: the solid three-angled stem; the photographs' stems read a centimetre to a
+			// centimetre and a half across, and a thinner one falls under a pixel at the far view.
+			radius: 0.007,
 			sides: 3,
 			// Still 02: each stem bows over through a quarter turn at the top.
 			bow: { mean: 100, spread: 15 },
 			// Still 19: the photographs' spike stalks read a few millimetres; at a pixel's width they
 			// drop from the silhouette's matte, so the spikes stand apart from their stems.
-			stalkShare: 0.5,
+			stalkShare: 0.6,
 			// Stills 19 and 20: the spikes stand in flower through summer and stay brown into winter.
 			seasons: ['blossom', 'summer', 'autumn', 'winter'],
 			spikes: {
