@@ -85,12 +85,12 @@
 		"distance": 3.5
 	},
 	"21-branch-studio.png": {
-		"daylight": 2.4
+		"daylight": 1.85
 	},
 	"22-subbranch-studio.png": {
-		"daylight": 1.35
+		"daylight": 1.5
 	},
 	"23-leaf-cluster-studio.png": {
-		"daylight": 1.27
+		"daylight": 1.19
 	}
 }
