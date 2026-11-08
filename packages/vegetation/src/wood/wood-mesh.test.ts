@@ -475,6 +475,27 @@ describe('the wood of the grown oak', () => {
 		}
 	});
 
+	it('shades the wood at its foot below the wood higher up', () => {
+		// The ground throws back less than the open sky, and a crown's open sides let a ray past
+		// beside the bole, so the sky share alone would light the foot more than the wood above it.
+		const mesh = report.mesh;
+		const mean = (low: number, high: number): number => {
+			let sum = 0;
+			let n = 0;
+			for (let v = 0; v < mesh.positions.length / 3; v++) {
+				const y = mesh.positions[v * 3 + 1] as number;
+				if (y < low || y >= high) continue;
+				sum += mesh.colors[v * 4 + 3] as number;
+				n++;
+			}
+			return n > 0 ? sum / n : 0;
+		};
+		const foot = mean(0, 1);
+		const higher = mean(6, 10);
+		expect(foot).toBeGreaterThan(0);
+		expect(foot).toBeLessThan(higher * 0.9);
+	});
+
 	it('keeps the bark texel density within 30 per cent of the target on every ring', () => {
 		const density = measureDensity(report);
 		expect(density.rings).toBeGreaterThan(5000);
