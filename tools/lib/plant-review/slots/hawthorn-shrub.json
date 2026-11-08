@@ -4,14 +4,18 @@
 		"sunRise": 45,
 		"skyShare": 0.19,
 		"fov": 30,
-		"daylight": 2.4
+		"daylight": 2.4,
+		"fill": 0.8,
+		"targetY": 0.5
 	},
 	"02-whole-shrub-profile.png": {
 		"sunAzimuth": 25,
 		"sunRise": 50,
 		"skyShare": 0.6,
 		"fov": 30,
-		"daylight": 1.7
+		"daylight": 1.7,
+		"fill": 0.8,
+		"targetY": 0.5
 	},
 	"03-whole-from-below.png": {
 		"sunAzimuth": 40,
@@ -44,7 +48,7 @@
 		"fov": 30,
 		"fill": null,
 		"targetY": null,
-		"top": 0.06,
+		"top": 0.1,
 		"eye": 0.3
 	},
 	"08-branch-fork.png": {
@@ -60,20 +64,32 @@
 	"11-leaf-cluster.png": {
 		"background": "studio-grey"
 	},
+	"15-bark-mid-stem.png": {
+		"span": 0.4
+	},
 	"16-bark-on-branch.png": {
 		"view": "bark-limb",
+		"thin": 0.018,
+		"span": 0.08
+	},
+	"26-bark-texture.png": {
+		"span": 0.3
+	},
+	"28-young-bark.png": {
+		"view": "bark-limb",
 		"thin": 0.012,
-		"span": 0.2
+		"span": 0.035
 	},
 	"19-thorns.png": {
 		"background": "studio-grey",
-		"leaves": 1.2
+		"leaves": 1.2,
+		"fruit": false
 	},
 	"20-flowers-spring.png": {
-		"view": "cluster",
+		"view": "twigs",
 		"background": "studio-grey",
 		"season": "blossom",
-		"leaves": 2.4
+		"leaves": 2.0
 	},
 	"21-branch-studio.png": {
 		"background": "studio-grey"

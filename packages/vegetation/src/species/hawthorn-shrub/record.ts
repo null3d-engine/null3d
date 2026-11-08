@@ -35,15 +35,16 @@ export const record: Species = {
 	latin: 'Crataegus monogyna',
 	form: 'many-stemmed thorny shrub in a dense low dome',
 	// Stills 07 and 18: several stems leave one stool and fan out, so no single bole can carry the
-	// plant. Its height is a guess from the photographs' scale; its spread and crown base are the
-	// fit's.
+	// plant. Still 18 stands the thickest stem about two hundredths of the height across at breast
+	// height. Its height is read from the stems' own size in still 07; its spread and crown base are
+	// the fit's.
 	size: { height: { mean: 4, spread: 0.6 }, dbh: 0.08, aspect },
 	growth: {
 		model: 'self-organizing',
 		years: 30,
 		macroOrders: 4,
-		// Stills 01, 02 and 18: the foliage reaches almost to the grass, so the envelope holds its
-		// room from its own base and the crown has no clear bole.
+		// Stills 01, 02 and 18: the foliage reaches almost to the grass, so the envelope keeps its room
+		// almost from its own base, cut flat only at the stool's height where the bare stems stand.
 		floor: 0.04,
 		// Stills 01, 02 and 09: the stool is a dense thicket, so more lateral buds flush than the
 		// light alone gives and the crown reads as one mass rather than a few limbs.
@@ -54,9 +55,9 @@ export const record: Species = {
 		clearanceThickness: 0.35,
 		turning: 30,
 		internode: { length: 0.22, ageFactor: 0.99 },
-		// Still 07: about five stems stand from one stool, each leaning out as it leaves the soil.
+		// Still 07: several stems stand from one stool, each leaning out as it leaves the soil.
 		stems: {
-			count: { mean: 5, spread: 1 },
+			count: { mean: 7, spread: 1 },
 			lean: { mean: 20, spread: 6 },
 			stool: 0.3,
 			fused: 0.5,
@@ -71,8 +72,9 @@ export const record: Species = {
 			angleSpread: 10,
 			extinction: [0.01, 0.02],
 		},
-		// Stills 01 and 02: no leader carries the shrub to an apex, so the dome spreads as wide as it
-		// is tall.
+		// Stills 01 and 02: the dome is broader than it is tall, and its top stays broad rather than
+		// running to a point, so the leader carries the crown high while its laterals fill the top
+		// round it.
 		apical: {
 			control: [
 				[0, 0.5],
@@ -81,9 +83,9 @@ export const record: Species = {
 			dominance: [0.7, 0.6, 0.98],
 			wander: 16,
 		},
-		// Still 07 and 18: each stem divides within its lowest tenth into a few limbs that fan out
-		// round it; the stool's stems take the stair above.
-		divide: { at: 0.08, count: 4, angle: 62, lean: 28, plumb: 4 },
+		// Still 07 and 18: each stem runs up bare for about a third of the height and then divides
+		// into a few limbs that fan out round it; the stool's stems take the stair above.
+		divide: { at: 0.3, count: 4, angle: 62, lean: 28, plumb: 4 },
 		// Stills 01 and 02: the crown's lit surface carries its fullest shoots.
 		light: { apical: 1, lateral: 1.2, shadow: [5, 0.15, 2], cells: 96, surface: true },
 		// Stills 01 and 02: the limbs run out level to build the dome's skirt, and only the outermost
@@ -193,10 +195,8 @@ export const record: Species = {
 			},
 		],
 		// Stills 21 and 22: a cut twig forks at last year's joint into two shoots, each ending in a
-		// tuft of leaves, with the wood bare between the joints and a thorn at every node. The crown
-		// cannot carry shoots this open and thorny, so the cuttings draw this class and the crown
-		// never does. Its two prototypes differ in length, so the branch takes the long one and the
-		// sub-branch the short.
+		// tuft of leaves, with the wood bare between the joints. The crown cannot carry shoots this
+		// open, so the cuttings draw this class and the crown never does.
 		cuttingClasses: [
 			{
 				name: 'cut',
@@ -247,11 +247,11 @@ export const record: Species = {
 			],
 			// The reference's dome is denser than the curve alone gives: this is the dial, not a
 			// change of reach or part size.
-			density: 1.8,
+			density: 1.7,
 			shadePrune: 0,
 			// Stills 01, 03 and 05: sky shows through the crown's middle and under it, where its own
 			// leaves leave a shoot under this share of the sky, while the lit outer masses stay.
-			skyPrune: 0.15,
+			skyPrune: 0.18,
 			skyPruneLayer: 1,
 			// Stills 01 and 18: no bare twigs hang outside the foliage.
 			bareTrim: 0.03,
@@ -269,7 +269,7 @@ export const record: Species = {
 			// wedge base, about four centimetres from base to tip, on a stalk about a quarter of that.
 			length: { mean: 0.035, spread: 0.006 },
 			outline: 'texture',
-			petiole: { length: 0.012, radius: 0.0008, flat: 0, droop: 10 },
+			petiole: { length: 0.009, radius: 0.0005, flat: 0, droop: 10 },
 			fold: 8,
 			curl: 10,
 			crossCurl: -4,
@@ -288,9 +288,9 @@ export const record: Species = {
 		// colour stands as it is.
 		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [1, 1, 1] }],
 		young: 0,
-		// Still 16 and 28: the plates fade to smooth red-brown bark on wood thinner than about three
+		// Still 16 and 28: the plates fade to smooth red-brown bark on wood thinner than about four
 		// centimetres across.
-		youngRadius: 0.03,
+		youngRadius: 0.02,
 		girthScale: [
 			[0, 0.5],
 			[1, 1],
@@ -325,7 +325,7 @@ export const record: Species = {
 			// the twigs, red-brown when young and grey with age.
 			kind: 'thorn',
 			at: 'node',
-			share: 0.35,
+			share: 0.3,
 			seasons: ['blossom', 'summer', 'autumn', 'winter'],
 			shape: { spines: 1, length: 0.022, spread: 0 },
 			colour: [0.18, 0.06, 0.04],
@@ -336,23 +336,20 @@ export const record: Species = {
 			// round berry on a short stalk below the last leaves.
 			kind: 'fruit',
 			at: 'shoot-tip',
-			share: 0.5,
+			share: 0.35,
 			count: { mean: 2, spread: 0.5 },
 			tipShare: 0.85,
 			seasons: ['summer', 'autumn'],
 			shape: {
 				lathe: [
 					[0.0012, 0],
-					[0.0032, 0.0012],
 					[0.0044, 0.003],
-					[0.0046, 0.0048],
-					[0.0042, 0.0064],
-					[0.0032, 0.0078],
-					[0.0018, 0.0088],
-					[0.0006, 0.0094],
+					[0.0046, 0.006],
+					[0.0032, 0.008],
+					[0.001, 0.0094],
 					[0, 0.0096],
 				],
-				sides: 10,
+				sides: 8,
 				stalk: 0.012,
 				pedicel: 0.004,
 				stalkSides: 5,
@@ -367,8 +364,8 @@ export const record: Species = {
 			// the leaves out among them.
 			kind: 'flower',
 			at: 'shoot-tip',
-			share: 0.6,
-			count: { mean: 8, spread: 2 },
+			share: 0.25,
+			count: { mean: 5, spread: 1.5 },
 			tipShare: 0.95,
 			seasons: ['blossom'],
 			shape: { petals: 5, radius: 0.007, cup: 0.45 },
@@ -399,9 +396,10 @@ export const record: Species = {
 	lod: {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
-		// The cards stand a third larger than the shoots they picture: a small-leaved species breaks
-		// into pieces at a whole view otherwise, as its leaves leave wide gaps between shoots.
-		cardGrow: 1.35,
+		// The cards stand a quarter larger than the shoots they picture, so a gap between one
+		// shoot's leaves falls on a neighbour's leaves rather than on sky, while the crown stays
+		// within the outline the camera frames.
+		cardGrow: 1.25,
 		// A card's twig is thinner than a pixel at a whole view, so each draws its supporting twig as
 		// a line that runs on to the card's own foliage, and the join shows.
 		cardStalk: 2,
