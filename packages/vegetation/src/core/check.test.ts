@@ -259,19 +259,26 @@ describe('the record check', () => {
 		).toBe(true);
 	});
 
-	it('presses only a blade leaf flat', () => {
+	it('presses only a leaf whose kind can lie flat', () => {
 		const pressed: Species = { ...template, cuttings: { leaf: { pressed: true } } };
-		const blade = template.foliage.kind === 'blade';
-		expect(speciesProblems(pressed).some((p) => p.startsWith('cuttings.leaf.pressed'))).toBe(
-			!blade,
-		);
+		const flat = template.foliage.kind === 'blade' || template.foliage.kind === 'thick';
+		expect(speciesProblems(pressed).some((p) => p.startsWith('cuttings.leaf.pressed'))).toBe(!flat);
 		const needled = {
 			...pressed,
 			foliage: { kind: 'none' },
 		} as unknown as Species;
 		expect(
-			speciesProblems(needled).some((p) => p.startsWith('cuttings.leaf.pressed lays a blade')),
+			speciesProblems(needled).some((p) => p.startsWith('cuttings.leaf.pressed lays a leaf')),
 		).toBe(true);
+	});
+
+	it('holds a pressed leaf own stalk to a length above zero', () => {
+		const short: Species = { ...template, cuttings: { leaf: { pressed: true, petiole: 0 } } };
+		expect(speciesProblems(short).some((p) => p.startsWith('cuttings.leaf.petiole is 0'))).toBe(
+			true,
+		);
+		const kept: Species = { ...template, cuttings: { leaf: { pressed: true, petiole: 0.04 } } };
+		expect(speciesProblems(kept).some((p) => p.startsWith('cuttings.leaf.petiole'))).toBe(false);
 	});
 
 	it("holds a compound leaf's leaflet angle and stalk to their ranges", () => {

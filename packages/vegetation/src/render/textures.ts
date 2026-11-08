@@ -83,6 +83,11 @@ export interface PrepareOptions extends CoarsenessOptions {
 	 * engine's cache of derived data. Without one, they are kept in memory for the visit alone.
 	 */
 	readonly cache?: PlantByteCache;
+	/**
+	 * Build a cutting kit: the classes its cut pieces draw and no card levels, so a piece that is
+	 * only ever drawn close up does not pay for the crown's cards or for the classes it never uses.
+	 */
+	readonly cutting?: boolean;
 }
 
 /** Slots in a species' near table: the copies that may draw real shoots at once. */
@@ -295,6 +300,7 @@ export async function prepareSpecies(
 			...(options?.placeholders === 'missing' && { placeholders: 'missing' as const }),
 			...(options?.form !== undefined && { form: options.form }),
 			...(options?.cache && { cache: options.cache }),
+			...(options?.cutting && { cutting: true }),
 		}),
 	]);
 	const textures = kitTextures(ctx, kit, set, loaded);

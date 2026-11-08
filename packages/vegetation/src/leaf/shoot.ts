@@ -1081,12 +1081,14 @@ function prototypeOf(
  * @param record The species record.
  * @param manifest The texture manifest.
  * @param leaves The species' leaf meshes at every tier, low first.
+ * @param cutting Build only the classes a cut piece draws, which the crown's kit then leaves out.
  * @returns The prototypes.
  */
 export function shootPrototypes(
 	record: Species,
 	manifest: TextureManifest,
 	leaves: readonly (readonly PrototypeArrays[])[],
+	cutting = false,
 ): UncardedPrototype[] {
 	void manifest;
 	const shoots = record.shoots;
@@ -1104,15 +1106,19 @@ export function shootPrototypes(
 			classes[index] as ShootClass,
 		),
 	);
-	if (leafMeshes > 0 && hasBareTwins(record))
+	if (!cutting && leafMeshes > 0 && hasBareTwins(record))
 		for (const [index, plan] of plans.entries())
 			out.push(
 				prototypeOf({ ...plan, leaves: [] }, leaves, out.length, classes[index] as ShootClass),
 			);
 	// A cutting class is planned last and marked as a cutting's, so the crown never offers one however
 	// its variants fall. It keeps a leafless twin beside it where the species has them, so a winter
-	// cutting of it still finds a piece.
-	for (const shootClass of shoots.cuttingClasses ?? [])
+	// cutting of it still finds a piece. A kit of a kind holds only the classes of its kind: the
+	// plant's kit the crown's and the cutting classes both are drawn from, the cutting kit the classes
+	// that only a cut piece draws.
+	for (const shootClass of (shoots.cuttingClasses ?? []).filter(
+		(shoot) => (shoot.cutOnly === true) === cutting,
+	))
 		for (let k = 0; k < CUTTING_PROTOTYPES; k++) {
 			const plan = planShoot(record, out.length, leafMeshes, shootClass);
 			out.push(

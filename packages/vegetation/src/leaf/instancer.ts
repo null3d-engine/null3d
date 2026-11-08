@@ -462,6 +462,9 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 	for (const b of order) {
 		const axis = buds.axis[b] as number;
 		const kind = buds.kind[b] as number;
+		// A dormant bud carries nothing, and it is no anchor for the stretch the next shoot's count
+		// shares: a culm's sheath buds must not stretch its tip's shoot down the bare culm.
+		if (kind === BUD_DORMANT) continue;
 		const at: Vector3 = [
 			buds.position[b * 3] as number,
 			buds.position[b * 3 + 1] as number,
@@ -469,7 +472,6 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 		];
 		const before = previous.get(axis);
 		previous.set(axis, b);
-		if (kind === BUD_DORMANT) continue;
 		const node = buds.node[b] as number;
 		const host = skeleton.axisOf[node] as number;
 		// The clean bole carries no shoot: the trunk below the crown is bare, as the record says. The
