@@ -54,6 +54,8 @@ export const record: Species = {
 				count: { mean: 5, spread: 1 },
 				length: { mean: 0.7, spread: 0.05 },
 				coil: 540,
+				// Still 01 and 06: a fiddlehead is a thick fleshy roll, nearly three times the stipe.
+				radius: 0.045,
 				// Still 01 and 06: the fiddleheads are hairy red-brown, the same mat as the trunk.
 				bark: 'grown',
 			},
@@ -120,6 +122,9 @@ export const record: Species = {
 				transmittance: [0.09, 0.15, 0.04],
 				roughness: [0.55, 0.65],
 			},
+			// Still 19: round brown spore cases stand under the lobes; the discs take their colour
+			// from the underside texture's own spore-case band.
+			sori: { count: 8, size: 0.0045, at: [0.39, 0.54] },
 		},
 	},
 	bark: {

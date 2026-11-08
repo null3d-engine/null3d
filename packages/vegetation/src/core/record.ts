@@ -560,6 +560,11 @@ export interface CrownRosette {
 			readonly length: Spread;
 			readonly coil?: number;
 			/**
+			 * Metres of radius at a crozier's foot: a fiddlehead is thick and fleshy, wider than the
+			 * stipe of the frond it will become. Absent, it takes the frond's own stipe width.
+			 */
+			readonly radius?: number;
+			/**
 			 * What a crozier's skin draws: `young`, the smooth young bark a thin shoot takes, or
 			 * `grown`, the species' grown bark layer with its zones, tint and hollows. A rolled
 			 * young frond is fleshy and hairy rather than smooth, so `grown` is what a fern's
@@ -1275,6 +1280,16 @@ export interface LeafShape {
 	readonly wave: readonly [amplitude: number, count: number];
 	/** How the leaf looks under light. */
 	readonly optics: LeafOptics;
+	/**
+	 * The spore cases a fern's leaf carries under its lobes: how many stand along the midrib, their
+	 * radius in metres, and the spot of the leaf texture they take their colour from, as u and v.
+	 * A leaf that names none carries none.
+	 */
+	readonly sori?: {
+		readonly count: number;
+		readonly size: number;
+		readonly at: readonly [number, number];
+	};
 }
 
 /**
