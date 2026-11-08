@@ -142,6 +142,9 @@ const TEXTURE_UV_STEPS: f32 = 65535.0;
 const WOOD_RADIUS_SPAN: f32 = 4.0;
 // The coverage at which a texel counts as leaf, the materials' alpha cutoff.
 const CUTOFF: f32 = 0.5;
+/// The coverage at which a texel counts in a matte, which keeps a partly covered texel rather than
+/// cutting it at the leaf's own cutoff.
+const MATTE_CUTOFF: f32 = 0.02;
 // How much a card's alpha rises for each mip level its sample reads. A mip level's alpha is already
 // the share of the texel that the leaves cover, so a small rise keeps a far card's thinnest leaves
 // from falling under the cutoff without inventing coverage that the mip does not hold.
@@ -802,8 +805,8 @@ fn gloss_albedo(roughness: f32, n_dot_v: f32) -> f32 {
 
 /// The coverage of a leaf or card texel, sharpened to a one-pixel edge at the cutoff: whole inside
 /// the blade, none outside, so the blade draws solid to its cut edge.
-fn sharpen(alpha: f32, width: f32) -> f32 {
-    return saturate((alpha - CUTOFF) / max(width, 0.0001) + 0.5);
+fn sharpen(alpha: f32, width: f32, cutoff: f32) -> f32 {
+    return saturate((alpha - cutoff) / max(width, 0.0001) + 0.5);
 }
 
 /// The scale from a role's stored texture coordinates to the texture's own.
@@ -1198,7 +1201,10 @@ fn surface(input: SurfaceInput) -> Surface {
     s.ambientNormal = select(normal, normalize(sky_normal), dot(sky_normal, sky_normal) > 0.0);
     s.occlusion = saturate(occlusion);
     s.occlusionByMinimum = true;
-    s.alpha = sharpen(alpha, width);
+    // A matte keeps a texel's fractional coverage: the review reads it at half black and counts
+    // any covered pixel as plant, so a group standing a pixel from the mass stays joined to it,
+    // where a cut at the leaf's own cutoff separates the two.
+    s.alpha = select(sharpen(alpha, width, CUTOFF), sharpen(alpha, width, MATTE_CUTOFF), matte);
     s.diffuseTransmission = select(share, 0.0, matte);
     s.diffuseTransmissionColor = select(through, vec3f(0.0), matte);
     return s;
