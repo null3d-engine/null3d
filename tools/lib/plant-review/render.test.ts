@@ -1,7 +1,15 @@
 // How a turn is split into sheets of cells: how many cells a sheet takes at a cell's size, how its
 // cells are laid out, and that the turns run on from sheet to sheet.
 import { describe, expect, test } from 'bun:test';
-import { sheetGrid, turnShots } from './render.ts';
+import { readPublished, sheetGrid, turnShots } from './render.ts';
+
+/** A page whose published result comes back as the given answers, one per read. */
+function pageAnswering(answers: readonly unknown[]): Parameters<typeof readPublished>[0] {
+	let read = 0;
+	return {
+		evaluate: async () => answers[Math.min(read++, answers.length - 1)],
+	} as unknown as Parameters<typeof readPublished>[0];
+}
 
 /** The pixels of a sheet's canvas, its empty cells included. */
 function canvasPixels(shot: ReturnType<typeof turnShots>[number]): number {
@@ -43,5 +51,18 @@ describe('the sheets of a turn', () => {
 		expect(
 			turnShots('turn', query, [4000, 3000], 0, 90, 4, false).map((s) => s.cells.length),
 		).toEqual([1, 1, 1, 1]);
+	});
+});
+
+describe('reading a page that published its result', () => {
+	test('takes the result on the first read that returns one', async () => {
+		const page = pageAnswering([undefined, undefined, { ok: true, width: 4 }]);
+		expect(await readPublished(page)).toEqual({ ok: true, width: 4 });
+	});
+
+	test('gives up with a message of its own when every read returns nothing', async () => {
+		await expect(readPublished(pageAnswering([undefined]))).rejects.toThrow(
+			'published a result, and the browser returned none of it',
+		);
 	});
 });
