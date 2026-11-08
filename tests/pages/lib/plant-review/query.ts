@@ -73,6 +73,11 @@ export interface PlantReviewQuery {
 	 * tone curve squeezes a bright sky more than the plant under it.
 	 */
 	readonly daylight?: number;
+	/**
+	 * A copy stand's lamp colour, as sRGB hex, in place of white: a photograph's own white balance,
+	 * so a picture taken under warm lamps is drawn under them too.
+	 */
+	readonly lamp?: string;
 	/** The wind's strength: 0 still, 1 the default field, up to 3. */
 	readonly wind?: number;
 	/** Seconds on the wind clock. The runner holds the frame at this sketch time. */
@@ -234,7 +239,7 @@ export function plantReviewQuery(query: PlantReviewQuery): string {
 		const value = query[name];
 		if (value !== undefined) params.set(name, short(value));
 	}
-	for (const name of ['background', 'sky', 'ground', 'season', 'preset', 'sun'] as const) {
+	for (const name of ['background', 'sky', 'ground', 'lamp', 'season', 'preset', 'sun'] as const) {
 		const value = query[name];
 		if (value) params.set(name, value);
 	}
@@ -314,7 +319,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		throw new Error(
 			`stand=${numbers.stand} is in stem radii from its axis: give a number above 1.`,
 		);
-	for (const name of ['sky', 'ground'] as const) {
+	for (const name of ['sky', 'ground', 'lamp'] as const) {
 		const text = params.get(name);
 		if (text !== null && !/^#[0-9a-f]{6}$/i.test(text))
 			throw new Error(`${name}=${text} is not a colour: give sRGB hex such as #c9d9e6.`);
@@ -349,6 +354,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		...(background && { background }),
 		...(params.get('sky') && { sky: params.get('sky') as string }),
 		...(params.get('ground') && { ground: params.get('ground') as string }),
+		...(params.get('lamp') && { lamp: params.get('lamp') as string }),
 		...(season && { season }),
 		...(preset && { preset }),
 		...(sun && { sun }),
