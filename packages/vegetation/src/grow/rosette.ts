@@ -26,6 +26,7 @@ import { cos, normalize3, PI, pow, quatFromFrame, radians, sin, type Vector3 } f
 import type { Rosette, Species, ThickLeaf } from '../core/record';
 import { curveAt, spreadAt } from '../core/types';
 import {
+	STALK_LEAST_SKY,
 	stalkDetail,
 	type ThickDetail,
 	thickDetail,
@@ -413,6 +414,7 @@ export function meshRosette(input: MeshInput, level: MeshLevel): MeshArrays {
 				along: [0, 1],
 				browning,
 				closeTip: true,
+				leastSky: STALK_LEAST_SKY,
 			});
 			continue;
 		}
