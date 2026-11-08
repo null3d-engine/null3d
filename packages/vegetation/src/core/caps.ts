@@ -112,12 +112,12 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 	},
 	palm: {
 		kitBytes: { low: 4 * MB, medium: 4 * MB, high: 4 * MB, ultra: 4 * MB },
-		// The date palm's crown is a hundred leaflets a side on twenty fronds, in a skirt of dead
-		// ones: its nearest foliage measures 3.70 MB, against the 3 MB that stood here before a palm
-		// grew. The owner raised the tier so the fronds keep the leaflets their photographs show
-		// rather than thin to fit a figure. The nearest wood measures 0.64 MB and its triangles
-		// 119,000, well under their own caps.
-		variantBytes: { low: 4.2 * MB, medium: 4.2 * MB, high: 4.2 * MB, ultra: 4.2 * MB },
+		// The date palm's crown is a hundred and seventy leaflets a side on thirty fronds, in a skirt
+		// of dead ones: its nearest foliage measures 5.29 MB. A crown thinned to fit 4.2 MB covered a
+		// quarter of its own box where the photographs cover four fifths, so the owner raised the
+		// tier to the measured figure rather than let the budget choose the crown. The nearest wood
+		// measures 0.65 MB and its triangles 135,000, well under their own caps.
+		variantBytes: { low: 5.6 * MB, medium: 5.6 * MB, high: 5.6 * MB, ultra: 5.6 * MB },
 		lod0WoodBytes: { low: 2 * MB, medium: 2 * MB, high: 2 * MB, ultra: 2 * MB },
 		lod0Triangles: 600_000,
 		lod1Triangles: 80_000,
