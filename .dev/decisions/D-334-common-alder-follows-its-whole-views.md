@@ -103,6 +103,13 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   from the stem (`lateral`), and the cluster's leaves stand along a stem with its internodes
   showing rather than crowded at one point. Rejected: thinning leaves, which a studio still scales
   back up, and a real branch cut from the grown plant, which draws one bare pole with a tuft.
+- **The branch turn's height spread is a pressed specimen against a fan.** At the eight angles the
+  review measures, the render's crown-box heights run 251, 326, 304, 299, 304, 310, 325 and 301
+  pixels, a spread of about a quarter; its photograph's run 277, 279, 280, 279, 276, 274, 260 and
+  277, a spread of about a fourteenth. A flat piece keeps its height as it turns; a shoot whose side
+  shoots fan in azimuth does not. The record has no field for planarity — `lateral` sets the angle
+  from the stem's line, and the azimuth step between one side shoot and the next is the engine's —
+  so this row's turn is the same structural gap as its narrower still, stated rather than bent.
 - The branch piece draws a cutting class of its own rather than the crown's spray. Three years put
   a side shoot at two joints, and the one at the lower joint reaches two units, so the piece
   branches where its photograph does. A class of its own is the fix because the crown's spray is
@@ -147,13 +154,25 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
 
   Values went from `[0.065, 0.14, 0.016]` and `[0.1818, 0.2535, 0.0781]` to
   `[0.0895, 0.1401, 0.0343]` and `[0.194, 0.2558, 0.0965]`.
+  **How narrow the window is:** still `02` sits exactly on the mark at 3.0 and still `25` at 2.8, so
+  the two cross within two tenths of a step. Either side of it fails one of them.
 - Still `13` is the picture row 10 keeps. Its photograph is 145, 155, 105 and still `25`'s is
   118, 138, 79 — some twelve steps apart — and still `13` reads between 6.0 and 6.8 at every
   setting of the back face. One leaf cannot be two undersides, so the row is stated with both
   triples rather than claimed.
 - The young bark carries a tint of 0.963, 0.907 and 0.848 in its texture source, half the measured
   linear ratio 0.927, 0.823 and 0.719, which darkens and warms it. Its surface colour difference
-  falls from 3.35 to 2.14, inside the mark. That layer serves thin wood only.
+  falls from 3.35 to 2.14, inside the mark. **This species' young-bark view does draw that layer**,
+  where the olive's was found not to: the figure moved by 1.21 under the tint, so the view reads the
+  layer it names.
+- **The bark-limb view draws under `sun: 'albedo'`**, so it shows the bark's own colour and a slot's
+  `daylight` is never read there. Raising that view's `daylight` from 1.5 to 2.0 moved its render
+  from 51.5 to 51.3, which is nothing; the change was reverted. Any species whose limb colour is off
+  should not expect a slot-light change to move it.
+- **The limb and the base pull opposite ways on one trunk layer.** The limb's bark draws 6.6 too
+  dark and the base's figure 4.1 too light, while the mid-trunk is inside at 26.2 against 25.8, and
+  all three take the same layer. No single tint serves them; the honest lever is a second trunk
+  layer, which is a texture build with a kit cost and is **not** built here.
 - The two cluster photographs draw different shoots of the one class. The slot file names the second
   prototype for the studio still, which costs no kit byte: `23` reads 0.150 background against its
   photograph's 0.152 with outline overlap 0.421, and `11` keeps the first at 0.166 against 0.173 and
