@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type PlantAsset, plantAssetDigest } from './asset';
-import { AXIS_LIMB, AXIS_STEM, SkeletonBuilder } from './core/graph';
+import { AXIS_LIMB, AXIS_STEM, BUD_TERMINAL, SkeletonBuilder } from './core/graph';
 import { quatRotate } from './core/math';
 import { standInSpecies } from './core/stand-in';
 import { CUTTING_LENGTH, clusterRank, cutBranch, cutFoliage, cutsShoot } from './cutting';
@@ -56,6 +56,67 @@ describe('cuttings', () => {
 			}
 		});
 	}
+
+	it('prefers the thickest axis near the asked length when the record hints no order', () => {
+		const builder = new SkeletonBuilder();
+		const stem = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		let node = builder.addNode({ x: 0, y: 0, z: 0, radius: 0.4, parent: -1, axis: stem });
+		for (let i = 1; i <= 12; i++)
+			node = builder.addNode({ x: 0, y: i, z: 0, radius: 0.4, parent: node, axis: stem });
+		const limb = (at: number, radius: number): number => {
+			const axis = builder.addAxis({
+				parent: stem,
+				parentNode: at,
+				parentT: 0,
+				order: 1,
+				kind: AXIS_LIMB,
+			});
+			let previous = builder.addNode({
+				x: radius,
+				y: at,
+				z: 0,
+				radius,
+				parent: at,
+				axis,
+			});
+			const first = previous;
+			for (let i = 1; i <= 3; i++)
+				previous = builder.addNode({
+					x: radius + i * 0.3,
+					y: at,
+					z: 0,
+					radius: radius * (1 - i * 0.1),
+					parent: previous,
+					axis,
+				});
+			builder.addBud({
+				node: first,
+				x: radius,
+				y: at,
+				z: 0,
+				frame: [0, 0, 0, 1],
+				kind: BUD_TERMINAL,
+				vigor: 0.5,
+				light: 1,
+				axis,
+				woodRadius: radius,
+			});
+			return axis;
+		};
+		const thin = limb(4, 0.04);
+		const thick = limb(8, 0.16);
+		const cut = cutBranch(
+			builder.finish(0),
+			{ ...stub.record, cuttings: undefined },
+			{
+				part: 'branch',
+			},
+		);
+		if (!cut) throw new Error('nothing was cut');
+		expect(cut.order).toBe(1);
+		expect(cut.axis).toBe(thick);
+		expect(cut.axis).not.toBe(thin);
+	});
 
 	it('cuts an axis that leaves at its parent node there, with every axis whose parents reach it', () => {
 		// A stem of five nodes; a limb leaving its third node; a twig on the limb; a second limb above.
