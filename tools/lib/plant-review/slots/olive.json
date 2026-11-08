@@ -1,13 +1,13 @@
 {
 	"01-whole-distant.png": {
 		"skyShare": 0.5,
-		"daylight": 2.2,
+		"daylight": 3.19,
 		"top": 0.15,
 		"turn": 270
 	},
 	"02-whole-profile.png": {
 		"skyShare": 0.5,
-		"daylight": 2.2,
+		"daylight": 3.5,
 		"turn": 30
 	},
 	"03-whole-from-below.png": {
@@ -57,7 +57,8 @@
 	"14-bark-base.png": {
 		"span": 2.5,
 		"skyShare": 0.35,
-		"daylight": 1.8
+		"daylight": 1.8,
+		"barkMask": true
 	},
 	"15-bark-mid-trunk.png": {
 		"span": 0.9,
@@ -79,7 +80,8 @@
 		"sky": "#c9c5be",
 		"girth": 0.25,
 		"along": 0.45,
-		"daylight": 1.25
+		"daylight": 1.25,
+		"barkMask": true
 	},
 	"07-limb-leaving-trunk.png": {
 		"distance": 3.5
