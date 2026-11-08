@@ -1,25 +1,16 @@
-// The crown-rosette grower: one stem crowned by a golden-angle spiral of fronds, for palms and tree
-// ferns. The stem carries the growing point at its top. Each frond is a stipe that leaves that point
-// at its age's tilt, and a rachis that runs on from the stipe's top, drooping by the record's curve
-// and coiling toward its upper face while it is still rolled. Each pinna leaves the rachis at its
-// angle as an axis of its own with a terminal bud, so a close review cuts one pinna as a piece and
-// the frond keeps its foliage wherever it is cut.
+// The crown-rosette grower: palms and tree ferns. One stem rises as a column, leaning and curving
+// by the record, and carries a golden-angle spiral of fronds at its top. Each frond is a rachis the
+// wood mesher draws as a thin limb, and one bud site at its base carries the blade, its vigor the
+// frond's age. The youngest fronds stand upright and the oldest arch out and down; dead fronds hang
+// below them as a skirt. A date palm also carries suckers: young stems from the foot, each with a
+// crown of its own.
 //
-// A frond's age runs from 0, a crozier just risen, through 0.5, mature, to 1, brown and dead. The
-// living fronds stand by age from the youngest inside to the oldest at the rim, and the dead ones
-// hang below them as the skirt that a tree fern keeps.
-//
-// The foliage draws each pinna as the species' leaf over its own axis: the flat blade from the
-// leaf's texture and shape, carried into space on the pinna's frame. Its second coordinates are the
-// share along the pinna and how brown it is, as the frond foliage's are, so the material browns a
-// dead frond as it browns a dead frond of bracken.
-
-import type { MeshArrays } from '../asset';
+// The foliage reads only the skeleton, so a cut frond keeps its blade. The merged foliage builder
+// draws the leaflets along each rachis.
 import {
-	AXIS_LIMB,
 	AXIS_RACHIS,
 	AXIS_STEM,
-	AXIS_STIPE,
+	BUD_FLOWER,
 	BUD_TERMINAL,
 	type MacroSkeleton,
 	SkeletonBuilder,
@@ -30,6 +21,7 @@ import {
 	cross3,
 	normalize3,
 	PI,
+	quatAxisAngle,
 	quatFromFrame,
 	quatRotate,
 	radians,
@@ -37,46 +29,68 @@ import {
 	type Vector3,
 } from '../core/math';
 import type { CrownRosette, FrondShape, Species } from '../core/record';
-import { curveAt, DETAILS, type Detail, spreadAt, spreadMean } from '../core/types';
-import { frondAge, MATURE_AGE, pinnaPlaces, rachisCurve } from '../leaf/frond';
-import { bladeMesh, outlineOf } from '../leaf/leaf-mesh';
-import { MeshWriter } from '../leaf/writer';
-import type { GrowInput, MeshInput, MeshLevel } from '../stages';
-import { type AxisPath, axisPath, emptyFrame, frameAt, type PathFrame } from '../wood/frames';
-import { axisBytes, skyByte } from './ground';
+import { curveAt, spreadAt } from '../core/types';
+import { MATURE_AGE } from '../leaf/frond';
+import { palmFoliage } from '../leaf/palm-frond';
+import type { GrowInput } from '../stages';
 import type { Grower } from './models';
 
 /** Draw purposes, so no two draws share a key. */
 const DRAW = {
-	stemHeight: 1,
-	stemLean: 2,
-	stemTurn: 3,
-	stemCurve: 4,
-	fronds: 5,
-	dead: 6,
-	croziers: 7,
-	start: 8,
-	tilt: 9,
-	age: 10,
-	length: 11,
+	height: 1,
+	lean: 2,
+	leanTurn: 3,
+	curve: 4,
+	suckers: 5,
+	suckerHeight: 6,
+	suckerTurn: 7,
+	suckerLean: 8,
+	fronds: 9,
+	frondTurn: 10,
+	frondLength: 11,
+	frondTilt: 12,
+	frondAzimuth: 13,
+	dead: 14,
+	deadLength: 15,
+	deadHang: 16,
+	deadTurn: 17,
+	spine: 18,
 } as const;
 
-/** Metres between a stem's nodes. */
-const STEM_NODE = 0.15;
-/** Metres between a stipe's nodes. */
-const STIPE_NODE = 0.06;
-/** The thinnest wood gets, in metres of radius. */
-const THINNEST = 0.0004;
-/** The size a crozier rises at, as a share of its mature size. */
-const YOUNG_SIZE = 0.45;
-/** A dead frond's length over a living one's, as it hangs in the skirt. */
-const SKIRT_SIZE = 0.65;
-/** The rachis's radius at its top, as a share of its radius at its base. */
-const RACHIS_TAPER = 0.25;
-/** A pinna's radius at its tip, as a share of its radius at its base. */
-const PINNA_TAPER = 0.2;
-/** Nodes along one pinna's midrib. */
-const PINNA_NODES = 3;
+/** Metres between the stem's nodes. */
+const STEM_NODE = 0.35;
+/** The most a stem's radius may narrow over one node, so the wood mesher keeps its rings even. */
+const RADIUS_FALL = 0.96;
+/** The thinnest a rachis gets, in metres of radius. */
+const RACHIS_TIP = 0.003;
+/** Metres between a rachis's nodes: enough for the wood mesher to follow the arch. */
+const RACHIS_NODE = 0.4;
+/** The most a rachis turns over one node, in radians, so a curve keeps its samples. */
+const RACHIS_TURN = 0.25;
+/** The share of the stem's height over which the frond bases clasp it. */
+const CROWN_DEPTH = 0.7;
+/** Metres that a frond's base stands out from the stem's surface. */
+const FROND_STAND = 0.08;
+/** The largest a frond's angle from vertical reaches, in degrees: the oldest living fronds droop. */
+const OLDEST_TILT = 118;
+/** The tilt of the upright youngest frond, in degrees. */
+const YOUNGEST_TILT = 8;
+/** Degrees that dead fronds hang below the horizontal. */
+const DEAD_TILT = 128;
+/** The share of a living frond's length that a dead frond keeps. */
+const DEAD_SHARE = 0.72;
+/** The least height of a sucker's stem, and the most, in metres. */
+const SUCKER_HEIGHT = [0.6, 2.6] as const;
+/** The share of the crown's living fronds a sucker carries. */
+const SUCKER_FRONDS = 0.45;
+/** Metres a sucker's foot stands from the main stem's axis. */
+const SUCKER_RING = [0.45, 0.9] as const;
+/** The azimuth spread of the date bunches, in degrees, round the crown. */
+const BUNCH_TURNS = [0, 90, 180, 270] as const;
+/** How far below the crown's origin the date bunches hang from, in metres. */
+const BUNCH_DROP = 0.5;
+/** Metres the date bunch stalks stand out from the stem's surface. */
+const BUNCH_OUT = 0.05;
 
 /** The record's crown-rosette growth, or a fault for another model. */
 function rosetteOf(record: Species): CrownRosette {
@@ -87,470 +101,407 @@ function rosetteOf(record: Species): CrownRosette {
 	return record.growth;
 }
 
-/** The frond with its droop turned the other way, for the fronds that hang below the crown. */
-function hanging(shape: FrondShape): FrondShape {
-	if (typeof shape.droop === 'number') return { ...shape, droop: -shape.droop };
-	return { ...shape, droop: shape.droop.map(([t, v]) => [t, -v] as const) };
+/** A stem's plan before its nodes are laid. */
+interface StemPlan {
+	/** The foot on the ground. */
+	readonly x: number;
+	readonly z: number;
+	/** Stem height in metres. */
+	readonly height: number;
+	/** Degrees the stem leans from vertical. */
+	readonly lean: number;
+	/** Degrees the stem bends over its height. */
+	readonly curve: number;
+	/** The azimuth the stem leans toward. */
+	readonly turn: number;
+	/** The radius at the foot, in metres. */
+	readonly radius: number;
+	/** Fronds its crown carries. */
+	readonly fronds: number;
+	/** Whether its crown carries dead fronds. */
+	readonly dead: number;
+	/** Share of the crown's height over which its frond bases clasp it. */
+	readonly crownDepth: number;
+	/** The scale a crown's fronds take. */
+	readonly scale: number;
 }
 
-/** One frond's place in the crown before its axes are laid. */
-interface FrondPlan {
-	/** Radians round the stem. */
-	readonly azimuth: number;
-	/** Degrees from vertical. */
-	readonly tilt: number;
-	/** The age its buds carry: 0 a crozier, 0.5 mature, 1 dead. */
-	readonly age: number;
-	/** Whether the frond hangs below the crown as part of the skirt. */
-	readonly dead: boolean;
-	/** Its size over a mature frond's. */
-	readonly size: number;
+/** The stem a grower laid: the axis, its nodes, its top point and the direction it ends in. */
+interface LaidStem {
+	readonly axis: number;
+	/** Its first node. */
+	readonly first: number;
+	/** Its top node. */
+	readonly top: number;
+	readonly topPoint: Vector3;
+	readonly topDirection: Vector3;
+	readonly plan: StemPlan;
+}
+
+/** The radius of a stem at a share of its height. */
+function stemRadius(growth: CrownRosette, plan: StemPlan, share: number): number {
+	return Math.max(
+		RACHIS_TIP,
+		curveAt(growth.stem.radius, Math.max(0, Math.min(1, share))) *
+			(plan.radius / baseRadius(growth)),
+	);
+}
+
+/** The radius the record's curve gives at the foot, so a stem's own foot radius scales it. */
+function baseRadius(growth: CrownRosette): number {
+	return Math.max(curveAt(growth.stem.radius, 0), 1e-4);
 }
 
 /**
- * The fronds of the crown: the living ones from the youngest inside to the oldest at the rim, the
- * croziers among the youngest, and the dead ones hanging below them.
+ * Lays one stem as a column of nodes: a lean and a bend over its height, the radius the record's
+ * curve gives, wider at the foot.
  */
-function frondPlans(input: GrowInput, growth: CrownRosette): FrondPlan[] {
-	const { crown } = growth;
-	const salt = input.record.seedSalt >>> 0;
-	const draw = (purpose: number, index = 0) =>
-		unitAt(input.seed, salt, input.variant, purpose, index);
-	const live = Math.max(1, Math.round(spreadAt(crown.fronds, draw(DRAW.fronds))));
-	const dead = Math.max(0, Math.round(spreadAt(crown.dead.count, draw(DRAW.dead))));
-	const croziers = Math.max(0, Math.round(spreadAt(crown.croziers ?? 0, draw(DRAW.croziers))));
-	let turn = draw(DRAW.start) * 2 * PI;
-	const plans: FrondPlan[] = [];
-	const put = (tilt: number, age: number, isDead: boolean) => {
-		turn += radians(crown.divergence);
-		const open = YOUNG_SIZE + (1 - YOUNG_SIZE) * frondAge(age).unrolled;
-		plans.push({ azimuth: turn, tilt, age, dead: isDead, size: open * (isDead ? SKIRT_SIZE : 1) });
-	};
-	for (let c = 0; c < croziers; c++)
-		put(6 + 12 * draw(DRAW.tilt, c), 0.03 + 0.13 * draw(DRAW.age, c), false);
-	for (let j = 0; j < live; j++) {
-		const share = live === 1 ? 0.5 : j / (live - 1);
-		put(curveAt(crown.tilt, share), MATURE_AGE * (0.8 + 0.2 * share), false);
+function layStem(builder: SkeletonBuilder, growth: CrownRosette, plan: StemPlan): LaidStem {
+	const axis = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+	const lean = radians(plan.lean);
+	const curve = radians(plan.curve);
+	const turn = plan.turn;
+	const nodes = Math.max(2, Math.ceil(plan.height / STEM_NODE));
+	let x = plan.x;
+	let y = 0;
+	let z = plan.z;
+	let node = builder.addNode({
+		x,
+		y,
+		z,
+		radius: stemRadius(growth, plan, 0),
+		parent: -1,
+		axis,
+	});
+	const first = node;
+	let previous = stemRadius(growth, plan, 0);
+	for (let n = 1; n <= nodes; n++) {
+		const share = n / nodes;
+		// The lean grows toward the stem's bend over its height, so a curving stem turns over as it
+		// rises.
+		const angle = lean + curve * share * share;
+		const step = plan.height / nodes;
+		x += sin(angle) * cos(turn) * step;
+		y += cos(angle) * step;
+		z += sin(angle) * sin(turn) * step;
+		const radius = Math.max(previous * RADIUS_FALL, stemRadius(growth, plan, share));
+		previous = radius;
+		node = builder.addNode({ x, y, z, radius, parent: node, axis });
 	}
-	for (let d = 0; d < dead; d++) {
-		const share = 0.35 + 0.65 * draw(DRAW.age, d + 64);
-		put(95 + Math.abs(crown.dead.hang) * share, 0.55 + 0.4 * draw(DRAW.age, d + 128), true);
+	return {
+		axis,
+		first,
+		top: node,
+		topPoint: [x, y, z],
+		topDirection: normalize3([
+			sin(lean + curve) * cos(turn),
+			cos(lean + curve),
+			sin(lean + curve) * sin(turn),
+		]),
+		plan,
+	};
+}
+
+/** Where one frond's rachis is laid: its base, its first direction and the azimuth it reaches. */
+interface FrondPlan {
+	/** The stem node the frond clasps. */
+	readonly node: number;
+	/** The point the rachis starts from. */
+	readonly base: Vector3;
+	/** Its first direction, a unit vector. */
+	readonly direction: Vector3;
+	/** Its side axis, square to the direction and to the frond's plane. */
+	readonly side: Vector3;
+	/** The frond's upper face, a unit vector square to the direction and the side. */
+	readonly upper: Vector3;
+	/** Its blade length in metres. */
+	readonly length: number;
+	/** The age its bud carries: a mature living frond, or a dead one. */
+	readonly age: number;
+	/** Its base radius in metres. */
+	readonly radius: number;
+}
+
+/**
+ * The fronds of one crown, laid in a golden-angle spiral. The date palm's tilt climbs with a
+ * frond's place in the spiral, so the youngest stand upright at the middle and the oldest arch
+ * farthest out. Dead fronds hang below them.
+ */
+function frondPlans(
+	builder: SkeletonBuilder,
+	growth: CrownRosette,
+	stem: LaidStem,
+	draw: (purpose: number, index: number) => number,
+	first: number,
+	count: number,
+	dead: number,
+	scale: number,
+): FrondPlan[] {
+	const shape: FrondShape = growth.frond;
+	const crown = growth.crown;
+	const plans: FrondPlan[] = [];
+	const baseRadiusOf = Math.max(shape.petiole.width / 2, RACHIS_TIP);
+	const start = draw(DRAW.frondTurn, first) * 2 * PI;
+	const spiral = count > 0 ? radians(crown.divergence) : 0;
+	const total = count + dead;
+	for (let i = 0; i < total; i++) {
+		const deadFrond = i >= count;
+		const living = deadFrond ? 0 : i;
+		const share = count > 0 ? living / Math.max(1, count - 1) : 0;
+		// The frond bases stand in a spiral down the crown's depth, newest lowest.
+		const depth = CROWN_DEPTH * (1 - (deadFrond ? 1 : share));
+		const want = stem.plan.height - depth;
+		const node = nodeNear(builder, stem, want);
+		const p = builder.position;
+		const azimuth = deadFrond
+			? start + spiral * (first + i) + radians(draw(DRAW.deadTurn, first + i) * 12 - 6)
+			: start + spiral * (first + i) + radians(draw(DRAW.frondAzimuth, first + i) * 16 - 8);
+		const tilt = deadFrond
+			? radians(DEAD_TILT + draw(DRAW.deadHang, first + i) * 20 - 10)
+			: radians(
+					YOUNGEST_TILT +
+						(OLDEST_TILT - YOUNGEST_TILT) * share +
+						draw(DRAW.frondTilt, first + i) * 10 -
+						5,
+				);
+		const horizontal: Vector3 = [cos(azimuth), 0, sin(azimuth)];
+		const direction = normalize3([horizontal[0] * sin(tilt), cos(tilt), horizontal[2] * sin(tilt)]);
+		const side = normalize3([-horizontal[2], 0, horizontal[0]]);
+		const upper = normalize3(cross3(direction, side, [0, 0, 0]));
+		const nodePoint: Vector3 = [
+			p[node * 3] as number,
+			p[node * 3 + 1] as number,
+			p[node * 3 + 2] as number,
+		];
+		const stand = stemRadius(
+			growth,
+			stem.plan,
+			(nodePoint[1] as number) / Math.max(stem.plan.height, 1e-4),
+		);
+		const base: Vector3 = [
+			(nodePoint[0] as number) + horizontal[0] * (stand + FROND_STAND),
+			nodePoint[1] as number,
+			(nodePoint[2] as number) + horizontal[2] * (stand + FROND_STAND),
+		];
+		const drawn = spreadAt(shape.length, draw(DRAW.frondLength, first + i));
+		const length = Math.max(
+			0.4,
+			drawn * scale * (deadFrond ? DEAD_SHARE - 0.2 * crown.dead.skirt : 0.75 + 0.25 * share),
+		);
+		plans.push({
+			node,
+			base,
+			direction,
+			side,
+			upper,
+			length: Math.max(shape.petiole.length + length * 0.2, length),
+			age: deadFrond ? 1 : MATURE_AGE,
+			radius: baseRadiusOf * (deadFrond ? 0.75 : 1) * scale,
+		});
 	}
 	return plans;
 }
 
-/** A node's point, from a builder still growing. */
-function nodePoint(builder: SkeletonBuilder, node: number): Vector3 {
-	return [
-		builder.position[node * 3] as number,
-		builder.position[node * 3 + 1] as number,
-		builder.position[node * 3 + 2] as number,
-	];
+/** The stem node nearest a height, so a frond clasps the stem where its base stands. */
+function nodeNear(builder: SkeletonBuilder, stem: LaidStem, height: number): number {
+	const p = builder.position;
+	let best = stem.first;
+	let bestGap = Number.POSITIVE_INFINITY;
+	for (let n = stem.first; n <= stem.top; n++) {
+		const gap = Math.abs((p[n * 3 + 1] as number) - height);
+		if (gap < bestGap) {
+			bestGap = gap;
+			best = n;
+		}
+	}
+	return best;
 }
 
-/** Where a frond's blade reaches: outward, made square to the rachis's first direction. */
-function lowerFace(direction: Vector3, azimuth: number): Vector3 {
-	const outward: Vector3 = [cos(azimuth), 0, sin(azimuth)];
-	const dot = outward[0] * direction[0] + outward[1] * direction[1] + outward[2] * direction[2];
-	const out: Vector3 = [
-		outward[0] - dot * direction[0],
-		outward[1] - dot * direction[1],
-		outward[2] - dot * direction[2],
-	];
-	if (out[0] * out[0] + out[1] * out[1] + out[2] * out[2] < 1e-12)
-		return [cos(azimuth), 0, sin(azimuth)];
-	return normalize3(out);
-}
-
-/** Lays one frond's stipe, rachis and pinnae on the skeleton, from the crown point. */
+/**
+ * Lays one frond's rachis from its base along its plan, turning toward its lower face by the
+ * record's droop curve, and adds the bud site that carries its blade.
+ */
 function layFrond(
 	builder: SkeletonBuilder,
-	input: GrowInput,
 	growth: CrownRosette,
+	stem: LaidStem,
 	plan: FrondPlan,
-	index: number,
-	crownNode: number,
-	stemAxis: number,
-): void {
-	const { seed, variant } = input;
-	const salt = input.record.seedSalt >>> 0;
-	const draw = (purpose: number, at: number) => unitAt(seed, salt, variant, purpose, at);
-	const foliage = input.record.foliage;
-	if (foliage.kind !== 'blade')
-		throw new Error(
-			`@null3d/vegetation: the crown-rosette grower's fronds need 'blade' foliage, not '${foliage.kind}'`,
-		);
-	const shape = plan.dead ? hanging(growth.frond) : growth.frond;
-	const age = frondAge(plan.age);
-	const tilt = radians(plan.tilt);
-	const direction: Vector3 = [
-		sin(tilt) * cos(plan.azimuth),
-		cos(tilt),
-		sin(tilt) * sin(plan.azimuth),
-	];
-	const lower = lowerFace(direction, plan.azimuth);
-	const crown = nodePoint(builder, crownNode);
-	const stipeLength = Math.max(0.02, shape.petiole.length * (0.5 + 0.5 * plan.size));
-	const stipeRadius = Math.max(shape.petiole.width / 2, THINNEST);
-	const stipeAxis = builder.addAxis({
-		parent: stemAxis,
-		parentNode: crownNode,
+): number {
+	const shape = growth.frond;
+	const axis = builder.addAxis({
+		parent: stem.axis,
+		parentNode: plan.node,
 		parentT: 0,
 		order: 1,
-		kind: AXIS_STIPE,
-	});
-	const stipeSteps = Math.max(1, Math.ceil(stipeLength / STIPE_NODE));
-	let previous = crownNode;
-	let sx = crown[0];
-	let sy = crown[1];
-	let sz = crown[2];
-	for (let n = 1; n <= stipeSteps; n++) {
-		sx += (direction[0] * stipeLength) / stipeSteps;
-		sy += (direction[1] * stipeLength) / stipeSteps;
-		sz += (direction[2] * stipeLength) / stipeSteps;
-		previous = builder.addNode({
-			x: sx,
-			y: sy,
-			z: sz,
-			radius: stipeRadius * (1 - 0.15 * (n / stipeSteps)),
-			parent: previous,
-			axis: stipeAxis,
-		});
-	}
-	const stipeTop = previous;
-	const bladeLength = Math.max(0.05, spreadAt(shape.length, draw(DRAW.length, index)) * plan.size);
-	const curve = rachisCurve(shape, age, bladeLength);
-	const rachisAxis = builder.addAxis({
-		parent: stipeAxis,
-		parentNode: stipeTop,
-		parentT: 0,
-		order: 2,
 		kind: AXIS_RACHIS,
 	});
-	const baseRadius = Math.max(stipeRadius * 0.75, THINNEST);
-	const points = curve.length / 3;
-	const rachisPoints: number[] = [];
-	const rachisRadii: number[] = [];
-	let rachisNode = stipeTop;
-	let rachisFirst = -1;
-	for (let i = 1; i < points; i++) {
-		const share = i / (points - 1);
-		const along = curve[i * 3] as number;
-		const across = curve[i * 3 + 1] as number;
-		const radius = Math.max(THINNEST, baseRadius * (1 - (1 - RACHIS_TAPER) * share));
-		rachisNode = builder.addNode({
-			x: sx + direction[0] * along + lower[0] * across,
-			y: sy + direction[1] * along + lower[1] * across,
-			z: sz + direction[2] * along + lower[2] * across,
+	const points = Math.max(2, Math.ceil(plan.length / RACHIS_NODE));
+	const step = plan.length / points;
+	let point = plan.base;
+	let direction = plan.direction;
+	const q = [0, 0, 0, 1];
+	let node = builder.addNode({
+		x: point[0],
+		y: point[1],
+		z: point[2],
+		radius: plan.radius,
+		parent: plan.node,
+		axis,
+	});
+	const first = node;
+	for (let i = 1; i <= points; i++) {
+		const share = i / points;
+		const turn = radians(curveAt(shape.droop, share));
+		quatAxisAngle(plan.side, Math.min(RACHIS_TURN, turn / points), q);
+		direction = normalize3(quatRotate(q, 0, direction, [0, 0, 0]));
+		point = [
+			(point[0] as number) + direction[0] * step,
+			(point[1] as number) + direction[1] * step,
+			(point[2] as number) + direction[2] * step,
+		];
+		const radius = Math.max(RACHIS_TIP, plan.radius + (RACHIS_TIP - plan.radius) * share);
+		node = builder.addNode({
+			x: point[0],
+			y: point[1],
+			z: point[2],
 			radius,
-			parent: rachisNode,
-			axis: rachisAxis,
+			parent: node,
+			axis,
 		});
-		if (rachisFirst < 0) rachisFirst = rachisNode;
-		rachisPoints.push(
-			builder.position[rachisNode * 3] as number,
-			builder.position[rachisNode * 3 + 1] as number,
-			builder.position[rachisNode * 3 + 2] as number,
-		);
-		rachisRadii.push(radius);
 	}
-	if (rachisFirst < 0 || rachisRadii.length < 2) return;
-	const bend = curve[2] as number;
-	const upper: Vector3 = normalize3([
-		direction[0] * sin(bend) - lower[0] * cos(bend),
-		direction[1] * sin(bend) - lower[1] * cos(bend),
-		direction[2] * sin(bend) - lower[2] * cos(bend),
-	]);
-	const path = axisPath(
-		new Float64Array(rachisPoints),
-		new Float64Array(rachisRadii),
-		rachisRadii.length,
-		upper,
-	);
-	layPinnae(builder, input, growth, plan, path, rachisAxis, rachisFirst, rachisNode);
+	// The bud at the blade's base: +Y along the rachis, +Z its upper face. The petiole's own length
+	// is the bare stalk before the leaflets begin, so the bud sits at the base where the blade's
+	// path starts.
+	const frame = new Float32Array(4);
+	quatFromFrame(plan.direction, plan.upper, frame);
+	builder.addBud({
+		node: first,
+		x: plan.base[0],
+		y: plan.base[1],
+		z: plan.base[2],
+		frame,
+		kind: BUD_TERMINAL,
+		vigor: plan.age,
+		light: 1,
+		axis,
+		woodRadius: plan.radius,
+	});
+	return point[1];
 }
 
-/** Lays one frond's pinnae along its rachis path, each as an axis with a terminal bud. */
-function layPinnae(
-	builder: SkeletonBuilder,
-	input: GrowInput,
-	growth: CrownRosette,
-	plan: FrondPlan,
-	path: AxisPath,
-	rachisAxis: number,
-	rachisFirst: number,
-	rachisLast: number,
-): void {
-	const shape = growth.frond;
-	const pinnae = shape.pinnae;
-	const foliage = input.record.foliage;
-	if (!pinnae || foliage.kind !== 'blade') return;
-	const places = pinnaPlaces(pinnae);
-	const nodeCount = rachisLast - rachisFirst + 1;
-	const age = frondAge(plan.age);
-	// A rolled frond carries pinnae only on the part it has unrolled.
-	const reached = plan.dead ? 1 : Math.min(1, age.unrolled + 0.05);
-	const frame: PathFrame = emptyFrame();
-	const pinnaRadius = Math.max(foliage.leaf.petiole.radius * 0.8, THINNEST);
-	const droop = radians(pinnae.droop);
-	for (let p = 0; p < places.length; p++) {
-		const share = places[p] as number;
-		if (share > reached) continue;
-		frameAt(path, share * path.length, frame);
-		const tangent = normalize3([
-			frame.tangent[0] as number,
-			frame.tangent[1] as number,
-			frame.tangent[2] as number,
-		]);
-		const upper = normalize3([
-			frame.normal[0] as number,
-			frame.normal[1] as number,
-			frame.normal[2] as number,
-		]);
-		const side = normalize3(cross3(tangent, upper, [0, 0, 0]));
-		const pinnaLength = Math.max(
-			0.01,
-			curveAt(pinnae.length, share) * spreadMean(shape.length) * plan.size,
-		);
-		const angle = radians(curveAt(pinnae.angle, share));
-		const parentNode = rachisFirst + Math.min(nodeCount - 1, Math.round(share * (nodeCount - 1)));
-		for (const sign of [-1, 1]) {
-			const dir = normalize3([
-				tangent[0] * cos(angle) + side[0] * sign * sin(angle),
-				tangent[1] * cos(angle) + side[1] * sign * sin(angle),
-				tangent[2] * cos(angle) + side[2] * sign * sin(angle),
-			]);
-			const pinnaAxis = builder.addAxis({
-				parent: rachisAxis,
-				parentNode,
-				parentT: 0,
-				order: 3,
-				kind: AXIS_LIMB,
-			});
-			let px = frame.position[0] as number;
-			let py = frame.position[1] as number;
-			let pz = frame.position[2] as number;
-			let previous = parentNode;
-			let firstPinna = -1;
-			for (let s = 0; s <= PINNA_NODES; s++) {
-				const along = s / PINNA_NODES;
-				// The pinna bows toward its lower face over its length.
-				const bow = droop * along * along;
-				const dx = dir[0] * cos(bow) - upper[0] * sin(bow);
-				const dy = dir[1] * cos(bow) - upper[1] * sin(bow);
-				const dz = dir[2] * cos(bow) - upper[2] * sin(bow);
-				if (s > 0) {
-					px += (dx * pinnaLength) / PINNA_NODES;
-					py += (dy * pinnaLength) / PINNA_NODES;
-					pz += (dz * pinnaLength) / PINNA_NODES;
-				}
-				previous = builder.addNode({
-					x: px,
-					y: py,
-					z: pz,
-					radius: Math.max(THINNEST, pinnaRadius * (1 - (1 - PINNA_TAPER) * along)),
-					parent: previous,
-					axis: pinnaAxis,
-					light: 1,
-				});
-				if (firstPinna < 0) firstPinna = previous;
-			}
-			const q = new Float32Array(4);
-			quatFromFrame(dir, upper, q);
-			builder.addBud({
-				node: firstPinna,
-				x: frame.position[0] as number,
-				y: frame.position[1] as number,
-				z: frame.position[2] as number,
-				frame: q,
-				kind: BUD_TERMINAL,
-				vigor: plan.age,
-				light: 1,
-				axis: pinnaAxis,
-				woodRadius: pinnaRadius,
-			});
-		}
+/**
+ * Adds the date bunches' sites: a few flower buds at the crown, below the youngest fronds, where the
+ * species' extras hang their stalked fruit.
+ */
+function addBunches(builder: SkeletonBuilder, growth: CrownRosette, stem: LaidStem): void {
+	const frame = new Float32Array([0, 0, 0, 1]);
+	// The bunches hang from the stem's own crown, so their stalks meet the wood.
+	const surface = stemRadius(growth, stem.plan, 1) + BUNCH_OUT;
+	for (const turn of BUNCH_TURNS) {
+		const azimuth = radians(turn) + stem.plan.turn;
+		const y = stem.plan.height - BUNCH_DROP;
+		builder.addBud({
+			node: stem.top,
+			x: (stem.topPoint[0] as number) + cos(azimuth) * surface,
+			y,
+			z: (stem.topPoint[2] as number) + sin(azimuth) * surface,
+			frame,
+			kind: BUD_FLOWER,
+			vigor: 0.5,
+			light: 1,
+			axis: stem.axis,
+			woodRadius: stemRadius(growth, stem.plan, 1),
+		});
 	}
 }
 
 /**
- * Grows a crown rosette: its stem's nodes, and each frond's stipe, rachis and pinnae.
+ * Grows one crown-rosette plant: its stem, its fronds and their blades, and any suckers at its
+ * foot.
  *
  * @param input The record, the seed, the variant and the season.
  * @returns The skeleton.
  * @category api/vegetation
  */
 export function growCrownRosette(input: GrowInput): MacroSkeleton {
-	const growth = rosetteOf(input.record);
-	const salt = input.record.seedSalt >>> 0;
-	const draw = (purpose: number, index = 0) =>
-		unitAt(input.seed, salt, input.variant, purpose, index);
-	const height = Math.max(0.1, spreadAt(growth.stem.height, draw(DRAW.stemHeight)));
-	const lean = radians(Math.abs(spreadAt(growth.stem.lean, draw(DRAW.stemLean))));
-	const curve = radians(Math.abs(spreadAt(growth.stem.curve, draw(DRAW.stemCurve))));
-	const turn = draw(DRAW.stemTurn) * 2 * PI;
+	const { record, seed, variant } = input;
+	const growth = rosetteOf(record);
+	const salt = record.seedSalt >>> 0;
+	const draw = (purpose: number, index = 0) => unitAt(seed, salt, variant, purpose, index);
 	const builder = new SkeletonBuilder();
-	const stemAxis = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
-	const steps = Math.max(2, Math.ceil(height / STEM_NODE));
-	let x = 0;
-	let y = 0;
-	let z = 0;
-	let previous = -1;
-	for (let n = 0; n <= steps; n++) {
-		const t = n / steps;
-		if (n > 0) {
-			const angle = lean + curve * t * t;
-			const step = height / steps;
-			x += sin(angle) * cos(turn) * step;
-			y += cos(angle) * step;
-			z += sin(angle) * sin(turn) * step;
-		}
-		previous = builder.addNode({
-			x,
-			y,
-			z,
-			radius: Math.max(THINNEST, curveAt(growth.stem.radius, t)),
-			parent: previous,
-			axis: stemAxis,
-			light: 1 - 0.25 * t,
-		});
-	}
-	const crownNode = previous;
-	const suckers = Math.max(
-		0,
-		Math.round(spreadAt(growth.stem.suckers ?? 0, draw(DRAW.stemHeight + 32))),
-	);
-	for (let s = 0; s < suckers; s++) {
-		const side = (2 * PI * s) / Math.max(1, suckers) + draw(DRAW.stemTurn, s) * 0.6;
-		const suckAxis = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
-		const suckLean = radians(8 + 10 * draw(DRAW.stemLean, s + 8));
-		const suckHeight = height * (0.55 + 0.3 * draw(DRAW.stemHeight, s + 8));
-		const suckSteps = Math.max(2, Math.ceil(suckHeight / STEM_NODE));
-		let px = 0;
-		let py = 0;
-		let pz = 0;
-		let parentNode = -1;
-		for (let n = 0; n <= suckSteps; n++) {
-			const t = n / suckSteps;
-			if (n > 0) {
-				const angle = suckLean * (0.4 + 0.6 * t);
-				const step = suckHeight / suckSteps;
-				px += sin(angle) * cos(side) * step;
-				py += cos(angle) * step;
-				pz += sin(angle) * sin(side) * step;
-			}
-			parentNode = builder.addNode({
-				x: px,
-				y: py,
-				z: pz,
-				radius: Math.max(THINNEST, curveAt(growth.stem.radius, t) * 0.7),
-				parent: parentNode,
-				axis: suckAxis,
-				light: 1 - 0.25 * t,
-			});
-		}
-	}
-	const plans = frondPlans(input, growth);
-	plans.forEach((plan, index) => {
-		layFrond(builder, input, growth, plan, index, crownNode, stemAxis);
-	});
-	return builder.finish(Math.max(0, height * 0.9));
-}
-
-/**
- * The tier a pinna's leaf draws at: the kit's tier at the nearest level, held at Medium there, and
- * the Low card at each card level. A tree fern's crown carries about a thousand pinnae, and each
- * pinna's own texture draws its pinnules, so the finest grid the crown needs is Medium.
- */
-function pinnaDetail(detail: Detail, level: MeshLevel): Detail {
-	if (level > 0) return 'low';
-	const at = Math.min(DETAILS.indexOf(detail), DETAILS.indexOf('medium'));
-	return DETAILS[Math.max(0, at)] as Detail;
-}
-
-/** The arc length along a run of nodes. */
-function axisLength(skeleton: MacroSkeleton, first: number, last: number): number {
-	const p = skeleton.position;
-	let length = 0;
-	for (let n = first + 1; n <= last; n++) {
-		const dx = (p[n * 3] as number) - (p[(n - 1) * 3] as number);
-		const dy = (p[n * 3 + 1] as number) - (p[(n - 1) * 3 + 1] as number);
-		const dz = (p[n * 3 + 2] as number) - (p[(n - 1) * 3 + 2] as number);
-		length += Math.sqrt(dx * dx + dy * dy + dz * dz);
-	}
-	return length;
-}
-
-/**
- * Meshes a crown rosette's foliage: each pinna as the species' leaf over its own axis. Each vertex's
- * colour bytes hold its pinna's wind record, a flutter phase that drifts along the pinna and the
- * crown's sky visibility; its second coordinates hold its share along the pinna and how brown it is.
- *
- * @param input The dressed variant.
- * @param level The level.
- * @returns The foliage mesh.
- * @category api/vegetation
- */
-export function meshCrownRosette(input: MeshInput, level: MeshLevel): MeshArrays {
-	const record = input.record;
-	const foliage = record.foliage;
-	if (foliage.kind !== 'blade')
-		throw new Error(
-			`@null3d/vegetation: the crown-rosette foliage needs 'blade' leaves, not '${foliage.kind}'`,
+	const height = Math.max(1, spreadAt(growth.stem.height, draw(DRAW.height)));
+	const lean = Math.max(0, spreadAt(growth.stem.lean, draw(DRAW.lean)));
+	const curve = spreadAt(growth.stem.curve, draw(DRAW.curve));
+	const turn = draw(DRAW.leanTurn) * 2 * PI;
+	const fronds = Math.max(3, Math.round(spreadAt(growth.crown.fronds, draw(DRAW.fronds))));
+	const dead = Math.max(0, Math.round(spreadAt(growth.crown.dead.count, draw(DRAW.dead))));
+	const radius = Math.max(curveAt(growth.stem.radius, 0), 1e-3);
+	const main: StemPlan = {
+		x: 0,
+		z: 0,
+		height,
+		lean,
+		curve,
+		turn,
+		radius,
+		fronds,
+		dead,
+		crownDepth: CROWN_DEPTH,
+		scale: 1,
+	};
+	const stem = layStem(builder, growth, main);
+	// The crown begins where the main stem's foliage reaches lowest, not where its suckers do.
+	let lowest = Number.POSITIVE_INFINITY;
+	const layCrown = (laid: LaidStem, first: number) => {
+		const plans = frondPlans(
+			builder,
+			growth,
+			laid,
+			draw,
+			first,
+			laid.plan.fronds,
+			laid.plan.dead,
+			laid.plan.scale,
 		);
-	const { skeleton, crown, kit } = input;
-	const axes = skeleton.axes;
-	const buds = skeleton.buds;
-	const detail = pinnaDetail(input.detail, level);
-	const outline = outlineOf(foliage.leaf, kit.manifest);
-	const leaf = bladeMesh(foliage.leaf, outline, detail);
-	const leafLength = Math.max(1e-4, spreadMean(foliage.leaf.length) + foliage.leaf.petiole.length);
-	const mesh = new MeshWriter();
-	const bytes = [0, 0, 0, 0];
-	const point: Vector3 = [0, 0, 0];
-	const normal: Vector3 = [0, 0, 0];
-	for (let b = 0; b < buds.count; b++) {
-		const axis = buds.axis[b] as number;
-		if ((axes.kind[axis] as number) !== AXIS_LIMB) continue;
-		const first = axes.first[axis] as number;
-		const last = axes.last[axis] as number;
-		if (last <= first) continue;
-		const wind = axisBytes(input, axis);
-		const scale = Math.max(1e-4, axisLength(skeleton, first, last) / leafLength);
-		const brown = frondAge(buds.vigor[b] as number).brown;
-		const firstVertex = mesh.vertices;
-		for (let i = 0; i < leaf.positions.length; i += 3) {
-			point[0] = (leaf.positions[i] as number) * scale;
-			point[1] = (leaf.positions[i + 1] as number) * scale;
-			point[2] = (leaf.positions[i + 2] as number) * scale;
-			quatRotate(buds.frame, b * 4, point, point);
-			point[0] += buds.position[b * 3] as number;
-			point[1] += buds.position[b * 3 + 1] as number;
-			point[2] += buds.position[b * 3 + 2] as number;
-			normal[0] = leaf.normals[i] as number;
-			normal[1] = leaf.normals[i + 1] as number;
-			normal[2] = leaf.normals[i + 2] as number;
-			quatRotate(buds.frame, b * 4, normal, normal);
-			const share = Math.min(1, Math.max(0, (leaf.positions[i + 1] as number) / leafLength));
-			bytes[0] = wind.high;
-			bytes[1] = wind.low;
-			bytes[2] = (wind.phase + Math.round(share * 64)) & 255;
-			bytes[3] = skyByte(crown, point);
-			mesh.vertex(
-				point,
-				normal,
-				[leaf.uvs[(i / 3) * 2] as number, leaf.uvs[(i / 3) * 2 + 1] as number],
-				[share, brown],
-				bytes,
-			);
-		}
-		for (const index of leaf.indices) mesh.indices.push(firstVertex + index);
+		plans.forEach((plan) => {
+			const reach = layFrond(builder, growth, laid, plan);
+			if (first === 0) lowest = Math.min(lowest, reach);
+		});
+	};
+	layCrown(stem, 0);
+	addBunches(builder, growth, stem);
+	const suckers = Math.max(0, Math.round(spreadAt(growth.stem.suckers ?? 0, draw(DRAW.suckers))));
+	let first = 1000;
+	for (let s = 0; s < suckers; s++) {
+		const ring = SUCKER_RING[0] + draw(DRAW.suckerTurn, s) * (SUCKER_RING[1] - SUCKER_RING[0]);
+		const azimuth = 2 * PI * (s / Math.max(1, suckers)) + draw(DRAW.suckerTurn, s + 32) * 0.6;
+		const suckerHeight =
+			SUCKER_HEIGHT[0] + draw(DRAW.suckerHeight, s) * (SUCKER_HEIGHT[1] - SUCKER_HEIGHT[0]);
+		const sucker: StemPlan = {
+			x: cos(azimuth) * ring,
+			z: sin(azimuth) * ring,
+			height: suckerHeight,
+			lean: 2 + draw(DRAW.suckerLean, s) * 6,
+			curve: 2 * draw(DRAW.suckerLean, s + 16),
+			turn: azimuth,
+			radius: Math.max(0.02, radius * (0.25 + 0.2 * (suckerHeight / SUCKER_HEIGHT[1]))),
+			fronds: Math.max(
+				3,
+				Math.round(fronds * SUCKER_FRONDS * (0.5 + suckerHeight / SUCKER_HEIGHT[1] / 2)),
+			),
+			dead: 0,
+			crownDepth: CROWN_DEPTH * 0.5,
+			scale: 0.35 + 0.4 * (suckerHeight / SUCKER_HEIGHT[1]),
+		};
+		const laid = layStem(builder, growth, sucker);
+		layCrown(laid, first);
+		first += 200;
 	}
-	return mesh.finishMesh();
+	return builder.finish(Number.isFinite(lowest) ? lowest : height * 0.5);
 }
 
-/** The crown-rosette grower: the stem and its crown's skeleton, and its fronds' pinnae as foliage. */
+/** The crown-rosette grower: the stem and its fronds, drawn as the variant's own foliage. */
 export const grower: Grower = {
 	grow: growCrownRosette,
-	foliage: meshCrownRosette,
+	foliage: palmFoliage,
 };

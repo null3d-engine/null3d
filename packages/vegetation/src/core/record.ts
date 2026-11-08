@@ -1851,8 +1851,8 @@ export interface CuttingHints {
 	readonly branch?: CutFromPlant | CutFromShoots;
 	/** A sub-branch about 0.35 m long, in either form. */
 	readonly subbranch?: CutFromPlant | CutFromShoots;
-	/** A leaf cluster: the shoot class to cut. */
-	readonly cluster?: CutFromShoots;
+	/** A leaf cluster: the shoot class to cut, or a length of a frond's rachis. */
+	readonly cluster?: CutFromPlant | CutFromShoots;
 	/** A single leaf: how it lies. */
 	readonly leaf?: CutLeaf;
 }
@@ -1882,6 +1882,16 @@ export interface CutFromPlant {
 	readonly order: number;
 	/** Metres of wood from the cut to the farthest tip. */
 	readonly length: number;
+	/**
+	 * Metres of the axis that the piece keeps from its cut, for a plant whose pieces are lengths of
+	 * a single long axis, such as a palm's frond. Without it the piece keeps the whole axis.
+	 */
+	readonly span?: number;
+	/**
+	 * Metres along the axis where the piece starts, for a piece cut from the middle of one long
+	 * axis rather than its base. The cut face stands there. 0 by default.
+	 */
+	readonly from?: number;
 }
 
 /**

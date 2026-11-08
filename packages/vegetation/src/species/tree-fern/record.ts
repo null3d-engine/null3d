@@ -16,12 +16,12 @@ export const record: Species = {
 	form: 'single stout fibrous trunk under a crown of arching fronds from one point',
 	// Still 01 and the silhouette 18: the crown is about as wide as the plant is tall, the trunk
 	// about a seventh of the height across at breast height.
-	size: { height: { mean: 3.4, spread: 0.35 }, dbh: 0.5, aspect: 1.05 },
+	size: { height: { mean: 3.6, spread: 0.3 }, dbh: 0.5, aspect: 1.25 },
 	growth: {
 		model: 'crown-rosette',
 		stem: {
 			// Stills 17 and 18: the trunk is about two thirds of the plant's height.
-			height: { mean: 2.35, spread: 0.25 },
+			height: { mean: 2.6, spread: 0.2 },
 			// Still 17: the column runs nearly parallel-sided, a little narrower at the top.
 			radius: [
 				[0, 0.29],
@@ -46,34 +46,37 @@ export const record: Species = {
 				[1, 98],
 			],
 			// Still 16, 17 and 20: the dead fronds hang against the trunk as a brown skirt.
-			dead: { count: { mean: 12, spread: 2 }, hang: 80, skirt: 0.75 },
-			// Still 06: coiled croziers fill the crown's centre.
-			croziers: { mean: 7, spread: 2 },
+			dead: { count: { mean: 12, spread: 2 }, hang: 128, skirt: 0.4 },
+			// The shared crown-rosette model carries no croziers yet; still 06's coiled centre is a
+			// stated limit of the model, not of this record.
 		},
 		frond: {
-			// Stills 21 and 22: the frond is twice divided, the pinnae in near-opposite pairs.
-			kind: 'bipinnate',
+			// Stills 21 and 22: the frond is twice divided, its pinnae in near-opposite pairs; the
+			// pinna itself is the species' leaf, drawn from its own picture.
+			kind: 'pinnate',
 			length: { mean: 2.1, spread: 0.2 },
 			// Still 07: a short red-brown stipe, densely hairy, no wider than the rachis.
 			petiole: { length: 0.28, width: 0.055, teeth: 0 },
 			// Still 21: the blade rises from the stipe and arches over, its tip drooping.
 			droop: [
-				[0, 3],
-				[0.3, 24],
-				[0.7, 40],
-				[1, 54],
+				[0, 0],
+				[0.15, 10],
+				[0.45, 26],
+				[0.75, 40],
+				[1, 52],
 			],
 			twist: 4,
 			pinnae: {
-				// Stills 08 to 11: about twenty-five pairs a side, longest near the middle of the blade.
-				count: { mean: 26, spread: 2 },
+				// Stills 08 to 11: thirty or more pairs a side. The count gives the places and each
+				// place carries a group, so the frond holds twice this many.
+				count: { mean: 16, spread: 1 },
 				// Pinna length over the frond's length, by position along the rachis.
 				length: [
-					[0, 0.09],
-					[0.15, 0.16],
-					[0.4, 0.21],
-					[0.8, 0.15],
-					[1, 0.05],
+					[0, 0.05],
+					[0.15, 0.14],
+					[0.4, 0.19],
+					[0.8, 0.13],
+					[1, 0.04],
 				],
 				angle: [
 					[0, 80],
@@ -81,8 +84,8 @@ export const record: Species = {
 					[1, 50],
 				],
 				planes: 1,
-				fold: 10,
-				droop: 14,
+				fold: 8,
+				droop: 12,
 				spines: 0,
 			},
 		},
@@ -138,29 +141,29 @@ export const record: Species = {
 	wind: {
 		// The trunk stands rigid; the fronds swing from their stipes.
 		stiffness: [
-			[0, 1],
-			[0.4, 0.75],
-			[1, 0.5],
+			[0, 0.98],
+			[0.5, 0.85],
+			[1, 0.6],
 		],
-		sway: { frequency: 0.3, amplitude: 0.02 },
-		flutter: { kind: 'leaflet', amplitude: 0.06, frequency: 1.2 },
+		sway: { frequency: 0.3, amplitude: 0.04 },
+		flutter: { kind: 'leaflet', amplitude: 0.08, frequency: 1.5 },
 	},
 	lod: {
 		nearFoliage: 'merged',
-		switchPixels: [200, 30, 120],
-		woodOrders: [2, 1],
+		switchPixels: [200, 40, 200],
+		woodOrders: [1, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit holds one pinna at each tier; the crown's thousand pinnae are the variant's.
+			// The kit holds one pinna at each tier; the crown's pinna leaflets are the variant's.
 			kitBytes: { low: 40_000, medium: 50_000, high: 60_000, ultra: 70_000 },
-			variantBytes: { low: 900_000, medium: 3_120_000, high: 3_120_000, ultra: 3_180_000 },
-			lod0Triangles: 220_000,
-			lod1Triangles: 12_000,
-			lod2Triangles: 6_000,
+			variantBytes: { low: 700_000, medium: 700_000, high: 700_000, ultra: 700_000 },
+			lod0Triangles: 40_000,
+			lod1Triangles: 8_000,
+			lod2Triangles: 5_000,
 			downloadBytes: 900_000,
 			downloadHalfBytes: 300_000,
-			growMilliseconds: 80,
+			growMilliseconds: 60,
 		},
 	},
 	textures: 'own',
@@ -168,10 +171,12 @@ export const record: Species = {
 	seedSalt: 0x7466726e,
 	roundBand: 0.25,
 	cuttings: {
-		// Still 21: one whole frond, a stipe and its blade.
+		// Still 21: one whole frond, its stipe and its pinnae.
 		branch: { order: 1, length: 2.4 },
-		// Still 22: one pinna of the frond, about a third of a metre.
-		subbranch: { order: 3, length: 0.33 },
+		// Still 22: a length of rachis from the middle of the frond, with its pinnae.
+		subbranch: { order: 1, length: 0.35, from: 0.9, span: 0.35 },
+		// Still 23: the frond's tip, where its pinnae shorten.
+		cluster: { order: 1, length: 0.2, from: 1.8, span: 0.2 },
 		// Stills 12, 13 and 24: the pinna laid flat on its own.
 		leaf: { pressed: true },
 	},
