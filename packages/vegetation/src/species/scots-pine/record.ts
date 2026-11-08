@@ -244,7 +244,7 @@ export const record: Species = {
 		// mid-trunk; stills 14 and 16 give each zone's figure.
 		zones: [
 			{ layer: 0, by: 'height', from: 0, to: 6.5, blend: 1.5 },
-			{ layer: 1, by: 'height', from: 6.5, to: 40, blend: 1.5 },
+			{ layer: 1, by: 'height', from: 6.5, to: 24, blend: 1.5 },
 		],
 		young: 0,
 		// Still 28: thin wood carries the orange-brown flaking bark of young branches.

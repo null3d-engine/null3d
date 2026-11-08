@@ -127,13 +127,14 @@ export interface PlantReviewQuery {
 	readonly along?: number;
 	/** Metres of radius that a limb view frames: it picks the limb that carries that thickness. */
 	readonly thin?: number;
+	/**
+	 * The bark zone whose own height a bark view frames, as an index into the record's zones: the
+	 * camera stands where that zone covers the wood, so each bark source is compared with the bark
+	 * its photograph shows. From 0.
+	 */
+	readonly barkZone?: number;
 	/** Metres of bark or limb that a bark or limb view's frame height covers. */
 	readonly span?: number;
-	/**
-	 * Metres up the stem at which a bark view stands, where the species' bark changes with height.
-	 * The view's own low stand by default.
-	 */
-	readonly height?: number;
 	/**
 	 * The row share on which a view up the stem puts the stem's first fork: the camera pitches up
 	 * until the fork lands there, no steeper than the view's elevation.
@@ -190,7 +191,7 @@ const NUMBER_FIELDS = [
 	'along',
 	'thin',
 	'span',
-	'height',
+	'barkZone',
 	'forkRow',
 	'footRow',
 	'crownRow',
@@ -300,6 +301,13 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		);
 	if (numbers.leaves !== undefined && numbers.leaves <= 0)
 		throw new Error(`leaves=${numbers.leaves} is a frame in leaf lengths: give a number above 0.`);
+	if (
+		numbers.barkZone !== undefined &&
+		(!Number.isInteger(numbers.barkZone) || numbers.barkZone < 0)
+	)
+		throw new Error(
+			`barkZone=${numbers.barkZone} is an index into the record's bark zones: give a whole number of 0 or more.`,
+		);
 	if (numbers.stand !== undefined && numbers.stand <= 1)
 		throw new Error(
 			`stand=${numbers.stand} is in stem radii from its axis: give a number above 1.`,
