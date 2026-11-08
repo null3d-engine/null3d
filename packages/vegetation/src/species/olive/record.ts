@@ -256,9 +256,13 @@ export const record: Species = {
 		},
 	},
 	bark: {
-		// Stills 26 and 15 under the copy-stand lamps: a pale cool grey, so the measured colour stands
-		// as it is.
-		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0 }],
+		// Stills 26 and 15: the bole's pale grey, deep spiralling ridges broken into small plates. Still
+		// 16: the smoother, paler bark of the great limbs above the bole, which reads sixteen steps
+		// lighter than the trunk's under the same light.
+		zones: [
+			{ layer: 0, by: 'height', from: 0, to: 2.6, blend: 0.3 },
+			{ layer: 1, by: 'height', from: 2.6, to: 40, blend: 0.4 },
+		],
 		young: 0,
 		// Still 16: the spiralling ridges fade to smooth grey bark on wood thinner than about three
 		// centimetres across.

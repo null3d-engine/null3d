@@ -11,7 +11,16 @@
 				"slot": 26,
 				"tile": [0.9, 0.9],
 				"depth": 0.05,
-				"smooth": 8
+				"smooth": 8,
+				"tint": [0.84, 0.83, 0.81]
+			},
+			{
+				"name": "limb",
+				"slot": 16,
+				"tile": [0.45, 0.45],
+				"depth": 0.02,
+				"smooth": 6,
+				"tint": [1.25, 1.22, 1.15]
 			}
 		],
 		"young": {
@@ -19,7 +28,13 @@
 			"slot": 28,
 			"tile": [0.25, 0.25],
 			"depth": 0.0006,
-			"delight": { "radius": 0.12 }
+			"delight": {
+				"radius": 0.12
+			}
 		}
+	},
+	"quality": {
+		"bark-color": 88,
+		"bark-normal": 88
 	}
 }

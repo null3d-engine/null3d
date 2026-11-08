@@ -57,7 +57,7 @@
 	"14-bark-base.png": {
 		"span": 2.5,
 		"skyShare": 0.35,
-		"daylight": 2.4
+		"daylight": 1.8
 	},
 	"15-bark-mid-trunk.png": {
 		"span": 0.9,
