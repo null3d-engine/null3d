@@ -1,14 +1,56 @@
 {
-	"04-crown-outside.png": { "view": "limb", "thin": 0.025, "span": 2.2, "surface": true },
-	"06-inside-crown.png": { "view": "crown", "elevation": 45, "distance": 1.6 },
-	"08-frond-division.png": { "view": "branch" },
-	"09-pinna.png": { "view": "leaf-upper", "background": "studio-grey", "roll": 39 },
-	"12-single-pinna-upper.png": { "roll": 39 },
-	"13-single-pinna-underside.png": { "roll": 39 },
-	"15-trunk-mid.png": { "span": 0.45 },
-	"16-trunk-under-crown.png": { "view": "bark-mid", "along": 0.94, "span": 0.45 },
-	"19-sori.png": { "view": "leaf-under", "roll": 39 },
-	"20-dead-frond-skirt.png": { "view": "whole" },
-	"24-leaf-texture-upper.png": { "roll": 39 },
-	"25-leaf-texture-underside.png": { "roll": 39 }
+	"04-crown-outside.png": {
+		"view": "limb",
+		"thin": 0.025,
+		"span": 2.2,
+		"surface": true
+	},
+	"06-inside-crown.png": {
+		"view": "crown",
+		"elevation": 45,
+		"distance": 1.6
+	},
+	"08-frond-division.png": {
+		"view": "branch"
+	},
+	"09-pinna.png": {
+		"view": "leaf-upper",
+		"background": "studio-grey",
+		"roll": 141
+	},
+	"12-single-pinna-upper.png": {
+		"roll": 141
+	},
+	"13-single-pinna-underside.png": {
+		"roll": 141
+	},
+	"15-trunk-mid.png": {
+		"span": 0.45
+	},
+	"16-trunk-under-crown.png": {
+		"view": "bark-mid",
+		"along": 0.94,
+		"span": 0.45
+	},
+	"19-sori.png": {
+		"view": "leaf-under",
+		"roll": 141
+	},
+	"20-dead-frond-skirt.png": {
+		"view": "whole"
+	},
+	"24-leaf-texture-upper.png": {
+		"roll": 141
+	},
+	"25-leaf-texture-underside.png": {
+		"roll": 141
+	},
+	"14-trunk-base.png": {
+		"view": "bark-mid",
+		"along": 0.03,
+		"span": 0.9
+	},
+	"26-bark-texture.png": {
+		"span": 0.45
+	}
 }

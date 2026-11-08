@@ -101,16 +101,17 @@ export const record: Species = {
 			twist: 4,
 			wave: [0.002, 3],
 			optics: {
-				reflectance: [0.055, 0.115, 0.028],
-				reflectanceBack: [0.16, 0.22, 0.14],
-				transmittance: [0.12, 0.24, 0.05],
+				// The texture's own mean colour on each face, as the flat-lit pictures show it.
+				reflectance: [0.0578, 0.0881, 0.0208],
+				reflectanceBack: [0.2539, 0.2494, 0.076],
+				transmittance: [0.09, 0.15, 0.04],
 				roughness: [0.55, 0.65],
 			},
 		},
 	},
 	bark: {
 		// Stills 15 and 26: the whole trunk is packed roots and cut frond bases, one surface.
-		zones: [{ layer: 0, by: 'height', from: -1, to: 4, blend: 0.2, tint: [1.45, 1.35, 1.3] }],
+		zones: [{ layer: 0, by: 'height', from: -1, to: 4, blend: 0.2 }],
 		young: 0,
 		// The stipes, rachises and pinna midribs take the fine tile, so they read as hairy brown
 		// stalks rather than as the trunk's coarse mat.
