@@ -17,9 +17,10 @@ export function plantSpeciesTests(root = ROOT): ImageTest[] {
 		sketch: `tests/pages/sketches/plant-review-sketch.ts?species=${id}&view=panels`,
 		hold: 1,
 		size: [1024, 1024],
-		// The four panels stand at a few metres, so a dense crown draws as real geometry, and a
-		// fourth of a million vertices can take longer than a minute to reach the capture under a
-		// loaded machine. A longer wait cannot pass an image that failed at sixty.
+		// Four panels of a whole plant, built and drawn from scratch: the merged foliage of a ground
+		// plant, and a dense crown drawn as real geometry, can take longer than the default limit on
+		// the software GPU's slower path under a loaded machine. A longer wait cannot pass an image
+		// that failed at sixty.
 		timeoutSeconds: 240,
 	}));
 }

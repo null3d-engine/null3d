@@ -365,10 +365,18 @@ const CUT_ROWS: CutRows | undefined =
 			? { top: QUERY.top, base: 1 }
 			: undefined;
 
+/** Whether an asset draws any wood at all: a ground plant draws its whole body as merged foliage. */
+function hasWood(asset: PlantAsset): boolean {
+	return asset.levels.some((level) => level.parts.some((part) => part.name === 'wood'));
+}
+
 /** The asset as a view draws it: the wood alone, or one level at every distance. */
 function shaped(asset: PlantAsset, woodOnly: boolean): PlantAsset {
+	// A view of the wood alone has no wood to draw on a ground plant. Its crown, sheaths and blades
+	// are that plant's body, so the view keeps them rather than drawing an empty picture.
+	const bare = woodOnly && hasWood(asset);
 	const keep = (parts: readonly PlantPart[]) =>
-		woodOnly ? parts.filter((part) => part.name === 'wood') : parts;
+		bare ? parts.filter((part) => part.name === 'wood') : parts;
 	const levelAt = (index: 0 | 1 | 2, from: number, source = asset.levels[index]) => ({
 		...source,
 		level: index,
@@ -378,7 +386,7 @@ function shaped(asset: PlantAsset, woodOnly: boolean): PlantAsset {
 	const empty = { parts: [], triangles: 0, bytes: 0 };
 	const lod = LOD;
 	const rows =
-		woodOnly || (lod !== undefined && lod !== 0) ? { ...asset.shoots, count: 0 } : asset.shoots;
+		bare || (lod !== undefined && lod !== 0) ? { ...asset.shoots, count: 0 } : asset.shoots;
 	if (lod === undefined || lod === 3)
 		return {
 			...asset,
@@ -459,11 +467,12 @@ export default defineSketch(async (ctx) => {
 			: undefined;
 	if (QUERY.form !== undefined && form === undefined)
 		notes.push(`the record has no ${QUERY.form} form, so the plant grows as its record stands`);
-	const kit = await prepareSpecies(ctx, module, {
+	const prepare = {
 		detail: QUERY.preset ?? 'high',
 		placeholders,
 		...(form !== undefined && { form }),
-	});
+	} as const;
+	const kit = await prepareSpecies(ctx, module, prepare);
 	const grow = {
 		seed: QUERY.seed ?? 11,
 		variant: QUERY.variant ?? 0,
@@ -481,12 +490,28 @@ export default defineSketch(async (ctx) => {
 		...(QUERY.pressed !== undefined && { pressed: QUERY.pressed }),
 	};
 	const needsWhole = !SPEC.cutting;
+	// A piece whose record hint names one of the species' cutting classes grows from a kit of its
+	// own, which holds that class and no cards: the piece is only ever drawn at the nearest level.
+	const cutHint = cutting ? record.cuttings?.[cutting.part] : undefined;
+	const cutsClass =
+		cutHint !== undefined &&
+		'shoot' in cutHint &&
+		(record.shoots?.cuttingClasses ?? []).some(
+			(shoot) => shoot.name === cutHint.shoot && shoot.cutOnly === true,
+		);
+	// A plant cut carries a denser covering when the record asks for one: its cutting kit places the
+	// shoots the studio piece needs and holds no card levels.
+	const plantCut = cutHint !== undefined && 'order' in cutHint;
+	const needsCutKit = cutsClass || (plantCut && record.cuttings?.density !== undefined);
+	const pieceKit =
+		cutting && needsCutKit ? await prepareSpecies(ctx, module, { ...prepare, cutting: true }) : kit;
 	const [whole, piece] = await Promise.all([
 		needsWhole ? growPlant(kit, grow) : undefined,
-		cutting ? growPlant(kit, { ...grow, cutting }) : undefined,
+		cutting ? growPlant(pieceKit, { ...grow, cutting }) : undefined,
 	]);
 	const main = (whole ?? piece) as PlantAsset;
-	const bounds = boundsOf(main, kit);
+	const mainKit = whole ? kit : pieceKit;
+	const bounds = boundsOf(main, mainKit);
 	const skeleton = main.skeleton;
 	const foot = stemFoot(skeleton);
 	const height = Math.max(0.05, bounds.max[1]);
@@ -523,7 +548,7 @@ export default defineSketch(async (ctx) => {
 	const closePlant = (woodOnly: boolean): ClosePlant => ({
 		skeleton,
 		shoots: woodOnly ? { ...main.shoots, count: 0 } : main.shoots,
-		prototypes: kit.prototypes,
+		prototypes: mainKit.prototypes,
 		...(leafLength !== undefined && { leafLength }),
 	});
 	/** Each close view's camera, found once and walked round its subject for a sheet's turns. */
@@ -753,7 +778,7 @@ export default defineSketch(async (ctx) => {
 					warning: 'the plant has no twig with end clusters that shows clear',
 				});
 				let shoot = 0.2;
-				for (const prototype of kit.prototypes) shoot = Math.max(shoot, prototype.length);
+				for (const prototype of mainKit.prototypes) shoot = Math.max(shoot, prototype.length);
 				const target = add(tip.at, scale(tip.direction, shoot / 2));
 				const outward = normalize([tip.at[0] - foot[0], 0, tip.at[2] - foot[2]]);
 				const back = Math.atan2(outward[0], outward[2]);
@@ -864,7 +889,7 @@ export default defineSketch(async (ctx) => {
 				}
 				// A cutting fills the frame with its own points, as its reference's piece does, on the
 				// rows its reference shows it on when the query measured them.
-				return fitPoints(piece as PlantAsset, kit, turn, e, aspect, fov, CUT_ROWS);
+				return fitPoints(piece as PlantAsset, pieceKit, turn, e, aspect, fov, CUT_ROWS);
 			}
 			case 'panels':
 				break;
@@ -895,7 +920,7 @@ export default defineSketch(async (ctx) => {
 			piece: 'plant',
 		});
 		const cluster = fit(
-			boundsOf(piece as PlantAsset, kit),
+			boundsOf(piece as PlantAsset, pieceKit),
 			turn0,
 			8,
 			quarter,
@@ -1105,10 +1130,10 @@ export default defineSketch(async (ctx) => {
 		placeholders === true && (LOD === undefined || LOD === 0)
 			? createNearPool(ctx, { placeholders: true })
 			: undefined;
-	const place = (asset: PlantAsset, at: V3, far?: readonly FarPlant[]) =>
+	const place = (asset: PlantAsset, at: V3, source: SpeciesKit, far?: readonly FarPlant[]) =>
 		placePlants(
 			ctx,
-			kit,
+			source,
 			[asset],
 			{
 				count: 1,
@@ -1135,8 +1160,8 @@ export default defineSketch(async (ctx) => {
 		);
 	const drawn = shaped(main, SPEC.woodOnly === true);
 	const far = LOD === 3 && whole ? [await bakeFarPlant(kit, whole)] : undefined;
-	place(drawn, [0, 0, 0], far);
-	if (VIEW === 'panels' && piece) place(shaped(piece, false), AWAY);
+	place(drawn, [0, 0, 0], mainKit, far);
+	if (VIEW === 'panels' && piece) place(shaped(piece, false), AWAY, pieceKit);
 	if (
 		!SPEC.woodOnly &&
 		(LOD === undefined || LOD === 0) &&
@@ -1200,7 +1225,7 @@ export default defineSketch(async (ctx) => {
 			cutting: {
 				...piece.cutting,
 				size: (() => {
-					const b = boundsOf(piece, kit);
+					const b = boundsOf(piece, pieceKit);
 					return sub(b.max, b.min);
 				})(),
 				axes: piece.skeleton.axes.count,
