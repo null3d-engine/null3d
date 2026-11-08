@@ -163,6 +163,36 @@ is the one part of the trunk the render lights like the rest of the wood, while 
 it shaded. That is a core term of the same class as the crown's sky extinction, and it stays a
 stated limit here until the core shades a foot by what stands over and beside it.
 
+### A foot shade and a limb tint, both per record
+
+Two levers were built after ruling the foot a fault rather than a limit.
+
+`bark.footShade` takes a share of the sky off the lowest wood, giving way to open sky over the lowest
+two meters, since the ground throws back far less than the sky does. It is off when a record gives
+none. Measured on the review's three pairs at none, a half and three quarters of the share:
+
+| Species | Base, none | Base, half | Base, three quarters | Mid trunk | Limb |
+| --- | --- | --- | --- | --- | --- |
+| English elm | 6.56 | 5.15 | 4.34 | 1.11 | 11.26 |
+| Pedunculate oak | 3.84 | 2.84 | 2.30 | 7.52 | 9.88 |
+| Common ash | 6.31 | 6.31 | 6.31 | 5.38 | 3.72 |
+
+The ash leaves the field unset and reads to the digit as it did, which is the proof that the field
+costs a species nothing. Its foot already draws below its photograph, where the elm's stands 6.7
+above and the oak's 3.9, so the shade helps two and would hurt one; it is a record's choice, not a
+shared one. The curve flattens, and a whole share would say a foot under a crown sees no sky, so the
+ceiling is below the photographs' own level: the elm's foot still stands about 4 above its picture.
+
+A second zone, keyed by **radius** rather than height, tints wood thinner than seven tenths of a
+meter a darker color of its own. The elm's limb falls from 11.26 to 8.36 color steps and the oak's
+from 9.88 to 9.28; the oak's base also falls from 2.30 to 2.04, and both species' mid trunks do not
+move. A height key would have left a limb that leaves the trunk low in the bole's zone, and a wider
+radius range would draw a seam where the tapering trunk crosses it.
+
+The limb's figure under-reports the drawn change, because at its scale the nine patches reach the sky
+and the meadow beside the limb. The tint is near its useful end: a half to a third of the linear
+color moved the figure 0.44 of a step where the first range moved it 2.9.
+
 ## Decision
 
 Take the physical bark color and light the two bark close-ups from the camera.
