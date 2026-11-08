@@ -29,7 +29,7 @@ export default defineSketch(async (ctx) => {
 	scene.createAmbientLight(day.ambient);
 
 	// The meadow's grass, grown by the add-on over the same field, so the ground reads as pasture.
-	const grass = createGrass(ctx, {
+	createGrass(ctx, {
 		height: () => 0,
 		area: { x: 0, z: 0, size: 200 },
 		count: 60_000,
@@ -65,8 +65,6 @@ export default defineSketch(async (ctx) => {
 	// The level of detail's coarseness: 0 draws the plant as grown, 1 the coarsest, where the
 	// finest twigs are gone and the shoots that remain are larger.
 	let detail = 0;
-	const pruneOf = (value: number, own: number) =>
-		Math.min(0.9, Math.max(0, own * (1.6 - 1.2 * Math.min(1, Math.max(0, value)))));
 	let planted: { destroy(): void }[] = [];
 	const postHud = () =>
 		page.post('hud', {
@@ -192,27 +190,29 @@ export default defineSketch(async (ctx) => {
 	})();
 
 	let seed = 11;
-	/** Whether the meadow has been built once: its first build belongs to the sketch's own start. */
-	let grown = false;
+	// The meadow's species and their placements are settled at the start, so every sign can stand on
+	// the bare ground before the plants that it names have grown.
+	const ids = speciesIds();
+	const modules = await Promise.all(ids.map((id) => loadSpecies(id)));
+	const across = Math.max(1, Math.ceil(Math.sqrt(ids.length)));
+	const step = 34;
+	/** Where a species stands in the meadow's grid, centred on the origin. */
+	const placeOf = (index: number): readonly [number, number] => [
+		((index % across) - (across - 1) / 2) * step,
+		(Math.floor(index / across) - (ids.length / across - 1) / 2) * step,
+	];
+	for (const [index, module] of modules.entries()) {
+		// The sign stands beside the plant's foot, clear of its trunk.
+		const [x, z] = placeOf(index);
+		plantSign(ctx, module.record.name, module.record.latin, [x + 13, z + 6]);
+	}
 	const growMeadow = async (at: number) => {
 		for (const piece of planted) piece.destroy();
 		planted = [];
-		const ids = speciesIds();
-		const across = Math.max(1, Math.ceil(Math.sqrt(ids.length)));
-		const step = 34;
-		// A meadow's first build is work that starting the sketch does, so it counts on the sketch's
-		// own loading bar and the page shows one start. Every later build is a change the reader
-		// asked for, and shows in a note of its own.
-		const first = !grown;
-		if (first) page.post('starting', { done: 0, total: ids.length });
-		else {
-			growing.begin();
-			growing.set(0, ids.length);
-		}
-		let index = 0;
-		for (const id of ids) {
-			const module = await loadSpecies(id);
-			// The meadow carries eleven species at once, and at close range every copy near the camera
+		growing.begin();
+		growing.set(0, ids.length);
+		for (const [index, module] of modules.entries()) {
+			// The meadow carries every species at once, and at close range every copy near the camera
 			// draws its real shoots: the medium tier keeps each plant's shape while halving the nearest
 			// level's triangles, which is what made a pan after a zoom crawl.
 			const kit = await prepareSpecies(ctx, module, { detail: 'medium', placeholders: 'missing' });
@@ -226,10 +226,7 @@ export default defineSketch(async (ctx) => {
 				coarseness: detail,
 				foliage: shareOf(foliage),
 			});
-			const x = ((index % across) - (across - 1) / 2) * step;
-			const z = (Math.floor(index / across) - (ids.length / across - 1) / 2) * step;
-			// The sign stands beside the plant's foot, clear of its trunk.
-			plantSign(ctx, kit.record.name, kit.record.latin, [x + 13, z + 6]);
+			const [x, z] = placeOf(index);
 			planted.push(
 				placePlants(
 					ctx,
@@ -245,24 +242,23 @@ export default defineSketch(async (ctx) => {
 					{ materials, view: { height: 1080, fov: 45 }, castShadows: true },
 				),
 			);
-			index++;
-			if (first) page.post('starting', { done: index, total: ids.length });
-			else growing.set(index, ids.length);
+			growing.set(index + 1, ids.length);
 		}
 		growing.end();
-		grown = true;
 		void at;
 	};
-	await growMeadow(seed);
 
 	let regrowing = false;
-	let announced = false;
+	// The meadow grows after the page's first frame, so the start ends with the grass standing and
+	// the plants' own progress note follows it, rather than counting inside the start.
+	let started = false;
 	return {
 		onUpdate(dt) {
 			view.update(dt);
-			if (!announced) {
-				announced = true;
+			if (!started) {
+				started = true;
 				postHud();
+				void growMeadow(seed);
 			}
 			if (input.wasPressed('KeyR') && !regrowing) {
 				regrowing = true;
