@@ -75,7 +75,8 @@
 		"sky": "#c6c2bd"
 	},
 	"19-cones-and-catkins.png": {
-		"season": "winter"
+		"season": "winter",
+		"distance": 0.3
 	},
 	"common-alder-turntable.mp4": {
 		"skyShare": 0.6,

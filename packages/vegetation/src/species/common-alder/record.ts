@@ -451,7 +451,7 @@ export const record: Species = {
 			// leaves.
 			kind: 'cone',
 			at: 'shoot-tip',
-			share: 0.16,
+			share: 0.3,
 			count: { mean: 3, spread: 1 },
 			tipShare: 0.8,
 			seasons: ['summer', 'autumn', 'winter'],
@@ -489,7 +489,7 @@ export const record: Species = {
 			// fours from the same twig ends, and sway clear of the leaves above them.
 			kind: 'catkin',
 			at: 'shoot-tip',
-			share: 0.18,
+			share: 0.25,
 			count: { mean: 3, spread: 0 },
 			tipShare: 0.9,
 			seasons: ['summer', 'autumn', 'winter'],
