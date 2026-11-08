@@ -236,7 +236,10 @@ function growHeads(
 				order: 3,
 				kind: AXIS_LIMB,
 			});
-			const radius = heads.radius * 0.35 * (1 + 0.02 * draw(input, Purpose.Spike, index, j, 4));
+			const radius =
+				heads.radius *
+				(heads.stalkShare ?? 0.35) *
+				(1 + 0.02 * draw(input, Purpose.Spike, index, j, 4));
 			const points: Vector3[] = [
 				from,
 				[

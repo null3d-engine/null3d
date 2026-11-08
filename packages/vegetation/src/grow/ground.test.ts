@@ -11,8 +11,9 @@ import { join } from 'node:path';
 import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from '../asset';
 import { capsFor, variantBytesOf } from '../core/caps';
 import { speciesProblems } from '../core/check';
-import { AXIS_CULM, BUD_FLOWER, BUD_TERMINAL, type MacroSkeleton } from '../core/graph';
+import { AXIS_CULM, AXIS_LIMB, BUD_FLOWER, BUD_TERMINAL, type MacroSkeleton } from '../core/graph';
 import type { GrassBlade, Species, ThickLeaf } from '../core/record';
+import { noTextureFiles } from '../core/textures';
 import { DETAILS } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 import type { PlantTaskInput } from '../generate-task';
@@ -295,6 +296,33 @@ describe('the pendulous sedge', () => {
 		expect(top).toBeLessThan(2);
 		expect(topOf(skeleton, AXIS_LEAF)).toBeGreaterThan(0.45);
 		expect(assetOf(sedgeRecord).levels[0].parts.map((part) => part.name)).toContain('extras');
+	});
+
+	it("gives each hanging spike's stalk the share of the stem's radius the record asks", () => {
+		const growth = sedgeRecord.growth;
+		if (growth.model !== 'tuft' || !growth.heads) throw new Error('the fixture is not a tuft');
+		const heads = { ...growth.heads, stalkShare: 0.6 };
+		const shared: Species = {
+			...sedgeRecord,
+			id: 'sedge-stalk-share',
+			growth: { ...growth, heads },
+		};
+		const kit = buildKitNow(
+			{ record: shared, textures: noTextureFiles(shared.id) },
+			{ placeholders: 'missing' },
+		);
+		const { skeleton } = growPlantNow(kit, OPTIONS);
+		let stalks = 0;
+		for (let a = 0; a < skeleton.axes.count; a++) {
+			const parent = skeleton.axes.parent[a] as number;
+			if (parent < 0) continue;
+			if ((skeleton.axes.kind[a] as number) !== AXIS_LIMB) continue;
+			if ((skeleton.axes.kind[parent] as number) !== AXIS_CULM) continue;
+			const radius = skeleton.radius[skeleton.axes.first[a] as number] as number;
+			expect(radius).toBeCloseTo(heads.radius * 0.6, 3);
+			stalks++;
+		}
+		expect(stalks).toBeGreaterThan(3);
 	});
 
 	it('ends its blades in long fine points', () => {

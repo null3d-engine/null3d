@@ -340,6 +340,7 @@ function growthProblems(record: Species, out: string[]): void {
 		if (heads) {
 			spreadProblems(heads.height, 'growth.heads.height', true, out);
 			wholeProblem(heads.sides, 'growth.heads.sides', 3, 12, out);
+			shareProblem(heads.stalkShare, 'growth.heads.stalkShare', out);
 			if (heads.kind === 'panicle' && !heads.panicle)
 				out.push("growth.heads is a 'panicle' and needs its panicle");
 			if (heads.kind === 'spike' && !heads.spikes)
