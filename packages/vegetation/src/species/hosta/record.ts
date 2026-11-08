@@ -25,27 +25,27 @@ export const record: Species = {
 		// of leaves, the outermost of each eye its oldest and lowest.
 		shoots: { mean: 6, spread: 1 },
 		crown: 0.04,
-		leaves: { mean: 9, spread: 1 },
+		leaves: { mean: 8.5, spread: 1 },
 		divergence: 137.5,
 		// Still 21: the youngest leaves stand nearly upright at the shoot's heart, the oldest lean
 		// out over the mound.
 		tilt: [
-			[0, 3],
-			[0.4, 10],
-			[0.8, 22],
-			[1, 34],
+			[0, 4],
+			[0.4, 20],
+			[0.8, 40],
+			[1, 58],
 		],
 		// Still 02: a stalk leaves upright, then arches out and down, the oldest bending furthest.
 		arch: [
 			[0, 2],
 			[0.5, 10],
-			[1, 38],
+			[1, 30],
 		],
 		// Still 22: the stalks are long against the blade, the oldest nearly as long as the leaf.
 		stalk: [
-			[0, 0.22],
-			[0.4, 0.42],
-			[1, 0.34],
+			[0, 0.26],
+			[0.4, 0.36],
+			[1, 0.28],
 		],
 		// Stills 02 and 23: a young centre-leaf is about three fifths the size of the oldest.
 		size: [
@@ -55,9 +55,9 @@ export const record: Species = {
 		],
 		// Still 02: the blade turns down from its stalk's line, the oldest hanging furthest.
 		pitch: [
-			[0, 6],
-			[0.5, 26],
-			[1, 44],
+			[0, 10],
+			[0.5, 38],
+			[1, 56],
 		],
 		// Still 23: about a sixth of a shoot's leaves are still rolled at the crown's heart.
 		rolled: 0.17,
@@ -126,11 +126,11 @@ export const record: Species = {
 	wind: {
 		// The wind clip: the blades lift and bounce on their stalks while the crown stays still.
 		stiffness: [
-			[0, 0.95],
-			[1, 0.72],
+			[0, 0.99],
+			[1, 0.93],
 		],
-		sway: { frequency: 0.8, amplitude: 0.02 },
-		flutter: { kind: 'blade', amplitude: 0.05, frequency: 1.4 },
+		sway: { frequency: 0.9, amplitude: 0.004 },
+		flutter: { kind: 'blade', amplitude: 0.006, frequency: 0.8 },
 	},
 	lod: {
 		nearFoliage: 'merged',
@@ -140,13 +140,13 @@ export const record: Species = {
 		shadowLevel: 1,
 		budget: {
 			kitBytes: { low: 40_000, medium: 65_000, high: 70_000, ultra: 125_000 },
-			// The densest variant's season sets each tier: 0.60, 1.46, 1.67 and 3.59 MB with its
+			// The densest variant's season sets each tier: 0.60, 1.42, 1.62 and 3.45 MB with its
 			// flower scapes standing. Each cap sits just above its figure, under the owner's.
-			variantBytes: { low: 600_000, medium: 1_470_000, high: 1_670_000, ultra: 3_600_000 },
-			// The densest variant's nearest level measures 72,576 triangles.
-			lod0Triangles: 78_000,
-			// The first card level measures 9,810 triangles and the second 3,060.
-			lod1Triangles: 10_000,
+			variantBytes: { low: 600_000, medium: 1_430_000, high: 1_640_000, ultra: 3_460_000 },
+			// The densest variant's nearest level measures 70,380 triangles.
+			lod0Triangles: 75_000,
+			// The first card level measures 9,540 triangles and the second 3,060.
+			lod1Triangles: 9_600,
 			lod2Triangles: 3_100,
 			downloadBytes: 350_000,
 			downloadHalfBytes: 120_000,
