@@ -19,22 +19,25 @@ import { MeshWriter, SURFACE_LEAF, SURFACE_STEM } from './writer';
 const SIDES: Readonly<Record<Detail, number>> = { low: 3, medium: 3, high: 4, ultra: 6 };
 
 /** The scale pairs along a cord, by tier: a close view shows the shingled scales. */
-const SCALE_STEPS: Readonly<Record<Detail, number>> = { low: 4, medium: 5, high: 7, ultra: 9 };
+const SCALE_STEPS: Readonly<Record<Detail, number>> = { low: 6, medium: 8, high: 12, ultra: 12 };
 
 /** A scale's width in metres. */
-const SCALE_WIDTH = 0.002;
+const SCALE_WIDTH = 0.0013;
 
 /** The share of the gap to the next scale that one scale covers, so neighbours overlap as shingles. */
-const SCALE_REACH = 1.45;
+const SCALE_REACH = 2.3;
 
 /** The longest scale in metres: the species' scale is a couple of millimetres. */
-const SCALE_LENGTH = 0.003;
+const SCALE_LENGTH = 0.005;
 
 /** Degrees a scale stands out from the cord. */
-const SCALE_TILT = 12;
+const SCALE_TILT = 30;
 
 /** The cord's wood as a share of the record's radius, so the scales stand proud of it. */
-const CORD_WOOD = 0.6;
+const CORD_WOOD = 0.5;
+
+/** Side cords a spray's own cord carries. */
+const SPRAY_CHILDREN = 1;
 
 /** Degrees a side cord leaves its parent at. */
 const CHILD_ANGLE = 54;
@@ -80,9 +83,9 @@ interface CordNode {
 }
 
 /**
- * Writes one cord: a thin woody axis with its scales standing along it in opposite pairs, each pair
- * turned a quarter from the last, as the species' shoot photographs show. Returns where the cord
- * ends and which way it runs.
+ * Writes one cord: a thin woody axis with its scales standing along it in two ranks on opposite
+ * sides, each scale's face turned to the spray's upper side, so the cord reads as a flattened frond
+ * with the rachis showing between the ranks. Returns where the cord ends and which way it runs.
  *
  * @param mesh The writer.
  * @param cordShape The cord.
@@ -101,7 +104,7 @@ function cord(
 	detail: Detail,
 ): { at: Vector3; direction: Vector3 } {
 	const steps = SCALE_STEPS[detail];
-	const bend = radians(3 + (cordShape.phase % 5));
+	const bend = radians(2 + (cordShape.phase % 3));
 	const surface = dead ? SURFACE_STEM : SURFACE_LEAF;
 	let at: Vector3 = [...cordShape.base];
 	let direction: Vector3 = [...cordShape.direction];
@@ -188,15 +191,19 @@ function cord(
 	const lastRing = firsts[steps] as number;
 	for (let j = 0; j < sides; j++) mesh.indices.push(lastRing + j, lastRing + j + 1, tip);
 
-	// The scales: an opposite pair at each node, the next pair turned a quarter, each leaf a
-	// pointed plate pressed against the cord and overlapping the pair beyond it.
+	// The scales: one plate at each node, the next node's on the opposite side, so the two ranks
+	// together read as a flattened frond with the rachis showing between them. Every plate's face
+	// looks along the spray's own upper side, so a viewer sees the scales rather than their edges.
 	const half = SCALE_WIDTH / 2;
 	const tilt = radians(SCALE_TILT);
 	for (let i = 0; i < steps; i++) {
 		const node = nodes[i] as CordNode;
 		const next = nodes[i + 1] as CordNode;
 		const step = next.along - node.along;
-		const length = Math.min(SCALE_LENGTH, step * SCALE_REACH);
+		// The last scale stops at the cord's tip rather than running past it, so a spray's height is
+		// the length the record asks for.
+		const remaining = cordShape.length - node.along;
+		const length = Math.min(SCALE_LENGTH, step * SCALE_REACH, remaining + step * 0.25);
 		const middle = length * 0.45;
 		const axis = normalize3([
 			next.at[0] - node.at[0],
@@ -205,101 +212,93 @@ function cord(
 		]);
 		const second = cross3(node.direction, node.across, [0, 0, 0]);
 		normalize3(second);
-		const turn = (i % 2) * (Math.PI / 2);
-		for (let k = 0; k < 2; k++) {
-			const azimuth = turn + k * Math.PI;
-			const radial = normalize3([
-				node.across[0] * cos(azimuth) + second[0] * sin(azimuth),
-				node.across[1] * cos(azimuth) + second[1] * sin(azimuth),
-				node.across[2] * cos(azimuth) + second[2] * sin(azimuth),
-			]);
-			const long = normalize3([
-				axis[0] * cos(tilt) + radial[0] * sin(tilt),
-				axis[1] * cos(tilt) + radial[1] * sin(tilt),
-				axis[2] * cos(tilt) + radial[2] * sin(tilt),
-			]);
-			const wide = normalize3(cross3(radial, long, [0, 0, 0]));
-			const face = cross3(long, wide, [0, 0, 0]);
-			normalize3(face);
-			if (face[0] * radial[0] + face[1] * radial[1] + face[2] * radial[2] < 0) {
-				face[0] = -face[0];
-				face[1] = -face[1];
-				face[2] = -face[2];
-			}
-			const base: Vector3 = [
-				node.at[0] + radial[0] * node.radius * CORD_WOOD,
-				node.at[1] + radial[1] * node.radius * CORD_WOOD,
-				node.at[2] + radial[2] * node.radius * CORD_WOOD,
-			];
-			const point = (along: number, side: number, out = 0): Vector3 => [
-				base[0] + long[0] * along + wide[0] * side + radial[0] * out,
-				base[1] + long[1] * along + wide[1] * side + radial[1] * out,
-				base[2] + long[2] * along + wide[2] * side + radial[2] * out,
-			];
-			const uv = (side: number, row: number): readonly [number, number] => [
-				0.5 + (side / SCALE_WIDTH) * UV_WIDTH,
-				span.base + row * (span.tip - span.base),
-			];
-			// A scale is broad and rounded over its own middle, so a cord reads as a shingled bed
-			// rather than as flat blades.
-			const bulge = half * 0.35;
-			const shoulder = length * 0.75;
-			const proud: Vector3 = normalize3([
-				face[0] + radial[0] * 0.6,
-				face[1] + radial[1] * 0.6,
-				face[2] + radial[2] * 0.6,
-			]);
-			const b0 = mesh.vertex(
-				point(0, -half * 0.5),
-				face,
-				uv(-half * 0.5, 0),
-				[0, 0],
-				[0, 0, surface, 255],
-			);
-			const b1 = mesh.vertex(
-				point(0, half * 0.5),
-				face,
-				uv(half * 0.5, 0),
-				[0, 0],
-				[0, 0, surface, 255],
-			);
-			const m1 = mesh.vertex(
-				point(middle, half, bulge),
-				proud,
-				uv(half, 0.5),
-				[middle, half],
-				[0, 0, surface, 255],
-			);
-			const m0 = mesh.vertex(
-				point(middle, -half, bulge),
-				proud,
-				uv(-half, 0.5),
-				[middle, -half],
-				[0, 0, surface, 255],
-			);
-			const s1 = mesh.vertex(
-				point(shoulder, half * 0.8, bulge * 0.7),
-				proud,
-				uv(half * 0.8, 0.8),
-				[shoulder, half * 0.8],
-				[0, 0, surface, 255],
-			);
-			const s0 = mesh.vertex(
-				point(shoulder, -half * 0.8, bulge * 0.7),
-				proud,
-				uv(-half * 0.8, 0.8),
-				[shoulder, -half * 0.8],
-				[0, 0, surface, 255],
-			);
-			const leafTip = mesh.vertex(
-				point(length, 0, bulge * 0.3),
-				face,
-				uv(0, 1),
-				[length, 0],
-				[0, 0, surface, 255],
-			);
-			mesh.indices.push(b0, b1, m1, b0, m1, m0, m0, m1, s1, m0, s1, s0, s0, s1, leafTip);
-		}
+		// The frond's own face: the upper side of the spray, kept the same way up along the cord.
+		const face: Vector3 = second[2] > 0 ? second : [-second[0], -second[1], -second[2]];
+		const side = i % 2 === 0 ? 1 : -1;
+		const radial = normalize3([
+			node.across[0] * side,
+			node.across[1] * side,
+			node.across[2] * side,
+		]);
+		const long = normalize3([
+			axis[0] * cos(tilt) + radial[0] * sin(tilt),
+			axis[1] * cos(tilt) + radial[1] * sin(tilt),
+			axis[2] * cos(tilt) + radial[2] * sin(tilt),
+		]);
+		const wide = normalize3(cross3(long, face, [0, 0, 0]));
+		const base: Vector3 = [
+			node.at[0] + radial[0] * node.radius * CORD_WOOD,
+			node.at[1] + radial[1] * node.radius * CORD_WOOD,
+			node.at[2] + radial[2] * node.radius * CORD_WOOD,
+		];
+		const point = (along: number, width: number, out = 0): Vector3 => [
+			base[0] + long[0] * along + wide[0] * width + face[0] * out,
+			base[1] + long[1] * along + wide[1] * width + face[1] * out,
+			base[2] + long[2] * along + wide[2] * width + face[2] * out,
+		];
+		const uv = (width: number, row: number): readonly [number, number] => [
+			0.5 + (width / SCALE_WIDTH) * UV_WIDTH,
+			span.base + row * (span.tip - span.base),
+		];
+		// A scale is broad and nearly flat, raised a little over its middle, so each rank reads as a
+		// bed of overlapping scales.
+		const bulge = half * 0.12;
+		const shoulder = length * 0.75;
+		const proud: Vector3 = normalize3([
+			face[0] + radial[0] * 0.5,
+			face[1] + radial[1] * 0.5,
+			face[2] + radial[2] * 0.5,
+		]);
+		const b0 = mesh.vertex(
+			point(0, -half * 0.8),
+			face,
+			uv(-half * 0.8, 0),
+			[0, 0],
+			[0, 0, surface, 255],
+		);
+		const b1 = mesh.vertex(
+			point(0, half * 0.8),
+			face,
+			uv(half * 0.8, 0),
+			[0, 0],
+			[0, 0, surface, 255],
+		);
+		const m1 = mesh.vertex(
+			point(middle, half, bulge),
+			proud,
+			uv(half, 0.5),
+			[middle, half],
+			[0, 0, surface, 255],
+		);
+		const m0 = mesh.vertex(
+			point(middle, -half, bulge),
+			proud,
+			uv(-half, 0.5),
+			[middle, -half],
+			[0, 0, surface, 255],
+		);
+		const s1 = mesh.vertex(
+			point(shoulder, half * 0.8, bulge * 0.7),
+			proud,
+			uv(half * 0.8, 0.8),
+			[shoulder, half * 0.8],
+			[0, 0, surface, 255],
+		);
+		const s0 = mesh.vertex(
+			point(shoulder, -half * 0.8, bulge * 0.7),
+			proud,
+			uv(-half * 0.8, 0.8),
+			[shoulder, -half * 0.8],
+			[0, 0, surface, 255],
+		);
+		const leafTip = mesh.vertex(
+			point(length, 0, bulge * 0.3),
+			face,
+			uv(0, 1),
+			[length, 0],
+			[0, 0, surface, 255],
+		);
+		mesh.indices.push(b0, b1, m1, b0, m1, m0, m0, m1, s1, m0, s1, s0, s0, s1, leafTip);
 	}
 	return { at: last.at, direction: last.direction };
 }
@@ -337,7 +336,7 @@ function grow(
 	// The children stand round the parent. A flat spray keeps them in the plane the parent bends
 	// in, square to the bend's own side; the Italian cypress's sprays divide in every direction, so
 	// their pair turns anywhere round the parent.
-	const children = cordShape.level === 0 ? 2 : 1;
+	const children = cordShape.level === 0 ? SPRAY_CHILDREN : 1;
 	const flatten = Math.min(1, Math.max(0, spray.flatten));
 	const base =
 		Math.PI / 2 + (1 - flatten) * 2 * Math.PI * unitAt(0x5ca1f, meshIndex, cordShape.level);
@@ -426,8 +425,9 @@ export function sprayMesh(
 }
 
 /**
- * The scale-spray foliage kind's leaf builder: the finest cord, which the leaf close-ups draw, then
- * two divided sprays with their own turns, so the shoots vary.
+ * The scale-spray foliage kind's leaf builder: a spray is the leaf a shoot carries, so every mesh is
+ * a whole spray, its cords dividing in the record's own order. The close-ups frame the first, and
+ * the others carry turns of their own, so a shoot's sprays do not repeat.
  */
 export const builder: FoliageBuilder = {
 	leaves(record: Species, manifest: TextureManifest, detail: Detail): readonly PrototypeArrays[] {
@@ -436,8 +436,7 @@ export const builder: FoliageBuilder = {
 			throw new Error(`@null3d/vegetation: the scale-spray builder got '${foliage.kind}' foliage`);
 		const spray = foliage.spray;
 		return [
-			// One cord, the unit that a scale leaf clothes and the leaf close-ups frame.
-			sprayMesh({ ...spray, orders: 1 }, manifest, detail, 0),
+			sprayMesh(spray, manifest, detail, 0),
 			...Array.from({ length: MESHES - 1 }, (_, index) =>
 				sprayMesh(spray, manifest, detail, index + 1),
 			),

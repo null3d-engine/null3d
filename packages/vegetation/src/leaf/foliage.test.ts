@@ -139,7 +139,7 @@ describe('the scale spray', () => {
 			const mesh = sprayMesh(SPRAY, OAK_MANIFEST, detail);
 			const triangles = mesh.indices.length / 3;
 			expect(triangles).toBeGreaterThan(10);
-			expect(triangles).toBeLessThan(800);
+			expect(triangles).toBeLessThan(900);
 			// The first cord runs a segment, and the child cords carry the spray above it.
 			expect(top(mesh.positions)).toBeGreaterThan(SPRAY.segment);
 			expect(top(mesh.positions)).toBeLessThan(SPRAY.segment * 2);
@@ -176,15 +176,12 @@ describe('the scale spray', () => {
 		const leaves = sprayBuilder.leaves(record, OAK_MANIFEST, 'high');
 		expect(leaves.length).toBe(3);
 		expect(new Set(leaves.map((leaf) => leaf.positions.join(','))).size).toBe(3);
-		// The first is one cord, which the leaf close-ups frame, and the others are sprays above it.
-		expect(top((leaves[0] as { positions: Float32Array }).positions)).toBeGreaterThanOrEqual(
-			SPRAY.segment,
-		);
+		// Every leaf is a whole spray: its first cord runs a segment and its side cords carry the
+		// spray above it, which is the frond the leaf close-ups frame.
+		for (const leaf of leaves)
+			expect(top((leaf as { positions: Float32Array }).positions)).toBeGreaterThan(SPRAY.segment);
 		expect(top((leaves[0] as { positions: Float32Array }).positions)).toBeLessThan(
-			SPRAY.segment * 1.1,
-		);
-		expect(top((leaves[1] as { positions: Float32Array }).positions)).toBeGreaterThan(
-			SPRAY.segment,
+			SPRAY.segment * 2,
 		);
 	});
 });
