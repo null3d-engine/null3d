@@ -23,7 +23,7 @@ export const record: Species = {
 	growth: {
 		model: 'tuft',
 		// Still 04's overhead view and still 07's crown show a dense tussock of many shoots.
-		shoots: { mean: 46, spread: 6 },
+		shoots: { mean: 80, spread: 8 },
 		// Still 07 and 09: the shoots rise from one short thick crown, a little over 20 cm across.
 		base: 0.11,
 		// Still 02: the outer shoots lean away from the crown while the middle ones stand upright.
@@ -36,7 +36,7 @@ export const record: Species = {
 		// Stills 08 and 23: a sedge's leaves leave their shoot in three ranks.
 		ranks: 3,
 		// Still 07: the brown sheaths stand 8 to 12 cm under the lowest blades.
-		sheath: { mean: 0.05, spread: 0.012 },
+		sheath: { mean: 0.06, spread: 0.012 },
 		// Still 07: each shoot's sheath bundle is about 1.5 cm across.
 		sheathRadius: 0.008,
 		// Still 02: the youngest blades stand nearly upright and the oldest arch out and over.
@@ -56,12 +56,12 @@ export const record: Species = {
 			count: { mean: 18, spread: 4 },
 			kind: 'spike',
 			// Still 17: the stems stand about 30 cm above the leaf mound at their highest point.
-			height: { mean: 1.8, spread: 0.2 },
+			height: { mean: 1.6, spread: 0.18 },
 			// Still 16: the solid three-angled stem is about 5 mm across.
-			radius: 0.0026,
+			radius: 0.003,
 			sides: 3,
 			// Still 02: each stem bows over through a quarter turn at the top.
-			bow: { mean: 95, spread: 15 },
+			bow: { mean: 100, spread: 15 },
 			// Stills 19 and 20: the spikes stand in flower through summer and stay brown into winter.
 			seasons: ['blossom', 'summer', 'autumn', 'winter'],
 			spikes: {
@@ -79,9 +79,9 @@ export const record: Species = {
 		kind: 'grass-blade',
 		blade: {
 			// The fact sheet's 0.5 to 1 m blade, as stills 11 and 21 show it.
-			length: { mean: 0.92, spread: 0.08 },
+			length: { mean: 1, spread: 0.08 },
 			// The fact sheet's 1.5 to 2 cm width.
-			width: 0.018,
+			width: 0.02,
 			// Still 12: the blade is widest in its lower third and narrows toward the long tip.
 			profile: [
 				[0, 0.5],
@@ -98,14 +98,14 @@ export const record: Species = {
 			// Still 12: the upper face twists part way along the blade.
 			twist: 35,
 			// Still 02: each blade arches from upright to hanging at its tip.
-			arch: { mean: 95, spread: 15 },
+			arch: { mean: 90, spread: 15 },
 			// Still 10: a few tips brown at the edge of the tuft.
 			dryTip: 0.05,
 			optics: {
 				// Still 12's glossy yellow-green upper face.
-				reflectance: [0.1, 0.21, 0.035],
+				reflectance: [0.07, 0.15, 0.012],
 				// Still 13's matt glaucous blue-green underside.
-				reflectanceBack: [0.14, 0.2, 0.15],
+				reflectanceBack: [0.1, 0.14, 0.11],
 				transmittance: [0.07, 0.15, 0.03],
 				roughness: [0.3, 0.7],
 			},
@@ -118,7 +118,7 @@ export const record: Species = {
 			at: 'flower',
 			share: 1,
 			seasons: ['blossom', 'summer'],
-			shape: { catkin: { length: 0.12, radius: 0.0025 } },
+			shape: { catkin: { length: 0.13, radius: 0.0026 } },
 			colour: [0.13, 0.2, 0.06],
 			hang: 180,
 		},
@@ -128,7 +128,7 @@ export const record: Species = {
 			at: 'flower',
 			share: 1,
 			seasons: ['autumn', 'winter'],
-			shape: { catkin: { length: 0.12, radius: 0.0025 } },
+			shape: { catkin: { length: 0.13, radius: 0.0026 } },
 			colour: [0.17, 0.11, 0.05],
 			hang: 180,
 		},
@@ -166,11 +166,12 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The measured kit and variant figures, with room above them under the ground plants' caps.
-			kitBytes: { low: 1_200_000, medium: 1_200_000, high: 1_200_000, ultra: 1_200_000 },
-			variantBytes: { low: 700_000, medium: 750_000, high: 800_000, ultra: 1_000_000 },
-			lod0Triangles: 200_000,
-			lod1Triangles: 30_000,
+			// Measured at seed 11 over the first four variants: the kit holds 33 to 37 KB, and a
+			// variant 0.93, 1.05, 1.19 and 1.78 MB from Low to Ultra.
+			kitBytes: { low: 100_000, medium: 100_000, high: 100_000, ultra: 100_000 },
+			variantBytes: { low: 1_000_000, medium: 1_200_000, high: 1_400_000, ultra: 2_000_000 },
+			lod0Triangles: 70_000,
+			lod1Triangles: 20_000,
 			lod2Triangles: 8_000,
 			downloadBytes: 350_000,
 			downloadHalfBytes: 120_000,
