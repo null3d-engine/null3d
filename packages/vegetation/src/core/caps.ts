@@ -64,12 +64,23 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		// tier rather than make the crown give up a prototype for it. The beech's own cluster cutting
 		// then added a second class, which takes the low tier to 3.29: the cap rises to 3.4 so the
 		// species can keep the crown it won rather than give up a prototype for the cutting.
-		kitBytes: { low: 3.4 * MB, medium: 4 * MB, high: 7.1 * MB, ultra: 13 * MB },
+		// The English elm's crown needs six prototypes and a cut shoot of nine leaves along a metre
+		// with two side shoots, which measures 3.35, 4.99, 8.13 and 14.37 MB: a lighter cut shoot
+		// fits the old caps and is sparser than its photograph. The owner raised the upper tiers
+		// rather than let the budget choose the cutting.
+		// The silver birch's crown needs six shoot prototypes and a cutting class of its own, and
+		// its medium kit sits on the old four-megabyte ceiling: the owner raised it so the species
+		// keeps the crown it won rather than give up a prototype for it.
+		kitBytes: { low: 3.4 * MB, medium: 5 * MB, high: 8.2 * MB, ultra: 14.5 * MB },
 		// The holm oak's densest variant, with a little room above it: 16.94, 17.05, 17.26 and
 		// 17.61 MB. An evergreen carries many small leaves on dense shoots, and the clearance packs
 		// the limbs into fuller crowns, so the evergreen rather than the oak now sets this cap. The
 		// oak's own largest variant measures 11.02 MB at high.
-		variantBytes: { low: 17 * MB, medium: 17.1 * MB, high: 17.3 * MB, ultra: 17.7 * MB },
+		// The common alder's rim needs about a quarter more shoots than its variant could hold: bytes
+		// run at 3.6 KB a shoot, so a rim of five pieces against a photograph's one is a budget
+		// question rather than a growth one. The owner raised the cap rather than let the budget
+		// choose the species' crown; the holm oak's figures this cap replaced were 16.94 to 17.61.
+		variantBytes: { low: 20 * MB, medium: 20.1 * MB, high: 20.3 * MB, ultra: 20.7 * MB },
 		// The pedunculate oak's largest of three variants, with about 15 per cent to spare: 7.72, 9.85,
 		// 13.05 and 17.80 MB. Close-up review needs every finest macro axis as real wood, and a page
 		// that needs fewer triangles grows a coarser plant. A thicker bole costs radial segments on
