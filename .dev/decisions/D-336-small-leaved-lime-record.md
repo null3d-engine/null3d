@@ -165,6 +165,8 @@ run's own figures, in the order of value the lead set.
 | Fault | Row | Figure | What it is |
 | --- | --- | --- | --- |
 | The upper crown is short of its photograph | 1 | crown boxes 240, 306 and 343 pixels tall against 295, 387 and 391 | The largest fault left: the crown's box is a fifth to a quarter short in height at every whole view, and its width is 0.93, 1.08 and 0.97 against 0.80, 0.755 and 0.734 |
+
+The crown's shape was attacked with four levers, and none wins the row without losing another. Steeper branches, 42 to 52 degrees, bring the boxes to 0.85, 0.88 and 0.88 but open the distant view's sky to 0.097 and the profile's to 0.115, past the profile's 0.112 ceiling, while the silhouette's floor of 0.0866 needs the crown denser than the profile's ceiling allows. Tapering the hull's top rows widens the plant to 0.974 of its height and fails all three gaps. A lower crown floor changes nothing, because the fitted envelope's own base is the floor. The crown's roundness sweeps the boxes' spread to 0.93, 1.08 and 0.97, so the row is left to the reviewer with these figures rather than a fourth guess.
 | The close cluster carries too few leaves | 5 | five leaves against the reference's eight | A leaf count, not a shape: a blob count of the reference cluster gives eight, so the deficit is three. Its turn is 142 wide against 85 |
 | The young bark's colour | 8 | 15.95 | A colour fault on the young layer, which a per-zone linear tint in the texture source can move without touching the relief. The bark texture's surface is 1.38 and passes |
 | The flower and sprout views frame the wrong subject | 12 | 19 and 20 frame a twig and a branch | Framing, not growth: their slots aim at wood where the photographs show a flower cluster and a stool's sprouts |
