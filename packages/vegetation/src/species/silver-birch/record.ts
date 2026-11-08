@@ -224,14 +224,15 @@ export const record: Species = {
 				droop: 55,
 			},
 			{
-				// Still 22: a short thin twig arching over, its alternate leaves along the run and spaced
-				// apart, and a side shoot at the joint below its newest year.
+				// Still 23: a short shoot of six large leaves spaced along its run, as its photograph shows
+				// it, and a side shoot at the joint below its newest year. The same class draws the close
+				// cluster, whose photograph is as airy.
 				name: 'cut',
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
 				length: { mean: 0.35, spread: 0.04 },
-				nodes: { mean: 10, spread: 0.6 },
+				nodes: { mean: 6, spread: 0.5 },
 				leafYears: 2,
 				internode: ALTERNATE,
 				stem: { radius: [0.004, 0.0018] },
@@ -239,8 +240,8 @@ export const record: Species = {
 				lateralGap: 0.4,
 				bend: { length: 0.05, angle: 20 },
 				leafScale: [
-					[0, 0.85],
-					[1, 1],
+					[0, 1.1],
+					[1, 1.3],
 				],
 				leafAngle: [
 					[0, 70],
@@ -438,10 +439,10 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The largest of the species and its three forms: 3.39, 6.04, 10.59 and 19.25 MB. The kit
+			// The largest of the species and its three forms: 3.38, 5.79, 9.92 and 17.78 MB. The kit
 			// holds the long leafy shoots the fine leaf needs and three cutting classes sized to their
-			// photographs, so it sits close to the tree caps' low and medium tiers.
-			kitBytes: { low: 3_450_000, medium: 6_100_000, high: 10_700_000, ultra: 19_400_000 },
+			// photographs.
+			kitBytes: { low: 3_450_000, medium: 5_900_000, high: 10_100_000, ultra: 18_100_000 },
 			// The largest variant of the species and its forms, the woodland's: 6.94, 6.97, 7.02 and
 			// 7.12 MB.
 			variantBytes: { low: 7_100_000, medium: 7_100_000, high: 7_200_000, ultra: 7_300_000 },
