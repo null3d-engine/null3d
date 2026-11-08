@@ -446,15 +446,15 @@ export function growArchitectural(input: GrowInput): MacroSkeleton {
 		}
 		const grown = axes[axis] as GrownAxis;
 		if (grown.nodes.length < 2) {
-			// An axis the outline leaves no room for draws one short piece, so its join still shows.
-			pushNode(
-				axis,
+			// An axis whose parent stands on the outline may take no step out. It keeps the one node
+			// that the cap placed: a short piece added beyond it would stand outside the outline.
+			const half: Vector3 = [
 				from[0] + direction[0] * step * 0.5,
 				from[1] + direction[1] * step * 0.5,
 				from[2] + direction[2] * step * 0.5,
-				direction,
-				0,
-			);
+			];
+			if (!volume || volume.room(half[0], half[1], half[2]) >= 0)
+				pushNode(axis, half[0], half[1], half[2], direction, 0);
 		}
 		const nodes = (axes[axis] as GrownAxis).nodes;
 
