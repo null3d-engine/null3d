@@ -6,7 +6,8 @@ import { AXIS_STEM, BUD_LATERAL } from '../core/graph';
 import { hashBytes, unitAt } from '../core/hash';
 import { record } from '../species/scots-pine/record';
 import { growArchitectural } from './architectural';
-import { envelopeVolume } from './envelope';
+import { envelopeVolume, insetVolume, smoothedVolume } from './envelope';
+import { shootReach } from './self-organizing';
 
 /** The pine grown at one seed and variant. */
 function grown(seed = 11, variant = 0): MacroSkeleton {
@@ -91,10 +92,16 @@ describe('the architectural grower', () => {
 		expect(record.envelope).toBeDefined();
 		// The grower turns the outline by the variant's own angle, which is its second hash purpose.
 		const turn = unitAt(11, record.seedSalt >>> 0, 0, 2) * 2 * Math.PI;
-		const volume = envelopeVolume(
-			record.envelope as NonNullable<typeof record.envelope>,
-			skeleton.height,
-			turn,
+		const volume = smoothedVolume(
+			insetVolume(
+				envelopeVolume(
+					record.envelope as NonNullable<typeof record.envelope>,
+					skeleton.height,
+					turn,
+				),
+				shootReach(record) * 0.6,
+			),
+			0.5,
 		);
 		for (let n = 0; n < skeleton.nodeCount; n++) {
 			const axis = skeleton.axisOf[n] as number;
@@ -108,7 +115,7 @@ describe('the architectural grower', () => {
 				skeleton.position[n * 3 + 2] as number,
 			);
 			// A node on the outline sits at the boundary, within the step that found it.
-			expect(room).toBeGreaterThan(-0.15);
+			expect(room).toBeGreaterThan(-0.1);
 		}
 	});
 
