@@ -32,7 +32,7 @@ const GRID: Readonly<Record<MeshLevel, { readonly rows: number; readonly columns
 const PINNA_SHARE: Readonly<Record<MeshLevel, number>> = { 0: 1, 1: 0.3, 2: 0.1 };
 
 /** The most leaflets that stand in one group at a rachis place. */
-const GROUP = 2;
+const GROUP = 1;
 /** Degrees that a group member's angle departs from its place's. */
 const GROUP_ANGLE = 16;
 /** The share of a frond's length that a group member stands along from its place's. */
@@ -42,11 +42,12 @@ const WIDTH_SHARE = 1;
 /** Degrees the planes of a V-section frond fan to either side of the rachis's own upper face. */
 const PLANE_FAN = 62;
 /**
- * How far inside the leaflet texture's drawn edge the ribbon samples it. The ribbon's own columns
- * stand on the leaflet's silhouette, where the picture's alpha runs out; a sample there reads as
- * nothing after a mip, so the colour comes from inside the blade and the geometry gives the shape.
+ * The texture column the ribbon samples. Its own columns stand on the leaflet's silhouette, where
+ * the picture's alpha runs out and a coarse mip averages it to nothing, so a crown drawn at any
+ * distance would read as bare rachises. The midrib is solid along the whole blade: the colour comes
+ * from there, and the ribbon's own columns give the shape.
  */
-const INNER_SAMPLE = 0.5;
+const SAMPLE_U = 0.5;
 /** The share of a leaflet's length and width that a spine keeps. */
 const SPINE_LENGTH = 0.42;
 const SPINE_WIDTH = 0.16;
@@ -247,7 +248,7 @@ function writeLeaflet(
 			normalAt[0] = normal[0] * cos(tilt) + across[0] * sin(tilt);
 			normalAt[1] = normal[1] * cos(tilt) + across[1] * sin(tilt);
 			normalAt[2] = normal[2] * cos(tilt) + across[2] * sin(tilt);
-			const u = 0.5 + (uLow + (uHigh - uLow) * column - 0.5) * INNER_SAMPLE;
+			const u = SAMPLE_U;
 			mesh.vertex(at, normalAt, [u, v], [second[0], second[1]], colour(at));
 		}
 	}

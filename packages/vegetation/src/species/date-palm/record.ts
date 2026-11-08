@@ -69,10 +69,9 @@ export const record: Species = {
 			],
 			twist: 6,
 			pinnae: {
-				// Still 09: a hundred leaflets a side, in groups, the longest near the middle of the
-				// rachis and shortest at the tip. The count gives the places; each place carries a
-				// group, so the frond holds twice this many.
-				count: { mean: 80, spread: 6 },
+				// Still 09: a hundred and twenty leaflets a side, about one every five centimetres,
+				// the longest near the middle of the rachis and the shortest at the tip.
+				count: { mean: 120, spread: 8 },
 				length: [
 					[0, 0.05],
 					[0.3, 0.052],
