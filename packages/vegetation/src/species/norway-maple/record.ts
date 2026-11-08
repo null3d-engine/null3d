@@ -80,9 +80,10 @@ export const record: Species = {
 			wander: 12,
 		},
 		// Stills 07 and 17: a short straight bole divides into three or four limbs a fifth of the way
-		// up, the first running on at a slight lean. The fitted outline holds no room below its lowest
-		// row, so the fork stands at that row rather than the photographs' two and a half metres.
-		divide: { at: 0.21, count: 4, angle: 48, lean: 22, plumb: 4 },
+		// up, the first running on at a slight lean. The wide limbs spread round the dome, as stills
+		// 01 and 02's round crowns ask. The fitted outline holds no room below its lowest row, so the
+		// fork stands at that row rather than the photographs' two and a half metres.
+		divide: { at: 0.21, count: 4, angle: 56, lean: 22, plumb: 4 },
 		// Stills 01 and 02: the crown's lit top and rim carry its fullest shoots.
 		light: { apical: 1, lateral: 1, shadow: [5, 0.15, 2], cells: 96, surface: true },
 		// Stills 05 and 06: the limbs run out level and their ends turn up a little, so the shoots
@@ -424,9 +425,9 @@ export const record: Species = {
 			// classes and the leaf's palmate blade among them; each cap sits above its figure and the
 			// medium one stays under the owner's four-megabyte ceiling.
 			kitBytes: { low: 3_300_000, medium: 3_980_000, high: 5_450_000, ultra: 8_250_000 },
-			// The crown's dense shoot dial puts 5,437 rosettes on the first variant, which measures
-			// 12.43, 12.50, 12.58 and 12.67 MB; each cap sits above it.
-			variantBytes: { low: 12_450_000, medium: 12_550_000, high: 12_650_000, ultra: 12_750_000 },
+			// The crown's dense shoot dial puts 6,121 rosettes on the first variant, which measures
+			// 13.85, 13.91, 13.98 and 14.08 MB; each cap sits above it.
+			variantBytes: { low: 13_900_000, medium: 13_950_000, high: 14_020_000, ultra: 14_120_000 },
 			lod0Triangles: 2_800_000,
 			lod1Triangles: 150_000,
 			lod2Triangles: 42_000,
