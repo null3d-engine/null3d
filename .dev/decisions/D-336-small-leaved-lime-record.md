@@ -160,11 +160,12 @@ Rejected:
   branch needed 16.26, then 8.49, then 6.98; row 10 stays a stated limit on the turns, with the
   light tuned as far as the page allows.
 - The bark close views are read masked, which drops every patch pixel close to the picture's own
-  background before the nine-patch mean. The base keeps its sign: our bark 2.2 dark, 3.6 short of
-  green and 6.1 short of yellow against its photograph. The mid-trunk fills its frame and is the
-  control, matching its photograph at 48.7 light either way. The limb's sign flips: unmasked it read
-  lighter than its photograph, masked it reads 8.8 dark, so the trimmed backdrop was carrying that
-  figure. The young bark stays 9.8.
+  background before the nine-patch mean. The steps at the clean run are: base 4.9 against 7.9
+  unmasked, mid-trunk **1.1** either way (it fills its frame and is the control), limb **9.2** against
+  3.0 unmasked, young bark 9.8 either way. The limb is the one the mask unmasked: it read as a pass
+  on the backdrop and reads 9.2 with the backdrop trimmed, its bark 8.8 light-steps dark where the
+  photograph is 49.1. So no bark figure of this species passed on an unmasked reading, and row 8
+  stays open with the mid-trunk the only close view inside its mark.
 - The clean run `lime-full-11` at `70181eaba` has every still inside the three-step colour mark:
   distant 1.8, profile 1.6, leaf cluster 0.2, flower spray 0.5, branch studio 2.9, sub-branch studio
   2.4 and leaf-cluster studio 1.6, with the turns at 4.22, 6.82, 6.98 and 7.46.
