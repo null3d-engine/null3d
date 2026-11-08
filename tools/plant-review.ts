@@ -342,14 +342,15 @@ function stillList<T extends { readonly file: string }>(stills: readonly T[]): r
 }
 
 /**
- * The slots a machine draws in: two. Three shared seven dev servers on a fourteen-core Mac and
- * pushed the load past thirty, so runs sat on their first page for minutes; one is safe but leaves
- * short tests waiting behind a full turn round. Two keeps the machine's load under ten and its
- * short rounds moving. A run takes one before
- * it starts drawing and gives it back when it is done, so no script has to know the rule.
- * `--no-slot` skips the wait for a run that is known to be alone.
+ * The slots a machine draws in: three. Seven shared dev servers on a fourteen-core Mac once pushed
+ * the load past thirty, so runs sat on their first page for minutes; one is safe but leaves short
+ * tests waiting behind a full turn round. Two held the load under ten while two draws worked. Three
+ * measured the load at nine with two draws working and a dozen rounds queued, so the third lane
+ * keeps a full round moving without a queue behind it. A run takes a slot before it starts drawing
+ * and gives it back when it is done, so no script has to know the rule. `--no-slot` skips the wait
+ * for a run that is known to be alone.
  */
-const DRAW_SLOTS = 2;
+const DRAW_SLOTS = 3;
 const DRAW_SLOT = '/tmp/null3d-plant-draw.slot-';
 /**
  * How long a slot that records no holder counts as taken: long enough for the oldest running

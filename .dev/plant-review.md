@@ -52,7 +52,9 @@ Row 11 is judged against a built neighbor, named in the verdict. A species with 
 states that instead of passing.
 
 Row 6 is read from the sky gap: the share of the crown's own box that shows background, measured on
-both pictures at each whole view. The reviewer writes the render's figure beside the reference's for
+both pictures at each whole view. A plant with no bare stem below its foliage, such as a sedge or a
+hosta, runs as wide at its foot as through its mound, so its crown's box is its whole box. The
+reviewer writes the render's figure beside the reference's for
 every whole view. The row passes when the render's sky gap is no more than five hundredths above its
 reference's and no more than two hundredths below it. The small allowance below covers the measure:
 a reference outline comes from color against a plain background and can lose its thinnest foliage.

@@ -272,8 +272,10 @@ export function speciesHeader(
 	const optics = foliageOptics(record);
 	const leaf = manifest.leaf;
 	if (optics) {
-		const upperMean = leaf?.mean.upper ?? optics.reflectance;
-		const lowerMean = leaf?.mean.lower ?? optics.reflectanceBack;
+		// A species with no leaf texture samples a white texel, so its mean is white: the texel times
+		// the scale then shows the record's own reflectance rather than a washed-out face.
+		const upperMean = leaf?.mean.upper ?? ([1, 1, 1] as const);
+		const lowerMean = leaf?.mean.lower ?? ([1, 1, 1] as const);
 		const upper = faceTerms(optics.reflectance, optics.transmittance, upperMean);
 		const lower = faceTerms(optics.reflectanceBack, optics.transmittance, lowerMean);
 		texel(header, HEADER.upper, [...upper.scale, optics.roughness[0]]);

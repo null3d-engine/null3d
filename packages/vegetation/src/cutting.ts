@@ -30,6 +30,7 @@ import type {
 	PinnaSpec,
 	ShootClass,
 	Species,
+	ThickLeaf,
 } from './core/record';
 import { DETAILS, type Detail, spreadMean, type Vec3 } from './core/types';
 import { foliage } from './leaf/kinds';
@@ -86,6 +87,12 @@ export const CUTTING_LENGTH: Readonly<Record<CuttingPart, number>> = {
 	cluster: 0.15,
 	leaf: 0.15,
 };
+
+/**
+ * The share of the blade's length that a pressed leaf keeps as its stalk where the record names
+ * none: a leaf picked from the crown shows a short piece of it under the blade.
+ */
+export const LEAF_CUT_PETIOLE = 0.12;
 
 /**
  * Steps of length match within which a piece counts as near the asked length, about a third either
@@ -232,6 +239,8 @@ interface Candidate {
 	/** Axes in its subtree, itself included, and the bud sites they carry in light enough for shoots. */
 	readonly axes: number;
 	readonly buds: number;
+	/** Its pipe radius at its first node, the thickness a piece's photograph shows. */
+	readonly thickness: number;
 }
 
 /**
@@ -302,15 +311,19 @@ function candidates(
 				light: (light[a] as number) / Math.max(1, nodes[a] as number),
 				axes: subtreeAxes[a] as number,
 				buds: subtreeBuds[a] as number,
+				thickness: skeleton.radius[axes.first[a] as number] as number,
 			});
 	const match = (c: Candidate) => Math.round(Math.abs(log(c.extent / length)) / MATCH_STEP);
 	const near = (c: Candidate) => (match(c) <= NEAR_STEPS ? 1 : 0);
 	const leafy = (c: Candidate) => (c.buds > 0 ? 1 : 0);
 	const divides = (c: Candidate) => (c.axes > 1 ? 1 : 0);
+	// A photograph of a piece shows a thick axis where it shows one at all, so a cut with no hinted
+	// order prefers the thickest axis among those near the asked length, before the closest match.
 	return out.sort(
 		(x, y) =>
 			leafy(y) - leafy(x) ||
 			near(y) - near(x) ||
+			y.thickness - x.thickness ||
 			divides(y) - divides(x) ||
 			match(x) - match(y) ||
 			y.light - x.light ||
@@ -748,23 +761,50 @@ function pressedFrondRecord(record: Species): Species | undefined {
 	return undefined;
 }
 
+/** A thick leaf's shape pressed flat: no cup, no curl and a flat margin. */
+function pressedThickShape(shape: ThickLeaf): ThickLeaf {
+	return { ...shape, cup: 0, curl: 0, wave: [0, shape.wave[1]] };
+}
+
 /**
  * The species' leaf meshes for a leaf cutting: the kit's own, or, where the piece or else the
- * record presses its leaf, the leaf built again pressed flat at the kit's tier.
+ * record presses its leaf, the leaf built again pressed flat at the kit's tier. A pressed thick leaf
+ * keeps a short piece of its stalk, as a leaf picked from the crown shows, and a species that grows
+ * its leaves on long stalks names the metres its pictures show.
  */
 function cutLeaves(kit: SpeciesKitData, press?: boolean): readonly PrototypeArrays[] {
 	const record = kit.record;
 	const leaf = record.foliage;
-	if (!(press ?? record.cuttings?.leaf?.pressed)) return kit.leaves;
-	if (leaf.kind === 'blade') {
-		const pressed: Species = { ...record, foliage: { ...leaf, leaf: pressedShape(leaf.leaf) } };
-		return foliage('blade').leaves(pressed, kit.manifest, kit.detail);
+	const flat = press ?? record.cuttings?.leaf?.pressed;
+	if (!flat) return kit.leaves;
+	if (leaf.kind === 'thick') {
+		const growth = record.growth;
+		const stalk = record.cuttings?.leaf?.petiole ?? LEAF_CUT_PETIOLE * spreadMean(leaf.leaf.length);
+		const pressed: Species = {
+			...record,
+			// The kit's leaf takes the stalk's length from the growth model, so a flat piece gives
+			// it the short stalk its picture shows in place of the crown's long one.
+			growth:
+				growth.model === 'rosette'
+					? {
+							...growth,
+							stalk: [
+								[0, stalk],
+								[1, stalk],
+							],
+						}
+					: growth,
+			foliage: { kind: 'thick', leaf: pressedThickShape(leaf.leaf) },
+		};
+		return foliage('thick').leaves(pressed, kit.manifest, kit.detail);
 	}
 	if (leaf.kind === 'frond') {
 		const pressed = pressedFrondRecord(record);
 		return pressed ? foliage('frond').leaves(pressed, kit.manifest, kit.detail) : kit.leaves;
 	}
-	return kit.leaves;
+	if (leaf.kind !== 'blade') return kit.leaves;
+	const pressedLeaf: Species = { ...record, foliage: { ...leaf, leaf: pressedShape(leaf.leaf) } };
+	return foliage('blade').leaves(pressedLeaf, kit.manifest, kit.detail);
 }
 
 /**

@@ -85,5 +85,27 @@
 	"08-limb-fork.png": {
 		"background": "studio-grey",
 		"sky": "#c6c2bd"
+	},
+	"21-branch-studio.png": {
+		"daylight": 1.7
+	},
+	"22-subbranch-studio.png": {
+		"daylight": 0.88,
+		"lamp": "#ebf9ff"
+	},
+	"23-leaf-cluster-studio.png": {
+		"daylight": 1.27,
+		"lamp": "#ebf9ff"
+	},
+	"branch-turntable.mp4": {
+		"daylight": 1.7
+	},
+	"leaf-cluster-turntable.mp4": {
+		"daylight": 1.27,
+		"lamp": "#ebf9ff"
+	},
+	"subbranch-turntable.mp4": {
+		"daylight": 0.88,
+		"lamp": "#ebf9ff"
 	}
 }
