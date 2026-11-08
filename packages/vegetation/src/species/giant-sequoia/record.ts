@@ -246,7 +246,10 @@ export const record: Species = {
 		flare: { amount: 0.25, height: 1.5 },
 		// The column itself widens strongly through its lowest tenth, as still 17 shows, and is
 		// nearly parallel above that.
-		taper: { amount: 0.8, height: 9 },
+		// The photographs give a flare of about 1.8 times the column at breast height and 2.3 at the
+		// ground, carried by the buttress lobes rather than by an even cone, so the taper keeps a
+		// third and each lobe swells the rest.
+		taper: { amount: 0.3, height: 9 },
 		buttress: {
 			lobes: { mean: 6, spread: 1 },
 			amount: 1,
