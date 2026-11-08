@@ -28,9 +28,9 @@ The Scots pine at seed 11, variant 0, grows 1 leader, 540 axes and about 6,400 b
 stands 19.14 m tall, and its crown base is at 0.52 of the height. The fitted envelope comes from 32 views of `pine-turntable.mp4`. Its own outlines overlap those
 views by 0.70 at their mean, so it stands as a cap rather than a target.
 
-The reference's twelve rows are measured in `pine-r24`. The whole views give a shape IoU of 0.39
-and 0.38. Their crown-box gap is 0.26 and 0.47 against the photographs' 0.19 and 0.26. Their leaf
-color difference is 6.5 and 11.8. The young form gives a shape IoU of 0.60. The close and bark views
+The reference's twelve rows are measured in `pine-r29`. The whole views give a shape IoU of 0.43
+and 0.43. Their crown-box gap is 0.31 and 0.41 against the photographs' 0.19 and 0.26. Their leaf
+color difference is 6.4 and 11.1. The young form gives a shape IoU of 0.60. The close and bark views
 and the rows that fail are listed in the species' review record.
 
 ## Look

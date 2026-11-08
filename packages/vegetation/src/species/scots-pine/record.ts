@@ -31,11 +31,11 @@ export const record: Species = {
 			// where the crown's plates lie closest.
 			kind: 'whorl',
 			spacing: [
-				[0, 1.6],
-				[0.5, 1.3],
-				[1, 0.9],
+				[0, 1.1],
+				[0.5, 0.95],
+				[1, 0.7],
 			],
-			perWhorl: { mean: 2, spread: 1 },
+			perWhorl: { mean: 3, spread: 1 },
 			between: 0.1,
 			// Stills 01 and 18: the lowest live limbs stand just under half the height, and the
 			// needle plates begin a little above them, so the crown's foliage fills the upper half.
@@ -58,10 +58,10 @@ export const record: Species = {
 				angle: [
 					[0, 90],
 					[0.5, 88],
-					[0.85, 82],
-					[1, 68],
+					[0.85, 86],
+					[1, 78],
 				],
-				density: 0.5,
+				density: 0.4,
 				arrangement: { kind: 'spiral', divergence: 137.5 },
 				flatten: 0,
 				sag: 0,
@@ -80,7 +80,7 @@ export const record: Species = {
 					[0, 72],
 					[1, 58],
 				],
-				density: 0.5,
+				density: 0.4,
 				arrangement: { kind: 'spiral', divergence: 137.5 },
 				flatten: 0.55,
 				sag: 3,
@@ -98,7 +98,7 @@ export const record: Species = {
 					[0, 62],
 					[1, 45],
 				],
-				density: 5.5,
+				density: 3.5,
 				arrangement: { kind: 'spiral', divergence: 137.5 },
 				flatten: 0.5,
 				sag: 2,
@@ -189,8 +189,8 @@ export const record: Species = {
 			// bare orange twig between them, and gather into dense plates at the crown's rim.
 			perMetre: [
 				[0, 12],
-				[0.5, 40],
-				[1, 75],
+				[0.5, 42],
+				[1, 80],
 			],
 			density: 1.1,
 			tipBias: 0.88,
@@ -243,8 +243,8 @@ export const record: Species = {
 		// Still 15: the grey-brown plated bark of the lower trunk changes to warm flaking scales at
 		// mid-trunk; stills 14 and 16 give each zone's figure.
 		zones: [
-			{ layer: 0, by: 'height', from: 0, to: 10.5, blend: 1.5 },
-			{ layer: 1, by: 'height', from: 10.5, to: 40, blend: 1.5 },
+			{ layer: 0, by: 'height', from: 0, to: 6.5, blend: 1.5 },
+			{ layer: 1, by: 'height', from: 6.5, to: 40, blend: 1.5 },
 		],
 		young: 0,
 		// Still 28: thin wood carries the orange-brown flaking bark of young branches.
@@ -334,7 +334,7 @@ export const record: Species = {
 		woodOrders: [2, 1],
 		// A brush's card stands a little larger than the shoots it pictures, so gaps between
 		// neighbouring brushes fall on needles rather than on sky.
-		cardGrow: 3.4,
+		cardGrow: 3.8,
 		// A card's twig is thinner than a pixel at a whole view, so the card draws a two-pixel stalk
 		// to the wood it grows from and runs it on to the foliage's centre.
 		cardStalk: 3,
