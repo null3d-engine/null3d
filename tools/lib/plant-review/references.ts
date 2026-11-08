@@ -163,6 +163,11 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			test: (n) => n.includes('clump-outside'),
 			slot: { view: 'trunk', framed: false },
 		},
+		{
+			// The spring spear is its own form of the plant, framed whole against the sky.
+			test: (n) => n.includes('new-shoot'),
+			slot: { view: 'whole', framed: true, background: 'sky-meadow' },
+		},
 		// A cut piece on a plain ground, framed as its photograph frames it: the photograph's piece
 		// sets the rows its top and its foot land on.
 		{ test: (n) => n.includes('subbranch-studio'), slot: { view: 'subbranch', framed: true } },

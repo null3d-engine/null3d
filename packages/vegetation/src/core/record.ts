@@ -1583,7 +1583,8 @@ export interface ExtraSpec {
 		| 'spike'
 		| 'thorn'
 		| 'spine-cluster'
-		| 'berry';
+		| 'berry'
+		| 'sheath';
 	/**
 	 * Which bud sites carry it: 'flower' takes the grower's flower sites (a head's spikelets,
 	 * florets or hanging spikes), 'stem-tip' the tip of each flowering stem.
@@ -1596,7 +1597,8 @@ export interface ExtraSpec {
 		| 'areole'
 		| 'crown-top'
 		| 'flower'
-		| 'stem-tip';
+		| 'stem-tip'
+		| 'culm-node';
 	/** Share of matching bud sites that carry one. */
 	readonly share: number;
 	/** How many stand at one site, 1 by default: an oak's acorns share a stalk in ones to threes. */

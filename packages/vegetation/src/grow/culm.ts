@@ -10,6 +10,7 @@
 import {
 	AXIS_CULM,
 	AXIS_LIMB,
+	BUD_DORMANT,
 	BUD_LATERAL,
 	BUD_TERMINAL,
 	type MacroSkeleton,
@@ -136,6 +137,8 @@ interface BudPlace {
 	readonly woodRadius: number;
 	/** Whether the bud ends its axis, where the shoot carries on the wood's own line. */
 	readonly terminal: boolean;
+	/** Whether the bud carries a sheath at a culm node rather than a leafy shoot. */
+	readonly dormant?: boolean;
 }
 
 /** Adds a branch axis from a node, and returns its node indices and the bud sites along it. */
@@ -292,12 +295,27 @@ export function growCulm(input: GrowInput): MacroSkeleton {
 			previous = nodeIndex;
 			nodes.push(nodeIndex);
 		}
-		// The branch complement at each node above the first branching height.
+		// The branch complement at each node above the first branching height, and a sheath at each
+		// node below the height the record gives sheaths to.
 		let branchCount = 0;
 		for (let s = 1; s < nodes.length; s++) {
 			const node = nodes[s] as number;
 			const at = pointAt(builder, node);
 			const heightShare = at[1] / Math.max(1e-6, height);
+			if (heightShare < growth.sheaths.upTo) {
+				buds.push({
+					node,
+					at,
+					along: [0, 1, 0],
+					heading: Math.atan2(at[2], at[0]),
+					elevation: PI / 2,
+					vigor: 0,
+					axis,
+					woodRadius: culmRadius(base, height, at[1], growth.node.ridge, true),
+					terminal: false,
+					dormant: true,
+				});
+			}
 			if (heightShare < growth.branches.from) continue;
 			const perNode = Math.max(
 				1,
@@ -359,7 +377,8 @@ export function growCulm(input: GrowInput): MacroSkeleton {
 		});
 	}
 	let crownBase = Number.POSITIVE_INFINITY;
-	for (const bud of buds) if (bud.at[1] < crownBase) crownBase = bud.at[1];
+	// A sheath's dormant bud is not foliage, so it does not set the crown's base.
+	for (const bud of buds) if (!bud.dormant && bud.at[1] < crownBase) crownBase = bud.at[1];
 	for (const bud of buds) {
 		const face =
 			Math.abs(bud.along[1]) > 0.95
@@ -375,7 +394,7 @@ export function growCulm(input: GrowInput): MacroSkeleton {
 			y: bud.at[1],
 			z: bud.at[2],
 			frame: frameOf(bud.along, face),
-			kind: bud.terminal ? BUD_TERMINAL : BUD_LATERAL,
+			kind: bud.dormant ? BUD_DORMANT : bud.terminal ? BUD_TERMINAL : BUD_LATERAL,
 			vigor: bud.vigor,
 			light: 1,
 			axis: bud.axis,
