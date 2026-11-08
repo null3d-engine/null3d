@@ -208,11 +208,12 @@ export const record: Species = {
 			angle: 20,
 			ranks: 0,
 			optics: {
-				// The photographs' shaded leaves read about a third brighter than the first record's:
-				// a grey-green, with the blue channel a little under the green's rise.
-				reflectance: [0.132, 0.262, 0.124],
-				reflectanceBack: [0.34, 0.48, 0.34],
-				transmittance: [0.2, 0.36, 0.17],
+				// The linear ratio of still 01's foliage to the render's, channel by channel: red 0.83,
+				// green 0.74 and blue 0.79 (the alder's method, D-334). The faces and the transmitted
+				// light take the same ratios, and the close shoot is read beside the whole view.
+				reflectance: [0.11, 0.193, 0.098],
+				reflectanceBack: [0.284, 0.354, 0.27],
+				transmittance: [0.167, 0.266, 0.135],
 				roughness: [0.5, 0.7],
 			},
 		},
