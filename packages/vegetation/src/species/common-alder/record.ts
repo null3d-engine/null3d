@@ -402,8 +402,8 @@ export const record: Species = {
 		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [1, 1, 1] }],
 		young: 0,
 		// Stills 16 and 28: the plates give way to smooth purplish bark with pale orange lenticels on
-		// wood thinner than about four centimetres across.
-		youngRadius: 0.05,
+		// wood thinner than about seven centimetres across, which is how the limb of still 16 reads.
+		youngRadius: 0.075,
 		// Still 15: the plates stand wider on the thick bole than on the limbs below it.
 		girthScale: [
 			[0, 0.55],
