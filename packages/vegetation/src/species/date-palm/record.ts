@@ -215,9 +215,9 @@ export const record: Species = {
 		// Still 21: the whole cut frond, spines at its base and leaflets along the rachis.
 		branch: { order: 1, length: 6 },
 		// Still 22: a length of rachis from the middle of the frond, with its leaflets.
-		subbranch: { order: 1, length: 0.5, from: 1.6, span: 0.5 },
+		subbranch: { order: 1, length: 0.6, from: 1.5, span: 0.6 },
 		// Still 23: a shorter length of rachis, with the leaflets' own arrangement at close range.
-		cluster: { order: 1, length: 0.18, from: 2, span: 0.18 },
+		cluster: { order: 1, length: 0.4, from: 2.1, span: 0.4 },
 		// Stills 12, 13, 24 and 25 lay the leaflet flat on a copy stand.
 		leaf: { pressed: true },
 	},
