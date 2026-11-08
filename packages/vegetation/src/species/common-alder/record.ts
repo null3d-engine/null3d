@@ -421,8 +421,8 @@ export const record: Species = {
 			// light stood four to nine steps too green and yellow against their photographs.
 			optics: {
 				reflectance: [0.0303, 0.0651, 0.0093],
-				reflectanceBack: [0.237, 0.2609, 0.1517],
-				transmittance: [0.0848, 0.144, 0.0311],
+				reflectanceBack: [0.194, 0.2558, 0.0965],
+				transmittance: [0.0895, 0.1401, 0.0343],
 				roughness: [0.42, 0.62],
 			},
 		},

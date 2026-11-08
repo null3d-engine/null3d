@@ -3,7 +3,7 @@
 	"species": "common-alder",
 	"source": {
 		"repository": "null3d-engine/plant-references",
-		"commit": "local",
+		"commit": "8355243695f3bae7eec19015855ea7459d019f0b",
 		"files": [
 			{
 				"name": "24-leaf-texture-upper.png",
@@ -244,9 +244,9 @@
 				0.12
 			],
 			"mean": [
-				0.15664,
-				0.09664,
-				0.05836
+				0.15084,
+				0.08765,
+				0.04949
 			]
 		}
 	},
@@ -283,8 +283,8 @@
 		},
 		{
 			"file": "young-color.ktx2",
-			"sha256": "cb7b41d546e4d17a11c79ec69a3f5a4cbf44034a3983f7124fe179788d0a559f",
-			"bytes": 55080
+			"sha256": "27dbf8e790bd148f04e7a31587dd34fc92d89f0c4999c09ea43a69cb66b315db",
+			"bytes": 54835
 		},
 		{
 			"file": "young-normal.ktx2",
@@ -303,8 +303,8 @@
 		},
 		{
 			"file": "young-color-half.ktx2",
-			"sha256": "073b472eb618101051d251139324c075c8307cecd75363bc2d83d6daa03afcac",
-			"bytes": 14341
+			"sha256": "9b18fc30110973df653730648e96e6f6c90264d92c0a826958069835694f35ed",
+			"bytes": 14254
 		},
 		{
 			"file": "young-normal-half.ktx2",
