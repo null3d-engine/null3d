@@ -53,6 +53,21 @@ The cut pieces, width over length, photograph against the run before the fix:
 | `23-leaf-cluster-studio.png` | 0.57 | 0.91 |
 | `11-leaf-cluster.png` | 0.66 | 0.96 |
 
+The stem pieces as the class change moved them, drawn on the record before it was committed, so
+these steer the design and are not evidence:
+
+| Run | Still | Groups render / photograph | Gap render / photograph | Outline IoU |
+| --- | --- | --- | --- | --- |
+| branch on the crown's spray | `21` | 1 / 1 | 0.277 / 0.412 | 0.235 |
+| branch class at 1 m | `21` | 12 / 1 | 0.650 / 0.412 | 0.154 |
+| branch class at 0.78 m | `21` | 7 / 1 | 0.446 / 0.412 | 0.164 |
+| sub-branch two years | `22` | 2 / 1 | 0.484 / 0.428 | 0.153 |
+| sub-branch three years, 0.55 m | `22` | 1 / 1 | 0.479 / 0.428 | 0.252 |
+
+Covered area moves with the square of a piece's length, so the branch's 0.65 at a metre becomes
+0.45 at 0.78 m. Its width does not follow: the piece draws one prototype, so which way its side
+shoots point is the seed's choice, and only their number answers it from the record.
+
 How the data was produced: `bun run plants:review common-alder --slot-query
 tools/lib/plant-review/slots/common-alder.json --out /tmp/alder-renders --run alder-r12`, and the
 same command's later runs; the crown boxes and gaps come from `metrics.json`, and the cut pieces'
@@ -83,14 +98,30 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   from the stem (`lateral`), and the cluster's six leaves stand along a stem with its internodes
   showing rather than crowded at one point. Rejected: thinning leaves, which a studio still scales
   back up, and a real branch cut from the grown plant, which draws one bare pole with a tuft.
+- The branch piece draws a cutting class of its own rather than the crown's spray. Three years put
+  a side shoot at two joints, and the one at the lower joint reaches two units, so the piece
+  branches where its photograph does. A class of its own is the fix because the crown's spray is
+  two years long: stretched to the length the photograph's branch has, its leaves read a third
+  small, and shortened back, the piece has no side shoot to reach out with.
+- The new class stands last among the cutting classes. Each class's shoot is seeded by its
+  prototype index, so a class inserted before another redraws that one. Standing first, the branch
+  class moved the cluster piece's turn gap from 0.116 to 0.062 against a photograph's 0.146, with
+  no field of the cluster class touched.
 - The rim's pieces are stated limits. Under the corrected piece count, which closes a one-pixel
-  hairline, the four whole views stand at two, one, two and two against the photographs' one, the
-  trunk view at four against two, and the branch studio at one. Seven record levers were measured one
-  at a time and none moved the trunk view: the first level switch, the leaf stalk's radius, the
-  shoots' scale, the card's size, the side shoots' count, the card stalk's width and the crown's
-  density. A matte cutoff would join them and was refused, because it fills the crown's fine gaps on
-  the same mask and would take the oak's two passing whole views into failure. What remains is an
-  engine fault, not a species one.
+  hairline, the four whole views stand at two, one, two and two against the photographs' one, and
+  the trunk view at four against two. Seven record levers were measured one at a time and none moved
+  the trunk view: the first level switch, the leaf stalk's radius, the shoots' scale, the card's
+  size, the side shoots' count, the card stalk's width and the crown's density. A matte cutoff would
+  join them and was refused, because it fills the crown's fine gaps on the same mask and would take
+  the oak's two passing whole views into failure. What remains is an engine fault, not a species
+  one.
+- The branch piece's loose groups are the same fault at a cut piece's scale, and the record states
+  them rather than paying for them. At the photograph's own density seven groups stand against one.
+  Each small group is a leaf at a shoot's tip whose nearest wood is 3 to 8.5 pixels away: a
+  millimetre and a half of stalk never reaches the leaf's alpha cutoff, so nothing is drawn between
+  blade and twig. A two-and-a-half millimetre stalk draws two of them joined and is not this
+  species' own size, so the record keeps the thin stalk. The sub-branch draws one group, because its
+  leaves sit close enough to overlap.
 
 ## Consequences
 
