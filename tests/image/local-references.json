@@ -179,6 +179,12 @@
 		"date": "2026-11-07",
 		"reason": "the branch that adds the species is not pushed yet, so no CI run could draw the software set; it is drawn here on this Mac's SwiftShader with CI=1"
 	},
+	"chromium-swiftshader/compat/plant-giant-sequoia.png": {
+		"test": "plant-giant-sequoia",
+		"tier": "compat",
+		"date": "2026-11-08",
+		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
+	},
 	"chromium-swiftshader/compat/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
 		"tier": "compat",
@@ -460,6 +466,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-07",
 		"reason": "the branch that adds the species is not pushed yet, so no CI run could draw the software set; it is drawn here on this Mac's SwiftShader with CI=1"
+	},
+	"chromium-swiftshader/webgl2/plant-giant-sequoia.png": {
+		"test": "plant-giant-sequoia",
+		"tier": "webgl2",
+		"date": "2026-11-08",
+		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
 	},
 	"chromium-swiftshader/webgl2/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
@@ -772,6 +784,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-07",
 		"reason": "the branch that adds the species is not pushed yet, so no CI run could draw the software set; it is drawn here on this Mac's SwiftShader with CI=1"
+	},
+	"chromium-swiftshader/webgpu/plant-giant-sequoia.png": {
+		"test": "plant-giant-sequoia",
+		"tier": "webgpu",
+		"date": "2026-11-08",
+		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
 	},
 	"chromium-swiftshader/webgpu/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
