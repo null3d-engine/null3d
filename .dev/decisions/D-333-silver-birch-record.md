@@ -112,13 +112,13 @@ The species' budgets, measured across the species and its three forms:
 
 | Tier | Kit | Variant | LOD0 | LOD1 | LOD2 |
 | --- | --- | --- | --- | --- | --- |
-| low | 2.48 MB | 6.94 MB | 1,651,374 | 119,543 | 40,620 |
-| medium | 4.13 MB | 6.97 MB | 1,671,693 | 120,911 | 40,941 |
-| high | 6.95 MB | 7.02 MB | 1,725,532 | 123,151 | 41,487 |
-| ultra | 12.32 MB | 7.12 MB | 1,849,438 | 127,135 | 42,454 |
+| low | 2.48 MB | 5.72 MB | 1,651,374 | 98,741 | 31,891 |
+| medium | 4.13 MB | 5.76 MB | 1,671,693 | 100,122 | 32,180 |
+| high | 6.94 MB | 5.81 MB | 1,725,532 | 102,316 | 32,596 |
+| ultra | 12.30 MB | 5.89 MB | 1,849,438 | 108,818 | 33,567 |
 
 The record's budget stands above each figure and inside the tree caps: 150,000 card triangles and
-43,000 at the second card level. The kit's high figure sits close to the tree cap's 7.1 MB, since the
+43,000 at the second card level. The kit's high figure sits inside the tree cap's 8.2 MB, since the
 kit holds the long leafy shoots that the fine leaf needs.
 
 The species registers a `plant-silver-birch` picture test, which the image manifest builds from the
@@ -132,6 +132,10 @@ Limits this record states:
 - The mature crown of still 33 cannot reach that picture's sky gap of 0.057 inside the tree caps. The
   card levels draw a row for each shoot, and the caps hold about eight thousand rows. A crown
   seventeen meters across then carries about a quarter of its photograph's leaf area.
+- The woodland crown's figure comes from its volume, not its foliage. A crown a third of the height
+  across spreads its shoots thin and read 0.258 open against its photograph's 0.139. A narrower
+  crown of the same foliage fills the same box and reads 0.148. Adding foliage instead passes the
+  second card level's cap at a density of 6, reaching 46,371 triangles against the cap's 43,000.
 - Still 20's autumn photograph lets 0.098 of its crown box show background. Stills 01 and 02 let
   0.177 and 0.167 show. One grown plant cannot sit inside all three bands, so the record follows the
   summer whole views.
