@@ -295,6 +295,10 @@ export const record: Species = {
 	},
 	bark: {
 		zones: [
+			// Still 16: a great limb takes the same net as the bole, but reads lighter and cooler than
+			// its photograph, so wood thinner than seven tenths of a meter takes a darker tint of its
+			// own, keyed by radius so a limb that leaves the trunk low takes it too.
+			{ layer: 0, by: 'radius', from: 0.2, to: 0.7, blend: 0.08, tint: [0.34, 0.34, 0.2] },
 			// The bole: stills 26 and 15 show one bark under a flat light and under daylight, so one
 			// tint keeps the flat-lit grey and the mid-trunk grey-brown close to both.
 			{ layer: 0, by: 'height', from: 0, to: 3.6, blend: 0.4, tint: [1.04, 1.02, 0.94] },

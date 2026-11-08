@@ -349,6 +349,10 @@ export const record: Species = {
 		// photograph, so the lowest half metre takes a darkening tint. It stays below the mid-trunk
 		// and texture cameras' frames, so neither of their figures moves.
 		zones: [
+			// Still 16: a great limb takes the same net as the bole, but reads lighter and cooler than
+			// its photograph, so wood thinner than a quarter meter takes a darker, warmer tint of its
+			// own. The key is the radius, so a limb that leaves the trunk low takes it too.
+			{ layer: 0, by: 'radius', from: 0.2, to: 0.7, blend: 0.08, tint: [0.34, 0.34, 0.2] },
 			{ layer: 0, by: 'height', from: 0, to: 0.5, blend: 0.3, tint: [0.62, 0.66, 0.72] },
 			{ layer: 0, by: 'height', from: 0.5, to: 40, blend: 0, tint: [1, 1, 1] },
 		],
