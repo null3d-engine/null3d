@@ -224,6 +224,8 @@ interface Candidate {
 	/** Axes in its subtree, itself included, and the bud sites they carry in light enough for shoots. */
 	readonly axes: number;
 	readonly buds: number;
+	/** Its pipe radius at its first node, the thickness a piece's photograph shows. */
+	readonly thickness: number;
 }
 
 /**
@@ -294,15 +296,19 @@ function candidates(
 				light: (light[a] as number) / Math.max(1, nodes[a] as number),
 				axes: subtreeAxes[a] as number,
 				buds: subtreeBuds[a] as number,
+				thickness: skeleton.radius[axes.first[a] as number] as number,
 			});
 	const match = (c: Candidate) => Math.round(Math.abs(log(c.extent / length)) / MATCH_STEP);
 	const near = (c: Candidate) => (match(c) <= NEAR_STEPS ? 1 : 0);
 	const leafy = (c: Candidate) => (c.buds > 0 ? 1 : 0);
 	const divides = (c: Candidate) => (c.axes > 1 ? 1 : 0);
+	// A photograph of a piece shows a thick axis where it shows one at all, so a cut with no hinted
+	// order prefers the thickest axis among those near the asked length, before the closest match.
 	return out.sort(
 		(x, y) =>
 			leafy(y) - leafy(x) ||
 			near(y) - near(x) ||
+			y.thickness - x.thickness ||
 			divides(y) - divides(x) ||
 			match(x) - match(y) ||
 			y.light - x.light ||

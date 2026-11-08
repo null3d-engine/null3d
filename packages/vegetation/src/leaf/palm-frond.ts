@@ -9,7 +9,7 @@
 // along the frond and the crown's sky visibility, and its second coordinates hold the share along
 // the frond and how brown it is.
 import type { MeshArrays } from '../asset';
-import { AXIS_RACHIS } from '../core/graph';
+import { AXIS_RACHIS, AXIS_STEM } from '../core/graph';
 import { cos, quatAxisAngle, quatRotate, radians, sin, tan, type Vector3 } from '../core/math';
 import type { FrondShape, LeafShape, PinnaSpec, Species } from '../core/record';
 import { curveAt, spreadMean } from '../core/types';
@@ -146,6 +146,7 @@ interface Leaflet {
 function leafletsOf(
 	shape: FrondShape,
 	pinnae: PinnaSpec,
+	origin: number,
 	length: number,
 	level: MeshLevel,
 	places: readonly number[],
@@ -159,7 +160,7 @@ function leafletsOf(
 		if (p % stride !== 0) return;
 		if (place < petioleShare) return;
 		const spine = p < Math.round((pinnae.spines ?? 0) / 2);
-		const blade = curveAt(pinnae.length, place) * length;
+		const blade = curveAt(pinnae.length, place) * origin;
 		for (let g = 0; g < GROUP; g++) {
 			const at = place + (g - (GROUP - 1) / 2) * GROUP_STEP;
 			if (at < 0 || at > 1) continue;
@@ -257,6 +258,14 @@ function writeLeaflet(
 		}
 }
 
+/** Whether a skeleton carries a stem, so it is a whole plant rather than a cut piece. */
+function hasStemAxis(skeleton: MeshInput['skeleton']): boolean {
+	const { axes } = skeleton;
+	for (let a = 0; a < axes.count; a++) if ((axes.kind[a] as number) === AXIS_STEM) return true;
+	return false;
+}
+
+/** The frond's own browning, 0 green to 1 dead, from the age its bud carries. */
 /** One frond of a variant, read from its skeleton: its rachis path, its age and its wind record. */
 interface PalmFrond {
 	readonly path: AxisPath;
@@ -351,7 +360,11 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 		rows: GRID[2].rows,
 		columns: GRID[2].columns,
 	};
-	const places = pinnaPlaces(pinnae, 1);
+	// A cut piece of a frond keeps the original's leaflets: the record's frond length gives their
+	// size, and the piece's own run gives only how many of its places it carries. A whole plant's
+	// frond is its own measure, so its leaflets follow the length it grew.
+	const hasStem = hasStemAxis(input.skeleton);
+	const recordFrond = spreadMean(shape.length) + shape.petiole.length;
 	const mesh = new MeshWriter();
 	const base = input.variant * VARIANT_RECORDS;
 	const frame: PathFrame = emptyFrame();
@@ -367,7 +380,10 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 		// than as blades: it takes the coarsest grid and the fewest places at every level.
 		const dead = frond.age > 0.99;
 		const drawn = dead ? 2 : level;
-		const list = leafletsOf(shape, pinnae, length, drawn, places);
+		const origin = hasStem ? length : Math.max(length, recordFrond);
+		const count = Math.max(1, Math.round(spreadMean(pinnae.count) * (length / origin)));
+		const places = pinnaPlaces({ ...pinnae, count }, 1);
+		const list = leafletsOf(shape, pinnae, origin, length, drawn, places);
 		const frondRibbon = dead ? deadRibbon : ribbon;
 		const bytes: number[] = [0, 0, 0, 0];
 		const record = base + frond.record;
