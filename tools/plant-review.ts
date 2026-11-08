@@ -505,7 +505,7 @@ function compareRun(
 			`- ${result.pairs.length} files beside a render of their view; ${masked.length} give an outline on a plain background in both pictures.`,
 			...masked.map(
 				(pair) =>
-					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, gap ${fixed(pair.gap?.reference)} against ${fixed(pair.gap?.render)}, leaf colour difference ${fixed(pair.foliageDeltaE, 1)}.`,
+					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, gap ${fixed(pair.gap?.reference)} against ${fixed(pair.gap?.render)}, leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${pieceClause(pair)}.`,
 			),
 			...result.pairs.flatMap((pair) =>
 				pair.surfaceDeltaE !== null
@@ -601,6 +601,16 @@ function framingLines(pairs: readonly StillResult[]): string[] {
 		const warning = framing.warning ? `, as ${framing.warning}` : '';
 		return [`- ${pair.file}: the camera framed ${framing.subject}${clutter}${warning}.`];
 	});
+}
+
+/**
+ * The piece count of one still, for the line that carries its other figures: every outlmed view
+ * states how many pieces it is drawn as, so a reader never has to infer it from the mismatch lines.
+ */
+function pieceClause(pair: StillResult): string {
+	if (!pair.pieces) return '';
+	const { render } = pair.pieces;
+	return `, drawn as ${render} piece${render === 1 ? '' : 's'}`;
 }
 
 /** Where the render is drawn as more or fewer separate pieces than its reference. */
