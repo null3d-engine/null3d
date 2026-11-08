@@ -98,7 +98,8 @@
 	},
 	"small-leaved-lime-turntable.mp4": {
 		"skyShare": 0.35,
-		"daylight": 3.0
+		"daylight": 1.64,
+		"lamp": "#e3ffe4"
 	},
 	"small-leaved-lime-wind-motion.mp4": {
 		"skyShare": 0.35,
@@ -112,5 +113,9 @@
 	"11-leaf-cluster.png": {
 		"daylight": 0.758,
 		"lamp": "#fffbe6"
+	},
+	"leaf-cluster-turntable.mp4": {
+		"daylight": 0.87,
+		"lamp": "#ffe3f3"
 	}
 }
