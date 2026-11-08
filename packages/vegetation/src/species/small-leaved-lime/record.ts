@@ -61,8 +61,8 @@ export const record: Species = {
 		// held well below it, so the tree is longer than it is broad.
 		apical: {
 			control: [
-				[0, 0.6],
-				[1, 0.63],
+				[0, 0.64],
+				[1, 0.67],
 			],
 			dominance: [0.78, 0.6, 0.98],
 			wander: 8,
@@ -104,7 +104,7 @@ export const record: Species = {
 				share: 0.3,
 				years: 1,
 				length: { mean: 0.16, spread: 0.03 },
-				nodes: { mean: 4.5, spread: 0.4 },
+				nodes: { mean: 12, spread: 0.6 },
 				internode: TWO_RANKED,
 				leafScale: [
 					[0, 0.8],
@@ -125,7 +125,7 @@ export const record: Species = {
 				share: 0.35,
 				years: 2,
 				length: { mean: 0.42, spread: 0.06 },
-				nodes: { mean: 6.5, spread: 0.4 },
+				nodes: { mean: 15, spread: 0.6 },
 				internode: TWO_RANKED,
 				stem: { radius: [0.005, 0.003] },
 				laterals: 2,
@@ -150,7 +150,7 @@ export const record: Species = {
 				share: 0.35,
 				years: 2,
 				length: { mean: 1.05, spread: 0.15 },
-				nodes: { mean: 7, spread: 0.4 },
+				nodes: { mean: 18, spread: 0.6 },
 				internode: TWO_RANKED,
 				stem: { radius: [0.014, 0.006] },
 				laterals: 2,
@@ -169,20 +169,22 @@ export const record: Species = {
 		],
 		// Stills 21, 22 and 23: a cut piece is one slender shoot with a few alternate leaves in two
 		// ranks, far sparser than the crown's own sprays. The crown cannot carry a shoot this open, so
-		// the cuttings draw these classes and the crown never does. Two prototypes of each class differ
-		// in length, so the branch and sub-branch take different pieces.
+		// the cuttings draw these classes and the crown never does. The branch and the sub-branch draw
+		// the cut class's two prototypes, and the cluster draws the spur.
 		cuttingClasses: [
 			{
+				// Still 21: a metre of the branch's wood, dividing into three side twigs with alternate
+				// leaves in two ranks. Its leaves stand far apart, as the photograph's do.
 				name: 'cut',
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
 				length: { mean: 0.95, spread: 0.2 },
-				nodes: { mean: 9, spread: 0.5 },
+				nodes: { mean: 6, spread: 0.5 },
 				internode: TWO_RANKED,
 				stem: { radius: [0.007, 0.003] },
-				laterals: 2,
-				lateralGap: 0.4,
+				laterals: 3,
+				lateralGap: 0.45,
 				bend: { length: 0.05, angle: 28 },
 				leafScale: [
 					[0, 0.85],
@@ -227,25 +229,26 @@ export const record: Species = {
 		// Still 10: one small lopsided red bud stands at every node above the leaf stalk, and a single
 		// terminal bud ends the twig. The young bark's own tone carries the bud's colour.
 		bud: {
-			length: 0.006,
-			width: 0.0045,
+			length: 0.009,
+			width: 0.0055,
 			tipCluster: 1,
-			colour: [0.26, 0.06, 0.03],
+			colour: [0.3, 0.05, 0.025],
 		},
 		placement: {
-			// Stills 01, 02 and 05: the limbs carry leafy twigs along their length, not only at their
-			// ends, so the crown reads as a web of fine branches rather than tufts on bare axes.
+			// Stills 01, 02 and 05: the crown is a dense web of small leaves on fine twigs, so every
+			// metre of the finest wood carries many shoots.
 			perMetre: [
-				[0, 1.6],
-				[0.55, 2.4],
-				[1, 7],
+				[0, 4.2],
+				[0.55, 5.4],
+				[1, 11],
 			],
-			// Stills 01 and 02: the crown is dense but its leaves leave sky between the masses.
-			density: 1.1,
+			// Stills 01, 02 and 18: the crown's own box shows about a twentieth of sky, so the shoots
+			// stand much denser than the curve alone gives.
+			density: 1.38,
 			shadePrune: 0,
-			// Stills 01, 03 and 05: sky shows through the crown's middle and under it, where its own
-			// leaves leave a shoot under this share of the sky; the lit outer masses stay.
-			skyPrune: 0.3,
+			// Stills 01, 03 and 05: a little sky shows through the crown's middle and under it, where
+			// its own leaves leave a shoot under this share of the sky; the lit outer masses stay.
+			skyPrune: 0.12,
 			skyPruneLayer: 1,
 			// Stills 01 and 18: no bare twigs hang outside the foliage.
 			bareTrim: 0.03,
@@ -253,20 +256,20 @@ export const record: Species = {
 			// the limbs rather than hanging under them.
 			lift: 12,
 			skyward: 0.55,
-			scale: { mean: 1.2, spread: 0.15 },
+			scale: { mean: 1.35, spread: 0.15 },
 		},
 	},
 	foliage: {
 		kind: 'blade',
 		leaf: {
 			// Stills 12, 13 and 24: a small heart-shaped blade about as wide as it is long, its base
-			// uneven and notched, its tip a short abrupt point. A small-leaved lime's blade runs 3 to
-			// 9 cm; the reference leaf is a little over five.
-			length: { mean: 0.055, spread: 0.008 },
+			// uneven and notched, its tip a short abrupt point. Still 21's one-metre branch draws its
+			// leaves about a thirteenth of its length, and a small-leaved lime's blade runs 3 to 9 cm.
+			length: { mean: 0.08, spread: 0.012 },
 			outline: 'texture',
 			// Stills 11, 12 and 24: a long slender stalk runs below the blade for about two fifths of
 			// its length, and hangs the blade away from the twig.
-			petiole: { length: 0.023, radius: 0.0011, flat: 0, droop: 14 },
+			petiole: { length: 0.028, radius: 0.0017, flat: 0, droop: 14 },
 			fold: 8,
 			curl: 10,
 			crossCurl: -4,
@@ -329,6 +332,21 @@ export const record: Species = {
 		},
 		flutes: { count: { mean: 6, spread: 1 }, depth: 0.05, height: 0.8 },
 	},
+	extras: [
+		{
+			// Still 19: in midsummer small cream flowers stand in loose clusters at the ends of the
+			// year's shoots, each cluster joined to a pale strap-shaped bract. The record draws the
+			// flowers as pale five-petalled cups at the shoot tips; the bract is a single flat blade
+			// that the extra shapes do not carry.
+			kind: 'flower',
+			at: 'shoot-tip',
+			share: 0.4,
+			seasons: ['blossom'],
+			shape: { petals: 5, radius: 0.0015, cup: 0.35 },
+			colour: [0.8, 0.78, 0.5],
+			hang: 20,
+		},
+	],
 	seasons: {
 		default: 'summer',
 		deciduous: true,
@@ -347,10 +365,10 @@ export const record: Species = {
 	},
 	lod: {
 		nearFoliage: 'instanced',
-		switchPixels: [240, 12, 160],
-		// The cards stand a quarter larger than the shoots they picture, so a gap between one shoot's
-		// leaves falls on a neighbour's leaves rather than on sky.
-		cardGrow: 1.25,
+		switchPixels: [160, 12, 160],
+		// The cards stand half again larger than the shoots they picture, so a gap between one shoot's
+		// leaves falls on a neighbour's leaves rather than on sky, and the far crown reads solid.
+		cardGrow: 1.5,
 		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so a card's leaves
 		// read as a piece in air unless its twig is drawn as a line.
 		cardStalk: 1.5,
@@ -358,12 +376,16 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit holds the crown's three classes and the cuttings' own two, and stands under the
-			// owner's cap for a tree at every tier.
-			kitBytes: { low: 3_400_000, medium: 4_000_000, high: 7_100_000, ultra: 13_000_000 },
-			variantBytes: { low: 17_000_000, medium: 17_100_000, high: 17_300_000, ultra: 17_700_000 },
+			// The kit holds the crown's three classes and the cuttings' own two; each cap sits just
+			// above the measured figure at its tier, at 2.47, 3.73, 5.95 and 10.17 MB, and under the
+			// owner's cap for a tree.
+			kitBytes: { low: 2_600_000, medium: 3_850_000, high: 6_100_000, ultra: 10_400_000 },
+			// The first variant measures 4.88, 4.98, 5.11 and 5.15 MB from the coarsest tier up.
+			variantBytes: { low: 5_000_000, medium: 5_100_000, high: 5_200_000, ultra: 5_300_000 },
 			lod0Triangles: 2_900_000,
-			lod1Triangles: 150_000,
+			// The heaviest variant's first card level draws about 96,800 triangles, and its second
+			// 42,800, under the owner's 43,000 cap at the finest tier.
+			lod1Triangles: 110_000,
 			lod2Triangles: 43_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
@@ -372,7 +394,7 @@ export const record: Species = {
 	},
 	textures: 'own',
 	variants: 6,
-	seedSalt: 3051897,
+	seedSalt: 18,
 	roundBand,
 	cuttings: {
 		// Stills 21 and 22: the branch and the sub-branch each draw one of the cut class's pieces,

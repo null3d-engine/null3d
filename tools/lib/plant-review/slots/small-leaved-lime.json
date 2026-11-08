@@ -2,52 +2,52 @@
 	"01-whole-distant.png": {
 		"sunAzimuth": -40,
 		"sunRise": 48,
-		"skyShare": 0.32,
-		"daylight": 3.4,
+		"skyShare": 0.25,
+		"daylight": 2.2,
 		"fov": 30
 	},
 	"02-whole-profile.png": {
 		"sunAzimuth": -25,
 		"sunRise": 50,
-		"skyShare": 0.35,
-		"daylight": 3.0,
+		"skyShare": 0.3,
+		"daylight": 2.9,
 		"fov": 30
 	},
 	"03-whole-from-below.png": {
 		"sunAzimuth": 10,
 		"sunRise": 72,
-		"skyShare": 0.55,
-		"daylight": 2.4
+		"skyShare": 0.4,
+		"daylight": 1.9
 	},
 	"04-crown-outside.png": {
 		"sunAzimuth": -30,
 		"sunRise": 48,
-		"skyShare": 0.32,
-		"daylight": 3.2,
+		"skyShare": 0.22,
+		"daylight": 2.8,
 		"distance": 4
 	},
 	"05-crown-underside.png": {
 		"sunAzimuth": -20,
 		"sunRise": 60,
-		"skyShare": 0.62,
-		"daylight": 2.4
+		"skyShare": 0.22,
+		"daylight": 2.3
 	},
 	"06-inside-crown.png": {
 		"sunAzimuth": -30,
 		"sunRise": 55,
-		"skyShare": 0.55,
-		"daylight": 1.8
+		"skyShare": 0.4,
+		"daylight": 1.5
 	},
 	"07-limb-leaving-trunk.png": {
 		"sunAzimuth": -35,
 		"sunRise": 45,
 		"skyShare": 0.5,
-		"daylight": 2.2,
+		"daylight": 1.4,
 		"background": "studio-grey"
 	},
 	"08-limb-fork.png": {
 		"skyShare": 0.55,
-		"daylight": 2.0,
+		"daylight": 1.4,
 		"background": "studio-grey"
 	},
 	"14-bark-base.png": {
@@ -74,7 +74,8 @@
 		"sunRise": 55,
 		"skyShare": 0.5,
 		"daylight": 2.6,
-		"season": "blossom"
+		"season": "blossom",
+		"leaves": 3.4
 	},
 	"20-basal-sprouts.png": {
 		"skyShare": 0.68,
@@ -82,15 +83,20 @@
 	},
 	"21-branch-studio.png": {
 		"skyShare": 0.6,
-		"daylight": 1.6
+		"daylight": 1.0
 	},
 	"22-subbranch-studio.png": {
 		"skyShare": 0.6,
-		"daylight": 1.6
+		"daylight": 1.0
 	},
 	"23-leaf-cluster-studio.png": {
 		"skyShare": 0.6,
-		"daylight": 1.6
+		"daylight": 1.0
+	},
+	"28-young-bark.png": {
+		"thin": 0.02,
+		"span": 0.06,
+		"along": 0.9
 	},
 	"small-leaved-lime-turntable.mp4": {
 		"skyShare": 0.35,
