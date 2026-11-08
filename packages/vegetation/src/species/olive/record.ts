@@ -398,6 +398,7 @@ export const record: Species = {
 			// stalks in the leaf axils, about two centimetres long.
 			kind: 'fruit',
 			at: 'shoot-tip',
+			// Still 19: about ten drupes on one twig, in three stages of ripeness.
 			share: 0.3,
 			count: { mean: 2, spread: 1 },
 			// The drupes stand on the internode below the leaves' tip, where the twig shows, as the
@@ -417,7 +418,9 @@ export const record: Species = {
 					[0.0008, 0.0222],
 					[0, 0.0226],
 				],
-				sides: 12,
+				// Still 19: a drupe two centimetres long, so eight faces read round at close range and
+				// cost little on a twig that carries several.
+				sides: 8,
 				// Still 19: a short stalk below each drupe, so the fruit clears the leaves above it.
 				stalk: 0.008,
 			},
@@ -460,8 +463,8 @@ export const record: Species = {
 			// The kit measures 2.49, 3.82, 6.53 and 12.36 MB at the four tiers; each cap sits just
 			// above its figure. The three studio classes are the last prototypes it carries.
 			kitBytes: { low: 2_520_000, medium: 3_900_000, high: 6_650_000, ultra: 12_550_000 },
-			// The largest of seed 11's six variants measures 8.56, 8.63, 8.67 and 8.73 MB.
-			variantBytes: { low: 8_600_000, medium: 8_650_000, high: 8_700_000, ultra: 8_800_000 },
+			// The largest of seed 11's six variants measures 6.83, 6.86, 6.87 and 6.93 MB.
+			variantBytes: { low: 6_850_000, medium: 6_880_000, high: 6_900_000, ultra: 6_950_000 },
 			lod0Triangles: 2_900_000,
 			lod1Triangles: 145_000,
 			lod2Triangles: 9_000,
