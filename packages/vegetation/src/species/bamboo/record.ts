@@ -34,7 +34,9 @@ export const record: Species = {
 		// out, the whole clump about as wide as a third of its height at the foot.
 		culms: { mean: 16, spread: 3 },
 		layout: 'clump',
-		spacing: 0.9,
+		// The culms stand packed, their swollen feet meeting, so the clump reads as one plant's
+		// silhouette at a distance, as stills 01 and 18 show.
+		spacing: 0.45,
 		height: { mean: 8, spread: 1 },
 		// Still 17: a culm's width over its height is about a fortieth, far thicker in proportion than
 		// a tree's bole.
