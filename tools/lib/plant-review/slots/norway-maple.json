@@ -52,9 +52,9 @@
 		"distance": 2
 	},
 	"14-bark-base.png": {
-		"sunRise": 40,
+		"sunRise": 60,
 		"sunAzimuth": 0,
-		"skyShare": 0.7,
+		"skyShare": 0.35,
 		"daylight": 2.4
 	},
 	"17-trunk-taper.png": {

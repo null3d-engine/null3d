@@ -228,14 +228,17 @@ export const record: Species = {
 				stem: { radius: [0.012, 0.006] },
 				laterals: 1.6,
 				lateralGap: 0.3,
+				// The side pair spreads wide off the leader, as stills 21 and 22 show, so the piece
+				// reads as broad as its photograph.
+				lateral: 70,
 				bend: { length: 0.06, angle: 16 },
 				leafScale: [
 					[0, 0.85],
 					[1, 1],
 				],
 				leafAngle: [
-					[0, 80],
-					[1, 60],
+					[0, 90],
+					[1, 75],
 				],
 				leafAngleSpread: 25,
 				leafYears: 1,
