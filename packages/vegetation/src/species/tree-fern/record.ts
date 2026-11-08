@@ -35,8 +35,8 @@ export const record: Species = {
 			surface: 'root-mat',
 		},
 		crown: {
-			// Still 01 and the crown views: a dense living crown of about two dozen fronds.
-			fronds: { mean: 25, spread: 2 },
+			// Still 01 and the crown views: a dense living crown of three dozen fronds.
+			fronds: { mean: 34, spread: 2 },
 			divergence: 137.5,
 			// Still 01: the youngest fronds stand up in the centre and the oldest arch out and down.
 			tilt: [
@@ -48,8 +48,9 @@ export const record: Species = {
 			// Stills 06 and 07: the fronds spring from one growing point at the trunk's top, where
 			// the old bases cluster, rather than clasping a length of stem as a palm's do.
 			depth: 0.2,
-			// Still 16, 17 and 20: the dead fronds hang against the trunk as a brown skirt.
-			dead: { count: { mean: 12, spread: 2 }, hang: 128, skirt: 0.4 },
+			// Still 16, 17 and 20: the dead fronds hang against the trunk as a brown skirt, and
+			// still 20 shows their pinnae, so a dead frond keeps the detail of a living one.
+			dead: { count: { mean: 20, spread: 2 }, hang: 160, skirt: 0.1, blades: true },
 			// The shared crown-rosette model carries no croziers yet; still 06's coiled centre is a
 			// stated limit of the model, not of this record.
 		},
@@ -137,8 +138,10 @@ export const record: Species = {
 		default: 'summer',
 		deciduous: false,
 		winter: 'evergreen',
-		// The dead fronds' brown, which the foliage's browning mixes toward.
-		autumn: { reflectance: [0.17, 0.09, 0.035], transmittance: [0.21, 0.12, 0.05] },
+		// The dead fronds' brown, which the foliage's browning mixes toward: still 20 shows a deep
+		// red-brown curtain, and its thin pinnae turn pale straw under a bright sun unless the brown
+		// takes less light through.
+		autumn: { reflectance: [0.12, 0.058, 0.028], transmittance: [0.1, 0.05, 0.025] },
 	},
 	wind: {
 		// The trunk stands rigid; the fronds swing from their stipes.
@@ -157,10 +160,16 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit holds one pinna at each tier; the crown's pinna leaflets are the variant's.
+			// The kit holds one pinna at each tier; the crown's pinna leaflets are the variant's, and
+			// the photographs' three dozen fronds and their skirt set the variant's size.
 			kitBytes: { low: 40_000, medium: 50_000, high: 60_000, ultra: 70_000 },
-			variantBytes: { low: 700_000, medium: 700_000, high: 700_000, ultra: 700_000 },
-			lod0Triangles: 40_000,
+			variantBytes: {
+				low: 1_300_000,
+				medium: 1_300_000,
+				high: 1_300_000,
+				ultra: 1_300_000,
+			},
+			lod0Triangles: 45_000,
 			lod1Triangles: 8_000,
 			lod2Triangles: 5_000,
 			downloadBytes: 900_000,
