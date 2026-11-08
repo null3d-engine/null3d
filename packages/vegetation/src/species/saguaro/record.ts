@@ -42,7 +42,7 @@ export const record: Species = {
 		// pinched junction; each runs out nearly level, bends at an elbow and rises parallel to the
 		// stem to a tip below its top.
 		arms: {
-			count: { mean: 4, spread: 0.7 },
+			count: { mean: 5, spread: 1 },
 			from: 0.55,
 			elbow: 0.75,
 			radius: 0.19,
