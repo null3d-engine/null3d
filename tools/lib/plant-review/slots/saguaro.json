@@ -1,6 +1,6 @@
 {
 	"04-arms-outside.png": {
-		"span": 1.6,
+		"span": 0.9,
 		"thin": 0.22,
 		"along": 0.35,
 		"sunAzimuth": -20,
@@ -9,7 +9,7 @@
 		"daylight": 2.3
 	},
 	"05-arm-underside.png": {
-		"span": 1.2,
+		"span": 0.8,
 		"thin": 0.22,
 		"along": 0.25,
 		"sunAzimuth": 10,
@@ -18,7 +18,7 @@
 		"daylight": 2.2
 	},
 	"06-between-arms.png": {
-		"span": 1.4,
+		"span": 0.9,
 		"thin": 0.22,
 		"along": 0.2,
 		"sunAzimuth": -15,
@@ -27,7 +27,7 @@
 		"daylight": 2.3
 	},
 	"08-arm-elbow.png": {
-		"span": 1.0,
+		"span": 0.9,
 		"thin": 0.22,
 		"along": 0.3
 	},
@@ -84,14 +84,14 @@
 	"01-whole-distant.png": {
 		"sunAzimuth": -24,
 		"sunRise": 56,
-		"skyShare": 0.3,
-		"daylight": 2.4
+		"skyShare": 0.5,
+		"daylight": 1.4
 	},
 	"02-whole-profile.png": {
 		"sunAzimuth": -18,
 		"sunRise": 52,
-		"skyShare": 0.3,
-		"daylight": 2.2
+		"skyShare": 0.5,
+		"daylight": 1.4
 	},
 	"17-trunk-taper.png": {
 		"sunAzimuth": -24,

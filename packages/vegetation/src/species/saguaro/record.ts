@@ -42,11 +42,11 @@ export const record: Species = {
 		// pinched junction; each runs out nearly level, bends at an elbow and rises parallel to the
 		// stem to a tip below its top.
 		arms: {
-			count: { mean: 4.5, spread: 1 },
-			from: 0.5,
+			count: { mean: 4, spread: 0.7 },
+			from: 0.55,
 			elbow: 1.0,
 			radius: 0.19,
-			rise: { mean: 2.8, spread: 0.7 },
+			rise: { mean: 2.4, spread: 0.6 },
 		},
 		// Stills 09, 10 and 15: areoles one to three centimetres apart along every crest, each an
 		// oval pad about a centimetre long.
@@ -237,7 +237,7 @@ export const record: Species = {
 	},
 	textures: 'own',
 	variants: 6,
-	seedSalt: 1916846533,
+	seedSalt: 1916846534,
 	roundBand,
 	cuttings: {
 		// Still 21: the whole arm, from the pinched junction through its run and elbow to upright.
