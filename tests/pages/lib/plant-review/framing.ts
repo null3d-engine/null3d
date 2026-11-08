@@ -44,8 +44,13 @@ export function rowAngle(row: number, fov: number): number {
 	return Math.atan((0.5 - row) * 2 * half);
 }
 
-/** The least height a camera stands at, in metres: one that would stand lower is raised to it. */
-const LOWEST_EYE = 0.3;
+/**
+ * The least height a camera stands at, in metres: one that would stand lower is raised to it. A
+ * photograph taken from the ground puts its plant's foot on the frame's bottom rows, and its solve
+ * asks for a camera a centimetre or two above the ground; a plant that is short beside its crown
+ * then still lands on the picture's rows.
+ */
+const LOWEST_EYE = 0.012;
 
 /**
  * The camera that puts a plant `height` metres tall where a framing asks: the horizon's row sets
