@@ -884,13 +884,21 @@ export function components(
 	return { labels, sizes };
 }
 
+/** Pixels of background a run may cross to join another: the mask's own resolution, not a gap. */
+export const PIECE_BRIDGE = 1;
+
 /**
  * The number of separate pieces a plant is drawn as, where a piece is a connected run of at least
- * `minArea` pixels.
+ * `minArea` pixels and two runs one background pixel apart count as one.
  *
  * A plant hangs together: every fruit meets its twig, every twig meets its limb. A part that meets
  * nothing is drawn as an island, and this counts it. Pieces smaller than `minArea` are ignored so
  * that a speck of background left by the outline's threshold is not read as a floating part.
+ *
+ * A single background pixel between two runs is the mask's resolution rather than a drawn gap: at
+ * the work width a shoot's supporting twig is thinner than a pixel, so the pixel that would join it
+ * falls to the outline's cutoff. Two runs a pixel apart are therefore one piece. The reference and
+ * the render both come through this function, so the rule counts the two sides alike.
  */
 export function pieceCount(
 	mask: Uint8Array,
@@ -898,9 +906,47 @@ export function pieceCount(
 	height: number,
 	minArea: number,
 ): number {
-	const { sizes } = components(mask, width, height);
+	const { labels, sizes } = components(mask, width, height);
+	const parent = new Int32Array(sizes.length);
+	for (let label = 0; label < parent.length; label++) parent[label] = label;
+	const find = (from: number): number => {
+		let root = from;
+		while ((parent[root] as number) !== root) root = parent[root] as number;
+		let at = from;
+		while ((parent[at] as number) !== root) {
+			const next = parent[at] as number;
+			parent[at] = root;
+			at = next;
+		}
+		return root;
+	};
+	const join = (a: number, b: number): void => {
+		const rootA = find(a);
+		const rootB = find(b);
+		if (rootA !== rootB) parent[Math.max(rootA, rootB)] = Math.min(rootA, rootB);
+	};
+	for (let y = 0; y < height; y++)
+		for (let x = 0; x < width; x++) {
+			if (labels[y * width + x]) continue;
+			let near = 0;
+			for (let dy = -PIECE_BRIDGE; dy <= PIECE_BRIDGE; dy++)
+				for (let dx = -PIECE_BRIDGE; dx <= PIECE_BRIDGE; dx++) {
+					const nx = x + dx;
+					const ny = y + dy;
+					if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+					const label = labels[ny * width + nx] as number;
+					if (!label) continue;
+					if (near === 0) near = label;
+					else join(near, label);
+				}
+		}
+	const areas = new Map<number, number>();
+	for (let label = 1; label < sizes.length; label++) {
+		const root = find(label);
+		areas.set(root, (areas.get(root) ?? 0) + (sizes[label] as number));
+	}
 	let count = 0;
-	for (const size of sizes) if (size >= minArea) count++;
+	for (const area of areas.values()) if (area >= minArea) count++;
 	return count;
 }
 
@@ -1329,8 +1375,9 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 }
 
 /**
- * Where the crown starts, found from its own rows: the first narrow run below the crown's wide top.
- * The lower edge of the foliage, whatever the ground below it reads as.
+ * Where the crown starts, found from its own rows: the first narrow stretch below the crown's wide
+ * top that the stem continues below. The lower edge of the foliage, whatever the ground below it
+ * reads as.
  */
 function crownStartFromTop(spans: Int32Array, box: Box, widest: number): number {
 	const tall = box.bottom - box.top + 1;
@@ -1340,13 +1387,25 @@ function crownStartFromTop(spans: Int32Array, box: Box, widest: number): number 
 	};
 	const limit = widest * 0.12;
 	const run = Math.max(2, Math.round(tall * 0.03));
+	// An airy crown is full of narrow rows of its own, so a narrow stretch alone does not make a
+	// crown's foot. Only the stem runs on below the lowest foliage, so a candidate is the foot
+	// when the rows beneath it stay narrow.
+	const check = Math.max(3, Math.round(tall * 0.12));
+	const stemShare = (y: number): number => {
+		const to = Math.min(box.bottom, y + check);
+		if (to <= y) return 1;
+		let narrow = 0;
+		for (let k = y + 1; k <= to; k++) if (width(k) <= limit) narrow++;
+		return narrow / (to - y);
+	};
 	let y = box.top;
 	while (y <= box.bottom && width(y) <= limit) y++;
 	for (; y <= box.bottom; y++) {
 		for (let k = 0; k < run && y + k <= box.bottom; k++) {
 			if (width(y + k) > limit) continue;
-			// The crown's last wide row before the narrow stretch that ends it.
-			return Math.max(box.top, y + k - 1);
+			const foot = Math.max(box.top, y + k - 1);
+			if (stemShare(foot) >= 0.7) return foot;
+			break;
 		}
 	}
 	return box.bottom;
