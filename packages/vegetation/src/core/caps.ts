@@ -112,7 +112,11 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 	},
 	palm: {
 		kitBytes: { low: 4 * MB, medium: 4 * MB, high: 4 * MB, ultra: 4 * MB },
-		variantBytes: { low: 3 * MB, medium: 3 * MB, high: 3 * MB, ultra: 3 * MB },
+		// The soft tree fern's crown carries about 1,800 pinnae, each the species' own leaf, and its
+		// variant measures 3.02 MB at the high tier. A palm's few large fronds sit far under this
+		// figure; the owner raised it so the tree fern keeps its frond division rather than give up
+		// pinnae for the budget.
+		variantBytes: { low: 3.3 * MB, medium: 3.3 * MB, high: 3.3 * MB, ultra: 3.3 * MB },
 		lod0WoodBytes: { low: 2 * MB, medium: 2 * MB, high: 2 * MB, ultra: 2 * MB },
 		lod0Triangles: 600_000,
 		lod1Triangles: 80_000,
