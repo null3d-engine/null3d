@@ -349,16 +349,13 @@ export const record: Species = {
 		// photograph, so the lowest half metre takes a darkening tint. It stays below the mid-trunk
 		// and texture cameras' frames, so neither of their figures moves.
 		zones: [
-			// Still 16: a great limb takes the same net as the bole, but reads lighter and cooler than
-			// its photograph, so wood thinner than a quarter meter takes a darker, warmer tint of its
-			// own. The key is the radius, so a limb that leaves the trunk low takes it too.
-			{ layer: 0, by: 'radius', from: 0.2, to: 0.7, blend: 0.08, tint: [0.34, 0.34, 0.2] },
+			// Still 16: a great limb carries the bole's net but reads grey where its photograph is
+			// olive-brown, so wood thinner than seven tenths of a meter loses blue and keeps its
+			// lightness. The key is the radius, so a limb leaving the trunk low takes it too.
+			{ layer: 0, by: 'radius', from: 0.2, to: 0.7, blend: 0.08, tint: [0.58, 0.8, 0.24] },
 			{ layer: 0, by: 'height', from: 0, to: 0.5, blend: 0.3, tint: [0.62, 0.66, 0.72] },
 			{ layer: 0, by: 'height', from: 0.5, to: 40, blend: 0, tint: [1, 1, 1] },
 		],
-		// Still 14: the foot stands under the crown's skirt with the ground beside it, so its lowest
-		// wood takes half the sky the crown leaves it. The mid trunk and the limb are untouched.
-		footShade: 0.75,
 		young: 0,
 		// Still 16: the net fades to smooth grey-brown wood on branches thinner than about three
 		// centimetres' radius, where still 28 shows the lenticels.
