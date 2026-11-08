@@ -359,12 +359,12 @@ export const record: Species = {
 		stiffness: [
 			[0, 0.99],
 			[0.5, 0.97],
-			[1, 0.95],
+			[1, 0.99],
 		],
 		// The clip's bands move by five to fifteen thousandths of the outline's height, so the sway
 		// and the flutter stand below the record's first figures.
 		sway: { frequency: 0.28, amplitude: 0.02 },
-		flutter: { kind: 'blade', amplitude: 0.12, frequency: 2.5 },
+		flutter: { kind: 'blade', amplitude: 0.06, frequency: 2.5 },
 	},
 	lod: {
 		nearFoliage: 'instanced',
