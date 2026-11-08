@@ -210,9 +210,9 @@ export const record: Species = {
 			optics: {
 				// The photographs' shaded leaves read about a third brighter than the first record's:
 				// a grey-green, with the blue channel a little under the green's rise.
-				reflectance: [0.077, 0.154, 0.073],
-				reflectanceBack: [0.2, 0.29, 0.2],
-				transmittance: [0.12, 0.22, 0.1],
+				reflectance: [0.089, 0.177, 0.084],
+				reflectanceBack: [0.23, 0.33, 0.23],
+				transmittance: [0.14, 0.25, 0.115],
 				roughness: [0.5, 0.7],
 			},
 		},
