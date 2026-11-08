@@ -123,6 +123,24 @@ const CLEAN_BOLE: SlotRule = {
 	framed: false,
 };
 
+/**
+ * A cactus's rib, areole and spine close-ups: the skin's own surface, where the areoles and their
+ * spine clusters stand, rather than a leaf or a twig. The span frames an areole and its neighbours.
+ */
+const SKIN_CLOSE: SlotRule = {
+	view: 'bark-mid',
+	query: { span: 0.2 },
+	framed: false,
+	note: 'a cactus skin close-up: judged on the waxy ribbed skin at close range',
+};
+
+/** A woodpecker's nest holes in an old cactus trunk: the same skin, framed wider. */
+const NEST_HOLES: SlotRule = {
+	view: 'bark-mid',
+	query: { span: 0.55 },
+	framed: false,
+};
+
 /** A branch with its side branches: the branch cutting laid across a frame of the photograph's scale. */
 const SECONDARY_BRANCHING: SlotRule = {
 	view: 'branch',
@@ -144,6 +162,28 @@ const FINE_TWIGS: SlotRule = {
 /** The slot rules, first match wins: words in the still's name, and the slot they name. */
 const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly slot: SlotRule }[] =
 	[
+		// A cactus's ribs, areoles and spine clusters are the skin's own close view: the species has no
+		// leaf or twig for the leaf and twig views to cut, and its body is one ribbed surface.
+		{ test: (n) => /rib|areole|spine/.test(n), slot: SKIN_CLOSE },
+		{ test: (n) => /\bnest|\bholes?\b/.test(n), slot: NEST_HOLES },
+		// A cactus's arms are its limbs: the whole arm, its underside and its elbow are limb views,
+		// and the crownless plant has no fork for the fork view to find.
+		{
+			test: (n) => /arms?-outside|between-arms/.test(n),
+			slot: { view: 'limb', query: { span: 2.5, thin: 0.24 }, framed: false },
+		},
+		{
+			test: (n) => /arm.*underside/.test(n),
+			slot: { view: 'limb', elevation: -30, query: { span: 1.5, thin: 0.24 }, framed: false },
+		},
+		{
+			test: (n) => /arm-elbow/.test(n),
+			slot: { view: 'limb', query: { span: 1.2, thin: 0.24 }, framed: false },
+		},
+		{
+			test: (n) => /arm-tip/.test(n),
+			slot: { view: 'limb', query: { span: 0.35, thin: 0.24 }, framed: false },
+		},
 		// A cut piece on a plain ground, framed as its photograph frames it: the photograph's piece
 		// sets the rows its top and its foot land on.
 		{ test: (n) => n.includes('subbranch-studio'), slot: { view: 'subbranch', framed: true } },
@@ -413,6 +453,8 @@ function formOf(name: string, forms: readonly string[]): string | undefined {
 
 /** The texture rule of a texture source that its number does not name. */
 function textureRule(number: number, name: string): SlotRule {
+	// A cactus's texture sources hold its spine clusters, not leaves: its surface is the ribbed stem.
+	if (/rib|areole|spine/.test(name)) return SKIN_CLOSE;
 	const known = TEXTURE_BY_NUMBER[number];
 	if (known) return known;
 	if (/leaf|needle|frond|blade/.test(name))
