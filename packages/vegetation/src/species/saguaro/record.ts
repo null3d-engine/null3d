@@ -113,8 +113,9 @@ export const record: Species = {
 	foliage: {
 		kind: 'blade',
 		leaf: {
-			// Still 24: one spine cluster spans about ten centimetres across its longest centrals.
-			length: { mean: 0.1, spread: 0.01 },
+			// Stills 16 and 24: a cluster spans about six centimetres across its spines on the arm, where
+			// the areoles stand three centimetres apart and the picture's own spines stay separate.
+			length: { mean: 0.06, spread: 0.006 },
 			outline: 'texture',
 			// The card is the cluster's own picture: a flat, stiff card with no fold of its own.
 			petiole: { length: 0.002, radius: 0.0012, flat: 0, droop: 0 },
