@@ -97,6 +97,14 @@ the leaf area to 1,328 square meters. Raising `shoots.prototypes` moves it a lit
 - `bark.peel` lifts strips of nine centimeters at 220 a square meter on the lower trunk, which still
   34 shows close up.
 
+### The skeleton view
+
+Row 2, the branch density, is decided on the skeleton view. It shows one clean stem, the bole bare to
+about two fifths of the height, and the limbs leaving it alternately. Each limb divides twice into
+fine weeping twigs over a dark foot. The skeleton is drawn inside the same round that carries the
+stills, so the row reads one tree at one commit. It is not a separate run, whose picture would belong
+to another tree.
+
 ### The review tool
 
 - `barkZone` is a new page query field. A bark view stands at the height its named zone covers.
@@ -180,6 +188,12 @@ that drew it.
 
 Limits this record states:
 
+- Row 10 fails on the crown's shade. Its three side views read 9.7, 8.9 and 13.9 steps from their
+  photographs, where the band is 3. The lever for a far crown's shade is its card's growth, and that
+  lever belongs to row 6 here. At 1.35 the color worsens to 10.2. It also closes stills 02 and 18
+  under their floors, at 0.136 and 0.165. At 1.1 the color moves one step. Still 01 then opens past
+  its ceiling at 0.237. The value 1.2 is the only one that keeps row 6. Row 10 is stated as a limit,
+  not as an untried lever.
 - The cut branch's arms run straight where its photograph's arch and fall away. Its outline match
   stays at 0.054 however its openness or extent is set. A droop of 70 degrees closes the piece to
   0.616 open against the photograph's 0.631. More subdivision is barred twice over. A third year of
