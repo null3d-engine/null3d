@@ -24,6 +24,9 @@ export function plantSpeciesTests(root = ROOT): ImageTest[] {
 		sketch: `tests/pages/sketches/plant-review-sketch.ts?species=${id}&view=panels`,
 		hold: 1,
 		size: [1024, 1024],
+		// Four panels of a whole plant, built and drawn from scratch: the merged foliage of a ground
+		// plant takes longer than the default limit on the software GPU's slower path, and a dense
+		// crown's four panels longer still.
 		timeoutSeconds: PANELS_SECONDS,
 	}));
 }
