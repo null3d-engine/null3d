@@ -102,9 +102,12 @@ function growsWithinBudget(kit: SpeciesKitData): void {
 	expect(near).toBeLessThanOrEqual(NEAR_CAPS.high.triangles);
 	expect(asset.levels[1].triangles).toBeLessThanOrEqual(budget.lod1Triangles);
 	expect(asset.levels[2].triangles).toBeLessThanOrEqual(budget.lod2Triangles);
-	// Every season's extras, such as autumn's fruit, stay within the card levels' caps too.
+	// Every season's extras, such as autumn's fruit, stay within the variant's byte cap and the card
+	// levels' caps too: a season can carry far more than the default one, and the bytes are what a
+	// player downloads.
 	for (const season of record.seasons.deciduous ? (['autumn', 'blossom'] as const) : []) {
 		const seasonal = growPlantNow(kit, { ...options, season });
+		expect(variantBytesOf(seasonal)).toBeLessThanOrEqual(budget.variantBytes[kit.detail]);
 		expect(seasonal.levels[1].triangles).toBeLessThanOrEqual(budget.lod1Triangles);
 		expect(seasonal.levels[2].triangles).toBeLessThanOrEqual(budget.lod2Triangles);
 	}

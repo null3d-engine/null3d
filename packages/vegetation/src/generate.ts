@@ -48,7 +48,7 @@ import {
 import type { Species, SpeciesModule } from './core/record';
 import { loadSpeciesHooks, speciesHooks } from './core/registry';
 import type { TextureManifest } from './core/textures';
-import { DETAILS, type Detail, type Season, type Vec3 } from './core/types';
+import { type Curve, DETAILS, type Detail, type Season, type Vec3 } from './core/types';
 import { lightCrown } from './crown/visibility';
 import {
 	type CuttingOptions,
@@ -184,10 +184,22 @@ export function withFoliage(record: Species, foliage: number | undefined): Speci
 			placement: {
 				...shoots.placement,
 				skyPrune: prune,
+				// The shoots per metre thin with the share as well, which is the dial every model
+				// answers: it takes the twigs and clusters along the finest axes, not only the leaves
+				// on them, so a limb left standing carries fewer of everything.
+				perMetre:
+					thin < 1 ? scaledCurve(shoots.placement.perMetre, thin) : shoots.placement.perMetre,
 				...(density !== undefined ? { density: density * thin } : {}),
 			},
 		},
 	};
+}
+
+/** A curve with every value multiplied by a factor. */
+function scaledCurve(curve: Curve, factor: number): Curve {
+	return typeof curve === 'number'
+		? curve * factor
+		: curve.map(([at, value]) => [at, value * factor] as [number, number]);
 }
 
 /** A growth spec whose finest order divides less often by a share: the twigs a sparse crown omits. */
