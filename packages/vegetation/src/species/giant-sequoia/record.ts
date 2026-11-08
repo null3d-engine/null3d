@@ -208,9 +208,11 @@ export const record: Species = {
 			angle: 28,
 			ranks: 0,
 			optics: {
-				reflectance: [0.05, 0.1, 0.055],
-				reflectanceBack: [0.14, 0.2, 0.15],
-				transmittance: [0.08, 0.15, 0.07],
+				// The photographs' shaded leaves read about a third brighter than the first record's:
+				// a grey-green, with the blue channel a little under the green's rise.
+				reflectance: [0.077, 0.154, 0.073],
+				reflectanceBack: [0.2, 0.29, 0.2],
+				transmittance: [0.12, 0.22, 0.1],
 				roughness: [0.5, 0.7],
 			},
 		},
@@ -315,7 +317,7 @@ export const record: Species = {
 		switchPixels: [240, 12, 160],
 		// The clumps stand about a fifth larger than their shoots, so the gaps between one clump's
 		// shoots fall on a neighbour's scales rather than on sky.
-		cardGrow: 12,
+		cardGrow: 14,
 		// A shoot's own twig is under a pixel at a whole view, so each card draws a short stalk
 		// down to the wood it grows from and joins the clump to its branch.
 		cardStalk: 3,
