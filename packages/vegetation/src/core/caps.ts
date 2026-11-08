@@ -72,7 +72,11 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		// 17.61 MB. An evergreen carries many small leaves on dense shoots, and the clearance packs
 		// the limbs into fuller crowns, so the evergreen rather than the oak now sets this cap. The
 		// oak's own largest variant measures 11.02 MB at high.
-		variantBytes: { low: 17 * MB, medium: 17.1 * MB, high: 17.3 * MB, ultra: 17.7 * MB },
+		// The common alder's rim needs about a quarter more shoots than its variant could hold: bytes
+		// run at 3.6 KB a shoot, so a rim of five pieces against a photograph's one is a budget
+		// question rather than a growth one. The owner raised the cap rather than let the budget
+		// choose the species' crown; the holm oak's figures this cap replaced were 16.94 to 17.61.
+		variantBytes: { low: 20 * MB, medium: 20.1 * MB, high: 20.3 * MB, ultra: 20.7 * MB },
 		// The pedunculate oak's largest of three variants, with about 15 per cent to spare: 7.72, 9.85,
 		// 13.05 and 17.80 MB. Close-up review needs every finest macro axis as real wood, and a page
 		// that needs fewer triangles grows a coarser plant. A thicker bole costs radial segments on
