@@ -314,7 +314,10 @@ export const record: Species = {
 	},
 	lod: {
 		nearFoliage: 'instanced',
-		switchPixels: [240, 12, 160],
+		// A shoot's card stands fourteen times the shoot, which reads as a blobby sheet closer than a
+		// few tens of pixels, so the real shoots draw from twenty pixels up and the cards serve the
+		// whole views alone.
+		switchPixels: [20, 12, 160],
 		// The clumps stand about a fifth larger than their shoots, so the gaps between one clump's
 		// shoots fall on a neighbour's scales rather than on sky.
 		cardGrow: 14,
