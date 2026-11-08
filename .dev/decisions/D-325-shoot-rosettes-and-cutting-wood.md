@@ -7,7 +7,9 @@ Summary: a shoot's crowded tip now spreads its leaves evenly round the stem inst
 so a leaf cluster reads the same from every side. A shoot class may name its own wood girth and
 lateral angle, so a three year spray is thicker and wider than this year's shoot. The oak's cluster
 carries eight leaves round one plump bud, which closes its sky gap to the reference's and recovers
-the shape overlap the first rosette lost.
+the shape overlap the first rosette lost. A cut piece that vanishes when the camera turns edge-on is
+a flat piece, not a measure's fault: its leaves need depth, which is an angle spread with a droop,
+not a bigger card.
 
 ## Question
 
@@ -74,6 +76,16 @@ draws one. Its leaf stalks stood 1.6 millimeters across and drooped ten degrees.
 and four degrees the groups fell to three. The leaf's own outline stayed at 0.81 overlap, and the
 single-leaf still's shape did not move. The lime and the alder show the same break-up in their cut
 pieces for the same reason.
+
+### A flat cut piece vanishes edge-on
+
+The English elm's cluster turn read 120 per cent tall against the 25 per cent band. The cause was
+one angle. At 135 degrees the render drew 8 by 10 pixels, where the photograph keeps 66 by 289. The
+piece is two-ranked and nearly flat, so its leaves vanish when the camera looks along their plane.
+Spreading the class's leaf angles 35 degrees and drooping them 6 gave them depth. The same edge-on
+cell then drew 73 by 265. The turn's height spread fell to 11.6 per cent and its width to 103, both
+inside their bands. The cluster stills held at 0.415 and 0.450 overlap. A bigger card cannot do
+this. The missing dimension is the leaf's own depth.
 
 ## Look
 

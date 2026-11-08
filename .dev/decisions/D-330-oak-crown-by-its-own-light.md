@@ -167,6 +167,16 @@ at the other, while they closed both gaps. A review light above the photographs'
 six steps on the same crown. That light is brighter than the photographs, so it fits the species to
 its score rather than to the picture. For the elm the color stays a stated limit.
 
+### A leaf-facing lever, refused on its cost
+
+The elm's close crown shows its leaves edge-on to a viewer outside the crown. Its photograph shows
+broad faces. The shoot placement's `skyward` turns each leaf's face toward the sky. Lowering it from
+0.55 to 0.25 was the one reachable lever. It did not fix the faces, and it opened the profile. The
+second whole view's gap rose from 0.088 to 0.095, from nine thousandths over its band to sixteen. The
+first view read 0.086 and the silhouette 0.088. The leaf color moved from 11.6 to 12.2 at the first
+view. The lever was reverted. The close crown's leaf faces stand as a limit of the leaf's own
+orientation model, not of the crown's settings.
+
 ## Look
 
 The crown thinned by its own light looks better than the clump field. Its sky falls between the limb
