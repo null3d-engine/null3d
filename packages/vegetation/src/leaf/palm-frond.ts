@@ -38,7 +38,7 @@ const GROUP_ANGLE = 16;
 /** The share of a frond's length that a group member stands along from its place's. */
 const GROUP_STEP = 0.012;
 /** The narrowest a leaflet ribbon is drawn, as a share of the texture's own leaflet width. */
-const WIDTH_SHARE = 1;
+const WIDTH_SHARE = 1.4;
 /** Degrees the planes of a V-section frond fan to either side of the rachis's own upper face. */
 const PLANE_FAN = 62;
 /**
