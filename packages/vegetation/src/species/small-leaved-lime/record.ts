@@ -28,7 +28,7 @@ export const record: Species = {
 	// Stills 01, 02 and 18: the bole stands about a thirtieth of the tree's height across at breast
 	// height, 0.030 to 0.034 on the silhouette, so a 22 m tree's bole is about three quarters of a
 	// metre thick.
-	size: { height: { mean: 21.55, spread: 2 }, dbh: 0.72, aspect },
+	size: { height: { mean: 20.7, spread: 2 }, dbh: 0.72, aspect },
 	growth: {
 		model: 'self-organizing',
 		years: 36,
@@ -252,7 +252,7 @@ export const record: Species = {
 			shadePrune: 0,
 			// Stills 01, 03 and 05: a little sky shows through the crown's middle and under it, where
 			// its own leaves leave a shoot under this share of the sky; the lit outer masses stay.
-			skyPrune: 0.08,
+			skyPrune: 0.06,
 			skyPruneLayer: 1,
 			// Stills 01 and 18: no bare twigs hang outside the foliage.
 			bareTrim: 0.03,
@@ -374,7 +374,7 @@ export const record: Species = {
 		switchPixels: [240, 12, 160],
 		// The cards stand half again larger than the shoots they picture, so a gap between one shoot's
 		// leaves falls on a neighbour's leaves rather than on sky, and the far crown reads solid.
-		cardGrow: 1.6,
+		cardGrow: 1.65,
 		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so a card's leaves
 		// read as a piece in air unless its twig is drawn as a line.
 		cardStalk: 1.5,
@@ -386,11 +386,11 @@ export const record: Species = {
 			// above the measured figure at its tier, at 2.48, 3.79, 6.10 and 10.46 MB, and under the
 			// owner's cap for a tree.
 			kitBytes: { low: 2_600_000, medium: 3_900_000, high: 6_300_000, ultra: 10_800_000 },
-			// The first variant measures 4.49, 4.55, 4.64 and 4.77 MB from the coarsest tier up.
-			variantBytes: { low: 4_800_000, medium: 4_850_000, high: 4_950_000, ultra: 5_050_000 },
+			// The first variant measures 4.05, 4.10, 4.20 and 4.33 MB from the coarsest tier up.
+			variantBytes: { low: 4_350_000, medium: 4_400_000, high: 4_500_000, ultra: 4_600_000 },
 			lod0Triangles: 2_900_000,
-			// The heaviest variant's first card level draws about 91,100 triangles, and its second
-			// 40,100, under the owner's 43,000 cap at the finest tier.
+			// The heaviest variant's first card level draws about 83,300 triangles, and its second
+			// 36,500, under the owner's 43,000 cap at the finest tier.
 			lod1Triangles: 110_000,
 			lod2Triangles: 43_000,
 			downloadBytes: 1_000_000,

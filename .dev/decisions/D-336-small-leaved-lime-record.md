@@ -57,16 +57,16 @@ in that folder.
 | An egg-shaped dome, taller than wide | `size.aspect` 0.74, from the fitted hull | 01, 02, 18: the widest foliage is 0.70 to 0.80 of the height across | The all-round band |
 | A crown base a sixth up | `growth.floor` 0.156 | 01, 02, 18 and the fitted hull's base | Variant bytes |
 | One straight central stem | no `growth.divide` | 17: the bole runs on as one stem and branches leave it all the way up | The crown's shape |
-| A leader that outgrows the limbs | `growth.apical.control` 0.64 to 0.67 | 01, 02, 18: one leader carries the crown to its single apex | The crown's width |
+| A leader that outgrows the limbs | `growth.apical.control` 0.68 to 0.70 | 01, 02, 18: one leader carries the crown to its single apex | The crown's width |
 | Wide, arching branches that droop | `growth.buds.angle` 52 to 62, `growth.tropism.gravi` below zero at the finest order | 02, 07, 09: branches leave at wide angles and their ends hang | Nothing measured |
 | Alternate leaves in two ranks | `growth.buds.arrangement` and `shoots.phyllotaxis`, `distichous` | 09, 10, 11, 22 | Shoot mesh |
-| A dense crown of fine twigs | `shoots.placement.perMetre` 4.2 to 12, `density` 1.55 and `cardGrow` 1.45 | 01, 02, 18: the crown's box shows about a twentieth of sky | Variant bytes and the card level |
-| Heart-shaped blades on long stalks | `foliage.leaf.length` 8 cm, `petiole.length` 2.8 cm | 12, 13, 24: a 3 to 9 cm blade on a stalk about two fifths of it | Kit bytes |
+| A dense crown of fine twigs | `growth.branching` 1.4, `shoots.placement.perMetre` 4.2 to 12, `density` 2.1 and `cardGrow` 1.6 | 01, 02, 18: the crown's box shows about a twentieth of sky | Variant bytes and the card level |
+| Heart-shaped blades on long stalks | `foliage.leaf.length` 7 cm, `petiole.length` 2.8 cm | 12, 13, 24: a 3 to 9 cm blade on a stalk about two fifths of it | Kit bytes |
 | Leaf colour | `foliage.leaf.optics`, sampled in linear light | 24, 25: the upper face 0.039, 0.093, 0.011 and the lower 0.267, 0.323, 0.201 | The leaf colour figures |
 | A lopsided red bud at each node | `shoots.bud` 9 mm by 5.5 mm, a single terminal bud | 10, 22 | Kit bytes |
 | Shallow fissures in grey bark | `bark`, the texture from slot 26 at a 0.5 m tile, slot 28 for young wood | 14, 15, 16, 26, 28 | The bark figures |
 | Cream flowers at the shoot tips | `extras` `flower`, a five-petal cup 3 mm across, in blossom | 19: cream flowers in clusters at the year's shoot ends | Variant bytes |
-| A cut piece of its own | `shoots.cuttingClasses`, `cut` and `spur` | 21, 22, 23: one slender shoot with a few alternate leaves | Kit bytes |
+| A cut piece of its own | `shoots.cuttingClasses`: `cut` over three years with two side twigs at 85 degrees, and `spur` | 21, 22, 23: a limb that forks and runs out as wide as it is tall, and one leaf cluster | Kit bytes |
 
 ### The fitted figures
 
