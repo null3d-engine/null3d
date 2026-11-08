@@ -186,6 +186,8 @@ function shootClassProblems(
 		if (!(shoot.bend.angle >= 0 && shoot.bend.angle <= 60))
 			out.push(`${path}.bend.angle is ${shoot.bend.angle}; it is degrees from 0 to 60`);
 	}
+	if (shoot.leafAzimuthSpread !== undefined)
+		wholeProblem(shoot.leafAzimuthSpread, `${path}.leafAzimuthSpread`, 0, 90, out);
 	if (shoot.skyward !== undefined) shareProblem(shoot.skyward, `${path}.skyward`, out);
 	if (shoot.phyllotaxis?.kind === 'spiral')
 		wholeProblem(shoot.phyllotaxis.divergence, `${path}.phyllotaxis.divergence`, 0, 360, out);

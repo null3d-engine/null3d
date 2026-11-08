@@ -16,9 +16,9 @@ import { aspect, envelope, roundBand } from './fit';
  * joints, crowded into the branchlet's last third where the fan stands.
  */
 const BRANCHLET: readonly (readonly [number, number])[] = [
-	[0, 5],
-	[0.4, 1],
-	[1, 0.5],
+	[0, 7],
+	[0.55, 0.9],
+	[1, 0.3],
 ];
 
 /** The bamboo's record. */
@@ -97,11 +97,12 @@ export const record: Species = {
 					[1, 0.95],
 				],
 				leafAngle: [
-					[0, 78],
-					[0.6, 62],
-					[1, 42],
+					[0, 85],
+					[0.6, 70],
+					[1, 52],
 				],
-				leafAngleSpread: 25,
+				leafAngleSpread: 18,
+				leafAzimuthSpread: 40,
 				droop: 6,
 				phyllotaxis: { kind: 'distichous', flatten: 0.45 },
 			},
@@ -122,11 +123,12 @@ export const record: Species = {
 					[1, 0.9],
 				],
 				leafAngle: [
-					[0, 80],
-					[0.5, 66],
-					[1, 44],
+					[0, 88],
+					[0.5, 74],
+					[1, 56],
 				],
-				leafAngleSpread: 26,
+				leafAngleSpread: 20,
+				leafAzimuthSpread: 40,
 				droop: 9,
 				phyllotaxis: { kind: 'distichous', flatten: 0.45 },
 			},
@@ -152,11 +154,12 @@ export const record: Species = {
 					[1, 1],
 				],
 				leafAngle: [
-					[0, 80],
-					[0.6, 62],
-					[1, 42],
+					[0, 88],
+					[0.6, 72],
+					[1, 54],
 				],
-				leafAngleSpread: 26,
+				leafAngleSpread: 20,
+				leafAzimuthSpread: 40,
 				droop: 9,
 				phyllotaxis: { kind: 'distichous', flatten: 0.45 },
 			},
