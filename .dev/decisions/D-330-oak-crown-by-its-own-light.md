@@ -177,6 +177,33 @@ first view read 0.086 and the silhouette 0.088. The leaf color moved from 11.6 t
 view. The lever was reverted. The close crown's leaf faces stand as a limit of the leaf's own
 orientation model, not of the crown's settings.
 
+### The growth light's shadow levels, a density lever in disguise
+
+The far card's shade is the sky share its own site sees: `crown/visibility.ts` weighs sixteen sky
+directions through the crown's leaf area, at half extinction, and writes each shoot row's share as
+its card's occlusion. The lead read the growth light's shadow levels as the knob for that shade, so
+they were swept, three runs at the same seed and slot file, drawing the three whole views and the
+leaf stills. At the record's own levels the whole views read 11.56, 12.96 and 8.58 color steps with
+sky gaps 0.088, 0.088 and 0.084.
+
+A deeper pyramid, its own-cell shadow raised from 0.15 to 0.35, lightened the crown to 9.68, 10.13
+and 8.04. It also opened the gaps to 0.119 and 0.171, past their 0.105 and 0.079 tops at the first
+two views, and dropped the outline overlap to 0.59 and 0.56.
+
+A shallower pyramid, the same level lowered to 0.08, closed the crown. Its gaps read 0.067, 0.066
+and 0.077, so the profile view comes inside its band from nine thousandths over, and the first view's
+outline overlap rises from 0.77 to 0.81. But the profile's width error doubles to 0.249, its crown
+box grows from 396 by 281 to 428 by 314, its overlap falls to 0.66, and its color moves the wrong
+way by 0.8 of a step. The closing crown fills more of its own envelope; the level does not buy color
+without moving the plant's outline.
+
+So the levels are a density and extent lever. The record cannot lighten the crown's color at a fixed
+crown: the color it needs is a different term. The change that would give it is the crown's sky
+extinction, or the map from sky share to a card's occlusion, which lifts a crown's whole interior
+without adding leaf. Until that term moves, row 10 stands as a stated limit with five levers
+measured against it: the thinning and wider cards, a review light brighter than the photographs, the
+leaf's skyward turn, the leaf's albedo, and now the growth light's shadow levels.
+
 ## Look
 
 The crown thinned by its own light looks better than the clump field. Its sky falls between the limb
