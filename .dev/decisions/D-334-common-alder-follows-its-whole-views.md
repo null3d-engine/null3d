@@ -120,6 +120,17 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   join them and was refused, because it fills the crown's fine gaps on the same mask and would take
   the oak's two passing whole views into failure. What remains is an engine fault, not a species
   one.
+- The leaf cluster carries eight leaves, not six, each a seventh smaller. Six large blades covered
+  what eight should, which put still `11`'s background share 0.012 below its floor. With eight, its
+  share rises to 0.161 against a photograph's 0.166 and its outline overlap from 0.336 to 0.415;
+  still `23` reads 0.165 against 0.152, with overlap 0.312 to 0.373.
+- **The winter keys are a budget limit.** Still `19` draws one catkin where its photograph shows six
+  cones and three catkin strings on one twig end, and the keys are not missing: the winter plant
+  holds the same 438,057 extras vertices as summer and autumn. A cone stands on 16 per cent of shoot
+  tips and a catkin on 18, drawn independently, so one tip carries both about three times in a
+  hundred. The lever is the share, and the densest variant measures 19.58 MB against the record's
+  19.70 and the owner's 20.30; a share of 0.3 put the same variant at 28.2 MB, so the 0.6 MB left
+  buys about one hundredth of a share.
 - **The base bark view is a limit of what its figure measures, not of the foot's colour.** The base
   view's colour is the mean of nine patches of a fifth of the frame each. Counted on the drawing,
   **half of those patch pixels are sky and ground**, against 39 per cent of the photograph's,
