@@ -192,6 +192,11 @@ Limits this record states:
   across spreads its shoots thin and read 0.258 open against its photograph's 0.139. A narrower
   crown of the same foliage fills the same box and reads 0.148. Adding foliage instead passes the
   second card level's cap at a density of 6, reaching 46,371 triangles against the cap's 43,000.
+- The card growth that opens the three side views was measured at two bases, before and after the
+  shared leaf back-face change. The gaps read the same to four decimals either way: 0.2114, 0.1663
+  and 0.1951. A species whose far crown reads its shoot geometry moves with that change, and its
+  value would not carry over. The birch's far views draw cards, so the prune's shoot count does not
+  reach them.
 - Still 30's crown box and sky gap are void. The tool reports a box holding 38 per cent of the
   plant's height. Its foot sits inside the foliage, so the gap measures a slice. A top margin does
   not clear it: the fault is the crown-foot finder. The owner rules that a void picture cannot pass
