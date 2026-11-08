@@ -158,6 +158,9 @@ export const record: Species = {
 	seedSalt: 0x4057a,
 	roundBand,
 	cuttings: {
+		// Stills 21 to 23: a lifted piece is one eye of the crown, and the photographs show six or
+		// seven leaves on it, against the nine each eye of the crown carries.
+		leaves: { mean: 8, spread: 1 },
 		// Still 21: one eye lifted from the crown, its leaves on their long stalks.
 		branch: { order: 1, length: 0.62 },
 		// Still 22: a shorter shoot on a piece of crown, a few leaves on it.

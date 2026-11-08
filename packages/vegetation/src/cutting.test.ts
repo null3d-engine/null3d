@@ -267,6 +267,41 @@ describe('cuttings', () => {
 		expect(Array.from(flattened?.positions ?? [])).toEqual(Array.from(pressed.positions));
 	});
 
+	it('gives a rosette piece the leaf count its cutting hint names', async () => {
+		const { hostaRecord } = await import('./grow/ground.fixture');
+		const { noTextureFiles } = await import('./core/textures');
+		const { AXIS_LEAF } = await import('./grow/ground');
+		await loadPlantCode(hostaRecord);
+		// The leaves one cut eye carries, with the hint given and with the crown's own count.
+		const leavesOfPiece = (hint?: number): number => {
+			const record =
+				hint === undefined
+					? hostaRecord
+					: {
+							...hostaRecord,
+							cuttings: { ...hostaRecord.cuttings, leaves: { mean: hint, spread: 0 } },
+						};
+			const kit = buildKitNow(
+				{ record, textures: noTextureFiles(record.id) },
+				{ placeholders: 'missing', detail: 'low' },
+			);
+			const piece = growPlantNow(kit, {
+				seed: 11,
+				variant: 0,
+				near: true,
+				cutting: { part: 'subbranch' },
+			});
+			let leaves = 0;
+			for (let a = 0; a < piece.skeleton.axes.count; a++)
+				if ((piece.skeleton.axes.kind[a] as number) === AXIS_LEAF) leaves++;
+			return leaves;
+		};
+		const crown = leavesOfPiece();
+		const sparse = leavesOfPiece(3);
+		expect(sparse).toBeLessThan(crown);
+		expect(sparse).toBeLessThanOrEqual(4);
+	});
+
 	it('cuts a leaf with either face toward +Z, and a cluster in rank order', () => {
 		const upper = cutFoliage(kit, { part: 'leaf' }, kit.detail);
 		const lower = cutFoliage(kit, { part: 'leaf', face: 'lower' }, kit.detail);
