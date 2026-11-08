@@ -93,6 +93,12 @@ The record's budget stands above each figure and inside the tree caps: 150,000 c
 43,000 at the second card level. The woodland form sets the card levels and the variant bytes. The
 mature form sets the nearest level's triangles.
 
+The species registers a `plant-silver-birch` picture test, which the image manifest builds from the
+registry with no line of its own. That test's six references, three tiers on the Mac and three on
+SwiftShader, are not drawn yet, so `bun run limits` reports the picture references past their limit.
+They must be drawn and accepted once the record is final, since a reference holds only for the tree
+that drew it.
+
 Limits this record states:
 
 - The mature crown of still 33 cannot reach that picture's sky gap of 0.057 inside the tree caps. The
