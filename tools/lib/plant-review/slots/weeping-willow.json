@@ -67,11 +67,22 @@
 		"sky": "#c9dbee"
 	},
 	"12-single-leaf-upper.png": {
-		"leaves": 1.06,
-		"roll": 45.0
+		"leaves": 1.25,
+		"roll": -45.0
 	},
 	"13-single-leaf-underside.png": {
-		"leaves": 1.06,
-		"roll": 45.0
+		"leaves": 1.25,
+		"roll": -45.0
+	},
+	"30-young-willow-whole.png": {
+		"sunAzimuth": 40,
+		"sunRise": 48,
+		"skyShare": 0.5,
+		"daylight": 2.3,
+		"fov": 30
+	},
+	"31-young-willow-crown.png": {
+		"skyShare": 0.55,
+		"daylight": 2.0
 	}
 }
