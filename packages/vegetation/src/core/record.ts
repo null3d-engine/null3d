@@ -1112,6 +1112,12 @@ export interface ShootClass {
 	 * round from every side.
 	 */
 	readonly leafAngleSpread?: number;
+	/**
+	 * Degrees each leaf's azimuth varies from the arrangement's own, from 0 to 90: a two-ranked
+	 * shoot's leaves then lie in a shallow cup rather than one plane, so its fan keeps a width as it
+	 * turns edge-on.
+	 */
+	readonly leafAzimuthSpread?: number;
 	/** Degrees the shoot hangs over its length (willow whips, birch). */
 	readonly droop: number;
 	/**
