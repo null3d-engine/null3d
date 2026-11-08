@@ -179,7 +179,7 @@ export const record: Species = {
 				nodes: { mean: 8, spread: 0.5 },
 				internode: ALTERNATE,
 				stem: { radius: [0.006, 0.003] },
-				lateral: 65,
+				lateral: 60,
 				laterals: 2,
 				lateralGap: 0.3,
 				leafScale: [
