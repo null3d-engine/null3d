@@ -5,8 +5,8 @@
 //
 //   bun run plants:review <species> [--refs <folder or slug>] [--out <folder>] [--run <name>]
 //     [--views a,b | all] [--step <degrees>] [--wind-fps 8] [--cell <pixels>] [--only stills,turns,wind]
-//     [--seed 11] [--variant 0] [--preset high] [--lod 0|1|2] [--gpu webgpu] [--no-matte]
-//     [--compare <run folder>]
+//     [--stills 01,02,18] [--seed 11] [--variant 0] [--preset high] [--lod 0|1|2] [--gpu webgpu]
+//     [--no-matte] [--compare <run folder>]
 //
 // The species is any registered species id, or any other id, which draws as a stand-in. The dev
 // server must serve this copy of the repository on the port that NULL3D_PORT names; one is started
@@ -322,6 +322,25 @@ function viewList(): PlantView[] {
 	return views;
 }
 
+/**
+ * The reference stills that `--stills` keeps: two-digit numbers or any part of a file's name.
+ * Absent, every still in use is drawn. A round that changes one part of a plant needs only the
+ * views that part shows, and drawing four of them takes a fraction of the time.
+ */
+function stillList<T extends { readonly file: string }>(stills: readonly T[]): readonly T[] {
+	if (!flag('stills')) return stills;
+	const names = option('stills')
+		.split(',')
+		.map((name) => name.trim().toLowerCase())
+		.filter((name) => name.length > 0);
+	const kept = stills.filter((still) =>
+		names.some((name) => still.file.toLowerCase().includes(name)),
+	);
+	if (kept.length === 0)
+		throw new Error(`--stills names ${option('stills')}, which matches no reference still`);
+	return kept;
+}
+
 /** The parts of the review that `--only` keeps: stills, turns and wind, all by default. */
 function parts(): Set<string> {
 	const all = ['stills', 'turns', 'wind'];
@@ -629,7 +648,7 @@ async function main(): Promise<void> {
 				>)
 			: {};
 		if (wanted.has('stills'))
-			for (const slot of set.stills)
+			for (const slot of stillList(set.stills))
 				shots.push(stillShot(set, slot, base, matte, span, slotQueries[slot.file]));
 		if (wanted.has('turns'))
 			for (const video of set.turns)

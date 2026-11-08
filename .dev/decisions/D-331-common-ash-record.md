@@ -318,6 +318,78 @@ height against the photographs' 0.038 to 0.051. Run `ash-46` draws the whole vie
 from 0.474 to 0.479 at 01 and the trunk taper from 0.417 to 0.422, and takes the limb's bark view
 from 0.407 to 0.356 as the camera finds a different limb. The largest variant rises to 6.13 MB.
 
+### The cluster's third pair costs a row and does not open the turn
+
+The reviewer named the piece itself as the lever for the cluster's turn: the reference carries six
+leaves in three opposite pairs where the ash's short shoot carries four in two, so the ash's two
+planes flatten more as the piece turns. The third pair was drawn on the crown's own short shoot, so
+the close view and the tree stayed one plant, and run `ash-48` measured it.
+
+It trades one axis of the turn for the other. The crown box's spread over the turn's frames, largest
+less smallest over the mean, goes from 95 per cent wide and 30 tall to 58 and 63, where the reference
+reads 54 and 14: the width, which was the fault, comes into line and the height doubles away from it.
+The turn's mean shape overlap rises from 0.227 to 0.261. The stills go the other way: the clusters
+read 0.3086 and 0.3058 against the photographs' 0.3918 and 0.3882, about 0.083 under and outside the
+band on the closed side, where they passed before.
+
+So the pair costs a passing pair of stills and brings no row, and it is back off: the short shoot
+draws four leaves in two pairs again and the kit returns to 9.07 MB at the ultra tier.
+
+### The cluster's turn is a trade the species cannot have both ways
+
+Two changes were drawn against the cluster's turn, and neither brings its height inside the
+reference's band:
+
+| Setting | The turn's spread wide | tall | Mean shape overlap |
+| --- | --- | --- | --- |
+| The reference | 54 per cent | 14 per cent | none |
+| As the record stands | 95 | 30 | 0.227 |
+| A third leaf pair on the short shoot | 58 | 63 | 0.261 |
+| The leaves laid flat at eighty degrees | 96 | 81 | 0.218 |
+| A third pair on a shoot half as long again | 52 | 16 | 0.233 |
+| A cutting class of its own, half as long again | 60 | 15 | 0.239 |
+
+The last row's spread is the eight-angle measure. Run `ash-51` drew it: the turn comes inside the
+band at 52 wide and 16 tall against the allowed 47 and 25, its width five points over, and the crown
+closes with the same change. The crown's cost is the longer shoot's rather than the six leaves':
+01's sky fell from 0.207 to 0.126 against its photograph's 0.261, 02 from 0.182 to 0.112 and 18 from
+0.209 to 0.124, and the cluster stills with them to 0.353 and 0.362, because six leaves on every
+short shoot is half again the crown's foliage. The third pair on the crown's own 0.18 m shoot leaves
+the whole views holding, which is why the crown's cost belongs to the shoot's length and not to the
+leaves' count.
+
+The class's own leaf angle and droop, steeper and arched at fifty to thirty-eight degrees with a
+droop of five, are the fourth measurement and the closest turn of all: run `ash-56` reads 56 wide and
+10 tall on the eight angles against the class's 60 and 15, and 60 and 15 on every frame against 74 and
+16. It buys four points of width on the eight angles and thirteen on every frame, and the turn's mean
+shape overlap falls from 0.239 to 0.223. It closes the cluster stills to 0.315 and 0.322 against their
+photographs' 0.392 and 0.388, about seven hundredths under and outside the band, so it costs a
+passing row and comes back out.
+
+The class's leaf spread is not the width's lever either. Narrowed from fifteen degrees either side
+to five, run `ash-54` reads 65 wide and 15 tall on the eight angles against the class's 60 and 15,
+and 78 and 17 on every frame against 74 and 16, so the width goes the wrong way while the overlap
+rises from 0.239 to 0.247 and the stills hold at 0.371 and 0.382. The spread is back at fifteen.
+
+Three levers have now been measured against the turn's width and none brings it down: the third
+pair on the crown's own shoot, the flat angle on the crown's class, and the class's own spread. The
+trade stands on the dedicated class's figures.
+
+The last row is run `ash-53`. A class of its own costs the crown nothing: the whole views hold at
+0.207, 0.181 and 0.209 and the cluster stills sit inside at 0.364 and 0.378. Its turn brings the
+height inside at 15 against the allowed 25, better than the crown's longer shoot managed, and leaves
+the width at 60 against the allowed 47, thirteen points over where the longer shoot read five. The
+class's own leaf spread is the figure still to take, and now it can move without touching the crown.
+
+The spread is the review's own crown-box measure over the turn's frames: the largest box less the
+smallest, over the mean. The third pair brings the width into the reference's band and doubles the
+height away from it; laying the leaves flat nearly triples the height and leaves the width where it
+was. Both are reverted.
+
+What the two say together is that the piece's width follows how many leaves stand in how many planes,
+and its height follows something the leaf's angle does not reach. The cluster's turn therefore stands
+as a trade this species cannot have both ways, and its two stills keep the figures they had.
+
 ### The envelope is not a knob
 
 The crown's box reads 1.155, 1.089 and 1.139 wide to high at the whole views against the
