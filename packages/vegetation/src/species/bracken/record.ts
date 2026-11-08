@@ -126,6 +126,8 @@ export const record: Species = {
 		// summer faces: a rust that is a variant of the same green, not another colour. Still 19's
 		// own render pulled the green down and the blue up to its photograph's mean.
 		autumn: { reflectance: [0.181, 0.071, 0.026], transmittance: [0.207, 0.094, 0.039] },
+		// Still 19: the stipes turn from green to the photograph's orange.
+		bark: { autumn: [8.8, 2.1, 2.1] },
 	},
 	wind: {
 		// The wind clip is a light breeze: the level blades rock a little on their stipes while

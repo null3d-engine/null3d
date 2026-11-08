@@ -123,6 +123,10 @@ export const HEADER = {
 	extraStalks: 51,
 	/** The least width in pixels that a card's stalk draws, or 0 where the record gives none. */
 	cardStalk: 55,
+	/** The autumn bark's linear tint, and 1 when the record gives one. */
+	autumnBark: 56,
+	/** The winter bark's linear tint, and 1 when the record gives one. */
+	winterBark: 57,
 } as const;
 
 /**
@@ -132,7 +136,7 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.cardStalk + 1;
+export const HEADER_TEXELS = HEADER.winterBark + 1;
 
 /** An extra's roughness where its record names none. */
 export const EXTRA_ROUGHNESS = 0.6;
@@ -355,6 +359,9 @@ export function speciesHeader(
 	if (bud) texel(header, HEADER.bud, [...bud, 1]);
 	const sway = windSway(record);
 	texel(header, HEADER.sway, [sway.amplitude, sway.frequency, sway.power, 0]);
+	const seasonBark = record.seasons.bark;
+	if (seasonBark?.autumn) texel(header, HEADER.autumnBark, [...seasonBark.autumn, 1]);
+	if (seasonBark?.winter) texel(header, HEADER.winterBark, [...seasonBark.winter, 1]);
 	texel(header, HEADER.cardStalk, [record.lod.cardStalk ?? 0, 0, 0, 0]);
 	return header;
 }
