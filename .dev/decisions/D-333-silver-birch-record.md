@@ -114,32 +114,21 @@ the leaf area to 1,328 square meters. Raising `shoots.prototypes` moves it a lit
   Its own fork photograph yields no outline in the tool, before the change or after. The picture is
   the guard: it shows both arms inside the frame where the old frame cut them off.
 
-### The daylight a slot asks for
+### The light a slot asks for
 
 The query's `daylight` is the strength of a view's light, and the review derives it from the
-photograph's own sky. The query's note says that value
+photograph's own sky. The birch's slot carries that value: 2.95 on stills 01, 02 and 18, and 4.1 on
+still 03.
 
-> a photograph's tone curve squeezes a bright sky more than the plant under it.
+A raised light was measured and overruled. At 4.5 on the three side views and 5.5 on still 03, every
+crown's red and green landed within five levels of its photograph's, and the color difference fell
+from 11.5 to 5.5, from 10.6 to 3.9, and from 10.3 to 6.2 steps. The batch rule stands against it:
+the light is the photographs' own measure, and a species may depart from it only with a physical
+reason. The row fails at either value against its band of 3 steps, so the raised light bought no row
+and made the figures untrustworthy. The slot keeps the sky-derived value.
 
-The birch's whole views show that squeeze. At the sky-derived value every crown stands 20 to 28
-levels low in red and green. The slot's `daylight` is raised to the value that lands the tone:
-stills 01, 02 and 18 to 4.5, and still 03 to 5.5. Red and green then land within five levels of
-the photographs':
-
-| still | photograph | at the sky-derived light | at the corrected light | steps |
-| --- | --- | --- | --- | --- |
-| 01 | #7f8e7e | #69725a | #7f896b | 11.5 to 5.5 |
-| 02 | #828e7a | #6a735a | #808a6c | 10.6 to 3.9 |
-| 03 | #889381 | #787960 | #89896d | 10.3 to 6.2 |
-
-Nothing else moves. Every sky gap and outline overlap is identical to four decimals between the two
-runs, since both come from the matte. The leaf swatches 24 and 25 read exactly 5.08 and 8.73 steps
-in both, since their slots light them by albedo. Still 03 takes 5.5 and not a higher value: its
-green overshoots its photograph's above it. The blue stays 14 to 19 levels short at every value.
-That is the leaf's own blue, a separate fault not masked by over-lighting.
-
-This corrects how the view lights a plant against a fixed sky. It does not fit the color band: the
-tone lands on the photograph's, and the residual is one channel short.
+The color difference therefore stands as a limit: 11.5 and 10.6 steps from the photographs at the
+tool's own light, where the working band is 3.
 
 ### A shoot class's own leaf arrangement and facing
 
