@@ -2,12 +2,12 @@
 	"01-whole-vase-distant.png": {
 		"skyShare": 0.167,
 		"fov": 30,
-		"daylight": 2.168
+		"daylight": 1.599
 	},
 	"02-whole-vase-profile.png": {
 		"skyShare": 0.357,
 		"fov": 30,
-		"daylight": 1.419
+		"daylight": 2.184
 	},
 	"03-whole-from-below.png": {
 		"skyShare": 0.357,
@@ -44,7 +44,7 @@
 	},
 	"elm-wind-motion.mp4": {
 		"skyShare": 0.167,
-		"daylight": 2.168
+		"daylight": 1.599
 	},
 	"20-suckers.png": {
 		"form": "suckers",

@@ -10,11 +10,12 @@
 // classes from the studio stills of a branch, a sub-branch and a leaf cluster; the leaf from the
 // texture sources and the single-leaf stills; the bark from the bark stills; the samaras from the
 //
-// The review slots light each still as the review tool derives its photograph's light: the upper
-// half's sky reads a mean linear luminance of 0.483 at still 01 and 0.677 at 02, so pi times each,
-// split with a hard sun and with haze, is 2.17 and 1.42 times the page's soft daylight. At that
-// light the crown reads eleven to thirteen colour steps from the photographs; no thinning inside
-// the sky-gap bands closes that, so the colour stands as a limit.
+// The review slots light each still as its photograph was lit: the upper half's sky reads a mean
+// linear luminance of 0.51 at still 01 and 0.70 at 02, so pi times each is 1.60 and 2.18 times the
+// page's soft daylight. At that light the crown reads fifteen and seven colour steps from the
+// photographs. The drawn crown is darker than either, and the crown's own sky extinction is the
+// term that darkens it: at zero the same crown reads six and five steps. No record lever closes
+// that inside the sky-gap bands, so the colour stands as a limit.
 // fruit still. The record is plain data: no code runs in it.
 import type { Species } from '../../core/record';
 import { aspect, envelope, roundBand } from './fit';
