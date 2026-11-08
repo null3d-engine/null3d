@@ -267,12 +267,11 @@ export const record: Species = {
 			],
 			// Stills 01 and 02: the crown is a dense mass, and the first round's curve alone left it
 			// open, so the dial adds shoots along the finest axes without changing their reach.
-			density: 3.5,
+			density: 3.8,
 			shadePrune: 0,
-			// Stills 01, 02 and 18: sky shows through the crown's middle and under it only where its
-			// own leaves leave a shoot under this share of the sky, and the lit outer masses stay.
+			// Stills 01, 02 and 18: the crown's mass comes from its cards, and a self-pruning line took
+			// shoots that the photographs keep in the crown's middle, so the line is off.
 			skyPrune: 0,
-			skyPruneLayer: 1,
 			// Stills 01 and 18: no bare twigs hang outside the foliage.
 			bareTrim: 0.03,
 			// Stills 02 and 05: the shoots stand up off their wood, so the foliage rides on the limbs.
@@ -414,7 +413,7 @@ export const record: Species = {
 		// The cards stand well over twice the shoots they picture: the mip lift keeps a far card's
 		// coverage, so the whole view's mass comes from the card's own size. Measured on the three
 		// whole views, 2.4 brings their sky gaps inside their bands.
-		cardGrow: 2.4,
+		cardGrow: 2.5,
 		// Still 01: a card's twig is thinner than a pixel at a whole view, so a card draws its
 		// supporting twig as a two-pixel line and the join shows.
 		cardStalk: 2,
@@ -426,9 +425,9 @@ export const record: Species = {
 			// classes and the leaf's palmate blade among them; each cap sits above its figure and the
 			// medium one stays under the owner's four-megabyte ceiling.
 			kitBytes: { low: 3_300_000, medium: 3_980_000, high: 5_450_000, ultra: 8_250_000 },
-			// The crown's dense shoot dial puts 6,644 rosettes on the first variant, which measures
-			// 15.04, 15.10, 15.17 and 15.27 MB; each cap sits above it, under the owner's ceiling.
-			variantBytes: { low: 15_050_000, medium: 15_100_000, high: 15_170_000, ultra: 15_270_000 },
+			// The crown's dense shoot dial puts 7,182 rosettes on the first variant, which measures
+			// 16.42, 16.48, 16.55 and 16.65 MB; each cap sits above it, under the owner's ceiling.
+			variantBytes: { low: 16_430_000, medium: 16_490_000, high: 16_560_000, ultra: 16_660_000 },
 			lod0Triangles: 2_800_000,
 			lod1Triangles: 150_000,
 			lod2Triangles: 42_000,
