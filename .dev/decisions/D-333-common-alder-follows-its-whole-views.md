@@ -2,11 +2,12 @@
 
 Status: decided and built in the species record. Task: none.
 
-Summary: The alder's reference set disagrees with itself. Still `01` draws a tree 1.23 times its
-height wide, still `02` 0.59, still `18` 0.63 and the turning video's hull 1.015, so the record
-follows the three that agree and states the outlier. Its cut pieces are fixed by their proportions,
-not their leaves: width over length 0.49 and 0.45 against the photographs' 0.79 and 0.80 for the two
-stem pieces, and 0.91 against 0.57 for the cluster.
+Summary: The alder's reference set disagrees with itself: stills `01` and `30` draw a crown box
+1.227 and 1.192 as wide as it is tall, stills `02` and `18` 0.658 and 0.750. The record follows the
+narrow pair, which its outline fits better, and states the disagreement rather than averaging it.
+Its cut pieces are fixed by their proportions, not their leaves: width over length 0.49 and 0.45
+against the photographs' 0.79 and 0.80 for the two stem pieces, and 0.91 against 0.57 for the
+cluster.
 
 ## Question
 
@@ -25,15 +26,21 @@ as a bare stem where its photograph shows a leafy branch?
 
 ## Data
 
-The whole views' crown boxes, as shares of each plant's own height, read by the review tool's mask:
+The whole views' crown boxes, as the review tool measures them, in work pixels and as their width
+over their own height:
 
-| Picture | Width | Height |
+| Picture | Box, width by height | Width over height |
 | --- | --- | --- |
-| `01-whole-distant.png` | 1.227 | 1.000 |
-| `02-whole-profile.png` | 0.590 | 0.898 |
-| `18-silhouette.png` | 0.626 | 0.834 |
-| `30-whole-with-landmark.png` | 0.920 | 0.772 |
-| the turning video's hull | 1.015 at its widest | - |
+| `01-whole-distant.png` | 373 by 304 | 1.227 |
+| `02-whole-profile.png` | 242 by 368 | 0.658 |
+| `18-silhouette.png` | 249 by 332 | 0.750 |
+| `30-whole-with-landmark.png` | 323 by 271 | 1.192 |
+| the turning video's eight angles | 234 by 347 to 324 by 272 | 0.674 to 1.191 |
+
+The turning video does not settle it: its own crown boxes run from 0.67 to 1.19 over its eight
+angles, because the generated tree drifts between frames. The envelope the fitting tool measures is
+1.015 of the plant's height wide at its widest, which is a third measure again and the widest of
+any of them.
 
 The same views' sky gaps, which row 6 reads: `01` 0.140, `02` 0.091, `18` 0.180, `30` 0.138.
 
@@ -53,17 +60,22 @@ boxes from each run's matte and each photograph's mask.
 
 ## Look
 
-Set `01` beside `18`: one is a broad tree whose lowest limbs reach past the width of its crown, the
-other a cone half as wide with the trunk running through it. `02` and `30` stand with `18`. A viewer
-who knows the species would take `18`, `02` and `30` for one tree and `01` for another.
+Set `01` beside `18`: one is a broad tree, its crown box wider than it is tall, the other a cone
+whose box is three quarters as wide as it is tall. `30` stands with `01` and `02` with `18`, so the
+pictures split two and two. The eyes do not settle it, so the figures do: the narrow crown the
+record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` and 0.42 against
+`01`, so it fits the narrow pair better.
 
 ## Decision
 
-- The record follows `02`, `18` and `30`. Its envelope is the visual hull of stills `18` and `02`,
-  which stand square to one another, so each gives the reach along one horizontal axis at every
-  height. `fit.ts` keeps the fitting tool's own hull beside it, and the record says why it is not
-  used. Rejected: growing to the tool's hull, which draws a crown 1.015 of the height wide where
-  three of the four whole views stand near 0.6.
+- The record follows `02` and `18`. Its envelope is the visual hull of those two stills, which
+  stand square to one another, so each gives the reach along one horizontal axis at every height.
+  `fit.ts` keeps the fitting tool's own hull beside it, and the record says why it is not used.
+  Rejected: growing to the tool's hull, which draws a crown 1.015 of the plant's height wide, wider
+  than any whole view.")
+- The piece count at a whole view is two to three against the photograph's one, at `lod.cardGrow`
+  1.7. Neither a wider card stalk nor a denser crown moved them; the card's size did, halving them
+  from five, four, three and three to two, three, three and two. The record does not claim one.
 - Row 6 cannot pass on every whole view, and the record states why: still `02` needs a gap of 0.141
   or less and still `18` needs 0.16 or more, an empty band. The crown sits where three of the four
   views pass and `02` misses by 0.02.

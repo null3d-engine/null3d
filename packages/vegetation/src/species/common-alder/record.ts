@@ -360,7 +360,7 @@ export const record: Species = {
 			],
 			// Stills 01 and 18: the crown holds about a tenth of its own box as sky, and the curve above
 			// carries the shoots that fill what the photographs show.
-			density: 3.4,
+			density: 3.6,
 			shadePrune: 0,
 			// Stills 01, 03 and 05: sky shows between the branch tiers and through the crown's middle,
 			// while the crown's own interior keeps the shade leaves that make its mass.
@@ -520,11 +520,11 @@ export const record: Species = {
 		switchPixels: [240, 12, 160],
 		// The cards stand two fifths larger than the shoots they picture, so a gap between one shoot's
 		// leaves falls on a neighbour's leaves rather than on sky, and the crown's rim reads solid.
-		cardGrow: 1.5,
+		cardGrow: 1.7,
 		// Still 18: a card's twig is thinner than a pixel at a whole view, so its leaves would read as a
 		// piece in air. Each card draws its supporting twig as a line from the parent node, so the join
-		// shows.
-		cardStalk: 2.5,
+		// shows. A wider least width draws the line as more specks, which count as more pieces.
+		cardStalk: 1.5,
 		cardStalkToFoliage: true,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
@@ -536,7 +536,9 @@ export const record: Species = {
 			kitBytes: { low: 3_200_000, medium: 3_700_000, high: 5_400_000, ultra: 8_200_000 },
 			variantBytes: { low: 19_500_000, medium: 19_600_000, high: 19_700_000, ultra: 19_800_000 },
 			lod0Triangles: 2_800_000,
-			lod1Triangles: 150_000,
+			// The denser crown's first card level measures 151,295 triangles; the cap above it is the
+			// owner's raised 155,000.
+			lod1Triangles: 155_000,
 			lod2Triangles: 42_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
