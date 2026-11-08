@@ -777,6 +777,12 @@ export interface TuftHeads {
 	readonly sides: number;
 	/** Degrees the stem's top bows over from vertical. */
 	readonly bow: Spread;
+	/**
+	 * The radius of a hanging spike's stalk, as a share of the stem's radius, from 0 to 1; absent,
+	 * 0.35. A stalk under a pixel wide drops from a silhouette's matte, so the spike then stands as
+	 * a piece apart from its stem.
+	 */
+	readonly stalkShare?: number;
 	/** The seasons the stems stand in. */
 	readonly seasons: readonly Season[];
 	/** A panicle: its length, whorls of branches, and flowers along each branch. */
