@@ -13,6 +13,7 @@
 // fruit still. The record is plain data: no code runs in it.
 import type { Species } from '../../core/record';
 import { aspect, crownBase, envelope, roundBand } from './fit';
+import { forms } from './forms';
 
 /** Internodes along a shoot: even along the run, the leaves alternate to its end. */
 const ALTERNATE: readonly (readonly [number, number])[] = [
@@ -36,8 +37,8 @@ export const record: Species = {
 		years: 36,
 		macroOrders: 4,
 		// Stills 09 and 10: the fine twigs divide again and again, and the crown keeps sky between
-		// them, so the branching stands a little above the light's own.
-		branching: 1.08,
+		// them, so the branching follows the light the crown's own shoots leave.
+		branching: 1,
 		// Stills 01, 02 and 18: the bole is bare to the crown's base, which the fit puts at 0.22 of
 		// the height.
 		floor: crownBase,
@@ -75,7 +76,7 @@ export const record: Species = {
 		// Still 18: the bole runs straight to the crown's base, then divides into four limbs that
 		// leave at about 55 degrees and spread round it, the first running on at 25.
 		divide: { at: 0.28, count: 4, angle: 55, lean: 25, plumb: 5 },
-		light: { apical: 1, lateral: 1, shadow: [5, 0.15, 2], cells: 96, surface: true },
+		light: { apical: 1, lateral: 1, shadow: [5, 0.05, 2], cells: 96, surface: true },
 		// Stills 05, 19 and 01: the limbs arch out and their fine twigs hang straight down, so the
 		// tips turn against gravity as the run goes out.
 		tropism: {
@@ -87,9 +88,9 @@ export const record: Species = {
 				[1, -0.3],
 			],
 		},
-		// Stills 01, 02 and 18: a bud carried under the crown stands in its shade, and the bole is
-		// bare to the crown's base.
-		shedding: { threshold: 0.1, cleanBole: 0.23, stubs: 0.2, underCrown: 0.5 },
+		// Stills 01, 02 and 18: the bole is bare to the crown's base, which the fit puts at 0.22 of
+		// the height, and no limb below it dies of shade, so the crown keeps its drooping lower rim.
+		shedding: { threshold: 0, cleanBole: 0.23, stubs: 0.2, underCrown: 0.5 },
 		// Stills 01 and 19: the outer twigs hang and the crown's rim droops, so the wood bends under
 		// its load and its tips turn down rather than up.
 		bending: { strength: 0.6, upturn: 0.05, girth: 3 },
@@ -100,7 +101,7 @@ export const record: Species = {
 	},
 	envelope,
 	shoots: {
-		prototypes: 5,
+		prototypes: 4,
 		classes: [
 			{
 				// Still 23's shoot tip: this year's shoot ends in one small pointed bud, with a few
@@ -109,8 +110,8 @@ export const record: Species = {
 				vigor: [0, 0.05],
 				share: 0.3,
 				years: 1,
-				length: { mean: 0.12, spread: 0.02 },
-				nodes: { mean: 3, spread: 0.4 },
+				length: { mean: 0.2, spread: 0.03 },
+				nodes: { mean: 7, spread: 0.4 },
 				internode: ALTERNATE,
 				leafScale: [
 					[0, 0.8],
@@ -131,7 +132,7 @@ export const record: Species = {
 				share: 0.35,
 				years: 2,
 				length: { mean: 0.4, spread: 0.06 },
-				nodes: { mean: 3, spread: 0.4 },
+				nodes: { mean: 16, spread: 1 },
 				internode: ALTERNATE,
 				stem: { radius: [0.004, 0.002] },
 				laterals: 2,
@@ -154,8 +155,8 @@ export const record: Species = {
 				vigor: [0.5, 1],
 				share: 0.35,
 				years: 2,
-				length: { mean: 1, spread: 0.15 },
-				nodes: { mean: 3, spread: 0.4 },
+				length: { mean: 0.6, spread: 0.1 },
+				nodes: { mean: 24, spread: 1 },
 				internode: ALTERNATE,
 				stem: { radius: [0.009, 0.004] },
 				laterals: 2,
@@ -170,6 +171,60 @@ export const record: Species = {
 					[1, 50],
 				],
 				droop: 8,
+			},
+		],
+		// The close pictures show cut pieces with their leaves spaced along the wood, which the
+		// crown's own classes do not: a crown's spray crowds its leaves for the veil, and a cut piece
+		// wants the run between them bare. Each close piece takes a class of its own, which the crown
+		// never draws.
+		cuttingClasses: [
+			{
+				// Still 21: a branch of about a metre divides into thin twigs that arch out and droop,
+				// the leaves alternate along their run and spaced apart.
+				name: 'whip',
+				vigor: [0, 1],
+				share: 0,
+				years: 1,
+				length: { mean: 1, spread: 0.15 },
+				nodes: { mean: 16, spread: 1 },
+				internode: ALTERNATE,
+				stem: { radius: [0.007, 0.003] },
+				laterals: 3,
+				lateralGap: 0.35,
+				bend: { length: 0.06, angle: 22 },
+				leafScale: [
+					[0, 0.8],
+					[1, 1],
+				],
+				leafAngle: [
+					[0, 72],
+					[1, 54],
+				],
+				droop: 24,
+			},
+			{
+				// Still 22: a sub-branch is about thirty-five centimetres of thin arching twig, its
+				// alternate leaves along it and two-leaved side shoots at its joints.
+				name: 'cut',
+				vigor: [0, 1],
+				share: 0,
+				years: 1,
+				length: { mean: 0.35, spread: 0.05 },
+				nodes: { mean: 8, spread: 0.6 },
+				internode: ALTERNATE,
+				stem: { radius: [0.004, 0.0018] },
+				laterals: 2,
+				lateralGap: 0.4,
+				bend: { length: 0.05, angle: 20 },
+				leafScale: [
+					[0, 0.85],
+					[1, 1],
+				],
+				leafAngle: [
+					[0, 70],
+					[1, 52],
+				],
+				droop: 18,
 			},
 		],
 		// Still 19: the weeping twig ends draw as their own piece, with a bud at the tip and leaves
@@ -189,12 +244,12 @@ export const record: Species = {
 			colour: [0.02, 0.012, 0.008],
 		},
 		placement: {
-			// Stills 01, 02 and 19: the crown's fine twigs carry leaves along their whole run, and
-			// the weeping strands carry the most at their hanging ends.
+			// Stills 01, 02 and 09: the crown's fine twigs carry leaves along their whole run, one
+			// leafy strand every few centimetres of wood, and the hanging ends carry the most.
 			perMetre: [
-				[0, 3],
-				[0.5, 4],
-				[1, 10],
+				[0, 4.2],
+				[0.5, 4.8],
+				[1, 9],
 			],
 			density: 1,
 			shadePrune: 0,
@@ -207,7 +262,7 @@ export const record: Species = {
 			lift: 8,
 			// Stills 10 and 19: the leaves hang down along the strands rather than facing the sky.
 			skyward: 0.35,
-			scale: { mean: 1, spread: 0.15 },
+			scale: { mean: 1.2, spread: 0.15 },
 		},
 	},
 	foliage: {
@@ -256,6 +311,11 @@ export const record: Species = {
 		// Still 14: moss and lichen over the black foot, up to about a metre, on every side.
 		moss: { amount: 0.5, up: 0.9, north: 0.1, colour: [0.15, 0.2, 0.05] },
 		lichen: { amount: 0.35, from: 0.02, to: 0.4, colour: [0.4, 0.42, 0.36] },
+		// Still 15: black diamond eyes stand where shed limbs were.
+		scars: 4,
+		// Stills 15 and 34: the chalky white bark lifts in thin horizontal strips that curl away from
+		// the wood, over the dark fissures beneath.
+		peel: { zone: 1, perSquareMetre: 30, width: { mean: 0.06, spread: 0.02 }, curl: 0.8 },
 	},
 	base: {
 		// Still 14: the foot swells into the root crown, with roots running out over the litter.
@@ -301,12 +361,14 @@ export const record: Species = {
 		autumn: { reflectance: [0.22, 0.16, 0.02], transmittance: [0.34, 0.26, 0.02] },
 	},
 	wind: {
-		// The wind clip's bands, base first: the white bole stands stiff and the weeping tips move
-		// most.
+		// The wind clip's bands, base first: the white bole stands stiff, the crown's lowest fringe of
+		// hanging twigs swings most, and the top only flickers.
 		stiffness: [
-			[0, 0.85],
-			[0.5, 0.8],
-			[1, 0.9],
+			[0, 0.95],
+			[0.2, 0.4],
+			[0.45, 0.55],
+			[0.8, 0.85],
+			[1, 1],
 		],
 		sway: { frequency: 0.32, amplitude: 0.05 },
 		flutter: { kind: 'blade', amplitude: 0.25, frequency: 3.2 },
@@ -322,12 +384,19 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// A first pass's figures; the measured ones replace them after the first round.
-			kitBytes: { low: 2_600_000, medium: 3_100_000, high: 6_000_000, ultra: 12_000_000 },
-			variantBytes: { low: 5_000_000, medium: 5_100_000, high: 5_200_000, ultra: 5_300_000 },
-			lod0Triangles: 2_500_000,
-			lod1Triangles: 40_000,
-			lod2Triangles: 12_000,
+			// The largest of the species and its three forms, with about a twentieth to spare: 2.46,
+			// 3.81, 6.11 and 10.48 MB. The kit holds the long leafy shoots the fine leaf needs.
+			kitBytes: { low: 2_600_000, medium: 4_000_000, high: 6_300_000, ultra: 10_800_000 },
+			// The largest variant of the species and its forms: 5.67, 5.76, 5.89 and 6.08 MB.
+			variantBytes: { low: 5_800_000, medium: 5_900_000, high: 6_000_000, ultra: 6_200_000 },
+			// The mature form's broad crown, with about a seventh to spare: 1.20, 1.22, 1.28 and
+			// 1.40 million triangles.
+			lod0Triangles: 1_450_000,
+			// The same crown's card levels: 77,306, 81,428, 87,000 and 95,174 of the tree cap's
+			// 150,000.
+			lod1Triangles: 98_000,
+			// 35,537, 36,110, 37,036 and 38,667 of the tree cap's 43,000.
+			lod2Triangles: 39_500,
 			// The birch's two bark zones buy the larger download the owner allows it.
 			downloadBytes: 1_300_000,
 			downloadHalfBytes: 400_000,
@@ -335,15 +404,18 @@ export const record: Species = {
 		},
 	},
 	roundBand,
+	// The young birch of stills 31 and 32, the mature birch of still 33 and the woodland birch of 30.
+	forms,
 	textures: 'own',
 	variants: 6,
 	seedSalt: 20221108,
 	cuttings: {
-		// Stills 21 and 22: a cut twig is a bare stem that forks once into two leafy shoots.
-		branch: { shoot: 'long' },
-		subbranch: { shoot: 'long', pick: 1 },
-		// Still 23: a strand's tip with its alternate leaves and its small bud.
-		cluster: { shoot: 'short' },
+		// Still 21: a cut branch of about a metre, its twigs arching out and drooping.
+		branch: { shoot: 'whip' },
+		// Still 22: the short leafy twig that arches over, which the cutting class draws.
+		subbranch: { shoot: 'cut' },
+		// Still 23: a twig tip with its alternate leaves and its small bud, spaced along the run.
+		cluster: { shoot: 'cut' },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
 		leaf: { pressed: true },
 	},

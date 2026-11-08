@@ -1,0 +1,70 @@
+{
+	"01-whole-distant.png": {
+		"daylight": 2.27,
+		"skyShare": 0.395
+	},
+	"02-whole-profile.png": {
+		"daylight": 2.27,
+		"skyShare": 0.395
+	},
+	"03-whole-from-below.png": {
+		"daylight": 3.19,
+		"skyShare": 0.395
+	},
+	"19-drooping-twig-ends.png": {
+		"daylight": 2.88,
+		"skyShare": 0.395
+	},
+	"20-autumn-yellow.png": {
+		"view": "whole",
+		"thin": null,
+		"span": null,
+		"season": "autumn",
+		"horizon": 1,
+		"targetX": 0.4883,
+		"sky": "#d0dcee",
+		"sunAzimuth": -19.1,
+		"sunRise": 37.1,
+		"top": 0.007,
+		"eye": 1.6,
+		"daylight": 2.96,
+		"skyShare": 0.7
+	},
+	"27-bark-texture-zone2.png": {
+		"barkZone": 0
+	},
+	"28-young-bark.png": {
+		"thin": 0.015
+	},
+	"30-woodland-form-whole.png": {
+		"daylight": 3.6,
+		"skyShare": 0.7
+	},
+	"31-young-birch-whole.png": {
+		"daylight": 2.98,
+		"skyShare": 0.395
+	},
+	"32-juvenile-bark.png": {
+		"form": "young"
+	},
+	"33-mature-dense-crown-whole.png": {
+		"daylight": 2.22,
+		"skyShare": 0.19
+	},
+	"34-peeling-bark-macro.png": {
+		"span": 0.1
+	},
+	"35-catkins.png": {
+		"view": "twigs",
+		"fruit": true,
+		"season": "summer"
+	},
+	"birch-turntable.mp4": {
+		"daylight": 2.27,
+		"skyShare": 0.395
+	},
+	"birch-wind-motion.mp4": {
+		"daylight": 2.27,
+		"skyShare": 0.395
+	}
+}

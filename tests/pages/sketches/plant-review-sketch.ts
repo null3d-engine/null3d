@@ -758,7 +758,13 @@ export default defineSketch(async (ctx) => {
 				return orbit([foot[0], 0.9, foot[2]], 1.5 + 3.5 * r, e, turn, fov);
 			}
 			case 'bark-mid': {
-				const y = Math.min(1.5, skeleton.height * 0.3);
+				// A bark zone of its own: the camera stands where that zone covers the wood, so the
+				// surface is the one the zone's texture source shows.
+				const zone = QUERY.barkZone === undefined ? undefined : record.bark?.zones[QUERY.barkZone];
+				const y =
+					zone?.by === 'height'
+						? Math.min(skeleton.height * 0.9, (zone.from + zone.to) / 2)
+						: Math.min(1.5, skeleton.height * 0.3);
 				const stem = stemAt(skeleton, y);
 				if (!stem) break;
 				const span = QUERY.span ?? 0.6;
