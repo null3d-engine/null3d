@@ -28,6 +28,19 @@ const TIGHT_ROSETTE: readonly (readonly [number, number])[] = [
 	[1, 0.25],
 ];
 
+/** A tuft's leaves, a little smaller than the record's own leaf. */
+const TUFT_SCALE: readonly (readonly [number, number])[] = [
+	[0, 0.85],
+	[1, 1],
+];
+
+/** Degrees between a tuft's leaves and its twig, older leaves lowest and widest. */
+const TUFT_ANGLE: readonly (readonly [number, number])[] = [
+	[0, 130],
+	[0.5, 95],
+	[1, 60],
+];
+
 /** The hawthorn's record. */
 export const record: Species = {
 	id: 'hawthorn-shrub',
@@ -126,10 +139,7 @@ export const record: Species = {
 				length: { mean: 0.03, spread: 0.006 },
 				nodes: { mean: 5, spread: 0.5 },
 				internode: ROSETTE,
-				leafScale: [
-					[0, 0.85],
-					[1, 1],
-				],
+				leafScale: TUFT_SCALE,
 				leafAngle: [
 					[0, 150],
 					[0.5, 100],
@@ -160,11 +170,7 @@ export const record: Species = {
 					[0, 1],
 					[1, 1],
 				],
-				leafAngle: [
-					[0, 130],
-					[0.5, 95],
-					[1, 60],
-				],
+				leafAngle: TUFT_ANGLE,
 				droop: 4,
 			},
 			{
@@ -182,15 +188,8 @@ export const record: Species = {
 				laterals: { mean: 1.5, spread: 0.4 },
 				lateralGap: 0.3,
 				bend: { length: 0.05, angle: 32 },
-				leafScale: [
-					[0, 0.85],
-					[1, 1],
-				],
-				leafAngle: [
-					[0, 130],
-					[0.5, 95],
-					[1, 60],
-				],
+				leafScale: TUFT_SCALE,
+				leafAngle: TUFT_ANGLE,
 				droop: 5,
 			},
 		],
@@ -203,7 +202,7 @@ export const record: Species = {
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
-				length: { mean: 0.35, spread: 0.1 },
+				length: { mean: 0.3, spread: 0.08 },
 				nodes: { mean: 6, spread: 0.5 },
 				internode: ROSETTE,
 				stem: { radius: [0.007, 0.003] },
@@ -215,11 +214,7 @@ export const record: Species = {
 					[0, 0.9],
 					[1, 1.1],
 				],
-				leafAngle: [
-					[0, 130],
-					[0.5, 95],
-					[1, 60],
-				],
+				leafAngle: TUFT_ANGLE,
 				droop: 4,
 			},
 		],
@@ -259,7 +254,7 @@ export const record: Species = {
 			// and the lowest ones stay low enough to keep the skirt at the grass.
 			lift: 6,
 			skyward: 0.55,
-			scale: { mean: 1.2, spread: 0.12 },
+			scale: { mean: 1.2, spread: 0.1 },
 		},
 	},
 	foliage: {
@@ -336,17 +331,15 @@ export const record: Species = {
 			// round berry on a short stalk below the last leaves.
 			kind: 'fruit',
 			at: 'shoot-tip',
-			share: 0.35,
+			share: 0.3,
 			count: { mean: 2, spread: 0.5 },
 			tipShare: 0.85,
 			seasons: ['summer', 'autumn'],
 			shape: {
 				lathe: [
 					[0.0012, 0],
-					[0.0044, 0.003],
-					[0.0046, 0.006],
-					[0.0032, 0.008],
-					[0.001, 0.0094],
+					[0.0046, 0.005],
+					[0.003, 0.0085],
 					[0, 0.0096],
 				],
 				sides: 8,
