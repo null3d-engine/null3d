@@ -1156,6 +1156,12 @@ export interface ShootClass {
 	 */
 	readonly phyllotaxis?: Phyllotaxis;
 	/**
+	 * Drawn by a cutting kit alone, which holds this class and no card levels; the plant kit leaves
+	 * it out. A cut piece is only ever drawn close up, so a dense class spends the cutting kit's cap
+	 * rather than the crown's, and the crown's kit does not pay for leaves the crown never draws.
+	 */
+	readonly cutOnly?: boolean;
+	/**
 	 * The share of a leaf's turn toward the sky this class takes, from 0 to 1, where the species' own
 	 * value does not fit: a cut twig held up to the camera shows its blades face on, while a crown's
 	 * leaves turn their faces up to the light. The species' `placement.skyward` by default.
@@ -1904,6 +1910,12 @@ export interface SpeciesBudget {
  */
 export interface CuttingHints {
 	/**
+	 * The shoots a cutting kit places over the crown's own, from 0.25 to 8, where a piece cut for
+	 * close review carries a denser covering than the crown can afford. The crown's kit is unchanged:
+	 * the piece is drawn at the nearest level alone, so its kit pays for no card levels.
+	 */
+	readonly density?: number;
+	/**
 	 * A branch about 1 m long: the macro order to cut from the grown plant and the length of its
 	 * wood, or the shoot class whose prototype stands for it.
 	 */
@@ -1924,10 +1936,17 @@ export interface CuttingHints {
 export interface CutLeaf {
 	/**
 	 * Whether the leaf lies pressed flat, as a species' single-leaf pictures lay it on a copy stand:
-	 * a blade leaf's fold, curls, twist, wave and stalk droop at nothing, its outline and textures
-	 * as they are. Without it the leaf keeps the shape it has on the plant.
+	 * a blade leaf's fold, curls, twist, wave and stalk droop at nothing, a thick leaf's cup, curl
+	 * and margin wave at nothing, its outline and textures as they are. Without it the leaf keeps
+	 * the shape it has on the plant.
 	 */
 	readonly pressed?: boolean;
+	/**
+	 * Metres of stalk a pressed leaf keeps under its blade, for a species whose leaves rise on long
+	 * stalks: the piece shows the short piece of stalk a picked leaf does. A share of the blade's
+	 * length by default.
+	 */
+	readonly petiole?: number;
 }
 
 /**
