@@ -54,5 +54,9 @@
 	},
 	"28-young-bark.png": {
 		"thin": 0.015
+	},
+	"13-single-leaf-underside.png": {
+		"leaves": 0.88,
+		"roll": -45
 	}
 }
