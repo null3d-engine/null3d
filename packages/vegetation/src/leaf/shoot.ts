@@ -612,7 +612,7 @@ export function planShoot(
 		let sky = square(start.sky, direction, [0, 0, 1]);
 		let along = start.along;
 		let node = 0;
-		const azimuthStart = draw(Purpose.Start, axis) * 360;
+		const azimuthStart = shootClass.azimuth ?? draw(Purpose.Start, axis) * 360;
 		const axisLength = start.unitLength * start.units;
 		let zig = 1;
 		// Side shoots this axis has put out so far.
