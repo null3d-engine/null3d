@@ -32,6 +32,17 @@ describe('the record check', () => {
 		expect(() => checkSpecies(broken)).toThrow(/cannot grow/);
 	});
 
+	it('holds a season bark tint to non-negative channels', () => {
+		const out = {
+			...template,
+			seasons: {
+				...template.seasons,
+				bark: { autumn: [1.2, -0.1, 0.9] as [number, number, number] },
+			},
+		} as Species;
+		expect(speciesProblems(out).some((p) => p.startsWith('seasons.bark.autumn[1]'))).toBe(true);
+	});
+
 	it('holds the sway power to its range', () => {
 		const out = {
 			...template,

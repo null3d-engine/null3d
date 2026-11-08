@@ -200,6 +200,25 @@ describe('the species header', () => {
 		expect(HEADER.extraScales + MAX_EXTRAS).toBeLessThanOrEqual(RECORDS_WIDTH);
 	});
 
+	test('writes the bark tint of each season the record names, and nothing for a season it leaves out', () => {
+		// A record that names none multiplies the bark by nothing: the two texels carry no flag.
+		expect(texel(header, HEADER.autumnBark)).toEqual([0, 0, 0, 0]);
+		expect(texel(header, HEADER.winterBark)).toEqual([0, 0, 0, 0]);
+		const turning: Species = {
+			...record,
+			seasons: { ...record.seasons, bark: { autumn: [2.1, 0.8, 0.4] } },
+		};
+		const written = speciesHeader(turning, manifest, speciesBox(turning));
+		const autumn = texel(written, HEADER.autumnBark);
+		expect(autumn.slice(0, 3).map((v) => toHalf(v as number))).toEqual([
+			toHalf(2.1),
+			toHalf(0.8),
+			toHalf(0.4),
+		]);
+		expect(autumn[3]).toBe(1);
+		expect(texel(written, HEADER.winterBark)).toEqual([0, 0, 0, 0]);
+	});
+
 	test('gives a species that names no sway the stated default', () => {
 		// A missing sway must never leave the plant still.
 		const bare: Species = { ...record, wind: { ...record.wind, sway: undefined } };

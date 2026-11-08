@@ -1736,6 +1736,11 @@ export interface SeasonSpec {
 	readonly autumn?: { readonly reflectance: Rgb; readonly transmittance: Rgb };
 	/** Blossom: which extra flowers, and the share of leaves that are out. */
 	readonly blossom?: { readonly extra: number; readonly leaves: number };
+	/**
+	 * A linear colour each named season multiplies into the bark, for a stem whose own colour turns
+	 * with the year. A season left out keeps the record's own bark.
+	 */
+	readonly bark?: Partial<Record<Season, Rgb>>;
 }
 
 /**
