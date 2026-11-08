@@ -54,8 +54,8 @@
 	},
 	"17-culm-taper.png": {
 		"lod": 0,
-		"skyShare": 0.35,
-		"daylight": 3.0
+		"skyShare": 0.3,
+		"daylight": 1.8
 	},
 	"24-leaf-texture-upper.png": {
 		"leaves": 1.15,
