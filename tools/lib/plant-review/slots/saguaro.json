@@ -54,10 +54,7 @@
 		"girth": null
 	},
 	"20-nest-holes.png": {
-		"view": "limb",
-		"thin": 0.4,
-		"along": 0.7,
-		"span": 0.9
+		"view": "crown"
 	},
 	"22-subbranch-studio.png": {
 		"view": "bark-limb",
