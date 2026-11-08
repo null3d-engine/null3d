@@ -112,7 +112,9 @@ export const record: Species = {
 		// Stills 15 and 26: the whole trunk is packed roots and cut frond bases, one surface.
 		zones: [{ layer: 0, by: 'height', from: -1, to: 4, blend: 0.2 }],
 		young: 0,
-		youngRadius: 0.008,
+		// The stipes, rachises and pinna midribs take the fine tile, so they read as hairy brown
+		// stalks rather than as the trunk's coarse mat.
+		youngRadius: 0.06,
 		girthScale: [
 			[0, 0.6],
 			[1, 1],

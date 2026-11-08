@@ -123,7 +123,7 @@ export interface PlantReviewQuery {
 	readonly top?: number;
 	/** The camera's height above the ground in metres, with `top`, when the base is out of frame. */
 	readonly eye?: number;
-	/** How far along a limb the limb view looks, as a share of the limb's length. */
+	/** How far along a limb the limb view looks, as a share of the limb's length; a bark view of a stem, as a share of its height. */
 	readonly along?: number;
 	/** Metres of radius that a limb view frames: it picks the limb that carries that thickness. */
 	readonly thin?: number;
