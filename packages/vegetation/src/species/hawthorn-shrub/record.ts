@@ -137,7 +137,8 @@ export const record: Species = {
 				share: 0.35,
 				years: 1,
 				length: { mean: 0.03, spread: 0.006 },
-				nodes: { mean: 5, spread: 0.5 },
+				// Five or six leaves in the rosette as stills 11 and 23 show; a node bears one leaf.
+				nodes: { mean: 6.5, spread: 0.5 },
 				internode: ROSETTE,
 				leafScale: TUFT_SCALE,
 				leafAngle: [
@@ -235,9 +236,11 @@ export const record: Species = {
 		placement: {
 			// Stills 01, 02 and 09: the shrub's finest axes are crowded with foliage, so every stretch
 			// of them carries shoots.
+			// Stills 09 and 10: a limb carries a spray of short twigs along its length, not one stem
+			// with a tuft at its end, so the finest axes bear shoots closely.
 			perMetre: [
-				[0, 5],
-				[0.55, 7],
+				[0, 7.5],
+				[0.55, 9.5],
 				[1, 16],
 			],
 			// The reference's dome is denser than the curve alone gives: this is the dial, not a
@@ -357,7 +360,7 @@ export const record: Species = {
 			// spring spur's end, with the leaves out among them.
 			kind: 'flower',
 			at: 'node',
-			share: 0.5,
+			share: 0.4,
 			count: { mean: 6, spread: 1.5 },
 			tipShare: 0.95,
 			seasons: ['blossom'],
@@ -405,13 +408,14 @@ export const record: Species = {
 			// The kit's leaves and six shoot prototypes measure 2.46, 3.36, 5.29 and 9.05 MB; each
 			// cap sits above its figure, under the class's own ceiling.
 			kitBytes: { low: 2_600_000, medium: 3_500_000, high: 5_600_000, ultra: 9_500_000 },
-			// Six variants measure 4.6 to 7.9 MB at every tier; each cap sits above the largest.
-			variantBytes: { low: 8_100_000, medium: 8_100_000, high: 8_100_000, ultra: 8_200_000 },
+			// Six variants measure 4.6 to 8.8 MB in leaf, and the blossom season carries the flowers'
+			// own mesh at 13.7 MB; each cap sits above the largest, under the class's own ceiling.
+			variantBytes: { low: 14_000_000, medium: 14_000_000, high: 14_000_000, ultra: 14_000_000 },
 			// The nearest level, with the shoot rows that stand in it, measures 246,651 triangles; the
-			// first card level 119,000 to 136,000 and the second 19,000 to 21,000, over three variants
+			// first card level 138,000 to 148,050 and the second 19,000 to 24,000, over three variants
 			// and every season.
 			lod0Triangles: 300_000,
-			lod1Triangles: 145_000,
+			lod1Triangles: 155_000,
 			lod2Triangles: 25_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
