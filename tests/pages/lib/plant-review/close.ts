@@ -66,6 +66,8 @@ const DEG = Math.PI / 180;
 const EYE = 1.6;
 /** Metres a camera that looks up the stem stands from the bark: a step back, as a person stands. */
 const BELOW_STANDOFF = 1;
+/** The lowest a view up a plant shorter than a person drops its lens, in metres above the ground. */
+const BELOW_LOWEST_EYE = 0.2;
 /**
  * The highest a camera that looks up a stemless plant stands, as a share of the plant's height: a
  * tuft or a rosette has no stem at eye height, so its photograph is taken from near its foot.
@@ -448,11 +450,17 @@ export function belowView(
 			);
 		else bole = boleStand(skeleton.crownBase, lens, crownRow, footRow);
 	}
-	const eye = bole?.eye ?? EYE;
+
+	// A plant taller than a person is looked up at from a person's eye height. A shorter plant
+	// stands under the eye entirely, so the camera drops to a height within it: a few steps back
+	// at that height the crown still stands above the lens and the view reads up through the plant.
+	const eye = bole?.eye ?? Math.min(EYE, Math.max(BELOW_LOWEST_EYE, skeleton.height * 0.35));
 	// A plant with no stem at eye height, such as a tuft or a rosette, has no bark to look up: its
-	// camera stands low at the rim of its own spread and looks up through the leaves, as a
-	// photograph taken from the plant's foot does. A stem's radius would put it inside the plant.
-	const stemless = stemAt(skeleton, EYE) === undefined;
+	// camera stands low at the rim of its own spread and looks up through the leaves, as a photograph
+	// taken from the plant's foot does. A stem's radius would put it inside the plant.
+	// A short plant has no stem at a person's eye height whatever kind it is, so the test looks for
+	// one within the plant: a fern's stipes are a stem to look up, a tuft has none at any height.
+	const stemless = stemAt(skeleton, Math.min(EYE, skeleton.height * 0.5)) === undefined;
 	const spread =
 		Math.max(
 			(skeleton.bounds.max[0] as number) - (skeleton.bounds.min[0] as number),
