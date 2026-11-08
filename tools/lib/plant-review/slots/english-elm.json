@@ -58,5 +58,8 @@
 	"13-single-leaf-underside.png": {
 		"leaves": 0.88,
 		"roll": -45
+	},
+	"11-leaf-cluster.png": {
+		"pick": 4
 	}
 }

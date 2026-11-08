@@ -28,6 +28,13 @@ const CROWDED: readonly (readonly [number, number])[] = [
 	[1, 0.45],
 ];
 
+/** Internodes along a fan's shoot: a bare foot, then the blades gathered into one face at the tip. */
+const TUFT: readonly (readonly [number, number])[] = [
+	[0, 1.8],
+	[0.5, 1],
+	[1, 0.3],
+];
+
 /** Internodes along a shoot: even along its run, the leaves in two rows to a terminal bud. */
 const RANK: readonly (readonly [number, number])[] = [
 	[0, 0.9],
@@ -219,6 +226,28 @@ export const record: Species = {
 				// camera turns edge-on to it, as the reference twig's leaves do.
 				leafAngleSpread: 35,
 				droop: 6,
+			},
+			{
+				// Still 11: six broad blades spring from one point at a short shoot's tip and overlap
+				// into a single face, the piece shown turned toward the camera. Its blades open wide
+				// and stand near one plane, so the piece reads as a fan rather than a ladder.
+				name: 'fan',
+				vigor: [0, 1],
+				share: 0,
+				years: 1,
+				length: { mean: 0.13, spread: 0.02 },
+				nodes: { mean: 9, spread: 0.5 },
+				internode: TUFT,
+				leafScale: [
+					[0, 1],
+					[1, 1],
+				],
+				leafAngle: [
+					[0, 80],
+					[1, 68],
+				],
+				leafAngleSpread: 10,
+				droop: 2,
 			},
 			{
 				// Stills 21 and 22: the cut piece is a bare stem that divides two or three times into
@@ -440,7 +469,7 @@ export const record: Species = {
 			// of alternate leaves taking most of it; each cap sits just above.
 			// The heaviest variant's first card level draws 58,843, 64,037, 71,732 and 81,547
 			// triangles up the tiers, and its second 24,756, 25,374, 26,390 and 27,199.
-			kitBytes: { low: 3_400_000, medium: 5_350_000, high: 9_150_000, ultra: 16_600_000 },
+			kitBytes: { low: 3_420_000, medium: 5_420_000, high: 9_380_000, ultra: 17_100_000 },
 			variantBytes: { low: 15_100_000, medium: 15_200_000, high: 15_400_000, ultra: 15_600_000 },
 			lod0Triangles: 2_500_000,
 			lod1Triangles: 85_000,
