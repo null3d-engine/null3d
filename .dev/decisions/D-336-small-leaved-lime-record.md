@@ -119,12 +119,15 @@ Rejected:
   as wide as its own height where the photographs read 0.73 to 0.80. The factor is written in
   `fit.ts`, and a re-run of the fitting tool writes the raw hull again and must have it applied.
 - The kit measures 2.48, 3.85, 6.26 and 10.82 MB at the low, medium, high and ultra tiers. The first
-  variant measures 3.21 to 3.47 MB, and the two card levels draw 62,500 and 28,300 triangles. Every
-  figure sits under the owner's cap for a tree.
-- The grown plant stands 23.74 m tall and 17.85 m across, so it is 0.752 as wide as tall. Its crown
-  base is 3.91 m up, a sixth of the height. The record's mean height is 20.9 m with a spread of 2,
-  and the drawn plant stands above that band: a narrower hull lifts the growth, which is the cost of
-  bringing the width inside the photographs' 0.70 to 0.80.
+  variant measures 3.21 to 3.47 MB, and its blossom season, which carries the flowers, 4.16 to 4.41,
+  so the cap follows the heavier season. The two card levels draw 62,500 and 28,300 triangles.
+- The grown plant stands 23.74 m tall and 17.85 m across, so it is 0.752 as wide as tall, against
+  the photographs' 0.70 to 0.80. Its crown base is 3.91 m up, a sixth of the height. The record's
+  mean height is 20.9 m with a spread of 2, so the drawn plant stands eight tenths above that band:
+  a narrower hull lifts the growth, which is the cost of the width. Pulling the mean down to 20.1 m
+  drew a 20.04 m plant at 0.922 as wide as tall, and a spread of 2.7 drew 24.43 m at 0.807 with the
+  silhouette's sky below its floor, so the height does not move with the mean in steps a record can
+  aim with. The width was kept because it gates rows 1, 6 and 9 together.
 - The review draws every one of the 32 reference files. The whole views, the render against its
   reference: still 01 has a sky gap of 0.095 against 0.049, a leaf colour of 3.6 and one piece. Still
   02 has 0.085 against 0.062, a colour of 3.5 and four pieces. Still 18 has 0.090 against 0.107 and
@@ -132,10 +135,13 @@ Rejected:
   0.003. The window is narrow because the reference set disagrees with itself: the silhouette's own
   0.107 sky sets a floor of 0.0866 while the distant view's 0.049 sets a ceiling of 0.099.
 - The leaf close-ups match with an overlap of 0.78 and 0.64 and a colour of 3.0 and 2.0. The bark
-  texture matches at 6.3 steps.
+  texture matches at 6.2 steps. The basal bark reads 16.3 steps and the young bark 6.2 once its view
+  framed bark rather than a limb; the owner ruled the base's figure a matter for the bark tint or the
+  scene's light rather than a growth change.
 - The whole-plant turn matches its video with a mean shape overlap of 0.701. Its crown box spreads 23
-  per cent wide and 17 per cent tall over the eight angles against the reference's 62 and 15, so
-  both sit inside the all-round band.
+  per cent wide and 17 per cent tall over the eight angles against the reference's 58 and 15, so
+  both sit inside the all-round band. The whole views now draw one piece each, which the shared
+  branch's crown-foot rule gave back.
 - The branch turn spreads 61 per cent wide and 25 per cent tall against 107 and 17, so both sit
   inside. The sub-branch spreads 68 per cent wide against 119, inside, but 29 per cent tall against
   6, outside. The leaf-cluster turn spreads 137 per cent wide and 75 per cent tall against 102 and
@@ -147,10 +153,13 @@ Rejected:
   tree moves at its foot, the model-shape limit the maple and the ash state in the same words.
 - The cut pieces draw their proportions: the branch at 0.91 as wide as it is tall against 1.05, the
   sub-branch at 0.60 against 0.59, and the leaf cluster at 0.71 against 0.50 and 0.68 against 0.70.
-  A leaf stalk twice as thick and nearly straight brings the piece counts down from 18 and 17 to 15
-  and 10 against one each.
-- The basal sprouts of stills 14 and 20 are not drawn. The record has no field for a sprout at the
-  foot. A stool of three stems was grown as a test: it draws a 5 cm plant with three limbs and no
-  crown, so the stool does not give the sprouts either. The still is of a coppiced stool, not of the
-  single-stemmed tree the whole views show.
+  A leaf stalk twice as thick and nearly straight brings the piece counts down from 18 and 17 to 10
+  and 10 against one each. The elm's cure for a collapsing flat shoot, a 35-degree leaf spread with a
+  small droop, made this species worse, 129 and 41 to 142 and 83: a lime leaf already hangs from a
+  2.8 cm stalk, so the spread turns the blades edge on as the piece comes round. It was reverted.
+- The basal sprouts of stills 14 and 20 are not drawn, and the reference set holds no skeleton view
+  for row 2: both stay as stated limits. The record has no field for a sprout at the foot. A stool of
+  three stems was grown as a test: it draws a 5 cm plant with three limbs and no crown, so the stool
+  does not give the sprouts either. The still is of a coppiced stool, not of the single-stemmed tree
+  the whole views show.
 
