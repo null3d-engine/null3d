@@ -129,8 +129,8 @@ export const record: Species = {
 				vigor: [0, 0.62],
 				share: 0.62,
 				years: 1,
-				length: { mean: 0.07, spread: 0.015 },
-				nodes: { mean: 18, spread: 3 },
+				length: { mean: 0.15, spread: 0.03 },
+				nodes: { mean: 34, spread: 4 },
 				internode: EVEN,
 				leafScale: [
 					[0, 1],
@@ -149,12 +149,12 @@ export const record: Species = {
 				vigor: [0.62, 1],
 				share: 0.38,
 				years: 3,
-				length: { mean: 0.3, spread: 0.05 },
-				nodes: { mean: 58, spread: 6 },
+				length: { mean: 0.42, spread: 0.06 },
+				nodes: { mean: 76, spread: 8 },
 				internode: EVEN,
 				stem: { radius: [0.006, 0.002] },
 				lateral: 70,
-				laterals: { mean: 3, spread: 0 },
+				laterals: { mean: 4, spread: 0 },
 				lateralGap: 0.32,
 				bend: { length: 0.04, angle: 15 },
 				leafScale: [
@@ -190,7 +190,7 @@ export const record: Species = {
 			bareTrim: 0.02,
 			// Stills 04, 05 and 11: the crown is built of separate rounded clumps, each of them
 			// several shoots gathered on the axis, with a finer tufting within each mass.
-			tipBias: 0.55,
+			tipBias: 0.15,
 			clump: { spacing: 1.6, depth: 0.55, fine: { spacing: 0.6, depth: 0.35 } },
 			skyward: 0.25,
 			scale: { mean: 1.15, spread: 0.12 },
@@ -315,7 +315,7 @@ export const record: Species = {
 		switchPixels: [240, 12, 160],
 		// The clumps stand about a fifth larger than their shoots, so the gaps between one clump's
 		// shoots fall on a neighbour's scales rather than on sky.
-		cardGrow: 3.6,
+		cardGrow: 2.6,
 		// A shoot's own twig is under a pixel at a whole view, so each card draws a short stalk
 		// down to the wood it grows from and joins the clump to its branch.
 		cardStalk: 3,
