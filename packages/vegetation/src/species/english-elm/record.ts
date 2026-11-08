@@ -9,6 +9,12 @@
 // video of the whole plant (fit.ts). The growth numbers are fitted to the same stills; the shoot
 // classes from the studio stills of a branch, a sub-branch and a leaf cluster; the leaf from the
 // texture sources and the single-leaf stills; the bark from the bark stills; the samaras from the
+//
+// The review slots light each still as the review tool derives its photograph's light: the upper
+// half's sky reads a mean linear luminance of 0.483 at still 01 and 0.677 at 02, so pi times each,
+// split with a hard sun and with haze, is 2.17 and 1.42 times the page's soft daylight. At that
+// light the crown reads eleven to thirteen colour steps from the photographs; no thinning inside
+// the sky-gap bands closes that, so the colour stands as a limit.
 // fruit still. The record is plain data: no code runs in it.
 import type { Species } from '../../core/record';
 import { aspect, envelope, roundBand } from './fit';
@@ -200,6 +206,32 @@ export const record: Species = {
 				leafAngleSpread: 12,
 				droop: 3,
 			},
+			{
+				// Stills 21 and 22: the cut piece is a bare stem that divides two or three times into
+				// slender shoots, each carrying alternate leaves in two rows and a terminal bud, with
+				// the leaves crowded along the last year's growth.
+				name: 'cut',
+				vigor: [0, 1],
+				share: 0,
+				years: 2,
+				length: { mean: 0.9, spread: 0.12 },
+				nodes: { mean: 9, spread: 0.5 },
+				internode: RANK,
+				// Still 21: the piece's foot stands about a twenty-fifth of its height across.
+				stem: { radius: [0.009, 0.005] },
+				laterals: 2,
+				lateralGap: 0.35,
+				bend: { length: 0.05, angle: 26 },
+				leafScale: [
+					[0, 0.85],
+					[1, 1],
+				],
+				leafAngle: [
+					[0, 72],
+					[1, 52],
+				],
+				droop: 3,
+			},
 		],
 		// Stills 09, 10 and 22: every leaf stands a half turn from the one below it, in two ranks.
 		phyllotaxis: { kind: 'spiral', divergence: 180 },
@@ -378,13 +410,14 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit measures 2.48, 3.82, 6.39 and 11.50 MB at the four tiers; each cap sits just above
+			// The kit measures 3.35, 4.99, 8.13 and 14.37 MB at the four tiers, the cut shoot's own two
+			// prototypes among them; each cap sits just above its figure.
 			// its figure.
 			// The largest of three variants measures 12.39, 12.51, 12.69 and 12.90 MB, the two years
 			// of alternate leaves taking most of it; each cap sits just above.
 			// The heaviest variant's first card level draws 54,079, 59,273, 66,968 and 76,783
 			// triangles up the tiers, and its second 22,374, 22,992, 24,008 and 24,817.
-			kitBytes: { low: 2_550_000, medium: 3_850_000, high: 6_450_000, ultra: 11_550_000 },
+			kitBytes: { low: 3_400_000, medium: 5_000_000, high: 8_150_000, ultra: 14_400_000 },
 			variantBytes: { low: 12_450_000, medium: 12_600_000, high: 12_750_000, ultra: 12_950_000 },
 			lod0Triangles: 2_500_000,
 			lod1Triangles: 80_000,
@@ -403,8 +436,8 @@ export const record: Species = {
 	cuttings: {
 		// Stills 21 and 22: the branch and the sub-branch are cut pieces of a bare stem forking into
 		// leafy shoots, so the close views draw the class the photographs do.
-		branch: { shoot: 'spray' },
-		subbranch: { shoot: 'long' },
+		branch: { shoot: 'cut' },
+		subbranch: { shoot: 'cut', pick: 1 },
 		// Still 23: one young shoot with eight alternate leaves and a terminal bud, as the spur
 		// draws it.
 		cluster: { shoot: 'spur' },

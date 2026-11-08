@@ -154,6 +154,19 @@ the same crown without that change, under the same tool. The leaf-cluster figure
 moves, by the same command, slot file and machine. The bole widths come from the foot test's own
 width measure, over the six variants.
 
+### The English elm's pair, at its photographs' own light
+
+The elm's whole views were measured twice at one light, the light the review tool derives from each
+photograph: still 01's upper-half sky reads a mean linear luminance of 0.483 and still 02's 0.677, so
+pi times each, split with a hard sun and with haze, gives 2.17 and 1.42 times the page's soft
+daylight. At that light an unthinned crown with cards at 1.7 times its shoots read 11.7 and 13.9
+colour steps from the photographs, and its sky gaps 0.171 and 0.117. The same crown with the crown's
+interior thinned at a 0.33 sky prune and cards at 2.55 read 11.2 and 12.7, its gaps 0.105 and 0.096.
+The thinning and the wider cards therefore bought half a step at one view and one step at the other
+while they closed both gaps. A review light above the photographs' own bought five or six steps on
+the same crown, but that light is brighter than the photographs, so it is a species fitting itself
+to its score, not a fix. For the elm the colour stays a stated limit.
+
 ## Look
 
 The crown thinned by its own light looks better than the clump field. Its sky falls between the limb
