@@ -194,7 +194,7 @@ export const record: Species = {
 				vigor: [0, 1],
 				share: 0,
 				years: 1,
-				length: { mean: 0.27, spread: 0.04 },
+				length: { mean: 0.34, spread: 0.04 },
 				nodes: { mean: 3, spread: 0 },
 				internode: PAIR,
 				// Still 23: the piece's pairs do not lie in one plane, so the shoot runs in short
