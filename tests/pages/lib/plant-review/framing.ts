@@ -47,7 +47,9 @@ export function rowAngle(row: number, fov: number): number {
 /**
  * The least height a camera stands at, in metres: one that would stand lower is raised to it. A
  * photograph of a low plant such as a sedge or a hosta is taken from a few decimetres up, so the
- * floor clears the ground without refusing the picture's own viewpoint.
+ * floor clears the ground without refusing the picture's own viewpoint. A plant a hand's width tall
+ * asks for a camera near its own foot, so the floor sits at a decimetre and the solve frames a herb
+ * or a low shrub as its photograph framed it.
  */
 const LOWEST_EYE = 0.1;
 
