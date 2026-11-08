@@ -135,9 +135,13 @@ Limits this record states:
 - Still 20's autumn photograph lets 0.098 of its crown box show background. Stills 01 and 02 let
   0.177 and 0.167 show. One grown plant cannot sit inside all three bands, so the record follows the
   summer whole views.
-- The crown's color still reads 8 to 15 steps from the photographs where the working band is 3. Its
+- The crown's color still reads 11 to 15 steps from the photographs where the working band is 3. Its
   leaves are small, so a whole view's crown is mostly leaf edges and shade. The light that each
   photograph's own sky gives does not close the gap. The leaf's optics carry little blue, which the
-  crown's mix of shades then reads as a saturated green.
+  crown's mix of shades then reads as a saturated green. Blue in the transmitted light alone gains
+  the crown 1.6 steps and moves neither leaf swatch, so the blue sits there. Blue in the reflected
+  light gains a little more at the crown. It also costs the upper swatch 3.8 steps, so that lever is
+  a trade and not a fix. The remaining gap belongs to the leaf's size and the crown's mixture of
+  shades rather than to one color value.
 - Still 34's lifting strips stand on the bole, but the camera looks straight at them. They read
   almost flat, where the photograph shows them curling away from the wood.
