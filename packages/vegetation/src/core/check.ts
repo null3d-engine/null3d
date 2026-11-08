@@ -551,6 +551,20 @@ export function speciesProblems(record: Species): string[] {
 		tint.forEach((channel, c) => {
 			notNegative(channel, `seasons.bark.${season}[${c}]`, out);
 		});
+	for (const [season, leaves] of Object.entries(record.seasons.leaves ?? {})) {
+		// Only a winter stand draws colours of its own: every other season of a turning plant takes
+		// the autumn colours, and the autumn block holds those.
+		if (season !== 'winter')
+			out.push(
+				`seasons.leaves names ${season}; set winter, the one season the shader draws its own leaf colours for, or leave the season out`,
+			);
+		leaves.reflectance.forEach((channel, c) => {
+			notNegative(channel, `seasons.leaves.${season}.reflectance[${c}]`, out);
+		});
+		leaves.transmittance.forEach((channel, c) => {
+			notNegative(channel, `seasons.leaves.${season}.transmittance[${c}]`, out);
+		});
+	}
 	if (record.bark) curveProblems(record.bark.girthScale, 'bark.girthScale', out);
 	const fork = record.bark?.fork;
 	if (fork?.bend !== undefined && !(fork.bend > 0))

@@ -1747,6 +1747,14 @@ export interface SeasonSpec {
 	 * with the year. A season left out keeps the record's own bark.
 	 */
 	readonly bark?: Partial<Record<Season, Rgb>>;
+	/**
+	 * The leaves' linear reflectance and transmittance in a season, in place of the autumn colours
+	 * that a turning plant draws its dead leaves with. A season left out keeps the autumn colours,
+	 * and the autumn block holds autumn's own.
+	 */
+	readonly leaves?: Partial<
+		Record<Season, { readonly reflectance: Rgb; readonly transmittance: Rgb }>
+	>;
 }
 
 /**

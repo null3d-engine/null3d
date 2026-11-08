@@ -240,6 +240,30 @@ describe('the species header', () => {
 		expect(texel(written, HEADER.winterBark)).toEqual([0, 0, 0, 0]);
 	});
 
+	test('writes a winter stand its own leaf colours, and nothing where the record leaves them out', () => {
+		expect(texel(header, HEADER.winterReflectance)).toEqual([0, 0, 0, 0]);
+		const standing: Species = {
+			...record,
+			seasons: {
+				...record.seasons,
+				leaves: { winter: { reflectance: [0.24, 0.12, 0.07], transmittance: [0.26, 0.16, 0.1] } },
+			},
+		};
+		const written = speciesHeader(standing, manifest, speciesBox(standing));
+		const reflectance = texel(written, HEADER.winterReflectance);
+		expect(reflectance.slice(0, 3).map((v) => toHalf(v as number))).toEqual([
+			toHalf(0.24),
+			toHalf(0.12),
+			toHalf(0.07),
+		]);
+		expect(reflectance[3]).toBe(1);
+		expect(
+			texel(written, HEADER.winterTransmittance)
+				.slice(0, 3)
+				.map((v) => toHalf(v as number)),
+		).toEqual([toHalf(0.26), toHalf(0.16), toHalf(0.1)]);
+	});
+
 	test('gives a species that names no sway the stated default', () => {
 		// A missing sway must never leave the plant still.
 		const bare: Species = { ...record, wind: { ...record.wind, sway: undefined } };
