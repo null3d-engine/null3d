@@ -200,7 +200,7 @@ export const record: Species = {
 					[0, 72],
 					[1, 54],
 				],
-				droop: 24,
+				droop: 45,
 			},
 			{
 				// Still 22: a sub-branch is about thirty-five centimetres of thin arching twig, its
@@ -224,7 +224,7 @@ export const record: Species = {
 					[0, 70],
 					[1, 52],
 				],
-				droop: 18,
+				droop: 45,
 			},
 		],
 		// Still 19: the weeping twig ends draw as their own piece, with a bud at the tip and leaves
@@ -255,7 +255,7 @@ export const record: Species = {
 			shadePrune: 0,
 			// Stills 01 and 18: the crown is open and the sky shows through it, so its inner shoots
 			// thin where their own leaves leave them under this share of the sky.
-			skyPrune: 0.1,
+			skyPrune: 0.13,
 			skyPruneLayer: 1,
 			// Stills 01 and 19: the hanging strands hang free, and no bare twig runs past them.
 			bareTrim: 0.02,
@@ -272,7 +272,7 @@ export const record: Species = {
 			// stalk of about two centimetres, which the texture source draws too.
 			length: { mean: 0.05, spread: 0.008 },
 			outline: 'texture',
-			petiole: { length: 0.022, radius: 0.0012, flat: 0, droop: 12 },
+			petiole: { length: 0.022, radius: 0.002, flat: 0, droop: 12 },
 			fold: 5,
 			curl: 10,
 			crossCurl: 0,
@@ -294,7 +294,10 @@ export const record: Species = {
 			{ layer: 0, by: 'height', from: 0, to: 1, blend: 0.12, tint: [1, 1, 1] },
 			// Stills 15 and 26: white and papery above, with black diamond marks and dark lenticel
 			// dashes.
-			{ layer: 1, by: 'height', from: 0.8, to: 40, blend: 0.2, tint: [1, 1, 1] },
+			{ layer: 1, by: 'height', from: 0.8, to: 6, blend: 0.2, tint: [1, 1, 1] },
+			// The upper bole and the great limbs carry the same white bark. They stand as a zone of
+			// their own so the lower bole alone lifts its peeling strips.
+			{ layer: 1, by: 'height', from: 6, to: 40, blend: 0.2, tint: [1, 1, 1] },
 		],
 		young: 2,
 		// Still 16: the white bark fades to the young purple-brown layer on wood thinner than about
@@ -315,7 +318,7 @@ export const record: Species = {
 		scars: 4,
 		// Stills 15 and 34: the chalky white bark lifts in thin horizontal strips that curl away from
 		// the wood, over the dark fissures beneath.
-		peel: { zone: 1, perSquareMetre: 30, width: { mean: 0.06, spread: 0.02 }, curl: 0.8 },
+		peel: { zone: 1, perSquareMetre: 300, width: { mean: 0.05, spread: 0.015 }, curl: 0.8 },
 	},
 	base: {
 		// Still 14: the foot swells into the root crown, with roots running out over the litter.
