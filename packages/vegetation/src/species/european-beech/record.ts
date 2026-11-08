@@ -335,12 +335,14 @@ export const record: Species = {
 			at: 'shoot-tip',
 			share: 0.06,
 			count: { mean: 1, spread: 0 },
-			// The two cupules hang apart on the stretch below the leaves' cluster: the burr higher,
-			// the split cupule lower, each where the twig shows.
-			tipShare: 0.86,
+			// The cupules hang together from one twig: this one a little nearer the tip, the split
+			// cupule and its nuts below it, each where the wood shows.
+			tipShare: 0.8,
 			seasons: ['autumn'],
-			// Still 19: the burr hangs to one side of the split cupule.
-			offset: [0.045, 0, 0],
+			// Both cupules belong to one group, so they stand on one shoot.
+			group: 0,
+			// The burr hangs to one side of the split cupule.
+			offset: [0.02, 0, 0],
 			shape: {
 				// A closed husk: a plump body that swells from the stalk and closes again over its top,
 				// so no opening faces the light.
@@ -382,8 +384,9 @@ export const record: Species = {
 			count: { mean: 1, spread: 0 },
 			tipShare: 0.78,
 			seasons: ['autumn'],
-			// Still 19: the split cupule's valves stand to the other side of the twig.
-			offset: [-0.045, 0, 0],
+			// The split cupule stands in the burr's group, on the far side of the shoot.
+			group: 0,
+			offset: [-0.02, 0, 0],
 			shape: { petals: 4, radius: 0.012, cup: 0.35 },
 			colour: [0.38, 0.31, 0.16],
 			roughness: [0.85, 0.85],
@@ -397,8 +400,10 @@ export const record: Species = {
 			count: { mean: 2, spread: 0 },
 			tipShare: 0.78,
 			seasons: ['autumn'],
-			// Still 19: the nuts sit inside the valves and a little below their rims.
-			offset: [-0.045, -0.006, 0],
+			// The nuts share the split cupule's site, so they sit inside its valves, a little below
+			// their rims.
+			group: 0,
+			offset: [-0.02, -0.006, 0],
 			shape: {
 				lathe: [
 					[0, 0],

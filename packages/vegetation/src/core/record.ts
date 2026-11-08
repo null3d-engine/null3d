@@ -1653,6 +1653,13 @@ export interface ExtraSpec {
 	 * has.
 	 */
 	readonly offset?: Vec3;
+	/**
+	 * A group number, 0 to 15: extras that name the same number draw at the same sites, so the parts
+	 * of one fruit hang on one twig. Each part keeps its own `tipShare` and `offset`, so a group sets
+	 * its parts in an order along the shoot rather than stacking them on one point. Absent, an extra
+	 * picks its own sites, as it always has.
+	 */
+	readonly group?: number;
 }
 
 /**
