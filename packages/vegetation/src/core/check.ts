@@ -452,6 +452,9 @@ function cuttingProblems(record: Species, out: string[]): void {
 		out.push(
 			`cuttings.leaf.pressed lays a blade leaf flat, and the foliage is '${record.foliage.kind}'`,
 		);
+	const density = record.cuttings?.density;
+	if (density !== undefined && !(density >= 0.25 && density <= 8))
+		out.push(`cuttings.density is ${density}; it is a share from 0.25 to 8`);
 	const names = new Set([
 		...(record.shoots?.classes ?? []).map((shoot) => shoot.name),
 		...(record.shoots?.cuttingClasses ?? []).map((shoot) => shoot.name),
