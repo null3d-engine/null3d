@@ -216,20 +216,20 @@ export const record: Species = {
 			// Four areole prototypes of one small card each, and the card atlas: the largest kit, at
 			// the finest tier, measures 1.21 MB.
 			kitBytes: { low: 1_250_000, medium: 1_250_000, high: 1_250_000, ultra: 1_250_000 },
-			// Every areole stands as a shoot row; the largest variant still measures 5.79 MB at the
-			// finest tier, which the card levels take.
+			// Every areole stands as a shoot row; the largest variant measures 4.93 MB at the finest
+			// tier, which the two card levels take.
 			variantBytes: {
-				low: 5_900_000,
-				medium: 5_900_000,
-				high: 5_900_000,
-				ultra: 5_900_000,
+				low: 5_000_000,
+				medium: 5_000_000,
+				high: 5_000_000,
+				ultra: 5_000_000,
 			},
 			// The nearest level draws the stem's and arms' wood; the areole cards are instanced rows.
 			lod0Triangles: 60_000,
-			// The first card level's areole cards measure 96,530 triangles at the finest tier; the
-			// second, every other card of the first, 42,502.
-			lod1Triangles: 100_000,
-			lod2Triangles: 43_500,
+			// The first card level's areole cards measure 84,806 triangles at the finest tier; the
+			// second, every other card of the first, 36,486.
+			lod1Triangles: 86_000,
+			lod2Triangles: 37_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 320_000,
 			growMilliseconds: 550,
