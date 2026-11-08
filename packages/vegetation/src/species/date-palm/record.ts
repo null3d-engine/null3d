@@ -42,7 +42,7 @@ export const record: Species = {
 		},
 		crown: {
 			// About twenty living fronds, in the golden-angle spiral the crown shows from below.
-			fronds: { mean: 22, spread: 2 },
+			fronds: { mean: 26, spread: 2 },
 			divergence: 137.5,
 			// The centre's youngest fronds stand upright, the oldest arch out and hang. The tilt and
 			// the dead fronds' hang are the palm's own, read from stills 02, 05 and 20; the crown's
@@ -75,11 +75,13 @@ export const record: Species = {
 				// Still 09: a hundred and twenty leaflets a side, about one every five centimetres,
 				// the longest near the middle of the rachis and the shortest at the tip.
 				count: { mean: 120, spread: 8 },
+				// Still 09: the leaflets are about a seventh of the frond's length at their longest,
+				// 40 to 45 cm on a mature frond, and shortest at its tip.
 				length: [
-					[0, 0.05],
-					[0.3, 0.052],
-					[0.65, 0.045],
-					[1, 0.022],
+					[0, 0.07],
+					[0.3, 0.073],
+					[0.65, 0.063],
+					[1, 0.031],
 				],
 				angle: [
 					[0, 42],
