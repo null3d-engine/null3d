@@ -249,6 +249,17 @@ describe('the width profile', () => {
 		expect(crownStartRow(rowSpans(mask, width, height), box)).toBe(44);
 	});
 
+	test('starts a mound with no bare stem at its foot', () => {
+		const width = 100;
+		const height = 100;
+		const mask = new Uint8Array(width * height);
+		// A tuft that runs as wide at the ground as at its widest: its crown is the whole plant.
+		for (let y = 0; y < 30; y++) for (let x = 20; x < 80; x++) mask[y * width + x] = 1;
+		for (let y = 30; y < 100; y++) for (let x = 4; x < 96; x++) mask[y * width + x] = 1;
+		const box = boxOf(mask, width, height) as NonNullable<ReturnType<typeof boxOf>>;
+		expect(crownStartRow(rowSpans(mask, width, height), box)).toBe(99);
+	});
+
 	test('finds where a crown starts over a narrow trunk', () => {
 		const width = 60;
 		const height = 60;

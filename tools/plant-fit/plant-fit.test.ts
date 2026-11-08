@@ -239,6 +239,13 @@ describe('the crown base', () => {
 		const tuft = extents((row) => (row < 2 ? 0.25 : row === 2 ? 0.1 : 0.6));
 		expect(crownBaseRow([tuft])).toBe(0);
 	});
+
+	test('runs a narrow column down to its own foot', () => {
+		// A cypress is under a fifth of its height across at every row, so a fixed crown width
+		// would read its whole slackened lower quarter as bare stem.
+		const column = extents((row) => (row < 2 ? 0.04 : row < 6 ? 0.12 : 0.16));
+		expect(crownBaseRow([column])).toBe(2);
+	});
 });
 
 describe('the outline of a frame', () => {
