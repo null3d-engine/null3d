@@ -545,7 +545,7 @@ function compareRun(
 			`- ${result.pairs.length} files beside a render of their view; ${masked.length} give an outline on a plain background in both pictures.`,
 			...masked.map(
 				(pair) =>
-					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, gap ${fixed(pair.gap?.reference)} against ${fixed(pair.gap?.render)}, leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${pieceClause(pair)}.`,
+					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, gap ${fixed(pair.gap?.reference)} against ${fixed(pair.gap?.render)}, leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${barkClause(pair)}${pieceClause(pair)}.`,
 			),
 			...result.pairs.flatMap((pair) =>
 				pair.surfaceDeltaE !== null
@@ -651,6 +651,18 @@ function pieceClause(pair: StillResult): string {
 	if (!pair.pieces) return '';
 	const { render } = pair.pieces;
 	return `, drawn as ${render} piece${render === 1 ? '' : 's'}`;
+}
+
+/**
+ * A bark close view's two colours, for the line that carries its other figures. The pair states
+ * which way the drawn bark is off, which a distance alone cannot, and a bark view that separates
+ * from its background measures the same patches as one that does not.
+ */
+function barkClause(pair: StillResult): string {
+	if (!pair.barkColour) return '';
+	const show = (lab: readonly number[]) => lab.map((n) => n.toFixed(1)).join(' ');
+	const { reference, render } = pair.barkColour;
+	return `, bark photographs ${show(reference)} and draws ${show(render)}`;
 }
 
 /** Where the render is drawn as more or fewer separate pieces than its reference. */
