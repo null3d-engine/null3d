@@ -1,14 +1,14 @@
 {
 	"01-whole-distant.png": {
-		"sunAzimuth": 60,
-		"sunRise": 40,
+		"sunAzimuth": 13.8,
+		"sunRise": 41.9,
 		"skyShare": 0.19,
 		"fov": 30,
 		"daylight": 2.428
 	},
 	"02-whole-profile.png": {
-		"sunAzimuth": 30,
-		"sunRise": 45,
+		"sunAzimuth": 4.7,
+		"sunRise": 41,
 		"skyShare": 0.395,
 		"fov": 30,
 		"fill": null,
