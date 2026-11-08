@@ -28,16 +28,17 @@ The Scots pine at seed 11, variant 0, grows 1 leader, 540 axes and about 6,400 b
 stands 19.14 m tall, and its crown base is at 0.52 of the height. The fitted envelope comes from 32 views of `pine-turntable.mp4`. Its own outlines overlap those
 views by 0.70 at their mean, so it stands as a cap rather than a target.
 
-The reference's twelve rows are measured in `pine-r31`. The whole views give a shape IoU of 0.45
-and 0.47. Their crown-box gap is 0.29 and 0.39 against the photographs' 0.19 and 0.26. Their leaf
-color difference is 6.4 and 11.1. The plant stands 20.5 m tall and 20.1 m wide. The young form gives a shape IoU of 0.60. The close and bark views
+The reference's twelve rows are measured in `pine-r35`. The whole views give a shape IoU of 0.29,
+0.32 and 0.34. Their crown-box gap is 0.41 and 0.48 against the photographs' 0.19 and 0.26. Their
+leaf color difference is 9.4 and 13.8. The plant stands 20.56 m tall and 19.54 m wide. The young form gives a shape IoU of 0.60. The close and bark views
 and the rows that fail are listed in the species' review record.
 
 ## Look
 
 - **A whorl is one year's growth.** The leader's nodes carry rings at the record's spacing, each
-  with its boughs spread evenly round it and turned a little from ring to ring. Small boughs between
-  the rings break the candelabra, as the reference's irregular limbs do.
+  with its boughs spread evenly round it and turned a little from ring to ring. The rings stand far
+  enough apart that their foliage reads as separate plates with sky between them. Small boughs
+  between the rings break the candelabra, as the reference's irregular limbs do.
 - **Position in the crown sets each axis.** A bough's length and angle come from its height in the
   crown, and its branches and twigs from their position along it. The lowest boughs run out longest
   and the upper ones shorten, which gives the flat-topped umbrella.
@@ -76,4 +77,5 @@ long bare bole and the flat separate plates.
   sites. It also checks the chain of every axis to a stem, the same bytes twice and the envelope cap.
 - `lod/card-bake.ts` reads `lod.cardCell`, and `lod/cards.test.ts` checks the finer atlas.
 - The Scots pine's record, envelope, textures and review slot live under its species folder, the
-  textures package and `tools/lib/plant-review/slots/`.
+  textures package and `tools/lib/plant-review/slots/`. Its leaf is the fascicle: stills 11 and 12
+  frame the pair, and row 4 reads the bundle's width and shape against the single needle.
