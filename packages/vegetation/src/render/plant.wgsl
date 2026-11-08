@@ -129,8 +129,10 @@ const TEXTURE_UV_STEPS: f32 = 65535.0;
 const WOOD_RADIUS_SPAN: f32 = 4.0;
 // The coverage at which a texel counts as leaf, the materials' alpha cutoff.
 const CUTOFF: f32 = 0.5;
-// How much a card's alpha rises for each mip level its sample reads, so far cards keep their leaves.
-const CARD_MIP_LIFT: f32 = 0.25;
+// How much a card's alpha rises for each mip level its sample reads. A mip level's alpha is already
+// the share of the texel that the leaves cover, so a small rise keeps a far card's thinnest leaves
+// from falling under the cutoff without inventing coverage that the mip does not hold.
+const CARD_MIP_LIFT: f32 = 0.05;
 // One turn, for the phases that the records and the vertex colours carry.
 const TURN: f32 = 6.283185307179586;
 // The wind speed at which a species' sway is measured: its record gives the metres at the top for
