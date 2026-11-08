@@ -121,7 +121,10 @@ export const record: Species = {
 		default: 'summer',
 		deciduous: true,
 		winter: 'marcescent',
-		autumn: { reflectance: [0.3, 0.14, 0.04], transmittance: [0.35, 0.15, 0.03] },
+		// Still 19's foliage against still 01's, per channel in linear light, multiplies the leaf's
+		// summer faces: a rust that is a variant of the same green, not another colour. Still 19's
+		// own render pulled the green down and the blue up to its photograph's mean.
+		autumn: { reflectance: [0.181, 0.071, 0.026], transmittance: [0.207, 0.094, 0.039] },
 	},
 	wind: {
 		// The wind clip is a light breeze: the level blades rock a little on their stipes while
