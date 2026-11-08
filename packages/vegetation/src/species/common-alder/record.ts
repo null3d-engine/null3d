@@ -120,6 +120,16 @@ const RUN: readonly (readonly [number, number])[] = [
 	[1, 0.6],
 ];
 
+/**
+ * How far a leaf leans off the shoot it grows on, along the shoot: wide open at its foot so the
+ * blades clear the stem, closing toward the tip as the stills of a branch and a sub-branch show.
+ */
+const OPEN_LEAF_ANGLE: readonly (readonly [number, number])[] = [
+	[0, 110],
+	[0.5, 80],
+	[1, 60],
+];
+
 /** The common alder's record. */
 export const record: Species = {
 	id: 'common-alder',
@@ -246,16 +256,12 @@ export const record: Species = {
 					[0, 0.9],
 					[1, 1],
 				],
-				leafAngle: [
-					[0, 110],
-					[0.5, 80],
-					[1, 60],
-				],
+				leafAngle: OPEN_LEAF_ANGLE,
 				droop: 4,
 			},
 			{
-				// Still 21: a limb's last two years of growth, its leafy side shoots alternating along a
-				// stem that shows between them.
+				// The crown's outer growth: two years of a limb's end, its leafy side shoots alternating
+				// along a stem that shows between them.
 				name: 'spray',
 				vigor: [0.5, 1],
 				share: 0.35,
@@ -272,11 +278,7 @@ export const record: Species = {
 					[0, 0.85],
 					[1, 1],
 				],
-				leafAngle: [
-					[0, 110],
-					[0.5, 80],
-					[1, 60],
-				],
+				leafAngle: OPEN_LEAF_ANGLE,
 				droop: 4,
 			},
 		],
@@ -288,25 +290,21 @@ export const record: Species = {
 				name: 'cut',
 				vigor: [0, 1],
 				share: 0,
-				years: 2,
-				length: { mean: 0.62, spread: 0.22 },
-				nodes: { mean: 4, spread: 0.5 },
+				years: 3,
+				length: { mean: 0.55, spread: 0.2 },
+				nodes: { mean: 4.5, spread: 0.5 },
 				internode: RUN,
-				stem: { radius: [0.008, 0.003] },
+				stem: { radius: [0.009, 0.002] },
 				lateral: 70,
 				laterals: 1.4,
 				lateralGap: 0.4,
-				leafYears: 1,
+				leafYears: 2,
 				bend: { length: 0.05, angle: 30 },
 				leafScale: [
 					[0, 0.9],
 					[1, 1.05],
 				],
-				leafAngle: [
-					[0, 110],
-					[0.5, 80],
-					[1, 60],
-				],
+				leafAngle: OPEN_LEAF_ANGLE,
 				droop: 4,
 			},
 			{
@@ -333,6 +331,31 @@ export const record: Species = {
 				],
 				leafAngleSpread: 15,
 				droop: 3,
+			},
+			{
+				// Still 21: three years of a limb, its side shoots leaving at a wide angle and
+				// carrying their leaves along their whole length, with the leaf size the photograph
+				// gives beside a piece this long. It stands last so the other two pieces draw the
+				// shoots they drew before it.
+				name: 'branch',
+				vigor: [0, 1],
+				share: 0,
+				years: 3,
+				length: { mean: 0.78, spread: 0.08 },
+				nodes: { mean: 3.5, spread: 0.5 },
+				internode: RUN,
+				stem: { radius: [0.012, 0.004] },
+				lateral: 70,
+				laterals: { mean: 2.6, spread: 0.2 },
+				lateralGap: 0.3,
+				leafYears: 2,
+				bend: { length: 0.06, angle: 30 },
+				leafScale: [
+					[0, 0.85],
+					[1, 1],
+				],
+				leafAngle: OPEN_LEAF_ANGLE,
+				droop: 4,
 			},
 		],
 		// Stills 11 and 23: each leaf stands a fifth of a turn past the one below it.
@@ -381,9 +404,9 @@ export const record: Species = {
 			// short stalk, which the texture contour carries with its notched tip and wavy double teeth.
 			length: { mean: 0.07, spread: 0.008 },
 			outline: 'texture',
-			// Stills 21 and 22: the stalk stands a little over a millimetre across, and at a cut piece's
-			// scale that draws as a broken line. A little thicker closes one of the sub-branch's four
-			// groups.
+			// Stills 21 and 22: the stalk stands a little over a millimetre across. A stout stalk draws
+			// its leaves joined at a cut piece's scale, but it is not this species' own, so the record
+			// keeps the thin one and the piece's loose groups are stated instead.
 			petiole: { length: 0.012, radius: 0.0016, flat: 0, droop: 20 },
 			fold: 12,
 			curl: 10,
@@ -542,8 +565,9 @@ export const record: Species = {
 		budget: {
 			// Each cap sits above the figure its tier measures, with room for the cut pieces. The
 			// crown's densest variant measures 18.2 to 19.4 MB, the rim's cards and the cutting
-			// classes among them, under the owner's twenty.
-			kitBytes: { low: 3_200_000, medium: 3_700_000, high: 5_400_000, ultra: 8_200_000 },
+			// classes among them, under the owner's twenty. The kit's three cutting classes measure
+			// 3.35, 4.71, 7.17 and 12.16 MB, inside the owner's 3.5, 6.3, 11.8 and 22.6.
+			kitBytes: { low: 3_450_000, medium: 4_900_000, high: 7_600_000, ultra: 12_900_000 },
 			variantBytes: { low: 19_500_000, medium: 19_600_000, high: 19_700_000, ultra: 19_800_000 },
 			lod0Triangles: 2_800_000,
 			// The denser crown's first card level measures 151,295 triangles; the cap above it is the
@@ -562,8 +586,9 @@ export const record: Species = {
 	// so the reference sets it.
 	roundBand,
 	cuttings: {
-		// Still 21: a metre branch of alternate leafy side shoots, which the crown's spray draws.
-		branch: { shoot: 'spray' },
+		// Still 21: a branch of alternate leafy side shoots, which its own class draws rather than the
+		// crown's spray, so the leaves keep the size the photograph gives them beside the piece.
+		branch: { shoot: 'branch' },
 		// Still 22: a shorter twig whose shoots leave sparse and bare between, as the cut class draws it.
 		subbranch: { shoot: 'cut' },
 		// Still 23: one shoot's five or six alternate leaves round their purple bud.
