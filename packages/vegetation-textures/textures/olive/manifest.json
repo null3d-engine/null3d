@@ -232,9 +232,9 @@
 					0.9
 				],
 				"mean": [
-					0.18025,
-					0.17391,
-					0.17065
+					0.22532,
+					0.22296,
+					0.22753
 				],
 				"height": {
 					"offset": 0.22379,
@@ -277,8 +277,8 @@
 		},
 		{
 			"file": "bark-color.ktx2",
-			"sha256": "640c072e9055cdf707140423e60f2fb516f1012cd3b9b0048b8b1cf46185edba",
-			"bytes": 194852
+			"sha256": "4282480df8f9c0c3e7614ae390a5fd731492c59ef09c8d9ef326af65319598f2",
+			"bytes": 195120
 		},
 		{
 			"file": "bark-normal.ktx2",
@@ -297,7 +297,7 @@
 		},
 		{
 			"file": "bark-color-half.ktx2",
-			"sha256": "128e2143bc9fcde3c3d3dbdc70bf248abda9b45f4d33f538e79ba4abcb47200c",
+			"sha256": "3b1230d979023c2ae9403331110b0f960a9e48d99a397ca815ca8a689ac13608",
 			"bytes": 54003
 		},
 		{

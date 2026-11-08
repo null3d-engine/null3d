@@ -60,7 +60,8 @@
 		"daylight": 2.4
 	},
 	"15-bark-mid-trunk.png": {
-		"span": 0.9
+		"span": 0.9,
+		"daylight": 0.8
 	},
 	"12-single-leaf-upper.png": {
 		"leaves": 1.15,
@@ -69,5 +70,15 @@
 	"13-single-leaf-underside.png": {
 		"leaves": 1.15,
 		"roll": -35
+	},
+	"28-young-bark.png": {
+		"daylight": 1.4
+	},
+	"16-bark-on-limb.png": {
+		"background": "studio-grey",
+		"sky": "#c9c5be",
+		"girth": 0.25,
+		"along": 0.45,
+		"daylight": 1.25
 	}
 }
