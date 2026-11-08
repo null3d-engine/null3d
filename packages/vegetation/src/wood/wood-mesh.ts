@@ -10,7 +10,14 @@
 // displacement on thin wood; `uv1.y` the junction mask; colour bytes R and G the wind record, B the
 // bend weight along the axis and A the crown's sky visibility.
 import type { MeshArrays } from '../asset';
-import { AXIS_LIMB, AXIS_STEM, AXIS_STIPE, type MacroSkeleton, NODE_STUB } from '../core/graph';
+import {
+	AXIS_ARM,
+	AXIS_LIMB,
+	AXIS_STEM,
+	AXIS_STIPE,
+	type MacroSkeleton,
+	NODE_STUB,
+} from '../core/graph';
 import { acos, cos, PI, sin, tan } from '../core/math';
 import type { Species } from '../core/record';
 import { crownSkyAt } from '../crown/visibility';
@@ -36,6 +43,7 @@ import {
 	type SurfaceHit,
 	type SurfacePlace,
 } from './junction';
+import { ribPlan, ribSection } from './ribs';
 import {
 	AxisRings,
 	bendRings,
@@ -51,7 +59,6 @@ import {
 	tubeDetail,
 } from './tube';
 import { type BarkScale, barkScale, tilesRound, uSpan } from './uv';
-
 /**
  * Metres of pipe radius that `uv1.x` spans from 0 to 1 on wood.
  *
@@ -634,6 +641,7 @@ class Mesher {
 	private readonly seed: number;
 	private readonly variant: number;
 	private readonly crown: CrownLight;
+	private readonly kinds: Uint8Array;
 	private readonly writer = new WoodWriter();
 	private readonly built: (AxisRings | undefined)[] = [];
 	private readonly contexts: (AxisContext | undefined)[] = [];
@@ -652,6 +660,7 @@ class Mesher {
 		this.seed = input.seed;
 		this.variant = input.variant;
 		this.crown = input.crown;
+		this.kinds = input.skeleton.axes.kind;
 		this.bark = barkScale(input.record, input.kit.manifest, largestRadius(input.skeleton));
 		this.tube = tubeDetail(level, input.detail, input.coarseness ?? 0);
 		this.rings = report
@@ -861,8 +870,22 @@ class Mesher {
 			const b = 1 / this.bark.scale(path.radius[i] as number);
 			barkV[i] = (barkV[i - 1] as number) + (step * (a + b)) / 2;
 		}
-		const section =
-			wood.stem >= 0
+		const ribs =
+			this.record.growth.model === 'column' &&
+			wood.axis >= 0 &&
+			(wood.stem >= 0 || (this.kinds[wood.axis] as number) === AXIS_ARM)
+				? ribPlan(
+						this.record.growth,
+						this.seed,
+						this.record.seedSalt,
+						variant,
+						wood.axis,
+						path.radius[0] as number,
+					)
+				: undefined;
+		const section = ribs
+			? ribSection(ribs, path.radius[0] as number)
+			: wood.stem >= 0
 				? stemSection(this.record.base, this.seed, this.record.seedSalt, variant, wood.stem)
 				: undefined;
 		let context: AxisContext = {
