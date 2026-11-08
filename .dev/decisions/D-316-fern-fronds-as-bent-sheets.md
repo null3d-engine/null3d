@@ -2,8 +2,10 @@
 
 Status: decided. The frond builder (`packages/vegetation/src/leaf/frond.ts`) is built for pinnate and
 bipinnate fronds, with frond ages from crozier to brown. The frond-colony grower
-(`grow/frond-colony.ts`) is built. Pending: palm fronds (fan and costapalmate), tripinnate fronds,
-the crown-rosette grower and stem surfaces. Ruling 11 parks them with the palms and the tree fern.
+(`grow/frond-colony.ts`) is built. Also built: the crown-rosette grower (`grow/crown-rosette.ts`).
+It lays a palm's stem and its spiral of fronds. The palm frond builder (`leaf/palm-frond.ts`) draws
+a pinnate frond as separate leaflets along its rachis. Pending: fan and costapalmate fronds,
+tripinnate fronds and stem surfaces. Ruling 11 parks those with the palms and the tree fern.
 Task: none.
 
 Summary: a frond draws as one sheet cut by its texture's alpha. The sheet bends so that each pinna
@@ -94,6 +96,15 @@ shader's merged foliage role has no stem surface. A stipe drawn there would take
   is the test colony's largest figure per tier, with about 15 per cent to spare. The lead set it so,
   under the owner's rule that quality comes before size.
 - **The species box** of a frond colony reaches as far as the rhizome runs, plus the longest frond.
+- **A palm's frond.** The date palm's texture sources show one leaflet, not a whole frond. So its
+  frond is not one sheet over a blade texture. Its grower draws each leaflet as a folded ribbon
+  along the rachis. The ribbon's outer columns follow the leaflet texture's own
+  contour, and its planes fan so the frond reads bristly from below. The rachis is the skeleton's
+  rachis axis, drawn as thin wood. The frond's ages set the leaflets' tilt and brownness. A dead
+  frond takes the coarsest grid, since the skirt reads as a mass. One alternative was a sheet cut
+  from a stretched leaflet texture. It draws one enormous leaflet rather than a pinnate frond.
+  Another was a mesh per leaflet at leaf detail. That cost many times the palm cap, for no gain at
+  the crown's distance.
 
 Rejected:
 
