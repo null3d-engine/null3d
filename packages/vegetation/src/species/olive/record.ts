@@ -212,6 +212,63 @@ export const record: Species = {
 				leafAngleSpread: 20,
 				droop: 4,
 			},
+			{
+				// Still 22: the sub-branch, a twig about a third of a metre long whose side shoots leave
+				// one at a time and droop at their ends.
+				name: 'cut',
+				vigor: [0, 1],
+				share: 0,
+				years: 2,
+				length: { mean: 0.35, spread: 0.05 },
+				nodes: { mean: 5, spread: 0.5 },
+				internode: PAIR,
+				stem: { radius: [0.005, 0.0025] },
+				phyllotaxis: { kind: 'opposite', decussate: true },
+				skyward: 0.45,
+				lateral: 70,
+				laterals: { mean: 1.8, spread: 0.4 },
+				lateralGap: 0.3,
+				bend: { length: 0.05, angle: 26 },
+				leafScale: [
+					[0, 0.95],
+					[1, 1.15],
+				],
+				leafAngle: [
+					[0, 110],
+					[0.5, 95],
+					[1, 80],
+				],
+				droop: 5,
+			},
+			{
+				// Still 21: the branch, most of a metre long, spreading by its side twigs. They leave the
+				// stem a few centimetres apart and reach well out, so the piece reads as a branch rather
+				// than a wand, and its leaves droop at every end.
+				name: 'whip',
+				vigor: [0, 1],
+				share: 0,
+				years: 2,
+				length: { mean: 0.7, spread: 0.1 },
+				nodes: { mean: 7, spread: 0.5 },
+				internode: PAIR,
+				stem: { radius: [0.006, 0.003] },
+				phyllotaxis: { kind: 'opposite', decussate: true },
+				skyward: 0.45,
+				lateral: 70,
+				laterals: { mean: 2.2, spread: 0.4 },
+				lateralGap: 0.3,
+				bend: { length: 0.07, angle: 30 },
+				leafScale: [
+					[0, 0.9],
+					[1, 1.1],
+				],
+				leafAngle: [
+					[0, 110],
+					[0.5, 95],
+					[1, 80],
+				],
+				droop: 6,
+			},
 		],
 		// Stills 10, 11 and 23: every pair of leaves stands at right angles to the pair below it.
 		phyllotaxis: { kind: 'opposite', decussate: true },
@@ -393,20 +450,20 @@ export const record: Species = {
 		cardGrow: 2,
 		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so its leaves read
 		// as a piece in air. Each draws its twig as a line, and the join shows.
-		cardStalk: 1.2,
+		cardStalk: 0,
 		cardStalkToFoliage: true,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit measures 1.73, 2.49, 4.05 and 7.39 MB at the four tiers; each cap sits just
-			// above its figure. The studio cluster's class is the last prototype it carries.
-			kitBytes: { low: 1_750_000, medium: 2_550_000, high: 4_100_000, ultra: 7_450_000 },
-			// The largest of seed 11's six variants measures 8.01, 8.07, 8.11 and 8.17 MB.
-			variantBytes: { low: 8_100_000, medium: 8_150_000, high: 8_200_000, ultra: 8_250_000 },
+			// The kit measures 2.49, 3.82, 6.53 and 12.36 MB at the four tiers; each cap sits just
+			// above its figure. The three studio classes are the last prototypes it carries.
+			kitBytes: { low: 2_520_000, medium: 3_900_000, high: 6_650_000, ultra: 12_550_000 },
+			// The largest of seed 11's six variants measures 8.56, 8.63, 8.67 and 8.73 MB.
+			variantBytes: { low: 8_600_000, medium: 8_650_000, high: 8_700_000, ultra: 8_800_000 },
 			lod0Triangles: 2_900_000,
-			lod1Triangles: 140_000,
-			lod2Triangles: 12_000,
+			lod1Triangles: 145_000,
+			lod2Triangles: 9_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
 			growMilliseconds: 600,
@@ -420,8 +477,8 @@ export const record: Species = {
 		// Stills 21 and 22: a branch about a metre long and a sub-branch about a third of that, each
 		// cut from the grown plant. The pieces carry the crown's own shoots, so their drooping twigs
 		// and opposite pairs are the photographs' without a class of their own.
-		branch: { order: 3, length: 0.9 },
-		subbranch: { order: 4, length: 0.35 },
+		branch: { shoot: 'whip' },
+		subbranch: { shoot: 'cut' },
 		// Still 23: one upright shoot, its pairs of leaves along the run and buds at its tip.
 		cluster: { shoot: 'spur' },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
