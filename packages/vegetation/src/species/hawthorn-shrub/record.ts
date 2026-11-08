@@ -305,13 +305,13 @@ export const record: Species = {
 		// Still 07: each stem flares only slightly where it leaves the soil; the stool's stems stand
 		// close enough that their feet meet.
 		flare: { amount: 0.1, height: 0.25 },
-		// Still 14: a few thin roots run out over the litter and sink as they go.
+		// Still 14: a few thin roots run out over the litter, only just proud of it, and sink as they go.
 		roots: {
 			count: { mean: 3, spread: 1 },
-			length: { mean: 0.5, spread: 0.1 },
-			radius: 0.03,
-			dive: 0.15,
-			ridge: 0.9,
+			length: { mean: 0.4, spread: 0.1 },
+			radius: 0.02,
+			dive: 0.1,
+			ridge: 0.4,
 		},
 	},
 	extras: [
@@ -319,8 +319,8 @@ export const record: Species = {
 			// Stills 09, 10 and 19: a long straight woody spine stands out from almost every node of
 			// the twigs, red-brown when young and grey with age.
 			kind: 'thorn',
-			at: 'node',
-			share: 0.3,
+			at: 'old-wood',
+			share: 0.5,
 			seasons: ['blossom', 'summer', 'autumn', 'winter'],
 			shape: { spines: 1, length: 0.022, spread: 0 },
 			colour: [0.18, 0.06, 0.04],
@@ -353,12 +353,12 @@ export const record: Species = {
 			hang: 160,
 		},
 		{
-			// Still 20: flat corymbs of five-petalled cream flowers at the ends of the spring shoots,
-			// where a spur's nodes crowd, with the leaves out among them.
+			// Still 20: flat corymbs of five-petalled cream flowers, carried on the crowded nodes at a
+			// spring spur's end, with the leaves out among them.
 			kind: 'flower',
 			at: 'node',
-			share: 0.3,
-			count: { mean: 5, spread: 1.5 },
+			share: 0.5,
+			count: { mean: 6, spread: 1.5 },
 			tipShare: 0.95,
 			seasons: ['blossom'],
 			shape: { petals: 5, radius: 0.007, cup: 0.45 },
@@ -394,20 +394,27 @@ export const record: Species = {
 		// within the outline the camera frames.
 		cardGrow: 1.25,
 		// A card's twig is thinner than a pixel at a whole view, so each draws its supporting twig as
-		// a line that runs on to the card's own foliage, and the join shows.
-		cardStalk: 2,
+		// a line wide enough to hold the leaf group in the picture, running on to the card's foliage.
+		cardStalk: 3,
 		cardStalkToFoliage: true,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			kitBytes: { low: 3_200_000, medium: 3_900_000, high: 6_900_000, ultra: 12_600_000 },
-			variantBytes: { low: 16_500_000, medium: 16_600_000, high: 16_800_000, ultra: 17_200_000 },
-			lod0Triangles: 2_800_000,
-			lod1Triangles: 150_000,
-			lod2Triangles: 43_000,
+			// The kit's leaves and six shoot prototypes measure 2.46, 3.36, 5.29 and 9.05 MB; each
+			// cap sits above its figure, under the class's own ceiling.
+			kitBytes: { low: 2_600_000, medium: 3_500_000, high: 5_600_000, ultra: 9_500_000 },
+			// Six variants measure 4.6 to 7.9 MB at every tier; each cap sits above the largest.
+			variantBytes: { low: 8_100_000, medium: 8_100_000, high: 8_100_000, ultra: 8_200_000 },
+			// The nearest level, with the shoot rows that stand in it, measures 246,651 triangles; the
+			// first card level 119,000 to 136,000 and the second 19,000 to 21,000, over three variants
+			// and every season.
+			lod0Triangles: 300_000,
+			lod1Triangles: 145_000,
+			lod2Triangles: 25_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
+			// The first growth of a process includes compiling the code, so the cap covers that.
 			growMilliseconds: 600,
 		},
 	},
