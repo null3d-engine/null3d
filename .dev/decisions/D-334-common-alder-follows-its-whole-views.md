@@ -158,11 +158,14 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   the two cross within two tenths of a step. Either side of it fails one of them.
 - Still `13` is the picture row 10 keeps. Its photograph is 145, 155, 105 and still `25`'s is
   118, 138, 79 — some twelve steps apart — and still `13` reads between 6.0 and 6.8 at every
-  setting of the back face. One leaf cannot be two undersides, so the row is stated with both
-  triples rather than claimed. **No slot field reaches either view**: the leaf-underside view draws
-  under `sun: 'albedo'`, which the page builds as two fixed white copy-stand lamps at a set
-  intensity, so `daylight`, `skyShare` and the sky's colour are all unread there. The only lever is
-  the leaf's back face, and still `25` pins it.
+  setting of the back face. One leaf cannot be two undersides as long as the stand's light is fixed.
+- **A studio picture now carries its own light.** `9a1ff7585` gives every light path the slot's
+  `daylight` for exposure and `lamp` for white balance, and a studio background stands between its
+  own walls rather than under the sky's blue. Before it, the copy stand read no query at all, so
+  still `13` was a fixed exposure and the two underside photographs looked like a wall. They are not:
+  the record sets `daylight` 1.09 and a warm lamp on still `13`, and twice the default exposure on
+  the winter keys, with still `25` left with no slot entry as the control that proves the field is
+  per picture.
 - The young bark carries a tint of 0.963, 0.907 and 0.848 in its texture source, half the measured
   linear ratio 0.927, 0.823 and 0.719, which darkens and warms it. Its surface colour difference
   falls from 3.35 to 2.14, inside the mark. **This species' young-bark view does draw that layer**,
