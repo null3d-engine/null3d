@@ -30,17 +30,17 @@ reference shows them, and its budget must hold at every tier.
 ## Data
 
 The species grows 12.0 m tall and 4.1 m across, which is the fitted aspect of 0.34. Its six variants
-carry 3 to 5 arms at 5.2 to 6.4 m, each running out 1 m, turning up over a quarter circle of 0.5 m
-and rising 1.6 to 3.0 m. An arm is pinched to about half its girth where it leaves the stem. The stem is 0.8 m across at the foot and carries 14 ribs; an arm carries 12.
+carry 3 to 5 arms at 5.8 to 6.8 m, each running out 0.9 m, turning up over a quarter circle of
+0.57 m and rising 2.6 to 3.8 m. An arm is pinched to about half its girth where it leaves the stem. The stem is 0.8 m across at the foot and carries 14 ribs; an arm carries 12.
 Nine woodpecker holes stand on the upper stem.
 
 | Measure | Value | Tier |
 | --- | --- | --- |
-| Areoles on the largest variant | 9,994 bud sites, one shoot each | high |
-| Nearest wood | 48,708 triangles | high |
-| First card level | 84,806 triangles | ultra |
-| Second card level | 36,486 triangles | ultra |
-| Variant bytes | 4,928,294 | ultra |
+| Areoles on the largest variant | 11,002 bud sites, one shoot each | high |
+| Nearest wood | 49,140 triangles | high |
+| First card level | 92,764 triangles | ultra |
+| Second card level | 40,127 triangles | ultra |
+| Variant bytes | 5,403,629 | ultra |
 | Kit bytes | 1,214,476 | ultra |
 | Grow | 750 ms cold in Bun on a Mac, where the oak records 600 ms and grows in 2.5 to 4.7 s | high |
 
