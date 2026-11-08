@@ -23,7 +23,7 @@ export const record: Species = {
 	growth: {
 		model: 'tuft',
 		// Still 04's overhead view and still 07's crown show a dense tussock of many shoots.
-		shoots: { mean: 105, spread: 10 },
+		shoots: { mean: 140, spread: 12 },
 		// Still 07 and 09: the shoots rise from one short thick crown, a little over 20 cm across.
 		base: 0.11,
 		// Still 02: the outer shoots lean away from the crown while the middle ones stand upright.
@@ -57,8 +57,8 @@ export const record: Species = {
 			kind: 'spike',
 			// Still 17: the stems stand about 30 cm above the leaf mound at their highest point.
 			height: { mean: 1.6, spread: 0.18 },
-			// Still 16: the solid three-angled stem is about 5 mm across.
-			radius: 0.003,
+			// Still 16: the solid three-angled stem; the photographs' stems read about a centimetre across.
+			radius: 0.005,
 			sides: 3,
 			// Still 02: each stem bows over through a quarter turn at the top.
 			bow: { mean: 100, spread: 15 },
@@ -102,10 +102,10 @@ export const record: Species = {
 			dryTip: 0.05,
 			optics: {
 				// Still 12's glossy yellow-green upper face.
-				reflectance: [0.07, 0.15, 0.012],
+				reflectance: [0.064, 0.122, 0.0065],
 				// Still 13's matt glaucous blue-green underside.
-				reflectanceBack: [0.1, 0.14, 0.11],
-				transmittance: [0.07, 0.15, 0.03],
+				reflectanceBack: [0.092, 0.113, 0.059],
+				transmittance: [0.064, 0.122, 0.016],
 				roughness: [0.45, 0.7],
 			},
 		},
@@ -166,11 +166,11 @@ export const record: Species = {
 		shadowLevel: 1,
 		budget: {
 			// Measured at seed 11 over the first four variants: the kit holds 33 to 37 KB, and a
-			// variant 1.10, 1.26, 1.44 and 2.21 MB from Low to Ultra.
+			// variant 1.33, 1.55, 1.78 and 2.80 MB from Low to Ultra.
 			kitBytes: { low: 100_000, medium: 100_000, high: 100_000, ultra: 100_000 },
-			variantBytes: { low: 1_300_000, medium: 1_500_000, high: 1_700_000, ultra: 2_500_000 },
-			lod0Triangles: 90_000,
-			lod1Triangles: 20_000,
+			variantBytes: { low: 1_500_000, medium: 1_600_000, high: 1_900_000, ultra: 3_000_000 },
+			lod0Triangles: 110_000,
+			lod1Triangles: 22_000,
 			lod2Triangles: 8_000,
 			downloadBytes: 350_000,
 			downloadHalfBytes: 120_000,
