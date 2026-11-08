@@ -310,9 +310,14 @@ export const record: Species = {
 		},
 	},
 	bark: {
-		// Stills 26 and 15 under the copy-stand lamps: a warm grey-brown, so the measured colour
-		// stands as it is. The drawn trunk takes no second layer.
-		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [1, 1, 1] }],
+		// Stills 26 and 15 under the copy-stand lamps: a warm grey-brown, so the texture's measured
+		// colour stands above the foot. Still 14: the flare reads some L units lighter than its
+		// photograph, so the lowest half metre takes a darkening tint. It stays below the mid-trunk
+		// and texture cameras' frames, so neither of their figures moves.
+		zones: [
+			{ layer: 0, by: 'height', from: 0, to: 0.5, blend: 0.3, tint: [0.62, 0.66, 0.72] },
+			{ layer: 0, by: 'height', from: 0.5, to: 40, blend: 0, tint: [1, 1, 1] },
+		],
 		young: 0,
 		// Still 16: the net fades to smooth grey-brown wood on branches thinner than about three
 		// centimetres' radius, where still 28 shows the lenticels.
