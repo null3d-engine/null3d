@@ -9,14 +9,15 @@
 // along the frond and the crown's sky visibility, and its second coordinates hold the share along
 // the frond and how brown it is.
 import type { MeshArrays } from '../asset';
+import { AXIS_RACHIS } from '../core/graph';
 import { cos, quatAxisAngle, quatRotate, radians, sin, tan, type Vector3 } from '../core/math';
 import type { FrondShape, LeafShape, PinnaSpec, Species } from '../core/record';
 import { curveAt, spreadMean } from '../core/types';
 import { crownSkyAt } from '../crown/visibility';
 import type { MeshInput, MeshLevel } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
-import { emptyFrame, frameAt, type PathFrame } from '../wood/frames';
-import { skeletonFronds } from './frond';
+import { type AxisPath, axisPath, emptyFrame, frameAt, type PathFrame } from '../wood/frames';
+
 import { type LeafOutline, textureOutline } from './outline';
 import { MeshWriter } from './writer';
 
@@ -250,6 +251,72 @@ function writeLeaflet(
 		}
 }
 
+/** One frond of a variant, read from its skeleton: its rachis path, its age and its wind record. */
+interface PalmFrond {
+	readonly path: AxisPath;
+	/**
+	 * Metres of the path that run from the stem's own node out to the frond's base. A palm's rachis
+	 * leaves the stem's axis, so the path's first sample stands on the stem rather than at the
+	 * blade's base; the leaflets start past this lead.
+	 */
+	readonly lead: number;
+	readonly age: number;
+	readonly record: number;
+	readonly phase: number;
+}
+
+/**
+ * The fronds a palm variant carries: one at each bud site on a rachis axis, the rachis's path from
+ * its junction with the stem through its nodes, the upper face where the bud's +Z points, and the
+ * age the bud's vigor holds.
+ */
+function palmFronds(input: MeshInput): PalmFrond[] {
+	const { axes, buds, position } = input.skeleton;
+	const fronds: PalmFrond[] = [];
+	const up: Vector3 = [0, 0, 0];
+	for (let b = 0; b < buds.count; b++) {
+		const axis = buds.axis[b] as number;
+		if ((axes.kind[axis] as number) !== AXIS_RACHIS) continue;
+		const first = axes.first[axis] as number;
+		const last = axes.last[axis] as number;
+		const pts: number[] = [];
+		const radii: number[] = [];
+		let lead = 0;
+		const parentNode = axes.parentNode[axis] as number;
+		if ((axes.parent[axis] as number) >= 0 && parentNode >= 0) {
+			pts.push(
+				position[parentNode * 3] as number,
+				position[parentNode * 3 + 1] as number,
+				position[parentNode * 3 + 2] as number,
+			);
+			radii.push(input.skeleton.radius[first] as number);
+			const dx = (position[first * 3] as number) - (position[parentNode * 3] as number);
+			const dy = (position[first * 3 + 1] as number) - (position[parentNode * 3 + 1] as number);
+			const dz = (position[first * 3 + 2] as number) - (position[parentNode * 3 + 2] as number);
+			lead = Math.sqrt(dx * dx + dy * dy + dz * dz);
+		}
+		for (let n = first; n <= last; n++) {
+			pts.push(
+				position[n * 3] as number,
+				position[n * 3 + 1] as number,
+				position[n * 3 + 2] as number,
+			);
+			radii.push(input.skeleton.radius[n] as number);
+		}
+		if (radii.length < 2) continue;
+		quatRotate(buds.frame, b * 4, [0, 0, 1], up);
+		const path = axisPath(new Float64Array(pts), new Float64Array(radii), radii.length, up);
+		fronds.push({
+			path,
+			lead,
+			age: buds.vigor[b] as number,
+			record: input.variant * VARIANT_RECORDS + (axes.record[axis] as number),
+			phase: (axis * 97) & 255,
+		});
+	}
+	return fronds;
+}
+
 /**
  * A palm plant's merged foliage at a level: every frond's leaflets along its rachis.
  *
@@ -286,20 +353,22 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 	const across: Vector3 = [0, 0, 0];
 	const normal: Vector3 = [0, 0, 0];
 	const q = [0, 0, 0, 1];
-	for (const frond of skeletonFronds(input.skeleton, input.variant)) {
-		const length = frond.path.length;
+	for (const frond of palmFronds(input)) {
+		// The frond's own run, past the lead that reaches out from the stem's axis to its base.
+		const length = frond.path.length - frond.lead;
 		if (length < 0.05) continue;
 		// A dead frond hangs as a brown mass in the skirt, where its leaflets read as the mass rather
 		// than as blades: it takes the coarsest grid and the fewest places at every level.
-		const dead = frond.age.brown > 0.9;
+		const dead = frond.age > 0.99;
 		const drawn = dead ? 2 : level;
 		const list = leafletsOf(shape, pinnae, length, drawn, places);
 		const frondRibbon = dead ? deadRibbon : ribbon;
 		const bytes: number[] = [0, 0, 0, 0];
 		const record = base + frond.record;
-		const brown = Math.max(0, Math.min(1, frond.age.brown));
+		const brown = Math.max(0, Math.min(1, (frond.age - 0.5) * 2));
 		for (const leaflet of list) {
-			const along = Math.max(0, Math.min(1, leaflet.at)) * length;
+			const share = Math.max(0, Math.min(1, leaflet.at));
+			const along = frond.lead + share * length;
 			frameAt(frond.path, along, frame);
 			point[0] = frame.position[0] as number;
 			point[1] = frame.position[1] as number;
@@ -344,7 +413,7 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 					bytes[3] = Math.round(255 * Math.max(0, Math.min(1, sky)));
 					return bytes;
 				},
-				[leaflet.at, brown],
+				[share, brown],
 			);
 		}
 	}

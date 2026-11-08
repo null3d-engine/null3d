@@ -52,7 +52,7 @@ export const record: Species = {
 				[1, 118],
 			],
 			// Still 20: a skirt of dead fronds hangs below the crown, over the top of the trunk.
-			dead: { count: { mean: 14, spread: 2 }, hang: 126, skirt: 0.35 },
+			dead: { count: { mean: 18, spread: 2 }, hang: 126, skirt: 0.35 },
 		},
 		frond: {
 			kind: 'pinnate',
