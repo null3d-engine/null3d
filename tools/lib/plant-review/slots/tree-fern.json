@@ -1,9 +1,8 @@
 {
 	"04-crown-outside.png": {
-		"view": "limb",
-		"thin": 0.025,
-		"span": 2.2,
-		"surface": true
+		"view": "crown",
+		"elevation": -20,
+		"distance": 4
 	},
 	"06-inside-crown.png": {
 		"view": "crown",
