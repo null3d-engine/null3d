@@ -515,14 +515,34 @@ and yellower than its photograph by 4.4 and 5.0. The factors that answer the fig
 and more, draw the foot a pale lavender. The options that keep the bark's own hue leave the figure
 where it is.
 
+The base's tone is also settable from the slot file, which now takes a picture's own white balance as a
+`lamp` and its exposure as `daylight`. The lamp moves the base's figure and cannot keep the bark's
+colour. Measured on 9 November, one value each:
+
+| Lamp, at the slot's own exposure | Base view |
+| --- | --- |
+| none | 6.26 |
+| `#ffe2ff` | 5.35 |
+| `#ffb0ff` | 4.42 |
+| `#e0b0ff` | 4.89 |
+| `#d0a8ff` | 5.05 |
+| `#ffb0ff` at a `daylight` of 1.2 | 3.25 |
+| `#ffb0ff` at a `daylight` of 1.3 | 2.95 |
+| `#ffb0ff`'s exposure alone, no lamp | 5.98 |
+
+The last two lamps stand inside the band, and both draw the foot a pale lavender. The photograph's
+bark is grey-brown, so the figure is met by a colour the species does not have. The exposure alone
+keeps the bark's colour and takes the figure to 5.98, so the base slot carries `daylight` 1.3 and no
+lamp.
+
 The reference set disagrees about the bark's colour as much as the render did. The flat texture
 source, still 26, stands 5.9, 6.8 and 7.8 steps from the photographs of the base, the mid-trunk and
 the limb. It stands 11.9 from the young bark. So the swatch's old figure of 1.7 measured the render
 against a patch its own close views do not agree with. With the zones in place still 26 reads 6.31,
 which is where the photographs themselves stand from it.
 
-A lower young radius, 0.015 in place of 0.03, moves the limb by three hundredths: the limb draws
-the mature bark either way, so that lever is not this row's.
+A lower young radius, 0.015 in place of 0.03, moves the limb by three hundredths. The limb draws the
+mature bark either way, so that lever is not this row's.
 
 ### The row 6 band through the cards, and the young bark's tint
 
@@ -609,9 +629,12 @@ Rejected:
      distant crown's colour would fight the texture that measures the leaf, and the leaf's own
      views, which stand at 2.2 and 1.5 steps, would be wrong. A future species with the same leaf
      meets the same limit, and should state it the same way.
-  5. The bark's colour at mid-trunk reads 5.38 steps through the bark-mid view where the texture
-     itself measures under 2, and the young bark reads 9.53. The close views' light does not move
-     either figure, so the residue is the material's own shading and the view's own scene.
+  5. The bark's colour stands inside its band at the mid-trunk and the limb, at 0.58 and 2.33 steps.
+     It stands at 6.26 at the base. The base's residue is a hue: its render reads 4.4 greener and 5.0
+     yellower than its photograph. The blue factor that answers the figure draws the foot pale
+     lavender. The reference set disagrees about the bark's own colour, so a swatch figure cannot
+     decide the row. The flat texture source stands 5.9, 6.8 and 7.8 steps from the photographs of
+     the base, the mid-trunk and the limb. It stands 11.9 from the young bark.
   6. The whole plant's outline matches its turning video at 0.507 on average. The reference's own
      hull overlaps its views by only 0.57 to 0.80, so the fitted envelope cannot be closer than the
      reference's own drift allows.

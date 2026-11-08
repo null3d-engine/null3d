@@ -64,5 +64,8 @@
 	},
 	"19-keys.png": {
 		"season": "summer"
+	},
+	"14-bark-base.png": {
+		"daylight": 1.3
 	}
 }
