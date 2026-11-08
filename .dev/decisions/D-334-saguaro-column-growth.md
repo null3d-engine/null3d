@@ -30,8 +30,10 @@ reference shows them, and its budget must hold at every tier.
 ## Data
 
 The species grows 12.0 m tall and 4.1 m across, which is the fitted aspect of 0.34. Its six variants
-carry 3 to 5 arms at 5.8 to 6.8 m, each running out 0.9 m, turning up over a quarter circle of
-0.57 m and rising 2.6 to 3.8 m. An arm is pinched to about half its girth where it leaves the stem. The stem is 0.8 m across at the foot and carries 14 ribs; an arm carries 12.
+carry 3 to 5 arms at 5.4 to 6.4 m, each running out 0.75 m, turning up over a quarter circle of
+0.49 m and rising 2.6 to 3.8 m. A thicker arm and a longer run, at radius 0.22 m and 0.9 m, measured
+worse on the second whole view (shape 0.43 against 0.50, width error 0.108 against 0.082), so the
+record keeps the thinner arm. An arm is pinched to about half its girth where it leaves the stem. The stem is 0.8 m across at the foot and carries 14 ribs; an arm carries 12.
 Nine woodpecker holes stand on the upper stem.
 
 | Measure | Value | Tier |
