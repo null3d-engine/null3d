@@ -10,7 +10,14 @@
 // displacement on thin wood; `uv1.y` the junction mask; colour bytes R and G the wind record, B the
 // bend weight along the axis and A the crown's sky visibility.
 import type { MeshArrays } from '../asset';
-import { AXIS_LIMB, AXIS_STEM, AXIS_STIPE, type MacroSkeleton, NODE_STUB } from '../core/graph';
+import {
+	AXIS_LIMB,
+	AXIS_RACHIS,
+	AXIS_STEM,
+	AXIS_STIPE,
+	type MacroSkeleton,
+	NODE_STUB,
+} from '../core/graph';
 import { acos, cos, PI, sin, tan } from '../core/math';
 import type { Species } from '../core/record';
 import { crownSkyAt } from '../crown/visibility';
@@ -162,14 +169,17 @@ function woodAxes(input: MeshInput, keep: number): WoodAxis[] {
 	const base = input.variant * VARIANT_RECORDS;
 	const lastKept = keptNodes(skeleton);
 	// Axes rooted at the ground, stems and a frond colony's stipes, take the stem base's flare,
-	// lobes and roots. A limb without a parent is the cut end of a piece, such as a cut branch, and
-	// starts plain. Any other axis without a parent, such as a ground plant's crown, carries no wood.
+	// lobes and roots. A limb or a rachis without a parent is the cut end of a piece, such as a cut
+	// branch or a cut frond, and starts plain. Any other axis without a parent, such as a ground
+	// plant's crown, carries no wood.
 	const rooted = (a: number) =>
 		(axes.kind[a] as number) === AXIS_STEM || (axes.kind[a] as number) === AXIS_STIPE;
+	const piece = (a: number) =>
+		(axes.kind[a] as number) === AXIS_LIMB || (axes.kind[a] as number) === AXIS_RACHIS;
 	const meshed = (a: number) =>
 		(axes.order[a] as number) <= keep &&
 		(lastKept[a] as number) >= (axes.first[a] as number) &&
-		((axes.parent[a] as number) >= 0 || rooted(a) || (axes.kind[a] as number) === AXIS_LIMB);
+		((axes.parent[a] as number) >= 0 || rooted(a) || piece(a));
 	// Where each axis divides: the nodes short of its end where a codominant side child leaves.
 	const divides = new Uint8Array(skeleton.nodeCount);
 	for (let a = 0; a < axes.count; a++) {
