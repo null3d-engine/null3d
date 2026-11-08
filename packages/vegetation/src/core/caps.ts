@@ -90,7 +90,10 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		// leaves on one shoot, and the near band is the only place those rows are real geometry, so the
 		// cap follows the densest species' measured figure rather than the oak's.
 		lod0Triangles: 2_900_000,
-		lod1Triangles: 150_000,
+		// The common alder's crown at density 3.5 measures 150,133 triangles at this level, and the
+		// cap, not the growth, was choosing its density: the owner raised it so a species' crown can
+		// be as solid as its photographs.
+		lod1Triangles: 155_000,
 		// The beech's second card level once each card draws its supporting twig: 27,666 triangles
 		// without the twig line and about 42,700 with one, which is above the holm oak's 37,723. A
 		// card that draws no twig floats free of the wood, so this cap follows the reading with it.
