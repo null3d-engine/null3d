@@ -425,13 +425,14 @@ export const record: Species = {
 	roundBand,
 	cuttings: {
 		// Still 21: the branch keeps the spray's years of stiff twigs, bare between the leaf tufts.
-		// The sub-branch takes the short cut class, which draws the photographs' tighter twigs.
+		// The sub-branch takes the short cut class, which draws the photographs' tighter twigs. Both
+		// are drawn from the shoot kit by this record's choice, so neither carries the thorns the
+		// grown plant wears; a branch or sub-branch cut from the grown plant would keep them.
 		branch: { shoot: 'spray' },
 		subbranch: { shoot: 'cut' },
 		// Stills 11 and 23 hold one rosette of five or six leaves round its buds at the end of a spur.
-		// This piece is drawn from the shoot kit alone, so it carries no old-wood extras: the thorns
-		// stand on buds of the grown plant, and the kit-cut close views show none, though the branch
-		// and sub-branch pieces, cut from the grown plant, keep theirs.
+		// A cluster is one shoot row drawn from the kit, so the old-wood extras cannot stand on it:
+		// the thorns grow from buds of the grown plant, and this piece shows none.
 		cluster: { shoot: 'short' },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
 		leaf: { pressed: true },
