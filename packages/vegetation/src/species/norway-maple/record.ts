@@ -244,6 +244,33 @@ export const record: Species = {
 				leafYears: 1,
 				droop: 3,
 			},
+			{
+				// Still 22: the stem forks once into two leafy arms at a joint, with the pair below it,
+				// as the photograph shows the young shoot. The class sits last so the other pieces keep
+				// their own draws.
+				name: 'fork',
+				vigor: [0, 1],
+				share: 0,
+				years: 2,
+				length: { mean: 0.45, spread: 0.08 },
+				nodes: { mean: 1, spread: 0 },
+				internode: PAIR,
+				stem: { radius: [0.01, 0.005] },
+				laterals: { mean: 2, spread: 0 },
+				lateralGap: 0,
+				lateral: 42,
+				leafScale: [
+					[0, 1],
+					[1, 1.3],
+				],
+				leafAngle: [
+					[0, 90],
+					[1, 75],
+				],
+				leafAngleSpread: 25,
+				leafYears: 1,
+				droop: 3,
+			},
 		],
 		// Stills 09, 10 and 21: every pair of leaves stands at right angles to the pair below it.
 		phyllotaxis: { kind: 'opposite', decussate: true },
@@ -437,10 +464,10 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit measures 3.29, 3.93, 5.27 and 7.84 MB at the four tiers, the two cutting
-			// classes and the leaf's palmate blade among them; each cap sits above its figure and the
-			// medium one stays under the owner's four-megabyte ceiling.
-			kitBytes: { low: 3_300_000, medium: 3_980_000, high: 5_450_000, ultra: 8_250_000 },
+			// The kit measures 3.30, 4.03, 5.59 and 8.55 MB at the four tiers, the three cutting
+			// classes and the leaf's palmate blade among them; each cap sits above its figure under
+			// the owner's ceilings.
+			kitBytes: { low: 3_320_000, medium: 4_060_000, high: 5_610_000, ultra: 8_580_000 },
 			// The crown's shoot dial at 3.8 and ten keys a bunch put the first variant at 19.35, 19.41,
 			// 19.48 and 19.58 MB; each cap sits above it, under the owner's ceiling. A key more would
 			// pass the low ceiling, which is what bounds the bunch's size.
@@ -462,7 +489,7 @@ export const record: Species = {
 		// Stills 21 and 22: the branch and the sub-branch take the cut class, which the crown never
 		// draws.
 		branch: { shoot: 'cut' },
-		subbranch: { shoot: 'cut', pick: 1 },
+		subbranch: { shoot: 'fork' },
 		// Still 23 and the cluster's turn: one short shoot of two opposite leaf pairs round its bud.
 		cluster: { shoot: 'spur' },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.

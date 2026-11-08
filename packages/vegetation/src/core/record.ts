@@ -1084,13 +1084,13 @@ export interface ShootSpec {
 }
 
 /**
- * One kind of shoot: long, short, spur, whip or spray.
+ * One kind of shoot: long, short, spur, whip or spray, or a cutting's own class such as a fork.
  *
  * @category api/vegetation
  */
 export interface ShootClass {
 	/** The class's name. */
-	readonly name: 'long' | 'short' | 'spur' | 'whip' | 'spray' | 'cut';
+	readonly name: 'long' | 'short' | 'spur' | 'whip' | 'spray' | 'cut' | 'fork';
 	/** Bud vigor this class serves, 0 weak to 1 strong. */
 	readonly vigor: readonly [number, number];
 	/** Share of the species' prototypes in this class. */
