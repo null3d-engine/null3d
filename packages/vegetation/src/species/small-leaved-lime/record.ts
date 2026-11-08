@@ -389,8 +389,9 @@ export const record: Species = {
 			// above the measured figure at its tier, at 2.48, 3.85, 6.26 and 10.82 MB, and under the
 			// owner's cap for a tree.
 			kitBytes: { low: 2_600_000, medium: 4_000_000, high: 6_500_000, ultra: 11_200_000 },
-			// The first variant measures 3.21, 3.27, 3.35 and 3.47 MB from the coarsest tier up.
-			variantBytes: { low: 3_400_000, medium: 3_450_000, high: 3_550_000, ultra: 3_650_000 },
+			// The first variant measures 3.21, 3.27, 3.35 and 3.47 MB from the coarsest tier up, and its
+			// blossom season, which carries the flowers, 4.16, 4.21, 4.30 and 4.41 MB.
+			variantBytes: { low: 4_300_000, medium: 4_350_000, high: 4_450_000, ultra: 4_550_000 },
 			lod0Triangles: 2_900_000,
 			// The heaviest variant's first card level draws about 62,500 triangles, and its second
 			// 28,300, under the owner's 43,000 cap at the finest tier.
