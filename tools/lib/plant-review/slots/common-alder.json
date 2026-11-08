@@ -90,5 +90,13 @@
 		"thin": 0.025,
 		"skyShare": 0.6,
 		"daylight": 1.5
+	},
+	"09-secondary-branching.png": {},
+	"10-fine-twigs.png": {},
+	"21-branch-studio.png": {
+		"roll": 90
+	},
+	"22-subbranch-studio.png": {
+		"roll": 90
 	}
 }
