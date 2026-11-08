@@ -186,21 +186,20 @@ the owner ruled. Each change was either dropped with the generator or ported int
 
 ## Gaps the species have found
 
-A species that cannot reach its references names the engine's own gap, with the field or the
+A species that cannot reach its references names the engine's own gap. It gives the field or the
 mechanism that is missing, so the next pass reads the gap rather than a mis-set record.
 
 - **A trunk's spiral, burrs and hollows are declared and unread.** `TrunkShape` in
-  `packages/vegetation/src/core/record.ts` holds `profile`, `twist` and `gnarl`, and the shade
-  description names the olive's spiral twist and hollow. No stage reads the field: the wood builder,
-  the flare and the bark all take the stem as the pipe model gives it. So an old olive's fluted
-  columns are drawn by the base's flutes and the bark texture alone, and its hollow bole has no
-  cavity at all. The olive records the gap rather than a record value that looks wrong.
-- **A divided bole ends in a cone.** Where `growth.divide` stops the stem at the fork, the stem's
-  wood tapers to its last ring and ends as a sharp point inside the joint. At the plant review's
-  limb-junction view the point shows as dark shards of bark among the limbs. The limbs themselves
-  meet correctly; the stem's own tip is what draws.
-- **A curved stem under the copy stand reads darker than a flat macro.** The plant review lights a
-  bark close-up from beside the camera, so a whole surface shows its albedo. A cylinder turned to
-  that light averages darker than the flat photograph of the same bark, since its flanks fall away
-  from both lamps: the olive's young bark reads 4.79 colour steps from its picture where its own
-  trunk tile reads 1.05. This is a fact about the measure, not a fault of the texture.
+  `packages/vegetation/src/core/record.ts` holds `profile`, `twist` and `gnarl`. The shade
+  description names the olive's spiral twist and hollow. No stage reads the field. The wood
+  builder, the flare and the bark take the stem as the pipe model gives it. So the base's flutes
+  and the bark texture alone draw an old olive's fluted columns, and its hollow bole has no cavity.
+- **A divided bole ends in a cone.** Where `growth.divide` stops the stem at the fork, the wood
+  tapers to its last ring and ends as a sharp point inside the joint. At the plant review's
+  limb-junction view the point shows as dark shards of bark among the limbs. The limbs meet
+  correctly; the stem's own tip is what draws.
+- **A curved stem under the copy stand reads darker than a flat macro.** The review lights a bark
+  close-up from beside the camera, so a whole surface shows its albedo. A cylinder turned to that
+  light averages darker than the flat photograph of the same bark. Its flanks fall away from both
+  lamps. The olive's young bark reads 4.79 color steps from its picture, where its trunk tile reads
+  1.05. This is a fact about the measure, not a fault of the texture.
