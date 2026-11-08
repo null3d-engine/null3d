@@ -370,13 +370,13 @@ export const record: Species = {
 			kind: 'fruit',
 			at: 'shoot-tip',
 			share: 0.15,
-			count: { mean: 8, spread: 2 },
+			count: { mean: 10, spread: 2 },
 			tipShare: 0.85,
 			seasons: ['summer', 'autumn'],
 			shape: {
 				samara: {
-					length: 0.035,
-					width: 0.011,
+					length: 0.045,
+					width: 0.014,
 					body: 0.2,
 				},
 				stalk: 0.04,
@@ -440,9 +440,10 @@ export const record: Species = {
 			// classes and the leaf's palmate blade among them; each cap sits above its figure and the
 			// medium one stays under the owner's four-megabyte ceiling.
 			kitBytes: { low: 3_300_000, medium: 3_980_000, high: 5_450_000, ultra: 8_250_000 },
-			// The crown's shoot dial at 3.8 puts the first variant at 16.42, 16.48, 16.55 and 16.65
-			// MB; each cap sits above it, under the owner's ceiling.
-			variantBytes: { low: 16_450_000, medium: 16_500_000, high: 16_570_000, ultra: 16_680_000 },
+			// The crown's shoot dial at 3.8 and ten keys a bunch put the first variant at 19.35, 19.41,
+			// 19.48 and 19.58 MB; each cap sits above it, under the owner's ceiling. A key more would
+			// pass the low ceiling, which is what bounds the bunch's size.
+			variantBytes: { low: 19_420_000, medium: 19_470_000, high: 19_550_000, ultra: 19_660_000 },
 			lod0Triangles: 2_800_000,
 			lod1Triangles: 150_000,
 			// The second card level measures 37,238, 37,963, 38,666 and 39,576 triangles.
