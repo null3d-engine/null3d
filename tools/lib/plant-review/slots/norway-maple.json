@@ -74,7 +74,8 @@
 	"20-spring-flowers.png": {
 		"season": "blossom",
 		"thin": 0.012,
-		"span": 0.4
+		"span": 0.4,
+		"fruit": true
 	},
 	"norway-maple-turntable.mp4": {
 		"skyShare": 0.5,
