@@ -291,6 +291,18 @@ describe("the page's stand camera", () => {
 		expect(camera.yaw).toBeLessThan(0);
 	});
 
+	test('stands a low camera for a short plant photographed from near the ground', () => {
+		const fov = 38;
+		const camera = standCamera(
+			{ fov, aspect: 1024 / 688, horizon: 0.8116, top: 0.193, base: 0.8814, targetX: 0.48 },
+			1.52,
+		);
+		expect(camera.warning).toBeUndefined();
+		expect(camera.height).toBeGreaterThan(0);
+		expect(projectRow(camera, 1.52, fov)).toBeCloseTo(0.193, 3);
+		expect(projectRow(camera, 0, fov)).toBeCloseTo(0.8814, 3);
+	});
+
 	test('says what it gave up when the base would put the camera under the ground', () => {
 		const camera = standCamera(
 			{ fov: 30, aspect: 1, horizon: 0.9, top: 0.1, base: 0.5, targetX: 0.5 },
@@ -425,6 +437,37 @@ describe('the pieces a plant is drawn as', () => {
 				maskOf(20, 20, [
 					[8, 8, 18, 18],
 					[0, 0, 5, 5],
+				]),
+				20,
+				20,
+				24,
+			),
+		).toBe(2);
+	});
+
+	test('counts two runs one background pixel apart as one piece', () => {
+		// The hairline case: a leaf group whose supporting twig is thinner than a pixel, so the one
+		// pixel that would join it fell to the outline's cutoff.
+		expect(
+			pieceCount(
+				maskOf(20, 20, [
+					[0, 0, 8, 8],
+					[9, 0, 18, 8],
+				]),
+				20,
+				20,
+				24,
+			),
+		).toBe(1);
+	});
+
+	test('counts two runs two background pixels apart as two pieces', () => {
+		// A genuine separation: the same two runs with an empty column between them.
+		expect(
+			pieceCount(
+				maskOf(20, 20, [
+					[0, 0, 8, 8],
+					[10, 0, 18, 8],
 				]),
 				20,
 				20,

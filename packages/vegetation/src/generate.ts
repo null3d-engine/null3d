@@ -45,10 +45,17 @@ import {
 	placeholderWind,
 	placeholderWood,
 } from './core/placeholder';
-import type { Species, SpeciesModule } from './core/record';
+import type { Growth, Species, SpeciesModule } from './core/record';
 import { loadSpeciesHooks, speciesHooks } from './core/registry';
 import type { TextureManifest } from './core/textures';
-import { DETAILS, type Detail, type Season, type Vec3 } from './core/types';
+import {
+	type Curve,
+	DETAILS,
+	type Detail,
+	type Season,
+	type Spread,
+	type Vec3,
+} from './core/types';
 import { lightCrown } from './crown/visibility';
 import {
 	type CuttingOptions,
@@ -115,11 +122,17 @@ export interface KitOptions {
 	 * not given.
 	 */
 	readonly form?: string;
+	/**
+	 * Build a cutting kit: the classes its cut pieces draw and no card levels or crown classes. A
+	 * cut piece is drawn only at the nearest level, so its kit never pays for the cards or for the
+	 * classes the crown alone uses.
+	 */
+	readonly cutting?: boolean;
 }
 
 /**
- * How one variant grows. Its coarseness options come from the kit, as `prepareSpecies` took them,
- * when it gives none of its own.
+ * How one variant grows. Its level-of-detail options come from the kit, as `prepareSpecies` took
+ * them, when it gives none of its own.
  *
  * @category api/vegetation
  */
@@ -137,37 +150,200 @@ export interface GrowOptions extends CoarsenessOptions {
 	/** Grow or cut one piece for close review instead of the whole plant. */
 	readonly cutting?: CuttingOptions;
 	/**
-	 * The crown's foliage against the record's own, from 0.4 to 2: 1 grows the plant as its record
-	 * says, below 1 thins its shoots, above 1 keeps the ones its own density drops. Every species
-	 * takes it the same way, by moving the sky prune that its crown's shaded wood answers to.
+	 * The leaf area on the wood against the record's own, from 0.4 to 2: 1 grows the record's
+	 * leaves, a share below 1 draws smaller leaves on the same twigs, above 1 larger ones. Every
+	 * species answers it the same way, since every record places its shoots at a scale its leaves
+	 * follow.
 	 */
-	readonly foliage?: number;
+	readonly leaves?: number;
+	/**
+	 * The wood itself against the record's own, from 0.4 to 2: 1 grows the record's crown, below 1
+	 * keeps fewer shoots along the wood, fewer of its finest twigs and a sparser division of its
+	 * branches, and above 1 keeps the shoots the record's own density drops. Every growth model
+	 * answers its own count of limbs, so one option sets the wood of any species.
+	 */
+	readonly limbs?: number;
 }
 
-/** The least and the most foliage share a growth may ask for. */
-export const FOLIAGE_LEAST = 0.4;
-export const FOLIAGE_MOST = 2;
+/** The least and the most share of leaves or limbs a growth may ask for. */
+export const LEAVES_LEAST = 0.4;
+export const LEAVES_MOST = 2;
+export const LIMBS_LEAST = 0.4;
+export const LIMBS_MOST = 2;
 
 /**
- * The record a plant grows by when its foliage is set against the record's own: the crown's sky
- * prune divides by the share, since a higher prune drops more of the shoots a crown's shaded wood
- * carries. Every species moves the same way, so one option sets the foliage of any of them.
+ * The record a plant grows by when its leaf area is set against the record's own. A shoot carries
+ * its leaves at its own scale, so the share is taken on the leaf's area and the scale moves by its
+ * square root, and the wood the leaves stand on does not move at all. Every species moves the same
+ * way, so one option sets the leaves of any of them.
  *
  * @param record The species record.
- * @param foliage The foliage share, 1 for the record's own; undefined or 1 leaves the record alone.
+ * @param leaves The leaf-area share, 1 for the record's own; undefined or 1 leaves the record alone.
  * @returns The record to grow by.
+ * @category api/vegetation
  */
-export function withFoliage(record: Species, foliage: number | undefined): Species {
-	if (foliage === undefined || foliage === 1) return record;
-	if (!(foliage >= FOLIAGE_LEAST && foliage <= FOLIAGE_MOST))
-		throw new Error(
-			`@null3d/vegetation: foliage ${foliage} is outside ${FOLIAGE_LEAST} to ${FOLIAGE_MOST}; 1 grows the record's own crown.`,
-		);
+export function withLeaves(record: Species, leaves: number | undefined): Species {
+	if (leaves === undefined || leaves === 1) return record;
+	checkShare('leaves', leaves, LEAVES_LEAST, LEAVES_MOST);
 	const shoots = record.shoots;
 	if (!shoots) return record;
-	const own = shoots.placement.skyPrune ?? 0.5;
-	const prune = Math.min(0.95, Math.max(0, own / foliage));
-	return { ...record, shoots: { ...shoots, placement: { ...shoots.placement, skyPrune: prune } } };
+	const grow = Math.sqrt(leaves);
+	const scale = shoots.placement.scale;
+	const scaled: Spread =
+		typeof scale === 'number'
+			? scale * grow
+			: { mean: scale.mean * grow, spread: scale.spread * grow };
+	const placement = shoots.placement;
+	const density = placement.density;
+	// A smaller shoot fits more often along the wood, so the shoot count would rise as the leaves
+	// shrink. The count moves with the scale the other way, so it is taken back out and the plant
+	// keeps the same wood, the same number of shoots and leaves of a new size.
+	return {
+		...record,
+		shoots: {
+			...shoots,
+			placement: {
+				...placement,
+				scale: scaled,
+				perMetre: scaledCurve(placement.perMetre, grow),
+				...(density !== undefined ? { density: density * grow } : {}),
+			},
+		},
+	};
+}
+
+/**
+ * The record a plant grows by when its wood is set against the record's own. Each growth model
+ * keeps its own count of limbs, and the share moves that count: the branches a self-organizing
+ * plant puts out, the finest order of an architectural plant, a rosette's fronds or a tuft's
+ * tillers, a culm's culms or a column's arms. A record that carries shoots also thins the shoots
+ * along its finest axes, and keeps its lit rim by raising the shade line it prunes under.
+ *
+ * @param record The species record.
+ * @param limbs The limb share, 1 for the record's own; undefined or 1 leaves the record alone.
+ * @returns The record to grow by.
+ * @category api/vegetation
+ */
+export function withLimbs(record: Species, limbs: number | undefined): Species {
+	if (limbs === undefined || limbs === 1) return record;
+	checkShare('limbs', limbs, LIMBS_LEAST, LIMBS_MOST);
+	const thin = Math.min(1, limbs);
+	const growth = thinnedGrowth(record.growth, thin);
+	const shoots = record.shoots;
+	if (!shoots) return { ...record, growth };
+	const placement = shoots.placement;
+	const own = placement.skyPrune;
+	// A share above the record's own keeps the shoots its shade line drops; below it the shoots
+	// along the finest axes thin, and the line rises so the crown keeps its lit rim.
+	const line = own === undefined ? undefined : Math.min(0.95, Math.max(0, own / limbs));
+	const density = placement.density;
+	return {
+		...record,
+		growth,
+		shoots: {
+			...shoots,
+			placement: {
+				...placement,
+				...(line !== undefined ? { skyPrune: line } : {}),
+				perMetre: thin < 1 ? scaledCurve(placement.perMetre, thin) : placement.perMetre,
+				...(density !== undefined ? { density: density * thin } : {}),
+			},
+		},
+	};
+}
+
+/** The share's range, or an error that says what it may be. */
+function checkShare(name: string, share: number, least: number, most: number): void {
+	if (share >= least && share <= most) return;
+	throw new Error(
+		`@null3d/vegetation: ${name} ${share} is outside ${least} to ${most}; 1 grows the record's own.`,
+	);
+}
+
+/** A growth spec with a share of its model's own limbs removed: the wood a sparse plant keeps. */
+function thinnedGrowth(growth: Species['growth'], thin: number): Species['growth'] {
+	switch (growth.model) {
+		// The branching multiplier is 1 where a record does not give one, so a share moves it
+		// whatever the record says: this is the dial that decides how many limbs a crown puts out.
+		case 'self-organizing':
+			return { ...growth, branching: (growth.branching ?? 1) * thin };
+		// A conifer's limbs are its boughs, so the share moves the boughs at the leader and leaves
+		// the orders below them their own division.
+		case 'architectural':
+			return {
+				...growth,
+				tiers: {
+					...growth.tiers,
+					perWhorl: scaledSpread(growth.tiers.perWhorl, thin),
+					between: growth.tiers.between * thin,
+				},
+			};
+		case 'crown-rosette':
+			return {
+				...growth,
+				crown: { ...growth.crown, fronds: scaledSpread(growth.crown.fronds, thin) },
+			};
+		case 'culm':
+			return { ...growth, culms: scaledSpread(growth.culms, thin) };
+		case 'rosette':
+			return { ...growth, shoots: scaledSpread(growth.shoots, thin) };
+		case 'frond-colony':
+			return { ...growth, fronds: scaledSpread(growth.fronds, thin) };
+		case 'tuft':
+			return { ...growth, shoots: scaledSpread(growth.shoots, thin) };
+		case 'column':
+			return { ...growth, arms: { ...growth.arms, count: scaledSpread(growth.arms.count, thin) } };
+	}
+}
+
+/** A count's spread with its mean scaled, never below one whole limb. */
+function scaledSpread(spread: Spread, factor: number): Spread {
+	if (typeof spread === 'number') return Math.max(1, spread * factor);
+	return { mean: Math.max(1, spread.mean * factor), spread: spread.spread * factor };
+}
+
+/** A curve with every value multiplied by a factor. */
+function scaledCurve(curve: Curve, factor: number): Curve {
+	return typeof curve === 'number'
+		? curve * factor
+		: curve.map(([at, value]) => [at, value * factor] as [number, number]);
+}
+
+/**
+ * The record a cutting kit grows by: the species' own, with the shoots a close piece carries over
+ * the crown's. A piece is drawn at the nearest level alone, so its kit pays for no cards, and a
+ * covering denser than the crown can afford costs the piece's own kit rather than the crown's.
+ */
+function cuttingRecord(record: Species): Species {
+	const share = record.cuttings?.density;
+	const shoots = record.shoots;
+	if (share === undefined || !shoots) return record;
+	const factor = Math.min(8, Math.max(0.25, share));
+	const growth = record.growth;
+	// A piece's bough carries the branchlets its photograph shows: the finest order divides by the
+	// same share, so the covering has wood to stand on.
+	const cutGrowth: Growth =
+		growth.model === 'architectural' && growth.orders.length > 0
+			? {
+					...growth,
+					orders: growth.orders.map((order, index) =>
+						index === growth.orders.length - 1
+							? { ...order, density: scaledCurve(order.density, factor) }
+							: order,
+					),
+				}
+			: growth;
+	return {
+		...record,
+		growth: cutGrowth,
+		shoots: {
+			...shoots,
+			placement: {
+				...shoots.placement,
+				perMetre: scaledCurve(shoots.placement.perMetre, factor),
+			},
+		},
+	};
 }
 
 /**
@@ -232,9 +408,14 @@ function stage<T>(
  * @returns The key.
  * @category api/vegetation
  */
-export function kitKey(record: Species, manifest: TextureManifest, detail: Detail): string {
+export function kitKey(
+	record: Species,
+	manifest: TextureManifest,
+	detail: Detail,
+	cutting = false,
+): string {
 	return hashText(
-		`${GENERATOR_VERSION}|${JSON.stringify(record)}|${JSON.stringify(manifest)}|${detail}`,
+		`${GENERATOR_VERSION}|${JSON.stringify(record)}|${JSON.stringify(manifest)}|${detail}${cutting ? ':cutting' : ''}`,
 	);
 }
 
@@ -250,10 +431,11 @@ export function kitKey(record: Species, manifest: TextureManifest, detail: Detai
 export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
 	const season = options.season ?? kit.record.seasons.default;
 	const cutting = options.cutting ? JSON.stringify(options.cutting) : '';
-	// The foliage share grows a different crown, so it keys a different asset.
-	const foliage =
-		options.foliage === undefined || options.foliage === 1 ? '' : `:foliage=${options.foliage}`;
-	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${foliage}`;
+	// A share of leaves or limbs grows a different plant, so it keys a different asset.
+	const leaves =
+		options.leaves === undefined || options.leaves === 1 ? '' : `:leaves=${options.leaves}`;
+	const limbs = options.limbs === undefined || options.limbs === 1 ? '' : `:limbs=${options.limbs}`;
+	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${leaves}${limbs}`;
 }
 
 /**
@@ -267,10 +449,12 @@ export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
  * @category api/vegetation
  */
 export function buildKitNow(source: KitSource, options: KitOptions = {}): SpeciesKitData {
-	const record = formRecord(source.record, options.form);
+	const base = formRecord(source.record, options.form);
 	const manifest = source.textures.manifest;
 	const detail = options.detail ?? 'high';
 	const placeholders = options.placeholders ?? false;
+	const cutting = options.cutting === true;
+	const record = cutting ? cuttingRecord(base) : base;
 	const box = speciesBox(record);
 	const builder = foliage(record.foliage.kind);
 	const leavesByTier = DETAILS.map((tier) =>
@@ -289,14 +473,17 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 	if (record.shoots) {
 		const uncarded = stage(
 			placeholders,
-			() => shootPrototypes(record, manifest, leavesByTier),
+			() => shootPrototypes(record, manifest, leavesByTier, cutting),
 			() => placeholderPrototypes(record, leavesByTier),
 		);
-		const baked = stage(
-			placeholders,
-			() => bakeCards(record, manifest, detail, uncarded),
-			() => placeholderCardBake(record, uncarded),
-		);
+		// A cutting kit holds no card levels: its pieces are drawn at the nearest level alone.
+		const baked = cutting
+			? { atlas: cards, cells: uncarded.map(() => ({ planes: [] })) }
+			: stage(
+					placeholders,
+					() => bakeCards(record, manifest, detail, uncarded),
+					() => placeholderCardBake(record, uncarded),
+				);
 		// The kit keeps its own tier's meshes and the tiers below it, which the near band draws
 		// farther out; a page draws at one preset, so the tiers above it are left empty. The card
 		// bake, the lengths and the radii read the full build first.
@@ -321,7 +508,7 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 	return {
 		record,
 		manifest,
-		key: kitKey(record, manifest, detail),
+		key: kitKey(record, manifest, detail, cutting),
 		detail,
 		box,
 		prototypes,
@@ -355,7 +542,7 @@ function partOf(
 
 /** The grown skeleton and its dressing: the stages before the meshes. */
 function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
-	const record = withFoliage(kit.record, options.foliage);
+	const record = withLimbs(withLeaves(kit.record, options.leaves), options.limbs);
 	const placeholders = kit.placeholders;
 	const growInput: GrowInput = {
 		record,

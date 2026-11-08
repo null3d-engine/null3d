@@ -25,7 +25,7 @@ export default defineSketch(async (ctx) => {
 	scene.setEnvironment(await assets.skyEnvironment(), { intensity: day.skyIntensity * 0.8 });
 	scene.setFog({ ...day.fog, density: 0.0004 });
 	post.set({ exposure: day.exposure });
-	scene.createDirectionalLight({ ...day.light, castShadows: true, shadow: { distance: 120 } });
+	scene.createDirectionalLight({ ...day.light, castShadows: true, shadow: { distance: 60 } });
 	scene.createAmbientLight(day.ambient);
 
 	// The meadow's grass, grown by the add-on over the same field, so the ground reads as pasture.
@@ -49,20 +49,24 @@ export default defineSketch(async (ctx) => {
 	const camera = scene.createPerspectiveCamera({ fov: 45, near: 0.1, far: 600 });
 	camera.setPosition(0, 20, 66);
 	scene.setActiveCamera(camera);
-	const view = interact(ctx, camera, { target: [0, 11, 0], groundY: 1.7 });
+	// The wheel steps a little further than the default, since a close approach makes each notch a
+	// small change in metres, and the shadows reach only as far as the meadow the camera can see.
+	const view = interact(ctx, camera, { target: [0, 11, 0], groundY: 1.7, zoomSpeed: 1.5 });
 
 	// The season: every record declares what its own does, so the same meadow grows bare in winter,
 	// turns in autumn and flowers in blossom. Summer is the record's default.
 	let season: 'summer' | 'autumn' | 'winter' | 'blossom' = 'summer';
-	// The foliage's density, against each record's own crown. The slider's middle is the record's own
-	// so its track runs 0 at the sparsest, 0.5 at the record's, 1 at the fullest, and the share the
-	// add-on takes runs from 0.4 through 1 to 2.
-	let foliage = 0.5;
+	// Two shares, each against the record's own, with the slider's middle the record's own: the track
+	// runs 0 at the sparsest, 0.5 at the record's, 1 at the fullest, and the share the add-on takes
+	// runs from 0.4 through 1 to 2. Leaves size what hangs on the wood; limbs decide how much wood
+	// there is, which every growth model answers with its own count of branches, fronds or tillers.
+	let leaves = 0.5;
+	let limbs = 0.5;
 	const shareOf = (value: number) =>
 		value <= 0.5 ? 0.4 + (value / 0.5) * 0.6 : 1 + ((value - 0.5) / 0.5) * 1;
-	// The level of detail's coarseness: 0 draws the plant as grown, 1 the coarsest, where the
-	// finest twigs are gone and the shoots that remain are larger.
-	let detail = 0;
+	// The coarseness: 0 draws the plant as grown, 1 the coarsest, where the finest twigs are gone
+	// and the shoots that remain are larger.
+	let coarseness = 0;
 	const pruneOf = (value: number, own: number) =>
 		Math.min(0.9, Math.max(0, own * (1.6 - 1.2 * Math.min(1, Math.max(0, value)))));
 	let planted: { destroy(): void }[] = [];
@@ -81,34 +85,53 @@ export default defineSketch(async (ctx) => {
 					})),
 				},
 				{
-					name: 'foliage',
-					title: 'Foliage',
+					name: 'leaves',
+					title: 'Leaves',
 					radio: false,
 					buttons: [],
 					slider: {
 						min: 0,
 						max: 1,
 						step: 0.05,
-						value: foliage,
+						value: leaves,
+						live: false,
+						marks: [
+							{ at: 0, label: 'small' },
+							{ at: 0.5, label: 'default' },
+							{ at: 1, label: 'large' },
+						],
+						tip: "Drag left to draw smaller leaves on the same wood, or right to draw larger ones. The middle is every record's own leaf, and the wood does not move.",
+					},
+				},
+				{
+					name: 'limbs',
+					title: 'Limbs',
+					radio: false,
+					buttons: [],
+					slider: {
+						min: 0,
+						max: 1,
+						step: 0.05,
+						value: limbs,
 						live: false,
 						marks: [
 							{ at: 0, label: 'sparse' },
 							{ at: 0.5, label: 'default' },
 							{ at: 1, label: 'dense' },
 						],
-						tip: "Drag left to thin each crown toward its bare wood, or right to keep the shoots its own density drops. The middle is every record's own crown.",
+						tip: "Drag left to keep fewer limbs toward the bare wood, or right to keep the shoots the record's own density drops. The middle is every record's own crown, and every species answers with its own count of branches, fronds or tillers.",
 					},
 				},
 				{
-					name: 'detail',
-					title: 'Detail',
+					name: 'coarseness',
+					title: 'Coarseness',
 					radio: false,
 					buttons: [],
 					slider: {
 						min: 0,
 						max: 1,
 						step: 0.05,
-						value: detail,
+						value: coarseness,
 						live: false,
 						marks: [
 							{ at: 0, label: 'as grown' },
@@ -121,35 +144,103 @@ export default defineSketch(async (ctx) => {
 			],
 			visible: true,
 		});
+	/**
+	 * A slider posts on every step of a drag, so the meadow waits for the hand to settle before it
+	 * grows again: the last change starts a short timer, and only its expiry regrows.
+	 */
+	let settling = 0;
+	const settleThenGrow = (): void => {
+		clearTimeout(settling);
+		settling = setTimeout(() => void growMeadow(seed), 350) as unknown as number;
+	};
 	page.onMessage((name, value) => {
 		if (name === 'season') {
 			if (value !== 'summer' && value !== 'autumn' && value !== 'winter' && value !== 'blossom')
 				return;
 			season = value;
-		} else if (name === 'foliage') {
+			postHud();
+			void growMeadow(seed);
+			return;
+		} else if (name === 'leaves') {
 			const next = Number(value);
 			if (!Number.isFinite(next)) return;
-			foliage = next;
-		} else if (name === 'detail') {
+			leaves = next;
+		} else if (name === 'limbs') {
+			const next = Number(value);
+			if (!Number.isFinite(next)) return;
+			limbs = next;
+		} else if (name === 'coarseness') {
 			const next = Number(value);
 			// The explainer button shares the group's name, so only a number turns the slider.
 			if (!Number.isFinite(next)) return;
-			detail = next;
+			coarseness = next;
 		} else return;
 		postHud();
-		void growMeadow(seed);
+		settleThenGrow();
 	});
+	/** The note that shows while the meadow grows, counting the species it has finished. */
+	const growing = (() => {
+		let box: HTMLElement | undefined;
+		let said: HTMLElement | undefined;
+		return {
+			begin(): void {
+				if (box) return;
+				box = document.createElement('div');
+				box.style.cssText = [
+					'position:fixed',
+					'left:50%',
+					'top:18px',
+					'transform:translateX(-50%)',
+					'padding:10px 16px',
+					'border-radius:10px',
+					'background:rgba(16,18,20,0.86)',
+					'color:#e8eaec',
+					'font:13px/1.4 system-ui,sans-serif',
+					'letter-spacing:0.02em',
+					'z-index:20',
+					'pointer-events:none',
+				].join(';');
+				said = document.createElement('span');
+				box.append(said);
+				document.body.append(box);
+			},
+			set(done: number, total: number): void {
+				if (said)
+					said.textContent = `Growing the meadow, ${Math.round((done / Math.max(1, total)) * 100)}%`;
+			},
+			end(): void {
+				box?.remove();
+				box = undefined;
+				said = undefined;
+			},
+		};
+	})();
+
 	let seed = 11;
+	/** Whether the meadow has been built once: its first build belongs to the sketch's own start. */
+	let grown = false;
 	const growMeadow = async (at: number) => {
 		for (const piece of planted) piece.destroy();
 		planted = [];
 		const ids = speciesIds();
 		const across = Math.max(1, Math.ceil(Math.sqrt(ids.length)));
 		const step = 34;
+		// A meadow's first build is work that starting the sketch does, so it counts on the sketch's
+		// own loading bar and the page shows one start. Every later build is a change the reader
+		// asked for, and shows in a note of its own.
+		const first = !grown;
+		if (first) page.post('starting', { done: 0, total: ids.length });
+		else {
+			growing.begin();
+			growing.set(0, ids.length);
+		}
 		let index = 0;
 		for (const id of ids) {
 			const module = await loadSpecies(id);
-			const kit = await prepareSpecies(ctx, module, { detail: 'high', placeholders: 'missing' });
+			// The meadow carries eleven species at once, and at close range every copy near the camera
+			// draws its real shoots: the medium tier keeps each plant's shape while halving the nearest
+			// level's triangles, which is what made a pan after a zoom crawl.
+			const kit = await prepareSpecies(ctx, module, { detail: 'medium', placeholders: 'missing' });
 			const materials = plantMaterials(ctx, kit, {});
 			const variant = index % Math.max(1, kit.record.variants);
 			const asset = await growPlant(kit, {
@@ -157,8 +248,9 @@ export default defineSketch(async (ctx) => {
 				variant,
 				near: true,
 				season,
-				coarseness: detail,
-				foliage: shareOf(foliage),
+				coarseness,
+				leaves: shareOf(leaves),
+				limbs: shareOf(limbs),
 			});
 			const x = ((index % across) - (across - 1) / 2) * step;
 			const z = (Math.floor(index / across) - (ids.length / across - 1) / 2) * step;
@@ -180,7 +272,11 @@ export default defineSketch(async (ctx) => {
 				),
 			);
 			index++;
+			if (first) page.post('starting', { done: index, total: ids.length });
+			else growing.set(index, ids.length);
 		}
+		growing.end();
+		grown = true;
 		void at;
 	};
 	await growMeadow(seed);
