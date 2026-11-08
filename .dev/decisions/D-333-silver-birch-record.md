@@ -121,14 +121,14 @@ photograph's own sky. The birch's slot carries that value: 2.95 on stills 01, 02
 still 03.
 
 A raised light was measured and overruled. At 4.5 on the three side views and 5.5 on still 03, every
-crown's red and green landed within five levels of its photograph's, and the color difference fell
-from 11.5 to 5.5, from 10.6 to 3.9, and from 10.3 to 6.2 steps. The batch rule stands against it:
-the light is the photographs' own measure, and a species may depart from it only with a physical
-reason. The row fails at either value against its band of 3 steps, so the raised light bought no row
-and made the figures untrustworthy. The slot keeps the sky-derived value.
+crown's red and green landed within five levels of its photograph's. The color difference fell from
+11.5 to 5.5, from 10.6 to 3.9, and from 10.3 to 6.2 steps. The batch rule stands against it: the
+light is the photographs' own measure, and a species may depart from it only with a physical reason.
+The row fails at either value against its band of 3 steps, so the raised light bought no row and
+made the figures untrustworthy. The slot keeps the sky-derived value.
 
-The color difference therefore stands as a limit: 11.5 and 10.6 steps from the photographs at the
-tool's own light, where the working band is 3.
+The color difference therefore stands as a limit. It reads 11.5 and 10.6 steps from the photographs
+at the tool's own light, where the working band is 3.
 
 ### A shoot class's own leaf arrangement and facing
 
@@ -192,6 +192,12 @@ Limits this record states:
   across spreads its shoots thin and read 0.258 open against its photograph's 0.139. A narrower
   crown of the same foliage fills the same box and reads 0.148. Adding foliage instead passes the
   second card level's cap at a density of 6, reaching 46,371 triangles against the cap's 43,000.
+- Still 30's crown box and sky gap are void. The tool reports a box holding 38 per cent of the
+  plant's height. Its foot sits inside the foliage, so the gap measures a slice. A top margin does
+  not clear it: the fault is the crown-foot finder. The owner rules that a void picture cannot pass
+  a row. Row 6 is judged on the four whole views that measure cleanly, and it fails while this one
+  stands void. The fault is the tool's and is not corrected here. The finder sets every species'
+  gap, so a change belongs in one pass with every species re-read.
 - Still 20's autumn photograph lets 0.098 of its crown box show background. Stills 01 and 02 let
   0.177 and 0.167 show. One grown plant cannot sit inside all three bands, so the record follows the
   summer whole views.
