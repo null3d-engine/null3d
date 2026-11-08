@@ -25,11 +25,11 @@ export const record: Species = {
 		// Still 04's overhead view and still 07's crown show a dense tussock of many shoots.
 		shoots: { mean: 170, spread: 14 },
 		// Still 07 and 09: the shoots rise from one short thick crown, a little over 20 cm across.
-		base: 0.11,
+		base: 0.1,
 		// Still 02: the outer shoots lean away from the crown while the middle ones stand upright.
 		lean: [
 			[0, 2],
-			[1, 20],
+			[1, 14],
 		],
 		// Still 11: one shoot carries six or seven blades.
 		blades: { mean: 6, spread: 1 },
@@ -79,7 +79,7 @@ export const record: Species = {
 		kind: 'grass-blade',
 		blade: {
 			// The fact sheet's 0.5 to 1 m blade, as stills 11 and 21 show it.
-			length: { mean: 1, spread: 0.08 },
+			length: { mean: 0.9, spread: 0.07 },
 			// The fact sheet's 1.5 to 2 cm width.
 			width: 0.02,
 			// Still 12: the blade is widest in its lower third and narrows toward the long tip.
