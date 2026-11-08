@@ -304,11 +304,12 @@ export const record: Species = {
 			twist: 4,
 			wave: [0.0015, 4],
 			// Stills 24 and 25: the upper face's linear mean and the lower face's paler, matt one, as
-			// the textures tool measures them.
+			// the textures tool measures them, scaled so the far crown's lit colour meets the whole
+			// views' foliage under the crown's own shading.
 			optics: {
-				reflectance: [0.1, 0.233, 0.0068],
-				reflectanceBack: [0.252, 0.357, 0.092],
-				transmittance: [0.17, 0.36, 0.012],
+				reflectance: [0.0755, 0.1785, 0.006],
+				reflectanceBack: [0.19, 0.274, 0.081],
+				transmittance: [0.128, 0.276, 0.0106],
 				roughness: [0.42, 0.6],
 			},
 		},
