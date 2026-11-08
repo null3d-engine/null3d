@@ -12,7 +12,7 @@
 // single-leaf stills and the texture sources; the bark from the bark stills; the catkins from the
 // fruit still. The record is plain data: no code runs in it.
 import type { Species } from '../../core/record';
-import { aspect, crownBase, envelope, roundBand } from './fit';
+import { aspect, crownBase, roundBand } from './fit';
 import { forms } from './forms';
 
 /** Internodes along a shoot: even along the run, the leaves alternate to its end. */
@@ -99,7 +99,22 @@ export const record: Species = {
 		// Still 08: a limb forks into two arms that part in a narrow V.
 		pipe: { exponent: 2.2, tipRadius: 0.008 },
 	},
-	envelope,
+	// The fit's 16 azimuths at each height, averaged to one radius: the species' own notes say the
+	// crown is near round in plan, and the fitted hull carries the turntable's drift between views
+	// (its own consistency runs 0.67 to 0.87). A round plan reads the same from every side, so the
+	// whole views at turn 0 and turn 90 agree.
+	envelope: {
+		kind: 'radial',
+		heights: [
+			0.219, 0.275, 0.33, 0.386, 0.442, 0.498, 0.554, 0.609, 0.665, 0.721, 0.777, 0.833, 0.888,
+			0.944, 1,
+		],
+		radii: [
+			0.088, 0.104, 0.147, 0.16, 0.179, 0.192, 0.188, 0.182, 0.164, 0.152, 0.134, 0.115, 0.078,
+			0.054, 0,
+		],
+		source: { method: 'turntable-hull', from: 'birch-turntable.mp4', views: 32 },
+	},
 	shoots: {
 		prototypes: 4,
 		classes: [
@@ -132,7 +147,7 @@ export const record: Species = {
 				share: 0.35,
 				years: 2,
 				length: { mean: 0.4, spread: 0.06 },
-				nodes: { mean: 16, spread: 1 },
+				nodes: { mean: 20, spread: 1 },
 				internode: ALTERNATE,
 				stem: { radius: [0.004, 0.002] },
 				laterals: 2,
@@ -156,7 +171,7 @@ export const record: Species = {
 				share: 0.35,
 				years: 2,
 				length: { mean: 0.6, spread: 0.1 },
-				nodes: { mean: 24, spread: 1 },
+				nodes: { mean: 29, spread: 1 },
 				internode: ALTERNATE,
 				stem: { radius: [0.009, 0.004] },
 				laterals: 2,
@@ -186,7 +201,7 @@ export const record: Species = {
 				share: 0,
 				years: 2,
 				length: { mean: 0.5, spread: 0.08 },
-				nodes: { mean: 7, spread: 0.6 },
+				nodes: { mean: 6, spread: 0.6 },
 				leafYears: 1,
 				internode: ALTERNATE,
 				stem: { radius: [0.007, 0.003] },
@@ -211,7 +226,7 @@ export const record: Species = {
 				share: 0,
 				years: 2,
 				length: { mean: 0.18, spread: 0.03 },
-				nodes: { mean: 5, spread: 0.5 },
+				nodes: { mean: 4, spread: 0.5 },
 				leafYears: 1,
 				internode: ALTERNATE,
 				stem: { radius: [0.004, 0.0018] },
@@ -234,7 +249,7 @@ export const record: Species = {
 		// Stills 09, 10 and 19: one bud at each node, a fifth of a turn from the last.
 		phyllotaxis: { kind: 'spiral', divergence: 137.5 },
 		orders: 3,
-		years: 3,
+		years: 2,
 		leafYears: 2,
 		// Still 10: the twigs are fine and brown, with a slight zigzag at the nodes.
 		stem: { radius: [0.003, 0.0015], zigzag: 5 },
@@ -253,18 +268,20 @@ export const record: Species = {
 				[0.5, 4.8],
 				[1, 9],
 			],
-			density: 1,
-			shadePrune: 0,
+			density: 3,
+			// The crown's inner shoots thin where its own finished leaves leave them under this share of
+			// the sky, so the rim stays full and each ray crosses fewer leaves than its silhouette says.
+			shadePrune: 0.15,
 			// Stills 01 and 18: the crown is open and the sky shows through it, so its inner shoots
 			// thin where their own leaves leave them under this share of the sky.
-			skyPrune: 0.13,
+			skyPrune: 0.3,
 			skyPruneLayer: 1,
 			// Stills 01 and 19: the hanging strands hang free, and no bare twig runs past them.
 			bareTrim: 0.02,
 			lift: 8,
 			// Stills 10 and 19: the leaves hang down along the strands rather than facing the sky.
 			skyward: 0.35,
-			scale: { mean: 1.2, spread: 0.15 },
+			scale: { mean: 1.3, spread: 0.15 },
 		},
 	},
 	foliage: {
@@ -389,19 +406,18 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The largest of the species and its three forms, with about a twentieth to spare: 2.46,
-			// 3.81, 6.11 and 10.48 MB. The kit holds the long leafy shoots the fine leaf needs.
-			kitBytes: { low: 2_600_000, medium: 4_000_000, high: 6_500_000, ultra: 10_800_000 },
-			// The largest variant of the species and its forms, the woodland's: 6.94, 7.00, 7.05 and
-			// 7.10 MB.
-			variantBytes: { low: 7_200_000, medium: 7_200_000, high: 7_300_000, ultra: 7_300_000 },
-			// The young form's dense crown, with about a twentieth to spare: 1.20, 1.22, 1.28 and
-			// 1.40 million triangles for the species and 1.90 million for the young form.
-			lod0Triangles: 2_000_000,
-			// The woodland form's card levels, the largest of the species and its forms: 120,650,
-			// 121,000, 125,117 and 128,000 of the tree cap's 150,000.
+			// The largest of the species and its three forms: 2.48, 4.13, 6.95 and 12.32 MB. The kit holds
+			// the long leafy shoots the fine leaf needs, so it sits close to the tree cap's 7.1 MB.
+			kitBytes: { low: 2_600_000, medium: 4_000_000, high: 6_700_000, ultra: 11_600_000 },
+			// The largest variant of the species and its forms, the woodland's: 6.94, 6.97, 7.02 and
+			// 7.12 MB.
+			variantBytes: { low: 7_100_000, medium: 7_100_000, high: 7_200_000, ultra: 7_300_000 },
+			// 1.65, 1.67, 1.73 and 1.85 million triangles of the tree cap's 2.9 million.
+			lod0Triangles: 2_200_000,
+			// The forms' card levels, the largest of the species and its forms: 119,543, 120,911,
+			// 123,151 and 127,135 of the tree cap's 150,000.
 			lod1Triangles: 135_000,
-			// 41,076, 41,200, 42,241 and 42,500 of the tree cap's 43,000.
+			// 40,620, 40,941, 41,487 and 42,454 of the tree cap's 43,000.
 			lod2Triangles: 42_800,
 			// The birch's two bark zones buy the larger download the owner allows it.
 			downloadBytes: 1_300_000,

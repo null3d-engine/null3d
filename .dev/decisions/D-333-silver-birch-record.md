@@ -58,6 +58,19 @@ so the shoot count was large but the wood that carried it was coarse. A weaker s
 the crown gives 1,803 axes at fewer shoots. The foliage then stands in many small sprays rather than
 a few large ones, and the leaves per shoot rise while the card rows fall.
 
+### A crown round in plan
+
+The fitting tool measures the crown's radius at 16 azimuths. The hull it writes is 9.6 m across one
+way and 7.0 the other. Its own consistency runs 0.668 to 0.872, because the turntable's tree drifts
+during its turn. A crown drawn on that hull reads denser from its broad side than from its narrow
+one. No shoot count puts both whole views inside row 6 at once. One such crown read 0.237 of sky at
+still 01 and 0.165 at still 02, against photographs that give 0.177 and 0.167.
+
+The species' fact sheet says the crown is near round from above. The record therefore averages the
+same measurement to one radius at each height, 15 numbers. `RadialEnvelope` allows a species to
+state that round form. The three whole views then read 0.225, 0.196 and 0.203
+against 0.177, 0.167 and 0.199, all inside the band.
+
 ### The figures the record keeps
 
 - `shoots.classes` carry 7, 16 and 24 nodes at 0.2, 0.4 and 0.6 meters. A leaf stands every two to
@@ -84,14 +97,14 @@ The species' budgets, measured across the species and its three forms:
 
 | Tier | Kit | Variant | LOD0 | LOD1 | LOD2 |
 | --- | --- | --- | --- | --- | --- |
-| low | 2.47 MB | 6.94 MB | 1,648,898 | 120,650 | 41,076 |
-| medium | 3.79 MB | 7.00 MB | | | |
-| high | 6.05 MB | 7.05 MB | 1,726,976 | 125,117 | 42,241 |
-| ultra | 10.33 MB | 7.10 MB | | | |
+| low | 2.48 MB | 6.94 MB | 1,651,374 | 119,543 | 40,620 |
+| medium | 4.13 MB | 6.97 MB | 1,671,693 | 120,911 | 40,941 |
+| high | 6.95 MB | 7.02 MB | 1,725,532 | 123,151 | 41,487 |
+| ultra | 12.32 MB | 7.12 MB | 1,849,438 | 127,135 | 42,454 |
 
 The record's budget stands above each figure and inside the tree caps: 150,000 card triangles and
-43,000 at the second card level. The woodland form sets the card levels and the variant bytes. The
-mature form sets the nearest level's triangles.
+43,000 at the second card level. The kit's high figure sits close to the tree cap's 7.1 MB, since the
+kit holds the long leafy shoots that the fine leaf needs.
 
 The species registers a `plant-silver-birch` picture test, which the image manifest builds from the
 registry with no line of its own. That test's six references, three tiers on the Mac and three on
