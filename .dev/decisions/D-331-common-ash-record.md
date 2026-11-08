@@ -530,6 +530,12 @@ colour. Measured on 9 November, one value each:
 | `#ffb0ff` at a `daylight` of 1.3 | 2.95 |
 | `#ffb0ff`'s exposure alone, no lamp | 5.98 |
 
+The measure itself was tested too. The review page now takes a slot's `barkMask`, which drops every
+patch pixel as close to the picture's corners as the backdrop is. A stem on sky is then measured on
+the stem alone. On the ash's three close views it moves nothing. The base reads 5.98 with and
+without it, and its reference patch moves by two tenths of a lightness step. The patches already
+sit on bark, so the base's residue is not a diluted backdrop.
+
 The last two lamps stand inside the band, and both draw the foot a pale lavender. The photograph's
 bark is grey-brown, so the figure is met by a colour the species does not have. The exposure alone
 keeps the bark's colour and takes the figure to 5.98, so the base slot carries `daylight` 1.3 and no
