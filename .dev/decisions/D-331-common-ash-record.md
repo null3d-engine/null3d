@@ -498,11 +498,17 @@ grows in about 290 to 300 ms with the machine in other hands.
 The crown's lower third carries less sky than view 01's photograph at every density and shape the
 record offers. Two changes to the cards bring the three whole views inside their bands, measured on
 8 November. The shade prune drops a shoot whose own leaves leave it under a share of the sky, at
-0.45 where it stood at 0.15. Views 01, 02 and 18 read 0.242, 0.224 and 0.240 against the
-photographs' 0.261, 0.187 and 0.215. The cut views hold at 0.52, 0.39 and 0.39. The cards then
-grow at 1.38 of the prototype's size, where the helper's model gave about 1.33. At 1.33, 02 reads
-0.2401 against 0.1869, three thousandths past the band's open side. At 1.38 the views read 0.2458,
-0.2309 and 0.2449, all inside with room on both sides.
+0.45 where it stood at 0.15. At the tip it was measured on, views 01, 02 and 18 read 0.242, 0.224
+and 0.240 against the photographs' 0.261, 0.187 and 0.215. The cut views hold at 0.52, 0.39 and
+0.39.
+
+The card size was then measured twice, because the landing branch's card coverage fix draws each
+card at its mip level's true coverage and opens the far crown. At the fitted 1.38 the views read
+0.2998, 0.2708 and 0.2887 against 0.2608, 0.1869 and 0.2147. So 02 and 18 fall outside. The cards
+stand at 1.55 at that base: 01 reads 0.2509, 02 0.2225 and 18 0.2437, all inside. 1.50 leaves 02
+two thousandths from its open side, and 1.60 puts 01 twenty-four thousandths under its closed one.
+The helper's model of about 1.33 held for the older base, where 1.38 read 0.2458, 0.2309 and
+0.2449. At that base 1.33 read 0.2401 at 02, three thousandths past its open side.
 
 The young bark takes a colour from the texture build. The young tile is made from still 28, the
 older green-grey bark of a young branch. The crown's shoots in still 10 are greener. The two
@@ -510,10 +516,9 @@ photographs' linear means differ by [1.11, 1.24, 1.01]. The young layer takes th
 [0.99, 1.11, 0.9], which keeps its brightness. The tool's `tint` field multiplies a layer's baked
 colour. It leaves the relief and the height field alone
 ([D-309](D-309-plant-textures-from-references.md)). The limb's bark figure moves from 3.79 to 3.72
-and stays inside its band. The young
-bark's own still holds at 9.53 because that view draws the mature bark. A red marker tint on the
-young layer left the picture's surface unchanged and reddened only a few stalks at its edge, while
-the same marker reddened every stem of still 10.
+and stays inside its band. The young bark's own still holds at 9.53 because that view draws the
+mature bark. A red marker tint on the young layer left the picture's surface unchanged and reddened
+only a few stalks at its edge, while the same marker reddened every stem of still 10.
 
 ## Look
 

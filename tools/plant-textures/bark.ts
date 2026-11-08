@@ -261,7 +261,7 @@ function heightMapping(tile: Picture, height: Plane): { offset: number; depth: n
  * Multiplies a picture's colour by a tint, channel by channel, in linear colour. Coverage is left
  * as it is: a bark tile is opaque.
  */
-export function tintPicture(p: Picture, tint: readonly [number, number, number]): void {
+function tintPicture(p: Picture, tint: readonly [number, number, number]): void {
 	for (let i = 0; i < p.r.length; i++) {
 		p.r[i] = unit((p.r[i] as number) * tint[0]);
 		p.g[i] = unit((p.g[i] as number) * tint[1]);
