@@ -73,7 +73,7 @@ export const record: Species = {
 		clearanceThickness: 0.35,
 		turning: 30,
 		shedding: { threshold: 0.06, cleanBole: 0.35, stubs: 0.12 },
-		bending: { strength: 0.05, upturn: 0.2 },
+		bending: { strength: 0.15, upturn: 0.25 },
 		forkRule: true,
 		kinks: true,
 		pipe: { exponent: 2.3, tipRadius: 0.004 },
@@ -203,7 +203,7 @@ export const record: Species = {
 		],
 		displacement: 0.012,
 		collar: { swell: 0.4, length: 1.8, ridge: 0.5 },
-		moss: { amount: 1, up: 1.2, north: 0, colour: [0.16, 0.26, 0.1] },
+		moss: { amount: 0.5, up: 0.7, north: 0, colour: [0.16, 0.26, 0.1] },
 		lichen: { amount: 0.8, from: 3, colour: [0.42, 0.46, 0.38] },
 	},
 	base: {
@@ -212,7 +212,7 @@ export const record: Species = {
 		roots: {
 			count: { mean: 5, spread: 1 },
 			length: { mean: 0.9, spread: 0.25 },
-			radius: 0.2,
+			radius: 0.1,
 			dive: 0.2,
 		},
 		flutes: { count: { mean: 5, spread: 1 }, depth: 0.1, height: 1.5 },
