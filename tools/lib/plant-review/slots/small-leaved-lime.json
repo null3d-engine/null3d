@@ -75,7 +75,8 @@
 		"sunAzimuth": -30,
 		"sunRise": 55,
 		"skyShare": 0.5,
-		"daylight": 2.6,
+		"daylight": 2.05,
+		"lamp": "#fffef2",
 		"season": "blossom"
 	},
 	"20-basal-sprouts.png": {
@@ -92,7 +93,8 @@
 	},
 	"23-leaf-cluster-studio.png": {
 		"skyShare": 0.6,
-		"daylight": 1.0
+		"daylight": 0.78,
+		"lamp": "#fae4ff"
 	},
 	"small-leaved-lime-turntable.mp4": {
 		"skyShare": 0.35,
@@ -106,5 +108,9 @@
 		"thin": 0.006,
 		"along": 0.75,
 		"span": 0.012
+	},
+	"11-leaf-cluster.png": {
+		"daylight": 0.758,
+		"lamp": "#fffbe6"
 	}
 }
