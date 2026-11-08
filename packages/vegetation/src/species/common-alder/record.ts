@@ -418,10 +418,11 @@ export const record: Species = {
 		collar: { swell: 0.42, length: 1.6, ridge: 0.5 },
 		// Still 08: the fork closes on a smooth curve, its arms parting in a wide Y.
 		fork: { bend: 2.6 },
-		// Stills 14 and 20: a green film of moss on the wet foot, reaching about a metre up, all round.
-		moss: { amount: 0.6, up: 1, north: 0, colour: [0.16, 0.2, 0.06] },
+		// Still 14's foot: a thin green film in the furrows, not a coat over the plates. The close view
+		// reads the base 5 units too green against the photograph at a third more moss than this.
+		moss: { amount: 0.3, up: 1, north: 0, colour: [0.16, 0.2, 0.06] },
 		// Still 15: pale grey-green lichen flecks the crests of the plates on the lower bole.
-		lichen: { amount: 0.3, from: 0.4, to: 0.7, colour: [0.36, 0.38, 0.34] },
+		lichen: { amount: 0.15, from: 0.4, to: 0.7, colour: [0.36, 0.38, 0.34] },
 	},
 	base: {
 		// Stills 14 and 20: the foot flares to about a third again the bole's own width at the water,
