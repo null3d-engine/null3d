@@ -181,14 +181,14 @@ export const record: Species = {
 				name: 'cut',
 				vigor: [0, 1],
 				share: 0,
-				years: 2,
+				years: 3,
 				length: { mean: 0.75, spread: 0.15 },
-				nodes: { mean: 9, spread: 0.5 },
+				nodes: { mean: 4, spread: 0.5 },
 				internode: TWO_RANKED,
-				stem: { radius: [0.007, 0.003] },
-				laterals: 4,
-				lateral: 70,
-				lateralGap: 0.45,
+				stem: { radius: [0.005, 0.002] },
+				laterals: 2,
+				lateral: 85,
+				lateralGap: 0.4,
 				bend: { length: 0.08, angle: 32 },
 				leafScale: [
 					[0, 0.85],
@@ -206,7 +206,7 @@ export const record: Species = {
 				vigor: [0, 1],
 				share: 0,
 				years: 1,
-				length: { mean: 0.28, spread: 0.04 },
+				length: { mean: 0.3, spread: 0.04 },
 				nodes: { mean: 5, spread: 0 },
 				internode: TWO_RANKED,
 				stem: { radius: [0.004, 0.0025] },
@@ -215,8 +215,8 @@ export const record: Species = {
 					[1, 1],
 				],
 				leafAngle: [
-					[0, 82],
-					[1, 68],
+					[0, 78],
+					[1, 64],
 				],
 				leafAngleSpread: 12,
 				droop: 4,
@@ -383,9 +383,9 @@ export const record: Species = {
 		shadowLevel: 1,
 		budget: {
 			// The kit holds the crown's three classes and the cuttings' own two; each cap sits just
-			// above the measured figure at its tier, at 2.47, 3.73, 5.96 and 10.20 MB, and under the
+			// above the measured figure at its tier, at 2.48, 3.79, 6.10 and 10.46 MB, and under the
 			// owner's cap for a tree.
-			kitBytes: { low: 2_600_000, medium: 3_850_000, high: 6_100_000, ultra: 10_400_000 },
+			kitBytes: { low: 2_600_000, medium: 3_900_000, high: 6_300_000, ultra: 10_800_000 },
 			// The first variant measures 4.49, 4.55, 4.64 and 4.77 MB from the coarsest tier up.
 			variantBytes: { low: 4_800_000, medium: 4_850_000, high: 4_950_000, ultra: 5_050_000 },
 			lod0Triangles: 2_900_000,
@@ -403,9 +403,10 @@ export const record: Species = {
 	seedSalt: 18,
 	roundBand,
 	cuttings: {
-		// Stills 21 and 22: the branch and the sub-branch each draw one of the cut class's pieces,
-		// sparse alternate leaves on a slender zigzag shoot.
+		// Still 21: a metre of limb that runs out almost as wide as it is tall, its long side twigs
+		// leaving almost level with their own stem.
 		branch: { shoot: 'cut' },
+		// Still 22: one slender shoot of the cut class, its alternate leaves well apart.
 		subbranch: { shoot: 'cut', pick: 1 },
 		// Still 23: a shoot tip of five alternate leaves and one terminal red bud.
 		cluster: { shoot: 'spur' },
