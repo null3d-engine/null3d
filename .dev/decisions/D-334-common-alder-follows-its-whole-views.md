@@ -120,6 +120,17 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   join them and was refused, because it fills the crown's fine gaps on the same mask and would take
   the oak's two passing whole views into failure. What remains is an engine fault, not a species
   one.
+- The leaf's light through and its underside carry a sixth more red and two thirds more blue than
+  the texture's means gave. All three whole views drew their foliage too green and too yellow by the
+  same amounts, so the fault was the material rather than any photograph's light, and the front face
+  was already right: the single-leaf stills measure it at 3.1 and 3.0 and did not move. With the two
+  back faces raised, the whole views' leaf colour reads 2.0, 1.9 and 2.1, inside the three-step
+  mark; before the change they read 5.16, 5.73 and 2.58.
+- The two cluster photographs draw different shoots of the one class. The slot file names the second
+  prototype for the studio still, which costs no kit byte: `23` reads 0.150 background against its
+  photograph's 0.152 with outline overlap 0.421, and `11` keeps the first at 0.166 against 0.173 and
+  0.415. A second cutting class would have given the same choice for two more prototypes at every
+  tier.
 - The leaf cluster carries eight leaves, not six, each a seventh smaller. Six large blades covered
   what eight should, which put still `11`'s background share 0.012 below its floor. With eight, its
   share rises to 0.161 against a photograph's 0.166 and its outline overlap from 0.336 to 0.415;
