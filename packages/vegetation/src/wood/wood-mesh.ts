@@ -10,7 +10,14 @@
 // displacement on thin wood; `uv1.y` the junction mask; colour bytes R and G the wind record, B the
 // bend weight along the axis and A the crown's sky visibility.
 import type { MeshArrays } from '../asset';
-import { AXIS_LIMB, AXIS_STEM, AXIS_STIPE, type MacroSkeleton, NODE_STUB } from '../core/graph';
+import {
+	AXIS_CULM,
+	AXIS_LIMB,
+	AXIS_STEM,
+	AXIS_STIPE,
+	type MacroSkeleton,
+	NODE_STUB,
+} from '../core/graph';
 import { acos, cos, PI, sin, tan } from '../core/math';
 import type { Species } from '../core/record';
 import { crownSkyAt } from '../crown/visibility';
@@ -165,7 +172,9 @@ function woodAxes(input: MeshInput, keep: number): WoodAxis[] {
 	// lobes and roots. A limb without a parent is the cut end of a piece, such as a cut branch, and
 	// starts plain. Any other axis without a parent, such as a ground plant's crown, carries no wood.
 	const rooted = (a: number) =>
-		(axes.kind[a] as number) === AXIS_STEM || (axes.kind[a] as number) === AXIS_STIPE;
+		(axes.kind[a] as number) === AXIS_STEM ||
+		(axes.kind[a] as number) === AXIS_CULM ||
+		(axes.kind[a] as number) === AXIS_STIPE;
 	const meshed = (a: number) =>
 		(axes.order[a] as number) <= keep &&
 		(lastKept[a] as number) >= (axes.first[a] as number) &&
