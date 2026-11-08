@@ -9,8 +9,15 @@ import { cos, exp, PI, sin, type Vector3 } from '../core/math';
 import type { CrownLight, DressInput } from '../stages';
 import { leafDensity, rowCentre } from './density';
 
-/** The extinction per unit of leaf area along a ray: half, for leaves turned every way. */
-const EXTINCTION = 0.5;
+/**
+ * The extinction per unit of leaf area along a ray. Three tenths, measured against two species: a
+ * crown's own sky share sets each far card's shade, and at this figure a passing crown's colours
+ * move toward its photographs while its sky gaps and outlines improve with them. At the half used
+ * before, every crown drew darker than its photograph could explain — the English elm read eleven to
+ * thirteen colour steps at the far views against a band of three, and even with no crown shade at
+ * all it stayed five to six steps off, so the term explains most but not all of that darkness.
+ */
+const EXTINCTION = 0.3;
 /** Directions over the upper hemisphere. */
 const DIRECTIONS = 16;
 

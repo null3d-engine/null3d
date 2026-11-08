@@ -222,19 +222,26 @@ describe('the record check', () => {
 		).toBe(true);
 	});
 
-	it('presses only a blade leaf flat', () => {
+	it('presses only a leaf whose kind can lie flat', () => {
 		const pressed: Species = { ...template, cuttings: { leaf: { pressed: true } } };
-		const blade = template.foliage.kind === 'blade';
-		expect(speciesProblems(pressed).some((p) => p.startsWith('cuttings.leaf.pressed'))).toBe(
-			!blade,
-		);
+		const flat = template.foliage.kind === 'blade' || template.foliage.kind === 'thick';
+		expect(speciesProblems(pressed).some((p) => p.startsWith('cuttings.leaf.pressed'))).toBe(!flat);
 		const needled = {
 			...pressed,
 			foliage: { kind: 'none' },
 		} as unknown as Species;
 		expect(
-			speciesProblems(needled).some((p) => p.startsWith('cuttings.leaf.pressed lays a blade')),
+			speciesProblems(needled).some((p) => p.startsWith('cuttings.leaf.pressed lays a leaf')),
 		).toBe(true);
+	});
+
+	it('holds a pressed leaf own stalk to a length above zero', () => {
+		const short: Species = { ...template, cuttings: { leaf: { pressed: true, petiole: 0 } } };
+		expect(speciesProblems(short).some((p) => p.startsWith('cuttings.leaf.petiole is 0'))).toBe(
+			true,
+		);
+		const kept: Species = { ...template, cuttings: { leaf: { pressed: true, petiole: 0.04 } } };
+		expect(speciesProblems(kept).some((p) => p.startsWith('cuttings.leaf.petiole'))).toBe(false);
 	});
 
 	it("holds a compound leaf's leaflet angle and stalk to their ranges", () => {
@@ -304,6 +311,36 @@ describe('the record check', () => {
 		expect(
 			speciesProblems(withCutting(crown.name)).some((problem) =>
 				problem.startsWith(`shoots.cuttingClasses names '${crown.name}'`),
+			),
+		).toBe(true);
+	});
+
+	it("holds a class's own arrangement and facing inside their ranges", () => {
+		const shoots = template.shoots;
+		if (!shoots) throw new Error('the template has no shoots');
+		const crown = shoots.classes[0];
+		if (!crown) throw new Error('the template has no crown class');
+		const withClass = (fields: Partial<typeof crown>): Species => ({
+			...template,
+			shoots: { ...shoots, classes: [{ ...crown, ...fields }, ...shoots.classes.slice(1)] },
+		});
+		// A cutting class takes the same checks, so a bad value is refused there too.
+		const withCutting = (fields: Partial<typeof crown>): Species => ({
+			...template,
+			shoots: { ...shoots, cuttingClasses: [{ ...crown, name: 'cut', ...fields }] },
+		});
+		expect(speciesProblems(withClass({ skyward: 0.4 }))).toEqual([]);
+		expect(
+			speciesProblems(withClass({ skyward: 1.4 })).some((problem) => problem.includes('skyward')),
+		).toBe(true);
+		expect(
+			speciesProblems(withClass({ phyllotaxis: { kind: 'spiral', divergence: 400 } })).some(
+				(problem) => problem.includes('phyllotaxis.divergence'),
+			),
+		).toBe(true);
+		expect(
+			speciesProblems(withCutting({ skyward: -0.2 })).some((problem) =>
+				problem.startsWith('shoots.cuttingClasses[0].skyward'),
 			),
 		).toBe(true);
 	});

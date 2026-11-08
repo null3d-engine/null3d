@@ -102,9 +102,12 @@ function growsWithinBudget(kit: SpeciesKitData): void {
 	expect(near).toBeLessThanOrEqual(NEAR_CAPS.high.triangles);
 	expect(asset.levels[1].triangles).toBeLessThanOrEqual(budget.lod1Triangles);
 	expect(asset.levels[2].triangles).toBeLessThanOrEqual(budget.lod2Triangles);
-	// Every season's extras, such as autumn's fruit, stay within the card levels' caps too.
+	// Every season's extras, such as autumn's fruit, stay within the variant's byte cap and the card
+	// levels' caps too: a season can carry far more than the default one, and the bytes are what a
+	// player downloads.
 	for (const season of record.seasons.deciduous ? (['autumn', 'blossom'] as const) : []) {
 		const seasonal = growPlantNow(kit, { ...options, season });
+		expect(variantBytesOf(seasonal)).toBeLessThanOrEqual(budget.variantBytes[kit.detail]);
 		expect(seasonal.levels[1].triangles).toBeLessThanOrEqual(budget.lod1Triangles);
 		expect(seasonal.levels[2].triangles).toBeLessThanOrEqual(budget.lod2Triangles);
 	}
@@ -125,6 +128,26 @@ for (const walked of WALKED) {
 			if (record.textures === 'own') expect(module.textures.manifest.species).toBe(record.id);
 			else expect(isSpeciesId(record.textures.from)).toBe(true);
 		});
+
+		for (const detail of DETAILS)
+			it(
+				`keeps its cutting kit within its cap at the ${detail} tier`,
+				() => {
+					const cutOnly = (record.shoots?.cuttingClasses ?? []).some(
+						(shoot) => shoot.cutOnly === true,
+					);
+					if (!cutOnly && record.cuttings?.density === undefined) return;
+					const kit = buildKitNow(module, {
+						placeholders: walked.placeholders,
+						detail,
+						cutting: true,
+					});
+					expect(kit.prototypes.length).toBeGreaterThan(0);
+					expect(kit.cards.size).toBe(0);
+					expect(kitBytesOf(kit)).toBeLessThanOrEqual(record.lod.budget.kitBytes[detail]);
+				},
+				scaledBudget(120_000),
+			);
 
 		for (const detail of DETAILS)
 			it(
