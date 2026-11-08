@@ -193,6 +193,31 @@ describe('cuttings', () => {
 		expect(piece.skeleton.height).toBeLessThan(whole.skeleton.height);
 	});
 
+	it('leaves the crown as it was when a cutting class joins the kit', async () => {
+		// A cutting class is planned after the crown's prototypes and marked as a cutting's, so the
+		// crown never offers one and no index it reads moves. A species that adds a cutting class
+		// therefore keeps the crown it grew, and a figure that moves came from something else.
+		const { species: oak } = await import('./species/pedunculate-oak');
+		await loadPlantCode(oak.record);
+		const without = { ...oak.record, shoots: { ...oak.record.shoots!, cuttingClasses: [] } };
+		const before = buildKitNow(
+			{ ...oak, record: without },
+			{ placeholders: 'missing', detail: 'low' },
+		);
+		const after = buildKitNow(oak, { placeholders: 'missing', detail: 'low' });
+		expect(after.prototypes.length).toBeGreaterThan(before.prototypes.length);
+		const grow = { seed: 11, variant: 0, near: true } as const;
+		const own = growPlantNow(before, grow).shoots;
+		const withCuttings = growPlantNow(after, grow).shoots;
+		expect(withCuttings.count).toBe(own.count);
+		expect(Array.from(withCuttings.prototype.subarray(0, own.count))).toEqual(
+			Array.from(own.prototype),
+		);
+		expect(Array.from(withCuttings.position.subarray(0, own.count * 3))).toEqual(
+			Array.from(own.position),
+		);
+	});
+
 	it('takes a branch or sub-branch from the shoot class its record names', async () => {
 		const { species: oak } = await import('./species/pedunculate-oak');
 		await loadPlantCode(oak.record);
