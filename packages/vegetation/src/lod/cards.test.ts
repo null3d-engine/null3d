@@ -272,8 +272,9 @@ describe('the card levels', () => {
 			// Without the option the line is today's: the row's origin to the stretch behind it.
 			near(offFrom, [px, py, pz]);
 			near(offTo, [px + bx, py + by, pz + bz]);
-			// With it, the line starts at the parent's end and ends at the card's plane centre.
-			near(onFrom, [px + bx, py + by, pz + bz]);
+			// With it, the line still starts at the row's origin, so the card stays joined to the
+			// wood, and it ends at the centre of the foliage the card carries.
+			near(onFrom, [px, py, pz]);
 			const centre = prototype.card.planes[0]?.centre;
 			if (!centre) continue;
 			quatRotate(
