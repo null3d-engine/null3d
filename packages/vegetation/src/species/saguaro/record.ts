@@ -78,8 +78,11 @@ export const record: Species = {
 				],
 				// Still 24: the longest central spine points down the stem, so every cluster lies the same
 				// way up its crest rather than turning a random face to the viewer. The card's midrib is
-				// the leaf's line, so its azimuth points that line down the stem.
+				// the leaf's line, so its azimuth points that line down the stem. The class keeps none
+				// of the skyward turn, which leaves the card's face outward from the skin rather than
+				// turning it up to the light.
 				azimuth: 270,
+				skyward: 0,
 				droop: 0,
 				stem: { radius: [0.007, 0.005] },
 			},
