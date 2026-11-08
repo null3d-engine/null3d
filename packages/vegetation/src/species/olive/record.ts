@@ -247,36 +247,6 @@ export const record: Species = {
 				],
 				droop: 5,
 			},
-			{
-				// Still 21: the branch, most of a metre long, spreading by its side twigs. They leave the
-				// stem a few centimetres apart and reach well out, so the piece reads as a branch rather
-				// than a wand, and its leaves droop at every end.
-				name: 'whip',
-				vigor: [0, 1],
-				share: 0,
-				cutOnly: true,
-				years: 2,
-				length: { mean: 0.7, spread: 0.1 },
-				nodes: { mean: 7, spread: 0.5 },
-				internode: PAIR,
-				stem: { radius: [0.006, 0.003] },
-				phyllotaxis: { kind: 'opposite', decussate: true },
-				skyward: 0.45,
-				lateral: 70,
-				laterals: { mean: 2.2, spread: 0.4 },
-				lateralGap: 0.3,
-				bend: { length: 0.07, angle: 30 },
-				leafScale: [
-					[0, 0.9],
-					[1, 1.1],
-				],
-				leafAngle: [
-					[0, 110],
-					[0.5, 95],
-					[1, 80],
-				],
-				droop: 6,
-			},
 		],
 		// Stills 10, 11 and 23: every pair of leaves stands at right angles to the pair below it.
 		phyllotaxis: { kind: 'opposite', decussate: true },
@@ -353,8 +323,8 @@ export const record: Species = {
 		// 16: the smoother, paler bark of the great limbs above the bole, which reads sixteen steps
 		// lighter than the trunk's under the same light.
 		zones: [
-			{ layer: 0, by: 'height', from: 0, to: 2.6, blend: 0.4 },
-			{ layer: 1, by: 'height', from: 2.6, to: 40, blend: 0.4 },
+			{ layer: 0, by: 'height', from: 0, to: 2.6, blend: 1.2 },
+			{ layer: 1, by: 'height', from: 2.6, to: 40, blend: 1.2 },
 		],
 		young: 0,
 		// Still 16: the spiralling ridges fade to smooth grey bark on wood thinner than about three
@@ -466,11 +436,11 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The plant's kit measures 1.13, 1.84, 3.26 and 6.33 MB and the cutting kit 0.13, 1.48, 4.22
-			// and 10.12 MB at the four tiers; each cap sits just above the larger of the two. The three
-			// studio classes stand in the cutting kit alone, so the plant's kit carries the crown's
-			// classes only, while a studio piece pays for its own leaves and no card levels.
-			kitBytes: { low: 1_310_000, medium: 1_880_000, high: 4_250_000, ultra: 10_200_000 },
+			// The plant's kit measures 1.13, 1.84, 3.26 and 6.33 MB and the cutting kit 0.11, 1.12, 3.17
+			// and 7.58 MB at the four tiers; each cap sits just above the larger of the two. The studio
+			// classes stand in the cutting kit alone, so the plant's kit carries the crown's classes
+			// only, while a studio piece pays for its own leaves and no card levels.
+			kitBytes: { low: 1_150_000, medium: 1_880_000, high: 3_300_000, ultra: 7_650_000 },
 			// The largest of seed 11's six variants measures 5.24, 5.36, 5.52 and 5.69 MB.
 			variantBytes: { low: 5_280_000, medium: 5_400_000, high: 5_560_000, ultra: 5_730_000 },
 			lod0Triangles: 2_900_000,
@@ -488,17 +458,18 @@ export const record: Species = {
 	seedSalt: 4150070,
 	roundBand,
 	cuttings: {
-		// Stills 21 and 22: a branch about a metre long and a sub-branch about a third of that, each
-		// cut from the grown plant. The pieces carry the crown's own shoots, so their drooping twigs
-		// and opposite pairs are the photographs' without a class of their own. A studio piece is
-		// drawn close and alone, so its kit is the cutting kit, which pays for no card levels.
-		branch: { shoot: 'whip' },
+		// Still 21: the branch is a great limb cut from the grown plant, about a metre of wood out
+		// from the bole, so it carries the crown's own shoots along its run and reads as a branch
+		// rather than a wand.
+		branch: { order: 2, length: 0.9 },
+		// Still 22: the sub-branch, a twig about a third of a metre long whose side shoots leave one at
+		// a time and droop at their ends.
 		subbranch: { shoot: 'cut' },
 		// Still 23: one upright shoot, its pairs of leaves along the run and buds at its tip.
 		cluster: { shoot: 'spur' },
 		// Stills 21 and 23: the photographed twigs carry more leaf along the same wood than the
 		// crown's own covering does, and a studio piece pays for that from its own kit.
-		density: 1.6,
+		density: 1,
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
 		leaf: { pressed: true },
 	},
