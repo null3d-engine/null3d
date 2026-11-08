@@ -36,6 +36,7 @@ import {
 	pointAlong,
 	stemAt,
 	stemFoot,
+	stemSurfaceAt,
 	sunlitTip,
 	turnedAbout,
 	type V3,
@@ -367,8 +368,11 @@ const CUT_ROWS: CutRows | undefined =
 
 /** The asset as a view draws it: the wood alone, or one level at every distance. */
 function shaped(asset: PlantAsset, woodOnly: boolean): PlantAsset {
+	// A plant whose stems and leaves share one mesh, such as a grass, has no wood part: its stem
+	// surface is the merged foliage, so a view of the wood shows the plant's own surface.
+	const wood = asset.levels.some((level) => level.parts.some((part) => part.name === 'wood'));
 	const keep = (parts: readonly PlantPart[]) =>
-		woodOnly ? parts.filter((part) => part.name === 'wood') : parts;
+		woodOnly && wood ? parts.filter((part) => part.name === 'wood') : parts;
 	const levelAt = (index: 0 | 1 | 2, from: number, source = asset.levels[index]) => ({
 		...source,
 		level: index,
@@ -797,7 +801,9 @@ export default defineSketch(async (ctx) => {
 			}
 			case 'bark-mid': {
 				const y = Math.min(1.5, skeleton.height * 0.3);
-				const stem = stemAt(skeleton, y);
+				// A plant with no single trunk, such as a tuft of culms, shows the thickest stem
+				// surface that crosses the height the picture frames.
+				const stem = stemAt(skeleton, y) ?? stemSurfaceAt(skeleton, y)?.at;
 				if (!stem) break;
 				const span = QUERY.span ?? 0.6;
 				const surface = add(stem.at, scale(out, stem.radius));

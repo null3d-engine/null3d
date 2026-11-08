@@ -3,6 +3,8 @@
 	"11-blade-cluster.png": { "cut": 0.28 },
 	"12-single-blade-upper.png": { "leaves": 1.1, "roll": -45 },
 	"13-single-blade-underside.png": { "leaves": 1.1, "roll": -45 },
+	"15-sheath-and-collar.png": { "span": 0.04 },
+	"16-ligule-and-collar.png": { "girth": null, "thin": 0.0018, "span": 0.03 },
 	"19-seed-head.png": { "distance": 0.32, "fov": 30 },
 	"23-leaf-cluster-studio.png": { "cut": 0.28 },
 	"24-leaf-texture-upper.png": { "leaves": 1.1, "roll": -45 },
