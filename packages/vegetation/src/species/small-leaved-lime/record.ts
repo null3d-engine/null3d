@@ -328,7 +328,7 @@ export const record: Species = {
 		},
 		// Still 14: a few roots run out over the litter and sink as they go.
 		roots: {
-			count: { mean: 4, spread: 1 },
+			count: { mean: 5, spread: 1 },
 			length: { mean: 1, spread: 0.2 },
 			radius: 0.35,
 			dive: 0.3,
@@ -347,7 +347,7 @@ export const record: Species = {
 			share: 0.7,
 			// Still 19: a lime's flowers stand five to ten together on one stalk, each about a
 			// centimetre across, so a site carries a cluster rather than a single small cup.
-			count: { mean: 4, spread: 1 },
+			count: { mean: 5, spread: 1 },
 			seasons: ['blossom'],
 			shape: { petals: 5, radius: 0.0015, cup: 0.35 },
 			colour: [0.8, 0.78, 0.5],
@@ -393,8 +393,8 @@ export const record: Species = {
 			// owner's cap for a tree.
 			kitBytes: { low: 2_600_000, medium: 4_000_000, high: 6_500_000, ultra: 11_200_000 },
 			// The first variant measures 3.21, 3.27, 3.35 and 3.47 MB from the coarsest tier up, and its
-			// blossom season, which carries the flowers, 9.94, 9.99, 10.08 and 10.20 MB.
-			variantBytes: { low: 10_300_000, medium: 10_400_000, high: 10_500_000, ultra: 10_600_000 },
+			// blossom season, which carries the flowers, 11.62, 11.68, 11.77 and 11.88 MB.
+			variantBytes: { low: 11_900_000, medium: 12_000_000, high: 12_100_000, ultra: 12_200_000 },
 			lod0Triangles: 2_900_000,
 			// The heaviest variant's first card level draws about 62,500 triangles, and its second
 			// 28,300, under the owner's 43,000 cap at the finest tier.
