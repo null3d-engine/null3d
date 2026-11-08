@@ -73,8 +73,8 @@ export const record: Species = {
 			wander: 6,
 		},
 		// Stills 07, 17 and 18: the bole forks low, about a sixth of the height, into four limbs
-		// that leave at about 58 degrees and spread round it, the first running on at 34.
-		divide: { at: 0.16, count: 4, angle: 58, lean: 34, plumb: 3 },
+		// that leave at about 64 degrees and spread round it, the first running on at 42.
+		divide: { at: 0.16, count: 4, angle: 64, lean: 42, plumb: 3 },
 		// Still 18: the curtain's lit surface carries its fullest shoots.
 		light: { apical: 1.1, lateral: 1.2, shadow: [5, 0.15, 2], cells: 64, surface: true },
 		// Stills 01 and 18: the great limbs climb from the fork, then arch out and let their ends
@@ -82,18 +82,18 @@ export const record: Species = {
 		tropism: {
 			photo: 0.05,
 			gravi: [
-				[0, 0.28],
-				[0.34, 0.12],
-				[0.67, -0.02],
-				[1, -0.08],
+				[0, 0.25],
+				[0.34, 0.02],
+				[0.6, -0.06],
+				[1, -0.1],
 			],
 		},
 		// Stills 02 and 05: the inner limbs stand bare of leaf near the trunk while the curtain's
 		// rim stays full, so the shaded wood inside sheds and the lit tips are spared.
-		shedding: { threshold: 0.08, cleanBole: 0.12, stubs: 0.03 },
-		// Stills 01 and 02: the long shoots hang almost straight down, so the limbs weigh little
-		// against their tips and their own arch is what the eye reads.
-		bending: { strength: 0.55, upturn: 0.12, girth: 3 },
+		shedding: { threshold: 0.08, cleanBole: 0.12, stubs: 0.03, underCrown: 0.5 },
+		// Stills 01 and 02: the long shoots hang almost straight down, so the limbs arch under the
+		// curtain's weight and their own line is what the eye reads at the rim.
+		bending: { strength: 0.7, upturn: 0.1, girth: 3 },
 		forkRule: true,
 		kinks: true,
 		// Still 08: a limb forks into arms that part in a narrow V, so a limb's end keeps its
@@ -111,7 +111,7 @@ export const record: Species = {
 				vigor: [0.55, 1],
 				share: 0.5,
 				years: 1,
-				length: { mean: 3, spread: 0.4 },
+				length: { mean: 2.6, spread: 0.35 },
 				nodes: { mean: 36, spread: 4 },
 				internode: RANK,
 				stem: { radius: [0.005, 0.0015] },
@@ -121,12 +121,12 @@ export const record: Species = {
 					[1, 0.85],
 				],
 				leafAngle: [
-					[0, 45],
-					[1, 58],
+					[0, 28],
+					[1, 38],
 				],
-				leafAngleSpread: 12,
-				skyward: 0.25,
-				droop: 100,
+				leafAngleSpread: 8,
+				skyward: 0.15,
+				droop: 120,
 			},
 			{
 				// Still 22: last year's shoot hangs on below this year's growth, so the curtain keeps
@@ -145,11 +145,11 @@ export const record: Species = {
 					[1, 0.88],
 				],
 				leafAngle: [
-					[0, 45],
-					[1, 58],
+					[0, 28],
+					[1, 38],
 				],
-				skyward: 0.25,
-				droop: 95,
+				skyward: 0.15,
+				droop: 110,
 			},
 			{
 				// Stills 05 and 31: the inner wood and the young tree carry short leafy shoots that
@@ -166,11 +166,11 @@ export const record: Species = {
 					[1, 1],
 				],
 				leafAngle: [
-					[0, 45],
-					[1, 58],
+					[0, 32],
+					[1, 42],
 				],
-				leafAngleSpread: 15,
-				skyward: 0.3,
+				leafAngleSpread: 10,
+				skyward: 0.2,
 				droop: 25,
 			},
 		],
@@ -192,7 +192,7 @@ export const record: Species = {
 					[1, 0.8],
 				],
 				stem: { radius: [0.012, 0.006] },
-				laterals: { mean: 2.2, spread: 0.6 },
+				laterals: { mean: 2.4, spread: 0.5 },
 				lateralGap: 0.25,
 				bend: { length: 0.09, angle: 19 },
 				leafScale: [
@@ -200,12 +200,12 @@ export const record: Species = {
 					[1, 0.95],
 				],
 				leafAngle: [
-					[0, 55],
-					[1, 68],
+					[0, 38],
+					[1, 50],
 				],
-				leafAngleSpread: 12,
+				leafAngleSpread: 10,
 				leafYears: 1,
-				skyward: 0.25,
+				skyward: 0.2,
 				droop: 55,
 			},
 			{
@@ -228,12 +228,12 @@ export const record: Species = {
 					[1, 1],
 				],
 				leafAngle: [
-					[0, 55],
-					[1, 68],
+					[0, 38],
+					[1, 50],
 				],
-				leafAngleSpread: 15,
+				leafAngleSpread: 12,
 				leafYears: 1,
-				skyward: 0.25,
+				skyward: 0.2,
 				droop: 45,
 			},
 			{
@@ -242,7 +242,7 @@ export const record: Species = {
 				share: 0,
 				years: 1,
 				length: { mean: 0.2, spread: 0.02 },
-				nodes: { mean: 10, spread: 1 },
+				nodes: { mean: 8, spread: 1 },
 				internode: RANK,
 				stem: { radius: [0.003, 0.002] },
 				leafScale: [
@@ -251,16 +251,17 @@ export const record: Species = {
 					[1, 0.8],
 				],
 				leafAngle: [
-					[0, 62],
-					[1, 72],
+					[0, 35],
+					[1, 48],
 				],
-				leafAngleSpread: 15,
-				skyward: 0.3,
+				leafAngleSpread: 12,
+				skyward: 0.25,
 				droop: 3,
 			},
 		],
-		// Stills 11 and 23: one leaf at each node, its rank turned from the last.
-		phyllotaxis: { kind: 'spiral', divergence: 137.5 },
+		// Stills 11 and 23: one leaf at each node, in two opposite ranks down the shoot, and each
+		// blade turned into the shoot's own plane so the ranks join into one narrow falling lance.
+		phyllotaxis: { kind: 'distichous', flatten: 0.75 },
 		orders: 2,
 		years: 2,
 		leafYears: 2,
@@ -284,14 +285,18 @@ export const record: Species = {
 			// Stills 05 and 06: the inner limbs stand bare near the trunk, so a tip in the crown's
 			// own deepest shade keeps no rosette.
 			tipPrune: 0.06,
+			// Stills 01, 02 and 06: the bole and its fork read through the curtain, so the deepest
+			// interior of the crown thins to the wood while the lit rim keeps its strands.
+			skyPrune: 0.35,
+			skyPruneLayer: 1,
 			// Stills 01 and 18: no bare twig hangs outside the foliage.
 			bareTrim: 0.02,
-			// Stills 01 and 19: the shoots leave the wood and fall at once, so a shoot turns below the
-			// line its bud gives it.
-			lift: -10,
-			// Stills 11 and 13: the blades hang along the shoot, so the pale backs show where the
-			// curtain turns.
-			skyward: 0.2,
+			// Stills 01 and 19: the shoots leave the wood and fall at once, so the blades hang with
+			// the shoot and the curtain breaks into narrow lances.
+			lift: 0,
+			// Stills 11 and 13: the blades hang along the shoot, their faces turned out where the
+			// curtain turns, so the crown reads silvery.
+			skyward: 0.12,
 			scale: { mean: 1.1, spread: 0.15 },
 		},
 	},
@@ -312,8 +317,12 @@ export const record: Species = {
 			wave: [0, 0],
 			optics: {
 				reflectance: [0.1, 0.22, 0.012],
-				reflectanceBack: [0.25, 0.32, 0.12],
-				transmittance: [0.1, 0.2, 0.02],
+				// The crown draws a mixture of the three faces. Its whole views stand too green and
+				// too yellow against their photographs, so the back face and the light through the
+				// leaf carry the photograph-to-render ratio per channel: a tenth more red, a little
+				// more green and a third more blue. The front face keeps its measured values.
+				reflectanceBack: [0.228, 0.298, 0.158],
+				transmittance: [0.091, 0.186, 0.026],
 				roughness: [0.45, 0.6],
 			},
 		},
@@ -384,15 +393,17 @@ export const record: Species = {
 		blossom: { extra: 0, leaves: 0.55 },
 	},
 	wind: {
-		// The wind clip: the trunk and the great limbs hold while the long shoots swing as pendulums.
+		// The wind clip: the trunk and the great limbs hold while the long shoots swing, but the
+		// clip's outline changes little from frame to frame, so the shoots are far stiffer than a
+		// free pendulum.
 		stiffness: [
 			[0, 0.9],
-			[0.5, 0.6],
-			[1, 0.15],
+			[0.5, 0.85],
+			[1, 0.6],
 		],
-		sway: { frequency: 0.25, amplitude: 0.06 },
-		whips: { fromOrder: 2, pendulum: 0.6 },
-		flutter: { kind: 'blade', amplitude: 0.35, frequency: 2.5 },
+		sway: { frequency: 0.3, amplitude: 0.015 },
+		whips: { fromOrder: 2, pendulum: 0.15 },
+		flutter: { kind: 'blade', amplitude: 0.15, frequency: 3 },
 	},
 	lod: {
 		nearFoliage: 'instanced',
@@ -400,12 +411,12 @@ export const record: Species = {
 		// a shoot of this length spans half a column of pixels at the switch, and the nearer rows
 		// carry only the shoots a walk up to the curtain needs.
 		switchPixels: [500, 12, 160],
-		// The cards stand well over twice the shoots they picture, so the curtain's sky gaps fall on
-		// a neighbour's leaves rather than showing through, and the far crown reads as one sheet.
-		cardGrow: 2.2,
+		// The cards stand over three times the shoots they picture, so a hanging shoot's card overlaps
+		// its neighbours and the far crown reads as one curtain rather than a fringe of specks.
+		cardGrow: 3.2,
 		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so each draws its
 		// supporting twig as a line and the join shows.
-		cardStalk: 1.5,
+		cardStalk: 2.5,
 		// A hanging shoot's card stands its whole length ahead of the row that draws it, so the
 		// stalk runs on to the card's centre and the curtain meets the wood it grows from.
 		cardStalkToFoliage: true,

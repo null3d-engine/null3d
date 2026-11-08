@@ -145,13 +145,13 @@ export const forms: Readonly<Record<string, SpeciesForm>> = {
 			],
 			// Still 30: the tufts gather at the limbs' ends with open sky between them.
 			placement: {
-				density: 1,
+				density: 2.2,
 				shadePrune: 0.06,
 				tipPrune: 0.05,
 				bareTrim: 0.02,
-				lift: -4,
-				skyward: 0.2,
-				scale: { mean: 1.05, spread: 0.12 },
+				lift: 0,
+				skyward: 0.15,
+				scale: { mean: 1.1, spread: 0.12 },
 			},
 		},
 		// Still 30: no moss or lichen on the young bark.
