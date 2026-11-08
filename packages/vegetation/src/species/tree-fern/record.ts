@@ -69,14 +69,14 @@ export const record: Species = {
 			pinnae: {
 				// Stills 08 to 11: thirty or more pairs a side. The count gives the places and each
 				// place carries a group, so the frond holds twice this many.
-				count: { mean: 20, spread: 1 },
+				count: { mean: 22, spread: 1 },
 				// Pinna length over the frond's length, by position along the rachis.
 				length: [
 					[0, 0.05],
-					[0.15, 0.11],
-					[0.4, 0.16],
-					[0.8, 0.11],
-					[1, 0.04],
+					[0.15, 0.13],
+					[0.4, 0.21],
+					[0.8, 0.13],
+					[1, 0.05],
 				],
 				angle: [
 					[0, 80],
@@ -174,9 +174,9 @@ export const record: Species = {
 		// Still 21: one whole frond, its stipe and its pinnae.
 		branch: { order: 1, length: 2.4 },
 		// Still 22: a length of rachis from the middle of the frond, with its pinnae.
-		subbranch: { order: 1, length: 0.6, from: 0.7, span: 0.6 },
+		subbranch: { order: 1, length: 1, from: 0.3, span: 1 },
 		// Still 23: the frond's tip, where its pinnae shorten.
-		cluster: { order: 1, length: 0.3, from: 1.1, span: 0.3 },
+		cluster: { order: 1, length: 0.35, from: 1.05, span: 0.35 },
 		// Stills 12, 13 and 24: the pinna laid flat on its own.
 		leaf: { pressed: true },
 	},
