@@ -236,12 +236,12 @@ export const record: Species = {
 				lateral: 70,
 				bend: { length: 0.06, angle: 16 },
 				leafScale: [
-					[0, 0.85],
-					[1, 1],
+					[0, 1.3],
+					[1, 1.5],
 				],
 				leafAngle: [
-					[0, 92],
-					[1, 80],
+					[0, 60],
+					[1, 50],
 				],
 				leafAngleSpread: 25,
 				leafYears: 1,
