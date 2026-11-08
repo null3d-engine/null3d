@@ -17,9 +17,9 @@ export function plantSpeciesTests(root = ROOT): ImageTest[] {
 		sketch: `tests/pages/sketches/plant-review-sketch.ts?species=${id}&view=panels`,
 		hold: 1,
 		size: [1024, 1024],
-		// Four panels grow the whole plant and draw it whole, close, cut and on the stem. On
-		// SwiftShader's WebGL2 that has taken just over the default minute, and the panels draw
-		// the low preset's lighter meshes there so the page publishes inside its budget.
+		// Four panels of a whole plant, built and drawn from scratch: the merged foliage of a ground
+		// plant takes longer than the default limit on the software GPU's slower path, so the panels
+		// draw the low preset's lighter meshes there.
 		timeoutSeconds: 120,
 		swiftShaderSwitches: ['preset=low'],
 	}));

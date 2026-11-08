@@ -439,10 +439,20 @@ function extraProblems(record: Species, out: string[]): void {
  * foliage that cannot lie flat.
  */
 function cuttingProblems(record: Species, out: string[]): void {
-	// A blade or a whole frond can lie pressed flat in its frame's plane.
-	const pressedLeaf = record.cuttings?.leaf?.pressed === true;
-	if (pressedLeaf && record.foliage.kind !== 'blade' && record.foliage.kind !== 'frond')
+	// A blade, a thick leaf or a whole frond can lie pressed flat in its frame's plane.
+	const leaf = record.cuttings?.leaf;
+	if (
+		leaf?.pressed &&
+		record.foliage.kind !== 'blade' &&
+		record.foliage.kind !== 'thick' &&
+		record.foliage.kind !== 'frond'
+	)
 		out.push(`cuttings.leaf.pressed lays a leaf flat, and the foliage is '${record.foliage.kind}'`);
+	if (leaf?.petiole !== undefined && !(leaf.petiole > 0))
+		out.push(`cuttings.leaf.petiole is ${leaf.petiole}; it is metres and must be above 0`);
+	const density = record.cuttings?.density;
+	if (density !== undefined && !(density >= 0.25 && density <= 8))
+		out.push(`cuttings.density is ${density}; it is a share from 0.25 to 8`);
 	const names = new Set([
 		...(record.shoots?.classes ?? []).map((shoot) => shoot.name),
 		...(record.shoots?.cuttingClasses ?? []).map((shoot) => shoot.name),
