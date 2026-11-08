@@ -206,6 +206,7 @@ export const record: Species = {
 				internode: ALTERNATE,
 				stem: { radius: [0.008, 0.003] },
 				laterals: 3,
+				lateral: 55,
 				lateralGap: 0.35,
 				bend: { length: 0.06, angle: 22 },
 				// Still 21: the photograph's leaves stand in two ranks along the twig and face the camera,
