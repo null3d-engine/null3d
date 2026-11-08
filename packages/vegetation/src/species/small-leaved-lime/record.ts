@@ -344,7 +344,7 @@ export const record: Species = {
 			// that the extra shapes do not carry.
 			kind: 'flower',
 			at: 'shoot-tip',
-			share: 0.4,
+			share: 0.7,
 			// Still 19: a lime's flowers stand five to ten together on one stalk, each about a
 			// centimetre across, so a site carries a cluster rather than a single small cup.
 			count: { mean: 4, spread: 1 },
@@ -393,8 +393,8 @@ export const record: Species = {
 			// owner's cap for a tree.
 			kitBytes: { low: 2_600_000, medium: 4_000_000, high: 6_500_000, ultra: 11_200_000 },
 			// The first variant measures 3.21, 3.27, 3.35 and 3.47 MB from the coarsest tier up, and its
-			// blossom season, which carries the flowers, 7.00, 7.06, 7.14 and 7.26 MB.
-			variantBytes: { low: 7_200_000, medium: 7_300_000, high: 7_400_000, ultra: 7_500_000 },
+			// blossom season, which carries the flowers, 9.94, 9.99, 10.08 and 10.20 MB.
+			variantBytes: { low: 10_300_000, medium: 10_400_000, high: 10_500_000, ultra: 10_600_000 },
 			lod0Triangles: 2_900_000,
 			// The heaviest variant's first card level draws about 62,500 triangles, and its second
 			// 28,300, under the owner's 43,000 cap at the finest tier.
