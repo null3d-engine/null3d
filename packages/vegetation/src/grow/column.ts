@@ -339,7 +339,7 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 		}
 		// The turn: a quarter circle of a few arm girths across, from level to upright, so the elbow
 		// reads as the photograph's rounded U rather than a corner.
-		const turnRadius = Math.max(0.3, armBase * 2.6);
+		const turnRadius = Math.max(0.24, armBase * 1.6);
 		const turnNodes = Math.max(3, Math.ceil((turnRadius * (PI / 2)) / ARM_NODE));
 		const runOut = start + plan.elbow;
 		for (let n = 1; n <= turnNodes; n++) {
