@@ -39,6 +39,9 @@ export const record: Species = {
 		// Stills 05, 06 and 07: the great limbs pass round one another rather than through. The rule
 		// holds only above a third of the trunk's girth, so the crown's fine wood keeps its own layout.
 		clearance: 0.3,
+		// Stills 01, 02 and 18: the crown's limbs stand close enough that the dome reads full from
+		// every side, so a bud grows a branch more readily than the light alone gives.
+		branching: 1.4,
 		clearanceThickness: 0.35,
 		turning: 30,
 		internode: { length: 0.5, ageFactor: 0.99 },
@@ -61,8 +64,8 @@ export const record: Species = {
 		// held well below it, so the tree is longer than it is broad.
 		apical: {
 			control: [
-				[0, 0.64],
-				[1, 0.67],
+				[0, 0.68],
+				[1, 0.7],
 			],
 			dominance: [0.78, 0.6, 0.98],
 			wander: 8,
@@ -104,7 +107,7 @@ export const record: Species = {
 				share: 0.3,
 				years: 1,
 				length: { mean: 0.16, spread: 0.03 },
-				nodes: { mean: 12, spread: 0.6 },
+				nodes: { mean: 10, spread: 0.5 },
 				internode: TWO_RANKED,
 				leafScale: [
 					[0, 0.8],
@@ -125,7 +128,7 @@ export const record: Species = {
 				share: 0.35,
 				years: 2,
 				length: { mean: 0.42, spread: 0.06 },
-				nodes: { mean: 15, spread: 0.6 },
+				nodes: { mean: 13, spread: 0.5 },
 				internode: TWO_RANKED,
 				stem: { radius: [0.005, 0.003] },
 				laterals: 2,
@@ -150,7 +153,7 @@ export const record: Species = {
 				share: 0.35,
 				years: 2,
 				length: { mean: 1.05, spread: 0.15 },
-				nodes: { mean: 18, spread: 0.6 },
+				nodes: { mean: 16, spread: 0.5 },
 				internode: TWO_RANKED,
 				stem: { radius: [0.014, 0.006] },
 				laterals: 2,
@@ -180,7 +183,7 @@ export const record: Species = {
 				share: 0,
 				years: 2,
 				length: { mean: 0.75, spread: 0.15 },
-				nodes: { mean: 6, spread: 0.5 },
+				nodes: { mean: 9, spread: 0.5 },
 				internode: TWO_RANKED,
 				stem: { radius: [0.007, 0.003] },
 				laterals: 4,
@@ -245,11 +248,11 @@ export const record: Species = {
 			],
 			// Stills 01, 02 and 18: the crown's own box shows about a twentieth of sky, so the shoots
 			// stand much denser than the curve alone gives.
-			density: 1.55,
+			density: 2.1,
 			shadePrune: 0,
 			// Stills 01, 03 and 05: a little sky shows through the crown's middle and under it, where
 			// its own leaves leave a shoot under this share of the sky; the lit outer masses stay.
-			skyPrune: 0.14,
+			skyPrune: 0.08,
 			skyPruneLayer: 1,
 			// Stills 01 and 18: no bare twigs hang outside the foliage.
 			bareTrim: 0.03,
@@ -266,7 +269,7 @@ export const record: Species = {
 			// Stills 12, 13 and 24: a small heart-shaped blade about as wide as it is long, its base
 			// uneven and notched, its tip a short abrupt point. Still 21's one-metre branch draws its
 			// leaves about a thirteenth of its length, and a small-leaved lime's blade runs 3 to 9 cm.
-			length: { mean: 0.08, spread: 0.012 },
+			length: { mean: 0.07, spread: 0.01 },
 			outline: 'texture',
 			// Stills 11, 12 and 24: a long slender stalk runs below the blade for about two fifths of
 			// its length, and hangs the blade away from the twig.
@@ -371,7 +374,7 @@ export const record: Species = {
 		switchPixels: [240, 12, 160],
 		// The cards stand half again larger than the shoots they picture, so a gap between one shoot's
 		// leaves falls on a neighbour's leaves rather than on sky, and the far crown reads solid.
-		cardGrow: 1.45,
+		cardGrow: 1.6,
 		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so a card's leaves
 		// read as a piece in air unless its twig is drawn as a line.
 		cardStalk: 1.5,
@@ -380,14 +383,14 @@ export const record: Species = {
 		shadowLevel: 1,
 		budget: {
 			// The kit holds the crown's three classes and the cuttings' own two; each cap sits just
-			// above the measured figure at its tier, at 2.47, 3.73, 5.95 and 10.17 MB, and under the
+			// above the measured figure at its tier, at 2.47, 3.73, 5.96 and 10.20 MB, and under the
 			// owner's cap for a tree.
 			kitBytes: { low: 2_600_000, medium: 3_850_000, high: 6_100_000, ultra: 10_400_000 },
-			// The first variant measures 4.19, 4.28, 4.40 and 4.41 MB from the coarsest tier up.
-			variantBytes: { low: 4_300_000, medium: 4_450_000, high: 4_550_000, ultra: 4_650_000 },
+			// The first variant measures 4.49, 4.55, 4.64 and 4.77 MB from the coarsest tier up.
+			variantBytes: { low: 4_800_000, medium: 4_850_000, high: 4_950_000, ultra: 5_050_000 },
 			lod0Triangles: 2_900_000,
-			// The heaviest variant's first card level draws about 96,800 triangles, and its second
-			// 42,800, under the owner's 43,000 cap at the finest tier.
+			// The heaviest variant's first card level draws about 91,100 triangles, and its second
+			// 40,100, under the owner's 43,000 cap at the finest tier.
 			lod1Triangles: 110_000,
 			lod2Triangles: 43_000,
 			downloadBytes: 1_000_000,
