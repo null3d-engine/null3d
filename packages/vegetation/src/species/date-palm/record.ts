@@ -170,7 +170,15 @@ export const record: Species = {
 			hang: 180,
 		},
 	],
-	seasons: { default: 'summer', deciduous: false, winter: 'evergreen' },
+	// The palm keeps its leaves all year, so the season never turns them. The record's autumn
+	// colours are the dry straw grey-brown that the shader mixes a browning frond toward: the dead
+	// skirt of stills 05 and 20, not a different season's hue.
+	seasons: {
+		default: 'summer',
+		deciduous: false,
+		winter: 'evergreen',
+		autumn: { reflectance: [0.36, 0.31, 0.22], transmittance: [0.2, 0.17, 0.11] },
+	},
 	wind: {
 		// The trunk stays still while the fronds toss, as the wind clip shows.
 		stiffness: [

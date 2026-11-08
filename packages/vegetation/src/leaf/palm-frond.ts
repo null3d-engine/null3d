@@ -146,11 +146,11 @@ function leafletsOf(
 	const out: Leaflet[] = [];
 	const planes = Math.max(1, pinnae.planes);
 	const petioleShare = Math.min(0.3, shape.petiole.length / Math.max(length, 1e-6));
-	let drew = 0;
+	// A coarser level keeps every so many places along the whole frond, so its tip keeps leaflets.
+	const stride = Math.max(1, Math.round(1 / PINNA_SHARE[level]));
 	places.forEach((place, p) => {
-		if (drew >= Math.round(places.length * PINNA_SHARE[level])) return;
+		if (p % stride !== 0) return;
 		if (place < petioleShare) return;
-		drew++;
 		const spine = p < Math.round((pinnae.spines ?? 0) / 2);
 		const blade = curveAt(pinnae.length, place) * length;
 		for (let g = 0; g < GROUP; g++) {
