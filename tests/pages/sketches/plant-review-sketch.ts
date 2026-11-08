@@ -32,6 +32,7 @@ import {
 	facing,
 	largestLimb,
 	limbNear,
+	mainStem,
 	normalize,
 	pointAlong,
 	stemAt,
@@ -793,10 +794,17 @@ export default defineSketch(async (ctx) => {
 			}
 			case 'bark-mid': {
 				// A stem's bark at a share of its height, or a middle height when the view names none.
+				// The stem is what the view reads, not the whole plant: a tree fern's crown stands far
+				// above the stem's top, so the plant's own height would put the camera in the crown.
+				const stemAxis = mainStem(skeleton);
+				const stemTop =
+					stemAxis >= 0
+						? (skeleton.position[(skeleton.axes.last[stemAxis] as number) * 3 + 1] as number)
+						: skeleton.height;
 				const y =
 					QUERY.along !== undefined
-						? Math.max(0, Math.min(skeleton.height, skeleton.height * QUERY.along))
-						: Math.min(1.5, skeleton.height * 0.3);
+						? Math.max(0, Math.min(stemTop, stemTop * QUERY.along))
+						: Math.min(1.5, stemTop * 0.3);
 				const stem = stemAt(skeleton, y);
 				if (!stem) break;
 				const span = QUERY.span ?? 0.6;
