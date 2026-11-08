@@ -48,7 +48,7 @@ import {
 import type { Species, SpeciesModule } from './core/record';
 import { loadSpeciesHooks, speciesHooks } from './core/registry';
 import type { TextureManifest } from './core/textures';
-import { DETAILS, type Detail, type Season, type Vec3 } from './core/types';
+import { type Curve, DETAILS, type Detail, type Season, type Vec3 } from './core/types';
 import { lightCrown } from './crown/visibility';
 import {
 	type CuttingOptions,
@@ -149,9 +149,11 @@ export const FOLIAGE_LEAST = 0.4;
 export const FOLIAGE_MOST = 2;
 
 /**
- * The record a plant grows by when its foliage is set against the record's own: the crown's sky
+ * The record a plant grows by when its foliage is set against the record's own. The crown's sky
  * prune divides by the share, since a higher prune drops more of the shoots a crown's shaded wood
- * carries. Every species moves the same way, so one option sets the foliage of any of them.
+ * carries; a share below the record's own also thins the shoots placed along the wood and the
+ * finest order's branching, so a sparse crown is open in its branches as well as its leaves. Every
+ * species moves the same way, so one option sets the foliage of any of them.
  *
  * @param record The species record.
  * @param foliage The foliage share, 1 for the record's own; undefined or 1 leaves the record alone.
@@ -167,7 +169,53 @@ export function withFoliage(record: Species, foliage: number | undefined): Speci
 	if (!shoots) return record;
 	const own = shoots.placement.skyPrune ?? 0.5;
 	const prune = Math.min(0.95, Math.max(0, own / foliage));
-	return { ...record, shoots: { ...shoots, placement: { ...shoots.placement, skyPrune: prune } } };
+	// A share below the record's own thins the crown twice over: each shoot carries fewer leaves,
+	// and fewer shoots stand to carry them, so a sparse crown loses its inner detail rather than
+	// keeping every twig and stripping its leaves. The finest order's branching thins with it, since
+	// the sub-branches are most of what an open crown still shows. A share above the record's own
+	// adds leaves to the wood the record grows; no setting invents a branch the plant never had.
+	const thin = Math.min(1, foliage);
+	const density = shoots.placement.density;
+	return {
+		...record,
+		growth: thin < 1 ? thinnedOrders(record.growth, thin) : record.growth,
+		shoots: {
+			...shoots,
+			placement: {
+				...shoots.placement,
+				skyPrune: prune,
+				// The shoots per metre thin with the share as well, which is the dial every model
+				// answers: it takes the twigs and clusters along the finest axes, not only the leaves
+				// on them, so a limb left standing carries fewer of everything.
+				perMetre:
+					thin < 1 ? scaledCurve(shoots.placement.perMetre, thin) : shoots.placement.perMetre,
+				...(density !== undefined ? { density: density * thin } : {}),
+			},
+		},
+	};
+}
+
+/** A curve with every value multiplied by a factor. */
+function scaledCurve(curve: Curve, factor: number): Curve {
+	return typeof curve === 'number'
+		? curve * factor
+		: curve.map(([at, value]) => [at, value * factor] as [number, number]);
+}
+
+/** A growth spec whose finest order divides less often by a share: the twigs a sparse crown omits. */
+function thinnedOrders(growth: Species['growth'], thin: number): Species['growth'] {
+	// Only a model that names its orders has one to thin; a self-organizing crown divides by its
+	// pipes, so its shape follows the shoots' placement alone.
+	if (growth.model !== 'architectural') return growth;
+	const orders = growth.orders;
+	if (orders.length === 0) return growth;
+	const finest = orders[orders.length - 1] as (typeof orders)[number];
+	const own = finest.density;
+	const divided: typeof own =
+		typeof own === 'number'
+			? own * thin
+			: own.map(([at, value]) => [at, value * thin] as [number, number]);
+	return { ...growth, orders: [...orders.slice(0, -1), { ...finest, density: divided }] };
 }
 
 /**

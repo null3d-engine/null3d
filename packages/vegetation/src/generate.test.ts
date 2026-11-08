@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { type PlantAsset, plantAssetDigest } from './asset';
 import { hashBytes } from './core/hash';
 import { NotBuiltError } from './core/not-built';
+import type { Species } from './core/record';
 import { standInSpecies } from './core/stand-in';
 import {
 	bakeFarNow,
@@ -204,12 +205,35 @@ self.onmessage = async (event) => {
 		expect(rows(1.6)).toBeGreaterThan(rows(1));
 		// Absent or one grows the record's own crown, to the shoot.
 		expect(rows()).toBe(rows(1));
-		// The share moves the record's own sky prune and nothing else.
+		// The share moves the record's own sky prune, and a sparse share thins the wood as well.
 		const shoots = oak.record.shoots as NonNullable<typeof oak.record.shoots>;
 		const own = withFoliage(oak.record, 1);
 		expect(own).toBe(oak.record);
 		const thinner = withFoliage(oak.record, 1.5) as typeof oak.record;
 		expect(thinner.shoots?.placement.skyPrune).toBeLessThan(shoots.placement.skyPrune ?? 0.5);
+		// A share above the record's own adds leaves to the wood the record grows; it never invents
+		// a branch, so the growth is the record's own untouched.
+		expect(thinner.growth).toBe(oak.record.growth);
+		// A share below it places fewer shoots along the wood, so a sparse crown is open in its
+		// branches and not only in its leaves.
+		const sparse = withFoliage(oak.record, 0.5) as typeof oak.record;
+		if (oak.record.growth.model === 'architectural') {
+			const finest = (spec: Species['growth']): number => {
+				if (spec.model !== 'architectural') return 0;
+				const own = spec.orders.at(-1)?.density;
+				return typeof own === 'number' ? own : (own?.[0]?.[1] ?? 0);
+			};
+			expect(finest(sparse.growth)).toBeCloseTo(finest(oak.record.growth) * 0.5, 6);
+		}
+		if (shoots.placement.density !== undefined)
+			expect(sparse.shoots?.placement.density).toBeCloseTo(shoots.placement.density * 0.5, 6);
+		// The shoots along the finest axes thin too, which is the dial every growth model answers.
+		const perMetre = (curve: typeof shoots.placement.perMetre) =>
+			typeof curve === 'number' ? curve : (curve[0]?.[1] ?? 0);
+		expect(perMetre(sparse.shoots?.placement.perMetre ?? 0)).toBeCloseTo(
+			perMetre(shoots.placement.perMetre) * 0.5,
+			6,
+		);
 		expect(() => withFoliage(oak.record, 3)).toThrow();
 		// A different share is a different asset, so the cache never hands back the record's own.
 		expect(variantKey(grown, { seed: 11, variant: 0, foliage: 0.5 })).not.toBe(

@@ -884,13 +884,21 @@ export function components(
 	return { labels, sizes };
 }
 
+/** Pixels of background a run may cross to join another: the mask's own resolution, not a gap. */
+export const PIECE_BRIDGE = 1;
+
 /**
  * The number of separate pieces a plant is drawn as, where a piece is a connected run of at least
- * `minArea` pixels.
+ * `minArea` pixels and two runs one background pixel apart count as one.
  *
  * A plant hangs together: every fruit meets its twig, every twig meets its limb. A part that meets
  * nothing is drawn as an island, and this counts it. Pieces smaller than `minArea` are ignored so
  * that a speck of background left by the outline's threshold is not read as a floating part.
+ *
+ * A single background pixel between two runs is the mask's resolution rather than a drawn gap: at
+ * the work width a shoot's supporting twig is thinner than a pixel, so the pixel that would join it
+ * falls to the outline's cutoff. Two runs a pixel apart are therefore one piece. The reference and
+ * the render both come through this function, so the rule counts the two sides alike.
  */
 export function pieceCount(
 	mask: Uint8Array,
@@ -898,9 +906,47 @@ export function pieceCount(
 	height: number,
 	minArea: number,
 ): number {
-	const { sizes } = components(mask, width, height);
+	const { labels, sizes } = components(mask, width, height);
+	const parent = new Int32Array(sizes.length);
+	for (let label = 0; label < parent.length; label++) parent[label] = label;
+	const find = (from: number): number => {
+		let root = from;
+		while ((parent[root] as number) !== root) root = parent[root] as number;
+		let at = from;
+		while ((parent[at] as number) !== root) {
+			const next = parent[at] as number;
+			parent[at] = root;
+			at = next;
+		}
+		return root;
+	};
+	const join = (a: number, b: number): void => {
+		const rootA = find(a);
+		const rootB = find(b);
+		if (rootA !== rootB) parent[Math.max(rootA, rootB)] = Math.min(rootA, rootB);
+	};
+	for (let y = 0; y < height; y++)
+		for (let x = 0; x < width; x++) {
+			if (labels[y * width + x]) continue;
+			let near = 0;
+			for (let dy = -PIECE_BRIDGE; dy <= PIECE_BRIDGE; dy++)
+				for (let dx = -PIECE_BRIDGE; dx <= PIECE_BRIDGE; dx++) {
+					const nx = x + dx;
+					const ny = y + dy;
+					if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+					const label = labels[ny * width + nx] as number;
+					if (!label) continue;
+					if (near === 0) near = label;
+					else join(near, label);
+				}
+		}
+	const areas = new Map<number, number>();
+	for (let label = 1; label < sizes.length; label++) {
+		const root = find(label);
+		areas.set(root, (areas.get(root) ?? 0) + (sizes[label] as number));
+	}
 	let count = 0;
-	for (const size of sizes) if (size >= minArea) count++;
+	for (const area of areas.values()) if (area >= minArea) count++;
 	return count;
 }
 
@@ -1310,12 +1356,59 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 	if (!Number.isFinite(trunk)) trunk = 0;
 	let widest = 0;
 	for (let y = box.top; y <= box.bottom; y++) widest = Math.max(widest, width(y));
-	const limit = Math.max(trunk * 2.5, widest * 0.12);
+	// A stem's own width plus a clear margin, but never so much of the plant's width that a thick
+	// bole reads as foliage: on a low-crowned tree whose trunk is a third of its height across, an
+	// uncapped margin swallows the crown and the foot lands wherever the first wide run begins.
+	const limit = Math.min(Math.max(trunk * 2.5, widest * 0.12), widest * 0.55);
 	const run = Math.max(2, Math.round(tall * 0.03));
-	for (let y = box.bottom; y >= box.top; y--) {
+	// A ground line in frame runs wider than the plant's stem, so skip those rows first: they are
+	// not the crown, and their width would let the scan below find the ground as a crown.
+	let floor = box.bottom;
+	while (floor > box.top && width(floor) > limit) floor--;
+	for (let y = floor; y >= box.top; y--) {
 		let wide = true;
 		for (let k = 0; k < run && y - k >= box.top; k++) if (width(y - k) <= limit) wide = false;
 		if (wide) return y;
+	}
+	// No wide run from the bottom means the lowest bands hold a ground line: a lake or a grassy
+	// slope wider than the crown makes the trunk estimate the ground's width, and its limit clears
+	// nothing. The crown's own rows still say where it starts, so find the first narrow run below
+	// its wide top. A photograph whose start the scan above finds never reaches this.
+	return crownStartFromTop(spans, box, limit);
+}
+
+/**
+ * Where the crown starts, found from its own rows: the first narrow stretch below the crown's wide
+ * top that the stem continues below. The lower edge of the foliage, whatever the ground below it
+ * reads as.
+ */
+function crownStartFromTop(spans: Int32Array, box: Box, limit: number): number {
+	const tall = box.bottom - box.top + 1;
+	const width = (y: number) => {
+		const left = spans[y * 2] as number;
+		return left < 0 ? 0 : (spans[y * 2 + 1] as number) - left + 1;
+	};
+	const run = Math.max(2, Math.round(tall * 0.03));
+	// An airy crown is full of narrow rows of its own, so a narrow stretch alone does not make a
+	// crown's foot. Only the stem runs on below the lowest foliage, so a candidate is the foot
+	// when the rows beneath it stay narrow.
+	const check = Math.max(3, Math.round(tall * 0.12));
+	const stemShare = (y: number): number => {
+		const to = Math.min(box.bottom, y + check);
+		if (to <= y) return 1;
+		let narrow = 0;
+		for (let k = y + 1; k <= to; k++) if (width(k) <= limit) narrow++;
+		return narrow / (to - y);
+	};
+	let y = box.top;
+	while (y <= box.bottom && width(y) <= limit) y++;
+	for (; y <= box.bottom; y++) {
+		for (let k = 0; k < run && y + k <= box.bottom; k++) {
+			if (width(y + k) > limit) continue;
+			const foot = Math.max(box.top, y + k - 1);
+			if (stemShare(foot) >= 0.7) return foot;
+			break;
+		}
 	}
 	return box.bottom;
 }

@@ -205,6 +205,50 @@ describe('the width profile', () => {
 		expect(crownStartRow(rowSpans(mask, width, height), box)).toBe(49);
 	});
 
+	test('finds the crown when a ground line runs below the foot', () => {
+		const width = 100;
+		const height = 100;
+		const mask = new Uint8Array(width * height);
+		// A crown of 80 px over a trunk of 4, over a grassy ground line that spans the frame.
+		// The ground is wider than the crown, so the lowest bands make the trunk estimate the
+		// ground's width and the upward scan finds no wide run.
+		for (let y = 0; y < 50; y++) for (let x = 10; x < 90; x++) mask[y * width + x] = 1;
+		for (let y = 50; y < 80; y++) for (let x = 48; x < 52; x++) mask[y * width + x] = 1;
+		for (let y = 80; y < 100; y++) for (let x = 0; x < 100; x++) mask[y * width + x] = 1;
+		const box = boxOf(mask, width, height) as NonNullable<ReturnType<typeof boxOf>>;
+		// The crown's lower edge, not the frame's foot and not the ground line's top.
+		expect(crownStartRow(rowSpans(mask, width, height), box)).toBe(49);
+	});
+
+	test("does not take a gap inside an airy crown for the crown's foot", () => {
+		const width = 100;
+		const height = 100;
+		const mask = new Uint8Array(width * height);
+		// An airy crown of 80 px broken by an empty row every seventh row, over a trunk of 4, over
+		// a ground line that spans the frame. The gaps belong to the crown, not to its foot.
+		for (let y = 0; y < 50; y++) {
+			if (y % 7 === 3) continue;
+			const inset = y < 20 ? 20 : 10;
+			for (let x = inset; x < width - inset; x++) mask[y * width + x] = 1;
+		}
+		for (let y = 50; y < 80; y++) for (let x = 48; x < 52; x++) mask[y * width + x] = 1;
+		for (let y = 80; y < 100; y++) for (let x = 0; x < 100; x++) mask[y * width + x] = 1;
+		const box = boxOf(mask, width, height) as NonNullable<ReturnType<typeof boxOf>>;
+		expect(crownStartRow(rowSpans(mask, width, height), box)).toBe(49);
+	});
+
+	test('finds the crown above a bole too thick for the margin alone', () => {
+		const width = 100;
+		const height = 100;
+		const mask = new Uint8Array(width * height);
+		// A crown of 90 px over a bole of 30: the stem is a third of the plant's height across, so a
+		// margin of two and a half stems would swallow the crown and the foot would land at the base.
+		for (let y = 0; y < 45; y++) for (let x = 5; x < 95; x++) mask[y * width + x] = 1;
+		for (let y = 45; y < 100; y++) for (let x = 35; x < 65; x++) mask[y * width + x] = 1;
+		const box = boxOf(mask, width, height) as NonNullable<ReturnType<typeof boxOf>>;
+		expect(crownStartRow(rowSpans(mask, width, height), box)).toBe(44);
+	});
+
 	test('finds where a crown starts over a narrow trunk', () => {
 		const width = 60;
 		const height = 60;
