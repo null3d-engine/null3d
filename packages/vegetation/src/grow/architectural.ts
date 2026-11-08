@@ -690,7 +690,7 @@ export function growArchitectural(input: GrowInput): MacroSkeleton {
 
 	// The leader's own tip carries a tuft, so the crown's top is not a bare spike; the upper whorls
 	// build the flat plate around it.
-	const topFrom = height * 0.95;
+	const topFrom = height * 0.86;
 	for (let i = 0; i < leaderNodes.length; i++) {
 		const node = (axes[leader] as GrownAxis).nodes[leaderNodes[i] as number] as GrownNode;
 		if (node.y < topFrom) continue;
