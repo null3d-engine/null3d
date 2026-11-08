@@ -63,7 +63,7 @@ a few large ones, and the leaves per shoot rise while the card rows fall.
 - `shoots.classes` carry 7, 16 and 24 nodes at 0.2, 0.4 and 0.6 meters. A leaf stands every two to
   two and a half centimeters along a strand, as stills 09, 10 and 23 show.
 - `shoots.placement.perMetre` runs 4.2 to 9 shoots a meter of the finest wood. `scale` stands at
-  1.2, which draws a five centimeter leaf at six, inside the species' three to seven.
+  1.2. A five centimeter leaf then draws at six, inside the species' three to seven.
 - Three `cuttingClasses` of its own, `whip` and `cut`, draw the cut pieces with their leaves spaced,
   as stills 21, 22 and 23 show.
 - `bark.peel` lifts strips of nine centimeters at 220 a square meter on the lower trunk, which still
