@@ -86,6 +86,19 @@ const MATTE = VIEW === 'silhouette' || QUERY.matte === true;
  */
 const LOD = QUERY.lod ?? (SPEC.woodOnly || QUERY.fruit ? 0 : undefined);
 const DEG = Math.PI / 180;
+/**
+ * A colour scaled by another colour's channels, which is how a picture's own white balance tints a
+ * light: white keeps every light as it is, and a warmer lamp takes blue out of all of them.
+ */
+function tinted(colour: string, by: string): string {
+	const channel = (hex: string, at: number) => Number.parseInt(hex.slice(at, at + 2), 16) / 255;
+	const parts = [0, 2, 4].map((at) =>
+		Math.round(Math.min(1, channel(colour, at + 1) * channel(by, at + 1)) * 255)
+			.toString(16)
+			.padStart(2, '0'),
+	);
+	return `#${parts.join('')}`;
+}
 /** The quaternion that lays a plane, which faces +Z, flat on the ground. */
 const FLAT: [number, number, number, number] = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];
 /** The height of a standing person's eye, in metres. */
@@ -365,10 +378,18 @@ const CUT_ROWS: CutRows | undefined =
 			? { top: QUERY.top, base: 1 }
 			: undefined;
 
+/** Whether an asset draws any wood at all: a ground plant draws its whole body as merged foliage. */
+function hasWood(asset: PlantAsset): boolean {
+	return asset.levels.some((level) => level.parts.some((part) => part.name === 'wood'));
+}
+
 /** The asset as a view draws it: the wood alone, or one level at every distance. */
 function shaped(asset: PlantAsset, woodOnly: boolean): PlantAsset {
+	// A view of the wood alone has no wood to draw on a ground plant. Its crown, sheaths and blades
+	// are that plant's body, so the view keeps them rather than drawing an empty picture.
+	const bare = woodOnly && hasWood(asset);
 	const keep = (parts: readonly PlantPart[]) =>
-		woodOnly ? parts.filter((part) => part.name === 'wood') : parts;
+		bare ? parts.filter((part) => part.name === 'wood') : parts;
 	const levelAt = (index: 0 | 1 | 2, from: number, source = asset.levels[index]) => ({
 		...source,
 		level: index,
@@ -378,7 +399,7 @@ function shaped(asset: PlantAsset, woodOnly: boolean): PlantAsset {
 	const empty = { parts: [], triangles: 0, bytes: 0 };
 	const lod = LOD;
 	const rows =
-		woodOnly || (lod !== undefined && lod !== 0) ? { ...asset.shoots, count: 0 } : asset.shoots;
+		bare || (lod !== undefined && lod !== 0) ? { ...asset.shoots, count: 0 } : asset.shoots;
 	if (lod === undefined || lod === 3)
 		return {
 			...asset,
@@ -459,11 +480,12 @@ export default defineSketch(async (ctx) => {
 			: undefined;
 	if (QUERY.form !== undefined && form === undefined)
 		notes.push(`the record has no ${QUERY.form} form, so the plant grows as its record stands`);
-	const kit = await prepareSpecies(ctx, module, {
+	const prepare = {
 		detail: QUERY.preset ?? 'high',
 		placeholders,
 		...(form !== undefined && { form }),
-	});
+	} as const;
+	const kit = await prepareSpecies(ctx, module, prepare);
 	const grow = {
 		seed: QUERY.seed ?? 11,
 		variant: QUERY.variant ?? 0,
@@ -481,12 +503,28 @@ export default defineSketch(async (ctx) => {
 		...(QUERY.pressed !== undefined && { pressed: QUERY.pressed }),
 	};
 	const needsWhole = !SPEC.cutting;
+	// A piece whose record hint names one of the species' cutting classes grows from a kit of its
+	// own, which holds that class and no cards: the piece is only ever drawn at the nearest level.
+	const cutHint = cutting ? record.cuttings?.[cutting.part] : undefined;
+	const cutsClass =
+		cutHint !== undefined &&
+		'shoot' in cutHint &&
+		(record.shoots?.cuttingClasses ?? []).some(
+			(shoot) => shoot.name === cutHint.shoot && shoot.cutOnly === true,
+		);
+	// A plant cut carries a denser covering when the record asks for one: its cutting kit places the
+	// shoots the studio piece needs and holds no card levels.
+	const plantCut = cutHint !== undefined && 'order' in cutHint;
+	const needsCutKit = cutsClass || (plantCut && record.cuttings?.density !== undefined);
+	const pieceKit =
+		cutting && needsCutKit ? await prepareSpecies(ctx, module, { ...prepare, cutting: true }) : kit;
 	const [whole, piece] = await Promise.all([
 		needsWhole ? growPlant(kit, grow) : undefined,
-		cutting ? growPlant(kit, { ...grow, cutting }) : undefined,
+		cutting ? growPlant(pieceKit, { ...grow, cutting }) : undefined,
 	]);
 	const main = (whole ?? piece) as PlantAsset;
-	const bounds = boundsOf(main, kit);
+	const mainKit = whole ? kit : pieceKit;
+	const bounds = boundsOf(main, mainKit);
 	const skeleton = main.skeleton;
 	const foot = stemFoot(skeleton);
 	const height = Math.max(0.05, bounds.max[1]);
@@ -523,7 +561,7 @@ export default defineSketch(async (ctx) => {
 	const closePlant = (woodOnly: boolean): ClosePlant => ({
 		skeleton,
 		shoots: woodOnly ? { ...main.shoots, count: 0 } : main.shoots,
-		prototypes: kit.prototypes,
+		prototypes: mainKit.prototypes,
 		...(leafLength !== undefined && { leafLength }),
 	});
 	/** Each close view's camera, found once and walked round its subject for a sheet's turns. */
@@ -782,7 +820,7 @@ export default defineSketch(async (ctx) => {
 					warning: 'the plant has no twig with end clusters that shows clear',
 				});
 				let shoot = 0.2;
-				for (const prototype of kit.prototypes) shoot = Math.max(shoot, prototype.length);
+				for (const prototype of mainKit.prototypes) shoot = Math.max(shoot, prototype.length);
 				const target = add(tip.at, scale(tip.direction, shoot / 2));
 				const outward = normalize([tip.at[0] - foot[0], 0, tip.at[2] - foot[2]]);
 				const back = Math.atan2(outward[0], outward[2]);
@@ -893,7 +931,7 @@ export default defineSketch(async (ctx) => {
 				}
 				// A cutting fills the frame with its own points, as its reference's piece does, on the
 				// rows its reference shows it on when the query measured them.
-				return fitPoints(piece as PlantAsset, kit, turn, e, aspect, fov, CUT_ROWS);
+				return fitPoints(piece as PlantAsset, pieceKit, turn, e, aspect, fov, CUT_ROWS);
 			}
 			case 'panels':
 				break;
@@ -924,7 +962,7 @@ export default defineSketch(async (ctx) => {
 			piece: 'plant',
 		});
 		const cluster = fit(
-			boundsOf(piece as PlantAsset, kit),
+			boundsOf(piece as PlantAsset, pieceKit),
 			turn0,
 			8,
 			quarter,
@@ -1060,18 +1098,32 @@ export default defineSketch(async (ctx) => {
 			const level = cross(ahead, [0, 1, 0]);
 			const across: V3 =
 				Math.hypot(level[0], level[1], level[2]) > 1e-6 ? normalize(level) : [1, 0, 0];
+			// A copy stand's lamps, coloured as their photograph's own white balance has them.
+			const lamp = QUERY.lamp ?? '#ffffff';
 			const lean = COPY_STAND_LAMP * DEG;
+			// The stand's exposure, which a photograph's own sets: one lamp pair shows a diffuse face at
+			// its reflectance, and a query's daylight copies a picture taken brighter or dimmer.
+			const exposure = QUERY.daylight ?? 1;
 			for (const side of [-1, 1])
 				scene.createDirectionalLight({
 					direction: normalize(
 						add(scale(ahead, Math.cos(lean)), scale(across, side * Math.sin(lean))),
 					),
-					color: '#ffffff',
-					intensity: Math.PI / (2 * Math.cos(lean)),
+					color: lamp,
+					intensity: (Math.PI / (2 * Math.cos(lean))) * exposure,
 				});
 		} else if (SUN === 'flat' && REFERENCE_LIGHT === null) {
-			scene.createAmbientLight({ intensity: 1 });
-			scene.createHemisphereLight({ skyColor: '#eef1f4', groundColor: '#b9b9b4', intensity: 1.5 });
+			// A studio's fill: an even light from every side rather than a sun, at the strength and the
+			// colour its reference measures, so a studio picture is matched as a daylight one is.
+			const fill = QUERY.daylight ?? 1;
+			const studio = BACKGROUND === 'studio-grey';
+			const lamp = QUERY.lamp ?? '#ffffff';
+			scene.createAmbientLight({ intensity: fill });
+			scene.createHemisphereLight({
+				skyColor: tinted(studio ? '#f1ede6' : '#eef1f4', lamp),
+				groundColor: tinted(studio ? '#c8c2b6' : '#b9b9b4', lamp),
+				intensity: 1.5 * fill,
+			});
 		} else {
 			// Soft daylight: most of the light from the whole sky, with a sun that gives the crown its
 			// depth, and a little light from below for the undersides. A query's daylight scales the sum
@@ -1084,10 +1136,14 @@ export default defineSketch(async (ctx) => {
 			const total = (skyLight + sunLight) * strength;
 			const skyScale = share === undefined ? strength : (share * total) / skyLight;
 			const sunScale = share === undefined ? strength : ((1 - share) * total) / sunLight;
+			// The fill's colour is the photograph's own white balance, which tints the sky it saw. A
+			// studio's own walls and paper are the base under it, warmer than an open sky's blue.
+			const studio = BACKGROUND === 'studio-grey';
+			const lamp = QUERY.lamp ?? '#ffffff';
 			scene.createAmbientLight({ intensity: 0.6 * skyScale });
 			scene.createHemisphereLight({
-				skyColor: '#dfe8f0',
-				groundColor: '#7f8166',
+				skyColor: tinted(studio ? '#f2eee7' : '#dfe8f0', lamp),
+				groundColor: tinted(studio ? '#c9c3b7' : '#7f8166', lamp),
 				intensity: 1.7 * skyScale,
 			});
 			// The reference's own light when it gave one: the sun stands that far to the camera's
@@ -1102,8 +1158,11 @@ export default defineSketch(async (ctx) => {
 							: SUN === 'overhead'
 								? [0.02, -1, 0.01]
 								: [-0.45, -1, -0.35];
+			// The sun takes the photograph's own white balance too, so a picture lit by a warm or a
+			// cool sun can be matched where its fill alone cannot reach.
 			scene.createDirectionalLight({
 				direction,
+				color: tinted('#ffffff', lamp),
 				intensity: sunLight * sunScale,
 				castShadows: true,
 				shadow,
@@ -1134,10 +1193,10 @@ export default defineSketch(async (ctx) => {
 		placeholders === true && (LOD === undefined || LOD === 0)
 			? createNearPool(ctx, { placeholders: true })
 			: undefined;
-	const place = (asset: PlantAsset, at: V3, far?: readonly FarPlant[]) =>
+	const place = (asset: PlantAsset, at: V3, source: SpeciesKit, far?: readonly FarPlant[]) =>
 		placePlants(
 			ctx,
-			kit,
+			source,
 			[asset],
 			{
 				count: 1,
@@ -1164,8 +1223,8 @@ export default defineSketch(async (ctx) => {
 		);
 	const drawn = shaped(main, SPEC.woodOnly === true);
 	const far = LOD === 3 && whole ? [await bakeFarPlant(kit, whole)] : undefined;
-	place(drawn, [0, 0, 0], far);
-	if (VIEW === 'panels' && piece) place(shaped(piece, false), AWAY);
+	place(drawn, [0, 0, 0], mainKit, far);
+	if (VIEW === 'panels' && piece) place(shaped(piece, false), AWAY, pieceKit);
 	if (
 		!SPEC.woodOnly &&
 		(LOD === undefined || LOD === 0) &&
@@ -1229,7 +1288,7 @@ export default defineSketch(async (ctx) => {
 			cutting: {
 				...piece.cutting,
 				size: (() => {
-					const b = boundsOf(piece, kit);
+					const b = boundsOf(piece, pieceKit);
 					return sub(b.max, b.min);
 				})(),
 				axes: piece.skeleton.axes.count,
