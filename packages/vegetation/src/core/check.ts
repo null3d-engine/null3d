@@ -328,6 +328,27 @@ function growthProblems(record: Species, out: string[]): void {
 			shareProblem(growth.scapes.raceme, 'growth.scapes.raceme', out);
 		}
 	}
+	if (growth.model === 'culm') {
+		spreadProblems(growth.culms, 'growth.culms', true, out);
+		if (!(growth.spacing > 0))
+			out.push(`growth.spacing is ${growth.spacing}; it is metres and must be above 0`);
+		spreadProblems(growth.height, 'growth.height', true, out);
+		spreadProblems(growth.diameter, 'growth.diameter', true, out);
+		curveProblems(growth.internode, 'growth.internode', out);
+		notNegative(growth.node.ridge, 'growth.node.ridge', out);
+		notNegative(growth.node.waxBand, 'growth.node.waxBand', out);
+		notNegative(growth.node.sheathScar, 'growth.node.sheathScar', out);
+		shareProblem(growth.branches.from, 'growth.branches.from', out);
+		spreadProblems(growth.branches.perNode, 'growth.branches.perNode', false, out);
+		curveProblems(growth.branches.length, 'growth.branches.length', out);
+		wholeProblem(growth.branches.angle, 'growth.branches.angle', 0, 90, out);
+		wholeProblem(growth.branches.orders, 'growth.branches.orders', 1, 3, out);
+		shareProblem(growth.sulcus, 'growth.sulcus', out);
+		shareProblem(growth.sheaths.upTo, 'growth.sheaths.upTo', out);
+		if (!(growth.sheaths.length >= 0))
+			out.push(`growth.sheaths.length is ${growth.sheaths.length}; a length is not negative`);
+		spreadProblems(growth.arch, 'growth.arch', false, out);
+	}
 	if (growth.model === 'tuft') {
 		if (record.foliage.kind !== 'grass-blade') out.push("a tuft's foliage is 'grass-blade'");
 		spreadProblems(growth.shoots, 'growth.shoots', true, out);
