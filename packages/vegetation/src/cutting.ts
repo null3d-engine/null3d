@@ -23,8 +23,15 @@ import {
 	quatRotate,
 	type Vector3,
 } from './core/math';
-import type { CutFromPlant, LeafShape, ShootClass, Species } from './core/record';
-import { DETAILS, type Detail, type Vec3 } from './core/types';
+import type {
+	CutFromPlant,
+	FrondShape,
+	LeafShape,
+	PinnaSpec,
+	ShootClass,
+	Species,
+} from './core/record';
+import { DETAILS, type Detail, spreadMean, type Vec3 } from './core/types';
 import { foliage } from './leaf/kinds';
 import { SURFACE_STEM } from './leaf/writer';
 
@@ -695,16 +702,69 @@ function pressedShape(shape: LeafShape): LeafShape {
 	};
 }
 
+/** A pinna's shape pressed flat: no fold and no droop, and its own pinnules flat too. */
+function pressedPinnae(pinnae: PinnaSpec): PinnaSpec {
+	return {
+		...pinnae,
+		fold: 0,
+		droop: 0,
+		...(pinnae.sub ? { sub: pressedPinnae(pinnae.sub) } : {}),
+	};
+}
+
+/** A frond's shape pressed flat: the rachis runs straight on from the stipe, its pinnae in its plane. */
+function pressedFrond(shape: FrondShape): FrondShape {
+	return {
+		...shape,
+		droop: 0,
+		twist: 0,
+		...(shape.pinnae ? { pinnae: pressedPinnae(shape.pinnae) } : {}),
+	};
+}
+
+/** A pressed specimen's stalk, as a share of its blade's length. */
+const PRESSED_STALK = 0.6;
+
+/** The record a pressed frond grows from: the species' frond laid flat in its own plane. */
+function pressedFrondRecord(record: Species): Species | undefined {
+	const growth = record.growth;
+	if (growth.model === 'frond-colony') {
+		// A copy-stand picture cuts the frond's stalk to a short piece over its blade, so the
+		// pressed specimen carries that stalk rather than the length the plant holds its blade up.
+		return {
+			...record,
+			growth: {
+				...growth,
+				stipe: {
+					...growth.stipe,
+					length: { mean: spreadMean(growth.frond.length) * PRESSED_STALK, spread: 0.02 },
+				},
+				frond: pressedFrond(growth.frond),
+			},
+		};
+	}
+	if (growth.model === 'crown-rosette')
+		return { ...record, growth: { ...growth, frond: pressedFrond(growth.frond) } };
+	return undefined;
+}
+
 /**
  * The species' leaf meshes for a leaf cutting: the kit's own, or, where the piece or else the
- * record presses its leaf, the blade built again pressed flat at the kit's tier.
+ * record presses its leaf, the leaf built again pressed flat at the kit's tier.
  */
 function cutLeaves(kit: SpeciesKitData, press?: boolean): readonly PrototypeArrays[] {
 	const record = kit.record;
 	const leaf = record.foliage;
-	if (!(press ?? record.cuttings?.leaf?.pressed) || leaf.kind !== 'blade') return kit.leaves;
-	const pressed: Species = { ...record, foliage: { ...leaf, leaf: pressedShape(leaf.leaf) } };
-	return foliage('blade').leaves(pressed, kit.manifest, kit.detail);
+	if (!(press ?? record.cuttings?.leaf?.pressed)) return kit.leaves;
+	if (leaf.kind === 'blade') {
+		const pressed: Species = { ...record, foliage: { ...leaf, leaf: pressedShape(leaf.leaf) } };
+		return foliage('blade').leaves(pressed, kit.manifest, kit.detail);
+	}
+	if (leaf.kind === 'frond') {
+		const pressed = pressedFrondRecord(record);
+		return pressed ? foliage('frond').leaves(pressed, kit.manifest, kit.detail) : kit.leaves;
+	}
+	return kit.leaves;
 }
 
 /**

@@ -31,7 +31,7 @@ import { type AxisPath, axisPath, emptyFrame, frameAt, type PathFrame } from '..
 import type { FoliageBuilder } from './kinds';
 import { cutLeaf, type LeafCut } from './leaf-mesh';
 import { type LeafOutline, textureOutline } from './outline';
-import { MeshWriter, SURFACE_LEAF, SURFACE_STEM, tube } from './writer';
+import { MeshWriter, SURFACE_LEAF, tube } from './writer';
 
 /**
  * A frond's age in the two shares its shape reads.
@@ -580,7 +580,15 @@ export function frondLeaf(
 			const share = r / (rings - 1);
 			stem.push({ at: [0, along, 0] as Vector3, radius: radius * (1 - 0.25 * share), along });
 		}
-		tube(mesh, stem, STIPE_SIDES[detail], () => [0, 0, SURFACE_STEM, 255]);
+		// The leaf texture paints the stipe along the line from its cut to the blade's base, so the
+		// tube samples that band and the stipe takes the colours its own picture gives it.
+		const foot = outline.petiole;
+		const head = outline.base;
+		const stipeUv = (_around: number, ring: number): readonly [number, number] => {
+			const t = ring / (rings - 1);
+			return [foot[0], foot[1] + (head[1] - foot[1]) * t];
+		};
+		tube(mesh, stem, STIPE_SIDES[detail], () => [0, 0, SURFACE_LEAF, 255], false, stipeUv);
 	}
 	return mesh.finishPrototype();
 }

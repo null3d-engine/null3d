@@ -66,6 +66,8 @@ const DEG = Math.PI / 180;
 const EYE = 1.6;
 /** Metres a camera that looks up the stem stands from the bark: a step back, as a person stands. */
 const BELOW_STANDOFF = 1;
+/** The lowest a view up a plant shorter than a person drops its lens, in metres above the ground. */
+const BELOW_LOWEST_EYE = 0.2;
 /**
  * The least height of a crown's base, in a person's eye heights, at which a view up the stem
  * frames the bole from its foot to the crown's base; under it, the bole is too short for that.
@@ -441,7 +443,10 @@ export function belowView(
 			);
 		else bole = boleStand(skeleton.crownBase, lens, crownRow, footRow);
 	}
-	const eye = bole?.eye ?? EYE;
+	// A plant taller than a person is looked up at from a person's eye height. A shorter plant
+	// stands under the eye entirely, so the camera drops to a height within it: a few steps back
+	// at that height the crown still stands above the lens and the view reads up through the plant.
+	const eye = bole?.eye ?? Math.min(EYE, Math.max(BELOW_LOWEST_EYE, skeleton.height * 0.35));
 	const radius = stemAt(skeleton, eye)?.radius ?? stemAt(skeleton, 1)?.radius ?? 0.1;
 	const reach = bole
 		? bole.bark + radius
@@ -466,10 +471,10 @@ export function belowView(
 	const out = facing(turn + (walked ?? 0) * DEG);
 	const position = standAt(turn + (walked ?? 0) * DEG);
 	let pitch = bole ? bole.pitch / DEG : Math.min(STEEPEST, elevation);
-	if (!bole && forkRow !== undefined && fork !== undefined && fork > EYE) {
+	if (!bole && forkRow !== undefined && fork !== undefined && fork > eye) {
 		// The fork shows where the bark nearest the camera divides, a radius nearer than the axis.
 		const near = reach - (stemAt(skeleton, fork)?.radius ?? 0);
-		const forkAngle = Math.atan2(fork - EYE, Math.max(0.1, near)) / DEG;
+		const forkAngle = Math.atan2(fork - eye, Math.max(0.1, near)) / DEG;
 		pitch = Math.max(0, Math.min(pitch, forkAngle - rowAngle(forkRow, lens.fov) / DEG));
 	}
 	const level = yawed([-out[0], 0, -out[2]], -aside * DEG);
