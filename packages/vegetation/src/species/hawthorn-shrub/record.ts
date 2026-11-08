@@ -376,15 +376,16 @@ export const record: Species = {
 		blossom: { extra: 2, leaves: 1 },
 	},
 	wind: {
-		// The wind clip: the twig tips flick while the mass holds, so the wood is stiff through and
-		// the outer order carries most of the motion.
+		// The wind clip: the twig tips flick while the mass holds. The wood is stiff through, so the
+		// outer order carries most of the motion; the plant sways a little at its foot and its leaves
+		// shift by a leaf's width, as a low dome stirs in a light breeze rather than rocking.
 		stiffness: [
-			[0, 0.92],
-			[0.5, 0.85],
-			[1, 0.6],
+			[0, 0.97],
+			[0.5, 0.94],
+			[1, 0.9],
 		],
-		sway: { frequency: 0.35, amplitude: 0.05 },
-		flutter: { kind: 'blade', amplitude: 0.3, frequency: 3 },
+		sway: { frequency: 0.35, amplitude: 0.02 },
+		flutter: { kind: 'blade', amplitude: 0.02, frequency: 3 },
 	},
 	lod: {
 		nearFoliage: 'instanced',
