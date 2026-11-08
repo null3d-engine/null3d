@@ -1,27 +1,31 @@
 {
 	"04-tuft-from-above.png": {
-		"view": "crown",
-		"elevation": 88
+		"elevation": 88,
+		"view": "crown"
 	},
 	"08-leaf-leaving-sheath.png": {
-		"view": "junction",
+		"distance": 0.25,
 		"elevation": 0,
-		"distance": 0.25
+		"view": "junction"
 	},
 	"09-new-shoots.png": {
-		"view": "cluster",
-		"background": "studio-grey"
+		"background": "studio-grey",
+		"view": "cluster"
 	},
 	"15-sheath-and-ligule.png": {
-		"view": "junction",
+		"distance": 0.25,
 		"elevation": 0,
-		"distance": 0.25
+		"view": "junction"
 	},
 	"20-hanging-spikes-habit.png": {
-		"view": "whole",
+		"eye": null,
 		"fill": null,
 		"targetY": null,
 		"top": null,
-		"eye": null
+		"view": "whole"
+	},
+	"21-branch-studio.png": {
+		"background": "studio-grey",
+		"view": "whole"
 	}
 }
