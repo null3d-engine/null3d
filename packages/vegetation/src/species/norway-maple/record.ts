@@ -352,8 +352,8 @@ export const record: Species = {
 		// same tile. The mid-trunk still photographs its bark from just above that metre, so the
 		// foot's zone stops below it.
 		zones: [
-			{ layer: 0, by: 'height', from: 0, to: 1.2, blend: 0.05, tint: [0.84, 0.86, 0.83] },
-			{ layer: 0, by: 'height', from: 1.2, to: 40, blend: 0.05, tint: [1, 1, 1] },
+			{ layer: 0, by: 'height', from: 0, to: 1.2, blend: 0.05, tint: [0.84, 0.86, 0.62] },
+			{ layer: 0, by: 'height', from: 1.2, to: 40, blend: 0.05, tint: [1, 1, 0.9] },
 		],
 		young: 0,
 		// Still 16: the fine net fades to smooth olive-grey on wood thinner than about four

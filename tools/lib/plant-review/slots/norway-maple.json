@@ -55,7 +55,7 @@
 		"sunRise": 60,
 		"sunAzimuth": 0,
 		"skyShare": 0.35,
-		"daylight": 2.4,
+		"daylight": 1.98,
 		"barkMask": true
 	},
 	"17-trunk-taper.png": {
@@ -88,10 +88,12 @@
 		"daylight": 1.3
 	},
 	"15-bark-mid-trunk.png": {
-		"barkMask": true
+		"barkMask": true,
+		"daylight": 0.59
 	},
 	"16-bark-on-limb.png": {
-		"barkMask": true
+		"barkMask": true,
+		"daylight": 0.72
 	},
 	"26-bark-texture.png": {
 		"barkMask": true
