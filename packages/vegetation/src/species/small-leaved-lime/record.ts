@@ -218,8 +218,8 @@ export const record: Species = {
 					[0, 78],
 					[1, 64],
 				],
-				leafAngleSpread: 35,
-				droop: 2,
+				leafAngleSpread: 12,
+				droop: 4,
 			},
 		],
 		// Stills 09, 10 and 11: one leaf at each node, the next turned half a turn from the last, so
@@ -248,7 +248,7 @@ export const record: Species = {
 			],
 			// Stills 01, 02 and 18: the crown's own box shows about a twentieth of sky, so the shoots
 			// stand much denser than the curve alone gives.
-			density: 2.4,
+			density: 2.1,
 			shadePrune: 0,
 			// Stills 01, 03 and 05: a little sky shows through the crown's middle and under it, where
 			// its own leaves leave a shoot under this share of the sky; the lit outer masses stay.
@@ -389,12 +389,12 @@ export const record: Species = {
 			// above the measured figure at its tier, at 2.48, 3.85, 6.26 and 10.82 MB, and under the
 			// owner's cap for a tree.
 			kitBytes: { low: 2_600_000, medium: 4_000_000, high: 6_500_000, ultra: 11_200_000 },
-			// The first variant measures 3.61, 3.67, 3.75 and 3.87 MB from the coarsest tier up.
-			variantBytes: { low: 3_800_000, medium: 3_850_000, high: 3_950_000, ultra: 4_050_000 },
+			// The first variant measures 3.21, 3.27, 3.35 and 3.47 MB from the coarsest tier up.
+			variantBytes: { low: 3_400_000, medium: 3_450_000, high: 3_550_000, ultra: 3_650_000 },
 			lod0Triangles: 2_900_000,
-			// The heaviest variant's first card level draws about 69,200 triangles, and its second
-			// 31,700, under the owner's 43,000 cap at the finest tier.
-			lod1Triangles: 80_000,
+			// The heaviest variant's first card level draws about 62,500 triangles, and its second
+			// 28,300, under the owner's 43,000 cap at the finest tier.
+			lod1Triangles: 70_000,
 			lod2Triangles: 43_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
