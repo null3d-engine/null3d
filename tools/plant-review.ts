@@ -12,7 +12,7 @@
 // server must serve this copy of the repository on the port that NULL3D_PORT names; one is started
 // when none answers there. tools/lib/plant-review/README.md describes every part.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmdirSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import { isSpeciesId, loadSpecies } from '../packages/vegetation/src/core/registry.ts';
 import { REPO_ROOT } from '../tests/lib/server.ts';
@@ -341,6 +341,37 @@ function stillList<T extends { readonly file: string }>(stills: readonly T[]): r
 	return kept;
 }
 
+/**
+ * The slots a machine draws in: three, so three runs share one GPU's worth of work. A run takes one
+ * before it starts drawing and gives it back when it is done, so no script has to know the rule.
+ * `--no-slot` skips the wait for a run that is known to be alone.
+ */
+const DRAW_SLOTS = 3;
+
+/** Takes the first free draw slot, waiting until one frees, and returns the way to give it back. */
+async function takeDrawSlot(): Promise<() => void> {
+	if (flag('no-slot')) return () => {};
+	for (let attempt = 0; attempt < 720; attempt++) {
+		for (let slot = 1; slot <= DRAW_SLOTS; slot++) {
+			const path = `/tmp/null3d-plant-draw.slot-${slot}`;
+			try {
+				mkdirSync(path);
+			} catch {
+				continue;
+			}
+			return () => {
+				try {
+					rmdirSync(path);
+				} catch {
+					// Another process cleared it; the slot is free either way.
+				}
+			};
+		}
+		await new Promise((done) => setTimeout(done, 5000));
+	}
+	throw new Error('no draw slot freed in an hour: another run is holding the machine');
+}
+
 /** The parts of the review that `--only` keeps: stills, turns and wind, all by default. */
 function parts(): Set<string> {
 	const all = ['stills', 'turns', 'wind'];
@@ -666,7 +697,13 @@ async function main(): Promise<void> {
 		`${species}${set ? ` against ${set.slug}` : ''}: ${cells} frames in ${shots.length} pages into ${dir}`,
 	);
 	const started = Date.now();
-	const frames = await drawShots(dir, shots, { ...(flag('gpu') && { gpu: option('gpu') }) });
+	const release = await takeDrawSlot();
+	let frames: readonly RunFrame[];
+	try {
+		frames = await drawShots(dir, shots, { ...(flag('gpu') && { gpu: option('gpu') }) });
+	} finally {
+		release();
+	}
 	const manifest: Manifest = {
 		tool: 'tools/plant-review.ts',
 		species,
