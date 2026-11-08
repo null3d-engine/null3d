@@ -42,7 +42,7 @@ export const record: Species = {
 		},
 		crown: {
 			// About twenty living fronds, in the golden-angle spiral the crown shows from below.
-			fronds: { mean: 30, spread: 3 },
+			fronds: { mean: 22, spread: 2 },
 			divergence: 137.5,
 			// The centre's youngest fronds stand upright, the oldest arch out and hang. The tilt and
 			// the dead fronds' hang are the palm's own, read from stills 02, 05 and 20; the crown's
@@ -74,7 +74,7 @@ export const record: Species = {
 			pinnae: {
 				// Still 09: a hundred and twenty leaflets a side, about one every five centimetres,
 				// the longest near the middle of the rachis and the shortest at the tip.
-				count: { mean: 170, spread: 10 },
+				count: { mean: 120, spread: 8 },
 				length: [
 					[0, 0.05],
 					[0.3, 0.052],
@@ -199,10 +199,10 @@ export const record: Species = {
 		shadowLevel: 0,
 		budget: {
 			kitBytes: { low: 1_500_000, medium: 1_500_000, high: 1_500_000, ultra: 1_500_000 },
-			variantBytes: { low: 5_400_000, medium: 5_400_000, high: 5_400_000, ultra: 5_400_000 },
+			variantBytes: { low: 4_000_000, medium: 4_000_000, high: 4_000_000, ultra: 4_000_000 },
 			lod0Triangles: 550_000,
 			lod1Triangles: 60_000,
-			lod2Triangles: 20_000,
+			lod2Triangles: 18_000,
 			downloadBytes: 900_000,
 			downloadHalfBytes: 300_000,
 			growMilliseconds: 250,
