@@ -58,10 +58,10 @@ export const record: Species = {
 				// Stills 01, 02 and 17: a bough runs out almost level from a swollen base, longest
 				// just above the crown's middle, and turns its tip up under its own weight.
 				length: [
-					[0, 6.5],
-					[0.35, 10],
-					[0.7, 6.5],
-					[1, 3],
+					[0, 4.5],
+					[0.35, 6.8],
+					[0.7, 4.5],
+					[1, 2],
 				],
 				angle: [
 					[0, 92],
@@ -80,9 +80,9 @@ export const record: Species = {
 				// Stills 05, 08 and 09: the bough carries short branches, widest toward its end, each
 				// one dipping and turning up.
 				length: [
-					[0, 1.1],
-					[0.5, 2.2],
-					[1, 2.8],
+					[0, 1.4],
+					[0.5, 2.8],
+					[1, 3.6],
 				],
 				angle: [
 					[0, 66],
