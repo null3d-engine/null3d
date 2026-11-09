@@ -182,6 +182,18 @@ Rejected:
   steps are the bark material's and not the record's. That gap is an engine question and is named
   beside the row rather than worked again here. It is the row's one figure outside the mark, and the three others are inside at 2.62,
   2.66 and 1.09.
+- The shared young-wood fix (`6444e4cc0`) makes thin wood take the tint of the zone it grows out of
+  instead of a pale material of its own. It moves hardest where a zone tints strongly, and this
+  record's limb zone is a lightener at 1.45 by 1.35 by 1.25, so the young bark leapt from 4.5 to
+  13.0 and the branch studio piece from 2.9 to 9.0. That is the fix behaving as designed: young wood
+  now takes its bough's tint. The record's `youngTint` divides that lightening back out and leans
+  green, 0.42 by 0.55 by 0.5, which holds the photograph's own value at 6.6; the two cut pieces'
+  lights were re-derived in two passes to 2.2 and 2.3.
+- The base round is `lime-full-15` at `2a076e616`, all 32 files, no local changes. Every still is
+  inside the three-step mark at 2.0, 1.5, 0.4, 2.0, 2.2, 2.3 and 1.5; the bark close views read 2.6,
+  1.09 and 2.66 masked; the young bark is 6.6; the gaps are 0.0949, 0.0853 and 0.0898 with one piece
+  each; and the turns read 4.26, 6.65, 7.87 and 8.16. The round drew all 601 frames before its
+  comparison was cut off by a signal, and its figures were re-compared from the pictures on disk.
 - The clean run `lime-full-11` at `70181eaba` has every still inside the three-step colour mark:
   distant 1.8, profile 1.6, leaf cluster 0.2, flower spray 0.5, branch studio 2.9, sub-branch studio
   2.4 and leaf-cluster studio 1.6, with the turns at 4.22, 6.82, 6.98 and 7.46.
