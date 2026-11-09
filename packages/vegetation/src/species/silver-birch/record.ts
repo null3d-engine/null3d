@@ -312,7 +312,7 @@ export const record: Species = {
 			shadePrune: 0.15,
 			// Stills 01 and 18: the crown is open and the sky shows through it, so its inner shoots
 			// thin where their own leaves leave them under this share of the sky.
-			skyPrune: 0.3,
+			skyPrune: 0.4,
 			skyPruneLayer: 1,
 			// Stills 01 and 19: the hanging strands hang free, and no bare twig runs past them.
 			bareTrim: 0.02,
