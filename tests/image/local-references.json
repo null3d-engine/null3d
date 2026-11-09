@@ -237,7 +237,7 @@
 		"test": "plant-silver-birch",
 		"tier": "compat",
 		"date": "2026-11-09",
-		"reason": "pkg/silver-birch at 048d8b561 adds the silver birch and its picture tests; this Mac's SwiftShader drew the new set with CI=1, and the branch's first CI run replaces it"
+		"reason": "the silver birch's crown foot and bark changed at 0d521edd7: the fitted hull's two lowest rows are trimmed, the base bark zone takes a tint and each bark picture its own light; this branch has no CI run to take the software set from, and CI's shards judge it later"
 	},
 	"chromium-swiftshader/compat/plant-sparse-oak.png": {
 		"test": "plant-sparse-oak",
@@ -573,7 +573,7 @@
 		"test": "plant-silver-birch",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "pkg/silver-birch at 048d8b561 adds the silver birch and its picture tests; this Mac's SwiftShader drew the new set with CI=1, and the branch's first CI run replaces it"
+		"reason": "the silver birch's crown foot and bark changed at 0d521edd7: the fitted hull's two lowest rows are trimmed, the base bark zone takes a tint and each bark picture its own light; this branch has no CI run to take the software set from, and CI's shards judge it later"
 	},
 	"chromium-swiftshader/webgl2/plant-sparse-oak.png": {
 		"test": "plant-sparse-oak",
@@ -939,7 +939,7 @@
 		"test": "plant-silver-birch",
 		"tier": "webgpu",
 		"date": "2026-11-09",
-		"reason": "pkg/silver-birch at 048d8b561 adds the silver birch and its picture tests; this Mac's SwiftShader drew the new set with CI=1, and the branch's first CI run replaces it"
+		"reason": "the silver birch's crown foot and bark changed at 0d521edd7: the fitted hull's two lowest rows are trimmed, the base bark zone takes a tint and each bark picture its own light; this branch has no CI run to take the software set from, and CI's shards judge it later"
 	},
 	"chromium-swiftshader/webgpu/plant-sparse-oak.png": {
 		"test": "plant-sparse-oak",
