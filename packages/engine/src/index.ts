@@ -57,7 +57,6 @@ export type {
 	WebGPUReport,
 	WorkerProbeFailure,
 } from './page/capabilities';
-export { readDeviceHints } from './page/capabilities';
 export type {
 	Engine,
 	EngineCapabilities,
@@ -97,6 +96,7 @@ export type { VideoOptions } from './page/videos';
 export type { PresetCheck, PresetCheckRound, TargetFps } from './quality/check';
 export type { DeviceHints, DeviceKind } from './quality/chooser';
 export { deviceKind } from './quality/chooser';
+export { readDeviceHints } from './quality/device-hints';
 export type { QualityPreset, QualitySettings } from './quality/presets';
 export type {
 	AnimationEvent,
