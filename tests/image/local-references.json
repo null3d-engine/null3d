@@ -173,6 +173,12 @@
 		"date": "2026-10-29",
 		"reason": "the card's stored normal no longer turns with the camera's bearing, so the pictures whose eye lies off the tree's forward moved; drawn on the software renderer"
 	},
+	"chromium-swiftshader/compat/plant-bracken.png": {
+		"test": "plant-bracken",
+		"tier": "compat",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 97c6fd194 after the engine merge; a CI drawing replaces it if it differs"
+	},
 	"chromium-swiftshader/compat/plant-common-alder.png": {
 		"test": "plant-common-alder",
 		"tier": "compat",
@@ -209,11 +215,23 @@
 		"date": "2026-11-09",
 		"reason": "drawn on this Mac's SwiftShader at 329daee84 after the whole-view light change moved the panels by a fifth; a CI drawing replaces it if it differs"
 	},
+	"chromium-swiftshader/compat/plant-meadow-grass.png": {
+		"test": "plant-meadow-grass",
+		"tier": "compat",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at the branch tip 9 Nov 2026; the branch's CI run will replace them if it differs"
+	},
 	"chromium-swiftshader/compat/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
 		"tier": "compat",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 8c31e17a3 after the oak's bole tint; CI replaces them"
+		"reason": "the oak's young bark now covers only wood under five centimetres radius, so its thin twigs keep the limb's colour; drawn on this Mac's SwiftShader at 453ba4198; a CI drawing replaces it if it differs"
+	},
+	"chromium-swiftshader/compat/plant-sedge.png": {
+		"test": "plant-sedge",
+		"tier": "compat",
+		"date": "2026-11-09",
+		"reason": "the sedge's spike foot now meets its stalk at the body's width, which changes the spikes in its whole-plant and crown panels; drawn on this Mac's SwiftShader at 54fe34bb6 after the engine merge, re-confirmed at 53c46be3a; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/compat/plant-silver-birch.png": {
 		"test": "plant-silver-birch",
@@ -485,6 +503,12 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
+	"chromium-swiftshader/webgl2/plant-bracken.png": {
+		"test": "plant-bracken",
+		"tier": "webgl2",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 97c6fd194 after the engine merge; a CI drawing replaces it if it differs"
+	},
 	"chromium-swiftshader/webgl2/plant-common-alder.png": {
 		"test": "plant-common-alder",
 		"tier": "webgl2",
@@ -521,11 +545,23 @@
 		"date": "2026-11-09",
 		"reason": "drawn on this Mac's SwiftShader at 329daee84 after the whole-view light change moved the panels by a fifth; a CI drawing replaces it if it differs"
 	},
+	"chromium-swiftshader/webgl2/plant-meadow-grass.png": {
+		"test": "plant-meadow-grass",
+		"tier": "webgl2",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at the branch tip 9 Nov 2026; the branch's CI run will replace them if it differs"
+	},
 	"chromium-swiftshader/webgl2/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 8c31e17a3 after the oak's bole tint; CI replaces them"
+		"reason": "the oak's young bark now covers only wood under five centimetres radius, so its thin twigs keep the limb's colour; drawn on this Mac's SwiftShader at 453ba4198; a CI drawing replaces it if it differs"
+	},
+	"chromium-swiftshader/webgl2/plant-sedge.png": {
+		"test": "plant-sedge",
+		"tier": "webgl2",
+		"date": "2026-11-09",
+		"reason": "the sedge's spike foot now meets its stalk at the body's width, which changes the spikes in its whole-plant and crown panels; drawn on this Mac's SwiftShader at 54fe34bb6 after the engine merge, re-confirmed at 53c46be3a; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgl2/plant-silver-birch.png": {
 		"test": "plant-silver-birch",
@@ -827,6 +863,12 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
+	"chromium-swiftshader/webgpu/plant-bracken.png": {
+		"test": "plant-bracken",
+		"tier": "webgpu",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 97c6fd194 after the engine merge; a CI drawing replaces it if it differs"
+	},
 	"chromium-swiftshader/webgpu/plant-common-alder.png": {
 		"test": "plant-common-alder",
 		"tier": "webgpu",
@@ -863,11 +905,23 @@
 		"date": "2026-11-09",
 		"reason": "drawn on this Mac's SwiftShader at 329daee84 after the whole-view light change moved the panels by a fifth; a CI drawing replaces it if it differs"
 	},
+	"chromium-swiftshader/webgpu/plant-meadow-grass.png": {
+		"test": "plant-meadow-grass",
+		"tier": "webgpu",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at the branch tip 9 Nov 2026; the branch's CI run will replace them if it differs"
+	},
 	"chromium-swiftshader/webgpu/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
 		"tier": "webgpu",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 8c31e17a3 after the oak's bole tint; CI replaces them"
+		"reason": "the oak's young bark now covers only wood under five centimetres radius, so its thin twigs keep the limb's colour; drawn on this Mac's SwiftShader at 453ba4198; a CI drawing replaces it if it differs"
+	},
+	"chromium-swiftshader/webgpu/plant-sedge.png": {
+		"test": "plant-sedge",
+		"tier": "webgpu",
+		"date": "2026-11-09",
+		"reason": "the sedge's spike foot now meets its stalk at the body's width, which changes the spikes in its whole-plant and crown panels; drawn on this Mac's SwiftShader at 54fe34bb6 after the engine merge, re-confirmed at 53c46be3a; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgpu/plant-silver-birch.png": {
 		"test": "plant-silver-birch",
@@ -1006,59 +1060,5 @@
 		"tier": "webgpu",
 		"date": "2026-10-30",
 		"reason": "No CI run has drawn this picture yet: run 41006111918 drew the three weather pictures and lost them when its shard reached the job's time limit, before the guard let a timed-out shard upload. This Mac's SwiftShader drew these three, and the next CI drawing of them replaces them."
-	},
-	"chromium-swiftshader/compat/plant-bracken.png": {
-		"test": "plant-bracken",
-		"tier": "compat",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 97c6fd194 after the engine merge; a CI drawing replaces it if it differs"
-	},
-	"chromium-swiftshader/webgl2/plant-bracken.png": {
-		"test": "plant-bracken",
-		"tier": "webgl2",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 97c6fd194 after the engine merge; a CI drawing replaces it if it differs"
-	},
-	"chromium-swiftshader/webgpu/plant-bracken.png": {
-		"test": "plant-bracken",
-		"tier": "webgpu",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 97c6fd194 after the engine merge; a CI drawing replaces it if it differs"
-	},
-	"chromium-swiftshader/compat/plant-sedge.png": {
-		"test": "plant-sedge",
-		"tier": "compat",
-		"date": "2026-11-09",
-		"reason": "the sedge's blade arch moved from ninety to seventy degrees, which reframes its whole plant at every scale; the software set is redrawn here while CI redraws it"
-	},
-	"chromium-swiftshader/webgl2/plant-sedge.png": {
-		"test": "plant-sedge",
-		"tier": "webgl2",
-		"date": "2026-11-09",
-		"reason": "the sedge's blade arch moved from ninety to seventy degrees, which reframes its whole plant at every scale; the software set is redrawn here while CI redraws it"
-	},
-	"chromium-swiftshader/webgpu/plant-sedge.png": {
-		"test": "plant-sedge",
-		"tier": "webgpu",
-		"date": "2026-11-09",
-		"reason": "the sedge's blade arch moved from ninety to seventy degrees, which reframes its whole plant at every scale; the software set is redrawn here while CI redraws it"
-	},
-	"chromium-swiftshader/compat/plant-meadow-grass.png": {
-		"test": "plant-meadow-grass",
-		"tier": "compat",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at the branch tip 9 Nov 2026; the branch's CI run will replace them if it differs"
-	},
-	"chromium-swiftshader/webgl2/plant-meadow-grass.png": {
-		"test": "plant-meadow-grass",
-		"tier": "webgl2",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at the branch tip 9 Nov 2026; the branch's CI run will replace them if it differs"
-	},
-	"chromium-swiftshader/webgpu/plant-meadow-grass.png": {
-		"test": "plant-meadow-grass",
-		"tier": "webgpu",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at the branch tip 9 Nov 2026; the branch's CI run will replace them if it differs"
 	}
 }
