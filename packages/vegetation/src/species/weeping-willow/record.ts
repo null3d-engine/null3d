@@ -192,7 +192,7 @@ export const record: Species = {
 					[1, 0.8],
 				],
 				stem: { radius: [0.012, 0.006] },
-				laterals: { mean: 2.4, spread: 0.5 },
+				laterals: { mean: 2.7, spread: 0.3 },
 				lateralGap: 0.25,
 				bend: { length: 0.09, angle: 19 },
 				leafScale: [
@@ -204,7 +204,7 @@ export const record: Species = {
 					[1, 50],
 				],
 				leafAngleSpread: 10,
-				leafYears: 1,
+				leafYears: 2,
 				skyward: 0.2,
 				droop: 55,
 			},
@@ -251,8 +251,8 @@ export const record: Species = {
 					[1, 0.8],
 				],
 				leafAngle: [
-					[0, 35],
-					[1, 48],
+					[0, 45],
+					[1, 60],
 				],
 				leafAngleSpread: 12,
 				skyward: 0.25,
