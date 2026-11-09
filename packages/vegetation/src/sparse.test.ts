@@ -4,7 +4,14 @@ import { describe, expect, it } from 'bun:test';
 import { speciesProblems } from './core/check';
 import type { Species } from './core/record';
 import { loadSpecies } from './core/registry';
-import { LEAVES_LEAST, SPARSE_LEAST, withLeaves, withLimbs, withSparse } from './generate';
+import {
+	LEAVES_LEAST,
+	SPARSE_LEAST,
+	sparseForDevice,
+	withLeaves,
+	withLimbs,
+	withSparse,
+} from './generate';
 
 /** The oak's record with sparse floors, so the shares have somewhere to stop. */
 async function floored(): Promise<Species> {
@@ -15,8 +22,9 @@ async function floored(): Promise<Species> {
 describe('the sparse form', () => {
 	it('leaves a record with no floors as it stands', async () => {
 		const { record } = await loadSpecies('pedunculate-oak');
+		const { sparse: _floors, ...bare } = record;
 		const options = { seed: 11, variant: 0, sparse: 1 } as const;
-		expect(withSparse(record, options)).toBe(options);
+		expect(withSparse(bare, options)).toBe(options);
 	});
 
 	it('leaves a level of zero as the record gives it', async () => {
@@ -61,6 +69,12 @@ describe('the sparse form', () => {
 		expect(() => withLeaves(record, 0.2, SPARSE_LEAST)).not.toThrow();
 		expect(() => withLimbs(record, 0.3, SPARSE_LEAST)).not.toThrow();
 		expect(LEAVES_LEAST).toBeGreaterThan(SPARSE_LEAST);
+	});
+
+	it('gives phones and tablets the light form and desktops the record', () => {
+		expect(sparseForDevice('phone')).toBe(1);
+		expect(sparseForDevice('tablet')).toBe(1);
+		expect(sparseForDevice('desktop')).toBe(0);
 	});
 
 	it('rejects floors outside their ranges', async () => {
