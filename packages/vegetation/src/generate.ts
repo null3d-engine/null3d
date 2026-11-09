@@ -540,9 +540,37 @@ function partOf(
 	return pieces.map((arrays) => ({ name, arrays }));
 }
 
+/**
+ * The record a cut piece grows by, where the species cuts its crown's own shoots: a plant with no
+ * shoot prototypes has no class to place a piece's leaves, so the piece's leaf count and its leaf
+ * size come from its cutting hint. A species with prototypes, or a plant with no hint, grows as it
+ * always did.
+ */
+function cuttingLeaves(record: Species, cutting: CuttingOptions | undefined): Species {
+	const growth = record.growth;
+	if (!cutting || record.shoots || growth.model !== 'rosette') return record;
+	const leaves = record.cuttings?.leaves;
+	const hint = record.cuttings?.[cutting.part as 'branch' | 'subbranch'];
+	const scale = hint && 'order' in hint ? hint.scale : undefined;
+	const leaf = record.foliage.kind === 'thick' ? record.foliage.leaf : undefined;
+	let out = record;
+	if (scale !== undefined && leaf) {
+		const sized: Spread =
+			typeof leaf.length === 'number'
+				? leaf.length * scale
+				: { mean: leaf.length.mean * scale, spread: leaf.length.spread * scale };
+		out = { ...record, foliage: { kind: 'thick', leaf: { ...leaf, length: sized } } };
+	}
+	if (leaves === undefined) return out;
+	return { ...out, growth: { ...growth, leaves } };
+}
+
 /** The grown skeleton and its dressing: the stages before the meshes. */
 function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
-	const record = withLimbs(withLeaves(kit.record, options.leaves), options.limbs);
+	const record = cuttingLeaves(
+		withLimbs(withLeaves(kit.record, options.leaves), options.limbs),
+		options.cutting,
+	);
 	const placeholders = kit.placeholders;
 	const growInput: GrowInput = {
 		record,
