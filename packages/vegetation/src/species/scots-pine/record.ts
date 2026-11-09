@@ -31,9 +31,9 @@ export const record: Species = {
 			// where the crown's plates lie closest.
 			kind: 'whorl',
 			spacing: [
-				[0, 2],
-				[0.5, 1.6],
-				[1, 1.05],
+				[0, 2.5],
+				[0.5, 2],
+				[1, 1.3],
 			],
 			perWhorl: { mean: 3, spread: 1 },
 			between: 0,
@@ -338,7 +338,7 @@ export const record: Species = {
 		woodOrders: [2, 1],
 		// A brush's card stands a little larger than the shoots it pictures, so gaps between
 		// neighbouring brushes fall on needles rather than on sky.
-		cardGrow: 8,
+		cardGrow: 5.5,
 		// A card's twig is thinner than a pixel at a whole view, so the card draws a two-pixel stalk
 		// to the wood it grows from and runs it on to the foliage's centre.
 		cardStalk: 3,
