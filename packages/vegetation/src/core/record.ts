@@ -66,6 +66,27 @@ export interface Species {
 	readonly cuttings?: CuttingHints;
 	/** Where the scatter places this species: its layer, spacing and tolerances. */
 	readonly ecology?: SpeciesEcology;
+	/**
+	 * The least of each grow share at which this species still reads as itself, for a sparse form:
+	 * a phone or a tablet may grow it lighter than a desktop, but not past these floors. A species
+	 * with no floors has no sparse form and grows the record's own at every device.
+	 */
+	readonly sparse?: SparseFloors;
+}
+
+/**
+ * The floors of a species' sparse form: the least limb and leaf share it keeps, and the most
+ * coarsening its wood and shoots take, before the plant stops reading as its species.
+ *
+ * @category api/vegetation
+ */
+export interface SparseFloors {
+	/** The least limb share, from 0.05 to 1: how much of the record's wood the sparse form keeps. */
+	readonly limbs: number;
+	/** The least leaf-area share, from 0.05 to 1: how much of the record's leaf it keeps. */
+	readonly leaves: number;
+	/** The most coarsening, from 0 to 1: how far the sparse form thins twigs and coarsens wood. */
+	readonly coarseness: number;
 }
 
 /**
