@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
 	plantReviewQuery,
 	readPlantReviewQuery,
@@ -247,6 +249,69 @@ describe('the width profile', () => {
 		for (let y = 45; y < 100; y++) for (let x = 35; x < 65; x++) mask[y * width + x] = 1;
 		const box = boxOf(mask, width, height) as NonNullable<ReturnType<typeof boxOf>>;
 		expect(crownStartRow(rowSpans(mask, width, height), box)).toBe(44);
+	});
+
+	test('finds a crown whose lowest boughs are thin above a flared foot', () => {
+		const width = 220;
+		const height = 180;
+		const mask = new Uint8Array(width * height);
+		// A crown of 100, its lowest boughs 70, over a stem of 40, over a foot that widens to 200 in the
+		// plant's last rows. The foot is the plant's widest row, so a limit taken from it sits above the
+		// lowest boughs, which then read as stem and the crown's base lands at the foot.
+		for (let y = 2; y < 30; y++) for (let x = 60; x < 160; x++) mask[y * width + x] = 1;
+		for (let y = 30; y < 60; y++) for (let x = 75; x < 145; x++) mask[y * width + x] = 1;
+		for (let y = 60; y < 161; y++) for (let x = 90; x < 130; x++) mask[y * width + x] = 1;
+		for (let y = 161; y < 172; y++) {
+			const half = Math.round(22 + 78 * ((y - 161) / 11));
+			for (let x = 110 - half; x < 110 + half; x++) mask[y * width + x] = 1;
+		}
+		const box = boxOf(mask, width, height) as NonNullable<ReturnType<typeof boxOf>>;
+		// The boughs' own bottom row is where the crown starts.
+		expect(crownStartRow(rowSpans(mask, width, height), box)).toBe(59);
+	});
+
+	test('finds a thin crown foot above a thick flared stem', () => {
+		// The giant sequoia's profile photograph, its plant outline row by row. The crown widens to 210
+		// pixels at its foot and the stem flares below it; before the fix its crown box held 320 of the
+		// plant's 549 rows, its base at row 376, because the flare set the width limit and the thin
+		// crown's lowest boughs read as stem.
+		const profile = JSON.parse(
+			readFileSync(join(import.meta.dirname, 'fixtures/giant-sequoia-profile.json'), 'utf8'),
+		) as {
+			readonly width: number;
+			readonly height: number;
+			readonly top: number;
+			readonly spans: readonly (readonly [number, number])[];
+		};
+		const mask = new Uint8Array(profile.width * profile.height);
+		profile.spans.forEach(([left, right], index) => {
+			if (left < 0) return;
+			for (let x = left; x <= right; x++) mask[(profile.top + index) * profile.width + x] = 1;
+		});
+		const box = boxOf(mask, profile.width, profile.height) as NonNullable<ReturnType<typeof boxOf>>;
+		// The crown's own lowest boughs, where the thin crown's rows first widen past the stem.
+		expect(crownStartRow(rowSpans(mask, profile.width, profile.height), box)).toBe(454);
+	});
+
+	test("moves a crown's foot smoothly as a plant's foot widens", () => {
+		const width = 120;
+		const height = 100;
+		// A crown of 100 over a stem of 10, its lowest rows a foot of the given width. At 0.8 of the
+		// crown's width a plant stood on the mark: the rule counted its whole box as crown above the
+		// mark and not below it, so two plants a pixel apart in the foot could differ by half a box.
+		const startAt = (footHalf: number) => {
+			const mask = new Uint8Array(width * height);
+			for (let y = 0; y < 40; y++) for (let x = 10; x < 110; x++) mask[y * width + x] = 1;
+			for (let y = 40; y < 60; y++) for (let x = 55; x < 65; x++) mask[y * width + x] = 1;
+			for (let y = 60; y < height; y++)
+				for (let x = 60 - footHalf; x < 60 + footHalf; x++) mask[y * width + x] = 1;
+			const box = boxOf(mask, width, height) as NonNullable<ReturnType<typeof boxOf>>;
+			return crownStartRow(rowSpans(mask, width, height), box);
+		};
+		const atTheMark = startAt(40);
+		const above = startAt(42);
+		// A fifth of the box: wide enough for the blend's own slope, far short of the old step.
+		expect(Math.abs(above - atTheMark)).toBeLessThan(height / 5);
 	});
 
 	test('starts a mound with no bare stem at its foot', () => {
