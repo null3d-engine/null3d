@@ -87,10 +87,17 @@
 		"skyShare": 0.6,
 		"daylight": 2.2
 	},
+	"14-bark-base.png": {
+		"barkMask": true
+	},
+	"15-bark-mid-trunk.png": {
+		"barkMask": true
+	},
 	"16-bark-on-limb.png": {
 		"thin": 0.025,
 		"skyShare": 0.6,
-		"daylight": 1.5
+		"daylight": 1.5,
+		"barkMask": true
 	},
 	"09-secondary-branching.png": {},
 	"10-fine-twigs.png": {},
