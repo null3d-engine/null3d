@@ -17,6 +17,7 @@ import {
 	firstForkHeight,
 	normalize,
 	stemAt,
+	stemSurfaceAt,
 	turnedAbout,
 	type V3,
 } from '../../../tests/pages/lib/plant-review/anatomy.ts';
@@ -32,7 +33,7 @@ import {
 	trunkView,
 	walkedRound,
 } from '../../../tests/pages/lib/plant-review/close.ts';
-import { rowAngle } from '../../../tests/pages/lib/plant-review/framing.ts';
+import { rowAngle, spanDistance } from '../../../tests/pages/lib/plant-review/framing.ts';
 import {
 	clutterOf,
 	lensAxes,
@@ -113,6 +114,15 @@ function oakLike(): MacroSkeleton {
 	run(b, rising, upper, [8.3, 6.5, 0], [0.4, 0.8, 0], 3, 0.17, 0.5);
 	return b.finish(1);
 }
+
+describe('a part of a piece framed at its own span', () => {
+	test('stands back far enough that the span fills the frame across it', () => {
+		// A square frame of 40 degrees shows a span equal to twice the distance times the tangent.
+		expect(spanDistance(0.5, 40, 1)).toBeCloseTo(0.25 / Math.tan((20 * Math.PI) / 180), 6);
+		// A taller frame is narrower across, so the camera stands further back for the same span.
+		expect(spanDistance(0.5, 40, 0.75)).toBeGreaterThan(spanDistance(0.5, 40, 1));
+	});
+});
 
 describe('the view up the stem', () => {
 	const skeleton = oakLike();
@@ -660,6 +670,36 @@ describe('the clutter of a frame', () => {
 			band: 2,
 		});
 		expect(clutter.inside).toBe(true);
+	});
+});
+
+describe('the stem surface of a plant with no single trunk', () => {
+	const b = new SkeletonBuilder();
+	// A crown a few centimetres across, with two culms rising from it past the sampled height.
+	const crown = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+	const crownBase = b.addNode({ x: 0, y: -0.03, z: 0, radius: 0.045, parent: -1, axis: crown });
+	const crownTop = b.addNode({ x: 0, y: 0, z: 0, radius: 0.045, parent: crownBase, axis: crown });
+	for (const [x, z, radius] of [
+		[0.02, 0, 0.0018],
+		[-0.02, 0.01, 0.0014],
+	] as const) {
+		const culm = b.addAxis({ parent: crown, parentNode: crownTop, order: 1, kind: AXIS_LIMB });
+		run(b, culm, crownTop, [x, 0, z], [0, 0.05, 0], 10, radius, 0.3);
+	}
+	const skeleton = b.finish(0);
+
+	test('the main stem does not reach the height the picture samples', () => {
+		expect(stemAt(skeleton, 0.16)).toBeUndefined();
+	});
+
+	test('the thickest culm crossing that height is the surface', () => {
+		const found = stemSurfaceAt(skeleton, 0.16);
+		expect(found?.at.at[1]).toBeCloseTo(0.16, 6);
+		expect(found?.at.radius).toBeCloseTo(0.001608, 6);
+	});
+
+	test('no axis reaches a height above the plant', () => {
+		expect(stemSurfaceAt(skeleton, 2)).toBeUndefined();
 	});
 });
 

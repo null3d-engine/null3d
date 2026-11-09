@@ -69,6 +69,8 @@ export interface PlacedUniforms {
 	readonly nearDistance?: number;
 	/** How far into autumn the leaves stand, from 0 for summer to 1 for turned. */
 	readonly season?: number;
+	/** The season the plant stands in: 0 summer, 1 autumn, 2 winter, 3 blossom. */
+	readonly seasonKind?: number;
 }
 
 /** What each material reads beyond its own textures: its kit's records and its wind state. */
@@ -152,6 +154,7 @@ export function plantMaterials(
 				nearDistance: 0,
 				displacement: 0,
 				season: 0,
+				seasonKind: 0,
 				matte: matte ? 1 : 0,
 			},
 		});
@@ -162,6 +165,8 @@ export function plantMaterials(
 				if (uniforms.nearDistance !== undefined)
 					material.setUniform('nearDistance', uniforms.nearDistance);
 				if (uniforms.season !== undefined) material.setUniform('season', uniforms.season);
+				if (uniforms.seasonKind !== undefined)
+					material.setUniform('seasonKind', uniforms.seasonKind);
 			},
 			sentBorn: field?.air.sent[3] ?? Number.NaN,
 		});

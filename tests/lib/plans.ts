@@ -3205,6 +3205,24 @@ export const recordPlan = (): PlanItem<Check>[] => [
 	},
 ];
 
+/**
+ * Procedural tree generation in a worker, for M3-V4's budgets: each species at each preset's
+ * detail, generated for several seeds, with the triangles, the vertices and the bytes of each
+ * variant. It draws nothing and asks for no GPU path, so every device runs it.
+ */
+export function treeGenerationPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(
+			'tree-generation',
+			'tree-generation',
+			{ kind: 'probe', tier: 'webgl2' },
+			// The page generates every species at four presets, each with warm-ups and six seeds: over
+			// five hundred generations. The figures are the run's result, so the item allows ten minutes.
+			{ switches: ['seeds=6'], timeoutSeconds: 600 },
+		),
+	];
+}
+
 export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanItem<Check>[]>> = {
 	record: recordPlan,
 	checks: checksPlan,
@@ -3265,6 +3283,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'terrain-shadow': terrainShadowPlan,
 	'island-phones': islandPhonesPlan,
 	'vegetation-scatter': vegetationScatterPlan,
+	'tree-generation': treeGenerationPlan,
 	'canvas-cost': canvasCostPlan,
 	'wind-stress': windStressPlan,
 	'webgpu-stall': webgpuStallPlan,
