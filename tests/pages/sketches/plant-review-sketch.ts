@@ -477,8 +477,21 @@ export default defineSketch(async (ctx) => {
 	// not built yet; any other id, or the query's `placeholders`, grows the stand-in of every stage.
 	const placeholders: boolean | 'missing' =
 		QUERY.placeholders ?? (isSpeciesId(QUERY.species) ? 'missing' : true);
-	const module = await loadSpeciesOrStandIn(QUERY.species);
-	const record = module.record;
+	const loadedModule = await loadSpeciesOrStandIn(QUERY.species);
+	// A tuft's soil — its rhizome and roots — belongs to the picture that frames the lifted base;
+	// every other view grows the plant above the soil, which is what the ground shows of it.
+	const record =
+		VIEW !== 'soil' &&
+		loadedModule.record.growth.model === 'tuft' &&
+		loadedModule.record.growth.soil !== undefined
+			? (() => {
+					const growth = loadedModule.record.growth;
+					if (growth.model !== 'tuft') return loadedModule.record;
+					const { soil: _soil, ...above } = growth;
+					return { ...loadedModule.record, growth: above };
+				})()
+			: loadedModule.record;
+	const module = { ...loadedModule, record };
 	// The query's form, another habit or the young plant, grows when the record has it. A record
 	// without that form grows as it stands, with a note, so a still of another habit is still drawn.
 	const form =
