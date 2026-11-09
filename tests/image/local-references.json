@@ -176,8 +176,8 @@
 	"chromium-swiftshader/compat/plant-common-alder.png": {
 		"test": "plant-common-alder",
 		"tier": "compat",
-		"date": "2026-11-08",
-		"reason": "SwiftShader drawn on the reference Mac: the picture test's four-panel view of a dense crown needs more than sixty seconds in software, so the run had no CI picture to take"
+		"date": "2026-11-09",
+		"reason": "SwiftShader drawn on the reference Mac at 0fdef2684, after the leaf optics, the cluster counts and the young-bark framing changed what the four panels draw"
 	},
 	"chromium-swiftshader/compat/plant-common-ash.png": {
 		"test": "plant-common-ash",
@@ -458,8 +458,8 @@
 	"chromium-swiftshader/webgl2/plant-common-alder.png": {
 		"test": "plant-common-alder",
 		"tier": "webgl2",
-		"date": "2026-11-08",
-		"reason": "SwiftShader drawn on the reference Mac: the picture test's four-panel view of a dense crown needs more than sixty seconds in software, so the run had no CI picture to take"
+		"date": "2026-11-09",
+		"reason": "SwiftShader drawn on the reference Mac at 0fdef2684, after the leaf optics, the cluster counts and the young-bark framing changed what the four panels draw"
 	},
 	"chromium-swiftshader/webgl2/plant-common-ash.png": {
 		"test": "plant-common-ash",
@@ -770,8 +770,8 @@
 	"chromium-swiftshader/webgpu/plant-common-alder.png": {
 		"test": "plant-common-alder",
 		"tier": "webgpu",
-		"date": "2026-11-08",
-		"reason": "SwiftShader drawn on the reference Mac: the picture test's four-panel view of a dense crown needs more than sixty seconds in software, so the run had no CI picture to take"
+		"date": "2026-11-09",
+		"reason": "SwiftShader drawn on the reference Mac at 0fdef2684, after the leaf optics, the cluster counts and the young-bark framing changed what the four panels draw"
 	},
 	"chromium-swiftshader/webgpu/plant-common-ash.png": {
 		"test": "plant-common-ash",
