@@ -34,6 +34,7 @@ The owner's decision, in five parts.
 3. The core engine has no three.js-look modes. A port may truly need one, where no setting can come close. That mode goes in the opt-in `three-compat` add-on module.
 4. Benchmarks compare equal work: the same scene content and comparable quality settings. Reports give quality notes beside the timings. The two engines' images need not be identical.
 5. Pixel comparisons with three.js cover only the shared building blocks: lighting terms, tone curves once chosen, skinning poses, animation sampling and glTF interpretation. A feature with an improved technique gets null3D's own references, and a looser sanity comparison with three.js.
+6. The Khronos sample models are a check, not a checklist. One sample per task closes the word "samples" in the parity tasks: the task draws its one sample and records why the others wait. That answer covers M3-G8's list of eight.
 
 ### Intent and look
 
