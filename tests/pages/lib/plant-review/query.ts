@@ -121,6 +121,11 @@ export interface PlantReviewQuery {
 	 */
 	readonly pressed?: boolean;
 	/**
+	 * For a single-leaf still: how far the leaf has opened, from 0 for a crozier still rolled to 1
+	 * for a leaf fully out. Absent, it is drawn as it stands on a mature plant.
+	 */
+	readonly age?: number;
+	/**
 	 * Whether a limb view frames the crown's outer surface, whose depth into the crown is part of its
 	 * subject, rather than one branch that its picture shows against a plain ground.
 	 */
