@@ -97,6 +97,19 @@ the leaf area to 1,328 square meters. Raising `shoots.prototypes` moves it a lit
 - `bark.peel` lifts strips of nine centimeters at 220 a square meter on the lower trunk, which still
   34 shows close up.
 
+### The close pictures' subjects
+
+Stills 09, 11 and 19 draw the same three cuttings as the studio stills 21, 22 and 23: the branch, the
+cluster and the sub-branch. So row 12's scatter and row 3's pieces are one figure, and the group
+counts quoted for the studio stills are its numbers.
+
+Still 19's subject is wrong. Its photograph is a limb arching in from a corner with about ten weeping
+strands hanging beneath it. The picture draws the sub-branch cutting, which is one upright twig of
+0.42 m. A roll of 180 degrees hangs the twig hands-down and reads 0.634 open against the photograph's
+0.547. It stays one straight twig. The slot-to-view table gives slot 19 the `subbranch` view for
+every species. The correction is therefore a view of its own that a species asks for in its slot,
+not a change to the shared table.
+
 ### The skeleton view
 
 Row 2, the branch density, is decided on the skeleton view. It shows one clean stem, the bole bare to
