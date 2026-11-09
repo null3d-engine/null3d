@@ -6,6 +6,7 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from './asset';
 import { AXIS_LIMB, AXIS_STEM, BUD_TERMINAL, SkeletonBuilder } from './core/graph';
 import { quatRotate } from './core/math';
@@ -321,39 +322,43 @@ describe('cuttings', () => {
 		}
 	});
 
-	it('presses a cut leaf flat where the record says, and leaves it as on the plant otherwise', async () => {
-		const { species: oak } = await import('./species/pedunculate-oak');
-		await loadPlantCode(oak.record);
-		const shaped = {
-			...oak,
-			record: { ...oak.record, cuttings: { ...oak.record.cuttings, leaf: undefined } },
-		};
-		const pressedKit = buildKitNow(oak, { placeholders: 'missing', detail: 'low' });
-		const shapedKit = buildKitNow(shaped, { placeholders: 'missing', detail: 'low' });
-		const pressed = cutFoliage(pressedKit, { part: 'leaf' }, 'low');
-		const plain = cutFoliage(shapedKit, { part: 'leaf' }, 'low');
-		if (!pressed || !plain) throw new Error('the oak has no leaf');
-		// The pressed blade lies in the plane of its frame; the plant's own blade folds and curls out
-		// of it, and the kit's leaves are the plant's.
-		let flat = 0;
-		let shapedDepth = 0;
-		for (let i = 2; i < pressed.positions.length; i += 3)
-			flat = Math.max(flat, Math.abs(pressed.positions[i] as number));
-		for (let i = 2; i < plain.positions.length; i += 3)
-			shapedDepth = Math.max(shapedDepth, Math.abs(plain.positions[i] as number));
-		expect(flat).toBeLessThan(1e-6);
-		expect(shapedDepth).toBeGreaterThan(0.005);
-		expect(Array.from(plain.positions)).toEqual(Array.from(shapedKit.leaves[0]?.positions ?? []));
-		expect(Array.from(pressedKit.leaves[0]?.positions ?? [])).toEqual(
-			Array.from(shapedKit.leaves[0]?.positions ?? []),
-		);
-		// A piece may ask for itself: as grown where the record presses, pressed where it does not.
-		const grown = cutFoliage(pressedKit, { part: 'leaf', pressed: false }, 'low');
-		const flattened = cutFoliage(shapedKit, { part: 'leaf', pressed: true }, 'low');
-		expect(Array.from(grown?.positions ?? [])).toEqual(Array.from(plain.positions));
-		expect(Array.from(flattened?.positions ?? [])).toEqual(Array.from(pressed.positions));
-		// Two whole kits of a mature species are built, which no other test in this file does.
-	}, 20_000);
+	it(
+		'presses a cut leaf flat where the record says, and leaves it as on the plant otherwise',
+		async () => {
+			const { species: oak } = await import('./species/pedunculate-oak');
+			await loadPlantCode(oak.record);
+			const shaped = {
+				...oak,
+				record: { ...oak.record, cuttings: { ...oak.record.cuttings, leaf: undefined } },
+			};
+			const pressedKit = buildKitNow(oak, { placeholders: 'missing', detail: 'low' });
+			const shapedKit = buildKitNow(shaped, { placeholders: 'missing', detail: 'low' });
+			const pressed = cutFoliage(pressedKit, { part: 'leaf' }, 'low');
+			const plain = cutFoliage(shapedKit, { part: 'leaf' }, 'low');
+			if (!pressed || !plain) throw new Error('the oak has no leaf');
+			// The pressed blade lies in the plane of its frame; the plant's own blade folds and curls out
+			// of it, and the kit's leaves are the plant's.
+			let flat = 0;
+			let shapedDepth = 0;
+			for (let i = 2; i < pressed.positions.length; i += 3)
+				flat = Math.max(flat, Math.abs(pressed.positions[i] as number));
+			for (let i = 2; i < plain.positions.length; i += 3)
+				shapedDepth = Math.max(shapedDepth, Math.abs(plain.positions[i] as number));
+			expect(flat).toBeLessThan(1e-6);
+			expect(shapedDepth).toBeGreaterThan(0.005);
+			expect(Array.from(plain.positions)).toEqual(Array.from(shapedKit.leaves[0]?.positions ?? []));
+			expect(Array.from(pressedKit.leaves[0]?.positions ?? [])).toEqual(
+				Array.from(shapedKit.leaves[0]?.positions ?? []),
+			);
+			// A piece may ask for itself: as grown where the record presses, pressed where it does not.
+			const grown = cutFoliage(pressedKit, { part: 'leaf', pressed: false }, 'low');
+			const flattened = cutFoliage(shapedKit, { part: 'leaf', pressed: true }, 'low');
+			expect(Array.from(grown?.positions ?? [])).toEqual(Array.from(plain.positions));
+			expect(Array.from(flattened?.positions ?? [])).toEqual(Array.from(pressed.positions));
+			// Two whole kits of a mature species are built, which no other test in this file does.
+		},
+		scaledBudget(20_000),
+	);
 
 	it('presses a cut frond flat in its own plane', async () => {
 		const { brackenRecord } = await import('./grow/bracken.fixture');
