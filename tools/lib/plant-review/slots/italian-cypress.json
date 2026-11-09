@@ -26,5 +26,8 @@
 	},
 	"28-young-bark.png": {
 		"barkMask": true
+	},
+	"11-single-spray.png": {
+		"view": "leaf-upper"
 	}
 }
