@@ -526,9 +526,19 @@ one. Scored on the stated limit alone, the ash would read eleven.
 Re-read on the land head at `31e48922f`, which brought the thin-wood tint, the limb stood at 1.87.
 That tint is reverted at `038dac7cc`, so on the settled land tip the limb reads 2.08 again.
 
-Re-read at `fbdcbcd83`, which merges `9da5a94d0`, the three close views read 2.77, 1.47 and 2.08.
-The base draws 47.7, -1.0, 7.4 against the photograph's 46.0, -1.6, 10.4. The mid-trunk draws 40.2,
-0.1, 5.8 against 41.0, 0.7, 7.1, and the limb 45.5, -1.7, 8.4 against 46.2, -1.0, 10.7.
+Re-read at `fbdcbcd83`, which merges `9da5a94d0`, the three close views read 2.77, 1.33 and 1.97,
+with the mask set per picture:
+
+| View | Masked | Unmasked | Corners of the photograph | Kept |
+| --- | --- | --- | --- | --- |
+| Base 14 | 2.77 | 6.93 | grey sky above, olive meadow below | masked |
+| Mid-trunk 15 | 1.47 | 1.33 | four grey bark tones | unmasked |
+| Limb 16 | 2.08 | 1.97 | pale grey and grey bark | unmasked |
+
+The mask helps where the corners are the backdrop. It hurts where they are the bark itself, because
+it then drops bark as backdrop. The base draws 47.7, -1.0, 7.4 against the photograph's 46.0, -1.6,
+10.4. The mid-trunk draws 48.5, -0.2, 6.8 against 49.0, 0.4, 5.7, and the limb 60.5, -0.1, 5.9
+against 62.8, -0.3, 5.4.
 
 The batch re-read was drawn at `980498366`, which merges `6e44d5063`'s strands camera and the land
 head. The whole views read 0.2512, 0.2244 and 0.2442, against 0.2608, 0.1869 and 0.2147.
