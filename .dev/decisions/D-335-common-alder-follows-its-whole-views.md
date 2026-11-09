@@ -166,15 +166,17 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   the record sets `daylight` 1.09 and a warm lamp on still `13`, and twice the default exposure on
   the winter keys, with still `25` left with no slot entry as the control that proves the field is
   per picture.
-- The young bark carries a tint of 0.963, 0.907 and 0.848 in its texture source, half the measured
-  linear ratio 0.927, 0.823 and 0.719, which darkens and warms it. Its surface colour difference
-  falls from 3.35 to 2.14, inside the mark. **This species' young-bark view does draw that layer**,
-  where the olive's was found not to: the figure moved by 1.21 under the tint, so the view reads the
-  layer it names.
-- **The bark-limb view draws under `sun: 'albedo'`**, so it shows the bark's own colour and a slot's
-  `daylight` is never read there. Raising that view's `daylight` from 1.5 to 2.0 moved its render
-  from 51.5 to 51.3, which is nothing; the change was reverted. Any species whose limb colour is off
-  should not expect a slot-light change to move it.
+- **The young bark is this batch's control for young-colour changes.** Its tint lives in the texture
+  set, where a shader or frame change cannot reach it, so a change to the shader's young-wood zone
+  tint or to the picture's frame must leave it byte-identical. It does: still `28` read 2.3 after
+  the zone tint was reverted and 2.3 again after the picture was asked for young wood. A species
+  that moves under the same change has moved because its own colour path differs, not because the
+  engine shifted under everything. The control's own line is `thin` 0.015, `span` 0.1 and
+  `barkMask` true, with the texture tint at 0.92, 0.78 and 0.81 — framing first, material second.
+- **A studio view's light is the slot's, and that includes the copy stand.** A slot's `daylight`
+  scales a view's light and its `lamp` colours it, on the field views and the copy stand alike. Still
+  `13` took 4.53 to 2.45 with `daylight` 1.27 and a lamp, while still `25`, which carries no slot
+  entry, held at 2.80 across three settings — the control that shows the light is per picture.
 - **The limb and the base pull opposite ways on one trunk layer.** The limb's bark draws 6.6 too
   dark and the base's figure 4.1 too light, while the mid-trunk is inside at 26.2 against 25.8, and
   all three take the same layer. No single tint serves them; the honest lever is a second trunk
