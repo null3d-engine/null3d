@@ -10,8 +10,7 @@
 	},
 	"09-new-shoots.png": {
 		"background": "studio-grey",
-		"lifted": 1,
-		"view": "soil"
+		"view": "cluster"
 	},
 	"12-single-leaf-upper.png": {
 		"leaves": 1.0,
