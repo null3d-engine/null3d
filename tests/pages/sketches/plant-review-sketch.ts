@@ -834,6 +834,22 @@ export default defineSketch(async (ctx) => {
 				if (found) return found;
 				break;
 			}
+			case 'soil': {
+				// The crown lifted from the soil: the rhizome and the roots that leave it, close enough
+				// that their widths read, seen a little from above as a washed base is photographed.
+				const wide = Math.max(
+					(skeleton.bounds.max[0] as number) - (skeleton.bounds.min[0] as number),
+					(skeleton.bounds.max[2] as number) - (skeleton.bounds.min[2] as number),
+				);
+				const reach = Math.max(0.1, Math.min(wide, 0.6) / 2);
+				return orbit(
+					[foot[0], 0.03, foot[2]],
+					(reach * 0.8) / Math.tan((fov * DEG) / 2),
+					e,
+					turn,
+					fov,
+				);
+			}
 			case 'bark-base': {
 				const r = stemAt(skeleton, 0.3)?.radius ?? 0.1;
 				// The foot and its flare, with the ground it stands on. The stand-off is measured from
@@ -1036,7 +1052,7 @@ export default defineSketch(async (ctx) => {
 	const colours = BACKGROUND_COLOURS[BACKGROUND];
 	scene.setBackground(MATTE ? '#ffffff' : (QUERY.sky ?? colours.sky));
 	const groundColour = QUERY.ground ?? colours.ground;
-	if (groundColour && !MATTE && !SPEC.cutting) {
+	if (groundColour && !MATTE && !SPEC.cutting && !QUERY.lifted) {
 		// The meadow is unlit and casts nothing back, so it shows its measured colour everywhere and a
 		// mask can tell it from the plant by colour alone.
 		scene.createMesh({
@@ -1045,7 +1061,7 @@ export default defineSketch(async (ctx) => {
 			rotation: FLAT,
 		});
 	}
-	if (MATTE && SPEC.whole && !SPEC.cutting) {
+	if (MATTE && SPEC.whole && !SPEC.cutting && !QUERY.lifted) {
 		// A whole plant's matte stands on a white ground, so what grows below the ground, such as the
 		// buried part of a root flare, stays hidden as the meadow hides it in the picture.
 		scene.createMesh({

@@ -756,6 +756,32 @@ export interface Tuft {
 	readonly size: Curve;
 	/** Flowering stems: how many, how tall, how they bow, and their heads. */
 	readonly heads?: TuftHeads;
+	/**
+	 * The crown's hold in the soil: a short rhizome and the roots that leave it, for a plant whose
+	 * photographs show them. Absent, the crown draws nothing under the shoots, as a tufted grass does.
+	 */
+	readonly soil?: TuftSoil;
+}
+
+/**
+ * What a tuft draws under its shoots: a rhizome lying at the soil's surface and the roots that leave
+ * it. A tufted grass leaves the rhizome absent and draws fibrous roots; a sedge shows both.
+ *
+ * @category api/vegetation
+ */
+export interface TuftSoil {
+	/** Half the rhizome's length, from the crown to either end, in metres; absent draws no rhizome. */
+	readonly rhizome?: Spread;
+	/** The rhizome's radius in metres, at most the crown's own radius. */
+	readonly rhizomeRadius?: number;
+	/** Roots that leave the crown and the rhizome. */
+	readonly roots: Spread;
+	/** A root's length in metres. */
+	readonly rootLength: Spread;
+	/** A root's radius where it leaves the crown, in metres: it tapers to a point. */
+	readonly rootRadius: number;
+	/** Degrees a root leaves the horizontal, downward, by its own draw. */
+	readonly droop: Spread;
 }
 
 /**
