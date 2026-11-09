@@ -132,7 +132,11 @@ export interface PlantReviewQuery {
 	readonly along?: number;
 	/** Metres of radius that a limb view frames: it picks the limb that carries that thickness. */
 	readonly thin?: number;
-	/** Metres of bark or limb that a bark or limb view's frame height covers. */
+	/**
+	 * Metres that a close view covers: the bark or limb a bark or limb view frames, or the width a
+	 * cut view shows across the frame, where the reference is a picture of a part of the piece
+	 * rather than the whole of it.
+	 */
 	readonly span?: number;
 	/**
 	 * The row share on which a view up the stem puts the stem's first fork: the camera pitches up

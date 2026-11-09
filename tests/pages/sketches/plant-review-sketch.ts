@@ -7,6 +7,7 @@
 // contract lives in `../lib/plant-review/`, which the review tools share. The page posts what it
 // measured and where its cameras stood as the `plant-review` message, so a tool records the facts
 // beside the pixels.
+
 import { type Camera, defineSketch, quat, type SketchContext } from '@null3d/engine';
 import {
 	BUD_TERMINAL,
@@ -58,6 +59,7 @@ import {
 	type CutRows,
 	cutCamera,
 	type ScreenFraming,
+	spanDistance,
 	standCamera,
 } from '../lib/plant-review/framing';
 import { measurePlant, partPositions, shootPositions } from '../lib/plant-review/measure';
@@ -890,6 +892,26 @@ export default defineSketch(async (ctx) => {
 			case 'cluster':
 			case 'leaf-upper':
 			case 'leaf-under': {
+				// A span frames a part of the piece rather than the whole of it: the frame's middle
+				// stands on the piece at the share the query names, halfway up by default, and the
+				// span is the width it shows there.
+				if (QUERY.span !== undefined && piece) {
+					const part = boundsOf(piece as PlantAsset, pieceKit);
+					const low = part.min[1] as number;
+					const high = part.max[1] as number;
+					const at = low + (high - low) * (QUERY.along ?? 0.5);
+					return orbit(
+						[
+							((part.min[0] as number) + (part.max[0] as number)) / 2,
+							at,
+							((part.min[2] as number) + (part.max[2] as number)) / 2,
+						],
+						spanDistance(QUERY.span, fov, aspect),
+						e,
+						turn,
+						fov,
+					);
+				}
 				// A piece framed at the scale its photograph shows, in leaf lengths, stands on its cut:
 				// the cut on the frame's lower edge, the piece running up across it and off its far edge
 				// where it is longer, as a cut branch runs off its photograph. A roll lays it across.

@@ -35,12 +35,17 @@
 		"daylight": 1.459
 	},
 	"08-stipe-forks-into-pinnae.png": {
-		"skyShare": 0.357,
-		"daylight": 1.459
+		"view": "leaf-upper",
+		"background": "studio-grey",
+		"sunAzimuth": null,
+		"sunRise": null,
+		"span": 0.55,
+		"along": 0.375
 	},
 	"09-pinna-subdivision.png": {
 		"skyShare": 0.357,
-		"daylight": 1.459
+		"daylight": 1.459,
+		"span": 0.5
 	},
 	"11-crozier-unfurling.png": {
 		"skyShare": 0.357,
@@ -52,11 +57,13 @@
 	},
 	"13-single-pinna-upper.png": {
 		"view": "leaf-upper",
-		"background": "white"
+		"background": "white",
+		"span": 0.5
 	},
 	"14-pinna-underside-sori.png": {
 		"view": "leaf-under",
-		"background": "white"
+		"background": "white",
+		"span": 0.5
 	},
 	"15-stipe-lower-black.png": {
 		"view": "bark-base",
@@ -144,5 +151,8 @@
 		"background": "studio-grey",
 		"sunAzimuth": null,
 		"sunRise": null
+	},
+	"10-ultimate-segments.png": {
+		"span": 0.12
 	}
 }
