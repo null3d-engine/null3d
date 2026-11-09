@@ -138,13 +138,13 @@ export const record: Species = {
 		// The wind clip: the sheathed base stays put while the blades and panicles sway, the stems
 		// most freely. Each order's share of the deepest order's stiffness keeps the base rigid.
 		stiffness: [
-			[0, 0.95],
-			[0.35, 0.8],
-			[0.7, 0.45],
-			[1, 0.15],
+			[0, 1],
+			[0.35, 0.98],
+			[0.7, 0.88],
+			[1, 0.25],
 		],
-		sway: { frequency: 0.7, amplitude: 0.03 },
-		flutter: { kind: 'grass', amplitude: 0.08, frequency: 2.5 },
+		sway: { frequency: 0.5, amplitude: 0.015 },
+		flutter: { kind: 'grass', amplitude: 0.015, frequency: 1.2 },
 	},
 	lod: {
 		// The tuft draws as one merged foliage mesh: blades, sheaths, stems and panicle branches,
