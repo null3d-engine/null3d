@@ -10,7 +10,8 @@
 	},
 	"09-new-shoots.png": {
 		"background": "studio-grey",
-		"view": "cluster"
+		"view": "cluster",
+		"leafLength": 0.15
 	},
 	"12-single-leaf-upper.png": {
 		"leaves": 1.0,
@@ -43,5 +44,8 @@
 	"21-branch-studio.png": {
 		"background": "studio-grey",
 		"view": "whole"
+	},
+	"10-fine-leaf-tips.png": {
+		"leafLength": 0.1
 	}
 }

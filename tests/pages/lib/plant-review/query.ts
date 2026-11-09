@@ -154,6 +154,12 @@ export interface PlantReviewQuery {
 	 * scale its photograph shows it at. The piece then stands on its cut at the frame's lower edge.
 	 */
 	readonly leaves?: number;
+	/**
+	 * Metres of one leaf that a photographed cutting was measured in, for the `leaves` frame. A
+	 * blade or a cluster whose own leaf is far longer than the photographed one frames at the
+	 * photograph's scale only when the length the photograph was measured in is named.
+	 */
+	readonly leafLength?: number;
 	/** Degrees the camera turns about its line of sight, the picture turning counterclockwise. */
 	readonly roll?: number;
 	/**
@@ -196,6 +202,7 @@ const NUMBER_FIELDS = [
 	'aside',
 	'stand',
 	'leaves',
+	'leafLength',
 	'roll',
 	'girth',
 	'turns',
@@ -299,6 +306,10 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		);
 	if (numbers.leaves !== undefined && numbers.leaves <= 0)
 		throw new Error(`leaves=${numbers.leaves} is a frame in leaf lengths: give a number above 0.`);
+	if (numbers.leafLength !== undefined && numbers.leafLength <= 0)
+		throw new Error(
+			`leafLength=${numbers.leafLength} is a leaf's length in metres: give a number above 0.`,
+		);
 	if (numbers.stand !== undefined && numbers.stand <= 1)
 		throw new Error(
 			`stand=${numbers.stand} is in stem radii from its axis: give a number above 1.`,
