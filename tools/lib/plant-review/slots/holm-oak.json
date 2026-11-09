@@ -1,0 +1,26 @@
+{
+	"01-whole-clump-distant.png": {
+		"skyShare": 0.357,
+		"daylight": 1.925
+	},
+	"02-whole-clump-profile.png": {
+		"skyShare": 0.357,
+		"daylight": 1.487
+	},
+	"14-bark-base.png": {
+		"barkMask": true,
+		"daylight": 1.63
+	},
+	"15-bark-mid-stem.png": {
+		"barkMask": true,
+		"daylight": 1.2
+	},
+	"16-bark-on-limb.png": {
+		"barkMask": true,
+		"daylight": 1.2
+	},
+	"holm-oak-turntable.mp4": {
+		"skyShare": 0.357,
+		"daylight": 1.925
+	}
+}

@@ -295,6 +295,23 @@ describe('the species header', () => {
 		expect(texel(header, HEADER.youngTile)[2]).toBe(1);
 	});
 
+	test("writes a bark zone's second band, and leaves it empty where the record names none", () => {
+		const near = (a: readonly number[], b: readonly number[]) => {
+			for (const [k, v] of a.entries()) expect(v).toBeCloseTo(b[k] as number, 6);
+		};
+		const bark = record.bark as NonNullable<Species['bark']>;
+		const zoned = {
+			...record,
+			bark: { ...bark, zones: [{ ...bark.zones[0], second: { from: 0, to: 1.5, blend: 0.2 } }] },
+		} as Species;
+		const written = speciesHeader(zoned, manifest, speciesBox(zoned));
+		near(texel(written, HEADER.barkSeconds), [0, 1.5, 0.2, 1]);
+		near(
+			texel(speciesHeader(record, manifest, speciesBox(record)), HEADER.barkSeconds),
+			[0, 0, 0, 0],
+		);
+	});
+
 	test('writes the lichen colour, amount and heights', () => {
 		const bark = record.bark;
 		if (!bark) throw new Error('the stand-in has no bark');
@@ -359,6 +376,7 @@ describe('the plant shader', () => {
 			HEADER_EXTRAS: HEADER.extras,
 			HEADER_BUD: HEADER.bud,
 			HEADER_BARK_ZONES: HEADER.barkZones,
+			HEADER_BARK_SECONDS: HEADER.barkSeconds,
 			HEADER_LICHEN: HEADER.lichen,
 			HEADER_LICHEN_REACH: HEADER.lichenReach,
 			HEADER_SWAY: HEADER.sway,
