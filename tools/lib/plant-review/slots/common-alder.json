@@ -1,0 +1,122 @@
+{
+	"01-whole-distant.png": {
+		"sunAzimuth": 5.2,
+		"sunRise": 42.9,
+		"skyShare": 0.6,
+		"daylight": 2.0,
+		"sky": "#d0dff1",
+		"ground": "#707a47",
+		"fov": 30,
+		"fill": 0.934,
+		"targetY": 0.483
+	},
+	"02-whole-profile.png": {
+		"sunAzimuth": -13.3,
+		"sunRise": 43.3,
+		"skyShare": 0.6,
+		"daylight": 2.2,
+		"sky": "#dae6f5",
+		"ground": "#72763b",
+		"fov": 30,
+		"fill": 0.951,
+		"targetY": 0.494
+	},
+	"18-silhouette.png": {
+		"fov": 30,
+		"fill": 0.923,
+		"targetY": 0.501
+	},
+	"30-whole-with-landmark.png": {
+		"sunAzimuth": 1.5,
+		"sunRise": 42.5,
+		"skyShare": 0.6,
+		"daylight": 2.24,
+		"sky": "#cce0f6",
+		"ground": "#909b4e",
+		"fill": 0.814,
+		"targetY": 0.493
+	},
+	"17-trunk-taper.png": {
+		"sunAzimuth": 2.4,
+		"sunRise": 38.4,
+		"skyShare": 0.65,
+		"daylight": 2.0,
+		"sky": "#cfe0f8",
+		"ground": "#75796f"
+	},
+	"03-whole-from-below.png": {
+		"sunAzimuth": 30,
+		"sunRise": 65,
+		"skyShare": 0.7,
+		"daylight": 2.4
+	},
+	"04-crown-outside.png": {
+		"skyShare": 0.65,
+		"daylight": 1.6,
+		"distance": 4
+	},
+	"05-crown-underside.png": {
+		"sunAzimuth": 30,
+		"sunRise": 70,
+		"skyShare": 0.75,
+		"daylight": 1.8
+	},
+	"06-inside-crown.png": {
+		"skyShare": 0.6,
+		"daylight": 1.2
+	},
+	"07-limb-leaving-trunk.png": {
+		"skyShare": 0.55,
+		"daylight": 1.2
+	},
+	"08-limb-fork.png": {
+		"thin": 0.015,
+		"background": "studio-grey",
+		"sky": "#c6c2bd"
+	},
+	"19-cones-and-catkins.png": {
+		"season": "winter",
+		"distance": 0.3,
+		"daylight": 2.0
+	},
+	"common-alder-turntable.mp4": {
+		"skyShare": 0.6,
+		"daylight": 2.2
+	},
+	"common-alder-wind-motion.mp4": {
+		"skyShare": 0.6,
+		"daylight": 2.2
+	},
+	"14-bark-base.png": {
+		"barkMask": true
+	},
+	"15-bark-mid-trunk.png": {
+		"barkMask": true
+	},
+	"16-bark-on-limb.png": {
+		"thin": 0.025,
+		"skyShare": 0.6,
+		"daylight": 1.5,
+		"barkMask": true
+	},
+	"09-secondary-branching.png": {},
+	"10-fine-twigs.png": {},
+	"21-branch-studio.png": {
+		"roll": 90
+	},
+	"22-subbranch-studio.png": {
+		"roll": 90
+	},
+	"23-leaf-cluster-studio.png": {
+		"pick": 1
+	},
+	"13-single-leaf-underside.png": {
+		"daylight": 1.27,
+		"lamp": "#fcf6ff"
+	},
+	"28-young-bark.png": {
+		"thin": 0.015,
+		"span": 0.1,
+		"barkMask": true
+	}
+}
