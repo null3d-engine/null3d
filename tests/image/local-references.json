@@ -176,8 +176,8 @@
 	"chromium-swiftshader/compat/plant-common-ash.png": {
 		"test": "plant-common-ash",
 		"tier": "compat",
-		"date": "2026-11-07",
-		"reason": "the branch that adds the species is not pushed yet, so no CI run could draw the software set; it is drawn here on this Mac's SwiftShader with CI=1"
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 95134a7a0 after the engine merge, which moved the four panels by about a third; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/compat/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
@@ -452,8 +452,8 @@
 	"chromium-swiftshader/webgl2/plant-common-ash.png": {
 		"test": "plant-common-ash",
 		"tier": "webgl2",
-		"date": "2026-11-07",
-		"reason": "the branch that adds the species is not pushed yet, so no CI run could draw the software set; it is drawn here on this Mac's SwiftShader with CI=1"
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 95134a7a0 after the engine merge, which moved the four panels by about a third; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgl2/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
@@ -758,8 +758,8 @@
 	"chromium-swiftshader/webgpu/plant-common-ash.png": {
 		"test": "plant-common-ash",
 		"tier": "webgpu",
-		"date": "2026-11-07",
-		"reason": "the branch that adds the species is not pushed yet, so no CI run could draw the software set; it is drawn here on this Mac's SwiftShader with CI=1"
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 95134a7a0 after the engine merge, which moved the four panels by about a third; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgpu/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
