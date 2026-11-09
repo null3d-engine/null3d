@@ -322,7 +322,7 @@ export const record: Species = {
 		// Still 16: the green sits on the limb's upper side, while the bole stays silver-grey; a film
 		// over the whole plant gives that, with the upper faces taking most of it. Still 14 keeps a
 		// little more on the buttress toes.
-		moss: { amount: 0.3, up: 24, north: 0.1, colour: [0.2, 0.3, 0.13] },
+		moss: { amount: 0.45, up: 30, north: 0.1, colour: [0.2, 0.3, 0.13] },
 		lichen: { amount: 0.12, from: 0, colour: [0.32, 0.42, 0.28] },
 		// The pale eyes along the bole where shed branches were, as stills 7 and 17 show.
 		scars: 1.5,
