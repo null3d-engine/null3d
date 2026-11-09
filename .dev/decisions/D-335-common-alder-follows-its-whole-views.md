@@ -177,10 +177,23 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   scales a view's light and its `lamp` colours it, on the field views and the copy stand alike. Still
   `13` took 4.53 to 2.45 with `daylight` 1.27 and a lamp, while still `25`, which carries no slot
   entry, held at 2.80 across three settings — the control that shows the light is per picture.
-- **The limb and the base pull opposite ways on one trunk layer.** The limb's bark draws 6.6 too
-  dark and the base's figure 4.1 too light, while the mid-trunk is inside at 26.2 against 25.8, and
-  all three take the same layer. No single tint serves them; the honest lever is a second trunk
-  layer, which is a texture build with a kit cost and is **not** built here.
+- **Row 8 is open, and its evidence is the three close views**, not the young bark, which is a
+  supplementary note about the material and cannot set a count.
+
+  | View | Photograph | Render | Distance | What misses |
+  | --- | --- | --- | --- | --- |
+  | `14` base | 41.0, 2.2, 8.6 | 45.1, −1.5, 11.8 | 6.69, but see below | not judgeable as bark |
+  | `15` mid-trunk | 25.8, 1.0, 3.6 | 26.2, 3.7, 3.5 | **3.63** | red-green by six tenths |
+  | `16` limb | 57.9, 2.1, 5.6 | 54.4, 3.6, 6.1 | **3.68** | lightness by seven tenths |
+
+  `14`'s 6.69 is a whole-frame mean that cannot judge bark at all, because half of its nine patch
+  pixels are sky and ground on a bole this thick; its honest reading is the patch-based one, where
+  the bark stands within half a step in light and red-green and 2.8 too blue. That is a limit of
+  the measure and is recorded as such, not counted as a pass.
+- **The limb and the base pull opposite ways on one trunk layer.** `16` draws 3.5 of light too
+  dark and `15` 2.7 too red, while `14`'s bark is too light, and all three take the same layer. No
+  single tint serves them; the honest lever is a second trunk layer, which is a texture build with
+  a kit cost and stays **unbuilt** as a landing item.
 - The two cluster photographs draw different shoots of the one class. The slot file names the second
   prototype for the studio still, which costs no kit byte: `23` reads 0.150 background against its
   photograph's 0.152 with outline overlap 0.421, and `11` keeps the first at 0.166 against 0.173 and
