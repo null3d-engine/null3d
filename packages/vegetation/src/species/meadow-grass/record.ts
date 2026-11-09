@@ -29,8 +29,8 @@ export const record: Species = {
 		shoots: { mean: 50, spread: 6 },
 		base: 0.05,
 		lean: [
-			[0, 3],
-			[1, 8],
+			[0, 1],
+			[1, 4],
 		],
 		// Still 22 and the fact sheet: two to four blades on each tiller, set in two ranks. The
 		// whole-plant pictures carry four or five, so the crown takes the fuller end.
@@ -42,8 +42,8 @@ export const record: Species = {
 		// their tips, while the oldest outer ones leave their collars wide and arch toward the
 		// ground. The young blades hold the leaf mass's height; the old ones its width.
 		spread: [
-			[0, 8],
-			[1, 36],
+			[0, 4],
+			[1, 18],
 		],
 		size: [
 			[0, 0.8],
@@ -93,7 +93,7 @@ export const record: Species = {
 			tipLength: 0.04,
 			fold: 18,
 			twist: 30,
-			arch: { mean: 35, spread: 15 },
+			arch: { mean: 18, spread: 8 },
 			// Stills 02 and 06: the old outer blades carry dry brown tips.
 			dryTip: 0.03,
 			// The texture source's two faces under flat light: the shader scales each face's picture
