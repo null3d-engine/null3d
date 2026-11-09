@@ -14,10 +14,17 @@ const ROOT = join(import.meta.dirname, '../..');
  * Seconds a species' four-panel picture may take. The panels stand three metres from the crown, so
  * every shoot row inside that band is real geometry; a dense crown draws about six million triangles
  * a frame, which a software rasteriser needs far longer for than the default sixty seconds allows.
- * No species needs longer: the densest of them, the common alder, drew its four panels in 96 seconds
- * on this Mac's SwiftShader with the rest of the batch drawing at the same time.
  */
 const PANELS_SECONDS = 120;
+
+/**
+ * Species whose own four panels need longer than the shared limit, with the seconds each was
+ * measured at. The common alder's dense crown drew in 96 seconds on this Mac's SwiftShader when its
+ * tiers ran one at a time, and its three tiers run together did not finish within 120.
+ */
+const PANELS_SECONDS_BY_SPECIES: Readonly<Record<string, number>> = {
+	'common-alder': 240,
+};
 
 /** The picture test of each species folder. */
 export function plantSpeciesTests(root = ROOT): ImageTest[] {
@@ -28,6 +35,6 @@ export function plantSpeciesTests(root = ROOT): ImageTest[] {
 		size: [1024, 1024],
 		// Four panels of a whole plant, built and drawn from scratch: the merged foliage of a ground
 		// plant takes longer than the default limit on the software GPU's slower path.
-		timeoutSeconds: PANELS_SECONDS,
+		timeoutSeconds: PANELS_SECONDS_BY_SPECIES[id] ?? PANELS_SECONDS,
 	}));
 }
