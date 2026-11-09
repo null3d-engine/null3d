@@ -1029,18 +1029,36 @@
 		"test": "plant-sedge",
 		"tier": "compat",
 		"date": "2026-11-09",
-		"reason": "the sedge's spike foot now meets its stalk at the body's width, which changes the spikes in its whole-plant and crown panels; the software set is redrawn here while CI redraws it"
+		"reason": "the sedge's blade arch moved from ninety to seventy degrees, which reframes its whole plant at every scale; the software set is redrawn here while CI redraws it"
 	},
 	"chromium-swiftshader/webgl2/plant-sedge.png": {
 		"test": "plant-sedge",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "the sedge's spike foot now meets its stalk at the body's width, which changes the spikes in its whole-plant and crown panels; the software set is redrawn here while CI redraws it"
+		"reason": "the sedge's blade arch moved from ninety to seventy degrees, which reframes its whole plant at every scale; the software set is redrawn here while CI redraws it"
 	},
 	"chromium-swiftshader/webgpu/plant-sedge.png": {
 		"test": "plant-sedge",
 		"tier": "webgpu",
 		"date": "2026-11-09",
-		"reason": "the sedge's spike foot now meets its stalk at the body's width, which changes the spikes in its whole-plant and crown panels; the software set is redrawn here while CI redraws it"
+		"reason": "the sedge's blade arch moved from ninety to seventy degrees, which reframes its whole plant at every scale; the software set is redrawn here while CI redraws it"
+	},
+	"chromium-swiftshader/compat/plant-meadow-grass.png": {
+		"test": "plant-meadow-grass",
+		"tier": "compat",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at the branch tip 9 Nov 2026; the branch's CI run will replace them if it differs"
+	},
+	"chromium-swiftshader/webgl2/plant-meadow-grass.png": {
+		"test": "plant-meadow-grass",
+		"tier": "webgl2",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at the branch tip 9 Nov 2026; the branch's CI run will replace them if it differs"
+	},
+	"chromium-swiftshader/webgpu/plant-meadow-grass.png": {
+		"test": "plant-meadow-grass",
+		"tier": "webgpu",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at the branch tip 9 Nov 2026; the branch's CI run will replace them if it differs"
 	}
 }

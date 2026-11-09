@@ -37,6 +37,7 @@ import {
 	pointAlong,
 	stemAt,
 	stemFoot,
+	stemSurfaceAt,
 	sunlitTip,
 	turnedAbout,
 	type V3,
@@ -572,15 +573,15 @@ export default defineSketch(async (ctx) => {
 	let facts: Record<string, unknown> = {};
 	const foliage = record.foliage;
 	/**
-	 * A leaf's length in metres: one blade, or a compound leaf's stalk, rachis and terminal leaflet,
-	 * which is the piece a cutting's frame and the close views measure in.
+	 * A leaf's length in metres: one blade (broadleaf or grass), or a compound leaf's stalk, rachis
+	 * and terminal leaflet, which is the piece a cutting's frame and the close views measure in.
 	 */
 	const leafLength =
-		foliage.kind !== 'blade'
-			? undefined
-			: (typeof foliage.leaf.length === 'number' ? foliage.leaf.length : foliage.leaf.length.mean) *
+		foliage.kind === 'blade'
+			? (typeof foliage.leaf.length === 'number' ? foliage.leaf.length : foliage.leaf.length.mean) *
 					(foliage.compound ? foliage.compound.rachis + 1 : 1) +
-				(foliage.compound ? foliage.leaf.petiole.length : 0);
+				(foliage.compound ? foliage.leaf.petiole.length : 0)
+			: undefined;
 	/**
 	 * A grass blade's length in metres. A cutting of several blades is framed in the leaf length its
 	 * photograph was measured in, which a blade a metre long would over-scale tenfold, so only a
@@ -940,7 +941,9 @@ export default defineSketch(async (ctx) => {
 					zone?.by === 'height'
 						? Math.min(skeleton.height * 0.9, (zone.from + zone.to) / 2)
 						: Math.min(1.5, skeleton.height * 0.3);
-				const stem = stemAt(skeleton, y);
+				// A plant with no single trunk, such as a tuft of culms, shows the thickest stem
+				// surface that crosses the height the picture frames.
+				const stem = stemAt(skeleton, y) ?? stemSurfaceAt(skeleton, y)?.at;
 				if (!stem) break;
 				const span = QUERY.span ?? 0.6;
 				const surface = add(stem.at, scale(out, stem.radius));
