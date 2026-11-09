@@ -105,12 +105,9 @@ export function warmUpProblems(result: WarmUpResult, gpu: 'webgpu' | 'webgl2'): 
 		const perObject =
 			(prepass(tier, playPreset) ? 2 : 1) +
 			(tier === 'webgpu' && prepass(tier, playPreset) ? 1 : 0);
-		// A slow device can drop the render scale while the object warms up, which builds the final
-		// pass's 8-bit variant beside its full-precision one: the count may hold one more, as the
-		// first frame's may.
-		if (result.addedPipelines !== perObject && result.addedPipelines !== perObject + 1)
+		if (result.addedPipelines !== perObject)
 			problems.push(
-				`the added object built ${result.addedPipelines} pipelines at '${playPreset}', not ${perObject} or ${perObject + 1}`,
+				`the added object built ${result.addedPipelines} pipelines at '${playPreset}', not ${perObject}`,
 			);
 	}
 	if (result.warmUpMs === null || result.warmUpMs < 0)
