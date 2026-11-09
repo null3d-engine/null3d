@@ -74,6 +74,12 @@ export interface CuttingOptions {
 	 * the plant, as a leaf held in the hand does. The record's cutting hint by default.
 	 */
 	readonly pressed?: boolean;
+	/**
+	 * For 'leaf': how far the leaf has opened, from 0 for a crozier still rolled to 1 for a leaf
+	 * fully out. A species with a leaf that grows through a shape a picture shows, such as a fern's
+	 * crozier, names it there; absent, the leaf is drawn as it stands on a mature plant.
+	 */
+	readonly age?: number;
 }
 
 /**
@@ -772,10 +778,17 @@ function pressedThickShape(shape: ThickLeaf): ThickLeaf {
  * keeps a short piece of its stalk, as a leaf picked from the crown shows, and a species that grows
  * its leaves on long stalks names the metres its pictures show.
  */
-function cutLeaves(kit: SpeciesKitData, press?: boolean): readonly PrototypeArrays[] {
+function cutLeaves(kit: SpeciesKitData, press?: boolean, age?: number): readonly PrototypeArrays[] {
 	const record = kit.record;
 	const leaf = record.foliage;
 	const flat = press ?? record.cuttings?.leaf?.pressed;
+	// A frond is built again when it lies flat or when the cut names an age of its own, because a
+	// crozier is the same leaf at another point of its opening rather than another shape.
+	if (leaf.kind === 'frond') {
+		const pressed = flat ? pressedFrondRecord(record) : undefined;
+		if (!pressed && age === undefined) return kit.leaves;
+		return foliage('frond').leaves(pressed ?? record, kit.manifest, kit.detail, age);
+	}
 	if (!flat) return kit.leaves;
 	if (leaf.kind === 'thick') {
 		const growth = record.growth;
@@ -797,10 +810,6 @@ function cutLeaves(kit: SpeciesKitData, press?: boolean): readonly PrototypeArra
 			foliage: { kind: 'thick', leaf: pressedThickShape(leaf.leaf) },
 		};
 		return foliage('thick').leaves(pressed, kit.manifest, kit.detail);
-	}
-	if (leaf.kind === 'frond') {
-		const pressed = pressedFrondRecord(record);
-		return pressed ? foliage('frond').leaves(pressed, kit.manifest, kit.detail) : kit.leaves;
 	}
 	if (leaf.kind !== 'blade') return kit.leaves;
 	const pressedLeaf: Species = { ...record, foliage: { ...leaf, leaf: pressedShape(leaf.leaf) } };
@@ -825,10 +834,12 @@ export function cutFoliage(
 	cutting: CuttingOptions,
 	detail: Detail,
 ): MeshArrays | undefined {
+	if (cutting.age !== undefined && !(cutting.age >= 0 && cutting.age <= 1))
+		throw new Error(`@null3d/vegetation: a cutting's age is ${cutting.age}; it runs from 0 to 1`);
 	const mesh = writer();
 	const origin: Vector3 = [0, 0, 0];
 	if (cutting.part === 'leaf') {
-		const leaves = cutLeaves(kit, cutting.pressed);
+		const leaves = cutLeaves(kit, cutting.pressed, cutting.age);
 		const leaf = leaves[(cutting.pick ?? 0) % Math.max(1, leaves.length)];
 		if (!leaf) return finish(mesh);
 		const turn = cutting.face === 'lower' ? [0, 1, 0, 0] : [0, 0, 0, 1];

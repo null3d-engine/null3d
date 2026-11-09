@@ -345,6 +345,22 @@ describe('cuttings', () => {
 		// blade flat and only its stipe's own tube standing off the axis.
 		expect(depth(cutFoliage(frondKit, { part: 'leaf' }, 'low'))).toBeGreaterThan(0.05);
 		expect(depth(cutFoliage(frondKit, { part: 'leaf', pressed: true }, 'low'))).toBeLessThan(0.01);
+		// A frond named young is the same leaf earlier in its opening: it is drawn again, and it is
+		// shorter than the frond it opens into, which is the crozier the picture shows.
+		const tall = (mesh: ReturnType<typeof cutFoliage> | undefined): number => {
+			let high = 0;
+			for (let i = 1; i < (mesh?.positions.length ?? 0); i += 3)
+				high = Math.max(high, mesh?.positions[i] as number);
+			return high;
+		};
+		const mature = cutFoliage(frondKit, { part: 'leaf' }, 'low');
+		const young = cutFoliage(frondKit, { part: 'leaf', age: 0.1 }, 'low');
+		expect(Array.from(young?.positions ?? [])).not.toEqual(Array.from(mature?.positions ?? []));
+		expect(tall(young)).toBeLessThan(tall(mature));
+		// An age outside the leaf's opening is refused rather than drawn as something else.
+		expect(() => cutFoliage(frondKit, { part: 'leaf', age: 1.5 }, 'low')).toThrow(
+			/runs from 0 to 1/,
+		);
 	});
 
 	it('cuts a leaf with either face toward +Z, and a cluster in rank order', () => {
