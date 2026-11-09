@@ -49,6 +49,7 @@ import {
 	insideView,
 	junctionView,
 	limbView,
+	strandsView,
 	surfaceView,
 	trunkView,
 	twigView,
@@ -573,12 +574,28 @@ export default defineSketch(async (ctx) => {
 				? foliage.blade.length
 				: foliage.blade.length.mean
 			: undefined;
+	/** The foliage cards' places, which a view of the crown's fringe weighs its sight line with. */
+	const foliagePoints = ((): Float32Array | undefined => {
+		const parts = (main.levels[0]?.parts ?? []).filter(
+			(part) => part.name === 'foliage' || part.name === 'cards',
+		);
+		if (parts.length === 0) return undefined;
+		const lists = parts.map((part) => partPositions(part, kit.box));
+		const out = new Float32Array(lists.reduce((n, list) => n + list.length, 0));
+		let at = 0;
+		for (const list of lists) {
+			out.set(list, at);
+			at += list.length;
+		}
+		return out;
+	})();
 	/** What the close views read of the plant: its wood alone for a view that draws the wood alone. */
 	const closePlant = (woodOnly: boolean): ClosePlant => ({
 		skeleton,
 		shoots: woodOnly ? { ...main.shoots, count: 0 } : main.shoots,
 		prototypes: mainKit.prototypes,
 		...(leafLength !== undefined && { leafLength }),
+		...(foliagePoints !== undefined && { foliage: foliagePoints }),
 	});
 	/** Each close view's camera, found once and walked round its subject for a sheet's turns. */
 	const closeViews = new Map<string, CloseView | undefined>();
@@ -814,6 +831,13 @@ export default defineSketch(async (ctx) => {
 				// The twig and its rosettes fill the frame: the reference stands a single twig against a
 				// plain backdrop, so the camera sits close and the shoot's own length is not the subject.
 				return { ...orbit(target, 0.28 + shoot / 4, e, back, fov), near: 0.02 };
+			}
+			case 'strands': {
+				// A limb's hanging shoots at the crown's rim, seen level against the sky as a
+				// drooping-twig photograph shows them.
+				const found = closeAt(view, () => strandsView(closePlant(false), lens), turn, fov, 0.05);
+				if (found) return found;
+				break;
 			}
 			case 'limb': {
 				// One branch with its side branches seen across its run, from the side where the least of
