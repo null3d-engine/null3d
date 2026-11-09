@@ -737,6 +737,14 @@ async function main(): Promise<void> {
 	}
 	if (set) {
 		const span = barkSpan(species);
+		// A species' own file sits beside the guide, and a round drawn without it loses every
+		// override in it: the camera a picture needs and the light it was taken in. Reading the file
+		// unasked would move every species that omits the flag, so the miss is named instead.
+		const speciesSlots = join(REPO_ROOT, 'tools/lib/plant-review/slots', `${species}.json`);
+		if (!flag('slot-query') && existsSync(speciesSlots))
+			console.warn(
+				`warning: ${species} has a slot file at ${speciesSlots}, and --slot-query did not name it, so this run misses every override in it`,
+			);
 		// Query fields per reference file, from a JSON object keyed by the file's name.
 		const slotQueries = flag('slot-query')
 			? (JSON.parse(readFileSync(resolve(option('slot-query')), 'utf8')) as Record<
