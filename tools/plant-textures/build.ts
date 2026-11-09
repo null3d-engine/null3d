@@ -4,7 +4,7 @@
 // own and a page fetches only the species it places.
 import { join } from 'node:path';
 import { type BarkLayer, barkLayer } from './bark.ts';
-import { readConfig, type SourceConfig } from './config.ts';
+import { type LeafConfig, readConfig, type SourceConfig } from './config.ts';
 import { ENCODER, encodeKtx2, type KtxJob } from './encode.ts';
 import { crop as cropFrom, decodePicture, type Picture } from './image.ts';
 import { type LeafTextures, leafTextures } from './leaf.ts';
@@ -81,9 +81,9 @@ export async function buildSpecies(
 	if (config.leaf) {
 		// A compound leaf's picture holds its whole blade; the leaflet the mesh draws takes its own
 		// part of it.
-		const cut = (p: Picture) => (config.leaf?.crop ? cropFrom(p, ...config.leaf.crop) : p);
-		const upper = cut(read(config.leaf.upper));
-		const lower = cut(read(config.leaf.lower));
+		const cut = (p: Picture, rect: LeafConfig['crop']) => (rect ? cropFrom(p, ...rect) : p);
+		const upper = cut(read(config.leaf.upper), config.leaf.crop);
+		const lower = cut(read(config.leaf.lower), config.leaf.lowerCrop ?? config.leaf.crop);
 		leaf = leafTextures(upper, lower, config.leaf);
 		for (const [set, half] of [
 			[leaf.full, false],
