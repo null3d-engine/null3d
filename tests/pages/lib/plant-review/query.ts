@@ -125,6 +125,8 @@ export interface PlantReviewQuery {
 	 * for a leaf fully out. Absent, it is drawn as it stands on a mature plant.
 	 */
 	readonly age?: number;
+	/** For a cut branch: whether its candidates rank by how young they are, so the piece is opening. */
+	readonly young?: boolean;
 	/**
 	 * Whether a limb view frames the crown's outer surface, whose depth into the crown is part of its
 	 * subject, rather than one branch that its picture shows against a plain ground.

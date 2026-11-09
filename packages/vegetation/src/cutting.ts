@@ -80,6 +80,12 @@ export interface CuttingOptions {
 	 * crozier, names it there; absent, the leaf is drawn as it stands on a mature plant.
 	 */
 	readonly age?: number;
+	/**
+	 * For 'branch' and 'subbranch': whether the candidates rank by how young they are rather than by
+	 * how well their length matches, so the piece draws a shoot that is still opening. Absent, a
+	 * cut ranks as it always has.
+	 */
+	readonly young?: boolean;
 }
 
 /**
@@ -247,6 +253,8 @@ interface Candidate {
 	readonly buds: number;
 	/** Its pipe radius at its first node, the thickness a piece's photograph shows. */
 	readonly thickness: number;
+	/** The mean age of its nodes, from 0 for a shoot still opening to 1 for a mature one. */
+	readonly age: number;
 }
 
 /**
@@ -260,6 +268,7 @@ function candidates(
 	order: number | undefined,
 	length: number,
 	shade: number,
+	young = false,
 ): Candidate[] {
 	const { axes } = skeleton;
 	const depth = depths(skeleton);
@@ -308,6 +317,13 @@ function candidates(
 		for (const owner of owners[skeleton.buds.axis[b] as number] as number[])
 			subtreeBuds[owner] = (subtreeBuds[owner] as number) + 1;
 	}
+	// A shoot's age is the vigor of the bud that carries it, which the foliage reads too; an axis
+	// with no bud of its own has no age and ranks last among the young.
+	const vigor = new Float64Array(axes.count).fill(Number.POSITIVE_INFINITY);
+	for (let b = 0; b < skeleton.buds.count; b++) {
+		const axis = skeleton.buds.axis[b] as number;
+		vigor[axis] = Math.min(vigor[axis] as number, skeleton.buds.vigor[b] as number);
+	}
 	const out: Candidate[] = [];
 	for (let a = 0; a < axes.count; a++)
 		if (isCandidate(a) && (extent[a] as number) > 0)
@@ -318,6 +334,7 @@ function candidates(
 				axes: subtreeAxes[a] as number,
 				buds: subtreeBuds[a] as number,
 				thickness: skeleton.radius[axes.first[a] as number] as number,
+				age: vigor[a] as number,
 			});
 	const match = (c: Candidate) => Math.round(Math.abs(log(c.extent / length)) / MATCH_STEP);
 	const near = (c: Candidate) => (match(c) <= NEAR_STEPS ? 1 : 0);
@@ -327,6 +344,7 @@ function candidates(
 	// order prefers the thickest axis among those near the asked length, before the closest match.
 	return out.sort(
 		(x, y) =>
+			(young ? x.age - y.age : 0) ||
 			leafy(y) - leafy(x) ||
 			near(y) - near(x) ||
 			y.thickness - x.thickness ||
@@ -372,9 +390,9 @@ export function cutBranch(
 	const length = cuttingLength(record, cutting);
 	const hinted = plantHint(record, cutting.part)?.order;
 	const shade = record.shoots?.placement.shadePrune ?? 0;
-	let ranked = candidates(skeleton, hinted, length, shade);
+	let ranked = candidates(skeleton, hinted, length, shade, cutting.young);
 	if (ranked.length === 0 && hinted !== undefined)
-		ranked = candidates(skeleton, undefined, length, shade);
+		ranked = candidates(skeleton, undefined, length, shade, cutting.young);
 	if (ranked.length === 0) return undefined;
 	const chosen = ranked[(cutting.pick ?? 0) % ranked.length] as Candidate;
 	const { axes, buds } = skeleton;

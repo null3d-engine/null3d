@@ -510,6 +510,7 @@ export default defineSketch(async (ctx) => {
 		...(VIEW === 'leaf-under' ? { face: 'lower' as const } : {}),
 		...(QUERY.pressed !== undefined && { pressed: QUERY.pressed }),
 		...(QUERY.age !== undefined && { age: QUERY.age }),
+		...(QUERY.young !== undefined && { young: QUERY.young }),
 	};
 	const needsWhole = !SPEC.cutting;
 	// A piece whose record hint names one of the species' cutting classes grows from a kit of its
