@@ -10,6 +10,7 @@
 	},
 	"28-young-bark.png": {
 		"thin": 0.015,
-		"span": 0.1
+		"span": 0.1,
+		"barkMask": true
 	}
 }
