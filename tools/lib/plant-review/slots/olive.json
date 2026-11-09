@@ -73,7 +73,9 @@
 		"roll": -35
 	},
 	"28-young-bark.png": {
-		"daylight": 1.4
+		"daylight": 1.2,
+		"thin": 0.02,
+		"span": 0.07
 	},
 	"16-bark-on-limb.png": {
 		"background": "studio-grey",
