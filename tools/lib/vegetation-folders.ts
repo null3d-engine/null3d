@@ -15,7 +15,7 @@ export interface SpeciesFolder {
 
 /**
  * The species folders, sorted: every folder under `species/` with an `index.ts`, but those whose
- * names start with an underscore, which are the template and the stand-in species.
+ * names start with an underscore, such as the template.
  */
 export function speciesFolders(root: string): SpeciesFolder[] {
 	const dir = join(root, SPECIES_DIR);

@@ -86,7 +86,7 @@ function fakeContext(start: QualityPreset = 'medium', tier = 'webgpu') {
 		},
 	};
 	const ctx = {
-		time: { now: 1 },
+		time: { now: 1, held: false, drawn: true },
 		engine: { capabilities: { tier, hdr: tier !== 'webgl2' } },
 		quality,
 		page: {

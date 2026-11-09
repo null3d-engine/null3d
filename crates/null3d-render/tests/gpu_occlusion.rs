@@ -406,6 +406,68 @@ fn with_the_depth_prepass_the_prepass_draws_what_the_second_phase_kept() {
 }
 
 #[test]
+fn a_pick_draws_the_second_set_of_draws_that_the_opaque_pass_drew() {
+    let mut world = world(Antialias::Msaa, occluding());
+    let mut mock = device();
+    let (first, _) = frames(&mut world, &mut mock);
+    world
+        .renderer
+        .settings_mut()
+        .set_pick(null3d_render::pick::PickRequest {
+            x: 4.0,
+            y: 3.0,
+            ring: 0,
+            slot: 40,
+            destination: 4096,
+        });
+    let picked = world.step(&mut mock, false);
+    let templates: HashMap<u32, u32> = first
+        .iter()
+        .chain(&picked)
+        .filter(|(op, _)| *op == Op::CreateRenderPipeline)
+        .map(|(_, o)| (o[0], o[1]))
+        .collect();
+    // The pick pass records its draws in the frame, outside any bundle, with the pick template.
+    let (mut in_bundle, mut template_now) = (false, 0);
+    let mut offsets = Vec::new();
+    for (op, o) in &picked {
+        match op {
+            Op::BeginBundle => in_bundle = true,
+            Op::EndBundle => in_bundle = false,
+            Op::SetPipeline if !in_bundle => template_now = templates[&o[0]],
+            Op::DrawIndexedIndirect if !in_bundle && template_now == template::PICK => {
+                offsets.push(o[1])
+            }
+            _ => {}
+        }
+    }
+    assert!(!offsets.is_empty(), "the pick draws the scene's objects");
+    let draws = bundle_draws(&first);
+    let passes = passes(&first, &pipeline_templates(&first));
+    let opaque = passes
+        .iter()
+        .rev()
+        .find_map(|p| match p {
+            Pass::Render { bundles, .. }
+                if bundles.len() == 1 && draws.contains_key(&bundles[0]) =>
+            {
+                Some(bundles[0])
+            }
+            _ => None,
+        })
+        .expect("the opaque pass replays its bundle");
+    let set = draws[&opaque].len() as u32 * INDIRECT_BYTES;
+    assert!(
+        draws[&opaque].iter().all(|&offset| offset >= set),
+        "the opaque pass draws the second set"
+    );
+    assert!(
+        offsets.iter().all(|&offset| offset >= set),
+        "the pick reads the draws that the late phase filled: {offsets:?}, set at {set}"
+    );
+}
+
+#[test]
 fn without_occlusion_culling_each_view_culls_once() {
     {
         let config = RendererConfig::default();

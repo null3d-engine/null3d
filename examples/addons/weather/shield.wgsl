@@ -29,15 +29,18 @@ fn shield_drops(uv: vec2f, time: f32) -> vec4f {
     let slide = sliding * age * age * 2.6;
     let center = vec2f(rest.x, fract(rest.y - slide));
     let local = fract(uv * cells) - center;
-    let radius = (0.06 + 0.11 * home.y) * holds;
-    let body = smoothstep(radius, radius * 0.4, length(local));
+    // Each fade runs from its lower edge to its higher one: smoothstep has no defined result when
+    // its edges are reversed or equal, and Firefox's software GL on Linux then fills a cell with
+    // no bead with water.
+    let radius = 0.06 + 0.11 * home.y;
+    let body = holds * (1.0 - smoothstep(radius * 0.4, radius, length(local)));
     // The trail is a thin streak above a bead that has slid.
     let above = local.y;
     let trail =
         sliding *
-        smoothstep(0.018, 0.0, abs(local.x)) *
+        (1.0 - smoothstep(0.0, 0.018, abs(local.x))) *
         smoothstep(0.0, 0.04, above) *
-        smoothstep(slide + 0.04, slide - 0.18, above);
+        (1.0 - smoothstep(slide - 0.18, slide + 0.04, above));
     return vec4f(body, local.x, local.y, trail);
 }
 

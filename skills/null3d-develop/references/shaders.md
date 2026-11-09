@@ -58,8 +58,11 @@ struct Surface {
   metalness: f32,
   roughness: f32,          // perceptual roughness, as in glTF and three.js
   normal: vec3f,           // world space, unit length
+  diffuseNormal: vec3f,    // (0.3) lights the sun's diffuse and the ambient and hemisphere lights; starts as the mesh's normal
+  ambientNormal: vec3f,    // (0.3) lights the sky's light alone: ambient, hemisphere, environment, probes; starts as the mesh's normal
   emissive: vec3f,         // linear RGB, added after lighting
   occlusion: f32,          // ambient occlusion, 0 to 1; darkens the ambient light and irradiance
+  occlusionByMinimum: bool,  // (0.3) true joins occlusion with screen-space occlusion by the smaller, not the product; for a baked occlusion
   irradiance: vec3f,       // baked light added to the ambient light, zero by default
   reflection: vec4f,       // (0.2) light from the mirror direction in rgb, its share of the environment's reflection in a
   shadowOffset: vec3f,     // (0.3) where the sun's shadow lookup reads, relative to the point and in world space; zero reads the point itself
@@ -455,7 +458,7 @@ The build resolves imports before translating, and adds only the functions the s
 - `null3d::lighting`: `lambert`, and three.js's physically based functions, such as `brdf_ggx`, `pbr_material` and `direct_light`.
 - `null3d::fog`: the curves `fog_linear` and `fog_exp2`, with three.js's formulas, and `fog_exponential`. Pass each curve the point's straight-line distance from the camera, as the engine does, so the fog stays put as the camera turns. The module also has `fog_height_ratio`, which thins the fog with height, `fog_color`, which adds the sun's glow, and `apply_fog`.
 - `null3d::vertex`: instance transforms, `transform_normal` for uneven scale, and `to_clip`.
-- `null3d::depth`: `linear_depth` and the view-z conversions for the engine's reversed depth, which hold on both GPU paths.
+- `null3d::depth`: `linear_depth` and the view-z conversions for the engine's reversed depth, which hold on both GPU paths. `toward_camera` gives the direction from a view-space position to the camera, for a perspective or an orthographic camera.
 - `null3d::sdf`: signed distances of shapes, and ways to combine them.
 
 Importing a module whole reserves its name. After `#import null3d::color`, no variable, parameter or field can be called `color`. Import items by name, as above, to keep the name free.

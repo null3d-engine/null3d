@@ -55,7 +55,7 @@ export default defineSketch(async (ctx) => {
 	scene.setActiveCamera(camera);
 	// The pointer points at an upright plane down the path: left is golden hour, right is dusk.
 	const view = interact(ctx, camera, { target: TARGET, planeZ: -10, bounds: BOUNDS });
-	const trees = createWood(ctx, camera);
+	const trees = await createWood(ctx, camera);
 
 	// Lanterns on iron posts, each with a bench below it whose shadow falls into the light's cone.
 	const box = geometry.box();

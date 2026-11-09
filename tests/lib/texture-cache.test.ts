@@ -49,7 +49,7 @@ describe('the texture cache plan', () => {
 
 	it('loads the production build: first visits under addresses of their own, repeat visits under one', () => {
 		expect(items[1]?.path).toBe(
-			'/__null3d/load/cold/{run}.{runner}.texture-cache-off-1/tests/pages/texture-cache.html?files=city&texture-cache=off&clear&fresh',
+			'/__null3d/load/cold/{run}.{runner}.texture-cache-off-1/tests/pages/texture-cache.html?files=city&derived-cache=off&clear&fresh',
 		);
 		expect(items[4]?.path).toBe(
 			'/__null3d/load/warm/{run}.{runner}.texture-cache/tests/pages/texture-cache.html?files=city',
@@ -81,7 +81,7 @@ describe('the texture cache plan', () => {
 			'the page loaded no textures: run bun run samples:fetch on the server',
 		]);
 		expect(textureCacheProblems(cold, result({ entriesBefore: null }))).toEqual([
-			'the page has no Cache Storage: serve it over HTTPS',
+			'the page has no storage for the cache: serve it over HTTPS',
 		]);
 	});
 

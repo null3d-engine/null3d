@@ -2,8 +2,9 @@
 // sizes whose sides are powers of two. Every step uses only additions, multiplications, divisions
 // and rounding, which give the same result in every JavaScript engine on every CPU. So the same
 // file gives the same pixels on every machine, and then the same encoded texture.
-import { convertIndexedToRgb, decode } from 'fast-png';
+import { convertIndexedToRgb } from 'fast-png';
 import jpeg from 'jpeg-js';
+import { decodePngFile } from '../png.js';
 
 /**
  * RGBA8 pixels, rows tightly packed, top row first.
@@ -88,7 +89,7 @@ export function decodeImage(bytes, mimeType) {
 		});
 		return { width, height, data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength) };
 	}
-	if (mimeType === 'image/png') return pngPixels(decode(bytes));
+	if (mimeType === 'image/png') return pngPixels(decodePngFile(bytes));
 	throw new Error(`the encoder reads PNG and JPEG images, not ${mimeType}`);
 }
 

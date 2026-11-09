@@ -104,7 +104,7 @@ The bake is arithmetic over the arrays. It gives the same pixels on every device
 
 The bake stores each point's normal in the object's own frame. At draw time the card turns that normal by the copy's turn and lights it, so a turned copy lights as its turned mesh does. The bake reads the mesh's own normals, and makes them where the part gives none.
 
-The vegetation add-on's `@null3d/vegetation/legacy` entry bakes a plant's most detailed level at first use with `bakeFarTree`, and hands the near meshes over to the cards with `handOverToCards` ([Vegetation](vegetation.md)).
+The vegetation add-on bakes a plant's far cards in a job worker with `bakeFarPlant`, and hands the near meshes over to the cards with `handOverToCards` ([Vegetation](vegetation.md)).
 
 ## The surface atlas
 

@@ -36,7 +36,7 @@ export interface CrownLight {
 	readonly min: Vec3;
 	/** A cell's edge in metres. */
 	readonly cell: number;
-	/** Sky visibility per cell, 0 to 1, x fastest. */
+	/** Sky visibility per cell, 0 to 1: x fastest, then y, then z. */
 	readonly sky: Float32Array;
 }
 
@@ -50,6 +50,17 @@ export interface DressInput extends GrowInput {
 	readonly kit: SpeciesKitData;
 	/** The grown skeleton. */
 	readonly skeleton: MacroSkeleton;
+	/**
+	 * How much simpler than grown the plant is, from 0 to 1: fewer and larger shoot rows, and wood
+	 * of fewer rings and sides. 0 when not given. The skeleton is already pruned for it.
+	 */
+	readonly coarseness?: number;
+	/**
+	 * The light of the crown as grown, which a sky-prune line reads at every coarseness, so a
+	 * coarser plant prunes the shoots its full crown leaves in the dark and the light is found once.
+	 * Absent, the prune lights the crown of the rows it is given.
+	 */
+	readonly pruneLight?: CrownLight;
 }
 
 /**

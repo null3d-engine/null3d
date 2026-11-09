@@ -6,8 +6,11 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import { type PlantAsset, plantAssetDigest } from './asset';
+import { hashBytes } from './core/hash';
 import { NotBuiltError } from './core/not-built';
+import { standInSpecies } from './core/stand-in';
 import {
 	bakeFarNow,
 	buildKitNow,
@@ -16,9 +19,15 @@ import {
 	kitKey,
 	loadPlantCode,
 	variantKey,
+	withLeaves,
+	withLimbs,
 } from './generate';
 import type { PlantTaskInput } from './generate-task';
-import { species as stub } from './species/_stub/index';
+
+/** The growth tests grow a real species, which a busy machine draws in tens of seconds. */
+const LONG = scaledBudget(180_000);
+
+const stub = standInSpecies('stub');
 
 await loadPlantCode(stub.record);
 const kit = buildKitNow(stub, { placeholders: true });
@@ -35,6 +44,29 @@ describe('the plant core with stand-ins', () => {
 		expect(kit.cards.color.length).toBe(kit.cards.size * kit.cards.size * 4 * 2);
 		expect(kit.header.length).toBeGreaterThan(0);
 		expect(kit.key).toBe(kitKey(stub.record, stub.textures.manifest, 'high'));
+	});
+
+	it('builds the kit of a form under a key of its own, and the record as it stands without one', () => {
+		const formed = {
+			...stub,
+			record: {
+				...stub.record,
+				forms: { young: { form: 'a young stand-in', size: { height: { mean: 2, spread: 0.2 } } } },
+			},
+		};
+		// The forms leave the record as it stands, and its kit, unchanged.
+		const own = buildKitNow(formed, { placeholders: true });
+		expect(own.key).toBe(kit.key);
+		expect('forms' in own.record).toBe(false);
+		const youngKit = buildKitNow(formed, { placeholders: true, form: 'young' });
+		expect(youngKit.record.size.height).toEqual({ mean: 2, spread: 0.2 });
+		expect(youngKit.key).not.toBe(kit.key);
+		const asset = growPlantNow(youngKit, { seed: 11, variant: 0 });
+		expect(asset.skeleton.height).toBeLessThan(2.5);
+		expect(variantKey(youngKit, { seed: 11, variant: 0 })).not.toBe(
+			variantKey(kit, { seed: 11, variant: 0 }),
+		);
+		expect(() => buildKitNow(formed, { placeholders: true, form: 'old' })).toThrow(/no form 'old'/);
 	});
 
 	it('grows a variant through every stage', () => {
@@ -68,7 +100,8 @@ describe('the plant core with stand-ins', () => {
 		expect(later.levels[0].parts).toHaveLength(0);
 		const wood = growNearWoodNow(kit, { seed: 11, variant: 0 });
 		const atOnce = growPlantNow(kit, { seed: 11, variant: 0, near: true }).levels[0].parts[0];
-		expect(wood?.arrays.positions).toEqual(atOnce?.arrays.positions as Uint16Array);
+		expect(wood).toHaveLength(1);
+		expect(wood[0]?.arrays.positions).toEqual(atOnce?.arrays.positions as Uint16Array);
 	});
 
 	it('bakes the far cards and cuts the review pieces', () => {
@@ -84,8 +117,50 @@ describe('the plant core with stand-ins', () => {
 		}
 	});
 
+	it('grows the same stand-ins as real stages land, so scenes that place them draw the same', () => {
+		const frozen = [
+			['stub', {}, 3667806437, '42622e3d4036c19e'],
+			[
+				'pedunculate-oak',
+				{ height: { mean: 20, spread: 3 }, aspect: 1.2 },
+				843710834,
+				'29724ef94d149086',
+			],
+		] as const;
+		for (const [id, options, kitHash, assetDigest] of frozen) {
+			const standIn = buildKitNow(standInSpecies(id, options), { placeholders: true });
+			let hash = 0;
+			for (const prototype of standIn.prototypes)
+				for (const tier of prototype.tiers)
+					hash =
+						hashBytes(new Uint8Array(tier.positions.buffer), hash) ^
+						hashBytes(tier.colors, hash + 1);
+			hash = hashBytes(standIn.cards.color, hash);
+			hash = hashBytes(
+				new Uint8Array(standIn.leaves[0]?.positions.buffer ?? new ArrayBuffer(0)),
+				hash,
+			);
+			expect(hash >>> 0).toBe(kitHash);
+			const grown = growPlantNow(standIn, { seed: 11, variant: 0, near: true });
+			expect(plantAssetDigest(grown)).toBe(assetDigest);
+		}
+	});
+
+	it('grows the built stages and stand-ins for the rest when the kit asks for the missing ones', () => {
+		const mixed = buildKitNow(stub, { placeholders: 'missing' });
+		expect(mixed.placeholders).toBe('missing');
+		const options = { seed: 11, variant: 0, near: true };
+		const asset = growPlantNow(mixed, options);
+		expect(plantAssetDigest(growPlantNow(mixed, options))).toBe(plantAssetDigest(asset));
+		expect(plantAssetDigest(asset)).not.toBe(plantAssetDigest(growPlantNow(kit, options)));
+		expect(asset.wind.count).toBe(asset.skeleton.axes.count);
+		expect(asset.levels[1].from).toBeGreaterThan(0);
+	});
+
 	it('throws where a stage is not built and the kit asks for no stand-ins', () => {
-		expect(() => buildKitNow(stub)).toThrow(NotBuiltError);
+		// Every kit stage is built; a variant's growth still meets a stage that is not.
+		const kit = buildKitNow(stub);
+		expect(() => growPlantNow(kit, { seed: 11, variant: 0, near: true })).toThrow(NotBuiltError);
 	});
 
 	it('grows the same bytes in a worker that runs the job-worker task', async () => {
@@ -122,4 +197,86 @@ self.onmessage = async (event) => {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
+
+	it(
+		"sizes every species' leaves from one share, leaving the wood where the record grows it",
+		async () => {
+			const oak = (await import('./species/pedunculate-oak/index')).species;
+			await loadPlantCode(oak.record);
+			const grown = buildKitNow(oak, { placeholders: 'missing', detail: 'high' });
+			const shoots = oak.record.shoots as NonNullable<typeof oak.record.shoots>;
+			// The leaf area is the share, so a shoot's own scale moves by its square root.
+			const own = withLeaves(oak.record, 1);
+			expect(own).toBe(oak.record);
+			const smaller = withLeaves(oak.record, 0.64) as typeof oak.record;
+			const scaleOf = (record: typeof oak.record): number => {
+				const scale = record.shoots?.placement.scale ?? 1;
+				return typeof scale === 'number' ? scale : scale.mean;
+			};
+			expect(scaleOf(smaller)).toBeCloseTo(scaleOf(oak.record) * 0.8, 6);
+			// The wood does not move: the same growth, and a shoot count that keeps its own by
+			// taking back the room a smaller shoot frees along the axis.
+			expect(smaller.growth).toBe(oak.record.growth);
+			const perMetre = (curve: typeof shoots.placement.perMetre) =>
+				typeof curve === 'number' ? curve : (curve[0]?.[1] ?? 0);
+			expect(perMetre(smaller.shoots?.placement.perMetre ?? 0)).toBeCloseTo(
+				perMetre(shoots.placement.perMetre) * 0.8,
+				6,
+			);
+			expect(() => withLeaves(oak.record, 3)).toThrow();
+			expect(variantKey(grown, { seed: 11, variant: 0, leaves: 0.5 })).not.toBe(
+				variantKey(grown, { seed: 11, variant: 0 }),
+			);
+			expect(variantKey(grown, { seed: 11, variant: 0, leaves: 1 })).toBe(
+				variantKey(grown, { seed: 11, variant: 0 }),
+			);
+		},
+		LONG,
+	);
+
+	it(
+		'thins or fills the wood from one limb share, every species the same way',
+		async () => {
+			const oak = (await import('./species/pedunculate-oak/index')).species;
+			await loadPlantCode(oak.record);
+			const grown = buildKitNow(oak, { placeholders: 'missing', detail: 'high' });
+			const rows = (limbs?: number) =>
+				growPlantNow(grown, { seed: 11, variant: 0, near: true, limbs }).shoots.count;
+			// A share below one drops the shoots a crown's shaded wood carries; above it, keeps them.
+			expect(rows(0.5)).toBeLessThan(rows(1));
+			expect(rows(1.6)).toBeGreaterThan(rows(1));
+			// Absent or one grows the record's own crown, to the shoot.
+			expect(rows()).toBe(rows(1));
+			const shoots = oak.record.shoots as NonNullable<typeof oak.record.shoots>;
+			// The share moves the record's own sky prune, so a sparse crown keeps its lit rim.
+			const thinner = withLimbs(oak.record, 1.5) as typeof oak.record;
+			expect(thinner.shoots?.placement.skyPrune).toBeLessThan(shoots.placement.skyPrune ?? 0.5);
+			const sparse = withLimbs(oak.record, 0.5) as typeof oak.record;
+			// The growth's own count of limbs moves with the share, whatever model the record names.
+			if (oak.record.growth.model === 'self-organizing') {
+				const own = oak.record.growth.branching ?? 1;
+				expect(sparse.growth.model).toBe('self-organizing');
+				if (sparse.growth.model === 'self-organizing')
+					expect(sparse.growth.branching).toBeCloseTo(own * 0.5, 6);
+			}
+			if (shoots.placement.density !== undefined)
+				expect(sparse.shoots?.placement.density).toBeCloseTo(shoots.placement.density * 0.5, 6);
+			// The shoots along the finest axes thin too, which is the dial every growth model answers.
+			const perMetre = (curve: typeof shoots.placement.perMetre) =>
+				typeof curve === 'number' ? curve : (curve[0]?.[1] ?? 0);
+			expect(perMetre(sparse.shoots?.placement.perMetre ?? 0)).toBeCloseTo(
+				perMetre(shoots.placement.perMetre) * 0.5,
+				6,
+			);
+			expect(() => withLimbs(oak.record, 3)).toThrow();
+			// A different share is a different asset, so the cache never hands back the record's own.
+			expect(variantKey(grown, { seed: 11, variant: 0, limbs: 0.5 })).not.toBe(
+				variantKey(grown, { seed: 11, variant: 0 }),
+			);
+			expect(variantKey(grown, { seed: 11, variant: 0, limbs: 1 })).toBe(
+				variantKey(grown, { seed: 11, variant: 0 }),
+			);
+		},
+		LONG,
+	);
 });

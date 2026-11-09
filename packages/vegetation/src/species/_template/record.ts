@@ -89,7 +89,13 @@ export const record: Species = {
 		leafYears: 1,
 		stem: { radius: [0.003, 0.0015], zigzag: 0 },
 		bud: { length: 0.006, width: 0.003, tipCluster: 1 },
-		placement: { perMetre: 6, shadePrune: 0.1, skyward: 0.3, scale: { mean: 1, spread: 0.15 } },
+		placement: {
+			perMetre: 6,
+			shadePrune: 0.1,
+			tipPrune: 0.05,
+			skyward: 0.3,
+			scale: { mean: 1, spread: 0.15 },
+		},
 	},
 	foliage: {
 		kind: 'blade',
@@ -134,8 +140,8 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			kitBytes: 2_000_000,
-			variantBytes: 1_500_000,
+			kitBytes: { low: 2_000_000, medium: 2_000_000, high: 2_000_000, ultra: 2_000_000 },
+			variantBytes: { low: 1_500_000, medium: 1_500_000, high: 1_500_000, ultra: 1_500_000 },
 			lod0Triangles: 800_000,
 			lod1Triangles: 60_000,
 			lod2Triangles: 15_000,

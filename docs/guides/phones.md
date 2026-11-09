@@ -100,7 +100,7 @@ The engine reads touches as it reads the mouse: the first finger presses `Mouse0
 
 ## Networks and repeat visits
 
-Phones often lose their network. A game that must play offline caches the engine's files and its own in a service worker, as [Hosting](../getting-started/hosting.md#offline-play) shows. The engine keeps each transcoded KTX2 texture in the browser's Cache Storage, so a repeat visit skips the transcoder. On phones that saves less time than on a tablet, because other start work takes most of a phone's start.
+Phones often lose their network. A game that must play offline caches the engine's files and its own in a service worker, as [Hosting](../getting-started/hosting.md#offline-play) shows. The engine keeps each transcoded KTX2 texture in its [cache of derived data](../api/assets.md#the-cache-of-derived-data), so a repeat visit skips the transcoder. On phones that saves less time than on a tablet, because other start work takes most of a phone's start.
 
 ## Browsers on iPhone and iPad
 

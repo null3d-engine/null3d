@@ -14,6 +14,8 @@ These guides hold the detail behind [AGENTS.md](../AGENTS.md), so that file can 
 | [Image tests](image-tests.md) | The image test manifest, its references in each environment and on each device, the review step, and CI's shards |
 | [Implementation notes](implementation-notes.md) | Habits that keep the hot paths fast, and the browser faults that shaped the code |
 | [Branches and parallel work](pull-requests.md) | How a branch lands on main by direct push, merging main into a branch and its generated files, commit messages and pushes, the GPU check, what CI runs and CI's jobs, several copies of the repository on one machine, and coordinating helper agents |
+| [Plant review](plant-review.md) | The reviewer's standard: the twelve rows, the coverage rules and the process. When a species passes, what a fail looks like, and how a verdict is reported. How the review lights and frames each picture, the judging rules where the standard is silent, and how to tune a crown |
+| [Plant references](plant-references.md) | The three measures a species is reviewed against: outline, surface color and edge directions. What each cannot see, the order to check framing, content and light before changing a figure, and the per-species loop |
 | [Releases](releases.md) | How a release is made, versions, and the one-time setup |
 | [Sample content](sample-content.md) | The large models, textures and environments that tests and benchmarks load: where they live, how to fetch and use them, how to add one, and why they are not in this repository |
 | [Skill evaluations](skill-evaluations.md) | The run of the develop skill's cases with and without the skill, its trigger queries, the pass rates, the time and tokens, and the limits of the method |

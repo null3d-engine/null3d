@@ -94,7 +94,11 @@ freeze in the engine's API at 1.0, and its code would join every page's start, f
 - **Hold mode.** A hold runs its frames with no frame loop, so a task that the sketch queued never
   answers while it steps. The held frame now waits for those tasks, then draws one more frame at
   the held time, as it already waits for textures and a grading table. Without that wait a held
-  picture would show the ground that the tasks had not yet written.
+  picture would show the ground that the tasks had not yet written. A task counts from its call,
+  before its WebAssembly file compiles. A count that starts after the compile misses the terrain's
+  first build while it compiles. That happens when an earlier task has already loaded the task
+  code, as the plant core's tasks in the Island's setup do. The hold then took its frame with no ground,
+  and the sea showed through the island. A unit test holds the count at one through a slow compile.
 
 ## Consequences
 

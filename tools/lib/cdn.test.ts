@@ -93,7 +93,8 @@ describe('package imports in the add-ons', () => {
 		expect(entries['@null3d/engine']).toBe('lib/index.js');
 		expect(entries['@null3d/engine/stats']).toBe('lib/stats.js');
 		expect(entries['@null3d/impostors']).toBe('addons/impostors/lib/index.js');
-		expect(entries['@null3d/vegetation/legacy']).toBe('addons/vegetation/lib/legacy/index.js');
+		expect(entries['@null3d/vegetation']).toBe('addons/vegetation/lib/index.js');
+		expect(entries['@null3d/engine/levels-planner']).toBe('levels/planner.js');
 	});
 
 	it('makes the engine and other add-ons relative, and leaves other text alone', () => {
@@ -106,7 +107,7 @@ describe('package imports in the add-ons', () => {
 			"import { compile } from '@null3d/vite-plugin';",
 		].join('\n');
 		expect(
-			packageImportsMadeRelative(text, 'addons/vegetation/lib/legacy/impostor.js', entries),
+			packageImportsMadeRelative(text, 'addons/vegetation/lib/render/material.js', entries),
 		).toBe(
 			[
 				"import { createEngine } from '../../../../lib/index.js';",

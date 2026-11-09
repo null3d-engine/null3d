@@ -1,8 +1,32 @@
-// Cuttings: one piece of a plant drawn as a plant of its own, for close review beside the reference
-// set's studio stills. The options are the core's; the extraction of a piece from a grown variant
-// belongs to the self-organizing growth's work and is not built yet.
-import type { PlantAsset, SpeciesKitData } from './asset';
-import { notBuilt } from './core/not-built';
+// Cuttings: one piece of a plant grown as a plant of its own, for close review beside the reference
+// set's studio stills. A branch or sub-branch is the subtree of one macro axis taken from the grown
+// skeleton, moved so its cut sits on the origin and, by default, turned so it stands upright on the
+// cut. The piece then goes through the same dressing and meshing stages as a whole plant, so it
+// carries the species' own shoots, wood and wind, whichever growth model grew it. A leaf cluster is
+// one shoot prototype of the kit and a leaf is one leaf mesh, each as a plant of its own.
+import type {
+	MeshArrays,
+	PrototypeArrays,
+	ShootPrototype,
+	ShootRows,
+	SpeciesKitData,
+} from './asset';
+import { type MacroSkeleton, SkeletonBuilder } from './core/graph';
+import {
+	acos,
+	cross3,
+	length3,
+	log,
+	normalize3,
+	quatAxisAngle,
+	quatMultiply,
+	quatRotate,
+	type Vector3,
+} from './core/math';
+import type { CutFromPlant, LeafShape, ShootClass, Species, ThickLeaf } from './core/record';
+import { DETAILS, type Detail, spreadMean, type Vec3 } from './core/types';
+import { foliage } from './leaf/kinds';
+import { SURFACE_STEM } from './leaf/writer';
 
 /**
  * The piece a cutting takes.
@@ -15,9 +39,9 @@ export type CuttingPart = 'branch' | 'subbranch' | 'cluster' | 'leaf';
  * One piece of a plant as a plant of its own: a branch about 1 m long, a sub-branch about 0.35 m, a
  * leaf cluster, or one leaf.
  *
- * - 'leaf': one leaf mesh of the species (front and back faces), at the nearest level.
- * - 'cluster': a shoot prototype, chosen by `pick` among the classes in vigor order. A 'merged'
- *   species cuts a group of leaflets on a rachis (palm), or blades at the collar (grass).
+ * - 'leaf': one leaf mesh of the species, at the nearest level.
+ * - 'cluster': a shoot prototype, chosen by `pick` among the prototypes in vigor order, the
+ *   record's hinted shoot class first. A species with no prototypes cuts its finest shoots instead.
  * - 'subbranch', 'branch': the subtree of a macro axis of the hinted order whose extent is nearest
  *   `length`, cut there, with its shoot rows merged into one foliage part.
  *
@@ -29,7 +53,7 @@ export type CuttingPart = 'branch' | 'subbranch' | 'cluster' | 'leaf';
 export interface CuttingOptions {
 	/** The piece to cut. */
 	readonly part: CuttingPart;
-	/** Metres from the cut to the farthest tip; 1.0, 0.35 and 0.15 by default. */
+	/** Metres from the cut to the farthest tip; the record's hint, or 1.0, 0.35 and 0.15 by default. */
 	readonly length?: number;
 	/** The candidate to take, 0 for the best. */
 	readonly pick?: number;
@@ -37,6 +61,11 @@ export interface CuttingOptions {
 	readonly orient?: 'upright' | 'as-grown';
 	/** For 'leaf': the face toward +Z. */
 	readonly face?: 'upper' | 'lower';
+	/**
+	 * For 'leaf': whether the leaf lies pressed flat, as a scan lays it, or keeps the shape it has on
+	 * the plant, as a leaf held in the hand does. The record's cutting hint by default.
+	 */
+	readonly pressed?: boolean;
 }
 
 /**
@@ -52,22 +81,706 @@ export const CUTTING_LENGTH: Readonly<Record<CuttingPart, number>> = {
 };
 
 /**
- * Cuts one piece from a grown variant, as an asset of its own.
+ * The share of the blade's length that a pressed leaf keeps as its stalk where the record names
+ * none: a leaf picked from the crown shows a short piece of it under the blade.
+ */
+export const LEAF_CUT_PETIOLE = 0.12;
+
+/**
+ * Steps of length match within which a piece counts as near the asked length, about a third either
+ * way: among near pieces, one that divides ranks before one that matches the length more closely.
+ */
+const NEAR_STEPS = 2;
+/** Candidates whose length match falls in the same step of this many natural-log units rank as near. */
+const MATCH_STEP = 0.15;
+
+/** A branch or sub-branch hint that cuts from the grown plant, if the record gives one. */
+function plantHint(record: Species, part: CuttingPart): CutFromPlant | undefined {
+	if (part !== 'branch' && part !== 'subbranch') return undefined;
+	const hint = record.cuttings?.[part];
+	return hint && 'order' in hint ? hint : undefined;
+}
+
+/** The shoot class a cutting hint takes from the kit, if it names one. */
+function shootHint(record: Species, part: CuttingPart): ShootClass['name'] | undefined {
+	if (part === 'leaf') return undefined;
+	const hint = record.cuttings?.[part];
+	return hint && 'shoot' in hint ? hint.shoot : undefined;
+}
+
+/**
+ * Whether a cutting is one shoot prototype from the kit rather than a piece of the grown plant: a
+ * cluster, or a branch or sub-branch whose record hint names a shoot class.
  *
- * @param kit The species' kit.
- * @param asset The whole grown variant.
- * @param cutting The piece to cut.
- * @returns The piece's asset.
+ * @param record The species record.
+ * @param part The piece.
+ * @returns Whether the kit's prototypes give the piece.
  * @category api/vegetation
  */
-export function cutPlant(
-	kit: SpeciesKitData,
-	asset: PlantAsset,
+export function cutsShoot(record: Species, part: CuttingPart): boolean {
+	return part === 'cluster' || shootHint(record, part) !== undefined;
+}
+
+/**
+ * The length a cutting aims for: the option's, else the record's hint, else the default.
+ *
+ * @param record The species record.
+ * @param cutting The piece to cut.
+ * @returns Metres from the cut to the farthest tip.
+ * @category api/vegetation
+ */
+export function cuttingLength(record: Species, cutting: CuttingOptions): number {
+	if (cutting.length !== undefined) return cutting.length;
+	const hint = plantHint(record, cutting.part);
+	return hint?.length ?? CUTTING_LENGTH[cutting.part];
+}
+
+/**
+ * The turn that stands a piece upright on its cut at the origin: the line from the cut to `mean`
+ * onto +Y.
+ */
+function uprightTurn(mean: Readonly<Vector3>): number[] {
+	const q = [0, 0, 0, 1];
+	const along = normalize3([mean[0], mean[1], mean[2]]);
+	const axis = cross3(along, [0, 1, 0], [0, 0, 0]);
+	const sine = length3(axis[0], axis[1], axis[2]);
+	if (sine > 1e-6) quatAxisAngle(normalize3(axis), acos(Math.max(-1, Math.min(1, along[1]))), q);
+	else if (along[1] < 0) quatAxisAngle([1, 0, 0], Math.PI, q);
+	return q;
+}
+
+/**
+ * The turn a shoot cutting stands in: upright on its attach point, the line to the mean of its
+ * stems' vertices onto +Y, as a cut branch stands on the line to its wood's mean; none when the
+ * cutting keeps its pose. The low tier, which every kit holds, gives one turn whatever tier draws
+ * the piece.
+ */
+function shootTurn(prototype: ShootPrototype, cutting: CuttingOptions): number[] {
+	if (cutting.orient === 'as-grown') return [0, 0, 0, 1];
+	const { positions: p, colors } = prototype.tiers[0] as PrototypeArrays;
+	const mean: Vector3 = [0, 0, 0];
+	let count = 0;
+	for (let i = 0; i < p.length; i += 3) {
+		if ((colors[(i / 3) * 4 + 2] as number) !== SURFACE_STEM) continue;
+		mean[0] += p[i] as number;
+		mean[1] += p[i + 1] as number;
+		mean[2] += p[i + 2] as number;
+		count++;
+	}
+	return count > 0 ? uprightTurn(mean) : [0, 0, 0, 1];
+}
+
+/** A node's position as a vector. */
+function nodeAt(skeleton: MacroSkeleton, node: number): Vector3 {
+	const p = skeleton.position;
+	return [p[node * 3] as number, p[node * 3 + 1] as number, p[node * 3 + 2] as number];
+}
+
+/**
+ * Where an axis leaves its parent. An axis that leaves at its parent node (a share of 0 along the
+ * internode, as the growers write it) is cut there. One that leaves further along the internode is
+ * cut where its first node, projected onto that internode, meets it. A stem is cut at its first node.
+ */
+function junctionOf(skeleton: MacroSkeleton, axis: number): Vector3 {
+	const { axes } = skeleton;
+	const first = nodeAt(skeleton, axes.first[axis] as number);
+	const parentNode = axes.parentNode[axis] as number;
+	const parentAxis = axes.parent[axis] as number;
+	if (parentNode < 0 || parentAxis < 0) return first;
+	const a = nodeAt(skeleton, parentNode);
+	if ((axes.parentT[axis] as number) <= 0) return a;
+	const next = parentNode + 1;
+	const b =
+		next <= (axes.last[parentAxis] as number) && (skeleton.axisOf[next] as number) === parentAxis
+			? nodeAt(skeleton, next)
+			: a;
+	const ab: Vector3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+	const span = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
+	const along = (first[0] - a[0]) * ab[0] + (first[1] - a[1]) * ab[1] + (first[2] - a[2]) * ab[2];
+	const t = span > 0 ? Math.min(1, Math.max(0, along / span)) : 0;
+	return [a[0] + ab[0] * t, a[1] + ab[1] * t, a[2] + ab[2] * t];
+}
+
+/** Each axis's depth below its stem, so a walk in depth order meets every parent first. */
+function depths(skeleton: MacroSkeleton): Uint16Array {
+	const { axes } = skeleton;
+	const depth = new Uint16Array(axes.count);
+	const known = new Uint8Array(axes.count);
+	for (let a = 0; a < axes.count; a++) {
+		const chain: number[] = [];
+		let at = a;
+		while (at >= 0 && known[at] === 0) {
+			chain.push(at);
+			at = axes.parent[at] as number;
+		}
+		let d = at >= 0 ? (depth[at] as number) + 1 : 0;
+		for (let k = chain.length - 1; k >= 0; k--) {
+			const axis = chain[k] as number;
+			depth[axis] = d++;
+			known[axis] = 1;
+		}
+	}
+	return depth;
+}
+
+/** One axis that a branch cut can start from: its extent from the cut and its subtree's light. */
+interface Candidate {
+	readonly axis: number;
+	readonly extent: number;
+	readonly light: number;
+	/** Axes in its subtree, itself included, and the bud sites they carry in light enough for shoots. */
+	readonly axes: number;
+	readonly buds: number;
+	/** Its pipe radius at its first node, the thickness a piece's photograph shows. */
+	readonly thickness: number;
+}
+
+/**
+ * The axes a branch cut can start from, ranked: those of the wanted order (any order past the stems
+ * when it is undefined): first those that carry bud sites in enough light to grow shoots (at or
+ * above the record's shade line), then those whose subtree's extent is near `length`, then those
+ * that divide, then by how near the extent is, then the sunniest.
+ */
+function candidates(
+	skeleton: MacroSkeleton,
+	order: number | undefined,
+	length: number,
+	shade: number,
+): Candidate[] {
+	const { axes } = skeleton;
+	const depth = depths(skeleton);
+	const byDepth = Array.from({ length: axes.count }, (_, a) => a).sort(
+		(a, b) => (depth[a] as number) - (depth[b] as number) || a - b,
+	);
+	// The candidate ancestors of each axis, nearest first, found walking parents before children.
+	const owners: number[][] = Array.from({ length: axes.count }, () => []);
+	const isCandidate = (a: number) =>
+		(axes.parent[a] as number) >= 0 &&
+		(order === undefined ? (axes.order[a] as number) >= 1 : (axes.order[a] as number) === order);
+	for (const a of byDepth) {
+		const parent = axes.parent[a] as number;
+		const inherited = parent >= 0 ? (owners[parent] as number[]) : [];
+		owners[a] = isCandidate(a) ? [a, ...inherited] : inherited;
+	}
+	const junction = new Map<number, Vector3>();
+	const extent = new Float64Array(axes.count);
+	const light = new Float64Array(axes.count);
+	const nodes = new Uint32Array(axes.count);
+	for (let a = 0; a < axes.count; a++) {
+		const owning = owners[a] as number[];
+		if (owning.length === 0) continue;
+		for (let n = axes.first[a] as number; n <= (axes.last[a] as number); n++) {
+			const p = nodeAt(skeleton, n);
+			for (const owner of owning) {
+				let j = junction.get(owner);
+				if (!j) {
+					j = junctionOf(skeleton, owner);
+					junction.set(owner, j);
+				}
+				const d = length3(p[0] - j[0], p[1] - j[1], p[2] - j[2]);
+				if (d > (extent[owner] as number)) extent[owner] = d;
+				light[owner] = (light[owner] as number) + (skeleton.light[n] as number);
+				nodes[owner] = (nodes[owner] as number) + 1;
+			}
+		}
+	}
+	const subtreeAxes = new Uint32Array(axes.count);
+	for (let a = 0; a < axes.count; a++)
+		for (const owner of owners[a] as number[])
+			subtreeAxes[owner] = (subtreeAxes[owner] as number) + 1;
+	const subtreeBuds = new Uint32Array(axes.count);
+	for (let b = 0; b < skeleton.buds.count; b++) {
+		if ((skeleton.buds.light[b] as number) < shade) continue;
+		for (const owner of owners[skeleton.buds.axis[b] as number] as number[])
+			subtreeBuds[owner] = (subtreeBuds[owner] as number) + 1;
+	}
+	const out: Candidate[] = [];
+	for (let a = 0; a < axes.count; a++)
+		if (isCandidate(a) && (extent[a] as number) > 0)
+			out.push({
+				axis: a,
+				extent: extent[a] as number,
+				light: (light[a] as number) / Math.max(1, nodes[a] as number),
+				axes: subtreeAxes[a] as number,
+				buds: subtreeBuds[a] as number,
+				thickness: skeleton.radius[axes.first[a] as number] as number,
+			});
+	const match = (c: Candidate) => Math.round(Math.abs(log(c.extent / length)) / MATCH_STEP);
+	const near = (c: Candidate) => (match(c) <= NEAR_STEPS ? 1 : 0);
+	const leafy = (c: Candidate) => (c.buds > 0 ? 1 : 0);
+	const divides = (c: Candidate) => (c.axes > 1 ? 1 : 0);
+	// A photograph of a piece shows a thick axis where it shows one at all, so a cut with no hinted
+	// order prefers the thickest axis among those near the asked length, before the closest match.
+	return out.sort(
+		(x, y) =>
+			leafy(y) - leafy(x) ||
+			near(y) - near(x) ||
+			y.thickness - x.thickness ||
+			divides(y) - divides(x) ||
+			match(x) - match(y) ||
+			y.light - x.light ||
+			x.axis - y.axis,
+	);
+}
+
+/** What a branch cut took from the plant: the piece's own skeleton and where it came from. */
+export interface CutBranch {
+	/** The piece, its cut on the origin. */
+	readonly skeleton: MacroSkeleton;
+	/** The axis of the whole plant the piece starts from. */
+	readonly axis: number;
+	/** That axis's botanical order. */
+	readonly order: number;
+	/** Metres from the cut to the farthest node of the piece. */
+	readonly extent: number;
+	/** How many axes could have been cut for the asked length and order. */
+	readonly candidates: number;
+}
+
+/**
+ * Cuts the subtree of one macro axis from a grown skeleton as a skeleton of its own: the axis whose
+ * subtree's extent from its junction is nearest the asked length, among the axes of the record's
+ * hinted order (or any order past the stems when the record hints none, or no axis has that order),
+ * taken by `pick` in rank order. The cut sits on the origin. 'upright' turns the piece so the line
+ * from the cut to its nodes' mean points up +Y; 'as-grown' keeps its turn. Bud frames turn with it.
+ *
+ * @param skeleton The whole plant's skeleton.
+ * @param record The species record, for its cutting hints.
+ * @param cutting The piece to cut: 'branch' or 'subbranch', or 'cluster' for a species without prototypes.
+ * @returns The piece, or undefined when the plant has no axis past its stems.
+ * @category api/vegetation
+ */
+export function cutBranch(
+	skeleton: MacroSkeleton,
+	record: Species,
 	cutting: CuttingOptions,
-): PlantAsset {
-	// The self-organizing growth's work builds the extraction.
-	void kit;
-	void asset;
-	void cutting;
-	throw notBuilt('cutting a piece from a plant');
+): CutBranch | undefined {
+	const length = cuttingLength(record, cutting);
+	const hinted = plantHint(record, cutting.part)?.order;
+	const shade = record.shoots?.placement.shadePrune ?? 0;
+	let ranked = candidates(skeleton, hinted, length, shade);
+	if (ranked.length === 0 && hinted !== undefined)
+		ranked = candidates(skeleton, undefined, length, shade);
+	if (ranked.length === 0) return undefined;
+	const chosen = ranked[(cutting.pick ?? 0) % ranked.length] as Candidate;
+	const { axes, buds } = skeleton;
+	const root = chosen.axis;
+	const inside = new Uint8Array(axes.count);
+	const depth = depths(skeleton);
+	const order = Array.from({ length: axes.count }, (_, a) => a).sort(
+		(a, b) => (depth[a] as number) - (depth[b] as number) || a - b,
+	);
+	for (const a of order) {
+		const parent = axes.parent[a] as number;
+		inside[a] = a === root || (parent >= 0 && inside[parent] === 1) ? 1 : 0;
+	}
+	const cut = junctionOf(skeleton, root);
+	// The turn that stands the piece upright: the cut-to-mean line onto +Y.
+	let q = [0, 0, 0, 1];
+	if (cutting.orient !== 'as-grown') {
+		const mean: Vector3 = [0, 0, 0];
+		let count = 0;
+		for (let a = 0; a < axes.count; a++) {
+			if (inside[a] !== 1) continue;
+			for (let n = axes.first[a] as number; n <= (axes.last[a] as number); n++) {
+				const p = nodeAt(skeleton, n);
+				mean[0] += p[0] - cut[0];
+				mean[1] += p[1] - cut[1];
+				mean[2] += p[2] - cut[2];
+				count++;
+			}
+		}
+		q = uprightTurn([mean[0] / count, mean[1] / count, mean[2] / count]);
+	}
+	const moved: Vector3 = [0, 0, 0];
+	const place = (p: Readonly<Vector3>): Vector3 =>
+		quatRotate(q, 0, [p[0] - cut[0], p[1] - cut[1], p[2] - cut[2]], moved);
+	const builder = new SkeletonBuilder();
+	const axisMap = new Int32Array(axes.count).fill(-1);
+	const nodeMap = new Int32Array(skeleton.nodeCount).fill(-1);
+	let cutNode = -1;
+	for (const a of order) {
+		if (inside[a] !== 1) continue;
+		const isRoot = a === root;
+		const parent = axes.parent[a] as number;
+		const parentNode = axes.parentNode[a] as number;
+		const mapped = builder.addAxis({
+			parent: isRoot ? -1 : (axisMap[parent] as number),
+			parentNode: isRoot || parentNode < 0 ? -1 : (nodeMap[parentNode] as number),
+			parentT: axes.parentT[a] as number,
+			order: axes.order[a] as number,
+			kind: axes.kind[a] as number,
+			barkV: axes.barkV[a] as number,
+			barkU: axes.barkU[a] as number,
+		});
+		axisMap[a] = mapped;
+		const first = axes.first[a] as number;
+		if (isRoot) {
+			// The cut face: a node at the junction, as thick as the piece's first node.
+			cutNode = builder.addNode({
+				x: 0,
+				y: 0,
+				z: 0,
+				radius: skeleton.radius[first] as number,
+				parent: -1,
+				axis: mapped,
+				light: skeleton.light[first] as number,
+				age: skeleton.age[first] as number,
+			});
+		}
+		for (let n = first; n <= (axes.last[a] as number); n++) {
+			const p = place(nodeAt(skeleton, n));
+			const from = skeleton.parent[n] as number;
+			const parentOf = from >= 0 ? (nodeMap[from] as number) : -1;
+			nodeMap[n] = builder.addNode({
+				x: p[0],
+				y: p[1],
+				z: p[2],
+				radius: skeleton.radius[n] as number,
+				parent: parentOf >= 0 ? parentOf : cutNode,
+				axis: mapped,
+				light: skeleton.light[n] as number,
+				age: skeleton.age[n] as number,
+				flags: skeleton.flags[n] as number,
+			});
+		}
+	}
+	const frame = [0, 0, 0, 1];
+	for (let b = 0; b < buds.count; b++) {
+		const axis = buds.axis[b] as number;
+		if (inside[axis] !== 1) continue;
+		const p = place([
+			buds.position[b * 3] as number,
+			buds.position[b * 3 + 1] as number,
+			buds.position[b * 3 + 2] as number,
+		]);
+		quatMultiply(q, 0, buds.frame, b * 4, frame);
+		builder.addBud({
+			node: nodeMap[buds.node[b] as number] as number,
+			x: p[0],
+			y: p[1],
+			z: p[2],
+			frame,
+			kind: buds.kind[b] as number,
+			vigor: buds.vigor[b] as number,
+			light: buds.light[b] as number,
+			axis: axisMap[axis] as number,
+			woodRadius: buds.woodRadius[b] as number,
+		});
+	}
+	return {
+		skeleton: builder.finish(),
+		axis: root,
+		order: axes.order[root] as number,
+		extent: chosen.extent,
+		candidates: ranked.length,
+	};
+}
+
+/** A mesh under construction in growable number lists. */
+interface Writer {
+	readonly positions: number[];
+	readonly normals: number[];
+	readonly uvs: number[];
+	readonly uvs1: number[];
+	readonly colors: number[];
+	readonly indices: number[];
+}
+
+const writer = (): Writer => ({
+	positions: [],
+	normals: [],
+	uvs: [],
+	uvs1: [],
+	colors: [],
+	indices: [],
+});
+
+function finish(mesh: Writer): MeshArrays {
+	const count = mesh.positions.length / 3;
+	return {
+		positions: new Float32Array(mesh.positions),
+		normals: new Float32Array(mesh.normals),
+		uvs: new Float32Array(mesh.uvs),
+		uvs1: new Float32Array(mesh.uvs1),
+		colors: new Uint8Array(mesh.colors),
+		indices: count > 0xffff ? new Uint32Array(mesh.indices) : new Uint16Array(mesh.indices),
+	};
+}
+
+/**
+ * Appends a prototype-space mesh, turned by the quaternion at `q[qo]`, scaled and moved to `at`.
+ * Each vertex's colour bytes become the wind record's two bytes, the prototype's bend weight and its
+ * self-occlusion, as a merged foliage part's are.
+ */
+function append(
+	mesh: Writer,
+	source: PrototypeArrays,
+	q: ArrayLike<number>,
+	qo: number,
+	scale: number,
+	at: Readonly<Vector3>,
+	record: number,
+): void {
+	const base = mesh.positions.length / 3;
+	const count = source.positions.length / 3;
+	const v: Vector3 = [0, 0, 0];
+	for (let i = 0; i < count; i++) {
+		quatRotate(
+			q,
+			qo,
+			[
+				source.positions[i * 3] as number,
+				source.positions[i * 3 + 1] as number,
+				source.positions[i * 3 + 2] as number,
+			],
+			v,
+		);
+		mesh.positions.push(at[0] + v[0] * scale, at[1] + v[1] * scale, at[2] + v[2] * scale);
+		quatRotate(
+			q,
+			qo,
+			[
+				source.normals[i * 3] as number,
+				source.normals[i * 3 + 1] as number,
+				source.normals[i * 3 + 2] as number,
+			],
+			v,
+		);
+		mesh.normals.push(v[0], v[1], v[2]);
+		mesh.uvs.push(source.uvs[i * 2] as number, source.uvs[i * 2 + 1] as number);
+		mesh.uvs1.push(
+			(source.uvs1[i * 2] as number) * scale,
+			(source.uvs1[i * 2 + 1] as number) * scale,
+		);
+		mesh.colors.push(
+			(record >>> 8) & 255,
+			record & 255,
+			source.colors[i * 4] as number,
+			source.colors[i * 4 + 3] as number,
+		);
+	}
+	for (const index of source.indices) mesh.indices.push(base + index);
+}
+
+/**
+ * A plant's shoot rows merged into one mesh: each row's prototype at the tier, turned, scaled and
+ * moved to the row, on the row's wind record from the variant's first one.
+ *
+ * @param kit The species' kit.
+ * @param rows The shoot rows.
+ * @param detail The mesh tier.
+ * @param recordBase The variant's first global wind record.
+ * @returns The merged mesh.
+ * @category api/vegetation
+ */
+export function mergeShoots(
+	kit: SpeciesKitData,
+	rows: ShootRows,
+	detail: Detail,
+	recordBase: number,
+): MeshArrays {
+	const mesh = writer();
+	const tier = heldTier(kit, detail);
+	for (let r = 0; r < rows.count; r++) {
+		const source = kit.prototypes[rows.prototype[r] as number]?.tiers[tier];
+		if (!source) continue;
+		append(
+			mesh,
+			source,
+			rows.rotation,
+			r * 4,
+			rows.scale[r] as number,
+			[
+				rows.position[r * 3] as number,
+				rows.position[r * 3 + 1] as number,
+				rows.position[r * 3 + 2] as number,
+			],
+			recordBase + (rows.record[r] as number),
+		);
+	}
+	return finish(mesh);
+}
+
+/**
+ * The index of the tier a cutting meshes its shoots at: the asked tier, or the kit's own where the
+ * kit holds no finer one.
+ */
+function heldTier(kit: SpeciesKitData, detail: Detail): number {
+	return Math.min(DETAILS.indexOf(detail), DETAILS.indexOf(kit.detail));
+}
+
+/**
+ * The kit's prototypes in the order a 'cluster' cutting picks them: those of the record's hinted
+ * shoot class first, then by vigor, strongest first.
+ *
+ * @param kit The species' kit.
+ * @returns The prototypes in rank order.
+ * @category api/vegetation
+ */
+export function clusterRank(
+	kit: SpeciesKitData,
+	part: CuttingPart = 'cluster',
+): readonly ShootPrototype[] {
+	const hint = shootHint(kit.record, part);
+	return [...kit.prototypes].sort(
+		(a, b) =>
+			Number(b.class === hint) - Number(a.class === hint) ||
+			b.vigor[1] - a.vigor[1] ||
+			b.vigor[0] - a.vigor[0] ||
+			a.index - b.index,
+	);
+}
+
+/**
+ * A 'cluster' cutting from the kit alone: one shoot row of the prototype that `pick` names, standing
+ * upright on its attach point at the origin unless the cutting keeps its pose, and the bounds of its
+ * mesh at the tier.
+ *
+ * @param kit The species' kit.
+ * @param cutting The piece.
+ * @param detail The mesh tier.
+ * @returns The row and its bounds, or undefined for a species without prototypes.
+ * @category api/vegetation
+ */
+export function clusterRow(
+	kit: SpeciesKitData,
+	cutting: CuttingOptions,
+	detail: Detail,
+	leafy?: boolean,
+):
+	| { readonly rows: ShootRows; readonly bounds: { readonly min: Vec3; readonly max: Vec3 } }
+	| undefined {
+	const all = clusterRank(kit, cutting.part);
+	// A piece is drawn in the season it is asked for: in a leafless season it takes the shoot's
+	// leafless twin where the kit holds one, as the whole plant's rows do.
+	const wanted = leafy === undefined ? all : all.filter((p) => p.leaves > 0 === leafy);
+	const ranked = wanted.length > 0 ? wanted : all;
+	if (ranked.length === 0) return undefined;
+	// The piece's own choice, else its record hint's, so two pieces of one class draw different shoots.
+	const hint = cutting.part === 'leaf' ? undefined : kit.record.cuttings?.[cutting.part];
+	const pick = cutting.pick ?? (hint && 'shoot' in hint ? (hint.pick ?? 0) : 0);
+	const prototype = ranked[pick % ranked.length] as ShootPrototype;
+	const tier = prototype.tiers[heldTier(kit, detail)] as PrototypeArrays;
+	const turn = shootTurn(prototype, cutting);
+	const p = tier.positions;
+	const min = [0, 0, 0];
+	const max = [0, 0, 0];
+	const turned: Vector3 = [0, 0, 0];
+	for (let i = 0; i < p.length; i += 3) {
+		quatRotate(turn, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], turned);
+		for (let k = 0; k < 3; k++) {
+			min[k] = Math.min(min[k] as number, turned[k] as number);
+			max[k] = Math.max(max[k] as number, turned[k] as number);
+		}
+	}
+	return {
+		rows: {
+			count: 1,
+			prototype: new Uint8Array([prototype.index]),
+			position: new Float32Array(3),
+			rotation: new Float32Array(turn),
+			scale: new Float32Array([1]),
+			record: new Uint16Array(1),
+			phase: new Uint8Array(1),
+			sky: new Uint8Array([250]),
+			bent: new Uint8Array([0x88]),
+			order: new Uint32Array(1),
+		},
+		bounds: {
+			min: [min[0] as number, min[1] as number, min[2] as number],
+			max: [max[0] as number, max[1] as number, max[2] as number],
+		},
+	};
+}
+
+/** A blade leaf's shape pressed flat: no fold, curl, twist or wave, and its stalk straight. */
+function pressedShape(shape: LeafShape): LeafShape {
+	return {
+		...shape,
+		fold: 0,
+		curl: 0,
+		crossCurl: 0,
+		twist: 0,
+		wave: [0, shape.wave[1]],
+		petiole: { ...shape.petiole, droop: 0 },
+	};
+}
+
+/** A thick leaf's shape pressed flat: no cup, no curl and a flat margin. */
+function pressedThickShape(shape: ThickLeaf): ThickLeaf {
+	return { ...shape, cup: 0, curl: 0, wave: [0, shape.wave[1]] };
+}
+
+/**
+ * The species' leaf meshes for a leaf cutting: the kit's own, or, where the piece or else the
+ * record presses its leaf, the blade built again pressed flat at the kit's tier. A pressed thick
+ * leaf keeps a short piece of its stalk, as a leaf picked from the crown shows, and a species that
+ * grows its leaves on long stalks names the metres its pictures show.
+ */
+function cutLeaves(kit: SpeciesKitData, press?: boolean): readonly PrototypeArrays[] {
+	const record = kit.record;
+	const leaf = record.foliage;
+	const flat = press ?? record.cuttings?.leaf?.pressed;
+	if (!flat) return kit.leaves;
+	if (leaf.kind === 'thick') {
+		const growth = record.growth;
+		const stalk = record.cuttings?.leaf?.petiole ?? LEAF_CUT_PETIOLE * spreadMean(leaf.leaf.length);
+		const pressed: Species = {
+			...record,
+			// The kit's leaf takes the stalk's length from the growth model, so a flat piece gives
+			// it the short stalk its picture shows in place of the crown's long one.
+			growth:
+				growth.model === 'rosette'
+					? {
+							...growth,
+							stalk: [
+								[0, stalk],
+								[1, stalk],
+							],
+						}
+					: growth,
+			foliage: { kind: 'thick', leaf: pressedThickShape(leaf.leaf) },
+		};
+		return foliage('thick').leaves(pressed, kit.manifest, kit.detail);
+	}
+	if (leaf.kind !== 'blade') return kit.leaves;
+	const pressed: Species = { ...record, foliage: { ...leaf, leaf: pressedShape(leaf.leaf) } };
+	return foliage('blade').leaves(pressed, kit.manifest, kit.detail);
+}
+
+/**
+ * The mesh of a 'leaf' or 'cluster' cutting from the kit alone: one leaf in its leaf frame (petiole
+ * tip on the origin, midrib up +Y, upper face toward +Z, or the lower face when asked), pressed
+ * flat where the record says, or one shoot prototype standing upright on its attach point unless
+ * the cutting keeps its pose. Undefined for a cluster of a species without prototypes, which cuts
+ * its finest shoots from the plant instead.
+ *
+ * @param kit The species' kit.
+ * @param cutting The piece.
+ * @param detail The mesh tier.
+ * @returns The piece's mesh, or undefined.
+ * @category api/vegetation
+ */
+export function cutFoliage(
+	kit: SpeciesKitData,
+	cutting: CuttingOptions,
+	detail: Detail,
+): MeshArrays | undefined {
+	const mesh = writer();
+	const origin: Vector3 = [0, 0, 0];
+	if (cutting.part === 'leaf') {
+		const leaves = cutLeaves(kit, cutting.pressed);
+		const leaf = leaves[(cutting.pick ?? 0) % Math.max(1, leaves.length)];
+		if (!leaf) return finish(mesh);
+		const turn = cutting.face === 'lower' ? [0, 1, 0, 0] : [0, 0, 0, 1];
+		append(mesh, leaf, turn, 0, 1, origin, 0);
+		return finish(mesh);
+	}
+	const ranked = clusterRank(kit, cutting.part);
+	if (ranked.length === 0) return undefined;
+	const prototype = ranked[(cutting.pick ?? 0) % ranked.length] as ShootPrototype;
+	const tier = prototype.tiers[heldTier(kit, detail)] as PrototypeArrays;
+	append(mesh, tier, shootTurn(prototype, cutting), 0, 1, origin, 0);
+	return finish(mesh);
 }

@@ -23,44 +23,14 @@
 		"date": "2026-10-31",
 		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
 	},
-	"chromium-swiftshader/compat/car-paint-no-seams.png": {
-		"test": "car-paint-no-seams",
-		"tier": "compat",
-		"date": "2026-10-28",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
-	},
-	"chromium-swiftshader/compat/car-paint-weave.png": {
-		"test": "car-paint-weave",
-		"tier": "compat",
-		"date": "2026-10-28",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
-	},
-	"chromium-swiftshader/compat/car-paint.png": {
-		"test": "car-paint",
-		"tier": "compat",
-		"date": "2026-10-28",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
-	},
 	"chromium-swiftshader/compat/cluster-shadows.png": {
 		"test": "cluster-shadows",
 		"tier": "compat",
 		"date": "2026-11-03",
 		"reason": "drawn on the Mac's SwiftShader because the branch is not pushed for a CI run; a CI drawing replaces it"
 	},
-	"chromium-swiftshader/compat/creek-water-close.png": {
-		"test": "creek-water-close",
-		"tier": "compat",
-		"date": "2026-11-02",
-		"reason": "The Creek's plants changed on this branch and CI's SwiftShader has not drawn the scene since. This Mac's SwiftShader drew these twelve; CI's next run draws the set again and replaces them (D-238)."
-	},
 	"chromium-swiftshader/compat/custom-cutout-motion.png": {
 		"test": "custom-cutout-motion",
-		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
-	},
-	"chromium-swiftshader/compat/custom-cutout.png": {
-		"test": "custom-cutout",
 		"tier": "compat",
 		"date": "2026-10-29",
 		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
@@ -88,12 +58,6 @@
 		"tier": "compat",
 		"date": "2026-10-27",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
-	},
-	"chromium-swiftshader/compat/demo-impostors.png": {
-		"test": "demo-impostors",
-		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
 	},
 	"chromium-swiftshader/compat/demo-ocean.png": {
 		"test": "demo-ocean",
@@ -124,6 +88,18 @@
 		"tier": "compat",
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
+	},
+	"chromium-swiftshader/compat/demo-vegetation-wind.png": {
+		"test": "demo-vegetation-wind",
+		"tier": "compat",
+		"date": "2026-11-07",
+		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
+	},
+	"chromium-swiftshader/compat/demo-vegetation.png": {
+		"test": "demo-vegetation",
+		"tier": "compat",
+		"date": "2026-11-07",
+		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
 	},
 	"chromium-swiftshader/compat/feature-instances-shadow.png": {
 		"test": "feature-instances-shadow",
@@ -197,32 +173,26 @@
 		"date": "2026-10-29",
 		"reason": "the card's stored normal no longer turns with the camera's bearing, so the pictures whose eye lies off the tree's forward moved; drawn on the software renderer"
 	},
-	"chromium-swiftshader/compat/probe-grid-mirror.png": {
-		"test": "probe-grid-mirror",
+	"chromium-swiftshader/compat/plant-common-ash.png": {
+		"test": "plant-common-ash",
 		"tier": "compat",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+		"date": "2026-11-07",
+		"reason": "the branch that adds the species is not pushed yet, so no CI run could draw the software set; it is drawn here on this Mac's SwiftShader with CI=1"
 	},
-	"chromium-swiftshader/compat/probe-grid-wall-leak.png": {
-		"test": "probe-grid-wall-leak",
+	"chromium-swiftshader/compat/plant-holm-oak.png": {
+		"test": "plant-holm-oak",
 		"tier": "compat",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+		"date": "2026-11-07",
+		"reason": "plant-holm-oak's first software-set reference: CI run 42417946731 failed its browser shards because the reference was the missing file, and its artifact fetch stalled for half an hour without delivering them; the picture was drawn on this Mac with the SwiftShader rasteriser, which the repository's notes record as agreeing with CI's byte for byte."
+	},
+	"chromium-swiftshader/compat/plant-pedunculate-oak.png": {
+		"test": "plant-pedunculate-oak",
+		"tier": "compat",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 8c31e17a3 after the oak's bole tint; CI replaces them"
 	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
-		"tier": "compat",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
-	},
-	"chromium-swiftshader/compat/probe-grid-wall.png": {
-		"test": "probe-grid-wall",
-		"tier": "compat",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
-	},
-	"chromium-swiftshader/compat/probe-grid.png": {
-		"test": "probe-grid",
 		"tier": "compat",
 		"date": "2026-11-02",
 		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
@@ -293,18 +263,6 @@
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
 	},
-	"chromium-swiftshader/compat/vegetation-broadleaf.png": {
-		"test": "vegetation-broadleaf",
-		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
-	},
-	"chromium-swiftshader/compat/vegetation-conifer.png": {
-		"test": "vegetation-conifer",
-		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
-	},
 	"chromium-swiftshader/compat/vegetation-grass-contact-bounce-off.png": {
 		"test": "vegetation-grass-contact-bounce-off",
 		"tier": "compat",
@@ -316,24 +274,6 @@
 		"tier": "compat",
 		"date": "2026-11-03",
 		"reason": "the contact pair on the software GPU at the shortened far cover"
-	},
-	"chromium-swiftshader/compat/vegetation-grass-shadow.png": {
-		"test": "vegetation-grass-shadow",
-		"tier": "compat",
-		"date": "2026-11-02",
-		"reason": "a new picture, drawn here until CI's SwiftShader set draws it; the software set takes the Low preset for its shadow cost"
-	},
-	"chromium-swiftshader/compat/vegetation-rush.png": {
-		"test": "vegetation-rush",
-		"tier": "compat",
-		"date": "2026-10-29",
-		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
-	},
-	"chromium-swiftshader/compat/vegetation-wildflower.png": {
-		"test": "vegetation-wildflower",
-		"tier": "compat",
-		"date": "2026-11-02",
-		"reason": "The new wildflower species has no CI drawing yet; CI's next run draws the software set and is the judge (D-238)."
 	},
 	"chromium-swiftshader/compat/weather.png": {
 		"test": "weather",
@@ -365,44 +305,14 @@
 		"date": "2026-10-31",
 		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
 	},
-	"chromium-swiftshader/webgl2/car-paint-no-seams.png": {
-		"test": "car-paint-no-seams",
-		"tier": "webgl2",
-		"date": "2026-10-28",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
-	},
-	"chromium-swiftshader/webgl2/car-paint-weave.png": {
-		"test": "car-paint-weave",
-		"tier": "webgl2",
-		"date": "2026-10-28",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
-	},
-	"chromium-swiftshader/webgl2/car-paint.png": {
-		"test": "car-paint",
-		"tier": "webgl2",
-		"date": "2026-10-28",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
-	},
 	"chromium-swiftshader/webgl2/cluster-shadows.png": {
 		"test": "cluster-shadows",
 		"tier": "webgl2",
 		"date": "2026-11-03",
 		"reason": "drawn on the Mac's SwiftShader because the branch is not pushed for a CI run; a CI drawing replaces it"
 	},
-	"chromium-swiftshader/webgl2/creek-water-close.png": {
-		"test": "creek-water-close",
-		"tier": "webgl2",
-		"date": "2026-11-02",
-		"reason": "The Creek's plants changed on this branch and CI's SwiftShader has not drawn the scene since. This Mac's SwiftShader drew these twelve; CI's next run draws the set again and replaces them (D-238)."
-	},
 	"chromium-swiftshader/webgl2/custom-cutout-motion.png": {
 		"test": "custom-cutout-motion",
-		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
-	},
-	"chromium-swiftshader/webgl2/custom-cutout.png": {
-		"test": "custom-cutout",
 		"tier": "webgl2",
 		"date": "2026-10-29",
 		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
@@ -437,12 +347,6 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
-	"chromium-swiftshader/webgl2/demo-splats.png": {
-		"test": "demo-splats",
-		"tier": "webgl2",
-		"date": "2026-11-02",
-		"reason": "The splats draw unlit in a one-sample layer, with each card along its ellipse's own axes, prefixes that grow their splats, and glTF splats whose color the alpha multiplies; drawn on this Mac's SwiftShader for the new demo before CI's first run of the branch"
-	},
 	"chromium-swiftshader/webgl2/demo-spot-cookies.png": {
 		"test": "demo-spot-cookies",
 		"tier": "webgl2",
@@ -454,6 +358,18 @@
 		"tier": "webgl2",
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
+	},
+	"chromium-swiftshader/webgl2/demo-vegetation-wind.png": {
+		"test": "demo-vegetation-wind",
+		"tier": "webgl2",
+		"date": "2026-11-07",
+		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
+	},
+	"chromium-swiftshader/webgl2/demo-vegetation.png": {
+		"test": "demo-vegetation",
+		"tier": "webgl2",
+		"date": "2026-11-07",
+		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
 	},
 	"chromium-swiftshader/webgl2/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
@@ -503,12 +419,6 @@
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
 	},
-	"chromium-swiftshader/webgl2/impostor-handover.png": {
-		"test": "impostor-handover",
-		"tier": "webgl2",
-		"date": "2026-10-31",
-		"reason": "drawn on this Mac's SwiftShader on the branch that fixes the hand-over band and adds the turned-copy light picture; the branch was not pushed when the set was drawn"
-	},
 	"chromium-swiftshader/webgl2/impostor-turn-azimuth.png": {
 		"test": "impostor-turn-azimuth",
 		"tier": "webgl2",
@@ -539,32 +449,26 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
-	"chromium-swiftshader/webgl2/probe-grid-mirror.png": {
-		"test": "probe-grid-mirror",
+	"chromium-swiftshader/webgl2/plant-common-ash.png": {
+		"test": "plant-common-ash",
 		"tier": "webgl2",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+		"date": "2026-11-07",
+		"reason": "the branch that adds the species is not pushed yet, so no CI run could draw the software set; it is drawn here on this Mac's SwiftShader with CI=1"
 	},
-	"chromium-swiftshader/webgl2/probe-grid-wall-leak.png": {
-		"test": "probe-grid-wall-leak",
+	"chromium-swiftshader/webgl2/plant-holm-oak.png": {
+		"test": "plant-holm-oak",
 		"tier": "webgl2",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+		"date": "2026-11-07",
+		"reason": "plant-holm-oak's first software-set reference: CI run 42417946731 failed its browser shards because the reference was the missing file, and its artifact fetch stalled for half an hour without delivering them; the picture was drawn on this Mac with the SwiftShader rasteriser, which the repository's notes record as agreeing with CI's byte for byte."
+	},
+	"chromium-swiftshader/webgl2/plant-pedunculate-oak.png": {
+		"test": "plant-pedunculate-oak",
+		"tier": "webgl2",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 8c31e17a3 after the oak's bole tint; CI replaces them"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
-		"tier": "webgl2",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
-	},
-	"chromium-swiftshader/webgl2/probe-grid-wall.png": {
-		"test": "probe-grid-wall",
-		"tier": "webgl2",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
-	},
-	"chromium-swiftshader/webgl2/probe-grid.png": {
-		"test": "probe-grid",
 		"tier": "webgl2",
 		"date": "2026-11-02",
 		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
@@ -659,12 +563,6 @@
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
 	},
-	"chromium-swiftshader/webgl2/vegetation-conifer.png": {
-		"test": "vegetation-conifer",
-		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
-	},
 	"chromium-swiftshader/webgl2/vegetation-grass-contact-bounce-off.png": {
 		"test": "vegetation-grass-contact-bounce-off",
 		"tier": "webgl2",
@@ -676,24 +574,6 @@
 		"tier": "webgl2",
 		"date": "2026-11-03",
 		"reason": "the contact pair on the software GPU at the shortened far cover"
-	},
-	"chromium-swiftshader/webgl2/vegetation-grass-shadow.png": {
-		"test": "vegetation-grass-shadow",
-		"tier": "webgl2",
-		"date": "2026-11-02",
-		"reason": "a new picture, drawn here until CI's SwiftShader set draws it; the software set takes the Low preset for its shadow cost"
-	},
-	"chromium-swiftshader/webgl2/vegetation-meadow-grass.png": {
-		"test": "vegetation-meadow-grass",
-		"tier": "webgl2",
-		"date": "2026-10-29",
-		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
-	},
-	"chromium-swiftshader/webgl2/vegetation-wildflower.png": {
-		"test": "vegetation-wildflower",
-		"tier": "webgl2",
-		"date": "2026-11-02",
-		"reason": "The new wildflower species has no CI drawing yet; CI's next run draws the software set and is the judge (D-238)."
 	},
 	"chromium-swiftshader/webgl2/weather.png": {
 		"test": "weather",
@@ -725,44 +605,14 @@
 		"date": "2026-10-31",
 		"reason": "the Mac drew this set before the branch's CI run; the CI session redraws it from CI's own SwiftShader"
 	},
-	"chromium-swiftshader/webgpu/car-paint-no-seams.png": {
-		"test": "car-paint-no-seams",
-		"tier": "webgpu",
-		"date": "2026-10-28",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
-	},
-	"chromium-swiftshader/webgpu/car-paint-weave.png": {
-		"test": "car-paint-weave",
-		"tier": "webgpu",
-		"date": "2026-10-28",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
-	},
-	"chromium-swiftshader/webgpu/car-paint.png": {
-		"test": "car-paint",
-		"tier": "webgpu",
-		"date": "2026-10-28",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that made point and spot lights answer a material's lobe; the branch was not pushed when the set was drawn"
-	},
 	"chromium-swiftshader/webgpu/cluster-shadows.png": {
 		"test": "cluster-shadows",
 		"tier": "webgpu",
 		"date": "2026-11-03",
 		"reason": "drawn on the Mac's SwiftShader because the branch is not pushed for a CI run; a CI drawing replaces it"
 	},
-	"chromium-swiftshader/webgpu/creek-water-close.png": {
-		"test": "creek-water-close",
-		"tier": "webgpu",
-		"date": "2026-11-02",
-		"reason": "The Creek's plants changed on this branch and CI's SwiftShader has not drawn the scene since. This Mac's SwiftShader drew these twelve; CI's next run draws the set again and replaces them (D-238)."
-	},
 	"chromium-swiftshader/webgpu/custom-cutout-motion.png": {
 		"test": "custom-cutout-motion",
-		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
-	},
-	"chromium-swiftshader/webgpu/custom-cutout.png": {
-		"test": "custom-cutout",
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
@@ -821,6 +671,18 @@
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
 	},
+	"chromium-swiftshader/webgpu/demo-vegetation-wind.png": {
+		"test": "demo-vegetation-wind",
+		"tier": "webgpu",
+		"date": "2026-11-07",
+		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
+	},
+	"chromium-swiftshader/webgpu/demo-vegetation.png": {
+		"test": "demo-vegetation",
+		"tier": "webgpu",
+		"date": "2026-11-07",
+		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
+	},
 	"chromium-swiftshader/webgpu/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
 		"tier": "webgpu",
@@ -863,12 +725,6 @@
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
 	},
-	"chromium-swiftshader/webgpu/impostor-handover.png": {
-		"test": "impostor-handover",
-		"tier": "webgpu",
-		"date": "2026-10-31",
-		"reason": "drawn on this Mac's SwiftShader on the branch that fixes the hand-over band and adds the turned-copy light picture; the branch was not pushed when the set was drawn"
-	},
 	"chromium-swiftshader/webgpu/impostor-turn-azimuth.png": {
 		"test": "impostor-turn-azimuth",
 		"tier": "webgpu",
@@ -899,32 +755,26 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
-	"chromium-swiftshader/webgpu/probe-grid-mirror.png": {
-		"test": "probe-grid-mirror",
+	"chromium-swiftshader/webgpu/plant-common-ash.png": {
+		"test": "plant-common-ash",
 		"tier": "webgpu",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+		"date": "2026-11-07",
+		"reason": "the branch that adds the species is not pushed yet, so no CI run could draw the software set; it is drawn here on this Mac's SwiftShader with CI=1"
 	},
-	"chromium-swiftshader/webgpu/probe-grid-wall-leak.png": {
-		"test": "probe-grid-wall-leak",
+	"chromium-swiftshader/webgpu/plant-holm-oak.png": {
+		"test": "plant-holm-oak",
 		"tier": "webgpu",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
+		"date": "2026-11-07",
+		"reason": "plant-holm-oak's first software-set reference: CI run 42417946731 failed its browser shards because the reference was the missing file, and its artifact fetch stalled for half an hour without delivering them; the picture was drawn on this Mac with the SwiftShader rasteriser, which the repository's notes record as agreeing with CI's byte for byte."
+	},
+	"chromium-swiftshader/webgpu/plant-pedunculate-oak.png": {
+		"test": "plant-pedunculate-oak",
+		"tier": "webgpu",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 8c31e17a3 after the oak's bole tint; CI replaces them"
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
-		"tier": "webgpu",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
-	},
-	"chromium-swiftshader/webgpu/probe-grid-wall.png": {
-		"test": "probe-grid-wall",
-		"tier": "webgpu",
-		"date": "2026-11-02",
-		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
-	},
-	"chromium-swiftshader/webgpu/probe-grid.png": {
-		"test": "probe-grid",
 		"tier": "webgpu",
 		"date": "2026-11-02",
 		"reason": "M3-F1: the probe grid's validity mask and live sky term redraw these pictures; CI's picture job draws the backstop references"
@@ -1013,12 +863,6 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
 	},
-	"chromium-swiftshader/webgpu/spot-map.png": {
-		"test": "spot-map",
-		"tier": "webgpu",
-		"date": "2026-11-04",
-		"reason": "the bounce light (49b215a8a) moved the WebGPU and WebGL2 pictures, and each tier now keeps a picture of its own; this Mac's SwiftShader drew the set before the branch's CI run, and CI's own SwiftShader redraws it"
-	},
 	"chromium-swiftshader/webgpu/terrain-baked-normals.png": {
 		"test": "terrain-baked-normals",
 		"tier": "webgpu",
@@ -1031,18 +875,6 @@
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
 	},
-	"chromium-swiftshader/webgpu/vegetation-broadleaf.png": {
-		"test": "vegetation-broadleaf",
-		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
-	},
-	"chromium-swiftshader/webgpu/vegetation-conifer.png": {
-		"test": "vegetation-conifer",
-		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
-	},
 	"chromium-swiftshader/webgpu/vegetation-grass-contact-bounce-off.png": {
 		"test": "vegetation-grass-contact-bounce-off",
 		"tier": "webgpu",
@@ -1054,18 +886,6 @@
 		"tier": "webgpu",
 		"date": "2026-11-03",
 		"reason": "the contact pair on the software GPU at the shortened far cover"
-	},
-	"chromium-swiftshader/webgpu/vegetation-grass-shadow.png": {
-		"test": "vegetation-grass-shadow",
-		"tier": "webgpu",
-		"date": "2026-11-02",
-		"reason": "a new picture, drawn here until CI's SwiftShader set draws it; the software set takes the Low preset for its shadow cost"
-	},
-	"chromium-swiftshader/webgpu/vegetation-wildflower.png": {
-		"test": "vegetation-wildflower",
-		"tier": "webgpu",
-		"date": "2026-11-02",
-		"reason": "The new wildflower species has no CI drawing yet; CI's next run draws the software set and is the judge (D-238)."
 	},
 	"chromium-swiftshader/webgpu/water-bounds.png": {
 		"test": "water-bounds",

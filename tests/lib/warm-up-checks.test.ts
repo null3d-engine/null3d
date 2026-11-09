@@ -18,9 +18,11 @@ function result(
 		warmUpMs: 1,
 		playPipelines: 0,
 		addedPipelines:
-			tier === 'webgl2' || (tier === 'webgpu' && (playPreset === 'high' || playPreset === 'ultra'))
-				? 2
-				: 1,
+			tier === 'webgpu' && (playPreset === 'high' || playPreset === 'ultra')
+				? 3
+				: tier === 'webgl2'
+					? 2
+					: 1,
 		afterPipelines: 0,
 		magenta: 100,
 		failures: [],
@@ -29,7 +31,7 @@ function result(
 
 describe('warmUpProblems', () => {
 	it('accepts the GPU-driven pipelines on the indirect path', () => {
-		expect(warmUpProblems(result(false, 31), 'webgpu')).toEqual([]);
+		expect(warmUpProblems(result(false, 38), 'webgpu')).toEqual([]);
 	});
 
 	it('follows the preset the first frame drew at, not the one the page ends on', () => {
@@ -43,47 +45,47 @@ describe('warmUpProblems', () => {
 	});
 
 	it("judges the added quad at the preset in force when it warmed up, not the first frame's", () => {
-		// The check stepped from High to Medium after the first frame: the frame's 31 pipelines are
+		// The check stepped from High to Medium after the first frame: the frame's 38 pipelines are
 		// High's, and the quad warms up at Medium and builds its depth pipeline there or not at all.
-		expect(warmUpProblems(result(false, 31, 'high', 'webgpu', 'medium'), 'webgpu')).toEqual([]);
-		// Had it warmed up at High, its depth pipeline would be one of the two it builds.
-		expect(warmUpProblems({ ...result(false, 31), addedPipelines: 1 }, 'webgpu')).toEqual([
-			"the added object built 1 pipelines at 'high', not 2",
+		expect(warmUpProblems(result(false, 38, 'high', 'webgpu', 'medium'), 'webgpu')).toEqual([]);
+		// Had it warmed up at High, its depth pipeline would be one of the three it builds.
+		expect(warmUpProblems({ ...result(false, 38), addedPipelines: 1 }, 'webgpu')).toEqual([
+			"the added object built 1 pipelines at 'high', not 3",
 		]);
 	});
 
 	it('accepts one pipeline fewer when the device draws directly', () => {
-		expect(warmUpProblems(result(true, 30), 'webgpu')).toEqual([]);
+		expect(warmUpProblems(result(true, 37), 'webgpu')).toEqual([]);
 	});
 
 	it('holds a direct-draw device to the pipelines that its path builds', () => {
 		expect(warmUpProblems(result(true, 16), 'webgpu')).toEqual([
-			"the first frame built 16 pipelines at 'high', not 30 or 31",
+			"the first frame built 16 pipelines at 'high', not 37 or 38",
 		]);
 		expect(warmUpProblems(result(false, 13), 'webgpu')).toEqual([
-			"the first frame built 13 pipelines at 'high', not 31 or 32",
+			"the first frame built 13 pipelines at 'high', not 38 or 39",
 		]);
 	});
 
 	it("accepts the final pass's 8-bit variant, which a dropped render scale builds", () => {
-		expect(warmUpProblems(result(false, 32), 'webgpu')).toEqual([]);
-		expect(warmUpProblems(result(true, 31), 'webgpu')).toEqual([]);
+		expect(warmUpProblems(result(false, 39), 'webgpu')).toEqual([]);
+		expect(warmUpProblems(result(true, 38), 'webgpu')).toEqual([]);
 	});
 
 	it('names the preset it needs when a page reports none', () => {
-		expect(warmUpProblems({ ...result(false, 31), firstFramePreset: null }, 'webgpu')).toEqual([
+		expect(warmUpProblems({ ...result(false, 38), firstFramePreset: null }, 'webgpu')).toEqual([
 			'the first frame reported no preset, which this check has no pipeline count for on webgpu; it needs one of low, medium, high, ultra',
 		]);
-		expect(warmUpProblems({ ...result(false, 31), playPreset: null }, 'webgpu')).toEqual([
+		expect(warmUpProblems({ ...result(false, 38), playPreset: null }, 'webgpu')).toEqual([
 			"the object's warm-up reported no preset, which this check has no pipeline count for on webgpu; it needs one of low, medium, high, ultra",
 		]);
 	});
 
 	it('names a preset that it has no count for instead of judging at another', () => {
-		expect(warmUpProblems(result(false, 31, 'cinematic', 'webgpu', 'high'), 'webgpu')).toEqual([
+		expect(warmUpProblems(result(false, 38, 'cinematic', 'webgpu', 'high'), 'webgpu')).toEqual([
 			"the first frame reported the preset 'cinematic', which this check has no pipeline count for on webgpu; it needs one of low, medium, high, ultra",
 		]);
-		expect(warmUpProblems(result(false, 31, 'high', 'webgpu', 'cinematic'), 'webgpu')).toEqual([
+		expect(warmUpProblems(result(false, 38, 'high', 'webgpu', 'cinematic'), 'webgpu')).toEqual([
 			"the object's warm-up reported the preset 'cinematic', which this check has no pipeline count for on webgpu; it needs one of low, medium, high, ultra",
 		]);
 	});

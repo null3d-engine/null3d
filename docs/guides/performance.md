@@ -222,7 +222,7 @@ The second draw costs about as much as the first. In the S2 benchmark with every
 Textures take most of a scene's GPU memory. Each preset gives textures a memory budget. When the scene's textures pass it, the engine drops the largest mip levels of the largest textures. It loads them again when room comes back. `quality.textureMemory` reports the bytes in use, the budget and the levels dropped ([Quality presets](../concepts/quality-presets.md#texture-memory)).
 
 - Load large textures from KTX2 files. The GPU keeps them compressed, at a quarter or an eighth of the memory of plain RGBA. `bunx @null3d/cli assets optimize` encodes them ([The asset pipeline](assets-pipeline.md)).
-- The engine keeps each transcoded KTX2 texture in the browser's Cache Storage, so a repeat visit skips the transcoder. On an iPad Pro, a repeat visit to the S6 benchmark's city, with its 120 textures, was ready 50% sooner. On phones in a device cloud it was ready about 6% sooner, because other start work takes most of their time.
+- The engine keeps each transcoded KTX2 texture in its [cache of derived data](../api/assets.md#the-cache-of-derived-data), so a repeat visit skips the transcoder. On an iPad Pro, a repeat visit to the S6 benchmark's city, with its 120 textures, was ready 50% sooner. On phones in a device cloud it was ready about 6% sooner, because other start work takes most of their time.
 - Destroy the textures that the scene no longer shows.
 
 ## Picking, labels, sprites and lines

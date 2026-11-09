@@ -222,10 +222,10 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	// the settings, the ring of pushes and gusts, and the box. A frame sets the runs that the sketch
 	// time owes, so the air keeps the same pace whatever the frame rate.
 	//
-	// The air starts when a page makes the wind. A held page steps its updates up to the held time
-	// and the pass runs with each step, so a held picture carries the air that the hold built. Each
-	// frame reads the sketch time from the engine's field, because a helper that answered it would
-	// box its fraction on a call that the browser does not inline.
+	// The air starts when a page makes the wind. A held page's first drawn frame runs the air from
+	// then to the held time, so a held picture carries the air that the hold built. Each frame reads
+	// the sketch time from the engine's field, because a helper that answered it would box its
+	// fraction on a call that the browser does not inline.
 	let solved = ctx.time.now;
 	// The preset names no field at Low. A page that keeps its own grid there still gets a field, at
 	// the add-on's own step and pressure count, because air that never steps never moves.
@@ -233,6 +233,10 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	const solverPressureSteps = (): number => (presetField() ? pressureSteps : PRESSURE_STEPS);
 	const cycleSteps = (): number => solverPressureSteps() + 2;
 	const owedSteps = (): number => {
+		// A held page steps its sketch many times and draws only the frames at the end, so the pass
+		// of a step before them never runs. The time stays owed until a frame that draws, which runs
+		// the air for the whole hold. A second drawn frame runs only the time since the first.
+		if (!ctx.time.drawn) return 0;
 		const step = presetField() ? stepSeconds : STEP_SECONDS;
 		// The sketch time is a sum of frame times, so a frame that owes exactly one step can read a
 		// hair under it.
@@ -240,11 +244,8 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		if (owed <= 0) return 0;
 		const cycles = Math.min(owed, MAX_CYCLES);
 		// A stall that owes more than one frame runs skips the air that it missed. Crediting only
-		// the cycles that ran would leave a debt, and every later frame would pay it. A held page
-		// steps its sketch many times and draws only the last frame, so the cycles that the steps
-		// between ran do not reach the GPU. The time stays owed until a frame draws it, so the one
-		// drawn frame runs the air for the whole hold instead of its last step alone.
-		if (!ctx.time.held) solved = owed > MAX_CYCLES ? ctx.time.now : solved + cycles * step;
+		// the cycles that ran would leave a debt, and every later frame would pay it.
+		solved = owed > MAX_CYCLES ? ctx.time.now : solved + cycles * step;
 		return cycles * cycleSteps();
 	};
 

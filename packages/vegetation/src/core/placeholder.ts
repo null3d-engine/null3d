@@ -1,10 +1,11 @@
 // The stand-ins: a simple, deterministic result for every stage of the generator, which a run that
-// asks for `placeholders` uses wherever a stage is not built yet. They let the review page, the
+// asks for `placeholders` uses at every stage, so a stand-in species draws the same as stages land. They let the review page, the
 // determinism tests and the stage packages run the whole pipeline from the first day: a stem with
 // tiers of limbs and twigs, a leaf quad, small shoots, flat cards, tubes of a few sides, and an
 // impostor of flat cells. They read only the record's numbers and the integer hash, and use only the
 // core's own trigonometry, so their bytes are the same on every engine. No shipped species draws
 // them: a run without `placeholders` throws where a stage is missing.
+
 import type {
 	CardCell,
 	MeshArrays,
@@ -13,17 +14,18 @@ import type {
 	PlantPart,
 	PrototypeArrays,
 	QuantisedArrays,
+	ShootPrototype,
 	ShootRows,
 	SpeciesKitData,
 	WindTable,
 } from '../asset';
-import type { CuttingOptions } from '../cutting';
+import { crownPrototypes } from '../asset';
 import type { UncardedPrototype } from '../leaf/shoot';
 import { REFERENCE_VIEW } from '../lod/levels';
 import { TEXTURE_UV_STEPS } from '../lod/quantise';
-import { HEADER_ROWS, RECORDS_WIDTH } from '../render/records';
+import { HEADER, HEADER_ROWS, RECORDS_WIDTH } from '../render/records';
 import type { CardAtlas, CrownLight, DressInput, FarBake, GrowInput, MeshInput } from '../stages';
-import { VARIANT_RECORDS, WIND_RECORD_FLOATS } from '../wind/records';
+import { VARIANT_RECORDS, WIND_RECORD_FLOATS, windSway } from '../wind/records';
 import type { SpeciesBox } from './box';
 import {
 	AXIS_LIMB,
@@ -39,6 +41,7 @@ import {
 	cross3,
 	length3,
 	normalize3,
+	pow,
 	quatFromFrame,
 	quatRotate,
 	radians,
@@ -145,6 +148,15 @@ function colourBytes(rgb: readonly number[], alpha: number): number[] {
 		Math.round(Math.min(1, Math.max(0, rgb[2] as number)) * 255),
 		alpha,
 	];
+}
+
+/** A linear colour as sRGB bytes, as the far bake's colour atlas holds it. */
+function srgbBytes(rgb: readonly number[], alpha: number): number[] {
+	const encode = (value: number) => {
+		const c = Math.min(1, Math.max(0, value));
+		return Math.round((c <= 0.0031308 ? 12.92 * c : 1.055 * pow(c, 1 / 2.4) - 0.055) * 255);
+	};
+	return [encode(rgb[0] as number), encode(rgb[1] as number), encode(rgb[2] as number), alpha];
 }
 
 /** The species' leaf colour, or a green where it has no optics. */
@@ -429,6 +441,8 @@ export function placeholderHeader(record: Species, box: SpeciesBox): Float32Arra
 	header.set([colour[0] as number, colour[1] as number, colour[2] as number, 0.6], 0);
 	header.set([...box.min, 0], 4);
 	header.set([box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2], 0], 8);
+	const sway = windSway(record);
+	header.set([sway.amplitude, sway.frequency, 0, 0], HEADER.sway * 4);
 	return header;
 }
 
@@ -599,7 +613,8 @@ export function emptyRows(): ShootRows {
 export function placeholderRows(input: DressInput): ShootRows {
 	const { record, seed, variant, skeleton, kit } = input;
 	const buds = skeleton.buds;
-	const count = kit.prototypes.length > 0 ? buds.count : 0;
+	const crowns = crownPrototypes(kit.prototypes);
+	const count = crowns.length > 0 ? buds.count : 0;
 	const rows = {
 		count,
 		prototype: new Uint8Array(count),
@@ -614,8 +629,8 @@ export function placeholderRows(input: DressInput): ShootRows {
 	};
 	const scale = record.shoots?.placement.scale ?? 1;
 	for (let b = 0; b < count; b++) {
-		rows.prototype[b] =
-			hashAt(seed, record.seedSalt, variant, Purpose.Prototype, b) % kit.prototypes.length;
+		const draw = hashAt(seed, record.seedSalt, variant, Purpose.Prototype, b) % crowns.length;
+		rows.prototype[b] = (crowns[draw] as ShootPrototype).index;
 		rows.position.set(buds.position.subarray(b * 3, b * 3 + 3), b * 3);
 		rows.rotation.set(buds.frame.subarray(b * 4, b * 4 + 4), b * 4);
 		rows.scale[b] = spreadAt(scale, unitAt(seed, record.seedSalt, variant, Purpose.Scale, b));
@@ -889,7 +904,7 @@ export function placeholderFar(kit: SpeciesKitData, asset: PlantAsset): FarBake 
 	const side = views * texels;
 	const color = new Uint8Array(side * side * 4);
 	const surface = new Uint8Array(side * side * 4);
-	const leaf = colourBytes(leafColour(kit.record.foliage), 255);
+	const leaf = srgbBytes(leafColour(kit.record.foliage), 255);
 	const middle = (texels - 1) / 2;
 	for (let y = 0; y < side; y++)
 		for (let x = 0; x < side; x++) {
@@ -926,29 +941,4 @@ export function levelOf(level: 0 | 1 | 2, parts: readonly PlantPart[], from: num
 			a.indices.byteLength;
 	}
 	return { level, parts, from, triangles, bytes };
-}
-
-/** The stand-in cutting: one leaf, one prototype, or the whole nearest level for a branch. */
-export function placeholderCut(
-	kit: SpeciesKitData,
-	asset: PlantAsset,
-	cutting: CuttingOptions,
-): PlantAsset {
-	let parts: readonly PlantPart[] = asset.levels[0].parts;
-	if (cutting.part === 'leaf' || cutting.part === 'cluster') {
-		const prototype = kit.prototypes[(cutting.pick ?? 0) % Math.max(1, kit.prototypes.length)];
-		const mesh =
-			cutting.part === 'leaf' ? kit.leaves[0] : prototype?.tiers[DETAILS.indexOf(kit.detail)];
-		parts = mesh
-			? [{ name: 'foliage', arrays: placeholderQuantise({ ...mesh }, kit.box, TEXTURE_UV_STEPS) }]
-			: [];
-	}
-	const near = levelOf(0, parts, 0);
-	return {
-		...asset,
-		cutting,
-		shoots: cutting.part === 'branch' || cutting.part === 'subbranch' ? asset.shoots : emptyRows(),
-		levels: [near, emptyLevel(1), emptyLevel(2)],
-		stats: { ...asset.stats, triangles: [near.triangles, 0, 0] },
-	};
 }

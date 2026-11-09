@@ -81,6 +81,12 @@ export interface Plan<Check = unknown> {
 	 */
 	skipMissing?: { report: string; allowed: MissingAllowed };
 	/**
+	 * Lets the browser's image buffers fail, as they do in a browser on some virtual machines. Once
+	 * the result of the item that `report` names lists such faults, the runner page skips each later
+	 * page that draws, and posts a skip with the faults as the page's result.
+	 */
+	skipImageFaults?: { report: string };
+	/**
 	 * Where the runner tool can open runner pages, a runner page hands the run to a new one after it
 	 * has run this many pages. Memory that earlier pages left held builds up in one Safari process,
 	 * such as what a removed frame reaches. A new runner page starts with none of it.
@@ -89,7 +95,10 @@ export interface Plan<Check = unknown> {
 }
 
 /** How the runner page runs a plan's pages. */
-export type PlanFlags = Pick<Plan, 'reportOnTop' | 'measureRefresh' | 'skipMissing' | 'tabEvery'>;
+export type PlanFlags = Pick<
+	Plan,
+	'reportOnTop' | 'measureRefresh' | 'skipMissing' | 'skipImageFaults' | 'tabEvery'
+>;
 
 /**
  * The pages that a runner page runs before it hands the run to a new one: fewer than Safari's 8 fast

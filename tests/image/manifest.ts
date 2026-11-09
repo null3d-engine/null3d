@@ -2651,24 +2651,30 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	{
 		// A threshold of 16 pixels draws patches far coarser than the mesh, so the picture shows
-		// the near ground fine and the far ground simplified.
+		// the near ground fine and the far ground simplified. Firefox has no `WEBGL_multi_draw`, so
+		// there WebGL2 draws the whole level that the nearest ground needs, coarse everywhere:
+		// 1.02% of the pixels differ from the patched picture. Firefox on Linux keeps its own.
 		name: 'cluster-coarse',
 		sketch: 'tests/pages/sketches/cluster-sketch.ts?coarse',
 		hold: 0,
 		size: [480, 270] as const,
 		switches: ['direct=off'],
+		devices: ['linux'],
 	},
 	// The ground casts its hills' shadows onto itself from a low sun, in three cascades. Each
 	// cascade draws the patches that its own texels pick, and the camera draws its own. The second
 	// test draws the finest patches in every cascade, and must match the first: a cascade's
 	// patches never shadow the ground that the camera's patches draw by more than the normal bias
-	// hides.
+	// hides. Firefox has no `WEBGL_multi_draw`, so there WebGL2 draws whole levels, and the low
+	// sun's shading shows their facets: 0.91% of the pixels differ from the patched picture.
+	// Firefox on Linux keeps its own, which both tests match.
 	{
 		name: 'cluster-shadows',
 		sketch: 'tests/pages/sketches/cluster-sketch.ts?shadows',
 		hold: 0,
 		size: [480, 270] as const,
 		switches: ['direct=off'],
+		devices: ['linux'],
 	},
 	{
 		name: 'cluster-shadows-fine',
@@ -3083,53 +3089,6 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		// more of them. A wrong bake still moves about 1.8 per cent of the frame.
 		swiftShaderTolerance: { threshold: 0.02, maxDiffRatio: 0.005 },
 	},
-	// Each built-in vegetation species: three of its variants, grown from the species record and a
-	// fixed seed, in a row on flat ground, drawn with the bark and leaf atlases that the GPU paints
-	// at first use. The shrub's page takes longer than the default limit on CI's software GPU, where
-	// it ran out the 60 seconds on compatibility and on WebGL2, so it asks for three times that.
-	...[
-		'broadleaf',
-		'conifer',
-		'shrub',
-		'fern',
-		'meadow-grass',
-		'oak',
-		'beech',
-		'birch',
-		'willow',
-		'alder',
-		'hosta',
-		'sedge',
-		'rush',
-		'wildflower',
-	].map((species) => ({
-		name: `vegetation-${species}`,
-		sketch: `tests/pages/sketches/vegetation-sketch.ts?species=${species}`,
-		hold: 1,
-		...(species === 'shrub' && { timeoutSeconds: 180 }),
-	})),
-	// The four maps that the GPU paints for the two atlases, each with its mip levels beside it,
-	// and below them a trunk and a leaf card drawn through the materials that sample them.
-	{
-		name: 'vegetation-atlas',
-		sketch: 'tests/pages/sketches/vegetation-atlas-sketch.ts',
-		hold: 1,
-		size: [1280, 720],
-	},
-	// The cards keep the share of the picture that they cover as they shrink, since every level of
-	// the atlas is painted with its own filter.
-	{
-		name: 'vegetation-leaf-cards',
-		sketch: 'tests/pages/sketches/leaf-card-coverage-sketch.ts',
-		hold: 1,
-		size: [1280, 720],
-	},
-	{
-		name: 'vegetation-coverage',
-		sketch: 'tests/pages/sketches/vegetation-coverage-sketch.ts',
-		hold: 1,
-		size: [640, 360],
-	},
 	// The first grass picture: a hill of tufts grown by the add-on, placed and tinted by integer
 	// hash, drawn as one band. The blades read the wind add-on's field, which this picture holds
 	// still; the camera and the light are fixed, so two runs draw the same frame.
@@ -3179,41 +3138,6 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [1280, 720],
 		swiftShaderSwitches: ['preset=low'],
 		timeoutSeconds: 300,
-	},
-	// A grove of grown oaks in the scene's one wind field: the leaf and bark materials sway, the
-	// leaves flutter and the sun's shadows follow. The two holds catch the trees at different points
-	// of their sway, the motion picture draws the sway's motion, and the still picture holds the air
-	// for the pair that the sway moves. The page that first compiles the instanced plant materials
-	// and their shadow casters pays minutes for it on CI's software GPU, which took 2.0 to 4.6
-	// minutes a page, so these four run in the heavy job, where each has a runner of its own, and
-	// hold 600 seconds. A later test that compiles these builds first meets the same wall.
-	{
-		name: 'vegetation-wind',
-		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts',
-		hold: 1,
-		size: [1280, 720],
-		timeoutSeconds: 600,
-	},
-	{
-		name: 'vegetation-wind-later',
-		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts',
-		hold: 1.6,
-		size: [1280, 720],
-		timeoutSeconds: 600,
-	},
-	{
-		name: 'vegetation-wind-motion',
-		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts?motion',
-		hold: 1,
-		size: [1280, 720],
-		timeoutSeconds: 600,
-	},
-	{
-		name: 'vegetation-wind-still',
-		sketch: 'tests/pages/sketches/vegetation-wind-sketch.ts?still',
-		hold: 1,
-		size: [1280, 720],
-		timeoutSeconds: 600,
 	},
 	// The wind add-on's own page: a field of cards that reads the air at each vertex. A gust
 	// crosses the field between the first hold and the second, so the pairs change where the gust
@@ -3288,15 +3212,6 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	{
 		name: 'impostor-turn-lean-azimuth',
 		sketch: 'tests/pages/sketches/impostor-turn-lean-sketch.ts?azimuth=90',
-		hold: 0,
-		size: [480, 270],
-	},
-	// A grown birch beside the card that `bakeFarTree` makes from it. The mesh draws level 0 with the
-	// bark and leaf materials, and the card draws the same level baked with the same atlases and the
-	// same colours, so the two crowns match in colour at the hand-over.
-	{
-		name: 'impostor-plant',
-		sketch: 'tests/pages/sketches/impostor-plant-sketch.ts',
 		hold: 0,
 		size: [480, 270],
 	},
@@ -3925,7 +3840,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 				...(comparison.swiftShaderHoldCount !== undefined && {
 					swiftShaderSwitches: [`count=${comparison.swiftShaderHoldCount}`],
 				}),
-				...(comparison.imageDevices && { devices: comparison.imageDevices }),
+				...(comparison.imageDevices?.[engine] && { devices: comparison.imageDevices[engine] }),
 			};
 			// A comparison that draws another's scene holds the same frame: its test shares that
 			// comparison's references.

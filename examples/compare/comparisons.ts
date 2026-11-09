@@ -62,10 +62,11 @@ export interface Comparison {
 	 */
 	sameSceneAs?: string;
 	/**
-	 * Devices whose browsers draw the held frame another way, so its image tests keep references of
-	 * each such device, as the guide to image tests (.dev/image-tests.md) says.
+	 * Devices whose browsers draw an engine's held frame another way, by engine, so that engine's
+	 * image tests keep references of each such device, as the guide to image tests
+	 * (.dev/image-tests.md) says.
 	 */
-	imageDevices?: readonly string[];
+	imageDevices?: { readonly null3d?: readonly string[]; readonly threejs?: readonly string[] };
 	/**
 	 * What the scene draws, and how the two engines draw each part of it, for the details sheet:
 	 * one row per topic, null3D's way and three.js's.
@@ -247,8 +248,9 @@ export const COMPARISONS: readonly Comparison[] = [
 		hold: NIGHT_HOLD,
 		swiftShaderHoldCount: NIGHT_HOLD.softwareCount,
 		holdTimeoutSeconds: NIGHT_HOLD.timeoutSeconds,
-		// Firefox on Linux filters the facades' textures with its own anisotropic samples.
-		imageDevices: ['linux'],
+		// Firefox on Linux filters three.js's facade textures with its own anisotropic samples.
+		// null3D's windows come from the facades add-on, and Firefox draws them as the Mac does.
+		imageDevices: { threejs: ['linux'] },
 		objectsAt: nightObjects,
 		shadowTiles: 0,
 		route:

@@ -30,17 +30,18 @@
 			"types": "./lib/index.d.ts",
 			"default": "./lib/index.js"
 		},
-		"./legacy": {
-			"null3d-source": "./src/legacy/index.ts",
-			"types": "./lib/legacy/index.d.ts",
-			"default": "./lib/legacy/index.js"
+		"./textures": {
+			"null3d-source": "./src/core/textures.ts",
+			"types": "./lib/core/textures.d.ts",
+			"default": "./lib/core/textures.js"
 		},
 		"./package.json": "./package.json"
 	},
 	"files": [
 		"lib",
 		"LICENSE-MIT",
-		"LICENSE-APACHE"
+		"LICENSE-APACHE",
+		"THIRD-PARTY-NOTICES.txt"
 	],
 	"publishConfig": {
 		"access": "public",
@@ -52,10 +53,12 @@
 	"peerDependencies": {
 		"@null3d/engine": "workspace:*",
 		"@null3d/wind": "workspace:*",
-		"@null3d/impostors": "workspace:*"
+		"@null3d/impostors": "workspace:*",
+		"@null3d/vegetation-textures": "workspace:*"
 	},
 	"devDependencies": {
 		"@null3d/engine": "workspace:*",
+		"@null3d/vegetation-textures": "workspace:*",
 		"@null3d/vite-plugin": "workspace:*",
 		"@null3d/wind": "workspace:*",
 		"@webgpu/types": "0.1.74",

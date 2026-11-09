@@ -25,7 +25,7 @@ Product pages, marketing pages and landing pages that show a 3D scene next to te
 3. The load deadline and the three states: waiting, late, ready. Reveal the canvas when `engine.firstFrame` resolves.
 4. The scene itself: the first view in the setup, the rest in later stages (`references/performance.md`, section 11).
 5. Pausing: off screen, under reduced motion, and a pause button for motion that lasts longer than five seconds.
-6. Second visits: HTTP caching, a cache for generated data (`references/performance.md`, section 12), `detach` and `attach` in single-page apps.
+6. Second visits: HTTP caching, `assets.cache` for generated data (`references/performance.md`, section 12), `detach` and `attach` in single-page apps.
 7. The crash marker.
 
 ## 3. Rules

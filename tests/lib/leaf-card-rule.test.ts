@@ -1,47 +1,50 @@
-// The leaf-card level rule is written twice: once in the generator, which makes its levels from a
-// skeleton, and once in the level planner that the asset tool and the engine share, which thins
-// cards of a mesh from a file or from arrays. D-241 chose that
-// split, so this test holds both to one rule: a level keeps every second card of the
-// one above in a space-filling order, and each kept card grows about its middle by the square root
-// of that step. A change to either side that breaks the rule fails here.
+// The leaf-card level rule is written twice: once in the vegetation add-on, which thins a plant's
+// shoot cards for its second card level, and once in the level planner that the asset tool and the
+// engine share, which thins cards of a mesh from a file or from arrays. D-241 chose that split, so
+// this test holds both to one rule: a level keeps every second card of the one above in a
+// space-filling order, and each kept card grows about its middle by the square root of that step.
+// A change to either side that breaks the rule fails here.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { cardKeep } from '../../packages/vegetation/src/lod/cards.ts';
 
 const ROOT = join(import.meta.dirname, '..', '..');
-const GENERATOR = readFileSync(join(ROOT, 'packages/vegetation/src/legacy/levels.ts'), 'utf8');
+const CARDS = readFileSync(join(ROOT, 'packages/vegetation/src/lod/cards.ts'), 'utf8');
+const ORDER = readFileSync(join(ROOT, 'packages/vegetation/src/leaf/instancer.ts'), 'utf8');
 const TOOL = readFileSync(join(ROOT, 'packages/engine/levels/planner.js'), 'utf8');
 
-describe('the leaf-card level rule, which the generator and the asset tool share', () => {
-	test('both order cards by a space-filling curve of the same width', () => {
-		const generator = /const CARD_KEY_BITS = (\d+);/.exec(GENERATOR);
-		const tool = /const CARD_KEY_BITS = (\d+);/.exec(TOOL);
-		expect(generator?.[1]).toBe('10');
-		expect(tool?.[1]).toBe('16');
+describe('the leaf-card level rule, which the vegetation add-on and the asset tool share', () => {
+	test('both order cards by a space-filling curve that interleaves the axes', () => {
+		expect(/const ORDER_BITS = (\d+);/.exec(ORDER)?.[1]).toBe('10');
+		expect(/const CARD_KEY_BITS = (\d+);/.exec(TOOL)?.[1]).toBe('16');
 		// Both keys interleave the axes of a card's middle, so every second kept card spreads over
-		// the crown. The widths differ, and the generator's coarser key still orders the same way.
-		expect(GENERATOR).toContain('key = key * 2 + ((axis >> bit) & 1)');
+		// the crown. The widths differ, and the add-on's coarser key still orders the same way.
+		expect(ORDER).toContain('key = key * 2 + ((axis >> bit) & 1)');
 		expect(TOOL).toContain('key = key * 2 + ((axis >> bit) & 1)');
 	});
 
 	test('both keep every second card of the level above', () => {
-		expect(GENERATOR).toContain('const every = 2 ** level;');
+		// The add-on's first card level holds every row; its second keeps every second. The step is
+		// written as a shift so the count is exact in every engine.
+		expect(CARDS).toContain('const every = 1 << (level - 1);');
 		// The planner's step names the base mesh's cards for each kept card: 2 ** level.
 		expect(TOOL).toContain('const every = 2 ** (levels.length + 1);');
 		expect(TOOL).toContain('thinCards(list, Math.min(every, Math.max(1, list.cards.length)))');
+		expect(cardKeep(0, 2)).toBeGreaterThan(0);
+		expect(cardKeep(1, 2)).toBe(0);
 	});
 
 	test('both grow a kept card about its middle by the square root of the step', () => {
-		expect(GENERATOR).toContain('const grow = Math.sqrt(every);');
+		expect(CARDS).toContain('const grow = Math.sqrt(every);');
 		expect(TOOL).toContain('const grow = Math.sqrt(every);');
-		// The generator keeps the same card, so its middle does not move; the tool rewrites the
-		// vertices around the card's middle by the same factor.
-		expect(GENERATOR).toContain('kept.push(card);');
+		expect(cardKeep(2, 2)).toBeCloseTo(Math.SQRT2, 12);
+		// The add-on scales each plane's half-extents about the plane's centre, and the record's own
+		// card growth multiplies that; the tool rewrites the vertices around the card's middle by
+		// the same factor.
+		expect(CARDS).toContain(
+			'grow * widen * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))',
+		);
 		expect(TOOL).toContain('centre + (value - centre) * grow');
-	});
-
-	test('both report the largest dropped card as the level error', () => {
-		expect(GENERATOR).toContain('error = Math.max(error, card.width, card.height);');
-		expect(TOOL).toContain('error = Math.max(error, card.size);');
 	});
 });

@@ -29,6 +29,8 @@ The table names what the engine ships. A feature may have both a shader module a
 
 The engine builds each address with `new URL(..., import.meta.url)`. The bundler then ships that file beside the engine's code.
 
+A repeat visit downloads less. The HTTP cache keeps the build's files, and the engine's cache of derived data keeps what it made from them, such as transcoded textures, in the browser's own storage. [Caches between visits](hosting.md#caches-between-visits) shows each cache.
+
 The vendored decoders hold a download path of their own, and the engine never uses it. The engine hands each decoder its compiled WebAssembly, so a page can block every other origin.
 
 ## What your own code downloads

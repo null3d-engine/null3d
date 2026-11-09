@@ -10893,7 +10893,6 @@ mod tests {
         TraceFrame {
             ssr: crate::ssr::Ssr::default(),
             projection: ([1.0; 16], [1.0; 16]),
-            orthographic: false,
             steps: 32,
         }
     }
