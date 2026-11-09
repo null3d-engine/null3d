@@ -24,7 +24,7 @@ export const record: Species = {
 		model: 'frond-colony',
 		// Still 01 and the turntable: about twenty fronds stand in one patch, their blades
 		// overlapping into a level roof.
-		fronds: { mean: 20, spread: 4 },
+		fronds: { mean: 15, spread: 3 },
 		// Still 01: the patch spreads about a metre and a quarter each way from its middle, the
 		// fronds a stipe apart along lines that wander out from it, so the plan reads round.
 		rhizome: {
