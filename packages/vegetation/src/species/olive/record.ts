@@ -323,7 +323,8 @@ export const record: Species = {
 		// 16: the smoother, paler bark of the great limbs above the bole, which reads sixteen steps
 		// lighter than the trunk's under the same light.
 		zones: [
-			{ layer: 0, by: 'height', from: 0, to: 2.6, blend: 1.2 },
+			{ layer: 0, by: 'height', from: 0, to: 1.4, blend: 0.7, tint: [1.36, 1.04, 0.8] },
+			{ layer: 0, by: 'height', from: 1.4, to: 2.6, blend: 1.2 },
 			{ layer: 1, by: 'height', from: 2.6, to: 40, blend: 1.2 },
 		],
 		young: 0,

@@ -57,12 +57,13 @@
 	"14-bark-base.png": {
 		"span": 2.5,
 		"skyShare": 0.35,
-		"daylight": 1.8,
+		"daylight": 1.26,
 		"barkMask": true
 	},
 	"15-bark-mid-trunk.png": {
 		"span": 0.9,
-		"daylight": 0.8
+		"daylight": 0.6,
+		"barkMask": true
 	},
 	"12-single-leaf-upper.png": {
 		"leaves": 1.15,
