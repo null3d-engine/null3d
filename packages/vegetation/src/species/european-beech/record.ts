@@ -183,8 +183,8 @@ export const record: Species = {
 				laterals: 2,
 				lateralGap: 0.3,
 				leafScale: [
-					[0, 0.85],
-					[1, 1.05],
+					[0, 0.95],
+					[1, 1.2],
 				],
 				leafAngle: [
 					[0, 96],
