@@ -98,6 +98,11 @@ export interface PlantReviewQuery {
 	readonly cut?: number;
 	/** Whether the page posts its measures of the plant beside the frame. */
 	readonly measure?: boolean;
+	/**
+	 * Whether the picture shows the plant lifted from the soil, as a photograph of its washed base
+	 * does: no ground plane is drawn, so the rhizome and the roots below the crown stay in view.
+	 */
+	readonly lifted?: boolean;
 	/** Whether the page draws a 1 m scale bar beside the view's target. */
 	readonly scale?: boolean;
 	/** Whether the twigs view looks for the plant's fruit rather than for a sunlit tip. */
@@ -221,7 +226,7 @@ const SHARE_FIELDS = new Set(['horizon', 'fill', 'targetY', 'targetX', 'top', 'a
 const COUNT_FIELDS = new Set(['turns', 'columns']);
 
 /** The switches, written as 1 when on. */
-const SWITCHES = ['measure', 'scale', 'matte', 'fruit', 'surface'] as const;
+const SWITCHES = ['measure', 'scale', 'matte', 'fruit', 'surface', 'lifted'] as const;
 
 /** A short form of a number for a query, so a query reads well and keeps its precision. */
 function short(value: number): string {
@@ -358,6 +363,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		...(placeholders !== null && { placeholders: placeholders === '1' }),
 		...(pressed !== null && { pressed: pressed === '1' }),
 		measure: params.get('measure') === '1',
+		lifted: params.get('lifted') === '1',
 		scale: params.get('scale') === '1',
 		matte: params.get('matte') === '1',
 		fruit: params.get('fruit') === '1',
