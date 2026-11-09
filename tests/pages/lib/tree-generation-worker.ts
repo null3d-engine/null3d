@@ -16,6 +16,8 @@ export type DetailName = 'low' | 'medium' | 'high' | 'ultra';
 export interface GenerateRequest {
 	batch: number;
 	detail: DetailName;
+	/** How far toward its sparse form each species grows, 0 or 1: a phone set asks for 1. */
+	sparse?: number;
 	species: SpeciesId;
 	seeds: number;
 }
@@ -42,7 +44,8 @@ self.onmessage = async ({ data }: MessageEvent<GenerateRequest>) => {
 		// The page draws nothing, so the kit takes placeholders rather than decoded texture files;
 		// the work measured is the generation itself, as a scene's start pays for it.
 		const kit = buildKitNow(module, { placeholders: 'missing', detail: data.detail });
-		const grow = (seed: number): PlantAsset => growPlantNow(kit, { seed, variant: 0 });
+		const grow = (seed: number): PlantAsset =>
+			growPlantNow(kit, { seed, variant: 0, sparse: data.sparse ?? 0 });
 		for (let warm = 0; warm < WARM_UPS; warm++) grow(11 + warm * 7919);
 		const timesMs: number[] = [];
 		let asset: PlantAsset | undefined;
