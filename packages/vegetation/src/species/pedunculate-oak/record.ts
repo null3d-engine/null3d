@@ -298,9 +298,11 @@ export const record: Species = {
 			// The foot stands in shade under the crown, where the bark's own albedo is a small part of
 			// what the picture shows, so its tint cuts blue hard to keep the olive the photograph has.
 			{ layer: 0, by: 'height', from: 0, to: 1.2, blend: 0.3, tint: [0.8, 0.72, 0.2] },
-			// The bole: stills 26 and 15 show one bark under a flat light and under daylight, so one
-			// tint keeps the flat-lit grey and the mid-trunk grey-brown close to both.
-			{ layer: 0, by: 'height', from: 1.2, to: 3.6, blend: 0.4, tint: [1.04, 1.02, 0.94] },
+			// The bole's bark is dark: the mid-trunk photograph shows its own tone under the page's
+			// daylight, so this tint scales the sampled colour to match it. The flat-lit texture source
+			// drawing the same wood sits a little dark beside its photograph, but a texture source
+			// sets no row.
+			{ layer: 0, by: 'height', from: 1.2, to: 3.6, blend: 0.4, tint: [0.69, 0.67, 0.62] },
 			// The great limbs stand in brighter light than the bole and read lighter and cooler than
 			// still 16, so they take a warmer, darker tint of their own above it.
 			{ layer: 0, by: 'height', from: 3.6, to: 40, blend: 0.6, tint: [0.5, 0.55, 0.1] },
