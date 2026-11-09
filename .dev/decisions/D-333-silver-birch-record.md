@@ -293,7 +293,8 @@ only when the mask is on.
   behind the subject and fills 0.45 of the frame. It also shows olive ground where the photograph
   looks up at the limb against sky.
 
-Two landing items follow. The bark figure needs a paired-patch reading, or the share each picture
-keeps printed beside it. The masked mean is a mean of whatever survives the cut, so two figures can
-agree while the pictures do not. The limb view needs a camera rise a picture can ask for. A slot's
-elevation changes nothing today, and the picture drawn twelve degrees up is identical.
+Two landing items follow, both batch-wide rather than the species'. The bark figure needs a
+paired-patch reading, or the share each picture keeps printed beside it. The masked mean is a mean of
+whatever survives the cut, so two figures can agree while the pictures do not. The limb view needs a
+camera rise a picture can ask for, since the hawthorn meets the same fault. A slot's elevation
+changes nothing today, and the picture drawn twelve degrees up is identical.
