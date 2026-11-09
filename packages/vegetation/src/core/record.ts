@@ -1543,6 +1543,13 @@ export interface BarkZone {
 	 * colour, and absent is 1 on every channel.
 	 */
 	readonly tint?: Rgb;
+	/**
+	 * A band on the zone's other axis, so the zone holds only where both bands do: a zone keyed by
+	 * radius may take a height band as well, and its cast then stands on a stem's foot without the
+	 * wood above it. A zone that holds on both axes wins over one that holds on a single axis.
+	 * Absent, the zone holds on its own axis alone.
+	 */
+	readonly second?: { readonly from: number; readonly to: number; readonly blend: number };
 }
 
 /**
