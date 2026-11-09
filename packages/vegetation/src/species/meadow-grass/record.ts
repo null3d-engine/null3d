@@ -23,14 +23,14 @@ export const record: Species = {
 	size: { height: { mean: 0.5, spread: 0.08 }, aspect },
 	growth: {
 		model: 'tuft',
-		// Stills 01, 04 and 21: many tillers rise from one crown, spreading over a disc a few
-		// centimetres across. The whole-plant pictures stand the leaf mass about as wide as it is
-		// tall, so the clump spreads wider than a tight disc and its outer tillers lean out.
-		shoots: { mean: 38, spread: 5 },
-		base: 0.07,
+		// Stills 01, 04 and 21: many tillers rise from one crown and their blades make a leaf mass
+		// about as wide as it is tall. The clump stays compact and packs its tillers, so the mass
+		// gains density without spreading past the pictures' outline.
+		shoots: { mean: 50, spread: 6 },
+		base: 0.05,
 		lean: [
-			[0, 4],
-			[1, 14],
+			[0, 3],
+			[1, 8],
 		],
 		// Still 22 and the fact sheet: two to four blades on each tiller, set in two ranks. The
 		// whole-plant pictures carry four or five, so the crown takes the fuller end.
