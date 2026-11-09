@@ -615,7 +615,7 @@ describe('budgetProblems', () => {
 	});
 
 	it("names a feature's shader module over its budget in a column, which no start counts", () => {
-		expect(FIRST_USE_SHADER_BUDGET.brotli).toBe(58 * 1024);
+		expect(FIRST_USE_SHADER_BUDGET.brotli).toBe(128 * 1024);
 		const within = sizes(START_BUDGET, LATER_BUDGET);
 		within.set('shaders-bloom-wgsl.js', FIRST_USE_SHADER_BUDGET);
 		expect(budgetProblems(within, downloads, later)).toEqual([]);
@@ -633,7 +633,7 @@ describe('budgetProblems', () => {
 			'shaders-area-lights-and-coat-sheen-and-displacement-and-row-values-glsl-tone-map-half.js';
 		const other = 'shaders-area-lights-glsl-draw-index-half.js';
 		const raisedRaw = FIRST_USE_SHADER_BUDGET.raw + 16 * 1024;
-		expect(FIRST_USE_SHADER_BUDGET.raw).toBe(1_792 * 1024);
+		expect(FIRST_USE_SHADER_BUDGET.raw).toBe(8_192 * 1024);
 		expect(Object.keys(FIRST_USE_SHADER_RAW_RAISE).sort()).toEqual([drawIndex, noDrawIndex].sort());
 		for (const name of [drawIndex, noDrawIndex])
 			expect(firstUseShaderBudget(name)).toEqual({
