@@ -94,6 +94,7 @@ const POSITION_STEPS: f32 = 65535.0;
 const REST_STEPS: f32 = 255.0;
 const HEADER_YOUNG: i32 = 15;
 const HEADER_YOUNG_TILE: i32 = 16;
+const HEADER_YOUNG_TINT: i32 = 56;
 const HEADER_MOSS: i32 = 17;
 const HEADER_MOSS_REACH: i32 = 18;
 const HEADER_EXTRAS: i32 = 19;
@@ -907,7 +908,9 @@ fn surface(input: SurfaceInput) -> Surface {
         let y_uv = uv / young_tile;
         let y_gx = gx / young_tile;
         let y_gy = gy / young_tile;
-        let y_colour = textureSampleGrad(second, secondSampler, y_uv, y_gx, y_gy).rgb;
+        let y_colour =
+            textureSampleGrad(second, secondSampler, y_uv, y_gx, y_gy).rgb *
+            header(HEADER_YOUNG_TINT).rgb;
         let y_relief = textureSampleGrad(third, thirdSampler, y_uv, y_gx, y_gy).rgb;
         let youth = 1.0 - smoothstep(young.w * 0.8, young.w * 1.2, radius);
         bark = mix(bark, y_colour, youth);
@@ -961,7 +964,7 @@ fn surface(input: SurfaceInput) -> Surface {
         let near_copy = object.values.x > 0.5;
         if (abs(input.uv1.y - STALK_PLANE) < 0.1) {
             // A card's stalk: the young bark's tone, so the join the card's leaves stand on shows.
-            base = header(HEADER_YOUNG).rgb;
+            base = header(HEADER_YOUNG).rgb * header(HEADER_YOUNG_TINT).rgb;
             roughness = 0.85;
             occlusion = 1.0;
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
@@ -1065,6 +1068,8 @@ fn surface(input: SurfaceInput) -> Surface {
             if (bud.w > 0.5 && kind > (KIND_STEM + KIND_BUD) * 0.5) {
                 let young_mean = max(header(HEADER_YOUNG).rgb, vec3f(0.0001));
                 base = min(bud.rgb * base / young_mean, vec3f(1.0));
+            } else {
+                base *= header(HEADER_YOUNG_TINT).rgb;
             }
             roughness = 0.8;
         } else {
