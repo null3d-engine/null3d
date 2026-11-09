@@ -613,6 +613,27 @@ export function withSparse<T extends GrowOptions>(record: Species, options: T): 
 	};
 }
 
+/**
+ * The kinds of device a page tells apart: the engine's own class, named here so the orchestrator
+ * holds no engine import and a job worker runs it alike.
+ *
+ * @category api/vegetation
+ */
+export type DeviceClass = 'phone' | 'tablet' | 'desktop';
+
+/**
+ * The sparse level a device class asks for: a phone or a tablet grows the light form of a species
+ * that records floors, and a desktop grows the record's own at every preset. A page reads its class
+ * from the engine's chooser and passes this level beside the record.
+ *
+ * @param kind The device class the engine chose.
+ * @returns The level for `GrowOptions.sparse`.
+ * @category api/vegetation
+ */
+export function sparseForDevice(kind: DeviceClass): number {
+	return kind === 'desktop' ? 0 : 1;
+}
+
 /** The grown skeleton and its dressing: the stages before the meshes. */
 function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 	// A sparse form's shares may sit below what a page may ask for on its own.
