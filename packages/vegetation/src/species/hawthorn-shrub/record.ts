@@ -137,7 +137,9 @@ export const record: Species = {
 				share: 0.35,
 				years: 1,
 				length: { mean: 0.03, spread: 0.006 },
-				// Five or six leaves in the rosette as stills 11 and 23 show; a node bears one leaf.
+				// Five or six leaves in the rosette as stills 11 and 23 show, standing round the shoot's
+				// axis on the golden angle rather than in a fan along one plane.
+				phyllotaxis: { kind: 'rosette-spur', leaves: { mean: 6, spread: 0.6 } },
 				nodes: { mean: 6.5, spread: 0.5 },
 				internode: ROSETTE,
 				leafScale: TUFT_SCALE,
