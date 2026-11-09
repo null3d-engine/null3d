@@ -309,6 +309,9 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 1477281293,
+	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
+	// be measured on the phone set before they are trusted.
+	sparse: { limbs: 0.4, leaves: 0.5, coarseness: 0.55 },
 	roundBand,
 	cuttings: {
 		branch: { shoot: 'spray' },
