@@ -120,6 +120,8 @@ export const HEADER = {
 	extraStalks: 51,
 	/** The least width in pixels that a card's stalk draws, or 0 where the record gives none. */
 	cardStalk: 55,
+	/** Young bark: the tint its thin wood takes, where the record gives one. */
+	youngTint: 56,
 } as const;
 
 /**
@@ -129,7 +131,7 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.cardStalk + 1;
+export const HEADER_TEXELS = HEADER.youngTint + 1;
 
 /** An extra's roughness where its record names none. */
 export const EXTRA_ROUGHNESS = 0.6;
@@ -301,6 +303,7 @@ export function speciesHeader(
 	if (bark) {
 		const young = barkManifest?.young;
 		texel(header, HEADER.young, [...(young?.mean ?? STAND_IN_BARK), bark.youngRadius]);
+		texel(header, HEADER.youngTint, [...(bark.youngTint ?? [1, 1, 1]), 0]);
 		const zones = bark.zones.slice(0, MAX_BARK_ZONES);
 		texel(header, HEADER.youngTile, [
 			young?.tile[0] ?? 0.12,
