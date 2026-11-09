@@ -14,6 +14,7 @@ import {
 } from '@null3d/vegetation';
 import { createWind } from '@null3d/wind';
 import { interact } from '../lib/interact';
+import { postWindHud } from './hud';
 
 /** Metres a second at the field's top, at the strongest of the sweep. */
 const GUST = 7;
@@ -55,58 +56,7 @@ export default defineSketch(async (ctx) => {
 	let power = GUST;
 	let bearing = 35;
 	let still = false;
-	const postHud = () =>
-		page.post('hud', {
-			groups: [
-				{
-					name: 'wind',
-					title: 'Wind',
-					radio: false,
-					buttons: [
-						{
-							id: 'still',
-							label: 'Hold',
-							tip: 'Hold the air still, or let it move again.',
-							active: still,
-						},
-					],
-					slider: {
-						min: 0,
-						max: 12,
-						step: 0.1,
-						value: power,
-						live: false,
-						marks: [
-							{ at: 0, label: 'still' },
-							{ at: 6, label: 'breeze' },
-							{ at: 12, label: 'gale' },
-						],
-						tip: "Drag the slider to set the wind's strength, from still air to a gale.",
-					},
-				},
-				{
-					name: 'bearing',
-					title: 'Direction',
-					radio: false,
-					buttons: [],
-					slider: {
-						min: 0,
-						max: 360,
-						step: 1,
-						value: bearing,
-						live: false,
-						marks: [
-							{ at: 0, label: 'N' },
-							{ at: 90, label: 'E' },
-							{ at: 180, label: 'S' },
-							{ at: 270, label: 'W' },
-						],
-						tip: 'Drag the slider to turn the wind round the meadow.',
-					},
-				},
-			],
-			visible: true,
-		});
+	const postHud = () => postWindHud(page, { power, bearing, still });
 	page.onMessage((name, value) => {
 		if (name === 'wind') {
 			const strength = Number(value);
