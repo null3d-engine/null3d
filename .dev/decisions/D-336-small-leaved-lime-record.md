@@ -173,8 +173,13 @@ Rejected:
   because the limb view serves both the great-limb photograph and the young-bark one and needs the
   slot's own `thin`. At `thin` 0.045 the picture finds a young shoot, and at a 5.5 cm span it fills
   the frame as its photograph does; with the record's `youngTint` at 0.9, 1.1 and 0.9, the young
-  bark reads **5.7** where it read 15.95 at the verdict. It is the row's one figure still outside the
-  mark, and the three others are inside at 2.62, 2.66 and 1.09.
+  bark reads **5.7** where it read 15.95 at the verdict. A 4 cm span at four-fifths of the copy-stand light takes it to **4.5**, where 3 cm reads 4.8, 5.5 cm
+  5.7 and 10 cm 8.7. The young layer's tone has plateaued there: 0.9 by 1.1 by 0.9 and 0.93 by 1.07
+  by 0.92 both read 4.5, a warmer 0.95 by 1.05 by 0.92 reads 4.7 and a redder 1.1 by 0.95 by 0.9
+  reads 7.3. The reviewer's remaining word is gloss, and the record carries roughness for the leaf and
+  for a fruit's body and band but none for bark, so the last three steps are the material's and not
+  the record's. It is the row's one figure outside the mark, and the three others are inside at 2.62,
+  2.66 and 1.09.
 - The clean run `lime-full-11` at `70181eaba` has every still inside the three-step colour mark:
   distant 1.8, profile 1.6, leaf cluster 0.2, flower spray 0.5, branch studio 2.9, sub-branch studio
   2.4 and leaf-cluster studio 1.6, with the turns at 4.22, 6.82, 6.98 and 7.46.
