@@ -96,9 +96,11 @@
 		"daylight": 0.72
 	},
 	"26-bark-texture.png": {
-		"barkMask": true
+		"barkMask": true,
+		"daylight": 0.47
 	},
 	"28-young-bark.png": {
-		"barkMask": true
+		"barkMask": true,
+		"daylight": 1.35
 	}
 }
