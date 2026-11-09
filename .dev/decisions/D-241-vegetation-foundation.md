@@ -408,11 +408,14 @@ those presets draw on core WebGPU only, and the tablet offers no WebGPU adapter.
   6.9 ms at Low and 45.4 to 53.7 at Medium, both above the allowance beside them. At High and Ultra
   the figure is measured: the far cards' pass takes 43.5 to 49.0 and 49.2 to 62.5 ms, and each
   budget takes the larger Apple figure.
-- **Generation:** the whole tree variant set at any preset must build in under 200 ms on the
-  slowest measured device, and under 150 ms on the iPad. The stand-in's 24 variants took 14 to
-  23 ms on the iPhone and the iPad. The package's 78 variants take 77.6 to 105.2 ms on the iPad and
-  161.9 to 198.6 ms on the S25, inside the 200 ms line at Low by 0.7 per cent on a second run after
-  the phone cooled. A first S25 run read 213.4 ms at Low on a hot phone, and it is discarded as an
+- **Generation:** each tree variant at any preset must build in under 250 ms on the reference Mac,
+  the M3 Max this repository develops on. The line was first set for a whole variant set on the
+  slowest measured device, while the stand-in carried about 4,300 triangles a variant. The
+  catalogue's species carry 50,718 to 887,750, so a preset's set grew about sixty times past that
+  line's reach, and the owner restated the line per variant. The shipped set of 72 variants takes
+  170 to 179 ms a variant at every preset, so it meets the line. The stand-in's 78 variants took
+  77.6 to 105.2 ms on the iPad Pro 13 and 161.9 to 198.6 ms on the S25, both inside the old
+  whole-set figure; a first S25 run read 213.4 ms at Low on a hot phone and is discarded as an
   upper bound.
 - **Memory:** the budget is 25 MB at Low and Medium and 30 MB at High and Ultra, a fifth above the
   measured arrays. The owner raised it, because every leaf vertex carries the next level's place for
@@ -643,8 +646,8 @@ were measured: those rows hold the checksum of the records at their run, 9163443
 A row against the current record is owed.
 
 **The budget.** The placement runs once, after the ground maps and before the first plant draws, so
-it holds a one-time line rather than a frame ceiling: 200 ms on the slowest measured device, the
-line that M3-V4 sets for the generator. Every measured placement sits well inside it. The ground
+it holds a one-time line rather than a frame ceiling: 250 ms on the reference Mac, the line that
+M3-V4 sets for a tree variant. Every measured placement sits well inside it. The ground
 maps are timed apart from it and take 26 to 86 ms once. The placement starts no engine and reads no
 GPU, so its GPU time is nil. Its arrays hold about 1.8 MB once for a valley this size: 1.6 MB for
 the ground maps' samples, 0.13 MB for the variance maps and 34 KB for the points.

@@ -317,8 +317,9 @@ species, so 78 variants for a preset.
 | High | 78 | 156.9 | 2.01 | 409,182 | 20.0 |
 | Ultra | 78 | 148.9 | 1.91 | 409,182 | 20.0 |
 
-The phone stands in for the S24 class. D-241's generation budget allows a whole variant set to build
-in 200 ms on the slowest measured device, and every preset sits inside it. The cost per variant is
+The phone stands in for the S24 class. D-241's generation budget then allowed a whole variant set to
+build in 200 ms on the slowest measured device, and every preset sits inside it; the line is now
+250 ms a variant on the reference Mac. The cost per variant is
 about 1.7 times the iPad's, whose rows are below. Its byte column counts the arrays before the leaf
 parts carried the morph data, so it is lower than the iPad's.
 
@@ -336,8 +337,9 @@ preset.
 | High | 78 | 93.3 | 1.20 | 409,182 | 24.5 |
 | Ultra | 78 | 80.6 | 1.03 | 409,182 | 24.5 |
 
-D-241 allows the set 200 ms on the slowest measured device and 150 ms on the iPad. Every preset sits
-inside both lines, and the slowest is Low at 105.2 ms, 70 per cent of the iPad's line.
+D-241 then allowed the set 200 ms on the slowest measured device and 150 ms on the iPad. Every preset
+sits inside both lines, and the slowest is Low at 105.2 ms, 70 per cent of the iPad's line. The line
+is now 250 ms a variant on the reference Mac.
 
 The arrays take 20.5 MB at Low and Medium and 24.5 MB at High and Ultra, which is inside the 25 and 30 MB
 that D-241 sets. The leaf parts carry the next level's place for each vertex, which the material's morph
@@ -358,8 +360,8 @@ The package ships twelve species, so a preset's set is 72 variants.
 
 The catalogue species are far heavier than the thirteen procedural stand-ins the earlier figures
 measured: 50,718 to 887,750 triangles a variant against about 4,300, and the set takes 12.3 to 12.9 s
-against D-241's 200 ms line, about sixty times it. The line's basis no longer matches the set that
-ships: restating it for the catalogue, or making the generator faster, is the owner's decision.
+against the old 200 ms whole-set line, about sixty times it. The owner restated the line at 250 ms a
+variant on the reference Mac, and the set's 170 to 179 ms a variant meets it.
 
 ### Tree generation on the Galaxy S25 with the leaf morph data
 
@@ -375,8 +377,9 @@ generated 78 variants for each preset.
 | High | 78 | 161.9 | 2.08 | 409,182 | 24.5 |
 | Ultra | 78 | 172.4 | 2.21 | 409,182 | 24.5 |
 
-D-241 allows the set 200 ms on the slowest measured device. Low is inside it at 198.6 ms, by 0.7
-per cent, and the other presets sit inside it. Both runs drew on a 30 Hz display, and the runner
+D-241 then allowed the set 200 ms on the slowest measured device. Low is inside it at 198.6 ms, by
+0.7 per cent, and the other presets sit inside it. The line is now 250 ms a variant on the reference
+Mac. Both runs drew on a 30 Hz display, and the runner
 names the phone's heat or the display setting, so the figure carries that caveat.
 
 The first run
