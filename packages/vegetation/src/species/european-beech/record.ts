@@ -303,8 +303,8 @@ export const record: Species = {
 		// the measured colour, while still 16's great limb already reads light: only the trunk takes
 		// the lift, and a limb stops short of its girth.
 		zones: [
-			{ layer: 0, by: 'radius', from: 0.3, to: 5, blend: 0.05, tint: [1.45, 1.42, 1.47] },
-			{ layer: 0, by: 'radius', from: 0, to: 0.3, blend: 0.05 },
+			{ layer: 0, by: 'radius', from: 0.45, to: 5, blend: 0.05, tint: [1.45, 1.42, 1.47] },
+			{ layer: 0, by: 'radius', from: 0, to: 0.45, blend: 0.05 },
 		],
 		young: 0,
 		// Stills 16 and 28: the young olive bark runs up the limbs and thin wood, so a limb in a close
