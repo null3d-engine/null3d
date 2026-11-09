@@ -177,7 +177,7 @@
 		"test": "plant-bracken",
 		"tier": "compat",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 97c6fd194 after the engine merge; a CI drawing replaces it if it differs"
+		"reason": "drawn on this Mac's SwiftShader at 2f2e1b93d after the leaf frame fix; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/compat/plant-common-ash.png": {
 		"test": "plant-common-ash",
@@ -459,7 +459,7 @@
 		"test": "plant-bracken",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 97c6fd194 after the engine merge; a CI drawing replaces it if it differs"
+		"reason": "drawn on this Mac's SwiftShader at 2f2e1b93d after the leaf frame fix; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgl2/plant-common-ash.png": {
 		"test": "plant-common-ash",
@@ -771,7 +771,7 @@
 		"test": "plant-bracken",
 		"tier": "webgpu",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 97c6fd194 after the engine merge; a CI drawing replaces it if it differs"
+		"reason": "drawn on this Mac's SwiftShader at 2f2e1b93d after the leaf frame fix; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgpu/plant-common-ash.png": {
 		"test": "plant-common-ash",
