@@ -7,10 +7,12 @@
 		"targetY": 0.45
 	},
 	"02-whole-plant-profile.png": {
+		"view": "leaf-upper",
+		"background": "sky-meadow",
 		"skyShare": 0.357,
 		"daylight": 1.524,
-		"fill": 0.79,
-		"targetY": 0.5
+		"fill": 0.84,
+		"targetY": 0.49
 	},
 	"03-whole-from-below.png": {
 		"skyShare": 0.357,
