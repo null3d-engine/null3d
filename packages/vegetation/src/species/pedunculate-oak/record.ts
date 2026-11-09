@@ -287,7 +287,7 @@ export const record: Species = {
 			wave: [0.003, 5],
 			optics: {
 				reflectance: [0.0429, 0.0864, 0.0194],
-				reflectanceBack: [0.2344, 0.2975, 0.232],
+				reflectanceBack: [0.2344, 0.2975, 0.212],
 				transmittance: [0.091, 0.195, 0.0195],
 				roughness: [0.45, 0.6],
 			},
@@ -295,12 +295,15 @@ export const record: Species = {
 	},
 	bark: {
 		zones: [
-			// The bole: stills 26 and 15 show one bark under a flat light and under daylight. Measured on
-			// the plant alone it draws lighter and greyer than both, so one tint darkens it and warms it.
-			{ layer: 0, by: 'height', from: 0, to: 3.6, blend: 0.4, tint: [0.75, 0.72, 0.5] },
+			// The foot stands in shade under the crown, where the bark's own albedo is a small part of
+			// what the picture shows, so its tint cuts blue hard to keep the olive the photograph has.
+			{ layer: 0, by: 'height', from: 0, to: 1.2, blend: 0.3, tint: [0.8, 0.72, 0.2] },
+			// The bole: stills 26 and 15 show one bark under a flat light and under daylight, so one
+			// tint keeps the flat-lit grey and the mid-trunk grey-brown close to both.
+			{ layer: 0, by: 'height', from: 1.2, to: 3.6, blend: 0.4, tint: [1.04, 1.02, 0.94] },
 			// The great limbs stand in brighter light than the bole and read lighter and cooler than
 			// still 16, so they take a warmer, darker tint of their own above it.
-			{ layer: 0, by: 'height', from: 3.6, to: 40, blend: 0.6, tint: [0.45, 0.42, 0.28] },
+			{ layer: 0, by: 'height', from: 3.6, to: 40, blend: 0.6, tint: [0.5, 0.55, 0.1] },
 		],
 		young: 0,
 		youngRadius: 0.08,
@@ -312,10 +315,10 @@ export const record: Species = {
 		collar: { swell: 0.45, length: 1.8, ridge: 0.6 },
 		// Still 07's limb leaves the trunk on a long, smooth curve under it, not a tight corner.
 		fork: { bend: 3 },
-		moss: { amount: 0.7, up: 1.6, north: 0.3, colour: [0.18, 0.22, 0.06] },
+		moss: { amount: 0.35, up: 1.2, north: 0.3, colour: [0.18, 0.22, 0.06] },
 		// Still 16's limb carries pale sage rosettes on its crests, so the lichen reaches the great
 		// limbs as well as the bole, in the fine flecks the bark shows through.
-		lichen: { amount: 0.65, from: 0.6, colour: [0.36, 0.38, 0.26] },
+		lichen: { amount: 0.3, from: 0.6, colour: [0.36, 0.38, 0.26] },
 	},
 	base: {
 		// Stills 01, 02, 17 and 18 flare the foot to about 1.8 times the bole a quarter metre up, 1.5
