@@ -204,7 +204,7 @@ export const record: Species = {
 			// Stills 01 and 18: no bare whisker stands outside the crown; a twig left with no shoot
 			// has died and goes.
 			bareTrim: 0.018,
-			lift: 20,
+			lift: 30,
 			reach: 12,
 			skyward: 0.35,
 			// The brushes gather at the nodes, so the internode between them shows bare.
