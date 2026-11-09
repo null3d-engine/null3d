@@ -1305,7 +1305,11 @@ export function compareStills(
 		// A close view of the bark is named by the view it draws, not by the words in its file name: a
 		// species whose photographs are called roots or petiole-section still draws the trunk close up,
 		// and its colour is read the same way as any other bark's.
-		const barkClose = slot.kind !== 'texture' && BARK_VIEWS.has(slot.view);
+		// The view the picture was drawn at, from the shot's own query, is what decides whether its
+		// colour is a bark colour: a species that names a picture's view draws that view, and the
+		// reference's number must not overrule it.
+		const drawn = frame.query?.view ?? slot.view;
+		const barkClose = slot.kind !== 'texture' && BARK_VIEWS.has(drawn);
 		const barkColour = barkClose
 			? { reference: patchLab(refImage, barkMaskOn), render: patchLab(render.image, barkMaskOn) }
 			: null;
