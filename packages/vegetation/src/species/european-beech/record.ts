@@ -203,10 +203,12 @@ export const record: Species = {
 				// A young shoot of the year: short enough that its leaves overlap their neighbours,
 				// as the photograph's sprig does.
 				length: { mean: 0.35, spread: 0.05 },
-				// Five leaves and the bud, where the photograph's sprig holds six large ones. At this
-				// size the cluster turn reads 119.5 wide against a band of 101 and 56.5 tall against
-				// 25, so both spreads remain: the width improved from 134.6, and both want the spray
-				// deeper or narrower than this one's 8 cm.
+				// Five leaves and the bud, where the photograph's sprig holds six large ones. The turn
+				// reads 119.5 wide against a band of 101 and 56.5 tall against 25. Three levers leave
+				// the spray 84 to 89 mm deep: the five-node class, the larger leaf, and ranks turned a
+				// little round the stem. The stills need the two ranks the photograph shows and the
+				// turn needs a depth a two-ranked spray does not have; that conflict stands as the
+				// row's limit rather than another round.
 				nodes: { mean: 5, spread: 0.5 },
 				internode: PLATE_RUN,
 				// A young shoot's leaves are larger than the crown's, and the photograph's sprig
