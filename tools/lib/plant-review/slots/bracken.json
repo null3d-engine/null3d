@@ -74,13 +74,15 @@
 	"15-stipe-lower-black.png": {
 		"view": "bark-base",
 		"skyShare": 0.357,
-		"daylight": 1.459
+		"daylight": 1.459,
+		"barkMask": true
 	},
 	"16-stipe-mid.png": {
 		"view": "bark-mid",
 		"skyShare": 0.357,
 		"daylight": 1.459,
-		"span": 0.09
+		"span": 0.09,
+		"barkMask": true
 	},
 	"17-rhizome.png": {
 		"skyShare": 0.357,
