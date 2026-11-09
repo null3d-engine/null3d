@@ -397,13 +397,13 @@ export const record: Species = {
 		// clip's outline changes little from frame to frame, so the shoots are far stiffer than a
 		// free pendulum.
 		stiffness: [
-			[0, 0.9],
-			[0.5, 0.85],
-			[1, 0.6],
+			[0, 0.95],
+			[0.5, 0.9],
+			[1, 0.7],
 		],
-		sway: { frequency: 0.3, amplitude: 0.015 },
-		whips: { fromOrder: 2, pendulum: 0.15 },
-		flutter: { kind: 'blade', amplitude: 0.15, frequency: 3 },
+		sway: { frequency: 0.3, amplitude: 0.004 },
+		whips: { fromOrder: 2, pendulum: 0.05 },
+		flutter: { kind: 'blade', amplitude: 0.03, frequency: 3 },
 	},
 	lod: {
 		nearFoliage: 'instanced',

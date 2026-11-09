@@ -19,7 +19,10 @@
 			"slot": 28,
 			"tile": [0.2, 0.2],
 			"depth": 0.0012,
-			"delight": { "radius": 0.12 }
+			"delight": {
+				"radius": 0.12
+			},
+			"tint": [1.0, 1.12, 1.08]
 		}
 	}
 }
