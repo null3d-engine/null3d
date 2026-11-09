@@ -105,10 +105,11 @@ export const record: Species = {
 		},
 	},
 	bark: {
-		// Stills 15 and 16: the stipe is black in its lowest tenth and green above it.
+		// Stills 15 and 16: the stipe is black in its lowest tenth and green above it, and the
+		// stipe's own photograph carries the green, so the zone above the black takes it as it is.
 		zones: [
-			{ layer: 0, by: 'height', from: -1, to: 0.12, blend: 0.06, tint: [0.022, 0.02, 0.017] },
-			{ layer: 1, by: 'height', from: 0.12, to: 4, blend: 0.06, tint: [0.1, 0.22, 0.035] },
+			{ layer: 0, by: 'height', from: -1, to: 0.12, blend: 0.06, tint: [0.06, 0.06, 0.05] },
+			{ layer: 0, by: 'height', from: 0.12, to: 4, blend: 0.06, tint: [1, 1, 1] },
 		],
 		young: 0,
 		youngRadius: 0,
@@ -159,8 +160,10 @@ export const record: Species = {
 			lod0Triangles: 200_000,
 			lod1Triangles: 30_000,
 			lod2Triangles: 8_000,
-			downloadBytes: 350_000,
-			downloadHalfBytes: 120_000,
+			// The leaf set and one stipe zone: 310.0 and 97.7 KB of leaf, 336.1 and 97.1 of stipe,
+			// 84.1 and 21.9 of the young layer the tool always builds, inside the measured allowance.
+			downloadBytes: 750_000,
+			downloadHalfBytes: 230_000,
 			growMilliseconds: 150,
 		},
 	},

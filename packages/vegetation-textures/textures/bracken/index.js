@@ -19,6 +19,16 @@ export const files = {
 					"name": "25-leaf-texture-underside.png",
 					"sha256": "597f67b000ee0e34578a860c7fd0b3bd9b97cae79209c65cfabae805260a7240",
 					"job": "bb83f7b7-a06a-4f03-8344-22f7d694d3aa"
+				},
+				{
+					"name": "16-stipe-mid.png",
+					"sha256": "b5b339dd1a2a3678ec12779322e668cf1634e0af85359fab81d31d6524ad6559",
+					"job": "cd9b56a2-fc0d-4e07-8ecc-304f65c5ad0e"
+				},
+				{
+					"name": "16-stipe-mid.png",
+					"sha256": "b5b339dd1a2a3678ec12779322e668cf1634e0af85359fab81d31d6524ad6559",
+					"job": "cd9b56a2-fc0d-4e07-8ecc-304f65c5ad0e"
 				}
 			]
 		},
@@ -217,6 +227,38 @@ export const files = {
 			},
 			"coverage": 0.2634
 		},
+		"bark": {
+			"size": 1024,
+			"layers": [
+				{
+					"name": "stipe",
+					"tile": [
+						0.04,
+						0.04
+					],
+					"mean": [
+						0.23708,
+						0.27615,
+						0.10705
+					],
+					"height": {
+						"offset": 0.25564,
+						"depth": 0.000823
+					}
+				}
+			],
+			"young": {
+				"tile": [
+					0.02,
+					0.02
+				],
+				"mean": [
+					0.23716,
+					0.27628,
+					0.10726
+				]
+			}
+		},
 		"outputs": [
 			{
 				"file": "leaf-color.ktx2",
@@ -237,15 +279,63 @@ export const files = {
 				"file": "leaf-normal-half.ktx2",
 				"sha256": "1ebd9332b41ea178b17b4b16b5011b12dfd1942b11151db86c878a676a8e6f19",
 				"bytes": 4852
+			},
+			{
+				"file": "bark-color.ktx2",
+				"sha256": "341c6367978f8fa2fe178adf1ebc5614ccbd6b5db0f4063339bacedeafef183b",
+				"bytes": 151202
+			},
+			{
+				"file": "bark-normal.ktx2",
+				"sha256": "29c8dea40462fd4c7a209a3eb41e5a7d3f990ba686b174659743da8a4f2f4e11",
+				"bytes": 184858
+			},
+			{
+				"file": "young-color.ktx2",
+				"sha256": "36fa5719ffb5feec117653c8e3a404f01c5f384288eb68f82cce35d3573351e4",
+				"bytes": 37525
+			},
+			{
+				"file": "young-normal.ktx2",
+				"sha256": "b2ef858f595607767abef4fd2e082e27ad40fd4436feaedca0e230389e1996b1",
+				"bytes": 46620
+			},
+			{
+				"file": "bark-color-half.ktx2",
+				"sha256": "1b55ff87031e6088eb850baadf2920a9a17be134d9de033baa383ea89a76ecd0",
+				"bytes": 46047
+			},
+			{
+				"file": "bark-normal-half.ktx2",
+				"sha256": "0f65de8e4e6e814883185ca0114a57906e6c9e425fc2a19b39945c647dce4bf8",
+				"bytes": 51104
+			},
+			{
+				"file": "young-color-half.ktx2",
+				"sha256": "caf09d99dd22f40b6a2b9f2d2ae93322b8018eb519751f2528aa31f78060187c",
+				"bytes": 10000
+			},
+			{
+				"file": "young-normal-half.ktx2",
+				"sha256": "20d61f68b24bf4bd274dbd60c299ab319696737aeba6ffae4ebb42403655bc64",
+				"bytes": 11929
 			}
 		]
 	},
 	full: {
 		leafColor: new URL('./leaf-color.ktx2', import.meta.url),
 		leafNormal: new URL('./leaf-normal.ktx2', import.meta.url),
+		barkColor: new URL('./bark-color.ktx2', import.meta.url),
+		barkNormal: new URL('./bark-normal.ktx2', import.meta.url),
+		youngColor: new URL('./young-color.ktx2', import.meta.url),
+		youngNormal: new URL('./young-normal.ktx2', import.meta.url),
 	},
 	half: {
 		leafColor: new URL('./leaf-color-half.ktx2', import.meta.url),
 		leafNormal: new URL('./leaf-normal-half.ktx2', import.meta.url),
+		barkColor: new URL('./bark-color-half.ktx2', import.meta.url),
+		barkNormal: new URL('./bark-normal-half.ktx2', import.meta.url),
+		youngColor: new URL('./young-color-half.ktx2', import.meta.url),
+		youngNormal: new URL('./young-normal-half.ktx2', import.meta.url),
 	},
 };
