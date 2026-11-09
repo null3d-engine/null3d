@@ -159,27 +159,28 @@ export const record: Species = {
 				droop: 10,
 			},
 		],
-		// Stills 21 and 22: a cut twig forks at last year's joint into two long laterals, so the piece
-		// ends in three leafy sprays on a bare lower stem. The crown cannot carry twigs this bare, so
+		// Stills 21 and 22: a cut twig whose two older joints each fork into long laterals, so the
+		// piece ends in leafy sprays on a bare lower stem. The crown cannot carry twigs this bare, so
 		// the cuttings draw a class the crown never does. Its two prototypes differ in how widely they
 		// spread, so the branch takes the wide piece and the sub-branch the tall one.
 		cuttingClasses: [
 			{
-				// Stills 21 and 22: a two-year spray, its lower stem bare, forking into two long leafy
-				// laterals that reach nearly the axis's own length.
+				// Stills 21 and 22: a three-year spray, its lower stem bare, its two older joints each
+				// forking into long leafy laterals that reach nearly the axis's own length. The second
+				// joint turns the sprays out of one plane, so the piece keeps its breadth as it turns.
 				name: 'cut',
 				vigor: [0, 1],
 				share: 0,
-				years: 2,
+				years: 3,
 				leafYears: 1,
 				length: { mean: 0.95, spread: 0.08 },
 				// Stills 21 and 22 hold about forty leaves over their three sprays, so a spray carries
-				// more leaves than the crown's own shoots do. A dozen along each made the piece denser
-				// and narrower, so the sprays reach outward instead: the laterals leave wider.
+				// more leaves than the crown's own shoots do. A dozen along each makes the piece denser
+				// and narrower, so the sprays reach outward by their length instead.
 				nodes: { mean: 8, spread: 0.5 },
 				internode: ALTERNATE,
 				stem: { radius: [0.006, 0.003] },
-				lateral: 60,
+				lateral: 50,
 				laterals: 2,
 				lateralGap: 0.3,
 				leafScale: [
@@ -498,9 +499,10 @@ export const record: Species = {
 		shadowLevel: 1,
 		budget: {
 			// The crown's prototypes, whose strongest shoots carry the crown's masses, with two cutting
-			// classes beside them: the branched cut twig and the cluster's own spray. 3.30, 3.99, 5.24
-			// and 7.70 MB at the four tiers; the owner's tree caps are 3.4, 4, 7.1 and 13 MB.
-			kitBytes: { low: 3_350_000, medium: 4_000_000, high: 5_300_000, ultra: 7_800_000 },
+			// classes beside them: the branched cut twig, which forks at each of its two older joints,
+			// and the cluster's own spray. 3.30, 4.11, 5.55 and 8.40 MB at the four tiers; the owner's
+			// tree caps are 3.5, 6.3, 11.8 and 22.6 MB.
+			kitBytes: { low: 3_400_000, medium: 4_200_000, high: 5_650_000, ultra: 8_500_000 },
 			variantBytes: { low: 10_500_000, medium: 11_000_000, high: 11_200_000, ultra: 11_500_000 },
 			// The crown's strongest shoot carries six leaves a year, which puts the densest near band at
 			// 2,702,377 triangles; the owner's cap for a tree is 2,900,000.
