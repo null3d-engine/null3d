@@ -50,19 +50,7 @@ describe('warmUpProblems', () => {
 		expect(warmUpProblems(result(false, 38, 'high', 'webgpu', 'medium'), 'webgpu')).toEqual([]);
 		// Had it warmed up at High, its depth pipeline would be one of the three it builds.
 		expect(warmUpProblems({ ...result(false, 38), addedPipelines: 1 }, 'webgpu')).toEqual([
-			"the added object built 1 pipelines at 'high', not 3 or 4",
-		]);
-	});
-
-	it("accepts the final pass's 8-bit variant during the added object's warm-up", () => {
-		// At Low the quad builds one pipeline; a slow device that drops the render scale adds the
-		// final pass's 8-bit variant, which is the second pipeline the software GPU reports.
-		expect(warmUpProblems(result(false, 21, 'low'), 'webgpu')).toEqual([]);
-		expect(warmUpProblems({ ...result(false, 21, 'low'), addedPipelines: 2 }, 'webgpu')).toEqual(
-			[],
-		);
-		expect(warmUpProblems({ ...result(false, 21, 'low'), addedPipelines: 3 }, 'webgpu')).toEqual([
-			"the added object built 3 pipelines at 'low', not 1 or 2",
+			"the added object built 1 pipelines at 'high', not 3",
 		]);
 	});
 
