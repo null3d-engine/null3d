@@ -550,7 +550,21 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 			growHeads(input, builder, growth, stem, height, heading, h);
 		}
 	}
-	return builder.finish(0);
+	const finished = builder.finish(0);
+	if (growth.soil === undefined) return finished;
+	// What grows below the soil does not extend the plant's box: the ground hides it, and every
+	// picture frames the plant above the ground. The crown's own nodes set the lowest point.
+	let lowest = finished.bounds.max[1] as number;
+	for (let n = finished.axes.first[0] as number; n <= (finished.axes.last[0] as number); n++)
+		lowest = Math.min(lowest, finished.position[n * 3 + 1] as number);
+	if ((finished.bounds.min[1] as number) >= lowest) return finished;
+	return {
+		...finished,
+		bounds: {
+			min: [finished.bounds.min[0], lowest, finished.bounds.min[2]],
+			max: finished.bounds.max,
+		},
+	};
 }
 
 /**
