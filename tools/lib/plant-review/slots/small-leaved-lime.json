@@ -112,9 +112,9 @@
 	"28-young-bark.png": {
 		"thin": 0.045,
 		"along": 0.75,
-		"span": 0.055,
+		"span": 0.04,
 		"barkMask": true,
-		"daylight": 0.7
+		"daylight": 0.85
 	},
 	"11-leaf-cluster.png": {
 		"daylight": 0.758,
