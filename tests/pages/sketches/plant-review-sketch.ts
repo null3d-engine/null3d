@@ -552,11 +552,17 @@ export default defineSketch(async (ctx) => {
 	 * which is the piece a cutting's frame and the close views measure in.
 	 */
 	const leafLength =
-		foliage.kind !== 'blade'
-			? undefined
-			: (typeof foliage.leaf.length === 'number' ? foliage.leaf.length : foliage.leaf.length.mean) *
-					(foliage.compound ? foliage.compound.rachis + 1 : 1) +
-				(foliage.compound ? foliage.leaf.petiole.length : 0);
+		foliage.kind === 'grass-blade'
+			? typeof foliage.blade.length === 'number'
+				? foliage.blade.length
+				: foliage.blade.length.mean
+			: foliage.kind !== 'blade'
+				? undefined
+				: (typeof foliage.leaf.length === 'number'
+						? foliage.leaf.length
+						: foliage.leaf.length.mean) *
+						(foliage.compound ? foliage.compound.rachis + 1 : 1) +
+					(foliage.compound ? foliage.leaf.petiole.length : 0);
 	/** What the close views read of the plant: its wood alone for a view that draws the wood alone. */
 	const closePlant = (woodOnly: boolean): ClosePlant => ({
 		skeleton,
