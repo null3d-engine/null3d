@@ -518,6 +518,11 @@ The count is eleven of twelve. The reviewer confirmed row 8 on run `ash-123` at 
 769 frames and all 32 reference files. Row 10's crown colour stays open at 12.9, 11.9 and 4.4
 against the band of 3, because a stated limit still fails its row.
 
+Re-read on the land head at `31e48922f`, which brings the thin-wood tint, the limb stands at 1.87
+where it stood at 2.08. The base and mid-trunk hold at 2.77 and 1.47. The young bark measures
+7.65 there, up from 6.53 on the earlier material, and it is a texture-source note rather than a row.
+The whole views hold: 0.2512, 0.2244 and 0.2442.
+
 The measure came first, because it was wrong. A slot's `barkMask` drops every patch pixel as close
 to the picture's corners as the backdrop is. Its first version read the backdrop as one colour: the
 mean of all four corners. A base view lays a stem on sky above the horizon and meadow below, so that
