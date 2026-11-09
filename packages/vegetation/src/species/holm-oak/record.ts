@@ -194,7 +194,14 @@ export const record: Species = {
 		},
 	},
 	bark: {
-		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0 }],
+		zones: [
+			// The stool: the photograph's bark reads light and yellow-green where the algae sit, and
+			// the moss over the foot pulls the drawn mean dark, so the foot takes its own tint.
+			{ layer: 0, by: 'height', from: 0, to: 1, blend: 0.3, tint: [1.75, 1.8, 1.15] },
+			// The trunk and the great limbs: the mid-stem reads darker than its photograph, so the
+			// wood above the foot lifts on every channel; the limb's yellow comes from its lichen.
+			{ layer: 0, by: 'height', from: 1, to: 40, blend: 0.4, tint: [1.3, 1.31, 1] },
+		],
 		young: 0,
 		youngRadius: 0.06,
 		girthScale: [
@@ -203,8 +210,8 @@ export const record: Species = {
 		],
 		displacement: 0.012,
 		collar: { swell: 0.4, length: 1.8, ridge: 0.5 },
-		moss: { amount: 0.5, up: 0.7, north: 0, colour: [0.16, 0.26, 0.1] },
-		lichen: { amount: 0.8, from: 3, colour: [0.42, 0.46, 0.38] },
+		moss: { amount: 0.25, up: 0.5, north: 0, colour: [0.3, 0.36, 0.16] },
+		lichen: { amount: 0.8, from: 3, colour: [0.44, 0.52, 0.16] },
 	},
 	base: {
 		flare: { amount: 0.6, height: 0.4 },
