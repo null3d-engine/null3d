@@ -455,6 +455,12 @@
 		"date": "2026-11-07",
 		"reason": "the branch that adds the species is not pushed yet, so no CI run could draw the software set; it is drawn here on this Mac's SwiftShader with CI=1"
 	},
+	"chromium-swiftshader/webgl2/plant-hawthorn-shrub.png": {
+		"test": "plant-hawthorn-shrub",
+		"tier": "webgl2",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 879cbb0ed after the engine merge; a CI drawing replaces it if it differs"
+	},
 	"chromium-swiftshader/webgl2/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
 		"tier": "webgl2",
