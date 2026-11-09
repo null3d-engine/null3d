@@ -31,9 +31,9 @@ export const record: Species = {
 			// where the crown's plates lie closest.
 			kind: 'whorl',
 			spacing: [
-				[0, 1.7],
-				[0.5, 1.4],
-				[1, 0.95],
+				[0, 2],
+				[0.5, 1.6],
+				[1, 1.05],
 			],
 			perWhorl: { mean: 3, spread: 1 },
 			between: 0,
@@ -61,7 +61,7 @@ export const record: Species = {
 					[0.85, 86],
 					[1, 78],
 				],
-				density: 0.4,
+				density: 1,
 				arrangement: { kind: 'spiral', divergence: 137.5 },
 				flatten: 0,
 				sag: 0,
@@ -99,7 +99,7 @@ export const record: Species = {
 					[0, 62],
 					[1, 45],
 				],
-				density: 3.4,
+				density: 2,
 				arrangement: { kind: 'spiral', divergence: 137.5 },
 				flatten: 0.5,
 				sag: 2,
@@ -186,17 +186,17 @@ export const record: Species = {
 			colour: [0.34, 0.13, 0.05],
 		},
 		placement: {
-			// Stills 01, 04 and 20: the needle brushes stand at the ends of the finest twigs, with
-			// bare orange twig between them, and gather into dense plates at the crown's rim.
+			// Stills 01, 04 and 20: the needle brushes stand in a thin run along the limbs and thicken
+			// toward the finest twigs' ends, gathering into dense plates at the crown's rim.
 			perMetre: [
-				[0, 18],
-				[0.5, 68],
-				[1, 125],
+				[0, 8],
+				[0.5, 29],
+				[1, 51],
 			],
 			density: 1.1,
 			tipBias: 0.75,
 			shadePrune: 0.08,
-			tipPrune: 0.18,
+			tipPrune: 0.32,
 			// Stills 03 and 05: sky and bare limb show through the crown's middle and under it,
 			// while the lit outer plates stay.
 			skyPrune: 0.3,
@@ -209,10 +209,10 @@ export const record: Species = {
 			skyward: 0.35,
 			// The brushes gather at the nodes, so the internode between them shows bare.
 			gather: 0.2,
-			scale: { mean: 1.55, spread: 0.12 },
+			scale: { mean: 1.8, spread: 0.15 },
 			// Still 20: the crown's top is built of separate plates at different heights, so the
 			// foliage gathers into tufts with wood and sky between them.
-			clump: { spacing: 1.2, depth: 0.15, fine: { spacing: 0.4, depth: 0.2 } },
+			clump: { spacing: 1.2, depth: 0.28, fine: { spacing: 0.4, depth: 0.3 } },
 		},
 	},
 	// Stills 11 and 12: a pine has no single leaf. The leaf is the fascicle, two needles in one
@@ -232,9 +232,9 @@ export const record: Species = {
 			optics: {
 				// The blue-green cast of stills 12, 13 and 24: less yellow than the broadleaves, with
 				// the blue channel close to the green.
-				reflectance: [0.075, 0.13, 0.08],
-				reflectanceBack: [0.19, 0.23, 0.2],
-				transmittance: [0.09, 0.16, 0.08],
+				reflectance: [0.075, 0.135, 0.105],
+				reflectanceBack: [0.185, 0.22, 0.235],
+				transmittance: [0.09, 0.16, 0.1],
 				roughness: [0.5, 0.6],
 			},
 		},
@@ -338,7 +338,7 @@ export const record: Species = {
 		woodOrders: [2, 1],
 		// A brush's card stands a little larger than the shoots it pictures, so gaps between
 		// neighbouring brushes fall on needles rather than on sky.
-		cardGrow: 3.8,
+		cardGrow: 8,
 		// A card's twig is thinner than a pixel at a whole view, so the card draws a two-pixel stalk
 		// to the wood it grows from and runs it on to the foliage's centre.
 		cardStalk: 3,
