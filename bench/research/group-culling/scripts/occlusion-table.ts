@@ -9,7 +9,7 @@
 // `bun occlusion-table.ts <results.json>...`
 import { existsSync, readFileSync } from 'node:fs';
 
-type Run = Record<string, any>;
+type Run = Record<string, unknown>;
 const median = (values: number[]) => {
 	const sorted = values.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
 	if (sorted.length === 0) return Number.NaN;
