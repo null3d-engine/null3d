@@ -33,10 +33,18 @@
 		"skyShare": 0.7
 	},
 	"27-bark-texture-zone2.png": {
-		"barkZone": 0
+		"barkZone": 0,
+		"daylight": 0.9
 	},
 	"28-young-bark.png": {
-		"thin": 0.03
+		"thin": 0.03,
+		"daylight": 0.6
+	},
+	"15-bark-mid-trunk.png": {
+		"daylight": 0.95
+	},
+	"26-bark-texture.png": {
+		"daylight": 1.4
 	},
 	"30-woodland-form-whole.png": {
 		"daylight": 4.4,
@@ -63,7 +71,9 @@
 		"skyShare": 0.4
 	},
 	"34-peeling-bark-macro.png": {
-		"span": 0.35
+		"span": 0.35,
+		"daylight": 0.9,
+		"lamp": "#fff6e8"
 	},
 	"35-catkins.png": {
 		"view": "twigs",
