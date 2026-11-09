@@ -13,12 +13,14 @@ export const PLANT_VIEWS = [
 	'junction',
 	'fork',
 	'twigs',
+	'strands',
 	'limb',
 	'branch',
 	'subbranch',
 	'cluster',
 	'leaf-upper',
 	'leaf-under',
+	'soil',
 	'bark-base',
 	'bark-mid',
 	'bark-limb',
@@ -32,7 +34,7 @@ export const PLANT_VIEWS = [
 export type PlantView = (typeof PLANT_VIEWS)[number];
 
 /** The backgrounds that a plant stands against. */
-export const PLANT_BACKGROUNDS = ['sky-meadow', 'studio-grey', 'white'] as const;
+export const PLANT_BACKGROUNDS = ['sky-meadow', 'sky', 'studio-grey', 'white'] as const;
 
 /** One background of the page. */
 export type PlantBackground = (typeof PLANT_BACKGROUNDS)[number];
@@ -54,6 +56,8 @@ export const BACKGROUND_COLOURS: Readonly<
 	Record<PlantBackground, { readonly sky: string; readonly ground?: string }>
 > = {
 	'sky-meadow': { sky: '#c5d8ef', ground: '#9e9b62' },
+	// Sky alone: a view whose subject hangs at the crown's rim, against the sky and no ground.
+	sky: { sky: '#c5d8ef' },
 	'studio-grey': { sky: '#cccdd1' },
 	white: { sky: '#fefefe' },
 };
@@ -149,6 +153,14 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		elevation: 0,
 		size: [960, 720],
 	},
+	strands: {
+		slots: [],
+		fov: 45,
+		background: 'sky',
+		sun: 'default',
+		elevation: 0,
+		size: [960, 720],
+	},
 	limb: {
 		slots: [4],
 		fov: 45,
@@ -201,6 +213,14 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		elevation: 0,
 		cutting: 'leaf',
 		size: [720, 960],
+	},
+	soil: {
+		slots: [],
+		fov: 45,
+		background: 'studio-grey',
+		sun: 'flat',
+		elevation: 10,
+		size: [960, 720],
 	},
 	'bark-base': {
 		slots: [14],
