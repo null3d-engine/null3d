@@ -523,12 +523,16 @@ passes, and the engine change becomes a task of its own. Its figures stay record
 acceptance, 12.9, 11.9 and 4.4 against the band of 3. Nobody then mistakes a dark crown for a fixed
 one. Scored on the stated limit alone, the ash would read eleven.
 
-Re-read on the land head at `31e48922f`, which brings the thin-wood tint, the limb stands at 1.87
-where it stood at 2.08. The base and mid-trunk hold at 2.77 and 1.47.
+Re-read on the land head at `31e48922f`, which brought the thin-wood tint, the limb stood at 1.87.
+That tint is reverted at `038dac7cc`, so on the settled land tip the limb reads 2.08 again.
+
+Re-read at `fbdcbcd83`, which merges `9da5a94d0`, the three close views read 2.77, 1.47 and 2.08.
+The base draws 47.7, -1.0, 7.4 against the photograph's 46.0, -1.6, 10.4. The mid-trunk draws 40.2,
+0.1, 5.8 against 41.0, 0.7, 7.1, and the limb 45.5, -1.7, 8.4 against 46.2, -1.0, 10.7.
 
 The batch re-read was drawn at `980498366`, which merges `6e44d5063`'s strands camera and the land
-head. The whole views read 0.2512, 0.2244 and 0.2442 against 0.2608, 0.1869 and 0.2147, all inside.
-Their crown aspects are 1.157, 1.096 and 1.157 against the photographs' 1.250, 1.227 and 0.900. The
+head. The whole views read 0.2512, 0.2244 and 0.2442, against 0.2608, 0.1869 and 0.2147.
+Their crown aspects are 1.157, 1.096 and 1.157. The photographs give 1.250, 1.227 and 0.900. The
 young bark reads 12.03 at the shared frame, `thin` 0.015 with a `span` of 0.1 and the mask, landed
 at `b40edf899`, drawn at `b62625f07`. The ash's own entry for that picture now carries the same
 pair rather than a thin alone. It read 6.68 with the narrower frame, and the rise is the frame's:
