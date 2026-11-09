@@ -1,4 +1,4 @@
-# D-334: a plate rule for a shoot's crowded runs
+# D-340: a plate rule for a shoot's crowded runs
 
 Status: decided and built as the optional field `shoots.placement.plate`, off by default. No species
 sets it. The European beech tried it in two measured runs and left it unset, so its crown's grain
